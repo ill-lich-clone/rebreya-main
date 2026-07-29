@@ -417,6 +417,137 @@ test("InventoryApp keeps page width while book tabs render externally", async ()
   }
 });
 
+test("InventoryApp exposes the active group crest and edit permission", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const groupActor = {
+    id: "group-a",
+    name: "Workshop Crew",
+    img: "group.webp",
+    flags: { "rebreya-main": { partyInventoryCrest: "crest.webp" } },
+    getFlag: () => "crest.webp",
+    system: { members: [] }
+  };
+  const { InventoryApp } = await import(
+    `../scripts/ui/inventory-app.js?crest-context=${Date.now()}`
+  );
+  const app = new InventoryApp(createModuleApi({
+    getGroupContext: () => ({
+      groupActor,
+      groupId: "group-a",
+      memberActorIds: []
+    }),
+    partySnapshot: { canManage: true }
+  }));
+
+  try {
+    const context = await app._prepareContext();
+    assert.deepEqual(context.partyIdentity, {
+      name: "Workshop Crew",
+      crestUrl: "crest.webp",
+      canEditCrest: true
+    });
+  }
+  finally {
+    restoreFoundry();
+  }
+});
+
+test("InventoryApp keeps crest editing disabled for non-managers", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const groupActor = {
+    id: "group-a",
+    name: "Workshop Crew",
+    img: "group.webp",
+    getFlag: () => "",
+    system: { members: [] }
+  };
+  const { InventoryApp } = await import(
+    `../scripts/ui/inventory-app.js?crest-permission=${Date.now()}`
+  );
+  const app = new InventoryApp(createModuleApi({
+    getGroupContext: () => ({
+      groupActor,
+      groupId: "group-a",
+      memberActorIds: []
+    }),
+    partySnapshot: { canManage: false }
+  }));
+
+  try {
+    const context = await app._prepareContext();
+    assert.equal(context.partyIdentity.crestUrl, "group.webp");
+    assert.equal(context.partyIdentity.canEditCrest, false);
+  }
+  finally {
+    restoreFoundry();
+  }
+});
+
+test("InventoryApp crest action persists a new image and rerenders", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const dom = installMinimalDom();
+  const crestButton = createFakeElement();
+  const root = createFakeElement({ closest: () => root });
+  root.querySelector = (selector) => (
+    selector === "[data-action='edit-party-crest']" ? crestButton : null
+  );
+  root.querySelectorAll = () => [];
+
+  const flagWrites = [];
+  const pickerRenders = [];
+  let picker = null;
+  class Picker {
+    constructor(options) {
+      this.options = options;
+      picker = this;
+    }
+
+    render(options) {
+      pickerRenders.push(options);
+      return this;
+    }
+  }
+  globalThis.foundry.applications.apps = {
+    FilePicker: { implementation: Picker }
+  };
+
+  const groupActor = {
+    img: "old-crest.webp",
+    getFlag: () => "old-crest.webp",
+    async setFlag(scope, key, value) {
+      flagWrites.push([scope, key, value]);
+    }
+  };
+  const { InventoryApp } = await import(
+    `../scripts/ui/inventory-app.js?crest-action=${Date.now()}`
+  );
+  const app = new InventoryApp(createModuleApi({
+    getGroupContext: () => null
+  }));
+  let renderCalls = 0;
+  app.element = root;
+  app.groupActor = groupActor;
+  app.render = async () => {
+    renderCalls += 1;
+  };
+
+  try {
+    await app._onRender({}, {});
+    await dispatchClick(crestButton);
+    await picker.options.callback("new-crest.webp");
+
+    assert.deepEqual(pickerRenders, [{ force: true }]);
+    assert.deepEqual(flagWrites, [
+      ["rebreya-main", "partyInventoryCrest", "new-crest.webp"]
+    ]);
+    assert.equal(renderCalls, 1);
+  }
+  finally {
+    dom.restore();
+    restoreFoundry();
+  }
+});
+
 test("InventoryApp renders a compact header summary without redundant warehouse details", async () => {
   const template = await readFile(new URL("../templates/inventory-app.hbs", import.meta.url), "utf8");
   const pageIndex = template.indexOf('class="rm-shell rm-inventory-shell rm-inventory-shell--compact rm-inventory-book__page scrollable"');

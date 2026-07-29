@@ -7,6 +7,10 @@ import {
   cleanText,
   finiteNumber as toNumber
 } from "../shared/foundry-values.js";
+import {
+  openPartyInventoryCrestPicker,
+  resolvePartyInventoryCrest
+} from "./party-inventory-crest.js";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
@@ -2920,6 +2924,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.actionFeedback = null;
     this.canManage = false;
     this.canDropInventoryItems = false;
+    this.groupActor = null;
     this.partyMembershipManagedByNativeGroup = false;
     this.scrollRestore = null;
     this.calendarDowntimeByIsoDate = {};
@@ -3393,6 +3398,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
   async _prepareContext() {
     this.calendarDowntimeByIsoDate = {};
+    this.groupActor = null;
     try {
       const inventorySnapshot = await this.moduleApi.getInventorySnapshot({
         search: this.search,
@@ -3405,9 +3411,11 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const groupContext = this.moduleApi.getGroupContext?.() ?? null;
         const groupActor = groupContext?.groupActor ?? null;
         if (groupActor) {
+          this.groupActor = groupActor;
           group = {
             id: groupContext.groupId ?? groupActor.id ?? "",
             name: groupActor.name ?? "Группа",
+            crestUrl: resolvePartyInventoryCrest(groupActor),
             memberCount: toInteger(
               groupContext.memberActorIds?.length
                 ?? groupContext.members?.length
@@ -3687,6 +3695,14 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         craftSearch: this.craftSearch,
         craftCrafterActorId: this.craftCrafterActorId,
         group,
+        partyIdentity: {
+          name: group?.name
+            ?? inventorySnapshot.actor?.name
+            ?? "Партийный инвентарь",
+          crestUrl: group?.crestUrl
+            ?? resolvePartyInventoryCrest(inventorySnapshot.actor),
+          canEditCrest: Boolean(canManage && this.groupActor)
+        },
         groupContextError,
         inventory: sortedInventoryItems,
         inventoryCount: sortedInventoryItems.length,
@@ -5702,6 +5718,26 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       catch (error) {
         console.error(`${MODULE_ID} | Failed to open party inventory sheet.`, error);
         ui.notifications?.error(error.message || "Не удалось открыть лист партийного инвентаря.");
+      }
+    }, listenerOptions);
+
+    element.querySelector("[data-action='edit-party-crest']")?.addEventListener("click", () => {
+      try {
+        openPartyInventoryCrestPicker({
+          actor: this.groupActor,
+          current: resolvePartyInventoryCrest(this.groupActor),
+          onSelected: async () => {
+            await this.render({ force: true });
+          },
+          onError: (error) => {
+            console.error(`${MODULE_ID} | Failed to update party inventory crest.`, error);
+            ui.notifications?.error("Не удалось сохранить герб группы.");
+          }
+        });
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to open party inventory crest picker.`, error);
+        ui.notifications?.error("Не удалось открыть выбор герба группы.");
       }
     }, listenerOptions);
 
