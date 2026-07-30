@@ -3,6 +3,8 @@ import { WorldMutationCoordinator } from "../application/world-mutation-coordina
 
 export const SPELL_INSTANCE_FLAG = "spellInstance";
 
+const SPELL_INSTANCE_MUTATION_COMMAND = "spell-instance-mutation";
+
 function isPlainObject(value) {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     return false;
@@ -141,6 +143,26 @@ function coordinatorRequestId(key, operationId) {
   return `${key}\u0000${operationId}`;
 }
 
+function currentUserCanUpdateActor(actor) {
+  const user = globalThis.game?.user;
+  if (!user) return true;
+  if (user?.isGM === true) return true;
+  if (typeof actor?.testUserPermission === "function") {
+    return actor.testUserPermission(user, "OWNER");
+  }
+  const ownership = actor?.ownership ?? actor?._source?.ownership ?? {};
+  return Number(ownership[user?.id] ?? 0) >= 3 || Number(ownership.default ?? 0) >= 3;
+}
+
+function declarationFrom(record) {
+  return { recipe: record.recipe, version: record.version };
+}
+
+function socketResult(record) {
+  const { effect, ...serialized } = record;
+  return cloneSerializable(serialized);
+}
+
 async function defaultLinkDependency(concentrationEffect, instanceEffect) {
   const midiQol = globalThis.MidiQOL;
   if (typeof midiQol?.addDependent === "function") {
@@ -229,14 +251,18 @@ export function findSpellInstance(actor, query = {}) {
 }
 
 export class SpellInstanceRuntime {
+  #canUpdateActor;
   #coordinator;
   #linkDependency;
   #registry;
+  #socketCommandBus;
 
   constructor({
     registry,
     coordinator = new WorldMutationCoordinator(),
-    linkDependency = defaultLinkDependency
+    linkDependency = defaultLinkDependency,
+    socketCommandBus,
+    canUpdateActor = currentUserCanUpdateActor
   } = {}) {
     if (!coordinator || typeof coordinator.runIdempotent !== "function") {
       throw new TypeError("Spell instance runtime requires a WorldMutationCoordinator.");
@@ -244,9 +270,17 @@ export class SpellInstanceRuntime {
     if (typeof linkDependency !== "function") {
       throw new TypeError("Spell instance runtime linkDependency must be a function.");
     }
+    if (socketCommandBus != null && typeof socketCommandBus.request !== "function") {
+      throw new TypeError("Spell instance socket command bus must support request.");
+    }
+    if (typeof canUpdateActor !== "function") {
+      throw new TypeError("Spell instance runtime canUpdateActor must be a function.");
+    }
+    this.#canUpdateActor = canUpdateActor;
     this.#coordinator = coordinator;
     this.#linkDependency = linkDependency;
     this.#registry = registry;
+    this.#socketCommandBus = socketCommandBus;
   }
 
   registerRecipe(recipe) {
@@ -261,6 +295,26 @@ export class SpellInstanceRuntime {
   }
 
   createInstance(context, initialState) {
+    if (!this.#canUpdateActor(context?.actor)) {
+      const declaration = declarationFor(context?.declaration);
+      const actorUuid = documentUuid(context?.actor, "Source actor");
+      return this.#requestMutation({
+        action: "create",
+        actorUuid,
+        concentrationEffectUuid: documentUuid(context?.concentrationEffect, "Concentration effect"),
+        declaration,
+        expectedRevision: 0,
+        instanceId: requireNonEmptyString(context?.instanceId ?? context?.operationId, "Spell instance ID"),
+        operationId: requireNonEmptyString(context?.operationId, "Spell instance operation ID"),
+        sourceActivityUuid: documentUuid(context?.activity, "Source activity"),
+        sourceItemUuid: documentUuid(context?.item, "Source item"),
+        state: requireState(initialState)
+      });
+    }
+    return this.#createInstanceLocal(context, initialState);
+  }
+
+  #createInstanceLocal(context, initialState) {
     const declaration = declarationFor(context?.declaration);
     const effectData = buildSpellInstanceEffectData(context, declaration, initialState);
     const actor = context?.actor;
@@ -323,9 +377,26 @@ export class SpellInstanceRuntime {
   updateInstance({ actor, instanceId, expectedRevision, operationId, state } = {}) {
     const revision = requireNonNegativeInteger(expectedRevision, "Expected spell instance revision");
     const nextState = requireState(state);
+    if (!this.#canUpdateActor(actor)) {
+      const record = this.readInstance({ actor, instanceId });
+      if (!record) throw new Error(`Spell instance not found: ${requireNonEmptyString(instanceId, "Spell instance ID")}`);
+      return this.#requestMutation({
+        action: "replace-state",
+        actorUuid: documentUuid(actor, "Spell instance actor"),
+        declaration: declarationFrom(record),
+        expectedRevision: revision,
+        instanceId: requireNonEmptyString(instanceId, "Spell instance ID"),
+        operationId: requireNonEmptyString(operationId, "Spell instance operation ID"),
+        state: nextState
+      });
+    }
+    return this.#updateInstanceLocal({ actor, instanceId, expectedRevision: revision, operationId, state: nextState });
+  }
+
+  #updateInstanceLocal({ actor, instanceId, expectedRevision, operationId, state } = {}) {
     return this.runInstanceOperation({ actor, instanceId, operationId }, async (record) => {
-      if (record.revision !== revision) {
-        throw new Error(`Spell instance has stale revision: expected ${revision}, found ${record.revision}`);
+      if (record.revision !== expectedRevision) {
+        throw new Error(`Spell instance has stale revision: expected ${expectedRevision}, found ${record.revision}`);
       }
       if (typeof record.effect.update !== "function") {
         throw new TypeError("Spell instance effect must support update.");
@@ -333,7 +404,7 @@ export class SpellInstanceRuntime {
       const next = {
         ...record,
         revision: record.revision + 1,
-        state: nextState
+        state
       };
       delete next.effect;
       await record.effect.update({ [`flags.${MODULE_ID}.${SPELL_INSTANCE_FLAG}`]: next });
@@ -343,9 +414,25 @@ export class SpellInstanceRuntime {
 
   deleteInstance({ actor, instanceId, expectedRevision, operationId } = {}) {
     const revision = requireNonNegativeInteger(expectedRevision, "Expected spell instance revision");
+    if (!this.#canUpdateActor(actor)) {
+      const record = this.readInstance({ actor, instanceId });
+      if (!record) throw new Error(`Spell instance not found: ${requireNonEmptyString(instanceId, "Spell instance ID")}`);
+      return this.#requestMutation({
+        action: "delete",
+        actorUuid: documentUuid(actor, "Spell instance actor"),
+        declaration: declarationFrom(record),
+        expectedRevision: revision,
+        instanceId: requireNonEmptyString(instanceId, "Spell instance ID"),
+        operationId: requireNonEmptyString(operationId, "Spell instance operation ID")
+      });
+    }
+    return this.#deleteInstanceLocal({ actor, instanceId, expectedRevision: revision, operationId });
+  }
+
+  #deleteInstanceLocal({ actor, instanceId, expectedRevision, operationId } = {}) {
     return this.runInstanceOperation({ actor, instanceId, operationId }, async (record) => {
-      if (record.revision !== revision) {
-        throw new Error(`Spell instance has stale revision: expected ${revision}, found ${record.revision}`);
+      if (record.revision !== expectedRevision) {
+        throw new Error(`Spell instance has stale revision: expected ${expectedRevision}, found ${record.revision}`);
       }
       if (typeof actor?.deleteEmbeddedDocuments !== "function") {
         throw new TypeError("Spell instance actor must support deleteEmbeddedDocuments.");
@@ -354,5 +441,57 @@ export class SpellInstanceRuntime {
       delete record.effect;
       return record;
     });
+  }
+
+  async executeAuthoritativeMutation(payload, { actor } = {}) {
+    if (documentUuid(actor, "Spell instance actor") !== payload?.actorUuid) {
+      throw new Error("Spell instance actor UUID does not match the authoritative actor.");
+    }
+    const declaration = declarationFor(payload.declaration);
+    if (payload.action === "create") {
+      const concentrationEffect = actorEffects(actor).find((effect) => effect?.uuid === payload.concentrationEffectUuid);
+      if (!concentrationEffect) {
+        throw new Error("Spell instance concentration effect is not on the authoritative actor.");
+      }
+      const result = await this.#createInstanceLocal({
+        actor,
+        activity: { uuid: payload.sourceActivityUuid },
+        concentrationEffect,
+        declaration,
+        instanceId: payload.instanceId,
+        item: { uuid: payload.sourceItemUuid },
+        operationId: payload.operationId
+      }, payload.state);
+      return socketResult(result);
+    }
+
+    const record = this.readInstance({ actor, instanceId: payload.instanceId });
+    if (!record || record.sourceActorUuid !== actor.uuid
+      || record.recipe !== declaration.recipe || record.version !== declaration.version) {
+      throw new Error("Spell instance declaration does not match the authoritative state.");
+    }
+    if (record.revision !== payload.expectedRevision) {
+      throw new Error(`Spell instance has stale revision: expected ${payload.expectedRevision}, found ${record.revision}`);
+    }
+    if (payload.action === "replace-state") {
+      return socketResult(await this.#updateInstanceLocal({
+        actor, instanceId: payload.instanceId, expectedRevision: payload.expectedRevision,
+        operationId: payload.operationId, state: payload.state
+      }));
+    }
+    if (payload.action === "delete") {
+      return socketResult(await this.#deleteInstanceLocal({
+        actor, instanceId: payload.instanceId, expectedRevision: payload.expectedRevision,
+        operationId: payload.operationId
+      }));
+    }
+    throw new Error("Spell instance mutation action is invalid.");
+  }
+
+  #requestMutation(payload) {
+    if (typeof this.#socketCommandBus?.request !== "function") {
+      return Promise.reject(new Error("Spell instance mutation requires an active-GM socket command bus."));
+    }
+    return this.#socketCommandBus.request(SPELL_INSTANCE_MUTATION_COMMAND, payload);
   }
 }
