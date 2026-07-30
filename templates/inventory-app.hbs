@@ -5,7 +5,7 @@
 {{else}}
   <section class="rm-inventory-book">
     <section class="rm-shell rm-inventory-shell rm-inventory-shell--compact rm-inventory-book__page scrollable">
-      <header class="rm-inventory-book__header">
+      <header class="rm-inventory-book__header{{#if tabs.isTravel}} rm-inventory-book__header--travel{{/if}}">
         {{#if tabs.isTravel}}
           <video
             class="rm-inventory-book__travel-video"

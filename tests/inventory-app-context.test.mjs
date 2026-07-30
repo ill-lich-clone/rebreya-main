@@ -773,7 +773,7 @@ test("InventoryApp uses its own workshop artwork without changing the character 
   );
 });
 
-test("InventoryApp renders a masked travel video only inside the travel header branch", async () => {
+test("InventoryApp replaces the workshop header with the complete travel video frame", async () => {
   const template = await readFile(
     new URL("../templates/inventory-app.hbs", import.meta.url),
     "utf8"
@@ -791,13 +791,19 @@ test("InventoryApp renders a masked travel video only inside the travel header b
     import.meta.url
   ));
 
-  const headerIndex = template.indexOf('class="rm-inventory-book__header"');
+  const headerIndex = template.indexOf("<header");
+  const headerTagEnd = template.indexOf(">", headerIndex);
+  const headerOpeningTag = template.slice(headerIndex, headerTagEnd + 1);
   const identityIndex = template.indexOf('class="rm-inventory-book__identity"');
-  const travelGuardIndex = template.indexOf("{{#if tabs.isTravel}}", headerIndex);
+  const travelGuardIndex = template.indexOf("{{#if tabs.isTravel}}", headerTagEnd);
   const travelGuardEnd = template.indexOf("{{/if}}", travelGuardIndex);
   const travelVideoBlock = template.slice(travelGuardIndex, travelGuardEnd);
 
   assert.ok(headerIndex >= 0, "expected the shared inventory header");
+  assert.match(
+    headerOpeningTag,
+    /class="rm-inventory-book__header\{\{#if tabs\.isTravel\}\} rm-inventory-book__header--travel\{\{\/if\}\}"/u
+  );
   assert.ok(
     travelGuardIndex > headerIndex && travelGuardIndex < identityIndex,
     "expected the travel-only video before shared header content"
@@ -825,11 +831,11 @@ test("InventoryApp renders a masked travel video only inside the travel header b
 
   assert.match(
     css,
-    /\.rebreya-inventory-app \.rm-inventory-book__travel-video\s*\{[^}]*position:\s*absolute;[^}]*inset:\s*0;[^}]*width:\s*100%;[^}]*height:\s*100%;[^}]*object-fit:\s*cover;[^}]*object-position:\s*center top;[^}]*pointer-events:\s*none;/su
+    /\.rebreya-inventory-app \.rm-inventory-book__travel-video\s*\{[^}]*position:\s*absolute;[^}]*inset:\s*0;[^}]*width:\s*100%;[^}]*height:\s*100%;[^}]*object-fit:\s*fill;[^}]*object-position:\s*center;[^}]*-webkit-mask-image:\s*none;[^}]*mask-image:\s*none;[^}]*pointer-events:\s*none;/su
   );
   assert.match(
     css,
-    /\.rebreya-inventory-app \.rm-inventory-book__travel-video\s*\{[^}]*-webkit-mask-image:\s*linear-gradient\(180deg,[^}]*transparent 100%\);[^}]*mask-image:\s*linear-gradient\(180deg,[^}]*transparent 100%\);/su
+    /\.rebreya-inventory-app \.rm-inventory-book__header--travel::before\s*\{[^}]*content:\s*none;[^}]*background-image:\s*none;/su
   );
   assert.match(
     css,
