@@ -782,6 +782,14 @@ test("InventoryApp renders a masked travel video only inside the travel header b
     new URL("../styles/main.css", import.meta.url),
     "utf8"
   );
+  const travelVideoAsset = await stat(new URL(
+    "../assets/ui/rebreya-travel-window.webm",
+    import.meta.url
+  ));
+  const travelPosterAsset = await stat(new URL(
+    "../assets/ui/rebreya-travel-window-poster.webp",
+    import.meta.url
+  ));
 
   const headerIndex = template.indexOf('class="rm-inventory-book__header"');
   const identityIndex = template.indexOf('class="rm-inventory-book__identity"');
@@ -794,6 +802,8 @@ test("InventoryApp renders a masked travel video only inside the travel header b
     travelGuardIndex > headerIndex && travelGuardIndex < identityIndex,
     "expected the travel-only video before shared header content"
   );
+  assert.ok(travelVideoAsset.size > 0);
+  assert.ok(travelPosterAsset.size > 0);
   assert.equal((template.match(/<video\b/gu) ?? []).length, 1);
   assert.match(travelVideoBlock, /class="rm-inventory-book__travel-video"/u);
   assert.match(travelVideoBlock, /\bautoplay\b/u);
