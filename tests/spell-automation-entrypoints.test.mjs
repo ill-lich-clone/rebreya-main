@@ -48,3 +48,16 @@ test("empty runtimes perform no document lookup or mutation", async () => {
   assert.equal(lookupCalls, 0);
   assert.equal(mutationCalls, 0);
 });
+
+test("runtimes report a descriptive registry dependency error when registering without one", () => {
+  const definition = { recipe: "moonbeam", version: 1, handlers: {} };
+
+  assert.throws(
+    () => new SpellInterceptionRuntime().registerRecipe(definition),
+    /spell runtime requires a registry/i
+  );
+  assert.throws(
+    () => new SpellAreaRuntime().registerRecipe(definition),
+    /spell runtime requires a registry/i
+  );
+});
