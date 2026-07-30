@@ -21,13 +21,31 @@ function clone(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));
 }
 
+function collectionValues(collection) {
+  if (!collection) {
+    return [];
+  }
+  if (Array.isArray(collection)) {
+    return collection;
+  }
+  if (Array.isArray(collection.contents)) {
+    return collection.contents;
+  }
+  if (typeof collection.values === "function") {
+    return Array.from(collection.values());
+  }
+  return typeof collection === "object" ? Object.values(collection) : [];
+}
+
 export function buildCounterspellActivity(sourceSystem = {}) {
   const activities = sourceSystem.activities && typeof sourceSystem.activities === "object"
     ? sourceSystem.activities
     : {};
+  const activityValues = collectionValues(activities);
   const sourceActivity = activities.counterspell
-    ?? Object.values(activities).find((activity) => cleanString(activity?._id) === "counterspell")
-    ?? Object.values(activities)[0]
+    ?? activities.get?.("counterspell")
+    ?? activityValues.find((activity) => cleanString(activity?._id) === "counterspell")
+    ?? activityValues[0]
     ?? {};
 
   const {

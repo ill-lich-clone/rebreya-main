@@ -571,6 +571,7 @@ test("repairCounterspellItems cleans legacy owned Counterspell activities", asyn
   const service = makeService();
   const item = counterspellItem();
   const updateCalls = [];
+  item.type = "spell";
   item.flags.dnd5e = {
     riders: {
       activity: ["legacy-check"]
@@ -606,6 +607,78 @@ test("repairCounterspellItems cleans legacy owned Counterspell activities", asyn
   assert.deepEqual(updateCalls[0].patch["flags.dnd5e.riders.activity"], []);
   assert.deepEqual(updateCalls[0].options, { render: false, rebreyaRepair: true });
   assert.equal(await service.repairCounterspellItems(actor), false);
+});
+
+test("repairCounterspellItems leaves a valid hydrated activity collection unchanged", async () => {
+  const service = makeService();
+  const item = counterspellItem();
+  const updateCalls = [];
+  item.type = "spell";
+  item.flags.dnd5e = {
+    riders: {
+      activity: []
+    }
+  };
+  item.system.activities = new Map([
+    ["counterspell0000", {
+      _id: "counterspell0000",
+      type: "utility",
+      activation: { type: "reaction", value: 1 },
+      consumption: {
+        targets: [],
+        scaling: { allowed: true, max: "" }
+      },
+      spell: {
+        level: 3,
+        scaling: { mode: "level", formula: "" }
+      }
+    }]
+  ]);
+  item.update = async (...args) => {
+    updateCalls.push(args);
+    return item;
+  };
+
+  assert.equal(await service.repairCounterspellItems(item), false);
+  assert.deepEqual(updateCalls, []);
+});
+
+test("repairCounterspellItems preserves reaction details from a legacy hydrated collection", async () => {
+  const service = makeService();
+  const item = counterspellItem();
+  const updateCalls = [];
+  item.type = "spell";
+  item.flags.dnd5e = {
+    riders: {
+      activity: []
+    }
+  };
+  item.system.activities = new Map([
+    ["legacyCheck", {
+      _id: "legacyCheck",
+      type: "check",
+      activation: {
+        type: "reaction",
+        value: 1,
+        condition: "when you see a creature casting a spell"
+      },
+      check: { ability: "int" }
+    }],
+    ["backup", {
+      _id: "backup",
+      type: "utility"
+    }]
+  ]);
+  item.update = async (patch, options) => {
+    updateCalls.push({ patch, options });
+    return item;
+  };
+
+  assert.equal(await service.repairCounterspellItems(item), true);
+  assert.equal(
+    updateCalls[0].patch["system.activities"].counterspell.activation.condition,
+    "when you see a creature casting a spell"
+  );
 });
 
 test("pre-use activity returns false only when the root spell is cancelled", async () => {
@@ -884,6 +957,38 @@ test("combat hooks route dnd5e and MIDI pre-use events through spell automation"
   assert.equal(dnd5eResult, false);
   assert.equal(midiResult, false);
   assert.deepEqual(calls, ["dnd5e", "midi"]);
+});
+
+test("combat hooks do not repair Counterspell again for their own item update", async () => {
+  const handlers = new Map();
+  globalThis.Hooks = {
+    on: (name, callback) => {
+      const callbacks = handlers.get(name) ?? [];
+      callbacks.push(callback);
+      handlers.set(name, callbacks);
+    }
+  };
+  globalThis.game = {};
+  const { registerCombatHooks } = await import("../scripts/combat/hooks.js");
+  const repaired = [];
+  const item = { id: "counterspell" };
+  registerCombatHooks({
+    spellAutomationService: {
+      deferDnd5ePreUseActivity: () => true,
+      applyMidiWorkflow: async () => true,
+      repairCounterspellItems: async (document) => {
+        repaired.push(document);
+        return true;
+      }
+    }
+  });
+
+  const updateItem = handlers.get("updateItem")?.[0];
+  updateItem(item, {}, { rebreyaRepair: true });
+  updateItem(item, {}, {});
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(repaired, [item]);
 });
 
 test("module API composes the Counterspell runtime and managed spell pack", async () => {

@@ -780,7 +780,10 @@ export function registerCombatHooks(moduleApi) {
   }
 
   if (hasSpellService) {
-    const repairCounterspellItems = (document) => {
+    const repairCounterspellItems = (document, options = {}) => {
+      if (options?.rebreyaRepair === true) {
+        return;
+      }
       moduleApi.spellAutomationService.repairCounterspellItems(document).catch((error) => {
         console.error(`${MODULE_ID} | Failed to repair Counterspell activities.`, error);
       });
@@ -791,8 +794,8 @@ export function registerCombatHooks(moduleApi) {
         repairCounterspellItems(app?.actor ?? app?.document);
       });
     }
-    Hooks.on("createItem", repairCounterspellItems);
-    Hooks.on("updateItem", repairCounterspellItems);
+    Hooks.on("createItem", (item, options) => repairCounterspellItems(item, options));
+    Hooks.on("updateItem", (item, _changes, options) => repairCounterspellItems(item, options));
 
     Hooks.on("midi-qol.preItemRoll", async (workflow) => {
       try {

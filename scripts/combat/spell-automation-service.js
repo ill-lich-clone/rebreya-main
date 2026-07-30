@@ -248,12 +248,11 @@ function counterspellRepairPatch(item) {
   const activities = item?.system?.activities && typeof item.system.activities === "object"
     ? item.system.activities
     : {};
-  const keys = Object.keys(activities);
-  const current = activities.counterspell;
+  const activityValues = collectionValues(activities);
+  const current = activityValues[0];
   const riderActivity = item?.flags?.dnd5e?.riders?.activity;
   const hasRiderActivities = Array.isArray(riderActivity) ? riderActivity.length > 0 : riderActivity != null;
-  const needsRepair = keys.length !== 1
-    || keys[0] !== "counterspell"
+  const needsRepair = activityValues.length !== 1
     || current?.type !== "utility"
     || current?.check !== undefined
     || current?.save !== undefined
