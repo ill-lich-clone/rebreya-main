@@ -773,6 +773,64 @@ test("InventoryApp uses its own workshop artwork without changing the character 
   );
 });
 
+test("InventoryApp renders a masked travel video only inside the travel header branch", async () => {
+  const template = await readFile(
+    new URL("../templates/inventory-app.hbs", import.meta.url),
+    "utf8"
+  );
+  const css = await readFile(
+    new URL("../styles/main.css", import.meta.url),
+    "utf8"
+  );
+
+  const headerIndex = template.indexOf('class="rm-inventory-book__header"');
+  const identityIndex = template.indexOf('class="rm-inventory-book__identity"');
+  const travelGuardIndex = template.indexOf("{{#if tabs.isTravel}}", headerIndex);
+  const travelGuardEnd = template.indexOf("{{/if}}", travelGuardIndex);
+  const travelVideoBlock = template.slice(travelGuardIndex, travelGuardEnd);
+
+  assert.ok(headerIndex >= 0, "expected the shared inventory header");
+  assert.ok(
+    travelGuardIndex > headerIndex && travelGuardIndex < identityIndex,
+    "expected the travel-only video before shared header content"
+  );
+  assert.equal((template.match(/<video\b/gu) ?? []).length, 1);
+  assert.match(travelVideoBlock, /class="rm-inventory-book__travel-video"/u);
+  assert.match(travelVideoBlock, /\bautoplay\b/u);
+  assert.match(travelVideoBlock, /\bmuted\b/u);
+  assert.match(travelVideoBlock, /\bloop\b/u);
+  assert.match(travelVideoBlock, /\bplaysinline\b/u);
+  assert.match(travelVideoBlock, /preload="metadata"/u);
+  assert.match(travelVideoBlock, /aria-hidden="true"/u);
+  assert.match(
+    travelVideoBlock,
+    /poster="\/modules\/rebreya-main\/assets\/ui\/rebreya-travel-window-poster\.webp"/u
+  );
+  assert.match(
+    travelVideoBlock,
+    /src="\/modules\/rebreya-main\/assets\/ui\/rebreya-travel-window\.webm"/u
+  );
+  assert.match(travelVideoBlock, /type="video\/webm"/u);
+  assert.doesNotMatch(travelVideoBlock, /\bcontrols\b/u);
+
+  assert.match(
+    css,
+    /\.rebreya-inventory-app \.rm-inventory-book__travel-video\s*\{[^}]*position:\s*absolute;[^}]*inset:\s*0;[^}]*width:\s*100%;[^}]*height:\s*100%;[^}]*object-fit:\s*cover;[^}]*object-position:\s*center top;[^}]*pointer-events:\s*none;/su
+  );
+  assert.match(
+    css,
+    /\.rebreya-inventory-app \.rm-inventory-book__travel-video\s*\{[^}]*-webkit-mask-image:\s*linear-gradient\(180deg,[^}]*transparent 100%\);[^}]*mask-image:\s*linear-gradient\(180deg,[^}]*transparent 100%\);/su
+  );
+  assert.match(
+    css,
+    /--rm-party-inventory-header-image:\s*url\("\.\.\/assets\/ui\/rebreya-party-inventory-workshop\.webp"\);/u
+  );
+  assert.match(
+    css,
+    /\.rebreya-inventory-app \.rm-inventory-book__header::before\s*\{[^}]*var\(--rm-party-inventory-header-image\)/su
+  );
+});
+
 test("InventoryApp sorts party inventory rows and exposes item value totals", async () => {
   const restoreFoundry = installFoundryApplicationStub();
   const items = [
