@@ -159,6 +159,14 @@ export class SpellAutomationHookBridge {
         return false;
       }
       if (isPromise(dispatched.value)) {
+        void Promise.resolve(dispatched.value).catch((error) => {
+          try {
+            this.#error("Rejected spell automation pre-use handler.", error);
+          }
+          catch {
+            // The rejection has been observed; logging must not re-reject it.
+          }
+        });
         this.#warn("Spell automation pre-use handlers must return synchronously.");
         return false;
       }

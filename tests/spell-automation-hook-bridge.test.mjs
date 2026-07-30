@@ -135,6 +135,30 @@ test("fails closed for an explicitly managed unknown pre-use recipe", async () =
   assert.equal(warnings.length, 1);
 });
 
+test("fails closed and contains Promise-returning pre-use handlers", async () => {
+  const fulfilled = Promise.resolve(true);
+  const rejected = Promise.reject(new Error("late recipe failure"));
+  const unhandled = [];
+  const onUnhandled = (error) => unhandled.push(error);
+  process.on("unhandledRejection", onUnhandled);
+
+  try {
+    const logger = { error() {} };
+    const fulfilledBridge = new SpellAutomationHookBridge({ registry: registryWith(() => fulfilled), logger });
+    const rejectedBridge = new SpellAutomationHookBridge({ registry: registryWith(() => rejected), logger });
+
+    assert.equal(fulfilledBridge.handlePreUseActivity(activity(), {}, {}, {}), false);
+    assert.equal(rejectedBridge.handlePreUseActivity(activity(), {}, {}, {}), false);
+    await fulfilled;
+    await new Promise((resolve) => setImmediate(resolve));
+
+    assert.deepEqual(unhandled, []);
+  }
+  finally {
+    process.off("unhandledRejection", onUnhandled);
+  }
+});
+
 test("fails open for an unmanaged event and for non-blocking handler errors", async () => {
   const unmanaged = new SpellAutomationHookBridge({ registry: new SpellAutomationRegistry() });
   const managedError = new SpellAutomationHookBridge({
