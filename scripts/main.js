@@ -80,6 +80,10 @@ import { LongRestPipelineService } from "./rest/long-rest-pipeline-service.js";
 import { RuneKnightAutomationService } from "./combat/rune-knight-automation-service.js";
 import { CurseEaterAutomationService } from "./combat/curse-eater-automation-service.js";
 import { SpellAutomationService } from "./combat/spell-automation-service.js?v=1.4.109-counterspell-sanitize";
+import { SpellAutomationRegistry } from "./combat/spell-automation-registry.js";
+import { SpellInterceptionRuntime } from "./combat/spell-interception-runtime.js";
+import { SpellAreaRuntime } from "./combat/spell-area-runtime.js";
+import { SpellAutomationHookBridge } from "./combat/spell-automation-hook-bridge.js";
 import { registerRadialStatusEffects } from "./combat/radial-status-effects.js";
 import { CombatStatusService, registerCombatStatusConfig } from "./combat/status-service.js?v=1.4.100-stale-active-effect-delete";
 import { AttackRollBoostService } from "./combat/attack-roll-boost-service.js?v=1.4.96";
@@ -132,6 +136,7 @@ import { refreshSmallTimeDateDisplay, registerSmallTimeIntegration, syncSmallTim
 import { registerRationFoodConversionHook } from "./integrations/ration-food-conversion.js";
 import { registerMagicWeaponTemplateHook } from "./integrations/magic-weapon-template.js?v=1.4.96";
 import { registerCraftsmanGadgetHooks } from "./integrations/craftsman-gadget-hooks.js";
+import { registerSpellAutomationHooks } from "./integrations/spell-automation-hooks.js";
 import { registerLongRestHooks } from "./integrations/long-rest-hooks.js";
 import {
   registerImplantDataModelPatch,
@@ -1076,6 +1081,16 @@ export class RebreyaMainModule {
     this.implantAutomationService = new ImplantAutomationService(this);
     this.combatAttackService = new CombatAttackService(this);
     this.sizeAutomationService = new SizeAutomationService(this);
+    this.spellAutomationRegistry = new SpellAutomationRegistry();
+    this.spellInterceptionRuntime = new SpellInterceptionRuntime({
+      registry: this.spellAutomationRegistry
+    });
+    this.spellAreaRuntime = new SpellAreaRuntime({
+      registry: this.spellAutomationRegistry
+    });
+    this.spellAutomationHookBridge = new SpellAutomationHookBridge({
+      registry: this.spellAutomationRegistry
+    });
     this.spellAutomationService = COUNTERSPELL_AUTOMATION_ENABLED
       ? new SpellAutomationService(this)
       : null;
@@ -5065,6 +5080,13 @@ Hooks.once("ready", async () => {
   }
   catch (error) {
     console.error(`${MODULE_ID} | Failed to register combat hooks.`, error);
+  }
+
+  try {
+    registerSpellAutomationHooks(moduleApi);
+  }
+  catch (error) {
+    console.error(`${MODULE_ID} | Failed to register spell automation hooks.`, error);
   }
 
   try {
