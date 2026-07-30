@@ -39,6 +39,33 @@ function registryWith(handler) {
   return registry;
 }
 
+function mutationGuard(value, onMutation, seen = new WeakMap()) {
+  if (value === null || (typeof value !== "object" && typeof value !== "function")) {
+    return value;
+  }
+  if (seen.has(value)) return seen.get(value);
+
+  const guarded = new Proxy(value, {
+    get(target, property, receiver) {
+      return mutationGuard(Reflect.get(target, property, receiver), onMutation, seen);
+    },
+    set(target, property, next, receiver) {
+      onMutation();
+      return Reflect.set(target, property, next, receiver);
+    },
+    deleteProperty(target, property) {
+      onMutation();
+      return Reflect.deleteProperty(target, property);
+    },
+    defineProperty(target, property, descriptor) {
+      onMutation();
+      return Reflect.defineProperty(target, property, descriptor);
+    }
+  });
+  seen.set(value, guarded);
+  return guarded;
+}
+
 test("reads an activity declaration before the item declaration", () => {
   const fromActivity = declaration({ recipe: "activity-first" });
   const source = activity({
@@ -170,7 +197,7 @@ test("fails open for an unmanaged event and for non-blocking handler errors", as
   assert.equal(managedError.handlePreUseActivity(activity(), {}, {}, {}), true);
 });
 
-test("1,000 unmanaged pre-use activities return synchronously without runtime work", () => {
+test("1,000 unmanaged pre-use activities return synchronously without runtime work", async () => {
   let dispatchResolutions = 0;
   let dispatches = 0;
   let documentLookups = 0;
@@ -180,6 +207,7 @@ test("1,000 unmanaged pre-use activities return synchronously without runtime wo
   const originalGame = globalThis.game;
   const originalSetTimeout = globalThis.setTimeout;
   const originalSetInterval = globalThis.setInterval;
+  const originalSetImmediate = globalThis.setImmediate;
   const registry = {
     get dispatch() {
       dispatchResolutions += 1;
@@ -203,6 +231,11 @@ test("1,000 unmanaged pre-use activities return synchronously without runtime wo
     registry,
     notifyWarning: () => { notifications += 1; }
   });
+  const guard = (value) => mutationGuard(value, () => { mutations += 1; });
+  const unmanagedActivity = guard({ flags: {} });
+  const usageConfig = guard({});
+  const dialogConfig = guard({});
+  const messageConfig = guard({});
 
   globalThis.game = game;
   globalThis.setTimeout = (...args) => {
@@ -216,8 +249,16 @@ test("1,000 unmanaged pre-use activities return synchronously without runtime wo
 
   try {
     for (let index = 0; index < 1_000; index += 1) {
-      assert.equal(bridge.handlePreUseActivity({ flags: {} }, {}, {}, {}), true);
+      assert.equal(bridge.handlePreUseActivity(unmanagedActivity, usageConfig, dialogConfig, messageConfig), true);
     }
+    await new Promise((resolve) => originalSetImmediate(resolve));
+
+    assert.equal(dispatchResolutions, 0);
+    assert.equal(dispatches, 0);
+    assert.equal(documentLookups, 0);
+    assert.equal(mutations, 0);
+    assert.equal(timers, 0);
+    assert.equal(notifications, 0);
   }
   finally {
     globalThis.game = originalGame;
@@ -225,10 +266,4 @@ test("1,000 unmanaged pre-use activities return synchronously without runtime wo
     globalThis.setInterval = originalSetInterval;
   }
 
-  assert.equal(dispatchResolutions, 0);
-  assert.equal(dispatches, 0);
-  assert.equal(documentLookups, 0);
-  assert.equal(mutations, 0);
-  assert.equal(timers, 0);
-  assert.equal(notifications, 0);
 });

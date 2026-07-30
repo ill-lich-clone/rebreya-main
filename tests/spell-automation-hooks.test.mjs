@@ -34,6 +34,33 @@ function moduleApi(bridge = {}) {
   return { spellAutomationHookBridge: bridge };
 }
 
+function mutationGuard(value, onMutation, seen = new WeakMap()) {
+  if (value === null || (typeof value !== "object" && typeof value !== "function")) {
+    return value;
+  }
+  if (seen.has(value)) return seen.get(value);
+
+  const guarded = new Proxy(value, {
+    get(target, property, receiver) {
+      return mutationGuard(Reflect.get(target, property, receiver), onMutation, seen);
+    },
+    set(target, property, next, receiver) {
+      onMutation();
+      return Reflect.set(target, property, next, receiver);
+    },
+    deleteProperty(target, property) {
+      onMutation();
+      return Reflect.deleteProperty(target, property);
+    },
+    defineProperty(target, property, descriptor) {
+      onMutation();
+      return Reflect.defineProperty(target, property, descriptor);
+    }
+  });
+  seen.set(value, guarded);
+  return guarded;
+}
+
 test("registers every bridge hook once", async () => {
   const Hooks = fakeHooks();
   const game = {};
@@ -175,6 +202,7 @@ test("registered empty hook paths do not access runtime documents, mutate state,
   let timers = 0;
   const originalSetTimeout = globalThis.setTimeout;
   const originalSetInterval = globalThis.setInterval;
+  const originalSetImmediate = globalThis.setImmediate;
   const game = new Proxy({}, {
     get(target, property, receiver) {
       if (property === "actors" || property === "scenes") documentLookups += 1;
@@ -188,6 +216,27 @@ test("registered empty hook paths do not access runtime documents, mutate state,
 
   assert.equal(registerSpellAutomationHooks(moduleApi({}), { Hooks, game }), true);
   mutations = 0;
+  const guard = (value) => mutationGuard(value, () => { mutations += 1; });
+  const hookArguments = {
+    "dnd5e.preUseActivity": [guard({ id: "activity" }), guard({}), guard({}), guard({})],
+    "dnd5e.postUseActivity": [guard({ id: "activity" }), guard({}), guard({})],
+    "midi-qol.RollComplete": [guard({
+      activity: { id: "activity" },
+      item: { id: "item" },
+      actor: { id: "actor" },
+      options: {},
+      dialogConfig: {},
+      messageConfig: {}
+    })],
+    "dnd5e.postSummon": [guard({ id: "activity" }), guard({ id: "profile" }), guard([{ id: "token" }]), guard({})],
+    createActiveEffect: [guard({ id: "effect" }), guard({})],
+    updateActiveEffect: [guard({ id: "effect" }), guard({}), guard({})],
+    deleteActiveEffect: [guard({ id: "effect" }), guard({})],
+    createMeasuredTemplate: [guard({ id: "template" }), guard({})],
+    updateMeasuredTemplate: [guard({ id: "template" }), guard({}), guard({})],
+    deleteMeasuredTemplate: [guard({ id: "template" }), guard({})],
+    combatTurnChange: [guard({ id: "combat" }), guard({}), guard({})]
+  };
   globalThis.setTimeout = (...args) => {
     timers += 1;
     return originalSetTimeout(...args);
@@ -199,16 +248,16 @@ test("registered empty hook paths do not access runtime documents, mutate state,
 
   try {
     for (const name of EXPECTED_HOOKS) {
-      assert.equal(Hooks.listeners.get(name)[0]({ id: name }, {}, {}), true);
+      assert.equal(Hooks.listeners.get(name)[0](...hookArguments[name]), true);
     }
-    await Promise.resolve();
+    await new Promise((resolve) => originalSetImmediate(resolve));
+
+    assert.equal(documentLookups, 0);
+    assert.equal(mutations, 0);
+    assert.equal(timers, 0);
   }
   finally {
     globalThis.setTimeout = originalSetTimeout;
     globalThis.setInterval = originalSetInterval;
   }
-
-  assert.equal(documentLookups, 0);
-  assert.equal(mutations, 0);
-  assert.equal(timers, 0);
 });
