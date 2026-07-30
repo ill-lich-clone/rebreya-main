@@ -50,14 +50,14 @@ function createEffect(actor, data = {}) {
   return effect;
 }
 
-function createActor({ effects = [], failCreate = null } = {}) {
+function createActor({ effects = [], failCreate = null, uuid = "Actor.caster" } = {}) {
   const actor = {
     createCalls: [],
     deleteCalls: [],
     effects: [],
     failCreate,
     nextEffectId: 1,
-    uuid: "Actor.caster",
+    uuid,
     async createEmbeddedDocuments(type, documents) {
       this.createCalls.push({ type, documents: clone(documents) });
       if (this.failCreate) {
@@ -389,4 +389,116 @@ test("falls back to a DnD5e dependency flag on the state effect", async () => {
   finally {
     globalThis.MidiQOL = priorMidi;
   }
+});
+
+test("scopes repeated operation ids to each actor and instance key", async () => {
+  // Catches WorldMutationCoordinator's global request cache returning actor A's instance for actor B.
+  const coordinator = new WorldMutationCoordinator();
+  const runtime = createRuntime({ coordinator });
+  const actorA = createActor({ uuid: "Actor.a" });
+  const actorB = createActor({ uuid: "Actor.b" });
+  const concentrationA = createConcentrationEffect(actorA);
+  const concentrationB = createConcentrationEffect(actorB);
+  const contextA = createContext(actorA, concentrationA, {
+    instanceId: "instance-a", operationId: "shared-operation"
+  });
+  const contextB = createContext(actorB, concentrationB, {
+    instanceId: "instance-b", operationId: "shared-operation"
+  });
+
+  const [first, second] = await Promise.all([
+    runtime.createInstance(contextA, { remainingMeteors: 6 }),
+    runtime.createInstance(contextB, { remainingMeteors: 6 })
+  ]);
+
+  assert.equal(first.sourceActorUuid, actorA.uuid);
+  assert.equal(second.sourceActorUuid, actorB.uuid);
+  assert.equal(actorA.createCalls.length, 1);
+  assert.equal(actorB.createCalls.length, 1);
+  assert.equal(readSpellInstance(first.effect).createdOperationId, "shared-operation");
+  assert.equal(readSpellInstance(second.effect).createdOperationId, "shared-operation");
+});
+
+test("cleans only a newly created state effect after dependency linking fails and permits a retry", async () => {
+  // Catches a failed dependency link leaving an orphan that makes later casts look successful.
+  const actor = createActor();
+  const concentrationEffect = createConcentrationEffect(actor);
+  const linkError = new Error("dependency link rejected");
+  let attempts = 0;
+  const runtime = createRuntime({
+    linkDependency: async () => {
+      attempts += 1;
+      if (attempts === 1) {
+        throw linkError;
+      }
+    }
+  });
+  const failedContext = createContext(actor, concentrationEffect, { operationId: "failed-cast" });
+
+  await assert.rejects(runtime.createInstance(failedContext, { remainingMeteors: 6 }), (error) => error === linkError);
+  assert.deepEqual(actor.deleteCalls, [{ type: "ActiveEffect", ids: ["effect-1"] }]);
+  assert.deepEqual(actor.effects, [concentrationEffect]);
+  assert.equal(concentrationEffect.updateCalls.length, 0);
+
+  const retried = await runtime.createInstance(
+    createContext(actor, concentrationEffect, { operationId: "retry-cast" }),
+    { remainingMeteors: 6 }
+  );
+  assert.equal(attempts, 2);
+  assert.equal(readSpellInstance(retried.effect).createdOperationId, "retry-cast");
+  assert.equal(actor.createCalls.length, 2);
+  assert.equal(actor.deleteCalls.length, 1);
+});
+
+test("calls MidiQOL.addDependent with the MidiQOL receiver", async () => {
+  // Catches extracting MidiQOL.addDependent and losing its required module receiver.
+  const actor = createActor();
+  const priorMidi = globalThis.MidiQOL;
+  const midi = {
+    linked: [],
+    addDependent(concentrationEffect, instanceEffect) {
+      this.linked.push({ concentrationEffect, instanceEffect });
+    }
+  };
+  globalThis.MidiQOL = midi;
+
+  try {
+    const runtime = new SpellInstanceRuntime({ coordinator: new WorldMutationCoordinator() });
+    const { concentrationEffect, result } = await createInstance(runtime, actor);
+    assert.deepEqual(midi.linked, [{ concentrationEffect, instanceEffect: result.effect }]);
+    assert.equal(result.effect.updateCalls.length, 0);
+  }
+  finally {
+    if (priorMidi === undefined) {
+      delete globalThis.MidiQOL;
+    }
+    else {
+      globalThis.MidiQOL = priorMidi;
+    }
+  }
+});
+
+test("concurrent updates with one expected revision commit once and reject the stale writer", async () => {
+  // Catches two queued updates with the same revision both overwriting the instance state.
+  const actor = createActor();
+  const runtime = createRuntime();
+  const { context, result } = await createInstance(runtime, actor);
+
+  const outcomes = await Promise.allSettled([
+    runtime.updateInstance({
+      actor, instanceId: context.instanceId, expectedRevision: 0,
+      operationId: "race-first", state: { remainingMeteors: 5, totalMeteors: 6 }
+    }),
+    runtime.updateInstance({
+      actor, instanceId: context.instanceId, expectedRevision: 0,
+      operationId: "race-second", state: { remainingMeteors: 4, totalMeteors: 6 }
+    })
+  ]);
+
+  assert.equal(outcomes[0].status, "fulfilled");
+  assert.equal(outcomes[1].status, "rejected");
+  assert.match(outcomes[1].reason.message, /stale revision/u);
+  assert.equal(readSpellInstance(result.effect).revision, 1);
+  assert.deepEqual(readSpellInstance(result.effect).state, { remainingMeteors: 5, totalMeteors: 6 });
+  assert.equal(result.effect.updateCalls.length, 1);
 });

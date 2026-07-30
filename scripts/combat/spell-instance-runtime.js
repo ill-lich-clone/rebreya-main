@@ -137,10 +137,14 @@ function recordFor(effect) {
   return instance ? { effect, ...instance } : null;
 }
 
+function coordinatorRequestId(key, operationId) {
+  return `${key}\u0000${operationId}`;
+}
+
 async function defaultLinkDependency(concentrationEffect, instanceEffect) {
-  const addDependent = globalThis.MidiQOL?.addDependent;
-  if (typeof addDependent === "function") {
-    await addDependent(concentrationEffect, instanceEffect);
+  const midiQol = globalThis.MidiQOL;
+  if (typeof midiQol?.addDependent === "function") {
+    await midiQol.addDependent(concentrationEffect, instanceEffect);
     return;
   }
 
@@ -264,7 +268,7 @@ export class SpellInstanceRuntime {
     const instance = effectData.flags[MODULE_ID][SPELL_INSTANCE_FLAG];
     const key = `spell-instance:${actorUuid}:${instance.instanceId}`;
 
-    return this.#coordinator.runIdempotent(key, instance.createdOperationId, async () => {
+    return this.#coordinator.runIdempotent(key, coordinatorRequestId(key, instance.createdOperationId), async () => {
       const existing = findSpellInstance(actor, {
         recipe: instance.recipe,
         version: instance.version,
@@ -281,7 +285,18 @@ export class SpellInstanceRuntime {
       if (!effect) {
         throw new Error("Spell instance effect creation returned no effect.");
       }
-      await this.#linkDependency(context.concentrationEffect, effect);
+      try {
+        await this.#linkDependency(context.concentrationEffect, effect);
+      }
+      catch (error) {
+        try {
+          await actor.deleteEmbeddedDocuments?.("ActiveEffect", [effect.id]);
+        }
+        catch {
+          // The link failure remains the actionable error even if best-effort cleanup also fails.
+        }
+        throw error;
+      }
       return recordFor(effect) ?? { effect, ...instance };
     });
   }
@@ -295,7 +310,7 @@ export class SpellInstanceRuntime {
     }
     const key = `spell-instance:${actorUuid}:${normalizedInstanceId}`;
 
-    return this.#coordinator.runIdempotent(key, normalizedOperationId, async () => {
+    return this.#coordinator.runIdempotent(key, coordinatorRequestId(key, normalizedOperationId), async () => {
       const effect = findSpellInstance(actor, { instanceId: normalizedInstanceId });
       const record = recordFor(effect);
       if (!record) {
