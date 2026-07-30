@@ -693,6 +693,15 @@ test("InventoryApp positions external book tabs and keeps the character-style ar
   );
 });
 
+test("InventoryApp hides its external book tabs while Foundry marks the window minimized", async () => {
+  const css = await readFile(new URL("../styles/main.css", import.meta.url), "utf8");
+
+  assert.match(
+    css,
+    /\.rebreya-inventory-app\.minimized \.rm-inventory-book__tabs\s*\{[^}]*display:\s*none;/u
+  );
+});
+
 test("InventoryApp keeps the party crest in a dedicated identity grid track", async () => {
   const template = await readFile(new URL("../templates/inventory-app.hbs", import.meta.url), "utf8");
   const css = await readFile(new URL("../styles/main.css", import.meta.url), "utf8");

@@ -4756,6 +4756,10 @@ summary:focus-visible {
   padding: 0;
 }
 
+.rebreya-inventory-app.minimized .rm-inventory-book__tabs {
+  display: none;
+}
+
 .rebreya-inventory-app .rm-inventory-book__tab {
   width: 104px;
   min-width: 0;
