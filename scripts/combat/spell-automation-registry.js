@@ -46,11 +46,11 @@ export class SpellAutomationRegistry {
   }
 
   dispatch(eventName, declaration, context) {
-    const handler = this.resolve(declaration)?.handlers[eventName];
-    if (!handler) {
+    const definition = this.resolve(declaration);
+    if (!definition || !Object.hasOwn(definition.handlers, eventName)) {
       return { handled: false, value: undefined };
     }
 
-    return { handled: true, value: handler(this.resolve(declaration), context) };
+    return { handled: true, value: definition.handlers[eventName](definition, context) };
   }
 }

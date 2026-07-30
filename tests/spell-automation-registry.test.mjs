@@ -53,6 +53,13 @@ test("returns null for an unknown version", () => {
   assert.equal(registry.resolve(declaration({ version: 99 })), null);
 });
 
+test("does not dispatch an inherited handler name", () => {
+  const registry = new SpellAutomationRegistry();
+  registry.register({ ...declaration(), handlers: {} });
+
+  assert.deepEqual(registry.dispatch("toString", declaration(), {}), { handled: false, value: undefined });
+});
+
 test("dispatches only the named handler with a frozen declaration", async () => {
   const registry = new SpellAutomationRegistry();
   const original = {
