@@ -121,6 +121,31 @@ function createPayload(overrides = {}) {
   };
 }
 
+function createReplacePayload(overrides = {}) {
+  return {
+    action: "replace-state",
+    actorUuid: "Actor.caster",
+    declaration: { recipe: "melfs-minute-meteors", version: 1 },
+    expectedRevision: 0,
+    instanceId: "melf-instance",
+    operationId: "replace-operation",
+    state: { remainingMeteors: 5 },
+    ...overrides
+  };
+}
+
+function createDeletePayload(overrides = {}) {
+  return {
+    action: "delete",
+    actorUuid: "Actor.caster",
+    declaration: { recipe: "melfs-minute-meteors", version: 1 },
+    expectedRevision: 0,
+    instanceId: "melf-instance",
+    operationId: "delete-operation",
+    ...overrides
+  };
+}
+
 function createModuleApi(runtime) {
   const registrations = new Map();
   return {
@@ -397,6 +422,31 @@ test("accepts only exact world or synthetic actor UUID document chains", () => {
 
   assert.deepEqual(malformed.map(isValidSpellInstanceMutationPayload), [false, false, false, false, false, false, false]);
   assert.equal(isValidSpellInstanceMutationPayload(synthetic), true);
+});
+
+test("replace-state and delete reject malformed actor UUID roots", () => {
+  // Catches non-create actions bypassing the strict actor-root parser.
+  const malformedActorUuids = [
+    "JournalEntry.any",
+    "Actor.",
+    "Scene.scene.Token.token.Actor.",
+    "Actor.caster.extra"
+  ];
+
+  for (const actorUuid of malformedActorUuids) {
+    assert.equal(isValidSpellInstanceMutationPayload(createReplacePayload({ actorUuid })), false);
+    assert.equal(isValidSpellInstanceMutationPayload(createDeletePayload({ actorUuid })), false);
+  }
+});
+
+test("replace-state and delete retain exact world and synthetic actor roots", () => {
+  // Catches hardening that blocks valid documented actor identities for non-create actions.
+  const actorUuids = ["Actor.caster", "Scene.scene.Token.token.Actor.delta"];
+
+  for (const actorUuid of actorUuids) {
+    assert.equal(isValidSpellInstanceMutationPayload(createReplacePayload({ actorUuid })), true);
+    assert.equal(isValidSpellInstanceMutationPayload(createDeletePayload({ actorUuid })), true);
+  }
 });
 
 test("the real command bus executes a valid owner mutation end to end", async () => {

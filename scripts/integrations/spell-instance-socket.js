@@ -106,9 +106,10 @@ async function resolveActor(actorUuid, { fromUuid } = {}) {
 
 export function isValidSpellInstanceMutationPayload(payload) {
   if (!validBase(payload)) return false;
+  const actorParts = parseActorUuid(payload.actorUuid);
+  if (!actorParts) return false;
 
   if (payload.action === "create") {
-    const actorParts = parseActorUuid(payload.actorUuid);
     const itemParts = actorParts && uuidParts(payload.sourceItemUuid);
     return Boolean(payload.expectedRevision === 0
       && exactKeys(payload, [
