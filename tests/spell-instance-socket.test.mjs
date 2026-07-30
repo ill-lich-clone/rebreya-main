@@ -2,7 +2,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { WorldMutationCoordinator } from "../scripts/application/world-mutation-coordinator.js";
-import { COMMAND_REQUEST_TYPE, SocketCommandBus } from "../scripts/infrastructure/foundry/socket-command-bus.js";
+import {
+  COMMAND_REQUEST_TYPE,
+  COMMAND_RESULT_TYPE,
+  SocketCommandBus
+} from "../scripts/infrastructure/foundry/socket-command-bus.js";
 import {
   SPELL_INSTANCE_FLAG,
   SpellInstanceRuntime,
@@ -128,6 +132,35 @@ function createModuleApi(runtime) {
       }
     }
   };
+}
+
+function createBusHarness({ actor = createActor(), ownerIds = ["owner"] } = {}) {
+  actor.ownership = Object.fromEntries(ownerIds.map((id) => [id, 3]));
+  const emitted = [];
+  const activeGm = { active: true, id: "gm", isGM: true };
+  const owner = { active: true, id: "owner", isGM: false };
+  const viewer = { active: true, id: "viewer", isGM: false };
+  const game = {
+    socket: { emit: (...args) => emitted.push(args) },
+    user: activeGm,
+    users: { contents: [activeGm, owner, viewer] }
+  };
+  const bus = new SocketCommandBus({ gameProvider: () => game });
+  registerSpellInstanceSocketCommand({ socketCommandBus: bus, spellInstanceRuntime: createRuntime() }, {
+    fromUuid: async (uuid) => uuid === actor.uuid ? actor : null
+  });
+  return { actor, bus, emitted };
+}
+
+async function dispatch(bus, payload, { requestId = "request-one", senderId = "owner" } = {}) {
+  bus.handleMessage({
+    type: COMMAND_REQUEST_TYPE,
+    command: SPELL_INSTANCE_MUTATION_COMMAND,
+    requestId,
+    senderId,
+    payload
+  }, { transportSenderId: senderId });
+  await new Promise((resolve) => setImmediate(resolve));
 }
 
 test("an owner performs the mutation locally", async () => {
@@ -307,4 +340,112 @@ test("propagates an active-GM socket error to the non-owner", async () => {
     actor, instanceId: context.instanceId, expectedRevision: 0, operationId: "delete-one"
   }), /active GM rejected mutation/u);
   assert.equal(actor.deleteCalls.length, 0);
+});
+
+test("rejects own poison keys in serialized state without mutating or polluting prototypes", async () => {
+  // Catches JSON-originated own __proto__ keys reaching a mutation or a clone operation.
+  const { actor, bus, emitted } = createBusHarness();
+  createContext(actor);
+  const payload = JSON.parse(JSON.stringify(createPayload()));
+  payload.state = JSON.parse('{"batches":[{"nested":{"__proto__":{"polluted":true}}}]}');
+
+  await dispatch(bus, payload);
+
+  assert.equal(actor.createCalls.length, 0);
+  assert.equal({}.polluted, undefined);
+  assert.equal(emitted.at(-1)[1].type, COMMAND_RESULT_TYPE);
+  assert.deepEqual(emitted.at(-1)[1].error, {
+    code: "invalid-payload", message: "Socket command payload is invalid"
+  });
+});
+
+test("rejects own constructor and prototype keys at every serialized depth", () => {
+  // Catches poison keys hidden in array members or declaration objects.
+  const constructorPayload = JSON.parse(JSON.stringify(createPayload({
+    state: { entries: [{ constructor: { poisoned: true } }] }
+  })));
+  const prototypePayload = JSON.parse(JSON.stringify(createPayload({
+    state: { entries: [{ deeply: { prototype: { poisoned: true } } }] }
+  })));
+  const declarationPayload = JSON.parse(JSON.stringify(createPayload()));
+  declarationPayload.declaration = JSON.parse(
+    '{"recipe":"melfs-minute-meteors","version":1,"__proto__":{"poisoned":true}}'
+  );
+
+  assert.equal(isValidSpellInstanceMutationPayload(constructorPayload), false);
+  assert.equal(isValidSpellInstanceMutationPayload(prototypePayload), false);
+  assert.equal(isValidSpellInstanceMutationPayload(declarationPayload), false);
+});
+
+test("accepts only exact world or synthetic actor UUID document chains", () => {
+  // Catches prefix/trailing-segment UUIDs crossing actor, item, activity, or effect boundaries.
+  const malformed = [
+    createPayload({ actorUuid: "Actor." }),
+    createPayload({ sourceItemUuid: "Actor.caster.Item." }),
+    createPayload({ sourceItemUuid: "Actor.caster.Item.melf.extra" }),
+    createPayload({ sourceActivityUuid: "Actor.caster.Item.melf.Activity.cast.extra" }),
+    createPayload({ concentrationEffectUuid: "Actor.caster.ActiveEffect.concentration.extra" }),
+    createPayload({ sourceActivityUuid: "Actor.other.Item.melf.Activity.cast" }),
+    createPayload({ sourceActivityUuid: "Actor.caster.Item.other.Activity.cast" })
+  ];
+  const synthetic = createPayload({
+    actorUuid: "Scene.scene.Token.token.Actor.delta",
+    concentrationEffectUuid: "Scene.scene.Token.token.Actor.delta.ActiveEffect.concentration",
+    sourceActivityUuid: "Scene.scene.Token.token.Actor.delta.Item.melf.Activity.cast",
+    sourceItemUuid: "Scene.scene.Token.token.Actor.delta.Item.melf"
+  });
+
+  assert.deepEqual(malformed.map(isValidSpellInstanceMutationPayload), [false, false, false, false, false, false, false]);
+  assert.equal(isValidSpellInstanceMutationPayload(synthetic), true);
+});
+
+test("the real command bus executes a valid owner mutation end to end", async () => {
+  // Catches registration that only works when handlers are invoked manually.
+  const { actor, bus, emitted } = createBusHarness();
+  createContext(actor);
+
+  await dispatch(bus, createPayload());
+
+  assert.equal(actor.createCalls.length, 1);
+  assert.equal(emitted.at(-1)[1].ok, true);
+  assert.equal(emitted.at(-1)[1].data.instanceId, "melf-instance");
+});
+
+test("the real command bus denies a non-owner without mutation", async () => {
+  // Catches authorization being bypassed by an envelope that reaches the active GM.
+  const { actor, bus, emitted } = createBusHarness({ ownerIds: ["owner"] });
+  createContext(actor);
+
+  await dispatch(bus, createPayload(), { senderId: "viewer" });
+
+  assert.equal(actor.createCalls.length, 0);
+  assert.deepEqual(emitted.at(-1)[1].error, {
+    code: "unauthorized", message: "Socket command is not authorized"
+  });
+});
+
+test("the real command bus rejects malformed payloads before authorization or mutation", async () => {
+  // Catches a closed protocol accepting an arbitrary document-update path in an envelope.
+  const { actor, bus, emitted } = createBusHarness();
+  createContext(actor);
+
+  await dispatch(bus, createPayload({ path: "system.attributes.hp.value" }));
+
+  assert.equal(actor.createCalls.length, 0);
+  assert.deepEqual(emitted.at(-1)[1].error, {
+    code: "invalid-payload", message: "Socket command payload is invalid"
+  });
+});
+
+test("the real command bus executes duplicate request envelopes once", async () => {
+  // Catches retries bypassing the bus request-id cache and duplicating the effect.
+  const { actor, bus, emitted } = createBusHarness();
+  createContext(actor);
+  const payload = createPayload();
+
+  await dispatch(bus, payload, { requestId: "duplicate-request" });
+  await dispatch(bus, payload, { requestId: "duplicate-request" });
+
+  assert.equal(actor.createCalls.length, 1);
+  assert.equal(emitted.filter(([, message]) => message.ok).length, 2);
 });

@@ -1,6 +1,7 @@
 export const SPELL_INSTANCE_MUTATION_COMMAND = "spell-instance-mutation";
 
 const ACTIONS = new Set(["create", "replace-state", "delete"]);
+const FORBIDDEN_OWN_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 
 function isPlainObject(value) {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
@@ -13,8 +14,18 @@ function isSerializable(value, seen = new WeakSet()) {
   if (typeof value === "number") return Number.isFinite(value);
   if (typeof value !== "object" || seen.has(value)) return false;
   seen.add(value);
-  const values = Array.isArray(value) ? value : isPlainObject(value) ? Object.values(value) : null;
-  return values !== null && values.every((entry) => isSerializable(entry, seen));
+  const keys = Object.keys(value);
+  if (keys.some((key) => FORBIDDEN_OWN_KEYS.has(key))) return false;
+  if (Array.isArray(value)) {
+    if (!keys.every((key) => /^(0|[1-9]\d*)$/u.test(key) && Number(key) < value.length)) return false;
+  }
+  else if (!isPlainObject(value)) {
+    return false;
+  }
+  return keys.every((key) => {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    return "value" in descriptor && isSerializable(descriptor.value, seen);
+  });
 }
 
 function nonEmptyString(value) {
@@ -32,7 +43,8 @@ function exactKeys(value, keys) {
 }
 
 function validDeclaration(value) {
-  return exactKeys(value, ["recipe", "version"])
+  return isSerializable(value)
+    && exactKeys(value, ["recipe", "version"])
     && nonEmptyString(value.recipe)
     && Number.isInteger(value.version)
     && value.version > 0;
@@ -47,8 +59,32 @@ function validBase(payload) {
     && nonEmptyString(payload.operationId);
 }
 
-function isActorDocumentUuid(value, actorUuid, documentType) {
-  return nonEmptyString(value) && value.startsWith(`${actorUuid}.${documentType}.`);
+function uuidParts(value) {
+  if (!nonEmptyString(value) || value !== value.trim()) return null;
+  const parts = value.split(".");
+  return parts.every((part) => nonEmptyString(part) && part === part.trim()) ? parts : null;
+}
+
+// Foundry actor roots accepted here: Actor.<id> and the documented synthetic
+// token shape Scene.<sceneId>.Token.<tokenId>.Actor.<actorId>.
+function parseActorUuid(value) {
+  const parts = uuidParts(value);
+  if (!parts) return null;
+  if (parts.length === 2 && parts[0] === "Actor") return parts;
+  if (parts.length === 6 && parts[0] === "Scene" && parts[2] === "Token" && parts[4] === "Actor") {
+    return parts;
+  }
+  return null;
+}
+
+function isExactChildUuid(value, parentParts, documentType) {
+  const parts = uuidParts(value);
+  return Boolean(
+    parts
+    && parts.length === parentParts.length + 2
+    && parts.slice(0, parentParts.length).every((part, index) => part === parentParts[index])
+    && parts.at(-2) === documentType
+  );
 }
 
 function senderOwnsActor(actor, sender) {
@@ -72,16 +108,20 @@ export function isValidSpellInstanceMutationPayload(payload) {
   if (!validBase(payload)) return false;
 
   if (payload.action === "create") {
-    return payload.expectedRevision === 0
+    const actorParts = parseActorUuid(payload.actorUuid);
+    const itemParts = actorParts && uuidParts(payload.sourceItemUuid);
+    return Boolean(payload.expectedRevision === 0
       && exactKeys(payload, [
         "action", "actorUuid", "concentrationEffectUuid", "declaration", "expectedRevision",
         "instanceId", "operationId", "sourceActivityUuid", "sourceItemUuid", "state"
       ])
-      && isActorDocumentUuid(payload.concentrationEffectUuid, payload.actorUuid, "ActiveEffect")
-      && isActorDocumentUuid(payload.sourceItemUuid, payload.actorUuid, "Item")
-      && payload.sourceActivityUuid.startsWith(`${payload.sourceItemUuid}.Activity.`)
+      && actorParts
+      && isExactChildUuid(payload.concentrationEffectUuid, actorParts, "ActiveEffect")
+      && isExactChildUuid(payload.sourceItemUuid, actorParts, "Item")
+      && itemParts
+      && isExactChildUuid(payload.sourceActivityUuid, itemParts, "Activity")
       && isPlainObject(payload.state)
-      && isSerializable(payload.state);
+      && isSerializable(payload.state));
   }
   if (payload.action === "replace-state") {
     return exactKeys(payload, [
