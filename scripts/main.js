@@ -203,7 +203,7 @@ export const ITEM_PILE_DAMAGE_COMMAND = "durability.item-pile.damage";
 const ENVIRONMENT_COMBAT_STATUS_IDS = new Set(["rebreya-surrounded", "rebreya-open-position"]);
 const ENVIRONMENT_STATUS_SOURCE = "rebreya-environment";
 const ENVIRONMENT_STATUS_VERSION = "surrounded-ac-1";
-const COUNTERSPELL_AUTOMATION_ENABLED = false;
+const COUNTERSPELL_AUTOMATION_ENABLED = true;
 let socketModuleApi = null;
 const queuedSocketMessages = [];
 

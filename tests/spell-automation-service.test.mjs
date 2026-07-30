@@ -886,18 +886,19 @@ test("combat hooks route dnd5e and MIDI pre-use events through spell automation"
   assert.deepEqual(calls, ["dnd5e", "midi"]);
 });
 
-test("module API gates and conditionally initializes the generic spell automation service", async () => {
-  const source = await readFile(new URL("../scripts/main.js", import.meta.url), "utf8");
+test("module API composes the Counterspell runtime and managed spell pack", async () => {
+  const previousHooks = globalThis.Hooks;
+  globalThis.Hooks = { once() {}, on() {} };
 
-  assert.match(source, /import \{ SpellAutomationService \} from "\.\/combat\/spell-automation-service\.js/);
-  assert.match(
-    source,
-    /this\.spellAutomationService = COUNTERSPELL_AUTOMATION_ENABLED\s*\?\s*new SpellAutomationService\(this\)\s*:\s*null;/u
-  );
-  assert.match(source, /await this\.spellAutomationService\.initialize\(\);/);
-  assert.match(source, /function dispatchSocketMessage\(message, senderId\)/);
-  assert.match(source, /queuedSocketMessages\.push\(\{ message, senderId \}\)/);
-  assert.match(source, /moduleApi\.handleSocketMessage\(queuedMessage\.message, queuedMessage\.senderId\)/);
-  assert.match(source, /await this\.reactionQueueService\.handleSocketMessage\(message, senderId\)/);
-  assert.doesNotMatch(source, /spellAutomationService\.handleSocketMessage/);
+  try {
+    const { RebreyaMainModule } = await import(`../scripts/main.js?counterspell-composition=${Date.now()}`);
+    const moduleApi = new RebreyaMainModule();
+
+    assert.equal(typeof moduleApi.spellAutomationService?.resolveCast, "function");
+    assert.equal(typeof moduleApi.spellAutomationService?.repairCounterspellItems, "function");
+    assert.equal(typeof moduleApi.spellsCompendium?.sync, "function");
+  }
+  finally {
+    globalThis.Hooks = previousHooks;
+  }
 });
