@@ -4,7 +4,8 @@ import assert from "node:assert/strict";
 const {
   buildManagedSpellEntry,
   buildRebreyaSpellItem,
-  loadSpellDefinitions
+  loadSpellDefinitions,
+  SpellsCompendiumService
 } = await import("../scripts/data/spells-compendium.js");
 
 function counterspellSource() {
@@ -211,10 +212,12 @@ test("spell sync creates Melf once and reports it unchanged on an identical seco
     }
   };
   const packs = new Map([["world.rebreya-spells", pack]]);
+  const activeGm = { id: "gm-1", isGM: true, active: true };
   globalThis.game = {
-    user: { isGM: true },
+    user: activeGm,
     system: { id: "dnd5e" },
-    packs
+    packs,
+    users: { activeGM: activeGm, contents: [activeGm] }
   };
   globalThis.foundry = {
     documents: {
@@ -235,13 +238,61 @@ test("spell sync creates Melf once and reports it unchanged on an identical seco
   });
 
   try {
-    const service = new (await import("../scripts/data/spells-compendium.js")).SpellsCompendiumService();
+    const service = new SpellsCompendiumService();
     const first = await service.sync();
     const second = await service.sync();
 
     assert.deepEqual(first.sync, { unchanged: 0, created: 1, updated: 0, deleted: 0 });
     assert.deepEqual(second.sync, { unchanged: 1, created: 0, updated: 0, deleted: 0 });
     assert.deepEqual(operations, [["create", ["melfMeteorsItem1"]]]);
+  }
+  finally {
+    globalThis.fetch = originalFetch;
+    globalThis.game = originalGame;
+    globalThis.foundry = originalFoundry;
+  }
+});
+
+test("spell sync skips a non-active GM before any pack or network access", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalGame = globalThis.game;
+  const originalFoundry = globalThis.foundry;
+  let fetches = 0;
+  const activeGm = { id: "gm-1", isGM: true, active: true };
+  const secondGm = { id: "gm-2", isGM: true, active: true };
+  globalThis.fetch = async () => {
+    fetches += 1;
+    throw new Error("a non-active GM must not fetch spell definitions");
+  };
+  globalThis.game = {
+    user: secondGm,
+    system: { id: "dnd5e" },
+    users: { activeGM: activeGm, contents: [activeGm, secondGm] },
+    packs: {
+      get() {
+        throw new Error("a non-active GM must not read packs");
+      }
+    }
+  };
+  globalThis.foundry = {
+    documents: {
+      collections: {
+        CompendiumCollection: {
+          async createCompendium() {
+            throw new Error("a non-active GM must not create a pack");
+          }
+        }
+      }
+    }
+  };
+
+  try {
+    assert.deepEqual(await new SpellsCompendiumService().sync(), {
+      skipped: true,
+      pack: null,
+      sync: { skipped: true, unchanged: 0, created: 0, updated: 0, deleted: 0 }
+    });
+    assert.equal(fetches, 0);
   }
   finally {
     globalThis.fetch = originalFetch;

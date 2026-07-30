@@ -3,6 +3,7 @@ import {
   SPELLS_COMPENDIUM_LABEL,
   SPELLS_COMPENDIUM_NAME
 } from "../constants.js";
+import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 import { buildCounterspellActivity } from "./counterspell-activity.js";
 import { ensurePackSidebarFolder } from "./compendium-utils.js";
 import { syncFlaggedManagedDocuments } from "./managed-compendium-sync.js";
@@ -247,6 +248,13 @@ export class SpellsCompendiumService {
   async sync() {
     if (!game.user?.isGM || !isDnd5eWorld()) {
       return null;
+    }
+    if (!isActiveGmClient(game)) {
+      return {
+        skipped: true,
+        pack: null,
+        sync: { skipped: true, unchanged: 0, created: 0, updated: 0, deleted: 0 }
+      };
     }
 
     const { sourcePack, spells } = await loadSpellDefinitions();

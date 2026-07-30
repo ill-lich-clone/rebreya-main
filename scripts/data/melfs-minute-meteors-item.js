@@ -58,8 +58,7 @@ export function buildMelfsMinuteMeteorsItem() {
     spellSlot: true,
     scaling: true,
     extra: {
-      duration: { value: "10", units: "minute", special: "", concentration: true, override: false },
-      spell: { level: 3, scaling: { mode: "level", formula: "" } }
+      duration: { value: "10", units: "minute", special: "", concentration: true, override: false }
     }
   });
   const release = activity({
@@ -79,7 +78,17 @@ export function buildMelfsMinuteMeteorsItem() {
     action: "burst",
     extra: {
       save: { ability: ["dex"], dc: { calculation: "spellcasting", formula: "" } },
-      damage: { onSave: "half", parts: [["2d6", "fire"]] },
+      damage: {
+        onSave: "half",
+        parts: [{
+          number: 2,
+          denomination: 6,
+          bonus: "",
+          types: ["fire"],
+          custom: { enabled: false, formula: "" },
+          scaling: { mode: "", number: 1, formula: "" }
+        }]
+      },
       target: {
         template: { type: "radius", size: "5", units: "ft" },
         prompt: true,

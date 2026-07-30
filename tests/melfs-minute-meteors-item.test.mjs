@@ -32,7 +32,18 @@ test("Melf's Minute Meteors creates native utility and Dexterity-save activities
   assert.equal(burst._id, MELFS_ACTIVITY_IDS.BURST);
   assert.equal(burst.type, "save");
   assert.deepEqual(burst.save, { ability: ["dex"], dc: { calculation: "spellcasting", formula: "" } });
-  assert.deepEqual(burst.damage, { onSave: "half", parts: [["2d6", "fire"]] });
+  assert.deepEqual(burst.damage, {
+    onSave: "half",
+    parts: [{
+      number: 2,
+      denomination: 6,
+      bonus: "",
+      types: ["fire"],
+      custom: { enabled: false, formula: "" },
+      scaling: { mode: "", number: 1, formula: "" }
+    }]
+  });
+  assert.equal(Array.isArray(burst.damage.parts[0]), false);
   assert.deepEqual(burst.target.template, { type: "radius", size: "5", units: "ft" });
   assert.equal(burst.attack, undefined);
 });
@@ -50,7 +61,7 @@ test("Melf's Minute Meteors preserves concentration and charges only its cast ac
     spellSlot: true,
     targets: []
   });
-  assert.deepEqual(cast.spell, { level: 3, scaling: { mode: "level", formula: "" } });
+  assert.equal(cast.spell, undefined);
   for (const activity of [release, burst]) {
     assert.equal(activity.consumption.spellSlot, false);
     assert.equal(activity.consumption.scaling.allowed, false);
