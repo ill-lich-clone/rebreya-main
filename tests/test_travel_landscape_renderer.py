@@ -64,6 +64,19 @@ class TravelLandscapeRendererTests(unittest.TestCase):
         )
         self.assertLessEqual(boundary_difference, adjacent_difference * 1.25)
 
+    def test_vibration_clamps_vertical_edges_instead_of_wrapping_them(self):
+        tile = Image.new("RGB", CANVAS)
+        pixels = tile.load()
+        for x in range(CANVAS[0]):
+            pixels[x, 0] = (255, 0, 0)
+            pixels[x, CANVAS[1] - 1] = (0, 0, 255)
+
+        downward_bob = render_frame(tile, 15)
+        upward_bob = render_frame(tile, 75)
+
+        self.assertEqual(downward_bob.getpixel((0, 0)), (255, 0, 0))
+        self.assertEqual(upward_bob.getpixel((0, CANVAS[1] - 1)), (0, 0, 255))
+
 
 if __name__ == "__main__":
     unittest.main()

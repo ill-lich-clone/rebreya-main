@@ -85,6 +85,25 @@ def _horizontal_smear(image: Image.Image, distance: int = 4) -> Image.Image:
     return Image.blend(Image.blend(left, image, 0.5), right, 1 / 3)
 
 
+def _vertical_clamp_shift(image: Image.Image, offset: int) -> Image.Image:
+    if not offset:
+        return image
+    width, height = image.size
+    distance = min(abs(offset), height)
+    shifted = Image.new(image.mode, image.size)
+    if offset > 0:
+        shifted.paste(image.crop((0, 0, width, height - distance)), (0, distance))
+        edge = image.crop((0, 0, width, 1))
+        for y in range(distance):
+            shifted.paste(edge, (0, y))
+    else:
+        shifted.paste(image.crop((0, distance, width, height)), (0, 0))
+        edge = image.crop((0, height - 1, width, height))
+        for y in range(height - distance, height):
+            shifted.paste(edge, (0, y))
+    return shifted
+
+
 def render_frame(
     tile: Image.Image,
     frame_index: int,
@@ -110,7 +129,7 @@ def render_frame(
     )
     vibration = round(math.sin(2 * math.pi * progress * 5))
     if vibration:
-        landscape = ImageChops.offset(landscape, 0, vibration)
+        landscape = _vertical_clamp_shift(landscape, vibration)
     return landscape.convert("RGB")
 
 
