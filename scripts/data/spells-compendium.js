@@ -5,6 +5,13 @@ import {
 } from "../constants.js";
 import { buildCounterspellActivity } from "./counterspell-activity.js";
 import { ensurePackSidebarFolder } from "./compendium-utils.js";
+import { syncFlaggedManagedDocuments } from "./managed-compendium-sync.js";
+import {
+  MELFS_MINUTE_METEORS_ID,
+  MELFS_MINUTE_METEORS_RECIPE,
+  MELFS_MINUTE_METEORS_VERSION,
+  buildMelfsMinuteMeteorsItem
+} from "./melfs-minute-meteors-item.js";
 
 const DND5E_SYSTEM_ID = "dnd5e";
 const PACK_ID = `world.${SPELLS_COMPENDIUM_NAME}`;
@@ -85,7 +92,41 @@ async function ensurePack() {
   return pack;
 }
 
-async function loadSpellDefinitions() {
+function stableValue(value) {
+  if (Array.isArray(value)) return value.map(stableValue);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.keys(value).sort().map((key) => [key, stableValue(value[key])])) ;
+  }
+  return value;
+}
+
+function stableSignature(value) {
+  return JSON.stringify(stableValue(value));
+}
+
+function normalizedSourceDefinition(entry) {
+  const id = cleanString(entry?.id);
+  const sourceIdentifier = cleanString(entry?.sourceIdentifier);
+  if (id === COUNTERSPELL_ID && sourceIdentifier && !cleanString(entry?.builder) && entry?.version == null) {
+    return { id, sourceIdentifier };
+  }
+  return null;
+}
+
+function normalizedBuilderDefinition(entry) {
+  const id = cleanString(entry?.id);
+  const builder = cleanString(entry?.builder);
+  const version = Number(entry?.version);
+  if (id === MELFS_MINUTE_METEORS_ID
+    && builder === MELFS_MINUTE_METEORS_RECIPE
+    && version === MELFS_MINUTE_METEORS_VERSION
+    && !cleanString(entry?.sourceIdentifier)) {
+    return { id, builder, version };
+  }
+  return null;
+}
+
+export async function loadSpellDefinitions() {
   const response = await fetch(SPELLS_DATA_PATH, { cache: "no-store" });
   if (!response.ok) {
     throw new Error(`Failed to load ${SPELLS_DATA_PATH}: ${response.status} ${response.statusText}`);
@@ -93,12 +134,11 @@ async function loadSpellDefinitions() {
 
   const data = await response.json();
   const sourcePack = cleanString(data?.sourcePack, "dnd5e.spells");
-  const spells = (Array.isArray(data?.spells) ? data.spells : [])
-    .map((entry) => ({
-      id: cleanString(entry?.id),
-      sourceIdentifier: cleanString(entry?.sourceIdentifier)
-    }))
-    .filter((entry) => entry.id && entry.sourceIdentifier);
+  const spells = (Array.isArray(data?.spells) ? data.spells : []).map((entry) => {
+    const definition = normalizedSourceDefinition(entry) ?? normalizedBuilderDefinition(entry);
+    if (!definition) throw new Error(`Invalid spell definition: ${cleanString(entry?.id, "unknown")}`);
+    return definition;
+  });
 
   return { sourcePack, spells };
 }
@@ -173,33 +213,34 @@ export function buildRebreyaSpellItem(source) {
   };
 }
 
-function isManagedSpell(document, spellId) {
-  return document?.getFlag?.(MODULE_ID, "spellId") === spellId
-    || cleanString(getProperty(document, "system.identifier")) === spellId;
+export function buildManagedSpellEntry(definition, source = null) {
+  const data = definition?.builder === MELFS_MINUTE_METEORS_RECIPE
+    ? buildMelfsMinuteMeteorsItem()
+    : buildRebreyaSpellItem(source);
+  data.flags ??= {};
+  data.flags[MODULE_ID] = {
+    ...(data.flags[MODULE_ID] ?? {}),
+    managed: true,
+    spellId: definition.id
+  };
+  const signature = stableSignature({
+    builder: definition.builder ?? "source",
+    version: definition.version ?? null,
+    system: data.system,
+    flags: data.flags
+  });
+  data.flags[MODULE_ID].signature = signature;
+  return {
+    spellId: definition.id,
+    documentId: cleanString(data._id),
+    signature,
+    data
+  };
 }
 
 async function getPackDocuments(pack) {
   const documents = await pack.getDocuments();
   return Array.isArray(documents) ? documents : [];
-}
-
-async function syncSpell(pack, definition, source) {
-  if (definition.id !== COUNTERSPELL_ID) {
-    return;
-  }
-
-  const documents = await getPackDocuments(pack);
-  const existing = documents.find((document) => isManagedSpell(document, definition.id));
-  const itemData = buildRebreyaSpellItem(source);
-  if (!existing) {
-    await Item.implementation.createDocuments([itemData], { pack: pack.collection });
-    return;
-  }
-
-  await Item.implementation.updateDocuments([{
-    ...itemData,
-    _id: existing.id ?? existing._id
-  }], { pack: pack.collection });
 }
 
 export class SpellsCompendiumService {
@@ -210,14 +251,28 @@ export class SpellsCompendiumService {
 
     const { sourcePack, spells } = await loadSpellDefinitions();
     const pack = await ensurePack();
+    const entries = [];
     for (const definition of spells) {
-      const sourceDocument = await resolveSourceSpell(sourcePack, definition.sourceIdentifier);
-      if (!sourceDocument) {
-        throw new Error(`Unable to load dnd5e spell '${definition.sourceIdentifier}'.`);
+      if (definition.sourceIdentifier) {
+        const sourceDocument = await resolveSourceSpell(sourcePack, definition.sourceIdentifier);
+        if (!sourceDocument) {
+          throw new Error(`Unable to load dnd5e spell '${definition.sourceIdentifier}'.`);
+        }
+        entries.push(buildManagedSpellEntry(definition, getSpellSource(sourceDocument)));
       }
-      await syncSpell(pack, definition, getSpellSource(sourceDocument));
+      else {
+        entries.push(buildManagedSpellEntry(definition));
+      }
     }
 
-    return game.packs.get(PACK_ID) ?? pack;
+    const sync = await syncFlaggedManagedDocuments({
+      pack,
+      entries,
+      documents: await getPackDocuments(pack),
+      moduleId: MODULE_ID,
+      sourceIdFlag: "spellId",
+      buildData: (entry) => entry.data
+    });
+    return { pack: game.packs.get(PACK_ID) ?? pack, sync };
   }
 }

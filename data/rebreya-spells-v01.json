@@ -5,6 +5,11 @@
     {
       "id": "counterspell-rebreya",
       "sourceIdentifier": "counterspell"
+    },
+    {
+      "id": "melfs-minute-meteors-rebreya",
+      "builder": "melfs-minute-meteors",
+      "version": 1
     }
   ]
 }
