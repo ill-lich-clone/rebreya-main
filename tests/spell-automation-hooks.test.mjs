@@ -167,3 +167,48 @@ test("postSummon remains available to the separate Craftsman hook", async () => 
   assert.deepEqual(craftsmanCalls, [args]);
   assert.deepEqual(bridgeCalls, [args]);
 });
+
+test("registered empty hook paths do not access runtime documents, mutate state, or start timers", async () => {
+  const Hooks = fakeHooks();
+  let documentLookups = 0;
+  let mutations = 0;
+  let timers = 0;
+  const originalSetTimeout = globalThis.setTimeout;
+  const originalSetInterval = globalThis.setInterval;
+  const game = new Proxy({}, {
+    get(target, property, receiver) {
+      if (property === "actors" || property === "scenes") documentLookups += 1;
+      return Reflect.get(target, property, receiver);
+    },
+    set(target, property, value, receiver) {
+      mutations += 1;
+      return Reflect.set(target, property, value, receiver);
+    }
+  });
+
+  assert.equal(registerSpellAutomationHooks(moduleApi({}), { Hooks, game }), true);
+  mutations = 0;
+  globalThis.setTimeout = (...args) => {
+    timers += 1;
+    return originalSetTimeout(...args);
+  };
+  globalThis.setInterval = (...args) => {
+    timers += 1;
+    return originalSetInterval(...args);
+  };
+
+  try {
+    for (const name of EXPECTED_HOOKS) {
+      assert.equal(Hooks.listeners.get(name)[0]({ id: name }, {}, {}), true);
+    }
+    await Promise.resolve();
+  }
+  finally {
+    globalThis.setTimeout = originalSetTimeout;
+    globalThis.setInterval = originalSetInterval;
+  }
+
+  assert.equal(documentLookups, 0);
+  assert.equal(mutations, 0);
+  assert.equal(timers, 0);
+});

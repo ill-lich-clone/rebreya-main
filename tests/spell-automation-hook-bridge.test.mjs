@@ -169,3 +169,66 @@ test("fails open for an unmanaged event and for non-blocking handler errors", as
   assert.equal(unmanaged.handlePreUseActivity(activity({ item: {} }), {}, {}, {}), true);
   assert.equal(managedError.handlePreUseActivity(activity(), {}, {}, {}), true);
 });
+
+test("1,000 unmanaged pre-use activities return synchronously without runtime work", () => {
+  let dispatchResolutions = 0;
+  let dispatches = 0;
+  let documentLookups = 0;
+  let mutations = 0;
+  let timers = 0;
+  let notifications = 0;
+  const originalGame = globalThis.game;
+  const originalSetTimeout = globalThis.setTimeout;
+  const originalSetInterval = globalThis.setInterval;
+  const registry = {
+    get dispatch() {
+      dispatchResolutions += 1;
+      return () => {
+        dispatches += 1;
+        return { handled: true, value: true };
+      };
+    }
+  };
+  const game = new Proxy({}, {
+    get(target, property, receiver) {
+      if (property === "actors" || property === "scenes") documentLookups += 1;
+      return Reflect.get(target, property, receiver);
+    },
+    set(target, property, value, receiver) {
+      mutations += 1;
+      return Reflect.set(target, property, value, receiver);
+    }
+  });
+  const bridge = new SpellAutomationHookBridge({
+    registry,
+    notifyWarning: () => { notifications += 1; }
+  });
+
+  globalThis.game = game;
+  globalThis.setTimeout = (...args) => {
+    timers += 1;
+    return originalSetTimeout(...args);
+  };
+  globalThis.setInterval = (...args) => {
+    timers += 1;
+    return originalSetInterval(...args);
+  };
+
+  try {
+    for (let index = 0; index < 1_000; index += 1) {
+      assert.equal(bridge.handlePreUseActivity({ flags: {} }, {}, {}, {}), true);
+    }
+  }
+  finally {
+    globalThis.game = originalGame;
+    globalThis.setTimeout = originalSetTimeout;
+    globalThis.setInterval = originalSetInterval;
+  }
+
+  assert.equal(dispatchResolutions, 0);
+  assert.equal(dispatches, 0);
+  assert.equal(documentLookups, 0);
+  assert.equal(mutations, 0);
+  assert.equal(timers, 0);
+  assert.equal(notifications, 0);
+});
