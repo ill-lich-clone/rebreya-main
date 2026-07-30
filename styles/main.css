@@ -4342,19 +4342,20 @@ summary:focus-visible {
 }
 
 .rebreya-inventory-app .rm-inventory-book__identity {
-  display: flex;
-  align-items: flex-start;
-  gap: 18px;
+  display: grid;
+  grid-template-columns: 124px minmax(0, 1fr);
+  grid-template-areas:
+    "crest heading"
+    "wallet wallet";
+  column-gap: 18px;
+  row-gap: 4px;
   min-width: 0;
   max-width: 48%;
 }
 
-.rebreya-inventory-app .rm-inventory-book__identity-column {
-  width: 124px;
-  display: grid;
-  justify-items: center;
-  gap: 4px;
-  flex: 0 0 124px;
+.rebreya-inventory-app .rm-inventory-book__identity-crest {
+  grid-area: crest;
+  justify-self: center;
 }
 
 .rebreya-inventory-app .rm-inventory-book__crest,
@@ -4424,6 +4425,7 @@ summary:focus-visible {
 }
 
 .rebreya-inventory-app .rm-inventory-book__heading {
+  grid-area: heading;
   min-width: 0;
   padding-top: 28px;
 }
@@ -4471,10 +4473,22 @@ summary:focus-visible {
 }
 
 .rebreya-inventory-app .rm-inventory-book__wallet {
+  grid-area: wallet;
+  justify-self: start;
   width: 260px;
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 6px;
+}
+
+.rebreya-inventory-app .rm-inventory-book__header .rm-inventory-book__panel {
+  border: 1px solid rgb(var(--rm-color-gold-rgb) / 0.3);
+  border-radius: 6px;
+  background: rgb(var(--rm-color-ink-rgb) / 0.94);
+  box-shadow:
+    inset 0 0 0 1px rgb(255 255 255 / 0.035),
+    0 3px 10px rgb(0 0 0 / 0.28);
+  color: var(--rm-text-primary);
 }
 
 .rebreya-inventory-app .rm-inventory-book__wallet .rm-coin-badge {
@@ -4483,22 +4497,16 @@ summary:focus-visible {
   justify-content: space-between;
   gap: 5px;
   padding: 4px 8px;
-  border-color: rgb(var(--rm-color-gold-rgb) / 0.25);
-  border-radius: 5px;
-  background: rgb(var(--rm-color-ink-rgb) / 0.84);
-  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.025);
 }
 
 .rebreya-inventory-app .rm-inventory-book__wallet .rm-coin-badge strong {
   min-width: 0;
   overflow: hidden;
-  font-size: 14px;
   text-overflow: ellipsis;
 }
 
 .rebreya-inventory-app .rm-inventory-book__wallet .rm-coin-badge span {
   flex: 0 0 auto;
-  font-size: 9px;
 }
 
 .rebreya-inventory-app .rm-inventory-book__wallet span.rm-coin-badge {
@@ -4532,13 +4540,6 @@ summary:focus-visible {
   justify-content: center;
   gap: 6px;
   padding: 5px 9px;
-  border: 1px solid rgb(var(--rm-color-gold-rgb) / 0.48);
-  border-radius: 6px;
-  background: rgb(var(--rm-color-ink-rgb) / 0.82);
-  color: var(--rm-text-primary);
-  box-shadow:
-    inset 0 0 0 1px rgb(255 255 255 / 0.04),
-    0 3px 10px rgb(0 0 0 / 0.4);
   font-size: 12px;
   font-weight: 700;
   line-height: 1;
@@ -4563,10 +4564,6 @@ summary:focus-visible {
 .rebreya-inventory-app .rm-inventory-book__cargo,
 .rebreya-inventory-app .rm-inventory-book__supply {
   min-width: 0;
-  border: 1px solid var(--rm-border-default);
-  border-radius: 6px;
-  background: rgb(var(--rm-color-ink-rgb) / 0.84);
-  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.025);
 }
 
 .rebreya-inventory-app .rm-inventory-book__cargo {
@@ -4583,8 +4580,11 @@ summary:focus-visible {
   gap: 10px;
 }
 
-.rebreya-inventory-app .rm-inventory-book__metric-heading span,
-.rebreya-inventory-app .rm-inventory-book__supply span {
+.rebreya-inventory-app :is(
+  .rm-inventory-book__metric-heading span,
+  .rm-inventory-book__supply span,
+  .rm-inventory-book__wallet .rm-coin-badge span
+) {
   color: var(--rm-text-secondary);
   font-size: 10px;
   font-weight: 700;
@@ -4593,10 +4593,22 @@ summary:focus-visible {
   text-transform: uppercase;
 }
 
-.rebreya-inventory-app .rm-inventory-book__metric-heading strong {
+.rebreya-inventory-app :is(
+  .rm-inventory-book__metric-heading strong,
+  .rm-inventory-book__supply strong,
+  .rm-inventory-book__wallet .rm-coin-badge strong
+) {
   color: var(--rm-text-primary);
   font-size: 13px;
   line-height: 1;
+}
+
+.rebreya-inventory-app .rm-inventory-book__wallet .rm-coin-badge--gp strong {
+  color: var(--rm-accent);
+}
+
+.rebreya-inventory-app .rm-inventory-book__wallet .rm-coin-badge--cp strong {
+  color: #c7865a;
 }
 
 .rebreya-inventory-app .rm-inventory-book__cargo-bar {
@@ -4694,12 +4706,6 @@ summary:focus-visible {
   grid-template-columns: 1fr auto;
   gap: 3px 7px;
   padding: 7px 8px;
-}
-
-.rebreya-inventory-app .rm-inventory-book__supply strong {
-  color: var(--rm-text-primary);
-  font-size: 12px;
-  line-height: 1;
 }
 
 .rebreya-inventory-app .rm-inventory-book__supply small {

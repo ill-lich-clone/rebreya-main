@@ -35,7 +35,7 @@ Add assertions to the existing header-layout test that require:
 assert.doesNotMatch(template, /rm-inventory-book__identity-column/u);
 assert.match(template, /class="rm-inventory-book__crest-button rm-inventory-book__identity-crest"/u);
 assert.match(template, /class="rm-currency-compact rm-inventory-book__wallet"/u);
-assert.equal((template.match(/rm-inventory-book__panel/gu) ?? []).length, 14);
+assert.equal((template.match(/rm-inventory-book__panel/gu) ?? []).length, 15);
 assert.match(css, /\.rm-inventory-book__identity\s*\{[^}]*grid-template-columns:\s*124px minmax\(0,\s*1fr\);/u);
 assert.match(css, /\.rm-inventory-book__identity-crest\s*\{[^}]*grid-area:\s*crest;/u);
 assert.match(css, /\.rm-inventory-book__wallet\s*\{[^}]*grid-area:\s*wallet;/u);

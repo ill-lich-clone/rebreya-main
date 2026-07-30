@@ -655,8 +655,7 @@ test("InventoryApp positions external book tabs and keeps the character-style ar
   assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__header\s*\{[^}]*height:\s*300px;[^}]*min-height:\s*300px;/u);
   assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__header::before\s*\{[^}]*var\(--rm-party-inventory-header-image\)[^}]*mask-image:\s*linear-gradient\(180deg,\s*#000 0%,\s*#000 58%,\s*rgb\(0 0 0 \/ 0\.72\) 75%,\s*transparent 100%\);/u);
   assert.doesNotMatch(css, /\.rebreya-inventory-app \.rm-inventory-book__header-shade/u);
-  assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__identity\s*\{[^}]*display:\s*flex;/u);
-  assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__identity-column\s*\{[^}]*display:\s*grid;[^}]*gap:\s*4px;/u);
+  assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__identity\s*\{[^}]*display:\s*grid;/u);
   assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__crest-button\s*\{/u);
   assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__crest-image\s*\{/u);
   assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__title\s*\{[^}]*font-family:\s*var\(--dnd5e-font-modesto\)[^}]*font-size:\s*36px;/u);
@@ -691,6 +690,55 @@ test("InventoryApp positions external book tabs and keeps the character-style ar
   assert.match(
     css,
     /\.rebreya-inventory-app \.rm-inventory-book__tabs\s*\{[^}]*top:\s*16[0-9]px;/u
+  );
+});
+
+test("InventoryApp keeps the party crest in a dedicated identity grid track", async () => {
+  const template = await readFile(new URL("../templates/inventory-app.hbs", import.meta.url), "utf8");
+  const css = await readFile(new URL("../styles/main.css", import.meta.url), "utf8");
+
+  assert.doesNotMatch(template, /rm-inventory-book__identity-column/u);
+  assert.match(template, /class="rm-inventory-book__crest-button rm-inventory-book__identity-crest"/u);
+  assert.match(template, /class="rm-inventory-book__crest rm-inventory-book__identity-crest"/u);
+  assert.match(
+    css,
+    /\.rebreya-inventory-app \.rm-inventory-book__identity\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*124px minmax\(0,\s*1fr\);[^}]*grid-template-areas:\s*"crest heading"\s*"wallet wallet";/u
+  );
+  assert.match(
+    css,
+    /\.rebreya-inventory-app \.rm-inventory-book__identity-crest\s*\{[^}]*grid-area:\s*crest;[^}]*justify-self:\s*center;/u
+  );
+  assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__heading\s*\{[^}]*grid-area:\s*heading;/u);
+  assert.match(
+    css,
+    /\.rebreya-inventory-app \.rm-inventory-book__wallet\s*\{[^}]*grid-area:\s*wallet;[^}]*justify-self:\s*start;/u
+  );
+});
+
+test("InventoryApp uses one surface component across compact header panels", async () => {
+  const template = await readFile(new URL("../templates/inventory-app.hbs", import.meta.url), "utf8");
+  const css = await readFile(new URL("../styles/main.css", import.meta.url), "utf8");
+
+  assert.equal((template.match(/rm-inventory-book__panel/gu) ?? []).length, 15);
+  assert.match(
+    css,
+    /\.rebreya-inventory-app \.rm-inventory-book__header \.rm-inventory-book__panel\s*\{[^}]*border:\s*1px solid rgb\(var\(--rm-color-gold-rgb\) \/ 0\.3\);[^}]*border-radius:\s*6px;[^}]*background:\s*rgb\(var\(--rm-color-ink-rgb\) \/ 0\.94\);[^}]*box-shadow:/u
+  );
+  assert.match(
+    css,
+    /\.rebreya-inventory-app :is\(\s*\.rm-inventory-book__metric-heading span,\s*\.rm-inventory-book__supply span,\s*\.rm-inventory-book__wallet \.rm-coin-badge span\s*\)\s*\{[^}]*font-size:\s*10px;/u
+  );
+  assert.match(
+    css,
+    /\.rebreya-inventory-app :is\(\s*\.rm-inventory-book__metric-heading strong,\s*\.rm-inventory-book__supply strong,\s*\.rm-inventory-book__wallet \.rm-coin-badge strong\s*\)\s*\{[^}]*font-size:\s*13px;/u
+  );
+  assert.match(
+    css,
+    /\.rebreya-inventory-app \.rm-inventory-book__wallet \.rm-coin-badge--gp strong\s*\{[^}]*color:\s*var\(--rm-accent\);/u
+  );
+  assert.match(
+    css,
+    /\.rebreya-inventory-app \.rm-inventory-book__wallet \.rm-coin-badge--cp strong\s*\{[^}]*color:\s*#c7865a;/u
   );
 });
 
