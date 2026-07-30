@@ -70,6 +70,55 @@ function activityFor(eventName, source) {
   return source?.activity ?? source ?? null;
 }
 
+function eventParts(eventName, rawArgs) {
+  const args = Array.isArray(rawArgs) ? rawArgs : [];
+  const document = args[0] ?? null;
+  const workflow = eventName === "midiRollComplete" ? document : null;
+  const activity = activityFor(eventName, document);
+  const item = activity?.item ?? workflow?.item ?? document?.item ?? null;
+  const actor = activity?.actor ?? item?.actor ?? workflow?.actor ?? workflow?.token?.actor ?? null;
+  const usageConfig = usageConfigFor(eventName, args, workflow);
+
+  return {
+    args,
+    document,
+    workflow,
+    activity,
+    item,
+    actor,
+    usageConfig
+  };
+}
+
+function tokenAndScene({ document, workflow, activity, item, actor }) {
+  // Prefer the workflow's resolved target, then directly related activity,
+  // item, actor, and event-document references. This never scans collections.
+  const token = workflow?.token
+    ?? activity?.token
+    ?? item?.token
+    ?? actor?.token
+    ?? document?.token
+    ?? null;
+  const scene = token?.scene
+    ?? token?.parent
+    ?? workflow?.scene
+    ?? activity?.scene
+    ?? item?.scene
+    ?? actor?.scene
+    ?? document?.scene
+    ?? null;
+  return { token, scene };
+}
+
+function preflightSpellAutomationEvent(eventName, rawArgs) {
+  const parts = eventParts(eventName, rawArgs);
+  return {
+    ...parts,
+    declaration: declarationFor(parts.activity, parts.item, parts.document),
+    isChildInvocation: isSpellAutomationChildInvocation(parts.usageConfig)
+  };
+}
+
 function declarationFor(activity, item, source) {
   for (const candidate of [activity, item, source]) {
     const declaration = readModuleFlag(candidate);
@@ -95,13 +144,19 @@ export function isSpellAutomationChildInvocation(usageConfig = {}) {
 }
 
 export function buildSpellAutomationContext(eventName, rawArgs, options = {}) {
-  const args = Array.isArray(rawArgs) ? rawArgs : [];
-  const source = args[0] ?? null;
-  const workflow = eventName === "midiRollComplete" ? source : null;
-  const activity = activityFor(eventName, source);
-  const item = activity?.item ?? workflow?.item ?? source?.item ?? null;
-  const actor = activity?.actor ?? item?.actor ?? workflow?.actor ?? workflow?.token?.actor ?? null;
-  const usageConfig = usageConfigFor(eventName, args, workflow);
+  const preflight = options.preflight ?? preflightSpellAutomationEvent(eventName, rawArgs);
+  const {
+    args,
+    document,
+    workflow,
+    activity,
+    item,
+    actor,
+    usageConfig,
+    declaration,
+    isChildInvocation
+  } = preflight;
+  const { token, scene } = tokenAndScene(preflight);
   const dialogConfig = eventName === "preUseActivity"
     ? args[2] ?? {}
     : workflow?.dialogConfig ?? workflow?.dialogOptions ?? {};
@@ -111,28 +166,31 @@ export function buildSpellAutomationContext(eventName, rawArgs, options = {}) {
 
   return {
     eventName,
-    action: options.action ?? usageConfig?.action ?? source?.action ?? eventName,
-    operationId: operationIdFrom(source, usageConfig, options),
-    declaration: declarationFor(activity, item, source),
-    childInvocation: isSpellAutomationChildInvocation(usageConfig),
-    document: source,
+    action: options.action ?? usageConfig?.action ?? document?.action ?? eventName,
+    operationId: operationIdFrom(document, usageConfig, options),
+    declaration,
+    isChildInvocation,
+    childInvocation: isChildInvocation,
+    document,
     activity,
     item,
     actor,
+    token,
+    scene,
     workflow,
     usageConfig,
     dialogConfig,
     messageConfig,
     rawArgs: args,
-    results: options.results,
-    profile: options.profile,
-    tokens: options.tokens,
-    summonOptions: options.summonOptions,
-    changeType: options.changeType,
-    changed: options.changed,
-    options: options.hookOptions,
-    prior: options.prior,
-    current: options.current
+    results: options.results ?? (eventName === "postUseActivity" ? args[2] ?? null : null),
+    profile: options.profile ?? null,
+    tokens: options.tokens ?? [],
+    summonOptions: options.summonOptions ?? {},
+    changeType: options.changeType ?? null,
+    changed: options.changed ?? null,
+    options: options.hookOptions ?? {},
+    prior: options.prior ?? null,
+    current: options.current ?? null
   };
 }
 
@@ -145,12 +203,15 @@ export class SpellAutomationHookBridge {
   }
 
   handlePreUseActivity(activity, usageConfig, dialogConfig, messageConfig) {
-    const context = buildSpellAutomationContext("preUseActivity", [activity, usageConfig, dialogConfig, messageConfig], {
-      operationIdFactory: this.operationIdFactory
-    });
-    if (context.childInvocation || !context.declaration) {
+    const rawArgs = [activity, usageConfig, dialogConfig, messageConfig];
+    const preflight = preflightSpellAutomationEvent("preUseActivity", rawArgs);
+    if (preflight.isChildInvocation || !preflight.declaration) {
       return true;
     }
+    const context = buildSpellAutomationContext("preUseActivity", rawArgs, {
+      preflight,
+      operationIdFactory: this.operationIdFactory
+    });
 
     try {
       const dispatched = this.registry?.dispatch?.("preUseActivity", context.declaration, context);
@@ -217,13 +278,15 @@ export class SpellAutomationHookBridge {
   }
 
   #handleAsync(eventName, rawArgs, options = {}) {
-    const context = buildSpellAutomationContext(eventName, rawArgs, {
-      ...options,
-      operationIdFactory: this.operationIdFactory
-    });
-    if (context.childInvocation || !context.declaration) {
+    const preflight = preflightSpellAutomationEvent(eventName, rawArgs);
+    if (preflight.isChildInvocation || !preflight.declaration) {
       return Promise.resolve(true);
     }
+    const context = buildSpellAutomationContext(eventName, rawArgs, {
+      ...options,
+      preflight,
+      operationIdFactory: this.operationIdFactory
+    });
 
     try {
       const dispatched = this.registry?.dispatch?.(eventName, context.declaration, context);

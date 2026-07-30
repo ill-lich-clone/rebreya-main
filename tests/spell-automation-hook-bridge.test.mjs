@@ -95,30 +95,88 @@ test("marks spellAutomationChild and spellAutomationBypass as child invocations"
   assert.equal(isSpellAutomationChildInvocation({}), false);
 });
 
-test("builds the same normalized fields for dnd5e and midi events", () => {
-  const sharedActivity = activity();
-  const usageConfig = { action: "cast", [MODULE_ID]: { operationId: "operation-existing" } };
-  const dnd5e = buildSpellAutomationContext("preUseActivity", [sharedActivity, usageConfig, { fastForward: true }, { createMessage: false }]);
-  const midi = buildSpellAutomationContext("midiRollComplete", [{
-    activity: sharedActivity,
-    item: sharedActivity.item,
-    actor: sharedActivity.actor,
-    options: usageConfig,
-    dialogConfig: { fastForward: true },
-    messageConfig: { createMessage: false }
-  }]);
+test("normalizes every public context field from dnd5e and Midi workflow relationships", () => {
+  const sceneFromActorToken = { id: "Scene.dnd5e" };
+  const actorToken = { id: "Token.dnd5e", parent: sceneFromActorToken };
+  const dnd5eActor = { uuid: "Actor.dnd5e", token: actorToken };
+  const dnd5eItem = {
+    uuid: "Item.dnd5e",
+    actor: dnd5eActor,
+    flags: { [MODULE_ID]: { spellAutomation: declaration({ recipe: "dnd5e-recipe" }) } }
+  };
+  const dnd5eActivity = { uuid: "Activity.dnd5e", actor: dnd5eActor, item: dnd5eItem };
+  const dnd5eUsage = { action: "cast", [MODULE_ID]: { operationId: "operation-dnd5e" } };
+  const dnd5eDialog = { fastForward: true };
+  const dnd5eMessage = { createMessage: false };
+  const dnd5eArgs = [dnd5eActivity, dnd5eUsage, dnd5eDialog, dnd5eMessage];
 
-  for (const context of [dnd5e, midi]) {
-    assert.equal(context.activity, sharedActivity);
-    assert.equal(context.item, sharedActivity.item);
-    assert.equal(context.actor, sharedActivity.actor);
-    assert.equal(context.usageConfig, usageConfig);
-    assert.equal(context.dialogConfig.fastForward, true);
-    assert.equal(context.messageConfig.createMessage, false);
-    assert.equal(context.declaration.recipe, "melf-minute-meteors");
-    assert.equal(context.operationId, "operation-existing");
-    assert.equal(context.action, "cast");
-  }
+  const sceneFromWorkflowToken = { id: "Scene.midi" };
+  const workflowToken = { id: "Token.midi", parent: sceneFromWorkflowToken };
+  const midiActor = { uuid: "Actor.midi" };
+  const midiItem = {
+    uuid: "Item.midi",
+    actor: midiActor,
+    flags: { [MODULE_ID]: { spellAutomation: declaration({ recipe: "midi-recipe" }) } }
+  };
+  const midiActivity = { uuid: "Activity.midi", actor: midiActor, item: midiItem };
+  const midiUsage = { action: "cast", [MODULE_ID]: { operationId: "operation-midi" } };
+  const workflow = {
+    id: "Workflow.midi",
+    activity: midiActivity,
+    item: midiItem,
+    actor: midiActor,
+    token: workflowToken,
+    options: midiUsage,
+    dialogConfig: { fastForward: false },
+    messageConfig: { createMessage: true }
+  };
+
+  const dnd5e = buildSpellAutomationContext("preUseActivity", dnd5eArgs);
+  const midi = buildSpellAutomationContext("midiRollComplete", [workflow]);
+
+  const canonicalFields = [
+    "eventName", "activity", "item", "actor", "token", "scene", "workflow", "document",
+    "usageConfig", "dialogConfig", "messageConfig", "results", "rawArgs", "declaration",
+    "operationId", "isChildInvocation"
+  ];
+  assert.deepEqual(Object.fromEntries(canonicalFields.map((field) => [field, dnd5e[field]])), {
+    eventName: "preUseActivity",
+    activity: dnd5eActivity,
+    item: dnd5eItem,
+    actor: dnd5eActor,
+    token: actorToken,
+    scene: sceneFromActorToken,
+    workflow: null,
+    document: dnd5eActivity,
+    usageConfig: dnd5eUsage,
+    dialogConfig: dnd5eDialog,
+    messageConfig: dnd5eMessage,
+    results: null,
+    rawArgs: dnd5eArgs,
+    declaration: dnd5eItem.flags[MODULE_ID].spellAutomation,
+    operationId: "operation-dnd5e",
+    isChildInvocation: false
+  });
+  assert.deepEqual(Object.fromEntries(canonicalFields.map((field) => [field, midi[field]])), {
+    eventName: "midiRollComplete",
+    activity: midiActivity,
+    item: midiItem,
+    actor: midiActor,
+    token: workflowToken,
+    scene: sceneFromWorkflowToken,
+    workflow,
+    document: workflow,
+    usageConfig: midiUsage,
+    dialogConfig: { fastForward: false },
+    messageConfig: { createMessage: true },
+    results: null,
+    rawArgs: [workflow],
+    declaration: midiItem.flags[MODULE_ID].spellAutomation,
+    operationId: "operation-midi",
+    isChildInvocation: false
+  });
+  assert.equal(dnd5e.childInvocation, false);
+  assert.equal(midi.childInvocation, false);
 });
 
 test("uses an existing operationId or creates one once per invocation", () => {
@@ -204,6 +262,7 @@ test("1,000 unmanaged pre-use activities return synchronously without runtime wo
   let mutations = 0;
   let timers = 0;
   let notifications = 0;
+  let operationIds = 0;
   const originalGame = globalThis.game;
   const originalSetTimeout = globalThis.setTimeout;
   const originalSetInterval = globalThis.setInterval;
@@ -229,7 +288,8 @@ test("1,000 unmanaged pre-use activities return synchronously without runtime wo
   });
   const bridge = new SpellAutomationHookBridge({
     registry,
-    notifyWarning: () => { notifications += 1; }
+    notifyWarning: () => { notifications += 1; },
+    operationIdFactory: () => `unexpected-operation-${++operationIds}`
   });
   const guard = (value) => mutationGuard(value, () => { mutations += 1; });
   const unmanagedActivity = guard({ flags: {} });
@@ -259,6 +319,7 @@ test("1,000 unmanaged pre-use activities return synchronously without runtime wo
     assert.equal(mutations, 0);
     assert.equal(timers, 0);
     assert.equal(notifications, 0);
+    assert.equal(operationIds, 0);
   }
   finally {
     globalThis.game = originalGame;
@@ -266,4 +327,26 @@ test("1,000 unmanaged pre-use activities return synchronously without runtime wo
     globalThis.setInterval = originalSetInterval;
   }
 
+});
+
+test("unmanaged asynchronous events return fail-open without creating an operation ID", async () => {
+  let operationIds = 0;
+  let dispatches = 0;
+  const bridge = new SpellAutomationHookBridge({
+    registry: {
+      dispatch() {
+        dispatches += 1;
+        return { handled: true, value: false };
+      }
+    },
+    operationIdFactory: () => `unexpected-operation-${++operationIds}`
+  });
+
+  assert.equal(await bridge.handleMidiRollComplete({
+    id: "Workflow.unmanaged",
+    activity: { id: "Activity.unmanaged", item: { flags: {} } },
+    options: {}
+  }), true);
+  assert.equal(dispatches, 0);
+  assert.equal(operationIds, 0);
 });
