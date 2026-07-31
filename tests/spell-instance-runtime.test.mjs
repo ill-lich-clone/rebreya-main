@@ -56,8 +56,20 @@ function createActor({ effects = [], failCreate = null, uuid = "Actor.caster" } 
     deleteCalls: [],
     effects: [],
     failCreate,
+    flags: {},
     nextEffectId: 1,
+    updateCalls: [],
     uuid,
+    getFlag(scope, key) {
+      return this.flags?.[scope]?.[key];
+    },
+    async update(update) {
+      this.updateCalls.push(clone(update));
+      for (const [path, value] of Object.entries(update)) {
+        assignPath(this, path, value);
+      }
+      return this;
+    },
     async createEmbeddedDocuments(type, documents) {
       this.createCalls.push({ type, documents: clone(documents) });
       if (this.failCreate) {
@@ -501,4 +513,86 @@ test("concurrent updates with one expected revision commit once and reject the s
   assert.equal(readSpellInstance(result.effect).revision, 1);
   assert.deepEqual(readSpellInstance(result.effect).state, { remainingMeteors: 5, totalMeteors: 6 });
   assert.equal(result.effect.updateCalls.length, 1);
+});
+
+test("durably claims an operation without an instance and blocks a fresh runtime after effects are deleted", async () => {
+  // Catches journal state being attached to a disposable ActiveEffect or held only in one runtime memory cache.
+  const actor = createActor();
+  const declaration = { recipe: "delayed-spell", version: 1 };
+  const firstRuntime = createRuntime();
+
+  const claimed = await firstRuntime.claimOperation({ actor, declaration, operationId: "release-1" });
+  actor.effects = [];
+  const freshRuntime = createRuntime();
+  const repeated = await freshRuntime.claimOperation({ actor, declaration, operationId: "release-1" });
+
+  assert.equal(claimed.status, "claimed");
+  assert.equal(repeated.status, "completed");
+  assert.equal(actor.updateCalls.length, 1);
+});
+
+test("authoritative claims serialize two client runtimes so exactly one may perform an effect", async () => {
+  // Catches using coordinator idempotency cache, which would return claimed to both concurrent callers.
+  const actor = createActor();
+  const declaration = { recipe: "delayed-spell", version: 1 };
+  const authority = createRuntime();
+  const socketCommandBus = {
+    request(_command, payload) {
+      return authority.executeAuthoritativeMutation(payload, { actor });
+    }
+  };
+  const firstClient = createRuntime({ canUpdateActor: () => false, socketCommandBus });
+  const secondClient = createRuntime({ canUpdateActor: () => false, socketCommandBus });
+  let externalEffects = 0;
+
+  const outcomes = await Promise.all([
+    firstClient.claimOperation({ actor, declaration, operationId: "release-1", authoritative: true }),
+    secondClient.claimOperation({ actor, declaration, operationId: "release-1", authoritative: true })
+  ]);
+  for (const outcome of outcomes) {
+    if (outcome.status === "claimed") externalEffects += 1;
+  }
+
+  assert.deepEqual(outcomes.map((outcome) => outcome.status).sort(), ["claimed", "completed"]);
+  assert.equal(externalEffects, 1);
+  assert.equal(actor.updateCalls.length, 1);
+});
+
+test("operation journal bounds completed entries and scopes recipe version operation and actor independently", async () => {
+  // Catches an unbounded tombstone list or a journal key that suppresses an unrelated spell operation.
+  const actor = createActor();
+  const otherActor = createActor({ uuid: "Actor.other" });
+  const runtime = createRuntime({ operationJournalLimit: 2 });
+  const declaration = { recipe: "delayed-spell", version: 1 };
+
+  for (const operationId of ["one", "two", "three"]) {
+    assert.equal((await runtime.claimOperation({ actor, declaration, operationId })).status, "claimed");
+  }
+  assert.equal((await runtime.claimOperation({ actor, declaration, operationId: "one" })).status, "claimed");
+  assert.equal((await runtime.claimOperation({ actor, declaration, operationId: "three" })).status, "completed");
+  assert.equal((await runtime.claimOperation({
+    actor, declaration: { recipe: "other-delayed-spell", version: 1 }, operationId: "three"
+  })).status, "claimed");
+  assert.equal((await runtime.claimOperation({
+    actor, declaration: { recipe: "delayed-spell", version: 2 }, operationId: "three"
+  })).status, "claimed");
+  assert.equal((await runtime.claimOperation({ actor: otherActor, declaration, operationId: "three" })).status, "claimed");
+});
+
+test("operation journal rejects invalid limits and fails closed when its Actor write rejects", async () => {
+  // Catches a failed durable write being remembered as claimed, or a zero retention limit silently disabling replay protection.
+  assert.throws(() => createRuntime({ operationJournalLimit: 0 }), /positive integer/u);
+  const actor = createActor();
+  const originalUpdate = actor.update;
+  actor.update = async () => { throw new Error("actor flag write failed"); };
+  const runtime = createRuntime();
+
+  await assert.rejects(runtime.claimOperation({
+    actor, declaration: { recipe: "delayed-spell", version: 1 }, operationId: "release-1"
+  }), /actor flag write failed/u);
+  actor.update = originalUpdate;
+
+  assert.equal((await runtime.claimOperation({
+    actor, declaration: { recipe: "delayed-spell", version: 1 }, operationId: "release-1"
+  })).status, "claimed");
 });

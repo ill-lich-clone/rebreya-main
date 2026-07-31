@@ -4,6 +4,9 @@ import { WorldMutationCoordinator } from "../application/world-mutation-coordina
 export const SPELL_INSTANCE_FLAG = "spellInstance";
 
 const SPELL_INSTANCE_MUTATION_COMMAND = "spell-instance-mutation";
+const SPELL_OPERATION_JOURNAL_FLAG = "spellOperationJournal";
+const SPELL_OPERATION_JOURNAL_VERSION = 1;
+const DEFAULT_SPELL_OPERATION_JOURNAL_LIMIT = 128;
 
 function isPlainObject(value) {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
@@ -158,6 +161,32 @@ function declarationFrom(record) {
   return { recipe: record.recipe, version: record.version };
 }
 
+function actorFlag(actor, key) {
+  const fromDocument = typeof actor?.getFlag === "function" ? actor.getFlag(MODULE_ID, key) : undefined;
+  return fromDocument ?? actor?.flags?.[MODULE_ID]?.[key];
+}
+
+function journalEntry(declaration, operationId) {
+  return { ...declarationFor(declaration), operationId: requireNonEmptyString(operationId, "Spell operation ID") };
+}
+
+function operationJournal(actor) {
+  const value = actorFlag(actor, SPELL_OPERATION_JOURNAL_FLAG);
+  if (value === undefined) return { entries: [], version: SPELL_OPERATION_JOURNAL_VERSION };
+  if (!isPlainObject(value) || value.version !== SPELL_OPERATION_JOURNAL_VERSION || !Array.isArray(value.entries)) {
+    throw new Error("Spell operation journal is invalid.");
+  }
+  return {
+    entries: value.entries.map((entry) => journalEntry(entry, entry?.operationId)),
+    version: SPELL_OPERATION_JOURNAL_VERSION
+  };
+}
+
+function sameJournalEntry(entry, candidate) {
+  return entry.recipe === candidate.recipe && entry.version === candidate.version
+    && entry.operationId === candidate.operationId;
+}
+
 function socketResult(record) {
   const { effect, ...serialized } = record;
   return cloneSerializable(serialized);
@@ -254,6 +283,7 @@ export class SpellInstanceRuntime {
   #canUpdateActor;
   #coordinator;
   #linkDependency;
+  #operationJournalLimit;
   #registry;
   #socketCommandBus;
 
@@ -262,9 +292,10 @@ export class SpellInstanceRuntime {
     coordinator = new WorldMutationCoordinator(),
     linkDependency = defaultLinkDependency,
     socketCommandBus,
-    canUpdateActor = currentUserCanUpdateActor
+    canUpdateActor = currentUserCanUpdateActor,
+    operationJournalLimit = DEFAULT_SPELL_OPERATION_JOURNAL_LIMIT
   } = {}) {
-    if (!coordinator || typeof coordinator.runIdempotent !== "function") {
+    if (!coordinator || typeof coordinator.runIdempotent !== "function" || typeof coordinator.run !== "function") {
       throw new TypeError("Spell instance runtime requires a WorldMutationCoordinator.");
     }
     if (typeof linkDependency !== "function") {
@@ -276,9 +307,13 @@ export class SpellInstanceRuntime {
     if (typeof canUpdateActor !== "function") {
       throw new TypeError("Spell instance runtime canUpdateActor must be a function.");
     }
+    if (!Number.isInteger(operationJournalLimit) || operationJournalLimit < 1) {
+      throw new TypeError("Spell operation journal limit must be a positive integer.");
+    }
     this.#canUpdateActor = canUpdateActor;
     this.#coordinator = coordinator;
     this.#linkDependency = linkDependency;
+    this.#operationJournalLimit = operationJournalLimit;
     this.#registry = registry;
     this.#socketCommandBus = socketCommandBus;
   }
@@ -292,6 +327,44 @@ export class SpellInstanceRuntime {
 
   readInstance({ actor, recipe, version, instanceId } = {}) {
     return recordFor(findSpellInstance(actor, { recipe, version, instanceId }));
+  }
+
+  claimOperation({ actor, declaration, operationId, authoritative = false } = {}) {
+    const actorUuid = documentUuid(actor, "Spell operation actor");
+    const normalizedDeclaration = declarationFor(declaration);
+    const normalizedOperationId = requireNonEmptyString(operationId, "Spell operation ID");
+    if (typeof authoritative !== "boolean") {
+      throw new TypeError("Spell operation authoritative mutation flag must be a boolean.");
+    }
+    if (authoritative || !this.#canUpdateActor(actor)) {
+      return this.#requestMutation({
+        action: "claim-operation",
+        actorUuid,
+        declaration: normalizedDeclaration,
+        operationId: normalizedOperationId
+      });
+    }
+    return this.#claimOperationLocal({ actor, declaration: normalizedDeclaration, operationId: normalizedOperationId });
+  }
+
+  #claimOperationLocal({ actor, declaration, operationId } = {}) {
+    const actorUuid = documentUuid(actor, "Spell operation actor");
+    const entry = journalEntry(declaration, operationId);
+    const key = `spell-operation-journal:${actorUuid}`;
+    return this.#coordinator.run(key, async () => {
+      const journal = operationJournal(actor);
+      const existing = journal.entries.find((candidate) => sameJournalEntry(candidate, entry));
+      if (existing) return { entry: cloneSerializable(existing), status: "completed" };
+      if (typeof actor?.update !== "function") {
+        throw new TypeError("Spell operation actor must support update.");
+      }
+      const next = {
+        entries: [...journal.entries, entry].slice(-this.#operationJournalLimit),
+        version: SPELL_OPERATION_JOURNAL_VERSION
+      };
+      await actor.update({ [`flags.${MODULE_ID}.${SPELL_OPERATION_JOURNAL_FLAG}`]: next });
+      return { entry: cloneSerializable(entry), status: "claimed" };
+    });
   }
 
   createInstance(context, initialState) {
@@ -454,6 +527,9 @@ export class SpellInstanceRuntime {
       throw new Error("Spell instance actor UUID does not match the authoritative actor.");
     }
     const declaration = declarationFor(payload.declaration);
+    if (payload.action === "claim-operation") {
+      return this.#claimOperationLocal({ actor, declaration, operationId: payload.operationId });
+    }
     if (payload.action === "create") {
       const concentrationEffect = actorEffects(actor).find((effect) => effect?.uuid === payload.concentrationEffectUuid);
       if (!concentrationEffect) {

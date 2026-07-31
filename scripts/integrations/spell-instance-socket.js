@@ -1,6 +1,6 @@
 export const SPELL_INSTANCE_MUTATION_COMMAND = "spell-instance-mutation";
 
-const ACTIONS = new Set(["create", "replace-state", "delete"]);
+const ACTIONS = new Set(["claim-operation", "create", "replace-state", "delete"]);
 const FORBIDDEN_OWN_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 
 function isPlainObject(value) {
@@ -59,6 +59,15 @@ function validBase(payload) {
     && nonEmptyString(payload.operationId);
 }
 
+function validClaim(payload) {
+  return ACTIONS.has(payload?.action)
+    && payload.action === "claim-operation"
+    && nonEmptyString(payload.actorUuid)
+    && validDeclaration(payload.declaration)
+    && nonEmptyString(payload.operationId)
+    && exactKeys(payload, ["action", "actorUuid", "declaration", "operationId"]);
+}
+
 function uuidParts(value) {
   if (!nonEmptyString(value) || value !== value.trim()) return null;
   const parts = value.split(".");
@@ -105,6 +114,9 @@ async function resolveActor(actorUuid, { fromUuid } = {}) {
 }
 
 export function isValidSpellInstanceMutationPayload(payload) {
+  if (payload?.action === "claim-operation") {
+    return validClaim(payload) && Boolean(parseActorUuid(payload.actorUuid));
+  }
   if (!validBase(payload)) return false;
   const actorParts = parseActorUuid(payload.actorUuid);
   if (!actorParts) return false;

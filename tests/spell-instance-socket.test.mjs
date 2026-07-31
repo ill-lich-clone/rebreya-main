@@ -58,9 +58,14 @@ function createActor({ ownerIds = ["owner"], uuid = "Actor.caster" } = {}) {
     createCalls: [],
     deleteCalls: [],
     effects: [],
+    flags: {},
     nextEffectId: 1,
     ownership: Object.fromEntries(ownerIds.map((id) => [id, 3])),
+    updateCalls: [],
     uuid,
+    getFlag(scope, key) {
+      return this.flags?.[scope]?.[key];
+    },
     testUserPermission(user, permission) {
       return permission === "OWNER" && Number(this.ownership[user?.id] ?? 0) >= 3;
     },
@@ -74,6 +79,13 @@ function createActor({ ownerIds = ["owner"], uuid = "Actor.caster" } = {}) {
       this.deleteCalls.push({ type, ids: [...ids] });
       this.effects = this.effects.filter((effect) => !ids.includes(effect.id));
       return ids;
+    },
+    async update(update) {
+      this.updateCalls.push(clone(update));
+      for (const [path, value] of Object.entries(update)) {
+        assignPath(this, path, value);
+      }
+      return this;
     }
   };
   return actor;
@@ -142,6 +154,16 @@ function createDeletePayload(overrides = {}) {
     expectedRevision: 0,
     instanceId: "melf-instance",
     operationId: "delete-operation",
+    ...overrides
+  };
+}
+
+function createClaimPayload(overrides = {}) {
+  return {
+    action: "claim-operation",
+    actorUuid: "Actor.caster",
+    declaration: { recipe: "delayed-spell", version: 1 },
+    operationId: "release-operation",
     ...overrides
   };
 }
@@ -242,6 +264,14 @@ test("validates the serialized action actor instance revision and operation id",
   assert.equal(isValidSpellInstanceMutationPayload(createPayload({ expectedRevision: -1 })), false);
   assert.equal(isValidSpellInstanceMutationPayload(createPayload({ operationId: "" })), false);
   assert.equal(isValidSpellInstanceMutationPayload(createPayload({ state: { callback() {} } })), false);
+});
+
+test("claim-operation accepts only its exact actor declaration and operation payload", () => {
+  // Catches the journal command accepting instance/revision fields or arbitrary transport capabilities.
+  assert.equal(isValidSpellInstanceMutationPayload(createClaimPayload()), true);
+  assert.equal(isValidSpellInstanceMutationPayload(createClaimPayload({ instanceId: "foreign" })), false);
+  assert.equal(isValidSpellInstanceMutationPayload(createClaimPayload({ expectedRevision: 0 })), false);
+  assert.equal(isValidSpellInstanceMutationPayload(createClaimPayload({ declaration: { recipe: "", version: 1 } })), false);
 });
 
 test("authorizes only a sender who owns the source actor or is GM", async () => {
@@ -459,6 +489,32 @@ test("the real command bus executes a valid owner mutation end to end", async ()
   assert.equal(actor.createCalls.length, 1);
   assert.equal(emitted.at(-1)[1].ok, true);
   assert.equal(emitted.at(-1)[1].data.instanceId, "melf-instance");
+});
+
+test("the real command bus durably claims an owner operation without an instance", async () => {
+  // Catches authoritative claim looking up a deleted spell instance before writing the actor journal.
+  const { actor, bus, emitted } = createBusHarness();
+  const payload = createClaimPayload();
+
+  await dispatch(bus, payload, { requestId: "claim-first" });
+  await dispatch(bus, payload, { requestId: "claim-second" });
+
+  assert.equal(actor.effects.length, 0);
+  assert.equal(actor.updateCalls.length, 1);
+  assert.equal(emitted.at(-2)[1].data.status, "claimed");
+  assert.equal(emitted.at(-1)[1].data.status, "completed");
+});
+
+test("the real command bus retains claim authorization", async () => {
+  // Catches a viewer claiming a durable operation for an actor it does not own.
+  const { actor, bus, emitted } = createBusHarness({ ownerIds: ["owner"] });
+
+  await dispatch(bus, createClaimPayload(), { senderId: "viewer" });
+
+  assert.equal(actor.updateCalls.length, 0);
+  assert.deepEqual(emitted.at(-1)[1].error, {
+    code: "unauthorized", message: "Socket command is not authorized"
+  });
 });
 
 test("the real command bus denies a non-owner without mutation", async () => {
