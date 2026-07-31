@@ -19,6 +19,7 @@ const FIREARM_RUST_PROPERTY = "lchFirearmRust";
 const FIREARM_MISFIRE_DIE_FORMULA = "1d20";
 const FIREARM_AMMO_STATE_FLAG = "firearmAmmoState";
 const FIREARM_CHAT_NOTES_FLAG = "firearmChatNotes";
+const DND5E_AMMUNITION_PROPERTY = "amm";
 const IMPLANT_RELOAD_RESERVOIR_FLAG = "implantReloadReservoir";
 const IMPLANT_RELOAD_RESERVOIR_CAPACITY = 20;
 const FIREARM_JAM_NAME_SUFFIX = " (клин)";
@@ -550,6 +551,34 @@ function isWeaponAttackActivity(activity) {
   }
 
   return String(activity.type ?? "").trim().toLowerCase() === "attack";
+}
+
+function removePropertyValue(properties, propertyKey) {
+  if (!properties) {
+    return false;
+  }
+
+  if (properties instanceof Set) {
+    return properties.delete(propertyKey);
+  }
+
+  if (Array.isArray(properties)) {
+    let changed = false;
+    for (let index = properties.length - 1; index >= 0; index -= 1) {
+      if (properties[index] === propertyKey) {
+        properties.splice(index, 1);
+        changed = true;
+      }
+    }
+    return changed;
+  }
+
+  if (isPlainObject(properties) && Object.hasOwn(properties, propertyKey)) {
+    delete properties[propertyKey];
+    return true;
+  }
+
+  return false;
 }
 
 function activityHasBaseWeaponDamage(activity) {
@@ -3074,6 +3103,8 @@ export class CombatAttackService {
   }
 
   #disableActivityConsumption(activity, usageConfig = {}, messageConfig = {}) {
+    this.#suppressNativeFirearmAmmunition(activity?.item);
+
     if (foundry.utils.getProperty(activity, "consumption.targets") !== undefined) {
       this.#applyActivitySourcePatch(activity, { "consumption.targets": [] });
     }
@@ -3083,6 +3114,23 @@ export class CombatAttackService {
     }
     usageConfig.hasConsumption = false;
     messageConfig.hasConsumption = false;
+  }
+
+  #suppressNativeFirearmAmmunition(item) {
+    if (!isFirearmItem(item)) {
+      return false;
+    }
+
+    const directChanged = removePropertyValue(
+      foundry.utils.getProperty(item, "system.properties"),
+      DND5E_AMMUNITION_PROPERTY
+    );
+    const valueChanged = removePropertyValue(
+      foundry.utils.getProperty(item, "system.properties.value"),
+      DND5E_AMMUNITION_PROPERTY
+    );
+
+    return directChanged || valueChanged;
   }
 
   #applyActivitySourcePatch(activity, patch) {
@@ -3401,8 +3449,10 @@ export class CombatAttackService {
       const actor = activity.actor ?? item.actor ?? null;
       const firearmMessageOptions = isFirearm ? { ...config, messageConfig: message } : config;
       if (isFirearm) {
+        this.#suppressNativeFirearmAmmunition(item);
         config.ammunition = false;
         for (const rollConfig of config?.rolls ?? []) {
+          rollConfig.ammunition = false;
           rollConfig.options ??= {};
           rollConfig.options.ammunition = false;
         }

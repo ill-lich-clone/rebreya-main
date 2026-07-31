@@ -448,6 +448,7 @@ test("real firearm gear data maps firearm sheet damage, properties, and attack a
   const musketAttack = Object.values(createdMusket.system.activities ?? {})[0];
   assert.equal(createdMusket.system.damage.base.number, 2);
   assert.equal(createdMusket.system.damage.base.denomination, 8);
+  assert.equal(createdMusket.system.properties.includes("amm"), false);
   assert.ok(createdMusket.system.properties.includes("lchFirearmMisfire"));
   assert.deepEqual(createdMusket.flags["rebreya-main"].handRequirement, {
     requiredHands: 2,
@@ -529,6 +530,7 @@ test("real firearm gear data maps firearm sheet damage, properties, and attack a
   const arquebusAttack = Object.values(createdArquebus.system.activities ?? {})[0];
   assert.equal(createdArquebus.system.damage.base.number, 6);
   assert.equal(createdArquebus.system.damage.base.denomination, 4);
+  assert.equal(createdArquebus.system.properties.includes("amm"), false);
   assert.equal(arquebusAttack.attack.type.value, "firearm");
   assert.equal(arquebusAttack.attack.ability, "str");
 });
@@ -748,7 +750,7 @@ test("gear signatures include stable document ids so old compendium documents re
   const created = createDnd5eItemData(katana, new Map());
   const signature = JSON.parse(created.flags["rebreya-main"].signature);
 
-  assert.equal(signature.templateVersion, 18);
+  assert.equal(signature.templateVersion, 19);
   assert.equal(created._id, createStableGearDocumentId("katana"));
   assert.equal(signature.stableDocumentId, created._id);
 });

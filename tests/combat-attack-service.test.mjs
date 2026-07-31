@@ -1501,6 +1501,7 @@ test("firearm attack activities disable dnd5e item ammunition consumption before
     name: "Автоматическая винтовка",
     typeValue: "firearmAdvanced",
     properties: {
+      amm: true,
       lchFirearmAmmunition: true,
       lchFirearmReload: true
     },
@@ -1521,6 +1522,15 @@ test("firearm attack activities disable dnd5e item ammunition consumption before
     quantity: 236
   });
   const actor = makeActor([weapon, ammo]);
+  weapon.system.properties = new Set(["amm", "lchFirearmAmmunition", "lchFirearmReload"]);
+  Object.defineProperty(weapon.system, "ammunitionOptions", {
+    configurable: true,
+    get() {
+      return this.properties.has("amm")
+        ? [{ value: ammo.id, label: `${ammo.name} (${ammo.system.quantity})` }]
+        : [];
+    }
+  });
   const updates = [];
   const activity = {
     type: "attack",
@@ -1570,6 +1580,8 @@ test("firearm attack activities disable dnd5e item ammunition consumption before
   assert.deepEqual(usageConfig.consume.resources, []);
   assert.equal(usageConfig.hasConsumption, false);
   assert.equal(messageConfig.hasConsumption, false);
+  assert.equal(weapon.system.properties.has("amm"), false);
+  assert.deepEqual(weapon.system.ammunitionOptions, []);
   assert.equal(ammo.system.quantity, 236);
   assert.equal(ammo.updateCalls.length, 0);
 });

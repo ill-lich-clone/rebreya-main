@@ -30,7 +30,7 @@ export { buildGearIconLookup };
 const PACK_ID = `world.${GEAR_COMPENDIUM_NAME}`;
 const DND5E_SYSTEM_ID = "dnd5e";
 const COMPENDIUM_SIDEBAR_FOLDER = ["Ребрея"];
-const GEAR_TEMPLATE_VERSION = 18;
+const GEAR_TEMPLATE_VERSION = 19;
 const GEAR_CONTAINER_CONTENT_SOURCE_TYPE = "gearContainerContent";
 const FIREARM_ATTACK_ACTIVITY_ID = "lchFirearmAtk001";
 const FIREARM_RELOAD_ACTIVITY_ID = "lchReloadGun0001";
@@ -877,12 +877,13 @@ function buildFirearmActivities(item) {
   return activities;
 }
 
-function applyWeaponData(baseData, weapon) {
+function applyWeaponData(baseData, weapon, { suppressNativeAmmunition = false } = {}) {
   if (!isPlainObject(weapon)) {
     return;
   }
 
-  const properties = cleanArray(weapon.properties);
+  const properties = cleanArray(weapon.properties)
+    .filter((property) => !suppressNativeAmmunition || property !== "amm");
   if (properties.length) {
     baseData.properties = properties;
   }
@@ -965,7 +966,9 @@ function buildSystemData(item, classification, descriptionHtml, presentation = n
         value: classification.systemTypeValue || "martialM",
         baseItem: classification.baseItem || ""
       };
-      applyWeaponData(baseData, item.weapon);
+      applyWeaponData(baseData, item.weapon, {
+        suppressNativeAmmunition: isFirearmClassification(classification)
+      });
       if (isFirearmClassification(classification)) {
         baseData.activities = buildFirearmActivities(item);
       }

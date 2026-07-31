@@ -373,11 +373,10 @@ test("module entrypoint preserves the released magic weapon template cache bust"
 
 test("gear compendium import preserves the released firearm activity cache bust", async () => {
   const entrypointSource = await readCanonicalEntrypointSource();
-  const escapedVersion = RELEASED_CACHE_VERSION;
 
   assert.match(
     entrypointSource,
-    new RegExp(`gear-compendium\\.js\\?v=${escapedVersion}-firearm-template-version-18`, "u"),
+    /gear-compendium\.js\?v=1\.4\.111-firearm-template-version-19&implants=1/u,
   );
 });
 
@@ -392,7 +391,7 @@ test("combat automation imports preserve their released cache busts", async () =
   );
   assert.match(
     entrypointSource,
-    /attack-service\.js\?v=1\.4\.109-firearm-native-ammo/u,
+    /attack-service\.js\?v=1\.4\.111-firearm-native-ammo-property/u,
   );
   assert.match(
     entrypointSource,
@@ -494,7 +493,7 @@ test("held item integrations preserve their released cache bust", async () => {
   );
   assert.match(
     entrypointSource,
-    /attack-service\.js\?v=1\.4\.109-firearm-native-ammo/u,
+    /attack-service\.js\?v=1\.4\.111-firearm-native-ammo-property/u,
   );
   assert.match(
     sheetSource,

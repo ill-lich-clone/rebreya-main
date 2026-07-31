@@ -1,7 +1,7 @@
 // @rebreya-role canonical-composition-root
 import { MODULE_ID, SETTINGS_KEYS } from "./constants.js";
 import { MaterialsCompendiumService } from "./data/materials-compendium.js";
-import { GearCompendiumService } from "./data/gear-compendium.js?v=1.4.96-firearm-template-version-18&implants=1";
+import { GearCompendiumService } from "./data/gear-compendium.js?v=1.4.111-firearm-template-version-19&implants=1";
 import { MagicItemsCompendiumService } from "./data/magic-items-compendium.js";
 import { FeatsCompendiumService } from "./data/feats-compendium.js";
 import { BackgroundsCompendiumService } from "./data/backgrounds-compendium.js";
@@ -78,7 +78,7 @@ import { SocketCommandBus } from "./infrastructure/foundry/socket-command-bus.js
 import { UiRefreshCoordinator } from "./infrastructure/ui/ui-refresh-coordinator.js";
 import { GlobalEventsService } from "./data/global-events-service.js";
 import { registerCombatHooks } from "./combat/hooks.js?v=1.4.111-paladin-dogmas";
-import { CombatAttackService } from "./combat/attack-service.js?v=1.4.109-firearm-native-ammo";
+import { CombatAttackService } from "./combat/attack-service.js?v=1.4.111-firearm-native-ammo-property";
 import { ImplantAutomationService } from "./combat/implant-automation-service.js";
 import { SizeAutomationService } from "./combat/size-automation-service.js?v=1.4.110-character-size-authority";
 import { ReactionCapabilityIndex } from "./combat/reaction-capability-index.js";
