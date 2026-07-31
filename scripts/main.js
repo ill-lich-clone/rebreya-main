@@ -151,6 +151,7 @@ import {
 } from "./integrations/implant-hooks.js";
 import { registerImplantAutomationHooks } from "./integrations/implant-automation-hooks.js";
 import { registerCraftsmanGadgetSocketCommand } from "./integrations/craftsman-gadget-socket.js";
+import { registerTransportGroupDropHooks } from "./integrations/transport-group-drop.js";
 import { getCraftsmanSubclasses } from "./integrations/craftsman-subclass-tracks.js";
 import { patchTransformCleanupUpdateActorHook } from "./integrations/transform-cleanup-compat.js";
 import { registerForienQuestLogIntegration, refreshForienQuestLogApps } from "./integrations/forien-quest-log.js?v=1.4.96";
@@ -5087,6 +5088,13 @@ Hooks.once("ready", async () => {
     module.api = moduleApi;
   }
   flushQueuedSocketMessages(moduleApi);
+
+  try {
+    registerTransportGroupDropHooks(moduleApi, { Hooks });
+  }
+  catch (error) {
+    console.error(`${MODULE_ID} | Failed to register party transport drop hook.`, error);
+  }
 
   try {
     await registerForienQuestLogIntegration(moduleApi);

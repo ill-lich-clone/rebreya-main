@@ -123,4 +123,5 @@ test("composition root synchronizes the managed transport Actor compendium", asy
   assert.match(source, /import\s+\{\s*TransportCompendiumService\s*\}\s+from\s+"\.\/data\/transport-compendium\.js";/u);
   assert.match(source, /this\.transportCompendium\s*=\s*new TransportCompendiumService/u);
   assert.match(source, /await this\.transportCompendium\.sync\(\);/u);
+  assert.match(source, /registerTransportGroupDropHooks\(moduleApi,\s*\{\s*Hooks\s*\}\);/u);
 });
