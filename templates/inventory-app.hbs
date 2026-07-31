@@ -25,7 +25,7 @@
           <div
             class="rm-inventory-book__travel-selector"
             role="group"
-            aria-label="Р’С‹Р±РѕСЂ РїРµР№Р·Р°Р¶Р° РїСѓС‚РµС€РµСЃС‚РІРёСЏ"
+            aria-label="Выбор пейзажа путешествия"
           >
             {{#each travelLandscape.options}}
               <button
@@ -33,7 +33,7 @@
                 class="rm-inventory-book__travel-choice{{#if selected}} is-active{{/if}}"
                 data-action="select-travel-landscape"
                 data-landscape-id="{{id}}"
-                aria-label="РџРµР№Р·Р°Р¶ {{number}}: {{label}}"
+                aria-label="Пейзаж {{number}}: {{label}}"
                 aria-pressed="{{ariaPressed}}"
                 title="{{label}}"
               >

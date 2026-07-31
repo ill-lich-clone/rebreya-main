@@ -840,12 +840,15 @@ test("InventoryApp replaces the workshop header with the complete travel video f
   assert.doesNotMatch(travelVideoBlock, /\bcontrols\b/u);
   assert.match(travelVideoBlock, /class="rm-inventory-book__travel-selector"/u);
   assert.match(travelVideoBlock, /role="group"/u);
-  assert.match(travelVideoBlock, /aria-label="Р’С‹Р±РѕСЂ РїРµР№Р·Р°Р¶Р° РїСѓС‚РµС€РµСЃС‚РІРёСЏ"/u);
+  assert.match(travelVideoBlock, /aria-label="Выбор пейзажа путешествия"/u);
   assert.match(travelVideoBlock, /\{\{#each travelLandscape\.options\}\}/u);
   assert.match(travelVideoBlock, /data-action="select-travel-landscape"/u);
   assert.match(travelVideoBlock, /data-landscape-id="\{\{id\}\}"/u);
   assert.match(travelVideoBlock, /aria-pressed="\{\{ariaPressed\}\}"/u);
+  assert.match(travelVideoBlock, /aria-label="Пейзаж \{\{number\}\}: \{\{label\}\}"/u);
   assert.match(travelVideoBlock, /\{\{number\}\}/u);
+  assert.doesNotMatch(travelVideoBlock, /Р’С‹Р±РѕСЂ/u);
+  assert.doesNotMatch(travelVideoBlock, /РџРµР№Р·Р°Р¶/u);
   assert.doesNotMatch(template, /rebreya-travel-window\.webm/u);
   assert.doesNotMatch(template, /rebreya-travel-window-poster\.webp/u);
 
