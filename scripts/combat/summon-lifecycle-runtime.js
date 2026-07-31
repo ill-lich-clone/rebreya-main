@@ -1,4 +1,5 @@
 import { MODULE_ID } from "../constants.js";
+import { WorldMutationCoordinator } from "../application/world-mutation-coordinator.js";
 import { spellAutomationKey } from "./spell-automation-registry.js";
 
 export const SUMMON_LINK_FLAG = "summonLink";
@@ -140,6 +141,95 @@ function claimView(claim) {
   return claim ?? null;
 }
 
+function rawSummonLink(token) {
+  return typeof token?.getFlag === "function"
+    ? token.getFlag(MODULE_ID, SUMMON_LINK_FLAG)
+    : token?.flags?.[MODULE_ID]?.[SUMMON_LINK_FLAG];
+}
+
+function documentId(document) {
+  return isIdentifier(document?.id) ? document.id : isIdentifier(document?._id) ? document._id : null;
+}
+
+function tokenScene(token) {
+  return token?.parent ?? token?.scene ?? null;
+}
+
+function tokenInScene(token) {
+  const scene = tokenScene(token);
+  const id = documentId(token);
+  if (!scene || !isIdentifier(scene.uuid) || !id) {
+    return false;
+  }
+  const tokens = scene.tokens;
+  if (typeof tokens?.get === "function") {
+    return tokens.get(id) === token;
+  }
+  return token.parent === scene || token.scene === scene;
+}
+
+function sameOperationMarker(link, claim) {
+  return isPlainRecord(link)
+    && link.runtime === SUMMON_RUNTIME
+    && link.recipe === claim.declaration.recipe
+    && link.version === claim.declaration.version
+    && link.operationId === claim.operationId;
+}
+
+function defaultAddDependent(controllingEffect, token) {
+  const midiQol = globalThis.MidiQOL;
+  return typeof midiQol?.addDependent === "function"
+    ? midiQol.addDependent(controllingEffect, token)
+    : undefined;
+}
+
+function applyCommonLink(tokenData, link) {
+  if (!isPlainRecord(tokenData)) {
+    throw new TypeError("Summon token data must be a mutable plain object.");
+  }
+  if (!isPlainRecord(tokenData.flags)) {
+    tokenData.flags = {};
+  }
+  if (!isPlainRecord(tokenData.flags[MODULE_ID])) {
+    tokenData.flags[MODULE_ID] = {};
+  }
+  tokenData.flags[MODULE_ID][SUMMON_LINK_FLAG] = { ...link };
+}
+
+function applyProviderPatch(tokenData, patch) {
+  if (patch === undefined || patch === null) {
+    return;
+  }
+  if (!isPlainRecord(patch) || !isSerializable(patch)) {
+    throw new TypeError("Summon provider token patches must be serializable plain objects.");
+  }
+  const allowed = new Set(["name", "disposition", "actorLink", "texture", "sight", "detectionModes", "flags"]);
+  for (const key of Object.keys(patch)) {
+    if (!allowed.has(key)) {
+      throw new TypeError(`Summon provider token patch field '${key}' is not allowed.`);
+    }
+  }
+  for (const key of ["name", "disposition", "actorLink", "texture", "sight", "detectionModes"]) {
+    if (Object.hasOwn(patch, key)) {
+      tokenData[key] = structuredClone(patch[key]);
+    }
+  }
+  if (!Object.hasOwn(patch, "flags")) {
+    return;
+  }
+  const flags = patch.flags;
+  if (!isPlainRecord(flags) || Object.keys(flags).some((key) => key !== MODULE_ID)) {
+    throw new TypeError("Summon provider patches may write only this module's provider flag.");
+  }
+  const moduleFlags = flags[MODULE_ID];
+  if (!isPlainRecord(moduleFlags) || Object.keys(moduleFlags).some((key) => key !== "provider")) {
+    throw new TypeError("Summon provider patches may write only the provider flag namespace.");
+  }
+  if (!isPlainRecord(tokenData.flags)) tokenData.flags = {};
+  if (!isPlainRecord(tokenData.flags[MODULE_ID])) tokenData.flags[MODULE_ID] = {};
+  tokenData.flags[MODULE_ID].provider = structuredClone(moduleFlags.provider);
+}
+
 /**
  * Builds the common persisted token-link shape. It deliberately does not
  * write anything: document stamping starts in the next lifecycle task.
@@ -210,18 +300,26 @@ export class SummonLifecycleRuntime {
   #now;
   #claimTimeoutMs;
   #maxPendingClaims;
+  #coordinator;
+  #addDependent;
   #providers = new Map();
   #claimsByActivity = new Map();
   #claimsByOptions = new WeakMap();
   #optionsByClaim = new WeakMap();
   #claimsByOperation = new Map();
 
-  constructor({ registry, operationIdFactory, clock, now, claimTimeoutMs = DEFAULT_CLAIM_TIMEOUT_MS, maxPendingClaims = DEFAULT_MAX_PENDING_CLAIMS } = {}) {
+  constructor({ registry, coordinator = new WorldMutationCoordinator(), addDependent = defaultAddDependent, operationIdFactory, clock, now, claimTimeoutMs = DEFAULT_CLAIM_TIMEOUT_MS, maxPendingClaims = DEFAULT_MAX_PENDING_CLAIMS } = {}) {
     if (!registry || typeof registry.register !== "function" || typeof registry.resolve !== "function") {
       throw new TypeError("SummonLifecycleRuntime requires a SpellAutomationRegistry-compatible registry.");
     }
     if (typeof operationIdFactory !== "function") {
       throw new TypeError("SummonLifecycleRuntime requires an operationIdFactory function.");
+    }
+    if (!coordinator || typeof coordinator.runIdempotent !== "function") {
+      throw new TypeError("SummonLifecycleRuntime requires a mutation coordinator.");
+    }
+    if (typeof addDependent !== "function") {
+      throw new TypeError("SummonLifecycleRuntime addDependent must be a function.");
     }
     const clockSource = now ?? clock;
     if (clockSource !== undefined && typeof clockSource !== "function") {
@@ -235,6 +333,8 @@ export class SummonLifecycleRuntime {
     }
     this.#registry = registry;
     this.#operationIdFactory = operationIdFactory;
+    this.#coordinator = coordinator;
+    this.#addDependent = addDependent;
     this.#now = clockSource ?? (() => Date.now());
     this.#claimTimeoutMs = claimTimeoutMs;
     this.#maxPendingClaims = maxPendingClaims;
@@ -325,7 +425,8 @@ export class SummonLifecycleRuntime {
     };
     Object.defineProperties(claim, {
       activity: { value: activity },
-      config: { value: provider.config }
+      config: { value: provider.config },
+      sourceTokenUuid: { value: maybeUuid(context.sourceToken ?? context.token) }
     });
     this.#claimsByOperation.set(operationId, claim);
     const activityClaims = this.#claimsByActivity.get(activityUuid) ?? [];
@@ -377,25 +478,55 @@ export class SummonLifecycleRuntime {
     if (!claim) {
       return null;
     }
-    this.#providerForClaim(claim)?.callbacks.prepareToken?.(this.#providerContext(claim, context, []));
+    const link = this.#commonLink(claim, context);
+    applyCommonLink(context.tokenData, link);
+    const patch = this.#providerForClaim(claim)?.callbacks.prepareToken?.(
+      this.#providerContext(claim, context, [], { tokenData: cloneSerializable(context.tokenData) })
+    );
+    if (isPromise(patch)) {
+      throw new TypeError("Summon provider prepareToken callbacks must return synchronously.");
+    }
+    applyProviderPatch(context.tokenData, patch);
+    applyCommonLink(context.tokenData, link);
     return claimView(claim);
   }
 
-  finalizeSummon(context = {}) {
+  async finalizeSummon(context = {}) {
     this.#pruneExpired();
     const claim = this.#claimForOptions(context.summonOptions, context.activity);
     if (!claim) {
       return null;
     }
-    try {
-      this.#providerForClaim(claim)?.callbacks.finalizeSummon?.(this.#providerContext(claim, context, context.tokens));
-      this.#removeClaim(claim);
-      return claimView(claim);
-    }
-    catch (error) {
-      this.#removeClaim(claim);
-      throw error;
-    }
+    const operationTokens = this.#operationTokens(claim, context.tokens);
+    const scene = tokenScene(operationTokens[0]);
+    const key = `summon:${scene?.uuid ?? claim.activityUuid}:${claim.operationId}`;
+    return this.#coordinator.runIdempotent(key, claim.operationId, async () => {
+      const currentTokens = this.#operationTokens(claim, context.tokens);
+      const provider = this.#providerForClaim(claim);
+      try {
+        for (const token of currentTokens) {
+          await this.#ensureFinalLink(claim, token, context);
+          if (context.controllingEffect) {
+            await this.#addDependent(context.controllingEffect, token);
+          }
+          await provider?.callbacks.finalizeToken?.(this.#providerContext(claim, context, currentTokens, { token }));
+        }
+        await provider?.callbacks.finalizeSummon?.(this.#providerContext(claim, context, currentTokens));
+        this.#removeClaim(claim);
+        return claimView(claim);
+      }
+      catch (error) {
+        const rollbackTokens = this.#operationTokens(claim, context.tokens);
+        await this.#rollbackTokens(rollbackTokens);
+        try {
+          await provider?.callbacks.cleanup?.(this.#providerContext(claim, context, rollbackTokens, { error }));
+        }
+        finally {
+          this.#removeClaim(claim);
+        }
+        throw error;
+      }
+    });
   }
 
   cancelClaim(claimOrContext) {
@@ -412,7 +543,7 @@ export class SummonLifecycleRuntime {
     return this.cancelClaim(claimOrContext);
   }
 
-  #providerContext(claim, context, tokens) {
+  #providerContext(claim, context, tokens, extra = {}) {
     return Object.freeze({
       operationId: claim.operationId,
       declaration: claim.declaration,
@@ -423,11 +554,12 @@ export class SummonLifecycleRuntime {
       controllingEffect: context.controllingEffect ?? null,
       profile: context.profile ?? null,
       summonOptions: context.summonOptions ?? null,
-      tokenData: context.tokenData ?? null,
-      token: context.token ?? null,
+      tokenData: extra.tokenData ?? (context.tokenData ? cloneSerializable(context.tokenData) : null),
+      token: extra.token ?? context.token ?? null,
       tokens: frozenTokens(tokens),
       config: claim.config,
-      mutate: null
+      mutate: null,
+      error: extra.error ?? null
     });
   }
 
@@ -473,6 +605,46 @@ export class SummonLifecycleRuntime {
 
   #providerForClaim(claim) {
     return this.#providers.get(spellAutomationKey(claim.declaration)) ?? null;
+  }
+
+  #commonLink(claim, context) {
+    return buildSummonLink({
+      declaration: claim.declaration,
+      operationId: claim.operationId,
+      activity: claim.activity,
+      sourceToken: context.sourceToken ?? context.token ?? (claim.sourceTokenUuid ? { uuid: claim.sourceTokenUuid } : null),
+      controllingEffect: context.controllingEffect
+    });
+  }
+
+  #operationTokens(claim, tokens) {
+    return Array.from(Array.isArray(tokens) ? tokens : []).filter((token) => tokenInScene(token)
+      && sameOperationMarker(rawSummonLink(token), claim));
+  }
+
+  async #ensureFinalLink(claim, token, context) {
+    const expected = this.#commonLink(claim, context);
+    const current = readSummonLink(token);
+    if (JSON.stringify(current) !== JSON.stringify(expected)) {
+      await token.update?.({ flags: { [MODULE_ID]: { [SUMMON_LINK_FLAG]: expected } } });
+    }
+  }
+
+  async #rollbackTokens(tokens) {
+    const byScene = new Map();
+    for (const token of tokens) {
+      const scene = tokenScene(token);
+      const id = documentId(token);
+      if (!scene || !id) continue;
+      const ids = byScene.get(scene) ?? [];
+      ids.push(id);
+      byScene.set(scene, ids);
+    }
+    for (const [scene, ids] of byScene) {
+      if (ids.length && typeof scene.deleteEmbeddedDocuments === "function") {
+        await scene.deleteEmbeddedDocuments("Token", ids);
+      }
+    }
   }
 
   #copyCorrelation(usageConfig, claim) {

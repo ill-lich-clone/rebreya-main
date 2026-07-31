@@ -41,13 +41,58 @@ function managedContext(overrides = {}) {
 
 function createRuntime(options = {}) {
   let nextOperation = 0;
+  const {
+    registry = new SpellAutomationRegistry(),
+    operationIdFactory = () => `summon-operation-${++nextOperation}`,
+    now = () => 1_000,
+    ...runtimeOptions
+  } = options;
   return new SummonLifecycleRuntime({
-    registry: options.registry ?? new SpellAutomationRegistry(),
-    operationIdFactory: options.operationIdFactory ?? (() => `summon-operation-${++nextOperation}`),
-    now: options.now ?? (() => 1_000),
-    claimTimeoutMs: options.claimTimeoutMs,
-    maxPendingClaims: options.maxPendingClaims
+    registry,
+    operationIdFactory,
+    now,
+    ...runtimeOptions
   });
+}
+
+function bindManagedClaim(runtime, context) {
+  const claim = runtime.claimPreUse(context);
+  const summonOptions = context.usageConfig.summons[MODULE_ID];
+  runtime.bindPreSummon({ activity: context.activity, summonOptions });
+  return { claim, summonOptions };
+}
+
+function createScene(uuid = "Scene.main") {
+  const tokens = new Map();
+  const deletes = [];
+  return {
+    uuid,
+    tokens,
+    deletes,
+    async deleteEmbeddedDocuments(type, ids) {
+      assert.equal(type, "Token");
+      deletes.push([...ids]);
+      for (const id of ids) tokens.delete(id);
+    }
+  };
+}
+
+function createToken(scene, id, link = null) {
+  const token = {
+    id,
+    uuid: `${scene.uuid}.Token.${id}`,
+    parent: scene,
+    scene,
+    flags: link ? { [MODULE_ID]: { [SUMMON_LINK_FLAG]: structuredClone(link) } } : {},
+    updates: [],
+    async update(patch) {
+      this.updates.push(structuredClone(patch));
+      this.flags = patch.flags ?? this.flags;
+      return this;
+    }
+  };
+  scene.tokens.set(id, token);
+  return token;
 }
 
 test("registers an explicit summon recipe through the shared registry", () => {
@@ -277,4 +322,167 @@ test("builds and reads only strict serializable summon links", () => {
   assert.deepEqual(readSummonLink({ flags: { [MODULE_ID]: { [SUMMON_LINK_FLAG]: link } } }), link);
   assert.equal(readSummonLink({ flags: { [MODULE_ID]: { [SUMMON_LINK_FLAG]: { ...link, recipe: "" } } } }), null);
   assert.throws(() => buildSummonLink({ declaration: { ...summonDeclaration(), recipe: "__proto__" }, operationId: "x" }), TypeError);
+});
+
+test("stamps a complete common link while allowing only provider token patches", () => {
+  const runtime = createRuntime();
+  runtime.registerProvider({
+    ...summonDeclaration(),
+    prepareToken() {
+      return {
+        name: "Animated chair",
+        texture: { src: "chair.webp" },
+        flags: { [MODULE_ID]: { provider: { size: "small" } } }
+      };
+    }
+  });
+  const context = managedContext({ operationId: "stamp" });
+  const { summonOptions } = bindManagedClaim(runtime, context);
+  const tokenData = { _id: "forbidden", actorId: "forbidden", flags: { other: { retained: true } } };
+
+  runtime.prepareSummonToken({ activity: context.activity, summonOptions, tokenData });
+
+  assert.deepEqual(tokenData.flags[MODULE_ID][SUMMON_LINK_FLAG], buildSummonLink({
+    declaration: context.declaration, operationId: "stamp", activity: context.activity, sourceToken: context.token
+  }));
+  assert.equal(tokenData.name, "Animated chair");
+  assert.equal(tokenData.texture.src, "chair.webp");
+  assert.deepEqual(tokenData.flags[MODULE_ID].provider, { size: "small" });
+  assert.equal(tokenData._id, "forbidden");
+  assert.equal(tokenData.actorId, "forbidden");
+  assert.deepEqual(tokenData.flags.other, { retained: true });
+});
+
+test("rejects provider attempts to replace the common link or escape the patch allowlist", () => {
+  const runtime = createRuntime();
+  runtime.registerProvider({
+    ...summonDeclaration(),
+    prepareToken() {
+      return { _id: "replacement", flags: { foreign: { escaped: true } } };
+    }
+  });
+  const context = managedContext({ operationId: "bad-patch" });
+  const { summonOptions } = bindManagedClaim(runtime, context);
+
+  assert.throws(() => runtime.prepareSummonToken({ activity: context.activity, summonOptions, tokenData: {} }), TypeError);
+});
+
+test("uses exact options bindings to stamp two operations independently", () => {
+  const runtime = createRuntime();
+  runtime.registerProvider(summonDeclaration());
+  const first = managedContext({ operationId: "one" });
+  const second = managedContext({ activity: activity("Actor.source.Item.item.Activity.second"), operationId: "two" });
+  const firstBinding = bindManagedClaim(runtime, first);
+  const secondBinding = bindManagedClaim(runtime, second);
+  const firstData = {};
+  const secondData = {};
+
+  runtime.prepareSummonToken({ activity: first.activity, summonOptions: firstBinding.summonOptions, tokenData: firstData });
+  runtime.prepareSummonToken({ activity: second.activity, summonOptions: secondBinding.summonOptions, tokenData: secondData });
+  assert.equal(runtime.prepareSummonToken({ activity: first.activity, summonOptions: secondBinding.summonOptions, tokenData: {} }), null);
+
+  assert.equal(firstData.flags[MODULE_ID][SUMMON_LINK_FLAG].operationId, "one");
+  assert.equal(secondData.flags[MODULE_ID][SUMMON_LINK_FLAG].operationId, "two");
+});
+
+test("finalizes matching operation tokens sequentially, freezes the list, and clears success", async () => {
+  const events = [];
+  const runtime = createRuntime({
+    addDependent: async (_effect, token) => events.push(`link:${token.id}`)
+  });
+  runtime.registerProvider({
+    ...summonDeclaration(),
+    async finalizeToken(context) {
+      assert.ok(Object.isFrozen(context.tokens));
+      events.push(`token:${context.token.id}`);
+    },
+    async finalizeSummon(context) {
+      events.push(`summon:${context.tokens.map((token) => token.id).join(",")}`);
+    }
+  });
+  const context = managedContext({ operationId: "finalize", controllingEffect: { uuid: "Actor.source.ActiveEffect.concentration" } });
+  const { summonOptions } = bindManagedClaim(runtime, context);
+  const scene = createScene();
+  const link = buildSummonLink({ declaration: context.declaration, operationId: "finalize", activity: context.activity, sourceToken: context.token, controllingEffect: context.controllingEffect });
+  const first = createToken(scene, "one", link);
+  const second = createToken(scene, "two", link);
+  createToken(scene, "foreign", { ...link, operationId: "foreign" });
+
+  await runtime.finalizeSummon({ activity: context.activity, summonOptions, tokens: [first, second, scene.tokens.get("foreign")], controllingEffect: context.controllingEffect });
+
+  assert.deepEqual(events, ["link:one", "token:one", "link:two", "token:two", "summon:one,two"]);
+  assert.equal(runtime.pendingClaimCount, 0);
+});
+
+test("repairs a matching incomplete link before finalizing and links its controlling effect", async () => {
+  const linked = [];
+  const runtime = createRuntime({ addDependent: async (_effect, token) => linked.push(token.id) });
+  runtime.registerProvider(summonDeclaration());
+  const context = managedContext({ operationId: "repair", controllingEffect: { uuid: "Actor.source.ActiveEffect.concentration" } });
+  const { summonOptions } = bindManagedClaim(runtime, context);
+  const scene = createScene();
+  const complete = buildSummonLink({ declaration: context.declaration, operationId: "repair", activity: context.activity, sourceToken: context.token, controllingEffect: context.controllingEffect });
+  const token = createToken(scene, "repair", { ...complete, sourceItemUuid: "" });
+
+  await runtime.finalizeSummon({ activity: context.activity, summonOptions, tokens: [token], controllingEffect: context.controllingEffect });
+
+  assert.deepEqual(token.updates, [{ flags: { [MODULE_ID]: { [SUMMON_LINK_FLAG]: complete } } }]);
+  assert.deepEqual(linked, ["repair"]);
+});
+
+test("provider failure deletes only matching operation tokens grouped by scene", async () => {
+  const runtime = createRuntime();
+  runtime.registerProvider({ ...summonDeclaration(), async finalizeToken() { throw new Error("finalize failed"); } });
+  const context = managedContext({ operationId: "rollback" });
+  const { summonOptions } = bindManagedClaim(runtime, context);
+  const sceneA = createScene("Scene.a");
+  const sceneB = createScene("Scene.b");
+  const link = buildSummonLink({ declaration: context.declaration, operationId: "rollback", activity: context.activity, sourceToken: context.token });
+  const first = createToken(sceneA, "one", link);
+  const second = createToken(sceneB, "two", link);
+
+  await assert.rejects(runtime.finalizeSummon({ activity: context.activity, summonOptions, tokens: [first, second] }), /finalize failed/u);
+
+  assert.deepEqual(sceneA.deletes, [["one"]]);
+  assert.deepEqual(sceneB.deletes, [["two"]]);
+  assert.equal(runtime.pendingClaimCount, 0);
+});
+
+test("failure preserves foreign and unlinked tokens and calls cleanup once", async () => {
+  const cleaned = [];
+  const runtime = createRuntime();
+  runtime.registerProvider({
+    ...summonDeclaration(),
+    async finalizeToken() { throw new Error("fail safely"); },
+    async cleanup(context) { cleaned.push({ error: context.error.message, tokens: context.tokens }); }
+  });
+  const context = managedContext({ operationId: "safe-rollback" });
+  const { summonOptions } = bindManagedClaim(runtime, context);
+  const scene = createScene();
+  const link = buildSummonLink({ declaration: context.declaration, operationId: "safe-rollback", activity: context.activity, sourceToken: context.token });
+  const owned = createToken(scene, "owned", link);
+  const foreign = createToken(scene, "foreign", { ...link, operationId: "other" });
+  const unlinked = createToken(scene, "unlinked");
+
+  await assert.rejects(runtime.finalizeSummon({ activity: context.activity, summonOptions, tokens: [owned, foreign, unlinked] }), /fail safely/u);
+
+  assert.deepEqual(scene.deletes, [["owned"]]);
+  assert.deepEqual(cleaned.map((entry) => ({ error: entry.error, tokens: entry.tokens.map((token) => token.id) })), [{ error: "fail safely", tokens: ["owned"] }]);
+  assert.ok(Object.isFrozen(cleaned[0].tokens));
+});
+
+test("a repeated finalize operation is idempotent", async () => {
+  let finalizeCalls = 0;
+  const runtime = createRuntime();
+  runtime.registerProvider({ ...summonDeclaration(), async finalizeSummon() { finalizeCalls += 1; } });
+  const context = managedContext({ operationId: "repeat" });
+  const { summonOptions } = bindManagedClaim(runtime, context);
+  const scene = createScene();
+  const link = buildSummonLink({ declaration: context.declaration, operationId: "repeat", activity: context.activity, sourceToken: context.token });
+  const token = createToken(scene, "repeat", link);
+
+  await runtime.finalizeSummon({ activity: context.activity, summonOptions, tokens: [token] });
+  await runtime.finalizeSummon({ activity: context.activity, summonOptions, tokens: [token] });
+
+  assert.equal(finalizeCalls, 1);
 });
