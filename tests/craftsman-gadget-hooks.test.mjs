@@ -1,6 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { SpellAutomationRegistry } from "../scripts/combat/spell-automation-registry.js";
+import { SpellAutomationHookBridge } from "../scripts/combat/spell-automation-hook-bridge.js";
+import { SummonLifecycleRuntime } from "../scripts/combat/summon-lifecycle-runtime.js";
+import { registerSpellAutomationHooks } from "../scripts/integrations/spell-automation-hooks.js";
 
 const { registerCraftsmanGadgetHooks } = await import(
   "../scripts/integrations/craftsman-gadget-hooks.js"
@@ -176,4 +180,57 @@ test("live module composition root constructs and registers Craftsman gadget aut
   assert.ok(constructPackSync >= 0);
   assert.ok(classPackSync > constructPackSync);
   assert.match(source, /registerCraftsmanGadgetHooks\(moduleApi\)/u);
+});
+
+test("Craftsman and managed summon lifecycles coexist on one native hook bus", async () => {
+  const listeners = new Map();
+  const Hooks = { on(name, listener) { const callbacks = listeners.get(name) ?? []; callbacks.push(listener); listeners.set(name, callbacks); } };
+  const game = {};
+  let craftsmanPostSummons = 0;
+  let providerFinalizations = 0;
+  const registry = new SpellAutomationRegistry();
+  const runtime = new SummonLifecycleRuntime({ registry, operationIdFactory: () => "managed-operation" });
+  runtime.registerProvider({
+    runtime: "summon", recipe: "animate-objects", version: 1,
+    async finalizeSummon() { providerFinalizations += 1; }
+  });
+  const bridge = new SpellAutomationHookBridge({ registry, operationIdFactory: () => "managed-operation" });
+  const craftsmanConstructorService = {
+    applyDnd5ePreUseActivity: () => true,
+    async handlePostSummon() { craftsmanPostSummons += 1; return true; }
+  };
+  registerCraftsmanGadgetHooks({ craftsmanConstructorService }, { Hooks, game });
+  registerSpellAutomationHooks({ spellAutomationHookBridge: bridge }, { Hooks, game });
+  const fire = async (name, ...args) => {
+    for (const callback of listeners.get(name) ?? []) callback(...args);
+    await new Promise((resolve) => setImmediate(resolve));
+  };
+
+  const legacy = { flags: { "rebreya-main": { craftsmanConstructor: { kind: "constructSummon", version: 1 } } } };
+  await fire("dnd5e.postSummon", legacy, {}, [{ id: "craftsman-token" }], {});
+  assert.equal(craftsmanPostSummons, 1);
+  assert.equal(runtime.pendingClaimCount, 0);
+  assert.equal(providerFinalizations, 0);
+
+  const actor = { uuid: "Actor.caster" };
+  const managed = {
+    uuid: "Actor.caster.Item.animate.Activity.summon",
+    actor,
+    item: { uuid: "Actor.caster.Item.animate", actor, flags: { "rebreya-main": { spellAutomation: { runtime: "summon", recipe: "animate-objects", version: 1 } } } }
+  };
+  const usage = {};
+  for (const callback of listeners.get("dnd5e.preUseActivity") ?? []) callback(managed, usage, {}, {});
+  const options = usage.summons["rebreya-main"];
+  for (const callback of listeners.get("dnd5e.preSummon") ?? []) callback(managed, {}, options);
+  const tokenData = {};
+  for (const callback of listeners.get("dnd5e.summonToken") ?? []) callback(managed, {}, tokenData, options);
+  const scene = { uuid: "Scene.test", tokens: new Map() };
+  const token = { id: "managed-token", parent: scene, scene, flags: tokenData.flags, async update() {} };
+  scene.tokens.set(token.id, token);
+  await fire("dnd5e.postSummon", managed, {}, [token], options);
+
+  assert.equal(providerFinalizations, 1);
+  assert.equal(runtime.pendingClaimCount, 0);
+  assert.equal(craftsmanPostSummons, 2);
+  assert.ok(token.flags["rebreya-main"].summonLink);
 });
