@@ -875,6 +875,55 @@ test("InventoryApp replaces the workshop header with the complete travel video f
   );
 });
 
+test("InventoryApp keeps travel controls inside substantial window rails", async () => {
+  const css = await readFile(
+    new URL("../styles/main.css", import.meta.url),
+    "utf8"
+  );
+  const frameMetrics = css.match(
+    /\.rebreya-inventory-app \.rm-inventory-book__header--travel\s*\{(?<body>[^}]*)\}/u
+  )?.groups?.body ?? "";
+  const frameRule = css.match(
+    /\.rebreya-inventory-app \.rm-inventory-book__header--travel::after\s*\{(?<body>[^}]*)\}/u
+  )?.groups?.body ?? "";
+  const selectorRule = css.match(
+    /\.rebreya-inventory-app \.rm-inventory-book__travel-selector\s*\{(?<body>[^}]*)\}/u
+  )?.groups?.body ?? "";
+  const readPixelVariable = (name) => {
+    const match = frameMetrics.match(new RegExp(`${name}:\\s*(\\d+)px;`, "u"));
+    assert.ok(match, `expected ${name} travel-frame metric`);
+    return Number(match[1]);
+  };
+
+  const inset = readPixelVariable("--rm-travel-frame-inset");
+  const border = readPixelVariable("--rm-travel-frame-border-width");
+  const sideRail = readPixelVariable("--rm-travel-frame-side-width");
+  const horizontalRail = readPixelVariable("--rm-travel-frame-rail-height");
+  const controlGap = readPixelVariable("--rm-travel-frame-control-gap");
+
+  assert.ok(sideRail >= 24, "expected visibly substantial side rails");
+  assert.ok(horizontalRail >= 18, "expected visibly substantial top and bottom rails");
+  assert.ok(controlGap >= 8, "expected controls to clear the inner rail edge");
+  assert.ok(inset + border + sideRail + controlGap > 32);
+  assert.ok(inset + border + horizontalRail + controlGap > 28);
+  assert.match(frameRule, /inset:\s*var\(--rm-travel-frame-inset\);/u);
+  assert.match(
+    frameRule,
+    /border:\s*var\(--rm-travel-frame-border-width\) solid/u
+  );
+  assert.match(frameRule, /var\(--rm-travel-frame-side-width\)/u);
+  assert.match(frameRule, /var\(--rm-travel-frame-rail-height\)/u);
+  assert.match(
+    selectorRule,
+    /right:\s*calc\(var\(--rm-travel-frame-inset\) \+ var\(--rm-travel-frame-border-width\) \+ var\(--rm-travel-frame-side-width\) \+ var\(--rm-travel-frame-control-gap\)\);/u
+  );
+  assert.match(
+    selectorRule,
+    /bottom:\s*calc\(var\(--rm-travel-frame-inset\) \+ var\(--rm-travel-frame-border-width\) \+ var\(--rm-travel-frame-rail-height\) \+ var\(--rm-travel-frame-control-gap\)\);/u
+  );
+  assert.doesNotMatch(selectorRule, /right:\s*22px;|bottom:\s*20px;/u);
+});
+
 test("InventoryApp sorts party inventory rows and exposes item value totals", async () => {
   const restoreFoundry = installFoundryApplicationStub();
   const items = [

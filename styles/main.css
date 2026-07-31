@@ -4338,6 +4338,14 @@ summary:focus-visible {
   background-image: none;
 }
 
+.rebreya-inventory-app .rm-inventory-book__header--travel {
+  --rm-travel-frame-inset: 6px;
+  --rm-travel-frame-border-width: 3px;
+  --rm-travel-frame-side-width: 24px;
+  --rm-travel-frame-rail-height: 18px;
+  --rm-travel-frame-control-gap: 8px;
+}
+
 .rebreya-inventory-app .rm-inventory-book__travel-video {
   position: absolute;
   z-index: 0;
@@ -4356,12 +4364,12 @@ summary:focus-visible {
   content: "";
   position: absolute;
   z-index: 1;
-  inset: 8px;
-  border: 2px solid rgb(var(--rm-color-gold-rgb) / 0.72);
-  border-radius: 10px;
+  inset: var(--rm-travel-frame-inset);
+  border: var(--rm-travel-frame-border-width) solid rgb(var(--rm-color-gold-rgb) / 0.72);
+  border-radius: 12px;
   background:
-    linear-gradient(90deg, var(--rm-color-surface) 0 16px, transparent 16px calc(100% - 16px), var(--rm-color-surface) calc(100% - 16px)),
-    linear-gradient(180deg, var(--rm-color-surface) 0 12px, transparent 12px calc(100% - 12px), var(--rm-color-surface) calc(100% - 12px));
+    linear-gradient(90deg, var(--rm-color-surface) 0 var(--rm-travel-frame-side-width), transparent var(--rm-travel-frame-side-width) calc(100% - var(--rm-travel-frame-side-width)), var(--rm-color-surface) calc(100% - var(--rm-travel-frame-side-width))),
+    linear-gradient(180deg, var(--rm-color-surface) 0 var(--rm-travel-frame-rail-height), transparent var(--rm-travel-frame-rail-height) calc(100% - var(--rm-travel-frame-rail-height)), var(--rm-color-surface) calc(100% - var(--rm-travel-frame-rail-height)));
   box-shadow:
     inset 0 0 0 2px rgb(var(--rm-color-ink-rgb) / 0.9),
     inset 0 0 24px rgb(var(--rm-color-ink-rgb) / 0.66),
@@ -4380,8 +4388,8 @@ summary:focus-visible {
 .rebreya-inventory-app .rm-inventory-book__travel-selector {
   position: absolute;
   z-index: 3;
-  right: 22px;
-  bottom: 20px;
+  right: calc(var(--rm-travel-frame-inset) + var(--rm-travel-frame-border-width) + var(--rm-travel-frame-side-width) + var(--rm-travel-frame-control-gap));
+  bottom: calc(var(--rm-travel-frame-inset) + var(--rm-travel-frame-border-width) + var(--rm-travel-frame-rail-height) + var(--rm-travel-frame-control-gap));
   display: flex;
   gap: 7px;
   padding: 6px;
