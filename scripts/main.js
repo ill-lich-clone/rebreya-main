@@ -10,6 +10,12 @@ import { RacesCompendiumService } from "./data/races-compendium.js?v=1.4.110-gia
 import { ClassesCompendiumService } from "./data/classes-compendium.js";
 import { CraftsmanConstructCompendiumService } from "./data/craftsman-construct-compendium.js";
 import { TransportCompendiumService } from "./data/transport-compendium.js";
+import {
+  TRANSPORT_IMPORT_COMMAND,
+  TRANSPORT_UPDATE_STATE_COMMAND,
+  TransportInstanceService,
+  registerTransportInstanceCommands
+} from "./data/transport-instance-service.js";
 import { SpellsCompendiumService } from "./data/spells-compendium.js?v=1.4.109-counterspell-sanitize";
 import { ActionsCompendiumService } from "./data/actions-compendium.js";
 import { DowntimeCompendiumService } from "./data/downtime-compendium.js";
@@ -1011,6 +1017,11 @@ export class RebreyaMainModule {
     });
     this.travelMapService = new TravelMapService();
     this.inventoryService = new InventoryService(this);
+    this.transportInstanceService = new TransportInstanceService(this, {
+      gameProvider: () => globalThis.game,
+      actorProvider: () => globalThis.Actor,
+      fromUuid: (uuid) => globalThis.fromUuid(uuid)
+    });
     this.durabilityService = new DurabilityService(this);
     this.travelService.setSpeedProvider((context) => this.inventoryService.getActiveTransportSpeedMeta({ context }));
     this.mapObjectTokenService = new MapObjectTokenService({
@@ -1169,6 +1180,7 @@ export class RebreyaMainModule {
 
   #registerTypedSocketCommands() {
     registerCraftsmanGadgetSocketCommand(this);
+    registerTransportInstanceCommands(this.socketCommandBus, this.transportInstanceService);
     const authorizeGroup = (payload, { sender }) => this.#canSenderManageGroup(sender, payload.groupActorId);
     this.socketCommandBus.register(GROUP_CALENDAR_PATCH_COMMAND, {
       validate: isValidCalendarPatchPayload,
@@ -2863,6 +2875,26 @@ export class RebreyaMainModule {
 
   async getTransportSnapshot(options = {}) {
     return this.inventoryService.getTransportSnapshot(options);
+  }
+
+  async importTransportIntoGroup(payload) {
+    const result = isActiveGmClient(globalThis.game)
+      ? await this.transportInstanceService.importIntoGroup(payload, {
+          sender: globalThis.game?.user
+        })
+      : await this.socketCommandBus.request(TRANSPORT_IMPORT_COMMAND, payload);
+    await this.refreshOpenApps();
+    return result;
+  }
+
+  async updateTransportInstanceState(payload) {
+    const result = isActiveGmClient(globalThis.game)
+      ? await this.transportInstanceService.updateInstanceState(payload, {
+          sender: globalThis.game?.user
+        })
+      : await this.socketCommandBus.request(TRANSPORT_UPDATE_STATE_COMMAND, payload);
+    await this.refreshOpenApps();
+    return result;
   }
 
   async setActiveTransport(activeTransportId = "") {
