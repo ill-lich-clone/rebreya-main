@@ -457,3 +457,56 @@ test("routes resumed parent uses while skipping child and ordinary bypass uses",
     ["preUseActivity", "release", "parent-operation"]
   ]);
 });
+
+test("normalizes preSummon with the original summon options object", () => {
+  const seen = [];
+  const summon = declaration({ runtime: "summon", recipe: "animate-objects" });
+  const bridge = new SpellAutomationHookBridge({ registry: { dispatch(eventName, registered, context) { seen.push({ eventName, registered, context }); return { handled: true, value: true }; } } });
+  const source = activity({ flags: { [MODULE_ID]: { spellAutomation: summon } } });
+  const options = { [MODULE_ID]: { operationId: "summon-operation" } };
+
+  assert.equal(bridge.handlePreSummon(source, { id: "profile" }, options), true);
+  assert.equal(seen[0].eventName, "preSummon");
+  assert.equal(seen[0].context.summonOptions, options);
+  assert.equal(seen[0].context.operationId, "summon-operation");
+});
+
+test("normalizes summonToken with the original mutable token data synchronously", () => {
+  const summon = declaration({ runtime: "summon", recipe: "animate-objects" });
+  const bridge = new SpellAutomationHookBridge({ registry: { dispatch(_eventName, _registered, context) { context.tokenData.flags = { stamped: true }; return { handled: true, value: true }; } } });
+  const source = activity({ flags: { [MODULE_ID]: { spellAutomation: summon } } });
+  const options = { [MODULE_ID]: { operationId: "summon-operation" } };
+  const tokenData = {};
+
+  assert.equal(bridge.handleSummonToken(source, {}, tokenData, options), true);
+  assert.deepEqual(tokenData, { flags: { stamped: true } });
+});
+
+test("normalizes postSummon with only the created token list", async () => {
+  const seen = [];
+  const summon = declaration({ runtime: "summon", recipe: "animate-objects" });
+  const bridge = new SpellAutomationHookBridge({ registry: { dispatch(eventName, _registered, context) { seen.push({ eventName, context }); return { handled: true, value: true }; } } });
+  const source = activity({ flags: { [MODULE_ID]: { spellAutomation: summon } } });
+  const created = [{ id: "created" }];
+
+  assert.equal(await bridge.handlePostSummon(source, {}, created, {}), true);
+  assert.equal(seen[0].eventName, "postSummon");
+  assert.equal(seen[0].context.tokens, created);
+});
+
+test("unmanaged and legacy summon phases take the immediate fast path", async () => {
+  let dispatches = 0;
+  let operations = 0;
+  const bridge = new SpellAutomationHookBridge({
+    registry: { dispatch() { dispatches += 1; return { handled: true, value: true }; } },
+    operationIdFactory: () => `unexpected-${++operations}`
+  });
+  const legacy = activity({ flags: { [MODULE_ID]: { craftsmanConstructor: { kind: "constructSummon" } } } });
+  const unmanaged = activity({ item: { flags: {} } });
+
+  assert.equal(bridge.handlePreSummon(legacy, {}, {}), true);
+  assert.equal(bridge.handleSummonToken(unmanaged, {}, {}, {}), true);
+  assert.equal(await bridge.handlePostSummon(legacy, {}, [], {}), true);
+  assert.equal(dispatches, 0);
+  assert.equal(operations, 0);
+});

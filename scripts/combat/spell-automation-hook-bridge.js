@@ -22,6 +22,15 @@ function isDeclaration(value) {
     && Number.isInteger(value.version) && value.version > 0;
 }
 
+function isSummonDeclaration(value) {
+  return isDeclaration(value) && value.runtime === "summon";
+}
+
+function summonOperationId(options) {
+  const candidates = [options?.summons?.[MODULE_ID], options?.[MODULE_ID], options?.flags?.[MODULE_ID]];
+  return candidates.find((candidate) => typeof candidate?.operationId === "string" && candidate.operationId.length > 0)?.operationId;
+}
+
 function operationIdFallback() {
   return globalThis.foundry?.utils?.randomID?.(16)
     ?? globalThis.crypto?.randomUUID?.()
@@ -238,6 +247,7 @@ export function buildSpellAutomationContext(eventName, rawArgs, options = {}) {
     profile: options.profile ?? null,
     tokens: options.tokens ?? [],
     summonOptions: options.summonOptions ?? {},
+    tokenData: options.tokenData ?? null,
     changeType: options.changeType ?? null,
     changed: options.changed ?? null,
     options: options.hookOptions ?? {},
@@ -304,7 +314,26 @@ export class SpellAutomationHookBridge {
     return this.#handleAsync("postSummon", [activity, profile, tokens, summonOptions], {
       profile,
       tokens,
-      summonOptions
+      summonOptions,
+      summonOnly: true,
+      operationId: summonOperationId(summonOptions)
+    });
+  }
+
+  handlePreSummon(activity, profile, summonOptions) {
+    return this.#handleSummonSync("preSummon", [activity, profile, summonOptions], {
+      profile,
+      summonOptions,
+      operationId: summonOperationId(summonOptions)
+    });
+  }
+
+  handleSummonToken(activity, profile, tokenData, summonOptions) {
+    return this.#handleSummonSync("summonToken", [activity, profile, tokenData, summonOptions], {
+      profile,
+      tokenData,
+      summonOptions,
+      operationId: summonOperationId(summonOptions)
     });
   }
 
@@ -332,7 +361,7 @@ export class SpellAutomationHookBridge {
 
   #handleAsync(eventName, rawArgs, options = {}) {
     const preflight = preflightSpellAutomationEvent(eventName, rawArgs);
-    if (preflight.isChildInvocation || !preflight.declaration) {
+    if (preflight.isChildInvocation || !preflight.declaration || (options.summonOnly && !isSummonDeclaration(preflight.declaration))) {
       return Promise.resolve(true);
     }
     const context = buildSpellAutomationContext(eventName, rawArgs, {
@@ -356,6 +385,31 @@ export class SpellAutomationHookBridge {
     catch (error) {
       this.#error(`Failed to run spell automation ${eventName} handler.`, error);
       return Promise.resolve(true);
+    }
+  }
+
+  #handleSummonSync(eventName, rawArgs, options) {
+    const preflight = preflightSpellAutomationEvent(eventName, rawArgs);
+    if (preflight.isChildInvocation || !isSummonDeclaration(preflight.declaration)) {
+      return true;
+    }
+    const context = buildSpellAutomationContext(eventName, rawArgs, {
+      ...options,
+      preflight,
+      operationIdFactory: this.operationIdFactory
+    });
+    try {
+      const dispatched = this.registry?.dispatch?.(eventName, context.declaration, context);
+      if (!dispatched?.handled) return true;
+      if (isPromise(dispatched.value)) {
+        this.#warn("Summon token lifecycle handlers must return synchronously.");
+        return false;
+      }
+      return dispatched.value !== false;
+    }
+    catch (error) {
+      this.#error(`Failed to run spell automation ${eventName} handler.`, error);
+      return true;
     }
   }
 

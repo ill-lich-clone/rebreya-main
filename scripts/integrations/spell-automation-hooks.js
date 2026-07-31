@@ -43,6 +43,24 @@ export function registerSpellAutomationHooks(moduleApi, {
   Hooks.on("midi-qol.RollComplete", (workflow) => runAsync(
     () => bridge.handleMidiRollComplete?.(workflow)
   ));
+  Hooks.on("dnd5e.preSummon", (activity, profile, summonOptions) => {
+    try {
+      return bridge.handlePreSummon?.(activity, profile, summonOptions) ?? true;
+    }
+    catch (error) {
+      report(error);
+      return true;
+    }
+  });
+  Hooks.on("dnd5e.summonToken", (activity, profile, tokenData, summonOptions) => {
+    try {
+      return bridge.handleSummonToken?.(activity, profile, tokenData, summonOptions) ?? true;
+    }
+    catch (error) {
+      report(error);
+      return true;
+    }
+  });
   Hooks.on("dnd5e.postSummon", (activity, profile, tokens, summonOptions) => runAsync(
     () => bridge.handlePostSummon?.(activity, profile, tokens, summonOptions)
   ));
