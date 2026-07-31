@@ -363,7 +363,11 @@ test("group.travel.replaceState normalizes input and replaces only travelState",
     const groupState = fixture.store[SETTINGS_KEYS.GROUP_STATE].groupsById[fixture.groupA.id];
     assert.deepEqual(groupState.travelState, normalizeTravelState(travelState));
     assert.deepEqual(groupState.traderState, { retained: "yes" });
-    assert.deepEqual(resultFor(fixture, request.requestId)?.data, normalizeTravelState(travelState));
+    assert.deepEqual(resultFor(fixture, request.requestId)?.data, {
+      travelState: normalizeTravelState(travelState),
+      appliedMiles: 0,
+      fuelChange: null
+    });
 
     const invalid = commandRequest(
       "group.travel.replaceState",

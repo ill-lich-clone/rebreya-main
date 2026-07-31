@@ -25,6 +25,30 @@ function positiveNumber(value) {
   return Number.isFinite(number) && number > 0 ? number : null;
 }
 
+function isMissingLegacyValue(value) {
+  return value == null
+    || String(value).trim() === ""
+    || String(value).trim() === "[object Object]";
+}
+
+function isLegacyBrokenSpeed(record, primaryKey) {
+  return isMissingLegacyValue(record?.[primaryKey])
+    || String(record?.raw ?? "").trim() === "[object Object]";
+}
+
+function shouldRepairNativeSpeed(value, flagRecord, primaryKey) {
+  if (isMissingLegacyValue(value)) return true;
+  return Number(value) === 0 && isLegacyBrokenSpeed(flagRecord, primaryKey);
+}
+
+function patchMissingNestedValues(patch, path, current, source, keys) {
+  for (const key of keys) {
+    if (isMissingLegacyValue(current?.[key]) && !isMissingLegacyValue(source?.[key])) {
+      patch[`${path}.${key}`] = structuredClone(source[key]);
+    }
+  }
+}
+
 function firstPositiveEntry(record = {}, keys = []) {
   for (const key of keys) {
     const value = positiveNumber(record?.[key]);
@@ -53,14 +77,20 @@ export async function repairTransportInstanceSpeeds(actors, actorDataBySourceId)
     );
     if (sourceMovement) {
       const [mode, value] = sourceMovement;
-      if (positiveNumber(actor.system?.attributes?.movement?.[mode]) == null) {
+      if (shouldRepairNativeSpeed(
+        actor.system?.attributes?.movement?.[mode],
+        transport.combatSpeed,
+        "primaryFt"
+      )) {
         patch[`system.attributes.movement.${mode}`] = value;
       }
-      if (positiveNumber(transport.combatSpeed?.primaryFt) == null) {
-        patch[`flags.${MODULE_ID}.transport.combatSpeed`] = structuredClone(
-          sourceData.flags?.[MODULE_ID]?.transport?.combatSpeed
-        );
-      }
+      patchMissingNestedValues(
+        patch,
+        `flags.${MODULE_ID}.transport.combatSpeed`,
+        transport.combatSpeed,
+        sourceData.flags?.[MODULE_ID]?.transport?.combatSpeed,
+        ["primaryFt", "secondaryFt", "raw"]
+      );
     }
 
     const sourceTravel = firstPositiveEntry(
@@ -69,14 +99,20 @@ export async function repairTransportInstanceSpeeds(actors, actorDataBySourceId)
     );
     if (sourceTravel) {
       const [mode, value] = sourceTravel;
-      if (positiveNumber(actor.system?.attributes?.travel?.speeds?.[mode]) == null) {
+      if (shouldRepairNativeSpeed(
+        actor.system?.attributes?.travel?.speeds?.[mode],
+        transport.travelSpeed,
+        "value"
+      )) {
         patch[`system.attributes.travel.speeds.${mode}`] = value;
       }
-      if (positiveNumber(transport.travelSpeed?.value) == null) {
-        patch[`flags.${MODULE_ID}.transport.travelSpeed`] = structuredClone(
-          sourceData.flags?.[MODULE_ID]?.transport?.travelSpeed
-        );
-      }
+      patchMissingNestedValues(
+        patch,
+        `flags.${MODULE_ID}.transport.travelSpeed`,
+        transport.travelSpeed,
+        sourceData.flags?.[MODULE_ID]?.transport?.travelSpeed,
+        ["value", "units", "raw"]
+      );
     }
 
     if (Object.keys(patch).length > 0) {

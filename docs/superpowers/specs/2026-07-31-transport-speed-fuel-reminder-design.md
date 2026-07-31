@@ -68,12 +68,14 @@ The sheet shows the saved name as missing and allows another item to be chosen.
 
 ## Travel Consumption
 
-Fuel consumption is attached to the existing successful travel-advance flow:
+Fuel consumption is attached to the authoritative active-GM travel commit:
 
 1. Resolve the active concrete transport and its fuel configuration.
-2. Advance the route and world time using the existing travel behavior.
-3. Determine the actual miles added by this action from the before/after travel
-   progress, so route-end clamping is respected.
+2. Inside the serialized group-state mutation, determine the actual miles from
+   the previous persisted state and the incoming state, so route-end clamping
+   and repeated stale requests are handled once.
+3. Persist the route progress. Only after persistence succeeds, and before the
+   mutation queue is released, run the fuel reminder mutation.
 4. Calculate `required = traveledMiles * fuelPerMile`.
 5. Resolve `fuelItemId` inside the active group's embedded inventory.
 6. Deduct `min(available, required)` using the existing inventory mutation
@@ -93,8 +95,9 @@ manual correction tool, not reverse simulation.
 ## Authorization and Mutation
 
 - Only users who may manage the owning party can save fuel configuration.
-- Player writes use an exact typed socket payload and are revalidated by the
-  active GM.
+- Player travel writes use the existing exact typed travel payload and are
+  revalidated by the active GM. There is no standalone fuel-consumption socket
+  command accepting client-supplied miles.
 - The server re-resolves the transport through the target group and the fuel
   Item through that group's embedded inventory; clients cannot submit arbitrary
   document updates or quantities.

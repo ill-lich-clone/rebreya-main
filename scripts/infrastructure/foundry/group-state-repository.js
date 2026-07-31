@@ -35,18 +35,20 @@ export class GroupStateRepository {
     return this.#normalizeRegistry(clone(this.#readSetting()));
   }
 
-  mutateRegistry(mutator) {
+  mutateRegistry(mutator, { afterCommit = null } = {}) {
     return this.#coordinator.run(GROUP_STATE_QUEUE_KEY, async () => {
       const registry = this.#normalizeRegistry(clone(this.#readSetting()));
       const result = await mutator(registry);
       const committedRegistry = this.#normalizeRegistry(clone(registry));
 
       await this.#writeSetting(committedRegistry);
-      return result;
+      return typeof afterCommit === "function"
+        ? afterCommit(result, committedRegistry)
+        : result;
     });
   }
 
-  mutateGroupState(groupActorId, mutator, { create = false } = {}) {
+  mutateGroupState(groupActorId, mutator, { create = false, afterCommit = null } = {}) {
     const normalizedGroupActorId = String(groupActorId ?? "").trim();
 
     return this.mutateRegistry(async (registry) => {
@@ -67,7 +69,7 @@ export class GroupStateRepository {
         groupState
       );
       return result;
-    });
+    }, { afterCommit });
   }
 
   /**

@@ -2,9 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  TRANSPORT_CONSUME_FUEL_COMMAND,
   TransportFuelService,
-  registerTransportFuelCommand,
   validateTransportFuelConsumptionPayload
 } from "../scripts/data/transport-fuel-service.js";
 
@@ -181,30 +179,4 @@ test("fuel mutation errors become warnings instead of travel failures", async ()
   assert.equal(result.consumed, 0);
   assert.equal(result.shortage, 1);
   assert.match(result.warning, /не удалось списать/iu);
-});
-
-test("fuel command delegates only authorized exact payloads", async () => {
-  const registrations = new Map();
-  const calls = [];
-  const service = {
-    async consumeForTravel(payload) {
-      calls.push(structuredClone(payload));
-      return { configured: false };
-    }
-  };
-  registerTransportFuelCommand({
-    register(command, definition) {
-      registrations.set(command, definition);
-    }
-  }, service, {
-    authorize: (payload, { sender }) => payload.groupActorId === "group-a" && sender?.id === "player-a"
-  });
-  const definition = registrations.get(TRANSPORT_CONSUME_FUEL_COMMAND);
-  const payload = { groupActorId: "group-a", appliedMiles: 10 };
-  const sender = { id: "player-a" };
-
-  assert.equal(definition.validate(payload), true);
-  assert.equal(await definition.authorize(payload, { sender }), true);
-  await definition.execute(payload, { sender });
-  assert.deepEqual(calls, [payload]);
 });

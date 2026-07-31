@@ -1,7 +1,5 @@
 import { MODULE_ID } from "../constants.js";
 
-export const TRANSPORT_CONSUME_FUEL_COMMAND = "group.transport.consumeFuel";
-
 const PAYLOAD_KEYS = Object.freeze(["appliedMiles", "groupActorId"]);
 
 function cleanId(value) {
@@ -69,23 +67,6 @@ export function validateTransportFuelConsumptionPayload(payload) {
     && isSafeId(payload.groupActorId)
     && miles != null
     && miles >= 0;
-}
-
-export function registerTransportFuelCommand(commandBus, service, { authorize } = {}) {
-  if (typeof commandBus?.register !== "function") {
-    throw new TypeError("Transport fuel command bus is required");
-  }
-  if (typeof service?.consumeForTravel !== "function") {
-    throw new TypeError("Transport fuel service is required");
-  }
-  if (typeof authorize !== "function") {
-    throw new TypeError("Transport fuel authorization is required");
-  }
-  commandBus.register(TRANSPORT_CONSUME_FUEL_COMMAND, {
-    validate: validateTransportFuelConsumptionPayload,
-    authorize,
-    execute: (payload) => service.consumeForTravel(payload)
-  });
 }
 
 export class TransportFuelService {

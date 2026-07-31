@@ -4,7 +4,7 @@
 
 **Goal:** Restore correct native and party-inventory transport speeds, allow a vehicle to select a group warehouse Item as fuel, and deduct available fuel after travel without blocking movement.
 
-**Architecture:** Build every managed transport Actor once from its raw catalog row, then repair only missing imported speed fields on concrete instances during GM compendium sync. Keep fuel selection on the concrete vehicle Actor, expose it through the injected Rebreya vehicle-sheet panel, and place distance-based deduction behind a focused `TransportFuelService` called after successful travel advancement.
+**Architecture:** Build every managed transport Actor once from its raw catalog row, then repair only recognizable legacy-broken speed fields on concrete instances during GM compendium sync. Keep fuel selection on the concrete vehicle Actor and expose it through the injected Rebreya vehicle-sheet panel. The active GM derives traveled miles from the serialized persisted state transition and runs `TransportFuelService` through the repository's post-persistence hook before releasing the mutation queue; no standalone client-controlled fuel command exists.
 
 **Tech Stack:** Foundry VTT 13, D&D5e 5.2.5 Actor/Item documents, native ES modules, Handlebars-adjacent DOM injection, Node `node:test`.
 
@@ -251,9 +251,9 @@ Expected: FAIL because the module does not exist.
 
 Resolve the active `member:<actorId>` from `context.groupState.transportState`, verify the concrete actor belongs to the context group, read its saved Item/rate, then resolve the embedded group Item. Round required, consumed, and shortage through a local two-decimal helper matching inventory precision. Update the Item quantity or delete a depleted Item. Catch mutation errors and return a warning result rather than throwing.
 
-- [ ] **Step 4: Integrate after successful travel advance**
+- [ ] **Step 4: Integrate with the authoritative travel commit**
 
-Construct `TransportFuelService` in `RebreyaMainModule`. In `advanceTravelHours`, after `travelService.advanceHours(hours)` succeeds, capture the current group context and call `consumeForTravel` with `result.travelChange.appliedMiles`. Attach its result as `result.fuelChange`, refresh inventory applications, and show an info notification for normal consumption or a warning notification for shortages/missing stock. Wrap only fuel consumption in `try/catch`; map sync and calendar time retain their existing behavior.
+Construct `TransportFuelService` in `RebreyaMainModule` and inject it into `TravelService`. On the active GM, calculate `appliedMiles` from the previous persisted travel state and the incoming state inside the serialized group mutation. Persist the travel state first, then consume fuel in an `afterCommit` callback while still holding the mutation queue. Return `fuelChange` with the travel command result and show warnings in `advanceTravelHours`. Do not expose a separate socket command accepting client-supplied miles.
 
 - [ ] **Step 5: Verify travel integration GREEN**
 

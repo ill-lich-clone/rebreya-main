@@ -169,6 +169,44 @@ test("GroupStateRepository mutateGroupState serializes mutations for different g
   assert.equal(fixture.storedRegistry.groupsById["group-b"].travelState.routeId, "route-b");
 });
 
+test("GroupStateRepository runs afterCommit only after persistence and before releasing the mutation queue", async () => {
+  const fixture = createRepositoryFixture({
+    groupsById: {
+      "group-a": buildDefaultGroupState("group-a", { now: 10 })
+    }
+  });
+  const afterCommitGate = createDeferred();
+  const events = [];
+
+  const first = fixture.repository.mutateGroupState(
+    "group-a",
+    (groupState) => {
+      events.push("mutate");
+      groupState.calendar.day = 7;
+      return "mutation-result";
+    },
+    {
+      async afterCommit(result) {
+        events.push(`after:${result}:${fixture.storedRegistry.groupsById["group-a"].calendar.day}`);
+        await afterCommitGate.promise;
+        return "after-result";
+      }
+    }
+  );
+  const second = fixture.repository.mutateGroupState("group-a", () => {
+    events.push("second");
+    return "second-result";
+  });
+
+  await flushTasks();
+  assert.deepEqual(events, ["mutate", "after:mutation-result:7"]);
+  assert.equal(fixture.writes.length, 1);
+
+  afterCommitGate.resolve();
+  assert.deepEqual(await Promise.all([first, second]), ["after-result", "second-result"]);
+  assert.deepEqual(events, ["mutate", "after:mutation-result:7", "second"]);
+});
+
 test("GroupStateRepository mutateGroupState creates a normalized state only when create is enabled", async () => {
   const fixture = createRepositoryFixture({ groupsById: {} });
 

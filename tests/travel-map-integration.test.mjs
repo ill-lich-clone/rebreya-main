@@ -391,7 +391,6 @@ test("RebreyaMainModule consumes transport fuel for the miles actually traveled"
   try {
     const { RebreyaMainModule } = await import(`../scripts/main.js?travel-fuel-gm=${Date.now()}`);
     const moduleApi = new RebreyaMainModule();
-    const consumed = [];
     moduleApi.travelService.advanceHours = async () => ({
       available: true,
       mapPosition: { available: false },
@@ -399,23 +398,19 @@ test("RebreyaMainModule consumes transport fuel for the miles actually traveled"
         groupActorId: "group-a",
         appliedHours: 1,
         appliedMiles: 3
-      }
-    });
-    moduleApi.transportFuelService.consumeForTravel = async (payload) => {
-      consumed.push(payload);
-      return {
+      },
+      fuelChange: {
         configured: true,
         required: 3,
         consumed: 1,
         shortage: 2,
         itemName: "Жидкий уголь",
         warning: "Топлива не хватило, но путь продолжен."
-      };
-    };
+      }
+    });
 
     const result = await moduleApi.advanceTravelHours(8);
 
-    assert.deepEqual(consumed, [{ groupActorId: "group-a", appliedMiles: 3 }]);
     assert.equal(result.fuelChange.shortage, 2);
     assert.deepEqual(warnings, ["Топлива не хватило, но путь продолжен."]);
   }
@@ -427,7 +422,7 @@ test("RebreyaMainModule consumes transport fuel for the miles actually traveled"
   }
 });
 
-test("RebreyaMainModule asks the active GM to consume player travel fuel", async () => {
+test("RebreyaMainModule never issues a separate client-controlled fuel command", async () => {
   const previousHooks = globalThis.Hooks;
   const previousGame = globalThis.game;
   const previousUi = globalThis.ui;
@@ -453,26 +448,24 @@ test("RebreyaMainModule asks the active GM to consume player travel fuel", async
         groupActorId: "group-a",
         appliedHours: 8,
         appliedMiles: 24
-      }
-    });
-    moduleApi.socketCommandBus.request = async (command, payload) => {
-      requests.push({ command, payload });
-      return {
+      },
+      fuelChange: {
         configured: true,
         required: 3,
         consumed: 3,
         shortage: 0,
         itemName: "Жидкий уголь",
         warning: ""
-      };
+      }
+    });
+    moduleApi.socketCommandBus.request = async (command, payload) => {
+      requests.push({ command, payload });
+      return {};
     };
 
     const result = await moduleApi.advanceTravelHours(8);
 
-    assert.deepEqual(requests, [{
-      command: "group.transport.consumeFuel",
-      payload: { groupActorId: "group-a", appliedMiles: 24 }
-    }]);
+    assert.deepEqual(requests, []);
     assert.equal(result.fuelChange.consumed, 3);
   }
   finally {

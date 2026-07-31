@@ -987,9 +987,10 @@ export function buildTravelSnapshot(rawNetwork = {}, rawState = {}, {
 }
 
 export class TravelService {
-  constructor({ groupContextService = null, commandBus = null, networkPath = TRAVEL_NETWORK_PATH, citiesPath = CANONICAL_CITY_CONNECTIONS_PATH, speedProvider = null } = {}) {
+  constructor({ groupContextService = null, commandBus = null, fuelService = null, networkPath = TRAVEL_NETWORK_PATH, citiesPath = CANONICAL_CITY_CONNECTIONS_PATH, speedProvider = null } = {}) {
     this.groupContextService = groupContextService;
     this.commandBus = commandBus;
+    this.fuelService = fuelService;
     this.networkPath = networkPath;
     this.citiesPath = citiesPath;
     this.networkPromise = null;
@@ -1069,16 +1070,27 @@ export class TravelService {
     }
 
     const travelState = normalizeTravelState(nextState);
-    const committedState = isActiveGmClient(globalThis.game)
+    const commitResult = isActiveGmClient(globalThis.game)
       ? await this.replaceGroupTravelState(context.groupId, travelState)
       : await this.commandBus?.request?.(GROUP_TRAVEL_REPLACE_STATE_COMMAND, {
         groupActorId: context.groupId,
         travelState
       });
-    if (!committedState) {
+    if (!commitResult) {
       throw new Error("Travel command bus is unavailable.");
     }
-    return normalizeTravelState(committedState);
+    if (commitResult?.travelState) {
+      return {
+        travelState: normalizeTravelState(commitResult.travelState),
+        appliedMiles: roundNumber(toNumber(commitResult.appliedMiles, 0), 2),
+        fuelChange: commitResult.fuelChange ?? null
+      };
+    }
+    return {
+      travelState: normalizeTravelState(commitResult),
+      appliedMiles: null,
+      fuelChange: null
+    };
   }
 
   replaceGroupTravelState(groupActorId, nextState) {
@@ -1088,8 +1100,42 @@ export class TravelService {
 
     const travelState = normalizeTravelState(nextState);
     return this.groupContextService.mutateGroupState(groupActorId, (groupState) => {
+      const previousState = normalizeTravelState(groupState.travelState ?? {});
+      const sameRoute = previousState.originCityId === travelState.originCityId
+        && previousState.destinationCityId === travelState.destinationCityId
+        && previousState.mode === travelState.mode;
+      const appliedMiles = sameRoute
+        ? roundNumber(travelState.traveledMiles - previousState.traveledMiles, 2)
+        : 0;
       groupState.travelState = clone(travelState);
-      return travelState;
+      return { travelState, appliedMiles, fuelChange: null };
+    }, {
+      afterCommit: async (commitResult) => {
+        if (
+          commitResult.appliedMiles <= 0
+          || typeof this.fuelService?.consumeForTravel !== "function"
+        ) {
+          return commitResult;
+        }
+        try {
+          commitResult.fuelChange = await this.fuelService.consumeForTravel({
+            groupActorId,
+            appliedMiles: commitResult.appliedMiles
+          });
+        }
+        catch (error) {
+          console.warn(`${MODULE_ID} | Failed to process transport fuel during travel commit.`, error);
+          commitResult.fuelChange = {
+            configured: false,
+            required: 0,
+            consumed: 0,
+            shortage: 0,
+            itemName: "",
+            warning: "Не удалось проверить топливо транспорта. Путешествие продолжено."
+          };
+        }
+        return commitResult;
+      }
     });
   }
 
@@ -1128,7 +1174,7 @@ export class TravelService {
       mode,
       traveledMiles: 0
     });
-    const committedState = await this.#writeGroupTravelState(context, nextState);
+    const { travelState: committedState } = await this.#writeGroupTravelState(context, nextState);
     const baseNetwork = await this.#loadNetwork();
     const { network, speedLabel, speedSourceLabel } = await this.#resolveNetworkForContext(baseNetwork, context);
     return buildTravelSnapshot(network, committedState, {
@@ -1140,7 +1186,7 @@ export class TravelService {
 
   async clearRoute() {
     const context = this.#getCurrentGroupContext();
-    const committedState = await this.#writeGroupTravelState(context, normalizeTravelState({}));
+    const { travelState: committedState } = await this.#writeGroupTravelState(context, normalizeTravelState({}));
     const baseNetwork = await this.#loadNetwork();
     const { network, speedLabel, speedSourceLabel } = await this.#resolveNetworkForContext(baseNetwork, context);
     return buildTravelSnapshot(network, committedState, {
@@ -1161,7 +1207,8 @@ export class TravelService {
     }
 
     const nextState = advanceTravelProgress(currentState, plan, hours);
-    const committedState = await this.#writeGroupTravelState(context, nextState);
+    const commitResult = await this.#writeGroupTravelState(context, nextState);
+    const committedState = commitResult.travelState;
     const snapshot = buildTravelSnapshot(network, committedState, {
       canAdvance: Boolean(context?.canManage),
       speedLabel,
@@ -1169,11 +1216,14 @@ export class TravelService {
     });
     return {
       ...snapshot,
+      fuelChange: commitResult.fuelChange,
       travelChange: {
         groupActorId: cleanId(context?.groupId),
         requestedHours: nextState.requestedHours,
-        appliedHours: nextState.addedHours,
-        appliedMiles: nextState.addedMiles
+        appliedHours: commitResult.appliedMiles == null
+          ? nextState.addedHours
+          : roundNumber(commitResult.appliedMiles / network.speedMph, 2),
+        appliedMiles: commitResult.appliedMiles ?? nextState.addedMiles
       }
     };
   }

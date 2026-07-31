@@ -278,6 +278,59 @@ test("TravelService pins actual traveled miles to the group captured before muta
   }
 });
 
+test("TravelService derives fuel miles from serialized committed state and ignores a repeated stale replacement", async () => {
+  const groupState = {
+    travelState: normalizeTravelState({
+      originCityId: "a",
+      destinationCityId: "c",
+      mode: "land",
+      traveledMiles: 6
+    })
+  };
+  const fuelCalls = [];
+  const events = [];
+  const groupContextService = {
+    async mutateGroupState(groupActorId, mutator, options = {}) {
+      assert.equal(groupActorId, "group-a");
+      const result = await mutator(groupState);
+      events.push("committed");
+      return typeof options.afterCommit === "function"
+        ? options.afterCommit(result)
+        : result;
+    }
+  };
+  const fuelService = {
+    async consumeForTravel(payload) {
+      events.push("fuel");
+      fuelCalls.push(structuredClone(payload));
+      return { configured: true, consumed: payload.appliedMiles };
+    }
+  };
+  const service = new TravelService({ groupContextService, fuelService });
+  const requestedState = normalizeTravelState({
+    originCityId: "a",
+    destinationCityId: "c",
+    mode: "land",
+    traveledMiles: 12
+  });
+
+  const first = await service.replaceGroupTravelState("group-a", requestedState);
+  const repeated = await service.replaceGroupTravelState("group-a", requestedState);
+
+  assert.deepEqual(first, {
+    travelState: requestedState,
+    appliedMiles: 6,
+    fuelChange: { configured: true, consumed: 6 }
+  });
+  assert.deepEqual(repeated, {
+    travelState: requestedState,
+    appliedMiles: 0,
+    fuelChange: null
+  });
+  assert.deepEqual(fuelCalls, [{ groupActorId: "group-a", appliedMiles: 6 }]);
+  assert.deepEqual(events, ["committed", "fuel", "committed"]);
+});
+
 test("actual travel network does not use the conflicting Orlanis-Freh land bridge", async () => {
   const actualNetwork = JSON.parse(await readFile(new URL("../data/travel-network.json", import.meta.url), "utf8"));
   const economyCities = JSON.parse(await readFile(new URL("../data/cities.json", import.meta.url), "utf8"));
@@ -441,7 +494,11 @@ test("TravelService sends normalized replacement and builds its snapshot from th
   const commandBus = {
     async request(command, payload) {
       requests.push({ command, payload });
-      return committedState;
+      return {
+        travelState: committedState,
+        appliedMiles: 0,
+        fuelChange: null
+      };
     }
   };
 

@@ -320,16 +320,11 @@ test("transport speed repair restores only malformed imported fields on concrete
   assert.deepEqual(updates, [{
     "system.attributes.movement.walk": 100,
     "system.attributes.travel.speeds.land": 10,
-    [`flags.${MODULE_ID}.transport.combatSpeed`]: {
-      primaryFt: 100,
-      secondaryFt: 200,
-      raw: "100/200 футов"
-    },
-    [`flags.${MODULE_ID}.transport.travelSpeed`]: {
-      value: 10,
-      units: "mi",
-      raw: "10 миль/час"
-    }
+    [`flags.${MODULE_ID}.transport.combatSpeed.primaryFt`]: 100,
+    [`flags.${MODULE_ID}.transport.combatSpeed.secondaryFt`]: 200,
+    [`flags.${MODULE_ID}.transport.combatSpeed.raw`]: "100/200 футов",
+    [`flags.${MODULE_ID}.transport.travelSpeed.value`]: 10,
+    [`flags.${MODULE_ID}.transport.travelSpeed.raw`]: "10 миль/час"
   }]);
   assert.equal(actor.img, "world/custom-kettle.webp");
   assert.equal(actor.system.attributes.hp.value, 70);
@@ -374,4 +369,81 @@ test("transport speed repair preserves deliberate non-zero world overrides", asy
 
   assert.deepEqual(result, { inspected: 1, updated: 0 });
   assert.equal(updates, 0);
+});
+
+test("transport speed repair preserves a deliberate stopped transport and partial flag overrides", async () => {
+  const source = catalog.find((row) => row.name === "Автомобиль «Кипятильник»");
+  const sourceData = buildTransportActorData(source);
+  const updates = [];
+  const actor = {
+    id: "stopped-kettle",
+    type: "vehicle",
+    flags: {
+      [MODULE_ID]: {
+        sourceId: source.sourceId,
+        transport: {
+          sourceId: source.sourceId,
+          instance: true,
+          combatSpeed: { primaryFt: 0, secondaryFt: 333, raw: "остановлен вручную" },
+          travelSpeed: { value: 0, units: "mi", raw: "остановлен вручную" }
+        }
+      }
+    },
+    system: {
+      attributes: {
+        movement: { walk: 0, units: "ft" },
+        travel: { speeds: { land: 0 }, units: "mph" }
+      }
+    },
+    async update(patch) {
+      updates.push(structuredClone(patch));
+    }
+  };
+
+  const result = await repairTransportInstanceSpeeds(
+    [actor],
+    new Map([[source.sourceId, sourceData]])
+  );
+
+  assert.deepEqual(result, { inspected: 1, updated: 0 });
+  assert.deepEqual(updates, []);
+});
+
+test("transport speed repair merges malformed primary values without replacing valid nested overrides", async () => {
+  const source = catalog.find((row) => row.name === "Автомобиль «Кипятильник»");
+  const sourceData = buildTransportActorData(source);
+  const updates = [];
+  const actor = {
+    id: "partial-kettle",
+    type: "vehicle",
+    flags: {
+      [MODULE_ID]: {
+        sourceId: source.sourceId,
+        transport: {
+          sourceId: source.sourceId,
+          instance: true,
+          combatSpeed: { primaryFt: null, secondaryFt: 333, raw: "ручной второй режим" },
+          travelSpeed: { value: null, units: "kn", raw: "ручные единицы" }
+        }
+      }
+    },
+    system: {
+      attributes: {
+        movement: { walk: 0, units: "ft" },
+        travel: { speeds: { land: 0 }, units: "mph" }
+      }
+    },
+    async update(patch) {
+      updates.push(structuredClone(patch));
+    }
+  };
+
+  await repairTransportInstanceSpeeds([actor], new Map([[source.sourceId, sourceData]]));
+
+  assert.deepEqual(updates, [{
+    "system.attributes.movement.walk": 100,
+    "system.attributes.travel.speeds.land": 10,
+    [`flags.${MODULE_ID}.transport.combatSpeed.primaryFt`]: 100,
+    [`flags.${MODULE_ID}.transport.travelSpeed.value`]: 10
+  }]);
 });
