@@ -1019,12 +1019,12 @@ export class RebreyaMainModule {
     });
     this.travelMapService = new TravelMapService();
     this.inventoryService = new InventoryService(this);
+    this.durabilityService = new DurabilityService(this);
     this.transportInstanceService = new TransportInstanceService(this, {
       gameProvider: () => globalThis.game,
       actorProvider: () => globalThis.Actor,
       fromUuid: (uuid) => globalThis.fromUuid(uuid)
     });
-    this.durabilityService = new DurabilityService(this);
     this.travelService.setSpeedProvider((context) => this.inventoryService.getActiveTransportSpeedMeta({ context }));
     this.mapObjectTokenService = new MapObjectTokenService({
       gameProvider: () => globalThis.game,
