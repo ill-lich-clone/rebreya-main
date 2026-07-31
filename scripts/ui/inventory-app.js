@@ -11,6 +11,12 @@ import {
   openPartyInventoryCrestPicker,
   resolvePartyInventoryCrest
 } from "./party-inventory-crest.js";
+import {
+  loadTravelLandscapeId,
+  normalizeTravelLandscapeId,
+  prepareTravelLandscapeContext,
+  saveTravelLandscapeId
+} from "./travel-landscape-selector.js";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
@@ -2959,6 +2965,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.downtimeQueuePage = 1;
     this.downtimeArchivePage = 1;
     this.travelTrackTime = false;
+    this.travelLandscapeId = loadTravelLandscapeId();
     this.expandedPartyMembers = new Set();
     this.searchRenderTimeout = null;
     this.craftSearchRenderTimeout = null;
@@ -3813,6 +3820,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
           dayValue: calendarSnapshot.day
         },
         travel,
+        travelLandscape: prepareTravelLandscapeContext(this.travelLandscapeId),
         transport,
         downtime,
         typeOptions: [
@@ -5471,6 +5479,19 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     element.querySelectorAll("[data-action='switch-tab']").forEach((button) => {
       button.addEventListener("click", (event) => {
         this.setActiveTab(event.currentTarget.dataset.tab || "inventory");
+      }, listenerOptions);
+    });
+
+    element.querySelectorAll("[data-action='select-travel-landscape']").forEach((button) => {
+      button.addEventListener("click", (event) => {
+        const nextLandscapeId = normalizeTravelLandscapeId(
+          event.currentTarget.dataset.landscapeId
+        );
+        if (nextLandscapeId === this.travelLandscapeId) {
+          return;
+        }
+        this.travelLandscapeId = saveTravelLandscapeId(nextLandscapeId);
+        this.render({ force: true, preserveScroll: true });
       }, listenerOptions);
     });
 

@@ -1518,6 +1518,23 @@ test("InventoryApp allows downtime tab and maps downtime snapshot into context o
 
 test("InventoryApp allows travel tab and maps travel snapshot into context", async () => {
   const restoreFoundry = installFoundryApplicationStub();
+  const previousGame = globalThis.game;
+  const previousLocalStorage = globalThis.localStorage;
+  const stored = new Map([
+    ["rebreya-main.travelLandscape:world-1:user-1", "city"]
+  ]);
+  globalThis.game = {
+    world: { id: "world-1" },
+    user: { id: "user-1" }
+  };
+  globalThis.localStorage = {
+    getItem(key) {
+      return stored.get(key) ?? null;
+    },
+    setItem(key, value) {
+      stored.set(key, value);
+    }
+  };
   const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?travel-tab=${Date.now()}`);
   const calls = [];
   const app = new InventoryApp(createModuleApi({
@@ -1570,9 +1587,77 @@ test("InventoryApp allows travel tab and maps travel snapshot into context", asy
     assert.equal(context.tabs.isTravel, true);
     assert.equal(context.travel.plan.totalMiles, 180);
     assert.equal(context.travel.progress.traveledMiles, 24);
+    assert.equal(context.travelLandscape.active.id, "city");
+    assert.equal(context.travelLandscape.options.length, 3);
+    assert.equal(
+      context.travelLandscape.options.filter((option) => option.selected).length,
+      1
+    );
     assert.deepEqual(calls.filter((call) => call[0] === "getTravelSnapshot"), [["getTravelSnapshot"]]);
   }
   finally {
+    globalThis.game = previousGame;
+    globalThis.localStorage = previousLocalStorage;
+    restoreFoundry();
+  }
+});
+
+test("InventoryApp stores a local travel landscape choice and rerenders once", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const dom = installMinimalDom();
+  const previousGame = globalThis.game;
+  const previousLocalStorage = globalThis.localStorage;
+  const stored = new Map();
+  globalThis.game = {
+    world: { id: "world-1" },
+    user: { id: "user-1" }
+  };
+  globalThis.localStorage = {
+    getItem(key) {
+      return stored.get(key) ?? null;
+    },
+    setItem(key, value) {
+      stored.set(key, value);
+    }
+  };
+
+  try {
+    const { InventoryApp } = await import(
+      `../scripts/ui/inventory-app.js?travel-landscape-click=${Date.now()}`
+    );
+    const choice = createFakeElement({
+      dataset: { landscapeId: "wilderness" }
+    });
+    const root = createFakeElement({ closest: () => root });
+    root.querySelector = () => null;
+    root.querySelectorAll = (selector) => (
+      selector === "[data-action='select-travel-landscape']"
+        ? [choice]
+        : []
+    );
+    const app = new InventoryApp(createModuleApi({
+      getGroupContext: () => null
+    }));
+    const renderCalls = [];
+    app.element = root;
+    app.render = async (options) => {
+      renderCalls.push(options);
+    };
+
+    await app._onRender({}, {});
+    await dispatchClick(choice);
+    await dispatchClick(choice);
+
+    assert.deepEqual(renderCalls, [{ force: true, preserveScroll: true }]);
+    assert.equal(
+      stored.get("rebreya-main.travelLandscape:world-1:user-1"),
+      "wilderness"
+    );
+  }
+  finally {
+    globalThis.game = previousGame;
+    globalThis.localStorage = previousLocalStorage;
+    dom.restore();
     restoreFoundry();
   }
 });
