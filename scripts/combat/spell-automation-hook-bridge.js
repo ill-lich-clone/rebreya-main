@@ -29,7 +29,15 @@ function operationIdFallback() {
 }
 
 function moduleUsageConfig(usageConfig) {
-  return usageConfig?.[MODULE_ID] ?? usageConfig?.flags?.[MODULE_ID] ?? {};
+  const direct = usageConfig?.[MODULE_ID];
+  const flagged = usageConfig?.flags?.[MODULE_ID];
+  if (!isRecord(direct)) {
+    return isRecord(flagged) ? flagged : {};
+  }
+  if (!isRecord(flagged)) {
+    return direct;
+  }
+  return { ...flagged, ...direct };
 }
 
 function usageConfigFor(eventName, rawArgs, workflow) {
@@ -60,6 +68,49 @@ function operationIdFrom(source, usageConfig, options) {
   }
 
   return (options.operationIdFactory ?? operationIdFallback)();
+}
+
+function hasOperationId(value) {
+  return typeof value === "string" && value.length > 0;
+}
+
+function persistOperationId(usageConfig, operationId) {
+  if (!isRecord(usageConfig) || !hasOperationId(operationId)) {
+    return;
+  }
+
+  if (!isRecord(usageConfig[MODULE_ID])) {
+    usageConfig[MODULE_ID] = {};
+  }
+  if (!hasOperationId(usageConfig[MODULE_ID].operationId)) {
+    usageConfig[MODULE_ID].operationId = operationId;
+  }
+
+  if (!isRecord(usageConfig.flags)) {
+    usageConfig.flags = {};
+  }
+  if (!isRecord(usageConfig.flags[MODULE_ID])) {
+    usageConfig.flags[MODULE_ID] = {};
+  }
+  if (!hasOperationId(usageConfig.flags[MODULE_ID].operationId)) {
+    usageConfig.flags[MODULE_ID].operationId = operationId;
+  }
+
+  if (usageConfig.midiOptions == null) {
+    usageConfig.midiOptions = {};
+  }
+  if (!isRecord(usageConfig.midiOptions)) {
+    return;
+  }
+  if (!isRecord(usageConfig.midiOptions.workflowOptions)) {
+    usageConfig.midiOptions.workflowOptions = {};
+  }
+  if (!isRecord(usageConfig.midiOptions.workflowOptions[MODULE_ID])) {
+    usageConfig.midiOptions.workflowOptions[MODULE_ID] = {};
+  }
+  if (!hasOperationId(usageConfig.midiOptions.workflowOptions[MODULE_ID].operationId)) {
+    usageConfig.midiOptions.workflowOptions[MODULE_ID].operationId = operationId;
+  }
 }
 
 function activityFor(eventName, source) {
@@ -140,7 +191,8 @@ export function readSpellAutomationDeclaration(source) {
 
 export function isSpellAutomationChildInvocation(usageConfig = {}) {
   const flags = moduleUsageConfig(usageConfig);
-  return flags.spellAutomationChild === true || flags.spellAutomationBypass === true;
+  return flags.spellAutomationChild === true
+    || (flags.spellAutomationBypass === true && flags.spellAutomationResume !== true);
 }
 
 export function buildSpellAutomationContext(eventName, rawArgs, options = {}) {
@@ -166,7 +218,7 @@ export function buildSpellAutomationContext(eventName, rawArgs, options = {}) {
 
   return {
     eventName,
-    action: options.action ?? usageConfig?.action ?? document?.action ?? eventName,
+    action: options.action ?? usageConfig?.action ?? document?.action ?? declaration?.action ?? eventName,
     operationId: operationIdFrom(document, usageConfig, options),
     declaration,
     isChildInvocation,
@@ -212,6 +264,7 @@ export class SpellAutomationHookBridge {
       preflight,
       operationIdFactory: this.operationIdFactory
     });
+    persistOperationId(usageConfig, context.operationId);
 
     try {
       const dispatched = this.registry?.dispatch?.("preUseActivity", context.declaration, context);

@@ -545,7 +545,8 @@ export class SpellAutomationService {
       ...usageConfig,
       [MODULE_ID]: {
         ...(usageConfig?.[MODULE_ID] ?? {}),
-        spellAutomationBypass: true
+        spellAutomationBypass: true,
+        spellAutomationResume: true
       },
       flags: {
         ...(usageConfig?.flags ?? {}),

@@ -860,7 +860,7 @@ test("MIDI workflow continues when a lower-level Counterspell ability check fail
   assert.equal(await service.applyMidiWorkflow(workflow), true);
 });
 
-test("deferred dnd5e pre-use resumes an active root cast with a bypass marker", async () => {
+test("deferred dnd5e pre-use resumes an active root cast with bypass and resume markers", async () => {
   const service = makeService({
     candidates: [counterspellCandidate()],
     prompt: async () => false
@@ -886,6 +886,28 @@ test("deferred dnd5e pre-use resumes an active root cast with a bypass marker", 
 
   assert.equal(useCalls.length, 1);
   assert.equal(useCalls[0][0][MODULE_ID].spellAutomationBypass, true);
+  assert.equal(useCalls[0][0][MODULE_ID].spellAutomationResume, true);
+});
+
+test("deferred dnd5e pre-use does not resume a parent cast counterspelled successfully", async () => {
+  const service = makeService({ candidates: [counterspellCandidate()] });
+  const useCalls = [];
+  const activity = {
+    id: "activity-root",
+    uuid: "Activity.root",
+    actor: { uuid: "Actor.caster" },
+    item: {
+      uuid: "Item.root",
+      system: { level: 3, components: { verbal: true, somatic: false } }
+    },
+    system: { range: { value: 90, units: "ft" } },
+    use: async (...args) => useCalls.push(args)
+  };
+
+  assert.equal(service.deferDnd5ePreUseActivity(activity, {}, {}, {}), false);
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(useCalls, []);
 });
 
 test("deferred dnd5e pre-use resumes the cast when reaction resolution errors", async () => {

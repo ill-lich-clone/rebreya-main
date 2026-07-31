@@ -350,3 +350,110 @@ test("unmanaged asynchronous events return fail-open without creating an operati
   assert.equal(dispatches, 0);
   assert.equal(operationIds, 0);
 });
+
+test("routes managed cast and release actions from their versioned declarations", async () => {
+  const contexts = [];
+  const bridge = new SpellAutomationHookBridge({
+    registry: {
+      dispatch(eventName, registered, context) {
+        contexts.push({ eventName, registered, context });
+        return { handled: true, value: true };
+      }
+    }
+  });
+  const cast = activity({ item: { flags: { [MODULE_ID]: { spellAutomation: declaration({ action: "cast" }) } } } });
+  const release = activity({ item: { flags: { [MODULE_ID]: { spellAutomation: declaration({ action: "release" }) } } } });
+
+  assert.equal(await bridge.handlePostUseActivity(cast, {}, { updates: [] }), true);
+  assert.equal(bridge.handlePreUseActivity(release, {}, {}, {}), true);
+
+  assert.deepEqual(contexts.map(({ eventName, context }) => [eventName, context.action]), [
+    ["postUseActivity", "cast"],
+    ["preUseActivity", "release"]
+  ]);
+});
+
+test("correlates one generated operation ID through pre-use, post-use, and Midi workflows", async () => {
+  const contexts = [];
+  let generated = 0;
+  const bridge = new SpellAutomationHookBridge({
+    registry: {
+      dispatch(eventName, registered, context) {
+        contexts.push({ eventName, context });
+        return { handled: true, value: true };
+      }
+    },
+    operationIdFactory: () => `operation-${++generated}`
+  });
+  const primary = activity({ item: { flags: { [MODULE_ID]: { spellAutomation: declaration({ action: "cast" }) } } } });
+  const primaryUsage = { midiOptions: { workflowOptions: {} } };
+
+  assert.equal(bridge.handlePreUseActivity(primary, primaryUsage, {}, {}), true);
+  assert.equal(primaryUsage.flags[MODULE_ID].operationId, "operation-1");
+  assert.equal(primaryUsage.midiOptions.workflowOptions[MODULE_ID].operationId, "operation-1");
+  assert.equal(await bridge.handlePostUseActivity(primary, primaryUsage, { updates: [] }), true);
+  assert.equal(await bridge.handleMidiRollComplete({ activity: primary, options: primaryUsage.midiOptions.workflowOptions }), true);
+
+  const secondaryUsage = { midiOptions: { workflowOptions: {} } };
+  assert.equal(bridge.handlePreUseActivity(activity(), secondaryUsage, {}, {}), true);
+
+  assert.deepEqual(contexts.slice(0, 3).map(({ eventName, context }) => [eventName, context.operationId]), [
+    ["preUseActivity", "operation-1"],
+    ["postUseActivity", "operation-1"],
+    ["midiRollComplete", "operation-1"]
+  ]);
+  assert.equal(secondaryUsage.flags[MODULE_ID].operationId, "operation-2");
+});
+
+test("preserves an existing operation ID from module flags when top-level options are present", () => {
+  let context = null;
+  const bridge = new SpellAutomationHookBridge({
+    registry: {
+      dispatch(eventName, registered, received) {
+        context = received;
+        return { handled: true, value: true };
+      }
+    },
+    operationIdFactory: () => "unexpected-operation"
+  });
+  const usageConfig = {
+    [MODULE_ID]: { configureDialog: false },
+    flags: { [MODULE_ID]: { operationId: "kept-operation" } },
+    midiOptions: { workflowOptions: { [MODULE_ID]: { operationId: "kept-operation" } } }
+  };
+
+  assert.equal(bridge.handlePreUseActivity(activity(), usageConfig, {}, {}), true);
+
+  assert.equal(context.operationId, "kept-operation");
+  assert.equal(usageConfig[MODULE_ID].operationId, "kept-operation");
+  assert.equal(usageConfig.flags[MODULE_ID].operationId, "kept-operation");
+  assert.equal(usageConfig.midiOptions.workflowOptions[MODULE_ID].operationId, "kept-operation");
+});
+
+test("routes resumed parent uses while skipping child and ordinary bypass uses", () => {
+  const contexts = [];
+  const bridge = new SpellAutomationHookBridge({
+    registry: {
+      dispatch(eventName, registered, context) {
+        contexts.push({ eventName, context });
+        return { handled: true, value: true };
+      }
+    }
+  });
+  const parent = activity({ item: { flags: { [MODULE_ID]: { spellAutomation: declaration({ action: "release" }) } } } });
+  const resumedUsage = {
+    [MODULE_ID]: {
+      operationId: "parent-operation",
+      spellAutomationBypass: true,
+      spellAutomationResume: true
+    }
+  };
+
+  assert.equal(bridge.handlePreUseActivity(parent, resumedUsage, {}, {}), true);
+  assert.equal(bridge.handlePreUseActivity(parent, { [MODULE_ID]: { spellAutomationChild: true } }, {}, {}), true);
+  assert.equal(bridge.handlePreUseActivity(parent, { [MODULE_ID]: { spellAutomationBypass: true } }, {}, {}), true);
+
+  assert.deepEqual(contexts.map(({ eventName, context }) => [eventName, context.action, context.operationId]), [
+    ["preUseActivity", "release", "parent-operation"]
+  ]);
+});
