@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFile } from "node:fs/promises";
 
 import { SpellAutomationRegistry } from "../scripts/combat/spell-automation-registry.js";
+import { TransportCompendiumService } from "../scripts/data/transport-compendium.js";
 
 function createHooks() {
   const onceCallbacks = new Map();
@@ -83,6 +85,7 @@ test("ready composes spell automation on one registry alongside legacy hook regi
     assert.ok(moduleApi.spellInterceptionRuntime);
     assert.ok(moduleApi.spellAreaRuntime);
     assert.equal(typeof moduleApi.spellAutomationService?.initialize, "function");
+    assert.ok(moduleApi.transportCompendium instanceof TransportCompendiumService);
 
     const handlers = { preUseActivity: () => false, postSummon: () => true };
     moduleApi.spellInterceptionRuntime.registerRecipe({ recipe: "counterspell", version: 1, handlers });
@@ -112,4 +115,12 @@ test("ready composes spell automation on one registry alongside legacy hook regi
   finally {
     restores.reverse().forEach((restore) => restore());
   }
+});
+
+test("composition root synchronizes the managed transport Actor compendium", async () => {
+  const source = await readFile(new URL("../scripts/main.js", import.meta.url), "utf8");
+
+  assert.match(source, /import\s+\{\s*TransportCompendiumService\s*\}\s+from\s+"\.\/data\/transport-compendium\.js";/u);
+  assert.match(source, /this\.transportCompendium\s*=\s*new TransportCompendiumService/u);
+  assert.match(source, /await this\.transportCompendium\.sync\(\);/u);
 });

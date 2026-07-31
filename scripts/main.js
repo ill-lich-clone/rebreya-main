@@ -9,6 +9,7 @@ import { StatesCompendiumService } from "./data/states-compendium.js";
 import { RacesCompendiumService } from "./data/races-compendium.js?v=1.4.110-giant-tribe-cache-fixes-2&implants=1";
 import { ClassesCompendiumService } from "./data/classes-compendium.js";
 import { CraftsmanConstructCompendiumService } from "./data/craftsman-construct-compendium.js";
+import { TransportCompendiumService } from "./data/transport-compendium.js";
 import { SpellsCompendiumService } from "./data/spells-compendium.js?v=1.4.109-counterspell-sanitize";
 import { ActionsCompendiumService } from "./data/actions-compendium.js";
 import { DowntimeCompendiumService } from "./data/downtime-compendium.js";
@@ -980,6 +981,10 @@ export class RebreyaMainModule {
     this.craftsmanConstructCompendium = new CraftsmanConstructCompendiumService({
       gameProvider: () => globalThis.game,
       actorProvider: () => globalThis.Actor,
+      isActiveGmClient
+    });
+    this.transportCompendium = new TransportCompendiumService({
+      gameProvider: () => globalThis.game,
       isActiveGmClient
     });
     this.classesCompendium = new ClassesCompendiumService();
@@ -2322,6 +2327,14 @@ export class RebreyaMainModule {
         console.error(`${MODULE_ID} | Failed to sync spells compendium.`, error);
         ui.notifications?.warn("Не удалось синхронизировать компендиум заклинаний Rebreya.");
       }
+    }
+
+    try {
+      await this.transportCompendium.sync();
+    }
+    catch (error) {
+      console.error(`${MODULE_ID} | Failed to sync transport compendium.`, error);
+      ui.notifications?.warn("Не удалось синхронизировать компендиум транспорта Ребреи.");
     }
 
     try {
