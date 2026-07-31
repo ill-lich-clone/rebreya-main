@@ -374,10 +374,13 @@ export class SpellInstanceRuntime {
     });
   }
 
-  updateInstance({ actor, instanceId, expectedRevision, operationId, state } = {}) {
+  updateInstance({ actor, instanceId, expectedRevision, operationId, state, authoritative = false } = {}) {
     const revision = requireNonNegativeInteger(expectedRevision, "Expected spell instance revision");
     const nextState = requireState(state);
-    if (!this.#canUpdateActor(actor)) {
+    if (typeof authoritative !== "boolean") {
+      throw new TypeError("Spell instance authoritative mutation flag must be a boolean.");
+    }
+    if (authoritative || !this.#canUpdateActor(actor)) {
       const record = this.readInstance({ actor, instanceId });
       if (!record) throw new Error(`Spell instance not found: ${requireNonEmptyString(instanceId, "Spell instance ID")}`);
       return this.#requestMutation({
@@ -412,9 +415,12 @@ export class SpellInstanceRuntime {
     });
   }
 
-  deleteInstance({ actor, instanceId, expectedRevision, operationId } = {}) {
+  deleteInstance({ actor, instanceId, expectedRevision, operationId, authoritative = false } = {}) {
     const revision = requireNonNegativeInteger(expectedRevision, "Expected spell instance revision");
-    if (!this.#canUpdateActor(actor)) {
+    if (typeof authoritative !== "boolean") {
+      throw new TypeError("Spell instance authoritative mutation flag must be a boolean.");
+    }
+    if (authoritative || !this.#canUpdateActor(actor)) {
       const record = this.readInstance({ actor, instanceId });
       if (!record) throw new Error(`Spell instance not found: ${requireNonEmptyString(instanceId, "Spell instance ID")}`);
       return this.#requestMutation({
