@@ -138,7 +138,19 @@ function isPromise(value) {
 }
 
 function claimView(claim) {
-  return claim ?? null;
+  if (!claim) {
+    return null;
+  }
+  return Object.freeze({
+    operationId: claim.operationId,
+    activityUuid: claim.activityUuid,
+    declaration: cloneSerializable(claim.declaration),
+    createdAt: claim.createdAt
+  });
+}
+
+function clonePlainInput(value) {
+  return value === null || value === undefined ? value : cloneSerializable(value);
 }
 
 function rawSummonLink(token) {
@@ -500,7 +512,8 @@ export class SummonLifecycleRuntime {
     const operationTokens = this.#operationTokens(claim, context.tokens);
     const scene = tokenScene(operationTokens[0]);
     const key = `summon:${scene?.uuid ?? claim.activityUuid}:${claim.operationId}`;
-    return this.#coordinator.runIdempotent(key, claim.operationId, async () => {
+    const requestId = [scene?.uuid ?? "", claim.activityUuid, claim.declaration.recipe, claim.declaration.version, claim.operationId].join("\u0000");
+    return this.#coordinator.runIdempotent(key, requestId, async () => {
       const currentTokens = this.#operationTokens(claim, context.tokens);
       const provider = this.#providerForClaim(claim);
       try {
@@ -546,14 +559,14 @@ export class SummonLifecycleRuntime {
   #providerContext(claim, context, tokens, extra = {}) {
     return Object.freeze({
       operationId: claim.operationId,
-      declaration: claim.declaration,
+      declaration: cloneSerializable(claim.declaration),
       activity: claim.activity,
       item: claim.activity?.item ?? null,
       sourceActor: claim.activity?.actor ?? null,
       sourceToken: context.sourceToken ?? context.token ?? null,
       controllingEffect: context.controllingEffect ?? null,
-      profile: context.profile ?? null,
-      summonOptions: context.summonOptions ?? null,
+      profile: clonePlainInput(context.profile),
+      summonOptions: clonePlainInput(context.summonOptions),
       tokenData: extra.tokenData ?? (context.tokenData ? cloneSerializable(context.tokenData) : null),
       token: extra.token ?? context.token ?? null,
       tokens: frozenTokens(tokens),
@@ -566,14 +579,14 @@ export class SummonLifecycleRuntime {
   #validationContext(provider, declaration, operationId, activity, context) {
     return Object.freeze({
       operationId,
-      declaration,
+      declaration: cloneSerializable(declaration),
       activity,
       item: activity?.item ?? null,
       sourceActor: activity?.actor ?? null,
       sourceToken: context.sourceToken ?? context.token ?? null,
       controllingEffect: context.controllingEffect ?? null,
-      profile: context.profile ?? null,
-      summonOptions: context.summonOptions ?? null,
+      profile: clonePlainInput(context.profile),
+      summonOptions: clonePlainInput(context.summonOptions),
       tokenData: null,
       token: null,
       tokens: frozenTokens(),
@@ -626,7 +639,10 @@ export class SummonLifecycleRuntime {
     const expected = this.#commonLink(claim, context);
     const current = readSummonLink(token);
     if (JSON.stringify(current) !== JSON.stringify(expected)) {
-      await token.update?.({ flags: { [MODULE_ID]: { [SUMMON_LINK_FLAG]: expected } } });
+      if (typeof token.update !== "function") {
+        throw new TypeError("Summon token must support update to repair its common link.");
+      }
+      await token.update({ [`flags.${MODULE_ID}.${SUMMON_LINK_FLAG}`]: expected });
     }
   }
 

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { MODULE_ID } from "../scripts/constants.js";
+import { WorldMutationCoordinator } from "../scripts/application/world-mutation-coordinator.js";
 import { SpellAutomationRegistry } from "../scripts/combat/spell-automation-registry.js";
 import {
   SUMMON_LINK_FLAG,
@@ -214,7 +215,8 @@ test("repeated pre-use with the same operation id reuses the claim", () => {
   const initialClaim = runtime.claimPreUse(first);
   const repeatedClaim = runtime.claimPreUse(second);
 
-  assert.equal(repeatedClaim, initialClaim);
+  assert.notEqual(repeatedClaim, initialClaim);
+  assert.deepEqual(repeatedClaim, initialClaim);
   assert.equal(runtime.pendingClaimCount, 1);
 });
 
@@ -230,7 +232,7 @@ test("preSummon binds the oldest matching activity claim to the options object",
   const bound = runtime.bindPreSummon({ activity: first.activity, summonOptions: options });
 
   assert.equal(bound.operationId, "first");
-  assert.equal(runtime.bindPreSummon({ activity: first.activity, summonOptions: options }), bound);
+  assert.deepEqual(runtime.bindPreSummon({ activity: first.activity, summonOptions: options }), bound);
 });
 
 test("an explicit options operation id wins over FIFO fallback", () => {
@@ -426,7 +428,7 @@ test("repairs a matching incomplete link before finalizing and links its control
 
   await runtime.finalizeSummon({ activity: context.activity, summonOptions, tokens: [token], controllingEffect: context.controllingEffect });
 
-  assert.deepEqual(token.updates, [{ flags: { [MODULE_ID]: { [SUMMON_LINK_FLAG]: complete } } }]);
+  assert.deepEqual(token.updates, [{ [`flags.${MODULE_ID}.${SUMMON_LINK_FLAG}`]: complete }]);
   assert.deepEqual(linked, ["repair"]);
 });
 
@@ -485,4 +487,83 @@ test("a repeated finalize operation is idempotent", async () => {
   await runtime.finalizeSummon({ activity: context.activity, summonOptions, tokens: [token] });
 
   assert.equal(finalizeCalls, 1);
+});
+
+test("scopes coordinator idempotency by scene activity recipe version and operation", async () => {
+  const coordinator = new WorldMutationCoordinator();
+  let finalized = 0;
+  const provider = { ...summonDeclaration(), async finalizeSummon() { finalized += 1; } };
+  const firstRuntime = createRuntime({ coordinator });
+  const secondRuntime = createRuntime({ coordinator });
+  firstRuntime.registerProvider(provider);
+  secondRuntime.registerProvider(provider);
+  const first = managedContext({ activity: activity("Activity.first"), operationId: "shared" });
+  const second = managedContext({ activity: activity("Activity.second"), operationId: "shared" });
+  const firstOptions = bindManagedClaim(firstRuntime, first).summonOptions;
+  const secondOptions = bindManagedClaim(secondRuntime, second).summonOptions;
+  const firstScene = createScene("Scene.first");
+  const secondScene = createScene("Scene.second");
+  const firstToken = createToken(firstScene, "one", buildSummonLink({ declaration: first.declaration, operationId: "shared", activity: first.activity, sourceToken: first.token }));
+  const secondToken = createToken(secondScene, "two", buildSummonLink({ declaration: second.declaration, operationId: "shared", activity: second.activity, sourceToken: second.token }));
+
+  await Promise.all([
+    firstRuntime.finalizeSummon({ activity: first.activity, summonOptions: firstOptions, tokens: [firstToken] }),
+    secondRuntime.finalizeSummon({ activity: second.activity, summonOptions: secondOptions, tokens: [secondToken] })
+  ]);
+
+  assert.equal(finalized, 2);
+});
+
+test("claim views are immutable snapshots and cannot mutate runtime indices", () => {
+  const runtime = createRuntime();
+  runtime.registerProvider(summonDeclaration());
+  const context = managedContext({ operationId: "snapshot" });
+  const claim = runtime.claimPreUse(context);
+
+  assert.ok(Object.isFrozen(claim));
+  assert.ok(Object.isFrozen(claim.declaration));
+  assert.throws(() => { claim.operationId = "stolen"; }, TypeError);
+  assert.equal(runtime.bindPreSummon({ activity: context.activity, summonOptions: context.usageConfig.summons[MODULE_ID] }).operationId, "snapshot");
+});
+
+test("provider plain context inputs are deep-cloned and frozen", () => {
+  const runtime = createRuntime();
+  runtime.registerProvider({
+    ...summonDeclaration(),
+    prepareToken(context) {
+      for (const value of [context.declaration, context.config, context.profile, context.summonOptions, context.tokenData]) {
+        assert.ok(Object.isFrozen(value));
+      }
+      assert.throws(() => { context.profile.nested.value = "mutated"; }, TypeError);
+      assert.throws(() => { context.summonOptions.nested.value = "mutated"; }, TypeError);
+      assert.throws(() => { context.tokenData.nested.value = "mutated"; }, TypeError);
+    }
+  });
+  const context = managedContext({ operationId: "frozen-inputs" });
+  const { summonOptions } = bindManagedClaim(runtime, context);
+  const profile = { nested: { value: "original" } };
+  const tokenData = { nested: { value: "original" } };
+  summonOptions.nested = { value: "original" };
+
+  runtime.prepareSummonToken({ activity: context.activity, summonOptions, profile, tokenData });
+
+  assert.deepEqual(profile, { nested: { value: "original" } });
+  assert.deepEqual(tokenData.nested, { value: "original" });
+});
+
+test("a missing token update rejects, rolls back, and cleans up the operation", async () => {
+  const cleanup = [];
+  const runtime = createRuntime();
+  runtime.registerProvider({ ...summonDeclaration(), async cleanup(context) { cleanup.push(context.error.message); } });
+  const context = managedContext({ operationId: "missing-update" });
+  const { summonOptions } = bindManagedClaim(runtime, context);
+  const scene = createScene();
+  const complete = buildSummonLink({ declaration: context.declaration, operationId: "missing-update", activity: context.activity, sourceToken: context.token });
+  const token = createToken(scene, "token", { ...complete, sourceItemUuid: "" });
+  token.update = undefined;
+
+  await assert.rejects(runtime.finalizeSummon({ activity: context.activity, summonOptions, tokens: [token] }), /must support update/u);
+
+  assert.deepEqual(scene.deletes, [["token"]]);
+  assert.deepEqual(cleanup, ["Summon token must support update to repair its common link."]);
 });
