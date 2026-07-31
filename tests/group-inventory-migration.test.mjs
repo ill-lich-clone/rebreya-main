@@ -335,7 +335,7 @@ test("getInventorySnapshot classifies Rebreya downtime items as downtime templat
   }
 });
 
-test("getTransportSnapshot exposes transport items stored on the group actor", async () => {
+test("getTransportSnapshot does not treat warehouse items as concrete group transport", async () => {
   const wagon = createItem({
     id: "wagon-1",
     name: "Тяжёлый гражданский фургон",
@@ -400,15 +400,11 @@ test("getTransportSnapshot exposes transport items stored on the group actor", a
     const inventorySnapshot = await service.getInventorySnapshot();
     const transportSnapshot = await service.getTransportSnapshot({ inventorySnapshot });
 
-    assert.equal(transportSnapshot.hasVehicles, true);
-    assert.equal(transportSnapshot.activeTransportId, "item:wagon-1");
-    assert.equal(transportSnapshot.activeVehicle.name, "Тяжёлый гражданский фургон");
-    assert.equal(transportSnapshot.effectiveSpeedMph, 12);
-    assert.equal(transportSnapshot.cargoLabel, "10000 фнт.");
-    assert.equal(transportSnapshot.durabilityLabel, "200 / 200");
-    assert.equal(transportSnapshot.vehicles[0].sourceLabel, "Склад");
-    assert.equal(transportSnapshot.activeVehicle.isActorBacked, false);
-    assert.equal(transportSnapshot.activeVehicle.canEditState, false);
+    assert.equal(transportSnapshot.hasVehicles, false);
+    assert.equal(transportSnapshot.activeTransportId, "");
+    assert.equal(transportSnapshot.activeVehicle, null);
+    assert.equal(transportSnapshot.effectiveSpeedMph, 3);
+    assert.deepEqual(transportSnapshot.vehicles, []);
   }
   finally {
     fixture.restore();

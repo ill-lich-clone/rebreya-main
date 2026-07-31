@@ -950,7 +950,8 @@ function buildTransportProfileFromActor(actor, memberState = {}, { memberCapacit
     img: actor?.img,
     sourceKind: "member",
     sourceLabel: "Участник группы",
-    typeLabel: cleanId(transportFlags.typeLabel)
+    typeLabel: cleanId(transportFlags.sourceType)
+      || cleanId(transportFlags.typeLabel)
       || cleanId(getProperty(actorData, "system.details.type"))
       || (actor?.type === "vehicle" ? "Транспорт" : getRoleLabel(role)),
     speedValue: firstDefinedValue(actorData, [
@@ -3883,9 +3884,6 @@ export class InventoryService {
     for (const member of resolvedPartySnapshot?.members ?? []) {
       addVehicle(buildTransportProfileFromPartyMember(member));
     }
-    for (const entry of resolvedInventorySnapshot?.allItems ?? resolvedInventorySnapshot?.items ?? []) {
-      addVehicle(buildTransportProfileFromInventoryEntry(entry));
-    }
 
     const vehicles = [...vehiclesById.values()]
       .sort((left, right) => {
@@ -3894,7 +3892,7 @@ export class InventoryService {
       });
     const requestedActive = state.activeTransportId ? vehiclesById.get(state.activeTransportId) ?? null : null;
     const activeVehicle = requestedActive ?? (vehicles.length === 1 ? vehicles[0] : null);
-    const activeTransportId = activeVehicle?.id ?? state.activeTransportId;
+    const activeTransportId = activeVehicle?.id ?? "";
     const effectiveSpeedMph = activeVehicle?.speedMph > 0
       ? roundNumber(activeVehicle.speedMph, 2)
       : DEFAULT_TRAVEL_SPEED_MPH;

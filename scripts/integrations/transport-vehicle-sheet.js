@@ -40,6 +40,10 @@ export function buildTransportSpecifications(actor) {
     ["Цена аренды", formatRentalPrice(transport.rentalPrice)],
     ["Ранг", optionalText(transport.rank)],
     ["Разгон", formatFeet(transport.accelerationFt)],
+    [
+      "Скорость в бою (режимы)",
+      transport.combatSpeed?.secondaryFt != null ? optionalText(transport.combatSpeed?.raw) : ""
+    ],
     ["Граница поломки", optionalText(transport.breakdownThreshold)],
     ["Расход топлива или корма", optionalText(transport.consumption?.raw ?? transport.consumption)],
     ["Исходная грузоподъёмность", optionalText(transport.raw?.cargoCapacity)]
@@ -83,6 +87,7 @@ export function registerTransportVehicleSheetHooks(_moduleApi, { Hooks = globalT
   if (!Hooks?.on || registeredHookSets.has(Hooks)) return false;
   registeredHookSets.add(Hooks);
   const render = (app, html) => injectTransportSpecifications(app, html);
+  Hooks.on("renderApplicationV2", render);
   Hooks.on("renderActorSheet", render);
   Hooks.on("renderActorSheet5eVehicle", render);
   return true;

@@ -51,6 +51,17 @@ export class TransportCompendiumService {
     const normalized = rows.map((entry, index) => normalizeTransportEntry(entry, index));
     const pack = await this.#ensurePack(game);
     const documents = await pack.getDocuments();
+    const expectedDocumentIds = new Set(normalized.map((entry) => entry.documentId));
+    const unmanagedCollisions = documents.filter((document) => {
+      const id = String(document?.id ?? document?._id ?? "").trim();
+      const managed = document?.getFlag?.(MODULE_ID, "managed")
+        ?? document?.flags?.[MODULE_ID]?.managed;
+      return expectedDocumentIds.has(id) && managed !== true;
+    });
+    if (unmanagedCollisions.length > 0) {
+      const ids = unmanagedCollisions.map((document) => document?.id ?? document?._id).join(", ");
+      throw new Error(`Transport compendium has an unmanaged document id collision: ${ids}`);
+    }
     const result = await syncFlaggedManagedDocuments({
       pack,
       entries: normalized.map((entry) => ({
@@ -69,8 +80,10 @@ export class TransportCompendiumService {
   async #ensurePack(game) {
     let pack = game?.packs?.get?.(TRANSPORT_COMPENDIUM_ID) ?? null;
     if (pack && (pack.documentName !== "Actor" || pack.metadata?.system !== "dnd5e")) {
-      await pack.deleteCompendium?.();
-      pack = null;
+      throw new Error(
+        `Transport compendium ${TRANSPORT_COMPENDIUM_ID} is incompatible; `
+        + "rename or migrate the existing user pack before synchronization"
+      );
     }
     if (pack) return pack;
 

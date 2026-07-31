@@ -27,13 +27,19 @@ const validState = {
 function createTransportInstanceHarness({
   addMemberError = null,
   managedGroup = true,
-  sourceManaged = true
+  sourceManaged = true,
+  existingTransport = false,
+  groupStateMutationError = null,
+  removeMemberError = null,
+  deleteError = null
 } = {}) {
   const createdActors = [];
   const addedMemberIds = [];
   const removedMemberIds = [];
   const roleUpdates = [];
+  const groupStateMutations = [];
   const actorUpdates = [];
+  const groupState = { members: {}, transportState: { activeTransportId: "" } };
   const gm = { id: "gm", isGM: true };
   const player = { id: "player-a", isGM: false };
   const source = {
@@ -74,6 +80,9 @@ function createTransportInstanceHarness({
       return key === "transport"
         ? {
             instance: true,
+            sourceId: "transport-v01-existing",
+            sourceActorUuid: validImport.sourceActorUuid,
+            groupActorId: "group-a",
             consumption: { kind: "fuel", unit: "gal" },
             instanceState: { reserveUnit: "gal" }
           }
@@ -91,6 +100,8 @@ function createTransportInstanceHarness({
       return user.id === player.id && level === "OWNER";
     }
   };
+  const members = [ownedCharacter];
+  if (existingTransport) members.unshift(vehicleActor);
   const groupActor = {
     id: "group-a",
     type: "group",
@@ -101,9 +112,13 @@ function createTransportInstanceHarness({
       async addMember(actor) {
         if (addMemberError) throw addMemberError;
         addedMemberIds.push(actor.id);
+        members.push(actor);
       },
       async removeMember(actorId) {
         removedMemberIds.push(actorId);
+        if (removeMemberError) throw removeMemberError;
+        const index = members.findIndex((member) => member.id === actorId);
+        if (index >= 0) members.splice(index, 1);
       }
     }
   };
@@ -114,10 +129,17 @@ function createTransportInstanceHarness({
         return {
           groupId: "group-a",
           groupActor,
-          members: [vehicleActor, ownedCharacter],
-          memberActorIds: [vehicleActor.id, ownedCharacter.id],
+          groupState,
+          members,
+          memberActorIds: members.map((member) => member.id),
           canManage: true
         };
+      },
+      async mutateGroupState(id, mutator) {
+        assert.equal(id, "group-a");
+        if (groupStateMutationError) throw groupStateMutationError;
+        groupStateMutations.push(id);
+        return mutator(groupState);
       }
     },
     inventoryService: {
@@ -134,7 +156,11 @@ function createTransportInstanceHarness({
         id: `vehicle-created-${createdActors.length + 1}`,
         uuid: `Actor.vehicle-created-${createdActors.length + 1}`,
         deleted: false,
+        getFlag(scope, key) {
+          return this.flags?.[scope]?.[key];
+        },
         async delete() {
+          if (deleteError) throw deleteError;
           this.deleted = true;
         }
       };
@@ -152,6 +178,8 @@ function createTransportInstanceHarness({
     addedMemberIds,
     removedMemberIds,
     roleUpdates,
+    groupState,
+    groupStateMutations,
     actorUpdates,
     options: {
       gameProvider: () => ({ user: gm }),
@@ -205,19 +233,17 @@ test("instance state validates condition, non-negative values, and capacity", ()
   );
 });
 
-test("each import creates a separate world Actor and assigns its default role", async () => {
+test("import creates an independent world Actor, assigns its target-group role, and activates it", async () => {
   const harness = createTransportInstanceHarness();
   const service = new TransportInstanceService(harness.moduleApi, harness.options);
 
   const first = await service.importIntoGroup(validImport, { sender: harness.gm });
-  const second = await service.importIntoGroup(validImport, { sender: harness.gm });
 
-  assert.notEqual(first.actorId, second.actorId);
-  assert.deepEqual(harness.addedMemberIds, [first.actorId, second.actorId]);
-  assert.deepEqual(harness.roleUpdates, [
-    [first.actorId, { role: "mount" }],
-    [second.actorId, { role: "mount" }]
-  ]);
+  assert.deepEqual(harness.addedMemberIds, [first.actorId]);
+  assert.deepEqual(harness.roleUpdates, []);
+  assert.deepEqual(harness.groupStateMutations, ["group-a"]);
+  assert.equal(harness.groupState.members[first.actorId].role, "mount");
+  assert.equal(harness.groupState.transportState.activeTransportId, `member:${first.actorId}`);
   const firstActor = harness.createdActors[0];
   assert.equal(firstActor._id, undefined);
   assert.equal(firstActor.folder, undefined);
@@ -227,6 +253,17 @@ test("each import creates a separate world Actor and assigns its default role", 
   assert.equal(firstActor.flags["rebreya-main"].transport.instance, true);
   assert.equal(firstActor.flags["rebreya-main"].transport.instanceState.reserveUnit, "lb");
   assert.equal(firstActor.flags["rebreya-main"].transport.sourceActorUuid, validImport.sourceActorUuid);
+});
+
+test("group import rejects a second concrete transport instance", async () => {
+  const harness = createTransportInstanceHarness({ existingTransport: true });
+  const service = new TransportInstanceService(harness.moduleApi, harness.options);
+
+  await assert.rejects(
+    () => service.importIntoGroup(validImport, { sender: harness.gm }),
+    /транспорт/u
+  );
+  assert.equal(harness.createdActors.length, 0);
 });
 
 test("failed native group membership deletes the newly-created orphan", async () => {
@@ -240,11 +277,10 @@ test("failed native group membership deletes the newly-created orphan", async ()
   assert.equal(harness.createdActors[0].deleted, true);
 });
 
-test("failed role assignment removes membership and deletes the newly-created Actor", async () => {
-  const harness = createTransportInstanceHarness();
-  harness.moduleApi.inventoryService.updatePartyMember = async () => {
-    throw new Error("role failed");
-  };
+test("failed target-group state assignment removes membership and deletes the newly-created Actor", async () => {
+  const harness = createTransportInstanceHarness({
+    groupStateMutationError: new Error("role failed")
+  });
   const service = new TransportInstanceService(harness.moduleApi, harness.options);
 
   await assert.rejects(
@@ -253,6 +289,25 @@ test("failed role assignment removes membership and deletes the newly-created Ac
   );
   assert.deepEqual(harness.removedMemberIds, ["vehicle-created-1"]);
   assert.equal(harness.createdActors[0].deleted, true);
+});
+
+test("failed rollback reports cleanup failures instead of hiding orphan risk", async () => {
+  const harness = createTransportInstanceHarness({
+    groupStateMutationError: new Error("role failed"),
+    removeMemberError: new Error("membership cleanup failed"),
+    deleteError: new Error("actor cleanup failed")
+  });
+  const service = new TransportInstanceService(harness.moduleApi, harness.options);
+
+  await assert.rejects(
+    () => service.importIntoGroup(validImport, { sender: harness.gm }),
+    (error) => (
+      error instanceof AggregateError
+      && /role failed/u.test(error.message)
+      && error.errors.some((entry) => /membership cleanup failed/u.test(entry.message))
+      && error.errors.some((entry) => /actor cleanup failed/u.test(entry.message))
+    )
+  );
 });
 
 test("import rejects unmanaged sources and unmanaged group targets", async () => {
@@ -281,7 +336,7 @@ test("sender authorization accepts GM or an owner of a group character", () => {
 });
 
 test("state update writes native HP and bounded per-instance fuel", async () => {
-  const harness = createTransportInstanceHarness();
+  const harness = createTransportInstanceHarness({ existingTransport: true });
   const service = new TransportInstanceService(harness.moduleApi, harness.options);
 
   const result = await service.updateInstanceState(validState, { sender: harness.gm });
@@ -300,7 +355,7 @@ test("state update writes native HP and bounded per-instance fuel", async () => 
 });
 
 test("state update rejects actors outside the group and HP above maximum", async () => {
-  const harness = createTransportInstanceHarness();
+  const harness = createTransportInstanceHarness({ existingTransport: true });
   const service = new TransportInstanceService(harness.moduleApi, harness.options);
 
   await assert.rejects(
@@ -313,5 +368,28 @@ test("state update rejects actors outside the group and HP above maximum", async
       patch: { ...validState.patch, hpCurrent: 101 }
     }, { sender: harness.gm }),
     /не могут превышать максимум/u
+  );
+});
+
+test("state update rejects unrelated and foreign-group vehicle members", async () => {
+  const unrelatedHarness = createTransportInstanceHarness({ existingTransport: true });
+  unrelatedHarness.vehicleActor.getFlag = () => ({ instance: false, groupActorId: "group-a" });
+  const unrelatedService = new TransportInstanceService(unrelatedHarness.moduleApi, unrelatedHarness.options);
+  await assert.rejects(
+    () => unrelatedService.updateInstanceState(validState, { sender: unrelatedHarness.gm }),
+    /транспорт/u
+  );
+
+  const foreignHarness = createTransportInstanceHarness({ existingTransport: true });
+  foreignHarness.vehicleActor.getFlag = () => ({
+    instance: true,
+    sourceId: "transport-v01-existing",
+    sourceActorUuid: validImport.sourceActorUuid,
+    groupActorId: "group-b"
+  });
+  const foreignService = new TransportInstanceService(foreignHarness.moduleApi, foreignHarness.options);
+  await assert.rejects(
+    () => foreignService.updateInstanceState(validState, { sender: foreignHarness.gm }),
+    /транспорт/u
   );
 });

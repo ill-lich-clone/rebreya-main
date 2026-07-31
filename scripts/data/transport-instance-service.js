@@ -158,8 +158,8 @@ export function registerTransportInstanceCommands(commandBus, service) {
 
 export class TransportInstanceService {
   constructor(moduleApi, options = {}) {
-    if (!moduleApi?.groupContextService || !moduleApi?.inventoryService) {
-      throw new TypeError("Transport instance service requires group and inventory services");
+    if (!moduleApi?.groupContextService) {
+      throw new TypeError("Transport instance service requires the group context service");
     }
     this.moduleApi = moduleApi;
     this.options = options;
@@ -186,6 +186,9 @@ export class TransportInstanceService {
       throw new Error("Некорректный запрос импорта транспорта.");
     }
     const groupContext = this.#resolveAuthorizedGroup(payload.groupActorId, sender);
+    if ((groupContext.members ?? []).some((member) => this.#isInstanceForGroup(member, groupContext.groupId))) {
+      throw new Error("В группе уже есть конкретный транспорт Ребреи.");
+    }
     const fromUuid = this.options.fromUuid ?? globalThis.fromUuid;
     if (typeof fromUuid !== "function") {
       throw new TypeError("fromUuid is required to import transport");
@@ -204,7 +207,23 @@ export class TransportInstanceService {
       const role = source.getFlag?.(MODULE_ID, "transport")?.defaultGroupRole === "mount"
         ? "mount"
         : "transport";
-      await this.moduleApi.inventoryService.updatePartyMember(actor.id, { role });
+      await this.moduleApi.groupContextService.mutateGroupState(groupContext.groupId, (groupState) => {
+        groupState.members = groupState.members && typeof groupState.members === "object"
+          ? groupState.members
+          : {};
+        groupState.members[actor.id] = {
+          ...(groupState.members[actor.id] ?? {}),
+          role
+        };
+        groupState.transportState = {
+          ...(groupState.transportState ?? {}),
+          activeTransportId: `member:${actor.id}`
+        };
+        return {
+          role,
+          activeTransportId: groupState.transportState.activeTransportId
+        };
+      });
       return {
         actorId: actor.id,
         actorUuid: actor.uuid,
@@ -213,17 +232,24 @@ export class TransportInstanceService {
       };
     }
     catch (error) {
+      const cleanupErrors = [];
       try {
         await groupContext.groupActor.system?.removeMember?.(actor.id);
       }
-      catch (_rollbackError) {
-        // Deleting the Actor remains the authoritative orphan cleanup.
+      catch (rollbackError) {
+        cleanupErrors.push(rollbackError);
       }
       try {
         await actor.delete?.();
       }
-      catch (_rollbackError) {
-        // Preserve the original mutation failure.
+      catch (rollbackError) {
+        cleanupErrors.push(rollbackError);
+      }
+      if (cleanupErrors.length > 0) {
+        throw new AggregateError(
+          [error, ...cleanupErrors],
+          `${error?.message || "Transport import failed"}; rollback cleanup failed`
+        );
       }
       throw error;
     }
@@ -247,6 +273,9 @@ export class TransportInstanceService {
     const transport = actor.getFlag?.(MODULE_ID, "transport")
       ?? actor.flags?.[MODULE_ID]?.transport
       ?? {};
+    if (!this.#isInstanceForGroup(actor, groupContext.groupId)) {
+      throw new Error("Выбранный актёр не является транспортом Ребреи этой группы.");
+    }
     const instanceState = normalizeTransportInstanceState(payload.patch, {
       reserveUnit: reserveUnitFromTransport(transport)
     });
@@ -272,6 +301,17 @@ export class TransportInstanceService {
       throw new Error("Нет прав на изменение транспорта этой группы.");
     }
     return context;
+  }
+
+  #isInstanceForGroup(actor, groupActorId) {
+    const transport = actor?.getFlag?.(MODULE_ID, "transport")
+      ?? actor?.flags?.[MODULE_ID]?.transport
+      ?? null;
+    return actor?.type === "vehicle"
+      && transport?.instance === true
+      && Boolean(cleanId(transport?.sourceId))
+      && Boolean(cleanId(transport?.sourceActorUuid))
+      && cleanId(transport?.groupActorId) === cleanId(groupActorId);
   }
 
   #assertManagedTransportSource(source, expectedUuid) {

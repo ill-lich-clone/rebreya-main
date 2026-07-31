@@ -156,7 +156,7 @@ test("transport compendium creates the exact Actor pack metadata", async () => {
   }]);
 });
 
-test("transport compendium replaces an incompatible pack", async () => {
+test("transport compendium refuses to delete an incompatible user pack", async () => {
   const harness = createTransportPackHarness({ existingPack: false });
   let deleted = 0;
   const incompatible = {
@@ -174,10 +174,13 @@ test("transport compendium replaces an incompatible pack", async () => {
     createCompendium: harness.createCompendium
   });
 
-  await service.sync(catalog);
+  await assert.rejects(
+    () => service.sync(catalog),
+    /incompatible/u
+  );
 
-  assert.equal(deleted, 1);
-  assert.equal(harness.createdMetadata.length, 1);
+  assert.equal(deleted, 0);
+  assert.equal(harness.createdMetadata.length, 0);
 });
 
 test("transport compendium updates changed managed rows, deletes stale managed rows, and keeps unmanaged actors", async () => {
@@ -216,4 +219,25 @@ test("transport compendium updates changed managed rows, deletes stale managed r
   assert.equal(harness.documents.includes(stale), false);
   assert.equal(harness.documents.includes(unmanaged), true);
   assert.notEqual(changed.getFlag("rebreya-main", "signature"), "outdated");
+});
+
+test("transport compendium rejects an unmanaged stable-id collision before mutation", async () => {
+  const harness = createTransportPackHarness();
+  const colliding = createDocument({
+    _id: catalog[0].documentId,
+    name: "Пользовательский транспорт",
+    type: "vehicle",
+    flags: {}
+  });
+  harness.documents.push(colliding);
+  const service = new TransportCompendiumService({
+    gameProvider: () => harness.game,
+    isActiveGmClient: () => true
+  });
+
+  await assert.rejects(
+    () => service.sync(catalog),
+    /unmanaged document id collision/u
+  );
+  assert.deepEqual(harness.documents, [colliding]);
 });

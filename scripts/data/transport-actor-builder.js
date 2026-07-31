@@ -2,7 +2,7 @@ import { MODULE_ID } from "../constants.js";
 
 const DASH = "—";
 const POUNDS_PER_TON = 2000;
-const TRANSPORT_VERSION = 1;
+const TRANSPORT_VERSION = 2;
 const DOCUMENT_ID_PATTERN = /^lchtransport\d{4}$/u;
 const SIGNATURE_FIELDS = Object.freeze([
   "sourceId",
@@ -300,12 +300,12 @@ export function buildTransportActorData(rawEntry) {
       hp,
       capacity: { cargo },
       movement,
-      travel: { speeds: travelSpeeds, units: "mi" }
+      travel: { speeds: travelSpeeds, units: "mph" }
     },
-    crew: { value: 0, max: entry.crewMax ?? 0 },
-    passengers: { value: 0, max: entry.passengerMax ?? 0 },
+    crew: { value: [], max: entry.crewMax ?? 0 },
+    passengers: { value: [], max: entry.passengerMax ?? 0 },
     details: {
-      type: entry.typeLabel,
+      type: travelMode(entry.typeLabel),
       biography: { value: buildDescription(entry), public: "" },
       source: {
         book: "Ребрея: Оружие, огнестрел и снаряжение",
@@ -345,6 +345,7 @@ export function buildTransportActorData(rawEntry) {
           sourceRow: entry.sourceRow,
           instance: false,
           defaultGroupRole: entry.defaultGroupRole,
+          sourceType: entry.typeLabel,
           rank: entry.rank,
           inventionYear: entry.inventionYear,
           rentalPrice: entry.rentalPriceData,

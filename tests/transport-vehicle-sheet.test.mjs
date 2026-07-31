@@ -96,6 +96,20 @@ test("vehicle specifications omit empty optional source values", () => {
   assert.deepEqual(rows, []);
 });
 
+test("vehicle specifications expose a secondary combat-speed mode", () => {
+  const rows = buildTransportSpecifications(createTransportActor({
+    combatSpeed: {
+      primaryFt: 300,
+      secondaryFt: 600,
+      raw: "300/600 футов"
+    }
+  }));
+
+  assert.deepEqual(rows, [
+    { label: "Скорость в бою (режимы)", value: "300/600 футов" }
+  ]);
+});
+
 test("sheet injection only touches Rebreya vehicle actors and never duplicates the panel", () => {
   const vehicleDom = createSheetDom();
   const characterDom = createSheetDom();
@@ -123,6 +137,7 @@ test("vehicle sheet hooks register generic and D&D5e render callbacks once", () 
   assert.equal(registerTransportVehicleSheetHooks({}, { Hooks }), true);
   assert.equal(registerTransportVehicleSheetHooks({}, { Hooks }), false);
   assert.deepEqual(calls.map(([name]) => name), [
+    "renderApplicationV2",
     "renderActorSheet",
     "renderActorSheet5eVehicle"
   ]);
