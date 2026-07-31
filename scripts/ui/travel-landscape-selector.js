@@ -29,6 +29,10 @@ function trimOrFallback(value, fallback) {
   return trimmedValue || fallback;
 }
 
+function escapeStorageKeyComponent(value) {
+  return value.replaceAll("%", "%25").replaceAll(":", "%3A");
+}
+
 function getDefaultScope() {
   const game = globalThis.game;
   return {
@@ -56,8 +60,12 @@ export function normalizeTravelLandscapeId(value) {
 
 export function createTravelLandscapeStorageKey({ worldId, userId } = {}) {
   const defaults = getDefaultScope();
-  const normalizedWorldId = trimOrFallback(worldId ?? defaults.worldId, "unknown-world");
-  const normalizedUserId = trimOrFallback(userId ?? defaults.userId, "anonymous");
+  const normalizedWorldId = escapeStorageKeyComponent(
+    trimOrFallback(worldId ?? defaults.worldId, "unknown-world")
+  );
+  const normalizedUserId = escapeStorageKeyComponent(
+    trimOrFallback(userId ?? defaults.userId, "anonymous")
+  );
   return `rebreya-main.travelLandscape:${normalizedWorldId}:${normalizedUserId}`;
 }
 

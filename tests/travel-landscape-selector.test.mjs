@@ -39,6 +39,17 @@ test("travel landscape storage is scoped by world and user", () => {
   );
 });
 
+test("travel landscape storage keys preserve distinct scope components", () => {
+  assert.notEqual(
+    createTravelLandscapeStorageKey({ worldId: "a:b", userId: "c" }),
+    createTravelLandscapeStorageKey({ worldId: "a", userId: "b:c" })
+  );
+  assert.notEqual(
+    createTravelLandscapeStorageKey({ worldId: "%3A", userId: "c" }),
+    createTravelLandscapeStorageKey({ worldId: ":", userId: "c" })
+  );
+});
+
 test("travel landscape storage reads, writes, and fails closed", () => {
   const values = new Map();
   const storage = {
