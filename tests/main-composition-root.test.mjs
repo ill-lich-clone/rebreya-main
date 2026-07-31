@@ -5,6 +5,11 @@ import { readFile } from "node:fs/promises";
 import { SpellAutomationRegistry } from "../scripts/combat/spell-automation-registry.js";
 import { SpellInstanceRuntime } from "../scripts/combat/spell-instance-runtime.js";
 import { TransportCompendiumService } from "../scripts/data/transport-compendium.js";
+import {
+  COMMAND_REQUEST_TYPE,
+  COMMAND_RESULT_TYPE
+} from "../scripts/infrastructure/foundry/socket-command-bus.js";
+import { SPELL_INSTANCE_MUTATION_COMMAND } from "../scripts/integrations/spell-instance-socket.js";
 
 function createHooks() {
   const onceCallbacks = new Map();
@@ -39,12 +44,24 @@ function replaceGlobal(name, value) {
 test("ready composes spell automation on one registry alongside legacy hook registrations", async () => {
   const Hooks = createHooks();
   const module = {};
+  const emittedSocketMessages = [];
+  const activeGm = { active: true, id: "gm", isGM: true };
+  let actorLookups = 0;
+  let timerCalls = 0;
   const restores = [
     replaceGlobal("Hooks", Hooks),
     replaceGlobal("Actor", class Actor {}),
     replaceGlobal("Item", class Item {}),
     replaceGlobal("Macro", class Macro {}),
     replaceGlobal("CONFIG", {}),
+    replaceGlobal("fromUuid", async () => {
+      actorLookups += 1;
+      return null;
+    }),
+    replaceGlobal("setTimeout", (...args) => {
+      timerCalls += 1;
+      return globalThis.setImmediate(...args);
+    }),
     replaceGlobal("foundry", {
       utils: {
         getProperty(source, path) {
@@ -65,10 +82,15 @@ test("ready composes spell automation on one registry alongside legacy hook regi
     replaceGlobal("ui", { notifications: { error() {}, info() {}, warn() {} } }),
     replaceGlobal("game", {
       modules: new Map([["rebreya-main", module]]),
-      socket: { on() {} },
+      socket: {
+        emit(channel, message) {
+          emittedSocketMessages.push({ channel, message });
+        },
+        on() {}
+      },
       system: { id: "dnd5e" },
-      user: {},
-      users: { contents: [] },
+      user: activeGm,
+      users: { activeGM: activeGm, contents: [activeGm] },
       messages: { contents: [] },
       settings: { get: () => false }
     })
@@ -99,6 +121,35 @@ test("ready composes spell automation on one registry alongside legacy hook regi
     assert.deepEqual(diagnostics.recipes, ["instance:melfs-minute-meteors:v1"]);
     assert.equal(diagnostics.activeOperations, 0);
     assert.throws(() => diagnostics.recipes.push("instance:leak:v1"), TypeError);
+
+    assert.equal(moduleApi.socketCommandBus.handleMessage({
+      type: COMMAND_REQUEST_TYPE,
+      command: SPELL_INSTANCE_MUTATION_COMMAND,
+      requestId: "invalid-spell-instance-mutation",
+      senderId: activeGm.id,
+      payload: {}
+    }, { transportSenderId: activeGm.id }), true);
+    await new Promise((resolve) => setImmediate(resolve));
+    const response = emittedSocketMessages.find(({ message }) => (
+      message?.type === COMMAND_RESULT_TYPE
+      && message.command === SPELL_INSTANCE_MUTATION_COMMAND
+      && message.requestId === "invalid-spell-instance-mutation"
+    ));
+    assert.deepEqual(response?.message, {
+      type: COMMAND_RESULT_TYPE,
+      command: SPELL_INSTANCE_MUTATION_COMMAND,
+      requestId: "invalid-spell-instance-mutation",
+      forUserId: activeGm.id,
+      senderId: activeGm.id,
+      ok: false,
+      error: {
+        code: "invalid-payload",
+        message: "Socket command payload is invalid"
+      }
+    });
+    assert.equal(actorLookups, 0);
+    assert.equal(timerCalls, 0);
+    assert.ok(emittedSocketMessages.every(({ message }) => message?.type === COMMAND_RESULT_TYPE));
 
     const handlers = { preUseActivity: () => false, postSummon: () => true };
     moduleApi.spellInterceptionRuntime.registerRecipe({ recipe: "counterspell", version: 1, handlers });
@@ -138,5 +189,4 @@ test("composition root synchronizes the managed transport Actor compendium", asy
   assert.match(source, /await this\.transportCompendium\.sync\(\);/u);
   assert.match(source, /registerTransportGroupDropHooks\(moduleApi,\s*\{\s*Hooks\s*\}\);/u);
   assert.match(source, /registerTransportVehicleSheetHooks\(moduleApi,\s*\{\s*Hooks\s*\}\);/u);
-  assert.match(source, /registerSpellInstanceSocketCommand\(this\);/u);
 });
