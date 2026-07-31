@@ -17,6 +17,11 @@ import {
   TransportInstanceService,
   registerTransportInstanceCommands
 } from "./data/transport-instance-service.js";
+import {
+  TRANSPORT_CONSUME_FUEL_COMMAND,
+  TransportFuelService,
+  registerTransportFuelCommand
+} from "./data/transport-fuel-service.js";
 import { SpellsCompendiumService } from "./data/spells-compendium.js?v=1.4.109-counterspell-sanitize";
 import { ActionsCompendiumService } from "./data/actions-compendium.js";
 import { DowntimeCompendiumService } from "./data/downtime-compendium.js";
@@ -1023,6 +1028,9 @@ export class RebreyaMainModule {
       groupContextService: this.groupContextService,
       commandBus: this.socketCommandBus
     });
+    this.transportFuelService = new TransportFuelService({
+      groupContextService: this.groupContextService
+    });
     this.travelMapService = new TravelMapService();
     this.inventoryService = new InventoryService(this);
     this.durabilityService = new DurabilityService(this);
@@ -1219,6 +1227,9 @@ export class RebreyaMainModule {
     registerSummonLifecycleSocketCommand(this);
     registerTransportInstanceCommands(this.socketCommandBus, this.transportInstanceService);
     const authorizeGroup = (payload, { sender }) => this.#canSenderManageGroup(sender, payload.groupActorId);
+    registerTransportFuelCommand(this.socketCommandBus, this.transportFuelService, {
+      authorize: authorizeGroup
+    });
     this.socketCommandBus.register(GROUP_CALENDAR_PATCH_COMMAND, {
       validate: isValidCalendarPatchPayload,
       authorize: authorizeGroup,
@@ -3930,6 +3941,28 @@ export class RebreyaMainModule {
 
   async advanceTravelHours(hours = 0, options = {}) {
     const result = await this.travelService.advanceHours(hours);
+    const travelChange = result?.travelChange ?? {};
+    const groupActorId = typeof travelChange.groupActorId === "string"
+      ? travelChange.groupActorId.trim()
+      : "";
+    const appliedMiles = Number(travelChange.appliedMiles);
+    if (groupActorId && Number.isFinite(appliedMiles) && appliedMiles > 0) {
+      try {
+        const payload = { groupActorId, appliedMiles };
+        result.fuelChange = isActiveGmClient(globalThis.game)
+          ? await this.transportFuelService.consumeForTravel(payload)
+          : await this.socketCommandBus.request(TRANSPORT_CONSUME_FUEL_COMMAND, payload);
+        if (result.fuelChange?.warning) {
+          ui.notifications?.warn?.(result.fuelChange.warning);
+        }
+      }
+      catch (error) {
+        console.warn(`${MODULE_ID} | Failed to process transport fuel after travel.`, error);
+        ui.notifications?.warn?.(
+          "Не удалось проверить топливо транспорта. Путешествие продолжено."
+        );
+      }
+    }
     await this.#syncTravelMapForSnapshot(result).catch((error) => {
       console.warn(`${MODULE_ID} | Failed to sync travel token after travel progress.`, error);
       ui.notifications?.warn?.(error.message || "Не удалось синхронизировать токен группы на карте мира.");

@@ -236,6 +236,48 @@ test("TravelService applies the active transport speed to travel timing", async 
   assert.equal(snapshot.plan.legs[0].hours, 1.33);
 });
 
+test("TravelService pins actual traveled miles to the group captured before mutation", async () => {
+  const groupState = {
+    travelState: {
+      originCityId: "a",
+      destinationCityId: "c",
+      mode: "land",
+      traveledMiles: 24
+    },
+    transportState: { activeTransportId: "member:wagon" }
+  };
+  const groupContextService = {
+    resolveForCurrentUser() {
+      return { groupId: "group-a", canManage: true, groupState };
+    },
+    async mutateGroupState(groupActorId, mutator) {
+      assert.equal(groupActorId, "group-a");
+      return mutator(groupState);
+    }
+  };
+  const previousGame = globalThis.game;
+  globalThis.game = {
+    user: { id: "gm", isGM: true, active: true },
+    users: { activeGM: { id: "gm", isGM: true, active: true } }
+  };
+  try {
+    const service = new TravelService({ groupContextService });
+    service.networkPromise = Promise.resolve(normalizeTravelNetwork(network));
+
+    const snapshot = await service.advanceHours(8);
+
+    assert.deepEqual(snapshot.travelChange, {
+      groupActorId: "group-a",
+      requestedHours: 8,
+      appliedHours: 1,
+      appliedMiles: 3
+    });
+  }
+  finally {
+    globalThis.game = previousGame;
+  }
+});
+
 test("actual travel network does not use the conflicting Orlanis-Freh land bridge", async () => {
   const actualNetwork = JSON.parse(await readFile(new URL("../data/travel-network.json", import.meta.url), "utf8"));
   const economyCities = JSON.parse(await readFile(new URL("../data/cities.json", import.meta.url), "utf8"));

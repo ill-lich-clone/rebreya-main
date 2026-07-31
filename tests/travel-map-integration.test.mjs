@@ -364,3 +364,121 @@ test("RebreyaMainModule applies tracked travel time to the calendar", async () =
     globalThis.foundry = previousFoundry;
   }
 });
+
+test("RebreyaMainModule consumes transport fuel for the miles actually traveled", async () => {
+  const previousHooks = globalThis.Hooks;
+  const previousGame = globalThis.game;
+  const previousUi = globalThis.ui;
+  const previousFoundry = globalThis.foundry;
+  const warnings = [];
+
+  globalThis.Hooks = { once() {}, on() {} };
+  globalThis.game = {
+    user: { id: "gm", isGM: true, active: true }
+  };
+  globalThis.ui = {
+    windows: {},
+    notifications: {
+      warn(message) {
+        warnings.push(message);
+      }
+    }
+  };
+  globalThis.foundry = {
+    applications: { instances: new Map() }
+  };
+
+  try {
+    const { RebreyaMainModule } = await import(`../scripts/main.js?travel-fuel-gm=${Date.now()}`);
+    const moduleApi = new RebreyaMainModule();
+    const consumed = [];
+    moduleApi.travelService.advanceHours = async () => ({
+      available: true,
+      mapPosition: { available: false },
+      travelChange: {
+        groupActorId: "group-a",
+        appliedHours: 1,
+        appliedMiles: 3
+      }
+    });
+    moduleApi.transportFuelService.consumeForTravel = async (payload) => {
+      consumed.push(payload);
+      return {
+        configured: true,
+        required: 3,
+        consumed: 1,
+        shortage: 2,
+        itemName: "Жидкий уголь",
+        warning: "Топлива не хватило, но путь продолжен."
+      };
+    };
+
+    const result = await moduleApi.advanceTravelHours(8);
+
+    assert.deepEqual(consumed, [{ groupActorId: "group-a", appliedMiles: 3 }]);
+    assert.equal(result.fuelChange.shortage, 2);
+    assert.deepEqual(warnings, ["Топлива не хватило, но путь продолжен."]);
+  }
+  finally {
+    globalThis.Hooks = previousHooks;
+    globalThis.game = previousGame;
+    globalThis.ui = previousUi;
+    globalThis.foundry = previousFoundry;
+  }
+});
+
+test("RebreyaMainModule asks the active GM to consume player travel fuel", async () => {
+  const previousHooks = globalThis.Hooks;
+  const previousGame = globalThis.game;
+  const previousUi = globalThis.ui;
+  const previousFoundry = globalThis.foundry;
+
+  globalThis.Hooks = { once() {}, on() {} };
+  globalThis.game = {
+    user: { id: "player-1", isGM: false, active: true }
+  };
+  globalThis.ui = { windows: {} };
+  globalThis.foundry = {
+    applications: { instances: new Map() }
+  };
+
+  try {
+    const { RebreyaMainModule } = await import(`../scripts/main.js?travel-fuel-player=${Date.now()}`);
+    const moduleApi = new RebreyaMainModule();
+    const requests = [];
+    moduleApi.travelService.advanceHours = async () => ({
+      available: true,
+      mapPosition: { available: false },
+      travelChange: {
+        groupActorId: "group-a",
+        appliedHours: 8,
+        appliedMiles: 24
+      }
+    });
+    moduleApi.socketCommandBus.request = async (command, payload) => {
+      requests.push({ command, payload });
+      return {
+        configured: true,
+        required: 3,
+        consumed: 3,
+        shortage: 0,
+        itemName: "Жидкий уголь",
+        warning: ""
+      };
+    };
+
+    const result = await moduleApi.advanceTravelHours(8);
+
+    assert.deepEqual(requests, [{
+      command: "group.transport.consumeFuel",
+      payload: { groupActorId: "group-a", appliedMiles: 24 }
+    }]);
+    assert.equal(result.fuelChange.consumed, 3);
+  }
+  finally {
+    globalThis.Hooks = previousHooks;
+    globalThis.game = previousGame;
+    globalThis.ui = previousUi;
+    globalThis.foundry = previousFoundry;
+  }
+});

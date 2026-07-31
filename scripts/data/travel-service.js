@@ -1170,6 +1170,7 @@ export class TravelService {
     return {
       ...snapshot,
       travelChange: {
+        groupActorId: cleanId(context?.groupId),
         requestedHours: nextState.requestedHours,
         appliedHours: nextState.addedHours,
         appliedMiles: nextState.addedMiles
