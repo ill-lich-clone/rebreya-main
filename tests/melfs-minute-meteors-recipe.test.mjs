@@ -23,7 +23,22 @@ function createItem() {
   return { actor, item, cast, release, burst };
 }
 
-function createRuntime({ remainingMeteors = 6 } = {}) {
+function createOperationJournal({ limit = 128 } = {}) {
+  const entriesByActor = new Map();
+  return {
+    async claim({ actor, declaration, operationId }) {
+      const entries = entriesByActor.get(actor.uuid) ?? [];
+      const duplicate = entries.some((entry) => entry.recipe === declaration.recipe
+        && entry.version === declaration.version && entry.operationId === operationId);
+      if (duplicate) return { status: "completed" };
+      const entry = { recipe: declaration.recipe, version: declaration.version, operationId };
+      entriesByActor.set(actor.uuid, [...entries, entry].slice(-limit));
+      return { status: "claimed" };
+    }
+  };
+}
+
+function createRuntime({ remainingMeteors = 6, operationJournal = createOperationJournal() } = {}) {
   const state = {
     instanceId: "melf-instance",
     recipe: RECIPE,
@@ -31,11 +46,18 @@ function createRuntime({ remainingMeteors = 6 } = {}) {
     revision: 0,
     state: { slotLevel: 3, remainingMeteors, totalMeteors: remainingMeteors }
   };
-  const calls = { create: [], delete: [], update: [] };
+  const calls = { claim: [], create: [], delete: [], timeline: [], update: [] };
   return {
     calls,
     state,
+    async claimOperation(input) {
+      const result = await operationJournal.claim(input);
+      calls.claim.push({ ...input, status: result.status });
+      calls.timeline.push("claim");
+      return result;
+    },
     async createInstance(context, initialState) {
+      calls.timeline.push("create");
       calls.create.push({ context, initialState });
       state.instanceId = context.instanceId;
       state.recipe = context.declaration.recipe;
@@ -45,6 +67,7 @@ function createRuntime({ remainingMeteors = 6 } = {}) {
       return { ...state, effect: { id: "melf-effect" } };
     },
     readInstance({ instanceId } = {}) {
+      calls.timeline.push("read");
       return state.deleted || (instanceId && instanceId !== state.instanceId) ? null : { ...state, state: structuredClone(state.state), effect: { id: "melf-effect" } };
     },
     async updateInstance({ instanceId, expectedRevision, operationId, state: next }) {
@@ -65,9 +88,9 @@ function createRuntime({ remainingMeteors = 6 } = {}) {
   };
 }
 
-function createActorScopedRuntime({ remainingMeteors = 6 } = {}) {
+function createActorScopedRuntime({ remainingMeteors = 6, operationJournal = createOperationJournal() } = {}) {
   const states = new Map();
-  const calls = { create: [], delete: [], update: [] };
+  const calls = { claim: [], create: [], delete: [], update: [] };
   function row(actor) {
     const existing = states.get(actor.uuid);
     if (existing) return existing;
@@ -86,6 +109,11 @@ function createActorScopedRuntime({ remainingMeteors = 6 } = {}) {
   }
   return {
     calls,
+    async claimOperation(input) {
+      const result = await operationJournal.claim(input);
+      calls.claim.push({ ...input, status: result.status });
+      return result;
+    },
     readInstance({ actor, instanceId } = {}) {
       const state = row(actor);
       return state.deleted || (instanceId && instanceId !== state.instanceId) ? null : snapshot(state);
@@ -169,6 +197,18 @@ test("builds 6 meteors at slot level 3 and 2 more per higher level", () => {
   assert.equal(melfMeteorPool(6), 12);
 });
 
+test("requires the durable spell-operation journal on its runtime", () => {
+  // Catches a recipe that can create a disposable spell instance without first recording the cast operation on its Actor.
+  const runtime = createRuntime();
+  delete runtime.claimOperation;
+
+  assert.throws(() => buildMelfsMinuteMeteorsRecipe({
+    instanceRuntime: runtime,
+    dialog: async () => ({ cancelled: true, count: 0 }),
+    runActivity: async () => ({ completed: true })
+  }), /claimOperation/u);
+});
+
 test("does not create an instance for canceled or counterspelled casts", async () => {
   for (const workflow of [{ completed: false, cancelled: true }, { completed: true, counterspelled: true }]) {
     const fixture = recipeFixture();
@@ -185,6 +225,37 @@ test("creates the instance after a successful cast using normalized highest-prio
   }));
   assert.equal(fixture.runtime.calls.create.length, 1);
   assert.deepEqual(fixture.runtime.calls.create[0].initialState, { slotLevel: 5, remainingMeteors: 10, totalMeteors: 10 });
+});
+
+test("claims a successful cast authoritatively before reading, creating, prompting, or releasing meteors", async () => {
+  // Catches a post-use handler creating state first, which cannot survive a later effect cleanup or client replay safely.
+  const fixture = recipeFixture({ choices: [{ cancelled: false, count: 0 }] });
+  const cast = context(fixture, { operationId: "journalled-cast" });
+
+  await fixture.recipe.handlers.postUseActivity(cast);
+
+  assert.deepEqual(fixture.runtime.calls.claim, [{
+    actor: fixture.actor,
+    authoritative: true,
+    declaration: { recipe: RECIPE, version: 1 },
+    operationId: "journalled-cast",
+    status: "claimed"
+  }]);
+  assert.deepEqual(fixture.runtime.calls.timeline.slice(0, 3), ["claim", "read", "create"]);
+  assert.equal(fixture.dialogs.length, 1);
+});
+
+test("a rejected cast journal claim fails closed before creating an instance or child effect", async () => {
+  // Catches a failed Actor journal write falling through to a spell instance and allowing a replay window.
+  const fixture = recipeFixture();
+  fixture.runtime.claimOperation = async () => { throw new Error("journal write failed"); };
+
+  await fixture.recipe.handlers.postUseActivity(context(fixture));
+
+  assert.equal(fixture.runtime.calls.create.length, 0);
+  assert.equal(fixture.dialogs.length, 0);
+  assert.equal(fixture.runs.length, 0);
+  assert.equal(fixture.errors.length, 1);
 });
 
 test("offers initial 0 1 or 2 only after creating the instance", async () => {
@@ -345,6 +416,48 @@ test("two recipe clients reserve one persisted release before either can replay 
   assert.equal(externalChildren.filter((run) => run.activity._id === "melfMeteorRel001").length, 1);
   assert.equal(externalChildren.filter((run) => run.activity._id === "melfMeteorBurst1").length, 1);
   assert.equal(runtime.state.state.remainingMeteors, 5);
+});
+
+test("two recipe clients claim one initial cast before either creates, prompts, or releases a meteor", async () => {
+  // Catches relying on the per-recipe in-flight map when the same cast is delivered to two clients.
+  const runtime = createRuntime();
+  const first = recipeFixture({ runtime, choices: [{ cancelled: false, count: 1 }] });
+  const second = recipeFixture({ runtime, choices: [{ cancelled: false, count: 1 }] });
+  const firstCast = context(first, { operationId: "shared-initial-cast" });
+  const secondCast = context(second, { operationId: "shared-initial-cast" });
+
+  await Promise.all([
+    first.recipe.handlers.postUseActivity(firstCast),
+    second.recipe.handlers.postUseActivity(secondCast)
+  ]);
+
+  assert.deepEqual(runtime.calls.claim.map((call) => call.status).sort(), ["claimed", "completed"]);
+  assert.equal(runtime.calls.create.length, 1);
+  assert.equal(first.dialogs.length + second.dialogs.length, 1);
+  assert.equal(first.runs.length + second.runs.length, 1);
+});
+
+test("a fresh recipe ignores a redelivered cast after its final later meteor deleted the instance", async () => {
+  // Catches cast idempotency stored only on the disposable Melf ActiveEffect instead of the durable Actor journal.
+  const runtime = createRuntime();
+  const initial = recipeFixture({ runtime, choices: [{ cancelled: false, count: 0 }, { cancelled: false, count: 1 }] });
+  const originalCast = context(initial, { operationId: "deleted-instance-cast" });
+
+  await initial.recipe.handlers.postUseActivity(originalCast);
+  runtime.state.state.remainingMeteors = 1;
+  initial.recipe.handlers.preUseActivity(context(initial, {
+    action: "release", activity: initial.release, operationId: "last-meteor-release"
+  }));
+  await flush();
+  assert.equal(runtime.state.deleted, true);
+
+  const fresh = recipeFixture({ runtime, choices: [{ cancelled: false, count: 1 }] });
+  await fresh.recipe.handlers.postUseActivity(context(fresh, { operationId: "deleted-instance-cast" }));
+
+  assert.equal(runtime.calls.create.length, 1);
+  assert.equal(fresh.dialogs.length, 0);
+  assert.equal(fresh.runs.length, 0);
+  assert.equal(runtime.state.deleted, true);
 });
 
 test("one recipe scopes equal release operation ids by actor and spell instance", async () => {

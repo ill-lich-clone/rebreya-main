@@ -146,6 +146,9 @@ export function buildMelfsMinuteMeteorsRecipe({
     || typeof instanceRuntime.deleteInstance !== "function") {
     throw new TypeError("Melf's Minute Meteors requires the spell instance runtime.");
   }
+  if (typeof instanceRuntime.claimOperation !== "function") {
+    throw new TypeError("Melf's Minute Meteors requires instanceRuntime.claimOperation.");
+  }
   if (typeof dialog !== "function" || typeof runActivity !== "function") {
     throw new TypeError("Melf's Minute Meteors requires dialog and activity runners.");
   }
@@ -255,6 +258,14 @@ export function buildMelfsMinuteMeteorsRecipe({
 
     try {
       await operationOnce({ actor: context.actor, instanceId: context.operationId, operationId: context.operationId }, async () => {
+        const declaration = { recipe: MELFS_MINUTE_METEORS_RECIPE, version: MELFS_MINUTE_METEORS_VERSION };
+        const claim = await instanceRuntime.claimOperation({
+          actor: context.actor,
+          authoritative: true,
+          declaration,
+          operationId: context.operationId
+        });
+        if (claim?.status !== "claimed") return;
         const slotLevel = numberAtLeastThree(
           context?.usageConfig?.spell?.slot
           ?? context?.workflow?.castData?.castLevel
@@ -267,7 +278,7 @@ export function buildMelfsMinuteMeteorsRecipe({
             actor: context.actor,
             activity: context.activity,
             concentrationEffect,
-            declaration: { recipe: MELFS_MINUTE_METEORS_RECIPE, version: MELFS_MINUTE_METEORS_VERSION },
+            declaration,
             instanceId: context.operationId,
             item: context.item,
             operationId: context.operationId
