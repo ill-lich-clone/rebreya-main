@@ -11,6 +11,7 @@ import {
 
 function createTransportActor(transport, { type = "vehicle" } = {}) {
   return {
+    id: "vehicle-a",
     type,
     getFlag(scope, key) {
       return scope === MODULE_ID && key === "transport" ? transport : undefined;
@@ -30,7 +31,26 @@ function createSheetDom() {
       className: "",
       textContent: "",
       children: [],
+      attributes: {},
+      dataset: {},
+      disabled: false,
+      value: "",
+      listeners: new Map(),
       ownerDocument,
+      setAttribute(name, value) {
+        this.attributes[name] = String(value);
+        if (name === "name") this.name = String(value);
+        if (name.startsWith("data-")) {
+          const key = name.slice(5).replace(/-([a-z])/gu, (_match, letter) => letter.toUpperCase());
+          this.dataset[key] = String(value);
+        }
+      },
+      addEventListener(name, listener) {
+        this.listeners.set(name, listener);
+      },
+      async dispatch(name) {
+        await this.listeners.get(name)?.({ currentTarget: this, preventDefault() {} });
+      },
       append(...nodes) {
         this.children.push(...nodes);
       },
@@ -39,6 +59,10 @@ function createSheetDom() {
         if (selector.startsWith(".") && this.className.split(/\s+/u).includes(selector.slice(1))) {
           return this;
         }
+        const nameMatch = selector.match(/^\[name="([^"]+)"\]$/u);
+        if (nameMatch && this.name === nameMatch[1]) return this;
+        const actionMatch = selector.match(/^\[data-action="([^"]+)"\]$/u);
+        if (actionMatch && this.dataset.action === actionMatch[1]) return this;
         for (const child of this.children) {
           const found = child.querySelector?.(selector);
           if (found) return found;
@@ -143,9 +167,67 @@ test("vehicle sheet hooks register generic and D&D5e render callbacks once", () 
   ]);
 });
 
-test("vehicle sheet specifications use a compact read-only surface", async () => {
+test("vehicle sheet configures a concrete transport from its group warehouse", async () => {
+  const dom = createSheetDom();
+  const calls = [];
+  const actor = createTransportActor({
+    instance: true,
+    groupActorId: "group-a",
+    instanceState: {
+      fuelItemId: "liquid-coal",
+      fuelItemName: "Жидкий уголь",
+      fuelPerMile: 0.125
+    }
+  });
+  const moduleApi = {
+    groupContextService: {
+      resolveForGroup(groupActorId) {
+        assert.equal(groupActorId, "group-a");
+        return {
+          canManage: true,
+          groupActor: {
+            id: "group-a",
+            items: {
+              contents: [
+                { id: "liquid-coal", name: "Жидкий уголь" },
+                { id: "firewood", name: "Дрова" }
+              ]
+            }
+          }
+        };
+      }
+    },
+    async updateTransportFuelConfig(payload) {
+      calls.push(structuredClone(payload));
+    }
+  };
+
+  assert.equal(injectTransportSpecifications({ actor }, dom.html, moduleApi), true);
+  const fuelItem = dom.root.querySelector('[name="fuelItemId"]');
+  const fuelPerMile = dom.root.querySelector('[name="fuelPerMile"]');
+  const save = dom.root.querySelector('[data-action="save-transport-fuel"]');
+  assert.ok(fuelItem);
+  assert.ok(fuelPerMile);
+  assert.ok(save);
+  assert.equal(fuelItem.value, "liquid-coal");
+  assert.equal(fuelPerMile.value, "0.125");
+
+  fuelItem.value = "firewood";
+  fuelPerMile.value = "0.25";
+  await save.dispatch("click");
+
+  assert.deepEqual(calls, [{
+    groupActorId: "group-a",
+    actorId: "vehicle-a",
+    fuelItemId: "firewood",
+    fuelPerMile: 0.25
+  }]);
+});
+
+test("vehicle sheet specifications use a compact control surface", async () => {
   const css = await readFile(new URL("../styles/main.css", import.meta.url), "utf8");
 
   assert.match(css, /\.rm-rebreya-transport-specs\s*\{/u);
   assert.match(css, /\.rm-rebreya-transport-specs\s+p\s*\{/u);
+  assert.match(css, /\.rm-rebreya-transport-fuel\s*\{/u);
 });

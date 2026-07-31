@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   TransportInstanceService,
   normalizeTransportInstanceState,
+  validateTransportFuelConfigPayload,
   validateTransportImportPayload,
   validateTransportStatePayload
 } from "../scripts/data/transport-instance-service.js";
@@ -28,6 +29,13 @@ const validState = {
     reserveCurrent: 8,
     reserveCapacity: 12
   }
+};
+
+const validFuelConfig = {
+  groupActorId: "group-a",
+  actorId: "vehicle-a",
+  fuelItemId: "liquid-coal",
+  fuelPerMile: 0.125
 };
 
 function createTransportInstanceHarness({
@@ -111,6 +119,15 @@ function createTransportInstanceHarness({
   const groupActor = {
     id: "group-a",
     type: "group",
+    items: {
+      contents: [
+        { id: "liquid-coal", name: "Жидкий уголь" },
+        { id: "firewood", name: "Дрова" }
+      ],
+      get(id) {
+        return this.contents.find((item) => item.id === id) ?? null;
+      }
+    },
     getFlag(scope, key) {
       return scope === "rebreya-main" && key === "managedPartyGroup" ? managedGroup : undefined;
     },
@@ -213,6 +230,16 @@ test("transport payload validators enforce exact keys and the managed pack UUID"
     ...validState,
     patch: { ...validState.patch, forged: true }
   }), false);
+});
+
+test("fuel configuration payload requires exact safe ids and a non-negative rate", () => {
+  assert.equal(validateTransportFuelConfigPayload(validFuelConfig), true);
+  assert.equal(validateTransportFuelConfigPayload({ ...validFuelConfig, fuelPerMile: "0,125" }), true);
+  assert.equal(validateTransportFuelConfigPayload({ ...validFuelConfig, fuelItemId: "" }), true);
+  assert.equal(validateTransportFuelConfigPayload({ ...validFuelConfig, fuelPerMile: -1 }), false);
+  assert.equal(validateTransportFuelConfigPayload({ ...validFuelConfig, fuelPerMile: "none" }), false);
+  assert.equal(validateTransportFuelConfigPayload({ ...validFuelConfig, forged: true }), false);
+  assert.equal(validateTransportFuelConfigPayload({ ...validFuelConfig, actorId: "__proto__" }), false);
 });
 
 test("world transport templates resolve back to their canonical managed compendium Actor", async () => {
@@ -415,6 +442,9 @@ test("import creates an independent world Actor, assigns its target-group role, 
   assert.equal(firstActor.flags["rebreya-main"].managed, undefined);
   assert.equal(firstActor.flags["rebreya-main"].transport.instance, true);
   assert.equal(firstActor.flags["rebreya-main"].transport.instanceState.reserveUnit, "lb");
+  assert.equal(firstActor.flags["rebreya-main"].transport.instanceState.fuelItemId, "");
+  assert.equal(firstActor.flags["rebreya-main"].transport.instanceState.fuelItemName, "");
+  assert.equal(firstActor.flags["rebreya-main"].transport.instanceState.fuelPerMile, 0);
   assert.equal(firstActor.flags["rebreya-main"].transport.sourceActorUuid, validImport.sourceActorUuid);
 });
 
@@ -579,4 +609,37 @@ test("state update rejects unrelated and foreign-group vehicle members", async (
     () => foreignService.updateInstanceState(validState, { sender: foreignHarness.gm }),
     /транспорт/u
   );
+});
+
+test("fuel configuration stores a group warehouse item without replacing live state", async () => {
+  const harness = createTransportInstanceHarness({ existingTransport: true });
+  const service = new TransportInstanceService(harness.moduleApi, harness.options);
+
+  const result = await service.updateFuelConfig(validFuelConfig, { sender: harness.gm });
+
+  assert.deepEqual(harness.actorUpdates.at(-1), {
+    "flags.rebreya-main.transport.instanceState": {
+      reserveUnit: "gal",
+      fuelItemId: "liquid-coal",
+      fuelItemName: "Жидкий уголь",
+      fuelPerMile: 0.125
+    }
+  });
+  assert.equal(result.actorId, "vehicle-a");
+  assert.equal(result.fuelItemName, "Жидкий уголь");
+  assert.equal(result.fuelPerMile, 0.125);
+});
+
+test("fuel configuration rejects an item outside the owning group", async () => {
+  const harness = createTransportInstanceHarness({ existingTransport: true });
+  const service = new TransportInstanceService(harness.moduleApi, harness.options);
+
+  await assert.rejects(
+    () => service.updateFuelConfig({
+      ...validFuelConfig,
+      fuelItemId: "foreign-fuel"
+    }, { sender: harness.gm }),
+    /не найден на складе группы/u
+  );
+  assert.equal(harness.actorUpdates.length, 0);
 });

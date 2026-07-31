@@ -12,6 +12,7 @@ import { CraftsmanConstructCompendiumService } from "./data/craftsman-construct-
 import { TransportCompendiumService } from "./data/transport-compendium.js";
 import {
   TRANSPORT_IMPORT_COMMAND,
+  TRANSPORT_UPDATE_FUEL_CONFIG_COMMAND,
   TRANSPORT_UPDATE_STATE_COMMAND,
   TransportInstanceService,
   registerTransportInstanceCommands
@@ -2929,6 +2930,16 @@ export class RebreyaMainModule {
           sender: globalThis.game?.user
         })
       : await this.socketCommandBus.request(TRANSPORT_UPDATE_STATE_COMMAND, payload);
+    await this.refreshOpenApps();
+    return result;
+  }
+
+  async updateTransportFuelConfig(payload) {
+    const result = isActiveGmClient(globalThis.game)
+      ? await this.transportInstanceService.updateFuelConfig(payload, {
+          sender: globalThis.game?.user
+        })
+      : await this.socketCommandBus.request(TRANSPORT_UPDATE_FUEL_CONFIG_COMMAND, payload);
     await this.refreshOpenApps();
     return result;
   }
