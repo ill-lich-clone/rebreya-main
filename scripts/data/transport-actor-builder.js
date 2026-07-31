@@ -4,6 +4,31 @@ const DASH = "—";
 const POUNDS_PER_TON = 2000;
 const TRANSPORT_VERSION = 1;
 const DOCUMENT_ID_PATTERN = /^lchtransport\d{4}$/u;
+const SIGNATURE_FIELDS = Object.freeze([
+  "sourceId",
+  "documentId",
+  "sourceRow",
+  "name",
+  "inventionYear",
+  "type",
+  "price",
+  "rentalPrice",
+  "rank",
+  "weight",
+  "hp",
+  "ac",
+  "combatSpeed",
+  "acceleration",
+  "travelSpeed",
+  "breakdownThreshold",
+  "consumption",
+  "crew",
+  "passengers",
+  "strength",
+  "size",
+  "cargoCapacity",
+  "description"
+]);
 
 const TYPE_ARTWORK = Object.freeze({
   "Скакун": "icons/svg/pawprint.svg",
@@ -142,8 +167,10 @@ function fnv1a(value) {
 }
 
 function buildTransportSignature(entry) {
-  const source = { ...entry.source };
-  delete source.source;
+  const source = Object.fromEntries(SIGNATURE_FIELDS.map((field) => [
+    field,
+    entry.source?.[field] ?? entry[field] ?? ""
+  ]));
   return `transport-v${TRANSPORT_VERSION}:${fnv1a(JSON.stringify(source))}`;
 }
 
