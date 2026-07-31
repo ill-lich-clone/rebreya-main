@@ -1,6 +1,7 @@
 import { MODULE_ID } from "../constants.js";
 import { WorldMutationCoordinator } from "../application/world-mutation-coordinator.js";
 import { spellAutomationKey } from "./spell-automation-registry.js";
+import { SUMMON_LIFECYCLE_MUTATION_COMMAND, isValidSummonLifecycleMutationPayload } from "../integrations/summon-lifecycle-socket.js";
 
 export const SUMMON_LINK_FLAG = "summonLink";
 
@@ -314,13 +315,15 @@ export class SummonLifecycleRuntime {
   #maxPendingClaims;
   #coordinator;
   #addDependent;
+  #socketCommandBus;
+  #canUpdateScene;
   #providers = new Map();
   #claimsByActivity = new Map();
   #claimsByOptions = new WeakMap();
   #optionsByClaim = new WeakMap();
   #claimsByOperation = new Map();
 
-  constructor({ registry, coordinator = new WorldMutationCoordinator(), addDependent = defaultAddDependent, operationIdFactory, clock, now, claimTimeoutMs = DEFAULT_CLAIM_TIMEOUT_MS, maxPendingClaims = DEFAULT_MAX_PENDING_CLAIMS } = {}) {
+  constructor({ registry, coordinator = new WorldMutationCoordinator(), addDependent = defaultAddDependent, socketCommandBus, canUpdateScene = (scene) => scene?.isOwner !== false, operationIdFactory, clock, now, claimTimeoutMs = DEFAULT_CLAIM_TIMEOUT_MS, maxPendingClaims = DEFAULT_MAX_PENDING_CLAIMS } = {}) {
     if (!registry || typeof registry.register !== "function" || typeof registry.resolve !== "function") {
       throw new TypeError("SummonLifecycleRuntime requires a SpellAutomationRegistry-compatible registry.");
     }
@@ -332,6 +335,12 @@ export class SummonLifecycleRuntime {
     }
     if (typeof addDependent !== "function") {
       throw new TypeError("SummonLifecycleRuntime addDependent must be a function.");
+    }
+    if (socketCommandBus != null && typeof socketCommandBus.request !== "function") {
+      throw new TypeError("SummonLifecycleRuntime socket command bus must support request.");
+    }
+    if (typeof canUpdateScene !== "function") {
+      throw new TypeError("SummonLifecycleRuntime canUpdateScene must be a function.");
     }
     const clockSource = now ?? clock;
     if (clockSource !== undefined && typeof clockSource !== "function") {
@@ -347,6 +356,8 @@ export class SummonLifecycleRuntime {
     this.#operationIdFactory = operationIdFactory;
     this.#coordinator = coordinator;
     this.#addDependent = addDependent;
+    this.#socketCommandBus = socketCommandBus;
+    this.#canUpdateScene = canUpdateScene;
     this.#now = clockSource ?? (() => Date.now());
     this.#claimTimeoutMs = claimTimeoutMs;
     this.#maxPendingClaims = maxPendingClaims;
@@ -556,6 +567,30 @@ export class SummonLifecycleRuntime {
     return this.cancelClaim(claimOrContext);
   }
 
+  async handleSocketMutation(payload, { actor, scene } = {}) {
+    if (!isValidSummonLifecycleMutationPayload(payload)) {
+      throw new TypeError("Summon lifecycle mutation payload is invalid.");
+    }
+    if (actor?.uuid !== payload.actorUuid || scene?.uuid !== payload.sceneUuid) {
+      throw new Error("Summon lifecycle mutation documents do not match the payload.");
+    }
+    const requestId = [payload.sceneUuid, payload.actorUuid, payload.declaration.recipe, payload.declaration.version, payload.operationId, payload.action, ...payload.tokenIds].join("\u0000");
+    return this.#coordinator.runIdempotent(`summon-socket:${payload.sceneUuid}:${payload.declaration.recipe}:v${payload.declaration.version}`, requestId, async () => {
+      const tokens = payload.tokenIds.map((id) => scene.tokens?.get?.(id)).filter((token) => token && this.#matchesSocketLink(token, payload));
+      if (payload.action === "ensure-link") {
+        for (const token of tokens) {
+          if (typeof token.update !== "function") throw new TypeError("Summon token must support update.");
+          await token.update({ [`flags.${MODULE_ID}.${SUMMON_LINK_FLAG}`]: payload.link });
+        }
+      }
+      else if (tokens.length) {
+        if (typeof scene.deleteEmbeddedDocuments !== "function") throw new TypeError("Summon scene must support token deletion.");
+        await scene.deleteEmbeddedDocuments("Token", tokens.map(documentId));
+      }
+      return Object.freeze({ action: payload.action, tokenIds: Object.freeze(tokens.map(documentId)) });
+    });
+  }
+
   #providerContext(claim, context, tokens, extra = {}) {
     return Object.freeze({
       operationId: claim.operationId,
@@ -642,7 +677,16 @@ export class SummonLifecycleRuntime {
       if (typeof token.update !== "function") {
         throw new TypeError("Summon token must support update to repair its common link.");
       }
-      await token.update({ [`flags.${MODULE_ID}.${SUMMON_LINK_FLAG}`]: expected });
+      const scene = tokenScene(token);
+      if (this.#canUpdateScene(scene)) {
+        await token.update({ [`flags.${MODULE_ID}.${SUMMON_LINK_FLAG}`]: expected });
+      }
+      else {
+        await this.#requestSocketMutation({
+          action: "ensure-link", actorUuid: expected.sourceActorUuid, sceneUuid: scene?.uuid, tokenIds: [documentId(token)],
+          declaration: { recipe: expected.recipe, version: expected.version }, operationId: expected.operationId, link: expected
+        });
+      }
     }
   }
 
@@ -657,10 +701,31 @@ export class SummonLifecycleRuntime {
       byScene.set(scene, ids);
     }
     for (const [scene, ids] of byScene) {
-      if (ids.length && typeof scene.deleteEmbeddedDocuments === "function") {
-        await scene.deleteEmbeddedDocuments("Token", ids);
+      if (!ids.length) continue;
+      const link = readSummonLink(scene.tokens?.get?.(ids[0]));
+      if (this.#canUpdateScene(scene)) {
+        if (typeof scene.deleteEmbeddedDocuments === "function") await scene.deleteEmbeddedDocuments("Token", ids);
+      }
+      else if (link) {
+        await this.#requestSocketMutation({
+          action: "delete-operation-tokens", actorUuid: link.sourceActorUuid, sceneUuid: scene.uuid, tokenIds: ids,
+          declaration: { recipe: link.recipe, version: link.version }, operationId: link.operationId, link
+        });
       }
     }
+  }
+
+  #matchesSocketLink(token, payload) {
+    const link = readSummonLink(token);
+    return Boolean(link && link.recipe === payload.declaration.recipe && link.version === payload.declaration.version
+      && link.operationId === payload.operationId && link.sourceActorUuid === payload.actorUuid);
+  }
+
+  #requestSocketMutation(payload) {
+    if (typeof this.#socketCommandBus?.request !== "function") {
+      return Promise.reject(new Error("Summon lifecycle mutation requires an active-GM socket command bus."));
+    }
+    return this.#socketCommandBus.request(SUMMON_LIFECYCLE_MUTATION_COMMAND, payload);
   }
 
   #copyCorrelation(usageConfig, claim) {
