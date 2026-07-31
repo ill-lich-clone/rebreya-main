@@ -14,6 +14,11 @@ const validImport = {
   sourceActorUuid: "Compendium.world.rebreya-transport.Actor.lchtransport0001"
 };
 
+const validWorldImport = {
+  groupActorId: "group-a",
+  sourceActorUuid: "Actor.world-lincoln"
+};
+
 const validState = {
   groupActorId: "group-a",
   actorId: "vehicle-a",
@@ -197,6 +202,7 @@ function createTransportInstanceHarness({
 
 test("transport payload validators enforce exact keys and the managed pack UUID", () => {
   assert.equal(validateTransportImportPayload(validImport), true);
+  assert.equal(validateTransportImportPayload(validWorldImport), true);
   assert.equal(validateTransportImportPayload({ ...validImport, forged: true }), false);
   assert.equal(validateTransportImportPayload({
     ...validImport,
@@ -207,6 +213,102 @@ test("transport payload validators enforce exact keys and the managed pack UUID"
     ...validState,
     patch: { ...validState.patch, forged: true }
   }), false);
+});
+
+test("world transport templates resolve back to their canonical managed compendium Actor", async () => {
+  const harness = createTransportInstanceHarness();
+  const worldSource = {
+    uuid: validWorldImport.sourceActorUuid,
+    pack: null,
+    type: "vehicle",
+    _stats: {
+      compendiumSource: validImport.sourceActorUuid
+    },
+    toObject: () => ({
+      name: "Линкор из мира",
+      type: "vehicle",
+      _stats: {
+        compendiumSource: validImport.sourceActorUuid
+      },
+      flags: {
+        "rebreya-main": {
+          managed: true,
+          sourceId: "transport-v01-boevoy-kon",
+          signature: "transport-v1:abc",
+          transport: {
+            instance: false,
+            sourceId: "transport-v01-boevoy-kon"
+          }
+        }
+      }
+    }),
+    getFlag(scope, key) {
+      return this.toObject().flags?.[scope]?.[key];
+    }
+  };
+  const service = new TransportInstanceService(harness.moduleApi, {
+    ...harness.options,
+    fromUuid: async (uuid) => {
+      if (uuid === worldSource.uuid) return worldSource;
+      if (uuid === harness.source.uuid) return harness.source;
+      return null;
+    }
+  });
+
+  const result = await service.importIntoGroup(validWorldImport, { sender: harness.gm });
+
+  assert.equal(result.actorId, "vehicle-created-1");
+  assert.equal(harness.createdActors[0].name, harness.source.name);
+  assert.equal(
+    harness.createdActors[0].flags["rebreya-main"].transport.sourceActorUuid,
+    validImport.sourceActorUuid
+  );
+});
+
+test("world transport templates with forged canonical identity are rejected", async () => {
+  const harness = createTransportInstanceHarness();
+  const forged = {
+    uuid: validWorldImport.sourceActorUuid,
+    pack: null,
+    type: "vehicle",
+    _stats: {
+      compendiumSource: validImport.sourceActorUuid
+    },
+    toObject: () => ({
+      type: "vehicle",
+      _stats: {
+        compendiumSource: validImport.sourceActorUuid
+      },
+      flags: {
+        "rebreya-main": {
+          managed: true,
+          sourceId: "transport-v01-forged",
+          signature: "transport-v1:forged",
+          transport: {
+            instance: false,
+            sourceId: "transport-v01-forged"
+          }
+        }
+      }
+    }),
+    getFlag(scope, key) {
+      return this.toObject().flags?.[scope]?.[key];
+    }
+  };
+  const service = new TransportInstanceService(harness.moduleApi, {
+    ...harness.options,
+    fromUuid: async (uuid) => {
+      if (uuid === forged.uuid) return forged;
+      if (uuid === harness.source.uuid) return harness.source;
+      return null;
+    }
+  });
+
+  await assert.rejects(
+    () => service.importIntoGroup(validWorldImport, { sender: harness.gm }),
+    /управляемым транспортом Ребреи/u
+  );
+  assert.equal(harness.createdActors.length, 0);
 });
 
 test("instance state validates condition, non-negative values, and capacity", () => {

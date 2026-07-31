@@ -6,10 +6,63 @@ const TRANSPORT_UUID_PATTERN = new RegExp(
   `^Compendium\\.${TRANSPORT_COMPENDIUM_ID.replaceAll(".", "\\.")}\\.Actor\\.lchtransport\\d{4}$`,
   "u"
 );
+const WORLD_ACTOR_UUID_PATTERN = /^Actor\.([A-Za-z0-9_-]{1,128})$/u;
 
-export function isTransportCompendiumActorDrop(data) {
-  return data?.type === "Actor"
-    && TRANSPORT_UUID_PATTERN.test(String(data?.uuid ?? "").trim());
+function cleanString(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function actorFlag(actor, key) {
+  return actor?.getFlag?.(MODULE_ID, key)
+    ?? actor?.flags?.[MODULE_ID]?.[key]
+    ?? actor?.toObject?.()?.flags?.[MODULE_ID]?.[key];
+}
+
+function actorCompendiumSource(actor) {
+  return cleanString(
+    actor?._stats?.compendiumSource
+    ?? actor?.toObject?.()?._stats?.compendiumSource
+  );
+}
+
+function defaultResolveWorldActor(uuid) {
+  const match = WORLD_ACTOR_UUID_PATTERN.exec(uuid);
+  if (!match) return null;
+  try {
+    return globalThis.fromUuidSync?.(uuid)
+      ?? globalThis.game?.actors?.get?.(match[1])
+      ?? null;
+  }
+  catch (_error) {
+    return null;
+  }
+}
+
+function isManagedWorldTransportActor(actor, expectedUuid) {
+  const transport = actorFlag(actor, "transport") ?? {};
+  const sourceId = cleanString(actorFlag(actor, "sourceId"));
+  const nestedSourceId = cleanString(transport.sourceId);
+  return actor?.type === "vehicle"
+    && !actor?.pack
+    && cleanString(actor?.uuid) === expectedUuid
+    && actorFlag(actor, "managed") === true
+    && transport.instance !== true
+    && Boolean(sourceId)
+    && sourceId === nestedSourceId
+    && TRANSPORT_UUID_PATTERN.test(actorCompendiumSource(actor));
+}
+
+export function isTransportCompendiumActorDrop(
+  data,
+  { resolveWorldActor = defaultResolveWorldActor } = {}
+) {
+  if (data?.type !== "Actor") return false;
+  const uuid = cleanString(data?.uuid);
+  if (TRANSPORT_UUID_PATTERN.test(uuid)) return true;
+  if (!WORLD_ACTOR_UUID_PATTERN.test(uuid) || typeof resolveWorldActor !== "function") {
+    return false;
+  }
+  return isManagedWorldTransportActor(resolveWorldActor(uuid), uuid);
 }
 
 export function findManagedGroupTokenAtPoint(canvas, x, y) {
@@ -29,8 +82,8 @@ export function findManagedGroupTokenAtPoint(canvas, x, y) {
   return null;
 }
 
-export function handleTransportGroupDrop(canvas, data, moduleApi) {
-  if (!isTransportCompendiumActorDrop(data)) return true;
+export function handleTransportGroupDrop(canvas, data, moduleApi, options = {}) {
+  if (!isTransportCompendiumActorDrop(data, options)) return true;
   const x = Number(data?.x);
   const y = Number(data?.y);
   if (!Number.isFinite(x) || !Number.isFinite(y)) return true;

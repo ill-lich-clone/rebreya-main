@@ -15,6 +15,34 @@ const validTransportData = {
   y: 150
 };
 
+const worldTransportData = {
+  type: "Actor",
+  uuid: "Actor.world-lincoln",
+  x: 150,
+  y: 150
+};
+
+const worldTransportActor = {
+  uuid: worldTransportData.uuid,
+  type: "vehicle",
+  pack: null,
+  _stats: {
+    compendiumSource: validTransportData.uuid
+  },
+  getFlag(scope, key) {
+    if (scope !== "rebreya-main") return undefined;
+    if (key === "managed") return true;
+    if (key === "sourceId") return "transport-v01-lincoln";
+    if (key === "transport") {
+      return {
+        instance: false,
+        sourceId: "transport-v01-lincoln"
+      };
+    }
+    return undefined;
+  }
+};
+
 function createToken({
   id = "group-a",
   bounds = [100, 100, 200, 200],
@@ -48,6 +76,33 @@ test("transport drop detection accepts only Actor UUIDs from the managed pack", 
   assert.equal(isTransportCompendiumActorDrop({ ...validTransportData, uuid: "Actor.vehicle-a" }), false);
 });
 
+test("transport drop detection accepts a managed world copy linked to the transport compendium", () => {
+  assert.equal(isTransportCompendiumActorDrop(worldTransportData, {
+    resolveWorldActor: (uuid) => uuid === worldTransportData.uuid ? worldTransportActor : null
+  }), true);
+  assert.equal(isTransportCompendiumActorDrop(worldTransportData, {
+    resolveWorldActor: () => ({
+      ...worldTransportActor,
+      getFlag: () => undefined
+    })
+  }), false);
+});
+
+test("transport drop detection resolves a world Actor from the Foundry actor collection", () => {
+  const previousGame = globalThis.game;
+  globalThis.game = {
+    actors: {
+      get: (actorId) => actorId === "world-lincoln" ? worldTransportActor : null
+    }
+  };
+  try {
+    assert.equal(isTransportCompendiumActorDrop(worldTransportData), true);
+  }
+  finally {
+    globalThis.game = previousGame;
+  }
+});
+
 test("accepted transport drop suppresses Foundry synchronously and imports asynchronously", async () => {
   const calls = [];
   const moduleApi = {
@@ -68,6 +123,29 @@ test("accepted transport drop suppresses Foundry synchronously and imports async
   assert.deepEqual(calls, [{
     groupActorId: "group-a",
     sourceActorUuid: validTransportData.uuid
+  }]);
+});
+
+test("managed world transport drop is routed to the group import API", async () => {
+  const calls = [];
+  const allowed = handleTransportGroupDrop(
+    createCanvasWithGroupToken(),
+    worldTransportData,
+    {
+      async importTransportIntoGroup(payload) {
+        calls.push(payload);
+      }
+    },
+    {
+      resolveWorldActor: (uuid) => uuid === worldTransportData.uuid ? worldTransportActor : null
+    }
+  );
+
+  assert.equal(allowed, false);
+  await Promise.resolve();
+  assert.deepEqual(calls, [{
+    groupActorId: "group-a",
+    sourceActorUuid: worldTransportData.uuid
   }]);
 });
 

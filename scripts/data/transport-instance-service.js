@@ -12,6 +12,7 @@ const TRANSPORT_UUID_PATTERN = new RegExp(
   `^Compendium\\.${TRANSPORT_COMPENDIUM_ID.replaceAll(".", "\\.")}\\.Actor\\.lchtransport\\d{4}$`,
   "u"
 );
+const WORLD_ACTOR_UUID_PATTERN = /^Actor\.[A-Za-z0-9_-]{1,128}$/u;
 const IMPORT_KEYS = Object.freeze(["groupActorId", "sourceActorUuid"]);
 const STATE_KEYS = Object.freeze(["actorId", "groupActorId", "patch"]);
 const STATE_PATCH_KEYS = Object.freeze([
@@ -31,6 +32,19 @@ function clone(value) {
 
 function cleanId(value) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function moduleFlag(document, key) {
+  return document?.getFlag?.(MODULE_ID, key)
+    ?? document?.flags?.[MODULE_ID]?.[key]
+    ?? document?.toObject?.()?.flags?.[MODULE_ID]?.[key];
+}
+
+function compendiumSourceOf(document) {
+  return cleanId(
+    document?._stats?.compendiumSource
+    ?? document?.toObject?.()?._stats?.compendiumSource
+  );
 }
 
 function hasExactKeys(value, keys) {
@@ -124,7 +138,10 @@ export function normalizeTransportInstanceState(value = {}, { reserveUnit = "" }
 export function validateTransportImportPayload(payload) {
   return hasExactKeys(payload, IMPORT_KEYS)
     && isSafeId(payload.groupActorId)
-    && TRANSPORT_UUID_PATTERN.test(cleanId(payload.sourceActorUuid));
+    && (
+      TRANSPORT_UUID_PATTERN.test(cleanId(payload.sourceActorUuid))
+      || WORLD_ACTOR_UUID_PATTERN.test(cleanId(payload.sourceActorUuid))
+    );
 }
 
 export function validateTransportStatePayload(payload) {
@@ -211,8 +228,12 @@ export class TransportInstanceService {
     if (typeof fromUuid !== "function") {
       throw new TypeError("fromUuid is required to import transport");
     }
-    const source = await fromUuid(payload.sourceActorUuid);
-    this.#assertManagedTransportSource(source, payload.sourceActorUuid);
+    const droppedSource = await fromUuid(payload.sourceActorUuid);
+    const source = await this.#resolveManagedTransportSource(
+      droppedSource,
+      payload.sourceActorUuid,
+      fromUuid
+    );
 
     const Actor = this.options.actorProvider?.() ?? globalThis.Actor;
     if (typeof Actor?.create !== "function") {
@@ -337,12 +358,8 @@ export class TransportInstanceService {
   }
 
   #assertManagedTransportSource(source, expectedUuid) {
-    const managed = source?.getFlag?.(MODULE_ID, "managed")
-      ?? source?.flags?.[MODULE_ID]?.managed;
-    const sourceId = cleanId(
-      source?.getFlag?.(MODULE_ID, "sourceId")
-      ?? source?.flags?.[MODULE_ID]?.sourceId
-    );
+    const managed = moduleFlag(source, "managed");
+    const sourceId = cleanId(moduleFlag(source, "sourceId"));
     if (
       source?.type !== "vehicle"
       || source?.pack !== TRANSPORT_COMPENDIUM_ID
@@ -352,6 +369,45 @@ export class TransportInstanceService {
     ) {
       throw new Error("Источник не является управляемым транспортом Ребреи.");
     }
+  }
+
+  async #resolveManagedTransportSource(source, expectedUuid, fromUuid) {
+    const expected = cleanId(expectedUuid);
+    if (TRANSPORT_UUID_PATTERN.test(expected)) {
+      this.#assertManagedTransportSource(source, expected);
+      return source;
+    }
+
+    const reject = () => this.#assertManagedTransportSource(null, "");
+    const transport = moduleFlag(source, "transport") ?? {};
+    const sourceId = cleanId(moduleFlag(source, "sourceId"));
+    const nestedSourceId = cleanId(transport.sourceId);
+    const signature = cleanId(moduleFlag(source, "signature"));
+    const compendiumSource = compendiumSourceOf(source);
+    if (
+      !WORLD_ACTOR_UUID_PATTERN.test(expected)
+      || source?.type !== "vehicle"
+      || source?.pack
+      || cleanId(source?.uuid) !== expected
+      || moduleFlag(source, "managed") !== true
+      || transport.instance === true
+      || !sourceId
+      || sourceId !== nestedSourceId
+      || !signature
+      || !TRANSPORT_UUID_PATTERN.test(compendiumSource)
+    ) {
+      reject();
+    }
+
+    const canonicalSource = await fromUuid(compendiumSource);
+    this.#assertManagedTransportSource(canonicalSource, compendiumSource);
+    if (
+      cleanId(moduleFlag(canonicalSource, "sourceId")) !== sourceId
+      || cleanId(moduleFlag(canonicalSource, "signature")) !== signature
+    ) {
+      reject();
+    }
+    return canonicalSource;
   }
 
   #buildWorldInstanceData(source, groupActorId) {
