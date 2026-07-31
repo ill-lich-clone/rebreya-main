@@ -121,6 +121,11 @@ test("transport compendium sync creates one managed vehicle per catalog row and 
   assert.equal(harness.documents.length, 62);
   assert.ok(harness.documents.every((document) => document.type === "vehicle"));
   assert.ok(harness.documents.every((document) => document.getFlag("rebreya-main", "managed") === true));
+  const kettle = harness.documents.find((document) => document.name === "Автомобиль «Кипятильник»");
+  assert.equal(kettle.system.attributes.movement.walk, 100);
+  assert.equal(kettle.system.attributes.travel.speeds.land, 10);
+  assert.equal(kettle.flags[MODULE_ID].transport.combatSpeed.primaryFt, 100);
+  assert.equal(kettle.flags[MODULE_ID].transport.travelSpeed.value, 10);
   assert.deepEqual(second.result, { unchanged: 62, created: 0, updated: 0, deleted: 0 });
 });
 

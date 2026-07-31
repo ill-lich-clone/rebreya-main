@@ -2,7 +2,7 @@ import { MODULE_ID } from "../constants.js";
 
 const DASH = "—";
 const POUNDS_PER_TON = 2000;
-const TRANSPORT_VERSION = 2;
+const TRANSPORT_VERSION = 3;
 const DOCUMENT_ID_PATTERN = /^lchtransport\d{4}$/u;
 const SIGNATURE_FIELDS = Object.freeze([
   "sourceId",

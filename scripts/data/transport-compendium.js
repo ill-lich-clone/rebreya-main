@@ -48,7 +48,11 @@ export class TransportCompendiumService {
     if (!Array.isArray(rows) || rows.length !== EXPECTED_CATALOG_SIZE) {
       throw new Error(`Transport catalog must contain exactly ${EXPECTED_CATALOG_SIZE} rows`);
     }
-    const normalized = rows.map((entry, index) => normalizeTransportEntry(entry, index));
+    const prepared = rows.map((entry, index) => ({
+      normalized: normalizeTransportEntry(entry, index),
+      actorData: buildTransportActorData(entry)
+    }));
+    const normalized = prepared.map(({ normalized: entry }) => entry);
     const pack = await this.#ensurePack(game);
     const documents = await pack.getDocuments();
     const expectedSourceIdByDocumentId = new Map(
@@ -79,15 +83,16 @@ export class TransportCompendiumService {
     }
     const result = await syncFlaggedManagedDocuments({
       pack,
-      entries: normalized.map((entry) => ({
+      entries: prepared.map(({ normalized: entry, actorData }) => ({
         ...entry,
-        signature: buildTransportActorData(entry).flags[MODULE_ID].signature
+        actorData,
+        signature: actorData.flags[MODULE_ID].signature
       })),
       documents,
       moduleId: MODULE_ID,
       sourceIdFlag: "sourceId",
       documentIdOfEntry: (entry) => entry.documentId,
-      buildData: (entry) => buildTransportActorData(entry)
+      buildData: (entry) => entry.actorData
     });
     return { skipped: false, pack, result };
   }

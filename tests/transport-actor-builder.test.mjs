@@ -84,8 +84,8 @@ test("vehicle builder writes native and Rebreya fields", () => {
   assert.equal(actor.system.crew.max, 1);
   assert.equal(actor.system.passengers.max, 4);
   assert.equal(actor.flags["rebreya-main"].transport.sourceId, source.sourceId);
-  assert.equal(actor.flags["rebreya-main"].transport.version, 2);
-  assert.match(actor.flags["rebreya-main"].signature, /^transport-v2:/u);
+  assert.equal(actor.flags["rebreya-main"].transport.version, 3);
+  assert.match(actor.flags["rebreya-main"].signature, /^transport-v3:/u);
   assert.equal(actor.flags["rebreya-main"].transport.instance, false);
   assert.equal(actor.flags["rebreya-main"].transport.defaultGroupRole, "transport");
   assert.equal(actor.flags["rebreya-main"].transport.sourceType, "Механический транспорт");
