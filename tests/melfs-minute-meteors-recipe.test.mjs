@@ -65,6 +65,58 @@ function createRuntime({ remainingMeteors = 6 } = {}) {
   };
 }
 
+function createActorScopedRuntime({ remainingMeteors = 6 } = {}) {
+  const states = new Map();
+  const calls = { create: [], delete: [], update: [] };
+  function row(actor) {
+    const existing = states.get(actor.uuid);
+    if (existing) return existing;
+    const state = {
+      instanceId: "melf-instance",
+      recipe: RECIPE,
+      version: 1,
+      revision: 0,
+      state: { slotLevel: 3, remainingMeteors, totalMeteors: remainingMeteors }
+    };
+    states.set(actor.uuid, state);
+    return state;
+  }
+  function snapshot(state) {
+    return { ...state, state: structuredClone(state.state), effect: { id: "melf-effect" } };
+  }
+  return {
+    calls,
+    readInstance({ actor, instanceId } = {}) {
+      const state = row(actor);
+      return state.deleted || (instanceId && instanceId !== state.instanceId) ? null : snapshot(state);
+    },
+    async createInstance(context, initialState) {
+      const state = row(context.actor);
+      calls.create.push({ context, initialState });
+      state.instanceId = context.instanceId;
+      state.state = structuredClone(initialState);
+      return snapshot(state);
+    },
+    async updateInstance({ actor, instanceId, expectedRevision, operationId, state: next }) {
+      const state = row(actor);
+      assert.equal(instanceId, state.instanceId);
+      assert.equal(expectedRevision, state.revision);
+      calls.update.push({ actorUuid: actor.uuid, operationId, state: structuredClone(next) });
+      state.revision += 1;
+      state.state = structuredClone(next);
+      return snapshot(state);
+    },
+    async deleteInstance({ actor, instanceId, expectedRevision, operationId }) {
+      const state = row(actor);
+      assert.equal(instanceId, state.instanceId);
+      assert.equal(expectedRevision, state.revision);
+      calls.delete.push({ actorUuid: actor.uuid, operationId });
+      state.deleted = true;
+      return snapshot(state);
+    }
+  };
+}
+
 function concentration(actor) {
   return { uuid: `${actor.uuid}.ActiveEffect.concentration`, actor, disabled: false };
 }
@@ -172,6 +224,7 @@ test("later release offers one or two then replays the stable bonus activity onc
   assert.equal(fixture.runs[0].activity, fixture.release);
   assert.equal(fixture.runs[0].usageConfig[MODULE_ID].spellAutomationChild, true);
   assert.equal(fixture.runs[0].usageConfig[MODULE_ID].operationId, "release-operation");
+  assert.equal(fixture.runs[0].usageConfig[MODULE_ID].instanceId, "melf-instance");
   assert.equal(fixture.runs.filter((run) => run.activity === fixture.release).length, 1);
   assert.equal(fixture.runs.filter((run) => run.activity === fixture.burst).length, 2);
 });
@@ -214,7 +267,7 @@ test("a canceled first template spends no meteors and a canceled second retains 
   first.recipe.handlers.preUseActivity(context(first, { action: "release", activity: first.release }));
   await flush();
   assert.equal(first.runtime.state.state.remainingMeteors, 6);
-  assert.equal(first.runtime.calls.update.length, 0);
+  assert.equal(first.runs.filter((run) => run.activity === first.burst).length, 1);
 
   let burstCount = 0;
   const second = recipeFixture({
@@ -228,7 +281,7 @@ test("a canceled first template spends no meteors and a canceled second retains 
   second.recipe.handlers.preUseActivity(context(second, { action: "release", activity: second.release }));
   await flush();
   assert.equal(second.runtime.state.state.remainingMeteors, 5);
-  assert.equal(second.runtime.calls.update.length, 1);
+  assert.equal(second.runs.filter((run) => run.activity === second.burst).length, 2);
 });
 
 test("the last completed meteor deletes the instance effect", async () => {
@@ -267,6 +320,94 @@ test("concurrent and repeated release operation ids cannot apply a second volley
   assert.equal(fixture.runs.filter((run) => run.activity === fixture.burst).length, 1);
 });
 
+test("two recipe clients reserve one persisted release before either can replay its bonus activity or burst", async () => {
+  // Catches recipe-local idempotency: two Foundry clients must not both reach an external child workflow.
+  const runtime = createRuntime();
+  const first = recipeFixture({ runtime, choices: [{ cancelled: false, count: 1 }] });
+  const second = recipeFixture({ runtime, choices: [{ cancelled: false, count: 1 }] });
+  const firstRelease = context(first, {
+    action: "release", activity: first.release, operationId: "shared-release"
+  });
+  const secondRelease = context(second, {
+    action: "release", activity: second.release, operationId: "shared-release"
+  });
+
+  first.recipe.handlers.preUseActivity(firstRelease);
+  second.recipe.handlers.preUseActivity(secondRelease);
+  await flush();
+  await flush();
+
+  const externalChildren = [
+    ...first.runs.filter((run) => run.activity === first.release || run.activity === first.burst),
+    ...second.runs.filter((run) => run.activity === second.release || run.activity === second.burst)
+  ];
+  assert.equal(externalChildren.length, 2);
+  assert.equal(externalChildren.filter((run) => run.activity._id === "melfMeteorRel001").length, 1);
+  assert.equal(externalChildren.filter((run) => run.activity._id === "melfMeteorBurst1").length, 1);
+  assert.equal(runtime.state.state.remainingMeteors, 5);
+});
+
+test("one recipe scopes equal release operation ids by actor and spell instance", async () => {
+  // Catches in-flight bookkeeping keyed only by parent operation, which blocks another actor's Melf instance.
+  const runtime = createActorScopedRuntime();
+  const fixture = recipeFixture({
+    runtime,
+    choices: [{ cancelled: false, count: 1 }, { cancelled: false, count: 1 }]
+  });
+  const other = createItem();
+  other.actor.uuid = "Actor.other-melf";
+  const first = context(fixture, { action: "release", activity: fixture.release, operationId: "shared-parent" });
+  const second = context(other, { action: "release", activity: other.release, operationId: "shared-parent" });
+
+  fixture.recipe.handlers.preUseActivity(first);
+  fixture.recipe.handlers.preUseActivity(second);
+  await flush();
+  await flush();
+
+  assert.equal(fixture.runs.filter((run) => run.activity._id === "melfMeteorRel001").length, 2);
+  assert.equal(fixture.runs.filter((run) => run.activity._id === "melfMeteorBurst1").length, 2);
+  assert.equal(runtime.readInstance({ actor: fixture.actor }).state.remainingMeteors, 5);
+  assert.equal(runtime.readInstance({ actor: other.actor }).state.remainingMeteors, 5);
+});
+
+test("a terminal cancellation commits its parent operation and blocks its replay after the local in-flight map is gone", async () => {
+  // Catches an unbounded recipe Set replacement that forgets cancellation once its local promise completes.
+  const runtime = createRuntime();
+  const fixture = recipeFixture({ runtime, choices: [{ cancelled: true, count: 0 }] });
+  const replayFixture = recipeFixture({ runtime, choices: [{ cancelled: false, count: 1 }] });
+  const release = context(fixture, { action: "release", activity: fixture.release, operationId: "cancelled-release" });
+  const replay = context(replayFixture, {
+    action: "release", activity: replayFixture.release, operationId: "cancelled-release"
+  });
+
+  fixture.recipe.handlers.preUseActivity(release);
+  await flush();
+  replayFixture.recipe.handlers.preUseActivity(replay);
+  await flush();
+
+  assert.equal(fixture.dialogs.length, 1);
+  assert.equal(replayFixture.dialogs.length, 0);
+  assert.equal(fixture.runs.length + replayFixture.runs.length, 0);
+  assert.equal(fixture.runtime.state.state.remainingMeteors, 6);
+});
+
+test("duplicate initial post-use reserves before the choice and releases a zero-meteor cast terminally", async () => {
+  // Catches duplicate postUse invocations opening multiple initial dialogs after the persisted instance exists.
+  const fixture = recipeFixture({ choices: [{ cancelled: false, count: 0 }, { cancelled: false, count: 1 }] });
+  const initial = context(fixture, { operationId: "initial-zero" });
+
+  await Promise.all([
+    fixture.recipe.handlers.postUseActivity(initial),
+    fixture.recipe.handlers.postUseActivity(initial)
+  ]);
+  await fixture.recipe.handlers.postUseActivity(initial);
+
+  assert.equal(fixture.runtime.calls.create.length, 1);
+  assert.equal(fixture.dialogs.length, 1);
+  assert.equal(fixture.runs.length, 0);
+  assert.equal(fixture.runtime.state.state.remainingMeteors, 6);
+});
+
 test("concurrent distinct releases cannot spend more meteors than the persisted pool", async () => {
   const fixture = recipeFixture({
     remainingMeteors: 1,
@@ -287,7 +428,11 @@ test("concurrent distinct releases cannot spend more meteors than the persisted 
 test("a post-damage failure stops the volley, reports it, and never rolls back Midi damage", async () => {
   const failure = new Error("persist failed after damage");
   const fixture = recipeFixture({ choices: [{ cancelled: false, count: 2 }] });
-  fixture.runtime.updateInstance = async () => { throw failure; };
+  const updateInstance = fixture.runtime.updateInstance;
+  fixture.runtime.updateInstance = async (input) => {
+    if (String(input.operationId).includes(":persist:")) throw failure;
+    return updateInstance(input);
+  };
   fixture.recipe.handlers.preUseActivity(context(fixture, { action: "release", activity: fixture.release }));
   await flush();
   assert.equal(fixture.runs.filter((run) => run.activity === fixture.burst).length, 1);

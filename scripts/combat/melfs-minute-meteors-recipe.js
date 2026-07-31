@@ -4,6 +4,7 @@ import {
   MELFS_MINUTE_METEORS_RECIPE,
   MELFS_MINUTE_METEORS_VERSION
 } from "../data/melfs-minute-meteors-item.js";
+import { SpellInstanceOperationLease } from "./spell-instance-operation-lease.js";
 
 function numberAtLeastThree(value) {
   const normalized = Number(value);
@@ -83,7 +84,11 @@ async function defaultRunActivity(activity, usageConfig) {
     midiOptions: {
       ...(usageConfig?.midiOptions ?? {}),
       configureDialog: false,
-      workflowOptions: { autoRollDamage: "always", autoFastDamage: true }
+      workflowOptions: {
+        ...(usageConfig?.midiOptions?.workflowOptions ?? {}),
+        autoRollDamage: "always",
+        autoFastDamage: true
+      }
     },
   });
 }
@@ -109,20 +114,11 @@ function childUsage(usageConfig, { instanceId, meteorIndex, operationId } = {}) 
       operationId,
       ...(instanceId ? { instanceId } : {}),
       ...(Number.isInteger(meteorIndex) ? { meteorIndex } : {})
+    },
+    midiOptions: {
+      ...(usageConfig?.midiOptions ?? {}),
+      workflowOptions: { ...(usageConfig?.midiOptions?.workflowOptions ?? {}) }
     }
-  };
-}
-
-function serialQueue() {
-  const tails = new Map();
-  return (key, operation) => {
-    const previous = tails.get(key) ?? Promise.resolve();
-    const result = previous.catch(() => undefined).then(operation);
-    const tail = result.catch(() => undefined).finally(() => {
-      if (tails.get(key) === tail) tails.delete(key);
-    });
-    tails.set(key, tail);
-    return result;
   };
 }
 
@@ -138,6 +134,7 @@ export function melfMeteorPool(slotLevel) {
  */
 export function buildMelfsMinuteMeteorsRecipe({
   instanceRuntime,
+  operationLease = null,
   dialog = defaultDialog,
   runActivity = defaultRunActivity,
   notifyError = globalThis.ui?.notifications?.error,
@@ -152,20 +149,26 @@ export function buildMelfsMinuteMeteorsRecipe({
   if (typeof dialog !== "function" || typeof runActivity !== "function") {
     throw new TypeError("Melf's Minute Meteors requires dialog and activity runners.");
   }
+  const lease = operationLease ?? new SpellInstanceOperationLease({ runtime: instanceRuntime });
+  if (typeof lease.reserve !== "function" || typeof lease.persist !== "function" || typeof lease.release !== "function"
+    || typeof lease.complete !== "function" || typeof lease.delete !== "function") {
+    throw new TypeError("Melf's Minute Meteors requires a complete spell instance operation lease.");
+  }
 
-  const runSerial = serialQueue();
-  const completedOperations = new Set();
   const inFlightOperations = new Map();
 
-  function operationOnce(operationId, operation) {
-    if (completedOperations.has(operationId)) return Promise.resolve(false);
-    const inFlight = inFlightOperations.get(operationId);
+  function operationKey(actor, instanceId, operationId) {
+    return `${actor?.uuid ?? "actor"}\u0000${instanceId}\u0000${operationId}`;
+  }
+
+  function operationOnce({ actor, instanceId, operationId }, operation) {
+    const key = operationKey(actor, instanceId, operationId);
+    const inFlight = inFlightOperations.get(key);
     if (inFlight) return inFlight;
     const result = Promise.resolve().then(operation).finally(() => {
-      inFlightOperations.delete(operationId);
-      completedOperations.add(operationId);
+      inFlightOperations.delete(key);
     });
-    inFlightOperations.set(operationId, result);
+    inFlightOperations.set(key, result);
     return result;
   }
 
@@ -177,56 +180,67 @@ export function buildMelfsMinuteMeteorsRecipe({
     });
   }
 
+  function readInitialInstance(actor, instanceId) {
+    const record = instanceRuntime.readInstance({ actor, instanceId });
+    return record?.recipe === MELFS_MINUTE_METEORS_RECIPE && record?.version === MELFS_MINUTE_METEORS_VERSION
+      ? record
+      : null;
+  }
+
   async function choose(mode, counts) {
     return normalizeChoice(await dialog({ mode, counts }), counts);
   }
 
-  async function executeVolley({ actor, activationMode, item, operationId, requestedCount, usageConfig }) {
-    void activationMode;
+  async function terminalRelease(session) {
+    await lease.release(session);
+  }
+
+  async function executeVolley({ actor, item, operationId, requestedCount, token, instanceId, usageConfig }) {
+    const burst = activityById(item, MELFS_ACTIVITY_IDS.BURST);
+    if (!burst) throw new Error("Melf's Minute Meteors burst Activity is missing.");
     const initial = readActiveInstance(actor);
-    if (!initial || initial.state?.remainingMeteors <= 0) return false;
-    const key = `${actor?.uuid ?? "actor"}:${initial.instanceId}`;
-    return runSerial(key, async () => {
-      const burst = activityById(item, MELFS_ACTIVITY_IDS.BURST);
-      if (!burst) throw new Error("Melf's Minute Meteors burst Activity is missing.");
+    if (!initial || initial.instanceId !== instanceId || initial.state?.remainingMeteors <= 0) {
+      await terminalRelease({ actor, instanceId, operationId, token });
+      return false;
+    }
 
-      const count = Math.min(requestedCount, Math.max(0, Number(initial.state?.remainingMeteors) || 0));
-      for (let meteorIndex = 0; meteorIndex < count; meteorIndex += 1) {
-        const record = readActiveInstance(actor);
-        if (!record || record.state?.remainingMeteors <= 0) return meteorIndex > 0;
-
-        const workflow = await runActivity(burst, childUsage(usageConfig, {
-          instanceId: record.instanceId,
-          meteorIndex,
-          operationId
-        }));
-        if (!completed(workflow)) return meteorIndex > 0;
-
-        const reread = readActiveInstance(actor);
-        if (!reread || reread.state?.remainingMeteors <= 0) {
-          throw new Error("Melf's Minute Meteors instance disappeared before the meteor could commit.");
-        }
-        const remainingMeteors = reread.state.remainingMeteors - 1;
-        if (remainingMeteors === 0) {
-          await instanceRuntime.deleteInstance({
-            actor,
-            instanceId: reread.instanceId,
-            expectedRevision: reread.revision,
-            operationId: `${operationId}:meteor:${meteorIndex}`
-          });
-        }
-        else {
-          await instanceRuntime.updateInstance({
-            actor,
-            instanceId: reread.instanceId,
-            expectedRevision: reread.revision,
-            operationId: `${operationId}:meteor:${meteorIndex}`,
-            state: { ...reread.state, remainingMeteors }
-          });
-        }
+    const count = Math.min(requestedCount, Math.max(0, Number(initial.state?.remainingMeteors) || 0));
+    for (let meteorIndex = 0; meteorIndex < count; meteorIndex += 1) {
+      const record = readActiveInstance(actor);
+      if (!record || record.state?.remainingMeteors <= 0) {
+        await terminalRelease({ actor, instanceId, operationId, token });
+        return meteorIndex > 0;
       }
-      return true;
-    });
+
+      const workflow = await runActivity(burst, childUsage(usageConfig, {
+        instanceId: record.instanceId,
+        meteorIndex,
+        operationId
+      }));
+      if (!completed(workflow)) {
+        await terminalRelease({ actor, instanceId, operationId, token });
+        return meteorIndex > 0;
+      }
+
+      const reread = readActiveInstance(actor);
+      if (!reread || reread.state?.remainingMeteors <= 0) {
+        throw new Error("Melf's Minute Meteors instance disappeared before the meteor could commit.");
+      }
+      const remainingMeteors = reread.state.remainingMeteors - 1;
+      if (remainingMeteors === 0) {
+        await lease.delete({ actor, instanceId: reread.instanceId, operationId, token });
+        return true;
+      }
+      await lease.persist({
+        actor,
+        instanceId: reread.instanceId,
+        operationId,
+        state: { ...reread.state, remainingMeteors },
+        token
+      });
+    }
+    await lease.complete({ actor, instanceId, operationId, token });
+    return true;
   }
 
   async function postUseActivity(context) {
@@ -239,67 +253,94 @@ export function buildMelfsMinuteMeteorsRecipe({
       return true;
     }
 
-    const slotLevel = numberAtLeastThree(
-      context?.usageConfig?.spell?.slot
-      ?? context?.workflow?.castData?.castLevel
-      ?? context?.workflow?.itemLevel
-      ?? context?.item?.system?.level
-    );
-    const totalMeteors = melfMeteorPool(slotLevel);
-    let instance;
     try {
-      instance = await instanceRuntime.createInstance({
-        actor: context.actor,
-        activity: context.activity,
-        concentrationEffect,
-        declaration: { recipe: MELFS_MINUTE_METEORS_RECIPE, version: MELFS_MINUTE_METEORS_VERSION },
-        instanceId: context.operationId,
-        item: context.item,
-        operationId: context.operationId
-      }, { slotLevel, remainingMeteors: totalMeteors, totalMeteors });
-    }
-    catch (error) {
-      errorReporter(notifyError, logger, error);
-      return true;
-    }
+      await operationOnce({ actor: context.actor, instanceId: context.operationId, operationId: context.operationId }, async () => {
+        const slotLevel = numberAtLeastThree(
+          context?.usageConfig?.spell?.slot
+          ?? context?.workflow?.castData?.castLevel
+          ?? context?.workflow?.itemLevel
+          ?? context?.item?.system?.level
+        );
+        const totalMeteors = melfMeteorPool(slotLevel);
+        const instance = readInitialInstance(context.actor, context.operationId)
+          ?? await instanceRuntime.createInstance({
+            actor: context.actor,
+            activity: context.activity,
+            concentrationEffect,
+            declaration: { recipe: MELFS_MINUTE_METEORS_RECIPE, version: MELFS_MINUTE_METEORS_VERSION },
+            instanceId: context.operationId,
+            item: context.item,
+            operationId: context.operationId
+          }, { slotLevel, remainingMeteors: totalMeteors, totalMeteors });
+        const reservation = await lease.reserve({
+          actor: context.actor,
+          instanceId: instance.instanceId,
+          operationId: context.operationId
+        });
+        if (reservation.status !== "acquired") return;
 
-    const count = await choose("initial", [0, 1, 2]);
-    if (!count) return true;
-    try {
-      await operationOnce(context.operationId, () => executeVolley({
-        actor: context.actor,
-        activationMode: "initial",
-        item: context.item,
-        operationId: context.operationId,
-        requestedCount: count,
-        usageConfig: context.usageConfig
-      }));
+        const count = await choose("initial", [0, 1, 2]);
+        const session = {
+          actor: context.actor,
+          instanceId: instance.instanceId,
+          operationId: context.operationId,
+          token: reservation.token
+        };
+        if (!count) {
+          await terminalRelease(session);
+          return;
+        }
+        await executeVolley({
+          ...session,
+          item: context.item,
+          requestedCount: count,
+          usageConfig: context.usageConfig
+        });
+      });
     }
     catch (error) {
       errorReporter(notifyError, logger, error);
     }
-    void instance;
     return true;
   }
 
   async function prepareReleaseAndReplay(context) {
     const instance = readActiveInstance(context.actor);
     if (!instance || instance.state?.remainingMeteors <= 0) return;
-    const count = await choose("release", [1, 2]);
-    if (!count) return;
-    const release = activityById(context.item, MELFS_ACTIVITY_IDS.RELEASE);
-    if (!release) {
-      errorReporter(notifyError, logger, new Error("Melf's Minute Meteors release Activity is missing."));
-      return;
-    }
     try {
-      const replay = await runActivity(release, childUsage(context.usageConfig, { operationId: context.operationId }));
-      if (!completed(replay)) return;
-      await executeVolley({
+      const reservation = await lease.reserve({
         actor: context.actor,
-        activationMode: "release",
-        item: context.item,
+        instanceId: instance.instanceId,
+        operationId: context.operationId
+      });
+      if (reservation.status !== "acquired") return;
+      const session = {
+        actor: context.actor,
+        instanceId: instance.instanceId,
         operationId: context.operationId,
+        token: reservation.token
+      };
+      const count = await choose("release", [1, 2]);
+      if (!count) {
+        await terminalRelease(session);
+        return;
+      }
+      const release = activityById(context.item, MELFS_ACTIVITY_IDS.RELEASE);
+      if (!release) {
+        await terminalRelease(session);
+        throw new Error("Melf's Minute Meteors release Activity is missing.");
+      }
+      const replay = await runActivity(release, childUsage(context.usageConfig, {
+        instanceId: instance.instanceId,
+        operationId: context.operationId
+      }));
+      if (!completed(replay)) {
+        await terminalRelease(session);
+        return;
+      }
+      await executeVolley({
+        ...session,
+        item: context.item,
         requestedCount: count,
         usageConfig: context.usageConfig
       });
@@ -330,7 +371,9 @@ export function buildMelfsMinuteMeteorsRecipe({
     handlers: {
       preUseActivity(context) {
         if (context?.isChildInvocation || context?.action !== "release") return true;
-        void operationOnce(context.operationId, () => prepareReleaseAndReplay(context));
+        const instance = readActiveInstance(context.actor);
+        if (!instance) return false;
+        void operationOnce({ actor: context.actor, instanceId: instance.instanceId, operationId: context.operationId }, () => prepareReleaseAndReplay(context));
         return false;
       },
       postUseActivity,
