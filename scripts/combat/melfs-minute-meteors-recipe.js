@@ -36,11 +36,15 @@ function completed(result) {
   return result !== false && result.completed !== false;
 }
 
-function normalConcentrationEffect(context) {
-  if (context?.concentrationEffect) return context.concentrationEffect;
-  const effects = context?.actor?.effects;
+function concentrationEffectFrom(effects) {
   const values = Array.isArray(effects) ? effects : effects?.contents ?? [];
   return values.find((effect) => effect?.isConcentration === true || effect?.statuses?.has?.("concentrating")) ?? null;
+}
+
+function normalConcentrationEffect(context) {
+  if (context?.concentrationEffect) return context.concentrationEffect;
+  return concentrationEffectFrom(context?.results?.effects)
+    ?? concentrationEffectFrom(context?.actor?.effects);
 }
 
 function normalizeChoice(choice, allowed) {

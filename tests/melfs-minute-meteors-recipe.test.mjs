@@ -227,6 +227,24 @@ test("creates the instance after a successful cast using normalized highest-prio
   assert.deepEqual(fixture.runtime.calls.create[0].initialState, { slotLevel: 5, remainingMeteors: 10, totalMeteors: 10 });
 });
 
+test("uses the concentration effect returned by dnd5e for an unlinked synthetic token", async () => {
+  // Catches scanning actor.effects before a synthetic token's newly-created delta effect is visible there.
+  const fixture = recipeFixture({ choices: [{ cancelled: false, count: 0 }] });
+  const returnedConcentration = {
+    ...concentration(fixture.actor),
+    statuses: new Set(["concentrating"])
+  };
+
+  await fixture.recipe.handlers.postUseActivity(context(fixture, {
+    concentrationEffect: null,
+    results: { effects: [returnedConcentration] }
+  }));
+
+  assert.equal(fixture.runtime.calls.create.length, 1);
+  assert.equal(fixture.runtime.calls.create[0].context.concentrationEffect, returnedConcentration);
+  assert.equal(fixture.errors.length, 0);
+});
+
 test("claims a successful cast authoritatively before reading, creating, prompting, or releasing meteors", async () => {
   // Catches a post-use handler creating state first, which cannot survive a later effect cleanup or client replay safely.
   const fixture = recipeFixture({ choices: [{ cancelled: false, count: 0 }] });
