@@ -57,9 +57,19 @@ function installMinimalDom() {
       this.closest = closest;
     }
 
-    addEventListener(type, listener) {
+    addEventListener(type, listener, options = {}) {
+      const signal = options?.signal;
+      if (signal?.aborted) {
+        return;
+      }
       this.listeners[type] ??= [];
       this.listeners[type].push(listener);
+      signal?.addEventListener("abort", () => {
+        const index = this.listeners[type].indexOf(listener);
+        if (index >= 0) {
+          this.listeners[type].splice(index, 1);
+        }
+      }, { once: true });
     }
 
     appendChild(child) {
@@ -348,12 +358,17 @@ function createFakeControl({ dataset = {}, value = "", disabled = false } = {}) 
   return control;
 }
 
-async function dispatchClick(button) {
-  assert.ok(button.listeners.click?.length, "expected click listener");
-  await button.listeners.click[0]({
+async function dispatchClick(button, { required = true } = {}) {
+  const listener = button.listeners.click?.[0];
+  if (!listener) {
+    assert.equal(required, false, "expected click listener");
+    return false;
+  }
+  await listener({
     currentTarget: button,
     preventDefault() {}
   });
+  return true;
 }
 
 test("InventoryApp _prepareContext surfaces known no-group display context errors", async () => {
@@ -1523,62 +1538,62 @@ test("InventoryApp allows travel tab and maps travel snapshot into context", asy
   const stored = new Map([
     ["rebreya-main.travelLandscape:world-1:user-1", "city"]
   ]);
-  globalThis.game = {
-    world: { id: "world-1" },
-    user: { id: "user-1" }
-  };
-  globalThis.localStorage = {
-    getItem(key) {
-      return stored.get(key) ?? null;
-    },
-    setItem(key, value) {
-      stored.set(key, value);
-    }
-  };
-  const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?travel-tab=${Date.now()}`);
-  const calls = [];
-  const app = new InventoryApp(createModuleApi({
-    getGroupContext: () => ({
-      groupActor: {
-        id: "group-a",
-        name: "Travel Group",
-        system: {
-          members: []
+  try {
+    globalThis.game = {
+      world: { id: "world-1" },
+      user: { id: "user-1" }
+    };
+    globalThis.localStorage = {
+      getItem(key) {
+        return stored.get(key) ?? null;
+      },
+      setItem(key, value) {
+        stored.set(key, value);
+      }
+    };
+    const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?travel-tab=${Date.now()}`);
+    const calls = [];
+    const app = new InventoryApp(createModuleApi({
+      getGroupContext: () => ({
+        groupActor: {
+          id: "group-a",
+          name: "Travel Group",
+          system: {
+            members: []
+          }
+        },
+        groupId: "group-a",
+        memberActorIds: []
+      }),
+      travelSnapshot: {
+        available: true,
+        canAdvance: true,
+        mode: "land",
+        cityOptions: [
+          { value: "liara-ken", label: "Лиара’Кен", selectedOrigin: true, selectedDestination: false },
+          { value: "stranbu", label: "Странбу", selectedOrigin: false, selectedDestination: true }
+        ],
+        modeOptions: [
+          { value: "land", label: "Земля", selected: true, disabled: false }
+        ],
+        plan: {
+          available: true,
+          originName: "Лиара’Кен",
+          destinationName: "Странбу",
+          totalMiles: 180,
+          totalHours: 60,
+          legs: []
+        },
+        progress: {
+          traveledMiles: 24,
+          remainingMiles: 156,
+          percent: 13.33,
+          label: "24 / 180 миль"
         }
       },
-      groupId: "group-a",
-      memberActorIds: []
-    }),
-    travelSnapshot: {
-      available: true,
-      canAdvance: true,
-      mode: "land",
-      cityOptions: [
-        { value: "liara-ken", label: "Лиара’Кен", selectedOrigin: true, selectedDestination: false },
-        { value: "stranbu", label: "Странбу", selectedOrigin: false, selectedDestination: true }
-      ],
-      modeOptions: [
-        { value: "land", label: "Земля", selected: true, disabled: false }
-      ],
-      plan: {
-        available: true,
-        originName: "Лиара’Кен",
-        destinationName: "Странбу",
-        totalMiles: 180,
-        totalHours: 60,
-        legs: []
-      },
-      progress: {
-        traveledMiles: 24,
-        remainingMiles: 156,
-        percent: 13.33,
-        label: "24 / 180 миль"
-      }
-    },
-    calls
-  }));
+      calls
+    }));
 
-  try {
     app.setActiveTab("travel", { render: false });
 
     const context = await app._prepareContext();
@@ -1602,28 +1617,109 @@ test("InventoryApp allows travel tab and maps travel snapshot into context", asy
   }
 });
 
-test("InventoryApp stores a local travel landscape choice and rerenders once", async () => {
+test("InventoryApp stores a local travel landscape choice, cleans stale listeners, and rerenders once", async () => {
   const restoreFoundry = installFoundryApplicationStub();
   const dom = installMinimalDom();
   const previousGame = globalThis.game;
   const previousLocalStorage = globalThis.localStorage;
   const stored = new Map();
-  globalThis.game = {
-    world: { id: "world-1" },
-    user: { id: "user-1" }
-  };
-  globalThis.localStorage = {
-    getItem(key) {
-      return stored.get(key) ?? null;
-    },
-    setItem(key, value) {
-      stored.set(key, value);
-    }
-  };
-
   try {
+    globalThis.game = {
+      world: { id: "world-1" },
+      user: { id: "user-1" }
+    };
+    globalThis.localStorage = {
+      getItem(key) {
+        return stored.get(key) ?? null;
+      },
+      setItem(key, value) {
+        stored.set(key, value);
+      }
+    };
     const { InventoryApp } = await import(
       `../scripts/ui/inventory-app.js?travel-landscape-click=${Date.now()}`
+    );
+    const obsoleteChoice = createFakeElement({
+      dataset: { landscapeId: "wilderness" }
+    });
+    const currentChoice = createFakeElement({
+      dataset: { landscapeId: "wilderness" }
+    });
+    const postCloseChoice = createFakeElement({
+      dataset: { landscapeId: "city" }
+    });
+    let choices = [obsoleteChoice];
+    const root = createFakeElement({ closest: () => root });
+    root.querySelector = () => null;
+    root.querySelectorAll = (selector) => (
+      selector === "[data-action='select-travel-landscape']"
+        ? choices
+        : []
+    );
+    const app = new InventoryApp(createModuleApi({
+      getGroupContext: () => null
+    }));
+    const renderCalls = [];
+    app.element = root;
+    app.render = async (options) => {
+      renderCalls.push(options);
+    };
+
+    await app._onRender({}, {});
+    choices = [currentChoice, postCloseChoice];
+    await app._onRender({}, {});
+    assert.equal(await dispatchClick(obsoleteChoice, { required: false }), false);
+    await dispatchClick(currentChoice);
+    const context = await app._prepareContext();
+    assert.equal(context.travelLandscape.active.id, "wilderness");
+    assert.equal(
+      context.travelLandscape.options.filter((option) => option.selected).length,
+      1
+    );
+    await app._preClose({});
+    assert.equal(await dispatchClick(postCloseChoice, { required: false }), false);
+
+    assert.deepEqual(renderCalls, [{ force: true, preserveScroll: true }]);
+    assert.equal(
+      stored.get("rebreya-main.travelLandscape:world-1:user-1"),
+      "wilderness"
+    );
+  }
+  finally {
+    globalThis.game = previousGame;
+    globalThis.localStorage = previousLocalStorage;
+    dom.restore();
+    restoreFoundry();
+  }
+});
+
+test("InventoryApp reports a rejected travel landscape rerender without an unhandled rejection", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const dom = installMinimalDom();
+  const previousGame = globalThis.game;
+  const previousLocalStorage = globalThis.localStorage;
+  const previousConsoleError = console.error;
+  const stored = new Map();
+  const loggedErrors = [];
+
+  try {
+    globalThis.game = {
+      world: { id: "world-1" },
+      user: { id: "user-1" }
+    };
+    globalThis.localStorage = {
+      getItem(key) {
+        return stored.get(key) ?? null;
+      },
+      setItem(key, value) {
+        stored.set(key, value);
+      }
+    };
+    console.error = (...args) => {
+      loggedErrors.push(args);
+    };
+    const { InventoryApp } = await import(
+      `../scripts/ui/inventory-app.js?travel-landscape-render-error=${Date.now()}`
     );
     const choice = createFakeElement({
       dataset: { landscapeId: "wilderness" }
@@ -1638,23 +1734,25 @@ test("InventoryApp stores a local travel landscape choice and rerenders once", a
     const app = new InventoryApp(createModuleApi({
       getGroupContext: () => null
     }));
-    const renderCalls = [];
+    const renderError = new Error("render failed");
     app.element = root;
-    app.render = async (options) => {
-      renderCalls.push(options);
-    };
+    app.render = () => Promise.reject(renderError);
 
     await app._onRender({}, {});
     await dispatchClick(choice);
-    await dispatchClick(choice);
+    await new Promise((resolve) => setImmediate(resolve));
 
-    assert.deepEqual(renderCalls, [{ force: true, preserveScroll: true }]);
     assert.equal(
       stored.get("rebreya-main.travelLandscape:world-1:user-1"),
       "wilderness"
     );
+    assert.deepEqual(loggedErrors, [[
+      "rebreya-main | Failed to render travel landscape selection.",
+      renderError
+    ]]);
   }
   finally {
+    console.error = previousConsoleError;
     globalThis.game = previousGame;
     globalThis.localStorage = previousLocalStorage;
     dom.restore();
@@ -3566,6 +3664,11 @@ test("InventoryApp downtime target dialog preserves constructor action types", a
     assert.equal(descriptionDialog.config.content.includes("data-field=\"target-action-description-text\""), true);
     descriptionDialog.close?.();
     await dialogPromise;
+
+    root.querySelectorAll = (selector) => selector === "[data-action='downtime-target-action']"
+      ? [stepsButton, resultButton]
+      : [];
+    await app._onRender({}, {});
 
     dialogPromise = dispatchClick(stepsButton);
     await new Promise((resolve) => setImmediate(resolve));

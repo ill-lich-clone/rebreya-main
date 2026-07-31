@@ -5491,7 +5491,14 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
           return;
         }
         this.travelLandscapeId = saveTravelLandscapeId(nextLandscapeId);
-        this.render({ force: true, preserveScroll: true });
+        try {
+          Promise.resolve(this.render({ force: true, preserveScroll: true })).catch((error) => {
+            console.error(`${MODULE_ID} | Failed to render travel landscape selection.`, error);
+          });
+        }
+        catch (error) {
+          console.error(`${MODULE_ID} | Failed to render travel landscape selection.`, error);
+        }
       }, listenerOptions);
     });
 
