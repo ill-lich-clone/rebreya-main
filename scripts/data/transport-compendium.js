@@ -51,16 +51,31 @@ export class TransportCompendiumService {
     const normalized = rows.map((entry, index) => normalizeTransportEntry(entry, index));
     const pack = await this.#ensurePack(game);
     const documents = await pack.getDocuments();
-    const expectedDocumentIds = new Set(normalized.map((entry) => entry.documentId));
-    const unmanagedCollisions = documents.filter((document) => {
+    const expectedSourceIdByDocumentId = new Map(
+      normalized.map((entry) => [entry.documentId, entry.sourceId])
+    );
+    const identityCollisions = documents.filter((document) => {
       const id = String(document?.id ?? document?._id ?? "").trim();
+      const expectedSourceId = expectedSourceIdByDocumentId.get(id);
+      if (!expectedSourceId) return false;
       const managed = document?.getFlag?.(MODULE_ID, "managed")
         ?? document?.flags?.[MODULE_ID]?.managed;
-      return expectedDocumentIds.has(id) && managed !== true;
+      const sourceId = String(
+        document?.getFlag?.(MODULE_ID, "sourceId")
+        ?? document?.flags?.[MODULE_ID]?.sourceId
+        ?? ""
+      ).trim();
+      return managed !== true || sourceId !== expectedSourceId;
     });
-    if (unmanagedCollisions.length > 0) {
-      const ids = unmanagedCollisions.map((document) => document?.id ?? document?._id).join(", ");
-      throw new Error(`Transport compendium has an unmanaged document id collision: ${ids}`);
+    if (identityCollisions.length > 0) {
+      const ids = identityCollisions.map((document) => document?.id ?? document?._id).join(", ");
+      const hasUnmanaged = identityCollisions.some((document) => (
+        (document?.getFlag?.(MODULE_ID, "managed") ?? document?.flags?.[MODULE_ID]?.managed) !== true
+      ));
+      const collisionType = hasUnmanaged
+        ? "unmanaged document id collision"
+        : "managed document identity collision";
+      throw new Error(`Transport compendium has a ${collisionType}: ${ids}`);
     }
     const result = await syncFlaggedManagedDocuments({
       pack,

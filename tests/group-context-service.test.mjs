@@ -181,6 +181,7 @@ test("normalizeGroupRegistry preserves active group and per-group state", () => 
     globalEventsState: { season: "rain" },
     craftState: { queue: ["item-a"] },
     travelState: {},
+    memberStateByActorId: {},
     transportState: { activeTransportId: "" },
     questState: {
       unlocksByQuestId: {},
@@ -337,11 +338,23 @@ test("normalizeGroupState uses deterministic initializedAt fallback", () => {
 
 test("normalizeGroupState preserves a trimmed active transport selection", () => {
   const state = normalizeGroupState("group-a", {
+    memberStateByActorId: {
+      "vehicle-a": {
+        role: "transport",
+        capBonusLb: 250
+      }
+    },
     transportState: {
       activeTransportId: " member:wagon "
     }
   });
 
+  assert.deepEqual(state.memberStateByActorId, {
+    "vehicle-a": {
+      role: "transport",
+      capBonusLb: 250
+    }
+  });
   assert.deepEqual(state.transportState, {
     activeTransportId: "member:wagon"
   });
@@ -532,6 +545,7 @@ test("buildDefaultGroupState creates file-backed empty runtime state without leg
     globalEventsState: {},
     craftState: {},
     travelState: {},
+    memberStateByActorId: {},
     transportState: { activeTransportId: "" },
     questState: {
       unlocksByQuestId: {},

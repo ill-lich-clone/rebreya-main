@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 import {
+  MODULE_ID,
   TRANSPORT_COMPENDIUM_ID,
   TRANSPORT_COMPENDIUM_LABEL,
   TRANSPORT_COMPENDIUM_NAME
@@ -238,6 +239,33 @@ test("transport compendium rejects an unmanaged stable-id collision before mutat
   await assert.rejects(
     () => service.sync(catalog),
     /unmanaged document id collision/u
+  );
+  assert.deepEqual(harness.documents, [colliding]);
+});
+
+test("transport compendium rejects a managed stable-id collision with the wrong source identity", async () => {
+  const harness = createTransportPackHarness();
+  const colliding = createDocument({
+    _id: catalog[0].documentId,
+    name: "Чужая управляемая запись",
+    type: "vehicle",
+    flags: {
+      [MODULE_ID]: {
+        managed: true,
+        sourceId: "transport-v01-wrong-source",
+        signature: "wrong"
+      }
+    }
+  });
+  harness.documents.push(colliding);
+  const service = new TransportCompendiumService({
+    gameProvider: () => harness.game,
+    isActiveGmClient: () => true
+  });
+
+  await assert.rejects(
+    () => service.sync(catalog),
+    /managed document identity collision/u
   );
   assert.deepEqual(harness.documents, [colliding]);
 });

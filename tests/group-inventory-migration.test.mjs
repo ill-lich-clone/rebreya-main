@@ -419,8 +419,11 @@ test("vehicle member reads D&D5e 5.2.5 native fields and live instance state", a
     isOwner: true,
     flags: {
       [MODULE_ID]: {
+        sourceId: "transport-v01-heavy-wagon",
         transport: {
           instance: true,
+          sourceActorUuid: "Compendium.world.rebreya-transport.Actor.heavywagon",
+          groupActorId: "group-a",
           consumption: { kind: "fuel", unit: "gal", raw: "Жидкий уголь 1/8 галлона" },
           instanceState: {
             condition: "damaged",
@@ -452,8 +455,7 @@ test("vehicle member reads D&D5e 5.2.5 native fields and live instance state", a
     partyState: {
       members: {
         "vehicle-a": {
-          role: "transport",
-          capBonusLb: 250
+          role: "member"
         }
       }
     }
@@ -463,6 +465,14 @@ test("vehicle member reads D&D5e 5.2.5 native fields and live instance state", a
       resolveForCurrentUser: () => ({
         groupActor,
         groupId: groupActor.id,
+        groupState: {
+          memberStateByActorId: {
+            "vehicle-a": {
+              role: "transport",
+              capBonusLb: 250
+            }
+          }
+        },
         members: [actor],
         canManage: true
       })
@@ -496,6 +506,81 @@ test("vehicle member reads D&D5e 5.2.5 native fields and live instance state", a
     assert.equal(member.transport.reserveCapacity, 12);
     assert.equal(member.transport.reserveUnit, "gal");
     assert.equal(member.capacityLb, 5250);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("ordinary D&D5e vehicles are not selectable as concrete Rebreya transport", async () => {
+  const actor = createActor({
+    id: "ordinary-vehicle",
+    name: "Обычная повозка",
+    type: "vehicle",
+    isOwner: true
+  });
+  actor.system.attributes = {
+    hp: { value: 20, max: 20 },
+    capacity: { cargo: { value: 500, units: "lb" } },
+    travel: { speeds: { land: 4 } }
+  };
+  const groupActor = createActor({
+    id: "group-ordinary",
+    name: "Партия",
+    type: "group",
+    isOwner: true,
+    members: [{ actor }]
+  });
+  const fixture = installInventoryFixture({
+    actors: [groupActor, actor],
+    partyState: {
+      members: {
+        "ordinary-vehicle": { role: "transport" }
+      }
+    }
+  });
+  const context = {
+    groupActor,
+    groupId: groupActor.id,
+    groupState: {
+      memberStateByActorId: {
+        "ordinary-vehicle": { role: "transport" }
+      },
+      transportState: {
+        activeTransportId: "member:ordinary-vehicle"
+      }
+    },
+    members: [actor],
+    canManage: true
+  };
+  const service = new InventoryService({
+    groupContextService: {
+      resolveForCurrentUser: () => context
+    },
+    getModel: async () => ({
+      materials: [],
+      materialById: new Map(),
+      materialByGoodId: new Map(),
+      gear: [],
+      gearById: new Map()
+    })
+  });
+
+  try {
+    const partySnapshot = await service.getPartySnapshot();
+    const transportSnapshot = await service.getTransportSnapshot({
+      partySnapshot,
+      context,
+      inventorySnapshot: {
+        actor: { canEdit: true },
+        canDropInventoryItems: true,
+        inventoryWeight: 0
+      }
+    });
+
+    assert.equal(partySnapshot.members[0].transport.canEditState, false);
+    assert.deepEqual(transportSnapshot.vehicles, []);
+    assert.equal(transportSnapshot.activeTransportId, "");
   }
   finally {
     fixture.restore();
@@ -2256,6 +2341,79 @@ test("getPartySnapshot uses native group system.members and ignores stale partyS
     assert.equal(snapshot.totalEnergyMax, 8);
     assert.equal(snapshot.availableActors.length, 0);
     assert.equal(snapshot.membershipManagedByNativeGroup, true);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("native group member edits persist in scoped group state", async () => {
+  const memberActor = createActor({
+    id: "vehicle-a",
+    name: "Групповой транспорт",
+    type: "vehicle",
+    isOwner: true
+  });
+  const groupActor = createActor({
+    id: "group-1",
+    name: "Party",
+    type: "group",
+    isOwner: true,
+    members: [{ actor: memberActor }]
+  });
+  const groupState = {
+    memberStateByActorId: {
+      "vehicle-a": {
+        role: "transport"
+      }
+    }
+  };
+  const fixture = installInventoryFixture({
+    actors: [groupActor, memberActor],
+    partyState: {
+      members: {
+        "vehicle-a": {
+          role: "member",
+          capBonusLb: 10
+        }
+      }
+    }
+  });
+  const context = {
+    groupActor,
+    groupId: groupActor.id,
+    groupState,
+    members: [memberActor],
+    canManage: true
+  };
+  const service = new InventoryService({
+    groupContextService: {
+      resolveForCurrentUser: () => context,
+      async mutateGroupState(groupActorId, mutator) {
+        assert.equal(groupActorId, groupActor.id);
+        return mutator(groupState);
+      }
+    }
+  });
+
+  try {
+    await service.updatePartyMember("vehicle-a", {
+      capBonusLb: 333,
+      foodPerDay: 0
+    });
+    await service.updatePartyMemberTool("vehicle-a", "smith", {
+      owned: true,
+      prof: 1
+    });
+    await service.setMemberEnergy("vehicle-a", 2);
+
+    assert.equal(groupState.memberStateByActorId["vehicle-a"].role, "transport");
+    assert.equal(groupState.memberStateByActorId["vehicle-a"].capBonusLb, 333);
+    assert.equal(groupState.memberStateByActorId["vehicle-a"].foodPerDay, 0);
+    assert.equal(groupState.memberStateByActorId["vehicle-a"].tools.smith.owned, true);
+    assert.equal(groupState.memberStateByActorId["vehicle-a"].energyCurrent, 2);
+    assert.equal(fixture.state.members["vehicle-a"].role, "member");
+    assert.equal(fixture.state.members["vehicle-a"].capBonusLb, 10);
   }
   finally {
     fixture.restore();

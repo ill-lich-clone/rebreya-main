@@ -163,6 +163,7 @@ export class TransportInstanceService {
     }
     this.moduleApi = moduleApi;
     this.options = options;
+    this.groupImportTails = new Map();
   }
 
   canManageGroup(groupActorId, sender = null) {
@@ -185,6 +186,23 @@ export class TransportInstanceService {
     if (!validateTransportImportPayload(payload)) {
       throw new Error("Некорректный запрос импорта транспорта.");
     }
+    const groupActorId = cleanId(payload.groupActorId);
+    const previous = this.groupImportTails.get(groupActorId) ?? Promise.resolve();
+    const operation = previous
+      .catch(() => undefined)
+      .then(() => this.#importIntoGroup(payload, sender));
+    this.groupImportTails.set(groupActorId, operation);
+    try {
+      return await operation;
+    }
+    finally {
+      if (this.groupImportTails.get(groupActorId) === operation) {
+        this.groupImportTails.delete(groupActorId);
+      }
+    }
+  }
+
+  async #importIntoGroup(payload, sender) {
     const groupContext = this.#resolveAuthorizedGroup(payload.groupActorId, sender);
     if ((groupContext.members ?? []).some((member) => this.#isInstanceForGroup(member, groupContext.groupId))) {
       throw new Error("В группе уже есть конкретный транспорт Ребреи.");
@@ -208,11 +226,12 @@ export class TransportInstanceService {
         ? "mount"
         : "transport";
       await this.moduleApi.groupContextService.mutateGroupState(groupContext.groupId, (groupState) => {
-        groupState.members = groupState.members && typeof groupState.members === "object"
-          ? groupState.members
+        groupState.memberStateByActorId = groupState.memberStateByActorId
+          && typeof groupState.memberStateByActorId === "object"
+          ? groupState.memberStateByActorId
           : {};
-        groupState.members[actor.id] = {
-          ...(groupState.members[actor.id] ?? {}),
+        groupState.memberStateByActorId[actor.id] = {
+          ...(groupState.memberStateByActorId[actor.id] ?? {}),
           role
         };
         groupState.transportState = {
@@ -307,9 +326,12 @@ export class TransportInstanceService {
     const transport = actor?.getFlag?.(MODULE_ID, "transport")
       ?? actor?.flags?.[MODULE_ID]?.transport
       ?? null;
+    const sourceId = transport?.sourceId
+      ?? actor?.getFlag?.(MODULE_ID, "sourceId")
+      ?? actor?.flags?.[MODULE_ID]?.sourceId;
     return actor?.type === "vehicle"
       && transport?.instance === true
-      && Boolean(cleanId(transport?.sourceId))
+      && Boolean(cleanId(sourceId))
       && Boolean(cleanId(transport?.sourceActorUuid))
       && cleanId(transport?.groupActorId) === cleanId(groupActorId);
   }
@@ -351,6 +373,7 @@ export class TransportInstanceService {
       ...sourceTransport,
       instance: true,
       instanceId,
+      sourceId: cleanId(moduleFlags.sourceId),
       sourceActorUuid: source.uuid,
       groupActorId,
       instanceState: normalizeTransportInstanceState({}, { reserveUnit })

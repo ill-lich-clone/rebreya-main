@@ -7,6 +7,7 @@ import {
   validateTransportImportPayload,
   validateTransportStatePayload
 } from "../scripts/data/transport-instance-service.js";
+import { normalizeGroupState } from "../scripts/data/group-context-service.js";
 
 const validImport = {
   groupActorId: "group-a",
@@ -39,7 +40,7 @@ function createTransportInstanceHarness({
   const roleUpdates = [];
   const groupStateMutations = [];
   const actorUpdates = [];
-  const groupState = { members: {}, transportState: { activeTransportId: "" } };
+  const groupState = normalizeGroupState("group-a", {});
   const gm = { id: "gm", isGM: true };
   const player = { id: "player-a", isGM: false };
   const source = {
@@ -139,7 +140,11 @@ function createTransportInstanceHarness({
         assert.equal(id, "group-a");
         if (groupStateMutationError) throw groupStateMutationError;
         groupStateMutations.push(id);
-        return mutator(groupState);
+        const result = mutator(groupState);
+        const persisted = normalizeGroupState(id, groupState);
+        for (const key of Object.keys(groupState)) delete groupState[key];
+        Object.assign(groupState, persisted);
+        return result;
       }
     },
     inventoryService: {
@@ -242,7 +247,7 @@ test("import creates an independent world Actor, assigns its target-group role, 
   assert.deepEqual(harness.addedMemberIds, [first.actorId]);
   assert.deepEqual(harness.roleUpdates, []);
   assert.deepEqual(harness.groupStateMutations, ["group-a"]);
-  assert.equal(harness.groupState.members[first.actorId].role, "mount");
+  assert.equal(harness.groupState.memberStateByActorId[first.actorId].role, "mount");
   assert.equal(harness.groupState.transportState.activeTransportId, `member:${first.actorId}`);
   const firstActor = harness.createdActors[0];
   assert.equal(firstActor._id, undefined);
@@ -255,8 +260,17 @@ test("import creates an independent world Actor, assigns its target-group role, 
   assert.equal(firstActor.flags["rebreya-main"].transport.sourceActorUuid, validImport.sourceActorUuid);
 });
 
-test("group import rejects a second concrete transport instance", async () => {
+test("group import rejects a legacy instance whose source id is stored at module root", async () => {
   const harness = createTransportInstanceHarness({ existingTransport: true });
+  harness.vehicleActor.getFlag = (_scope, key) => {
+    if (key === "sourceId") return "transport-v01-existing";
+    if (key !== "transport") return undefined;
+    return {
+      instance: true,
+      sourceActorUuid: validImport.sourceActorUuid,
+      groupActorId: "group-a"
+    };
+  };
   const service = new TransportInstanceService(harness.moduleApi, harness.options);
 
   await assert.rejects(
@@ -264,6 +278,21 @@ test("group import rejects a second concrete transport instance", async () => {
     /транспорт/u
   );
   assert.equal(harness.createdActors.length, 0);
+});
+
+test("concurrent imports serialize per group and create only one concrete transport", async () => {
+  const harness = createTransportInstanceHarness();
+  const service = new TransportInstanceService(harness.moduleApi, harness.options);
+
+  const results = await Promise.allSettled([
+    service.importIntoGroup(validImport, { sender: harness.gm }),
+    service.importIntoGroup(validImport, { sender: harness.gm })
+  ]);
+
+  assert.equal(results.filter((result) => result.status === "fulfilled").length, 1);
+  assert.equal(results.filter((result) => result.status === "rejected").length, 1);
+  assert.equal(harness.createdActors.length, 1);
+  assert.equal(harness.addedMemberIds.length, 1);
 });
 
 test("failed native group membership deletes the newly-created orphan", async () => {

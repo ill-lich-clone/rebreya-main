@@ -63,6 +63,18 @@ function cloneSafeObjectMetadata(value) {
   return metadata;
 }
 
+function normalizeMemberStateByActorId(value = {}) {
+  const members = {};
+  for (const [rawActorId, rawMemberState] of Object.entries(asObject(value))) {
+    const actorId = cleanId(rawActorId);
+    if (!actorId || !isSafeObjectKey(actorId)) {
+      continue;
+    }
+    members[actorId] = cloneSafeObjectMetadata(rawMemberState);
+  }
+  return members;
+}
+
 function normalizeLegacyInventoryMergePairs(value = {}) {
   const pairs = Object.create(null);
   for (const [pairKey, rawPairState] of Object.entries(asObject(value))) {
@@ -236,6 +248,7 @@ export function buildDefaultGroupState(groupActorId, { now = Date.now() } = {}) 
     globalEventsState: {},
     craftState: {},
     travelState: {},
+    memberStateByActorId: {},
     transportState: {
       activeTransportId: ""
     },
@@ -287,6 +300,7 @@ export function normalizeGroupState(groupActorId, value = {}) {
     globalEventsState: clone(asObject(source.globalEventsState)),
     craftState: clone(asObject(source.craftState)),
     travelState: clone(asObject(source.travelState)),
+    memberStateByActorId: normalizeMemberStateByActorId(source.memberStateByActorId),
     transportState: normalizeGroupTransportState(source.transportState),
     questState: normalizeQuestState(source.questState),
     downtimeState: {

@@ -848,6 +848,7 @@ function buildTransportProfile({
   actorId = "",
   actorUuid = "",
   isActorBacked = false,
+  isConcreteInstance = false,
   canEditState = false,
   condition = "operational",
   reserveCurrent = 0,
@@ -899,6 +900,7 @@ function buildTransportProfile({
     actorId: cleanId(actorId),
     actorUuid: cleanId(actorUuid),
     isActorBacked: isActorBacked === true,
+    isConcreteInstance: isConcreteInstance === true,
     canEditState: canEditState === true,
     condition: ["operational", "damaged", "broken"].includes(cleanId(condition))
       ? cleanId(condition)
@@ -914,9 +916,14 @@ function buildTransportProfile({
   };
 }
 
-function buildTransportProfileFromActor(actor, memberState = {}, { memberCapacityLb = 0, memberRole = "" } = {}) {
+function buildTransportProfileFromActor(actor, memberState = {}, {
+  memberCapacityLb = 0,
+  memberRole = "",
+  groupActorId = ""
+} = {}) {
   const actorData = actor?.toObject?.() ?? actor ?? {};
-  const transportFlags = asPlainObject(getProperty(actorData, `flags.${MODULE_ID}.transport`));
+  const moduleFlags = asPlainObject(getProperty(actorData, `flags.${MODULE_ID}`));
+  const transportFlags = asPlainObject(moduleFlags.transport);
   const role = normalizeRole(memberRole || memberState.role);
   const hasTransportFlags = Object.keys(transportFlags).length > 0;
   const isExplicitTransportActor = actor?.type === "vehicle"
@@ -944,6 +951,11 @@ function buildTransportProfileFromActor(actor, memberState = {}, { memberCapacit
   ]);
   const instanceState = asPlainObject(transportFlags.instanceState);
   const consumption = asPlainObject(transportFlags.consumption);
+  const isConcreteInstance = actor?.type === "vehicle"
+    && transportFlags.instance === true
+    && Boolean(cleanId(transportFlags.sourceId ?? moduleFlags.sourceId))
+    && Boolean(cleanId(transportFlags.sourceActorUuid))
+    && cleanId(transportFlags.groupActorId) === cleanId(groupActorId);
   const profile = buildTransportProfile({
     id: actor?.id ? `member:${actor.id}` : "",
     name: actor?.name,
@@ -1012,7 +1024,8 @@ function buildTransportProfileFromActor(actor, memberState = {}, { memberCapacit
     actorId: actor?.id,
     actorUuid: actor?.uuid,
     isActorBacked: true,
-    canEditState: actor?.type === "vehicle",
+    isConcreteInstance,
+    canEditState: isConcreteInstance,
     condition: instanceState.condition,
     reserveCurrent: instanceState.reserveCurrent,
     reserveCapacity: instanceState.reserveCapacity,
@@ -1709,6 +1722,23 @@ export class InventoryService {
       this.lastGroupContextError = error.message;
       return null;
     }
+  }
+
+  #getNativeGroupState(inventoryActor) {
+    if (!this.#isNativeGroupInventoryActor(inventoryActor)) {
+      return null;
+    }
+    const service = this.moduleApi.groupContextService;
+    const context = service?.resolveForGroup?.(inventoryActor.id)
+      ?? service?.resolveForCurrentUser?.()
+      ?? null;
+    const resolvedGroupId = cleanId(context?.groupId ?? context?.groupActor?.id);
+    if (resolvedGroupId && resolvedGroupId !== cleanId(inventoryActor.id)) {
+      return null;
+    }
+    return context?.groupState && typeof context.groupState === "object"
+      ? context.groupState
+      : null;
   }
 
   canManagePartyInventory(actor = null) {
@@ -2880,6 +2910,7 @@ export class InventoryService {
 
   #buildPartyMemberRows(state, inventoryActor) {
     if (this.#isNativeGroupInventoryActor(inventoryActor)) {
+      const scopedMemberState = this.#getNativeGroupState(inventoryActor)?.memberStateByActorId ?? {};
       return getGroupMemberActors(inventoryActor)
         .map((actorDocument) => {
           const actorId = String(actorDocument?.id ?? "").trim();
@@ -2890,7 +2921,11 @@ export class InventoryService {
           return {
             actorId,
             actor: actorDocument,
-            memberState: this.#normalizeMemberState(state.members?.[actorId] ?? buildDefaultMemberState("member"))
+            memberState: this.#normalizeMemberState(
+              scopedMemberState[actorId]
+              ?? state.members?.[actorId]
+              ?? buildDefaultMemberState("member")
+            )
           };
         })
         .filter((row) => row);
@@ -2907,20 +2942,6 @@ export class InventoryService {
   #assertLegacyPartyMembershipMutable() {
     if (this.#getGroupInventoryActor()) {
       throw new Error(NATIVE_GROUP_MEMBERSHIP_MESSAGE);
-    }
-  }
-
-  #assertNativeGroupMemberIfNeeded(actorId) {
-    const groupActor = this.#getGroupInventoryActor();
-    if (!groupActor) {
-      return;
-    }
-
-    const memberIds = new Set(getGroupMemberActors(groupActor)
-      .map((actor) => String(actor?.id ?? "").trim())
-      .filter((id) => id));
-    if (!memberIds.has(String(actorId ?? "").trim())) {
-      throw new Error("Участник группы не найден в листе dnd5e группы.");
     }
   }
 
@@ -3694,7 +3715,8 @@ export class InventoryService {
           : roundNumber((effectiveStrength * capacityMultiplier) + memberState.capBonusLb, 2);
         const transportProfile = buildTransportProfileFromActor(actorDocument, memberState, {
           memberCapacityLb: legacyCapacityLb,
-          memberRole: memberState.role
+          memberRole: memberState.role,
+          groupActorId: inventoryActor?.id
         });
         const explicitVehicleCapacity = transportProfile?.hasExplicitCargoCapacity
           ? Math.max(0, Number(transportProfile.cargoCapacityLb) || 0)
@@ -3873,7 +3895,7 @@ export class InventoryService {
     );
     const vehiclesById = new Map();
     const addVehicle = (vehicle) => {
-      if (!vehicle?.id || !vehicle.isTransport) {
+      if (!vehicle?.id || !vehicle.isTransport || vehicle.isConcreteInstance !== true) {
         return;
       }
       if (!vehiclesById.has(vehicle.id)) {
@@ -4547,6 +4569,65 @@ export class InventoryService {
     return result;
   }
 
+  async #writeMemberStates(actorIds, mutator, { guard, inventoryActor = null } = {}) {
+    const ids = [...new Set((actorIds ?? []).map(cleanId).filter(Boolean))];
+    const writeLegacyState = () => this.#writeState((state) => {
+      const members = new Map(ids.map((actorId) => [
+        actorId,
+        this.#normalizeMemberState(state.members[actorId] ?? buildDefaultMemberState("member"))
+      ]));
+      const result = mutator(members);
+      for (const [actorId, memberState] of members) {
+        state.members[actorId] = this.#normalizeMemberState(memberState, memberState.role);
+      }
+      return result;
+    }, { guard });
+    const groupActor = this.#isNativeGroupInventoryActor(inventoryActor)
+      ? inventoryActor
+      : this.#getGroupInventoryActor();
+    if (!groupActor) {
+      return writeLegacyState();
+    }
+
+    const nativeMemberIds = new Set(getGroupMemberActors(groupActor)
+      .map((actor) => cleanId(actor?.id))
+      .filter(Boolean));
+    if (ids.some((actorId) => !nativeMemberIds.has(actorId))) {
+      throw new Error("Участник группы не найден в листе dnd5e группы.");
+    }
+    guard?.();
+    if (!this.canManagePartyInventory(groupActor)) {
+      throw new Error("Партийным инвентарём управляют владельцы склада.");
+    }
+    if (typeof this.moduleApi.groupContextService?.mutateGroupState !== "function") {
+      return writeLegacyState();
+    }
+    const legacyMembers = this.#getState().members;
+    const result = await this.moduleApi.groupContextService.mutateGroupState(groupActor.id, (groupState) => {
+      groupState.memberStateByActorId = groupState.memberStateByActorId
+        && typeof groupState.memberStateByActorId === "object"
+        ? groupState.memberStateByActorId
+        : {};
+      const members = new Map(ids.map((actorId) => [
+        actorId,
+        this.#normalizeMemberState({
+          ...(legacyMembers[actorId] ?? {}),
+          ...(groupState.memberStateByActorId[actorId] ?? {})
+        })
+      ]));
+      const mutationResult = mutator(members);
+      for (const [actorId, memberState] of members) {
+        groupState.memberStateByActorId[actorId] = this.#normalizeMemberState(
+          memberState,
+          memberState.role
+        );
+      }
+      return mutationResult;
+    });
+    guard?.();
+    return result;
+  }
+
   releaseCraftReservationOnce(projectId, remaining, mutationId, options = {}) {
     return this.mutationCoordinator.run(
       "inventory",
@@ -4831,10 +4912,8 @@ export class InventoryService {
       throw new Error("Не выбран участник группы.");
     }
 
-    this.#assertNativeGroupMemberIfNeeded(actorId);
-
-    return this.#writeState((state) => {
-      const currentState = this.#normalizeMemberState(state.members[actorId] ?? buildDefaultMemberState("member"));
+    return this.#writeMemberStates([actorId], (members) => {
+      const currentState = members.get(actorId);
       const nextRole = patch.role !== undefined ? normalizeRole(patch.role) : currentState.role;
       const roleChanged = nextRole !== currentState.role;
       const roleDefaults = PARTY_ROLE_DEFAULTS[nextRole] ?? PARTY_ROLE_DEFAULTS.member;
@@ -4868,8 +4947,9 @@ export class InventoryService {
           : normalizeToolsMap(currentState.tools)
       };
 
-      state.members[actorId] = this.#normalizeMemberState(nextMember, nextRole);
-      return foundry.utils.deepClone(state.members[actorId]);
+      const normalized = this.#normalizeMemberState(nextMember, nextRole);
+      members.set(actorId, normalized);
+      return foundry.utils.deepClone(normalized);
     });
   }
 
@@ -4878,15 +4958,13 @@ export class InventoryService {
       throw new Error("Не выбран участник группы.");
     }
 
-    this.#assertNativeGroupMemberIfNeeded(actorId);
-
     const normalizedToolId = normalizeToolId(toolId);
     if (!normalizedToolId) {
       throw new Error("Инструмент Rebreya не найден.");
     }
 
-    return this.#writeState((state) => {
-      const memberState = this.#normalizeMemberState(state.members[actorId] ?? buildDefaultMemberState("member"));
+    return this.#writeMemberStates([actorId], (members) => {
+      const memberState = members.get(actorId);
       const currentToolState = normalizeToolState(memberState.tools?.[normalizedToolId]);
       const nextToolState = normalizeToolState({
         ...currentToolState,
@@ -4895,8 +4973,8 @@ export class InventoryService {
 
       memberState.tools = normalizeToolsMap(memberState.tools);
       memberState.tools[normalizedToolId] = nextToolState;
-      state.members[actorId] = this.#normalizeMemberState(memberState, memberState.role);
-      return foundry.utils.deepClone(state.members[actorId].tools[normalizedToolId]);
+      members.set(actorId, memberState);
+      return foundry.utils.deepClone(nextToolState);
     });
   }
 
@@ -4905,13 +4983,11 @@ export class InventoryService {
       throw new Error("Не выбран участник группы.");
     }
 
-    this.#assertNativeGroupMemberIfNeeded(actorId);
-
-    return this.#writeState((state) => {
-      const memberState = this.#normalizeMemberState(state.members[actorId] ?? buildDefaultMemberState("member"));
+    return this.#writeMemberStates([actorId], (members) => {
+      const memberState = members.get(actorId);
       memberState.energyCurrent = Math.max(0, Math.floor(toNumber(currentEnergy, 0)));
-      state.members[actorId] = this.#normalizeMemberState(memberState, memberState.role);
-      return foundry.utils.deepClone(state.members[actorId]);
+      members.set(actorId, memberState);
+      return foundry.utils.deepClone(memberState);
     });
   }
 
@@ -4965,17 +5041,17 @@ export class InventoryService {
       }
     }
 
-    const result = await this.#writeState((state) => {
-      const memberState = this.#normalizeMemberState(state.members[actorId] ?? buildDefaultMemberState("member"));
+    const result = await this.#writeMemberStates([actorId], (members) => {
+      const memberState = members.get(actorId);
       const actorDocument = game.actors.get(actorId) ?? null;
       const energyState = clampEnergyCurrent(memberState, actorDocument);
       memberState.energyCurrent = Math.min(energyState.max, energyState.current + restoreDays);
-      state.members[actorId] = this.#normalizeMemberState(memberState, memberState.role);
+      members.set(actorId, memberState);
       return {
         actorId,
-        energyCurrent: state.members[actorId].energyCurrent
+        energyCurrent: memberState.energyCurrent
       };
-    });
+    }, { inventoryActor: actor });
 
     return {
       ...result,
@@ -5160,16 +5236,17 @@ export class InventoryService {
     }
 
     if (applyEnergy && partySnapshot.memberCount > 0) {
-      await this.#writeState((state) => {
-        for (const member of partySnapshot.members) {
-          const memberState = this.#normalizeMemberState(
-            state.members[member.actorId] ?? buildDefaultMemberState(member.memberState.role),
-            member.memberState.role
-          );
-          memberState.energyCurrent = currentEnergyByActorId.get(member.actorId) ?? member.energyCurrent;
-          state.members[member.actorId] = this.#normalizeMemberState(memberState, memberState.role);
-        }
-      }, { guard });
+      await this.#writeMemberStates(
+        partySnapshot.members.map((member) => member.actorId),
+        (members) => {
+          for (const member of partySnapshot.members) {
+            const memberState = members.get(member.actorId);
+            memberState.energyCurrent = currentEnergyByActorId.get(member.actorId) ?? member.energyCurrent;
+            members.set(member.actorId, memberState);
+          }
+        },
+        { guard, inventoryActor: actor }
+      );
     }
 
     guard?.();
