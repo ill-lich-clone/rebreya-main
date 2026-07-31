@@ -407,6 +407,159 @@ test("getTransportSnapshot exposes transport items stored on the group actor", a
     assert.equal(transportSnapshot.cargoLabel, "10000 фнт.");
     assert.equal(transportSnapshot.durabilityLabel, "200 / 200");
     assert.equal(transportSnapshot.vehicles[0].sourceLabel, "Склад");
+    assert.equal(transportSnapshot.activeVehicle.isActorBacked, false);
+    assert.equal(transportSnapshot.activeVehicle.canEditState, false);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("vehicle member reads D&D5e 5.2.5 native fields and live instance state", async () => {
+  const actor = createActor({
+    id: "vehicle-a",
+    name: "Тяжёлый гражданский фургон",
+    type: "vehicle",
+    isOwner: true,
+    flags: {
+      [MODULE_ID]: {
+        transport: {
+          instance: true,
+          consumption: { kind: "fuel", unit: "gal", raw: "Жидкий уголь 1/8 галлона" },
+          instanceState: {
+            condition: "damaged",
+            reserveCurrent: 8,
+            reserveCapacity: 12,
+            reserveUnit: "gal"
+          }
+        }
+      }
+    }
+  });
+  actor.system.attributes = {
+    hp: { value: 72, max: 100 },
+    ac: { flat: 17 },
+    capacity: { cargo: { value: 5000, units: "lb" } },
+    travel: { speeds: { land: 12 } }
+  };
+  actor.system.crew = { max: 2, value: [] };
+  actor.system.passengers = { max: 6, value: [] };
+  const groupActor = createActor({
+    id: "group-a",
+    name: "Партия",
+    type: "group",
+    isOwner: true,
+    members: [{ actor }]
+  });
+  const fixture = installInventoryFixture({
+    actors: [groupActor, actor],
+    partyState: {
+      members: {
+        "vehicle-a": {
+          role: "transport",
+          capBonusLb: 250
+        }
+      }
+    }
+  });
+  const service = new InventoryService({
+    groupContextService: {
+      resolveForCurrentUser: () => ({
+        groupActor,
+        groupId: groupActor.id,
+        members: [actor],
+        canManage: true
+      })
+    },
+    getModel: async () => ({
+      materials: [],
+      materialById: new Map(),
+      materialByGoodId: new Map(),
+      gear: [],
+      gearById: new Map()
+    })
+  });
+
+  try {
+    const snapshot = await service.getPartySnapshot();
+    const member = snapshot.members[0];
+
+    assert.equal(member.transport.actorId, "vehicle-a");
+    assert.equal(member.transport.actorUuid, "Actor.vehicle-a");
+    assert.equal(member.transport.isActorBacked, true);
+    assert.equal(member.transport.canEditState, true);
+    assert.equal(member.transport.cargoCapacityLb, 5000);
+    assert.equal(member.transport.crew, 2);
+    assert.equal(member.transport.passengers, 6);
+    assert.equal(member.transport.hpValue, 72);
+    assert.equal(member.transport.hpMax, 100);
+    assert.equal(member.transport.ac, 17);
+    assert.equal(member.transport.condition, "damaged");
+    assert.equal(member.transport.conditionLabel, "Повреждён");
+    assert.equal(member.transport.reserveCurrent, 8);
+    assert.equal(member.transport.reserveCapacity, 12);
+    assert.equal(member.transport.reserveUnit, "gal");
+    assert.equal(member.capacityLb, 5250);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("mount member uses explicit native cargo plus the configured capacity bonus", async () => {
+  const mount = createActor({
+    id: "mount-a",
+    name: "Боевой конь",
+    type: "vehicle",
+    isOwner: true
+  });
+  mount.system.attributes = {
+    hp: { value: 0, max: 0 },
+    ac: { flat: 11 },
+    capacity: { cargo: { value: 540, units: "lb" } },
+    travel: { speeds: { land: 6 } }
+  };
+  const groupActor = createActor({
+    id: "group-mount",
+    name: "Партия",
+    type: "group",
+    isOwner: true,
+    members: [{ actor: mount }]
+  });
+  const fixture = installInventoryFixture({
+    actors: [groupActor, mount],
+    partyState: {
+      members: {
+        "mount-a": {
+          role: "mount",
+          capBonusLb: 60
+        }
+      }
+    }
+  });
+  const service = new InventoryService({
+    groupContextService: {
+      resolveForCurrentUser: () => ({
+        groupActor,
+        groupId: groupActor.id,
+        members: [mount],
+        canManage: true
+      })
+    },
+    getModel: async () => ({
+      materials: [],
+      materialById: new Map(),
+      materialByGoodId: new Map(),
+      gear: [],
+      gearById: new Map()
+    })
+  });
+
+  try {
+    const snapshot = await service.getPartySnapshot();
+
+    assert.equal(snapshot.members[0].transport.cargoCapacityLb, 540);
+    assert.equal(snapshot.members[0].capacityLb, 600);
   }
   finally {
     fixture.restore();

@@ -781,6 +781,28 @@ function getDurabilityLabel(value, maximum) {
   return "-";
 }
 
+function getTransportConditionLabel(value) {
+  switch (cleanId(value)) {
+    case "damaged":
+      return "Повреждён";
+    case "broken":
+      return "Сломан";
+    case "operational":
+    default:
+      return "Исправен";
+  }
+}
+
+function formatTransportReserveLabel(current, capacity, unit = "") {
+  const safeCurrent = extractNumber(current) ?? 0;
+  const safeCapacity = extractNumber(capacity);
+  const suffix = cleanId(unit);
+  const amount = Number.isFinite(safeCapacity)
+    ? `${formatNumberLabel(safeCurrent)} / ${formatNumberLabel(safeCapacity)}`
+    : formatNumberLabel(safeCurrent);
+  return suffix ? `${amount} ${suffix}` : amount;
+}
+
 function isTransportText(value) {
   const text = normalizeText(value);
   return Boolean(text && (
@@ -822,7 +844,16 @@ function buildTransportProfile({
   rank = null,
   size = "",
   quantity = null,
-  isTransport = false
+  isTransport = false,
+  actorId = "",
+  actorUuid = "",
+  isActorBacked = false,
+  canEditState = false,
+  condition = "operational",
+  reserveCurrent = 0,
+  reserveCapacity = null,
+  reserveUnit = "",
+  hasExplicitCargoCapacity = false
 } = {}) {
   const speedMph = parseSpeedMph(speedValue) ?? parseSpeedMph(fallbackSpeedValue) ?? 0;
   const cargoCapacityLb = parseWeightToPounds(cargoValue) ?? 0;
@@ -862,7 +893,20 @@ function buildTransportProfile({
     size: cleanId(size),
     quantity: quantity === null ? null : Math.max(0, roundNumber(toNumber(quantity, 0), 2)),
     detailsLabel: details.join(" • "),
-    isTransport: Boolean(isTransport || speedMph > 0 || cargoCapacityLb > 0 || isTransportText(typeLabel) || isTransportText(name))
+    isTransport: Boolean(isTransport || speedMph > 0 || cargoCapacityLb > 0 || isTransportText(typeLabel) || isTransportText(name)),
+    actorId: cleanId(actorId),
+    actorUuid: cleanId(actorUuid),
+    isActorBacked: isActorBacked === true,
+    canEditState: canEditState === true,
+    condition: ["operational", "damaged", "broken"].includes(cleanId(condition))
+      ? cleanId(condition)
+      : "operational",
+    conditionLabel: getTransportConditionLabel(condition),
+    reserveCurrent: extractNumber(reserveCurrent) ?? 0,
+    reserveCapacity: extractNumber(reserveCapacity),
+    reserveUnit: cleanId(reserveUnit),
+    reserveLabel: formatTransportReserveLabel(reserveCurrent, reserveCapacity, reserveUnit),
+    hasExplicitCargoCapacity: hasExplicitCargoCapacity === true
   };
 }
 
@@ -879,33 +923,43 @@ function buildTransportProfileFromActor(actor, memberState = {}, { memberCapacit
     return null;
   }
 
-  const movementLand = firstDefinedValue(actorData, [
+  const movementSpeed = firstDefinedValue(actorData, [
     "system.attributes.movement.land",
     "system.attributes.movement.walk",
-    "system.attributes.movement.ground"
+    "system.attributes.movement.ground",
+    "system.attributes.movement.fly",
+    "system.attributes.movement.swim"
   ]);
+  const explicitCargoValue = firstDefinedValue(actorData, [
+    `flags.${MODULE_ID}.transport.cargoCapacityLb`,
+    `flags.${MODULE_ID}.transport.cargoCapacity`,
+    "system.attributes.capacity.cargo.value",
+    "system.attributes.capacity.weight.value",
+    "system.capacity.weight.value",
+    "system.attributes.capacity.cargo"
+  ]);
+  const instanceState = asPlainObject(transportFlags.instanceState);
+  const consumption = asPlainObject(transportFlags.consumption);
   const profile = buildTransportProfile({
     id: actor?.id ? `member:${actor.id}` : "",
     name: actor?.name,
     img: actor?.img,
     sourceKind: "member",
     sourceLabel: "Участник группы",
-    typeLabel: cleanId(transportFlags.typeLabel) || (actor?.type === "vehicle" ? "Транспорт" : getRoleLabel(role)),
+    typeLabel: cleanId(transportFlags.typeLabel)
+      || cleanId(getProperty(actorData, "system.details.type"))
+      || (actor?.type === "vehicle" ? "Транспорт" : getRoleLabel(role)),
     speedValue: firstDefinedValue(actorData, [
       `flags.${MODULE_ID}.transport.speedMph`,
       `flags.${MODULE_ID}.transport.travelSpeedMph`,
       "system.attributes.travel.speeds.land",
       "system.attributes.travel.speeds.walk",
-      "system.attributes.travel.speeds.ground"
+      "system.attributes.travel.speeds.ground",
+      "system.attributes.travel.speeds.water",
+      "system.attributes.travel.speeds.air"
     ]),
-    fallbackSpeedValue: movementLand == null ? null : `${movementLand} футов`,
-    cargoValue: firstDefinedValue(actorData, [
-      `flags.${MODULE_ID}.transport.cargoCapacityLb`,
-      `flags.${MODULE_ID}.transport.cargoCapacity`,
-      "system.attributes.capacity.cargo",
-      "system.attributes.capacity.weight.value",
-      "system.capacity.weight.value"
-    ]) ?? memberCapacityLb,
+    fallbackSpeedValue: movementSpeed == null ? null : `${movementSpeed} футов`,
+    cargoValue: explicitCargoValue ?? memberCapacityLb,
     hpValue: firstDefinedValue(actorData, [
       `flags.${MODULE_ID}.transport.hp.value`,
       "system.attributes.hp.value"
@@ -921,17 +975,21 @@ function buildTransportProfileFromActor(actor, memberState = {}, { memberCapacit
     ]),
     crew: firstDefinedValue(actorData, [
       `flags.${MODULE_ID}.transport.crew`,
+      "system.crew.max",
+      "system.attributes.crew.max",
       "system.attributes.crew",
       "system.crew"
     ]),
     passengers: firstDefinedValue(actorData, [
       `flags.${MODULE_ID}.transport.passengers`,
+      "system.passengers.max",
+      "system.attributes.passengers.max",
       "system.attributes.passengers",
       "system.passengers"
     ]),
     fuel: firstDefinedValue(actorData, [
       `flags.${MODULE_ID}.transport.fuel`,
-      `flags.${MODULE_ID}.transport.consumption`,
+      `flags.${MODULE_ID}.transport.consumption.raw`,
       "system.attributes.fuel",
       "system.fuel"
     ]),
@@ -945,7 +1003,16 @@ function buildTransportProfileFromActor(actor, memberState = {}, { memberCapacit
       "system.traits.size",
       "system.attributes.size"
     ]),
-    isTransport: true
+    isTransport: true,
+    actorId: actor?.id,
+    actorUuid: actor?.uuid,
+    isActorBacked: true,
+    canEditState: actor?.type === "vehicle",
+    condition: instanceState.condition,
+    reserveCurrent: instanceState.reserveCurrent,
+    reserveCapacity: instanceState.reserveCapacity,
+    reserveUnit: instanceState.reserveUnit ?? consumption.unit,
+    hasExplicitCargoCapacity: explicitCargoValue !== undefined
   });
 
   return profile.isTransport ? profile : null;
@@ -1020,7 +1087,9 @@ function buildTransportProfileFromInventoryItem(itemData, {
     rank: transportFlags.rank ?? moduleFlags.rank ?? sourceFlags.rank ?? matchedGear?.rank,
     size: transportFlags.size ?? sourceFlags.size,
     quantity,
-    isTransport
+    isTransport,
+    isActorBacked: false,
+    canEditState: false
   });
 
   return profile.isTransport ? profile : null;
@@ -3613,13 +3682,22 @@ export class InventoryService {
         const inventoryWeight = actorDocument ? this.#getInventoryWeight(actorDocument) : 0;
         const effectiveStrength = memberState.strOverride ?? getActorStrength(actorDocument);
         const capacityMultiplier = memberState.capModOverride ?? state.defaultCapMod;
-        const capacityLb = memberState.role === "transport"
+        const legacyCapacityLb = memberState.role === "transport"
           ? roundNumber(memberState.capBonusLb, 2)
           : roundNumber((effectiveStrength * capacityMultiplier) + memberState.capBonusLb, 2);
         const transportProfile = buildTransportProfileFromActor(actorDocument, memberState, {
-          memberCapacityLb: capacityLb,
+          memberCapacityLb: legacyCapacityLb,
           memberRole: memberState.role
         });
+        const explicitVehicleCapacity = transportProfile?.hasExplicitCargoCapacity
+          ? Math.max(0, Number(transportProfile.cargoCapacityLb) || 0)
+          : 0;
+        const capacityLb = (
+          ["transport", "mount"].includes(memberState.role)
+          && explicitVehicleCapacity > 0
+        )
+          ? roundNumber(explicitVehicleCapacity + memberState.capBonusLb, 2)
+          : legacyCapacityLb;
         const energyState = clampEnergyCurrent(memberState, actorDocument);
         const conModEffective = memberState.conModOverride ?? getActorConMod(actorDocument);
         const toolEntries = REBREYA_TOOLS.map((tool) => {
