@@ -262,6 +262,25 @@ test("cancellation releases, successful persistence keeps ownership, and final d
   assert.equal(new Set(runtime.mutationOperationIds).size, runtime.mutationOperationIds.length);
 });
 
+test("release completes its parent operation for a fresh service while another parent can reserve", async () => {
+  // Catches cancellation release clearing only the lease, which lets a reload replay an already terminal parent effect.
+  const runtime = createSharedCasRuntime({ actorUuid: actorA.uuid });
+  const original = createLease(runtime, { tokens: ["cancel-owner"] });
+  const reserved = await original.reserve({ actor: actorA, instanceId: "spell-a", operationId: "cancelled" });
+  await original.release({
+    actor: actorA, instanceId: "spell-a", operationId: "cancelled", token: reserved.token
+  });
+  const reloaded = createLease(runtime, { tokens: ["replay-owner", "next-owner"] });
+  let replayEffects = 0;
+  const replay = await reloaded.reserve({ actor: actorA, instanceId: "spell-a", operationId: "cancelled" });
+  if (replay.status === "acquired") replayEffects += 1;
+  const next = await reloaded.reserve({ actor: actorA, instanceId: "spell-a", operationId: "next-parent" });
+
+  assert.equal(replay.status, "completed");
+  assert.equal(replayEffects, 0);
+  assert.equal(next.status, "acquired");
+});
+
 test("a failed post-effect persist leaves the acquired lease fail-closed", async () => {
   // Catches a commit failure being reported as success or silently releasing the damage reservation.
   const runtime = createSharedCasRuntime({ actorUuid: actorA.uuid });

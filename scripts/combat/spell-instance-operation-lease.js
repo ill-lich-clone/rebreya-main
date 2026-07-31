@@ -171,13 +171,19 @@ export class SpellInstanceOperationLease {
 
   async release({ actor, instanceId, operationId, token } = {}) {
     const { metadata, record, parentOperationId, ownerToken } = this.#owned(actor, instanceId, operationId, token);
+    const history = metadata.completed.filter((entry) => entry.operationId !== parentOperationId);
+    history.push({ operationId: parentOperationId });
     const updated = await this.#runtime.updateInstance({
       actor,
       authoritative: true,
       expectedRevision: record.revision,
       instanceId,
       operationId: mutationOperationId(parentOperationId, "release", ownerToken, record.revision),
-      state: stateWithMetadata(record.state, { ...metadata, lease: null })
+      state: stateWithMetadata(record.state, {
+        ...metadata,
+        completed: history.slice(-this.#completedLimit),
+        lease: null
+      })
     });
     return { status: "released", token: ownerToken, record: updated };
   }
