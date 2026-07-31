@@ -5679,6 +5679,90 @@ summary:focus-visible {
   gap: 8px;
 }
 
+.rm-transport-instance {
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--rm-border-subtle);
+  border-radius: var(--rm-ui-row-radius);
+  background: rgb(var(--rm-color-dark-rgb) / 0.3);
+}
+
+.rm-transport-instance__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.rm-transport-instance__header > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.rm-transport-state {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  align-items: end;
+}
+
+.rm-transport-state label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.rm-transport-state label > span:first-child,
+.rm-transport-specs span {
+  color: var(--rm-text-secondary);
+  font-size: 10px;
+  line-height: 1.1;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.rm-transport-state input,
+.rm-transport-state select {
+  width: 100%;
+  min-width: 0;
+}
+
+.rm-transport-state__split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: center;
+}
+
+.rm-transport-state__save {
+  grid-column: 1 / -1;
+  justify-self: start;
+}
+
+.rm-transport-specs {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.rm-transport-specs p {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  margin: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--rm-border-subtle);
+  border-radius: var(--rm-ui-row-radius);
+  background: rgb(var(--rm-color-dark-rgb) / 0.34);
+}
+
+.rm-transport-specs strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .rm-transport-summary {
   display: grid;
   gap: 4px;
@@ -9206,6 +9290,8 @@ summary:focus-visible {
   .rm-travel-controls,
   .rm-travel-stats,
   .rm-transport-overview,
+  .rm-transport-state,
+  .rm-transport-specs,
   .rm-transport-row,
   .rm-transport-row__metrics {
     grid-template-columns: 1fr;

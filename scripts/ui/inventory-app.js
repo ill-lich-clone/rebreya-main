@@ -1481,16 +1481,52 @@ function buildEmptyTransportContext({ warning = "" } = {}) {
   };
 }
 
+const TRANSPORT_CONDITION_OPTIONS = Object.freeze([
+  { value: "operational", label: "Исправен" },
+  { value: "damaged", label: "Повреждён" },
+  { value: "broken", label: "Сломан" }
+]);
+
 function prepareTransportContext(snapshot = {}) {
   const source = snapshot && typeof snapshot === "object" ? snapshot : buildEmptyTransportContext();
   const vehicles = Array.isArray(source.vehicles) ? source.vehicles : [];
+  const activeSource = source.activeVehicle && typeof source.activeVehicle === "object"
+    ? source.activeVehicle
+    : null;
+  const condition = cleanText(activeSource?.condition) || "operational";
+  const activeVehicle = activeSource
+    ? {
+        ...activeSource,
+        stateForm: {
+          canEdit: Boolean(
+            source.canManage
+            && activeSource.isActorBacked
+            && activeSource.canEditState !== false
+          ),
+          hpCurrent: String(Number.isFinite(Number(activeSource.hpValue)) ? Number(activeSource.hpValue) : 0),
+          reserveCurrent: String(
+            Number.isFinite(Number(activeSource.reserveCurrent))
+              ? Number(activeSource.reserveCurrent)
+              : 0
+          ),
+          reserveCapacity: activeSource.reserveCapacity == null
+            ? ""
+            : String(activeSource.reserveCapacity),
+          hasCapacity: activeSource.reserveCapacity != null,
+          conditionOptions: TRANSPORT_CONDITION_OPTIONS.map((option) => ({
+            ...option,
+            selected: option.value === condition
+          }))
+        }
+      }
+    : null;
   return {
     ...buildEmptyTransportContext(),
     ...source,
     vehicles,
     hasVehicles: Boolean(source.hasVehicles ?? vehicles.length > 0),
     canManage: Boolean(source.canManage),
-    activeVehicle: source.activeVehicle ?? null,
+    activeVehicle,
     cargoOverloaded: Boolean(source.cargoOverloaded)
   };
 }
@@ -5540,6 +5576,49 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         }
       }, listenerOptions);
     });
+
+    element.querySelector("[data-action='transport-state-save']")?.addEventListener("click", async (event) => {
+      const button = event.currentTarget;
+      const form = button.closest?.("[data-transport-state-form]");
+      if (!form) return;
+      const field = (name) => form.querySelector?.(`[name='${name}']`)?.value ?? "";
+      const capacityText = String(field("reserveCapacity")).trim();
+      button.disabled = true;
+      try {
+        await this.moduleApi.updateTransportInstanceState?.({
+          groupActorId: cleanText(this.groupActor?.id),
+          actorId: cleanText(form.dataset?.actorId),
+          patch: {
+            hpCurrent: Number(field("hpCurrent")),
+            condition: cleanText(field("condition")),
+            reserveCurrent: Number(field("reserveCurrent")),
+            reserveCapacity: capacityText === "" ? null : Number(capacityText)
+          }
+        });
+        this.#setActionFeedback("success", "Состояние транспорта сохранено.");
+        await this.render?.({ force: true, preserveScroll: true });
+      }
+      catch (error) {
+        button.disabled = false;
+        console.error(`${MODULE_ID} | Failed to save transport state.`, error);
+        const message = error?.message || "Не удалось сохранить состояние транспорта.";
+        this.#setActionFeedback("error", message);
+        globalThis.ui?.notifications?.error?.(message);
+      }
+    }, listenerOptions);
+
+    element.querySelector("[data-action='open-transport-actor-sheet']")?.addEventListener("click", (event) => {
+      const actorId = cleanText(event.currentTarget.dataset?.actorId);
+      const actor = globalThis.game?.actors?.get?.(actorId)
+        ?? globalThis.game?.actors?.contents?.find?.((candidate) => candidate?.id === actorId)
+        ?? null;
+      if (!actor?.sheet) {
+        globalThis.ui?.notifications?.error?.("Лист транспорта не найден.");
+        return;
+      }
+      actor.sheet.render?.(true);
+      bringAppToFront(actor.sheet);
+    }, listenerOptions);
 
     const bindDowntimeField = (selector, assign) => {
       element.querySelector(selector)?.addEventListener("change", (event) => {

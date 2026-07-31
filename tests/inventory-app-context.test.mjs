@@ -261,6 +261,10 @@ function createModuleApi({
       calls.push(["setActiveTransport", activeTransportId]);
       return {};
     },
+    async updateTransportInstanceState(payload) {
+      calls.push(["updateTransportInstanceState", payload]);
+      return {};
+    },
     async setTravelRoute(payload) {
       calls.push(["setTravelRoute", payload]);
       return {};
@@ -1680,6 +1684,146 @@ test("InventoryApp transport selection delegates to the module API", async () =>
   }
 });
 
+test("InventoryApp prepares editable state for an Actor-backed transport", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?transport-state-context=${Date.now()}`);
+  const app = new InventoryApp(createModuleApi({
+    getGroupContext: () => ({
+      groupActor: {
+        id: "group-a",
+        name: "Transport Group",
+        system: { members: [] }
+      },
+      groupId: "group-a",
+      memberActorIds: []
+    }),
+    transportSnapshot: {
+      canManage: true,
+      activeTransportId: "member:vehicle-a",
+      activeVehicle: {
+        id: "member:vehicle-a",
+        actorId: "vehicle-a",
+        isActorBacked: true,
+        hpValue: 72,
+        hpMax: 100,
+        condition: "damaged",
+        reserveCurrent: 8,
+        reserveCapacity: 12,
+        reserveUnit: "gal"
+      },
+      vehicles: []
+    }
+  }));
+
+  try {
+    app.setActiveTab("transport", { render: false });
+    const context = await app._prepareContext();
+
+    assert.equal(context.transport.activeVehicle.stateForm.canEdit, true);
+    assert.equal(context.transport.activeVehicle.stateForm.hpCurrent, "72");
+    assert.equal(context.transport.activeVehicle.stateForm.reserveCurrent, "8");
+    assert.equal(context.transport.activeVehicle.stateForm.reserveCapacity, "12");
+    assert.equal(
+      context.transport.activeVehicle.stateForm.conditionOptions
+        .find((option) => option.value === "damaged").selected,
+      true
+    );
+  }
+  finally {
+    restoreFoundry();
+  }
+});
+
+test("InventoryApp preserves an unset manual transport capacity as an empty field", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?transport-empty-capacity=${Date.now()}`);
+  const app = new InventoryApp(createModuleApi({
+    getGroupContext: () => ({
+      groupActor: { id: "group-a", name: "Transport Group", system: { members: [] } },
+      groupId: "group-a",
+      memberActorIds: []
+    }),
+    transportSnapshot: {
+      canManage: true,
+      activeVehicle: {
+        actorId: "vehicle-a",
+        isActorBacked: true,
+        hpValue: 0,
+        hpMax: 0,
+        condition: "operational",
+        reserveCurrent: 0,
+        reserveCapacity: null,
+        reserveUnit: "lb"
+      },
+      vehicles: []
+    }
+  }));
+
+  try {
+    app.setActiveTab("transport", { render: false });
+    const context = await app._prepareContext();
+
+    assert.equal(context.transport.activeVehicle.stateForm.reserveCapacity, "");
+  }
+  finally {
+    restoreFoundry();
+  }
+});
+
+test("transport state save delegates exact group and Actor ids", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const dom = installMinimalDom();
+  const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?transport-state-save=${Date.now()}`);
+  const calls = [];
+  const saveButton = createFakeControl();
+  const fields = new Map([
+    ["hpCurrent", createFakeControl({ value: "70" })],
+    ["condition", createFakeControl({ value: "damaged" })],
+    ["reserveCurrent", createFakeControl({ value: "7" })],
+    ["reserveCapacity", createFakeControl({ value: "12" })]
+  ]);
+  const form = createFakeElement({ dataset: { actorId: "vehicle-a" } });
+  form.querySelector = (selector) => {
+    const match = selector.match(/^\[name='(.+)'\]$/u);
+    return match ? fields.get(match[1]) ?? null : null;
+  };
+  saveButton.closest = (selector) => selector === "[data-transport-state-form]" ? form : null;
+  const root = createFakeElement();
+  root.querySelector = (selector) => (
+    selector === "[data-action='transport-state-save']" ? saveButton : null
+  );
+  root.querySelectorAll = () => [];
+  const app = new InventoryApp(createModuleApi({
+    getGroupContext: () => null,
+    calls
+  }));
+  app.groupActor = { id: "group-a" };
+  app.element = root;
+
+  try {
+    await app._onRender({}, {});
+    await dispatchClick(saveButton);
+
+    assert.deepEqual(calls.filter((call) => call[0] === "updateTransportInstanceState"), [[
+      "updateTransportInstanceState",
+      {
+        groupActorId: "group-a",
+        actorId: "vehicle-a",
+        patch: {
+          hpCurrent: 70,
+          condition: "damaged",
+          reserveCurrent: 7,
+          reserveCapacity: 12
+        }
+      }
+    ]]);
+  }
+  finally {
+    dom.restore();
+    restoreFoundry();
+  }
+});
+
 test("InventoryApp travel city autocomplete selects the preview with Enter", async () => {
   const restoreFoundry = installFoundryApplicationStub();
   const dom = installMinimalDom();
@@ -1928,8 +2072,12 @@ test("InventoryApp template exposes the transport tab and active transport contr
   assert.match(template, /data-action="transport-select"/u);
   assert.match(template, /transport\.activeVehicle/u);
   assert.match(template, /transport\.speedSourceLabel/u);
+  assert.match(template, /data-transport-state-form/u);
+  assert.match(template, /data-action="transport-state-save"/u);
+  assert.match(template, /name="reserveCapacity"/u);
   assert.match(css, /\.rm-transport-panel/u);
   assert.match(css, /\.rm-transport-row\.is-active/u);
+  assert.match(css, /\.rm-transport-state\s*\{/u);
 });
 
 test("InventoryApp downtime context can switch queue pages to archive requests", async () => {

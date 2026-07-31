@@ -853,7 +853,9 @@ function buildTransportProfile({
   reserveCurrent = 0,
   reserveCapacity = null,
   reserveUnit = "",
-  hasExplicitCargoCapacity = false
+  hasExplicitCargoCapacity = false,
+  accelerationFt = null,
+  breakdownThreshold = null
 } = {}) {
   const speedMph = parseSpeedMph(speedValue) ?? parseSpeedMph(fallbackSpeedValue) ?? 0;
   const cargoCapacityLb = parseWeightToPounds(cargoValue) ?? 0;
@@ -906,7 +908,9 @@ function buildTransportProfile({
     reserveCapacity: extractNumber(reserveCapacity),
     reserveUnit: cleanId(reserveUnit),
     reserveLabel: formatTransportReserveLabel(reserveCurrent, reserveCapacity, reserveUnit),
-    hasExplicitCargoCapacity: hasExplicitCargoCapacity === true
+    hasExplicitCargoCapacity: hasExplicitCargoCapacity === true,
+    accelerationFt: extractNumber(accelerationFt),
+    breakdownThreshold: extractNumber(breakdownThreshold)
   };
 }
 
@@ -1012,7 +1016,9 @@ function buildTransportProfileFromActor(actor, memberState = {}, { memberCapacit
     reserveCurrent: instanceState.reserveCurrent,
     reserveCapacity: instanceState.reserveCapacity,
     reserveUnit: instanceState.reserveUnit ?? consumption.unit,
-    hasExplicitCargoCapacity: explicitCargoValue !== undefined
+    hasExplicitCargoCapacity: explicitCargoValue !== undefined,
+    accelerationFt: transportFlags.accelerationFt,
+    breakdownThreshold: transportFlags.breakdownThreshold
   });
 
   return profile.isTransport ? profile : null;
