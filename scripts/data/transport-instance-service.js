@@ -234,6 +234,10 @@ export class TransportInstanceService {
       payload.sourceActorUuid,
       fromUuid
     );
+    const replacedSourceMemberId = WORLD_ACTOR_UUID_PATTERN.test(cleanId(payload.sourceActorUuid))
+      && (groupContext.members ?? []).some((member) => member?.id === droppedSource?.id)
+      ? cleanId(droppedSource.id)
+      : "";
 
     const Actor = this.options.actorProvider?.() ?? globalThis.Actor;
     if (typeof Actor?.create !== "function") {
@@ -241,8 +245,13 @@ export class TransportInstanceService {
     }
     const data = this.#buildWorldInstanceData(source, groupContext.groupActor.id);
     const actor = await Actor.create(data, { renderSheet: false, keepId: false });
+    let replacedSourceMemberRemoved = false;
     try {
       await groupContext.groupActor.system?.addMember?.(actor);
+      if (replacedSourceMemberId) {
+        await groupContext.groupActor.system?.removeMember?.(replacedSourceMemberId);
+        replacedSourceMemberRemoved = true;
+      }
       const role = source.getFlag?.(MODULE_ID, "transport")?.defaultGroupRole === "mount"
         ? "mount"
         : "transport";
@@ -273,6 +282,14 @@ export class TransportInstanceService {
     }
     catch (error) {
       const cleanupErrors = [];
+      if (replacedSourceMemberRemoved) {
+        try {
+          await groupContext.groupActor.system?.addMember?.(droppedSource);
+        }
+        catch (rollbackError) {
+          cleanupErrors.push(rollbackError);
+        }
+      }
       try {
         await groupContext.groupActor.system?.removeMember?.(actor.id);
       }

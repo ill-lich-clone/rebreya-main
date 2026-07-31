@@ -265,6 +265,62 @@ test("world transport templates resolve back to their canonical managed compendi
   );
 });
 
+test("world transport template already added by the native group sheet is replaced by the managed instance", async () => {
+  const harness = createTransportInstanceHarness();
+  const worldSource = {
+    id: "world-lincoln",
+    uuid: validWorldImport.sourceActorUuid,
+    pack: null,
+    type: "vehicle",
+    _stats: {
+      compendiumSource: validImport.sourceActorUuid
+    },
+    toObject: () => ({
+      _id: "world-lincoln",
+      name: "Линкор",
+      type: "vehicle",
+      _stats: {
+        compendiumSource: validImport.sourceActorUuid
+      },
+      flags: {
+        "rebreya-main": {
+          managed: true,
+          sourceId: "transport-v01-boevoy-kon",
+          signature: "transport-v1:abc",
+          transport: {
+            instance: false,
+            sourceId: "transport-v01-boevoy-kon"
+          }
+        }
+      }
+    }),
+    getFlag(scope, key) {
+      return this.toObject().flags?.[scope]?.[key];
+    }
+  };
+  const context = harness.moduleApi.groupContextService.resolveForGroup("group-a");
+  context.members.push(worldSource);
+  const service = new TransportInstanceService(harness.moduleApi, {
+    ...harness.options,
+    fromUuid: async (uuid) => {
+      if (uuid === worldSource.uuid) return worldSource;
+      if (uuid === harness.source.uuid) return harness.source;
+      return null;
+    }
+  });
+
+  const result = await service.importIntoGroup(validWorldImport, { sender: harness.gm });
+
+  assert.equal(result.actorId, "vehicle-created-1");
+  assert.deepEqual(harness.removedMemberIds, ["world-lincoln"]);
+  assert.equal(context.members.some((member) => member.id === "world-lincoln"), false);
+  assert.equal(context.members.some((member) => member.id === result.actorId), true);
+  assert.equal(
+    harness.groupState.transportState.activeTransportId,
+    "member:vehicle-created-1"
+  );
+});
+
 test("world transport templates with forged canonical identity are rejected", async () => {
   const harness = createTransportInstanceHarness();
   const forged = {

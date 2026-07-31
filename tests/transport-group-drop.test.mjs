@@ -207,6 +207,36 @@ test("failed asynchronous import reports an error without falling through to tok
   }
 });
 
+test("managed transport dropped on a group sheet is routed through the managed import", async () => {
+  const registrations = new Map();
+  const calls = [];
+  const Hooks = {
+    on(name, callback) {
+      registrations.set(name, callback);
+    }
+  };
+  const groupActor = createToken().actor;
+  const moduleApi = {
+    async importTransportIntoGroup(payload) {
+      calls.push(payload);
+    }
+  };
+
+  registerTransportGroupDropHooks(moduleApi, {
+    Hooks,
+    resolveWorldActor: (uuid) => uuid === worldTransportData.uuid ? worldTransportActor : null
+  });
+  const sheetDrop = registrations.get("dropActorSheetData");
+
+  assert.equal(typeof sheetDrop, "function");
+  assert.equal(sheetDrop(groupActor, {}, worldTransportData), false);
+  await Promise.resolve();
+  assert.deepEqual(calls, [{
+    groupActorId: "group-a",
+    sourceActorUuid: worldTransportData.uuid
+  }]);
+});
+
 test("hook registration is idempotent for the same Hooks object", () => {
   const registrations = [];
   const Hooks = {
@@ -218,7 +248,8 @@ test("hook registration is idempotent for the same Hooks object", () => {
 
   assert.equal(registerTransportGroupDropHooks(moduleApi, { Hooks }), true);
   assert.equal(registerTransportGroupDropHooks(moduleApi, { Hooks }), false);
-  assert.equal(registrations.length, 1);
+  assert.equal(registrations.length, 2);
   assert.equal(registrations[0][0], "dropCanvasData");
   assert.equal(registrations[0][1](createCanvasWithGroupToken(), validTransportData), false);
+  assert.equal(registrations[1][0], "dropActorSheetData");
 });

@@ -102,18 +102,47 @@ export function handleTransportGroupDrop(canvas, data, moduleApi, options = {}) 
   return false;
 }
 
+export function handleTransportGroupSheetDrop(groupActor, data, moduleApi, options = {}) {
+  if (
+    !isManagedPartyGroup(groupActor)
+    || !isTransportCompendiumActorDrop(data, options)
+    || typeof moduleApi?.importTransportIntoGroup !== "function"
+  ) {
+    return true;
+  }
+
+  void moduleApi.importTransportIntoGroup({
+    groupActorId: groupActor.id,
+    sourceActorUuid: cleanString(data.uuid)
+  }).catch((error) => {
+    console.error(`${MODULE_ID} | Failed to import transport dropped on a group sheet.`, error);
+    globalThis.ui?.notifications?.error?.(
+      error?.message || "Не удалось добавить транспорт в группу."
+    );
+  });
+  return false;
+}
+
 export function registerTransportGroupDropHooks(
   moduleApi,
   {
     Hooks = globalThis.Hooks,
-    canvasProvider = () => globalThis.canvas
+    canvasProvider = () => globalThis.canvas,
+    resolveWorldActor = defaultResolveWorldActor
   } = {}
 ) {
   if (!Hooks || (typeof Hooks !== "object" && typeof Hooks !== "function")) return false;
   if (typeof Hooks.on !== "function" || registeredHookObjects.has(Hooks)) return false;
   registeredHookObjects.add(Hooks);
   Hooks.on("dropCanvasData", (hookCanvas, data) => (
-    handleTransportGroupDrop(hookCanvas ?? canvasProvider(), data, moduleApi)
+    handleTransportGroupDrop(hookCanvas ?? canvasProvider(), data, moduleApi, {
+      resolveWorldActor
+    })
+  ));
+  Hooks.on("dropActorSheetData", (actor, _sheet, data) => (
+    handleTransportGroupSheetDrop(actor, data, moduleApi, {
+      resolveWorldActor
+    })
   ));
   return true;
 }
