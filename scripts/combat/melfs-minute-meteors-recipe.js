@@ -250,7 +250,7 @@ export function buildMelfsMinuteMeteorsRecipe({
     return true;
   }
 
-  async function postUseActivity(context) {
+  async function postUseActivity(_definition, context = _definition) {
     if (context?.isChildInvocation || context?.action !== "cast" || !completed(context?.workflow ?? context?.results)) {
       return true;
     }
@@ -384,7 +384,7 @@ export function buildMelfsMinuteMeteorsRecipe({
       return { slotLevel, remainingMeteors: totalMeteors, totalMeteors };
     },
     handlers: {
-      preUseActivity(context) {
+      preUseActivity(_definition, context = _definition) {
         if (context?.isChildInvocation || context?.action !== "release") return true;
         const instance = readActiveInstance(context.actor);
         if (!instance) return false;

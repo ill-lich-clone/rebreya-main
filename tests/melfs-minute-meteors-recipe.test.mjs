@@ -5,6 +5,7 @@ import {
   buildMelfsMinuteMeteorsRecipe,
   melfMeteorPool
 } from "../scripts/combat/melfs-minute-meteors-recipe.js";
+import { SpellAutomationRegistry } from "../scripts/combat/spell-automation-registry.js";
 
 const MODULE_ID = "rebreya-main";
 const RECIPE = "melfs-minute-meteors";
@@ -243,6 +244,47 @@ test("uses the concentration effect returned by dnd5e for an unlinked synthetic 
   assert.equal(fixture.runtime.calls.create.length, 1);
   assert.equal(fixture.runtime.calls.create[0].context.concentrationEffect, returnedConcentration);
   assert.equal(fixture.errors.length, 0);
+});
+
+test("creates Melf state when the real registry dispatches a completed cast", async () => {
+  // Catches recipe handlers reading the registry definition argument as the Foundry cast context.
+  const fixture = recipeFixture({ choices: [{ cancelled: false, count: 0 }] });
+  const registry = new SpellAutomationRegistry();
+  registry.register({ ...fixture.recipe, runtime: "instance" });
+
+  const dispatched = registry.dispatch("postUseActivity", {
+    runtime: "instance",
+    recipe: RECIPE,
+    version: 1
+  }, context(fixture));
+  await dispatched.value;
+
+  assert.equal(dispatched.handled, true);
+  assert.equal(fixture.runtime.calls.create.length, 1);
+  assert.equal(fixture.dialogs.length, 1);
+});
+
+test("releases Melf meteors when the real registry dispatches the bonus activity", async () => {
+  // Catches the release handler mistaking the registered definition for the Foundry usage context.
+  const fixture = recipeFixture({ choices: [{ cancelled: false, count: 1 }] });
+  const registry = new SpellAutomationRegistry();
+  registry.register({ ...fixture.recipe, runtime: "instance" });
+
+  const dispatched = registry.dispatch("preUseActivity", {
+    runtime: "instance",
+    recipe: RECIPE,
+    version: 1
+  }, context(fixture, {
+    action: "release",
+    activity: fixture.release,
+    operationId: "registered-release"
+  }));
+  assert.equal(dispatched.value, false);
+  await flush();
+
+  assert.deepEqual(fixture.dialogs[0].counts, [1, 2]);
+  assert.equal(fixture.runs.filter((run) => run.activity === fixture.release).length, 1);
+  assert.equal(fixture.runs.filter((run) => run.activity === fixture.burst).length, 1);
 });
 
 test("claims a successful cast authoritatively before reading, creating, prompting, or releasing meteors", async () => {
