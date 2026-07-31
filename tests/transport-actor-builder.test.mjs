@@ -84,5 +84,6 @@ test("vehicle builder writes native and Rebreya fields", () => {
   assert.equal(actor.flags["rebreya-main"].transport.instance, false);
   assert.equal(actor.flags["rebreya-main"].transport.defaultGroupRole, "transport");
   assert.equal(actor.flags["rebreya-main"].transport.consumption.raw, "Жидкий уголь 1/16 галлона");
+  assert.equal(actor.flags["rebreya-main"].transport.raw.cargoCapacity, source.cargoCapacity);
   assert.equal(actor.prototypeToken.actorLink, true);
 });

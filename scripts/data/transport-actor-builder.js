@@ -365,6 +365,7 @@ export function buildTransportActorData(rawEntry) {
             crew: entry.source.crew,
             passengers: entry.source.passengers,
             strength: entry.source.strength,
+            cargoCapacity: entry.source.cargoCapacity,
             description: entry.source.description
           }
         }

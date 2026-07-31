@@ -5673,6 +5673,42 @@ summary:focus-visible {
   min-height: 420px;
 }
 
+.rm-rebreya-transport-specs {
+  display: grid;
+  gap: 6px;
+  margin: 10px 0;
+  padding: 10px;
+  border: 1px solid rgb(var(--rm-color-gold-rgb) / 0.28);
+  border-radius: var(--rm-radius-row);
+  background: rgb(var(--rm-color-dark-rgb) / 0.5);
+}
+
+.rm-rebreya-transport-specs h3 {
+  margin: 0 0 2px;
+  color: var(--rm-accent-strong);
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.rm-rebreya-transport-specs p {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  margin: 0;
+  padding-top: 5px;
+  border-top: 1px solid rgb(255 255 255 / 0.06);
+}
+
+.rm-rebreya-transport-specs span {
+  color: var(--rm-text-secondary);
+}
+
+.rm-rebreya-transport-specs strong {
+  color: var(--rm-text-primary);
+  text-align: right;
+}
+
 .rm-transport-overview {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
