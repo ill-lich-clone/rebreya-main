@@ -14,14 +14,33 @@
             loop
             playsinline
             preload="metadata"
-            poster="/modules/rebreya-main/assets/ui/rebreya-travel-window-poster.webp"
+            poster="{{travelLandscape.active.posterUrl}}"
             aria-hidden="true"
           >
             <source
-              src="/modules/rebreya-main/assets/ui/rebreya-travel-window.webm"
+              src="{{travelLandscape.active.videoUrl}}"
               type="video/webm"
             >
           </video>
+          <div
+            class="rm-inventory-book__travel-selector"
+            role="group"
+            aria-label="Р’С‹Р±РѕСЂ РїРµР№Р·Р°Р¶Р° РїСѓС‚РµС€РµСЃС‚РІРёСЏ"
+          >
+            {{#each travelLandscape.options}}
+              <button
+                type="button"
+                class="rm-inventory-book__travel-choice{{#if selected}} is-active{{/if}}"
+                data-action="select-travel-landscape"
+                data-landscape-id="{{id}}"
+                aria-label="РџРµР№Р·Р°Р¶ {{number}}: {{label}}"
+                aria-pressed="{{ariaPressed}}"
+                title="{{label}}"
+              >
+                {{number}}
+              </button>
+            {{/each}}
+          </div>
         {{/if}}
 
         <div class="rm-inventory-book__identity">

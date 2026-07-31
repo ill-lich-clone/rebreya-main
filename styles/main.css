@@ -4345,10 +4345,27 @@ summary:focus-visible {
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: fill;
+  object-fit: cover;
   object-position: center;
   -webkit-mask-image: none;
   mask-image: none;
+  pointer-events: none;
+}
+
+.rebreya-inventory-app .rm-inventory-book__header--travel::after {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  inset: 8px;
+  border: 2px solid rgb(var(--rm-color-gold-rgb) / 0.72);
+  border-radius: 10px;
+  background:
+    linear-gradient(90deg, var(--rm-color-surface) 0 16px, transparent 16px calc(100% - 16px), var(--rm-color-surface) calc(100% - 16px)),
+    linear-gradient(180deg, var(--rm-color-surface) 0 12px, transparent 12px calc(100% - 12px), var(--rm-color-surface) calc(100% - 12px));
+  box-shadow:
+    inset 0 0 0 2px rgb(var(--rm-color-ink-rgb) / 0.9),
+    inset 0 0 24px rgb(var(--rm-color-ink-rgb) / 0.66),
+    0 0 0 1px rgb(var(--rm-color-gold-rgb) / 0.2);
   pointer-events: none;
 }
 
@@ -4357,7 +4374,53 @@ summary:focus-visible {
 .rebreya-inventory-app .rm-inventory-book__controls,
 .rebreya-inventory-app .rm-inventory-book__actions {
   position: relative;
-  z-index: 1;
+  z-index: 2;
+}
+
+.rebreya-inventory-app .rm-inventory-book__travel-selector {
+  position: absolute;
+  z-index: 3;
+  right: 22px;
+  bottom: 20px;
+  display: flex;
+  gap: 7px;
+  padding: 6px;
+  border: 1px solid var(--rm-border-strong);
+  border-radius: 999px;
+  background: rgb(var(--rm-color-ink-rgb) / 0.82);
+  box-shadow: 0 5px 16px rgb(0 0 0 / 0.42);
+}
+
+.rebreya-inventory-app .rm-inventory-book__travel-choice {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--rm-border-strong);
+  border-radius: 50%;
+  background: var(--rm-surface-2);
+  color: var(--rm-text-secondary);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.rebreya-inventory-app .rm-inventory-book__travel-choice:hover,
+.rebreya-inventory-app .rm-inventory-book__travel-choice:focus-visible {
+  border-color: var(--rm-accent-strong);
+  color: var(--rm-text-primary);
+}
+
+.rebreya-inventory-app .rm-inventory-book__travel-choice:focus-visible {
+  outline: 2px solid var(--rm-accent-strong);
+  outline-offset: 2px;
+}
+
+.rebreya-inventory-app .rm-inventory-book__travel-choice.is-active {
+  border-color: var(--rm-accent-strong);
+  background: linear-gradient(180deg, var(--rm-accent-strong), var(--rm-accent));
+  color: var(--rm-color-ink);
+  box-shadow: 0 0 12px rgb(var(--rm-color-gold-rgb) / 0.42);
 }
 
 .rebreya-inventory-app .rm-inventory-book__identity {

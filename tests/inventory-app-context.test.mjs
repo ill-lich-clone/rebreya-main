@@ -801,21 +801,12 @@ test("InventoryApp replaces the workshop header with the complete travel video f
     new URL("../styles/main.css", import.meta.url),
     "utf8"
   );
-  const travelVideoAsset = await stat(new URL(
-    "../assets/ui/rebreya-travel-window.webm",
-    import.meta.url
-  ));
-  const travelPosterAsset = await stat(new URL(
-    "../assets/ui/rebreya-travel-window-poster.webp",
-    import.meta.url
-  ));
-
   const headerIndex = template.indexOf("<header");
   const headerTagEnd = template.indexOf(">", headerIndex);
   const headerOpeningTag = template.slice(headerIndex, headerTagEnd + 1);
   const identityIndex = template.indexOf('class="rm-inventory-book__identity"');
   const travelGuardIndex = template.indexOf("{{#if tabs.isTravel}}", headerTagEnd);
-  const travelGuardEnd = template.indexOf("{{/if}}", travelGuardIndex);
+  const travelGuardEnd = template.indexOf("\n        {{/if}}", travelGuardIndex);
   const travelVideoBlock = template.slice(travelGuardIndex, travelGuardEnd);
 
   assert.ok(headerIndex >= 0, "expected the shared inventory header");
@@ -827,9 +818,9 @@ test("InventoryApp replaces the workshop header with the complete travel video f
     travelGuardIndex > headerIndex && travelGuardIndex < identityIndex,
     "expected the travel-only video before shared header content"
   );
-  assert.ok(travelVideoAsset.size > 0);
-  assert.ok(travelPosterAsset.size > 0);
   assert.equal((template.match(/<video\b/gu) ?? []).length, 1);
+  assert.equal((travelVideoBlock.match(/<video\b/gu) ?? []).length, 1);
+  assert.equal((travelVideoBlock.match(/<source\b/gu) ?? []).length, 1);
   assert.match(travelVideoBlock, /class="rm-inventory-book__travel-video"/u);
   assert.match(travelVideoBlock, /\bautoplay\b/u);
   assert.match(travelVideoBlock, /\bmuted\b/u);
@@ -839,23 +830,38 @@ test("InventoryApp replaces the workshop header with the complete travel video f
   assert.match(travelVideoBlock, /aria-hidden="true"/u);
   assert.match(
     travelVideoBlock,
-    /poster="\/modules\/rebreya-main\/assets\/ui\/rebreya-travel-window-poster\.webp"/u
+    /poster="\{\{travelLandscape\.active\.posterUrl\}\}"/u
   );
   assert.match(
     travelVideoBlock,
-    /src="\/modules\/rebreya-main\/assets\/ui\/rebreya-travel-window\.webm"/u
+    /src="\{\{travelLandscape\.active\.videoUrl\}\}"/u
   );
   assert.match(travelVideoBlock, /type="video\/webm"/u);
   assert.doesNotMatch(travelVideoBlock, /\bcontrols\b/u);
+  assert.match(travelVideoBlock, /class="rm-inventory-book__travel-selector"/u);
+  assert.match(travelVideoBlock, /role="group"/u);
+  assert.match(travelVideoBlock, /aria-label="Р’С‹Р±РѕСЂ РїРµР№Р·Р°Р¶Р° РїСѓС‚РµС€РµСЃС‚РІРёСЏ"/u);
+  assert.match(travelVideoBlock, /\{\{#each travelLandscape\.options\}\}/u);
+  assert.match(travelVideoBlock, /data-action="select-travel-landscape"/u);
+  assert.match(travelVideoBlock, /data-landscape-id="\{\{id\}\}"/u);
+  assert.match(travelVideoBlock, /aria-pressed="\{\{ariaPressed\}\}"/u);
+  assert.match(travelVideoBlock, /\{\{number\}\}/u);
+  assert.doesNotMatch(template, /rebreya-travel-window\.webm/u);
+  assert.doesNotMatch(template, /rebreya-travel-window-poster\.webp/u);
 
   assert.match(
     css,
-    /\.rebreya-inventory-app \.rm-inventory-book__travel-video\s*\{[^}]*position:\s*absolute;[^}]*inset:\s*0;[^}]*width:\s*100%;[^}]*height:\s*100%;[^}]*object-fit:\s*fill;[^}]*object-position:\s*center;[^}]*-webkit-mask-image:\s*none;[^}]*mask-image:\s*none;[^}]*pointer-events:\s*none;/su
+    /\.rebreya-inventory-app \.rm-inventory-book__travel-video\s*\{[^}]*position:\s*absolute;[^}]*inset:\s*0;[^}]*width:\s*100%;[^}]*height:\s*100%;[^}]*object-fit:\s*cover;[^}]*object-position:\s*center;[^}]*-webkit-mask-image:\s*none;[^}]*mask-image:\s*none;[^}]*pointer-events:\s*none;/su
   );
+  assert.doesNotMatch(css, /object-fit:\s*fill;/u);
   assert.match(
     css,
     /\.rebreya-inventory-app \.rm-inventory-book__header--travel::before\s*\{[^}]*content:\s*none;[^}]*background-image:\s*none;/su
   );
+  assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__header--travel::after\s*\{/u);
+  assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__travel-selector\s*\{/u);
+  assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__travel-choice\s*\{[^}]*border-radius:\s*50%;/su);
+  assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__travel-choice\.is-active\s*\{/u);
   assert.match(
     css,
     /--rm-party-inventory-header-image:\s*url\("\.\.\/assets\/ui\/rebreya-party-inventory-workshop\.webp"\);/u
