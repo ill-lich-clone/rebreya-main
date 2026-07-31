@@ -12,6 +12,12 @@ import {
 const MODULE_ID = "rebreya-main";
 const FOUNDRY_ID = /^[A-Za-z0-9]{16}$/u;
 
+test("Melf's Minute Meteors uses the canonical Rebreya catalog title", () => {
+  const item = buildMelfsMinuteMeteorsItem();
+
+  assert.equal(item.name, "Мельфовы маленькие метеоры");
+});
+
 test("Melf's Minute Meteors creates native utility and Dexterity-save activities", () => {
   const item = buildMelfsMinuteMeteorsItem();
   const { cast, release, burst } = item.system.activities;

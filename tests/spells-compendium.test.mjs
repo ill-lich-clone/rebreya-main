@@ -177,6 +177,7 @@ test("managed Melf entries retain their logical id and receive a signature from 
   assert.equal(entry.data.flags["rebreya-main"].managed, true);
   assert.equal(entry.data.flags["rebreya-main"].spellId, "melfs-minute-meteors-rebreya");
   assert.equal(entry.data.flags["rebreya-main"].signature, entry.signature);
+  assert.equal(JSON.parse(entry.signature).name, "Мельфовы маленькие метеоры");
 });
 
 test("spell sync creates Melf once and reports it unchanged on an identical second sync", async () => {

@@ -99,7 +99,7 @@ export function buildMelfsMinuteMeteorsItem() {
 
   return {
     _id: MELFS_MINUTE_METEORS_DOCUMENT_ID,
-    name: "Метеоры Мельфа",
+    name: "Мельфовы маленькие метеоры",
     type: "spell",
     img: "icons/magic/fire/projectile-meteor-salvo-strong-teal.webp",
     ownership: { default: globalThis.CONST?.DOCUMENT_OWNERSHIP_LEVELS?.OBSERVER ?? 2 },

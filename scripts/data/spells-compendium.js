@@ -226,6 +226,7 @@ export function buildManagedSpellEntry(definition, source = null) {
   };
   const signature = stableSignature({
     builder: definition.builder ?? "source",
+    name: data.name,
     version: definition.version ?? null,
     system: data.system,
     flags: data.flags
