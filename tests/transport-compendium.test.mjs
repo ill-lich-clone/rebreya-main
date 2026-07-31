@@ -10,8 +10,10 @@ import {
 } from "../scripts/constants.js";
 import {
   TransportCompendiumService,
-  loadTransportCatalog
+  loadTransportCatalog,
+  repairTransportInstanceSpeeds
 } from "../scripts/data/transport-compendium.js";
+import { buildTransportActorData } from "../scripts/data/transport-actor-builder.js";
 
 const catalog = JSON.parse(await readFile(
   new URL("../data/rebreya-transport-v01.json", import.meta.url),
@@ -273,4 +275,103 @@ test("transport compendium rejects a managed stable-id collision with the wrong 
     /managed document identity collision/u
   );
   assert.deepEqual(harness.documents, [colliding]);
+});
+
+test("transport speed repair restores only malformed imported fields on concrete instances", async () => {
+  const source = catalog.find((row) => row.name === "Автомобиль «Кипятильник»");
+  const sourceData = buildTransportActorData(source);
+  const updates = [];
+  const actor = {
+    id: "kettle-instance",
+    type: "vehicle",
+    img: "world/custom-kettle.webp",
+    flags: {
+      [MODULE_ID]: {
+        sourceId: source.sourceId,
+        transport: {
+          sourceId: source.sourceId,
+          sourceActorUuid: `Compendium.${TRANSPORT_COMPENDIUM_ID}.Actor.${source.documentId}`,
+          groupActorId: "group-a",
+          instance: true,
+          combatSpeed: { primaryFt: null, secondaryFt: null, raw: "[object Object]" },
+          travelSpeed: { value: null, units: "mi", raw: "[object Object]" },
+          instanceState: { condition: "damaged", reserveCurrent: 7, reserveCapacity: 12, reserveUnit: "gal" }
+        }
+      }
+    },
+    system: {
+      attributes: {
+        hp: { value: 70, max: 100 },
+        movement: { walk: 0, units: "ft" },
+        travel: { speeds: {}, units: "mph" }
+      }
+    },
+    async update(patch) {
+      updates.push(structuredClone(patch));
+    }
+  };
+
+  const result = await repairTransportInstanceSpeeds(
+    [actor],
+    new Map([[source.sourceId, sourceData]])
+  );
+
+  assert.deepEqual(result, { inspected: 1, updated: 1 });
+  assert.deepEqual(updates, [{
+    "system.attributes.movement.walk": 100,
+    "system.attributes.travel.speeds.land": 10,
+    [`flags.${MODULE_ID}.transport.combatSpeed`]: {
+      primaryFt: 100,
+      secondaryFt: 200,
+      raw: "100/200 футов"
+    },
+    [`flags.${MODULE_ID}.transport.travelSpeed`]: {
+      value: 10,
+      units: "mi",
+      raw: "10 миль/час"
+    }
+  }]);
+  assert.equal(actor.img, "world/custom-kettle.webp");
+  assert.equal(actor.system.attributes.hp.value, 70);
+  assert.equal(actor.flags[MODULE_ID].transport.instanceState.reserveCurrent, 7);
+});
+
+test("transport speed repair preserves deliberate non-zero world overrides", async () => {
+  const source = catalog.find((row) => row.name === "Автомобиль «Кипятильник»");
+  const sourceData = buildTransportActorData(source);
+  let updates = 0;
+  const actor = {
+    id: "custom-kettle",
+    type: "vehicle",
+    flags: {
+      [MODULE_ID]: {
+        sourceId: source.sourceId,
+        transport: {
+          sourceId: source.sourceId,
+          sourceActorUuid: `Compendium.${TRANSPORT_COMPENDIUM_ID}.Actor.${source.documentId}`,
+          groupActorId: "group-a",
+          instance: true,
+          combatSpeed: { primaryFt: 120, secondaryFt: 240, raw: "120/240 футов" },
+          travelSpeed: { value: 12, units: "mi", raw: "12 миль/час" }
+        }
+      }
+    },
+    system: {
+      attributes: {
+        movement: { walk: 120, units: "ft" },
+        travel: { speeds: { land: 12 }, units: "mph" }
+      }
+    },
+    async update() {
+      updates += 1;
+    }
+  };
+
+  const result = await repairTransportInstanceSpeeds(
+    [actor],
+    new Map([[source.sourceId, sourceData]])
+  );
+
+  assert.deepEqual(result, { inspected: 1, updated: 0 });
+  assert.equal(updates, 0);
 });

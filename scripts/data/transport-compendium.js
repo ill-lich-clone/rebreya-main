@@ -13,6 +13,80 @@ import { syncFlaggedManagedDocuments } from "./managed-compendium-sync.js";
 
 const EXPECTED_CATALOG_SIZE = 62;
 
+function collectionValues(collection) {
+  if (Array.isArray(collection)) return collection;
+  if (Array.isArray(collection?.contents)) return collection.contents;
+  if (typeof collection?.values === "function") return Array.from(collection.values());
+  return [];
+}
+
+function positiveNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : null;
+}
+
+function firstPositiveEntry(record = {}, keys = []) {
+  for (const key of keys) {
+    const value = positiveNumber(record?.[key]);
+    if (value != null) return [key, value];
+  }
+  return null;
+}
+
+export async function repairTransportInstanceSpeeds(actors, actorDataBySourceId) {
+  const sources = actorDataBySourceId instanceof Map ? actorDataBySourceId : new Map();
+  let inspected = 0;
+  let updated = 0;
+  for (const actor of collectionValues(actors)) {
+    const moduleFlags = actor?.flags?.[MODULE_ID] ?? {};
+    const transport = moduleFlags.transport ?? {};
+    const sourceId = String(transport.sourceId ?? moduleFlags.sourceId ?? "").trim();
+    if (actor?.type !== "vehicle" || transport.instance !== true || !sourceId) continue;
+    const sourceData = sources.get(sourceId);
+    if (!sourceData) continue;
+    inspected += 1;
+
+    const patch = {};
+    const sourceMovement = firstPositiveEntry(
+      sourceData.system?.attributes?.movement,
+      ["walk", "swim", "fly", "climb", "burrow"]
+    );
+    if (sourceMovement) {
+      const [mode, value] = sourceMovement;
+      if (positiveNumber(actor.system?.attributes?.movement?.[mode]) == null) {
+        patch[`system.attributes.movement.${mode}`] = value;
+      }
+      if (positiveNumber(transport.combatSpeed?.primaryFt) == null) {
+        patch[`flags.${MODULE_ID}.transport.combatSpeed`] = structuredClone(
+          sourceData.flags?.[MODULE_ID]?.transport?.combatSpeed
+        );
+      }
+    }
+
+    const sourceTravel = firstPositiveEntry(
+      sourceData.system?.attributes?.travel?.speeds,
+      ["land", "water", "air"]
+    );
+    if (sourceTravel) {
+      const [mode, value] = sourceTravel;
+      if (positiveNumber(actor.system?.attributes?.travel?.speeds?.[mode]) == null) {
+        patch[`system.attributes.travel.speeds.${mode}`] = value;
+      }
+      if (positiveNumber(transport.travelSpeed?.value) == null) {
+        patch[`flags.${MODULE_ID}.transport.travelSpeed`] = structuredClone(
+          sourceData.flags?.[MODULE_ID]?.transport?.travelSpeed
+        );
+      }
+    }
+
+    if (Object.keys(patch).length > 0) {
+      await actor.update?.(patch);
+      updated += 1;
+    }
+  }
+  return { inspected, updated };
+}
+
 export async function loadTransportCatalog({
   fetcher = globalThis.fetch,
   path = `modules/${MODULE_ID}/data/rebreya-transport-v01.json`
@@ -94,6 +168,10 @@ export class TransportCompendiumService {
       documentIdOfEntry: (entry) => entry.documentId,
       buildData: (entry) => entry.actorData
     });
+    await repairTransportInstanceSpeeds(
+      game?.actors,
+      new Map(prepared.map(({ normalized: entry, actorData }) => [entry.sourceId, actorData]))
+    );
     return { skipped: false, pack, result };
   }
 
