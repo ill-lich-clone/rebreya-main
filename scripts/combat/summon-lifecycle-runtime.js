@@ -541,7 +541,7 @@ export class SummonLifecycleRuntime {
       }
       catch (error) {
         const rollbackTokens = this.#operationTokens(claim, context.tokens);
-        await this.#rollbackTokens(rollbackTokens);
+        await this.#rollbackTokens(rollbackTokens, claim, context);
         try {
           await provider?.callbacks.cleanup?.(this.#providerContext(claim, context, rollbackTokens, { error }));
         }
@@ -574,20 +574,31 @@ export class SummonLifecycleRuntime {
     if (actor?.uuid !== payload.actorUuid || scene?.uuid !== payload.sceneUuid) {
       throw new Error("Summon lifecycle mutation documents do not match the payload.");
     }
-    const requestId = [payload.sceneUuid, payload.actorUuid, payload.declaration.recipe, payload.declaration.version, payload.operationId, payload.action, ...payload.tokenIds].join("\u0000");
+    if (!this.#sourceTokenMatches(payload, scene)) {
+      throw new Error("Summon lifecycle source token does not match the source actor.");
+    }
+    const requestId = [payload.sceneUuid, payload.actorUuid, payload.declaration.recipe, payload.declaration.version, payload.operationId, payload.action, ...payload.tokenIds, JSON.stringify(payload.link)].join("\u0000");
     return this.#coordinator.runIdempotent(`summon-socket:${payload.sceneUuid}:${payload.declaration.recipe}:v${payload.declaration.version}`, requestId, async () => {
-      const tokens = payload.tokenIds.map((id) => scene.tokens?.get?.(id)).filter((token) => token && this.#matchesSocketLink(token, payload));
       if (payload.action === "ensure-link") {
-        for (const token of tokens) {
+        const mutated = [];
+        for (const id of payload.tokenIds) {
+          const token = scene.tokens?.get?.(id);
+          if (!token || !this.#matchesSocketLink(token, payload)) continue;
           if (typeof token.update !== "function") throw new TypeError("Summon token must support update.");
           await token.update({ [`flags.${MODULE_ID}.${SUMMON_LINK_FLAG}`]: payload.link });
+          mutated.push(documentId(token));
         }
+        return Object.freeze({ action: payload.action, tokenIds: Object.freeze(mutated) });
       }
-      else if (tokens.length) {
+      const ids = payload.tokenIds.filter((id) => {
+        const token = scene.tokens?.get?.(id);
+        return token && this.#matchesSocketLink(token, payload);
+      });
+      if (ids.length) {
         if (typeof scene.deleteEmbeddedDocuments !== "function") throw new TypeError("Summon scene must support token deletion.");
-        await scene.deleteEmbeddedDocuments("Token", tokens.map(documentId));
+        await scene.deleteEmbeddedDocuments("Token", ids);
       }
-      return Object.freeze({ action: payload.action, tokenIds: Object.freeze(tokens.map(documentId)) });
+      return Object.freeze({ action: payload.action, tokenIds: Object.freeze(ids) });
     });
   }
 
@@ -690,7 +701,7 @@ export class SummonLifecycleRuntime {
     }
   }
 
-  async #rollbackTokens(tokens) {
+  async #rollbackTokens(tokens, claim, context) {
     const byScene = new Map();
     for (const token of tokens) {
       const scene = tokenScene(token);
@@ -702,7 +713,7 @@ export class SummonLifecycleRuntime {
     }
     for (const [scene, ids] of byScene) {
       if (!ids.length) continue;
-      const link = readSummonLink(scene.tokens?.get?.(ids[0]));
+      const link = this.#commonLink(claim, context);
       if (this.#canUpdateScene(scene)) {
         if (typeof scene.deleteEmbeddedDocuments === "function") await scene.deleteEmbeddedDocuments("Token", ids);
       }
@@ -716,9 +727,15 @@ export class SummonLifecycleRuntime {
   }
 
   #matchesSocketLink(token, payload) {
-    const link = readSummonLink(token);
-    return Boolean(link && link.recipe === payload.declaration.recipe && link.version === payload.declaration.version
+    const link = rawSummonLink(token);
+    return Boolean(link && link.runtime === "summon" && link.recipe === payload.declaration.recipe && link.version === payload.declaration.version
       && link.operationId === payload.operationId && link.sourceActorUuid === payload.actorUuid);
+  }
+
+  #sourceTokenMatches(payload, scene) {
+    const prefix = `${payload.sceneUuid}.Token.`;
+    const id = payload.link.sourceTokenUuid.startsWith(prefix) ? payload.link.sourceTokenUuid.slice(prefix.length) : null;
+    return scene.tokens?.get?.(id)?.actor?.uuid === payload.actorUuid;
   }
 
   #requestSocketMutation(payload) {

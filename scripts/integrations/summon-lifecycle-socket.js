@@ -27,13 +27,23 @@ function sceneUuid(value) {
   const parts = uuidParts(value);
   return Boolean(parts && parts.length === 2 && parts[0] === "Scene" && parts.every(isSafeString));
 }
+function isExactChildUuid(value, parentUuid, documentType) {
+  const child = uuidParts(value);
+  const parent = uuidParts(parentUuid);
+  return Boolean(child && parent && child.length === parent.length + 2
+    && child.slice(0, parent.length).every((part, index) => part === parent[index])
+    && child.at(-2) === documentType && isSafeString(child.at(-1)));
+}
 function validDeclaration(value) { return exactKeys(value, ["recipe", "version"]) && isSafeString(value.recipe) && Number.isInteger(value.version) && value.version > 0; }
 function validLink(value, payload) {
   const fields = ["runtime", "recipe", "version", "operationId", "sourceActorUuid", "sourceTokenUuid", "sourceItemUuid", "sourceActivityUuid", "controllingEffectUuid"];
-  return exactKeys(value, fields) && value.runtime === "summon" && isSafeString(value.recipe) && Number.isInteger(value.version) && value.version > 0
+  if (!(exactKeys(value, fields) && value.runtime === "summon" && isSafeString(value.recipe) && Number.isInteger(value.version) && value.version > 0
     && isSafeString(value.operationId) && actorUuid(value.sourceActorUuid) && isSafeString(value.sourceTokenUuid) && isSafeString(value.sourceItemUuid)
     && isSafeString(value.sourceActivityUuid) && (value.controllingEffectUuid === null || isSafeString(value.controllingEffectUuid))
-    && value.recipe === payload.declaration.recipe && value.version === payload.declaration.version && value.operationId === payload.operationId && value.sourceActorUuid === payload.actorUuid;
+    && value.recipe === payload.declaration.recipe && value.version === payload.declaration.version && value.operationId === payload.operationId && value.sourceActorUuid === payload.actorUuid)) return false;
+  return isExactChildUuid(value.sourceItemUuid, value.sourceActorUuid, "Item")
+    && isExactChildUuid(value.sourceActivityUuid, value.sourceItemUuid, "Activity")
+    && isExactChildUuid(value.sourceTokenUuid, payload.sceneUuid, "Token");
 }
 function senderOwnsActor(actor, sender) {
   if (sender?.isGM === true) return true;
@@ -47,6 +57,11 @@ async function resolve(uuid, options) {
   if (typeof resolver !== "function") return null;
   const document = await resolver(uuid);
   return document?.uuid === uuid ? document : null;
+}
+
+function sourceTokenId(sceneUuidValue, tokenUuid) {
+  const prefix = `${sceneUuidValue}.Token.`;
+  return tokenUuid.startsWith(prefix) ? tokenUuid.slice(prefix.length) : null;
 }
 
 export function isValidSummonLifecycleMutationPayload(payload) {
@@ -69,6 +84,8 @@ export function registerSummonLifecycleSocketCommand(moduleApi, options = {}) {
       if (!senderOwnsActor(actor, sender)) throw new Error("Summon lifecycle mutation is not authorized.");
       const scene = await resolve(payload.sceneUuid, options);
       if (!scene) throw new Error("Summon lifecycle scene is unavailable.");
+      const sourceToken = scene.tokens?.get?.(sourceTokenId(payload.sceneUuid, payload.link.sourceTokenUuid));
+      if (sourceToken?.actor?.uuid !== payload.actorUuid) throw new Error("Summon lifecycle source token does not match the source actor.");
       return runtime.handleSocketMutation(payload, { actor, scene });
     }
   });
