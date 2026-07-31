@@ -4,12 +4,14 @@ import { readFile } from "node:fs/promises";
 
 import { SpellAutomationRegistry } from "../scripts/combat/spell-automation-registry.js";
 import { SpellInstanceRuntime } from "../scripts/combat/spell-instance-runtime.js";
+import { SummonLifecycleRuntime } from "../scripts/combat/summon-lifecycle-runtime.js";
 import { TransportCompendiumService } from "../scripts/data/transport-compendium.js";
 import {
   COMMAND_REQUEST_TYPE,
   COMMAND_RESULT_TYPE
 } from "../scripts/infrastructure/foundry/socket-command-bus.js";
 import { SPELL_INSTANCE_MUTATION_COMMAND } from "../scripts/integrations/spell-instance-socket.js";
+import { SUMMON_LIFECYCLE_MUTATION_COMMAND } from "../scripts/integrations/summon-lifecycle-socket.js";
 
 function createHooks() {
   const onceCallbacks = new Map();
@@ -105,7 +107,9 @@ test("ready composes spell automation on one registry alongside legacy hook regi
     const moduleApi = module.api;
     assert.ok(moduleApi.spellAutomationRegistry instanceof SpellAutomationRegistry);
     assert.ok(moduleApi.spellInstanceRuntime instanceof SpellInstanceRuntime);
+    assert.ok(moduleApi.summonLifecycleRuntime instanceof SummonLifecycleRuntime);
     assert.equal(moduleApi.spellInstanceRuntime.activeOperationCount, 0);
+    assert.equal(moduleApi.summonLifecycleRuntime.pendingClaimCount, 0);
     assert.equal(moduleApi.spellAutomationHookBridge.registry, moduleApi.spellAutomationRegistry);
     assert.ok(moduleApi.spellInterceptionRuntime);
     assert.ok(moduleApi.spellAreaRuntime);
@@ -120,7 +124,18 @@ test("ready composes spell automation on one registry alongside legacy hook regi
     assert.ok(Object.isFrozen(diagnostics.recipes));
     assert.deepEqual(diagnostics.recipes, ["instance:melfs-minute-meteors:v1"]);
     assert.equal(diagnostics.activeOperations, 0);
+    assert.equal(diagnostics.pendingSummonClaims, 0);
     assert.throws(() => diagnostics.recipes.push("instance:leak:v1"), TypeError);
+
+    const summonProvider = moduleApi.registerSummonProvider({
+      runtime: "summon",
+      recipe: "composition-summon",
+      version: 1
+    });
+    assert.equal(
+      moduleApi.spellAutomationRegistry.resolve({ runtime: "summon", recipe: "composition-summon", version: 1 }),
+      summonProvider
+    );
 
     assert.equal(moduleApi.socketCommandBus.handleMessage({
       type: COMMAND_REQUEST_TYPE,
@@ -150,6 +165,20 @@ test("ready composes spell automation on one registry alongside legacy hook regi
     assert.equal(actorLookups, 0);
     assert.equal(timerCalls, 0);
     assert.ok(emittedSocketMessages.every(({ message }) => message?.type === COMMAND_RESULT_TYPE));
+
+    assert.equal(moduleApi.socketCommandBus.handleMessage({
+      type: COMMAND_REQUEST_TYPE,
+      command: SUMMON_LIFECYCLE_MUTATION_COMMAND,
+      requestId: "invalid-summon-lifecycle-mutation",
+      senderId: activeGm.id,
+      payload: {}
+    }, { transportSenderId: activeGm.id }), true);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(emittedSocketMessages.find(({ message }) => (
+      message?.type === COMMAND_RESULT_TYPE
+      && message.command === SUMMON_LIFECYCLE_MUTATION_COMMAND
+      && message.requestId === "invalid-summon-lifecycle-mutation"
+    ))?.message.error?.code, "invalid-payload");
 
     const handlers = { preUseActivity: () => false, postSummon: () => true };
     moduleApi.spellInterceptionRuntime.registerRecipe({ recipe: "counterspell", version: 1, handlers });

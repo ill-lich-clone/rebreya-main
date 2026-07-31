@@ -89,6 +89,7 @@ import { CurseEaterAutomationService } from "./combat/curse-eater-automation-ser
 import { SpellAutomationService } from "./combat/spell-automation-service.js?v=1.4.109-counterspell-sanitize";
 import { SpellAutomationRegistry } from "./combat/spell-automation-registry.js";
 import { SpellInstanceRuntime } from "./combat/spell-instance-runtime.js";
+import { SummonLifecycleRuntime } from "./combat/summon-lifecycle-runtime.js";
 import { buildMelfsMinuteMeteorsRecipe } from "./combat/melfs-minute-meteors-recipe.js";
 import { SpellInterceptionRuntime } from "./combat/spell-interception-runtime.js";
 import { SpellAreaRuntime } from "./combat/spell-area-runtime.js";
@@ -154,6 +155,7 @@ import {
 import { registerImplantAutomationHooks } from "./integrations/implant-automation-hooks.js";
 import { registerCraftsmanGadgetSocketCommand } from "./integrations/craftsman-gadget-socket.js";
 import { registerSpellInstanceSocketCommand } from "./integrations/spell-instance-socket.js";
+import { registerSummonLifecycleSocketCommand } from "./integrations/summon-lifecycle-socket.js";
 import { registerTransportGroupDropHooks } from "./integrations/transport-group-drop.js";
 import { registerTransportVehicleSheetHooks } from "./integrations/transport-vehicle-sheet.js";
 import { getCraftsmanSubclasses } from "./integrations/craftsman-subclass-tracks.js";
@@ -1108,6 +1110,12 @@ export class RebreyaMainModule {
       coordinator: this.worldMutationCoordinator,
       socketCommandBus: this.socketCommandBus
     });
+    this.summonLifecycleRuntime = new SummonLifecycleRuntime({
+      registry: this.spellAutomationRegistry,
+      coordinator: this.worldMutationCoordinator,
+      socketCommandBus: this.socketCommandBus,
+      operationIdFactory: () => createSocketRequestId("summon")
+    });
     this.melfsMinuteMeteorsRecipe = buildMelfsMinuteMeteorsRecipe({
       instanceRuntime: this.spellInstanceRuntime
     });
@@ -1195,13 +1203,19 @@ export class RebreyaMainModule {
   getSpellAutomationDiagnostics() {
     return Object.freeze({
       recipes: this.spellAutomationRegistry.listKeys(),
-      activeOperations: this.spellInstanceRuntime.activeOperationCount
+      activeOperations: this.spellInstanceRuntime.activeOperationCount,
+      pendingSummonClaims: this.summonLifecycleRuntime.pendingClaimCount
     });
+  }
+
+  registerSummonProvider(provider) {
+    return this.summonLifecycleRuntime.registerProvider(provider);
   }
 
   #registerTypedSocketCommands() {
     registerCraftsmanGadgetSocketCommand(this);
     registerSpellInstanceSocketCommand(this);
+    registerSummonLifecycleSocketCommand(this);
     registerTransportInstanceCommands(this.socketCommandBus, this.transportInstanceService);
     const authorizeGroup = (payload, { sender }) => this.#canSenderManageGroup(sender, payload.groupActorId);
     this.socketCommandBus.register(GROUP_CALENDAR_PATCH_COMMAND, {
