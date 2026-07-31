@@ -3,6 +3,7 @@ import test from "node:test";
 import { readFile } from "node:fs/promises";
 
 import { SpellAutomationRegistry } from "../scripts/combat/spell-automation-registry.js";
+import { SpellInstanceRuntime } from "../scripts/combat/spell-instance-runtime.js";
 import { TransportCompendiumService } from "../scripts/data/transport-compendium.js";
 
 function createHooks() {
@@ -81,11 +82,23 @@ test("ready composes spell automation on one registry alongside legacy hook regi
 
     const moduleApi = module.api;
     assert.ok(moduleApi.spellAutomationRegistry instanceof SpellAutomationRegistry);
+    assert.ok(moduleApi.spellInstanceRuntime instanceof SpellInstanceRuntime);
+    assert.equal(moduleApi.spellInstanceRuntime.activeOperationCount, 0);
     assert.equal(moduleApi.spellAutomationHookBridge.registry, moduleApi.spellAutomationRegistry);
     assert.ok(moduleApi.spellInterceptionRuntime);
     assert.ok(moduleApi.spellAreaRuntime);
     assert.equal(typeof moduleApi.spellAutomationService?.initialize, "function");
     assert.ok(moduleApi.transportCompendium instanceof TransportCompendiumService);
+    assert.equal(
+      moduleApi.spellAutomationRegistry.resolve({ runtime: "instance", recipe: "melfs-minute-meteors", version: 1 }),
+      moduleApi.melfsMinuteMeteorsRecipe
+    );
+    const diagnostics = moduleApi.getSpellAutomationDiagnostics();
+    assert.ok(Object.isFrozen(diagnostics));
+    assert.ok(Object.isFrozen(diagnostics.recipes));
+    assert.deepEqual(diagnostics.recipes, ["instance:melfs-minute-meteors:v1"]);
+    assert.equal(diagnostics.activeOperations, 0);
+    assert.throws(() => diagnostics.recipes.push("instance:leak:v1"), TypeError);
 
     const handlers = { preUseActivity: () => false, postSummon: () => true };
     moduleApi.spellInterceptionRuntime.registerRecipe({ recipe: "counterspell", version: 1, handlers });
@@ -125,4 +138,5 @@ test("composition root synchronizes the managed transport Actor compendium", asy
   assert.match(source, /await this\.transportCompendium\.sync\(\);/u);
   assert.match(source, /registerTransportGroupDropHooks\(moduleApi,\s*\{\s*Hooks\s*\}\);/u);
   assert.match(source, /registerTransportVehicleSheetHooks\(moduleApi,\s*\{\s*Hooks\s*\}\);/u);
+  assert.match(source, /registerSpellInstanceSocketCommand\(this\);/u);
 });

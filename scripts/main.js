@@ -88,6 +88,8 @@ import { RuneKnightAutomationService } from "./combat/rune-knight-automation-ser
 import { CurseEaterAutomationService } from "./combat/curse-eater-automation-service.js";
 import { SpellAutomationService } from "./combat/spell-automation-service.js?v=1.4.109-counterspell-sanitize";
 import { SpellAutomationRegistry } from "./combat/spell-automation-registry.js";
+import { SpellInstanceRuntime } from "./combat/spell-instance-runtime.js";
+import { buildMelfsMinuteMeteorsRecipe } from "./combat/melfs-minute-meteors-recipe.js";
 import { SpellInterceptionRuntime } from "./combat/spell-interception-runtime.js";
 import { SpellAreaRuntime } from "./combat/spell-area-runtime.js";
 import { SpellAutomationHookBridge } from "./combat/spell-automation-hook-bridge.js";
@@ -151,6 +153,7 @@ import {
 } from "./integrations/implant-hooks.js";
 import { registerImplantAutomationHooks } from "./integrations/implant-automation-hooks.js";
 import { registerCraftsmanGadgetSocketCommand } from "./integrations/craftsman-gadget-socket.js";
+import { registerSpellInstanceSocketCommand } from "./integrations/spell-instance-socket.js";
 import { registerTransportGroupDropHooks } from "./integrations/transport-group-drop.js";
 import { registerTransportVehicleSheetHooks } from "./integrations/transport-vehicle-sheet.js";
 import { getCraftsmanSubclasses } from "./integrations/craftsman-subclass-tracks.js";
@@ -1100,6 +1103,15 @@ export class RebreyaMainModule {
     this.combatAttackService = new CombatAttackService(this);
     this.sizeAutomationService = new SizeAutomationService(this);
     this.spellAutomationRegistry = new SpellAutomationRegistry();
+    this.spellInstanceRuntime = new SpellInstanceRuntime({
+      registry: this.spellAutomationRegistry,
+      coordinator: this.worldMutationCoordinator,
+      socketCommandBus: this.socketCommandBus
+    });
+    this.melfsMinuteMeteorsRecipe = buildMelfsMinuteMeteorsRecipe({
+      instanceRuntime: this.spellInstanceRuntime
+    });
+    this.melfsMinuteMeteorsRecipe = this.spellInstanceRuntime.registerRecipe(this.melfsMinuteMeteorsRecipe);
     this.spellInterceptionRuntime = new SpellInterceptionRuntime({
       registry: this.spellAutomationRegistry
     });
@@ -1180,8 +1192,16 @@ export class RebreyaMainModule {
     });
   }
 
+  getSpellAutomationDiagnostics() {
+    return Object.freeze({
+      recipes: this.spellAutomationRegistry.listKeys(),
+      activeOperations: this.spellInstanceRuntime.activeOperationCount
+    });
+  }
+
   #registerTypedSocketCommands() {
     registerCraftsmanGadgetSocketCommand(this);
+    registerSpellInstanceSocketCommand(this);
     registerTransportInstanceCommands(this.socketCommandBus, this.transportInstanceService);
     const authorizeGroup = (payload, { sender }) => this.#canSenderManageGroup(sender, payload.groupActorId);
     this.socketCommandBus.register(GROUP_CALENDAR_PATCH_COMMAND, {

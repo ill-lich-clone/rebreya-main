@@ -280,6 +280,7 @@ export function findSpellInstance(actor, query = {}) {
 }
 
 export class SpellInstanceRuntime {
+  #activeOperationCount = 0;
   #canUpdateActor;
   #coordinator;
   #linkDependency;
@@ -325,6 +326,10 @@ export class SpellInstanceRuntime {
     return this.#registry.register({ ...recipe, runtime: "instance" });
   }
 
+  get activeOperationCount() {
+    return this.#activeOperationCount;
+  }
+
   readInstance({ actor, recipe, version, instanceId } = {}) {
     return recordFor(findSpellInstance(actor, { recipe, version, instanceId }));
   }
@@ -351,7 +356,7 @@ export class SpellInstanceRuntime {
     const actorUuid = documentUuid(actor, "Spell operation actor");
     const entry = journalEntry(declaration, operationId);
     const key = `spell-operation-journal:${actorUuid}`;
-    return this.#coordinator.run(key, async () => {
+    return this.#trackOperation(() => this.#coordinator.run(key, async () => {
       const journal = operationJournal(actor);
       const existing = journal.entries.find((candidate) => sameJournalEntry(candidate, entry));
       if (existing) return { entry: cloneSerializable(existing), status: "completed" };
@@ -364,7 +369,7 @@ export class SpellInstanceRuntime {
       };
       await actor.update({ [`flags.${MODULE_ID}.${SPELL_OPERATION_JOURNAL_FLAG}`]: next });
       return { entry: cloneSerializable(entry), status: "claimed" };
-    });
+    }));
   }
 
   createInstance(context, initialState) {
@@ -395,7 +400,7 @@ export class SpellInstanceRuntime {
     const instance = effectData.flags[MODULE_ID][SPELL_INSTANCE_FLAG];
     const key = `spell-instance:${actorUuid}:${instance.instanceId}`;
 
-    return this.#coordinator.runIdempotent(key, coordinatorRequestId(key, instance.createdOperationId), async () => {
+    return this.#trackOperation(() => this.#coordinator.runIdempotent(key, coordinatorRequestId(key, instance.createdOperationId), async () => {
       const existing = findSpellInstance(actor, {
         recipe: instance.recipe,
         version: instance.version,
@@ -425,7 +430,7 @@ export class SpellInstanceRuntime {
         throw error;
       }
       return recordFor(effect) ?? { effect, ...instance };
-    });
+    }));
   }
 
   runInstanceOperation({ actor, instanceId, operationId } = {}, operation) {
@@ -437,14 +442,14 @@ export class SpellInstanceRuntime {
     }
     const key = `spell-instance:${actorUuid}:${normalizedInstanceId}`;
 
-    return this.#coordinator.runIdempotent(key, coordinatorRequestId(key, normalizedOperationId), async () => {
+    return this.#trackOperation(() => this.#coordinator.runIdempotent(key, coordinatorRequestId(key, normalizedOperationId), async () => {
       const effect = findSpellInstance(actor, { instanceId: normalizedInstanceId });
       const record = recordFor(effect);
       if (!record) {
         throw new Error(`Spell instance not found: ${normalizedInstanceId}`);
       }
       return operation(record);
-    });
+    }));
   }
 
   updateInstance({ actor, instanceId, expectedRevision, operationId, state, authoritative = false } = {}) {
@@ -575,5 +580,18 @@ export class SpellInstanceRuntime {
       return Promise.reject(new Error("Spell instance mutation requires an active-GM socket command bus."));
     }
     return this.#socketCommandBus.request(SPELL_INSTANCE_MUTATION_COMMAND, payload);
+  }
+
+  #trackOperation(operation) {
+    this.#activeOperationCount += 1;
+    try {
+      return Promise.resolve(operation()).finally(() => {
+        this.#activeOperationCount -= 1;
+      });
+    }
+    catch (error) {
+      this.#activeOperationCount -= 1;
+      return Promise.reject(error);
+    }
   }
 }

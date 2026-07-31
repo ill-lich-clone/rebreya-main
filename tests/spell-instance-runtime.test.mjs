@@ -261,6 +261,29 @@ test("serializes concurrent operations for one instance", async () => {
   assert.deepEqual(events, ["first:start", "first:end", "second:start"]);
 });
 
+test("reports active local instance mutations until they settle or reject", async () => {
+  const actor = createActor();
+  const runtime = createRuntime();
+  const { context } = await createInstance(runtime, actor);
+  let releaseOperation;
+  const gate = new Promise((resolve) => { releaseOperation = resolve; });
+
+  const pending = runtime.runInstanceOperation({
+    actor, instanceId: context.instanceId, operationId: "counted-volley"
+  }, async () => gate);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(runtime.activeOperationCount, 1);
+
+  releaseOperation("done");
+  assert.equal(await pending, "done");
+  assert.equal(runtime.activeOperationCount, 0);
+
+  await assert.rejects(runtime.runInstanceOperation({
+    actor, instanceId: context.instanceId, operationId: "rejected-volley"
+  }, async () => { throw new Error("expected failure"); }), /expected failure/u);
+  assert.equal(runtime.activeOperationCount, 0);
+});
+
 test("rejects a stale expected revision without losing state", async () => {
   // Catches an outdated volley overwriting a more recent resource decrement.
   const actor = createActor();

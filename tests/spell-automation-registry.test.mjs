@@ -53,6 +53,19 @@ test("returns null for an unknown version", () => {
   assert.equal(registry.resolve(declaration({ version: 99 })), null);
 });
 
+test("lists immutable registered keys in insertion order without exposing declarations", () => {
+  const registry = new SpellAutomationRegistry();
+  registry.register({ ...declaration({ recipe: "first" }), handlers: {} });
+  registry.register({ ...declaration({ recipe: "second", version: 2 }), handlers: {} });
+
+  const keys = registry.listKeys();
+
+  assert.deepEqual(keys, ["instance:first:v1", "instance:second:v2"]);
+  assert.ok(Object.isFrozen(keys));
+  assert.throws(() => keys.push("instance:leak:v1"), TypeError);
+  assert.equal(registry.resolve(declaration({ recipe: "first" }))?.recipe, "first");
+});
+
 test("does not dispatch an inherited handler name", () => {
   const registry = new SpellAutomationRegistry();
   registry.register({ ...declaration(), handlers: {} });

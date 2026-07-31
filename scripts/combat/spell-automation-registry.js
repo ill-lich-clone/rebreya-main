@@ -45,6 +45,10 @@ export class SpellAutomationRegistry {
     return this.#definitions.get(spellAutomationKey(declaration)) ?? null;
   }
 
+  listKeys() {
+    return Object.freeze(Array.from(this.#definitions.keys()));
+  }
+
   dispatch(eventName, declaration, context) {
     const definition = this.resolve(declaration);
     if (!definition || !Object.hasOwn(definition.handlers, eventName)) {
