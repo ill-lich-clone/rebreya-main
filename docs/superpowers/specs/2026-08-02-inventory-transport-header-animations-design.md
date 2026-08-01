@@ -26,17 +26,17 @@ The current Travel-only parallax markup remains conditional on `tabs.isTravel`. 
 
 Inventory continues to use `assets/ui/rebreya-party-inventory-workshop.webp`.
 
-Its `::before` artwork runs a clearly visible but smooth Ken Burns-style camera drift:
+Its `::before` artwork runs a clearly visible but smooth Ken Burns-style camera flight:
 
-- duration: 22 seconds;
-- direction: `alternate`;
+- duration: 37 seconds;
+- direction: a closed, forward-only loop with seven unevenly spaced camera stops;
 - easing: `ease-in-out`;
 - movement: horizontal and vertical `translate3d` changes expressed only as percentages, with up to a 5% travel range;
-- zoom: `scale(1.04)` to `scale(1.12)`;
+- zoom: `scale(1.04)` to `scale(1.13)` with zoom-ins, pull-backs, and lateral flights interleaved;
 - transform origin: biased toward the lit workbench and window;
-- no visible reset between cycles.
+- the `0%` and `100%` transforms are identical so the loop has no visible reset.
 
-A separate `::after` overlay combines a warm radial glow with a narrow diagonal brass highlight. It crosses the header slowly through percentage-based transforms and opacity, making the motion immediately legible without obscuring the artwork or competing with the controls. Inventory uses no steam or smoke effect.
+A separate `::after` overlay combines a warm radial glow with a narrow diagonal brass highlight. It follows its own five-stop 17-second closed loop, making the motion immediately legible without obscuring the artwork or competing with the controls. Because 37 and 17 seconds are coprime, the combined Inventory composition does not repeat for 629 seconds. Inventory uses no steam or smoke effect.
 
 ## Transport Artwork
 
@@ -50,15 +50,15 @@ The visual style is cinematic, slightly stylized concept art consistent with the
 
 Transport uses the same lazy camera principle as Inventory, tuned to travel visibly along the locomotive:
 
-- duration: 24 seconds;
-- direction: `alternate`;
+- duration: 41 seconds;
+- direction: a closed, forward-only loop with seven unevenly spaced camera stops distinct from Inventory;
 - easing: `ease-in-out`;
 - movement: lateral and slight vertical `translate3d` drift expressed only as percentages, with up to a 5% travel range;
-- zoom: `scale(1.03)` to `scale(1.11)`;
+- zoom: `scale(1.03)` to `scale(1.12)` with alternating approaches, pull-backs, and lateral flights;
 - transform origin: centered on the locomotive boiler and cab;
-- no visible reset between cycles.
+- the `0%` and `100%` transforms are identical so the loop has no visible reset.
 
-Its `::after` overlay combines soft CSS radial gradients for drifting steam with a narrow warm highlight across the boiler. Only percentage-based `transform` and `opacity` animate, producing visible steam and reflected lamp light without animating blur, filters, background position, or pixel offsets.
+Its `::after` overlay combines soft CSS radial gradients for drifting steam with a narrow warm highlight across the boiler. The overlay follows a separate five-stop 19-second closed loop. Because 41 and 19 seconds are coprime, the combined Transport composition does not repeat for 779 seconds. Only percentage-based `transform` and `opacity` animate, producing visible steam and reflected lamp light without animating blur, filters, background position, or pixel offsets.
 
 ## Performance and Accessibility
 
@@ -75,7 +75,10 @@ Automated tests must verify:
 - the correct header modifier is emitted for Inventory, Travel, and Transport;
 - Inventory references the existing workshop asset;
 - Transport references the new train asset;
-- the expected 22-second and 24-second camera animations use `alternate` and `ease-in-out`;
+- the expected 37-second and 41-second camera animations run forward-only closed loops with at least seven camera stops;
+- the 17-second Inventory overlay and 19-second Transport overlay run independent closed loops with at least five stops;
+- each loop has identical `0%` and `100%` transforms and opacity, avoiding a visible reset;
+- Inventory and Transport use distinct camera trajectories;
 - all animation keyframe translations use percentages rather than pixel offsets;
 - Inventory and Transport include distinct glare/steam overlay animations;
 - the reduced-motion rule disables both artwork and overlay animations;
@@ -87,5 +90,6 @@ Rendered QA must verify:
 - both headers fill the 300 px crop without empty edges during their full transform range;
 - text, wallet, summary, and action controls stay readable and clickable;
 - the motion is clearly visible within two seconds while remaining smooth and avoiding a sudden camera move;
+- zoom-ins, pull-backs, and lateral camera flights are visible over a full cycle, and no immediate A-to-B-to-A reversal remains;
 - Transport reads immediately as a classic steam train;
 - no clipping, z-index regression, missing asset, console error, or visible loop seam appears.
