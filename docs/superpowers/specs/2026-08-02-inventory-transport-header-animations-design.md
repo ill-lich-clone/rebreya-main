@@ -31,12 +31,12 @@ Its `::before` artwork runs a clearly visible but smooth Ken Burns-style camera 
 - duration: 22 seconds;
 - direction: `alternate`;
 - easing: `ease-in-out`;
-- movement: horizontal and vertical `translate3d` changes expressed only as percentages, with a 3-4% travel range;
+- movement: horizontal and vertical `translate3d` changes expressed only as percentages, with up to a 5% travel range;
 - zoom: `scale(1.04)` to `scale(1.12)`;
 - transform origin: biased toward the lit workbench and window;
 - no visible reset between cycles.
 
-A separate `::after` overlay combines a warm radial glow with a narrow diagonal brass highlight. It crosses the header slowly through percentage-based transforms and opacity, making the motion immediately legible without obscuring the artwork or competing with the controls.
+A separate `::after` overlay combines a warm radial glow with a narrow diagonal brass highlight. It crosses the header slowly through percentage-based transforms and opacity, making the motion immediately legible without obscuring the artwork or competing with the controls. Inventory uses no steam or smoke effect.
 
 ## Transport Artwork
 
@@ -53,7 +53,7 @@ Transport uses the same lazy camera principle as Inventory, tuned to travel visi
 - duration: 24 seconds;
 - direction: `alternate`;
 - easing: `ease-in-out`;
-- movement: lateral and slight vertical `translate3d` drift expressed only as percentages, with a 3-4% travel range;
+- movement: lateral and slight vertical `translate3d` drift expressed only as percentages, with up to a 5% travel range;
 - zoom: `scale(1.03)` to `scale(1.11)`;
 - transform origin: centered on the locomotive boiler and cab;
 - no visible reset between cycles.
