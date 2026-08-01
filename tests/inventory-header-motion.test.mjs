@@ -41,3 +41,38 @@ test("Transport header ships one production 1920x700 WebP", async () => {
   assert.ok(metadata.size > 100_000, "transport header must contain production artwork");
   assert.deepEqual(readWebpDimensions(bytes), { width: 1920, height: 700 });
 });
+
+test("Inventory and Transport headers use slow compositor-friendly CSS motion", async () => {
+  const css = await readFile(new URL("../styles/main.css", import.meta.url), "utf8");
+
+  assert.match(
+    css,
+    /--rm-transport-header-image:\s*url\("\.\.\/assets\/ui\/rebreya-transport-steam-depot\.webp"\);/u
+  );
+  assert.match(
+    css,
+    /\.rm-inventory-book__header--inventory::before\s*\{[^}]*animation:\s*rm-inventory-header-camera 42s ease-in-out infinite alternate;/su
+  );
+  assert.match(
+    css,
+    /\.rm-inventory-book__header--transport::before\s*\{[^}]*background-image:\s*var\(--rm-transport-header-image\);[^}]*animation:\s*rm-transport-header-camera 48s ease-in-out infinite alternate;/su
+  );
+  assert.match(css, /@keyframes rm-inventory-header-light/u);
+  assert.match(css, /@keyframes rm-transport-header-steam/u);
+
+  for (const animationName of [
+    "rm-inventory-header-camera",
+    "rm-transport-header-camera",
+    "rm-inventory-header-light",
+    "rm-transport-header-steam"
+  ]) {
+    const keyframes = css.match(new RegExp(`@keyframes ${animationName}\\s*\\{([\\s\\S]*?)\\n\\}`, "u"));
+    assert.ok(keyframes, `expected ${animationName} keyframes`);
+    assert.doesNotMatch(keyframes[1], /filter:|background-position:|(?:width|height|inset|top|right|bottom|left):/u);
+  }
+
+  assert.match(
+    css,
+    /@media \(prefers-reduced-motion:\s*reduce\)\s*\{[\s\S]*?\.rm-inventory-book__header--inventory::before,[\s\S]*?\.rm-inventory-book__header--transport::after\s*\{[^}]*animation:\s*none;[^}]*will-change:\s*auto;/u
+  );
+});

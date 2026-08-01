@@ -30,6 +30,7 @@
   --rm-surface-subtle: rgb(255 255 255 / 0.04);
   --rm-character-sheet-header-image: url("/modules/rebreya-main/assets/ui/rebreya-character-header.webp");
   --rm-party-inventory-header-image: url("../assets/ui/rebreya-party-inventory-workshop.webp");
+  --rm-transport-header-image: url("../assets/ui/rebreya-transport-steam-depot.webp");
   --rm-border-subtle: rgb(var(--rm-color-gold-rgb) / 0.1);
   --rm-border-default: rgb(var(--rm-color-gold-rgb) / 0.16);
   --rm-border-strong: rgb(var(--rm-color-gold-rgb) / 0.34);
@@ -4333,6 +4334,46 @@ summary:focus-visible {
   pointer-events: none;
 }
 
+.rebreya-inventory-app .rm-inventory-book__header--inventory::before,
+.rebreya-inventory-app .rm-inventory-book__header--transport::before {
+  inset: -10px;
+  will-change: transform;
+}
+
+.rebreya-inventory-app .rm-inventory-book__header--inventory::before {
+  transform-origin: 58% 48%;
+  animation: rm-inventory-header-camera 42s ease-in-out infinite alternate;
+}
+
+.rebreya-inventory-app .rm-inventory-book__header--transport::before {
+  background-image: var(--rm-transport-header-image);
+  transform-origin: 56% 52%;
+  animation: rm-transport-header-camera 48s ease-in-out infinite alternate;
+}
+
+.rebreya-inventory-app .rm-inventory-book__header--inventory::after,
+.rebreya-inventory-app .rm-inventory-book__header--transport::after {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+
+.rebreya-inventory-app .rm-inventory-book__header--inventory::after {
+  background: radial-gradient(circle at 55% 48%, rgb(224 178 94 / 0.2), transparent 28%);
+  animation: rm-inventory-header-light 16s ease-in-out infinite alternate;
+}
+
+.rebreya-inventory-app .rm-inventory-book__header--transport::after {
+  background:
+    radial-gradient(ellipse at 38% 72%, rgb(226 231 230 / 0.15), transparent 24%),
+    radial-gradient(ellipse at 61% 50%, rgb(226 231 230 / 0.1), transparent 21%),
+    radial-gradient(circle at 72% 30%, rgb(224 178 94 / 0.12), transparent 22%);
+  animation: rm-transport-header-steam 18s ease-in-out infinite alternate;
+}
+
 .rebreya-inventory-app .rm-inventory-book__header--travel::before {
   content: none;
   background-image: none;
@@ -4404,9 +4445,62 @@ summary:focus-visible {
   }
 }
 
+@keyframes rm-inventory-header-camera {
+  from {
+    transform: translate3d(-1%, 0, 0) scale(1.04);
+  }
+
+  to {
+    transform: translate3d(1.2%, -1.2%, 0) scale(1.09);
+  }
+}
+
+@keyframes rm-transport-header-camera {
+  from {
+    transform: translate3d(-1.8%, 0, 0) scale(1.03);
+  }
+
+  to {
+    transform: translate3d(1.2%, -0.8%, 0) scale(1.085);
+  }
+}
+
+@keyframes rm-inventory-header-light {
+  from {
+    opacity: 0.24;
+    transform: translate3d(-0.4%, 0, 0) scale(1);
+  }
+
+  to {
+    opacity: 0.38;
+    transform: translate3d(0.6%, -0.4%, 0) scale(1.035);
+  }
+}
+
+@keyframes rm-transport-header-steam {
+  from {
+    opacity: 0.1;
+    transform: translate3d(-1%, 1.5%, 0) scale(1.01);
+  }
+
+  to {
+    opacity: 0.22;
+    transform: translate3d(1%, -2.5%, 0) scale(1.05);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .rebreya-inventory-app .rm-inventory-book__travel-layer::before {
     animation: none;
+  }
+
+  .rebreya-inventory-app .rm-inventory-book__header--inventory::before,
+  .rebreya-inventory-app .rm-inventory-book__header--inventory::after,
+  .rebreya-inventory-app .rm-inventory-book__header--transport::before,
+  .rebreya-inventory-app .rm-inventory-book__header--transport::after {
+    animation: none;
+    transform: none;
+    will-change: auto;
   }
 }
 

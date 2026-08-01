@@ -652,7 +652,7 @@ test("InventoryApp renders a compact header summary without redundant warehouse 
   );
 
   const walletIndex = template.indexOf('class="rm-currency-compact rm-inventory-book__wallet"');
-  const inventoryBranchIndex = template.indexOf("{{#if tabs.isInventory}}");
+  const inventoryBranchIndex = template.indexOf("{{#if tabs.isInventory}}", walletIndex);
   assert.ok(walletIndex >= 0, "expected the shared currency wallet");
   assert.ok(walletIndex < inventoryBranchIndex, "expected the wallet outside the inventory-only branch");
 
