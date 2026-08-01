@@ -792,7 +792,7 @@ test("InventoryApp uses its own workshop artwork without changing the character 
   );
 });
 
-test("InventoryApp renders one five-layer travel parallax without media selection", async () => {
+test("InventoryApp routes header artwork by tab and keeps one five-layer travel parallax", async () => {
   const template = await readFile(
     new URL("../templates/inventory-app.hbs", import.meta.url),
     "utf8"
@@ -812,7 +812,7 @@ test("InventoryApp renders one five-layer travel parallax without media selectio
   assert.ok(headerIndex >= 0, "expected the shared inventory header");
   assert.match(
     headerOpeningTag,
-    /class="rm-inventory-book__header\{\{#if tabs\.isTravel\}\} rm-inventory-book__header--travel\{\{\/if\}\}"/u
+    /class="rm-inventory-book__header\{\{#if tabs\.isInventory\}\} rm-inventory-book__header--inventory\{\{\/if\}\}\{\{#if tabs\.isTravel\}\} rm-inventory-book__header--travel\{\{\/if\}\}\{\{#if tabs\.isTransport\}\} rm-inventory-book__header--transport\{\{\/if\}\}"/u
   );
   assert.ok(
     travelGuardIndex > headerIndex && travelGuardIndex < identityIndex,
