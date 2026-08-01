@@ -107,7 +107,57 @@ test("Inventory and Transport headers use slow compositor-friendly CSS motion", 
     assert.equal(stops.at(-1).offset, 100, `${animationName} must end at 100%`);
     assert.equal(stops[0].transform, stops.at(-1).transform, `${animationName} transform must close seamlessly`);
 
+    const transforms = stops.map((stop) => {
+      assert.ok(stop.transform, `${animationName} ${stop.offset}% must define transform`);
+      const transform = stop.transform.match(
+        /^translate3d\((-?\d+(?:\.\d+)?)%,\s*(-?\d+(?:\.\d+)?)%,\s*0\)\s+scale\((\d+(?:\.\d+)?)\)$/u
+      );
+      assert.ok(transform, `${animationName} ${stop.offset}% must use percentage x/y translate3d and scale`);
+      return { x: Number(transform[1]), y: Number(transform[2]), scale: Number(transform[3]) };
+    });
+
+    const horizontalPositions = transforms.map(({ x }) => x);
+    assert.ok(Math.min(...horizontalPositions) >= -2.5, `${animationName} must stay inside left overscan`);
+    assert.ok(Math.max(...horizontalPositions) <= 2.5, `${animationName} must stay inside right overscan`);
+    assert.ok(
+      Math.max(...horizontalPositions) - Math.min(...horizontalPositions) <= 5,
+      `${animationName} horizontal travel must not exceed five percentage points`
+    );
+
+    if (animationName.includes("camera")) {
+      const modifier = animationName.includes("inventory") ? "inventory" : "transport";
+      const cameraRule = [...css.matchAll(
+        new RegExp(`\\.rm-inventory-book__header--${modifier}::before\\s*\\{([^}]*)\\}`, "gsu")
+      )].map((match) => match[1]).find((block) => block.includes("transform-origin:"));
+      assert.ok(cameraRule, `expected ${modifier} camera rule`);
+      const origin = cameraRule.match(/transform-origin:\s*(\d+(?:\.\d+)?)%\s+(\d+(?:\.\d+)?)%;/u);
+      assert.ok(origin, `${animationName} must define percentage transform-origin`);
+
+      const layerStart = -0.025;
+      const layerSize = 1.05;
+      const originX = layerStart + layerSize * Number(origin[1]) / 100;
+      const originY = layerStart + layerSize * Number(origin[2]) / 100;
+
+      for (const [index, transform] of transforms.entries()) {
+        const translateX = layerSize * transform.x / 100;
+        const translateY = layerSize * transform.y / 100;
+        const left = originX + (layerStart - originX) * transform.scale + translateX;
+        const right = originX + (layerStart + layerSize - originX) * transform.scale + translateX;
+        const top = originY + (layerStart - originY) * transform.scale + translateY;
+        const bottom = originY + (layerStart + layerSize - originY) * transform.scale + translateY;
+        const offset = stops[index].offset;
+
+        assert.ok(left <= 0, `${animationName} ${offset}% must cover the left edge`);
+        assert.ok(right >= 1, `${animationName} ${offset}% must cover the right edge`);
+        assert.ok(top <= 0, `${animationName} ${offset}% must cover the top edge`);
+        assert.ok(bottom >= 1, `${animationName} ${offset}% must cover the bottom edge`);
+      }
+    }
+
     if (!animationName.includes("camera")) {
+      for (const stop of stops) {
+        assert.match(stop.opacity ?? "", /^(?:0|1|0?\.\d+)$/u, `${animationName} ${stop.offset}% must define opacity`);
+      }
       assert.equal(stops[0].opacity, stops.at(-1).opacity, `${animationName} opacity must close seamlessly`);
     }
   }
