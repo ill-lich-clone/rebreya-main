@@ -4342,13 +4342,13 @@ summary:focus-visible {
 
 .rebreya-inventory-app .rm-inventory-book__header--inventory::before {
   transform-origin: 58% 48%;
-  animation: rm-inventory-header-camera 22s ease-in-out infinite alternate;
+  animation: rm-inventory-header-camera 37s ease-in-out infinite;
 }
 
 .rebreya-inventory-app .rm-inventory-book__header--transport::before {
   background-image: var(--rm-transport-header-image);
   transform-origin: 56% 52%;
-  animation: rm-transport-header-camera 24s ease-in-out infinite alternate;
+  animation: rm-transport-header-camera 41s ease-in-out infinite;
 }
 
 .rebreya-inventory-app .rm-inventory-book__header--inventory::after,
@@ -4372,7 +4372,7 @@ summary:focus-visible {
       transparent 64%
     ),
     radial-gradient(circle at 55% 48%, rgb(224 178 94 / 0.28), transparent 30%);
-  animation: rm-inventory-header-light 10s ease-in-out infinite alternate;
+  animation: rm-inventory-header-light 17s ease-in-out infinite;
 }
 
 .rebreya-inventory-app .rm-inventory-book__header--transport::after {
@@ -4388,7 +4388,7 @@ summary:focus-visible {
     radial-gradient(ellipse at 38% 72%, rgb(226 231 230 / 0.24), transparent 25%),
     radial-gradient(ellipse at 61% 50%, rgb(226 231 230 / 0.18), transparent 22%),
     radial-gradient(circle at 72% 30%, rgb(224 178 94 / 0.2), transparent 23%);
-  animation: rm-transport-header-steam 12s ease-in-out infinite alternate;
+  animation: rm-transport-header-steam 19s ease-in-out infinite;
 }
 
 .rebreya-inventory-app .rm-inventory-book__header--travel::before {
@@ -4463,46 +4463,126 @@ summary:focus-visible {
 }
 
 @keyframes rm-inventory-header-camera {
-  from {
+  0% {
     transform: translate3d(-2.5%, 1%, 0) scale(1.04);
   }
 
-  to {
-    transform: translate3d(2.5%, -1.5%, 0) scale(1.12);
+  13% {
+    transform: translate3d(1.3%, -0.7%, 0) scale(1.09);
+  }
+
+  29% {
+    transform: translate3d(-0.7%, -1.4%, 0) scale(1.125);
+  }
+
+  46% {
+    transform: translate3d(2.5%, 0.3%, 0) scale(1.07);
+  }
+
+  64% {
+    transform: translate3d(-1.6%, 1.1%, 0) scale(1.13);
+  }
+
+  82% {
+    transform: translate3d(0.8%, -1.5%, 0) scale(1.085);
+  }
+
+  100% {
+    transform: translate3d(-2.5%, 1%, 0) scale(1.04);
   }
 }
 
 @keyframes rm-transport-header-camera {
-  from {
-    transform: translate3d(-3%, 0.8%, 0) scale(1.03);
+  0% {
+    transform: translate3d(2.5%, -1.2%, 0) scale(1.06);
   }
 
-  to {
-    transform: translate3d(2%, -1.2%, 0) scale(1.11);
+  11% {
+    transform: translate3d(-1.2%, 0.9%, 0) scale(1.105);
+  }
+
+  27% {
+    transform: translate3d(0.6%, -0.4%, 0) scale(1.04);
+  }
+
+  45% {
+    transform: translate3d(-2.5%, -1%, 0) scale(1.12);
+  }
+
+  61% {
+    transform: translate3d(1.5%, 0.8%, 0) scale(1.075);
+  }
+
+  79% {
+    transform: translate3d(-0.8%, 0.2%, 0) scale(1.115);
+  }
+
+  100% {
+    transform: translate3d(2.5%, -1.2%, 0) scale(1.06);
   }
 }
 
 @keyframes rm-inventory-header-light {
-  from {
+  0% {
     opacity: 0.22;
     transform: translate3d(-2.5%, 1%, 0) scale(1.02);
   }
 
-  to {
+  21% {
     opacity: 0.48;
+    transform: translate3d(1.6%, -0.8%, 0) scale(1.055);
+  }
+
+  43% {
+    opacity: 0.3;
+    transform: translate3d(-0.9%, -1.5%, 0) scale(1.035);
+  }
+
+  68% {
+    opacity: 0.44;
     transform: translate3d(2.5%, -1%, 0) scale(1.06);
+  }
+
+  84% {
+    opacity: 0.27;
+    transform: translate3d(-0.5%, 1.2%, 0) scale(1.03);
+  }
+
+  100% {
+    opacity: 0.22;
+    transform: translate3d(-2.5%, 1%, 0) scale(1.02);
   }
 }
 
 @keyframes rm-transport-header-steam {
-  from {
+  0% {
     opacity: 0.18;
-    transform: translate3d(-2.5%, 1.5%, 0) scale(1.02);
+    transform: translate3d(2.5%, -1%, 0) scale(1.06);
   }
 
-  to {
+  17% {
+    opacity: 0.4;
+    transform: translate3d(-1.4%, -1.6%, 0) scale(1.055);
+  }
+
+  39% {
+    opacity: 0.25;
+    transform: translate3d(0.7%, 1.2%, 0) scale(1.03);
+  }
+
+  63% {
     opacity: 0.42;
-    transform: translate3d(2.5%, -2%, 0) scale(1.07);
+    transform: translate3d(-2.5%, -2%, 0) scale(1.07);
+  }
+
+  81% {
+    opacity: 0.29;
+    transform: translate3d(1.2%, 0.5%, 0) scale(1.04);
+  }
+
+  100% {
+    opacity: 0.18;
+    transform: translate3d(2.5%, -1%, 0) scale(1.06);
   }
 }
 

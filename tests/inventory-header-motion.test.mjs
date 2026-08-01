@@ -51,11 +51,11 @@ test("Inventory and Transport headers use slow compositor-friendly CSS motion", 
   );
   assert.match(
     css,
-    /\.rm-inventory-book__header--inventory::before\s*\{[^}]*animation:\s*rm-inventory-header-camera 22s ease-in-out infinite alternate;/su
+    /\.rm-inventory-book__header--inventory::before\s*\{[^}]*animation:\s*rm-inventory-header-camera 37s ease-in-out infinite;/su
   );
   assert.match(
     css,
-    /\.rm-inventory-book__header--transport::before\s*\{[^}]*background-image:\s*var\(--rm-transport-header-image\);[^}]*animation:\s*rm-transport-header-camera 24s ease-in-out infinite alternate;/su
+    /\.rm-inventory-book__header--transport::before\s*\{[^}]*background-image:\s*var\(--rm-transport-header-image\);[^}]*animation:\s*rm-transport-header-camera 41s ease-in-out infinite;/su
   );
   assert.match(
     css,
@@ -66,7 +66,7 @@ test("Inventory and Transport headers use slow compositor-friendly CSS motion", 
   assert.ok(inventoryOverlay, "expected Inventory glare overlay");
   assert.match(inventoryOverlay[1], /radial-gradient/u);
   assert.match(inventoryOverlay[1], /linear-gradient/u);
-  assert.match(inventoryOverlay[1], /animation:\s*rm-inventory-header-light 10s ease-in-out infinite alternate;/u);
+  assert.match(inventoryOverlay[1], /animation:\s*rm-inventory-header-light 17s ease-in-out infinite;/u);
   assert.doesNotMatch(inventoryOverlay[1], /steam|smoke|ellipse/iu);
 
   const transportOverlay = [...css.matchAll(/\.rm-inventory-book__header--transport::after\s*\{([^}]*)\}/gsu)]
@@ -75,30 +75,55 @@ test("Inventory and Transport headers use slow compositor-friendly CSS motion", 
   assert.ok(transportOverlay, "expected Transport steam and glare overlay");
   assert.match(transportOverlay, /radial-gradient/u);
   assert.match(transportOverlay, /linear-gradient/u);
-  assert.match(transportOverlay, /animation:\s*rm-transport-header-steam 12s ease-in-out infinite alternate;/u);
+  assert.match(transportOverlay, /animation:\s*rm-transport-header-steam 19s ease-in-out infinite;/u);
 
   assert.match(css, /@keyframes rm-inventory-header-light/u);
   assert.match(css, /@keyframes rm-transport-header-steam/u);
-  assert.match(
-    css,
-    /@keyframes rm-inventory-header-camera\s*\{[\s\S]*?translate3d\(-2\.5%, 1%, 0\) scale\(1\.04\);[\s\S]*?translate3d\(2\.5%, -1\.5%, 0\) scale\(1\.12\);[\s\S]*?\n\}/u
-  );
-  assert.match(
-    css,
-    /@keyframes rm-transport-header-camera\s*\{[\s\S]*?translate3d\(-3%, 0\.8%, 0\) scale\(1\.03\);[\s\S]*?translate3d\(2%, -1\.2%, 0\) scale\(1\.11\);[\s\S]*?\n\}/u
-  );
-
-  for (const animationName of [
+  const animationNames = [
     "rm-inventory-header-camera",
     "rm-transport-header-camera",
     "rm-inventory-header-light",
     "rm-transport-header-steam"
-  ]) {
+  ];
+  const animationStops = new Map();
+
+  for (const animationName of animationNames) {
     const keyframes = css.match(new RegExp(`@keyframes ${animationName}\\s*\\{([\\s\\S]*?)\\n\\}`, "u"));
     assert.ok(keyframes, `expected ${animationName} keyframes`);
     assert.doesNotMatch(keyframes[1], /\b-?\d+(?:\.\d+)?px\b/u);
     assert.doesNotMatch(keyframes[1], /filter:|background-position:|(?:width|height|inset|top|right|bottom|left):/u);
+
+    const stops = [...keyframes[1].matchAll(/(\d+(?:\.\d+)?)%\s*\{([^}]*)\}/gsu)].map((match) => ({
+      offset: Number(match[1]),
+      declarations: match[2],
+      transform: match[2].match(/transform:\s*([^;]+);/u)?.[1],
+      opacity: match[2].match(/opacity:\s*([^;]+);/u)?.[1]
+    }));
+    animationStops.set(animationName, stops);
+
+    const minimumStops = animationName.includes("camera") ? 7 : 5;
+    assert.ok(stops.length >= minimumStops, `${animationName} must have at least ${minimumStops} stops`);
+    assert.equal(stops[0].offset, 0, `${animationName} must start at 0%`);
+    assert.equal(stops.at(-1).offset, 100, `${animationName} must end at 100%`);
+    assert.equal(stops[0].transform, stops.at(-1).transform, `${animationName} transform must close seamlessly`);
+
+    if (!animationName.includes("camera")) {
+      assert.equal(stops[0].opacity, stops.at(-1).opacity, `${animationName} opacity must close seamlessly`);
+    }
   }
+
+  for (const animationName of ["rm-inventory-header-camera", "rm-transport-header-camera"]) {
+    const scales = animationStops.get(animationName).map((stop) => Number(stop.transform.match(/scale\(([^)]+)\)/u)[1]));
+    const scaleDeltas = scales.slice(1).map((scale, index) => scale - scales[index]);
+    assert.ok(scaleDeltas.some((delta) => delta > 0), `${animationName} must include a zoom-in`);
+    assert.ok(scaleDeltas.some((delta) => delta < 0), `${animationName} must include a pull-back`);
+  }
+
+  assert.notDeepEqual(
+    animationStops.get("rm-inventory-header-camera").map((stop) => stop.transform),
+    animationStops.get("rm-transport-header-camera").map((stop) => stop.transform),
+    "Inventory and Transport must use distinct camera flights"
+  );
 
   assert.match(
     css,
