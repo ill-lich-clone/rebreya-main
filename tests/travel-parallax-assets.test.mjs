@@ -36,3 +36,23 @@ test("moving travel parallax layers preserve lossless tile edges", async () => {
     );
   }
 });
+
+test("obsolete travel videos and posters are removed", async () => {
+  const obsoleteFiles = [
+    "../assets/ui/rebreya-travel-city-poster.webp",
+    "../assets/ui/rebreya-travel-city.webm",
+    "../assets/ui/rebreya-travel-industrial-poster.webp",
+    "../assets/ui/rebreya-travel-industrial.webm",
+    "../assets/ui/rebreya-travel-wilderness-poster.webp",
+    "../assets/ui/rebreya-travel-wilderness.webm",
+    "../tools/render_travel_landscapes.py"
+  ];
+
+  for (const relativePath of obsoleteFiles) {
+    await assert.rejects(
+      stat(new URL(relativePath, import.meta.url)),
+      { code: "ENOENT" },
+      `${relativePath} must not ship with the layered parallax`
+    );
+  }
+});
