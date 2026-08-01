@@ -51,14 +51,42 @@ test("Inventory and Transport headers use slow compositor-friendly CSS motion", 
   );
   assert.match(
     css,
-    /\.rm-inventory-book__header--inventory::before\s*\{[^}]*animation:\s*rm-inventory-header-camera 42s ease-in-out infinite alternate;/su
+    /\.rm-inventory-book__header--inventory::before\s*\{[^}]*animation:\s*rm-inventory-header-camera 22s ease-in-out infinite alternate;/su
   );
   assert.match(
     css,
-    /\.rm-inventory-book__header--transport::before\s*\{[^}]*background-image:\s*var\(--rm-transport-header-image\);[^}]*animation:\s*rm-transport-header-camera 48s ease-in-out infinite alternate;/su
+    /\.rm-inventory-book__header--transport::before\s*\{[^}]*background-image:\s*var\(--rm-transport-header-image\);[^}]*animation:\s*rm-transport-header-camera 24s ease-in-out infinite alternate;/su
   );
+  assert.match(
+    css,
+    /\.rm-inventory-book__header--inventory::before,\s*\.rebreya-inventory-app \.rm-inventory-book__header--transport::before\s*\{[^}]*inset:\s*-2\.5%;/su
+  );
+
+  const inventoryOverlay = css.match(/\.rm-inventory-book__header--inventory::after\s*\{([^}]*)\}/su);
+  assert.ok(inventoryOverlay, "expected Inventory glare overlay");
+  assert.match(inventoryOverlay[1], /radial-gradient/u);
+  assert.match(inventoryOverlay[1], /linear-gradient/u);
+  assert.match(inventoryOverlay[1], /animation:\s*rm-inventory-header-light 10s ease-in-out infinite alternate;/u);
+  assert.doesNotMatch(inventoryOverlay[1], /steam|smoke|ellipse/iu);
+
+  const transportOverlay = [...css.matchAll(/\.rm-inventory-book__header--transport::after\s*\{([^}]*)\}/gsu)]
+    .map((match) => match[1])
+    .find((block) => block.includes("background:"));
+  assert.ok(transportOverlay, "expected Transport steam and glare overlay");
+  assert.match(transportOverlay, /radial-gradient/u);
+  assert.match(transportOverlay, /linear-gradient/u);
+  assert.match(transportOverlay, /animation:\s*rm-transport-header-steam 12s ease-in-out infinite alternate;/u);
+
   assert.match(css, /@keyframes rm-inventory-header-light/u);
   assert.match(css, /@keyframes rm-transport-header-steam/u);
+  assert.match(
+    css,
+    /@keyframes rm-inventory-header-camera\s*\{[\s\S]*?translate3d\(-2\.5%, 1%, 0\) scale\(1\.04\);[\s\S]*?translate3d\(2\.5%, -1\.5%, 0\) scale\(1\.12\);[\s\S]*?\n\}/u
+  );
+  assert.match(
+    css,
+    /@keyframes rm-transport-header-camera\s*\{[\s\S]*?translate3d\(-3%, 0\.8%, 0\) scale\(1\.03\);[\s\S]*?translate3d\(2%, -1\.2%, 0\) scale\(1\.11\);[\s\S]*?\n\}/u
+  );
 
   for (const animationName of [
     "rm-inventory-header-camera",
@@ -68,6 +96,7 @@ test("Inventory and Transport headers use slow compositor-friendly CSS motion", 
   ]) {
     const keyframes = css.match(new RegExp(`@keyframes ${animationName}\\s*\\{([\\s\\S]*?)\\n\\}`, "u"));
     assert.ok(keyframes, `expected ${animationName} keyframes`);
+    assert.doesNotMatch(keyframes[1], /\b-?\d+(?:\.\d+)?px\b/u);
     assert.doesNotMatch(keyframes[1], /filter:|background-position:|(?:width|height|inset|top|right|bottom|left):/u);
   }
 

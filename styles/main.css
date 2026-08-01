@@ -4336,19 +4336,19 @@ summary:focus-visible {
 
 .rebreya-inventory-app .rm-inventory-book__header--inventory::before,
 .rebreya-inventory-app .rm-inventory-book__header--transport::before {
-  inset: -10px;
+  inset: -2.5%;
   will-change: transform;
 }
 
 .rebreya-inventory-app .rm-inventory-book__header--inventory::before {
   transform-origin: 58% 48%;
-  animation: rm-inventory-header-camera 42s ease-in-out infinite alternate;
+  animation: rm-inventory-header-camera 22s ease-in-out infinite alternate;
 }
 
 .rebreya-inventory-app .rm-inventory-book__header--transport::before {
   background-image: var(--rm-transport-header-image);
   transform-origin: 56% 52%;
-  animation: rm-transport-header-camera 48s ease-in-out infinite alternate;
+  animation: rm-transport-header-camera 24s ease-in-out infinite alternate;
 }
 
 .rebreya-inventory-app .rm-inventory-book__header--inventory::after,
@@ -4362,16 +4362,33 @@ summary:focus-visible {
 }
 
 .rebreya-inventory-app .rm-inventory-book__header--inventory::after {
-  background: radial-gradient(circle at 55% 48%, rgb(224 178 94 / 0.2), transparent 28%);
-  animation: rm-inventory-header-light 16s ease-in-out infinite alternate;
+  background:
+    linear-gradient(
+      118deg,
+      transparent 34%,
+      rgb(255 226 166 / 0.04) 42%,
+      rgb(255 218 138 / 0.32) 49%,
+      rgb(255 226 166 / 0.05) 56%,
+      transparent 64%
+    ),
+    radial-gradient(circle at 55% 48%, rgb(224 178 94 / 0.28), transparent 30%);
+  animation: rm-inventory-header-light 10s ease-in-out infinite alternate;
 }
 
 .rebreya-inventory-app .rm-inventory-book__header--transport::after {
   background:
-    radial-gradient(ellipse at 38% 72%, rgb(226 231 230 / 0.15), transparent 24%),
-    radial-gradient(ellipse at 61% 50%, rgb(226 231 230 / 0.1), transparent 21%),
-    radial-gradient(circle at 72% 30%, rgb(224 178 94 / 0.12), transparent 22%);
-  animation: rm-transport-header-steam 18s ease-in-out infinite alternate;
+    linear-gradient(
+      112deg,
+      transparent 39%,
+      rgb(255 224 155 / 0.04) 47%,
+      rgb(255 210 118 / 0.3) 53%,
+      rgb(255 224 155 / 0.05) 59%,
+      transparent 67%
+    ),
+    radial-gradient(ellipse at 38% 72%, rgb(226 231 230 / 0.24), transparent 25%),
+    radial-gradient(ellipse at 61% 50%, rgb(226 231 230 / 0.18), transparent 22%),
+    radial-gradient(circle at 72% 30%, rgb(224 178 94 / 0.2), transparent 23%);
+  animation: rm-transport-header-steam 12s ease-in-out infinite alternate;
 }
 
 .rebreya-inventory-app .rm-inventory-book__header--travel::before {
@@ -4447,45 +4464,45 @@ summary:focus-visible {
 
 @keyframes rm-inventory-header-camera {
   from {
-    transform: translate3d(-1%, 0, 0) scale(1.04);
+    transform: translate3d(-2.5%, 1%, 0) scale(1.04);
   }
 
   to {
-    transform: translate3d(1.2%, -1.2%, 0) scale(1.09);
+    transform: translate3d(2.5%, -1.5%, 0) scale(1.12);
   }
 }
 
 @keyframes rm-transport-header-camera {
   from {
-    transform: translate3d(-1.8%, 0, 0) scale(1.03);
+    transform: translate3d(-3%, 0.8%, 0) scale(1.03);
   }
 
   to {
-    transform: translate3d(1.2%, -0.8%, 0) scale(1.085);
+    transform: translate3d(2%, -1.2%, 0) scale(1.11);
   }
 }
 
 @keyframes rm-inventory-header-light {
   from {
-    opacity: 0.24;
-    transform: translate3d(-0.4%, 0, 0) scale(1);
+    opacity: 0.22;
+    transform: translate3d(-2.5%, 1%, 0) scale(1.02);
   }
 
   to {
-    opacity: 0.38;
-    transform: translate3d(0.6%, -0.4%, 0) scale(1.035);
+    opacity: 0.48;
+    transform: translate3d(2.5%, -1%, 0) scale(1.06);
   }
 }
 
 @keyframes rm-transport-header-steam {
   from {
-    opacity: 0.1;
-    transform: translate3d(-1%, 1.5%, 0) scale(1.01);
+    opacity: 0.18;
+    transform: translate3d(-2.5%, 1.5%, 0) scale(1.02);
   }
 
   to {
-    opacity: 0.22;
-    transform: translate3d(1%, -2.5%, 0) scale(1.05);
+    opacity: 0.42;
+    transform: translate3d(2.5%, -2%, 0) scale(1.07);
   }
 }
 
