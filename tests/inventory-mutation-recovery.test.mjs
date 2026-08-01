@@ -172,6 +172,62 @@ test("broken lootgen grants persist full durability exactly once and do not merg
   }
 });
 
+test("storage loot grants an item and coins to a character exactly once", async () => {
+  const hero = createActor({ id: "storage-hero" });
+  const group = createActor({
+    id: "storage-group",
+    type: "group",
+    managed: true,
+    members: [{ actor: hero }]
+  });
+  const fixture = installFixture({ group, actors: [group, hero] });
+
+  try {
+    const row = {
+      rowId: "rope-row",
+      quantity: 2,
+      itemData: {
+        name: "Верёвка",
+        type: "loot",
+        system: { quantity: 1 },
+        flags: { [MODULE_ID]: { sourceType: "storage-manual" } }
+      }
+    };
+
+    await fixture.service.addLootgenRowToCharacterOnce(row, hero, "storage:item:token-1:rope-row:self");
+    await fixture.service.addLootgenRowToCharacterOnce(row, hero, "storage:item:token-1:rope-row:self");
+    await fixture.service.addCurrencyToCharacterOnce({ gp: 3, sp: 7 }, hero, "storage:coins:token-1:self");
+    await fixture.service.addCurrencyToCharacterOnce({ gp: 3, sp: 7 }, hero, "storage:coins:token-1:self");
+
+    assert.equal(hero.items.contents.length, 1);
+    assert.equal(hero.items.contents[0].name, "Верёвка");
+    assert.equal(hero.items.contents[0].system.quantity, 2);
+    assert.equal(hero.system.currency.gp, 3);
+    assert.equal(hero.system.currency.sp, 7);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("storage loot refuses a non-character self destination", async () => {
+  const group = createActor({ id: "storage-group", type: "group", managed: true });
+  const fixture = installFixture({ group, actors: [group] });
+
+  try {
+    await assert.rejects(
+      fixture.service.addLootgenRowToCharacterOnce({
+        quantity: 1,
+        itemData: { name: "Камень", type: "loot", system: { quantity: 1 } }
+      }, group, "storage:item:invalid-target"),
+      /только персонажу/u
+    );
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
 test("calendar execution guard stops supply mutations before the next persistent side effect", async () => {
   let authority = true;
   let foodUpdates = 0;

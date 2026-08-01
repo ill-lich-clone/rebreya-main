@@ -5,8 +5,7 @@ import {
   buildLootgenRowIdentity,
   collectBreakableManagedGearIds,
   normalizeBrokenEquipmentChance,
-  normalizeLootgenBrokenMarker,
-  rollLootgenBrokenState
+  normalizeLootgenBrokenMarker
 } from "../data/lootgen-durability.js";
 import { getAppElement } from "../ui.js";
 import {
@@ -14,6 +13,7 @@ import {
   isLootgenTypeAllowed,
   resolveMagicLootgenTypeLabel
 } from "./lootgen-type-filters.js";
+import { generateLootgenResult, normalizeLootgenForm } from "../data/lootgen-generator.js";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
@@ -37,15 +37,6 @@ function toInteger(value, fallback = 0) {
 function roundNumber(value, precision = 2) {
   const factor = 10 ** precision;
   return Math.round((toNumber(value, 0) + Number.EPSILON) * factor) / factor;
-}
-
-function randomPick(values) {
-  if (!Array.isArray(values) || values.length === 0) {
-    return null;
-  }
-
-  const index = Math.floor(Math.random() * values.length);
-  return values[index] ?? null;
 }
 
 function normalizeCoins(coins = {}) {
@@ -197,95 +188,44 @@ function normalizeGeneratedRows(rows = []) {
     .filter((row) => row.sourceType && row.sourceId && row.name);
 }
 
-function spendRemainingValueIntoRows(rows = [], remainingValue = 0) {
-  const resultRows = (Array.isArray(rows) ? rows : []).map((row) => ({ ...row }));
-  let remaining = Math.max(0, toInteger(remainingValue, 0));
-  const spendableRows = resultRows
-    .map((row, index) => ({
-      index,
-      value: Math.max(1, toInteger(row.value, 1))
-    }))
-    .filter((entry) => entry.value <= remaining);
-
-  if (!spendableRows.length || remaining <= 0) {
-    return { rows: resultRows, remainingValue: remaining };
+export async function promptLootgenTemplateName(
+  DialogV2 = globalThis.foundry?.applications?.api?.DialogV2
+) {
+  if (typeof DialogV2?.wait !== "function") {
+    throw new Error("Диалог сохранения шаблона Lootgen недоступен.");
   }
 
-  const applySpend = (rowIndex, quantity) => {
-    const row = resultRows[rowIndex];
-    const extraQuantity = Math.max(0, toInteger(quantity, 0));
-    if (!row || extraQuantity <= 0) {
-      return 0;
-    }
-
-    const value = Math.max(1, toInteger(row.value, 1));
-    row.quantity = Math.max(0, toInteger(row.quantity, 0)) + extraQuantity;
-    row.totalValue = Math.max(0, toInteger(row.totalValue, 0)) + (value * extraQuantity);
-    return value * extraQuantity;
-  };
-
-  if (remaining <= 200000) {
-    const previous = Array(remaining + 1).fill(null);
-    previous[0] = { rowIndex: -1, previousTotal: -1 };
-
-    for (let total = 0; total <= remaining; total += 1) {
-      if (!previous[total]) {
-        continue;
+  const value = await DialogV2.wait({
+    window: { title: "Сохранить шаблон Lootgen" },
+    content: `
+      <form>
+        <div class="form-group">
+          <label>Название шаблона</label>
+          <input type="text" name="templateName" required autofocus autocomplete="off">
+        </div>
+      </form>
+    `,
+    buttons: [
+      {
+        action: "save",
+        label: "Сохранить",
+        icon: "fa-solid fa-floppy-disk",
+        default: true,
+        callback: (_event, button) => String(
+          button?.form?.elements?.templateName?.value ?? ""
+        ).trim()
+      },
+      {
+        action: "cancel",
+        label: "Отмена",
+        callback: () => null
       }
+    ],
+    rejectClose: false,
+    close: () => null
+  });
 
-      for (const entry of spendableRows) {
-        const nextTotal = total + entry.value;
-        if (nextTotal <= remaining && !previous[nextTotal]) {
-          previous[nextTotal] = {
-            rowIndex: entry.index,
-            previousTotal: total
-          };
-        }
-      }
-    }
-
-    let bestTotal = remaining;
-    while (bestTotal > 0 && !previous[bestTotal]) {
-      bestTotal -= 1;
-    }
-
-    if (bestTotal > 0) {
-      let cursor = bestTotal;
-      const quantityByRowIndex = new Map();
-      while (cursor > 0) {
-        const step = previous[cursor];
-        if (!step || step.rowIndex < 0) {
-          break;
-        }
-
-        quantityByRowIndex.set(step.rowIndex, (quantityByRowIndex.get(step.rowIndex) ?? 0) + 1);
-        cursor = step.previousTotal;
-      }
-
-      for (const [rowIndex, quantity] of quantityByRowIndex.entries()) {
-        applySpend(rowIndex, quantity);
-      }
-
-      remaining -= bestTotal;
-    }
-
-    return { rows: resultRows, remainingValue: remaining };
-  }
-
-  const greedyRows = [...spendableRows].sort((left, right) => right.value - left.value);
-  for (const entry of greedyRows) {
-    const quantity = Math.floor(remaining / entry.value);
-    if (quantity <= 0) {
-      continue;
-    }
-
-    remaining -= applySpend(entry.index, quantity);
-    if (remaining <= 0) {
-      break;
-    }
-  }
-
-  return { rows: resultRows, remainingValue: remaining };
+  return value == null ? null : String(value).trim();
 }
 
 export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
@@ -392,6 +332,67 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
       directCoinGrantId: this.generated.directCoinGrantId,
       hasResult: this.generated.hasResult
     });
+  }
+
+  #getFormSnapshot() {
+    return normalizeLootgenForm({
+      rankMin: this.rankMin,
+      rankMax: this.rankMax,
+      itemCount: this.itemCount,
+      budgetValue: this.budgetValue,
+      includeGear: this.includeGear,
+      includeCoins: this.includeCoins,
+      includeMagicItems: this.includeMagicItems,
+      gearTypeFilters: this.gearTypeFilters,
+      magicTypeFilters: this.magicTypeFilters,
+      magicPercent: this.magicPercent,
+      brokenEquipmentChance: this.brokenEquipmentChance
+    });
+  }
+
+  applyLootgenTemplate(template = {}) {
+    const form = normalizeLootgenForm(template?.form);
+    this.rankMin = form.rankMin;
+    this.rankMax = form.rankMax;
+    this.itemCount = form.itemCount;
+    this.budgetValue = form.budgetValue;
+    this.includeGear = form.includeGear;
+    this.includeCoins = form.includeCoins;
+    this.includeMagicItems = form.includeMagicItems;
+    this.gearTypeFilters = { ...form.gearTypeFilters };
+    this.magicTypeFilters = { ...form.magicTypeFilters };
+    this.magicPercent = form.magicPercent;
+    this.brokenEquipmentChance = form.brokenEquipmentChance;
+    return form;
+  }
+
+  async #saveLootgenTemplate() {
+    if (typeof this.moduleApi.saveLootgenTemplate !== "function") {
+      throw new Error("Текущая версия модуля не поддерживает шаблоны Lootgen.");
+    }
+
+    const templateName = await promptLootgenTemplateName();
+    if (templateName == null) {
+      return null;
+    }
+
+    return this.saveTemplateFromName(templateName);
+  }
+
+  async saveTemplateFromName(name) {
+    if (typeof this.moduleApi.saveLootgenTemplate !== "function") {
+      throw new Error("Текущая версия модуля не поддерживает шаблоны Lootgen.");
+    }
+    return this.moduleApi.saveLootgenTemplate({
+      name,
+      form: this.#getFormSnapshot()
+    });
+  }
+
+  async generateFromForm(form = {}) {
+    this.applyLootgenTemplate({ form });
+    await this.#generateLoot();
+    return this.#cloneGeneratedResult();
   }
 
   restoreGeneratedResult(payload = {}) {
@@ -645,121 +646,21 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const model = await this.moduleApi.getModel();
     const mundanePool = await this.#buildMundanePool(model);
     const magicPool = this.includeMagicItems ? await this.#buildMagicPool() : [];
-    if (!mundanePool.length && !magicPool.length) {
-      throw new Error("Для выбранных параметров нет доступных предметов.");
-    }
-
-    const magicChance = Math.min(100, Math.max(0, toNumber(this.magicPercent, 0))) / 100;
-    const forceMagicOnly = this.includeMagicItems && magicChance >= 0.999;
-    const maxRows = Math.max(1, toInteger(this.itemCount, 1));
-    const budgetValue = Math.max(0, toInteger(this.budgetValue, 0));
-    let remainingValue = budgetValue;
-    const picks = [];
-    const usedUnique = new Set();
-
-    for (let index = 0; index < maxRows; index += 1) {
-      const affordableMundane = mundanePool.filter((entry) => {
-        if (entry.value > remainingValue) {
-          return false;
-        }
-
-        const entryKey = `${entry.sourceType}:${entry.sourceId}`;
-        return !usedUnique.has(entryKey);
-      });
-
-      const affordableMagic = magicPool.filter((entry) => {
-        if (entry.value > remainingValue) {
-          return false;
-        }
-
-        const entryKey = `${entry.sourceType}:${entry.sourceId}`;
-        return !usedUnique.has(entryKey);
-      });
-
-      if (!affordableMundane.length && !affordableMagic.length) {
-        break;
-      }
-
-      let sourcePool = [];
-      if (forceMagicOnly) {
-        sourcePool = affordableMagic;
-      }
-      else {
-        const wantsMagic = this.includeMagicItems
-          && affordableMagic.length > 0
-          && (!affordableMundane.length || Math.random() < magicChance);
-        sourcePool = wantsMagic
-          ? affordableMagic
-          : (affordableMundane.length ? affordableMundane : affordableMagic);
-      }
-
-      if (!sourcePool.length) {
-        break;
-      }
-
-      const picked = randomPick(sourcePool);
-      if (!picked) {
-        break;
-      }
-
-      const pickedKey = `${picked.sourceType}:${picked.sourceId}`;
-      usedUnique.add(pickedKey);
-
-      let quantity = 1;
-      if (picked.stackable) {
-        const maxQtyByBudget = Math.max(1, Math.floor(remainingValue / picked.value));
-        const randomQtyCap = Math.min(maxQtyByBudget, 1 + Math.floor(Math.random() * 4));
-        quantity = Math.max(1, randomQtyCap);
-      }
-
-      let totalValue = picked.value * quantity;
-      if (totalValue > remainingValue) {
-        quantity = 1;
-        totalValue = picked.value;
-      }
-
-      picks.push({
-        ...picked,
-        isBroken: rollLootgenBrokenState({
-          sourceType: picked.sourceType,
-          chance: this.brokenEquipmentChance,
-          isEligible: picked.breakable === true
-        }),
-        quantity,
-        totalValue
-      });
-
-      remainingValue = Math.max(0, remainingValue - totalValue);
-      if (remainingValue <= 0) {
-        break;
-      }
-    }
-
-    let rows = aggregateRows(picks);
-    const budgetFill = spendRemainingValueIntoRows(rows, remainingValue);
-    rows = budgetFill.rows;
-    remainingValue = budgetFill.remainingValue;
-    const spentValue = rows.reduce((sum, row) => sum + row.totalValue, 0);
-    const coinValue = this.includeCoins ? remainingValue : 0;
-    const coins = randomCoinsFromValue(coinValue);
-    const directBatchId = randomID();
-    rows = rows.map((row, index) => ({
-      ...row,
-      directGrantId: `lootgen:${directBatchId}:row:${index}`
-    }));
-    this.generated = {
-      rows,
-      coins,
-      spentValue,
-      budgetValue,
-      totalItems: rows.reduce((sum, row) => sum + row.quantity, 0),
+    this.generated = generateLootgenResult({
+      mundanePool,
+      magicPool,
+      includeMagicItems: this.includeMagicItems,
+      magicPercent: this.magicPercent,
+      itemCount: this.itemCount,
+      budgetValue: this.budgetValue,
+      includeCoins: this.includeCoins,
+      brokenEquipmentChance: this.brokenEquipmentChance,
+      batchId: randomID(),
       generatedAt: new Intl.DateTimeFormat("ru-RU", {
         dateStyle: "short",
         timeStyle: "medium"
-      }).format(new Date()),
-      directCoinGrantId: `lootgen:${directBatchId}:coins`,
-      hasResult: rows.length > 0 || coins.totalCopper > 0
-    };
+      }).format(new Date())
+    });
     this.chatLootId = "";
   }
 
@@ -882,6 +783,7 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const canManage = isGM && !this.viewer;
     let model = {};
     let magicDocuments = [];
+    let lootgenTemplates = [];
     if (canManage) {
       try {
         model = await this.moduleApi.getModel();
@@ -895,6 +797,15 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
       }
       catch (error) {
         console.error(`${MODULE_ID} | Failed to prepare lootgen magic type filters.`, error);
+      }
+
+      if (typeof this.moduleApi.listLootgenTemplates === "function") {
+        try {
+          lootgenTemplates = this.moduleApi.listLootgenTemplates();
+        }
+        catch (error) {
+          console.error(`${MODULE_ID} | Failed to prepare Lootgen templates.`, error);
+        }
       }
     }
 
@@ -917,6 +828,8 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
         includeGear: this.includeGear,
         includeCoins: this.includeCoins,
         includeMagicItems: this.includeMagicItems,
+        lootgenTemplates,
+        hasLootgenTemplates: lootgenTemplates.length > 0,
         gearTypeOptions,
         magicTypeOptions,
         hasGearTypeOptions: gearTypeOptions.length > 0,
@@ -1036,6 +949,37 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
           canUndo: Boolean(previousResult.hasResult),
           payload: previousResult
         });
+      }, listenerOptions);
+
+      element.querySelector("[data-action='lootgen-save-template']")?.addEventListener("click", async () => {
+        try {
+          const saved = await this.#saveLootgenTemplate();
+          if (saved) {
+            await this.render({ force: true });
+          }
+        }
+        catch (error) {
+          console.error(MODULE_ID + " | Failed to save Lootgen template.", error);
+          ui.notifications?.error?.(error.message || "Не удалось сохранить шаблон Lootgen.");
+        }
+      }, listenerOptions);
+
+      element.querySelector("[data-action='lootgen-apply-template']")?.addEventListener("click", async () => {
+        try {
+          const templateId = String(
+            element.querySelector("[data-action='lootgen-template-select']")?.value ?? ""
+          );
+          const template = this.moduleApi.getLootgenTemplate?.(templateId) ?? null;
+          if (!template) {
+            throw new Error("Выберите шаблон Lootgen.");
+          }
+          this.applyLootgenTemplate(template);
+          await this.render({ force: true });
+        }
+        catch (error) {
+          console.error(MODULE_ID + " | Failed to apply Lootgen template.", error);
+          ui.notifications?.error?.(error.message || "Не удалось применить шаблон Lootgen.");
+        }
       }, listenerOptions);
 
       element.querySelector("[data-action='lootgen-new-window']")?.addEventListener("click", async () => {

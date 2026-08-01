@@ -183,7 +183,13 @@ export const SETTINGS_KEYS = {
   TRADE_ROUTE_OVERRIDES: "tradeRouteOverrides",
   STATE_POLICIES: "statePolicies",
   COSMOLOGY_STATE: "cosmologyState",
-  GLOBAL_EVENTS_STATE: "globalEventsState"
+  GLOBAL_EVENTS_STATE: "globalEventsState",
+  LOOTGEN_TEMPLATES: "lootgenTemplates"
+};
+
+export const REBREYA_STORAGE_FLAGS = {
+  ACTOR: "storage",
+  TOKEN: "storage"
 };
 
 export const DATA_SOURCE_MODES = {

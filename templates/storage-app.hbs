@@ -1,0 +1,87 @@
+<section class="rm-shell rm-app-shell rm-storage-shell">
+  <header class="rm-storage-header">
+    <div>
+      <p class="rm-eyebrow">Хранилище</p>
+      <h2>{{name}}</h2>
+    </div>
+    {{#if isEmpty}}<span class="rm-storage-state">Пусто</span>{{/if}}
+  </header>
+
+  {{#if configuration.enabled}}
+    <form class="rm-storage-config">
+      <div class="rm-field">
+        <label>Название</label>
+        <input type="text" name="baseName" value="{{configuration.baseName}}">
+      </div>
+      <div class="rm-field">
+        <label>Шаблон Lootgen</label>
+        <select name="templateId" data-action="storage-select-template">
+          <option value="">Без шаблона</option>
+          {{#each configuration.templateOptions}}
+            <option value="{{id}}">{{name}}</option>
+          {{/each}}
+        </select>
+      </div>
+      {{#if configuration.selectedTemplateName}}
+        <p class="rm-muted">Сохранённый снимок: {{configuration.selectedTemplateName}}</p>
+      {{/if}}
+      <div class="rm-storage-config__actions">
+        <button type="button" class="rm-button rm-button--primary" data-action="storage-save-config">
+          <i class="fa-solid fa-floppy-disk"></i><span>Сохранить настройки</span>
+        </button>
+        {{#if configuration.canReset}}
+          <button type="button" class="rm-button rm-button--secondary" data-action="storage-reset">
+            <i class="fa-solid fa-rotate-left"></i><span>Сбросить содержимое</span>
+          </button>
+        {{/if}}
+      </div>
+      {{#if configuration.canAddManualItems}}
+        <div class="rm-storage-dropzone" data-storage-dropzone>
+          <i class="fa-solid fa-hand-pointer"></i>
+          <span>Перетащите сюда предмет, чтобы добавить его вручную</span>
+        </div>
+        {{#each configuration.manualRows}}
+          <div class="rm-storage-manual-row">
+            <span>{{name}} ×{{quantity}}</span>
+            <button type="button" class="rm-icon-button" data-action="storage-remove-manual-item" data-row-id="{{rowId}}" title="Убрать предмет">
+              <i class="fa-solid fa-trash"></i>
+            </button>
+          </div>
+        {{/each}}
+      {{/if}}
+    </form>
+  {{/if}}
+
+  {{#if hasRows}}
+    <div class="rm-storage-grid">
+      {{#each rows}}
+        <article class="rm-storage-item">
+          {{#if img}}<img src="{{img}}" alt="">{{else}}<i class="fa-solid fa-box rm-storage-item__placeholder"></i>{{/if}}
+          <div class="rm-storage-item__body">
+            <strong>{{name}}</strong>
+            <span class="rm-muted">{{typeLabel}} · ×{{quantity}}</span>
+          </div>
+          <div class="rm-storage-item__actions">
+            <button type="button" class="rm-button rm-button--primary" data-action="storage-claim-self" data-row-id="{{rowId}}">Себе</button>
+            <button type="button" class="rm-button rm-button--secondary" data-action="storage-claim-party" data-row-id="{{rowId}}">В группу</button>
+          </div>
+        </article>
+      {{/each}}
+    </div>
+  {{else}}
+    <div class="rm-storage-empty">
+      <i class="fa-solid fa-box-open"></i>
+      <p>В хранилище нет предметов.</p>
+    </div>
+  {{/if}}
+
+  {{#if hasCoins}}
+    <section class="rm-storage-coins">
+      <div><i class="fa-solid fa-coins"></i><strong>{{coinsLabel}}</strong></div>
+      <div class="rm-storage-item__actions">
+        <button type="button" class="rm-button rm-button--primary" data-action="storage-claim-coins-self">Себе</button>
+        <button type="button" class="rm-button rm-button--secondary" data-action="storage-claim-coins-party">В группу</button>
+      </div>
+    </section>
+  {{/if}}
+</section>

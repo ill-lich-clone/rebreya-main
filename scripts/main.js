@@ -79,6 +79,15 @@ import { getActiveGm, isActiveGmClient } from "./infrastructure/foundry/active-g
 import { SocketCommandBus } from "./infrastructure/foundry/socket-command-bus.js";
 import { UiRefreshCoordinator } from "./infrastructure/ui/ui-refresh-coordinator.js";
 import { GlobalEventsService } from "./data/global-events-service.js";
+import { LootgenTemplateCatalog } from "./data/lootgen-template-catalog.js";
+import { StorageService, isStorageActor, readStorageState } from "./data/storage-service.js";
+import {
+  StorageCommandService,
+  isValidStorageClaimCoinsPayload,
+  isValidStorageClaimRowPayload,
+  isValidStorageOpenPayload,
+  storageCharacterTokenUuidForClaim
+} from "./data/storage-command-service.js?v=1.4.111-storage-claim-party-gm-fallback";
 import { registerCombatHooks } from "./combat/hooks.js?v=1.4.111-paladin-dogmas";
 import { CombatAttackService } from "./combat/attack-service.js?v=1.4.111-native-ammo-selection-guard";
 import { ImplantAutomationService } from "./combat/implant-automation-service.js";
@@ -147,6 +156,7 @@ import { runMapObjectTokenMacro } from "./integrations/map-object-token-macro.js
 import { refreshSmallTimeDateDisplay, registerSmallTimeIntegration, syncSmallTimeToCalendarTime } from "./integrations/smalltime-compat.js";
 import { registerRationFoodConversionHook } from "./integrations/ration-food-conversion.js";
 import { registerMagicWeaponTemplateHook } from "./integrations/magic-weapon-template.js?v=1.4.96";
+import { registerStorageTokenHooks } from "./integrations/storage-token-hooks.js";
 import { registerCraftsmanGadgetHooks } from "./integrations/craftsman-gadget-hooks.js";
 import { registerSpellAutomationHooks } from "./integrations/spell-automation-hooks.js";
 import { registerLongRestHooks } from "./integrations/long-rest-hooks.js";
@@ -221,6 +231,9 @@ const COMBAT_STATUS_SET_COMMAND = "combat.status.set";
 const TRADER_PURCHASE_COMMAND = "trader.purchase";
 const TRADER_SELL_COMMAND = "trader.sell";
 export const ITEM_PILE_DAMAGE_COMMAND = "durability.item-pile.damage";
+export const STORAGE_OPEN_COMMAND = "storage.open";
+export const STORAGE_CLAIM_ROW_COMMAND = "storage.claim-row";
+export const STORAGE_CLAIM_COINS_COMMAND = "storage.claim-coins";
 const ENVIRONMENT_COMBAT_STATUS_IDS = new Set(["rebreya-surrounded", "rebreya-open-position"]);
 const ENVIRONMENT_STATUS_SOURCE = "rebreya-environment";
 const ENVIRONMENT_STATUS_VERSION = "surrounded-ac-1";
@@ -279,6 +292,43 @@ function createSocketRequestId(prefix) {
 
 function cleanSocketId(value) {
   return String(value ?? "").trim();
+}
+
+function storageTokenObject(tokenDocument) {
+  return tokenDocument?.object
+    ?? globalThis.canvas?.tokens?.get?.(tokenDocument?.id)
+    ?? null;
+}
+
+function storageTokenCenter(tokenDocument) {
+  const object = storageTokenObject(tokenDocument);
+  if (object?.center) return object.center;
+  const gridSize = Number(globalThis.canvas?.grid?.size ?? globalThis.canvas?.dimensions?.size ?? 100);
+  const width = Number(tokenDocument?.width ?? 1) * gridSize;
+  const height = Number(tokenDocument?.height ?? 1) * gridSize;
+  return {
+    x: Number(tokenDocument?.x ?? 0) + width / 2,
+    y: Number(tokenDocument?.y ?? 0) + height / 2
+  };
+}
+
+function measureStorageTokenDistance(characterToken, storageToken) {
+  const grid = globalThis.canvas?.grid;
+  const from = storageTokenCenter(characterToken);
+  const to = storageTokenCenter(storageToken);
+  if (typeof grid?.measurePath === "function") {
+    return Number(grid.measurePath([from, to])?.distance);
+  }
+  if (typeof grid?.measureDistance === "function") {
+    return Number(grid.measureDistance(from, to));
+  }
+  return Number.POSITIVE_INFINITY;
+}
+
+function isStorageTokenVisibleTo(storageToken) {
+  if (storageToken?.hidden === true) return false;
+  const object = storageTokenObject(storageToken);
+  return object ? object.visible !== false : true;
 }
 
 const CALENDAR_TRANSITION_BOOLEAN_OPTION_KEYS = new Set([
@@ -982,6 +1032,11 @@ export class RebreyaMainModule {
       gameProvider: () => globalThis.game,
       normalizeState: normalizeTraderState
     });
+    this.lootgenTemplateCatalog = new LootgenTemplateCatalog({
+      get: () => globalThis.game?.settings?.get(MODULE_ID, SETTINGS_KEYS.LOOTGEN_TEMPLATES),
+      set: (value) => globalThis.game?.settings?.set(MODULE_ID, SETTINGS_KEYS.LOOTGEN_TEMPLATES, value),
+      randomId: () => globalThis.randomID?.()
+    });
     this.repository = new EconomyRepository();
     this.materialsCompendium = new MaterialsCompendiumService();
     this.gearCompendium = new GearCompendiumService();
@@ -1031,6 +1086,16 @@ export class RebreyaMainModule {
     this.travelMapService = new TravelMapService();
     this.inventoryService = new InventoryService(this);
     this.durabilityService = new DurabilityService(this);
+    this.storageService = new StorageService({
+      generate: (form, context) => this.generateStorageLoot(form, context)
+    });
+    this.storageCommandService = new StorageCommandService({
+      storageService: this.storageService,
+      inventoryService: this.inventoryService,
+      resolveToken: (uuid) => globalThis.fromUuid?.(uuid),
+      measureDistance: measureStorageTokenDistance,
+      isVisibleTo: isStorageTokenVisibleTo
+    });
     this.transportInstanceService = new TransportInstanceService(this, {
       gameProvider: () => globalThis.game,
       actorProvider: () => globalThis.Actor,
@@ -1192,6 +1257,7 @@ export class RebreyaMainModule {
     this.lootgenApps = new Map();
     this.lootgenCounter = 0;
     this.latestLootgenResult = null;
+    this.storageApps = new Map();
     this.cityApps = new Map();
     this.traderV2Apps = new Map();
     this.tradeRouteApps = new Map();
@@ -1292,6 +1358,21 @@ export class RebreyaMainModule {
       validate: isValidInventoryCurrencyConvertPayload,
       authorize: (payload, { sender }) => this.#canSenderManageGroup(sender, payload.inventoryActorId),
       execute: (payload) => this.inventoryService.executeCurrencyConvertMutation(payload)
+    });
+    this.socketCommandBus.register(STORAGE_OPEN_COMMAND, {
+      validate: isValidStorageOpenPayload,
+      authorize: (_payload, { sender }) => Boolean(sender),
+      execute: (payload, { sender }) => this.storageCommandService.open(payload, { sender })
+    });
+    this.socketCommandBus.register(STORAGE_CLAIM_ROW_COMMAND, {
+      validate: isValidStorageClaimRowPayload,
+      authorize: (_payload, { sender }) => Boolean(sender),
+      execute: (payload, { sender }) => this.storageCommandService.claimRow(payload, { sender })
+    });
+    this.socketCommandBus.register(STORAGE_CLAIM_COINS_COMMAND, {
+      validate: isValidStorageClaimCoinsPayload,
+      authorize: (_payload, { sender }) => Boolean(sender),
+      execute: (payload, { sender }) => this.storageCommandService.claimCoins(payload, { sender })
     });
     this.socketCommandBus.register(ITEM_PILE_DAMAGE_COMMAND, {
       validate: isValidItemPileDamagePayload,
@@ -2919,6 +3000,220 @@ export class RebreyaMainModule {
     return this.inventoryService.getTransportSnapshot(options);
   }
 
+  #controlledCharacterTokenUuid(explicitUuid = "") {
+    const requested = cleanSocketId(explicitUuid);
+    if (requested) return requested;
+    const token = (globalThis.canvas?.tokens?.controlled ?? [])
+      .find((candidate) => candidate?.actor?.type === "character");
+    return cleanSocketId(token?.document?.uuid ?? token?.uuid);
+  }
+
+  async openStorage(tokenUuid, request = {}) {
+    const payload = {
+      tokenUuid: cleanSocketId(tokenUuid),
+      characterTokenUuid: this.#controlledCharacterTokenUuid(request.characterTokenUuid)
+    };
+    return isActiveGmClient(globalThis.game)
+      ? this.storageCommandService.open(payload, { sender: globalThis.game?.user })
+      : this.socketCommandBus.request(STORAGE_OPEN_COMMAND, payload);
+  }
+
+  async claimStorageRow(tokenUuid, rowId, destination, mutationId, request = {}) {
+    const safeTokenUuid = cleanSocketId(tokenUuid);
+    const safeDestination = cleanSocketId(destination);
+    const payload = {
+      tokenUuid: safeTokenUuid,
+      characterTokenUuid: storageCharacterTokenUuidForClaim({
+        controlledCharacterTokenUuid: this.#controlledCharacterTokenUuid(request.characterTokenUuid),
+        storageTokenUuid: safeTokenUuid,
+        destination: safeDestination,
+        isGM: globalThis.game?.user?.isGM === true
+      }),
+      rowId: cleanSocketId(rowId),
+      destination: safeDestination,
+      mutationId: cleanSocketId(mutationId)
+    };
+    return isActiveGmClient(globalThis.game)
+      ? this.storageCommandService.claimRow(payload, { sender: globalThis.game?.user })
+      : this.socketCommandBus.request(STORAGE_CLAIM_ROW_COMMAND, payload);
+  }
+
+  async claimStorageCoins(tokenUuid, destination, mutationId, request = {}) {
+    const safeTokenUuid = cleanSocketId(tokenUuid);
+    const safeDestination = cleanSocketId(destination);
+    const payload = {
+      tokenUuid: safeTokenUuid,
+      characterTokenUuid: storageCharacterTokenUuidForClaim({
+        controlledCharacterTokenUuid: this.#controlledCharacterTokenUuid(request.characterTokenUuid),
+        storageTokenUuid: safeTokenUuid,
+        destination: safeDestination,
+        isGM: globalThis.game?.user?.isGM === true
+      }),
+      destination: safeDestination,
+      mutationId: cleanSocketId(mutationId)
+    };
+    return isActiveGmClient(globalThis.game)
+      ? this.storageCommandService.claimCoins(payload, { sender: globalThis.game?.user })
+      : this.socketCommandBus.request(STORAGE_CLAIM_COINS_COMMAND, payload);
+  }
+
+  async #resolveStorageToken(tokenUuid, { requireMarked = true } = {}) {
+    const document = await globalThis.fromUuid?.(cleanSocketId(tokenUuid));
+    const token = document?.document ?? document;
+    if (!token?.actor) throw new Error("Токен хранилища не найден.");
+    if (requireMarked && !isStorageActor(token.actor)) {
+      throw new Error("Токен не отмечен как хранилище Rebreya.");
+    }
+    return token;
+  }
+
+  async getStorageSnapshot(tokenUuid) {
+    const token = await this.#resolveStorageToken(tokenUuid);
+    const state = readStorageState(token);
+    const combinedRows = [...state.manualRows, ...state.generatedRows];
+    const rows = combinedRows
+      .map((row, index) => ({ ...foundry.utils.deepClone(row), rowId: cleanSocketId(row.rowId ?? index) }))
+      .filter((row) => !state.claimedRowIds.includes(row.rowId));
+    const coins = Object.fromEntries(["pp", "gp", "sp", "cp"].map((key) => [
+      key,
+      state.coinsClaimed
+        ? 0
+        : Math.max(0, Math.trunc(Number(state.manualCoins?.[key] ?? 0) + Number(state.generatedCoins?.[key] ?? 0)))
+    ]));
+    const canManage = globalThis.game?.user?.isGM === true;
+    return {
+      tokenUuid: cleanSocketId(token.uuid ?? tokenUuid),
+      name: cleanSocketId(token.name),
+      state: state.state,
+      rows,
+      coins,
+      ...(canManage ? {
+        baseName: state.baseName,
+        template: foundry.utils.deepClone(state.template),
+        manualRows: foundry.utils.deepClone(state.manualRows),
+        manualCoins: foundry.utils.deepClone(state.manualCoins)
+      } : {})
+    };
+  }
+
+  async configureStorageToken(tokenUuid, config = {}) {
+    if (!globalThis.game?.user?.isGM) {
+      throw new Error("Настраивать хранилища может только мастер.");
+    }
+    const token = await this.#resolveStorageToken(tokenUuid, { requireMarked: false });
+    if (!isStorageActor(token.actor)) {
+      if (typeof token.actor.setFlag === "function") {
+        await token.actor.setFlag(MODULE_ID, "storage", { enabled: true });
+      }
+      else {
+        await token.actor.update({ [`flags.${MODULE_ID}.storage`]: { enabled: true } });
+      }
+    }
+    const patch = {};
+    if (Object.prototype.hasOwnProperty.call(config, "baseName")) {
+      patch.baseName = cleanSocketId(config.baseName) || cleanSocketId(token.name) || "Хранилище";
+    }
+    if (Object.prototype.hasOwnProperty.call(config, "templateId")) {
+      const templateId = cleanSocketId(config.templateId);
+      const template = templateId ? this.lootgenTemplateCatalog.get(templateId) : null;
+      if (templateId && !template) throw new Error("Шаблон Lootgen не найден.");
+      patch.template = template ? { name: template.name, form: template.form } : null;
+    }
+    return this.storageService.configure(token, patch);
+  }
+
+  async markStorageActor(actorUuid) {
+    if (!globalThis.game?.user?.isGM) throw new Error("Создавать хранилища может только мастер.");
+    const actor = await globalThis.fromUuid?.(cleanSocketId(actorUuid));
+    if (!actor || actor.type !== "npc") {
+      throw new Error("Хранилищем можно сделать только NPC-актёра.");
+    }
+    if (typeof actor.setFlag === "function") {
+      await actor.setFlag(MODULE_ID, "storage", { enabled: true });
+    }
+    else {
+      await actor.update({ [`flags.${MODULE_ID}.storage`]: { enabled: true } });
+    }
+    globalThis.ui?.notifications?.info(`Актёр «${actor.name}» отмечен как хранилище.`);
+    return actor;
+  }
+
+  async addManualStorageItem(tokenUuid, itemUuid) {
+    if (!globalThis.game?.user?.isGM) throw new Error("Добавлять предметы может только мастер.");
+    const [token, item] = await Promise.all([
+      this.#resolveStorageToken(tokenUuid),
+      globalThis.fromUuid?.(cleanSocketId(itemUuid))
+    ]);
+    if (!item || item.documentName !== "Item" && !(globalThis.Item && item instanceof globalThis.Item)) {
+      throw new Error("Перетащенный предмет не найден.");
+    }
+    const state = readStorageState(token);
+    const itemData = foundry.utils.deepClone(item.toObject());
+    delete itemData._id;
+    delete itemData.folder;
+    delete itemData.sort;
+    delete itemData.ownership;
+    delete itemData._stats;
+    const quantity = Math.max(1, Number(foundry.utils.getProperty(itemData, "system.quantity") ?? 1));
+    const row = {
+      rowId: createSocketRequestId("storage-manual"),
+      name: cleanSocketId(itemData.name) || "Предмет",
+      img: cleanSocketId(itemData.img),
+      typeLabel: cleanSocketId(itemData.type) || "Предмет",
+      sourceType: "manual",
+      sourceId: cleanSocketId(item.uuid),
+      quantity,
+      itemData
+    };
+    return this.storageService.configure(token, {
+      manualRows: [...state.manualRows, row],
+      state: state.state === "empty" ? "opened" : state.state
+    });
+  }
+
+  async removeManualStorageItem(tokenUuid, rowId) {
+    if (!globalThis.game?.user?.isGM) throw new Error("Удалять предметы может только мастер.");
+    const token = await this.#resolveStorageToken(tokenUuid);
+    const state = readStorageState(token);
+    const safeRowId = cleanSocketId(rowId);
+    const manualRows = state.manualRows.filter((row, index) => cleanSocketId(row.rowId ?? index) !== safeRowId);
+    return this.storageService.configure(token, { manualRows });
+  }
+
+  async resetStorageToken(tokenUuid) {
+    if (!globalThis.game?.user?.isGM) throw new Error("Сбрасывать хранилища может только мастер.");
+    const token = await this.#resolveStorageToken(tokenUuid);
+    return this.storageService.configure(token, {
+      generatedRows: [],
+      generatedCoins: {},
+      claimedRowIds: [],
+      coinsClaimed: false,
+      state: "unopened"
+    });
+  }
+
+  async openStorageApp({ tokenUuid, configure = false } = {}) {
+    const safeTokenUuid = cleanSocketId(tokenUuid);
+    if (!safeTokenUuid) throw new Error("Не указан токен хранилища.");
+    if (configure) {
+      await this.configureStorageToken(safeTokenUuid);
+    }
+    else {
+      await this.openStorage(safeTokenUuid);
+    }
+    const moduleVersion = game.modules.get(MODULE_ID)?.version ?? "1.4.96";
+    const { StorageApp } = await import(`./ui/storage-app.js?v=${encodeURIComponent(moduleVersion)}`);
+    const key = `${safeTokenUuid}:${configure ? "configure" : "open"}`;
+    let app = this.storageApps.get(key);
+    if (!app) {
+      app = new StorageApp(this, safeTokenUuid, { configure });
+      this.storageApps.set(key, app);
+    }
+    await app.render({ force: true });
+    bringAppToFront(app);
+    return app;
+  }
+
   async importTransportIntoGroup(payload) {
     const result = isActiveGmClient(globalThis.game)
       ? await this.transportInstanceService.importIntoGroup(payload, {
@@ -4408,6 +4703,56 @@ export class RebreyaMainModule {
     };
   }
 
+  listLootgenTemplates() {
+    if (!game.user?.isGM) {
+      throw new Error("Шаблоны Lootgen доступны только мастеру.");
+    }
+    return this.lootgenTemplateCatalog.list();
+  }
+
+  getLootgenTemplate(templateId) {
+    if (!game.user?.isGM) {
+      throw new Error("Шаблоны Lootgen доступны только мастеру.");
+    }
+    return this.lootgenTemplateCatalog.get(templateId);
+  }
+
+  async saveLootgenTemplate(payload = {}) {
+    if (!game.user?.isGM) {
+      throw new Error("Сохранять шаблоны Lootgen может только мастер.");
+    }
+    return this.lootgenTemplateCatalog.save(payload);
+  }
+
+  async removeLootgenTemplate(templateId) {
+    if (!game.user?.isGM) {
+      throw new Error("Удалять шаблоны Lootgen может только мастер.");
+    }
+    return this.lootgenTemplateCatalog.remove(templateId);
+  }
+
+  async generateStorageLoot(form = {}) {
+    if (!isActiveGmClient(globalThis.game)) {
+      throw new Error("Содержимое хранилища может генерировать только активный мастер.");
+    }
+    const moduleVersion = game.modules.get(MODULE_ID)?.version ?? "1.4.96";
+    const { LootgenApp } = await import(`./ui/lootgen-app.js?v=${encodeURIComponent(moduleVersion)}`);
+    const generator = new LootgenApp(this, { appKey: `storage-generator-${createSocketRequestId("loot")}` });
+    const generated = await generator.generateFromForm(form);
+    const rows = [];
+    for (const [index, row] of (generated.rows ?? []).entries()) {
+      rows.push({
+        ...foundry.utils.deepClone(row),
+        rowId: createSocketRequestId(`storage-row-${index}`),
+        itemData: await this.inventoryService.buildLootgenItemData(row)
+      });
+    }
+    return {
+      rows,
+      coins: foundry.utils.deepClone(generated.coins ?? {})
+    };
+  }
+
   unregisterLootgenApp(appKey) {
     if (!appKey) {
       return false;
@@ -5244,6 +5589,13 @@ Hooks.once("ready", async () => {
   }
   catch (error) {
     console.error(`${MODULE_ID} | Failed to register lootgen chat hooks.`, error);
+  }
+
+  try {
+    registerStorageTokenHooks(moduleApi, { hooks: Hooks });
+  }
+  catch (error) {
+    console.error(`${MODULE_ID} | Failed to register storage token hooks.`, error);
   }
 
   try {

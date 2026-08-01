@@ -4305,6 +4305,27 @@ export class InventoryService {
     );
   }
 
+  addLootgenRowToCharacterOnce(row, actor, mutationId) {
+    const frozenRow = foundry.utils.deepClone(row ?? {});
+    return this.mutationCoordinator.run(
+      "inventory",
+      () => {
+        if (!isActiveGmClient()) {
+          throw new Error("Only the active GM can grant storage loot to a character.");
+        }
+        if (!isActorDocument(actor) || actor.type !== "character") {
+          throw new Error("Лут из хранилища можно выдать только персонажу.");
+        }
+        return this.#executeInventoryGrantOnce({
+          actor,
+          quantity: frozenRow.quantity,
+          mutationId,
+          buildItemData: () => this.buildLootgenItemData(frozenRow, { allowPersistedItemData: true })
+        });
+      }
+    );
+  }
+
   async #executeAddModelItemOnce(sourceType, sourceId, quantity, mutationId) {
     return this.#executeInventoryGrantOnce({
       quantity,
@@ -4313,12 +4334,14 @@ export class InventoryService {
     });
   }
 
-  async #executeInventoryGrantOnce({ quantity, mutationId, buildItemData }) {
+  async #executeInventoryGrantOnce({ actor: requestedActor = null, quantity, mutationId, buildItemData }) {
     const operationId = createInventoryMutationId("inventory-grant", mutationId);
     let record = await this.mutationJournal.find(operationId);
-    const actor = await this.getInventoryActor({ create: true });
-    this.#assertCanManagePartyInventory(actor);
-    if (!actor) throw new Error("Не удалось получить партийный инвентарь.");
+    const actor = requestedActor ?? await this.getInventoryActor({ create: true });
+    if (!requestedActor) {
+      this.#assertCanManagePartyInventory(actor);
+    }
+    if (!actor) throw new Error("Не удалось получить инвентарь для выдачи лута.");
     if (!record) {
       const safeQuantity = Math.max(0.01, roundNumber(toNumber(quantity, 1), 2));
       const itemData = await buildItemData(safeQuantity);
@@ -4401,12 +4424,30 @@ export class InventoryService {
     );
   }
 
-  async #executeAddCurrencyOnce(coins, mutationId) {
+  addCurrencyToCharacterOnce(coins = {}, actor, mutationId = "") {
+    const frozenCoins = foundry.utils.deepClone(coins ?? {});
+    return this.mutationCoordinator.run(
+      "inventory",
+      () => {
+        if (!isActiveGmClient()) {
+          throw new Error("Only the active GM can grant storage currency to a character.");
+        }
+        if (!isActorDocument(actor) || actor.type !== "character") {
+          throw new Error("Монеты из хранилища можно выдать только персонажу.");
+        }
+        return this.#executeAddCurrencyOnce(frozenCoins, mutationId, { actor });
+      }
+    );
+  }
+
+  async #executeAddCurrencyOnce(coins, mutationId, { actor: requestedActor = null } = {}) {
     const operationId = createInventoryMutationId("inventory-currency-grant", mutationId);
     let record = await this.mutationJournal.find(operationId);
-    const actor = await this.getInventoryActor({ create: true });
-    this.#assertCanManagePartyInventory(actor);
-    if (!actor) throw new Error("Не удалось получить партийный инвентарь.");
+    const actor = requestedActor ?? await this.getInventoryActor({ create: true });
+    if (!requestedActor) {
+      this.#assertCanManagePartyInventory(actor);
+    }
+    if (!actor) throw new Error("Не удалось получить инвентарь для выдачи монет.");
     if (!record) {
       const before = buildCurrencySnapshot(actor);
       const after = {

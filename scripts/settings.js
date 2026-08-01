@@ -274,4 +274,15 @@ export function registerSettings() {
     }
   });
 
+  game.settings.register(MODULE_ID, SETTINGS_KEYS.LOOTGEN_TEMPLATES, {
+    scope: "world",
+    config: false,
+    type: Object,
+    default: {
+      version: 1,
+      templates: []
+    },
+    onChange: () => game.rebreyaMain?.refreshOpenApps?.()
+  });
+
 }

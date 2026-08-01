@@ -7,7 +7,7 @@
 ## Совместимость и точка входа
 
 - Module ID: `rebreya-main`.
-- Версия: `1.4.104`.
+- Версия: `1.4.112`.
 - Foundry VTT: minimum/verified `13`.
 - Основная система: `dnd5e`.
 - Обязательная зависимость: `statuscounter >= 3.0.4`.
@@ -233,6 +233,15 @@
 
 `scripts/integrations/item-piles-dnd5e.js` содержит helper `ensureItemPilesDnD5eIntegration`, но не регистрируется composition root. Не считать эту интеграцию активной, пока в `main.js` не появился явный вызов и тест.
 
+## Шаблоны Lootgen и хранилища на сцене
+
+- Внизу окна Lootgen мастер сохраняет текущие настройки кнопкой `Сохранить шаблон`; шаблоны хранятся в скрытом world setting `lootgenTemplates` и повторно применяются в Lootgen и других инструментах модуля.
+- NPC помечается как хранилище Rebreya через действие `Хранилище` в заголовке листа. Конкретные настройки и сгенерированный лут записываются во флаг конкретного Scene Token, поэтому два токена одного актёра независимы.
+- ЛКМ по токену открывает меню. Игрок видит `Открыть`, мастер дополнительно видит `Настроить`; в настройке можно выбрать снимок шаблона Lootgen и добавить предметы вручную перетаскиванием.
+- При первом явном открытии содержимое генерируется один раз. Игрок может передать каждую строку или монеты себе либо в групповой инвентарь. Для игрока active-GM повторно проверяет видимость, владение выбранным персонажем и дистанцию не более 5 футов.
+- После выдачи всего содержимого состояние становится `empty`, а к имени токена добавляется `(пусто)`. Выдача идемпотентна и идёт через единый `SocketCommandBus`.
+- Хранилища принадлежат Rebreya: их actor/token flags, генерация, интерфейс и выдача не используют Item Piles и не добавляют его как зависимость модуля.
+
 ## Публичный API
 
 Поддерживаемая точка вызова макросов:
@@ -275,6 +284,8 @@ await api.setCombatStatus("actor-id", "frightened", { value: 2 });
 - `isTraderIntegrationAvailable`, `getCityTraderSummaries`, `getTraderSnapshot`, `purchaseTraderItem`, `createTraderSalePreview`, `sellTraderItem`, `updateTraderMetadata`.
 - `recordTraderAudit`, `getTradeAuditLog`, `rollbackTraderAuditEntry`.
 - `shareLootgenResult`, `createLootgenChatMessage`, `claimLootgenChatRow`, `claimLootgenChatCoins`, `claimLootgenChatRowToInventory`, `claimLootgenChatAllToInventory`, `restoreLootgenClearFromChat`.
+- `listLootgenTemplates`, `getLootgenTemplate`, `saveLootgenTemplate`, `removeLootgenTemplate`.
+- `openStorageApp`, `getStorageSnapshot`, `markStorageActor`, `configureStorageToken`, `addManualStorageItem`, `removeManualStorageItem`, `resetStorageToken`, `openStorage`, `claimStorageRow`, `claimStorageCoins`.
 - `installItemUpgrade`, `removeItemUpgrade`, `setItemUpgradeCapacity`.
 
 ### Бой и космология
@@ -297,7 +308,7 @@ Hidden world state:
 
 - `traderState`, `partyState` (legacy compatibility), `groupState`, `craftState`, `calendarState`.
 - `craftMutationJournal`, `inventoryMutationJournal`.
-- `connectionStates`, `referenceNotes`, `tradeRouteOverrides`, `statePolicies`, `cosmologyState`, `globalEventsState`, `globalEventsDraft`.
+- `connectionStates`, `referenceNotes`, `tradeRouteOverrides`, `statePolicies`, `cosmologyState`, `globalEventsState`, `globalEventsDraft`, `lootgenTemplates`.
 
 Основные источники в `data/`:
 

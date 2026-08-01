@@ -90,6 +90,20 @@ test("lootgen app treats materials as an equipment type filter", async () => {
   assert.match(source, /typeLabel:\s*MATERIAL_LOOTGEN_TYPE_LABEL/u);
 });
 
+test("lootgen lets the GM save and apply reusable templates", async () => {
+  const [source, template] = await Promise.all([
+    readFile(new URL("../scripts/ui/lootgen-app.js", import.meta.url), "utf8"),
+    readFile(new URL("../templates/lootgen-app.hbs", import.meta.url), "utf8")
+  ]);
+
+  assert.match(template, /data-action="lootgen-save-template"/u);
+  assert.match(template, /data-action="lootgen-apply-template"/u);
+  assert.match(template, /Сохранить шаблон/u);
+  assert.match(source, /saveLootgenTemplate/u);
+  assert.match(source, /listLootgenTemplates/u);
+  assert.match(source, /applyLootgenTemplate/u);
+});
+
 test("lootgen type filter sections grow without their own scrollbars", async () => {
   const styles = await readFile(new URL("../styles/main.css", import.meta.url), "utf8");
   const match = styles.match(/\.rm-lootgen-type-filter__options\s*\{(?<body>[^}]+)\}/u);

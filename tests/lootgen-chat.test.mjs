@@ -714,9 +714,10 @@ test("only the active GM handles economic lootgen socket claims", async () => {
 });
 
 test("lootgen trusts only GM-authored chat state and journals direct grants", async () => {
-  const [mainSource, appSource] = await Promise.all([
+  const [mainSource, appSource, generatorSource] = await Promise.all([
     readFile(new URL("../scripts/main.js", import.meta.url), "utf8"),
-    readFile(new URL("../scripts/ui/lootgen-app.js", import.meta.url), "utf8")
+    readFile(new URL("../scripts/ui/lootgen-app.js", import.meta.url), "utf8"),
+    readFile(new URL("../scripts/data/lootgen-generator.js", import.meta.url), "utf8")
   ]);
 
   assert.match(mainSource, /const createdBy = String\(state\?\.createdBy/u);
@@ -724,7 +725,7 @@ test("lootgen trusts only GM-authored chat state and journals direct grants", as
   assert.match(mainSource, /author\?\.isGM === true/u);
   assert.match(mainSource, /addLootgenRowToInventoryOnce\(row, mutationId\)/u);
   assert.match(mainSource, /addCurrencyToInventoryOnce\(coins, stableMutationId\)/u);
-  assert.match(appSource, /directGrantId: `lootgen:\$\{directBatchId\}:row:\$\{index\}`/u);
-  assert.match(appSource, /directCoinGrantId: `lootgen:\$\{directBatchId\}:coins`/u);
+  assert.match(generatorSource, /directGrantId: `lootgen:\$\{safeBatchId\}:row:\$\{index\}`/u);
+  assert.match(generatorSource, /directCoinGrantId: `lootgen:\$\{safeBatchId\}:coins`/u);
   assert.doesNotMatch(appSource, /updatePartyCurrency\(\{/u);
 });

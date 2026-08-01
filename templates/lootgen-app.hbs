@@ -13,6 +13,27 @@
           <span>Новое окно</span>
         </button>
 
+        <div class="rm-field">
+          <label for="rm-lootgen-template-{{appKey}}">Шаблон генерации</label>
+          <div class="rm-lootgen-primary-actions">
+            <select id="rm-lootgen-template-{{appKey}}" data-action="lootgen-template-select">
+              <option value="">Выберите шаблон</option>
+              {{#each form.lootgenTemplates}}
+                <option value="{{id}}">{{name}}</option>
+              {{/each}}
+            </select>
+            <button
+              type="button"
+              class="rm-button rm-button--secondary"
+              data-action="lootgen-apply-template"
+              {{#unless form.hasLootgenTemplates}}disabled{{/unless}}
+            >
+              <i class="fa-solid fa-file-import"></i>
+              <span>Применить</span>
+            </button>
+          </div>
+        </div>
+
         <div class="rm-lootgen-control-grid">
           <div class="rm-field">
             <label title="Нижняя граница ранга для подбора предметов.">Минимальный ранг</label>
@@ -128,6 +149,15 @@
             <span>Очистить</span>
           </button>
         </div>
+        <button
+          type="button"
+          class="rm-button rm-button--secondary rm-button--wide"
+          data-action="lootgen-save-template"
+          title="Сохранить текущие настройки генерации как шаблон"
+        >
+          <i class="fa-solid fa-floppy-disk"></i>
+          <span>Сохранить шаблон</span>
+        </button>
       </aside>
     {{/if}}
 
