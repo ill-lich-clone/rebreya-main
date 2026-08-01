@@ -2077,6 +2077,62 @@ test("arquebus attacks disable dnd5e ammunition selection so only reloading spen
   assert.equal(ammo.updateCalls.length, 0);
 });
 
+test("ordinary ammunition weapons clear invalid dnd5e ammunition selections before the attack roll", () => {
+  const weapon = makeWeaponItem({
+    id: "crossbow",
+    name: "Crossbow",
+    properties: new Set(["amm"])
+  });
+  weapon.system.type.value = "simpleR";
+  const ammo = makeAmmoItem({
+    id: "crossbow-bolts",
+    name: "Crossbow Bolts",
+    subtype: "crossbowBolt"
+  });
+  const actor = makeActor([weapon, ammo]);
+  const activity = {
+    id: "crossbowAttack",
+    type: "attack",
+    actor,
+    item: weapon,
+    attack: {
+      type: {
+        value: "ranged"
+      }
+    }
+  };
+  const config = {
+    subject: activity,
+    ammunition: "Ammunition",
+    rolls: [{
+      ammunition: "Ammunition",
+      options: {
+        ammunition: "Ammunition"
+      }
+    }]
+  };
+  const dialog = {
+    options: {
+      ammunitionOptions: [
+        { value: "", label: "" },
+        { value: "Ammunition", label: "Ammunition" },
+        { value: ammo.id, label: "Crossbow Bolts (20)" }
+      ]
+    }
+  };
+  const service = new CombatAttackService({});
+
+  const result = service.applyDnd5eAttackRollConfig(config, dialog, {});
+
+  assert.equal(result, true);
+  assert.equal(config.ammunition, "");
+  assert.equal(config.rolls[0].ammunition, "");
+  assert.equal(config.rolls[0].options.ammunition, "");
+  assert.deepEqual(dialog.options.ammunitionOptions.map((option) => option.value), ["", ammo.id]);
+  assert.equal(ammo.system.quantity, 30);
+  assert.equal(ammo.updateCalls.length, 0);
+});
+
 test("firearm attack roll notes ammo and misfire in the originating attack card", () => {
   TestRoll.queuedTotals = [13];
   TestRoll.messages = [];

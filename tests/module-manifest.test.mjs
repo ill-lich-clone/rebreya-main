@@ -391,7 +391,7 @@ test("combat automation imports preserve their released cache busts", async () =
   );
   assert.match(
     entrypointSource,
-    /attack-service\.js\?v=1\.4\.111-firearm-native-ammo-property/u,
+    /attack-service\.js\?v=1\.4\.111-native-ammo-selection-guard/u,
   );
   assert.match(
     entrypointSource,
@@ -493,7 +493,7 @@ test("held item integrations preserve their released cache bust", async () => {
   );
   assert.match(
     entrypointSource,
-    /attack-service\.js\?v=1\.4\.111-firearm-native-ammo-property/u,
+    /attack-service\.js\?v=1\.4\.111-native-ammo-selection-guard/u,
   );
   assert.match(
     sheetSource,

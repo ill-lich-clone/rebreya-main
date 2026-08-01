@@ -80,7 +80,7 @@ import { SocketCommandBus } from "./infrastructure/foundry/socket-command-bus.js
 import { UiRefreshCoordinator } from "./infrastructure/ui/ui-refresh-coordinator.js";
 import { GlobalEventsService } from "./data/global-events-service.js";
 import { registerCombatHooks } from "./combat/hooks.js?v=1.4.111-paladin-dogmas";
-import { CombatAttackService } from "./combat/attack-service.js?v=1.4.111-firearm-native-ammo-property";
+import { CombatAttackService } from "./combat/attack-service.js?v=1.4.111-native-ammo-selection-guard";
 import { ImplantAutomationService } from "./combat/implant-automation-service.js";
 import { SizeAutomationService } from "./combat/size-automation-service.js?v=1.4.110-character-size-authority";
 import { ReactionCapabilityIndex } from "./combat/reaction-capability-index.js";

@@ -3133,6 +3133,82 @@ export class CombatAttackService {
     return directChanged || valueChanged;
   }
 
+  #actorItemById(actor, itemId) {
+    const safeItemId = cleanText(itemId);
+    if (!safeItemId) {
+      return null;
+    }
+
+    const directItem = actor?.items?.get?.(safeItemId);
+    if (directItem) {
+      return directItem;
+    }
+
+    return collectionValues(actor?.items).find((item) => (
+      cleanText(item?.id ?? item?._id) === safeItemId
+    )) ?? null;
+  }
+
+  #isValidNativeAmmunitionOption(actor, option) {
+    const value = cleanText(option?.value);
+    return !value || Boolean(this.#actorItemById(actor, value));
+  }
+
+  #clearInvalidNativeAmmunitionSelection(activity, config = {}, dialog = {}) {
+    const actor = activity?.actor ?? activity?.item?.actor ?? null;
+    if (!actor) {
+      return false;
+    }
+
+    let changed = false;
+    const sanitize = (value) => {
+      if (value === false) {
+        return false;
+      }
+
+      const safeValue = cleanText(value);
+      if (!safeValue) {
+        return value === undefined ? undefined : "";
+      }
+
+      if (this.#actorItemById(actor, safeValue)) {
+        return value;
+      }
+
+      changed = true;
+      return "";
+    };
+
+    if (Object.hasOwn(config, "ammunition")) {
+      config.ammunition = sanitize(config.ammunition);
+    }
+
+    for (const rollConfig of config?.rolls ?? []) {
+      if (!isPlainObject(rollConfig)) {
+        continue;
+      }
+
+      if (Object.hasOwn(rollConfig, "ammunition")) {
+        rollConfig.ammunition = sanitize(rollConfig.ammunition);
+      }
+      if (isPlainObject(rollConfig.options) && Object.hasOwn(rollConfig.options, "ammunition")) {
+        rollConfig.options.ammunition = sanitize(rollConfig.options.ammunition);
+      }
+    }
+
+    const options = dialog?.options?.ammunitionOptions;
+    if (Array.isArray(options)) {
+      const filteredOptions = options.filter((option) => this.#isValidNativeAmmunitionOption(actor, option));
+      if (filteredOptions.length !== options.length) {
+        dialog.options ??= {};
+        dialog.options.ammunitionOptions = filteredOptions;
+        changed = true;
+      }
+    }
+
+    return changed;
+  }
+
   #applyActivitySourcePatch(activity, patch) {
     if (!isPlainObject(patch) || !Object.keys(patch).length) {
       return;
@@ -3448,6 +3524,10 @@ export class CombatAttackService {
       const isFirearm = isFirearmItem(item);
       const actor = activity.actor ?? item.actor ?? null;
       const firearmMessageOptions = isFirearm ? { ...config, messageConfig: message } : config;
+      if (!isFirearm) {
+        this.#clearInvalidNativeAmmunitionSelection(activity, config, dialog);
+      }
+
       if (isFirearm) {
         this.#suppressNativeFirearmAmmunition(item);
         config.ammunition = false;
