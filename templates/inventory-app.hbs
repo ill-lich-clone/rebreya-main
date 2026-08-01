@@ -7,39 +7,15 @@
     <section class="rm-shell rm-inventory-shell rm-inventory-shell--compact rm-inventory-book__page scrollable">
       <header class="rm-inventory-book__header{{#if tabs.isTravel}} rm-inventory-book__header--travel{{/if}}">
         {{#if tabs.isTravel}}
-          <video
-            class="rm-inventory-book__travel-video"
-            autoplay
-            muted
-            loop
-            playsinline
-            preload="metadata"
-            poster="{{travelLandscape.active.posterUrl}}"
+          <div
+            class="rm-inventory-book__travel-parallax"
             aria-hidden="true"
           >
-            <source
-              src="{{travelLandscape.active.videoUrl}}"
-              type="video/webm"
-            >
-          </video>
-          <div
-            class="rm-inventory-book__travel-selector"
-            role="group"
-            aria-label="Выбор пейзажа путешествия"
-          >
-            {{#each travelLandscape.options}}
-              <button
-                type="button"
-                class="rm-inventory-book__travel-choice{{#if selected}} is-active{{/if}}"
-                data-action="select-travel-landscape"
-                data-landscape-id="{{id}}"
-                aria-label="Пейзаж {{number}}: {{label}}"
-                aria-pressed="{{ariaPressed}}"
-                title="{{label}}"
-              >
-                {{number}}
-              </button>
-            {{/each}}
+            <span class="rm-inventory-book__travel-layer rm-inventory-book__travel-layer--sky" data-parallax-layer="sky"></span>
+            <span class="rm-inventory-book__travel-layer rm-inventory-book__travel-layer--far-mountains" data-parallax-layer="far-mountains"></span>
+            <span class="rm-inventory-book__travel-layer rm-inventory-book__travel-layer--middle-ridges" data-parallax-layer="middle-ridges"></span>
+            <span class="rm-inventory-book__travel-layer rm-inventory-book__travel-layer--valley" data-parallax-layer="valley"></span>
+            <span class="rm-inventory-book__travel-layer rm-inventory-book__travel-layer--foreground" data-parallax-layer="foreground"></span>
           </div>
         {{/if}}
 
@@ -1180,4 +1156,3 @@
     </nav>
   </section>
 {{/if}}
-

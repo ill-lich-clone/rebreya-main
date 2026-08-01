@@ -792,7 +792,7 @@ test("InventoryApp uses its own workshop artwork without changing the character 
   );
 });
 
-test("InventoryApp replaces the workshop header with the complete travel video frame", async () => {
+test("InventoryApp renders one five-layer travel parallax without media selection", async () => {
   const template = await readFile(
     new URL("../templates/inventory-app.hbs", import.meta.url),
     "utf8"
@@ -807,7 +807,7 @@ test("InventoryApp replaces the workshop header with the complete travel video f
   const identityIndex = template.indexOf('class="rm-inventory-book__identity"');
   const travelGuardIndex = template.indexOf("{{#if tabs.isTravel}}", headerTagEnd);
   const travelGuardEnd = template.indexOf("\n        {{/if}}", travelGuardIndex);
-  const travelVideoBlock = template.slice(travelGuardIndex, travelGuardEnd);
+  const travelBlock = template.slice(travelGuardIndex, travelGuardEnd);
 
   assert.ok(headerIndex >= 0, "expected the shared inventory header");
   assert.match(
@@ -816,55 +816,28 @@ test("InventoryApp replaces the workshop header with the complete travel video f
   );
   assert.ok(
     travelGuardIndex > headerIndex && travelGuardIndex < identityIndex,
-    "expected the travel-only video before shared header content"
+    "expected the travel-only parallax before shared header content"
   );
-  assert.equal((template.match(/<video\b/gu) ?? []).length, 1);
-  assert.equal((travelVideoBlock.match(/<video\b/gu) ?? []).length, 1);
-  assert.equal((travelVideoBlock.match(/<source\b/gu) ?? []).length, 1);
-  assert.match(travelVideoBlock, /class="rm-inventory-book__travel-video"/u);
-  assert.match(travelVideoBlock, /\bautoplay\b/u);
-  assert.match(travelVideoBlock, /\bmuted\b/u);
-  assert.match(travelVideoBlock, /\bloop\b/u);
-  assert.match(travelVideoBlock, /\bplaysinline\b/u);
-  assert.match(travelVideoBlock, /preload="metadata"/u);
-  assert.match(travelVideoBlock, /aria-hidden="true"/u);
+  assert.equal((template.match(/<video\b/gu) ?? []).length, 0);
+  assert.equal((travelBlock.match(/<video\b/gu) ?? []).length, 0);
+  assert.equal((travelBlock.match(/<source\b/gu) ?? []).length, 0);
   assert.match(
-    travelVideoBlock,
-    /poster="\{\{travelLandscape\.active\.posterUrl\}\}"/u
+    travelBlock,
+    /class="rm-inventory-book__travel-parallax"[\s\S]*aria-hidden="true"/u
   );
-  assert.match(
-    travelVideoBlock,
-    /src="\{\{travelLandscape\.active\.videoUrl\}\}"/u
+  assert.equal(
+    (travelBlock.match(/class="rm-inventory-book__travel-layer /gu) ?? []).length,
+    5
   );
-  assert.match(travelVideoBlock, /type="video\/webm"/u);
-  assert.doesNotMatch(travelVideoBlock, /\bcontrols\b/u);
-  assert.match(travelVideoBlock, /class="rm-inventory-book__travel-selector"/u);
-  assert.match(travelVideoBlock, /role="group"/u);
-  assert.match(travelVideoBlock, /aria-label="Выбор пейзажа путешествия"/u);
-  assert.match(travelVideoBlock, /\{\{#each travelLandscape\.options\}\}/u);
-  assert.match(travelVideoBlock, /data-action="select-travel-landscape"/u);
-  assert.match(travelVideoBlock, /data-landscape-id="\{\{id\}\}"/u);
-  assert.match(travelVideoBlock, /aria-pressed="\{\{ariaPressed\}\}"/u);
-  assert.match(travelVideoBlock, /aria-label="Пейзаж \{\{number\}\}: \{\{label\}\}"/u);
-  assert.match(travelVideoBlock, /\{\{number\}\}/u);
-  assert.doesNotMatch(travelVideoBlock, /Р’С‹Р±РѕСЂ/u);
-  assert.doesNotMatch(travelVideoBlock, /РџРµР№Р·Р°Р¶/u);
-  assert.doesNotMatch(template, /rebreya-travel-window\.webm/u);
-  assert.doesNotMatch(template, /rebreya-travel-window-poster\.webp/u);
-
-  assert.match(
-    css,
-    /\.rebreya-inventory-app \.rm-inventory-book__travel-video\s*\{[^}]*position:\s*absolute;[^}]*inset:\s*0;[^}]*width:\s*100%;[^}]*height:\s*100%;[^}]*object-fit:\s*cover;[^}]*object-position:\s*center;[^}]*-webkit-mask-image:\s*none;[^}]*mask-image:\s*none;[^}]*pointer-events:\s*none;/su
+  assert.deepEqual(
+    [...travelBlock.matchAll(/data-parallax-layer="([^"]+)"/gu)].map((match) => match[1]),
+    ["sky", "far-mountains", "middle-ridges", "valley", "foreground"]
   );
-  assert.doesNotMatch(css, /object-fit:\s*fill;/u);
+  assert.doesNotMatch(travelBlock, /travelLandscape|select-travel-landscape|aria-pressed/u);
   assert.match(
     css,
     /\.rebreya-inventory-app \.rm-inventory-book__header--travel::before\s*\{[^}]*content:\s*none;[^}]*background-image:\s*none;/su
   );
-  assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__header--travel::after\s*\{/u);
-  assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__travel-selector\s*\{/u);
-  assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__travel-choice\s*\{[^}]*border-radius:\s*50%;/su);
-  assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__travel-choice\.is-active\s*\{/u);
   assert.match(
     css,
     /--rm-party-inventory-header-image:\s*url\("\.\.\/assets\/ui\/rebreya-party-inventory-workshop\.webp"\);/u
@@ -873,55 +846,6 @@ test("InventoryApp replaces the workshop header with the complete travel video f
     css,
     /\.rebreya-inventory-app \.rm-inventory-book__header::before\s*\{[^}]*var\(--rm-party-inventory-header-image\)/su
   );
-});
-
-test("InventoryApp keeps travel controls inside substantial window rails", async () => {
-  const css = await readFile(
-    new URL("../styles/main.css", import.meta.url),
-    "utf8"
-  );
-  const frameMetrics = css.match(
-    /\.rebreya-inventory-app \.rm-inventory-book__header--travel\s*\{(?<body>[^}]*)\}/u
-  )?.groups?.body ?? "";
-  const frameRule = css.match(
-    /\.rebreya-inventory-app \.rm-inventory-book__header--travel::after\s*\{(?<body>[^}]*)\}/u
-  )?.groups?.body ?? "";
-  const selectorRule = css.match(
-    /\.rebreya-inventory-app \.rm-inventory-book__travel-selector\s*\{(?<body>[^}]*)\}/u
-  )?.groups?.body ?? "";
-  const readPixelVariable = (name) => {
-    const match = frameMetrics.match(new RegExp(`${name}:\\s*(\\d+)px;`, "u"));
-    assert.ok(match, `expected ${name} travel-frame metric`);
-    return Number(match[1]);
-  };
-
-  const inset = readPixelVariable("--rm-travel-frame-inset");
-  const border = readPixelVariable("--rm-travel-frame-border-width");
-  const sideRail = readPixelVariable("--rm-travel-frame-side-width");
-  const horizontalRail = readPixelVariable("--rm-travel-frame-rail-height");
-  const controlGap = readPixelVariable("--rm-travel-frame-control-gap");
-
-  assert.ok(sideRail >= 24, "expected visibly substantial side rails");
-  assert.ok(horizontalRail >= 18, "expected visibly substantial top and bottom rails");
-  assert.ok(controlGap >= 8, "expected controls to clear the inner rail edge");
-  assert.ok(inset + border + sideRail + controlGap > 32);
-  assert.ok(inset + border + horizontalRail + controlGap > 28);
-  assert.match(frameRule, /inset:\s*var\(--rm-travel-frame-inset\);/u);
-  assert.match(
-    frameRule,
-    /border:\s*var\(--rm-travel-frame-border-width\) solid/u
-  );
-  assert.match(frameRule, /var\(--rm-travel-frame-side-width\)/u);
-  assert.match(frameRule, /var\(--rm-travel-frame-rail-height\)/u);
-  assert.match(
-    selectorRule,
-    /right:\s*calc\(var\(--rm-travel-frame-inset\) \+ var\(--rm-travel-frame-border-width\) \+ var\(--rm-travel-frame-side-width\) \+ var\(--rm-travel-frame-control-gap\)\);/u
-  );
-  assert.match(
-    selectorRule,
-    /bottom:\s*calc\(var\(--rm-travel-frame-inset\) \+ var\(--rm-travel-frame-border-width\) \+ var\(--rm-travel-frame-rail-height\) \+ var\(--rm-travel-frame-control-gap\)\);/u
-  );
-  assert.doesNotMatch(selectorRule, /right:\s*22px;|bottom:\s*20px;/u);
 });
 
 test("InventoryApp sorts party inventory rows and exposes item value totals", async () => {
@@ -1591,24 +1515,7 @@ test("InventoryApp allows downtime tab and maps downtime snapshot into context o
 
 test("InventoryApp allows travel tab and maps travel snapshot into context", async () => {
   const restoreFoundry = installFoundryApplicationStub();
-  const previousGame = globalThis.game;
-  const previousLocalStorage = globalThis.localStorage;
-  const stored = new Map([
-    ["rebreya-main.travelLandscape:world-1:user-1", "city"]
-  ]);
   try {
-    globalThis.game = {
-      world: { id: "world-1" },
-      user: { id: "user-1" }
-    };
-    globalThis.localStorage = {
-      getItem(key) {
-        return stored.get(key) ?? null;
-      },
-      setItem(key, value) {
-        stored.set(key, value);
-      }
-    };
     const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?travel-tab=${Date.now()}`);
     const calls = [];
     const app = new InventoryApp(createModuleApi({
@@ -1660,160 +1567,10 @@ test("InventoryApp allows travel tab and maps travel snapshot into context", asy
     assert.equal(context.tabs.isTravel, true);
     assert.equal(context.travel.plan.totalMiles, 180);
     assert.equal(context.travel.progress.traveledMiles, 24);
-    assert.equal(context.travelLandscape.active.id, "city");
-    assert.equal(context.travelLandscape.options.length, 3);
-    assert.equal(
-      context.travelLandscape.options.filter((option) => option.selected).length,
-      1
-    );
+    assert.equal("travelLandscape" in context, false);
     assert.deepEqual(calls.filter((call) => call[0] === "getTravelSnapshot"), [["getTravelSnapshot"]]);
   }
   finally {
-    globalThis.game = previousGame;
-    globalThis.localStorage = previousLocalStorage;
-    restoreFoundry();
-  }
-});
-
-test("InventoryApp stores a local travel landscape choice, cleans stale listeners, and rerenders once", async () => {
-  const restoreFoundry = installFoundryApplicationStub();
-  const dom = installMinimalDom();
-  const previousGame = globalThis.game;
-  const previousLocalStorage = globalThis.localStorage;
-  const stored = new Map();
-  try {
-    globalThis.game = {
-      world: { id: "world-1" },
-      user: { id: "user-1" }
-    };
-    globalThis.localStorage = {
-      getItem(key) {
-        return stored.get(key) ?? null;
-      },
-      setItem(key, value) {
-        stored.set(key, value);
-      }
-    };
-    const { InventoryApp } = await import(
-      `../scripts/ui/inventory-app.js?travel-landscape-click=${Date.now()}`
-    );
-    const obsoleteChoice = createFakeElement({
-      dataset: { landscapeId: "wilderness" }
-    });
-    const currentChoice = createFakeElement({
-      dataset: { landscapeId: "wilderness" }
-    });
-    const postCloseChoice = createFakeElement({
-      dataset: { landscapeId: "city" }
-    });
-    let choices = [obsoleteChoice];
-    const root = createFakeElement({ closest: () => root });
-    root.querySelector = () => null;
-    root.querySelectorAll = (selector) => (
-      selector === "[data-action='select-travel-landscape']"
-        ? choices
-        : []
-    );
-    const app = new InventoryApp(createModuleApi({
-      getGroupContext: () => null
-    }));
-    const renderCalls = [];
-    app.element = root;
-    app.render = async (options) => {
-      renderCalls.push(options);
-    };
-
-    await app._onRender({}, {});
-    choices = [currentChoice, postCloseChoice];
-    await app._onRender({}, {});
-    assert.equal(await dispatchClick(obsoleteChoice, { required: false }), false);
-    await dispatchClick(currentChoice);
-    const context = await app._prepareContext();
-    assert.equal(context.travelLandscape.active.id, "wilderness");
-    assert.equal(
-      context.travelLandscape.options.filter((option) => option.selected).length,
-      1
-    );
-    await app._preClose({});
-    assert.equal(await dispatchClick(postCloseChoice, { required: false }), false);
-
-    assert.deepEqual(renderCalls, [{ force: true, preserveScroll: true }]);
-    assert.equal(
-      stored.get("rebreya-main.travelLandscape:world-1:user-1"),
-      "wilderness"
-    );
-  }
-  finally {
-    globalThis.game = previousGame;
-    globalThis.localStorage = previousLocalStorage;
-    dom.restore();
-    restoreFoundry();
-  }
-});
-
-test("InventoryApp reports a rejected travel landscape rerender without an unhandled rejection", async () => {
-  const restoreFoundry = installFoundryApplicationStub();
-  const dom = installMinimalDom();
-  const previousGame = globalThis.game;
-  const previousLocalStorage = globalThis.localStorage;
-  const previousConsoleError = console.error;
-  const stored = new Map();
-  const loggedErrors = [];
-
-  try {
-    globalThis.game = {
-      world: { id: "world-1" },
-      user: { id: "user-1" }
-    };
-    globalThis.localStorage = {
-      getItem(key) {
-        return stored.get(key) ?? null;
-      },
-      setItem(key, value) {
-        stored.set(key, value);
-      }
-    };
-    console.error = (...args) => {
-      loggedErrors.push(args);
-    };
-    const { InventoryApp } = await import(
-      `../scripts/ui/inventory-app.js?travel-landscape-render-error=${Date.now()}`
-    );
-    const choice = createFakeElement({
-      dataset: { landscapeId: "wilderness" }
-    });
-    const root = createFakeElement({ closest: () => root });
-    root.querySelector = () => null;
-    root.querySelectorAll = (selector) => (
-      selector === "[data-action='select-travel-landscape']"
-        ? [choice]
-        : []
-    );
-    const app = new InventoryApp(createModuleApi({
-      getGroupContext: () => null
-    }));
-    const renderError = new Error("render failed");
-    app.element = root;
-    app.render = () => Promise.reject(renderError);
-
-    await app._onRender({}, {});
-    await dispatchClick(choice);
-    await new Promise((resolve) => setImmediate(resolve));
-
-    assert.equal(
-      stored.get("rebreya-main.travelLandscape:world-1:user-1"),
-      "wilderness"
-    );
-    assert.deepEqual(loggedErrors, [[
-      "rebreya-main | Failed to render travel landscape selection.",
-      renderError
-    ]]);
-  }
-  finally {
-    console.error = previousConsoleError;
-    globalThis.game = previousGame;
-    globalThis.localStorage = previousLocalStorage;
-    dom.restore();
     restoreFoundry();
   }
 });
