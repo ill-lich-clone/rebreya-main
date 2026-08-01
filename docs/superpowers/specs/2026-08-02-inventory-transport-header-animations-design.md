@@ -26,17 +26,17 @@ The current Travel-only parallax markup remains conditional on `tabs.isTravel`. 
 
 Inventory continues to use `assets/ui/rebreya-party-inventory-workshop.webp`.
 
-Its `::before` artwork runs a slow Ken Burns-style camera drift:
+Its `::before` artwork runs a clearly visible but smooth Ken Burns-style camera drift:
 
-- duration: 42 seconds;
+- duration: 22 seconds;
 - direction: `alternate`;
 - easing: `ease-in-out`;
-- movement: small horizontal and vertical `translate3d` changes;
-- zoom: `scale(1.04)` to `scale(1.09)`;
+- movement: horizontal and vertical `translate3d` changes expressed only as percentages, with a 3-4% travel range;
+- zoom: `scale(1.04)` to `scale(1.12)`;
 - transform origin: biased toward the lit workbench and window;
 - no visible reset between cycles.
 
-A separate `::after` overlay breathes very subtly through opacity to suggest warm lantern light. It must not obscure the artwork or compete with the controls.
+A separate `::after` overlay combines a warm radial glow with a narrow diagonal brass highlight. It crosses the header slowly through percentage-based transforms and opacity, making the motion immediately legible without obscuring the artwork or competing with the controls.
 
 ## Transport Artwork
 
@@ -48,17 +48,17 @@ The visual style is cinematic, slightly stylized concept art consistent with the
 
 ## Transport Motion
 
-Transport uses the same lazy camera principle as Inventory, tuned to travel slowly along the locomotive:
+Transport uses the same lazy camera principle as Inventory, tuned to travel visibly along the locomotive:
 
-- duration: 48 seconds;
+- duration: 24 seconds;
 - direction: `alternate`;
 - easing: `ease-in-out`;
-- movement: a restrained lateral `translate3d` drift;
-- zoom: `scale(1.03)` to `scale(1.085)`;
+- movement: lateral and slight vertical `translate3d` drift expressed only as percentages, with a 3-4% travel range;
+- zoom: `scale(1.03)` to `scale(1.11)`;
 - transform origin: centered on the locomotive boiler and cab;
 - no visible reset between cycles.
 
-Its `::after` overlay uses three soft CSS radial gradients. Only the overlay's `transform` and `opacity` animate, producing faint drifting steam and warm light without animating blur, filters, or background position.
+Its `::after` overlay combines soft CSS radial gradients for drifting steam with a narrow warm highlight across the boiler. Only percentage-based `transform` and `opacity` animate, producing visible steam and reflected lamp light without animating blur, filters, background position, or pixel offsets.
 
 ## Performance and Accessibility
 
@@ -75,7 +75,9 @@ Automated tests must verify:
 - the correct header modifier is emitted for Inventory, Travel, and Transport;
 - Inventory references the existing workshop asset;
 - Transport references the new train asset;
-- the expected 42-second and 48-second animations use `alternate` and `ease-in-out`;
+- the expected 22-second and 24-second camera animations use `alternate` and `ease-in-out`;
+- all animation keyframe translations use percentages rather than pixel offsets;
+- Inventory and Transport include distinct glare/steam overlay animations;
 - the reduced-motion rule disables both artwork and overlay animations;
 - no obsolete video or landscape selector returns;
 - the new WebP is nonempty and exactly `1920 x 700`.
@@ -84,6 +86,6 @@ Rendered QA must verify:
 
 - both headers fill the 300 px crop without empty edges during their full transform range;
 - text, wallet, summary, and action controls stay readable and clickable;
-- the motion is visible only when observed over time and never feels like a sudden camera move;
+- the motion is clearly visible within two seconds while remaining smooth and avoiding a sudden camera move;
 - Transport reads immediately as a classic steam train;
 - no clipping, z-index regression, missing asset, console error, or visible loop seam appears.
