@@ -846,6 +846,57 @@ test("InventoryApp renders one five-layer travel parallax without media selectio
     css,
     /\.rebreya-inventory-app \.rm-inventory-book__header::before\s*\{[^}]*var\(--rm-party-inventory-header-image\)/su
   );
+  assert.match(
+    css,
+    /\.rebreya-inventory-app \.rm-inventory-book__header--travel\s*\{[^}]*--rm-travel-repeat-width:\s*1280px;/su
+  );
+  assert.match(
+    css,
+    /\.rebreya-inventory-app \.rm-inventory-book__travel-parallax\s*\{[^}]*position:\s*absolute;[^}]*z-index:\s*0;[^}]*inset:\s*0;[^}]*overflow:\s*hidden;[^}]*pointer-events:\s*none;/su
+  );
+  assert.match(
+    css,
+    /\.rebreya-inventory-app \.rm-inventory-book__travel-layer::before\s*\{[^}]*width:\s*calc\(100% \+ var\(--rm-travel-repeat-width\)\);[^}]*background-repeat:\s*repeat-x;[^}]*background-size:\s*var\(--rm-travel-repeat-width\) 300px;[^}]*animation:\s*rm-travel-parallax-scroll var\(--rm-travel-layer-duration\) linear infinite;/su
+  );
+
+  const layerStyles = [
+    ["sky", "mountain-sky.webp", null],
+    ["far-mountains", "mountain-far-mountains.webp", "600s"],
+    ["middle-ridges", "mountain-middle-ridges.webp", "250s"],
+    ["valley", "mountain-valley.webp", "115.38s"],
+    ["foreground", "mountain-foreground.webp", "60s"]
+  ];
+
+  for (const [layer, filename, duration] of layerStyles) {
+    const rule = css.match(new RegExp(
+      `\\.rebreya-inventory-app \\.rm-inventory-book__travel-layer--${layer}::before\\s*\\{([^}]*)\\}`,
+      "su"
+    ));
+
+    assert.ok(rule, `expected CSS for the ${layer} parallax layer`);
+    assert.ok(
+      rule[1].includes(`background-image: url("../assets/ui/travel-parallax/${filename}");`),
+      `expected ${filename} on the ${layer} parallax layer`
+    );
+    if (duration) {
+      assert.ok(
+        rule[1].includes(`--rm-travel-layer-duration: ${duration};`),
+        `expected ${duration} duration on the ${layer} parallax layer`
+      );
+    } else {
+      assert.match(rule[1], /animation:\s*none;/u);
+    }
+  }
+
+  assert.match(
+    css,
+    /@keyframes rm-travel-parallax-scroll\s*\{[\s\S]*?from\s*\{[^}]*transform:\s*translate3d\(0,\s*0,\s*0\);[^}]*\}[\s\S]*?to\s*\{[^}]*transform:\s*translate3d\(-1280px,\s*0,\s*0\);/u
+  );
+  assert.match(
+    css,
+    /@media \(prefers-reduced-motion:\s*reduce\)\s*\{[\s\S]*?\.rebreya-inventory-app \.rm-inventory-book__travel-layer::before\s*\{[^}]*animation:\s*none;/u
+  );
+  assert.doesNotMatch(css, /rm-inventory-book__travel-(?:video|selector|choice)/u);
 });
 
 test("InventoryApp sorts party inventory rows and exposes item value totals", async () => {

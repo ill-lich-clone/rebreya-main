@@ -4338,18 +4338,76 @@ summary:focus-visible {
   background-image: none;
 }
 
-.rebreya-inventory-app .rm-inventory-book__travel-video {
+.rebreya-inventory-app .rm-inventory-book__header--travel {
+  --rm-travel-repeat-width: 1280px;
+}
+
+.rebreya-inventory-app .rm-inventory-book__travel-parallax {
   position: absolute;
   z-index: 0;
   inset: 0;
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  object-position: center;
-  -webkit-mask-image: none;
-  mask-image: none;
+  overflow: hidden;
   pointer-events: none;
+}
+
+.rebreya-inventory-app .rm-inventory-book__travel-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.rebreya-inventory-app .rm-inventory-book__travel-layer::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: calc(100% + var(--rm-travel-repeat-width));
+  background-position: left top;
+  background-repeat: repeat-x;
+  background-size: var(--rm-travel-repeat-width) 300px;
+  will-change: transform;
+  animation: rm-travel-parallax-scroll var(--rm-travel-layer-duration) linear infinite;
+}
+
+.rebreya-inventory-app .rm-inventory-book__travel-layer--sky::before {
+  background-image: url("../assets/ui/travel-parallax/mountain-sky.webp");
+  animation: none;
+}
+
+.rebreya-inventory-app .rm-inventory-book__travel-layer--far-mountains::before {
+  --rm-travel-layer-duration: 600s;
+  background-image: url("../assets/ui/travel-parallax/mountain-far-mountains.webp");
+}
+
+.rebreya-inventory-app .rm-inventory-book__travel-layer--middle-ridges::before {
+  --rm-travel-layer-duration: 250s;
+  background-image: url("../assets/ui/travel-parallax/mountain-middle-ridges.webp");
+}
+
+.rebreya-inventory-app .rm-inventory-book__travel-layer--valley::before {
+  --rm-travel-layer-duration: 115.38s;
+  background-image: url("../assets/ui/travel-parallax/mountain-valley.webp");
+}
+
+.rebreya-inventory-app .rm-inventory-book__travel-layer--foreground::before {
+  --rm-travel-layer-duration: 60s;
+  background-image: url("../assets/ui/travel-parallax/mountain-foreground.webp");
+}
+
+@keyframes rm-travel-parallax-scroll {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+
+  to {
+    transform: translate3d(-1280px, 0, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rebreya-inventory-app .rm-inventory-book__travel-layer::before {
+    animation: none;
+  }
 }
 
 .rebreya-inventory-app .rm-inventory-book__heading,
@@ -4358,52 +4416,6 @@ summary:focus-visible {
 .rebreya-inventory-app .rm-inventory-book__actions {
   position: relative;
   z-index: 2;
-}
-
-.rebreya-inventory-app .rm-inventory-book__travel-selector {
-  position: absolute;
-  z-index: 3;
-  right: 10px;
-  bottom: 10px;
-  display: flex;
-  gap: 7px;
-  padding: 6px;
-  border: 1px solid var(--rm-border-strong);
-  border-radius: 999px;
-  background: rgb(var(--rm-color-ink-rgb) / 0.82);
-  box-shadow: 0 5px 16px rgb(0 0 0 / 0.42);
-}
-
-.rebreya-inventory-app .rm-inventory-book__travel-choice {
-  width: 30px;
-  height: 30px;
-  display: grid;
-  place-items: center;
-  padding: 0;
-  border: 1px solid var(--rm-border-strong);
-  border-radius: 50%;
-  background: var(--rm-surface-2);
-  color: var(--rm-text-secondary);
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.rebreya-inventory-app .rm-inventory-book__travel-choice:hover,
-.rebreya-inventory-app .rm-inventory-book__travel-choice:focus-visible {
-  border-color: var(--rm-accent-strong);
-  color: var(--rm-text-primary);
-}
-
-.rebreya-inventory-app .rm-inventory-book__travel-choice:focus-visible {
-  outline: 2px solid var(--rm-accent-strong);
-  outline-offset: 2px;
-}
-
-.rebreya-inventory-app .rm-inventory-book__travel-choice.is-active {
-  border-color: var(--rm-accent-strong);
-  background: linear-gradient(180deg, var(--rm-accent-strong), var(--rm-accent));
-  color: var(--rm-color-ink);
-  box-shadow: 0 0 12px rgb(var(--rm-color-gold-rgb) / 0.42);
 }
 
 .rebreya-inventory-app .rm-inventory-book__identity {
