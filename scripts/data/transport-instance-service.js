@@ -100,11 +100,9 @@ function isManagedGroup(groupActor) {
     && groupActor.getFlag?.(MODULE_ID, REBREYA_GROUP_FLAGS.MANAGED) === true;
 }
 
-function isItemUuid(value) {
-  const uuid = cleanId(value);
-  return uuid.length > 0
-    && uuid.length <= 512
-    && /(?:^|\.)Item\.[A-Za-z0-9_-]{1,128}$/u.test(uuid);
+function isBoundedDocumentReference(value) {
+  const reference = cleanId(value);
+  return reference.length > 0 && reference.length <= 512;
 }
 
 function isItemDocument(document) {
@@ -147,7 +145,7 @@ export function validateTransportFuelSelectionPayload(payload) {
   return hasExactKeys(payload, FUEL_SELECTION_KEYS)
     && isSafeId(payload.groupActorId)
     && isSafeId(payload.actorId)
-    && isItemUuid(payload.itemUuid);
+    && isBoundedDocumentReference(payload.itemUuid);
 }
 
 export function registerTransportInstanceCommands(commandBus, service) {

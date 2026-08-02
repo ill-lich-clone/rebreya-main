@@ -259,9 +259,10 @@ test("transport payload validators enforce exact keys and the managed pack UUID"
   }), false);
 });
 
-test("fuel selection payload accepts only exact safe ids and an Item UUID", () => {
+test("fuel selection payload accepts only exact safe ids and a bounded document reference", () => {
   assert.equal(validateTransportFuelSelectionPayload(validFuelSelection), true);
   assert.equal(validateTransportFuelSelectionPayload({ ...validFuelSelection, itemUuid: "" }), false);
+  assert.equal(validateTransportFuelSelectionPayload({ ...validFuelSelection, itemUuid: "x".repeat(513) }), false);
   assert.equal(validateTransportFuelSelectionPayload({ ...validFuelSelection, forged: true }), false);
   assert.equal(validateTransportFuelSelectionPayload({ ...validFuelSelection, actorId: "__proto__" }), false);
 });
@@ -645,6 +646,20 @@ test("selectFuel resolves Item identity without mutating the Item", async () => 
   assert.deepEqual(result.fuelSelector, buildTransportFuelSelector(harness.droppedItem));
   assert.deepEqual(harness.droppedItem.updateCalls, []);
   assert.deepEqual(harness.droppedItem.deleteCalls, []);
+});
+
+test("selectFuel lets the Foundry UUID resolver validate opaque Item references", async () => {
+  const harness = createTransportInstanceHarness({ existingTransport: true });
+  harness.droppedItem.uuid = "Actor.group.Item.coal#inventory-reference";
+  const service = new TransportInstanceService(harness.moduleApi, harness.options);
+
+  const result = await service.selectFuel({
+    ...validFuelSelection,
+    itemUuid: harness.droppedItem.uuid
+  }, { sender: harness.gm });
+
+  assert.equal(result.actorId, "vehicle-a");
+  assert.deepEqual(result.fuelSelector, buildTransportFuelSelector(harness.droppedItem));
 });
 
 test("selectFuel rejects a dropped UUID that does not resolve to an Item", async () => {
