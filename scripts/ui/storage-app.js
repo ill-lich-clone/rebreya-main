@@ -1,5 +1,6 @@
 import { MODULE_ID } from "../constants.js";
 import { getAppElement } from "../ui.js";
+import { placeTokenOverlay, storageTokenViewportBounds } from "./storage-token-overlay.js";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 const COIN_KEYS = ["pp", "gp", "sp", "cp"];
@@ -43,7 +44,7 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
       icon: "fa-solid fa-box-open",
       resizable: true
     },
-    position: { width: 720, height: 680 }
+    position: { width: 430, height: 560 }
   };
 
   static PARTS = {
@@ -58,6 +59,8 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.moduleApi = moduleApi;
     this.tokenUuid = clean(tokenUuid);
     this.configure = options.configure === true;
+    this.anchorRequested = options.anchorToToken === true;
+    this.anchorDetached = false;
     this.snapshot = null;
     this.renderListenersAbortController = null;
   }
@@ -81,7 +84,8 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
       name: clean(row.name ?? row.itemData?.name) || "Предмет",
       img: clean(row.img ?? row.itemData?.img),
       quantity: Math.max(1, Number(row.quantity ?? 1)),
-      typeLabel: clean(row.typeLabel ?? row.itemData?.type) || "Предмет"
+      typeLabel: clean(row.typeLabel ?? row.itemData?.type) || "Предмет",
+      canEdit: configurationEnabled
     }));
 
     return {
@@ -127,6 +131,45 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
     root.addEventListener("dragover", (event) => {
       if (event.target?.closest?.("[data-storage-dropzone]")) event.preventDefault();
     }, listenerOptions);
+    root.querySelector?.(".window-header")?.addEventListener?.("pointerdown", () => this.#detachAnchor(), listenerOptions);
+    if (this.anchorRequested && !this.anchorDetached) {
+      const schedule = globalThis.requestAnimationFrame ?? ((callback) => globalThis.setTimeout?.(callback, 0));
+      schedule?.(() => this.repositionToToken());
+    }
+  }
+
+  requestTokenAnchor() {
+    this.anchorRequested = true;
+    this.anchorDetached = false;
+  }
+
+  async repositionToToken() {
+    if (!this.anchorRequested || this.anchorDetached) return false;
+    const document = await globalThis.fromUuid?.(this.tokenUuid);
+    const root = getAppElement(this);
+    const bounds = storageTokenViewportBounds(document?.object ?? document);
+    if (!root || !bounds) return false;
+    const rect = root.getBoundingClientRect?.() ?? { width: 430, height: 560 };
+    const position = placeTokenOverlay({
+      tokenBounds: bounds,
+      overlaySize: rect,
+      viewport: { width: globalThis.innerWidth, height: globalThis.innerHeight },
+      gap: 14,
+      margin: 16
+    });
+    this.setPosition?.({ left: position.left, top: position.top });
+    root.classList?.add?.("is-token-anchored");
+    root.dataset.anchorPlacement = position.placement;
+    root.style?.setProperty?.("--rm-storage-pointer-left", `${position.pointerLeft}px`);
+    return true;
+  }
+
+  #detachAnchor() {
+    this.anchorDetached = true;
+    this.anchorRequested = false;
+    const root = getAppElement(this);
+    root?.classList?.remove?.("is-token-anchored");
+    if (root?.dataset) delete root.dataset.anchorPlacement;
   }
 
   async #refresh() {
@@ -163,6 +206,14 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
       }
       else if (action === "storage-remove-manual-item") {
         await this.moduleApi.removeManualStorageItem(this.tokenUuid, rowId);
+      }
+      else if (action === "storage-update-row") {
+        const row = control.closest?.("[data-storage-row]");
+        const quantity = Number(row?.querySelector?.("[data-storage-quantity]")?.value);
+        await this.moduleApi.updateStorageRowQuantity(this.tokenUuid, rowId, quantity);
+      }
+      else if (action === "storage-delete-row") {
+        await this.moduleApi.deleteStorageRow(this.tokenUuid, rowId);
       }
       else if (action === "storage-reset") {
         await this.moduleApi.resetStorageToken(this.tokenUuid);

@@ -89,6 +89,8 @@ test("storage configuration exposes template and manual item controls to GMs", a
     ]
   );
   assert.deepEqual(context.configuration.textureModes.map(({ active }) => active), [false, true, false]);
+  assert.equal(StorageApp.DEFAULT_OPTIONS.position.width, 430);
+  assert.equal(context.rows[0].canEdit, true);
 });
 
 test("storage configuration is hidden from players", async () => {
@@ -97,6 +99,14 @@ test("storage configuration is hidden from players", async () => {
   assert.equal(context.configuration.enabled, false);
   assert.deepEqual(context.configuration.templateOptions, []);
   assert.equal(context.configuration.canSetTexture, false);
+  assert.equal(context.rows[0].canEdit, false);
+});
+
+test("storage template exposes generated-row quantity and delete controls to GMs", async () => {
+  const template = await readFile(new URL("../templates/storage-app.hbs", import.meta.url), "utf8");
+  assert.match(template, /data-action="storage-update-row"/u);
+  assert.match(template, /data-action="storage-delete-row"/u);
+  assert.match(template, /data-storage-quantity/u);
 });
 
 test("storage texture controls stay hidden when a token has no complete texture set", async () => {
