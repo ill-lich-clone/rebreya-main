@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 import { MODULE_ID } from "../scripts/constants.js";
 import {
@@ -54,4 +56,13 @@ test("ground pile marker is owned by Rebreya token flags", () => {
     flags: { [MODULE_ID]: { groundPile: { enabled: true } } }
   }), true);
   assert.equal(isGroundPileToken({ flags: {} }), false);
+});
+
+test("every storage pile category points to a bundled PNG token", () => {
+  for (const presentation of STORAGE_PILE_PRESENTATIONS) {
+    const relativePath = presentation.img.replace(`modules/${MODULE_ID}/`, "../");
+    const absolutePath = fileURLToPath(new URL(relativePath, import.meta.url));
+    assert.equal(existsSync(absolutePath), true, `${presentation.key}: ${absolutePath}`);
+    assert.match(absolutePath, /\.png$/u);
+  }
 });
