@@ -213,7 +213,7 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
     "data/crafting-service.js?v=1.4.96-craft-calendar",
     "data/craft-downtime-service.js?v=1.4.96-craft-calendar",
     "data/calendar-transition-coordinator.js?v=1.4.96-craft-calendar",
-    "integrations/durability-hooks.js?v=1.4.96-durability-piles",
+    "integrations/durability-hooks.js?v=1.4.116-native-durability",
     "integrations/inventory-sync.js?v=1.4.96-durable-transfer"
   ]) {
     assert.equal(canonicalSource.includes(importPath), true, importPath);
