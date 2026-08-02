@@ -10,6 +10,8 @@ import {
   applyDurabilityDamage,
   buildInitialDurability,
   isDurabilityEligible,
+  markDurabilityBroken,
+  markDurabilityDestroyed,
   resolveDurabilityProfile
 } from "./durability-rules.js";
 
@@ -248,13 +250,7 @@ export class DurabilityService {
           return toPlain(transition);
         }
         const committedTransition = transitionWithTimestamp(transition, this.#timestamp());
-        if (committedTransition.outcome === "destroyed") {
-          this.#assertGm();
-          return this.#executeDestroy(item, committedTransition, mutationId);
-        }
-        return this.#commitUpdate(item, committedTransition, {
-          clearEquipment: committedTransition.outcome === "broken"
-        });
+        return this.#commitUpdate(item, committedTransition, { clearEquipment: false });
       }
     );
   }
@@ -267,12 +263,7 @@ export class DurabilityService {
         if (!flag || flag.state === "broken" || flag.state === "destroyed") {
           return ignoredTransition(flag);
         }
-        const amount = Math.max(1, Number(flag?.hp?.value) || 0)
-          + Math.max(0, Number(flag.damageThreshold) || 0);
-        const transition = applyDurabilityDamage(flag, {
-          amount,
-          damageType: "force"
-        });
+        const transition = markDurabilityBroken(flag);
         if (transition.outcome === "ignored") {
           return toPlain(transition);
         }
@@ -399,31 +390,7 @@ export class DurabilityService {
   }
 
   #buildDestroyedTransition(flag) {
-    if (flag.state === "destroyed") {
-      return {
-        outcome: "destroyed",
-        nextFlag: toPlain(flag),
-        appliedDamage: 0
-      };
-    }
-
-    const first = applyDurabilityDamage(flag, {
-      amount: Math.max(1, Number(flag?.hp?.value) || 0)
-        + Math.max(0, Number(flag.damageThreshold) || 0),
-      damageType: "force"
-    });
-    if (first.outcome === "ignored" || first.outcome === "destroyed") {
-      return toPlain(first);
-    }
-    const second = applyDurabilityDamage(first.nextFlag, {
-      amount: Math.max(1, Number(first.nextFlag?.hp?.value) || 0)
-        + Math.max(0, Number(first.nextFlag?.damageThreshold) || 0),
-      damageType: "force"
-    });
-    return {
-      ...toPlain(second),
-      appliedDamage: first.appliedDamage + second.appliedDamage
-    };
+    return toPlain(markDurabilityDestroyed(flag));
   }
 
   async #commitUpdate(item, transition, {

@@ -395,17 +395,35 @@ export function applyDurabilityDamage(flag, { amount, damageType } = {}) {
     return { outcome: "damaged", nextFlag, appliedDamage };
   }
 
-  if (Number(flag.breakStage) >= 1 || flag.state === "broken") {
-    nextFlag.state = "destroyed";
-    nextFlag.breakStage = 2;
-    nextFlag.hp = { value: 0, max: maxHp };
-    return { outcome: "destroyed", nextFlag, appliedDamage };
-  }
+  nextFlag.hp = { value: 0, max: maxHp };
+  return { outcome: "depleted", nextFlag, appliedDamage };
+}
 
+export function markDurabilityBroken(flag) {
+  if (!flag || flag.eligible === false || ["broken", "destroyed"].includes(normalizeToken(flag.state))) {
+    return ignoredTransition(flag);
+  }
+  const nextFlag = cloneDurabilityFlag(flag);
+  const maxHp = Math.max(0, Number(nextFlag?.hp?.max) || 0);
   nextFlag.state = "broken";
   nextFlag.breakStage = 1;
-  nextFlag.hp = { value: maxHp, max: maxHp };
-  return { outcome: "broken", nextFlag, appliedDamage };
+  nextFlag.hp = { value: 0, max: maxHp };
+  return { outcome: "broken", nextFlag, appliedDamage: 0 };
+}
+
+export function markDurabilityDestroyed(flag) {
+  if (!flag || flag.eligible === false) {
+    return ignoredTransition(flag);
+  }
+  if (normalizeToken(flag.state) === "destroyed") {
+    return { outcome: "destroyed", nextFlag: cloneDurabilityFlag(flag), appliedDamage: 0 };
+  }
+  const nextFlag = cloneDurabilityFlag(flag);
+  const maxHp = Math.max(0, Number(nextFlag?.hp?.max) || 0);
+  nextFlag.state = "destroyed";
+  nextFlag.breakStage = 2;
+  nextFlag.hp = { value: 0, max: maxHp };
+  return { outcome: "destroyed", nextFlag, appliedDamage: 0 };
 }
 
 export function buildDurabilitySignature(flag = {}) {

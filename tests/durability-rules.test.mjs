@@ -7,6 +7,8 @@ import {
   buildDurabilitySignature,
   buildInitialDurability,
   isDurabilityEligible,
+  markDurabilityBroken,
+  markDurabilityDestroyed,
   resolveDurabilityProfile
 } from "../scripts/data/durability-rules.js";
 
@@ -401,27 +403,31 @@ test("damage at the threshold is ignored and damage above it is applied in full"
   assert.equal(above.nextFlag.hp.value, 8);
 });
 
-test("the first reduction to zero breaks the item and refreshes the second HP pool", () => {
+test("damage stops an intact item at zero without changing its state", () => {
   const flag = buildInitialDurability(resolveFromMaterialName("Сталь"));
   const transition = applyDurabilityDamage(flag, { amount: 15, damageType: "slashing" });
 
-  assert.equal(transition.outcome, "broken");
+  assert.equal(transition.outcome, "depleted");
   assert.equal(transition.appliedDamage, 15);
-  assert.equal(transition.nextFlag.state, "broken");
-  assert.equal(transition.nextFlag.breakStage, 1);
-  assert.deepEqual(transition.nextFlag.hp, { value: 15, max: 15 });
+  assert.equal(transition.nextFlag.state, "intact");
+  assert.equal(transition.nextFlag.breakStage, 0);
+  assert.deepEqual(transition.nextFlag.hp, { value: 0, max: 15 });
 });
 
-test("the second reduction to zero destroys the item and leaves it at zero HP", () => {
+test("explicit break and destroy transitions keep zero HP without a second pool", () => {
   const intact = buildInitialDurability(resolveFromMaterialName("Сталь"));
-  const broken = applyDurabilityDamage(intact, { amount: 15, damageType: "slashing" }).nextFlag;
-  const transition = applyDurabilityDamage(broken, { amount: 15, damageType: "force" });
+  const depleted = applyDurabilityDamage(intact, { amount: 15, damageType: "slashing" }).nextFlag;
+  const broken = markDurabilityBroken(depleted);
+  const destroyed = markDurabilityDestroyed(depleted);
 
-  assert.equal(transition.outcome, "destroyed");
-  assert.equal(transition.appliedDamage, 15);
-  assert.equal(transition.nextFlag.state, "destroyed");
-  assert.equal(transition.nextFlag.breakStage, 2);
-  assert.deepEqual(transition.nextFlag.hp, { value: 0, max: 15 });
+  assert.equal(broken.outcome, "broken");
+  assert.equal(broken.nextFlag.state, "broken");
+  assert.equal(broken.nextFlag.breakStage, 1);
+  assert.deepEqual(broken.nextFlag.hp, { value: 0, max: 15 });
+  assert.equal(destroyed.outcome, "destroyed");
+  assert.equal(destroyed.nextFlag.state, "destroyed");
+  assert.equal(destroyed.nextFlag.breakStage, 2);
+  assert.deepEqual(destroyed.nextFlag.hp, { value: 0, max: 15 });
 });
 
 test("damage transitions never mutate their input flag", () => {

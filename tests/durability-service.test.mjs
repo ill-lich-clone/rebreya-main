@@ -388,6 +388,7 @@ test("breakItem clears equipped and supported attunement fields but preserves he
   const transition = await service.breakItem(item);
 
   assert.equal(transition.outcome, "broken");
+  assert.deepEqual(transition.nextFlag.hp, { value: 0, max: 15 });
   assert.deepEqual(item.updates[0], {
     [`flags.${MODULE_ID}.durability`]: transition.nextFlag,
     "system.equipped": false,
@@ -535,12 +536,12 @@ test("destroyItem treats an already missing document as committed", async () => 
   assert.equal(store.state.records[0].terminal, true);
 });
 
-test("damageItem routes second zero HP through durable destruction", async () => {
+test("damageItem persists depletion at zero without deleting the item", async () => {
   const item = createItem({
     moduleFlags: {
       sourceType: "gear",
       gearId: "sword",
-      durability: durabilityFlag({ state: "broken", breakStage: 1, hpValue: 5 })
+      durability: durabilityFlag({ state: "intact", breakStage: 0, hpValue: 5 })
     }
   });
   const { service } = createService({ item });
@@ -551,9 +552,11 @@ test("damageItem routes second zero HP through durable destruction", async () =>
     mutationId: "second-zero"
   });
 
-  assert.equal(result.outcome, "destroyed");
+  assert.equal(result.outcome, "depleted");
+  assert.equal(result.nextFlag.state, "intact");
+  assert.deepEqual(result.nextFlag.hp, { value: 0, max: 15 });
   assert.equal(item.updates.length, 1);
-  assert.equal(item.deleteCalls, 1);
+  assert.equal(item.deleteCalls, 0);
 });
 
 test("destroyItem rejects inactive-GM mutation ownership before journaling", async () => {
