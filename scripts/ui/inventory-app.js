@@ -2648,6 +2648,16 @@ async function promptNumericValue({ title, label, value = "", min = 0, step = "0
       ? 'inputmode="decimal" pattern="[+-]?(?:[0-9]+(?:[.,][0-9]+)?|[.,][0-9]+)"'
       : `min="${foundry.utils.escapeHTML(String(min))}" step="${foundry.utils.escapeHTML(String(step))}"`;
 
+    const resolveFromRoot = (root) => {
+      if (settled) {
+        return false;
+      }
+      const input = root?.querySelector("[data-field='numeric-value']");
+      settled = true;
+      resolve(input?.value ?? null);
+      return true;
+    };
+
     const dialog = new Dialog({
       title,
       content: `
@@ -2669,9 +2679,7 @@ async function promptNumericValue({ title, label, value = "", min = 0, step = "0
           label: confirmLabel,
           callback: (html) => {
             const root = getDialogRoot(html);
-            const input = root?.querySelector("[data-field='numeric-value']");
-            settled = true;
-            resolve(input?.value ?? null);
+            resolveFromRoot(root);
           }
         },
         cancel: {
@@ -2686,6 +2694,13 @@ async function promptNumericValue({ title, label, value = "", min = 0, step = "0
       render: (html) => {
         const root = getDialogRoot(html);
         const input = root?.querySelector("[data-field='numeric-value']");
+        root?.querySelector("form")?.addEventListener("submit", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          if (resolveFromRoot(root)) {
+            dialog.close?.();
+          }
+        });
         if (input instanceof HTMLInputElement) {
           input.focus();
           input.select();

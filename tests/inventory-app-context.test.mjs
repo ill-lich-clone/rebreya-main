@@ -1355,6 +1355,98 @@ test("InventoryApp item quantity and supply dialogs parse signed edits as relati
   }
 });
 
+test("InventoryApp numeric prompt prevents native form submission and applies the supply edit once", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const dom = installMinimalDom();
+  const previousDialog = globalThis.Dialog;
+  const previousHTMLInputElement = globalThis.HTMLInputElement;
+  const previousUi = globalThis.ui;
+  const supplies = [];
+  const foodSupply = createFakeElement({ dataset: { resourceKey: "food" } });
+  const appRoot = createFakeElement();
+  appRoot.querySelector = () => null;
+  appRoot.querySelectorAll = (selector) => selector === "[data-action='edit-supply']"
+    ? [foodSupply]
+    : [];
+  globalThis.ui = {
+    notifications: {
+      info() {},
+      error() {}
+    },
+    windows: {}
+  };
+  globalThis.Dialog = class Dialog {
+    static instances = [];
+
+    constructor(config, options = {}) {
+      this.config = config;
+      this.options = options;
+      Dialog.instances.push(this);
+    }
+
+    render() {}
+
+    close() {
+      this.config.close?.();
+    }
+  };
+  globalThis.HTMLInputElement = globalThis.HTMLElement;
+
+  try {
+    const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?numeric-submit=${Date.now()}`);
+    const moduleApi = createModuleApi({
+      getGroupContext: () => null
+    });
+    moduleApi.addPartySupply = async (resourceKey, quantity) => {
+      supplies.push({ resourceKey, quantity });
+    };
+    const app = new InventoryApp(moduleApi);
+    app.element = appRoot;
+    app.canManage = true;
+
+    await app._onRender({}, {});
+    const supplyPromise = foodSupply.listeners.contextmenu[0]({
+      currentTarget: foodSupply,
+      preventDefault() {},
+      stopPropagation() {}
+    });
+    const dialog = globalThis.Dialog.instances.at(-1);
+    const form = createFakeElement();
+    const input = createFakeElement();
+    input.value = "+4";
+    input.focus = () => {};
+    input.select = () => {};
+    const dialogRoot = createFakeElement();
+    dialogRoot.querySelector = (selector) => {
+      if (selector === "form") return form;
+      if (selector === "[data-field='numeric-value']") return input;
+      return null;
+    };
+
+    dialog.config.render(dialogRoot);
+    let prevented = 0;
+    let stopped = 0;
+    const submitEvent = {
+      preventDefault() { prevented += 1; },
+      stopPropagation() { stopped += 1; }
+    };
+    await form.listeners.submit[0](submitEvent);
+    await form.listeners.submit[0](submitEvent);
+    await supplyPromise;
+
+    assert.equal(prevented, 2);
+    assert.equal(stopped, 2);
+    assert.deepEqual(supplies, [{ resourceKey: "food", quantity: 4 }]);
+  }
+  finally {
+    globalThis.Dialog = previousDialog;
+    globalThis.HTMLInputElement = previousHTMLInputElement;
+    globalThis.ui = previousUi;
+    dom.restore();
+    restoreFoundry();
+  }
+});
+
 test("InventoryApp currency dialog uses text inputs and currency-specific button sizing", async () => {
   const [appSource, css] = await Promise.all([
     readFile(new URL("../scripts/ui/inventory-app.js", import.meta.url), "utf8"),
