@@ -17,14 +17,15 @@ function createStorageToken(id, name = "Сундук") {
     getFlag(scope, key) {
       return flags[scope]?.[key];
     },
-    async update(update) {
-      const [scope, key] = String(Object.keys(update)[0] ?? "")
-        .replace(/^flags\./u, "")
-        .split(".");
-      flags[scope] = flags[scope] ?? {};
-      flags[scope][key] = update[Object.keys(update)[0]];
-      if (update.name) {
-        this.name = update.name;
+    async update(patch) {
+      for (const [path, value] of Object.entries(patch)) {
+        const parts = path.split(".");
+        let cursor = this;
+        for (const part of parts.slice(0, -1)) {
+          cursor[part] ??= {};
+          cursor = cursor[part];
+        }
+        cursor[parts.at(-1)] = structuredClone(value);
       }
       return this;
     }
@@ -79,4 +80,97 @@ test("storage actor marker and empty display name use Rebreya-owned flags", () =
     }
   }), true);
   assert.equal(deriveStorageDisplayName({ baseName: "Бочка", state: "empty" }), "Бочка (пусто)");
+});
+
+test("opening, final claim, and reset select the matching storage texture", async () => {
+  const textures = {
+    unopened: "closed.webp",
+    opened: "open.webp",
+    empty: "empty.webp"
+  };
+  const service = new StorageService({
+    generate: async () => ({ rows: [{ rowId: "generated" }], coins: {} })
+  });
+  const token = createStorageToken("visual-chest");
+
+  await service.configure(token, { textures, displayMode: "unopened" });
+  assert.equal(token.texture.src, "closed.webp");
+
+  await service.open(token);
+  assert.equal(readStorageState(token).state, "opened");
+  assert.equal(readStorageState(token).displayMode, "opened");
+  assert.equal(token.texture.src, "open.webp");
+
+  await service.claim(token, { kind: "row", rowId: "generated" });
+  assert.equal(readStorageState(token).state, "empty");
+  assert.equal(readStorageState(token).displayMode, "empty");
+  assert.equal(token.texture.src, "empty.webp");
+  assert.equal(token.name, "Сундук (пусто)");
+
+  await service.configure(token, {
+    generatedRows: [],
+    generatedCoins: {},
+    claimedRowIds: [],
+    coinsClaimed: false,
+    state: "unopened",
+    displayMode: "unopened"
+  });
+  assert.equal(readStorageState(token).state, "unopened");
+  assert.equal(readStorageState(token).displayMode, "unopened");
+  assert.equal(token.texture.src, "closed.webp");
+  assert.equal(token.name, "Сундук");
+});
+
+test("a partial claim preserves a GM's manual texture without changing loot state", async () => {
+  const service = new StorageService({
+    generate: async () => ({
+      rows: [{ rowId: "first" }, { rowId: "second" }],
+      coins: {}
+    })
+  });
+  const token = createStorageToken("manual-visual");
+  await service.configure(token, {
+    textures: { unopened: "closed.webp", opened: "open.webp", empty: "empty.webp" }
+  });
+  await service.open(token);
+
+  const manuallyClosed = await service.setTextureMode(token, "unopened");
+  assert.equal(manuallyClosed.state, "opened");
+  assert.equal(manuallyClosed.displayMode, "unopened");
+  assert.equal(token.texture.src, "closed.webp");
+
+  await service.claim(token, { kind: "row", rowId: "first" });
+  const current = readStorageState(token);
+  assert.equal(current.state, "opened");
+  assert.equal(current.displayMode, "unopened");
+  assert.deepEqual(current.claimedRowIds, ["first"]);
+  assert.equal(token.texture.src, "closed.webp");
+});
+
+test("manual texture selection rejects unknown modes and incomplete texture sets", async () => {
+  const service = new StorageService();
+  const complete = createStorageToken("complete");
+  await service.configure(complete, {
+    textures: { unopened: "closed.webp", opened: "open.webp", empty: "empty.webp" }
+  });
+  await assert.rejects(service.setTextureMode(complete, "broken"), /режим/u);
+
+  const incomplete = createStorageToken("incomplete");
+  await service.configure(incomplete, {
+    textures: { unopened: "closed.webp", opened: "open.webp" }
+  });
+  await assert.rejects(service.setTextureMode(incomplete, "opened"), /текстур/u);
+});
+
+test("legacy storage tokens without textures keep their previous no-texture behavior", async () => {
+  const service = new StorageService({
+    generate: async () => ({ rows: [{ rowId: "legacy" }], coins: {} })
+  });
+  const token = createStorageToken("legacy");
+
+  await service.open(token);
+
+  assert.equal(readStorageState(token).state, "opened");
+  assert.equal(readStorageState(token).textures, null);
+  assert.equal(token.texture, undefined);
 });

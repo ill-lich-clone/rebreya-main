@@ -5,6 +5,8 @@ export const STORAGE_ACTOR_FLAG = "storage";
 export const STORAGE_TOKEN_FLAG = "storage";
 const STORAGE_VERSION = 1;
 const STORAGE_STATES = new Set(["unopened", "opened", "empty"]);
+export const STORAGE_TEXTURE_MODES = Object.freeze(["unopened", "opened", "empty"]);
+const STORAGE_TEXTURE_MODE_SET = new Set(STORAGE_TEXTURE_MODES);
 const COIN_KEYS = ["pp", "gp", "sp", "cp"];
 
 function clone(value) {
@@ -76,6 +78,15 @@ function normalizeClaimedRowIds(value) {
     .filter(Boolean)));
 }
 
+function normalizeTextures(value) {
+  if (!value || typeof value !== "object") return null;
+  const textures = Object.fromEntries(STORAGE_TEXTURE_MODES.map((mode) => [
+    mode,
+    String(value[mode] ?? "").trim()
+  ]));
+  return STORAGE_TEXTURE_MODES.every((mode) => textures[mode]) ? textures : null;
+}
+
 function hasUnclaimedContent(state) {
   const rows = visibleRows(state);
   const hasRows = rows.some((row, index) => !state.claimedRowIds.includes(String(row.rowId ?? index)));
@@ -87,6 +98,10 @@ function hasUnclaimedContent(state) {
 export function buildStorageTokenState(input = {}) {
   const source = input && typeof input === "object" ? input : {};
   const state = STORAGE_STATES.has(source.state) ? source.state : "unopened";
+  const textures = normalizeTextures(source.textures);
+  const displayMode = textures && STORAGE_TEXTURE_MODE_SET.has(source.displayMode)
+    ? source.displayMode
+    : state;
   return {
     version: STORAGE_VERSION,
     baseName: cleanName(source.baseName),
@@ -97,7 +112,9 @@ export function buildStorageTokenState(input = {}) {
     generatedCoins: normalizeCoins(source.generatedCoins),
     claimedRowIds: normalizeClaimedRowIds(source.claimedRowIds),
     coinsClaimed: source.coinsClaimed === true,
-    state
+    state,
+    textures,
+    displayMode
   };
 }
 
@@ -139,10 +156,15 @@ export class StorageService {
       throw new TypeError("Storage token must support update.");
     }
     const normalized = buildStorageTokenState(state);
-    await document.update({
+    const patch = {
       ["flags." + MODULE_ID + "." + STORAGE_TOKEN_FLAG]: normalized,
       name: deriveStorageDisplayName(normalized)
-    });
+    };
+    const texturePath = normalized.textures?.[normalized.displayMode];
+    if (texturePath) {
+      patch["texture.src"] = texturePath;
+    }
+    await document.update(patch);
     return clone(normalized);
   }
 
@@ -195,7 +217,8 @@ export class StorageService {
       ...current,
       generatedRows: generated?.rows,
       generatedCoins: generated?.coins,
-      state: "opened"
+      state: "opened",
+      displayMode: "opened"
     });
     return {
       generatedNow: true,
@@ -217,10 +240,12 @@ export class StorageService {
       if (current.coinsClaimed || !COIN_KEYS.some((key) => coins[key] > 0)) {
         return { changed: false, coins, state: clone(current) };
       }
+      const nextState = hasUnclaimedContent({ ...current, coinsClaimed: true }) ? "opened" : "empty";
       const state = await this.#write(token, {
         ...current,
         coinsClaimed: true,
-        state: hasUnclaimedContent({ ...current, coinsClaimed: true }) ? "opened" : "empty"
+        state: nextState,
+        displayMode: nextState === "empty" ? "empty" : current.displayMode
       });
       return { changed: true, coins, state };
     }
@@ -232,14 +257,29 @@ export class StorageService {
       return { changed: false, row: null, state: clone(current) };
     }
 
+    const claimedRowIds = [...current.claimedRowIds, rowId];
+    const nextState = hasUnclaimedContent({ ...current, claimedRowIds }) ? "opened" : "empty";
     const state = await this.#write(token, {
       ...current,
-      claimedRowIds: [...current.claimedRowIds, rowId],
-      state: hasUnclaimedContent({
-        ...current,
-        claimedRowIds: [...current.claimedRowIds, rowId]
-      }) ? "opened" : "empty"
+      claimedRowIds,
+      state: nextState,
+      displayMode: nextState === "empty" ? "empty" : current.displayMode
     });
     return { changed: true, row: clone(row), state };
+  }
+
+  async setTextureMode(token, mode) {
+    const normalizedMode = String(mode ?? "").trim();
+    if (!STORAGE_TEXTURE_MODE_SET.has(normalizedMode)) {
+      throw new Error("Неизвестный режим текстуры хранилища.");
+    }
+    const current = readStorageState(token);
+    if (!current.textures) {
+      throw new Error("У хранилища не настроен полный набор текстур.");
+    }
+    return this.#write(token, {
+      ...current,
+      displayMode: normalizedMode
+    });
   }
 }
