@@ -5860,6 +5860,40 @@ summary:focus-visible {
   align-items: center;
 }
 
+.rm-travel-speed-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--rm-border-subtle);
+}
+
+.rm-travel-speed-row > span {
+  color: var(--rm-text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.rm-travel-speed-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.rm-travel-speed-option {
+  min-width: 44px;
+  justify-content: center;
+}
+
+.rm-travel-speed-option.is-active {
+  border-color: rgb(var(--rm-color-gold-rgb) / 0.78);
+  background: rgb(var(--rm-color-gold-rgb) / 0.16);
+  color: var(--rm-accent-strong);
+  box-shadow: inset 0 0 0 1px rgb(var(--rm-color-gold-rgb) / 0.2);
+}
+
 .rm-travel-time-toggle {
   display: inline-flex;
   align-items: center;

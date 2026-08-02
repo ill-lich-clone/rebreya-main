@@ -404,7 +404,13 @@ test("group.transport.replaceState normalizes input and replaces only transportS
 
     const groupState = fixture.store[SETTINGS_KEYS.GROUP_STATE].groupsById[fixture.groupA.id];
     assert.deepEqual(groupState.transportState, normalizeGroupTransportState(transportState));
-    assert.deepEqual(groupState.travelState, normalizeTravelState({ version: 1, originCityId: "old", destinationCityId: "", mode: "land", traveledMiles: 2 }));
+    assert.deepEqual(groupState.travelState, {
+      version: 1,
+      originCityId: "old",
+      destinationCityId: "",
+      mode: "land",
+      traveledMiles: 2
+    });
     assert.deepEqual(resultFor(fixture, request.requestId)?.data, normalizeGroupTransportState(transportState));
 
     const invalid = commandRequest(

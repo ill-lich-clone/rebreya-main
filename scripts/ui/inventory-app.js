@@ -5751,6 +5751,24 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       }, listenerOptions);
     }
 
+    element.querySelectorAll("[data-action='travel-speed-multiplier']").forEach((button) => {
+      button.addEventListener("click", async (event) => {
+        const speedMultiplier = toNumber(event.currentTarget.dataset.multiplier, 1);
+        try {
+          await this.moduleApi.setTravelSpeedMultiplier?.(speedMultiplier);
+          this.#setActionFeedback("success", "Модификатор скорости обновлён.");
+          bringAppToFront(this);
+        }
+        catch (error) {
+          console.error(`${MODULE_ID} | Failed to update travel speed multiplier.`, error);
+          const message = error.message || "Не удалось изменить модификатор скорости.";
+          this.#setActionFeedback("error", message);
+          this.render({ force: true });
+          ui.notifications?.error(message);
+        }
+      }, listenerOptions);
+    });
+
     element.querySelectorAll("[data-action='travel-advance']").forEach((button) => {
       button.addEventListener("click", async (event) => {
         const hours = toNumber(event.currentTarget.dataset.hours, 0);

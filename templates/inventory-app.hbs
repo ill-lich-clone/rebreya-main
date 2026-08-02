@@ -633,6 +633,22 @@
                   <span>Сбросить</span>
                 </button>
               </div>
+
+              <div class="rm-travel-speed-row" role="group" aria-label="Модификатор скорости">
+                <span>Скорость</span>
+                <div class="rm-travel-speed-options">
+                  {{#each travel.speedMultiplierOptions}}
+                    <button
+                      type="button"
+                      class="rm-button rm-button--small rm-travel-speed-option {{#if selected}}is-active{{/if}}"
+                      data-action="travel-speed-multiplier"
+                      data-multiplier="{{value}}"
+                      aria-pressed="{{#if selected}}true{{else}}false{{/if}}"
+                      {{#unless ../travel.canSelectRoute}}disabled{{/unless}}
+                    >{{label}}</button>
+                  {{/each}}
+                </div>
+              </div>
             </section>
 
             <section class="rm-travel-leg-list">

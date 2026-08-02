@@ -1,6 +1,43 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
+test("RebreyaMainModule saves the shared travel speed multiplier and refreshes open apps", async () => {
+  const previousHooks = globalThis.Hooks;
+  const previousGame = globalThis.game;
+  const previousUi = globalThis.ui;
+  const previousFoundry = globalThis.foundry;
+
+  globalThis.Hooks = { once() {}, on() {} };
+  globalThis.game = { user: { id: "gm", isGM: true } };
+  globalThis.ui = { windows: {} };
+  globalThis.foundry = { applications: { instances: new Map() } };
+
+  try {
+    const { RebreyaMainModule } = await import(`../scripts/main.js?travel-speed-multiplier=${Date.now()}`);
+    const moduleApi = new RebreyaMainModule();
+    const calls = [];
+    const snapshot = { speedMultiplier: 2, speedMph: 20 };
+    moduleApi.travelService.setSpeedMultiplier = async (value) => {
+      calls.push(["setSpeedMultiplier", value]);
+      return snapshot;
+    };
+    moduleApi.refreshOpenApps = async () => {
+      calls.push(["refreshOpenApps"]);
+    };
+
+    const result = await moduleApi.setTravelSpeedMultiplier(2);
+
+    assert.equal(result, snapshot);
+    assert.deepEqual(calls, [["setSpeedMultiplier", 2], ["refreshOpenApps"]]);
+  }
+  finally {
+    globalThis.Hooks = previousHooks;
+    globalThis.game = previousGame;
+    globalThis.ui = previousUi;
+    globalThis.foundry = previousFoundry;
+  }
+});
+
 test("RebreyaMainModule syncs the active group token after travel route changes", async () => {
   const previousHooks = globalThis.Hooks;
   const previousGame = globalThis.game;

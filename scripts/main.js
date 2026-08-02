@@ -4240,6 +4240,12 @@ export class RebreyaMainModule {
     return result;
   }
 
+  async setTravelSpeedMultiplier(speedMultiplier = 1) {
+    const result = await this.travelService.setSpeedMultiplier(speedMultiplier);
+    await this.refreshOpenApps();
+    return result;
+  }
+
   async #applyTravelCalendarTime(hours = 0) {
     const safeHours = toNumber(hours, 0);
     if (Math.abs(safeHours) <= 0.001) {

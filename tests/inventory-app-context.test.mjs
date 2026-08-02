@@ -2522,6 +2522,50 @@ test("InventoryApp travel advance updates the progress strip without rendering t
   }
 });
 
+test("InventoryApp saves the selected travel speed multiplier", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const dom = installMinimalDom();
+  const previousGame = globalThis.game;
+  globalThis.game = {
+    settings: {
+      get() {
+        return 2;
+      }
+    }
+  };
+
+  const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?travel-speed-multiplier=${Date.now()}`);
+  const calls = [];
+  const speedButton = createFakeControl({ dataset: { multiplier: "2" } });
+  const root = createFakeElement({ closest: () => root });
+  root.querySelector = () => null;
+  root.querySelectorAll = (selector) => (
+    selector === "[data-action='travel-speed-multiplier']" ? [speedButton] : []
+  );
+  const moduleApi = createModuleApi({ getGroupContext: () => null, calls });
+  moduleApi.setTravelSpeedMultiplier = async (multiplier) => {
+    calls.push(["setTravelSpeedMultiplier", multiplier]);
+    return { speedMultiplier: multiplier };
+  };
+  const app = new InventoryApp(moduleApi);
+  app.element = root;
+
+  try {
+    await app._onRender({}, {});
+    await dispatchClick(speedButton);
+
+    assert.deepEqual(calls.filter((call) => call[0] === "setTravelSpeedMultiplier"), [[
+      "setTravelSpeedMultiplier",
+      2
+    ]]);
+  }
+  finally {
+    globalThis.game = previousGame;
+    dom.restore();
+    restoreFoundry();
+  }
+});
+
 test("InventoryApp travel leg city link opens the city database entry", async () => {
   const restoreFoundry = installFoundryApplicationStub();
   const dom = installMinimalDom();
@@ -2565,12 +2609,18 @@ test("InventoryApp travel autocomplete and progress token have readable styles",
   assert.match(template, /data-action="travel-open-city"/u);
   assert.match(template, /data-hours="-8"/u);
   assert.match(template, /data-hours="-1"/u);
+  assert.match(template, /class="rm-travel-speed-row"/u);
+  assert.match(template, /data-action="travel-speed-multiplier"/u);
+  assert.match(template, /data-multiplier="\{\{value\}\}"/u);
+  assert.match(template, /\{\{#unless \.\.\/travel\.canSelectRoute\}\}disabled\{\{\/unless\}\}/u);
   assert.match(template, /travel\.plan\.totalTravelDays precision=0/u);
   assert.match(template, /travel\.progress\.remainingTravelDays precision=0/u);
   assert.match(css, /\.rm-travel-city-option\s*\{[\s\S]*justify-items:\s*start/u);
   assert.match(css, /\.rm-travel-city-option\s*\{[\s\S]*line-height:\s*1\.2/u);
   assert.match(css, /\.rm-travel-city-option span\s*\{[\s\S]*font-weight:\s*700/u);
   assert.match(css, /\.rm-travel-progress-token\s*\{/u);
+  assert.match(css, /\.rm-travel-speed-row\s*\{/u);
+  assert.match(css, /\.rm-travel-speed-option\.is-active\s*\{/u);
   assert.match(css, /\.rm-travel-leg-list\s*\{[\s\S]*max-height:/u);
   assert.match(css, /\.rm-travel-leg-list\s*\{[\s\S]*overflow-y:\s*auto/u);
 });

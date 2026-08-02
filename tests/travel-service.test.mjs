@@ -35,6 +35,44 @@ const network = Object.freeze({
   ]
 });
 
+test("travel speed multiplier defaults safely and preserves allowed values", () => {
+  assert.equal(normalizeTravelState({}).speedMultiplier, 1);
+  assert.equal(normalizeTravelState({ speedMultiplier: 0.25 }).speedMultiplier, 0.25);
+  assert.equal(normalizeTravelState({ speedMultiplier: 4 }).speedMultiplier, 4);
+  assert.equal(normalizeTravelState({ speedMultiplier: 3 }).speedMultiplier, 1);
+});
+
+test("travel speed multiplier changes route timing and selected control", () => {
+  const snapshot = buildTravelSnapshot({ ...network, speedMph: 8 }, {
+    originCityId: "a",
+    destinationCityId: "c",
+    mode: "land",
+    speedMultiplier: 0.5
+  });
+
+  assert.equal(snapshot.speedMph, 4);
+  assert.equal(snapshot.speedLabel, "4 миль/час");
+  assert.equal(snapshot.plan.totalHours, 6.75);
+  assert.equal(snapshot.plan.legs[0].hours, 3);
+  assert.equal(snapshot.speedMultiplier, 0.5);
+  assert.deepEqual(
+    snapshot.speedMultiplierOptions.map(({ value, selected }) => [value, selected]),
+    [[0.25, false], [0.5, true], [1, false], [2, false], [4, false]]
+  );
+});
+
+test("buildTravelPlan applies the travel speed multiplier directly", () => {
+  const plan = buildTravelPlan({ ...network, speedMph: 8 }, {
+    originCityId: "a",
+    destinationCityId: "c",
+    mode: "land",
+    speedMultiplier: 0.25
+  });
+
+  assert.equal(plan.speedMph, 2);
+  assert.equal(plan.totalHours, 13.5);
+});
+
 test("buildTravelPlan chooses the shortest land path and computes 3 mph timing", () => {
   const plan = buildTravelPlan(network, {
     originCityId: "a",
@@ -234,6 +272,50 @@ test("TravelService applies the active transport speed to travel timing", async 
   assert.equal(snapshot.speedSourceLabel, "Тяжёлый гражданский фургон");
   assert.equal(snapshot.plan.totalHours, 3);
   assert.equal(snapshot.plan.legs[0].hours, 1.33);
+});
+
+test("TravelService persists a travel speed multiplier and applies it to progress", async () => {
+  const groupState = {
+    travelState: normalizeTravelState({
+      originCityId: "a",
+      destinationCityId: "c",
+      mode: "land",
+      traveledMiles: 4
+    })
+  };
+  const groupContextService = {
+    resolveForCurrentUser() {
+      return { groupId: "group-a", canManage: true, groupState };
+    },
+    async mutateGroupState(groupActorId, mutator, options = {}) {
+      assert.equal(groupActorId, "group-a");
+      const result = await mutator(groupState);
+      return typeof options.afterCommit === "function" ? options.afterCommit(result) : result;
+    }
+  };
+  const previousGame = globalThis.game;
+  globalThis.game = {
+    user: { id: "gm", isGM: true, active: true },
+    users: { activeGM: { id: "gm", isGM: true, active: true } }
+  };
+
+  try {
+    const service = new TravelService({ groupContextService });
+    service.networkPromise = Promise.resolve(normalizeTravelNetwork({ ...network, speedMph: 8 }));
+
+    const selected = await service.setSpeedMultiplier(2);
+    const advanced = await service.advanceHours(1);
+
+    assert.equal(groupState.travelState.speedMultiplier, 2);
+    assert.equal(groupState.travelState.originCityId, "a");
+    assert.equal(selected.speedMph, 16);
+    assert.equal(selected.progress.traveledMiles, 4);
+    assert.equal(advanced.travelChange.appliedMiles, 16);
+    await assert.rejects(() => service.setSpeedMultiplier(3), /модификатор скорости/iu);
+  }
+  finally {
+    globalThis.game = previousGame;
+  }
 });
 
 test("TravelService pins actual traveled miles to the group captured before mutation", async () => {

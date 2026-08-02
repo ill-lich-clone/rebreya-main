@@ -8,6 +8,14 @@ const TRAVEL_NETWORK_PATH = `modules/${MODULE_ID}/data/travel-network.json`;
 const CANONICAL_CITY_CONNECTIONS_PATH = `modules/${MODULE_ID}/data/cities.json`;
 const DEFAULT_TRAVEL_SPEED_MPH = 3;
 const TRAVEL_DAY_HOURS = 8;
+const TRAVEL_SPEED_MULTIPLIERS = Object.freeze([0.25, 0.5, 1, 2, 4]);
+const TRAVEL_SPEED_MULTIPLIER_LABELS = Object.freeze({
+  0.25: "¼×",
+  0.5: "½×",
+  1: "1×",
+  2: "2×",
+  4: "4×"
+});
 const DEFAULT_WORLD_MAP = Object.freeze({
   sceneName: "Карта мира",
   sourceWidth: 23906,
@@ -577,12 +585,23 @@ export function normalizeTravelNetwork(value = {}) {
 
 export function normalizeTravelState(value = {}) {
   const source = asObject(value);
+  const speedMultiplier = Number(source.speedMultiplier);
   return {
     version: 1,
     originCityId: cleanId(source.originCityId),
     destinationCityId: cleanId(source.destinationCityId),
     mode: normalizeTravelMode(source.mode),
-    traveledMiles: Math.max(0, roundNumber(toNumber(source.traveledMiles, 0), 2))
+    traveledMiles: Math.max(0, roundNumber(toNumber(source.traveledMiles, 0), 2)),
+    speedMultiplier: TRAVEL_SPEED_MULTIPLIERS.includes(speedMultiplier) ? speedMultiplier : 1
+  };
+}
+
+function applyTravelSpeedMultiplier(rawNetwork, rawState) {
+  const network = normalizeTravelNetwork(rawNetwork);
+  const state = normalizeTravelState(rawState);
+  return {
+    ...network,
+    speedMph: roundNumber(network.speedMph * state.speedMultiplier, 2)
   };
 }
 
@@ -660,8 +679,8 @@ function buildPlanLeg(network, fromId, toId, route) {
 }
 
 export function buildTravelPlan(rawNetwork, rawState = {}) {
-  const network = normalizeTravelNetwork(rawNetwork);
   const state = normalizeTravelState(rawState);
+  const network = applyTravelSpeedMultiplier(rawNetwork, state);
   const origin = network.cityById.get(state.originCityId) ?? null;
   const destination = network.cityById.get(state.destinationCityId) ?? null;
 
@@ -955,8 +974,8 @@ export function buildTravelSnapshot(rawNetwork = {}, rawState = {}, {
   speedLabel = "",
   speedSourceLabel = ""
 } = {}) {
-  const network = normalizeTravelNetwork(rawNetwork);
   const state = normalizeTravelState(rawState);
+  const network = normalizeTravelNetwork(rawNetwork);
   const plan = buildTravelPlan(network, state);
   const progress = buildProgress(state, plan);
   const mapPosition = buildTravelMapPosition(network, plan, state);
@@ -980,8 +999,16 @@ export function buildTravelSnapshot(rawNetwork = {}, rawState = {}, {
     progress,
     mapPosition,
     emptyMessage: plan.reason || "Выберите города и способ пути.",
-    speedMph: network.speedMph,
-    speedLabel: cleanId(speedLabel) || `${network.speedMph} мили/час`,
+    speedMph: plan.speedMph,
+    speedLabel: state.speedMultiplier === 1 && cleanId(speedLabel)
+      ? cleanId(speedLabel)
+      : `${plan.speedMph} миль/час`,
+    speedMultiplier: state.speedMultiplier,
+    speedMultiplierOptions: TRAVEL_SPEED_MULTIPLIERS.map((value) => ({
+      value,
+      label: TRAVEL_SPEED_MULTIPLIER_LABELS[value],
+      selected: value === state.speedMultiplier
+    })),
     speedSourceLabel: cleanId(speedSourceLabel)
   };
 }
@@ -1009,7 +1036,7 @@ export class TravelService {
     if (!this.speedProvider) {
       return {
         network,
-        speedLabel: `${network.speedMph} мили/час`,
+        speedLabel: `${network.speedMph} миль/час`,
         speedSourceLabel: ""
       };
     }
@@ -1021,7 +1048,7 @@ export class TravelService {
         ...network,
         speedMph
       },
-      speedLabel: cleanId(speedMeta?.label) || `${speedMph} мили/час`,
+      speedLabel: cleanId(speedMeta?.label) || `${speedMph} миль/час`,
       speedSourceLabel: cleanId(speedMeta?.sourceLabel)
     };
   }
@@ -1184,6 +1211,27 @@ export class TravelService {
     });
   }
 
+  async setSpeedMultiplier(speedMultiplier = 1) {
+    const numericMultiplier = Number(speedMultiplier);
+    if (!TRAVEL_SPEED_MULTIPLIERS.includes(numericMultiplier)) {
+      throw new Error("Некорректный модификатор скорости путешествия.");
+    }
+
+    const context = this.#getCurrentGroupContext();
+    const currentState = normalizeTravelState(context?.groupState?.travelState ?? {});
+    const { travelState: committedState } = await this.#writeGroupTravelState(context, {
+      ...currentState,
+      speedMultiplier: numericMultiplier
+    });
+    const baseNetwork = await this.#loadNetwork();
+    const { network, speedLabel, speedSourceLabel } = await this.#resolveNetworkForContext(baseNetwork, context);
+    return buildTravelSnapshot(network, committedState, {
+      canAdvance: Boolean(context?.canManage),
+      speedLabel,
+      speedSourceLabel
+    });
+  }
+
   async clearRoute() {
     const context = this.#getCurrentGroupContext();
     const { travelState: committedState } = await this.#writeGroupTravelState(context, normalizeTravelState({}));
@@ -1222,7 +1270,7 @@ export class TravelService {
         requestedHours: nextState.requestedHours,
         appliedHours: commitResult.appliedMiles == null
           ? nextState.addedHours
-          : roundNumber(commitResult.appliedMiles / network.speedMph, 2),
+          : roundNumber(commitResult.appliedMiles / plan.speedMph, 2),
         appliedMiles: commitResult.appliedMiles ?? nextState.addedMiles
       }
     };
