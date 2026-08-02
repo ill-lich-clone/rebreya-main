@@ -9,6 +9,7 @@ import {
   isValidStorageClaimCoinsPayload,
   isValidStorageClaimRowPayload,
   isValidStorageDepositPayload,
+  isValidStorageRestorePortablePayload,
   storageCharacterTokenUuidForClaim
 } from "../scripts/data/storage-command-service.js";
 
@@ -34,7 +35,8 @@ function createHarness({
   visible = true,
   rowQuantity = 1,
   rejectItemGrant = false,
-  depositSource = null
+  depositSource = null,
+  containerItemService = null
 } = {}) {
   const player = { id: "player", isGM: false };
   const hero = {
@@ -134,6 +136,7 @@ function createHarness({
     measureDistance: () => distance,
     measurePointDistance: () => pointDistance,
     groundPileService,
+    containerItemService,
     isVisibleTo: () => visible,
     resolveDepositSource: async () => depositSource
   });
@@ -219,8 +222,27 @@ test("storage deposit payload validation accepts only exact item and storage-row
   }), false);
   assert.equal(isValidStorageDepositPayload({
     ...base,
+    quantity: 1,
+    source: { kind: "storage-token", tokenUuid: "Scene.scene.Token.other-chest" }
+  }), true);
+  assert.equal(isValidStorageDepositPayload({
+    ...base,
     source: { kind: "Actor", itemUuid: "Actor.hero" }
   }), false);
+});
+
+test("portable scene restore payload accepts one exact item and finite scene point", () => {
+  const payload = {
+    itemUuid: "Actor.hero.Item.bag",
+    characterTokenUuid: "Scene.scene.Token.hero",
+    sceneId: "scene",
+    x: 120,
+    y: 180,
+    mutationId: "portable-scene"
+  };
+  assert.equal(isValidStorageRestorePortablePayload(payload), true);
+  assert.equal(isValidStorageRestorePortablePayload({ ...payload, x: Number.NaN }), false);
+  assert.equal(isValidStorageRestorePortablePayload({ ...payload, extra: true }), false);
 });
 
 test("command claims a row from a nested container path and keeps the parent row", async () => {
@@ -265,6 +287,43 @@ test("command claims a row from a nested container path and keeps the parent row
   assert.equal(readStorageStateAtPath(harness.storageToken, ["bag-row"]).manualRows[0].quantity, 1);
   assert.deepEqual(readStorageState(harness.storageToken).manualRows.map((row) => row.rowId), ["bag-row"]);
   assert.equal(harness.itemGrants.length, 1);
+});
+
+test("claiming a container materializes a native dnd5e tree instead of a flat loot row", async () => {
+  const materialized = [];
+  const containerItemService = {
+    async materializeToActorOnce(actor, snapshot, mutationId) {
+      materialized.push({ actor, snapshot: clone(snapshot), mutationId });
+      return { id: "native-container" };
+    }
+  };
+  const harness = createHarness({ containerItemService });
+  const containerRow = buildStorageContainerRow({
+    containerId: "portable-bag",
+    storageKind: "bag",
+    name: "Сумка хранения",
+    state: { baseName: "Сумка хранения", state: "opened", manualRows: [], generatedRows: [] }
+  }, { rowId: "portable-row" });
+  await harness.storageService.configure(harness.storageToken, {
+    state: "opened",
+    manualRows: [containerRow]
+  });
+
+  await harness.service.claimRow({
+    tokenUuid: harness.storageToken.uuid,
+    characterTokenUuid: harness.characterToken.uuid,
+    rowId: "portable-row",
+    destination: "self",
+    quantity: 1,
+    target: null,
+    mutationId: "portable-claim"
+  }, { sender: harness.player });
+
+  assert.equal(materialized.length, 1);
+  assert.equal(materialized[0].actor, harness.hero);
+  assert.equal(materialized[0].snapshot.containerId, "portable-bag");
+  assert.equal(harness.itemGrants.length, 0);
+  assert.equal(readStorageState(harness.storageToken).state, "empty");
 });
 
 test("storage deposits are idempotent and move the selected quantity once", async () => {

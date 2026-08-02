@@ -3,6 +3,7 @@ import {
   parseStorageDragData,
   promptStorageTransferQuantity
 } from "../ui/storage-transfer-ui.js";
+import { isPortableStorageContainerItem } from "../data/storage-container-snapshot.js";
 
 const registeredHookObjects = new WeakSet();
 
@@ -40,7 +41,11 @@ export async function transferStorageDropToCharacter(actor, data, moduleApi, { p
     payload.rowId,
     "character",
     createMutationId(),
-    { quantity, target: { actorUuid: clean(actor.uuid) } }
+    {
+      quantity,
+      target: { actorUuid: clean(actor.uuid) },
+      ...(payload.path?.length ? { path: payload.path } : {})
+    }
   );
   return { handled: true, cancelled: false, quantity, result };
 }
@@ -64,9 +69,36 @@ export async function transferStorageDropToCanvas(canvas, data, moduleApi, { pro
     payload.rowId,
     "scene",
     createMutationId(),
-    { quantity, target: { sceneId, x, y } }
+    {
+      quantity,
+      target: { sceneId, x, y },
+      ...(payload.path?.length ? { path: payload.path } : {})
+    }
   );
   return { handled: true, cancelled: false, quantity, result };
+}
+
+export async function transferPortableStorageItemDropToCanvas(
+  canvas,
+  data,
+  moduleApi,
+  { resolveUuid = (uuid) => globalThis.fromUuid?.(uuid) } = {}
+) {
+  const itemUuid = clean(data?.uuid);
+  if (!itemUuid || !["Item", "ItemUUID"].includes(clean(data?.type))) return { handled: false };
+  const item = await resolveUuid(itemUuid);
+  if (!isPortableStorageContainerItem(item)) return { handled: false };
+  if (typeof moduleApi?.dropPortableStorageItemToScene !== "function") {
+    throw new Error("API переносимых контейнеров Rebreya недоступен.");
+  }
+  const sceneId = clean(canvas?.scene?.id ?? data?.sceneId);
+  const x = Number(data?.x);
+  const y = Number(data?.y);
+  if (!sceneId || !Number.isFinite(x) || !Number.isFinite(y)) {
+    throw new Error("Не удалось определить место для контейнера на сцене.");
+  }
+  const result = await moduleApi.dropPortableStorageItemToScene(itemUuid, { sceneId, x, y });
+  return { handled: true, result };
 }
 
 export function handleStorageActorSheetDrop(actor, data, moduleApi, options = {}) {
@@ -76,8 +108,15 @@ export function handleStorageActorSheetDrop(actor, data, moduleApi, options = {}
 }
 
 export function handleStorageCanvasDrop(canvas, data, moduleApi, options = {}) {
-  if (!parseStorageDragData(data)) return true;
-  void transferStorageDropToCanvas(canvas, data, moduleApi, options).catch(notifyDropError);
+  if (parseStorageDragData(data)) {
+    void transferStorageDropToCanvas(canvas, data, moduleApi, options).catch(notifyDropError);
+    return false;
+  }
+  const item = options.resolveUuidSync?.(clean(data?.uuid)) ?? globalThis.fromUuidSync?.(clean(data?.uuid));
+  if (!isPortableStorageContainerItem(item)) return true;
+  void transferPortableStorageItemDropToCanvas(canvas, data, moduleApi, {
+    resolveUuid: async () => item
+  }).catch(notifyDropError);
   return false;
 }
 

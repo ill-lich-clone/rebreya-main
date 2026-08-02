@@ -116,6 +116,13 @@ test("deposit drag parser accepts Foundry Items and Rebreya storage rows only", 
     kind: "item",
     itemUuid: "Actor.hero.Item.sword"
   });
+  assert.deepEqual(parseStorageDepositDragData({
+    type: "Token",
+    uuid: "Scene.scene.Token.chest"
+  }), {
+    kind: "storage-token",
+    tokenUuid: "Scene.scene.Token.chest"
+  });
 });
 
 test("embedded actor item deposits move partial quantities and authorize only owners", async () => {
@@ -229,4 +236,96 @@ test("storage-row deposits consume and restore a ground pile quantity", async ()
   await source.restore(receipt);
   assert.equal(readStorageState(token).manualRows[0].quantity, 4);
   assert.equal(readStorageState(token).state, "opened");
+});
+
+test("portable dnd5e container Items move with their complete recursive snapshot", async () => {
+  const item = {
+    id: "bag",
+    uuid: "Actor.hero.Item.bag",
+    documentName: "Item",
+    parent: {
+      documentName: "Actor",
+      testUserPermission: () => true
+    },
+    type: "container",
+    name: "Сумка хранения",
+    img: "bag.webp",
+    system: { quantity: 1 },
+    flags: {
+      [MODULE_ID]: {
+        storageContainer: {
+          containerId: "bag-1",
+          storageKind: "bag",
+          name: "Сумка хранения",
+          state: { baseName: "Сумка хранения", state: "opened", manualRows: [], generatedRows: [] }
+        }
+      }
+    },
+    getFlag(scope, key) { return this.flags?.[scope]?.[key]; }
+  };
+  const calls = [];
+  const containerItemService = {
+    async captureFromItem(actual) {
+      calls.push(["capture", actual]);
+      return clone(item.flags[MODULE_ID].storageContainer);
+    },
+    async removeItemTree(actual) {
+      calls.push(["remove", actual]);
+      return { actor: actual.parent, snapshot: clone(item.flags[MODULE_ID].storageContainer) };
+    },
+    async restoreItemTree(receipt) {
+      calls.push(["restore", receipt]);
+      return true;
+    }
+  };
+  const source = await resolveStorageDepositSource({ kind: "item", itemUuid: item.uuid }, {
+    fromUuid: async () => item,
+    containerItemService,
+    createRowId: () => "bag-row"
+  });
+
+  assert.equal(source.kind, "storage-item");
+  assert.equal(source.available, 1);
+  assert.equal(source.row.rowKind, "container");
+  assert.equal(source.row.container.containerId, "bag-1");
+  const receipt = await source.consume(1);
+  await source.restore(receipt);
+  assert.deepEqual(calls.map(([kind]) => kind), ["capture", "remove", "restore"]);
+});
+
+test("whole storage token sources delete after deposit and can restore the original token", async () => {
+  const token = createStorageToken();
+  token.actor.id = "storage-actor";
+  token.parent = {
+    id: "scene",
+    created: [],
+    async createEmbeddedDocuments(type, documents) {
+      this.created.push({ type, documents: clone(documents) });
+      return documents;
+    }
+  };
+  token.texture = { src: "chest.webp" };
+  token.toObject = () => ({
+    _id: token.id,
+    name: token.name,
+    actorId: token.actor.id,
+    texture: clone(token.texture),
+    flags: clone(token.flags)
+  });
+  token.delete = async () => { token.deleted = true; };
+  await new StorageService().configure(token, { state: "opened", containerId: "token-container" });
+
+  const source = await resolveStorageDepositSource({ kind: "storage-token", tokenUuid: token.uuid }, {
+    resolveToken: async () => token,
+    createRowId: () => "token-row"
+  });
+  assert.equal(source.kind, "storage-token");
+  assert.equal(source.row.rowKind, "container");
+  assert.equal(source.row.container.containerId, "token-container");
+  const receipt = await source.consume(1);
+  assert.equal(token.deleted, true);
+  await source.restore(receipt);
+  assert.equal(token.parent.created.length, 1);
+  assert.equal(token.parent.created[0].type, "Token");
+  assert.equal(token.parent.created[0].documents[0]._id, token.id);
 });

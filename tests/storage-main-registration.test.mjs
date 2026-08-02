@@ -13,9 +13,20 @@ test("main registers the storage deposit socket API and current cache keys", asy
   assert.match(main, /async inspectStorageDepositSource\(/u);
   assert.match(main, /async depositStorageItem\(/u);
   assert.match(main, /registerStorageTokenDropHooks\(moduleApi/u);
-  assert.match(main, /1\.4\.117-storage-deposits/u);
-  assert.match(main, /storage-deposit-interactions-1/u);
-  assert.match(main, /1\.4\.117-storage-deposit-interactions/u);
+  assert.match(main, /STORAGE_RESTORE_PORTABLE_COMMAND\s*=\s*"storage\.restore-portable"/u);
+  assert.match(main, /register\(STORAGE_RESTORE_PORTABLE_COMMAND,\s*\{/u);
+  assert.match(main, /this\.storageCommandService\.restorePortableItem\(payload,\s*\{ sender \}\)/u);
+  assert.match(main, /this\.storageContainerItemService = new StorageContainerItemService\(\);/u);
+  for (const importPath of [
+    "data/storage-service.js?v=1.4.118-nested-storage-containers",
+    "data/storage-container-item-service.js?v=1.4.118-nested-storage-containers",
+    "data/storage-deposit-source.js?v=1.4.118-nested-storage-containers",
+    "data/storage-command-service.js?v=1.4.118-nested-storage-containers",
+    "integrations/storage-transfer-drop.js?v=1.4.118-nested-storage-containers",
+    "integrations/storage-token-drop.js?v=1.4.118-nested-storage-containers"
+  ]) {
+    assert.equal(main.includes(importPath), true, importPath);
+  }
   assert.equal(manifest.version, "1.4.118");
 });
 

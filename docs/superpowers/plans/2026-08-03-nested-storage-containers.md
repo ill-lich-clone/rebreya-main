@@ -63,38 +63,38 @@
 
 **Files:** `scripts/data/storage-deposit-source.js`, `scripts/data/storage-command-service.js`, `scripts/data/inventory-service.js`, new focused integration/service files, tests
 
-- [ ] Test token, nested-row, and flagged Item deposit sources with consume/restore receipts.
-- [ ] Test taking a container creates a standard dnd5e container Item with its complete recursive snapshot.
-- [ ] Test dropping that Item to a scene reconstructs the correct token and removes the embedded source Item only after success.
-- [ ] Test whole source-token transfer deletes the source and rolls back the destination on deletion failure.
-- [ ] Register Item-sheet open actions and scene-drop restoration without custom Item types.
-- [ ] Commit `feat: make storage containers portable`.
+- [x] Test token, nested-row, and flagged Item deposit sources with consume/restore receipts.
+- [x] Test taking a container creates a standard dnd5e container Item with its complete recursive snapshot.
+- [x] Test dropping that Item to a scene reconstructs the correct token and removes the embedded source Item only after success.
+- [x] Test whole source-token transfer deletes the source and rolls back the destination on deletion failure.
+- [x] Use the native dnd5e container sheet and register scene-drop restoration without custom Item types.
+- [x] Complete the portable-container implementation for the final feature commit.
 
 ## Task 6: Add one-second token/container drop affordance
 
 **Files:** `scripts/integrations/storage-token-drop.js` or a focused token-transfer integration, `styles/main.css`, tests
 
-- [ ] Test one-second hover feedback, cancellation, permission/distance checks, and a single committed drop.
-- [ ] Support whole storage tokens, storage rows, and portable storage Items as sources.
-- [ ] Show `Отпустите, чтобы добавить` above the target without changing grid layout.
-- [ ] Commit `feat: allow dropping containers into storage`.
+- [x] Test one-second hover feedback, cancellation, permission/distance checks, and a single committed drop.
+- [x] Support whole storage tokens, storage rows, and portable storage Items as sources.
+- [x] Show `Отпустите, чтобы добавить` above the target without changing grid layout.
+- [x] Complete the container-drop implementation for the final feature commit.
 
 ## Task 7: Detach the compact popover and add nested navigation
 
 **Files:** `scripts/ui/storage-app.js`, `templates/storage-app.hbs`, `styles/main.css`, `tests/storage-app.test.mjs`
 
-- [ ] Test that the active popover is a sibling of the grid and the grid has no expansion padding.
-- [ ] Render a single active popover outside the grid, position it to the chosen icon, and clamp it inside the app.
-- [ ] Render breadcrumbs and open nested containers in the same app; keep left/right-click and drag behavior working.
-- [ ] Verify live updates preserve a valid nested path and close invalid paths.
-- [ ] Commit `feat: add compact nested storage navigation`.
+- [x] Test that the active popover is a sibling of the grid and the grid has no expansion padding.
+- [x] Render a single active popover outside the grid, position it to the chosen icon, and clamp it inside the app.
+- [x] Render breadcrumbs and open nested containers in the same app; keep left/right-click and drag behavior working.
+- [x] Verify live updates preserve a valid nested path and close invalid paths.
+- [x] Complete compact nested navigation for the final feature commit.
 
 ## Task 8: Wire, verify, and publish
 
 **Files:** `scripts/main.js`, socket/API tests, release metadata
 
-- [ ] Register new services/hooks/API methods and bump all changed cache keys.
-- [ ] Run focused tests, syntax checks, then the complete test suite.
-- [ ] Review `git diff`, scan for invalid manifest URLs and retired dependency references, and confirm `origin/main` ancestry again.
+- [x] Register new services/hooks/API methods and bump all changed cache keys.
+- [x] Run focused tests, syntax checks, then the complete test suite.
+- [x] Review `git diff`, scan for invalid manifest URLs and retired dependency references, and confirm `origin/main` ancestry again.
 - [ ] Perform the available live Foundry smoke test: module initializes, chest opens, nested container moves to inventory and back to scene.
 - [ ] Commit remaining wiring, push `lich_branch` without force, and report any live-only limitation precisely.

@@ -234,7 +234,7 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
   );
   assert.match(
     canonicalSource,
-    /storage-app\.js\?v=\$\{encodeURIComponent\(`\$\{moduleVersion\}-storage-deposit-interactions-1`\)\}/u
+    /storage-app\.js\?v=\$\{encodeURIComponent\(`\$\{moduleVersion\}-nested-storage-containers`\)\}/u
   );
   assert.match(
     traderServiceSource,
@@ -360,7 +360,7 @@ test("legacy settings relay fails closed when a world-setting socket is unavaila
 test("module stylesheet cache bust loads the storage deposit interaction styles", async () => {
   const entrypointSource = await readCanonicalEntrypointSource();
 
-  assert.match(entrypointSource, /const MODULE_STYLE_VERSION = "1\.4\.117-storage-deposit-interactions";/u);
+  assert.match(entrypointSource, /const MODULE_STYLE_VERSION = "1\.4\.118-nested-storage-containers";/u);
   assert.match(entrypointSource, /const stylesheetHref = `\$\{MODULE_STYLE_PATH\}\?v=\$\{encodeURIComponent\(MODULE_STYLE_VERSION\)\}`;/u);
   assert.doesNotMatch(entrypointSource, /module\?\.version\s*\?\?/u);
 });

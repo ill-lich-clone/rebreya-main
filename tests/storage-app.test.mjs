@@ -33,8 +33,8 @@ function createApp({ canManage = true, configure = true, withTextures = true, ge
   const claimCalls = [];
   const depositCalls = [];
   const moduleApi = {
-    async getStorageSnapshot() {
-      if (getStorageSnapshot) return getStorageSnapshot();
+    async getStorageSnapshot(...args) {
+      if (getStorageSnapshot) return getStorageSnapshot(...args);
       return {
         tokenUuid: "Scene.scene.Token.chest",
         baseName: "Chest",
@@ -114,8 +114,7 @@ test("storage configuration exposes template and manual item controls to GMs", a
   assert.equal(StorageApp.DEFAULT_OPTIONS.position.width, 286);
   assert.equal(context.rows[0].canEdit, true);
   assert.equal(context.gridColumns, 3);
-  assert.equal(context.rows[0].popoverAlignment, "left");
-  assert.equal(context.coinsPopoverAlignment, "center");
+  assert.equal(context.activePopover, null);
 });
 
 test("storage configuration is hidden from players", async () => {
@@ -132,7 +131,8 @@ test("storage template exposes generated-row quantity and delete controls to GMs
   assert.match(template, /data-action="storage-update-row"/u);
   assert.match(template, /data-action="storage-delete-row"/u);
   assert.match(template, /data-storage-quantity/u);
-  assert.match(template, /rm-storage-item__popover--\{\{popoverAlignment\}\}/u);
+  assert.match(template, /class="rm-storage-popover-layer"/u);
+  assert.match(template, /data-anchor-row-id="\{\{activePopover\.anchorRowId\}\}"/u);
 });
 
 test("storage texture controls stay hidden when a token has no complete texture set", async () => {
@@ -349,8 +349,69 @@ test("PKM opens the same item popover and suppresses the native menu", async () 
 
 test("storage item popovers stay interactive above their grid", async () => {
   const css = await readFile(new URL("../styles/main.css", import.meta.url), "utf8");
+  const template = await readFile(new URL("../templates/storage-app.hbs", import.meta.url), "utf8");
   assert.match(css, /\.rm-storage-item__popover\s*\{[^}]*pointer-events:\s*auto/isu);
+  assert.match(css, /\.rm-storage-popover-layer\s*\{[^}]*position:\s*absolute[^}]*pointer-events:\s*none/isu);
   assert.match(css, /\.rebreya-storage-app\s+\.window-content\s*\{[^}]*overflow:\s*visible/isu);
+  assert.doesNotMatch(css, /\.rm-storage-grid:has\(/u);
+  assert.match(template, /<\/div>\s*\{\{else\}\}[\s\S]*?\{\{#if activePopover\}\}\s*<div class="rm-storage-popover-layer"/u);
+});
+
+test("container title opens a nested path and breadcrumbs return to the root", async () => {
+  const requests = [];
+  const rootSnapshot = {
+    tokenUuid: "Scene.scene.Token.chest",
+    name: "Сундук",
+    baseName: "Сундук",
+    state: "opened",
+    rows: [{
+      rowKind: "container",
+      rowId: "bag-row",
+      name: "Сумка хранения",
+      quantity: 1,
+      container: { containerId: "bag-1" }
+    }],
+    coins: {}
+  };
+  const nestedSnapshot = {
+    tokenUuid: rootSnapshot.tokenUuid,
+    path: ["bag-row"],
+    name: "Сумка хранения",
+    baseName: "Сумка хранения",
+    state: "opened",
+    rows: [{ rowId: "gem-row", name: "Самоцвет", quantity: 2 }],
+    coins: {}
+  };
+  const { app } = createApp({
+    configure: false,
+    getStorageSnapshot: async (_tokenUuid, request = {}) => {
+      requests.push(structuredClone(request));
+      return request.path?.length ? nestedSnapshot : rootSnapshot;
+    }
+  });
+  const listeners = new Map();
+  app.render = async () => {};
+  app.element = new class extends FakeElement {
+    addEventListener(name, callback) { listeners.set(name, callback); }
+  }();
+  await app._prepareContext();
+  app._onRender({}, {});
+  const control = (action, rowId = "bag-row", index = "0") => ({
+    dataset: { action, rowId, index },
+    closest(selector) { return selector === "[data-action]" ? this : null; }
+  });
+
+  await listeners.get("click")({ target: control("storage-open-container") });
+  assert.deepEqual(app.path, ["bag-row"]);
+  assert.equal(app.snapshot.name, "Сумка хранения");
+  assert.deepEqual(requests.at(-1), { path: ["bag-row"] });
+  const nestedContext = await app._prepareContext();
+  assert.equal(nestedContext.hasBreadcrumbs, true);
+  assert.deepEqual(nestedContext.breadcrumbs.map(({ name }) => name), ["Сундук", "Сумка хранения"]);
+
+  await listeners.get("click")({ target: control("storage-breadcrumb", "", "0") });
+  assert.deepEqual(app.path, []);
+  assert.equal(app.snapshot.name, "Сундук");
 });
 
 test("GM configuration drop routes an item through the authoritative deposit API", async () => {

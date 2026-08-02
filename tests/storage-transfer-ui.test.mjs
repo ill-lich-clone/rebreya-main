@@ -11,6 +11,7 @@ import {
 test("storage drag payload round-trips only the authoritative row reference", () => {
   const payload = buildStorageDragData({
     tokenUuid: "Scene.scene.Token.chest",
+    path: ["bag-row"],
     rowId: "row-1",
     quantity: 4
   });
@@ -18,6 +19,7 @@ test("storage drag payload round-trips only the authoritative row reference", ()
   assert.deepEqual(parseStorageDragData(JSON.stringify(payload)), {
     type: "RebreyaStorageClaim",
     tokenUuid: "Scene.scene.Token.chest",
+    path: ["bag-row"],
     rowId: "row-1",
     quantity: 4
   });

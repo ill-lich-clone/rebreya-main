@@ -1,4 +1,9 @@
-import { readStorageState } from "./storage-service.js";
+import { isStorageActor, readStorageState, readStorageStateAtPath } from "./storage-service.js";
+import {
+  buildStorageContainerRow,
+  isPortableStorageContainerItem
+} from "./storage-container-snapshot.js";
+import { buildStorageContainerSnapshotFromToken } from "./storage-container-item-service.js";
 import { parseStorageDragData } from "../ui/storage-transfer-ui.js";
 
 function clone(value) {
@@ -127,8 +132,12 @@ export function parseStorageDepositDragData(value) {
       kind: "storage-row",
       tokenUuid: clean(canonical.tokenUuid),
       rowId: clean(canonical.rowId),
-      quantity: positiveQuantity(canonical.quantity)
+      quantity: positiveQuantity(canonical.quantity),
+      ...(Array.isArray(canonical.path) ? { path: canonical.path.map(clean).filter(Boolean).slice(0, 8) } : {})
     };
+  }
+  if (canonical?.kind === "storage-token" && clean(canonical.tokenUuid)) {
+    return { kind: "storage-token", tokenUuid: clean(canonical.tokenUuid) };
   }
   const storage = parseStorageDragData(value);
   if (storage) {
@@ -136,18 +145,23 @@ export function parseStorageDepositDragData(value) {
       kind: "storage-row",
       tokenUuid: storage.tokenUuid,
       rowId: storage.rowId,
-      quantity: storage.quantity
+      quantity: storage.quantity,
+      ...(storage.path?.length ? { path: storage.path } : {})
     };
   }
 
   const payload = canonical;
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+  if (clean(payload.type) === "Token") {
+    const tokenUuid = clean(payload.uuid ?? payload.tokenUuid);
+    return tokenUuid ? { kind: "storage-token", tokenUuid } : null;
+  }
   if (!["Item", "ItemUUID"].includes(clean(payload.type))) return null;
   const itemUuid = clean(payload.uuid);
   return itemUuid ? { kind: "item", itemUuid } : null;
 }
 
-async function resolveItemSource(sourceRef, { fromUuid, createRowId }) {
+async function resolveItemSource(sourceRef, { fromUuid, createRowId, containerItemService = null }) {
   if (typeof fromUuid !== "function") throw new TypeError("Для предмета требуется разрешение UUID.");
   const item = await fromUuid(sourceRef.itemUuid);
   if (!isItemDocument(item)) throw new Error("Перетаскиваемый предмет не найден.");
@@ -155,6 +169,43 @@ async function resolveItemSource(sourceRef, { fromUuid, createRowId }) {
   const available = itemQuantity(item);
   const embedded = isEmbeddedActorItem(item);
   const parent = embedded ? item.parent : null;
+  if (isPortableStorageContainerItem(item)) {
+    if (!containerItemService || typeof containerItemService.captureFromItem !== "function") {
+      throw new Error("Сервис переносимых контейнеров Rebreya недоступен.");
+    }
+    const snapshot = await containerItemService.captureFromItem(item);
+    const row = buildStorageContainerRow(snapshot, {
+      rowId: clean(createRowId?.()) || createDepositRowId()
+    });
+    return {
+      kind: "storage-item",
+      mode: embedded ? "move" : "copy",
+      available: 1,
+      row,
+      sourceKey: clean(item.uuid),
+      item,
+      sourceActor: parent,
+      canUserMove(user) {
+        if (!embedded || user?.isGM === true) return true;
+        if (typeof parent?.testUserPermission === "function") {
+          return parent.testUserPermission(user, "OWNER") === true;
+        }
+        return item?.isOwner === true || parent?.isOwner === true;
+      },
+      async consume(requestedQuantity) {
+        requireQuantity(requestedQuantity, 1);
+        if (!embedded) return { kind: "copy" };
+        const receipt = await containerItemService.removeItemTree(item);
+        return { kind: "storage-item", receipt };
+      },
+      async restore(receipt) {
+        if (!receipt || receipt.kind === "copy") return false;
+        if (receipt.kind !== "storage-item") return false;
+        await containerItemService.restoreItemTree(receipt.receipt);
+        return true;
+      }
+    };
+  }
   const row = buildItemRow(item, available, createRowId);
 
   return {
@@ -225,7 +276,8 @@ async function resolveStorageRowSource(sourceRef, {
   }
   const token = await resolveToken(sourceRef.tokenUuid);
   if (!token) throw new Error("Исходное хранилище не найдено.");
-  const state = readStorageState(token);
+  const path = Array.isArray(sourceRef.path) ? sourceRef.path.map(clean).filter(Boolean).slice(0, 8) : [];
+  const state = readStorageStateAtPath(token, path);
   const rowId = clean(sourceRef.rowId);
   const row = storageRows(state).find((entry) => clean(entry?.rowId) === rowId) ?? null;
   if (!row || state.claimedRowIds.includes(rowId)) {
@@ -256,18 +308,75 @@ async function resolveStorageRowSource(sourceRef, {
     canUserMove() { return true; },
     async consume(requestedQuantity) {
       const quantity = requireQuantity(requestedQuantity, available);
-      const beforeState = readStorageState(token);
+      const beforeState = readStorageStateAtPath(token, path);
       const result = await storageService.claim(token, {
         kind: "row",
         rowId,
-        quantity
+        quantity,
+        path
       });
       if (!result.changed) throw new Error("Предмет исходного хранилища уже недоступен.");
       return { kind: "storage-row", beforeState, state: result.state, token };
     },
     async restore(receipt) {
       if (receipt?.kind !== "storage-row") return false;
-      await storageService.configure(token, receipt.beforeState);
+      await storageService.configure(token, receipt.beforeState, { path });
+      return true;
+    }
+  };
+}
+
+async function resolveStorageTokenSource(sourceRef, { resolveToken, createRowId }) {
+  if (typeof resolveToken !== "function") {
+    throw new TypeError("Для токена-контейнера требуется token resolver.");
+  }
+  const token = await resolveToken(sourceRef.tokenUuid);
+  const document = token?.document ?? token;
+  if (!document || !isStorageActor(document.actor)) {
+    throw new Error("Перетаскиваемый токен не является хранилищем Rebreya.");
+  }
+  const snapshot = buildStorageContainerSnapshotFromToken(document);
+  const row = buildStorageContainerRow(snapshot, {
+    rowId: clean(createRowId?.()) || createDepositRowId()
+  });
+  const parent = document.parent ?? document.scene ?? null;
+  const tokenData = clone(document.toObject?.() ?? document) ?? {};
+
+  return {
+    kind: "storage-token",
+    mode: "move",
+    available: 1,
+    row,
+    sourceKey: clean(document.uuid ?? sourceRef.tokenUuid),
+    storageToken: document,
+    canUserMove(user) {
+      if (user?.isGM === true) return true;
+      if (typeof document.testUserPermission === "function") {
+        return document.testUserPermission(user, "OWNER") === true;
+      }
+      if (typeof document.actor?.testUserPermission === "function") {
+        return document.actor.testUserPermission(user, "OWNER") === true;
+      }
+      return document.isOwner === true || document.actor?.isOwner === true;
+    },
+    async consume(requestedQuantity) {
+      requireQuantity(requestedQuantity, 1);
+      if (typeof document.delete === "function") {
+        await document.delete();
+      }
+      else if (typeof parent?.deleteEmbeddedDocuments === "function" && clean(document.id)) {
+        await parent.deleteEmbeddedDocuments("Token", [clean(document.id)]);
+      }
+      else {
+        throw new TypeError("Сцена не поддерживает удаление токена-контейнера.");
+      }
+      return { kind: "storage-token", parent, tokenData };
+    },
+    async restore(receipt) {
+      if (receipt?.kind !== "storage-token" || typeof receipt.parent?.createEmbeddedDocuments !== "function") {
+        return false;
+      }
+      await receipt.parent.createEmbeddedDocuments("Token", [receipt.tokenData], { keepId: true });
       return true;
     }
   };
@@ -282,6 +391,9 @@ export async function resolveStorageDepositSource(sourceRef, dependencies = {}) 
   }
   if (sourceRef.kind === "storage-row") {
     return resolveStorageRowSource(sourceRef, dependencies);
+  }
+  if (sourceRef.kind === "storage-token") {
+    return resolveStorageTokenSource(sourceRef, dependencies);
   }
   throw new Error("Неподдерживаемый источник предмета для хранилища.");
 }

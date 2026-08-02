@@ -5,6 +5,7 @@ import {
   handleStorageActorSheetDrop,
   handleStorageCanvasDrop,
   registerStorageTransferDropHooks,
+  transferPortableStorageItemDropToCanvas,
   transferStorageDropToCanvas,
   transferStorageDropToCharacter
 } from "../scripts/integrations/storage-transfer-drop.js";
@@ -47,6 +48,40 @@ test("canvas drop targets the exact scene point and cancellation preserves sourc
   const cancelled = await transferStorageDropToCanvas(canvas, data, api, { prompt: async () => null });
   assert.equal(cancelled.cancelled, true);
   assert.equal(calls.length, 1);
+});
+
+test("portable dnd5e container Item drops restore a storage token on the scene", async () => {
+  const calls = [];
+  const result = await transferPortableStorageItemDropToCanvas(
+    { scene: { id: "scene" } },
+    { type: "Item", uuid: "Actor.hero.Item.bag", x: 120, y: 180 },
+    {
+      async dropPortableStorageItemToScene(...args) {
+        calls.push(args);
+        return { changed: true, tokenUuid: "Scene.scene.Token.bag" };
+      }
+    },
+    {
+      resolveUuid: async () => ({
+        type: "container",
+        flags: {
+          "rebreya-main": {
+            storageContainer: {
+              containerId: "bag-1",
+              storageKind: "bag",
+              name: "Сумка",
+              state: { baseName: "Сумка", state: "opened", manualRows: [], generatedRows: [] }
+            }
+          }
+        }
+      })
+    }
+  );
+
+  assert.equal(result.handled, true);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0][0], "Actor.hero.Item.bag");
+  assert.deepEqual(calls[0][1], { sceneId: "scene", x: 120, y: 180 });
 });
 
 test("drop hooks consume only Rebreya storage payloads", () => {

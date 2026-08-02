@@ -9,13 +9,15 @@ function positiveInteger(value) {
   return Number.isSafeInteger(number) && number >= 1 ? number : 0;
 }
 
-export function buildStorageDragData({ tokenUuid = "", rowId = "", quantity = 0 } = {}) {
+export function buildStorageDragData({ tokenUuid = "", path = [], rowId = "", quantity = 0 } = {}) {
   const payload = {
     type: STORAGE_DRAG_TYPE,
     tokenUuid: clean(tokenUuid),
     rowId: clean(rowId),
     quantity: positiveInteger(quantity)
   };
+  const normalizedPath = (Array.isArray(path) ? path : []).map(clean).filter(Boolean).slice(0, 8);
+  if (normalizedPath.length) payload.path = normalizedPath;
   if (!payload.tokenUuid || !payload.rowId || !payload.quantity) {
     throw new Error("Нельзя перетащить предмет без действительного источника.");
   }
@@ -38,7 +40,14 @@ export function parseStorageDragData(value) {
   const rowId = clean(payload.rowId);
   const quantity = positiveInteger(payload.quantity);
   if (!tokenUuid || !rowId || !quantity) return null;
-  return { type: STORAGE_DRAG_TYPE, tokenUuid, rowId, quantity };
+  const path = (Array.isArray(payload.path) ? payload.path : []).map(clean).filter(Boolean).slice(0, 8);
+  return {
+    type: STORAGE_DRAG_TYPE,
+    tokenUuid,
+    ...(path.length ? { path } : {}),
+    rowId,
+    quantity
+  };
 }
 
 export function storageGridColumns(itemCount) {

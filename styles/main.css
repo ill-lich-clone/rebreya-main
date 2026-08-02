@@ -12549,6 +12549,7 @@ summary:focus-visible {
 }
 
 .rm-storage-shell {
+  position: relative;
   display: grid;
   gap: 10px;
   padding: 10px;
@@ -12647,19 +12648,11 @@ summary:focus-visible {
   overflow: visible;
 }
 
-.rm-storage-grid:has(.rm-storage-item.is-expanded) {
-  padding-bottom: 168px;
-}
-
 .rm-storage-item {
   position: relative;
   width: 72px;
   height: 72px;
   cursor: grab;
-}
-
-.rm-storage-item.is-expanded {
-  z-index: 20;
 }
 
 .rm-storage-item__icon {
@@ -12725,9 +12718,9 @@ summary:focus-visible {
 
 .rm-storage-item__popover {
   position: absolute;
-  top: calc(100% + 9px);
+  top: 0;
   left: 50%;
-  z-index: 100;
+  z-index: 2;
   pointer-events: auto;
   display: grid;
   width: 224px;
@@ -12748,7 +12741,7 @@ summary:focus-visible {
 .rm-storage-item__popover::before {
   position: absolute;
   top: -5px;
-  left: 50%;
+  left: var(--rm-storage-popover-arrow-left, 50%);
   width: 9px;
   height: 9px;
   border-top: 1px solid rgb(218 174 76 / 0.72);
@@ -12756,6 +12749,48 @@ summary:focus-visible {
   background: rgb(28 30 37 / 0.99);
   content: "";
   transform: translateX(-50%) rotate(45deg);
+}
+
+.rm-storage-popover-layer {
+  position: absolute;
+  z-index: 120;
+  inset: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.rm-storage-breadcrumbs {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.3rem;
+  color: rgb(218 174 76 / 0.9);
+  font-size: 0.78rem;
+}
+
+.rm-storage-breadcrumbs button {
+  min-width: 0;
+  height: auto;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  box-shadow: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rm-storage-breadcrumbs button[aria-current="page"] {
+  color: #f2ede2;
+  cursor: default;
+  text-decoration: none;
+}
+
+.rm-storage-breadcrumbs i {
+  flex: 0 0 auto;
+  font-size: 0.62rem;
+  opacity: 0.7;
 }
 
 .rm-storage-item__popover--left {

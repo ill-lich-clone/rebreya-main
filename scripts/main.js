@@ -86,7 +86,7 @@ import {
   isStorageActor,
   readStorageState,
   readStorageStateAtPath
-} from "./data/storage-service.js";
+} from "./data/storage-service.js?v=1.4.118-nested-storage-containers";
 import { StorageOpenSoundService } from "./data/storage-open-sound-service.js";
 import {
   isStorageTokenVisible,
@@ -95,10 +95,11 @@ import {
 } from "./data/storage-access.js";
 import { BuiltinStorageActorService } from "./data/builtin-storage-actor-service.js";
 import { StorageGroundPileService } from "./data/storage-ground-pile-service.js";
+import { StorageContainerItemService } from "./data/storage-container-item-service.js?v=1.4.118-nested-storage-containers";
 import {
   parseStorageDepositDragData,
   resolveStorageDepositSource
-} from "./data/storage-deposit-source.js?v=1.4.117-storage-deposits";
+} from "./data/storage-deposit-source.js?v=1.4.118-nested-storage-containers";
 import { NativeObjectDurabilityService } from "./data/native-object-durability-service.js";
 import {
   StorageCommandService,
@@ -106,8 +107,9 @@ import {
   isValidStorageClaimRowPayload,
   isValidStorageDepositPayload,
   isValidStorageOpenPayload,
+  isValidStorageRestorePortablePayload,
   storageCharacterTokenUuidForClaim
-} from "./data/storage-command-service.js?v=1.4.117-storage-deposits";
+} from "./data/storage-command-service.js?v=1.4.118-nested-storage-containers";
 import { registerCombatHooks } from "./combat/hooks.js?v=1.4.111-paladin-dogmas";
 import { CombatAttackService } from "./combat/attack-service.js?v=1.4.111-native-ammo-selection-guard";
 import { ImplantAutomationService } from "./combat/implant-automation-service.js";
@@ -185,8 +187,8 @@ import { registerCraftsmanGadgetSocketCommand } from "./integrations/craftsman-g
 import { registerSpellInstanceSocketCommand } from "./integrations/spell-instance-socket.js";
 import { registerSummonLifecycleSocketCommand } from "./integrations/summon-lifecycle-socket.js";
 import { registerTransportGroupDropHooks } from "./integrations/transport-group-drop.js";
-import { registerStorageTransferDropHooks } from "./integrations/storage-transfer-drop.js";
-import { registerStorageTokenDropHooks } from "./integrations/storage-token-drop.js?v=1.4.117-storage-deposits";
+import { registerStorageTransferDropHooks } from "./integrations/storage-transfer-drop.js?v=1.4.118-nested-storage-containers";
+import { registerStorageTokenDropHooks } from "./integrations/storage-token-drop.js?v=1.4.118-nested-storage-containers";
 import { registerTransportVehicleSheetHooks } from "./integrations/transport-vehicle-sheet.js";
 import {
   parseStorageDragData,
@@ -245,7 +247,7 @@ const LEGACY_WORLD_MUTATION_SOCKET_TYPES = new Set([
   SOCKET_EVENT_LOOTGEN_CLAIM_COINS
 ]);
 const MODULE_STYLE_PATH = `modules/${MODULE_ID}/styles/main.css`;
-const MODULE_STYLE_VERSION = "1.4.117-storage-deposit-interactions";
+const MODULE_STYLE_VERSION = "1.4.118-nested-storage-containers";
 const SECONDS_PER_HOUR = 3600;
 const SECONDS_PER_DAY = 86400;
 const TRAVEL_DAY_HOURS = 8;
@@ -257,6 +259,7 @@ export const STORAGE_OPEN_COMMAND = "storage.open";
 export const STORAGE_CLAIM_ROW_COMMAND = "storage.claim-row";
 export const STORAGE_CLAIM_COINS_COMMAND = "storage.claim-coins";
 export const STORAGE_DEPOSIT_COMMAND = "storage.deposit";
+export const STORAGE_RESTORE_PORTABLE_COMMAND = "storage.restore-portable";
 export const DURABILITY_TARGET_DAMAGE_COMMAND = "durability.target.damage";
 const ENVIRONMENT_COMBAT_STATUS_IDS = new Set(["rebreya-surrounded", "rebreya-open-position"]);
 const ENVIRONMENT_STATUS_SOURCE = "rebreya-environment";
@@ -1070,6 +1073,7 @@ export class RebreyaMainModule {
       gameProvider: () => globalThis.game,
       isActiveGm: isActiveGmClient
     });
+    this.storageContainerItemService = new StorageContainerItemService();
     this.nativeObjectDurabilityService = new NativeObjectDurabilityService({
       durabilityService: this.durabilityService,
       storageService: this.storageService,
@@ -1087,6 +1091,7 @@ export class RebreyaMainModule {
       measureDistance: measureStorageTokenDistance,
       measurePointDistance: measureStoragePointDistance,
       groundPileService: this.storageGroundPileService,
+      containerItemService: this.storageContainerItemService,
       isVisibleTo: (storageToken) => isStorageTokenVisible(storageToken)
     });
     this.transportInstanceService = new TransportInstanceService(this, {
@@ -1371,6 +1376,11 @@ export class RebreyaMainModule {
       validate: isValidStorageDepositPayload,
       authorize: (_payload, { sender }) => Boolean(sender),
       execute: (payload, { sender }) => this.storageCommandService.deposit(payload, { sender })
+    });
+    this.socketCommandBus.register(STORAGE_RESTORE_PORTABLE_COMMAND, {
+      validate: isValidStorageRestorePortablePayload,
+      authorize: (_payload, { sender }) => Boolean(sender),
+      execute: (payload, { sender }) => this.storageCommandService.restorePortableItem(payload, { sender })
     });
     this.socketCommandBus.register(DURABILITY_TARGET_DAMAGE_COMMAND, {
       validate: isValidDurabilityTargetDamagePayload,
@@ -3123,7 +3133,8 @@ export class RebreyaMainModule {
     const resolved = await resolveStorageDepositSource(source, {
       fromUuid: (uuid) => globalThis.fromUuid?.(uuid),
       resolveToken: (uuid) => globalThis.fromUuid?.(uuid),
-      storageService: this.storageService
+      storageService: this.storageService,
+      containerItemService: this.storageContainerItemService
     });
     return {
       source,
@@ -3140,8 +3151,14 @@ export class RebreyaMainModule {
           kind: "storage-row",
           tokenUuid: cleanSocketId(source.tokenUuid),
           rowId: cleanSocketId(source.rowId),
-          quantity: Number(source.quantity)
+          quantity: Number(source.quantity),
+          ...(cleanStoragePath(source.path).length ? { path: cleanStoragePath(source.path) } : {})
         }
+      : source?.kind === "storage-token"
+        ? {
+            kind: "storage-token",
+            tokenUuid: cleanSocketId(source.tokenUuid)
+          }
       : {
           kind: "item",
           itemUuid: cleanSocketId(source?.itemUuid)
@@ -3160,6 +3177,20 @@ export class RebreyaMainModule {
       : this.socketCommandBus.request(STORAGE_DEPOSIT_COMMAND, payload);
   }
 
+  async dropPortableStorageItemToScene(itemUuid, request = {}) {
+    const payload = {
+      itemUuid: cleanSocketId(itemUuid),
+      characterTokenUuid: this.#controlledCharacterTokenUuid(request.characterTokenUuid),
+      sceneId: cleanSocketId(request.sceneId),
+      x: Number(request.x),
+      y: Number(request.y),
+      mutationId: cleanSocketId(request.mutationId) || createSocketRequestId("storage-portable-scene")
+    };
+    return isActiveGmClient(globalThis.game)
+      ? this.storageCommandService.restorePortableItem(payload, { sender: globalThis.game?.user })
+      : this.socketCommandBus.request(STORAGE_RESTORE_PORTABLE_COMMAND, payload);
+  }
+
   async #resolveStorageToken(tokenUuid, { requireMarked = true } = {}) {
     const document = await globalThis.fromUuid?.(cleanSocketId(tokenUuid));
     const token = document?.document ?? document;
@@ -3176,7 +3207,19 @@ export class RebreyaMainModule {
     const state = readStorageStateAtPath(token, path);
     const combinedRows = [...state.manualRows, ...state.generatedRows];
     const rows = combinedRows
-      .map((row, index) => ({ ...foundry.utils.deepClone(row), rowId: cleanSocketId(row.rowId ?? index) }))
+      .map((row, index) => {
+        const next = { ...foundry.utils.deepClone(row), rowId: cleanSocketId(row.rowId ?? index) };
+        if (next.rowKind === "container" && next.container) {
+          next.container = {
+            containerId: cleanSocketId(next.container.containerId),
+            storageKind: cleanSocketId(next.container.storageKind),
+            name: cleanSocketId(next.container.name),
+            img: cleanSocketId(next.container.img),
+            state: cleanSocketId(next.container.state?.state)
+          };
+        }
+        return next;
+      })
       .filter((row) => !state.claimedRowIds.includes(row.rowId));
     const coins = Object.fromEntries(["pp", "gp", "sp", "cp"].map((key) => [
       key,
@@ -3329,23 +3372,24 @@ export class RebreyaMainModule {
     return this.storageService.setTextureMode(token, mode, { path: cleanStoragePath(request.path) });
   }
 
-  async openStorageApp({ tokenUuid, configure = false, anchorToToken = false } = {}) {
+  async openStorageApp({ tokenUuid, configure = false, anchorToToken = false, path = [] } = {}) {
     const safeTokenUuid = cleanSocketId(tokenUuid);
+    const safePath = cleanStoragePath(path);
     if (!safeTokenUuid) throw new Error("Не указан токен хранилища.");
     if (configure) {
-      await this.configureStorageToken(safeTokenUuid);
+      await this.configureStorageToken(safeTokenUuid, {}, { path: safePath });
     }
     else {
-      await this.openStorage(safeTokenUuid);
+      await this.openStorage(safeTokenUuid, { path: safePath });
     }
     const moduleVersion = game.modules.get(MODULE_ID)?.version ?? "1.4.96";
     const { StorageApp } = await import(
-      `./ui/storage-app.js?v=${encodeURIComponent(`${moduleVersion}-storage-deposit-interactions-1`)}`
+      `./ui/storage-app.js?v=${encodeURIComponent(`${moduleVersion}-nested-storage-containers`)}`
     );
     const key = `${safeTokenUuid}:${configure ? "configure" : "open"}`;
     let app = this.storageApps.get(key);
     if (!app) {
-      app = new StorageApp(this, safeTokenUuid, { configure, anchorToToken });
+      app = new StorageApp(this, safeTokenUuid, { configure, anchorToToken, path: safePath });
       this.storageApps.set(key, app);
     }
     else if (anchorToToken) {

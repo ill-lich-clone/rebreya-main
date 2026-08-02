@@ -63,6 +63,9 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
     super(options);
     this.moduleApi = moduleApi;
     this.tokenUuid = clean(tokenUuid);
+    this.path = (Array.isArray(options.path) ? options.path : []).map(clean).filter(Boolean).slice(0, 8);
+    this.pathNames = (Array.isArray(options.pathNames) ? options.pathNames : []).map(clean).filter(Boolean).slice(0, 8);
+    this.rootName = clean(options.rootName);
     this.configure = options.configure === true;
     this.anchorRequested = options.anchorToToken === true;
     this.anchorDetached = false;
@@ -81,13 +84,32 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
     return clean(this.snapshot?.name) || clean(this.options?.window?.title) || "Сундук";
   }
 
+  #pathRequest() {
+    return this.path.length ? { path: [...this.path] } : {};
+  }
+
+  async #requestSnapshot() {
+    while (true) {
+      try {
+        return await this.moduleApi.getStorageSnapshot(this.tokenUuid, this.#pathRequest());
+      }
+      catch (error) {
+        if (!this.path.length) throw error;
+        this.path.pop();
+        this.pathNames.pop();
+        this.activeRowId = "";
+      }
+    }
+  }
+
   async _prepareContext() {
     if (!this.snapshot) {
       const request = ++this.snapshotRequest;
-      const snapshot = await this.moduleApi.getStorageSnapshot(this.tokenUuid);
+      const snapshot = await this.#requestSnapshot();
       if (request === this.snapshotRequest) this.snapshot = snapshot;
     }
     const windowTitle = clean(this.snapshot?.name) || "Сундук";
+    if (!this.path.length) this.rootName = windowTitle;
     this.options ??= {};
     this.options.window ??= {};
     this.options.window.title = windowTitle;
@@ -102,13 +124,7 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const hasCoins = COIN_KEYS.some((key) => coins[key] > 0);
     const gridItemCount = snapshotRows.length + (hasCoins ? 1 : 0);
     const gridColumns = storageGridColumns(gridItemCount);
-    const popoverAlignment = (index) => {
-      const column = index % gridColumns;
-      if (column === 0) return "left";
-      if (column === gridColumns - 1) return "right";
-      return "center";
-    };
-    const rows = snapshotRows.map((row, index) => ({
+    const rows = snapshotRows.map((row) => ({
       ...clone(row),
       rowId: clean(row.rowId),
       name: clean(row.name ?? row.itemData?.name) || "Предмет",
@@ -118,14 +134,30 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
       sourceType: clean(row.sourceType),
       sourceId: clean(row.sourceId),
       canOpenSource: Boolean(clean(row.sourceId)),
+      isContainer: row.rowKind === "container" && Boolean(row.container),
       canEdit: configurationEnabled,
-      expanded: this.activeRowId === clean(row.rowId),
-      showQuantity: Math.max(1, Number(row.quantity ?? 1)) > 1,
-      popoverAlignment: popoverAlignment(index)
+      active: this.activeRowId === clean(row.rowId),
+      showQuantity: row.rowKind !== "container" && Math.max(1, Number(row.quantity ?? 1)) > 1
     }));
     const validPopoverIds = new Set(rows.map((row) => row.rowId));
     if (hasCoins) validPopoverIds.add("__coins");
     if (this.activeRowId && !validPopoverIds.has(this.activeRowId)) this.activeRowId = "";
+    const selectedRow = rows.find((row) => row.rowId === this.activeRowId) ?? null;
+    const activePopover = this.activeRowId === "__coins"
+      ? {
+          isCoins: true,
+          anchorRowId: "__coins",
+          name: coinsLabel(coins)
+        }
+      : selectedRow ? { ...selectedRow, anchorRowId: selectedRow.rowId } : null;
+    const breadcrumbs = [
+      { index: 0, name: this.rootName || "Сундук" },
+      ...this.path.map((rowId, index) => ({
+        index: index + 1,
+        rowId,
+        name: clean(this.pathNames[index]) || `Контейнер ${index + 1}`
+      }))
+    ].map((entry, index, values) => ({ ...entry, current: index === values.length - 1 }));
 
     return {
       tokenUuid: this.tokenUuid,
@@ -134,6 +166,9 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
       isEmpty: this.snapshot?.state === "empty",
       canManage,
       rows,
+      activePopover,
+      breadcrumbs,
+      hasBreadcrumbs: breadcrumbs.length > 1,
       hasRows: rows.length > 0,
       hasGridItems: gridItemCount > 0,
       gridColumns,
@@ -141,7 +176,6 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
       coinsLabel: coinsLabel(coins),
       hasCoins,
       coinsExpanded: this.activeRowId === "__coins",
-      coinsPopoverAlignment: popoverAlignment(rows.length),
       configuration: {
         enabled: configurationEnabled,
         baseName: clean(this.snapshot?.baseName) || clean(this.snapshot?.name) || "Хранилище",
@@ -197,11 +231,38 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const viewportWidth = Math.max(320, Number(globalThis.innerWidth) || 1920);
     const width = this.configure ? 430 : Math.min(viewportWidth - 32, Math.max(286, (columns * 80) + 46));
     this.setPosition?.({ width });
+    const positionPopover = globalThis.requestAnimationFrame ?? ((callback) => globalThis.setTimeout?.(callback, 0));
+    positionPopover?.(() => this.#positionPopover(root));
     root.querySelector?.(".window-header")?.addEventListener?.("pointerdown", () => this.#detachAnchor(), listenerOptions);
     if (this.anchorRequested && !this.anchorDetached) {
       const schedule = globalThis.requestAnimationFrame ?? ((callback) => globalThis.setTimeout?.(callback, 0));
       schedule?.(() => this.repositionToToken());
     }
+  }
+
+  #positionPopover(root) {
+    const shell = root?.querySelector?.(".rm-storage-shell");
+    const popover = root?.querySelector?.("[data-storage-popover]");
+    if (!shell || !popover) return false;
+    const anchorId = clean(popover.dataset?.anchorRowId);
+    const candidates = Array.from(root.querySelectorAll?.("[data-row-id]") ?? []);
+    const anchor = candidates.find((element) => clean(element.dataset?.rowId) === anchorId)
+      ?.querySelector?.(".rm-storage-item__icon")
+      ?? candidates.find((element) => clean(element.dataset?.rowId) === anchorId);
+    const shellRect = shell.getBoundingClientRect?.();
+    const anchorRect = anchor?.getBoundingClientRect?.();
+    const popoverRect = popover.getBoundingClientRect?.();
+    if (!shellRect || !anchorRect) return false;
+    const width = Math.max(160, Number(popoverRect?.width) || 224);
+    const center = (Number(anchorRect.left) + Number(anchorRect.right)) / 2 - Number(shellRect.left);
+    const half = width / 2;
+    const shellWidth = Math.max(width + 16, Number(shellRect.width) || width + 16);
+    const left = Math.min(shellWidth - half - 8, Math.max(half + 8, center));
+    const top = Number(anchorRect.bottom) - Number(shellRect.top) + 9;
+    popover.style?.setProperty?.("left", `${left}px`);
+    popover.style?.setProperty?.("top", `${top}px`);
+    popover.style?.setProperty?.("--rm-storage-popover-arrow-left", `${Math.max(12, Math.min(width - 12, half + center - left))}px`);
+    return true;
   }
 
   requestTokenAnchor() {
@@ -273,7 +334,7 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
   async scheduleSnapshotRefresh() {
     const request = ++this.snapshotRequest;
-    const snapshot = await this.moduleApi.getStorageSnapshot(this.tokenUuid);
+    const snapshot = await this.#requestSnapshot();
     if (request !== this.snapshotRequest) return false;
     this.snapshot = snapshot;
     await this.render({ force: true });
@@ -303,9 +364,21 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
       rowId,
       destination,
       mutationId("storage-row"),
-      { quantity }
+      { quantity, ...this.#pathRequest() }
     );
     return true;
+  }
+
+  async #openContainer(rowId) {
+    const row = this.#rowById(rowId);
+    if (!row || row.rowKind !== "container" || !row.container) {
+      throw new Error("Вложенный контейнер уже недоступен.");
+    }
+    this.path.push(clean(row.rowId));
+    this.pathNames.push(clean(row.name) || "Контейнер");
+    this.activeRowId = "";
+    this.snapshot = null;
+    await this.scheduleSnapshotRefresh();
   }
 
   async #openRowSource(rowId) {
@@ -347,6 +420,19 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
         await this.#openRowSource(rowId);
         return;
       }
+      else if (action === "storage-open-container") {
+        await this.#openContainer(rowId);
+        return;
+      }
+      else if (action === "storage-breadcrumb") {
+        const index = Math.max(0, Math.trunc(Number(control.dataset.index) || 0));
+        this.path = this.path.slice(0, index);
+        this.pathNames = this.pathNames.slice(0, index);
+        this.activeRowId = "";
+        this.snapshot = null;
+        await this.scheduleSnapshotRefresh();
+        return;
+      }
       else if (action === "storage-claim-self" || action === "storage-claim-party") {
         const changed = await this.#claimRow(rowId, action.endsWith("self") ? "self" : "party");
         if (!changed) return;
@@ -356,7 +442,8 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
         await this.moduleApi.claimStorageCoins(
           this.tokenUuid,
           action.endsWith("self") ? "self" : "party",
-          mutationId("storage-coins")
+          mutationId("storage-coins"),
+          this.#pathRequest()
         );
       }
       else if (action === "storage-save-config") {
@@ -364,25 +451,25 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
         await this.moduleApi.configureStorageToken(this.tokenUuid, {
           baseName: clean(form?.elements?.baseName?.value),
           templateId: clean(form?.elements?.templateId?.value)
-        });
+        }, this.#pathRequest());
       }
       else if (action === "storage-remove-manual-item") {
-        await this.moduleApi.removeManualStorageItem(this.tokenUuid, rowId);
+        await this.moduleApi.removeManualStorageItem(this.tokenUuid, rowId, this.#pathRequest());
       }
       else if (action === "storage-update-row") {
         const row = control.closest?.("[data-storage-row]");
         const quantity = Number(row?.querySelector?.("[data-storage-quantity]")?.value);
-        await this.moduleApi.updateStorageRowQuantity(this.tokenUuid, rowId, quantity);
+        await this.moduleApi.updateStorageRowQuantity(this.tokenUuid, rowId, quantity, this.#pathRequest());
       }
       else if (action === "storage-delete-row") {
-        await this.moduleApi.deleteStorageRow(this.tokenUuid, rowId);
+        await this.moduleApi.deleteStorageRow(this.tokenUuid, rowId, this.#pathRequest());
         this.activeRowId = "";
       }
       else if (action === "storage-reset") {
-        await this.moduleApi.resetStorageToken(this.tokenUuid);
+        await this.moduleApi.resetStorageToken(this.tokenUuid, this.#pathRequest());
       }
       else if (action === "storage-set-texture") {
-        await this.moduleApi.setStorageTextureMode(this.tokenUuid, clean(control.dataset.mode));
+        await this.moduleApi.setStorageTextureMode(this.tokenUuid, clean(control.dataset.mode), this.#pathRequest());
       }
       else {
         return;
@@ -412,6 +499,7 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
     if (!row) return;
     const payload = buildStorageDragData({
       tokenUuid: this.tokenUuid,
+      path: this.path,
       rowId: clean(row.rowId),
       quantity: Math.max(1, Math.trunc(Number(row.quantity ?? 1)) || 1)
     });
@@ -432,7 +520,8 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
         this.tokenUuid,
         inspected.source,
         quantity,
-        mutationId("storage-window-deposit")
+        mutationId("storage-window-deposit"),
+        this.#pathRequest()
       );
       await this.#refresh();
     }
