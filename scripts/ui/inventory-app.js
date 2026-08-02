@@ -1555,6 +1555,14 @@ function prepareTransportContext(snapshot = {}) {
     quantity: Math.max(0, toNumber(sourceFuel.quantity, 0)),
     consumptionPerMile: Math.max(0, toNumber(sourceFuel.consumptionPerMile, 0)),
     unit: cleanText(sourceFuel.unit),
+    consumptionForm: {
+      canEdit: Boolean(source.canManage && activeVehicle?.isConcreteInstance && fuelConfigured),
+      amount: String(Math.max(0, toNumber(sourceFuel.consumptionPerMile, 0))),
+      unitOptions: [
+        { value: "lb", label: "фунты", selected: cleanText(sourceFuel.unit) === "lb" },
+        { value: "gal", label: "галлоны", selected: cleanText(sourceFuel.unit) === "gal" }
+      ]
+    },
     miles: fuelMiles,
     isEmpty: fuelConfigured && sourceFuel.isEmpty === true,
     stacks: Array.isArray(sourceFuel.stacks) ? sourceFuel.stacks : [],
@@ -5649,6 +5657,36 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         button.disabled = false;
         console.error(`${MODULE_ID} | Failed to save transport state.`, error);
         const message = error?.message || "Не удалось сохранить состояние транспорта.";
+        this.#setActionFeedback("error", message);
+        globalThis.ui?.notifications?.error?.(message);
+      }
+    }, listenerOptions);
+
+    element.querySelector("[data-action='transport-fuel-consumption-save']")?.addEventListener("click", async (event) => {
+      const button = event.currentTarget;
+      const form = button.closest?.("[data-transport-fuel-consumption-form]");
+      if (!form) return;
+      const amountText = cleanText(
+        form.querySelector?.("[name='fuelConsumptionAmount']")?.value
+      ).replace(",", ".");
+      const unit = cleanText(form.querySelector?.("[name='fuelConsumptionUnit']")?.value);
+      button.disabled = true;
+      try {
+        await this.moduleApi.updateTransportFuelConsumption?.({
+          groupActorId: cleanText(this.groupActor?.id),
+          actorId: cleanText(form.dataset?.actorId),
+          consumption: {
+            amount: Number(amountText),
+            unit
+          }
+        });
+        this.#setActionFeedback("success", "Расход топлива сохранён.");
+        await this.render?.({ force: true, preserveScroll: true });
+      }
+      catch (error) {
+        button.disabled = false;
+        console.error(`${MODULE_ID} | Failed to save transport fuel consumption.`, error);
+        const message = error?.message || "Не удалось сохранить расход топлива.";
         this.#setActionFeedback("error", message);
         globalThis.ui?.notifications?.error?.(message);
       }

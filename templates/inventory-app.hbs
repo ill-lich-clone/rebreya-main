@@ -739,7 +739,42 @@
                         <p><span>Кол-во</span><strong class="{{#if transport.fuel.isEmpty}}rm-negative{{/if}}">{{rmNum transport.fuel.card.quantity}}</strong></p>
                         <p><span>Вес</span><strong>{{transport.fuel.card.weightLabel}}</strong></p>
                         <p><span>Цена</span><strong>{{transport.fuel.card.valueLabel}}</strong></p>
-                        <p><span>Расход</span><strong>{{rmNum transport.fuel.consumptionPerMile}} {{transport.fuel.unit}}/миля</strong></p>
+                        <div class="rm-transport-fuel-card__consumption">
+                          <span>Расход</span>
+                          {{#if transport.fuel.consumptionForm.canEdit}}
+                            <form
+                              class="rm-transport-fuel-consumption-form"
+                              data-transport-fuel-consumption-form
+                              data-actor-id="{{transport.activeVehicle.actorId}}"
+                            >
+                              <input
+                                name="fuelConsumptionAmount"
+                                type="number"
+                                min="0.000001"
+                                step="any"
+                                value="{{transport.fuel.consumptionForm.amount}}"
+                                aria-label="Расход топлива"
+                              >
+                              <select name="fuelConsumptionUnit" aria-label="Единица расхода топлива">
+                                {{#each transport.fuel.consumptionForm.unitOptions}}
+                                  <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                                {{/each}}
+                              </select>
+                              <span class="rm-transport-fuel-consumption-form__cadence">/ милю</span>
+                              <button
+                                type="button"
+                                class="rm-button rm-button--small rm-transport-fuel-consumption-form__save"
+                                data-action="transport-fuel-consumption-save"
+                                aria-label="Сохранить расход топлива"
+                                title="Сохранить расход топлива"
+                              >
+                                <i class="fa-solid fa-floppy-disk"></i>
+                              </button>
+                            </form>
+                          {{else}}
+                            <strong>{{rmNum transport.fuel.consumptionPerMile}} {{transport.fuel.unit}}/миля</strong>
+                          {{/if}}
+                        </div>
                         <p><span>Запас хода</span><strong class="{{#if transport.fuel.isEmpty}}rm-negative{{/if}}">{{rmNum transport.fuel.miles precision=0}} миль</strong></p>
                       </div>
                     </div>

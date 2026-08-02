@@ -279,6 +279,10 @@ function createModuleApi({
       calls.push(["selectTransportFuel", payload]);
       return {};
     },
+    async updateTransportFuelConsumption(payload) {
+      calls.push(["updateTransportFuelConsumption", payload]);
+      return {};
+    },
     async setTravelRoute(payload) {
       calls.push(["setTravelRoute", payload]);
       return {};
@@ -1766,8 +1770,10 @@ test("InventoryApp allows transport tab and maps the active group transport fuel
       }],
       activeVehicle: {
         id: "member:wagon",
+        actorId: "wagon",
         name: "Тяжёлый гражданский фургон",
         speedMph: 12,
+        isConcreteInstance: true,
         cargoCapacityLb: 5000,
         durabilityLabel: "200 / 200"
       }
@@ -1787,6 +1793,14 @@ test("InventoryApp allows transport tab and maps the active group transport fuel
     assert.equal(context.transport.fuel.miles, 42);
     assert.equal(context.transport.fuel.quantity, 5);
     assert.equal(context.transport.fuel.card.name, "Liquid coal");
+    assert.deepEqual(context.transport.fuel.consumptionForm, {
+      canEdit: true,
+      amount: "0.125",
+      unitOptions: [
+        { value: "lb", label: "фунты", selected: false },
+        { value: "gal", label: "галлоны", selected: true }
+      ]
+    });
     assert.equal(context.transport.activeVehicle.name, "Тяжёлый гражданский фургон");
     const [transportCall] = calls.filter((call) => call[0] === "getTransportSnapshot");
     assert.ok(transportCall);
@@ -1811,10 +1825,48 @@ test("transport tab renders a full openable fuel Item drop card", async () => {
   assert.match(transportPanel, /transport\.fuel\.card\.name/u);
   assert.match(transportPanel, /transport\.fuel\.card\.quantity/u);
   assert.match(transportPanel, /data-action="open-transport-fuel-item"/u);
+  assert.match(transportPanel, /data-transport-fuel-consumption-form/u);
+  assert.match(transportPanel, /name="fuelConsumptionAmount"/u);
+  assert.match(transportPanel, /name="fuelConsumptionUnit"/u);
+  assert.match(transportPanel, /data-action="transport-fuel-consumption-save"/u);
   assert.match(transportPanel, /transport\.fuel\.miles/u);
   assert.doesNotMatch(transportPanel, /name="fuelPerMile"/u);
   assert.doesNotMatch(transportPanel, /name="reserveCurrent"/u);
   assert.doesNotMatch(transportPanel, /name="reserveCapacity"/u);
+});
+
+test("InventoryApp keeps fuel consumption read-only without group management rights", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?transport-fuel-readonly=${Date.now()}`);
+  const app = new InventoryApp(createModuleApi({
+    getGroupContext: () => null,
+    transportSnapshot: {
+      canManage: false,
+      activeTransportId: "member:vehicle-a",
+      activeVehicle: {
+        id: "member:vehicle-a",
+        actorId: "vehicle-a",
+        isConcreteInstance: true
+      },
+      fuel: {
+        configured: true,
+        consumptionPerMile: 120,
+        unit: "lb"
+      },
+      vehicles: []
+    }
+  }));
+
+  try {
+    app.setActiveTab("transport", { render: false });
+    const context = await app._prepareContext();
+
+    assert.equal(context.transport.fuel.consumptionForm.canEdit, false);
+    assert.equal(context.transport.fuel.consumptionForm.amount, "120");
+  }
+  finally {
+    restoreFoundry();
+  }
 });
 
 test("transport fuel drop selects an Item and its card opens the real document", async () => {
@@ -2011,6 +2063,56 @@ test("transport state save delegates exact group and Actor ids", async () => {
     ]]);
   }
   finally {
+    dom.restore();
+    restoreFoundry();
+  }
+});
+
+test("transport fuel consumption save delegates the card amount and unit", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const dom = installMinimalDom();
+  const previousUi = globalThis.ui;
+  const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?transport-fuel-consumption-save=${Date.now()}`);
+  const calls = [];
+  const renders = [];
+  const saveButton = createFakeControl();
+  const fields = new Map([
+    ["fuelConsumptionAmount", createFakeControl({ value: "120" })],
+    ["fuelConsumptionUnit", createFakeControl({ value: "lb" })]
+  ]);
+  const form = createFakeElement({ dataset: { actorId: "vehicle-a" } });
+  form.querySelector = (selector) => {
+    const match = selector.match(/^\[name='(.+)'\]$/u);
+    return match ? fields.get(match[1]) ?? null : null;
+  };
+  saveButton.closest = (selector) => selector === "[data-transport-fuel-consumption-form]" ? form : null;
+  const root = createFakeElement();
+  root.querySelector = (selector) => (
+    selector === "[data-action='transport-fuel-consumption-save']" ? saveButton : null
+  );
+  root.querySelectorAll = () => [];
+  globalThis.ui = { notifications: { error() {}, info() {}, warn() {} } };
+  const app = new InventoryApp(createModuleApi({ getGroupContext: () => null, calls }));
+  app.groupActor = { id: "group-a" };
+  app.element = root;
+  app.render = async (options) => renders.push(options);
+
+  try {
+    await app._onRender({}, {});
+    await dispatchClick(saveButton);
+
+    assert.deepEqual(calls.filter((call) => call[0] === "updateTransportFuelConsumption"), [[
+      "updateTransportFuelConsumption",
+      {
+        groupActorId: "group-a",
+        actorId: "vehicle-a",
+        consumption: { amount: 120, unit: "lb" }
+      }
+    ]]);
+    assert.deepEqual(renders, [{ force: true, preserveScroll: true }]);
+  }
+  finally {
+    globalThis.ui = previousUi;
     dom.restore();
     restoreFoundry();
   }
