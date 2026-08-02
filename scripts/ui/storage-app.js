@@ -1,6 +1,11 @@
 import { MODULE_ID } from "../constants.js";
 import { getAppElement } from "../ui.js";
 import { placeTokenOverlay, storageTokenViewportBounds } from "./storage-token-overlay.js";
+import {
+  buildStorageDragData,
+  promptStorageTransferQuantity,
+  storageGridColumns
+} from "./storage-transfer-ui.js";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 const COIN_KEYS = ["pp", "gp", "sp", "cp"];
@@ -44,7 +49,7 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
       icon: "fa-solid fa-box-open",
       resizable: true
     },
-    position: { width: 430, height: 560 }
+    position: { width: 286, height: "auto" }
   };
 
   static PARTS = {
@@ -62,6 +67,7 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.anchorRequested = options.anchorToToken === true;
     this.anchorDetached = false;
     this.snapshot = null;
+    this.activeRowId = "";
     this.renderListenersAbortController = null;
   }
 
@@ -85,8 +91,18 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
       img: clean(row.img ?? row.itemData?.img),
       quantity: Math.max(1, Number(row.quantity ?? 1)),
       typeLabel: clean(row.typeLabel ?? row.itemData?.type) || "Предмет",
-      canEdit: configurationEnabled
+      sourceType: clean(row.sourceType),
+      sourceId: clean(row.sourceId),
+      canOpenSource: Boolean(clean(row.sourceId)),
+      canEdit: configurationEnabled,
+      expanded: this.activeRowId === clean(row.rowId),
+      showQuantity: Math.max(1, Number(row.quantity ?? 1)) > 1
     }));
+    const hasCoins = COIN_KEYS.some((key) => coins[key] > 0);
+    const validPopoverIds = new Set(rows.map((row) => row.rowId));
+    if (hasCoins) validPopoverIds.add("__coins");
+    if (this.activeRowId && !validPopoverIds.has(this.activeRowId)) this.activeRowId = "";
+    const gridItemCount = rows.length + (hasCoins ? 1 : 0);
 
     return {
       tokenUuid: this.tokenUuid,
@@ -96,9 +112,12 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
       canManage,
       rows,
       hasRows: rows.length > 0,
+      hasGridItems: gridItemCount > 0,
+      gridColumns: storageGridColumns(gridItemCount),
       coins,
       coinsLabel: coinsLabel(coins),
-      hasCoins: COIN_KEYS.some((key) => coins[key] > 0),
+      hasCoins,
+      coinsExpanded: this.activeRowId === "__coins",
       configuration: {
         enabled: configurationEnabled,
         baseName: clean(this.snapshot?.baseName) || clean(this.snapshot?.name) || "Хранилище",
@@ -128,9 +147,27 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const listenerOptions = { signal: this.renderListenersAbortController.signal };
     root.addEventListener("click", (event) => this.#onClick(event), listenerOptions);
     root.addEventListener("drop", (event) => this.#onDrop(event), listenerOptions);
+    root.addEventListener("dragstart", (event) => this.#onDragStart(event), listenerOptions);
     root.addEventListener("dragover", (event) => {
       if (event.target?.closest?.("[data-storage-dropzone]")) event.preventDefault();
     }, listenerOptions);
+    globalThis.document?.addEventListener?.("click", (event) => {
+      if (!this.activeRowId || root.contains?.(event.target)) return;
+      this.activeRowId = "";
+      void this.#refresh();
+    }, listenerOptions);
+    globalThis.document?.addEventListener?.("keydown", (event) => {
+      if (event.key !== "Escape" || !this.activeRowId) return;
+      this.activeRowId = "";
+      void this.#refresh();
+    }, listenerOptions);
+    const gridCount = (this.snapshot?.rows?.length ?? 0)
+      + (COIN_KEYS.some((key) => Number(this.snapshot?.coins?.[key] ?? 0) > 0) ? 1 : 0);
+    const columns = storageGridColumns(gridCount);
+    root.style?.setProperty?.("--rm-storage-columns", String(columns));
+    const viewportWidth = Math.max(320, Number(globalThis.innerWidth) || 1920);
+    const width = this.configure ? 430 : Math.min(viewportWidth - 32, Math.max(286, (columns * 80) + 46));
+    this.setPosition?.({ width });
     root.querySelector?.(".window-header")?.addEventListener?.("pointerdown", () => this.#detachAnchor(), listenerOptions);
     if (this.anchorRequested && !this.anchorDetached) {
       const schedule = globalThis.requestAnimationFrame ?? ((callback) => globalThis.setTimeout?.(callback, 0));
@@ -176,19 +213,64 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
     await this.render({ force: false });
   }
 
+  #rowById(rowId) {
+    return (this.snapshot?.rows ?? []).find((row) => clean(row?.rowId) === clean(rowId)) ?? null;
+  }
+
+  async #claimRow(rowId, destination) {
+    const row = this.#rowById(rowId);
+    if (!row) throw new Error("Предмет хранилища уже недоступен.");
+    const available = Math.max(1, Math.trunc(Number(row.quantity ?? 1)) || 1);
+    const quantity = await promptStorageTransferQuantity(available);
+    if (quantity === null) return false;
+    await this.moduleApi.claimStorageRow(
+      this.tokenUuid,
+      rowId,
+      destination,
+      mutationId("storage-row"),
+      { quantity }
+    );
+    return true;
+  }
+
+  async #openRowSource(rowId) {
+    const row = this.#rowById(rowId);
+    if (!row) throw new Error("Предмет хранилища уже недоступен.");
+    const sourceId = clean(row.sourceId);
+    if (sourceId.includes(".") && typeof globalThis.fromUuid === "function") {
+      const document = await globalThis.fromUuid(sourceId);
+      if (document?.sheet?.render) {
+        await document.sheet.render(true);
+        return;
+      }
+    }
+    if (typeof this.moduleApi.openTradeEntry === "function" && sourceId) {
+      await this.moduleApi.openTradeEntry(clean(row.sourceType), sourceId, clean(row.name));
+      return;
+    }
+    throw new Error("Исходный документ предмета не найден.");
+  }
+
   async #onClick(event) {
     const control = event.target?.closest?.("[data-action]");
     if (!control) return;
     const action = clean(control.dataset.action);
     const rowId = clean(control.dataset.rowId);
     try {
-      if (action === "storage-claim-self" || action === "storage-claim-party") {
-        await this.moduleApi.claimStorageRow(
-          this.tokenUuid,
-          rowId,
-          action.endsWith("self") ? "self" : "party",
-          mutationId("storage-row")
-        );
+      if (action === "storage-toggle-row") {
+        this.activeRowId = this.activeRowId === rowId ? "" : rowId;
+      }
+      else if (action === "storage-toggle-coins") {
+        this.activeRowId = this.activeRowId === "__coins" ? "" : "__coins";
+      }
+      else if (action === "storage-open-item") {
+        await this.#openRowSource(rowId);
+        return;
+      }
+      else if (action === "storage-claim-self" || action === "storage-claim-party") {
+        const changed = await this.#claimRow(rowId, action.endsWith("self") ? "self" : "party");
+        if (!changed) return;
+        this.activeRowId = "";
       }
       else if (action === "storage-claim-coins-self" || action === "storage-claim-coins-party") {
         await this.moduleApi.claimStorageCoins(
@@ -214,6 +296,7 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
       }
       else if (action === "storage-delete-row") {
         await this.moduleApi.deleteStorageRow(this.tokenUuid, rowId);
+        this.activeRowId = "";
       }
       else if (action === "storage-reset") {
         await this.moduleApi.resetStorageToken(this.tokenUuid);
@@ -230,6 +313,20 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
       console.error(`${MODULE_ID} | Storage action failed.`, error);
       globalThis.ui?.notifications?.error(error?.message ?? "Не удалось выполнить действие хранилища.");
     }
+  }
+
+  #onDragStart(event) {
+    const source = event.target?.closest?.("[data-storage-row-drag]");
+    if (!source || !event.dataTransfer) return;
+    const row = this.#rowById(clean(source.dataset.rowId));
+    if (!row) return;
+    const payload = buildStorageDragData({
+      tokenUuid: this.tokenUuid,
+      rowId: clean(row.rowId),
+      quantity: Math.max(1, Math.trunc(Number(row.quantity ?? 1)) || 1)
+    });
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", JSON.stringify(payload));
   }
 
   async #onDrop(event) {

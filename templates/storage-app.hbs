@@ -71,45 +71,67 @@
     </form>
   {{/if}}
 
-  {{#if hasRows}}
-    <div class="rm-storage-grid rm-storage-list">
+  {{#if hasGridItems}}
+    <div class="rm-storage-grid" style="--rm-storage-columns: {{gridColumns}};">
       {{#each rows}}
-        <article class="rm-storage-item" data-storage-row data-row-id="{{rowId}}">
-          {{#if img}}<img src="{{img}}" alt="">{{else}}<i class="fa-solid fa-box rm-storage-item__placeholder"></i>{{/if}}
-          <div class="rm-storage-item__body">
-            <strong>{{name}}</strong>
-            <span class="rm-muted">{{typeLabel}}</span>
-          </div>
-          {{#if canEdit}}
-            <div class="rm-storage-item__edit">
-              <input data-storage-quantity type="number" min="1" step="1" value="{{quantity}}" aria-label="Количество">
-              <button type="button" class="rm-icon-button" data-action="storage-update-row" data-row-id="{{rowId}}" title="Сохранить количество"><i class="fa-solid fa-check"></i></button>
-              <button type="button" class="rm-icon-button" data-action="storage-delete-row" data-row-id="{{rowId}}" title="Удалить предмет"><i class="fa-solid fa-trash"></i></button>
+        <article class="rm-storage-item{{#if expanded}} is-expanded{{/if}}" data-storage-row data-row-id="{{rowId}}">
+          <button
+            type="button"
+            class="rm-storage-item__icon"
+            data-action="storage-toggle-row"
+            data-row-id="{{rowId}}"
+            data-storage-row-drag
+            draggable="true"
+            aria-expanded="{{expanded}}"
+            title="{{name}}"
+          >
+            {{#if img}}<img src="{{img}}" alt="">{{else}}<i class="fa-solid fa-box rm-storage-item__placeholder"></i>{{/if}}
+            {{#if showQuantity}}<strong class="rm-storage-item__quantity">{{quantity}}</strong>{{/if}}
+          </button>
+          {{#if expanded}}
+            <div class="rm-storage-item__popover" data-storage-popover>
+              {{#if canOpenSource}}
+                <button type="button" class="rm-storage-item__name" data-action="storage-open-item" data-row-id="{{rowId}}">{{name}}</button>
+              {{else}}
+                <strong class="rm-storage-item__name rm-storage-item__name--plain">{{name}}</strong>
+              {{/if}}
+              <span class="rm-muted">{{typeLabel}}</span>
+              <div class="rm-storage-item__actions">
+                <button type="button" class="rm-button rm-button--primary" data-action="storage-claim-self" data-row-id="{{rowId}}">Забрать себе</button>
+                <button type="button" class="rm-button rm-button--secondary" data-action="storage-claim-party" data-row-id="{{rowId}}">В группу</button>
+              </div>
+              {{#if canEdit}}
+                <div class="rm-storage-item__edit">
+                  <input data-storage-quantity type="number" min="1" step="1" value="{{quantity}}" aria-label="Количество">
+                  <button type="button" class="rm-icon-button" data-action="storage-update-row" data-row-id="{{rowId}}" title="Сохранить количество"><i class="fa-solid fa-check"></i></button>
+                  <button type="button" class="rm-icon-button" data-action="storage-delete-row" data-row-id="{{rowId}}" title="Удалить предмет"><i class="fa-solid fa-trash"></i></button>
+                </div>
+              {{/if}}
             </div>
-          {{else}}
-            <strong class="rm-storage-item__quantity">×{{quantity}}</strong>
           {{/if}}
-          <div class="rm-storage-item__actions">
-            <button type="button" class="rm-button rm-button--primary" data-action="storage-claim-self" data-row-id="{{rowId}}">Себе</button>
-            <button type="button" class="rm-button rm-button--secondary" data-action="storage-claim-party" data-row-id="{{rowId}}">В группу</button>
-          </div>
         </article>
       {{/each}}
+      {{#if hasCoins}}
+        <article class="rm-storage-item rm-storage-item--coins{{#if coinsExpanded}} is-expanded{{/if}}">
+          <button type="button" class="rm-storage-item__icon" data-action="storage-toggle-coins" aria-expanded="{{coinsExpanded}}" title="{{coinsLabel}}">
+            <i class="fa-solid fa-coins rm-storage-item__placeholder"></i>
+          </button>
+          {{#if coinsExpanded}}
+            <div class="rm-storage-item__popover" data-storage-popover>
+              <strong class="rm-storage-item__name rm-storage-item__name--plain">{{coinsLabel}}</strong>
+              <div class="rm-storage-item__actions">
+                <button type="button" class="rm-button rm-button--primary" data-action="storage-claim-coins-self">Забрать себе</button>
+                <button type="button" class="rm-button rm-button--secondary" data-action="storage-claim-coins-party">В группу</button>
+              </div>
+            </div>
+          {{/if}}
+        </article>
+      {{/if}}
     </div>
   {{else}}
     <div class="rm-storage-empty">
       <i class="fa-solid fa-box-open"></i>
       <p>В хранилище нет предметов.</p>
     </div>
-  {{/if}}
-
-  {{#if hasCoins}}
-    <section class="rm-storage-coins">
-      <div><i class="fa-solid fa-coins"></i><strong>{{coinsLabel}}</strong></div>
-      <div class="rm-storage-item__actions">
-        <button type="button" class="rm-button rm-button--primary" data-action="storage-claim-coins-self">Себе</button>
-        <button type="button" class="rm-button rm-button--secondary" data-action="storage-claim-coins-party">В группу</button>
-      </div>
-    </section>
   {{/if}}
 </section>

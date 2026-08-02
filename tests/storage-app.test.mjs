@@ -62,6 +62,11 @@ function createApp({ canManage = true, configure = true, withTextures = true } =
 
 test("storage grid offers self and party destinations for rows and coins", async () => {
   const template = await readFile(new URL("../templates/storage-app.hbs", import.meta.url), "utf8");
+  assert.match(template, /class="rm-storage-item__icon"/u);
+  assert.match(template, /draggable="true"/u);
+  assert.match(template, /data-action="storage-toggle-row"/u);
+  assert.match(template, /data-storage-popover/u);
+  assert.match(template, /data-action="storage-open-item"/u);
   assert.match(template, /data-action="storage-claim-self"/u);
   assert.match(template, /data-action="storage-claim-party"/u);
   assert.match(template, /data-action="storage-claim-coins-self"/u);
@@ -69,6 +74,7 @@ test("storage grid offers self and party destinations for rows and coins", async
   assert.match(template, /\{\{#if configuration\.canSetTexture\}\}/u);
   assert.match(template, /data-action="storage-set-texture"/u);
   assert.match(template, /data-mode="\{\{mode\}\}"/u);
+  assert.doesNotMatch(template, /storage-page/u);
 });
 
 test("storage configuration exposes template and manual item controls to GMs", async () => {
@@ -89,8 +95,9 @@ test("storage configuration exposes template and manual item controls to GMs", a
     ]
   );
   assert.deepEqual(context.configuration.textureModes.map(({ active }) => active), [false, true, false]);
-  assert.equal(StorageApp.DEFAULT_OPTIONS.position.width, 430);
+  assert.equal(StorageApp.DEFAULT_OPTIONS.position.width, 286);
   assert.equal(context.rows[0].canEdit, true);
+  assert.equal(context.gridColumns, 3);
 });
 
 test("storage configuration is hidden from players", async () => {
