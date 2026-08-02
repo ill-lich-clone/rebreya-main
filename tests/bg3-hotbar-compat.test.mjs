@@ -260,11 +260,11 @@ test("BG3 hotbar common actions still populate regular actors", async () => {
   assert.deepEqual(await AutoPopulateCreateToken._getCombatActionsList(actor), ["Actor.guard.Item.dash"]);
 });
 
-test("BG3 hotbar ignores legacy Item Piles flags without a Rebreya storage marker", () => {
+test("BG3 hotbar ignores unrelated module flags without a Rebreya storage marker", () => {
   assert.equal(shouldSkipBg3HotbarCommonActionsForActor({
     type: "npc",
     flags: {
-      "item-piles": { data: { enabled: true, type: "pile" } }
+      "foreign-module": { data: { enabled: true, type: "pile" } }
     }
   }), false);
 });

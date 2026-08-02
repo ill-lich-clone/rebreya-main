@@ -35,9 +35,9 @@ test("ground-pile actor prototypes win over their generic storage marker", () =>
   assert.equal(isNativeStorageObject(actor), true);
 });
 
-test("legacy Item Piles flags do not identify a native storage object", () => {
+test("unrelated module flags do not identify a native storage object", () => {
   assert.equal(storageObjectKind({
-    flags: { itempiles: { data: { enabled: true } } }
+    flags: { "foreign-module": { data: { enabled: true } } }
   }), null);
   assert.equal(isNativeStorageObject(null), false);
 });

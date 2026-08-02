@@ -6,7 +6,7 @@ import { RaceAutomationService } from "../scripts/combat/race-automation-service
 import { InventoryService } from "../scripts/data/inventory-service.js";
 import { TraderService } from "../scripts/data/trader-service.js";
 
-test("scene storage and durability are owned by Rebreya and add no Item Piles dependency", async () => {
+test("scene storage and durability are owned by Rebreya and add no retired external pile dependency", async () => {
   const [manifestSource, mainSource, ...runtimeSources] = await Promise.all([
     readFile(new URL("../module.json", import.meta.url), "utf8"),
     readFile(new URL("../scripts/main.js", import.meta.url), "utf8"),

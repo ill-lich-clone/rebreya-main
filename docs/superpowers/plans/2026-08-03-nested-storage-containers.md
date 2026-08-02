@@ -34,11 +34,11 @@
 
 **Files:** `README.md`, `tests/**/*.test.mjs`, `docs/**/*.md`, generated architecture output if applicable
 
-- [ ] Add/adjust a repository guard proving production and manifest have no retired external integration lifecycle.
-- [ ] Remove obsolete flags, documentation, compatibility tests, and historical implementation plan dedicated to that integration.
-- [ ] Regenerate architecture documentation if its source graph changes.
-- [ ] Run focused guards and verify a repository search has no runtime dependency/reference.
-- [ ] Commit `chore: remove retired pile integration residue`.
+- [x] Add/adjust a repository guard proving production and manifest have no retired external integration lifecycle.
+- [x] Remove obsolete flags, documentation, compatibility tests, and the historical implementation plan dedicated to that integration.
+- [x] Regenerate architecture documentation after removing the retired plan from the source graph.
+- [x] Run focused guards and verify a repository search has no runtime dependency/reference.
+- [x] Commit `chore: remove retired pile integration residue`.
 
 ## Task 3: Add the recursive container snapshot domain
 
