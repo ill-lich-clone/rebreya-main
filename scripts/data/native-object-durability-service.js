@@ -69,6 +69,30 @@ function visibleRows(state) {
     .filter((row) => !claimed.has(clean(row?.rowId)));
 }
 
+function visibleCoins(state) {
+  const result = { pp: 0, gp: 0, sp: 0, cp: 0 };
+  if (state?.coinsClaimed === true) return result;
+  for (const key of Object.keys(result)) {
+    result[key] = Math.max(0, Math.trunc(Number(state?.manualCoins?.[key] ?? 0) || 0))
+      + Math.max(0, Math.trunc(Number(state?.generatedCoins?.[key] ?? 0) || 0));
+  }
+  return result;
+}
+
+function hasCoins(coins) {
+  return Object.values(coins ?? {}).some((amount) => Number(amount) > 0);
+}
+
+function tokenCenter(token) {
+  const gridSize = Math.max(1, Number(
+    token?.parent?.grid?.size ?? token?.parent?.grid?.sizeX ?? globalThis.canvas?.grid?.size ?? 100
+  ) || 100);
+  return {
+    x: Number(token?.x ?? 0) + Math.max(1, Number(token?.width ?? 1)) * gridSize / 2,
+    y: Number(token?.y ?? 0) + Math.max(1, Number(token?.height ?? 1)) * gridSize / 2
+  };
+}
+
 function rowDurability(row) {
   return row?.itemData?.flags?.[MODULE_ID]?.durability ?? null;
 }
@@ -253,7 +277,31 @@ export class NativeObjectDurabilityService {
     });
   }
 
-  async destroyChest() {
-    throw new Error("Разрушение сундука ещё не подключено.");
+  async destroyChest(token, { mutationId } = {}) {
+    this.#requireActiveGm();
+    if (!token || typeof this.groundPileService?.transferSnapshotToScene !== "function") {
+      throw new TypeError("Native ground-pile transfer service is required to destroy a chest.");
+    }
+    const stableMutationId = clean(mutationId) || `${clean(token.uuid ?? token.id)}:destroy`;
+    const opened = await this.storageService.open(token, { reason: "destroyed" });
+    const state = opened.state;
+    const rows = visibleRows(state);
+    const coins = visibleCoins(state);
+    let pile = null;
+    if (rows.length || hasCoins(coins)) {
+      pile = await this.groundPileService.transferSnapshotToScene({
+        rows,
+        coins,
+        sceneId: clean(token?.parent?.id),
+        ...tokenCenter(token),
+        mutationId: stableMutationId
+      });
+    }
+    if (typeof token.delete === "function") await token.delete();
+    else if (typeof token?.parent?.deleteEmbeddedDocuments === "function") {
+      await token.parent.deleteEmbeddedDocuments("Token", [token.id]);
+    }
+    else throw new TypeError("Storage token cannot be deleted.");
+    return { outcome: "destroyed", pileUuid: clean(pile?.token?.uuid) };
   }
 }

@@ -62,7 +62,7 @@ function createToken({ id = "chest", groundPile = false, rows = [], objectDurabi
   return token;
 }
 
-function createService({ storageService = new StorageService() } = {}) {
+function createService({ storageService = new StorageService(), groundPileService = null } = {}) {
   const itemDamageCalls = [];
   const itemBreakCalls = [];
   const itemDestroyCalls = [];
@@ -81,7 +81,7 @@ function createService({ storageService = new StorageService() } = {}) {
       return { outcome: "destroyed" };
     }
   };
-  const groundPileService = {
+  const piles = groundPileService ?? {
     async refreshAfterStorageMutation(token, state) {
       refreshCalls.push([token, structuredClone(state)]);
       return { deleted: state.state === "empty", state };
@@ -90,7 +90,7 @@ function createService({ storageService = new StorageService() } = {}) {
   const service = new NativeObjectDurabilityService({
     durabilityService,
     storageService,
-    groundPileService,
+    groundPileService: piles,
     isActiveGm: () => true,
     resolveUuid: async () => null
   });
@@ -173,4 +173,75 @@ test("destroying a single ground item deletes the row and refreshes the empty pi
   assert.equal(result.outcome, "destroyed");
   assert.equal(readStorageState(pile).state, "empty");
   assert.equal(refreshCalls.at(-1)[1].state, "empty");
+});
+
+test("destroying an unopened chest generates once, spills one snapshot, then deletes it", async () => {
+  let generateCalls = 0;
+  const storageService = new StorageService({
+    generate: async () => {
+      generateCalls += 1;
+      return {
+        rows: [
+          { rowId: "one", name: "Меч", quantity: 1, itemData: { system: { quantity: 1 } } },
+          { rowId: "two", name: "Щит", quantity: 1, itemData: { system: { quantity: 1 } } },
+          { rowId: "three", name: "Факел", quantity: 2, itemData: { system: { quantity: 2 } } }
+        ],
+        coins: { gp: 4, sp: 2 }
+      };
+    }
+  });
+  const snapshots = [];
+  const groundPileService = {
+    async transferSnapshotToScene(request) {
+      snapshots.push(structuredClone(request));
+      return { token: { uuid: "Scene.scene.Token.pile" } };
+    }
+  };
+  const chest = createToken({ objectDurability: { ...structuredClone(CHEST_OBJECT_DURABILITY), hp: { value: 0, max: 18 } } });
+  Object.assign(chest, { x: 200, y: 300, width: 1, height: 1 });
+  chest.parent = { id: "scene", grid: { size: 100 } };
+  chest.delete = async () => { chest.deleted = true; };
+  const { service } = createService({ storageService, groundPileService });
+
+  const result = await service.destroyChest(chest, { mutationId: "destroy-chest-1" });
+
+  assert.equal(generateCalls, 1);
+  assert.equal(snapshots.length, 1);
+  assert.equal(snapshots[0].rows.length, 3);
+  assert.deepEqual(snapshots[0].coins, { pp: 0, gp: 4, sp: 2, cp: 0 });
+  assert.equal(snapshots[0].x, 250);
+  assert.equal(snapshots[0].y, 350);
+  assert.equal(chest.deleted, true);
+  assert.deepEqual(result, { outcome: "destroyed", pileUuid: "Scene.scene.Token.pile" });
+});
+
+test("retry after pile creation reuses the stable mutation and deletes without duplication", async () => {
+  const seenMutations = new Set();
+  const createdPiles = [];
+  const groundPileService = {
+    async transferSnapshotToScene(request) {
+      if (!seenMutations.has(request.mutationId)) createdPiles.push(request.mutationId);
+      seenMutations.add(request.mutationId);
+      return { token: { uuid: "Scene.scene.Token.pile" }, duplicate: createdPiles.length === 1 };
+    }
+  };
+  const storageService = new StorageService({
+    generate: async () => ({ rows: [{ rowId: "one", name: "Меч", quantity: 1 }], coins: {} })
+  });
+  const chest = createToken();
+  Object.assign(chest, { x: 0, y: 0, width: 1, height: 1 });
+  chest.parent = { id: "scene", grid: { size: 100 } };
+  let deleteCalls = 0;
+  chest.delete = async () => {
+    deleteCalls += 1;
+    if (deleteCalls === 1) throw new Error("delete failed");
+    chest.deleted = true;
+  };
+  const { service } = createService({ storageService, groundPileService });
+
+  await assert.rejects(service.destroyChest(chest, { mutationId: "destroy-chest-2" }), /delete failed/u);
+  await service.destroyChest(chest, { mutationId: "destroy-chest-2" });
+
+  assert.deepEqual(createdPiles, ["destroy-chest-2"]);
+  assert.equal(chest.deleted, true);
 });

@@ -34,6 +34,16 @@ function rowIdentity(row) {
   return [clean(row?.name ?? row?.itemData?.name), clean(row?.typeLabel ?? row?.itemData?.type), broken].join(":");
 }
 
+function normalizedCoins(coins) {
+  return buildStorageTokenState({ manualCoins: coins }).manualCoins;
+}
+
+function addCoins(left, right) {
+  const first = normalizedCoins(left);
+  const second = normalizedCoins(right);
+  return Object.fromEntries(Object.keys(first).map((key) => [key, first[key] + second[key]]));
+}
+
 function visibleRows(state) {
   const claimed = new Set(state?.claimedRowIds ?? []);
   return [...(state?.manualRows ?? []), ...(state?.generatedRows ?? [])]
@@ -132,6 +142,32 @@ export class StorageGroundPileService {
   }
 
   async transferToScene({ row, quantity, sceneId, x, y, mutationId } = {}) {
+    const incoming = this.#prepareRow(row, quantity);
+    return this.#transferPreparedSnapshot({
+      rows: [incoming],
+      coins: {},
+      sceneId,
+      x,
+      y,
+      mutationId
+    });
+  }
+
+  async transferSnapshotToScene({ rows = [], coins = {}, sceneId, x, y, mutationId } = {}) {
+    const incomingRows = (Array.isArray(rows) ? rows : [])
+      .filter((row) => row && typeof row === "object")
+      .map((row) => this.#prepareRow(row, rowQuantity(row)));
+    return this.#transferPreparedSnapshot({
+      rows: incomingRows,
+      coins: normalizedCoins(coins),
+      sceneId,
+      x,
+      y,
+      mutationId
+    });
+  }
+
+  async #transferPreparedSnapshot({ rows, coins, sceneId, x, y, mutationId }) {
     const game = this.#requireActiveGm();
     const scene = this.#resolveScene(game, sceneId);
     if (!scene || typeof scene.createEmbeddedDocuments !== "function") {
@@ -152,22 +188,34 @@ export class StorageGroundPileService {
         return { created: false, merged: false, duplicate: true, token: existing, state: readStorageState(existing) };
       }
       const state = readStorageState(existing);
-      const incoming = this.#prepareRow(row, quantity);
       const claimed = new Set(state.claimedRowIds);
-      const identity = rowIdentity(incoming);
-      let stacked = false;
-      const manualRows = state.manualRows.map((entry) => {
-        if (stacked || claimed.has(clean(entry?.rowId)) || rowIdentity(entry) !== identity) return entry;
-        stacked = true;
-        const next = clone(entry);
-        next.quantity = rowQuantity(entry) + incoming.quantity;
+      const manualRows = state.manualRows.map(clone);
+      for (const incoming of rows) {
+        const identity = rowIdentity(incoming);
+        const stackIndex = manualRows.findIndex((entry) => (
+          !claimed.has(clean(entry?.rowId)) && rowIdentity(entry) === identity
+        ));
+        if (stackIndex < 0) {
+          manualRows.push(clone(incoming));
+          continue;
+        }
+        const next = clone(manualRows[stackIndex]);
+        next.quantity = rowQuantity(next) + rowQuantity(incoming);
         next.itemData ??= {};
         next.itemData.system ??= {};
         next.itemData.system.quantity = next.quantity;
-        return next;
-      });
-      if (!stacked) manualRows.push(incoming);
-      const candidate = { ...state, manualRows };
+        manualRows[stackIndex] = next;
+      }
+      const incomingCoins = normalizedCoins(coins);
+      const hasIncomingCoins = Object.values(incomingCoins).some((amount) => amount > 0);
+      const candidate = {
+        ...state,
+        manualRows,
+        manualCoins: addCoins(state.manualCoins, incomingCoins),
+        coinsClaimed: hasIncomingCoins ? false : state.coinsClaimed,
+        state: "opened",
+        displayMode: "opened"
+      };
       const presentation = deriveGroundPilePresentation(visibleRows(candidate));
       const next = await this.#writePile(existing, candidate, presentation, [
         ...(groundFlag.mutationIds ?? []),
@@ -178,8 +226,7 @@ export class StorageGroundPileService {
 
     const actor = this.#resolvePileActor(game);
     if (!actor) throw new Error("Служебный актёр наземной кучи не восстановлен.");
-    const incoming = this.#prepareRow(row, quantity);
-    const presentation = deriveGroundPilePresentation([incoming]);
+    const presentation = deriveGroundPilePresentation(rows);
     const textures = {
       unopened: presentation.img,
       opened: presentation.img,
@@ -188,7 +235,8 @@ export class StorageGroundPileService {
     const storage = buildStorageTokenState({
       baseName: presentation.name,
       state: "opened",
-      manualRows: [incoming],
+      manualRows: rows,
+      manualCoins: coins,
       textures,
       displayMode: "opened"
     });

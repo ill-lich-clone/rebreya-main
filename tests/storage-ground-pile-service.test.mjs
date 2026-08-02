@@ -74,6 +74,16 @@ const sword = {
   itemData: { name: "Меч", system: { quantity: 5 } }
 };
 
+const axe = {
+  ...structuredClone(sword),
+  rowId: "source-axe",
+  sourceId: "axe",
+  name: "Топор",
+  img: "icons/axe.webp",
+  quantity: 1,
+  itemData: { name: "Топор", system: { quantity: 1 } }
+};
+
 test("canvas transfer creates an unlinked independent ground pile token", async () => {
   const { service, tokens } = createHarness();
   const result = await service.transferToScene({
@@ -151,4 +161,51 @@ test("empty ground pile cleanup deletes its token while nonempty piles refresh",
   await service.refreshAfterStorageMutation(token, { ...state, state: "empty", claimedRowIds: [state.manualRows[0].rowId] });
   assert.equal(token.deleted, true);
   assert.equal(tokens.length, 0);
+});
+
+test("a complete snapshot creates one pile with every row and coin", async () => {
+  const { service, tokens } = createHarness();
+
+  const result = await service.transferSnapshotToScene({
+    rows: [sword, axe],
+    coins: { gp: 4, sp: 2 },
+    sceneId: "scene",
+    x: 300,
+    y: 400,
+    mutationId: "snapshot-one"
+  });
+
+  assert.equal(result.created, true);
+  assert.equal(tokens.length, 1);
+  const state = readStorageState(tokens[0]);
+  assert.equal(state.manualRows.length, 2);
+  assert.deepEqual(state.manualRows.map((row) => row.quantity), [5, 1]);
+  assert.deepEqual(state.manualCoins, { pp: 0, gp: 4, sp: 2, cp: 0 });
+});
+
+test("snapshot retries are idempotent while new snapshots stack rows and add coins", async () => {
+  const { service, tokens } = createHarness();
+  const request = {
+    rows: [sword],
+    coins: { gp: 2 },
+    sceneId: "scene",
+    x: 300,
+    y: 400,
+    mutationId: "snapshot-one"
+  };
+  await service.transferSnapshotToScene(request);
+  const duplicate = await service.transferSnapshotToScene(request);
+  assert.equal(duplicate.duplicate, true);
+
+  await service.transferSnapshotToScene({
+    ...request,
+    coins: { gp: 3, cp: 7 },
+    mutationId: "snapshot-two"
+  });
+
+  assert.equal(tokens.length, 1);
+  const state = readStorageState(tokens[0]);
+  assert.equal(state.manualRows.length, 1);
+  assert.equal(state.manualRows[0].quantity, 10);
+  assert.deepEqual(state.manualCoins, { pp: 0, gp: 5, sp: 0, cp: 7 });
 });
