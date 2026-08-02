@@ -1,11 +1,10 @@
 import { MODULE_ID } from "../constants.js";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 import { BUILTIN_STORAGE_PRESETS } from "./builtin-storage-presets.js";
+import { buildStorageTokenState } from "./storage-service.js";
 
 export const BUILTIN_STORAGE_FOLDER_NAME = "Хранилища";
 export const BUILTIN_STORAGE_PRESET_FLAG = "builtinStoragePreset";
-
-const EMPTY_COINS = Object.freeze({ pp: 0, gp: 0, sp: 0, cp: 0 });
 
 function clone(value) {
   if (typeof globalThis.structuredClone === "function") {
@@ -29,20 +28,12 @@ function readPresetId(actor) {
 }
 
 function initialStorageState(preset) {
-  return {
-    version: 1,
+  return buildStorageTokenState({
     baseName: preset.name,
-    template: null,
-    manualRows: [],
-    manualCoins: clone(EMPTY_COINS),
-    generatedRows: [],
-    generatedCoins: clone(EMPTY_COINS),
-    claimedRowIds: [],
-    coinsClaimed: false,
     state: "unopened",
     textures: clone(preset.textures),
     displayMode: "unopened"
-  };
+  });
 }
 
 export function buildBuiltinStorageActorData(preset, folderId) {

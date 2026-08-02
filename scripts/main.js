@@ -81,6 +81,7 @@ import { UiRefreshCoordinator } from "./infrastructure/ui/ui-refresh-coordinator
 import { GlobalEventsService } from "./data/global-events-service.js";
 import { LootgenTemplateCatalog } from "./data/lootgen-template-catalog.js";
 import { StorageService, isStorageActor, readStorageState } from "./data/storage-service.js";
+import { BuiltinStorageActorService } from "./data/builtin-storage-actor-service.js";
 import {
   StorageCommandService,
   isValidStorageClaimCoinsPayload,
@@ -1089,6 +1090,12 @@ export class RebreyaMainModule {
     this.storageService = new StorageService({
       generate: (form, context) => this.generateStorageLoot(form, context)
     });
+    this.builtinStorageActorService = new BuiltinStorageActorService({
+      gameProvider: () => globalThis.game,
+      folderProvider: () => globalThis.Folder,
+      actorProvider: () => globalThis.Actor,
+      isActiveGm: isActiveGmClient
+    });
     this.storageCommandService = new StorageCommandService({
       storageService: this.storageService,
       inventoryService: this.inventoryService,
@@ -1528,6 +1535,16 @@ export class RebreyaMainModule {
       && getGroupMemberActors(groupActor).some((actor) => actor?.id === sourceActor?.id);
   }
 
+  async restoreBuiltinStorageActors() {
+    try {
+      return await this.builtinStorageActorService.sync();
+    }
+    catch (error) {
+      console.warn(`${MODULE_ID} | Failed to restore built-in storage actors.`, error);
+      return null;
+    }
+  }
+
   async initialize() {
     try {
       const calendarSnapshot = this.calendarService.getSnapshot();
@@ -1554,6 +1571,7 @@ export class RebreyaMainModule {
     catch (error) {
       console.warn(`${MODULE_ID} | Failed to sync managed map object documents.`, error);
     }
+    await this.restoreBuiltinStorageActors();
     try {
       await this.traderService.cleanupLegacyManagedTraders();
     }

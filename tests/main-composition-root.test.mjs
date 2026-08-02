@@ -6,6 +6,7 @@ import { SpellAutomationRegistry } from "../scripts/combat/spell-automation-regi
 import { SpellInstanceRuntime } from "../scripts/combat/spell-instance-runtime.js";
 import { SummonLifecycleRuntime } from "../scripts/combat/summon-lifecycle-runtime.js";
 import { TransportCompendiumService } from "../scripts/data/transport-compendium.js";
+import { BuiltinStorageActorService } from "../scripts/data/builtin-storage-actor-service.js";
 import {
   COMMAND_REQUEST_TYPE,
   COMMAND_RESULT_TYPE
@@ -105,6 +106,33 @@ test("ready composes spell automation on one registry alongside legacy hook regi
     await Hooks.onceCallbacks.get("ready")();
 
     const moduleApi = module.api;
+    assert.ok(moduleApi.builtinStorageActorService instanceof BuiltinStorageActorService);
+    const restoredDocuments = {
+      folder: { id: "storage-folder" },
+      actors: [{ id: "copper" }]
+    };
+    moduleApi.builtinStorageActorService = {
+      async sync() {
+        return restoredDocuments;
+      }
+    };
+    assert.equal(await moduleApi.restoreBuiltinStorageActors(), restoredDocuments);
+
+    const warnings = [];
+    const originalWarn = console.warn;
+    console.warn = (...args) => warnings.push(args);
+    try {
+      moduleApi.builtinStorageActorService = {
+        async sync() {
+          throw new Error("folder unavailable");
+        }
+      };
+      assert.equal(await moduleApi.restoreBuiltinStorageActors(), null);
+    }
+    finally {
+      console.warn = originalWarn;
+    }
+    assert.match(String(warnings[0]?.[0] ?? ""), /Failed to restore built-in storage actors/u);
     assert.ok(moduleApi.spellAutomationRegistry instanceof SpellAutomationRegistry);
     assert.ok(moduleApi.spellInstanceRuntime instanceof SpellInstanceRuntime);
     assert.ok(moduleApi.summonLifecycleRuntime instanceof SummonLifecycleRuntime);

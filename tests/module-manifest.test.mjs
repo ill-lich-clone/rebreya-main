@@ -63,7 +63,7 @@ test("module manifest loads the stable canonical entrypoint", async () => {
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const entrypointSource = await readFile(new URL("scripts/main.js", manifestUrl), "utf8");
 
-  assert.equal(manifest.version, "1.4.112");
+  assert.equal(manifest.version, "1.4.113");
   assert.deepEqual(manifest.esmodules, ["scripts/main.js"]);
   assert.match(entrypointSource, /@rebreya-role canonical-composition-root/u);
   assert.match(entrypointSource, /export class RebreyaMainModule/u);
