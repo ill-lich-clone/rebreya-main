@@ -70,9 +70,10 @@ test("built-in storage Actor data creates an unlinked closed NPC with independen
   assert.equal(data.flags[MODULE_ID].storage.enabled, true);
   assert.equal(data.flags[MODULE_ID][BUILTIN_STORAGE_PRESET_FLAG].id, "wood-dark-copper");
   assert.equal(data.prototypeToken.actorLink, false);
+  assert.equal(data.prototypeToken.name, "Сундук");
   assert.equal(data.prototypeToken.texture.src, preset.textures.unopened);
   assert.deepEqual(storage.textures, preset.textures);
-  assert.equal(storage.baseName, preset.name);
+  assert.equal(storage.baseName, "Сундук");
   assert.equal(storage.state, "unopened");
   assert.equal(storage.displayMode, "unopened");
   assert.deepEqual(storage.manualCoins, { pp: 0, gp: 0, sp: 0, cp: 0 });

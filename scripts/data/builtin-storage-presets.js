@@ -1,6 +1,7 @@
 const ASSET_ROOT = "modules/rebreya-main/assets/storage/chests";
 const CLOSED_TEXTURE = `${ASSET_ROOT}/wood-dark-closed.webp`;
 const EMPTY_TEXTURE = `${ASSET_ROOT}/wood-dark-empty.webp`;
+export const BUILTIN_STORAGE_TOKEN_NAME = "Сундук";
 
 function deepFreeze(value) {
   for (const child of Object.values(value)) {
@@ -22,7 +23,7 @@ function createPreset(id, name, openedFile) {
     name,
     textures,
     prototypeToken: {
-      name,
+      name: BUILTIN_STORAGE_TOKEN_NAME,
       actorLink: false,
       texture: { src: textures.unopened }
     }

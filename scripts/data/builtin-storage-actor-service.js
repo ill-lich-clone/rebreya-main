@@ -1,6 +1,6 @@
 import { MODULE_ID } from "../constants.js";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
-import { BUILTIN_STORAGE_PRESETS } from "./builtin-storage-presets.js";
+import { BUILTIN_STORAGE_PRESETS, BUILTIN_STORAGE_TOKEN_NAME } from "./builtin-storage-presets.js";
 import { buildStorageTokenState } from "./storage-service.js";
 
 export const BUILTIN_STORAGE_FOLDER_NAME = "Хранилища";
@@ -29,7 +29,7 @@ function readPresetId(actor) {
 
 function initialStorageState(preset) {
   return buildStorageTokenState({
-    baseName: preset.name,
+    baseName: BUILTIN_STORAGE_TOKEN_NAME,
     state: "unopened",
     textures: clone(preset.textures),
     displayMode: "unopened"
@@ -87,6 +87,7 @@ export class BuiltinStorageActorService {
       const existing = collectionValues(game?.actors)
         .find((actor) => readPresetId(actor) === preset.id);
       if (existing) {
+        await this.#syncExistingActor(existing, preset);
         actors.push(existing);
         continue;
       }
@@ -106,7 +107,36 @@ export class BuiltinStorageActorService {
         this.logger?.error?.(`${MODULE_ID} | Failed to restore storage preset ${preset.id}.`, error);
       }
     }
+    await this.#migrateSceneTokens(game, actors);
     return { folder, actors };
+  }
+
+  async #syncExistingActor(actor, preset) {
+    if (typeof actor?.update !== "function") return;
+    const current = actor.prototypeToken?.flags?.[MODULE_ID]?.storage ?? {};
+    await actor.update({
+      "prototypeToken.name": BUILTIN_STORAGE_TOKEN_NAME,
+      [`prototypeToken.flags.${MODULE_ID}.storage`]: buildStorageTokenState({
+        ...current,
+        baseName: BUILTIN_STORAGE_TOKEN_NAME,
+        textures: current.textures ?? preset.textures
+      })
+    });
+  }
+
+  async #migrateSceneTokens(game, actors) {
+    const actorPresets = new Map(actors.map((actor) => [actor.id, BUILTIN_STORAGE_PRESETS.find((preset) => preset.id === readPresetId(actor))]));
+    for (const scene of collectionValues(game?.scenes)) {
+      for (const token of collectionValues(scene?.tokens)) {
+        const preset = actorPresets.get(token?.actorId);
+        if (!preset || String(token?.name ?? "").trim() !== preset.name || typeof token?.update !== "function") continue;
+        const current = token?.flags?.[MODULE_ID]?.storage ?? {};
+        await token.update({
+          name: BUILTIN_STORAGE_TOKEN_NAME,
+          [`flags.${MODULE_ID}.storage`]: buildStorageTokenState({ ...current, baseName: BUILTIN_STORAGE_TOKEN_NAME })
+        });
+      }
+    }
   }
 
   async #ensureFolder(game) {

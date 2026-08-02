@@ -25,7 +25,7 @@ test("built-in storage catalog exposes the three immutable coin presets", () => 
     assert.match(preset.textures.unopened, /wood-dark-closed\.webp$/u);
     assert.match(preset.textures.opened, new RegExp(`${EXPECTED_PRESETS[index][2]}$`, "u"));
     assert.match(preset.textures.empty, /wood-dark-empty\.webp$/u);
-    assert.equal(preset.prototypeToken.name, preset.name);
+    assert.equal(preset.prototypeToken.name, "Сундук");
     assert.equal(preset.prototypeToken.actorLink, false);
     assert.equal(preset.prototypeToken.texture.src, preset.textures.unopened);
   }
