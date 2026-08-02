@@ -214,7 +214,6 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
     "data/craft-downtime-service.js?v=1.4.96-craft-calendar",
     "data/calendar-transition-coordinator.js?v=1.4.96-craft-calendar",
     "integrations/durability-hooks.js?v=1.4.96-durability-piles",
-    "integrations/item-piles-dnd5e.js?v=1.4.96-durability-piles",
     "integrations/inventory-sync.js?v=1.4.96-durable-transfer"
   ]) {
     assert.equal(canonicalSource.includes(importPath), true, importPath);
@@ -282,16 +281,10 @@ test("durability service and its persisted mutation journal are wired into the l
   }
 });
 
-test("Item Piles integration is invoked from both init and ready lifecycle call sites", async () => {
+test("canonical entrypoint has no Item Piles integration lifecycle", async () => {
   const canonicalSource = await readCanonicalEntrypointSource();
-  const initStart = canonicalSource.indexOf('Hooks.once("init"');
-  const readyStart = canonicalSource.indexOf('Hooks.once("ready"');
-  const initSource = canonicalSource.slice(initStart, readyStart);
-  const readySource = canonicalSource.slice(readyStart);
 
-  assert.match(canonicalSource, /import\s+\{[^}]*ensureItemPilesDnD5eIntegration[^}]*\}\s+from "\.\/integrations\/item-piles-dnd5e\.js(?:\?[^"\s]+)?";/u);
-  assert.match(initSource, /ensureItemPilesDnD5eIntegration\(\)/u);
-  assert.match(readySource, /await ensureItemPilesDnD5eIntegration\(\)/u);
+  assert.doesNotMatch(canonicalSource, /item.?piles|itempiles/iu);
 });
 
 test("legacy settings relay is an explicit deprecated compatibility boundary", async () => {

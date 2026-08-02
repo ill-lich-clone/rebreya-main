@@ -127,7 +127,6 @@ export const SPELLS_COMPENDIUM_NAME = "rebreya-spells";
 export const SPELLS_COMPENDIUM_LABEL = "Заклинания Rebreya (D&D 5e 2014)";
 export const ACTIONS_COMPENDIUM_NAME = "rebreya-actions";
 export const ACTIONS_COMPENDIUM_LABEL = "Действия";
-export const ITEM_PILES_MODULE_ID = "item-piles";
 export const TRADERS_FOLDER_NAME = "Торговцы Rebreya";
 export const MAX_VISIBLE_CITIES = 70;
 export const ENERGY_BASE_DAYS = 3;

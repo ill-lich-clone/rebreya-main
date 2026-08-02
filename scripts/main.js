@@ -151,13 +151,8 @@ import { registerHeldShieldArmorClassPatch } from "./integrations/held-shield-ac
 import {
   patchDurabilityItemEffectSuppression,
   reconcileBrokenEquippedArmor,
-  reconcileItemPileDurability,
   registerDurabilityHooks
 } from "./integrations/durability-hooks.js?v=1.4.96-durability-piles";
-import {
-  ensureItemPilesDnD5eIntegration,
-  registerItemPilesSimilarityRepairHook
-} from "./integrations/item-piles-dnd5e.js?v=1.4.96-durability-piles";
 import { patchEffectMacroCombatHooks } from "./integrations/effectmacro-compat.js";
 import { patchSmAirshipRenderSettingsHook } from "./integrations/sm-airship-compat.js";
 import { registerInventorySyncHooks } from "./integrations/inventory-sync.js?v=1.4.96-durable-transfer";
@@ -244,7 +239,6 @@ const COSMOLOGY_SET_MECHANUS_COMMAND = "cosmology.setMechanus";
 const COMBAT_STATUS_SET_COMMAND = "combat.status.set";
 const TRADER_PURCHASE_COMMAND = "trader.purchase";
 const TRADER_SELL_COMMAND = "trader.sell";
-export const ITEM_PILE_DAMAGE_COMMAND = "durability.item-pile.damage";
 export const STORAGE_OPEN_COMMAND = "storage.open";
 export const STORAGE_CLAIM_ROW_COMMAND = "storage.claim-row";
 export const STORAGE_CLAIM_COINS_COMMAND = "storage.claim-coins";
@@ -694,44 +688,6 @@ function isValidInventoryCurrencyConvertPayload(payload) {
   return hasExactKeys(payload, ["inventoryActorId", "mode"])
     && isTrimmedNonEmptyString(payload.inventoryActorId)
     && ["normalized", "gp", "sp", "cp"].includes(payload.mode);
-}
-
-function isValidItemPileDamagePayload(payload) {
-  return hasExactKeys(payload, ["amount", "damageType", "itemUuid", "mutationId"])
-    && isTrimmedNonEmptyString(payload.itemUuid)
-    && payload.itemUuid.length <= 512
-    && Number.isFinite(payload.amount)
-    && payload.amount > 0
-    && typeof payload.damageType === "string"
-    && payload.damageType === payload.damageType.trim()
-    && payload.damageType.length <= 100
-    && isValidInventoryMutationId(payload.mutationId);
-}
-
-function itemPilesApi() {
-  return globalThis.game?.itempiles?.API
-    ?? globalThis.game?.modules?.get?.("item-piles")?.api
-    ?? null;
-}
-
-async function resolveItemPileDurabilityItem(itemUuid) {
-  const item = typeof globalThis.fromUuid === "function"
-    ? await globalThis.fromUuid(itemUuid)
-    : null;
-  const actor = item?.parent ?? item?.actor ?? null;
-  const api = itemPilesApi();
-  if (!item || !actor || !api || !item?.flags?.[MODULE_ID]?.durability) {
-    return null;
-  }
-  const target = actor?.token?.document ?? actor?.token ?? actor;
-  try {
-    return api.isValidItemPile?.(target) === true || (target !== actor && api.isValidItemPile?.(actor) === true)
-      ? item
-      : null;
-  }
-  catch (_error) {
-    return null;
-  }
 }
 
 function traderActorIsOwnedByUser(actor, user) {
@@ -1367,24 +1323,6 @@ export class RebreyaMainModule {
       validate: isValidStorageClaimCoinsPayload,
       authorize: (_payload, { sender }) => Boolean(sender),
       execute: (payload, { sender }) => this.storageCommandService.claimCoins(payload, { sender })
-    });
-    this.socketCommandBus.register(ITEM_PILE_DAMAGE_COMMAND, {
-      validate: isValidItemPileDamagePayload,
-      authorize: async (payload, { sender }) => {
-        const item = await resolveItemPileDurabilityItem(payload.itemUuid);
-        return traderActorIsOwnedByUser(item?.parent ?? item?.actor, sender);
-      },
-      execute: async (payload) => {
-        const item = await resolveItemPileDurabilityItem(payload.itemUuid);
-        if (!item) {
-          throw new Error("Item Pile durability target was not found.");
-        }
-        return this.durabilityService.damageItem(item, {
-          amount: payload.amount,
-          damageType: payload.damageType,
-          mutationId: payload.mutationId
-        });
-      }
     });
     const authorizeTradeActor = (payload, { sender }) => traderActorIsOwnedByUser(
       globalThis.game?.actors?.get?.(payload.actorId)
@@ -2519,22 +2457,6 @@ export class RebreyaMainModule {
 
   damageItem(item, options = {}) {
     return this.durabilityService.damageItem(item, options);
-  }
-
-  damageItemPile(item, options = {}) {
-    if (isActiveGmClient(globalThis.game)) {
-      return this.durabilityService.damageItem(item, options);
-    }
-    const payload = {
-      itemUuid: cleanSocketId(item?.uuid),
-      amount: Number(options.amount),
-      damageType: cleanSocketId(options.damageType),
-      mutationId: cleanSocketId(options.mutationId) || createSocketRequestId("durability-pile")
-    };
-    if (!isValidItemPileDamagePayload(payload)) {
-      throw new Error("Invalid Item Pile durability damage request.");
-    }
-    return this.socketCommandBus.request(ITEM_PILE_DAMAGE_COMMAND, payload);
   }
 
   breakItem(item, options = {}) {
@@ -5502,16 +5424,6 @@ Hooks.once("init", () => {
   }
 
   try {
-    registerItemPilesSimilarityRepairHook({ Hooks });
-    void ensureItemPilesDnD5eIntegration().catch((error) => {
-      console.warn(`${MODULE_ID} | Failed to initialize Item Piles integration.`, error);
-    });
-  }
-  catch (error) {
-    console.warn(`${MODULE_ID} | Failed to initialize Item Piles integration.`, error);
-  }
-
-  try {
     patchSmAirshipRenderSettingsHook();
   }
   catch (error) {
@@ -5526,13 +5438,6 @@ if (Hooks.on instanceof Function) {
 }
 
 Hooks.once("ready", async () => {
-  try {
-    await ensureItemPilesDnD5eIntegration();
-  }
-  catch (error) {
-    console.warn(`${MODULE_ID} | Failed to finalize Item Piles integration.`, error);
-  }
-
   try {
     patchEffectMacroCombatHooks();
   }
@@ -5597,7 +5502,6 @@ Hooks.once("ready", async () => {
   try {
     registerDurabilityHooks(moduleApi);
     await reconcileBrokenEquippedArmor();
-    await reconcileItemPileDurability();
   }
   catch (error) {
     console.error(`${MODULE_ID} | Failed to register durability hooks.`, error);

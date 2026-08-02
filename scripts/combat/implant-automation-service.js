@@ -146,7 +146,7 @@ function isAttendedItem(item) {
     item?.system?.equipped === true
     || item?.system?.worn === true
     || item?.system?.carried === true
-    || item?.flags?.itempiles?.item?.notForSale === true
+    || item?.flags?.[MODULE_ID]?.item?.notForSale === true
   );
 }
 

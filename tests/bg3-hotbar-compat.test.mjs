@@ -8,7 +8,7 @@ const {
   ensurePlayerInventoryQuickButton,
   getBg3DeathSaveData,
   patchBg3HotbarDeathSavesContainer,
-  patchBg3HotbarItemPileCommonActions,
+  patchBg3HotbarStorageCommonActions,
   registerSceneControlsHook,
   resolvePlayerInventoryButtonAnchor,
   shouldSkipBg3HotbarCommonActionsForActor,
@@ -211,16 +211,14 @@ test("BG3 hotbar auto-add suppression leaves unrelated items alone", () => {
   assert.equal(options.noBG3AutoAdd, undefined);
 });
 
-test("BG3 hotbar common actions are skipped for Item Piles actors", async () => {
+test("BG3 hotbar common actions are skipped for Rebreya storage actors", async () => {
   const created = [];
   const actor = {
     type: "npc",
     flags: {
-      "item-piles": {
-        data: {
-          enabled: true,
-          type: "pile"
-        }
+      "rebreya-main": {
+        storage: { enabled: true },
+        groundPilePrototype: { enabled: true }
       }
     },
     createEmbeddedDocuments: async (...args) => {
@@ -235,7 +233,7 @@ test("BG3 hotbar common actions are skipped for Item Piles actors", async () => 
   };
 
   assert.equal(shouldSkipBg3HotbarCommonActionsForActor(actor), true);
-  assert.equal(await patchBg3HotbarItemPileCommonActions({
+  assert.equal(await patchBg3HotbarStorageCommonActions({
     force: true,
     importModule: async () => ({ AutoPopulateCreateToken })
   }), true);
@@ -254,12 +252,21 @@ test("BG3 hotbar common actions still populate regular actors", async () => {
   AutoPopulateCreateToken._getCombatActionsList = async () => ["Actor.guard.Item.dash"];
 
   assert.equal(shouldSkipBg3HotbarCommonActionsForActor(actor), false);
-  assert.equal(await patchBg3HotbarItemPileCommonActions({
+  assert.equal(await patchBg3HotbarStorageCommonActions({
     force: true,
     importModule: async () => ({ AutoPopulateCreateToken })
   }), true);
 
   assert.deepEqual(await AutoPopulateCreateToken._getCombatActionsList(actor), ["Actor.guard.Item.dash"]);
+});
+
+test("BG3 hotbar ignores legacy Item Piles flags without a Rebreya storage marker", () => {
+  assert.equal(shouldSkipBg3HotbarCommonActionsForActor({
+    type: "npc",
+    flags: {
+      "item-piles": { data: { enabled: true, type: "pile" } }
+    }
+  }), false);
 });
 
 test("BG3 hotbar death save data tolerates actors without death saves", () => {

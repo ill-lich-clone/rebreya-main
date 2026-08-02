@@ -6,19 +6,22 @@ import { RaceAutomationService } from "../scripts/combat/race-automation-service
 import { InventoryService } from "../scripts/data/inventory-service.js";
 import { TraderService } from "../scripts/data/trader-service.js";
 
-test("scene storage is owned by Rebreya and adds no Item Piles dependency", async () => {
-  const [manifestSource, mainSource, ...storageSources] = await Promise.all([
+test("scene storage and durability are owned by Rebreya and add no Item Piles dependency", async () => {
+  const [manifestSource, mainSource, ...runtimeSources] = await Promise.all([
     readFile(new URL("../module.json", import.meta.url), "utf8"),
     readFile(new URL("../scripts/main.js", import.meta.url), "utf8"),
     readFile(new URL("../scripts/data/storage-service.js", import.meta.url), "utf8"),
     readFile(new URL("../scripts/data/storage-command-service.js", import.meta.url), "utf8"),
+    readFile(new URL("../scripts/data/durability-rules.js", import.meta.url), "utf8"),
+    readFile(new URL("../scripts/data/durability-service.js", import.meta.url), "utf8"),
     readFile(new URL("../scripts/integrations/storage-token-hooks.js", import.meta.url), "utf8"),
+    readFile(new URL("../scripts/hooks.js", import.meta.url), "utf8"),
     readFile(new URL("../scripts/ui/storage-app.js", import.meta.url), "utf8")
   ]);
   const manifest = JSON.parse(manifestSource);
 
   assert.equal(manifest.relationships.requires.some((entry) => entry.id === "item-piles"), false);
-  assert.doesNotMatch(storageSources.join("\n"), /item[- ]?piles/iu);
+  assert.doesNotMatch([mainSource, ...runtimeSources].join("\n"), /item.?piles|itempiles/iu);
   for (const apiName of ["openStorage", "claimStorageRow", "claimStorageCoins", "configureStorageToken"]) {
     assert.match(mainSource, new RegExp(`\\b${apiName}\\b`, "u"));
   }

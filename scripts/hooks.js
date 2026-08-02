@@ -1,18 +1,19 @@
 ﻿import { MODULE_ID, SETTINGS_KEYS } from "./constants.js";
 
+import { isNativeStorageObject } from "./data/storage-object-kind.js";
+
 let bg3HotbarSuppressionHookRegistered = false;
 let bg3HotbarDeathSavesCompatRegistered = false;
-let bg3HotbarItemPileCommonActionsCompatRegistered = false;
+let bg3HotbarStorageCommonActionsCompatRegistered = false;
 let fixedRaceSizeHookRegistered = false;
 let playerInventoryQuickButtonHookRegistered = false;
 const PANEL_TOOL_NAME = `${MODULE_ID}-panel`;
 const DND5E_ACTOR_SIZES = new Set(["tiny", "sm", "med", "lg", "huge", "grg"]);
-const ITEM_PILES_COMPAT_MODULE_ID = "item-piles";
 const BG3_HOTBAR_MODULE_ID = "bg3-inspired-hotbar";
 const BG3_DEATH_SAVES_CONTAINER_PATH = `/modules/${BG3_HOTBAR_MODULE_ID}/scripts/components/containers/DeathSavesContainer.js`;
 const BG3_AUTO_POPULATE_CREATE_TOKEN_PATH = `/modules/${BG3_HOTBAR_MODULE_ID}/scripts/features/AutoPopulateCreateToken.js`;
 const BG3_DEATH_SAVES_PATCH_FLAG = Symbol.for(`${MODULE_ID}.bg3DeathSavesPatch`);
-const BG3_ITEM_PILE_COMMON_ACTIONS_PATCH_FLAG = Symbol.for(`${MODULE_ID}.bg3ItemPileCommonActionsPatch`);
+const BG3_STORAGE_COMMON_ACTIONS_PATCH_FLAG = Symbol.for(`${MODULE_ID}.bg3StorageCommonActionsPatch`);
 const PLAYER_INVENTORY_BUTTON_SELECTOR = "[data-rebreya-player-inventory-button='true']";
 const PLAYER_INVENTORY_BUTTON_LEFT = "calc(clamp(220px, 8.5vw, 280px) + 8px)";
 const PLAYER_INVENTORY_BUTTON_SIZE = 36;
@@ -82,49 +83,8 @@ export function getBg3DeathSaveData(actor, display = getBg3DeathSavesDisplaySett
   };
 }
 
-function getDocumentFlagData(document, moduleId, key) {
-  return document?.getFlag?.(moduleId, key) ?? document?.flags?.[moduleId]?.[key];
-}
-
-function getItemPileLookupTargets(actor) {
-  return [
-    actor,
-    actor?.token,
-    actor?.token?.document,
-    actor?.parent,
-    actor?.prototypeToken
-  ].filter(Boolean);
-}
-
-function hasEnabledItemPileFlag(target) {
-  const pileData = getDocumentFlagData(target, ITEM_PILES_COMPAT_MODULE_ID, "data");
-  return isPlainObject(pileData) && pileData.enabled === true;
-}
-
-function isItemPileActorByApi(actor) {
-  const api = globalThis.game?.itempiles?.API;
-  if (typeof api?.isValidItemPile !== "function") {
-    return false;
-  }
-
-  return getItemPileLookupTargets(actor).some((target) => {
-    try {
-      return api.isValidItemPile(target) === true;
-    }
-    catch (_error) {
-      return false;
-    }
-  });
-}
-
 export function shouldSkipBg3HotbarCommonActionsForActor(actor) {
-  return Boolean(
-    actor
-    && (
-      isItemPileActorByApi(actor)
-      || getItemPileLookupTargets(actor).some(hasEnabledItemPileFlag)
-    )
-  );
+  return Boolean(actor && isNativeStorageObject(actor));
 }
 
 function isBg3HotbarActive() {
@@ -165,7 +125,7 @@ export async function patchBg3HotbarDeathSavesContainer({
   return true;
 }
 
-export async function patchBg3HotbarItemPileCommonActions({
+export async function patchBg3HotbarStorageCommonActions({
   force = false,
   importModule = (path) => import(path)
 } = {}) {
@@ -178,7 +138,7 @@ export async function patchBg3HotbarItemPileCommonActions({
     module = await importModule(BG3_AUTO_POPULATE_CREATE_TOKEN_PATH);
   }
   catch (error) {
-    console.warn(`${MODULE_ID} | Failed to load BG3 hotbar token auto-populate for item pile compatibility patch.`, error);
+    console.warn(`${MODULE_ID} | Failed to load BG3 hotbar token auto-populate for storage compatibility patch.`, error);
     return false;
   }
 
@@ -186,14 +146,14 @@ export async function patchBg3HotbarItemPileCommonActions({
   if (
     !autoPopulateCreateToken
     || typeof autoPopulateCreateToken._getCombatActionsList !== "function"
-    || autoPopulateCreateToken[BG3_ITEM_PILE_COMMON_ACTIONS_PATCH_FLAG]
+    || autoPopulateCreateToken[BG3_STORAGE_COMMON_ACTIONS_PATCH_FLAG]
   ) {
     return false;
   }
 
   const originalGetCombatActionsList = autoPopulateCreateToken._getCombatActionsList;
-  autoPopulateCreateToken[BG3_ITEM_PILE_COMMON_ACTIONS_PATCH_FLAG] = true;
-  autoPopulateCreateToken._getCombatActionsList = async function getRebreyaItemPileSafeCombatActions(actor, ...args) {
+  autoPopulateCreateToken[BG3_STORAGE_COMMON_ACTIONS_PATCH_FLAG] = true;
+  autoPopulateCreateToken._getCombatActionsList = async function getRebreyaStorageSafeCombatActions(actor, ...args) {
     if (shouldSkipBg3HotbarCommonActionsForActor(actor)) {
       return [];
     }
@@ -214,15 +174,15 @@ function registerBg3HotbarAutoAddSuppression() {
   });
 }
 
-function registerBg3HotbarItemPileCommonActionsCompat() {
-  if (bg3HotbarItemPileCommonActionsCompatRegistered || !globalThis.Hooks?.once) {
+function registerBg3HotbarStorageCommonActionsCompat() {
+  if (bg3HotbarStorageCommonActionsCompatRegistered || !globalThis.Hooks?.once) {
     return;
   }
 
-  bg3HotbarItemPileCommonActionsCompatRegistered = true;
+  bg3HotbarStorageCommonActionsCompatRegistered = true;
   Hooks.once("ready", () => {
-    patchBg3HotbarItemPileCommonActions().catch((error) => {
-      console.warn(`${MODULE_ID} | Failed to patch BG3 hotbar item pile common actions.`, error);
+    patchBg3HotbarStorageCommonActions().catch((error) => {
+      console.warn(`${MODULE_ID} | Failed to patch BG3 hotbar storage common actions.`, error);
     });
   });
 }
@@ -734,7 +694,7 @@ export function refreshEconomyLauncher() {
 
 export function registerSceneControlsHook() {
   registerBg3HotbarAutoAddSuppression();
-  registerBg3HotbarItemPileCommonActionsCompat();
+  registerBg3HotbarStorageCommonActionsCompat();
   registerBg3HotbarDeathSavesCompat();
   registerFixedRaceSizeHook();
   registerPlayerInventoryQuickButtonHook();
