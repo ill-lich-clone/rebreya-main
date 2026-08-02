@@ -8,6 +8,7 @@ import {
   collectRepositorySnapshot,
   validateArchitectureGraph
 } from "../tools/architecture-map/graph-builder.mjs";
+import { renderArchitectureHtml } from "../tools/architecture-map/html-renderer.mjs";
 
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const generatedHtmlPath = "docs/rebreya-module-architecture.html";
@@ -130,4 +131,37 @@ test("repository snapshot gives every tracked file exactly one file node", async
   assert.deepEqual(filePaths, trackedPaths);
   assert.equal(new Set(filePaths).size, filePaths.length);
   assert.equal(graph.meta.trackedFileCount, snapshot.files.length);
+});
+
+test("renderer emits a self-contained offline architecture document", () => {
+  const graph = buildArchitectureGraph(makeFixture());
+  const html = renderArchitectureHtml(graph);
+
+  assert.match(html, /^<!doctype html>/iu);
+  assert.match(html, /id="architecture-search"/u);
+  assert.match(html, /id="fit-graph"/u);
+  assert.match(html, /id="architecture-canvas"/u);
+  assert.match(html, /id="architecture-edges"/u);
+  assert.match(html, /id="architecture-nodes"/u);
+  assert.match(html, /id="architecture-minimap"/u);
+  assert.match(html, /window\.__REBREYA_ARCHITECTURE__/u);
+  assert.doesNotMatch(html, /<script[^>]+src=/iu);
+  assert.doesNotMatch(html, /<link[^>]+href=/iu);
+  assert.doesNotMatch(html, /\bfetch\s*\(/u);
+});
+
+test("renderer safely serializes data that could otherwise terminate an inline script", () => {
+  const graph = buildArchitectureGraph(makeFixture());
+  graph.nodes[0].description = "</script><script>globalThis.compromised=true</script>";
+
+  const html = renderArchitectureHtml(graph);
+
+  assert.doesNotMatch(html, /<script>globalThis\.compromised=true<\/script>/u);
+  assert.match(html, /\\u003c\/script\\u003e/u);
+});
+
+test("renderer output is deterministic for a fixed graph", () => {
+  const graph = buildArchitectureGraph(makeFixture());
+
+  assert.equal(renderArchitectureHtml(graph), renderArchitectureHtml(graph));
 });
