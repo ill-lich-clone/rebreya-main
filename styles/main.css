@@ -12544,6 +12544,45 @@ summary:focus-visible {
   grid-column: 1 / -1;
 }
 
+.rm-storage-texture-modes {
+  margin: 0;
+  padding: 0.65rem;
+  border: 1px solid rgb(255 255 255 / 0.14);
+  border-radius: 7px;
+}
+
+.rm-storage-texture-modes legend {
+  padding: 0 0.35rem;
+  color: var(--color-text-dark-secondary);
+  font-weight: 600;
+}
+
+.rm-storage-texture-modes__buttons {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.rm-storage-texture-mode {
+  justify-content: center;
+}
+
+.rm-storage-texture-mode.is-active {
+  border-color: rgb(218 174 76 / 0.78);
+  background: rgb(218 174 76 / 0.16);
+  box-shadow: inset 0 0 0 1px rgb(218 174 76 / 0.2);
+}
+
+.rm-storage-texture-mode__number {
+  display: inline-grid;
+  width: 1.4rem;
+  height: 1.4rem;
+  place-items: center;
+  border: 1px solid currentcolor;
+  border-radius: 50%;
+  font-weight: 700;
+}
+
 .rm-storage-dropzone {
   display: flex;
   align-items: center;
@@ -12626,6 +12665,10 @@ summary:focus-visible {
     grid-template-columns: 1fr;
   }
 
+  .rm-storage-texture-modes__buttons {
+    grid-template-columns: 1fr;
+  }
+
   .rm-storage-config__actions,
   .rm-storage-coins,
   .rm-storage-item__actions {
@@ -12634,6 +12677,7 @@ summary:focus-visible {
   }
 
   .rm-storage-item__actions .rm-button,
+  .rm-storage-texture-mode,
   .rm-storage-config__actions .rm-button {
     width: 100%;
   }

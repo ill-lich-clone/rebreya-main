@@ -3091,7 +3091,9 @@ export class RebreyaMainModule {
         baseName: state.baseName,
         template: foundry.utils.deepClone(state.template),
         manualRows: foundry.utils.deepClone(state.manualRows),
-        manualCoins: foundry.utils.deepClone(state.manualCoins)
+        manualCoins: foundry.utils.deepClone(state.manualCoins),
+        textures: foundry.utils.deepClone(state.textures),
+        displayMode: state.displayMode
       } : {})
     };
   }
@@ -3167,7 +3169,8 @@ export class RebreyaMainModule {
     };
     return this.storageService.configure(token, {
       manualRows: [...state.manualRows, row],
-      state: state.state === "empty" ? "opened" : state.state
+      state: state.state === "empty" ? "opened" : state.state,
+      displayMode: state.state === "empty" ? "opened" : state.displayMode
     });
   }
 
@@ -3188,8 +3191,17 @@ export class RebreyaMainModule {
       generatedCoins: {},
       claimedRowIds: [],
       coinsClaimed: false,
-      state: "unopened"
+      state: "unopened",
+      displayMode: "unopened"
     });
+  }
+
+  async setStorageTextureMode(tokenUuid, mode) {
+    if (!globalThis.game?.user?.isGM) {
+      throw new Error("Менять текстуру хранилища может только мастер.");
+    }
+    const token = await this.#resolveStorageToken(tokenUuid);
+    return this.storageService.setTextureMode(token, mode);
   }
 
   async openStorageApp({ tokenUuid, configure = false } = {}) {

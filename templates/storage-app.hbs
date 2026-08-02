@@ -25,6 +25,25 @@
       {{#if configuration.selectedTemplateName}}
         <p class="rm-muted">Сохранённый снимок: {{configuration.selectedTemplateName}}</p>
       {{/if}}
+      {{#if configuration.canSetTexture}}
+        <fieldset class="rm-storage-texture-modes">
+          <legend>Внешний вид</legend>
+          <div class="rm-storage-texture-modes__buttons">
+            {{#each configuration.textureModes}}
+              <button
+                type="button"
+                class="rm-button rm-button--secondary rm-storage-texture-mode{{#if active}} is-active{{/if}}"
+                data-action="storage-set-texture"
+                data-mode="{{mode}}"
+                aria-pressed="{{active}}"
+              >
+                <span class="rm-storage-texture-mode__number">{{number}}</span>
+                <span>{{label}}</span>
+              </button>
+            {{/each}}
+          </div>
+        </fieldset>
+      {{/if}}
       <div class="rm-storage-config__actions">
         <button type="button" class="rm-button rm-button--primary" data-action="storage-save-config">
           <i class="fa-solid fa-floppy-disk"></i><span>Сохранить настройки</span>

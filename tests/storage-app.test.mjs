@@ -6,7 +6,11 @@ class FakeApplicationV2 {
   constructor(options = {}) {
     this.options = options;
   }
+
+  async render() {}
 }
+
+class FakeElement {}
 
 globalThis.foundry = {
   applications: {
@@ -19,12 +23,14 @@ globalThis.foundry = {
 };
 globalThis.game = { user: { isGM: true } };
 globalThis.randomID = () => "storage-test-id";
+globalThis.HTMLElement = FakeElement;
 
 const { StorageApp } = await import("../scripts/ui/storage-app.js?storage-app-test");
 
-function createApp({ canManage = true, configure = true } = {}) {
+function createApp({ canManage = true, configure = true, withTextures = true } = {}) {
   globalThis.game.user.isGM = canManage;
-  return new StorageApp({
+  const textureCalls = [];
+  const moduleApi = {
     async getStorageSnapshot() {
       return {
         tokenUuid: "Scene.scene.Token.chest",
@@ -34,13 +40,24 @@ function createApp({ canManage = true, configure = true } = {}) {
         rows: [{ rowId: "row-1", name: "Меч", quantity: 1, typeLabel: "Оружие", img: "icons/sword.webp" }],
         coins: { pp: 0, gp: 2, sp: 0, cp: 0 },
         manualRows: [],
-        template: { name: "Простой сундук", form: {} }
+        template: { name: "Простой сундук", form: {} },
+        textures: withTextures ? {
+          unopened: "closed.webp",
+          opened: "open.webp",
+          empty: "empty.webp"
+        } : null,
+        displayMode: "opened"
       };
     },
     listLootgenTemplates() {
       return [{ id: "simple", name: "Простой сундук", form: { itemCount: 2 } }];
+    },
+    async setStorageTextureMode(tokenUuid, mode) {
+      textureCalls.push({ tokenUuid, mode });
     }
-  }, "Scene.scene.Token.chest", { configure });
+  };
+  const app = new StorageApp(moduleApi, "Scene.scene.Token.chest", { configure });
+  return { app, textureCalls };
 }
 
 test("storage grid offers self and party destinations for rows and coins", async () => {
@@ -49,20 +66,68 @@ test("storage grid offers self and party destinations for rows and coins", async
   assert.match(template, /data-action="storage-claim-party"/u);
   assert.match(template, /data-action="storage-claim-coins-self"/u);
   assert.match(template, /data-action="storage-claim-coins-party"/u);
+  assert.match(template, /\{\{#if configuration\.canSetTexture\}\}/u);
+  assert.match(template, /data-action="storage-set-texture"/u);
+  assert.match(template, /data-mode="\{\{mode\}\}"/u);
 });
 
 test("storage configuration exposes template and manual item controls to GMs", async () => {
-  const context = await createApp()._prepareContext();
+  const context = await createApp().app._prepareContext();
   assert.equal(context.canManage, true);
   assert.equal(context.configuration.enabled, true);
   assert.equal(context.configuration.templateOptions[0].name, "Простой сундук");
   assert.equal(context.configuration.canAddManualItems, true);
   assert.equal(context.configuration.baseName, "Chest");
+  assert.equal(context.configuration.canSetTexture, true);
+  assert.equal(context.configuration.displayMode, "opened");
+  assert.deepEqual(
+    context.configuration.textureModes.map(({ mode, label, number }) => [mode, label, number]),
+    [
+      ["unopened", "Закрытый", "1"],
+      ["opened", "Открытый", "2"],
+      ["empty", "Пустой", "3"]
+    ]
+  );
+  assert.deepEqual(context.configuration.textureModes.map(({ active }) => active), [false, true, false]);
 });
 
 test("storage configuration is hidden from players", async () => {
-  const context = await createApp({ canManage: false, configure: true })._prepareContext();
+  const context = await createApp({ canManage: false, configure: true }).app._prepareContext();
   assert.equal(context.canManage, false);
   assert.equal(context.configuration.enabled, false);
   assert.deepEqual(context.configuration.templateOptions, []);
+  assert.equal(context.configuration.canSetTexture, false);
+});
+
+test("storage texture controls stay hidden when a token has no complete texture set", async () => {
+  const context = await createApp({ withTextures: false }).app._prepareContext();
+
+  assert.equal(context.configuration.enabled, true);
+  assert.equal(context.configuration.canSetTexture, false);
+  assert.deepEqual(context.configuration.textureModes, []);
+});
+
+test("clicking a texture mode sends the exact token and mode through the module API", async () => {
+  const { app, textureCalls } = createApp();
+  const listeners = new Map();
+  const root = new class extends FakeElement {
+    addEventListener(name, callback) {
+      listeners.set(name, callback);
+    }
+  }();
+  app.element = root;
+  app._onRender({}, {});
+  const control = {
+    dataset: { action: "storage-set-texture", mode: "empty" },
+    closest(selector) {
+      return selector === "[data-action]" ? this : null;
+    }
+  };
+
+  await listeners.get("click")({ target: control });
+
+  assert.deepEqual(textureCalls, [{
+    tokenUuid: "Scene.scene.Token.chest",
+    mode: "empty"
+  }]);
 });

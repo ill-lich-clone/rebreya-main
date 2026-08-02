@@ -3,6 +3,11 @@ import { getAppElement } from "../ui.js";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 const COIN_KEYS = ["pp", "gp", "sp", "cp"];
+const TEXTURE_MODES = Object.freeze([
+  Object.freeze({ mode: "unopened", number: "1", label: "Закрытый" }),
+  Object.freeze({ mode: "opened", number: "2", label: "Открытый" }),
+  Object.freeze({ mode: "empty", number: "3", label: "Пустой" })
+]);
 
 function clean(value) {
   return String(value ?? "").trim();
@@ -69,6 +74,7 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
       ? this.moduleApi.listLootgenTemplates()
       : [];
     const coins = normalizeCoins(this.snapshot?.coins);
+    const hasTextureSet = TEXTURE_MODES.every(({ mode }) => clean(this.snapshot?.textures?.[mode]));
     const rows = (this.snapshot?.rows ?? []).map((row) => ({
       ...clone(row),
       rowId: clean(row.rowId),
@@ -96,7 +102,15 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
         templateOptions: configurationEnabled ? clone(templates) : [],
         selectedTemplateName: clean(this.snapshot?.template?.name),
         manualRows: configurationEnabled ? clone(this.snapshot?.manualRows ?? []) : [],
-        canReset: configurationEnabled && ["opened", "empty"].includes(this.snapshot?.state)
+        canReset: configurationEnabled && ["opened", "empty"].includes(this.snapshot?.state),
+        canSetTexture: configurationEnabled && hasTextureSet,
+        displayMode: configurationEnabled && hasTextureSet ? clean(this.snapshot?.displayMode) : "",
+        textureModes: configurationEnabled && hasTextureSet
+          ? TEXTURE_MODES.map((entry) => ({
+              ...entry,
+              active: this.snapshot?.displayMode === entry.mode
+            }))
+          : []
       }
     };
   }
@@ -152,6 +166,9 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
       }
       else if (action === "storage-reset") {
         await this.moduleApi.resetStorageToken(this.tokenUuid);
+      }
+      else if (action === "storage-set-texture") {
+        await this.moduleApi.setStorageTextureMode(this.tokenUuid, clean(control.dataset.mode));
       }
       else {
         return;
