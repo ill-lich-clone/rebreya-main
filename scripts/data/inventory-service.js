@@ -24,6 +24,10 @@ import {
   buildTransportFuelInventorySnapshot,
   normalizeTransportFuelSelector
 } from "./transport-fuel-item.js";
+import {
+  normalizeTransportFuelConsumption,
+  resolveTransportFuelConsumption
+} from "./transport-fuel-consumption.js";
 
 const SOCKET_CHANNEL = `module.${MODULE_ID}`;
 export const SOCKET_EVENT_INVENTORY_IMPORT_REQUEST = "inventory-import-request";
@@ -846,6 +850,7 @@ function buildTransportProfile({
   canEditState = false,
   condition = "operational",
   fuelSelector = null,
+  fuelConsumption = null,
   consumption = null,
   hasExplicitCargoCapacity = false,
   accelerationFt = null,
@@ -900,6 +905,7 @@ function buildTransportProfile({
       : "operational",
     conditionLabel: getTransportConditionLabel(condition),
     fuelSelector: normalizeTransportFuelSelector(fuelSelector),
+    fuelConsumption: normalizeTransportFuelConsumption(fuelConsumption, { optional: true }),
     consumption: {
       kind: cleanId(consumption?.kind),
       amount: Math.max(0, toNumber(consumption?.amount, 0)),
@@ -1025,6 +1031,7 @@ function buildTransportProfileFromActor(actor, memberState = {}, {
     canEditState: isConcreteInstance,
     condition: instanceState.condition,
     fuelSelector: instanceState.fuelSelector,
+    fuelConsumption: instanceState.fuelConsumption,
     consumption,
     hasExplicitCargoCapacity: explicitCargoValue !== undefined,
     accelerationFt: transportFlags.accelerationFt,
@@ -1197,6 +1204,7 @@ function buildEmptyTransportSnapshot({ warning = "", canManage = false } = {}) {
       quantity: 0,
       consumptionPerMile: 0,
       unit: "",
+      consumptionSource: "none",
       miles: 0,
       isEmpty: false,
       stacks: [],
@@ -1234,10 +1242,11 @@ function buildTransportFuelSnapshot(activeVehicle, groupActor) {
     groupActor?.items,
     activeVehicle.fuelSelector
   );
-  const consumption = activeVehicle.consumption ?? {};
-  const consumptionPerMile = consumption.kind === "fuel" && consumption.cadence === "mile"
-    ? Math.max(0, toNumber(consumption.amount, 0))
-    : 0;
+  const effectiveConsumption = resolveTransportFuelConsumption(
+    activeVehicle.fuelConsumption,
+    activeVehicle.consumption
+  );
+  const consumptionPerMile = effectiveConsumption.amount;
   const miles = consumptionPerMile > 0
     ? Math.max(0, Math.floor(inventoryFuel.quantity / consumptionPerMile))
     : 0;
@@ -1271,7 +1280,8 @@ function buildTransportFuelSnapshot(activeVehicle, groupActor) {
     card,
     quantity: inventoryFuel.quantity,
     consumptionPerMile,
-    unit: cleanId(consumption.unit),
+    unit: effectiveConsumption.unit,
+    consumptionSource: effectiveConsumption.source,
     miles,
     isEmpty: inventoryFuel.configured && inventoryFuel.isEmpty,
     stacks: inventoryFuel.stacks,

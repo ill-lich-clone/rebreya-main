@@ -1,5 +1,6 @@
 import { MODULE_ID } from "../constants.js";
 import { buildTransportFuelInventorySnapshot } from "./transport-fuel-item.js";
+import { resolveTransportFuelConsumption } from "./transport-fuel-consumption.js";
 
 const PAYLOAD_KEYS = Object.freeze(["appliedMiles", "groupActorId"]);
 
@@ -95,10 +96,11 @@ export class TransportFuelService {
       context?.groupActor?.items,
       transport.instanceState?.fuelSelector
     );
-    const consumption = transport.consumption ?? {};
-    const fuelPerMile = consumption.kind === "fuel" && consumption.cadence === "mile"
-      ? Math.max(0, toNumber(consumption.amount) ?? 0)
-      : 0;
+    const effectiveConsumption = resolveTransportFuelConsumption(
+      transport.instanceState?.fuelConsumption,
+      transport.consumption
+    );
+    const fuelPerMile = effectiveConsumption.amount;
     const itemName = cleanId(fuel.name);
     const appliedMiles = Math.max(0, requestedMiles ?? 0);
     if (!fuel.configured || fuelPerMile <= 0) return emptyResult({ itemName });

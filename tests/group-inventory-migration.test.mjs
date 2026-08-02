@@ -472,6 +472,10 @@ test("vehicle member reads D&D5e 5.2.5 native fields and live instance state", a
           },
           instanceState: {
             condition: "damaged",
+            fuelConsumption: {
+              amount: 2,
+              unit: "lb"
+            },
             fuelSelector: {
               uuid: "Compendium.world.goods.Item.coal",
               sourceType: "good",
@@ -564,14 +568,29 @@ test("vehicle member reads D&D5e 5.2.5 native fields and live instance state", a
       }
     });
     assert.equal(transportSnapshot.fuel.quantity, 5);
-    assert.equal(transportSnapshot.fuel.consumptionPerMile, 0.125);
-    assert.equal(transportSnapshot.fuel.unit, "gal");
-    assert.equal(transportSnapshot.fuel.miles, 40);
+    assert.equal(transportSnapshot.fuel.consumptionPerMile, 2);
+    assert.equal(transportSnapshot.fuel.unit, "lb");
+    assert.equal(transportSnapshot.fuel.consumptionSource, "override");
+    assert.equal(transportSnapshot.fuel.miles, 2);
     assert.equal(transportSnapshot.fuel.card.name, "Жидкий уголь");
     assert.equal(transportSnapshot.fuel.card.openUuid, "Actor.group-a.Item.fuel-a");
     assert.equal(transportSnapshot.fuel.card.quantity, 5);
     assert.equal(transportSnapshot.fuel.card.canOpen, true);
     assert.deepEqual(transportSnapshot.fuel.stacks.map((stack) => stack.itemId), ["fuel-a", "fuel-b"]);
+
+    delete actor.flags[MODULE_ID].transport.instanceState.fuelConsumption;
+    const fallbackPartySnapshot = await service.getPartySnapshot();
+    const fallbackTransportSnapshot = await service.getTransportSnapshot({
+      partySnapshot: fallbackPartySnapshot,
+      inventorySnapshot: {
+        actor: { canEdit: true },
+        canDropInventoryItems: true
+      }
+    });
+    assert.equal(fallbackTransportSnapshot.fuel.consumptionPerMile, 0.125);
+    assert.equal(fallbackTransportSnapshot.fuel.unit, "gal");
+    assert.equal(fallbackTransportSnapshot.fuel.consumptionSource, "transport");
+    assert.equal(fallbackTransportSnapshot.fuel.miles, 40);
 
     fuelItem.system.quantity = 0;
     secondFuelItem.system.quantity = 0;

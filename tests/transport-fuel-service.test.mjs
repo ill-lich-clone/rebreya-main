@@ -23,6 +23,7 @@ function createFuelHarness({
   quantities = [2, 3],
   configured = true,
   rate = 0.125,
+  override = null,
   mutationError = null
 } = {}) {
   const updates = [];
@@ -53,7 +54,10 @@ function createFuelHarness({
           groupActorId: "group-a",
           consumption: { kind: "fuel", amount: rate, unit: "gal", cadence: "mile" },
           instanceState: configured
-            ? { fuelSelector: buildTransportFuelSelector(selectedFuel) }
+            ? {
+                fuelSelector: buildTransportFuelSelector(selectedFuel),
+                ...(override ? { fuelConsumption: structuredClone(override) } : {})
+              }
             : {}
         }
       }
@@ -112,6 +116,20 @@ test("travel consumes matching warehouse stacks in stable item-id order", async 
     { _id: "coal-a", "system.quantity": 0 },
     { _id: "coal-b", "system.quantity": 1 }
   ]]]);
+});
+
+test("travel consumes the same instance fuel rate shown by inventory", async () => {
+  const harness = createFuelHarness({
+    quantities: [300],
+    rate: 0.125,
+    override: { amount: 120, unit: "lb" }
+  });
+
+  const result = await harness.service.consumeForTravel({ groupActorId: "group-a", appliedMiles: 2 });
+
+  assert.equal(result.required, 240);
+  assert.equal(result.consumed, 240);
+  assert.equal(harness.items[0].system.quantity, 60);
 });
 
 test("insufficient fuel is depleted without deleting stacks or blocking travel", async () => {
