@@ -25,10 +25,10 @@
 
 **Files:** `tests/module-manifest.test.mjs`, `module.json`, `scripts/main-1.4.118.js`, `scripts/main.js`
 
-- [ ] Change the manifest test to require version `1.4.118`, a query-free `scripts/main-1.4.118.js` entry, and an existing wrapper file.
-- [ ] Run the focused test and confirm it fails against the invalid query-string path.
-- [ ] Add the real versioned wrapper, update the manifest, retain `state`/`gadget` declarations, and bump storage cache keys.
-- [ ] Run manifest and registration tests and commit `fix: restore valid Foundry module entrypoint`.
+- [x] Change the manifest test to require version `1.4.118`, a query-free `scripts/main-1.4.118.js` entry, and an existing wrapper file.
+- [x] Run the focused test and confirm it fails against the invalid query-string path.
+- [x] Add the real versioned wrapper, update the manifest, and retain `state`/`gadget` declarations; the versioned wrapper cache-busts the canonical graph.
+- [x] Run manifest and registration tests and commit `fix: restore valid Foundry module entrypoint`.
 
 ## Task 2: Remove retired pile integration residue
 

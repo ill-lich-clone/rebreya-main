@@ -7,13 +7,13 @@
       "name": "ill_lich"
     }
   ],
-  "version": "1.4.117",
+  "version": "1.4.118",
   "compatibility": {
     "minimum": "13",
     "verified": "13"
   },
   "esmodules": [
-    "scripts/main.js?v=1.4.117-storage-deposit-interactions"
+    "scripts/main-1.4.118.js"
   ],
   "socket": true,
   "styles": [

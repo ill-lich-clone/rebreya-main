@@ -16,7 +16,7 @@ test("main registers the storage deposit socket API and current cache keys", asy
   assert.match(main, /1\.4\.117-storage-deposits/u);
   assert.match(main, /storage-deposit-interactions-1/u);
   assert.match(main, /1\.4\.117-storage-deposit-interactions/u);
-  assert.equal(manifest.version, "1.4.117");
+  assert.equal(manifest.version, "1.4.118");
 });
 
 test("storage drop hook registrations have independent error boundaries", async () => {
