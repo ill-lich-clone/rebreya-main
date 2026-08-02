@@ -5961,41 +5961,6 @@ summary:focus-visible {
   text-align: right;
 }
 
-.rm-rebreya-transport-fuel {
-  display: grid;
-  gap: 7px;
-  padding-top: 8px;
-  border-top: 1px solid rgb(var(--rm-color-gold-rgb) / 0.22);
-}
-
-.rm-rebreya-transport-fuel h4 {
-  margin: 0;
-  color: var(--rm-accent-strong);
-  font-size: 12px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.rm-rebreya-transport-fuel label {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(110px, 1.2fr);
-  gap: 8px;
-  align-items: center;
-}
-
-.rm-rebreya-transport-fuel select,
-.rm-rebreya-transport-fuel input,
-.rm-rebreya-transport-fuel button {
-  min-height: 30px;
-  margin: 0;
-}
-
-.rm-rebreya-transport-fuel button {
-  border: 1px solid rgb(var(--rm-color-gold-rgb) / 0.38);
-  background: rgb(var(--rm-color-dark-rgb) / 0.72);
-  color: var(--rm-accent-strong);
-}
-
 .rm-transport-overview {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

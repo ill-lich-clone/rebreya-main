@@ -167,10 +167,10 @@ test("vehicle sheet hooks register generic and D&D5e render callbacks once", () 
   ]);
 });
 
-test("vehicle sheet configures a concrete transport from its group warehouse", async () => {
+test("vehicle sheet exposes specifications without transport fuel controls", () => {
   const dom = createSheetDom();
-  const calls = [];
   const actor = createTransportActor({
+    inventionYear: "318",
     instance: true,
     groupActorId: "group-a",
     instanceState: {
@@ -179,49 +179,10 @@ test("vehicle sheet configures a concrete transport from its group warehouse", a
       fuelPerMile: 0.125
     }
   });
-  const moduleApi = {
-    groupContextService: {
-      resolveForGroup(groupActorId) {
-        assert.equal(groupActorId, "group-a");
-        return {
-          canManage: true,
-          groupActor: {
-            id: "group-a",
-            items: {
-              contents: [
-                { id: "liquid-coal", name: "Жидкий уголь" },
-                { id: "firewood", name: "Дрова" }
-              ]
-            }
-          }
-        };
-      }
-    },
-    async updateTransportFuelConfig(payload) {
-      calls.push(structuredClone(payload));
-    }
-  };
-
-  assert.equal(injectTransportSpecifications({ actor }, dom.html, moduleApi), true);
-  const fuelItem = dom.root.querySelector('[name="fuelItemId"]');
-  const fuelPerMile = dom.root.querySelector('[name="fuelPerMile"]');
-  const save = dom.root.querySelector('[data-action="save-transport-fuel"]');
-  assert.ok(fuelItem);
-  assert.ok(fuelPerMile);
-  assert.ok(save);
-  assert.equal(fuelItem.value, "liquid-coal");
-  assert.equal(fuelPerMile.value, "0.125");
-
-  fuelItem.value = "firewood";
-  fuelPerMile.value = "0.25";
-  await save.dispatch("click");
-
-  assert.deepEqual(calls, [{
-    groupActorId: "group-a",
-    actorId: "vehicle-a",
-    fuelItemId: "firewood",
-    fuelPerMile: 0.25
-  }]);
+  assert.equal(injectTransportSpecifications({ actor }, dom.html), true);
+  assert.equal(dom.root.querySelector('[name="fuelItemId"]'), null);
+  assert.equal(dom.root.querySelector('[name="fuelPerMile"]'), null);
+  assert.equal(dom.root.querySelector('[data-action="save-transport-fuel"]'), null);
 });
 
 test("vehicle sheet specifications use a compact control surface", async () => {
@@ -229,5 +190,5 @@ test("vehicle sheet specifications use a compact control surface", async () => {
 
   assert.match(css, /\.rm-rebreya-transport-specs\s*\{/u);
   assert.match(css, /\.rm-rebreya-transport-specs\s+p\s*\{/u);
-  assert.match(css, /\.rm-rebreya-transport-fuel\s*\{/u);
+  assert.doesNotMatch(css, /\.rm-rebreya-transport-fuel\s*\{/u);
 });
