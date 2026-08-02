@@ -1,10 +1,18 @@
 import { MODULE_ID } from "../constants.js";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
-import { BUILTIN_STORAGE_PRESETS, BUILTIN_STORAGE_TOKEN_NAME } from "./builtin-storage-presets.js";
+import {
+  BUILTIN_STORAGE_PRESETS,
+  BUILTIN_STORAGE_TOKEN_NAME,
+  GROUND_PILE_STORAGE_PRESET
+} from "./builtin-storage-presets.js";
 import { buildStorageTokenState } from "./storage-service.js";
 
 export const BUILTIN_STORAGE_FOLDER_NAME = "Хранилища";
 export const BUILTIN_STORAGE_PRESET_FLAG = "builtinStoragePreset";
+const ALL_BUILTIN_STORAGE_PRESETS = Object.freeze([
+  ...BUILTIN_STORAGE_PRESETS,
+  GROUND_PILE_STORAGE_PRESET
+]);
 
 function clone(value) {
   if (typeof globalThis.structuredClone === "function") {
@@ -29,10 +37,10 @@ function readPresetId(actor) {
 
 function initialStorageState(preset) {
   return buildStorageTokenState({
-    baseName: BUILTIN_STORAGE_TOKEN_NAME,
-    state: "unopened",
+    baseName: preset.groundPile === true ? preset.prototypeToken.name : BUILTIN_STORAGE_TOKEN_NAME,
+    state: preset.groundPile === true ? "opened" : "unopened",
     textures: clone(preset.textures),
-    displayMode: "unopened"
+    displayMode: preset.groundPile === true ? "opened" : "unopened"
   });
 }
 
@@ -43,19 +51,21 @@ export function buildBuiltinStorageActorData(preset, folderId) {
   return {
     name: preset.name,
     type: "npc",
-    img: preset.textures.unopened,
+    img: preset.groundPile === true ? preset.textures.opened : preset.textures.unopened,
     folder: folderId,
     flags: {
       [MODULE_ID]: {
         storage: { enabled: true },
-        [BUILTIN_STORAGE_PRESET_FLAG]: { id: preset.id }
+        [BUILTIN_STORAGE_PRESET_FLAG]: { id: preset.id },
+        ...(preset.groundPile === true ? { groundPilePrototype: { enabled: true } } : {})
       }
     },
     prototypeToken: {
       ...clone(preset.prototypeToken),
       flags: {
         [MODULE_ID]: {
-          storage: initialStorageState(preset)
+          storage: initialStorageState(preset),
+          ...(preset.groundPile === true ? { groundPile: { enabled: true } } : {})
         }
       }
     }
@@ -83,7 +93,7 @@ export class BuiltinStorageActorService {
 
     const folder = await this.#ensureFolder(game);
     const actors = [];
-    for (const preset of BUILTIN_STORAGE_PRESETS) {
+    for (const preset of ALL_BUILTIN_STORAGE_PRESETS) {
       const existing = collectionValues(game?.actors)
         .find((actor) => readPresetId(actor) === preset.id);
       if (existing) {
@@ -114,22 +124,31 @@ export class BuiltinStorageActorService {
   async #syncExistingActor(actor, preset) {
     if (typeof actor?.update !== "function") return;
     const current = actor.prototypeToken?.flags?.[MODULE_ID]?.storage ?? {};
+    const initial = initialStorageState(preset);
     await actor.update({
-      "prototypeToken.name": BUILTIN_STORAGE_TOKEN_NAME,
+      "prototypeToken.name": preset.prototypeToken.name,
       [`prototypeToken.flags.${MODULE_ID}.storage`]: buildStorageTokenState({
+        ...initial,
         ...current,
-        baseName: BUILTIN_STORAGE_TOKEN_NAME,
+        baseName: preset.prototypeToken.name,
         textures: current.textures ?? preset.textures
-      })
+      }),
+      ...(preset.groundPile === true ? {
+        [`flags.${MODULE_ID}.groundPilePrototype`]: { enabled: true },
+        [`prototypeToken.flags.${MODULE_ID}.groundPile`]: { enabled: true }
+      } : {})
     });
   }
 
   async #migrateSceneTokens(game, actors) {
-    const actorPresets = new Map(actors.map((actor) => [actor.id, BUILTIN_STORAGE_PRESETS.find((preset) => preset.id === readPresetId(actor))]));
+    const actorPresets = new Map(actors.map((actor) => [
+      actor.id,
+      ALL_BUILTIN_STORAGE_PRESETS.find((preset) => preset.id === readPresetId(actor))
+    ]));
     for (const scene of collectionValues(game?.scenes)) {
       for (const token of collectionValues(scene?.tokens)) {
         const preset = actorPresets.get(token?.actorId);
-        if (!preset || String(token?.name ?? "").trim() !== preset.name || typeof token?.update !== "function") continue;
+        if (!preset || preset.groundPile === true || String(token?.name ?? "").trim() !== preset.name || typeof token?.update !== "function") continue;
         const current = token?.flags?.[MODULE_ID]?.storage ?? {};
         await token.update({
           name: BUILTIN_STORAGE_TOKEN_NAME,
