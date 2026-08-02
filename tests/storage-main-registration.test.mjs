@@ -18,3 +18,14 @@ test("main registers the storage deposit socket API and current cache keys", asy
   assert.match(main, /1\.4\.117-storage-deposit-interactions/u);
   assert.equal(manifest.version, "1.4.117");
 });
+
+test("storage drop hook registrations have independent error boundaries", async () => {
+  const main = await readFile(new URL("../scripts/main.js", import.meta.url), "utf8");
+  const transferRegistration = main.indexOf("registerStorageTransferDropHooks(moduleApi");
+  const tokenRegistration = main.indexOf("registerStorageTokenDropHooks(moduleApi");
+  const transferCatch = main.indexOf("Failed to register storage transfer drop hooks", transferRegistration);
+
+  assert.ok(transferRegistration >= 0);
+  assert.ok(tokenRegistration > transferRegistration);
+  assert.ok(transferCatch > transferRegistration && transferCatch < tokenRegistration);
+});

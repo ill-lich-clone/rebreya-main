@@ -63,8 +63,8 @@ test("module manifest loads the stable canonical entrypoint", async () => {
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const entrypointSource = await readFile(new URL("scripts/main.js", manifestUrl), "utf8");
 
-  assert.equal(manifest.version, "1.4.116");
-  assert.deepEqual(manifest.esmodules, ["scripts/main.js"]);
+  assert.equal(manifest.version, "1.4.117");
+  assert.deepEqual(manifest.esmodules, ["scripts/main.js?v=1.4.117-storage-deposit-interactions"]);
   assert.match(entrypointSource, /@rebreya-role canonical-composition-root/u);
   assert.match(entrypointSource, /export class RebreyaMainModule/u);
 });
@@ -225,7 +225,7 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
   );
   assert.match(
     canonicalSource,
-    /storage-app\.js\?v=\$\{encodeURIComponent\(`\$\{moduleVersion\}-storage-live-title-3`\)\}/u
+    /storage-app\.js\?v=\$\{encodeURIComponent\(`\$\{moduleVersion\}-storage-deposit-interactions-1`\)\}/u
   );
   assert.match(
     traderServiceSource,
@@ -237,7 +237,7 @@ test("module keeps recent published entrypoint URLs as canonical compatibility f
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
 
-  assert.deepEqual(manifest.esmodules, ["scripts/main.js"]);
+  assert.deepEqual(manifest.esmodules, ["scripts/main.js?v=1.4.117-storage-deposit-interactions"]);
 
   for (const fileName of ["main-1.4.98.js", "main-1.4.99.js", "main-1.4.100.js"]) {
     const forwarderSource = await readFile(new URL(`../scripts/${fileName}`, import.meta.url), "utf8");
@@ -348,10 +348,10 @@ test("legacy settings relay fails closed when a world-setting socket is unavaila
   }
 });
 
-test("module stylesheet cache bust loads the compact storage grid styles", async () => {
+test("module stylesheet cache bust loads the storage deposit interaction styles", async () => {
   const entrypointSource = await readCanonicalEntrypointSource();
 
-  assert.match(entrypointSource, /const MODULE_STYLE_VERSION = "1\.4\.115-storage-grid";/u);
+  assert.match(entrypointSource, /const MODULE_STYLE_VERSION = "1\.4\.117-storage-deposit-interactions";/u);
   assert.match(entrypointSource, /const stylesheetHref = `\$\{MODULE_STYLE_PATH\}\?v=\$\{encodeURIComponent\(MODULE_STYLE_VERSION\)\}`;/u);
   assert.doesNotMatch(entrypointSource, /module\?\.version\s*\?\?/u);
 });

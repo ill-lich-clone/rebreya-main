@@ -5623,15 +5623,15 @@ Hooks.once("ready", async () => {
   try {
     registerStorageTransferDropHooks(moduleApi, { Hooks });
   }
+  catch (error) {
+    console.error(`${MODULE_ID} | Failed to register storage transfer drop hooks.`, error);
+  }
 
   try {
     registerStorageTokenDropHooks(moduleApi, { hooks: Hooks });
   }
   catch (error) {
     console.error(`${MODULE_ID} | Failed to register storage token drop hooks.`, error);
-  }
-  catch (error) {
-    console.error(`${MODULE_ID} | Failed to register storage transfer drop hooks.`, error);
   }
 
   try {
