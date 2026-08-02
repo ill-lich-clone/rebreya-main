@@ -5,6 +5,7 @@ import { readFile } from "node:fs/promises";
 import {
   TRANSPORT_IMPORT_COMMAND,
   TRANSPORT_SELECT_FUEL_COMMAND,
+  TRANSPORT_UPDATE_FUEL_CONSUMPTION_COMMAND,
   TRANSPORT_UPDATE_STATE_COMMAND,
   registerTransportInstanceCommands
 } from "../scripts/data/transport-instance-service.js";
@@ -29,11 +30,18 @@ const validFuelSelection = {
   itemUuid: "Compendium.world.goods.Item.coal"
 };
 
+const validFuelConsumptionUpdate = {
+  groupActorId: "group-a",
+  actorId: "vehicle-a",
+  consumption: { amount: 120, unit: "lb" }
+};
+
 function createRegisteredTransportCommandHarness() {
   const registrations = new Map();
   const importCalls = [];
   const updateCalls = [];
   const fuelSelectionCalls = [];
+  const fuelConsumptionCalls = [];
   const service = {
     canManageGroup: (_groupActorId, sender) => sender?.id === "player-a",
     async importIntoGroup(payload, context) {
@@ -47,6 +55,10 @@ function createRegisteredTransportCommandHarness() {
     async selectFuel(payload, context) {
       fuelSelectionCalls.push([structuredClone(payload), context]);
       return { actorId: payload.actorId, groupActorId: payload.groupActorId };
+    },
+    async updateFuelConsumption(payload, context) {
+      fuelConsumptionCalls.push([structuredClone(payload), context]);
+      return { actorId: payload.actorId, groupActorId: payload.groupActorId };
     }
   };
   const commandBus = {
@@ -55,7 +67,7 @@ function createRegisteredTransportCommandHarness() {
     }
   };
   registerTransportInstanceCommands(commandBus, service);
-  return { registrations, importCalls, updateCalls, fuelSelectionCalls };
+  return { registrations, importCalls, updateCalls, fuelSelectionCalls, fuelConsumptionCalls };
 }
 
 test("registered import command validates and authorizes the authenticated sender", async () => {
@@ -103,6 +115,22 @@ test("registered fuel command validates and delegates the exact Item selection",
   assert.equal(harness.fuelSelectionCalls[0][1].sender, sender);
 });
 
+test("registered fuel consumption command validates and delegates the exact override", async () => {
+  const harness = createRegisteredTransportCommandHarness();
+  const definition = harness.registrations.get(TRANSPORT_UPDATE_FUEL_CONSUMPTION_COMMAND);
+  const sender = { id: "player-a", isGM: false };
+
+  assert.equal(definition.validate(validFuelConsumptionUpdate), true);
+  assert.equal(definition.validate({ ...validFuelConsumptionUpdate, forged: true }), false);
+  assert.equal(await definition.authorize(validFuelConsumptionUpdate, { sender }), true);
+  assert.deepEqual(await definition.execute(validFuelConsumptionUpdate, { sender }), {
+    actorId: "vehicle-a",
+    groupActorId: "group-a"
+  });
+  assert.deepEqual(harness.fuelConsumptionCalls[0][0], validFuelConsumptionUpdate);
+  assert.equal(harness.fuelConsumptionCalls[0][1].sender, sender);
+});
+
 test("main composes transport commands and exposes local-or-socket APIs", async () => {
   const source = await readFile(new URL("../scripts/main.js", import.meta.url), "utf8");
 
@@ -118,6 +146,9 @@ test("main composes transport commands and exposes local-or-socket APIs", async 
   assert.match(source, /this\.socketCommandBus\.request\(TRANSPORT_UPDATE_STATE_COMMAND,\s*payload\)/u);
   assert.match(source, /async selectTransportFuel\(payload\)/u);
   assert.match(source, /this\.socketCommandBus\.request\(TRANSPORT_SELECT_FUEL_COMMAND,\s*payload\)/u);
+  assert.match(source, /async updateTransportFuelConsumption\(payload\)/u);
+  assert.match(source, /this\.socketCommandBus\.request\(TRANSPORT_UPDATE_FUEL_CONSUMPTION_COMMAND,\s*payload\)/u);
   assert.match(source, /this\.transportInstanceService\.importIntoGroup\(payload,\s*\{\s*sender:/u);
   assert.match(source, /this\.transportInstanceService\.updateInstanceState\(payload,\s*\{\s*sender:/u);
+  assert.match(source, /this\.transportInstanceService\.updateFuelConsumption\(payload,\s*\{\s*sender:/u);
 });

@@ -13,6 +13,7 @@ import { TransportCompendiumService } from "./data/transport-compendium.js";
 import {
   TRANSPORT_IMPORT_COMMAND,
   TRANSPORT_SELECT_FUEL_COMMAND,
+  TRANSPORT_UPDATE_FUEL_CONSUMPTION_COMMAND,
   TRANSPORT_UPDATE_STATE_COMMAND,
   TransportInstanceService,
   registerTransportInstanceCommands
@@ -3270,6 +3271,16 @@ export class RebreyaMainModule {
           sender: globalThis.game?.user
         })
       : await this.socketCommandBus.request(TRANSPORT_SELECT_FUEL_COMMAND, payload);
+    await this.refreshOpenApps();
+    return result;
+  }
+
+  async updateTransportFuelConsumption(payload) {
+    const result = isActiveGmClient(globalThis.game)
+      ? await this.transportInstanceService.updateFuelConsumption(payload, {
+          sender: globalThis.game?.user
+        })
+      : await this.socketCommandBus.request(TRANSPORT_UPDATE_FUEL_CONSUMPTION_COMMAND, payload);
     await this.refreshOpenApps();
     return result;
   }

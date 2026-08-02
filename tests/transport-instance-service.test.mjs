@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   TransportInstanceService,
   normalizeTransportInstanceState,
+  validateTransportFuelConsumptionUpdatePayload,
   validateTransportFuelSelectionPayload,
   validateTransportImportPayload,
   validateTransportStatePayload
@@ -34,6 +35,15 @@ const validFuelSelection = {
   groupActorId: "group-a",
   actorId: "vehicle-a",
   itemUuid: "Compendium.world.goods.Item.coal"
+};
+
+const validFuelConsumptionUpdate = {
+  groupActorId: "group-a",
+  actorId: "vehicle-a",
+  consumption: {
+    amount: 120,
+    unit: "lb"
+  }
 };
 
 function createTransportInstanceHarness({
@@ -265,6 +275,26 @@ test("fuel selection payload accepts only exact safe ids and a bounded document 
   assert.equal(validateTransportFuelSelectionPayload({ ...validFuelSelection, itemUuid: "x".repeat(513) }), false);
   assert.equal(validateTransportFuelSelectionPayload({ ...validFuelSelection, forged: true }), false);
   assert.equal(validateTransportFuelSelectionPayload({ ...validFuelSelection, actorId: "__proto__" }), false);
+});
+
+test("fuel consumption update accepts only an exact positive lb or gal payload", () => {
+  assert.equal(validateTransportFuelConsumptionUpdatePayload(validFuelConsumptionUpdate), true);
+  assert.equal(validateTransportFuelConsumptionUpdatePayload({
+    ...validFuelConsumptionUpdate,
+    consumption: { amount: "0,125", unit: "gal" }
+  }), true);
+  assert.equal(validateTransportFuelConsumptionUpdatePayload({
+    ...validFuelConsumptionUpdate,
+    consumption: { amount: 0, unit: "lb" }
+  }), false);
+  assert.equal(validateTransportFuelConsumptionUpdatePayload({
+    ...validFuelConsumptionUpdate,
+    consumption: { amount: 1, unit: "kg" }
+  }), false);
+  assert.equal(validateTransportFuelConsumptionUpdatePayload({
+    ...validFuelConsumptionUpdate,
+    forged: true
+  }), false);
 });
 
 test("world transport templates resolve back to their canonical managed compendium Actor", async () => {
@@ -628,6 +658,49 @@ test("state update rejects unrelated and foreign-group vehicle members", async (
   await assert.rejects(
     () => foreignService.updateInstanceState(validState, { sender: foreignHarness.gm }),
     /транспорт/u
+  );
+});
+
+test("fuel consumption update changes only instance calculation state", async () => {
+  const harness = createTransportInstanceHarness({ existingTransport: true });
+  const service = new TransportInstanceService(harness.moduleApi, harness.options);
+
+  const result = await service.updateFuelConsumption(validFuelConsumptionUpdate, { sender: harness.gm });
+
+  assert.deepEqual(harness.actorUpdates.at(-1), {
+    "flags.rebreya-main.transport.instanceState": {
+      condition: "operational",
+      fuelConsumption: { amount: 120, unit: "lb" }
+    }
+  });
+  assert.deepEqual(result, {
+    groupActorId: "group-a",
+    actorId: "vehicle-a",
+    fuelConsumption: { amount: 120, unit: "lb" }
+  });
+});
+
+test("selectFuel preserves the inventory consumption override", async () => {
+  const harness = createTransportInstanceHarness({ existingTransport: true });
+  const originalGetFlag = harness.vehicleActor.getFlag.bind(harness.vehicleActor);
+  harness.vehicleActor.getFlag = (scope, key) => {
+    const value = originalGetFlag(scope, key);
+    if (key !== "transport") return value;
+    return {
+      ...value,
+      instanceState: {
+        ...value.instanceState,
+        fuelConsumption: { amount: 120, unit: "lb" }
+      }
+    };
+  };
+  const service = new TransportInstanceService(harness.moduleApi, harness.options);
+
+  await service.selectFuel(validFuelSelection, { sender: harness.gm });
+
+  assert.deepEqual(
+    harness.actorUpdates.at(-1)["flags.rebreya-main.transport.instanceState"].fuelConsumption,
+    { amount: 120, unit: "lb" }
   );
 });
 

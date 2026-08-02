@@ -7,9 +7,11 @@ import {
   buildTransportFuelSelector,
   normalizeTransportFuelSelector
 } from "./transport-fuel-item.js";
+import { normalizeTransportFuelConsumption } from "./transport-fuel-consumption.js";
 
 export const TRANSPORT_IMPORT_COMMAND = "group.transport.importActor";
 export const TRANSPORT_SELECT_FUEL_COMMAND = "group.transport.selectFuel";
+export const TRANSPORT_UPDATE_FUEL_CONSUMPTION_COMMAND = "group.transport.updateFuelConsumption";
 export const TRANSPORT_UPDATE_STATE_COMMAND = "group.transport.updateActorState";
 
 const TRANSPORT_CONDITIONS = new Set(["operational", "damaged", "broken"]);
@@ -20,6 +22,8 @@ const TRANSPORT_UUID_PATTERN = new RegExp(
 const WORLD_ACTOR_UUID_PATTERN = /^Actor\.[A-Za-z0-9_-]{1,128}$/u;
 const IMPORT_KEYS = Object.freeze(["groupActorId", "sourceActorUuid"]);
 const FUEL_SELECTION_KEYS = Object.freeze(["actorId", "groupActorId", "itemUuid"]);
+const FUEL_CONSUMPTION_UPDATE_KEYS = Object.freeze(["actorId", "consumption", "groupActorId"]);
+const FUEL_CONSUMPTION_KEYS = Object.freeze(["amount", "unit"]);
 const STATE_KEYS = Object.freeze(["actorId", "groupActorId", "patch"]);
 const STATE_PATCH_KEYS = Object.freeze([
   "condition",
@@ -120,6 +124,9 @@ export function normalizeTransportInstanceState(value = {}) {
   if (Object.hasOwn(value, "fuelSelector")) {
     normalized.fuelSelector = normalizeTransportFuelSelector(value.fuelSelector);
   }
+  if (Object.hasOwn(value, "fuelConsumption")) {
+    normalized.fuelConsumption = normalizeTransportFuelConsumption(value.fuelConsumption);
+  }
   return normalized;
 }
 
@@ -148,6 +155,19 @@ export function validateTransportFuelSelectionPayload(payload) {
     && isBoundedDocumentReference(payload.itemUuid);
 }
 
+export function validateTransportFuelConsumptionUpdatePayload(payload) {
+  try {
+    return hasExactKeys(payload, FUEL_CONSUMPTION_UPDATE_KEYS)
+      && isSafeId(payload.groupActorId)
+      && isSafeId(payload.actorId)
+      && hasExactKeys(payload.consumption, FUEL_CONSUMPTION_KEYS)
+      && Boolean(normalizeTransportFuelConsumption(payload.consumption));
+  }
+  catch (_error) {
+    return false;
+  }
+}
+
 export function registerTransportInstanceCommands(commandBus, service) {
   if (typeof commandBus?.register !== "function") {
     throw new TypeError("Transport command bus is required");
@@ -168,6 +188,11 @@ export function registerTransportInstanceCommands(commandBus, service) {
     validate: validateTransportFuelSelectionPayload,
     authorize: (payload, { sender } = {}) => service.canManageGroup(payload.groupActorId, sender),
     execute: (payload, { sender } = {}) => service.selectFuel(payload, { sender })
+  });
+  commandBus.register(TRANSPORT_UPDATE_FUEL_CONSUMPTION_COMMAND, {
+    validate: validateTransportFuelConsumptionUpdatePayload,
+    authorize: (payload, { sender } = {}) => service.canManageGroup(payload.groupActorId, sender),
+    execute: (payload, { sender } = {}) => service.updateFuelConsumption(payload, { sender })
   });
 }
 
@@ -392,6 +417,33 @@ export class TransportInstanceService {
       groupActorId: groupContext.groupId,
       actorId: actor.id,
       fuelSelector
+    };
+  }
+
+  async updateFuelConsumption(payload, { sender } = {}) {
+    if (!validateTransportFuelConsumptionUpdatePayload(payload)) {
+      throw new Error("Некорректный запрос изменения расхода топлива транспорта.");
+    }
+    const groupContext = this.#resolveAuthorizedGroup(payload.groupActorId, sender);
+    const actor = (groupContext.members ?? []).find((member) => member?.id === payload.actorId);
+    if (!actor || !this.#isInstanceForGroup(actor, groupContext.groupId)) {
+      throw new Error("Транспорт не найден в выбранной группе.");
+    }
+
+    const transport = actor.getFlag?.(MODULE_ID, "transport")
+      ?? actor.flags?.[MODULE_ID]?.transport
+      ?? {};
+    const instanceState = normalizeTransportInstanceState({
+      ...(transport.instanceState ?? {}),
+      fuelConsumption: payload.consumption
+    });
+    await actor.update({
+      [`flags.${MODULE_ID}.transport.instanceState`]: instanceState
+    });
+    return {
+      groupActorId: groupContext.groupId,
+      actorId: actor.id,
+      fuelConsumption: instanceState.fuelConsumption
     };
   }
 
