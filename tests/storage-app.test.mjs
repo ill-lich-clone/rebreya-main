@@ -27,11 +27,13 @@ globalThis.HTMLElement = FakeElement;
 
 const { StorageApp } = await import("../scripts/ui/storage-app.js?storage-app-test");
 
-function createApp({ canManage = true, configure = true, withTextures = true } = {}) {
+function createApp({ canManage = true, configure = true, withTextures = true, getStorageSnapshot = null } = {}) {
   globalThis.game.user.isGM = canManage;
   const textureCalls = [];
+  const claimCalls = [];
   const moduleApi = {
     async getStorageSnapshot() {
+      if (getStorageSnapshot) return getStorageSnapshot();
       return {
         tokenUuid: "Scene.scene.Token.chest",
         baseName: "Chest",
@@ -54,10 +56,13 @@ function createApp({ canManage = true, configure = true, withTextures = true } =
     },
     async setStorageTextureMode(tokenUuid, mode) {
       textureCalls.push({ tokenUuid, mode });
+    },
+    async claimStorageRow(...args) {
+      claimCalls.push(args);
     }
   };
   const app = new StorageApp(moduleApi, "Scene.scene.Token.chest", { configure });
-  return { app, textureCalls };
+  return { app, textureCalls, claimCalls };
 }
 
 test("storage grid offers self and party destinations for rows and coins", async () => {
@@ -150,4 +155,141 @@ test("clicking a texture mode sends the exact token and mode through the module 
     tokenUuid: "Scene.scene.Token.chest",
     mode: "empty"
   }]);
+});
+
+test("compact storage uses the token name only in the window title", async () => {
+  const template = await readFile(new URL("../templates/storage-app.hbs", import.meta.url), "utf8");
+  const { app } = createApp();
+
+  await app._prepareContext();
+
+  assert.equal(app.options.window.title, "Сундук");
+  assert.doesNotMatch(template, /rm-storage-header|rm-eyebrow[^>]*>\s*Хранилище|<h2>\{\{name\}\}<\/h2>/u);
+});
+
+test("item cells keep click actions separate from article dragging and use no native title", async () => {
+  const template = await readFile(new URL("../templates/storage-app.hbs", import.meta.url), "utf8");
+
+  assert.match(template, /<article[^>]*draggable="true"[^>]*data-storage-row-drag/u);
+  assert.match(template, /class="rm-storage-item__icon"[^>]*data-action="storage-toggle-row"/u);
+  assert.match(template, /data-storage-popover/u);
+  assert.doesNotMatch(template, /class="rm-storage-item__icon"[^>]*title=/u);
+  assert.match(template, /aria-label="[^"]*\{\{name\}\}"/u);
+});
+
+test("matching token updates rerender from a fresh snapshot and unrelated updates do not", async () => {
+  const previousHooks = globalThis.Hooks;
+  const callbacks = new Map();
+  globalThis.Hooks = {
+    on(name, callback) {
+      const rows = callbacks.get(name) ?? [];
+      rows.push(callback);
+      callbacks.set(name, rows);
+      return callback;
+    },
+    off(name, callback) {
+      callbacks.set(name, (callbacks.get(name) ?? []).filter((entry) => entry !== callback));
+    }
+  };
+  try {
+    let name = "Сундук";
+    const { app } = createApp({
+      getStorageSnapshot: async () => ({
+        tokenUuid: app.tokenUuid,
+        baseName: name,
+        name,
+        state: "opened",
+        rows: [],
+        coins: {}
+      })
+    });
+    const renders = [];
+    app.render = async (options) => renders.push(options);
+    app.element = new class extends FakeElement {
+      addEventListener() {}
+    }();
+    await app._prepareContext();
+    app._onRender({}, {});
+
+    name = "Сундук (пусто)";
+    await callbacks.get("updateToken")[0]({ uuid: app.tokenUuid });
+    assert.equal(renders.length, 1);
+    assert.deepEqual(renders[0], { force: true });
+    assert.equal(app.snapshot.name, "Сундук (пусто)");
+
+    await callbacks.get("updateToken")[0]({ uuid: "Scene.other.Token.chest" });
+    assert.equal(renders.length, 1);
+  }
+  finally {
+    globalThis.Hooks = previousHooks;
+  }
+});
+
+test("newer snapshot requests win and hook subscriptions are removed on close", async () => {
+  const previousHooks = globalThis.Hooks;
+  const callbacks = new Map();
+  const removed = [];
+  globalThis.Hooks = {
+    on(name, callback) {
+      callbacks.set(name, callback);
+      return callback;
+    },
+    off(name, callback) {
+      removed.push([name, callback]);
+    }
+  };
+  try {
+    const pending = [];
+    const { app } = createApp({
+      getStorageSnapshot: () => new Promise((resolve) => pending.push(resolve))
+    });
+    app.render = async () => {};
+    app.element = new class extends FakeElement { addEventListener() {} }();
+    app._onRender({}, {});
+
+    const first = app.scheduleSnapshotRefresh();
+    const second = app.scheduleSnapshotRefresh();
+    pending[1]({ name: "Новый", rows: [], coins: {}, state: "opened" });
+    await second;
+    pending[0]({ name: "Старый", rows: [], coins: {}, state: "opened" });
+    await first;
+    assert.equal(app.snapshot.name, "Новый");
+
+    await app._onClose?.({}, {});
+    assert.deepEqual(removed.map(([name]) => name).sort(), [
+      "deleteToken",
+      "rebreya-main.storageUpdated",
+      "updateToken"
+    ]);
+  }
+  finally {
+    globalThis.Hooks = previousHooks;
+  }
+});
+
+test("LKM opens an item popover and its self action claims the row", async () => {
+  const { app, claimCalls } = createApp();
+  const listeners = new Map();
+  const renders = [];
+  app.render = async (options) => renders.push(options);
+  app.element = new class extends FakeElement {
+    addEventListener(name, callback) { listeners.set(name, callback); }
+  }();
+  await app._prepareContext();
+  app._onRender({}, {});
+
+  const control = (action) => ({
+    dataset: { action, rowId: "row-1" },
+    closest(selector) { return selector === "[data-action]" ? this : null; }
+  });
+  await listeners.get("click")({ target: control("storage-toggle-row") });
+  assert.equal(app.activeRowId, "row-1");
+  assert.deepEqual(renders.at(-1), { force: true });
+
+  await listeners.get("click")({ target: control("storage-claim-self") });
+  assert.equal(claimCalls.length, 1);
+  assert.equal(claimCalls[0][0], app.tokenUuid);
+  assert.equal(claimCalls[0][1], "row-1");
+  assert.equal(claimCalls[0][2], "self");
+  assert.deepEqual(claimCalls[0][4], { quantity: 1 });
 });

@@ -12531,15 +12531,24 @@ summary:focus-visible {
   transform: translateX(-50%) rotate(225deg);
 }
 
+.rebreya-storage-app,
+.rebreya-storage-app .window-content {
+  overflow: visible;
+}
+
 .rm-storage-shell {
   display: grid;
-  gap: 0.85rem;
-  padding: 1rem;
+  gap: 10px;
+  padding: 10px;
   max-height: min(560px, calc(100vh - 32px));
+  overflow: visible;
+  background: linear-gradient(180deg, #15171c, #0d0f13);
+}
+
+.rm-storage-shell:has(.rm-storage-config) {
   overflow: auto;
 }
 
-.rm-storage-header,
 .rm-storage-coins,
 .rm-storage-config__actions,
 .rm-storage-item__actions,
@@ -12548,18 +12557,6 @@ summary:focus-visible {
   align-items: center;
   justify-content: space-between;
   gap: 0.55rem;
-}
-
-.rm-storage-header h2,
-.rm-storage-header p {
-  margin: 0;
-}
-
-.rm-storage-state {
-  padding: 0.25rem 0.55rem;
-  border: 1px solid rgb(255 255 255 / 0.18);
-  border-radius: 999px;
-  color: var(--color-text-dark-secondary);
 }
 
 .rm-storage-config {
@@ -12646,6 +12643,7 @@ summary:focus-visible {
   position: relative;
   width: 72px;
   height: 72px;
+  cursor: grab;
 }
 
 .rm-storage-item.is-expanded {
@@ -12663,9 +12661,9 @@ summary:focus-visible {
   place-items: center;
   border: 1px solid rgb(255 255 255 / 0.2);
   border-radius: 9px;
-  background: rgb(0 0 0 / 0.24);
-  box-shadow: inset 0 0 12px rgb(0 0 0 / 0.35);
-  cursor: grab;
+  background: linear-gradient(145deg, rgb(37 39 47 / 0.96), rgb(12 14 18 / 0.98));
+  box-shadow: inset 0 0 12px rgb(0 0 0 / 0.48), 0 4px 10px rgb(0 0 0 / 0.28);
+  cursor: pointer;
 }
 
 .rm-storage-item__icon:hover,
@@ -12674,7 +12672,7 @@ summary:focus-visible {
   box-shadow: 0 0 0 1px rgb(218 174 76 / 0.24), inset 0 0 12px rgb(0 0 0 / 0.35);
 }
 
-.rm-storage-item__icon:active {
+.rm-storage-item:active {
   cursor: grabbing;
 }
 
@@ -12717,15 +12715,16 @@ summary:focus-visible {
   position: absolute;
   top: calc(100% + 9px);
   left: 50%;
-  z-index: 30;
+  z-index: 100;
   display: grid;
-  width: 230px;
-  gap: 0.45rem;
-  padding: 0.65rem;
-  border: 1px solid rgb(218 174 76 / 0.48);
-  border-radius: 9px;
-  background: rgb(20 21 25 / 0.98);
-  box-shadow: 0 8px 22px rgb(0 0 0 / 0.55);
+  width: 224px;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid rgb(218 174 76 / 0.72);
+  border-radius: 8px;
+  color: #f2ede2;
+  background: linear-gradient(180deg, rgb(28 30 37 / 0.99), rgb(12 14 18 / 0.99));
+  box-shadow: 0 12px 30px rgb(0 0 0 / 0.58), inset 0 0 0 1px rgb(255 255 255 / 0.04);
   transform: translateX(-50%);
 }
 
@@ -12735,9 +12734,9 @@ summary:focus-visible {
   left: 50%;
   width: 9px;
   height: 9px;
-  border-top: 1px solid rgb(218 174 76 / 0.48);
-  border-left: 1px solid rgb(218 174 76 / 0.48);
-  background: rgb(20 21 25 / 0.98);
+  border-top: 1px solid rgb(218 174 76 / 0.72);
+  border-left: 1px solid rgb(218 174 76 / 0.72);
+  background: rgb(28 30 37 / 0.99);
   content: "";
   transform: translateX(-50%) rotate(45deg);
 }
@@ -12767,16 +12766,15 @@ summary:focus-visible {
   min-width: 0;
   height: auto;
   padding: 0;
-  overflow: hidden;
   border: 0;
-  color: var(--color-text-hyperlink, #8db7ff);
+  color: #f0c76d;
   background: transparent;
   box-shadow: none;
   font-weight: 700;
   text-align: left;
   text-decoration: underline;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .rm-storage-item__name--plain {

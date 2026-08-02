@@ -67,8 +67,10 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.anchorRequested = options.anchorToToken === true;
     this.anchorDetached = false;
     this.snapshot = null;
+    this.snapshotRequest = 0;
     this.activeRowId = "";
     this.renderListenersAbortController = null;
+    this.liveHookSubscriptions = [];
   }
 
   get id() {
@@ -76,7 +78,15 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   async _prepareContext() {
-    this.snapshot = await this.moduleApi.getStorageSnapshot(this.tokenUuid);
+    if (!this.snapshot) {
+      const request = ++this.snapshotRequest;
+      const snapshot = await this.moduleApi.getStorageSnapshot(this.tokenUuid);
+      if (request === this.snapshotRequest) this.snapshot = snapshot;
+    }
+    const windowTitle = clean(this.snapshot?.name) || "Сундук";
+    this.options ??= {};
+    this.options.window ??= {};
+    this.options.window.title = windowTitle;
     const canManage = globalThis.game?.user?.isGM === true;
     const configurationEnabled = canManage && this.configure;
     const templates = configurationEnabled && typeof this.moduleApi.listLootgenTemplates === "function"
@@ -115,7 +125,7 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     return {
       tokenUuid: this.tokenUuid,
-      name: clean(this.snapshot?.name) || "Хранилище",
+      name: windowTitle,
       state: clean(this.snapshot?.state) || "unopened",
       isEmpty: this.snapshot?.state === "empty",
       canManage,
@@ -150,6 +160,7 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
   _onRender(context, options) {
     super._onRender?.(context, options);
+    this.#registerLiveHooks();
     this.renderListenersAbortController?.abort();
     this.renderListenersAbortController = new AbortController();
     const root = getAppElement(this);
@@ -164,12 +175,12 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
     globalThis.document?.addEventListener?.("click", (event) => {
       if (!this.activeRowId || root.contains?.(event.target)) return;
       this.activeRowId = "";
-      void this.#refresh();
+      void this.#renderCurrent();
     }, listenerOptions);
     globalThis.document?.addEventListener?.("keydown", (event) => {
       if (event.key !== "Escape" || !this.activeRowId) return;
       this.activeRowId = "";
-      void this.#refresh();
+      void this.#renderCurrent();
     }, listenerOptions);
     const gridCount = (this.snapshot?.rows?.length ?? 0)
       + (COIN_KEYS.some((key) => Number(this.snapshot?.coins?.[key] ?? 0) > 0) ? 1 : 0);
@@ -219,8 +230,54 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
     if (root?.dataset) delete root.dataset.anchorPlacement;
   }
 
+  #matchesToken(document) {
+    return clean(document?.uuid ?? document?.document?.uuid) === this.tokenUuid;
+  }
+
+  #registerLiveHooks() {
+    const Hooks = globalThis.Hooks;
+    if (this.liveHookSubscriptions.length || typeof Hooks?.on !== "function") return;
+    const subscribe = (name, callback) => {
+      const id = Hooks.on(name, callback);
+      this.liveHookSubscriptions.push({ name, id });
+    };
+    subscribe("updateToken", (token) => (
+      this.#matchesToken(token) ? this.scheduleSnapshotRefresh() : undefined
+    ));
+    subscribe("deleteToken", (token) => (
+      this.#matchesToken(token) ? this.close?.() : undefined
+    ));
+    subscribe(`${MODULE_ID}.storageUpdated`, (token) => (
+      this.#matchesToken(token) ? this.scheduleSnapshotRefresh() : undefined
+    ));
+  }
+
+  async _onClose(options) {
+    this.snapshotRequest += 1;
+    this.renderListenersAbortController?.abort();
+    this.renderListenersAbortController = null;
+    const Hooks = globalThis.Hooks;
+    for (const { name, id } of this.liveHookSubscriptions.splice(0)) {
+      Hooks?.off?.(name, id);
+    }
+    return super._onClose?.(options);
+  }
+
+  async scheduleSnapshotRefresh() {
+    const request = ++this.snapshotRequest;
+    const snapshot = await this.moduleApi.getStorageSnapshot(this.tokenUuid);
+    if (request !== this.snapshotRequest) return false;
+    this.snapshot = snapshot;
+    await this.render({ force: true });
+    return true;
+  }
+
+  async #renderCurrent() {
+    await this.render({ force: true });
+  }
+
   async #refresh() {
-    await this.render({ force: false });
+    await this.scheduleSnapshotRefresh();
   }
 
   #rowById(rowId) {
@@ -269,9 +326,13 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
     try {
       if (action === "storage-toggle-row") {
         this.activeRowId = this.activeRowId === rowId ? "" : rowId;
+        await this.#renderCurrent();
+        return;
       }
       else if (action === "storage-toggle-coins") {
         this.activeRowId = this.activeRowId === "__coins" ? "" : "__coins";
+        await this.#renderCurrent();
+        return;
       }
       else if (action === "storage-open-item") {
         await this.#openRowSource(rowId);
