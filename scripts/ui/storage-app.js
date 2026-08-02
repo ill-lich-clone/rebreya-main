@@ -84,7 +84,17 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
       : [];
     const coins = normalizeCoins(this.snapshot?.coins);
     const hasTextureSet = TEXTURE_MODES.every(({ mode }) => clean(this.snapshot?.textures?.[mode]));
-    const rows = (this.snapshot?.rows ?? []).map((row) => ({
+    const snapshotRows = this.snapshot?.rows ?? [];
+    const hasCoins = COIN_KEYS.some((key) => coins[key] > 0);
+    const gridItemCount = snapshotRows.length + (hasCoins ? 1 : 0);
+    const gridColumns = storageGridColumns(gridItemCount);
+    const popoverAlignment = (index) => {
+      const column = index % gridColumns;
+      if (column === 0) return "left";
+      if (column === gridColumns - 1) return "right";
+      return "center";
+    };
+    const rows = snapshotRows.map((row, index) => ({
       ...clone(row),
       rowId: clean(row.rowId),
       name: clean(row.name ?? row.itemData?.name) || "Предмет",
@@ -96,13 +106,12 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
       canOpenSource: Boolean(clean(row.sourceId)),
       canEdit: configurationEnabled,
       expanded: this.activeRowId === clean(row.rowId),
-      showQuantity: Math.max(1, Number(row.quantity ?? 1)) > 1
+      showQuantity: Math.max(1, Number(row.quantity ?? 1)) > 1,
+      popoverAlignment: popoverAlignment(index)
     }));
-    const hasCoins = COIN_KEYS.some((key) => coins[key] > 0);
     const validPopoverIds = new Set(rows.map((row) => row.rowId));
     if (hasCoins) validPopoverIds.add("__coins");
     if (this.activeRowId && !validPopoverIds.has(this.activeRowId)) this.activeRowId = "";
-    const gridItemCount = rows.length + (hasCoins ? 1 : 0);
 
     return {
       tokenUuid: this.tokenUuid,
@@ -113,11 +122,12 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
       rows,
       hasRows: rows.length > 0,
       hasGridItems: gridItemCount > 0,
-      gridColumns: storageGridColumns(gridItemCount),
+      gridColumns,
       coins,
       coinsLabel: coinsLabel(coins),
       hasCoins,
       coinsExpanded: this.activeRowId === "__coins",
+      coinsPopoverAlignment: popoverAlignment(rows.length),
       configuration: {
         enabled: configurationEnabled,
         baseName: clean(this.snapshot?.baseName) || clean(this.snapshot?.name) || "Хранилище",

@@ -88,6 +88,8 @@ test("canvas transfer creates an unlinked independent ground pile token", async 
   assert.equal(result.created, true);
   assert.equal(tokens.length, 1);
   assert.equal(tokens[0].actorLink, false);
+  assert.equal(tokens[0].x, 250);
+  assert.equal(tokens[0].y, 350);
   assert.equal(tokens[0].name, "Меч (2)");
   assert.equal(tokens[0].texture.src, "icons/sword.webp");
   assert.equal(tokens[0].flags[MODULE_ID].groundPile.enabled, true);

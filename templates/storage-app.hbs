@@ -89,7 +89,7 @@
             {{#if showQuantity}}<strong class="rm-storage-item__quantity">{{quantity}}</strong>{{/if}}
           </button>
           {{#if expanded}}
-            <div class="rm-storage-item__popover" data-storage-popover>
+            <div class="rm-storage-item__popover rm-storage-item__popover--{{popoverAlignment}}" data-storage-popover>
               {{#if canOpenSource}}
                 <button type="button" class="rm-storage-item__name" data-action="storage-open-item" data-row-id="{{rowId}}">{{name}}</button>
               {{else}}
@@ -117,7 +117,7 @@
             <i class="fa-solid fa-coins rm-storage-item__placeholder"></i>
           </button>
           {{#if coinsExpanded}}
-            <div class="rm-storage-item__popover" data-storage-popover>
+            <div class="rm-storage-item__popover rm-storage-item__popover--{{coinsPopoverAlignment}}" data-storage-popover>
               <strong class="rm-storage-item__name rm-storage-item__name--plain">{{coinsLabel}}</strong>
               <div class="rm-storage-item__actions">
                 <button type="button" class="rm-button rm-button--primary" data-action="storage-claim-coins-self">Забрать себе</button>

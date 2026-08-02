@@ -193,15 +193,18 @@ export class StorageGroundPileService {
       displayMode: "opened"
     });
     const prototype = clone(actor?.prototypeToken?.toObject?.() ?? actor?.prototypeToken ?? {});
+    const tokenWidth = Math.max(1, Number(prototype.width ?? 1));
+    const tokenHeight = Math.max(1, Number(prototype.height ?? 1));
+    const gridSize = Math.max(1, Number(scene?.grid?.size ?? scene?.grid?.sizeX ?? 100) || 100);
     const data = {
       ...prototype,
       actorId: actor.id,
       actorLink: false,
       name: presentation.name,
-      x: pointX,
-      y: pointY,
-      width: Math.max(1, Number(prototype.width ?? 1)),
-      height: Math.max(1, Number(prototype.height ?? 1)),
+      x: pointX - tokenWidth * gridSize / 2,
+      y: pointY - tokenHeight * gridSize / 2,
+      width: tokenWidth,
+      height: tokenHeight,
       texture: { ...(clone(prototype.texture) ?? {}), src: presentation.img },
       flags: {
         ...(clone(prototype.flags) ?? {}),

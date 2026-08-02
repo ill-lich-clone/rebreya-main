@@ -98,6 +98,8 @@ test("storage configuration exposes template and manual item controls to GMs", a
   assert.equal(StorageApp.DEFAULT_OPTIONS.position.width, 286);
   assert.equal(context.rows[0].canEdit, true);
   assert.equal(context.gridColumns, 3);
+  assert.equal(context.rows[0].popoverAlignment, "left");
+  assert.equal(context.coinsPopoverAlignment, "center");
 });
 
 test("storage configuration is hidden from players", async () => {
@@ -114,6 +116,7 @@ test("storage template exposes generated-row quantity and delete controls to GMs
   assert.match(template, /data-action="storage-update-row"/u);
   assert.match(template, /data-action="storage-delete-row"/u);
   assert.match(template, /data-storage-quantity/u);
+  assert.match(template, /rm-storage-item__popover--\{\{popoverAlignment\}\}/u);
 });
 
 test("storage texture controls stay hidden when a token has no complete texture set", async () => {

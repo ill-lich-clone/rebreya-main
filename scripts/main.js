@@ -96,7 +96,7 @@ import {
   isValidStorageClaimRowPayload,
   isValidStorageOpenPayload,
   storageCharacterTokenUuidForClaim
-} from "./data/storage-command-service.js?v=1.4.111-storage-claim-party-gm-fallback";
+} from "./data/storage-command-service.js?v=1.4.114-storage-drag-transfers";
 import { registerCombatHooks } from "./combat/hooks.js?v=1.4.111-paladin-dogmas";
 import { CombatAttackService } from "./combat/attack-service.js?v=1.4.111-native-ammo-selection-guard";
 import { ImplantAutomationService } from "./combat/implant-automation-service.js";
