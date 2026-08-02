@@ -63,7 +63,7 @@ test("module manifest loads the stable canonical entrypoint", async () => {
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const entrypointSource = await readFile(new URL("scripts/main.js", manifestUrl), "utf8");
 
-  assert.equal(manifest.version, "1.4.114");
+  assert.equal(manifest.version, "1.4.115");
   assert.deepEqual(manifest.esmodules, ["scripts/main.js"]);
   assert.match(entrypointSource, /@rebreya-role canonical-composition-root/u);
   assert.match(entrypointSource, /export class RebreyaMainModule/u);
@@ -351,10 +351,10 @@ test("legacy settings relay fails closed when a world-setting socket is unavaila
   }
 });
 
-test("module stylesheet cache bust loads the party transport styles", async () => {
+test("module stylesheet cache bust loads the compact storage grid styles", async () => {
   const entrypointSource = await readCanonicalEntrypointSource();
 
-  assert.match(entrypointSource, /const MODULE_STYLE_VERSION = "1\.4\.110-transport-tab";/u);
+  assert.match(entrypointSource, /const MODULE_STYLE_VERSION = "1\.4\.115-storage-grid";/u);
   assert.match(entrypointSource, /const stylesheetHref = `\$\{MODULE_STYLE_PATH\}\?v=\$\{encodeURIComponent\(MODULE_STYLE_VERSION\)\}`;/u);
   assert.doesNotMatch(entrypointSource, /module\?\.version\s*\?\?/u);
 });
