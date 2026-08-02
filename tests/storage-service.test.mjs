@@ -147,6 +147,70 @@ test("a partial claim preserves a GM's manual texture without changing loot stat
   assert.equal(token.texture.src, "closed.webp");
 });
 
+test("quantity claims decrement a row before claiming its final units", async () => {
+  const service = new StorageService({
+    generate: async () => ({
+      rows: [{
+        rowId: "stack",
+        name: "Arrows",
+        quantity: 5,
+        itemData: { system: { quantity: 5 } }
+      }],
+      coins: {}
+    })
+  });
+  const token = createStorageToken("quantity-claim");
+  await service.open(token);
+
+  const first = await service.claim(token, {
+    kind: "row",
+    rowId: "stack",
+    quantity: 2
+  });
+
+  assert.equal(first.changed, true);
+  assert.equal(first.quantity, 2);
+  assert.equal(first.row.quantity, 2);
+  assert.equal(first.row.itemData.system.quantity, 2);
+  assert.equal(readStorageState(token).generatedRows[0].quantity, 3);
+  assert.equal(readStorageState(token).generatedRows[0].itemData.system.quantity, 3);
+  assert.deepEqual(readStorageState(token).claimedRowIds, []);
+  assert.equal(readStorageState(token).state, "opened");
+
+  const final = await service.claim(token, {
+    kind: "row",
+    rowId: "stack",
+    quantity: 3
+  });
+
+  assert.equal(final.quantity, 3);
+  assert.deepEqual(readStorageState(token).claimedRowIds, ["stack"]);
+  assert.equal(readStorageState(token).state, "empty");
+});
+
+test("quantity claims reject invalid or excessive amounts without changing storage", async () => {
+  const service = new StorageService({
+    generate: async () => ({
+      rows: [{ rowId: "stack", quantity: 3, itemData: { system: { quantity: 3 } } }],
+      coins: {}
+    })
+  });
+  const token = createStorageToken("invalid-quantity-claim");
+  await service.open(token);
+
+  await assert.rejects(
+    service.claim(token, { kind: "row", rowId: "stack", quantity: 0 }),
+    /Количество/u
+  );
+  await assert.rejects(
+    service.claim(token, { kind: "row", rowId: "stack", quantity: 4 }),
+    /Количество/u
+  );
+
+  assert.equal(readStorageState(token).generatedRows[0].quantity, 3);
+  assert.deepEqual(readStorageState(token).claimedRowIds, []);
+});
+
 test("manual texture selection rejects unknown modes and incomplete texture sets", async () => {
   const service = new StorageService();
   const complete = createStorageToken("complete");

@@ -267,6 +267,40 @@ export class StorageService {
       return { changed: false, row: null, state: clone(current) };
     }
 
+    const available = Math.max(1, Math.trunc(Number(
+      row.quantity ?? row.itemData?.system?.quantity ?? 1
+    )) || 1);
+    const quantity = request?.quantity === undefined
+      ? available
+      : Number(request.quantity);
+    if (!Number.isSafeInteger(quantity) || quantity < 1 || quantity > available) {
+      throw new Error("Количество должно быть целым числом от 1 до доступного остатка.");
+    }
+
+    const claimedRow = clone(row);
+    claimedRow.quantity = quantity;
+    claimedRow.itemData ??= {};
+    claimedRow.itemData.system ??= {};
+    claimedRow.itemData.system.quantity = quantity;
+
+    if (quantity < available) {
+      const remaining = available - quantity;
+      const updateRows = (sourceRows) => normalizeRows(sourceRows).map((entry) => {
+        if (String(entry?.rowId ?? "").trim() !== rowId) return entry;
+        entry.quantity = remaining;
+        entry.itemData ??= {};
+        entry.itemData.system ??= {};
+        entry.itemData.system.quantity = remaining;
+        return entry;
+      });
+      const state = await this.#write(token, {
+        ...current,
+        manualRows: updateRows(current.manualRows),
+        generatedRows: updateRows(current.generatedRows)
+      });
+      return { changed: true, row: claimedRow, quantity, state };
+    }
+
     const claimedRowIds = [...current.claimedRowIds, rowId];
     const nextState = hasUnclaimedContent({ ...current, claimedRowIds }) ? "opened" : "empty";
     const state = await this.#write(token, {
@@ -275,7 +309,7 @@ export class StorageService {
       state: nextState,
       displayMode: nextState === "empty" ? "empty" : current.displayMode
     });
-    return { changed: true, row: clone(row), state };
+    return { changed: true, row: claimedRow, quantity, state };
   }
 
   async #mutateEditableRow(token, rowId, mutate) {
