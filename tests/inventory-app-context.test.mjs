@@ -1989,6 +1989,7 @@ test("InventoryApp prepares state and fuel controls for every transport row", as
     assert.equal(active.fuel.consumptionForm.canEdit, true);
     assert.equal(active.fuel.consumptionForm.amount, "0.5");
     assert.equal(active.fuel.consumptionForm.unitOptions.find((option) => option.value === "lb").selected, true);
+    assert.equal(active.fuel.unitLabel, "фнт.");
     assert.equal(inactive.canOpen, true);
     assert.equal(inactive.stateForm.hpCurrent, "30");
     assert.equal(inactive.stateForm.conditionOptions.find((option) => option.value === "damaged").selected, true);
@@ -2001,7 +2002,7 @@ test("InventoryApp prepares state and fuel controls for every transport row", as
   }
 });
 
-test("transport tab renders a full openable fuel Item drop card", async () => {
+test("transport tab renders one minimal vehicle and fuel pair per row", async () => {
   const [template, css] = await Promise.all([
     readFile(new URL("../templates/inventory-app.hbs", import.meta.url), "utf8"),
     readFile(new URL("../styles/main.css", import.meta.url), "utf8")
@@ -2011,24 +2012,23 @@ test("transport tab renders a full openable fuel Item drop card", async () => {
     template.indexOf("{{#if tabs.isDowntime}}")
   );
 
+  assert.match(transportPanel, /data-transport-row/u);
+  assert.match(transportPanel, /data-action="open-transport-document"/u);
   assert.match(transportPanel, /data-action="transport-fuel-dropzone"/u);
-  assert.match(transportPanel, /class="rm-inventory-row rm-compact-item rm-transport-fuel-card/u);
-  assert.match(transportPanel, /transport\.fuel\.card\.img/u);
-  assert.match(transportPanel, /transport\.fuel\.card\.name/u);
-  assert.match(transportPanel, /transport\.fuel\.card\.quantity/u);
+  assert.match(transportPanel, /Добавьте топливо/u);
+  assert.match(transportPanel, /fuel\.card\.img/u);
+  assert.match(transportPanel, /fuel\.card\.name/u);
+  assert.match(transportPanel, /fuel\.quantity/u);
+  assert.match(transportPanel, /fuel\.consumptionPerMile/u);
   assert.match(transportPanel, /data-action="open-transport-fuel-item"/u);
-  assert.match(transportPanel, /data-transport-fuel-consumption-form/u);
-  assert.match(transportPanel, /name="fuelConsumptionAmount"/u);
-  assert.match(transportPanel, /name="fuelConsumptionUnit"/u);
-  assert.match(transportPanel, /data-action="transport-fuel-consumption-save"/u);
-  assert.match(transportPanel, /transport\.fuel\.miles/u);
-  assert.doesNotMatch(transportPanel, /name="fuelPerMile"/u);
-  assert.doesNotMatch(transportPanel, /name="reserveCurrent"/u);
-  assert.doesNotMatch(transportPanel, /name="reserveCapacity"/u);
-  assert.doesNotMatch(transportPanel, /transport\.activeVehicle\.fuel/u);
-  assert.match(css, /\.rm-transport-fuel-card\s*\{[^}]*grid-template-columns:\s*minmax\(180px,\s*1fr\)\s+minmax\(0,\s*3fr\)/su);
-  assert.match(css, /\.rm-transport-fuel-card__metrics\s*\{[^}]*width:\s*100%/su);
-  assert.match(css, /\.rm-transport-specs\s*\{[^}]*grid-template-columns:\s*repeat\(4,/su);
+  assert.doesNotMatch(transportPanel, /rm-transport-overview/u);
+  assert.doesNotMatch(transportPanel, /rm-transport-instance/u);
+  assert.doesNotMatch(transportPanel, /transport-state-save/u);
+  assert.doesNotMatch(transportPanel, /transport-fuel-consumption-save/u);
+  assert.doesNotMatch(transportPanel, /transport-select/u);
+  assert.doesNotMatch(transportPanel, /Открыть лист/u);
+  assert.doesNotMatch(transportPanel, /Запас хода/u);
+  assert.match(css, /\.rm-transport-row\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+minmax\(0,\s*2fr\)/su);
 });
 
 test("InventoryApp keeps fuel consumption read-only without group management rights", async () => {
@@ -2596,21 +2596,21 @@ test("InventoryApp travel autocomplete and progress token have readable styles",
   assert.match(css, /\.rm-travel-leg-list\s*\{[\s\S]*overflow-y:\s*auto/u);
 });
 
-test("InventoryApp template exposes the transport tab and active transport controls", async () => {
+test("InventoryApp template exposes only the minimal transport row controls", async () => {
   const template = await readFile(new URL("../templates/inventory-app.hbs", import.meta.url), "utf8");
   const css = await readFile(new URL("../styles/main.css", import.meta.url), "utf8");
 
   assert.match(template, /data-tab="transport"/u);
   assert.match(template, /\{\{#if tabs\.isTransport\}\}/u);
-  assert.match(template, /data-action="transport-select"/u);
-  assert.match(template, /transport\.activeVehicle/u);
-  assert.match(template, /transport\.speedSourceLabel/u);
-  assert.match(template, /data-transport-state-form/u);
-  assert.match(template, /data-action="transport-state-save"/u);
-  assert.doesNotMatch(template, /name="reserveCapacity"/u);
+  assert.match(template, /data-transport-row/u);
+  assert.match(template, /data-action="open-transport-document"/u);
+  assert.match(template, /data-action="transport-fuel-dropzone"/u);
+  assert.doesNotMatch(template, /data-action="transport-select"/u);
+  assert.doesNotMatch(template, /data-transport-state-form/u);
+  assert.doesNotMatch(template, /data-action="transport-state-save"/u);
   assert.match(css, /\.rm-transport-panel/u);
   assert.match(css, /\.rm-transport-row\.is-active/u);
-  assert.match(css, /\.rm-transport-state\s*\{/u);
+  assert.doesNotMatch(css, /\.rm-transport-state\s*\{/u);
 });
 
 test("InventoryApp downtime context can switch queue pages to archive requests", async () => {

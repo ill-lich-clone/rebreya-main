@@ -1530,6 +1530,7 @@ function prepareTransportFuelContext(sourceFuel = {}, { canManage = false, vehic
     quantity: Math.max(0, toNumber(sourceFuel?.quantity, 0)),
     consumptionPerMile: Math.max(0, toNumber(sourceFuel?.consumptionPerMile, 0)),
     unit,
+    unitLabel: unit === "lb" ? "фнт." : unit === "gal" ? "гал." : "ед.",
     consumptionForm: {
       canEdit: Boolean(canManage && vehicle?.isConcreteInstance && configured),
       amount: String(Math.max(0, toNumber(sourceFuel?.consumptionPerMile, 0))),

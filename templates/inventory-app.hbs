@@ -655,10 +655,7 @@
     {{#if tabs.isTransport}}
       <section class="rm-panel rm-panel--full rm-panel--compact rm-transport-panel">
         <div class="rm-panel__header rm-panel__header--compact">
-          <div>
-            <h3>Транспорт</h3>
-          </div>
-          <span class="rm-badge rm-status-badge rm-status-badge--info">{{transport.speedLabel}}</span>
+          <h3>Транспорт</h3>
         </div>
 
         {{#if transport.warning}}
@@ -666,219 +663,66 @@
             <span>{{transport.warning}}</span>
           </p>
         {{else}}
-          <section class="rm-transport-overview">
-            <article class="rm-transport-summary rm-transport-summary--active">
-              <span>Активный транспорт</span>
-              {{#if transport.activeVehicle}}
-                <strong>{{transport.activeVehicle.name}}</strong>
-                <small>{{transport.speedSourceLabel}}</small>
-              {{else}}
-                <strong>Пешком</strong>
-                <small>Выберите транспорт группы, чтобы заменить базовую скорость.</small>
-              {{/if}}
-            </article>
-            <article class="rm-transport-summary">
-              <span>Скорость пути</span>
-              <strong>{{transport.speedLabel}}</strong>
-              <small>{{transport.speedSourceLabel}}</small>
-            </article>
-            <article class="rm-transport-summary {{#if transport.cargoOverloaded}}rm-negative{{/if}}">
-              <span>Грузоподъёмность</span>
-              <strong>{{transport.cargoLabel}}</strong>
-              <small>{{transport.cargoUsageLabel}} • свободно {{transport.cargoFreeLabel}}</small>
-            </article>
-            <article class="rm-transport-summary">
-              <span>Прочность</span>
-              <strong>{{transport.durabilityLabel}}</strong>
-              <small>Хиты активного транспорта</small>
-            </article>
-          </section>
-
-          {{#if transport.activeVehicle.isActorBacked}}
-            <section class="rm-transport-instance">
-              <header class="rm-transport-instance__header">
-                <div>
-                  <span class="rm-muted">Состояние активного транспорта</span>
-                  <strong>{{transport.activeVehicle.name}}</strong>
-                </div>
-                <button
-                  type="button"
-                  class="rm-button rm-button--small rm-button--secondary"
-                  data-action="open-transport-actor-sheet"
-                  data-actor-id="{{transport.activeVehicle.actorId}}"
-                >
-                  <i class="fa-solid fa-id-card"></i>
-                  <span>Открыть лист</span>
-                </button>
-              </header>
-
-              <section
-                class="rm-transport-fuel-slot {{#if transport.fuel.isEmpty}}is-empty{{/if}}"
-                {{#if transport.canManage}}data-action="transport-fuel-dropzone"{{/if}}
-                data-actor-id="{{transport.activeVehicle.actorId}}"
-              >
-                {{#if transport.fuel.configured}}
-                  <article class="rm-inventory-row rm-compact-item rm-transport-fuel-card {{#if transport.fuel.isEmpty}}is-empty{{/if}}">
-                    <div class="rm-compact-item__main">
-                      <button
-                        type="button"
-                        class="rm-transport-fuel-card__open"
-                        data-action="open-transport-fuel-item"
-                        data-item-uuid="{{transport.fuel.card.openUuid}}"
-                        {{#unless transport.fuel.card.canOpen}}disabled{{/unless}}
-                      >
-                        <img class="rm-compact-item__image" src="{{transport.fuel.card.img}}" alt="">
-                        <span class="rm-compact-item__copy">
-                          <strong class="rm-compact-item__name">{{transport.fuel.card.name}}</strong>
-                          <small>{{transport.fuel.card.type}}</small>
-                        </span>
-                      </button>
-                    </div>
-                    <div class="rm-compact-item__side">
-                      <div class="rm-compact-item__metrics rm-transport-fuel-card__metrics">
-                        <p><span>Кол-во</span><strong class="{{#if transport.fuel.isEmpty}}rm-negative{{/if}}">{{rmNum transport.fuel.card.quantity}}</strong></p>
-                        <p><span>Вес</span><strong>{{transport.fuel.card.weightLabel}}</strong></p>
-                        <p><span>Цена</span><strong>{{transport.fuel.card.valueLabel}}</strong></p>
-                        <div class="rm-transport-fuel-card__consumption">
-                          <span>Расход</span>
-                          {{#if transport.fuel.consumptionForm.canEdit}}
-                            <form
-                              class="rm-transport-fuel-consumption-form"
-                              data-transport-fuel-consumption-form
-                              data-actor-id="{{transport.activeVehicle.actorId}}"
-                            >
-                              <input
-                                name="fuelConsumptionAmount"
-                                type="number"
-                                min="0.000001"
-                                step="any"
-                                value="{{transport.fuel.consumptionForm.amount}}"
-                                aria-label="Расход топлива"
-                              >
-                              <select name="fuelConsumptionUnit" aria-label="Единица расхода топлива">
-                                {{#each transport.fuel.consumptionForm.unitOptions}}
-                                  <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                                {{/each}}
-                              </select>
-                              <span class="rm-transport-fuel-consumption-form__cadence">/ милю</span>
-                              <button
-                                type="button"
-                                class="rm-button rm-button--small rm-transport-fuel-consumption-form__save"
-                                data-action="transport-fuel-consumption-save"
-                                aria-label="Сохранить расход топлива"
-                                title="Сохранить расход топлива"
-                              >
-                                <i class="fa-solid fa-floppy-disk"></i>
-                              </button>
-                            </form>
-                          {{else}}
-                            <strong>{{rmNum transport.fuel.consumptionPerMile}} {{transport.fuel.unit}}/миля</strong>
-                          {{/if}}
-                        </div>
-                        <p><span>Запас хода</span><strong class="{{#if transport.fuel.isEmpty}}rm-negative{{/if}}">{{rmNum transport.fuel.miles precision=0}} миль</strong></p>
-                      </div>
-                    </div>
-                  </article>
-                  {{#if transport.canManage}}<small class="rm-muted">Перетащите другой Item сюда, чтобы заменить вид топлива.</small>{{/if}}
-                {{else}}
-                  <p class="rm-transport-fuel-slot__empty">
-                    <i class="fa-solid fa-gas-pump"></i>
-                    <span>Перетащите сюда Item топлива из компендиума, каталога предметов или любого листа.</span>
-                  </p>
-                {{/if}}
-              </section>
-
-              <form
-                class="rm-transport-state"
-                data-transport-state-form
-                data-actor-id="{{transport.activeVehicle.actorId}}"
-              >
-                <label>
-                  <span>Хиты</span>
-                  <span class="rm-transport-state__split">
-                    <input
-                      name="hpCurrent"
-                      type="number"
-                      min="0"
-                      {{#if transport.activeVehicle.hpMax}}max="{{transport.activeVehicle.hpMax}}"{{/if}}
-                      value="{{transport.activeVehicle.stateForm.hpCurrent}}"
-                      {{#unless transport.activeVehicle.stateForm.canEdit}}disabled{{/unless}}
-                    >
-                    <strong>/ {{transport.activeVehicle.hpMax}}</strong>
-                  </span>
-                </label>
-                <label>
-                  <span>Состояние</span>
-                  <select name="condition" {{#unless transport.activeVehicle.stateForm.canEdit}}disabled{{/unless}}>
-                    {{#each transport.activeVehicle.stateForm.conditionOptions}}
-                      <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                    {{/each}}
-                  </select>
-                </label>
-                {{#if transport.activeVehicle.stateForm.canEdit}}
-                  <button
-                    type="button"
-                    class="rm-button rm-button--small rm-button--primary rm-transport-state__save"
-                    data-action="transport-state-save"
-                  >
-                    <i class="fa-solid fa-floppy-disk"></i>
-                    <span>Сохранить состояние</span>
-                  </button>
-                {{/if}}
-              </form>
-
-              <div class="rm-transport-specs">
-                <p><span>Экипаж</span><strong>{{transport.activeVehicle.crewLabel}}</strong></p>
-                <p><span>Пассажиры</span><strong>{{transport.activeVehicle.passengersLabel}}</strong></p>
-                <p><span>Разгон</span><strong>{{#if transport.activeVehicle.accelerationFt}}{{transport.activeVehicle.accelerationFt}} фт.{{else}}—{{/if}}</strong></p>
-                <p><span>Поломка, к20</span><strong>{{#if transport.activeVehicle.breakdownThreshold}}{{transport.activeVehicle.breakdownThreshold}}{{else}}—{{/if}}</strong></p>
-              </div>
-            </section>
-          {{/if}}
-
           {{#if transport.hasVehicles}}
             <div class="rm-transport-list">
               {{#each transport.vehicles}}
-                <article class="rm-transport-row {{#if active}}is-active{{/if}}">
-                  <div class="rm-transport-row__main">
+                <article
+                  class="rm-transport-row {{#if active}}is-active{{/if}}"
+                  data-transport-row
+                  data-transport-id="{{id}}"
+                  data-actor-id="{{actorId}}"
+                  title="ПКМ — подробности и настройка"
+                >
+                  <section class="rm-transport-row__vehicle">
                     <img class="rm-transport-row__image" src="{{img}}" alt="{{name}}">
-                    <div class="rm-transport-row__copy">
-                      <div class="rm-transport-row__title">
-                        <strong>{{name}}</strong>
-                        {{#if active}}<span class="rm-badge rm-status-badge rm-status-badge--good">Активен</span>{{/if}}
-                      </div>
-                      <p class="rm-muted">
-                        {{sourceLabel}}
-                        {{#if detailsLabel}} • {{detailsLabel}}{{/if}}
-                        {{#if quantity}} • {{rmNum quantity}} шт.{{/if}}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div class="rm-transport-row__metrics">
-                    <p><span>Скорость</span><strong>{{speedLabel}}</strong></p>
-                    <p><span>Груз</span><strong>{{cargoLabel}}</strong></p>
-                    <p><span>Хиты</span><strong>{{durabilityLabel}}</strong></p>
-                    <p><span>КД</span><strong>{{acLabel}}</strong></p>
-                  </div>
-
-                  {{#if ../transport.canManage}}
                     <button
                       type="button"
-                      class="rm-button rm-button--small {{#if active}}rm-button--secondary{{else}}rm-button--primary{{/if}}"
-                      data-action="transport-select"
-                      data-transport-id="{{id}}"
-                      {{#if active}}disabled{{/if}}
+                      class="rm-link-button rm-transport-row__name"
+                      data-action="open-transport-document"
+                      data-actor-id="{{actorId}}"
+                      title="ЛКМ — открыть карточку транспорта"
+                      {{#unless canOpen}}disabled{{/unless}}
                     >
-                      <i class="fa-solid {{#if active}}fa-check{{else}}fa-location-arrow{{/if}}"></i>
-                      <span>{{#if active}}Выбран{{else}}Выбрать{{/if}}</span>
+                      {{name}}
                     </button>
-                  {{/if}}
+                    {{#if active}}<span class="rm-transport-row__active">Активен</span>{{/if}}
+                  </section>
+
+                  <section
+                    class="rm-transport-row__fuel {{#if fuel.isEmpty}}is-empty{{/if}} {{#unless fuel.configured}}is-unconfigured{{/unless}}"
+                    {{#if ../transport.canManage}}data-action="transport-fuel-dropzone"{{/if}}
+                    data-actor-id="{{actorId}}"
+                  >
+                    {{#if fuel.configured}}
+                      <button
+                        type="button"
+                        class="rm-transport-row__fuel-item"
+                        data-action="open-transport-fuel-item"
+                        data-item-uuid="{{fuel.card.openUuid}}"
+                        title="ЛКМ — открыть карточку топлива"
+                        {{#unless fuel.card.canOpen}}disabled{{/unless}}
+                      >
+                        <img src="{{fuel.card.img}}" alt="">
+                        <strong>{{fuel.card.name}}</strong>
+                      </button>
+                      <span class="rm-transport-row__fuel-value {{#if fuel.isEmpty}}rm-negative{{/if}}">
+                        {{rmNum fuel.quantity}} {{fuel.unitLabel}}
+                      </span>
+                      <span class="rm-transport-row__fuel-consumption">
+                        {{rmNum fuel.consumptionPerMile}} {{fuel.unitLabel}}/миля
+                      </span>
+                    {{else}}
+                      <span class="rm-transport-row__fuel-empty">
+                        <i class="fa-solid fa-gas-pump"></i>
+                        <span>Добавьте топливо</span>
+                      </span>
+                    {{/if}}
+                  </section>
                 </article>
               {{/each}}
             </div>
           {{else}}
-            <p class="rm-empty">В группе пока нет транспорта. Положите транспортный предмет в токен или склад группы.</p>
+            <p class="rm-empty">В группе пока нет транспорта.</p>
           {{/if}}
         {{/if}}
       </section>
