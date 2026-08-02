@@ -2,7 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { MODULE_ID } from "../scripts/constants.js";
-import { StorageService, readStorageState } from "../scripts/data/storage-service.js";
+import { StorageService, readStorageState, readStorageStateAtPath } from "../scripts/data/storage-service.js";
+import { buildStorageContainerRow } from "../scripts/data/storage-container-snapshot.js";
 import {
   StorageCommandService,
   isValidStorageClaimCoinsPayload,
@@ -204,12 +205,66 @@ test("storage deposit payload validation accepts only exact item and storage-row
   }), true);
   assert.equal(isValidStorageDepositPayload({
     ...base,
+    path: ["bag-row"],
+    source: { kind: "item", itemUuid: "Actor.hero.Item.arrow" }
+  }), true);
+  assert.equal(isValidStorageDepositPayload({
+    ...base,
+    path: Array.from({ length: 9 }, (_, index) => `row-${index}`),
+    source: { kind: "item", itemUuid: "Actor.hero.Item.arrow" }
+  }), false);
+  assert.equal(isValidStorageDepositPayload({
+    ...base,
     source: { kind: "item", itemUuid: "Actor.hero.Item.arrow", extra: true }
   }), false);
   assert.equal(isValidStorageDepositPayload({
     ...base,
     source: { kind: "Actor", itemUuid: "Actor.hero" }
   }), false);
+});
+
+test("command claims a row from a nested container path and keeps the parent row", async () => {
+  const harness = createHarness();
+  const bagRow = buildStorageContainerRow({
+    containerId: "bag-command",
+    storageKind: "bag",
+    name: "Сумка",
+    state: {
+      baseName: "Сумка",
+      state: "opened",
+      manualRows: [{
+        rowId: "nested-item",
+        name: "Ключ",
+        quantity: 2,
+        itemData: { name: "Ключ", type: "loot", system: { quantity: 2 } }
+      }],
+      generatedRows: [],
+      claimedRowIds: [],
+      manualCoins: {},
+      generatedCoins: {},
+      coinsClaimed: false
+    }
+  }, { rowId: "bag-row" });
+  await harness.storageService.configure(harness.storageToken, {
+    state: "opened",
+    manualRows: [bagRow]
+  });
+
+  const result = await harness.service.claimRow({
+    tokenUuid: harness.storageToken.uuid,
+    characterTokenUuid: harness.characterToken.uuid,
+    path: ["bag-row"],
+    rowId: "nested-item",
+    destination: "self",
+    quantity: 1,
+    target: null,
+    mutationId: "nested-claim"
+  }, { sender: harness.player });
+
+  assert.equal(result.row.name, "Ключ");
+  assert.equal(readStorageStateAtPath(harness.storageToken, ["bag-row"]).manualRows[0].quantity, 1);
+  assert.deepEqual(readStorageState(harness.storageToken).manualRows.map((row) => row.rowId), ["bag-row"]);
+  assert.equal(harness.itemGrants.length, 1);
 });
 
 test("storage deposits are idempotent and move the selected quantity once", async () => {

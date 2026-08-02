@@ -1,5 +1,12 @@
 import { MODULE_ID } from "../constants.js";
 import { normalizeLootgenForm } from "./lootgen-generator.js";
+import {
+  buildStorageContainerSnapshot,
+  collectStorageContainerIds,
+  isStorageContainerRow,
+  resolveStorageContainerPath,
+  updateStorageContainerPath
+} from "./storage-container-snapshot.js";
 
 export const STORAGE_ACTOR_FLAG = "storage";
 export const STORAGE_TOKEN_FLAG = "storage";
@@ -9,6 +16,7 @@ const STORAGE_STATES = new Set(["unopened", "opened", "empty"]);
 export const STORAGE_TEXTURE_MODES = Object.freeze(["unopened", "opened", "empty"]);
 const STORAGE_TEXTURE_MODE_SET = new Set(STORAGE_TEXTURE_MODES);
 const COIN_KEYS = ["pp", "gp", "sp", "cp"];
+const STORAGE_KINDS = new Set(["chest", "bag", "pile"]);
 
 function clone(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));
@@ -28,6 +36,23 @@ function readFlag(document, key) {
     return document.getFlag(MODULE_ID, key);
   }
   return document?.flags?.[MODULE_ID]?.[key];
+}
+
+function cleanId(value) {
+  return String(value ?? "").trim();
+}
+
+function storageKindForDocument(document, stored = null) {
+  const explicit = cleanId(stored?.storageKind);
+  if (STORAGE_KINDS.has(explicit)) return explicit;
+  return readFlag(document, "groundPile")?.enabled === true ? "pile" : "chest";
+}
+
+function storageContainerIdForDocument(document, stored = null) {
+  const explicit = cleanId(stored?.containerId);
+  if (explicit) return explicit;
+  const identity = cleanId(document?.uuid ?? document?.id);
+  return identity ? `scene-storage:${identity}` : `scene-storage:${createDepositRowId()}`;
 }
 
 function normalizeRows(rows) {
@@ -158,6 +183,8 @@ export function buildStorageTokenState(input = {}) {
     : state;
   return {
     version: STORAGE_VERSION,
+    containerId: cleanId(source.containerId),
+    storageKind: STORAGE_KINDS.has(cleanId(source.storageKind)) ? cleanId(source.storageKind) : "chest",
     baseName: cleanName(source.baseName),
     template: normalizeTemplate(source.template),
     manualRows: normalizeRows(source.manualRows),
@@ -181,8 +208,46 @@ export function readStorageState(token) {
   const document = resolveDocument(token);
   const stored = readFlag(document, STORAGE_TOKEN_FLAG);
   return buildStorageTokenState({
+    containerId: storageContainerIdForDocument(document, stored),
+    storageKind: storageKindForDocument(document, stored),
     baseName: stored?.baseName ?? document?.name ?? token?.name,
     ...stored
+  });
+}
+
+function storageSnapshotForToken(token) {
+  const document = resolveDocument(token);
+  const state = readStorageState(token);
+  const texturePath = cleanId(state.textures?.[state.displayMode] ?? document?.texture?.src ?? token?.texture?.src);
+  return buildStorageContainerSnapshot({
+    containerId: state.containerId,
+    storageKind: state.storageKind,
+    name: state.baseName,
+    img: texturePath,
+    state,
+    presentation: {
+      tokenName: cleanId(document?.name ?? token?.name),
+      texture: texturePath,
+      width: Number(document?.width ?? token?.width) || 1,
+      height: Number(document?.height ?? token?.height) || 1
+    }
+  });
+}
+
+function normalizeStoragePath(path) {
+  return (Array.isArray(path) ? path : []).map(cleanId).filter(Boolean);
+}
+
+export function readStorageStateAtPath(token, path = []) {
+  const normalizedPath = normalizeStoragePath(path);
+  if (!normalizedPath.length) return readStorageState(token);
+  const nested = resolveStorageContainerPath(storageSnapshotForToken(token), normalizedPath);
+  if (!nested) throw new Error("Вложенный контейнер по указанному пути не найден.");
+  return buildStorageTokenState({
+    ...nested.state,
+    containerId: nested.containerId,
+    storageKind: nested.storageKind,
+    baseName: nested.state?.baseName ?? nested.name
   });
 }
 
@@ -208,12 +273,64 @@ export class StorageService {
     this.openTasks = new Map();
   }
 
+  #scopedToken(token, path = []) {
+    const normalizedPath = normalizeStoragePath(path);
+    if (!normalizedPath.length) return token;
+    const root = resolveDocument(token);
+    const rootSnapshot = storageSnapshotForToken(root);
+    const nested = resolveStorageContainerPath(rootSnapshot, normalizedPath);
+    if (!nested) throw new Error("Вложенный контейнер по указанному пути не найден.");
+    const service = this;
+    return {
+      id: `${cleanId(root?.id)}:${normalizedPath.join("/")}`,
+      uuid: `${cleanId(root?.uuid)}#${normalizedPath.join("/")}`,
+      name: nested.name,
+      actor: root?.actor,
+      __storageRoot: root,
+      __storagePath: normalizedPath,
+      getFlag(scope, key) {
+        if (scope === MODULE_ID && key === STORAGE_TOKEN_FLAG) {
+          return {
+            ...clone(nested.state),
+            containerId: nested.containerId,
+            storageKind: nested.storageKind
+          };
+        }
+        return undefined;
+      },
+      async update(patch = {}) {
+        const nextState = buildStorageTokenState(
+          patch[`flags.${MODULE_ID}.${STORAGE_TOKEN_FLAG}`] ?? nested.state
+        );
+        const nextRoot = updateStorageContainerPath(rootSnapshot, normalizedPath, (current) => ({
+          ...current,
+          name: nextState.baseName,
+          img: cleanId(nextState.textures?.[nextState.displayMode] ?? current.img),
+          state: nextState,
+          presentation: {
+            ...(clone(current.presentation) ?? {}),
+            texture: cleanId(nextState.textures?.[nextState.displayMode] ?? current.presentation?.texture ?? current.img)
+          }
+        }));
+        await root.update({
+          [`flags.${MODULE_ID}.${STORAGE_TOKEN_FLAG}`]: nextRoot.state
+        });
+        globalThis.Hooks?.callAll?.(STORAGE_UPDATED_HOOK, root, clone(nextRoot.state));
+        return service.#scopedToken(root, normalizedPath);
+      }
+    };
+  }
+
   async #write(token, state) {
     const document = resolveDocument(token);
     if (typeof document?.update !== "function") {
       throw new TypeError("Storage token must support update.");
     }
-    const normalized = buildStorageTokenState(state);
+    const normalized = buildStorageTokenState({
+      ...state,
+      containerId: cleanId(state?.containerId) || storageContainerIdForDocument(document, state),
+      storageKind: storageKindForDocument(document, state)
+    });
     const patch = {
       ["flags." + MODULE_ID + "." + STORAGE_TOKEN_FLAG]: normalized,
       name: deriveStorageDisplayName(normalized)
@@ -223,11 +340,14 @@ export class StorageService {
       patch["texture.src"] = texturePath;
     }
     await document.update(patch);
-    globalThis.Hooks?.callAll?.(STORAGE_UPDATED_HOOK, document, clone(normalized));
+    if (!document?.__storageRoot) {
+      globalThis.Hooks?.callAll?.(STORAGE_UPDATED_HOOK, document, clone(normalized));
+    }
     return clone(normalized);
   }
 
-  async configure(token, config = {}) {
+  async configure(token, config = {}, { path = [] } = {}) {
+    token = this.#scopedToken(token, path);
     const current = readStorageState(token);
     const source = config && typeof config === "object" ? config : {};
     return this.#write(token, {
@@ -242,6 +362,7 @@ export class StorageService {
   }
 
   async open(token, context = {}) {
+    token = this.#scopedToken(token, context?.path);
     const document = resolveDocument(token);
     const tokenId = String(document?.uuid ?? document?.id ?? token?.id ?? "");
     if (this.openTasks.has(tokenId)) {
@@ -295,6 +416,7 @@ export class StorageService {
   }
 
   async claim(token, request = {}) {
+    token = this.#scopedToken(token, request?.path);
     const current = readStorageState(token);
     if (current.state === "unopened") {
       throw new Error("Сначала откройте хранилище.");
@@ -367,12 +489,24 @@ export class StorageService {
     return { changed: true, row: claimedRow, quantity, state };
   }
 
-  async depositRow(token, row, { quantity } = {}) {
+  async depositRow(token, row, { quantity, path = [] } = {}) {
+    token = this.#scopedToken(token, path);
     if (!row || typeof row !== "object" || Array.isArray(row)) {
       throw new TypeError("Предмет для добавления в хранилище должен быть объектом.");
     }
     const current = readStorageState(token);
     const amount = requirePositiveQuantity(quantity ?? row.quantity ?? row.itemData?.system?.quantity);
+    if (isStorageContainerRow(row) && amount !== 1) {
+      throw new Error("Контейнер можно переносить только целиком.");
+    }
+    if (isStorageContainerRow(row)) {
+      const root = token?.__storageRoot ?? resolveDocument(token);
+      const targetIds = collectStorageContainerIds(storageSnapshotForToken(root));
+      const incomingIds = collectStorageContainerIds(row.container);
+      if ([...incomingIds].some((containerId) => targetIds.has(containerId))) {
+        throw new Error("Нельзя поместить контейнер в самого себя или создать цикл вложения.");
+      }
+    }
     const stackKey = cleanStackKey(row.stackKey ?? row.sourceId);
     const claimedRowIds = new Set(current.claimedRowIds);
 
@@ -422,7 +556,8 @@ export class StorageService {
     return { changed: true, merged, rowId, quantity: amount, state };
   }
 
-  async #mutateEditableRow(token, rowId, mutate) {
+  async #mutateEditableRow(token, rowId, mutate, { path = [] } = {}) {
+    token = this.#scopedToken(token, path);
     const current = readStorageState(token);
     const id = String(rowId ?? "").trim();
     if (!id || current.claimedRowIds.includes(id)) throw new Error("Предмет уже забран или недоступен для изменения.");
@@ -444,7 +579,7 @@ export class StorageService {
     });
   }
 
-  async updateRowQuantity(token, rowId, quantity) {
+  async updateRowQuantity(token, rowId, quantity, { path = [] } = {}) {
     const amount = Number(quantity);
     if (!Number.isSafeInteger(amount) || amount < 1) throw new Error("Количество должно быть целым числом не меньше 1.");
     return this.#mutateEditableRow(token, rowId, (row) => {
@@ -453,10 +588,10 @@ export class StorageService {
       row.itemData.system ??= {};
       row.itemData.system.quantity = amount;
       return row;
-    });
+    }, { path });
   }
 
-  async updateRowDurability(token, rowId, durability) {
+  async updateRowDurability(token, rowId, durability, { path = [] } = {}) {
     if (!durability || typeof durability !== "object") {
       throw new TypeError("Прочность предмета должна быть объектом.");
     }
@@ -466,14 +601,15 @@ export class StorageService {
       row.itemData.flags[MODULE_ID] ??= {};
       row.itemData.flags[MODULE_ID].durability = clone(durability);
       return row;
-    });
+    }, { path });
   }
 
-  async deleteRow(token, rowId) {
-    return this.#mutateEditableRow(token, rowId, () => null);
+  async deleteRow(token, rowId, { path = [] } = {}) {
+    return this.#mutateEditableRow(token, rowId, () => null, { path });
   }
 
-  async setTextureMode(token, mode) {
+  async setTextureMode(token, mode, { path = [] } = {}) {
+    token = this.#scopedToken(token, path);
     const normalizedMode = String(mode ?? "").trim();
     if (!STORAGE_TEXTURE_MODE_SET.has(normalizedMode)) {
       throw new Error("Неизвестный режим текстуры хранилища.");

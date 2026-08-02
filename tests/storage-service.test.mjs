@@ -6,8 +6,10 @@ import {
   StorageService,
   deriveStorageDisplayName,
   isStorageActor,
-  readStorageState
+  readStorageState,
+  readStorageStateAtPath
 } from "../scripts/data/storage-service.js";
+import { buildStorageContainerRow } from "../scripts/data/storage-container-snapshot.js";
 
 function createStorageToken(id, name = "Сундук") {
   const flags = {};
@@ -418,5 +420,75 @@ test("storage deposits reject invalid quantities without changing state", async 
   );
 
   assert.equal(readStorageState(token).state, "empty");
+  assert.deepEqual(readStorageState(token).manualRows, []);
+});
+
+test("nested storage paths deposit and claim without replacing the root container", async () => {
+  const service = new StorageService();
+  const token = createStorageToken("nested-root", "Сундук");
+  const bagRow = buildStorageContainerRow({
+    containerId: "bag-1",
+    storageKind: "bag",
+    name: "Сумка хранения",
+    img: "icons/bag.webp",
+    state: {
+      baseName: "Сумка хранения",
+      state: "opened",
+      manualRows: [],
+      generatedRows: [],
+      claimedRowIds: [],
+      manualCoins: {},
+      generatedCoins: {},
+      coinsClaimed: false
+    }
+  }, { rowId: "bag-row" });
+
+  await service.configure(token, {
+    state: "opened",
+    manualRows: [bagRow]
+  });
+  await service.depositRow(token, {
+    rowId: "gem-row",
+    stackKey: "gem",
+    name: "Самоцвет",
+    quantity: 2,
+    itemData: { type: "loot", system: { quantity: 2 } }
+  }, { quantity: 2, path: ["bag-row"] });
+
+  const nestedBeforeClaim = readStorageStateAtPath(token, ["bag-row"]);
+  assert.equal(nestedBeforeClaim.manualRows[0].name, "Самоцвет");
+  assert.equal(nestedBeforeClaim.manualRows[0].quantity, 2);
+  assert.deepEqual(readStorageState(token).manualRows.map((row) => row.rowId), ["bag-row"]);
+
+  const claim = await service.claim(token, {
+    kind: "row",
+    rowId: "gem-row",
+    quantity: 1,
+    path: ["bag-row"]
+  });
+  assert.equal(claim.row.quantity, 1);
+  assert.equal(readStorageStateAtPath(token, ["bag-row"]).manualRows[0].quantity, 1);
+  assert.equal(readStorageState(token).state, "opened");
+});
+
+test("nested storage rejects self and ancestor container cycles", async () => {
+  const service = new StorageService();
+  const token = createStorageToken("cycle-root", "Сундук");
+  await service.configure(token, {
+    containerId: "root-container",
+    state: "opened"
+  });
+
+  const selfRow = buildStorageContainerRow({
+    containerId: "root-container",
+    storageKind: "chest",
+    name: "Тот же сундук",
+    state: { baseName: "Тот же сундук", state: "opened", manualRows: [], generatedRows: [] }
+  }, { rowId: "self-row" });
+
+  await assert.rejects(
+    service.depositRow(token, selfRow, { quantity: 1 }),
+    /цикл|самого себя|повтор/i
+  );
   assert.deepEqual(readStorageState(token).manualRows, []);
 });

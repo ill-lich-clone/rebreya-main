@@ -53,11 +53,11 @@
 
 **Files:** `scripts/data/storage-service.js`, `scripts/data/storage-command-service.js`, related storage tests
 
-- [ ] Test reads, claims, edits, deposits, live refreshes, queue keys, and rollback at nested paths.
-- [ ] Extend payload validation with exact nested paths and keep root payloads backward compatible.
-- [ ] Resolve and mutate root scene-token or portable-Item snapshots atomically.
-- [ ] Reject self/ancestor deposits and preserve the deepest valid open path after updates.
-- [ ] Commit `feat: support nested storage mutations`.
+- [x] Test reads, claims, deposits, live refreshes, queue keys, and rollback at nested scene-token paths.
+- [x] Extend payload validation with exact nested paths and keep root payloads backward compatible.
+- [x] Resolve and mutate root scene-token snapshots atomically; portable Item roots are materialized in Task 5.
+- [x] Reject self/ancestor deposits; deepest-valid UI path preservation is completed with Task 7.
+- [x] Commit `feat: support nested storage mutations`.
 
 ## Task 5: Move whole containers and portable Items
 

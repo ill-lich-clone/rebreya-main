@@ -1,4 +1,4 @@
-import { isStorageActor, readStorageState } from "./storage-service.js";
+import { isStorageActor, readStorageState, readStorageStateAtPath } from "./storage-service.js";
 import { resolveStorageDepositSource } from "./storage-deposit-source.js";
 
 const STORAGE_ROW_DESTINATIONS = new Set(["self", "party", "character", "scene"]);
@@ -27,6 +27,25 @@ function isTrimmedString(value, { required = false, max = 512 } = {}) {
 
 function isOptionalQuantity(value) {
   return value === null || (Number.isSafeInteger(value) && value >= 1);
+}
+
+function isValidStoragePath(value) {
+  return Array.isArray(value)
+    && value.length <= 8
+    && value.every((rowId) => isTrimmedString(rowId, { required: true, max: 160 }));
+}
+
+function hasLegacyOrPathKeys(value, legacyKeys) {
+  return hasExactKeys(value, legacyKeys)
+    || (hasExactKeys(value, [...legacyKeys, "path"].sort()) && isValidStoragePath(value.path));
+}
+
+function storagePath(value) {
+  return (Array.isArray(value) ? value : []).map(clean).filter(Boolean);
+}
+
+function storagePathKey(value) {
+  return storagePath(value).join("/");
 }
 
 function isValidStorageDepositSource(source) {
@@ -62,13 +81,13 @@ function clone(value) {
 }
 
 export function isValidStorageOpenPayload(payload) {
-  return hasExactKeys(payload, ["characterTokenUuid", "tokenUuid"])
+  return hasLegacyOrPathKeys(payload, ["characterTokenUuid", "tokenUuid"])
     && isTrimmedString(payload.tokenUuid, { required: true })
     && isTrimmedString(payload.characterTokenUuid);
 }
 
 export function isValidStorageClaimRowPayload(payload) {
-  return hasExactKeys(payload, [
+  return hasLegacyOrPathKeys(payload, [
     "characterTokenUuid", "destination", "mutationId", "quantity", "rowId", "target", "tokenUuid"
   ])
     && isTrimmedString(payload.tokenUuid, { required: true })
@@ -81,7 +100,7 @@ export function isValidStorageClaimRowPayload(payload) {
 }
 
 export function isValidStorageClaimCoinsPayload(payload) {
-  return hasExactKeys(payload, ["characterTokenUuid", "destination", "mutationId", "tokenUuid"])
+  return hasLegacyOrPathKeys(payload, ["characterTokenUuid", "destination", "mutationId", "tokenUuid"])
     && isTrimmedString(payload.tokenUuid, { required: true })
     && isTrimmedString(payload.characterTokenUuid, { required: payload.destination === "self" })
     && STORAGE_COIN_DESTINATIONS.has(payload.destination)
@@ -89,7 +108,7 @@ export function isValidStorageClaimCoinsPayload(payload) {
 }
 
 export function isValidStorageDepositPayload(payload) {
-  return hasExactKeys(payload, [
+  return hasLegacyOrPathKeys(payload, [
     "characterTokenUuid", "mutationId", "quantity", "source", "tokenUuid"
   ])
     && isTrimmedString(payload.tokenUuid, { required: true })
@@ -138,8 +157,16 @@ function requireDestination(value) {
   return destination;
 }
 
-function storageMutationId({ tokenUuid, kind, identity = "", destination, mutationId }) {
-  return ["storage", clean(tokenUuid), clean(kind), clean(identity), clean(destination), requireMutationId(mutationId)].join(":");
+function storageMutationId({ tokenUuid, path = [], kind, identity = "", destination, mutationId }) {
+  return [
+    "storage",
+    clean(tokenUuid),
+    storagePathKey(path),
+    clean(kind),
+    clean(identity),
+    clean(destination),
+    requireMutationId(mutationId)
+  ].join(":");
 }
 
 function rowIdentity(row, index) {
@@ -280,7 +307,8 @@ export class StorageCommandService {
     const access = await this.#resolveAccess(payload, sender);
     return this.storageService.open(access.storageToken, {
       senderId: clean(sender?.id),
-      characterTokenUuid: clean(payload.characterTokenUuid)
+      characterTokenUuid: clean(payload.characterTokenUuid),
+      path: storagePath(payload.path)
     });
   }
 
@@ -290,19 +318,21 @@ export class StorageCommandService {
     const rowId = clean(payload.rowId);
     if (!rowId) throw new Error("Не указан предмет хранилища.");
     const tokenUuid = clean(payload.tokenUuid);
+    const path = storagePath(payload.path);
     const mutationKey = storageMutationId({
       tokenUuid,
+      path,
       kind: "row",
       identity: rowId,
       destination,
       mutationId
     });
-    return this.#runClaim(`${tokenUuid}:storage`, mutationKey, async () => {
+    return this.#runClaim(`${tokenUuid}:${storagePathKey(path)}:storage`, mutationKey, async () => {
       const access = await this.#resolveAccess(payload, sender);
       if (destination === "self" && access.character?.type !== "character") {
         throw new Error("Для получения лута себе выберите персонажа.");
       }
-      const state = readStorageState(access.storageToken);
+      const state = readStorageStateAtPath(access.storageToken, path);
       if (state.state === "unopened") throw new Error("Сначала откройте хранилище.");
       const rows = [...state.manualRows, ...state.generatedRows];
       const row = rows.find((entry, index) => rowIdentity(entry, index) === rowId) ?? null;
@@ -345,8 +375,8 @@ export class StorageCommandService {
           mutationId: grantId
         });
       }
-      const result = await this.storageService.claim(access.storageToken, { kind: "row", rowId, quantity });
-      await this.#refreshSource(access.storageToken, result.state);
+      const result = await this.storageService.claim(access.storageToken, { kind: "row", rowId, quantity, path });
+      await this.#refreshSource(access.storageToken, readStorageState(access.storageToken));
       return result;
     });
   }
@@ -358,13 +388,14 @@ export class StorageCommandService {
     }
     const mutationId = requireMutationId(payload.mutationId);
     const tokenUuid = clean(payload.tokenUuid);
-    const mutationKey = storageMutationId({ tokenUuid, kind: "coins", destination, mutationId });
-    return this.#runClaim(`${tokenUuid}:storage`, mutationKey, async () => {
+    const path = storagePath(payload.path);
+    const mutationKey = storageMutationId({ tokenUuid, path, kind: "coins", destination, mutationId });
+    return this.#runClaim(`${tokenUuid}:${storagePathKey(path)}:storage`, mutationKey, async () => {
       const access = await this.#resolveAccess(payload, sender);
       if (destination === "self" && access.character?.type !== "character") {
         throw new Error("Для получения монет себе выберите персонажа.");
       }
-      const state = readStorageState(access.storageToken);
+      const state = readStorageStateAtPath(access.storageToken, path);
       if (state.state === "unopened") throw new Error("Сначала откройте хранилище.");
       const keys = ["pp", "gp", "sp", "cp"];
       const coins = Object.fromEntries(keys.map((key) => [
@@ -381,14 +412,15 @@ export class StorageCommandService {
       else {
         await this.inventoryService.addCurrencyToInventoryOnce(coins, grantId);
       }
-      const result = await this.storageService.claim(access.storageToken, { kind: "coins" });
-      await this.#refreshSource(access.storageToken, result.state);
+      const result = await this.storageService.claim(access.storageToken, { kind: "coins", path });
+      await this.#refreshSource(access.storageToken, readStorageState(access.storageToken));
       return result;
     });
   }
 
   async deposit(payload = {}, { sender } = {}) {
     const tokenUuid = clean(payload.tokenUuid);
+    const path = storagePath(payload.path);
     const mutationId = requireMutationId(payload.mutationId);
     const sourceRef = clone(payload.source);
     if (!isValidStorageDepositSource(sourceRef)) {
@@ -407,13 +439,14 @@ export class StorageCommandService {
       : clean(sourceRef.itemUuid);
     const mutationKey = storageMutationId({
       tokenUuid,
+      path,
       kind: "deposit",
       identity: sourceIdentity,
       destination: "storage",
       mutationId
     });
     const queueKeys = [
-      `${tokenUuid}:storage`,
+      `${tokenUuid}:${storagePathKey(path)}:storage`,
       sourceRef.kind === "storage-row"
         ? `${clean(sourceRef.tokenUuid)}:storage`
         : `${clean(sourceRef.itemUuid)}:item`
@@ -442,11 +475,11 @@ export class StorageCommandService {
         }, sender);
       }
 
-      const beforeTarget = readStorageState(access.storageToken);
+      const beforeTarget = readStorageStateAtPath(access.storageToken, path);
       let deposited = null;
       let sourceReceipt = null;
       try {
-        deposited = await this.storageService.depositRow(access.storageToken, source.row, { quantity });
+        deposited = await this.storageService.depositRow(access.storageToken, source.row, { quantity, path });
         sourceReceipt = await source.consume(quantity);
       }
       catch (error) {
@@ -461,7 +494,7 @@ export class StorageCommandService {
         }
         if (deposited) {
           try {
-            await this.storageService.configure(access.storageToken, beforeTarget);
+            await this.storageService.configure(access.storageToken, beforeTarget, { path });
           }
           catch (rollbackError) {
             rollbackErrors.push(rollbackError);
@@ -473,7 +506,7 @@ export class StorageCommandService {
         throw error;
       }
 
-      const refreshes = [this.#refreshSource(access.storageToken, deposited.state)];
+      const refreshes = [this.#refreshSource(access.storageToken, readStorageState(access.storageToken))];
       if (source.storageToken) {
         refreshes.push(this.#refreshSource(source.storageToken, sourceReceipt?.state));
       }

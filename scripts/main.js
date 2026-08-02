@@ -81,7 +81,12 @@ import { SocketCommandBus } from "./infrastructure/foundry/socket-command-bus.js
 import { UiRefreshCoordinator } from "./infrastructure/ui/ui-refresh-coordinator.js";
 import { GlobalEventsService } from "./data/global-events-service.js";
 import { LootgenTemplateCatalog } from "./data/lootgen-template-catalog.js";
-import { StorageService, isStorageActor, readStorageState } from "./data/storage-service.js";
+import {
+  StorageService,
+  isStorageActor,
+  readStorageState,
+  readStorageStateAtPath
+} from "./data/storage-service.js";
 import { StorageOpenSoundService } from "./data/storage-open-sound-service.js";
 import {
   isStorageTokenVisible,
@@ -311,6 +316,13 @@ function createSocketRequestId(prefix) {
 
 function cleanSocketId(value) {
   return String(value ?? "").trim();
+}
+
+function cleanStoragePath(value) {
+  return (Array.isArray(value) ? value : [])
+    .map(cleanSocketId)
+    .filter(Boolean)
+    .slice(0, 8);
 }
 
 const CALENDAR_TRANSITION_BOOLEAN_OPTION_KEYS = new Set([
@@ -3041,9 +3053,11 @@ export class RebreyaMainModule {
   }
 
   async openStorage(tokenUuid, request = {}) {
+    const path = cleanStoragePath(request.path);
     const payload = {
       tokenUuid: cleanSocketId(tokenUuid),
-      characterTokenUuid: this.#controlledCharacterTokenUuid(request.characterTokenUuid)
+      characterTokenUuid: this.#controlledCharacterTokenUuid(request.characterTokenUuid),
+      ...(path.length ? { path } : {})
     };
     return isActiveGmClient(globalThis.game)
       ? this.storageCommandService.open(payload, { sender: globalThis.game?.user })
@@ -3053,6 +3067,7 @@ export class RebreyaMainModule {
   async claimStorageRow(tokenUuid, rowId, destination, mutationId, request = {}) {
     const safeTokenUuid = cleanSocketId(tokenUuid);
     const safeDestination = cleanSocketId(destination);
+    const path = cleanStoragePath(request.path);
     const payload = {
       tokenUuid: safeTokenUuid,
       characterTokenUuid: storageCharacterTokenUuidForClaim({
@@ -3073,7 +3088,8 @@ export class RebreyaMainModule {
               y: Number(request.target?.y)
             }
           : null,
-      mutationId: cleanSocketId(mutationId)
+      mutationId: cleanSocketId(mutationId),
+      ...(path.length ? { path } : {})
     };
     return isActiveGmClient(globalThis.game)
       ? this.storageCommandService.claimRow(payload, { sender: globalThis.game?.user })
@@ -3083,6 +3099,7 @@ export class RebreyaMainModule {
   async claimStorageCoins(tokenUuid, destination, mutationId, request = {}) {
     const safeTokenUuid = cleanSocketId(tokenUuid);
     const safeDestination = cleanSocketId(destination);
+    const path = cleanStoragePath(request.path);
     const payload = {
       tokenUuid: safeTokenUuid,
       characterTokenUuid: storageCharacterTokenUuidForClaim({
@@ -3092,7 +3109,8 @@ export class RebreyaMainModule {
         isGM: globalThis.game?.user?.isGM === true
       }),
       destination: safeDestination,
-      mutationId: cleanSocketId(mutationId)
+      mutationId: cleanSocketId(mutationId),
+      ...(path.length ? { path } : {})
     };
     return isActiveGmClient(globalThis.game)
       ? this.storageCommandService.claimCoins(payload, { sender: globalThis.game?.user })
@@ -3128,12 +3146,14 @@ export class RebreyaMainModule {
           kind: "item",
           itemUuid: cleanSocketId(source?.itemUuid)
         };
+    const path = cleanStoragePath(request.path);
     const payload = {
       tokenUuid: cleanSocketId(tokenUuid),
       characterTokenUuid: this.#controlledCharacterTokenUuid(request.characterTokenUuid),
       source: safeSource,
       quantity: Number(quantity),
-      mutationId: cleanSocketId(mutationId)
+      mutationId: cleanSocketId(mutationId),
+      ...(path.length ? { path } : {})
     };
     return isActiveGmClient(globalThis.game)
       ? this.storageCommandService.deposit(payload, { sender: globalThis.game?.user })
@@ -3150,9 +3170,10 @@ export class RebreyaMainModule {
     return token;
   }
 
-  async getStorageSnapshot(tokenUuid) {
+  async getStorageSnapshot(tokenUuid, request = {}) {
     const token = await this.#resolveStorageToken(tokenUuid);
-    const state = readStorageState(token);
+    const path = cleanStoragePath(request.path);
+    const state = readStorageStateAtPath(token, path);
     const combinedRows = [...state.manualRows, ...state.generatedRows];
     const rows = combinedRows
       .map((row, index) => ({ ...foundry.utils.deepClone(row), rowId: cleanSocketId(row.rowId ?? index) }))
@@ -3166,7 +3187,8 @@ export class RebreyaMainModule {
     const canManage = globalThis.game?.user?.isGM === true;
     return {
       tokenUuid: cleanSocketId(token.uuid ?? tokenUuid),
-      name: cleanSocketId(token.name),
+      path,
+      name: path.length ? state.baseName : cleanSocketId(token.name),
       state: state.state,
       rows,
       coins,
@@ -3181,11 +3203,12 @@ export class RebreyaMainModule {
     };
   }
 
-  async configureStorageToken(tokenUuid, config = {}) {
+  async configureStorageToken(tokenUuid, config = {}, request = {}) {
     if (!globalThis.game?.user?.isGM) {
       throw new Error("Настраивать хранилища может только мастер.");
     }
     const token = await this.#resolveStorageToken(tokenUuid, { requireMarked: false });
+    const path = cleanStoragePath(request.path);
     if (!isStorageActor(token.actor)) {
       if (typeof token.actor.setFlag === "function") {
         await token.actor.setFlag(MODULE_ID, "storage", { enabled: true });
@@ -3204,7 +3227,7 @@ export class RebreyaMainModule {
       if (templateId && !template) throw new Error("Шаблон Lootgen не найден.");
       patch.template = template ? { name: template.name, form: template.form } : null;
     }
-    return this.storageService.configure(token, patch);
+    return this.storageService.configure(token, patch, { path });
   }
 
   async markStorageActor(actorUuid) {
@@ -3223,7 +3246,7 @@ export class RebreyaMainModule {
     return actor;
   }
 
-  async addManualStorageItem(tokenUuid, itemUuid) {
+  async addManualStorageItem(tokenUuid, itemUuid, request = {}) {
     if (!globalThis.game?.user?.isGM) throw new Error("Добавлять предметы может только мастер.");
     const [token, item] = await Promise.all([
       this.#resolveStorageToken(tokenUuid),
@@ -3232,7 +3255,8 @@ export class RebreyaMainModule {
     if (!item || item.documentName !== "Item" && !(globalThis.Item && item instanceof globalThis.Item)) {
       throw new Error("Перетащенный предмет не найден.");
     }
-    const state = readStorageState(token);
+    const path = cleanStoragePath(request.path);
+    const state = readStorageStateAtPath(token, path);
     const itemData = foundry.utils.deepClone(item.toObject());
     delete itemData._id;
     delete itemData.folder;
@@ -3254,33 +3278,37 @@ export class RebreyaMainModule {
       manualRows: [...state.manualRows, row],
       state: state.state === "empty" ? "opened" : state.state,
       displayMode: state.state === "empty" ? "opened" : state.displayMode
-    });
-    await this.storageGroundPileService.refreshAfterStorageMutation(token, next);
+    }, { path });
+    await this.storageGroundPileService.refreshAfterStorageMutation(token, readStorageState(token));
     return next;
   }
 
-  async removeManualStorageItem(tokenUuid, rowId) {
+  async removeManualStorageItem(tokenUuid, rowId, request = {}) {
     if (!globalThis.game?.user?.isGM) throw new Error("Удалять предметы может только мастер.");
-    return this.deleteStorageRow(tokenUuid, rowId);
+    return this.deleteStorageRow(tokenUuid, rowId, request);
   }
 
-  async updateStorageRowQuantity(tokenUuid, rowId, quantity) {
+  async updateStorageRowQuantity(tokenUuid, rowId, quantity, request = {}) {
     if (!globalThis.game?.user?.isGM) throw new Error("Изменять предметы может только мастер.");
     const token = await this.#resolveStorageToken(tokenUuid);
-    const next = await this.storageService.updateRowQuantity(token, cleanSocketId(rowId), quantity);
-    await this.storageGroundPileService.refreshAfterStorageMutation(token, next);
+    const next = await this.storageService.updateRowQuantity(token, cleanSocketId(rowId), quantity, {
+      path: cleanStoragePath(request.path)
+    });
+    await this.storageGroundPileService.refreshAfterStorageMutation(token, readStorageState(token));
     return next;
   }
 
-  async deleteStorageRow(tokenUuid, rowId) {
+  async deleteStorageRow(tokenUuid, rowId, request = {}) {
     if (!globalThis.game?.user?.isGM) throw new Error("Удалять предметы может только мастер.");
     const token = await this.#resolveStorageToken(tokenUuid);
-    const next = await this.storageService.deleteRow(token, cleanSocketId(rowId));
-    await this.storageGroundPileService.refreshAfterStorageMutation(token, next);
+    const next = await this.storageService.deleteRow(token, cleanSocketId(rowId), {
+      path: cleanStoragePath(request.path)
+    });
+    await this.storageGroundPileService.refreshAfterStorageMutation(token, readStorageState(token));
     return next;
   }
 
-  async resetStorageToken(tokenUuid) {
+  async resetStorageToken(tokenUuid, request = {}) {
     if (!globalThis.game?.user?.isGM) throw new Error("Сбрасывать хранилища может только мастер.");
     const token = await this.#resolveStorageToken(tokenUuid);
     return this.storageService.configure(token, {
@@ -3290,15 +3318,15 @@ export class RebreyaMainModule {
       coinsClaimed: false,
       state: "unopened",
       displayMode: "unopened"
-    });
+    }, { path: cleanStoragePath(request.path) });
   }
 
-  async setStorageTextureMode(tokenUuid, mode) {
+  async setStorageTextureMode(tokenUuid, mode, request = {}) {
     if (!globalThis.game?.user?.isGM) {
       throw new Error("Менять текстуру хранилища может только мастер.");
     }
     const token = await this.#resolveStorageToken(tokenUuid);
-    return this.storageService.setTextureMode(token, mode);
+    return this.storageService.setTextureMode(token, mode, { path: cleanStoragePath(request.path) });
   }
 
   async openStorageApp({ tokenUuid, configure = false, anchorToToken = false } = {}) {
