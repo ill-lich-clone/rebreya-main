@@ -385,6 +385,9 @@ export function applyDurabilityDamage(flag, { amount, damageType } = {}) {
 
   const currentHp = Math.max(0, Number(flag?.hp?.value) || 0);
   const maxHp = Math.max(0, Number(flag?.hp?.max) || 0);
+  if (currentHp <= 0) {
+    return ignoredTransition(flag);
+  }
   const remainingHp = Math.max(0, currentHp - damage);
   const appliedDamage = currentHp - remainingHp;
   const nextFlag = cloneDurabilityFlag(flag);

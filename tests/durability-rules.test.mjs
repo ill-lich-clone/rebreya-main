@@ -414,6 +414,17 @@ test("damage stops an intact item at zero without changing its state", () => {
   assert.deepEqual(transition.nextFlag.hp, { value: 0, max: 15 });
 });
 
+test("further damage at zero is ignored instead of opening another outcome", () => {
+  const flag = buildInitialDurability(resolveFromMaterialName("Сталь"));
+  const depleted = applyDurabilityDamage(flag, { amount: 15, damageType: "slashing" }).nextFlag;
+
+  const repeated = applyDurabilityDamage(depleted, { amount: 5, damageType: "slashing" });
+
+  assert.equal(repeated.outcome, "ignored");
+  assert.equal(repeated.appliedDamage, 0);
+  assert.deepEqual(repeated.nextFlag.hp, { value: 0, max: 15 });
+});
+
 test("explicit break and destroy transitions keep zero HP without a second pool", () => {
   const intact = buildInitialDurability(resolveFromMaterialName("Сталь"));
   const depleted = applyDurabilityDamage(intact, { amount: 15, damageType: "slashing" }).nextFlag;

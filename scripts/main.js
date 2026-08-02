@@ -90,6 +90,7 @@ import {
 } from "./data/storage-access.js";
 import { BuiltinStorageActorService } from "./data/builtin-storage-actor-service.js";
 import { StorageGroundPileService } from "./data/storage-ground-pile-service.js";
+import { NativeObjectDurabilityService } from "./data/native-object-durability-service.js";
 import {
   StorageCommandService,
   isValidStorageClaimCoinsPayload,
@@ -151,8 +152,9 @@ import { registerHeldShieldArmorClassPatch } from "./integrations/held-shield-ac
 import {
   patchDurabilityItemEffectSuppression,
   reconcileBrokenEquippedArmor,
+  reconcileNativeObjectDurability,
   registerDurabilityHooks
-} from "./integrations/durability-hooks.js?v=1.4.96-durability-piles";
+} from "./integrations/durability-hooks.js?v=1.4.116-native-durability";
 import { patchEffectMacroCombatHooks } from "./integrations/effectmacro-compat.js";
 import { patchSmAirshipRenderSettingsHook } from "./integrations/sm-airship-compat.js";
 import { registerInventorySyncHooks } from "./integrations/inventory-sync.js?v=1.4.96-durable-transfer";
@@ -190,6 +192,7 @@ import {
 } from "./settings.js";
 import { buildLootgenChatContent, buildLootgenStatusContent, registerLootgenChatHooks } from "./ui/lootgen-chat.js?v=1.4.96-durability";
 import { bringAppToFront, notifyUser, registerHandlebarsHelpers, rerenderApp } from "./ui.js";
+import { promptDurabilityOutcome } from "./ui/durability-outcome-dialog.js";
 
 const SOCKET_CHANNEL = `module.${MODULE_ID}`;
 const SOCKET_EVENT_LOOTGEN_SHOW = "lootgen-show-result";
@@ -242,6 +245,7 @@ const TRADER_SELL_COMMAND = "trader.sell";
 export const STORAGE_OPEN_COMMAND = "storage.open";
 export const STORAGE_CLAIM_ROW_COMMAND = "storage.claim-row";
 export const STORAGE_CLAIM_COINS_COMMAND = "storage.claim-coins";
+export const DURABILITY_TARGET_DAMAGE_COMMAND = "durability.target.damage";
 const ENVIRONMENT_COMBAT_STATUS_IDS = new Set(["rebreya-surrounded", "rebreya-open-position"]);
 const ENVIRONMENT_STATUS_SOURCE = "rebreya-environment";
 const ENVIRONMENT_STATUS_VERSION = "surrounded-ac-1";
@@ -690,6 +694,16 @@ function isValidInventoryCurrencyConvertPayload(payload) {
     && ["normalized", "gp", "sp", "cp"].includes(payload.mode);
 }
 
+function isValidDurabilityTargetDamagePayload(payload) {
+  return hasExactKeys(payload, ["amount", "damageType", "mutationId", "targetUuid"])
+    && Number.isFinite(payload.amount)
+    && payload.amount > 0
+    && typeof payload.damageType === "string"
+    && payload.damageType === payload.damageType.trim()
+    && isValidInventoryMutationId(payload.mutationId)
+    && isTrimmedNonEmptyString(payload.targetUuid);
+}
+
 function traderActorIsOwnedByUser(actor, user) {
   if (!actor || !user) return false;
   if (user.isGM === true) return true;
@@ -1037,6 +1051,16 @@ export class RebreyaMainModule {
       gameProvider: () => globalThis.game,
       isActiveGm: isActiveGmClient
     });
+    this.nativeObjectDurabilityService = new NativeObjectDurabilityService({
+      durabilityService: this.durabilityService,
+      storageService: this.storageService,
+      groundPileService: this.storageGroundPileService,
+      mutationCoordinator: this.worldMutationCoordinator,
+      isActiveGm: () => isActiveGmClient(globalThis.game),
+      resolveUuid: (uuid) => globalThis.fromUuid?.(uuid)
+    });
+    this.promptDurabilityOutcome = promptDurabilityOutcome;
+    this.durabilityOutcomeTasks = new Map();
     this.storageCommandService = new StorageCommandService({
       storageService: this.storageService,
       inventoryService: this.inventoryService,
@@ -1323,6 +1347,11 @@ export class RebreyaMainModule {
       validate: isValidStorageClaimCoinsPayload,
       authorize: (_payload, { sender }) => Boolean(sender),
       execute: (payload, { sender }) => this.storageCommandService.claimCoins(payload, { sender })
+    });
+    this.socketCommandBus.register(DURABILITY_TARGET_DAMAGE_COMMAND, {
+      validate: isValidDurabilityTargetDamagePayload,
+      authorize: (_payload, { sender }) => sender?.isGM === true,
+      execute: (payload) => this.#damageDurabilityTargetOnActiveGm(payload.targetUuid, payload)
     });
     const authorizeTradeActor = (payload, { sender }) => traderActorIsOwnedByUser(
       globalThis.game?.actors?.get?.(payload.actorId)
@@ -2456,7 +2485,65 @@ export class RebreyaMainModule {
   }
 
   damageItem(item, options = {}) {
-    return this.durabilityService.damageItem(item, options);
+    return this.damageDurabilityTarget(item, options);
+  }
+
+  async damageDurabilityTarget(target, options = {}) {
+    const amount = Number(options?.amount);
+    const damageType = String(options?.damageType ?? "").trim();
+    const mutationId = String(options?.mutationId ?? "").trim()
+      || createSocketRequestId("durability-target");
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new Error("Урон прочности должен быть положительным числом.");
+    }
+    if (isActiveGmClient(globalThis.game)) {
+      return this.#damageDurabilityTargetOnActiveGm(target, { amount, damageType, mutationId });
+    }
+    const resolved = await this.nativeObjectDurabilityService.resolve(target);
+    const targetUuid = String(resolved?.item?.uuid ?? resolved?.token?.uuid ?? resolved?.uuid ?? "").trim();
+    if (!targetUuid) return { outcome: "ignored", nextFlag: null, appliedDamage: 0 };
+    return this.socketCommandBus.request(DURABILITY_TARGET_DAMAGE_COMMAND, {
+      amount,
+      damageType,
+      mutationId,
+      targetUuid
+    });
+  }
+
+  async #damageDurabilityTargetOnActiveGm(target, options = {}) {
+    const resolved = await this.nativeObjectDurabilityService.resolve(target);
+    if (!resolved) return { outcome: "ignored", nextFlag: null, appliedDamage: 0 };
+    const transition = await this.nativeObjectDurabilityService.damage(target, options);
+    if (transition?.outcome !== "depleted") return transition;
+    const key = String(resolved.uuid ?? resolved.item?.uuid ?? resolved.token?.uuid ?? "").trim();
+    const previous = this.durabilityOutcomeTasks.get(key) ?? Promise.resolve();
+    const task = previous.catch(() => undefined).then(async () => {
+      const current = await this.nativeObjectDurabilityService.resolve(target);
+      const state = String(
+        current?.durability?.state
+        ?? current?.item?.flags?.[MODULE_ID]?.durability?.state
+        ?? current?.token?.flags?.[MODULE_ID]?.objectDurability?.state
+        ?? "intact"
+      ).trim();
+      if (["broken", "destroyed"].includes(state)) return transition;
+      const name = String(current?.row?.name ?? current?.item?.name ?? current?.token?.name ?? "Предмет").trim();
+      const choice = await this.promptDurabilityOutcome({ name });
+      if (!choice) return transition;
+      return this.nativeObjectDurabilityService.resolveDepletion(target, choice, {
+        mutationId: options.mutationId
+      });
+    });
+    this.durabilityOutcomeTasks.set(key, task);
+    try {
+      return await task;
+    }
+    finally {
+      if (this.durabilityOutcomeTasks.get(key) === task) this.durabilityOutcomeTasks.delete(key);
+    }
+  }
+
+  resolveDurabilityOutcome(target, choice, options = {}) {
+    return this.nativeObjectDurabilityService.resolveDepletion(target, choice, options);
   }
 
   breakItem(item, options = {}) {
@@ -5501,7 +5588,10 @@ Hooks.once("ready", async () => {
 
   try {
     registerDurabilityHooks(moduleApi);
-    await reconcileBrokenEquippedArmor();
+    await Promise.all([
+      reconcileBrokenEquippedArmor(),
+      reconcileNativeObjectDurability()
+    ]);
   }
   catch (error) {
     console.error(`${MODULE_ID} | Failed to register durability hooks.`, error);
