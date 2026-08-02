@@ -1,47 +1,60 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
+import { MODULE_ID } from "../scripts/constants.js";
+import { buildTransportFuelSelector } from "../scripts/data/transport-fuel-item.js";
 import {
   TransportFuelService,
   validateTransportFuelConsumptionPayload
 } from "../scripts/data/transport-fuel-service.js";
 
+const selectedFuel = {
+  documentName: "Item",
+  uuid: "Compendium.world.goods.Item.coal",
+  name: "Жидкий уголь",
+  type: "loot",
+  img: "icons/coal.webp",
+  flags: {
+    [MODULE_ID]: { sourceType: "good", sourceId: "liquid-coal" }
+  }
+};
+
 function createFuelHarness({
-  quantity = 5,
-  fuelItemId = "liquid-coal",
-  fuelItemName = "Жидкий уголь",
-  fuelPerMile = 0.125,
-  includeItem = true,
+  quantities = [2, 3],
+  configured = true,
+  rate = 0.125,
   mutationError = null
 } = {}) {
-  const itemUpdates = [];
-  let deleted = false;
-  const item = {
-    id: "liquid-coal",
-    name: "Жидкий уголь",
-    system: { quantity },
-    async update(patch) {
-      if (mutationError) throw mutationError;
-      itemUpdates.push(structuredClone(patch));
-      this.system.quantity = patch["system.quantity"];
-    },
-    async delete() {
-      if (mutationError) throw mutationError;
-      deleted = true;
-    }
-  };
+  const updates = [];
+  const items = quantities.map((quantity, index) => {
+    const id = index === 0 ? "coal-b" : `coal-${String.fromCharCode(96 + index)}`;
+    return {
+      documentName: "Item",
+      id,
+      uuid: `Actor.group-a.Item.${id}`,
+      name: "Жидкий уголь",
+      type: "loot",
+      img: "icons/coal.webp",
+      system: { quantity },
+      flags: {
+        [MODULE_ID]: { sourceType: "good", sourceId: "liquid-coal" }
+      }
+    };
+  });
   const vehicle = {
     id: "vehicle-a",
     type: "vehicle",
     flags: {
-      "rebreya-main": {
-        sourceId: "transport-v01-kettle",
+      [MODULE_ID]: {
         transport: {
           instance: true,
           sourceId: "transport-v01-kettle",
           sourceActorUuid: "Compendium.world.rebreya-transport.Actor.lchtransport0048",
           groupActorId: "group-a",
-          instanceState: { fuelItemId, fuelItemName, fuelPerMile }
+          consumption: { kind: "fuel", amount: rate, unit: "gal", cadence: "mile" },
+          instanceState: configured
+            ? { fuelSelector: buildTransportFuelSelector(selectedFuel) }
+            : {}
         }
       }
     },
@@ -52,35 +65,31 @@ function createFuelHarness({
   const groupActor = {
     id: "group-a",
     type: "group",
-    items: {
-      contents: includeItem ? [item] : [],
-      get(id) {
-        return this.contents.find((entry) => entry.id === id) ?? null;
+    items: { contents: items },
+    async updateEmbeddedDocuments(documentName, patches) {
+      if (mutationError) throw mutationError;
+      updates.push([documentName, structuredClone(patches)]);
+      for (const patch of patches) {
+        const item = items.find((entry) => entry.id === patch._id);
+        if (item) item.system.quantity = patch["system.quantity"];
       }
-    }
-  };
-  const context = {
-    groupId: "group-a",
-    groupActor,
-    members: [vehicle],
-    groupState: {
-      transportState: { activeTransportId: "member:vehicle-a" }
+      return items;
     }
   };
   const service = new TransportFuelService({
     groupContextService: {
       resolveForGroup(groupActorId) {
         assert.equal(groupActorId, "group-a");
-        return context;
+        return {
+          groupId: "group-a",
+          groupActor,
+          members: [vehicle],
+          groupState: { transportState: { activeTransportId: "member:vehicle-a" } }
+        };
       }
     }
   });
-  return {
-    service,
-    item,
-    itemUpdates,
-    wasDeleted: () => deleted
-  };
+  return { service, items, updates };
 }
 
 test("fuel consumption payload is exact and non-negative", () => {
@@ -92,88 +101,58 @@ test("fuel consumption payload is exact and non-negative", () => {
   assert.equal(validateTransportFuelConsumptionPayload({ ...valid, groupActorId: "__proto__" }), false);
 });
 
-test("travel consumes the configured fractional warehouse quantity", async () => {
+test("travel consumes matching warehouse stacks in stable item-id order", async () => {
   const harness = createFuelHarness();
+  const result = await harness.service.consumeForTravel({ groupActorId: "group-a", appliedMiles: 32 });
 
-  const result = await harness.service.consumeForTravel({
-    groupActorId: "group-a",
-    appliedMiles: 10
-  });
-
-  assert.deepEqual(result, {
-    configured: true,
-    required: 1.25,
-    consumed: 1.25,
-    shortage: 0,
-    itemName: "Жидкий уголь",
-    warning: ""
-  });
-  assert.deepEqual(harness.itemUpdates, [{ "system.quantity": 3.75 }]);
-  assert.equal(harness.wasDeleted(), false);
+  assert.equal(result.required, 4);
+  assert.equal(result.consumed, 4);
+  assert.equal(result.shortage, 0);
+  assert.deepEqual(harness.updates, [["Item", [
+    { _id: "coal-a", "system.quantity": 0 },
+    { _id: "coal-b", "system.quantity": 1 }
+  ]]]);
 });
 
-test("insufficient fuel is depleted and reported without blocking travel", async () => {
-  const harness = createFuelHarness({ quantity: 2, fuelPerMile: 0.3 });
+test("insufficient fuel is depleted without deleting stacks or blocking travel", async () => {
+  const harness = createFuelHarness({ quantities: [1, 1] });
+  const result = await harness.service.consumeForTravel({ groupActorId: "group-a", appliedMiles: 24 });
 
-  const result = await harness.service.consumeForTravel({
-    groupActorId: "group-a",
-    appliedMiles: 10
-  });
-
-  assert.equal(result.configured, true);
   assert.equal(result.required, 3);
   assert.equal(result.consumed, 2);
   assert.equal(result.shortage, 1);
   assert.match(result.warning, /не хватило 1/u);
-  assert.equal(harness.wasDeleted(), true);
+  assert.deepEqual(harness.items.map((item) => item.system.quantity), [0, 0]);
 });
 
-test("missing or unconfigured fuel returns a reminder and never throws", async () => {
-  const missing = createFuelHarness({ includeItem: false });
-  const missingResult = await missing.service.consumeForTravel({
-    groupActorId: "group-a",
-    appliedMiles: 8
-  });
-  assert.equal(missingResult.configured, true);
-  assert.equal(missingResult.consumed, 0);
-  assert.equal(missingResult.shortage, 1);
-  assert.match(missingResult.warning, /не найден/u);
+test("selected fuel without warehouse stock reports shortage and remains configured", async () => {
+  const harness = createFuelHarness({ quantities: [] });
+  const result = await harness.service.consumeForTravel({ groupActorId: "group-a", appliedMiles: 8 });
 
-  const unconfigured = createFuelHarness({ fuelItemId: "", fuelItemName: "", fuelPerMile: 0 });
-  const unconfiguredResult = await unconfigured.service.consumeForTravel({
-    groupActorId: "group-a",
-    appliedMiles: 8
-  });
-  assert.deepEqual(unconfiguredResult, {
-    configured: false,
-    required: 0,
-    consumed: 0,
-    shortage: 0,
-    itemName: "",
-    warning: ""
-  });
-});
-
-test("rewinding travel never refunds or mutates fuel", async () => {
-  const harness = createFuelHarness();
-  const result = await harness.service.consumeForTravel({
-    groupActorId: "group-a",
-    appliedMiles: -12
-  });
-
-  assert.equal(result.required, 0);
+  assert.equal(result.configured, true);
+  assert.equal(result.required, 1);
   assert.equal(result.consumed, 0);
-  assert.deepEqual(harness.itemUpdates, []);
-  assert.equal(harness.wasDeleted(), false);
+  assert.equal(result.shortage, 1);
+  assert.equal(result.itemName, "Жидкий уголь");
+  assert.match(result.warning, /не найдено/u);
+});
+
+test("unconfigured fuel and travel rewind never mutate inventory", async () => {
+  const unconfigured = createFuelHarness({ configured: false });
+  assert.deepEqual(
+    await unconfigured.service.consumeForTravel({ groupActorId: "group-a", appliedMiles: 8 }),
+    { configured: false, required: 0, consumed: 0, shortage: 0, itemName: "", warning: "" }
+  );
+
+  const rewind = createFuelHarness();
+  const rewindResult = await rewind.service.consumeForTravel({ groupActorId: "group-a", appliedMiles: -12 });
+  assert.equal(rewindResult.required, 0);
+  assert.deepEqual(rewind.updates, []);
 });
 
 test("fuel mutation errors become warnings instead of travel failures", async () => {
   const harness = createFuelHarness({ mutationError: new Error("warehouse locked") });
-
-  const result = await harness.service.consumeForTravel({
-    groupActorId: "group-a",
-    appliedMiles: 8
-  });
+  const result = await harness.service.consumeForTravel({ groupActorId: "group-a", appliedMiles: 8 });
 
   assert.equal(result.required, 1);
   assert.equal(result.consumed, 0);

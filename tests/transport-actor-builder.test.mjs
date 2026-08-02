@@ -34,6 +34,22 @@ test("transport normalizer keeps source text and does not invent dashed stats", 
   assert.equal(mount.feedOrFuel.unit, "lb");
 });
 
+test("transport consumption exposes a machine-readable fractional per-mile rate", () => {
+  const vehicle = normalizeTransportEntry({
+    ...catalog.find((row) => row.name === "Гражданский автомобиль"),
+    consumption: "Жидкий уголь 1/8 галлона"
+  });
+
+  assert.deepEqual(vehicle.feedOrFuel, {
+    kind: "fuel",
+    resource: "Жидкий уголь",
+    amount: 0.125,
+    unit: "gal",
+    cadence: "mile",
+    raw: "Жидкий уголь 1/8 галлона"
+  });
+});
+
 test("locomotive capacity retains own and towed tonnage", () => {
   assert.deepEqual(parseTransportCapacity("5/500 тонн"), {
     cargoCapacityLb: 10000,

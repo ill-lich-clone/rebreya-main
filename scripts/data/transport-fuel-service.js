@@ -1,4 +1,5 @@
 import { MODULE_ID } from "../constants.js";
+import { buildTransportFuelInventorySnapshot } from "./transport-fuel-item.js";
 
 const PAYLOAD_KEYS = Object.freeze(["appliedMiles", "groupActorId"]);
 
@@ -29,19 +30,6 @@ function toNumber(value) {
 
 function roundQuantity(value) {
   return Math.round((Number(value) + Number.EPSILON) * 100) / 100;
-}
-
-function collectionValues(collection) {
-  if (Array.isArray(collection)) return collection;
-  if (Array.isArray(collection?.contents)) return collection.contents;
-  if (typeof collection?.values === "function") return Array.from(collection.values());
-  return [];
-}
-
-function collectionGet(collection, id) {
-  return collection?.get?.(id)
-    ?? collectionValues(collection).find((entry) => entry?.id === id)
-    ?? null;
 }
 
 function readTransport(actor) {
@@ -103,36 +91,59 @@ export class TransportFuelService {
       return emptyResult();
     }
 
-    const state = transport.instanceState ?? {};
-    const fuelItemId = cleanId(state.fuelItemId);
-    const itemName = cleanId(state.fuelItemName);
-    const fuelPerMile = Math.max(0, toNumber(state.fuelPerMile) ?? 0);
+    const fuel = buildTransportFuelInventorySnapshot(
+      context?.groupActor?.items,
+      transport.instanceState?.fuelSelector
+    );
+    const consumption = transport.consumption ?? {};
+    const fuelPerMile = consumption.kind === "fuel" && consumption.cadence === "mile"
+      ? Math.max(0, toNumber(consumption.amount) ?? 0)
+      : 0;
+    const itemName = cleanId(fuel.name);
     const appliedMiles = Math.max(0, requestedMiles ?? 0);
-    if (!fuelItemId || fuelPerMile <= 0) return emptyResult({ itemName });
+    if (!fuel.configured || fuelPerMile <= 0) return emptyResult({ itemName });
     if (appliedMiles <= 0) return emptyResult({ configured: true, itemName });
 
     const required = roundQuantity(appliedMiles * fuelPerMile);
     if (required <= 0) return emptyResult({ configured: true, itemName });
-    const item = collectionGet(context?.groupActor?.items, fuelItemId);
-    if (!item) {
+    if (fuel.stacks.length === 0) {
       return {
         configured: true,
         required,
         consumed: 0,
         shortage: required,
         itemName,
-        warning: `Топливо «${itemName || fuelItemId}» не найдено на складе группы.`
+        warning: `Топливо «${itemName || "выбранный предмет"}» не найдено на складе группы.`
       };
     }
 
-    const available = Math.max(0, toNumber(item.system?.quantity ?? item.toObject?.()?.system?.quantity) ?? 0);
-    const consumed = roundQuantity(Math.min(available, required));
+    const consumed = roundQuantity(Math.min(fuel.quantity, required));
     const shortage = roundQuantity(Math.max(0, required - consumed));
+    let remaining = consumed;
+    const updates = [];
+    for (const stack of fuel.stacks) {
+      if (remaining <= 0) break;
+      const stackConsumed = roundQuantity(Math.min(stack.quantity, remaining));
+      if (stackConsumed <= 0) continue;
+      updates.push({
+        _id: stack.itemId,
+        "system.quantity": roundQuantity(stack.quantity - stackConsumed)
+      });
+      remaining = roundQuantity(remaining - stackConsumed);
+    }
     try {
-      if (consumed > 0) {
-        const nextQuantity = roundQuantity(available - consumed);
-        if (nextQuantity <= 0) await item.delete?.();
-        else await item.update?.({ "system.quantity": nextQuantity });
+      if (updates.length > 0) {
+        if (typeof context?.groupActor?.updateEmbeddedDocuments === "function") {
+          await context.groupActor.updateEmbeddedDocuments("Item", updates);
+        }
+        else {
+          const items = context?.groupActor?.items;
+          for (const patch of updates) {
+            const item = items?.get?.(patch._id)
+              ?? items?.contents?.find?.((entry) => entry?.id === patch._id);
+            await item?.update?.({ "system.quantity": patch["system.quantity"] });
+          }
+        }
       }
     }
     catch (error) {
@@ -142,8 +153,8 @@ export class TransportFuelService {
         required,
         consumed: 0,
         shortage: required,
-        itemName: cleanId(item.name) || itemName,
-        warning: `Не удалось списать топливо «${cleanId(item.name) || itemName}». Путешествие продолжено.`
+        itemName,
+        warning: `Не удалось списать топливо «${itemName}». Путешествие продолжено.`
       };
     }
 
@@ -152,9 +163,9 @@ export class TransportFuelService {
       required,
       consumed,
       shortage,
-      itemName: cleanId(item.name) || itemName,
+      itemName,
       warning: shortage > 0
-        ? `Топливо «${cleanId(item.name) || itemName}»: не хватило ${shortage}. Путешествие продолжено.`
+        ? `Топливо «${itemName}»: не хватило ${shortage}. Путешествие продолжено.`
         : ""
     };
   }

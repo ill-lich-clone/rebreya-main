@@ -405,11 +405,25 @@ test("getTransportSnapshot does not treat warehouse items as concrete group tran
     assert.equal(transportSnapshot.activeVehicle, null);
     assert.equal(transportSnapshot.effectiveSpeedMph, 3);
     assert.deepEqual(transportSnapshot.vehicles, []);
-    assert.deepEqual(transportSnapshot.fuelRange, {
+    assert.deepEqual(transportSnapshot.fuel, {
       configured: false,
-      itemName: "",
-      miles: null,
+      selector: {
+        uuid: "",
+        sourceUuid: "",
+        sourceType: "",
+        sourceId: "",
+        type: "",
+        normalizedName: "",
+        name: "",
+        img: ""
+      },
+      card: null,
+      quantity: 0,
+      consumptionPerMile: 0,
+      unit: "",
+      miles: 0,
       isEmpty: false,
+      stacks: [],
       reason: "noTransport"
     });
   }
@@ -420,9 +434,22 @@ test("getTransportSnapshot does not treat warehouse items as concrete group tran
 
 test("vehicle member reads D&D5e 5.2.5 native fields and live instance state", async () => {
   const fuelItem = createItem({
+    id: "fuel-b",
+    name: "Жидкий уголь",
+    quantity: 3,
+    flags: {
+      [MODULE_ID]: { sourceType: "good", sourceId: "liquid-coal" }
+    },
+    extra: { uuid: "Actor.group-a.Item.fuel-b" }
+  });
+  const secondFuelItem = createItem({
     id: "fuel-a",
-    name: "Liquid coal",
-    quantity: 39.9
+    name: "Жидкий уголь",
+    quantity: 2,
+    flags: {
+      [MODULE_ID]: { sourceType: "good", sourceId: "liquid-coal" }
+    },
+    extra: { uuid: "Actor.group-a.Item.fuel-a" }
   });
   const actor = createActor({
     id: "vehicle-a",
@@ -436,15 +463,27 @@ test("vehicle member reads D&D5e 5.2.5 native fields and live instance state", a
           instance: true,
           sourceActorUuid: "Compendium.world.rebreya-transport.Actor.heavywagon",
           groupActorId: "group-a",
-          consumption: { kind: "fuel", unit: "gal", raw: "Жидкий уголь 1/8 галлона" },
+          consumption: {
+            kind: "fuel",
+            amount: 0.125,
+            unit: "gal",
+            cadence: "mile",
+            raw: "Жидкий уголь 1/8 галлона"
+          },
           instanceState: {
             condition: "damaged",
             reserveCurrent: 8,
             reserveCapacity: 12,
             reserveUnit: "gal",
-            fuelItemId: fuelItem.id,
-            fuelItemName: fuelItem.name,
-            fuelPerMile: 0.25
+            fuelSelector: {
+              uuid: "Compendium.world.goods.Item.coal",
+              sourceType: "good",
+              sourceId: "liquid-coal",
+              type: "loot",
+              normalizedName: "жидкий уголь",
+              name: "Жидкий уголь",
+              img: "icons/coal.webp"
+            }
           }
         }
       }
@@ -464,7 +503,7 @@ test("vehicle member reads D&D5e 5.2.5 native fields and live instance state", a
     type: "group",
     isOwner: true,
     members: [{ actor }],
-    items: [fuelItem]
+    items: [fuelItem, secondFuelItem]
   });
   const fixture = installInventoryFixture({
     actors: [groupActor, actor],
@@ -530,15 +569,18 @@ test("vehicle member reads D&D5e 5.2.5 native fields and live instance state", a
         canDropInventoryItems: true
       }
     });
-    assert.deepEqual(transportSnapshot.fuelRange, {
-      configured: true,
-      itemName: fuelItem.name,
-      miles: 159,
-      isEmpty: false,
-      reason: ""
-    });
+    assert.equal(transportSnapshot.fuel.quantity, 5);
+    assert.equal(transportSnapshot.fuel.consumptionPerMile, 0.125);
+    assert.equal(transportSnapshot.fuel.unit, "gal");
+    assert.equal(transportSnapshot.fuel.miles, 40);
+    assert.equal(transportSnapshot.fuel.card.name, "Жидкий уголь");
+    assert.equal(transportSnapshot.fuel.card.openUuid, "Actor.group-a.Item.fuel-a");
+    assert.equal(transportSnapshot.fuel.card.quantity, 5);
+    assert.equal(transportSnapshot.fuel.card.canOpen, true);
+    assert.deepEqual(transportSnapshot.fuel.stacks.map((stack) => stack.itemId), ["fuel-a", "fuel-b"]);
 
     fuelItem.system.quantity = 0;
+    secondFuelItem.system.quantity = 0;
     const emptyFuelSnapshot = await service.getTransportSnapshot({
       partySnapshot: snapshot,
       inventorySnapshot: {
@@ -546,13 +588,11 @@ test("vehicle member reads D&D5e 5.2.5 native fields and live instance state", a
         canDropInventoryItems: true
       }
     });
-    assert.deepEqual(emptyFuelSnapshot.fuelRange, {
-      configured: true,
-      itemName: fuelItem.name,
-      miles: 0,
-      isEmpty: true,
-      reason: ""
-    });
+    assert.equal(emptyFuelSnapshot.fuel.configured, true);
+    assert.equal(emptyFuelSnapshot.fuel.quantity, 0);
+    assert.equal(emptyFuelSnapshot.fuel.miles, 0);
+    assert.equal(emptyFuelSnapshot.fuel.isEmpty, true);
+    assert.equal(emptyFuelSnapshot.fuel.card.openUuid, "Actor.group-a.Item.fuel-a");
   }
   finally {
     fixture.restore();

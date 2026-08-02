@@ -20,6 +20,10 @@ import { WorldMutationCoordinator } from "../application/world-mutation-coordina
 import { finiteNumber as toNumber } from "../shared/foundry-values.js";
 import { buildDurabilitySignature, isDurabilityEligible } from "./durability-rules.js";
 import { applyLootgenRowDurability } from "./lootgen-durability.js";
+import {
+  buildTransportFuelInventorySnapshot,
+  normalizeTransportFuelSelector
+} from "./transport-fuel-item.js";
 
 const SOCKET_CHANNEL = `module.${MODULE_ID}`;
 export const SOCKET_EVENT_INVENTORY_IMPORT_REQUEST = "inventory-import-request";
@@ -854,9 +858,8 @@ function buildTransportProfile({
   reserveCurrent = 0,
   reserveCapacity = null,
   reserveUnit = "",
-  fuelItemId = "",
-  fuelItemName = "",
-  fuelPerMile = null,
+  fuelSelector = null,
+  consumption = null,
   hasExplicitCargoCapacity = false,
   accelerationFt = null,
   breakdownThreshold = null
@@ -913,9 +916,14 @@ function buildTransportProfile({
     reserveCapacity: extractNumber(reserveCapacity),
     reserveUnit: cleanId(reserveUnit),
     reserveLabel: formatTransportReserveLabel(reserveCurrent, reserveCapacity, reserveUnit),
-    fuelItemId: cleanId(fuelItemId),
-    fuelItemName: cleanId(fuelItemName),
-    fuelPerMile: Math.max(0, toNumber(fuelPerMile, 0)),
+    fuelSelector: normalizeTransportFuelSelector(fuelSelector),
+    consumption: {
+      kind: cleanId(consumption?.kind),
+      amount: Math.max(0, toNumber(consumption?.amount, 0)),
+      unit: cleanId(consumption?.unit),
+      cadence: cleanId(consumption?.cadence),
+      raw: cleanId(consumption?.raw)
+    },
     hasExplicitCargoCapacity: hasExplicitCargoCapacity === true,
     accelerationFt: extractNumber(accelerationFt),
     breakdownThreshold: extractNumber(breakdownThreshold)
@@ -1036,9 +1044,8 @@ function buildTransportProfileFromActor(actor, memberState = {}, {
     reserveCurrent: instanceState.reserveCurrent,
     reserveCapacity: instanceState.reserveCapacity,
     reserveUnit: instanceState.reserveUnit ?? consumption.unit,
-    fuelItemId: instanceState.fuelItemId,
-    fuelItemName: instanceState.fuelItemName,
-    fuelPerMile: instanceState.fuelPerMile,
+    fuelSelector: instanceState.fuelSelector,
+    consumption,
     hasExplicitCargoCapacity: explicitCargoValue !== undefined,
     accelerationFt: transportFlags.accelerationFt,
     breakdownThreshold: transportFlags.breakdownThreshold
@@ -1203,11 +1210,16 @@ function buildEmptyTransportSnapshot({ warning = "", canManage = false } = {}) {
     hasVehicles: false,
     activeTransportId: "",
     activeVehicle: null,
-    fuelRange: {
+    fuel: {
       configured: false,
-      itemName: "",
-      miles: null,
+      selector: normalizeTransportFuelSelector(null),
+      card: null,
+      quantity: 0,
+      consumptionPerMile: 0,
+      unit: "",
+      miles: 0,
       isEmpty: false,
+      stacks: [],
       reason: "noTransport"
     },
     effectiveSpeedMph: DEFAULT_TRAVEL_SPEED_MPH,
@@ -1222,41 +1234,68 @@ function getRawQuantity(itemData) {
   return Math.max(0, toNumber(foundry.utils.getProperty(itemData, "system.quantity"), 1));
 }
 
-function buildTransportFuelRange(activeVehicle, groupActor) {
+function buildTransportFuelSnapshot(activeVehicle, groupActor) {
   if (!activeVehicle?.isConcreteInstance) {
     return {
       configured: false,
-      itemName: "",
-      miles: null,
+      selector: normalizeTransportFuelSelector(null),
+      card: null,
+      quantity: 0,
+      consumptionPerMile: 0,
+      unit: "",
+      miles: 0,
       isEmpty: false,
+      stacks: [],
       reason: "noTransport"
     };
   }
 
-  const fuelItemId = cleanId(activeVehicle.fuelItemId);
-  const fuelPerMile = Math.max(0, toNumber(activeVehicle.fuelPerMile, 0));
-  const savedItemName = cleanId(activeVehicle.fuelItemName);
-  if (!fuelItemId || fuelPerMile <= 0) {
-    return {
-      configured: false,
-      itemName: savedItemName,
-      miles: null,
-      isEmpty: false,
-      reason: "unconfigured"
-    };
-  }
-
-  const fuelItem = groupActor?.items?.get?.(fuelItemId)
-    ?? groupActor?.items?.contents?.find?.((item) => cleanId(item?.id) === fuelItemId)
-    ?? null;
-  const quantity = fuelItem ? getRawQuantity(fuelItem.toObject?.() ?? fuelItem) : 0;
-  const miles = Math.max(0, Math.floor(quantity / fuelPerMile));
+  const inventoryFuel = buildTransportFuelInventorySnapshot(
+    groupActor?.items,
+    activeVehicle.fuelSelector
+  );
+  const consumption = activeVehicle.consumption ?? {};
+  const consumptionPerMile = consumption.kind === "fuel" && consumption.cadence === "mile"
+    ? Math.max(0, toNumber(consumption.amount, 0))
+    : 0;
+  const miles = consumptionPerMile > 0
+    ? Math.max(0, Math.floor(inventoryFuel.quantity / consumptionPerMile))
+    : 0;
+  const primaryItem = inventoryFuel.primaryItemId
+    ? groupActor?.items?.get?.(inventoryFuel.primaryItemId)
+      ?? groupActor?.items?.contents?.find?.((item) => cleanId(item?.id) === inventoryFuel.primaryItemId)
+      ?? null
+    : null;
+  const primaryData = primaryItem?.toObject?.() ?? primaryItem ?? {};
+  const weight = Math.max(0, toNumber(getProperty(primaryData, "system.weight.value"), 0));
+  const price = getProperty(primaryData, "system.price") ?? {};
+  const card = inventoryFuel.configured
+    ? {
+        ...inventoryFuel.selector,
+        itemId: inventoryFuel.primaryItemId,
+        itemUuid: inventoryFuel.primaryItemUuid,
+        openUuid: inventoryFuel.openUuid,
+        name: inventoryFuel.name,
+        img: inventoryFuel.img,
+        type: inventoryFuel.type,
+        quantity: inventoryFuel.quantity,
+        weight,
+        weightLabel: weight > 0 ? `${roundNumber(weight, 2)} фнт.` : "-",
+        valueLabel: formatPriceLabel(price),
+        canOpen: Boolean(inventoryFuel.openUuid)
+      }
+    : null;
   return {
-    configured: true,
-    itemName: cleanId(fuelItem?.name) || savedItemName,
+    configured: inventoryFuel.configured,
+    selector: inventoryFuel.selector,
+    card,
+    quantity: inventoryFuel.quantity,
+    consumptionPerMile,
+    unit: cleanId(consumption.unit),
     miles,
-    isEmpty: miles === 0,
-    reason: ""
+    isEmpty: inventoryFuel.configured && inventoryFuel.isEmpty,
+    stacks: inventoryFuel.stacks,
+    reason: inventoryFuel.configured ? (consumptionPerMile > 0 ? "" : "noConsumption") : "unconfigured"
   };
 }
 
@@ -3969,7 +4008,7 @@ export class InventoryService {
     const requestedActive = state.activeTransportId ? vehiclesById.get(state.activeTransportId) ?? null : null;
     const activeVehicle = requestedActive ?? (vehicles.length === 1 ? vehicles[0] : null);
     const activeTransportId = activeVehicle?.id ?? "";
-    const fuelRange = buildTransportFuelRange(activeVehicle, groupContext?.groupActor);
+    const fuel = buildTransportFuelSnapshot(activeVehicle, groupContext?.groupActor);
     const effectiveSpeedMph = activeVehicle?.speedMph > 0
       ? roundNumber(activeVehicle.speedMph, 2)
       : DEFAULT_TRAVEL_SPEED_MPH;
@@ -3994,7 +4033,7 @@ export class InventoryService {
             active: true
           }
         : null,
-      fuelRange,
+      fuel,
       effectiveSpeedMph,
       speedLabel: formatTransportSpeedLabel(effectiveSpeedMph),
       speedSourceLabel: activeVehicle?.name ?? "Пешком",
