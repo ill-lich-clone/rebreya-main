@@ -2029,6 +2029,7 @@ test("transport tab renders one minimal vehicle and fuel pair per row", async ()
   assert.doesNotMatch(transportPanel, /Открыть лист/u);
   assert.doesNotMatch(transportPanel, /Запас хода/u);
   assert.match(css, /\.rm-transport-row\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+minmax\(0,\s*2fr\)/su);
+  assert.match(css, /\.rm-transport-dialog__fields\s*,\s*\n\.rm-transport-dialog__specs\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/su);
 });
 
 test("InventoryApp keeps fuel consumption read-only without group management rights", async () => {
@@ -2061,110 +2062,6 @@ test("InventoryApp keeps fuel consumption read-only without group management rig
     assert.equal(context.transport.fuel.consumptionForm.amount, "120");
   }
   finally {
-    restoreFoundry();
-  }
-});
-
-test("transport fuel drop selects an Item and its card opens the real document", async () => {
-  const restoreFoundry = installFoundryApplicationStub();
-  const dom = installMinimalDom();
-  const previousTextEditor = globalThis.TextEditor;
-  const previousFromUuid = globalThis.fromUuid;
-  const previousUi = globalThis.ui;
-  const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?transport-fuel-drop=${Date.now()}`);
-  const calls = [];
-  const dropzone = createFakeControl({ dataset: { actorId: "vehicle-a" } });
-  dropzone.classList = { add() {}, remove() {} };
-  const openButton = createFakeControl({ dataset: { itemUuid: "Actor.group-a.Item.coal-a" } });
-  const root = createFakeElement();
-  root.querySelector = (selector) => {
-    if (selector === "[data-action='transport-fuel-dropzone']") return dropzone;
-    if (selector === "[data-action='open-transport-fuel-item']") return openButton;
-    return null;
-  };
-  root.querySelectorAll = () => [];
-  const renders = [];
-  const warnings = [];
-  globalThis.TextEditor = {
-    getDragEventData: (event) => event.dragData
-  };
-  globalThis.fromUuid = async (uuid) => ({
-    documentName: "Item",
-    uuid,
-    sheet: { render: (force) => renders.push(force) }
-  });
-  globalThis.ui = { notifications: { warn: (message) => warnings.push(message), error() {}, info() {} } };
-  const app = new InventoryApp(createModuleApi({ getGroupContext: () => null, calls }));
-  app.groupActor = { id: "group-a" };
-  app.element = root;
-
-  try {
-    await app._onRender({}, {});
-    await dropzone.listeners.drop[0]({
-      dragData: { type: "Item", uuid: "Compendium.world.goods.Item.coal" },
-      preventDefault() {}
-    });
-    assert.deepEqual(calls.filter((call) => call[0] === "selectTransportFuel"), [[
-      "selectTransportFuel",
-      {
-        groupActorId: "group-a",
-        actorId: "vehicle-a",
-        itemUuid: "Compendium.world.goods.Item.coal"
-      }
-    ]]);
-
-    await openButton.listeners.click[0]({ currentTarget: openButton });
-    assert.deepEqual(renders, [true]);
-
-    await dropzone.listeners.drop[0]({
-      dragData: { type: "Actor", uuid: "Actor.vehicle-a" },
-      preventDefault() {}
-    });
-    assert.equal(calls.filter((call) => call[0] === "selectTransportFuel").length, 1);
-    assert.equal(warnings.length, 1);
-  }
-  finally {
-    globalThis.TextEditor = previousTextEditor;
-    globalThis.fromUuid = previousFromUuid;
-    globalThis.ui = previousUi;
-    dom.restore();
-    restoreFoundry();
-  }
-});
-
-test("InventoryApp transport selection delegates to the module API", async () => {
-  const restoreFoundry = installFoundryApplicationStub();
-  const dom = installMinimalDom();
-  const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?transport-select=${Date.now()}`);
-  const calls = [];
-  const selectButton = createFakeControl({ dataset: { transportId: "member:wagon" } });
-  const root = createFakeElement({
-    closest: () => root
-  });
-  root.querySelector = () => null;
-  root.querySelectorAll = (selector) => {
-    if (selector === "[data-action='transport-select']") {
-      return [selectButton];
-    }
-    return [];
-  };
-  const app = new InventoryApp(createModuleApi({
-    getGroupContext: () => null,
-    calls
-  }));
-  app.element = root;
-
-  try {
-    await app._onRender({}, {});
-    await dispatchClick(selectButton);
-
-    assert.deepEqual(calls.filter((call) => call[0] === "setActiveTransport"), [[
-      "setActiveTransport",
-      "member:wagon"
-    ]]);
-  }
-  finally {
-    dom.restore();
     restoreFoundry();
   }
 });
@@ -2214,144 +2111,209 @@ test("InventoryApp prepares editable state for an Actor-backed transport", async
   }
 });
 
-test("transport state save delegates exact group and Actor ids", async () => {
+test("transport rows bind fuel drop and document opening per vehicle", async () => {
   const restoreFoundry = installFoundryApplicationStub();
   const dom = installMinimalDom();
-  const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?transport-state-save=${Date.now()}`);
-  const calls = [];
-  const saveButton = createFakeControl();
-  const fields = new Map([
-    ["hpCurrent", createFakeControl({ value: "70" })],
-    ["condition", createFakeControl({ value: "damaged" })]
-  ]);
-  const form = createFakeElement({ dataset: { actorId: "vehicle-a" } });
-  form.querySelector = (selector) => {
-    const match = selector.match(/^\[name='(.+)'\]$/u);
-    return match ? fields.get(match[1]) ?? null : null;
-  };
-  saveButton.closest = (selector) => selector === "[data-transport-state-form]" ? form : null;
-  const root = createFakeElement();
-  root.querySelector = (selector) => (
-    selector === "[data-action='transport-state-save']" ? saveButton : null
-  );
-  root.querySelectorAll = () => [];
-  const app = new InventoryApp(createModuleApi({
-    getGroupContext: () => null,
-    calls
-  }));
-  app.groupActor = { id: "group-a" };
-  app.element = root;
-
-  try {
-    await app._onRender({}, {});
-    await dispatchClick(saveButton);
-
-    assert.deepEqual(calls.filter((call) => call[0] === "updateTransportInstanceState"), [[
-      "updateTransportInstanceState",
-      {
-        groupActorId: "group-a",
-        actorId: "vehicle-a",
-        patch: {
-          hpCurrent: 70,
-          condition: "damaged"
-        }
-      }
-    ]]);
-  }
-  finally {
-    dom.restore();
-    restoreFoundry();
-  }
-});
-
-test("transport fuel consumption save delegates the card amount and unit", async () => {
-  const restoreFoundry = installFoundryApplicationStub();
-  const dom = installMinimalDom();
+  const previousTextEditor = globalThis.TextEditor;
+  const previousFromUuid = globalThis.fromUuid;
+  const previousGame = globalThis.game;
   const previousUi = globalThis.ui;
-  const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?transport-fuel-consumption-save=${Date.now()}`);
+  const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?transport-row-actions=${Date.now()}`);
   const calls = [];
-  const renders = [];
-  const saveButton = createFakeControl();
-  const fields = new Map([
-    ["fuelConsumptionAmount", createFakeControl({ value: "120" })],
-    ["fuelConsumptionUnit", createFakeControl({ value: "lb" })]
-  ]);
-  const form = createFakeElement({ dataset: { actorId: "vehicle-a" } });
-  form.querySelector = (selector) => {
-    const match = selector.match(/^\[name='(.+)'\]$/u);
-    return match ? fields.get(match[1]) ?? null : null;
-  };
-  saveButton.closest = (selector) => selector === "[data-transport-fuel-consumption-form]" ? form : null;
+  const dropzoneA = createFakeControl({ dataset: { actorId: "vehicle-a" } });
+  const dropzoneB = createFakeControl({ dataset: { actorId: "vehicle-b" } });
+  dropzoneA.classList = { add() {}, remove() {} };
+  dropzoneB.classList = { add() {}, remove() {} };
+  const fuelA = createFakeControl({ dataset: { itemUuid: "Actor.group-a.Item.coal" } });
+  const fuelB = createFakeControl({ dataset: { itemUuid: "Actor.group-a.Item.coke" } });
+  const vehicleA = createFakeControl({ dataset: { actorId: "vehicle-a" } });
+  const vehicleRenders = [];
+  const fuelRenders = [];
   const root = createFakeElement();
-  root.querySelector = (selector) => (
-    selector === "[data-action='transport-fuel-consumption-save']" ? saveButton : null
-  );
-  root.querySelectorAll = () => [];
-  globalThis.ui = { notifications: { error() {}, info() {}, warn() {} } };
+  root.querySelector = () => null;
+  root.querySelectorAll = (selector) => {
+    if (selector === "[data-action='transport-fuel-dropzone']") return [dropzoneA, dropzoneB];
+    if (selector === "[data-action='open-transport-fuel-item']") return [fuelA, fuelB];
+    if (selector === "[data-action='open-transport-document']") return [vehicleA];
+    return [];
+  };
+  globalThis.TextEditor = { getDragEventData: (event) => event.dragData };
+  globalThis.fromUuid = async (uuid) => ({
+    documentName: "Item",
+    uuid,
+    sheet: { render: () => fuelRenders.push(uuid) }
+  });
+  globalThis.game = {
+    actors: {
+      get: (actorId) => actorId === "vehicle-a"
+        ? { sheet: { render: () => vehicleRenders.push(actorId) } }
+        : null,
+      contents: []
+    }
+  };
+  globalThis.ui = { notifications: { warn() {}, error() {}, info() {} } };
   const app = new InventoryApp(createModuleApi({ getGroupContext: () => null, calls }));
   app.groupActor = { id: "group-a" };
   app.element = root;
-  app.render = async (options) => renders.push(options);
 
   try {
     await app._onRender({}, {});
-    await dispatchClick(saveButton);
-
-    assert.deepEqual(calls.filter((call) => call[0] === "updateTransportFuelConsumption"), [[
-      "updateTransportFuelConsumption",
+    await dropzoneB.listeners.drop[0]({
+      dragData: { type: "Item", uuid: "Compendium.world.goods.Item.coke" },
+      preventDefault() {}
+    });
+    assert.deepEqual(calls.filter((call) => call[0] === "selectTransportFuel"), [[
+      "selectTransportFuel",
       {
         groupActorId: "group-a",
-        actorId: "vehicle-a",
-        consumption: { amount: 120, unit: "lb" }
+        actorId: "vehicle-b",
+        itemUuid: "Compendium.world.goods.Item.coke"
       }
     ]]);
-    assert.deepEqual(renders, [{ force: true, preserveScroll: true }]);
+
+    await fuelB.listeners.click[0]({ currentTarget: fuelB, stopPropagation() {} });
+    await vehicleA.listeners.click[0]({ currentTarget: vehicleA, stopPropagation() {} });
+    assert.deepEqual(fuelRenders, ["Actor.group-a.Item.coke"]);
+    assert.deepEqual(vehicleRenders, ["vehicle-a"]);
   }
   finally {
+    globalThis.TextEditor = previousTextEditor;
+    globalThis.fromUuid = previousFromUuid;
+    globalThis.game = previousGame;
     globalThis.ui = previousUi;
     dom.restore();
     restoreFoundry();
   }
 });
 
-test("transport fuel consumption form ignores Enter and native submit", async () => {
+test("transport row dialog ignores Enter and saves all editable settings explicitly", async () => {
   const restoreFoundry = installFoundryApplicationStub();
   const dom = installMinimalDom();
-  const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?transport-fuel-consumption-enter=${Date.now()}`);
+  const previousDialog = globalThis.Dialog;
+  const previousUi = globalThis.ui;
+  const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?transport-row-dialog=${Date.now()}`);
   const calls = [];
-  const form = createFakeElement({ dataset: { actorId: "vehicle-a" } });
+  const renders = [];
+  const row = createFakeControl({ dataset: { transportId: "member:vehicle-b" } });
   const root = createFakeElement();
-  root.querySelector = (selector) => (
-    selector === "[data-transport-fuel-consumption-form]" ? form : null
-  );
-  root.querySelectorAll = () => [];
+  root.querySelector = () => null;
+  root.querySelectorAll = (selector) => selector === "[data-transport-row]" ? [row] : [];
+  globalThis.ui = { notifications: { warn() {}, error() {}, info() {} }, windows: {} };
+  globalThis.Dialog = class Dialog {
+    static instances = [];
+
+    constructor(config, options = {}) {
+      this.config = config;
+      this.options = options;
+      this.closed = false;
+      Dialog.instances.push(this);
+    }
+
+    render() {}
+    close() { this.closed = true; }
+  };
   const app = new InventoryApp(createModuleApi({ getGroupContext: () => null, calls }));
   app.groupActor = { id: "group-a" };
+  app.transportContext = {
+    canManage: true,
+    vehicles: [{
+      id: "member:vehicle-b",
+      actorId: "vehicle-b",
+      name: "Фургон",
+      active: false,
+      hpValue: 40,
+      hpMax: 50,
+      condition: "operational",
+      speedLabel: "10 миль/час",
+      cargoLabel: "1 600 фнт.",
+      acLabel: "14",
+      crewLabel: "1",
+      passengersLabel: "2",
+      accelerationFt: 20,
+      breakdownThreshold: 5,
+      fuel: {
+        configured: true,
+        card: { name: "Кокс" },
+        consumptionPerMile: 0.5,
+        unit: "lb"
+      }
+    }]
+  };
   app.element = root;
+  app.render = async (options) => renders.push(options);
 
   try {
     await app._onRender({}, {});
-    let keydownPrevented = false;
-    let keydownStopped = false;
+    let contextPrevented = false;
+    row.listeners.contextmenu[0]({
+      currentTarget: row,
+      preventDefault() { contextPrevented = true; },
+      stopPropagation() {}
+    });
+    const dialog = globalThis.Dialog.instances.at(-1);
+    assert.equal(contextPrevented, true);
+    assert.deepEqual(dialog.config.buttons, {});
+    assert.match(dialog.config.content, />Сохранить</u);
+    assert.doesNotMatch(dialog.config.content, />Отмена</u);
+    assert.equal(dialog.options.classes.includes("rm-transport-dialog-window"), true);
+
+    const form = createFakeElement();
+    const saveButton = createFakeControl();
+    const fields = new Map([
+      ["active", createFakeControl()],
+      ["hpCurrent", createFakeControl({ value: "35" })],
+      ["condition", createFakeControl({ value: "damaged" })],
+      ["fuelConsumptionAmount", createFakeControl({ value: "0,75" })],
+      ["fuelConsumptionUnit", createFakeControl({ value: "lb" })]
+    ]);
+    fields.get("active").checked = true;
+    const dialogRoot = createFakeElement();
+    dialogRoot.querySelector = (selector) => {
+      if (selector === "[data-transport-dialog-form]") return form;
+      if (selector === "[data-action='transport-dialog-save']") return saveButton;
+      const fieldMatch = selector.match(/^\[name='(.+)'\]$/u);
+      return fieldMatch ? fields.get(fieldMatch[1]) ?? null : null;
+    };
+    dialog.config.render(dialogRoot);
+
+    let enterPrevented = false;
+    let enterStopped = false;
     form.listeners.keydown[0]({
       key: "Enter",
-      preventDefault() { keydownPrevented = true; },
-      stopPropagation() { keydownStopped = true; }
+      preventDefault() { enterPrevented = true; },
+      stopPropagation() { enterStopped = true; }
     });
-    let submitPrevented = false;
-    let submitStopped = false;
-    form.listeners.submit[0]({
-      preventDefault() { submitPrevented = true; },
-      stopPropagation() { submitStopped = true; }
-    });
+    assert.equal(enterPrevented, true);
+    assert.equal(enterStopped, true);
+    assert.equal(calls.filter((call) => call[0].startsWith("updateTransport")).length, 0);
 
-    assert.equal(keydownPrevented, true);
-    assert.equal(keydownStopped, true);
-    assert.equal(submitPrevented, true);
-    assert.equal(submitStopped, true);
-    assert.deepEqual(calls.filter((call) => call[0] === "updateTransportFuelConsumption"), []);
+    await dispatchClick(saveButton);
+    assert.deepEqual(calls.filter((call) => call[0] === "updateTransportInstanceState").at(-1), [
+      "updateTransportInstanceState",
+      {
+        groupActorId: "group-a",
+        actorId: "vehicle-b",
+        patch: { hpCurrent: 35, condition: "damaged" }
+      }
+    ]);
+    assert.deepEqual(calls.filter((call) => call[0] === "updateTransportFuelConsumption").at(-1), [
+      "updateTransportFuelConsumption",
+      {
+        groupActorId: "group-a",
+        actorId: "vehicle-b",
+        consumption: { amount: 0.75, unit: "lb" }
+      }
+    ]);
+    assert.deepEqual(calls.filter((call) => call[0] === "setActiveTransport").at(-1), [
+      "setActiveTransport",
+      "member:vehicle-b"
+    ]);
+    assert.equal(dialog.closed, true);
+    assert.deepEqual(renders, [{ force: true, preserveScroll: true }]);
   }
   finally {
+    globalThis.Dialog = previousDialog;
+    globalThis.ui = previousUi;
     dom.restore();
     restoreFoundry();
   }

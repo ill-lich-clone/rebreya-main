@@ -1602,6 +1602,70 @@ function prepareTransportContext(snapshot = {}) {
   };
 }
 
+function buildTransportDialogSpecs(vehicle = {}) {
+  const specs = [
+    ["Скорость", vehicle.speedLabel || "—"],
+    ["Грузоподъёмность", vehicle.cargoLabel || "—"],
+    ["КД", vehicle.acLabel || "—"],
+    ["Экипаж", vehicle.crewLabel || "—"],
+    ["Пассажиры", vehicle.passengersLabel || "—"],
+    ["Разгон", vehicle.accelerationFt ? `${vehicle.accelerationFt} фт.` : "—"],
+    ["Поломка, к20", vehicle.breakdownThreshold || "—"]
+  ];
+  return specs.map(([label, value]) => `
+    <p><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></p>
+  `).join("");
+}
+
+function buildTransportDialogContent(vehicle = {}, { canManage = false } = {}) {
+  const disabled = canManage ? "" : " disabled";
+  const fuelConfigured = vehicle.fuel?.configured === true;
+  const fuelDisabled = canManage && fuelConfigured ? "" : " disabled";
+  const fuelName = cleanText(vehicle.fuel?.card?.name) || "Топливо не назначено";
+  const hpMax = Math.max(0, Number(vehicle.hpMax) || 0);
+  const hpMaxAttribute = hpMax > 0 ? ` max="${hpMax}"` : "";
+  const conditionOptions = TRANSPORT_CONDITION_OPTIONS.map((option) => `
+    <option value="${option.value}" ${option.value === vehicle.condition ? "selected" : ""}>${escapeHtml(option.label)}</option>
+  `).join("");
+  const consumptionUnit = cleanText(vehicle.fuel?.unit);
+  return `
+    <form class="rm-transport-dialog" data-transport-dialog-form>
+      <label class="rm-transport-dialog__active">
+        <input type="checkbox" name="active" ${vehicle.active ? "checked" : ""}${disabled}>
+        <span>Активный транспорт</span>
+      </label>
+      <div class="rm-transport-dialog__fields">
+        <label>
+          <span>Хиты</span>
+          <input type="number" name="hpCurrent" min="0"${hpMaxAttribute} value="${Number(vehicle.hpValue) || 0}"${disabled}>
+        </label>
+        <label>
+          <span>Состояние</span>
+          <select name="condition"${disabled}>${conditionOptions}</select>
+        </label>
+        <label>
+          <span>Расход</span>
+          <input type="number" name="fuelConsumptionAmount" min="0.000001" step="any" value="${Number(vehicle.fuel?.consumptionPerMile) || 0}"${fuelDisabled}>
+        </label>
+        <label>
+          <span>Единица</span>
+          <select name="fuelConsumptionUnit"${fuelDisabled}>
+            <option value="lb" ${consumptionUnit === "lb" ? "selected" : ""}>фунты</option>
+            <option value="gal" ${consumptionUnit === "gal" ? "selected" : ""}>галлоны</option>
+          </select>
+        </label>
+      </div>
+      <p class="rm-transport-dialog__fuel"><span>Топливо</span><strong>${escapeHtml(fuelName)}</strong></p>
+      <div class="rm-transport-dialog__specs">${buildTransportDialogSpecs(vehicle)}</div>
+      ${canManage ? `
+        <footer>
+          <button type="button" class="rm-button rm-button--primary" data-action="transport-dialog-save">Сохранить</button>
+        </footer>
+      ` : ""}
+    </form>
+  `;
+}
+
 function applyTravelProgressSnapshot(element, snapshot = {}) {
   if (!element || !snapshot?.progress || !snapshot?.plan?.available) {
     return false;
@@ -3153,6 +3217,92 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         this.render({ force: true });
       }
     }, 3500);
+  }
+
+  #openTransportDialog(transportId) {
+    const vehicle = (this.transportContext?.vehicles ?? [])
+      .find((entry) => entry.id === cleanText(transportId));
+    const DialogClass = globalThis.Dialog;
+    if (!vehicle || typeof DialogClass !== "function") {
+      return;
+    }
+
+    const dialog = new DialogClass({
+      title: cleanText(vehicle.name) || "Транспорт",
+      content: buildTransportDialogContent(vehicle, {
+        canManage: Boolean(this.transportContext?.canManage)
+      }),
+      buttons: {},
+      render: (html) => {
+        const root = getDialogRoot(html);
+        const form = root?.querySelector?.("[data-transport-dialog-form]");
+        form?.addEventListener("submit", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+        });
+        form?.addEventListener("keydown", (event) => {
+          if (event.key !== "Enter") return;
+          event.preventDefault();
+          event.stopPropagation();
+        });
+        root?.querySelector?.("[data-action='transport-dialog-save']")
+          ?.addEventListener("click", async (event) => {
+            await this.#saveTransportDialog(vehicle, root, dialog, event.currentTarget);
+          });
+      }
+    }, {
+      classes: ["rebreya-main", "rebreya-trader-dialog", "rm-transport-dialog-window"],
+      width: 720
+    });
+    renderDialogOnTop(dialog);
+  }
+
+  async #saveTransportDialog(vehicle, root, dialog, button) {
+    const field = (name) => root?.querySelector?.(`[name='${name}']`);
+    button.disabled = true;
+    try {
+      const hpCurrent = Number(field("hpCurrent")?.value);
+      const hpMax = Math.max(0, Number(vehicle.hpMax) || 0);
+      const condition = cleanText(field("condition")?.value);
+      const amount = Number(cleanText(field("fuelConsumptionAmount")?.value).replace(",", "."));
+      const unit = cleanText(field("fuelConsumptionUnit")?.value);
+      if (!Number.isFinite(hpCurrent) || hpCurrent < 0 || (hpMax > 0 && hpCurrent > hpMax)) {
+        throw new Error("Проверьте текущие хиты транспорта.");
+      }
+      if (!TRANSPORT_CONDITION_OPTIONS.some((option) => option.value === condition)) {
+        throw new Error("Проверьте состояние транспорта.");
+      }
+      if (vehicle.fuel?.configured && (!Number.isFinite(amount) || amount <= 0 || !["lb", "gal"].includes(unit))) {
+        throw new Error("Проверьте расход и единицу топлива.");
+      }
+
+      await this.moduleApi.updateTransportInstanceState?.({
+        groupActorId: cleanText(this.groupActor?.id),
+        actorId: cleanText(vehicle.actorId),
+        patch: { hpCurrent, condition }
+      });
+      if (vehicle.fuel?.configured) {
+        await this.moduleApi.updateTransportFuelConsumption?.({
+          groupActorId: cleanText(this.groupActor?.id),
+          actorId: cleanText(vehicle.actorId),
+          consumption: { amount, unit }
+        });
+      }
+      const active = Boolean(field("active")?.checked);
+      if (active !== Boolean(vehicle.active)) {
+        await this.moduleApi.setActiveTransport?.(active ? vehicle.id : "");
+      }
+      this.#setActionFeedback("success", "Транспорт сохранён.");
+      dialog.close?.();
+      await this.render?.({ force: true, preserveScroll: true });
+    }
+    catch (error) {
+      button.disabled = false;
+      console.error(`${MODULE_ID} | Failed to save transport dialog.`, error);
+      const message = error?.message || "Не удалось сохранить транспорт.";
+      this.#setActionFeedback("error", message);
+      globalThis.ui?.notifications?.error?.(message);
+    }
   }
 
   #resolveAvailableActorIdByName(query, availableActors = null) {
@@ -5648,109 +5798,32 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       }
     }, listenerOptions);
 
-    element.querySelectorAll("[data-action='transport-select']").forEach((button) => {
-      button.addEventListener("click", async (event) => {
-        const transportId = cleanText(event.currentTarget.dataset.transportId);
-        event.currentTarget.disabled = true;
-        try {
-          await this.moduleApi.setActiveTransport?.(transportId);
-          this.#setActionFeedback("success", "Активный транспорт обновлён.");
-          bringAppToFront(this);
-        }
-        catch (error) {
-          console.error(`${MODULE_ID} | Failed to select active transport.`, error);
-          const message = error.message || "Не удалось выбрать транспорт.";
-          this.#setActionFeedback("error", message);
-          this.render({ force: true });
-          ui.notifications?.error(message);
-        }
+    element.querySelectorAll("[data-transport-row]").forEach((row) => {
+      row.addEventListener("contextmenu", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        this.#openTransportDialog(cleanText(row.dataset?.transportId));
       }, listenerOptions);
     });
 
-    element.querySelector("[data-action='transport-state-save']")?.addEventListener("click", async (event) => {
-      const button = event.currentTarget;
-      const form = button.closest?.("[data-transport-state-form]");
-      if (!form) return;
-      const field = (name) => form.querySelector?.(`[name='${name}']`)?.value ?? "";
-      button.disabled = true;
-      try {
-        await this.moduleApi.updateTransportInstanceState?.({
-          groupActorId: cleanText(this.groupActor?.id),
-          actorId: cleanText(form.dataset?.actorId),
-          patch: {
-            hpCurrent: Number(field("hpCurrent")),
-            condition: cleanText(field("condition"))
-          }
-        });
-        this.#setActionFeedback("success", "Состояние транспорта сохранено.");
-        await this.render?.({ force: true, preserveScroll: true });
-      }
-      catch (error) {
-        button.disabled = false;
-        console.error(`${MODULE_ID} | Failed to save transport state.`, error);
-        const message = error?.message || "Не удалось сохранить состояние транспорта.";
-        this.#setActionFeedback("error", message);
-        globalThis.ui?.notifications?.error?.(message);
-      }
-    }, listenerOptions);
+    element.querySelectorAll("[data-action='open-transport-document']").forEach((control) => {
+      control.addEventListener("click", (event) => {
+        event.stopPropagation();
+        const actorId = cleanText(event.currentTarget.dataset?.actorId);
+        const actor = globalThis.game?.actors?.get?.(actorId)
+          ?? globalThis.game?.actors?.contents?.find?.((candidate) => candidate?.id === actorId)
+          ?? null;
+        if (!actor?.sheet) {
+          globalThis.ui?.notifications?.warn?.("Карточка транспорта недоступна.");
+          return;
+        }
+        actor.sheet.render?.(true);
+        bringAppToFront(actor.sheet);
+      }, listenerOptions);
+    });
 
-    const fuelConsumptionForm = element.querySelector("[data-transport-fuel-consumption-form]");
-    fuelConsumptionForm?.addEventListener("keydown", (event) => {
-      if (event.key !== "Enter") return;
-      event.preventDefault();
-      event.stopPropagation();
-    }, listenerOptions);
-    fuelConsumptionForm?.addEventListener("submit", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-    }, listenerOptions);
-
-    element.querySelector("[data-action='transport-fuel-consumption-save']")?.addEventListener("click", async (event) => {
-      const button = event.currentTarget;
-      const form = button.closest?.("[data-transport-fuel-consumption-form]");
-      if (!form) return;
-      const amountText = cleanText(
-        form.querySelector?.("[name='fuelConsumptionAmount']")?.value
-      ).replace(",", ".");
-      const unit = cleanText(form.querySelector?.("[name='fuelConsumptionUnit']")?.value);
-      button.disabled = true;
-      try {
-        await this.moduleApi.updateTransportFuelConsumption?.({
-          groupActorId: cleanText(this.groupActor?.id),
-          actorId: cleanText(form.dataset?.actorId),
-          consumption: {
-            amount: Number(amountText),
-            unit
-          }
-        });
-        this.#setActionFeedback("success", "Расход топлива сохранён.");
-        await this.render?.({ force: true, preserveScroll: true });
-      }
-      catch (error) {
-        button.disabled = false;
-        console.error(`${MODULE_ID} | Failed to save transport fuel consumption.`, error);
-        const message = error?.message || "Не удалось сохранить расход топлива.";
-        this.#setActionFeedback("error", message);
-        globalThis.ui?.notifications?.error?.(message);
-      }
-    }, listenerOptions);
-
-    element.querySelector("[data-action='open-transport-actor-sheet']")?.addEventListener("click", (event) => {
-      const actorId = cleanText(event.currentTarget.dataset?.actorId);
-      const actor = globalThis.game?.actors?.get?.(actorId)
-        ?? globalThis.game?.actors?.contents?.find?.((candidate) => candidate?.id === actorId)
-        ?? null;
-      if (!actor?.sheet) {
-        globalThis.ui?.notifications?.error?.("Лист транспорта не найден.");
-        return;
-      }
-      actor.sheet.render?.(true);
-      bringAppToFront(actor.sheet);
-    }, listenerOptions);
-
-    const fuelDropzone = element.querySelector("[data-action='transport-fuel-dropzone']");
-    if (fuelDropzone) {
-      fuelDropzone.addEventListener("dragover", (event) => {
+    element.querySelectorAll("[data-action='transport-fuel-dropzone']").forEach((dropzone) => {
+      dropzone.addEventListener("dragover", (event) => {
         let dragData = null;
         try {
           dragData = globalThis.TextEditor?.getDragEventData?.(event);
@@ -5760,17 +5833,17 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         }
         if (dragData?.type !== "Item" || !cleanText(dragData.uuid)) return;
         event.preventDefault();
-        fuelDropzone.classList?.add?.("is-dragover");
+        dropzone.classList?.add?.("is-dragover");
       }, listenerOptions);
 
-      fuelDropzone.addEventListener("dragleave", (event) => {
-        if (event.relatedTarget && fuelDropzone.contains?.(event.relatedTarget)) return;
-        fuelDropzone.classList?.remove?.("is-dragover");
+      dropzone.addEventListener("dragleave", (event) => {
+        if (event.relatedTarget && dropzone.contains?.(event.relatedTarget)) return;
+        dropzone.classList?.remove?.("is-dragover");
       }, listenerOptions);
 
-      fuelDropzone.addEventListener("drop", async (event) => {
+      dropzone.addEventListener("drop", async (event) => {
         event.preventDefault();
-        fuelDropzone.classList?.remove?.("is-dragover");
+        dropzone.classList?.remove?.("is-dragover");
         try {
           const dragData = globalThis.TextEditor?.getDragEventData?.(event);
           const itemUuid = cleanText(dragData?.uuid);
@@ -5780,7 +5853,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
           }
           await this.moduleApi.selectTransportFuel?.({
             groupActorId: cleanText(this.groupActor?.id),
-            actorId: cleanText(fuelDropzone.dataset?.actorId),
+            actorId: cleanText(dropzone.dataset?.actorId),
             itemUuid
           });
           this.#setActionFeedback("success", "Предмет топлива выбран.");
@@ -5794,29 +5867,32 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
           globalThis.ui?.notifications?.error?.(message);
         }
       }, listenerOptions);
-    }
+    });
 
-    element.querySelector("[data-action='open-transport-fuel-item']")?.addEventListener("click", async (event) => {
-      const itemUuid = cleanText(event.currentTarget.dataset?.itemUuid);
-      try {
-        const item = itemUuid && typeof globalThis.fromUuid === "function"
-          ? await globalThis.fromUuid(itemUuid)
-          : null;
-        const Item = globalThis.Item;
-        const isItem = item?.documentName === "Item"
-          || (typeof Item === "function" && item instanceof Item);
-        if (!isItem || !item?.sheet) {
-          globalThis.ui?.notifications?.warn?.("Выбранный предмет топлива больше недоступен.");
-          return;
+    element.querySelectorAll("[data-action='open-transport-fuel-item']").forEach((control) => {
+      control.addEventListener("click", async (event) => {
+        event.stopPropagation();
+        const itemUuid = cleanText(event.currentTarget.dataset?.itemUuid);
+        try {
+          const item = itemUuid && typeof globalThis.fromUuid === "function"
+            ? await globalThis.fromUuid(itemUuid)
+            : null;
+          const Item = globalThis.Item;
+          const isItem = item?.documentName === "Item"
+            || (typeof Item === "function" && item instanceof Item);
+          if (!isItem || !item?.sheet) {
+            globalThis.ui?.notifications?.warn?.("Выбранный предмет топлива больше недоступен.");
+            return;
+          }
+          item.sheet.render?.(true);
+          bringAppToFront(item.sheet);
         }
-        item.sheet.render?.(true);
-        bringAppToFront(item.sheet);
-      }
-      catch (error) {
-        console.error(`${MODULE_ID} | Failed to open transport fuel item.`, error);
-        globalThis.ui?.notifications?.error?.(error?.message || "Не удалось открыть предмет топлива.");
-      }
-    }, listenerOptions);
+        catch (error) {
+          console.error(`${MODULE_ID} | Failed to open transport fuel item.`, error);
+          globalThis.ui?.notifications?.error?.(error?.message || "Не удалось открыть предмет топлива.");
+        }
+      }, listenerOptions);
+    });
 
     const bindDowntimeField = (selector, assign) => {
       element.querySelector(selector)?.addEventListener("change", (event) => {
