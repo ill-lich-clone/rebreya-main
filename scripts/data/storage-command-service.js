@@ -1,4 +1,5 @@
 import { isStorageActor, readStorageState } from "./storage-service.js";
+import { resolveStorageDepositSource } from "./storage-deposit-source.js";
 
 const STORAGE_ROW_DESTINATIONS = new Set(["self", "party", "character", "scene"]);
 const STORAGE_COIN_DESTINATIONS = new Set(["self", "party"]);
@@ -26,6 +27,19 @@ function isTrimmedString(value, { required = false, max = 512 } = {}) {
 
 function isOptionalQuantity(value) {
   return value === null || (Number.isSafeInteger(value) && value >= 1);
+}
+
+function isValidStorageDepositSource(source) {
+  if (hasExactKeys(source, ["itemUuid", "kind"])) {
+    return source.kind === "item"
+      && isTrimmedString(source.itemUuid, { required: true });
+  }
+  return hasExactKeys(source, ["kind", "quantity", "rowId", "tokenUuid"])
+    && source.kind === "storage-row"
+    && isTrimmedString(source.tokenUuid, { required: true })
+    && isTrimmedString(source.rowId, { required: true, max: 160 })
+    && Number.isSafeInteger(source.quantity)
+    && source.quantity >= 1;
 }
 
 function isValidStorageTarget(destination, target) {
@@ -71,6 +85,18 @@ export function isValidStorageClaimCoinsPayload(payload) {
     && isTrimmedString(payload.tokenUuid, { required: true })
     && isTrimmedString(payload.characterTokenUuid, { required: payload.destination === "self" })
     && STORAGE_COIN_DESTINATIONS.has(payload.destination)
+    && isTrimmedString(payload.mutationId, { required: true, max: 160 });
+}
+
+export function isValidStorageDepositPayload(payload) {
+  return hasExactKeys(payload, [
+    "characterTokenUuid", "mutationId", "quantity", "source", "tokenUuid"
+  ])
+    && isTrimmedString(payload.tokenUuid, { required: true })
+    && isTrimmedString(payload.characterTokenUuid)
+    && isValidStorageDepositSource(payload.source)
+    && Number.isSafeInteger(payload.quantity)
+    && payload.quantity >= 1
     && isTrimmedString(payload.mutationId, { required: true, max: 160 });
 }
 
@@ -128,7 +154,9 @@ export class StorageCommandService {
     measureDistance,
     measurePointDistance = () => Number.POSITIVE_INFINITY,
     groundPileService = null,
-    isVisibleTo
+    isVisibleTo,
+    resolveDocument = (...args) => globalThis.fromUuid?.(...args),
+    resolveDepositSource = resolveStorageDepositSource
   } = {}) {
     if (!storageService || !inventoryService) {
       throw new TypeError("StorageCommandService requires storage and inventory services.");
@@ -143,6 +171,8 @@ export class StorageCommandService {
     this.measurePointDistance = measurePointDistance;
     this.groundPileService = groundPileService;
     this.isVisibleTo = isVisibleTo;
+    this.resolveDocument = resolveDocument;
+    this.resolveDepositSource = resolveDepositSource;
     this.claimTasks = new Map();
     this.claimQueues = new Map();
     this.claimResults = new Map();
@@ -213,14 +243,19 @@ export class StorageCommandService {
     return { storageToken, characterToken, character };
   }
 
-  async #runClaim(sourceKey, mutationKey, operation) {
+  async #runMutation(queueKeys, mutationKey, operation) {
     if (this.claimResults.has(mutationKey)) return this.claimResults.get(mutationKey);
     const existing = this.claimTasks.get(mutationKey);
     if (existing) return existing;
 
-    const previous = this.claimQueues.get(sourceKey) ?? Promise.resolve();
-    const queued = previous.catch(() => {}).then(operation);
-    this.claimQueues.set(sourceKey, queued);
+    const keys = Array.from(new Set((Array.isArray(queueKeys) ? queueKeys : [queueKeys])
+      .map(clean)
+      .filter(Boolean))).sort();
+    const previous = Promise.all(keys.map((key) => (
+      this.claimQueues.get(key)?.catch(() => {}) ?? Promise.resolve()
+    )));
+    const queued = previous.then(operation);
+    for (const key of keys) this.claimQueues.set(key, queued);
     const task = queued.then((result) => {
       this.claimResults.set(mutationKey, result);
       if (this.claimResults.size > 500) {
@@ -229,10 +264,16 @@ export class StorageCommandService {
       return result;
     }).finally(() => {
       this.claimTasks.delete(mutationKey);
-      if (this.claimQueues.get(sourceKey) === queued) this.claimQueues.delete(sourceKey);
+      for (const key of keys) {
+        if (this.claimQueues.get(key) === queued) this.claimQueues.delete(key);
+      }
     });
     this.claimTasks.set(mutationKey, task);
     return task;
+  }
+
+  async #runClaim(sourceKey, mutationKey, operation) {
+    return this.#runMutation([sourceKey], mutationKey, operation);
   }
 
   async open(payload = {}, { sender } = {}) {
@@ -256,7 +297,7 @@ export class StorageCommandService {
       destination,
       mutationId
     });
-    return this.#runClaim(`${tokenUuid}:row:${rowId}`, mutationKey, async () => {
+    return this.#runClaim(`${tokenUuid}:storage`, mutationKey, async () => {
       const access = await this.#resolveAccess(payload, sender);
       if (destination === "self" && access.character?.type !== "character") {
         throw new Error("Для получения лута себе выберите персонажа.");
@@ -318,7 +359,7 @@ export class StorageCommandService {
     const mutationId = requireMutationId(payload.mutationId);
     const tokenUuid = clean(payload.tokenUuid);
     const mutationKey = storageMutationId({ tokenUuid, kind: "coins", destination, mutationId });
-    return this.#runClaim(`${tokenUuid}:coins`, mutationKey, async () => {
+    return this.#runClaim(`${tokenUuid}:storage`, mutationKey, async () => {
       const access = await this.#resolveAccess(payload, sender);
       if (destination === "self" && access.character?.type !== "character") {
         throw new Error("Для получения монет себе выберите персонажа.");
@@ -343,6 +384,106 @@ export class StorageCommandService {
       const result = await this.storageService.claim(access.storageToken, { kind: "coins" });
       await this.#refreshSource(access.storageToken, result.state);
       return result;
+    });
+  }
+
+  async deposit(payload = {}, { sender } = {}) {
+    const tokenUuid = clean(payload.tokenUuid);
+    const mutationId = requireMutationId(payload.mutationId);
+    const sourceRef = clone(payload.source);
+    if (!isValidStorageDepositSource(sourceRef)) {
+      throw new Error("Неподдерживаемый источник предмета для хранилища.");
+    }
+    const quantity = Number(payload.quantity);
+    if (!Number.isSafeInteger(quantity) || quantity < 1) {
+      throw new Error("Количество должно быть целым числом не меньше 1.");
+    }
+    if (sourceRef.kind === "storage-row" && clean(sourceRef.tokenUuid) === tokenUuid) {
+      throw new Error("Нельзя перенести предмет из хранилища в то же самое хранилище.");
+    }
+
+    const sourceIdentity = sourceRef.kind === "storage-row"
+      ? `${clean(sourceRef.tokenUuid)}:${clean(sourceRef.rowId)}`
+      : clean(sourceRef.itemUuid);
+    const mutationKey = storageMutationId({
+      tokenUuid,
+      kind: "deposit",
+      identity: sourceIdentity,
+      destination: "storage",
+      mutationId
+    });
+    const queueKeys = [
+      `${tokenUuid}:storage`,
+      sourceRef.kind === "storage-row"
+        ? `${clean(sourceRef.tokenUuid)}:storage`
+        : `${clean(sourceRef.itemUuid)}:item`
+    ];
+
+    return this.#runMutation(queueKeys, mutationKey, async () => {
+      const access = await this.#resolveAccess(payload, sender);
+      const source = await this.resolveDepositSource(sourceRef, {
+        fromUuid: this.resolveDocument,
+        resolveToken: this.resolveToken,
+        storageService: this.storageService
+      });
+      if (!source || typeof source.consume !== "function" || typeof source.restore !== "function") {
+        throw new Error("Источник предмета для хранилища недоступен.");
+      }
+      if (quantity > Number(source.available)) {
+        throw new Error(`Количество должно быть целым числом от 1 до ${source.available}.`);
+      }
+      if (source.mode === "move" && source.canUserMove?.(sender) !== true) {
+        throw new Error("У вас нет прав владельца на перемещение этого предмета.");
+      }
+      if (source.kind === "storage-row") {
+        await this.#resolveAccess({
+          tokenUuid: clean(sourceRef.tokenUuid),
+          characterTokenUuid: clean(payload.characterTokenUuid)
+        }, sender);
+      }
+
+      const beforeTarget = readStorageState(access.storageToken);
+      let deposited = null;
+      let sourceReceipt = null;
+      try {
+        deposited = await this.storageService.depositRow(access.storageToken, source.row, { quantity });
+        sourceReceipt = await source.consume(quantity);
+      }
+      catch (error) {
+        const rollbackErrors = [];
+        if (sourceReceipt) {
+          try {
+            await source.restore(sourceReceipt);
+          }
+          catch (rollbackError) {
+            rollbackErrors.push(rollbackError);
+          }
+        }
+        if (deposited) {
+          try {
+            await this.storageService.configure(access.storageToken, beforeTarget);
+          }
+          catch (rollbackError) {
+            rollbackErrors.push(rollbackError);
+          }
+        }
+        if (rollbackErrors.length) {
+          throw new AggregateError([error, ...rollbackErrors], "Не удалось полностью откатить перенос предмета.");
+        }
+        throw error;
+      }
+
+      const refreshes = [this.#refreshSource(access.storageToken, deposited.state)];
+      if (source.storageToken) {
+        refreshes.push(this.#refreshSource(source.storageToken, sourceReceipt?.state));
+      }
+      const refreshResults = await Promise.allSettled(refreshes);
+      for (const refresh of refreshResults) {
+        if (refresh.status === "rejected") {
+          console.warn("Rebreya storage refresh failed after a committed deposit.", refresh.reason);
+        }
+      }
+      return { ...deposited, sourceMode: source.mode };
     });
   }
 }

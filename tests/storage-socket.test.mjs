@@ -7,6 +7,7 @@ import {
   StorageCommandService,
   isValidStorageClaimCoinsPayload,
   isValidStorageClaimRowPayload,
+  isValidStorageDepositPayload,
   storageCharacterTokenUuidForClaim
 } from "../scripts/data/storage-command-service.js";
 
@@ -31,7 +32,8 @@ function createHarness({
   pointDistance = 5,
   visible = true,
   rowQuantity = 1,
-  rejectItemGrant = false
+  rejectItemGrant = false,
+  depositSource = null
 } = {}) {
   const player = { id: "player", isGM: false };
   const hero = {
@@ -131,7 +133,8 @@ function createHarness({
     measureDistance: () => distance,
     measurePointDistance: () => pointDistance,
     groundPileService,
-    isVisibleTo: () => visible
+    isVisibleTo: () => visible,
+    resolveDepositSource: async () => depositSource
   });
 
   return {
@@ -166,6 +169,152 @@ test("storage claim rejects a player outside five feet before granting an item",
     /5 фут/iu
   );
   assert.equal(harness.itemGrants.length, 0);
+});
+
+function depositPayload(harness, overrides = {}) {
+  return {
+    tokenUuid: harness.storageToken.uuid,
+    characterTokenUuid: harness.characterToken.uuid,
+    source: { kind: "item", itemUuid: "Actor.hero.Item.arrow" },
+    quantity: 2,
+    mutationId: "deposit-1",
+    ...overrides
+  };
+}
+
+test("storage deposit payload validation accepts only exact item and storage-row sources", () => {
+  const base = {
+    tokenUuid: "Scene.scene.Token.chest",
+    characterTokenUuid: "Scene.scene.Token.hero",
+    quantity: 2,
+    mutationId: "deposit-1"
+  };
+  assert.equal(isValidStorageDepositPayload({
+    ...base,
+    source: { kind: "item", itemUuid: "Actor.hero.Item.arrow" }
+  }), true);
+  assert.equal(isValidStorageDepositPayload({
+    ...base,
+    source: {
+      kind: "storage-row",
+      tokenUuid: "Scene.scene.Token.pile",
+      rowId: "row-1",
+      quantity: 4
+    }
+  }), true);
+  assert.equal(isValidStorageDepositPayload({
+    ...base,
+    source: { kind: "item", itemUuid: "Actor.hero.Item.arrow", extra: true }
+  }), false);
+  assert.equal(isValidStorageDepositPayload({
+    ...base,
+    source: { kind: "Actor", itemUuid: "Actor.hero" }
+  }), false);
+});
+
+test("storage deposits are idempotent and move the selected quantity once", async () => {
+  const consumeCalls = [];
+  const source = {
+    kind: "item",
+    mode: "move",
+    available: 5,
+    sourceKey: "Actor.hero.Item.arrow",
+    row: {
+      rowId: "deposit-arrow",
+      stackKey: "same-arrow",
+      name: "Стрела",
+      quantity: 5,
+      itemData: { name: "Стрела", type: "consumable", system: { quantity: 5 } }
+    },
+    canUserMove: () => true,
+    async consume(quantity) {
+      consumeCalls.push(quantity);
+      return { kind: "item-update", beforeQuantity: 5 };
+    },
+    async restore() {}
+  };
+  const harness = createHarness({ depositSource: source });
+  await harness.storageService.configure(harness.storageToken, {
+    state: "empty",
+    displayMode: "empty"
+  });
+  const payload = depositPayload(harness);
+
+  const first = await harness.service.deposit(payload, { sender: harness.player });
+  const second = await harness.service.deposit(payload, { sender: harness.player });
+
+  assert.equal(first.quantity, 2);
+  assert.deepEqual(second, first);
+  assert.deepEqual(consumeCalls, [2]);
+  assert.equal(readStorageState(harness.storageToken).manualRows[0].quantity, 2);
+  assert.equal(readStorageState(harness.storageToken).state, "opened");
+});
+
+test("storage deposits reject distance and source ownership before mutation", async () => {
+  const consumeCalls = [];
+  const source = {
+    kind: "item",
+    mode: "move",
+    available: 2,
+    sourceKey: "Actor.other.Item.arrow",
+    row: {
+      rowId: "deposit-arrow",
+      stackKey: "arrow",
+      name: "Стрела",
+      quantity: 2,
+      itemData: { system: { quantity: 2 } }
+    },
+    canUserMove: () => false,
+    async consume() { consumeCalls.push(true); },
+    async restore() {}
+  };
+  const far = createHarness({ distance: 10, depositSource: source });
+  await assert.rejects(
+    far.service.deposit(depositPayload(far), { sender: far.player }),
+    /5 фут/iu
+  );
+
+  const near = createHarness({ depositSource: source });
+  await assert.rejects(
+    near.service.deposit(depositPayload(near), { sender: near.player }),
+    /прав|влад/iu
+  );
+  assert.deepEqual(consumeCalls, []);
+  assert.deepEqual(readStorageState(near.storageToken).manualRows, []);
+});
+
+test("failed source consumption restores the exact target storage state", async () => {
+  const source = {
+    kind: "item",
+    mode: "move",
+    available: 2,
+    sourceKey: "Actor.hero.Item.arrow",
+    row: {
+      rowId: "deposit-arrow",
+      stackKey: "arrow",
+      name: "Стрела",
+      quantity: 2,
+      itemData: { system: { quantity: 2 } }
+    },
+    canUserMove: () => true,
+    async consume() { throw new Error("consume failed"); },
+    async restore() { throw new Error("restore must not run without a receipt"); }
+  };
+  const harness = createHarness({ depositSource: source });
+  await harness.storageService.configure(harness.storageToken, {
+    baseName: "Сундук",
+    state: "empty",
+    displayMode: "empty"
+  });
+  const before = readStorageState(harness.storageToken);
+
+  await assert.rejects(
+    harness.service.deposit(depositPayload(harness), { sender: harness.player }),
+    /consume failed/u
+  );
+
+  assert.deepEqual(readStorageState(harness.storageToken), before);
+  assert.equal(harness.storageToken.name, "Сундук (пусто)");
 });
 
 test("storage open rejects a token hidden from the player", async () => {
