@@ -4,11 +4,12 @@ import assert from "node:assert/strict";
 import {
   TransportInstanceService,
   normalizeTransportInstanceState,
-  validateTransportFuelConfigPayload,
+  validateTransportFuelSelectionPayload,
   validateTransportImportPayload,
   validateTransportStatePayload
 } from "../scripts/data/transport-instance-service.js";
 import { normalizeGroupState } from "../scripts/data/group-context-service.js";
+import { buildTransportFuelSelector } from "../scripts/data/transport-fuel-item.js";
 
 const validImport = {
   groupActorId: "group-a",
@@ -31,11 +32,10 @@ const validState = {
   }
 };
 
-const validFuelConfig = {
+const validFuelSelection = {
   groupActorId: "group-a",
   actorId: "vehicle-a",
-  fuelItemId: "liquid-coal",
-  fuelPerMile: 0.125
+  itemUuid: "Compendium.world.goods.Item.coal"
 };
 
 function createTransportInstanceHarness({
@@ -56,6 +56,25 @@ function createTransportInstanceHarness({
   const groupState = normalizeGroupState("group-a", {});
   const gm = { id: "gm", isGM: true };
   const player = { id: "player-a", isGM: false };
+  const droppedItem = {
+    documentName: "Item",
+    uuid: validFuelSelection.itemUuid,
+    type: "loot",
+    name: "Жидкий уголь",
+    img: "icons/coal.webp",
+    system: { quantity: 40 },
+    flags: {
+      "rebreya-main": { sourceType: "good", sourceId: "liquid-coal" }
+    },
+    updateCalls: [],
+    deleteCalls: [],
+    async update(patch) {
+      this.updateCalls.push(structuredClone(patch));
+    },
+    async delete() {
+      this.deleteCalls.push(true);
+    }
+  };
   const source = {
     uuid: validImport.sourceActorUuid,
     pack: "world.rebreya-transport",
@@ -98,7 +117,12 @@ function createTransportInstanceHarness({
             sourceActorUuid: validImport.sourceActorUuid,
             groupActorId: "group-a",
             consumption: { kind: "fuel", unit: "gal" },
-            instanceState: { reserveUnit: "gal" }
+            instanceState: {
+              reserveUnit: "gal",
+              fuelItemId: "legacy-coal",
+              fuelItemName: "Старый уголь",
+              fuelPerMile: 9
+            }
           }
         : undefined;
     },
@@ -200,6 +224,7 @@ function createTransportInstanceHarness({
     player,
     moduleApi,
     source,
+    droppedItem,
     vehicleActor,
     createdActors,
     addedMemberIds,
@@ -211,7 +236,11 @@ function createTransportInstanceHarness({
     options: {
       gameProvider: () => ({ user: gm }),
       actorProvider: () => Actor,
-      fromUuid: async (uuid) => uuid === source.uuid ? source : null,
+      fromUuid: async (uuid) => {
+        if (uuid === source.uuid) return source;
+        if (uuid === droppedItem.uuid) return droppedItem;
+        return null;
+      },
       idFactory: () => `instance-${createdActors.length + 1}`
     }
   };
@@ -232,14 +261,11 @@ test("transport payload validators enforce exact keys and the managed pack UUID"
   }), false);
 });
 
-test("fuel configuration payload requires exact safe ids and a non-negative rate", () => {
-  assert.equal(validateTransportFuelConfigPayload(validFuelConfig), true);
-  assert.equal(validateTransportFuelConfigPayload({ ...validFuelConfig, fuelPerMile: "0,125" }), true);
-  assert.equal(validateTransportFuelConfigPayload({ ...validFuelConfig, fuelItemId: "" }), true);
-  assert.equal(validateTransportFuelConfigPayload({ ...validFuelConfig, fuelPerMile: -1 }), false);
-  assert.equal(validateTransportFuelConfigPayload({ ...validFuelConfig, fuelPerMile: "none" }), false);
-  assert.equal(validateTransportFuelConfigPayload({ ...validFuelConfig, forged: true }), false);
-  assert.equal(validateTransportFuelConfigPayload({ ...validFuelConfig, actorId: "__proto__" }), false);
+test("fuel selection payload accepts only exact safe ids and an Item UUID", () => {
+  assert.equal(validateTransportFuelSelectionPayload(validFuelSelection), true);
+  assert.equal(validateTransportFuelSelectionPayload({ ...validFuelSelection, itemUuid: "" }), false);
+  assert.equal(validateTransportFuelSelectionPayload({ ...validFuelSelection, forged: true }), false);
+  assert.equal(validateTransportFuelSelectionPayload({ ...validFuelSelection, actorId: "__proto__" }), false);
 });
 
 test("world transport templates resolve back to their canonical managed compendium Actor", async () => {
@@ -442,9 +468,9 @@ test("import creates an independent world Actor, assigns its target-group role, 
   assert.equal(firstActor.flags["rebreya-main"].managed, undefined);
   assert.equal(firstActor.flags["rebreya-main"].transport.instance, true);
   assert.equal(firstActor.flags["rebreya-main"].transport.instanceState.reserveUnit, "lb");
-  assert.equal(firstActor.flags["rebreya-main"].transport.instanceState.fuelItemId, "");
-  assert.equal(firstActor.flags["rebreya-main"].transport.instanceState.fuelItemName, "");
-  assert.equal(firstActor.flags["rebreya-main"].transport.instanceState.fuelPerMile, 0);
+  assert.equal(firstActor.flags["rebreya-main"].transport.instanceState.fuelSelector, undefined);
+  assert.equal(firstActor.flags["rebreya-main"].transport.instanceState.fuelItemId, undefined);
+  assert.equal(firstActor.flags["rebreya-main"].transport.instanceState.fuelPerMile, undefined);
   assert.equal(firstActor.flags["rebreya-main"].transport.sourceActorUuid, validImport.sourceActorUuid);
 });
 
@@ -611,35 +637,34 @@ test("state update rejects unrelated and foreign-group vehicle members", async (
   );
 });
 
-test("fuel configuration stores a group warehouse item without replacing live state", async () => {
+test("selectFuel resolves Item identity without mutating the Item", async () => {
   const harness = createTransportInstanceHarness({ existingTransport: true });
   const service = new TransportInstanceService(harness.moduleApi, harness.options);
 
-  const result = await service.updateFuelConfig(validFuelConfig, { sender: harness.gm });
+  const result = await service.selectFuel(validFuelSelection, { sender: harness.gm });
 
   assert.deepEqual(harness.actorUpdates.at(-1), {
     "flags.rebreya-main.transport.instanceState": {
       reserveUnit: "gal",
-      fuelItemId: "liquid-coal",
-      fuelItemName: "Жидкий уголь",
-      fuelPerMile: 0.125
+      fuelSelector: buildTransportFuelSelector(harness.droppedItem)
     }
   });
   assert.equal(result.actorId, "vehicle-a");
-  assert.equal(result.fuelItemName, "Жидкий уголь");
-  assert.equal(result.fuelPerMile, 0.125);
+  assert.deepEqual(result.fuelSelector, buildTransportFuelSelector(harness.droppedItem));
+  assert.deepEqual(harness.droppedItem.updateCalls, []);
+  assert.deepEqual(harness.droppedItem.deleteCalls, []);
 });
 
-test("fuel configuration rejects an item outside the owning group", async () => {
+test("selectFuel rejects a dropped UUID that does not resolve to an Item", async () => {
   const harness = createTransportInstanceHarness({ existingTransport: true });
   const service = new TransportInstanceService(harness.moduleApi, harness.options);
 
   await assert.rejects(
-    () => service.updateFuelConfig({
-      ...validFuelConfig,
-      fuelItemId: "foreign-fuel"
+    () => service.selectFuel({
+      ...validFuelSelection,
+      itemUuid: "Compendium.world.goods.Item.missing"
     }, { sender: harness.gm }),
-    /не найден на складе группы/u
+    /предмет топлива/u
   );
   assert.equal(harness.actorUpdates.length, 0);
 });

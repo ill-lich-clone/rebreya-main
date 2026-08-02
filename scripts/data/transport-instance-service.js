@@ -3,9 +3,13 @@ import {
   REBREYA_GROUP_FLAGS,
   TRANSPORT_COMPENDIUM_ID
 } from "../constants.js";
+import {
+  buildTransportFuelSelector,
+  normalizeTransportFuelSelector
+} from "./transport-fuel-item.js";
 
 export const TRANSPORT_IMPORT_COMMAND = "group.transport.importActor";
-export const TRANSPORT_UPDATE_FUEL_CONFIG_COMMAND = "group.transport.updateFuelConfig";
+export const TRANSPORT_SELECT_FUEL_COMMAND = "group.transport.selectFuel";
 export const TRANSPORT_UPDATE_STATE_COMMAND = "group.transport.updateActorState";
 
 const TRANSPORT_CONDITIONS = new Set(["operational", "damaged", "broken"]);
@@ -15,7 +19,7 @@ const TRANSPORT_UUID_PATTERN = new RegExp(
 );
 const WORLD_ACTOR_UUID_PATTERN = /^Actor\.[A-Za-z0-9_-]{1,128}$/u;
 const IMPORT_KEYS = Object.freeze(["groupActorId", "sourceActorUuid"]);
-const FUEL_CONFIG_KEYS = Object.freeze(["actorId", "fuelItemId", "fuelPerMile", "groupActorId"]);
+const FUEL_SELECTION_KEYS = Object.freeze(["actorId", "groupActorId", "itemUuid"]);
 const STATE_KEYS = Object.freeze(["actorId", "groupActorId", "patch"]);
 const STATE_PATCH_KEYS = Object.freeze([
   "condition",
@@ -112,17 +116,17 @@ function reserveUnitFromTransport(transport = {}) {
   );
 }
 
-function collectionValues(collection) {
-  if (Array.isArray(collection)) return collection;
-  if (Array.isArray(collection?.contents)) return collection.contents;
-  if (typeof collection?.values === "function") return Array.from(collection.values());
-  return [];
+function isItemUuid(value) {
+  const uuid = cleanId(value);
+  return uuid.length > 0
+    && uuid.length <= 512
+    && /(?:^|\.)Item\.[A-Za-z0-9_-]{1,128}$/u.test(uuid);
 }
 
-function collectionGet(collection, id) {
-  return collection?.get?.(id)
-    ?? collectionValues(collection).find((entry) => entry?.id === id)
-    ?? null;
+function isItemDocument(document) {
+  if (document?.documentName === "Item") return true;
+  const Item = globalThis.Item;
+  return typeof Item === "function" && document instanceof Item;
 }
 
 export function normalizeTransportInstanceState(value = {}, { reserveUnit = "" } = {}) {
@@ -148,10 +152,8 @@ export function normalizeTransportInstanceState(value = {}, { reserveUnit = "" }
     reserveCapacity,
     reserveUnit: cleanId(reserveUnit)
   };
-  if (Object.hasOwn(value, "fuelItemId")) normalized.fuelItemId = cleanId(value.fuelItemId);
-  if (Object.hasOwn(value, "fuelItemName")) normalized.fuelItemName = cleanId(value.fuelItemName);
-  if (Object.hasOwn(value, "fuelPerMile")) {
-    normalized.fuelPerMile = nonNegativeNumber(value.fuelPerMile, 0, "Расход топлива на милю");
+  if (Object.hasOwn(value, "fuelSelector")) {
+    normalized.fuelSelector = normalizeTransportFuelSelector(value.fuelSelector);
   }
   return normalized;
 }
@@ -176,13 +178,11 @@ export function validateTransportStatePayload(payload) {
     && isNumericInput(payload.patch.reserveCapacity, { optional: true });
 }
 
-export function validateTransportFuelConfigPayload(payload) {
-  return hasExactKeys(payload, FUEL_CONFIG_KEYS)
+export function validateTransportFuelSelectionPayload(payload) {
+  return hasExactKeys(payload, FUEL_SELECTION_KEYS)
     && isSafeId(payload.groupActorId)
     && isSafeId(payload.actorId)
-    && (!cleanId(payload.fuelItemId) || isSafeId(payload.fuelItemId))
-    && isNumericInput(payload.fuelPerMile)
-    && Number(String(payload.fuelPerMile).replace(",", ".")) >= 0;
+    && isItemUuid(payload.itemUuid);
 }
 
 export function registerTransportInstanceCommands(commandBus, service) {
@@ -201,10 +201,10 @@ export function registerTransportInstanceCommands(commandBus, service) {
     authorize: (payload, { sender } = {}) => service.canManageGroup(payload.groupActorId, sender),
     execute: (payload, { sender } = {}) => service.updateInstanceState(payload, { sender })
   });
-  commandBus.register(TRANSPORT_UPDATE_FUEL_CONFIG_COMMAND, {
-    validate: validateTransportFuelConfigPayload,
+  commandBus.register(TRANSPORT_SELECT_FUEL_COMMAND, {
+    validate: validateTransportFuelSelectionPayload,
     authorize: (payload, { sender } = {}) => service.canManageGroup(payload.groupActorId, sender),
-    execute: (payload, { sender } = {}) => service.updateFuelConfig(payload, { sender })
+    execute: (payload, { sender } = {}) => service.selectFuel(payload, { sender })
   });
 }
 
@@ -386,9 +386,9 @@ export class TransportInstanceService {
     };
   }
 
-  async updateFuelConfig(payload, { sender } = {}) {
-    if (!validateTransportFuelConfigPayload(payload)) {
-      throw new Error("Некорректный запрос настройки топлива транспорта.");
+  async selectFuel(payload, { sender } = {}) {
+    if (!validateTransportFuelSelectionPayload(payload)) {
+      throw new Error("Некорректный запрос выбора топлива транспорта.");
     }
     const groupContext = this.#resolveAuthorizedGroup(payload.groupActorId, sender);
     const actor = (groupContext.members ?? []).find((member) => member?.id === payload.actorId);
@@ -396,20 +396,25 @@ export class TransportInstanceService {
       throw new Error("Транспорт не найден в выбранной группе.");
     }
 
-    const fuelItemId = cleanId(payload.fuelItemId);
-    const fuelItem = fuelItemId ? collectionGet(groupContext.groupActor?.items, fuelItemId) : null;
-    if (fuelItemId && !fuelItem) {
-      throw new Error("Выбранный товар топлива не найден на складе группы.");
+    const fromUuid = this.options.fromUuidProvider
+      ?? this.options.fromUuid
+      ?? globalThis.fromUuid;
+    if (typeof fromUuid !== "function") {
+      throw new TypeError("fromUuid is required to select transport fuel");
     }
-    const fuelPerMile = nonNegativeNumber(payload.fuelPerMile, 0, "Расход топлива на милю");
+    const item = await fromUuid(cleanId(payload.itemUuid));
+    if (!isItemDocument(item)) {
+      throw new Error("Перетащите предмет топлива.");
+    }
     const transport = actor.getFlag?.(MODULE_ID, "transport")
       ?? actor.flags?.[MODULE_ID]?.transport
       ?? {};
+    const previous = clone(transport.instanceState) ?? {};
+    const { fuelItemId, fuelItemName, fuelPerMile, ...retained } = previous;
+    const fuelSelector = buildTransportFuelSelector(item);
     const instanceState = {
-      ...(clone(transport.instanceState) ?? {}),
-      fuelItemId,
-      fuelItemName: cleanId(fuelItem?.name),
-      fuelPerMile
+      ...retained,
+      fuelSelector
     };
     await actor.update({
       [`flags.${MODULE_ID}.transport.instanceState`]: instanceState
@@ -417,9 +422,7 @@ export class TransportInstanceService {
     return {
       groupActorId: groupContext.groupId,
       actorId: actor.id,
-      fuelItemId,
-      fuelItemName: instanceState.fuelItemName,
-      fuelPerMile
+      fuelSelector
     };
   }
 
@@ -517,9 +520,6 @@ export class TransportInstanceService {
       ?? (() => globalThis.foundry?.utils?.randomID?.() ?? crypto.randomUUID());
     const instanceId = cleanId(idFactory()) || crypto.randomUUID();
     const reserveUnit = reserveUnitFromTransport(sourceTransport);
-    const fuelPerMile = sourceTransport.consumption?.cadence === "mile"
-      ? nonNegativeNumber(sourceTransport.consumption?.amount, 0, "Расход топлива на милю")
-      : 0;
     moduleFlags.transport = {
       ...sourceTransport,
       instance: true,
@@ -527,11 +527,7 @@ export class TransportInstanceService {
       sourceId: cleanId(moduleFlags.sourceId),
       sourceActorUuid: source.uuid,
       groupActorId,
-      instanceState: normalizeTransportInstanceState({
-        fuelItemId: "",
-        fuelItemName: "",
-        fuelPerMile
-      }, { reserveUnit })
+      instanceState: normalizeTransportInstanceState({}, { reserveUnit })
     };
     data.flags = {
       ...(clone(data.flags) ?? {}),
