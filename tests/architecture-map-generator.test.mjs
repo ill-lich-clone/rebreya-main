@@ -1,6 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
+import { readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 
 import {
   buildArchitectureGraph,
@@ -12,6 +17,7 @@ import { renderArchitectureHtml } from "../tools/architecture-map/html-renderer.
 
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const generatedHtmlPath = "docs/rebreya-module-architecture.html";
+const execFileAsync = promisify(execFile);
 
 function makeFixture() {
   return {
@@ -164,4 +170,34 @@ test("renderer output is deterministic for a fixed graph", () => {
   const graph = buildArchitectureGraph(makeFixture());
 
   assert.equal(renderArchitectureHtml(graph), renderArchitectureHtml(graph));
+});
+
+test("generator CLI writes a complete current-repository snapshot", async () => {
+  const outputPath = join(tmpdir(), `rebreya-architecture-${process.pid}.html`);
+  try {
+    await execFileAsync(process.execPath, ["tools/generate-architecture-map.mjs", outputPath], {
+      cwd: repoRoot,
+      encoding: "utf8",
+      maxBuffer: 16 * 1024 * 1024
+    });
+    const html = await readFile(outputPath, "utf8");
+    const match = html.match(/window\.__REBREYA_ARCHITECTURE__\s*=\s*(\{.*?\});\s*<\/script>/su);
+    assert.ok(match, "generated HTML embeds the architecture graph");
+    const graph = JSON.parse(match[1]);
+    const { stdout } = await execFileAsync("git", ["ls-files", "-z"], {
+      cwd: repoRoot,
+      encoding: "utf8",
+      maxBuffer: 16 * 1024 * 1024
+    });
+    const tracked = stdout
+      .split("\0")
+      .filter((path) => path && path !== generatedHtmlPath);
+
+    assert.equal(graph.nodes.filter((node) => node.type === "file").length, tracked.length);
+    assert.equal(graph.meta.trackedFileCount, tracked.length);
+    assert.match(html, new RegExp(graph.meta.sourceCommit.slice(0, 10), "u"));
+  }
+  finally {
+    await rm(outputPath, { force: true });
+  }
 });
