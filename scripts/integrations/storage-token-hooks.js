@@ -1,38 +1,7 @@
 import { MODULE_ID } from "../constants.js";
+import { preflightStorageAccess } from "../data/storage-access.js";
 import { isStorageActor } from "../data/storage-service.js";
-
-const STORAGE_MENU_ID = `${MODULE_ID}-storage-token-menu`;
-
-function defaultShowActions(_token, actions) {
-  const document = globalThis.document;
-  if (!document?.body) return;
-  document.getElementById(STORAGE_MENU_ID)?.remove();
-  const menu = document.createElement("div");
-  menu.id = STORAGE_MENU_ID;
-  menu.className = "rm-storage-token-menu";
-  for (const action of actions) {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "rm-button rm-button--secondary";
-    const icon = document.createElement("i");
-    icon.className = action.icon;
-    const label = document.createElement("span");
-    label.textContent = action.label;
-    button.append(icon, label);
-    button.addEventListener("click", async () => {
-      try {
-        await action.callback();
-        menu.remove();
-      }
-      catch (error) {
-        console.error(`${MODULE_ID} | Storage token action failed.`, error);
-        globalThis.ui?.notifications?.error(error?.message ?? "Не удалось открыть хранилище.");
-      }
-    });
-    menu.append(button);
-  }
-  document.body.append(menu);
-}
+import { StorageTokenOverlayController } from "../ui/storage-token-overlay.js";
 
 export function buildStorageTokenActions(moduleApi, token, { isGM = false } = {}) {
   const tokenUuid = String(token?.document?.uuid ?? token?.uuid ?? "").trim();
@@ -40,14 +9,14 @@ export function buildStorageTokenActions(moduleApi, token, { isGM = false } = {}
     id: "open",
     label: "Открыть",
     icon: "fa-solid fa-box-open",
-    callback: () => moduleApi.openStorageApp({ tokenUuid, configure: false })
+    callback: () => moduleApi.openStorageApp({ tokenUuid, configure: false, anchorToToken: true })
   }];
   if (isGM) {
     actions.push({
       id: "configure",
       label: "Настроить",
       icon: "fa-solid fa-gear",
-      callback: () => moduleApi.openStorageApp({ tokenUuid, configure: true })
+      callback: () => moduleApi.openStorageApp({ tokenUuid, configure: true, anchorToToken: true })
     });
   }
   return actions;
@@ -56,14 +25,33 @@ export function buildStorageTokenActions(moduleApi, token, { isGM = false } = {}
 export function registerStorageTokenHooks(moduleApi, {
   hooks = globalThis.Hooks,
   gameProvider = () => globalThis.game,
-  showActions = defaultShowActions
+  canvasProvider = () => globalThis.canvas,
+  overlayController = new StorageTokenOverlayController({ canvasProvider })
 } = {}) {
   if (typeof hooks?.on !== "function") return false;
 
   const boundTokens = new WeakSet();
   const showTokenActions = (token) => {
-    const isGM = gameProvider()?.user?.isGM === true;
-    showActions(token, buildStorageTokenActions(moduleApi, token, { isGM }));
+    const game = gameProvider();
+    if (game?.user?.isGM === true) {
+      overlayController.showActions(token, buildStorageTokenActions(moduleApi, token, { isGM: true }));
+      return;
+    }
+    const access = preflightStorageAccess(token, { game, canvas: canvasProvider() });
+    if (access.reason === "distance") {
+      overlayController.showFeedback(token, "Подойдите ближе", { durationMs: 2000 });
+      return;
+    }
+    if (!access.allowed) {
+      const messages = {
+        character: "Выберите принадлежащего вам персонажа.",
+        scene: "Персонаж и хранилище должны находиться на одной сцене.",
+        visibility: "Персонаж не видит это хранилище."
+      };
+      globalThis.ui?.notifications?.warn(messages[access.reason] ?? "Хранилище сейчас недоступно.");
+      return;
+    }
+    overlayController.showActions(token, buildStorageTokenActions(moduleApi, token, { isGM: false }));
   };
   const bindPointerClick = (token) => {
     if (!isStorageActor(token?.actor) || typeof token?.on !== "function" || boundTokens.has(token)) return;
@@ -79,10 +67,14 @@ export function registerStorageTokenHooks(moduleApi, {
     bindPointerClick(token);
     showTokenActions(token);
   });
-
   hooks.on("hoverToken", (token, hovered) => {
     if (hovered) bindPointerClick(token);
   });
+  hooks.on("canvasPan", () => overlayController.reposition());
+  hooks.on("updateToken", () => overlayController.reposition());
+  hooks.on("deleteToken", () => overlayController.close());
+  hooks.on("canvasReady", () => overlayController.close());
+  hooks.on("canvasTearDown", () => overlayController.close());
 
   hooks.on("getActorSheetHeaderButtons", (app, buttons) => {
     const game = gameProvider();

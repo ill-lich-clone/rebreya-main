@@ -12559,11 +12559,10 @@ summary:focus-visible {
 }
 
 /* Scene storage */
-.rm-storage-token-menu {
+.rm-storage-token-actions,
+.rm-storage-token-feedback {
   position: fixed;
-  bottom: 5rem;
-  left: 50%;
-  z-index: 100;
+  z-index: 1100;
   display: flex;
   gap: 0.45rem;
   padding: 0.5rem;
@@ -12571,7 +12570,38 @@ summary:focus-visible {
   border-radius: 8px;
   background: rgb(20 20 24 / 0.94);
   box-shadow: 0 0.5rem 1.5rem rgb(0 0 0 / 0.35);
-  transform: translateX(-50%);
+  color: var(--color-text-light-highlight, #f5f5f5);
+  pointer-events: auto;
+}
+
+.rm-storage-token-feedback {
+  padding: 0.45rem 0.7rem;
+  font-weight: 700;
+  text-shadow: 0 1px 2px #000;
+}
+
+.rm-storage-token-actions::after,
+.rm-storage-token-feedback::after {
+  position: absolute;
+  left: var(--rm-storage-pointer-left, 50%);
+  width: 0.75rem;
+  height: 0.75rem;
+  border-right: 1px solid rgb(255 255 255 / 0.18);
+  border-bottom: 1px solid rgb(255 255 255 / 0.18);
+  background: rgb(20 20 24 / 0.94);
+  content: "";
+  transform: translateX(-50%) rotate(45deg);
+}
+
+.rm-storage-token-actions[data-placement="above"]::after,
+.rm-storage-token-feedback[data-placement="above"]::after {
+  bottom: -0.42rem;
+}
+
+.rm-storage-token-actions[data-placement="below"]::after,
+.rm-storage-token-feedback[data-placement="below"]::after {
+  top: -0.42rem;
+  transform: translateX(-50%) rotate(225deg);
 }
 
 .rm-storage-shell {

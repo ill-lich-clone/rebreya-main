@@ -4,18 +4,30 @@ import assert from "node:assert/strict";
 import { MODULE_ID } from "../scripts/constants.js";
 import { registerStorageTokenHooks } from "../scripts/integrations/storage-token-hooks.js";
 
-function createHarness({ isGM = false } = {}) {
+function createHarness({ isGM = false, distance = 5 } = {}) {
   const listeners = new Map();
   const calls = [];
   const tokenListeners = new Map();
+  const scene = { id: "scene" };
+  const user = { id: isGM ? "gm" : "player", isGM };
   const storageToken = {
     actor: {
       type: "npc",
       flags: { [MODULE_ID]: { storage: { enabled: true } } },
       getFlag(scope, key) { return this.flags?.[scope]?.[key]; }
     },
-    document: { uuid: "Scene.scene.Token.chest" },
+    document: { uuid: "Scene.scene.Token.chest", parent: scene },
+    visible: true,
+    center: { x: 150, y: 50 },
     on(name, callback) { tokenListeners.set(name, callback); }
+  };
+  const characterToken = {
+    actor: {
+      type: "character",
+      testUserPermission: (candidate, permission) => candidate === user && permission === "OWNER"
+    },
+    document: { uuid: "Scene.scene.Token.hero", parent: scene },
+    center: { x: 50, y: 50 }
   };
   const hooks = {
     on(name, callback) { listeners.set(name, callback); }
@@ -25,12 +37,24 @@ function createHarness({ isGM = false } = {}) {
     markStorageActor: async (actorUuid) => calls.push({ actorUuid })
   };
   const shown = [];
+  const feedback = [];
+  const overlayController = {
+    showActions(token, actions) { shown.push(actions); },
+    showFeedback(token, text, options) { feedback.push({ token, text, ...options }); },
+    reposition() {},
+    close() {},
+    destroy() {}
+  };
   registerStorageTokenHooks(moduleApi, {
     hooks,
-    gameProvider: () => ({ user: { isGM } }),
-    showActions: (_token, actions) => shown.push(actions)
+    gameProvider: () => ({ user }),
+    canvasProvider: () => ({
+      grid: { measurePath: () => ({ distance }) },
+      tokens: { controlled: [characterToken], get: () => null }
+    }),
+    overlayController
   });
-  return { listeners, calls, shown, storageToken, tokenListeners };
+  return { listeners, calls, shown, feedback, storageToken, tokenListeners };
 }
 
 test("left-clicking storage offers only Open to a player", async () => {
@@ -38,7 +62,11 @@ test("left-clicking storage offers only Open to a player", async () => {
   await harness.listeners.get("controlToken")(harness.storageToken, true);
   assert.deepEqual(harness.shown[0].map((action) => action.label), ["Открыть"]);
   await harness.shown[0][0].callback();
-  assert.deepEqual(harness.calls, [{ tokenUuid: harness.storageToken.document.uuid, configure: false }]);
+  assert.deepEqual(harness.calls, [{
+    tokenUuid: harness.storageToken.document.uuid,
+    configure: false,
+    anchorToToken: true
+  }]);
 });
 
 test("GM storage actions include a gear configuration button", async () => {
@@ -46,7 +74,24 @@ test("GM storage actions include a gear configuration button", async () => {
   await harness.listeners.get("controlToken")(harness.storageToken, true);
   assert.deepEqual(harness.shown[0].map((action) => action.label), ["Открыть", "Настроить"]);
   await harness.shown[0][1].callback();
-  assert.deepEqual(harness.calls, [{ tokenUuid: harness.storageToken.document.uuid, configure: true }]);
+  assert.deepEqual(harness.calls, [{
+    tokenUuid: harness.storageToken.document.uuid,
+    configure: true,
+    anchorToToken: true
+  }]);
+});
+
+test("a distant player sees token-local feedback instead of actions", () => {
+  const harness = createHarness({ isGM: false, distance: 10 });
+  harness.listeners.get("hoverToken")(harness.storageToken, true);
+  harness.tokenListeners.get("pointertap")({ button: 0 });
+
+  assert.equal(harness.shown.length, 0);
+  assert.deepEqual(harness.feedback, [{
+    token: harness.storageToken,
+    text: "Подойдите ближе",
+    durationMs: 2000
+  }]);
 });
 
 test("an unowned storage token opens its action menu from a left pointer click", async () => {
