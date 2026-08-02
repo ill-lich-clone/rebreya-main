@@ -1905,7 +1905,10 @@ test("InventoryApp allows transport tab and maps the active group transport fuel
 });
 
 test("transport tab renders a full openable fuel Item drop card", async () => {
-  const template = await readFile(new URL("../templates/inventory-app.hbs", import.meta.url), "utf8");
+  const [template, css] = await Promise.all([
+    readFile(new URL("../templates/inventory-app.hbs", import.meta.url), "utf8"),
+    readFile(new URL("../styles/main.css", import.meta.url), "utf8")
+  ]);
   const transportPanel = template.slice(
     template.indexOf("{{#if tabs.isTransport}}"),
     template.indexOf("{{#if tabs.isDowntime}}")
@@ -1925,6 +1928,10 @@ test("transport tab renders a full openable fuel Item drop card", async () => {
   assert.doesNotMatch(transportPanel, /name="fuelPerMile"/u);
   assert.doesNotMatch(transportPanel, /name="reserveCurrent"/u);
   assert.doesNotMatch(transportPanel, /name="reserveCapacity"/u);
+  assert.doesNotMatch(transportPanel, /transport\.activeVehicle\.fuel/u);
+  assert.match(css, /\.rm-transport-fuel-card\s*\{[^}]*grid-template-columns:\s*minmax\(180px,\s*1fr\)\s+minmax\(0,\s*3fr\)/su);
+  assert.match(css, /\.rm-transport-fuel-card__metrics\s*\{[^}]*width:\s*100%/su);
+  assert.match(css, /\.rm-transport-specs\s*\{[^}]*grid-template-columns:\s*repeat\(4,/su);
 });
 
 test("InventoryApp keeps fuel consumption read-only without group management rights", async () => {
@@ -2205,6 +2212,49 @@ test("transport fuel consumption save delegates the card amount and unit", async
   }
   finally {
     globalThis.ui = previousUi;
+    dom.restore();
+    restoreFoundry();
+  }
+});
+
+test("transport fuel consumption form ignores Enter and native submit", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const dom = installMinimalDom();
+  const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?transport-fuel-consumption-enter=${Date.now()}`);
+  const calls = [];
+  const form = createFakeElement({ dataset: { actorId: "vehicle-a" } });
+  const root = createFakeElement();
+  root.querySelector = (selector) => (
+    selector === "[data-transport-fuel-consumption-form]" ? form : null
+  );
+  root.querySelectorAll = () => [];
+  const app = new InventoryApp(createModuleApi({ getGroupContext: () => null, calls }));
+  app.groupActor = { id: "group-a" };
+  app.element = root;
+
+  try {
+    await app._onRender({}, {});
+    let keydownPrevented = false;
+    let keydownStopped = false;
+    form.listeners.keydown[0]({
+      key: "Enter",
+      preventDefault() { keydownPrevented = true; },
+      stopPropagation() { keydownStopped = true; }
+    });
+    let submitPrevented = false;
+    let submitStopped = false;
+    form.listeners.submit[0]({
+      preventDefault() { submitPrevented = true; },
+      stopPropagation() { submitStopped = true; }
+    });
+
+    assert.equal(keydownPrevented, true);
+    assert.equal(keydownStopped, true);
+    assert.equal(submitPrevented, true);
+    assert.equal(submitStopped, true);
+    assert.deepEqual(calls.filter((call) => call[0] === "updateTransportFuelConsumption"), []);
+  }
+  finally {
     dom.restore();
     restoreFoundry();
   }

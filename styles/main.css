@@ -6008,6 +6008,12 @@ summary:focus-visible {
 
 .rm-transport-fuel-card {
   margin: 0;
+  grid-template-columns: minmax(180px, 1fr) minmax(0, 3fr);
+}
+
+.rm-transport-fuel-card > .rm-compact-item__side {
+  width: 100%;
+  min-width: 0;
 }
 
 .rm-transport-fuel-card__open {
@@ -6036,7 +6042,11 @@ summary:focus-visible {
 }
 
 .rm-transport-fuel-card__metrics {
-  grid-template-columns: repeat(5, minmax(74px, 1fr));
+  width: 100%;
+  grid-template-columns:
+    repeat(3, minmax(56px, 0.75fr))
+    minmax(264px, 2.5fr)
+    minmax(84px, 1fr);
 }
 
 .rm-transport-fuel-card__consumption {
@@ -6128,7 +6138,7 @@ summary:focus-visible {
 
 .rm-transport-specs {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 6px;
 }
 

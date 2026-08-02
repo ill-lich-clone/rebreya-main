@@ -5677,6 +5677,17 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       }
     }, listenerOptions);
 
+    const fuelConsumptionForm = element.querySelector("[data-transport-fuel-consumption-form]");
+    fuelConsumptionForm?.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      event.stopPropagation();
+    }, listenerOptions);
+    fuelConsumptionForm?.addEventListener("submit", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    }, listenerOptions);
+
     element.querySelector("[data-action='transport-fuel-consumption-save']")?.addEventListener("click", async (event) => {
       const button = event.currentTarget;
       const form = button.closest?.("[data-transport-fuel-consumption-form]");
