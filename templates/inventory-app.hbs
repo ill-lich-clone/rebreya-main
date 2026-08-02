@@ -4,7 +4,7 @@
   </section>
 {{else}}
   <section class="rm-inventory-book">
-    <section class="rm-shell rm-inventory-shell rm-inventory-shell--compact rm-inventory-book__page scrollable">
+    <section class="rm-shell rm-inventory-shell rm-inventory-shell--compact rm-inventory-book__page scrollable" data-tab="{{activeTab}}">
       <header class="rm-inventory-book__header{{#if tabs.isInventory}} rm-inventory-book__header--inventory{{/if}}{{#if tabs.isTravel}} rm-inventory-book__header--travel{{/if}}{{#if tabs.isTransport}} rm-inventory-book__header--transport{{/if}}">
         {{#if tabs.isTravel}}
           <div
@@ -100,28 +100,11 @@
         </div>
 
         <div class="rm-inventory-book__controls">
-          <div class="rm-inventory-book__actions">
-            <button type="button" class="rm-inventory-book__action rm-inventory-book__panel" data-action="open-actor-sheet" title="Открыть лист склада">
-              <i class="fa-solid fa-up-right-from-square"></i>
-              <span>Лист склада</span>
-            </button>
-            {{#if canManage}}
-              <button type="button" class="rm-inventory-book__action rm-inventory-book__panel" data-action="add-food" title="Добавить еду">
-                <i class="fa-solid fa-bread-slice"></i>
-                <span>Еда</span>
-              </button>
-              <button type="button" class="rm-inventory-book__action rm-inventory-book__panel" data-action="add-water" title="Добавить воду">
-                <i class="fa-solid fa-droplet"></i>
-                <span>Вода</span>
-              </button>
-            {{/if}}
-          </div>
-
           <section class="rm-inventory-book__summary" aria-label="Сводка партийных запасов">
             <article class="rm-inventory-book__cargo rm-inventory-book__panel">
               <div class="rm-inventory-book__metric-heading">
-                <span>Груз</span>
-                <strong>{{rmNum party.inventoryWeight}} / {{rmNum party.totalCapacityLb}} фнт.</strong>
+                <span>Грузоподъёмность</span>
+                <strong class="{{#if party.dashboard.weight.isOverloaded}}rm-negative{{/if}}">{{rmNum party.inventoryWeight}} / {{rmNum party.totalCapacityLb}} фнт.</strong>
               </div>
               <div
                 class="rm-inventory-book__cargo-bar"
@@ -151,21 +134,26 @@
               </div>
             </article>
 
+            <article class="rm-inventory-book__route rm-inventory-book__panel">
+              <span title="{{travel.headerRoute.routeLabel}}">{{travel.headerRoute.routeLabel}}</span>
+              <strong>{{travel.headerRoute.remainingDaysLabel}}</strong>
+            </article>
+
             <div class="rm-inventory-book__supply-row">
-              <article class="rm-inventory-book__supply rm-inventory-book__panel {{party.dashboard.food.className}}">
+              <article class="rm-inventory-book__supply rm-inventory-book__panel" {{#if canManage}}data-action="edit-supply" data-resource-key="food" title="Изменить еду (ПКМ)"{{/if}}>
                 <span>Еда</span>
-                <strong>{{rmNum summary.foodLb}} фнт.</strong>
+                <strong class="{{#if party.dashboard.food.isEmpty}}rm-negative{{/if}}">{{rmNum summary.foodLb}} фнт.</strong>
                 <small>{{party.dashboard.food.daysLabel}}</small>
               </article>
-              <article class="rm-inventory-book__supply rm-inventory-book__panel {{party.dashboard.water.className}}">
+              <article class="rm-inventory-book__supply rm-inventory-book__panel" {{#if canManage}}data-action="edit-supply" data-resource-key="water" title="Изменить воду (ПКМ)"{{/if}}>
                 <span>Вода</span>
-                <strong>{{rmNum summary.waterGal}} гал.</strong>
+                <strong class="{{#if party.dashboard.water.isEmpty}}rm-negative{{/if}}">{{rmNum summary.waterGal}} гал.</strong>
                 <small>{{party.dashboard.water.daysLabel}}</small>
               </article>
               <article class="rm-inventory-book__supply rm-inventory-book__panel">
-                <span>Энергия</span>
-                <strong>{{party.dashboard.energy.ratioLabel}}</strong>
-                <small>{{party.dashboard.energy.note}}</small>
+                <span>Топливо</span>
+                <strong class="{{#if transport.fuelRange.isEmpty}}rm-negative{{/if}}">{{transport.fuelRange.valueLabel}}</strong>
+                <small title="{{transport.fuelRange.note}}">{{transport.fuelRange.note}}</small>
               </article>
             </div>
           </section>

@@ -854,6 +854,9 @@ function buildTransportProfile({
   reserveCurrent = 0,
   reserveCapacity = null,
   reserveUnit = "",
+  fuelItemId = "",
+  fuelItemName = "",
+  fuelPerMile = null,
   hasExplicitCargoCapacity = false,
   accelerationFt = null,
   breakdownThreshold = null
@@ -910,6 +913,9 @@ function buildTransportProfile({
     reserveCapacity: extractNumber(reserveCapacity),
     reserveUnit: cleanId(reserveUnit),
     reserveLabel: formatTransportReserveLabel(reserveCurrent, reserveCapacity, reserveUnit),
+    fuelItemId: cleanId(fuelItemId),
+    fuelItemName: cleanId(fuelItemName),
+    fuelPerMile: Math.max(0, toNumber(fuelPerMile, 0)),
     hasExplicitCargoCapacity: hasExplicitCargoCapacity === true,
     accelerationFt: extractNumber(accelerationFt),
     breakdownThreshold: extractNumber(breakdownThreshold)
@@ -1030,6 +1036,9 @@ function buildTransportProfileFromActor(actor, memberState = {}, {
     reserveCurrent: instanceState.reserveCurrent,
     reserveCapacity: instanceState.reserveCapacity,
     reserveUnit: instanceState.reserveUnit ?? consumption.unit,
+    fuelItemId: instanceState.fuelItemId,
+    fuelItemName: instanceState.fuelItemName,
+    fuelPerMile: instanceState.fuelPerMile,
     hasExplicitCargoCapacity: explicitCargoValue !== undefined,
     accelerationFt: transportFlags.accelerationFt,
     breakdownThreshold: transportFlags.breakdownThreshold
@@ -1194,6 +1203,13 @@ function buildEmptyTransportSnapshot({ warning = "", canManage = false } = {}) {
     hasVehicles: false,
     activeTransportId: "",
     activeVehicle: null,
+    fuelRange: {
+      configured: false,
+      itemName: "",
+      miles: null,
+      isEmpty: false,
+      reason: "noTransport"
+    },
     effectiveSpeedMph: DEFAULT_TRAVEL_SPEED_MPH,
     speedLabel: `${DEFAULT_TRAVEL_SPEED_MPH} мили/час`,
     speedSourceLabel: "Пешком",
@@ -1204,6 +1220,44 @@ function buildEmptyTransportSnapshot({ warning = "", canManage = false } = {}) {
 
 function getRawQuantity(itemData) {
   return Math.max(0, toNumber(foundry.utils.getProperty(itemData, "system.quantity"), 1));
+}
+
+function buildTransportFuelRange(activeVehicle, groupActor) {
+  if (!activeVehicle?.isConcreteInstance) {
+    return {
+      configured: false,
+      itemName: "",
+      miles: null,
+      isEmpty: false,
+      reason: "noTransport"
+    };
+  }
+
+  const fuelItemId = cleanId(activeVehicle.fuelItemId);
+  const fuelPerMile = Math.max(0, toNumber(activeVehicle.fuelPerMile, 0));
+  const savedItemName = cleanId(activeVehicle.fuelItemName);
+  if (!fuelItemId || fuelPerMile <= 0) {
+    return {
+      configured: false,
+      itemName: savedItemName,
+      miles: null,
+      isEmpty: false,
+      reason: "unconfigured"
+    };
+  }
+
+  const fuelItem = groupActor?.items?.get?.(fuelItemId)
+    ?? groupActor?.items?.contents?.find?.((item) => cleanId(item?.id) === fuelItemId)
+    ?? null;
+  const quantity = fuelItem ? getRawQuantity(fuelItem.toObject?.() ?? fuelItem) : 0;
+  const miles = Math.max(0, Math.floor(quantity / fuelPerMile));
+  return {
+    configured: true,
+    itemName: cleanId(fuelItem?.name) || savedItemName,
+    miles,
+    isEmpty: miles === 0,
+    reason: ""
+  };
 }
 
 function getItemWeight(itemData) {
@@ -3915,6 +3969,7 @@ export class InventoryService {
     const requestedActive = state.activeTransportId ? vehiclesById.get(state.activeTransportId) ?? null : null;
     const activeVehicle = requestedActive ?? (vehicles.length === 1 ? vehicles[0] : null);
     const activeTransportId = activeVehicle?.id ?? "";
+    const fuelRange = buildTransportFuelRange(activeVehicle, groupContext?.groupActor);
     const effectiveSpeedMph = activeVehicle?.speedMph > 0
       ? roundNumber(activeVehicle.speedMph, 2)
       : DEFAULT_TRAVEL_SPEED_MPH;
@@ -3939,6 +3994,7 @@ export class InventoryService {
             active: true
           }
         : null,
+      fuelRange,
       effectiveSpeedMph,
       speedLabel: formatTransportSpeedLabel(effectiveSpeedMph),
       speedSourceLabel: activeVehicle?.name ?? "Пешком",

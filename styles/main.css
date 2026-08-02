@@ -4603,8 +4603,7 @@ summary:focus-visible {
 
 .rebreya-inventory-app .rm-inventory-book__heading,
 .rebreya-inventory-app .rm-inventory-book__identity,
-.rebreya-inventory-app .rm-inventory-book__controls,
-.rebreya-inventory-app .rm-inventory-book__actions {
+.rebreya-inventory-app .rm-inventory-book__controls {
   position: relative;
   z-index: 2;
 }
@@ -4785,43 +4784,6 @@ summary:focus-visible {
   width: 420px;
   max-width: 46%;
   display: grid;
-  gap: 8px;
-}
-
-.rebreya-inventory-app .rm-inventory-book__actions {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 7px;
-  flex-wrap: nowrap;
-}
-
-.rebreya-inventory-app .rm-inventory-book__action:first-child {
-  flex: 1 1 auto;
-}
-
-.rebreya-inventory-app .rm-inventory-book__action {
-  min-height: 36px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 5px 9px;
-  font-size: 12px;
-  font-weight: 700;
-  line-height: 1;
-}
-
-.rebreya-inventory-app .rm-inventory-book__action:hover {
-  border-color: rgb(var(--rm-color-gold-rgb) / 0.82);
-  background: rgb(var(--rm-color-surface-raised-rgb) / 0.94);
-  color: var(--rm-accent-strong);
-}
-
-.rebreya-inventory-app .rm-inventory-book__action:focus-visible {
-  outline: 2px solid var(--rm-accent);
-  outline-offset: 2px;
 }
 
 .rebreya-inventory-app .rm-inventory-book__summary {
@@ -4830,6 +4792,7 @@ summary:focus-visible {
 }
 
 .rebreya-inventory-app .rm-inventory-book__cargo,
+.rebreya-inventory-app .rm-inventory-book__route,
 .rebreya-inventory-app .rm-inventory-book__supply {
   min-width: 0;
 }
@@ -4838,6 +4801,33 @@ summary:focus-visible {
   display: grid;
   gap: 6px;
   padding: 7px 9px 8px;
+}
+
+.rebreya-inventory-app .rm-inventory-book__route {
+  min-height: 32px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 9px;
+}
+
+.rebreya-inventory-app .rm-inventory-book__route span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--rm-text-primary);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rebreya-inventory-app .rm-inventory-book__route strong {
+  color: var(--rm-accent);
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
 }
 
 .rebreya-inventory-app .rm-inventory-book__metric-heading {
@@ -4869,6 +4859,10 @@ summary:focus-visible {
   color: var(--rm-text-primary);
   font-size: 13px;
   line-height: 1;
+}
+
+.rebreya-inventory-app .rm-inventory-book__header strong.rm-negative {
+  color: var(--rm-negative);
 }
 
 .rebreya-inventory-app .rm-inventory-book__wallet .rm-coin-badge--gp strong {
@@ -4974,6 +4968,14 @@ summary:focus-visible {
   grid-template-columns: 1fr auto;
   gap: 3px 7px;
   padding: 7px 8px;
+}
+
+.rebreya-inventory-app .rm-inventory-book__supply[data-action="edit-supply"] {
+  cursor: context-menu;
+}
+
+.rebreya-inventory-app .rm-inventory-book__supply[data-action="edit-supply"]:hover {
+  border-color: rgb(var(--rm-color-gold-rgb) / 0.66);
 }
 
 .rebreya-inventory-app .rm-inventory-book__supply small {

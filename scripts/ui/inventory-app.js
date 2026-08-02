@@ -1450,11 +1450,28 @@ function prepareTravelContext(snapshot = {}, trackTime = false) {
         label: "Маршрут не выбран",
         completed: false
       };
+  const routeAvailable = Boolean(
+    plan?.available
+    && cleanText(plan.originName)
+    && cleanText(plan.destinationName)
+  );
+  const headerRoute = routeAvailable
+    ? {
+        available: true,
+        routeLabel: `${cleanText(plan.originName)} → ${cleanText(plan.destinationName)}`,
+        remainingDaysLabel: `${formatTravelDayNumber(progress.remainingTravelDays)} дн.`
+      }
+    : {
+        available: false,
+        routeLabel: "Маршрут не выбран",
+        remainingDaysLabel: "—"
+      };
 
   return {
     ...source,
     plan,
     progress,
+    headerRoute,
     canRewind: Boolean(source.canRewind),
     trackTime: Boolean(trackTime)
   };
@@ -1469,6 +1486,15 @@ function buildEmptyTransportContext({ warning = "" } = {}) {
     hasVehicles: false,
     activeTransportId: "",
     activeVehicle: null,
+    fuelRange: {
+      configured: false,
+      itemName: "",
+      miles: null,
+      isEmpty: false,
+      reason: "noTransport",
+      valueLabel: "—",
+      note: "Транспорт не выбран"
+    },
     effectiveSpeedMph: 3,
     speedLabel: "3 мили/час",
     speedSourceLabel: "Пешком",
@@ -1519,6 +1545,24 @@ function prepareTransportContext(snapshot = {}) {
         }
       }
     : null;
+  const sourceFuelRange = source.fuelRange && typeof source.fuelRange === "object"
+    ? source.fuelRange
+    : {};
+  const fuelConfigured = sourceFuelRange.configured === true;
+  const fuelReason = cleanText(sourceFuelRange.reason) || (activeVehicle ? "unconfigured" : "noTransport");
+  const fuelRange = {
+    configured: fuelConfigured,
+    itemName: cleanText(sourceFuelRange.itemName),
+    miles: fuelConfigured ? Math.max(0, Math.floor(toNumber(sourceFuelRange.miles, 0))) : null,
+    isEmpty: fuelConfigured && sourceFuelRange.isEmpty === true,
+    reason: fuelConfigured ? "" : fuelReason,
+    valueLabel: fuelConfigured
+      ? `${Math.max(0, Math.floor(toNumber(sourceFuelRange.miles, 0)))} миль`
+      : "—",
+    note: fuelConfigured
+      ? (cleanText(sourceFuelRange.itemName) || "Топливо")
+      : (fuelReason === "noTransport" ? "Транспорт не выбран" : "Топливо не настроено")
+  };
   return {
     ...buildEmptyTransportContext(),
     ...source,
@@ -1526,6 +1570,7 @@ function prepareTransportContext(snapshot = {}) {
     hasVehicles: Boolean(source.hasVehicles ?? vehicles.length > 0),
     canManage: Boolean(source.canManage),
     activeVehicle,
+    fuelRange,
     cargoOverloaded: Boolean(source.cargoOverloaded)
   };
 }
@@ -3560,6 +3605,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
       const dashboard = {
         weight: {
+          isOverloaded: freeCapacityLb < 0,
           className: toStateClass(weightSeverity),
           badgeType: toStatusBadgeType(weightSeverity),
           badgeLabel: freeCapacityLb < 0
@@ -3572,6 +3618,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
           meterPercent: capacityUsedPercent
         },
         food: {
+          isEmpty: toNumber(inventorySnapshot.summary.foodLb, 0) <= 0,
           className: toStateClass(foodSeverity),
           badgeType: toStatusBadgeType(foodSeverity),
           daysLabel: hasFoodEstimate ? `${foodDaysLeft} дн.` : "Без нормы",
@@ -3580,6 +3627,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
             : "Задайте расход в группе"
         },
         water: {
+          isEmpty: toNumber(inventorySnapshot.summary.waterGal, 0) <= 0,
           className: toStateClass(waterSeverity),
           badgeType: toStatusBadgeType(waterSeverity),
           daysLabel: hasWaterEstimate ? `${waterDaysLeft} дн.` : "Без нормы",
@@ -5836,25 +5884,31 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       }
     }, listenerOptions);
 
-    element.querySelector("[data-action='add-food']")?.addEventListener("click", async () => {
-      try {
-        await this.#promptSupply("food");
-      }
-      catch (error) {
-        console.error(`${MODULE_ID} | Failed to add party food.`, error);
-        ui.notifications?.error(error.message || "Не удалось изменить запас еды.");
-      }
-    }, listenerOptions);
+    for (const supplyElement of element.querySelectorAll("[data-action='edit-supply']")) {
+      supplyElement.addEventListener("contextmenu", async (event) => {
+        if (!this.canManage) {
+          return;
+        }
 
-    element.querySelector("[data-action='add-water']")?.addEventListener("click", async () => {
-      try {
-        await this.#promptSupply("water");
-      }
-      catch (error) {
-        console.error(`${MODULE_ID} | Failed to add party water.`, error);
-        ui.notifications?.error(error.message || "Не удалось изменить запас воды.");
-      }
-    }, listenerOptions);
+        const resourceKey = cleanText(event.currentTarget?.dataset?.resourceKey);
+        if (!["food", "water"].includes(resourceKey)) {
+          return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+        try {
+          await this.#promptSupply(resourceKey);
+        }
+        catch (error) {
+          console.error(`${MODULE_ID} | Failed to edit party ${resourceKey}.`, error);
+          ui.notifications?.error(
+            error.message
+            || (resourceKey === "water" ? "Не удалось изменить запас воды." : "Не удалось изменить запас еды.")
+          );
+        }
+      }, listenerOptions);
+    }
 
     element.querySelector("[data-action='search']")?.addEventListener("input", (event) => {
       this.search = event.currentTarget.value ?? "";

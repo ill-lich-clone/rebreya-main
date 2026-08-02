@@ -405,6 +405,13 @@ test("getTransportSnapshot does not treat warehouse items as concrete group tran
     assert.equal(transportSnapshot.activeVehicle, null);
     assert.equal(transportSnapshot.effectiveSpeedMph, 3);
     assert.deepEqual(transportSnapshot.vehicles, []);
+    assert.deepEqual(transportSnapshot.fuelRange, {
+      configured: false,
+      itemName: "",
+      miles: null,
+      isEmpty: false,
+      reason: "noTransport"
+    });
   }
   finally {
     fixture.restore();
@@ -412,6 +419,11 @@ test("getTransportSnapshot does not treat warehouse items as concrete group tran
 });
 
 test("vehicle member reads D&D5e 5.2.5 native fields and live instance state", async () => {
+  const fuelItem = createItem({
+    id: "fuel-a",
+    name: "Liquid coal",
+    quantity: 39.9
+  });
   const actor = createActor({
     id: "vehicle-a",
     name: "Тяжёлый гражданский фургон",
@@ -429,7 +441,10 @@ test("vehicle member reads D&D5e 5.2.5 native fields and live instance state", a
             condition: "damaged",
             reserveCurrent: 8,
             reserveCapacity: 12,
-            reserveUnit: "gal"
+            reserveUnit: "gal",
+            fuelItemId: fuelItem.id,
+            fuelItemName: fuelItem.name,
+            fuelPerMile: 0.25
           }
         }
       }
@@ -448,7 +463,8 @@ test("vehicle member reads D&D5e 5.2.5 native fields and live instance state", a
     name: "Партия",
     type: "group",
     isOwner: true,
-    members: [{ actor }]
+    members: [{ actor }],
+    items: [fuelItem]
   });
   const fixture = installInventoryFixture({
     actors: [groupActor, actor],
@@ -506,6 +522,37 @@ test("vehicle member reads D&D5e 5.2.5 native fields and live instance state", a
     assert.equal(member.transport.reserveCapacity, 12);
     assert.equal(member.transport.reserveUnit, "gal");
     assert.equal(member.capacityLb, 5250);
+
+    const transportSnapshot = await service.getTransportSnapshot({
+      partySnapshot: snapshot,
+      inventorySnapshot: {
+        actor: { canEdit: true },
+        canDropInventoryItems: true
+      }
+    });
+    assert.deepEqual(transportSnapshot.fuelRange, {
+      configured: true,
+      itemName: fuelItem.name,
+      miles: 159,
+      isEmpty: false,
+      reason: ""
+    });
+
+    fuelItem.system.quantity = 0;
+    const emptyFuelSnapshot = await service.getTransportSnapshot({
+      partySnapshot: snapshot,
+      inventorySnapshot: {
+        actor: { canEdit: true },
+        canDropInventoryItems: true
+      }
+    });
+    assert.deepEqual(emptyFuelSnapshot.fuelRange, {
+      configured: true,
+      itemName: fuelItem.name,
+      miles: 0,
+      isEmpty: true,
+      reason: ""
+    });
   }
   finally {
     fixture.restore();

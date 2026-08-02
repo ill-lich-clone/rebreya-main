@@ -606,9 +606,11 @@ test("InventoryApp renders a compact header summary without redundant warehouse 
   const template = await readFile(new URL("../templates/inventory-app.hbs", import.meta.url), "utf8");
   const pageIndex = template.indexOf('class="rm-shell rm-inventory-shell rm-inventory-shell--compact rm-inventory-book__page scrollable"');
   const tabsIndex = template.indexOf('class="rm-inventory-book__tabs"');
+  const headerTemplate = template.slice(pageIndex, template.indexOf("</header>", pageIndex));
 
   assert.match(template, /class="rm-inventory-book"/u);
   assert.ok(pageIndex >= 0, "expected the scrollable book page");
+  assert.match(template, /class="rm-shell rm-inventory-shell rm-inventory-shell--compact rm-inventory-book__page scrollable" data-tab="\{\{activeTab\}\}"/u);
   assert.ok(tabsIndex > pageIndex, "expected the tab rail after the book page");
   assert.match(template, /class="rm-inventory-book__controls"/u);
   assert.match(template, /class="rm-inventory-book__identity"/u);
@@ -625,6 +627,17 @@ test("InventoryApp renders a compact header summary without redundant warehouse 
   assert.match(template, /class="rm-inventory-book__cargo-bar"[^>]*tabindex="0"[^>]*aria-describedby="rm-inventory-cargo-tooltip"/u);
   assert.match(template, /class="rm-inventory-book__cargo-tooltip"[^>]*id="rm-inventory-cargo-tooltip"/u);
   assert.match(template, /class="rm-inventory-book__supply-row"/u);
+  assert.match(template, /class="rm-inventory-book__route rm-inventory-book__panel"/u);
+  assert.match(template, /travel\.headerRoute\.routeLabel/u);
+  assert.match(template, /travel\.headerRoute\.remainingDaysLabel/u);
+  assert.match(template, /data-action="edit-supply" data-resource-key="food"/u);
+  assert.match(template, /data-action="edit-supply" data-resource-key="water"/u);
+  assert.match(template, /transport\.fuelRange\.valueLabel/u);
+  assert.match(template, /transport\.fuelRange\.note/u);
+  assert.match(template, /party\.dashboard\.weight\.isOverloaded/u);
+  assert.match(template, /party\.dashboard\.food\.isEmpty/u);
+  assert.match(template, /party\.dashboard\.water\.isEmpty/u);
+  assert.match(template, /transport\.fuelRange\.isEmpty/u);
   assert.doesNotMatch(template, /class="rm-inventory-book__header-shade"/u);
   assert.doesNotMatch(template, /class="rm-compact-pill-strip rm-compact-pill-strip--primary"/u);
   assert.doesNotMatch(template, /Подробнее по складу/u);
@@ -660,8 +673,10 @@ test("InventoryApp renders a compact header summary without redundant warehouse 
     assert.match(template, new RegExp(`data-action="switch-tab"[^>]+data-tab="${tab}"`, "u"));
   }
 
-  assert.match(template, /class="rm-inventory-book__actions"[\s\S]*data-action="open-actor-sheet"/u);
-  assert.match(template, /\{\{#if canManage\}\}[\s\S]*data-action="add-food"[\s\S]*data-action="add-water"[\s\S]*\{\{\/if\}\}/u);
+  assert.doesNotMatch(template, /data-action="open-actor-sheet"/u);
+  assert.doesNotMatch(template, /data-action="add-food"/u);
+  assert.doesNotMatch(template, /data-action="add-water"/u);
+  assert.doesNotMatch(headerTemplate, />Энергия</u);
 });
 
 test("InventoryApp positions external book tabs and keeps the character-style artwork mask", async () => {
@@ -691,7 +706,8 @@ test("InventoryApp positions external book tabs and keeps the character-style ar
     /\.rebreya-inventory-app \.rm-inventory-book__wallet \.rm-coin-badge\s*\{[^}]*min-height:\s*28px;/u
   );
   assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__inventory-meta\s*\{/u);
-  assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__action\s*\{[^}]*min-height:\s*36px;/u);
+  assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__route\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\) auto;/u);
+  assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__supply\[data-action="edit-supply"\]\s*\{[^}]*cursor:\s*context-menu;/u);
   assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__tabs\s*\{[^}]*position:\s*absolute;[^}]*right:\s*-\d+px;[^}]*grid-auto-flow:\s*row;/u);
   assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__summary\s*\{/u);
   assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__cargo-tooltip\s*\{/u);
@@ -747,7 +763,7 @@ test("InventoryApp uses one surface component across compact header panels", asy
   const template = await readFile(new URL("../templates/inventory-app.hbs", import.meta.url), "utf8");
   const css = await readFile(new URL("../styles/main.css", import.meta.url), "utf8");
 
-  assert.equal((template.match(/rm-inventory-book__panel/gu) ?? []).length, 15);
+  assert.equal((template.match(/rm-inventory-book__panel/gu) ?? []).length, 13);
   assert.match(
     css,
     /\.rebreya-inventory-app \.rm-inventory-book__header \.rm-inventory-book__panel\s*\{[^}]*border:\s*1px solid rgb\(var\(--rm-color-gold-rgb\) \/ 0\.3\);[^}]*border-radius:\s*6px;[^}]*background:\s*rgb\(var\(--rm-color-ink-rgb\) \/ 0\.94\);[^}]*box-shadow:/u
@@ -1239,14 +1255,18 @@ test("InventoryApp item quantity and supply dialogs parse signed edits as relati
       quantity: "20"
     }
   });
-  const addWaterButton = createFakeElement();
+  const waterSupply = createFakeElement({ dataset: { resourceKey: "water" } });
   const appRoot = createFakeElement();
-  appRoot.querySelector = (selector) => selector === "[data-action='add-water']"
-    ? addWaterButton
-    : null;
-  appRoot.querySelectorAll = (selector) => selector === "[data-action='edit-item-quantity']"
-    ? [editQuantityButton]
-    : [];
+  appRoot.querySelector = () => null;
+  appRoot.querySelectorAll = (selector) => {
+    if (selector === "[data-action='edit-item-quantity']") {
+      return [editQuantityButton];
+    }
+    if (selector === "[data-action='edit-supply']") {
+      return [waterSupply];
+    }
+    return [];
+  };
   globalThis.ui = {
     notifications: {
       info() {},
@@ -1279,6 +1299,7 @@ test("InventoryApp item quantity and supply dialogs parse signed edits as relati
     };
     const app = new InventoryApp(moduleApi);
     app.element = appRoot;
+    app.canManage = true;
 
     await app._onRender({}, {});
     let quantityPromise = editQuantityButton.listeners.click[0]({ currentTarget: editQuantityButton });
@@ -1297,7 +1318,12 @@ test("InventoryApp item quantity and supply dialogs parse signed edits as relati
     dialog.config.buttons.confirm.callback(dialogRoot);
     await quantityPromise;
 
-    const supplyPromise = addWaterButton.listeners.click[0]({ currentTarget: addWaterButton });
+    let contextMenuPrevented = false;
+    const supplyPromise = waterSupply.listeners.contextmenu[0]({
+      currentTarget: waterSupply,
+      preventDefault() { contextMenuPrevented = true; },
+      stopPropagation() {}
+    });
     dialog = globalThis.Dialog.instances.at(-1);
     fields = { "[data-field='numeric-value']": { value: "-5" } };
     dialogRoot = createFakeElement();
@@ -1310,6 +1336,7 @@ test("InventoryApp item quantity and supply dialogs parse signed edits as relati
       { itemId: "water-item", quantity: 10 }
     ]);
     assert.deepEqual(supplies, [{ resourceKey: "water", quantity: -5 }]);
+    assert.equal(contextMenuPrevented, true);
     assert.match(dialog.config.content, /type="text"[^>]+inputmode="decimal"[^>]+data-field="numeric-value"/u);
   }
   finally {
@@ -1564,6 +1591,49 @@ test("InventoryApp allows downtime tab and maps downtime snapshot into context o
   }
 });
 
+test("InventoryApp marks only overloaded cargo and empty header supplies as critical", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  try {
+    const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?header-logistics=${Date.now()}`);
+    const app = new InventoryApp(createModuleApi({
+      inventorySnapshot: {
+        actor: { id: "group-a", name: "Party", canEdit: true },
+        hasActor: true,
+        items: [],
+        allItems: [],
+        emptyInventory: true,
+        groupContextError: "",
+        summary: {
+          distinctCount: 0,
+          totalQuantity: 0,
+          totalWeight: 120,
+          foodLb: 0,
+          waterGal: 0,
+          currencyLabel: "0 cp",
+          currency: { pp: 0, gp: 0, sp: 0, cp: 0, totalCopper: 0, label: "0 cp" }
+        }
+      },
+      partySnapshot: {
+        totalCapacityLb: 100,
+        inventoryWeight: 120,
+        freeCapacityLb: -20,
+        foodDaysLeft: 0,
+        waterDaysLeft: 0,
+        canManage: true
+      }
+    }));
+
+    const context = await app._prepareContext();
+
+    assert.equal(context.party.dashboard.weight.isOverloaded, true);
+    assert.equal(context.party.dashboard.food.isEmpty, true);
+    assert.equal(context.party.dashboard.water.isEmpty, true);
+  }
+  finally {
+    restoreFoundry();
+  }
+});
+
 test("InventoryApp allows travel tab and maps travel snapshot into context", async () => {
   const restoreFoundry = installFoundryApplicationStub();
   try {
@@ -1603,6 +1673,7 @@ test("InventoryApp allows travel tab and maps travel snapshot into context", asy
         progress: {
           traveledMiles: 24,
           remainingMiles: 156,
+          remainingTravelDays: 3,
           percent: 13.33,
           label: "24 / 180 миль"
         }
@@ -1618,6 +1689,11 @@ test("InventoryApp allows travel tab and maps travel snapshot into context", asy
     assert.equal(context.tabs.isTravel, true);
     assert.equal(context.travel.plan.totalMiles, 180);
     assert.equal(context.travel.progress.traveledMiles, 24);
+    assert.deepEqual(context.travel.headerRoute, {
+      available: true,
+      routeLabel: `${context.travel.plan.originName} → ${context.travel.plan.destinationName}`,
+      remainingDaysLabel: "3 дн."
+    });
     assert.equal("travelLandscape" in context, false);
     assert.deepEqual(calls.filter((call) => call[0] === "getTravelSnapshot"), [["getTravelSnapshot"]]);
   }
@@ -1647,6 +1723,13 @@ test("InventoryApp allows transport tab and maps the active group transport", as
       warning: "",
       canManage: true,
       activeTransportId: "member:wagon",
+      fuelRange: {
+        configured: true,
+        itemName: "Liquid coal",
+        miles: 42,
+        isEmpty: false,
+        reason: ""
+      },
       effectiveSpeedMph: 12,
       speedLabel: "12 миль/час",
       speedSourceLabel: "Тяжёлый гражданский фургон",
@@ -1685,6 +1768,7 @@ test("InventoryApp allows transport tab and maps the active group transport", as
     assert.equal(context.tabs.isTransport, true);
     assert.equal(context.transport.activeTransportId, "member:wagon");
     assert.equal(context.transport.effectiveSpeedMph, 12);
+    assert.equal(context.transport.fuelRange.miles, 42);
     assert.equal(context.transport.activeVehicle.name, "Тяжёлый гражданский фургон");
     const [transportCall] = calls.filter((call) => call[0] === "getTransportSnapshot");
     assert.ok(transportCall);
@@ -2245,16 +2329,16 @@ test("InventoryApp supply prompt opens above the inventory window", async () => 
   const previousDialog = globalThis.Dialog;
   const previousUi = globalThis.ui;
   const dialogs = [];
-  const addFoodButton = createFakeElement();
+  const foodSupply = createFakeElement({ dataset: { resourceKey: "food" } });
   const inventoryWindow = createFakeElement({
     closest: () => inventoryWindow
   });
   inventoryWindow.style.zIndex = "500";
   const root = inventoryWindow;
-  root.querySelector = (selector) => selector === "[data-action='add-food']"
-    ? addFoodButton
-    : null;
-  root.querySelectorAll = () => [];
+  root.querySelector = () => null;
+  root.querySelectorAll = (selector) => selector === "[data-action='edit-supply']"
+    ? [foodSupply]
+    : [];
   globalThis.document.querySelectorAll = (selector) => selector === ".window-app, .application"
     ? [inventoryWindow, ...dialogs.map((dialog) => dialog.element)]
     : [];
@@ -2289,12 +2373,14 @@ test("InventoryApp supply prompt opens above the inventory window", async () => 
     getGroupContext: () => null
   }));
   app.element = root;
+  app.canManage = true;
 
   try {
     await app._onRender({}, {});
-    const clickPromise = addFoodButton.listeners.click[0]({
-      currentTarget: addFoodButton,
-      preventDefault() {}
+    const clickPromise = foodSupply.listeners.contextmenu[0]({
+      currentTarget: foodSupply,
+      preventDefault() {},
+      stopPropagation() {}
     });
     await new Promise((resolve) => setImmediate(resolve));
 
