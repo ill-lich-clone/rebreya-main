@@ -82,6 +82,10 @@ import { UiRefreshCoordinator } from "./infrastructure/ui/ui-refresh-coordinator
 import { GlobalEventsService } from "./data/global-events-service.js";
 import { LootgenTemplateCatalog } from "./data/lootgen-template-catalog.js";
 import { StorageService, isStorageActor, readStorageState } from "./data/storage-service.js";
+import {
+  isStorageTokenVisible,
+  measureStorageTokenDistance
+} from "./data/storage-access.js";
 import { BuiltinStorageActorService } from "./data/builtin-storage-actor-service.js";
 import {
   StorageCommandService,
@@ -294,43 +298,6 @@ function createSocketRequestId(prefix) {
 
 function cleanSocketId(value) {
   return String(value ?? "").trim();
-}
-
-function storageTokenObject(tokenDocument) {
-  return tokenDocument?.object
-    ?? globalThis.canvas?.tokens?.get?.(tokenDocument?.id)
-    ?? null;
-}
-
-function storageTokenCenter(tokenDocument) {
-  const object = storageTokenObject(tokenDocument);
-  if (object?.center) return object.center;
-  const gridSize = Number(globalThis.canvas?.grid?.size ?? globalThis.canvas?.dimensions?.size ?? 100);
-  const width = Number(tokenDocument?.width ?? 1) * gridSize;
-  const height = Number(tokenDocument?.height ?? 1) * gridSize;
-  return {
-    x: Number(tokenDocument?.x ?? 0) + width / 2,
-    y: Number(tokenDocument?.y ?? 0) + height / 2
-  };
-}
-
-function measureStorageTokenDistance(characterToken, storageToken) {
-  const grid = globalThis.canvas?.grid;
-  const from = storageTokenCenter(characterToken);
-  const to = storageTokenCenter(storageToken);
-  if (typeof grid?.measurePath === "function") {
-    return Number(grid.measurePath([from, to])?.distance);
-  }
-  if (typeof grid?.measureDistance === "function") {
-    return Number(grid.measureDistance(from, to));
-  }
-  return Number.POSITIVE_INFINITY;
-}
-
-function isStorageTokenVisibleTo(storageToken) {
-  if (storageToken?.hidden === true) return false;
-  const object = storageTokenObject(storageToken);
-  return object ? object.visible !== false : true;
 }
 
 const CALENDAR_TRANSITION_BOOLEAN_OPTION_KEYS = new Set([
@@ -1102,7 +1069,7 @@ export class RebreyaMainModule {
       inventoryService: this.inventoryService,
       resolveToken: (uuid) => globalThis.fromUuid?.(uuid),
       measureDistance: measureStorageTokenDistance,
-      isVisibleTo: isStorageTokenVisibleTo
+      isVisibleTo: (storageToken) => isStorageTokenVisible(storageToken)
     });
     this.transportInstanceService = new TransportInstanceService(this, {
       gameProvider: () => globalThis.game,
