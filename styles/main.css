@@ -6138,6 +6138,32 @@ summary:focus-visible {
 .rm-transport-dialog__fields select {
   width: 100%;
   min-width: 0;
+  min-height: 38px;
+  padding: 7px 9px;
+  border: 1px solid var(--rm-border-strong);
+  border-radius: var(--rm-radius-input);
+  background: var(--rm-surface-input);
+  color: var(--rm-text-primary);
+  -webkit-text-fill-color: var(--rm-text-primary);
+  font: inherit;
+  box-sizing: border-box;
+}
+
+.rm-transport-dialog__fields input {
+  caret-color: var(--rm-text-primary);
+}
+
+.rm-transport-dialog__fields input:focus,
+.rm-transport-dialog__fields select:focus {
+  outline: none;
+  border-color: var(--rm-accent);
+  box-shadow: 0 0 0 3px rgb(var(--rm-color-gold-rgb) / 0.18);
+}
+
+.rm-transport-dialog__fields select option {
+  color: var(--rm-text-primary);
+  background: var(--rm-color-ink);
+  -webkit-text-fill-color: var(--rm-text-primary);
 }
 
 .rm-transport-dialog__specs p,

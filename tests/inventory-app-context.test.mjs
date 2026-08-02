@@ -2032,6 +2032,23 @@ test("transport tab renders one minimal vehicle and fuel pair per row", async ()
   assert.match(css, /\.rm-transport-dialog__fields\s*,\s*\n\.rm-transport-dialog__specs\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/su);
 });
 
+test("transport dialog keeps editable values visible and native options themed", async () => {
+  const css = await readFile(new URL("../styles/main.css", import.meta.url), "utf8");
+
+  assert.match(
+    css,
+    /\.rm-transport-dialog__fields input,\s*\n\.rm-transport-dialog__fields select\s*\{[^}]*background:\s*var\(--rm-surface-input\)[^}]*color:\s*var\(--rm-text-primary\)[^}]*-webkit-text-fill-color:\s*var\(--rm-text-primary\)/su
+  );
+  assert.match(
+    css,
+    /\.rm-transport-dialog__fields input\s*\{[^}]*caret-color:\s*var\(--rm-text-primary\)/su
+  );
+  assert.match(
+    css,
+    /\.rm-transport-dialog__fields select option\s*\{[^}]*color:\s*var\(--rm-text-primary\)[^}]*background:\s*var\(--rm-color-ink\)/su
+  );
+});
+
 test("InventoryApp keeps fuel consumption read-only without group management rights", async () => {
   const restoreFoundry = installFoundryApplicationStub();
   const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?transport-fuel-readonly=${Date.now()}`);
