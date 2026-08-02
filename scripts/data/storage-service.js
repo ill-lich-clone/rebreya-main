@@ -96,6 +96,59 @@ function hasUnclaimedContent(state) {
   return hasRows || hasCoins;
 }
 
+function requirePositiveQuantity(value) {
+  const quantity = Number(value);
+  if (!Number.isSafeInteger(quantity) || quantity < 1) {
+    throw new Error("Количество должно быть целым числом не меньше 1.");
+  }
+  return quantity;
+}
+
+function cleanStackKey(value) {
+  return String(value ?? "").trim();
+}
+
+function storageRowStackKey(row) {
+  return cleanStackKey(row?.stackKey ?? row?.sourceId);
+}
+
+function setStorageRowQuantity(row, quantity) {
+  const next = clone(row) ?? {};
+  next.quantity = quantity;
+  next.itemData ??= {};
+  next.itemData.system ??= {};
+  next.itemData.system.quantity = quantity;
+  return next;
+}
+
+function createDepositRowId() {
+  const random = globalThis.foundry?.utils?.randomID?.()
+    ?? globalThis.crypto?.randomUUID?.()
+    ?? Math.random().toString(36).slice(2);
+  return `deposit-${random}`;
+}
+
+function mergeDepositIntoRows(rows, claimedRowIds, row, stackKey, quantity) {
+  const nextRows = normalizeRows(rows);
+  const index = stackKey
+    ? nextRows.findIndex((entry) => (
+        !claimedRowIds.has(String(entry?.rowId ?? "").trim())
+        && storageRowStackKey(entry) === stackKey
+      ))
+    : -1;
+  if (index < 0) return { rows: nextRows, merged: false, rowId: "" };
+
+  const currentQuantity = requirePositiveQuantity(
+    nextRows[index]?.quantity ?? nextRows[index]?.itemData?.system?.quantity ?? 1
+  );
+  nextRows[index] = setStorageRowQuantity(nextRows[index], currentQuantity + quantity);
+  return {
+    rows: nextRows,
+    merged: true,
+    rowId: String(nextRows[index].rowId ?? "").trim()
+  };
+}
+
 export function buildStorageTokenState(input = {}) {
   const source = input && typeof input === "object" ? input : {};
   const state = STORAGE_STATES.has(source.state) ? source.state : "unopened";
@@ -312,6 +365,61 @@ export class StorageService {
       displayMode: nextState === "empty" ? "empty" : current.displayMode
     });
     return { changed: true, row: claimedRow, quantity, state };
+  }
+
+  async depositRow(token, row, { quantity } = {}) {
+    if (!row || typeof row !== "object" || Array.isArray(row)) {
+      throw new TypeError("Предмет для добавления в хранилище должен быть объектом.");
+    }
+    const current = readStorageState(token);
+    const amount = requirePositiveQuantity(quantity ?? row.quantity ?? row.itemData?.system?.quantity);
+    const stackKey = cleanStackKey(row.stackKey ?? row.sourceId);
+    const claimedRowIds = new Set(current.claimedRowIds);
+
+    const manualMerge = mergeDepositIntoRows(
+      current.manualRows,
+      claimedRowIds,
+      row,
+      stackKey,
+      amount
+    );
+    let manualRows = manualMerge.rows;
+    let generatedRows = normalizeRows(current.generatedRows);
+    let merged = manualMerge.merged;
+    let rowId = manualMerge.rowId;
+
+    if (!merged) {
+      const generatedMerge = mergeDepositIntoRows(
+        generatedRows,
+        claimedRowIds,
+        row,
+        stackKey,
+        amount
+      );
+      generatedRows = generatedMerge.rows;
+      merged = generatedMerge.merged;
+      rowId = generatedMerge.rowId;
+    }
+
+    if (!merged) {
+      const deposited = setStorageRowQuantity(row, amount);
+      deposited.stackKey = stackKey;
+      const requestedRowId = String(deposited.rowId ?? "").trim();
+      deposited.rowId = requestedRowId && !claimedRowIds.has(requestedRowId)
+        ? requestedRowId
+        : createDepositRowId();
+      rowId = deposited.rowId;
+      manualRows.push(deposited);
+    }
+
+    const state = await this.#write(token, {
+      ...current,
+      manualRows,
+      generatedRows,
+      state: "opened",
+      displayMode: "opened"
+    });
+    return { changed: true, merged, rowId, quantity: amount, state };
   }
 
   async #mutateEditableRow(token, rowId, mutate) {

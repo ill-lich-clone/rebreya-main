@@ -324,3 +324,99 @@ test("row durability updates only the selected item data and emits storageUpdate
     globalThis.Hooks = previousHooks;
   }
 });
+
+test("depositing into empty storage reopens the same token with its opened texture", async () => {
+  const service = new StorageService();
+  const token = createStorageToken("deposit-empty");
+  token.uuid = "Scene.scene.Token.deposit-empty";
+  await service.configure(token, {
+    baseName: "Сундук",
+    state: "empty",
+    displayMode: "empty",
+    textures: {
+      unopened: "closed.webp",
+      opened: "open.webp",
+      empty: "empty.webp"
+    }
+  });
+
+  const result = await service.depositRow(token, {
+    rowId: "deposit-new",
+    stackKey: "Compendium.dnd5e.items.sword",
+    sourceId: "Compendium.dnd5e.items.sword",
+    name: "Меч",
+    quantity: 2,
+    itemData: { name: "Меч", type: "weapon", system: { quantity: 2 } }
+  }, { quantity: 2 });
+
+  assert.equal(result.changed, true);
+  assert.equal(result.merged, false);
+  assert.equal(result.rowId, "deposit-new");
+  assert.equal(result.quantity, 2);
+  assert.equal(readStorageState(token).state, "opened");
+  assert.equal(readStorageState(token).displayMode, "opened");
+  assert.equal(readStorageState(token).manualRows[0].quantity, 2);
+  assert.equal(readStorageState(token).manualRows[0].itemData.system.quantity, 2);
+  assert.equal(token.texture.src, "open.webp");
+  assert.equal(token.name, "Сундук");
+});
+
+test("depositing an equivalent item merges its stack and leaves claimed rows untouched", async () => {
+  const service = new StorageService();
+  const token = createStorageToken("deposit-merge");
+  await service.configure(token, {
+    state: "opened",
+    manualRows: [
+      {
+        rowId: "claimed-stack",
+        stackKey: "same-item",
+        name: "Стрела",
+        quantity: 9,
+        itemData: { name: "Стрела", system: { quantity: 9 } }
+      },
+      {
+        rowId: "active-stack",
+        stackKey: "same-item",
+        name: "Стрела",
+        quantity: 3,
+        itemData: { name: "Стрела", system: { quantity: 3 } }
+      }
+    ],
+    claimedRowIds: ["claimed-stack"]
+  });
+
+  const result = await service.depositRow(token, {
+    rowId: "incoming-stack",
+    stackKey: "same-item",
+    name: "Стрела",
+    quantity: 2,
+    itemData: { name: "Стрела", system: { quantity: 2 } }
+  }, { quantity: 2 });
+
+  const state = readStorageState(token);
+  assert.equal(result.merged, true);
+  assert.equal(result.rowId, "active-stack");
+  assert.equal(state.manualRows.length, 2);
+  assert.equal(state.manualRows[0].quantity, 9);
+  assert.equal(state.manualRows[1].quantity, 5);
+  assert.equal(state.manualRows[1].itemData.system.quantity, 5);
+});
+
+test("storage deposits reject invalid quantities without changing state", async () => {
+  const service = new StorageService();
+  const token = createStorageToken("deposit-invalid");
+  await service.configure(token, { state: "empty", displayMode: "empty" });
+
+  await assert.rejects(
+    service.depositRow(token, {
+      rowId: "bad",
+      stackKey: "bad",
+      name: "Ошибка",
+      itemData: { system: { quantity: 1 } }
+    }, { quantity: 0 }),
+    /Количество/u
+  );
+
+  assert.equal(readStorageState(token).state, "empty");
+  assert.deepEqual(readStorageState(token).manualRows, []);
+});
