@@ -63,7 +63,7 @@ test("module manifest loads the stable canonical entrypoint", async () => {
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const entrypointSource = await readFile(new URL("scripts/main.js", manifestUrl), "utf8");
 
-  assert.equal(manifest.version, "1.4.115");
+  assert.equal(manifest.version, "1.4.116");
   assert.deepEqual(manifest.esmodules, ["scripts/main.js"]);
   assert.match(entrypointSource, /@rebreya-role canonical-composition-root/u);
   assert.match(entrypointSource, /export class RebreyaMainModule/u);
@@ -222,6 +222,10 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
   assert.match(
     canonicalSource,
     /import\(`\.\/ui\/lootgen-app\.js\?v=\$\{encodeURIComponent\(moduleVersion\)\}`\)/u
+  );
+  assert.match(
+    canonicalSource,
+    /storage-app\.js\?v=\$\{encodeURIComponent\(`\$\{moduleVersion\}-storage-live-title-3`\)\}/u
   );
   assert.match(
     traderServiceSource,

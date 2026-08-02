@@ -77,6 +77,10 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
     return `${MODULE_ID}-storage-${this.tokenUuid.replace(/[^a-z0-9_-]/giu, "-")}`;
   }
 
+  get title() {
+    return clean(this.snapshot?.name) || clean(this.options?.window?.title) || "Сундук";
+  }
+
   async _prepareContext() {
     if (!this.snapshot) {
       const request = ++this.snapshotRequest;
@@ -165,6 +169,9 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.renderListenersAbortController = new AbortController();
     const root = getAppElement(this);
     if (!root) return;
+    const windowTitle = clean(context?.name) || this.title;
+    const windowTitleElement = root.querySelector?.(".window-title");
+    if (windowTitleElement) windowTitleElement.textContent = windowTitle;
     const listenerOptions = { signal: this.renderListenersAbortController.signal };
     root.addEventListener("click", (event) => this.#onClick(event), listenerOptions);
     root.addEventListener("drop", (event) => this.#onDrop(event), listenerOptions);

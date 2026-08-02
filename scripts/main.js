@@ -3258,7 +3258,9 @@ export class RebreyaMainModule {
       await this.openStorage(safeTokenUuid);
     }
     const moduleVersion = game.modules.get(MODULE_ID)?.version ?? "1.4.96";
-    const { StorageApp } = await import(`./ui/storage-app.js?v=${encodeURIComponent(moduleVersion)}`);
+    const { StorageApp } = await import(
+      `./ui/storage-app.js?v=${encodeURIComponent(`${moduleVersion}-storage-live-title-3`)}`
+    );
     const key = `${safeTokenUuid}:${configure ? "configure" : "open"}`;
     let app = this.storageApps.get(key);
     if (!app) {

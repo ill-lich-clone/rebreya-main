@@ -160,10 +160,21 @@ test("clicking a texture mode sends the exact token and mode through the module 
 test("compact storage uses the token name only in the window title", async () => {
   const template = await readFile(new URL("../templates/storage-app.hbs", import.meta.url), "utf8");
   const { app } = createApp();
+  const header = { textContent: "Хранилище" };
+  app.element = new class extends FakeElement {
+    style = { setProperty() {} };
+    addEventListener() {}
+    querySelector(selector) {
+      return selector === ".window-title" ? header : null;
+    }
+  }();
 
-  await app._prepareContext();
+  const context = await app._prepareContext();
+  app._onRender(context, {});
 
   assert.equal(app.options.window.title, "Сундук");
+  assert.equal(app.title, "Сундук");
+  assert.equal(header.textContent, "Сундук");
   assert.doesNotMatch(template, /rm-storage-header|rm-eyebrow[^>]*>\s*Хранилище|<h2>\{\{name\}\}<\/h2>/u);
 });
 
