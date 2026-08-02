@@ -85,9 +85,11 @@ import { StorageService, isStorageActor, readStorageState } from "./data/storage
 import { StorageOpenSoundService } from "./data/storage-open-sound-service.js";
 import {
   isStorageTokenVisible,
+  measureStoragePointDistance,
   measureStorageTokenDistance
 } from "./data/storage-access.js";
 import { BuiltinStorageActorService } from "./data/builtin-storage-actor-service.js";
+import { StorageGroundPileService } from "./data/storage-ground-pile-service.js";
 import {
   StorageCommandService,
   isValidStorageClaimCoinsPayload,
@@ -176,7 +178,12 @@ import { registerCraftsmanGadgetSocketCommand } from "./integrations/craftsman-g
 import { registerSpellInstanceSocketCommand } from "./integrations/spell-instance-socket.js";
 import { registerSummonLifecycleSocketCommand } from "./integrations/summon-lifecycle-socket.js";
 import { registerTransportGroupDropHooks } from "./integrations/transport-group-drop.js";
+import { registerStorageTransferDropHooks } from "./integrations/storage-transfer-drop.js";
 import { registerTransportVehicleSheetHooks } from "./integrations/transport-vehicle-sheet.js";
+import {
+  parseStorageDragData,
+  promptStorageTransferQuantity
+} from "./ui/storage-transfer-ui.js";
 import { getCraftsmanSubclasses } from "./integrations/craftsman-subclass-tracks.js";
 import { patchTransformCleanupUpdateActorHook } from "./integrations/transform-cleanup-compat.js";
 import { registerForienQuestLogIntegration, refreshForienQuestLogApps } from "./integrations/forien-quest-log.js?v=1.4.96";
@@ -1070,11 +1077,17 @@ export class RebreyaMainModule {
       actorProvider: () => globalThis.Actor,
       isActiveGm: isActiveGmClient
     });
+    this.storageGroundPileService = new StorageGroundPileService({
+      gameProvider: () => globalThis.game,
+      isActiveGm: isActiveGmClient
+    });
     this.storageCommandService = new StorageCommandService({
       storageService: this.storageService,
       inventoryService: this.inventoryService,
       resolveToken: (uuid) => globalThis.fromUuid?.(uuid),
       measureDistance: measureStorageTokenDistance,
+      measurePointDistance: measureStoragePointDistance,
+      groundPileService: this.storageGroundPileService,
       isVisibleTo: (storageToken) => isStorageTokenVisible(storageToken)
     });
     this.transportInstanceService = new TransportInstanceService(this, {
@@ -3030,6 +3043,15 @@ export class RebreyaMainModule {
       rowId: cleanSocketId(rowId),
       destination: safeDestination,
       quantity: request.quantity === undefined ? null : Number(request.quantity),
+      target: safeDestination === "character"
+        ? { actorUuid: cleanSocketId(request.target?.actorUuid) }
+        : safeDestination === "scene"
+          ? {
+              sceneId: cleanSocketId(request.target?.sceneId),
+              x: Number(request.target?.x),
+              y: Number(request.target?.y)
+            }
+          : null,
       mutationId: cleanSocketId(mutationId)
     };
     return isActiveGmClient(globalThis.game)
@@ -3166,11 +3188,13 @@ export class RebreyaMainModule {
       quantity,
       itemData
     };
-    return this.storageService.configure(token, {
+    const next = await this.storageService.configure(token, {
       manualRows: [...state.manualRows, row],
       state: state.state === "empty" ? "opened" : state.state,
       displayMode: state.state === "empty" ? "opened" : state.displayMode
     });
+    await this.storageGroundPileService.refreshAfterStorageMutation(token, next);
+    return next;
   }
 
   async removeManualStorageItem(tokenUuid, rowId) {
@@ -3181,13 +3205,17 @@ export class RebreyaMainModule {
   async updateStorageRowQuantity(tokenUuid, rowId, quantity) {
     if (!globalThis.game?.user?.isGM) throw new Error("Изменять предметы может только мастер.");
     const token = await this.#resolveStorageToken(tokenUuid);
-    return this.storageService.updateRowQuantity(token, cleanSocketId(rowId), quantity);
+    const next = await this.storageService.updateRowQuantity(token, cleanSocketId(rowId), quantity);
+    await this.storageGroundPileService.refreshAfterStorageMutation(token, next);
+    return next;
   }
 
   async deleteStorageRow(tokenUuid, rowId) {
     if (!globalThis.game?.user?.isGM) throw new Error("Удалять предметы может только мастер.");
     const token = await this.#resolveStorageToken(tokenUuid);
-    return this.storageService.deleteRow(token, cleanSocketId(rowId));
+    const next = await this.storageService.deleteRow(token, cleanSocketId(rowId));
+    await this.storageGroundPileService.refreshAfterStorageMutation(token, next);
+    return next;
   }
 
   async resetStorageToken(tokenUuid) {
@@ -4331,6 +4359,18 @@ export class RebreyaMainModule {
   }
 
   async importInventoryDrop(dropData) {
+    const storageDrop = parseStorageDragData(dropData);
+    if (storageDrop) {
+      const quantity = await promptStorageTransferQuantity(storageDrop.quantity);
+      if (quantity === null) return { cancelled: true };
+      return this.runInventoryMutation(() => this.claimStorageRow(
+        storageDrop.tokenUuid,
+        storageDrop.rowId,
+        "party",
+        createSocketRequestId("storage-party-drop"),
+        { quantity }
+      ));
+    }
     return this.runInventoryMutation(
       () => this.inventoryService.importDroppedItem(dropData)
     );
@@ -5525,6 +5565,13 @@ Hooks.once("ready", async () => {
   }
   catch (error) {
     console.error(`${MODULE_ID} | Failed to register party transport drop hook.`, error);
+  }
+
+  try {
+    registerStorageTransferDropHooks(moduleApi, { Hooks });
+  }
+  catch (error) {
+    console.error(`${MODULE_ID} | Failed to register storage transfer drop hooks.`, error);
   }
 
   try {

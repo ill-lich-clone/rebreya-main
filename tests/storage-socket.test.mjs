@@ -26,7 +26,13 @@ function applyPatch(target, patch) {
   }
 }
 
-function createHarness({ distance = 5, visible = true, rowQuantity = 1, rejectItemGrant = false } = {}) {
+function createHarness({
+  distance = 5,
+  pointDistance = 5,
+  visible = true,
+  rowQuantity = 1,
+  rejectItemGrant = false
+} = {}) {
   const player = { id: "player", isGM: false };
   const hero = {
     id: "hero",
@@ -34,6 +40,12 @@ function createHarness({ distance = 5, visible = true, rowQuantity = 1, rejectIt
     testUserPermission: (user, permission) => user?.id === player.id && permission === "OWNER"
   };
   const scene = { id: "scene" };
+  const targetHero = {
+    id: "target-hero",
+    uuid: "Actor.target-hero",
+    type: "character",
+    testUserPermission: (user, permission) => user?.id === player.id && permission === "OWNER"
+  };
   const characterToken = {
     id: "hero-token",
     uuid: "Scene.scene.Token.hero",
@@ -65,11 +77,14 @@ function createHarness({ distance = 5, visible = true, rowQuantity = 1, rejectIt
   };
   const documents = new Map([
     [characterToken.uuid, characterToken],
-    [storageToken.uuid, storageToken]
+    [storageToken.uuid, storageToken],
+    [targetHero.uuid, targetHero]
   ]);
   const itemGrants = [];
   const coinGrants = [];
   const completed = new Set();
+  const groundCalls = [];
+  const refreshCalls = [];
   const inventoryService = {
     async addLootgenRowToCharacterOnce(row, actor, mutationId) {
       if (rejectItemGrant) throw new Error("grant failed");
@@ -100,15 +115,38 @@ function createHarness({ distance = 5, visible = true, rowQuantity = 1, rejectIt
       coins: { gp: 2 }
     })
   });
+  const groundPileService = {
+    async transferToScene(request) {
+      groundCalls.push(clone(request));
+      return { created: true };
+    },
+    async refreshAfterStorageMutation(token, state) {
+      refreshCalls.push({ token, state: clone(state) });
+    }
+  };
   const service = new StorageCommandService({
     storageService,
     inventoryService,
     resolveToken: async (uuid) => documents.get(uuid) ?? null,
     measureDistance: () => distance,
+    measurePointDistance: () => pointDistance,
+    groundPileService,
     isVisibleTo: () => visible
   });
 
-  return { player, hero, characterToken, storageToken, storageService, service, itemGrants, coinGrants };
+  return {
+    player,
+    hero,
+    targetHero,
+    characterToken,
+    storageToken,
+    storageService,
+    service,
+    itemGrants,
+    coinGrants,
+    groundCalls,
+    refreshCalls
+  };
 }
 
 test("storage claim rejects a player outside five feet before granting an item", async () => {
@@ -122,6 +160,7 @@ test("storage claim rejects a player outside five feet before granting an item",
       rowId: "row-1",
       destination: "self",
       quantity: null,
+      target: null,
       mutationId: "claim-1"
     }, { sender: harness.player }),
     /5 фут/iu
@@ -154,6 +193,7 @@ test("repeated storage claims grant rows and coins only once and empty the token
     rowId: "row-1",
     destination: "party",
     quantity: null,
+    target: null,
     mutationId: "claim-row-1"
   };
   await harness.service.claimRow(rowRequest, { sender: harness.player });
@@ -192,6 +232,7 @@ test("party storage claims accept an empty character token for a GM client", () 
     rowId: "row-1",
     destination: "party",
     quantity: 1,
+    target: null,
     mutationId: "claim-row-party"
   }), true);
   assert.equal(isValidStorageClaimCoinsPayload({
@@ -209,6 +250,7 @@ test("self storage claims still require a character token", () => {
     rowId: "row-1",
     destination: "self",
     quantity: 1,
+    target: null,
     mutationId: "claim-row-self"
   }), false);
   assert.equal(isValidStorageClaimCoinsPayload({
@@ -247,6 +289,7 @@ test("partial storage transfers grant and remove only the requested quantity", a
     rowId: "row-1",
     destination: "party",
     quantity: 2,
+    target: null,
     mutationId: "partial-row"
   }, { sender: harness.player });
 
@@ -270,6 +313,7 @@ test("failed destination grants do not decrement storage", async () => {
     rowId: "row-1",
     destination: "party",
     quantity: 2,
+    target: null,
     mutationId: "failed-row"
   }, { sender: harness.player }), /grant failed/u);
 
@@ -289,6 +333,7 @@ test("duplicate partial mutations decrement once and competing quantities serial
     rowId: "row-1",
     destination: "party",
     quantity: 2,
+    target: null,
     mutationId: "same-partial"
   };
 
@@ -304,4 +349,96 @@ test("duplicate partial mutations decrement once and competing quantities serial
   assert.deepEqual(competing.map((entry) => entry.status), ["fulfilled", "rejected"]);
   assert.equal(readStorageState(harness.storageToken).generatedRows[0].quantity, 1);
   assert.equal(harness.itemGrants.length, 2);
+});
+
+test("storage row payload validation accepts only exact character and scene targets", () => {
+  const base = {
+    tokenUuid: "Scene.scene.Token.chest",
+    characterTokenUuid: "Scene.scene.Token.hero",
+    rowId: "row-1",
+    quantity: 1,
+    mutationId: "drop-1"
+  };
+  assert.equal(isValidStorageClaimRowPayload({
+    ...base,
+    destination: "character",
+    target: { actorUuid: "Actor.hero" }
+  }), true);
+  assert.equal(isValidStorageClaimRowPayload({
+    ...base,
+    destination: "scene",
+    target: { sceneId: "scene", x: 100, y: 200 }
+  }), true);
+  assert.equal(isValidStorageClaimRowPayload({
+    ...base,
+    destination: "scene",
+    target: { sceneId: "scene", x: "100", y: 200 }
+  }), false);
+  assert.equal(isValidStorageClaimRowPayload({
+    ...base,
+    destination: "party",
+    target: { actorUuid: "Actor.hero" }
+  }), false);
+});
+
+test("sheet drop grants to an owned target character before decrementing source", async () => {
+  const harness = createHarness({ rowQuantity: 4 });
+  const access = {
+    tokenUuid: harness.storageToken.uuid,
+    characterTokenUuid: harness.characterToken.uuid
+  };
+  await harness.service.open(access, { sender: harness.player });
+  const result = await harness.service.claimRow({
+    ...access,
+    rowId: "row-1",
+    destination: "character",
+    quantity: 2,
+    target: { actorUuid: harness.targetHero.uuid },
+    mutationId: "character-drop"
+  }, { sender: harness.player });
+
+  assert.equal(result.quantity, 2);
+  assert.equal(harness.itemGrants[0].actor, harness.targetHero);
+  assert.equal(harness.itemGrants[0].row.quantity, 2);
+  assert.equal(readStorageState(harness.storageToken).generatedRows[0].quantity, 2);
+  assert.equal(harness.refreshCalls.length, 1);
+});
+
+test("canvas drop creates a ground pile only within five feet of the character", async () => {
+  const harness = createHarness({ rowQuantity: 3, pointDistance: 5 });
+  const access = {
+    tokenUuid: harness.storageToken.uuid,
+    characterTokenUuid: harness.characterToken.uuid
+  };
+  await harness.service.open(access, { sender: harness.player });
+  await harness.service.claimRow({
+    ...access,
+    rowId: "row-1",
+    destination: "scene",
+    quantity: 2,
+    target: { sceneId: "scene", x: 400, y: 500 },
+    mutationId: "scene-drop"
+  }, { sender: harness.player });
+
+  assert.equal(harness.groundCalls.length, 1);
+  assert.equal(harness.groundCalls[0].quantity, 2);
+  assert.deepEqual(
+    { sceneId: harness.groundCalls[0].sceneId, x: harness.groundCalls[0].x, y: harness.groundCalls[0].y },
+    { sceneId: "scene", x: 400, y: 500 }
+  );
+  assert.equal(readStorageState(harness.storageToken).generatedRows[0].quantity, 1);
+
+  const far = createHarness({ rowQuantity: 3, pointDistance: 10 });
+  await far.storageService.open(far.storageToken);
+  await assert.rejects(far.service.claimRow({
+    tokenUuid: far.storageToken.uuid,
+    characterTokenUuid: far.characterToken.uuid,
+    rowId: "row-1",
+    destination: "scene",
+    quantity: 1,
+    target: { sceneId: "scene", x: 800, y: 800 },
+    mutationId: "scene-too-far"
+  }, { sender: far.player }), /5 фут/iu);
+  assert.equal(far.groundCalls.length, 0);
+  assert.equal(readStorageState(far.storageToken).generatedRows[0].quantity, 3);
 });

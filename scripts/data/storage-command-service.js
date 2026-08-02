@@ -1,6 +1,7 @@
 import { isStorageActor, readStorageState } from "./storage-service.js";
 
-const STORAGE_DESTINATIONS = new Set(["self", "party"]);
+const STORAGE_ROW_DESTINATIONS = new Set(["self", "party", "character", "scene"]);
+const STORAGE_COIN_DESTINATIONS = new Set(["self", "party"]);
 const MAX_STORAGE_DISTANCE_FEET = 5;
 
 function clean(value) {
@@ -27,6 +28,21 @@ function isOptionalQuantity(value) {
   return value === null || (Number.isSafeInteger(value) && value >= 1);
 }
 
+function isValidStorageTarget(destination, target) {
+  if (destination === "self" || destination === "party") return target === null;
+  if (destination === "character") {
+    return hasExactKeys(target, ["actorUuid"])
+      && isTrimmedString(target.actorUuid, { required: true });
+  }
+  if (destination === "scene") {
+    return hasExactKeys(target, ["sceneId", "x", "y"])
+      && isTrimmedString(target.sceneId, { required: true, max: 160 })
+      && Number.isFinite(target.x)
+      && Number.isFinite(target.y);
+  }
+  return false;
+}
+
 function clone(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));
 }
@@ -39,12 +55,13 @@ export function isValidStorageOpenPayload(payload) {
 
 export function isValidStorageClaimRowPayload(payload) {
   return hasExactKeys(payload, [
-    "characterTokenUuid", "destination", "mutationId", "quantity", "rowId", "tokenUuid"
+    "characterTokenUuid", "destination", "mutationId", "quantity", "rowId", "target", "tokenUuid"
   ])
     && isTrimmedString(payload.tokenUuid, { required: true })
     && isTrimmedString(payload.characterTokenUuid, { required: payload.destination === "self" })
     && isTrimmedString(payload.rowId, { required: true, max: 160 })
-    && STORAGE_DESTINATIONS.has(payload.destination)
+    && STORAGE_ROW_DESTINATIONS.has(payload.destination)
+    && isValidStorageTarget(payload.destination, payload.target)
     && isOptionalQuantity(payload.quantity)
     && isTrimmedString(payload.mutationId, { required: true, max: 160 });
 }
@@ -53,7 +70,7 @@ export function isValidStorageClaimCoinsPayload(payload) {
   return hasExactKeys(payload, ["characterTokenUuid", "destination", "mutationId", "tokenUuid"])
     && isTrimmedString(payload.tokenUuid, { required: true })
     && isTrimmedString(payload.characterTokenUuid, { required: payload.destination === "self" })
-    && STORAGE_DESTINATIONS.has(payload.destination)
+    && STORAGE_COIN_DESTINATIONS.has(payload.destination)
     && isTrimmedString(payload.mutationId, { required: true, max: 160 });
 }
 
@@ -89,8 +106,8 @@ function requireMutationId(value) {
 
 function requireDestination(value) {
   const destination = clean(value);
-  if (!STORAGE_DESTINATIONS.has(destination)) {
-    throw new Error("Получатель лута должен быть self или party.");
+  if (!STORAGE_ROW_DESTINATIONS.has(destination)) {
+    throw new Error("Неизвестное назначение предмета из хранилища.");
   }
   return destination;
 }
@@ -109,6 +126,8 @@ export class StorageCommandService {
     inventoryService,
     resolveToken,
     measureDistance,
+    measurePointDistance = () => Number.POSITIVE_INFINITY,
+    groundPileService = null,
     isVisibleTo
   } = {}) {
     if (!storageService || !inventoryService) {
@@ -121,10 +140,44 @@ export class StorageCommandService {
     this.inventoryService = inventoryService;
     this.resolveToken = resolveToken;
     this.measureDistance = measureDistance;
+    this.measurePointDistance = measurePointDistance;
+    this.groundPileService = groundPileService;
     this.isVisibleTo = isVisibleTo;
     this.claimTasks = new Map();
     this.claimQueues = new Map();
     this.claimResults = new Map();
+  }
+
+  async #resolveCharacterTarget(target, sender) {
+    const document = tokenDocument(await this.resolveToken(clean(target?.actorUuid)));
+    const actor = document?.actor ?? document;
+    if (!actor || actor.type !== "character") {
+      throw new Error("Предмет можно перенести только в инвентарь персонажа.");
+    }
+    if (sender?.isGM !== true && actor.testUserPermission?.(sender, "OWNER") !== true) {
+      throw new Error("У вас нет прав владельца на этого персонажа.");
+    }
+    return actor;
+  }
+
+  async #validateSceneTarget(target, access, sender) {
+    const targetSceneId = clean(target?.sceneId);
+    if (!targetSceneId || targetSceneId !== sceneId(access.storageToken)) {
+      throw new Error("Предмет можно положить только на сцену с открытым хранилищем.");
+    }
+    if (sender?.isGM !== true) {
+      const distance = Number(await this.measurePointDistance(access.characterToken, target));
+      if (!Number.isFinite(distance) || distance > MAX_STORAGE_DISTANCE_FEET) {
+        throw new Error("Предмет можно положить на землю только в пределах 5 футов от персонажа.");
+      }
+    }
+    if (!this.groundPileService?.transferToScene) {
+      throw new Error("Сервис наземных куч Rebreya недоступен.");
+    }
+  }
+
+  async #refreshSource(storageToken, state) {
+    await this.groundPileService?.refreshAfterStorageMutation?.(storageToken, state);
   }
 
   async #resolveAccess(payload, sender) {
@@ -233,15 +286,35 @@ export class StorageCommandService {
       if (destination === "self") {
         await this.inventoryService.addLootgenRowToCharacterOnce(transferRow, access.character, grantId);
       }
-      else {
+      else if (destination === "party") {
         await this.inventoryService.addLootgenRowToInventoryOnce(transferRow, grantId);
       }
-      return this.storageService.claim(access.storageToken, { kind: "row", rowId, quantity });
+      else if (destination === "character") {
+        const targetActor = await this.#resolveCharacterTarget(payload.target, sender);
+        await this.inventoryService.addLootgenRowToCharacterOnce(transferRow, targetActor, grantId);
+      }
+      else {
+        await this.#validateSceneTarget(payload.target, access, sender);
+        await this.groundPileService.transferToScene({
+          row: transferRow,
+          quantity,
+          sceneId: clean(payload.target.sceneId),
+          x: Number(payload.target.x),
+          y: Number(payload.target.y),
+          mutationId: grantId
+        });
+      }
+      const result = await this.storageService.claim(access.storageToken, { kind: "row", rowId, quantity });
+      await this.#refreshSource(access.storageToken, result.state);
+      return result;
     });
   }
 
   async claimCoins(payload = {}, { sender } = {}) {
-    const destination = requireDestination(payload.destination);
+    const destination = clean(payload.destination);
+    if (!STORAGE_COIN_DESTINATIONS.has(destination)) {
+      throw new Error("Монеты можно забрать себе или в инвентарь группы.");
+    }
     const mutationId = requireMutationId(payload.mutationId);
     const tokenUuid = clean(payload.tokenUuid);
     const mutationKey = storageMutationId({ tokenUuid, kind: "coins", destination, mutationId });
@@ -267,7 +340,9 @@ export class StorageCommandService {
       else {
         await this.inventoryService.addCurrencyToInventoryOnce(coins, grantId);
       }
-      return this.storageService.claim(access.storageToken, { kind: "coins" });
+      const result = await this.storageService.claim(access.storageToken, { kind: "coins" });
+      await this.#refreshSource(access.storageToken, result.state);
+      return result;
     });
   }
 }

@@ -37,6 +37,19 @@ export function measureStorageTokenDistance(characterToken, storageToken, { canv
   return Number.POSITIVE_INFINITY;
 }
 
+export function measureStoragePointDistance(characterToken, point, { canvas = globalThis.canvas } = {}) {
+  const from = storageTokenCenter(characterToken, { canvas });
+  const to = { x: Number(point?.x), y: Number(point?.y) };
+  if (!Number.isFinite(to.x) || !Number.isFinite(to.y)) return Number.POSITIVE_INFINITY;
+  if (typeof canvas?.grid?.measurePath === "function") {
+    return Number(canvas.grid.measurePath([from, to])?.distance);
+  }
+  if (typeof canvas?.grid?.measureDistance === "function") {
+    return Number(canvas.grid.measureDistance(from, to));
+  }
+  return Number.POSITIVE_INFINITY;
+}
+
 export function isStorageTokenVisible(storageToken, { canvas = globalThis.canvas } = {}) {
   const document = storageTokenDocument(storageToken);
   if (document?.hidden === true) return false;
