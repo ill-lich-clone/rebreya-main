@@ -3998,31 +3998,30 @@ export class InventoryService {
     const requestedActive = state.activeTransportId ? vehiclesById.get(state.activeTransportId) ?? null : null;
     const activeVehicle = requestedActive ?? (vehicles.length === 1 ? vehicles[0] : null);
     const activeTransportId = activeVehicle?.id ?? "";
-    const fuel = buildTransportFuelSnapshot(activeVehicle, groupContext?.groupActor);
     const effectiveSpeedMph = activeVehicle?.speedMph > 0
       ? roundNumber(activeVehicle.speedMph, 2)
       : DEFAULT_TRAVEL_SPEED_MPH;
     const cargoCapacityLb = Math.max(0, toNumber(activeVehicle?.cargoCapacityLb, 0));
     const cargoUsedLb = roundNumber(toNumber(resolvedPartySnapshot?.inventoryWeight, 0), 2);
     const cargoFreeLb = roundNumber(cargoCapacityLb - cargoUsedLb, 2);
-    const vehiclesWithActiveState = vehicles.map((vehicle) => ({
-      ...vehicle,
-      active: Boolean(activeVehicle && vehicle.id === activeVehicle.id)
-    }));
+    const vehicleRows = vehicles
+      .map((vehicle) => ({
+        ...vehicle,
+        active: Boolean(activeVehicle && vehicle.id === activeVehicle.id),
+        fuel: buildTransportFuelSnapshot(vehicle, groupContext?.groupActor)
+      }))
+      .sort((left, right) => Number(right.active) - Number(left.active));
+    const activeVehicleRow = vehicleRows.find((vehicle) => vehicle.active) ?? null;
+    const fuel = activeVehicleRow?.fuel ?? buildTransportFuelSnapshot(null, groupContext?.groupActor);
 
     return {
       available: true,
       warning: "",
       canManage,
-      vehicles: vehiclesWithActiveState,
-      hasVehicles: vehiclesWithActiveState.length > 0,
+      vehicles: vehicleRows,
+      hasVehicles: vehicleRows.length > 0,
       activeTransportId,
-      activeVehicle: activeVehicle
-        ? {
-            ...activeVehicle,
-            active: true
-          }
-        : null,
+      activeVehicle: activeVehicleRow,
       fuel,
       effectiveSpeedMph,
       speedLabel: formatTransportSpeedLabel(effectiveSpeedMph),

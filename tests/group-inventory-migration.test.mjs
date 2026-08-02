@@ -612,6 +612,111 @@ test("vehicle member reads D&D5e 5.2.5 native fields and live instance state", a
   }
 });
 
+test("getTransportSnapshot returns active-first rows with independent fuel views", async () => {
+  const coalItem = createItem({
+    id: "fuel-coal",
+    name: "Уголь",
+    quantity: 8,
+    flags: {
+      [MODULE_ID]: { sourceType: "good", sourceId: "coal" }
+    },
+    extra: { uuid: "Actor.group-a.Item.fuel-coal" }
+  });
+  const cokeItem = createItem({
+    id: "fuel-coke",
+    name: "Кокс",
+    quantity: 12,
+    flags: {
+      [MODULE_ID]: { sourceType: "good", sourceId: "coke" }
+    },
+    extra: { uuid: "Actor.group-a.Item.fuel-coke" }
+  });
+  const groupActor = createActor({
+    id: "group-a",
+    name: "Партия",
+    type: "group",
+    isOwner: true,
+    items: [coalItem, cokeItem]
+  });
+  const makeTransport = ({ id, name, sourceId, fuelName, amount, unit }) => ({
+    actorId: id,
+    actorName: name,
+    transport: {
+      id: `member:${id}`,
+      actorId: id,
+      name,
+      isTransport: true,
+      isConcreteInstance: true,
+      isActorBacked: true,
+      canEditState: true,
+      speedMph: 10,
+      cargoCapacityLb: 1000,
+      hpValue: 40,
+      hpMax: 40,
+      condition: "operational",
+      fuelSelector: {
+        uuid: `Compendium.world.goods.Item.${sourceId}`,
+        sourceType: "good",
+        sourceId,
+        type: "loot",
+        normalizedName: fuelName.toLocaleLowerCase("ru"),
+        name: fuelName,
+        img: "icons/svg/item-bag.svg"
+      },
+      fuelConsumption: { amount, unit },
+      consumption: { kind: "fuel", amount, unit, cadence: "mile", raw: fuelName }
+    }
+  });
+  const service = new InventoryService({
+    getModel: async () => ({
+      materials: [],
+      materialById: new Map(),
+      materialByGoodId: new Map(),
+      gear: [],
+      gearById: new Map()
+    })
+  });
+
+  const snapshot = await service.getTransportSnapshot({
+    partySnapshot: {
+      canManage: true,
+      inventoryWeight: 0,
+      members: [
+        makeTransport({ id: "vehicle-a", name: "Броневик", sourceId: "coal", fuelName: "Уголь", amount: 2, unit: "lb" }),
+        makeTransport({ id: "vehicle-b", name: "Фургон", sourceId: "coke", fuelName: "Кокс", amount: 0.5, unit: "gal" })
+      ]
+    },
+    inventorySnapshot: {
+      actor: { canEdit: true },
+      canDropInventoryItems: true
+    },
+    context: {
+      groupActor,
+      groupId: groupActor.id,
+      groupState: {
+        transportState: { activeTransportId: "member:vehicle-b" }
+      },
+      canManage: true
+    }
+  });
+
+  assert.deepEqual(snapshot.vehicles.map((vehicle) => vehicle.id), [
+    "member:vehicle-b",
+    "member:vehicle-a"
+  ]);
+  assert.equal(snapshot.vehicles[0].active, true);
+  assert.equal(snapshot.vehicles[0].fuel.card.name, "Кокс");
+  assert.equal(snapshot.vehicles[0].fuel.quantity, 12);
+  assert.equal(snapshot.vehicles[0].fuel.consumptionPerMile, 0.5);
+  assert.equal(snapshot.vehicles[0].fuel.unit, "gal");
+  assert.equal(snapshot.vehicles[1].active, false);
+  assert.equal(snapshot.vehicles[1].fuel.card.name, "Уголь");
+  assert.equal(snapshot.vehicles[1].fuel.quantity, 8);
+  assert.equal(snapshot.vehicles[1].fuel.consumptionPerMile, 2);
+  assert.equal(snapshot.vehicles[1].fuel.unit, "lb");
+  assert.equal(snapshot.fuel, snapshot.vehicles[0].fuel);
+});
+
 test("ordinary D&D5e vehicles are not selectable as concrete Rebreya transport", async () => {
   const actor = createActor({
     id: "ordinary-vehicle",
