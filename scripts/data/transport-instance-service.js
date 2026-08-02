@@ -23,9 +23,7 @@ const FUEL_SELECTION_KEYS = Object.freeze(["actorId", "groupActorId", "itemUuid"
 const STATE_KEYS = Object.freeze(["actorId", "groupActorId", "patch"]);
 const STATE_PATCH_KEYS = Object.freeze([
   "condition",
-  "hpCurrent",
-  "reserveCapacity",
-  "reserveCurrent"
+  "hpCurrent"
 ]);
 const OBSERVER_OWNERSHIP = 2;
 
@@ -87,11 +85,6 @@ function nonNegativeNumber(value, fallback = 0, label = "Значение") {
   return number;
 }
 
-function optionalNonNegativeNumber(value, label = "Вместимость") {
-  if (value == null || value === "") return null;
-  return nonNegativeNumber(value, 0, label);
-}
-
 function senderOwnsActor(sender, actor) {
   if (!sender || !actor) return false;
   if (typeof actor.testUserPermission === "function") {
@@ -107,15 +100,6 @@ function isManagedGroup(groupActor) {
     && groupActor.getFlag?.(MODULE_ID, REBREYA_GROUP_FLAGS.MANAGED) === true;
 }
 
-function reserveUnitFromTransport(transport = {}) {
-  return cleanId(
-    transport.instanceState?.reserveUnit
-    ?? transport.consumption?.unit
-    ?? transport.consumptionUnit
-    ?? ""
-  );
-}
-
 function isItemUuid(value) {
   const uuid = cleanId(value);
   return uuid.length > 0
@@ -129,29 +113,12 @@ function isItemDocument(document) {
   return typeof Item === "function" && document instanceof Item;
 }
 
-export function normalizeTransportInstanceState(value = {}, { reserveUnit = "" } = {}) {
+export function normalizeTransportInstanceState(value = {}) {
   const condition = cleanId(value.condition || "operational");
   if (!TRANSPORT_CONDITIONS.has(condition)) {
     throw new Error("Неизвестное состояние транспорта.");
   }
-  const reserveCapacity = optionalNonNegativeNumber(
-    value.reserveCapacity,
-    "Вместимость топлива или корма"
-  );
-  const reserveCurrent = nonNegativeNumber(
-    value.reserveCurrent,
-    0,
-    "Запас топлива или корма"
-  );
-  if (reserveCapacity != null && reserveCurrent > reserveCapacity) {
-    throw new Error("Запас топлива или корма не может превышать вместимость.");
-  }
-  const normalized = {
-    condition,
-    reserveCurrent,
-    reserveCapacity,
-    reserveUnit: cleanId(reserveUnit)
-  };
+  const normalized = { condition };
   if (Object.hasOwn(value, "fuelSelector")) {
     normalized.fuelSelector = normalizeTransportFuelSelector(value.fuelSelector);
   }
@@ -173,9 +140,7 @@ export function validateTransportStatePayload(payload) {
     && isSafeId(payload.actorId)
     && hasExactKeys(payload.patch, STATE_PATCH_KEYS)
     && TRANSPORT_CONDITIONS.has(cleanId(payload.patch.condition))
-    && isNumericInput(payload.patch.hpCurrent)
-    && isNumericInput(payload.patch.reserveCurrent)
-    && isNumericInput(payload.patch.reserveCapacity, { optional: true });
+    && isNumericInput(payload.patch.hpCurrent);
 }
 
 export function validateTransportFuelSelectionPayload(payload) {
@@ -371,8 +336,6 @@ export class TransportInstanceService {
     const instanceState = normalizeTransportInstanceState({
       ...(transport.instanceState ?? {}),
       ...payload.patch
-    }, {
-      reserveUnit: reserveUnitFromTransport(transport)
     });
     await actor.update({
       "system.attributes.hp.value": hpCurrent,
@@ -410,7 +373,15 @@ export class TransportInstanceService {
       ?? actor.flags?.[MODULE_ID]?.transport
       ?? {};
     const previous = clone(transport.instanceState) ?? {};
-    const { fuelItemId, fuelItemName, fuelPerMile, ...retained } = previous;
+    const {
+      fuelItemId,
+      fuelItemName,
+      fuelPerMile,
+      reserveCurrent,
+      reserveCapacity,
+      reserveUnit,
+      ...retained
+    } = previous;
     const fuelSelector = buildTransportFuelSelector(item);
     const instanceState = {
       ...retained,
@@ -519,7 +490,6 @@ export class TransportInstanceService {
     const idFactory = this.options.idFactory
       ?? (() => globalThis.foundry?.utils?.randomID?.() ?? crypto.randomUUID());
     const instanceId = cleanId(idFactory()) || crypto.randomUUID();
-    const reserveUnit = reserveUnitFromTransport(sourceTransport);
     moduleFlags.transport = {
       ...sourceTransport,
       instance: true,
@@ -527,7 +497,7 @@ export class TransportInstanceService {
       sourceId: cleanId(moduleFlags.sourceId),
       sourceActorUuid: source.uuid,
       groupActorId,
-      instanceState: normalizeTransportInstanceState({}, { reserveUnit })
+      instanceState: normalizeTransportInstanceState()
     };
     data.flags = {
       ...(clone(data.flags) ?? {}),

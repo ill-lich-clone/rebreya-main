@@ -797,16 +797,6 @@ function getTransportConditionLabel(value) {
   }
 }
 
-function formatTransportReserveLabel(current, capacity, unit = "") {
-  const safeCurrent = extractNumber(current) ?? 0;
-  const safeCapacity = extractNumber(capacity);
-  const suffix = cleanId(unit);
-  const amount = Number.isFinite(safeCapacity)
-    ? `${formatNumberLabel(safeCurrent)} / ${formatNumberLabel(safeCapacity)}`
-    : formatNumberLabel(safeCurrent);
-  return suffix ? `${amount} ${suffix}` : amount;
-}
-
 function isTransportText(value) {
   const text = normalizeText(value);
   return Boolean(text && (
@@ -855,9 +845,6 @@ function buildTransportProfile({
   isConcreteInstance = false,
   canEditState = false,
   condition = "operational",
-  reserveCurrent = 0,
-  reserveCapacity = null,
-  reserveUnit = "",
   fuelSelector = null,
   consumption = null,
   hasExplicitCargoCapacity = false,
@@ -912,10 +899,6 @@ function buildTransportProfile({
       ? cleanId(condition)
       : "operational",
     conditionLabel: getTransportConditionLabel(condition),
-    reserveCurrent: extractNumber(reserveCurrent) ?? 0,
-    reserveCapacity: extractNumber(reserveCapacity),
-    reserveUnit: cleanId(reserveUnit),
-    reserveLabel: formatTransportReserveLabel(reserveCurrent, reserveCapacity, reserveUnit),
     fuelSelector: normalizeTransportFuelSelector(fuelSelector),
     consumption: {
       kind: cleanId(consumption?.kind),
@@ -1041,9 +1024,6 @@ function buildTransportProfileFromActor(actor, memberState = {}, {
     isConcreteInstance,
     canEditState: isConcreteInstance,
     condition: instanceState.condition,
-    reserveCurrent: instanceState.reserveCurrent,
-    reserveCapacity: instanceState.reserveCapacity,
-    reserveUnit: instanceState.reserveUnit ?? consumption.unit,
     fuelSelector: instanceState.fuelSelector,
     consumption,
     hasExplicitCargoCapacity: explicitCargoValue !== undefined,

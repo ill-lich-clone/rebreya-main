@@ -472,9 +472,6 @@ test("vehicle member reads D&D5e 5.2.5 native fields and live instance state", a
           },
           instanceState: {
             condition: "damaged",
-            reserveCurrent: 8,
-            reserveCapacity: 12,
-            reserveUnit: "gal",
             fuelSelector: {
               uuid: "Compendium.world.goods.Item.coal",
               sourceType: "good",
@@ -557,9 +554,6 @@ test("vehicle member reads D&D5e 5.2.5 native fields and live instance state", a
     assert.equal(member.transport.ac, 17);
     assert.equal(member.transport.condition, "damaged");
     assert.equal(member.transport.conditionLabel, "Повреждён");
-    assert.equal(member.transport.reserveCurrent, 8);
-    assert.equal(member.transport.reserveCapacity, 12);
-    assert.equal(member.transport.reserveUnit, "gal");
     assert.equal(member.capacityLb, 5250);
 
     const transportSnapshot = await service.getTransportSnapshot({

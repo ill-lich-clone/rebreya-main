@@ -1486,11 +1486,16 @@ function buildEmptyTransportContext({ warning = "" } = {}) {
     hasVehicles: false,
     activeTransportId: "",
     activeVehicle: null,
-    fuelRange: {
+    fuel: {
       configured: false,
-      itemName: "",
-      miles: null,
+      selector: {},
+      card: null,
+      quantity: 0,
+      consumptionPerMile: 0,
+      unit: "",
+      miles: 0,
       isEmpty: false,
+      stacks: [],
       reason: "noTransport",
       valueLabel: "—",
       note: "Транспорт не выбран"
@@ -1529,15 +1534,6 @@ function prepareTransportContext(snapshot = {}) {
             && activeSource.canEditState !== false
           ),
           hpCurrent: String(Number.isFinite(Number(activeSource.hpValue)) ? Number(activeSource.hpValue) : 0),
-          reserveCurrent: String(
-            Number.isFinite(Number(activeSource.reserveCurrent))
-              ? Number(activeSource.reserveCurrent)
-              : 0
-          ),
-          reserveCapacity: activeSource.reserveCapacity == null
-            ? ""
-            : String(activeSource.reserveCapacity),
-          hasCapacity: activeSource.reserveCapacity != null,
           conditionOptions: TRANSPORT_CONDITION_OPTIONS.map((option) => ({
             ...option,
             selected: option.value === condition
@@ -1545,23 +1541,30 @@ function prepareTransportContext(snapshot = {}) {
         }
       }
     : null;
-  const sourceFuelRange = source.fuelRange && typeof source.fuelRange === "object"
-    ? source.fuelRange
+  const sourceFuel = source.fuel && typeof source.fuel === "object"
+    ? source.fuel
     : {};
-  const fuelConfigured = sourceFuelRange.configured === true;
-  const fuelReason = cleanText(sourceFuelRange.reason) || (activeVehicle ? "unconfigured" : "noTransport");
-  const fuelRange = {
+  const fuelConfigured = sourceFuel.configured === true;
+  const fuelReason = cleanText(sourceFuel.reason) || (activeVehicle ? "unconfigured" : "noTransport");
+  const fuelMiles = Math.max(0, Math.floor(toNumber(sourceFuel.miles, 0)));
+  const fuel = {
+    ...sourceFuel,
     configured: fuelConfigured,
-    itemName: cleanText(sourceFuelRange.itemName),
-    miles: fuelConfigured ? Math.max(0, Math.floor(toNumber(sourceFuelRange.miles, 0))) : null,
-    isEmpty: fuelConfigured && sourceFuelRange.isEmpty === true,
+    selector: sourceFuel.selector && typeof sourceFuel.selector === "object" ? sourceFuel.selector : {},
+    card: sourceFuel.card && typeof sourceFuel.card === "object" ? sourceFuel.card : null,
+    quantity: Math.max(0, toNumber(sourceFuel.quantity, 0)),
+    consumptionPerMile: Math.max(0, toNumber(sourceFuel.consumptionPerMile, 0)),
+    unit: cleanText(sourceFuel.unit),
+    miles: fuelMiles,
+    isEmpty: fuelConfigured && sourceFuel.isEmpty === true,
+    stacks: Array.isArray(sourceFuel.stacks) ? sourceFuel.stacks : [],
     reason: fuelConfigured ? "" : fuelReason,
     valueLabel: fuelConfigured
-      ? `${Math.max(0, Math.floor(toNumber(sourceFuelRange.miles, 0)))} миль`
+      ? `${fuelMiles} миль`
       : "—",
     note: fuelConfigured
-      ? (cleanText(sourceFuelRange.itemName) || "Топливо")
-      : (fuelReason === "noTransport" ? "Транспорт не выбран" : "Топливо не настроено")
+      ? (cleanText(sourceFuel.card?.name) || cleanText(sourceFuel.selector?.name) || "Топливо")
+      : (fuelReason === "noTransport" ? "Транспорт не выбран" : "Топливо не выбрано")
   };
   return {
     ...buildEmptyTransportContext(),
@@ -1570,7 +1573,7 @@ function prepareTransportContext(snapshot = {}) {
     hasVehicles: Boolean(source.hasVehicles ?? vehicles.length > 0),
     canManage: Boolean(source.canManage),
     activeVehicle,
-    fuelRange,
+    fuel,
     cargoOverloaded: Boolean(source.cargoOverloaded)
   };
 }
@@ -5629,7 +5632,6 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       const form = button.closest?.("[data-transport-state-form]");
       if (!form) return;
       const field = (name) => form.querySelector?.(`[name='${name}']`)?.value ?? "";
-      const capacityText = String(field("reserveCapacity")).trim();
       button.disabled = true;
       try {
         await this.moduleApi.updateTransportInstanceState?.({
@@ -5637,9 +5639,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
           actorId: cleanText(form.dataset?.actorId),
           patch: {
             hpCurrent: Number(field("hpCurrent")),
-            condition: cleanText(field("condition")),
-            reserveCurrent: Number(field("reserveCurrent")),
-            reserveCapacity: capacityText === "" ? null : Number(capacityText)
+            condition: cleanText(field("condition"))
           }
         });
         this.#setActionFeedback("success", "Состояние транспорта сохранено.");
@@ -5665,6 +5665,76 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       }
       actor.sheet.render?.(true);
       bringAppToFront(actor.sheet);
+    }, listenerOptions);
+
+    const fuelDropzone = element.querySelector("[data-action='transport-fuel-dropzone']");
+    if (fuelDropzone) {
+      fuelDropzone.addEventListener("dragover", (event) => {
+        let dragData = null;
+        try {
+          dragData = globalThis.TextEditor?.getDragEventData?.(event);
+        }
+        catch (_error) {
+          return;
+        }
+        if (dragData?.type !== "Item" || !cleanText(dragData.uuid)) return;
+        event.preventDefault();
+        fuelDropzone.classList?.add?.("is-dragover");
+      }, listenerOptions);
+
+      fuelDropzone.addEventListener("dragleave", (event) => {
+        if (event.relatedTarget && fuelDropzone.contains?.(event.relatedTarget)) return;
+        fuelDropzone.classList?.remove?.("is-dragover");
+      }, listenerOptions);
+
+      fuelDropzone.addEventListener("drop", async (event) => {
+        event.preventDefault();
+        fuelDropzone.classList?.remove?.("is-dragover");
+        try {
+          const dragData = globalThis.TextEditor?.getDragEventData?.(event);
+          const itemUuid = cleanText(dragData?.uuid);
+          if (dragData?.type !== "Item" || !itemUuid) {
+            globalThis.ui?.notifications?.warn?.("Перетащите сюда предмет топлива.");
+            return;
+          }
+          await this.moduleApi.selectTransportFuel?.({
+            groupActorId: cleanText(this.groupActor?.id),
+            actorId: cleanText(fuelDropzone.dataset?.actorId),
+            itemUuid
+          });
+          this.#setActionFeedback("success", "Предмет топлива выбран.");
+          globalThis.ui?.notifications?.info?.("Предмет топлива выбран.");
+          bringAppToFront(this);
+        }
+        catch (error) {
+          console.error(`${MODULE_ID} | Failed to select transport fuel.`, error);
+          const message = error?.message || "Не удалось выбрать предмет топлива.";
+          this.#setActionFeedback("error", message);
+          globalThis.ui?.notifications?.error?.(message);
+        }
+      }, listenerOptions);
+    }
+
+    element.querySelector("[data-action='open-transport-fuel-item']")?.addEventListener("click", async (event) => {
+      const itemUuid = cleanText(event.currentTarget.dataset?.itemUuid);
+      try {
+        const item = itemUuid && typeof globalThis.fromUuid === "function"
+          ? await globalThis.fromUuid(itemUuid)
+          : null;
+        const Item = globalThis.Item;
+        const isItem = item?.documentName === "Item"
+          || (typeof Item === "function" && item instanceof Item);
+        if (!isItem || !item?.sheet) {
+          globalThis.ui?.notifications?.warn?.("Выбранный предмет топлива больше недоступен.");
+          return;
+        }
+        item.sheet.render?.(true);
+        bringAppToFront(item.sheet);
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to open transport fuel item.`, error);
+        globalThis.ui?.notifications?.error?.(error?.message || "Не удалось открыть предмет топлива.");
+      }
     }, listenerOptions);
 
     const bindDowntimeField = (selector, assign) => {

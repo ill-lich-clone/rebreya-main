@@ -19,9 +19,7 @@ const validState = {
   actorId: "vehicle-a",
   patch: {
     hpCurrent: 8,
-    condition: "operational",
-    reserveCurrent: 3,
-    reserveCapacity: 10
+    condition: "operational"
   }
 };
 
@@ -83,10 +81,6 @@ test("registered state command delegates only exact state payloads", async () =>
   const sender = { id: "player-a", isGM: false };
 
   assert.equal(definition.validate(validState), true);
-  assert.equal(definition.validate({
-    ...validState,
-    patch: { ...validState.patch, reserveCurrent: -1 }
-  }), true);
   assert.equal(definition.validate({
     ...validState,
     patch: { ...validState.patch, actorId: "forged" }

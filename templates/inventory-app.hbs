@@ -152,8 +152,8 @@
               </article>
               <article class="rm-inventory-book__supply rm-inventory-book__panel">
                 <span>Топливо</span>
-                <strong class="{{#if transport.fuelRange.isEmpty}}rm-negative{{/if}}">{{transport.fuelRange.valueLabel}}</strong>
-                <small title="{{transport.fuelRange.note}}">{{transport.fuelRange.note}}</small>
+                <strong class="{{#if transport.fuel.isEmpty}}rm-negative{{/if}}">{{transport.fuel.valueLabel}}</strong>
+                <small title="{{transport.fuel.note}}">{{transport.fuel.note}}</small>
               </article>
             </div>
           </section>
@@ -712,6 +712,47 @@
                 </button>
               </header>
 
+              <section
+                class="rm-transport-fuel-slot {{#if transport.fuel.isEmpty}}is-empty{{/if}}"
+                {{#if transport.canManage}}data-action="transport-fuel-dropzone"{{/if}}
+                data-actor-id="{{transport.activeVehicle.actorId}}"
+              >
+                {{#if transport.fuel.configured}}
+                  <article class="rm-inventory-row rm-compact-item rm-transport-fuel-card {{#if transport.fuel.isEmpty}}is-empty{{/if}}">
+                    <div class="rm-compact-item__main">
+                      <button
+                        type="button"
+                        class="rm-transport-fuel-card__open"
+                        data-action="open-transport-fuel-item"
+                        data-item-uuid="{{transport.fuel.card.openUuid}}"
+                        {{#unless transport.fuel.card.canOpen}}disabled{{/unless}}
+                      >
+                        <img class="rm-compact-item__image" src="{{transport.fuel.card.img}}" alt="">
+                        <span class="rm-compact-item__copy">
+                          <strong class="rm-compact-item__name">{{transport.fuel.card.name}}</strong>
+                          <small>{{transport.fuel.card.type}}</small>
+                        </span>
+                      </button>
+                    </div>
+                    <div class="rm-compact-item__side">
+                      <div class="rm-compact-item__metrics rm-transport-fuel-card__metrics">
+                        <p><span>Кол-во</span><strong class="{{#if transport.fuel.isEmpty}}rm-negative{{/if}}">{{rmNum transport.fuel.card.quantity}}</strong></p>
+                        <p><span>Вес</span><strong>{{transport.fuel.card.weightLabel}}</strong></p>
+                        <p><span>Цена</span><strong>{{transport.fuel.card.valueLabel}}</strong></p>
+                        <p><span>Расход</span><strong>{{rmNum transport.fuel.consumptionPerMile}} {{transport.fuel.unit}}/миля</strong></p>
+                        <p><span>Запас хода</span><strong class="{{#if transport.fuel.isEmpty}}rm-negative{{/if}}">{{rmNum transport.fuel.miles precision=0}} миль</strong></p>
+                      </div>
+                    </div>
+                  </article>
+                  {{#if transport.canManage}}<small class="rm-muted">Перетащите другой Item сюда, чтобы заменить вид топлива.</small>{{/if}}
+                {{else}}
+                  <p class="rm-transport-fuel-slot__empty">
+                    <i class="fa-solid fa-gas-pump"></i>
+                    <span>Перетащите сюда Item топлива из компендиума, каталога предметов или любого листа.</span>
+                  </p>
+                {{/if}}
+              </section>
+
               <form
                 class="rm-transport-state"
                 data-transport-state-form
@@ -739,31 +780,6 @@
                     {{/each}}
                   </select>
                 </label>
-                <label>
-                  <span>Запас {{transport.activeVehicle.reserveUnit}}</span>
-                  <input
-                    name="reserveCurrent"
-                    type="number"
-                    min="0"
-                    step="any"
-                    {{#if transport.activeVehicle.stateForm.hasCapacity}}max="{{transport.activeVehicle.reserveCapacity}}"{{/if}}
-                    value="{{transport.activeVehicle.stateForm.reserveCurrent}}"
-                    {{#unless transport.activeVehicle.stateForm.canEdit}}disabled{{/unless}}
-                  >
-                </label>
-                <label>
-                  <span>Вместимость {{transport.activeVehicle.reserveUnit}}</span>
-                  <input
-                    name="reserveCapacity"
-                    type="number"
-                    min="0"
-                    step="any"
-                    value="{{transport.activeVehicle.stateForm.reserveCapacity}}"
-                    placeholder="Задать вручную"
-                    {{#unless transport.activeVehicle.stateForm.canEdit}}disabled{{/unless}}
-                  >
-                </label>
-
                 {{#if transport.activeVehicle.stateForm.canEdit}}
                   <button
                     type="button"

@@ -275,6 +275,10 @@ function createModuleApi({
       calls.push(["updateTransportInstanceState", payload]);
       return {};
     },
+    async selectTransportFuel(payload) {
+      calls.push(["selectTransportFuel", payload]);
+      return {};
+    },
     async setTravelRoute(payload) {
       calls.push(["setTravelRoute", payload]);
       return {};
@@ -632,12 +636,12 @@ test("InventoryApp renders a compact header summary without redundant warehouse 
   assert.match(template, /travel\.headerRoute\.remainingDaysLabel/u);
   assert.match(template, /data-action="edit-supply" data-resource-key="food"/u);
   assert.match(template, /data-action="edit-supply" data-resource-key="water"/u);
-  assert.match(template, /transport\.fuelRange\.valueLabel/u);
-  assert.match(template, /transport\.fuelRange\.note/u);
+  assert.match(template, /transport\.fuel\.valueLabel/u);
+  assert.match(template, /transport\.fuel\.note/u);
   assert.match(template, /party\.dashboard\.weight\.isOverloaded/u);
   assert.match(template, /party\.dashboard\.food\.isEmpty/u);
   assert.match(template, /party\.dashboard\.water\.isEmpty/u);
-  assert.match(template, /transport\.fuelRange\.isEmpty/u);
+  assert.match(template, /transport\.fuel\.isEmpty/u);
   assert.doesNotMatch(template, /class="rm-inventory-book__header-shade"/u);
   assert.doesNotMatch(template, /class="rm-compact-pill-strip rm-compact-pill-strip--primary"/u);
   assert.doesNotMatch(template, /Подробнее по складу/u);
@@ -1702,7 +1706,7 @@ test("InventoryApp allows travel tab and maps travel snapshot into context", asy
   }
 });
 
-test("InventoryApp allows transport tab and maps the active group transport", async () => {
+test("InventoryApp allows transport tab and maps the active group transport fuel", async () => {
   const restoreFoundry = installFoundryApplicationStub();
   const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?transport-tab=${Date.now()}`);
   const calls = [];
@@ -1723,11 +1727,23 @@ test("InventoryApp allows transport tab and maps the active group transport", as
       warning: "",
       canManage: true,
       activeTransportId: "member:wagon",
-      fuelRange: {
+      fuel: {
         configured: true,
-        itemName: "Liquid coal",
+        selector: { name: "Liquid coal" },
+        card: {
+          name: "Liquid coal",
+          img: "coal.webp",
+          type: "loot",
+          quantity: 5,
+          openUuid: "Actor.group-a.Item.coal-a",
+          canOpen: true
+        },
+        quantity: 5,
+        consumptionPerMile: 0.125,
+        unit: "gal",
         miles: 42,
         isEmpty: false,
+        stacks: [],
         reason: ""
       },
       effectiveSpeedMph: 12,
@@ -1768,7 +1784,9 @@ test("InventoryApp allows transport tab and maps the active group transport", as
     assert.equal(context.tabs.isTransport, true);
     assert.equal(context.transport.activeTransportId, "member:wagon");
     assert.equal(context.transport.effectiveSpeedMph, 12);
-    assert.equal(context.transport.fuelRange.miles, 42);
+    assert.equal(context.transport.fuel.miles, 42);
+    assert.equal(context.transport.fuel.quantity, 5);
+    assert.equal(context.transport.fuel.card.name, "Liquid coal");
     assert.equal(context.transport.activeVehicle.name, "Тяжёлый гражданский фургон");
     const [transportCall] = calls.filter((call) => call[0] === "getTransportSnapshot");
     assert.ok(transportCall);
@@ -1776,6 +1794,92 @@ test("InventoryApp allows transport tab and maps the active group transport", as
     assert.ok(transportCall[1].inventorySnapshot);
   }
   finally {
+    restoreFoundry();
+  }
+});
+
+test("transport tab renders a full openable fuel Item drop card", async () => {
+  const template = await readFile(new URL("../templates/inventory-app.hbs", import.meta.url), "utf8");
+  const transportPanel = template.slice(
+    template.indexOf("{{#if tabs.isTransport}}"),
+    template.indexOf("{{#if tabs.isDowntime}}")
+  );
+
+  assert.match(transportPanel, /data-action="transport-fuel-dropzone"/u);
+  assert.match(transportPanel, /class="rm-inventory-row rm-compact-item rm-transport-fuel-card/u);
+  assert.match(transportPanel, /transport\.fuel\.card\.img/u);
+  assert.match(transportPanel, /transport\.fuel\.card\.name/u);
+  assert.match(transportPanel, /transport\.fuel\.card\.quantity/u);
+  assert.match(transportPanel, /data-action="open-transport-fuel-item"/u);
+  assert.match(transportPanel, /transport\.fuel\.miles/u);
+  assert.doesNotMatch(transportPanel, /name="fuelPerMile"/u);
+  assert.doesNotMatch(transportPanel, /name="reserveCurrent"/u);
+  assert.doesNotMatch(transportPanel, /name="reserveCapacity"/u);
+});
+
+test("transport fuel drop selects an Item and its card opens the real document", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const dom = installMinimalDom();
+  const previousTextEditor = globalThis.TextEditor;
+  const previousFromUuid = globalThis.fromUuid;
+  const previousUi = globalThis.ui;
+  const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?transport-fuel-drop=${Date.now()}`);
+  const calls = [];
+  const dropzone = createFakeControl({ dataset: { actorId: "vehicle-a" } });
+  dropzone.classList = { add() {}, remove() {} };
+  const openButton = createFakeControl({ dataset: { itemUuid: "Actor.group-a.Item.coal-a" } });
+  const root = createFakeElement();
+  root.querySelector = (selector) => {
+    if (selector === "[data-action='transport-fuel-dropzone']") return dropzone;
+    if (selector === "[data-action='open-transport-fuel-item']") return openButton;
+    return null;
+  };
+  root.querySelectorAll = () => [];
+  const renders = [];
+  const warnings = [];
+  globalThis.TextEditor = {
+    getDragEventData: (event) => event.dragData
+  };
+  globalThis.fromUuid = async (uuid) => ({
+    documentName: "Item",
+    uuid,
+    sheet: { render: (force) => renders.push(force) }
+  });
+  globalThis.ui = { notifications: { warn: (message) => warnings.push(message), error() {}, info() {} } };
+  const app = new InventoryApp(createModuleApi({ getGroupContext: () => null, calls }));
+  app.groupActor = { id: "group-a" };
+  app.element = root;
+
+  try {
+    await app._onRender({}, {});
+    await dropzone.listeners.drop[0]({
+      dragData: { type: "Item", uuid: "Compendium.world.goods.Item.coal" },
+      preventDefault() {}
+    });
+    assert.deepEqual(calls.filter((call) => call[0] === "selectTransportFuel"), [[
+      "selectTransportFuel",
+      {
+        groupActorId: "group-a",
+        actorId: "vehicle-a",
+        itemUuid: "Compendium.world.goods.Item.coal"
+      }
+    ]]);
+
+    await openButton.listeners.click[0]({ currentTarget: openButton });
+    assert.deepEqual(renders, [true]);
+
+    await dropzone.listeners.drop[0]({
+      dragData: { type: "Actor", uuid: "Actor.vehicle-a" },
+      preventDefault() {}
+    });
+    assert.equal(calls.filter((call) => call[0] === "selectTransportFuel").length, 1);
+    assert.equal(warnings.length, 1);
+  }
+  finally {
+    globalThis.TextEditor = previousTextEditor;
+    globalThis.fromUuid = previousFromUuid;
+    globalThis.ui = previousUi;
+    dom.restore();
     restoreFoundry();
   }
 });
@@ -1839,10 +1943,7 @@ test("InventoryApp prepares editable state for an Actor-backed transport", async
         isActorBacked: true,
         hpValue: 72,
         hpMax: 100,
-        condition: "damaged",
-        reserveCurrent: 8,
-        reserveCapacity: 12,
-        reserveUnit: "gal"
+        condition: "damaged"
       },
       vehicles: []
     }
@@ -1854,49 +1955,11 @@ test("InventoryApp prepares editable state for an Actor-backed transport", async
 
     assert.equal(context.transport.activeVehicle.stateForm.canEdit, true);
     assert.equal(context.transport.activeVehicle.stateForm.hpCurrent, "72");
-    assert.equal(context.transport.activeVehicle.stateForm.reserveCurrent, "8");
-    assert.equal(context.transport.activeVehicle.stateForm.reserveCapacity, "12");
     assert.equal(
       context.transport.activeVehicle.stateForm.conditionOptions
         .find((option) => option.value === "damaged").selected,
       true
     );
-  }
-  finally {
-    restoreFoundry();
-  }
-});
-
-test("InventoryApp preserves an unset manual transport capacity as an empty field", async () => {
-  const restoreFoundry = installFoundryApplicationStub();
-  const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?transport-empty-capacity=${Date.now()}`);
-  const app = new InventoryApp(createModuleApi({
-    getGroupContext: () => ({
-      groupActor: { id: "group-a", name: "Transport Group", system: { members: [] } },
-      groupId: "group-a",
-      memberActorIds: []
-    }),
-    transportSnapshot: {
-      canManage: true,
-      activeVehicle: {
-        actorId: "vehicle-a",
-        isActorBacked: true,
-        hpValue: 0,
-        hpMax: 0,
-        condition: "operational",
-        reserveCurrent: 0,
-        reserveCapacity: null,
-        reserveUnit: "lb"
-      },
-      vehicles: []
-    }
-  }));
-
-  try {
-    app.setActiveTab("transport", { render: false });
-    const context = await app._prepareContext();
-
-    assert.equal(context.transport.activeVehicle.stateForm.reserveCapacity, "");
   }
   finally {
     restoreFoundry();
@@ -1911,9 +1974,7 @@ test("transport state save delegates exact group and Actor ids", async () => {
   const saveButton = createFakeControl();
   const fields = new Map([
     ["hpCurrent", createFakeControl({ value: "70" })],
-    ["condition", createFakeControl({ value: "damaged" })],
-    ["reserveCurrent", createFakeControl({ value: "7" })],
-    ["reserveCapacity", createFakeControl({ value: "12" })]
+    ["condition", createFakeControl({ value: "damaged" })]
   ]);
   const form = createFakeElement({ dataset: { actorId: "vehicle-a" } });
   form.querySelector = (selector) => {
@@ -1944,9 +2005,7 @@ test("transport state save delegates exact group and Actor ids", async () => {
         actorId: "vehicle-a",
         patch: {
           hpCurrent: 70,
-          condition: "damaged",
-          reserveCurrent: 7,
-          reserveCapacity: 12
+          condition: "damaged"
         }
       }
     ]]);
@@ -2207,7 +2266,7 @@ test("InventoryApp template exposes the transport tab and active transport contr
   assert.match(template, /transport\.speedSourceLabel/u);
   assert.match(template, /data-transport-state-form/u);
   assert.match(template, /data-action="transport-state-save"/u);
-  assert.match(template, /name="reserveCapacity"/u);
+  assert.doesNotMatch(template, /name="reserveCapacity"/u);
   assert.match(css, /\.rm-transport-panel/u);
   assert.match(css, /\.rm-transport-row\.is-active/u);
   assert.match(css, /\.rm-transport-state\s*\{/u);

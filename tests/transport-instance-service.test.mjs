@@ -26,9 +26,7 @@ const validState = {
   actorId: "vehicle-a",
   patch: {
     hpCurrent: 72,
-    condition: "damaged",
-    reserveCurrent: 8,
-    reserveCapacity: 12
+    condition: "damaged"
   }
 };
 
@@ -420,32 +418,28 @@ test("world transport templates with forged canonical identity are rejected", as
   assert.equal(harness.createdActors.length, 0);
 });
 
-test("instance state validates condition, non-negative values, and capacity", () => {
+test("instance state keeps condition and fuel identity but drops duplicate reserve values", () => {
   assert.deepEqual(normalizeTransportInstanceState({
     condition: "operational",
     reserveCurrent: "4.5",
-    reserveCapacity: "10"
-  }, { reserveUnit: "gal" }), {
+    reserveCapacity: "10",
+    reserveUnit: "gal",
+    fuelSelector: buildTransportFuelSelector({
+      uuid: "Compendium.world.goods.Item.coal",
+      name: "Жидкий уголь",
+      type: "loot"
+    })
+  }), {
     condition: "operational",
-    reserveCurrent: 4.5,
-    reserveCapacity: 10,
-    reserveUnit: "gal"
+    fuelSelector: buildTransportFuelSelector({
+      uuid: "Compendium.world.goods.Item.coal",
+      name: "Жидкий уголь",
+      type: "loot"
+    })
   });
   assert.throws(
-    () => normalizeTransportInstanceState({ condition: "lost", reserveCurrent: 0 }),
+    () => normalizeTransportInstanceState({ condition: "lost" }),
     /Неизвестное состояние/u
-  );
-  assert.throws(
-    () => normalizeTransportInstanceState({ condition: "broken", reserveCurrent: -1 }),
-    /не может быть отрицательным/u
-  );
-  assert.throws(
-    () => normalizeTransportInstanceState({
-      condition: "damaged",
-      reserveCurrent: 11,
-      reserveCapacity: 10
-    }),
-    /не может превышать вместимость/u
   );
 });
 
@@ -467,7 +461,9 @@ test("import creates an independent world Actor, assigns its target-group role, 
   assert.equal(firstActor.ownership.default, 2);
   assert.equal(firstActor.flags["rebreya-main"].managed, undefined);
   assert.equal(firstActor.flags["rebreya-main"].transport.instance, true);
-  assert.equal(firstActor.flags["rebreya-main"].transport.instanceState.reserveUnit, "lb");
+  assert.deepEqual(firstActor.flags["rebreya-main"].transport.instanceState, {
+    condition: "operational"
+  });
   assert.equal(firstActor.flags["rebreya-main"].transport.instanceState.fuelSelector, undefined);
   assert.equal(firstActor.flags["rebreya-main"].transport.instanceState.fuelItemId, undefined);
   assert.equal(firstActor.flags["rebreya-main"].transport.instanceState.fuelPerMile, undefined);
@@ -578,7 +574,7 @@ test("sender authorization accepts GM or an owner of a group character", () => {
   assert.equal(service.canManageGroup("group-a", { id: "stranger", isGM: false }), false);
 });
 
-test("state update writes native HP and bounded per-instance fuel", async () => {
+test("state update writes native HP and condition without duplicate fuel quantity", async () => {
   const harness = createTransportInstanceHarness({ existingTransport: true });
   const service = new TransportInstanceService(harness.moduleApi, harness.options);
 
@@ -587,10 +583,7 @@ test("state update writes native HP and bounded per-instance fuel", async () => 
   assert.deepEqual(harness.actorUpdates.at(-1), {
     "system.attributes.hp.value": 72,
     "flags.rebreya-main.transport.instanceState": {
-      condition: "damaged",
-      reserveCurrent: 8,
-      reserveCapacity: 12,
-      reserveUnit: "gal"
+      condition: "damaged"
     }
   });
   assert.equal(result.actorId, "vehicle-a");
@@ -645,7 +638,6 @@ test("selectFuel resolves Item identity without mutating the Item", async () => 
 
   assert.deepEqual(harness.actorUpdates.at(-1), {
     "flags.rebreya-main.transport.instanceState": {
-      reserveUnit: "gal",
       fuelSelector: buildTransportFuelSelector(harness.droppedItem)
     }
   });
