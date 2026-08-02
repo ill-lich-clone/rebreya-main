@@ -5,6 +5,11 @@ import {
   BUILTIN_STORAGE_TOKEN_NAME,
   GROUND_PILE_STORAGE_PRESET
 } from "./builtin-storage-presets.js";
+import {
+  CHEST_OBJECT_DURABILITY,
+  normalizeStorageObjectDurability,
+  STORAGE_OBJECT_DURABILITY_FLAG
+} from "./native-object-durability-service.js";
 import { buildStorageTokenState } from "./storage-service.js";
 
 export const BUILTIN_STORAGE_FOLDER_NAME = "Хранилища";
@@ -65,6 +70,9 @@ export function buildBuiltinStorageActorData(preset, folderId) {
       flags: {
         [MODULE_ID]: {
           storage: initialStorageState(preset),
+          ...(preset.groundPile === true ? {} : {
+            [STORAGE_OBJECT_DURABILITY_FLAG]: clone(CHEST_OBJECT_DURABILITY)
+          }),
           ...(preset.groundPile === true ? { groundPile: { enabled: true } } : {})
         }
       }
@@ -125,6 +133,10 @@ export class BuiltinStorageActorService {
     if (typeof actor?.update !== "function") return;
     const current = actor.prototypeToken?.flags?.[MODULE_ID]?.storage ?? {};
     const initial = initialStorageState(preset);
+    const currentDurability = actor.prototypeToken?.flags?.[MODULE_ID]?.[STORAGE_OBJECT_DURABILITY_FLAG];
+    const durability = preset.groundPile === true
+      ? null
+      : normalizeStorageObjectDurability(currentDurability ?? CHEST_OBJECT_DURABILITY);
     await actor.update({
       "prototypeToken.name": preset.prototypeToken.name,
       [`prototypeToken.flags.${MODULE_ID}.storage`]: buildStorageTokenState({
@@ -133,6 +145,16 @@ export class BuiltinStorageActorService {
         baseName: preset.prototypeToken.name,
         textures: current.textures ?? preset.textures
       }),
+      ...(durability ? {
+        [`prototypeToken.flags.${MODULE_ID}.${STORAGE_OBJECT_DURABILITY_FLAG}`]: durability,
+        "prototypeToken.delta.system.attributes.hp": {
+          value: durability.hp.value,
+          max: durability.hp.max,
+          dt: durability.damageThreshold
+        },
+        "prototypeToken.delta.system.attributes.ac": { calc: "flat", flat: durability.ac },
+        "prototypeToken.bar1.attribute": "attributes.hp"
+      } : {}),
       ...(preset.groundPile === true ? {
         [`flags.${MODULE_ID}.groundPilePrototype`]: { enabled: true },
         [`prototypeToken.flags.${MODULE_ID}.groundPile`]: { enabled: true }

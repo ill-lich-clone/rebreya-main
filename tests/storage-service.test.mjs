@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  STORAGE_UPDATED_HOOK,
   StorageService,
   deriveStorageDisplayName,
   isStorageActor,
@@ -287,4 +288,39 @@ test("deleting the final generated row empties storage", async () => {
   assert.equal(next.state, "empty");
   assert.equal(next.displayMode, "empty");
   assert.equal(token.name, "Сундук (пусто)");
+});
+
+test("row durability updates only the selected item data and emits storageUpdated", async () => {
+  const previousHooks = globalThis.Hooks;
+  const calls = [];
+  globalThis.Hooks = { callAll: (...args) => calls.push(args) };
+  try {
+    const service = new StorageService({
+      generate: async () => ({
+        rows: [
+          { rowId: "first", itemData: { flags: { ["rebreya-main"]: { durability: { hp: { value: 5, max: 5 } } } } } },
+          { rowId: "second", itemData: { flags: {} } }
+        ],
+        coins: {}
+      })
+    });
+    const token = createStorageToken("durable-row");
+    token.uuid = "Scene.scene.Token.durable-row";
+    await service.open(token);
+    calls.length = 0;
+
+    const next = await service.updateRowDurability(token, "first", {
+      state: "intact",
+      hp: { value: 2, max: 5 }
+    });
+
+    assert.deepEqual(next.generatedRows[0].itemData.flags["rebreya-main"].durability.hp, { value: 2, max: 5 });
+    assert.deepEqual(next.generatedRows[1].itemData.flags, {});
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0][0], STORAGE_UPDATED_HOOK);
+    assert.equal(calls[0][1], token);
+  }
+  finally {
+    globalThis.Hooks = previousHooks;
+  }
 });

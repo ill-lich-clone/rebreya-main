@@ -12,6 +12,7 @@ import {
   BuiltinStorageActorService,
   buildBuiltinStorageActorData
 } from "../scripts/data/builtin-storage-actor-service.js";
+import { CHEST_OBJECT_DURABILITY } from "../scripts/data/native-object-durability-service.js";
 
 function createHarness({ active = true, failPresetId = "" } = {}) {
   const currentUser = { id: "gm-primary", isGM: true, active };
@@ -75,6 +76,9 @@ test("built-in storage Actor data creates an unlinked closed NPC with independen
   assert.equal(data.prototypeToken.actorLink, false);
   assert.equal(data.prototypeToken.name, "Сундук");
   assert.equal(data.prototypeToken.texture.src, preset.textures.unopened);
+  assert.deepEqual(data.prototypeToken.flags[MODULE_ID].objectDurability, CHEST_OBJECT_DURABILITY);
+  assert.deepEqual(data.prototypeToken.delta.system.attributes.hp, { value: 18, max: 18, dt: 0 });
+  assert.equal(data.prototypeToken.delta.system.attributes.ac.flat, 15);
   assert.deepEqual(storage.textures, preset.textures);
   assert.equal(storage.baseName, "Сундук");
   assert.equal(storage.state, "unopened");

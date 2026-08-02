@@ -1,3 +1,5 @@
+import { CHEST_OBJECT_DURABILITY } from "./native-object-durability-service.js";
+
 const ASSET_ROOT = "modules/rebreya-main/assets/storage/chests";
 const CLOSED_TEXTURE = `${ASSET_ROOT}/wood-dark-closed.webp`;
 const EMPTY_TEXTURE = `${ASSET_ROOT}/wood-dark-empty.webp`;
@@ -26,7 +28,17 @@ function createPreset(id, name, openedFile) {
     prototypeToken: {
       name: BUILTIN_STORAGE_TOKEN_NAME,
       actorLink: false,
-      texture: { src: textures.unopened }
+      texture: { src: textures.unopened },
+      objectDurability: JSON.parse(JSON.stringify(CHEST_OBJECT_DURABILITY)),
+      delta: {
+        system: {
+          attributes: {
+            hp: { value: 18, max: 18, dt: 0 },
+            ac: { calc: "flat", flat: 15 }
+          }
+        }
+      },
+      bar1: { attribute: "attributes.hp" }
     }
   });
 }

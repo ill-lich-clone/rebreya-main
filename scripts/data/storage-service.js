@@ -3,6 +3,7 @@ import { normalizeLootgenForm } from "./lootgen-generator.js";
 
 export const STORAGE_ACTOR_FLAG = "storage";
 export const STORAGE_TOKEN_FLAG = "storage";
+export const STORAGE_UPDATED_HOOK = `${MODULE_ID}.storageUpdated`;
 const STORAGE_VERSION = 1;
 const STORAGE_STATES = new Set(["unopened", "opened", "empty"]);
 export const STORAGE_TEXTURE_MODES = Object.freeze(["unopened", "opened", "empty"]);
@@ -169,6 +170,7 @@ export class StorageService {
       patch["texture.src"] = texturePath;
     }
     await document.update(patch);
+    globalThis.Hooks?.callAll?.(STORAGE_UPDATED_HOOK, document, clone(normalized));
     return clone(normalized);
   }
 
@@ -342,6 +344,19 @@ export class StorageService {
       row.itemData ??= {};
       row.itemData.system ??= {};
       row.itemData.system.quantity = amount;
+      return row;
+    });
+  }
+
+  async updateRowDurability(token, rowId, durability) {
+    if (!durability || typeof durability !== "object") {
+      throw new TypeError("Прочность предмета должна быть объектом.");
+    }
+    return this.#mutateEditableRow(token, rowId, (row) => {
+      row.itemData ??= {};
+      row.itemData.flags ??= {};
+      row.itemData.flags[MODULE_ID] ??= {};
+      row.itemData.flags[MODULE_ID].durability = clone(durability);
       return row;
     });
   }

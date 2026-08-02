@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { access, readFile } from "node:fs/promises";
 
 import { BUILTIN_STORAGE_PRESETS } from "../scripts/data/builtin-storage-presets.js";
+import { CHEST_OBJECT_DURABILITY } from "../scripts/data/native-object-durability-service.js";
 
 const EXPECTED_PRESETS = [
   ["wood-dark-copper", "Сундук — медные монеты", "wood-dark-copper-open.webp"],
@@ -28,6 +29,10 @@ test("built-in storage catalog exposes the three immutable coin presets", () => 
     assert.equal(preset.prototypeToken.name, "Сундук");
     assert.equal(preset.prototypeToken.actorLink, false);
     assert.equal(preset.prototypeToken.texture.src, preset.textures.unopened);
+    assert.deepEqual(preset.prototypeToken.objectDurability, CHEST_OBJECT_DURABILITY);
+    assert.deepEqual(preset.prototypeToken.delta.system.attributes.hp, { value: 18, max: 18, dt: 0 });
+    assert.deepEqual(preset.prototypeToken.delta.system.attributes.ac, { calc: "flat", flat: 15 });
+    assert.equal(preset.prototypeToken.bar1.attribute, "attributes.hp");
   }
 });
 
