@@ -1904,6 +1904,103 @@ test("InventoryApp allows transport tab and maps the active group transport fuel
   }
 });
 
+test("InventoryApp prepares state and fuel controls for every transport row", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?transport-rows=${Date.now()}`);
+  const app = new InventoryApp(createModuleApi({
+    getGroupContext: () => null,
+    transportSnapshot: {
+      available: true,
+      warning: "",
+      canManage: true,
+      activeTransportId: "member:vehicle-b",
+      hasVehicles: true,
+      vehicles: [{
+        id: "member:vehicle-b",
+        actorId: "vehicle-b",
+        actorUuid: "Actor.vehicle-b",
+        name: "Фургон",
+        active: true,
+        isActorBacked: true,
+        isConcreteInstance: true,
+        canEditState: true,
+        hpValue: 40,
+        hpMax: 40,
+        condition: "operational",
+        fuel: {
+          configured: true,
+          card: { name: "Кокс", openUuid: "Actor.group-a.Item.coke", canOpen: true },
+          quantity: 12,
+          consumptionPerMile: 0.5,
+          unit: "lb",
+          isEmpty: false,
+          stacks: []
+        }
+      }, {
+        id: "member:vehicle-a",
+        actorId: "vehicle-a",
+        actorUuid: "Actor.vehicle-a",
+        name: "Броневик",
+        active: false,
+        isActorBacked: true,
+        isConcreteInstance: true,
+        canEditState: true,
+        hpValue: 30,
+        hpMax: 50,
+        condition: "damaged",
+        fuel: {
+          configured: false,
+          card: null,
+          quantity: 0,
+          consumptionPerMile: 0,
+          unit: "",
+          isEmpty: false,
+          stacks: []
+        }
+      }],
+      activeVehicle: {
+        id: "member:vehicle-b",
+        actorId: "vehicle-b",
+        name: "Фургон",
+        active: true
+      },
+      fuel: {
+        configured: true,
+        card: { name: "Кокс" },
+        quantity: 12,
+        consumptionPerMile: 0.5,
+        unit: "lb",
+        miles: 24,
+        isEmpty: false,
+        stacks: []
+      }
+    }
+  }));
+
+  try {
+    app.setActiveTab("transport", { render: false });
+    const context = await app._prepareContext();
+    const [active, inactive] = context.transport.vehicles;
+
+    assert.equal(active.canOpen, true);
+    assert.equal(active.stateForm.canEdit, true);
+    assert.equal(active.stateForm.hpCurrent, "40");
+    assert.equal(active.stateForm.conditionOptions.find((option) => option.value === "operational").selected, true);
+    assert.equal(active.fuel.consumptionForm.canEdit, true);
+    assert.equal(active.fuel.consumptionForm.amount, "0.5");
+    assert.equal(active.fuel.consumptionForm.unitOptions.find((option) => option.value === "lb").selected, true);
+    assert.equal(inactive.canOpen, true);
+    assert.equal(inactive.stateForm.hpCurrent, "30");
+    assert.equal(inactive.stateForm.conditionOptions.find((option) => option.value === "damaged").selected, true);
+    assert.equal(inactive.fuel.configured, false);
+    assert.equal(inactive.fuel.emptyLabel, "Добавьте топливо");
+    assert.equal(app.transportContext, context.transport);
+  }
+  finally {
+    restoreFoundry();
+  }
+});
+
 test("transport tab renders a full openable fuel Item drop card", async () => {
   const [template, css] = await Promise.all([
     readFile(new URL("../templates/inventory-app.hbs", import.meta.url), "utf8"),

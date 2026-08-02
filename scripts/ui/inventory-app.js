@@ -1517,69 +1517,84 @@ const TRANSPORT_CONDITION_OPTIONS = Object.freeze([
   { value: "broken", label: "Сломан" }
 ]);
 
+function prepareTransportFuelContext(sourceFuel = {}, { canManage = false, vehicle = null } = {}) {
+  const configured = sourceFuel?.configured === true;
+  const fuelReason = cleanText(sourceFuel?.reason) || (vehicle ? "unconfigured" : "noTransport");
+  const miles = Math.max(0, Math.floor(toNumber(sourceFuel?.miles, 0)));
+  const unit = cleanText(sourceFuel?.unit);
+  return {
+    ...sourceFuel,
+    configured,
+    selector: sourceFuel?.selector && typeof sourceFuel.selector === "object" ? sourceFuel.selector : {},
+    card: sourceFuel?.card && typeof sourceFuel.card === "object" ? sourceFuel.card : null,
+    quantity: Math.max(0, toNumber(sourceFuel?.quantity, 0)),
+    consumptionPerMile: Math.max(0, toNumber(sourceFuel?.consumptionPerMile, 0)),
+    unit,
+    consumptionForm: {
+      canEdit: Boolean(canManage && vehicle?.isConcreteInstance && configured),
+      amount: String(Math.max(0, toNumber(sourceFuel?.consumptionPerMile, 0))),
+      unitOptions: [
+        { value: "lb", label: "фунты", selected: unit === "lb" },
+        { value: "gal", label: "галлоны", selected: unit === "gal" }
+      ]
+    },
+    miles,
+    isEmpty: configured && sourceFuel?.isEmpty === true,
+    stacks: Array.isArray(sourceFuel?.stacks) ? sourceFuel.stacks : [],
+    reason: configured ? "" : fuelReason,
+    emptyLabel: "Добавьте топливо",
+    valueLabel: configured ? `${miles} миль` : "—",
+    note: configured
+      ? (cleanText(sourceFuel?.card?.name) || cleanText(sourceFuel?.selector?.name) || "Топливо")
+      : (fuelReason === "noTransport" ? "Транспорт не выбран" : "Топливо не выбрано")
+  };
+}
+
+function prepareTransportVehicleContext(vehicle = {}, { canManage = false } = {}) {
+  const condition = cleanText(vehicle.condition) || "operational";
+  return {
+    ...vehicle,
+    canOpen: Boolean(vehicle.actorId || vehicle.actorUuid),
+    fuel: prepareTransportFuelContext(vehicle.fuel, { canManage, vehicle }),
+    stateForm: {
+      canEdit: Boolean(canManage && vehicle.isActorBacked && vehicle.canEditState !== false),
+      hpCurrent: String(Number.isFinite(Number(vehicle.hpValue)) ? Number(vehicle.hpValue) : 0),
+      conditionOptions: TRANSPORT_CONDITION_OPTIONS.map((option) => ({
+        ...option,
+        selected: option.value === condition
+      }))
+    }
+  };
+}
+
 function prepareTransportContext(snapshot = {}) {
   const source = snapshot && typeof snapshot === "object" ? snapshot : buildEmptyTransportContext();
-  const vehicles = Array.isArray(source.vehicles) ? source.vehicles : [];
+  const canManage = Boolean(source.canManage);
   const activeSource = source.activeVehicle && typeof source.activeVehicle === "object"
     ? source.activeVehicle
     : null;
-  const condition = cleanText(activeSource?.condition) || "operational";
-  const activeVehicle = activeSource
-    ? {
-        ...activeSource,
-        stateForm: {
-          canEdit: Boolean(
-            source.canManage
-            && activeSource.isActorBacked
-            && activeSource.canEditState !== false
-          ),
-          hpCurrent: String(Number.isFinite(Number(activeSource.hpValue)) ? Number(activeSource.hpValue) : 0),
-          conditionOptions: TRANSPORT_CONDITION_OPTIONS.map((option) => ({
-            ...option,
-            selected: option.value === condition
-          }))
+  const vehicles = (Array.isArray(source.vehicles) ? source.vehicles : []).map((vehicle) => {
+    const merged = activeSource?.id && activeSource.id === vehicle?.id
+      ? {
+          ...vehicle,
+          ...activeSource,
+          fuel: vehicle?.fuel ?? source.fuel
         }
-      }
-    : null;
+      : vehicle;
+    return prepareTransportVehicleContext(merged, { canManage });
+  });
+  const activeVehicle = vehicles.find((vehicle) => vehicle.active)
+    ?? (activeSource ? prepareTransportVehicleContext({ ...activeSource, fuel: source.fuel }, { canManage }) : null);
   const sourceFuel = source.fuel && typeof source.fuel === "object"
     ? source.fuel
     : {};
-  const fuelConfigured = sourceFuel.configured === true;
-  const fuelReason = cleanText(sourceFuel.reason) || (activeVehicle ? "unconfigured" : "noTransport");
-  const fuelMiles = Math.max(0, Math.floor(toNumber(sourceFuel.miles, 0)));
-  const fuel = {
-    ...sourceFuel,
-    configured: fuelConfigured,
-    selector: sourceFuel.selector && typeof sourceFuel.selector === "object" ? sourceFuel.selector : {},
-    card: sourceFuel.card && typeof sourceFuel.card === "object" ? sourceFuel.card : null,
-    quantity: Math.max(0, toNumber(sourceFuel.quantity, 0)),
-    consumptionPerMile: Math.max(0, toNumber(sourceFuel.consumptionPerMile, 0)),
-    unit: cleanText(sourceFuel.unit),
-    consumptionForm: {
-      canEdit: Boolean(source.canManage && activeVehicle?.isConcreteInstance && fuelConfigured),
-      amount: String(Math.max(0, toNumber(sourceFuel.consumptionPerMile, 0))),
-      unitOptions: [
-        { value: "lb", label: "фунты", selected: cleanText(sourceFuel.unit) === "lb" },
-        { value: "gal", label: "галлоны", selected: cleanText(sourceFuel.unit) === "gal" }
-      ]
-    },
-    miles: fuelMiles,
-    isEmpty: fuelConfigured && sourceFuel.isEmpty === true,
-    stacks: Array.isArray(sourceFuel.stacks) ? sourceFuel.stacks : [],
-    reason: fuelConfigured ? "" : fuelReason,
-    valueLabel: fuelConfigured
-      ? `${fuelMiles} миль`
-      : "—",
-    note: fuelConfigured
-      ? (cleanText(sourceFuel.card?.name) || cleanText(sourceFuel.selector?.name) || "Топливо")
-      : (fuelReason === "noTransport" ? "Транспорт не выбран" : "Топливо не выбрано")
-  };
+  const fuel = prepareTransportFuelContext(sourceFuel, { canManage, vehicle: activeVehicle });
   return {
     ...buildEmptyTransportContext(),
     ...source,
     vehicles,
     hasVehicles: Boolean(source.hasVehicles ?? vehicles.length > 0),
-    canManage: Boolean(source.canManage),
+    canManage,
     activeVehicle,
     fuel,
     cargoOverloaded: Boolean(source.cargoOverloaded)
@@ -3795,6 +3810,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       });
       const travel = prepareTravelContext(travelSnapshot ?? buildEmptyTravelContext({ warning: travelWarning }), this.travelTrackTime);
       const transport = prepareTransportContext(transportSnapshot ?? buildEmptyTransportContext({ warning: transportWarning }));
+      this.transportContext = transport;
       const calendarCells = buildCalendarDowntimeCells(calendarSnapshot, downtimeSnapshot);
       this.calendarDowntimeByIsoDate = Object.fromEntries(calendarCells.map((cell) => [cell.isoDate, cell.downtime]));
 
