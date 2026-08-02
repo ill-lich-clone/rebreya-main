@@ -141,12 +141,16 @@ export function deriveStorageDisplayName(state = {}) {
 
 export class StorageService {
   constructor({
-    generate = async () => ({ rows: [], coins: {} })
+    generate = async () => ({ rows: [], coins: {} }),
+    onGeneratedOpen = async () => {},
+    logger = console
   } = {}) {
     if (typeof generate !== "function") {
       throw new TypeError("StorageService requires a generate function.");
     }
     this.generate = generate;
+    this.onGeneratedOpen = typeof onGeneratedOpen === "function" ? onGeneratedOpen : async () => {};
+    this.logger = logger;
     this.openTasks = new Map();
   }
 
@@ -220,6 +224,12 @@ export class StorageService {
       state: "opened",
       displayMode: "opened"
     });
+    try {
+      await this.onGeneratedOpen({ token: resolveDocument(token), state: clone(next), context: clone(context) });
+    }
+    catch (error) {
+      this.logger?.warn?.(`${MODULE_ID} | Storage opened callback failed.`, error);
+    }
     return {
       generatedNow: true,
       state: next,

@@ -174,3 +174,30 @@ test("legacy storage tokens without textures keep their previous no-texture beha
   assert.equal(readStorageState(token).textures, null);
   assert.equal(token.texture, undefined);
 });
+
+test("simultaneous first opens invoke the generated callback once after opening", async () => {
+  const opened = [];
+  const service = new StorageService({
+    generate: async () => ({ rows: [{ rowId: "once" }], coins: {} }),
+    onGeneratedOpen: async ({ state }) => opened.push(state.state)
+  });
+  const token = createStorageToken("single-flight");
+
+  await Promise.all([service.open(token), service.open(token)]);
+
+  assert.deepEqual(opened, ["opened"]);
+});
+
+test("generated callback failure does not roll back opened storage", async () => {
+  const warnings = [];
+  const service = new StorageService({
+    onGeneratedOpen: async () => { throw new Error("audio failed"); },
+    logger: { warn(_message, error) { warnings.push(error.message); } }
+  });
+  const token = createStorageToken("nonfatal-callback");
+
+  await service.open(token);
+
+  assert.equal(readStorageState(token).state, "opened");
+  assert.deepEqual(warnings, ["audio failed"]);
+});
