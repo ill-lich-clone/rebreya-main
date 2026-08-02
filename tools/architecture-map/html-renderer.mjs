@@ -1,4 +1,20 @@
 const PAGE_TITLE = "Rebreya Main — архитектура модуля";
+const MAX_LEAF_COLUMNS = 72;
+const MIN_FOCUS_SCALE = 1.05;
+const MAX_FOCUS_SCALE = 1.35;
+
+export function calculateLeafColumnCount(count) {
+  const normalizedCount = Math.max(0, Number(count) || 0);
+  if (normalizedCount <= 1) return 1;
+  return Math.max(
+    1,
+    Math.min(MAX_LEAF_COLUMNS, Math.ceil(Math.sqrt(normalizedCount * 1.9)))
+  );
+}
+
+export function calculateFocusScale(currentScale) {
+  return Math.max(MIN_FOCUS_SCALE, Math.min(MAX_FOCUS_SCALE, Number(currentScale) || 0));
+}
 
 function serializeForInlineScript(value) {
   return JSON.stringify(value)
@@ -468,11 +484,11 @@ export function renderArchitectureHtml(graph) {
       <span class="search-count" id="search-count" aria-live="polite"></span>
     </label>
     <div class="architecture-actions">
-      <button class="architecture-control" id="fit-graph" type="button">
+      <button class="architecture-control" id="fit-graph" type="button" aria-label="Показать всю схему">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5"/></svg>
         <span>Вся схема</span>
       </button>
-      <button class="architecture-control" id="clear-selection" type="button">
+      <button class="architecture-control" id="clear-selection" type="button" aria-label="Сбросить поиск и выделение">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5l14 14M19 5L5 19"/></svg>
         <span>Сбросить</span>
       </button>
@@ -584,7 +600,9 @@ export function renderArchitectureHtml(graph) {
           const domainNode = domainNodes.find((node) => node.type === "domain");
           const directories = domainNodes.filter((node) => node.type === "directory");
           const leaves = domainNodes.filter((node) => node.rank >= 3 && node.type !== "directory");
-          const leafColumns = Math.max(1, Math.min(28, Math.ceil(Math.sqrt(Math.max(1, leaves.length) * 1.9))));
+          const leafColumns = leaves.length <= 1
+            ? 1
+            : Math.max(1, Math.min(${MAX_LEAF_COLUMNS}, Math.ceil(Math.sqrt(leaves.length * 1.9))));
           const leafRows = Math.ceil(leaves.length / leafColumns);
           const directoryColumns = Math.max(1, Math.min(3, Math.ceil(Math.sqrt(Math.max(1, directories.length)))));
           const directoryRows = Math.ceil(directories.length / directoryColumns);
@@ -776,7 +794,7 @@ export function renderArchitectureHtml(graph) {
         const position = layout.positions.get(nodeId);
         if (!position) return;
         const rect = canvas.getBoundingClientRect();
-        transform.scale = Math.max(0.62, Math.min(1.15, transform.scale));
+        transform.scale = Math.max(${MIN_FOCUS_SCALE}, Math.min(${MAX_FOCUS_SCALE}, transform.scale));
         transform.x = rect.width / 2 - (position.x + position.width / 2) * transform.scale;
         transform.y = rect.height / 2 - (position.y + position.height / 2) * transform.scale;
         applyTransform();

@@ -13,7 +13,11 @@ import {
   collectRepositorySnapshot,
   validateArchitectureGraph
 } from "../tools/architecture-map/graph-builder.mjs";
-import { renderArchitectureHtml } from "../tools/architecture-map/html-renderer.mjs";
+import {
+  calculateFocusScale,
+  calculateLeafColumnCount,
+  renderArchitectureHtml
+} from "../tools/architecture-map/html-renderer.mjs";
 
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const generatedHtmlPath = "docs/rebreya-module-architecture.html";
@@ -151,6 +155,8 @@ test("renderer emits a self-contained offline architecture document", () => {
   assert.match(html, /id="architecture-nodes"/u);
   assert.match(html, /id="architecture-minimap"/u);
   assert.match(html, /window\.__REBREYA_ARCHITECTURE__/u);
+  assert.match(html, /id="fit-graph"[^>]+aria-label="Показать всю схему"/u);
+  assert.match(html, /id="clear-selection"[^>]+aria-label="Сбросить поиск и выделение"/u);
   assert.doesNotMatch(html, /<script[^>]+src=/iu);
   assert.doesNotMatch(html, /<link[^>]+href=/iu);
   assert.doesNotMatch(html, /\bfetch\s*\(/u);
@@ -170,6 +176,18 @@ test("renderer output is deterministic for a fixed graph", () => {
   const graph = buildArchitectureGraph(makeFixture());
 
   assert.equal(renderArchitectureHtml(graph), renderArchitectureHtml(graph));
+});
+
+test("dense domains expand horizontally instead of forming one tall file column", () => {
+  assert.equal(calculateLeafColumnCount(0), 1);
+  assert.equal(calculateLeafColumnCount(100), 14);
+  assert.equal(calculateLeafColumnCount(2299), 67);
+});
+
+test("search focus raises overview zoom to a readable node scale", () => {
+  assert.equal(calculateFocusScale(0.05), 1.05);
+  assert.equal(calculateFocusScale(1.2), 1.2);
+  assert.equal(calculateFocusScale(2), 1.35);
 });
 
 test("generator CLI writes a complete current-repository snapshot", async () => {
