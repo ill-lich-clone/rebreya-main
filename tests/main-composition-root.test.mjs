@@ -7,6 +7,7 @@ import { SpellInstanceRuntime } from "../scripts/combat/spell-instance-runtime.j
 import { SummonLifecycleRuntime } from "../scripts/combat/summon-lifecycle-runtime.js";
 import { TransportCompendiumService } from "../scripts/data/transport-compendium.js";
 import { BuiltinStorageActorService } from "../scripts/data/builtin-storage-actor-service.js";
+import { StorageOpenSoundService } from "../scripts/data/storage-open-sound-service.js";
 import {
   COMMAND_REQUEST_TYPE,
   COMMAND_RESULT_TYPE
@@ -107,6 +108,7 @@ test("ready composes spell automation on one registry alongside legacy hook regi
 
     const moduleApi = module.api;
     assert.ok(moduleApi.builtinStorageActorService instanceof BuiltinStorageActorService);
+    assert.ok(moduleApi.storageOpenSoundService instanceof StorageOpenSoundService);
     const restoredDocuments = {
       folder: { id: "storage-folder" },
       actors: [{ id: "copper" }]

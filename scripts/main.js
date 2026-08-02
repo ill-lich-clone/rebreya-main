@@ -82,6 +82,7 @@ import { UiRefreshCoordinator } from "./infrastructure/ui/ui-refresh-coordinator
 import { GlobalEventsService } from "./data/global-events-service.js";
 import { LootgenTemplateCatalog } from "./data/lootgen-template-catalog.js";
 import { StorageService, isStorageActor, readStorageState } from "./data/storage-service.js";
+import { StorageOpenSoundService } from "./data/storage-open-sound-service.js";
 import {
   isStorageTokenVisible,
   measureStorageTokenDistance
@@ -1055,8 +1056,13 @@ export class RebreyaMainModule {
     this.travelMapService = new TravelMapService();
     this.inventoryService = new InventoryService(this);
     this.durabilityService = new DurabilityService(this);
+    this.storageOpenSoundService = new StorageOpenSoundService({
+      gameProvider: () => globalThis.game,
+      isActiveGm: isActiveGmClient
+    });
     this.storageService = new StorageService({
-      generate: (form, context) => this.generateStorageLoot(form, context)
+      generate: (form, context) => this.generateStorageLoot(form, context),
+      onGeneratedOpen: ({ token }) => this.storageOpenSoundService.playForToken(token)
     });
     this.builtinStorageActorService = new BuiltinStorageActorService({
       gameProvider: () => globalThis.game,
@@ -1540,6 +1546,12 @@ export class RebreyaMainModule {
       console.warn(`${MODULE_ID} | Failed to sync managed map object documents.`, error);
     }
     await this.restoreBuiltinStorageActors();
+    try {
+      await this.storageOpenSoundService.cleanupStale(globalThis.canvas?.scene);
+    }
+    catch (error) {
+      console.warn(`${MODULE_ID} | Failed to clean stale storage sounds.`, error);
+    }
     try {
       await this.traderService.cleanupLegacyManagedTraders();
     }
@@ -3190,7 +3202,7 @@ export class RebreyaMainModule {
     return this.storageService.setTextureMode(token, mode);
   }
 
-  async openStorageApp({ tokenUuid, configure = false } = {}) {
+  async openStorageApp({ tokenUuid, configure = false, anchorToToken = false } = {}) {
     const safeTokenUuid = cleanSocketId(tokenUuid);
     if (!safeTokenUuid) throw new Error("Не указан токен хранилища.");
     if (configure) {
@@ -3204,8 +3216,11 @@ export class RebreyaMainModule {
     const key = `${safeTokenUuid}:${configure ? "configure" : "open"}`;
     let app = this.storageApps.get(key);
     if (!app) {
-      app = new StorageApp(this, safeTokenUuid, { configure });
+      app = new StorageApp(this, safeTokenUuid, { configure, anchorToToken });
       this.storageApps.set(key, app);
+    }
+    else if (anchorToToken) {
+      app.requestTokenAnchor?.();
     }
     await app.render({ force: true });
     bringAppToFront(app);
