@@ -101,6 +101,31 @@ export async function transferPortableStorageItemDropToCanvas(
   return { handled: true, result };
 }
 
+export async function transferFoundryItemDropToCanvas(
+  canvas,
+  data,
+  moduleApi,
+  { prompt } = {}
+) {
+  const itemUuid = clean(data?.uuid);
+  if (!itemUuid || !["Item", "ItemUUID"].includes(clean(data?.type))) return { handled: false };
+  if (typeof moduleApi?.inspectStorageDepositSource !== "function"
+    || typeof moduleApi?.dropStorageItemToScene !== "function") {
+    throw new Error("API переноса предметов Rebreya на сцену недоступен.");
+  }
+  const sceneId = clean(canvas?.scene?.id ?? data?.sceneId);
+  const x = Number(data?.x);
+  const y = Number(data?.y);
+  if (!sceneId || !Number.isFinite(x) || !Number.isFinite(y)) {
+    throw new Error("Не удалось определить место для предмета на сцене.");
+  }
+  const inspected = await moduleApi.inspectStorageDepositSource({ kind: "item", itemUuid });
+  const quantity = await promptStorageTransferQuantity(inspected.available, { prompt });
+  if (quantity === null) return { handled: true, cancelled: true };
+  const result = await moduleApi.dropStorageItemToScene(itemUuid, { sceneId, x, y, quantity });
+  return { handled: true, cancelled: false, quantity, result };
+}
+
 export function handleStorageActorSheetDrop(actor, data, moduleApi, options = {}) {
   if (!parseStorageDragData(data)) return true;
   void transferStorageDropToCharacter(actor, data, moduleApi, options).catch(notifyDropError);
@@ -112,11 +137,8 @@ export function handleStorageCanvasDrop(canvas, data, moduleApi, options = {}) {
     void transferStorageDropToCanvas(canvas, data, moduleApi, options).catch(notifyDropError);
     return false;
   }
-  const item = options.resolveUuidSync?.(clean(data?.uuid)) ?? globalThis.fromUuidSync?.(clean(data?.uuid));
-  if (!isPortableStorageContainerItem(item)) return true;
-  void transferPortableStorageItemDropToCanvas(canvas, data, moduleApi, {
-    resolveUuid: async () => item
-  }).catch(notifyDropError);
+  if (!["Item", "ItemUUID"].includes(clean(data?.type)) || !clean(data?.uuid)) return true;
+  void transferFoundryItemDropToCanvas(canvas, data, moduleApi, options).catch(notifyDropError);
   return false;
 }
 

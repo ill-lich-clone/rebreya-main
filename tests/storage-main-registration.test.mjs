@@ -12,22 +12,27 @@ test("main registers the storage deposit socket API and current cache keys", asy
   assert.match(main, /this\.storageCommandService\.deposit\(payload,\s*\{ sender \}\)/u);
   assert.match(main, /async inspectStorageDepositSource\(/u);
   assert.match(main, /async depositStorageItem\(/u);
+  assert.match(main, /isValidStorageDropItemPayload/u);
+  assert.match(main, /STORAGE_DROP_ITEM_COMMAND\s*=\s*"storage\.drop-item-to-scene"/u);
+  assert.match(main, /register\(STORAGE_DROP_ITEM_COMMAND,\s*\{/u);
+  assert.match(main, /this\.storageCommandService\.dropItemToScene\(payload,\s*\{ sender \}\)/u);
+  assert.match(main, /async dropStorageItemToScene\(/u);
   assert.match(main, /registerStorageTokenDropHooks\(moduleApi/u);
   assert.match(main, /STORAGE_RESTORE_PORTABLE_COMMAND\s*=\s*"storage\.restore-portable"/u);
   assert.match(main, /register\(STORAGE_RESTORE_PORTABLE_COMMAND,\s*\{/u);
   assert.match(main, /this\.storageCommandService\.restorePortableItem\(payload,\s*\{ sender \}\)/u);
   assert.match(main, /this\.storageContainerItemService = new StorageContainerItemService\(\);/u);
   for (const importPath of [
-    "data/storage-service.js?v=1.4.118-nested-storage-containers",
-    "data/storage-container-item-service.js?v=1.4.118-nested-storage-containers",
-    "data/storage-deposit-source.js?v=1.4.118-nested-storage-containers",
-    "data/storage-command-service.js?v=1.4.118-nested-storage-containers",
-    "integrations/storage-transfer-drop.js?v=1.4.118-nested-storage-containers",
-    "integrations/storage-token-drop.js?v=1.4.118-nested-storage-containers"
+    "data/storage-service.js?v=1.4.119-storage-canvas-drops",
+    "data/storage-container-item-service.js?v=1.4.119-storage-canvas-drops",
+    "data/storage-deposit-source.js?v=1.4.119-storage-canvas-drops",
+    "data/storage-command-service.js?v=1.4.119-storage-canvas-drops",
+    "integrations/storage-transfer-drop.js?v=1.4.119-storage-canvas-drops",
+    "integrations/storage-token-drop.js?v=1.4.119-storage-canvas-drops"
   ]) {
     assert.equal(main.includes(importPath), true, importPath);
   }
-  assert.equal(manifest.version, "1.4.118");
+  assert.equal(manifest.version, "1.4.119");
 });
 
 test("storage drop hook registrations have independent error boundaries", async () => {

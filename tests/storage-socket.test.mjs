@@ -9,6 +9,7 @@ import {
   isValidStorageClaimCoinsPayload,
   isValidStorageClaimRowPayload,
   isValidStorageDepositPayload,
+  isValidStorageDropItemPayload,
   isValidStorageRestorePortablePayload,
   storageCharacterTokenUuidForClaim
 } from "../scripts/data/storage-command-service.js";
@@ -36,7 +37,8 @@ function createHarness({
   rowQuantity = 1,
   rejectItemGrant = false,
   depositSource = null,
-  containerItemService = null
+  containerItemService = null,
+  groundFailure = null
 } = {}) {
   const player = { id: "player", isGM: false };
   const hero = {
@@ -122,6 +124,7 @@ function createHarness({
   });
   const groundPileService = {
     async transferToScene(request) {
+      if (groundFailure) throw groundFailure;
       groundCalls.push(clone(request));
       return { created: true };
     },
@@ -243,6 +246,135 @@ test("portable scene restore payload accepts one exact item and finite scene poi
   assert.equal(isValidStorageRestorePortablePayload(payload), true);
   assert.equal(isValidStorageRestorePortablePayload({ ...payload, x: Number.NaN }), false);
   assert.equal(isValidStorageRestorePortablePayload({ ...payload, extra: true }), false);
+});
+
+test("generic Item scene drop payload accepts an exact quantity and finite scene point", () => {
+  const payload = {
+    itemUuid: "Actor.hero.Item.arrows",
+    characterTokenUuid: "Scene.scene.Token.hero",
+    sceneId: "scene",
+    x: 120,
+    y: 180,
+    quantity: 2,
+    mutationId: "item-scene"
+  };
+  assert.equal(isValidStorageDropItemPayload(payload), true);
+  assert.equal(isValidStorageDropItemPayload({ ...payload, quantity: 0 }), false);
+  assert.equal(isValidStorageDropItemPayload({ ...payload, extra: true }), false);
+});
+
+test("ordinary inventory Items move to a ground pile at the requested scene point", async () => {
+  const consumed = [];
+  const source = {
+    kind: "item",
+    mode: "move",
+    available: 4,
+    sourceKey: "Actor.hero.Item.arrows",
+    row: {
+      rowId: "arrows",
+      name: "Стрела",
+      quantity: 4,
+      itemData: { name: "Стрела", type: "consumable", system: { quantity: 4 } }
+    },
+    canUserMove: () => true,
+    async consume(quantity) { consumed.push(quantity); return { kind: "item-update" }; },
+    async restore() {}
+  };
+  const harness = createHarness({ depositSource: source, pointDistance: 5 });
+
+  const result = await harness.service.dropItemToScene({
+    itemUuid: "Actor.hero.Item.arrows",
+    characterTokenUuid: harness.characterToken.uuid,
+    sceneId: "scene",
+    x: 400,
+    y: 500,
+    quantity: 2,
+    mutationId: "drop-arrows"
+  }, { sender: harness.player });
+
+  assert.equal(result.changed, true);
+  assert.deepEqual(consumed, [2]);
+  assert.equal(harness.groundCalls.length, 1);
+  assert.equal(harness.groundCalls[0].quantity, 2);
+  assert.equal(harness.groundCalls[0].row.itemData.system.quantity, 2);
+  assert.deepEqual(
+    { sceneId: harness.groundCalls[0].sceneId, x: harness.groundCalls[0].x, y: harness.groundCalls[0].y },
+    { sceneId: "scene", x: 400, y: 500 }
+  );
+});
+
+test("native container Items restore as storage tokens with their full recursive contents", async () => {
+  const consumed = [];
+  const restored = [];
+  const snapshot = {
+    containerId: "native-bag",
+    storageKind: "bag",
+    name: "Рюкзак",
+    img: "bag.webp",
+    state: { baseName: "Рюкзак", state: "opened", manualRows: [], generatedRows: [] }
+  };
+  const source = {
+    kind: "storage-item",
+    mode: "move",
+    available: 1,
+    sourceKey: "Actor.hero.Item.backpack",
+    row: buildStorageContainerRow(snapshot),
+    canUserMove: () => true,
+    async consume(quantity) { consumed.push(quantity); return { kind: "storage-item" }; },
+    async restore() {}
+  };
+  const containerItemService = {
+    async restoreSnapshotToScene(actualSnapshot, target) {
+      restored.push({ snapshot: clone(actualSnapshot), target: clone(target) });
+      return { uuid: "Scene.scene.Token.backpack" };
+    }
+  };
+  const harness = createHarness({ depositSource: source, containerItemService, pointDistance: 5 });
+
+  const result = await harness.service.dropItemToScene({
+    itemUuid: "Actor.hero.Item.backpack",
+    characterTokenUuid: harness.characterToken.uuid,
+    sceneId: "scene",
+    x: 220,
+    y: 330,
+    quantity: 1,
+    mutationId: "drop-backpack"
+  }, { sender: harness.player });
+
+  assert.equal(result.tokenUuid, "Scene.scene.Token.backpack");
+  assert.deepEqual(consumed, [1]);
+  assert.equal(restored.length, 1);
+  assert.equal(restored[0].snapshot.containerId, "native-bag");
+  assert.equal(harness.groundCalls.length, 0);
+});
+
+test("failed Item scene creation restores the moved inventory source", async () => {
+  const calls = [];
+  const source = {
+    kind: "item",
+    mode: "move",
+    available: 1,
+    sourceKey: "Actor.hero.Item.doll",
+    row: { rowId: "doll", quantity: 1, itemData: { system: { quantity: 1 } } },
+    canUserMove: () => true,
+    async consume() { calls.push("consume"); return { kind: "item-delete" }; },
+    async restore() { calls.push("restore"); }
+  };
+  const harness = createHarness({
+    depositSource: source,
+    groundFailure: new Error("scene create failed")
+  });
+
+  await assert.rejects(harness.service.dropItemToScene({
+    itemUuid: "Actor.hero.Item.doll",
+    characterTokenUuid: harness.characterToken.uuid,
+    sceneId: "scene",
+    x: 100,
+    y: 100,
+    quantity: 1,
+    mutationId: "drop-doll"
+  }, { sender: harness.player }), /scene create failed/u);
+  assert.deepEqual(calls, ["consume", "restore"]);
 });
 
 test("command claims a row from a nested container path and keeps the parent row", async () => {

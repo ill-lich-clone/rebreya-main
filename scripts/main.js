@@ -86,7 +86,7 @@ import {
   isStorageActor,
   readStorageState,
   readStorageStateAtPath
-} from "./data/storage-service.js?v=1.4.118-nested-storage-containers";
+} from "./data/storage-service.js?v=1.4.119-storage-canvas-drops";
 import { StorageOpenSoundService } from "./data/storage-open-sound-service.js";
 import {
   isStorageTokenVisible,
@@ -95,21 +95,22 @@ import {
 } from "./data/storage-access.js";
 import { BuiltinStorageActorService } from "./data/builtin-storage-actor-service.js";
 import { StorageGroundPileService } from "./data/storage-ground-pile-service.js";
-import { StorageContainerItemService } from "./data/storage-container-item-service.js?v=1.4.118-nested-storage-containers";
+import { StorageContainerItemService } from "./data/storage-container-item-service.js?v=1.4.119-storage-canvas-drops";
 import {
   parseStorageDepositDragData,
   resolveStorageDepositSource
-} from "./data/storage-deposit-source.js?v=1.4.118-nested-storage-containers";
+} from "./data/storage-deposit-source.js?v=1.4.119-storage-canvas-drops";
 import { NativeObjectDurabilityService } from "./data/native-object-durability-service.js";
 import {
   StorageCommandService,
   isValidStorageClaimCoinsPayload,
   isValidStorageClaimRowPayload,
   isValidStorageDepositPayload,
+  isValidStorageDropItemPayload,
   isValidStorageOpenPayload,
   isValidStorageRestorePortablePayload,
   storageCharacterTokenUuidForClaim
-} from "./data/storage-command-service.js?v=1.4.118-nested-storage-containers";
+} from "./data/storage-command-service.js?v=1.4.119-storage-canvas-drops";
 import { registerCombatHooks } from "./combat/hooks.js?v=1.4.111-paladin-dogmas";
 import { CombatAttackService } from "./combat/attack-service.js?v=1.4.111-native-ammo-selection-guard";
 import { ImplantAutomationService } from "./combat/implant-automation-service.js";
@@ -187,8 +188,8 @@ import { registerCraftsmanGadgetSocketCommand } from "./integrations/craftsman-g
 import { registerSpellInstanceSocketCommand } from "./integrations/spell-instance-socket.js";
 import { registerSummonLifecycleSocketCommand } from "./integrations/summon-lifecycle-socket.js";
 import { registerTransportGroupDropHooks } from "./integrations/transport-group-drop.js";
-import { registerStorageTransferDropHooks } from "./integrations/storage-transfer-drop.js?v=1.4.118-nested-storage-containers";
-import { registerStorageTokenDropHooks } from "./integrations/storage-token-drop.js?v=1.4.118-nested-storage-containers";
+import { registerStorageTransferDropHooks } from "./integrations/storage-transfer-drop.js?v=1.4.119-storage-canvas-drops";
+import { registerStorageTokenDropHooks } from "./integrations/storage-token-drop.js?v=1.4.119-storage-canvas-drops";
 import { registerTransportVehicleSheetHooks } from "./integrations/transport-vehicle-sheet.js";
 import {
   parseStorageDragData,
@@ -247,7 +248,7 @@ const LEGACY_WORLD_MUTATION_SOCKET_TYPES = new Set([
   SOCKET_EVENT_LOOTGEN_CLAIM_COINS
 ]);
 const MODULE_STYLE_PATH = `modules/${MODULE_ID}/styles/main.css`;
-const MODULE_STYLE_VERSION = "1.4.118-nested-storage-containers";
+const MODULE_STYLE_VERSION = "1.4.119-storage-canvas-drops";
 const SECONDS_PER_HOUR = 3600;
 const SECONDS_PER_DAY = 86400;
 const TRAVEL_DAY_HOURS = 8;
@@ -259,6 +260,7 @@ export const STORAGE_OPEN_COMMAND = "storage.open";
 export const STORAGE_CLAIM_ROW_COMMAND = "storage.claim-row";
 export const STORAGE_CLAIM_COINS_COMMAND = "storage.claim-coins";
 export const STORAGE_DEPOSIT_COMMAND = "storage.deposit";
+export const STORAGE_DROP_ITEM_COMMAND = "storage.drop-item-to-scene";
 export const STORAGE_RESTORE_PORTABLE_COMMAND = "storage.restore-portable";
 export const DURABILITY_TARGET_DAMAGE_COMMAND = "durability.target.damage";
 const ENVIRONMENT_COMBAT_STATUS_IDS = new Set(["rebreya-surrounded", "rebreya-open-position"]);
@@ -1376,6 +1378,11 @@ export class RebreyaMainModule {
       validate: isValidStorageDepositPayload,
       authorize: (_payload, { sender }) => Boolean(sender),
       execute: (payload, { sender }) => this.storageCommandService.deposit(payload, { sender })
+    });
+    this.socketCommandBus.register(STORAGE_DROP_ITEM_COMMAND, {
+      validate: isValidStorageDropItemPayload,
+      authorize: (_payload, { sender }) => Boolean(sender),
+      execute: (payload, { sender }) => this.storageCommandService.dropItemToScene(payload, { sender })
     });
     this.socketCommandBus.register(STORAGE_RESTORE_PORTABLE_COMMAND, {
       validate: isValidStorageRestorePortablePayload,
@@ -3191,6 +3198,21 @@ export class RebreyaMainModule {
       : this.socketCommandBus.request(STORAGE_RESTORE_PORTABLE_COMMAND, payload);
   }
 
+  async dropStorageItemToScene(itemUuid, request = {}) {
+    const payload = {
+      itemUuid: cleanSocketId(itemUuid),
+      characterTokenUuid: this.#controlledCharacterTokenUuid(request.characterTokenUuid),
+      sceneId: cleanSocketId(request.sceneId),
+      x: Number(request.x),
+      y: Number(request.y),
+      quantity: Number(request.quantity),
+      mutationId: cleanSocketId(request.mutationId) || createSocketRequestId("storage-item-scene")
+    };
+    return isActiveGmClient(globalThis.game)
+      ? this.storageCommandService.dropItemToScene(payload, { sender: globalThis.game?.user })
+      : this.socketCommandBus.request(STORAGE_DROP_ITEM_COMMAND, payload);
+  }
+
   async #resolveStorageToken(tokenUuid, { requireMarked = true } = {}) {
     const document = await globalThis.fromUuid?.(cleanSocketId(tokenUuid));
     const token = document?.document ?? document;
@@ -3384,7 +3406,7 @@ export class RebreyaMainModule {
     }
     const moduleVersion = game.modules.get(MODULE_ID)?.version ?? "1.4.96";
     const { StorageApp } = await import(
-      `./ui/storage-app.js?v=${encodeURIComponent(`${moduleVersion}-nested-storage-containers`)}`
+      `./ui/storage-app.js?v=${encodeURIComponent(`${moduleVersion}-storage-canvas-drops`)}`
     );
     const key = `${safeTokenUuid}:${configure ? "configure" : "open"}`;
     let app = this.storageApps.get(key);

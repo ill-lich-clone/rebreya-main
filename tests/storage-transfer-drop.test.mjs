@@ -5,6 +5,7 @@ import {
   handleStorageActorSheetDrop,
   handleStorageCanvasDrop,
   registerStorageTransferDropHooks,
+  transferFoundryItemDropToCanvas,
   transferPortableStorageItemDropToCanvas,
   transferStorageDropToCanvas,
   transferStorageDropToCharacter
@@ -84,18 +85,65 @@ test("portable dnd5e container Item drops restore a storage token on the scene",
   assert.deepEqual(calls[0][1], { sceneId: "scene", x: 120, y: 180 });
 });
 
-test("drop hooks consume only Rebreya storage payloads", () => {
+test("ordinary inventory and compendium Items drop onto the exact scene point", async () => {
+  const calls = [];
+  const api = {
+    async inspectStorageDepositSource(source) {
+      assert.deepEqual(source, { kind: "item", itemUuid: "Actor.hero.Item.arrow" });
+      return { available: 5 };
+    },
+    async dropStorageItemToScene(...args) {
+      calls.push(args);
+      return { changed: true };
+    }
+  };
+
+  const result = await transferFoundryItemDropToCanvas(
+    { scene: { id: "scene" } },
+    { type: "Item", uuid: "Actor.hero.Item.arrow", x: 240, y: 360 },
+    api,
+    { prompt: async ({ max }) => max - 2 }
+  );
+
+  assert.equal(result.handled, true);
+  assert.equal(result.quantity, 3);
+  assert.deepEqual(calls[0][0], "Actor.hero.Item.arrow");
+  assert.deepEqual(calls[0][1], { sceneId: "scene", x: 240, y: 360, quantity: 3 });
+});
+
+test("ordinary native dnd5e containers are accepted as whole scene drops", async () => {
+  const calls = [];
+  const result = await transferFoundryItemDropToCanvas(
+    { scene: { id: "scene" } },
+    { type: "Item", uuid: "Actor.hero.Item.backpack", x: 120, y: 180 },
+    {
+      async inspectStorageDepositSource() { return { available: 1 }; },
+      async dropStorageItemToScene(...args) { calls.push(args); return { changed: true }; }
+    },
+    { prompt: async ({ max }) => max }
+  );
+
+  assert.equal(result.handled, true);
+  assert.equal(result.quantity, 1);
+  assert.deepEqual(calls[0][1], { sceneId: "scene", x: 120, y: 180, quantity: 1 });
+});
+
+test("drop hooks consume Rebreya storage payloads and every Foundry Item on canvas", () => {
   const registrations = new Map();
   const Hooks = { on(name, handler) { registrations.set(name, handler); } };
-  assert.equal(registerStorageTransferDropHooks({}, { Hooks }), true);
-  assert.equal(registerStorageTransferDropHooks({}, { Hooks }), false);
+  const moduleApi = {
+    async inspectStorageDepositSource() { return { available: 1 }; },
+    async dropStorageItemToScene() { return { changed: true }; }
+  };
+  assert.equal(registerStorageTransferDropHooks(moduleApi, { Hooks }), true);
+  assert.equal(registerStorageTransferDropHooks(moduleApi, { Hooks }), false);
 
   assert.equal(registrations.get("dropActorSheetData")(
     { type: "character", uuid: "Actor.hero" }, {}, { type: "Item", uuid: "Item.sword" }
   ), true);
   assert.equal(registrations.get("dropCanvasData")(
     { scene: { id: "scene" } }, { type: "Item", uuid: "Item.sword", x: 1, y: 2 }
-  ), true);
+  ), false);
 
   assert.equal(handleStorageActorSheetDrop(
     { type: "character", uuid: "Actor.hero" }, { ...storageDrop, quantity: 1 },

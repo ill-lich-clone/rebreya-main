@@ -153,6 +153,38 @@ test("removing and restoring a portable container moves its entire item tree", a
   assert.equal(actor.items.contents.length, 4);
 });
 
+test("an ordinary native dnd5e container is captured with all of its live contents", async () => {
+  const actor = createActor();
+  const [bag] = await actor.createEmbeddedDocuments("Item", [{
+    name: "Походный рюкзак",
+    type: "container",
+    img: "icons/backpack.webp",
+    system: {
+      quantity: 1,
+      container: null,
+      type: { value: "backpack" },
+      currency: { gp: 3 }
+    },
+    flags: {}
+  }]);
+  await actor.createEmbeddedDocuments("Item", [{
+    name: "Факел",
+    type: "consumable",
+    img: "icons/torch.webp",
+    system: { quantity: 4, container: bag.id },
+    flags: {}
+  }]);
+
+  const snapshot = await new StorageContainerItemService().captureFromItem(bag);
+
+  assert.equal(snapshot.storageKind, "bag");
+  assert.equal(snapshot.name, "Походный рюкзак");
+  assert.equal(snapshot.state.manualRows.length, 1);
+  assert.equal(snapshot.state.manualRows[0].name, "Факел");
+  assert.equal(snapshot.state.manualRows[0].quantity, 4);
+  assert.equal(snapshot.state.manualCoins.gp, 3);
+});
+
 test("scene storage snapshots preserve actor and token presentation", () => {
   const token = {
     id: "chest",
@@ -234,4 +266,40 @@ test("portable container restores to a scene token once with the same storage st
   assert.equal(created[0].documents[0].y, 200);
   assert.equal(created[0].documents[0].flags[MODULE_ID].storage.containerId, "bag-1");
   assert.equal(created[0].documents[0].flags[MODULE_ID].storageContainerMutation.id, "scene-restore");
+});
+
+test("a native container without a stored actor uses the Rebreya fallback storage actor on scene restore", async () => {
+  const created = [];
+  const scene = {
+    id: "scene",
+    tokens: { contents: [] },
+    async createEmbeddedDocuments(_type, documents) {
+      created.push(clone(documents[0]));
+      return [{ ...clone(documents[0]), id: "bag-token" }];
+    }
+  };
+  const fallbackActor = {
+    id: "ground-storage",
+    async getTokenDocument() {
+      return { toObject: () => ({ actorId: this.id, width: 1, height: 1, texture: { src: "fallback.webp" } }) };
+    }
+  };
+  const service = new StorageContainerItemService({
+    resolveScene: () => scene,
+    resolveActor: () => null,
+    resolveFallbackActor: () => fallbackActor
+  });
+  const snapshot = bagSnapshot();
+  snapshot.presentation = { itemSystem: { type: { value: "backpack" } } };
+
+  await service.restoreSnapshotToScene(snapshot, {
+    sceneId: "scene",
+    x: 100,
+    y: 200,
+    mutationId: "native-bag-scene"
+  });
+
+  assert.equal(created[0].actorId, fallbackActor.id);
+  assert.equal(created[0].name, snapshot.name);
+  assert.equal(created[0].texture.src, snapshot.img);
 });

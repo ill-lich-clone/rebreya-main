@@ -139,6 +139,20 @@ export function isValidStorageRestorePortablePayload(payload) {
     && isTrimmedString(payload.mutationId, { required: true, max: 160 });
 }
 
+export function isValidStorageDropItemPayload(payload) {
+  return hasExactKeys(payload, [
+    "characterTokenUuid", "itemUuid", "mutationId", "quantity", "sceneId", "x", "y"
+  ])
+    && isTrimmedString(payload.characterTokenUuid)
+    && isTrimmedString(payload.itemUuid, { required: true })
+    && isTrimmedString(payload.sceneId, { required: true, max: 160 })
+    && Number.isFinite(payload.x)
+    && Number.isFinite(payload.y)
+    && Number.isSafeInteger(payload.quantity)
+    && payload.quantity >= 1
+    && isTrimmedString(payload.mutationId, { required: true, max: 160 });
+}
+
 export function storageCharacterTokenUuidForClaim({
   controlledCharacterTokenUuid = "",
   storageTokenUuid = "",
@@ -576,31 +590,40 @@ export class StorageCommandService {
   }
 
   async restorePortableItem(payload = {}, { sender } = {}) {
-    if (!this.containerItemService) {
-      throw new Error("Сервис переносимых контейнеров Rebreya недоступен.");
-    }
+    return this.dropItemToScene({ ...payload, quantity: 1 }, { sender });
+  }
+
+  async dropItemToScene(payload = {}, { sender } = {}) {
     const itemUuid = clean(payload.itemUuid);
     const mutationId = requireMutationId(payload.mutationId);
     const sceneIdValue = clean(payload.sceneId);
     const mutationKey = storageMutationId({
       tokenUuid: itemUuid,
-      kind: "portable-scene",
+      kind: "item-scene",
       destination: sceneIdValue,
       mutationId
     });
     return this.#runMutation([`${itemUuid}:item`, `${sceneIdValue}:scene`], mutationKey, async () => {
-      const item = await this.resolveDocument(itemUuid);
-      const actor = item?.parent?.documentName === "Actor" || item?.parent?.items
-        ? item.parent
-        : item?.actor ?? null;
-      if (!item || !actor) throw new Error("Переносимый контейнер в инвентаре не найден.");
+      const source = await this.resolveDepositSource({ kind: "item", itemUuid }, {
+        fromUuid: this.resolveDocument,
+        resolveToken: this.resolveToken,
+        storageService: this.storageService,
+        containerItemService: this.containerItemService
+      });
+      if (!source || typeof source.consume !== "function" || typeof source.restore !== "function") {
+        throw new Error("Источник предмета для сцены недоступен.");
+      }
+      const quantity = Number(payload.quantity);
+      if (!Number.isSafeInteger(quantity) || quantity < 1 || quantity > Number(source.available)) {
+        throw new Error(`Количество должно быть целым числом от 1 до ${source.available}.`);
+      }
+      if (source.mode === "move" && source.canUserMove?.(sender) !== true) {
+        throw new Error("У вас нет прав владельца на перемещение этого предмета.");
+      }
       if (sender?.isGM !== true) {
-        if (actor.testUserPermission?.(sender, "OWNER") !== true && item.isOwner !== true && actor.isOwner !== true) {
-          throw new Error("У вас нет прав владельца на этот контейнер.");
-        }
         const characterToken = tokenDocument(await this.resolveToken(clean(payload.characterTokenUuid)));
         if (!characterToken || sceneId(characterToken) !== sceneIdValue) {
-          throw new Error("Персонаж и место выгрузки контейнера должны находиться на одной сцене.");
+          throw new Error("Персонаж и место выгрузки предмета должны находиться на одной сцене.");
         }
         const distance = Number(await this.measurePointDistance(characterToken, {
           sceneId: sceneIdValue,
@@ -608,34 +631,59 @@ export class StorageCommandService {
           y: Number(payload.y)
         }));
         if (!Number.isFinite(distance) || distance > MAX_STORAGE_DISTANCE_FEET) {
-          throw new Error("Контейнер можно положить на землю только в пределах 5 футов от персонажа.");
+          throw new Error("Предмет можно положить на землю только в пределах 5 футов от персонажа.");
         }
       }
 
-      const snapshot = await this.containerItemService.captureFromItem(item);
-      const created = await this.containerItemService.restoreSnapshotToScene(snapshot, {
-        sceneId: sceneIdValue,
-        x: Number(payload.x),
-        y: Number(payload.y),
-        mutationId: mutationKey
-      });
+      let receipt = null;
       try {
-        await this.containerItemService.removeItemTree(item);
+        receipt = await source.consume(quantity);
+        if (source.kind === "storage-item") {
+          if (!this.containerItemService?.restoreSnapshotToScene) {
+            throw new Error("Сервис контейнеров Rebreya недоступен.");
+          }
+          const snapshot = source.row?.container;
+          const created = await this.containerItemService.restoreSnapshotToScene(snapshot, {
+            sceneId: sceneIdValue,
+            x: Number(payload.x),
+            y: Number(payload.y),
+            mutationId: mutationKey
+          });
+          return {
+            changed: true,
+            tokenUuid: clean(created?.uuid ?? created?.id),
+            containerId: clean(snapshot?.containerId)
+          };
+        }
+        if (!this.groundPileService?.transferToScene) {
+          throw new Error("Сервис наземных куч Rebreya недоступен.");
+        }
+        const row = clone(source.row);
+        row.quantity = quantity;
+        row.itemData ??= {};
+        row.itemData.system ??= {};
+        row.itemData.system.quantity = quantity;
+        const created = await this.groundPileService.transferToScene({
+          row,
+          quantity,
+          sceneId: sceneIdValue,
+          x: Number(payload.x),
+          y: Number(payload.y),
+          mutationId: mutationKey
+        });
+        return { changed: true, ...created };
       }
       catch (error) {
-        try {
-          await created?.delete?.();
-        }
-        catch (rollbackError) {
-          throw new AggregateError([error, rollbackError], "Не удалось откатить выгрузку контейнера на сцену.");
+        if (receipt) {
+          try {
+            await source.restore(receipt);
+          }
+          catch (rollbackError) {
+            throw new AggregateError([error, rollbackError], "Не удалось откатить выгрузку предмета на сцену.");
+          }
         }
         throw error;
       }
-      return {
-        changed: true,
-        tokenUuid: clean(created?.uuid ?? created?.id),
-        containerId: snapshot.containerId
-      };
     });
   }
 }

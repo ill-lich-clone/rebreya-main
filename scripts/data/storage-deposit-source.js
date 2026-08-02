@@ -1,8 +1,5 @@
 import { isStorageActor, readStorageState, readStorageStateAtPath } from "./storage-service.js";
-import {
-  buildStorageContainerRow,
-  isPortableStorageContainerItem
-} from "./storage-container-snapshot.js";
+import { buildStorageContainerRow } from "./storage-container-snapshot.js";
 import { buildStorageContainerSnapshotFromToken } from "./storage-container-item-service.js";
 import { parseStorageDragData } from "../ui/storage-transfer-ui.js";
 
@@ -169,7 +166,7 @@ async function resolveItemSource(sourceRef, { fromUuid, createRowId, containerIt
   const available = itemQuantity(item);
   const embedded = isEmbeddedActorItem(item);
   const parent = embedded ? item.parent : null;
-  if (isPortableStorageContainerItem(item)) {
+  if (clean(item?.type) === "container") {
     if (!containerItemService || typeof containerItemService.captureFromItem !== "function") {
       throw new Error("Сервис переносимых контейнеров Rebreya недоступен.");
     }

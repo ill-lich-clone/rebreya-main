@@ -1,10 +1,10 @@
 import { MODULE_ID } from "../constants.js";
+import { GROUND_PILE_PRESET_ID } from "./builtin-storage-presets.js";
 import { readStorageState } from "./storage-service.js";
 import {
   buildStorageContainerRow,
   buildStorageContainerSnapshot,
   createPortableStorageContainerItemData,
-  isPortableStorageContainerItem,
   readPortableStorageContainerSnapshot
 } from "./storage-container-snapshot.js";
 
@@ -36,6 +36,43 @@ function itemCollection(actor) {
   if (Array.isArray(contents)) return contents;
   if (actor?.items && typeof actor.items[Symbol.iterator] === "function") return Array.from(actor.items);
   return [];
+}
+
+function collectionValues(collection) {
+  if (Array.isArray(collection?.contents)) return collection.contents;
+  if (Array.isArray(collection)) return collection;
+  if (typeof collection?.values === "function") return Array.from(collection.values());
+  return [];
+}
+
+function nativeStorageKind(item) {
+  const value = clean(item?.system?.type?.value).toLowerCase();
+  if (value === "chest") return "chest";
+  if (value === "pile") return "pile";
+  return "bag";
+}
+
+function nativeContainerSnapshot(item) {
+  const name = clean(item?.name) || "Хранилище";
+  const currency = clone(item?.system?.currency) ?? {};
+  return buildStorageContainerSnapshot({
+    containerId: `native-${clean(item?.uuid ?? item?.id) || randomId("container")}`,
+    storageKind: nativeStorageKind(item),
+    name,
+    img: clean(item?.img),
+    state: {
+      baseName: name,
+      state: "opened",
+      displayMode: "opened",
+      manualRows: [],
+      generatedRows: [],
+      claimedRowIds: [],
+      manualCoins: currency,
+      generatedCoins: {},
+      coinsClaimed: false
+    },
+    presentation: { itemSystem: clone(item?.system) ?? {} }
+  });
 }
 
 function plainItemData(item) {
@@ -118,10 +155,14 @@ export class StorageContainerItemService {
   constructor({
     resolveScene = (id) => globalThis.game?.scenes?.get?.(id) ?? null,
     resolveActor = (id) => globalThis.game?.actors?.get?.(id) ?? null,
+    resolveFallbackActor = () => collectionValues(globalThis.game?.actors).find((actor) => (
+      clean(readFlag(actor, "builtinStoragePreset")?.id) === GROUND_PILE_PRESET_ID
+    )) ?? null,
     logger = console
   } = {}) {
     this.resolveScene = resolveScene;
     this.resolveActor = resolveActor;
+    this.resolveFallbackActor = resolveFallbackActor;
     this.logger = logger;
   }
 
@@ -214,7 +255,7 @@ export class StorageContainerItemService {
   }
 
   async captureFromItem(item) {
-    if (!isPortableStorageContainerItem(item)) {
+    if (clean(item?.type) !== "container") {
       throw new Error("Предмет не является переносимым контейнером Rebreya.");
     }
     const actor = item?.parent?.documentName === "Actor" || item?.parent?.type
@@ -222,15 +263,14 @@ export class StorageContainerItemService {
       : item?.actor ?? null;
     const allItems = itemCollection(actor);
     const visit = async (current, ancestors = new Set()) => {
-      const base = readPortableStorageContainerSnapshot(current);
-      if (!base) throw new Error("У вложенного контейнера отсутствует снимок Rebreya.");
+      const base = readPortableStorageContainerSnapshot(current) ?? nativeContainerSnapshot(current);
       const itemId = clean(current.id);
       if (ancestors.has(itemId)) throw new Error("Обнаружен цикл нативных dnd5e-контейнеров.");
       const nextAncestors = new Set(ancestors).add(itemId);
       const children = allItems.filter((candidate) => clean(candidate?.system?.container) === itemId);
       const rows = [];
       for (const child of children) {
-        if (isPortableStorageContainerItem(child)) {
+        if (clean(child?.type) === "container") {
           rows.push(buildStorageContainerRow(await visit(child, nextAncestors), {
             rowId: memberRowId(child)
           }));
@@ -345,8 +385,12 @@ export class StorageContainerItemService {
     )) ?? null;
     if (existing) return existing;
 
-    const actorId = clean(normalized.presentation?.actorId);
-    const actor = await this.resolveActor(actorId);
+    let actorId = clean(normalized.presentation?.actorId);
+    let actor = actorId ? await this.resolveActor(actorId) : null;
+    if (!actor) {
+      actor = await this.resolveFallbackActor?.();
+      actorId = clean(actor?.id);
+    }
     if (!actor) throw new Error("Актёр-прототип контейнера не найден.");
     let prototypeData = {};
     if (typeof actor.getTokenDocument === "function") {

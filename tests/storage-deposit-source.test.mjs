@@ -293,6 +293,52 @@ test("portable dnd5e container Items move with their complete recursive snapshot
   assert.deepEqual(calls.map(([kind]) => kind), ["capture", "remove", "restore"]);
 });
 
+test("ordinary native dnd5e containers use the recursive container transfer path", async () => {
+  const item = {
+    id: "native-bag",
+    uuid: "Actor.9R0Mkbw9h40prpZL.Item.native-bag",
+    documentName: "Item",
+    parent: { documentName: "Actor", testUserPermission: () => true },
+    type: "container",
+    name: "Рюкзак",
+    img: "backpack.webp",
+    system: { quantity: 1, type: { value: "backpack" } },
+    flags: {}
+  };
+  const calls = [];
+  const containerItemService = {
+    async captureFromItem(actual) {
+      calls.push(["capture", actual]);
+      return {
+        containerId: "native-bag",
+        storageKind: "bag",
+        name: "Рюкзак",
+        state: { baseName: "Рюкзак", state: "opened", manualRows: [], generatedRows: [] }
+      };
+    },
+    async removeItemTree(actual) {
+      calls.push(["remove", actual]);
+      return { actor: actual.parent };
+    },
+    async restoreItemTree(receipt) {
+      calls.push(["restore", receipt]);
+    }
+  };
+
+  const source = await resolveStorageDepositSource({ kind: "item", itemUuid: item.uuid }, {
+    fromUuid: async () => item,
+    containerItemService,
+    createRowId: () => "native-bag-row"
+  });
+
+  assert.equal(source.kind, "storage-item");
+  assert.equal(source.row.rowKind, "container");
+  assert.equal(source.row.container.containerId, "native-bag");
+  const receipt = await source.consume(1);
+  await source.restore(receipt);
+  assert.deepEqual(calls.map(([kind]) => kind), ["capture", "remove", "restore"]);
+});
+
 test("whole storage token sources delete after deposit and can restore the original token", async () => {
   const token = createStorageToken();
   token.actor.id = "storage-actor";

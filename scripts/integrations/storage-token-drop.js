@@ -8,6 +8,7 @@ import {
 } from "../ui/storage-token-overlay.js";
 
 const registeredHookObjects = new WeakSet();
+const patchedTokenPrototypes = new WeakSet();
 const DRAG_MIME_TYPES = ["text/plain", "text", "application/json", "text/uri-list"];
 
 function clean(value) {
@@ -141,6 +142,52 @@ export class StorageTokenDropController {
     return true;
   }
 
+  handleCanvasTokenDragMove(sourceToken, event) {
+    if (!isStorageActor(sourceToken?.actor)) {
+      this.clear();
+      return false;
+    }
+    const destination = event?.interactionData?.destination;
+    const target = this.#tokenAtCanvasPoint(
+      Number(destination?.x),
+      Number(destination?.y),
+      sourceToken
+    );
+    if (!target) {
+      this.#clearTarget();
+      this.dragSource = null;
+      return false;
+    }
+    this.dragSource = { kind: "storage-token", tokenUuid: tokenUuid(sourceToken) };
+    if (this.activeToken === target) return true;
+    this.#activateTarget(target);
+    return true;
+  }
+
+  handleCanvasTokenDragDrop(sourceToken, event) {
+    const destination = event?.interactionData?.destination;
+    const target = this.activeToken ?? this.#tokenAtCanvasPoint(
+      Number(destination?.x),
+      Number(destination?.y),
+      sourceToken
+    );
+    const source = this.dragSource ?? {
+      kind: "storage-token",
+      tokenUuid: tokenUuid(sourceToken)
+    };
+    const ready = this.ready && target === this.activeToken && clean(source.tokenUuid);
+    this.clear();
+    if (!ready || !target) return false;
+    void this.#depositSource(target, source);
+    return true;
+  }
+
+  handleCanvasTokenDragCancel() {
+    if (this.dragSource?.kind !== "storage-token") return false;
+    this.clear();
+    return true;
+  }
+
   handleDragLeave(event) {
     if (!this.activeToken) return false;
     const bounds = this.boundsProvider(this.activeToken);
@@ -161,23 +208,8 @@ export class StorageTokenDropController {
     this.clear();
     if (!ready) return true;
 
-    try {
-      const inspected = await this.moduleApi.inspectStorageDepositSource(source);
-      const quantity = await this.promptQuantity(inspected.available);
-      if (quantity === null) return true;
-      await this.moduleApi.depositStorageItem(
-        tokenUuid(token),
-        inspected.source,
-        quantity,
-        this.createMutationId()
-      );
-      return true;
-    }
-    catch (error) {
-      this.logger?.error?.(`${MODULE_ID} | Storage token deposit failed.`, error);
-      globalThis.ui?.notifications?.error?.(error?.message ?? "Не удалось добавить предмет в хранилище.");
-      return true;
-    }
+    await this.#depositSource(token, source);
+    return true;
   }
 
   handleDragEnd() {
@@ -202,6 +234,61 @@ export class StorageTokenDropController {
       && isStorageActor(token?.actor)
       && pointInside(this.boundsProvider(token), Number(x), Number(y))
     )) ?? null;
+  }
+
+  #tokenAtCanvasPoint(x, y, excludedToken = null) {
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    const tokens = [...(this.canvasProvider?.()?.tokens?.placeables ?? [])].reverse();
+    return tokens.find((token) => {
+      if (token === excludedToken || token?.document === excludedToken?.document) return false;
+      if (token?.visible === false || !isStorageActor(token?.actor)) return false;
+      if (typeof token?.bounds?.contains === "function") return token.bounds.contains(x, y);
+      const canvas = this.canvasProvider?.();
+      const gridSize = Math.max(1, Number(canvas?.scene?.grid?.size ?? canvas?.grid?.size ?? 100) || 100);
+      const document = token?.document ?? token;
+      const left = Number(document?.x);
+      const top = Number(document?.y);
+      const width = Math.max(1, Number(document?.width ?? 1)) * gridSize;
+      const height = Math.max(1, Number(document?.height ?? 1)) * gridSize;
+      return Number.isFinite(left) && Number.isFinite(top)
+        && x >= left && x <= left + width && y >= top && y <= top + height;
+    }) ?? null;
+  }
+
+  #activateTarget(token) {
+    this.#clearTarget();
+    this.activeToken = token;
+    this.#highlight(token);
+    if (typeof this.setTimeout !== "function") return;
+    this.readyTimer = this.setTimeout(() => {
+      if (this.activeToken !== token || !this.dragSource) return;
+      this.readyTimer = null;
+      this.ready = true;
+      this.overlayController.showFeedback(token, "Отпустите, чтобы добавить", {
+        durationMs: 0,
+        className: "rm-storage-token-feedback--drop-ready"
+      });
+    }, 1000);
+  }
+
+  async #depositSource(token, source) {
+    try {
+      const inspected = await this.moduleApi.inspectStorageDepositSource(source);
+      const quantity = await this.promptQuantity(inspected.available);
+      if (quantity === null) return true;
+      await this.moduleApi.depositStorageItem(
+        tokenUuid(token),
+        inspected.source,
+        quantity,
+        this.createMutationId()
+      );
+      return true;
+    }
+    catch (error) {
+      this.logger?.error?.(`${MODULE_ID} | Storage token deposit failed.`, error);
+      globalThis.ui?.notifications?.error?.(error?.message ?? "Не удалось добавить предмет в хранилище.");
+      return true;
+    }
   }
 
   #highlight(token) {
@@ -233,6 +320,33 @@ export class StorageTokenDropController {
   }
 }
 
+export function patchStorageTokenCanvasDrag(controller, { TokenClass = globalThis.Token } = {}) {
+  const prototype = TokenClass?.prototype;
+  if (!prototype || patchedTokenPrototypes.has(prototype)) return false;
+  const originalMove = prototype._onDragLeftMove;
+  const originalDrop = prototype._onDragLeftDrop;
+  const originalCancel = prototype._onDragLeftCancel;
+  if (typeof originalMove !== "function" || typeof originalDrop !== "function") return false;
+
+  prototype._onDragLeftMove = function rebreyaStorageDragMove(event) {
+    const result = originalMove.call(this, event);
+    controller.handleCanvasTokenDragMove(this, event);
+    return result;
+  };
+  prototype._onDragLeftDrop = function rebreyaStorageDragDrop(event) {
+    if (controller.handleCanvasTokenDragDrop(this, event)) return undefined;
+    return originalDrop.call(this, event);
+  };
+  if (typeof originalCancel === "function") {
+    prototype._onDragLeftCancel = function rebreyaStorageDragCancel(event) {
+      controller.handleCanvasTokenDragCancel(this, event);
+      return originalCancel.call(this, event);
+    };
+  }
+  patchedTokenPrototypes.add(prototype);
+  return true;
+}
+
 export function registerStorageTokenDropHooks(moduleApi, {
   hooks = globalThis.Hooks,
   controller = new StorageTokenDropController(moduleApi)
@@ -240,7 +354,11 @@ export function registerStorageTokenDropHooks(moduleApi, {
   if (typeof hooks?.on !== "function" || registeredHookObjects.has(hooks)) return false;
   registeredHookObjects.add(hooks);
   controller.bind();
-  hooks.on("canvasReady", () => controller.bind());
+  patchStorageTokenCanvasDrag(controller);
+  hooks.on("canvasReady", () => {
+    controller.bind();
+    patchStorageTokenCanvasDrag(controller);
+  });
   hooks.on("canvasTearDown", () => controller.clear());
   hooks.on("deleteToken", (token) => {
     if (controller.activeToken === (token?.object ?? token)) controller.clear();

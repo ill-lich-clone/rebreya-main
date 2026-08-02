@@ -2,7 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { MODULE_ID } from "../scripts/constants.js";
-import { StorageTokenDropController } from "../scripts/integrations/storage-token-drop.js";
+import {
+  patchStorageTokenCanvasDrag,
+  StorageTokenDropController
+} from "../scripts/integrations/storage-token-drop.js";
 
 function createClock() {
   let now = 0;
@@ -53,7 +56,12 @@ function createHarness() {
   const moduleApi = {
     async inspectStorageDepositSource(source) {
       inspections.push(source);
-      return { source, available: 3, mode: "move", name: "Стрела" };
+      return {
+        source,
+        available: source?.kind === "storage-token" ? 1 : 3,
+        mode: "move",
+        name: "Стрела"
+      };
     },
     async depositStorageItem(...args) {
       deposits.push(args);
@@ -64,7 +72,7 @@ function createHarness() {
     canvasProvider: () => ({ tokens: { placeables: [token] } }),
     boundsProvider: () => ({ left: 100, top: 100, right: 200, bottom: 200 }),
     overlayController: overlay,
-    promptQuantity: async () => 2,
+    promptQuantity: async (maximum) => Math.min(maximum, 2),
     setTimeout: clock.setTimeout,
     clearTimeout: clock.clearTimeout,
     createMutationId: () => "deposit-test"
@@ -86,6 +94,37 @@ function createHarness() {
     stopImmediatePropagation() { this.immediateStops += 1; }
   };
   return { controller, clock, token, overlay, overlayCalls, moduleApi, deposits, inspections, event };
+}
+
+function createCanvasDragHarness() {
+  const harness = createHarness();
+  harness.token.bounds = { contains: (x, y) => x >= 100 && x <= 200 && y >= 100 && y <= 200 };
+  class FakeToken {
+    constructor(document) {
+      this.document = document;
+      this.actor = document.actor;
+      this.visible = true;
+      this.bounds = { contains: () => false };
+      this.originalMoves = 0;
+      this.originalDrops = 0;
+      this.originalCancels = 0;
+    }
+    _onDragLeftMove() { this.originalMoves += 1; return "move"; }
+    _onDragLeftDrop() { this.originalDrops += 1; return "drop"; }
+    _onDragLeftCancel() { this.originalCancels += 1; return "cancel"; }
+  }
+  const sourceDocument = {
+    uuid: "Scene.scene.Token.pile",
+    actor: {
+      flags: { [MODULE_ID]: { storage: { enabled: true } } },
+      getFlag(scope, key) { return this.flags?.[scope]?.[key]; }
+    }
+  };
+  const source = new FakeToken(sourceDocument);
+  harness.controller.canvasProvider = () => ({ tokens: { placeables: [source, harness.token] } });
+  patchStorageTokenCanvasDrag(harness.controller, { TokenClass: FakeToken });
+  const event = { interactionData: { destination: { x: 150, y: 150 } } };
+  return { ...harness, source, event };
 }
 
 test("holding an item over storage for one second shows drop feedback and dropping deposits quantity", async () => {
@@ -155,4 +194,35 @@ test("drop before the one-second ready state is consumed without creating a depo
   assert.equal(harness.deposits.length, 0);
   assert.equal(harness.event.immediateStops, 1);
   assert.equal(harness.controller.activeToken, null);
+});
+
+test("holding a whole storage token over another storage intercepts PIXI movement and deposits it", async () => {
+  const harness = createCanvasDragHarness();
+
+  harness.source._onDragLeftMove(harness.event);
+  harness.clock.advance(1000);
+  harness.source._onDragLeftDrop(harness.event);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.equal(harness.source.originalMoves, 1);
+  assert.equal(harness.source.originalDrops, 0);
+  assert.equal(harness.deposits.length, 1);
+  assert.equal(harness.deposits[0][0], harness.token.document.uuid);
+  assert.deepEqual(harness.deposits[0][1], {
+    kind: "storage-token",
+    tokenUuid: harness.source.document.uuid
+  });
+  assert.equal(harness.deposits[0][2], 1);
+});
+
+test("dropping a storage token before the one-second hold keeps normal Foundry movement", async () => {
+  const harness = createCanvasDragHarness();
+
+  harness.source._onDragLeftMove(harness.event);
+  const result = harness.source._onDragLeftDrop(harness.event);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.equal(result, "drop");
+  assert.equal(harness.source.originalDrops, 1);
+  assert.equal(harness.deposits.length, 0);
 });
