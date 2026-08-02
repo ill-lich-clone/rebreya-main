@@ -174,6 +174,7 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
     if (windowTitleElement) windowTitleElement.textContent = windowTitle;
     const listenerOptions = { signal: this.renderListenersAbortController.signal };
     root.addEventListener("click", (event) => this.#onClick(event), listenerOptions);
+    root.addEventListener("contextmenu", (event) => this.#onContextMenu(event), listenerOptions);
     root.addEventListener("drop", (event) => this.#onDrop(event), listenerOptions);
     root.addEventListener("dragstart", (event) => this.#onDragStart(event), listenerOptions);
     root.addEventListener("dragover", (event) => {
@@ -330,6 +331,7 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
     if (!control) return;
     const action = clean(control.dataset.action);
     const rowId = clean(control.dataset.rowId);
+    event.preventDefault?.();
     try {
       if (action === "storage-toggle-row") {
         this.activeRowId = this.activeRowId === rowId ? "" : rowId;
@@ -391,6 +393,16 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
       console.error(`${MODULE_ID} | Storage action failed.`, error);
       globalThis.ui?.notifications?.error(error?.message ?? "Не удалось выполнить действие хранилища.");
     }
+  }
+
+  async #onContextMenu(event) {
+    const control = event.target?.closest?.(
+      "[data-action='storage-toggle-row'], [data-action='storage-toggle-coins']"
+    );
+    if (!control) return;
+    event.preventDefault?.();
+    event.stopPropagation?.();
+    await this.#onClick({ target: control });
   }
 
   #onDragStart(event) {

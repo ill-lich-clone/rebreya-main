@@ -12716,6 +12716,7 @@ summary:focus-visible {
   top: calc(100% + 9px);
   left: 50%;
   z-index: 100;
+  pointer-events: auto;
   display: grid;
   width: 224px;
   gap: 8px;
@@ -12726,6 +12727,10 @@ summary:focus-visible {
   background: linear-gradient(180deg, rgb(28 30 37 / 0.99), rgb(12 14 18 / 0.99));
   box-shadow: 0 12px 30px rgb(0 0 0 / 0.58), inset 0 0 0 1px rgb(255 255 255 / 0.04);
   transform: translateX(-50%);
+}
+
+.rebreya-storage-app .window-content {
+  overflow: visible;
 }
 
 .rm-storage-item__popover::before {

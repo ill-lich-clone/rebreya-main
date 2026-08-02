@@ -304,3 +304,40 @@ test("LKM opens an item popover and its self action claims the row", async () =>
   assert.equal(claimCalls[0][2], "self");
   assert.deepEqual(claimCalls[0][4], { quantity: 1 });
 });
+
+test("PKM opens the same item popover and suppresses the native menu", async () => {
+  const { app } = createApp();
+  const listeners = new Map();
+  const renders = [];
+  app.render = async (options) => renders.push(options);
+  app.element = new class extends FakeElement {
+    addEventListener(name, callback) { listeners.set(name, callback); }
+  }();
+  await app._prepareContext();
+  app._onRender({}, {});
+
+  let prevented = 0;
+  let stopped = 0;
+  const icon = {
+    dataset: { action: "storage-toggle-row", rowId: "row-1" },
+    closest(selector) {
+      return selector.includes("storage-toggle-row") || selector === "[data-action]" ? this : null;
+    }
+  };
+  await listeners.get("contextmenu")({
+    target: icon,
+    preventDefault: () => { prevented += 1; },
+    stopPropagation: () => { stopped += 1; }
+  });
+
+  assert.equal(app.activeRowId, "row-1");
+  assert.deepEqual(renders.at(-1), { force: true });
+  assert.equal(prevented, 1);
+  assert.equal(stopped, 1);
+});
+
+test("storage item popovers stay interactive above their grid", async () => {
+  const css = await readFile(new URL("../styles/main.css", import.meta.url), "utf8");
+  assert.match(css, /\.rm-storage-item__popover\s*\{[^}]*pointer-events:\s*auto/isu);
+  assert.match(css, /\.rebreya-storage-app\s+\.window-content\s*\{[^}]*overflow:\s*visible/isu);
+});
