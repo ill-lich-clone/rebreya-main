@@ -12501,6 +12501,18 @@ summary:focus-visible {
   pointer-events: auto;
 }
 
+.rm-storage-token-feedback--drop-ready {
+  border-color: rgb(var(--rm-color-gold-rgb) / 0.72);
+  background:
+    linear-gradient(180deg, rgb(var(--rm-color-gold-rgb) / 0.2), transparent),
+    rgb(20 20 24 / 0.97);
+  box-shadow:
+    0 0 0 1px rgb(var(--rm-color-gold-rgb) / 0.18),
+    0 0 1.2rem rgb(var(--rm-color-gold-rgb) / 0.32),
+    0 0.5rem 1.5rem rgb(0 0 0 / 0.4);
+  color: var(--rm-accent-strong);
+}
+
 .rm-storage-token-feedback {
   padding: 0.45rem 0.7rem;
   font-weight: 700;

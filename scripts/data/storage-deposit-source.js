@@ -115,6 +115,21 @@ function storageRows(state) {
 }
 
 export function parseStorageDepositDragData(value) {
+  const canonical = parsedObject(value);
+  if (canonical?.kind === "item" && clean(canonical.itemUuid)) {
+    return { kind: "item", itemUuid: clean(canonical.itemUuid) };
+  }
+  if (canonical?.kind === "storage-row"
+    && clean(canonical.tokenUuid)
+    && clean(canonical.rowId)
+    && positiveQuantity(canonical.quantity)) {
+    return {
+      kind: "storage-row",
+      tokenUuid: clean(canonical.tokenUuid),
+      rowId: clean(canonical.rowId),
+      quantity: positiveQuantity(canonical.quantity)
+    };
+  }
   const storage = parseStorageDragData(value);
   if (storage) {
     return {
@@ -125,7 +140,7 @@ export function parseStorageDepositDragData(value) {
     };
   }
 
-  const payload = parsedObject(value);
+  const payload = canonical;
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
   if (!["Item", "ItemUUID"].includes(clean(payload.type))) return null;
   const itemUuid = clean(payload.uuid);

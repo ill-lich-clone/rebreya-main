@@ -98,12 +98,13 @@ export class StorageTokenOverlayController {
     return true;
   }
 
-  showFeedback(token, text, { durationMs = 2000 } = {}) {
-    const node = this.#replaceNode(token, "rm-storage-token-feedback");
+  showFeedback(token, text, { durationMs = 2000, className = "" } = {}) {
+    const modifier = String(className ?? "").trim().replace(/[^a-zA-Z0-9_-]/gu, "");
+    const node = this.#replaceNode(token, ["rm-storage-token-feedback", modifier].filter(Boolean).join(" "));
     if (!node) return false;
     node.textContent = String(text ?? "");
     this.reposition();
-    if (typeof this.setTimeout === "function") {
+    if (Number(durationMs) > 0 && typeof this.setTimeout === "function") {
       this.feedbackTimer = this.setTimeout(() => this.close(), durationMs);
     }
     return true;

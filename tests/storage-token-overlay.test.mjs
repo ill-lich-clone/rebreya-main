@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  StorageTokenOverlayController,
   placeTokenOverlay,
   storageTokenViewportBounds
 } from "../scripts/ui/storage-token-overlay.js";
@@ -51,4 +52,36 @@ test("overlay stays centered above a token when the viewport has room", () => {
     placement: "above",
     pointerLeft: 60
   });
+});
+
+test("persistent feedback does not schedule an automatic close and accepts a modifier class", () => {
+  const timeoutCalls = [];
+  const body = { nodes: [], append(node) { this.nodes.push(node); } };
+  const document = {
+    body,
+    createElement() {
+      return {
+        className: "",
+        dataset: {},
+        style: { setProperty() {} },
+        remove() {},
+        getBoundingClientRect: () => ({ width: 160, height: 32 })
+      };
+    },
+    addEventListener() {}
+  };
+  const controller = new StorageTokenOverlayController({
+    document,
+    window: { innerWidth: 800, innerHeight: 600, addEventListener() {} },
+    canvasProvider: () => null,
+    setTimeout: (...args) => timeoutCalls.push(args),
+    clearTimeout() {}
+  });
+
+  assert.equal(controller.showFeedback({}, "Отпустите", {
+    durationMs: 0,
+    className: "rm-storage-token-feedback--drop-ready"
+  }), true);
+  assert.equal(timeoutCalls.length, 0);
+  assert.equal(body.nodes[0].className, "rm-storage-token-feedback rm-storage-token-feedback--drop-ready");
 });

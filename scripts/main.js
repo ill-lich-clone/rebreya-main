@@ -181,6 +181,7 @@ import { registerSpellInstanceSocketCommand } from "./integrations/spell-instanc
 import { registerSummonLifecycleSocketCommand } from "./integrations/summon-lifecycle-socket.js";
 import { registerTransportGroupDropHooks } from "./integrations/transport-group-drop.js";
 import { registerStorageTransferDropHooks } from "./integrations/storage-transfer-drop.js";
+import { registerStorageTokenDropHooks } from "./integrations/storage-token-drop.js?v=1.4.117-storage-deposits";
 import { registerTransportVehicleSheetHooks } from "./integrations/transport-vehicle-sheet.js";
 import {
   parseStorageDragData,
@@ -5621,6 +5622,13 @@ Hooks.once("ready", async () => {
 
   try {
     registerStorageTransferDropHooks(moduleApi, { Hooks });
+  }
+
+  try {
+    registerStorageTokenDropHooks(moduleApi, { hooks: Hooks });
+  }
+  catch (error) {
+    console.error(`${MODULE_ID} | Failed to register storage token drop hooks.`, error);
   }
   catch (error) {
     console.error(`${MODULE_ID} | Failed to register storage transfer drop hooks.`, error);

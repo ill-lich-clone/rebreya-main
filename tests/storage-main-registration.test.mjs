@@ -12,6 +12,7 @@ test("main registers the storage deposit socket API and current cache keys", asy
   assert.match(main, /this\.storageCommandService\.deposit\(payload,\s*\{ sender \}\)/u);
   assert.match(main, /async inspectStorageDepositSource\(/u);
   assert.match(main, /async depositStorageItem\(/u);
+  assert.match(main, /registerStorageTokenDropHooks\(moduleApi/u);
   assert.match(main, /1\.4\.117-storage-deposits/u);
   assert.match(main, /storage-deposit-interactions-1/u);
   assert.match(main, /1\.4\.117-storage-deposit-interactions/u);

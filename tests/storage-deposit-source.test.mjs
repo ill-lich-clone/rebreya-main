@@ -109,6 +109,13 @@ test("deposit drag parser accepts Foundry Items and Rebreya storage rows only", 
   });
   assert.equal(parseStorageDepositDragData({ type: "Actor", uuid: "Actor.hero" }), null);
   assert.equal(parseStorageDepositDragData({ type: "Item", uuid: "" }), null);
+  assert.deepEqual(parseStorageDepositDragData({
+    kind: "item",
+    itemUuid: "Actor.hero.Item.sword"
+  }), {
+    kind: "item",
+    itemUuid: "Actor.hero.Item.sword"
+  });
 });
 
 test("embedded actor item deposits move partial quantities and authorize only owners", async () => {
