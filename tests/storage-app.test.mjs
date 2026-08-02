@@ -31,6 +31,7 @@ function createApp({ canManage = true, configure = true, withTextures = true, ge
   globalThis.game.user.isGM = canManage;
   const textureCalls = [];
   const claimCalls = [];
+  const depositCalls = [];
   const moduleApi = {
     async getStorageSnapshot() {
       if (getStorageSnapshot) return getStorageSnapshot();
@@ -59,10 +60,20 @@ function createApp({ canManage = true, configure = true, withTextures = true, ge
     },
     async claimStorageRow(...args) {
       claimCalls.push(args);
+    },
+    async inspectStorageDepositSource(data) {
+      return {
+        source: { kind: "item", itemUuid: data.uuid },
+        available: 1,
+        mode: "copy"
+      };
+    },
+    async depositStorageItem(...args) {
+      depositCalls.push(args);
     }
   };
   const app = new StorageApp(moduleApi, "Scene.scene.Token.chest", { configure });
-  return { app, textureCalls, claimCalls };
+  return { app, textureCalls, claimCalls, depositCalls };
 }
 
 test("storage grid offers self and party destinations for rows and coins", async () => {
@@ -340,4 +351,36 @@ test("storage item popovers stay interactive above their grid", async () => {
   const css = await readFile(new URL("../styles/main.css", import.meta.url), "utf8");
   assert.match(css, /\.rm-storage-item__popover\s*\{[^}]*pointer-events:\s*auto/isu);
   assert.match(css, /\.rebreya-storage-app\s+\.window-content\s*\{[^}]*overflow:\s*visible/isu);
+});
+
+test("GM configuration drop routes an item through the authoritative deposit API", async () => {
+  const { app, depositCalls } = createApp({ configure: true });
+  const listeners = new Map();
+  app.render = async () => {};
+  app.element = new class extends FakeElement {
+    addEventListener(name, callback) { listeners.set(name, callback); }
+  }();
+  await app._prepareContext();
+  app._onRender({}, {});
+  let prevented = 0;
+  const dropzone = {
+    closest(selector) { return selector === "[data-storage-dropzone]" ? this : null; }
+  };
+  await listeners.get("drop")({
+    target: dropzone,
+    preventDefault: () => { prevented += 1; },
+    dataTransfer: {
+      getData: () => JSON.stringify({ type: "Item", uuid: "Compendium.dnd5e.items.Item.sword" })
+    }
+  });
+
+  assert.equal(prevented, 1);
+  assert.equal(depositCalls.length, 1);
+  assert.equal(depositCalls[0][0], app.tokenUuid);
+  assert.deepEqual(depositCalls[0][1], {
+    kind: "item",
+    itemUuid: "Compendium.dnd5e.items.Item.sword"
+  });
+  assert.equal(depositCalls[0][2], 1);
+  assert.match(depositCalls[0][3], /^storage-window-deposit-/u);
 });

@@ -425,11 +425,15 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
     try {
       const data = globalThis.TextEditor?.getDragEventData?.(event)
         ?? JSON.parse(event.dataTransfer?.getData("text/plain") || "{}");
-      const uuid = clean(data?.uuid);
-      if (!uuid || !["Item", "ItemUUID"].includes(clean(data?.type))) {
-        throw new Error("Перетащите предмет из листа или компендиума.");
-      }
-      await this.moduleApi.addManualStorageItem(this.tokenUuid, uuid);
+      const inspected = await this.moduleApi.inspectStorageDepositSource(data);
+      const quantity = await promptStorageTransferQuantity(inspected.available);
+      if (quantity === null) return;
+      await this.moduleApi.depositStorageItem(
+        this.tokenUuid,
+        inspected.source,
+        quantity,
+        mutationId("storage-window-deposit")
+      );
       await this.#refresh();
     }
     catch (error) {

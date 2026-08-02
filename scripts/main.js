@@ -90,14 +90,19 @@ import {
 } from "./data/storage-access.js";
 import { BuiltinStorageActorService } from "./data/builtin-storage-actor-service.js";
 import { StorageGroundPileService } from "./data/storage-ground-pile-service.js";
+import {
+  parseStorageDepositDragData,
+  resolveStorageDepositSource
+} from "./data/storage-deposit-source.js?v=1.4.117-storage-deposits";
 import { NativeObjectDurabilityService } from "./data/native-object-durability-service.js";
 import {
   StorageCommandService,
   isValidStorageClaimCoinsPayload,
   isValidStorageClaimRowPayload,
+  isValidStorageDepositPayload,
   isValidStorageOpenPayload,
   storageCharacterTokenUuidForClaim
-} from "./data/storage-command-service.js?v=1.4.114-storage-drag-transfers";
+} from "./data/storage-command-service.js?v=1.4.117-storage-deposits";
 import { registerCombatHooks } from "./combat/hooks.js?v=1.4.111-paladin-dogmas";
 import { CombatAttackService } from "./combat/attack-service.js?v=1.4.111-native-ammo-selection-guard";
 import { ImplantAutomationService } from "./combat/implant-automation-service.js";
@@ -234,7 +239,7 @@ const LEGACY_WORLD_MUTATION_SOCKET_TYPES = new Set([
   SOCKET_EVENT_LOOTGEN_CLAIM_COINS
 ]);
 const MODULE_STYLE_PATH = `modules/${MODULE_ID}/styles/main.css`;
-const MODULE_STYLE_VERSION = "1.4.115-storage-grid";
+const MODULE_STYLE_VERSION = "1.4.117-storage-deposit-interactions";
 const SECONDS_PER_HOUR = 3600;
 const SECONDS_PER_DAY = 86400;
 const TRAVEL_DAY_HOURS = 8;
@@ -245,6 +250,7 @@ const TRADER_SELL_COMMAND = "trader.sell";
 export const STORAGE_OPEN_COMMAND = "storage.open";
 export const STORAGE_CLAIM_ROW_COMMAND = "storage.claim-row";
 export const STORAGE_CLAIM_COINS_COMMAND = "storage.claim-coins";
+export const STORAGE_DEPOSIT_COMMAND = "storage.deposit";
 export const DURABILITY_TARGET_DAMAGE_COMMAND = "durability.target.damage";
 const ENVIRONMENT_COMBAT_STATUS_IDS = new Set(["rebreya-surrounded", "rebreya-open-position"]);
 const ENVIRONMENT_STATUS_SOURCE = "rebreya-environment";
@@ -1347,6 +1353,11 @@ export class RebreyaMainModule {
       validate: isValidStorageClaimCoinsPayload,
       authorize: (_payload, { sender }) => Boolean(sender),
       execute: (payload, { sender }) => this.storageCommandService.claimCoins(payload, { sender })
+    });
+    this.socketCommandBus.register(STORAGE_DEPOSIT_COMMAND, {
+      validate: isValidStorageDepositPayload,
+      authorize: (_payload, { sender }) => Boolean(sender),
+      execute: (payload, { sender }) => this.storageCommandService.deposit(payload, { sender })
     });
     this.socketCommandBus.register(DURABILITY_TARGET_DAMAGE_COMMAND, {
       validate: isValidDurabilityTargetDamagePayload,
@@ -3087,6 +3098,47 @@ export class RebreyaMainModule {
       : this.socketCommandBus.request(STORAGE_CLAIM_COINS_COMMAND, payload);
   }
 
+  async inspectStorageDepositSource(dragData) {
+    const source = parseStorageDepositDragData(dragData);
+    if (!source) throw new Error("Перетащите предмет или строку другого хранилища.");
+    const resolved = await resolveStorageDepositSource(source, {
+      fromUuid: (uuid) => globalThis.fromUuid?.(uuid),
+      resolveToken: (uuid) => globalThis.fromUuid?.(uuid),
+      storageService: this.storageService
+    });
+    return {
+      source,
+      available: resolved.available,
+      mode: resolved.mode,
+      name: cleanSocketId(resolved.row?.name),
+      img: cleanSocketId(resolved.row?.img)
+    };
+  }
+
+  async depositStorageItem(tokenUuid, source, quantity, mutationId, request = {}) {
+    const safeSource = source?.kind === "storage-row"
+      ? {
+          kind: "storage-row",
+          tokenUuid: cleanSocketId(source.tokenUuid),
+          rowId: cleanSocketId(source.rowId),
+          quantity: Number(source.quantity)
+        }
+      : {
+          kind: "item",
+          itemUuid: cleanSocketId(source?.itemUuid)
+        };
+    const payload = {
+      tokenUuid: cleanSocketId(tokenUuid),
+      characterTokenUuid: this.#controlledCharacterTokenUuid(request.characterTokenUuid),
+      source: safeSource,
+      quantity: Number(quantity),
+      mutationId: cleanSocketId(mutationId)
+    };
+    return isActiveGmClient(globalThis.game)
+      ? this.storageCommandService.deposit(payload, { sender: globalThis.game?.user })
+      : this.socketCommandBus.request(STORAGE_DEPOSIT_COMMAND, payload);
+  }
+
   async #resolveStorageToken(tokenUuid, { requireMarked = true } = {}) {
     const document = await globalThis.fromUuid?.(cleanSocketId(tokenUuid));
     const token = document?.document ?? document;
@@ -3259,7 +3311,7 @@ export class RebreyaMainModule {
     }
     const moduleVersion = game.modules.get(MODULE_ID)?.version ?? "1.4.96";
     const { StorageApp } = await import(
-      `./ui/storage-app.js?v=${encodeURIComponent(`${moduleVersion}-storage-live-title-3`)}`
+      `./ui/storage-app.js?v=${encodeURIComponent(`${moduleVersion}-storage-deposit-interactions-1`)}`
     );
     const key = `${safeTokenUuid}:${configure ? "configure" : "open"}`;
     let app = this.storageApps.get(key);
