@@ -44,10 +44,10 @@
 
 **Files:** `scripts/data/storage-container-snapshot.js`, `tests/storage-container-snapshot.test.mjs`
 
-- [ ] Test normalization of item/container rows, stable IDs, quantity-one semantics, depth limit, cycle rejection, path resolution, and immutable path updates.
-- [ ] Implement snapshot normalization and helpers with no Foundry globals required.
-- [ ] Test conversion to/from a standard dnd5e Item flag payload.
-- [ ] Commit `feat: add recursive storage container snapshots`.
+- [x] Test normalization of item/container rows, stable IDs, quantity-one semantics, depth limit, cycle rejection, path resolution, and immutable path updates.
+- [x] Implement snapshot normalization and helpers with no required Foundry globals.
+- [x] Test conversion to/from a standard dnd5e Item flag payload.
+- [x] Commit `feat: add recursive storage container snapshots`.
 
 ## Task 4: Make storage mutations path-aware
 
