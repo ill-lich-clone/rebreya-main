@@ -3174,11 +3174,19 @@ export class RebreyaMainModule {
 
   async removeManualStorageItem(tokenUuid, rowId) {
     if (!globalThis.game?.user?.isGM) throw new Error("Удалять предметы может только мастер.");
+    return this.deleteStorageRow(tokenUuid, rowId);
+  }
+
+  async updateStorageRowQuantity(tokenUuid, rowId, quantity) {
+    if (!globalThis.game?.user?.isGM) throw new Error("Изменять предметы может только мастер.");
     const token = await this.#resolveStorageToken(tokenUuid);
-    const state = readStorageState(token);
-    const safeRowId = cleanSocketId(rowId);
-    const manualRows = state.manualRows.filter((row, index) => cleanSocketId(row.rowId ?? index) !== safeRowId);
-    return this.storageService.configure(token, { manualRows });
+    return this.storageService.updateRowQuantity(token, cleanSocketId(rowId), quantity);
+  }
+
+  async deleteStorageRow(tokenUuid, rowId) {
+    if (!globalThis.game?.user?.isGM) throw new Error("Удалять предметы может только мастер.");
+    const token = await this.#resolveStorageToken(tokenUuid);
+    return this.storageService.deleteRow(token, cleanSocketId(rowId));
   }
 
   async resetStorageToken(tokenUuid) {

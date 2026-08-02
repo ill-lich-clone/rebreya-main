@@ -201,3 +201,26 @@ test("generated callback failure does not roll back opened storage", async () =>
   assert.equal(readStorageState(token).state, "opened");
   assert.deepEqual(warnings, ["audio failed"]);
 });
+
+test("GM quantity editing updates generated row and embedded item quantity", async () => {
+  const service = new StorageService({ generate: async () => ({ rows: [{ rowId: "row", quantity: 1, itemData: { system: { quantity: 1 } } }], coins: {} }) });
+  const token = createStorageToken("editable");
+  await service.open(token);
+
+  const next = await service.updateRowQuantity(token, "row", 4);
+
+  assert.equal(next.generatedRows[0].quantity, 4);
+  assert.equal(next.generatedRows[0].itemData.system.quantity, 4);
+});
+
+test("deleting the final generated row empties storage", async () => {
+  const service = new StorageService({ generate: async () => ({ rows: [{ rowId: "row" }], coins: {} }) });
+  const token = createStorageToken("deletable");
+  await service.open(token);
+
+  const next = await service.deleteRow(token, "row");
+
+  assert.equal(next.state, "empty");
+  assert.equal(next.displayMode, "empty");
+  assert.equal(token.name, "Сундук (пусто)");
+});

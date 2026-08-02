@@ -278,6 +278,44 @@ export class StorageService {
     return { changed: true, row: clone(row), state };
   }
 
+  async #mutateEditableRow(token, rowId, mutate) {
+    const current = readStorageState(token);
+    const id = String(rowId ?? "").trim();
+    if (!id || current.claimedRowIds.includes(id)) throw new Error("Предмет уже забран или недоступен для изменения.");
+    let found = false;
+    const change = (rows) => rows.map((row) => {
+      if (String(row?.rowId ?? "").trim() !== id) return row;
+      found = true;
+      return mutate(clone(row));
+    }).filter(Boolean);
+    const manualRows = change(current.manualRows);
+    const generatedRows = change(current.generatedRows);
+    if (!found) throw new Error("Предмет хранилища не найден.");
+    const candidate = { ...current, manualRows, generatedRows };
+    const state = current.state === "unopened" ? "unopened" : (hasUnclaimedContent(candidate) ? "opened" : "empty");
+    return this.#write(token, {
+      ...candidate,
+      state,
+      displayMode: state === "empty" ? "empty" : state === "opened" ? "opened" : current.displayMode
+    });
+  }
+
+  async updateRowQuantity(token, rowId, quantity) {
+    const amount = Number(quantity);
+    if (!Number.isSafeInteger(amount) || amount < 1) throw new Error("Количество должно быть целым числом не меньше 1.");
+    return this.#mutateEditableRow(token, rowId, (row) => {
+      row.quantity = amount;
+      row.itemData ??= {};
+      row.itemData.system ??= {};
+      row.itemData.system.quantity = amount;
+      return row;
+    });
+  }
+
+  async deleteRow(token, rowId) {
+    return this.#mutateEditableRow(token, rowId, () => null);
+  }
+
   async setTextureMode(token, mode) {
     const normalizedMode = String(mode ?? "").trim();
     if (!STORAGE_TEXTURE_MODE_SET.has(normalizedMode)) {
