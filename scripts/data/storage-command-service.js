@@ -23,6 +23,14 @@ function isTrimmedString(value, { required = false, max = 512 } = {}) {
     && (!required || value.length > 0);
 }
 
+function isOptionalQuantity(value) {
+  return value === null || (Number.isSafeInteger(value) && value >= 1);
+}
+
+function clone(value) {
+  return value == null ? value : JSON.parse(JSON.stringify(value));
+}
+
 export function isValidStorageOpenPayload(payload) {
   return hasExactKeys(payload, ["characterTokenUuid", "tokenUuid"])
     && isTrimmedString(payload.tokenUuid, { required: true })
@@ -31,12 +39,13 @@ export function isValidStorageOpenPayload(payload) {
 
 export function isValidStorageClaimRowPayload(payload) {
   return hasExactKeys(payload, [
-    "characterTokenUuid", "destination", "mutationId", "rowId", "tokenUuid"
+    "characterTokenUuid", "destination", "mutationId", "quantity", "rowId", "tokenUuid"
   ])
     && isTrimmedString(payload.tokenUuid, { required: true })
     && isTrimmedString(payload.characterTokenUuid, { required: payload.destination === "self" })
     && isTrimmedString(payload.rowId, { required: true, max: 160 })
     && STORAGE_DESTINATIONS.has(payload.destination)
+    && isOptionalQuantity(payload.quantity)
     && isTrimmedString(payload.mutationId, { required: true, max: 160 });
 }
 
@@ -114,6 +123,8 @@ export class StorageCommandService {
     this.measureDistance = measureDistance;
     this.isVisibleTo = isVisibleTo;
     this.claimTasks = new Map();
+    this.claimQueues = new Map();
+    this.claimResults = new Map();
   }
 
   async #resolveAccess(payload, sender) {
@@ -149,11 +160,25 @@ export class StorageCommandService {
     return { storageToken, characterToken, character };
   }
 
-  async #runClaim(key, operation) {
-    const existing = this.claimTasks.get(key);
+  async #runClaim(sourceKey, mutationKey, operation) {
+    if (this.claimResults.has(mutationKey)) return this.claimResults.get(mutationKey);
+    const existing = this.claimTasks.get(mutationKey);
     if (existing) return existing;
-    const task = Promise.resolve().then(operation).finally(() => this.claimTasks.delete(key));
-    this.claimTasks.set(key, task);
+
+    const previous = this.claimQueues.get(sourceKey) ?? Promise.resolve();
+    const queued = previous.catch(() => {}).then(operation);
+    this.claimQueues.set(sourceKey, queued);
+    const task = queued.then((result) => {
+      this.claimResults.set(mutationKey, result);
+      if (this.claimResults.size > 500) {
+        this.claimResults.delete(this.claimResults.keys().next().value);
+      }
+      return result;
+    }).finally(() => {
+      this.claimTasks.delete(mutationKey);
+      if (this.claimQueues.get(sourceKey) === queued) this.claimQueues.delete(sourceKey);
+    });
+    this.claimTasks.set(mutationKey, task);
     return task;
   }
 
@@ -171,7 +196,14 @@ export class StorageCommandService {
     const rowId = clean(payload.rowId);
     if (!rowId) throw new Error("Не указан предмет хранилища.");
     const tokenUuid = clean(payload.tokenUuid);
-    return this.#runClaim(`${tokenUuid}:row:${rowId}`, async () => {
+    const mutationKey = storageMutationId({
+      tokenUuid,
+      kind: "row",
+      identity: rowId,
+      destination,
+      mutationId
+    });
+    return this.#runClaim(`${tokenUuid}:row:${rowId}`, mutationKey, async () => {
       const access = await this.#resolveAccess(payload, sender);
       if (destination === "self" && access.character?.type !== "character") {
         throw new Error("Для получения лута себе выберите персонажа.");
@@ -183,14 +215,28 @@ export class StorageCommandService {
       if (!row || state.claimedRowIds.includes(rowId)) {
         return { changed: false, row: null, state };
       }
-      const grantId = storageMutationId({ tokenUuid, kind: "row", identity: rowId, destination, mutationId });
+      const available = Math.max(1, Math.trunc(Number(
+        row.quantity ?? row.itemData?.system?.quantity ?? 1
+      )) || 1);
+      const quantity = payload.quantity === null || payload.quantity === undefined
+        ? available
+        : Number(payload.quantity);
+      if (!Number.isSafeInteger(quantity) || quantity < 1 || quantity > available) {
+        throw new Error("Количество должно быть целым числом от 1 до доступного остатка.");
+      }
+      const transferRow = clone(row);
+      transferRow.quantity = quantity;
+      transferRow.itemData ??= {};
+      transferRow.itemData.system ??= {};
+      transferRow.itemData.system.quantity = quantity;
+      const grantId = mutationKey;
       if (destination === "self") {
-        await this.inventoryService.addLootgenRowToCharacterOnce(row, access.character, grantId);
+        await this.inventoryService.addLootgenRowToCharacterOnce(transferRow, access.character, grantId);
       }
       else {
-        await this.inventoryService.addLootgenRowToInventoryOnce(row, grantId);
+        await this.inventoryService.addLootgenRowToInventoryOnce(transferRow, grantId);
       }
-      return this.storageService.claim(access.storageToken, { kind: "row", rowId });
+      return this.storageService.claim(access.storageToken, { kind: "row", rowId, quantity });
     });
   }
 
@@ -198,7 +244,8 @@ export class StorageCommandService {
     const destination = requireDestination(payload.destination);
     const mutationId = requireMutationId(payload.mutationId);
     const tokenUuid = clean(payload.tokenUuid);
-    return this.#runClaim(`${tokenUuid}:coins`, async () => {
+    const mutationKey = storageMutationId({ tokenUuid, kind: "coins", destination, mutationId });
+    return this.#runClaim(`${tokenUuid}:coins`, mutationKey, async () => {
       const access = await this.#resolveAccess(payload, sender);
       if (destination === "self" && access.character?.type !== "character") {
         throw new Error("Для получения монет себе выберите персонажа.");
@@ -213,7 +260,7 @@ export class StorageCommandService {
       if (state.coinsClaimed || !keys.some((key) => coins[key] > 0)) {
         return { changed: false, coins, state };
       }
-      const grantId = storageMutationId({ tokenUuid, kind: "coins", destination, mutationId });
+      const grantId = mutationKey;
       if (destination === "self") {
         await this.inventoryService.addCurrencyToCharacterOnce(coins, access.character, grantId);
       }

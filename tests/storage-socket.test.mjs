@@ -26,7 +26,7 @@ function applyPatch(target, patch) {
   }
 }
 
-function createHarness({ distance = 5, visible = true } = {}) {
+function createHarness({ distance = 5, visible = true, rowQuantity = 1, rejectItemGrant = false } = {}) {
   const player = { id: "player", isGM: false };
   const hero = {
     id: "hero",
@@ -72,10 +72,12 @@ function createHarness({ distance = 5, visible = true } = {}) {
   const completed = new Set();
   const inventoryService = {
     async addLootgenRowToCharacterOnce(row, actor, mutationId) {
+      if (rejectItemGrant) throw new Error("grant failed");
       if (!completed.has(mutationId)) itemGrants.push({ row: clone(row), actor, mutationId, destination: "self" });
       completed.add(mutationId);
     },
     async addLootgenRowToInventoryOnce(row, mutationId) {
+      if (rejectItemGrant) throw new Error("grant failed");
       if (!completed.has(mutationId)) itemGrants.push({ row: clone(row), mutationId, destination: "party" });
       completed.add(mutationId);
     },
@@ -92,8 +94,8 @@ function createHarness({ distance = 5, visible = true } = {}) {
     generate: async () => ({
       rows: [{
         rowId: "row-1",
-        quantity: 1,
-        itemData: { name: "Меч", type: "weapon", system: { quantity: 1 } }
+        quantity: rowQuantity,
+        itemData: { name: "Меч", type: "weapon", system: { quantity: rowQuantity } }
       }],
       coins: { gp: 2 }
     })
@@ -119,6 +121,7 @@ test("storage claim rejects a player outside five feet before granting an item",
       characterTokenUuid: harness.characterToken.uuid,
       rowId: "row-1",
       destination: "self",
+      quantity: null,
       mutationId: "claim-1"
     }, { sender: harness.player }),
     /5 фут/iu
@@ -150,6 +153,7 @@ test("repeated storage claims grant rows and coins only once and empty the token
     ...access,
     rowId: "row-1",
     destination: "party",
+    quantity: null,
     mutationId: "claim-row-1"
   };
   await harness.service.claimRow(rowRequest, { sender: harness.player });
@@ -187,6 +191,7 @@ test("party storage claims accept an empty character token for a GM client", () 
     characterTokenUuid: "",
     rowId: "row-1",
     destination: "party",
+    quantity: 1,
     mutationId: "claim-row-party"
   }), true);
   assert.equal(isValidStorageClaimCoinsPayload({
@@ -203,6 +208,7 @@ test("self storage claims still require a character token", () => {
     characterTokenUuid: "",
     rowId: "row-1",
     destination: "self",
+    quantity: 1,
     mutationId: "claim-row-self"
   }), false);
   assert.equal(isValidStorageClaimCoinsPayload({
@@ -226,4 +232,76 @@ test("GM party claims provide a backwards-compatible token UUID for older active
     destination: "party",
     isGM: false
   }), "");
+});
+
+test("partial storage transfers grant and remove only the requested quantity", async () => {
+  const harness = createHarness({ rowQuantity: 5 });
+  const access = {
+    tokenUuid: harness.storageToken.uuid,
+    characterTokenUuid: harness.characterToken.uuid
+  };
+  await harness.service.open(access, { sender: harness.player });
+
+  const result = await harness.service.claimRow({
+    ...access,
+    rowId: "row-1",
+    destination: "party",
+    quantity: 2,
+    mutationId: "partial-row"
+  }, { sender: harness.player });
+
+  assert.equal(result.quantity, 2);
+  assert.equal(harness.itemGrants.length, 1);
+  assert.equal(harness.itemGrants[0].row.quantity, 2);
+  assert.equal(harness.itemGrants[0].row.itemData.system.quantity, 2);
+  assert.equal(readStorageState(harness.storageToken).generatedRows[0].quantity, 3);
+});
+
+test("failed destination grants do not decrement storage", async () => {
+  const harness = createHarness({ rowQuantity: 5, rejectItemGrant: true });
+  const access = {
+    tokenUuid: harness.storageToken.uuid,
+    characterTokenUuid: harness.characterToken.uuid
+  };
+  await harness.service.open(access, { sender: harness.player });
+
+  await assert.rejects(harness.service.claimRow({
+    ...access,
+    rowId: "row-1",
+    destination: "party",
+    quantity: 2,
+    mutationId: "failed-row"
+  }, { sender: harness.player }), /grant failed/u);
+
+  assert.equal(readStorageState(harness.storageToken).generatedRows[0].quantity, 5);
+  assert.deepEqual(readStorageState(harness.storageToken).claimedRowIds, []);
+});
+
+test("duplicate partial mutations decrement once and competing quantities serialize", async () => {
+  const harness = createHarness({ rowQuantity: 5 });
+  const access = {
+    tokenUuid: harness.storageToken.uuid,
+    characterTokenUuid: harness.characterToken.uuid
+  };
+  await harness.service.open(access, { sender: harness.player });
+  const duplicate = {
+    ...access,
+    rowId: "row-1",
+    destination: "party",
+    quantity: 2,
+    mutationId: "same-partial"
+  };
+
+  await harness.service.claimRow(duplicate, { sender: harness.player });
+  await harness.service.claimRow(duplicate, { sender: harness.player });
+  assert.equal(readStorageState(harness.storageToken).generatedRows[0].quantity, 3);
+  assert.equal(harness.itemGrants.length, 1);
+
+  const competing = await Promise.allSettled([
+    harness.service.claimRow({ ...duplicate, quantity: 2, mutationId: "race-a" }, { sender: harness.player }),
+    harness.service.claimRow({ ...duplicate, quantity: 2, mutationId: "race-b" }, { sender: harness.player })
+  ]);
+  assert.deepEqual(competing.map((entry) => entry.status), ["fulfilled", "rejected"]);
+  assert.equal(readStorageState(harness.storageToken).generatedRows[0].quantity, 1);
+  assert.equal(harness.itemGrants.length, 2);
 });

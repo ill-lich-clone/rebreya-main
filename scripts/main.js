@@ -3029,6 +3029,7 @@ export class RebreyaMainModule {
       }),
       rowId: cleanSocketId(rowId),
       destination: safeDestination,
+      quantity: request.quantity === undefined ? null : Number(request.quantity),
       mutationId: cleanSocketId(mutationId)
     };
     return isActiveGmClient(globalThis.game)
