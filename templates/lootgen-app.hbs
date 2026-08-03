@@ -31,6 +31,16 @@
               <i class="fa-solid fa-file-import"></i>
               <span>Применить</span>
             </button>
+            <button
+              type="button"
+              class="rm-button rm-button--secondary"
+              data-action="lootgen-delete-template"
+              title="Удалить выбранный шаблон"
+              aria-label="Удалить выбранный шаблон"
+              {{#unless form.hasLootgenTemplates}}disabled{{/unless}}
+            >
+              <i class="fa-solid fa-trash"></i>
+            </button>
           </div>
         </div>
 

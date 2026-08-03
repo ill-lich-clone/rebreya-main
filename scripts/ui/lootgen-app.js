@@ -228,6 +228,37 @@ export async function promptLootgenTemplateName(
   return value == null ? null : String(value).trim();
 }
 
+export async function confirmLootgenTemplateRemoval(
+  template,
+  DialogV2 = globalThis.foundry?.applications?.api?.DialogV2
+) {
+  if (typeof DialogV2?.wait !== "function") {
+    throw new Error("Диалог удаления шаблона Lootgen недоступен.");
+  }
+  const safeName = String(template?.name ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+  return Boolean(await DialogV2.wait({
+    window: { title: "Удалить шаблон Lootgen" },
+    content: `<p>Удалить шаблон <strong>${safeName}</strong>?</p>`,
+    buttons: [{
+      action: "delete",
+      label: "Удалить",
+      icon: "fa-solid fa-trash",
+      callback: () => true
+    }, {
+      action: "cancel",
+      label: "Отмена",
+      default: true,
+      callback: () => false
+    }],
+    rejectClose: false,
+    close: () => false
+  }));
+}
+
 export function resolveLootgenItemValue(rawValue, fallbackGold = 0) {
   const explicit = Math.max(0, toInteger(rawValue, 0));
   if (explicit > 0) {
@@ -419,6 +450,23 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
       name,
       form: this.#getFormSnapshot()
     });
+  }
+
+  async removeTemplateById(templateId, {
+    confirm = confirmLootgenTemplateRemoval
+  } = {}) {
+    if (typeof this.moduleApi.getLootgenTemplate !== "function"
+      || typeof this.moduleApi.removeLootgenTemplate !== "function") {
+      throw new Error("Текущая версия модуля не поддерживает удаление шаблонов Lootgen.");
+    }
+    const template = this.moduleApi.getLootgenTemplate(templateId);
+    if (!template) {
+      throw new Error("Выберите шаблон Lootgen.");
+    }
+    if (!await confirm(template)) {
+      return false;
+    }
+    return Boolean(await this.moduleApi.removeLootgenTemplate(template.id));
   }
 
   async generateFromForm(form = {}) {
@@ -1011,6 +1059,22 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
         catch (error) {
           console.error(MODULE_ID + " | Failed to apply Lootgen template.", error);
           ui.notifications?.error?.(error.message || "Не удалось применить шаблон Lootgen.");
+        }
+      }, listenerOptions);
+
+      element.querySelector("[data-action='lootgen-delete-template']")?.addEventListener("click", async () => {
+        try {
+          const templateId = String(
+            element.querySelector("[data-action='lootgen-template-select']")?.value ?? ""
+          );
+          if (await this.removeTemplateById(templateId)) {
+            ui.notifications?.info?.("Шаблон Lootgen удалён.");
+            await this.render({ force: true });
+          }
+        }
+        catch (error) {
+          console.error(MODULE_ID + " | Failed to delete Lootgen template.", error);
+          ui.notifications?.error?.(error.message || "Не удалось удалить шаблон Lootgen.");
         }
       }, listenerOptions);
 

@@ -112,3 +112,20 @@ test("lootgen carries the soft quantity target through context and saved templat
   assert.equal(context.form.optimalItemQuantity, 7);
   assert.equal(savedPayload.form.optimalItemQuantity, 7);
 });
+
+test("lootgen deletes a selected template only after confirmation", async () => {
+  const removed = [];
+  const template = { id: "codex-test", name: "Codex test", form: {} };
+  const app = new LootgenApp({
+    getLootgenTemplate: (id) => id === template.id ? template : null,
+    removeLootgenTemplate: async (id) => {
+      removed.push(id);
+      return true;
+    }
+  }, { appKey: "delete-template" });
+
+  assert.equal(await app.removeTemplateById(template.id, { confirm: async () => false }), false);
+  assert.deepEqual(removed, []);
+  assert.equal(await app.removeTemplateById(template.id, { confirm: async () => true }), true);
+  assert.deepEqual(removed, [template.id]);
+});

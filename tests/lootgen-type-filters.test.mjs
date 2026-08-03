@@ -111,6 +111,12 @@ test("lootgen renders the soft optimal quantity control", async () => {
   assert.match(template, /Оптимальное количество предметов/u);
 });
 
+test("lootgen renders a saved-template delete control", async () => {
+  const template = await readFile(new URL("../templates/lootgen-app.hbs", import.meta.url), "utf8");
+
+  assert.match(template, /data-action="lootgen-delete-template"/u);
+});
+
 test("lootgen type filter sections grow without their own scrollbars", async () => {
   const styles = await readFile(new URL("../styles/main.css", import.meta.url), "utf8");
   const match = styles.match(/\.rm-lootgen-type-filter__options\s*\{(?<body>[^}]+)\}/u);
