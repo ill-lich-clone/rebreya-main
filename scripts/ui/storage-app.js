@@ -3,12 +3,14 @@ import { getAppElement } from "../ui.js";
 import { placeTokenOverlay, storageTokenViewportBounds } from "./storage-token-overlay.js";
 import {
   buildStorageDragData,
+  parseStorageDragData,
   promptStorageTransferQuantity,
   storageGridColumns
 } from "./storage-transfer-ui.js";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 const COIN_KEYS = ["pp", "gp", "sp", "cp"];
+const STORAGE_TRANSFER_TYPES = new Set(["text/plain", "text", "application/json"]);
 const TEXTURE_MODES = Object.freeze([
   Object.freeze({ mode: "unopened", number: "1", label: "Закрытый" }),
   Object.freeze({ mode: "opened", number: "2", label: "Открытый" }),
@@ -28,6 +30,30 @@ function clone(value) {
 function mutationId(prefix) {
   const random = globalThis.foundry?.utils?.randomID?.() ?? globalThis.randomID?.() ?? Math.random().toString(36).slice(2);
   return `${prefix}-${Date.now()}-${random}`;
+}
+
+function dragEventData(event) {
+  const foundryData = globalThis.TextEditor?.getDragEventData?.(event);
+  if (foundryData != null) return foundryData;
+  try {
+    return JSON.parse(event?.dataTransfer?.getData?.("text/plain") || "{}");
+  }
+  catch (_error) {
+    return null;
+  }
+}
+
+function isSupportedStorageWindowDrop(data) {
+  if (parseStorageDragData(data)) return true;
+  return ["Item", "ItemUUID"].includes(clean(data?.type)) && Boolean(clean(data?.uuid));
+}
+
+function isEditableDropTarget(target) {
+  return Boolean(target?.closest?.("input, textarea, select, [contenteditable='true'], [contenteditable='']"));
+}
+
+function hasStorageTransferType(dataTransfer) {
+  return Array.from(dataTransfer?.types ?? []).some((type) => STORAGE_TRANSFER_TYPES.has(clean(type).toLowerCase()));
 }
 
 function normalizeCoins(coins = {}) {
@@ -215,7 +241,9 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
     root.addEventListener("drop", (event) => this.#onDrop(event), listenerOptions);
     root.addEventListener("dragstart", (event) => this.#onDragStart(event), listenerOptions);
     root.addEventListener("dragover", (event) => {
-      if (event.target?.closest?.("[data-storage-dropzone]")) event.preventDefault();
+      if (this.#acceptsDropTarget(event) && hasStorageTransferType(event.dataTransfer)) {
+        event.preventDefault();
+      }
     }, listenerOptions);
     globalThis.document?.addEventListener?.("click", (event) => {
       if (!this.activeRowId || root.contains?.(event.target)) return;
@@ -516,12 +544,20 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
     event.dataTransfer.setData("text/plain", JSON.stringify(payload));
   }
 
+  #acceptsDropTarget(event) {
+    if (isEditableDropTarget(event?.target)) return false;
+    return this.configure !== true || Boolean(event?.target?.closest?.("[data-storage-dropzone]"));
+  }
+
+  #acceptsDrop(event, data) {
+    return this.#acceptsDropTarget(event) && isSupportedStorageWindowDrop(data);
+  }
+
   async #onDrop(event) {
-    if (!this.configure || globalThis.game?.user?.isGM !== true || !event.target?.closest?.("[data-storage-dropzone]")) return;
+    const data = dragEventData(event);
+    if (!this.#acceptsDrop(event, data)) return;
     event.preventDefault();
     try {
-      const data = globalThis.TextEditor?.getDragEventData?.(event)
-        ?? JSON.parse(event.dataTransfer?.getData("text/plain") || "{}");
       const inspected = await this.moduleApi.inspectStorageDepositSource(data);
       const quantity = await promptStorageTransferQuantity(inspected.available);
       if (quantity === null) return;

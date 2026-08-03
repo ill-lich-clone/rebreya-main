@@ -3426,7 +3426,7 @@ export class RebreyaMainModule {
     }
     const moduleVersion = game.modules.get(MODULE_ID)?.version ?? "1.4.96";
     const { StorageApp } = await import(
-      `./ui/storage-app.js?v=${encodeURIComponent(`${moduleVersion}-storage-canvas-drops`)}`
+      `./ui/storage-app.js?v=${encodeURIComponent(`${moduleVersion}-storage-window-drops`)}`
     );
     const key = `${safeTokenUuid}:${configure ? "configure" : "open"}`;
     let app = this.storageApps.get(key);

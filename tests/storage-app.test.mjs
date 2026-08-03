@@ -27,7 +27,14 @@ globalThis.HTMLElement = FakeElement;
 
 const { StorageApp } = await import("../scripts/ui/storage-app.js?storage-app-test");
 
-function createApp({ canManage = true, configure = true, withTextures = true, getStorageSnapshot = null } = {}) {
+function createApp({
+  canManage = true,
+  configure = true,
+  withTextures = true,
+  getStorageSnapshot = null,
+  inspectStorageDepositSource = null,
+  appOptions = {}
+} = {}) {
   globalThis.game.user.isGM = canManage;
   const textureCalls = [];
   const claimCalls = [];
@@ -62,6 +69,7 @@ function createApp({ canManage = true, configure = true, withTextures = true, ge
       claimCalls.push(args);
     },
     async inspectStorageDepositSource(data) {
+      if (inspectStorageDepositSource) return inspectStorageDepositSource(data);
       return {
         source: { kind: "item", itemUuid: data.uuid },
         available: 1,
@@ -72,7 +80,7 @@ function createApp({ canManage = true, configure = true, withTextures = true, ge
       depositCalls.push(args);
     }
   };
-  const app = new StorageApp(moduleApi, "Scene.scene.Token.chest", { configure });
+  const app = new StorageApp(moduleApi, "Scene.scene.Token.chest", { configure, ...appOptions });
   return { app, textureCalls, claimCalls, depositCalls };
 }
 
@@ -512,4 +520,98 @@ test("GM configuration drop routes an item through the authoritative deposit API
   });
   assert.equal(depositCalls[0][2], 1);
   assert.match(depositCalls[0][3], /^storage-window-deposit-/u);
+});
+
+test("ordinary player storage accepts a ground-pile row drop anywhere in its window", async () => {
+  const source = {
+    type: "RebreyaStorageClaim",
+    tokenUuid: "Scene.scene.Token.pile",
+    path: ["source-bag"],
+    rowId: "rope-row",
+    quantity: 1
+  };
+  const { app, depositCalls } = createApp({
+    canManage: false,
+    configure: false,
+    appOptions: { path: ["target-bag"] },
+    inspectStorageDepositSource: async (data) => ({
+      source: {
+        kind: "storage-row",
+        tokenUuid: data.tokenUuid,
+        path: data.path,
+        rowId: data.rowId,
+        quantity: data.quantity
+      },
+      available: data.quantity,
+      mode: "move"
+    })
+  });
+  const listeners = new Map();
+  app.render = async () => {};
+  app.element = new class extends FakeElement {
+    addEventListener(name, callback) { listeners.set(name, callback); }
+  }();
+  await app._prepareContext();
+  app._onRender({}, {});
+  let prevented = 0;
+  let phase = "dragover";
+  const dropEvent = {
+    target: { closest: () => null },
+    preventDefault: () => { prevented += 1; },
+    dataTransfer: {
+      types: ["text/plain"],
+      getData: () => phase === "dragover" ? "" : JSON.stringify(source)
+    }
+  };
+
+  listeners.get("dragover")(dropEvent);
+  assert.equal(prevented, 1);
+  phase = "drop";
+  await listeners.get("drop")(dropEvent);
+
+  assert.equal(prevented, 2);
+  assert.equal(depositCalls.length, 1);
+  assert.equal(depositCalls[0][0], app.tokenUuid);
+  assert.deepEqual(depositCalls[0][1], {
+    kind: "storage-row",
+    tokenUuid: source.tokenUuid,
+    path: source.path,
+    rowId: source.rowId,
+    quantity: source.quantity
+  });
+  assert.deepEqual(depositCalls[0][4], { path: ["target-bag"] });
+});
+
+test("ordinary storage leaves unsupported and editable-target drops to native behavior", async () => {
+  const { app, depositCalls } = createApp({ configure: false });
+  const listeners = new Map();
+  app.render = async () => {};
+  app.element = new class extends FakeElement {
+    addEventListener(name, callback) { listeners.set(name, callback); }
+  }();
+  await app._prepareContext();
+  app._onRender({}, {});
+  let prevented = 0;
+  const unsupported = {
+    target: { closest: () => null },
+    preventDefault: () => { prevented += 1; },
+    dataTransfer: {
+      getData: () => JSON.stringify({ type: "Actor", uuid: "Actor.hero" })
+    }
+  };
+
+  listeners.get("dragover")(unsupported);
+  await listeners.get("drop")(unsupported);
+  const editable = {
+    target: { closest: (selector) => selector.includes("input") ? {} : null },
+    preventDefault: () => { prevented += 1; },
+    dataTransfer: {
+      getData: () => JSON.stringify({ type: "Item", uuid: "Actor.hero.Item.rope" })
+    }
+  };
+  listeners.get("dragover")(editable);
+  await listeners.get("drop")(editable);
+
+  assert.equal(prevented, 0);
+  assert.equal(depositCalls.length, 0);
 });

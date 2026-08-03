@@ -234,7 +234,7 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
   );
   assert.match(
     canonicalSource,
-    /storage-app\.js\?v=\$\{encodeURIComponent\(`\$\{moduleVersion\}-storage-canvas-drops`\)\}/u
+    /storage-app\.js\?v=\$\{encodeURIComponent\(`\$\{moduleVersion\}-storage-window-drops`\)\}/u
   );
   assert.match(
     traderServiceSource,
