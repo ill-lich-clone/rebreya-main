@@ -1,4 +1,5 @@
 import { rollLootgenBrokenState } from "./lootgen-durability.js";
+import { rollLootgenMultipleAppearance } from "./lootgen-multiple-appearance.js";
 
 const COIN_MULTIPLIERS = {
   pp: 1000,
@@ -45,6 +46,7 @@ export function normalizeLootgenForm(raw = {}) {
     rankMin: Math.min(rankMin, rankMax),
     rankMax: Math.max(rankMin, rankMax),
     itemCount: clampInteger(source.itemCount, 1, 40, 8),
+    optimalItemQuantity: clampInteger(source.optimalItemQuantity, 1, 100, 4),
     budgetValue: Math.max(0, toInteger(source.budgetValue, 5000)),
     magicPercent: clampInteger(source.magicPercent, 0, 100, 25),
     brokenEquipmentChance: clampInteger(source.brokenEquipmentChance, 0, 100, 0),
@@ -56,13 +58,44 @@ export function normalizeLootgenForm(raw = {}) {
   };
 }
 
-function randomPick(values, random) {
+function weightedRandomPick(values, getWeight, random) {
   if (!Array.isArray(values) || values.length === 0) {
     return null;
   }
 
-  const index = Math.floor(random() * values.length);
-  return values[index] ?? null;
+  const weighted = values
+    .map((value) => ({ value, weight: Math.max(0, toNumber(getWeight(value), 0)) }))
+    .filter((entry) => entry.weight > 0);
+  const totalWeight = weighted.reduce((sum, entry) => sum + entry.weight, 0);
+  if (totalWeight <= 0) {
+    return null;
+  }
+
+  let threshold = Math.max(0, Math.min(0.9999999999999999, toNumber(random(), 0))) * totalWeight;
+  for (const entry of weighted) {
+    threshold -= entry.weight;
+    if (threshold < 0) {
+      return entry.value;
+    }
+  }
+  return weighted.at(-1)?.value ?? null;
+}
+
+function candidateIdentity(candidate) {
+  return `${String(candidate?.sourceType ?? "")}:${String(candidate?.sourceId ?? "")}`;
+}
+
+function candidateWeight(candidate, currentQuantity, optimalQuantity) {
+  if (candidate?.sourceType === "magicItem") {
+    return currentQuantity === 0 ? 1 : 0;
+  }
+  if (currentQuantity === 0) {
+    return 4;
+  }
+  if (currentQuantity < optimalQuantity) {
+    return 2;
+  }
+  return 0.5;
 }
 
 function normalizeCoins(coins = {}) {
@@ -161,97 +194,6 @@ function aggregateRows(rows) {
     }));
 }
 
-function spendRemainingValueIntoRows(rows = [], remainingValue = 0) {
-  const resultRows = (Array.isArray(rows) ? rows : []).map((row) => ({ ...row }));
-  let remaining = Math.max(0, toInteger(remainingValue, 0));
-  const spendableRows = resultRows
-    .map((row, index) => ({
-      index,
-      value: Math.max(1, toInteger(row.value, 1))
-    }))
-    .filter((entry) => entry.value <= remaining);
-
-  if (!spendableRows.length || remaining <= 0) {
-    return { rows: resultRows, remainingValue: remaining };
-  }
-
-  const applySpend = (rowIndex, quantity) => {
-    const row = resultRows[rowIndex];
-    const extraQuantity = Math.max(0, toInteger(quantity, 0));
-    if (!row || extraQuantity <= 0) {
-      return 0;
-    }
-
-    const value = Math.max(1, toInteger(row.value, 1));
-    row.quantity = Math.max(0, toInteger(row.quantity, 0)) + extraQuantity;
-    row.totalValue = Math.max(0, toInteger(row.totalValue, 0)) + (value * extraQuantity);
-    return value * extraQuantity;
-  };
-
-  if (remaining <= 200000) {
-    const previous = Array(remaining + 1).fill(null);
-    previous[0] = { rowIndex: -1, previousTotal: -1 };
-
-    for (let total = 0; total <= remaining; total += 1) {
-      if (!previous[total]) {
-        continue;
-      }
-
-      for (const entry of spendableRows) {
-        const nextTotal = total + entry.value;
-        if (nextTotal <= remaining && !previous[nextTotal]) {
-          previous[nextTotal] = {
-            rowIndex: entry.index,
-            previousTotal: total
-          };
-        }
-      }
-    }
-
-    let bestTotal = remaining;
-    while (bestTotal > 0 && !previous[bestTotal]) {
-      bestTotal -= 1;
-    }
-
-    if (bestTotal > 0) {
-      let cursor = bestTotal;
-      const quantityByRowIndex = new Map();
-      while (cursor > 0) {
-        const step = previous[cursor];
-        if (!step || step.rowIndex < 0) {
-          break;
-        }
-
-        quantityByRowIndex.set(step.rowIndex, (quantityByRowIndex.get(step.rowIndex) ?? 0) + 1);
-        cursor = step.previousTotal;
-      }
-
-      for (const [rowIndex, quantity] of quantityByRowIndex.entries()) {
-        applySpend(rowIndex, quantity);
-      }
-
-      remaining -= bestTotal;
-    }
-
-    return { rows: resultRows, remainingValue: remaining };
-  }
-
-  const greedyRows = [...spendableRows].sort((left, right) => right.value - left.value);
-  for (const entry of greedyRows) {
-    const quantity = Math.floor(remaining / entry.value);
-    if (quantity <= 0) {
-      continue;
-    }
-
-    remaining -= applySpend(entry.index, quantity);
-    if (remaining <= 0) {
-      break;
-    }
-  }
-
-  return { rows: resultRows, remainingValue: remaining };
-}
-
 export function generateLootgenResult({
   form: rawForm,
   mundanePool = [],
@@ -261,6 +203,7 @@ export function generateLootgenResult({
   includeMagicItems = false,
   magicPercent = 0,
   itemCount = 1,
+  optimalItemQuantity = 4,
   budgetValue = 0,
   includeCoins = true,
   brokenEquipmentChance = 0,
@@ -276,6 +219,7 @@ export function generateLootgenResult({
     rankMin,
     rankMax,
     itemCount,
+    optimalItemQuantity,
     budgetValue,
     includeMagicItems,
     magicPercent,
@@ -295,80 +239,92 @@ export function generateLootgenResult({
   let remainingValue = safeBudgetValue;
   const picks = [];
   const usedUnique = new Set();
+  const quantitiesByIdentity = new Map();
+  const isEligible = (entry) => {
+    const identity = candidateIdentity(entry);
+    if (usedUnique.has(identity)) {
+      return false;
+    }
+    const value = Math.max(0, toInteger(entry?.value, 0));
+    return value <= remainingValue;
+  };
+  const weightFor = (entry) => candidateWeight(
+    entry,
+    quantitiesByIdentity.get(candidateIdentity(entry)) ?? 0,
+    form.optimalItemQuantity
+  );
 
-  for (let index = 0; index < maxRows; index += 1) {
-    const affordableMundane = safeMundanePool.filter((entry) => {
-      if (entry.value > remainingValue) {
-        return false;
+  let passMadeProgress = true;
+  while (remainingValue > 0 && passMadeProgress) {
+    passMadeProgress = false;
+    for (let index = 0; index < maxRows; index += 1) {
+      const affordableMundane = safeMundanePool.filter(isEligible);
+      const affordableMagic = safeMagicPool.filter(isEligible);
+      if (!affordableMundane.length && !affordableMagic.length) {
+        break;
       }
 
-      const entryKey = `${entry.sourceType}:${entry.sourceId}`;
-      return !usedUnique.has(entryKey);
-    });
-    const affordableMagic = safeMagicPool.filter((entry) => {
-      if (entry.value > remainingValue) {
-        return false;
+      let sourcePool = [];
+      if (forceMagicOnly) {
+        sourcePool = affordableMagic;
+      }
+      else {
+        const wantsMagic = form.includeMagicItems
+          && affordableMagic.length > 0
+          && (!affordableMundane.length || random() < magicChance);
+        sourcePool = wantsMagic
+          ? affordableMagic
+          : (affordableMundane.length ? affordableMundane : affordableMagic);
+      }
+      const picked = weightedRandomPick(sourcePool, weightFor, random);
+      if (!picked) {
+        break;
       }
 
-      const entryKey = `${entry.sourceType}:${entry.sourceId}`;
-      return !usedUnique.has(entryKey);
-    });
-    if (!affordableMundane.length && !affordableMagic.length) {
-      break;
-    }
+      const pickedKey = candidateIdentity(picked);
+      const unitValue = Math.max(0, toInteger(picked.value, 0));
+      let quantity = picked.sourceType === "magicItem" || picked.stackable === false
+        ? 1
+        : rollLootgenMultipleAppearance(picked.multipleAppearance ?? "1", random);
+      if (unitValue > 0) {
+        quantity = Math.min(quantity, Math.floor(remainingValue / unitValue));
+      }
+      quantity = Math.max(0, toInteger(quantity, 0));
+      if (quantity <= 0) {
+        usedUnique.add(pickedKey);
+        continue;
+      }
 
-    let sourcePool = [];
-    if (forceMagicOnly) {
-      sourcePool = affordableMagic;
-    }
-    else {
-      const wantsMagic = form.includeMagicItems
-        && affordableMagic.length > 0
-        && (!affordableMundane.length || random() < magicChance);
-      sourcePool = wantsMagic
-        ? affordableMagic
-        : (affordableMundane.length ? affordableMundane : affordableMagic);
-    }
-    const picked = randomPick(sourcePool, random);
-    if (!picked) {
-      break;
-    }
+      const totalValue = unitValue * quantity;
+      picks.push({
+        ...picked,
+        value: unitValue,
+        isBroken: rollLootgenBrokenState({
+          sourceType: picked.sourceType,
+          chance: form.brokenEquipmentChance,
+          isEligible: picked.breakable === true,
+          random
+        }),
+        quantity,
+        totalValue
+      });
+      quantitiesByIdentity.set(
+        pickedKey,
+        (quantitiesByIdentity.get(pickedKey) ?? 0) + quantity
+      );
+      if (picked.sourceType === "magicItem" || picked.stackable === false || unitValue <= 0) {
+        usedUnique.add(pickedKey);
+      }
 
-    const pickedKey = `${picked.sourceType}:${picked.sourceId}`;
-    usedUnique.add(pickedKey);
-    let quantity = 1;
-    if (picked.stackable) {
-      const maxQtyByBudget = Math.max(1, Math.floor(remainingValue / picked.value));
-      quantity = Math.max(1, Math.min(maxQtyByBudget, 1 + Math.floor(random() * 4)));
-    }
-
-    let totalValue = picked.value * quantity;
-    if (totalValue > remainingValue) {
-      quantity = 1;
-      totalValue = picked.value;
-    }
-    picks.push({
-      ...picked,
-      isBroken: rollLootgenBrokenState({
-        sourceType: picked.sourceType,
-        chance: form.brokenEquipmentChance,
-        isEligible: picked.breakable === true,
-        random
-      }),
-      quantity,
-      totalValue
-    });
-
-    remainingValue = Math.max(0, remainingValue - totalValue);
-    if (remainingValue <= 0) {
-      break;
+      remainingValue = Math.max(0, remainingValue - totalValue);
+      passMadeProgress = true;
+      if (remainingValue <= 0) {
+        break;
+      }
     }
   }
 
   let rows = aggregateRows(picks);
-  const budgetFill = spendRemainingValueIntoRows(rows, remainingValue);
-  rows = budgetFill.rows;
-  remainingValue = budgetFill.remainingValue;
   const spentValue = rows.reduce((sum, row) => sum + row.totalValue, 0);
   const coins = form.includeCoins ? randomCoinsFromValue(remainingValue, random) : randomCoinsFromValue(0, random);
   const safeBatchId = String(batchId ?? "").trim();
