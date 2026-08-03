@@ -191,6 +191,7 @@ import { registerSummonLifecycleSocketCommand } from "./integrations/summon-life
 import { registerTransportGroupDropHooks } from "./integrations/transport-group-drop.js";
 import { registerStorageTransferDropHooks } from "./integrations/storage-transfer-drop.js?v=1.4.119-storage-canvas-drops";
 import { registerStorageTokenDropHooks } from "./integrations/storage-token-drop.js?v=1.4.121-storage-manager-callbacks";
+import { registerStorageContainerHierarchyHooks } from "./integrations/storage-container-hierarchy.js?v=1.4.122-storage-container-cycle-repair";
 import { registerTransportVehicleSheetHooks } from "./integrations/transport-vehicle-sheet.js";
 import {
   parseStorageDragData,
@@ -5745,6 +5746,13 @@ Hooks.once("ready", async () => {
   }
   catch (error) {
     console.error(`${MODULE_ID} | Failed to register storage token drop hooks.`, error);
+  }
+
+  try {
+    await registerStorageContainerHierarchyHooks({ Hooks });
+  }
+  catch (error) {
+    console.error(`${MODULE_ID} | Failed to register storage container hierarchy hooks.`, error);
   }
 
   try {
