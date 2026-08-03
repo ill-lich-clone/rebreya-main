@@ -1,5 +1,5 @@
 import { rollLootgenBrokenState } from "./lootgen-durability.js";
-import { rollLootgenMultipleAppearance } from "./lootgen-multiple-appearance.js";
+import { rollLootgenMultipleAppearance } from "./lootgen-multiple-appearance.js?v=1.4.128-lootgen-multiplicity";
 
 const COIN_MULTIPLIERS = {
   pp: 1000,

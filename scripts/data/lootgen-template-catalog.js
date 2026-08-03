@@ -1,4 +1,4 @@
-import { normalizeLootgenForm } from "./lootgen-generator.js";
+import { normalizeLootgenForm } from "./lootgen-generator.js?v=1.4.128-lootgen-multiplicity";
 
 const CATALOG_VERSION = 2;
 

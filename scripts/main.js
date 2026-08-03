@@ -23,7 +23,7 @@ import { SpellsCompendiumService } from "./data/spells-compendium.js?v=1.4.109-c
 import { ActionsCompendiumService } from "./data/actions-compendium.js";
 import { DowntimeCompendiumService } from "./data/downtime-compendium.js";
 import { FeatChoiceAutomationService, registerFeatChoiceAutomationHooks } from "./automation/feat-choice-service.js";
-import { EconomyRepository } from "./data/repository.js?v=1.4.109-implants-3";
+import { EconomyRepository } from "./data/repository.js?v=1.4.128-lootgen-multiplicity";
 import { TraderService, normalizeTraderState } from "./data/trader-service.js?v=1.4.109-lazy-trader-restock";
 import { TradeTransactionService } from "./features/trading/trade-transaction-service.js";
 import {
@@ -80,7 +80,7 @@ import { getActiveGm, isActiveGmClient } from "./infrastructure/foundry/active-g
 import { SocketCommandBus } from "./infrastructure/foundry/socket-command-bus.js";
 import { UiRefreshCoordinator } from "./infrastructure/ui/ui-refresh-coordinator.js";
 import { GlobalEventsService } from "./data/global-events-service.js";
-import { LootgenTemplateCatalog } from "./data/lootgen-template-catalog.js";
+import { LootgenTemplateCatalog } from "./data/lootgen-template-catalog.js?v=1.4.128-lootgen-multiplicity";
 import {
   StorageService,
   isStorageActor,
