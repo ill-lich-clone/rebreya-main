@@ -109,6 +109,12 @@ function createCanvasDragHarness() {
       this.originalMoves = 0;
       this.originalDrops = 0;
       this.originalCancels = 0;
+      this.mouseInteractionManager = {
+        callbacks: {
+          dragLeftMove: this._onDragLeftMove,
+          dragLeftDrop: this._onDragLeftDrop
+        }
+      };
     }
     _onDragLeftMove() { this.originalMoves += 1; return "move"; }
     _onDragLeftDrop() { this.originalDrops += 1; return "drop"; }
@@ -214,6 +220,24 @@ test("holding a whole storage token over another storage intercepts PIXI movemen
     tokenUuid: harness.source.document.uuid
   });
   assert.equal(harness.deposits[0][2], 1);
+});
+
+test("patch rewires managers that captured Foundry drag callbacks before module ready", async () => {
+  const harness = createCanvasDragHarness();
+  const callbacks = harness.source.mouseInteractionManager.callbacks;
+
+  callbacks.dragLeftMove.call(harness.source, harness.event);
+  harness.clock.advance(1000);
+  callbacks.dragLeftDrop.call(harness.source, harness.event);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.equal(harness.source.originalMoves, 1);
+  assert.equal(harness.source.originalDrops, 0);
+  assert.equal(harness.deposits.length, 1);
+  assert.deepEqual(harness.deposits[0][1], {
+    kind: "storage-token",
+    tokenUuid: harness.source.document.uuid
+  });
 });
 
 test("dropping a storage token before the one-second hold keeps normal Foundry movement", async () => {

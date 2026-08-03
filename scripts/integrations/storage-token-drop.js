@@ -9,6 +9,7 @@ import {
 
 const registeredHookObjects = new WeakSet();
 const patchedTokenPrototypes = new WeakSet();
+const patchedDragCallback = Symbol("rebreyaStorageTokenDragCallback");
 const DRAG_MIME_TYPES = ["text/plain", "text", "application/json", "text/uri-list"];
 
 function clean(value) {
@@ -430,33 +431,67 @@ export class StorageTokenDropController {
   }
 }
 
-export function patchStorageTokenCanvasDrag(controller, {
-  TokenClass = globalThis.foundry?.canvas?.placeables?.Token ?? globalThis.Token
-} = {}) {
-  const prototype = TokenClass?.prototype;
-  if (!prototype || patchedTokenPrototypes.has(prototype)) return false;
-  const originalMove = prototype._onDragLeftMove;
-  const originalDrop = prototype._onDragLeftDrop;
-  const originalCancel = prototype._onDragLeftCancel;
-  if (typeof originalMove !== "function" || typeof originalDrop !== "function") return false;
-
-  prototype._onDragLeftMove = function rebreyaStorageDragMove(event) {
+function wrapStorageTokenDragMove(controller, originalMove) {
+  const wrapped = function rebreyaStorageDragMove(event) {
     const result = originalMove.call(this, event);
     controller.handleCanvasTokenDragMove(this, event);
     return result;
   };
-  prototype._onDragLeftDrop = function rebreyaStorageDragDrop(event) {
+  wrapped[patchedDragCallback] = true;
+  return wrapped;
+}
+
+function wrapStorageTokenDragDrop(controller, originalDrop) {
+  const wrapped = function rebreyaStorageDragDrop(event) {
     if (controller.handleCanvasTokenDragDrop(this, event)) return undefined;
     return originalDrop.call(this, event);
   };
-  if (typeof originalCancel === "function") {
-    prototype._onDragLeftCancel = function rebreyaStorageDragCancel(event) {
-      controller.handleCanvasTokenDragCancel(this, event);
-      return originalCancel.call(this, event);
-    };
+  wrapped[patchedDragCallback] = true;
+  return wrapped;
+}
+
+export function patchStorageTokenInteractionManager(controller, token) {
+  const callbacks = token?.mouseInteractionManager?.callbacks;
+  if (!callbacks) return false;
+  let changed = false;
+  if (typeof callbacks.dragLeftMove === "function" && !callbacks.dragLeftMove[patchedDragCallback]) {
+    callbacks.dragLeftMove = wrapStorageTokenDragMove(controller, callbacks.dragLeftMove);
+    changed = true;
   }
-  patchedTokenPrototypes.add(prototype);
-  return true;
+  if (typeof callbacks.dragLeftDrop === "function" && !callbacks.dragLeftDrop[patchedDragCallback]) {
+    callbacks.dragLeftDrop = wrapStorageTokenDragDrop(controller, callbacks.dragLeftDrop);
+    changed = true;
+  }
+  return changed;
+}
+
+export function patchStorageTokenCanvasDrag(controller, {
+  TokenClass = globalThis.foundry?.canvas?.placeables?.Token ?? globalThis.Token
+} = {}) {
+  const prototype = TokenClass?.prototype;
+  if (!prototype) return false;
+  let changed = false;
+  if (!patchedTokenPrototypes.has(prototype)) {
+    const originalMove = prototype._onDragLeftMove;
+    const originalDrop = prototype._onDragLeftDrop;
+    const originalCancel = prototype._onDragLeftCancel;
+    if (typeof originalMove !== "function" || typeof originalDrop !== "function") return false;
+
+    prototype._onDragLeftMove = wrapStorageTokenDragMove(controller, originalMove);
+    prototype._onDragLeftDrop = wrapStorageTokenDragDrop(controller, originalDrop);
+    if (typeof originalCancel === "function") {
+      prototype._onDragLeftCancel = function rebreyaStorageDragCancel(event) {
+        controller.handleCanvasTokenDragCancel(this, event);
+        return originalCancel.call(this, event);
+      };
+    }
+    patchedTokenPrototypes.add(prototype);
+    changed = true;
+  }
+  for (const token of controller.canvasProvider?.()?.tokens?.placeables ?? []) {
+    changed = patchStorageTokenInteractionManager(controller, token) || changed;
+  }
+  return changed;
 }
 
 export function registerStorageTokenDropHooks(moduleApi, {

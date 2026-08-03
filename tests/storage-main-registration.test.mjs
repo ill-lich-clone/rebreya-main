@@ -31,11 +31,11 @@ test("main registers the storage deposit socket API and current cache keys", asy
     "data/storage-deposit-source.js?v=1.4.119-storage-canvas-drops",
     "data/storage-command-service.js?v=1.4.120-storage-character-drop-2",
     "integrations/storage-transfer-drop.js?v=1.4.119-storage-canvas-drops",
-    "integrations/storage-token-drop.js?v=1.4.120-storage-character-drop-3"
+    "integrations/storage-token-drop.js?v=1.4.121-storage-manager-callbacks"
   ]) {
     assert.equal(main.includes(importPath), true, importPath);
   }
-  assert.equal(manifest.version, "1.4.120");
+  assert.equal(manifest.version, "1.4.121");
 });
 
 test("storage drop hook registrations have independent error boundaries", async () => {

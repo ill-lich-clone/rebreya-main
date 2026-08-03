@@ -190,7 +190,7 @@ import { registerSpellInstanceSocketCommand } from "./integrations/spell-instanc
 import { registerSummonLifecycleSocketCommand } from "./integrations/summon-lifecycle-socket.js";
 import { registerTransportGroupDropHooks } from "./integrations/transport-group-drop.js";
 import { registerStorageTransferDropHooks } from "./integrations/storage-transfer-drop.js?v=1.4.119-storage-canvas-drops";
-import { registerStorageTokenDropHooks } from "./integrations/storage-token-drop.js?v=1.4.120-storage-character-drop-3";
+import { registerStorageTokenDropHooks } from "./integrations/storage-token-drop.js?v=1.4.121-storage-manager-callbacks";
 import { registerTransportVehicleSheetHooks } from "./integrations/transport-vehicle-sheet.js";
 import {
   parseStorageDragData,
