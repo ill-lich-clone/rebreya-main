@@ -326,3 +326,43 @@ test("a native container without a stored actor uses the Rebreya fallback storag
   assert.equal(created[0].name, snapshot.name);
   assert.equal(created[0].texture.src, snapshot.img);
 });
+
+test("a restored bag does not inherit the fallback ground-pile marker", async () => {
+  const created = [];
+  const scene = {
+    id: "scene",
+    tokens: { contents: [] },
+    async createEmbeddedDocuments(_type, documents) {
+      created.push(clone(documents[0]));
+      return [{ ...clone(documents[0]), id: "bag-token" }];
+    }
+  };
+  const fallbackActor = {
+    id: "ground-storage",
+    async getTokenDocument() {
+      return {
+        toObject: () => ({
+          actorId: this.id,
+          width: 1,
+          height: 1,
+          flags: { [MODULE_ID]: { groundPile: { enabled: true } } }
+        })
+      };
+    }
+  };
+  const service = new StorageContainerItemService({
+    resolveScene: () => scene,
+    resolveActor: () => null,
+    resolveFallbackActor: () => fallbackActor
+  });
+
+  await service.restoreSnapshotToScene(bagSnapshot(), {
+    sceneId: "scene",
+    x: 100,
+    y: 200,
+    mutationId: "bag-with-fallback-prototype"
+  });
+
+  assert.equal(created[0].flags[MODULE_ID].storage.storageKind, "bag");
+  assert.equal(created[0].flags[MODULE_ID].groundPile, undefined);
+});

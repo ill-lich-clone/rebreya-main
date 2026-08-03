@@ -240,16 +240,20 @@ test("patch rewires managers that captured Foundry drag callbacks before module 
   });
 });
 
-test("dropping a storage token before the one-second hold keeps normal Foundry movement", async () => {
+test("dropping a storage token directly on storage deposits without a one-second hold", async () => {
   const harness = createCanvasDragHarness();
 
   harness.source._onDragLeftMove(harness.event);
   const result = harness.source._onDragLeftDrop(harness.event);
   await new Promise((resolve) => setTimeout(resolve, 0));
 
-  assert.equal(result, "drop");
-  assert.equal(harness.source.originalDrops, 1);
-  assert.equal(harness.deposits.length, 0);
+  assert.equal(result, undefined);
+  assert.equal(harness.source.originalDrops, 0);
+  assert.equal(harness.deposits.length, 1);
+  assert.deepEqual(harness.deposits[0][1], {
+    kind: "storage-token",
+    tokenUuid: harness.source.document.uuid
+  });
 });
 
 test("canvas token hit testing falls back to scene document geometry when PIXI bounds miss", async () => {

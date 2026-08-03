@@ -417,6 +417,21 @@ export class StorageContainerItemService {
       prototypeData = clone(prototype?.toObject?.() ?? prototype) ?? {};
     }
     const presented = clone(normalized.presentation?.tokenData) ?? {};
+    const moduleFlags = {
+      ...(clone(prototypeData.flags?.[MODULE_ID]) ?? {}),
+      ...(clone(presented.flags?.[MODULE_ID]) ?? {}),
+      storage: {
+        ...normalized.state,
+        containerId: normalized.containerId,
+        storageKind: normalized.storageKind
+      },
+      [STORAGE_CONTAINER_MUTATION_FLAG]: {
+        id: stableMutationId,
+        kind: "scene-restore"
+      }
+    };
+    if (normalized.storageKind === "pile") moduleFlags.groundPile = { enabled: true };
+    else delete moduleFlags.groundPile;
     const data = {
       ...prototypeData,
       ...presented,
@@ -435,20 +450,7 @@ export class StorageContainerItemService {
       flags: {
         ...(clone(prototypeData.flags) ?? {}),
         ...(clone(presented.flags) ?? {}),
-        [MODULE_ID]: {
-          ...(clone(prototypeData.flags?.[MODULE_ID]) ?? {}),
-          ...(clone(presented.flags?.[MODULE_ID]) ?? {}),
-          storage: {
-            ...normalized.state,
-            containerId: normalized.containerId,
-            storageKind: normalized.storageKind
-          },
-          [STORAGE_CONTAINER_MUTATION_FLAG]: {
-            id: stableMutationId,
-            kind: "scene-restore"
-          },
-          ...(normalized.storageKind === "pile" ? { groundPile: { enabled: true } } : {})
-        }
+        [MODULE_ID]: moduleFlags
       }
     };
     delete data._id;

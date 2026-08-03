@@ -95,7 +95,7 @@ import {
 } from "./data/storage-access.js";
 import { BuiltinStorageActorService } from "./data/builtin-storage-actor-service.js";
 import { StorageGroundPileService } from "./data/storage-ground-pile-service.js";
-import { StorageContainerItemService } from "./data/storage-container-item-service.js?v=1.4.123-storage-ground-item-transfer";
+import { StorageContainerItemService } from "./data/storage-container-item-service.js?v=1.4.124-storage-ground-container-marker";
 import {
   parseStorageDepositDragData,
   resolveStorageDepositSource
@@ -190,7 +190,7 @@ import { registerSpellInstanceSocketCommand } from "./integrations/spell-instanc
 import { registerSummonLifecycleSocketCommand } from "./integrations/summon-lifecycle-socket.js";
 import { registerTransportGroupDropHooks } from "./integrations/transport-group-drop.js";
 import { registerStorageTransferDropHooks } from "./integrations/storage-transfer-drop.js?v=1.4.119-storage-canvas-drops";
-import { registerStorageTokenDropHooks } from "./integrations/storage-token-drop.js?v=1.4.121-storage-manager-callbacks";
+import { registerStorageTokenDropHooks } from "./integrations/storage-token-drop.js?v=1.4.125-storage-token-immediate-drop";
 import { registerStorageContainerHierarchyHooks } from "./integrations/storage-container-hierarchy.js?v=1.4.122-storage-container-cycle-repair";
 import { registerTransportVehicleSheetHooks } from "./integrations/transport-vehicle-sheet.js";
 import {

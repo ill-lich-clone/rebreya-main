@@ -210,7 +210,7 @@ export class StorageTokenDropController {
     }
     this.dragSource = this.canvasDragSource;
     if (this.activeToken === target && this.activeTargetKind === targetKind) return true;
-    this.#activateTarget(target, targetKind);
+    this.#activateTarget(target, targetKind, { immediate: true });
     return true;
   }
 
@@ -331,14 +331,16 @@ export class StorageTokenDropController {
     }) ?? null;
   }
 
-  #activateTarget(token, targetKind = "storage") {
+  #activateTarget(token, targetKind = "storage", { immediate = false } = {}) {
     this.#clearTarget();
     this.activeToken = token;
     this.activeTargetKind = targetKind;
     this.#highlight(token);
-    if (targetKind === "character") {
+    if (targetKind === "character" || immediate) {
       this.ready = true;
-      this.overlayController.showFeedback(token, "Отпустите, чтобы передать", {
+      this.overlayController.showFeedback(token, targetKind === "character"
+        ? "Отпустите, чтобы передать"
+        : "Отпустите, чтобы добавить", {
         durationMs: 0,
         className: "rm-storage-token-feedback--drop-ready"
       });
