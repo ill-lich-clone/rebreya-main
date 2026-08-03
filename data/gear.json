@@ -17,6 +17,7 @@
         "predominantMaterialName":  "Дерево",
         "linkedTool":  "Деревянщика",
         "value":  "5.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -39,6 +40,7 @@
         "predominantMaterialName":  "Алхимические реагенты",
         "linkedTool":  "Алхимические",
         "value":  "25.0",
+        "multipleAppearance":  "1к3",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -61,6 +63,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Кузнеца",
         "value":  "10.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -83,6 +86,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Кузнеца",
         "value":  "10.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -105,6 +109,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Кузнеца",
         "value":  "5.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -127,6 +132,7 @@
         "predominantMaterialName":  "Камень",
         "linkedTool":  "Кузнеца",
         "value":  "5.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -149,6 +155,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Кузнеца",
         "value":  "10.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -171,6 +178,7 @@
         "predominantMaterialName":  "Дерево",
         "linkedTool":  "Деревянщика",
         "value":  "5.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -193,6 +201,7 @@
         "predominantMaterialName":  "Бумага",
         "linkedTool":  "Каллиграфа",
         "value":  "2.0",
+        "multipleAppearance":  "2к12",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -215,6 +224,7 @@
         "predominantMaterialName":  "Кожа",
         "linkedTool":  "Кожедела",
         "value":  "15.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -237,6 +247,7 @@
         "predominantMaterialName":  "Стекло",
         "linkedTool":  "Исследователя",
         "value":  "5.0",
+        "multipleAppearance":  "1к4",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -259,6 +270,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Жестянщика",
         "value":  "5.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -281,6 +293,7 @@
         "predominantMaterialName":  "Лён",
         "linkedTool":  "Кожедела",
         "value":  "20.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -303,6 +316,7 @@
         "predominantMaterialName":  "Шёлк",
         "linkedTool":  "Кожедела",
         "value":  "40.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -325,6 +339,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Кузнеца",
         "value":  "10.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -347,6 +362,7 @@
         "predominantMaterialName":  "Воск",
         "linkedTool":  "Каллиграфа",
         "value":  "25.0",
+        "multipleAppearance":  "1к4",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -369,6 +385,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Жестянщика",
         "value":  "5.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -391,6 +408,7 @@
         "predominantMaterialName":  "Спирт",
         "linkedTool":  "Алхимические",
         "value":  "20.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -413,6 +431,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Воровские",
         "value":  "5.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -435,6 +454,7 @@
         "predominantMaterialName":  "Алхимические реагенты",
         "linkedTool":  "Алхимические",
         "value":  "50.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -457,6 +477,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "15.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -479,6 +500,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Кузнеца",
         "value":  "15.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -501,6 +523,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Кузнеца",
         "value":  "15.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -523,6 +546,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Кузнеца",
         "value":  "20.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -545,6 +569,7 @@
         "predominantMaterialName":  "Спирт",
         "linkedTool":  "Алхимические",
         "value":  "50.0",
+        "multipleAppearance":  "1к3",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -567,6 +592,7 @@
         "predominantMaterialName":  "Бумага",
         "linkedTool":  "Каллиграфа",
         "value":  "15.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -589,6 +615,7 @@
         "predominantMaterialName":  "Бумага",
         "linkedTool":  "Каллиграфа",
         "value":  "50.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -611,6 +638,7 @@
         "predominantMaterialName":  "Медь",
         "linkedTool":  "Кузнеца",
         "value":  "2.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -633,6 +661,7 @@
         "predominantMaterialName":  "Кожа",
         "linkedTool":  "Кожедела",
         "value":  "15.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -655,6 +684,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Ювелира",
         "value":  "10.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -677,6 +707,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Кожедела",
         "value":  "75.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -699,6 +730,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Кузнеца",
         "value":  "75.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -721,6 +753,7 @@
         "predominantMaterialName":  "Ткань",
         "linkedTool":  "Алхимические",
         "value":  "50.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -743,6 +776,7 @@
         "predominantMaterialName":  "Дерево",
         "linkedTool":  "Деревянщика",
         "value":  "10.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -765,6 +799,7 @@
         "predominantMaterialName":  "Кожа",
         "linkedTool":  "Кожедела",
         "value":  "5.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -787,6 +822,7 @@
         "predominantMaterialName":  "Дерево",
         "linkedTool":  "Деревянщика",
         "value":  "2.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -809,6 +845,7 @@
         "predominantMaterialName":  "Кожа",
         "linkedTool":  "Кожедела",
         "value":  "5.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -831,6 +868,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Кузнеца",
         "value":  "15.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -853,6 +891,7 @@
         "predominantMaterialName":  "Стекло",
         "linkedTool":  "Исследователя",
         "value":  "10.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -875,6 +914,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Жестянщика",
         "value":  "25.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -897,6 +937,7 @@
         "predominantMaterialName":  "Дерево",
         "linkedTool":  "Деревянщика",
         "value":  "10.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -919,6 +960,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Кузнеца",
         "value":  "25.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -941,6 +983,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Кузнеца",
         "value":  "15.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -963,6 +1006,7 @@
         "predominantMaterialName":  "Дерево",
         "linkedTool":  "Ювелира",
         "value":  "40.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -985,6 +1029,7 @@
         "predominantMaterialName":  "Дерево",
         "linkedTool":  "Ювелира",
         "value":  "40.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -1007,6 +1052,7 @@
         "predominantMaterialName":  "Камень",
         "linkedTool":  "Ювелира",
         "value":  "40.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -1029,6 +1075,7 @@
         "predominantMaterialName":  "Дерево",
         "linkedTool":  "Ювелира",
         "value":  "20.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -1051,6 +1098,7 @@
         "predominantMaterialName":  "Кристалл",
         "linkedTool":  "Ювелира",
         "value":  "50.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -1073,6 +1121,7 @@
         "predominantMaterialName":  "Масло",
         "linkedTool":  "Алхимические",
         "value":  "10.0",
+        "multipleAppearance":  "1к4",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -1095,6 +1144,7 @@
         "predominantMaterialName":  "Известь",
         "linkedTool":  "Камнелома",
         "value":  "2.0",
+        "multipleAppearance":  "1к6",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -1117,6 +1167,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Кузнеца",
         "value":  "15.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -1139,6 +1190,7 @@
         "predominantMaterialName":  "Ткань",
         "linkedTool":  "Гримёра",
         "value":  "5.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -1161,6 +1213,7 @@
         "predominantMaterialName":  "Ткань",
         "linkedTool":  "Алхимические",
         "value":  "200.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -1183,6 +1236,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Кузнеца",
         "value":  "20.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -1205,6 +1259,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Кузнеца",
         "value":  "5.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -1227,6 +1282,7 @@
         "predominantMaterialName":  "Масло",
         "linkedTool":  "Алхимические",
         "value":  "15.0",
+        "multipleAppearance":  "1к4",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -1249,6 +1305,7 @@
         "predominantMaterialName":  "Ткань",
         "linkedTool":  "Кожедела",
         "value":  "20.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -1271,6 +1328,7 @@
         "predominantMaterialName":  "Ткань",
         "linkedTool":  "Кожедела",
         "value":  "25.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -1293,6 +1351,7 @@
         "predominantMaterialName":  "Ткань",
         "linkedTool":  "Кожедела",
         "value":  "15.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -1315,6 +1374,7 @@
         "predominantMaterialName":  "Ткань",
         "linkedTool":  "Кожедела",
         "value":  "50.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -1337,6 +1397,7 @@
         "predominantMaterialName":  "Ткань",
         "linkedTool":  "Кожедела",
         "value":  "25.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -1359,6 +1420,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Кузнеца",
         "value":  "15.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -1381,6 +1443,7 @@
         "predominantMaterialName":  "Ткань",
         "linkedTool":  "Гримёра",
         "value":  "50.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -1403,6 +1466,7 @@
         "predominantMaterialName":  "Пергамент",
         "linkedTool":  "Каллиграфа",
         "value":  "15.0",
+        "multipleAppearance":  "1к6",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -1425,6 +1489,7 @@
         "predominantMaterialName":  "Стекло",
         "linkedTool":  "Исследователя",
         "value":  "50.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -1447,6 +1512,7 @@
         "predominantMaterialName":  "Дерево",
         "linkedTool":  "Каллиграфа",
         "value":  "2.0",
+        "multipleAppearance":  "1к4",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -1469,6 +1535,7 @@
         "predominantMaterialName":  "Стекло",
         "linkedTool":  "Исследователя",
         "value":  "800.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -1491,6 +1558,7 @@
         "predominantMaterialName":  "Мясо",
         "linkedTool":  "Повара",
         "value":  "15.0",
+        "multipleAppearance":  "1к6",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -1513,6 +1581,7 @@
         "predominantMaterialName":  "Кожа",
         "linkedTool":  "Кожедела",
         "value":  "20.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -1535,6 +1604,7 @@
         "predominantMaterialName":  "Ткань",
         "linkedTool":  "Гримёра",
         "value":  "10.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -1557,6 +1627,7 @@
         "predominantMaterialName":  "Воск",
         "linkedTool":  "Каллиграфа",
         "value":  "5.0",
+        "multipleAppearance":  "2к6",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -1579,6 +1650,7 @@
         "predominantMaterialName":  "Спирт",
         "linkedTool":  "Алхимические",
         "value":  "80.0",
+        "multipleAppearance":  "1к3",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -1601,6 +1673,7 @@
         "predominantMaterialName":  "Серебро",
         "linkedTool":  "Кузнеца",
         "value":  "20.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -1623,6 +1696,7 @@
         "predominantMaterialName":  "Серебро",
         "linkedTool":  "Кузнеца",
         "value":  "20.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -1645,6 +1719,7 @@
         "predominantMaterialName":  "Серебро",
         "linkedTool":  "Кузнеца",
         "value":  "20.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -1667,6 +1742,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Кузнеца",
         "value":  "15.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -1689,6 +1765,7 @@
         "predominantMaterialName":  "Ткань",
         "linkedTool":  "Гримёра",
         "value":  "10.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -1711,6 +1788,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Жестянщика",
         "value":  "15.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -1733,6 +1811,7 @@
         "predominantMaterialName":  "Дерево",
         "linkedTool":  "Деревянщика",
         "value":  "10.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -1755,6 +1834,7 @@
         "predominantMaterialName":  "Дерево",
         "linkedTool":  "Деревянщика",
         "value":  "10.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -1777,6 +1857,7 @@
         "predominantMaterialName":  "Камень",
         "linkedTool":  "Камнелома",
         "value":  "15.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -1799,6 +1880,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Кузнеца",
         "value":  "5.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -1821,6 +1903,7 @@
         "predominantMaterialName":  "Стекло",
         "linkedTool":  "Исследователя",
         "value":  "250.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -1843,6 +1926,7 @@
         "predominantMaterialName":  "Дерево",
         "linkedTool":  "Деревянщика",
         "value":  "20.0",
+        "multipleAppearance":  "1к6",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -1865,6 +1949,7 @@
         "predominantMaterialName":  "Стекло",
         "linkedTool":  "Исследователя",
         "value":  "5.0",
+        "multipleAppearance":  "1к6",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -1887,6 +1972,7 @@
         "predominantMaterialName":  "Медь",
         "linkedTool":  "Кузнеца",
         "value":  "2.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -1909,6 +1995,7 @@
         "predominantMaterialName":  "Дерево",
         "linkedTool":  "Деревянщика",
         "value":  "20.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -1931,6 +2018,7 @@
         "predominantMaterialName":  "Дерево",
         "linkedTool":  "Деревянщика",
         "value":  "20.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -1953,6 +2041,7 @@
         "predominantMaterialName":  "Дерево",
         "linkedTool":  "Деревянщика",
         "value":  "20.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -1975,6 +2064,7 @@
         "predominantMaterialName":  "Дерево",
         "linkedTool":  "Деревянщика",
         "value":  "20.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -1997,6 +2087,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Жестянщика",
         "value":  "50.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -2019,6 +2110,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Жестянщика",
         "value":  "80.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -2041,6 +2133,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Кузнеца",
         "value":  "20.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -2063,6 +2156,7 @@
         "predominantMaterialName":  "Чернила",
         "linkedTool":  "Каллиграфа",
         "value":  "50.0",
+        "multipleAppearance":  "1к4",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -2085,6 +2179,7 @@
         "predominantMaterialName":  "Дерево",
         "linkedTool":  "Деревянщика",
         "value":  "20.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -2107,6 +2202,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Кузнеца",
         "value":  "10.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -2129,6 +2225,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Кузнеца",
         "value":  "10.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -2151,6 +2248,7 @@
         "predominantMaterialName":  "Дерево",
         "linkedTool":  "Деревянщика",
         "value":  "15.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -2195,6 +2293,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Кузнеца",
         "value":  "25.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -2241,6 +2340,7 @@
         "predominantMaterialName":  "Дерево",
         "linkedTool":  "Деревянщика",
         "value":  "5.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -2280,6 +2380,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Кузнеца",
         "value":  "25.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -2330,6 +2431,7 @@
         "predominantMaterialName":  "Дерево",
         "linkedTool":  "Деревянщика",
         "value":  "15.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -2370,6 +2472,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Кузнеца",
         "value":  "15.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -2413,6 +2516,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Кузнеца",
         "value":  "5.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -2462,6 +2566,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Кузнеца",
         "value":  "10.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -2509,6 +2614,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Кузнеца",
         "value":  "5.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -2547,6 +2653,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Кузнеца",
         "value":  "15.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -2594,6 +2701,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Кузнеца",
         "value":  "5.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -2642,6 +2750,7 @@
         "predominantMaterialName":  "Дерево",
         "linkedTool":  "Деревянщика",
         "value":  "40.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -2683,6 +2792,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Кузнеца",
         "value":  "5.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -2731,6 +2841,7 @@
         "predominantMaterialName":  "Дерево",
         "linkedTool":  "Деревянщика",
         "value":  "30.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -2770,6 +2881,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Кузнеца",
         "value":  "10.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -2815,6 +2927,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Деревянщика",
         "value":  "80.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -2866,6 +2979,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "60.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -2915,6 +3029,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "70.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -2961,6 +3076,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Деревянщика",
         "value":  "90.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -3012,6 +3128,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "120.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -3056,6 +3173,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Деревянщика",
         "value":  "100.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -3103,6 +3221,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "90.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -3148,6 +3267,7 @@
         "predominantMaterialName":  "Кожа",
         "linkedTool":  "Кожедела",
         "value":  "50.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -3199,6 +3319,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "50.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -3247,6 +3368,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "80.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -3295,6 +3417,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "70.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -3342,6 +3465,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Деревянщика",
         "value":  "80.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -3393,6 +3517,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "60.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -3438,6 +3563,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "120.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -3487,6 +3613,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "60.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -3527,6 +3654,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "70.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -3572,6 +3700,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "80.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -3620,6 +3749,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "60.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -3664,6 +3794,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "50.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -3708,6 +3839,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "60.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -3755,6 +3887,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "100.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -3801,6 +3934,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "100.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -3848,6 +3982,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "70.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -3899,6 +4034,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "120.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -3948,6 +4084,7 @@
         "predominantMaterialName":  "Кость",
         "linkedTool":  "Художественные",
         "value":  "60.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -3994,6 +4131,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "70.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -4038,6 +4176,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "150.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -4086,6 +4225,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "60.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -4127,6 +4267,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "70.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -4180,6 +4321,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "80.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -4225,6 +4367,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "120.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -4271,6 +4414,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "25.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -4310,6 +4454,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "80.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -4353,6 +4498,7 @@
         "predominantMaterialName":  "Дерево",
         "linkedTool":  "Деревянщика",
         "value":  "200.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -4394,6 +4540,7 @@
         "predominantMaterialName":  "Дерево",
         "linkedTool":  "Деревянщика",
         "value":  "250.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -4440,6 +4587,7 @@
         "predominantMaterialName":  "Дерево",
         "linkedTool":  "Деревянщика",
         "value":  "300.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -4485,6 +4633,7 @@
         "predominantMaterialName":  "Дерево",
         "linkedTool":  "Деревянщика",
         "value":  "25.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -4530,6 +4679,7 @@
         "predominantMaterialName":  "Лён",
         "linkedTool":  "Гримёра",
         "value":  "30.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -4569,6 +4719,7 @@
         "predominantMaterialName":  "Дерево",
         "linkedTool":  "Деревянщика",
         "value":  "250.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -4611,6 +4762,7 @@
         "predominantMaterialName":  "Дерево",
         "linkedTool":  "Деревянщика",
         "value":  "500.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -4656,6 +4808,7 @@
         "predominantMaterialName":  "Дерево",
         "linkedTool":  "Деревянщика",
         "value":  "1000.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -4701,6 +4854,7 @@
         "predominantMaterialName":  "Ткань",
         "linkedTool":  "Гримёра",
         "value":  "25.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -4733,6 +4887,7 @@
         "predominantMaterialName":  "Кожа",
         "linkedTool":  "Кожедела",
         "value":  "50.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -4765,6 +4920,7 @@
         "predominantMaterialName":  "Кожа",
         "linkedTool":  "Кожедела",
         "value":  "125.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -4797,6 +4953,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Кузнеца",
         "value":  "50.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -4829,6 +4986,7 @@
         "predominantMaterialName":  "Кожа",
         "linkedTool":  "Кожедела",
         "value":  "60.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -4861,6 +5019,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "120.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -4893,6 +5052,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "200.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -4925,6 +5085,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "600.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -4957,6 +5118,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "1500.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -4989,6 +5151,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Кузнеца",
         "value":  "50.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -5021,6 +5184,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "500.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -5053,6 +5217,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "1000.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -5085,6 +5250,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "1500.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -5117,6 +5283,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "3000.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -5149,6 +5316,7 @@
         "predominantMaterialName":  "Кость",
         "linkedTool":  "Кожедела",
         "value":  "5000.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -5181,6 +5349,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Кузнеца",
         "value":  "100.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -5213,6 +5382,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "70.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -5245,6 +5415,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "250.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -5277,6 +5448,7 @@
         "predominantMaterialName":  "Кожа",
         "linkedTool":  "Гримёра",
         "value":  "20.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -5309,6 +5481,7 @@
         "predominantMaterialName":  "Кожа",
         "linkedTool":  "Кожедела",
         "value":  "50.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -5341,6 +5514,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "100.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -5373,6 +5547,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "200.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -5405,6 +5580,7 @@
         "predominantMaterialName":  "Ткань",
         "linkedTool":  "Гримёра",
         "value":  "250.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -5437,6 +5613,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "400.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -5469,6 +5646,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "500.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -5501,6 +5679,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "800.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -5533,6 +5712,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "1200.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -5565,6 +5745,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "1500.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -5597,6 +5778,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "5000.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -5629,6 +5811,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "500.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -5661,6 +5844,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "600.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -5693,6 +5877,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Жестянщика",
         "value":  "250.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -5749,6 +5934,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Жестянщика",
         "value":  "250.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -5807,6 +5993,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Жестянщика",
         "value":  "300.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -5867,6 +6054,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Жестянщика",
         "value":  "800.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -5922,6 +6110,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Жестянщика",
         "value":  "500.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -5982,6 +6171,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Жестянщика",
         "value":  "200.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -6042,6 +6232,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Жестянщика",
         "value":  "600.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -6102,6 +6293,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Жестянщика",
         "value":  "400.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -6158,6 +6350,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "1000.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -6211,6 +6404,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "1150.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -6264,6 +6458,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "1200.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -6321,6 +6516,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "2100.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -6376,6 +6572,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "1700.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -6431,6 +6628,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "1000.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -6487,6 +6685,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "1500.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -6543,6 +6742,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "1500.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -6598,6 +6798,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "2500.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -6656,6 +6857,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "3000.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -6715,6 +6917,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "3500.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -6771,6 +6974,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "3500.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -6829,6 +7033,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "2500.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -6882,6 +7087,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "2500.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -6941,6 +7147,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "6500.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -7001,6 +7208,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "7000.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -7055,6 +7263,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "16000.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -7113,6 +7322,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "6000.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -7173,6 +7383,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "20000.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -7230,6 +7441,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "5000.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -7291,6 +7503,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "3000.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -7350,6 +7563,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "20000.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -7414,6 +7628,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "1000.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -7436,6 +7651,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "700.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -7458,6 +7674,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "500.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -7480,6 +7697,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "800.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -7502,6 +7720,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "1000.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -7524,6 +7743,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "200.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -7546,6 +7766,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "1000.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -7568,6 +7789,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "1000.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -7590,6 +7812,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "1400.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -7612,6 +7835,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "1500.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -7634,6 +7858,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "6000.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -7656,6 +7881,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "8000.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -7678,6 +7904,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "2000.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -7700,6 +7927,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "6000.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -7722,6 +7950,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "2000.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -7744,6 +7973,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "2000.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -7766,6 +7996,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "4000.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -7788,6 +8019,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "4000.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -7810,6 +8042,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "4000.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -7832,6 +8065,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "4000.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -7854,6 +8088,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "500000.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -7876,6 +8111,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "3000.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -7898,6 +8134,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "5000.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -7920,6 +8157,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "1000.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -7942,6 +8180,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "3000.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -7964,6 +8203,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Кузнеца",
         "value":  "50.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -7986,6 +8226,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Кузнеца",
         "value":  "100.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -8008,6 +8249,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Кузнеца",
         "value":  "150.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -8030,6 +8272,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Кузнеца",
         "value":  "200.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -8052,6 +8295,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Кузнеца",
         "value":  "100.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -8074,6 +8318,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Кузнеца",
         "value":  "100.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -8096,6 +8341,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Кузнеца",
         "value":  "100.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -8118,6 +8364,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Кузнеца",
         "value":  "100.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -8140,6 +8387,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Кузнеца",
         "value":  "100.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -8162,6 +8410,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Кузнеца",
         "value":  "200.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -8184,6 +8433,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Кузнеца",
         "value":  "100.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -8206,6 +8456,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Кузнеца",
         "value":  "100.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -8228,6 +8479,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Кузнеца",
         "value":  "100.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -8250,6 +8502,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Кузнеца",
         "value":  "100.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -8272,6 +8525,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Кузнеца",
         "value":  "100.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -8294,6 +8548,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Кузнеца",
         "value":  "100.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -8316,6 +8571,7 @@
         "predominantMaterialName":  "Бумага",
         "linkedTool":  "Художественные",
         "value":  "4",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -8338,6 +8594,7 @@
         "predominantMaterialName":  "Бумага",
         "linkedTool":  "Художественные",
         "value":  "2",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -8360,6 +8617,7 @@
         "predominantMaterialName":  "Бумага",
         "linkedTool":  "Художественные",
         "value":  "4",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -8382,6 +8640,7 @@
         "predominantMaterialName":  "Пергамент",
         "linkedTool":  "Художественные",
         "value":  "12",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -8404,6 +8663,7 @@
         "predominantMaterialName":  "Пергамент",
         "linkedTool":  "Художественные",
         "value":  "24",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -8426,6 +8686,7 @@
         "predominantMaterialName":  "Пергамент",
         "linkedTool":  "Художественные",
         "value":  "20",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -8448,6 +8709,7 @@
         "predominantMaterialName":  "Пергамент",
         "linkedTool":  "Художественные",
         "value":  "60",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -8470,6 +8732,7 @@
         "predominantMaterialName":  "Пергамент",
         "linkedTool":  "Художественные",
         "value":  "48",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -8492,6 +8755,7 @@
         "predominantMaterialName":  "Дерево",
         "linkedTool":  "Художественные",
         "value":  "160",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -8514,6 +8778,7 @@
         "predominantMaterialName":  "Дерево",
         "linkedTool":  "Художественные",
         "value":  "24",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -8536,6 +8801,7 @@
         "predominantMaterialName":  "Золото",
         "linkedTool":  "Ювелира",
         "value":  "12",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -8558,6 +8824,7 @@
         "predominantMaterialName":  "Ткань",
         "linkedTool":  "Художественные",
         "value":  "16",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -8580,6 +8847,7 @@
         "predominantMaterialName":  "Ткань",
         "linkedTool":  "Художественные",
         "value":  "64",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -8602,6 +8870,7 @@
         "predominantMaterialName":  "Ткань",
         "linkedTool":  "Художественные",
         "value":  "12",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -8624,6 +8893,7 @@
         "predominantMaterialName":  "Ткань",
         "linkedTool":  "Художественные",
         "value":  "20",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -8646,6 +8916,7 @@
         "predominantMaterialName":  "Глина",
         "linkedTool":  "Художественные",
         "value":  "8",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -8668,6 +8939,7 @@
         "predominantMaterialName":  "Глина",
         "linkedTool":  "Художественные",
         "value":  "32",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -8690,6 +8962,7 @@
         "predominantMaterialName":  "Глина",
         "linkedTool":  "Художественные",
         "value":  "20",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -8712,6 +8985,7 @@
         "predominantMaterialName":  "Камень",
         "linkedTool":  "Камнелома",
         "value":  "12",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -8734,6 +9008,7 @@
         "predominantMaterialName":  "Медь",
         "linkedTool":  "Кузнеца",
         "value":  "40",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -8756,6 +9031,7 @@
         "predominantMaterialName":  "Серебро",
         "linkedTool":  "Ювелира",
         "value":  "120",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -8778,6 +9054,7 @@
         "predominantMaterialName":  "Камень",
         "linkedTool":  "Камнелома",
         "value":  "96",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -8800,6 +9077,7 @@
         "predominantMaterialName":  "Медь",
         "linkedTool":  "Кузнеца",
         "value":  "160",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -8822,6 +9100,7 @@
         "predominantMaterialName":  "Камень",
         "linkedTool":  "Камнелома",
         "value":  "280",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -8844,6 +9123,7 @@
         "predominantMaterialName":  "Медь",
         "linkedTool":  "Кузнеца",
         "value":  "400",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -8866,6 +9146,7 @@
         "predominantMaterialName":  "Камень",
         "linkedTool":  "Камнелома",
         "value":  "200",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -8888,6 +9169,7 @@
         "predominantMaterialName":  "Камень",
         "linkedTool":  "Камнелома",
         "value":  "960",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -8910,6 +9192,7 @@
         "predominantMaterialName":  "Дерево",
         "linkedTool":  "Художественные",
         "value":  "4",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -8932,6 +9215,7 @@
         "predominantMaterialName":  "Дерево",
         "linkedTool":  "Художественные",
         "value":  "8",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -8954,6 +9238,7 @@
         "predominantMaterialName":  "Дерево",
         "linkedTool":  "Художественные",
         "value":  "7",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -8976,6 +9261,7 @@
         "predominantMaterialName":  "Глина",
         "linkedTool":  "Художественные",
         "value":  "10",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -8998,6 +9284,7 @@
         "predominantMaterialName":  "Дерево",
         "linkedTool":  "Ювелира",
         "value":  "28",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -9020,6 +9307,7 @@
         "predominantMaterialName":  "Дерево",
         "linkedTool":  "Ювелира",
         "value":  "96",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -9042,6 +9330,7 @@
         "predominantMaterialName":  "Медь",
         "linkedTool":  "Ювелира",
         "value":  "48",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -9064,6 +9353,7 @@
         "predominantMaterialName":  "Медь",
         "linkedTool":  "Ювелира",
         "value":  "36",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -9086,6 +9376,7 @@
         "predominantMaterialName":  "Медь",
         "linkedTool":  "Ювелира",
         "value":  "20",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -9108,6 +9399,7 @@
         "predominantMaterialName":  "Серебро",
         "linkedTool":  "Ювелира",
         "value":  "64",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -9130,6 +9422,7 @@
         "predominantMaterialName":  "Золото",
         "linkedTool":  "Ювелира",
         "value":  "200",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -9152,6 +9445,7 @@
         "predominantMaterialName":  "Золото",
         "linkedTool":  "Ювелира",
         "value":  "800",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -9174,6 +9468,7 @@
         "predominantMaterialName":  "Камень",
         "linkedTool":  "Ювелира",
         "value":  "24",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -9196,6 +9491,7 @@
         "predominantMaterialName":  "Серебро",
         "linkedTool":  "Ювелира",
         "value":  "16",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -9218,6 +9514,7 @@
         "predominantMaterialName":  "Серебро",
         "linkedTool":  "Ювелира",
         "value":  "20",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -9240,6 +9537,7 @@
         "predominantMaterialName":  "Золото",
         "linkedTool":  "Ювелира",
         "value":  "28",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -9262,6 +9560,7 @@
         "predominantMaterialName":  "Кость",
         "linkedTool":  "Ювелира",
         "value":  "120",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -9284,6 +9583,7 @@
         "predominantMaterialName":  "Серебро",
         "linkedTool":  "Ювелира",
         "value":  "40",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -9306,6 +9606,7 @@
         "predominantMaterialName":  "Золото",
         "linkedTool":  "Ювелира",
         "value":  "200",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -9328,6 +9629,7 @@
         "predominantMaterialName":  "Дерево",
         "linkedTool":  "Художественные",
         "value":  "32",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -9350,6 +9652,7 @@
         "predominantMaterialName":  "Дерево",
         "linkedTool":  "Деревянщика",
         "value":  "12",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -9372,6 +9675,7 @@
         "predominantMaterialName":  "Серебро",
         "linkedTool":  "Ювелира",
         "value":  "32",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -9394,6 +9698,7 @@
         "predominantMaterialName":  "Дерево",
         "linkedTool":  "Художественные",
         "value":  "72",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -9416,6 +9721,7 @@
         "predominantMaterialName":  "Дерево",
         "linkedTool":  "Художественные",
         "value":  "28",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -9438,6 +9744,7 @@
         "predominantMaterialName":  "Серебро",
         "linkedTool":  "Ювелира",
         "value":  "15",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -9460,6 +9767,7 @@
         "predominantMaterialName":  "Стекло",
         "linkedTool":  "Художественные",
         "value":  "44",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -9482,6 +9790,7 @@
         "predominantMaterialName":  "Шёлк",
         "linkedTool":  "Кожедела",
         "value":  "960",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -9504,6 +9813,7 @@
         "predominantMaterialName":  "Шёлк",
         "linkedTool":  "Кожедела",
         "value":  "1120",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -9526,6 +9836,7 @@
         "predominantMaterialName":  "Ткань",
         "linkedTool":  "Кожедела",
         "value":  "1440",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -9548,6 +9859,7 @@
         "predominantMaterialName":  "Кожа",
         "linkedTool":  "Кожедела",
         "value":  "800",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -9570,6 +9882,7 @@
         "predominantMaterialName":  "Шерсть",
         "linkedTool":  "Кожедела",
         "value":  "1280",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -9592,6 +9905,7 @@
         "predominantMaterialName":  "Шерсть",
         "linkedTool":  "Кожедела",
         "value":  "1760",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -9614,6 +9928,7 @@
         "predominantMaterialName":  "Шёлк",
         "linkedTool":  "Кожедела",
         "value":  "2240",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -9636,6 +9951,7 @@
         "predominantMaterialName":  "Ткань",
         "linkedTool":  "Кожедела",
         "value":  "1920",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -9658,6 +9974,7 @@
         "predominantMaterialName":  "Шёлк",
         "linkedTool":  "Кожедела",
         "value":  "2560",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -9680,6 +9997,7 @@
         "predominantMaterialName":  "Шёлк",
         "linkedTool":  "Кожедела",
         "value":  "2800",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -9702,6 +10020,7 @@
         "predominantMaterialName":  "Шёлк",
         "linkedTool":  "Кожедела",
         "value":  "3600",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -9724,6 +10043,7 @@
         "predominantMaterialName":  "Шерсть",
         "linkedTool":  "Кожедела",
         "value":  "4000",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -9746,6 +10066,7 @@
         "predominantMaterialName":  "Шёлк",
         "linkedTool":  "Кожедела",
         "value":  "4800",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -9768,6 +10089,7 @@
         "predominantMaterialName":  "Шёлк",
         "linkedTool":  "Кожедела",
         "value":  "4400",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -9790,6 +10112,7 @@
         "predominantMaterialName":  "Ткань",
         "linkedTool":  "Кожедела",
         "value":  "6000",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -9812,6 +10135,7 @@
         "predominantMaterialName":  "Шёлк",
         "linkedTool":  "Кожедела",
         "value":  "5200",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -9834,6 +10158,7 @@
         "predominantMaterialName":  "Шёлк",
         "linkedTool":  "Кожедела",
         "value":  "6400",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -9856,6 +10181,7 @@
         "predominantMaterialName":  "Шёлк",
         "linkedTool":  "Кожедела",
         "value":  "9600",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -9878,6 +10204,7 @@
         "predominantMaterialName":  "Шёлк",
         "linkedTool":  "Кожедела",
         "value":  "12000",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -9900,6 +10227,7 @@
         "predominantMaterialName":  "Шёлк",
         "linkedTool":  "Кожедела",
         "value":  "14400",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -9922,6 +10250,7 @@
         "predominantMaterialName":  "Шёлк",
         "linkedTool":  "Кожедела",
         "value":  "11200",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -9944,6 +10273,7 @@
         "predominantMaterialName":  "Шёлк",
         "linkedTool":  "Кожедела",
         "value":  "17600",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -9966,6 +10296,7 @@
         "predominantMaterialName":  "Шёлк",
         "linkedTool":  "Кожедела",
         "value":  "22400",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -9988,6 +10319,7 @@
         "predominantMaterialName":  "Шёлк",
         "linkedTool":  "Кожедела",
         "value":  "36000",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -10010,6 +10342,7 @@
         "predominantMaterialName":  "Шёлк",
         "linkedTool":  "Кожедела",
         "value":  "56000",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -10032,6 +10365,7 @@
         "predominantMaterialName":  "Золото",
         "linkedTool":  "Ювелира",
         "value":  "48000",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -10054,6 +10388,7 @@
         "predominantMaterialName":  "Серебро",
         "linkedTool":  "Ювелира",
         "value":  "1200",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -10076,6 +10411,7 @@
         "predominantMaterialName":  "Камень",
         "linkedTool":  "Камнелома",
         "value":  "960",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -10098,6 +10434,7 @@
         "predominantMaterialName":  "Лён",
         "linkedTool":  "Художественные",
         "value":  "1440",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -10120,6 +10457,7 @@
         "predominantMaterialName":  "Шёлк",
         "linkedTool":  "Художественные",
         "value":  "1280",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -10142,6 +10480,7 @@
         "predominantMaterialName":  "Медь",
         "linkedTool":  "Ювелира",
         "value":  "2000",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -10164,6 +10503,7 @@
         "predominantMaterialName":  "Камень",
         "linkedTool":  "Художественные",
         "value":  "1760",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -10186,6 +10526,7 @@
         "predominantMaterialName":  "Стекло",
         "linkedTool":  "Художественные",
         "value":  "2400",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -10208,6 +10549,7 @@
         "predominantMaterialName":  "Медь",
         "linkedTool":  "Ювелира",
         "value":  "2800",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -10230,6 +10572,7 @@
         "predominantMaterialName":  "Золото",
         "linkedTool":  "Ювелира",
         "value":  "3600",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -10252,6 +10595,7 @@
         "predominantMaterialName":  "Дерево",
         "linkedTool":  "Художественные",
         "value":  "4000",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -10274,6 +10618,7 @@
         "predominantMaterialName":  "Шёлк",
         "linkedTool":  "Художественные",
         "value":  "5200",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -10296,6 +10641,7 @@
         "predominantMaterialName":  "Серебро",
         "linkedTool":  "Ювелира",
         "value":  "5600",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -10318,6 +10664,7 @@
         "predominantMaterialName":  "Серебро",
         "linkedTool":  "Ювелира",
         "value":  "6400",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -10340,6 +10687,7 @@
         "predominantMaterialName":  "Камень",
         "linkedTool":  "Камнелома",
         "value":  "9600",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -10362,6 +10710,7 @@
         "predominantMaterialName":  "Золото",
         "linkedTool":  "Ювелира",
         "value":  "12000",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -10384,6 +10733,7 @@
         "predominantMaterialName":  "Лён",
         "linkedTool":  "Художественные",
         "value":  "11200",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -10406,6 +10756,7 @@
         "predominantMaterialName":  "Платина",
         "linkedTool":  "Ювелира",
         "value":  "14400",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -10428,6 +10779,7 @@
         "predominantMaterialName":  "Стекло",
         "linkedTool":  "Художественные",
         "value":  "17600",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -10450,6 +10802,7 @@
         "predominantMaterialName":  "Золото",
         "linkedTool":  "Ювелира",
         "value":  "36000",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -10472,6 +10825,7 @@
         "predominantMaterialName":  "Камень",
         "linkedTool":  "Камнелома",
         "value":  "24000",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -10494,6 +10848,7 @@
         "predominantMaterialName":  "Стекло",
         "linkedTool":  "Художественные",
         "value":  "32000",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -10516,6 +10871,7 @@
         "predominantMaterialName":  "Камень",
         "linkedTool":  "Художественные",
         "value":  "40000",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -10538,6 +10894,7 @@
         "predominantMaterialName":  "Платина",
         "linkedTool":  "Ювелира",
         "value":  "60000",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -10560,6 +10917,7 @@
         "predominantMaterialName":  "Камень",
         "linkedTool":  "Камнелома",
         "value":  "80000",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -10582,6 +10940,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Жестянщика",
         "value":  "110",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -10604,6 +10963,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "220",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -10626,6 +10986,7 @@
         "predominantMaterialName":  "Мифрил",
         "linkedTool":  "Жестянщика",
         "value":  "1100",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -10648,6 +11009,7 @@
         "predominantMaterialName":  "Адамантин",
         "linkedTool":  "Жестянщика",
         "value":  "5500",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -10670,6 +11032,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "16500",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -10692,6 +11055,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "8800",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -10714,6 +11078,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "440",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -10736,6 +11101,7 @@
         "predominantMaterialName":  "Медь",
         "linkedTool":  "Жестянщика",
         "value":  "1100",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -10758,6 +11124,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "220",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -10780,6 +11147,7 @@
         "predominantMaterialName":  "Осколок маны",
         "linkedTool":  "Жестянщика",
         "value":  "2200",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -10802,6 +11170,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "1100",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -10824,6 +11193,7 @@
         "predominantMaterialName":  "Осколок маны",
         "linkedTool":  "Жестянщика",
         "value":  "2750",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -10846,6 +11216,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "1100",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -10868,6 +11239,7 @@
         "predominantMaterialName":  "Мифрил",
         "linkedTool":  "Жестянщика",
         "value":  "1320",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -10890,6 +11262,7 @@
         "predominantMaterialName":  "Осколок маны",
         "linkedTool":  "Жестянщика",
         "value":  "220",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -10912,6 +11285,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "440",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -10934,6 +11308,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "1320",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -10956,6 +11331,7 @@
         "predominantMaterialName":  "Медь",
         "linkedTool":  "Жестянщика",
         "value":  "1100",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -10978,6 +11354,7 @@
         "predominantMaterialName":  "Железный голем",
         "linkedTool":  "Жестянщика",
         "value":  "11000",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -11000,6 +11377,7 @@
         "predominantMaterialName":  "Тролль",
         "linkedTool":  "Ювелира",
         "value":  "220",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -11022,6 +11400,7 @@
         "predominantMaterialName":  "Пыль призрака",
         "linkedTool":  "Ювелира",
         "value":  "138",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -11044,6 +11423,7 @@
         "predominantMaterialName":  "Коготь чудовища",
         "linkedTool":  "Ювелира",
         "value":  "55",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -11066,6 +11446,7 @@
         "predominantMaterialName":  "Сердце чудовища",
         "linkedTool":  "Ювелира",
         "value":  "165",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -11088,6 +11469,7 @@
         "predominantMaterialName":  "Язык чудовища",
         "linkedTool":  "Ювелира",
         "value":  "110",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -11110,6 +11492,7 @@
         "predominantMaterialName":  "Щупальце чудовища",
         "linkedTool":  "Ювелира",
         "value":  "550",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -11132,6 +11515,7 @@
         "predominantMaterialName":  "Ледяной клык",
         "linkedTool":  "Ювелира",
         "value":  "550",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -11154,6 +11538,7 @@
         "predominantMaterialName":  "Эктоплазма",
         "linkedTool":  "Ювелира",
         "value":  "275",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -11176,6 +11561,7 @@
         "predominantMaterialName":  "Ядовитый шип",
         "linkedTool":  "Ювелира",
         "value":  "550",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -11198,6 +11584,7 @@
         "predominantMaterialName":  "Эссенция света",
         "linkedTool":  "Ювелира",
         "value":  "110",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -11220,6 +11607,7 @@
         "predominantMaterialName":  "Дерево",
         "linkedTool":  "Жестянщика",
         "value":  "11",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -11242,6 +11630,7 @@
         "predominantMaterialName":  "Дерево",
         "linkedTool":  "Жестянщика",
         "value":  "17",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -11264,6 +11653,7 @@
         "predominantMaterialName":  "Стекло",
         "linkedTool":  "Жестянщика",
         "value":  "33",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -11286,6 +11676,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Жестянщика",
         "value":  "14",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -11308,6 +11699,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "66",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -11330,6 +11722,7 @@
         "predominantMaterialName":  "Осколок маны",
         "linkedTool":  "Ювелира",
         "value":  "132",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -11352,6 +11745,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Жестянщика",
         "value":  "9",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -11374,6 +11768,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "50",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -11396,6 +11791,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "88",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -11418,6 +11814,7 @@
         "predominantMaterialName":  "Камень",
         "linkedTool":  "Жестянщика",
         "value":  "110",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -11440,6 +11837,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "220",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -11462,6 +11860,7 @@
         "predominantMaterialName":  "Кракен",
         "linkedTool":  "Ювелира",
         "value":  "0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -11484,6 +11883,7 @@
         "predominantMaterialName":  "Кристальный левиафан",
         "linkedTool":  "Ювелира",
         "value":  "13750",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -11506,6 +11906,7 @@
         "predominantMaterialName":  "Лёгкое чудовища",
         "linkedTool":  "Ювелира",
         "value":  "1320",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -11528,6 +11929,7 @@
         "predominantMaterialName":  "Регенерирующая плоть",
         "linkedTool":  "Ювелира",
         "value":  "1650",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -11550,6 +11952,7 @@
         "predominantMaterialName":  "Живая вода",
         "linkedTool":  "Ювелира",
         "value":  "1980",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -11572,6 +11975,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "880",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -11594,6 +11998,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "1650",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -11616,6 +12021,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "110",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -11638,6 +12044,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "550",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -11660,6 +12067,7 @@
         "predominantMaterialName":  "Стекло",
         "linkedTool":  "Жестянщика",
         "value":  "83",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -11682,6 +12090,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "330",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -11704,6 +12113,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "1100",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -11726,6 +12136,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "220.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -11748,6 +12159,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "165.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -11770,6 +12182,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "550.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -11792,6 +12205,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "330.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -11814,6 +12228,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "6.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -11836,6 +12251,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "165.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -11858,6 +12274,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "660.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -11880,6 +12297,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "220.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -11902,6 +12320,7 @@
         "predominantMaterialName":  "Мозг чудовища",
         "linkedTool":  "Ювелира",
         "value":  "385.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -11924,6 +12343,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "1100.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -11946,6 +12366,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "3300.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -11968,6 +12389,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "220.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -11990,6 +12412,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "0.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -12012,6 +12435,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "0.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -12034,6 +12458,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "0.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -12056,6 +12481,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "0.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -12078,6 +12504,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "0.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -12100,6 +12527,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "0.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -12122,6 +12550,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "0.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -12144,6 +12573,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "0.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -12166,6 +12596,7 @@
         "predominantMaterialName":  "Мозг чудовища",
         "linkedTool":  "Ювелира",
         "value":  "16500.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -12188,6 +12619,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "2200.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -12210,6 +12642,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "11000.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -12232,6 +12665,7 @@
         "predominantMaterialName":  "Кристальный левиафан",
         "linkedTool":  "Ювелира",
         "value":  "24750.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -12254,6 +12688,7 @@
         "predominantMaterialName":  "Тарраск",
         "linkedTool":  "Ювелира",
         "value":  "22000.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -12276,6 +12711,7 @@
         "predominantMaterialName":  "Эссенция хаоса",
         "linkedTool":  "Ювелира",
         "value":  "5500.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -12298,6 +12734,7 @@
         "predominantMaterialName":  "Сердце преобразования",
         "linkedTool":  "Ювелира",
         "value":  "19800.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -12320,6 +12757,7 @@
         "predominantMaterialName":  "Ядро переплетённой реальности",
         "linkedTool":  "Ювелира",
         "value":  "44000.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -12342,6 +12780,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "110.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -12364,6 +12803,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "55.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -12386,6 +12826,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "550.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -12408,6 +12849,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "220.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -12430,6 +12872,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "550.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -12452,6 +12895,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "330.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -12474,6 +12918,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "110.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -12496,6 +12941,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "550.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -12518,6 +12964,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "1100.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -12540,6 +12987,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "1100.0",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -12562,6 +13010,7 @@
         "predominantMaterialName":  "Серебро",
         "linkedTool":  "Кузнеца",
         "value":  "157",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -12584,6 +13033,7 @@
         "predominantMaterialName":  "Адамантин",
         "linkedTool":  "Кузнеца",
         "value":  "625",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -12606,6 +13056,7 @@
         "predominantMaterialName":  "Эльфийская сталь",
         "linkedTool":  "Кузнеца",
         "value":  "313",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -12628,6 +13079,7 @@
         "predominantMaterialName":  "Кристаллы забытых Титанов",
         "linkedTool":  "Кузнеца",
         "value":  "625",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -12650,6 +13102,7 @@
         "predominantMaterialName":  "Кости мантикоры",
         "linkedTool":  "Кузнеца",
         "value":  "469",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -12672,6 +13125,7 @@
         "predominantMaterialName":  "Осколки метеоритных звёзд",
         "linkedTool":  "Кузнеца",
         "value":  "1563",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -12694,6 +13148,7 @@
         "predominantMaterialName":  "Искажающая сталь",
         "linkedTool":  "Кузнеца",
         "value":  "157",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -12716,6 +13171,7 @@
         "predominantMaterialName":  "Дьявольское железо",
         "linkedTool":  "Кузнеца",
         "value":  "157",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -12738,6 +13194,7 @@
         "predominantMaterialName":  "Ночная сталь",
         "linkedTool":  "Кузнеца",
         "value":  "625",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -12760,6 +13217,7 @@
         "predominantMaterialName":  "Радужный металл",
         "linkedTool":  "Кузнеца",
         "value":  "157",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -12782,6 +13240,7 @@
         "predominantMaterialName":  "Коричневая сталь",
         "linkedTool":  "Кузнеца",
         "value":  "469",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -12804,6 +13263,7 @@
         "predominantMaterialName":  "Адамантин",
         "linkedTool":  "Кузнеца",
         "value":  "2500",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -12826,6 +13286,7 @@
         "predominantMaterialName":  "Мифрил",
         "linkedTool":  "Кузнеца",
         "value":  "625",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -12848,6 +13309,7 @@
         "predominantMaterialName":  "Лунный металл",
         "linkedTool":  "Кузнеца",
         "value":  "1250",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -12870,6 +13332,7 @@
         "predominantMaterialName":  "Шерсть гриффона",
         "linkedTool":  "Кожедела",
         "value":  "313",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -12892,6 +13355,7 @@
         "predominantMaterialName":  "Корень драконьего дерева",
         "linkedTool":  "Деревянщика",
         "value":  "1094",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -12914,6 +13378,7 @@
         "predominantMaterialName":  "Хребет чудовища",
         "linkedTool":  "Кузнеца",
         "value":  "32",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -12936,6 +13401,7 @@
         "predominantMaterialName":  "Чернила чудовища",
         "linkedTool":  "Ювелира",
         "value":  "157",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -12958,6 +13424,7 @@
         "predominantMaterialName":  "Осколок тени",
         "linkedTool":  "Ювелира",
         "value":  "157",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -12980,6 +13447,7 @@
         "predominantMaterialName":  "Осколок черепа чудовища",
         "linkedTool":  "Кузнеца",
         "value":  "125",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -13002,6 +13470,7 @@
         "predominantMaterialName":  "Коготь чудовища",
         "linkedTool":  "Кузнеца",
         "value":  "63",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -13024,6 +13493,7 @@
         "predominantMaterialName":  "Шкура чудовища",
         "linkedTool":  "Кожедела",
         "value":  "94",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -13046,6 +13516,7 @@
         "predominantMaterialName":  "Жало чудовища",
         "linkedTool":  "Кузнеца",
         "value":  "313",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -13068,6 +13539,7 @@
         "predominantMaterialName":  "Желчь чудовища",
         "linkedTool":  "Кожедела",
         "value":  "625",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -13090,6 +13562,7 @@
         "predominantMaterialName":  "Хитин чудовища",
         "linkedTool":  "Кожедела",
         "value":  "157",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -13112,6 +13585,7 @@
         "predominantMaterialName":  "Фрагмент панциря чудовища",
         "linkedTool":  "Кожедела",
         "value":  "313",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -13134,6 +13608,7 @@
         "predominantMaterialName":  "Сухожилие чудовища",
         "linkedTool":  "Кожедела",
         "value":  "313",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -13156,6 +13631,7 @@
         "predominantMaterialName":  "Эссенция воздуха",
         "linkedTool":  "Ювелира",
         "value":  "157",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -13178,6 +13654,7 @@
         "predominantMaterialName":  "Рог чудовища",
         "linkedTool":  "Кузнеца",
         "value":  "625",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -13200,6 +13677,7 @@
         "predominantMaterialName":  "Чешуя монстра",
         "linkedTool":  "Кузнеца",
         "value":  "625",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -13222,6 +13700,7 @@
         "predominantMaterialName":  "Щупальце чудовища",
         "linkedTool":  "Кузнеца",
         "value":  "3125",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -13244,6 +13723,7 @@
         "predominantMaterialName":  "Малый осколок души",
         "linkedTool":  "Ювелира",
         "value":  "375",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -13266,6 +13746,7 @@
         "predominantMaterialName":  "Закалённая чешуя",
         "linkedTool":  "Кузнеца",
         "value":  "625",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -13288,6 +13769,7 @@
         "predominantMaterialName":  "Ледяной клык",
         "linkedTool":  "Кузнеца",
         "value":  "313",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -13310,6 +13792,7 @@
         "predominantMaterialName":  "Эктоплазма",
         "linkedTool":  "Ювелира",
         "value":  "625",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -13332,6 +13815,7 @@
         "predominantMaterialName":  "Эссенция тени",
         "linkedTool":  "Ювелира",
         "value":  "125",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -13354,6 +13838,7 @@
         "predominantMaterialName":  "Осколок маны",
         "linkedTool":  "Ювелира",
         "value":  "3125",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -13376,6 +13861,7 @@
         "predominantMaterialName":  "Осколок маны",
         "linkedTool":  "Ювелира",
         "value":  "3125",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -13398,6 +13884,7 @@
         "predominantMaterialName":  "Осколок маны",
         "linkedTool":  "Ювелира",
         "value":  "3125",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -13420,6 +13907,7 @@
         "predominantMaterialName":  "Панцирь чудовища",
         "linkedTool":  "Кузнеца",
         "value":  "1250",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -13442,6 +13930,7 @@
         "predominantMaterialName":  "Гигантский коготь",
         "linkedTool":  "Кузнеца",
         "value":  "6000",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -13464,6 +13953,7 @@
         "predominantMaterialName":  "Эссенция духа",
         "linkedTool":  "Ювелира",
         "value":  "3000",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -13486,6 +13976,7 @@
         "predominantMaterialName":  "Живой корень",
         "linkedTool":  "Кузнеца",
         "value":  "3750",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -13508,6 +13999,7 @@
         "predominantMaterialName":  "Бивень чудовища",
         "linkedTool":  "Кузнеца",
         "value":  "2250",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -13530,6 +14022,7 @@
         "predominantMaterialName":  "Эссенция света",
         "linkedTool":  "Ювелира",
         "value":  "3125",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -13552,6 +14045,7 @@
         "predominantMaterialName":  "Грозовой камень",
         "linkedTool":  "Кузнеца",
         "value":  "3125",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -13574,6 +14068,7 @@
         "predominantMaterialName":  "Живая вода",
         "linkedTool":  "Ювелира",
         "value":  "4500",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -13596,6 +14091,7 @@
         "predominantMaterialName":  "Магический конденсатор",
         "linkedTool":  "Ювелира",
         "value":  "2500",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -13618,6 +14114,7 @@
         "predominantMaterialName":  "Крупный кристалл маны",
         "linkedTool":  "Ювелира",
         "value":  "7500",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -13640,6 +14137,7 @@
         "predominantMaterialName":  "Крупный кристалл маны",
         "linkedTool":  "Ювелира",
         "value":  "7500",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -13662,6 +14160,7 @@
         "predominantMaterialName":  "Пылающее ядро",
         "linkedTool":  "Ювелира",
         "value":  "18750",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -13684,6 +14183,7 @@
         "predominantMaterialName":  "Заиндевелое ядро",
         "linkedTool":  "Ювелира",
         "value":  "16875",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -13706,6 +14206,7 @@
         "predominantMaterialName":  "Великий осколок души",
         "linkedTool":  "Ювелира",
         "value":  "15000",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -13728,6 +14229,7 @@
         "predominantMaterialName":  "Великий осколок души",
         "linkedTool":  "Ювелира",
         "value":  "15000",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -13750,6 +14252,7 @@
         "predominantMaterialName":  "Эссенция кошмаров",
         "linkedTool":  "Ювелира",
         "value":  "10000",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -13772,6 +14275,7 @@
         "predominantMaterialName":  "Сердцевина древня",
         "linkedTool":  "Кузнеца",
         "value":  "8125",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -13794,6 +14298,7 @@
         "predominantMaterialName":  "Эссенция небес",
         "linkedTool":  "Кузнеца",
         "value":  "22500",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -13816,6 +14321,7 @@
         "predominantMaterialName":  "Астральный котёл",
         "linkedTool":  "Кузнеца",
         "value":  "5000",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -13838,6 +14344,7 @@
         "predominantMaterialName":  "Паутина гиганского паука",
         "linkedTool":  "Кожедела",
         "value":  "1250",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -13860,6 +14367,7 @@
         "predominantMaterialName":  "Фейское дерево",
         "linkedTool":  "Кожедела",
         "value":  "625",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -13882,6 +14390,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Кузнеца",
         "value":  "13",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -13921,6 +14430,7 @@
         "predominantMaterialName":  "Порох",
         "linkedTool":  "Жестянщика",
         "value":  "25",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -13943,6 +14453,7 @@
         "predominantMaterialName":  "Порох",
         "linkedTool":  "Жестянщика",
         "value":  "75",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -13965,6 +14476,7 @@
         "predominantMaterialName":  "Порох",
         "linkedTool":  "Жестянщика",
         "value":  "75",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -13987,6 +14499,7 @@
         "predominantMaterialName":  "Порох",
         "linkedTool":  "Жестянщика",
         "value":  "63",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -14009,6 +14522,7 @@
         "predominantMaterialName":  "Порох",
         "linkedTool":  "Жестянщика",
         "value":  "15",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -14031,6 +14545,7 @@
         "predominantMaterialName":  "Порох",
         "linkedTool":  "Жестянщика",
         "value":  "94",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -14053,6 +14568,7 @@
         "predominantMaterialName":  "Порох",
         "linkedTool":  "Жестянщика",
         "value":  "50",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -14075,6 +14591,7 @@
         "predominantMaterialName":  "Порох",
         "linkedTool":  "Жестянщика",
         "value":  "25",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -14097,6 +14614,7 @@
         "predominantMaterialName":  "Порох",
         "linkedTool":  "Жестянщика",
         "value":  "13",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -14119,6 +14637,7 @@
         "predominantMaterialName":  "Порох",
         "linkedTool":  "Жестянщика",
         "value":  "500000",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -14141,6 +14660,7 @@
         "predominantMaterialName":  "Порох",
         "linkedTool":  "Жестянщика",
         "value":  "18750",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -14163,6 +14683,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "125",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -14185,6 +14706,7 @@
         "predominantMaterialName":  "Серебро",
         "linkedTool":  "Жестянщика",
         "value":  "125",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -14207,6 +14729,7 @@
         "predominantMaterialName":  "Адамантин",
         "linkedTool":  "Кузнеца",
         "value":  "1250",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -14229,6 +14752,7 @@
         "predominantMaterialName":  "Бумага",
         "linkedTool":  "Каллиграфа",
         "value":  "7",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -14251,6 +14775,7 @@
         "predominantMaterialName":  "Бумага",
         "linkedTool":  "Каллиграфа",
         "value":  "3",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -14273,6 +14798,7 @@
         "predominantMaterialName":  "Бумага",
         "linkedTool":  "Каллиграфа",
         "value":  "2",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -14295,6 +14821,7 @@
         "predominantMaterialName":  "Бумага",
         "linkedTool":  "Каллиграфа",
         "value":  "2",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -14317,6 +14844,7 @@
         "predominantMaterialName":  "Бумага",
         "linkedTool":  "Каллиграфа",
         "value":  "2",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -14339,6 +14867,7 @@
         "predominantMaterialName":  "Бумага",
         "linkedTool":  "Каллиграфа",
         "value":  "3",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -14361,6 +14890,7 @@
         "predominantMaterialName":  "Бумага",
         "linkedTool":  "Каллиграфа",
         "value":  "7",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -14383,6 +14913,7 @@
         "predominantMaterialName":  "Бумага",
         "linkedTool":  "Каллиграфа",
         "value":  "7",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -14405,6 +14936,7 @@
         "predominantMaterialName":  "Бумага",
         "linkedTool":  "Каллиграфа",
         "value":  "3",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -14427,6 +14959,7 @@
         "predominantMaterialName":  "Бумага",
         "linkedTool":  "Каллиграфа",
         "value":  "3",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -14449,6 +14982,7 @@
         "predominantMaterialName":  "Бумага",
         "linkedTool":  "Исследователя",
         "value":  "2",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -14471,6 +15005,7 @@
         "predominantMaterialName":  "Бумага",
         "linkedTool":  "Каллиграфа",
         "value":  "2",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -14493,6 +15028,7 @@
         "predominantMaterialName":  "Бумага",
         "linkedTool":  "Каллиграфа",
         "value":  "3",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -14515,6 +15051,7 @@
         "predominantMaterialName":  "Бумага",
         "linkedTool":  "Каллиграфа",
         "value":  "4",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -14537,6 +15074,7 @@
         "predominantMaterialName":  "Бумага",
         "linkedTool":  "Каллиграфа",
         "value":  "7",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -14559,6 +15097,7 @@
         "predominantMaterialName":  "Бумага",
         "linkedTool":  "Исследователя",
         "value":  "7",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -14581,6 +15120,7 @@
         "predominantMaterialName":  "Бумага",
         "linkedTool":  "Художественные",
         "value":  "19",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -14603,6 +15143,7 @@
         "predominantMaterialName":  "Бумага",
         "linkedTool":  "Исследователя",
         "value":  "13",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -14625,6 +15166,7 @@
         "predominantMaterialName":  "Бумага",
         "linkedTool":  "Исследователя",
         "value":  "19",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -14647,6 +15189,7 @@
         "predominantMaterialName":  "Бумага",
         "linkedTool":  "Каллиграфа",
         "value":  "19",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -14669,6 +15212,7 @@
         "predominantMaterialName":  "Бумага",
         "linkedTool":  "Исследователя",
         "value":  "32",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -14691,6 +15235,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Жестянщика",
         "value":  "94",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -14713,6 +15258,7 @@
         "predominantMaterialName":  "Свинец",
         "linkedTool":  "Жестянщика",
         "value":  "63",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -14735,6 +15281,7 @@
         "predominantMaterialName":  "Бумага",
         "linkedTool":  "Исследователя",
         "value":  "188",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -14757,6 +15304,7 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Жестянщика",
         "value":  "625",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -14779,6 +15327,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "100000",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -14836,6 +15385,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "250000",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -14896,6 +15446,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "150000",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -14955,6 +15506,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "375000",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  "",
@@ -15015,6 +15567,7 @@
         "predominantMaterialName":  "Порох",
         "linkedTool":  "Жестянщика",
         "value":  "625",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -15037,6 +15590,7 @@
         "predominantMaterialName":  "Порох",
         "linkedTool":  "Жестянщика",
         "value":  "250",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -15059,6 +15613,7 @@
         "predominantMaterialName":  "Порох",
         "linkedTool":  "Жестянщика",
         "value":  "1250",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -15081,6 +15636,7 @@
         "predominantMaterialName":  "Порох",
         "linkedTool":  "Жестянщика",
         "value":  "100",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -15103,6 +15659,7 @@
         "predominantMaterialName":  "Порох",
         "linkedTool":  "Жестянщика",
         "value":  "63",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -15125,6 +15682,7 @@
         "predominantMaterialName":  "Порох",
         "linkedTool":  "Жестянщика",
         "value":  "125",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -15147,6 +15705,7 @@
         "predominantMaterialName":  "Порох",
         "linkedTool":  "Жестянщика",
         "value":  "313",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -15169,6 +15728,7 @@
         "predominantMaterialName":  "Порох",
         "linkedTool":  "Жестянщика",
         "value":  "125",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -15191,6 +15751,7 @@
         "predominantMaterialName":  "Порох",
         "linkedTool":  "Жестянщика",
         "value":  "375",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -15213,6 +15774,7 @@
         "predominantMaterialName":  "Порох",
         "linkedTool":  "Жестянщика",
         "value":  "125",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -15235,6 +15797,7 @@
         "predominantMaterialName":  "Порох",
         "linkedTool":  "Жестянщика",
         "value":  "63",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -15257,6 +15820,7 @@
         "predominantMaterialName":  "Порох",
         "linkedTool":  "Жестянщика",
         "value":  "125",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -15279,6 +15843,7 @@
         "predominantMaterialName":  "Освящённый адамантий",
         "linkedTool":  "Кузнеца",
         "value":  "3750",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -15301,6 +15866,7 @@
         "predominantMaterialName":  "Прах модронов",
         "linkedTool":  "Кузнеца",
         "value":  "1500",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -15323,6 +15889,7 @@
         "predominantMaterialName":  "Порошок Дрохубы",
         "linkedTool":  "Кузнеца",
         "value":  "2500",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -15345,6 +15912,7 @@
         "predominantMaterialName":  "Шёпот тьмы",
         "linkedTool":  "Кузнеца",
         "value":  "2032",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -15367,6 +15935,7 @@
         "predominantMaterialName":  "Кристальный левиафан",
         "linkedTool":  "Кузнеца",
         "value":  "25000",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -15389,6 +15958,7 @@
         "predominantMaterialName":  "Оркус",
         "linkedTool":  "Кузнеца",
         "value":  "50000",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -15411,6 +15981,7 @@
         "predominantMaterialName":  "Кости тролля",
         "linkedTool":  "Кузнеца",
         "value":  "250",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -15433,6 +16004,7 @@
         "predominantMaterialName":  "Астральный дредноут",
         "linkedTool":  "Кузнеца",
         "value":  "31250",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -15455,6 +16027,7 @@
         "predominantMaterialName":  "Астральный дредноут",
         "linkedTool":  "Кузнеца",
         "value":  "31250",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -15477,6 +16050,7 @@
         "predominantMaterialName":  "Астральный дредноут",
         "linkedTool":  "Кузнеца",
         "value":  "12500",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -15499,6 +16073,7 @@
         "predominantMaterialName":  "Железный голем",
         "linkedTool":  "Кузнеца",
         "value":  "12500",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -15521,6 +16096,7 @@
         "predominantMaterialName":  "Осколок кости чудовища",
         "linkedTool":  "Кузнеца",
         "value":  "32",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -15543,6 +16119,7 @@
         "predominantMaterialName":  "Перо чудовища",
         "linkedTool":  "Ювелира",
         "value":  "32",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -15565,6 +16142,7 @@
         "predominantMaterialName":  "Живой корень",
         "linkedTool":  "Кузнеца",
         "value":  "3750",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -15587,6 +16165,7 @@
         "predominantMaterialName":  "Хребет бесконечной плоти",
         "linkedTool":  "Кузнеца",
         "value":  "43750",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -15609,6 +16188,7 @@
         "predominantMaterialName":  "Абсолютная Пустота",
         "linkedTool":  "Кузнеца",
         "value":  "50000",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -15631,6 +16211,7 @@
         "predominantMaterialName":  "Эридана",
         "linkedTool":  "Кузнеца",
         "value":  "37500",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -15653,6 +16234,7 @@
         "predominantMaterialName":  "—",
         "linkedTool":  "Ювелира",
         "value":  "1250",
+        "multipleAppearance":  "1",
         "itemSlot":  "",
         "heroDollSlots":  "",
         "source":  "gear-workbook"
@@ -15675,6 +16257,7 @@
         "predominantMaterialName":  "—",
         "linkedTool":  "Ювелира",
         "value":  "6250",
+        "multipleAppearance":  "1",
         "itemSlot":  "",
         "heroDollSlots":  "",
         "source":  "gear-workbook"
@@ -15697,6 +16280,7 @@
         "predominantMaterialName":  "—",
         "linkedTool":  "Ювелира",
         "value":  "938",
+        "multipleAppearance":  "1",
         "itemSlot":  "",
         "heroDollSlots":  "",
         "source":  "gear-workbook"
@@ -15719,6 +16303,7 @@
         "predominantMaterialName":  "—",
         "linkedTool":  "Ювелира",
         "value":  "125",
+        "multipleAppearance":  "1",
         "itemSlot":  "",
         "heroDollSlots":  "",
         "source":  "gear-workbook"
@@ -15741,6 +16326,7 @@
         "predominantMaterialName":  "—",
         "linkedTool":  "Ювелира",
         "value":  "3750",
+        "multipleAppearance":  "1",
         "itemSlot":  "",
         "heroDollSlots":  "",
         "source":  "gear-workbook"
@@ -15763,6 +16349,7 @@
         "predominantMaterialName":  "—",
         "linkedTool":  "Ювелира",
         "value":  "15625",
+        "multipleAppearance":  "1",
         "itemSlot":  "",
         "heroDollSlots":  "",
         "source":  "gear-workbook"
@@ -15785,6 +16372,7 @@
         "predominantMaterialName":  "—",
         "linkedTool":  "Ювелира",
         "value":  "7500",
+        "multipleAppearance":  "1",
         "itemSlot":  "",
         "heroDollSlots":  "",
         "source":  "gear-workbook"
@@ -15807,6 +16395,7 @@
         "predominantMaterialName":  "—",
         "linkedTool":  "Ювелира",
         "value":  "1563",
+        "multipleAppearance":  "1",
         "itemSlot":  "",
         "heroDollSlots":  "",
         "source":  "gear-workbook"
@@ -15829,6 +16418,7 @@
         "predominantMaterialName":  "—",
         "linkedTool":  "Ювелира",
         "value":  "1250",
+        "multipleAppearance":  "1",
         "itemSlot":  "",
         "heroDollSlots":  "",
         "source":  "gear-workbook"
@@ -15851,6 +16441,7 @@
         "predominantMaterialName":  "Демонический рог",
         "linkedTool":  "Ювелира",
         "value":  "3125",
+        "multipleAppearance":  "1",
         "itemSlot":  "",
         "heroDollSlots":  "",
         "source":  "gear-workbook"
@@ -15873,6 +16464,7 @@
         "predominantMaterialName":  "Обсидиановый осколок",
         "linkedTool":  "Ювелира",
         "value":  "3750",
+        "multipleAppearance":  "1",
         "itemSlot":  "",
         "heroDollSlots":  "",
         "source":  "gear-workbook"
@@ -15895,6 +16487,7 @@
         "predominantMaterialName":  "Медь",
         "linkedTool":  "Кузнеца",
         "value":  "313",
+        "multipleAppearance":  "1",
         "itemSlot":  "",
         "heroDollSlots":  "",
         "source":  "gear-workbook"
@@ -15917,6 +16510,7 @@
         "predominantMaterialName":  "Порох",
         "linkedTool":  "Алхимические",
         "value":  "13",
+        "multipleAppearance":  "1к3",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -15939,6 +16533,7 @@
         "predominantMaterialName":  "Порох",
         "linkedTool":  "Алхимические",
         "value":  "50",
+        "multipleAppearance":  "1к3",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -15961,6 +16556,7 @@
         "predominantMaterialName":  "Порох",
         "linkedTool":  "Алхимические",
         "value":  "188",
+        "multipleAppearance":  "1к3",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -15983,6 +16579,7 @@
         "predominantMaterialName":  "Порох",
         "linkedTool":  "Алхимические",
         "value":  "250",
+        "multipleAppearance":  "1к3",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -16005,6 +16602,7 @@
         "predominantMaterialName":  "Порох",
         "linkedTool":  "Алхимические",
         "value":  "63",
+        "multipleAppearance":  "1к3",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -16027,6 +16625,7 @@
         "predominantMaterialName":  "Порох",
         "linkedTool":  "Алхимические",
         "value":  "125",
+        "multipleAppearance":  "1к3",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -16049,6 +16648,7 @@
         "predominantMaterialName":  "Порох",
         "linkedTool":  "Алхимические",
         "value":  "88",
+        "multipleAppearance":  "1к3",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -16071,6 +16671,7 @@
         "predominantMaterialName":  "Порох",
         "linkedTool":  "Алхимические",
         "value":  "125",
+        "multipleAppearance":  "1к3",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -16093,6 +16694,7 @@
         "predominantMaterialName":  "Порох",
         "linkedTool":  "Алхимические",
         "value":  "1250",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -16115,6 +16717,7 @@
         "predominantMaterialName":  "Порох",
         "linkedTool":  "Алхимические",
         "value":  "4375",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -16137,6 +16740,7 @@
         "predominantMaterialName":  "Порох",
         "linkedTool":  "Алхимические",
         "value":  "1875",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -16159,6 +16763,7 @@
         "predominantMaterialName":  "Порох",
         "linkedTool":  "Алхимические",
         "value":  "1250",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -16181,6 +16786,7 @@
         "predominantMaterialName":  "Порох",
         "linkedTool":  "Алхимические",
         "value":  "1250",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -16203,6 +16809,7 @@
         "predominantMaterialName":  "—",
         "linkedTool":  "Ювелира",
         "value":  "13",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -16225,6 +16832,7 @@
         "predominantMaterialName":  "—",
         "linkedTool":  "Ювелира",
         "value":  "13",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -16247,6 +16855,7 @@
         "predominantMaterialName":  "—",
         "linkedTool":  "Ювелира",
         "value":  "13",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -16269,6 +16878,7 @@
         "predominantMaterialName":  "—",
         "linkedTool":  "Ювелира",
         "value":  "13",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -16291,6 +16901,7 @@
         "predominantMaterialName":  "—",
         "linkedTool":  "Ювелира",
         "value":  "13",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -16313,6 +16924,7 @@
         "predominantMaterialName":  "—",
         "linkedTool":  "Ювелира",
         "value":  "63",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -16335,6 +16947,7 @@
         "predominantMaterialName":  "—",
         "linkedTool":  "Ювелира",
         "value":  "63",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -16357,6 +16970,7 @@
         "predominantMaterialName":  "—",
         "linkedTool":  "Ювелира",
         "value":  "63",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -16379,6 +16993,7 @@
         "predominantMaterialName":  "—",
         "linkedTool":  "Ювелира",
         "value":  "63",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -16401,6 +17016,7 @@
         "predominantMaterialName":  "—",
         "linkedTool":  "Ювелира",
         "value":  "63",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -16423,6 +17039,7 @@
         "predominantMaterialName":  "—",
         "linkedTool":  "Ювелира",
         "value":  "125",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -16445,6 +17062,7 @@
         "predominantMaterialName":  "—",
         "linkedTool":  "Ювелира",
         "value":  "125",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -16467,6 +17085,7 @@
         "predominantMaterialName":  "—",
         "linkedTool":  "Ювелира",
         "value":  "125",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -16489,6 +17108,7 @@
         "predominantMaterialName":  "—",
         "linkedTool":  "Ювелира",
         "value":  "125",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -16511,6 +17131,7 @@
         "predominantMaterialName":  "—",
         "linkedTool":  "Ювелира",
         "value":  "125",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -16533,6 +17154,7 @@
         "predominantMaterialName":  "—",
         "linkedTool":  "Ювелира",
         "value":  "625",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -16555,6 +17177,7 @@
         "predominantMaterialName":  "—",
         "linkedTool":  "Ювелира",
         "value":  "625",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -16577,6 +17200,7 @@
         "predominantMaterialName":  "—",
         "linkedTool":  "Ювелира",
         "value":  "625",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -16599,6 +17223,7 @@
         "predominantMaterialName":  "—",
         "linkedTool":  "Ювелира",
         "value":  "625",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -16621,6 +17246,7 @@
         "predominantMaterialName":  "—",
         "linkedTool":  "Ювелира",
         "value":  "625",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -16643,6 +17269,7 @@
         "predominantMaterialName":  "—",
         "linkedTool":  "Ювелира",
         "value":  "1250",
+        "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
         "heroDollSlots":  ""
@@ -16665,6 +17292,7 @@
         "predominantMaterialName":  "—",
         "linkedTool":  "Ювелира",
         "value":  "1250",
+        "multipleAppearance":  "1",
         "itemSlot":  "",
         "heroDollSlots":  "",
         "source":  "gear-workbook"
@@ -16687,6 +17315,7 @@
         "predominantMaterialName":  "—",
         "linkedTool":  "Ювелира",
         "value":  "1250",
+        "multipleAppearance":  "1",
         "itemSlot":  "",
         "heroDollSlots":  "",
         "source":  "gear-workbook"
@@ -16709,6 +17338,7 @@
         "predominantMaterialName":  "—",
         "linkedTool":  "Ювелира",
         "value":  "1250",
+        "multipleAppearance":  "1",
         "itemSlot":  "",
         "heroDollSlots":  "",
         "source":  "gear-workbook"
@@ -16731,6 +17361,7 @@
         "predominantMaterialName":  "—",
         "linkedTool":  "Ювелира",
         "value":  "1250",
+        "multipleAppearance":  "1",
         "itemSlot":  "",
         "heroDollSlots":  "",
         "source":  "gear-workbook"
@@ -16753,6 +17384,7 @@
         "predominantMaterialName":  "—",
         "linkedTool":  "Ювелира",
         "value":  "6250",
+        "multipleAppearance":  "1",
         "itemSlot":  "",
         "heroDollSlots":  "",
         "source":  "gear-workbook"
@@ -16775,6 +17407,7 @@
         "predominantMaterialName":  "—",
         "linkedTool":  "Ювелира",
         "value":  "6250",
+        "multipleAppearance":  "1",
         "itemSlot":  "",
         "heroDollSlots":  "",
         "source":  "gear-workbook"
@@ -16797,6 +17430,7 @@
         "predominantMaterialName":  "—",
         "linkedTool":  "Ювелира",
         "value":  "6250",
+        "multipleAppearance":  "1",
         "itemSlot":  "",
         "heroDollSlots":  "",
         "source":  "gear-workbook"
@@ -16819,6 +17453,7 @@
         "predominantMaterialName":  "—",
         "linkedTool":  "Ювелира",
         "value":  "32",
+        "multipleAppearance":  "1",
         "itemSlot":  "",
         "heroDollSlots":  "",
         "source":  "gear-workbook"
@@ -16841,6 +17476,7 @@
         "predominantMaterialName":  "Кость",
         "linkedTool":  "Художественные",
         "value":  "32",
+        "multipleAppearance":  "1",
         "itemSlot":  "",
         "heroDollSlots":  "",
         "source":  "gear-workbook"
@@ -16863,6 +17499,7 @@
         "predominantMaterialName":  "Золото",
         "linkedTool":  "Ювелира",
         "value":  "32",
+        "multipleAppearance":  "1",
         "itemSlot":  "",
         "heroDollSlots":  "",
         "source":  "gear-workbook"
@@ -16885,6 +17522,7 @@
         "predominantMaterialName":  "Ткань",
         "linkedTool":  "Гримёра",
         "value":  "32",
+        "multipleAppearance":  "1",
         "itemSlot":  "",
         "heroDollSlots":  "",
         "source":  "gear-workbook"
@@ -16907,6 +17545,7 @@
         "predominantMaterialName":  "Золото",
         "linkedTool":  "Ювелира",
         "value":  "32",
+        "multipleAppearance":  "1",
         "itemSlot":  "",
         "heroDollSlots":  "",
         "source":  "gear-workbook"
@@ -16929,6 +17568,7 @@
         "predominantMaterialName":  "Золото",
         "linkedTool":  "Ювелира",
         "value":  "313",
+        "multipleAppearance":  "1",
         "itemSlot":  "",
         "heroDollSlots":  "",
         "source":  "gear-workbook"
@@ -16951,6 +17591,7 @@
         "predominantMaterialName":  "Кость",
         "linkedTool":  "Художественные",
         "value":  "313",
+        "multipleAppearance":  "1",
         "itemSlot":  "",
         "heroDollSlots":  "",
         "source":  "gear-workbook"
@@ -16973,6 +17614,7 @@
         "predominantMaterialName":  "Золото",
         "linkedTool":  "Ювелира",
         "value":  "313",
+        "multipleAppearance":  "1",
         "itemSlot":  "",
         "heroDollSlots":  "",
         "source":  "gear-workbook"
@@ -16995,6 +17637,7 @@
         "predominantMaterialName":  "Шёлк",
         "linkedTool":  "Кожедела",
         "value":  "313",
+        "multipleAppearance":  "1",
         "itemSlot":  "",
         "heroDollSlots":  "",
         "source":  "gear-workbook"
@@ -17017,6 +17660,7 @@
         "predominantMaterialName":  "Медь",
         "linkedTool":  "Ювелира",
         "value":  "313",
+        "multipleAppearance":  "1",
         "itemSlot":  "",
         "heroDollSlots":  "",
         "source":  "gear-workbook"
@@ -17039,6 +17683,7 @@
         "predominantMaterialName":  "Серебро",
         "linkedTool":  "Ювелира",
         "value":  "938",
+        "multipleAppearance":  "1",
         "itemSlot":  "",
         "heroDollSlots":  "",
         "source":  "gear-workbook"
@@ -17061,6 +17706,7 @@
         "predominantMaterialName":  "Дерево",
         "linkedTool":  "Художественные",
         "value":  "938",
+        "multipleAppearance":  "1",
         "itemSlot":  "",
         "heroDollSlots":  "",
         "source":  "gear-workbook"
@@ -17083,6 +17729,7 @@
         "predominantMaterialName":  "Золото",
         "linkedTool":  "Ювелира",
         "value":  "938",
+        "multipleAppearance":  "1",
         "itemSlot":  "",
         "heroDollSlots":  "",
         "source":  "gear-workbook"
@@ -17105,6 +17752,7 @@
         "predominantMaterialName":  "Электрум",
         "linkedTool":  "Ювелира",
         "value":  "938",
+        "multipleAppearance":  "1",
         "itemSlot":  "",
         "heroDollSlots":  "",
         "source":  "gear-workbook"
@@ -17127,6 +17775,7 @@
         "predominantMaterialName":  "Камень",
         "linkedTool":  "Художественные",
         "value":  "938",
+        "multipleAppearance":  "1",
         "itemSlot":  "",
         "heroDollSlots":  "",
         "source":  "gear-workbook"
@@ -17149,6 +17798,7 @@
         "predominantMaterialName":  "Золото",
         "linkedTool":  "Ювелира",
         "value":  "3125",
+        "multipleAppearance":  "1",
         "itemSlot":  "",
         "heroDollSlots":  "",
         "source":  "gear-workbook"
@@ -17171,6 +17821,7 @@
         "predominantMaterialName":  "Лён",
         "linkedTool":  "Художественные",
         "value":  "3125",
+        "multipleAppearance":  "1",
         "itemSlot":  "",
         "heroDollSlots":  "",
         "source":  "gear-workbook"
@@ -17193,6 +17844,7 @@
         "predominantMaterialName":  "Платина",
         "linkedTool":  "Ювелира",
         "value":  "3125",
+        "multipleAppearance":  "1",
         "itemSlot":  "",
         "heroDollSlots":  "",
         "source":  "gear-workbook"
@@ -17215,6 +17867,7 @@
         "predominantMaterialName":  "Золото",
         "linkedTool":  "Ювелира",
         "value":  "3125",
+        "multipleAppearance":  "1",
         "itemSlot":  "",
         "heroDollSlots":  "",
         "source":  "gear-workbook"
@@ -17237,6 +17890,7 @@
         "predominantMaterialName":  "Шёлк",
         "linkedTool":  "Ювелира",
         "value":  "3125",
+        "multipleAppearance":  "1",
         "itemSlot":  "",
         "heroDollSlots":  "",
         "source":  "gear-workbook"
@@ -17259,6 +17913,7 @@
         "predominantMaterialName":  "Золото",
         "linkedTool":  "Ювелира",
         "value":  "9375",
+        "multipleAppearance":  "1",
         "itemSlot":  "",
         "heroDollSlots":  "",
         "source":  "gear-workbook"
@@ -17281,6 +17936,7 @@
         "predominantMaterialName":  "Платина",
         "linkedTool":  "Ювелира",
         "value":  "9375",
+        "multipleAppearance":  "1",
         "itemSlot":  "",
         "heroDollSlots":  "",
         "source":  "gear-workbook"
@@ -17303,6 +17959,7 @@
         "predominantMaterialName":  "Золото",
         "linkedTool":  "Ювелира",
         "value":  "9375",
+        "multipleAppearance":  "1",
         "itemSlot":  "",
         "heroDollSlots":  "",
         "source":  "gear-workbook"
@@ -17325,6 +17982,7 @@
         "predominantMaterialName":  "Золото",
         "linkedTool":  "Ювелира",
         "value":  "9375",
+        "multipleAppearance":  "1",
         "itemSlot":  "",
         "heroDollSlots":  "",
         "source":  "gear-workbook"
@@ -17347,6 +18005,7 @@
         "predominantMaterialName":  "Камень",
         "linkedTool":  "Ювелира",
         "value":  "9375",
+        "multipleAppearance":  "1",
         "itemSlot":  "",
         "heroDollSlots":  "",
         "source":  "gear-workbook"
@@ -17369,6 +18028,7 @@
         "predominantMaterialName":  "—",
         "linkedTool":  "Ювелира",
         "value":  "125",
+        "multipleAppearance":  "1",
         "itemSlot":  "",
         "heroDollSlots":  "",
         "source":  "gear-workbook"
@@ -17391,6 +18051,7 @@
         "predominantMaterialName":  "—",
         "linkedTool":  "Ювелира",
         "value":  "375",
+        "multipleAppearance":  "1",
         "itemSlot":  "",
         "heroDollSlots":  "",
         "source":  "gear-workbook"
@@ -17413,6 +18074,7 @@
         "predominantMaterialName":  "—",
         "linkedTool":  "Ювелира",
         "value":  "625",
+        "multipleAppearance":  "1",
         "itemSlot":  "",
         "heroDollSlots":  "",
         "source":  "gear-workbook"
@@ -17435,6 +18097,7 @@
         "predominantMaterialName":  "—",
         "linkedTool":  "Ювелира",
         "value":  "1250",
+        "multipleAppearance":  "1",
         "itemSlot":  "",
         "heroDollSlots":  "",
         "source":  "gear-workbook"
@@ -17457,6 +18120,7 @@
         "predominantMaterialName":  "—",
         "linkedTool":  "Ювелира",
         "value":  "6250",
+        "multipleAppearance":  "1",
         "itemSlot":  "",
         "heroDollSlots":  "",
         "source":  "gear-workbook"
@@ -17479,6 +18143,7 @@
         "predominantMaterialName":  "—",
         "linkedTool":  "Ювелира",
         "value":  "31250",
+        "multipleAppearance":  "1",
         "itemSlot":  "",
         "heroDollSlots":  "",
         "source":  "gear-workbook"
@@ -17501,6 +18166,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "25",
+        "multipleAppearance":  "1к6",
         "itemSlot":  "",
         "heroDollSlots":  "",
         "source":  "gear-workbook"
@@ -17523,6 +18189,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "625",
+        "multipleAppearance":  "1",
         "itemSlot":  "",
         "heroDollSlots":  "",
         "source":  "gear-workbook"
@@ -17545,6 +18212,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "500",
+        "multipleAppearance":  "1",
         "itemSlot":  "",
         "heroDollSlots":  "",
         "source":  "gear-workbook"
@@ -17567,6 +18235,7 @@
         "predominantMaterialName":  "Алхимические реагенты",
         "linkedTool":  "Алхимические",
         "value":  "25.0",
+        "multipleAppearance":  "1к3",
         "itemSlot":  "",
         "heroDollSlots":  "",
         "source":  "gear-workbook"
@@ -17589,6 +18258,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "100",
+        "multipleAppearance":  "1",
         "itemSlot":  "",
         "heroDollSlots":  "",
         "source":  "gear-workbook"
@@ -17611,6 +18281,7 @@
         "predominantMaterialName":  "Стекло",
         "linkedTool":  "Исследователя",
         "value":  "500",
+        "multipleAppearance":  "1",
         "itemSlot":  "",
         "heroDollSlots":  "",
         "source":  "gear-workbook"
@@ -17633,6 +18304,7 @@
         "predominantMaterialName":  "Кожа",
         "linkedTool":  "Жестянщика",
         "value":  "25",
+        "multipleAppearance":  "1",
         "itemSlot":  "",
         "heroDollSlots":  "",
         "source":  "gear-workbook"
@@ -17655,6 +18327,7 @@
         "predominantMaterialName":  "Ткань",
         "linkedTool":  "Жестянщика",
         "value":  "38",
+        "multipleAppearance":  "1",
         "itemSlot":  "",
         "heroDollSlots":  "",
         "source":  "gear-workbook"
@@ -17677,6 +18350,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "2",
+        "multipleAppearance":  "1",
         "itemSlot":  "",
         "heroDollSlots":  "",
         "source":  "gear-workbook"
@@ -17699,6 +18373,7 @@
         "predominantMaterialName":  "Дерево",
         "linkedTool":  "Алхимические",
         "value":  "7",
+        "multipleAppearance":  "1",
         "itemSlot":  "",
         "heroDollSlots":  "",
         "source":  "gear-workbook"
@@ -17721,6 +18396,7 @@
         "predominantMaterialName":  "Медь",
         "linkedTool":  "Ювелира",
         "value":  "7",
+        "multipleAppearance":  "1",
         "itemSlot":  "",
         "heroDollSlots":  "",
         "source":  "gear-workbook"
@@ -17743,6 +18419,7 @@
         "predominantMaterialName":  "Ткань",
         "linkedTool":  "Кожедела",
         "value":  "125",
+        "multipleAppearance":  "1",
         "itemSlot":  "",
         "heroDollSlots":  "",
         "source":  "gear-workbook"
@@ -17765,6 +18442,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "250",
+        "multipleAppearance":  "1",
         "itemSlot":  "",
         "heroDollSlots":  "",
         "source":  "gear-workbook"
@@ -17787,6 +18465,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "500",
+        "multipleAppearance":  "1",
         "itemSlot":  "",
         "heroDollSlots":  "",
         "source":  "gear-workbook"
@@ -17809,6 +18488,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "125",
+        "multipleAppearance":  "1",
         "itemSlot":  "",
         "heroDollSlots":  "",
         "source":  "gear-workbook"
@@ -17831,6 +18511,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "2500",
+        "multipleAppearance":  "1",
         "itemSlot":  "",
         "heroDollSlots":  "",
         "source":  "gear-workbook"
@@ -17853,6 +18534,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "38",
+        "multipleAppearance":  "1",
         "itemSlot":  "",
         "heroDollSlots":  "",
         "source":  "gear-workbook"
@@ -17875,6 +18557,7 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "6250",
+        "multipleAppearance":  "1",
         "itemSlot":  "",
         "heroDollSlots":  "",
         "source":  "gear-workbook"
@@ -17897,6 +18580,7 @@
         "predominantMaterialName":  "Кожа",
         "linkedTool":  "Алхимические",
         "value":  "125",
+        "multipleAppearance":  "1",
         "itemSlot":  "",
         "heroDollSlots":  "",
         "source":  "gear-workbook"

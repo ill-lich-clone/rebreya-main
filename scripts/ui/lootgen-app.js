@@ -228,6 +228,35 @@ export async function promptLootgenTemplateName(
   return value == null ? null : String(value).trim();
 }
 
+export function resolveLootgenItemValue(rawValue, fallbackGold = 0) {
+  const explicit = Math.max(0, toInteger(rawValue, 0));
+  if (explicit > 0) {
+    return explicit;
+  }
+
+  const fallbackValue = toInteger(Math.round(Math.max(0, toNumber(fallbackGold, 0)) * 100), 0);
+  return Math.max(0, fallbackValue);
+}
+
+export function buildLootgenMundaneCandidate(gearItem, {
+  rank,
+  value,
+  typeLabel,
+  breakable = false
+} = {}) {
+  return {
+    sourceType: "gear",
+    sourceId: String(gearItem?.id ?? ""),
+    name: String(gearItem?.name ?? "Снаряжение"),
+    rank: Math.max(0, toInteger(rank, 0)),
+    value: Math.max(0, toInteger(value, 0)),
+    multipleAppearance: String(gearItem?.multipleAppearance ?? "1"),
+    typeLabel: String(typeLabel ?? gearItem?.equipmentType ?? "Снаряжение"),
+    stackable: true,
+    breakable: Boolean(breakable)
+  };
+}
+
 export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
   static DEFAULT_OPTIONS = {
     classes: ["rebreya-main", "rebreya-lootgen-app"],
@@ -438,12 +467,7 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   #toValue(rawValue, fallbackGold = 0) {
-    const explicit = Math.max(0, toInteger(rawValue, 0));
-    if (explicit > 0) {
-      return explicit;
-    }
-
-    return Math.max(1, toInteger(Math.round(Math.max(0, toNumber(fallbackGold, 0)) * 100), 1));
+    return resolveLootgenItemValue(rawValue, fallbackGold);
   }
 
   async #getBreakableGearSourceIds() {
@@ -525,16 +549,12 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
         const fallbackGold = toNumber(gearItem.priceGoldEquivalent, toNumber(gearItem.priceValue, 0));
         const value = this.#toValue(gearItem.value, fallbackGold);
-        pool.push({
-          sourceType: "gear",
-          sourceId: String(gearItem.id),
-          name: String(gearItem.name ?? "Снаряжение"),
+        pool.push(buildLootgenMundaneCandidate(gearItem, {
           rank,
           value,
           typeLabel,
-          stackable: true,
           breakable: breakableGearIds.has(String(gearItem.id))
-        });
+        }));
       }
 
       if (isLootgenTypeAllowed(MATERIAL_LOOTGEN_TYPE_LABEL, gearTypeOptions)) {
@@ -557,6 +577,7 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
             name: String(material.name ?? MATERIAL_LOOTGEN_TYPE_LABEL),
             rank,
             value,
+            multipleAppearance: "1",
             typeLabel: MATERIAL_LOOTGEN_TYPE_LABEL,
             stackable: true
           });

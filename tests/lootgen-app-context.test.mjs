@@ -27,7 +27,42 @@ globalThis.game = {
 };
 globalThis.randomID = () => "test-id";
 
-const { LootgenApp, promptLootgenTemplateName } = await import("../scripts/ui/lootgen-app.js?context-test");
+const {
+  LootgenApp,
+  buildLootgenMundaneCandidate,
+  promptLootgenTemplateName,
+  resolveLootgenItemValue
+} = await import("../scripts/ui/lootgen-app.js?context-test");
+
+test("lootgen mundane candidates carry authored package formulas", () => {
+  assert.deepEqual(buildLootgenMundaneCandidate({
+    id: "paper-sheet",
+    name: "Бумага (один лист)",
+    multipleAppearance: "2к12"
+  }, {
+    rank: 0,
+    value: 2,
+    typeLabel: "Снаряжение",
+    breakable: false
+  }), {
+    sourceType: "gear",
+    sourceId: "paper-sheet",
+    name: "Бумага (один лист)",
+    rank: 0,
+    value: 2,
+    multipleAppearance: "2к12",
+    typeLabel: "Снаряжение",
+    stackable: true,
+    breakable: false
+  });
+});
+
+test("lootgen item value keeps truly valueless items at zero", () => {
+  assert.equal(resolveLootgenItemValue("", 0), 0);
+  assert.equal(resolveLootgenItemValue(0, 0), 0);
+  assert.equal(resolveLootgenItemValue("25", 0), 25);
+  assert.equal(resolveLootgenItemValue("", 1.5), 150);
+});
 
 test("lootgen asks for a template name through a Foundry dialog", async () => {
   const name = await promptLootgenTemplateName({

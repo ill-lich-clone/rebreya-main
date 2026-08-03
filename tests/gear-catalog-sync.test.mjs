@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 
 import * as importer from "../scripts/data/importer.js";
 import { DATA_SOURCE_MODES, MODULE_ID, SETTINGS_KEYS } from "../scripts/constants.js";
@@ -154,6 +155,38 @@ test("economy normalization preserves the merged upgrade mechanics", () => {
   assert.deepEqual(dataset.gear[0].upgrade, upgrade);
 });
 
+test("economy normalization preserves authored loot multiplicity", () => {
+  const dataset = normalizeEconomyDataset({
+    goods: [],
+    regions: [],
+    cities: [],
+    reference: {},
+    materials: [],
+    gear: [{
+      id: "paper-sheet",
+      name: "Бумага (один лист)",
+      multipleAppearance: "2к12"
+    }, {
+      id: "plain-item",
+      name: "Обычный предмет"
+    }]
+  });
+
+  assert.equal(dataset.gear[0].multipleAppearance, "2к12");
+  assert.equal(dataset.gear[1].multipleAppearance, "1");
+});
+
+test("builtin gear catalog gives every loot item an explicit valid multiplicity", async () => {
+  const gear = JSON.parse(await readFile(new URL("../data/gear.json", import.meta.url), "utf8"));
+  const byName = new Map(gear.map((item) => [item.name, item]));
+
+  assert.equal(gear.length, 684);
+  assert.equal(gear.every((item) => /^(?:[1-9]\d*|[1-9]\d*[кd][1-9]\d*)$/u.test(item.multipleAppearance)), true);
+  assert.equal(byName.get("Бумага (один лист)")?.multipleAppearance, "2к12");
+  assert.equal(byName.get("Стрелы (20)")?.multipleAppearance, "1");
+  assert.equal(byName.get("Свеча")?.multipleAppearance, "2к6");
+});
+
 test("builtin dataset loader reads upgrade profiles and merges them into base gear", async () => {
   const baseProduct = {
     id: "serebrenie-oruzhiya",
@@ -226,6 +259,7 @@ test("builtin dataset loader reads upgrade profiles and merges them into base ge
       predominantMaterialName: "",
       linkedTool: "",
       value: "",
+      multipleAppearance: "1",
       foundryType: "",
       foundrySubtype: "",
       foundrySubtypeExtra: "",
