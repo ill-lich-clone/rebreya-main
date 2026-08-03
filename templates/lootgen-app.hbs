@@ -48,6 +48,10 @@
             <input type="number" min="1" max="40" step="1" value="{{form.itemCount}}" data-field="itemCount">
           </div>
           <div class="rm-field">
+            <label title="Мягкий ориентир количества копий одного предмета. Генератор может дать меньше или больше, если этого требует бюджет и формула предмета.">Оптимальное количество предметов</label>
+            <input type="number" min="1" max="100" step="1" value="{{form.optimalItemQuantity}}" data-field="optimalItemQuantity">
+          </div>
+          <div class="rm-field">
             <label title="Общий лимит value на всю выдачу.">Бюджет, value</label>
             <input type="number" min="0" step="1" value="{{form.budgetValue}}" data-field="budgetValue">
           </div>

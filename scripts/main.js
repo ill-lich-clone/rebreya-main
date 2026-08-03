@@ -1549,6 +1549,15 @@ export class RebreyaMainModule {
   }
 
   async initialize() {
+    if (globalThis.game?.user?.isGM === true) {
+      try {
+        await this.lootgenTemplateCatalog.migrate();
+      }
+      catch (error) {
+        console.warn(`${MODULE_ID} | Failed to migrate Lootgen templates.`, error);
+      }
+    }
+
     try {
       const calendarSnapshot = this.calendarService.getSnapshot();
       await this.globalEventsService.refreshEventActivationByDate(calendarSnapshot?.isoDate, null);

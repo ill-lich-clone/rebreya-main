@@ -279,7 +279,7 @@ export function registerSettings() {
     config: false,
     type: Object,
     default: {
-      version: 1,
+      version: 2,
       templates: []
     },
     onChange: () => game.rebreyaMain?.refreshOpenApps?.()

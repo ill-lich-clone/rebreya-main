@@ -93,3 +93,22 @@ test("lootgen context exposes saved templates to a GM", async () => {
   assert.deepEqual(context.form.lootgenTemplates, [savedTemplate]);
   assert.equal(context.form.hasLootgenTemplates, true);
 });
+
+test("lootgen carries the soft quantity target through context and saved templates", async () => {
+  let savedPayload = null;
+  const app = new LootgenApp({
+    getModel: async () => ({ gear: [], materials: [] }),
+    listLootgenTemplates: () => [],
+    saveLootgenTemplate: async (payload) => {
+      savedPayload = payload;
+      return payload;
+    }
+  }, { appKey: "soft-target" });
+
+  app.applyLootgenTemplate({ form: { optimalItemQuantity: 7 } });
+  const context = await app._prepareContext();
+  await app.saveTemplateFromName("Семь предметов");
+
+  assert.equal(context.form.optimalItemQuantity, 7);
+  assert.equal(savedPayload.form.optimalItemQuantity, 7);
+});

@@ -6,12 +6,16 @@ import { readFile } from "node:fs/promises";
 
 function createMemorySettingStore(initialValue = { version: 1, templates: [] }) {
   let value = initialValue;
+  let setCount = 0;
   return {
     get: () => value,
     set: async (nextValue) => {
+      setCount += 1;
       value = nextValue;
       return value;
-    }
+    },
+    value: () => value,
+    setCount: () => setCount
   };
 }
 
@@ -36,6 +40,7 @@ test("catalog saves a named normalized Lootgen template", async () => {
     rankMin: 1,
     rankMax: 4,
     itemCount: 2,
+    optimalItemQuantity: 4,
     budgetValue: 5000,
     magicPercent: 25,
     brokenEquipmentChance: 0,
@@ -46,6 +51,24 @@ test("catalog saves a named normalized Lootgen template", async () => {
     magicTypeFilters: {}
   });
   assert.deepEqual(catalog.list(), [saved]);
+});
+
+test("catalog persists version two migration with the soft target", async () => {
+  const legacyTemplate = {
+    id: "legacy",
+    name: "Старый шаблон",
+    form: { itemCount: 7 },
+    updatedAt: 50
+  };
+  const store = createMemorySettingStore({ version: 1, templates: [legacyTemplate] });
+  const catalog = new LootgenTemplateCatalog({ get: store.get, set: store.set });
+
+  assert.equal(await catalog.migrate(), true);
+  assert.equal(store.setCount(), 1);
+  assert.equal(store.value().version, 2);
+  assert.equal(store.value().templates[0].form.optimalItemQuantity, 4);
+  assert.equal(await catalog.migrate(), false);
+  assert.equal(store.setCount(), 1);
 });
 
 test("catalog rejects blank and duplicate template names", async () => {

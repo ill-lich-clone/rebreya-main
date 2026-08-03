@@ -286,6 +286,7 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.rankMin = 0;
     this.rankMax = 4;
     this.itemCount = 8;
+    this.optimalItemQuantity = 4;
     this.budgetValue = 5000;
     this.includeGear = true;
     this.includeCoins = true;
@@ -368,6 +369,7 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
       rankMin: this.rankMin,
       rankMax: this.rankMax,
       itemCount: this.itemCount,
+      optimalItemQuantity: this.optimalItemQuantity,
       budgetValue: this.budgetValue,
       includeGear: this.includeGear,
       includeCoins: this.includeCoins,
@@ -384,6 +386,7 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.rankMin = form.rankMin;
     this.rankMax = form.rankMax;
     this.itemCount = form.itemCount;
+    this.optimalItemQuantity = form.optimalItemQuantity;
     this.budgetValue = form.budgetValue;
     this.includeGear = form.includeGear;
     this.includeCoins = form.includeCoins;
@@ -673,6 +676,7 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
       includeMagicItems: this.includeMagicItems,
       magicPercent: this.magicPercent,
       itemCount: this.itemCount,
+      optimalItemQuantity: this.optimalItemQuantity,
       budgetValue: this.budgetValue,
       includeCoins: this.includeCoins,
       brokenEquipmentChance: this.brokenEquipmentChance,
@@ -845,6 +849,7 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
         rankMin: this.rankMin,
         rankMax: this.rankMax,
         itemCount: this.itemCount,
+        optimalItemQuantity: this.optimalItemQuantity,
         budgetValue: this.budgetValue,
         includeGear: this.includeGear,
         includeCoins: this.includeCoins,
@@ -935,6 +940,12 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
             this[fieldName] = fieldName === "brokenEquipmentChance"
               ? normalizeBrokenEquipmentChance(input.value)
               : Math.min(100, Math.max(0, toInteger(input.value, this[fieldName])));
+            input.value = String(this[fieldName]);
+            return;
+          }
+
+          if (fieldName === "optimalItemQuantity") {
+            this[fieldName] = Math.min(100, Math.max(1, toInteger(input.value, this[fieldName])));
             input.value = String(this[fieldName]);
             return;
           }

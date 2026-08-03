@@ -1,6 +1,6 @@
 import { normalizeLootgenForm } from "./lootgen-generator.js";
 
-const CATALOG_VERSION = 1;
+const CATALOG_VERSION = 2;
 
 function clone(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));
@@ -78,6 +78,16 @@ export class LootgenTemplateCatalog {
 
   #read() {
     return normalizeCatalog(this.getSetting());
+  }
+
+  async migrate() {
+    const current = this.getSetting();
+    const normalized = normalizeCatalog(current);
+    if (JSON.stringify(current) === JSON.stringify(normalized)) {
+      return false;
+    }
+    await this.setSetting(normalized);
+    return true;
   }
 
   list() {
