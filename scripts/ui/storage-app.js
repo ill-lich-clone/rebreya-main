@@ -135,6 +135,9 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
       sourceId: clean(row.sourceId),
       canOpenSource: Boolean(clean(row.sourceId)),
       isContainer: row.rowKind === "container" && Boolean(row.container),
+      primaryAction: row.rowKind === "container" && Boolean(row.container)
+        ? "storage-open-container"
+        : "storage-toggle-row",
       canEdit: configurationEnabled,
       active: this.activeRowId === clean(row.rowId),
       showQuantity: row.rowKind !== "container" && Math.max(1, Number(row.quantity ?? 1)) > 1
@@ -484,11 +487,17 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
   async #onContextMenu(event) {
     const control = event.target?.closest?.(
-      "[data-action='storage-toggle-row'], [data-action='storage-toggle-coins']"
+      "[data-action='storage-toggle-row'], [data-action='storage-open-container'], [data-action='storage-toggle-coins']"
     );
     if (!control) return;
     event.preventDefault?.();
     event.stopPropagation?.();
+    if (clean(control.dataset.action) === "storage-open-container") {
+      const rowId = clean(control.dataset.rowId);
+      this.activeRowId = this.activeRowId === rowId ? "" : rowId;
+      await this.#renderCurrent();
+      return;
+    }
     await this.#onClick({ target: control });
   }
 

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import { MODULE_ID } from "../scripts/constants.js";
 import {
+  characterSheetAtPoint,
   patchStorageTokenCanvasDrag,
   StorageTokenDropController
 } from "../scripts/integrations/storage-token-drop.js";
@@ -225,4 +226,97 @@ test("dropping a storage token before the one-second hold keeps normal Foundry m
   assert.equal(result, "drop");
   assert.equal(harness.source.originalDrops, 1);
   assert.equal(harness.deposits.length, 0);
+});
+
+test("canvas token hit testing falls back to scene document geometry when PIXI bounds miss", async () => {
+  const harness = createCanvasDragHarness();
+  harness.token.bounds = { contains: () => false };
+  Object.assign(harness.token.document, { x: 100, y: 100, width: 1, height: 1 });
+  harness.controller.canvasProvider = () => ({
+    scene: { grid: { size: 100 } },
+    tokens: { placeables: [harness.source, harness.token] }
+  });
+
+  harness.source._onDragLeftMove(harness.event);
+  harness.clock.advance(1000);
+  harness.source._onDragLeftDrop(harness.event);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.equal(harness.source.originalDrops, 0);
+  assert.equal(harness.deposits.length, 1);
+});
+
+test("dropping a whole storage token on a character sheet transfers it to that inventory", async () => {
+  const harness = createCanvasDragHarness();
+  const moves = [];
+  harness.controller.characterSheetProvider = () => ({ uuid: "Actor.hero", type: "character" });
+  harness.moduleApi.moveStorageTokenToCharacter = async (...args) => moves.push(args);
+  harness.event.interactionData.destination = { x: 20, y: 20 };
+  harness.source._onDragLeftMove(harness.event);
+  const pointer = {
+    clientX: 500,
+    clientY: 300,
+    prevented: 0,
+    stopped: 0,
+    preventDefault() { this.prevented += 1; },
+    stopPropagation() { this.stopped += 1; },
+    stopImmediatePropagation() { this.stopped += 1; }
+  };
+
+  const handled = harness.controller.handleCanvasTokenPointerUp(pointer);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.equal(handled, true);
+  assert.equal(pointer.prevented, 1);
+  assert.deepEqual(moves, [[harness.source.document.uuid, "Actor.hero", "deposit-test"]]);
+});
+
+test("Foundry v13 character sheets resolve from their ApplicationV2 element id", () => {
+  const actor = { id: "hero123", uuid: "Actor.hero123", type: "character" };
+  const sheet = {
+    id: "CharacterActorSheet-Actor-hero123",
+    classList: { contains: () => false },
+    getBoundingClientRect: () => ({ left: 100, top: 100, right: 700, bottom: 700 })
+  };
+  const document = {
+    elementFromPoint: () => ({ closest: () => sheet })
+  };
+
+  assert.equal(characterSheetAtPoint(400, 400, {
+    document,
+    windows: {},
+    actors: { get: (id) => id === actor.id ? actor : null }
+  }), actor);
+});
+
+test("dropping a whole storage token on a character token transfers it to that inventory", async () => {
+  const harness = createCanvasDragHarness();
+  const moves = [];
+  const character = { uuid: "Actor.hero", name: "Герой", type: "character" };
+  const characterToken = {
+    actor: character,
+    visible: true,
+    document: { x: 300, y: 300, width: 1, height: 1, uuid: "Scene.scene.Token.hero" },
+    hover: false,
+    border: { visible: false },
+    renderFlags: { set() {} }
+  };
+  harness.moduleApi.moveStorageTokenToCharacter = async (...args) => moves.push(args);
+  harness.controller.canvasProvider = () => ({
+    scene: { grid: { size: 100 } },
+    tokens: { placeables: [harness.source, harness.token, characterToken] }
+  });
+  harness.event.interactionData.destination = { x: 350, y: 350 };
+
+  harness.source._onDragLeftMove(harness.event);
+  harness.source._onDragLeftDrop(harness.event);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.equal(harness.source.originalDrops, 0);
+  assert.deepEqual(moves, [[
+    harness.source.document.uuid,
+    character.uuid,
+    "deposit-test",
+    { characterTokenUuid: characterToken.document.uuid }
+  ]]);
 });

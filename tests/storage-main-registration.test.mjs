@@ -18,6 +18,9 @@ test("main registers the storage deposit socket API and current cache keys", asy
   assert.match(main, /this\.storageCommandService\.dropItemToScene\(payload,\s*\{ sender \}\)/u);
   assert.match(main, /async dropStorageItemToScene\(/u);
   assert.match(main, /registerStorageTokenDropHooks\(moduleApi/u);
+  assert.match(main, /STORAGE_TOKEN_CHARACTER_COMMAND\s*=\s*"storage\.token-to-character"/u);
+  assert.match(main, /register\(STORAGE_TOKEN_CHARACTER_COMMAND,\s*\{/u);
+  assert.match(main, /async moveStorageTokenToCharacter\(/u);
   assert.match(main, /STORAGE_RESTORE_PORTABLE_COMMAND\s*=\s*"storage\.restore-portable"/u);
   assert.match(main, /register\(STORAGE_RESTORE_PORTABLE_COMMAND,\s*\{/u);
   assert.match(main, /this\.storageCommandService\.restorePortableItem\(payload,\s*\{ sender \}\)/u);
@@ -26,13 +29,13 @@ test("main registers the storage deposit socket API and current cache keys", asy
     "data/storage-service.js?v=1.4.119-storage-canvas-drops",
     "data/storage-container-item-service.js?v=1.4.119-storage-canvas-drops",
     "data/storage-deposit-source.js?v=1.4.119-storage-canvas-drops",
-    "data/storage-command-service.js?v=1.4.119-storage-canvas-drops",
+    "data/storage-command-service.js?v=1.4.120-storage-character-drop-2",
     "integrations/storage-transfer-drop.js?v=1.4.119-storage-canvas-drops",
-    "integrations/storage-token-drop.js?v=1.4.119-storage-canvas-drops"
+    "integrations/storage-token-drop.js?v=1.4.120-storage-character-drop-3"
   ]) {
     assert.equal(main.includes(importPath), true, importPath);
   }
-  assert.equal(manifest.version, "1.4.119");
+  assert.equal(manifest.version, "1.4.120");
 });
 
 test("storage drop hook registrations have independent error boundaries", async () => {

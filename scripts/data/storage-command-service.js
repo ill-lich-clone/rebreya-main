@@ -153,6 +153,14 @@ export function isValidStorageDropItemPayload(payload) {
     && isTrimmedString(payload.mutationId, { required: true, max: 160 });
 }
 
+export function isValidStorageTokenCharacterPayload(payload) {
+  return hasExactKeys(payload, ["actorUuid", "characterTokenUuid", "mutationId", "tokenUuid"])
+    && isTrimmedString(payload.tokenUuid, { required: true })
+    && isTrimmedString(payload.characterTokenUuid)
+    && isTrimmedString(payload.actorUuid, { required: true })
+    && isTrimmedString(payload.mutationId, { required: true, max: 160 });
+}
+
 export function storageCharacterTokenUuidForClaim({
   controlledCharacterTokenUuid = "",
   storageTokenUuid = "",
@@ -341,11 +349,16 @@ export class StorageCommandService {
 
   async open(payload = {}, { sender } = {}) {
     const access = await this.#resolveAccess(payload, sender);
-    return this.storageService.open(access.storageToken, {
+    const result = await this.storageService.open(access.storageToken, {
       senderId: clean(sender?.id),
       characterTokenUuid: clean(payload.characterTokenUuid),
       path: storagePath(payload.path)
     });
+    return {
+      generatedNow: result?.generatedNow === true,
+      state: clean(result?.state?.state) || "opened",
+      displayMode: clean(result?.state?.displayMode) || "opened"
+    };
   }
 
   async claimRow(payload = {}, { sender } = {}) {
@@ -591,6 +604,65 @@ export class StorageCommandService {
 
   async restorePortableItem(payload = {}, { sender } = {}) {
     return this.dropItemToScene({ ...payload, quantity: 1 }, { sender });
+  }
+
+  async moveStorageTokenToCharacter(payload = {}, { sender } = {}) {
+    const tokenUuid = clean(payload.tokenUuid);
+    const actorUuid = clean(payload.actorUuid);
+    const mutationId = requireMutationId(payload.mutationId);
+    const mutationKey = storageMutationId({
+      tokenUuid,
+      kind: "token-character",
+      identity: actorUuid,
+      destination: "character",
+      mutationId
+    });
+    return this.#runMutation([`${tokenUuid}:storage`, `${actorUuid}:actor`], mutationKey, async () => {
+      const access = await this.#resolveAccess({
+        tokenUuid,
+        characterTokenUuid: clean(payload.characterTokenUuid)
+      }, sender);
+      const actor = await this.#resolveCharacterTarget({ actorUuid }, sender);
+      const source = await this.resolveDepositSource({ kind: "storage-token", tokenUuid }, {
+        fromUuid: this.resolveDocument,
+        resolveToken: this.resolveToken,
+        storageService: this.storageService,
+        containerItemService: this.containerItemService
+      });
+      if (!source?.row?.container || typeof source.consume !== "function" || typeof source.restore !== "function") {
+        throw new Error("Переносимое хранилище недоступно.");
+      }
+      if (source.canUserMove?.(sender) !== true) {
+        throw new Error("У вас нет прав владельца на перемещение этого хранилища.");
+      }
+      if (!this.containerItemService?.materializeToActorOnce) {
+        throw new Error("Сервис переносимых контейнеров Rebreya недоступен.");
+      }
+      let receipt = null;
+      try {
+        receipt = await source.consume(1);
+        const item = await this.containerItemService.materializeToActorOnce(
+          actor,
+          source.row.container,
+          mutationKey
+        );
+        return {
+          changed: true,
+          actorUuid: clean(actor.uuid),
+          itemUuid: clean(item?.uuid ?? item?.id),
+          containerId: clean(source.row.container.containerId)
+        };
+      }
+      catch (error) {
+        if (receipt) {
+          try { await source.restore(receipt); }
+          catch (rollbackError) {
+            throw new AggregateError([error, rollbackError], "Не удалось откатить перенос хранилища персонажу.");
+          }
+        }
+        throw error;
+      }
+    });
   }
 
   async dropItemToScene(payload = {}, { sender } = {}) {

@@ -12548,6 +12548,10 @@ summary:focus-visible {
   overflow: visible;
 }
 
+.rebreya-storage-app.minimized .window-content {
+  display: none !important;
+}
+
 .rm-storage-shell {
   position: relative;
   display: grid;

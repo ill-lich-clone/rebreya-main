@@ -109,8 +109,9 @@ import {
   isValidStorageDropItemPayload,
   isValidStorageOpenPayload,
   isValidStorageRestorePortablePayload,
+  isValidStorageTokenCharacterPayload,
   storageCharacterTokenUuidForClaim
-} from "./data/storage-command-service.js?v=1.4.119-storage-canvas-drops";
+} from "./data/storage-command-service.js?v=1.4.120-storage-character-drop-2";
 import { registerCombatHooks } from "./combat/hooks.js?v=1.4.111-paladin-dogmas";
 import { CombatAttackService } from "./combat/attack-service.js?v=1.4.111-native-ammo-selection-guard";
 import { ImplantAutomationService } from "./combat/implant-automation-service.js";
@@ -189,7 +190,7 @@ import { registerSpellInstanceSocketCommand } from "./integrations/spell-instanc
 import { registerSummonLifecycleSocketCommand } from "./integrations/summon-lifecycle-socket.js";
 import { registerTransportGroupDropHooks } from "./integrations/transport-group-drop.js";
 import { registerStorageTransferDropHooks } from "./integrations/storage-transfer-drop.js?v=1.4.119-storage-canvas-drops";
-import { registerStorageTokenDropHooks } from "./integrations/storage-token-drop.js?v=1.4.119-storage-canvas-drops";
+import { registerStorageTokenDropHooks } from "./integrations/storage-token-drop.js?v=1.4.120-storage-character-drop-3";
 import { registerTransportVehicleSheetHooks } from "./integrations/transport-vehicle-sheet.js";
 import {
   parseStorageDragData,
@@ -248,7 +249,7 @@ const LEGACY_WORLD_MUTATION_SOCKET_TYPES = new Set([
   SOCKET_EVENT_LOOTGEN_CLAIM_COINS
 ]);
 const MODULE_STYLE_PATH = `modules/${MODULE_ID}/styles/main.css`;
-const MODULE_STYLE_VERSION = "1.4.119-storage-canvas-drops";
+const MODULE_STYLE_VERSION = "1.4.120-storage-character-drop";
 const SECONDS_PER_HOUR = 3600;
 const SECONDS_PER_DAY = 86400;
 const TRAVEL_DAY_HOURS = 8;
@@ -262,6 +263,7 @@ export const STORAGE_CLAIM_COINS_COMMAND = "storage.claim-coins";
 export const STORAGE_DEPOSIT_COMMAND = "storage.deposit";
 export const STORAGE_DROP_ITEM_COMMAND = "storage.drop-item-to-scene";
 export const STORAGE_RESTORE_PORTABLE_COMMAND = "storage.restore-portable";
+export const STORAGE_TOKEN_CHARACTER_COMMAND = "storage.token-to-character";
 export const DURABILITY_TARGET_DAMAGE_COMMAND = "durability.target.damage";
 const ENVIRONMENT_COMBAT_STATUS_IDS = new Set(["rebreya-surrounded", "rebreya-open-position"]);
 const ENVIRONMENT_STATUS_SOURCE = "rebreya-environment";
@@ -1388,6 +1390,11 @@ export class RebreyaMainModule {
       validate: isValidStorageRestorePortablePayload,
       authorize: (_payload, { sender }) => Boolean(sender),
       execute: (payload, { sender }) => this.storageCommandService.restorePortableItem(payload, { sender })
+    });
+    this.socketCommandBus.register(STORAGE_TOKEN_CHARACTER_COMMAND, {
+      validate: isValidStorageTokenCharacterPayload,
+      authorize: (_payload, { sender }) => Boolean(sender),
+      execute: (payload, { sender }) => this.storageCommandService.moveStorageTokenToCharacter(payload, { sender })
     });
     this.socketCommandBus.register(DURABILITY_TARGET_DAMAGE_COMMAND, {
       validate: isValidDurabilityTargetDamagePayload,
@@ -3211,6 +3218,18 @@ export class RebreyaMainModule {
     return isActiveGmClient(globalThis.game)
       ? this.storageCommandService.dropItemToScene(payload, { sender: globalThis.game?.user })
       : this.socketCommandBus.request(STORAGE_DROP_ITEM_COMMAND, payload);
+  }
+
+  async moveStorageTokenToCharacter(tokenUuid, actorUuid, mutationId, request = {}) {
+    const payload = {
+      tokenUuid: cleanSocketId(tokenUuid),
+      characterTokenUuid: this.#controlledCharacterTokenUuid(request.characterTokenUuid),
+      actorUuid: cleanSocketId(actorUuid),
+      mutationId: cleanSocketId(mutationId) || createSocketRequestId("storage-token-character")
+    };
+    return isActiveGmClient(globalThis.game)
+      ? this.storageCommandService.moveStorageTokenToCharacter(payload, { sender: globalThis.game?.user })
+      : this.socketCommandBus.request(STORAGE_TOKEN_CHARACTER_COMMAND, payload);
   }
 
   async #resolveStorageToken(tokenUuid, { requireMarked = true } = {}) {

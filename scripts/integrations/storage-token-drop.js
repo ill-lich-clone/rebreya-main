@@ -57,6 +57,41 @@ function defaultMutationId() {
   return `storage-token-deposit-${random}`;
 }
 
+function appElement(application) {
+  const element = application?.element;
+  return element?.nodeType === 1 ? element : element?.[0] ?? null;
+}
+
+export function characterSheetAtPoint(x, y, {
+  document = globalThis.document,
+  windows = globalThis.ui?.windows,
+  actors = globalThis.game?.actors
+} = {}) {
+  if (!Number.isFinite(Number(x)) || !Number.isFinite(Number(y))) return null;
+  const topElement = document?.elementFromPoint?.(Number(x), Number(y)) ?? null;
+  const sheetElement = topElement?.closest?.(".sheet.actor, .actor.sheet") ?? null;
+  if (sheetElement && sheetElement.classList?.contains?.("minimized") !== true
+    && pointInside(sheetElement.getBoundingClientRect?.(), Number(x), Number(y))) {
+    const actorId = clean(sheetElement.dataset?.actorId)
+      || clean(sheetElement.dataset?.documentId)
+      || clean(sheetElement.id).match(/Actor-([a-z0-9]+)(?:$|-)/iu)?.[1]
+      || "";
+    const actor = actors?.get?.(actorId) ?? null;
+    if (actor?.type === "character") return actor;
+  }
+  const applications = Object.values(windows ?? {}).reverse();
+  for (const application of applications) {
+    const actor = application?.actor ?? application?.document ?? application?.object;
+    if (actor?.type !== "character" || application?.minimized === true || application?._minimized === true) continue;
+    const element = appElement(application);
+    if (!element) continue;
+    if (topElement && typeof element.contains === "function" && !element.contains(topElement)) continue;
+    const bounds = element.getBoundingClientRect?.();
+    if (pointInside(bounds, Number(x), Number(y))) return actor;
+  }
+  return null;
+}
+
 export class StorageTokenDropController {
   constructor(moduleApi, {
     document = globalThis.document,
@@ -67,6 +102,7 @@ export class StorageTokenDropController {
     setTimeout = globalThis.setTimeout?.bind(globalThis),
     clearTimeout = globalThis.clearTimeout?.bind(globalThis),
     createMutationId = defaultMutationId,
+    characterSheetProvider = (x, y) => characterSheetAtPoint(x, y, { document }),
     logger = console
   } = {}) {
     this.moduleApi = moduleApi;
@@ -78,9 +114,12 @@ export class StorageTokenDropController {
     this.setTimeout = setTimeout;
     this.clearTimeout = clearTimeout;
     this.createMutationId = createMutationId;
+    this.characterSheetProvider = characterSheetProvider;
     this.logger = logger;
     this.dragSource = null;
+    this.canvasDragSource = null;
     this.activeToken = null;
+    this.activeTargetKind = null;
     this.ready = false;
     this.readyTimer = null;
     this.highlightState = null;
@@ -96,6 +135,7 @@ export class StorageTokenDropController {
     this.document.addEventListener("dragleave", (event) => this.handleDragLeave(event), { capture: true, signal });
     this.document.addEventListener("drop", (event) => { void this.handleDrop(event); }, { capture: true, signal });
     this.document.addEventListener("dragend", () => this.handleDragEnd(), { capture: true, signal });
+    this.document.addEventListener("pointerup", (event) => this.handleCanvasTokenPointerUp(event), { capture: true, signal });
     this.document.addEventListener("keydown", (event) => this.handleKeyDown(event), { capture: true, signal });
     return true;
   }
@@ -147,20 +187,29 @@ export class StorageTokenDropController {
       this.clear();
       return false;
     }
+    this.canvasDragSource = { kind: "storage-token", tokenUuid: tokenUuid(sourceToken) };
     const destination = event?.interactionData?.destination;
-    const target = this.#tokenAtCanvasPoint(
+    let target = this.#tokenAtCanvasPoint(
       Number(destination?.x),
       Number(destination?.y),
       sourceToken
     );
+    let targetKind = "storage";
+    if (!target) {
+      target = this.#characterAtCanvasPoint(
+        Number(destination?.x),
+        Number(destination?.y),
+        sourceToken
+      );
+      targetKind = "character";
+    }
     if (!target) {
       this.#clearTarget();
-      this.dragSource = null;
       return false;
     }
-    this.dragSource = { kind: "storage-token", tokenUuid: tokenUuid(sourceToken) };
-    if (this.activeToken === target) return true;
-    this.#activateTarget(target);
+    this.dragSource = this.canvasDragSource;
+    if (this.activeToken === target && this.activeTargetKind === targetKind) return true;
+    this.#activateTarget(target, targetKind);
     return true;
   }
 
@@ -171,6 +220,7 @@ export class StorageTokenDropController {
       Number(destination?.y),
       sourceToken
     );
+    const targetKind = this.activeTargetKind ?? "storage";
     const source = this.dragSource ?? {
       kind: "storage-token",
       tokenUuid: tokenUuid(sourceToken)
@@ -178,13 +228,29 @@ export class StorageTokenDropController {
     const ready = this.ready && target === this.activeToken && clean(source.tokenUuid);
     this.clear();
     if (!ready || !target) return false;
-    void this.#depositSource(target, source);
+    if (targetKind === "character") {
+      void this.#moveTokenToCharacter(source, target.actor, tokenUuid(target));
+    }
+    else void this.#depositSource(target, source);
     return true;
   }
 
   handleCanvasTokenDragCancel() {
-    if (this.dragSource?.kind !== "storage-token") return false;
+    if (this.canvasDragSource?.kind !== "storage-token" && this.dragSource?.kind !== "storage-token") return false;
     this.clear();
+    return true;
+  }
+
+  handleCanvasTokenPointerUp(event) {
+    const source = this.canvasDragSource;
+    if (source?.kind !== "storage-token") return false;
+    const actor = this.characterSheetProvider?.(Number(event?.clientX), Number(event?.clientY));
+    if (actor?.type !== "character" || !clean(actor?.uuid)) return false;
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    event?.stopImmediatePropagation?.();
+    this.clear();
+    void this.#moveTokenToCharacter(source, actor);
     return true;
   }
 
@@ -225,6 +291,7 @@ export class StorageTokenDropController {
   clear() {
     this.#clearTarget();
     this.dragSource = null;
+    this.canvasDragSource = null;
   }
 
   #tokenAt(x, y) {
@@ -237,12 +304,19 @@ export class StorageTokenDropController {
   }
 
   #tokenAtCanvasPoint(x, y, excludedToken = null) {
+    return this.#placeableAtCanvasPoint(x, y, excludedToken, (token) => isStorageActor(token?.actor));
+  }
+
+  #characterAtCanvasPoint(x, y, excludedToken = null) {
+    return this.#placeableAtCanvasPoint(x, y, excludedToken, (token) => token?.actor?.type === "character");
+  }
+
+  #placeableAtCanvasPoint(x, y, excludedToken, predicate) {
     if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
     const tokens = [...(this.canvasProvider?.()?.tokens?.placeables ?? [])].reverse();
     return tokens.find((token) => {
       if (token === excludedToken || token?.document === excludedToken?.document) return false;
-      if (token?.visible === false || !isStorageActor(token?.actor)) return false;
-      if (typeof token?.bounds?.contains === "function") return token.bounds.contains(x, y);
+      if (token?.visible === false || predicate?.(token) !== true) return false;
       const canvas = this.canvasProvider?.();
       const gridSize = Math.max(1, Number(canvas?.scene?.grid?.size ?? canvas?.grid?.size ?? 100) || 100);
       const document = token?.document ?? token;
@@ -250,21 +324,33 @@ export class StorageTokenDropController {
       const top = Number(document?.y);
       const width = Math.max(1, Number(document?.width ?? 1)) * gridSize;
       const height = Math.max(1, Number(document?.height ?? 1)) * gridSize;
-      return Number.isFinite(left) && Number.isFinite(top)
-        && x >= left && x <= left + width && y >= top && y <= top + height;
+      if (Number.isFinite(left) && Number.isFinite(top)
+        && x >= left && x <= left + width && y >= top && y <= top + height) return true;
+      return typeof token?.bounds?.contains === "function" && token.bounds.contains(x, y);
     }) ?? null;
   }
 
-  #activateTarget(token) {
+  #activateTarget(token, targetKind = "storage") {
     this.#clearTarget();
     this.activeToken = token;
+    this.activeTargetKind = targetKind;
     this.#highlight(token);
+    if (targetKind === "character") {
+      this.ready = true;
+      this.overlayController.showFeedback(token, "Отпустите, чтобы передать", {
+        durationMs: 0,
+        className: "rm-storage-token-feedback--drop-ready"
+      });
+      return;
+    }
     if (typeof this.setTimeout !== "function") return;
     this.readyTimer = this.setTimeout(() => {
       if (this.activeToken !== token || !this.dragSource) return;
       this.readyTimer = null;
       this.ready = true;
-      this.overlayController.showFeedback(token, "Отпустите, чтобы добавить", {
+      this.overlayController.showFeedback(token, targetKind === "character"
+        ? "Отпустите, чтобы передать"
+        : "Отпустите, чтобы добавить", {
         durationMs: 0,
         className: "rm-storage-token-feedback--drop-ready"
       });
@@ -288,6 +374,29 @@ export class StorageTokenDropController {
       this.logger?.error?.(`${MODULE_ID} | Storage token deposit failed.`, error);
       globalThis.ui?.notifications?.error?.(error?.message ?? "Не удалось добавить предмет в хранилище.");
       return true;
+    }
+  }
+
+  async #moveTokenToCharacter(source, actor, characterTokenUuid = "") {
+    try {
+      if (typeof this.moduleApi?.moveStorageTokenToCharacter !== "function") {
+        throw new Error("API переноса хранилища Rebreya недоступен.");
+      }
+      const request = clean(characterTokenUuid)
+        ? { characterTokenUuid: clean(characterTokenUuid) }
+        : undefined;
+      const args = [
+        clean(source.tokenUuid),
+        clean(actor.uuid),
+        this.createMutationId()
+      ];
+      if (request) args.push(request);
+      await this.moduleApi.moveStorageTokenToCharacter(...args);
+      globalThis.ui?.notifications?.info?.(`${clean(actor.name) || "Персонаж"} получает хранилище.`);
+    }
+    catch (error) {
+      this.logger?.error?.(`${MODULE_ID} | Storage token character transfer failed.`, error);
+      globalThis.ui?.notifications?.error?.(error?.message ?? "Не удалось перенести хранилище персонажу.");
     }
   }
 
@@ -317,10 +426,13 @@ export class StorageTokenDropController {
     }
     this.highlightState = null;
     this.activeToken = null;
+    this.activeTargetKind = null;
   }
 }
 
-export function patchStorageTokenCanvasDrag(controller, { TokenClass = globalThis.Token } = {}) {
+export function patchStorageTokenCanvasDrag(controller, {
+  TokenClass = globalThis.foundry?.canvas?.placeables?.Token ?? globalThis.Token
+} = {}) {
   const prototype = TokenClass?.prototype;
   if (!prototype || patchedTokenPrototypes.has(prototype)) return false;
   const originalMove = prototype._onDragLeftMove;

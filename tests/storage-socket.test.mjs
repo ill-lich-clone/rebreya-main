@@ -11,6 +11,7 @@ import {
   isValidStorageDepositPayload,
   isValidStorageDropItemPayload,
   isValidStorageRestorePortablePayload,
+  isValidStorageTokenCharacterPayload,
   storageCharacterTokenUuidForClaim
 } from "../scripts/data/storage-command-service.js";
 
@@ -246,6 +247,53 @@ test("portable scene restore payload accepts one exact item and finite scene poi
   assert.equal(isValidStorageRestorePortablePayload(payload), true);
   assert.equal(isValidStorageRestorePortablePayload({ ...payload, x: Number.NaN }), false);
   assert.equal(isValidStorageRestorePortablePayload({ ...payload, extra: true }), false);
+});
+
+test("storage token character transfer payload accepts only exact document identities", () => {
+  const payload = {
+    tokenUuid: "Scene.scene.Token.chest",
+    characterTokenUuid: "Scene.scene.Token.hero",
+    actorUuid: "Actor.hero",
+    mutationId: "token-to-character"
+  };
+  assert.equal(isValidStorageTokenCharacterPayload(payload), true);
+  assert.equal(isValidStorageTokenCharacterPayload({ ...payload, actorUuid: "" }), false);
+  assert.equal(isValidStorageTokenCharacterPayload({ ...payload, extra: true }), false);
+});
+
+test("whole storage token transfer materializes its container tree in an owned character and removes the scene token", async () => {
+  const consumed = [];
+  const materialized = [];
+  const source = {
+    kind: "storage-token",
+    mode: "move",
+    available: 1,
+    row: { container: { containerId: "portable-chest", name: "Сундук", state: {} } },
+    canUserMove: () => true,
+    async consume(quantity) { consumed.push(quantity); return { kind: "storage-token" }; },
+    async restore() {}
+  };
+  const containerItemService = {
+    async materializeToActorOnce(actor, snapshot, mutationId) {
+      materialized.push({ actor, snapshot: clone(snapshot), mutationId });
+      return { id: "portable-item" };
+    }
+  };
+  const harness = createHarness({ depositSource: source, containerItemService });
+
+  const result = await harness.service.moveStorageTokenToCharacter({
+    tokenUuid: harness.storageToken.uuid,
+    characterTokenUuid: harness.characterToken.uuid,
+    actorUuid: harness.targetHero.uuid,
+    mutationId: "token-to-character"
+  }, { sender: harness.player });
+
+  assert.deepEqual(consumed, [1]);
+  assert.equal(materialized.length, 1);
+  assert.equal(materialized[0].actor, harness.targetHero);
+  assert.equal(materialized[0].snapshot.containerId, "portable-chest");
+  assert.match(materialized[0].mutationId, /token-to-character/u);
+  assert.equal(result.changed, true);
 });
 
 test("generic Item scene drop payload accepts an exact quantity and finite scene point", () => {
@@ -573,6 +621,20 @@ test("storage open rejects a token hidden from the player", async () => {
     /не видит/iu
   );
   assert.equal(readStorageState(harness.storageToken).state, "unopened");
+});
+
+test("storage open returns a compact socket acknowledgement instead of the full nested contents", async () => {
+  const harness = createHarness();
+
+  const result = await harness.service.open({
+    tokenUuid: harness.storageToken.uuid,
+    characterTokenUuid: harness.characterToken.uuid
+  }, { sender: harness.player });
+
+  assert.deepEqual(Object.keys(result).sort(), ["displayMode", "generatedNow", "state"]);
+  assert.equal(result.state, "opened");
+  assert.equal(result.displayMode, "opened");
+  assert.equal("rows" in result, false);
 });
 
 test("repeated storage claims grant rows and coins only once and empty the token", async () => {

@@ -80,7 +80,7 @@ test("storage grid offers self and party destinations for rows and coins", async
   const template = await readFile(new URL("../templates/storage-app.hbs", import.meta.url), "utf8");
   assert.match(template, /class="rm-storage-item__icon"/u);
   assert.match(template, /draggable="true"/u);
-  assert.match(template, /data-action="storage-toggle-row"/u);
+  assert.match(template, /data-action="\{\{primaryAction\}\}"/u);
   assert.match(template, /data-storage-popover/u);
   assert.match(template, /data-action="storage-open-item"/u);
   assert.match(template, /data-action="storage-claim-self"/u);
@@ -193,10 +193,73 @@ test("item cells keep click actions separate from article dragging and use no na
   const template = await readFile(new URL("../templates/storage-app.hbs", import.meta.url), "utf8");
 
   assert.match(template, /<article[^>]*draggable="true"[^>]*data-storage-row-drag/u);
-  assert.match(template, /class="rm-storage-item__icon"[^>]*data-action="storage-toggle-row"/u);
+  assert.match(template, /class="rm-storage-item__icon"[^>]*data-action="\{\{primaryAction\}\}"/u);
   assert.match(template, /data-storage-popover/u);
   assert.doesNotMatch(template, /class="rm-storage-item__icon"[^>]*title=/u);
   assert.match(template, /aria-label="[^"]*\{\{name\}\}"/u);
+});
+
+test("container cells open the nested storage directly while ordinary items open their popover", async () => {
+  const { app } = createApp({
+    configure: false,
+    getStorageSnapshot: async () => ({
+      tokenUuid: "Scene.scene.Token.chest",
+      name: "Сундук",
+      state: "opened",
+      rows: [
+        { rowId: "item-row", rowKind: "item", name: "Меч", quantity: 1 },
+        {
+          rowId: "bag-row",
+          rowKind: "container",
+          name: "Сумка хранения",
+          quantity: 1,
+          container: { containerId: "bag-1" }
+        }
+      ],
+      coins: {}
+    })
+  });
+
+  const context = await app._prepareContext();
+
+  assert.equal(context.rows.find((row) => row.rowId === "item-row").primaryAction, "storage-toggle-row");
+  assert.equal(context.rows.find((row) => row.rowId === "bag-row").primaryAction, "storage-open-container");
+  const template = await readFile(new URL("../templates/storage-app.hbs", import.meta.url), "utf8");
+  assert.match(template, /data-action="\{\{primaryAction\}\}"/u);
+});
+
+test("PKM on a nested container still exposes transfer actions", async () => {
+  const { app } = createApp({
+    configure: false,
+    getStorageSnapshot: async () => ({
+      tokenUuid: "Scene.scene.Token.chest",
+      name: "Сундук",
+      state: "opened",
+      rows: [{
+        rowId: "bag-row",
+        rowKind: "container",
+        name: "Сумка хранения",
+        quantity: 1,
+        container: { containerId: "bag-1" }
+      }],
+      coins: {}
+    })
+  });
+  const listeners = new Map();
+  app.render = async () => {};
+  app.element = new class extends FakeElement {
+    addEventListener(name, callback) { listeners.set(name, callback); }
+  }();
+  await app._prepareContext();
+  app._onRender({}, {});
+  const icon = {
+    dataset: { action: "storage-open-container", rowId: "bag-row" },
+    closest(selector) { return selector.includes("storage-open-container") ? this : null; }
+  };
+
+  await listeners.get("contextmenu")({ target: icon, preventDefault() {}, stopPropagation() {} });
+
+  assert.equal(app.activeRowId, "bag-row");
 });
 
 test("matching token updates rerender from a fresh snapshot and unrelated updates do not", async () => {
@@ -355,6 +418,11 @@ test("storage item popovers stay interactive above their grid", async () => {
   assert.match(css, /\.rebreya-storage-app\s+\.window-content\s*\{[^}]*overflow:\s*visible/isu);
   assert.doesNotMatch(css, /\.rm-storage-grid:has\(/u);
   assert.match(template, /<\/div>\s*\{\{else\}\}[\s\S]*?\{\{#if activePopover\}\}\s*<div class="rm-storage-popover-layer"/u);
+});
+
+test("minimized storage hides all overflowing window content", async () => {
+  const css = await readFile(new URL("../styles/main.css", import.meta.url), "utf8");
+  assert.match(css, /\.rebreya-storage-app\.minimized\s*>?\s*\.window-content\s*\{[^}]*display:\s*none\s*!important/isu);
 });
 
 test("container title opens a nested path and breadcrumbs return to the root", async () => {
