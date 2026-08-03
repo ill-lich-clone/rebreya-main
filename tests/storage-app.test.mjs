@@ -387,6 +387,28 @@ test("LKM opens an item popover and its self action claims the row", async () =>
   assert.deepEqual(claimCalls[0][4], { quantity: 1 });
 });
 
+test("popover close control dismisses the active item popover", async () => {
+  const { app } = createApp();
+  const listeners = new Map();
+  const renders = [];
+  app.render = async (options) => renders.push(options);
+  app.element = new class extends FakeElement {
+    addEventListener(name, callback) { listeners.set(name, callback); }
+  }();
+  await app._prepareContext();
+  app._onRender({}, {});
+  app.activeRowId = "row-1";
+  const closeControl = {
+    dataset: { action: "storage-close-popover" },
+    closest(selector) { return selector === "[data-action]" ? this : null; }
+  };
+
+  await listeners.get("click")({ target: closeControl, preventDefault() {} });
+
+  assert.equal(app.activeRowId, "");
+  assert.deepEqual(renders.at(-1), { force: true });
+});
+
 test("PKM opens the same item popover and suppresses the native menu", async () => {
   const { app } = createApp();
   const listeners = new Map();

@@ -105,6 +105,9 @@
   {{#if activePopover}}
     <div class="rm-storage-popover-layer" data-storage-popover-layer>
       <div class="rm-storage-item__popover" data-storage-popover data-anchor-row-id="{{activePopover.anchorRowId}}">
+        <button type="button" class="rm-storage-item__popover-close" data-action="storage-close-popover" aria-label="Закрыть">
+          <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+        </button>
         {{#if activePopover.isCoins}}
           <strong class="rm-storage-item__name rm-storage-item__name--plain">{{activePopover.name}}</strong>
           <div class="rm-storage-item__actions">

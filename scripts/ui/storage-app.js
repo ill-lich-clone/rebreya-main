@@ -437,7 +437,12 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const rowId = clean(control.dataset.rowId);
     event.preventDefault?.();
     try {
-      if (action === "storage-toggle-row") {
+      if (action === "storage-close-popover") {
+        this.activeRowId = "";
+        await this.#renderCurrent();
+        return;
+      }
+      else if (action === "storage-toggle-row") {
         this.activeRowId = this.activeRowId === rowId ? "" : rowId;
         await this.#renderCurrent();
         return;

@@ -12729,13 +12729,34 @@ summary:focus-visible {
   display: grid;
   width: 224px;
   gap: 8px;
-  padding: 10px;
+  padding: 10px 34px 10px 10px;
   border: 1px solid rgb(218 174 76 / 0.72);
   border-radius: 8px;
   color: #f2ede2;
   background: linear-gradient(180deg, rgb(28 30 37 / 0.99), rgb(12 14 18 / 0.99));
   box-shadow: 0 12px 30px rgb(0 0 0 / 0.58), inset 0 0 0 1px rgb(255 255 255 / 0.04);
   transform: translateX(-50%);
+}
+
+.rm-storage-item__popover-close {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: grid;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  color: rgb(242 237 226 / 0.82);
+  background: transparent;
+  box-shadow: none;
+  place-items: center;
+}
+
+.rm-storage-item__popover-close:hover,
+.rm-storage-item__popover-close:focus-visible {
+  color: #fff;
+  background: rgb(255 255 255 / 0.1);
 }
 
 .rebreya-storage-app .window-content {
