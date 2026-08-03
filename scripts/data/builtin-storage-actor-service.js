@@ -43,6 +43,7 @@ function readPresetId(actor) {
 function initialStorageState(preset) {
   return buildStorageTokenState({
     baseName: preset.groundPile === true ? preset.prototypeToken.name : BUILTIN_STORAGE_TOKEN_NAME,
+    storageKind: preset.groundPile === true ? "pile" : "chest",
     state: preset.groundPile === true ? "opened" : "unopened",
     textures: clone(preset.textures),
     displayMode: preset.groundPile === true ? "opened" : "unopened"

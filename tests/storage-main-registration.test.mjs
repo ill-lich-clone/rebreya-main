@@ -28,7 +28,7 @@ test("main registers the storage deposit socket API and current cache keys", asy
   for (const importPath of [
     "data/storage-service.js?v=1.4.119-storage-canvas-drops",
     "data/storage-container-item-service.js?v=1.4.124-storage-ground-container-marker",
-    "data/storage-deposit-source.js?v=1.4.123-storage-ground-item-transfer",
+    "data/storage-deposit-source.js?v=1.4.126-native-container-copies",
     "data/storage-command-service.js?v=1.4.123-storage-ground-item-transfer",
     "integrations/storage-transfer-drop.js?v=1.4.119-storage-canvas-drops",
     "integrations/storage-token-drop.js?v=1.4.125-storage-token-immediate-drop",
@@ -36,7 +36,7 @@ test("main registers the storage deposit socket API and current cache keys", asy
   ]) {
     assert.equal(main.includes(importPath), true, importPath);
   }
-  assert.equal(manifest.version, "1.4.125");
+  assert.equal(manifest.version, "1.4.126");
   assert.match(main, /await registerStorageContainerHierarchyHooks\(\{ Hooks \}\)/u);
 });
 

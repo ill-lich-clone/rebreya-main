@@ -99,6 +99,7 @@ test("ground pile Actor data creates an unlinked already-open storage prototype"
   assert.equal(data.flags[MODULE_ID].groundPilePrototype.enabled, true);
   assert.equal(data.prototypeToken.actorLink, false);
   assert.equal(data.prototypeToken.flags[MODULE_ID].groundPile.enabled, true);
+  assert.equal(storage.storageKind, "pile");
   assert.equal(storage.state, "opened");
   assert.equal(storage.displayMode, "opened");
 });

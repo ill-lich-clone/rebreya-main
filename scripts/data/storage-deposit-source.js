@@ -1,5 +1,11 @@
+import { MODULE_ID } from "../constants.js";
+import { GROUND_PILE_PRESET_ID } from "./builtin-storage-presets.js";
 import { isStorageActor, readStorageState, readStorageStateAtPath } from "./storage-service.js";
-import { buildStorageContainerRow, isStorageContainerRow } from "./storage-container-snapshot.js";
+import {
+  buildStorageContainerRow,
+  isStorageContainerRow,
+  rekeyStorageContainerSnapshot
+} from "./storage-container-snapshot.js?v=1.4.126-native-container-copies";
 import { buildStorageContainerSnapshotFromToken } from "./storage-container-item-service.js";
 import { parseStorageDragData } from "../ui/storage-transfer-ui.js";
 
@@ -116,8 +122,19 @@ function storageRows(state) {
   ];
 }
 
-function singleGroundItem(snapshot) {
-  if (snapshot?.storageKind !== "pile" || snapshot?.state?.state === "unopened") return null;
+function moduleFlag(document, key) {
+  return document?.getFlag?.(MODULE_ID, key) ?? document?.flags?.[MODULE_ID]?.[key];
+}
+
+function isMarkedGroundPile(document) {
+  return moduleFlag(document, "groundPile")?.enabled === true
+    || moduleFlag(document?.actor, "groundPilePrototype")?.enabled === true
+    || clean(moduleFlag(document?.actor, "builtinStoragePreset")?.id) === GROUND_PILE_PRESET_ID;
+}
+
+function singleGroundItem(snapshot, document) {
+  if ((snapshot?.storageKind !== "pile" && !isMarkedGroundPile(document))
+    || snapshot?.state?.state === "unopened") return null;
   const state = snapshot.state ?? {};
   const claimed = new Set((Array.isArray(state.claimedRowIds) ? state.claimedRowIds : []).map(clean));
   const rows = storageRows(state).filter((row) => !claimed.has(clean(row?.rowId)));
@@ -186,7 +203,8 @@ async function resolveItemSource(sourceRef, { fromUuid, createRowId, containerIt
     if (!containerItemService || typeof containerItemService.captureFromItem !== "function") {
       throw new Error("Сервис переносимых контейнеров Rebreya недоступен.");
     }
-    const snapshot = await containerItemService.captureFromItem(item);
+    const captured = await containerItemService.captureFromItem(item);
+    const snapshot = embedded ? captured : rekeyStorageContainerSnapshot(captured);
     const row = buildStorageContainerRow(snapshot, {
       rowId: clean(createRowId?.()) || createDepositRowId()
     });
@@ -349,7 +367,7 @@ async function resolveStorageTokenSource(sourceRef, { resolveToken, storageServi
     throw new Error("Перетаскиваемый токен не является хранилищем Rebreya.");
   }
   const snapshot = buildStorageContainerSnapshotFromToken(document);
-  const groundItem = singleGroundItem(snapshot);
+  const groundItem = singleGroundItem(snapshot, document);
   const row = groundItem
     ? {
         ...clone(groundItem),

@@ -146,6 +146,23 @@ export function buildStorageContainerSnapshot(input = {}, { createId = createSta
   });
 }
 
+export function rekeyStorageContainerSnapshot(input = {}, { createId = createStableId } = {}) {
+  if (typeof createId !== "function") throw new TypeError("createId должен быть функцией.");
+  const snapshot = buildStorageContainerSnapshot(input);
+  const visit = (current) => {
+    const containerId = clean(createId("container")) || createStableId("container");
+    current.containerId = containerId;
+    current.state.containerId = containerId;
+    for (const row of stateRows(current.state)) {
+      if (!isStorageContainerRow(row)) continue;
+      visit(row.container);
+      row.sourceId = `storage-container:${row.container.containerId}`;
+    }
+  };
+  visit(snapshot);
+  return snapshot;
+}
+
 export function buildStorageContainerRow(snapshot, { rowId = "", createId = createStableId } = {}) {
   const normalized = buildStorageContainerSnapshot(snapshot, { createId });
   return {

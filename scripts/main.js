@@ -99,7 +99,7 @@ import { StorageContainerItemService } from "./data/storage-container-item-servi
 import {
   parseStorageDepositDragData,
   resolveStorageDepositSource
-} from "./data/storage-deposit-source.js?v=1.4.123-storage-ground-item-transfer";
+} from "./data/storage-deposit-source.js?v=1.4.126-native-container-copies";
 import { NativeObjectDurabilityService } from "./data/native-object-durability-service.js";
 import {
   StorageCommandService,

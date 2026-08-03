@@ -339,6 +339,63 @@ test("ordinary native dnd5e containers use the recursive container transfer path
   assert.deepEqual(calls.map(([kind]) => kind), ["capture", "remove", "restore"]);
 });
 
+test("separate copies of the same native container receive unique identities and never stack", async () => {
+  const item = {
+    id: "native-bag-template",
+    uuid: "Compendium.dnd5e.items.Item.native-bag-template",
+    documentName: "Item",
+    parent: { documentName: "CompendiumCollection" },
+    type: "container",
+    name: "Сумка хранения",
+    img: "bag.webp",
+    system: { quantity: 1, type: { value: "bag" } },
+    flags: {}
+  };
+  const templateSnapshot = {
+    containerId: "native-template-container",
+    storageKind: "bag",
+    name: "Сумка хранения",
+    state: {
+      baseName: "Сумка хранения",
+      state: "opened",
+      manualRows: [],
+      generatedRows: []
+    }
+  };
+  const dependencies = {
+    fromUuid: async () => item,
+    containerItemService: {
+      async captureFromItem() {
+        return clone(templateSnapshot);
+      }
+    }
+  };
+
+  const first = await resolveStorageDepositSource({ kind: "item", itemUuid: item.uuid }, dependencies);
+  const second = await resolveStorageDepositSource({ kind: "item", itemUuid: item.uuid }, dependencies);
+
+  assert.equal(first.mode, "copy");
+  assert.equal(second.mode, "copy");
+  assert.notEqual(first.row.container.containerId, templateSnapshot.containerId);
+  assert.notEqual(second.row.container.containerId, templateSnapshot.containerId);
+  assert.notEqual(first.row.container.containerId, second.row.container.containerId);
+
+  const target = createStorageToken();
+  const storageService = new StorageService();
+  await storageService.configure(target, {
+    containerId: "target-chest",
+    storageKind: "chest",
+    state: "opened"
+  });
+  await storageService.depositRow(target, first.row, { quantity: 1 });
+  await storageService.depositRow(target, second.row, { quantity: 1 });
+
+  const rows = readStorageState(target).manualRows;
+  assert.equal(rows.length, 2);
+  assert.deepEqual(rows.map((row) => row.rowKind), ["container", "container"]);
+  assert.deepEqual(rows.map((row) => row.quantity), [1, 1]);
+});
+
 test("whole storage token sources delete after deposit and can restore the original token", async () => {
   const token = createStorageToken();
   token.actor.id = "storage-actor";
@@ -421,4 +478,36 @@ test("a single ordinary ground item is transferred as an item instead of a neste
   assert.equal(token.deleted, true);
   await source.restore(complete);
   assert.equal(token.parent.created.length, 1);
+});
+
+test("a marked ground pile with a stale chest kind still transfers its single ordinary item directly", async () => {
+  const token = createStorageToken();
+  token.flags[MODULE_ID] = { groundPile: { enabled: true } };
+  token.actor.flags[MODULE_ID].builtinStoragePreset = { id: "ground-pile" };
+  const storageService = new StorageService();
+  await storageService.configure(token, {
+    storageKind: "chest",
+    state: "opened",
+    containerId: "legacy-ground-item",
+    manualRows: [{
+      rowId: "fuel-row",
+      name: "Топливный бак (1)",
+      quantity: 3,
+      itemData: {
+        name: "Топливный бак (1)",
+        type: "consumable",
+        system: { quantity: 3 }
+      }
+    }]
+  });
+
+  const source = await resolveStorageDepositSource({ kind: "storage-token", tokenUuid: token.uuid }, {
+    resolveToken: async () => token,
+    storageService,
+    createRowId: () => "moved-fuel"
+  });
+
+  assert.equal(source.row.rowKind, "item");
+  assert.equal(source.row.name, "Топливный бак (1)");
+  assert.equal(source.available, 3);
 });

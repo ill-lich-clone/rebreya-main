@@ -11,6 +11,7 @@ import {
   isPortableStorageContainerItem,
   isStorageContainerRow,
   readPortableStorageContainerSnapshot,
+  rekeyStorageContainerSnapshot,
   resolveStorageContainerPath,
   updateStorageContainerPath
 } from "../scripts/data/storage-container-snapshot.js";
@@ -79,6 +80,32 @@ test("container snapshots reject duplicate ancestors and nesting deeper than eig
     () => buildStorageContainerSnapshot(current),
     /глубин/i
   );
+});
+
+test("rekeying a copied container assigns fresh identities to the full nested tree", () => {
+  const original = buildStorageContainerSnapshot(snapshot("bag-template", "Сумка хранения", [
+    buildStorageContainerRow(snapshot("backpack-template", "Рюкзак", [{
+      rowId: "rope-row",
+      name: "Верёвка",
+      quantity: 2,
+      itemData: { type: "loot", system: { quantity: 2 } }
+    }]), { rowId: "backpack-row" })
+  ]));
+  const ids = ["bag-copy", "backpack-copy"];
+
+  const copied = rekeyStorageContainerSnapshot(original, {
+    createId: () => ids.shift()
+  });
+
+  const nested = copied.state.manualRows[0];
+  assert.equal(copied.containerId, "bag-copy");
+  assert.equal(copied.state.containerId, "bag-copy");
+  assert.equal(nested.container.containerId, "backpack-copy");
+  assert.equal(nested.container.state.containerId, "backpack-copy");
+  assert.equal(nested.sourceId, "storage-container:backpack-copy");
+  assert.equal(nested.container.state.manualRows[0].name, "Верёвка");
+  assert.equal(original.containerId, "bag-template");
+  assert.equal(original.state.manualRows[0].container.containerId, "backpack-template");
 });
 
 test("nested paths resolve and update immutably", () => {
