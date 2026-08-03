@@ -95,11 +95,11 @@ import {
 } from "./data/storage-access.js";
 import { BuiltinStorageActorService } from "./data/builtin-storage-actor-service.js";
 import { StorageGroundPileService } from "./data/storage-ground-pile-service.js";
-import { StorageContainerItemService } from "./data/storage-container-item-service.js?v=1.4.119-storage-canvas-drops";
+import { StorageContainerItemService } from "./data/storage-container-item-service.js?v=1.4.123-storage-ground-item-transfer";
 import {
   parseStorageDepositDragData,
   resolveStorageDepositSource
-} from "./data/storage-deposit-source.js?v=1.4.119-storage-canvas-drops";
+} from "./data/storage-deposit-source.js?v=1.4.123-storage-ground-item-transfer";
 import { NativeObjectDurabilityService } from "./data/native-object-durability-service.js";
 import {
   StorageCommandService,
@@ -111,7 +111,7 @@ import {
   isValidStorageRestorePortablePayload,
   isValidStorageTokenCharacterPayload,
   storageCharacterTokenUuidForClaim
-} from "./data/storage-command-service.js?v=1.4.120-storage-character-drop-2";
+} from "./data/storage-command-service.js?v=1.4.123-storage-ground-item-transfer";
 import { registerCombatHooks } from "./combat/hooks.js?v=1.4.111-paladin-dogmas";
 import { CombatAttackService } from "./combat/attack-service.js?v=1.4.111-native-ammo-selection-guard";
 import { ImplantAutomationService } from "./combat/implant-automation-service.js";

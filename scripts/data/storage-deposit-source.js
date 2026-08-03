@@ -1,5 +1,5 @@
 import { isStorageActor, readStorageState, readStorageStateAtPath } from "./storage-service.js";
-import { buildStorageContainerRow } from "./storage-container-snapshot.js";
+import { buildStorageContainerRow, isStorageContainerRow } from "./storage-container-snapshot.js";
 import { buildStorageContainerSnapshotFromToken } from "./storage-container-item-service.js";
 import { parseStorageDragData } from "../ui/storage-transfer-ui.js";
 
@@ -114,6 +114,22 @@ function storageRows(state) {
     ...(Array.isArray(state?.manualRows) ? state.manualRows : []),
     ...(Array.isArray(state?.generatedRows) ? state.generatedRows : [])
   ];
+}
+
+function singleGroundItem(snapshot) {
+  if (snapshot?.storageKind !== "pile" || snapshot?.state?.state === "unopened") return null;
+  const state = snapshot.state ?? {};
+  const claimed = new Set((Array.isArray(state.claimedRowIds) ? state.claimedRowIds : []).map(clean));
+  const rows = storageRows(state).filter((row) => !claimed.has(clean(row?.rowId)));
+  if (rows.length !== 1 || isStorageContainerRow(rows[0])) return null;
+  if (state.coinsClaimed !== true) {
+    const coinKeys = ["pp", "gp", "sp", "cp"];
+    const hasCoins = coinKeys.some((key) => (
+      Number(state.manualCoins?.[key] ?? 0) + Number(state.generatedCoins?.[key] ?? 0)
+    ) > 0);
+    if (hasCoins) return null;
+  }
+  return rows[0];
 }
 
 export function parseStorageDepositDragData(value) {
@@ -323,7 +339,7 @@ async function resolveStorageRowSource(sourceRef, {
   };
 }
 
-async function resolveStorageTokenSource(sourceRef, { resolveToken, createRowId }) {
+async function resolveStorageTokenSource(sourceRef, { resolveToken, storageService, createRowId }) {
   if (typeof resolveToken !== "function") {
     throw new TypeError("Для токена-контейнера требуется token resolver.");
   }
@@ -333,16 +349,30 @@ async function resolveStorageTokenSource(sourceRef, { resolveToken, createRowId 
     throw new Error("Перетаскиваемый токен не является хранилищем Rebreya.");
   }
   const snapshot = buildStorageContainerSnapshotFromToken(document);
-  const row = buildStorageContainerRow(snapshot, {
-    rowId: clean(createRowId?.()) || createDepositRowId()
-  });
+  const groundItem = singleGroundItem(snapshot);
+  const row = groundItem
+    ? {
+        ...clone(groundItem),
+        rowKind: "item",
+        rowId: clean(createRowId?.()) || createDepositRowId()
+      }
+    : buildStorageContainerRow(snapshot, {
+        rowId: clean(createRowId?.()) || createDepositRowId()
+      });
+  const available = groundItem
+    ? positiveQuantity(groundItem.quantity ?? groundItem.itemData?.system?.quantity, 1)
+    : 1;
+  row.quantity = available;
+  row.itemData ??= {};
+  row.itemData.system ??= {};
+  row.itemData.system.quantity = available;
   const parent = document.parent ?? document.scene ?? null;
   const tokenData = clone(document.toObject?.() ?? document) ?? {};
 
   return {
     kind: "storage-token",
     mode: "move",
-    available: 1,
+    available,
     row,
     sourceKey: clean(document.uuid ?? sourceRef.tokenUuid),
     storageToken: document,
@@ -357,7 +387,20 @@ async function resolveStorageTokenSource(sourceRef, { resolveToken, createRowId 
       return document.isOwner === true || document.actor?.isOwner === true;
     },
     async consume(requestedQuantity) {
-      requireQuantity(requestedQuantity, 1);
+      const quantity = requireQuantity(requestedQuantity, available);
+      if (groundItem && quantity < available) {
+        if (!storageService?.claim) {
+          throw new TypeError("Для частичного переноса наземного предмета требуется StorageService.");
+        }
+        const beforeState = readStorageState(document);
+        const result = await storageService.claim(document, {
+          kind: "row",
+          rowId: clean(groundItem.rowId),
+          quantity
+        });
+        if (!result.changed) throw new Error("Наземный предмет уже недоступен.");
+        return { kind: "storage-row", beforeState, state: result.state, token: document };
+      }
       if (typeof document.delete === "function") {
         await document.delete();
       }
@@ -370,6 +413,11 @@ async function resolveStorageTokenSource(sourceRef, { resolveToken, createRowId 
       return { kind: "storage-token", parent, tokenData };
     },
     async restore(receipt) {
+      if (receipt?.kind === "storage-row") {
+        if (!storageService?.configure) return false;
+        await storageService.configure(document, receipt.beforeState);
+        return true;
+      }
       if (receipt?.kind !== "storage-token" || typeof receipt.parent?.createEmbeddedDocuments !== "function") {
         return false;
       }

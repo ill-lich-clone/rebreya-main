@@ -375,3 +375,50 @@ test("whole storage token sources delete after deposit and can restore the origi
   assert.equal(token.parent.created[0].type, "Token");
   assert.equal(token.parent.created[0].documents[0]._id, token.id);
 });
+
+test("a single ordinary ground item is transferred as an item instead of a nested container", async () => {
+  const token = createStorageToken();
+  token.parent = {
+    created: [],
+    async createEmbeddedDocuments(type, documents) {
+      this.created.push({ type, documents: clone(documents) });
+      return documents;
+    }
+  };
+  token.toObject = () => ({ _id: token.id, name: token.name, flags: clone(token.flags) });
+  token.delete = async () => { token.deleted = true; };
+  const storageService = new StorageService();
+  await storageService.configure(token, {
+    storageKind: "pile",
+    state: "opened",
+    containerId: "ground-gold",
+    manualRows: [{
+      rowId: "gold-row",
+      name: "Золото",
+      quantity: 2,
+      itemData: { name: "Золото", type: "loot", system: { quantity: 2 } }
+    }]
+  });
+
+  const source = await resolveStorageDepositSource({ kind: "storage-token", tokenUuid: token.uuid }, {
+    resolveToken: async () => token,
+    storageService,
+    createRowId: () => "moved-gold"
+  });
+
+  assert.equal(source.kind, "storage-token");
+  assert.equal(source.row.rowKind, "item");
+  assert.equal(source.row.name, "Золото");
+  assert.equal(source.available, 2);
+
+  const partial = await source.consume(1);
+  assert.equal(token.deleted, undefined);
+  assert.equal(readStorageState(token).manualRows[0].quantity, 1);
+  await source.restore(partial);
+  assert.equal(readStorageState(token).manualRows[0].quantity, 2);
+
+  const complete = await source.consume(2);
+  assert.equal(token.deleted, true);
+  await source.restore(complete);
+  assert.equal(token.parent.created.length, 1);
+});

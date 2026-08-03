@@ -98,6 +98,7 @@ function createHarness({
       if (rejectItemGrant) throw new Error("grant failed");
       if (!completed.has(mutationId)) itemGrants.push({ row: clone(row), actor, mutationId, destination: "self" });
       completed.add(mutationId);
+      return { actorId: actor.id, itemId: "granted-item", quantity: row.quantity };
     },
     async addLootgenRowToInventoryOnce(row, mutationId) {
       if (rejectItemGrant) throw new Error("grant failed");
@@ -294,6 +295,48 @@ test("whole storage token transfer materializes its container tree in an owned c
   assert.equal(materialized[0].snapshot.containerId, "portable-chest");
   assert.match(materialized[0].mutationId, /token-to-character/u);
   assert.equal(result.changed, true);
+});
+
+test("a scene pile with one ordinary item grants that item without creating a container", async () => {
+  const consumed = [];
+  const materialized = [];
+  const source = {
+    kind: "storage-token",
+    mode: "move",
+    available: 3,
+    row: {
+      rowKind: "item",
+      rowId: "gold-row",
+      name: "Золото",
+      quantity: 3,
+      itemData: { name: "Золото", type: "loot", system: { quantity: 3 } }
+    },
+    canUserMove: () => true,
+    async consume(quantity) { consumed.push(quantity); return { kind: "storage-token" }; },
+    async restore() {}
+  };
+  const containerItemService = {
+    async materializeToActorOnce(...args) {
+      materialized.push(args);
+      return { id: "unexpected-container" };
+    }
+  };
+  const harness = createHarness({ depositSource: source, containerItemService });
+
+  const result = await harness.service.moveStorageTokenToCharacter({
+    tokenUuid: harness.storageToken.uuid,
+    characterTokenUuid: harness.characterToken.uuid,
+    actorUuid: harness.targetHero.uuid,
+    mutationId: "single-item-to-character"
+  }, { sender: harness.player });
+
+  assert.deepEqual(consumed, [3]);
+  assert.equal(materialized.length, 0);
+  assert.equal(harness.itemGrants.length, 1);
+  assert.equal(harness.itemGrants[0].row.name, "Золото");
+  assert.equal(harness.itemGrants[0].actor, harness.targetHero);
+  assert.equal(result.itemUuid, "granted-item");
+  assert.equal(result.containerId, "");
 });
 
 test("generic Item scene drop payload accepts an exact quantity and finite scene point", () => {

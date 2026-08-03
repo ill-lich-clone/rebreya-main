@@ -629,28 +629,43 @@ export class StorageCommandService {
         storageService: this.storageService,
         containerItemService: this.containerItemService
       });
-      if (!source?.row?.container || typeof source.consume !== "function" || typeof source.restore !== "function") {
+      if (!source?.row || typeof source.consume !== "function" || typeof source.restore !== "function") {
         throw new Error("Переносимое хранилище недоступно.");
       }
       if (source.canUserMove?.(sender) !== true) {
         throw new Error("У вас нет прав владельца на перемещение этого хранилища.");
       }
-      if (!this.containerItemService?.materializeToActorOnce) {
+      if (source.row.container && !this.containerItemService?.materializeToActorOnce) {
         throw new Error("Сервис переносимых контейнеров Rebreya недоступен.");
       }
       let receipt = null;
       try {
-        receipt = await source.consume(1);
-        const item = await this.containerItemService.materializeToActorOnce(
-          actor,
-          source.row.container,
-          mutationKey
-        );
+        const transferQuantity = Number(source.available);
+        if (!Number.isSafeInteger(transferQuantity) || transferQuantity < 1) {
+          throw new Error("Переносимый предмет уже недоступен.");
+        }
+        receipt = await source.consume(transferQuantity);
+        const item = source.row.container
+          ? await this.containerItemService.materializeToActorOnce(
+              actor,
+              source.row.container,
+              mutationKey
+            )
+          : await this.inventoryService.addLootgenRowToCharacterOnce(
+              source.row,
+              actor,
+              mutationKey
+            );
         return {
           changed: true,
           actorUuid: clean(actor.uuid),
-          itemUuid: clean(item?.uuid ?? item?.id),
-          containerId: clean(source.row.container.containerId)
+          itemUuid: clean(
+            item?.uuid
+            ?? actor?.items?.get?.(clean(item?.itemId))?.uuid
+            ?? item?.itemId
+            ?? item?.id
+          ),
+          containerId: clean(source.row.container?.containerId)
         };
       }
       catch (error) {

@@ -26,6 +26,14 @@ function randomId(prefix) {
   return `${prefix}-${random}`;
 }
 
+function documentId() {
+  const foundryId = globalThis.foundry?.utils?.randomID?.();
+  if (clean(foundryId)) return clean(foundryId);
+  const random = globalThis.crypto?.randomUUID?.()?.replaceAll("-", "")
+    ?? Math.random().toString(36).slice(2).padEnd(16, "0");
+  return clean(random).slice(0, 16);
+}
+
 function readFlag(document, key) {
   if (typeof document?.getFlag === "function") return document.getFlag(MODULE_ID, key);
   return document?.flags?.[MODULE_ID]?.[key];
@@ -174,17 +182,7 @@ export class StorageContainerItemService {
     )) ?? null;
   }
 
-  async #createItem(actor, data, createdIds) {
-    if (typeof actor?.createEmbeddedDocuments !== "function") {
-      throw new TypeError("Актёр не поддерживает создание предметов-контейнеров.");
-    }
-    const [item] = await actor.createEmbeddedDocuments("Item", [data]);
-    if (!item) throw new Error("Созданный предмет-контейнер не найден.");
-    createdIds.push(clean(item.id));
-    return item;
-  }
-
-  async #materializeChildren(actor, parentItem, snapshot, createdIds) {
+  #materializeChildren(parentItemId, snapshot, documents) {
     const state = snapshot.state ?? {};
     const claimed = new Set((Array.isArray(state.claimedRowIds) ? state.claimedRowIds : []).map(clean));
     const rows = [
@@ -195,14 +193,16 @@ export class StorageContainerItemService {
     for (const row of rows) {
       if (row?.rowKind === "container" && row.container) {
         const nested = buildStorageContainerSnapshot(row.container);
-        const data = createPortableStorageContainerItemData(nested, containerOptions(nested, parentItem.id));
+        const childId = documentId();
+        const data = createPortableStorageContainerItemData(nested, containerOptions(nested, parentItemId));
+        data._id = childId;
         data.flags[MODULE_ID][STORAGE_CONTAINER_MEMBER_FLAG] = {
           rootContainerId: snapshot.containerId,
           containerId: nested.containerId,
           rowId: clean(row.rowId)
         };
-        const child = await this.#createItem(actor, data, createdIds);
-        await this.#materializeChildren(actor, child, nested, createdIds);
+        documents.push(data);
+        this.#materializeChildren(childId, nested, documents);
         continue;
       }
 
@@ -211,13 +211,14 @@ export class StorageContainerItemService {
       data.name = clean(row?.name ?? data.name) || "Предмет";
       data.img = clean(row?.img ?? data.img);
       data.system.quantity = quantity;
-      data.system.container = parentItem.id;
+      data._id = documentId();
+      data.system.container = parentItemId;
       data.flags[MODULE_ID][STORAGE_CONTAINER_MEMBER_FLAG] = {
         rootContainerId: snapshot.containerId,
         containerId: snapshot.containerId,
         rowId: clean(row?.rowId) || randomId("row")
       };
-      await this.#createItem(actor, data, createdIds);
+      documents.push(data);
     }
   }
 
@@ -227,7 +228,10 @@ export class StorageContainerItemService {
     const existing = this.#findMutationRoot(actor, stableMutationId);
     if (existing) return existing;
 
-    const createdIds = [];
+    if (typeof actor?.createEmbeddedDocuments !== "function") {
+      throw new TypeError("Актёр не поддерживает создание предметов-контейнеров.");
+    }
+    const rootId = documentId();
     try {
       const rootData = createPortableStorageContainerItemData(
         normalized,
@@ -237,14 +241,29 @@ export class StorageContainerItemService {
         id: stableMutationId,
         kind: "materialize"
       };
-      const root = await this.#createItem(actor, rootData, createdIds);
-      await this.#materializeChildren(actor, root, normalized, createdIds);
+      rootData._id = rootId;
+      const documents = [rootData];
+      this.#materializeChildren(rootId, normalized, documents);
+      const created = await actor.createEmbeddedDocuments("Item", documents, { keepId: true });
+      const root = created?.find?.((item) => clean(item?.id ?? item?._id) === rootId) ?? created?.[0];
+      if (!root) throw new Error("Созданный предмет-контейнер не найден.");
       return root;
     }
     catch (error) {
-      if (createdIds.length && typeof actor?.deleteEmbeddedDocuments === "function") {
+      const partialRoot = this.#findMutationRoot(actor, stableMutationId);
+      if (partialRoot && typeof actor?.deleteEmbeddedDocuments === "function") {
         try {
-          await actor.deleteEmbeddedDocuments("Item", createdIds);
+          const ids = [];
+          const allItems = itemCollection(actor);
+          const collect = (parentId) => {
+            for (const child of allItems.filter((item) => clean(item?.system?.container) === parentId)) {
+              ids.push(clean(child.id));
+              collect(clean(child.id));
+            }
+          };
+          collect(clean(partialRoot.id));
+          ids.push(clean(partialRoot.id));
+          await actor.deleteEmbeddedDocuments("Item", ids.filter(Boolean));
         }
         catch (rollbackError) {
           throw new AggregateError([error, rollbackError], "Не удалось откатить создание контейнера в инвентаре.");

@@ -139,6 +139,29 @@ test("portable storage materializes as native dnd5e container hierarchy and capt
   assert.equal(actor.items.contents.length, 4);
 });
 
+test("portable storage creates its complete item tree in one actor batch", async () => {
+  const actor = createActor();
+  const originalCreate = actor.createEmbeddedDocuments.bind(actor);
+  const calls = [];
+  actor.createEmbeddedDocuments = async (type, documents, options) => {
+    calls.push({ type, documents: clone(documents), options: clone(options) });
+    return originalCreate(type, documents, options);
+  };
+
+  const root = await new StorageContainerItemService().materializeToActorOnce(
+    actor,
+    bagSnapshot(),
+    "single-batch"
+  );
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].type, "Item");
+  assert.equal(calls[0].documents.length, 4);
+  assert.equal(calls[0].options.keepId, true);
+  assert.equal(actor.items.contents.length, 4);
+  assert.equal(actor.items.contents.find((item) => item.name === "Верёвка").system.container, root.id);
+});
+
 test("removing and restoring a portable container moves its entire item tree", async () => {
   const actor = createActor();
   const service = new StorageContainerItemService();

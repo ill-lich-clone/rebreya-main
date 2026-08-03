@@ -63,8 +63,8 @@ test("module manifest loads the stable canonical entrypoint", async () => {
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const [entrypoint] = manifest.esmodules;
 
-  assert.equal(manifest.version, "1.4.122");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.122.js"]);
+  assert.equal(manifest.version, "1.4.123");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.123.js"]);
   assert.doesNotMatch(entrypoint, /[?#]/u);
 
   const entrypointSource = await readFile(new URL(entrypoint, manifestUrl), "utf8");
@@ -72,7 +72,7 @@ test("module manifest loads the stable canonical entrypoint", async () => {
     entrypointSource,
     [
       "// @rebreya-role versioned-entrypoint-cache-forwarder",
-      'export * from "./main.js?v=1.4.122-storage-container-cycle-repair";',
+      'export * from "./main.js?v=1.4.123-storage-ground-item-transfer";',
       ""
     ].join("\n")
   );
@@ -246,7 +246,7 @@ test("module keeps recent published entrypoint URLs as canonical compatibility f
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
 
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.122.js"]);
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.123.js"]);
 
   for (const fileName of ["main-1.4.98.js", "main-1.4.99.js", "main-1.4.100.js"]) {
     const forwarderSource = await readFile(new URL(`../scripts/${fileName}`, import.meta.url), "utf8");
@@ -262,6 +262,19 @@ test("module keeps recent published entrypoint URLs as canonical compatibility f
     );
     assert.doesNotMatch(forwarderSource, /\?v=/u, `${fileName} must not instantiate a second composition root`);
   }
+});
+
+test("the currently running 1.4.122 entrypoint forwards to the fixed storage graph", async () => {
+  const source = await readFile(new URL("../scripts/main-1.4.122.js", import.meta.url), "utf8");
+
+  assert.equal(
+    source,
+    [
+      "// @rebreya-role versioned-entrypoint-cache-forwarder",
+      'export * from "./main.js?v=1.4.123-storage-ground-item-transfer";',
+      ""
+    ].join("\n")
+  );
 });
 
 test("module entrypoint cache-busts stale ActiveEffect deletion handling", async () => {
