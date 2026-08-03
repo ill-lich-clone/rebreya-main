@@ -80,7 +80,7 @@ import { getActiveGm, isActiveGmClient } from "./infrastructure/foundry/active-g
 import { SocketCommandBus } from "./infrastructure/foundry/socket-command-bus.js";
 import { UiRefreshCoordinator } from "./infrastructure/ui/ui-refresh-coordinator.js";
 import { GlobalEventsService } from "./data/global-events-service.js";
-import { LootgenTemplateCatalog } from "./data/lootgen-template-catalog.js?v=1.4.128-lootgen-multiplicity";
+import { LootgenTemplateCatalog } from "./data/lootgen-template-catalog.js?v=1.4.129-lootgen-row-cap";
 import {
   StorageService,
   isStorageActor,

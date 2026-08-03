@@ -13,7 +13,7 @@ import {
   isLootgenTypeAllowed,
   resolveMagicLootgenTypeLabel
 } from "./lootgen-type-filters.js";
-import { generateLootgenResult, normalizeLootgenForm } from "../data/lootgen-generator.js?v=1.4.128-lootgen-multiplicity";
+import { generateLootgenResult, normalizeLootgenForm } from "../data/lootgen-generator.js?v=1.4.129-lootgen-row-cap";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 

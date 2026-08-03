@@ -85,6 +85,59 @@ test("lootgen repeats selection passes and may exceed the soft target to spend b
   assert.equal(result.spentValue, 600);
 });
 
+test("lootgen treats itemCount as a hard cap on result rows across budget passes", () => {
+  const mundanePool = Array.from({ length: 10 }, (_, index) => ({
+    sourceType: "gear",
+    sourceId: `tool-${index}`,
+    name: `Tool ${index}`,
+    rank: 0,
+    value: 5,
+    multipleAppearance: "1",
+    typeLabel: "Gear",
+    stackable: false
+  }));
+
+  const result = generateLootgenResult({
+    mundanePool,
+    itemCount: 4,
+    optimalItemQuantity: 4,
+    budgetValue: 50,
+    includeCoins: true,
+    random: () => 0
+  });
+
+  assert.equal(result.rows.length, 4);
+  assert.equal(result.spentValue, 20);
+  assert.equal(result.coins.totalCopper, 30);
+});
+
+test("lootgen fills requested rows before increasing selected stack quantities", () => {
+  const mundanePool = Array.from({ length: 4 }, (_, index) => ({
+    sourceType: "gear",
+    sourceId: `material-${index}`,
+    name: `Material ${index}`,
+    rank: 0,
+    value: 5,
+    multipleAppearance: "1",
+    typeLabel: "Material",
+    stackable: true
+  }));
+
+  const result = generateLootgenResult({
+    mundanePool,
+    itemCount: 4,
+    optimalItemQuantity: 4,
+    budgetValue: 50,
+    includeCoins: true,
+    random: () => 0
+  });
+
+  assert.equal(result.rows.length, 4);
+  assert.equal(result.totalItems, 10);
+  assert.equal(result.rows.some((row) => row.quantity > 1), true);
+  assert.equal(result.spentValue, 50);
+});
+
 test("lootgen never repeats one specific magic item even when it is consumable", () => {
   const result = generateLootgenResult({
     mundanePool: [],

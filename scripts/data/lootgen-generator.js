@@ -238,11 +238,12 @@ export function generateLootgenResult({
   const safeBudgetValue = form.budgetValue;
   let remainingValue = safeBudgetValue;
   const picks = [];
-  const usedUnique = new Set();
+  const selectedIdentities = new Set();
+  const selectedCandidates = [];
   const quantitiesByIdentity = new Map();
-  const isEligible = (entry) => {
+  const isAffordableUnselected = (entry) => {
     const identity = candidateIdentity(entry);
-    if (usedUnique.has(identity)) {
+    if (selectedIdentities.has(identity)) {
       return false;
     }
     const value = Math.max(0, toInteger(entry?.value, 0));
@@ -254,74 +255,88 @@ export function generateLootgenResult({
     form.optimalItemQuantity
   );
 
-  let passMadeProgress = true;
-  while (remainingValue > 0 && passMadeProgress) {
-    passMadeProgress = false;
-    for (let index = 0; index < maxRows; index += 1) {
-      const affordableMundane = safeMundanePool.filter(isEligible);
-      const affordableMagic = safeMagicPool.filter(isEligible);
-      if (!affordableMundane.length && !affordableMagic.length) {
-        break;
-      }
-
-      let sourcePool = [];
-      if (forceMagicOnly) {
-        sourcePool = affordableMagic;
-      }
-      else {
-        const wantsMagic = form.includeMagicItems
-          && affordableMagic.length > 0
-          && (!affordableMundane.length || random() < magicChance);
-        sourcePool = wantsMagic
-          ? affordableMagic
-          : (affordableMundane.length ? affordableMundane : affordableMagic);
-      }
-      const picked = weightedRandomPick(sourcePool, weightFor, random);
-      if (!picked) {
-        break;
-      }
-
-      const pickedKey = candidateIdentity(picked);
-      const unitValue = Math.max(0, toInteger(picked.value, 0));
-      let quantity = picked.sourceType === "magicItem" || picked.stackable === false
-        ? 1
-        : rollLootgenMultipleAppearance(picked.multipleAppearance ?? "1", random);
-      if (unitValue > 0) {
-        quantity = Math.min(quantity, Math.floor(remainingValue / unitValue));
-      }
-      quantity = Math.max(0, toInteger(quantity, 0));
-      if (quantity <= 0) {
-        usedUnique.add(pickedKey);
-        continue;
-      }
-
-      const totalValue = unitValue * quantity;
-      picks.push({
-        ...picked,
-        value: unitValue,
-        isBroken: rollLootgenBrokenState({
-          sourceType: picked.sourceType,
-          chance: form.brokenEquipmentChance,
-          isEligible: picked.breakable === true,
-          random
-        }),
-        quantity,
-        totalValue
-      });
-      quantitiesByIdentity.set(
-        pickedKey,
-        (quantitiesByIdentity.get(pickedKey) ?? 0) + quantity
-      );
-      if (picked.sourceType === "magicItem" || picked.stackable === false || unitValue <= 0) {
-        usedUnique.add(pickedKey);
-      }
-
-      remainingValue = Math.max(0, remainingValue - totalValue);
-      passMadeProgress = true;
-      if (remainingValue <= 0) {
-        break;
-      }
+  for (let index = 0; index < maxRows && remainingValue > 0; index += 1) {
+    const affordableMundane = safeMundanePool.filter(isAffordableUnselected);
+    const affordableMagic = safeMagicPool.filter(isAffordableUnselected);
+    if (!affordableMundane.length && !affordableMagic.length) {
+      break;
     }
+
+    let sourcePool = [];
+    if (forceMagicOnly) {
+      sourcePool = affordableMagic;
+    }
+    else {
+      const wantsMagic = form.includeMagicItems
+        && affordableMagic.length > 0
+        && (!affordableMundane.length || random() < magicChance);
+      sourcePool = wantsMagic
+        ? affordableMagic
+        : (affordableMundane.length ? affordableMundane : affordableMagic);
+    }
+    const picked = weightedRandomPick(sourcePool, () => 1, random);
+    if (!picked) {
+      break;
+    }
+
+    const pickedKey = candidateIdentity(picked);
+    const unitValue = Math.max(0, toInteger(picked.value, 0));
+    let quantity = picked.sourceType === "magicItem" || picked.stackable === false
+      ? 1
+      : rollLootgenMultipleAppearance(picked.multipleAppearance ?? "1", random);
+    if (unitValue > 0) {
+      quantity = Math.min(quantity, Math.floor(remainingValue / unitValue));
+    }
+    quantity = Math.max(0, toInteger(quantity, 0));
+    selectedIdentities.add(pickedKey);
+    if (quantity <= 0) {
+      continue;
+    }
+
+    const selected = {
+      ...picked,
+      value: unitValue,
+      isBroken: rollLootgenBrokenState({
+        sourceType: picked.sourceType,
+        chance: form.brokenEquipmentChance,
+        isEligible: picked.breakable === true,
+        random
+      })
+    };
+    const totalValue = unitValue * quantity;
+    selectedCandidates.push(selected);
+    picks.push({ ...selected, quantity, totalValue });
+    quantitiesByIdentity.set(pickedKey, quantity);
+    remainingValue = Math.max(0, remainingValue - totalValue);
+  }
+
+  while (remainingValue > 0) {
+    const repeatable = selectedCandidates.filter((entry) => (
+      entry.sourceType !== "magicItem"
+      && entry.stackable !== false
+      && entry.value > 0
+      && entry.value <= remainingValue
+    ));
+    const picked = weightedRandomPick(repeatable, weightFor, random);
+    if (!picked) {
+      break;
+    }
+
+    const pickedKey = candidateIdentity(picked);
+    let quantity = rollLootgenMultipleAppearance(picked.multipleAppearance ?? "1", random);
+    quantity = Math.min(quantity, Math.floor(remainingValue / picked.value));
+    quantity = Math.max(0, toInteger(quantity, 0));
+    if (quantity <= 0) {
+      break;
+    }
+
+    const totalValue = picked.value * quantity;
+    picks.push({ ...picked, quantity, totalValue });
+    quantitiesByIdentity.set(
+      pickedKey,
+      (quantitiesByIdentity.get(pickedKey) ?? 0) + quantity
+    );
+    remainingValue = Math.max(0, remainingValue - totalValue);
   }
 
   let rows = aggregateRows(picks);
