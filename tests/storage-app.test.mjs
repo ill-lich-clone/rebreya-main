@@ -389,7 +389,9 @@ test("newer snapshot requests win and hook subscriptions are removed on close", 
 });
 
 test("LKM opens an item popover and its self action claims the row", async () => {
-  const { app, claimCalls } = createApp();
+  const { app, claimCalls } = createApp({
+    appOptions: { characterTokenUuid: "Scene.scene.Token.hero" }
+  });
   const listeners = new Map();
   const renders = [];
   app.render = async (options) => renders.push(options);
@@ -412,7 +414,10 @@ test("LKM opens an item popover and its self action claims the row", async () =>
   assert.equal(claimCalls[0][0], app.tokenUuid);
   assert.equal(claimCalls[0][1], "row-1");
   assert.equal(claimCalls[0][2], "self");
-  assert.deepEqual(claimCalls[0][4], { quantity: 1 });
+  assert.deepEqual(claimCalls[0][4], {
+    quantity: 1,
+    characterTokenUuid: "Scene.scene.Token.hero"
+  });
 });
 
 test("popover close control dismisses the active item popover", async () => {
@@ -583,7 +588,10 @@ test("ordinary player storage accepts a ground-pile row drop anywhere in its win
   const { app, depositCalls } = createApp({
     canManage: false,
     configure: false,
-    appOptions: { path: ["target-bag"] },
+    appOptions: {
+      path: ["target-bag"],
+      characterTokenUuid: "Scene.scene.Token.hero"
+    },
     inspectStorageDepositSource: async (data) => ({
       source: {
         kind: "storage-row",
@@ -629,7 +637,10 @@ test("ordinary player storage accepts a ground-pile row drop anywhere in its win
     rowId: source.rowId,
     quantity: source.quantity
   });
-  assert.deepEqual(depositCalls[0][4], { path: ["target-bag"] });
+  assert.deepEqual(depositCalls[0][4], {
+    path: ["target-bag"],
+    characterTokenUuid: "Scene.scene.Token.hero"
+  });
 });
 
 test("ordinary storage leaves unsupported and editable-target drops to native behavior", async () => {

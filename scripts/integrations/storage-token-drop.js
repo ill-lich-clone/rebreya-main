@@ -1,4 +1,5 @@
 import { MODULE_ID } from "../constants.js";
+import { preflightStorageAccess } from "../data/storage-access.js";
 import { parseStorageDepositDragData } from "../data/storage-deposit-source.js";
 import { isStorageActor } from "../data/storage-service.js";
 import { promptStorageTransferQuantity } from "../ui/storage-transfer-ui.js";
@@ -96,6 +97,7 @@ export function characterSheetAtPoint(x, y, {
 export class StorageTokenDropController {
   constructor(moduleApi, {
     document = globalThis.document,
+    gameProvider = () => globalThis.game,
     canvasProvider = () => globalThis.canvas,
     boundsProvider = (token) => storageTokenViewportBounds(token, { canvas: canvasProvider() }),
     overlayController = new StorageTokenOverlayController({ canvasProvider }),
@@ -108,6 +110,7 @@ export class StorageTokenDropController {
   } = {}) {
     this.moduleApi = moduleApi;
     this.document = document;
+    this.gameProvider = gameProvider;
     this.canvasProvider = canvasProvider;
     this.boundsProvider = boundsProvider;
     this.overlayController = overlayController;
@@ -159,16 +162,25 @@ export class StorageTokenDropController {
       this.#clearTarget();
       return false;
     }
-    const token = this.#tokenAt(event?.clientX, event?.clientY);
+    const character = this.dragSource.kind === "storage-row"
+      ? this.#characterAtViewportPoint(event?.clientX, event?.clientY)
+      : null;
+    const token = character ?? this.#tokenAt(event?.clientX, event?.clientY);
     if (!token) {
       this.#clearTarget();
       return false;
     }
     event?.preventDefault?.();
-    if (this.activeToken === token) return true;
+    const targetKind = character ? "character" : "storage";
+    if (this.activeToken === token && this.activeTargetKind === targetKind) return true;
     this.#clearTarget();
     this.activeToken = token;
+    this.activeTargetKind = targetKind;
     this.#highlight(token);
+    if (character) {
+      this.ready = true;
+      return true;
+    }
     if (typeof this.setTimeout === "function") {
       this.readyTimer = this.setTimeout(() => {
         if (this.activeToken !== token || !this.dragSource) return;
@@ -265,17 +277,22 @@ export class StorageTokenDropController {
 
   async handleDrop(event) {
     this.dragSource ??= parseDragEvent(event);
-    const token = this.activeToken ?? this.#tokenAt(event?.clientX, event?.clientY);
+    const character = this.dragSource?.kind === "storage-row"
+      ? this.#characterAtViewportPoint(event?.clientX, event?.clientY)
+      : null;
+    const token = this.activeToken ?? character ?? this.#tokenAt(event?.clientX, event?.clientY);
     if (!this.dragSource || !token) return false;
     event?.preventDefault?.();
     event?.stopPropagation?.();
     event?.stopImmediatePropagation?.();
     const source = this.dragSource;
     const ready = this.ready && token === this.activeToken;
+    const targetKind = this.activeTargetKind ?? (character ? "character" : "storage");
     this.clear();
     if (!ready) return true;
 
-    await this.#depositSource(token, source);
+    if (targetKind === "character") await this.#claimRowToCharacter(token, source);
+    else await this.#depositSource(token, source);
     return true;
   }
 
@@ -300,6 +317,17 @@ export class StorageTokenDropController {
     return tokens.find((token) => (
       token?.visible !== false
       && isStorageActor(token?.actor)
+      && pointInside(this.boundsProvider(token), Number(x), Number(y))
+    )) ?? null;
+  }
+
+  #characterAtViewportPoint(x, y) {
+    const user = this.gameProvider?.()?.user;
+    const tokens = [...(this.canvasProvider?.()?.tokens?.placeables ?? [])].reverse();
+    return tokens.find((token) => (
+      token?.visible !== false
+      && token?.actor?.type === "character"
+      && (user?.isGM === true || token.actor.testUserPermission?.(user, "OWNER") === true)
       && pointInside(this.boundsProvider(token), Number(x), Number(y))
     )) ?? null;
   }
@@ -365,17 +393,56 @@ export class StorageTokenDropController {
       const inspected = await this.moduleApi.inspectStorageDepositSource(source);
       const quantity = await this.promptQuantity(inspected.available);
       if (quantity === null) return true;
+      const access = preflightStorageAccess(token, {
+        game: this.gameProvider?.(),
+        canvas: this.canvasProvider?.()
+      });
+      const request = clean(access.characterTokenUuid)
+        ? { characterTokenUuid: clean(access.characterTokenUuid) }
+        : undefined;
       await this.moduleApi.depositStorageItem(
         tokenUuid(token),
         inspected.source,
         quantity,
-        this.createMutationId()
+        this.createMutationId(),
+        request
       );
       return true;
     }
     catch (error) {
       this.logger?.error?.(`${MODULE_ID} | Storage token deposit failed.`, error);
       globalThis.ui?.notifications?.error?.(error?.message ?? "Не удалось добавить предмет в хранилище.");
+      return true;
+    }
+  }
+
+  async #claimRowToCharacter(token, source) {
+    try {
+      if (typeof this.moduleApi?.claimStorageRow !== "function") {
+        throw new Error("Storage transfer API is unavailable.");
+      }
+      const available = Math.max(1, Math.trunc(Number(source?.quantity ?? 1)) || 1);
+      const quantity = await this.promptQuantity(available);
+      if (quantity === null) return true;
+      await this.moduleApi.claimStorageRow(
+        clean(source.tokenUuid),
+        clean(source.rowId),
+        "character",
+        this.createMutationId(),
+        {
+          quantity,
+          target: { actorUuid: clean(token?.actor?.uuid) },
+          characterTokenUuid: tokenUuid(token),
+          ...(Array.isArray(source?.path) && source.path.length ? { path: [...source.path] } : {})
+        }
+      );
+      return true;
+    }
+    catch (error) {
+      this.logger?.error?.(`${MODULE_ID} | Storage row character transfer failed.`, error);
+      globalThis.ui?.notifications?.error?.(
+        error?.message ?? "Не удалось перенести предмет из хранилища персонажу."
+      );
       return true;
     }
   }

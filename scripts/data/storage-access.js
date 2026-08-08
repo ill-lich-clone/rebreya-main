@@ -105,22 +105,43 @@ export function preflightStorageAccess(storageToken, {
   if (game?.user?.isGM === true) {
     return { allowed: true, reason: "ok", characterTokenUuid: "" };
   }
-  const characterToken = (canvas?.tokens?.controlled ?? []).find((candidate) => (
+  const controlled = new Set(canvas?.tokens?.controlled ?? []);
+  const tokens = [...new Set([
+    ...(canvas?.tokens?.placeables ?? []),
+    ...(canvas?.tokens?.controlled ?? [])
+  ])];
+  const ownedCharacters = tokens.filter((candidate) => (
     candidate?.actor?.type === "character"
     && candidate.actor.testUserPermission?.(game?.user, "OWNER") === true
   ));
-  const characterDocument = storageTokenDocument(characterToken);
-  const characterTokenUuid = String(characterDocument?.uuid ?? characterToken?.uuid ?? "").trim();
-  if (!characterToken) return { allowed: false, reason: "character", characterTokenUuid };
-
   const storageDocument = storageTokenDocument(storageToken);
-  if (!storageDocument?.parent?.id || storageDocument.parent.id !== characterDocument?.parent?.id) {
-    return { allowed: false, reason: "scene", characterTokenUuid };
-  }
+  if (!ownedCharacters.length) return { allowed: false, reason: "character", characterTokenUuid: "" };
+  const sameScene = ownedCharacters.filter((candidate) => (
+    storageDocument?.parent?.id
+    && storageTokenDocument(candidate)?.parent?.id === storageDocument.parent.id
+  ));
+  if (!sameScene.length) return { allowed: false, reason: "scene", characterTokenUuid: "" };
   if (!isStorageTokenVisible(storageToken, { canvas })) {
-    return { allowed: false, reason: "visibility", characterTokenUuid };
+    return { allowed: false, reason: "visibility", characterTokenUuid: "" };
   }
-  const distance = measureStorageTokenDistance(characterToken, storageToken, { canvas });
+  const ranked = sameScene
+    .filter((candidate) => isStorageTokenVisible(candidate, { canvas }))
+    .map((candidate) => ({
+      token: candidate,
+      distance: measureStorageTokenDistance(candidate, storageToken, { canvas }),
+      controlled: controlled.has(candidate),
+      id: String(storageTokenDocument(candidate)?.id ?? candidate?.id ?? "")
+    }))
+    .sort((left, right) => (
+      left.distance - right.distance
+      || Number(right.controlled) - Number(left.controlled)
+      || left.id.localeCompare(right.id)
+    ));
+  const nearest = ranked[0];
+  if (!nearest) return { allowed: false, reason: "character", characterTokenUuid: "" };
+  const characterDocument = storageTokenDocument(nearest.token);
+  const characterTokenUuid = String(characterDocument?.uuid ?? nearest.token?.uuid ?? "").trim();
+  const distance = nearest.distance;
   if (!Number.isFinite(distance) || distance > MAX_STORAGE_DISTANCE_FEET) {
     return { allowed: false, reason: "distance", characterTokenUuid };
   }

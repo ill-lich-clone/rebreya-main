@@ -3,13 +3,22 @@ import { preflightStorageAccess } from "../data/storage-access.js";
 import { isStorageActor } from "../data/storage-service.js";
 import { StorageTokenOverlayController } from "../ui/storage-token-overlay.js";
 
-export function buildStorageTokenActions(moduleApi, token, { isGM = false } = {}) {
+export function buildStorageTokenActions(moduleApi, token, {
+  isGM = false,
+  characterTokenUuid = ""
+} = {}) {
   const tokenUuid = String(token?.document?.uuid ?? token?.uuid ?? "").trim();
+  const safeCharacterTokenUuid = String(characterTokenUuid ?? "").trim();
   const actions = [{
     id: "open",
     label: "Открыть",
     icon: "fa-solid fa-box-open",
-    callback: () => moduleApi.openStorageApp({ tokenUuid, configure: false, anchorToToken: true })
+    callback: () => moduleApi.openStorageApp({
+      tokenUuid,
+      configure: false,
+      anchorToToken: true,
+      ...(safeCharacterTokenUuid ? { characterTokenUuid: safeCharacterTokenUuid } : {})
+    })
   }];
   if (isGM) {
     actions.push({
@@ -51,7 +60,10 @@ export function registerStorageTokenHooks(moduleApi, {
       globalThis.ui?.notifications?.warn(messages[access.reason] ?? "Хранилище сейчас недоступно.");
       return;
     }
-    overlayController.showActions(token, buildStorageTokenActions(moduleApi, token, { isGM: false }));
+    overlayController.showActions(token, buildStorageTokenActions(moduleApi, token, {
+      isGM: false,
+      characterTokenUuid: access.characterTokenUuid
+    }));
   };
   const bindPointerClick = (token) => {
     if (!isStorageActor(token?.actor) || typeof token?.on !== "function" || boundTokens.has(token)) return;

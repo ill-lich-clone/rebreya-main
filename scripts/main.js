@@ -92,7 +92,7 @@ import {
   isStorageTokenVisible,
   measureStoragePointDistance,
   measureStorageTokenDistance
-} from "./data/storage-access.js?v=1.4.131-storage-character-drop";
+} from "./data/storage-access.js?v=1.4.132-storage-owned-character-resolution";
 import { BuiltinStorageActorService } from "./data/builtin-storage-actor-service.js";
 import { StorageGroundPileService } from "./data/storage-ground-pile-service.js?v=1.4.130-storage-player-fixes";
 import { StorageContainerItemService } from "./data/storage-container-item-service.js?v=1.4.130-storage-player-fixes";
@@ -176,7 +176,7 @@ import { runMapObjectTokenMacro } from "./integrations/map-object-token-macro.js
 import { refreshSmallTimeDateDisplay, registerSmallTimeIntegration, syncSmallTimeToCalendarTime } from "./integrations/smalltime-compat.js";
 import { registerRationFoodConversionHook } from "./integrations/ration-food-conversion.js";
 import { registerMagicWeaponTemplateHook } from "./integrations/magic-weapon-template.js?v=1.4.96";
-import { registerStorageTokenHooks } from "./integrations/storage-token-hooks.js";
+import { registerStorageTokenHooks } from "./integrations/storage-token-hooks.js?v=1.4.132-storage-owned-character-resolution";
 import { registerCraftsmanGadgetHooks } from "./integrations/craftsman-gadget-hooks.js";
 import { registerSpellAutomationHooks } from "./integrations/spell-automation-hooks.js";
 import { registerLongRestHooks } from "./integrations/long-rest-hooks.js";
@@ -190,7 +190,7 @@ import { registerSpellInstanceSocketCommand } from "./integrations/spell-instanc
 import { registerSummonLifecycleSocketCommand } from "./integrations/summon-lifecycle-socket.js";
 import { registerTransportGroupDropHooks } from "./integrations/transport-group-drop.js";
 import { registerStorageTransferDropHooks } from "./integrations/storage-transfer-drop.js?v=1.4.131-storage-character-drop";
-import { registerStorageTokenDropHooks } from "./integrations/storage-token-drop.js?v=1.4.125-storage-token-immediate-drop";
+import { registerStorageTokenDropHooks } from "./integrations/storage-token-drop.js?v=1.4.132-storage-owned-character-resolution";
 import { registerStorageContainerHierarchyHooks } from "./integrations/storage-container-hierarchy.js?v=1.4.122-storage-container-cycle-repair";
 import { registerTransportVehicleSheetHooks } from "./integrations/transport-vehicle-sheet.js";
 import {
@@ -3423,15 +3423,25 @@ export class RebreyaMainModule {
     return this.storageService.setTextureMode(token, mode, { path: cleanStoragePath(request.path) });
   }
 
-  async openStorageApp({ tokenUuid, configure = false, anchorToToken = false, path = [] } = {}) {
+  async openStorageApp({
+    tokenUuid,
+    configure = false,
+    anchorToToken = false,
+    path = [],
+    characterTokenUuid = ""
+  } = {}) {
     const safeTokenUuid = cleanSocketId(tokenUuid);
     const safePath = cleanStoragePath(path);
+    const safeCharacterTokenUuid = cleanSocketId(characterTokenUuid);
     if (!safeTokenUuid) throw new Error("Не указан токен хранилища.");
     if (configure) {
       await this.configureStorageToken(safeTokenUuid, {}, { path: safePath });
     }
     else {
-      await this.openStorage(safeTokenUuid, { path: safePath });
+      await this.openStorage(safeTokenUuid, {
+        path: safePath,
+        characterTokenUuid: safeCharacterTokenUuid
+      });
     }
     const moduleVersion = game.modules.get(MODULE_ID)?.version ?? "1.4.96";
     const { StorageApp } = await import(
@@ -3440,11 +3450,17 @@ export class RebreyaMainModule {
     const key = `${safeTokenUuid}:${configure ? "configure" : "open"}`;
     let app = this.storageApps.get(key);
     if (!app) {
-      app = new StorageApp(this, safeTokenUuid, { configure, anchorToToken, path: safePath });
+      app = new StorageApp(this, safeTokenUuid, {
+        configure,
+        anchorToToken,
+        path: safePath,
+        characterTokenUuid: safeCharacterTokenUuid
+      });
       this.storageApps.set(key, app);
     }
-    else if (anchorToToken) {
-      app.requestTokenAnchor?.();
+    else {
+      app.characterTokenUuid = safeCharacterTokenUuid;
+      if (anchorToToken) app.requestTokenAnchor?.();
     }
     await app.render({ force: true });
     bringAppToFront(app);

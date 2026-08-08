@@ -348,3 +348,106 @@ test("dropping a whole storage token on a character token transfers it to that i
     { characterTokenUuid: characterToken.document.uuid }
   ]]);
 });
+
+test("dropping a storage row on an owned character token claims it instead of dropping it on the scene", async () => {
+  const harness = createHarness();
+  const claims = [];
+  const character = {
+    uuid: "Actor.hero",
+    name: "Р“РµСЂРѕР№",
+    type: "character",
+    testUserPermission: () => true
+  };
+  const characterToken = {
+    actor: character,
+    visible: true,
+    document: { uuid: "Scene.scene.Token.hero" },
+    hover: false,
+    border: { visible: false },
+    renderFlags: { set() {} }
+  };
+  harness.moduleApi.claimStorageRow = async (...args) => claims.push(args);
+  harness.controller.canvasProvider = () => ({
+    tokens: { placeables: [harness.token, characterToken] }
+  });
+  harness.controller.boundsProvider = (token) => token === characterToken
+    ? { left: 300, top: 300, right: 400, bottom: 400 }
+    : { left: 100, top: 100, right: 200, bottom: 200 };
+  const source = {
+    type: "RebreyaStorageClaim",
+    tokenUuid: "Scene.scene.Token.chest",
+    rowId: "row-shovel",
+    quantity: 1
+  };
+  const event = {
+    clientX: 350,
+    clientY: 350,
+    dataTransfer: {
+      getData: (type) => type === "text/plain" ? JSON.stringify(source) : ""
+    },
+    preventions: 0,
+    stops: 0,
+    immediateStops: 0,
+    preventDefault() { this.preventions += 1; },
+    stopPropagation() { this.stops += 1; },
+    stopImmediatePropagation() { this.immediateStops += 1; }
+  };
+
+  harness.controller.handleDragStart(event);
+  assert.equal(harness.controller.handleDragOver(event), true);
+  assert.equal(await harness.controller.handleDrop(event), true);
+
+  assert.deepEqual(claims, [[
+    source.tokenUuid,
+    source.rowId,
+    "character",
+    "deposit-test",
+    {
+      quantity: 1,
+      target: { actorUuid: character.uuid },
+      characterTokenUuid: characterToken.document.uuid
+    }
+  ]]);
+  assert.equal(harness.deposits.length, 0);
+  assert.equal(event.immediateStops, 1);
+});
+
+test("depositing a scene item into storage uses the nearest owned character even when an object is controlled", async () => {
+  const harness = createHarness();
+  const player = { id: "player", isGM: false };
+  const scene = { id: "scene" };
+  const calendar = {
+    actor: { type: "loot" },
+    document: { uuid: "Scene.scene.Token.calendar", parent: scene },
+    visible: true
+  };
+  const characterToken = {
+    actor: {
+      type: "character",
+      testUserPermission: (user, permission) => user === player && permission === "OWNER"
+    },
+    document: { id: "hero", uuid: "Scene.scene.Token.hero", parent: scene },
+    center: { x: 50, y: 50 },
+    visible: true
+  };
+  Object.assign(harness.token.document, { id: "chest", parent: scene });
+  harness.token.center = { x: 150, y: 50 };
+  harness.controller.gameProvider = () => ({ user: player });
+  harness.controller.canvasProvider = () => ({
+    grid: { measurePath: () => ({ distance: 5 }) },
+    tokens: {
+      controlled: [calendar],
+      placeables: [calendar, characterToken, harness.token],
+      get: () => null
+    }
+  });
+
+  harness.controller.handleDragStart(harness.event);
+  harness.controller.handleDragOver(harness.event);
+  harness.clock.advance(1000);
+  await harness.controller.handleDrop(harness.event);
+
+  assert.deepEqual(harness.deposits[0][4], {
+    characterTokenUuid: characterToken.document.uuid
+  });
+});

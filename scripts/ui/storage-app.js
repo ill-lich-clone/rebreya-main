@@ -89,6 +89,7 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
     super(options);
     this.moduleApi = moduleApi;
     this.tokenUuid = clean(tokenUuid);
+    this.characterTokenUuid = clean(options.characterTokenUuid);
     this.path = (Array.isArray(options.path) ? options.path : []).map(clean).filter(Boolean).slice(0, 8);
     this.pathNames = (Array.isArray(options.pathNames) ? options.pathNames : []).map(clean).filter(Boolean).slice(0, 8);
     this.rootName = clean(options.rootName);
@@ -111,7 +112,10 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   #pathRequest() {
-    return this.path.length ? { path: [...this.path] } : {};
+    return {
+      ...(this.path.length ? { path: [...this.path] } : {}),
+      ...(this.characterTokenUuid ? { characterTokenUuid: this.characterTokenUuid } : {})
+    };
   }
 
   async #requestSnapshot() {

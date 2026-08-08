@@ -50,7 +50,7 @@ function createHarness({ isGM = false, distance = 5 } = {}) {
     gameProvider: () => ({ user }),
     canvasProvider: () => ({
       grid: { measurePath: () => ({ distance }) },
-      tokens: { controlled: [characterToken], get: () => null }
+      tokens: { controlled: [characterToken], placeables: [characterToken, storageToken], get: () => null }
     }),
     overlayController
   });
@@ -65,7 +65,8 @@ test("left-clicking storage offers only Open to a player", async () => {
   assert.deepEqual(harness.calls, [{
     tokenUuid: harness.storageToken.document.uuid,
     configure: false,
-    anchorToToken: true
+    anchorToToken: true,
+    characterTokenUuid: "Scene.scene.Token.hero"
   }]);
 });
 

@@ -63,8 +63,8 @@ test("module manifest loads the stable canonical entrypoint", async () => {
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const [entrypoint] = manifest.esmodules;
 
-  assert.equal(manifest.version, "1.4.131");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.131.js"]);
+  assert.equal(manifest.version, "1.4.132");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.132.js"]);
   assert.doesNotMatch(entrypoint, /[?#]/u);
 
   const entrypointSource = await readFile(new URL(entrypoint, manifestUrl), "utf8");
@@ -72,7 +72,7 @@ test("module manifest loads the stable canonical entrypoint", async () => {
     entrypointSource,
     [
       "// @rebreya-role versioned-entrypoint-cache-forwarder",
-      'export * from "./main.js?v=1.4.131-storage-character-drop";',
+      'export * from "./main.js?v=1.4.132-storage-owned-character-resolution";',
       ""
     ].join("\n")
   );
@@ -226,7 +226,7 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
     "integrations/inventory-sync.js?v=1.4.96-durable-transfer",
     "data/storage-container-item-service.js?v=1.4.130-storage-player-fixes",
     "data/storage-deposit-source.js?v=1.4.126-native-container-copies",
-    "integrations/storage-token-drop.js?v=1.4.125-storage-token-immediate-drop"
+    "integrations/storage-token-drop.js?v=1.4.132-storage-owned-character-resolution"
   ]) {
     assert.equal(canonicalSource.includes(importPath), true, importPath);
   }
@@ -249,7 +249,7 @@ test("module keeps recent published entrypoint URLs as canonical compatibility f
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
 
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.131.js"]);
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.132.js"]);
 
   for (const fileName of ["main-1.4.98.js", "main-1.4.99.js", "main-1.4.100.js"]) {
     const forwarderSource = await readFile(new URL(`../scripts/${fileName}`, import.meta.url), "utf8");

@@ -40,7 +40,7 @@ test("player preflight reports distance without authorizing the storage action",
   });
   const canvas = {
     grid: { measurePath: () => ({ distance: 10 }) },
-    tokens: { controlled: [hero], get: () => null }
+    tokens: { controlled: [hero], placeables: [hero, storage], get: () => null }
   };
 
   assert.deepEqual(preflightStorageAccess(storage, { game: { user: player }, canvas }), {
@@ -48,6 +48,80 @@ test("player preflight reports distance without authorizing the storage action",
     reason: "distance",
     characterTokenUuid: "Scene.scene.Token.hero"
   });
+});
+
+test("player preflight ignores a controlled map object and selects the nearest owned character", () => {
+  const player = { id: "player", isGM: false };
+  const scene = { id: "scene" };
+  const ownedActor = {
+    type: "character",
+    testUserPermission: (user, permission) => user === player && permission === "OWNER"
+  };
+  const calendar = createToken({
+    id: "calendar",
+    uuid: "Scene.scene.Token.calendar",
+    scene,
+    actor: { type: "loot" },
+    x: 200
+  });
+  const farHero = createToken({
+    id: "far-hero",
+    uuid: "Scene.scene.Token.far",
+    scene,
+    actor: ownedActor,
+    x: 0
+  });
+  const nearHero = createToken({
+    id: "near-hero",
+    uuid: "Scene.scene.Token.near",
+    scene,
+    actor: ownedActor,
+    x: 100
+  });
+  const storage = createToken({
+    id: "chest",
+    uuid: "Scene.scene.Token.chest",
+    scene,
+    actor: { type: "npc" },
+    x: 200
+  });
+  const canvas = {
+    grid: {
+      measurePath: ([from, to]) => ({ distance: Math.abs(to.x - from.x) / 100 * 5 })
+    },
+    tokens: {
+      controlled: [calendar],
+      placeables: [calendar, farHero, nearHero, storage],
+      get: () => null
+    }
+  };
+
+  assert.deepEqual(preflightStorageAccess(storage, { game: { user: player }, canvas }), {
+    allowed: true,
+    reason: "ok",
+    characterTokenUuid: nearHero.document.uuid
+  });
+});
+
+test("an owned controlled character wins an equal-distance tie", () => {
+  const player = { id: "player", isGM: false };
+  const scene = { id: "scene" };
+  const actor = {
+    type: "character",
+    testUserPermission: () => true
+  };
+  const first = createToken({ id: "a", uuid: "Scene.scene.Token.a", scene, actor, x: 0 });
+  const controlled = createToken({ id: "z", uuid: "Scene.scene.Token.z", scene, actor, x: 200 });
+  const storage = createToken({ id: "chest", uuid: "chest", scene, actor: { type: "npc" }, x: 100 });
+  const canvas = {
+    grid: { measurePath: () => ({ distance: 5 }) },
+    tokens: { controlled: [controlled], placeables: [first, controlled, storage], get: () => null }
+  };
+
+  assert.equal(
+    preflightStorageAccess(storage, { game: { user: player }, canvas }).characterTokenUuid,
+    controlled.document.uuid
+  );
 });
 
 test("GM preflight succeeds without a controlled character", () => {
