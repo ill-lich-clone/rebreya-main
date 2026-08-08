@@ -25,6 +25,22 @@ function notifyDropError(error) {
   );
 }
 
+function characterTokenAtCanvasPoint(canvas, x, y) {
+  const gridSize = Math.max(1, Number(canvas?.scene?.grid?.size ?? canvas?.grid?.size ?? 100) || 100);
+  return [...(canvas?.tokens?.placeables ?? [])].reverse().find((token) => {
+    if (token?.visible === false || token?.actor?.type !== "character" || !clean(token.actor.uuid)) return false;
+    if (typeof token?.bounds?.contains === "function") return token.bounds.contains(x, y);
+    const document = token?.document ?? token;
+    const left = Number(document?.x);
+    const top = Number(document?.y);
+    const width = Math.max(1, Number(document?.width ?? 1)) * gridSize;
+    const height = Math.max(1, Number(document?.height ?? 1)) * gridSize;
+    return Number.isFinite(left) && Number.isFinite(top)
+      && x >= left && x <= left + width
+      && y >= top && y <= top + height;
+  }) ?? null;
+}
+
 export async function transferStorageDropToCharacter(actor, data, moduleApi, { prompt } = {}) {
   const payload = parseStorageDragData(data);
   if (!payload) return { handled: false };
@@ -58,6 +74,10 @@ export async function transferStorageDropToCanvas(canvas, data, moduleApi, { pro
   const y = Number(data?.y);
   if (!sceneId || !Number.isFinite(x) || !Number.isFinite(y)) {
     throw new Error("Не удалось определить место для предмета на сцене.");
+  }
+  const characterToken = characterTokenAtCanvasPoint(canvas, x, y);
+  if (characterToken) {
+    return transferStorageDropToCharacter(characterToken.actor, payload, moduleApi, { prompt });
   }
   if (typeof moduleApi?.claimStorageRow !== "function") {
     throw new Error("API хранилища Rebreya недоступен.");

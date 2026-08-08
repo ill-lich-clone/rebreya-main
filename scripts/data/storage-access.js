@@ -18,7 +18,7 @@ export function storageTokenCenter(token, { canvas = globalThis.canvas } = {}) {
   if (object?.center && Number.isFinite(Number(object.center.x)) && Number.isFinite(Number(object.center.y))) {
     return { x: Number(object.center.x), y: Number(object.center.y) };
   }
-  const gridSize = Number(canvas?.grid?.size ?? canvas?.dimensions?.size ?? 100);
+  const gridSize = Number(document?.parent?.grid?.size ?? canvas?.grid?.size ?? canvas?.dimensions?.size ?? 100);
   return {
     x: Number(document?.x ?? 0) + Number(document?.width ?? 1) * gridSize / 2,
     y: Number(document?.y ?? 0) + Number(document?.height ?? 1) * gridSize / 2
@@ -27,7 +27,7 @@ export function storageTokenCenter(token, { canvas = globalThis.canvas } = {}) {
 
 function storageTokenFootprintCenters(token, { canvas = globalThis.canvas } = {}) {
   const document = storageTokenDocument(token);
-  const gridSize = Number(canvas?.grid?.size ?? canvas?.dimensions?.size ?? 100);
+  const gridSize = Number(document?.parent?.grid?.size ?? canvas?.grid?.size ?? canvas?.dimensions?.size ?? 100);
   const width = Number(document?.width ?? 1);
   const height = Number(document?.height ?? 1);
   if (!Number.isFinite(gridSize) || gridSize <= 0
@@ -59,9 +59,26 @@ function measureGridDistance(from, to, canvas) {
   return Number.POSITIVE_INFINITY;
 }
 
+function measureSquareGridSteps(from, to, sceneGrid) {
+  const squareType = globalThis.CONST?.GRID_TYPES?.SQUARE ?? 1;
+  const gridSize = Number(sceneGrid?.size);
+  const gridDistance = Number(sceneGrid?.distance);
+  if (Number(sceneGrid?.type) !== squareType
+    || !Number.isFinite(gridSize) || gridSize <= 0
+    || !Number.isFinite(gridDistance) || gridDistance <= 0) return null;
+  const columnSteps = Math.abs(Math.floor(from.x / gridSize) - Math.floor(to.x / gridSize));
+  const rowSteps = Math.abs(Math.floor(from.y / gridSize) - Math.floor(to.y / gridSize));
+  return Math.max(columnSteps, rowSteps) * gridDistance;
+}
+
 export function measureStorageTokenDistance(characterToken, storageToken, { canvas = globalThis.canvas } = {}) {
+  const sceneGrid = storageTokenDocument(characterToken)?.parent?.grid
+    ?? storageTokenDocument(storageToken)?.parent?.grid
+    ?? canvas?.scene?.grid;
   const distances = storageTokenFootprintCenters(characterToken, { canvas }).flatMap((from) => (
-    storageTokenFootprintCenters(storageToken, { canvas }).map((to) => measureGridDistance(from, to, canvas))
+    storageTokenFootprintCenters(storageToken, { canvas }).map((to) => (
+      measureSquareGridSteps(from, to, sceneGrid) ?? measureGridDistance(from, to, canvas)
+    ))
   ));
   return Math.min(...distances.filter(Number.isFinite), Number.POSITIVE_INFINITY);
 }

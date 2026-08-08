@@ -51,6 +51,34 @@ test("canvas drop targets the exact scene point and cancellation preserves sourc
   assert.equal(calls.length, 1);
 });
 
+test("canvas drop on a character token moves the storage row to that character", async () => {
+  const calls = [];
+  const actor = { type: "character", uuid: "Actor.hero" };
+  const canvas = {
+    scene: { id: "scene", grid: { size: 100 } },
+    grid: { size: 100 },
+    tokens: {
+      placeables: [{
+        visible: true,
+        actor,
+        document: { x: 200, y: 300, width: 1, height: 1 }
+      }]
+    }
+  };
+  const data = { ...storageDrop, quantity: 1, x: 240, y: 360 };
+
+  const result = await transferStorageDropToCanvas(canvas, data, {
+    async claimStorageRow(...args) { calls.push(args); return { changed: true }; }
+  }, { prompt: async () => 1 });
+
+  assert.equal(result.handled, true);
+  assert.deepEqual(calls[0].slice(0, 3), [storageDrop.tokenUuid, storageDrop.rowId, "character"]);
+  assert.deepEqual(calls[0][4], {
+    quantity: 1,
+    target: { actorUuid: actor.uuid }
+  });
+});
+
 test("portable dnd5e container Item drops restore a storage token on the scene", async () => {
   const calls = [];
   const result = await transferPortableStorageItemDropToCanvas(

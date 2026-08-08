@@ -89,3 +89,51 @@ test("distance uses the nearest occupied grid spaces for large tokens", () => {
   assert.equal(measureStorageTokenDistance(hero, chest, { canvas }), 5);
   assert.equal(measureStoragePointDistance(hero, { x: 250, y: 50 }, { canvas }), 5);
 });
+
+test("diagonally adjacent squares are one five-foot storage step", () => {
+  const scene = { id: "scene", grid: { type: 1, size: 100, distance: 5 } };
+  const hero = createToken({ id: "hero", uuid: "hero", actor: { type: "character" }, scene });
+  const chest = createToken({
+    id: "chest",
+    uuid: "chest",
+    actor: { type: "npc" },
+    scene,
+    x: 100,
+    y: 100
+  });
+  const canvas = {
+    scene,
+    grid: {
+      size: 100,
+      measurePath: ([from, to]) => ({
+        distance: Math.hypot(to.x - from.x, to.y - from.y) / 100 * 5
+      })
+    },
+    tokens: { get: () => null }
+  };
+
+  assert.equal(measureStorageTokenDistance(hero, chest, { canvas }), 5);
+});
+
+test("authoritative distance uses the token scene grid when the GM views another scene", () => {
+  const tokenScene = { id: "token-scene", grid: { type: 1, size: 100, distance: 5 } };
+  const hero = createToken({ id: "hero", uuid: "hero", actor: { type: "character" }, scene: tokenScene });
+  const chest = createToken({
+    id: "chest",
+    uuid: "chest",
+    actor: { type: "npc" },
+    scene: tokenScene,
+    x: 100,
+    y: 100
+  });
+  const canvas = {
+    scene: { id: "gm-scene", grid: { type: 0, size: 200, distance: 10 } },
+    grid: {
+      size: 200,
+      measurePath: ([from, to]) => ({ distance: Math.hypot(to.x - from.x, to.y - from.y) / 20 })
+    },
+    tokens: { get: () => null }
+  };
+
+  assert.equal(measureStorageTokenDistance(hero, chest, { canvas }), 5);
+});
