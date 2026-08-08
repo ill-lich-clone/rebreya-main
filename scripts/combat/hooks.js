@@ -341,7 +341,12 @@ export function registerCombatHooks(moduleApi) {
       return true;
     };
 
-    Hooks.on("targetToken", applyCurrentEnvironment);
+    Hooks.on("targetToken", (user) => {
+      if (user?.id && user.id !== globalThis.game?.user?.id) {
+        return true;
+      }
+      return applyCurrentEnvironment();
+    });
     Hooks.on("controlToken", applyCurrentEnvironment);
   }
 

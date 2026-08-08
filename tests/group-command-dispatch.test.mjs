@@ -798,6 +798,100 @@ test("player setCombatStatus routes environment status changes for unowned actor
   }
 });
 
+test("player routes owned synthetic actor environment statuses through the active GM by UUID", async () => {
+  const globals = installCombatStatusGlobals();
+  const fixture = installFixture({ currentUserId: "player-a" });
+  try {
+    const syntheticActor = createCombatActor(globals.Actor, globals.ActiveEffect, {
+      id: "enemy-delta",
+      type: "npc",
+      isOwner: true
+    });
+    syntheticActor.uuid = "Scene.scene-a.Token.enemy-token.Actor.delta";
+    const moduleApi = new RebreyaMainModule();
+
+    const pending = moduleApi.setCombatStatus(syntheticActor, "rebreya-surrounded", {
+      active: true,
+      durationRounds: 1,
+      meta: {
+        source: "rebreya-environment",
+        sourceActorUuid: fixture.memberA.uuid ?? `Actor.${fixture.memberA.id}`,
+        version: "surrounded-ac-1"
+      }
+    });
+    const request = fixture.emitted[0]?.message;
+
+    assert.equal(request?.command, "combat.status.set");
+    assert.equal(request?.payload?.actorUuid, syntheticActor.uuid);
+    assert.equal(syntheticActor.effects.contents.length, 0);
+
+    await moduleApi.handleSocketMessage({
+      type: COMMAND_RESULT_TYPE,
+      command: request.command,
+      requestId: request.requestId,
+      forUserId: fixture.users.playerA.id,
+      senderId: fixture.users.gmA.id,
+      ok: true,
+      data: { active: true, statusId: "rebreya-surrounded" }
+    });
+    await pending;
+  }
+  finally {
+    fixture.restore();
+    globals.restore();
+  }
+});
+
+test("active GM resolves a synthetic actor UUID before applying an environment status", async () => {
+  const globals = installCombatStatusGlobals();
+  const fixture = installFixture();
+  const previousFromUuid = globalThis.fromUuid;
+  try {
+    const sourceActor = createCombatActor(globals.Actor, globals.ActiveEffect, {
+      id: "character-a",
+      type: "character",
+      ownerId: fixture.users.playerA.id
+    });
+    const syntheticActor = createCombatActor(globals.Actor, globals.ActiveEffect, {
+      id: "enemy-delta",
+      type: "npc"
+    });
+    syntheticActor.uuid = "Scene.scene-a.Token.enemy-token.Actor.delta";
+    fixture.actors.push(sourceActor);
+    globalThis.fromUuid = async (uuid) => uuid === syntheticActor.uuid ? syntheticActor : null;
+    const moduleApi = new RebreyaMainModule();
+    const request = commandRequest(
+      "combat.status.set",
+      fixture.users.playerA.id,
+      {
+        actorUuid: syntheticActor.uuid,
+        statusId: "rebreya-surrounded",
+        options: {
+          active: true,
+          durationRounds: 1,
+          meta: {
+            source: "rebreya-environment",
+            sourceActorUuid: sourceActor.uuid,
+            version: "surrounded-ac-1"
+          }
+        }
+      },
+      "synthetic-status"
+    );
+
+    await moduleApi.handleSocketMessage(request);
+    await flushCommands();
+
+    assert.equal(resultFor(fixture, request.requestId)?.ok, true);
+    assert.equal(syntheticActor.effects.contents.length, 1);
+  }
+  finally {
+    globalThis.fromUuid = previousFromUuid;
+    fixture.restore();
+    globals.restore();
+  }
+});
+
 test("RebreyaMainModule rejects an unknown typed command before legacy dispatch", async () => {
   const fixture = installFixture();
   try {

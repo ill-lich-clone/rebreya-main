@@ -33,13 +33,14 @@ test("main registers the storage deposit socket API and current cache keys", asy
     "data/storage-deposit-source.js?v=1.4.126-native-container-copies",
     "data/storage-command-service.js?v=1.4.130-storage-player-fixes",
     "integrations/storage-token-hooks.js?v=1.4.133-ground-item-polish",
+    "combat/hooks.js?v=1.4.134-actor-delta-status-socket",
     "integrations/storage-transfer-drop.js?v=1.4.131-storage-character-drop",
     "integrations/storage-token-drop.js?v=1.4.132-storage-owned-character-resolution",
     "integrations/storage-container-hierarchy.js?v=1.4.122-storage-container-cycle-repair"
   ]) {
     assert.equal(main.includes(importPath), true, importPath);
   }
-  assert.equal(manifest.version, "1.4.133");
+  assert.equal(manifest.version, "1.4.134");
   assert.match(main, /await registerStorageContainerHierarchyHooks\(\{ Hooks \}\)/u);
 });
 

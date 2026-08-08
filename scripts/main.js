@@ -112,7 +112,7 @@ import {
   isValidStorageTokenCharacterPayload,
   storageCharacterTokenUuidForClaim
 } from "./data/storage-command-service.js?v=1.4.130-storage-player-fixes";
-import { registerCombatHooks } from "./combat/hooks.js?v=1.4.111-paladin-dogmas";
+import { registerCombatHooks } from "./combat/hooks.js?v=1.4.134-actor-delta-status-socket";
 import { CombatAttackService } from "./combat/attack-service.js?v=1.4.111-native-ammo-selection-guard";
 import { ImplantAutomationService } from "./combat/implant-automation-service.js";
 import { SizeAutomationService } from "./combat/size-automation-service.js?v=1.4.110-character-size-authority";
@@ -897,6 +897,38 @@ function resolveActorFromUuid(uuid) {
   return actorId ? resolveActorById(actorId) : null;
 }
 
+function isValidActorUuid(uuid) {
+  const parts = String(uuid ?? "").trim().split(".");
+  if (parts.length === 2 && parts[0] === "Actor") {
+    return parts.every(Boolean);
+  }
+  return parts.length === 6
+    && parts[0] === "Scene"
+    && parts[2] === "Token"
+    && parts[4] === "Actor"
+    && parts.every(Boolean);
+}
+
+async function resolveActorByUuid(uuid) {
+  const normalizedUuid = String(uuid ?? "").trim();
+  if (!isValidActorUuid(normalizedUuid)) {
+    return null;
+  }
+
+  const worldActor = resolveActorFromUuid(normalizedUuid);
+  if (worldActor) {
+    return worldActor;
+  }
+
+  const resolver = globalThis.fromUuid;
+  if (typeof resolver !== "function") {
+    return null;
+  }
+
+  const actor = await resolver(normalizedUuid);
+  return actor?.uuid === normalizedUuid ? actor : null;
+}
+
 function normalizeCombatStatusOptionsForSocket(options = {}) {
   const normalized = {};
   if (Object.hasOwn(options, "active")) {
@@ -943,10 +975,14 @@ function isEnvironmentCombatStatusOptions(statusId, options = {}) {
 }
 
 function isValidCombatStatusSetPayload(payload) {
+  const hasActorId = typeof payload?.actorId === "string" && payload.actorId.trim().length > 0;
+  const hasActorUuid = typeof payload?.actorUuid === "string" && isValidActorUuid(payload.actorUuid);
+  const targetKeys = hasActorId && !hasActorUuid
+    ? ["actorId", "options", "statusId"]
+    : (hasActorUuid && !hasActorId ? ["actorUuid", "options", "statusId"] : null);
   return Boolean(
-    hasExactKeys(payload, ["actorId", "options", "statusId"])
-    && typeof payload.actorId === "string"
-    && payload.actorId.trim().length > 0
+    targetKeys
+    && hasExactKeys(payload, targetKeys)
     && typeof payload.statusId === "string"
     && payload.statusId.trim().length > 0
     && isEnvironmentCombatStatusOptions(payload.statusId, payload.options)
@@ -962,10 +998,6 @@ function actorIsOwnedByUser(actor, user) {
   }
   const ownership = actor.ownership ?? actor._source?.ownership ?? {};
   return Number(ownership[user.id] ?? 0) >= 3 || Number(ownership.default ?? 0) >= 3;
-}
-
-function actorCanMutateLocally(actor) {
-  return Boolean(globalThis.game?.user?.isGM || actor?.isOwner === true);
 }
 
 function filterVisibleGlobalEvents(events = []) {
@@ -1441,7 +1473,7 @@ export class RebreyaMainModule {
     });
   }
 
-  #canSenderSetCombatStatus(sender, payload) {
+  async #canSenderSetCombatStatus(sender, payload) {
     if (sender?.isGM) {
       return true;
     }
@@ -1451,22 +1483,28 @@ export class RebreyaMainModule {
     }
 
     if (payload.options.active === false) {
-      const current = this.combatStatusService.getStatus(payload.actorId, payload.statusId);
+      const targetActor = payload.actorUuid
+        ? await resolveActorByUuid(payload.actorUuid)
+        : resolveActorById(payload.actorId);
+      const current = this.combatStatusService.getStatus(targetActor, payload.statusId);
       return current?.active === true && current?.meta?.source === ENVIRONMENT_STATUS_SOURCE;
     }
 
-    const sourceActor = resolveActorFromUuid(payload.options.meta?.sourceActorUuid);
+    const sourceActor = await resolveActorByUuid(payload.options.meta?.sourceActorUuid);
     return actorIsOwnedByUser(sourceActor, sender);
   }
 
   async #executeCombatStatusSetCommand(payload) {
-    const result = await this.combatStatusService.setStatus(payload.actorId, payload.statusId, payload.options);
+    const actor = payload.actorUuid
+      ? await resolveActorByUuid(payload.actorUuid)
+      : resolveActorById(payload.actorId);
+    const result = await this.combatStatusService.setStatus(actor, payload.statusId, payload.options);
     await this.refreshOpenApps();
-    return this.combatStatusService.getStatus(payload.actorId, payload.statusId) ?? Boolean(result);
+    return this.combatStatusService.getStatus(actor, payload.statusId) ?? Boolean(result);
   }
 
   #shouldRouteCombatStatus(actor, statusInput, options = {}) {
-    if (actorCanMutateLocally(actor)) {
+    if (globalThis.game?.user?.isGM) {
       return false;
     }
 
@@ -1477,9 +1515,12 @@ export class RebreyaMainModule {
 
   #combatStatusPayload(actor, statusInput, options = {}) {
     const actorId = normalizeDocumentId(actor);
+    const actorUuid = String(actor?.uuid ?? "").trim();
     const statusId = this.combatStatusService.normalizeStatusId(statusInput, String(statusInput ?? "").trim());
     return {
-      actorId,
+      ...(isValidActorUuid(actorUuid) && !/^Actor\.[^.]+$/u.test(actorUuid)
+        ? { actorUuid }
+        : { actorId }),
       statusId,
       options: normalizeCombatStatusOptionsForSocket(options)
     };

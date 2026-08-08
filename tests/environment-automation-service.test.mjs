@@ -225,7 +225,7 @@ test("Rebreya environment registers target and attack hooks", async () => {
       return listeners.length;
     }
   };
-  globalThis.game = {};
+  globalThis.game = { user: { id: "player-a" } };
 
   try {
     registerCombatHooks({
@@ -248,7 +248,9 @@ test("Rebreya environment registers target and attack hooks", async () => {
     assert.ok(hookNames.includes("dnd5e.preRollAttack"));
     assert.ok(hookNames.includes("midi-qol.preAttackRoll"));
 
-    await listeners.find((entry) => entry.hookName === "targetToken").listener();
+    const targetTokenHook = listeners.find((entry) => entry.hookName === "targetToken").listener;
+    await targetTokenHook({ id: "player-b" });
+    await targetTokenHook({ id: "player-a" });
     await listeners.find((entry) => entry.hookName === "dnd5e.preRollAttack").listener({ id: "dnd5e" }, {}, {});
     await listeners.find((entry) => entry.hookName === "midi-qol.preAttackRoll").listener({ id: "midi" });
 
