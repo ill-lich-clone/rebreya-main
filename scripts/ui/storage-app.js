@@ -237,6 +237,7 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
     if (windowTitleElement) windowTitleElement.textContent = windowTitle;
     const listenerOptions = { signal: this.renderListenersAbortController.signal };
     root.addEventListener("click", (event) => this.#onClick(event), listenerOptions);
+    root.addEventListener("change", (event) => this.#onQuantityChange(event), listenerOptions);
     root.addEventListener("contextmenu", (event) => this.#onContextMenu(event), listenerOptions);
     root.addEventListener("drop", (event) => this.#onDrop(event), listenerOptions);
     root.addEventListener("dragstart", (event) => this.#onDragStart(event), listenerOptions);
@@ -268,6 +269,21 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
     if (this.anchorRequested && !this.anchorDetached) {
       const schedule = globalThis.requestAnimationFrame ?? ((callback) => globalThis.setTimeout?.(callback, 0));
       schedule?.(() => this.repositionToToken());
+    }
+  }
+
+  async #onQuantityChange(event) {
+    const input = event.target;
+    if (!input?.matches?.("[data-storage-quantity]")) return;
+    const rowId = clean(input.dataset?.rowId);
+    const quantity = Number(input.value);
+    try {
+      await this.moduleApi.updateStorageRowQuantity(this.tokenUuid, rowId, quantity, this.#pathRequest());
+      await this.#refresh();
+    }
+    catch (error) {
+      console.error(`${MODULE_ID} | Storage quantity update failed.`, error);
+      globalThis.ui?.notifications?.error(error?.message ?? "Не удалось изменить количество предмета.");
     }
   }
 

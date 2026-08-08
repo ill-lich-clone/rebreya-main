@@ -25,9 +25,31 @@ export function storageTokenCenter(token, { canvas = globalThis.canvas } = {}) {
   };
 }
 
-export function measureStorageTokenDistance(characterToken, storageToken, { canvas = globalThis.canvas } = {}) {
-  const from = storageTokenCenter(characterToken, { canvas });
-  const to = storageTokenCenter(storageToken, { canvas });
+function storageTokenFootprintCenters(token, { canvas = globalThis.canvas } = {}) {
+  const document = storageTokenDocument(token);
+  const gridSize = Number(canvas?.grid?.size ?? canvas?.dimensions?.size ?? 100);
+  const width = Number(document?.width ?? 1);
+  const height = Number(document?.height ?? 1);
+  if (!Number.isFinite(gridSize) || gridSize <= 0
+    || !Number.isSafeInteger(width) || width < 1
+    || !Number.isSafeInteger(height) || height < 1) {
+    return [storageTokenCenter(token, { canvas })];
+  }
+  const left = Number(document?.x ?? 0);
+  const top = Number(document?.y ?? 0);
+  const centers = [];
+  for (let column = 0; column < width; column += 1) {
+    for (let row = 0; row < height; row += 1) {
+      centers.push({
+        x: left + (column + 0.5) * gridSize,
+        y: top + (row + 0.5) * gridSize
+      });
+    }
+  }
+  return centers;
+}
+
+function measureGridDistance(from, to, canvas) {
   if (typeof canvas?.grid?.measurePath === "function") {
     return Number(canvas.grid.measurePath([from, to])?.distance);
   }
@@ -37,17 +59,19 @@ export function measureStorageTokenDistance(characterToken, storageToken, { canv
   return Number.POSITIVE_INFINITY;
 }
 
+export function measureStorageTokenDistance(characterToken, storageToken, { canvas = globalThis.canvas } = {}) {
+  const distances = storageTokenFootprintCenters(characterToken, { canvas }).flatMap((from) => (
+    storageTokenFootprintCenters(storageToken, { canvas }).map((to) => measureGridDistance(from, to, canvas))
+  ));
+  return Math.min(...distances.filter(Number.isFinite), Number.POSITIVE_INFINITY);
+}
+
 export function measureStoragePointDistance(characterToken, point, { canvas = globalThis.canvas } = {}) {
-  const from = storageTokenCenter(characterToken, { canvas });
   const to = { x: Number(point?.x), y: Number(point?.y) };
   if (!Number.isFinite(to.x) || !Number.isFinite(to.y)) return Number.POSITIVE_INFINITY;
-  if (typeof canvas?.grid?.measurePath === "function") {
-    return Number(canvas.grid.measurePath([from, to])?.distance);
-  }
-  if (typeof canvas?.grid?.measureDistance === "function") {
-    return Number(canvas.grid.measureDistance(from, to));
-  }
-  return Number.POSITIVE_INFINITY;
+  const distances = storageTokenFootprintCenters(characterToken, { canvas })
+    .map((from) => measureGridDistance(from, to, canvas));
+  return Math.min(...distances.filter(Number.isFinite), Number.POSITIVE_INFINITY);
 }
 
 export function isStorageTokenVisible(storageToken, { canvas = globalThis.canvas } = {}) {

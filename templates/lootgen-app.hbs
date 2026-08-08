@@ -19,7 +19,7 @@
             <select id="rm-lootgen-template-{{appKey}}" data-action="lootgen-template-select">
               <option value="">Выберите шаблон</option>
               {{#each form.lootgenTemplates}}
-                <option value="{{id}}">{{name}}</option>
+                <option value="{{id}}" {{#if selected}}selected{{/if}}>{{name}}</option>
               {{/each}}
             </select>
             <button

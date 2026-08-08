@@ -1,7 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { preflightStorageAccess } from "../scripts/data/storage-access.js";
+import {
+  measureStoragePointDistance,
+  measureStorageTokenDistance,
+  preflightStorageAccess
+} from "../scripts/data/storage-access.js";
 
 function createToken({ id, uuid, actor, scene, x = 0, y = 0, visible = true }) {
   const document = { id, uuid, actor, parent: scene, x, y, width: 1, height: 1 };
@@ -62,4 +66,26 @@ test("GM preflight succeeds without a controlled character", () => {
     reason: "ok",
     characterTokenUuid: ""
   });
+});
+
+test("distance uses the nearest occupied grid spaces for large tokens", () => {
+  const scene = { id: "scene" };
+  const actor = { type: "character" };
+  const hero = createToken({ id: "hero", uuid: "hero", actor, scene });
+  hero.document.width = 2;
+  hero.document.height = 2;
+  hero.center = { x: 100, y: 100 };
+  const chest = createToken({ id: "chest", uuid: "chest", actor: { type: "npc" }, scene, x: 200 });
+  const canvas = {
+    grid: {
+      size: 100,
+      measurePath: ([from, to]) => ({
+        distance: Math.hypot(to.x - from.x, to.y - from.y) / 100 * 5
+      })
+    },
+    tokens: { get: () => null }
+  };
+
+  assert.equal(measureStorageTokenDistance(hero, chest, { canvas }), 5);
+  assert.equal(measureStoragePointDistance(hero, { x: 250, y: 50 }, { canvas }), 5);
 });

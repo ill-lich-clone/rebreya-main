@@ -291,6 +291,38 @@ test("portable container restores to a scene token once with the same storage st
   assert.equal(created[0].documents[0].flags[MODULE_ID].storageContainerMutation.id, "scene-restore");
 });
 
+test("a player who drops a container owns its synthetic scene actor", async () => {
+  const created = [];
+  const scene = {
+    id: "scene",
+    tokens: { contents: [] },
+    async createEmbeddedDocuments(_type, documents) {
+      created.push(clone(documents[0]));
+      return [{ ...clone(documents[0]), id: "owned-container" }];
+    }
+  };
+  const actor = {
+    id: "storage-actor",
+    async getTokenDocument() {
+      return { toObject: () => ({ actorId: this.id, width: 1, height: 1 }) };
+    }
+  };
+  const service = new StorageContainerItemService({
+    resolveScene: () => scene,
+    resolveActor: () => actor
+  });
+
+  await service.restoreSnapshotToScene(bagSnapshot(), {
+    sceneId: "scene",
+    x: 100,
+    y: 200,
+    mutationId: "owned-container",
+    ownerUserId: "player-1"
+  });
+
+  assert.equal(created[0].delta.ownership["player-1"], 3);
+});
+
 test("a native container without a stored actor uses the Rebreya fallback storage actor on scene restore", async () => {
   const created = [];
   const scene = {

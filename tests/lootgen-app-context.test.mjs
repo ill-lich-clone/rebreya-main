@@ -90,7 +90,7 @@ test("lootgen context exposes saved templates to a GM", async () => {
 
   const context = await app._prepareContext();
 
-  assert.deepEqual(context.form.lootgenTemplates, [savedTemplate]);
+  assert.deepEqual(context.form.lootgenTemplates, [{ ...savedTemplate, selected: false }]);
   assert.equal(context.form.hasLootgenTemplates, true);
 });
 
@@ -128,4 +128,21 @@ test("lootgen deletes a selected template only after confirmation", async () => 
   assert.deepEqual(removed, []);
   assert.equal(await app.removeTemplateById(template.id, { confirm: async () => true }), true);
   assert.deepEqual(removed, [template.id]);
+});
+
+test("lootgen applies a selected template and remembers its selection", async () => {
+  const template = {
+    id: "small-cache",
+    name: "Small cache",
+    form: { itemCount: 4, budgetValue: 900 }
+  };
+  const app = new LootgenApp({
+    getLootgenTemplate: (id) => id === template.id ? template : null
+  }, { appKey: "apply-template" });
+
+  await app.applyTemplateById(template.id, { render: false });
+
+  assert.equal(app.itemCount, 4);
+  assert.equal(app.budgetValue, 900);
+  assert.equal(app.selectedTemplateId, template.id);
 });

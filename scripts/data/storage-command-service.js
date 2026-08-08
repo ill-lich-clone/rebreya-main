@@ -451,7 +451,8 @@ export class StorageCommandService {
           sceneId: clean(payload.target.sceneId),
           x: Number(payload.target.x),
           y: Number(payload.target.y),
-          mutationId: grantId
+          mutationId: grantId,
+          ownerUserId: clean(sender?.id)
         });
       }
       const result = await this.storageService.claim(access.storageToken, { kind: "row", rowId, quantity, path });
@@ -734,7 +735,8 @@ export class StorageCommandService {
             sceneId: sceneIdValue,
             x: Number(payload.x),
             y: Number(payload.y),
-            mutationId: mutationKey
+            mutationId: mutationKey,
+            ownerUserId: clean(sender?.id)
           });
           return {
             changed: true,
@@ -756,7 +758,8 @@ export class StorageCommandService {
           sceneId: sceneIdValue,
           x: Number(payload.x),
           y: Number(payload.y),
-          mutationId: mutationKey
+          mutationId: mutationKey,
+          ownerUserId: clean(sender?.id)
         });
         return { changed: true, ...created };
       }

@@ -38,6 +38,14 @@ function normalizedCoins(coins) {
   return buildStorageTokenState({ manualCoins: coins }).manualCoins;
 }
 
+function ownedSyntheticActorDelta(delta, ownerUserId) {
+  const userId = clean(ownerUserId);
+  const next = clone(delta) ?? {};
+  if (!userId) return next;
+  next.ownership = { ...(next.ownership ?? {}), [userId]: 3 };
+  return next;
+}
+
 function addCoins(left, right) {
   const first = normalizedCoins(left);
   const second = normalizedCoins(right);
@@ -114,7 +122,7 @@ export class StorageGroundPileService {
     return prepared;
   }
 
-  async #writePile(token, state, presentation, mutationIds) {
+  async #writePile(token, state, presentation, mutationIds, ownerUserId = "") {
     const textures = {
       unopened: presentation.img,
       opened: presentation.img,
@@ -136,12 +144,13 @@ export class StorageGroundPileService {
       [`flags.${MODULE_ID}.storage`]: normalized,
       [`flags.${MODULE_ID}.groundPile`]: groundPile,
       name: presentation.name,
-      "texture.src": presentation.img
+      "texture.src": presentation.img,
+      ...(clean(ownerUserId) ? { delta: ownedSyntheticActorDelta(token?.delta, ownerUserId) } : {})
     });
     return normalized;
   }
 
-  async transferToScene({ row, quantity, sceneId, x, y, mutationId } = {}) {
+  async transferToScene({ row, quantity, sceneId, x, y, mutationId, ownerUserId = "" } = {}) {
     const incoming = this.#prepareRow(row, quantity);
     return this.#transferPreparedSnapshot({
       rows: [incoming],
@@ -149,11 +158,12 @@ export class StorageGroundPileService {
       sceneId,
       x,
       y,
-      mutationId
+      mutationId,
+      ownerUserId
     });
   }
 
-  async transferSnapshotToScene({ rows = [], coins = {}, sceneId, x, y, mutationId } = {}) {
+  async transferSnapshotToScene({ rows = [], coins = {}, sceneId, x, y, mutationId, ownerUserId = "" } = {}) {
     const incomingRows = (Array.isArray(rows) ? rows : [])
       .filter((row) => row && typeof row === "object")
       .map((row) => this.#prepareRow(row, rowQuantity(row)));
@@ -163,11 +173,12 @@ export class StorageGroundPileService {
       sceneId,
       x,
       y,
-      mutationId
+      mutationId,
+      ownerUserId
     });
   }
 
-  async #transferPreparedSnapshot({ rows, coins, sceneId, x, y, mutationId }) {
+  async #transferPreparedSnapshot({ rows, coins, sceneId, x, y, mutationId, ownerUserId = "" }) {
     const game = this.#requireActiveGm();
     const scene = this.#resolveScene(game, sceneId);
     if (!scene || typeof scene.createEmbeddedDocuments !== "function") {
@@ -220,7 +231,7 @@ export class StorageGroundPileService {
       const next = await this.#writePile(existing, candidate, presentation, [
         ...(groundFlag.mutationIds ?? []),
         stableMutationId
-      ]);
+      ], ownerUserId);
       return { created: false, merged: true, duplicate: false, token: existing, state: next };
     }
 
@@ -248,6 +259,7 @@ export class StorageGroundPileService {
       ...prototype,
       actorId: actor.id,
       actorLink: false,
+      delta: ownedSyntheticActorDelta(prototype.delta, ownerUserId),
       name: presentation.name,
       x: pointX - tokenWidth * gridSize / 2,
       y: pointY - tokenHeight * gridSize / 2,

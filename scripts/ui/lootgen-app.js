@@ -326,6 +326,7 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.magicTypeFilters = {};
     this.magicPercent = 25;
     this.brokenEquipmentChance = 0;
+    this.selectedTemplateId = "";
     this.generated = this.#createEmptyGenerated();
     this.chatLootId = "";
     this.renderListenersAbortController = null;
@@ -427,6 +428,16 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.magicPercent = form.magicPercent;
     this.brokenEquipmentChance = form.brokenEquipmentChance;
     return form;
+  }
+
+  async applyTemplateById(templateId, { render = true } = {}) {
+    const id = String(templateId ?? "").trim();
+    const template = await this.moduleApi.getLootgenTemplate?.(id);
+    if (!template) throw new Error("Выберите шаблон Lootgen.");
+    this.applyLootgenTemplate(template);
+    this.selectedTemplateId = id;
+    if (render) await this.render({ force: true });
+    return template;
   }
 
   async #saveLootgenTemplate() {
@@ -874,7 +885,10 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
       if (typeof this.moduleApi.listLootgenTemplates === "function") {
         try {
-          lootgenTemplates = this.moduleApi.listLootgenTemplates();
+          lootgenTemplates = this.moduleApi.listLootgenTemplates().map((template) => ({
+            ...template,
+            selected: String(template?.id ?? "") === this.selectedTemplateId
+          }));
         }
         catch (error) {
           console.error(`${MODULE_ID} | Failed to prepare Lootgen templates.`, error);
@@ -1049,15 +1063,25 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
           const templateId = String(
             element.querySelector("[data-action='lootgen-template-select']")?.value ?? ""
           );
-          const template = this.moduleApi.getLootgenTemplate?.(templateId) ?? null;
-          if (!template) {
-            throw new Error("Выберите шаблон Lootgen.");
-          }
-          this.applyLootgenTemplate(template);
-          await this.render({ force: true });
+          await this.applyTemplateById(templateId);
         }
         catch (error) {
           console.error(MODULE_ID + " | Failed to apply Lootgen template.", error);
+          ui.notifications?.error?.(error.message || "Не удалось применить шаблон Lootgen.");
+        }
+      }, listenerOptions);
+
+      element.querySelector("[data-action='lootgen-template-select']")?.addEventListener("change", async (event) => {
+        const templateId = String(event.currentTarget?.value ?? "");
+        if (!templateId) {
+          this.selectedTemplateId = "";
+          return;
+        }
+        try {
+          await this.applyTemplateById(templateId);
+        }
+        catch (error) {
+          console.error(MODULE_ID + " | Failed to apply selected Lootgen template.", error);
           ui.notifications?.error?.(error.message || "Не удалось применить шаблон Lootgen.");
         }
       }, listenerOptions);

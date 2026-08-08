@@ -107,6 +107,21 @@ test("canvas transfer creates an unlinked independent ground pile token", async 
   assert.equal(readStorageState(tokens[0]).state, "opened");
 });
 
+test("a player who drops an item owns the created synthetic pile actor", async () => {
+  const { service, tokens } = createHarness();
+  await service.transferToScene({
+    row: sword,
+    quantity: 1,
+    sceneId: "scene",
+    x: 300,
+    y: 400,
+    mutationId: "player-drop",
+    ownerUserId: "player-1"
+  });
+
+  assert.equal(tokens[0].delta.ownership["player-1"], 3);
+});
+
 test("dropping on a pile stacks identical items and appends different items", async () => {
   const { service, tokens } = createHarness();
   await service.transferToScene({ row: sword, quantity: 2, sceneId: "scene", x: 300, y: 400, mutationId: "one" });

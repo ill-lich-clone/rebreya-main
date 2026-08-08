@@ -19,6 +19,14 @@ function clean(value) {
   return String(value ?? "").trim();
 }
 
+function ownedSyntheticActorDelta(delta, ownerUserId) {
+  const userId = clean(ownerUserId);
+  const next = clone(delta) ?? {};
+  if (!userId) return next;
+  next.ownership = { ...(next.ownership ?? {}), [userId]: 3 };
+  return next;
+}
+
 function randomId(prefix) {
   const random = globalThis.foundry?.utils?.randomID?.()
     ?? globalThis.crypto?.randomUUID?.()
@@ -392,7 +400,7 @@ export class StorageContainerItemService {
     });
   }
 
-  async restoreSnapshotToScene(snapshot, { sceneId, x, y, mutationId } = {}) {
+  async restoreSnapshotToScene(snapshot, { sceneId, x, y, mutationId, ownerUserId = "" } = {}) {
     const normalized = buildStorageContainerSnapshot(snapshot);
     const stableMutationId = clean(mutationId) || randomId("storage-container-scene");
     const scene = await this.resolveScene(clean(sceneId));
@@ -437,6 +445,7 @@ export class StorageContainerItemService {
       ...presented,
       actorId,
       actorLink: false,
+      delta: ownedSyntheticActorDelta(presented.delta ?? prototypeData.delta, ownerUserId),
       name: normalized.storageKind === "chest"
         ? "Сундук"
         : clean(presented.name) || normalized.name,

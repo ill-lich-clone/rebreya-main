@@ -387,6 +387,7 @@ test("ordinary inventory Items move to a ground pile at the requested scene poin
   assert.deepEqual(consumed, [2]);
   assert.equal(harness.groundCalls.length, 1);
   assert.equal(harness.groundCalls[0].quantity, 2);
+  assert.equal(harness.groundCalls[0].ownerUserId, harness.player.id);
   assert.equal(harness.groundCalls[0].row.itemData.system.quantity, 2);
   assert.deepEqual(
     { sceneId: harness.groundCalls[0].sceneId, x: harness.groundCalls[0].x, y: harness.groundCalls[0].y },
@@ -436,6 +437,7 @@ test("native container Items restore as storage tokens with their full recursive
   assert.deepEqual(consumed, [1]);
   assert.equal(restored.length, 1);
   assert.equal(restored[0].snapshot.containerId, "native-bag");
+  assert.equal(restored[0].target.ownerUserId, harness.player.id);
   assert.equal(harness.groundCalls.length, 0);
 });
 

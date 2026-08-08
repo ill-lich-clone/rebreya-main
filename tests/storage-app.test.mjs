@@ -39,6 +39,7 @@ function createApp({
   const textureCalls = [];
   const claimCalls = [];
   const depositCalls = [];
+  const quantityCalls = [];
   const moduleApi = {
     async getStorageSnapshot(...args) {
       if (getStorageSnapshot) return getStorageSnapshot(...args);
@@ -78,10 +79,13 @@ function createApp({
     },
     async depositStorageItem(...args) {
       depositCalls.push(args);
+    },
+    async updateStorageRowQuantity(...args) {
+      quantityCalls.push(args);
     }
   };
   const app = new StorageApp(moduleApi, "Scene.scene.Token.chest", { configure, ...appOptions });
-  return { app, textureCalls, claimCalls, depositCalls };
+  return { app, textureCalls, claimCalls, depositCalls, quantityCalls };
 }
 
 test("storage grid offers self and party destinations for rows and coins", async () => {
@@ -174,6 +178,30 @@ test("clicking a texture mode sends the exact token and mode through the module 
     tokenUuid: "Scene.scene.Token.chest",
     mode: "empty"
   }]);
+});
+
+test("changing a storage quantity saves it without requiring the tiny check button", async () => {
+  const { app, quantityCalls } = createApp();
+  const listeners = new Map();
+  const root = new class extends FakeElement {
+    addEventListener(name, callback) { listeners.set(name, callback); }
+  }();
+  app.element = root;
+  app._onRender({}, {});
+  const input = {
+    value: "7",
+    dataset: { rowId: "row-1" },
+    matches: (selector) => selector === "[data-storage-quantity]"
+  };
+
+  await listeners.get("change")({ target: input });
+
+  assert.deepEqual(quantityCalls, [[
+    "Scene.scene.Token.chest",
+    "row-1",
+    7,
+    {}
+  ]]);
 });
 
 test("compact storage uses the token name only in the window title", async () => {
