@@ -86,8 +86,9 @@ export function measureStorageTokenDistance(characterToken, storageToken, { canv
 export function measureStoragePointDistance(characterToken, point, { canvas = globalThis.canvas } = {}) {
   const to = { x: Number(point?.x), y: Number(point?.y) };
   if (!Number.isFinite(to.x) || !Number.isFinite(to.y)) return Number.POSITIVE_INFINITY;
+  const sceneGrid = storageTokenDocument(characterToken)?.parent?.grid ?? canvas?.scene?.grid;
   const distances = storageTokenFootprintCenters(characterToken, { canvas })
-    .map((from) => measureGridDistance(from, to, canvas));
+    .map((from) => measureSquareGridSteps(from, to, sceneGrid) ?? measureGridDistance(from, to, canvas));
   return Math.min(...distances.filter(Number.isFinite), Number.POSITIVE_INFINITY);
 }
 

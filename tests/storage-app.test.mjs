@@ -227,12 +227,16 @@ test("compact storage uses the token name only in the window title", async () =>
 
 test("item cells keep click actions separate from article dragging and use no native title", async () => {
   const template = await readFile(new URL("../templates/storage-app.hbs", import.meta.url), "utf8");
+  const css = await readFile(new URL("../styles/main.css", import.meta.url), "utf8");
 
   assert.match(template, /<article[^>]*draggable="true"[^>]*data-storage-row-drag/u);
-  assert.match(template, /class="rm-storage-item__icon"[^>]*data-action="\{\{primaryAction\}\}"/u);
+  assert.match(template, /class="rm-storage-item__icon rm-tooltip-anchor"[^>]*data-action="\{\{primaryAction\}\}"/u);
+  assert.match(template, /class="rm-storage-item__icon rm-tooltip-anchor"[^>]*data-rm-tooltip="\{\{name\}\}"/u);
   assert.match(template, /data-storage-popover/u);
-  assert.doesNotMatch(template, /class="rm-storage-item__icon"[^>]*title=/u);
+  assert.doesNotMatch(template, /class="[^"]*rm-storage-item__icon[^"]*"[^>]*title=/u);
   assert.match(template, /aria-label="[^"]*\{\{name\}\}"/u);
+  assert.match(css, /\.rm-storage-item__icon\.rm-tooltip-anchor\s*\{[^}]*overflow:\s*visible/isu);
+  assert.match(css, /\.rm-storage-item__icon\.rm-tooltip-anchor\s*>\s*img\s*\{[^}]*border-radius:\s*inherit/isu);
 });
 
 test("container cells open the nested storage directly while ordinary items open their popover", async () => {

@@ -77,8 +77,9 @@
         <article class="rm-storage-item" draggable="true" data-storage-row-drag data-storage-row data-row-id="{{rowId}}">
           <button
             type="button"
-            class="rm-storage-item__icon"
+            class="rm-storage-item__icon rm-tooltip-anchor"
             data-action="{{primaryAction}}"
+            data-rm-tooltip="{{name}}"
             data-row-id="{{rowId}}"
             aria-expanded="{{active}}"
             aria-label="Открыть действия: {{name}}"

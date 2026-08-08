@@ -62,8 +62,8 @@ function tokenContainsPoint(token, scene, x, y) {
   const gridSize = Math.max(1, Number(scene?.grid?.size ?? scene?.grid?.sizeX ?? 100) || 100);
   const left = Number(token?.x ?? 0);
   const top = Number(token?.y ?? 0);
-  const width = Math.max(1, Number(token?.width ?? 1)) * gridSize;
-  const height = Math.max(1, Number(token?.height ?? 1)) * gridSize;
+  const width = Math.max(0.5, Number(token?.width ?? 1)) * gridSize;
+  const height = Math.max(0.5, Number(token?.height ?? 1)) * gridSize;
   return x >= left && x <= left + width && y >= top && y <= top + height;
 }
 
@@ -252,8 +252,13 @@ export class StorageGroundPileService {
       displayMode: "opened"
     });
     const prototype = clone(actor?.prototypeToken?.toObject?.() ?? actor?.prototypeToken ?? {});
-    const tokenWidth = Math.max(1, Number(prototype.width ?? 1));
-    const tokenHeight = Math.max(1, Number(prototype.height ?? 1));
+    const hasCoins = Object.values(normalizedCoins(coins)).some((amount) => amount > 0);
+    const singleOrdinaryItem = rows.length === 1
+      && rows[0]?.rowKind !== "container"
+      && !rows[0]?.container
+      && !hasCoins;
+    const tokenWidth = singleOrdinaryItem ? 0.5 : Math.max(1, Number(prototype.width ?? 1));
+    const tokenHeight = singleOrdinaryItem ? 0.5 : Math.max(1, Number(prototype.height ?? 1));
     const gridSize = Math.max(1, Number(scene?.grid?.size ?? scene?.grid?.sizeX ?? 100) || 100);
     const data = {
       ...prototype,

@@ -98,8 +98,10 @@ test("canvas transfer creates an unlinked independent ground pile token", async 
   assert.equal(result.created, true);
   assert.equal(tokens.length, 1);
   assert.equal(tokens[0].actorLink, false);
-  assert.equal(tokens[0].x, 250);
-  assert.equal(tokens[0].y, 350);
+  assert.equal(tokens[0].width, 0.5);
+  assert.equal(tokens[0].height, 0.5);
+  assert.equal(tokens[0].x, 275);
+  assert.equal(tokens[0].y, 375);
   assert.equal(tokens[0].name, "Меч (2)");
   assert.equal(tokens[0].texture.src, "icons/sword.webp");
   assert.equal(tokens[0].flags[MODULE_ID].groundPile.enabled, true);
@@ -148,7 +150,7 @@ test("dropping on a pile stacks identical items and appends different items", as
 test("nearby drops outside pile bounds create another token and duplicate mutations do nothing", async () => {
   const { service, tokens } = createHarness();
   await service.transferToScene({ row: sword, quantity: 1, sceneId: "scene", x: 300, y: 400, mutationId: "one" });
-  await service.transferToScene({ row: sword, quantity: 1, sceneId: "scene", x: 450, y: 400, mutationId: "two" });
+  await service.transferToScene({ row: sword, quantity: 1, sceneId: "scene", x: 340, y: 400, mutationId: "two" });
   assert.equal(tokens.length, 2);
 
   const duplicate = await service.transferToScene({
@@ -196,6 +198,29 @@ test("a complete snapshot creates one pile with every row and coin", async () =>
   assert.equal(state.manualRows.length, 2);
   assert.deepEqual(state.manualRows.map((row) => row.quantity), [5, 1]);
   assert.deepEqual(state.manualCoins, { pp: 0, gp: 4, sp: 2, cp: 0 });
+  assert.equal(tokens[0].width, 1);
+  assert.equal(tokens[0].height, 1);
+});
+
+test("a single container snapshot keeps the preset token size", async () => {
+  const { service, tokens } = createHarness();
+  await service.transferSnapshotToScene({
+    rows: [{
+      ...sword,
+      rowKind: "container",
+      container: { containerId: "bag-1", rows: [], coins: {} }
+    }],
+    coins: {},
+    sceneId: "scene",
+    x: 300,
+    y: 400,
+    mutationId: "container-one"
+  });
+
+  assert.equal(tokens[0].width, 1);
+  assert.equal(tokens[0].height, 1);
+  assert.equal(tokens[0].x, 250);
+  assert.equal(tokens[0].y, 350);
 });
 
 test("snapshot retries are idempotent while new snapshots stack rows and add coins", async () => {

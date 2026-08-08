@@ -164,6 +164,30 @@ test("distance uses the nearest occupied grid spaces for large tokens", () => {
   assert.equal(measureStoragePointDistance(hero, { x: 250, y: 50 }, { canvas }), 5);
 });
 
+test("every point inside an adjacent square is within five feet for a ground drop", () => {
+  const scene = { id: "scene", grid: { type: 1, size: 100, distance: 5 } };
+  const hero = createToken({
+    id: "hero",
+    uuid: "Scene.scene.Token.hero",
+    scene,
+    actor: { type: "character" }
+  });
+  const canvas = {
+    scene,
+    grid: {
+      size: 100,
+      measurePath: ([from, to]) => ({
+        distance: Math.hypot(to.x - from.x, to.y - from.y) / 100 * 5
+      })
+    },
+    tokens: { get: () => null }
+  };
+
+  assert.equal(measureStoragePointDistance(hero, { x: 199, y: 199 }, { canvas }), 5);
+  assert.equal(measureStoragePointDistance(hero, { x: 101, y: 199 }, { canvas }), 5);
+  assert.equal(measureStoragePointDistance(hero, { x: 200, y: 50 }, { canvas }), 10);
+});
+
 test("diagonally adjacent squares are one five-foot storage step", () => {
   const scene = { id: "scene", grid: { type: 1, size: 100, distance: 5 } };
   const hero = createToken({ id: "hero", uuid: "hero", actor: { type: "character" }, scene });

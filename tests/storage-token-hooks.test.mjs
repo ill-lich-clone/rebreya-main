@@ -60,6 +60,9 @@ function createHarness({ isGM = false, distance = 5 } = {}) {
 test("left-clicking storage offers only Open to a player", async () => {
   const harness = createHarness({ isGM: false });
   await harness.listeners.get("controlToken")(harness.storageToken, true);
+  assert.equal(harness.shown.length, 0);
+  assert.equal(harness.feedback.length, 0);
+  harness.tokenListeners.get("pointertap")({ button: 0 });
   assert.deepEqual(harness.shown[0].map((action) => action.label), ["Открыть"]);
   await harness.shown[0][0].callback();
   assert.deepEqual(harness.calls, [{
@@ -73,6 +76,9 @@ test("left-clicking storage offers only Open to a player", async () => {
 test("GM storage actions include a gear configuration button", async () => {
   const harness = createHarness({ isGM: true });
   await harness.listeners.get("controlToken")(harness.storageToken, true);
+  assert.equal(harness.shown.length, 0);
+  assert.equal(harness.feedback.length, 0);
+  harness.tokenListeners.get("pointertap")({ button: 0 });
   assert.deepEqual(harness.shown[0].map((action) => action.label), ["Открыть", "Настроить"]);
   await harness.shown[0][1].callback();
   assert.deepEqual(harness.calls, [{

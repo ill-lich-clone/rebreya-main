@@ -77,7 +77,6 @@ export function registerStorageTokenHooks(moduleApi, {
   hooks.on("controlToken", async (token, controlled) => {
     if (!controlled || !isStorageActor(token?.actor)) return;
     bindPointerClick(token);
-    showTokenActions(token);
   });
   hooks.on("hoverToken", (token, hovered) => {
     if (hovered) bindPointerClick(token);

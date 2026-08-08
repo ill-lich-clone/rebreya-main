@@ -12675,6 +12675,14 @@ summary:focus-visible {
   cursor: pointer;
 }
 
+.rm-storage-item__icon.rm-tooltip-anchor {
+  overflow: visible;
+}
+
+.rm-storage-item__icon.rm-tooltip-anchor > img {
+  border-radius: inherit;
+}
+
 .rm-storage-item__icon:hover,
 .rm-storage-item__icon[aria-expanded="true"] {
   border-color: rgb(218 174 76 / 0.8);
