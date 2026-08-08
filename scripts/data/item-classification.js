@@ -637,7 +637,7 @@ function buildConsumableAmmoProfile(name) {
 function buildGenericAmmoProfile(name) {
   return buildConsumableAmmoProfile(name) ?? {
     systemTypeValue: "ammo",
-    systemTypeSubtype: ""
+    systemTypeSubtype: "firearmBullet"
   };
 }
 

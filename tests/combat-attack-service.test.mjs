@@ -336,6 +336,24 @@ function makeWeaponItem({
   return item;
 }
 
+function addRepeatingShotEffect(item, { disabled = false, suppressed = false } = {}) {
+  const effect = {
+    name: "Повторный выстрел",
+    type: "enchantment",
+    disabled,
+    isSuppressed: suppressed,
+    origin: "Compendium.fifthpendium-artificer-525.items.Item.C8pmt95CMAvPPojm"
+  };
+  item.effects = {
+    contents: [effect],
+    values: () => [effect].values(),
+    [Symbol.iterator]: function* iterator() {
+      yield effect;
+    }
+  };
+  return item;
+}
+
 test("weapon attack activities automatically take an unused item in the left hand", async () => {
   const warnings = [];
   const previousWarn = globalThis.ui.notifications.warn;
@@ -2083,7 +2101,8 @@ test("ordinary ammunition weapons clear invalid dnd5e ammunition selections befo
     name: "Crossbow",
     properties: new Set(["amm"])
   });
-  weapon.system.type.value = "simpleR";
+  weapon.system.type = { value: "simpleR", baseItem: "lightcrossbow" };
+  weapon.system.ammunition = { type: "crossbowBolt" };
   const ammo = makeAmmoItem({
     id: "crossbow-bolts",
     name: "Crossbow Bolts",
@@ -2131,6 +2150,122 @@ test("ordinary ammunition weapons clear invalid dnd5e ammunition selections befo
   assert.deepEqual(dialog.options.ammunitionOptions.map((option) => option.value), ["", ammo.id]);
   assert.equal(ammo.system.quantity, 30);
   assert.equal(ammo.updateCalls.length, 0);
+});
+
+test("Repeating Shot disables native ammunition selection and consumption for ordinary weapons", () => {
+  const weapon = addRepeatingShotEffect(makeWeaponItem({
+    id: "crossbow",
+    name: "Crossbow",
+    properties: new Set(["amm"]),
+    lichWeaponPropertyValues: { rku: 1 }
+  }));
+  weapon.system.type = { value: "martialR", baseItem: "handcrossbow" };
+  weapon.system.ammunition = { type: "crossbowBolt" };
+  const ammo = makeAmmoItem({ id: "bolts", subtype: "crossbowBolt", quantity: 20 });
+  const actor = makeActor([weapon, ammo]);
+  const activity = {
+    id: "crossbowAttack",
+    type: "attack",
+    actor,
+    item: weapon,
+    criticalThreshold: 20,
+    attack: { type: { value: "ranged" } },
+    consumption: {
+      targets: [{ type: "itemUses", target: "charged-upgrade" }]
+    }
+  };
+  const usageConfig = { consume: { resources: [0] }, hasConsumption: true };
+  const messageConfig = { hasConsumption: true };
+  const config = {
+    subject: activity,
+    ammunition: ammo.id,
+    rolls: [{ ammunition: ammo.id, options: { ammunition: ammo.id } }]
+  };
+  const dialog = {
+    options: { ammunitionOptions: [{ value: ammo.id, label: ammo.name }] }
+  };
+  const service = new CombatAttackService({});
+
+  assert.equal(service.applyDnd5ePreUseActivity(activity, usageConfig, {}, messageConfig), true);
+  assert.deepEqual(activity.consumption.targets, [{ type: "itemUses", target: "charged-upgrade" }]);
+  assert.deepEqual(usageConfig.consume.resources, [0]);
+  assert.equal(usageConfig.hasConsumption, true);
+  assert.equal(messageConfig.hasConsumption, true);
+  assert.equal(service.applyDnd5eAttackRollConfig(config, dialog, {}), true);
+  assert.equal(config.ammunition, false);
+  assert.equal(config.rolls[0].ammunition, false);
+  assert.equal(config.rolls[0].options.ammunition, false);
+  assert.equal(config.rolls[0].options.rebreyaRkuThreshold, 19);
+  assert.deepEqual(dialog.options.ammunitionOptions, []);
+  assert.equal(ammo.system.quantity, 20);
+});
+
+test("ordinary ammunition validation rejects incompatible and empty stacks but preserves matching ammunition", () => {
+  const weapon = makeWeaponItem({
+    id: "crossbow",
+    name: "Crossbow",
+    properties: new Set(["amm"])
+  });
+  weapon.system.type = { value: "martialR", baseItem: "handcrossbow" };
+  weapon.system.ammunition = { type: "crossbowBolt" };
+  const bolts = makeAmmoItem({ id: "bolts", subtype: "crossbowBolt", quantity: 20 });
+  const emptyBolts = makeAmmoItem({ id: "empty-bolts", subtype: "crossbowBolt", quantity: 0 });
+  const musketAmmo = makeAmmoItem({ id: "musket-ammo", subtype: "firearmBullet", quantity: 20 });
+  const actor = makeActor([weapon, bolts, emptyBolts, musketAmmo]);
+  const activity = {
+    id: "crossbowAttack",
+    type: "attack",
+    actor,
+    item: weapon,
+    attack: { type: { value: "ranged" } }
+  };
+  const config = {
+    subject: activity,
+    ammunition: musketAmmo.id,
+    rolls: [{ ammunition: emptyBolts.id, options: { ammunition: bolts.id } }]
+  };
+  const dialog = {
+    options: {
+      ammunitionOptions: [
+        { value: "", label: "" },
+        { value: bolts.id, label: bolts.name },
+        { value: emptyBolts.id, label: emptyBolts.name },
+        { value: musketAmmo.id, label: musketAmmo.name }
+      ]
+    }
+  };
+  const service = new CombatAttackService({});
+
+  assert.equal(service.applyDnd5eAttackRollConfig(config, dialog, {}), true);
+  assert.equal(config.ammunition, "");
+  assert.equal(config.rolls[0].ammunition, "");
+  assert.equal(config.rolls[0].options.ammunition, bolts.id);
+  assert.deepEqual(dialog.options.ammunitionOptions.map((option) => option.value), ["", bolts.id]);
+});
+
+test("disabled Repeating Shot restores ordinary typed ammunition handling", () => {
+  const weapon = addRepeatingShotEffect(makeWeaponItem({
+    id: "crossbow",
+    properties: new Set(["amm"])
+  }), { disabled: true });
+  weapon.system.type = { value: "martialR", baseItem: "handcrossbow" };
+  weapon.system.ammunition = { type: "crossbowBolt" };
+  const bolts = makeAmmoItem({ id: "bolts", subtype: "crossbowBolt", quantity: 20 });
+  const actor = makeActor([weapon, bolts]);
+  const activity = { id: "attack", type: "attack", actor, item: weapon };
+  const config = {
+    subject: activity,
+    ammunition: bolts.id,
+    rolls: [{ ammunition: bolts.id, options: { ammunition: bolts.id } }]
+  };
+  const dialog = { options: { ammunitionOptions: [{ value: bolts.id, label: bolts.name }] } };
+  const service = new CombatAttackService({});
+
+  assert.equal(service.applyDnd5eAttackRollConfig(config, dialog, {}), true);
+  assert.equal(config.ammunition, bolts.id);
+  assert.equal(config.rolls[0].ammunition, bolts.id);
+  assert.equal(config.rolls[0].options.ammunition, bolts.id);
+  assert.deepEqual(dialog.options.ammunitionOptions.map((option) => option.value), [bolts.id]);
 });
 
 test("firearm attack roll notes ammo and misfire in the originating attack card", () => {

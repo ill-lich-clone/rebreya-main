@@ -1,5 +1,9 @@
 import { HELD_ITEM_UPDATED_HOOK, MODULE_ID } from "../constants.js";
 import { getFighterManeuverAutomation } from "../data/fighter-automation.js";
+import {
+  hasActiveRepeatingShot,
+  isCompatibleAmmunition
+} from "../data/ammunition-compatibility.js?v=1.4.111-native-ammunition-compatibility";
 import { getCharacterSizeRule } from "./size-automation-service.js?v=1.4.109-character-size";
 import {
   buildHeldItemHandUpdate,
@@ -3149,13 +3153,14 @@ export class CombatAttackService {
     )) ?? null;
   }
 
-  #isValidNativeAmmunitionOption(actor, option) {
+  #isValidNativeAmmunitionOption(actor, weapon, option) {
     const value = cleanText(option?.value);
-    return !value || Boolean(this.#actorItemById(actor, value));
+    return !value || isCompatibleAmmunition(weapon, this.#actorItemById(actor, value));
   }
 
   #clearInvalidNativeAmmunitionSelection(activity, config = {}, dialog = {}) {
     const actor = activity?.actor ?? activity?.item?.actor ?? null;
+    const weapon = activity?.item ?? null;
     if (!actor) {
       return false;
     }
@@ -3171,7 +3176,7 @@ export class CombatAttackService {
         return value === undefined ? undefined : "";
       }
 
-      if (this.#actorItemById(actor, safeValue)) {
+      if (isCompatibleAmmunition(weapon, this.#actorItemById(actor, safeValue))) {
         return value;
       }
 
@@ -3198,7 +3203,7 @@ export class CombatAttackService {
 
     const options = dialog?.options?.ammunitionOptions;
     if (Array.isArray(options)) {
-      const filteredOptions = options.filter((option) => this.#isValidNativeAmmunitionOption(actor, option));
+      const filteredOptions = options.filter((option) => this.#isValidNativeAmmunitionOption(actor, weapon, option));
       if (filteredOptions.length !== options.length) {
         dialog.options ??= {};
         dialog.options.ammunitionOptions = filteredOptions;
@@ -3476,7 +3481,6 @@ export class CombatAttackService {
           return false;
         }
       }
-
       if (!this.#ensureHeldWeaponActivity(activity)) {
         return false;
       }
@@ -3522,14 +3526,17 @@ export class CombatAttackService {
       }
 
       const isFirearm = isFirearmItem(item);
+      const repeatingShot = !isFirearm && hasActiveRepeatingShot(item);
       const actor = activity.actor ?? item.actor ?? null;
       const firearmMessageOptions = isFirearm ? { ...config, messageConfig: message } : config;
-      if (!isFirearm) {
+      if (!isFirearm && !repeatingShot) {
         this.#clearInvalidNativeAmmunitionSelection(activity, config, dialog);
       }
 
-      if (isFirearm) {
-        this.#suppressNativeFirearmAmmunition(item);
+      if (isFirearm || repeatingShot) {
+        if (isFirearm) {
+          this.#suppressNativeFirearmAmmunition(item);
+        }
         config.ammunition = false;
         for (const rollConfig of config?.rolls ?? []) {
           rollConfig.ammunition = false;
@@ -3539,18 +3546,20 @@ export class CombatAttackService {
         dialog.options ??= {};
         dialog.options.ammunitionOptions = [];
 
-        if (this.#getFirearmAmmoShotBlock(item)) {
-          return true;
-        }
+        if (isFirearm) {
+          if (this.#getFirearmAmmoShotBlock(item)) {
+            return true;
+          }
 
-        const ammo = this.#consumeLoadedFirearmAmmo(
-          actor,
-          item,
-          this.#resolveFirearmShotAmmoCost(item),
-          firearmMessageOptions
-        );
-        if (!ammo.success) {
-          return false;
+          const ammo = this.#consumeLoadedFirearmAmmo(
+            actor,
+            item,
+            this.#resolveFirearmShotAmmoCost(item),
+            firearmMessageOptions
+          );
+          if (!ammo.success) {
+            return false;
+          }
         }
       }
 

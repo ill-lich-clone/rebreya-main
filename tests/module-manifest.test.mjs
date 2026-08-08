@@ -437,7 +437,7 @@ test("gear compendium import preserves the released firearm activity cache bust"
 
   assert.match(
     entrypointSource,
-    /gear-compendium\.js\?v=1\.4\.111-firearm-template-version-19&implants=1/u,
+    /gear-compendium\.js\?v=1\.4\.111-ammunition-template-version-20&implants=1/u,
   );
 });
 
@@ -452,7 +452,7 @@ test("combat automation imports preserve their released cache busts", async () =
   );
   assert.match(
     entrypointSource,
-    /attack-service\.js\?v=1\.4\.111-native-ammo-selection-guard/u,
+    /attack-service\.js\?v=1\.4\.111-native-ammunition-compatibility/u,
   );
   assert.match(
     entrypointSource,
@@ -554,7 +554,7 @@ test("held item integrations preserve their released cache bust", async () => {
   );
   assert.match(
     entrypointSource,
-    /attack-service\.js\?v=1\.4\.111-native-ammo-selection-guard/u,
+    /attack-service\.js\?v=1\.4\.111-native-ammunition-compatibility/u,
   );
   assert.match(
     sheetSource,

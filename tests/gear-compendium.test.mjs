@@ -566,6 +566,33 @@ test("ordinary weapons from the weapon sheet use registered dnd5e base weapon id
   }
 });
 
+test("ordinary ammunition weapons emit an exact native ammunition type", () => {
+  const gear = JSON.parse(readFileSync(join(TESTS_DIR, "..", "data", "gear.json"), "utf8").replace(/^\uFEFF/u, ""));
+  const byId = new Map(gear.map((item) => [item.id, item]));
+  const cases = [
+    ["korotkiy-luk", "arrow"],
+    ["dlinnyy-luk", "arrow"],
+    ["arbalet-legkiy", "crossbowBolt"],
+    ["arbalet-ruchnoy", "crossbowBolt"],
+    ["arbalet-tyazhelyy", "crossbowBolt"],
+    ["dukhovaya-trubka", "blowgunNeedle"],
+    ["prashcha", "slingBullet"]
+  ];
+
+  for (const [gearId, expectedSubtype] of cases) {
+    const created = createDnd5eItemData(byId.get(gearId), new Map());
+    assert.equal(created.system.ammunition.type, expectedSubtype, gearId);
+  }
+
+  const untypedWeapons = [];
+  for (const source of gear) {
+    const created = createDnd5eItemData(source, new Map());
+    if (created.type !== "weapon" || !(created.system.properties ?? []).includes("amm")) continue;
+    if (!created.system.ammunition?.type) untypedWeapons.push(source.id);
+  }
+  assert.deepEqual(untypedWeapons, []);
+});
+
 test("craftsman tools use stable ids and native dnd5e tool subtypes", () => {
   const gear = JSON.parse(readFileSync(join(TESTS_DIR, "..", "data", "gear.json"), "utf8").replace(/^\uFEFF/u, ""));
   const byId = new Map(gear.map((item) => [item.id, item]));
@@ -644,6 +671,7 @@ test("real gear ammunition rows create dnd5e consumable ammo items", () => {
   const ammunition = gear.filter((item) => item.equipmentType === "Боеприпас");
   assert.ok(ammunition.length > 0);
 
+  const untypedAmmunition = [];
   for (const item of ammunition) {
     const quantity = Number(item.name.match(/\((\d+)\)\s*$/u)?.[1] ?? 1);
     const created = createDnd5eItemData(item, new Map());
@@ -651,12 +679,14 @@ test("real gear ammunition rows create dnd5e consumable ammo items", () => {
     assert.equal(created.system.quantity, quantity, `${item.id} creates one actor stack per source pack`);
     assert.equal(created.system.weight.value, Number(item.weight ?? 0) / quantity, `${item.id} creates per-piece weight`);
     assert.equal(created.system.type.value, "ammo", `${item.id} uses dnd5e ammo type`);
+    if (!created.system.type.subtype) untypedAmmunition.push(item.id);
     assert.equal(created.flags["rebreya-main"].foundrySubtype, "ammo");
     assert.equal(created.flags["rebreya-main"].sourcePackQuantity, quantity);
     assert.equal(created.flags["rebreya-main"].sourcePackPriceGoldEquivalent, item.priceGoldEquivalent);
     assert.equal(created.flags["rebreya-main"].sourcePackWeight, Number(item.weight ?? 0));
     assert.equal(created.flags["rebreya-main"].priceGoldEquivalent, item.priceGoldEquivalent / quantity);
   }
+  assert.deepEqual(untypedAmmunition, []);
 });
 
 test("Rebreya weapon ids can point at live gear documents instead of predicted ids", () => {
@@ -750,7 +780,7 @@ test("gear signatures include stable document ids so old compendium documents re
   const created = createDnd5eItemData(katana, new Map());
   const signature = JSON.parse(created.flags["rebreya-main"].signature);
 
-  assert.equal(signature.templateVersion, 19);
+  assert.equal(signature.templateVersion, 20);
   assert.equal(created._id, createStableGearDocumentId("katana"));
   assert.equal(signature.stableDocumentId, created._id);
 });

@@ -21,6 +21,10 @@ import {
 import { createStableGearDocumentId } from "./gear-document-ids.js";
 import { syncManagedDocuments } from "./managed-compendium-sync.js";
 import {
+  inferWeaponAmmunitionSubtype,
+  isSelfAmmunitionWeapon
+} from "./ammunition-compatibility.js?v=1.4.111-native-ammunition-compatibility";
+import {
   escapeFoundryHtml as escapeHtml,
   finiteNumber as toFiniteNumber
 } from "../shared/foundry-values.js";
@@ -30,7 +34,7 @@ export { buildGearIconLookup };
 const PACK_ID = `world.${GEAR_COMPENDIUM_NAME}`;
 const DND5E_SYSTEM_ID = "dnd5e";
 const COMPENDIUM_SIDEBAR_FOLDER = ["Ребрея"];
-const GEAR_TEMPLATE_VERSION = 19;
+const GEAR_TEMPLATE_VERSION = 20;
 const GEAR_CONTAINER_CONTENT_SOURCE_TYPE = "gearContainerContent";
 const FIREARM_ATTACK_ACTIVITY_ID = "lchFirearmAtk001";
 const FIREARM_RELOAD_ACTIVITY_ID = "lchReloadGun0001";
@@ -969,6 +973,23 @@ function buildSystemData(item, classification, descriptionHtml, presentation = n
       applyWeaponData(baseData, item.weapon, {
         suppressNativeAmmunition: isFirearmClassification(classification)
       });
+      if (!isFirearmClassification(classification)) {
+        const ammunitionProfile = {
+          ...item,
+          type: "weapon",
+          system: {
+            type: { baseItem: classification.baseItem || "" },
+            properties: baseData.properties ?? []
+          }
+        };
+        const ammunitionType = inferWeaponAmmunitionSubtype(ammunitionProfile);
+        if (ammunitionType) {
+          baseData.ammunition = { type: ammunitionType };
+        }
+        else if (isSelfAmmunitionWeapon(ammunitionProfile)) {
+          baseData.properties = (baseData.properties ?? []).filter((property) => property !== "amm");
+        }
+      }
       if (isFirearmClassification(classification)) {
         baseData.activities = buildFirearmActivities(item);
       }

@@ -1,7 +1,8 @@
 // @rebreya-role canonical-composition-root
 import { MODULE_ID, SETTINGS_KEYS } from "./constants.js";
 import { MaterialsCompendiumService } from "./data/materials-compendium.js";
-import { GearCompendiumService } from "./data/gear-compendium.js?v=1.4.111-firearm-template-version-19&implants=1";
+import { GearCompendiumService } from "./data/gear-compendium.js?v=1.4.111-ammunition-template-version-20&implants=1";
+import { repairWorldAmmunitionCompatibility } from "./data/ammunition-compatibility.js?v=1.4.111-native-ammunition-compatibility";
 import { MagicItemsCompendiumService } from "./data/magic-items-compendium.js";
 import { FeatsCompendiumService } from "./data/feats-compendium.js";
 import { BackgroundsCompendiumService } from "./data/backgrounds-compendium.js";
@@ -113,7 +114,7 @@ import {
   storageCharacterTokenUuidForClaim
 } from "./data/storage-command-service.js?v=1.4.130-storage-player-fixes";
 import { registerCombatHooks } from "./combat/hooks.js?v=1.4.134-actor-delta-status-socket";
-import { CombatAttackService } from "./combat/attack-service.js?v=1.4.111-native-ammo-selection-guard";
+import { CombatAttackService } from "./combat/attack-service.js?v=1.4.111-native-ammunition-compatibility";
 import { ImplantAutomationService } from "./combat/implant-automation-service.js";
 import { SizeAutomationService } from "./combat/size-automation-service.js?v=1.4.110-character-size-authority";
 import { ReactionCapabilityIndex } from "./combat/reaction-capability-index.js";
@@ -1618,6 +1619,19 @@ export class RebreyaMainModule {
     });
 
     await this.#syncManagedCompendia(model);
+    try {
+      const ammunitionRepair = await repairWorldAmmunitionCompatibility(globalThis.game);
+      if (!ammunitionRepair.skipped && (
+        ammunitionRepair.updatedWeapons > 0
+        || ammunitionRepair.updatedAmmunition > 0
+        || ammunitionRepair.failedActors > 0
+      )) {
+        console.log(`${MODULE_ID} | Ammunition compatibility repaired`, ammunitionRepair);
+      }
+    }
+    catch (error) {
+      console.warn(`${MODULE_ID} | Failed to repair native ammunition compatibility.`, error);
+    }
     try {
       await this.mapObjectTokenService.syncManagedDocuments();
     }
