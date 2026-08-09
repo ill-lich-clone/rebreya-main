@@ -27,6 +27,23 @@ try {
     $expected = if ($batch -eq 26) { 6 } else { 10 }
     Assert-True (@($manifest.Cities | Where-Object batch -eq $batch).Count -eq $expected) "Bad size for batch $batch"
   }
+
+  $cardScript = Join-Path $repoRoot 'scripts\city-map-production\New-CityMapCard.ps1'
+  $vurulName = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('0JLRg9GA0YPQuw=='))
+  & $cardScript -ManifestPath $manifestPath -Batch 1 -CityName $vurulName -CitiesPath $citiesPath -AssetRoot $assetRoot
+  $cardPath = Join-Path $testRoot 'batches\batch-01\cards\vurul.json'
+  $promptPath = Join-Path $testRoot 'batches\batch-01\prompts\vurul.txt'
+  Assert-True (Test-Path -LiteralPath $cardPath -PathType Leaf) 'Vurul card was not created'
+  Assert-True (Test-Path -LiteralPath $promptPath -PathType Leaf) 'Vurul prompt was not created'
+  $card = Get-Content -Raw -Encoding UTF8 -LiteralPath $cardPath | ConvertFrom-Json
+  $prompt = Get-Content -Raw -Encoding UTF8 -LiteralPath $promptPath
+  Assert-True ($card.rank -eq 4 -and $card.width -eq 4500 -and $card.height -eq 4500) 'Vurul rank size is wrong'
+  Assert-True ($card.primaryReadyReference.rank -eq 4) 'Primary ready anchor must have rank 4'
+  Assert-True ($prompt.StartsWith('ZERO-PASS CARTOGRAPHIC GATE')) 'Prompt does not start with zero-pass gate'
+  Assert-True ($prompt.Contains([string]$card.description)) 'Prompt does not contain the canonical description'
+  Assert-True ($prompt.Contains('Never render the metadata city name')) 'Prompt does not prohibit rendering the name'
+  Assert-True ($prompt.TrimEnd().EndsWith('cropped essential district.')) 'Prompt does not end with the output contract'
+  Assert-True (@($card.referenceRecords).Count -le 4) 'Reference record limit exceeded'
   'PASS manifest smoke test'
 }
 finally {
