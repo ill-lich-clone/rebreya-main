@@ -86,7 +86,8 @@ try {
   $stageScript = Join-Path $repoRoot 'scripts\city-map-production\Stage-CityMapBatch.ps1'
   $publishScript = Join-Path $repoRoot 'scripts\city-map-production\Publish-CityMapBatch.ps1'
   $auditScript = Join-Path $repoRoot 'scripts\city-map-production\Test-CityMapFinalSet.ps1'
-  & $startScript -Batch 1 -ManifestPath $fixtureManifestPath -AssetRoot $fixtureAsset -ExpectedBeforeCount 1
+  $baselineResult = & $startScript -Batch 1 -ManifestPath $fixtureManifestPath -AssetRoot $fixtureAsset -ExpectedBeforeCount 1
+  Assert-True ($baselineResult.BatchSize -eq 1) 'Start result does not expose the batch size'
 
   $missingSourceStopped = $false
   try {
@@ -112,6 +113,39 @@ try {
   Assert-True ((Get-FileHash -Algorithm SHA256 -LiteralPath $protected).Hash -eq $protectedHash) 'Protected fixture changed'
   $audit = & $auditScript -ExpectedCount 2 -RequireManifestPrefix 1 -ManifestPath $fixtureManifestPath -CitiesPath $fixtureCitiesPath -AssetRoot $fixtureAsset
   Assert-True ($audit.Status -eq 'PASS') 'Final set audit did not pass for a valid fixture'
+
+  $receiptPath = Join-Path $fixtureBatch 'publish-receipt.json'
+  $receipt = Get-Content -Raw -Encoding UTF8 -LiteralPath $receiptPath | ConvertFrom-Json
+  $originalInstalled = @($receipt.Installed)
+  $receipt.Installed = @()
+  $receipt | ConvertTo-Json -Depth 8 | Set-Content -Encoding UTF8 -LiteralPath $receiptPath
+  $missingReceiptStopped = $false
+  try {
+    & $auditScript -ExpectedCount 2 -RequireManifestPrefix 1 -ManifestPath $fixtureManifestPath -CitiesPath $fixtureCitiesPath -AssetRoot $fixtureAsset | Out-Null
+  } catch {
+    $missingReceiptStopped = $true
+  }
+  Assert-True $missingReceiptStopped 'Final audit accepted a receipt missing a batch target'
+
+  $receipt.Installed = @($originalInstalled + $originalInstalled[0])
+  $receipt | ConvertTo-Json -Depth 8 | Set-Content -Encoding UTF8 -LiteralPath $receiptPath
+  $duplicateReceiptStopped = $false
+  try {
+    & $auditScript -ExpectedCount 2 -RequireManifestPrefix 1 -ManifestPath $fixtureManifestPath -CitiesPath $fixtureCitiesPath -AssetRoot $fixtureAsset | Out-Null
+  } catch {
+    $duplicateReceiptStopped = $true
+  }
+  Assert-True $duplicateReceiptStopped 'Final audit accepted a receipt with duplicate targets'
+
+  $receipt.Installed = @($originalInstalled + [pscustomobject]@{name='Extra';path=$protected;hash=$protectedHash})
+  $receipt | ConvertTo-Json -Depth 8 | Set-Content -Encoding UTF8 -LiteralPath $receiptPath
+  $extraReceiptStopped = $false
+  try {
+    & $auditScript -ExpectedCount 2 -RequireManifestPrefix 1 -ManifestPath $fixtureManifestPath -CitiesPath $fixtureCitiesPath -AssetRoot $fixtureAsset | Out-Null
+  } catch {
+    $extraReceiptStopped = $true
+  }
+  Assert-True $extraReceiptStopped 'Final audit accepted a receipt with an extra target'
 
   $collisionStopped = $false
   try {

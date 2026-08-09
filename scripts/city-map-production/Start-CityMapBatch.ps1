@@ -43,7 +43,7 @@ $hashes = @($existing | Sort-Object FullName | ForEach-Object {
   [pscustomobject]@{path=$_.FullName;hash=(Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash}
 })
 $baseline = [pscustomobject]@{
-  Batch=$Batch; CapturedAt=(Get-Date).ToString('o'); ExistingCount=$existing.Count
+  Batch=$Batch; BatchSize=$targets.Count; CapturedAt=(Get-Date).ToString('o'); ExistingCount=$existing.Count
   ExpectedAfterCount=($existing.Count + $targets.Count); Hashes=$hashes
 }
 Write-CityMapJson -Value $baseline -Path $baselinePath

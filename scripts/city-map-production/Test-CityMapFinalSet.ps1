@@ -50,7 +50,27 @@ for ($batch = 1; $batch -le $RequireManifestPrefix; $batch++) {
   }
   $receipt = Read-CityMapJson -Path (Join-Path $batchRoot 'publish-receipt.json')
   if ([int]$receipt.Batch -ne $batch) { throw "Wrong receipt batch: $($receipt.Batch)" }
+  $batchTargets = @($manifest.Cities | Where-Object { [int]$_.batch -eq $batch })
+  $expectedByPath = @{}
+  foreach ($target in $batchTargets) {
+    $targetKey = [IO.Path]::GetFullPath([string]$target.targetPath).ToLowerInvariant()
+    if ($expectedByPath.ContainsKey($targetKey)) { throw "Duplicate manifest target for batch ${batch}: $($target.targetPath)" }
+    $expectedByPath[$targetKey] = $target
+  }
+  $installedByPath = @{}
   foreach ($installed in @($receipt.Installed)) {
+    if ([string]::IsNullOrWhiteSpace([string]$installed.path)) { throw "Receipt target path is empty for batch $batch" }
+    $installedKey = [IO.Path]::GetFullPath([string]$installed.path).ToLowerInvariant()
+    if ($installedByPath.ContainsKey($installedKey)) { throw "Duplicate receipt target for batch ${batch}: $($installed.path)" }
+    if (-not $expectedByPath.ContainsKey($installedKey)) { throw "Extra receipt target for batch ${batch}: $($installed.path)" }
+    $installedByPath[$installedKey] = $installed
+  }
+  if ($installedByPath.Count -ne $expectedByPath.Count) { throw "Receipt target count mismatch for batch $batch" }
+  foreach ($targetKey in $expectedByPath.Keys) {
+    if (-not $installedByPath.ContainsKey($targetKey)) { throw "Receipt target missing for batch ${batch}: $($expectedByPath[$targetKey].targetPath)" }
+    $target = $expectedByPath[$targetKey]
+    $installed = $installedByPath[$targetKey]
+    if ([string]$installed.name -cne [string]$target.name) { throw "Receipt city name mismatch for batch ${batch}: $($installed.path)" }
     if (-not (Test-Path -LiteralPath $installed.path -PathType Leaf)) { throw "Receipt target missing: $($installed.path)" }
     if ((Get-FileHash -Algorithm SHA256 -LiteralPath $installed.path).Hash -ne $installed.hash) { throw "Receipt hash mismatch: $($installed.path)" }
   }
