@@ -28,6 +28,13 @@ try {
     Assert-True (@($manifest.Cities | Where-Object batch -eq $batch).Count -eq $expected) "Bad size for batch $batch"
   }
 
+  $catalogPath = Join-Path $testRoot 'reference-catalog.json'
+  $readyCatalog = [pscustomobject]@{
+    readyMaps = @(Get-ChildItem -LiteralPath $assetRoot -Recurse -File -Filter '*.webp' | ForEach-Object {
+      [pscustomobject]@{ name=$_.BaseName; path=$_.FullName }
+    })
+  }
+  $readyCatalog | ConvertTo-Json -Depth 4 | Set-Content -Encoding UTF8 -LiteralPath $catalogPath
   $cardScript = Join-Path $repoRoot 'scripts\city-map-production\New-CityMapCard.ps1'
   $vurulName = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('0JLRg9GA0YPQuw=='))
   & $cardScript -ManifestPath $manifestPath -Batch 1 -CityName $vurulName -CitiesPath $citiesPath -AssetRoot $assetRoot
@@ -39,7 +46,8 @@ try {
   $prompt = Get-Content -Raw -Encoding UTF8 -LiteralPath $promptPath
   Assert-True ($card.rank -eq 4 -and $card.width -eq 4500 -and $card.height -eq 4500) 'Vurul rank size is wrong'
   Assert-True ($card.primaryReadyReference.rank -eq 4) 'Primary ready anchor must have rank 4'
-  Assert-True ($prompt.StartsWith('ZERO-PASS CARTOGRAPHIC GATE')) 'Prompt does not start with zero-pass gate'
+  $zeroHeading = 'ZERO-PASS CARTOGRAPHIC GATE ' + [char]0x2014 + ' APPLY BEFORE DRAWING ANY CONTENT.'
+  Assert-True ($prompt.StartsWith($zeroHeading)) 'Prompt does not start with the exact zero-pass gate'
   Assert-True ($prompt.Contains([string]$card.description)) 'Prompt does not contain the canonical description'
   Assert-True ($prompt.Contains('Never render the metadata city name')) 'Prompt does not prohibit rendering the name'
   Assert-True ($prompt.TrimEnd().EndsWith('cropped essential district.')) 'Prompt does not end with the output contract'

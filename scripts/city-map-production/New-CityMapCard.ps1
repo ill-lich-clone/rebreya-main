@@ -70,6 +70,64 @@ function Get-CityMapLocationGuidance([object]$City) {
   return "$guidance Plane context: $plane."
 }
 
+function Get-CityMapCatalogProperty([object]$Object, [string[]]$Names) {
+  foreach ($name in $Names) {
+    $property = $Object.PSObject.Properties[$name]
+    if ($null -ne $property -and $null -ne $property.Value) { return @($property.Value) }
+  }
+  return @()
+}
+
+function Get-CityMapReadyReferenceEntries([string]$CatalogPath, [string]$PilotRoot, [hashtable]$CanonicalByName) {
+  $entries = @()
+  if (Test-Path -LiteralPath $CatalogPath -PathType Leaf) {
+    $catalog = Read-CityMapJson -Path $CatalogPath
+    $entries = @(Get-CityMapCatalogProperty -Object $catalog -Names @('readyMaps', 'readyReferences', 'ready'))
+    if ($entries.Count -eq 0) {
+      $allReferences = @(Get-CityMapCatalogProperty -Object $catalog -Names @('references', 'records'))
+      $entries = @($allReferences | Where-Object {
+        $kind = [string]$_.kind
+        $category = [string]$_.category
+        $group = [string]$_.group
+        $kind -eq 'ready' -or $category -eq 'ready' -or $group -eq 'ready'
+      })
+    }
+    if ($entries.Count -ne 44) {
+      throw "Reference catalog must contain exactly 44 initial ready maps, found $($entries.Count): $CatalogPath"
+    }
+  } else {
+    $fallbackFiles = @(Get-ChildItem -LiteralPath $PilotRoot -Recurse -File -Filter '*.webp')
+    if ($fallbackFiles.Count -ne 44) {
+      throw "reference-catalog.json is required after production begins; safe fallback requires exactly 44 ready WebPs, found $($fallbackFiles.Count)"
+    }
+    $entries = @($fallbackFiles | ForEach-Object {
+      [pscustomobject]@{ name=$_.BaseName; path=$_.FullName }
+    })
+  }
+
+  $resolved = @()
+  foreach ($entry in $entries) {
+    $name = [string](Get-CityMapCatalogProperty -Object $entry -Names @('name', 'cityName'))
+    $path = [string](Get-CityMapCatalogProperty -Object $entry -Names @('path', 'filePath', 'fullName'))
+    if ([string]::IsNullOrWhiteSpace($name) -or [string]::IsNullOrWhiteSpace($path)) {
+      throw "Every ready reference needs name and path: $CatalogPath"
+    }
+    $key = $name.ToLowerInvariant()
+    if (-not $CanonicalByName.ContainsKey($key)) { throw "Ready reference is not canonical: $name" }
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Ready reference path is missing: $path" }
+    $city = $CanonicalByName[$key]
+    $catalogRank = @(Get-CityMapCatalogProperty -Object $entry -Names @('rank'))
+    if ($catalogRank.Count -gt 0 -and [int]$catalogRank[0] -ne [int]$city.rank) {
+      throw "Ready reference rank differs from canonical data: $name"
+    }
+    $resolved += [pscustomobject]@{ name=[string]$city.name; rank=[int]$city.rank; path=$path }
+  }
+  if (@($resolved | Group-Object { $_.name.ToLowerInvariant() } | Where-Object Count -ne 1).Count -ne 0) {
+    throw 'Reference catalog contains duplicate ready city names'
+  }
+  return @($resolved)
+}
+
 $manifest = Read-CityMapJson -Path $ManifestPath
 $targetMatches = @($manifest.Cities | Where-Object {
   [int]$_.batch -eq $Batch -and [string]$_.name -ceq $CityName
@@ -86,11 +144,11 @@ foreach ($city in $canonical) {
   $canonicalByName[[string]$city.name.ToLowerInvariant()] = $city
 }
 
+$workRoot = Split-Path -Parent $ManifestPath
+$referenceCatalogPath = Join-Path $workRoot 'reference-catalog.json'
 $readyCandidates = @()
-foreach ($file in @(Get-ChildItem -LiteralPath $AssetRoot -Recurse -File -Filter '*.webp')) {
-  $key = $file.BaseName.ToLowerInvariant()
-  if (-not $canonicalByName.ContainsKey($key)) { continue }
-  $candidate = $canonicalByName[$key]
+foreach ($readyReference in @(Get-CityMapReadyReferenceEntries -CatalogPath $referenceCatalogPath -PilotRoot $AssetRoot -CanonicalByName $canonicalByName)) {
+  $candidate = $canonicalByName[$readyReference.name.ToLowerInvariant()]
   if ([int]$candidate.rank -ne [int]$target.rank) { continue }
 
   $score = 0
@@ -102,7 +160,7 @@ foreach ($file in @(Get-ChildItem -LiteralPath $AssetRoot -Recurse -File -Filter
     name=[string]$candidate.name
     rank=[int]$candidate.rank
     score=$score
-    path=$file.FullName
+    path=$readyReference.path
   }
 }
 
@@ -179,10 +237,11 @@ $mustAvoid = @(
   'a camp, scattered huts or disconnected platforms in place of a permanent city'
 )
 
-$zeroBlock = @'
-ZERO-PASS CARTOGRAPHIC GATE - APPLY BEFORE DRAWING ANY CONTENT.
+$zeroHeading = 'ZERO-PASS CARTOGRAPHIC GATE ' + [char]0x2014 + ' APPLY BEFORE DRAWING ANY CONTENT.'
+$zeroBlock = @"
+$zeroHeading
 Lock the entire image to an exact 90-degree nadir orthographic map projection. This is a flat cartographic city plan, never a bird's-eye illustration, isometric scene, landscape painting, or cinematic aerial shot. Every building must be represented only by roof shape, footprint, courtyard, wall plan, road and ground surface. If any design choice would expose a facade, door, window, vertical side wall, horizon, vanishing point, or directional perspective, redesign it as a top-down roof or footprint. Circular towers, plazas, domes, reservoirs and arenas must remain true circles, never perspective ellipses. Apply this rule consistently to the center, edges, terrain, cliffs, bridges and tallest landmarks.
-'@
+"@
 $outputBlock = @'
 OUTPUT CONTRACT.
 One polished square Foundry VTT regional city map, richly detailed hand-drawn fantasy atlas style, crisp dark contours, readable roofs, roads, districts and terrain, natural colors, subtle watercolor and paper texture. Show the complete city footprint and enough meaningful surrounding geography. No text, city name, letters, numbers, runes, pseudotext, captions, legend, frame, grid, compass, coat of arms, logo, signature, watermark, visible facade, side wall, horizon, isometric angle, perspective ellipse, copied street layout, repeated tree stamp, or cropped essential district.
@@ -221,7 +280,6 @@ $outputBlock
 "@
 
 $tag = '{0:D2}' -f $Batch
-$workRoot = Split-Path -Parent $ManifestPath
 $batchRoot = Join-Path $workRoot "batches\batch-$tag"
 $cardPath = Join-Path $batchRoot ('cards\' + $target.id + '.json')
 $promptPath = Join-Path $batchRoot ('prompts\' + $target.id + '.txt')
