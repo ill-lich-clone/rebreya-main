@@ -52,6 +52,74 @@ try {
   Assert-True ($prompt.Contains('Never render the metadata city name')) 'Prompt does not prohibit rendering the name'
   Assert-True ($prompt.TrimEnd().EndsWith('cropped essential district.')) 'Prompt does not end with the output contract'
   Assert-True (@($card.referenceRecords).Count -le 4) 'Reference record limit exceeded'
+
+  $fixtureRoot = Join-Path $testRoot 'publish-fixture'
+  $fixtureAsset = Join-Path $fixtureRoot 'assets'
+  $fixtureBatch = Join-Path $fixtureRoot 'batches\batch-01'
+  $fixtureRank = Join-Path $fixtureAsset ([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('0KDQsNC90LMg')) + '2')
+  New-Item -ItemType Directory -Force -Path $fixtureRank | Out-Null
+  New-Item -ItemType Directory -Force -Path (Join-Path $fixtureBatch 'source') | Out-Null
+
+  $protected = Join-Path $fixtureRank 'Protected.webp'
+  & magick -size 3500x3500 xc:'#556644' $protected
+  if ($LASTEXITCODE -ne 0) { throw 'Could not create protected fixture WebP' }
+  $protectedHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $protected).Hash
+  $targetPath = Join-Path $fixtureRank 'Test City.webp'
+  $fixtureManifest = [pscustomobject]@{
+    SchemaVersion=1; CanonicalCount=2; InitialReadyCount=1; TargetCount=1; BatchCount=1
+    Cities=@([pscustomobject]@{
+      id='test-city'; name='Test City'; safeFileName='Test City'; description='test'
+      rank=2; width=3500; height=3500; population=600; state='test'; regionName='test'
+      locationType='meadow'; cityType='agricultural'; batch=1; slot=1; targetPath=$targetPath
+    })
+  }
+  $fixtureManifestPath = Join-Path $fixtureRoot 'manifest.json'
+  $fixtureManifest | ConvertTo-Json -Depth 8 | Set-Content -Encoding UTF8 -LiteralPath $fixtureManifestPath
+  $fixtureManifest.Cities | ConvertTo-Json -Depth 8 | Set-Content -Encoding UTF8 -LiteralPath (Join-Path $fixtureBatch 'manifest.json')
+  $fixtureCitiesPath = Join-Path $fixtureRoot 'cities.json'
+  @(
+    [pscustomobject]@{name='Protected'; rank=2},
+    [pscustomobject]@{name='Test City'; rank=2}
+  ) | ConvertTo-Json -Depth 4 | Set-Content -Encoding UTF8 -LiteralPath $fixtureCitiesPath
+
+  $startScript = Join-Path $repoRoot 'scripts\city-map-production\Start-CityMapBatch.ps1'
+  $stageScript = Join-Path $repoRoot 'scripts\city-map-production\Stage-CityMapBatch.ps1'
+  $publishScript = Join-Path $repoRoot 'scripts\city-map-production\Publish-CityMapBatch.ps1'
+  $auditScript = Join-Path $repoRoot 'scripts\city-map-production\Test-CityMapFinalSet.ps1'
+  & $startScript -Batch 1 -ManifestPath $fixtureManifestPath -AssetRoot $fixtureAsset -ExpectedBeforeCount 1
+
+  $missingSourceStopped = $false
+  try {
+    & $stageScript -Batch 1 -ManifestPath $fixtureManifestPath
+  } catch {
+    $missingSourceStopped = $true
+  }
+  Assert-True $missingSourceStopped 'Staging accepted a batch with a missing source'
+
+  $sourcePath = Join-Path $fixtureBatch 'source\test-city.png'
+  & magick -size 256x256 xc:'#778855' $sourcePath
+  if ($LASTEXITCODE -ne 0) { throw 'Could not create fixture PNG' }
+  & $stageScript -Batch 1 -ManifestPath $fixtureManifestPath
+  $stagedPath = Join-Path $fixtureBatch 'staged-webp\Test City.webp'
+  Assert-True (Test-Path -LiteralPath $stagedPath -PathType Leaf) 'Staging did not create the WebP'
+  Assert-True ((& magick identify -format '%m|%w|%h' $stagedPath) -eq 'WEBP|3500|3500') 'Staged WebP dimensions are wrong'
+  Assert-True (Test-Path -LiteralPath (Join-Path $fixtureBatch 'review.jpg') -PathType Leaf) 'Contact sheet is missing'
+
+  [pscustomobject]@{Batch=1;Approved=$true;ApprovedAt=(Get-Date).ToString('o');UserMessage='fixture approval'} |
+    ConvertTo-Json | Set-Content -Encoding UTF8 -LiteralPath (Join-Path $fixtureBatch 'approval.json')
+  & $publishScript -Batch 1 -ManifestPath $fixtureManifestPath -AssetRoot $fixtureAsset -ExpectedAfterCount 2
+  Assert-True (Test-Path -LiteralPath $targetPath -PathType Leaf) 'Published fixture target is missing'
+  Assert-True ((Get-FileHash -Algorithm SHA256 -LiteralPath $protected).Hash -eq $protectedHash) 'Protected fixture changed'
+  $audit = & $auditScript -ExpectedCount 2 -RequireManifestPrefix 1 -ManifestPath $fixtureManifestPath -CitiesPath $fixtureCitiesPath -AssetRoot $fixtureAsset
+  Assert-True ($audit.Status -eq 'PASS') 'Final set audit did not pass for a valid fixture'
+
+  $collisionStopped = $false
+  try {
+    & $publishScript -Batch 1 -ManifestPath $fixtureManifestPath -AssetRoot $fixtureAsset -ExpectedAfterCount 2
+  } catch {
+    $collisionStopped = $true
+  }
+  Assert-True $collisionStopped 'Second publication did not stop on an existing target'
   'PASS manifest smoke test'
 }
 finally {
