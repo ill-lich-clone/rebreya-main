@@ -324,7 +324,7 @@ test("module entrypoint cache-busts stale ActiveEffect deletion handling", async
 
   assert.match(
     entrypointSource,
-    /combat\/status-service\.js\?v=1\.4\.100-stale-active-effect-delete/u
+    /combat\/status-service\.js\?v=1\.4\.100-hp-dead-overlay/u
   );
 });
 
@@ -464,7 +464,7 @@ test("combat automation imports preserve their released cache busts", async () =
   );
   assert.match(
     entrypointSource,
-    /status-service\.js\?v=1\.4\.100-stale-active-effect-delete/u,
+    /status-service\.js\?v=1\.4\.100-hp-dead-overlay/u,
   );
   assert.match(
     entrypointSource,

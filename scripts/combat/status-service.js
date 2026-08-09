@@ -1,4 +1,5 @@
 import { MODULE_ID } from "../constants.js";
+import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 import {
   LEGACY_REBREYA_FRIGHTENED_STATUS_ID,
   REBREYA_DISCREET_STATUS_ID,
@@ -14,6 +15,7 @@ const STATUS_VALUE_FLAG = "statusValue";
 const STATUS_META_FLAG = "statusMeta";
 const DEFAULT_DURATION_ROUNDS = 0;
 const DAE_MODULE_ID = "dae";
+const DEAD_STATUS_ID = "dead";
 const LEGACY_BLOODIED_STATUS_ID = "rebreya-bloodied";
 const LEGACY_RESTRAINED_STATUS_ID = "rebreya-restrained";
 const FRIGHTENED_STATUS_ID = REBREYA_FRIGHTENED_STATUS_ID;
@@ -2126,9 +2128,46 @@ export class CombatStatusService {
   }
 
   async handleActorHpUpdate(actor, changed = {}) {
-    void actor;
-    void changed;
-    return false;
+    if (!isActiveGmClient(globalThis.game) || !(actor instanceof Actor)) {
+      return false;
+    }
+
+    const hasHpValueUpdate = Object.hasOwn(changed, "system.attributes.hp.value")
+      || getProperty(changed, "system.attributes.hp.value") !== undefined;
+    if (!hasHpValueUpdate) {
+      return false;
+    }
+
+    const hp = getActorHpSnapshot(actor);
+    if (!hp) {
+      return false;
+    }
+
+    const current = this.#findStatusEffect(actor, DEAD_STATUS_ID);
+    if (hp.current <= 0) {
+      if (current) {
+        if (getProperty(current, "flags.core.overlay") === true) {
+          return false;
+        }
+        if (typeof current.update === "function") {
+          await current.update({ "flags.core.overlay": true });
+        }
+        else {
+          await actor.toggleStatusEffect(DEAD_STATUS_ID, { active: true, overlay: true });
+        }
+        return true;
+      }
+
+      await this.setStatus(actor, DEAD_STATUS_ID, { active: true, overlay: true });
+      return true;
+    }
+
+    if (!current) {
+      return false;
+    }
+
+    await this.setStatus(actor, DEAD_STATUS_ID, { active: false, overlay: true });
+    return true;
   }
 
   async tickDecayingDamage(actorOrId) {

@@ -17,6 +17,89 @@ import {
   registerCombatStatusConfig
 } from "../scripts/combat/status-service.js";
 
+test("actor HP updates synchronize the dead overlay in both directions", async () => {
+  const previousActor = globalThis.Actor;
+  const previousActiveEffect = globalThis.ActiveEffect;
+  const previousConfig = globalThis.CONFIG;
+  const previousFoundry = globalThis.foundry;
+  const previousGame = globalThis.game;
+
+  class TestActiveEffect {
+    constructor(actor) {
+      this.parent = actor;
+      this.statuses = new Set(["dead"]);
+      this.flags = { core: { statusId: "dead", overlay: true } };
+      this.updateCalls = [];
+    }
+
+    async update(patch) {
+      this.updateCalls.push(patch);
+      if (Object.hasOwn(patch, "flags.core.overlay")) {
+        this.flags.core.overlay = patch["flags.core.overlay"];
+      }
+    }
+  }
+
+  class TestActor {
+    constructor() {
+      this.id = "target";
+      this.system = { attributes: { hp: { value: 0, max: 20 } } };
+      this.effects = { contents: [] };
+      this.toggleCalls = [];
+    }
+
+    async toggleStatusEffect(statusId, options) {
+      this.toggleCalls.push([statusId, options]);
+      if (options.active) {
+        const effect = new TestActiveEffect(this);
+        this.effects.contents.push(effect);
+        return effect;
+      }
+      this.effects.contents = this.effects.contents.filter((effect) => !effect.statuses.has(statusId));
+      return true;
+    }
+  }
+
+  const gm = { id: "gm", active: true, isGM: true };
+  globalThis.Actor = TestActor;
+  globalThis.ActiveEffect = TestActiveEffect;
+  globalThis.CONFIG = { statusEffects: [{ id: "dead" }] };
+  globalThis.foundry = {
+    utils: {
+      deepClone: structuredClone,
+      getProperty: (source, path) => String(path).split(".").reduce((value, key) => value?.[key], source)
+    }
+  };
+  globalThis.game = { user: gm, users: { contents: [gm] } };
+
+  try {
+    const actor = new TestActor();
+    const service = new CombatStatusService({});
+
+    assert.equal(await service.handleActorHpUpdate(actor, { "system.attributes.hp.value": 0 }), true);
+    assert.deepEqual(actor.toggleCalls, [["dead", { active: true, overlay: true }]]);
+
+    assert.equal(await service.handleActorHpUpdate(actor, { system: { attributes: { hp: { value: 0 } } } }), false);
+    assert.equal(actor.toggleCalls.length, 1);
+
+    actor.effects.contents[0].flags.core.overlay = false;
+    assert.equal(await service.handleActorHpUpdate(actor, { "system.attributes.hp.value": 0 }), true);
+    assert.deepEqual(actor.effects.contents[0].updateCalls, [{ "flags.core.overlay": true }]);
+
+    actor.system.attributes.hp.value = 7;
+    assert.equal(await service.handleActorHpUpdate(actor, { system: { attributes: { hp: { value: 7 } } } }), true);
+    assert.deepEqual(actor.toggleCalls[1], ["dead", { active: false, overlay: true }]);
+    assert.equal(actor.effects.contents.length, 0);
+  }
+  finally {
+    globalThis.Actor = previousActor;
+    globalThis.ActiveEffect = previousActiveEffect;
+    globalThis.CONFIG = previousConfig;
+    globalThis.foundry = previousFoundry;
+    globalThis.game = previousGame;
+  }
+});
+
 test("dnd5e restrained is not aliased to the Rebreya discreet status", () => {
   assert.equal(normalizeRebreyaStatusId("restrained", ""), "");
   assert.equal(normalizeRebreyaStatusId("discreet", ""), "rebreya-discreet");
