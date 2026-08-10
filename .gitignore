@@ -2,4 +2,7 @@ tmp/
 __pycache__/
 *.pyc
 .playwright-mcp/
-Trace-20260724T044510.json
+Trace-*.json
+conversation-memory.txt
+tmp-races-*.json
+tmp_selenium_*.log
