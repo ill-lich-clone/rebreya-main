@@ -1,47 +1,10 @@
-# Rebreya Main: руководство для агента
+# Rebreya Main: паспорт функций и подсистем
 
-Этот файл — короткая карта проекта. Начинай работу отсюда; не читай весь репозиторий, большие исходные документы или исторические планы без прямой необходимости.
-
-## Обязательный Git-процесс
-
-- Репозиторий общий: код параллельно изменяют несколько человек.
-- Перед любыми правками выполни `git status --short --branch`, `git branch --show-current` и `git fetch origin --prune`.
-- Основная ветка — `main` (если в другом remote используется `master`, проверяй её аналогично).
-- Все изменения вноси только в `lich_branch`. Никогда не коммить и не пушь напрямую в `main` или `master`.
-- После fetch проверь расхождение: `git rev-list --left-right --count HEAD...origin/main` и `git log --oneline HEAD..origin/main`.
-- Если есть чужие незакоммиченные изменения, remote `lich_branch` ушла вперёд или актуальная основная ветка конфликтует с работой — остановись и сообщи пользователю.
-- Не используй `git add -A` в смешанной рабочей копии: добавляй только файлы текущей задачи.
-- Перед commit проверь `git diff --check`, `git diff --stat` и содержательный `git diff`.
-- После проверок сделай осмысленный commit и `git push -u origin lich_branch`. Force push запрещён без отдельного разрешения.
-
-## Быстрый вход
-
-- Среда: Foundry VTT 13, система dnd5e, обязательный модуль `statuscounter >= 3.0.4`.
-- Источник версии и runtime-entrypoint — `module.json`. Не доверяй номеру версии в старых документах.
-- Manifest загружает versioned forwarder `scripts/main-<version>.js`; он должен только импортировать `scripts/main.js`.
-- `scripts/main.js` — единственный composition root. Он создаёт сервисы, регистрирует lifecycle/hooks/socket routes и публикует API как `game.rebreyaMain` и `game.modules.get("rebreya-main")?.api`.
-- Полная обзорная документация — `README.md`. Открывай только нужный раздел по заголовку, а не весь файл.
-- Сгенерированная карта — `docs/rebreya-module-architecture.html`; это snapshot, поэтому перед использованием сверяй `sourceCommit` и при необходимости запускай `node tools/generate-architecture-map.mjs`. Не загружай HTML целиком в контекст.
-
-## Архитектурные слои
-
-| Слой | Каноническое место | Назначение |
-|---|---|---|
-| Composition | `scripts/main.js` | lifecycle, сборка зависимостей, публичный API, socket dispatch |
-| Application | `scripts/application/`, `scripts/features/trading/` | use cases, транзакции, recovery и идемпотентность |
-| Domain/data | `scripts/data/`, `scripts/engine/`, `data/` | правила, каталоги, состояние и расчёты |
-| Infrastructure | `scripts/infrastructure/` | Foundry repositories, active-GM, typed sockets, UI refresh |
-| Automation | `scripts/combat/`, `scripts/automation/`, `scripts/cosmology/`, `scripts/rest/` | реакции на Foundry/dnd5e hooks и игровые автоматизации |
-| Integration | `scripts/integrations/` | адаптеры dnd5e и сторонних модулей |
-| UI | `scripts/ui/`, `templates/`, `styles/` | ApplicationV2, Handlebars и оформление |
-| Shared | `scripts/shared/` | только действительно общие примитивы без доменной семантики |
-| Verification | `tests/` | Node test runner; тесты названы по владельцу поведения |
-
-Зависимости направляй к domain/application и инфраструктурным интерфейсам. UI не должен напрямую писать world settings или исполнять привилегированные мутации.
+Этот документ содержит подробные точки реализации, владельцев, data flow и профильные тесты. Начинай с корневого `AGENTS.md`, находи нужный раздел через `rg` и не загружай паспорт целиком без прямой необходимости.
 
 ## Контракт актуальности паспорта
 
-`AGENT.md` — обязательная часть реализации, а не историческая заметка. Любое изменение поведения должно в том же commit обновлять соответствующий паспорт ниже.
+`docs/function-passport.md` — обязательная часть реализации, а не историческая заметка. Любое изменение поведения должно в том же commit обновлять соответствующий паспорт ниже.
 
 Обновление обязательно, если изменение:
 
@@ -54,9 +17,9 @@
 
 В затронутом паспорте укажи новые методы с сигнатурами, назначение, владельца, путь данных, ограничения и тесты. При удалении функции удали или замени её запись. Внутренний helper документируй только тогда, когда он становится архитектурной точкой входа или меняет границу ответственности. Хронологический changelog здесь не ведётся: документ всегда описывает текущее состояние.
 
-Definition of Done: код, тесты, `README.md` при изменении публичного контракта и затронутые разделы `AGENT.md` согласованы между собой. Изменение без актуализации паспорта считается незавершённым.
+Definition of Done: код, тесты, `README.md` при изменении публичного контракта и затронутые разделы `docs/function-passport.md` согласованы между собой. Изменение без актуализации паспорта считается незавершённым.
 
-Перед commit выполни `git diff --name-only` и `git diff --cached --name-only`. Если изменён функциональный файл в `scripts/`, `data/`, `templates/`, `styles/` или `module.json`, соответствующее изменение `AGENT.md` должно быть в том же staged scope. Исключение — чисто внутренний refactor без изменения контракта, владельца, data flow и точки реализации; это исключение должно быть очевидно из diff.
+Перед commit выполни `git diff --name-only` и `git diff --cached --name-only`. Если изменён функциональный файл в `scripts/`, `data/`, `templates/`, `styles/` или `module.json`, соответствующее изменение `docs/function-passport.md` должно быть в том же staged scope. Исключение — чисто внутренний refactor без изменения контракта, владельца, data flow и точки реализации; это исключение должно быть очевидно из diff.
 
 ## Паспорт функций и подсистем
 
@@ -281,55 +244,4 @@ Definition of Done: код, тесты, `README.md` при изменении п
 - **Не сработала automation:** проверь identifier/sourceType/runtime flags, recipe/version, Actor ownership, dnd5e/MIDI hook и registry diagnostics через `getSpellAutomationDiagnostics()`.
 - **Не синхронизировался pack:** проверь active GM, managed/source/signature flags, stable ID collision и dependency order.
 - **Как выбрать тест:** owner service → `<owner>.test.mjs`; typed command → `*-socket`/`*-command-dispatch`; recovery → `*-recovery`/transaction; UI → `*-app-context`/`*-ui`; compatibility → одноимённый integration test.
-- **Как найти вход:** `rg -n "имяМетода|COMMAND_NAME|flag|hook" scripts tests README.md AGENT.md`; затем читай только найденный service, composition wiring и focused-тест.
-
-## Как переходить к реализации
-
-1. Сформулируй одно наблюдаемое поведение и предполагаемого владельца из карты выше.
-2. Найди declaration, вызовы, flags, commands и hooks: `rg -n "термин|метод|flag|command|hook" scripts tests README.md`.
-3. Открывай только найденные диапазоны. Большие `scripts/main.js`, `inventory-app.js`, `inventory-service.js`, PDF/XLSX и generated HTML целиком не читай.
-4. Проверь, нет ли уже канонического сервиса, API-метода или socket command. Расширяй владельца; не создавай второй Trader/Inventory/Sheet app и не дублируй hook.
-5. Для world-state используй repository/coordinator. Не пиши `game.settings` напрямую из UI.
-6. Для операции игрока, требующей прав GM, добавляй валидируемую typed command и авторизацию отправителя; не доверяй payload клиента.
-7. Сначала добавь или измени focused-тест `tests/<owner>.test.mjs`, затем внеси минимальную реализацию.
-8. При изменении API, socket command, pack lifecycle или automation hook обнови соответствующий раздел `README.md`.
-9. Сохраняй исходники, JSON, шаблоны и русские строки в UTF-8 без битой кириллицы.
-
-Чтобы увидеть публичные методы composition root без чтения файла целиком:
-
-```powershell
-rg -n '^\s{2}(?:async\s+)?[A-Za-z_$][A-Za-z0-9_$]*\s*\(' scripts/main.js
-```
-
-## Проверки
-
-Focused-тест выбирай по владельцу, например:
-
-```powershell
-node --test tests/trader-service.test.mjs
-node --test tests/storage-service.test.mjs
-node --test tests/calendar-transition-coordinator.test.mjs
-```
-
-Полная проверка перед завершением:
-
-```powershell
-node --test tests/*.test.mjs
-git diff --check
-
-$files = git ls-files '*.js' '*.mjs'
-foreach ($file in $files) { node --check $file }
-
-$json = git ls-files '*.json'
-foreach ($file in $json) { Get-Content -Raw -Encoding UTF8 $file | ConvertFrom-Json | Out-Null }
-```
-
-Не вставляй в отчёт полный успешный вывод тестов: достаточно команды, числа passed/failed и текста реальных ошибок.
-
-## Что не загружать без прямой необходимости
-
-- `docs/**/*.pdf`, `*.xlsx`, большие исходные TXT/MD сеттинга;
-- `docs/rebreya-module-architecture.html` целиком;
-- `docs/superpowers/plans/` и исторические design-документы, если задача не продолжает конкретный план;
-- трассы, Selenium-логи, `tmp/`, `tmp-*` и иные производные артефакты;
-- весь `magicItem.js`: сначала ищи конкретное имя или export через `rg`.
+- **Как найти вход:** `rg -n "имяМетода|COMMAND_NAME|flag|hook" scripts tests README.md docs/function-passport.md`; затем читай только найденный service, composition wiring и focused-тест.
