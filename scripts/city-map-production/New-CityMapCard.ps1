@@ -1,5 +1,5 @@
 param(
-  [Parameter(Mandatory)][string]$ManifestPath,
+  [string]$ManifestPath = 'D:\FoundryVTT\Data\modules\rebreya-main\tmp\city-map-full-production\manifest.json',
   [Parameter(Mandatory)][ValidateRange(1,26)][int]$Batch,
   [Parameter(Mandatory)][string]$CityName,
   [string]$CitiesPath = 'D:\FoundryVTT\Data\modules\rebreya-main\data\cities.json',
@@ -144,7 +144,11 @@ foreach ($city in $canonical) {
   $canonicalByName[[string]$city.name.ToLowerInvariant()] = $city
 }
 
-$workRoot = Split-Path -Parent $ManifestPath
+$manifestDirectory = (Resolve-Path -LiteralPath (Split-Path -Parent $ManifestPath)).Path
+$workRoot = $manifestDirectory
+if ((Split-Path -Leaf $manifestDirectory) -match '^batch-\d{2}$') {
+  $workRoot = Split-Path -Parent (Split-Path -Parent $manifestDirectory)
+}
 $referenceCatalogPath = Join-Path $workRoot 'reference-catalog.json'
 $readyCandidates = @()
 foreach ($readyReference in @(Get-CityMapReadyReferenceEntries -CatalogPath $referenceCatalogPath -PilotRoot $AssetRoot -CanonicalByName $canonicalByName)) {
