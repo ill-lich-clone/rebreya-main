@@ -1813,7 +1813,7 @@ test("RED: a reaction Shield cast is ready at the start of its owner's next turn
   ), true);
 });
 
-test("combatRound advances a first-in-initiative Sorcerer cooldown", async () => {
+test("a non-owner End Turn client leaves the cooldown mutation to the active GM after combatTurnChange", async () => {
   const previousHooks = globalThis.Hooks;
   const previousGame = globalThis.game;
   const handlers = new Map();
@@ -1826,14 +1826,40 @@ test("combatRound advances a first-in-initiative Sorcerer cooldown", async () =>
   globalThis.Hooks = {
     on: (name, callback) => handlers.set(name, [...(handlers.get(name) ?? []), callback])
   };
-  globalThis.game = { user: { id: "user", isGM: true }, messages: new Map() };
+  const player = { id: "player", active: true, isGM: false };
+  const activeGm = { id: "gm", active: true, isGM: true };
+  globalThis.game = {
+    user: player,
+    users: { activeGM: activeGm, contents: [player, activeGm] },
+    messages: new Map()
+  };
+  const setFlag = actor.setFlag.bind(actor);
+  const writes = [];
+  actor.setFlag = async (...args) => {
+    if (globalThis.game.user.id !== activeGm.id) {
+      throw new Error("non-owner cannot persist another Actor's cooldown");
+    }
+    writes.push(args);
+    return setFlag(...args);
+  };
 
   try {
     const { registerCombatHooks } = await import("../scripts/combat/hooks.js");
     registerCombatHooks({ sorcererAutomationService: service });
-    const combat = { turns: [{ actor }], combatant: { actor } };
-    handlers.get("combatRound")?.[0](combat, { round: 2, turn: 0 }, { direction: 1 });
-    await new Promise((resolve) => setImmediate(resolve));
+    const handler = handlers.get("combatTurnChange")?.[0];
+    assert.equal(typeof handler, "function");
+    const combat = { turns: [{ actor }], combatant: { actor }, round: 1, turn: 0 };
+    handler(combat, { round: 1, turn: 0 }, { round: 1, turn: 0 });
+    await waitForDeferredActivityUse();
+    assert.equal(writes.length, 0);
+    assert.deepEqual(actor.getFlag(MODULE_ID, "sorcererAutomation.virtualSlotCooldowns"), {
+      "fireball:3": { remaining: 3 }
+    });
+
+    globalThis.game.user = activeGm;
+    handler(combat, { round: 1, turn: 0 }, { round: 1, turn: 1 });
+    await waitForDeferredActivityUse();
+    assert.equal(writes.length, 1);
     assert.deepEqual(actor.getFlag(MODULE_ID, "sorcererAutomation.virtualSlotCooldowns"), {
       "fireball:3": { remaining: 2 }
     });
@@ -1844,22 +1870,87 @@ test("combatRound advances a first-in-initiative Sorcerer cooldown", async () =>
   }
 });
 
-test("rewinding combat does not decrement a Sorcerer cooldown", async () => {
+test("a first-in-initiative Sorcerer ticks once at a new round without combatTurn or combatRound cooldown handlers", async () => {
+  const previousHooks = globalThis.Hooks;
+  const previousGame = globalThis.game;
+  const handlers = new Map();
   const actor = levelActor(5, { includePoints: true });
   const service = new SorcererAutomationService({});
   await service.syncSorceryPoints(actor);
   await service.applyDnd5ePreUseActivity(
     makeSorcererSpell(actor, { id: "fireball", baseLevel: 3 }), {}, {}, {}
   );
+  const activeGm = { id: "gm", active: true, isGM: true };
+  globalThis.Hooks = {
+    on: (name, callback) => handlers.set(name, [...(handlers.get(name) ?? []), callback])
+  };
+  globalThis.game = {
+    user: activeGm,
+    users: { activeGM: activeGm, contents: [activeGm] },
+    messages: new Map()
+  };
 
-  await service.handleCombatTurnChange(
-    { turns: [{ actor }], combatant: { actor } },
-    { round: 1, turn: 0 },
-    { direction: -1 }
+  try {
+    const { registerCombatHooks } = await import("../scripts/combat/hooks.js");
+    registerCombatHooks({ sorcererAutomationService: service });
+    assert.equal(handlers.has("combatRound"), false);
+    const combat = { turns: [{ actor }], combatant: { actor }, round: 2, turn: 0 };
+    handlers.get("combatTurn")?.[0](combat, { round: 2, turn: 0 }, { direction: 1 });
+    const handler = handlers.get("combatTurnChange")?.[0];
+    assert.equal(typeof handler, "function");
+    handler(combat, { round: 1, turn: 0 }, { round: 2, turn: 0 });
+    await waitForDeferredActivityUse();
+    assert.deepEqual(actor.getFlag(MODULE_ID, "sorcererAutomation.virtualSlotCooldowns"), {
+      "fireball:3": { remaining: 2 }
+    });
+  }
+  finally {
+    globalThis.Hooks = previousHooks;
+    globalThis.game = previousGame;
+  }
+});
+
+test("a rewind and a combat with no active GM do not decrement a Sorcerer cooldown", async () => {
+  const previousHooks = globalThis.Hooks;
+  const previousGame = globalThis.game;
+  const handlers = new Map();
+  const actor = levelActor(5, { includePoints: true });
+  const service = new SorcererAutomationService({});
+  await service.syncSorceryPoints(actor);
+  await service.applyDnd5ePreUseActivity(
+    makeSorcererSpell(actor, { id: "fireball", baseLevel: 3 }), {}, {}, {}
   );
-  assert.deepEqual(actor.getFlag(MODULE_ID, "sorcererAutomation.virtualSlotCooldowns"), {
-    "fireball:3": { remaining: 3 }
-  });
+  const activeGm = { id: "gm", active: true, isGM: true };
+  const player = { id: "player", active: true, isGM: false };
+  globalThis.Hooks = {
+    on: (name, callback) => handlers.set(name, [...(handlers.get(name) ?? []), callback])
+  };
+  globalThis.game = {
+    user: activeGm,
+    users: { activeGM: activeGm, contents: [activeGm, player] },
+    messages: new Map()
+  };
+
+  try {
+    const { registerCombatHooks } = await import("../scripts/combat/hooks.js");
+    registerCombatHooks({ sorcererAutomationService: service });
+    const handler = handlers.get("combatTurnChange")?.[0];
+    assert.equal(typeof handler, "function");
+    const combat = { turns: [{ actor }], combatant: { actor }, round: 1, turn: 0 };
+    handler(combat, { round: 2, turn: 0 }, { round: 1, turn: 0 });
+    await waitForDeferredActivityUse();
+    globalThis.game.user = player;
+    globalThis.game.users.activeGM = null;
+    handler(combat, { round: 1, turn: 0 }, { round: 1, turn: 1 });
+    await waitForDeferredActivityUse();
+    assert.deepEqual(actor.getFlag(MODULE_ID, "sorcererAutomation.virtualSlotCooldowns"), {
+      "fireball:3": { remaining: 3 }
+    });
+  }
+  finally {
+    globalThis.Hooks = previousHooks;
+    globalThis.game = previousGame;
+  }
 });
 
 test("RED: a cooldown card stores stable metadata and keeps exactly one footer block", async () => {
@@ -1901,6 +1992,41 @@ test("RED: a cooldown card stores stable metadata and keeps exactly one footer b
     assert.equal((message.content.match(/data-rebreya-sorcerer-cooldown/gu) ?? []).length, 1);
   }
   finally {
+    globalThis.game = previousGame;
+  }
+});
+
+test("a rejected cooldown chat-card update does not roll back the saved Actor cooldown", async () => {
+  const previousGame = globalThis.game;
+  const previousConsoleError = console.error;
+  const actor = levelActor(5, { includePoints: true });
+  const service = new SorcererAutomationService({});
+  await service.syncSorceryPoints(actor);
+  const activity = makeSorcererSpell(actor, { id: "fireball", baseLevel: 3 });
+  const messageConfig = {};
+
+  assert.equal(await service.applyDnd5ePreUseActivity(activity, {}, {}, messageConfig), true);
+  const message = makeCooldownCardMessage({
+    content: '<div class="chat-card"></div>',
+    flags: messageConfig.data?.flags
+  });
+  globalThis.game = { ...previousGame, messages: new Map([[message.id, message]]) };
+
+  try {
+    await service.handleDnd5ePostCreateUsageMessage(activity, message);
+    message.update = async () => {
+      throw new Error("chat card write failed");
+    };
+    console.error = () => undefined;
+
+    await service.handleCombatTurnChange({ combatant: { actor } }, { turn: 0 });
+
+    assert.deepEqual(actor.getFlag(MODULE_ID, "sorcererAutomation.virtualSlotCooldowns"), {
+      "fireball:3": { remaining: 2 }
+    });
+  }
+  finally {
+    console.error = previousConsoleError;
     globalThis.game = previousGame;
   }
 });
@@ -2902,10 +3028,15 @@ test("RED: hooks use the installed dnd5e save, damage, and attack hook contracts
   const previousHooks = globalThis.Hooks;
   const previousGame = globalThis.game;
   const handlers = new Map();
+  const activeGm = { id: "user", active: true, isGM: true };
   globalThis.Hooks = {
     on: (name, callback) => handlers.set(name, callback)
   };
-  globalThis.game = { user: { id: "user", isGM: true }, combat: { round: 1 } };
+  globalThis.game = {
+    user: activeGm,
+    users: { activeGM: activeGm, contents: [activeGm] },
+    combat: { round: 1 }
+  };
   try {
     const { registerCombatHooks } = await import("../scripts/combat/hooks.js");
     const service = new SorcererAutomationService({});
@@ -2915,7 +3046,11 @@ test("RED: hooks use the installed dnd5e save, damage, and attack hook contracts
     assert.equal(typeof handlers.get("dnd5e.preRollSavingThrow"), "function");
     assert.equal(typeof handlers.get("dnd5e.preRollDamage"), "function");
     assert.equal(typeof handlers.get("dnd5e.rollAttack"), "function");
-    handlers.get("combatTurn")({ combatant: { actor: levelActor(1) } }, { turn: 0 }, {});
+    handlers.get("combatTurnChange")(
+      { combatant: { actor: levelActor(1) } },
+      { round: 1, turn: 0 },
+      { round: 1, turn: 1 }
+    );
     await waitForDeferredActivityUse();
     assert.equal(combatTurnCalls, 1);
   }

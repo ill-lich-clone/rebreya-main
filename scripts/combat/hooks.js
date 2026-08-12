@@ -1,4 +1,5 @@
 import { MODULE_ID } from "../constants.js";
+import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 
 const HOOKS_REGISTERED_KEY = `${MODULE_ID}.combatHooksRegistered`;
 const CHARACTER_SHEET_RENDER_HOOKS = Object.freeze([
@@ -15,6 +16,24 @@ function completeSorcererReactionCheckWhenNoSpellService(usageConfig = {}) {
   usageConfig.flags ??= {};
   usageConfig.flags[MODULE_ID] ??= {};
   usageConfig.flags[MODULE_ID].reactionCheckComplete = true;
+}
+
+function combatTurnChangeDirection(previous = {}, current = {}) {
+  const previousRound = Number(previous?.round);
+  const currentRound = Number(current?.round);
+  if (!Number.isInteger(previousRound) || !Number.isInteger(currentRound)) {
+    return 0;
+  }
+  if (currentRound !== previousRound) {
+    return Math.sign(currentRound - previousRound);
+  }
+
+  const previousTurn = Number(previous?.turn);
+  const currentTurn = Number(current?.turn);
+  if (!Number.isInteger(previousTurn) || !Number.isInteger(currentTurn)) {
+    return 0;
+  }
+  return Math.sign(currentTurn - previousTurn);
 }
 
 export function registerCombatHooks(moduleApi) {
@@ -350,12 +369,11 @@ export function registerCombatHooks(moduleApi) {
     Hooks.on("controlToken", applyCurrentEnvironment);
   }
 
-  const advanceSorcererCooldowns = (combat, updateData, updateOptions) => {
-    moduleApi.sorcererAutomationService.handleCombatTurnChange(
-      combat,
-      updateData,
-      updateOptions
-    ).catch((error) => {
+  const advanceSorcererCooldowns = (combat, previous, current) => {
+    if (!isActiveGmClient(globalThis.game) || combatTurnChangeDirection(previous, current) <= 0) {
+      return;
+    }
+    moduleApi.sorcererAutomationService.handleCombatTurnChange(combat, current ?? {}, { direction: 1 }).catch((error) => {
       console.error(`${MODULE_ID} | Failed to update Sorcerer virtual-slot cooldowns.`, error);
     });
   };
@@ -394,10 +412,6 @@ export function registerCombatHooks(moduleApi) {
       });
     }
 
-    if (hasSorcererService) {
-      advanceSorcererCooldowns(combat, updateData, updateOptions);
-    }
-
     if (hasPaladinService) {
       moduleApi.paladinAutomationService.handleCombatTurnChange(combat, updateData, updateOptions).catch((error) => {
         console.error(`${MODULE_ID} | Failed to handle paladin turn automation.`, error);
@@ -406,7 +420,7 @@ export function registerCombatHooks(moduleApi) {
   });
 
   if (hasSorcererService) {
-    Hooks.on("combatRound", advanceSorcererCooldowns);
+    Hooks.on("combatTurnChange", advanceSorcererCooldowns);
   }
 
   if (hasAttackService) {
