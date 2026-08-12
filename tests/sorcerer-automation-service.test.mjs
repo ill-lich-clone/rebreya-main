@@ -3338,7 +3338,7 @@ test("Draconic Dragon Spell adds one d6 damage per selected Sorcery Point", asyn
   const service = new SorcererAutomationService({});
   await service.syncSorceryPoints(actor);
   const activity = makeDnd5eActivityClone(makeSorcererSpell(actor, {
-    system: { damage: { parts: [{ _id: "base-fire", formula: "1d6", types: ["fire"] }] } }
+    system: { damage: { parts: [{ _id: "base-fire", formula: "1d6", types: new Set(["fire"]) }] } }
   }));
 
   assert.equal(await service.applyDnd5ePreUseActivity(activity, {
@@ -3351,9 +3351,12 @@ test("Draconic Dragon Spell adds one d6 damage per selected Sorcery Point", asyn
 
   const added = activity.damage.parts.find((part) => part._id === "rebreya-draconic-dragon-spell");
   assert.equal(added.formula, "2d6");
-  assert.deepEqual(added.types, ["fire"]);
-  assert.deepEqual(activity.system.damage.parts.at(-1), added);
-  assert.deepEqual(activity.item.system.damage.parts.at(-1), added);
+  assert.ok(added.types instanceof Set);
+  assert.ok(added.types.has("fire"));
+  assert.ok(activity.damage.parts.find((part) => part._id === "base-fire").types instanceof Set);
+  assert.ok(activity.damage.parts.find((part) => part._id === "base-fire").types.has("fire"));
+  assert.deepEqual(activity.system.damage.parts.at(-1).types, ["fire"]);
+  assert.deepEqual(activity.item.system.damage.parts.at(-1).types, ["fire"]);
   assert.equal(pointsItem(actor).system.uses.spent, 4);
 });
 
@@ -3382,7 +3385,8 @@ test("Draconic Dragon Spell accepts dnd5e damage parts whose types are Sets", as
 
   const added = activity.damage.parts.find((part) => part._id === "rebreya-draconic-dragon-spell");
   assert.equal(added.formula, "3d6");
-  assert.deepEqual(added.types, ["fire"]);
+  assert.ok(added.types instanceof Set);
+  assert.ok(added.types.has("fire"));
   assert.equal(pointsItem(actor).system.uses.spent, 5);
 });
 
@@ -3550,7 +3554,7 @@ test("RED: Draconic Dragon Spell damage hook follows attack roll messages back t
   }
 });
 
-test("Draconic Ancestral Spell changes this cast's spell damage to the ancestor type", async () => {
+test("Draconic Ancestral Spell changes runtime damage parts to the ancestor type", async () => {
   const actor = metamagicActor();
   addDraconicAncestor(actor, "Огонь");
   addMetamagic(actor, "draconic-ancestral-spell", 1, "base", {
@@ -3562,7 +3566,7 @@ test("Draconic Ancestral Spell changes this cast's spell damage to the ancestor 
     system: {
       damage: {
         parts: [
-          { _id: "cold-part", formula: "1d8", types: ["cold"] },
+          { _id: "cold-part", formula: "1d8", types: new Set(["cold"]) },
           ["1d6", "acid"]
         ]
       }
@@ -3574,13 +3578,15 @@ test("Draconic Ancestral Spell changes this cast's spell damage to the ancestor 
     sorcererMetamagic: { ids: ["draconic-ancestral-spell"] }
   }, {}, {}), true);
 
-  assert.deepEqual(activity.damage.parts.map((part) => Array.isArray(part) ? part[1] : part.types[0]), ["fire", "fire"]);
+  assert.ok(activity.damage.parts[0].types instanceof Set);
+  assert.ok(activity.damage.parts[0].types.has("fire"));
+  assert.equal(activity.damage.parts[1][1], "fire");
   assert.deepEqual(activity.system.damage.parts.map((part) => Array.isArray(part) ? part[1] : part.types[0]), ["fire", "fire"]);
   assert.deepEqual(activity.item.system.damage.parts.map((part) => Array.isArray(part) ? part[1] : part.types[0]), ["fire", "fire"]);
   assert.equal(pointsItem(actor).system.uses.spent, 3);
 });
 
-test("Elemental Affinity adds Charisma modifier once to matching draconic spell damage", async () => {
+test("Elemental Affinity adds Charisma modifier once to matching native runtime damage", async () => {
   const actor = metamagicActor();
   actor.system.abilities.cha.mod = 4;
   addDraconicAncestor(actor, "Огонь");
@@ -3589,7 +3595,7 @@ test("Elemental Affinity adds Charisma modifier once to matching draconic spell 
   await service.syncSorceryPoints(actor);
   const messageConfig = {};
   const activity = makeDnd5eActivityClone(makeSorcererSpell(actor, {
-    system: { damage: { parts: [{ _id: "base-fire", formula: "2d6", types: ["fire"] }] } }
+    system: { damage: { parts: [{ _id: "base-fire", formula: "2d6", types: new Set(["fire"]) }] } }
   }));
 
   assert.equal(await service.applyDnd5ePreUseActivity(activity, {
@@ -3598,9 +3604,47 @@ test("Elemental Affinity adds Charisma modifier once to matching draconic spell 
 
   const added = activity.damage.parts.find((part) => part._id === "rebreya-draconic-elemental-affinity");
   assert.equal(added.formula, "4");
-  assert.deepEqual(added.types, ["fire"]);
+  assert.ok(added.types instanceof Set);
+  assert.ok(added.types.has("fire"));
   assert.equal(messageConfig.data.flags[MODULE_ID].damageBonus.source, "draconic-elemental-affinity");
   assert.equal(pointsItem(actor).system.uses.spent, 2);
+});
+
+test("Draconic Dragon Spell and Elemental Affinity add their runtime damage bonuses once", async () => {
+  const actor = metamagicActor();
+  actor.system.abilities.cha.mod = 4;
+  addDraconicAncestor(actor, "Огонь");
+  addSubclassFeature(actor, "Родство со стихией", "draconic-elemental-affinity");
+  addMetamagic(actor, "draconic-dragon-spell", 3, "base", {
+    costMode: "variable",
+    minCost: 1,
+    maxCost: 3,
+    metamagicAutomation: "draconic-dragon-spell"
+  });
+  const service = new SorcererAutomationService({});
+  await service.syncSorceryPoints(actor);
+  const activity = makeDnd5eActivityClone(makeSorcererSpell(actor, {
+    system: { damage: { parts: [{ _id: "base-fire", formula: "2d6", types: new Set(["fire"]) }] } }
+  }));
+
+  assert.equal(await service.applyDnd5ePreUseActivity(activity, {
+    sorcererVirtualSpellLevel: 1,
+    sorcererMetamagic: {
+      ids: ["draconic-dragon-spell"],
+      costs: { "draconic-dragon-spell": 2 }
+    }
+  }, {}, {}), true);
+
+  const dragonSpell = activity.damage.parts.find((part) => part._id === "rebreya-draconic-dragon-spell");
+  const affinity = activity.damage.parts.find((part) => part._id === "rebreya-draconic-elemental-affinity");
+  assert.equal(dragonSpell.formula, "2d6");
+  assert.ok(dragonSpell.types instanceof Set);
+  assert.ok(dragonSpell.types.has("fire"));
+  assert.equal(affinity.formula, "4");
+  assert.ok(affinity.types instanceof Set);
+  assert.ok(affinity.types.has("fire"));
+  assert.equal(activity.damage.parts.filter((part) => part._id === dragonSpell._id).length, 1);
+  assert.equal(activity.damage.parts.filter((part) => part._id === affinity._id).length, 1);
 });
 
 test("Elemental Affinity ignores spells that do not match the draconic damage type", async () => {
