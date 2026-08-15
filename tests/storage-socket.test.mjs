@@ -42,6 +42,7 @@ function createHarness({
   groundFailure = null
 } = {}) {
   const player = { id: "player", isGM: false };
+  const gm = { id: "gm", isGM: true, active: true };
   const hero = {
     id: "hero",
     type: "character",
@@ -93,6 +94,7 @@ function createHarness({
   const completed = new Set();
   const groundCalls = [];
   const refreshCalls = [];
+  const depositResolveCalls = [];
   const inventoryService = {
     async addLootgenRowToCharacterOnce(row, actor, mutationId) {
       if (rejectItemGrant) throw new Error("grant failed");
@@ -143,11 +145,15 @@ function createHarness({
     groundPileService,
     containerItemService,
     isVisibleTo: () => visible,
-    resolveDepositSource: async () => depositSource
+    resolveDepositSource: async (...args) => {
+      depositResolveCalls.push(clone(args[0]));
+      return typeof depositSource === "function" ? depositSource(...args) : depositSource;
+    }
   });
 
   return {
     player,
+    gm,
     hero,
     targetHero,
     characterToken,
@@ -157,7 +163,8 @@ function createHarness({
     itemGrants,
     coinGrants,
     groundCalls,
-    refreshCalls
+    refreshCalls,
+    depositResolveCalls
   };
 }
 
@@ -191,7 +198,7 @@ function depositPayload(harness, overrides = {}) {
   };
 }
 
-test("storage deposit payload validation accepts only exact item and storage-row sources", () => {
+test("storage deposit payload validation accepts only exact item, Journal, and storage-row sources", () => {
   const base = {
     tokenUuid: "Scene.scene.Token.chest",
     characterTokenUuid: "Scene.scene.Token.hero",
@@ -224,6 +231,28 @@ test("storage deposit payload validation accepts only exact item and storage-row
   assert.equal(isValidStorageDepositPayload({
     ...base,
     source: { kind: "item", itemUuid: "Actor.hero.Item.arrow", extra: true }
+  }), false);
+  assert.equal(isValidStorageDepositPayload({
+    tokenUuid: base.tokenUuid,
+    characterTokenUuid: "",
+    source: { kind: "journal", journalUuid: "JournalEntry.notes" },
+    quantity: 1,
+    mutationId: "journal-deposit"
+  }), true);
+  assert.equal(isValidStorageDepositPayload({
+    tokenUuid: base.tokenUuid,
+    characterTokenUuid: "",
+    source: { kind: "journal", journalUuid: "JournalEntry.notes", extra: true },
+    quantity: 1,
+    mutationId: "journal-deposit"
+  }), false);
+  assert.equal(isValidStorageDepositPayload({
+    tokenUuid: base.tokenUuid,
+    characterTokenUuid: "",
+    source: { kind: "journal", journalUuid: "JournalEntry.notes" },
+    quantity: 1,
+    mutationId: "journal-deposit",
+    extra: true
   }), false);
   assert.equal(isValidStorageDepositPayload({
     ...base,
@@ -587,6 +616,158 @@ test("storage deposits are idempotent and move the selected quantity once", asyn
   assert.deepEqual(consumeCalls, [2]);
   assert.equal(readStorageState(harness.storageToken).manualRows[0].quantity, 2);
   assert.equal(readStorageState(harness.storageToken).state, "opened");
+});
+
+test("Journal deposits are GM-only, quantity-one, re-resolved, and consumed only after authorization", async () => {
+  const consumeCalls = [];
+  const journalSource = {
+    kind: "journal",
+    mode: "copy",
+    available: 1,
+    sourceKey: "JournalEntry.notes",
+    row: {
+      rowKind: "journal",
+      rowId: "journal-row",
+      stackKey: "",
+      sourceId: "JournalEntry.notes",
+      sourceType: "journal",
+      name: "Полевые заметки",
+      img: "icons/book.webp",
+      quantity: 1
+    },
+    canUserMove: (user) => user?.isGM === true,
+    async consume(quantity) {
+      consumeCalls.push(quantity);
+      return { kind: "copy" };
+    },
+    async restore() { return false; }
+  };
+  const harness = createHarness({ depositSource: journalSource });
+  await harness.storageService.configure(harness.storageToken, {
+    state: "empty",
+    displayMode: "empty"
+  });
+  const source = { kind: "journal", journalUuid: "JournalEntry.notes" };
+
+  await assert.rejects(
+    harness.service.deposit(depositPayload(harness, {
+      characterTokenUuid: "",
+      source,
+      quantity: 1,
+      mutationId: "journal-player"
+    }), { sender: harness.player }),
+    /журнал.*мастер|мастер.*журнал/iu
+  );
+  assert.deepEqual(consumeCalls, []);
+  assert.deepEqual(readStorageState(harness.storageToken).manualRows, []);
+
+  await assert.rejects(
+    harness.service.deposit(depositPayload(harness, {
+      characterTokenUuid: "",
+      source,
+      quantity: 2,
+      mutationId: "journal-quantity"
+    }), { sender: harness.gm }),
+    /журнал.*1|количеств/iu
+  );
+  assert.deepEqual(consumeCalls, []);
+  assert.deepEqual(readStorageState(harness.storageToken).manualRows, []);
+
+  const result = await harness.service.deposit(depositPayload(harness, {
+    characterTokenUuid: "",
+    source,
+    quantity: 1,
+    mutationId: "journal-gm"
+  }), { sender: harness.gm });
+
+  assert.equal(result.quantity, 1);
+  assert.equal(result.sourceMode, "copy");
+  assert.deepEqual(consumeCalls, [1]);
+  assert.deepEqual(harness.depositResolveCalls, [source]);
+  assert.deepEqual(readStorageState(harness.storageToken).manualRows, [journalSource.row]);
+});
+
+test("Journal rows are rejected before every claim materialization path while GM deletion remains available", async () => {
+  const materialized = [];
+  const harness = createHarness({
+    containerItemService: {
+      async materializeToActorOnce(...args) { materialized.push(args); }
+    }
+  });
+  await harness.storageService.configure(harness.storageToken, {
+    state: "opened",
+    manualRows: [{
+      rowKind: "journal",
+      rowId: "journal-row",
+      stackKey: "",
+      sourceId: "JournalEntry.notes",
+      sourceType: "journal",
+      name: "Полевые заметки",
+      img: "icons/book.webp",
+      quantity: 1
+    }]
+  });
+
+  await assert.rejects(
+    harness.service.claimRow({
+      tokenUuid: harness.storageToken.uuid,
+      characterTokenUuid: harness.characterToken.uuid,
+      rowId: "journal-row",
+      destination: "self",
+      quantity: 1,
+      target: null,
+      mutationId: "journal-claim"
+    }, { sender: harness.player }),
+    /журнал.*нельзя забрать/iu
+  );
+  assert.deepEqual(harness.itemGrants, []);
+  assert.deepEqual(harness.groundCalls, []);
+  assert.deepEqual(materialized, []);
+  assert.deepEqual(readStorageState(harness.storageToken).claimedRowIds, []);
+
+  const deleted = await harness.storageService.deleteRow(harness.storageToken, "journal-row");
+  assert.deepEqual(deleted.manualRows, []);
+  assert.equal(deleted.state, "empty");
+});
+
+test("RebreyaMainModule preserves the exact Journal source in an active-GM deposit", async () => {
+  const previousGame = globalThis.game;
+  const previousCanvas = globalThis.canvas;
+  const previousHooks = globalThis.Hooks;
+  const gm = { id: "gm", isGM: true, active: true };
+  globalThis.game = { user: gm, users: { activeGM: gm } };
+  globalThis.canvas = { tokens: { controlled: [] } };
+  globalThis.Hooks = { once() {}, on() {} };
+  try {
+    const { RebreyaMainModule } = await import(`../scripts/main.js?journal-deposit=${Date.now()}`);
+    const moduleApi = new RebreyaMainModule();
+    const calls = [];
+    moduleApi.storageCommandService = {
+      async deposit(payload, context) {
+        calls.push({ payload: clone(payload), context });
+        return { changed: true };
+      }
+    };
+
+    await moduleApi.depositStorageItem(
+      "Scene.scene.Token.chest",
+      { kind: "journal", journalUuid: "JournalEntry.notes" },
+      1,
+      "journal-main",
+      { characterTokenUuid: "" }
+    );
+
+    assert.deepEqual(calls[0].payload.source, {
+      kind: "journal",
+      journalUuid: "JournalEntry.notes"
+    });
+    assert.equal(calls[0].context.sender, gm);
+  }
+  finally {
+    globalThis.game = previousGame;
+    globalThis.canvas = previousCanvas;
+    globalThis.Hooks = previousHooks;
+  }
 });
 
 test("storage deposits reject distance and source ownership before mutation", async () => {

@@ -4,6 +4,7 @@ import { isStorageActor, readStorageState, readStorageStateAtPath } from "./stor
 import {
   buildStorageContainerRow,
   isStorageContainerRow,
+  isStorageJournalRow,
   rekeyStorageContainerSnapshot
 } from "./storage-container-snapshot.js?v=1.4.126-native-container-copies";
 import { buildStorageContainerSnapshotFromToken } from "./storage-container-item-service.js";
@@ -38,6 +39,14 @@ function parsedObject(value) {
   catch (_error) {
     return null;
   }
+}
+
+function hasExactKeys(value, expectedKeys) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const actualKeys = Object.keys(value).sort();
+  const sortedExpected = [...expectedKeys].sort();
+  return actualKeys.length === sortedExpected.length
+    && actualKeys.every((key, index) => key === sortedExpected[index]);
 }
 
 function createDepositRowId() {
@@ -90,6 +99,11 @@ function isItemDocument(document) {
     || document?.constructor?.metadata?.name === "Item";
 }
 
+function isJournalEntryDocument(document) {
+  return document?.documentName === "JournalEntry"
+    || document?.constructor?.metadata?.name === "JournalEntry";
+}
+
 function isEmbeddedActorItem(item) {
   return item?.parent?.documentName === "Actor"
     || item?.parent?.constructor?.metadata?.name === "Actor";
@@ -112,6 +126,21 @@ function buildItemRow(item, available, createRowId) {
     img: clean(item?.img ?? data.img),
     quantity: available,
     itemData: data
+  };
+}
+
+function buildJournalRow(journal, createRowId) {
+  const sourceId = clean(journal?.uuid);
+  if (!sourceId) throw new Error("Журнал не имеет допустимого UUID.");
+  return {
+    rowKind: "journal",
+    rowId: clean(createRowId?.()) || createDepositRowId(),
+    stackKey: "",
+    sourceId,
+    sourceType: "journal",
+    name: clean(journal?.name) || "Журнал",
+    img: clean(journal?.img),
+    quantity: 1
   };
 }
 
@@ -138,7 +167,7 @@ function singleGroundItem(snapshot, document) {
   const state = snapshot.state ?? {};
   const claimed = new Set((Array.isArray(state.claimedRowIds) ? state.claimedRowIds : []).map(clean));
   const rows = storageRows(state).filter((row) => !claimed.has(clean(row?.rowId)));
-  if (rows.length !== 1 || isStorageContainerRow(rows[0])) return null;
+  if (rows.length !== 1 || isStorageContainerRow(rows[0]) || isStorageJournalRow(rows[0])) return null;
   if (state.coinsClaimed !== true) {
     const coinKeys = ["pp", "gp", "sp", "cp"];
     const hasCoins = coinKeys.some((key) => (
@@ -151,6 +180,11 @@ function singleGroundItem(snapshot, document) {
 
 export function parseStorageDepositDragData(value) {
   const canonical = parsedObject(value);
+  if (hasExactKeys(canonical, ["journalUuid", "kind"])
+    && canonical.kind === "journal"
+    && clean(canonical.journalUuid)) {
+    return { kind: "journal", journalUuid: clean(canonical.journalUuid) };
+  }
   if (canonical?.kind === "item" && clean(canonical.itemUuid)) {
     return { kind: "item", itemUuid: clean(canonical.itemUuid) };
   }
@@ -186,9 +220,36 @@ export function parseStorageDepositDragData(value) {
     const tokenUuid = clean(payload.uuid ?? payload.tokenUuid);
     return tokenUuid ? { kind: "storage-token", tokenUuid } : null;
   }
+  if (clean(payload.type) === "JournalEntry") {
+    const journalUuid = clean(payload.uuid);
+    return journalUuid ? { kind: "journal", journalUuid } : null;
+  }
   if (!["Item", "ItemUUID"].includes(clean(payload.type))) return null;
   const itemUuid = clean(payload.uuid);
   return itemUuid ? { kind: "item", itemUuid } : null;
+}
+
+async function resolveJournalSource(sourceRef, { fromUuid, createRowId }) {
+  if (typeof fromUuid !== "function") throw new TypeError("Для журнала требуется разрешение UUID.");
+  const journal = await fromUuid(sourceRef.journalUuid);
+  if (!isJournalEntryDocument(journal)) {
+    throw new Error("Перетаскиваемый журнал JournalEntry не найден.");
+  }
+  const row = buildJournalRow(journal, createRowId);
+  return {
+    kind: "journal",
+    mode: "copy",
+    available: 1,
+    row,
+    sourceKey: row.sourceId,
+    journal,
+    canUserMove(user) { return user?.isGM === true; },
+    async consume(requestedQuantity) {
+      requireQuantity(requestedQuantity, 1);
+      return { kind: "copy" };
+    },
+    async restore() { return false; }
+  };
 }
 
 async function resolveItemSource(sourceRef, { fromUuid, createRowId, containerItemService = null }) {
@@ -313,6 +374,9 @@ async function resolveStorageRowSource(sourceRef, {
   const row = storageRows(state).find((entry) => clean(entry?.rowId) === rowId) ?? null;
   if (!row || state.claimedRowIds.includes(rowId)) {
     throw new Error("Предмет исходного хранилища уже недоступен.");
+  }
+  if (isStorageJournalRow(row)) {
+    throw new Error("Ссылку на журнал нельзя переносить как предмет из другого хранилища.");
   }
   const available = positiveQuantity(row.quantity ?? row.itemData?.system?.quantity, 1);
   const depositRow = clone(row);
@@ -451,6 +515,9 @@ export async function resolveStorageDepositSource(sourceRef, dependencies = {}) 
   }
   if (sourceRef.kind === "item") {
     return resolveItemSource(sourceRef, dependencies);
+  }
+  if (sourceRef.kind === "journal") {
+    return resolveJournalSource(sourceRef, dependencies);
   }
   if (sourceRef.kind === "storage-row") {
     return resolveStorageRowSource(sourceRef, dependencies);

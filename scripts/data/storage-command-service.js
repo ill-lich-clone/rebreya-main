@@ -1,6 +1,6 @@
 import { isStorageActor, readStorageState, readStorageStateAtPath } from "./storage-service.js";
 import { resolveStorageDepositSource } from "./storage-deposit-source.js";
-import { isStorageContainerRow } from "./storage-container-snapshot.js";
+import { isStorageContainerRow, isStorageJournalRow } from "./storage-container-snapshot.js";
 
 const STORAGE_ROW_DESTINATIONS = new Set(["self", "party", "character", "scene"]);
 const STORAGE_COIN_DESTINATIONS = new Set(["self", "party"]);
@@ -50,6 +50,10 @@ function storagePathKey(value) {
 }
 
 function isValidStorageDepositSource(source) {
+  if (hasExactKeys(source, ["journalUuid", "kind"])) {
+    return source.kind === "journal"
+      && isTrimmedString(source.journalUuid, { required: true });
+  }
   if (hasExactKeys(source, ["itemUuid", "kind"])) {
     return source.kind === "item"
       && isTrimmedString(source.itemUuid, { required: true });
@@ -388,6 +392,9 @@ export class StorageCommandService {
       if (!row || state.claimedRowIds.includes(rowId)) {
         return { changed: false, row: null, state };
       }
+      if (isStorageJournalRow(row)) {
+        throw new Error("Ссылку на журнал нельзя забрать из хранилища.");
+      }
       const available = Math.max(1, Math.trunc(Number(
         row.quantity ?? row.itemData?.system?.quantity ?? 1
       )) || 1);
@@ -510,6 +517,12 @@ export class StorageCommandService {
     if (!Number.isSafeInteger(quantity) || quantity < 1) {
       throw new Error("Количество должно быть целым числом не меньше 1.");
     }
+    if (sourceRef.kind === "journal" && sender?.isGM !== true) {
+      throw new Error("Добавлять ссылки на журнал может только мастер.");
+    }
+    if (sourceRef.kind === "journal" && quantity !== 1) {
+      throw new Error("Ссылку на журнал можно добавить только в количестве 1.");
+    }
     if (["storage-row", "storage-token"].includes(sourceRef.kind) && clean(sourceRef.tokenUuid) === tokenUuid) {
       throw new Error("Нельзя перенести предмет из хранилища в то же самое хранилище.");
     }
@@ -518,7 +531,9 @@ export class StorageCommandService {
       ? `${clean(sourceRef.tokenUuid)}:${storagePathKey(sourceRef.path)}:${clean(sourceRef.rowId)}`
       : sourceRef.kind === "storage-token"
         ? clean(sourceRef.tokenUuid)
-        : clean(sourceRef.itemUuid);
+        : sourceRef.kind === "journal"
+          ? clean(sourceRef.journalUuid)
+          : clean(sourceRef.itemUuid);
     const mutationKey = storageMutationId({
       tokenUuid,
       path,
@@ -531,7 +546,9 @@ export class StorageCommandService {
       `${tokenUuid}:${storagePathKey(path)}:storage`,
       ["storage-row", "storage-token"].includes(sourceRef.kind)
         ? `${clean(sourceRef.tokenUuid)}:storage`
-        : `${clean(sourceRef.itemUuid)}:item`
+        : sourceRef.kind === "journal"
+          ? `${clean(sourceRef.journalUuid)}:journal`
+          : `${clean(sourceRef.itemUuid)}:item`
     ];
 
     return this.#runMutation(queueKeys, mutationKey, async () => {

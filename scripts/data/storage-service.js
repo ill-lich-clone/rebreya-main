@@ -4,6 +4,7 @@ import {
   buildStorageContainerSnapshot,
   collectStorageContainerIds,
   isStorageContainerRow,
+  isStorageJournalRow,
   resolveStorageContainerPath,
   updateStorageContainerPath
 } from "./storage-container-snapshot.js";
@@ -443,6 +444,9 @@ export class StorageService {
     if (!row || current.claimedRowIds.includes(rowId)) {
       return { changed: false, row: null, state: clone(current) };
     }
+    if (isStorageJournalRow(row)) {
+      throw new Error("Ссылку на журнал нельзя забрать из хранилища.");
+    }
 
     const available = Math.max(1, Math.trunc(Number(
       row.quantity ?? row.itemData?.system?.quantity ?? 1
@@ -496,6 +500,10 @@ export class StorageService {
     }
     const current = readStorageState(token);
     const amount = requirePositiveQuantity(quantity ?? row.quantity ?? row.itemData?.system?.quantity);
+    const journalRow = isStorageJournalRow(row);
+    if (journalRow && amount !== 1) {
+      throw new Error("Ссылку на журнал можно добавить только целиком в количестве 1.");
+    }
     if (isStorageContainerRow(row) && amount !== 1) {
       throw new Error("Контейнер можно переносить только целиком.");
     }
@@ -507,22 +515,24 @@ export class StorageService {
         throw new Error("Нельзя поместить контейнер в самого себя или создать цикл вложения.");
       }
     }
-    const stackKey = cleanStackKey(row.stackKey ?? row.sourceId);
+    const stackKey = journalRow ? "" : cleanStackKey(row.stackKey ?? row.sourceId);
     const claimedRowIds = new Set(current.claimedRowIds);
 
-    const manualMerge = mergeDepositIntoRows(
-      current.manualRows,
-      claimedRowIds,
-      row,
-      stackKey,
-      amount
-    );
+    const manualMerge = journalRow
+      ? { rows: normalizeRows(current.manualRows), merged: false, rowId: "" }
+      : mergeDepositIntoRows(
+          current.manualRows,
+          claimedRowIds,
+          row,
+          stackKey,
+          amount
+        );
     let manualRows = manualMerge.rows;
     let generatedRows = normalizeRows(current.generatedRows);
     let merged = manualMerge.merged;
     let rowId = manualMerge.rowId;
 
-    if (!merged) {
+    if (!merged && !journalRow) {
       const generatedMerge = mergeDepositIntoRows(
         generatedRows,
         claimedRowIds,
@@ -536,7 +546,13 @@ export class StorageService {
     }
 
     if (!merged) {
-      const deposited = setStorageRowQuantity(row, amount);
+      const deposited = journalRow ? clone(row) : setStorageRowQuantity(row, amount);
+      if (journalRow) {
+        deposited.rowKind = "journal";
+        deposited.sourceType = "journal";
+        deposited.quantity = 1;
+        delete deposited.itemData;
+      }
       deposited.stackKey = stackKey;
       const requestedRowId = String(deposited.rowId ?? "").trim();
       deposited.rowId = requestedRowId && !claimedRowIds.has(requestedRowId)
@@ -583,6 +599,9 @@ export class StorageService {
     const amount = Number(quantity);
     if (!Number.isSafeInteger(amount) || amount < 1) throw new Error("Количество должно быть целым числом не меньше 1.");
     return this.#mutateEditableRow(token, rowId, (row) => {
+      if (isStorageJournalRow(row)) {
+        throw new Error("Количество ссылки на журнал изменять нельзя.");
+      }
       row.quantity = amount;
       row.itemData ??= {};
       row.itemData.system ??= {};

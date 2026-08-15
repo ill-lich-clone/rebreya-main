@@ -280,6 +280,36 @@ test("GM quantity editing updates generated row and embedded item quantity", asy
   assert.equal(next.generatedRows[0].itemData.system.quantity, 4);
 });
 
+test("Journal reference rows cannot be claimed or quantity-edited", async () => {
+  const service = new StorageService();
+  const token = createStorageToken("journal-guards");
+  await service.configure(token, {
+    state: "opened",
+    manualRows: [{
+      rowKind: "journal",
+      rowId: "journal-row",
+      stackKey: "",
+      sourceId: "JournalEntry.notes",
+      sourceType: "journal",
+      name: "Полевые заметки",
+      img: "icons/book.webp",
+      quantity: 1
+    }]
+  });
+
+  await assert.rejects(
+    service.claim(token, { kind: "row", rowId: "journal-row", quantity: 1 }),
+    /журнал.*нельзя забрать/iu
+  );
+  await assert.rejects(
+    service.updateRowQuantity(token, "journal-row", 2),
+    /журнал/iu
+  );
+  assert.deepEqual(readStorageState(token).claimedRowIds, []);
+  assert.equal(readStorageState(token).manualRows[0].quantity, 1);
+  assert.equal("itemData" in readStorageState(token).manualRows[0], false);
+});
+
 test("deleting the final generated row empties storage", async () => {
   const service = new StorageService({ generate: async () => ({ rows: [{ rowId: "row" }], coins: {} }) });
   const token = createStorageToken("deletable");
@@ -421,6 +451,46 @@ test("storage deposits reject invalid quantities without changing state", async 
 
   assert.equal(readStorageState(token).state, "empty");
   assert.deepEqual(readStorageState(token).manualRows, []);
+});
+
+test("Journal deposits store one non-stackable reference and remain GM-deletable", async () => {
+  const service = new StorageService();
+  const token = createStorageToken("journal-deposit");
+  const row = {
+    rowKind: "journal",
+    rowId: "journal-row",
+    stackKey: "must-not-stack",
+    sourceId: "JournalEntry.notes",
+    sourceType: "journal",
+    name: "Полевые заметки",
+    img: "icons/book.webp",
+    quantity: 1
+  };
+  await service.configure(token, { state: "empty", displayMode: "empty" });
+
+  await assert.rejects(
+    service.depositRow(token, row, { quantity: 2 }),
+    /журнал.*целиком|количеств/iu
+  );
+  assert.deepEqual(readStorageState(token).manualRows, []);
+
+  const result = await service.depositRow(token, row, { quantity: 1 });
+  assert.equal(result.quantity, 1);
+  assert.equal(result.merged, false);
+  assert.deepEqual(readStorageState(token).manualRows, [{
+    rowKind: "journal",
+    rowId: "journal-row",
+    stackKey: "",
+    sourceId: "JournalEntry.notes",
+    sourceType: "journal",
+    name: "Полевые заметки",
+    img: "icons/book.webp",
+    quantity: 1
+  }]);
+
+  const deleted = await service.deleteRow(token, "journal-row");
+  assert.deepEqual(deleted.manualRows, []);
+  assert.equal(deleted.state, "empty");
 });
 
 test("nested storage paths deposit and claim without replacing the root container", async () => {

@@ -3290,6 +3290,11 @@ export class RebreyaMainModule {
             kind: "storage-token",
             tokenUuid: cleanSocketId(source.tokenUuid)
           }
+      : source?.kind === "journal"
+        ? {
+            kind: "journal",
+            journalUuid: cleanSocketId(source.journalUuid)
+          }
       : {
           kind: "item",
           itemUuid: cleanSocketId(source?.itemUuid)
