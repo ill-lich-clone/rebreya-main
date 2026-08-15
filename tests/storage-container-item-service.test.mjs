@@ -222,6 +222,44 @@ test("portable storage materializes only Items and keeps Journal references in i
   });
 });
 
+test("capturing an unopened portable container resets generated Journal references into deduplicated manual rows", async () => {
+  const actor = createActor();
+  const journal = (rowId, sourceId, name) => ({
+    rowKind: "journal",
+    rowId,
+    sourceId,
+    sourceType: "journal",
+    name,
+    img: "icons/book.webp",
+    quantity: 1
+  });
+  const root = await new StorageContainerItemService().materializeToActorOnce(actor, {
+    containerId: "unopened-journal-bag",
+    storageKind: "bag",
+    name: "Unopened bag",
+    state: {
+      baseName: "Unopened bag",
+      state: "unopened",
+      manualRows: [journal("manual-journal", "JournalEntry.manual", "Manual journal")],
+      generatedRows: [
+        journal("generated-journal", "JournalEntry.generated", "Generated journal"),
+        journal("manual-journal", "JournalEntry.duplicate", "Duplicate journal")
+      ],
+      claimedRowIds: [],
+      manualCoins: {},
+      generatedCoins: {},
+      coinsClaimed: false
+    }
+  }, "unopened-journal-capture");
+
+  const captured = await new StorageContainerItemService().captureFromItem(root);
+
+  assert.equal(captured.state.state, "unopened");
+  assert.deepEqual(captured.state.manualRows.map((row) => row.rowId), ["manual-journal", "generated-journal"]);
+  assert.equal(captured.state.manualRows[0].sourceId, "JournalEntry.manual");
+  assert.deepEqual(captured.state.generatedRows, []);
+});
+
 test("removing and restoring a portable container moves its entire item tree", async () => {
   const actor = createActor();
   const service = new StorageContainerItemService();

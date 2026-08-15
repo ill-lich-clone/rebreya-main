@@ -150,6 +150,19 @@ function mergeRowsWithJournalReferences(rows, state) {
   });
 }
 
+function resetUnclaimedJournalRows(state) {
+  const journals = unclaimedJournalRows(state);
+  const journalIds = new Set(journals.map((row) => clean(row.rowId)));
+  const retain = (rows) => (Array.isArray(rows) ? rows : []).filter((row) => (
+    !isStorageJournalRow(row) || !journalIds.has(clean(row?.rowId))
+  ));
+  return {
+    ...state,
+    manualRows: [...retain(state?.manualRows), ...journals],
+    generatedRows: retain(state?.generatedRows)
+  };
+}
+
 function containerOptions(snapshot, parentContainerId) {
   const storedSystem = snapshot?.presentation?.itemSystem ?? {};
   const capacity = storedSystem.capacity ?? {};
@@ -348,10 +361,12 @@ export class StorageContainerItemService {
       }
 
       if (storedState.state === "unopened") {
+        const resetState = resetUnclaimedJournalRows(storedState);
         return buildStorageContainerSnapshot({
           ...base,
           name: clean(current?.name) || base.name,
           img: clean(current?.img) || base.img,
+          state: resetState,
           presentation: {
             ...(clone(base.presentation) ?? {}),
             itemSystem: clone(current?.system) ?? {}
