@@ -7,6 +7,10 @@ import {
   selectStateOptions,
   selectStateOverview
 } from "../engine/selectors.js";
+import {
+  buildPublicFilterOptions,
+  selectPublicCityRows
+} from "../application/public-economy-read-model.js";
 import { getAppElement } from "../ui.js";
 import {
   PendingTradeTransactions,
@@ -214,6 +218,31 @@ export class EconomyApp extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   async _prepareContext() {
+    if (game.user?.isGM !== true) {
+      const snapshot = await this.moduleApi.getPublicEconomySnapshot();
+      const publicFilters = {
+        search: this.filters.search,
+        state: this.filters.state,
+        regionId: this.filters.regionId,
+        cityType: this.filters.cityType
+      };
+      const selectedCities = selectPublicCityRows(snapshot.cities, publicFilters);
+      const filterOptions = buildPublicFilterOptions(snapshot.cities, publicFilters.state);
+      return {
+        hasError: false,
+        isPublicView: true,
+        filters: publicFilters,
+        cities: selectedCities.slice(0, MAX_VISIBLE_CITIES),
+        materialRows: snapshot.materialRows,
+        filteredCityCount: selectedCities.length,
+        totalCityCount: snapshot.cities.length,
+        cityListLimited: selectedCities.length > MAX_VISIBLE_CITIES,
+        stateOptions: filterOptions.stateOptions,
+        regionOptions: filterOptions.regionOptions,
+        cityTypeOptions: filterOptions.cityTypeOptions
+      };
+    }
+
     const model = await this.moduleApi.getModel();
     const selectedCities = selectCityList(model, this.filters);
     const visibleCities = selectedCities.slice(0, MAX_VISIBLE_CITIES).map((city) => ({
@@ -233,6 +262,7 @@ export class EconomyApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     return {
       hasError: false,
+      isPublicView: false,
       filters: this.filters,
       cities: visibleCities,
       visibleCityCount: visibleCities.length,

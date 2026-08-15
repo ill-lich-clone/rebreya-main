@@ -1,3 +1,58 @@
+{{#if isPublicView}}
+  <!-- public-economy:start -->
+  <section class="rm-shell rm-public-economy-shell scrollable">
+    <header class="rm-public-economy-header">
+      <h2>Экономика Ребреи</h2>
+      <p>Города, базовые цены материалов и общий мировой дефицит.</p>
+    </header>
+    <section class="rm-public-economy-filters">
+      <input type="search" data-filter="search" value="{{filters.search}}" placeholder="Найти город">
+      <select data-filter="state">
+        <option value="all">Все государства</option>
+        {{#each stateOptions}}<option value="{{value}}" {{#if (rmEq value ../filters.state)}}selected{{/if}}>{{label}}</option>{{/each}}
+      </select>
+      <select data-filter="regionId">
+        <option value="all">Все регионы</option>
+        {{#each regionOptions}}<option value="{{value}}" {{#if (rmEq value ../filters.regionId)}}selected{{/if}}>{{label}}</option>{{/each}}
+      </select>
+      <select data-filter="cityType">
+        <option value="all">Все типы</option>
+        {{#each cityTypeOptions}}<option value="{{value}}" {{#if (rmEq value ../filters.cityType)}}selected{{/if}}>{{label}}</option>{{/each}}
+      </select>
+    </section>
+    <p class="rm-muted">Найдено городов: {{filteredCityCount}} из {{totalCityCount}}.</p>
+    <section class="rm-public-economy-cities">
+      {{#each cities}}
+        <button type="button" class="rm-public-economy-city" data-action="open-city" data-city-id="{{id}}">
+          {{#if image}}<img src="{{image}}" alt="">{{/if}}
+          <strong>{{name}}</strong>
+          <span>{{state}} / {{regionName}} / {{cityType}}</span>
+        </button>
+      {{else}}
+        <p class="rm-empty">Города не найдены.</p>
+      {{/each}}
+    </section>
+    {{#if cityListLimited}}<p class="rm-muted">Показана первая часть списка. Уточните фильтры.</p>{{/if}}
+    <section class="rm-public-economy-materials">
+      <table class="rm-table">
+        <thead>
+          <tr><th>Материал</th><th>Базовая цена</th><th>Единица</th><th>Мировой дефицит</th></tr>
+        </thead>
+        <tbody>
+          {{#each materialRows}}
+            <tr>
+              <td>{{name}}</td>
+              <td>{{rmNum basePriceGold}} зм</td>
+              <td>{{rmNum baseWeight}} фнт.</td>
+              <td>{{#if hasWorldDeficit}}{{rmNum worldDeficit}}{{else}}—{{/if}}</td>
+            </tr>
+          {{/each}}
+        </tbody>
+      </table>
+    </section>
+  </section>
+  <!-- public-economy:end -->
+{{else}}
 <section class="rm-shell rm-app-shell rm-economy-shell scrollable">
   <header class="rm-hero rm-app-header rm-economy-header">
     <div class="rm-app-title">
@@ -271,3 +326,4 @@
     </aside>
   </section>
 </section>
+{{/if}}

@@ -1635,6 +1635,116 @@ summary:focus-visible {
   backdrop-filter: blur(2px);
 }
 
+.rebreya-economy-app .rm-public-economy-shell {
+  display: grid;
+  gap: 14px;
+  min-height: 100%;
+  padding: 18px;
+}
+
+.rebreya-economy-app .rm-public-economy-header {
+  padding: 18px;
+  border: 1px solid var(--rm-border-strong);
+  background: radial-gradient(circle at top right, rgb(var(--rm-color-gold-rgb) / 0.14), transparent 52%), var(--rm-surface-2);
+}
+
+.rebreya-economy-app .rm-public-economy-header h2 {
+  margin: 0 0 6px;
+  color: var(--rm-accent-strong);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 30px;
+}
+
+.rebreya-economy-app .rm-public-economy-header p {
+  margin: 0;
+  color: var(--rm-muted);
+}
+
+.rebreya-economy-app .rm-public-economy-filters {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.7fr) repeat(3, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.rebreya-economy-app .rm-public-economy-filters input {
+  min-width: 0;
+}
+
+.rebreya-economy-app .rm-public-economy-filters select {
+  min-width: 0;
+}
+
+.rebreya-economy-app .rm-public-economy-cities {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.rebreya-economy-app .rm-public-economy-city {
+  display: grid;
+  grid-template-columns: 104px minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  gap: 4px 12px;
+  min-width: 0;
+  padding: 10px;
+  overflow: hidden;
+  border: 1px solid var(--rm-border-default);
+  border-radius: var(--rm-radius-row);
+  color: var(--rm-text-primary);
+  background: var(--rm-surface-1);
+  text-align: left;
+}
+
+.rebreya-economy-app .rm-public-economy-city:hover {
+  border-color: var(--rm-border-strong);
+  background: var(--rm-row-bg-hover);
+}
+
+.rebreya-economy-app .rm-public-economy-city img {
+  grid-row: 1 / span 2;
+  width: 104px;
+  aspect-ratio: 2 / 1;
+  align-self: center;
+  border-radius: var(--rm-radius-row);
+  object-fit: cover;
+}
+
+.rebreya-economy-app .rm-public-economy-city strong {
+  align-self: end;
+  overflow-wrap: anywhere;
+}
+
+.rebreya-economy-app .rm-public-economy-city span {
+  align-self: start;
+  color: var(--rm-muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.rebreya-economy-app .rm-public-economy-materials {
+  overflow-x: auto;
+  border: 1px solid var(--rm-border-default);
+  background: var(--rm-surface-1);
+}
+
+.rebreya-economy-app .rm-public-economy-materials table {
+  min-width: 640px;
+}
+
+@media (max-width: 760px) {
+  .rebreya-economy-app .rm-public-economy-shell {
+    padding: 10px;
+  }
+
+  .rebreya-economy-app .rm-public-economy-filters {
+    grid-template-columns: 1fr;
+  }
+
+  .rebreya-economy-app .rm-public-economy-cities {
+    grid-template-columns: 1fr;
+  }
+}
+
 .rm-dashboard {
   display: grid;
   grid-template-columns: minmax(0, 2fr) minmax(320px, 0.95fr);

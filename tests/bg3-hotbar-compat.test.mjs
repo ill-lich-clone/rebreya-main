@@ -560,6 +560,17 @@ test("scene controls hide groups tool from non-GM users", () => {
   });
 });
 
+test("scene controls expose Economy to non-GM users", () => {
+  withSceneControlsHandlerForUser({ isGM: false }, (handler) => {
+    const controls = { tokens: { name: "tokens", order: 20, tools: {} } };
+    handler(controls);
+
+    const economyTool = controls["rebreya-main-rebreya"].tools["rebreya-main-economy"];
+    assert.equal(economyTool.visible, true);
+    assert.equal(economyTool.title, "REBREYA_MAIN.Controls.OpenEconomy");
+  });
+});
+
 test("scene controls deactivate the tiles layer before Rebreya app buttons run", () => {
   withSceneControlsHandler((handler) => {
     let deactivationCount = 0;

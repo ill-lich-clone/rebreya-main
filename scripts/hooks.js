@@ -552,7 +552,7 @@ function buildToolsRecord() {
       title: game.i18n.localize("REBREYA_MAIN.Controls.OpenEconomy"),
       icon: "fa-solid fa-coins",
       button: true,
-      visible: game.user?.isGM === true && showEconomyButton,
+      visible: showEconomyButton,
       onChange: createSafeAction(
         () => game.rebreyaMain?.openEconomyApp?.(),
         "Economy control click failed."

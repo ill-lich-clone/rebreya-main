@@ -248,3 +248,20 @@ test("public city styles stay scoped to the canonical City app", async () => {
   assert.ok(publicSelectorLines.length > 0);
   assert.equal(publicSelectorLines.every((line) => line.trim().startsWith(".rebreya-city-app ")), true);
 });
+
+test("public economy styles stay scoped to the canonical Economy app", async () => {
+  const css = await readFile(stylesheetUrl, "utf8");
+
+  for (const selector of [
+    "rm-public-economy-shell",
+    "rm-public-economy-filters",
+    "rm-public-economy-cities",
+    "rm-public-economy-city",
+    "rm-public-economy-materials"
+  ]) {
+    assert.match(css, new RegExp(`\\.rebreya-economy-app \\.${selector}`, "u"), selector);
+  }
+  const publicSelectorLines = css.split(/\r?\n/u).filter((line) => line.includes(".rm-public-economy-"));
+  assert.ok(publicSelectorLines.length > 0);
+  assert.equal(publicSelectorLines.every((line) => line.trim().startsWith(".rebreya-economy-app ")), true);
+});
