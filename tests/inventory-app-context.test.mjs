@@ -1167,7 +1167,7 @@ test("InventoryApp item service menu exposes stock actions without duplicate ope
   }
 });
 
-test("InventoryApp currency dialog parses relative coin edits and uses the compact currency window class", async () => {
+test("InventoryApp currency dialog accepts signed edits with v-compatible input patterns", async () => {
   const restoreFoundry = installFoundryApplicationStub();
   const dom = installMinimalDom();
   const previousDialog = globalThis.Dialog;
@@ -1222,6 +1222,11 @@ test("InventoryApp currency dialog parses relative coin edits and uses the compa
     await app._onRender({}, {});
     const clickPromise = editButton.listeners.click[0]();
     const dialog = globalThis.Dialog.instances.at(-1);
+    const patternValues = Array.from(dialog.config.content.matchAll(/\bpattern="([^"]+)"/gu), (match) => match[1]);
+    assert.equal(patternValues.length, 4);
+    for (const patternValue of patternValues) {
+      assert.doesNotThrow(() => new RegExp(patternValue, "v"));
+    }
     const fields = {
       "[data-field='currency-pp']": { value: "2" },
       "[data-field='currency-gp']": { value: "+70" },
@@ -1249,7 +1254,7 @@ test("InventoryApp currency dialog parses relative coin edits and uses the compa
   }
 });
 
-test("InventoryApp item quantity and supply dialogs parse signed edits as relative deltas", async () => {
+test("InventoryApp numeric dialogs accept signed deltas with v-compatible input patterns", async () => {
   const restoreFoundry = installFoundryApplicationStub();
   const dom = installMinimalDom();
   const previousDialog = globalThis.Dialog;
@@ -1346,6 +1351,9 @@ test("InventoryApp item quantity and supply dialogs parse signed edits as relati
     assert.deepEqual(supplies, [{ resourceKey: "water", quantity: -5 }]);
     assert.equal(contextMenuPrevented, true);
     assert.match(dialog.config.content, /type="text"[^>]+inputmode="decimal"[^>]+data-field="numeric-value"/u);
+    const patternValue = dialog.config.content.match(/\bpattern="([^"]+)"/u)?.[1];
+    assert.equal(typeof patternValue, "string");
+    assert.doesNotThrow(() => new RegExp(patternValue, "v"));
   }
   finally {
     globalThis.Dialog = previousDialog;

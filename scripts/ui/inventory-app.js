@@ -2725,7 +2725,7 @@ async function promptNumericValue({ title, label, value = "", min = 0, step = "0
     let settled = false;
     const inputType = allowRelative ? "text" : "number";
     const relativeAttributes = allowRelative
-      ? 'inputmode="decimal" pattern="[+-]?(?:[0-9]+(?:[.,][0-9]+)?|[.,][0-9]+)"'
+      ? 'inputmode="decimal" pattern="[+\\-]?(?:[0-9]+(?:[.,][0-9]+)?|[.,][0-9]+)"'
       : `min="${foundry.utils.escapeHTML(String(min))}" step="${foundry.utils.escapeHTML(String(step))}"`;
 
     const resolveFromRoot = (root) => {
@@ -2905,19 +2905,19 @@ async function promptCurrencyDialog(currency = {}) {
           <div class="rm-currency-dialog__grid">
             <div class="rm-field rm-field--narrow">
               <label>Пм</label>
-              <input type="text" inputmode="numeric" pattern="[+-]?[0-9]*" value="${safeCurrency.pp}" data-field="currency-pp">
+              <input type="text" inputmode="numeric" pattern="[+\\-]?[0-9]*" value="${safeCurrency.pp}" data-field="currency-pp">
             </div>
             <div class="rm-field rm-field--narrow">
               <label>Зм</label>
-              <input type="text" inputmode="numeric" pattern="[+-]?[0-9]*" value="${safeCurrency.gp}" data-field="currency-gp">
+              <input type="text" inputmode="numeric" pattern="[+\\-]?[0-9]*" value="${safeCurrency.gp}" data-field="currency-gp">
             </div>
             <div class="rm-field rm-field--narrow">
               <label>См</label>
-              <input type="text" inputmode="numeric" pattern="[+-]?[0-9]*" value="${safeCurrency.sp}" data-field="currency-sp">
+              <input type="text" inputmode="numeric" pattern="[+\\-]?[0-9]*" value="${safeCurrency.sp}" data-field="currency-sp">
             </div>
             <div class="rm-field rm-field--narrow">
               <label>Мм</label>
-              <input type="text" inputmode="numeric" pattern="[+-]?[0-9]*" value="${safeCurrency.cp}" data-field="currency-cp">
+              <input type="text" inputmode="numeric" pattern="[+\\-]?[0-9]*" value="${safeCurrency.cp}" data-field="currency-cp">
             </div>
           </div>
           <p class="rm-muted">Сначала отредактируйте значения, затем при необходимости примените конвертацию.</p>
