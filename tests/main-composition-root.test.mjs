@@ -268,6 +268,8 @@ test("composition root exposes safe public city reads and GM-only presentation m
     assert.match(source, new RegExp(`(?:async\\s+)?${methodName}\\(`, "u"), methodName);
   }
   assert.equal(source.match(/this\.cityApps\s*=\s*new Map\(\)/gu)?.length, 1);
+  assert.doesNotMatch(source, /publicCityApps|playerCityApps|new PublicCityApp/u);
+  assert.match(source, /return this\.openTraderV2\(cityId, traderKey, options\)/u);
 
   const publicCityStart = source.indexOf("  async getPublicCitySnapshot(cityId)");
   const publicCityEnd = source.indexOf("\n  async getPublicEconomySnapshot()", publicCityStart);

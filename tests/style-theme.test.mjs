@@ -4,6 +4,14 @@ import test from "node:test";
 
 const stylesheetUrl = new URL("../styles/main.css", import.meta.url);
 
+function between(source, startMarker, endMarker) {
+  const start = source.indexOf(startMarker);
+  const end = source.indexOf(endMarker, start + startMarker.length);
+  assert.notEqual(start, -1, startMarker);
+  assert.notEqual(end, -1, endMarker);
+  return source.slice(start, end);
+}
+
 function withoutStandaloneTraderRules(css) {
   const characters = [...css];
   let cursor = 0;
@@ -35,6 +43,19 @@ function withoutStandaloneTraderRules(css) {
 
   return characters.join("");
 }
+
+test("public economy markup excludes private price mechanics", async () => {
+  const economyTemplate = await readFile(new URL("../templates/economy-app.hbs", import.meta.url), "utf8");
+  const publicTemplateBranch = between(
+    economyTemplate,
+    "<!-- public-economy:start -->",
+    "<!-- public-economy:end -->"
+  );
+
+  for (const forbidden of ["priceModifierPercent", "selfSufficiencyRate", "routePriceModifierPercent"]) {
+    assert.equal(publicTemplateBranch.includes(forbidden), false, forbidden);
+  }
+});
 
 test("Rebreya windows use the inherited graphite and brass redesign", async () => {
   const css = await readFile(stylesheetUrl, "utf8");

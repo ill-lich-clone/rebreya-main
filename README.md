@@ -162,8 +162,8 @@
 
 | UI | Файл | Назначение |
 |---|---|---|
-| Экономика | `scripts/ui/economy-app.js` | города, дефициты, события, навигация |
-| Город | `scripts/ui/city-app.js` | overview/goods/routes/traders/debug |
+| Экономика | `scripts/ui/economy-app.js` | player: города, базовые цены и мировой дефицит; GM: полная аналитика |
+| Город | `scripts/ui/city-app.js` | player/public: панорама, описание, фактические цены и торговцы; GM: analytics и presentation |
 | Маршруты | `trade-routes-app.js`, `trade-route-app.js` | аналитика и ручные overrides |
 | Государства | `states-app.js` | налоги, пошлины, описания |
 | Глобальные события | `global-events-app.js` | scope, modifiers, даты и видимость |
@@ -173,6 +173,10 @@
 | Лутген | `lootgen-app.js`, `lootgen-chat.js` | генерация, шаринг и claims |
 | Космология | `cosmology-app.js` | world-флаг Mechanus |
 | Справка | `reference-info-app.js` | материалы, снаряжение и reference cards |
+
+Экономика открывается игрокам существующей кнопкой в группе Scene Controls, если включён `showEconomyButton`. Карточки экономики и обе точки сводки маршрута вызывают единственный `openCityApp(cityId)`. Просмотр города и открытие его торговцев не зависят от текущего travel state или местоположения группы.
+
+Игрок всегда получает public-режим существующих Economy/City apps без механических процентов, стрелок и объяснений модификаторов. В общей экономике цена материала базовая, а в городе показана фактическая цена, рассчитанная Trader Engine. GM сохраняет прежнюю аналитику и может переключить тот же City app в public-вид; описание и панорама редактируются как world overrides без изменения `data/cities.json`.
 
 Старого `trader-app.js` и `templates/trader-app.hbs` больше нет. `openTrader()` и `openTraderSheet()` являются compatibility-алиасами `openTraderV2()`; второй Trader UI создавать не нужно.
 
@@ -260,7 +264,8 @@ await api.setCombatStatus("actor-id", "frightened", { value: 2 });
 
 ### Экономика, события и reference
 
-- `getCitySnapshot`, `getTradeRouteSnapshot`, `getTradeRouteBaseSnapshot`, `getTradeRoutes`, `prepareTradeRouteAnalytics`, `hasTradeRouteAnalytics`.
+- `getCitySnapshot`, `getPublicCitySnapshot`, `getPublicEconomySnapshot`, `getTradeRouteSnapshot`, `getTradeRouteBaseSnapshot`, `getTradeRoutes`, `prepareTradeRouteAnalytics`, `hasTradeRouteAnalytics`.
+- `getCityPresentation`, `updateCityPresentation`, `resetCityPresentation` — чтение merged presentation и GM-only изменение/сброс world overrides `description`/`image`.
 - `setConnectionActive`, `updateTradeRouteMetadata`, `getStatePolicies`, `getEffectiveStatePolicy`, `updateStatePolicy`, `getReferenceEntrySnapshot`, `updateReferenceDescription`.
 - `getAllGlobalEvents`, `getActiveGlobalEvents`, `getEventsAffectingCity`, `getEventsAffectingCityGood`, `getEventsAffectingRoute`, `getEventsAffectingState`.
 - `createGlobalEvent`, `updateGlobalEvent`, `deleteGlobalEvent`, `duplicateGlobalEvent`, `importDefaultGlobalEventTemplates`.
@@ -293,7 +298,7 @@ await api.setCombatStatus("actor-id", "frightened", { value: 2 });
 - `rollWeaponAttack`, `rollFirearmAttack`, `clearFirearmJam`, `maintainFirearm`, `resolveProvokedAttack`, `resolveParry`, `resolveInterception`.
 - `getCosmologyState`, `isMechanusEnabled`, `setMechanusEnabled`.
 
-`initialize`, `handleSocketMessage`, `handleLootgenChatItemCreated`, `handleGlobalEventsConfigChange`, `syncFeatsFromWorldCompendium`, `refreshInventoryViews`, `refreshDowntimeViews`, `refreshCosmologyViews`, `runInventoryMutation` и `unregisterLootgenApp` — lifecycle/internal coordination surface; не использовать их как доменный API макроса без отдельной причины.
+`initialize`, `handleSocketMessage`, `handleLootgenChatItemCreated`, `handleGlobalEventsConfigChange`, `syncFeatsFromWorldCompendium`, `refreshInventoryViews`, `refreshDowntimeViews`, `refreshCosmologyViews`, `refreshCityViews`, `runInventoryMutation` и `unregisterLootgenApp` — lifecycle/internal coordination surface; не использовать их как доменный API макроса без отдельной причины. `refreshCityViews({ cityIds = [] } = {})` обновляет только запрошенные instances единственного `cityApps` cache (или все открытые города при пустом списке), не поднимая окна над остальными.
 
 ## Settings и данные
 
@@ -307,6 +312,7 @@ Hidden world state:
 - `traderState`, `partyState` (legacy compatibility), `groupState`, `craftState`, `calendarState`.
 - `craftMutationJournal`, `inventoryMutationJournal`.
 - `connectionStates`, `referenceNotes`, `tradeRouteOverrides`, `statePolicies`, `cosmologyState`, `globalEventsState`, `globalEventsDraft`, `lootgenTemplates`.
+- `cityPresentationOverrides` — только непустые отличия `description`/`image` известных городов; сброс поля удаляет override и возвращает значение из `data/cities.json`.
 
 Основные источники в `data/`:
 
@@ -348,7 +354,7 @@ Focused tests названы по владельцу: `*-automation-service.test
 3. Расширить существующий сервис; новый сервис допустим только при новой ответственности, а не новом UI.
 4. Не переносить helper в shared только из-за одинакового имени. Должны совпасть null/undefined semantics, trim, Foundry fallback, HTML escaping, collection precedence и формат ошибок.
 5. Не копировать compendium lifecycle: использовать `syncManagedDocuments`, `syncFlaggedManagedDocuments` или `syncManagedDocumentsOnActiveGm`.
-6. Не создавать второй Trader/Inventory/Sheet app. Compatibility-метод должен делегировать канонической реализации.
+6. Не создавать второй City/Trader/Inventory/Sheet app. Compatibility-метод должен делегировать канонической реализации; просмотр города и Trader V2 не ограничиваются travel state.
 7. Не регистрировать один Hook в нескольких местах. `combat/hooks.js` уже объединяет dnd5e и Midi paths и содержит guards для отсутствующих сервисов.
 8. Не писать world setting напрямую из UI и не добавлять неавторизованный socket event.
 9. Локальную функцию удалять только после поиска declaration/call sites и проверки callback/hook/string references.
