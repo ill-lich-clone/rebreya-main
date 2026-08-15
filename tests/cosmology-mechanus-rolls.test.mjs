@@ -6,6 +6,7 @@ const {
   computeMechanusAverageFormulaTotal,
   getMechanusDieAverage,
   patchMechanusRollClass,
+  registerMechanusRollHooks,
   resetMechanusRollClassPatch
 } = await import("../scripts/cosmology/mechanus-rolls.js");
 
@@ -282,8 +283,8 @@ test("Mechanus d20 advantage survives a dnd5e and MIDI-style total recomputation
     assert.deepEqual(d20.results.map((result) => result.active), [true, false]);
     assert.equal(d20.results[0].result, 14);
 
-    roll._total = roll._evaluateTotal();
     assert.equal(roll.total, 20);
+    assert.equal(roll._evaluateTotal(), 20);
     assert.equal(roll._formula, "1d20 + 2 + 4");
   }
   finally {
@@ -293,6 +294,232 @@ test("Mechanus d20 advantage survives a dnd5e and MIDI-style total recomputation
     else {
       globalThis.foundry = previousFoundry;
     }
+  }
+});
+
+test("Mechanus repairs the exact malformed d20 roll persisted by MIDI", () => {
+  class TestOperatorTerm {
+    constructor({ operator }) {
+      this.operator = operator;
+      this.options = {};
+      this._evaluated = true;
+    }
+
+    get formula() {
+      return ` ${this.operator} `;
+    }
+
+    get total() {
+      return ` ${this.operator} `;
+    }
+  }
+
+  class TestNumericTerm {
+    constructor({ number, options = {}, evaluated = false }) {
+      this.number = Number(number);
+      this.options = options;
+      this._evaluated = evaluated;
+    }
+
+    evaluate() {
+      this._evaluated = true;
+      return this;
+    }
+
+    get formula() {
+      return String(this.number);
+    }
+
+    get total() {
+      return this.number;
+    }
+  }
+
+  class TestD20Term {
+    constructor() {
+      this.number = 1;
+      this._number = 1;
+      this.faces = 20;
+      this.modifiers = [];
+      this.options = { advantageMode: 1, rebreyaMechanusAdvantageBonus: 2 };
+      this.results = [
+        { result: 6, value: 6, active: true, discarded: false },
+        { result: 15, active: false, discarded: true }
+      ];
+      this._evaluated = true;
+    }
+
+    get formula() {
+      return `${this.number}d${this.faces}${this.modifiers.join("")}`;
+    }
+
+    get total() {
+      return this.results.reduce((total, result) => result.active ? total + result.result : total, 0);
+    }
+  }
+
+  const d20 = new TestD20Term();
+  const bonus = new TestNumericTerm({
+    number: 2,
+    options: { rebreyaMechanusAdvantageBonus: 2 }
+  });
+  const roll = {
+    _formula: "2d20kh + 4",
+    _total: 19,
+    options: { advantageMode: 1 },
+    terms: [
+      d20,
+      new TestOperatorTerm({ operator: "+" }),
+      bonus,
+      new TestOperatorTerm({ operator: "+" }),
+      new TestNumericTerm({ number: 4, evaluated: true })
+    ],
+    get formula() {
+      return this.terms.map((term) => term.formula).join("");
+    },
+    get total() {
+      return this._total;
+    },
+    resetFormula() {
+      this._formula = this.formula;
+      return this._formula;
+    },
+    _evaluateTotal() {
+      return Function(`"use strict"; return (${this.terms.map((term) => term.total).join("")});`)();
+    }
+  };
+
+  assert.equal(applyMechanusAveragesToRoll(roll), true);
+  assert.equal(bonus._evaluated, true);
+  assert.equal(roll._formula, "1d20 + 2 + 4");
+  assert.equal(roll.total, 12);
+});
+
+test("Mechanus repairs MIDI rolls at the preCreateChatMessage boundary", () => {
+  const previousRoll = globalThis.Roll;
+  const previousHooks = globalThis.Hooks;
+  const previousLibWrapper = globalThis.libWrapper;
+  const callbacks = new Map();
+
+  class TestRoll {
+    async evaluate() {
+      return this;
+    }
+  }
+
+  const d20 = {
+    number: 1,
+    _number: 1,
+    faces: 20,
+    modifiers: [],
+    options: { advantageMode: 1, rebreyaMechanusAdvantageBonus: 2 },
+    results: [
+      { result: 6, value: 6, active: true, discarded: false },
+      { result: 15, active: false, discarded: true }
+    ],
+    _evaluated: true,
+    get formula() {
+      return "1d20";
+    },
+    get total() {
+      return 6;
+    },
+    toJSON() {
+      return { class: "D20Die", evaluated: true, number: 1, faces: 20, modifiers: [], results: this.results };
+    }
+  };
+  const operator = (value) => ({
+    operator: value,
+    options: {},
+    _evaluated: true,
+    get formula() {
+      return ` ${value} `;
+    },
+    get total() {
+      return ` ${value} `;
+    },
+    toJSON() {
+      return { class: "OperatorTerm", evaluated: true, operator: value };
+    }
+  });
+  const numeric = (number, options = {}, evaluated = true) => ({
+    number,
+    options,
+    _evaluated: evaluated,
+    evaluate() {
+      this._evaluated = true;
+      return this;
+    },
+    get formula() {
+      return String(number);
+    },
+    get total() {
+      return number;
+    },
+    toJSON() {
+      return { class: "NumericTerm", options, evaluated: this._evaluated, number };
+    }
+  });
+  const roll = {
+    _formula: "2d20kh + 4",
+    _total: 19,
+    terms: [d20, operator("+"), numeric(2, { rebreyaMechanusAdvantageBonus: 2 }, false), operator("+"), numeric(4)],
+    get formula() {
+      return this.terms.map((term) => term.formula).join("");
+    },
+    get total() {
+      return this._total;
+    },
+    resetFormula() {
+      return this._formula = this.formula;
+    },
+    _evaluateTotal() {
+      return Function(`"use strict"; return (${this.terms.map((term) => term.total).join("")});`)();
+    },
+    toJSON() {
+      return {
+        class: "D20Roll",
+        formula: this._formula,
+        terms: this.terms.map((term) => term.toJSON()),
+        total: this._total,
+        evaluated: true
+      };
+    }
+  };
+  const document = {
+    rolls: [roll],
+    content: "19",
+    updateSource(update) {
+      this.update = update;
+    }
+  };
+
+  globalThis.Roll = TestRoll;
+  globalThis.libWrapper = undefined;
+  globalThis.Hooks = {
+    on(name, callback) {
+      callbacks.set(name, callback);
+      return 17;
+    },
+    off() {}
+  };
+
+  try {
+    assert.equal(registerMechanusRollHooks({ isMechanusEnabled: () => true }), true);
+    const preCreate = callbacks.get("preCreateChatMessage");
+    assert.equal(typeof preCreate, "function");
+    preCreate(document);
+
+    assert.equal(document.update.content, "12");
+    assert.equal(document.update.rolls[0].formula, "1d20 + 2 + 4");
+    assert.equal(document.update.rolls[0].total, 12);
+    assert.equal(document.update.rolls[0].terms[2].evaluated, true);
+  }
+  finally {
+    resetMechanusRollClassPatch(TestRoll);
+    globalThis.Roll = previousRoll;
+    globalThis.Hooks = previousHooks;
+    globalThis.libWrapper = previousLibWrapper;
   }
 });
 

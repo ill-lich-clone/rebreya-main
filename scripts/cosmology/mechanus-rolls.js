@@ -208,6 +208,18 @@ function refreshRollFormulaFromTerms(roll) {
     return false;
   }
 
+  if (typeof roll.resetFormula === "function") {
+    try {
+      const formula = roll.resetFormula();
+      if (typeof formula === "string") {
+        return true;
+      }
+    }
+    catch (_error) {
+      // Fall back to rebuilding the cached formula from the term formulas below.
+    }
+  }
+
   const formulaParts = roll.terms.map((term) => {
     if (typeof term === "string") {
       return term;
@@ -228,6 +240,80 @@ function refreshRollFormulaFromTerms(roll) {
   return roll._formula === formula;
 }
 
+function getMechanusAdvantageBonusTerm(roll) {
+  if (!Array.isArray(roll?.terms)) {
+    return null;
+  }
+
+  return roll.terms.find((term) => {
+    if (getTermFaces(term)) {
+      return false;
+    }
+    return Number.isFinite(toFiniteNumber(term?.options?.rebreyaMechanusAdvantageBonus, NaN));
+  }) ?? null;
+}
+
+function evaluateMechanusBonusTerm(term) {
+  if (!term || term._evaluated === true) {
+    return;
+  }
+
+  if (typeof term.evaluate === "function") {
+    try {
+      term.evaluate();
+      return;
+    }
+    catch (_error) {
+      // The marker and numeric total are sufficient to restore a serialized evaluated term below.
+    }
+  }
+
+  try {
+    term._evaluated = true;
+  }
+  catch (_error) {
+    // A sealed term can still contribute its numeric total to the roll.
+  }
+}
+
+function evaluateRollTotalFromTerms(roll) {
+  if (typeof roll?._evaluateTotal === "function") {
+    try {
+      return finalizeMechanusTotal(roll._evaluateTotal());
+    }
+    catch (_error) {
+      // Fall back to the same safe arithmetic evaluation used by formula averaging.
+    }
+  }
+
+  if (!Array.isArray(roll?.terms)) {
+    return null;
+  }
+
+  const expression = roll.terms.map((term) => {
+    if (typeof term === "string") {
+      return term;
+    }
+    return term?.total;
+  }).join(" ");
+  return evaluateSafeFormula(expression);
+}
+
+function repairMechanusAdvantageRoll(roll) {
+  const bonusTerm = getMechanusAdvantageBonusTerm(roll);
+  if (!bonusTerm) {
+    return false;
+  }
+
+  evaluateMechanusBonusTerm(bonusTerm);
+  refreshRollFormulaFromTerms(roll);
+  const total = evaluateRollTotalFromTerms(roll);
+  if (total !== null) {
+    setRollTotal(roll, total);
+  }
+  return total !== null;
+}
+
 function insertD20AdvantageBonusTerm(roll, term, bonus) {
   const termIndex = Array.isArray(roll?.terms) ? roll.terms.indexOf(term) : -1;
   const NumericTerm = globalThis.foundry?.dice?.terms?.NumericTerm;
@@ -241,6 +327,7 @@ function insertD20AdvantageBonusTerm(roll, term, bonus) {
     number: Math.abs(bonus),
     options: { rebreyaMechanusAdvantageBonus: bonus }
   });
+  evaluateMechanusBonusTerm(numeric);
   roll.terms.splice(termIndex + 1, 0, operator, numeric);
   refreshRollFormulaFromTerms(roll);
   return true;
@@ -465,8 +552,17 @@ export function computeMechanusAverageFormulaTotal(formula) {
 }
 
 export function applyMechanusAveragesToRoll(roll, { enabled = true } = {}) {
-  if (!enabled || !roll || roll[ROLL_APPLIED]) {
+  if (!enabled || !roll) {
     return false;
+  }
+
+  const repairedAdvantageRoll = repairMechanusAdvantageRoll(roll);
+  if (roll[ROLL_APPLIED]) {
+    return repairedAdvantageRoll;
+  }
+  if (repairedAdvantageRoll) {
+    markRollApplied(roll);
+    return true;
   }
 
   const currentRollTotal = toFiniteNumber(roll.total ?? roll._total, NaN);
@@ -512,6 +608,7 @@ export function applyMechanusAveragesToRoll(roll, { enabled = true } = {}) {
     if (nextTotal !== null) {
       applyFinalTotalCorrectionToTerms(averagedTerms, exactNextTotal - nextTotal);
       setRollTotal(roll, nextTotal);
+      repairMechanusAdvantageRoll(roll);
       markRollApplied(roll);
       return true;
     }
@@ -617,6 +714,50 @@ function unregisterMechanusLibWrapperTargets(targets) {
   }
 }
 
+function createMechanusChatMessageRepairHook(isEnabled) {
+  return (document) => {
+    if (isEnabled() !== true || !Array.isArray(document?.rolls)) {
+      return;
+    }
+
+    const previousTotals = document.rolls.map((roll) => toFiniteNumber(roll?.total ?? roll?._total, NaN));
+    const changed = document.rolls.map((roll) => applyMechanusAveragesToRoll(roll, { enabled: true }));
+    if (!changed.some(Boolean)) {
+      return;
+    }
+
+    const update = {
+      rolls: document.rolls.map((roll) => typeof roll?.toJSON === "function" ? roll.toJSON() : roll)
+    };
+    const content = String(document.content ?? document?._source?.content ?? "").trim();
+    if (document.rolls.length === 1 && Number.isFinite(previousTotals[0]) && content === String(previousTotals[0])) {
+      update.content = String(document.rolls[0].total ?? document.rolls[0]._total);
+    }
+    document.updateSource?.(update);
+  };
+}
+
+function registerMechanusChatMessageRepairHook(prototype, isEnabled) {
+  const state = prototype?.[PATCH_STATE];
+  const Hooks = globalThis.Hooks;
+  if (!state || state.chatMessageHook || typeof Hooks?.on !== "function") {
+    return false;
+  }
+
+  const id = Hooks.on("preCreateChatMessage", createMechanusChatMessageRepairHook(isEnabled));
+  state.chatMessageHook = { Hooks, id };
+  return true;
+}
+
+function unregisterMechanusChatMessageRepairHook(state) {
+  const registration = state?.chatMessageHook;
+  if (!registration || typeof registration.Hooks?.off !== "function") {
+    return;
+  }
+
+  registration.Hooks.off("preCreateChatMessage", registration.id);
+}
+
 export function patchMechanusRollClass(RollClass = globalThis.Roll, { isEnabled = () => false } = {}) {
   const prototype = RollClass?.prototype;
   if (!prototype || (typeof prototype.evaluate !== "function" && typeof prototype.evaluateSync !== "function")) {
@@ -675,6 +816,8 @@ export function resetMechanusRollClassPatch(RollClass = globalThis.Roll) {
     return false;
   }
 
+  unregisterMechanusChatMessageRepairHook(state);
+
   if (state.mode === "libWrapper") {
     unregisterMechanusLibWrapperTargets(state.targets);
     delete prototype[PATCH_STATE];
@@ -695,7 +838,8 @@ export function resetMechanusRollClassPatch(RollClass = globalThis.Roll) {
 
 export function registerMechanusRollHooks(moduleApi = globalThis.game?.rebreyaMain) {
   const RollClass = globalThis.Roll ?? globalThis.CONFIG?.Dice?.Roll ?? null;
-  return patchMechanusRollClass(RollClass, {
-    isEnabled: () => moduleApi?.isMechanusEnabled?.() === true
-  });
+  const isEnabled = () => moduleApi?.isMechanusEnabled?.() === true;
+  const patched = patchMechanusRollClass(RollClass, { isEnabled });
+  const hookRegistered = registerMechanusChatMessageRepairHook(RollClass?.prototype, isEnabled);
+  return patched || hookRegistered;
 }

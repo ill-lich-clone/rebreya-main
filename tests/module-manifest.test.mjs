@@ -63,8 +63,8 @@ test("module manifest loads the stable canonical entrypoint", async () => {
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const [entrypoint] = manifest.esmodules;
 
-  assert.equal(manifest.version, "1.4.137");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.137.js"]);
+  assert.equal(manifest.version, "1.4.138");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.138.js"]);
   assert.doesNotMatch(entrypoint, /[?#]/u);
 
   const entrypointSource = await readFile(new URL(entrypoint, manifestUrl), "utf8");
@@ -249,7 +249,7 @@ test("module keeps recent published entrypoint URLs as canonical compatibility f
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
 
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.137.js"]);
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.138.js"]);
 
   for (const fileName of ["main-1.4.98.js", "main-1.4.99.js", "main-1.4.100.js"]) {
     const forwarderSource = await readFile(new URL(`../scripts/${fileName}`, import.meta.url), "utf8");
@@ -460,7 +460,7 @@ test("combat automation imports preserve their released cache busts", async () =
   );
   assert.match(
     entrypointSource,
-    /mechanus-rolls\.js\?v=1\.4\.137-mechanus-serialized-d20-bonus/u,
+    /mechanus-rolls\.js\?v=1\.4\.138-mechanus-midi-chat-repair/u,
   );
   assert.match(
     entrypointSource,
