@@ -2566,19 +2566,20 @@ test("InventoryApp saves the selected travel speed multiplier", async () => {
   }
 });
 
-test("InventoryApp travel leg city link opens the city database entry", async () => {
+test("InventoryApp travel route city links open both city database entries", async () => {
   const restoreFoundry = installFoundryApplicationStub();
   const dom = installMinimalDom();
   const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?travel-city-link=${Date.now()}`);
   const calls = [];
-  const cityButton = createFakeControl({ dataset: { cityId: "aizenburg" } });
+  const originButton = createFakeControl({ dataset: { cityId: "origin-city" } });
+  const destinationButton = createFakeControl({ dataset: { cityId: "destination-city" } });
   const root = createFakeElement({
     closest: () => root
   });
   root.querySelector = () => null;
   root.querySelectorAll = (selector) => {
     if (selector === "[data-action='travel-open-city']") {
-      return [cityButton];
+      return [originButton, destinationButton];
     }
     return [];
   };
@@ -2590,9 +2591,13 @@ test("InventoryApp travel leg city link opens the city database entry", async ()
 
   try {
     await app._onRender({}, {});
-    await dispatchClick(cityButton);
+    await dispatchClick(originButton);
+    await dispatchClick(destinationButton);
 
-    assert.deepEqual(calls.filter((call) => call[0] === "openCityApp"), [["openCityApp", "aizenburg"]]);
+    assert.deepEqual(
+      calls.filter((call) => call[0] === "openCityApp"),
+      [["openCityApp", "origin-city"], ["openCityApp", "destination-city"]]
+    );
   }
   finally {
     dom.restore();
@@ -2607,6 +2612,8 @@ test("InventoryApp travel autocomplete and progress token have readable styles",
   assert.match(template, /data-travel-progress-token/u);
   assert.match(template, /data-action="travel-track-time"/u);
   assert.match(template, /data-action="travel-open-city"/u);
+  assert.match(template, /data-action="travel-open-city" data-city-id="\{\{travel\.originCityId\}\}">\{\{travel\.plan\.originName\}\}<\/button>/u);
+  assert.match(template, /data-action="travel-open-city" data-city-id="\{\{travel\.destinationCityId\}\}">\{\{travel\.plan\.destinationName\}\}<\/button>/u);
   assert.match(template, /data-hours="-8"/u);
   assert.match(template, /data-hours="-1"/u);
   assert.match(template, /class="rm-travel-speed-row"/u);

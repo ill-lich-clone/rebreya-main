@@ -586,9 +586,9 @@
           {{#if travel.plan.available}}
             <section class="rm-travel-summary">
               <div class="rm-travel-route">
-                <strong>{{travel.plan.originName}}</strong>
-                <i class="fa-solid fa-arrow-right-long"></i>
-                <strong>{{travel.plan.destinationName}}</strong>
+                <button type="button" class="rm-link-button rm-travel-city-link" data-action="travel-open-city" data-city-id="{{travel.originCityId}}">{{travel.plan.originName}}</button>
+                <span>→</span>
+                <button type="button" class="rm-link-button rm-travel-city-link" data-action="travel-open-city" data-city-id="{{travel.destinationCityId}}">{{travel.plan.destinationName}}</button>
               </div>
 
               <div class="rm-travel-stats">
