@@ -523,6 +523,154 @@ test("Mechanus repairs MIDI rolls at the preCreateChatMessage boundary", () => {
   }
 });
 
+test("Mechanus repairs rolls at final dnd5e activity boundaries before MIDI renders them", () => {
+  const previousRoll = globalThis.Roll;
+  const previousHooks = globalThis.Hooks;
+  const previousLibWrapper = globalThis.libWrapper;
+  const callbacks = new Map();
+
+  class TestRoll {
+    async evaluate() {
+      return this;
+    }
+  }
+
+  const operator = (value) => ({
+    operator: value,
+    options: {},
+    _evaluated: true,
+    get formula() {
+      return ` ${value} `;
+    },
+    get total() {
+      return ` ${value} `;
+    }
+  });
+  const numeric = (number, options = {}) => ({
+    number,
+    options,
+    _evaluated: true,
+    get formula() {
+      return String(number);
+    },
+    get total() {
+      return number;
+    }
+  });
+  const attackD20 = {
+    number: 1,
+    _number: 1,
+    faces: 20,
+    modifiers: [],
+    options: { advantageMode: 1, rebreyaMechanusAdvantageBonus: 2 },
+    results: [
+      { result: 1, value: 1, active: true, discarded: false },
+      { result: 12, value: 12, active: false, discarded: true }
+    ],
+    _evaluated: true,
+    get formula() {
+      return "1d20";
+    },
+    get total() {
+      return this.results.reduce((total, result) => result.active ? total + result.result : total, 0);
+    }
+  };
+  const attackRoll = {
+    _formula: "2d20kh + 4 + 3",
+    _total: 19,
+    options: { advantageMode: 1 },
+    terms: [
+      attackD20,
+      operator("+"),
+      numeric(2, { rebreyaMechanusAdvantageBonus: 2 }),
+      operator("+"),
+      numeric(4),
+      operator("+"),
+      numeric(3)
+    ],
+    get formula() {
+      return this.terms.map((term) => term.formula).join("");
+    },
+    get total() {
+      return this._total;
+    },
+    resetFormula() {
+      return this._formula = this.formula;
+    },
+    _evaluateTotal() {
+      return Function(`"use strict"; return (${this.terms.map((term) => term.total).join("")});`)();
+    }
+  };
+  const damageDie = {
+    number: 1,
+    faces: 6,
+    modifiers: [],
+    options: {},
+    results: [{ result: 6, value: 6, active: true, discarded: false }],
+    get formula() {
+      return "1d6";
+    },
+    get total() {
+      return this.results.reduce((total, result) => result.active ? total + result.result : total, 0);
+    }
+  };
+  const damageRoll = {
+    _formula: "1d6 + 4",
+    _total: 10,
+    terms: [damageDie, operator("+"), numeric(4)],
+    get formula() {
+      return this._formula;
+    },
+    get total() {
+      return this._total;
+    },
+    resetFormula() {
+      return this._formula;
+    },
+    _evaluateTotal() {
+      return Function(`"use strict"; return (${this.terms.map((term) => term.total).join("")});`)();
+    }
+  };
+
+  globalThis.Roll = TestRoll;
+  globalThis.libWrapper = undefined;
+  globalThis.Hooks = {
+    on(name, callback) {
+      callbacks.set(name, callback);
+      return name;
+    },
+    off() {}
+  };
+
+  try {
+    assert.equal(applyMechanusAveragesToRoll(damageRoll), true);
+    assert.equal(damageRoll.total, 7);
+    damageRoll._total = 10;
+    delete damageRoll[Symbol.for("rebreya-main.mechanusAverageApplied")];
+
+    assert.equal(registerMechanusRollHooks({ isMechanusEnabled: () => true }), true);
+    const rollAttack = callbacks.get("dnd5e.rollAttack");
+    const rollDamage = callbacks.get("dnd5e.rollDamage");
+    const rollFormula = callbacks.get("dnd5e.rollFormula");
+    assert.equal(typeof rollAttack, "function");
+    assert.equal(typeof rollDamage, "function");
+    assert.equal(typeof rollFormula, "function");
+
+    rollAttack([attackRoll]);
+    rollDamage([damageRoll]);
+
+    assert.equal(attackRoll._formula, "1d20 + 2 + 4 + 3");
+    assert.equal(attackRoll.total, 10);
+    assert.equal(damageRoll.total, 7);
+  }
+  finally {
+    resetMechanusRollClassPatch(TestRoll);
+    globalThis.Roll = previousRoll;
+    globalThis.Hooks = previousHooks;
+    globalThis.libWrapper = previousLibWrapper;
+  }
+});
+
 test("Mechanus reads dnd5e d20 advantage mode when keep modifiers are absent", () => {
   const advantageRoll = {
     formula: "2d20kh + 3",

@@ -5,6 +5,7 @@ const PATCH_STATE = Symbol.for(`${MODULE_ID}.mechanusRollPatch`);
 const ROLL_APPLIED = Symbol.for(`${MODULE_ID}.mechanusAverageApplied`);
 const ROLL_EVALUATE_TARGET = "Roll.prototype.evaluate";
 const ROLL_EVALUATE_SYNC_TARGET = "Roll.prototype.evaluateSync";
+const DND5E_ACTIVITY_ROLL_HOOKS = ["dnd5e.rollAttack", "dnd5e.rollDamage", "dnd5e.rollFormula"];
 
 function toFiniteNumber(value, fallback = NaN) {
   const numeric = Number(value);
@@ -299,13 +300,19 @@ function evaluateRollTotalFromTerms(roll) {
   return evaluateSafeFormula(expression);
 }
 
-function repairMechanusAdvantageRoll(roll) {
+function hasMechanusAverageTerm(roll) {
+  return collectDiceTerms(roll).some((term) => term?.options?.rebreyaMechanusAverage === true);
+}
+
+function repairMechanusTransformedRoll(roll) {
   const bonusTerm = getMechanusAdvantageBonusTerm(roll);
-  if (!bonusTerm) {
+  if (!bonusTerm && !hasMechanusAverageTerm(roll) && roll?.[ROLL_APPLIED] !== true) {
     return false;
   }
 
-  evaluateMechanusBonusTerm(bonusTerm);
+  if (bonusTerm) {
+    evaluateMechanusBonusTerm(bonusTerm);
+  }
   refreshRollFormulaFromTerms(roll);
   const total = evaluateRollTotalFromTerms(roll);
   if (total !== null) {
@@ -437,6 +444,8 @@ function replaceTermResultsWithAverage(term, averageTotal, selectedNumber = getT
   const faces = getTermFaces(term);
   const activeNumber = Math.max(0, Math.floor(toFiniteNumber(selectedNumber, 0)));
   const perDieAverage = faces > 0 ? ((faces + 1) / 2) : averageTotal;
+  term.options ??= {};
+  term.options.rebreyaMechanusAverage = true;
 
   if (Array.isArray(term.results) && term.results.length > 0) {
     let activeIndex = 0;
@@ -556,11 +565,11 @@ export function applyMechanusAveragesToRoll(roll, { enabled = true } = {}) {
     return false;
   }
 
-  const repairedAdvantageRoll = repairMechanusAdvantageRoll(roll);
+  const repairedTransformedRoll = repairMechanusTransformedRoll(roll);
   if (roll[ROLL_APPLIED]) {
-    return repairedAdvantageRoll;
+    return repairedTransformedRoll;
   }
-  if (repairedAdvantageRoll) {
+  if (repairedTransformedRoll) {
     markRollApplied(roll);
     return true;
   }
@@ -608,7 +617,7 @@ export function applyMechanusAveragesToRoll(roll, { enabled = true } = {}) {
     if (nextTotal !== null) {
       applyFinalTotalCorrectionToTerms(averagedTerms, exactNextTotal - nextTotal);
       setRollTotal(roll, nextTotal);
-      repairMechanusAdvantageRoll(roll);
+      repairMechanusTransformedRoll(roll);
       markRollApplied(roll);
       return true;
     }
@@ -758,6 +767,51 @@ function unregisterMechanusChatMessageRepairHook(state) {
   registration.Hooks.off("preCreateChatMessage", registration.id);
 }
 
+function createMechanusDnd5eRollRepairHook(isEnabled) {
+  return (rolls) => {
+    if (isEnabled() !== true) {
+      return;
+    }
+
+    const rollList = Array.isArray(rolls) ? rolls : [rolls];
+    for (const roll of rollList) {
+      try {
+        applyMechanusAveragesToRoll(roll, { enabled: true });
+      }
+      catch (error) {
+        console.warn(`${MODULE_ID} | Failed to repair a dnd5e activity roll for Mechanus.`, error);
+      }
+    }
+  };
+}
+
+function registerMechanusDnd5eRollRepairHooks(prototype, isEnabled) {
+  const state = prototype?.[PATCH_STATE];
+  const Hooks = globalThis.Hooks;
+  if (!state || state.dnd5eRollHooks || typeof Hooks?.on !== "function") {
+    return false;
+  }
+
+  const callback = createMechanusDnd5eRollRepairHook(isEnabled);
+  const registrations = DND5E_ACTIVITY_ROLL_HOOKS.map((name) => ({
+    name,
+    id: Hooks.on(name, callback)
+  }));
+  state.dnd5eRollHooks = { Hooks, registrations };
+  return true;
+}
+
+function unregisterMechanusDnd5eRollRepairHooks(state) {
+  const registration = state?.dnd5eRollHooks;
+  if (!registration || typeof registration.Hooks?.off !== "function") {
+    return;
+  }
+
+  for (const { name, id } of registration.registrations ?? []) {
+    registration.Hooks.off(name, id);
+  }
+}
+
 export function patchMechanusRollClass(RollClass = globalThis.Roll, { isEnabled = () => false } = {}) {
   const prototype = RollClass?.prototype;
   if (!prototype || (typeof prototype.evaluate !== "function" && typeof prototype.evaluateSync !== "function")) {
@@ -817,6 +871,7 @@ export function resetMechanusRollClassPatch(RollClass = globalThis.Roll) {
   }
 
   unregisterMechanusChatMessageRepairHook(state);
+  unregisterMechanusDnd5eRollRepairHooks(state);
 
   if (state.mode === "libWrapper") {
     unregisterMechanusLibWrapperTargets(state.targets);
@@ -841,5 +896,6 @@ export function registerMechanusRollHooks(moduleApi = globalThis.game?.rebreyaMa
   const isEnabled = () => moduleApi?.isMechanusEnabled?.() === true;
   const patched = patchMechanusRollClass(RollClass, { isEnabled });
   const hookRegistered = registerMechanusChatMessageRepairHook(RollClass?.prototype, isEnabled);
-  return patched || hookRegistered;
+  const dnd5eHooksRegistered = registerMechanusDnd5eRollRepairHooks(RollClass?.prototype, isEnabled);
+  return patched || hookRegistered || dnd5eHooksRegistered;
 }
