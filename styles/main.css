@@ -5127,6 +5127,10 @@ summary:focus-visible {
   padding: 7px 9px;
 }
 
+.rebreya-inventory-app .rm-inventory-book__route[data-action="clear-header-travel-route"] {
+  cursor: context-menu;
+}
+
 .rebreya-inventory-app .rm-inventory-book__route span {
   min-width: 0;
   overflow: hidden;

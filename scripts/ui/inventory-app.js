@@ -5801,7 +5801,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       }, listenerOptions);
     });
 
-    element.querySelector("[data-action='travel-clear']")?.addEventListener("click", async () => {
+    const clearTravelRoute = async () => {
       try {
         await this.moduleApi.clearTravelRoute?.();
         this.#setActionFeedback("success", "Маршрут путешествия очищен.");
@@ -5814,7 +5814,20 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         this.render({ force: true });
         ui.notifications?.error(message);
       }
-    }, listenerOptions);
+    };
+
+    element.querySelector("[data-action='travel-clear']")?.addEventListener("click", clearTravelRoute, listenerOptions);
+
+    element.querySelectorAll("[data-action='clear-header-travel-route']").forEach((routeCard) => {
+      routeCard.addEventListener("contextmenu", async (event) => {
+        if (!this.canManage) {
+          return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        await clearTravelRoute();
+      }, listenerOptions);
+    });
 
     element.querySelectorAll("[data-transport-row]").forEach((row) => {
       row.addEventListener("contextmenu", (event) => {

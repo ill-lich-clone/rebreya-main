@@ -636,6 +636,14 @@ test("InventoryApp renders a compact header summary without redundant warehouse 
   assert.match(template, /class="rm-inventory-book__cargo-tooltip"[^>]*id="rm-inventory-cargo-tooltip"/u);
   assert.match(template, /class="rm-inventory-book__supply-row"/u);
   assert.match(template, /class="rm-inventory-book__route rm-inventory-book__panel"/u);
+  assert.match(
+    template,
+    /\{\{#if travel\.headerRoute\.available\}\}[\s\S]*class="rm-inventory-book__route rm-inventory-book__panel"[\s\S]*\{\{\/if\}\}/u
+  );
+  assert.match(
+    template,
+    /\{\{#if canManage\}\}data-action="clear-header-travel-route"[^}]*\{\{\/if\}\}/u
+  );
   assert.match(template, /travel\.headerRoute\.routeLabel/u);
   assert.match(template, /travel\.headerRoute\.remainingDaysLabel/u);
   assert.match(template, /data-action="edit-supply" data-resource-key="food"/u);
@@ -2525,6 +2533,44 @@ test("InventoryApp travel advance updates the progress strip without rendering t
   }
   finally {
     globalThis.game = previousGame;
+    dom.restore();
+    restoreFoundry();
+  }
+});
+
+test("InventoryApp clears the header travel route from its context menu", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const dom = installMinimalDom();
+  const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?header-travel-clear=${Date.now()}`);
+  const calls = [];
+  const routeCard = createFakeControl();
+  const root = createFakeElement({ closest: () => root });
+  root.querySelector = () => null;
+  root.querySelectorAll = (selector) => (
+    selector === "[data-action='clear-header-travel-route']" ? [routeCard] : []
+  );
+  const app = new InventoryApp(createModuleApi({
+    getGroupContext: () => null,
+    calls
+  }));
+  app.element = root;
+  app.canManage = true;
+
+  try {
+    await app._onRender({}, {});
+    let prevented = false;
+    let stopped = false;
+    await routeCard.listeners.contextmenu[0]({
+      currentTarget: routeCard,
+      preventDefault() { prevented = true; },
+      stopPropagation() { stopped = true; }
+    });
+
+    assert.equal(prevented, true);
+    assert.equal(stopped, true);
+    assert.deepEqual(calls.filter((call) => call[0] === "clearTravelRoute"), [["clearTravelRoute"]]);
+  }
+  finally {
     dom.restore();
     restoreFoundry();
   }

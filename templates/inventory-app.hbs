@@ -134,10 +134,12 @@
               </div>
             </article>
 
-            <article class="rm-inventory-book__route rm-inventory-book__panel">
-              <span title="{{travel.headerRoute.routeLabel}}">{{travel.headerRoute.routeLabel}}</span>
-              <strong>{{travel.headerRoute.remainingDaysLabel}}</strong>
-            </article>
+            {{#if travel.headerRoute.available}}
+              <article class="rm-inventory-book__route rm-inventory-book__panel" {{#if canManage}}data-action="clear-header-travel-route" title="Очистить маршрут (ПКМ)"{{/if}}>
+                <span title="{{travel.headerRoute.routeLabel}}">{{travel.headerRoute.routeLabel}}</span>
+                <strong>{{travel.headerRoute.remainingDaysLabel}}</strong>
+              </article>
+            {{/if}}
 
             <div class="rm-inventory-book__supply-row">
               <article class="rm-inventory-book__supply rm-inventory-book__panel" {{#if canManage}}data-action="edit-supply" data-resource-key="food" title="Изменить еду (ПКМ)"{{/if}}>

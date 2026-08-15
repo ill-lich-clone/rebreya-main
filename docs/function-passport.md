@@ -155,6 +155,7 @@ Definition of Done: код, тесты, `README.md` при изменении п
 - **Внешние методы:** `getTravelSnapshot()`, `setTravelRoute(payload)`, `setTravelSpeedMultiplier(value)`, `advanceTravelHours(hours, options)`, `clearTravelRoute()`, `getTransportSnapshot(options)`, `importTransportIntoGroup(payload)`, `updateTransportInstanceState(payload)`, `selectTransportFuel(payload)`, `updateTransportFuelConsumption(payload)`, `setActiveTransport(id)`.
 - **Typed commands:** `group.travel.replaceState`, `group.transport.replaceState`, `group.transport.importActor`, `group.transport.updateActorState`, `group.transport.selectFuel`, `group.transport.updateFuelConsumption`.
 - **Integrations:** `scripts/integrations/transport-group-drop.js`, `transport-vehicle-sheet.js`; данные сети — `data/travel-network.json`.
+- **UI:** верхняя сводка Inventory показывает маршрут только при доступном плане; менеджер может очистить сохранённый маршрут ПКМ по карточке через `clearTravelRoute()`.
 - **Куда править:** path/timing/progress — TravelService; map coordinates/token — TravelMapService; world Actor instance — TransportInstanceService; consumption — fuel service; sheet/drop — integrations.
 - **Нельзя:** хранить запас топлива вторично во flag транспорта, блокировать travel из-за warning расхода, принимать forged canonical identity или применять stale replacement повторно.
 - **Тесты:** `tests/travel-*.test.mjs`, `transport-*.test.mjs`.
