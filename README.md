@@ -278,7 +278,7 @@ await api.setCombatStatus("actor-id", "frightened", { value: 2 });
 - `getInventorySnapshot`, `getPartySnapshot`, `addPartyMember`, `removePartyMember`, `updatePartyDefaults`, `updatePartyMember`, `updatePartyMemberTool`.
 - `updateInventoryItemQuantity`, `deleteInventoryItem`, `takeInventoryItemToCharacter`, `sellInventoryItem`, `importInventoryDrop`, `addModelItemToInventory`, `breakInventoryItemToMaterial`.
 - `addPartySupply`, `consumePartySuppliesOneDay`, `updatePartyCurrency`, `convertPartyCurrency`, `setPartyMemberEnergy`, `restorePartyMemberEnergy`, `getRebreyaToolCatalog`.
-- `getTravelSnapshot`, `setTravelRoute`, `advanceTravelHours`, `clearTravelRoute`.
+- `getTravelSnapshot`, `syncTravelMapToken`, `setTravelRoute`, `advanceTravelHours`, `clearTravelRoute`.
 - `getCraftSnapshot`, `queueCraftTask`, `cancelCraftTask`, `processCraftOneDay`.
 - `getDowntimeSnapshot`, `getDowntimeActionCatalog`, `grantDowntimeWeeks`, `revokeDowntimeWeeks`, `clearDowntimeHistory`, `createDowntimeRequest`, `updateDowntimeRequest`, `setDowntimeRequestStatus`, `setDowntimeRequestChecks`, `recordDowntimeCheckResult`, `continueDowntimeProject`, `closeDowntimeProject`.
 - `getCalendarSnapshot`, `setCalendarTimeOfDay`, `setCalendarDate`, `shiftCalendarDays`, `advanceCalendarDays`, `advanceCalendarWeeks`, `advanceCalendarMonths`.

@@ -92,7 +92,10 @@ test("RebreyaMainModule syncs the active group token after travel route changes"
         return { synced: true };
       }
     };
-    moduleApi.refreshOpenApps = async () => {};
+    let refreshCount = 0;
+    moduleApi.refreshOpenApps = async () => {
+      refreshCount += 1;
+    };
 
     await moduleApi.setTravelRoute({
       originCityId: "liara-ken",
@@ -104,6 +107,66 @@ test("RebreyaMainModule syncs the active group token after travel route changes"
       groupActor,
       position: mapPosition
     }]);
+    assert.equal(refreshCount, 0);
+  }
+  finally {
+    globalThis.Hooks = previousHooks;
+    globalThis.game = previousGame;
+    globalThis.ui = previousUi;
+    globalThis.foundry = previousFoundry;
+  }
+});
+
+test("RebreyaMainModule resyncs the current travel token without changing the route", async () => {
+  const previousHooks = globalThis.Hooks;
+  const previousGame = globalThis.game;
+  const previousUi = globalThis.ui;
+  const previousFoundry = globalThis.foundry;
+
+  globalThis.Hooks = { once() {}, on() {} };
+  globalThis.game = { user: { id: "gm", isGM: true } };
+  globalThis.ui = { windows: {} };
+  globalThis.foundry = { applications: { instances: new Map() } };
+
+  try {
+    const { RebreyaMainModule } = await import(`../scripts/main.js?travel-map-resync=${Date.now()}`);
+    const moduleApi = new RebreyaMainModule();
+    const groupActor = {
+      id: "group-a",
+      name: "Travel Group"
+    };
+    const mapPosition = {
+      available: true,
+      sceneName: "World Map",
+      sceneX: 120,
+      sceneY: 240
+    };
+    let setRouteCount = 0;
+    const synced = [];
+    moduleApi.travelService.getSnapshot = async () => ({
+      available: true,
+      mapPosition
+    });
+    moduleApi.travelService.setRoute = async () => {
+      setRouteCount += 1;
+      return {};
+    };
+    moduleApi.groupContextService.resolveForCurrentUser = () => ({
+      groupActor,
+      groupId: groupActor.id
+    });
+    moduleApi.travelMapService = {
+      async syncGroupToken(payload) {
+        synced.push(payload);
+        return { synced: true };
+      }
+    };
+
+    const result = await moduleApi.syncTravelMapToken();
+
+    assert.equal(result.synced, true);
+    assert.equal(setRouteCount, 0);
+    assert.deepEqual(synced, [{ groupActor, position: mapPosition }]);
   }
   finally {
     globalThis.Hooks = previousHooks;

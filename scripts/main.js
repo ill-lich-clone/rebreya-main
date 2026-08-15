@@ -48,7 +48,7 @@ import {
   TravelService,
   normalizeTravelState
 } from "./data/travel-service.js";
-import { TravelMapService } from "./data/travel-map-service.js";
+import { TravelMapService } from "./data/travel-map-service.js?v=1.4.141-auraeffects-inactive-scene";
 import {
   INVENTORY_CURRENCY_CONVERT_COMMAND,
   INVENTORY_CURRENCY_UPDATE_COMMAND,
@@ -170,6 +170,7 @@ import {
   registerRebreyaWeaponBaseItemsFromGearPack
 } from "./integrations/dnd5e-sheet-extensions.js?v=1.4.110-giant-tribe-cache-fixes-2&implants=1&sorcerer-cooldown-context=4";
 import { registerHeldShieldArmorClassPatch } from "./integrations/held-shield-ac.js?v=1.4.96";
+import { registerTravelMapHooks } from "./integrations/travel-map-hooks.js?v=1.4.141-auraeffects-inactive-scene";
 import {
   patchDurabilityItemEffectSuppression,
   reconcileBrokenEquippedArmor,
@@ -3682,6 +3683,11 @@ export class RebreyaMainModule {
     return this.travelService.getSnapshot();
   }
 
+  async syncTravelMapToken() {
+    const snapshot = await this.travelService.getSnapshot();
+    return this.#syncTravelMapForSnapshot(snapshot);
+  }
+
   getGroupRegistry() {
     return this.groupContextService.getRegistry();
   }
@@ -4580,7 +4586,6 @@ export class RebreyaMainModule {
       console.warn(`${MODULE_ID} | Failed to sync travel token after route update.`, error);
       ui.notifications?.warn?.(error.message || "Не удалось синхронизировать токен группы на карте мира.");
     });
-    await this.refreshOpenApps();
     return result;
   }
 
@@ -6047,6 +6052,13 @@ Hooks.once("ready", async () => {
   }
   catch (error) {
     console.error(`${MODULE_ID} | Failed to register inventory sync hooks.`, error);
+  }
+
+  try {
+    registerTravelMapHooks(moduleApi, { Hooks });
+  }
+  catch (error) {
+    console.error(`${MODULE_ID} | Failed to register travel map hooks.`, error);
   }
 
   try {
