@@ -203,7 +203,50 @@ function getMechanusD20AdvantageBonus(term, roll) {
   return mode > 0 ? 2 : -2;
 }
 
-function replaceD20AdvantageWithFlatBonus(term, firstResult, replacementTotal, bonus) {
+function refreshRollFormulaFromTerms(roll) {
+  if (!Array.isArray(roll?.terms)) {
+    return false;
+  }
+
+  const formulaParts = roll.terms.map((term) => {
+    if (typeof term === "string") {
+      return term;
+    }
+    return typeof term?.formula === "string" ? term.formula : null;
+  });
+  if (formulaParts.some((part) => part === null)) {
+    return false;
+  }
+
+  const formula = formulaParts.join("");
+  try {
+    roll._formula = formula;
+  }
+  catch (_error) {
+    return false;
+  }
+  return roll._formula === formula;
+}
+
+function insertD20AdvantageBonusTerm(roll, term, bonus) {
+  const termIndex = Array.isArray(roll?.terms) ? roll.terms.indexOf(term) : -1;
+  const NumericTerm = globalThis.foundry?.dice?.terms?.NumericTerm;
+  const OperatorTerm = globalThis.foundry?.dice?.terms?.OperatorTerm;
+  if (termIndex < 0 || typeof NumericTerm !== "function" || typeof OperatorTerm !== "function") {
+    return false;
+  }
+
+  const operator = new OperatorTerm({ operator: bonus >= 0 ? "+" : "-" });
+  const numeric = new NumericTerm({
+    number: Math.abs(bonus),
+    options: { rebreyaMechanusAdvantageBonus: bonus }
+  });
+  roll.terms.splice(termIndex + 1, 0, operator, numeric);
+  refreshRollFormulaFromTerms(roll);
+  return true;
+}
+
+function replaceD20AdvantageWithFlatBonus(roll, term, firstResult, replacementTotal, bonus) {
   setObjectNumberProperty(term, "number", 1);
   setObjectNumberProperty(term, "_number", 1);
 
@@ -227,8 +270,10 @@ function replaceD20AdvantageWithFlatBonus(term, firstResult, replacementTotal, b
 
   term.options ??= {};
   term.options.rebreyaMechanusAdvantageBonus = bonus;
-  setObjectNumberProperty(term, "_total", replacementTotal);
-  setObjectNumberProperty(term, "total", replacementTotal);
+  if (!insertD20AdvantageBonusTerm(roll, term, bonus)) {
+    setObjectNumberProperty(term, "_total", replacementTotal);
+    setObjectNumberProperty(term, "total", replacementTotal);
+  }
 }
 
 function setObjectNumberProperty(object, key, value) {
@@ -439,7 +484,7 @@ export function applyMechanusAveragesToRoll(roll, { enabled = true } = {}) {
         const replacementTotal = firstResult + d20AdvantageBonus;
         delta += replacementTotal - currentTermTotal;
         changed = true;
-        replaceD20AdvantageWithFlatBonus(term, firstResult, replacementTotal, d20AdvantageBonus);
+        replaceD20AdvantageWithFlatBonus(roll, term, firstResult, replacementTotal, d20AdvantageBonus);
       }
       continue;
     }

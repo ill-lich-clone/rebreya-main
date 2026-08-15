@@ -138,7 +138,7 @@ import { registerRadialStatusEffects } from "./combat/radial-status-effects.js";
 import { CombatStatusService, registerCombatStatusConfig } from "./combat/status-service.js?v=1.4.100-hp-dead-overlay";
 import { AttackRollBoostService } from "./combat/attack-roll-boost-service.js?v=1.4.96";
 import { EnvironmentAutomationService } from "./combat/environment-automation-service.js?v=1.4.96-environment-stable-statuses";
-import { registerMechanusRollHooks } from "./cosmology/mechanus-rolls.js?v=1.4.137-mechanus-zero-dice-first-result";
+import { registerMechanusRollHooks } from "./cosmology/mechanus-rolls.js?v=1.4.137-mechanus-serialized-d20-bonus";
 import { FighterAutomationService } from "./combat/fighter-automation-service.js?v=1.4.96";
 import { SorcererAutomationService } from "./combat/sorcerer-automation-service.js?v=1.4.96-sorcerer-cooldown-card&cooldown-context=4";
 import { ElementalAdeptAutomationService } from "./combat/elemental-adept-automation-service.js";

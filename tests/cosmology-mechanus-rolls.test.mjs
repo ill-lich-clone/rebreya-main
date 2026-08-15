@@ -196,6 +196,106 @@ test("Mechanus converts d20 advantage and disadvantage into flat bonuses", () =>
   assert.equal(disadvantageRoll.total, 13);
 });
 
+test("Mechanus d20 advantage survives a dnd5e and MIDI-style total recomputation", () => {
+  const previousFoundry = globalThis.foundry;
+
+  class TestOperatorTerm {
+    constructor({ operator }) {
+      this.operator = operator;
+    }
+
+    get formula() {
+      return ` ${this.operator} `;
+    }
+
+    get total() {
+      return ` ${this.operator} `;
+    }
+  }
+
+  class TestNumericTerm {
+    constructor({ number, options = {} }) {
+      this.number = Number(number);
+      this.options = options;
+    }
+
+    get formula() {
+      return String(this.number);
+    }
+
+    get total() {
+      return this.number;
+    }
+  }
+
+  class TestD20Term {
+    constructor() {
+      this.number = 2;
+      this._number = 2;
+      this.faces = 20;
+      this.modifiers = ["kh"];
+      this.options = { advantageMode: 1 };
+      this.results = [{ result: 14, active: false }, { result: 18, active: true }];
+      Object.preventExtensions(this);
+    }
+
+    get formula() {
+      return `${this.number}d${this.faces}${this.modifiers.join("")}`;
+    }
+
+    get total() {
+      return this.results.reduce((total, result) => result.active ? total + result.result : total, 0);
+    }
+  }
+
+  globalThis.foundry = {
+    ...(previousFoundry ?? {}),
+    dice: {
+      ...(previousFoundry?.dice ?? {}),
+      terms: {
+        ...(previousFoundry?.dice?.terms ?? {}),
+        NumericTerm: TestNumericTerm,
+        OperatorTerm: TestOperatorTerm
+      }
+    }
+  };
+
+  try {
+    const d20 = new TestD20Term();
+    const roll = {
+      _formula: "2d20kh + 4",
+      _total: 22,
+      options: { advantageMode: 1 },
+      terms: [d20, new TestOperatorTerm({ operator: "+" }), new TestNumericTerm({ number: 4 })],
+      get formula() {
+        return this.terms.map((term) => term.formula).join("");
+      },
+      get total() {
+        return this._total;
+      },
+      _evaluateTotal() {
+        return Function(`"use strict"; return (${this.terms.map((term) => term.total).join("")});`)();
+      }
+    };
+
+    assert.equal(applyMechanusAveragesToRoll(roll), true);
+    assert.deepEqual(d20.results.map((result) => result.active), [true, false]);
+    assert.equal(d20.results[0].result, 14);
+
+    roll._total = roll._evaluateTotal();
+    assert.equal(roll.total, 20);
+    assert.equal(roll._formula, "1d20 + 2 + 4");
+  }
+  finally {
+    if (previousFoundry === undefined) {
+      delete globalThis.foundry;
+    }
+    else {
+      globalThis.foundry = previousFoundry;
+    }
+  }
+});
+
 test("Mechanus reads dnd5e d20 advantage mode when keep modifiers are absent", () => {
   const advantageRoll = {
     formula: "2d20kh + 3",
