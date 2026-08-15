@@ -6,10 +6,7 @@
   {{#if isPublicView}}
     <!-- public-city:start -->
     <section class="rm-public-city-shell scrollable">
-      <header class="rm-public-city-hero">
-        {{#if publicCityImageUrl}}
-          <img class="rm-public-city-hero__image" src="{{publicCityImageUrl}}" alt="">
-        {{/if}}
+      <header class="rm-public-city-hero" data-city-image-url="{{publicCityImageUrl}}">
         <div class="rm-public-city-hero__copy">
           <span>{{publicCity.state}} / {{publicCity.regionName}} / {{publicCity.cityType}}</span>
           <h2>{{publicCity.name}}</h2>

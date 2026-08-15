@@ -318,11 +318,14 @@ export class CityEconomyApp extends HandlebarsApplicationMixin(ApplicationV2) {
       return;
     }
 
-    element.querySelectorAll(".rm-public-city-hero__image").forEach((image) => {
-      image.addEventListener("error", () => {
-        image.hidden = true;
-      }, { once: true });
-    });
+    const publicCityHero = element.querySelector(".rm-public-city-hero[data-city-image-url]");
+    const publicCityImageUrl = String(publicCityHero?.dataset.cityImageUrl ?? "").trim();
+    if (publicCityHero && publicCityImageUrl) {
+      publicCityHero.style.setProperty("background-image", `url(${JSON.stringify(publicCityImageUrl)})`);
+      publicCityHero.style.setProperty("background-position", "center");
+      publicCityHero.style.setProperty("background-repeat", "no-repeat");
+      publicCityHero.style.setProperty("background-size", "cover");
+    }
 
     element.querySelectorAll("[data-action='city-public-tab']").forEach((button) => {
       button.addEventListener("click", (event) => {

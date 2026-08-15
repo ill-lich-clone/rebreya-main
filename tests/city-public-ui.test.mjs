@@ -52,7 +52,7 @@ test("player CityEconomyApp prepares only the public snapshot", async () => {
   globalThis.game = {
     user: { isGM: false },
     settings: { get: () => false },
-    modules: new Map([["rebreya-main", { version: "1.4.135" }]])
+    modules: new Map([["rebreya-main", { version: "1.4.136" }]])
   };
   const calls = [];
   try {
@@ -72,7 +72,7 @@ test("player CityEconomyApp prepares only the public snapshot", async () => {
     const context = await app._prepareContext();
     assert.equal(context.isPublicView, true);
     assert.equal(context.canEditPresentation, false);
-    assert.equal(context.publicCityImageUrl, "/foundry/modules/rebreya-main/assets/cities/Город.webp?v=1.4.135");
+    assert.equal(context.publicCityImageUrl, "/foundry/modules/rebreya-main/assets/cities/Город.webp?v=1.4.136");
     assert.deepEqual(calls, [["public", "city-a"]]);
 
     const missing = new CityEconomyApp({ async getPublicCitySnapshot() { return null; } }, "missing");
@@ -94,9 +94,10 @@ test("CityEconomyApp retains GM analytics and exposes only planned public contro
   ]);
   assert.match(source, /resolveCityViewMode/u);
   assert.match(source, /this\.moduleApi\.getCitySnapshot\(this\.cityId\)/u);
-  assert.match(source, /rm-public-city-hero__image[\s\S]*addEventListener\("error"[\s\S]*hidden\s*=\s*true/u);
-  assert.match(template, /src="\{\{publicCityImageUrl\}\}"/u);
-  assert.match(mainSource, /import\("\.\/ui\/city-app\.js\?v=1\.4\.135-public-city-panorama"\)/u);
+  assert.doesNotMatch(template, /rm-public-city-hero__image/u);
+  assert.match(template, /data-city-image-url="\{\{publicCityImageUrl\}\}"/u);
+  assert.match(source, /dataset\.cityImageUrl[\s\S]*style\.setProperty\("background-image"/u);
+  assert.match(mainSource, /import\("\.\/ui\/city-app\.js\?v=1\.4\.136-public-city-background"\)/u);
   assert.doesNotMatch(source, /travelState|originCityId|destinationCityId/u);
   for (const action of [
     "city-public-tab",
