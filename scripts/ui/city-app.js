@@ -11,6 +11,12 @@ import {
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 const PUBLIC_CITY_TABS = new Set(["city", "market", "traders"]);
 
+function getFoundryAssetUrl(path) {
+  const assetPath = String(path ?? "").trim();
+  if (!assetPath) return "";
+  return foundry.utils?.getRoute?.(assetPath) ?? assetPath;
+}
+
 function formatStatusLabel(status) {
   switch (status) {
     case "deficit":
@@ -216,6 +222,7 @@ export class CityEconomyApp extends HandlebarsApplicationMixin(ApplicationV2) {
         isGmViewer: game.user?.isGM === true,
         canEditPresentation: game.user?.isGM === true,
         publicCity,
+        publicCityImageUrl: getFoundryAssetUrl(publicCity?.image),
         publicTabs: {
           isCity: this.publicTab === "city",
           isMarket: this.publicTab === "market",

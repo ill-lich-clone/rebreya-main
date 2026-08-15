@@ -46,7 +46,8 @@ test("player CityEconomyApp prepares only the public snapshot", async () => {
   const previousGame = globalThis.game;
   class TestApplication { constructor() {} async _onRender() {} }
   globalThis.foundry = {
-    applications: { api: { ApplicationV2: TestApplication, HandlebarsApplicationMixin: (Base) => Base, DialogV2: {} } }
+    applications: { api: { ApplicationV2: TestApplication, HandlebarsApplicationMixin: (Base) => Base, DialogV2: {} } },
+    utils: { getRoute: (path) => `/foundry/${path}` }
   };
   globalThis.game = { user: { isGM: false }, settings: { get: () => false } };
   const calls = [];
@@ -55,13 +56,19 @@ test("player CityEconomyApp prepares only the public snapshot", async () => {
     const app = new CityEconomyApp({
       async getPublicCitySnapshot(cityId) {
         calls.push(["public", cityId]);
-        return { id: cityId, materialRows: [], traders: [] };
+        return {
+          id: cityId,
+          image: "modules/rebreya-main/assets/cities/Город.webp",
+          materialRows: [],
+          traders: []
+        };
       },
       getCitySnapshot() { throw new Error("player must not request the mechanical city snapshot"); }
     }, "city-a");
     const context = await app._prepareContext();
     assert.equal(context.isPublicView, true);
     assert.equal(context.canEditPresentation, false);
+    assert.equal(context.publicCityImageUrl, "/foundry/modules/rebreya-main/assets/cities/Город.webp");
     assert.deepEqual(calls, [["public", "city-a"]]);
 
     const missing = new CityEconomyApp({ async getPublicCitySnapshot() { return null; } }, "missing");
@@ -83,6 +90,7 @@ test("CityEconomyApp retains GM analytics and exposes only planned public contro
   assert.match(source, /resolveCityViewMode/u);
   assert.match(source, /this\.moduleApi\.getCitySnapshot\(this\.cityId\)/u);
   assert.match(source, /rm-public-city-hero__image[\s\S]*addEventListener\("error"[\s\S]*hidden\s*=\s*true/u);
+  assert.match(template, /src="\{\{publicCityImageUrl\}\}"/u);
   assert.doesNotMatch(source, /travelState|originCityId|destinationCityId/u);
   for (const action of [
     "city-public-tab",
