@@ -4,7 +4,8 @@ import { readFile } from "node:fs/promises";
 
 const cases = [
   ["trader-app-v2.js", "this.#playSequencerEntrance"],
-  ["lootgen-app.js", "element.querySelectorAll"]
+  ["lootgen-app.js", "element.querySelectorAll"],
+  ["city-app.js", "element.querySelectorAll"]
 ];
 
 for (const [fileName, firstInteractiveWork] of cases) {

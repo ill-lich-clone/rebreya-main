@@ -2,7 +2,14 @@
 import { getAppElement } from "../ui.js";
 import { finiteNumber as toNumber } from "../shared/foundry-values.js";
 
+import {
+  openCityImagePicker,
+  promptCityDescription,
+  resolveCityViewMode
+} from "./city-presentation-ui.js";
+
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
+const PUBLIC_CITY_TABS = new Set(["city", "market", "traders"]);
 
 function formatStatusLabel(status) {
   switch (status) {
@@ -187,6 +194,8 @@ export class CityEconomyApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.moduleApi = moduleApi;
     this.cityId = cityId;
     this.activeTab = CITY_TABS.OVERVIEW;
+    this.viewMode = resolveCityViewMode({ isGM: game.user?.isGM === true, requestedMode: "admin" });
+    this.publicTab = "city";
   }
 
   get id() {
@@ -194,6 +203,27 @@ export class CityEconomyApp extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   async _prepareContext() {
+    this.viewMode = resolveCityViewMode({
+      isGM: game.user?.isGM === true,
+      requestedMode: this.viewMode
+    });
+    if (this.viewMode === "public") {
+      const publicCity = await this.moduleApi.getPublicCitySnapshot(this.cityId);
+      return {
+        hasError: !publicCity,
+        errorMessage: publicCity ? "" : "Город не найден в загруженных данных.",
+        isPublicView: true,
+        isGmViewer: game.user?.isGM === true,
+        canEditPresentation: game.user?.isGM === true,
+        publicCity,
+        publicTabs: {
+          isCity: this.publicTab === "city",
+          isMarket: this.publicTab === "market",
+          isTraders: this.publicTab === "traders"
+        }
+      };
+    }
+
     const model = await this.moduleApi.getModel();
     const city = this.moduleApi.getCitySnapshot(this.cityId);
     if (!city) {
@@ -218,6 +248,8 @@ export class CityEconomyApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     return {
       hasError: false,
+      isPublicView: false,
+      isGmViewer: game.user?.isGM === true,
       activeTab: this.activeTab,
       city,
       cityBalanceClass,
@@ -274,6 +306,93 @@ export class CityEconomyApp extends HandlebarsApplicationMixin(ApplicationV2) {
     if (!element) {
       return;
     }
+
+    element.querySelectorAll(".rm-public-city-hero__image").forEach((image) => {
+      image.addEventListener("error", () => {
+        image.hidden = true;
+      }, { once: true });
+    });
+
+    element.querySelectorAll("[data-action='city-public-tab']").forEach((button) => {
+      button.addEventListener("click", (event) => {
+        const tab = String(event.currentTarget.dataset.tab ?? "").trim();
+        if (!PUBLIC_CITY_TABS.has(tab)) return;
+        this.publicTab = tab;
+        this.render({ force: true });
+      });
+    });
+
+    element.querySelectorAll("[data-action='toggle-city-view']").forEach((button) => {
+      button.addEventListener("click", (event) => {
+        this.viewMode = resolveCityViewMode({
+          isGM: game.user?.isGM === true,
+          requestedMode: event.currentTarget.dataset.viewMode
+        });
+        this.render({ force: true });
+      });
+    });
+
+    element.querySelectorAll("[data-action='edit-city-description']").forEach((button) => {
+      button.addEventListener("click", async () => {
+        let city = context?.publicCity;
+        let description = await promptCityDescription({ city });
+        while (description !== null) {
+          try {
+            await this.moduleApi.updateCityPresentation(this.cityId, { description });
+            return;
+          }
+          catch (error) {
+            console.error(`${MODULE_ID} | Failed to update city description.`, error);
+            ui.notifications?.error("Не удалось сохранить описание города.");
+            city = { ...city, description };
+            description = await promptCityDescription({ city });
+          }
+        }
+      });
+    });
+
+    element.querySelectorAll("[data-action='edit-city-image']").forEach((button) => {
+      button.addEventListener("click", () => {
+        try {
+          openCityImagePicker({
+            current: context?.publicCity?.image,
+            onSelected: (image) => this.moduleApi.updateCityPresentation(this.cityId, { image }),
+            onError: (error) => {
+              console.error(`${MODULE_ID} | Failed to update city image.`, error);
+              ui.notifications?.error("Не удалось сохранить изображение города.");
+            }
+          });
+        }
+        catch (error) {
+          console.error(`${MODULE_ID} | Failed to open city image picker.`, error);
+          ui.notifications?.error("Не удалось открыть выбор изображения.");
+        }
+      });
+    });
+
+    element.querySelectorAll("[data-action='reset-city-description']").forEach((button) => {
+      button.addEventListener("click", async () => {
+        try {
+          await this.moduleApi.resetCityPresentation(this.cityId, ["description"]);
+        }
+        catch (error) {
+          console.error(`${MODULE_ID} | Failed to reset city description.`, error);
+          ui.notifications?.error("Не удалось сбросить описание города.");
+        }
+      });
+    });
+
+    element.querySelectorAll("[data-action='reset-city-image']").forEach((button) => {
+      button.addEventListener("click", async () => {
+        try {
+          await this.moduleApi.resetCityPresentation(this.cityId, ["image"]);
+        }
+        catch (error) {
+          console.error(`${MODULE_ID} | Failed to reset city image.`, error);
+          ui.notifications?.error("Не удалось сбросить изображение города.");
+        }
+      });
+    });
 
     element.querySelectorAll("[data-action='switch-tab']").forEach((button) => {
       button.addEventListener("click", (event) => {

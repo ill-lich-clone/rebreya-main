@@ -504,6 +504,211 @@
   align-items: center;
 }
 
+.rebreya-city-app .rm-public-city-shell {
+  min-height: 100%;
+  padding: 18px;
+  color: var(--rm-text);
+  background: radial-gradient(circle at top, rgba(128, 87, 37, 0.2), transparent 42%), var(--rm-bg);
+}
+
+.rebreya-city-app .rm-public-city-hero {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  aspect-ratio: 2 / 1;
+  min-height: 320px;
+  max-height: 520px;
+  overflow: hidden;
+  border: 1px solid rgba(213, 174, 105, 0.38);
+  border-radius: var(--rm-radius-section);
+  background: linear-gradient(135deg, #33271d, #13100f 72%);
+  box-shadow: var(--rm-shadow-panel);
+}
+
+.rebreya-city-app .rm-public-city-hero::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, rgba(8, 7, 7, 0.94) 0%, rgba(8, 7, 7, 0.62) 46%, rgba(8, 7, 7, 0.12) 78%), linear-gradient(0deg, rgba(8, 7, 7, 0.78), transparent 55%);
+  pointer-events: none;
+}
+
+.rebreya-city-app .rm-public-city-hero__image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.rebreya-city-app .rm-public-city-hero__copy {
+  position: relative;
+  z-index: 1;
+  width: min(62%, 680px);
+  padding: 34px;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.88);
+}
+
+.rebreya-city-app .rm-public-city-hero__copy span {
+  color: var(--rm-accent-strong);
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.rebreya-city-app .rm-public-city-hero__copy h2 {
+  margin: 8px 0 12px;
+  color: #f3e4c3;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(34px, 5vw, 64px);
+  line-height: 0.98;
+}
+
+.rebreya-city-app .rm-public-city-hero__copy p {
+  margin: 0;
+  color: rgba(247, 239, 221, 0.88);
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+.rebreya-city-app .rm-public-city-hero__actions {
+  position: absolute;
+  z-index: 2;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  max-width: 54%;
+}
+
+.rebreya-city-app .rm-public-city-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 14px 0;
+}
+
+.rebreya-city-app .rm-public-city-tabs button {
+  min-height: 42px;
+  border: 1px solid rgba(213, 174, 105, 0.25);
+  border-radius: var(--rm-radius-row);
+  color: var(--rm-muted);
+  background: rgba(20, 17, 15, 0.88);
+}
+
+.rebreya-city-app .rm-public-city-tabs button.is-active {
+  border-color: var(--rm-accent);
+  color: #f5dfb2;
+  background: rgba(128, 87, 37, 0.32);
+  box-shadow: inset 0 -2px 0 var(--rm-accent);
+}
+
+.rebreya-city-app .rm-public-city-story {
+  padding: 24px;
+  border: 1px solid var(--rm-border);
+  border-radius: var(--rm-radius-section);
+  background: linear-gradient(180deg, var(--rm-surface-2), var(--rm-surface-1));
+  line-height: 1.65;
+}
+
+.rebreya-city-app .rm-public-city-market {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.rebreya-city-app .rm-public-city-market article {
+  display: grid;
+  gap: 6px;
+  padding: 14px;
+  border: 1px solid var(--rm-border);
+  border-radius: var(--rm-radius-row);
+  background: linear-gradient(180deg, var(--rm-surface-2), var(--rm-surface-1));
+}
+
+.rebreya-city-app .rm-public-city-market article strong {
+  color: var(--rm-accent-strong);
+}
+
+.rebreya-city-app .rm-public-city-traders {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.rebreya-city-app .rm-public-city-traders article {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid var(--rm-border);
+  border-radius: var(--rm-radius-section);
+  background: linear-gradient(180deg, var(--rm-surface-2), var(--rm-surface-1));
+}
+
+.rebreya-city-app .rm-public-city-trader__identity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.rebreya-city-app .rm-public-city-trader__identity img {
+  width: 54px;
+  height: 54px;
+  flex: 0 0 54px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.rebreya-city-app .rm-public-city-trader__identity p {
+  margin: 4px 0;
+  color: var(--rm-muted);
+}
+
+.rebreya-city-app .rm-public-city-trader__identity span {
+  color: var(--rm-accent-strong);
+  font-size: 12px;
+}
+
+@media (max-width: 760px) {
+  .rebreya-city-app .rm-public-city-shell {
+    padding: 10px;
+  }
+
+  .rebreya-city-app .rm-public-city-hero {
+    aspect-ratio: auto;
+    min-height: 420px;
+  }
+
+  .rebreya-city-app .rm-public-city-hero__copy {
+    width: 100%;
+    padding: 24px 18px;
+  }
+
+  .rebreya-city-app .rm-public-city-hero__actions {
+    right: 10px;
+    left: 10px;
+    max-width: none;
+  }
+
+  .rebreya-city-app .rm-public-city-market {
+    grid-template-columns: 1fr;
+  }
+
+  .rebreya-city-app .rm-public-city-traders {
+    grid-template-columns: 1fr;
+  }
+
+  .rebreya-city-app .rm-public-city-traders article {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
 .rm-eyebrow {
   margin: 0 0 6px;
   color: var(--rm-accent);

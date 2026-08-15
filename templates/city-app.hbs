@@ -3,12 +3,77 @@
     <p class="rm-empty">{{errorMessage}}</p>
   </section>
 {{else}}
+  {{#if isPublicView}}
+    <!-- public-city:start -->
+    <section class="rm-public-city-shell scrollable">
+      <header class="rm-public-city-hero">
+        {{#if publicCity.image}}
+          <img class="rm-public-city-hero__image" src="{{publicCity.image}}" alt="">
+        {{/if}}
+        <div class="rm-public-city-hero__copy">
+          <span>{{publicCity.state}} / {{publicCity.regionName}} / {{publicCity.cityType}}</span>
+          <h2>{{publicCity.name}}</h2>
+          <p>{{publicCity.description}}</p>
+        </div>
+        {{#if canEditPresentation}}
+          <div class="rm-public-city-hero__actions">
+            <button type="button" class="rm-button rm-button--small" data-action="edit-city-description">Изменить описание</button>
+            <button type="button" class="rm-button rm-button--small" data-action="reset-city-description">Сбросить описание</button>
+            <button type="button" class="rm-button rm-button--small" data-action="edit-city-image">Выбрать изображение</button>
+            <button type="button" class="rm-button rm-button--small" data-action="reset-city-image">Сбросить изображение</button>
+            <button type="button" class="rm-button rm-button--small" data-action="toggle-city-view" data-view-mode="admin">Экономика GM</button>
+          </div>
+        {{/if}}
+      </header>
+      <nav class="rm-public-city-tabs">
+        <button type="button" class="{{#if publicTabs.isCity}}is-active{{/if}}" data-action="city-public-tab" data-tab="city">Город</button>
+        <button type="button" class="{{#if publicTabs.isMarket}}is-active{{/if}}" data-action="city-public-tab" data-tab="market">Рынок</button>
+        <button type="button" class="{{#if publicTabs.isTraders}}is-active{{/if}}" data-action="city-public-tab" data-tab="traders">Торговцы</button>
+      </nav>
+      {{#if publicTabs.isCity}}
+        <section class="rm-public-city-story"><p>{{publicCity.description}}</p></section>
+      {{/if}}
+      {{#if publicTabs.isMarket}}
+        <section class="rm-public-city-market">
+          {{#each publicCity.materialRows}}
+            <article><span>{{name}}</span><strong>{{rmNum finalPriceGold}} зм за {{rmNum finalWeight}} фнт.</strong></article>
+          {{else}}
+            <p class="rm-empty">Для города нет доступных цен материалов.</p>
+          {{/each}}
+        </section>
+      {{/if}}
+      {{#if publicTabs.isTraders}}
+        <section class="rm-public-city-traders">
+          {{#if publicCity.tradersError}}<p class="rm-empty">{{publicCity.tradersError}}</p>{{/if}}
+          {{#each publicCity.traders}}
+            <article>
+              <div class="rm-public-city-trader__identity">
+                {{#if image}}<img src="{{image}}" alt="">{{/if}}
+                <div>
+                  <strong>{{name}}</strong>
+                  {{#if description}}<p>{{description}}</p>{{/if}}
+                  {{#if availabilityLabel}}<span>{{availabilityLabel}}</span>{{/if}}
+                </div>
+              </div>
+              <button type="button" class="rm-button rm-button--small" data-action="open-trader" data-trader-key="{{traderKey}}">Открыть лавку</button>
+            </article>
+          {{else}}
+            {{#unless publicCity.tradersError}}<p class="rm-empty">Для этого города пока нет доступных лавок.</p>{{/unless}}
+          {{/each}}
+        </section>
+      {{/if}}
+    </section>
+    <!-- public-city:end -->
+  {{else}}
   <section class="rm-shell rm-city-shell scrollable">
     <header class="rm-hero rm-hero--city">
       <div>
         <p class="rm-eyebrow">Городская экономика</p>
         <h2>{{city.name}}</h2>
         <p class="rm-muted">{{city.state}} / {{city.regionName}} / {{city.cityType}}</p>
+        {{#if isGmViewer}}
+          <button type="button" class="rm-button rm-button--small" data-action="toggle-city-view" data-view-mode="public">Публичный вид</button>
+        {{/if}}
       </div>
       <div class="rm-city-scoreboard">
         <div>
@@ -508,4 +573,5 @@
       </section>
     {{/if}}
   </section>
+  {{/if}}
 {{/if}}

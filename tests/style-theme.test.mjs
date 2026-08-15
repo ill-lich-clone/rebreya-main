@@ -231,3 +231,20 @@ test("Lootgen exposes broken equipment as a visible condition without renaming e
   assert.match(css, /\.rm-chat-loot__row-main \.rm-chat-loot__condition--broken\s*\{[^}]*color:\s*var\(--rm-warning\) !important;/su);
   assert.doesNotMatch(template, /\{\{name\}\}\s*\(сломано\)/iu);
 });
+
+test("public city styles stay scoped to the canonical City app", async () => {
+  const css = await readFile(stylesheetUrl, "utf8");
+
+  for (const selector of [
+    "rm-public-city-shell",
+    "rm-public-city-hero",
+    "rm-public-city-tabs",
+    "rm-public-city-market",
+    "rm-public-city-traders"
+  ]) {
+    assert.match(css, new RegExp(`\\.rebreya-city-app \\.${selector}`, "u"), selector);
+  }
+  const publicSelectorLines = css.split(/\r?\n/u).filter((line) => line.includes(".rm-public-city-"));
+  assert.ok(publicSelectorLines.length > 0);
+  assert.equal(publicSelectorLines.every((line) => line.trim().startsWith(".rebreya-city-app ")), true);
+});
