@@ -48,13 +48,14 @@ Definition of Done: код, тесты, `README.md` при изменении п
 ### 3. Экономика, города, товары и торговые маршруты
 
 - **Зачем:** загрузить каноническую модель мира и рассчитать снабжение, спрос, цены, связи и аналитические snapshots без UI-зависимостей.
-- **Владельцы:** чтение/кэш — `scripts/data/repository.js` (`EconomyRepository`); расчёты — `scripts/engine/economy-engine.js`; представления — `scripts/engine/selectors.js`.
-- **Источники:** `data/goods.json`, `regions.json`, `cities.json`, `reference.json`, `materials.json`, `gear.json`; runtime overrides живут в world settings, а не переписывают source JSON.
+- **Владельцы:** чтение/кэш — `scripts/data/repository.js` (`EconomyRepository`); presentation overrides — `scripts/data/city-presentation-overrides.js` и тот же repository; расчёты — `scripts/engine/economy-engine.js`; представления — `scripts/engine/selectors.js`.
+- **Источники:** `data/goods.json`, `regions.json`, `cities.json`, `reference.json`, `materials.json`, `gear.json`; runtime overrides живут в world settings, а не переписывают source JSON. Hidden world setting `cityPresentationOverrides` хранит только непустые отличия `description`/`image` известных городов и возвращается detached после нормализации.
 - **Внешние методы:** `getCitySnapshot(cityId)`, `getTradeRouteSnapshot(connectionId)`, `getTradeRouteBaseSnapshot(connectionId)`, `getTradeRoutes()`, `hasTradeRouteAnalytics()`, `prepareTradeRouteAnalytics({ rerender })`, `setConnectionActive(connectionId, isActive)`, `updateTradeRouteMetadata(connectionId, patch)`, `getReferenceEntrySnapshot(entryType, entryId)`, `updateReferenceDescription(entryType, entryId, description)`.
+- **Presentation repository:** `getCityPresentationOverrides()`, `getCityPresentations()`, `getCityPresentation(cityId)`, `updateCityPresentation(cityId, patch = {})`. Bulk merge читает setting один раз; `null` и пустая строка удаляют override поля и восстанавливают source value; неизвестный `cityId` отклоняется. Публичная mutation проходит только через composition root, где обязан стоять GM authorization boundary.
 - **UI:** `scripts/ui/economy-app.js`, `city-app.js`, `trade-routes-app.js`, `trade-route-app.js`, `reference-info-app.js` и одноимённые templates.
 - **Куда править:** формулу — engine; нормализацию исходников — repository/data importer; shape карточки — selector/UI; persisted override — composition method + setting/repository.
 - **Нельзя:** считать цену в template/UI, мутировать snapshot или смешивать source data с world override.
-- **Тесты:** `tests/economy-city-connections.test.mjs`, профильные tests сервисов/окон и `tests/main-composition-root.test.mjs` для wiring.
+- **Тесты:** `tests/economy-city-connections.test.mjs`, `tests/city-presentation-overrides.test.mjs`, профильные tests сервисов/окон и `tests/main-composition-root.test.mjs` для wiring.
 
 ### 4. Глобальные события и политики государств
 

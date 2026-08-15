@@ -221,6 +221,13 @@ export function registerSettings() {
     default: {}
   });
 
+  game.settings.register(MODULE_ID, SETTINGS_KEYS.CITY_PRESENTATION_OVERRIDES, {
+    scope: "world",
+    config: false,
+    type: Object,
+    default: {}
+  });
+
   game.settings.register(MODULE_ID, SETTINGS_KEYS.REFERENCE_NOTES, {
     scope: "world",
     config: false,

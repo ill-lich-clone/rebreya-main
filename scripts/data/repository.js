@@ -2,6 +2,12 @@
 import { buildDetailedCitySnapshot, buildEconomyModel, buildReachableImportRoutesForCity } from "../engine/economy-engine.js";
 import { loadEconomyDataset } from "./importer.js?v=1.4.128-lootgen-multiplicity";
 
+import {
+  mergeCityPresentation,
+  normalizeCityPresentationOverrides,
+  patchCityPresentationOverrides
+} from "./city-presentation-overrides.js";
+
 function buildReferenceNoteKey(entryType, entryId) {
   return `${entryType}::${entryId}`;
 }
@@ -272,6 +278,34 @@ export class EconomyRepository {
     return this.#getObjectSetting(SETTINGS_KEYS.CONNECTION_STATES);
   }
 
+  getCityPresentationOverrides() {
+    const knownCityIds = new Set(this.#model?.cities?.map((city) => city.id) ?? []);
+    return normalizeCityPresentationOverrides(
+      this.#getObjectSetting(SETTINGS_KEYS.CITY_PRESENTATION_OVERRIDES),
+      knownCityIds
+    );
+  }
+
+  getCityPresentation(cityId) {
+    return this.getCityPresentations()[cityId] ?? null;
+  }
+
+  getCityPresentations() {
+    const overrides = this.getCityPresentationOverrides();
+    return Object.fromEntries(
+      (this.#model?.cities ?? []).map((city) => [city.id, mergeCityPresentation(city, overrides)])
+    );
+  }
+
+  async updateCityPresentation(cityId, patch = {}) {
+    const knownCityIds = new Set(this.#model?.cities?.map((city) => city.id) ?? []);
+    const next = patchCityPresentationOverrides(
+      this.getCityPresentationOverrides(), cityId, patch, knownCityIds
+    );
+    await game.settings.set(MODULE_ID, SETTINGS_KEYS.CITY_PRESENTATION_OVERRIDES, next);
+    return this.getCityPresentation(cityId);
+  }
+
   getReferenceNotes() {
     return this.#getObjectSetting(SETTINGS_KEYS.REFERENCE_NOTES);
   }
@@ -397,6 +431,7 @@ export class EconomyRepository {
   async resetWorldData() {
     await Promise.all([
       game.settings.set(MODULE_ID, SETTINGS_KEYS.CONNECTION_STATES, {}),
+      game.settings.set(MODULE_ID, SETTINGS_KEYS.CITY_PRESENTATION_OVERRIDES, {}),
       game.settings.set(MODULE_ID, SETTINGS_KEYS.REFERENCE_NOTES, {}),
       game.settings.set(MODULE_ID, SETTINGS_KEYS.TRADE_ROUTE_OVERRIDES, {}),
       game.settings.set(MODULE_ID, SETTINGS_KEYS.STATE_POLICIES, {})

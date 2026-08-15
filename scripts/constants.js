@@ -178,6 +178,7 @@ export const SETTINGS_KEYS = {
   DURABILITY_MUTATION_JOURNAL: "durabilityMutationJournal",
   CALENDAR_STATE: "calendarState",
   CONNECTION_STATES: "connectionStates",
+  CITY_PRESENTATION_OVERRIDES: "cityPresentationOverrides",
   REFERENCE_NOTES: "referenceNotes",
   TRADE_ROUTE_OVERRIDES: "tradeRouteOverrides",
   STATE_POLICIES: "statePolicies",
