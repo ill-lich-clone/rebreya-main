@@ -75,6 +75,10 @@ import { GROUP_CALENDAR_PATCH_COMMAND, CalendarService } from "./data/calendar-s
 import { CalendarTransitionCoordinator } from "./data/calendar-transition-coordinator.js?v=1.4.96-craft-calendar";
 import { WorldMutationCoordinator } from "./application/world-mutation-coordinator.js";
 import { LootClaimService } from "./application/loot-claim-service.js";
+import {
+  buildPublicCitySnapshot,
+  buildPublicEconomySnapshot
+} from "./application/public-economy-read-model.js";
 import { GroupStateRepository } from "./infrastructure/foundry/group-state-repository.js";
 import { TraderStateRepository } from "./infrastructure/foundry/trader-state-repository.js";
 import { getActiveGm, isActiveGmClient } from "./infrastructure/foundry/active-gm.js";
@@ -2939,6 +2943,54 @@ export class RebreyaMainModule {
     return this.repository.getCitySnapshot(cityId);
   }
 
+  async getPublicCitySnapshot(cityId) {
+    const model = await this.getModel();
+    const city = this.getCitySnapshot(cityId);
+    if (!city) return null;
+    let traders = [];
+    let tradersError = "";
+    try {
+      traders = await this.getCityTraderSummaries(cityId);
+    }
+    catch (error) {
+      console.error(`${MODULE_ID} | Failed to load public traders for '${cityId}'.`, error);
+      tradersError = "Не удалось загрузить торговцев города.";
+    }
+    return buildPublicCitySnapshot({
+      model,
+      city,
+      presentation: this.repository.getCityPresentation(cityId),
+      traders,
+      tradersError
+    });
+  }
+
+  async getPublicEconomySnapshot() {
+    const model = await this.getModel();
+    return buildPublicEconomySnapshot(model, this.repository.getCityPresentations());
+  }
+
+  getCityPresentation(cityId) {
+    return this.repository.getCityPresentation(cityId);
+  }
+
+  async updateCityPresentation(cityId, patch = {}) {
+    if (game.user?.isGM !== true) throw new Error("City presentation updates require a GM");
+    const result = await this.repository.updateCityPresentation(cityId, patch);
+    await this.refreshCityViews({ cityIds: [cityId] });
+    return result;
+  }
+
+  async resetCityPresentation(cityId, fields = ["description", "image"]) {
+    if (game.user?.isGM !== true) throw new Error("City presentation updates require a GM");
+    const allowed = new Set(["description", "image"]);
+    const patch = Object.fromEntries((fields ?? []).filter((field) => allowed.has(field)).map((field) => [field, null]));
+    if (!Object.keys(patch).length) return this.getCityPresentation(cityId);
+    const result = await this.repository.updateCityPresentation(cityId, patch);
+    await this.refreshCityViews({ cityIds: [cityId] });
+    return result;
+  }
+
   getTradeRouteSnapshot(connectionId) {
     return this.repository.getTradeRoute(connectionId);
   }
@@ -5333,6 +5385,15 @@ export class RebreyaMainModule {
   async refreshCosmologyViews() {
     const task = this.#appRefreshTask(this.cosmologyApp);
     await this.uiRefreshCoordinator.request(task ? [task] : []);
+  }
+
+  async refreshCityViews({ cityIds = [] } = {}) {
+    const requested = new Set((cityIds ?? []).map((id) => String(id ?? "").trim()).filter(Boolean));
+    const apps = requested.size
+      ? [...requested].map((id) => this.cityApps.get(id)).filter(Boolean)
+      : [...this.cityApps.values()];
+    const tasks = apps.map((app) => this.#appRefreshTask(app)).filter(Boolean);
+    await this.uiRefreshCoordinator.request(tasks);
   }
 
   async refreshOpenApps() {

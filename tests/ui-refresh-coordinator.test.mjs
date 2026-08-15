@@ -186,6 +186,22 @@ test("cosmology refresh does not render unrelated open applications", async () =
   }
 });
 
+test("city presentation refresh targets only requested city apps", async () => {
+  const fixture = installUiFixture();
+  try {
+    fixture.moduleApi.cityApps.set("a", fixture.createApp("city-a"));
+    fixture.moduleApi.cityApps.set("b", fixture.createApp("city-b"));
+
+    await fixture.moduleApi.refreshCityViews({ cityIds: ["b"] });
+
+    assert.deepEqual(fixture.calls.map((call) => call.name), ["city-b"]);
+    assert.equal(fixture.calls[0].options.focus, false);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
 test("cosmology setting changes request only the cosmology refresh scope", () => {
   const previousGame = globalThis.game;
   const previousUi = globalThis.ui;

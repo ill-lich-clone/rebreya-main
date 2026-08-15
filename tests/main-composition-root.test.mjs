@@ -249,3 +249,40 @@ test("composition root synchronizes the managed transport Actor compendium", asy
   assert.match(source, /registerTransportGroupDropHooks\(moduleApi,\s*\{\s*Hooks\s*\}\);/u);
   assert.match(source, /registerTransportVehicleSheetHooks\(moduleApi,\s*\{\s*Hooks\s*\}\);/u);
 });
+
+test("composition root exposes safe public city reads and GM-only presentation mutations", async () => {
+  const source = await readFile(new URL("../scripts/main.js", import.meta.url), "utf8");
+
+  assert.match(
+    source,
+    /import\s+\{\s*buildPublicCitySnapshot,\s*buildPublicEconomySnapshot\s*\}\s+from\s+"\.\/application\/public-economy-read-model\.js";/u
+  );
+  for (const methodName of [
+    "getPublicCitySnapshot",
+    "getPublicEconomySnapshot",
+    "getCityPresentation",
+    "updateCityPresentation",
+    "resetCityPresentation",
+    "refreshCityViews"
+  ]) {
+    assert.match(source, new RegExp(`(?:async\\s+)?${methodName}\\(`, "u"), methodName);
+  }
+  assert.equal(source.match(/this\.cityApps\s*=\s*new Map\(\)/gu)?.length, 1);
+
+  const publicCityStart = source.indexOf("  async getPublicCitySnapshot(cityId)");
+  const publicCityEnd = source.indexOf("\n  async getPublicEconomySnapshot()", publicCityStart);
+  assert.notEqual(publicCityStart, -1);
+  assert.notEqual(publicCityEnd, -1);
+  const publicCityMethod = source.slice(publicCityStart, publicCityEnd);
+  assert.match(publicCityMethod, /return buildPublicCitySnapshot\(/u);
+  assert.doesNotMatch(publicCityMethod, /return this\.getCitySnapshot\(cityId\)/u);
+
+  const updateStart = source.indexOf("  async updateCityPresentation(cityId, patch = {})");
+  const updateEnd = source.indexOf("\n  async resetCityPresentation", updateStart);
+  assert.notEqual(updateStart, -1);
+  assert.notEqual(updateEnd, -1);
+  const updateMethodSource = source.slice(updateStart, updateEnd);
+  assert.match(updateMethodSource, /game\.user\?\.isGM\s*!==\s*true/u);
+  assert.match(updateMethodSource, /City presentation updates require a GM/u);
+  assert.match(updateMethodSource, /refreshCityViews\(\{ cityIds: \[cityId\] \}\)/u);
+});
