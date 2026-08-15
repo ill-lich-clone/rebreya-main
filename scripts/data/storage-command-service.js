@@ -98,6 +98,13 @@ export function isValidStorageOpenPayload(payload) {
     && isTrimmedString(payload.characterTokenUuid);
 }
 
+export function isValidStorageJournalReadPayload(payload) {
+  return hasLegacyOrPathKeys(payload, ["characterTokenUuid", "rowId", "tokenUuid"])
+    && isTrimmedString(payload.tokenUuid, { required: true })
+    && isTrimmedString(payload.characterTokenUuid)
+    && isTrimmedString(payload.rowId, { required: true, max: 160 });
+}
+
 export function isValidStorageClaimRowPayload(payload) {
   return hasLegacyOrPathKeys(payload, [
     "characterTokenUuid", "destination", "mutationId", "quantity", "rowId", "target", "tokenUuid"
@@ -228,6 +235,7 @@ export class StorageCommandService {
     measurePointDistance = () => Number.POSITIVE_INFINITY,
     groundPileService = null,
     containerItemService = null,
+    journalReader,
     isVisibleTo,
     resolveDocument = (...args) => globalThis.fromUuid?.(...args),
     resolveDepositSource = resolveStorageDepositSource
@@ -238,6 +246,9 @@ export class StorageCommandService {
     if (typeof resolveToken !== "function" || typeof measureDistance !== "function" || typeof isVisibleTo !== "function") {
       throw new TypeError("StorageCommandService requires token access dependencies.");
     }
+    if (typeof journalReader?.read !== "function") {
+      throw new TypeError("StorageCommandService requires a storage Journal reader.");
+    }
     this.storageService = storageService;
     this.inventoryService = inventoryService;
     this.resolveToken = resolveToken;
@@ -245,6 +256,7 @@ export class StorageCommandService {
     this.measurePointDistance = measurePointDistance;
     this.groundPileService = groundPileService;
     this.containerItemService = containerItemService;
+    this.journalReader = journalReader;
     this.isVisibleTo = isVisibleTo;
     this.resolveDocument = resolveDocument;
     this.resolveDepositSource = resolveDepositSource;
@@ -363,6 +375,21 @@ export class StorageCommandService {
       state: clean(result?.state?.state) || "opened",
       displayMode: clean(result?.state?.displayMode) || "opened"
     };
+  }
+
+  async readJournal(payload = {}, { sender } = {}) {
+    const access = await this.#resolveAccess(payload, sender);
+    const path = storagePath(payload.path);
+    const state = readStorageStateAtPath(access.storageToken, path);
+    if (state.state === "unopened") throw new Error("Сначала откройте хранилище.");
+
+    const rowId = clean(payload.rowId);
+    const rows = [...state.manualRows, ...state.generatedRows];
+    const row = rows.find((entry, index) => rowIdentity(entry, index) === rowId) ?? null;
+    if (!row || state.claimedRowIds.includes(rowId) || !isStorageJournalRow(row)) {
+      throw new Error("Запись журнала недоступна.");
+    }
+    return this.journalReader.read(row.sourceId);
   }
 
   async claimRow(payload = {}, { sender } = {}) {

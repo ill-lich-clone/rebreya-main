@@ -10,6 +10,7 @@ import {
   isValidStorageClaimRowPayload,
   isValidStorageDepositPayload,
   isValidStorageDropItemPayload,
+  isValidStorageJournalReadPayload,
   isValidStorageRestorePortablePayload,
   isValidStorageTokenCharacterPayload,
   storageCharacterTokenUuidForClaim
@@ -38,6 +39,7 @@ function createHarness({
   rowQuantity = 1,
   rejectItemGrant = false,
   depositSource = null,
+  journalReader = null,
   containerItemService = null,
   groundFailure = null
 } = {}) {
@@ -95,6 +97,7 @@ function createHarness({
   const groundCalls = [];
   const refreshCalls = [];
   const depositResolveCalls = [];
+  const journalReadCalls = [];
   const inventoryService = {
     async addLootgenRowToCharacterOnce(row, actor, mutationId) {
       if (rejectItemGrant) throw new Error("grant failed");
@@ -145,6 +148,12 @@ function createHarness({
     groundPileService,
     containerItemService,
     isVisibleTo: () => visible,
+    journalReader: journalReader ?? {
+      async read(journalUuid) {
+        journalReadCalls.push(journalUuid);
+        return { name: "Полевые заметки", pages: [] };
+      }
+    },
     resolveDepositSource: async (...args) => {
       depositResolveCalls.push(clone(args[0]));
       return typeof depositSource === "function" ? depositSource(...args) : depositSource;
@@ -164,7 +173,8 @@ function createHarness({
     coinGrants,
     groundCalls,
     refreshCalls,
-    depositResolveCalls
+    depositResolveCalls,
+    journalReadCalls
   };
 }
 
@@ -263,6 +273,170 @@ test("storage deposit payload validation accepts only exact item, Journal, and s
     ...base,
     source: { kind: "Actor", itemUuid: "Actor.hero" }
   }), false);
+});
+
+test("storage Journal read payload accepts only exact root and path identities without a Journal UUID", () => {
+  const root = {
+    tokenUuid: "Scene.scene.Token.chest",
+    characterTokenUuid: "Scene.scene.Token.hero",
+    rowId: "journal-row"
+  };
+  assert.equal(isValidStorageJournalReadPayload(root), true);
+  assert.equal(isValidStorageJournalReadPayload({ ...root, path: ["bag-row"] }), true);
+  assert.equal(isValidStorageJournalReadPayload({ ...root, journalUuid: "JournalEntry.evil" }), false);
+  assert.equal(isValidStorageJournalReadPayload({ ...root, extra: true }), false);
+  assert.equal(isValidStorageJournalReadPayload({ ...root, tokenUuid: "" }), false);
+  assert.equal(isValidStorageJournalReadPayload({ ...root, rowId: "" }), false);
+  assert.equal(isValidStorageJournalReadPayload({ ...root, characterTokenUuid: " hero " }), false);
+  assert.equal(isValidStorageJournalReadPayload({ ...root, path: [""] }), false);
+  assert.equal(isValidStorageJournalReadPayload({ ...root, path: Array(9).fill("row") }), false);
+});
+
+test("storage Journal reads re-run access checks and use only an authoritative unclaimed row source", async () => {
+  const journalOwnership = { default: 0, gm: 3 };
+  const beforeOwnership = structuredClone(journalOwnership);
+  const readCalls = [];
+  const harness = createHarness({
+    journalReader: {
+      async read(journalUuid) {
+        readCalls.push(journalUuid);
+        return { name: "Полевые заметки", pages: [] };
+      }
+    }
+  });
+  await harness.storageService.configure(harness.storageToken, {
+    state: "opened",
+    manualRows: [{
+      rowKind: "journal",
+      rowId: "journal-row",
+      stackKey: "",
+      sourceId: "JournalEntry.authoritative",
+      sourceType: "journal",
+      name: "Полевые заметки",
+      img: "icons/book.webp",
+      quantity: 1
+    }]
+  });
+  const payload = {
+    tokenUuid: harness.storageToken.uuid,
+    characterTokenUuid: harness.characterToken.uuid,
+    rowId: "journal-row",
+    journalUuid: "JournalEntry.polluted"
+  };
+
+  const snapshot = await harness.service.readJournal(payload, { sender: harness.player });
+
+  assert.deepEqual(snapshot, { name: "Полевые заметки", pages: [] });
+  assert.deepEqual(readCalls, ["JournalEntry.authoritative"]);
+  assert.deepEqual(journalOwnership, beforeOwnership);
+
+  const farHarness = createHarness({ distance: 6 });
+  await farHarness.storageService.configure(farHarness.storageToken, {
+    state: "opened",
+    manualRows: [readStorageState(harness.storageToken).manualRows[0]]
+  });
+  await assert.rejects(farHarness.service.readJournal({
+    tokenUuid: farHarness.storageToken.uuid,
+    characterTokenUuid: farHarness.characterToken.uuid,
+    rowId: "journal-row"
+  }, { sender: farHarness.player }), /5 футов/iu);
+
+  const hiddenHarness = createHarness({ visible: false });
+  await assert.rejects(hiddenHarness.service.readJournal({
+    tokenUuid: hiddenHarness.storageToken.uuid,
+    characterTokenUuid: hiddenHarness.characterToken.uuid,
+    rowId: "journal-row"
+  }, { sender: hiddenHarness.player }), /не видит/iu);
+
+  const otherSceneHarness = createHarness();
+  otherSceneHarness.characterToken.parent = { id: "other-scene" };
+  await assert.rejects(otherSceneHarness.service.readJournal({
+    tokenUuid: otherSceneHarness.storageToken.uuid,
+    characterTokenUuid: otherSceneHarness.characterToken.uuid,
+    rowId: "journal-row"
+  }, { sender: otherSceneHarness.player }), /одной сцене/iu);
+
+  await assert.rejects(harness.service.readJournal({
+    tokenUuid: harness.storageToken.uuid,
+    characterTokenUuid: harness.characterToken.uuid,
+    rowId: "journal-row"
+  }, { sender: { id: "stranger", isGM: false } }), /принадлежащего вам персонажа/iu);
+});
+
+test("storage Journal reads resolve nested state live and fail closed for unavailable rows", async () => {
+  const harness = createHarness();
+  const nestedJournal = {
+    rowKind: "journal",
+    rowId: "nested-journal",
+    stackKey: "",
+    sourceId: "JournalEntry.nested",
+    sourceType: "journal",
+    name: "Вложенная запись",
+    img: "icons/book.webp",
+    quantity: 1
+  };
+  const bagRow = buildStorageContainerRow({
+    containerId: "bag-journal",
+    storageKind: "bag",
+    name: "Сумка",
+    state: {
+      baseName: "Сумка",
+      state: "opened",
+      manualRows: [nestedJournal],
+      generatedRows: [],
+      claimedRowIds: [],
+      manualCoins: {},
+      generatedCoins: {},
+      coinsClaimed: false
+    }
+  }, { rowId: "bag-row" });
+  await harness.storageService.configure(harness.storageToken, {
+    state: "opened",
+    manualRows: [bagRow]
+  });
+  const request = {
+    tokenUuid: harness.storageToken.uuid,
+    characterTokenUuid: harness.characterToken.uuid,
+    path: ["bag-row"],
+    rowId: "nested-journal"
+  };
+
+  await harness.service.readJournal(request, { sender: harness.player });
+  assert.deepEqual(harness.journalReadCalls, ["JournalEntry.nested"]);
+
+  const nestedState = readStorageStateAtPath(harness.storageToken, ["bag-row"]);
+  nestedState.claimedRowIds = ["nested-journal"];
+  bagRow.container.state = nestedState;
+  await harness.storageService.configure(harness.storageToken, { state: "opened", manualRows: [bagRow] });
+  await assert.rejects(harness.service.readJournal(request, { sender: harness.player }), /недоступна/iu);
+
+  await harness.storageService.configure(harness.storageToken, { state: "opened", manualRows: [] });
+  await assert.rejects(harness.service.readJournal({ ...request, path: [] }, { sender: harness.player }), /недоступна/iu);
+
+  await harness.storageService.configure(harness.storageToken, {
+    state: "opened",
+    manualRows: [{
+      rowId: "ordinary",
+      name: "Ключ",
+      quantity: 1,
+      itemData: { name: "Ключ", type: "loot", system: { quantity: 1 } }
+    }]
+  });
+  await assert.rejects(harness.service.readJournal({
+    ...request,
+    path: [],
+    rowId: "ordinary"
+  }, { sender: harness.player }), /недоступна/iu);
+
+  await harness.storageService.configure(harness.storageToken, {
+    state: "unopened",
+    manualRows: [nestedJournal]
+  });
+  await assert.rejects(harness.service.readJournal({
+    ...request,
+    path: [],
+    rowId: "nested-journal"
+  }, { sender: harness.player }), /Сначала откройте/iu);
 });
 
 test("portable scene restore payload accepts one exact item and finite scene point", () => {
@@ -767,6 +941,95 @@ test("RebreyaMainModule preserves the exact Journal source in an active-GM depos
     globalThis.game = previousGame;
     globalThis.canvas = previousCanvas;
     globalThis.Hooks = previousHooks;
+  }
+});
+
+test("RebreyaMainModule sends an exact UUID-free storage Journal read payload", async () => {
+  const previousGame = globalThis.game;
+  const previousCanvas = globalThis.canvas;
+  const previousHooks = globalThis.Hooks;
+  const gm = { id: "gm", isGM: true, active: true };
+  globalThis.game = { user: gm, users: { activeGM: gm } };
+  globalThis.canvas = { tokens: { controlled: [] } };
+  globalThis.Hooks = { once() {}, on() {} };
+  try {
+    const { RebreyaMainModule } = await import(`../scripts/main.js?journal-read=${Date.now()}`);
+    const moduleApi = new RebreyaMainModule();
+    const calls = [];
+    moduleApi.storageCommandService = {
+      async readJournal(payload, context) {
+        calls.push({ payload: clone(payload), context });
+        return { name: "Полевые заметки", pages: [] };
+      }
+    };
+
+    await moduleApi.readStorageJournal("Scene.scene.Token.chest", "journal-row", {
+      characterTokenUuid: "",
+      path: ["bag-row"],
+      journalUuid: "JournalEntry.polluted"
+    });
+
+    assert.deepEqual(calls[0].payload, {
+      tokenUuid: "Scene.scene.Token.chest",
+      characterTokenUuid: "",
+      rowId: "journal-row",
+      path: ["bag-row"]
+    });
+    assert.equal(calls[0].context.sender, gm);
+  }
+  finally {
+    globalThis.game = previousGame;
+    globalThis.canvas = previousCanvas;
+    globalThis.Hooks = previousHooks;
+  }
+});
+
+test("player storage snapshots omit Journal sources while GM diagnostics retain them", async () => {
+  const previousGame = globalThis.game;
+  const previousCanvas = globalThis.canvas;
+  const previousHooks = globalThis.Hooks;
+  const previousFoundry = globalThis.foundry;
+  const previousFromUuid = globalThis.fromUuid;
+  const player = { id: "player", isGM: false };
+  const gm = { id: "gm", isGM: true, active: true };
+  const harness = createHarness();
+  globalThis.game = { user: player, users: { activeGM: gm } };
+  globalThis.canvas = { tokens: { controlled: [] } };
+  globalThis.Hooks = { once() {}, on() {} };
+  globalThis.foundry = { utils: { deepClone: clone } };
+  globalThis.fromUuid = async (uuid) => uuid === harness.storageToken.uuid ? harness.storageToken : null;
+  try {
+    const { RebreyaMainModule } = await import(`../scripts/main.js?journal-snapshot=${Date.now()}`);
+    const moduleApi = new RebreyaMainModule();
+    await moduleApi.storageService.configure(harness.storageToken, {
+      state: "opened",
+      manualRows: [{
+        rowKind: "journal",
+        rowId: "journal-row",
+        stackKey: "",
+        sourceId: "JournalEntry.private",
+        sourceType: "journal",
+        name: "Полевые заметки",
+        img: "icons/book.webp",
+        quantity: 1
+      }]
+    });
+
+    const playerSnapshot = await moduleApi.getStorageSnapshot(harness.storageToken.uuid);
+    assert.equal("sourceId" in playerSnapshot.rows[0], false);
+    assert.equal("manualRows" in playerSnapshot, false);
+
+    globalThis.game.user = gm;
+    const gmSnapshot = await moduleApi.getStorageSnapshot(harness.storageToken.uuid);
+    assert.equal(gmSnapshot.rows[0].sourceId, "JournalEntry.private");
+    assert.equal(gmSnapshot.manualRows[0].sourceId, "JournalEntry.private");
+  }
+  finally {
+    globalThis.game = previousGame;
+    globalThis.canvas = previousCanvas;
+    globalThis.Hooks = previousHooks;
+    globalThis.foundry = previousFoundry;
+    globalThis.fromUuid = previousFromUuid;
   }
 });
 

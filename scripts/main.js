@@ -101,6 +101,7 @@ import {
 import { BuiltinStorageActorService } from "./data/builtin-storage-actor-service.js";
 import { StorageGroundPileService } from "./data/storage-ground-pile-service.js?v=1.4.133-ground-item-polish";
 import { StorageContainerItemService } from "./data/storage-container-item-service.js?v=1.4.130-storage-player-fixes";
+import { StorageJournalReader } from "./data/storage-journal-reader.js";
 import {
   parseStorageDepositDragData,
   resolveStorageDepositSource
@@ -112,6 +113,7 @@ import {
   isValidStorageClaimRowPayload,
   isValidStorageDepositPayload,
   isValidStorageDropItemPayload,
+  isValidStorageJournalReadPayload,
   isValidStorageOpenPayload,
   isValidStorageRestorePortablePayload,
   isValidStorageTokenCharacterPayload,
@@ -264,6 +266,7 @@ const COMBAT_STATUS_SET_COMMAND = "combat.status.set";
 const TRADER_PURCHASE_COMMAND = "trader.purchase";
 const TRADER_SELL_COMMAND = "trader.sell";
 export const STORAGE_OPEN_COMMAND = "storage.open";
+export const STORAGE_JOURNAL_READ_COMMAND = "storage.journal.read";
 export const STORAGE_CLAIM_ROW_COMMAND = "storage.claim-row";
 export const STORAGE_CLAIM_COINS_COMMAND = "storage.claim-coins";
 export const STORAGE_DEPOSIT_COMMAND = "storage.deposit";
@@ -1116,6 +1119,12 @@ export class RebreyaMainModule {
       isActiveGm: isActiveGmClient
     });
     this.storageContainerItemService = new StorageContainerItemService();
+    this.storageJournalReader = new StorageJournalReader({
+      fromUuid: (uuid) => globalThis.fromUuid?.(uuid),
+      enrichHtml: (content, options) => (
+        globalThis.CONFIG?.ux?.TextEditor?.implementation?.enrichHTML?.(content, options)
+      )
+    });
     this.nativeObjectDurabilityService = new NativeObjectDurabilityService({
       durabilityService: this.durabilityService,
       storageService: this.storageService,
@@ -1134,6 +1143,7 @@ export class RebreyaMainModule {
       measurePointDistance: measureStoragePointDistance,
       groundPileService: this.storageGroundPileService,
       containerItemService: this.storageContainerItemService,
+      journalReader: this.storageJournalReader,
       isVisibleTo: (storageToken) => isStorageTokenVisible(storageToken)
     });
     this.transportInstanceService = new TransportInstanceService(this, {
@@ -1403,6 +1413,11 @@ export class RebreyaMainModule {
       validate: isValidStorageOpenPayload,
       authorize: (_payload, { sender }) => Boolean(sender),
       execute: (payload, { sender }) => this.storageCommandService.open(payload, { sender })
+    });
+    this.socketCommandBus.register(STORAGE_JOURNAL_READ_COMMAND, {
+      validate: isValidStorageJournalReadPayload,
+      authorize: (_payload, { sender }) => Boolean(sender),
+      execute: (payload, { sender }) => this.storageCommandService.readJournal(payload, { sender })
     });
     this.socketCommandBus.register(STORAGE_CLAIM_ROW_COMMAND, {
       validate: isValidStorageClaimRowPayload,
@@ -3205,6 +3220,19 @@ export class RebreyaMainModule {
       : this.socketCommandBus.request(STORAGE_OPEN_COMMAND, payload);
   }
 
+  async readStorageJournal(tokenUuid, rowId, request = {}) {
+    const path = cleanStoragePath(request.path);
+    const payload = {
+      tokenUuid: cleanSocketId(tokenUuid),
+      characterTokenUuid: this.#controlledCharacterTokenUuid(request.characterTokenUuid),
+      rowId: cleanSocketId(rowId),
+      ...(path.length ? { path } : {})
+    };
+    return isActiveGmClient(globalThis.game)
+      ? this.storageCommandService.readJournal(payload, { sender: globalThis.game?.user })
+      : this.socketCommandBus.request(STORAGE_JOURNAL_READ_COMMAND, payload);
+  }
+
   async claimStorageRow(tokenUuid, rowId, destination, mutationId, request = {}) {
     const safeTokenUuid = cleanSocketId(tokenUuid);
     const safeDestination = cleanSocketId(destination);
@@ -3369,6 +3397,7 @@ export class RebreyaMainModule {
     const path = cleanStoragePath(request.path);
     const state = readStorageStateAtPath(token, path);
     const combinedRows = [...state.manualRows, ...state.generatedRows];
+    const canManage = globalThis.game?.user?.isGM === true;
     const rows = combinedRows
       .map((row, index) => {
         const next = { ...foundry.utils.deepClone(row), rowId: cleanSocketId(row.rowId ?? index) };
@@ -3381,6 +3410,7 @@ export class RebreyaMainModule {
             state: cleanSocketId(next.container.state?.state)
           };
         }
+        if (!canManage && next.rowKind === "journal") delete next.sourceId;
         return next;
       })
       .filter((row) => !state.claimedRowIds.includes(row.rowId));
@@ -3390,7 +3420,6 @@ export class RebreyaMainModule {
         ? 0
         : Math.max(0, Math.trunc(Number(state.manualCoins?.[key] ?? 0) + Number(state.generatedCoins?.[key] ?? 0)))
     ]));
-    const canManage = globalThis.game?.user?.isGM === true;
     return {
       tokenUuid: cleanSocketId(token.uuid ?? tokenUuid),
       path,

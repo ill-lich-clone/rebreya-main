@@ -7,6 +7,12 @@ test("main registers the storage deposit socket API and current cache keys", asy
   const manifest = JSON.parse(await readFile(new URL("../module.json", import.meta.url), "utf8"));
 
   assert.match(main, /isValidStorageDepositPayload/u);
+  assert.match(main, /StorageJournalReader/u);
+  assert.match(main, /isValidStorageJournalReadPayload/u);
+  assert.match(main, /STORAGE_JOURNAL_READ_COMMAND\s*=\s*"storage\.journal\.read"/u);
+  assert.match(main, /register\(STORAGE_JOURNAL_READ_COMMAND,\s*\{/u);
+  assert.match(main, /this\.storageCommandService\.readJournal\(payload,\s*\{ sender \}\)/u);
+  assert.match(main, /async readStorageJournal\(/u);
   assert.match(main, /STORAGE_DEPOSIT_COMMAND\s*=\s*"storage\.deposit"/u);
   assert.match(main, /register\(STORAGE_DEPOSIT_COMMAND,\s*\{/u);
   assert.match(main, /this\.storageCommandService\.deposit\(payload,\s*\{ sender \}\)/u);

@@ -243,6 +243,7 @@
 - При первом явном открытии содержимое генерируется один раз. Игрок может передать каждую строку или монеты себе либо в групповой инвентарь. Для игрока active-GM повторно проверяет видимость, владение выбранным персонажем и дистанцию не более 5 футов.
 - После выдачи всего содержимого состояние становится `empty`, а к имени токена добавляется `(пусто)`. Выдача идемпотентна и идёт через единый `SocketCommandBus`.
 - Хранилища полностью принадлежат Rebreya: их actor/token flags, генерация, интерфейс и выдача не требуют внешнего модуля куч.
+- `readStorageJournal(tokenUuid, rowId, request)` читает только Journal-ссылку из открытого, доступного хранилища. Active GM заново проверяет сцену, видимость, дистанцию и владение выбранным персонажем, берёт Journal UUID только из authoritative строки по `request.path`, читает актуальные страницы без изменения документа или ownership и возвращает UUID-free read-only snapshot без нераскрытых secret-блоков. Sidebar visibility и ownership Journal не дают и не отменяют доступ; удалённая, забранная или небезопасная запись отвечает общей ошибкой недоступности.
 
 ## Публичный API
 
@@ -288,7 +289,7 @@ await api.setCombatStatus("actor-id", "frightened", { value: 2 });
 - `recordTraderAudit`, `getTradeAuditLog`, `rollbackTraderAuditEntry`.
 - `shareLootgenResult`, `createLootgenChatMessage`, `claimLootgenChatRow`, `claimLootgenChatCoins`, `claimLootgenChatRowToInventory`, `claimLootgenChatAllToInventory`, `restoreLootgenClearFromChat`.
 - `listLootgenTemplates`, `getLootgenTemplate`, `saveLootgenTemplate`, `removeLootgenTemplate`.
-- `openStorageApp`, `getStorageSnapshot`, `markStorageActor`, `configureStorageToken`, `addManualStorageItem`, `removeManualStorageItem`, `resetStorageToken`, `openStorage`, `claimStorageRow`, `claimStorageCoins`.
+- `openStorageApp`, `getStorageSnapshot`, `markStorageActor`, `configureStorageToken`, `addManualStorageItem`, `removeManualStorageItem`, `resetStorageToken`, `openStorage`, `readStorageJournal(tokenUuid, rowId, request)`, `claimStorageRow`, `claimStorageCoins`.
 - `installItemUpgrade`, `removeItemUpgrade`, `setItemUpgradeCapacity`.
 
 ### Бой и космология

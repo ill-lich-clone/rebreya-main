@@ -12,6 +12,7 @@ test("scene storage and durability are owned by Rebreya and add no retired exter
     readFile(new URL("../scripts/main.js", import.meta.url), "utf8"),
     readFile(new URL("../scripts/data/storage-service.js", import.meta.url), "utf8"),
     readFile(new URL("../scripts/data/storage-command-service.js", import.meta.url), "utf8"),
+    readFile(new URL("../scripts/data/storage-journal-reader.js", import.meta.url), "utf8"),
     readFile(new URL("../scripts/data/durability-rules.js", import.meta.url), "utf8"),
     readFile(new URL("../scripts/data/durability-service.js", import.meta.url), "utf8"),
     readFile(new URL("../scripts/integrations/storage-token-hooks.js", import.meta.url), "utf8"),
@@ -22,7 +23,9 @@ test("scene storage and durability are owned by Rebreya and add no retired exter
 
   assert.equal(manifest.relationships.requires.some((entry) => entry.id === "item-piles"), false);
   assert.doesNotMatch([mainSource, ...runtimeSources].join("\n"), /item.?piles|itempiles/iu);
-  for (const apiName of ["openStorage", "claimStorageRow", "claimStorageCoins", "configureStorageToken"]) {
+  for (const apiName of [
+    "openStorage", "readStorageJournal", "claimStorageRow", "claimStorageCoins", "configureStorageToken"
+  ]) {
     assert.match(mainSource, new RegExp(`\\b${apiName}\\b`, "u"));
   }
 });
