@@ -1136,6 +1136,13 @@ summary:focus-visible {
   transform: translate(-50%, 0);
 }
 
+.rm-storage-item__icon.rm-tooltip-anchor[aria-expanded="true"][data-rm-tooltip]::before,
+.rm-storage-item__icon.rm-tooltip-anchor[aria-expanded="true"][data-rm-tooltip]::after {
+  opacity: 0;
+  visibility: hidden;
+  transform: translate(-50%, 4px);
+}
+
 .rm-summary-grid,
 .rm-city-layout {
   display: grid;

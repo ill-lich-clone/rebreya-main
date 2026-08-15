@@ -237,6 +237,10 @@ test("item cells keep click actions separate from article dragging and use no na
   assert.match(template, /aria-label="[^"]*\{\{name\}\}"/u);
   assert.match(css, /\.rm-storage-item__icon\.rm-tooltip-anchor\s*\{[^}]*overflow:\s*visible/isu);
   assert.match(css, /\.rm-storage-item__icon\.rm-tooltip-anchor\s*>\s*img\s*\{[^}]*border-radius:\s*inherit/isu);
+  assert.match(
+    css,
+    /\.rm-storage-item__icon\.rm-tooltip-anchor\[aria-expanded="true"\]\[data-rm-tooltip\]::before,[\s\S]*?::after\s*\{[^}]*opacity:\s*0[^}]*visibility:\s*hidden/isu
+  );
 });
 
 test("container cells open the nested storage directly while ordinary items open their popover", async () => {
