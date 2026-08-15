@@ -14,7 +14,11 @@ const PUBLIC_CITY_TABS = new Set(["city", "market", "traders"]);
 function getFoundryAssetUrl(path) {
   const assetPath = String(path ?? "").trim();
   if (!assetPath) return "";
-  return foundry.utils?.getRoute?.(assetPath) ?? assetPath;
+  const routedPath = foundry.utils?.getRoute?.(assetPath) ?? assetPath;
+  const moduleVersion = String(game.modules?.get?.(MODULE_ID)?.version ?? "").trim();
+  if (!moduleVersion) return routedPath;
+  const separator = routedPath.includes("?") ? "&" : "?";
+  return `${routedPath}${separator}v=${encodeURIComponent(moduleVersion)}`;
 }
 
 function formatStatusLabel(status) {

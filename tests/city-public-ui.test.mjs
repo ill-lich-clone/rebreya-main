@@ -49,7 +49,11 @@ test("player CityEconomyApp prepares only the public snapshot", async () => {
     applications: { api: { ApplicationV2: TestApplication, HandlebarsApplicationMixin: (Base) => Base, DialogV2: {} } },
     utils: { getRoute: (path) => `/foundry/${path}` }
   };
-  globalThis.game = { user: { isGM: false }, settings: { get: () => false } };
+  globalThis.game = {
+    user: { isGM: false },
+    settings: { get: () => false },
+    modules: new Map([["rebreya-main", { version: "1.4.135" }]])
+  };
   const calls = [];
   try {
     const { CityEconomyApp } = await import(`../scripts/ui/city-app.js?public-player=${Date.now()}`);
@@ -68,7 +72,7 @@ test("player CityEconomyApp prepares only the public snapshot", async () => {
     const context = await app._prepareContext();
     assert.equal(context.isPublicView, true);
     assert.equal(context.canEditPresentation, false);
-    assert.equal(context.publicCityImageUrl, "/foundry/modules/rebreya-main/assets/cities/Город.webp");
+    assert.equal(context.publicCityImageUrl, "/foundry/modules/rebreya-main/assets/cities/Город.webp?v=1.4.135");
     assert.deepEqual(calls, [["public", "city-a"]]);
 
     const missing = new CityEconomyApp({ async getPublicCitySnapshot() { return null; } }, "missing");
@@ -83,14 +87,16 @@ test("player CityEconomyApp prepares only the public snapshot", async () => {
 });
 
 test("CityEconomyApp retains GM analytics and exposes only planned public controls", async () => {
-  const [source, template] = await Promise.all([
+  const [source, template, mainSource] = await Promise.all([
     readFile(new URL("../scripts/ui/city-app.js", import.meta.url), "utf8"),
-    readFile(new URL("../templates/city-app.hbs", import.meta.url), "utf8")
+    readFile(new URL("../templates/city-app.hbs", import.meta.url), "utf8"),
+    readFile(new URL("../scripts/main.js", import.meta.url), "utf8")
   ]);
   assert.match(source, /resolveCityViewMode/u);
   assert.match(source, /this\.moduleApi\.getCitySnapshot\(this\.cityId\)/u);
   assert.match(source, /rm-public-city-hero__image[\s\S]*addEventListener\("error"[\s\S]*hidden\s*=\s*true/u);
   assert.match(template, /src="\{\{publicCityImageUrl\}\}"/u);
+  assert.match(mainSource, /import\("\.\/ui\/city-app\.js\?v=1\.4\.135-public-city-panorama"\)/u);
   assert.doesNotMatch(source, /travelState|originCityId|destinationCityId/u);
   for (const action of [
     "city-public-tab",
@@ -110,6 +116,13 @@ test("CityEconomyApp retains GM analytics and exposes only planned public contro
   assert.notEqual(start, -1);
   assert.notEqual(end, -1);
   const publicBranch = template.slice(start, end);
+  assert.equal(
+    publicBranch.match(/\{\{publicCity\.description\}\}/gu)?.length,
+    1,
+    "public description must be rendered only in the City tab"
+  );
+  const heroEnd = publicBranch.indexOf("</header>");
+  assert.equal(publicBranch.slice(0, heroEnd).includes("{{publicCity.description}}"), false);
   for (const forbidden of ["priceModifierPercent", "production", "demand", "balance", "surplus", "deficit", "selfSufficiencyRate"]) {
     assert.equal(publicBranch.includes(forbidden), false, forbidden);
   }

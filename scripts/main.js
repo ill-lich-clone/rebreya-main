@@ -5442,7 +5442,7 @@ export class RebreyaMainModule {
 
   async openCityApp(cityId) {
     try {
-      const { CityEconomyApp } = await import("./ui/city-app.js");
+      const { CityEconomyApp } = await import("./ui/city-app.js?v=1.4.135-public-city-panorama");
 
       let app = this.cityApps.get(cityId);
       if (!app) {
