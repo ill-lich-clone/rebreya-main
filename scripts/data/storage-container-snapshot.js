@@ -55,6 +55,21 @@ function normalizeItemRow(row, createId) {
   return normalized;
 }
 
+function normalizeJournalRow(row, createId) {
+  const sourceId = clean(row?.sourceId);
+  if (!sourceId) throw new TypeError("Journal reference row requires sourceId.");
+  return {
+    rowKind: "journal",
+    rowId: clean(row?.rowId) || createId("journal"),
+    stackKey: "",
+    sourceId,
+    sourceType: "journal",
+    name: clean(row?.name) || "Журнал",
+    img: clean(row?.img),
+    quantity: 1
+  };
+}
+
 function normalizeContainerRow(row, context) {
   const nested = normalizeSnapshot(row?.container, {
     ...context,
@@ -87,9 +102,12 @@ function normalizeContainerRow(row, context) {
 function normalizeRows(rows, context) {
   return (Array.isArray(rows) ? rows : [])
     .filter((row) => row && typeof row === "object" && !Array.isArray(row))
-    .map((row) => isStorageContainerRow(row)
-      ? normalizeContainerRow(row, context)
-      : normalizeItemRow(row, context.createId));
+    .map((row) => {
+      if (isStorageJournalRow(row)) return normalizeJournalRow(row, context.createId);
+      return isStorageContainerRow(row)
+        ? normalizeContainerRow(row, context)
+        : normalizeItemRow(row, context.createId);
+    });
 }
 
 function normalizeSnapshot(input, context) {
@@ -135,6 +153,10 @@ function normalizeSnapshot(input, context) {
 export function isStorageContainerRow(row) {
   return row?.rowKind === "container"
     || Boolean(row?.container && typeof row.container === "object" && !Array.isArray(row.container));
+}
+
+export function isStorageJournalRow(row) {
+  return row?.rowKind === "journal" || clean(row?.sourceType) === "journal";
 }
 
 export function buildStorageContainerSnapshot(input = {}, { createId = createStableId } = {}) {

@@ -10,6 +10,7 @@ import {
   createPortableStorageContainerItemData,
   isPortableStorageContainerItem,
   isStorageContainerRow,
+  isStorageJournalRow,
   readPortableStorageContainerSnapshot,
   rekeyStorageContainerSnapshot,
   resolveStorageContainerPath,
@@ -59,6 +60,54 @@ test("container rows are unique quantity-one rows and ordinary rows remain stack
   assert.equal(isStorageContainerRow(root.state.manualRows[1]), true);
   assert.equal(isStorageContainerRow(root.state.manualRows[0]), false);
   assert.deepEqual([...collectStorageContainerIds(root)].sort(), ["bag-1", "chest-1"]);
+});
+
+test("journal reference rows stay canonical across root, nested, portable, and rekeyed snapshots", () => {
+  const journal = {
+    rowKind: "journal",
+    rowId: "journal-row",
+    sourceId: "JournalEntry.secret-notes",
+    sourceType: "journal",
+    name: "Полевые заметки",
+    img: "icons/book.webp",
+    quantity: 99,
+    itemData: { type: "loot" }
+  };
+  const root = buildStorageContainerSnapshot(snapshot("root", "Сундук", [
+    journal,
+    buildStorageContainerRow(snapshot("nested", "Сумка", [
+      { ...journal, rowId: "nested-journal-row" }
+    ]), { rowId: "nested-row" })
+  ]));
+  const expected = {
+    rowKind: "journal",
+    rowId: "journal-row",
+    stackKey: "",
+    sourceId: "JournalEntry.secret-notes",
+    sourceType: "journal",
+    name: "Полевые заметки",
+    img: "icons/book.webp",
+    quantity: 1
+  };
+
+  assert.deepEqual(root.state.manualRows[0], expected);
+  assert.equal(isStorageJournalRow(root.state.manualRows[0]), true);
+  assert.equal("itemData" in root.state.manualRows[0], false);
+  assert.deepEqual(root.state.manualRows[1].container.state.manualRows[0], {
+    ...expected,
+    rowId: "nested-journal-row"
+  });
+  assert.equal(readPortableStorageContainerSnapshot(
+    createPortableStorageContainerItemData(root)
+  ).state.manualRows[0].sourceId, "JournalEntry.secret-notes");
+  assert.equal(rekeyStorageContainerSnapshot(root).state.manualRows[0].sourceId, "JournalEntry.secret-notes");
+  assert.throws(
+    () => buildStorageContainerSnapshot(snapshot("invalid", "Сундук", [{
+      rowKind: "journal",
+      rowId: "missing-source"
+    }])),
+    TypeError
+  );
 });
 
 test("container snapshots reject duplicate ancestors and nesting deeper than eight levels", () => {

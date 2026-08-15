@@ -162,6 +162,66 @@ test("portable storage creates its complete item tree in one actor batch", async
   assert.equal(actor.items.contents.find((item) => item.name === "Верёвка").system.container, root.id);
 });
 
+test("portable storage materializes only Items and keeps Journal references in its snapshot", async () => {
+  const actor = createActor();
+  const originalCreate = actor.createEmbeddedDocuments.bind(actor);
+  const calls = [];
+  actor.createEmbeddedDocuments = async (type, documents, options) => {
+    calls.push({ type, documents: clone(documents), options: clone(options) });
+    return originalCreate(type, documents, options);
+  };
+  const snapshot = {
+    containerId: "journal-bag",
+    storageKind: "bag",
+    name: "Сумка",
+    img: "icons/bag.webp",
+    state: {
+      baseName: "Сумка",
+      state: "opened",
+      manualRows: [
+        {
+          rowId: "rope-row",
+          name: "Верёвка",
+          img: "icons/rope.webp",
+          quantity: 2,
+          itemData: { name: "Верёвка", type: "loot", img: "icons/rope.webp", system: { quantity: 2 } }
+        },
+        {
+          rowKind: "journal",
+          rowId: "journal-row",
+          sourceId: "JournalEntry.secret-notes",
+          sourceType: "journal",
+          name: "Полевые заметки",
+          img: "icons/book.webp",
+          quantity: 1
+        }
+      ],
+      generatedRows: [],
+      claimedRowIds: [],
+      manualCoins: {},
+      generatedCoins: {},
+      coinsClaimed: false
+    }
+  };
+
+  const root = await new StorageContainerItemService().materializeToActorOnce(actor, snapshot, "journal-row");
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].documents.length, 2);
+  assert.deepEqual(calls[0].documents.map((item) => item.name).sort(), ["Верёвка", "Сумка"]);
+  const captured = await new StorageContainerItemService().captureFromItem(root);
+  assert.deepEqual(captured.state.manualRows.find((row) => row.rowId === "journal-row"), {
+    rowKind: "journal",
+    rowId: "journal-row",
+    stackKey: "",
+    sourceId: "JournalEntry.secret-notes",
+    sourceType: "journal",
+    name: "Полевые заметки",
+    img: "icons/book.webp",
+    quantity: 1
+  });
+});
+
 test("removing and restoring a portable container moves its entire item tree", async () => {
   const actor = createActor();
   const service = new StorageContainerItemService();

@@ -5,6 +5,7 @@ import {
   buildStorageContainerRow,
   buildStorageContainerSnapshot,
   createPortableStorageContainerItemData,
+  isStorageJournalRow,
   readPortableStorageContainerSnapshot
 } from "./storage-container-snapshot.js";
 
@@ -125,6 +126,30 @@ function itemQuantity(item) {
   return Number.isSafeInteger(quantity) && quantity >= 1 ? quantity : 1;
 }
 
+function unclaimedJournalRows(state) {
+  const claimed = new Set((Array.isArray(state?.claimedRowIds) ? state.claimedRowIds : []).map(clean));
+  const rowIds = new Set();
+  return [
+    ...(Array.isArray(state?.manualRows) ? state.manualRows : []),
+    ...(Array.isArray(state?.generatedRows) ? state.generatedRows : [])
+  ].filter((row) => {
+    const rowId = clean(row?.rowId);
+    if (!isStorageJournalRow(row) || !rowId || claimed.has(rowId) || rowIds.has(rowId)) return false;
+    rowIds.add(rowId);
+    return true;
+  }).map(clone);
+}
+
+function mergeRowsWithJournalReferences(rows, state) {
+  const rowIds = new Set();
+  return [...unclaimedJournalRows(state), ...rows].filter((row) => {
+    const rowId = clean(row?.rowId);
+    if (!rowId || rowIds.has(rowId)) return false;
+    rowIds.add(rowId);
+    return true;
+  });
+}
+
 function containerOptions(snapshot, parentContainerId) {
   const storedSystem = snapshot?.presentation?.itemSystem ?? {};
   const capacity = storedSystem.capacity ?? {};
@@ -199,6 +224,7 @@ export class StorageContainerItemService {
     ].filter((row) => !claimed.has(clean(row?.rowId)));
 
     for (const row of rows) {
+      if (isStorageJournalRow(row)) continue;
       if (row?.rowKind === "container" && row.container) {
         const nested = buildStorageContainerSnapshot(row.container);
         const childId = documentId();
@@ -291,6 +317,7 @@ export class StorageContainerItemService {
     const allItems = itemCollection(actor);
     const visit = async (current, ancestors = new Set()) => {
       const base = readPortableStorageContainerSnapshot(current) ?? nativeContainerSnapshot(current);
+      const storedState = base.state ?? {};
       const itemId = clean(current.id);
       if (ancestors.has(itemId)) throw new Error("Обнаружен цикл нативных dnd5e-контейнеров.");
       const nextAncestors = new Set(ancestors).add(itemId);
@@ -320,7 +347,6 @@ export class StorageContainerItemService {
         });
       }
 
-      const storedState = base.state ?? {};
       if (storedState.state === "unopened") {
         return buildStorageContainerSnapshot({
           ...base,
@@ -333,6 +359,7 @@ export class StorageContainerItemService {
         });
       }
       const currency = clone(current?.system?.currency) ?? visibleCoins(storedState);
+      const mergedRows = mergeRowsWithJournalReferences(rows, storedState);
       return buildStorageContainerSnapshot({
         ...base,
         name: clean(current?.name) || base.name,
@@ -340,14 +367,14 @@ export class StorageContainerItemService {
         state: {
           ...storedState,
           baseName: clean(current?.name) || base.name,
-          manualRows: rows,
+          manualRows: mergedRows,
           generatedRows: [],
           claimedRowIds: [],
           manualCoins: currency,
           generatedCoins: {},
           coinsClaimed: false,
-          state: rows.length || hasCoins(currency) ? "opened" : "empty",
-          displayMode: rows.length || hasCoins(currency) ? "opened" : "empty"
+          state: mergedRows.length || hasCoins(currency) ? "opened" : "empty",
+          displayMode: mergedRows.length || hasCoins(currency) ? "opened" : "empty"
         },
         presentation: {
           ...(clone(base.presentation) ?? {}),
