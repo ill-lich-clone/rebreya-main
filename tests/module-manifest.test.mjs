@@ -460,7 +460,7 @@ test("combat automation imports preserve their released cache busts", async () =
   );
   assert.match(
     entrypointSource,
-    new RegExp(`mechanus-rolls\\.js\\?v=${escapedVersion}-mechanus-d20-advantage-mode`, "u"),
+    /mechanus-rolls\.js\?v=1\.4\.137-mechanus-zero-dice-first-result/u,
   );
   assert.match(
     entrypointSource,

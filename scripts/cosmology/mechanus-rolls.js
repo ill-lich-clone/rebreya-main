@@ -16,6 +16,11 @@ function toPositiveInteger(value, fallback = 0) {
   return Number.isFinite(numeric) && numeric > 0 ? numeric : fallback;
 }
 
+function toNonNegativeInteger(value, fallback = 0) {
+  const numeric = Math.floor(toFiniteNumber(value, fallback));
+  return Number.isFinite(numeric) && numeric >= 0 ? numeric : fallback;
+}
+
 function diceTermPattern() {
   return /(^|[^\w.])(\d*)d(\d+)((?:k[hl]|d[hl])\d*)?(?![\w])/giu;
 }
@@ -56,7 +61,7 @@ function getTermFaces(term) {
 }
 
 function getTermNumber(term) {
-  return toPositiveInteger(term?.number ?? term?._number, 1);
+  return toNonNegativeInteger(term?.number ?? term?._number, 1);
 }
 
 function getResultValue(result) {
@@ -379,9 +384,9 @@ function applyFinalTotalCorrectionToTerms(terms, correction) {
 }
 
 export function getMechanusDieAverage(number, faces) {
-  const diceNumber = toPositiveInteger(number, 1);
+  const diceNumber = toNonNegativeInteger(number, 1);
   const diceFaces = toPositiveInteger(faces, 0);
-  if (!diceNumber || !diceFaces || IGNORED_FACES.has(diceFaces)) {
+  if (!diceFaces || IGNORED_FACES.has(diceFaces)) {
     return null;
   }
 

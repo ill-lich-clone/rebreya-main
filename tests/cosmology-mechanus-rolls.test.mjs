@@ -10,11 +10,27 @@ const {
 } = await import("../scripts/cosmology/mechanus-rolls.js");
 
 test("Mechanus averages non-d20 and non-d100 dice at the whole roll level", () => {
+  assert.equal(getMechanusDieAverage(0, 6), 0);
   assert.equal(getMechanusDieAverage(1, 4), 2.5);
+  assert.equal(computeMechanusAverageFormulaTotal("0d6"), 0);
   assert.equal(computeMechanusAverageFormulaTotal("1d4"), 2);
   assert.equal(computeMechanusAverageFormulaTotal("2d4"), 5);
   assert.equal(computeMechanusAverageFormulaTotal("1d4 + 1d4"), 5);
   assert.equal(computeMechanusAverageFormulaTotal("8d6"), 28);
+});
+
+test("Mechanus preserves an explicit zero-dice damage term", () => {
+  const damageRoll = {
+    formula: "0d6",
+    total: 0,
+    _total: 0,
+    terms: [{ number: 0, faces: 6, total: 0, results: [] }]
+  };
+
+  assert.equal(applyMechanusAveragesToRoll(damageRoll), true);
+  assert.equal(damageRoll.total, 0);
+  assert.equal(damageRoll.terms[0].number, 0);
+  assert.deepEqual(damageRoll.terms[0].results, []);
 });
 
 test("Mechanus formula averaging respects non-d20 keep modifiers", () => {
@@ -141,11 +157,11 @@ test("Mechanus converts d20 advantage and disadvantage into flat bonuses", () =>
       faces: 20,
       modifiers: ["kh"],
       total: 18,
-      results: [{ result: 10, active: false }, { result: 18, active: true }]
+      results: [{ result: 1, active: false }, { result: 20, active: true }]
     }]
   };
   assert.equal(applyMechanusAveragesToRoll(advantageRoll), true);
-  assert.equal(advantageRoll.total, 12);
+  assert.equal(advantageRoll.total, 3);
   assert.equal(advantageRoll.terms[0].number, 1);
   assert.deepEqual(advantageRoll.terms[0].results.map((result) => result.active), [true, false]);
 
