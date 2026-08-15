@@ -44,6 +44,21 @@ test("public city snapshot exposes final material price without mechanics", () =
   }
 });
 
+test("public city market exposes only materials linked to economy goods", () => {
+  const { model, city } = fixture();
+  model.materials.push({
+    id: "monster-saliva",
+    name: "Слюна чудовища",
+    priceGold: 25,
+    weight: 6,
+    linkedGoodId: null
+  });
+
+  const snapshot = buildPublicCitySnapshot({ model, city, presentation: {}, traders: [] });
+
+  assert.deepEqual(snapshot.materialRows.map((row) => row.materialId), ["iron"]);
+});
+
 test("public city snapshot preserves the actual minimum-price selling weight", () => {
   const { model, city, material } = fixture();
   material.priceGold = 0.01;

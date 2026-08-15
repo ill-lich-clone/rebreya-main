@@ -42,16 +42,18 @@ export function buildPublicCitySnapshot({
   if (!city) return null;
   return {
     ...publicCityIdentity(city, presentation),
-    materialRows: (model?.materials ?? []).map((material) => {
-      const modifier = getMaterialPriceModifier(model, city, material);
-      const pricing = applyMarketPrice(material.priceGold, modifier, material.weight);
-      return {
-        materialId: material.id,
-        name: material.name,
-        finalPriceGold: pricing.finalPriceGold,
-        finalWeight: pricing.finalWeight
-      };
-    }),
+    materialRows: (model?.materials ?? [])
+      .filter((material) => Boolean(clean(material?.linkedGoodId)))
+      .map((material) => {
+        const modifier = getMaterialPriceModifier(model, city, material);
+        const pricing = applyMarketPrice(material.priceGold, modifier, material.weight);
+        return {
+          materialId: material.id,
+          name: material.name,
+          finalPriceGold: pricing.finalPriceGold,
+          finalWeight: pricing.finalWeight
+        };
+      }),
     traders: (traders ?? []).map(publicTraderSummary),
     tradersError: clean(tradersError)
   };
