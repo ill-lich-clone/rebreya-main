@@ -439,6 +439,50 @@ test("storage Journal reads resolve nested state live and fail closed for unavai
   }, { sender: harness.player }), /Сначала откройте/iu);
 });
 
+test("storage Journal reads require exact opened state instead of accepting empty storage", async () => {
+  const harness = createHarness();
+  await harness.storageService.configure(harness.storageToken, {
+    state: "empty",
+    manualRows: [{
+      rowKind: "journal",
+      rowId: "journal-row",
+      sourceId: "JournalEntry.empty",
+      sourceType: "journal",
+      name: "Недоступная запись",
+      quantity: 1
+    }]
+  });
+
+  await assert.rejects(harness.service.readJournal({
+    tokenUuid: harness.storageToken.uuid,
+    characterTokenUuid: harness.characterToken.uuid,
+    rowId: "journal-row"
+  }, { sender: harness.player }), /Сначала откройте/iu);
+  assert.deepEqual(harness.journalReadCalls, []);
+});
+
+test("storage Journal reads reject sourceType-only rows without authoritative Journal rowKind", async () => {
+  const harness = createHarness();
+  await harness.storageService.configure(harness.storageToken, {
+    state: "opened",
+    manualRows: [{
+      rowKind: "item",
+      rowId: "forged-journal",
+      sourceId: "JournalEntry.forged",
+      sourceType: "journal",
+      name: "Поддельная запись",
+      quantity: 1
+    }]
+  });
+
+  await assert.rejects(harness.service.readJournal({
+    tokenUuid: harness.storageToken.uuid,
+    characterTokenUuid: harness.characterToken.uuid,
+    rowId: "forged-journal"
+  }, { sender: harness.player }), /недоступна/iu);
+  assert.deepEqual(harness.journalReadCalls, []);
+});
+
 test("portable scene restore payload accepts one exact item and finite scene point", () => {
   const payload = {
     itemUuid: "Actor.hero.Item.bag",
@@ -1003,25 +1047,48 @@ test("player storage snapshots omit Journal sources while GM diagnostics retain 
     const moduleApi = new RebreyaMainModule();
     await moduleApi.storageService.configure(harness.storageToken, {
       state: "opened",
-      manualRows: [{
-        rowKind: "journal",
-        rowId: "journal-row",
-        stackKey: "",
-        sourceId: "JournalEntry.private",
-        sourceType: "journal",
-        name: "Полевые заметки",
-        img: "icons/book.webp",
-        quantity: 1
-      }]
+      manualRows: [
+        {
+          rowKind: "journal",
+          rowId: "journal-row",
+          stackKey: "",
+          sourceId: "JournalEntry.private",
+          sourceType: "journal",
+          name: "Полевые заметки",
+          img: "icons/book.webp",
+          quantity: 1
+        },
+        {
+          rowKind: "item",
+          rowId: "source-type-journal",
+          sourceId: "JournalEntry.source-type-only",
+          sourceType: "journal",
+          name: "Поддельная Journal-строка",
+          quantity: 1
+        },
+        {
+          rowKind: "journal",
+          rowId: "row-kind-journal",
+          sourceId: "JournalEntry.row-kind-only",
+          sourceType: "item",
+          name: "Повреждённая Journal-строка",
+          quantity: 1
+        }
+      ]
     });
 
     const playerSnapshot = await moduleApi.getStorageSnapshot(harness.storageToken.uuid);
-    assert.equal("sourceId" in playerSnapshot.rows[0], false);
+    assert.equal(playerSnapshot.rows.length, 3);
+    assert.equal(playerSnapshot.rows.some((row) => "sourceId" in row), false);
     assert.equal("manualRows" in playerSnapshot, false);
 
     globalThis.game.user = gm;
     const gmSnapshot = await moduleApi.getStorageSnapshot(harness.storageToken.uuid);
-    assert.equal(gmSnapshot.rows[0].sourceId, "JournalEntry.private");
+    assert.deepEqual(gmSnapshot.rows.map((row) => row.sourceId), [
+      "JournalEntry.private",
+      "JournalEntry.source-type-only",
+      "JournalEntry.row-kind-only"
+    ]);
     assert.equal(gmSnapshot.manualRows[0].sourceId, "JournalEntry.private");
   }
   finally {

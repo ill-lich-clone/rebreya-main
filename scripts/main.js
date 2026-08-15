@@ -101,6 +101,7 @@ import {
 import { BuiltinStorageActorService } from "./data/builtin-storage-actor-service.js";
 import { StorageGroundPileService } from "./data/storage-ground-pile-service.js?v=1.4.133-ground-item-polish";
 import { StorageContainerItemService } from "./data/storage-container-item-service.js?v=1.4.130-storage-player-fixes";
+import { isStorageJournalRow } from "./data/storage-container-snapshot.js";
 import { StorageJournalReader } from "./data/storage-journal-reader.js";
 import {
   parseStorageDepositDragData,
@@ -1124,7 +1125,13 @@ export class RebreyaMainModule {
       fromUuid: (uuid) => globalThis.fromUuid?.(uuid),
       enrichHtml: (content, options) => (
         globalThis.CONFIG?.ux?.TextEditor?.implementation?.enrichHTML?.(content, options)
-      )
+      ),
+      parseHtml: (html) => {
+        const template = globalThis.document?.createElement?.("template");
+        if (!template) throw new Error("HTML parser unavailable.");
+        template.innerHTML = html;
+        return template.content;
+      }
     });
     this.nativeObjectDurabilityService = new NativeObjectDurabilityService({
       durabilityService: this.durabilityService,
@@ -3411,7 +3418,7 @@ export class RebreyaMainModule {
             state: cleanSocketId(next.container.state?.state)
           };
         }
-        if (!canManage && next.rowKind === "journal") delete next.sourceId;
+        if (!canManage && isStorageJournalRow(next)) delete next.sourceId;
         return next;
       })
       .filter((row) => !state.claimedRowIds.includes(row.rowId));

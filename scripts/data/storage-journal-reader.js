@@ -19,25 +19,14 @@ function pageSort(page) {
   return Number.isFinite(value) ? value : 0;
 }
 
-function hasUnrevealedSecretSection(html) {
-  for (const match of String(html ?? "").matchAll(/<section\b[^>]*>/giu)) {
-    const classMatch = match[0].match(/\bclass\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/iu);
-    if (!classMatch) continue;
-    const classes = clean(classMatch[1] ?? classMatch[2] ?? classMatch[3])
-      .split(/\s+/u)
-      .filter(Boolean);
-    if (classes.includes("secret") && !classes.includes("revealed")) return true;
-  }
-  return false;
-}
-
 export class StorageJournalReader {
-  constructor({ fromUuid, enrichHtml } = {}) {
-    if (typeof fromUuid !== "function" || typeof enrichHtml !== "function") {
-      throw new TypeError("StorageJournalReader requires Journal resolution and HTML enrichment.");
+  constructor({ fromUuid, enrichHtml, parseHtml } = {}) {
+    if (typeof fromUuid !== "function" || typeof enrichHtml !== "function" || typeof parseHtml !== "function") {
+      throw new TypeError("StorageJournalReader requires Journal resolution, HTML enrichment, and parsing.");
     }
     this.fromUuid = fromUuid;
     this.enrichHtml = enrichHtml;
+    this.parseHtml = parseHtml;
   }
 
   async read(journalUuid) {
@@ -74,7 +63,12 @@ export class StorageJournalReader {
             rolls: false,
             custom: false
           });
-          if (typeof html !== "string" || hasUnrevealedSecretSection(html)) throw unavailable();
+          if (typeof html !== "string") throw unavailable();
+          const fragment = this.parseHtml(html);
+          if (typeof fragment?.querySelector !== "function"
+            || fragment.querySelector("section.secret:not(.revealed)")) {
+            throw unavailable();
+          }
           snapshot.html = html;
         }
         pageSnapshots.push(snapshot);

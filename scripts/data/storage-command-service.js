@@ -381,12 +381,13 @@ export class StorageCommandService {
     const access = await this.#resolveAccess(payload, sender);
     const path = storagePath(payload.path);
     const state = readStorageStateAtPath(access.storageToken, path);
-    if (state.state === "unopened") throw new Error("Сначала откройте хранилище.");
+    if (state.state !== "opened") throw new Error("Сначала откройте хранилище.");
 
     const rowId = clean(payload.rowId);
     const rows = [...state.manualRows, ...state.generatedRows];
     const row = rows.find((entry, index) => rowIdentity(entry, index) === rowId) ?? null;
-    if (!row || state.claimedRowIds.includes(rowId) || !isStorageJournalRow(row)) {
+    if (!row || state.claimedRowIds.includes(rowId)
+      || row.rowKind !== "journal" || !isStorageJournalRow(row)) {
       throw new Error("Запись журнала недоступна.");
     }
     return this.journalReader.read(row.sourceId);

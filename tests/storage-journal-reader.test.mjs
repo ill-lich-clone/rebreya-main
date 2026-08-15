@@ -47,6 +47,15 @@ function createJournalFixture() {
   return { journal, textPage };
 }
 
+function semanticFragment(html) {
+  return {
+    querySelector(selector) {
+      assert.equal(selector, "section.secret:not(.revealed)");
+      return String(html).includes("Тайный пароль") ? { tagName: "SECTION" } : null;
+    }
+  };
+}
+
 test("Journal reader enriches live text without secrets or document metadata and never mutates ownership", async () => {
   const { journal, textPage } = createJournalFixture();
   const enrichCalls = [];
@@ -55,7 +64,8 @@ test("Journal reader enriches live text without secrets or document metadata and
     enrichHtml: async (content, options) => {
       enrichCalls.push({ content, options });
       return content.replace(/<section class="secret">[\s\S]*?<\/section>/gu, "");
-    }
+    },
+    parseHtml: semanticFragment
   });
   const beforeOwnership = structuredClone(journal.ownership);
 
@@ -97,24 +107,50 @@ test("Journal reader fails closed for deleted Journals, enrichment errors, and r
   const beforeRow = structuredClone(storageRow);
   const missingReader = new StorageJournalReader({
     fromUuid: async () => null,
-    enrichHtml: async (content) => content
+    enrichHtml: async (content) => content,
+    parseHtml: semanticFragment
   });
   await assert.rejects(missingReader.read(journal.uuid), { message: "Запись журнала недоступна." });
   assert.deepEqual(storageRow, beforeRow);
 
   const unsafeReader = new StorageJournalReader({
     fromUuid: async () => journal,
-    enrichHtml: async (content) => content
+    enrichHtml: async (content) => content,
+    parseHtml: semanticFragment
   });
   await assert.rejects(unsafeReader.read(journal.uuid), { message: "Запись журнала недоступна." });
 
   const failedReader = new StorageJournalReader({
     fromUuid: async () => journal,
-    enrichHtml: async () => { throw new Error("raw GM failure"); }
+    enrichHtml: async () => { throw new Error("raw GM failure"); },
+    parseHtml: semanticFragment
   });
   await assert.rejects(failedReader.read(journal.uuid), (error) => {
     assert.equal(error.message, "Запись журнала недоступна.");
     assert.equal(error.message.includes("raw GM failure"), false);
     return true;
   });
+});
+
+test("Journal reader rejects browser-semantic secret classes that evade raw tag regexes", async () => {
+  const { journal } = createJournalFixture();
+  const adversarialHtml = [
+    '<section class="sec&#114;et"><p>Тайный пароль entity</p></section>',
+    '<section data-note=">" class="secret"><p>Тайный пароль quoted</p></section>'
+  ];
+
+  for (const html of adversarialHtml) {
+    const parseCalls = [];
+    const reader = new StorageJournalReader({
+      fromUuid: async () => journal,
+      enrichHtml: async () => html,
+      parseHtml: (value) => {
+        parseCalls.push(value);
+        return semanticFragment(value);
+      }
+    });
+
+    await assert.rejects(reader.read(journal.uuid), { message: "Запись журнала недоступна." });
+    assert.deepEqual(parseCalls, [html]);
+  }
 });
