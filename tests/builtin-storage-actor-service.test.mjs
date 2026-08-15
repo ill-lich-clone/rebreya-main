@@ -14,17 +14,34 @@ import {
 } from "../scripts/data/builtin-storage-actor-service.js";
 import { CHEST_OBJECT_DURABILITY } from "../scripts/data/native-object-durability-service.js";
 
+const EXPECTED_SYNC_IDS = [
+  "wood-dark-copper",
+  "wood-dark-silver",
+  "wood-dark-gold",
+  "barrel",
+  "wicker-basket",
+  "provision-sack",
+  "ceramic-storage-jar",
+  "wardrobe",
+  "kitchen-hutch",
+  "dresser",
+  "bedside-cabinet",
+  "ground-pile"
+];
+
 function createHarness({ active = true, failPresetId = "" } = {}) {
   const currentUser = { id: "gm-primary", isGM: true, active };
   const folders = [];
   const actors = [];
+  const scenes = [];
   const folderCreates = [];
   const actorCreates = [];
   const game = {
     user: currentUser,
     users: { activeGM: active ? currentUser : null, contents: [currentUser] },
     folders: { contents: folders },
-    actors: { contents: actors }
+    actors: { contents: actors },
+    scenes: { contents: scenes }
   };
 
   const Folder = {
@@ -60,7 +77,7 @@ function createHarness({ active = true, failPresetId = "" } = {}) {
     actorProvider: () => Actor,
     logger: { error() {} }
   });
-  return { service, game, folders, actors, folderCreates, actorCreates };
+  return { service, game, folders, actors, scenes, folderCreates, actorCreates };
 }
 
 test("built-in storage Actor data creates an unlinked closed NPC with independent token state", () => {
@@ -104,6 +121,21 @@ test("ground pile Actor data creates an unlinked already-open storage prototype"
   assert.equal(storage.displayMode, "opened");
 });
 
+test("built-in furniture Actor data uses its preset token name and storage base name", () => {
+  const preset = BUILTIN_STORAGE_PRESETS.find(({ id }) => id === "barrel");
+  assert.ok(preset);
+
+  const data = buildBuiltinStorageActorData(preset, "storage-folder");
+  const storage = data.prototypeToken.flags[MODULE_ID].storage;
+
+  assert.equal(data.name, "Бочка");
+  assert.equal(data.prototypeToken.name, "Бочка");
+  assert.equal(storage.baseName, "Бочка");
+  assert.equal(storage.storageKind, "chest");
+  assert.deepEqual(storage.textures, preset.textures);
+  assert.deepEqual(data.prototypeToken.flags[MODULE_ID].objectDurability, CHEST_OBJECT_DURABILITY);
+});
+
 test("inactive GM clients do not read or create built-in storage documents", async () => {
   const harness = createHarness({ active: false });
 
@@ -112,7 +144,7 @@ test("inactive GM clients do not read or create built-in storage documents", asy
   assert.equal(harness.actorCreates.length, 0);
 });
 
-test("active GM creates the root folder, three chests, and one pile Actor exactly once", async () => {
+test("active GM creates the root folder and every built-in storage Actor exactly once", async () => {
   const harness = createHarness();
 
   const first = await harness.service.sync();
@@ -124,10 +156,10 @@ test("active GM creates the root folder, three chests, and one pile Actor exactl
     type: "Actor",
     folder: null
   });
-  assert.equal(harness.actorCreates.length, 4);
+  assert.equal(harness.actorCreates.length, 12);
   assert.deepEqual(
     first.actors.map((actor) => actor.getFlag(MODULE_ID, BUILTIN_STORAGE_PRESET_FLAG).id),
-    ["wood-dark-copper", "wood-dark-silver", "wood-dark-gold", "ground-pile"]
+    EXPECTED_SYNC_IDS
   );
   assert.deepEqual(second.actors, first.actors);
 });
@@ -147,9 +179,9 @@ test("sync restores only a missing preset and preserves edits to existing Actors
   const result = await harness.service.sync();
 
   assert.equal(harness.folderCreates.length, 1);
-  assert.equal(harness.actorCreates.length, 5);
+  assert.equal(harness.actorCreates.length, 13);
   assert.equal(copper.name, "Мой медный сундук");
-  assert.equal(result.actors.length, 4);
+  assert.equal(result.actors.length, 12);
   assert.equal(result.actors.filter((actor) => (
     actor.getFlag(MODULE_ID, BUILTIN_STORAGE_PRESET_FLAG).id === "wood-dark-silver"
   )).length, 1);
@@ -162,7 +194,34 @@ test("one rejected preset does not prevent the other built-in Actors from being 
 
   assert.deepEqual(
     result.actors.map((actor) => actor.getFlag(MODULE_ID, BUILTIN_STORAGE_PRESET_FLAG).id),
-    ["wood-dark-copper", "wood-dark-gold", "ground-pile"]
+    EXPECTED_SYNC_IDS.filter((id) => id !== "wood-dark-silver")
   );
-  assert.equal(harness.actorCreates.length, 4);
+  assert.equal(harness.actorCreates.length, 12);
+});
+
+test("sync migrates only automatically inherited scene token names to the preset token name", async () => {
+  const harness = createHarness();
+  await harness.service.sync();
+  const copper = harness.actors.find((actor) => (
+    actor.getFlag(MODULE_ID, BUILTIN_STORAGE_PRESET_FLAG).id === "wood-dark-copper"
+  ));
+  const createToken = (name) => ({
+    actorId: copper.id,
+    name,
+    flags: { [MODULE_ID]: { storage: { baseName: name } } },
+    updates: [],
+    async update(patch) {
+      this.updates.push(structuredClone(patch));
+    }
+  });
+  const automatic = createToken("Сундук — медные монеты");
+  const custom = createToken("Мой сундук");
+  harness.scenes.push({ tokens: { contents: [automatic, custom] } });
+
+  await harness.service.sync();
+
+  assert.equal(automatic.updates.length, 1);
+  assert.equal(automatic.updates[0].name, "Сундук");
+  assert.equal(automatic.updates[0][`flags.${MODULE_ID}.storage`].baseName, "Сундук");
+  assert.equal(custom.updates.length, 0);
 });

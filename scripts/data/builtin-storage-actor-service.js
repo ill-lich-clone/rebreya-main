@@ -2,7 +2,6 @@ import { MODULE_ID } from "../constants.js";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 import {
   BUILTIN_STORAGE_PRESETS,
-  BUILTIN_STORAGE_TOKEN_NAME,
   GROUND_PILE_STORAGE_PRESET
 } from "./builtin-storage-presets.js";
 import {
@@ -42,7 +41,7 @@ function readPresetId(actor) {
 
 function initialStorageState(preset) {
   return buildStorageTokenState({
-    baseName: preset.groundPile === true ? preset.prototypeToken.name : BUILTIN_STORAGE_TOKEN_NAME,
+    baseName: preset.prototypeToken.name,
     storageKind: preset.groundPile === true ? "pile" : "chest",
     state: preset.groundPile === true ? "opened" : "unopened",
     textures: clone(preset.textures),
@@ -174,8 +173,8 @@ export class BuiltinStorageActorService {
         if (!preset || preset.groundPile === true || String(token?.name ?? "").trim() !== preset.name || typeof token?.update !== "function") continue;
         const current = token?.flags?.[MODULE_ID]?.storage ?? {};
         await token.update({
-          name: BUILTIN_STORAGE_TOKEN_NAME,
-          [`flags.${MODULE_ID}.storage`]: buildStorageTokenState({ ...current, baseName: BUILTIN_STORAGE_TOKEN_NAME })
+          name: preset.prototypeToken.name,
+          [`flags.${MODULE_ID}.storage`]: buildStorageTokenState({ ...current, baseName: preset.prototypeToken.name })
         });
       }
     }
