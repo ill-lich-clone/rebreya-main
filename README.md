@@ -176,7 +176,7 @@
 
 Экономика открывается игрокам существующей кнопкой в группе Scene Controls, если включён `showEconomyButton`. Карточки экономики и обе точки сводки маршрута вызывают единственный `openCityApp(cityId)`. Просмотр города и открытие его торговцев не зависят от текущего travel state или местоположения группы.
 
-Игрок всегда получает public-режим существующих Economy/City apps без механических процентов, стрелок и объяснений модификаторов. В общей экономике цена материала базовая, а в городе показана фактическая цена, рассчитанная Trader Engine. GM сохраняет прежнюю аналитику и может переключить тот же City app в public-вид; описание и панорама редактируются как world overrides без изменения `data/cities.json`.
+Игрок всегда получает public-режим существующих Economy/City apps без механических процентов, стрелок и объяснений модификаторов. В общей экономике цена материала базовая, а в городе показана фактическая цена, рассчитанная Trader Engine. GM сохраняет прежнюю аналитику и может переключить тот же City app в public-вид; описание и панорама редактируются как world overrides без изменения `data/cities.json`. Базовые панорамы принадлежат модулю: все 300 WebP лежат в `assets/cities/`, а source-данные используют runtime-пути `modules/rebreya-main/assets/cities/<имя города>.webp`.
 
 Старого `trader-app.js` и `templates/trader-app.hbs` больше нет. `openTrader()` и `openTraderSheet()` являются compatibility-алиасами `openTraderV2()`; второй Trader UI создавать не нужно.
 
@@ -316,12 +316,12 @@ Hidden world state:
 
 Основные источники в `data/`:
 
-- экономика: `goods.json`, `regions.json`, `cities.json`, `reference.json`, `materials.json`, `gear.json`;
+- экономика: `goods.json`, `regions.json`, `cities.json`, `reference.json`, `materials.json`, `gear.json`; 300 панорам городов — tracked-файлы `assets/cities/`, а `cities.json` хранит только module-owned runtime-пути `modules/rebreya-main/assets/cities/<имя города>.webp`;
 - контент: races/backgrounds/states/spells/downtime и class rework JSON;
 - путешествия: `travel-network.json`;
 - magic items: корневой `magicItem.js`; feats: корневой `feat.js` плюс `feats-world-overrides.json`.
 
-Импортные инструменты: `tools/import-xlsx.ps1`, `import-materials.ps1`, `import-gear.ps1`, `sync-travel-network.mjs`, `apply-feat-automation.mjs`, `apply-race-automation.mjs`. Формат item-полей дополнительно описан в `docs/foundry-item-fields.md`.
+Импортные инструменты: `tools/import-xlsx.ps1`, `import-materials.ps1`, `import-gear.ps1`, `sync-travel-network.mjs`, `apply-feat-automation.mjs`, `apply-race-automation.mjs`. `import-xlsx.ps1` генерирует module-owned city panorama paths; сами WebP перед релизом должны находиться в `assets/cities/`. Формат item-полей дополнительно описан в `docs/foundry-item-fields.md`.
 
 ## Проверки разработки
 

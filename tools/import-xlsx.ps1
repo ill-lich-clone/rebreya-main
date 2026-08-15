@@ -751,7 +751,7 @@ foreach ($row in ($cityRows | Where-Object { $_.__row -ge 2 -and $_.__row -le $c
     id = New-UniqueSlug -Value $name -UsedIds $usedCityIds
     name = $name
     description = Normalize-DisplayText -Value (Get-Value -Row $row -Column 'B')
-    image = "assets/Карты/Карты городов/Пейзажи 2x1/$name.webp"
+    image = "modules/rebreya-main/assets/cities/$name.webp"
     type = Normalize-DisplayText -Value (Get-Value -Row $row -Column 'C')
     cityType = Normalize-DisplayText -Value (Get-Value -Row $row -Column 'D')
     rank = Convert-ToNumber -Value (Get-Value -Row $row -Column 'E')
