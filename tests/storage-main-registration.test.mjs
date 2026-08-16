@@ -74,6 +74,7 @@ test("main registers the storage deposit socket API and current cache keys", asy
   assert.match(main, /await this\.storageGroundPileService\.repairLegacyCoinRows\(\);/u);
   for (const importPath of [
     "data/storage-service.js?v=1.4.144-spreadsheet-coins-ground-repair",
+    "data/storage-open-sound-service.js?v=1.4.145-coin-icons-storage-sound",
     "data/storage-access.js?v=1.4.133-ground-item-polish",
     "data/storage-ground-pile-service.js?v=1.4.144-spreadsheet-coins-ground-repair",
     "data/storage-container-item-service.js?v=1.4.130-storage-player-fixes",
@@ -93,7 +94,7 @@ test("main registers the storage deposit socket API and current cache keys", asy
   ]) {
     assert.equal(storageCommand.includes(importPath), true, importPath);
   }
-  assert.equal(manifest.version, "1.4.144");
+  assert.equal(manifest.version, "1.4.145");
   assert.match(main, /await registerStorageContainerHierarchyHooks\(\{ Hooks \}\)/u);
 });
 

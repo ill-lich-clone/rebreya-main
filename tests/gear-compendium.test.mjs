@@ -695,7 +695,7 @@ test("the spreadsheet gear catalog owns the four managed coin Items", () => {
   const byId = new Map(gear.map((item) => [item.id, item]));
   const expected = [
     ["platinovaya-moneta", "pp", "Платиновая монета", 10],
-    ["zolota-moneta", "gp", "Золота монета", 1],
+    ["zolotaya-moneta", "gp", "Золотая монета", 1],
     ["serebryannaya-moneta", "sp", "Серебрянная монета", 0.1],
     ["mednaya-moneta", "cp", "Медная монета", 0.01]
   ];
@@ -706,8 +706,6 @@ test("the spreadsheet gear catalog owns the four managed coin Items", () => {
     assert.ok(source, `${gearId} exists in canonical gear data`);
     assert.equal(source.name, name);
     assert.equal(source.equipmentType, "Сокровища");
-    assert.equal(source.priceValue, 1);
-    assert.equal(source.priceDenomination, denomination);
     assert.equal(source.priceGoldEquivalent, priceGoldEquivalent);
 
     const created = createDnd5eItemData(source, folderIds);
@@ -899,7 +897,7 @@ test("gear signatures include stable document ids so old compendium documents re
   const created = createDnd5eItemData(katana, new Map());
   const signature = JSON.parse(created.flags["rebreya-main"].signature);
 
-  assert.equal(signature.templateVersion, 20);
+  assert.equal(signature.templateVersion, 21);
   assert.equal(created._id, createStableGearDocumentId("katana"));
   assert.equal(signature.stableDocumentId, created._id);
 });
@@ -950,6 +948,23 @@ test("gear custom icons override stock fallbacks by item name", () => {
     createDnd5eItemData(byId.get("mushket"), new Map(), iconLookup).img,
     "modules/rebreya-main/templates/icons/weapons/%D0%9C%D1%83%D1%88%D0%BA%D0%B5%D1%82.webp"
   );
+});
+
+test("four gear coin templates use distinct module-owned denomination icons", () => {
+  const gear = JSON.parse(readFileSync(join(TESTS_DIR, "..", "data", "gear.json"), "utf8").replace(/^\uFEFF/u, ""));
+  const coinIcons = Object.fromEntries(gear
+    .filter((item) => item.equipmentType === "Сокровища" && /монета$/iu.test(item.name))
+    .map((item) => {
+      const created = createDnd5eItemData(item, new Map());
+      return [created.flags["rebreya-main"].storageCoinTemplate?.denomination, created.img];
+    }));
+
+  assert.deepEqual(coinIcons, {
+    cp: "modules/rebreya-main/assets/storage/coins/cp.png",
+    sp: "modules/rebreya-main/assets/storage/coins/sp.png",
+    gp: "modules/rebreya-main/assets/storage/coins/gp.png",
+    pp: "modules/rebreya-main/assets/storage/coins/pp.png"
+  });
 });
 
 test("gear custom icons can match shortened and type-qualified item names", () => {

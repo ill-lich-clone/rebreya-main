@@ -11,7 +11,7 @@ import {
   DEFAULT_GEAR_ICON,
   resolveGearItemIcon,
   resolveGearNamedIcon
-} from "./gear-icon-resolver.js";
+} from "./gear-icon-resolver.js?v=1.4.145-coin-icons-storage-sound";
 import {
   classifyGearEntry,
   inferHeroDollSlotGroupFromSlots,
@@ -35,9 +35,15 @@ export { buildGearIconLookup };
 const PACK_ID = `world.${GEAR_COMPENDIUM_NAME}`;
 const DND5E_SYSTEM_ID = "dnd5e";
 const COMPENDIUM_SIDEBAR_FOLDER = ["Ребрея"];
-const GEAR_TEMPLATE_VERSION = 20;
+const GEAR_TEMPLATE_VERSION = 21;
 const GEAR_CONTAINER_CONTENT_SOURCE_TYPE = "gearContainerContent";
 const STORAGE_COIN_DENOMINATIONS = new Set(["pp", "gp", "sp", "cp"]);
+const STORAGE_COIN_DENOMINATION_BY_NAME = Object.freeze({
+  "медная монета": "cp",
+  "серебрянная монета": "sp",
+  "золотая монета": "gp",
+  "платиновая монета": "pp"
+});
 const FIREARM_ATTACK_ACTIVITY_ID = "lchFirearmAtk001";
 const FIREARM_RELOAD_ACTIVITY_ID = "lchReloadGun0001";
 const FIREARM_AUTOMATIC_FIRE_ACTIVITY_ID = "lchAutoFire00001";
@@ -68,14 +74,7 @@ function resolveGearCoinDenomination(item) {
   if (normalizeMatchText(item?.equipmentType) !== normalizeMatchText("Сокровища")) {
     return "";
   }
-  if (!/монета$/iu.test(cleanString(item?.name))) {
-    return "";
-  }
-  if (Number(item?.priceValue) !== 1) {
-    return "";
-  }
-  const denomination = cleanString(item?.priceDenomination).toLowerCase();
-  return STORAGE_COIN_DENOMINATIONS.has(denomination) ? denomination : "";
+  return STORAGE_COIN_DENOMINATION_BY_NAME[normalizeMatchText(item?.name)] ?? "";
 }
 
 function isPlainObject(value) {

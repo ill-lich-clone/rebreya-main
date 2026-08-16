@@ -63,8 +63,8 @@ test("module manifest loads the stable canonical entrypoint", async () => {
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const [entrypoint] = manifest.esmodules;
 
-  assert.equal(manifest.version, "1.4.144");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.144.js"]);
+  assert.equal(manifest.version, "1.4.145");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.145.js"]);
   assert.doesNotMatch(entrypoint, /[?#]/u);
 
   const entrypointSource = await readFile(new URL(entrypoint, manifestUrl), "utf8");
@@ -72,7 +72,7 @@ test("module manifest loads the stable canonical entrypoint", async () => {
     entrypointSource,
     [
       "// @rebreya-role versioned-entrypoint-cache-forwarder",
-      'import "./main.js?v=1.4.144-spreadsheet-coins-ground-repair";',
+      'import "./main.js?v=1.4.145-coin-icons-storage-sound";',
       ""
     ].join("\n")
   );
@@ -225,7 +225,8 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
     "data/calendar-transition-coordinator.js?v=1.4.96-craft-calendar",
     "integrations/durability-hooks.js?v=1.4.116-native-durability",
     "integrations/inventory-sync.js?v=1.4.96-durable-transfer",
-    "data/gear-compendium.js?v=1.4.144-spreadsheet-coins-ground-repair",
+    "data/gear-compendium.js?v=1.4.145-coin-icons-storage-sound",
+    "data/storage-open-sound-service.js?v=1.4.145-coin-icons-storage-sound",
     "data/storage-service.js?v=1.4.144-spreadsheet-coins-ground-repair",
     "data/storage-ground-pile-service.js?v=1.4.144-spreadsheet-coins-ground-repair",
     "data/storage-container-item-service.js?v=1.4.130-storage-player-fixes",
@@ -260,7 +261,7 @@ test("module keeps recent published entrypoint URLs as canonical compatibility f
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
 
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.144.js"]);
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.145.js"]);
 
   for (const fileName of ["main-1.4.98.js", "main-1.4.99.js", "main-1.4.100.js"]) {
     const forwarderSource = await readFile(new URL(`../scripts/${fileName}`, import.meta.url), "utf8");
@@ -448,7 +449,7 @@ test("gear compendium import uses the current spreadsheet coin cache bust", asyn
 
   assert.match(
     entrypointSource,
-    /gear-compendium\.js\?v=1\.4\.144-spreadsheet-coins-ground-repair/u,
+    /gear-compendium\.js\?v=1\.4\.145-coin-icons-storage-sound/u,
   );
 });
 

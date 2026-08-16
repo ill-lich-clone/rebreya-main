@@ -181,7 +181,7 @@ test("managed Coin Items route only to the physical currency pile API", async ()
 
 test("the synced gear-compendium gold row reaches manual coin API without an Item route", async () => {
   const gear = JSON.parse(readFileSync(new URL("../data/gear.json", import.meta.url), "utf8").replace(/^\uFEFF/u, ""));
-  const sourceRow = gear.find((item) => item.id === "zolota-moneta");
+  const sourceRow = gear.find((item) => item.id === "zolotaya-moneta");
   const itemData = createDnd5eItemData(sourceRow, new Map([["Сокровища", "treasure-folder"]]));
   const item = {
     ...itemData,

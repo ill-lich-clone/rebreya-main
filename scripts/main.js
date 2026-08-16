@@ -1,7 +1,7 @@
 // @rebreya-role canonical-composition-root
 import { MODULE_ID, SETTINGS_KEYS } from "./constants.js";
 import { MaterialsCompendiumService } from "./data/materials-compendium.js";
-import { GearCompendiumService } from "./data/gear-compendium.js?v=1.4.144-spreadsheet-coins-ground-repair";
+import { GearCompendiumService } from "./data/gear-compendium.js?v=1.4.145-coin-icons-storage-sound";
 import { repairWorldAmmunitionCompatibility } from "./data/ammunition-compatibility.js?v=1.4.111-native-ammunition-compatibility";
 import { MagicItemsCompendiumService } from "./data/magic-items-compendium.js";
 import { FeatsCompendiumService } from "./data/feats-compendium.js";
@@ -92,7 +92,7 @@ import {
   readStorageState,
   readStorageStateAtPath
 } from "./data/storage-service.js?v=1.4.144-spreadsheet-coins-ground-repair";
-import { StorageOpenSoundService } from "./data/storage-open-sound-service.js";
+import { StorageOpenSoundService } from "./data/storage-open-sound-service.js?v=1.4.145-coin-icons-storage-sound";
 import {
   isStorageTokenVisible,
   measureStoragePointDistance,

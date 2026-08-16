@@ -9,44 +9,29 @@ export class StorageOpenSoundService {
   constructor({
     gameProvider = () => globalThis.game,
     isActiveGm = isActiveGmClient,
-    audioHelper = globalThis.AudioHelper,
-    setTimeout = globalThis.setTimeout?.bind(globalThis),
+    soundsLayer = null,
+    soundsLayerProvider = () => globalThis.canvas?.sounds,
     logger = console
   } = {}) {
     this.gameProvider = gameProvider;
     this.isActiveGm = isActiveGm;
-    this.audioHelper = audioHelper;
-    this.setTimeout = setTimeout;
+    this.soundsLayerProvider = () => soundsLayer ?? soundsLayerProvider?.();
     this.logger = logger;
   }
 
   async playForToken(token) {
     if (this.isActiveGm(this.gameProvider()) !== true) return null;
-    const scene = token?.parent;
-    if (typeof scene?.createEmbeddedDocuments !== "function") return null;
-    try { await this.audioHelper?.preloadSound?.(STORAGE_OPEN_SOUND_PATH); }
-    catch (error) { this.logger?.warn?.(`${MODULE_ID} | Storage sound preload failed.`, error); }
+    const soundsLayer = this.soundsLayerProvider();
+    if (typeof soundsLayer?.emitAtPosition !== "function") return null;
     try {
       const center = storageTokenCenter(token);
-      const [sound] = await scene.createEmbeddedDocuments("AmbientSound", [{
-        x: center.x,
-        y: center.y,
-        path: STORAGE_OPEN_SOUND_PATH,
-        radius: 10,
-        repeat: false,
+      await soundsLayer.emitAtPosition(STORAGE_OPEN_SOUND_PATH, center, 10, {
         volume: 0.8,
         easing: true,
         walls: true,
-        hidden: false,
-        flags: { [MODULE_ID]: { [TEMPORARY_STORAGE_SOUND_FLAG]: true } }
-      }]);
-      if (sound?.id && typeof this.setTimeout === "function") {
-        this.setTimeout(async () => {
-          try { await scene.deleteEmbeddedDocuments("AmbientSound", [sound.id]); }
-          catch (error) { this.logger?.warn?.(`${MODULE_ID} | Storage sound cleanup failed.`, error); }
-        }, 1250);
-      }
-      return sound ?? null;
+        gmAlways: true
+      });
+      return true;
     }
     catch (error) {
       this.logger?.warn?.(`${MODULE_ID} | Storage sound creation failed.`, error);

@@ -65,8 +65,8 @@ test("PowerShell gear import selects the named base sheet and maps columns by he
     assert.deepEqual(importedCoins, [
       ["Медная монета", 1, "cp", 0.01],
       ["Серебрянная монета", 1, "sp", 0.1],
-      ["Золота монета", 1, "gp", 1],
-      ["Платиновая монета", 1, "pp", 10]
+      ["Золотая монета", 1, "gp", 1],
+      ["Платиновая монета", 10, "gp", 10]
     ]);
     assert.equal(
       gear.every((entry) => /^(?:[1-9]\d*|[1-9]\d*[кd][1-9]\d*)$/u.test(entry.multipleAppearance)),

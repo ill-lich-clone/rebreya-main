@@ -11,6 +11,13 @@ const GEAR_ICON_SEARCH_PATHS = [
   CUSTOM_GEAR_ICONS_BASE_PATH
 ];
 
+const GEAR_COIN_ICONS = Object.freeze({
+  "медная монета": `modules/${MODULE_ID}/assets/storage/coins/cp.png`,
+  "серебрянная монета": `modules/${MODULE_ID}/assets/storage/coins/sp.png`,
+  "золотая монета": `modules/${MODULE_ID}/assets/storage/coins/gp.png`,
+  "платиновая монета": `modules/${MODULE_ID}/assets/storage/coins/pp.png`
+});
+
 function cleanString(value, fallback = "") {
   const text = String(value ?? "").trim();
   return text || fallback;
@@ -494,6 +501,12 @@ export function resolveGearItemIcon(item, { classification = null, iconLookup = 
   const safeClassification = classification ?? classifyGearEntry(item ?? {});
   const folderPath = buildFolderPath(safeClassification).join(" / ").toLowerCase();
   const typeText = normalizeMatchText(item?.equipmentType);
+  const coinIcon = typeText === normalizeMatchText("Сокровища")
+    ? GEAR_COIN_ICONS[normalizeMatchText(item?.name)]
+    : "";
+  if (coinIcon) {
+    return coinIcon;
+  }
   const namedCustomIcon = resolveGearNamedIcon(item, iconLookup);
   if (namedCustomIcon) {
     return namedCustomIcon;
