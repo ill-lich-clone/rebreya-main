@@ -20,6 +20,7 @@ export const STORAGE_COIN_DENOMINATIONS = Object.freeze(["pp", "gp", "sp", "cp"]
 const STORAGE_COIN_DENOMINATION_SET = new Set(STORAGE_COIN_DENOMINATIONS);
 const COIN_KEYS = STORAGE_COIN_DENOMINATIONS;
 const STORAGE_KINDS = new Set(["chest", "bag", "pile"]);
+const NIGHT_GOGGLES_ICON = "modules/rebreya-main/templates/icons/Magic%20Items/%D0%9D%D0%BE%D1%87%D0%BD%D1%8B%D0%B5%20%D0%BE%D1%87%D0%BA%D0%B8.webp";
 
 export function readStorageCoinDenomination(item) {
   const flag = typeof item?.getFlag === "function"
@@ -54,6 +55,13 @@ function cleanId(value) {
   return String(value ?? "").trim();
 }
 
+function normalizeStorageItemIcon(value) {
+  const path = cleanId(value).replace(/\\/gu, "/");
+  return path.toLowerCase().endsWith("goggles-of-night.webp")
+    ? NIGHT_GOGGLES_ICON
+    : path;
+}
+
 function storageKindForDocument(document, stored = null) {
   const explicit = cleanId(stored?.storageKind);
   if (STORAGE_KINDS.has(explicit)) return explicit;
@@ -70,7 +78,16 @@ function storageContainerIdForDocument(document, stored = null) {
 function normalizeRows(rows) {
   return (Array.isArray(rows) ? rows : [])
     .filter((row) => row && typeof row === "object")
-    .map((row) => clone(row));
+    .map((row) => {
+      const normalized = clone(row);
+      if (Object.hasOwn(normalized, "img")) {
+        normalized.img = normalizeStorageItemIcon(normalized.img);
+      }
+      if (normalized.itemData && typeof normalized.itemData === "object" && Object.hasOwn(normalized.itemData, "img")) {
+        normalized.itemData.img = normalizeStorageItemIcon(normalized.itemData.img);
+      }
+      return normalized;
+    });
 }
 
 function normalizeCoins(coins) {

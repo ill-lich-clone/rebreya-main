@@ -5,6 +5,7 @@ import {
   STORAGE_UPDATED_HOOK,
   STORAGE_COIN_DENOMINATIONS,
   StorageService,
+  buildStorageTokenState,
   deriveStorageDisplayName,
   isStorageActor,
   readStorageCoinDenomination,
@@ -52,6 +53,26 @@ test("storage owns coin denominations and reads only the exact managed flag", ()
     flags: { "rebreya-main": { storageCoinTemplate: { denomination: "gp" } } }
   }), null);
   assert.equal(readStorageCoinDenomination({ name: "Золотая монета" }), null);
+});
+
+test("storage snapshots replace the removed goggles icon in row and persisted item data", () => {
+  const state = buildStorageTokenState({
+    state: "opened",
+    generatedRows: [{
+      rowId: "night-goggles",
+      name: "Ночные очки",
+      img: "icons/equipment/eyes/goggles-of-night.webp",
+      itemData: {
+        name: "Ночные очки",
+        img: "goggles-of-night.webp",
+        system: { quantity: 1 }
+      }
+    }]
+  });
+
+  const expected = "modules/rebreya-main/templates/icons/Magic%20Items/%D0%9D%D0%BE%D1%87%D0%BD%D1%8B%D0%B5%20%D0%BE%D1%87%D0%BA%D0%B8.webp";
+  assert.equal(state.generatedRows[0].img, expected);
+  assert.equal(state.generatedRows[0].itemData.img, expected);
 });
 
 test("two storage tokens using one actor keep independent template snapshots", async () => {

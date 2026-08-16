@@ -210,6 +210,45 @@ test("storage loot grants an item and coins to a character exactly once", async 
   }
 });
 
+test("storage loot grants persisted magic item data to party inventory exactly once", async () => {
+  const group = createActor({ id: "storage-group", type: "group", managed: true });
+  const fixture = installFixture({ group, actors: [group] });
+  const row = {
+    rowId: "night-goggles-row",
+    sourceType: "gear",
+    sourceId: "Compendium.world.rebreya-magic-items.Item.rUCEi3ytA16ncRdg",
+    quantity: 1,
+    itemData: {
+      name: "Ночные очки",
+      type: "equipment",
+      img: "modules/rebreya-main/templates/icons/Magic%20Items/%D0%9D%D0%BE%D1%87%D0%BD%D1%8B%D0%B5%20%D0%BE%D1%87%D0%BA%D0%B8.webp",
+      system: { quantity: 1, rarity: "uncommon" },
+      flags: { [MODULE_ID]: { sourceType: "magicItem", magicItemId: "nochnye-ochki" } }
+    }
+  };
+
+  try {
+    await fixture.service.addLootgenRowToInventoryOnce(
+      row,
+      "storage:item:token-1:night-goggles-row:party",
+      { allowPersistedItemData: true }
+    );
+    await fixture.service.addLootgenRowToInventoryOnce(
+      row,
+      "storage:item:token-1:night-goggles-row:party",
+      { allowPersistedItemData: true }
+    );
+
+    assert.equal(group.items.contents.length, 1);
+    assert.equal(group.items.contents[0].name, "Ночные очки");
+    assert.equal(group.items.contents[0].flags[MODULE_ID].sourceType, "magicItem");
+    assert.equal(group.items.contents[0].flags[MODULE_ID].magicItemId, "nochnye-ochki");
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
 test("storage loot refuses a non-character self destination", async () => {
   const group = createActor({ id: "storage-group", type: "group", managed: true });
   const fixture = installFixture({ group, actors: [group] });

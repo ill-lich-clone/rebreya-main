@@ -3,7 +3,7 @@ import {
   readStorageCoinDenomination,
   readStorageState,
   readStorageStateAtPath
-} from "./storage-service.js?v=1.4.144-spreadsheet-coins-ground-repair";
+} from "./storage-service.js?v=1.4.146-storage-persisted-items";
 import { resolveStorageDepositSource } from "./storage-deposit-source.js?v=1.4.144-spreadsheet-coins-ground-repair";
 import { isStorageContainerRow, isStorageJournalRow } from "./storage-container-snapshot.js";
 import { MODULE_ID } from "../constants.js";
@@ -568,7 +568,11 @@ export class StorageCommandService {
         await this.inventoryService.addLootgenRowToCharacterOnce(transferRow, access.character, grantId);
       }
       else if (destination === "party") {
-        await this.inventoryService.addLootgenRowToInventoryOnce(transferRow, grantId);
+        await this.inventoryService.addLootgenRowToInventoryOnce(
+          transferRow,
+          grantId,
+          { allowPersistedItemData: true }
+        );
       }
       else if (destination === "character") {
         const targetActor = await this.#resolveCharacterTarget(payload.target, sender);

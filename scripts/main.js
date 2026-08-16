@@ -63,7 +63,7 @@ import {
   SOCKET_EVENT_INVENTORY_SOURCE_DEPLETION_RESULT,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_REQUEST,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_RESULT
-} from "./data/inventory-service.js?v=1.4.111-member-transport-filter";
+} from "./data/inventory-service.js?v=1.4.146-storage-persisted-items";
 import { DurabilityService } from "./data/durability-service.js?v=1.4.144-spreadsheet-coins-ground-repair";
 import { MapObjectTokenService } from "./data/map-object-token-service.js?v=1.4.97-map-object-token";
 import { HeroDollService } from "./data/hero-doll-service.js";
@@ -91,7 +91,7 @@ import {
   isStorageActor,
   readStorageState,
   readStorageStateAtPath
-} from "./data/storage-service.js?v=1.4.144-spreadsheet-coins-ground-repair";
+} from "./data/storage-service.js?v=1.4.146-storage-persisted-items";
 import { StorageOpenSoundService } from "./data/storage-open-sound-service.js?v=1.4.145-coin-icons-storage-sound";
 import {
   isStorageTokenVisible,
@@ -123,7 +123,7 @@ import {
   isValidStorageRestorePortablePayload,
   isValidStorageTokenCharacterPayload,
   storageCharacterTokenUuidForClaim
-} from "./data/storage-command-service.js?v=1.4.144-spreadsheet-coins-ground-repair";
+} from "./data/storage-command-service.js?v=1.4.146-storage-persisted-items";
 import { registerCombatHooks } from "./combat/hooks.js?v=1.4.134-actor-delta-status-socket";
 import { CombatAttackService } from "./combat/attack-service.js?v=1.4.111-native-ammunition-compatibility";
 import { ImplantAutomationService } from "./combat/implant-automation-service.js";

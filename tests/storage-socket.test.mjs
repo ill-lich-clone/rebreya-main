@@ -114,9 +114,9 @@ function createHarness({
       completed.add(mutationId);
       return { actorId: actor.id, itemId: "granted-item", quantity: row.quantity };
     },
-    async addLootgenRowToInventoryOnce(row, mutationId) {
+    async addLootgenRowToInventoryOnce(row, mutationId, options) {
       if (rejectItemGrant) throw new Error("grant failed");
-      if (!completed.has(mutationId)) itemGrants.push({ row: clone(row), mutationId, destination: "party" });
+      if (!completed.has(mutationId)) itemGrants.push({ row: clone(row), mutationId, options: clone(options), destination: "party" });
       completed.add(mutationId);
     },
     async addCurrencyToCharacterOnce(coins, actor, mutationId) {
@@ -1765,6 +1765,7 @@ test("repeated storage claims grant rows and coins only once and empty the token
   await harness.service.claimCoins(coinRequest, { sender: harness.player });
 
   assert.equal(harness.itemGrants.length, 1);
+  assert.deepEqual(harness.itemGrants[0].options, { allowPersistedItemData: true });
   assert.equal(harness.coinGrants.length, 1);
   assert.equal(readStorageState(harness.storageToken).state, "empty");
   assert.equal(harness.storageToken.name, "Сундук (пусто)");

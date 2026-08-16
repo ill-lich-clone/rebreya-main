@@ -4360,15 +4360,20 @@ export class InventoryService {
     );
   }
 
-  addLootgenRowToInventoryOnce(row, mutationId) {
+  addLootgenRowToInventoryOnce(row, mutationId, { allowPersistedItemData = false } = {}) {
     const frozenRow = foundry.utils.deepClone(row ?? {});
     return this.mutationCoordinator.run(
       "inventory",
-      () => this.#executeInventoryGrantOnce({
-        quantity: frozenRow.quantity,
-        mutationId,
-        buildItemData: () => this.buildLootgenItemData(frozenRow)
-      })
+      () => {
+        if (allowPersistedItemData && !isActiveGmClient()) {
+          throw new Error("Only the active GM can grant persisted storage items.");
+        }
+        return this.#executeInventoryGrantOnce({
+          quantity: frozenRow.quantity,
+          mutationId,
+          buildItemData: () => this.buildLootgenItemData(frozenRow, { allowPersistedItemData })
+        });
+      }
     );
   }
 
