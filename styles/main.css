@@ -13123,6 +13123,7 @@ summary:focus-visible {
 }
 
 .rebreya-storage-app .window-content {
+  z-index: 2;
   overflow: visible;
 }
 
