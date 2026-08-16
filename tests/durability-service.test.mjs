@@ -193,9 +193,18 @@ function createModel() {
       size: "small"
     }
   };
+  const cuirass = {
+    id: "cuirass",
+    name: "Cuirass",
+    predominantMaterialId: material.id,
+    durability: {
+      construction: "sturdy",
+      size: "medium"
+    }
+  };
   return {
-    gear: [gear],
-    gearById: new Map([[gear.id, gear]]),
+    gear: [gear, cuirass],
+    gearById: new Map([[gear.id, gear], [cuirass.id, cuirass]]),
     materials: [material],
     materialById: new Map([[material.id, material]]),
     materialByGoodId: new Map()
@@ -249,6 +258,60 @@ function durabilityFlag({ state = "intact", breakStage = 0, hpValue = 15 } = {})
     updatedAt: "2026-07-15T10:00:00.000Z"
   };
 }
+
+test("getOrBuildDurability derives a cuirass without updating its source item", async () => {
+  const cuirass = createItem({
+    id: "cuirass-item",
+    type: "equipment",
+    system: { equipped: false, properties: [], rarity: "" },
+    moduleFlags: { sourceType: "gear", gearId: "cuirass" }
+  });
+  const { service, hookCalls } = createService({ item: cuirass });
+
+  const derived = await service.getOrBuildDurability(cuirass);
+
+  assert.equal(derived.eligible, true);
+  assert.equal(derived.state, "intact");
+  assert.equal(derived.hp.value, derived.hp.max);
+  assert.equal(cuirass.updates.length, 0);
+  assert.equal(hookCalls.length, 0);
+
+  const initialized = await service.initializeItem(cuirass);
+
+  assert.deepEqual(initialized, derived);
+  assert.equal(cuirass.updates.length, 1);
+});
+
+test("getOrBuildDurability clones an existing damaged flag without updating its source item", async () => {
+  const damagedFlag = durabilityFlag({ state: "damaged", hpValue: 3 });
+  const damagedCuirass = createItem({
+    id: "damaged-cuirass-item",
+    type: "equipment",
+    system: { equipped: false, properties: [], rarity: "" },
+    moduleFlags: {
+      sourceType: "gear",
+      gearId: "cuirass",
+      durability: damagedFlag
+    }
+  });
+  const { service, hookCalls } = createService({ item: damagedCuirass });
+
+  const preserved = await service.getOrBuildDurability(damagedCuirass);
+
+  assert.deepEqual(preserved, damagedFlag);
+  assert.notEqual(preserved, damagedFlag);
+  assert.equal(damagedCuirass.updates.length, 0);
+  assert.equal(hookCalls.length, 0);
+});
+
+test("getOrBuildDurability leaves ineligible items untouched", async () => {
+  const magicItem = createItem({ system: { rarity: "rare", equipped: false } });
+  const { service, hookCalls } = createService({ item: magicItem });
+
+  assert.equal(await service.getOrBuildDurability(magicItem), null);
+  assert.equal(magicItem.updates.length, 0);
+  assert.equal(hookCalls.length, 0);
+});
 
 test("initializeItem resolves model gear and material once with a complete plain update", async () => {
   const item = createItem();

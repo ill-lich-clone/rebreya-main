@@ -212,20 +212,26 @@ export class DurabilityService {
     );
   }
 
-  async #initializeItem(item, { force = false, sourceType, sourceId } = {}) {
-    const itemData = itemDataOf(item);
-    if (!isDurabilityEligible(itemData)) {
+  async getOrBuildDurability(item, { sourceType, sourceId } = {}) {
+    if (!isDurabilityEligible(itemDataOf(item))) {
       return null;
     }
-
     const existing = this.getDurability(item);
-    if (existing && force !== true) {
+    if (existing) {
       return existing;
     }
+    return this.#buildInitialFlag(item, { sourceType, sourceId });
+  }
 
-    const flag = await this.#buildInitialFlag(item, { sourceType, sourceId });
+  async #initializeItem(item, { force = false, sourceType, sourceId } = {}) {
+    const flag = force === true
+      ? await this.#buildInitialFlag(item, { sourceType, sourceId })
+      : await this.getOrBuildDurability(item, { sourceType, sourceId });
     if (!flag) {
       return null;
+    }
+    if (force !== true && this.getDurability(item)) {
+      return flag;
     }
     const transition = {
       outcome: "initialized",
@@ -323,14 +329,7 @@ export class DurabilityService {
   }
 
   async #readOrBuildFlag(item) {
-    if (!isDurabilityEligible(itemDataOf(item))) {
-      return null;
-    }
-    const existing = this.getDurability(item);
-    if (existing) {
-      return existing;
-    }
-    return this.#buildInitialFlag(item);
+    return this.getOrBuildDurability(item);
   }
 
   async #buildInitialFlag(item, { sourceType, sourceId } = {}) {

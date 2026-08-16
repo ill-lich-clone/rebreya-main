@@ -185,12 +185,13 @@ Definition of Done: код, тесты, `README.md` при изменении п
 
 - **Зачем:** нормализовать durability, применить повреждение/поломку/уничтожение и устанавливать upgrades в пределах capacity.
 - **Владельцы:** legacy/item durability — `scripts/data/durability-service.js`; native dnd5e objects — `native-object-durability-service.js`; rules — `durability-rules.js`; upgrades — `item-upgrade-service.js`.
-- **Внешние методы:** `initializeItem()`, `damageItem()`, `damageDurabilityTarget()`, `resolveDurabilityOutcome()`, `breakItem()`, `destroyItem()`, `getDurability()`, `isBroken()`, `installItemUpgrade(hostItem, upgradeItem, options)`, `removeItemUpgrade()`, `setItemUpgradeCapacity()`.
+- **Внешние методы:** `initializeItem()`, `getOrBuildDurability(item, { sourceType?, sourceId? })`, `damageItem()`, `damageDurabilityTarget()`, `resolveDurabilityOutcome()`, `breakItem()`, `destroyItem()`, `getDurability()`, `isBroken()`, `installItemUpgrade(hostItem, upgradeItem, options)`, `removeItemUpgrade()`, `setItemUpgradeCapacity()`.
+- **Data flow durability:** `getOrBuildDurability()` сначала проверяет eligibility, затем возвращает plain clone существующего flag (включая damage/broken state и timestamp) либо строит initial flag из model gear, material, construction и size. Это чистый derive-path: не вызывает `item.update`, delete, hooks, journals и не меняет source document. `initializeItem()` для normal path использует тот же результат и делает один update только для отсутствующего flag; `force: true` строит initial flag заново private builder. `storageCoinTemplate.denomination` и `sourceType: coinTemplate` исключают managed Coin Items из durability, обычный loot остаётся eligible.
 - **Typed command:** `durability.target.damage`; mutation journal — hidden setting durability journal, зарегистрированный composition root.
 - **Integrations/UI:** `scripts/integrations/durability-hooks.js`, `item-upgrade-sheet.js`, `scripts/ui/durability-outcome-dialog.js`.
 - **Куда править:** формулы/thresholds — rules; routing native/legacy — integrations; Actor/Item mutation — соответствующий service; sheet controls — integration/UI.
 - **Нельзя:** одновременно маршрутизировать Item в native и legacy service, уничтожать без outcome/recovery path или считать UI capacity authoritative.
-- **Тесты:** `tests/durability-*.test.mjs`, `native-object-durability-service.test.mjs`, `native-durability-*.test.mjs`, `item-upgrade-service.test.mjs`.
+- **Тесты:** `tests/durability-*.test.mjs` (включая non-mutating derivation, existing-flag precedence и Coin exclusion), `native-object-durability-service.test.mjs`, `native-durability-*.test.mjs`, `item-upgrade-service.test.mjs`.
 
 ### 15. Managed-компендиумы и каталоги
 

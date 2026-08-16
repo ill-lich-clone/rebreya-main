@@ -237,6 +237,8 @@ function isNonDurableStack(flags) {
     || Boolean(flags.linkedGoodId)
     || flags.managedPartySupply === true
     || Boolean(flags.resourceKey)
+    || normalizeToken(flags.sourceType) === "cointemplate"
+    || Boolean(normalizeToken(flags.storageCoinTemplate?.denomination))
     || NON_DURABLE_STACK_SOURCE_TYPES.has(normalizeToken(flags.sourceType));
 }
 

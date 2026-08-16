@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import { MODULE_ID } from "../scripts/constants.js";
 import {
   applyDurabilityDamage,
   buildDurabilitySignature,
@@ -311,6 +312,32 @@ test("Rebreya material and goods stack markers are excluded while functional loo
         gearId: "pohodnyy-nabor"
       }
     }
+  }), true);
+});
+
+test("managed Coin templates are excluded while ordinary loot remains durable", () => {
+  assert.equal(isDurabilityEligible({
+    type: "loot",
+    system: { properties: [], rarity: "" },
+    flags: { [MODULE_ID]: {
+      sourceType: "coinTemplate",
+      storageCoinTemplate: { version: 1, denomination: "gp" }
+    }}
+  }), false);
+
+  assert.equal(isDurabilityEligible({
+    type: "loot",
+    system: { properties: [], rarity: "" },
+    flags: { [MODULE_ID]: {
+      sourceType: "gear",
+      storageCoinTemplate: { version: 1, denomination: "gp" }
+    }}
+  }), false);
+
+  assert.equal(isDurabilityEligible({
+    type: "loot",
+    system: { properties: [], rarity: "" },
+    flags: { [MODULE_ID]: {} }
   }), true);
 });
 
