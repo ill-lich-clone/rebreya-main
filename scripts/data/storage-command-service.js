@@ -7,10 +7,12 @@ import {
 import { resolveStorageDepositSource } from "./storage-deposit-source.js?v=1.4.144-spreadsheet-coins-ground-repair";
 import { isStorageContainerRow, isStorageJournalRow } from "./storage-container-snapshot.js";
 import { MODULE_ID } from "../constants.js";
+import { escapeFoundryHtml } from "../shared/foundry-values.js";
 
 const STORAGE_ROW_DESTINATIONS = new Set(["self", "party", "character", "scene"]);
 const STORAGE_COIN_DESTINATIONS = new Set(["self", "party"]);
 const STORAGE_COIN_DENOMINATIONS = new Set(["pp", "gp", "sp", "cp"]);
+const STORAGE_COIN_LABELS = Object.freeze({ pp: "пм", gp: "зм", sp: "см", cp: "мм" });
 const MAX_STORAGE_DISTANCE_FEET = 5;
 
 function clean(value) {
@@ -261,7 +263,9 @@ export class StorageCommandService {
     journalReader,
     isVisibleTo,
     resolveDocument = (...args) => globalThis.fromUuid?.(...args),
-    resolveDepositSource = resolveStorageDepositSource
+    resolveDepositSource = resolveStorageDepositSource,
+    createChatMessage = (data) => globalThis.ChatMessage?.create?.(data),
+    logger = console
   } = {}) {
     if (!storageService || !inventoryService) {
       throw new TypeError("StorageCommandService requires storage and inventory services.");
@@ -287,6 +291,8 @@ export class StorageCommandService {
     this.isVisibleTo = isVisibleTo;
     this.resolveDocument = resolveDocument;
     this.resolveDepositSource = resolveDepositSource;
+    this.createChatMessage = typeof createChatMessage === "function" ? createChatMessage : null;
+    this.logger = logger;
     this.claimTasks = new Map();
     this.claimQueues = new Map();
     this.claimResults = new Map();
@@ -352,6 +358,39 @@ export class StorageCommandService {
 
   async #refreshSource(storageToken, state) {
     await this.groundPileService?.refreshAfterStorageMutation?.(storageToken, state);
+  }
+
+  async #publishClaimMessage({ sender, destination, actor = null, row = null, quantity = null, coins = null } = {}) {
+    if (!this.createChatMessage || !["self", "party"].includes(destination)) return false;
+    const initiator = escapeFoundryHtml(clean(sender?.name) || "Игрок");
+    const destinationLabel = destination === "party"
+      ? "групповой инвентарь"
+      : `инвентарь ${escapeFoundryHtml(clean(actor?.name) || "персонажа")}`;
+    let subject = "";
+    if (row) {
+      const amount = Number(quantity);
+      const safeQuantity = Number.isSafeInteger(amount) && amount > 0 ? amount : 1;
+      const rowName = escapeFoundryHtml(clean(row?.name ?? row?.itemData?.name) || "Предмет");
+      subject = `${safeQuantity} × ${rowName}`;
+    }
+    else {
+      subject = Object.entries(STORAGE_COIN_LABELS)
+        .map(([denomination, label]) => [denomination, label, Number(coins?.[denomination] ?? 0)])
+        .filter(([, , amount]) => Number.isSafeInteger(amount) && amount > 0)
+        .map(([, label, amount]) => `${amount} ${label}`)
+        .join(", ");
+    }
+    if (!subject) return false;
+    try {
+      await this.createChatMessage({
+        content: `<p><strong>${initiator}</strong> перемещает <strong>${subject}</strong> в ${destinationLabel}.</p>`
+      });
+      return true;
+    }
+    catch (error) {
+      this.logger?.warn?.(`${MODULE_ID} | Storage claim ChatMessage creation failed.`, error);
+      return false;
+    }
   }
 
   async #resolveAccess(payload, sender) {
@@ -550,6 +589,15 @@ export class StorageCommandService {
       }
       const result = await this.storageService.claim(access.storageToken, { kind: "row", rowId, quantity, path });
       await this.#refreshSource(access.storageToken, readStorageState(access.storageToken));
+      if (result.changed === true) {
+        await this.#publishClaimMessage({
+          sender,
+          destination,
+          actor: access.character,
+          row: transferRow,
+          quantity
+        });
+      }
       return result;
     });
   }
@@ -587,6 +635,14 @@ export class StorageCommandService {
       }
       const result = await this.storageService.claim(access.storageToken, { kind: "coins", path });
       await this.#refreshSource(access.storageToken, readStorageState(access.storageToken));
+      if (result.changed === true) {
+        await this.#publishClaimMessage({
+          sender,
+          destination,
+          actor: access.character,
+          coins
+        });
+      }
       return result;
     });
   }

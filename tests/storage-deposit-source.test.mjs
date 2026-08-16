@@ -632,6 +632,7 @@ test("whole storage token sources delete after deposit and can restore the origi
     name: token.name,
     actorId: token.actor.id,
     texture: clone(token.texture),
+    sight: { enabled: true, range: 60 },
     flags: clone(token.flags)
   });
   token.delete = async () => { token.deleted = true; };
@@ -650,6 +651,7 @@ test("whole storage token sources delete after deposit and can restore the origi
   assert.equal(token.parent.created.length, 1);
   assert.equal(token.parent.created[0].type, "Token");
   assert.equal(token.parent.created[0].documents[0]._id, token.id);
+  assert.deepEqual(token.parent.created[0].documents[0].sight, { enabled: false, range: 60 });
 });
 
 test("a single ordinary ground item is transferred as an item instead of a nested container", async () => {

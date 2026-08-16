@@ -418,6 +418,10 @@ export class StorageGroundPileService {
       ...prototype,
       actorId: actor.id,
       actorLink: false,
+      sight: {
+        ...(clone(prototype.sight) ?? {}),
+        enabled: false
+      },
       delta: ownedSyntheticActorDelta(prototype.delta, ownerUserId),
       name: presentation.name,
       x: pointX - tokenWidth * gridSize / 2,

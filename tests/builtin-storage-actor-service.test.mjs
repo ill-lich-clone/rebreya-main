@@ -99,6 +99,7 @@ test("built-in storage Actor data creates an unlinked closed NPC with independen
   assert.equal(data.flags[MODULE_ID].storage.enabled, true);
   assert.equal(data.flags[MODULE_ID][BUILTIN_STORAGE_PRESET_FLAG].id, "wood-dark-copper");
   assert.equal(data.prototypeToken.actorLink, false);
+  assert.equal(data.prototypeToken.sight.enabled, false);
   assert.equal(data.prototypeToken.name, "Сундук");
   assert.equal(data.prototypeToken.texture.src, preset.textures.unopened);
   assert.deepEqual(data.prototypeToken.flags[MODULE_ID].objectDurability, CHEST_OBJECT_DURABILITY);
@@ -262,6 +263,7 @@ test("sync reconciles existing built-in Actors into the oldest storage folder wi
   for (const actor of harness.actors) {
     assert.equal(actor.updates.length, 1);
     assert.equal(actor.updates[0].folder, canonical.id);
+    assert.equal(actor.updates[0]["prototypeToken.sight.enabled"], false);
   }
   assert.deepEqual(
     harness.actors[0].updates[0][`prototypeToken.flags.${MODULE_ID}.storage`].manualRows,

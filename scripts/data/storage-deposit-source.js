@@ -574,7 +574,12 @@ async function resolveStorageTokenSource(sourceRef, { resolveToken, storageServi
       if (receipt?.kind !== "storage-token" || typeof receipt.parent?.createEmbeddedDocuments !== "function") {
         return false;
       }
-      await receipt.parent.createEmbeddedDocuments("Token", [receipt.tokenData], { keepId: true });
+      const restoredTokenData = clone(receipt.tokenData) ?? {};
+      restoredTokenData.sight = {
+        ...(clone(restoredTokenData.sight) ?? {}),
+        enabled: false
+      };
+      await receipt.parent.createEmbeddedDocuments("Token", [restoredTokenData], { keepId: true });
       return true;
     }
   };

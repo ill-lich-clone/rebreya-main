@@ -1153,7 +1153,8 @@ export class RebreyaMainModule {
       containerItemService: this.storageContainerItemService,
       durabilityService: this.durabilityService,
       journalReader: this.storageJournalReader,
-      isVisibleTo: (storageToken) => isStorageTokenVisible(storageToken)
+      isVisibleTo: (storageToken) => isStorageTokenVisible(storageToken),
+      createChatMessage: (data) => globalThis.ChatMessage?.create?.(data)
     });
     this.transportInstanceService = new TransportInstanceService(this, {
       gameProvider: () => globalThis.game,

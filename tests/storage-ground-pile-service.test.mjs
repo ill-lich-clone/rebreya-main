@@ -30,7 +30,13 @@ function createHarness({ activeGm = true, beforeCreate, beforeUpdate } = {}) {
       }
     },
     getFlag(scope, key) { return this.flags?.[scope]?.[key]; },
-    prototypeToken: { name: "Куча предметов", width: 1, height: 1, texture: { src: "mixed.png" } }
+    prototypeToken: {
+      name: "Куча предметов",
+      width: 1,
+      height: 1,
+      texture: { src: "mixed.png" },
+      sight: { enabled: true, range: 60 }
+    }
   };
   const tokens = [];
   const scene = {
@@ -138,6 +144,7 @@ test("canvas transfer creates an unlinked independent ground pile token", async 
   assert.equal(result.created, true);
   assert.equal(tokens.length, 1);
   assert.equal(tokens[0].actorLink, false);
+  assert.deepEqual(tokens[0].sight, { enabled: false, range: 60 });
   assert.equal(tokens[0].width, 0.5);
   assert.equal(tokens[0].height, 0.5);
   assert.equal(tokens[0].x, 275);

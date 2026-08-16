@@ -487,6 +487,11 @@ export class StorageContainerItemService {
       ...presented,
       actorId,
       actorLink: false,
+      sight: {
+        ...(clone(prototypeData.sight) ?? {}),
+        ...(clone(presented.sight) ?? {}),
+        enabled: false
+      },
       delta: ownedSyntheticActorDelta(presented.delta ?? prototypeData.delta, ownerUserId),
       name: normalized.storageKind === "chest"
         ? "Сундук"

@@ -357,9 +357,13 @@ test("portable container restores to a scene token once with the same storage st
   const actor = {
     id: "storage-actor",
     async getTokenDocument() {
-      return {
-        toObject: () => ({ actorId: this.id, texture: { src: "prototype.webp" }, width: 1, height: 1 })
-      };
+      return { toObject: () => ({
+        actorId: this.id,
+        texture: { src: "prototype.webp" },
+        width: 1,
+        height: 1,
+        sight: { enabled: true, range: 30 }
+      }) };
     }
   };
   const service = new StorageContainerItemService({
@@ -367,13 +371,15 @@ test("portable container restores to a scene token once with the same storage st
     resolveActor: (id) => id === actor.id ? actor : null
   });
 
-  const first = await service.restoreSnapshotToScene(bagSnapshot(), {
+  const snapshot = bagSnapshot();
+  snapshot.presentation.tokenData = { sight: { enabled: true, range: 60 } };
+  const first = await service.restoreSnapshotToScene(snapshot, {
     sceneId: scene.id,
     x: 100,
     y: 200,
     mutationId: "scene-restore"
   });
-  const second = await service.restoreSnapshotToScene(bagSnapshot(), {
+  const second = await service.restoreSnapshotToScene(snapshot, {
     sceneId: scene.id,
     x: 999,
     y: 999,
@@ -385,6 +391,7 @@ test("portable container restores to a scene token once with the same storage st
   assert.equal(created[0].type, "Token");
   assert.equal(created[0].documents[0].x, 100);
   assert.equal(created[0].documents[0].y, 200);
+  assert.deepEqual(created[0].documents[0].sight, { enabled: false, range: 60 });
   assert.equal(created[0].documents[0].flags[MODULE_ID].storage.containerId, "bag-1");
   assert.equal(created[0].documents[0].flags[MODULE_ID].storageContainerMutation.id, "scene-restore");
 });

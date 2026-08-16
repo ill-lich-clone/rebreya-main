@@ -83,6 +83,10 @@ export function buildBuiltinStorageActorData(preset, folderId) {
     },
     prototypeToken: {
       ...clone(preset.prototypeToken),
+      sight: {
+        ...(clone(preset.prototypeToken.sight) ?? {}),
+        enabled: false
+      },
       flags: {
         [MODULE_ID]: {
           storage: initialStorageState(preset),
@@ -159,6 +163,7 @@ export class BuiltinStorageActorService {
     await actor.update({
       ...(String(currentFolderId ?? "") !== String(folderId ?? "") ? { folder: folderId } : {}),
       "prototypeToken.name": preset.prototypeToken.name,
+      "prototypeToken.sight.enabled": false,
       [`prototypeToken.flags.${MODULE_ID}.storage`]: buildStorageTokenState({
         ...initial,
         ...current,
