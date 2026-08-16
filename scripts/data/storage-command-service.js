@@ -4,6 +4,7 @@ import { isStorageContainerRow, isStorageJournalRow } from "./storage-container-
 
 const STORAGE_ROW_DESTINATIONS = new Set(["self", "party", "character", "scene"]);
 const STORAGE_COIN_DESTINATIONS = new Set(["self", "party"]);
+const STORAGE_COIN_DENOMINATIONS = new Set(["pp", "gp", "sp", "cp"]);
 const MAX_STORAGE_DISTANCE_FEET = 5;
 
 function clean(value) {
@@ -156,6 +157,21 @@ export function isValidStorageDropItemPayload(payload) {
   ])
     && isTrimmedString(payload.characterTokenUuid)
     && isTrimmedString(payload.itemUuid, { required: true })
+    && isTrimmedString(payload.sceneId, { required: true, max: 160 })
+    && Number.isFinite(payload.x)
+    && Number.isFinite(payload.y)
+    && Number.isSafeInteger(payload.quantity)
+    && payload.quantity >= 1
+    && isTrimmedString(payload.mutationId, { required: true, max: 160 });
+}
+
+export function isValidStorageCoinDropPayload(payload) {
+  return hasExactKeys(payload, [
+    "characterTokenUuid", "denomination", "itemUuid", "mutationId", "quantity", "sceneId", "x", "y"
+  ])
+    && isTrimmedString(payload.characterTokenUuid)
+    && isTrimmedString(payload.itemUuid, { required: true })
+    && STORAGE_COIN_DENOMINATIONS.has(payload.denomination)
     && isTrimmedString(payload.sceneId, { required: true, max: 160 })
     && Number.isFinite(payload.x)
     && Number.isFinite(payload.y)
@@ -590,6 +606,9 @@ export class StorageCommandService {
       if (!source || typeof source.consume !== "function" || typeof source.restore !== "function") {
         throw new Error("Источник предмета для хранилища недоступен.");
       }
+      if (source.kind === "coin-template") {
+        throw new Error("Managed Item монет можно переносить только в физическую кучу монет на сцене.");
+      }
       if (quantity > Number(source.available)) {
         throw new Error(`Количество должно быть целым числом от 1 до ${source.available}.`);
       }
@@ -746,6 +765,9 @@ export class StorageCommandService {
       if (!source || typeof source.consume !== "function" || typeof source.restore !== "function") {
         throw new Error("Источник предмета для сцены недоступен.");
       }
+      if (source.kind === "coin-template") {
+        throw new Error("Managed Item монет нельзя выгружать как обычную строку наземной кучи.");
+      }
       const quantity = Number(payload.quantity);
       if (!Number.isSafeInteger(quantity) || quantity < 1 || quantity > Number(source.available)) {
         throw new Error(`Количество должно быть целым числом от 1 до ${source.available}.`);
@@ -815,6 +837,115 @@ export class StorageCommandService {
           }
           catch (rollbackError) {
             throw new AggregateError([error, rollbackError], "Не удалось откатить выгрузку предмета на сцену.");
+          }
+        }
+        throw error;
+      }
+    });
+  }
+
+  async dropCoinsToScene(payload = {}, { sender } = {}) {
+    if (!isValidStorageCoinDropPayload(payload)) {
+      throw new Error("Некорректная команда переноса монет на сцену.");
+    }
+    if (typeof this.groundPileService?.findProcessedMutationAtPoint !== "function"
+      || typeof this.groundPileService?.transferCoinsToScene !== "function") {
+      throw new Error("Сервис наземных куч Rebreya недоступен.");
+    }
+
+    const itemUuid = payload.itemUuid;
+    const denomination = payload.denomination;
+    const sceneIdValue = payload.sceneId;
+    const quantity = payload.quantity;
+    const mutationKey = storageMutationId({
+      tokenUuid: itemUuid,
+      kind: "coin-scene",
+      identity: denomination,
+      destination: sceneIdValue,
+      mutationId: payload.mutationId
+    });
+    const pointRequest = {
+      sceneId: sceneIdValue,
+      x: payload.x,
+      y: payload.y,
+      mutationId: mutationKey
+    };
+    const alreadyProcessed = this.groundPileService.findProcessedMutationAtPoint(pointRequest);
+    if (alreadyProcessed) return { changed: false, ...alreadyProcessed };
+
+    return this.#runMutation([`${itemUuid}:item`, `${sceneIdValue}:scene`], mutationKey, async () => {
+      const queuedDuplicate = this.groundPileService.findProcessedMutationAtPoint(pointRequest);
+      if (queuedDuplicate) return { changed: false, ...queuedDuplicate };
+
+      const source = await this.resolveDepositSource({ kind: "item", itemUuid }, {
+        fromUuid: this.resolveDocument,
+        resolveToken: this.resolveToken,
+        storageService: this.storageService,
+        containerItemService: this.containerItemService
+      });
+      if (!source || source.kind !== "coin-template"
+        || typeof source.consume !== "function" || typeof source.restore !== "function") {
+        throw new Error("Источник не является managed Item монет Rebreya.");
+      }
+      if (source.denomination !== denomination) {
+        throw new Error("Номинал managed Item монет изменился; повторите перенос.");
+      }
+      if (source.mode === "move") {
+        if (!Number.isSafeInteger(source.available) || source.available < 1 || quantity > source.available) {
+          throw new Error(`Количество должно быть целым числом от 1 до ${source.available}.`);
+        }
+        if (source.canUserMove?.(sender) !== true) {
+          throw new Error("У вас нет прав владельца на перемещение этих монет.");
+        }
+      }
+      else if (source.mode !== "copy" || source.available !== null) {
+        throw new Error("Источник managed Item монет имеет недопустимый режим.");
+      }
+
+      if (sender?.isGM !== true) {
+        const characterToken = tokenDocument(await this.resolveToken(payload.characterTokenUuid));
+        const character = characterToken?.actor ?? null;
+        if (!characterToken || character?.type !== "character"
+          || character.testUserPermission?.(sender, "OWNER") !== true) {
+          throw new Error("Выберите принадлежащего вам персонажа для переноса монет.");
+        }
+        if (sceneId(characterToken) !== sceneIdValue) {
+          throw new Error("Персонаж и место выгрузки монет должны находиться на одной сцене.");
+        }
+        const distance = Number(await this.measurePointDistance(characterToken, {
+          sceneId: sceneIdValue,
+          x: payload.x,
+          y: payload.y
+        }));
+        if (!Number.isFinite(distance) || distance > MAX_STORAGE_DISTANCE_FEET) {
+          throw new Error("Монеты можно положить на землю только в пределах 5 футов от персонажа.");
+        }
+      }
+
+      let receipt = null;
+      try {
+        if (source.mode === "move") receipt = await source.consume(quantity);
+        const created = await this.groundPileService.transferCoinsToScene({
+          coins: { [denomination]: quantity },
+          sceneId: sceneIdValue,
+          x: payload.x,
+          y: payload.y,
+          mutationId: mutationKey,
+          ownerUserId: clean(sender?.id)
+        });
+        if (created?.duplicate === true && receipt) {
+          await source.restore(receipt);
+          receipt = null;
+        }
+        return { changed: created?.duplicate !== true, ...created };
+      }
+      catch (error) {
+        if (receipt) {
+          try {
+            await source.restore(receipt);
+          }
+          catch (rollbackError) {
+            throw new AggregateError([error, rollbackError], "Не удалось откатить выгрузку монет на сцену.");
           }
         }
         throw error;

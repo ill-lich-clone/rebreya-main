@@ -116,6 +116,7 @@ import {
   StorageCommandService,
   isValidStorageClaimCoinsPayload,
   isValidStorageClaimRowPayload,
+  isValidStorageCoinDropPayload,
   isValidStorageDepositPayload,
   isValidStorageDropItemPayload,
   isValidStorageJournalReadPayload,
@@ -276,6 +277,7 @@ export const STORAGE_JOURNAL_READ_COMMAND = "storage.journal.read";
 export const STORAGE_CLAIM_ROW_COMMAND = "storage.claim-row";
 export const STORAGE_CLAIM_COINS_COMMAND = "storage.claim-coins";
 export const STORAGE_DEPOSIT_COMMAND = "storage.deposit";
+export const STORAGE_COIN_DROP_COMMAND = "storage.coin.drop";
 export const STORAGE_DROP_ITEM_COMMAND = "storage.drop-item-to-scene";
 export const STORAGE_RESTORE_PORTABLE_COMMAND = "storage.restore-portable";
 export const STORAGE_TOKEN_CHARACTER_COMMAND = "storage.token-to-character";
@@ -1446,6 +1448,11 @@ export class RebreyaMainModule {
       validate: isValidStorageDepositPayload,
       authorize: (_payload, { sender }) => Boolean(sender),
       execute: (payload, { sender }) => this.storageCommandService.deposit(payload, { sender })
+    });
+    this.socketCommandBus.register(STORAGE_COIN_DROP_COMMAND, {
+      validate: isValidStorageCoinDropPayload,
+      authorize: (_payload, { sender }) => Boolean(sender),
+      execute: (payload, { sender }) => this.storageCommandService.dropCoinsToScene(payload, { sender })
     });
     this.socketCommandBus.register(STORAGE_DROP_ITEM_COMMAND, {
       validate: isValidStorageDropItemPayload,
@@ -3321,10 +3328,12 @@ export class RebreyaMainModule {
     });
     return {
       source,
+      kind: resolved.kind,
+      denomination: resolved.denomination,
       available: resolved.available,
       mode: resolved.mode,
-      name: cleanSocketId(resolved.row?.name),
-      img: cleanSocketId(resolved.row?.img)
+      name: cleanSocketId(resolved.row?.name ?? resolved.item?.name),
+      img: cleanSocketId(resolved.row?.img ?? resolved.item?.img)
     };
   }
 
@@ -3392,6 +3401,22 @@ export class RebreyaMainModule {
     return isActiveGmClient(globalThis.game)
       ? this.storageCommandService.dropItemToScene(payload, { sender: globalThis.game?.user })
       : this.socketCommandBus.request(STORAGE_DROP_ITEM_COMMAND, payload);
+  }
+
+  async dropStorageCoinsToScene(itemUuid, denomination, request = {}) {
+    const payload = {
+      itemUuid: cleanSocketId(itemUuid),
+      denomination: cleanSocketId(denomination),
+      characterTokenUuid: this.#controlledCharacterTokenUuid(request.characterTokenUuid),
+      sceneId: cleanSocketId(request.sceneId),
+      x: Number(request.x),
+      y: Number(request.y),
+      quantity: Number(request.quantity),
+      mutationId: cleanSocketId(request.mutationId) || createSocketRequestId("storage-coin-scene")
+    };
+    return isActiveGmClient(globalThis.game)
+      ? this.storageCommandService.dropCoinsToScene(payload, { sender: globalThis.game?.user })
+      : this.socketCommandBus.request(STORAGE_COIN_DROP_COMMAND, payload);
   }
 
   async moveStorageTokenToCharacter(tokenUuid, actorUuid, mutationId, request = {}) {

@@ -8,6 +8,7 @@ import {
   rekeyStorageContainerSnapshot
 } from "./storage-container-snapshot.js?v=1.4.126-native-container-copies";
 import { buildStorageContainerSnapshotFromToken } from "./storage-container-item-service.js";
+import { readBuiltinCoinDenomination } from "./builtin-coin-template-service.js";
 import { parseStorageDragData } from "../ui/storage-transfer-ui.js";
 
 function clone(value) {
@@ -260,6 +261,72 @@ async function resolveItemSource(sourceRef, { fromUuid, createRowId, containerIt
   const available = itemQuantity(item);
   const embedded = isEmbeddedActorItem(item);
   const parent = embedded ? item.parent : null;
+  const denomination = readBuiltinCoinDenomination(item);
+  if (denomination) {
+    const coinAvailable = embedded ? positiveQuantity(item?.system?.quantity) : null;
+    if (embedded && !coinAvailable) {
+      throw new Error("В источнике нет доступных монет.");
+    }
+    return {
+      kind: "coin-template",
+      denomination,
+      mode: embedded ? "move" : "copy",
+      available: coinAvailable,
+      sourceKey: clean(item.uuid),
+      item,
+      sourceActor: parent,
+      canUserMove(user) {
+        if (!embedded || user?.isGM === true) return true;
+        if (typeof parent?.testUserPermission === "function") {
+          return parent.testUserPermission(user, "OWNER") === true;
+        }
+        return item?.isOwner === true || parent?.isOwner === true;
+      },
+      async consume(requestedQuantity) {
+        const maximum = embedded
+          ? positiveQuantity(item?.system?.quantity)
+          : Number.POSITIVE_INFINITY;
+        const quantity = requireQuantity(requestedQuantity, maximum);
+        if (!embedded) return { kind: "copy" };
+        const beforeQuantity = positiveQuantity(item?.system?.quantity);
+        const snapshot = itemData(item);
+        if (quantity < beforeQuantity) {
+          await item.update({ "system.quantity": beforeQuantity - quantity });
+          return {
+            kind: "item-update",
+            itemUuid: clean(item.uuid),
+            beforeQuantity,
+            item,
+            parent
+          };
+        }
+        await item.delete();
+        return {
+          kind: "item-delete",
+          itemUuid: clean(item.uuid),
+          beforeQuantity,
+          snapshot,
+          item,
+          parent
+        };
+      },
+      async restore(receipt) {
+        if (!receipt || receipt.kind === "copy") return false;
+        if (receipt.kind === "item-update") {
+          await receipt.item.update({ "system.quantity": receipt.beforeQuantity });
+          return true;
+        }
+        if (receipt.kind === "item-delete") {
+          if (typeof receipt.parent?.createEmbeddedDocuments !== "function") {
+            throw new Error("Не удалось восстановить исходные монеты после ошибки переноса.");
+          }
+          await receipt.parent.createEmbeddedDocuments("Item", [receipt.snapshot], { keepId: true });
+          return true;
+        }
+        return false;
+      }
+    };
+  }
   if (clean(item?.type) === "container") {
     if (!containerItemService || typeof containerItemService.captureFromItem !== "function") {
       throw new Error("Сервис переносимых контейнеров Rebreya недоступен.");

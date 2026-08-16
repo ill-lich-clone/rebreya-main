@@ -139,6 +139,38 @@ test("ordinary inventory and compendium Items drop onto the exact scene point", 
   assert.deepEqual(calls[0][1], { sceneId: "scene", x: 240, y: 360, quantity: 3 });
 });
 
+test("managed Coin Items route only to the physical currency pile API", async () => {
+  const coinCalls = [];
+  const itemCalls = [];
+  const result = await transferFoundryItemDropToCanvas(
+    { scene: { id: "scene" } },
+    { type: "Item", uuid: "Item.gold-template", x: 240, y: 360 },
+    {
+      async inspectStorageDepositSource(source) {
+        assert.deepEqual(source, { kind: "item", itemUuid: "Item.gold-template" });
+        return { kind: "coin-template", denomination: "gp", available: null, mode: "copy" };
+      },
+      async dropStorageCoinsToScene(...args) { coinCalls.push(args); return { changed: true }; },
+      async dropStorageItemToScene(...args) { itemCalls.push(args); return { changed: true }; }
+    },
+    { prompt: async ({ max, value }) => {
+      assert.equal(max, null);
+      assert.equal(value, 1);
+      return 25;
+    } }
+  );
+
+  assert.equal(result.handled, true);
+  assert.equal(result.quantity, 25);
+  assert.deepEqual(coinCalls, [["Item.gold-template", "gp", {
+    sceneId: "scene",
+    x: 240,
+    y: 360,
+    quantity: 25
+  }]]);
+  assert.deepEqual(itemCalls, []);
+});
+
 test("ordinary native dnd5e containers are accepted as whole scene drops", async () => {
   const calls = [];
   const result = await transferFoundryItemDropToCanvas(

@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import * as storageTransferUi from "../scripts/ui/storage-transfer-ui.js";
 
 import {
   buildStorageDragData,
@@ -54,6 +55,32 @@ test("quantity prompt bypasses one item, supports cancellation, and validates bo
 
   await assert.rejects(
     promptStorageTransferQuantity(5, { prompt: async () => 6 }),
+    /Количество/u
+  );
+});
+
+test("coin quantity prompt is unbounded for templates and bounded for embedded stacks", async () => {
+  assert.equal(typeof storageTransferUi.promptStorageCoinQuantity, "function");
+  const { promptStorageCoinQuantity } = storageTransferUi;
+  const seen = [];
+  assert.equal(await promptStorageCoinQuantity(null, {
+    prompt: async (options) => {
+      seen.push(options);
+      return Number.MAX_SAFE_INTEGER;
+    }
+  }), Number.MAX_SAFE_INTEGER);
+  assert.deepEqual(seen, [{ max: null, value: 1 }]);
+
+  assert.equal(await promptStorageCoinQuantity(null, { prompt: async () => null }), null);
+  for (const invalid of [0, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+    await assert.rejects(
+      promptStorageCoinQuantity(null, { prompt: async () => invalid }),
+      /Количество/u
+    );
+  }
+  assert.equal(await promptStorageCoinQuantity(5, { prompt: async () => 5 }), 5);
+  await assert.rejects(
+    promptStorageCoinQuantity(5, { prompt: async () => 6 }),
     /Количество/u
   );
 });

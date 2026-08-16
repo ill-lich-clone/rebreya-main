@@ -1,6 +1,7 @@
 import { MODULE_ID } from "../constants.js";
 import {
   parseStorageDragData,
+  promptStorageCoinQuantity,
   promptStorageTransferQuantity
 } from "../ui/storage-transfer-ui.js";
 import { isPortableStorageContainerItem } from "../data/storage-container-snapshot.js";
@@ -140,6 +141,20 @@ export async function transferFoundryItemDropToCanvas(
     throw new Error("Не удалось определить место для предмета на сцене.");
   }
   const inspected = await moduleApi.inspectStorageDepositSource({ kind: "item", itemUuid });
+  if (inspected.kind === "coin-template") {
+    if (typeof moduleApi?.dropStorageCoinsToScene !== "function") {
+      throw new Error("API переноса монет Rebreya на сцену недоступен.");
+    }
+    const quantity = await promptStorageCoinQuantity(inspected.available, { prompt });
+    if (quantity === null) return { handled: true, cancelled: true };
+    const result = await moduleApi.dropStorageCoinsToScene(itemUuid, inspected.denomination, {
+      sceneId,
+      x,
+      y,
+      quantity
+    });
+    return { handled: true, cancelled: false, quantity, result };
+  }
   const quantity = await promptStorageTransferQuantity(inspected.available, { prompt });
   if (quantity === null) return { handled: true, cancelled: true };
   const result = await moduleApi.dropStorageItemToScene(itemUuid, { sceneId, x, y, quantity });

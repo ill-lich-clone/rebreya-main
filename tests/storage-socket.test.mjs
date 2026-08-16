@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import * as storageCommands from "../scripts/data/storage-command-service.js";
 
 import { MODULE_ID } from "../scripts/constants.js";
 import { StorageService, readStorageState, readStorageStateAtPath } from "../scripts/data/storage-service.js";
@@ -41,7 +42,10 @@ function createHarness({
   depositSource = null,
   journalReader = null,
   containerItemService = null,
-  groundFailure = null
+  groundFailure = null,
+  coinGroundFailure = null,
+  processedCoinMutations = new Set(),
+  executionOrder = []
 } = {}) {
   const player = { id: "player", isGM: false };
   const gm = { id: "gm", isGM: true, active: true };
@@ -95,6 +99,8 @@ function createHarness({
   const coinGrants = [];
   const completed = new Set();
   const groundCalls = [];
+  const groundCoinCalls = [];
+  const groundFindCalls = [];
   const refreshCalls = [];
   const depositResolveCalls = [];
   const journalReadCalls = [];
@@ -130,6 +136,20 @@ function createHarness({
     })
   });
   const groundPileService = {
+    findProcessedMutationAtPoint(request) {
+      executionOrder.push("find");
+      groundFindCalls.push(clone(request));
+      return processedCoinMutations.has(request.mutationId)
+        ? { created: false, merged: false, duplicate: true, token: { uuid: "Scene.scene.Token.coin-pile" } }
+        : null;
+    },
+    async transferCoinsToScene(request) {
+      executionOrder.push("transfer-coins");
+      if (coinGroundFailure) throw coinGroundFailure;
+      groundCoinCalls.push(clone(request));
+      processedCoinMutations.add(request.mutationId);
+      return { created: true, duplicate: false };
+    },
     async transferToScene(request) {
       if (groundFailure) throw groundFailure;
       groundCalls.push(clone(request));
@@ -155,6 +175,7 @@ function createHarness({
       }
     },
     resolveDepositSource: async (...args) => {
+      executionOrder.push("resolve");
       depositResolveCalls.push(clone(args[0]));
       return typeof depositSource === "function" ? depositSource(...args) : depositSource;
     }
@@ -172,6 +193,8 @@ function createHarness({
     itemGrants,
     coinGrants,
     groundCalls,
+    groundCoinCalls,
+    groundFindCalls,
     refreshCalls,
     depositResolveCalls,
     journalReadCalls
@@ -599,6 +622,224 @@ test("generic Item scene drop payload accepts an exact quantity and finite scene
   assert.equal(isValidStorageDropItemPayload(payload), true);
   assert.equal(isValidStorageDropItemPayload({ ...payload, quantity: 0 }), false);
   assert.equal(isValidStorageDropItemPayload({ ...payload, extra: true }), false);
+});
+
+test("managed coin scene payload validator accepts only the exact typed command", () => {
+  assert.equal(typeof storageCommands.isValidStorageCoinDropPayload, "function");
+  const { isValidStorageCoinDropPayload } = storageCommands;
+  const payload = {
+    itemUuid: "Item.gold-template",
+    denomination: "gp",
+    characterTokenUuid: "Scene.scene.Token.hero",
+    sceneId: "scene",
+    x: 120,
+    y: 180,
+    quantity: 25,
+    mutationId: "coin-scene"
+  };
+  assert.equal(isValidStorageCoinDropPayload(payload), true);
+  for (const invalid of [
+    { ...payload, extra: true },
+    { ...payload, denomination: "gold" },
+    { ...payload, quantity: 0 },
+    { ...payload, quantity: 1.5 },
+    { ...payload, quantity: Number.MAX_SAFE_INTEGER + 1 },
+    { ...payload, itemUuid: "" },
+    { ...payload, sceneId: "" },
+    { ...payload, mutationId: "" },
+    { ...payload, x: Number.POSITIVE_INFINITY },
+    { ...payload, y: Number.NaN }
+  ]) {
+    assert.equal(isValidStorageCoinDropPayload(invalid), false);
+  }
+});
+
+test("managed coin drop re-resolves authority, consumes an owned stack, and transfers only manual coins", async () => {
+  const order = [];
+  const consumed = [];
+  const source = {
+    kind: "coin-template",
+    denomination: "gp",
+    mode: "move",
+    available: 4,
+    canUserMove: () => true,
+    async consume(quantity) { order.push("consume"); consumed.push(quantity); return { kind: "item-update" }; },
+    async restore() { order.push("restore"); }
+  };
+  const harness = createHarness({ depositSource: source, executionOrder: order, pointDistance: 5 });
+  const result = await harness.service.dropCoinsToScene({
+    itemUuid: "Actor.hero.Item.gold",
+    denomination: "gp",
+    characterTokenUuid: harness.characterToken.uuid,
+    sceneId: "scene",
+    x: 400,
+    y: 500,
+    quantity: 2,
+    mutationId: "drop-gold"
+  }, { sender: harness.player });
+
+  assert.equal(result.changed, true);
+  assert.deepEqual(order, ["find", "find", "resolve", "consume", "transfer-coins"]);
+  assert.deepEqual(consumed, [2]);
+  assert.equal(harness.groundCalls.length, 0);
+  assert.equal(harness.groundCoinCalls.length, 1);
+  assert.deepEqual(harness.groundCoinCalls[0].coins, { gp: 2 });
+  assert.equal("row" in harness.groundCoinCalls[0], false);
+  assert.equal(harness.groundCoinCalls[0].ownerUserId, harness.player.id);
+});
+
+test("managed coin retries find the processed pile before resolving a consumed source", async () => {
+  const processed = new Set();
+  let sourceAvailable = true;
+  const harness = createHarness({
+    processedCoinMutations: processed,
+    depositSource: async () => {
+      if (!sourceAvailable) throw new Error("source was consumed");
+      return {
+        kind: "coin-template",
+        denomination: "sp",
+        mode: "move",
+        available: 1,
+        canUserMove: () => true,
+        async consume() { sourceAvailable = false; return { kind: "item-delete" }; },
+        async restore() {}
+      };
+    }
+  });
+  const payload = {
+    itemUuid: "Actor.hero.Item.silver",
+    denomination: "sp",
+    characterTokenUuid: harness.characterToken.uuid,
+    sceneId: "scene",
+    x: 100,
+    y: 100,
+    quantity: 1,
+    mutationId: "drop-silver-once"
+  };
+
+  await harness.service.dropCoinsToScene(payload, { sender: harness.player });
+  const duplicate = await harness.service.dropCoinsToScene(payload, { sender: harness.player });
+
+  assert.equal(duplicate.duplicate, true);
+  assert.equal(harness.depositResolveCalls.length, 1);
+  assert.equal(harness.groundCoinCalls.length, 1);
+});
+
+test("managed coin drop rejects stale denomination, excess quantity, ownership, and character context", async () => {
+  const payload = {
+    itemUuid: "Actor.hero.Item.coin",
+    denomination: "gp",
+    characterTokenUuid: "Scene.scene.Token.hero",
+    sceneId: "scene",
+    x: 100,
+    y: 100,
+    quantity: 3,
+    mutationId: "coin-guards"
+  };
+  const source = (overrides = {}) => ({
+    kind: "coin-template",
+    denomination: "gp",
+    mode: "move",
+    available: 2,
+    canUserMove: () => true,
+    async consume() { return { kind: "item-update" }; },
+    async restore() {},
+    ...overrides
+  });
+  await assert.rejects(
+    createHarness({ depositSource: source({ denomination: "sp" }) }).service.dropCoinsToScene(payload, { sender: { id: "gm", isGM: true } }),
+    /номинал/iu
+  );
+  await assert.rejects(
+    createHarness({ depositSource: source() }).service.dropCoinsToScene(payload, { sender: { id: "gm", isGM: true } }),
+    /Количество/u
+  );
+  await assert.rejects(
+    createHarness({ depositSource: source({ available: 3, canUserMove: () => false }) }).service.dropCoinsToScene(payload, { sender: { id: "player", isGM: false } }),
+    /прав/iu
+  );
+  await assert.rejects(
+    createHarness({ depositSource: source({ available: 3 }), pointDistance: 6 }).service.dropCoinsToScene(payload, { sender: { id: "player", isGM: false } }),
+    /5 фут/iu
+  );
+  await assert.rejects(
+    createHarness({ depositSource: source({ available: 3 }) }).service.dropCoinsToScene({ ...payload, characterTokenUuid: "" }, { sender: { id: "player", isGM: false } }),
+    /персонаж/iu
+  );
+});
+
+test("failed managed coin transfer restores an embedded source", async () => {
+  const calls = [];
+  const harness = createHarness({
+    coinGroundFailure: new Error("coin transfer failed"),
+    depositSource: {
+      kind: "coin-template",
+      denomination: "cp",
+      mode: "move",
+      available: 2,
+      canUserMove: () => true,
+      async consume() { calls.push("consume"); return { kind: "item-delete" }; },
+      async restore() { calls.push("restore"); }
+    }
+  });
+  await assert.rejects(harness.service.dropCoinsToScene({
+    itemUuid: "Actor.hero.Item.copper",
+    denomination: "cp",
+    characterTokenUuid: harness.characterToken.uuid,
+    sceneId: "scene",
+    x: 100,
+    y: 100,
+    quantity: 2,
+    mutationId: "drop-copper"
+  }, { sender: harness.player }), /coin transfer failed/u);
+  assert.deepEqual(calls, ["consume", "restore"]);
+});
+
+test("managed Coin Items cannot enter ordinary storage rows", async () => {
+  const harness = createHarness({
+    depositSource: {
+      kind: "coin-template",
+      denomination: "gp",
+      mode: "copy",
+      available: null,
+      canUserMove: () => true,
+      async consume() { return { kind: "copy" }; },
+      async restore() {}
+    }
+  });
+  await harness.storageService.open(harness.storageToken);
+  let depositRows = 0;
+  harness.storageService.depositRow = async () => { depositRows += 1; };
+  await assert.rejects(harness.service.deposit(depositPayload(harness, { quantity: 1 }), {
+    sender: harness.player
+  }), /монет/iu);
+  assert.equal(depositRows, 0);
+});
+
+test("managed Coin Items cannot enter the ordinary ground Item row command", async () => {
+  let consumed = 0;
+  const harness = createHarness({
+    depositSource: {
+      kind: "coin-template",
+      denomination: "gp",
+      mode: "copy",
+      available: null,
+      canUserMove: () => true,
+      async consume() { consumed += 1; return { kind: "copy" }; },
+      async restore() {}
+    }
+  });
+  await assert.rejects(harness.service.dropItemToScene({
+    itemUuid: "Item.gold-template",
+    characterTokenUuid: harness.characterToken.uuid,
+    sceneId: "scene",
+    x: 100,
+    y: 100,
+    quantity: 1,
+    mutationId: "wrong-ground-route"
+  }, { sender: harness.player }), /монет/iu);
+  assert.equal(consumed, 0);
+  assert.equal(harness.groundCalls.length, 0);
 });
 
 test("ordinary inventory Items move to a ground pile at the requested scene point", async () => {

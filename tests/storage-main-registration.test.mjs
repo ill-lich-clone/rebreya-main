@@ -23,6 +23,11 @@ test("main registers the storage deposit socket API and current cache keys", asy
   assert.match(main, /register\(STORAGE_DROP_ITEM_COMMAND,\s*\{/u);
   assert.match(main, /this\.storageCommandService\.dropItemToScene\(payload,\s*\{ sender \}\)/u);
   assert.match(main, /async dropStorageItemToScene\(/u);
+  assert.match(main, /isValidStorageCoinDropPayload/u);
+  assert.match(main, /STORAGE_COIN_DROP_COMMAND\s*=\s*"storage\.coin\.drop"/u);
+  assert.match(main, /register\(STORAGE_COIN_DROP_COMMAND,\s*\{/u);
+  assert.match(main, /this\.storageCommandService\.dropCoinsToScene\(payload,\s*\{ sender \}\)/u);
+  assert.match(main, /async dropStorageCoinsToScene\(/u);
   assert.match(main, /registerStorageTokenDropHooks\(moduleApi/u);
   assert.match(main, /STORAGE_TOKEN_CHARACTER_COMMAND\s*=\s*"storage\.token-to-character"/u);
   assert.match(main, /register\(STORAGE_TOKEN_CHARACTER_COMMAND,\s*\{/u);

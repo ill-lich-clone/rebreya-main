@@ -58,16 +58,19 @@ export function storageGridColumns(itemCount) {
 
 async function defaultQuantityPrompt({ max, value }) {
   const DialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
+  const bounded = Number.isSafeInteger(max) && max >= 1;
+  const rangeLabel = bounded ? ` (1-${max})` : "";
+  const maximumAttribute = bounded ? ` max="${max}"` : "";
   if (typeof DialogV2?.prompt !== "function") {
-    const fallback = globalThis.prompt?.(`Сколько перенести? (1-${max})`, String(value));
+    const fallback = globalThis.prompt?.(`Сколько перенести?${rangeLabel}`, String(value));
     return fallback === null ? null : Number(fallback);
   }
   return DialogV2.prompt({
     window: { title: "Сколько перенести?" },
     content: `
       <form class="rm-storage-quantity-dialog">
-        <label>Количество (1-${max})</label>
-        <input type="number" name="quantity" min="1" max="${max}" step="1" value="${value}" autofocus>
+        <label>Количество${rangeLabel}</label>
+        <input type="number" name="quantity" min="1"${maximumAttribute} step="1" value="${value}" autofocus>
       </form>
     `,
     ok: {
@@ -87,6 +90,20 @@ export async function promptStorageTransferQuantity(maxQuantity, { prompt = defa
   const quantity = positiveInteger(value);
   if (!quantity || quantity > max) {
     throw new Error(`Количество должно быть целым числом от 1 до ${max}.`);
+  }
+  return quantity;
+}
+
+export async function promptStorageCoinQuantity(maxQuantity = null, { prompt = defaultQuantityPrompt } = {}) {
+  const max = maxQuantity === null ? null : positiveInteger(maxQuantity);
+  if (maxQuantity !== null && !max) throw new Error("В источнике нет доступных монет.");
+  if (max === 1) return 1;
+  const value = await prompt({ max, value: 1 });
+  if (value === null || value === undefined || value === false || value === "") return null;
+  const quantity = positiveInteger(value);
+  if (!quantity || (max !== null && quantity > max)) {
+    const range = max === null ? "не меньше 1" : `от 1 до ${max}`;
+    throw new Error(`Количество должно быть целым числом ${range}.`);
   }
   return quantity;
 }

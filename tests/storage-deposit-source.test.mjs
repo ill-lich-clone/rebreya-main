@@ -25,7 +25,11 @@ function applyPatch(target, patch) {
   }
 }
 
-function createEmbeddedItem({ quantity = 5, sourceId = "Compendium.dnd5e.items.arrow" } = {}) {
+function createEmbeddedItem({
+  quantity = 5,
+  sourceId = "Compendium.dnd5e.items.arrow",
+  denomination = null
+} = {}) {
   const created = [];
   const actor = {
     uuid: "Actor.hero",
@@ -44,7 +48,12 @@ function createEmbeddedItem({ quantity = 5, sourceId = "Compendium.dnd5e.items.a
     name: "Стрела",
     type: "consumable",
     img: "arrow.webp",
-    flags: { core: { sourceId } },
+    flags: {
+      core: { sourceId },
+      ...(denomination ? {
+        [MODULE_ID]: { storageCoinTemplate: { version: 1, denomination } }
+      } : {})
+    },
     system: { quantity },
     deleted: false,
     updates: [],
@@ -225,6 +234,81 @@ test("world and compendium item deposits copy without mutating their source", as
     await source.restore(receipt);
     assert.equal(item.system.quantity >= 1, true);
   }
+});
+
+test("managed world Coin Items resolve from their stable flag as unbounded copy sources", async () => {
+  const item = {
+    uuid: "Item.gold-template",
+    documentName: "Item",
+    parent: null,
+    name: "Переименованный жетон",
+    type: "loot",
+    img: "custom.webp",
+    flags: { [MODULE_ID]: { storageCoinTemplate: { version: 1, denomination: "gp" } } },
+    system: { quantity: 1, sourceType: "coinTemplate" },
+    toObject() {
+      return {
+        name: this.name,
+        type: this.type,
+        img: this.img,
+        flags: clone(this.flags),
+        system: clone(this.system)
+      };
+    }
+  };
+  const source = await resolveStorageDepositSource({ kind: "item", itemUuid: item.uuid }, {
+    fromUuid: async () => item
+  });
+
+  assert.equal(source.kind, "coin-template");
+  assert.equal(source.denomination, "gp");
+  assert.equal(source.mode, "copy");
+  assert.equal(source.available, null);
+  assert.deepEqual(await source.consume(Number.MAX_SAFE_INTEGER), { kind: "copy" });
+  assert.equal(await source.restore({ kind: "copy" }), false);
+  assert.equal(item.system.quantity, 1);
+});
+
+test("managed embedded Coin Items move within their live quantity and reuse Item receipts", async () => {
+  const partial = createEmbeddedItem({ quantity: 5, denomination: "sp" });
+  const partialSource = await resolveStorageDepositSource({ kind: "item", itemUuid: partial.item.uuid }, {
+    fromUuid: async () => partial.item
+  });
+
+  assert.equal(partialSource.kind, "coin-template");
+  assert.equal(partialSource.denomination, "sp");
+  assert.equal(partialSource.mode, "move");
+  assert.equal(partialSource.available, 5);
+  assert.equal(partialSource.canUserMove({ id: "owner" }), true);
+  assert.equal(partialSource.canUserMove({ id: "stranger" }), false);
+  const partialReceipt = await partialSource.consume(2);
+  assert.equal(partial.item.system.quantity, 3);
+  await partialSource.restore(partialReceipt);
+  assert.equal(partial.item.system.quantity, 5);
+
+  const full = createEmbeddedItem({ quantity: 2, denomination: "cp" });
+  const fullSource = await resolveStorageDepositSource({ kind: "item", itemUuid: full.item.uuid }, {
+    fromUuid: async () => full.item
+  });
+  const fullReceipt = await fullSource.consume(2);
+  assert.equal(full.item.deleted, true);
+  await fullSource.restore(fullReceipt);
+  assert.equal(full.created.length, 1);
+  assert.equal(full.created[0].rows[0].system.quantity, 2);
+  assert.deepEqual(full.created[0].options, { keepId: true });
+});
+
+test("unflagged loot remains an ordinary Item source", async () => {
+  const item = createEmbeddedItem({ quantity: 3 }).item;
+  item.type = "loot";
+  item.name = "Жетон без managed-флага";
+  const source = await resolveStorageDepositSource({ kind: "item", itemUuid: item.uuid }, {
+    fromUuid: async () => item
+  });
+
+  assert.equal(source.kind, "item");
+  assert.equal(source.denomination, undefined);
+  assert.equal(source.available, 3);
 });
 
 test("Journal deposits resolve an authoritative reference and copy without mutating the document", async () => {
