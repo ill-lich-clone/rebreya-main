@@ -28,6 +28,9 @@ test("main registers the storage deposit socket API and current cache keys", asy
   assert.match(main, /register\(STORAGE_COIN_DROP_COMMAND,\s*\{/u);
   assert.match(main, /this\.storageCommandService\.dropCoinsToScene\(payload,\s*\{ sender \}\)/u);
   assert.match(main, /async dropStorageCoinsToScene\(/u);
+  assert.match(main, /this\.builtinCoinTemplateService = new BuiltinCoinTemplateService\(\{/u);
+  assert.match(main, /this\.storageJournalReader = new StorageJournalReader\(\{/u);
+  assert.match(main, /durabilityService: this\.durabilityService,/u);
   assert.match(main, /registerStorageTokenDropHooks\(moduleApi/u);
   assert.match(main, /STORAGE_TOKEN_CHARACTER_COMMAND\s*=\s*"storage\.token-to-character"/u);
   assert.match(main, /register\(STORAGE_TOKEN_CHARACTER_COMMAND,\s*\{/u);
@@ -51,8 +54,21 @@ test("main registers the storage deposit socket API and current cache keys", asy
   ]) {
     assert.equal(main.includes(importPath), true, importPath);
   }
-  assert.equal(manifest.version, "1.4.142");
+  assert.equal(manifest.version, "1.4.143");
   assert.match(main, /await registerStorageContainerHierarchyHooks\(\{ Hooks \}\)/u);
+});
+
+test("mixed coin asset stays presentation-only and is outside composition and template sync", async () => {
+  const [main, templateService, presentation] = await Promise.all([
+    readFile(new URL("../scripts/main.js", import.meta.url), "utf8"),
+    readFile(new URL("../scripts/data/builtin-coin-template-service.js", import.meta.url), "utf8"),
+    readFile(new URL("../scripts/data/storage-pile-presentation.js", import.meta.url), "utf8")
+  ]);
+
+  assert.match(presentation, /assets\/storage\/piles/u);
+  assert.match(presentation, /\["coins", "", "Куча монет", "coins\.png"\]/u);
+  assert.doesNotMatch(main, /assets\/storage\/piles\/coins\.png/u);
+  assert.doesNotMatch(templateService, /assets\/storage\/piles\/coins\.png/u);
 });
 
 test("storage drop hook registrations have independent error boundaries", async () => {
