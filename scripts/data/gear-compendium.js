@@ -17,7 +17,7 @@ import {
   inferHeroDollSlotGroupFromSlots,
   mapSlotGroupToHeroDollSlots,
   normalizeHeroDollSlotGroup
-} from "./item-classification.js";
+} from "./item-classification.js?v=1.4.144-spreadsheet-coins-ground-repair";
 import { createStableGearDocumentId } from "./gear-document-ids.js";
 import { syncManagedDocuments } from "./managed-compendium-sync.js";
 import {
@@ -28,6 +28,7 @@ import {
   escapeFoundryHtml as escapeHtml,
   finiteNumber as toFiniteNumber
 } from "../shared/foundry-values.js";
+import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 
 export { buildGearIconLookup };
 
@@ -36,6 +37,7 @@ const DND5E_SYSTEM_ID = "dnd5e";
 const COMPENDIUM_SIDEBAR_FOLDER = ["Ребрея"];
 const GEAR_TEMPLATE_VERSION = 20;
 const GEAR_CONTAINER_CONTENT_SOURCE_TYPE = "gearContainerContent";
+const STORAGE_COIN_DENOMINATIONS = new Set(["pp", "gp", "sp", "cp"]);
 const FIREARM_ATTACK_ACTIVITY_ID = "lchFirearmAtk001";
 const FIREARM_RELOAD_ACTIVITY_ID = "lchReloadGun0001";
 const FIREARM_AUTOMATIC_FIRE_ACTIVITY_ID = "lchAutoFire00001";
@@ -60,6 +62,20 @@ function normalizeMatchText(value) {
     .replace(/\u0451/gu, "\u0435")
     .replace(/['\u2019\u2018\u02BC\u02B9\u2032"\u201C\u201D\u00AB\u00BB]/gu, "")
     .replace(/\s+/gu, " ");
+}
+
+function resolveGearCoinDenomination(item) {
+  if (normalizeMatchText(item?.equipmentType) !== normalizeMatchText("Сокровища")) {
+    return "";
+  }
+  if (!/монета$/iu.test(cleanString(item?.name))) {
+    return "";
+  }
+  if (Number(item?.priceValue) !== 1) {
+    return "";
+  }
+  const denomination = cleanString(item?.priceDenomination).toLowerCase();
+  return STORAGE_COIN_DENOMINATIONS.has(denomination) ? denomination : "";
 }
 
 function isPlainObject(value) {
@@ -276,6 +292,7 @@ function buildGearSignature(item) {
     itemSlot,
     heroDollSlots,
     firearmClass: classification.firearmClass,
+    storageCoinDenomination: resolveGearCoinDenomination(item),
     weapon: isPlainObject(item.weapon) ? item.weapon : null,
     armor: isPlainObject(item.armor) ? item.armor : null,
     implant: isPlainObject(item.implant) ? item.implant : null,
@@ -1067,6 +1084,7 @@ export function createDnd5eItemData(item, folderIdByPath, iconLookup = null) {
   const attackTraitsText = cleanString(weapon.attackTraitsText || weapon.propertiesText);
   const handRequirement = resolveWeaponHandRequirement(weapon);
   const containerContents = cloneContainerContents(item.containerContents);
+  const coinDenomination = resolveGearCoinDenomination(item);
 
   return {
     _id: createStableGearDocumentId(item.id),
@@ -1083,6 +1101,12 @@ export function createDnd5eItemData(item, folderIdByPath, iconLookup = null) {
         managed: true,
         sourceType: "gear",
         gearId: item.id,
+        ...(coinDenomination ? {
+          storageCoinTemplate: {
+            version: 1,
+            denomination: coinDenomination
+          }
+        } : {}),
         signature,
         equipmentType: item.equipmentType ?? "",
         foundryType: classification.documentType,
@@ -1312,6 +1336,63 @@ async function syncManagedDocumentIcons(pack, documents, iconLookup) {
   await Item.implementation.updateDocuments(updates, { pack: pack.collection });
 }
 
+function collectionValues(collection) {
+  if (Array.isArray(collection?.contents)) return collection.contents;
+  if (Array.isArray(collection)) return collection;
+  if (typeof collection?.values === "function") return Array.from(collection.values());
+  return [];
+}
+
+function documentFolderId(document) {
+  return cleanString(document?.folder?.id ?? document?.folder);
+}
+
+export async function removeLegacyWorldCoinTemplates({
+  gameRef = globalThis.game,
+  ItemClass = globalThis.Item,
+  FolderClass = globalThis.Folder,
+  isActiveGm = isActiveGmClient
+} = {}) {
+  if (isActiveGm(gameRef) !== true) {
+    return { deletedItemIds: [], deletedFolderIds: [] };
+  }
+
+  const items = collectionValues(gameRef?.items);
+  const legacyItems = items.filter((item) => {
+    const flags = item?.flags?.[MODULE_ID] ?? {};
+    const denomination = cleanString(flags.storageCoinTemplate?.denomination).toLowerCase();
+    return flags.sourceType === "coinTemplate"
+      && flags.storageCoinTemplate?.version === 1
+      && STORAGE_COIN_DENOMINATIONS.has(denomination);
+  });
+  const deletedItemIds = legacyItems.map((item) => cleanString(item?.id)).filter(Boolean);
+  if (!deletedItemIds.length) {
+    return { deletedItemIds, deletedFolderIds: [] };
+  }
+  if (typeof ItemClass?.deleteDocuments !== "function") {
+    throw new TypeError("Item.deleteDocuments is required to remove legacy world coin templates.");
+  }
+  await ItemClass.deleteDocuments(deletedItemIds);
+
+  const deletedItemIdSet = new Set(deletedItemIds);
+  const legacyFolderIds = new Set(legacyItems.map(documentFolderId).filter(Boolean));
+  const remainingItems = items.filter((item) => !deletedItemIdSet.has(cleanString(item?.id)));
+  const deletedFolderIds = collectionValues(gameRef?.folders)
+    .filter((folder) => (
+      legacyFolderIds.has(cleanString(folder?.id))
+      && folder?.type === "Item"
+      && folder?.folder == null
+      && cleanString(folder?.name) === "МОНЕТЫ"
+      && !remainingItems.some((item) => documentFolderId(item) === cleanString(folder?.id))
+    ))
+    .map((folder) => cleanString(folder?.id));
+
+  if (deletedFolderIds.length && typeof FolderClass?.deleteDocuments === "function") {
+    await FolderClass.deleteDocuments(deletedFolderIds);
+  }
+  return { deletedItemIds, deletedFolderIds };
+}
+
 async function refreshQuickInsertIndex() {
   const quickInsert = globalThis.QuickInsert;
   if (typeof quickInsert?.forceIndex !== "function") {
@@ -1434,6 +1515,7 @@ export class GearCompendiumService {
 
     const syncedDocuments = await getPackDocuments(pack);
     await syncManagedDocumentIcons(pack, syncedDocuments, iconLookup);
+    await removeLegacyWorldCoinTemplates();
     await refreshQuickInsertIndex();
 
     return game.packs.get(PACK_ID) ?? pack;

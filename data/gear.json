@@ -121,8 +121,8 @@
         "shopSubtype":  "Оружейная лавка",
         "priceText":  "4 мм",
         "priceValue":  4,
-        "priceDenomination":  "gp",
-        "priceGoldEquivalent":  4,
+        "priceDenomination":  "cp",
+        "priceGoldEquivalent":  0.04,
         "rank":  0,
         "weight":  null,
         "volume":  "",
@@ -190,8 +190,8 @@
         "shopSubtype":  "Книжная и писчая лавка",
         "priceText":  "2 см",
         "priceValue":  2,
-        "priceDenomination":  "gp",
-        "priceGoldEquivalent":  2,
+        "priceDenomination":  "sp",
+        "priceGoldEquivalent":  0.2,
         "rank":  0,
         "weight":  null,
         "volume":  "",
@@ -213,8 +213,8 @@
         "shopSubtype":  "Кожевенная мастерская",
         "priceText":  "2 см",
         "priceValue":  2,
-        "priceDenomination":  "gp",
-        "priceGoldEquivalent":  2,
+        "priceDenomination":  "sp",
+        "priceGoldEquivalent":  0.2,
         "rank":  0,
         "weight":  5,
         "volume":  "",
@@ -259,8 +259,8 @@
         "shopSubtype":  "Скобяная лавка",
         "priceText":  "5 мм",
         "priceValue":  5,
-        "priceDenomination":  "gp",
-        "priceGoldEquivalent":  5,
+        "priceDenomination":  "cp",
+        "priceGoldEquivalent":  0.05,
         "rank":  0,
         "weight":  2,
         "volume":  "",
@@ -351,8 +351,8 @@
         "shopSubtype":  "Книжная и писчая лавка",
         "priceText":  "5 см",
         "priceValue":  5,
-        "priceDenomination":  "gp",
-        "priceGoldEquivalent":  5,
+        "priceDenomination":  "sp",
+        "priceGoldEquivalent":  0.5,
         "rank":  0,
         "weight":  null,
         "volume":  "",
@@ -811,8 +811,8 @@
         "shopSubtype":  "Столярная и бондарная",
         "priceText":  "4 см",
         "priceValue":  4,
-        "priceDenomination":  "gp",
-        "priceGoldEquivalent":  4,
+        "priceDenomination":  "sp",
+        "priceGoldEquivalent":  0.4,
         "rank":  0,
         "weight":  2,
         "volume":  "",
@@ -834,8 +834,8 @@
         "shopSubtype":  "Кожевенная мастерская",
         "priceText":  "5 см",
         "priceValue":  5,
-        "priceDenomination":  "gp",
-        "priceGoldEquivalent":  5,
+        "priceDenomination":  "sp",
+        "priceGoldEquivalent":  0.5,
         "rank":  0,
         "weight":  1,
         "volume":  "",
@@ -880,8 +880,8 @@
         "shopSubtype":  "Стекольная и оптическая мастерская",
         "priceText":  "2 мм",
         "priceValue":  2,
-        "priceDenomination":  "gp",
-        "priceGoldEquivalent":  2,
+        "priceDenomination":  "cp",
+        "priceGoldEquivalent":  0.02,
         "rank":  0,
         "weight":  4,
         "volume":  "",
@@ -903,8 +903,8 @@
         "shopSubtype":  "Скобяная лавка",
         "priceText":  "5 см",
         "priceValue":  5,
-        "priceDenomination":  "gp",
-        "priceGoldEquivalent":  5,
+        "priceDenomination":  "sp",
+        "priceGoldEquivalent":  0.5,
         "rank":  0,
         "weight":  1,
         "volume":  "",
@@ -926,8 +926,8 @@
         "shopSubtype":  "Столярная и бондарная",
         "priceText":  "1 см",
         "priceValue":  1,
-        "priceDenomination":  "gp",
-        "priceGoldEquivalent":  1,
+        "priceDenomination":  "sp",
+        "priceGoldEquivalent":  0.1,
         "rank":  0,
         "weight":  25,
         "volume":  "",
@@ -1110,8 +1110,8 @@
         "shopSubtype":  "Алхимико-аптекарская лавка",
         "priceText":  "1 см",
         "priceValue":  1,
-        "priceDenomination":  "gp",
-        "priceGoldEquivalent":  1,
+        "priceDenomination":  "sp",
+        "priceGoldEquivalent":  0.1,
         "rank":  0,
         "weight":  1,
         "volume":  "",
@@ -1133,8 +1133,8 @@
         "shopSubtype":  "Книжная и писчая лавка",
         "priceText":  "1 мм",
         "priceValue":  1,
-        "priceDenomination":  "gp",
-        "priceGoldEquivalent":  1,
+        "priceDenomination":  "cp",
+        "priceGoldEquivalent":  0.01,
         "rank":  0,
         "weight":  null,
         "volume":  "",
@@ -1179,8 +1179,8 @@
         "shopSubtype":  "Походная лавка",
         "priceText":  "1 мм",
         "priceValue":  1,
-        "priceDenomination":  "gp",
-        "priceGoldEquivalent":  1,
+        "priceDenomination":  "cp",
+        "priceGoldEquivalent":  0.01,
         "rank":  0,
         "weight":  null,
         "volume":  "",
@@ -1271,8 +1271,8 @@
         "shopSubtype":  "Алхимико-аптекарская лавка",
         "priceText":  "2 мм",
         "priceValue":  2,
-        "priceDenomination":  "gp",
-        "priceGoldEquivalent":  2,
+        "priceDenomination":  "cp",
+        "priceGoldEquivalent":  0.02,
         "rank":  0,
         "weight":  null,
         "volume":  "",
@@ -1340,8 +1340,8 @@
         "shopSubtype":  "Портняжная лавка",
         "priceText":  "5 см",
         "priceValue":  5,
-        "priceDenomination":  "gp",
-        "priceGoldEquivalent":  5,
+        "priceDenomination":  "sp",
+        "priceGoldEquivalent":  0.5,
         "rank":  0,
         "weight":  3,
         "volume":  "",
@@ -1386,8 +1386,8 @@
         "shopSubtype":  "Портняжная лавка",
         "priceText":  "5 см",
         "priceValue":  5,
-        "priceDenomination":  "gp",
-        "priceGoldEquivalent":  5,
+        "priceDenomination":  "sp",
+        "priceGoldEquivalent":  0.5,
         "rank":  0,
         "weight":  3,
         "volume":  "",
@@ -1455,8 +1455,8 @@
         "shopSubtype":  "Книжная и писчая лавка",
         "priceText":  "5 см",
         "priceValue":  5,
-        "priceDenomination":  "gp",
-        "priceGoldEquivalent":  5,
+        "priceDenomination":  "sp",
+        "priceGoldEquivalent":  0.5,
         "rank":  0,
         "weight":  null,
         "volume":  "",
@@ -1501,8 +1501,8 @@
         "shopSubtype":  "Книжная и писчая лавка",
         "priceText":  "2 мм",
         "priceValue":  2,
-        "priceDenomination":  "gp",
-        "priceGoldEquivalent":  2,
+        "priceDenomination":  "cp",
+        "priceGoldEquivalent":  0.02,
         "rank":  0,
         "weight":  null,
         "volume":  "",
@@ -1616,8 +1616,8 @@
         "shopSubtype":  "Скобяная лавка",
         "priceText":  "1 мм",
         "priceValue":  1,
-        "priceDenomination":  "gp",
-        "priceGoldEquivalent":  1,
+        "priceDenomination":  "cp",
+        "priceGoldEquivalent":  0.01,
         "rank":  0,
         "weight":  null,
         "volume":  "",
@@ -1731,8 +1731,8 @@
         "shopSubtype":  "Скобяная лавка",
         "priceText":  "5 мм",
         "priceValue":  5,
-        "priceDenomination":  "gp",
-        "priceGoldEquivalent":  5,
+        "priceDenomination":  "cp",
+        "priceGoldEquivalent":  0.05,
         "rank":  0,
         "weight":  null,
         "volume":  "",
@@ -1777,8 +1777,8 @@
         "shopSubtype":  "Скобяная лавка",
         "priceText":  "2 см",
         "priceValue":  2,
-        "priceDenomination":  "gp",
-        "priceGoldEquivalent":  2,
+        "priceDenomination":  "sp",
+        "priceGoldEquivalent":  0.2,
         "rank":  0,
         "weight":  1,
         "volume":  "",
@@ -1846,8 +1846,8 @@
         "shopSubtype":  "Скобяная лавка",
         "priceText":  "1 мм",
         "priceValue":  1,
-        "priceDenomination":  "gp",
-        "priceGoldEquivalent":  1,
+        "priceDenomination":  "cp",
+        "priceGoldEquivalent":  0.01,
         "rank":  0,
         "weight":  1,
         "volume":  "",
@@ -1869,8 +1869,8 @@
         "shopSubtype":  "Походная лавка",
         "priceText":  "5 см",
         "priceValue":  5,
-        "priceDenomination":  "gp",
-        "priceGoldEquivalent":  5,
+        "priceDenomination":  "sp",
+        "priceGoldEquivalent":  0.5,
         "rank":  0,
         "weight":  1,
         "volume":  "",
@@ -1915,8 +1915,8 @@
         "shopSubtype":  "Походная лавка",
         "priceText":  "1 мм",
         "priceValue":  1,
-        "priceDenomination":  "gp",
-        "priceGoldEquivalent":  1,
+        "priceDenomination":  "cp",
+        "priceGoldEquivalent":  0.01,
         "rank":  0,
         "weight":  1,
         "volume":  "",
@@ -1961,8 +1961,8 @@
         "shopSubtype":  "Походная лавка",
         "priceText":  "2 мм",
         "priceValue":  2,
-        "priceDenomination":  "gp",
-        "priceGoldEquivalent":  2,
+        "priceDenomination":  "cp",
+        "priceGoldEquivalent":  0.02,
         "rank":  0,
         "weight":  1,
         "volume":  "",
@@ -2168,8 +2168,8 @@
         "shopSubtype":  "Столярная и бондарная",
         "priceText":  "5 мм",
         "priceValue":  5,
-        "priceDenomination":  "gp",
-        "priceGoldEquivalent":  5,
+        "priceDenomination":  "cp",
+        "priceGoldEquivalent":  0.05,
         "rank":  0,
         "weight":  7,
         "volume":  "",
@@ -2214,8 +2214,8 @@
         "shopSubtype":  "Скобяная лавка",
         "priceText":  "5 мм",
         "priceValue":  5,
-        "priceDenomination":  "gp",
-        "priceGoldEquivalent":  5,
+        "priceDenomination":  "cp",
+        "priceGoldEquivalent":  0.05,
         "rank":  0,
         "weight":  null,
         "volume":  "",
@@ -2237,8 +2237,8 @@
         "shopSubtype":  "Оружейная лавка",
         "priceText":  "2 см",
         "priceValue":  2,
-        "priceDenomination":  "gp",
-        "priceGoldEquivalent":  2,
+        "priceDenomination":  "sp",
+        "priceGoldEquivalent":  0.2,
         "rank":  0,
         "weight":  4,
         "volume":  "",
@@ -2329,8 +2329,8 @@
         "shopSubtype":  "Оружейная лавка",
         "priceText":  "1 см",
         "priceValue":  1,
-        "priceDenomination":  "gp",
-        "priceGoldEquivalent":  1,
+        "priceDenomination":  "sp",
+        "priceGoldEquivalent":  0.1,
         "rank":  0,
         "weight":  2,
         "volume":  "",
@@ -2505,8 +2505,8 @@
         "shopSubtype":  "Оружейная лавка",
         "priceText":  "2 см",
         "priceValue":  2,
-        "priceDenomination":  "gp",
-        "priceGoldEquivalent":  2,
+        "priceDenomination":  "sp",
+        "priceGoldEquivalent":  0.2,
         "rank":  0,
         "weight":  10,
         "volume":  "",
@@ -2555,8 +2555,8 @@
         "shopSubtype":  "Оружейная лавка",
         "priceText":  "3 см",
         "priceValue":  3,
-        "priceDenomination":  "gp",
-        "priceGoldEquivalent":  3,
+        "priceDenomination":  "sp",
+        "priceGoldEquivalent":  0.30000000000000004,
         "rank":  0,
         "weight":  2,
         "volume":  "",
@@ -2781,8 +2781,8 @@
         "shopSubtype":  "Оружейная лавка",
         "priceText":  "5 мм",
         "priceValue":  5,
-        "priceDenomination":  "gp",
-        "priceGoldEquivalent":  5,
+        "priceDenomination":  "cp",
+        "priceGoldEquivalent":  0.05,
         "rank":  0,
         "weight":  14,
         "volume":  "",
@@ -2870,8 +2870,8 @@
         "shopSubtype":  "Оружейная лавка",
         "priceText":  "1 см",
         "priceValue":  1,
-        "priceDenomination":  "gp",
-        "priceGoldEquivalent":  1,
+        "priceDenomination":  "sp",
+        "priceGoldEquivalent":  0.1,
         "rank":  0,
         "weight":  null,
         "volume":  "",
@@ -8560,8 +8560,8 @@
         "shopSubtype":  "Художественный салон",
         "priceText":  "5 см",
         "priceValue":  5,
-        "priceDenomination":  "gp",
-        "priceGoldEquivalent":  5,
+        "priceDenomination":  "sp",
+        "priceGoldEquivalent":  0.5,
         "rank":  0,
         "weight":  0.1,
         "volume":  "",
@@ -14741,8 +14741,8 @@
         "shopSubtype":  "Книжная и писчая лавка",
         "priceText":  "5 мм",
         "priceValue":  5,
-        "priceDenomination":  "gp",
-        "priceGoldEquivalent":  5,
+        "priceDenomination":  "cp",
+        "priceGoldEquivalent":  0.05,
         "rank":  0,
         "weight":  null,
         "volume":  "",
@@ -14764,8 +14764,8 @@
         "shopSubtype":  "Книжная и писчая лавка",
         "priceText":  "2 мм",
         "priceValue":  2,
-        "priceDenomination":  "gp",
-        "priceGoldEquivalent":  2,
+        "priceDenomination":  "cp",
+        "priceGoldEquivalent":  0.02,
         "rank":  0,
         "weight":  null,
         "volume":  "",
@@ -14787,8 +14787,8 @@
         "shopSubtype":  "Книжная и писчая лавка",
         "priceText":  "1 мм",
         "priceValue":  1,
-        "priceDenomination":  "gp",
-        "priceGoldEquivalent":  1,
+        "priceDenomination":  "cp",
+        "priceGoldEquivalent":  0.01,
         "rank":  0,
         "weight":  null,
         "volume":  "",
@@ -14810,8 +14810,8 @@
         "shopSubtype":  "Книжная и писчая лавка",
         "priceText":  "1 см",
         "priceValue":  1,
-        "priceDenomination":  "gp",
-        "priceGoldEquivalent":  1,
+        "priceDenomination":  "sp",
+        "priceGoldEquivalent":  0.1,
         "rank":  0,
         "weight":  null,
         "volume":  "",
@@ -14833,8 +14833,8 @@
         "shopSubtype":  "Книжная и писчая лавка",
         "priceText":  "1 см",
         "priceValue":  1,
-        "priceDenomination":  "gp",
-        "priceGoldEquivalent":  1,
+        "priceDenomination":  "sp",
+        "priceGoldEquivalent":  0.1,
         "rank":  0,
         "weight":  null,
         "volume":  "",
@@ -14856,8 +14856,8 @@
         "shopSubtype":  "Книжная и писчая лавка",
         "priceText":  "2 см",
         "priceValue":  2,
-        "priceDenomination":  "gp",
-        "priceGoldEquivalent":  2,
+        "priceDenomination":  "sp",
+        "priceGoldEquivalent":  0.2,
         "rank":  0,
         "weight":  null,
         "volume":  "",
@@ -14879,8 +14879,8 @@
         "shopSubtype":  "Книжная и писчая лавка",
         "priceText":  "5 см",
         "priceValue":  5,
-        "priceDenomination":  "gp",
-        "priceGoldEquivalent":  5,
+        "priceDenomination":  "sp",
+        "priceGoldEquivalent":  0.5,
         "rank":  0,
         "weight":  1,
         "volume":  "",
@@ -14902,8 +14902,8 @@
         "shopSubtype":  "Книжная и писчая лавка",
         "priceText":  "5 см",
         "priceValue":  5,
-        "priceDenomination":  "gp",
-        "priceGoldEquivalent":  5,
+        "priceDenomination":  "sp",
+        "priceGoldEquivalent":  0.5,
         "rank":  0,
         "weight":  null,
         "volume":  "",
@@ -14925,8 +14925,8 @@
         "shopSubtype":  "Книжная и писчая лавка",
         "priceText":  "2 см",
         "priceValue":  2,
-        "priceDenomination":  "gp",
-        "priceGoldEquivalent":  2,
+        "priceDenomination":  "sp",
+        "priceGoldEquivalent":  0.2,
         "rank":  0,
         "weight":  null,
         "volume":  "",
@@ -14948,8 +14948,8 @@
         "shopSubtype":  "Книжная и писчая лавка",
         "priceText":  "2 см",
         "priceValue":  2,
-        "priceDenomination":  "gp",
-        "priceGoldEquivalent":  2,
+        "priceDenomination":  "sp",
+        "priceGoldEquivalent":  0.2,
         "rank":  0,
         "weight":  null,
         "volume":  "",
@@ -16235,9 +16235,9 @@
         "linkedTool":  "Ювелира",
         "value":  "1250",
         "multipleAppearance":  "1",
+        "source":  "gear-workbook",
         "itemSlot":  "",
-        "heroDollSlots":  "",
-        "source":  "gear-workbook"
+        "heroDollSlots":  ""
     },
     {
         "id":  "proklyat-e-presleduyushchego-uspekha",
@@ -16258,9 +16258,9 @@
         "linkedTool":  "Ювелира",
         "value":  "6250",
         "multipleAppearance":  "1",
+        "source":  "gear-workbook",
         "itemSlot":  "",
-        "heroDollSlots":  "",
-        "source":  "gear-workbook"
+        "heroDollSlots":  ""
     },
     {
         "id":  "proklyat-e-zhizni-i-smerti",
@@ -16281,9 +16281,9 @@
         "linkedTool":  "Ювелира",
         "value":  "938",
         "multipleAppearance":  "1",
+        "source":  "gear-workbook",
         "itemSlot":  "",
-        "heroDollSlots":  "",
-        "source":  "gear-workbook"
+        "heroDollSlots":  ""
     },
     {
         "id":  "proklyat-e-tyazhesti-zhizni",
@@ -16304,9 +16304,9 @@
         "linkedTool":  "Ювелира",
         "value":  "125",
         "multipleAppearance":  "1",
+        "source":  "gear-workbook",
         "itemSlot":  "",
-        "heroDollSlots":  "",
-        "source":  "gear-workbook"
+        "heroDollSlots":  ""
     },
     {
         "id":  "proklyat-e-krovopuskaniya",
@@ -16327,9 +16327,9 @@
         "linkedTool":  "Ювелира",
         "value":  "3750",
         "multipleAppearance":  "1",
+        "source":  "gear-workbook",
         "itemSlot":  "",
-        "heroDollSlots":  "",
-        "source":  "gear-workbook"
+        "heroDollSlots":  ""
     },
     {
         "id":  "proklyat-e-skorbyashchego-proshlogo",
@@ -16350,9 +16350,9 @@
         "linkedTool":  "Ювелира",
         "value":  "15625",
         "multipleAppearance":  "1",
+        "source":  "gear-workbook",
         "itemSlot":  "",
-        "heroDollSlots":  "",
-        "source":  "gear-workbook"
+        "heroDollSlots":  ""
     },
     {
         "id":  "proklyat-e-prityagivanie-snaryadov",
@@ -16373,9 +16373,9 @@
         "linkedTool":  "Ювелира",
         "value":  "7500",
         "multipleAppearance":  "1",
+        "source":  "gear-workbook",
         "itemSlot":  "",
-        "heroDollSlots":  "",
-        "source":  "gear-workbook"
+        "heroDollSlots":  ""
     },
     {
         "id":  "proklyat-e-ognennoy-dushi",
@@ -16396,9 +16396,9 @@
         "linkedTool":  "Ювелира",
         "value":  "1563",
         "multipleAppearance":  "1",
+        "source":  "gear-workbook",
         "itemSlot":  "",
-        "heroDollSlots":  "",
-        "source":  "gear-workbook"
+        "heroDollSlots":  ""
     },
     {
         "id":  "proklyat-e-voli-k-zhizni",
@@ -16419,9 +16419,9 @@
         "linkedTool":  "Ювелира",
         "value":  "1250",
         "multipleAppearance":  "1",
+        "source":  "gear-workbook",
         "itemSlot":  "",
-        "heroDollSlots":  "",
-        "source":  "gear-workbook"
+        "heroDollSlots":  ""
     },
     {
         "id":  "proklyat-e-tsepey",
@@ -16442,9 +16442,9 @@
         "linkedTool":  "Ювелира",
         "value":  "3125",
         "multipleAppearance":  "1",
+        "source":  "gear-workbook",
         "itemSlot":  "",
-        "heroDollSlots":  "",
-        "source":  "gear-workbook"
+        "heroDollSlots":  ""
     },
     {
         "id":  "proklyat-e-obsidiana",
@@ -16465,9 +16465,9 @@
         "linkedTool":  "Ювелира",
         "value":  "3750",
         "multipleAppearance":  "1",
+        "source":  "gear-workbook",
         "itemSlot":  "",
-        "heroDollSlots":  "",
-        "source":  "gear-workbook"
+        "heroDollSlots":  ""
     },
     {
         "id":  "mednaya-provolka",
@@ -16488,9 +16488,9 @@
         "linkedTool":  "Кузнеца",
         "value":  "313",
         "multipleAppearance":  "1",
+        "source":  "gear-workbook",
         "itemSlot":  "",
-        "heroDollSlots":  "",
-        "source":  "gear-workbook"
+        "heroDollSlots":  ""
     },
     {
         "id":  "malaya-oskolochnaya-granata",
@@ -16786,6 +16786,144 @@
         "predominantMaterialName":  "Порох",
         "linkedTool":  "Алхимические",
         "value":  "1250",
+        "multipleAppearance":  "1",
+        "source":  "gear-workbook",
+        "itemSlot":  "",
+        "heroDollSlots":  ""
+    },
+    {
+        "id":  "kamennyy-ugol-10-fnt",
+        "name":  "Каменный уголь (10 фнт)",
+        "equipmentType":  "Снаряжение",
+        "shopSubtype":  "Автомобильная мастерская",
+        "priceText":  "5 мм",
+        "priceValue":  5,
+        "priceDenomination":  "cp",
+        "priceGoldEquivalent":  0.05,
+        "rank":  1,
+        "weight":  10,
+        "volume":  "",
+        "capacity":  "",
+        "description":  "Сортированный каменный уголь для котлов, печей и паровых двигателей. Указанная цена относится к десяти фунтам топлива.",
+        "predominantMaterialId":  "ugol",
+        "predominantMaterialName":  "Уголь",
+        "linkedTool":  "Алхимические",
+        "value":  "7",
+        "multipleAppearance":  "1",
+        "source":  "gear-workbook",
+        "itemSlot":  "",
+        "heroDollSlots":  ""
+    },
+    {
+        "id":  "benzin-1-gallon",
+        "name":  "Бензин (1 галлон)",
+        "equipmentType":  "Снаряжение",
+        "shopSubtype":  "Автомобильная мастерская",
+        "priceText":  "2 см",
+        "priceValue":  2,
+        "priceDenomination":  "sp",
+        "priceGoldEquivalent":  0.2,
+        "rank":  3,
+        "weight":  null,
+        "volume":  "",
+        "capacity":  "",
+        "description":  "Лёгкое моторное топливо из угольной нефти для быстроходных двигателей с искровым зажиганием.",
+        "predominantMaterialId":  null,
+        "predominantMaterialName":  "Угольная нефть",
+        "linkedTool":  "Алхимические",
+        "value":  "3",
+        "multipleAppearance":  "1",
+        "source":  "gear-workbook",
+        "itemSlot":  "",
+        "heroDollSlots":  ""
+    },
+    {
+        "id":  "kerosin-1-gallon",
+        "name":  "Керосин (1 галлон)",
+        "equipmentType":  "Снаряжение",
+        "shopSubtype":  "Автомобильная мастерская",
+        "priceText":  "1 см",
+        "priceValue":  1,
+        "priceDenomination":  "sp",
+        "priceGoldEquivalent":  0.1,
+        "rank":  2,
+        "weight":  null,
+        "volume":  "",
+        "capacity":  "",
+        "description":  "Средняя фракция угольной нефти для жидкотопливных горелок, ранних паровых машин и авиационных двигателей.",
+        "predominantMaterialId":  null,
+        "predominantMaterialName":  "Угольная нефть",
+        "linkedTool":  "Алхимические",
+        "value":  "2",
+        "multipleAppearance":  "1",
+        "source":  "gear-workbook",
+        "itemSlot":  "",
+        "heroDollSlots":  ""
+    },
+    {
+        "id":  "dizel-1-gallon",
+        "name":  "Дизель (1 галлон)",
+        "equipmentType":  "Снаряжение",
+        "shopSubtype":  "Автомобильная мастерская",
+        "priceText":  "1 см",
+        "priceValue":  1,
+        "priceDenomination":  "sp",
+        "priceGoldEquivalent":  0.1,
+        "rank":  3,
+        "weight":  null,
+        "volume":  "",
+        "capacity":  "",
+        "description":  "Тяжёлое моторное топливо из угольной нефти для грузовых автомобилей, бронемашин и тяжёлых двигателей.",
+        "predominantMaterialId":  null,
+        "predominantMaterialName":  "Угольная нефть",
+        "linkedTool":  "Алхимические",
+        "value":  "2",
+        "multipleAppearance":  "1",
+        "source":  "gear-workbook",
+        "itemSlot":  "",
+        "heroDollSlots":  ""
+    },
+    {
+        "id":  "mazut-1-gallon",
+        "name":  "Мазут (1 галлон)",
+        "equipmentType":  "Снаряжение",
+        "shopSubtype":  "Автомобильная мастерская",
+        "priceText":  "5 мм",
+        "priceValue":  5,
+        "priceDenomination":  "cp",
+        "priceGoldEquivalent":  0.05,
+        "rank":  2,
+        "weight":  null,
+        "volume":  "",
+        "capacity":  "",
+        "description":  "Густой остаток перегонки угольной нефти для крупных котлов, кораблей и тяжёлых воздушных судов.",
+        "predominantMaterialId":  null,
+        "predominantMaterialName":  "Угольная нефть",
+        "linkedTool":  "Алхимические",
+        "value":  "7",
+        "multipleAppearance":  "1",
+        "source":  "gear-workbook",
+        "itemSlot":  "",
+        "heroDollSlots":  ""
+    },
+    {
+        "id":  "metallicheskaya-kanistra",
+        "name":  "Металлическая канистра",
+        "equipmentType":  "Снаряжение",
+        "shopSubtype":  "Автомобильная мастерская",
+        "priceText":  "5 см",
+        "priceValue":  5,
+        "priceDenomination":  "sp",
+        "priceGoldEquivalent":  0.5,
+        "rank":  2,
+        "weight":  4,
+        "volume":  "",
+        "capacity":  "5 галлонов (19 лит.), 0,7 кубического фута",
+        "description":  "Герметичная стальная ёмкость с ручкой и винтовой крышкой для безопасной перевозки жидкого топлива.",
+        "predominantMaterialId":  "stal",
+        "predominantMaterialName":  "Сталь",
+        "linkedTool":  "Жестянщика",
+        "value":  "7",
         "multipleAppearance":  "1",
         "source":  "gear-workbook",
         "itemSlot":  "",
@@ -17293,9 +17431,9 @@
         "linkedTool":  "Ювелира",
         "value":  "1250",
         "multipleAppearance":  "1",
+        "source":  "gear-workbook",
         "itemSlot":  "",
-        "heroDollSlots":  "",
-        "source":  "gear-workbook"
+        "heroDollSlots":  ""
     },
     {
         "id":  "zvyozdchatyy-rubin",
@@ -17316,9 +17454,9 @@
         "linkedTool":  "Ювелира",
         "value":  "1250",
         "multipleAppearance":  "1",
+        "source":  "gear-workbook",
         "itemSlot":  "",
-        "heroDollSlots":  "",
-        "source":  "gear-workbook"
+        "heroDollSlots":  ""
     },
     {
         "id":  "izumrud",
@@ -17339,9 +17477,9 @@
         "linkedTool":  "Ювелира",
         "value":  "1250",
         "multipleAppearance":  "1",
+        "source":  "gear-workbook",
         "itemSlot":  "",
-        "heroDollSlots":  "",
-        "source":  "gear-workbook"
+        "heroDollSlots":  ""
     },
     {
         "id":  "opal",
@@ -17362,9 +17500,9 @@
         "linkedTool":  "Ювелира",
         "value":  "1250",
         "multipleAppearance":  "1",
+        "source":  "gear-workbook",
         "itemSlot":  "",
-        "heroDollSlots":  "",
-        "source":  "gear-workbook"
+        "heroDollSlots":  ""
     },
     {
         "id":  "giatsint",
@@ -17385,9 +17523,9 @@
         "linkedTool":  "Ювелира",
         "value":  "6250",
         "multipleAppearance":  "1",
+        "source":  "gear-workbook",
         "itemSlot":  "",
-        "heroDollSlots":  "",
-        "source":  "gear-workbook"
+        "heroDollSlots":  ""
     },
     {
         "id":  "rubin",
@@ -17408,9 +17546,9 @@
         "linkedTool":  "Ювелира",
         "value":  "6250",
         "multipleAppearance":  "1",
+        "source":  "gear-workbook",
         "itemSlot":  "",
-        "heroDollSlots":  "",
-        "source":  "gear-workbook"
+        "heroDollSlots":  ""
     },
     {
         "id":  "chyornyy-sapfir",
@@ -17431,9 +17569,9 @@
         "linkedTool":  "Ювелира",
         "value":  "6250",
         "multipleAppearance":  "1",
+        "source":  "gear-workbook",
         "itemSlot":  "",
-        "heroDollSlots":  "",
-        "source":  "gear-workbook"
+        "heroDollSlots":  ""
     },
     {
         "id":  "serebryanyy-kuvshin",
@@ -17454,9 +17592,9 @@
         "linkedTool":  "Ювелира",
         "value":  "32",
         "multipleAppearance":  "1",
+        "source":  "gear-workbook",
         "itemSlot":  "",
-        "heroDollSlots":  "",
-        "source":  "gear-workbook"
+        "heroDollSlots":  ""
     },
     {
         "id":  "reznaya-statuetka-iz-kosti",
@@ -17477,9 +17615,9 @@
         "linkedTool":  "Художественные",
         "value":  "32",
         "multipleAppearance":  "1",
+        "source":  "gear-workbook",
         "itemSlot":  "",
-        "heroDollSlots":  "",
-        "source":  "gear-workbook"
+        "heroDollSlots":  ""
     },
     {
         "id":  "malen-kiy-zolotoy-braslet",
@@ -17500,9 +17638,9 @@
         "linkedTool":  "Ювелира",
         "value":  "32",
         "multipleAppearance":  "1",
+        "source":  "gear-workbook",
         "itemSlot":  "",
-        "heroDollSlots":  "",
-        "source":  "gear-workbook"
+        "heroDollSlots":  ""
     },
     {
         "id":  "chyornaya-barkhatnaya-maska-vyshitaya-serebryanoy-nit-yu",
@@ -17523,9 +17661,9 @@
         "linkedTool":  "Гримёра",
         "value":  "32",
         "multipleAppearance":  "1",
+        "source":  "gear-workbook",
         "itemSlot":  "",
-        "heroDollSlots":  "",
-        "source":  "gear-workbook"
+        "heroDollSlots":  ""
     },
     {
         "id":  "zolotoy-medal-on-s-portretom-vozlyublennoy-vnutri",
@@ -17546,9 +17684,9 @@
         "linkedTool":  "Ювелира",
         "value":  "32",
         "multipleAppearance":  "1",
+        "source":  "gear-workbook",
         "itemSlot":  "",
-        "heroDollSlots":  "",
-        "source":  "gear-workbook"
+        "heroDollSlots":  ""
     },
     {
         "id":  "zolotoe-kol-tso-s-geliotropami",
@@ -17569,9 +17707,9 @@
         "linkedTool":  "Ювелира",
         "value":  "313",
         "multipleAppearance":  "1",
+        "source":  "gear-workbook",
         "itemSlot":  "",
-        "heroDollSlots":  "",
-        "source":  "gear-workbook"
+        "heroDollSlots":  ""
     },
     {
         "id":  "reznaya-statuetka-slonovoy-kosti",
@@ -17592,9 +17730,9 @@
         "linkedTool":  "Художественные",
         "value":  "313",
         "multipleAppearance":  "1",
+        "source":  "gear-workbook",
         "itemSlot":  "",
-        "heroDollSlots":  "",
-        "source":  "gear-workbook"
+        "heroDollSlots":  ""
     },
     {
         "id":  "bol-shoy-zolotoy-braslet",
@@ -17615,9 +17753,9 @@
         "linkedTool":  "Ювелира",
         "value":  "313",
         "multipleAppearance":  "1",
+        "source":  "gear-workbook",
         "itemSlot":  "",
-        "heroDollSlots":  "",
-        "source":  "gear-workbook"
+        "heroDollSlots":  ""
     },
     {
         "id":  "shyolkovaya-mantiya-s-zolotoy-vyshivkoy",
@@ -17638,9 +17776,9 @@
         "linkedTool":  "Кожедела",
         "value":  "313",
         "multipleAppearance":  "1",
+        "source":  "gear-workbook",
         "itemSlot":  "",
-        "heroDollSlots":  "",
-        "source":  "gear-workbook"
+        "heroDollSlots":  ""
     },
     {
         "id":  "latunnaya-kruzhka-inkrustirovannaya-nefritom",
@@ -17661,9 +17799,9 @@
         "linkedTool":  "Ювелира",
         "value":  "313",
         "multipleAppearance":  "1",
+        "source":  "gear-workbook",
         "itemSlot":  "",
-        "heroDollSlots":  "",
-        "source":  "gear-workbook"
+        "heroDollSlots":  ""
     },
     {
         "id":  "serebryanaya-chasha-dekorirovannaya-lunnym-kamnem",
@@ -17684,9 +17822,9 @@
         "linkedTool":  "Ювелира",
         "value":  "938",
         "multipleAppearance":  "1",
+        "source":  "gear-workbook",
         "itemSlot":  "",
-        "heroDollSlots":  "",
-        "source":  "gear-workbook"
+        "heroDollSlots":  ""
     },
     {
         "id":  "reznaya-arfa-iz-ekzoticheskoy-drevesiny-s-inkrustatsiey",
@@ -17707,9 +17845,9 @@
         "linkedTool":  "Художественные",
         "value":  "938",
         "multipleAppearance":  "1",
+        "source":  "gear-workbook",
         "itemSlot":  "",
-        "heroDollSlots":  "",
-        "source":  "gear-workbook"
+        "heroDollSlots":  ""
     },
     {
         "id":  "nebol-shoy-zolotoy-idol",
@@ -17730,9 +17868,9 @@
         "linkedTool":  "Ювелира",
         "value":  "938",
         "multipleAppearance":  "1",
+        "source":  "gear-workbook",
         "itemSlot":  "",
-        "heroDollSlots":  "",
-        "source":  "gear-workbook"
+        "heroDollSlots":  ""
     },
     {
         "id":  "tseremonial-nyy-kinzhal-iz-elektruma-s-chyornoy-zhemchuzhinoy",
@@ -17753,9 +17891,9 @@
         "linkedTool":  "Ювелира",
         "value":  "938",
         "multipleAppearance":  "1",
+        "source":  "gear-workbook",
         "itemSlot":  "",
-        "heroDollSlots":  "",
-        "source":  "gear-workbook"
+        "heroDollSlots":  ""
     },
     {
         "id":  "obsidianovaya-statuetka-s-zolotoy-inkrustatsiey",
@@ -17776,9 +17914,9 @@
         "linkedTool":  "Художественные",
         "value":  "938",
         "multipleAppearance":  "1",
+        "source":  "gear-workbook",
         "itemSlot":  "",
-        "heroDollSlots":  "",
-        "source":  "gear-workbook"
+        "heroDollSlots":  ""
     },
     {
         "id":  "prekrasnaya-zolotaya-tsep-s-ognennym-opalom",
@@ -17799,9 +17937,9 @@
         "linkedTool":  "Ювелира",
         "value":  "3125",
         "multipleAppearance":  "1",
+        "source":  "gear-workbook",
         "itemSlot":  "",
-        "heroDollSlots":  "",
-        "source":  "gear-workbook"
+        "heroDollSlots":  ""
     },
     {
         "id":  "starinnyy-shedevr-zhivopisi",
@@ -17822,9 +17960,9 @@
         "linkedTool":  "Художественные",
         "value":  "3125",
         "multipleAppearance":  "1",
+        "source":  "gear-workbook",
         "itemSlot":  "",
-        "heroDollSlots":  "",
-        "source":  "gear-workbook"
+        "heroDollSlots":  ""
     },
     {
         "id":  "platinovyy-braslet-s-sapfirom",
@@ -17845,9 +17983,9 @@
         "linkedTool":  "Ювелира",
         "value":  "3125",
         "multipleAppearance":  "1",
+        "source":  "gear-workbook",
         "itemSlot":  "",
-        "heroDollSlots":  "",
-        "source":  "gear-workbook"
+        "heroDollSlots":  ""
     },
     {
         "id":  "zolotaya-muzykal-naya-shkatulka",
@@ -17868,9 +18006,9 @@
         "linkedTool":  "Ювелира",
         "value":  "3125",
         "multipleAppearance":  "1",
+        "source":  "gear-workbook",
         "itemSlot":  "",
-        "heroDollSlots":  "",
-        "source":  "gear-workbook"
+        "heroDollSlots":  ""
     },
     {
         "id":  "glaznaya-povyazka-s-lozhnym-glazom-iz-golubogo-sapfira-i-lunnogo-kamnya",
@@ -17891,9 +18029,9 @@
         "linkedTool":  "Ювелира",
         "value":  "3125",
         "multipleAppearance":  "1",
+        "source":  "gear-workbook",
         "itemSlot":  "",
-        "heroDollSlots":  "",
-        "source":  "gear-workbook"
+        "heroDollSlots":  ""
     },
     {
         "id":  "ukrashennaya-dragotsennostyami-zolotaya-korona",
@@ -17914,9 +18052,9 @@
         "linkedTool":  "Ювелира",
         "value":  "9375",
         "multipleAppearance":  "1",
+        "source":  "gear-workbook",
         "itemSlot":  "",
-        "heroDollSlots":  "",
-        "source":  "gear-workbook"
+        "heroDollSlots":  ""
     },
     {
         "id":  "ukrashennoe-dragotsennostyami-platinovoe-kol-tso",
@@ -17937,9 +18075,9 @@
         "linkedTool":  "Ювелира",
         "value":  "9375",
         "multipleAppearance":  "1",
+        "source":  "gear-workbook",
         "itemSlot":  "",
-        "heroDollSlots":  "",
-        "source":  "gear-workbook"
+        "heroDollSlots":  ""
     },
     {
         "id":  "nebol-shaya-zolotaya-statuetka-s-rubinami",
@@ -17960,9 +18098,9 @@
         "linkedTool":  "Ювелира",
         "value":  "9375",
         "multipleAppearance":  "1",
+        "source":  "gear-workbook",
         "itemSlot":  "",
-        "heroDollSlots":  "",
-        "source":  "gear-workbook"
+        "heroDollSlots":  ""
     },
     {
         "id":  "zolotoy-kubok-s-izumrudami",
@@ -17983,9 +18121,9 @@
         "linkedTool":  "Ювелира",
         "value":  "9375",
         "multipleAppearance":  "1",
+        "source":  "gear-workbook",
         "itemSlot":  "",
-        "heroDollSlots":  "",
-        "source":  "gear-workbook"
+        "heroDollSlots":  ""
     },
     {
         "id":  "nefritovaya-igral-naya-doska-s-zolotymi-figurkami",
@@ -18006,9 +18144,9 @@
         "linkedTool":  "Ювелира",
         "value":  "9375",
         "multipleAppearance":  "1",
+        "source":  "gear-workbook",
         "itemSlot":  "",
-        "heroDollSlots":  "",
-        "source":  "gear-workbook"
+        "heroDollSlots":  ""
     },
     {
         "id":  "krokhotnyy-almaz",
@@ -18029,9 +18167,9 @@
         "linkedTool":  "Ювелира",
         "value":  "125",
         "multipleAppearance":  "1",
+        "source":  "gear-workbook",
         "itemSlot":  "",
-        "heroDollSlots":  "",
-        "source":  "gear-workbook"
+        "heroDollSlots":  ""
     },
     {
         "id":  "malen-kiy-almaz",
@@ -18052,9 +18190,9 @@
         "linkedTool":  "Ювелира",
         "value":  "375",
         "multipleAppearance":  "1",
+        "source":  "gear-workbook",
         "itemSlot":  "",
-        "heroDollSlots":  "",
-        "source":  "gear-workbook"
+        "heroDollSlots":  ""
     },
     {
         "id":  "almaz",
@@ -18075,9 +18213,9 @@
         "linkedTool":  "Ювелира",
         "value":  "625",
         "multipleAppearance":  "1",
+        "source":  "gear-workbook",
         "itemSlot":  "",
-        "heroDollSlots":  "",
-        "source":  "gear-workbook"
+        "heroDollSlots":  ""
     },
     {
         "id":  "bol-shoy-almaz",
@@ -18098,9 +18236,9 @@
         "linkedTool":  "Ювелира",
         "value":  "1250",
         "multipleAppearance":  "1",
+        "source":  "gear-workbook",
         "itemSlot":  "",
-        "heroDollSlots":  "",
-        "source":  "gear-workbook"
+        "heroDollSlots":  ""
     },
     {
         "id":  "ogromnyy-almaz",
@@ -18121,9 +18259,9 @@
         "linkedTool":  "Ювелира",
         "value":  "6250",
         "multipleAppearance":  "1",
+        "source":  "gear-workbook",
         "itemSlot":  "",
-        "heroDollSlots":  "",
-        "source":  "gear-workbook"
+        "heroDollSlots":  ""
     },
     {
         "id":  "giganskiy-almaz",
@@ -18144,9 +18282,9 @@
         "linkedTool":  "Ювелира",
         "value":  "31250",
         "multipleAppearance":  "1",
+        "source":  "gear-workbook",
         "itemSlot":  "",
-        "heroDollSlots":  "",
-        "source":  "gear-workbook"
+        "heroDollSlots":  ""
     },
     {
         "id":  "zaryad-para",
@@ -18167,9 +18305,9 @@
         "linkedTool":  "Жестянщика",
         "value":  "25",
         "multipleAppearance":  "1к6",
+        "source":  "gear-workbook",
         "itemSlot":  "",
-        "heroDollSlots":  "",
-        "source":  "gear-workbook"
+        "heroDollSlots":  ""
     },
     {
         "id":  "kompressor",
@@ -18190,9 +18328,9 @@
         "linkedTool":  "Жестянщика",
         "value":  "625",
         "multipleAppearance":  "1",
+        "source":  "gear-workbook",
         "itemSlot":  "",
-        "heroDollSlots":  "",
-        "source":  "gear-workbook"
+        "heroDollSlots":  ""
     },
     {
         "id":  "pnevmaticheskiy-garpun",
@@ -18213,9 +18351,9 @@
         "linkedTool":  "Жестянщика",
         "value":  "500",
         "multipleAppearance":  "1",
+        "source":  "gear-workbook",
         "itemSlot":  "",
-        "heroDollSlots":  "",
-        "source":  "gear-workbook"
+        "heroDollSlots":  ""
     },
     {
         "id":  "slepyashchaya-shashka",
@@ -18236,9 +18374,9 @@
         "linkedTool":  "Алхимические",
         "value":  "25.0",
         "multipleAppearance":  "1к3",
+        "source":  "gear-workbook",
         "itemSlot":  "",
-        "heroDollSlots":  "",
-        "source":  "gear-workbook"
+        "heroDollSlots":  ""
     },
     {
         "id":  "kineticheskie-botinki",
@@ -18259,9 +18397,9 @@
         "linkedTool":  "Жестянщика",
         "value":  "100",
         "multipleAppearance":  "1",
+        "source":  "gear-workbook",
         "itemSlot":  "",
-        "heroDollSlots":  "",
-        "source":  "gear-workbook"
+        "heroDollSlots":  ""
     },
     {
         "id":  "binokl",
@@ -18282,9 +18420,9 @@
         "linkedTool":  "Исследователя",
         "value":  "500",
         "multipleAppearance":  "1",
+        "source":  "gear-workbook",
         "itemSlot":  "",
-        "heroDollSlots":  "",
-        "source":  "gear-workbook"
+        "heroDollSlots":  ""
     },
     {
         "id":  "mekhanizirovannyy-ryukzak",
@@ -18305,9 +18443,9 @@
         "linkedTool":  "Жестянщика",
         "value":  "25",
         "multipleAppearance":  "1",
+        "source":  "gear-workbook",
         "itemSlot":  "",
-        "heroDollSlots":  "",
-        "source":  "gear-workbook"
+        "heroDollSlots":  ""
     },
     {
         "id":  "mekhanizirovannaya-odezhda",
@@ -18328,9 +18466,9 @@
         "linkedTool":  "Жестянщика",
         "value":  "38",
         "multipleAppearance":  "1",
+        "source":  "gear-workbook",
         "itemSlot":  "",
-        "heroDollSlots":  "",
-        "source":  "gear-workbook"
+        "heroDollSlots":  ""
     },
     {
         "id":  "zazhigalka",
@@ -18351,9 +18489,9 @@
         "linkedTool":  "Жестянщика",
         "value":  "2",
         "multipleAppearance":  "1",
+        "source":  "gear-workbook",
         "itemSlot":  "",
-        "heroDollSlots":  "",
-        "source":  "gear-workbook"
+        "heroDollSlots":  ""
     },
     {
         "id":  "korobok-spichek",
@@ -18362,8 +18500,8 @@
         "shopSubtype":  "Походная лавка",
         "priceText":  "5 мм",
         "priceValue":  5,
-        "priceDenomination":  "gp",
-        "priceGoldEquivalent":  5,
+        "priceDenomination":  "cp",
+        "priceGoldEquivalent":  0.05,
         "rank":  2,
         "weight":  null,
         "volume":  "",
@@ -18374,9 +18512,9 @@
         "linkedTool":  "Алхимические",
         "value":  "7",
         "multipleAppearance":  "1",
+        "source":  "gear-workbook",
         "itemSlot":  "",
-        "heroDollSlots":  "",
-        "source":  "gear-workbook"
+        "heroDollSlots":  ""
     },
     {
         "id":  "naruchnye-chasy",
@@ -18397,9 +18535,9 @@
         "linkedTool":  "Ювелира",
         "value":  "7",
         "multipleAppearance":  "1",
+        "source":  "gear-workbook",
         "itemSlot":  "",
-        "heroDollSlots":  "",
-        "source":  "gear-workbook"
+        "heroDollSlots":  ""
     },
     {
         "id":  "parashyut",
@@ -18420,9 +18558,9 @@
         "linkedTool":  "Кожедела",
         "value":  "125",
         "multipleAppearance":  "1",
+        "source":  "gear-workbook",
         "itemSlot":  "",
-        "heroDollSlots":  "",
-        "source":  "gear-workbook"
+        "heroDollSlots":  ""
     },
     {
         "id":  "mekhanicheskie-kryl-ya",
@@ -18443,9 +18581,9 @@
         "linkedTool":  "Жестянщика",
         "value":  "250",
         "multipleAppearance":  "1",
+        "source":  "gear-workbook",
         "itemSlot":  "",
-        "heroDollSlots":  "",
-        "source":  "gear-workbook"
+        "heroDollSlots":  ""
     },
     {
         "id":  "parovoy-kuznechnyy-molot",
@@ -18466,9 +18604,9 @@
         "linkedTool":  "Кузнеца",
         "value":  "500",
         "multipleAppearance":  "1",
+        "source":  "gear-workbook",
         "itemSlot":  "",
-        "heroDollSlots":  "",
-        "source":  "gear-workbook"
+        "heroDollSlots":  ""
     },
     {
         "id":  "zaryazhennye-perchatki",
@@ -18489,9 +18627,9 @@
         "linkedTool":  "Жестянщика",
         "value":  "125",
         "multipleAppearance":  "1",
+        "source":  "gear-workbook",
         "itemSlot":  "",
-        "heroDollSlots":  "",
-        "source":  "gear-workbook"
+        "heroDollSlots":  ""
     },
     {
         "id":  "portativnaya-drel",
@@ -18512,9 +18650,9 @@
         "linkedTool":  "Жестянщика",
         "value":  "2500",
         "multipleAppearance":  "1",
+        "source":  "gear-workbook",
         "itemSlot":  "",
-        "heroDollSlots":  "",
-        "source":  "gear-workbook"
+        "heroDollSlots":  ""
     },
     {
         "id":  "pod-yomnyy-blok",
@@ -18535,9 +18673,9 @@
         "linkedTool":  "Жестянщика",
         "value":  "38",
         "multipleAppearance":  "1",
+        "source":  "gear-workbook",
         "itemSlot":  "",
-        "heroDollSlots":  "",
-        "source":  "gear-workbook"
+        "heroDollSlots":  ""
     },
     {
         "id":  "parovoy-ranets",
@@ -18558,9 +18696,9 @@
         "linkedTool":  "Жестянщика",
         "value":  "6250",
         "multipleAppearance":  "1",
+        "source":  "gear-workbook",
         "itemSlot":  "",
-        "heroDollSlots":  "",
-        "source":  "gear-workbook"
+        "heroDollSlots":  ""
     },
     {
         "id":  "zashchitnaya-maska",
@@ -18581,8 +18719,100 @@
         "linkedTool":  "Алхимические",
         "value":  "125",
         "multipleAppearance":  "1",
+        "source":  "gear-workbook",
         "itemSlot":  "",
-        "heroDollSlots":  "",
-        "source":  "gear-workbook"
+        "heroDollSlots":  ""
+    },
+    {
+        "id":  "mednaya-moneta",
+        "name":  "Медная монета",
+        "equipmentType":  "Сокровища",
+        "shopSubtype":  "Ювелирно-часовая мастерская",
+        "priceText":  "1 мм",
+        "priceValue":  1,
+        "priceDenomination":  "cp",
+        "priceGoldEquivalent":  0.01,
+        "rank":  0,
+        "weight":  0.02,
+        "volume":  "",
+        "capacity":  "",
+        "description":  "Это медная монета",
+        "predominantMaterialId":  "med",
+        "predominantMaterialName":  "Медь",
+        "linkedTool":  "Ювелира",
+        "value":  "",
+        "multipleAppearance":  "1",
+        "source":  "gear-workbook",
+        "itemSlot":  "",
+        "heroDollSlots":  ""
+    },
+    {
+        "id":  "serebryannaya-moneta",
+        "name":  "Серебрянная монета",
+        "equipmentType":  "Сокровища",
+        "shopSubtype":  "Ювелирно-часовая мастерская",
+        "priceText":  "1 см",
+        "priceValue":  1,
+        "priceDenomination":  "sp",
+        "priceGoldEquivalent":  0.1,
+        "rank":  0,
+        "weight":  0.02,
+        "volume":  "",
+        "capacity":  "",
+        "description":  "Это серебрянная монета",
+        "predominantMaterialId":  "serebro",
+        "predominantMaterialName":  "Серебро",
+        "linkedTool":  "Ювелира",
+        "value":  "",
+        "multipleAppearance":  "1",
+        "source":  "gear-workbook",
+        "itemSlot":  "",
+        "heroDollSlots":  ""
+    },
+    {
+        "id":  "zolota-moneta",
+        "name":  "Золота монета",
+        "equipmentType":  "Сокровища",
+        "shopSubtype":  "Ювелирно-часовая мастерская",
+        "priceText":  "1 зм",
+        "priceValue":  1,
+        "priceDenomination":  "gp",
+        "priceGoldEquivalent":  1,
+        "rank":  1,
+        "weight":  0.02,
+        "volume":  "",
+        "capacity":  "",
+        "description":  "Это золотая монета",
+        "predominantMaterialId":  "zoloto",
+        "predominantMaterialName":  "Золото",
+        "linkedTool":  "Ювелира",
+        "value":  "",
+        "multipleAppearance":  "1",
+        "source":  "gear-workbook",
+        "itemSlot":  "",
+        "heroDollSlots":  ""
+    },
+    {
+        "id":  "platinovaya-moneta",
+        "name":  "Платиновая монета",
+        "equipmentType":  "Сокровища",
+        "shopSubtype":  "Ювелирно-часовая мастерская",
+        "priceText":  "1 пм",
+        "priceValue":  1,
+        "priceDenomination":  "pp",
+        "priceGoldEquivalent":  10,
+        "rank":  2,
+        "weight":  0.02,
+        "volume":  "",
+        "capacity":  "",
+        "description":  "Это платиновая монета",
+        "predominantMaterialId":  "platina",
+        "predominantMaterialName":  "Платина",
+        "linkedTool":  "Ювелира",
+        "value":  "",
+        "multipleAppearance":  "1",
+        "source":  "gear-workbook",
+        "itemSlot":  "",
+        "heroDollSlots":  ""
     }
 ]

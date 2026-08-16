@@ -357,6 +357,19 @@ test("stable built-in Coin identity excludes durability even when mutable source
       }
     }
   }), false);
+
+  for (const version of [undefined, 0, 2, "1"]) {
+    assert.equal(isDurabilityEligible({
+      type: "loot",
+      system: { properties: [], rarity: "" },
+      flags: {
+        [MODULE_ID]: {
+          sourceType: "gear",
+          storageCoinTemplate: { version, denomination: "gp" }
+        }
+      }
+    }), true, `unsupported coin flag version ${String(version)} must remain ordinary durable loot`);
+  }
 });
 
 test("actual party supply flags never initialize durability", () => {

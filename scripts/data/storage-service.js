@@ -16,8 +16,19 @@ const STORAGE_VERSION = 1;
 const STORAGE_STATES = new Set(["unopened", "opened", "empty"]);
 export const STORAGE_TEXTURE_MODES = Object.freeze(["unopened", "opened", "empty"]);
 const STORAGE_TEXTURE_MODE_SET = new Set(STORAGE_TEXTURE_MODES);
-const COIN_KEYS = ["pp", "gp", "sp", "cp"];
+export const STORAGE_COIN_DENOMINATIONS = Object.freeze(["pp", "gp", "sp", "cp"]);
+const STORAGE_COIN_DENOMINATION_SET = new Set(STORAGE_COIN_DENOMINATIONS);
+const COIN_KEYS = STORAGE_COIN_DENOMINATIONS;
 const STORAGE_KINDS = new Set(["chest", "bag", "pile"]);
+
+export function readStorageCoinDenomination(item) {
+  const flag = typeof item?.getFlag === "function"
+    ? item.getFlag(MODULE_ID, "storageCoinTemplate")
+    : item?.flags?.[MODULE_ID]?.storageCoinTemplate;
+  if (flag?.version !== 1) return null;
+  const denomination = String(flag?.denomination ?? "").trim().toLowerCase();
+  return STORAGE_COIN_DENOMINATION_SET.has(denomination) ? denomination : null;
+}
 
 function clone(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));

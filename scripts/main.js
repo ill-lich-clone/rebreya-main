@@ -1,7 +1,7 @@
 // @rebreya-role canonical-composition-root
 import { MODULE_ID, SETTINGS_KEYS } from "./constants.js";
 import { MaterialsCompendiumService } from "./data/materials-compendium.js";
-import { GearCompendiumService } from "./data/gear-compendium.js?v=1.4.111-ammunition-template-version-20&implants=1";
+import { GearCompendiumService } from "./data/gear-compendium.js?v=1.4.144-spreadsheet-coins-ground-repair";
 import { repairWorldAmmunitionCompatibility } from "./data/ammunition-compatibility.js?v=1.4.111-native-ammunition-compatibility";
 import { MagicItemsCompendiumService } from "./data/magic-items-compendium.js";
 import { FeatsCompendiumService } from "./data/feats-compendium.js";
@@ -64,7 +64,7 @@ import {
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_REQUEST,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_RESULT
 } from "./data/inventory-service.js?v=1.4.111-member-transport-filter";
-import { DurabilityService } from "./data/durability-service.js?v=1.4.96-durability";
+import { DurabilityService } from "./data/durability-service.js?v=1.4.144-spreadsheet-coins-ground-repair";
 import { MapObjectTokenService } from "./data/map-object-token-service.js?v=1.4.97-map-object-token";
 import { HeroDollService } from "./data/hero-doll-service.js";
 import { ImplantService } from "./data/implant-service.js";
@@ -91,7 +91,7 @@ import {
   isStorageActor,
   readStorageState,
   readStorageStateAtPath
-} from "./data/storage-service.js?v=1.4.119-storage-canvas-drops";
+} from "./data/storage-service.js?v=1.4.144-spreadsheet-coins-ground-repair";
 import { StorageOpenSoundService } from "./data/storage-open-sound-service.js";
 import {
   isStorageTokenVisible,
@@ -99,8 +99,7 @@ import {
   measureStorageTokenDistance
 } from "./data/storage-access.js?v=1.4.133-ground-item-polish";
 import { BuiltinStorageActorService } from "./data/builtin-storage-actor-service.js";
-import { BuiltinCoinTemplateService } from "./data/builtin-coin-template-service.js";
-import { StorageGroundPileService } from "./data/storage-ground-pile-service.js?v=1.4.133-ground-item-polish";
+import { StorageGroundPileService } from "./data/storage-ground-pile-service.js?v=1.4.144-spreadsheet-coins-ground-repair";
 import { StorageContainerItemService } from "./data/storage-container-item-service.js?v=1.4.130-storage-player-fixes";
 import { isStorageJournalRow } from "./data/storage-container-snapshot.js";
 import {
@@ -110,7 +109,7 @@ import {
 import {
   parseStorageDepositDragData,
   resolveStorageDepositSource
-} from "./data/storage-deposit-source.js?v=1.4.126-native-container-copies";
+} from "./data/storage-deposit-source.js?v=1.4.144-spreadsheet-coins-ground-repair";
 import { NativeObjectDurabilityService } from "./data/native-object-durability-service.js";
 import {
   StorageCommandService,
@@ -124,7 +123,7 @@ import {
   isValidStorageRestorePortablePayload,
   isValidStorageTokenCharacterPayload,
   storageCharacterTokenUuidForClaim
-} from "./data/storage-command-service.js?v=1.4.130-storage-player-fixes";
+} from "./data/storage-command-service.js?v=1.4.144-spreadsheet-coins-ground-repair";
 import { registerCombatHooks } from "./combat/hooks.js?v=1.4.134-actor-delta-status-socket";
 import { CombatAttackService } from "./combat/attack-service.js?v=1.4.111-native-ammunition-compatibility";
 import { ImplantAutomationService } from "./combat/implant-automation-service.js";
@@ -203,7 +202,7 @@ import { registerCraftsmanGadgetSocketCommand } from "./integrations/craftsman-g
 import { registerSpellInstanceSocketCommand } from "./integrations/spell-instance-socket.js";
 import { registerSummonLifecycleSocketCommand } from "./integrations/summon-lifecycle-socket.js";
 import { registerTransportGroupDropHooks } from "./integrations/transport-group-drop.js";
-import { registerStorageTransferDropHooks } from "./integrations/storage-transfer-drop.js?v=1.4.131-storage-character-drop";
+import { registerStorageTransferDropHooks } from "./integrations/storage-transfer-drop.js?v=1.4.144-spreadsheet-coins-ground-repair";
 import { registerStorageTokenDropHooks } from "./integrations/storage-token-drop.js?v=1.4.132-storage-owned-character-resolution";
 import { registerStorageContainerHierarchyHooks } from "./integrations/storage-container-hierarchy.js?v=1.4.122-storage-container-cycle-repair";
 import { registerTransportVehicleSheetHooks } from "./integrations/transport-vehicle-sheet.js";
@@ -1122,12 +1121,6 @@ export class RebreyaMainModule {
       actorProvider: () => globalThis.Actor,
       isActiveGm: isActiveGmClient
     });
-    this.builtinCoinTemplateService = new BuiltinCoinTemplateService({
-      gameProvider: () => globalThis.game,
-      folderProvider: () => globalThis.Folder,
-      itemProvider: () => globalThis.Item,
-      isActiveGm: isActiveGmClient
-    });
     this.storageGroundPileService = new StorageGroundPileService({
       gameProvider: () => globalThis.game,
       isActiveGm: isActiveGmClient
@@ -1630,16 +1623,6 @@ export class RebreyaMainModule {
     }
   }
 
-  async restoreBuiltinCoinTemplates() {
-    try {
-      return await this.builtinCoinTemplateService.sync();
-    }
-    catch (error) {
-      console.warn(`${MODULE_ID} | Failed to restore built-in coin templates.`, error);
-      return null;
-    }
-  }
-
   async initialize() {
     if (globalThis.game?.user?.isGM === true) {
       try {
@@ -1689,7 +1672,14 @@ export class RebreyaMainModule {
       console.warn(`${MODULE_ID} | Failed to sync managed map object documents.`, error);
     }
     await this.restoreBuiltinStorageActors();
-    await this.restoreBuiltinCoinTemplates();
+    if (isActiveGmClient(globalThis.game)) {
+      try {
+        await this.storageGroundPileService.repairLegacyCoinRows();
+      }
+      catch (error) {
+        console.warn(`${MODULE_ID} | Failed to repair legacy ground coin rows.`, error);
+      }
+    }
     try {
       await this.storageOpenSoundService.cleanupStale(globalThis.canvas?.scene);
     }

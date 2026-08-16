@@ -236,11 +236,12 @@ test("world and compendium item deposits copy without mutating their source", as
   }
 });
 
-test("managed world Coin Items resolve from their stable flag as unbounded copy sources", async () => {
+test("managed gear-compendium coin Items resolve from their stable flag as unbounded copy sources", async () => {
   const item = {
-    uuid: "Item.gold-template",
+    uuid: "Compendium.world.rebreya-gear.Item.gold-template",
     documentName: "Item",
     parent: null,
+    pack: "world.rebreya-gear",
     name: "Переименованный жетон",
     type: "loot",
     img: "custom.webp",

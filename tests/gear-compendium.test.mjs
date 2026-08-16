@@ -6,7 +6,8 @@ import { fileURLToPath } from "node:url";
 
 import {
   createDnd5eItemData,
-  getPrimaryGearDocumentCreateOptions
+  getPrimaryGearDocumentCreateOptions,
+  removeLegacyWorldCoinTemplates
 } from "../scripts/data/gear-compendium.js";
 import { buildNamedIconLookup } from "../scripts/data/compendium-utils.js";
 import { createStableGearDocumentId } from "../scripts/data/gear-document-ids.js";
@@ -687,6 +688,124 @@ test("real gear ammunition rows create dnd5e consumable ammo items", () => {
     assert.equal(created.flags["rebreya-main"].priceGoldEquivalent, item.priceGoldEquivalent / quantity);
   }
   assert.deepEqual(untypedAmmunition, []);
+});
+
+test("the spreadsheet gear catalog owns the four managed coin Items", () => {
+  const gear = JSON.parse(readFileSync(join(TESTS_DIR, "..", "data", "gear.json"), "utf8").replace(/^\uFEFF/u, ""));
+  const byId = new Map(gear.map((item) => [item.id, item]));
+  const expected = [
+    ["platinovaya-moneta", "pp", "Платиновая монета", 10],
+    ["zolota-moneta", "gp", "Золота монета", 1],
+    ["serebryannaya-moneta", "sp", "Серебрянная монета", 0.1],
+    ["mednaya-moneta", "cp", "Медная монета", 0.01]
+  ];
+  const folderIds = new Map([["Сокровища", "treasure-folder"]]);
+
+  for (const [gearId, denomination, name, priceGoldEquivalent] of expected) {
+    const source = byId.get(gearId);
+    assert.ok(source, `${gearId} exists in canonical gear data`);
+    assert.equal(source.name, name);
+    assert.equal(source.equipmentType, "Сокровища");
+    assert.equal(source.priceValue, 1);
+    assert.equal(source.priceDenomination, denomination);
+    assert.equal(source.priceGoldEquivalent, priceGoldEquivalent);
+
+    const created = createDnd5eItemData(source, folderIds);
+    assert.equal(created.name, name);
+    assert.equal(created.type, "loot");
+    assert.equal(created.folder, "treasure-folder");
+    assert.equal(created.system.quantity, 1);
+    assert.equal(created.system.type.value, "treasure");
+    assert.equal(created.flags["rebreya-main"].managed, true);
+    assert.equal(created.flags["rebreya-main"].sourceType, "gear");
+    assert.equal(created.flags["rebreya-main"].gearId, gearId);
+    assert.deepEqual(created.flags["rebreya-main"].storageCoinTemplate, {
+      version: 1,
+      denomination
+    });
+  }
+});
+
+test("gear sync cleanup removes only legacy managed world coin templates and their empty folder", async () => {
+  const coinFolder = { id: "legacy-coins", name: "МОНЕТЫ", type: "Item", folder: null };
+  const userFolder = { id: "user-coins", name: "МОНЕТЫ", type: "Item", folder: null };
+  const legacyCoin = {
+    id: "legacy-gp",
+    folder: coinFolder,
+    flags: {
+      "rebreya-main": {
+        sourceType: "coinTemplate",
+        storageCoinTemplate: { version: 1, denomination: "gp" }
+      }
+    }
+  };
+  const sameNameUserItem = {
+    id: "user-item",
+    name: "Золотая монета",
+    folder: userFolder,
+    flags: {}
+  };
+  const unsupportedFlagItem = {
+    id: "future-gp",
+    name: "Будущая золотая монета",
+    folder: userFolder,
+    flags: {
+      "rebreya-main": {
+        sourceType: "coinTemplate",
+        storageCoinTemplate: { version: 2, denomination: "gp" }
+      }
+    }
+  };
+  const itemDeletes = [];
+  const folderDeletes = [];
+
+  const result = await removeLegacyWorldCoinTemplates({
+    gameRef: {
+      user: { id: "gm", isGM: true, active: true },
+      users: [{ id: "gm", isGM: true, active: true }],
+      items: [legacyCoin, sameNameUserItem, unsupportedFlagItem],
+      folders: [coinFolder, userFolder]
+    },
+    ItemClass: { deleteDocuments: async (ids) => itemDeletes.push([...ids]) },
+    FolderClass: { deleteDocuments: async (ids) => folderDeletes.push([...ids]) }
+  });
+
+  assert.deepEqual(itemDeletes, [["legacy-gp"]]);
+  assert.deepEqual(folderDeletes, [["legacy-coins"]]);
+  assert.deepEqual(result, { deletedItemIds: ["legacy-gp"], deletedFolderIds: ["legacy-coins"] });
+});
+
+test("gear sync cleanup preserves a legacy folder that still contains an unmanaged Item", async () => {
+  const folder = { id: "legacy-coins", name: "МОНЕТЫ", type: "Item", folder: null };
+  const itemDeletes = [];
+  const folderDeletes = [];
+  await removeLegacyWorldCoinTemplates({
+    gameRef: {
+      user: { id: "gm", isGM: true, active: true },
+      users: [{ id: "gm", isGM: true, active: true }],
+      items: [{
+        id: "legacy-cp",
+        folder,
+        flags: {
+          "rebreya-main": {
+            sourceType: "coinTemplate",
+            storageCoinTemplate: { version: 1, denomination: "cp" }
+          }
+        }
+      }, {
+        id: "user-cp",
+        name: "Медная монета",
+        folder,
+        flags: {}
+      }],
+      folders: [folder]
+    },
+    ItemClass: { deleteDocuments: async (ids) => itemDeletes.push([...ids]) },
+    FolderClass: { deleteDocuments: async (ids) => folderDeletes.push([...ids]) }
+  });
+
+  assert.deepEqual(itemDeletes, [["legacy-cp"]]);
+  assert.deepEqual(folderDeletes, []);
 });
 
 test("Rebreya weapon ids can point at live gear documents instead of predicted ids", () => {

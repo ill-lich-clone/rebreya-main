@@ -59,6 +59,22 @@ test("PowerShell gear import selects the named base sheet and maps columns by he
       "current common gear sheet must import every curse product"
     );
     assert.equal(new Set(gear.map((entry) => entry.id)).size, gear.length);
+    const importedCoins = gear
+      .filter((entry) => entry.equipmentType === "Сокровища" && /монета$/iu.test(entry.name))
+      .map((entry) => [entry.name, entry.priceValue, entry.priceDenomination, entry.priceGoldEquivalent]);
+    assert.deepEqual(importedCoins, [
+      ["Медная монета", 1, "cp", 0.01],
+      ["Серебрянная монета", 1, "sp", 0.1],
+      ["Золота монета", 1, "gp", 1],
+      ["Платиновая монета", 1, "pp", 10]
+    ]);
+    assert.equal(
+      gear.every((entry) => /^(?:[1-9]\d*|[1-9]\d*[кd][1-9]\d*)$/u.test(entry.multipleAppearance)),
+      true,
+      "import must preserve authored multiplicity and default new rows to one"
+    );
+    assert.equal(gear.find((entry) => entry.name === "Бумага (один лист)")?.multipleAppearance, "2к12");
+    assert.equal(gear.find((entry) => entry.name === "Платиновая монета")?.multipleAppearance, "1");
     assert.equal(
       gear.some((entry) => /транспорт|скакун/iu.test(entry.equipmentType)),
       false,

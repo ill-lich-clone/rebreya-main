@@ -3,9 +3,11 @@ import assert from "node:assert/strict";
 
 import {
   STORAGE_UPDATED_HOOK,
+  STORAGE_COIN_DENOMINATIONS,
   StorageService,
   deriveStorageDisplayName,
   isStorageActor,
+  readStorageCoinDenomination,
   readStorageState,
   readStorageStateAtPath
 } from "../scripts/data/storage-service.js";
@@ -34,6 +36,23 @@ function createStorageToken(id, name = "Сундук") {
     }
   };
 }
+
+test("storage owns coin denominations and reads only the exact managed flag", () => {
+  assert.deepEqual(STORAGE_COIN_DENOMINATIONS, ["pp", "gp", "sp", "cp"]);
+  assert.equal(readStorageCoinDenomination({
+    flags: { "rebreya-main": { storageCoinTemplate: { version: 1, denomination: "gp" } } }
+  }), "gp");
+  assert.equal(readStorageCoinDenomination({
+    flags: { "rebreya-main": { storageCoinTemplate: { version: 1, denomination: "ep" } } }
+  }), null);
+  assert.equal(readStorageCoinDenomination({
+    flags: { "rebreya-main": { storageCoinTemplate: { version: 2, denomination: "gp" } } }
+  }), null);
+  assert.equal(readStorageCoinDenomination({
+    flags: { "rebreya-main": { storageCoinTemplate: { denomination: "gp" } } }
+  }), null);
+  assert.equal(readStorageCoinDenomination({ name: "Золотая монета" }), null);
+});
 
 test("two storage tokens using one actor keep independent template snapshots", async () => {
   const service = new StorageService();

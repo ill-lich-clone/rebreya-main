@@ -1,5 +1,10 @@
-import { isStorageActor, readStorageState, readStorageStateAtPath } from "./storage-service.js";
-import { resolveStorageDepositSource } from "./storage-deposit-source.js";
+import {
+  isStorageActor,
+  readStorageCoinDenomination,
+  readStorageState,
+  readStorageStateAtPath
+} from "./storage-service.js?v=1.4.144-spreadsheet-coins-ground-repair";
+import { resolveStorageDepositSource } from "./storage-deposit-source.js?v=1.4.144-spreadsheet-coins-ground-repair";
 import { isStorageContainerRow, isStorageJournalRow } from "./storage-container-snapshot.js";
 import { MODULE_ID } from "../constants.js";
 
@@ -289,9 +294,7 @@ export class StorageCommandService {
 
   async #prepareGroundRow(row, { sourceItem = null, sourceKind = "" } = {}) {
     const prepared = clone(row);
-    const coinDenomination = clean(
-      prepared?.itemData?.flags?.[MODULE_ID]?.storageCoinTemplate?.denomination
-    );
+    const coinDenomination = readStorageCoinDenomination(prepared?.itemData);
     if (!this.durabilityService
       || isStorageContainerRow(prepared)
       || isStorageJournalRow(prepared)
@@ -299,7 +302,7 @@ export class StorageCommandService {
       || sourceKind === "coin-template"
       || sourceKind === "journal"
       || prepared?.rowKind === "coin"
-      || STORAGE_COIN_DENOMINATIONS.has(coinDenomination)) {
+      || coinDenomination) {
       return prepared;
     }
     const durability = await this.durabilityService.getOrBuildDurability(

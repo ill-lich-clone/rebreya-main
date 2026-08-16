@@ -1,7 +1,12 @@
 import { MODULE_ID } from "../constants.js";
-import { BUILTIN_COIN_TEMPLATES } from "./builtin-coin-template-service.js";
 
 const ASSET_ROOT = `modules/${MODULE_ID}/assets/storage/piles`;
+const COIN_PRESENTATIONS = Object.freeze([
+  Object.freeze({ denomination: "pp", name: "Платиновая монета", img: "icons/commodities/currency/coins-assorted-mix-platinum.webp" }),
+  Object.freeze({ denomination: "gp", name: "Золотая монета", img: "icons/commodities/currency/coins-plain-gold.webp" }),
+  Object.freeze({ denomination: "sp", name: "Серебряная монета", img: "icons/commodities/currency/coins-assorted-mix-silver.webp" }),
+  Object.freeze({ denomination: "cp", name: "Медная монета", img: "icons/commodities/currency/coins-assorted-mix-copper.webp" })
+]);
 
 function clean(value) {
   return String(value ?? "").trim().replace(/\s+/gu, " ");
@@ -48,7 +53,7 @@ const PRESENTATION_BY_TYPE = new Map(STORAGE_PILE_PRESENTATIONS
 
 export function deriveGroundPilePresentation(rows = [], { coins = {}, preserveEmptyCoinPile = false } = {}) {
   const visibleRows = (Array.isArray(rows) ? rows : []).filter((row) => row && typeof row === "object");
-  const positiveDenominations = BUILTIN_COIN_TEMPLATES.filter(({ denomination }) => {
+  const positiveDenominations = COIN_PRESENTATIONS.filter(({ denomination }) => {
     const amount = Number(coins?.[denomination] ?? 0);
     return Number.isFinite(amount) && Math.trunc(amount) > 0;
   });

@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   handleStorageActorSheetDrop,
@@ -11,6 +12,10 @@ import {
   transferStorageDropToCharacter
 } from "../scripts/integrations/storage-transfer-drop.js";
 import { STORAGE_DRAG_TYPE } from "../scripts/ui/storage-transfer-ui.js";
+import { createDnd5eItemData } from "../scripts/data/gear-compendium.js";
+import { resolveStorageDepositSource } from "../scripts/data/storage-deposit-source.js";
+
+globalThis.CONST ??= { DOCUMENT_OWNERSHIP_LEVELS: { OBSERVER: 2 } };
 
 const storageDrop = {
   type: STORAGE_DRAG_TYPE,
@@ -144,10 +149,13 @@ test("managed Coin Items route only to the physical currency pile API", async ()
   const itemCalls = [];
   const result = await transferFoundryItemDropToCanvas(
     { scene: { id: "scene" } },
-    { type: "Item", uuid: "Item.gold-template", x: 240, y: 360 },
+    { type: "Item", uuid: "Compendium.world.rebreya-gear.Item.gold-template", x: 240, y: 360 },
     {
       async inspectStorageDepositSource(source) {
-        assert.deepEqual(source, { kind: "item", itemUuid: "Item.gold-template" });
+        assert.deepEqual(source, {
+          kind: "item",
+          itemUuid: "Compendium.world.rebreya-gear.Item.gold-template"
+        });
         return { kind: "coin-template", denomination: "gp", available: null, mode: "copy" };
       },
       async dropStorageCoinsToScene(...args) { coinCalls.push(args); return { changed: true }; },
@@ -162,11 +170,60 @@ test("managed Coin Items route only to the physical currency pile API", async ()
 
   assert.equal(result.handled, true);
   assert.equal(result.quantity, 25);
-  assert.deepEqual(coinCalls, [["Item.gold-template", "gp", {
+  assert.deepEqual(coinCalls, [["Compendium.world.rebreya-gear.Item.gold-template", "gp", {
     sceneId: "scene",
     x: 240,
     y: 360,
     quantity: 25
+  }]]);
+  assert.deepEqual(itemCalls, []);
+});
+
+test("the synced gear-compendium gold row reaches manual coin API without an Item route", async () => {
+  const gear = JSON.parse(readFileSync(new URL("../data/gear.json", import.meta.url), "utf8").replace(/^\uFEFF/u, ""));
+  const sourceRow = gear.find((item) => item.id === "zolota-moneta");
+  const itemData = createDnd5eItemData(sourceRow, new Map([["Сокровища", "treasure-folder"]]));
+  const item = {
+    ...itemData,
+    id: itemData._id,
+    uuid: `Compendium.world.rebreya-gear.Item.${itemData._id}`,
+    documentName: "Item",
+    parent: null,
+    pack: "world.rebreya-gear",
+    toObject() { return structuredClone(itemData); }
+  };
+  const coinCalls = [];
+  const itemCalls = [];
+
+  await transferFoundryItemDropToCanvas(
+    { scene: { id: "scene" } },
+    { type: "Item", uuid: item.uuid, x: 240, y: 360 },
+    {
+      async inspectStorageDepositSource(sourceRef) {
+        const source = await resolveStorageDepositSource(sourceRef, { fromUuid: async () => item });
+        return {
+          kind: source.kind,
+          denomination: source.denomination,
+          available: source.available,
+          mode: source.mode
+        };
+      },
+      async dropStorageCoinsToScene(...args) { coinCalls.push(args); return { changed: true }; },
+      async dropStorageItemToScene(...args) { itemCalls.push(args); return { changed: true }; }
+    },
+    { prompt: async () => 100 }
+  );
+
+  assert.equal(itemData.flags["rebreya-main"].sourceType, "gear");
+  assert.deepEqual(itemData.flags["rebreya-main"].storageCoinTemplate, {
+    version: 1,
+    denomination: "gp"
+  });
+  assert.deepEqual(coinCalls, [[item.uuid, "gp", {
+    sceneId: "scene",
+    x: 240,
+    y: 360,
+    quantity: 100
   }]]);
   assert.deepEqual(itemCalls, []);
 });

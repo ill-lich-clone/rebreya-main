@@ -13,7 +13,7 @@ import {
   markDurabilityBroken,
   markDurabilityDestroyed,
   resolveDurabilityProfile
-} from "./durability-rules.js";
+} from "./durability-rules.js?v=1.4.144-spreadsheet-coins-ground-repair";
 
 const DURABILITY_FLAG_PATH = `flags.${MODULE_ID}.durability`;
 const SIDE_EFFECT_LEASE_MS = 30_000;

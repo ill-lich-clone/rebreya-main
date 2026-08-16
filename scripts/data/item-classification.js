@@ -812,6 +812,19 @@ export function classifyGearEntry(item = {}) {
     };
   }
 
+  if (normalizedEquipmentType === normalizeText("Сокровища")) {
+    return {
+      documentType: "loot",
+      systemTypeValue: "treasure",
+      systemTypeSubtype: "",
+      baseItem: "",
+      folderPath: "Сокровища",
+      heroDollSlots: [],
+      firearmClass: "",
+      sourceCategory: "Сокровища"
+    };
+  }
+
   if (normalizedEquipmentType === normalizeText("Боеприпас") || normalizedEquipmentType === normalizeText("Боеприпасы")) {
     const ammoProfile = buildGenericAmmoProfile(item.name);
     return {

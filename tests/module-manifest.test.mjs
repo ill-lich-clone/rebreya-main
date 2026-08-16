@@ -63,8 +63,8 @@ test("module manifest loads the stable canonical entrypoint", async () => {
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const [entrypoint] = manifest.esmodules;
 
-  assert.equal(manifest.version, "1.4.143");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.143.js"]);
+  assert.equal(manifest.version, "1.4.144");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.144.js"]);
   assert.doesNotMatch(entrypoint, /[?#]/u);
 
   const entrypointSource = await readFile(new URL(entrypoint, manifestUrl), "utf8");
@@ -72,7 +72,7 @@ test("module manifest loads the stable canonical entrypoint", async () => {
     entrypointSource,
     [
       "// @rebreya-role versioned-entrypoint-cache-forwarder",
-      'import "./main.js";',
+      'import "./main.js?v=1.4.144-spreadsheet-coins-ground-repair";',
       ""
     ].join("\n")
   );
@@ -208,6 +208,7 @@ test("production has no legacy Craftsman compendium retirement path", async () =
 test("current entrypoint cache-busts the changed craft durability and transfer graph", async () => {
   const canonicalSource = await readCanonicalEntrypointSource();
   const traderServiceSource = await readFile(new URL("../scripts/data/trader-service.js", import.meta.url), "utf8");
+  const durabilityServiceSource = await readFile(new URL("../scripts/data/durability-service.js", import.meta.url), "utf8");
 
   assert.match(
     canonicalSource,
@@ -218,18 +219,28 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
     "data/trader-service.js?v=1.4.109-lazy-trader-restock",
     "data/downtime-service.js?v=1.4.96-craft-calendar",
     "data/inventory-service.js?v=1.4.111-member-transport-filter",
-    "data/durability-service.js?v=1.4.96-durability",
+    "data/durability-service.js?v=1.4.144-spreadsheet-coins-ground-repair",
     "data/crafting-service.js?v=1.4.96-craft-calendar",
     "data/craft-downtime-service.js?v=1.4.96-craft-calendar",
     "data/calendar-transition-coordinator.js?v=1.4.96-craft-calendar",
     "integrations/durability-hooks.js?v=1.4.116-native-durability",
     "integrations/inventory-sync.js?v=1.4.96-durable-transfer",
+    "data/gear-compendium.js?v=1.4.144-spreadsheet-coins-ground-repair",
+    "data/storage-service.js?v=1.4.144-spreadsheet-coins-ground-repair",
+    "data/storage-ground-pile-service.js?v=1.4.144-spreadsheet-coins-ground-repair",
     "data/storage-container-item-service.js?v=1.4.130-storage-player-fixes",
-    "data/storage-deposit-source.js?v=1.4.126-native-container-copies",
+    "data/storage-deposit-source.js?v=1.4.144-spreadsheet-coins-ground-repair",
+    "data/storage-command-service.js?v=1.4.144-spreadsheet-coins-ground-repair",
+    "integrations/storage-transfer-drop.js?v=1.4.144-spreadsheet-coins-ground-repair",
     "integrations/storage-token-drop.js?v=1.4.132-storage-owned-character-resolution"
   ]) {
     assert.equal(canonicalSource.includes(importPath), true, importPath);
   }
+  assert.equal(
+    durabilityServiceSource.includes("durability-rules.js?v=1.4.144-spreadsheet-coins-ground-repair"),
+    true,
+    "durability rule changes need their own browser module cache key"
+  );
 
   assert.match(
     canonicalSource,
@@ -249,7 +260,7 @@ test("module keeps recent published entrypoint URLs as canonical compatibility f
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
 
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.143.js"]);
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.144.js"]);
 
   for (const fileName of ["main-1.4.98.js", "main-1.4.99.js", "main-1.4.100.js"]) {
     const forwarderSource = await readFile(new URL(`../scripts/${fileName}`, import.meta.url), "utf8");
@@ -341,7 +352,7 @@ test("durability service and its persisted mutation journal are wired into the l
 
   assert.equal(constantsModule.DURABILITY_UPDATED_HOOK, "rebreya-main.durabilityUpdated");
   assert.equal(constantsModule.SETTINGS_KEYS.DURABILITY_MUTATION_JOURNAL, "durabilityMutationJournal");
-  assert.match(canonicalSource, /import \{ DurabilityService \} from "\.\/data\/durability-service\.js\?v=1\.4\.96-durability";/u);
+  assert.match(canonicalSource, /import \{ DurabilityService \} from "\.\/data\/durability-service\.js\?v=1\.4\.144-spreadsheet-coins-ground-repair";/u);
   assert.match(canonicalSource, /this\.inventoryService = new InventoryService\(this\);\s+this\.durabilityService = new DurabilityService\(this\);/u);
   assert.match(canonicalSource, /game\.settings\.register\(MODULE_ID, SETTINGS_KEYS\.DURABILITY_MUTATION_JOURNAL,/u);
   for (const method of ["initializeItem", "damageItem", "breakItem", "destroyItem", "getDurability", "isBroken"]) {
@@ -432,12 +443,12 @@ test("module entrypoint preserves the released magic weapon template cache bust"
   assert.match(entrypointSource, /registerMagicWeaponTemplateHook\(moduleApi\)/u);
 });
 
-test("gear compendium import preserves the released firearm activity cache bust", async () => {
+test("gear compendium import uses the current spreadsheet coin cache bust", async () => {
   const entrypointSource = await readCanonicalEntrypointSource();
 
   assert.match(
     entrypointSource,
-    /gear-compendium\.js\?v=1\.4\.111-ammunition-template-version-20&implants=1/u,
+    /gear-compendium\.js\?v=1\.4\.144-spreadsheet-coins-ground-repair/u,
   );
 });
 

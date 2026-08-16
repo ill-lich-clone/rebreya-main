@@ -180,7 +180,7 @@ test("builtin gear catalog gives every loot item an explicit valid multiplicity"
   const gear = JSON.parse(await readFile(new URL("../data/gear.json", import.meta.url), "utf8"));
   const byName = new Map(gear.map((item) => [item.name, item]));
 
-  assert.equal(gear.length, 684);
+  assert.equal(gear.length, 694);
   assert.equal(gear.every((item) => /^(?:[1-9]\d*|[1-9]\d*[кd][1-9]\d*)$/u.test(item.multipleAppearance)), true);
   assert.equal(byName.get("Бумага (один лист)")?.multipleAppearance, "2к12");
   assert.equal(byName.get("Стрелы (20)")?.multipleAppearance, "1");

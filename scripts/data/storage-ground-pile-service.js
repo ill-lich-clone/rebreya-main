@@ -1,7 +1,14 @@
 import { MODULE_ID } from "../constants.js";
 import { GROUND_PILE_PRESET_ID } from "./builtin-storage-presets.js";
-import { buildStorageTokenState, readStorageState } from "./storage-service.js";
-import { deriveGroundPilePresentation, isGroundPileToken } from "./storage-pile-presentation.js";
+import {
+  buildStorageTokenState,
+  readStorageCoinDenomination,
+  readStorageState
+} from "./storage-service.js?v=1.4.144-spreadsheet-coins-ground-repair";
+import {
+  deriveGroundPilePresentation,
+  isGroundPileToken
+} from "./storage-pile-presentation.js?v=1.4.144-spreadsheet-coins-ground-repair";
 
 function clone(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));
@@ -77,6 +84,59 @@ function visibleRows(state) {
   const claimed = new Set(state?.claimedRowIds ?? []);
   return [...(state?.manualRows ?? []), ...(state?.generatedRows ?? [])]
     .filter((row) => !claimed.has(clean(row?.rowId)));
+}
+
+function coinRowDenomination(row) {
+  return readStorageCoinDenomination(row?.itemData ?? row);
+}
+
+function splitLegacyCoinRows(rows, claimedRowIds) {
+  const claimed = new Set(claimedRowIds ?? []);
+  const keptRows = [];
+  let convertedCoins = normalizedCoins({});
+  let convertedRows = 0;
+  const removedRowIds = [];
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const denomination = coinRowDenomination(row);
+    if (!denomination) {
+      keptRows.push(clone(row));
+      continue;
+    }
+    const rowId = clean(row?.rowId);
+    removedRowIds.push(rowId);
+    convertedRows += 1;
+    if (claimed.has(rowId)) continue;
+    const quantity = Number(row?.quantity ?? row?.itemData?.system?.quantity);
+    if (!Number.isSafeInteger(quantity) || quantity < 1) {
+      throw new Error("Количество managed Coin Item в наземной куче должно быть положительным безопасным целым числом.");
+    }
+    convertedCoins = addManualCoinsChecked(convertedCoins, { [denomination]: quantity });
+  }
+  return { rows: keptRows, convertedCoins, convertedRows, removedRowIds };
+}
+
+function migrateLegacyCoinRowsInState(state) {
+  const claimedRowIds = state?.claimedRowIds ?? [];
+  const manual = splitLegacyCoinRows(state?.manualRows, claimedRowIds);
+  const generated = splitLegacyCoinRows(state?.generatedRows, claimedRowIds);
+  const convertedRows = manual.convertedRows + generated.convertedRows;
+  if (convertedRows === 0) return null;
+  const convertedCoins = addManualCoinsChecked(manual.convertedCoins, generated.convertedCoins);
+  const hasConvertedCoins = hasPositiveCoins(convertedCoins);
+  const discardClaimedBalances = hasConvertedCoins && state?.coinsClaimed === true;
+  const removed = new Set([...manual.removedRowIds, ...generated.removedRowIds].filter(Boolean));
+  return {
+    state: {
+      ...state,
+      manualRows: manual.rows,
+      generatedRows: generated.rows,
+      claimedRowIds: claimedRowIds.filter((rowId) => !removed.has(clean(rowId))),
+      manualCoins: addManualCoinsChecked(discardClaimedBalances ? {} : state?.manualCoins, convertedCoins),
+      generatedCoins: discardClaimedBalances ? normalizedCoins({}) : state?.generatedCoins,
+      coinsClaimed: hasConvertedCoins ? false : state?.coinsClaimed
+    },
+    convertedRows
+  };
 }
 
 function tokenContainsPoint(token, scene, x, y) {
@@ -166,11 +226,24 @@ export class StorageGroundPileService {
       coinPile: presentation.categoryKey === "coins",
       mutationIds: Array.from(new Set(mutationIds.map(clean).filter(Boolean))).slice(-100)
     };
+    const resize = {};
+    if (presentation.categoryKey === "coins") {
+      const gridSize = Math.max(1, Number(token?.parent?.grid?.size ?? token?.parent?.grid?.sizeX ?? 100) || 100);
+      const currentWidth = Math.max(0.5, Number(token?.width ?? 1));
+      const currentHeight = Math.max(0.5, Number(token?.height ?? 1));
+      const centerX = Number(token?.x ?? 0) + currentWidth * gridSize / 2;
+      const centerY = Number(token?.y ?? 0) + currentHeight * gridSize / 2;
+      resize.width = 0.5;
+      resize.height = 0.5;
+      resize.x = centerX - gridSize / 4;
+      resize.y = centerY - gridSize / 4;
+    }
     await token.update({
       [`flags.${MODULE_ID}.storage`]: normalized,
       [`flags.${MODULE_ID}.groundPile`]: groundPile,
       name: presentation.name,
       "texture.src": presentation.img,
+      ...resize,
       ...(clean(ownerUserId) ? { delta: ownedSyntheticActorDelta(token?.delta, ownerUserId) } : {})
     });
     return normalized;
@@ -178,9 +251,10 @@ export class StorageGroundPileService {
 
   async transferToScene({ row, quantity, sceneId, x, y, mutationId, ownerUserId = "" } = {}) {
     const incoming = this.#prepareRow(row, quantity);
+    const denomination = coinRowDenomination(incoming);
     return this.#transferPreparedSnapshot({
-      rows: [incoming],
-      coins: {},
+      rows: denomination ? [] : [incoming],
+      coins: denomination ? { [denomination]: incoming.quantity } : {},
       sceneId,
       x,
       y,
@@ -193,9 +267,10 @@ export class StorageGroundPileService {
     const incomingRows = (Array.isArray(rows) ? rows : [])
       .filter((row) => row && typeof row === "object")
       .map((row) => this.#prepareRow(row, rowQuantity(row)));
+    const split = splitLegacyCoinRows(incomingRows, []);
     return this.#transferPreparedSnapshot({
-      rows: incomingRows,
-      coins: normalizedCoins(coins),
+      rows: split.rows,
+      coins: addManualCoinsChecked(coins, split.convertedCoins),
       sceneId,
       x,
       y,
@@ -332,12 +407,12 @@ export class StorageGroundPileService {
     });
     const prototype = clone(actor?.prototypeToken?.toObject?.() ?? actor?.prototypeToken ?? {});
     const hasCoins = hasPositiveCoins(incomingCoins);
-    const singleOrdinaryItem = rows.length === 1
+    const tinyGroundItem = presentation.categoryKey === "coins" || (rows.length === 1
       && rows[0]?.rowKind !== "container"
       && !rows[0]?.container
-      && !hasCoins;
-    const tokenWidth = singleOrdinaryItem ? 0.5 : Math.max(1, Number(prototype.width ?? 1));
-    const tokenHeight = singleOrdinaryItem ? 0.5 : Math.max(1, Number(prototype.height ?? 1));
+      && !hasCoins);
+    const tokenWidth = tinyGroundItem ? 0.5 : Math.max(1, Number(prototype.width ?? 1));
+    const tokenHeight = tinyGroundItem ? 0.5 : Math.max(1, Number(prototype.height ?? 1));
     const gridSize = Math.max(1, Number(scene?.grid?.size ?? scene?.grid?.sizeX ?? 100) || 100);
     const data = {
       ...prototype,
@@ -385,5 +460,29 @@ export class StorageGroundPileService {
     });
     const next = await this.#writePile(token, state, presentation, groundFlag.mutationIds ?? []);
     return { deleted: false, state: next };
+  }
+
+  async repairLegacyCoinRows() {
+    const game = this.#requireActiveGm();
+    let repairedTokens = 0;
+    let convertedRows = 0;
+    for (const scene of collectionValues(game?.scenes)) {
+      await this.#runSceneMutation(scene?.id, async () => {
+        for (const token of collectionValues(scene?.tokens)) {
+          if (!isGroundPileToken(token)) continue;
+          const migration = migrateLegacyCoinRowsInState(readStorageState(token));
+          if (!migration) continue;
+          const groundFlag = clone(readFlag(token, "groundPile")) ?? {};
+          const presentation = deriveGroundPilePresentation(visibleRows(migration.state), {
+            coins: unclaimedCoins(migration.state),
+            preserveEmptyCoinPile: groundFlag.coinPile === true
+          });
+          await this.#writePile(token, migration.state, presentation, groundFlag.mutationIds ?? []);
+          repairedTokens += 1;
+          convertedRows += migration.convertedRows;
+        }
+      });
+    }
+    return { repairedTokens, convertedRows };
   }
 }

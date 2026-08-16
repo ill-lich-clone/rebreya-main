@@ -1,6 +1,11 @@
 import { MODULE_ID } from "../constants.js";
 import { GROUND_PILE_PRESET_ID } from "./builtin-storage-presets.js";
-import { isStorageActor, readStorageState, readStorageStateAtPath } from "./storage-service.js";
+import {
+  isStorageActor,
+  readStorageCoinDenomination,
+  readStorageState,
+  readStorageStateAtPath
+} from "./storage-service.js?v=1.4.144-spreadsheet-coins-ground-repair";
 import {
   buildStorageContainerRow,
   isStorageContainerRow,
@@ -8,7 +13,6 @@ import {
   rekeyStorageContainerSnapshot
 } from "./storage-container-snapshot.js?v=1.4.126-native-container-copies";
 import { buildStorageContainerSnapshotFromToken } from "./storage-container-item-service.js";
-import { readBuiltinCoinDenomination } from "./builtin-coin-template-service.js";
 import { parseStorageDragData } from "../ui/storage-transfer-ui.js";
 
 function clone(value) {
@@ -261,7 +265,7 @@ async function resolveItemSource(sourceRef, { fromUuid, createRowId, containerIt
   const available = itemQuantity(item);
   const embedded = isEmbeddedActorItem(item);
   const parent = embedded ? item.parent : null;
-  const denomination = readBuiltinCoinDenomination(item);
+  const denomination = readStorageCoinDenomination(item);
   if (denomination) {
     const coinAvailable = embedded ? positiveQuantity(item?.system?.quantity) : null;
     if (embedded && !coinAvailable) {

@@ -102,6 +102,28 @@ const treasure = {
   itemData: { name: "Рубин", system: { quantity: 1 } }
 };
 
+const platinumCoinItemRow = {
+  rowId: "legacy-platinum-coin",
+  sourceType: "gear",
+  sourceId: "Compendium.world.rebreya-gear.Item.platinum",
+  name: "Платиновая монета",
+  img: "icons/commodities/currency/coins-assorted-mix-platinum.webp",
+  typeLabel: "Сокровища",
+  quantity: 1,
+  itemData: {
+    name: "Платиновая монета",
+    type: "loot",
+    img: "icons/commodities/currency/coins-assorted-mix-platinum.webp",
+    system: { quantity: 1, type: { value: "treasure" } },
+    flags: {
+      [MODULE_ID]: {
+        sourceType: "gear",
+        storageCoinTemplate: { version: 1, denomination: "pp" }
+      }
+    }
+  }
+};
+
 test("canvas transfer creates an unlinked independent ground pile token", async () => {
   const { service, tokens } = createHarness();
   const result = await service.transferToScene({
@@ -484,6 +506,25 @@ test("snapshot transfer passes coins into treasure presentation", async () => {
   assert.equal(tokens[0].flags[MODULE_ID].groundPile.coinPile, false);
 });
 
+test("snapshot transfer converts managed coin rows into manualCoins before creating the pile", async () => {
+  const { service, tokens } = createHarness();
+  await service.transferSnapshotToScene({
+    rows: [platinumCoinItemRow],
+    coins: { gp: 100 },
+    sceneId: "scene",
+    x: 300,
+    y: 400,
+    mutationId: "coin-row-snapshot"
+  });
+
+  const state = readStorageState(tokens[0]);
+  assert.deepEqual(state.manualRows, []);
+  assert.deepEqual(state.manualCoins, { pp: 1, gp: 100, sp: 0, cp: 0 });
+  assert.equal(tokens[0].name, "Куча монет");
+  assert.equal(tokens[0].width, 0.5);
+  assert.equal(tokens[0].height, 0.5);
+});
+
 test("a complete snapshot creates one pile with every row and coin", async () => {
   const { service, tokens } = createHarness();
 
@@ -552,4 +593,85 @@ test("snapshot retries are idempotent while new snapshots stack rows and add coi
   assert.equal(state.manualRows.length, 1);
   assert.equal(state.manualRows[0].quantity, 10);
   assert.deepEqual(state.manualCoins, { pp: 0, gp: 5, sp: 0, cp: 7 });
+});
+
+test("pure coin piles use the tiny ground-item token size", async () => {
+  const { service, tokens } = createHarness();
+
+  await service.transferCoinsToScene({
+    coins: { gp: 100 },
+    sceneId: "scene",
+    x: 300,
+    y: 400,
+    mutationId: "tiny-gold-pile"
+  });
+
+  assert.equal(tokens[0].width, 0.5);
+  assert.equal(tokens[0].height, 0.5);
+  assert.equal(tokens[0].x, 275);
+  assert.equal(tokens[0].y, 375);
+});
+
+test("a managed Coin Item dropped onto existing gold becomes manual platinum currency, never an Item row", async () => {
+  const { service, tokens } = createHarness();
+  await service.transferCoinsToScene({
+    coins: { gp: 100 },
+    sceneId: "scene",
+    x: 300,
+    y: 400,
+    mutationId: "existing-gold"
+  });
+
+  await service.transferToScene({
+    row: platinumCoinItemRow,
+    quantity: 1,
+    sceneId: "scene",
+    x: 300,
+    y: 400,
+    mutationId: "platinum-item-on-gold"
+  });
+
+  const state = readStorageState(tokens[0]);
+  assert.deepEqual(state.manualRows, []);
+  assert.deepEqual(state.manualCoins, { pp: 1, gp: 100, sp: 0, cp: 0 });
+  assert.equal(tokens[0].name, "Куча монет");
+  assert.equal(tokens[0].texture.src, `modules/${MODULE_ID}/assets/storage/piles/coins.png`);
+  assert.equal(tokens[0].width, 0.5);
+  assert.equal(tokens[0].height, 0.5);
+});
+
+test("active GM idempotently migrates legacy Coin Item rows into manualCoins and repairs presentation and size", async () => {
+  const { service, tokens } = createHarness();
+  await service.transferToScene({
+    row: sword,
+    quantity: 1,
+    sceneId: "scene",
+    x: 300,
+    y: 400,
+    mutationId: "legacy-pile-seed"
+  });
+  const token = tokens[0];
+  const legacyState = readStorageState(token);
+  legacyState.manualRows = [structuredClone(platinumCoinItemRow)];
+  legacyState.manualCoins = { pp: 0, gp: 100, sp: 0, cp: 0 };
+  token.flags[MODULE_ID].storage = legacyState;
+  token.width = 1;
+  token.height = 1;
+  token.x = 250;
+  token.y = 350;
+
+  const first = await service.repairLegacyCoinRows();
+  const second = await service.repairLegacyCoinRows();
+
+  assert.deepEqual(first, { repairedTokens: 1, convertedRows: 1 });
+  assert.deepEqual(second, { repairedTokens: 0, convertedRows: 0 });
+  const repaired = readStorageState(token);
+  assert.deepEqual(repaired.manualRows, []);
+  assert.deepEqual(repaired.manualCoins, { pp: 1, gp: 100, sp: 0, cp: 0 });
+  assert.equal(token.name, "Куча монет");
+  assert.equal(token.texture.src, `modules/${MODULE_ID}/assets/storage/piles/coins.png`);
+  assert.equal(token.width, 0.5);
+  assert.equal(token.height, 0.5);
+  assert.equal(token.x, 275);
+  assert.equal(token.y, 375);
 });

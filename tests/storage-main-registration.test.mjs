@@ -46,6 +46,7 @@ async function waitForSocketResult(emitted, requestId) {
 
 test("main registers the storage deposit socket API and current cache keys", async () => {
   const main = await readFile(new URL("../scripts/main.js", import.meta.url), "utf8");
+  const storageCommand = await readFile(new URL("../scripts/data/storage-command-service.js", import.meta.url), "utf8");
   const manifest = JSON.parse(await readFile(new URL("../module.json", import.meta.url), "utf8"));
 
   assert.match(main, /isValidStorageDepositPayload/u);
@@ -60,7 +61,7 @@ test("main registers the storage deposit socket API and current cache keys", asy
   assert.match(main, /register\(STORAGE_DROP_ITEM_COMMAND,\s*\{/u);
   assert.match(main, /this\.storageCommandService\.dropItemToScene\(payload,\s*\{ sender \}\)/u);
   assert.match(main, /async dropStorageItemToScene\(/u);
-  assert.match(main, /this\.builtinCoinTemplateService = new BuiltinCoinTemplateService\(\{/u);
+  assert.doesNotMatch(main, /BuiltinCoinTemplateService|builtinCoinTemplateService|restoreBuiltinCoinTemplates/u);
   assert.match(main, /this\.storageJournalReader = new StorageJournalReader\(\{/u);
   assert.match(main, /registerStorageTokenDropHooks\(moduleApi/u);
   assert.match(main, /STORAGE_TOKEN_CHARACTER_COMMAND\s*=\s*"storage\.token-to-character"/u);
@@ -70,22 +71,29 @@ test("main registers the storage deposit socket API and current cache keys", asy
   assert.match(main, /register\(STORAGE_RESTORE_PORTABLE_COMMAND,\s*\{/u);
   assert.match(main, /this\.storageCommandService\.restorePortableItem\(payload,\s*\{ sender \}\)/u);
   assert.match(main, /this\.storageContainerItemService = new StorageContainerItemService\(\);/u);
+  assert.match(main, /await this\.storageGroundPileService\.repairLegacyCoinRows\(\);/u);
   for (const importPath of [
-    "data/storage-service.js?v=1.4.119-storage-canvas-drops",
+    "data/storage-service.js?v=1.4.144-spreadsheet-coins-ground-repair",
     "data/storage-access.js?v=1.4.133-ground-item-polish",
-    "data/storage-ground-pile-service.js?v=1.4.133-ground-item-polish",
+    "data/storage-ground-pile-service.js?v=1.4.144-spreadsheet-coins-ground-repair",
     "data/storage-container-item-service.js?v=1.4.130-storage-player-fixes",
-    "data/storage-deposit-source.js?v=1.4.126-native-container-copies",
-    "data/storage-command-service.js?v=1.4.130-storage-player-fixes",
+    "data/storage-deposit-source.js?v=1.4.144-spreadsheet-coins-ground-repair",
+    "data/storage-command-service.js?v=1.4.144-spreadsheet-coins-ground-repair",
     "integrations/storage-token-hooks.js?v=1.4.133-ground-item-polish",
     "combat/hooks.js?v=1.4.134-actor-delta-status-socket",
-    "integrations/storage-transfer-drop.js?v=1.4.131-storage-character-drop",
+    "integrations/storage-transfer-drop.js?v=1.4.144-spreadsheet-coins-ground-repair",
     "integrations/storage-token-drop.js?v=1.4.132-storage-owned-character-resolution",
     "integrations/storage-container-hierarchy.js?v=1.4.122-storage-container-cycle-repair"
   ]) {
     assert.equal(main.includes(importPath), true, importPath);
   }
-  assert.equal(manifest.version, "1.4.143");
+  for (const importPath of [
+    "storage-service.js?v=1.4.144-spreadsheet-coins-ground-repair",
+    "storage-deposit-source.js?v=1.4.144-spreadsheet-coins-ground-repair"
+  ]) {
+    assert.equal(storageCommand.includes(importPath), true, importPath);
+  }
+  assert.equal(manifest.version, "1.4.144");
   assert.match(main, /await registerStorageContainerHierarchyHooks\(\{ Hooks \}\)/u);
 });
 
@@ -248,16 +256,14 @@ test("composed storage command service receives the module durability service in
 });
 
 test("mixed coin asset stays presentation-only and is outside composition and template sync", async () => {
-  const [main, templateService, presentation] = await Promise.all([
+  const [main, presentation] = await Promise.all([
     readFile(new URL("../scripts/main.js", import.meta.url), "utf8"),
-    readFile(new URL("../scripts/data/builtin-coin-template-service.js", import.meta.url), "utf8"),
     readFile(new URL("../scripts/data/storage-pile-presentation.js", import.meta.url), "utf8")
   ]);
 
   assert.match(presentation, /assets\/storage\/piles/u);
   assert.match(presentation, /\["coins", "", "Куча монет", "coins\.png"\]/u);
   assert.doesNotMatch(main, /assets\/storage\/piles\/coins\.png/u);
-  assert.doesNotMatch(templateService, /assets\/storage\/piles\/coins\.png/u);
 });
 
 test("storage drop hook registrations have independent error boundaries", async () => {
