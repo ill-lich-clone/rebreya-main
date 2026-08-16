@@ -80,6 +80,14 @@ function createHarness({ active = true, failPresetId = "" } = {}) {
   return { service, game, folders, actors, scenes, folderCreates, actorCreates };
 }
 
+function makeActorUpdatable(actor) {
+  actor.updates = [];
+  actor.update = async function update(patch) {
+    this.updates.push(structuredClone(patch));
+  };
+  return actor;
+}
+
 test("built-in storage Actor data creates an unlinked closed NPC with independent token state", () => {
   const preset = BUILTIN_STORAGE_PRESETS[0];
   const data = buildBuiltinStorageActorData(preset, "storage-folder");
@@ -162,6 +170,103 @@ test("active GM creates the root folder and every built-in storage Actor exactly
     EXPECTED_SYNC_IDS
   );
   assert.deepEqual(second.actors, first.actors);
+});
+
+test("sync reuses the deterministic oldest storage folder at any nesting level", async () => {
+  const cases = [
+    {
+      name: "oldest known creation time",
+      folders: [
+        { id: "newer-root", name: BUILTIN_STORAGE_FOLDER_NAME, type: "Actor", folder: null, _stats: { createdTime: 200 } },
+        { id: "oldest-nested", name: ` ${BUILTIN_STORAGE_FOLDER_NAME} `, type: "Actor", folder: "parent-folder", _stats: { createdTime: 100 } }
+      ],
+      expectedId: "oldest-nested"
+    },
+    {
+      name: "known time before missing time",
+      folders: [
+        { id: "missing-time", name: BUILTIN_STORAGE_FOLDER_NAME, type: "Actor", folder: "parent-folder" },
+        { id: "known-time", name: BUILTIN_STORAGE_FOLDER_NAME, type: "Actor", folder: null, _stats: { createdTime: 300 } }
+      ],
+      expectedId: "known-time"
+    },
+    {
+      name: "stable ID tie break for equal known times",
+      folders: [
+        { id: "known-z", name: BUILTIN_STORAGE_FOLDER_NAME, type: "Actor", folder: null, _stats: { createdTime: 400 } },
+        { id: "known-a", name: BUILTIN_STORAGE_FOLDER_NAME, type: "Actor", folder: "parent-folder", _stats: { createdTime: 400 } }
+      ],
+      expectedId: "known-a"
+    },
+    {
+      name: "stable ID tie break",
+      folders: [
+        { id: "folder-z", name: BUILTIN_STORAGE_FOLDER_NAME, type: "Actor", folder: null },
+        { id: "folder-a", name: BUILTIN_STORAGE_FOLDER_NAME, type: "Actor", folder: "parent-folder" }
+      ],
+      expectedId: "folder-a"
+    }
+  ];
+
+  for (const fixture of cases) {
+    const harness = createHarness();
+    harness.folders.push(
+      { id: `ignored-${fixture.name}`, name: "Другая папка", type: "Actor", folder: null },
+      ...structuredClone(fixture.folders)
+    );
+
+    const result = await harness.service.sync();
+
+    assert.equal(result.folder.id, fixture.expectedId, fixture.name);
+    assert.equal(harness.folderCreates.length, 0, fixture.name);
+    assert.equal(harness.actorCreates.length, EXPECTED_SYNC_IDS.length, fixture.name);
+    assert.equal(harness.actorCreates.every(({ data }) => data.folder === fixture.expectedId), true, fixture.name);
+  }
+});
+
+test("sync reconciles existing built-in Actors into the oldest storage folder without deleting duplicates", async () => {
+  const harness = createHarness();
+  await harness.service.sync();
+  const initialFolderCreates = harness.folderCreates.length;
+  const canonical = {
+    id: "storage-oldest",
+    name: BUILTIN_STORAGE_FOLDER_NAME,
+    type: "Actor",
+    folder: "under-hand-folder",
+    _stats: { createdTime: 100 }
+  };
+  const duplicate = {
+    id: "storage-newer",
+    name: BUILTIN_STORAGE_FOLDER_NAME,
+    type: "Actor",
+    folder: null,
+    _stats: { createdTime: 200 }
+  };
+  harness.folders.splice(0, harness.folders.length, duplicate, canonical);
+
+  for (const actor of harness.actors) {
+    actor.folder = duplicate.id;
+    actor.name = `Пользовательское имя ${actor.id}`;
+    makeActorUpdatable(actor);
+  }
+  const preservedName = harness.actors[0].name;
+  const preservedRows = [{ rowId: "kept-row", name: "Содержимое", quantity: 1 }];
+  harness.actors[0].prototypeToken.flags[MODULE_ID].storage.manualRows = structuredClone(preservedRows);
+
+  const result = await harness.service.sync();
+
+  assert.equal(result.folder, canonical);
+  assert.equal(harness.folderCreates.length, initialFolderCreates);
+  assert.deepEqual(harness.folders, [duplicate, canonical]);
+  assert.equal(harness.actors[0].name, preservedName);
+  for (const actor of harness.actors) {
+    assert.equal(actor.updates.length, 1);
+    assert.equal(actor.updates[0].folder, canonical.id);
+  }
+  assert.deepEqual(
+    harness.actors[0].updates[0][`prototypeToken.flags.${MODULE_ID}.storage`].manualRows,
+    preservedRows
+  );
 });
 
 test("sync restores only a missing preset and preserves edits to existing Actors", async () => {

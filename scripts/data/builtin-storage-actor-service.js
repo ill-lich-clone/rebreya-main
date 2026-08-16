@@ -39,6 +39,22 @@ function readPresetId(actor) {
   return String(flag?.id ?? "").trim();
 }
 
+function compareBuiltinStorageFolders(left, right) {
+  const leftCreated = left?._stats?.createdTime;
+  const rightCreated = right?._stats?.createdTime;
+  const leftHasCreated = Number.isFinite(leftCreated);
+  const rightHasCreated = Number.isFinite(rightCreated);
+  if (leftHasCreated && rightHasCreated && leftCreated !== rightCreated) {
+    return leftCreated - rightCreated;
+  }
+  if (leftHasCreated !== rightHasCreated) return leftHasCreated ? -1 : 1;
+  const leftId = String(left?.id ?? "");
+  const rightId = String(right?.id ?? "");
+  if (leftId < rightId) return -1;
+  if (leftId > rightId) return 1;
+  return 0;
+}
+
 function initialStorageState(preset) {
   return buildStorageTokenState({
     baseName: preset.prototypeToken.name,
@@ -105,7 +121,7 @@ export class BuiltinStorageActorService {
       const existing = collectionValues(game?.actors)
         .find((actor) => readPresetId(actor) === preset.id);
       if (existing) {
-        await this.#syncExistingActor(existing, preset);
+        await this.#syncExistingActor(existing, preset, folder.id);
         actors.push(existing);
         continue;
       }
@@ -129,8 +145,11 @@ export class BuiltinStorageActorService {
     return { folder, actors };
   }
 
-  async #syncExistingActor(actor, preset) {
+  async #syncExistingActor(actor, preset, folderId) {
     if (typeof actor?.update !== "function") return;
+    const currentFolderId = typeof actor?.folder === "string"
+      ? actor.folder
+      : actor?.folder?.id ?? null;
     const current = actor.prototypeToken?.flags?.[MODULE_ID]?.storage ?? {};
     const initial = initialStorageState(preset);
     const currentDurability = actor.prototypeToken?.flags?.[MODULE_ID]?.[STORAGE_OBJECT_DURABILITY_FLAG];
@@ -138,6 +157,7 @@ export class BuiltinStorageActorService {
       ? null
       : normalizeStorageObjectDurability(currentDurability ?? CHEST_OBJECT_DURABILITY);
     await actor.update({
+      ...(String(currentFolderId ?? "") !== String(folderId ?? "") ? { folder: folderId } : {}),
       "prototypeToken.name": preset.prototypeToken.name,
       [`prototypeToken.flags.${MODULE_ID}.storage`]: buildStorageTokenState({
         ...initial,
@@ -181,11 +201,12 @@ export class BuiltinStorageActorService {
   }
 
   async #ensureFolder(game) {
-    const existing = collectionValues(game?.folders).find((folder) => (
-      folder?.type === "Actor"
-      && folder?.folder == null
-      && String(folder?.name ?? "").trim() === BUILTIN_STORAGE_FOLDER_NAME
-    ));
+    const existing = collectionValues(game?.folders)
+      .filter((folder) => (
+        folder?.type === "Actor"
+        && String(folder?.name ?? "").trim() === BUILTIN_STORAGE_FOLDER_NAME
+      ))
+      .sort(compareBuiltinStorageFolders)[0];
     if (existing) return existing;
 
     const Folder = this.folderProvider();
