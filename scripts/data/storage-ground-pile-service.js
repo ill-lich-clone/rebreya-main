@@ -94,6 +94,7 @@ export class StorageGroundPileService {
     this.gameProvider = gameProvider;
     this.isActiveGm = isActiveGm;
     this.idFactory = idFactory;
+    this.sceneMutationTasks = new Map();
   }
 
   #requireActiveGm() {
@@ -221,7 +222,24 @@ export class StorageGroundPileService {
     return { created: false, merged: false, duplicate: true, token, state: readStorageState(token) };
   }
 
-  async #transferPreparedSnapshot({ rows, coins, sceneId, x, y, mutationId, ownerUserId = "" }) {
+  async #runSceneMutation(sceneId, operation) {
+    const key = clean(sceneId);
+    const previous = this.sceneMutationTasks.get(key) ?? Promise.resolve();
+    const task = previous.catch(() => {}).then(operation);
+    this.sceneMutationTasks.set(key, task);
+    try {
+      return await task;
+    }
+    finally {
+      if (this.sceneMutationTasks.get(key) === task) this.sceneMutationTasks.delete(key);
+    }
+  }
+
+  async #transferPreparedSnapshot(request) {
+    return this.#runSceneMutation(request.sceneId, () => this.#transferPreparedSnapshotNow(request));
+  }
+
+  async #transferPreparedSnapshotNow({ rows, coins, sceneId, x, y, mutationId, ownerUserId = "" }) {
     const game = this.#requireActiveGm();
     const scene = this.#resolveScene(game, sceneId);
     if (!scene || typeof scene.createEmbeddedDocuments !== "function") {
@@ -262,10 +280,12 @@ export class StorageGroundPileService {
       }
       const incomingCoins = normalizedCoins(coins);
       const hasIncomingCoins = hasPositiveCoins(incomingCoins);
+      const discardClaimedBalances = hasIncomingCoins && state.coinsClaimed === true;
       const candidate = {
         ...state,
         manualRows,
-        manualCoins: addCoins(state.manualCoins, incomingCoins),
+        manualCoins: addCoins(discardClaimedBalances ? {} : state.manualCoins, incomingCoins),
+        generatedCoins: discardClaimedBalances ? normalizedCoins({}) : state.generatedCoins,
         coinsClaimed: hasIncomingCoins ? false : state.coinsClaimed,
         state: "opened",
         displayMode: "opened"

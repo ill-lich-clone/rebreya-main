@@ -14,7 +14,13 @@ function applyPatch(target, patch) {
   }
 }
 
-function createHarness({ activeGm = true } = {}) {
+function deferred() {
+  let resolve;
+  const promise = new Promise((next) => { resolve = next; });
+  return { promise, resolve };
+}
+
+function createHarness({ activeGm = true, beforeCreate, beforeUpdate } = {}) {
   const pileActor = {
     id: "pile-actor",
     flags: {
@@ -33,6 +39,7 @@ function createHarness({ activeGm = true } = {}) {
     tokens: { contents: tokens },
     async createEmbeddedDocuments(type, rows) {
       assert.equal(type, "Token");
+      await beforeCreate?.();
       return rows.map((data, index) => {
         const token = {
           ...structuredClone(data),
@@ -41,7 +48,7 @@ function createHarness({ activeGm = true } = {}) {
           parent: scene,
           actor: pileActor,
           getFlag(scope, key) { return this.flags?.[scope]?.[key]; },
-          async update(patch) { applyPatch(this, patch); return this; },
+          async update(patch) { await beforeUpdate?.(); applyPatch(this, patch); return this; },
           async delete() { tokens.splice(tokens.indexOf(this), 1); this.deleted = true; }
         };
         tokens.push(token);
@@ -235,6 +242,87 @@ test("coin transfer creates and merges a pure manual-coin pile idempotently", as
   assert.deepEqual(readStorageState(tokens[0]).manualCoins, { pp: 0, gp: 5, sp: 3, cp: 0 });
 });
 
+test("concurrent same-ID coin creation creates and adds exactly once", async () => {
+  const createEntered = deferred();
+  const releaseCreate = deferred();
+  const { service, tokens } = createHarness({
+    beforeCreate: async () => {
+      createEntered.resolve();
+      await releaseCreate.promise;
+    }
+  });
+  const request = {
+    coins: { gp: 5 }, sceneId: "scene", x: 300, y: 400, mutationId: "parallel-create"
+  };
+
+  const first = service.transferCoinsToScene(request);
+  await createEntered.promise;
+  const second = service.transferCoinsToScene(request);
+  releaseCreate.resolve();
+  const results = await Promise.all([first, second]);
+
+  assert.equal(tokens.length, 1);
+  assert.equal(results.filter((result) => result.created).length, 1);
+  assert.equal(results.filter((result) => result.duplicate).length, 1);
+  assert.deepEqual(readStorageState(tokens[0]).manualCoins, { pp: 0, gp: 5, sp: 0, cp: 0 });
+});
+
+test("concurrent same-ID merge adds exactly once", async () => {
+  const updateEntered = deferred();
+  const releaseUpdate = deferred();
+  const { service, tokens } = createHarness({
+    beforeUpdate: async () => {
+      updateEntered.resolve();
+      await releaseUpdate.promise;
+    }
+  });
+  await service.transferCoinsToScene({
+    coins: { gp: 1 }, sceneId: "scene", x: 300, y: 400, mutationId: "parallel-base"
+  });
+  const request = {
+    coins: { sp: 2 }, sceneId: "scene", x: 300, y: 400, mutationId: "parallel-same-merge"
+  };
+
+  const first = service.transferCoinsToScene(request);
+  await updateEntered.promise;
+  const second = service.transferCoinsToScene(request);
+  releaseUpdate.resolve();
+  const results = await Promise.all([first, second]);
+
+  assert.equal(results.filter((result) => result.merged).length, 1);
+  assert.equal(results.filter((result) => result.duplicate).length, 1);
+  assert.deepEqual(readStorageState(tokens[0]).manualCoins, { pp: 0, gp: 1, sp: 2, cp: 0 });
+});
+
+test("concurrent distinct merges both survive on the contained pile", async () => {
+  const updateEntered = deferred();
+  const releaseUpdate = deferred();
+  const { service, tokens } = createHarness({
+    beforeUpdate: async () => {
+      updateEntered.resolve();
+      await releaseUpdate.promise;
+    }
+  });
+  await service.transferCoinsToScene({
+    coins: { gp: 1 }, sceneId: "scene", x: 300, y: 400, mutationId: "distinct-base"
+  });
+
+  const first = service.transferCoinsToScene({
+    coins: { sp: 2 }, sceneId: "scene", x: 300, y: 400, mutationId: "distinct-sp"
+  });
+  await updateEntered.promise;
+  const second = service.transferCoinsToScene({
+    coins: { cp: 3 }, sceneId: "scene", x: 320, y: 420, mutationId: "distinct-cp"
+  });
+  releaseUpdate.resolve();
+  await Promise.all([first, second]);
+
+  assert.deepEqual(readStorageState(tokens[0]).manualCoins, { pp: 0, gp: 1, sp: 2, cp: 3 });
+  assert.deepEqual(tokens[0].flags[MODULE_ID].groundPile.mutationIds, [
+    "distinct-base", "distinct-sp", "distinct-cp"
+  ]);
+});
+
 test("coin mutation lookup requires the active GM and coin transfer rejects an empty map", async () => {
   const { service } = createHarness({ activeGm: false });
   const request = { coins: {}, sceneId: "scene", x: 300, y: 400, mutationId: "empty-coins" };
@@ -243,7 +331,7 @@ test("coin mutation lookup requires the active GM and coin transfer rejects an e
   await assert.rejects(() => service.transferCoinsToScene(request), /хотя бы одну монету/u);
 });
 
-test("a claimed pure coin pile persists empty and reopens with recomputed coin presentation", async () => {
+test("a claimed pure coin pile reopens with only incoming coins", async () => {
   const { service, tokens } = createHarness();
   await service.transferCoinsToScene({
     coins: { gp: 5 }, sceneId: "scene", x: 300, y: 400, mutationId: "coin-create"
@@ -268,17 +356,24 @@ test("a claimed pure coin pile persists empty and reopens with recomputed coin p
   assert.equal(reopened.state, "opened");
   assert.equal(reopened.displayMode, "opened");
   assert.equal(reopened.coinsClaimed, false);
+  assert.deepEqual(reopened.manualCoins, { pp: 0, gp: 2, sp: 0, cp: 0 });
 
   await service.refreshAfterStorageMutation(token, {
-    ...reopened, coinsClaimed: true, state: "empty", displayMode: "empty"
+    ...reopened,
+    generatedCoins: { pp: 0, gp: 0, sp: 0, cp: 4 },
+    coinsClaimed: true,
+    state: "empty",
+    displayMode: "empty"
   });
   await service.transferCoinsToScene({
-    coins: { sp: 3 }, sceneId: "scene", x: 300, y: 400, mutationId: "coin-reopen-mixed"
+    coins: { sp: 3 }, sceneId: "scene", x: 300, y: 400, mutationId: "coin-reopen-after-generated"
   });
   reopened = readStorageState(token);
-  assert.equal(token.name, "Куча монет");
+  assert.equal(token.name, "Серебряная монета");
   assert.equal(reopened.state, "opened");
   assert.equal(reopened.coinsClaimed, false);
+  assert.deepEqual(reopened.manualCoins, { pp: 0, gp: 0, sp: 3, cp: 0 });
+  assert.deepEqual(reopened.generatedCoins, { pp: 0, gp: 0, sp: 0, cp: 0 });
 });
 
 test("treasure rows with coins stay treasure piles and still delete when emptied", async () => {
