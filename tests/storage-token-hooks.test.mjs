@@ -19,7 +19,11 @@ function createHarness({ isGM = false, distance = 5 } = {}) {
     document: { uuid: "Scene.scene.Token.chest", parent: scene },
     visible: true,
     center: { x: 150, y: 50 },
-    on(name, callback) { tokenListeners.set(name, callback); }
+    on(name, callback) { tokenListeners.set(name, callback); },
+    off(name, callback) {
+      if (tokenListeners.get(name) === callback) tokenListeners.delete(name);
+    },
+    removeAllListeners() { tokenListeners.clear(); }
   };
   const characterToken = {
     actor: {
@@ -106,6 +110,19 @@ test("an unowned storage token opens its action menu from a left pointer click",
   harness.listeners.get("hoverToken")(harness.storageToken, true);
   harness.tokenListeners.get("pointertap")({ button: 0 });
   assert.deepEqual(harness.shown[0].map((action) => action.label), ["Открыть"]);
+});
+
+test("storage pointer click is rebound after Foundry redraw removes token listeners", () => {
+  const harness = createHarness({ isGM: true });
+  harness.listeners.get("hoverToken")(harness.storageToken, true);
+  const originalHandler = harness.tokenListeners.get("pointertap");
+
+  harness.storageToken.removeAllListeners();
+  harness.listeners.get("drawToken")(harness.storageToken);
+
+  assert.equal(harness.tokenListeners.get("pointertap"), originalHandler);
+  harness.tokenListeners.get("pointertap")({ button: 0 });
+  assert.deepEqual(harness.shown[0].map((action) => action.label), ["Открыть", "Настроить"]);
 });
 
 test("actor sheet header can mark an NPC as storage", async () => {

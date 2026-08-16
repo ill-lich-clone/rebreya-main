@@ -39,7 +39,7 @@ export function registerStorageTokenHooks(moduleApi, {
 } = {}) {
   if (typeof hooks?.on !== "function") return false;
 
-  const boundTokens = new WeakSet();
+  const pointerHandlers = new WeakMap();
   const showTokenActions = (token) => {
     const game = gameProvider();
     if (game?.user?.isGM === true) {
@@ -66,12 +66,17 @@ export function registerStorageTokenHooks(moduleApi, {
     }));
   };
   const bindPointerClick = (token) => {
-    if (!isStorageActor(token?.actor) || typeof token?.on !== "function" || boundTokens.has(token)) return;
-    boundTokens.add(token);
-    token.on("pointertap", (event) => {
-      const button = Number(event?.button ?? event?.data?.button ?? 0);
-      if (button === 0) showTokenActions(token);
-    });
+    if (!isStorageActor(token?.actor) || typeof token?.on !== "function") return;
+    let handler = pointerHandlers.get(token);
+    if (!handler) {
+      handler = (event) => {
+        const button = Number(event?.button ?? event?.data?.button ?? 0);
+        if (button === 0) showTokenActions(token);
+      };
+      pointerHandlers.set(token, handler);
+    }
+    token.off?.("pointertap", handler);
+    token.on("pointertap", handler);
   };
 
   hooks.on("controlToken", async (token, controlled) => {
@@ -81,6 +86,7 @@ export function registerStorageTokenHooks(moduleApi, {
   hooks.on("hoverToken", (token, hovered) => {
     if (hovered) bindPointerClick(token);
   });
+  hooks.on("drawToken", bindPointerClick);
   hooks.on("canvasPan", () => overlayController.reposition());
   hooks.on("updateToken", () => overlayController.reposition());
   hooks.on("deleteToken", () => overlayController.close());
