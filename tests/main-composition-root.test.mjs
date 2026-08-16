@@ -7,6 +7,7 @@ import { SpellInstanceRuntime } from "../scripts/combat/spell-instance-runtime.j
 import { SummonLifecycleRuntime } from "../scripts/combat/summon-lifecycle-runtime.js";
 import { TransportCompendiumService } from "../scripts/data/transport-compendium.js";
 import { BuiltinStorageActorService } from "../scripts/data/builtin-storage-actor-service.js";
+import { BuiltinCoinTemplateService } from "../scripts/data/builtin-coin-template-service.js";
 import { StorageOpenSoundService } from "../scripts/data/storage-open-sound-service.js";
 import {
   COMMAND_REQUEST_TYPE,
@@ -108,6 +109,7 @@ test("ready composes spell automation on one registry alongside legacy hook regi
 
     const moduleApi = module.api;
     assert.ok(moduleApi.builtinStorageActorService instanceof BuiltinStorageActorService);
+    assert.ok(moduleApi.builtinCoinTemplateService instanceof BuiltinCoinTemplateService);
     assert.ok(moduleApi.storageOpenSoundService instanceof StorageOpenSoundService);
     const restoredDocuments = {
       folder: { id: "storage-folder" },
@@ -135,6 +137,32 @@ test("ready composes spell automation on one registry alongside legacy hook regi
       console.warn = originalWarn;
     }
     assert.match(String(warnings[0]?.[0] ?? ""), /Failed to restore built-in storage actors/u);
+    const restoredCoinTemplates = {
+      folder: { id: "coin-folder" },
+      items: [{ id: "gold-template" }]
+    };
+    moduleApi.builtinCoinTemplateService = {
+      async sync() {
+        return restoredCoinTemplates;
+      }
+    };
+    assert.equal(await moduleApi.restoreBuiltinCoinTemplates(), restoredCoinTemplates);
+
+    const coinWarnings = [];
+    const originalCoinWarn = console.warn;
+    console.warn = (...args) => coinWarnings.push(args);
+    try {
+      moduleApi.builtinCoinTemplateService = {
+        async sync() {
+          throw new Error("coin folder unavailable");
+        }
+      };
+      assert.equal(await moduleApi.restoreBuiltinCoinTemplates(), null);
+    }
+    finally {
+      console.warn = originalCoinWarn;
+    }
+    assert.match(String(coinWarnings[0]?.[0] ?? ""), /Failed to restore built-in coin templates/u);
     assert.ok(moduleApi.spellAutomationRegistry instanceof SpellAutomationRegistry);
     assert.ok(moduleApi.spellInstanceRuntime instanceof SpellInstanceRuntime);
     assert.ok(moduleApi.summonLifecycleRuntime instanceof SummonLifecycleRuntime);

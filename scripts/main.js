@@ -99,6 +99,7 @@ import {
   measureStorageTokenDistance
 } from "./data/storage-access.js?v=1.4.133-ground-item-polish";
 import { BuiltinStorageActorService } from "./data/builtin-storage-actor-service.js";
+import { BuiltinCoinTemplateService } from "./data/builtin-coin-template-service.js";
 import { StorageGroundPileService } from "./data/storage-ground-pile-service.js?v=1.4.133-ground-item-polish";
 import { StorageContainerItemService } from "./data/storage-container-item-service.js?v=1.4.130-storage-player-fixes";
 import { isStorageJournalRow } from "./data/storage-container-snapshot.js";
@@ -1119,6 +1120,12 @@ export class RebreyaMainModule {
       actorProvider: () => globalThis.Actor,
       isActiveGm: isActiveGmClient
     });
+    this.builtinCoinTemplateService = new BuiltinCoinTemplateService({
+      gameProvider: () => globalThis.game,
+      folderProvider: () => globalThis.Folder,
+      itemProvider: () => globalThis.Item,
+      isActiveGm: isActiveGmClient
+    });
     this.storageGroundPileService = new StorageGroundPileService({
       gameProvider: () => globalThis.game,
       isActiveGm: isActiveGmClient
@@ -1615,6 +1622,16 @@ export class RebreyaMainModule {
     }
   }
 
+  async restoreBuiltinCoinTemplates() {
+    try {
+      return await this.builtinCoinTemplateService.sync();
+    }
+    catch (error) {
+      console.warn(`${MODULE_ID} | Failed to restore built-in coin templates.`, error);
+      return null;
+    }
+  }
+
   async initialize() {
     if (globalThis.game?.user?.isGM === true) {
       try {
@@ -1664,6 +1681,7 @@ export class RebreyaMainModule {
       console.warn(`${MODULE_ID} | Failed to sync managed map object documents.`, error);
     }
     await this.restoreBuiltinStorageActors();
+    await this.restoreBuiltinCoinTemplates();
     try {
       await this.storageOpenSoundService.cleanupStale(globalThis.canvas?.scene);
     }
