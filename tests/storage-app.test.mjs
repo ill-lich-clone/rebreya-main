@@ -33,6 +33,8 @@ function createApp({
   withTextures = true,
   getStorageSnapshot = null,
   inspectStorageDepositSource = null,
+  readStorageJournal = null,
+  openStorageJournalViewer = null,
   appOptions = {}
 } = {}) {
   globalThis.game.user.isGM = canManage;
@@ -40,6 +42,7 @@ function createApp({
   const claimCalls = [];
   const depositCalls = [];
   const quantityCalls = [];
+  const journalReadCalls = [];
   const moduleApi = {
     async getStorageSnapshot(...args) {
       if (getStorageSnapshot) return getStorageSnapshot(...args);
@@ -82,10 +85,20 @@ function createApp({
     },
     async updateStorageRowQuantity(...args) {
       quantityCalls.push(args);
+    },
+    async readStorageJournal(...args) {
+      journalReadCalls.push(args);
+      return readStorageJournal
+        ? readStorageJournal(...args)
+        : { name: "Запись", pages: [] };
     }
   };
-  const app = new StorageApp(moduleApi, "Scene.scene.Token.chest", { configure, ...appOptions });
-  return { app, textureCalls, claimCalls, depositCalls, quantityCalls };
+  const app = new StorageApp(moduleApi, "Scene.scene.Token.chest", {
+    configure,
+    ...(openStorageJournalViewer ? { openStorageJournalViewer } : {}),
+    ...appOptions
+  });
+  return { app, textureCalls, claimCalls, depositCalls, quantityCalls, journalReadCalls };
 }
 
 test("storage grid offers self and party destinations for rows and coins", async () => {
@@ -103,6 +116,84 @@ test("storage grid offers self and party destinations for rows and coins", async
   assert.match(template, /data-action="storage-set-texture"/u);
   assert.match(template, /data-mode="\{\{mode\}\}"/u);
   assert.doesNotMatch(template, /storage-page/u);
+});
+
+test("Journal rows expose a read-only view model and no transfer controls", async () => {
+  const { app } = createApp({
+    configure: true,
+    getStorageSnapshot: async () => ({
+      tokenUuid: "Scene.scene.Token.chest",
+      name: "Сундук",
+      state: "opened",
+      rows: [{
+        rowId: "journal-row",
+        rowKind: "journal",
+        sourceId: "JournalEntry.private-notes",
+        name: "Полевые заметки",
+        quantity: 1
+      }],
+      coins: {}
+    })
+  });
+
+  const context = await app._prepareContext();
+  const row = context.rows[0];
+  assert.equal(row.isJournal, true);
+  assert.equal(row.canDrag, false);
+  assert.equal(row.canClaim, false);
+  assert.equal(row.canOpenSource, false);
+  assert.equal(row.showQuantity, false);
+  assert.equal(row.canDelete, true);
+
+  const template = await readFile(new URL("../templates/storage-app.hbs", import.meta.url), "utf8");
+  assert.match(template, /\{\{#if canDrag\}\}[\s\S]*?data-storage-row-drag[\s\S]*?\{\{\/if\}\}/u);
+  assert.match(template, /\{\{#if activePopover\.isJournal\}\}[\s\S]*?data-action="storage-read-journal"[\s\S]*?\{\{\/if\}\}/u);
+  const journalBranch = template.match(/\{\{#if activePopover\.isJournal\}\}([\s\S]*?)\{\{else\}\}/u)?.[1] ?? "";
+  assert.doesNotMatch(journalBranch, /storage-claim-self|storage-claim-party|data-storage-quantity|data-storage-row-drag/u);
+});
+
+test("Journal read action passes nested access context and opens only the returned snapshot", async () => {
+  const snapshot = {
+    name: "Полевые заметки",
+    pages: [{ pageId: "text-1", name: "День первый", type: "text", html: "<p>Безопасный текст</p>" }]
+  };
+  const viewerCalls = [];
+  const { app, journalReadCalls } = createApp({
+    configure: false,
+    appOptions: {
+      path: ["bag-row"],
+      characterTokenUuid: "Scene.scene.Token.hero"
+    },
+    getStorageSnapshot: async () => ({
+      tokenUuid: "Scene.scene.Token.chest",
+      name: "Сумка",
+      state: "opened",
+      rows: [{ rowId: "journal-row", rowKind: "journal", name: "Полевые заметки", quantity: 1 }],
+      coins: {}
+    }),
+    readStorageJournal: async () => snapshot,
+    openStorageJournalViewer: async (receivedSnapshot) => viewerCalls.push(receivedSnapshot)
+  });
+  const listeners = new Map();
+  app.element = new class extends FakeElement {
+    addEventListener(name, callback) { listeners.set(name, callback); }
+  }();
+  app.render = async () => {};
+  await app._prepareContext();
+  app._onRender({}, {});
+  const control = {
+    dataset: { action: "storage-read-journal", rowId: "journal-row" },
+    closest(selector) { return selector === "[data-action]" ? this : null; }
+  };
+
+  await listeners.get("click")({ target: control, preventDefault() {} });
+
+  assert.deepEqual(journalReadCalls, [[
+    "Scene.scene.Token.chest",
+    "journal-row",
+    { path: ["bag-row"], characterTokenUuid: "Scene.scene.Token.hero" }
+  ]]);
+  assert.deepEqual(viewerCalls, [snapshot]);
 });
 
 test("storage configuration exposes template and manual item controls to GMs", async () => {

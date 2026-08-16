@@ -1,0 +1,16 @@
+<section class="rebreya-storage-journal-viewer">
+  {{#each pages}}
+    <article class="rebreya-storage-journal-viewer__page">
+      {{#if name}}<h2>{{name}}</h2>{{/if}}
+      {{#if (eq type "text")}}
+        <div class="rebreya-storage-journal-viewer__text">{{{html}}}</div>
+      {{else if (eq type "image")}}
+        <figure><img src="{{src}}" alt="{{caption}}">{{#if caption}}<figcaption>{{caption}}</figcaption>{{/if}}</figure>
+      {{else if (eq type "video")}}
+        <figure><video src="{{src}}" controls preload="metadata"></video>{{#if caption}}<figcaption>{{caption}}</figcaption>{{/if}}</figure>
+      {{else if (eq type "pdf")}}
+        <figure><iframe src="{{src}}" title="{{caption}}" loading="lazy"></iframe>{{#if caption}}<figcaption>{{caption}}</figcaption>{{/if}}</figure>
+      {{/if}}
+    </article>
+  {{/each}}
+</section>

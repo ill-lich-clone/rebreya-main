@@ -1,6 +1,7 @@
 import { MODULE_ID } from "../constants.js";
 import { getAppElement } from "../ui.js";
 import { placeTokenOverlay, storageTokenViewportBounds } from "./storage-token-overlay.js";
+import { openStorageJournalViewer } from "./storage-journal-viewer.js";
 import {
   buildStorageDragData,
   parseStorageDragData,
@@ -94,6 +95,7 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.pathNames = (Array.isArray(options.pathNames) ? options.pathNames : []).map(clean).filter(Boolean).slice(0, 8);
     this.rootName = clean(options.rootName);
     this.configure = options.configure === true;
+    this.openStorageJournalViewer = options.openStorageJournalViewer ?? openStorageJournalViewer;
     this.anchorRequested = options.anchorToToken === true;
     this.anchorDetached = false;
     this.snapshot = null;
@@ -154,24 +156,30 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const hasCoins = COIN_KEYS.some((key) => coins[key] > 0);
     const gridItemCount = snapshotRows.length + (hasCoins ? 1 : 0);
     const gridColumns = storageGridColumns(gridItemCount);
-    const rows = snapshotRows.map((row) => ({
-      ...clone(row),
-      rowId: clean(row.rowId),
-      name: clean(row.name ?? row.itemData?.name) || "Предмет",
-      img: clean(row.img ?? row.itemData?.img),
-      quantity: Math.max(1, Number(row.quantity ?? 1)),
-      typeLabel: clean(row.typeLabel ?? row.itemData?.type) || "Предмет",
-      sourceType: clean(row.sourceType),
-      sourceId: clean(row.sourceId),
-      canOpenSource: Boolean(clean(row.sourceId)),
-      isContainer: row.rowKind === "container" && Boolean(row.container),
-      primaryAction: row.rowKind === "container" && Boolean(row.container)
-        ? "storage-open-container"
-        : "storage-toggle-row",
-      canEdit: configurationEnabled,
-      active: this.activeRowId === clean(row.rowId),
-      showQuantity: row.rowKind !== "container" && Math.max(1, Number(row.quantity ?? 1)) > 1
-    }));
+    const rows = snapshotRows.map((row) => {
+      const isJournal = row.rowKind === "journal";
+      const isContainer = row.rowKind === "container" && Boolean(row.container);
+      return {
+        ...clone(row),
+        rowId: clean(row.rowId),
+        name: clean(row.name ?? row.itemData?.name) || "Предмет",
+        img: clean(row.img ?? row.itemData?.img),
+        quantity: Math.max(1, Number(row.quantity ?? 1)),
+        typeLabel: clean(row.typeLabel ?? row.itemData?.type) || "Предмет",
+        sourceType: clean(row.sourceType),
+        sourceId: clean(row.sourceId),
+        isJournal,
+        canDrag: !isJournal,
+        canClaim: !isJournal,
+        canOpenSource: !isJournal && Boolean(clean(row.sourceId)),
+        isContainer,
+        primaryAction: isContainer ? "storage-open-container" : "storage-toggle-row",
+        canEdit: configurationEnabled && !isJournal,
+        canDelete: isJournal ? canManage : configurationEnabled,
+        active: this.activeRowId === clean(row.rowId),
+        showQuantity: !isJournal && !isContainer && Math.max(1, Number(row.quantity ?? 1)) > 1
+      };
+    });
     const validPopoverIds = new Set(rows.map((row) => row.rowId));
     if (hasCoins) validPopoverIds.add("__coins");
     if (this.activeRowId && !validPopoverIds.has(this.activeRowId)) this.activeRowId = "";
@@ -407,6 +415,7 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
   async #claimRow(rowId, destination) {
     const row = this.#rowById(rowId);
     if (!row) throw new Error("Предмет хранилища уже недоступен.");
+    if (row.rowKind === "journal") throw new Error("Записи журнала нельзя перемещать.");
     const available = Math.max(1, Math.trunc(Number(row.quantity ?? 1)) || 1);
     const quantity = await promptStorageTransferQuantity(available);
     if (quantity === null) return false;
@@ -435,6 +444,7 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
   async #openRowSource(rowId) {
     const row = this.#rowById(rowId);
     if (!row) throw new Error("Предмет хранилища уже недоступен.");
+    if (row.rowKind === "journal") throw new Error("Запись журнала доступна только для чтения.");
     const sourceId = clean(row.sourceId);
     if (sourceId.includes(".") && typeof globalThis.fromUuid === "function") {
       const document = await globalThis.fromUuid(sourceId);
@@ -448,6 +458,13 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
       return;
     }
     throw new Error("Исходный документ предмета не найден.");
+  }
+
+  async #readJournal(rowId) {
+    const row = this.#rowById(rowId);
+    if (!row || row.rowKind !== "journal") throw new Error("Запись журнала уже недоступна.");
+    const snapshot = await this.moduleApi.readStorageJournal(this.tokenUuid, rowId, this.#pathRequest());
+    await this.openStorageJournalViewer(snapshot);
   }
 
   async #onClick(event) {
@@ -474,6 +491,10 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
       }
       else if (action === "storage-open-item") {
         await this.#openRowSource(rowId);
+        return;
+      }
+      else if (action === "storage-read-journal") {
+        await this.#readJournal(rowId);
         return;
       }
       else if (action === "storage-open-container") {
@@ -558,7 +579,7 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const source = event.target?.closest?.("[data-storage-row-drag]");
     if (!source || !event.dataTransfer) return;
     const row = this.#rowById(clean(source.dataset.rowId));
-    if (!row) return;
+    if (!row || row.rowKind === "journal") return;
     const payload = buildStorageDragData({
       tokenUuid: this.tokenUuid,
       path: this.path,
