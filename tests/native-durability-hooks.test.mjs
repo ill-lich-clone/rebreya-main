@@ -144,8 +144,12 @@ test("native reconciliation repairs chest and single ground-row projections", as
       baseName: "Меч",
       state: "opened",
       manualRows: [{
-        rowId: "sword",
+        rowId: "cuirass",
+        name: "Кираса",
         itemData: {
+          name: "Кираса",
+          type: "equipment",
+          system: { quantity: 1 },
           flags: { [MODULE_ID]: { durability: { eligible: true, hp: { value: 4, max: 9 }, ac: 17, damageThreshold: 2 } } }
         }
       }]
@@ -162,6 +166,7 @@ test("native reconciliation repairs chest and single ground-row projections", as
   assert.equal(chest.delta.system.attributes.hp.value, 7);
   assert.deepEqual(pile.delta.system.attributes.hp, { value: 4, max: 9, dt: 2 });
   assert.equal(pile.delta.system.attributes.ac.flat, 17);
+  assert.equal(pile.bar1.attribute, "attributes.hp");
 });
 
 test("storage updates refresh only their matching native projection", async () => {

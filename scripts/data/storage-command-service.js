@@ -1,6 +1,7 @@
 import { isStorageActor, readStorageState, readStorageStateAtPath } from "./storage-service.js";
 import { resolveStorageDepositSource } from "./storage-deposit-source.js";
 import { isStorageContainerRow, isStorageJournalRow } from "./storage-container-snapshot.js";
+import { MODULE_ID } from "../constants.js";
 
 const STORAGE_ROW_DESTINATIONS = new Set(["self", "party", "character", "scene"]);
 const STORAGE_COIN_DESTINATIONS = new Set(["self", "party"]);
@@ -251,6 +252,7 @@ export class StorageCommandService {
     measurePointDistance = () => Number.POSITIVE_INFINITY,
     groundPileService = null,
     containerItemService = null,
+    durabilityService = null,
     journalReader,
     isVisibleTo,
     resolveDocument = (...args) => globalThis.fromUuid?.(...args),
@@ -265,6 +267,9 @@ export class StorageCommandService {
     if (typeof journalReader?.read !== "function") {
       throw new TypeError("StorageCommandService requires a storage Journal reader.");
     }
+    if (durabilityService != null && typeof durabilityService.getOrBuildDurability !== "function") {
+      throw new TypeError("StorageCommandService durabilityService requires getOrBuildDurability().");
+    }
     this.storageService = storageService;
     this.inventoryService = inventoryService;
     this.resolveToken = resolveToken;
@@ -272,6 +277,7 @@ export class StorageCommandService {
     this.measurePointDistance = measurePointDistance;
     this.groundPileService = groundPileService;
     this.containerItemService = containerItemService;
+    this.durabilityService = durabilityService;
     this.journalReader = journalReader;
     this.isVisibleTo = isVisibleTo;
     this.resolveDocument = resolveDocument;
@@ -279,6 +285,32 @@ export class StorageCommandService {
     this.claimTasks = new Map();
     this.claimQueues = new Map();
     this.claimResults = new Map();
+  }
+
+  async #prepareGroundRow(row, { sourceItem = null, sourceKind = "" } = {}) {
+    const prepared = clone(row);
+    const coinDenomination = clean(
+      prepared?.itemData?.flags?.[MODULE_ID]?.storageCoinTemplate?.denomination
+    );
+    if (!this.durabilityService
+      || isStorageContainerRow(prepared)
+      || isStorageJournalRow(prepared)
+      || sourceKind === "storage-item"
+      || sourceKind === "coin-template"
+      || sourceKind === "journal"
+      || prepared?.rowKind === "coin"
+      || STORAGE_COIN_DENOMINATIONS.has(coinDenomination)) {
+      return prepared;
+    }
+    const durability = await this.durabilityService.getOrBuildDurability(
+      sourceItem ?? prepared?.itemData
+    );
+    if (durability == null) return prepared;
+    prepared.itemData ??= {};
+    prepared.itemData.flags ??= {};
+    prepared.itemData.flags[MODULE_ID] ??= {};
+    prepared.itemData.flags[MODULE_ID].durability = clone(durability);
+    return prepared;
   }
 
   async #resolveCharacterTarget(target, sender) {
@@ -496,8 +528,9 @@ export class StorageCommandService {
       }
       else {
         await this.#validateSceneTarget(payload.target, access, sender);
+        const groundRow = await this.#prepareGroundRow(transferRow);
         await this.groundPileService.transferToScene({
-          row: transferRow,
+          row: groundRow,
           quantity,
           sceneId: clean(payload.target.sceneId),
           x: Number(payload.target.x),
@@ -790,6 +823,17 @@ export class StorageCommandService {
         }
       }
 
+      const groundRow = clone(source.row);
+      if (groundRow) {
+        groundRow.quantity = quantity;
+        groundRow.itemData ??= {};
+        groundRow.itemData.system ??= {};
+        groundRow.itemData.system.quantity = quantity;
+      }
+      const preparedGroundRow = await this.#prepareGroundRow(groundRow, {
+        sourceItem: source.item,
+        sourceKind: source.kind
+      });
       let receipt = null;
       try {
         receipt = await source.consume(quantity);
@@ -814,13 +858,8 @@ export class StorageCommandService {
         if (!this.groundPileService?.transferToScene) {
           throw new Error("Сервис наземных куч Rebreya недоступен.");
         }
-        const row = clone(source.row);
-        row.quantity = quantity;
-        row.itemData ??= {};
-        row.itemData.system ??= {};
-        row.itemData.system.quantity = quantity;
         const created = await this.groundPileService.transferToScene({
-          row,
+          row: preparedGroundRow,
           quantity,
           sceneId: sceneIdValue,
           x: Number(payload.x),

@@ -1158,6 +1158,7 @@ export class RebreyaMainModule {
       measurePointDistance: measureStoragePointDistance,
       groundPileService: this.storageGroundPileService,
       containerItemService: this.storageContainerItemService,
+      durabilityService: this.durabilityService,
       journalReader: this.storageJournalReader,
       isVisibleTo: (storageToken) => isStorageTokenVisible(storageToken)
     });

@@ -45,7 +45,9 @@ function createHarness({
   groundFailure = null,
   coinGroundFailure = null,
   processedCoinMutations = new Set(),
-  executionOrder = []
+  executionOrder = [],
+  durabilityService = null,
+  logResolve = true
 } = {}) {
   const player = { id: "player", isGM: false };
   const gm = { id: "gm", isGM: true, active: true };
@@ -151,6 +153,7 @@ function createHarness({
       return { created: true, duplicate: false };
     },
     async transferToScene(request) {
+      executionOrder.push("transfer");
       if (groundFailure) throw groundFailure;
       groundCalls.push(clone(request));
       return { created: true };
@@ -167,6 +170,7 @@ function createHarness({
     measurePointDistance: () => pointDistance,
     groundPileService,
     containerItemService,
+    durabilityService,
     isVisibleTo: () => visible,
     journalReader: journalReader ?? {
       async read(journalUuid) {
@@ -175,7 +179,7 @@ function createHarness({
       }
     },
     resolveDepositSource: async (...args) => {
-      executionOrder.push("resolve");
+      if (logResolve) executionOrder.push("resolve");
       depositResolveCalls.push(clone(args[0]));
       return typeof depositSource === "function" ? depositSource(...args) : depositSource;
     }
@@ -200,6 +204,13 @@ function createHarness({
     journalReadCalls
   };
 }
+
+test("storage command service validates a supplied durability derivation dependency", () => {
+  assert.throws(
+    () => createHarness({ durabilityService: {} }),
+    /getOrBuildDurability/u
+  );
+});
 
 test("storage claim rejects a player outside five feet before granting an item", async () => {
   const harness = createHarness({ distance: 10, visible: true });
@@ -818,7 +829,11 @@ test("managed Coin Items cannot enter ordinary storage rows", async () => {
 
 test("managed Coin Items cannot enter the ordinary ground Item row command", async () => {
   let consumed = 0;
+  let derived = 0;
   const harness = createHarness({
+    durabilityService: {
+      async getOrBuildDurability() { derived += 1; return { eligible: true }; }
+    },
     depositSource: {
       kind: "coin-template",
       denomination: "gp",
@@ -839,48 +854,231 @@ test("managed Coin Items cannot enter the ordinary ground Item row command", asy
     mutationId: "wrong-ground-route"
   }, { sender: harness.player }), /монет/iu);
   assert.equal(consumed, 0);
+  assert.equal(derived, 0);
   assert.equal(harness.groundCalls.length, 0);
 });
 
-test("ordinary inventory Items move to a ground pile at the requested scene point", async () => {
-  const consumed = [];
+test("world, compendium, and embedded Items derive durability before ground source consumption", async (t) => {
+  const derivedFlag = {
+    eligible: true,
+    hp: { value: 12, max: 12 },
+    ac: 16,
+    damageThreshold: 3,
+    state: "intact",
+    updatedAt: 111
+  };
+  for (const scenario of [
+    { name: "world", itemUuid: "Item.cuirass", mode: "copy" },
+    { name: "compendium", itemUuid: "Compendium.rebreya.items.Item.cuirass", mode: "copy" },
+    { name: "embedded", itemUuid: "Actor.hero.Item.cuirass", mode: "move" }
+  ]) {
+    await t.test(scenario.name, async () => {
+      const events = [];
+      const sourceItem = { uuid: scenario.itemUuid, updates: [] };
+      const source = {
+        kind: "item",
+        mode: scenario.mode,
+        available: 4,
+        sourceKey: scenario.itemUuid,
+        item: sourceItem,
+        row: {
+          rowId: "cuirass",
+          name: "Кираса",
+          quantity: 4,
+          itemData: { name: "Кираса", type: "equipment", system: { quantity: 4 } }
+        },
+        canUserMove: () => true,
+        async consume() { events.push("consume"); return { kind: scenario.mode === "copy" ? "copy" : "item-update" }; },
+        async restore() {}
+      };
+      const originalRow = clone(source.row);
+      const harness = createHarness({
+        depositSource: source,
+        pointDistance: 5,
+        executionOrder: events,
+        logResolve: false,
+        durabilityService: {
+          async getOrBuildDurability(item) {
+            events.push("derive");
+            assert.equal(item, sourceItem);
+            return derivedFlag;
+          }
+        }
+      });
+
+      const result = await harness.service.dropItemToScene({
+        itemUuid: scenario.itemUuid,
+        characterTokenUuid: harness.characterToken.uuid,
+        sceneId: "scene",
+        x: 400,
+        y: 500,
+        quantity: 2,
+        mutationId: `drop-cuirass-${scenario.name}`
+      }, { sender: harness.player });
+
+      assert.equal(result.changed, true);
+      assert.deepEqual(events, ["derive", "consume", "transfer"]);
+      assert.deepEqual(harness.groundCalls[0].row.itemData.flags[MODULE_ID].durability, derivedFlag);
+      assert.notEqual(harness.groundCalls[0].row.itemData.flags[MODULE_ID].durability, derivedFlag);
+      assert.equal(harness.groundCalls[0].row.itemData.system.quantity, 2);
+      assert.equal(harness.groundCalls[0].ownerUserId, harness.player.id);
+      assert.deepEqual(source.row, originalRow);
+      assert.equal(sourceItem.updates.length, 0);
+      assert.equal(sourceItem.flags, undefined);
+    });
+  }
+});
+
+test("ground preparation preserves an existing damaged durability flag exactly", async () => {
+  const damagedFlag = {
+    eligible: true,
+    hp: { value: 3, max: 11 },
+    ac: 15,
+    damageThreshold: 2,
+    state: "damaged",
+    updatedAt: 987654321
+  };
+  const sourceItem = { flags: { [MODULE_ID]: { durability: clone(damagedFlag) } } };
+  const source = {
+    kind: "item",
+    mode: "copy",
+    available: 1,
+    item: sourceItem,
+    row: { rowId: "damaged-cuirass", quantity: 1, itemData: { name: "Кираса", type: "equipment", system: { quantity: 1 } } },
+    canUserMove: () => true,
+    async consume() { return { kind: "copy" }; },
+    async restore() {}
+  };
+  const harness = createHarness({
+    depositSource: source,
+    durabilityService: {
+      async getOrBuildDurability(item) {
+        assert.equal(item, sourceItem);
+        return clone(item.flags[MODULE_ID].durability);
+      }
+    }
+  });
+
+  await harness.service.dropItemToScene({
+    itemUuid: "Item.damaged-cuirass",
+    sceneId: "scene",
+    x: 10,
+    y: 20,
+    quantity: 1,
+    mutationId: "drop-damaged-cuirass"
+  }, { sender: harness.gm });
+
+  assert.deepEqual(harness.groundCalls[0].row.itemData.flags[MODULE_ID].durability, damagedFlag);
+  assert.deepEqual(sourceItem.flags[MODULE_ID].durability, damagedFlag);
+});
+
+test("ineligible ground Items gain no durability flag", async () => {
+  let derives = 0;
+  const source = {
+    kind: "item",
+    mode: "copy",
+    available: 1,
+    row: { rowId: "ration", quantity: 1, itemData: { name: "Рацион", type: "consumable", system: { quantity: 1 } } },
+    canUserMove: () => true,
+    async consume() { return { kind: "copy" }; },
+    async restore() {}
+  };
+  const harness = createHarness({
+    depositSource: source,
+    durabilityService: { async getOrBuildDurability() { derives += 1; return null; } }
+  });
+
+  await harness.service.dropItemToScene({
+    itemUuid: "Item.ration",
+    sceneId: "scene",
+    x: 10,
+    y: 20,
+    quantity: 1,
+    mutationId: "drop-ration"
+  }, { sender: harness.gm });
+
+  assert.equal(derives, 1);
+  assert.equal(harness.groundCalls[0].row.itemData.flags?.[MODULE_ID]?.durability, undefined);
+});
+
+test("durability derivation failure leaves the ground source untouched", async () => {
+  const events = [];
+  const sourceItem = { system: { quantity: 1 }, deleted: false, updates: [] };
   const source = {
     kind: "item",
     mode: "move",
-    available: 4,
-    sourceKey: "Actor.hero.Item.arrows",
-    row: {
-      rowId: "arrows",
-      name: "Стрела",
-      quantity: 4,
-      itemData: { name: "Стрела", type: "consumable", system: { quantity: 4 } }
-    },
+    available: 1,
+    item: sourceItem,
+    row: { rowId: "cuirass", quantity: 1, itemData: { name: "Кираса", type: "equipment", system: { quantity: 1 } } },
     canUserMove: () => true,
-    async consume(quantity) { consumed.push(quantity); return { kind: "item-update" }; },
-    async restore() {}
+    async consume() { events.push("consume"); sourceItem.deleted = true; return { kind: "item-delete" }; },
+    async restore() { events.push("restore"); }
   };
-  const harness = createHarness({ depositSource: source, pointDistance: 5 });
+  const harness = createHarness({
+    depositSource: source,
+    executionOrder: events,
+    logResolve: false,
+    durabilityService: {
+      async getOrBuildDurability() { events.push("derive"); throw new Error("derive failed"); }
+    }
+  });
 
-  const result = await harness.service.dropItemToScene({
-    itemUuid: "Actor.hero.Item.arrows",
-    characterTokenUuid: harness.characterToken.uuid,
+  await assert.rejects(harness.service.dropItemToScene({
+    itemUuid: "Actor.hero.Item.cuirass",
     sceneId: "scene",
-    x: 400,
-    y: 500,
-    quantity: 2,
-    mutationId: "drop-arrows"
-  }, { sender: harness.player });
+    x: 10,
+    y: 20,
+    quantity: 1,
+    mutationId: "drop-derive-failure"
+  }, { sender: harness.gm }), /derive failed/u);
 
-  assert.equal(result.changed, true);
-  assert.deepEqual(consumed, [2]);
-  assert.equal(harness.groundCalls.length, 1);
-  assert.equal(harness.groundCalls[0].quantity, 2);
-  assert.equal(harness.groundCalls[0].ownerUserId, harness.player.id);
-  assert.equal(harness.groundCalls[0].row.itemData.system.quantity, 2);
-  assert.deepEqual(
-    { sceneId: harness.groundCalls[0].sceneId, x: harness.groundCalls[0].x, y: harness.groundCalls[0].y },
-    { sceneId: "scene", x: 400, y: 500 }
-  );
+  assert.deepEqual(events, ["derive"]);
+  assert.equal(sourceItem.system.quantity, 1);
+  assert.equal(sourceItem.deleted, false);
+  assert.deepEqual(sourceItem.updates, []);
+  assert.equal(harness.groundCalls.length, 0);
+});
+
+test("ground durability derivation waits for quantity, ownership, and point validation", async () => {
+  const basePayload = {
+    itemUuid: "Actor.hero.Item.cuirass",
+    characterTokenUuid: "Scene.scene.Token.hero",
+    sceneId: "scene",
+    x: 10,
+    y: 20,
+    quantity: 1,
+    mutationId: "drop-validation"
+  };
+  for (const scenario of [
+    { name: "quantity", sender: { id: "gm", isGM: true }, available: 0, canUserMove: true, pointDistance: 5 },
+    { name: "ownership", sender: { id: "player", isGM: false }, available: 1, canUserMove: false, pointDistance: 5 },
+    { name: "point", sender: { id: "player", isGM: false }, available: 1, canUserMove: true, pointDistance: 6 }
+  ]) {
+    let derives = 0;
+    let consumes = 0;
+    const harness = createHarness({
+      pointDistance: scenario.pointDistance,
+      depositSource: {
+        kind: "item",
+        mode: "move",
+        available: scenario.available,
+        row: { rowId: "cuirass", quantity: 1, itemData: { name: "Кираса", type: "equipment", system: { quantity: 1 } } },
+        canUserMove: () => scenario.canUserMove,
+        async consume() { consumes += 1; return { kind: "item-update" }; },
+        async restore() {}
+      },
+      durabilityService: {
+        async getOrBuildDurability() { derives += 1; return { eligible: true }; }
+      }
+    });
+
+    await assert.rejects(
+      harness.service.dropItemToScene({ ...basePayload, mutationId: `drop-validation-${scenario.name}` }, { sender: scenario.sender })
+    );
+    assert.equal(derives, 0, scenario.name);
+    assert.equal(consumes, 0, scenario.name);
+    assert.equal(harness.groundCalls.length, 0, scenario.name);
+  }
 });
 
 test("native container Items restore as storage tokens with their full recursive contents", async () => {
@@ -909,7 +1107,14 @@ test("native container Items restore as storage tokens with their full recursive
       return { uuid: "Scene.scene.Token.backpack" };
     }
   };
-  const harness = createHarness({ depositSource: source, containerItemService, pointDistance: 5 });
+  const harness = createHarness({
+    depositSource: source,
+    containerItemService,
+    pointDistance: 5,
+    durabilityService: {
+      async getOrBuildDurability() { throw new Error("container durability must be skipped"); }
+    }
+  });
 
   const result = await harness.service.dropItemToScene({
     itemUuid: "Actor.hero.Item.backpack",
@@ -1149,6 +1354,9 @@ test("Journal deposits are GM-only, quantity-one, re-resolved, and consumed only
 test("Journal rows are rejected before every claim materialization path while GM deletion remains available", async () => {
   const materialized = [];
   const harness = createHarness({
+    durabilityService: {
+      async getOrBuildDurability() { throw new Error("Journal durability must be skipped"); }
+    },
     containerItemService: {
       async materializeToActorOnce(...args) { materialized.push(args); }
     }
@@ -1659,12 +1867,38 @@ test("sheet drop grants to an owned target character before decrementing source"
 });
 
 test("canvas drop creates a ground pile only within five feet of the character", async () => {
-  const harness = createHarness({ rowQuantity: 3, pointDistance: 5 });
+  const events = [];
+  const derivedFlag = {
+    eligible: true,
+    hp: { value: 9, max: 9 },
+    ac: 14,
+    damageThreshold: 1,
+    state: "intact",
+    updatedAt: 222
+  };
+  let derivedInput = null;
+  const harness = createHarness({
+    rowQuantity: 3,
+    pointDistance: 5,
+    executionOrder: events,
+    durabilityService: {
+      async getOrBuildDurability(item) {
+        events.push("derive");
+        derivedInput = clone(item);
+        return derivedFlag;
+      }
+    }
+  });
   const access = {
     tokenUuid: harness.storageToken.uuid,
     characterTokenUuid: harness.characterToken.uuid
   };
   await harness.service.open(access, { sender: harness.player });
+  const originalClaim = harness.storageService.claim.bind(harness.storageService);
+  harness.storageService.claim = async (...args) => {
+    events.push("claim");
+    return originalClaim(...args);
+  };
   await harness.service.claimRow({
     ...access,
     rowId: "row-1",
@@ -1675,6 +1909,9 @@ test("canvas drop creates a ground pile only within five feet of the character",
   }, { sender: harness.player });
 
   assert.equal(harness.groundCalls.length, 1);
+  assert.deepEqual(events, ["derive", "transfer", "claim"]);
+  assert.equal(derivedInput.system.quantity, 2);
+  assert.deepEqual(harness.groundCalls[0].row.itemData.flags[MODULE_ID].durability, derivedFlag);
   assert.equal(harness.groundCalls[0].quantity, 2);
   assert.deepEqual(
     { sceneId: harness.groundCalls[0].sceneId, x: harness.groundCalls[0].x, y: harness.groundCalls[0].y },
