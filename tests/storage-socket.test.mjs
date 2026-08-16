@@ -972,17 +972,45 @@ test("ground preparation preserves an existing damaged durability flag exactly",
   assert.deepEqual(sourceItem.flags[MODULE_ID].durability, damagedFlag);
 });
 
-test("ineligible ground Items gain no durability flag", async () => {
+test("ineligible ground Items shed stale durability only from the cloned pile row", async () => {
   let derives = 0;
+  const staleDurability = {
+    eligible: true,
+    hp: { value: 2, max: 8 },
+    ac: 13,
+    damageThreshold: 1,
+    state: "damaged",
+    updatedAt: 123456
+  };
+  const sourceItem = {
+    name: "Рацион",
+    type: "consumable",
+    flags: { [MODULE_ID]: { durability: clone(staleDurability) } }
+  };
   const source = {
     kind: "item",
     mode: "copy",
     available: 1,
-    row: { rowId: "ration", quantity: 1, itemData: { name: "Рацион", type: "consumable", system: { quantity: 1 } } },
+    item: sourceItem,
+    row: {
+      rowId: "ration",
+      quantity: 1,
+      itemData: {
+        name: "Рацион",
+        type: "consumable",
+        system: { quantity: 1 },
+        flags: {
+          [MODULE_ID]: { durability: clone(staleDurability), presentation: { label: "Сухпаёк" } },
+          "other-module": { retained: true }
+        }
+      }
+    },
     canUserMove: () => true,
     async consume() { return { kind: "copy" }; },
     async restore() {}
   };
+  const originalRow = clone(source.row);
+  const originalSourceItem = clone(sourceItem);
   const harness = createHarness({
     depositSource: source,
     durabilityService: { async getOrBuildDurability() { derives += 1; return null; } }
@@ -999,6 +1027,10 @@ test("ineligible ground Items gain no durability flag", async () => {
 
   assert.equal(derives, 1);
   assert.equal(harness.groundCalls[0].row.itemData.flags?.[MODULE_ID]?.durability, undefined);
+  assert.deepEqual(harness.groundCalls[0].row.itemData.flags[MODULE_ID].presentation, { label: "Сухпаёк" });
+  assert.deepEqual(harness.groundCalls[0].row.itemData.flags["other-module"], { retained: true });
+  assert.deepEqual(source.row, originalRow);
+  assert.deepEqual(sourceItem, originalSourceItem);
 });
 
 test("durability derivation failure leaves the ground source untouched", async () => {

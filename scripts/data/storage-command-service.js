@@ -305,7 +305,13 @@ export class StorageCommandService {
     const durability = await this.durabilityService.getOrBuildDurability(
       sourceItem ?? prepared?.itemData
     );
-    if (durability == null) return prepared;
+    if (durability == null) {
+      const moduleFlags = prepared?.itemData?.flags?.[MODULE_ID];
+      if (moduleFlags && typeof moduleFlags === "object" && !Array.isArray(moduleFlags)) {
+        delete moduleFlags.durability;
+      }
+      return prepared;
+    }
     prepared.itemData ??= {};
     prepared.itemData.flags ??= {};
     prepared.itemData.flags[MODULE_ID] ??= {};
