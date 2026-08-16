@@ -1,7 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { StorageJournalReader } from "../scripts/data/storage-journal-reader.js";
+import {
+  StorageJournalReader,
+  createStorageJournalHtmlParser
+} from "../scripts/data/storage-journal-reader.js";
 
 function createJournalFixture() {
   const textPage = {
@@ -47,25 +50,102 @@ function createJournalFixture() {
   return { journal, textPage };
 }
 
-function semanticFragment(html) {
+function decodeNumericCharacterReferences(value) {
+  return String(value).replace(/&#(?:(x)([0-9a-f]+)|([0-9]+));?/giu, (_match, hex, hexValue, decimalValue) => {
+    const codePoint = Number.parseInt(hex ? hexValue : decimalValue, hex ? 16 : 10);
+    return Number.isFinite(codePoint) ? String.fromCodePoint(codePoint) : "";
+  });
+}
+
+function sectionStartTags(html) {
+  const source = String(html);
+  const lower = source.toLowerCase();
+  const tags = [];
+  let cursor = 0;
+  while (cursor < source.length) {
+    const start = lower.indexOf("<section", cursor);
+    if (start < 0) break;
+    const boundary = source[start + "<section".length];
+    if (boundary && !/[\s/>]/u.test(boundary)) {
+      cursor = start + 1;
+      continue;
+    }
+    let quote = "";
+    let end = -1;
+    for (let index = start + "<section".length; index < source.length; index += 1) {
+      const character = source[index];
+      if (quote) {
+        if (character === quote) quote = "";
+        continue;
+      }
+      if (character === '"' || character === "'") quote = character;
+      else if (character === ">") {
+        end = index;
+        break;
+      }
+    }
+    if (end < 0) break;
+    tags.push(source.slice(start, end + 1));
+    cursor = end + 1;
+  }
+  return tags;
+}
+
+function classTokens(startTag) {
+  const match = startTag.match(/\bclass\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/iu);
+  if (!match) return [];
+  return decodeNumericCharacterReferences(match[1] ?? match[2] ?? match[3])
+    .split(/\s+/u)
+    .filter(Boolean);
+}
+
+function createSemanticTemplateDocument() {
+  const assignedHtml = [];
   return {
-    querySelector(selector) {
-      assert.equal(selector, "section.secret:not(.revealed)");
-      return String(html).includes("Тайный пароль") ? { tagName: "SECTION" } : null;
+    assignedHtml,
+    createElement(tagName) {
+      assert.equal(tagName, "template");
+      let html = "";
+      const content = {
+        querySelector(selector) {
+          assert.equal(selector, "section.secret:not(.revealed)");
+          const match = sectionStartTags(html).find((startTag) => {
+            const classes = classTokens(startTag);
+            return classes.includes("secret") && !classes.includes("revealed");
+          });
+          return match ? { tagName: "SECTION", startTag: match } : null;
+        }
+      };
+      return {
+        content,
+        set innerHTML(value) {
+          html = String(value);
+          assignedHtml.push(html);
+        },
+        get innerHTML() {
+          return html;
+        }
+      };
     }
   };
+}
+
+function createTestHtmlParser() {
+  const document = createSemanticTemplateDocument();
+  return { document, parseHtml: createStorageJournalHtmlParser(() => document) };
 }
 
 test("Journal reader enriches live text without secrets or document metadata and never mutates ownership", async () => {
   const { journal, textPage } = createJournalFixture();
   const enrichCalls = [];
+  const { parseHtml } = createTestHtmlParser();
   const reader = new StorageJournalReader({
     fromUuid: async (uuid) => uuid === journal.uuid ? journal : null,
     enrichHtml: async (content, options) => {
       enrichCalls.push({ content, options });
       return content.replace(/<section class="secret">[\s\S]*?<\/section>/gu, "");
     },
-    parseHtml: semanticFragment
+    parseHtml
   });
   const beforeOwnership = structuredClone(journal.ownership);
 
@@ -105,10 +185,11 @@ test("Journal reader fails closed for deleted Journals, enrichment errors, and r
     ownership: { default: 0 }
   };
   const beforeRow = structuredClone(storageRow);
+  const { parseHtml } = createTestHtmlParser();
   const missingReader = new StorageJournalReader({
     fromUuid: async () => null,
     enrichHtml: async (content) => content,
-    parseHtml: semanticFragment
+    parseHtml
   });
   await assert.rejects(missingReader.read(journal.uuid), { message: "Запись журнала недоступна." });
   assert.deepEqual(storageRow, beforeRow);
@@ -116,14 +197,14 @@ test("Journal reader fails closed for deleted Journals, enrichment errors, and r
   const unsafeReader = new StorageJournalReader({
     fromUuid: async () => journal,
     enrichHtml: async (content) => content,
-    parseHtml: semanticFragment
+    parseHtml
   });
   await assert.rejects(unsafeReader.read(journal.uuid), { message: "Запись журнала недоступна." });
 
   const failedReader = new StorageJournalReader({
     fromUuid: async () => journal,
     enrichHtml: async () => { throw new Error("raw GM failure"); },
-    parseHtml: semanticFragment
+    parseHtml
   });
   await assert.rejects(failedReader.read(journal.uuid), (error) => {
     assert.equal(error.message, "Запись журнала недоступна.");
@@ -134,6 +215,7 @@ test("Journal reader fails closed for deleted Journals, enrichment errors, and r
 
 test("Journal reader rejects browser-semantic secret classes that evade raw tag regexes", async () => {
   const { journal } = createJournalFixture();
+  const { document, parseHtml } = createTestHtmlParser();
   const adversarialHtml = [
     '<section class="sec&#114;et"><p>Тайный пароль entity</p></section>',
     '<section data-note=">" class="secret"><p>Тайный пароль quoted</p></section>'
@@ -146,11 +228,27 @@ test("Journal reader rejects browser-semantic secret classes that evade raw tag 
       enrichHtml: async () => html,
       parseHtml: (value) => {
         parseCalls.push(value);
-        return semanticFragment(value);
+        return parseHtml(value);
       }
     });
 
     await assert.rejects(reader.read(journal.uuid), { message: "Запись журнала недоступна." });
     assert.deepEqual(parseCalls, [html]);
+    assert.equal(document.assignedHtml.at(-1), html);
   }
+});
+
+test("production Journal HTML adapter exposes browser-semantic secret selectors", () => {
+  const { document, parseHtml } = createTestHtmlParser();
+  for (const html of [
+    '<section class="sec&#114;et"><p>entity case</p></section>',
+    '<section data-note=">" class="secret"><p>quoted case</p></section>'
+  ]) {
+    const fragment = parseHtml(html);
+    assert.ok(fragment.querySelector("section.secret:not(.revealed)"));
+    assert.equal(document.assignedHtml.at(-1), html);
+  }
+
+  const revealed = parseHtml('<section class="secret revealed"><p>visible case</p></section>');
+  assert.equal(revealed.querySelector("section.secret:not(.revealed)"), null);
 });

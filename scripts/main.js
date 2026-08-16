@@ -102,7 +102,10 @@ import { BuiltinStorageActorService } from "./data/builtin-storage-actor-service
 import { StorageGroundPileService } from "./data/storage-ground-pile-service.js?v=1.4.133-ground-item-polish";
 import { StorageContainerItemService } from "./data/storage-container-item-service.js?v=1.4.130-storage-player-fixes";
 import { isStorageJournalRow } from "./data/storage-container-snapshot.js";
-import { StorageJournalReader } from "./data/storage-journal-reader.js";
+import {
+  StorageJournalReader,
+  createStorageJournalHtmlParser
+} from "./data/storage-journal-reader.js";
 import {
   parseStorageDepositDragData,
   resolveStorageDepositSource
@@ -1126,12 +1129,7 @@ export class RebreyaMainModule {
       enrichHtml: (content, options) => (
         globalThis.CONFIG?.ux?.TextEditor?.implementation?.enrichHTML?.(content, options)
       ),
-      parseHtml: (html) => {
-        const template = globalThis.document?.createElement?.("template");
-        if (!template) throw new Error("HTML parser unavailable.");
-        template.innerHTML = html;
-        return template.content;
-      }
+      parseHtml: createStorageJournalHtmlParser(() => globalThis.document)
     });
     this.nativeObjectDurabilityService = new NativeObjectDurabilityService({
       durabilityService: this.durabilityService,

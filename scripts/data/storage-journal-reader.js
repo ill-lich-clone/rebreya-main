@@ -19,6 +19,18 @@ function pageSort(page) {
   return Number.isFinite(value) ? value : 0;
 }
 
+export function createStorageJournalHtmlParser(documentProvider = () => globalThis.document) {
+  if (typeof documentProvider !== "function") {
+    throw new TypeError("Storage Journal HTML parser requires a document provider.");
+  }
+  return (html) => {
+    const template = documentProvider()?.createElement?.("template");
+    if (!template) throw new Error("HTML parser unavailable.");
+    template.innerHTML = String(html);
+    return template.content;
+  };
+}
+
 export class StorageJournalReader {
   constructor({ fromUuid, enrichHtml, parseHtml } = {}) {
     if (typeof fromUuid !== "function" || typeof enrichHtml !== "function" || typeof parseHtml !== "function") {
