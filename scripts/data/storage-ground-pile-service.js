@@ -52,6 +52,18 @@ function addCoins(left, right) {
   return Object.fromEntries(Object.keys(first).map((key) => [key, first[key] + second[key]]));
 }
 
+function addManualCoinsChecked(left, right) {
+  const first = normalizedCoins(left);
+  const second = normalizedCoins(right);
+  return Object.fromEntries(Object.keys(first).map((key) => {
+    const amount = first[key] + second[key];
+    if (!Number.isSafeInteger(amount) || amount < 0) {
+      throw new Error(`Сумма монет ${key} должна оставаться неотрицательным безопасным целым числом.`);
+    }
+    return [key, amount];
+  }));
+}
+
 function hasPositiveCoins(coins) {
   return Object.values(normalizedCoins(coins)).some((amount) => amount > 0);
 }
@@ -284,7 +296,7 @@ export class StorageGroundPileService {
       const candidate = {
         ...state,
         manualRows,
-        manualCoins: addCoins(discardClaimedBalances ? {} : state.manualCoins, incomingCoins),
+        manualCoins: addManualCoinsChecked(discardClaimedBalances ? {} : state.manualCoins, incomingCoins),
         generatedCoins: discardClaimedBalances ? normalizedCoins({}) : state.generatedCoins,
         coinsClaimed: hasIncomingCoins ? false : state.coinsClaimed,
         state: "opened",

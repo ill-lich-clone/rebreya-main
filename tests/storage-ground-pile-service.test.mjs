@@ -242,6 +242,63 @@ test("coin transfer creates and merges a pure manual-coin pile idempotently", as
   assert.deepEqual(readStorageState(tokens[0]).manualCoins, { pp: 0, gp: 5, sp: 3, cp: 0 });
 });
 
+test("coin merge rejects unsafe cumulative balances for every denomination without changing the pile", async () => {
+  for (const denomination of ["pp", "gp", "sp", "cp"]) {
+    const { service, tokens } = createHarness();
+    await service.transferCoinsToScene({
+      coins: { [denomination]: Number.MAX_SAFE_INTEGER },
+      sceneId: "scene",
+      x: 300,
+      y: 400,
+      mutationId: `coin-safe-limit-${denomination}`
+    });
+    const before = structuredClone({
+      name: tokens[0].name,
+      texture: tokens[0].texture,
+      flags: tokens[0].flags,
+      delta: tokens[0].delta
+    });
+
+    await assert.rejects(service.transferCoinsToScene({
+      coins: { [denomination]: 1 },
+      sceneId: "scene",
+      x: 300,
+      y: 400,
+      mutationId: `coin-overflow-${denomination}`
+    }), /безопасным целым/u);
+
+    assert.deepEqual({
+      name: tokens[0].name,
+      texture: tokens[0].texture,
+      flags: tokens[0].flags,
+      delta: tokens[0].delta
+    }, before);
+    assert.equal(readStorageState(tokens[0]).manualCoins[denomination], Number.MAX_SAFE_INTEGER);
+  }
+});
+
+test("coin merge accepts the exact largest safe cumulative balance", async () => {
+  const { service, tokens } = createHarness();
+  await service.transferCoinsToScene({
+    coins: { gp: Number.MAX_SAFE_INTEGER - 1 },
+    sceneId: "scene",
+    x: 300,
+    y: 400,
+    mutationId: "coin-below-limit"
+  });
+
+  const merged = await service.transferCoinsToScene({
+    coins: { gp: 1 },
+    sceneId: "scene",
+    x: 300,
+    y: 400,
+    mutationId: "coin-at-limit"
+  });
+
+  assert.equal(merged.merged, true);
+  assert.equal(readStorageState(tokens[0]).manualCoins.gp, Number.MAX_SAFE_INTEGER);
+});
+
 test("concurrent same-ID coin creation creates and adds exactly once", async () => {
   const createEntered = deferred();
   const releaseCreate = deferred();

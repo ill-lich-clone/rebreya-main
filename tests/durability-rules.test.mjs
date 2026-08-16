@@ -345,6 +345,20 @@ test("managed Coin templates are excluded while ordinary loot remains durable", 
   }), true);
 });
 
+test("stable built-in Coin identity excludes durability even when mutable sourceType says gear", () => {
+  assert.equal(isDurabilityEligible({
+    type: "loot",
+    system: { properties: [], rarity: "" },
+    flags: {
+      [MODULE_ID]: {
+        sourceType: "gear",
+        sourceId: "mutable-catalog-id",
+        storageCoinTemplate: { version: 1, denomination: "gp" }
+      }
+    }
+  }), false);
+});
+
 test("actual party supply flags never initialize durability", () => {
   for (const flags of [
     { managedPartySupply: true, resourceKey: "food" },

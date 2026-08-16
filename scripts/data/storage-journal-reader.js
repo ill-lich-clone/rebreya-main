@@ -1,4 +1,14 @@
 const JOURNAL_UNAVAILABLE_ERROR = "Запись журнала недоступна.";
+const DOCUMENT_LINK_CLASSES = new Set([
+  "content-link",
+  "document-link",
+  "entity-link",
+  "inline-roll",
+  "inline-result",
+  "rollable",
+  "draggable",
+  "drag-handler"
+]);
 
 function clean(value) {
   return String(value ?? "").trim();
@@ -27,8 +37,57 @@ export function createStorageJournalHtmlParser(documentProvider = () => globalTh
     const template = documentProvider()?.createElement?.("template");
     if (!template) throw new Error("HTML parser unavailable.");
     template.innerHTML = String(html);
-    return template.content;
+    const fragment = template.content;
+    if (typeof fragment?.querySelector !== "function" || typeof fragment?.querySelectorAll !== "function") {
+      throw new Error("HTML parser unavailable.");
+    }
+    return {
+      querySelector: (selector) => fragment.querySelector(selector),
+      querySelectorAll: (selector) => fragment.querySelectorAll(selector),
+      serialize() {
+        const serialized = template.innerHTML;
+        if (typeof serialized !== "string") throw new Error("HTML serializer unavailable.");
+        return serialized;
+      }
+    };
   };
+}
+
+function sanitizeJournalHtml(fragment) {
+  if (typeof fragment?.querySelector !== "function"
+    || typeof fragment?.querySelectorAll !== "function"
+    || typeof fragment?.serialize !== "function") {
+    throw unavailable();
+  }
+  if (fragment.querySelector("section.secret:not(.revealed)")) throw unavailable();
+
+  for (const element of Array.from(fragment.querySelectorAll("*"))) {
+    if (typeof element?.removeAttribute !== "function"
+      || typeof element?.getAttribute !== "function"
+      || typeof element?.setAttribute !== "function") {
+      throw unavailable();
+    }
+    for (const attribute of Array.from(element.attributes ?? [])) {
+      const name = clean(attribute?.name).toLowerCase();
+      if (name === "id"
+        || name === "href"
+        || name === "draggable"
+        || name === "contenteditable"
+        || name.startsWith("data-")
+        || name.startsWith("on")) {
+        element.removeAttribute(name);
+      }
+    }
+    const classes = clean(element.getAttribute("class"))
+      .split(/\s+/u)
+      .filter((token) => token && !DOCUMENT_LINK_CLASSES.has(token.toLowerCase()));
+    if (classes.length) element.setAttribute("class", classes.join(" "));
+    else element.removeAttribute("class");
+  }
+
+  const serialized = fragment.serialize();
+  if (typeof serialized !== "string") throw unavailable();
+  return serialized;
 }
 
 export class StorageJournalReader {
@@ -77,11 +136,7 @@ export class StorageJournalReader {
           });
           if (typeof html !== "string") throw unavailable();
           const fragment = this.parseHtml(html);
-          if (typeof fragment?.querySelector !== "function"
-            || fragment.querySelector("section.secret:not(.revealed)")) {
-            throw unavailable();
-          }
-          snapshot.html = html;
+          snapshot.html = sanitizeJournalHtml(fragment);
         }
         pageSnapshots.push(snapshot);
       }

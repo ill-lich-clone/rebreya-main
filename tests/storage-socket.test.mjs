@@ -5,6 +5,7 @@ import * as storageCommands from "../scripts/data/storage-command-service.js";
 import { MODULE_ID } from "../scripts/constants.js";
 import { StorageService, readStorageState, readStorageStateAtPath } from "../scripts/data/storage-service.js";
 import { buildStorageContainerRow } from "../scripts/data/storage-container-snapshot.js";
+import { resolveStorageDepositSource } from "../scripts/data/storage-deposit-source.js";
 import {
   StorageCommandService,
   isValidStorageClaimCoinsPayload,
@@ -804,6 +805,68 @@ test("failed managed coin transfer restores an embedded source", async () => {
     mutationId: "drop-copper"
   }, { sender: harness.player }), /coin transfer failed/u);
   assert.deepEqual(calls, ["consume", "restore"]);
+});
+
+test("unsafe cumulative coin transfer restores the deleted embedded managed Coin source", async () => {
+  const restored = [];
+  const actor = {
+    uuid: "Actor.hero",
+    documentName: "Actor",
+    testUserPermission: (user, permission) => user?.id === "player" && permission === "OWNER",
+    async createEmbeddedDocuments(type, rows, options) {
+      restored.push({ type, rows: clone(rows), options: clone(options) });
+      return rows;
+    }
+  };
+  const item = {
+    id: "copper-stack",
+    uuid: "Actor.hero.Item.copper-stack",
+    documentName: "Item",
+    parent: actor,
+    name: "Медные монеты",
+    type: "loot",
+    img: "icons/coins-copper.webp",
+    flags: { [MODULE_ID]: { storageCoinTemplate: { version: 1, denomination: "cp" } } },
+    system: { quantity: 2 },
+    deleted: false,
+    toObject() {
+      return {
+        _id: this.id,
+        name: this.name,
+        type: this.type,
+        img: this.img,
+        flags: clone(this.flags),
+        system: clone(this.system)
+      };
+    },
+    async delete() {
+      this.deleted = true;
+      return this;
+    }
+  };
+  const harness = createHarness({
+    coinGroundFailure: new Error("Сумма монет cp должна оставаться неотрицательным безопасным целым числом."),
+    depositSource: (sourceRef) => resolveStorageDepositSource(sourceRef, {
+      fromUuid: async (uuid) => uuid === item.uuid ? item : null
+    })
+  });
+
+  await assert.rejects(harness.service.dropCoinsToScene({
+    itemUuid: item.uuid,
+    denomination: "cp",
+    characterTokenUuid: harness.characterToken.uuid,
+    sceneId: "scene",
+    x: 100,
+    y: 100,
+    quantity: 2,
+    mutationId: "drop-copper-overflow"
+  }, { sender: harness.player }), /безопасным целым/u);
+
+  assert.equal(item.deleted, true);
+  assert.equal(restored.length, 1);
+  assert.equal(restored[0].type, "Item");
+  assert.equal(restored[0].rows[0].system.quantity, 2);
+  assert.deepEqual(restored[0].options, { keepId: true });
 });
 
 test("managed Coin Items cannot enter ordinary storage rows", async () => {

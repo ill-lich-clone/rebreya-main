@@ -99,6 +99,42 @@ function classTokens(startTag) {
     .filter(Boolean);
 }
 
+function startTagRecords(html) {
+  const source = String(html);
+  const records = [];
+  const pattern = /<([a-z][\w:-]*)(\s[^<>]*?)?\s*\/?>/giu;
+  for (const match of source.matchAll(pattern)) {
+    const attributes = new Map();
+    const attributeSource = match[2] ?? "";
+    const attributePattern = /([^\s=/>]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+)))?/gu;
+    for (const attribute of attributeSource.matchAll(attributePattern)) {
+      attributes.set(attribute[1].toLowerCase(), attribute[2] ?? attribute[3] ?? attribute[4] ?? "");
+    }
+    records.push({
+      start: match.index,
+      end: match.index + match[0].length,
+      tagName: match[1].toUpperCase(),
+      attributes,
+      selfClosing: /\/>$/u.test(match[0])
+    });
+  }
+  return records;
+}
+
+function serializeStartTagRecords(html, records) {
+  let cursor = 0;
+  let result = "";
+  for (const record of records) {
+    result += html.slice(cursor, record.start);
+    const attributes = Array.from(record.attributes, ([name, value]) => (
+      value === "" ? name : `${name}="${value}"`
+    ));
+    result += `<${record.tagName.toLowerCase()}${attributes.length ? ` ${attributes.join(" ")}` : ""}${record.selfClosing ? "/" : ""}>`;
+    cursor = record.end;
+  }
+  return result + html.slice(cursor);
+}
+
 function createSemanticTemplateDocument() {
   const assignedHtml = [];
   return {
@@ -106,24 +142,46 @@ function createSemanticTemplateDocument() {
     createElement(tagName) {
       assert.equal(tagName, "template");
       let html = "";
+      let records = [];
+      const elements = () => records.map((record) => ({
+        tagName: record.tagName,
+        get attributes() {
+          return Array.from(record.attributes, ([name, value]) => ({ name, value }));
+        },
+        getAttribute(name) {
+          return record.attributes.get(String(name).toLowerCase()) ?? null;
+        },
+        setAttribute(name, value) {
+          record.attributes.set(String(name).toLowerCase(), String(value));
+        },
+        removeAttribute(name) {
+          record.attributes.delete(String(name).toLowerCase());
+        }
+      }));
       const content = {
         querySelector(selector) {
           assert.equal(selector, "section.secret:not(.revealed)");
-          const match = sectionStartTags(html).find((startTag) => {
+          const serialized = serializeStartTagRecords(html, records);
+          const match = sectionStartTags(serialized).find((startTag) => {
             const classes = classTokens(startTag);
             return classes.includes("secret") && !classes.includes("revealed");
           });
           return match ? { tagName: "SECTION", startTag: match } : null;
+        },
+        querySelectorAll(selector) {
+          assert.equal(selector, "*");
+          return elements();
         }
       };
       return {
         content,
         set innerHTML(value) {
           html = String(value);
+          records = startTagRecords(html);
           assignedHtml.push(html);
         },
         get innerHTML() {
-          return html;
+          return serializeStartTagRecords(html, records);
         }
       };
     }
@@ -235,6 +293,50 @@ test("Journal reader rejects browser-semantic secret classes that evade raw tag 
     await assert.rejects(reader.read(journal.uuid), { message: "Запись журнала недоступна." });
     assert.deepEqual(parseCalls, [html]);
     assert.equal(document.assignedHtml.at(-1), html);
+  }
+});
+
+test("Journal reader removes enriched document-link metadata and affordances while preserving readable text", async () => {
+  const { journal } = createJournalFixture();
+  const { parseHtml } = createTestHtmlParser();
+  const enriched = [
+    '<p>Маршрут ведёт к ',
+    '<a class="content-link document-link draggable" draggable="true" href="#" ',
+    'data-uuid="JournalEntry.secret-map" data-document-id="secret-map" data-id="legacy-secret" ',
+    'data-action="openDocument"><i class="fas fa-book-open"></i>Старой карте</a>.',
+    '</p>'
+  ].join("");
+  const reader = new StorageJournalReader({
+    fromUuid: async () => journal,
+    enrichHtml: async () => enriched,
+    parseHtml
+  });
+
+  const snapshot = await reader.read(journal.uuid);
+  const html = snapshot.pages.find((page) => page.type === "text").html;
+
+  assert.match(html, /Старой карте/u);
+  assert.match(html, /Маршрут ведёт/u);
+  assert.equal(html.includes("JournalEntry.secret-map"), false);
+  assert.equal(html.includes("secret-map"), false);
+  assert.equal(html.includes("legacy-secret"), false);
+  assert.doesNotMatch(html, /\b(?:content-link|document-link|draggable)\b/u);
+  assert.doesNotMatch(html, /\b(?:data-[\w-]+|draggable|href)\s*=/u);
+});
+
+test("Journal reader fails closed when parsed HTML cannot be queried or serialized", async () => {
+  const { journal } = createJournalFixture();
+  for (const parseHtml of [
+    () => ({ querySelector() { return null; } }),
+    () => ({ querySelector() { return null; }, querySelectorAll() { return []; }, serialize() { throw new Error("serialize failure"); } })
+  ]) {
+    const reader = new StorageJournalReader({
+      fromUuid: async () => journal,
+      enrichHtml: async () => "<p>Открытый текст</p>",
+      parseHtml
+    });
+
+    await assert.rejects(reader.read(journal.uuid), { message: "Запись журнала недоступна." });
   }
 });
 
