@@ -316,23 +316,27 @@ test("Rebreya material and goods stack markers are excluded while functional loo
 });
 
 test("managed Coin templates are excluded while ordinary loot remains durable", () => {
-  assert.equal(isDurabilityEligible({
-    type: "loot",
-    system: { properties: [], rarity: "" },
-    flags: { [MODULE_ID]: {
-      sourceType: "coinTemplate",
-      storageCoinTemplate: { version: 1, denomination: "gp" }
-    }}
-  }), false);
+  for (const denomination of ["pp", "gp", "sp", "cp"]) {
+    assert.equal(isDurabilityEligible({
+      type: "loot",
+      system: { properties: [], rarity: "" },
+      flags: { [MODULE_ID]: {
+        sourceType: "coinTemplate",
+        storageCoinTemplate: { version: 1, denomination }
+      }}
+    }), false, denomination);
+  }
 
-  assert.equal(isDurabilityEligible({
-    type: "loot",
-    system: { properties: [], rarity: "" },
-    flags: { [MODULE_ID]: {
-      sourceType: "gear",
-      storageCoinTemplate: { version: 1, denomination: "gp" }
-    }}
-  }), false);
+  for (const denomination of ["electrum", "", " ", null]) {
+    assert.equal(isDurabilityEligible({
+      type: "loot",
+      system: { properties: [], rarity: "" },
+      flags: { [MODULE_ID]: {
+        sourceType: "coinTemplate",
+        storageCoinTemplate: { version: 1, denomination }
+      }}
+    }), true, String(denomination));
+  }
 
   assert.equal(isDurabilityEligible({
     type: "loot",
