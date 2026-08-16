@@ -1,4 +1,5 @@
 import { MODULE_ID } from "../constants.js";
+import { BUILTIN_COIN_TEMPLATES } from "./builtin-coin-template-service.js";
 
 const ASSET_ROOT = `modules/${MODULE_ID}/assets/storage/piles`;
 
@@ -24,6 +25,7 @@ const DEFINITIONS = [
   ["equipment", "Снаряжение", "Куча снаряжения", "equipment.png"],
   ["treasure", "Сокровища", "Куча сокровищ", "treasure.png"],
   ["materials", "Материал", "Куча материалов", "materials.png"],
+  ["coins", "", "Куча монет", "coins.png"],
   ["mixed-items", "", "Куча предметов", "mixed-items.png"]
 ];
 
@@ -38,12 +40,49 @@ export const STORAGE_PILE_PRESENTATIONS = Object.freeze(DEFINITIONS.map(([
 })));
 
 const GENERIC_PRESENTATION = STORAGE_PILE_PRESENTATIONS.at(-1);
+const COIN_PRESENTATION = STORAGE_PILE_PRESENTATIONS.find((entry) => entry.key === "coins");
+const TREASURE_PRESENTATION = STORAGE_PILE_PRESENTATIONS.find((entry) => entry.key === "treasure");
 const PRESENTATION_BY_TYPE = new Map(STORAGE_PILE_PRESENTATIONS
   .filter((entry) => entry.normalizedTypeLabel)
   .map((entry) => [entry.normalizedTypeLabel, entry]));
 
-export function deriveGroundPilePresentation(rows = []) {
+export function deriveGroundPilePresentation(rows = [], { coins = {}, preserveEmptyCoinPile = false } = {}) {
   const visibleRows = (Array.isArray(rows) ? rows : []).filter((row) => row && typeof row === "object");
+  const positiveDenominations = BUILTIN_COIN_TEMPLATES.filter(({ denomination }) => {
+    const amount = Number(coins?.[denomination] ?? 0);
+    return Number.isFinite(amount) && Math.trunc(amount) > 0;
+  });
+  if (!visibleRows.length && positiveDenominations.length === 1) {
+    const [{ name, img }] = positiveDenominations;
+    return { name, img, categoryKey: COIN_PRESENTATION.key };
+  }
+  if (!visibleRows.length && positiveDenominations.length > 1) {
+    return {
+      name: COIN_PRESENTATION.name,
+      img: COIN_PRESENTATION.img,
+      categoryKey: COIN_PRESENTATION.key
+    };
+  }
+  if (!visibleRows.length && preserveEmptyCoinPile === true) {
+    return {
+      name: `${COIN_PRESENTATION.name} (пусто)`,
+      img: COIN_PRESENTATION.img,
+      categoryKey: COIN_PRESENTATION.key
+    };
+  }
+
+  const hasCoins = positiveDenominations.length > 0;
+  const allTreasure = visibleRows.length > 0 && visibleRows.every((row) => (
+    normalizeStoragePileCategory(row.typeLabel ?? row.itemData?.type) === TREASURE_PRESENTATION.normalizedTypeLabel
+  ));
+  if (hasCoins && allTreasure) {
+    return {
+      name: TREASURE_PRESENTATION.name,
+      img: TREASURE_PRESENTATION.img,
+      categoryKey: TREASURE_PRESENTATION.key
+    };
+  }
+
   if (visibleRows.length === 1) {
     const row = visibleRows[0];
     const quantity = Math.max(1, Math.trunc(Number(

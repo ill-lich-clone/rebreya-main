@@ -52,6 +52,15 @@ function addCoins(left, right) {
   return Object.fromEntries(Object.keys(first).map((key) => [key, first[key] + second[key]]));
 }
 
+function hasPositiveCoins(coins) {
+  return Object.values(normalizedCoins(coins)).some((amount) => amount > 0);
+}
+
+function unclaimedCoins(state) {
+  if (state?.coinsClaimed === true) return normalizedCoins({});
+  return addCoins(state?.manualCoins, state?.generatedCoins);
+}
+
 function visibleRows(state) {
   const claimed = new Set(state?.claimedRowIds ?? []);
   return [...(state?.manualRows ?? []), ...(state?.generatedRows ?? [])]
@@ -128,16 +137,20 @@ export class StorageGroundPileService {
       opened: presentation.img,
       empty: presentation.img
     };
+    const emptyCoinPile = presentation.categoryKey === "coins"
+      && visibleRows(state).length === 0
+      && !hasPositiveCoins(unclaimedCoins(state));
     const normalized = buildStorageTokenState({
       ...state,
       baseName: presentation.name,
-      state: "opened",
+      state: emptyCoinPile ? "empty" : "opened",
       textures,
-      displayMode: "opened"
+      displayMode: emptyCoinPile ? "empty" : "opened"
     });
     const groundPile = {
       ...(clone(readFlag(token, "groundPile")) ?? {}),
       enabled: true,
+      coinPile: presentation.categoryKey === "coins",
       mutationIds: Array.from(new Set(mutationIds.map(clean).filter(Boolean))).slice(-100)
     };
     await token.update({
@@ -176,6 +189,36 @@ export class StorageGroundPileService {
       mutationId,
       ownerUserId
     });
+  }
+
+  async transferCoinsToScene({ coins = {}, sceneId, x, y, mutationId, ownerUserId = "" } = {}) {
+    const incomingCoins = normalizedCoins(coins);
+    if (!hasPositiveCoins(incomingCoins)) {
+      throw new Error("Для наземной кучи нужно передать хотя бы одну монету.");
+    }
+    return this.#transferPreparedSnapshot({
+      rows: [],
+      coins: incomingCoins,
+      sceneId,
+      x,
+      y,
+      mutationId,
+      ownerUserId
+    });
+  }
+
+  findProcessedMutationAtPoint({ sceneId, x, y, mutationId } = {}) {
+    const game = this.#requireActiveGm();
+    const scene = this.#resolveScene(game, sceneId);
+    const pointX = Number(x);
+    const pointY = Number(y);
+    const stableMutationId = clean(mutationId);
+    if (!scene || !Number.isFinite(pointX) || !Number.isFinite(pointY) || !stableMutationId) return null;
+    const token = findGroundPileAtPoint(scene, pointX, pointY);
+    if (!token) return null;
+    const mutationIds = readFlag(token, "groundPile")?.mutationIds ?? [];
+    if (!mutationIds.includes(stableMutationId)) return null;
+    return { created: false, merged: false, duplicate: true, token, state: readStorageState(token) };
   }
 
   async #transferPreparedSnapshot({ rows, coins, sceneId, x, y, mutationId, ownerUserId = "" }) {
@@ -218,7 +261,7 @@ export class StorageGroundPileService {
         manualRows[stackIndex] = next;
       }
       const incomingCoins = normalizedCoins(coins);
-      const hasIncomingCoins = Object.values(incomingCoins).some((amount) => amount > 0);
+      const hasIncomingCoins = hasPositiveCoins(incomingCoins);
       const candidate = {
         ...state,
         manualRows,
@@ -227,7 +270,10 @@ export class StorageGroundPileService {
         state: "opened",
         displayMode: "opened"
       };
-      const presentation = deriveGroundPilePresentation(visibleRows(candidate));
+      const presentation = deriveGroundPilePresentation(visibleRows(candidate), {
+        coins: unclaimedCoins(candidate),
+        preserveEmptyCoinPile: groundFlag.coinPile === true
+      });
       const next = await this.#writePile(existing, candidate, presentation, [
         ...(groundFlag.mutationIds ?? []),
         stableMutationId
@@ -237,7 +283,8 @@ export class StorageGroundPileService {
 
     const actor = this.#resolvePileActor(game);
     if (!actor) throw new Error("Служебный актёр наземной кучи не восстановлен.");
-    const presentation = deriveGroundPilePresentation(rows);
+    const incomingCoins = normalizedCoins(coins);
+    const presentation = deriveGroundPilePresentation(rows, { coins: incomingCoins });
     const textures = {
       unopened: presentation.img,
       opened: presentation.img,
@@ -252,7 +299,7 @@ export class StorageGroundPileService {
       displayMode: "opened"
     });
     const prototype = clone(actor?.prototypeToken?.toObject?.() ?? actor?.prototypeToken ?? {});
-    const hasCoins = Object.values(normalizedCoins(coins)).some((amount) => amount > 0);
+    const hasCoins = hasPositiveCoins(incomingCoins);
     const singleOrdinaryItem = rows.length === 1
       && rows[0]?.rowKind !== "container"
       && !rows[0]?.container
@@ -276,7 +323,11 @@ export class StorageGroundPileService {
         [MODULE_ID]: {
           ...(clone(prototype.flags?.[MODULE_ID]) ?? {}),
           storage,
-          groundPile: { enabled: true, mutationIds: [stableMutationId] }
+          groundPile: {
+            enabled: true,
+            coinPile: presentation.categoryKey === "coins",
+            mutationIds: [stableMutationId]
+          }
         }
       }
     };
@@ -287,17 +338,19 @@ export class StorageGroundPileService {
 
   async refreshAfterStorageMutation(token, state = readStorageState(token)) {
     if (!isGroundPileToken(token)) return { deleted: false, state };
+    const groundFlag = clone(readFlag(token, "groundPile")) ?? {};
     const rows = visibleRows(state);
-    const hasCoins = state.coinsClaimed !== true && ["pp", "gp", "sp", "cp"].some((key) => (
-      Number(state.manualCoins?.[key] ?? 0) + Number(state.generatedCoins?.[key] ?? 0) > 0
-    ));
-    if (!rows.length && !hasCoins) {
+    const coins = unclaimedCoins(state);
+    const hasCoins = hasPositiveCoins(coins);
+    if (!rows.length && !hasCoins && groundFlag.coinPile !== true) {
       if (typeof token?.delete === "function") await token.delete();
       else await token?.parent?.deleteEmbeddedDocuments?.("Token", [token.id]);
       return { deleted: true, state };
     }
-    const presentation = deriveGroundPilePresentation(rows);
-    const groundFlag = clone(readFlag(token, "groundPile")) ?? {};
+    const presentation = deriveGroundPilePresentation(rows, {
+      coins,
+      preserveEmptyCoinPile: groundFlag.coinPile === true
+    });
     const next = await this.#writePile(token, state, presentation, groundFlag.mutationIds ?? []);
     return { deleted: false, state: next };
   }

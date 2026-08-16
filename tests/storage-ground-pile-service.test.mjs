@@ -14,7 +14,7 @@ function applyPatch(target, patch) {
   }
 }
 
-function createHarness() {
+function createHarness({ activeGm = true } = {}) {
   const pileActor = {
     id: "pile-actor",
     flags: {
@@ -57,10 +57,10 @@ function createHarness() {
   let nextId = 0;
   const service = new StorageGroundPileService({
     gameProvider: () => game,
-    isActiveGm: () => true,
+    isActiveGm: () => activeGm,
     idFactory: () => `pile-row-${++nextId}`
   });
-  return { service, scene, tokens, pileActor };
+  return { service, scene, tokens, pileActor, game };
 }
 
 const sword = {
@@ -84,6 +84,17 @@ const axe = {
   itemData: { name: "Топор", system: { quantity: 1 } }
 };
 
+const treasure = {
+  ...structuredClone(sword),
+  rowId: "source-ruby",
+  sourceId: "ruby",
+  name: "Рубин",
+  img: "icons/ruby.webp",
+  typeLabel: "Сокровища",
+  quantity: 1,
+  itemData: { name: "Рубин", system: { quantity: 1 } }
+};
+
 test("canvas transfer creates an unlinked independent ground pile token", async () => {
   const { service, tokens } = createHarness();
   const result = await service.transferToScene({
@@ -105,6 +116,7 @@ test("canvas transfer creates an unlinked independent ground pile token", async 
   assert.equal(tokens[0].name, "Меч (2)");
   assert.equal(tokens[0].texture.src, "icons/sword.webp");
   assert.equal(tokens[0].flags[MODULE_ID].groundPile.enabled, true);
+  assert.equal(tokens[0].flags[MODULE_ID].groundPile.coinPile, false);
   assert.equal(readStorageState(tokens[0]).manualRows[0].quantity, 2);
   assert.equal(readStorageState(tokens[0]).state, "opened");
 });
@@ -178,6 +190,146 @@ test("empty ground pile cleanup deletes its token while nonempty piles refresh",
   await service.refreshAfterStorageMutation(token, { ...state, state: "empty", claimedRowIds: [state.manualRows[0].rowId] });
   assert.equal(token.deleted, true);
   assert.equal(tokens.length, 0);
+});
+
+test("coin transfer creates and merges a pure manual-coin pile idempotently", async () => {
+  const { service, tokens } = createHarness();
+  const request = {
+    coins: { gp: 5 },
+    sceneId: "scene",
+    x: 300,
+    y: 400,
+    mutationId: "coin-drop-one"
+  };
+
+  const created = await service.transferCoinsToScene(request);
+  assert.equal(created.created, true);
+  assert.equal(tokens.length, 1);
+  assert.equal(tokens[0].name, "Золотая монета");
+  assert.match(tokens[0].texture.src, /coins-plain-gold\.webp$/u);
+  assert.equal(tokens[0].flags[MODULE_ID].groundPile.coinPile, true);
+  assert.equal(readStorageState(tokens[0]).manualRows.length, 0);
+  assert.deepEqual(readStorageState(tokens[0]).manualCoins, { pp: 0, gp: 5, sp: 0, cp: 0 });
+  assert.deepEqual(readStorageState(tokens[0]).generatedCoins, { pp: 0, gp: 0, sp: 0, cp: 0 });
+
+  const processed = service.findProcessedMutationAtPoint(request);
+  assert.equal(processed.duplicate, true);
+  assert.equal(processed.token, tokens[0]);
+  assert.equal(service.findProcessedMutationAtPoint({ ...request, sceneId: "other" }), null);
+  assert.equal(service.findProcessedMutationAtPoint({ ...request, x: 900, y: 900 }), null);
+  assert.equal(service.findProcessedMutationAtPoint({ ...request, mutationId: "not-processed" }), null);
+
+  const duplicate = await service.transferCoinsToScene(request);
+  assert.equal(duplicate.duplicate, true);
+  assert.equal(readStorageState(tokens[0]).manualCoins.gp, 5);
+
+  const merged = await service.transferCoinsToScene({
+    ...request,
+    coins: { sp: 3 },
+    mutationId: "coin-drop-two"
+  });
+  assert.equal(merged.merged, true);
+  assert.equal(tokens.length, 1);
+  assert.equal(tokens[0].name, "Куча монет");
+  assert.equal(tokens[0].texture.src, `modules/${MODULE_ID}/assets/storage/piles/coins.png`);
+  assert.deepEqual(readStorageState(tokens[0]).manualCoins, { pp: 0, gp: 5, sp: 3, cp: 0 });
+});
+
+test("coin mutation lookup requires the active GM and coin transfer rejects an empty map", async () => {
+  const { service } = createHarness({ activeGm: false });
+  const request = { coins: {}, sceneId: "scene", x: 300, y: 400, mutationId: "empty-coins" };
+
+  assert.throws(() => service.findProcessedMutationAtPoint(request), /активный мастер/u);
+  await assert.rejects(() => service.transferCoinsToScene(request), /хотя бы одну монету/u);
+});
+
+test("a claimed pure coin pile persists empty and reopens with recomputed coin presentation", async () => {
+  const { service, tokens } = createHarness();
+  await service.transferCoinsToScene({
+    coins: { gp: 5 }, sceneId: "scene", x: 300, y: 400, mutationId: "coin-create"
+  });
+  const token = tokens[0];
+  const claimed = { ...readStorageState(token), coinsClaimed: true, state: "empty", displayMode: "empty" };
+
+  const emptyResult = await service.refreshAfterStorageMutation(token, claimed);
+  assert.equal(emptyResult.deleted, false);
+  assert.equal(tokens.length, 1);
+  assert.equal(token.name, "Куча монет (пусто)");
+  assert.equal(token.texture.src, `modules/${MODULE_ID}/assets/storage/piles/coins.png`);
+  assert.equal(token.flags[MODULE_ID].groundPile.coinPile, true);
+  assert.equal(readStorageState(token).state, "empty");
+  assert.equal(readStorageState(token).displayMode, "empty");
+
+  await service.transferCoinsToScene({
+    coins: { gp: 2 }, sceneId: "scene", x: 300, y: 400, mutationId: "coin-reopen-single"
+  });
+  let reopened = readStorageState(token);
+  assert.equal(token.name, "Золотая монета");
+  assert.equal(reopened.state, "opened");
+  assert.equal(reopened.displayMode, "opened");
+  assert.equal(reopened.coinsClaimed, false);
+
+  await service.refreshAfterStorageMutation(token, {
+    ...reopened, coinsClaimed: true, state: "empty", displayMode: "empty"
+  });
+  await service.transferCoinsToScene({
+    coins: { sp: 3 }, sceneId: "scene", x: 300, y: 400, mutationId: "coin-reopen-mixed"
+  });
+  reopened = readStorageState(token);
+  assert.equal(token.name, "Куча монет");
+  assert.equal(reopened.state, "opened");
+  assert.equal(reopened.coinsClaimed, false);
+});
+
+test("treasure rows with coins stay treasure piles and still delete when emptied", async () => {
+  const { service, tokens } = createHarness();
+  await service.transferSnapshotToScene({
+    rows: [treasure],
+    coins: {},
+    sceneId: "scene",
+    x: 300,
+    y: 400,
+    mutationId: "treasure-create"
+  });
+  await service.transferCoinsToScene({
+    coins: { gp: 4 },
+    sceneId: "scene",
+    x: 300,
+    y: 400,
+    mutationId: "treasure-coins"
+  });
+  const token = tokens[0];
+  const state = readStorageState(token);
+  assert.equal(token.name, "Куча сокровищ");
+  assert.match(token.texture.src, /treasure\.png$/u);
+  assert.equal(token.flags[MODULE_ID].groundPile.coinPile, false);
+  assert.deepEqual(state.manualCoins, { pp: 0, gp: 4, sp: 0, cp: 0 });
+
+  await service.refreshAfterStorageMutation(token, {
+    ...state,
+    claimedRowIds: [state.manualRows[0].rowId],
+    coinsClaimed: true,
+    state: "empty",
+    displayMode: "empty"
+  });
+  assert.equal(token.deleted, true);
+  assert.equal(tokens.length, 0);
+});
+
+test("snapshot transfer passes coins into treasure presentation", async () => {
+  const { service, tokens } = createHarness();
+  await service.transferSnapshotToScene({
+    rows: [treasure],
+    coins: { sp: 2 },
+    sceneId: "scene",
+    x: 300,
+    y: 400,
+    mutationId: "treasure-snapshot"
+  });
+
+  assert.equal(tokens[0].name, "Куча сокровищ");
+  assert.match(tokens[0].texture.src, /treasure\.png$/u);
+  assert.equal(tokens[0].flags[MODULE_ID].groundPile.coinPile, false);
 });
 
 test("a complete snapshot creates one pile with every row and coin", async () => {

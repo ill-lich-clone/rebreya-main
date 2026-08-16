@@ -41,6 +41,64 @@ test("ground pile presentation derives same-category and mixed pile tokens", () 
   assert.match(mixed.img, /mixed-items\.png$/u);
 });
 
+test("pure coin piles use denomination, mixed coin, and preserved-empty presentations", () => {
+  assert.deepEqual(deriveGroundPilePresentation([], { coins: { gp: 8 } }), {
+    name: "Золотая монета",
+    img: "icons/commodities/currency/coins-plain-gold.webp",
+    categoryKey: "coins"
+  });
+  assert.deepEqual(deriveGroundPilePresentation([], { coins: { gp: 8, sp: 3 } }), {
+    name: "Куча монет",
+    img: `modules/${MODULE_ID}/assets/storage/piles/coins.png`,
+    categoryKey: "coins"
+  });
+  assert.deepEqual(deriveGroundPilePresentation([], {
+    coins: { pp: 0, gp: -2, sp: "3", cp: Number.NaN }
+  }), {
+    name: "Серебряная монета",
+    img: "icons/commodities/currency/coins-assorted-mix-silver.webp",
+    categoryKey: "coins"
+  });
+  assert.deepEqual(deriveGroundPilePresentation([], { preserveEmptyCoinPile: true }), {
+    name: "Куча монет (пусто)",
+    img: `modules/${MODULE_ID}/assets/storage/piles/coins.png`,
+    categoryKey: "coins"
+  });
+});
+
+test("rows with coins preserve treasure and existing ordinary row presentation rules", () => {
+  assert.deepEqual(deriveGroundPilePresentation([
+    { name: "Рубин", img: "icons/ruby.webp", typeLabel: "Сокровища", quantity: 1 }
+  ], { coins: { gp: 3 } }), {
+    name: "Куча сокровищ",
+    img: `modules/${MODULE_ID}/assets/storage/piles/treasure.png`,
+    categoryKey: "treasure"
+  });
+  assert.deepEqual(deriveGroundPilePresentation([
+    { name: "Меч", img: "icons/sword.webp", typeLabel: "Оружие", quantity: 1 }
+  ], { coins: { gp: 3 } }), {
+    name: "Меч",
+    img: "icons/sword.webp",
+    categoryKey: "single"
+  });
+  assert.deepEqual(deriveGroundPilePresentation([
+    { name: "Меч", typeLabel: "Оружие", quantity: 1 },
+    { name: "Топор", typeLabel: "Оружие", quantity: 1 }
+  ], { coins: { gp: 3 } }), {
+    name: "Куча оружия",
+    img: `modules/${MODULE_ID}/assets/storage/piles/weapons.png`,
+    categoryKey: "weapons"
+  });
+  assert.deepEqual(deriveGroundPilePresentation([
+    { name: "Меч", typeLabel: "Оружие", quantity: 1 },
+    { name: "Зелье", typeLabel: "Зелье", quantity: 1 }
+  ], { coins: { gp: 3 } }), {
+    name: "Куча предметов",
+    img: `modules/${MODULE_ID}/assets/storage/piles/mixed-items.png`,
+    categoryKey: "mixed-items"
+  });
+});
+
 test("unknown category labels safely use the mixed pile presentation", () => {
   const result = deriveGroundPilePresentation([
     { name: "Первый", typeLabel: "Неизвестное", quantity: 1 },
