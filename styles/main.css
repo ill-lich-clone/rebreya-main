@@ -1099,7 +1099,7 @@ summary:focus-visible {
   visibility: hidden;
   transform: translate(-50%, 6px);
   transition: opacity 120ms ease, transform 120ms ease, visibility 120ms ease;
-  z-index: 90;
+  z-index: 1000;
 }
 
 .rm-tooltip-anchor[data-rm-tooltip]::before {
