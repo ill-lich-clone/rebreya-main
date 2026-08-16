@@ -257,3 +257,102 @@ test("magic item compendium builds automation for selected magic items", () => {
     assert.equal(automation?.maxAbilityScore, expectedMaxAbilityScore);
   }
 });
+
+test("magic instruments expose independent native cast activities", () => {
+  const sourceItems = new Map(MAGIC_ITEMS.map((item) => [item.name, item]));
+  const names = ["Бандура Фоклучан", "Лира Кли", "Лютня Досс"];
+  const expectedByInstrument = {
+    "Бандура Фоклучан": [
+      ["Дубинка", 0, "Compendium.dnd5e.spells.Item.VzgFzcmocr1X1cp4"],
+      ["Защита от зла и добра", 1, "Compendium.dnd5e.spells.Item.xmDBqZhRVrtLP8h2"],
+      ["Левитация", 2, "Compendium.dnd5e.spells.Item.MRxldJd6C4bsBo3O"],
+      ["Невидимость", 2, "Compendium.dnd5e.spells.Item.1N8dDMMgZ1h1YJ3B"],
+      ["Огонь фей", 1, "Compendium.dnd5e.spells.Item.nqBDWkVOfcGZt4YU"],
+      ["Опутывание", 1, "Compendium.dnd5e.spells.Item.gMrWeG8fMDPRFiVe"],
+      ["Полёт", 3, "Compendium.dnd5e.spells.Item.yfbK8gZqESlaoY5t"],
+      ["Разговор с животными", 1, "Compendium.dnd5e.spells.Item.aL1F8fvYLtNzUbKu"]
+    ],
+    "Лира Кли": [
+      ["Защита от зла и добра", 1, "Compendium.dnd5e.spells.Item.xmDBqZhRVrtLP8h2"],
+      ["Изменение формы камня", 4, "Compendium.dnd5e.spells.Item.QvGcdRUSNRKEQJlK"],
+      ["Левитация", 2, "Compendium.dnd5e.spells.Item.MRxldJd6C4bsBo3O"],
+      ["Невидимость", 2, "Compendium.dnd5e.spells.Item.1N8dDMMgZ1h1YJ3B"],
+      ["Огненная стена", 4, "Compendium.dnd5e.spells.Item.X3DrXgxjwI2dvkD6"],
+      ["Полёт", 3, "Compendium.dnd5e.spells.Item.yfbK8gZqESlaoY5t"],
+      ["Стена ветров", 3, "Compendium.dnd5e.spells.Item.ew6GA8dJy2spQmFW"]
+    ],
+    "Лютня Досс": [
+      ["Дружба с животными", 1, "Compendium.dnd5e.spells.Item.hDOENzjuj5WpLq7B"],
+      ["Защита от энергии (только огонь)", 3, "Compendium.dnd5e.spells.Item.j8NtLXOOJ3GAKF8I"],
+      ["Защита от яда", 2, "Compendium.dnd5e.spells.Item.MAxM77CDUu8dgIRQ"],
+      ["Защита от зла и добра", 1, "Compendium.dnd5e.spells.Item.xmDBqZhRVrtLP8h2"],
+      ["Левитация", 2, "Compendium.dnd5e.spells.Item.MRxldJd6C4bsBo3O"],
+      ["Невидимость", 2, "Compendium.dnd5e.spells.Item.1N8dDMMgZ1h1YJ3B"],
+      ["Полёт", 3, "Compendium.dnd5e.spells.Item.yfbK8gZqESlaoY5t"]
+    ]
+  };
+  const normalized = magicItemsCompendium.normalizeMagicItems(
+    names.map((name) => sourceItems.get(name))
+  );
+  const byName = new Map(normalized.map((item) => [item.name, item]));
+  const createdByName = new Map(names.map((name) => [
+    name,
+    magicItemsCompendium.createMagicItemData(byName.get(name), new Map())
+  ]));
+
+  for (const name of names) {
+    const created = createdByName.get(name);
+    const activities = Object.values(created.system.activities ?? {});
+    const expected = expectedByInstrument[name];
+
+    assert.equal(activities.length, expected.length);
+    assert.deepEqual(
+      activities.map((activity) => [activity.name, activity.spell.level, activity.spell.uuid]),
+      expected
+    );
+
+    for (const activity of activities) {
+      assert.equal(activity.type, "cast");
+      assert.deepEqual(activity.activation, { type: "action", value: 1, condition: "" });
+      assert.equal(activity.consumption.spellSlot, false);
+      assert.deepEqual(activity.consumption.targets, [{ type: "activityUses", value: "1" }]);
+      assert.deepEqual(activity.uses, {
+        spent: 0,
+        max: "1",
+        recovery: [{ period: "dawn", type: "recoverAll", formula: "" }]
+      });
+      assert.equal(activity.spell.ability, "");
+      assert.deepEqual(activity.spell.challenge, { override: false });
+      assert.deepEqual(activity.spell.properties, ["vocal", "somatic", "material"]);
+      assert.equal(activity.spell.spellbook, true);
+      assert.equal(activity._id.length, 16);
+    }
+
+    assert.deepEqual(
+      Object.keys(created.system.activities ?? {}),
+      activities.map((activity) => activity._id)
+    );
+    assert.deepEqual(
+      magicItemsCompendium.createMagicItemData(byName.get(name), new Map()).system.activities,
+      created.system.activities
+    );
+
+    const signature = JSON.parse(created.flags["rebreya-main"].signature);
+    assert.equal(signature.nativeInstrumentSpellActivities.version, 1);
+    assert.deepEqual(signature.nativeInstrumentSpellActivities.activities, created.system.activities);
+  }
+
+  const flyActivityIds = names.map((name) => Object.values(createdByName.get(name).system.activities)
+    .find((activity) => activity.spell.uuid === "Compendium.dnd5e.spells.Item.yfbK8gZqESlaoY5t")._id);
+  assert.equal(new Set(flyActivityIds).size, 3);
+
+  const [illusionTool] = magicItemsCompendium.normalizeMagicItems([
+    sourceItems.get("Инструмент иллюзий")
+  ]);
+  const illusionToolData = magicItemsCompendium.createMagicItemData(illusionTool, new Map());
+  assert.equal(illusionToolData.system.activities, undefined);
+  assert.equal(
+    Object.hasOwn(JSON.parse(illusionToolData.flags["rebreya-main"].signature), "nativeInstrumentSpellActivities"),
+    false
+  );
+});

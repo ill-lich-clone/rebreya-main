@@ -28,6 +28,37 @@ const EFFECT_MODE_ADD = 2;
 const EFFECT_MODE_UPGRADE = 4;
 const DEFAULT_MAGIC_ITEM_ICON = "systems/dnd5e/icons/svg/items/loot.svg";
 const MAGIC_TEMPLATE_VERSION = 4;
+const NATIVE_INSTRUMENT_SPELL_ACTIVITY_VERSION = 1;
+const NATIVE_INSTRUMENT_SPELLS = {
+  "бандура-фоклучан": [
+    { name: "Дубинка", id: "VzgFzcmocr1X1cp4", level: 0 },
+    { name: "Защита от зла и добра", id: "xmDBqZhRVrtLP8h2", level: 1 },
+    { name: "Левитация", id: "MRxldJd6C4bsBo3O", level: 2 },
+    { name: "Невидимость", id: "1N8dDMMgZ1h1YJ3B", level: 2 },
+    { name: "Огонь фей", id: "nqBDWkVOfcGZt4YU", level: 1 },
+    { name: "Опутывание", id: "gMrWeG8fMDPRFiVe", level: 1 },
+    { name: "Полёт", id: "yfbK8gZqESlaoY5t", level: 3 },
+    { name: "Разговор с животными", id: "aL1F8fvYLtNzUbKu", level: 1 }
+  ],
+  "лира-кли": [
+    { name: "Защита от зла и добра", id: "xmDBqZhRVrtLP8h2", level: 1 },
+    { name: "Изменение формы камня", id: "QvGcdRUSNRKEQJlK", level: 4 },
+    { name: "Левитация", id: "MRxldJd6C4bsBo3O", level: 2 },
+    { name: "Невидимость", id: "1N8dDMMgZ1h1YJ3B", level: 2 },
+    { name: "Огненная стена", id: "X3DrXgxjwI2dvkD6", level: 4 },
+    { name: "Полёт", id: "yfbK8gZqESlaoY5t", level: 3 },
+    { name: "Стена ветров", id: "ew6GA8dJy2spQmFW", level: 3 }
+  ],
+  "лютня-досс": [
+    { name: "Дружба с животными", id: "hDOENzjuj5WpLq7B", level: 1 },
+    { name: "Защита от энергии (только огонь)", id: "j8NtLXOOJ3GAKF8I", level: 3 },
+    { name: "Защита от яда", id: "MAxM77CDUu8dgIRQ", level: 2 },
+    { name: "Защита от зла и добра", id: "xmDBqZhRVrtLP8h2", level: 1 },
+    { name: "Левитация", id: "MRxldJd6C4bsBo3O", level: 2 },
+    { name: "Невидимость", id: "1N8dDMMgZ1h1YJ3B", level: 2 },
+    { name: "Полёт", id: "yfbK8gZqESlaoY5t", level: 3 }
+  ]
+};
 const MODULE_ICONS_BASE_PATH = `modules/${MODULE_ID}/templates/icons`;
 const MAGIC_ICON_SEARCH_PATHS = [`${MODULE_ICONS_BASE_PATH}/Magic Items`, MODULE_ICONS_BASE_PATH];
 const BELLMAN_POWER_ITEM_NAME = "Жемчужина силы";
@@ -61,6 +92,64 @@ function stableHashId(seed, scope = "id") {
 
 function buildMagicItemEffectId(item, suffix) {
   return stableHashId(`magic-item:${String(item?.id ?? "").trim()}:${suffix}`, "magic-item-effect");
+}
+
+function resolveNativeInstrumentSpellDefinition(item) {
+  return NATIVE_INSTRUMENT_SPELLS[String(item?.id ?? "").trim()] ?? null;
+}
+
+function buildNativeInstrumentSpellActivities(item) {
+  const spells = resolveNativeInstrumentSpellDefinition(item);
+  if (!spells) {
+    return null;
+  }
+
+  return Object.fromEntries(spells.map((spell) => {
+    const activityId = stableHashId(
+      `magic-item:${item.id}:spell:${spell.id}`,
+      "magic-item-activity"
+    );
+    return [activityId, {
+      _id: activityId,
+      type: "cast",
+      name: spell.name,
+      activation: {
+        type: "action",
+        value: 1,
+        condition: ""
+      },
+      consumption: {
+        scaling: {
+          allowed: false,
+          max: ""
+        },
+        spellSlot: false,
+        targets: [{
+          type: "activityUses",
+          value: "1"
+        }]
+      },
+      uses: {
+        spent: 0,
+        max: "1",
+        recovery: [{
+          period: "dawn",
+          type: "recoverAll",
+          formula: ""
+        }]
+      },
+      spell: {
+        ability: "",
+        challenge: {
+          override: false
+        },
+        level: spell.level,
+        properties: ["vocal", "somatic", "material"],
+        spellbook: true,
+        uuid: `Compendium.dnd5e.spells.Item.${spell.id}`
+      }
+    }];
+  }));
 }
 
 function buildPassiveMagicItemEffect({
@@ -440,6 +529,7 @@ function buildMagicSignature(item) {
   const classification = classifyMagicItem(item);
   const itemSlot = resolveItemSlotGroup(item, classification);
   const heroDollSlots = mapSlotGroupToHeroDollSlots(itemSlot, classification.heroDollSlots);
+  const nativeInstrumentSpellActivities = buildNativeInstrumentSpellActivities(item);
   return JSON.stringify({
     templateVersion: MAGIC_TEMPLATE_VERSION,
     id: item.id,
@@ -465,7 +555,13 @@ function buildMagicSignature(item) {
     foundryBaseItem: classification.baseItem,
     folderPath: buildFolderPath(classification),
     heroDollSlots,
-    firearmClass: classification.firearmClass
+    firearmClass: classification.firearmClass,
+    ...(nativeInstrumentSpellActivities ? {
+      nativeInstrumentSpellActivities: {
+        version: NATIVE_INSTRUMENT_SPELL_ACTIVITY_VERSION,
+        activities: nativeInstrumentSpellActivities
+      }
+    } : {})
   });
 }
 
@@ -619,6 +715,11 @@ export function createMagicItemData(item, folderIdByPath, iconLookup = null) {
   const descriptionHtml = buildDescriptionHtml(item, classification);
   const magicItemAutomation = resolveMagicItemAutomationDefinition(item);
   const systemData = buildSystemData(item, classification, descriptionHtml);
+  const nativeInstrumentSpellActivities = buildNativeInstrumentSpellActivities(item);
+
+  if (nativeInstrumentSpellActivities) {
+    systemData.activities = nativeInstrumentSpellActivities;
+  }
 
   if (magicItemAutomation?.kind === "bagOfHolding") {
     systemData.capacity = magicItemAutomation.capacity ?? {
