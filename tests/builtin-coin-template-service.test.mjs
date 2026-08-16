@@ -81,13 +81,56 @@ function makeItem(data) {
   return {
     ...data,
     updates: [],
+    updateCalls: [],
     getFlag(scope, key) {
       return this.flags?.[scope]?.[key];
     },
-    async update(patch) {
+    async update(patch, options = {}) {
       this.updates.push(structuredClone(patch));
+      this.updateCalls.push({ patch: structuredClone(patch), options: structuredClone(options) });
+      if (patch.type && patch.type !== this.type) {
+        if (options.recursive !== false || !patch.system || typeof patch.system !== "object") {
+          throw new Error("Foundry v13 requires a full non-recursive system replacement when changing Item type.");
+        }
+      }
+      applyFoundryUpdate(this, patch, options);
     }
   };
+}
+
+function applyFoundryUpdate(target, patch, options) {
+  if (options.recursive === false) {
+    for (const [key, value] of Object.entries(patch)) {
+      target[key] = structuredClone(value);
+    }
+    return;
+  }
+  for (const [path, value] of Object.entries(patch)) {
+    const keys = path.split(".");
+    const leaf = keys.pop();
+    const parent = keys.reduce((current, key) => (current[key] ??= {}), target);
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      parent[leaf] ??= {};
+      mergeFoundryObject(parent[leaf], value);
+      continue;
+    }
+    parent[leaf] = structuredClone(value);
+  }
+}
+
+function mergeFoundryObject(target, source) {
+  for (const [key, value] of Object.entries(source)) {
+    if (key.startsWith("-=")) {
+      delete target[key.slice(2)];
+      continue;
+    }
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      target[key] ??= {};
+      mergeFoundryObject(target[key], value);
+      continue;
+    }
+    target[key] = structuredClone(value);
+  }
 }
 
 function expectedManagedData(denomination, folderId) {
@@ -146,7 +189,7 @@ test("active GM creates the root coin folder and immutable catalog exactly once"
   assert.equal(harness.itemCreates.length, 4);
 });
 
-test("sync finds renamed and moved Items by stable flag and repairs only managed fields", async () => {
+test("sync migrates a flagged Item type with a full system replacement that preserves non-managed data", async () => {
   const harness = createHarness();
   await harness.service.sync();
   const gold = harness.items.find((item) => (
@@ -156,24 +199,63 @@ test("sync finds renamed and moved Items by stable flag and repairs only managed
   gold.type = "equipment";
   gold.img = "icons/svg/mystery-man.svg";
   gold.folder = { id: "other-folder" };
-  gold.system = { quantity: 99, type: { value: "gear" }, untouched: "keep" };
+  gold.system = {
+    quantity: 99,
+    type: { value: "gear", subtype: "kept-subtype" },
+    untouched: { nested: "keep" }
+  };
+  gold.ownership = { default: 2 };
   gold.flags[MODULE_ID].sourceType = "wrong";
-  gold.flags[MODULE_ID][BUILTIN_COIN_TEMPLATE_FLAG].version = 0;
 
   await harness.service.sync();
 
   assert.equal(harness.itemCreates.length, 4);
-  assert.equal(gold.updates.length, 1);
-  assert.deepEqual(gold.updates[0], {
+  assert.equal(gold.updateCalls[0].options.recursive, false);
+  assert.deepEqual(gold.updateCalls[0].patch, {
     name: "Золотая монета",
     type: "loot",
     img: "icons/commodities/currency/coins-plain-gold.webp",
     folder: "folder-1",
-    "system.quantity": 1,
-    "system.type.value": "treasure",
-    [`flags.${MODULE_ID}.sourceType`]: "coinTemplate",
-    [`flags.${MODULE_ID}.${BUILTIN_COIN_TEMPLATE_FLAG}`]: { version: 1, denomination: "gp" }
+    system: {
+      quantity: 1,
+      type: { value: "treasure", subtype: "kept-subtype" },
+      untouched: { nested: "keep" }
+    }
   });
+  assert.equal(gold.type, "loot");
+  assert.deepEqual(gold.system, {
+    quantity: 1,
+    type: { value: "treasure", subtype: "kept-subtype" },
+    untouched: { nested: "keep" }
+  });
+  assert.deepEqual(gold.ownership, { default: 2 });
+  assert.equal(gold.flags[MODULE_ID].sourceType, "coinTemplate");
+});
+
+test("sync removes legacy stable-flag keys while preserving unrelated flags and system data", async () => {
+  const harness = createHarness();
+  await harness.service.sync();
+  const gold = harness.items.find((item) => (
+    item.getFlag(MODULE_ID, BUILTIN_COIN_TEMPLATE_FLAG)?.denomination === "gp"
+  ));
+  gold.flags[MODULE_ID][BUILTIN_COIN_TEMPLATE_FLAG] = {
+    version: 0,
+    denomination: "gp",
+    legacy: true
+  };
+  gold.flags[MODULE_ID].unrelated = { keep: true };
+  gold.flags.otherModule = { keep: true };
+  gold.system.untouched = { nested: "keep" };
+
+  await harness.service.sync();
+
+  assert.deepEqual(gold.flags[MODULE_ID][BUILTIN_COIN_TEMPLATE_FLAG], {
+    version: 1,
+    denomination: "gp"
+  });
+  assert.deepEqual(gold.flags[MODULE_ID].unrelated, { keep: true });
+  assert.deepEqual(gold.flags.otherModule, { keep: true });
+  assert.deepEqual(gold.system.untouched, { nested: "keep" });
 });
 
 test("an unflagged same-name Item remains untouched and does not satisfy the managed catalog", async () => {

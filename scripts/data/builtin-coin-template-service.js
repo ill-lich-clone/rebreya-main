@@ -38,6 +38,15 @@ function collectionValues(collection) {
   return [];
 }
 
+function cloneData(value) {
+  const source = typeof value?.toObject === "function" ? value.toObject() : value;
+  if (!source || typeof source !== "object") return {};
+  if (typeof globalThis.structuredClone === "function") {
+    return globalThis.structuredClone(source);
+  }
+  return JSON.parse(JSON.stringify(source));
+}
+
 function compareManagedItems(left, right) {
   const leftSort = Number.isFinite(left?.sort) ? left.sort : 0;
   const rightSort = Number.isFinite(right?.sort) ? right.sort : 0;
@@ -55,6 +64,20 @@ export function readBuiltinCoinDenomination(item) {
     : item?.flags?.[MODULE_ID]?.[BUILTIN_COIN_TEMPLATE_FLAG];
   const denomination = String(flag?.denomination ?? "").trim();
   return BUILTIN_COIN_DENOMINATIONS.has(denomination) ? denomination : null;
+}
+
+function buildExactCoinTemplateFlag(item, denomination) {
+  const current = typeof item?.getFlag === "function"
+    ? item.getFlag(MODULE_ID, BUILTIN_COIN_TEMPLATE_FLAG)
+    : item?.flags?.[MODULE_ID]?.[BUILTIN_COIN_TEMPLATE_FLAG];
+  const removals = Object.keys(current && typeof current === "object" ? current : {})
+    .filter((key) => key !== "version" && key !== "denomination")
+    .map((key) => [`-=${key}`, null]);
+  return {
+    ...Object.fromEntries(removals),
+    version: 1,
+    denomination
+  };
 }
 
 function buildBuiltinCoinTemplateData(template, folderId) {
@@ -132,6 +155,27 @@ export class BuiltinCoinTemplateService {
 
   async #repairItem(item, template, folderId) {
     if (typeof item?.update !== "function") return;
+    const exactFlag = buildExactCoinTemplateFlag(item, template.denomination);
+    if (item.type !== "loot") {
+      const system = cloneData(item.system);
+      system.quantity = 1;
+      system.type = {
+        ...(system.type && typeof system.type === "object" ? system.type : {}),
+        value: "treasure"
+      };
+      await item.update({
+        name: template.name,
+        type: "loot",
+        img: template.img,
+        folder: folderId,
+        system
+      }, { recursive: false });
+      await item.update({
+        [`flags.${MODULE_ID}.sourceType`]: "coinTemplate",
+        [`flags.${MODULE_ID}.${BUILTIN_COIN_TEMPLATE_FLAG}`]: exactFlag
+      });
+      return;
+    }
     await item.update({
       name: template.name,
       type: "loot",
@@ -140,10 +184,7 @@ export class BuiltinCoinTemplateService {
       "system.quantity": 1,
       "system.type.value": "treasure",
       [`flags.${MODULE_ID}.sourceType`]: "coinTemplate",
-      [`flags.${MODULE_ID}.${BUILTIN_COIN_TEMPLATE_FLAG}`]: {
-        version: 1,
-        denomination: template.denomination
-      }
+      [`flags.${MODULE_ID}.${BUILTIN_COIN_TEMPLATE_FLAG}`]: exactFlag
     });
   }
 
