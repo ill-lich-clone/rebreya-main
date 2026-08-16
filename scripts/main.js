@@ -4665,7 +4665,6 @@ export class RebreyaMainModule {
 
   async clearTravelRoute() {
     const result = await this.travelService.clearRoute();
-    await this.refreshOpenApps();
     return result;
   }
 

@@ -2429,6 +2429,56 @@ test("InventoryApp travel city autocomplete selects the preview with Enter", asy
   }
 });
 
+test("InventoryApp refreshes the open travel tab after a route change", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const dom = installMinimalDom();
+  const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?travel-route-refresh=${Date.now()}`);
+  const calls = [];
+  const originValue = createFakeControl({ value: "liara-ken" });
+  const destinationValue = createFakeControl({ value: "stranbu" });
+  const modeSelect = createFakeControl({ value: "land" });
+  const controls = new Map([
+    ["[data-action='travel-origin']", originValue],
+    ["[data-action='travel-destination']", destinationValue],
+    ["[data-action='travel-mode']", modeSelect]
+  ]);
+  const root = createFakeElement({ closest: () => root });
+  root.querySelector = (selector) => controls.get(selector) ?? null;
+  root.querySelectorAll = () => [];
+  const app = new InventoryApp(createModuleApi({
+    getGroupContext: () => null,
+    calls
+  }));
+  app.element = root;
+  app.activeTab = "travel";
+  const renders = [];
+  app.render = async (options) => {
+    renders.push(options);
+    return app;
+  };
+
+  try {
+    await app._onRender({}, {});
+    assert.ok(modeSelect.listeners.change?.length, "expected travel mode change listener");
+    await modeSelect.listeners.change[0]({ currentTarget: modeSelect });
+
+    assert.equal(app.activeTab, "travel");
+    assert.deepEqual(calls.filter((call) => call[0] === "setTravelRoute"), [[
+      "setTravelRoute",
+      {
+        originCityId: "liara-ken",
+        destinationCityId: "stranbu",
+        mode: "land"
+      }
+    ]]);
+    assert.deepEqual(renders, [{ force: true, preserveScroll: true }]);
+  }
+  finally {
+    dom.restore();
+    restoreFoundry();
+  }
+});
+
 test("InventoryApp travel advance updates the progress strip without rendering the whole app", async () => {
   const restoreFoundry = installFoundryApplicationStub();
   const dom = installMinimalDom();
@@ -2569,6 +2619,206 @@ test("InventoryApp clears the header travel route from its context menu", async 
     assert.equal(prevented, true);
     assert.equal(stopped, true);
     assert.deepEqual(calls.filter((call) => call[0] === "clearTravelRoute"), [["clearTravelRoute"]]);
+  }
+  finally {
+    dom.restore();
+    restoreFoundry();
+  }
+});
+
+test("InventoryApp reset renders the cleared snapshot instead of restoring a stale route", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const dom = installMinimalDom();
+  const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?travel-route-clear=${Date.now()}`);
+  const calls = [];
+  const clearButton = createFakeControl();
+  const root = createFakeElement({ closest: () => root });
+  root.querySelector = (selector) => (
+    selector === "[data-action='travel-clear']" ? clearButton : null
+  );
+  root.querySelectorAll = () => [];
+  const clearedSnapshot = {
+    available: true,
+    warning: "",
+    canAdvance: false,
+    canRewind: false,
+    canSelectRoute: true,
+    mode: "land",
+    originCityId: "",
+    originCityName: "",
+    destinationCityId: "",
+    destinationCityName: "",
+    cityOptions: [],
+    modeOptions: [],
+    plan: {
+      available: false,
+      reason: "Выберите города и способ пути."
+    },
+    progress: {
+      traveledMiles: 0,
+      remainingMiles: 0,
+      percent: 0,
+      traveledHours: 0,
+      remainingHours: 0,
+      traveledTravelDays: 0,
+      remainingTravelDays: 0,
+      label: "Маршрут не выбран",
+      completed: false
+    },
+    mapPosition: {
+      available: false,
+      reason: "Маршрут не выбран"
+    },
+    emptyMessage: "Выберите города и способ пути.",
+    speedMph: 3,
+    speedLabel: "3 мили/час",
+    speedMultiplier: 1,
+    speedMultiplierOptions: [],
+    speedSourceLabel: "Пешком"
+  };
+  const staleSnapshot = {
+    ...clearedSnapshot,
+    originCityId: "ferton",
+    originCityName: "Фэртон",
+    destinationCityId: "tsugengrim",
+    destinationCityName: "Цугенгрим",
+    plan: {
+      available: true,
+      originName: "Фэртон",
+      destinationName: "Цугенгрим",
+      totalMiles: 3607,
+      totalHours: 1202.33,
+      totalTravelDays: 150,
+      legs: []
+    },
+    progress: {
+      ...clearedSnapshot.progress,
+      remainingMiles: 3607,
+      remainingHours: 1202.33,
+      remainingTravelDays: 150,
+      label: "0 / 3607 миль"
+    }
+  };
+  const moduleApi = createModuleApi({
+    getGroupContext: () => null,
+    travelSnapshot: staleSnapshot,
+    calls
+  });
+  moduleApi.clearTravelRoute = async () => {
+    calls.push(["clearTravelRoute"]);
+    return clearedSnapshot;
+  };
+  const app = new InventoryApp(moduleApi);
+  app.element = root;
+  app.activeTab = "travel";
+  const renderedContexts = [];
+  app.render = async () => {
+    renderedContexts.push(await app._prepareContext());
+    return app;
+  };
+
+  try {
+    await app._onRender({}, {});
+    await dispatchClick(clearButton);
+
+    assert.equal(app.activeTab, "travel");
+    assert.equal(renderedContexts.length, 1);
+    assert.equal(renderedContexts[0].travel.plan.available, false);
+    assert.equal(renderedContexts[0].travel.headerRoute.available, false);
+    assert.equal(calls.filter((call) => call[0] === "getTravelSnapshot").length, 0);
+  }
+  finally {
+    dom.restore();
+    restoreFoundry();
+  }
+});
+
+test("InventoryApp ignores a route response that finishes after reset", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const dom = installMinimalDom();
+  const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?travel-route-race=${Date.now()}`);
+  const originValue = createFakeControl({ value: "ferton" });
+  const destinationValue = createFakeControl({ value: "tsugengrim" });
+  const modeSelect = createFakeControl({ value: "land" });
+  const clearButton = createFakeControl();
+  const controls = new Map([
+    ["[data-action='travel-origin']", originValue],
+    ["[data-action='travel-destination']", destinationValue],
+    ["[data-action='travel-mode']", modeSelect],
+    ["[data-action='travel-clear']", clearButton]
+  ]);
+  const root = createFakeElement({ closest: () => root });
+  root.querySelector = (selector) => controls.get(selector) ?? null;
+  root.querySelectorAll = () => [];
+  const emptyProgress = {
+    traveledMiles: 0,
+    remainingMiles: 0,
+    percent: 0,
+    traveledHours: 0,
+    remainingHours: 0,
+    traveledTravelDays: 0,
+    remainingTravelDays: 0,
+    label: "Маршрут не выбран",
+    completed: false
+  };
+  const clearedSnapshot = {
+    available: true,
+    canAdvance: false,
+    canRewind: false,
+    canSelectRoute: true,
+    plan: { available: false },
+    progress: emptyProgress
+  };
+  const selectedSnapshot = {
+    available: true,
+    canAdvance: true,
+    canRewind: false,
+    canSelectRoute: true,
+    originCityId: "ferton",
+    destinationCityId: "tsugengrim",
+    plan: {
+      available: true,
+      originName: "Фэртон",
+      destinationName: "Цугенгрим",
+      totalMiles: 3607,
+      totalHours: 1202.33,
+      totalTravelDays: 150,
+      legs: []
+    },
+    progress: {
+      ...emptyProgress,
+      remainingMiles: 3607,
+      remainingHours: 1202.33,
+      remainingTravelDays: 150,
+      label: "0 / 3607 миль"
+    }
+  };
+  let resolveRoute;
+  const routeResult = new Promise((resolve) => {
+    resolveRoute = resolve;
+  });
+  const moduleApi = createModuleApi({ getGroupContext: () => null });
+  moduleApi.setTravelRoute = async () => routeResult;
+  moduleApi.clearTravelRoute = async () => clearedSnapshot;
+  const app = new InventoryApp(moduleApi);
+  app.element = root;
+  app.activeTab = "travel";
+  const renderedContexts = [];
+  app.render = async () => {
+    renderedContexts.push(await app._prepareContext());
+    return app;
+  };
+
+  try {
+    await app._onRender({}, {});
+    const pendingRouteChange = modeSelect.listeners.change[0]({ currentTarget: modeSelect });
+    await dispatchClick(clearButton);
+    resolveRoute(selectedSnapshot);
+    await pendingRouteChange;
+
+    assert.equal(renderedContexts.length, 1);
+    assert.equal(renderedContexts[0].travel.plan.available, false);
+    assert.equal(renderedContexts[0].travel.headerRoute.available, false);
   }
   finally {
     dom.restore();

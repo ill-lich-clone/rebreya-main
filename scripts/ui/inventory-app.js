@@ -3109,6 +3109,8 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.downtimeQueuePage = 1;
     this.downtimeArchivePage = 1;
     this.travelTrackTime = false;
+    this.pendingTravelSnapshot = null;
+    this.travelMutationSequence = 0;
     this.expandedPartyMembers = new Set();
     this.searchRenderTimeout = null;
     this.craftSearchRenderTimeout = null;
@@ -3727,7 +3729,13 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       let travelSnapshot = null;
       let travelWarning = "";
       try {
-        travelSnapshot = await this.moduleApi.getTravelSnapshot?.();
+        if (this.pendingTravelSnapshot !== null) {
+          travelSnapshot = this.pendingTravelSnapshot;
+          this.pendingTravelSnapshot = null;
+        }
+        else {
+          travelSnapshot = await this.moduleApi.getTravelSnapshot?.();
+        }
       }
       catch (error) {
         if (!isKnownGroupContextError(error)) {
@@ -5718,12 +5726,18 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       const originCityId = cleanText(element.querySelector("[data-action='travel-origin']")?.value);
       const destinationCityId = cleanText(element.querySelector("[data-action='travel-destination']")?.value);
       const mode = cleanText(element.querySelector("[data-action='travel-mode']")?.value) || "land";
+      const mutationSequence = ++this.travelMutationSequence;
       try {
-        await this.moduleApi.setTravelRoute?.({
+        const snapshot = await this.moduleApi.setTravelRoute?.({
           originCityId,
           destinationCityId,
           mode
         });
+        if (mutationSequence !== this.travelMutationSequence) {
+          return;
+        }
+        this.pendingTravelSnapshot = snapshot ?? null;
+        await this.render({ force: true, preserveScroll: true });
         this.#setActionFeedback("success", "Маршрут путешествия обновлён.");
         bringAppToFront(this);
       }
@@ -5802,8 +5816,14 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     });
 
     const clearTravelRoute = async () => {
+      const mutationSequence = ++this.travelMutationSequence;
       try {
-        await this.moduleApi.clearTravelRoute?.();
+        const snapshot = await this.moduleApi.clearTravelRoute?.();
+        if (mutationSequence !== this.travelMutationSequence) {
+          return;
+        }
+        this.pendingTravelSnapshot = snapshot ?? null;
+        await this.render({ force: true, preserveScroll: true });
         this.#setActionFeedback("success", "Маршрут путешествия очищен.");
         bringAppToFront(this);
       }

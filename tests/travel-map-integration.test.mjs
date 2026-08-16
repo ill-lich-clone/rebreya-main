@@ -340,6 +340,45 @@ test("RebreyaMainModule advances travel without forcing inventory rerender", asy
   }
 });
 
+test("RebreyaMainModule clears travel without forcing inventory rerender", async () => {
+  const previousHooks = globalThis.Hooks;
+  const previousGame = globalThis.game;
+  const previousUi = globalThis.ui;
+  const previousFoundry = globalThis.foundry;
+
+  globalThis.Hooks = { once() {}, on() {} };
+  globalThis.game = { user: { id: "gm", isGM: true } };
+  globalThis.ui = { windows: {} };
+  globalThis.foundry = { applications: { instances: new Map() } };
+
+  try {
+    const { RebreyaMainModule } = await import(`../scripts/main.js?travel-clear-no-refresh=${Date.now()}`);
+    const moduleApi = new RebreyaMainModule();
+    const snapshot = {
+      available: true,
+      originCityId: "",
+      destinationCityId: "",
+      plan: { available: false }
+    };
+    let refreshCount = 0;
+    moduleApi.travelService.clearRoute = async () => snapshot;
+    moduleApi.refreshOpenApps = async () => {
+      refreshCount += 1;
+    };
+
+    const result = await moduleApi.clearTravelRoute();
+
+    assert.equal(result, snapshot);
+    assert.equal(refreshCount, 0);
+  }
+  finally {
+    globalThis.Hooks = previousHooks;
+    globalThis.game = previousGame;
+    globalThis.ui = previousUi;
+    globalThis.foundry = previousFoundry;
+  }
+});
+
 test("RebreyaMainModule applies tracked travel time to the calendar", async () => {
   const previousHooks = globalThis.Hooks;
   const previousGame = globalThis.game;
