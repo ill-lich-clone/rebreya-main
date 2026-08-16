@@ -1118,7 +1118,7 @@ summary:focus-visible {
   padding: 8px 10px;
   border-radius: var(--rm-radius-section);
   border: 1px solid var(--rm-border-default);
-  background: var(--rm-surface-row);
+  background: rgb(var(--rm-color-dark-rgb) / 0.96);
   box-shadow: 0 14px 30px rgba(0, 0, 0, 0.4);
   color: var(--rm-text-primary);
   font-size: 12px;
