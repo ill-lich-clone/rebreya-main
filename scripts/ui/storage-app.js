@@ -46,7 +46,7 @@ function dragEventData(event) {
 
 function isSupportedStorageWindowDrop(data) {
   if (parseStorageDragData(data)) return true;
-  return ["Item", "ItemUUID"].includes(clean(data?.type)) && Boolean(clean(data?.uuid));
+  return ["Item", "ItemUUID", "JournalEntry"].includes(clean(data?.type)) && Boolean(clean(data?.uuid));
 }
 
 function isEditableDropTarget(target) {
