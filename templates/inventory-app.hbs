@@ -63,36 +63,36 @@
           >
             {{#if canEditCurrency}}
               <button type="button" class="rm-coin-badge rm-inventory-book__panel rm-coin-badge--pp" data-action="edit-currency" title="Редактировать монеты">
-                <strong>{{rmNum summary.currency.pp precision=0}}</strong>
+                <strong title="{{rmNum summary.currency.pp precision=0}}">{{summary.currencyDisplay.pp}}</strong>
                 <span>ПМ</span>
               </button>
               <button type="button" class="rm-coin-badge rm-inventory-book__panel rm-coin-badge--gp" data-action="edit-currency" title="Редактировать монеты">
-                <strong>{{rmNum summary.currency.gp precision=0}}</strong>
+                <strong title="{{rmNum summary.currency.gp precision=0}}">{{summary.currencyDisplay.gp}}</strong>
                 <span>ЗМ</span>
               </button>
               <button type="button" class="rm-coin-badge rm-inventory-book__panel rm-coin-badge--sp" data-action="edit-currency" title="Редактировать монеты">
-                <strong>{{rmNum summary.currency.sp precision=0}}</strong>
+                <strong title="{{rmNum summary.currency.sp precision=0}}">{{summary.currencyDisplay.sp}}</strong>
                 <span>СМ</span>
               </button>
               <button type="button" class="rm-coin-badge rm-inventory-book__panel rm-coin-badge--cp" data-action="edit-currency" title="Редактировать монеты">
-                <strong>{{rmNum summary.currency.cp precision=0}}</strong>
+                <strong title="{{rmNum summary.currency.cp precision=0}}">{{summary.currencyDisplay.cp}}</strong>
                 <span>ММ</span>
               </button>
             {{else}}
               <span class="rm-coin-badge rm-inventory-book__panel rm-coin-badge--pp">
-                <strong>{{rmNum summary.currency.pp precision=0}}</strong>
+                <strong title="{{rmNum summary.currency.pp precision=0}}">{{summary.currencyDisplay.pp}}</strong>
                 <span>ПМ</span>
               </span>
               <span class="rm-coin-badge rm-inventory-book__panel rm-coin-badge--gp">
-                <strong>{{rmNum summary.currency.gp precision=0}}</strong>
+                <strong title="{{rmNum summary.currency.gp precision=0}}">{{summary.currencyDisplay.gp}}</strong>
                 <span>ЗМ</span>
               </span>
               <span class="rm-coin-badge rm-inventory-book__panel rm-coin-badge--sp">
-                <strong>{{rmNum summary.currency.sp precision=0}}</strong>
+                <strong title="{{rmNum summary.currency.sp precision=0}}">{{summary.currencyDisplay.sp}}</strong>
                 <span>СМ</span>
               </span>
               <span class="rm-coin-badge rm-inventory-book__panel rm-coin-badge--cp">
-                <strong>{{rmNum summary.currency.cp precision=0}}</strong>
+                <strong title="{{rmNum summary.currency.cp precision=0}}">{{summary.currencyDisplay.cp}}</strong>
                 <span>ММ</span>
               </span>
             {{/if}}
@@ -1053,6 +1053,10 @@
       <button type="button" class="rm-inventory-book__tab {{#if tabs.isTravel}}is-active{{/if}}" data-action="switch-tab" data-tab="travel">Путешествие</button>
       <button type="button" class="rm-inventory-book__tab {{#if tabs.isTransport}}is-active{{/if}}" data-action="switch-tab" data-tab="transport">Транспорт</button>
       <button type="button" class="rm-inventory-book__tab {{#if tabs.isDowntime}}is-active{{/if}}" data-action="switch-tab" data-tab="downtime">Простой</button>
+    </nav>
+    <nav class="rm-inventory-book__utilities" aria-label="Дополнительные окна">
+      <button type="button" class="rm-inventory-book__utility" data-action="open-economy">Экономика</button>
+      <button type="button" class="rm-inventory-book__utility" data-action="open-quest-log">Квест лог</button>
     </nav>
   </section>
 {{/if}}

@@ -5064,7 +5064,7 @@ summary:focus-visible {
 .rebreya-inventory-app .rm-inventory-book__wallet {
   grid-area: wallet;
   justify-self: start;
-  width: 260px;
+  width: 300px;
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 6px;
@@ -5354,6 +5354,35 @@ summary:focus-visible {
 
 .rebreya-inventory-app.minimized .rm-inventory-book__tabs {
   display: none;
+}
+
+.rebreya-inventory-app .rm-inventory-book__utilities {
+  position: absolute;
+  z-index: -1;
+  top: 80px;
+  right: -104px;
+  display: grid;
+  gap: 7px;
+  width: 104px;
+}
+
+.rebreya-inventory-app.minimized .rm-inventory-book__utilities {
+  display: none;
+}
+
+.rebreya-inventory-app .rm-inventory-book__utility {
+  width: 104px;
+  min-height: 36px;
+  padding: 7px 8px 7px 12px;
+  border: 1px solid var(--rm-border-default);
+  border-left-color: var(--rm-border-strong);
+  border-radius: 0 8px 8px 0;
+  background: linear-gradient(90deg, rgb(var(--rm-color-surface-raised-rgb) / 0.96), rgb(var(--rm-color-ink-rgb) / 0.96));
+  color: var(--rm-text-secondary);
+  box-shadow: 3px 3px 8px rgb(0 0 0 / 0.34);
+  font-size: 12px;
+  font-weight: 700;
+  text-align: left;
 }
 
 .rebreya-inventory-app .rm-inventory-book__tab {

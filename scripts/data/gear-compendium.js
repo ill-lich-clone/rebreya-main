@@ -17,13 +17,14 @@ import {
   inferHeroDollSlotGroupFromSlots,
   mapSlotGroupToHeroDollSlots,
   normalizeHeroDollSlotGroup
-} from "./item-classification.js?v=1.4.144-spreadsheet-coins-ground-repair";
+} from "./item-classification.js?v=1.4.147-native-ammunition";
 import { createStableGearDocumentId } from "./gear-document-ids.js";
 import { syncManagedDocuments } from "./managed-compendium-sync.js";
 import {
   inferWeaponAmmunitionSubtype,
   isSelfAmmunitionWeapon
-} from "./ammunition-compatibility.js?v=1.4.111-native-ammunition-compatibility";
+} from "./ammunition-compatibility.js?v=1.4.147-native-ammunition";
+import { inferRebreyaWeaponAmmunitionSubtype } from "./ammunition-types.js";
 import {
   escapeFoundryHtml as escapeHtml,
   finiteNumber as toFiniteNumber
@@ -35,7 +36,7 @@ export { buildGearIconLookup };
 const PACK_ID = `world.${GEAR_COMPENDIUM_NAME}`;
 const DND5E_SYSTEM_ID = "dnd5e";
 const COMPENDIUM_SIDEBAR_FOLDER = ["Ребрея"];
-const GEAR_TEMPLATE_VERSION = 21;
+const GEAR_TEMPLATE_VERSION = 22;
 const GEAR_CONTAINER_CONTENT_SOURCE_TYPE = "gearContainerContent";
 const STORAGE_COIN_DENOMINATIONS = new Set(["pp", "gp", "sp", "cp"]);
 const STORAGE_COIN_DENOMINATION_BY_NAME = Object.freeze({
@@ -989,6 +990,12 @@ function buildSystemData(item, classification, descriptionHtml, presentation = n
       applyWeaponData(baseData, item.weapon, {
         suppressNativeAmmunition: isFirearmClassification(classification)
       });
+      if (isFirearmClassification(classification)) {
+        const ammunitionType = inferRebreyaWeaponAmmunitionSubtype(item);
+        if (ammunitionType) {
+          baseData.ammunition = { type: ammunitionType };
+        }
+      }
       if (!isFirearmClassification(classification)) {
         const ammunitionProfile = {
           ...item,

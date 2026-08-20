@@ -2,8 +2,9 @@ import { HELD_ITEM_UPDATED_HOOK, MODULE_ID } from "../constants.js";
 import { getFighterManeuverAutomation } from "../data/fighter-automation.js";
 import {
   hasActiveRepeatingShot,
+  inferAmmunitionItemSubtype,
   isCompatibleAmmunition
-} from "../data/ammunition-compatibility.js?v=1.4.111-native-ammunition-compatibility";
+} from "../data/ammunition-compatibility.js?v=1.4.147-native-ammunition";
 import { getCharacterSizeRule } from "./size-automation-service.js?v=1.4.109-character-size";
 import {
   buildHeldItemHandUpdate,
@@ -1551,10 +1552,18 @@ export class CombatAttackService {
     return direct && typeof direct === "object" ? "system.quantity.value" : "system.quantity";
   }
 
-  #findMatchingAmmunition(actor, ammunitionLabel) {
+  #findMatchingAmmunition(actor, weapon, ammunitionLabel) {
     const directAmmunition = this.#resolveAmmunitionItemByIdentifier(actor, ammunitionLabel);
     if (directAmmunition) {
       return [directAmmunition];
+    }
+
+    const nativeSubtype = cleanText(foundry.utils.getProperty(weapon, "system.ammunition.type"));
+    if (nativeSubtype) {
+      return collectionValues(actor?.items)
+        .filter((item) => this.#isAmmunitionItem(item))
+        .filter((item) => this.#getItemQuantity(item) > 0)
+        .filter((item) => inferAmmunitionItemSubtype(item) === nativeSubtype);
     }
 
     const wantedStem = this.#ammunitionStem(ammunitionLabel);
@@ -1569,7 +1578,7 @@ export class CombatAttackService {
         || wantedStem.includes(this.#ammunitionStem(item.name)));
   }
 
-  async #spendActorAmmunition(actor, ammunitionLabel, amount) {
+  async #spendActorAmmunition(actor, weapon, ammunitionLabel, amount) {
     const requested = Math.max(0, Math.floor(toNumber(amount, 0)));
     if (requested <= 0) {
       return {
@@ -1580,7 +1589,7 @@ export class CombatAttackService {
 
     let remaining = requested;
     const updates = [];
-    for (const ammoItem of this.#findMatchingAmmunition(actor, ammunitionLabel)) {
+    for (const ammoItem of this.#findMatchingAmmunition(actor, weapon, ammunitionLabel)) {
       if (remaining <= 0) {
         break;
       }
@@ -4424,6 +4433,7 @@ export class CombatAttackService {
     );
     const inventorySpent = await this.#spendActorAmmunition(
       actor,
+      weapon,
       state.ammunition,
       Math.max(0, missing - reservoirSpent.spent)
     );

@@ -663,6 +663,7 @@ export function registerCombatHooks(moduleApi) {
       }
       return true;
     });
+
   }
 
   if (hasSorcererService) {
@@ -1039,6 +1040,16 @@ export function registerCombatHooks(moduleApi) {
         console.error(`${MODULE_ID} | Failed to apply MIDI race automation.`, error);
       });
       return true;
+    });
+
+    Hooks.on("midi-qol.preDamageRoll", async (workflow, activity, config) => {
+      try {
+        return await moduleApi.raceAutomationService.applyMidiPreDamageRoll(workflow, activity, config);
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to prepare MIDI race damage.`, error);
+        return true;
+      }
     });
   }
 

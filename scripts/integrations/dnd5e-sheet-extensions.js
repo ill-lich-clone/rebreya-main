@@ -15,6 +15,7 @@ import { registerCraftsmanGadgetItemType } from "./craftsman-gadget-item-type.js
 import { bringAppToFront } from "../ui.js";
 import { createStableGearDocumentId } from "../data/gear-document-ids.js";
 import { buildRebreyaArtisanToolConfig } from "../data/rebreya-tool-proficiencies.js";
+import { REBREYA_AMMUNITION_SUBTYPES } from "../data/ammunition-types.js";
 import {
   getRebreyaWeaponBaseItemDefinitions,
   getHeroDollSlotGroups,
@@ -6980,6 +6981,13 @@ export function extendDnd5eItemTypes() {
     console.warn(`${MODULE_ID} | Failed to register Rebreya weapon base items from gear pack.`, error);
   });
   registerRebreyaArtisanToolProficiencies();
+
+  CONFIG.DND5E.consumableTypes ??= {};
+  CONFIG.DND5E.consumableTypes.ammo ??= {};
+  CONFIG.DND5E.consumableTypes.ammo.subtypes = {
+    ...(CONFIG.DND5E.consumableTypes.ammo.subtypes ?? {}),
+    ...REBREYA_AMMUNITION_SUBTYPES
+  };
 
   registerNativeStateItemType();
   registerDowntimeItemType();

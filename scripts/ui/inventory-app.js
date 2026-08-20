@@ -309,6 +309,19 @@ function toInteger(value, fallback = 0) {
   return Math.floor(toNumber(value, fallback));
 }
 
+export function formatCompactCurrencyAmount(value) {
+  const amount = toInteger(value, 0);
+  const absolute = Math.abs(amount);
+  const compact = (divisor, suffix) => {
+    const scaled = amount / divisor;
+    const precision = Math.abs(scaled) < 10 ? 1 : 0;
+    return `${Number(scaled.toFixed(precision))}${suffix}`;
+  };
+  if (absolute >= 1_000_000) return compact(1_000_000, "м");
+  if (absolute >= 1_000) return compact(1_000, "к");
+  return String(amount);
+}
+
 function escapeHtml(value) {
   return foundry.utils.escapeHTML(cleanText(value));
 }
@@ -3853,6 +3866,12 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         totalCopper: 0,
         label: inventorySnapshot.summary.currencyLabel
       };
+      const currencyDisplay = Object.fromEntries(
+        ["pp", "gp", "sp", "cp"].map((denomination) => [
+          denomination,
+          formatCompactCurrencyAmount(currency[denomination])
+        ])
+      );
       this.sortMode = normalizeInventorySortMode(this.sortMode);
       const sortedInventoryItems = sortInventoryEntries(inventorySnapshot.items, this.sortMode);
       const itemValueSummary = buildInventoryValueSummary(inventorySnapshot.allItems ?? inventorySnapshot.items);
@@ -4005,6 +4024,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         summary: {
           ...inventorySnapshot.summary,
           currency,
+          currencyDisplay,
           ...itemValueSummary,
           partyCapacityLb: partySnapshot.totalCapacityLb,
           freeCapacityLb,
@@ -5719,6 +5739,20 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     element.querySelectorAll("[data-action='switch-tab']").forEach((button) => {
       button.addEventListener("click", (event) => {
         this.setActiveTab(event.currentTarget.dataset.tab || "inventory");
+      }, listenerOptions);
+    });
+
+    element.querySelectorAll("[data-action='open-economy']").forEach((button) => {
+      button.addEventListener("click", () => this.moduleApi.openEconomyApp?.(), listenerOptions);
+    });
+    element.querySelectorAll("[data-action='open-quest-log']").forEach((button) => {
+      button.addEventListener("click", async () => {
+        try {
+          await this.moduleApi.openQuestLogApp?.();
+        }
+        catch (_error) {
+          // The composition root reports the user-facing integration error.
+        }
       }, listenerOptions);
     });
 

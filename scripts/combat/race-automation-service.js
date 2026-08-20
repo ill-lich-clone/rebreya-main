@@ -649,13 +649,30 @@ function targetListFromWorkflow(workflow) {
 function defaultDamageTypeFromWorkflow(workflow, fallback = "") {
   const parts = workflow?.damageDetail ?? workflow?.damageRolls?.flatMap((roll) => roll?.terms ?? []) ?? [];
   for (const part of parts) {
-    const type = cleanText(part?.options?.flavor ?? part?.options?.type).toLowerCase();
+    const type = cleanText(part?.type ?? part?.options?.type ?? part?.options?.flavor).toLowerCase();
     if (type) {
       return type;
     }
   }
 
   return fallback;
+}
+
+function appendDamageRollConfig(config, actor, formula, damageType, flavor) {
+  const safeFormula = cleanText(formula);
+  if (!safeFormula) return false;
+  const safeDamageType = cleanText(damageType);
+  config.rolls ??= [];
+  config.rolls.push({
+    data: actor?.getRollData?.() ?? {},
+    parts: [safeFormula],
+    options: {
+      type: safeDamageType,
+      types: safeDamageType ? [safeDamageType] : [],
+      flavor: cleanText(flavor)
+    }
+  });
+  return true;
 }
 
 function isActorLarger(targetActor, sourceActor) {
@@ -1317,9 +1334,20 @@ export class RaceAutomationService {
     }
 
     await this.#handleKeenEye(actor, workflow, hitTargets);
-    await this.#handleFuryOfTheSmall(actor, workflow, hitTargets);
     await this.#handleSurpriseAttack(actor, workflow, hitTargets);
     await this.#handleCelestialDamage(actor, workflow, hitTargets);
+    return true;
+  }
+
+  async applyMidiPreDamageRoll(workflow, activity, config = {}) {
+    if (workflow && activity && !workflow.activity) {
+      workflow.activity = activity;
+    }
+    const actor = workflow?.actor;
+    if (!(actor instanceof Actor)) return true;
+    const hitTargets = targetListFromWorkflow(workflow);
+    if (!hitTargets.length) return true;
+    await this.#handleFuryOfTheSmall(actor, workflow, hitTargets, config);
     return true;
   }
 
@@ -1443,7 +1471,7 @@ export class RaceAutomationService {
     return true;
   }
 
-  async #handleFuryOfTheSmall(actor, workflow, hitTargets) {
+  async #handleFuryOfTheSmall(actor, workflow, hitTargets, config) {
     if (!this.#hasMechanic(actor, "fury-small")) {
       return false;
     }
@@ -1473,12 +1501,14 @@ export class RaceAutomationService {
       return false;
     }
 
+    if (!appendDamageRollConfig(
+      config,
+      actor,
+      "2 * @prof",
+      defaultDamageTypeFromWorkflow(workflow),
+      "Ярость мелкого"
+    )) return false;
     this._turnDamageKeys.add(key);
-    await this.#applyDamage(target, "2 * @prof", defaultDamageTypeFromWorkflow(workflow), {
-      sourceActor: actor,
-      sourceItemUuid: feature?.uuid,
-      label: "Ярость мелкого"
-    });
     return true;
   }
 

@@ -2,7 +2,7 @@
 import { MODULE_ID, SETTINGS_KEYS } from "./constants.js";
 import { MaterialsCompendiumService } from "./data/materials-compendium.js";
 import { GearCompendiumService } from "./data/gear-compendium.js?v=1.4.145-coin-icons-storage-sound";
-import { repairWorldAmmunitionCompatibility } from "./data/ammunition-compatibility.js?v=1.4.111-native-ammunition-compatibility";
+import { repairWorldAmmunitionCompatibility } from "./data/ammunition-compatibility.js?v=1.4.147-native-ammunition";
 import { MagicItemsCompendiumService } from "./data/magic-items-compendium.js";
 import { FeatsCompendiumService } from "./data/feats-compendium.js";
 import { BackgroundsCompendiumService } from "./data/backgrounds-compendium.js";
@@ -124,8 +124,8 @@ import {
   isValidStorageTokenCharacterPayload,
   storageCharacterTokenUuidForClaim
 } from "./data/storage-command-service.js?v=1.4.146-storage-persisted-items";
-import { registerCombatHooks } from "./combat/hooks.js?v=1.4.134-actor-delta-status-socket";
-import { CombatAttackService } from "./combat/attack-service.js?v=1.4.111-native-ammunition-compatibility";
+import { registerCombatHooks } from "./combat/hooks.js?v=1.4.147-race-damage";
+import { CombatAttackService } from "./combat/attack-service.js?v=1.4.147-native-ammunition";
 import { ImplantAutomationService } from "./combat/implant-automation-service.js";
 import { SizeAutomationService } from "./combat/size-automation-service.js?v=1.4.110-character-size-authority";
 import { ReactionCapabilityIndex } from "./combat/reaction-capability-index.js";
@@ -160,7 +160,7 @@ import {
   PerformerAutomationService
 } from "./combat/performer-automation-service.js?v=1.4.96";
 import { BardicInspirationCompatService } from "./combat/bardic-inspiration-compat-service.js";
-import { RaceAutomationService, SOCKET_EVENT_RACE_AUTOMATION } from "./combat/race-automation-service.js?v=1.4.110-giant-tribe-cache-fixes-2";
+import { RaceAutomationService, SOCKET_EVENT_RACE_AUTOMATION } from "./combat/race-automation-service.js?v=1.4.147-race-damage";
 import { CraftsmanGadgetService } from "./combat/craftsman-gadget-service.js";
 import { CraftsmanGadgetZoneService } from "./combat/craftsman-gadget-zone-service.js";
 import { CraftsmanVehicleService } from "./combat/craftsman-vehicle-service.js";
@@ -173,7 +173,7 @@ import {
   extendDnd5eItemTypes,
   registerDnd5eSheetExtensions,
   registerRebreyaWeaponBaseItemsFromGearPack
-} from "./integrations/dnd5e-sheet-extensions.js?v=1.4.110-giant-tribe-cache-fixes-2&implants=1&sorcerer-cooldown-context=4";
+} from "./integrations/dnd5e-sheet-extensions.js?v=1.4.147-native-ammunition";
 import { registerHeldShieldArmorClassPatch } from "./integrations/held-shield-ac.js?v=1.4.96";
 import { registerTravelMapHooks } from "./integrations/travel-map-hooks.js?v=1.4.141-auraeffects-inactive-scene";
 import {
@@ -213,6 +213,7 @@ import {
 import { getCraftsmanSubclasses } from "./integrations/craftsman-subclass-tracks.js";
 import { patchTransformCleanupUpdateActorHook } from "./integrations/transform-cleanup-compat.js";
 import { registerForienQuestLogIntegration, refreshForienQuestLogApps } from "./integrations/forien-quest-log.js?v=1.4.96";
+import { openRebreyaQuestLog } from "./integrations/rebreya-quest-log.js";
 import {
   SOCKET_EVENT_SET_SETTING,
   SOCKET_EVENT_SET_SETTING_RESULT,
@@ -5514,6 +5515,17 @@ export class RebreyaMainModule {
     catch (error) {
       console.error(`${MODULE_ID} | Failed to open economy app.`, error);
       ui.notifications?.error("Не удалось открыть окно экономики. Подробности в консоли.");
+      throw error;
+    }
+  }
+
+  async openQuestLogApp(options = {}) {
+    try {
+      return await openRebreyaQuestLog({ options });
+    }
+    catch (error) {
+      console.error(`${MODULE_ID} | Failed to open Rebreya quest log.`, error);
+      ui.notifications?.error(error.message || "Не удалось открыть журнал заданий Rebreya.");
       throw error;
     }
   }

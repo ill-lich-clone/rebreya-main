@@ -66,8 +66,8 @@ test("managed ammunition identities recover a missing dnd5e subtype", () => {
     ["arbaletnye-bolty-20", "crossbowBolt"],
     ["igly-dlya-trubki-50", "blowgunNeedle"],
     ["snaryady-dlya-prashchi-20", "slingBullet"],
-    ["mushketnyy-patron-20", "firearmBullet"],
-    ["batareya-4", "firearmBullet"]
+    ["mushketnyy-patron-20", "rebreyaMusket"],
+    ["batareya-4", "rebreyaEnergyBattery"]
   ];
 
   for (const [gearId, expected] of cases) {
@@ -147,7 +147,7 @@ test("actor repair types old items and clears persisted incompatible ammunition 
   assert.equal(crossbow.flags.dnd5e.last.attack.ammunition, "");
   assert.equal(crossbow.system.magicalBonus, 1);
   assert.equal(crossbow.flags["rebreya-main"].customMarker, true);
-  assert.equal(musketAmmo.system.type.subtype, "firearmBullet");
+  assert.equal(musketAmmo.system.type.subtype, "rebreyaMusket");
   assert.equal(bolts.system.type.subtype, "crossbowBolt");
 
   const second = await repairActorAmmunitionCompatibility(actor);

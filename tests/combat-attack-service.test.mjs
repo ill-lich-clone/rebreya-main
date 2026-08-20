@@ -2653,6 +2653,38 @@ test("reloading a firearm consumes matching actor ammunition and fills the magaz
   assert.doesNotMatch(globalThis.ChatMessage.messages.at(-1)?.content ?? "", /боезапас|загружено/iu);
 });
 
+test("firearm reload matches native Rebreya ammunition family instead of a name guess", async () => {
+  const weapon = makeFirearmItem({
+    name: "Мушкет",
+    typeValue: "firearmPrimitive",
+    properties: { lchFirearmAmmunition: true, lchFirearmReload: true },
+    values: { ammunition: "Мушкетные", reload: "Перезарядка 1" },
+    ammoState: { current: 0, capacity: 1, ammunition: "Мушкетные" }
+  });
+  weapon.system.ammunition = { type: "rebreyaMusket" };
+  const wrongFamily = makeAmmoItem({
+    id: "wrong-family",
+    name: "Мушкетный патрон",
+    quantity: 5,
+    subtype: "rebreyaRifle"
+  });
+  const musketAmmo = makeAmmoItem({
+    id: "musket-family",
+    name: "Пороховой заряд",
+    quantity: 5,
+    subtype: "rebreyaMusket"
+  });
+  const actor = makeActor([weapon, wrongFamily, musketAmmo]);
+  const service = new CombatAttackService({});
+
+  const result = await service.reloadFirearm(actor, weapon, { createMessage: false });
+
+  assert.equal(result.success, true);
+  assert.equal(result.loaded, 1);
+  assert.equal(wrongFamily.system.quantity, 5);
+  assert.equal(musketAmmo.system.quantity, 4);
+});
+
 test("reloading a firearm resolves selected ammunition item identifiers", async () => {
   globalThis.ChatMessage.messages = [];
   const ammoId = "yrYgqnZjyFUdqkpg";

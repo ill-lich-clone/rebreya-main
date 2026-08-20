@@ -1,5 +1,10 @@
 import { MODULE_ID } from "../constants.js";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
+import {
+  inferRebreyaAmmunitionSubtype,
+  inferRebreyaWeaponAmmunitionSubtype,
+  REBREYA_AMMUNITION_SUBTYPES
+} from "./ammunition-types.js";
 
 const WEAPON_SUBTYPE_BY_BASE_ITEM = new Map([
   ["shortbow", "arrow"],
@@ -29,7 +34,8 @@ const AMMUNITION_SUBTYPES = new Set([
   "crossbowBolt",
   "blowgunNeedle",
   "slingBullet",
-  "firearmBullet"
+  "firearmBullet",
+  ...Object.keys(REBREYA_AMMUNITION_SUBTYPES)
 ]);
 
 const FIREARM_AMMUNITION_GEAR_IDS = new Set([
@@ -120,6 +126,8 @@ function gearId(item) {
 }
 
 function inferAmmunitionSubtypeFromIdentity(item) {
+  const rebreyaSubtype = inferRebreyaAmmunitionSubtype(item);
+  if (rebreyaSubtype) return rebreyaSubtype;
   const id = gearId(item);
   const name = normalized(item?.name);
   if (/strel|arrow/u.test(id) || /стрел/u.test(name)) return "arrow";
@@ -136,6 +144,8 @@ function inferAmmunitionSubtypeFromIdentity(item) {
 }
 
 export function inferWeaponAmmunitionSubtype(item) {
+  const rebreyaSubtype = inferRebreyaWeaponAmmunitionSubtype(item);
+  if (rebreyaSubtype) return rebreyaSubtype;
   const properties = itemProperties(item);
   if (!properties.includes("amm")) return "";
   return WEAPON_SUBTYPE_BY_BASE_ITEM.get(weaponBaseItem(item))

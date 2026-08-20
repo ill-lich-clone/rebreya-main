@@ -1,5 +1,7 @@
 ﻿import { getRebreyaArtisanToolByGearId } from "./rebreya-tool-proficiencies.js";
 
+import { inferRebreyaAmmunitionSubtype } from "./ammunition-types.js";
+
 const BACK_SLOTS = ["back1", "back2", "back3", "back4", "back5"];
 const HAND_SLOTS = ["leftHand", "rightHand"];
 const RING_SLOTS = ["ring1", "ring2"];
@@ -634,8 +636,12 @@ function buildConsumableAmmoProfile(name) {
   return null;
 }
 
-function buildGenericAmmoProfile(name) {
-  return buildConsumableAmmoProfile(name) ?? {
+function buildGenericAmmoProfile(item) {
+  const rebreyaSubtype = inferRebreyaAmmunitionSubtype(item);
+  if (rebreyaSubtype) {
+    return { systemTypeValue: "ammo", systemTypeSubtype: rebreyaSubtype };
+  }
+  return buildConsumableAmmoProfile(item?.name) ?? {
     systemTypeValue: "ammo",
     systemTypeSubtype: "firearmBullet"
   };
@@ -826,7 +832,7 @@ export function classifyGearEntry(item = {}) {
   }
 
   if (normalizedEquipmentType === normalizeText("Боеприпас") || normalizedEquipmentType === normalizeText("Боеприпасы")) {
-    const ammoProfile = buildGenericAmmoProfile(item.name);
+    const ammoProfile = buildGenericAmmoProfile(item);
     return {
       documentType: "consumable",
       systemTypeValue: ammoProfile.systemTypeValue,

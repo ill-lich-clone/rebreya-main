@@ -63,8 +63,8 @@ test("module manifest loads the stable canonical entrypoint", async () => {
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const [entrypoint] = manifest.esmodules;
 
-  assert.equal(manifest.version, "1.4.146");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.146.js"]);
+  assert.equal(manifest.version, "1.4.147");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.147.js"]);
   assert.doesNotMatch(entrypoint, /[?#]/u);
 
   const entrypointSource = await readFile(new URL(entrypoint, manifestUrl), "utf8");
@@ -72,7 +72,7 @@ test("module manifest loads the stable canonical entrypoint", async () => {
     entrypointSource,
     [
       "// @rebreya-role versioned-entrypoint-cache-forwarder",
-      'import "./main.js?v=1.4.146-storage-persisted-items";',
+      'import "./main.js?v=1.4.147-race-ammunition-inventory";',
       ""
     ].join("\n")
   );
@@ -141,7 +141,7 @@ test("production registers the hidden GiantTribe advancement before race compend
   );
   assert.match(
     entrypointSource,
-    /dnd5e-sheet-extensions\.js\?v=1\.4\.110-giant-tribe-cache-fixes-2/u
+    /dnd5e-sheet-extensions\.js\?v=1\.4\.147-native-ammunition/u
   );
   assert.match(
     entrypointSource,
@@ -212,7 +212,7 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
 
   assert.match(
     canonicalSource,
-    /integrations\/dnd5e-sheet-extensions\.js\?v=1\.4\.110-giant-tribe-cache-fixes-2/u
+    /integrations\/dnd5e-sheet-extensions\.js\?v=1\.4\.147-native-ammunition/u
   );
 
   for (const importPath of [
@@ -261,7 +261,7 @@ test("module keeps recent published entrypoint URLs as canonical compatibility f
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
 
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.146.js"]);
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.147.js"]);
 
   for (const fileName of ["main-1.4.98.js", "main-1.4.99.js", "main-1.4.100.js"]) {
     const forwarderSource = await readFile(new URL(`../scripts/${fileName}`, import.meta.url), "utf8");
@@ -460,11 +460,11 @@ test("combat automation imports preserve their released cache busts", async () =
 
   assert.match(
     entrypointSource,
-    /combat\/hooks\.js\?v=1\.4\.134-actor-delta-status-socket/u,
+    /combat\/hooks\.js\?v=1\.4\.147-race-damage/u,
   );
   assert.match(
     entrypointSource,
-    /attack-service\.js\?v=1\.4\.111-native-ammunition-compatibility/u,
+    /attack-service\.js\?v=1\.4\.147-native-ammunition/u,
   );
   assert.match(
     entrypointSource,
@@ -519,7 +519,7 @@ test("paladin dogma automation is constructed and routed through the current com
   );
   assert.match(
     entrypointSource,
-    /combat\/hooks\.js\?v=1\.4\.134-actor-delta-status-socket/u
+    /combat\/hooks\.js\?v=1\.4\.147-race-damage/u
   );
   assert.match(
     entrypointSource,
@@ -545,7 +545,7 @@ test("owned race and Giant Tribe configuration is wired to create and sheet repa
     readFile(new URL("../scripts/combat/hooks.js", import.meta.url), "utf8")
   ]);
 
-  assert.match(entrypointSource, /race-automation-service\.js\?v=1\.4\.110-giant-tribe-cache-fixes-2/u);
+  assert.match(entrypointSource, /race-automation-service\.js\?v=1\.4\.147-race-damage/u);
   assert.match(
     hooksSource,
     /moduleApi\.raceAutomationService\.handleCreatedItem\(item, options, userId\)/u
@@ -562,11 +562,11 @@ test("held item integrations preserve their released cache bust", async () => {
 
   assert.match(
     entrypointSource,
-    /dnd5e-sheet-extensions\.js\?v=1\.4\.110-giant-tribe-cache-fixes-2/u,
+    /dnd5e-sheet-extensions\.js\?v=1\.4\.147-native-ammunition/u,
   );
   assert.match(
     entrypointSource,
-    /attack-service\.js\?v=1\.4\.111-native-ammunition-compatibility/u,
+    /attack-service\.js\?v=1\.4\.147-native-ammunition/u,
   );
   assert.match(
     sheetSource,

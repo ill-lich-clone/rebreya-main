@@ -229,7 +229,8 @@
 | Item upgrades | `item-upgrade-sheet.js`, `item-upgrade-service.js` | установка/снятие mods и capacity через owned Items |
 | Inventory sync | `inventory-sync.js` | после Item/Actor mutations обновляет только связанные inventory views |
 | SmallTime | `smalltime-compat.js` | отображение календаря Rebreya и подтверждение расхода запасов при сдвиге world time |
-| Forien Quest Log | `forien-quest-log.js`, `quest-log-service.js` | metadata, requirements, grouped quests, rumors/events и UI overlays |
+| Rebreya Quest Log | `rebreya-quest-log.js` | кнопка инвентаря открывает отдельный модуль только через его публичный `openQuestLog` API |
+| Legacy Forien Quest Log | `forien-quest-log.js`, `quest-log-service.js` | старый metadata/UI overlay-контур; новый launcher его не использует |
 | Rations | `ration-food-conversion.js` | созданные ration Items можно конвертировать в партийную еду |
 | Magic templates | `magic-weapon-template.js` | шаблон базового оружия/доспеха/щита/боеприпасов/инструмента для magic item |
 | BG3 Hotbar | `scripts/hooks.js` | подавляет auto-add служебных Items, чинит item-pile common actions/death saves |
@@ -263,7 +264,7 @@ await api.setCombatStatus("actor-id", "frightened", { value: 2 });
 ### Модель и окна
 
 - `getModel`, `reloadData`, `resetWorldData`, `refreshOpenApps`.
-- `openEconomyApp`, `openCityApp`, `openWorldTradeRoutesApp`, `openTradeRouteApp`, `openStatesApp`, `openGlobalEventsApp`, `openReferenceInfoApp`.
+- `openEconomyApp`, `openQuestLogApp`, `openCityApp`, `openWorldTradeRoutesApp`, `openTradeRouteApp`, `openStatesApp`, `openGlobalEventsApp`, `openReferenceInfoApp`.
 - `openInventoryApp`, `openGroupsApp`, `openPartyInventorySheet`, `openLootgenApp`, `openCosmologyApp`.
 - `openTrader`, `openTraderV2`, `openTraderSheet` — все открывают единственный Trader V2.
 

@@ -2375,6 +2375,33 @@ test("extendDnd5eItemTypes registers Rebreya artisan tools from the gear compend
   }
 });
 
+test("extendDnd5eItemTypes registers native Rebreya ammunition families", async () => {
+  const stubs = installSheetExtensionStubs();
+  globalThis.game.modules = new Map([["rebreya-main", { documentTypes: { Item: { state: {}, downtime: {} } } }]]);
+  globalThis.CONFIG.Item = {
+    dataModels: { background: class BackgroundData { static metadata = {}; } },
+    typeLabels: {},
+    typeIcons: {}
+  };
+  globalThis.CONFIG.DND5E.consumableTypes = {
+    ammo: { label: "Боеприпасы", subtypes: { firearmBullet: "Пули" } }
+  };
+
+  try {
+    const { extendDnd5eItemTypes } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?rebreya-ammo=${Date.now()}`);
+    extendDnd5eItemTypes();
+
+    assert.equal(CONFIG.DND5E.consumableTypes.ammo.subtypes.rebreyaMusket, "Мушкетные патроны");
+    assert.equal(CONFIG.DND5E.consumableTypes.ammo.subtypes.rebreyaRifle, "Винтовочные патроны");
+    assert.equal(CONFIG.DND5E.consumableTypes.ammo.subtypes.rebreyaShotgun, "Картечные патроны");
+    assert.equal(CONFIG.DND5E.consumableTypes.ammo.subtypes.rebreyaPistol, "Пистолетные патроны");
+    assert.equal(CONFIG.DND5E.consumableTypes.ammo.subtypes.firearmBullet, "Пули");
+  }
+  finally {
+    stubs.restore();
+  }
+});
+
 test("extendDnd5eItemTypes registers firearm activity attack type and Midi action type", async () => {
   const stubs = installSheetExtensionStubs();
   globalThis.game.modules = new Map([["rebreya-main", { documentTypes: { Item: { state: {}, downtime: {} } } }]]);

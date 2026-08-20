@@ -298,6 +298,12 @@ function createModuleApi({
     openCityApp(cityId) {
       calls.push(["openCityApp", cityId]);
     },
+    openEconomyApp() {
+      calls.push(["openEconomyApp"]);
+    },
+    openQuestLogApp() {
+      calls.push(["openQuestLogApp"]);
+    },
     getDowntimeSnapshot() {
       calls.push(["getDowntimeSnapshot"]);
       if (downtimeError) {
@@ -620,6 +626,7 @@ test("InventoryApp renders a compact header summary without redundant warehouse 
   assert.ok(pageIndex >= 0, "expected the scrollable book page");
   assert.match(template, /class="rm-shell rm-inventory-shell rm-inventory-shell--compact rm-inventory-book__page scrollable" data-tab="\{\{activeTab\}\}"/u);
   assert.ok(tabsIndex > pageIndex, "expected the tab rail after the book page");
+  assert.match(template, /data-action="open-economy"[\s\S]*data-action="open-quest-log"/u);
   assert.match(template, /class="rm-inventory-book__controls"/u);
   assert.match(template, /class="rm-inventory-book__identity"/u);
   assert.match(template, /partyIdentity\.crestUrl/u);
@@ -695,6 +702,52 @@ test("InventoryApp renders a compact header summary without redundant warehouse 
   assert.doesNotMatch(headerTemplate, />Энергия</u);
 });
 
+test("InventoryApp compact currency labels preserve small values and abbreviate large values", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  try {
+    const { formatCompactCurrencyAmount } = await import(`../scripts/ui/inventory-app.js?compact-currency=${Date.now()}`);
+
+    assert.equal(formatCompactCurrencyAmount(999), "999");
+    assert.equal(formatCompactCurrencyAmount(1_400), "1.4к");
+    assert.equal(formatCompactCurrencyAmount(12_000), "12к");
+    assert.equal(formatCompactCurrencyAmount(1_250_000), "1.3м");
+  }
+  finally {
+    restoreFoundry();
+  }
+});
+
+test("InventoryApp external utility buttons open economy and the dedicated Rebreya quest log", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const dom = installMinimalDom();
+  const calls = [];
+  const economyButton = createFakeElement();
+  const questButton = createFakeElement();
+  const root = createFakeElement();
+  root.querySelector = () => null;
+  root.querySelectorAll = (selector) => {
+    if (selector === "[data-action='open-economy']") return [economyButton];
+    if (selector === "[data-action='open-quest-log']") return [questButton];
+    return [];
+  };
+  const app = new (await import(`../scripts/ui/inventory-app.js?external-utilities=${Date.now()}`)).InventoryApp(
+    createModuleApi({ calls })
+  );
+  app.element = root;
+
+  try {
+    await app._onRender({}, {});
+    economyButton.listeners.click[0]();
+    await questButton.listeners.click[0]();
+
+    assert.deepEqual(calls, [["openEconomyApp"], ["openQuestLogApp"]]);
+  }
+  finally {
+    dom.restore();
+    restoreFoundry();
+  }
+});
+
 test("InventoryApp positions external book tabs and keeps the character-style artwork mask", async () => {
   const css = await readFile(new URL("../styles/main.css", import.meta.url), "utf8");
 
@@ -715,7 +768,7 @@ test("InventoryApp positions external book tabs and keeps the character-style ar
   );
   assert.match(
     css,
-    /\.rebreya-inventory-app \.rm-inventory-book__wallet\s*\{[^}]*width:\s*260px;[^}]*grid-template-columns:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\);/u
+    /\.rebreya-inventory-app \.rm-inventory-book__wallet\s*\{[^}]*width:\s*300px;[^}]*grid-template-columns:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\);/u
   );
   assert.match(
     css,

@@ -445,6 +445,9 @@ test("real firearm gear data maps firearm sheet damage, properties, and attack a
   assert.equal(semiAutomaticRifle.weapon.lichWeaponPropertyValues.semiAutomaticDamage, "2d12");
 
   const createdMusket = createDnd5eItemData(musket, new Map());
+  const createdRifle = createDnd5eItemData(byId.get("vintovka"), new Map());
+  const createdShotgun = createDnd5eItemData(byId.get("drobovik"), new Map());
+  const createdPistol = createDnd5eItemData(byId.get("pistolet"), new Map());
   const musketActivityIds = Object.keys(createdMusket.system.activities ?? {});
   const musketAttack = Object.values(createdMusket.system.activities ?? {})[0];
   assert.equal(createdMusket.system.damage.base.number, 2);
@@ -467,6 +470,10 @@ test("real firearm gear data maps firearm sheet damage, properties, and attack a
   assert.equal(musketAttack._id, musketActivityIds[0]);
   assert.equal(musketAttack.type, "attack");
   assert.equal(musketAttack.attack.type.value, "firearm");
+  assert.equal(createdMusket.system.ammunition.type, "rebreyaMusket");
+  assert.equal(createdRifle.system.ammunition.type, "rebreyaRifle");
+  assert.equal(createdShotgun.system.ammunition.type, "rebreyaShotgun");
+  assert.equal(createdPistol.system.ammunition.type, "rebreyaPistol");
   assert.equal(musketAttack.attack.type.classification, "weapon");
   assert.equal(musketAttack.attack.ability, "str");
 
@@ -534,6 +541,21 @@ test("real firearm gear data maps firearm sheet damage, properties, and attack a
   assert.equal(createdArquebus.system.properties.includes("amm"), false);
   assert.equal(arquebusAttack.attack.type.value, "firearm");
   assert.equal(arquebusAttack.attack.ability, "str");
+});
+
+test("Rebreya firearm ammunition items use the same native family as their weapons", () => {
+  const gear = JSON.parse(readFileSync(join(TESTS_DIR, "..", "data", "gear.json"), "utf8").replace(/^\uFEFF/u, ""));
+  const byId = new Map(gear.map((item) => [item.id, item]));
+  const cases = [
+    ["mushketnyy-patron-20", "rebreyaMusket"],
+    ["vintovochnyy-patron-10", "rebreyaRifle"],
+    ["kartechnyy-patron-20", "rebreyaShotgun"],
+    ["pistoletnyy-patron-20", "rebreyaPistol"]
+  ];
+
+  for (const [gearId, subtype] of cases) {
+    assert.equal(createDnd5eItemData(byId.get(gearId), new Map()).system.type.subtype, subtype, gearId);
+  }
 });
 
 test("ordinary weapons from the weapon sheet use registered dnd5e base weapon ids", () => {
@@ -897,7 +919,7 @@ test("gear signatures include stable document ids so old compendium documents re
   const created = createDnd5eItemData(katana, new Map());
   const signature = JSON.parse(created.flags["rebreya-main"].signature);
 
-  assert.equal(signature.templateVersion, 21);
+  assert.equal(signature.templateVersion, 22);
   assert.equal(created._id, createStableGearDocumentId("katana"));
   assert.equal(signature.stableDocumentId, created._id);
 });
