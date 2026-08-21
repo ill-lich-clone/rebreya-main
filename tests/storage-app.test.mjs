@@ -576,54 +576,36 @@ test("PKM opens the same item popover and suppresses the native menu", async () 
   assert.equal(stopped, 1);
 });
 
-test("storage popover waits for the rendered DOM and anchors below the selected item", async () => {
-  const previousAnimationFrame = globalThis.requestAnimationFrame;
-  globalThis.requestAnimationFrame = (callback) => callback();
-  try {
-    const { app } = createApp();
-    let releaseBaseRender;
-    let domReady = false;
-    app.baseRenderGate = new Promise((resolve) => { releaseBaseRender = resolve; })
-      .then(() => { domReady = true; });
-    const styles = new Map();
-    const popover = {
-      dataset: { anchorRowId: "row-1" },
-      style: { setProperty: (name, value) => styles.set(name, value) },
-      getBoundingClientRect: () => ({ width: 224 })
-    };
-    const icon = {
-      getBoundingClientRect: () => ({ left: 294, right: 366, bottom: 260 })
-    };
-    const row = {
-      dataset: { rowId: "row-1" },
-      querySelector: (selector) => selector === ".rm-storage-item__icon" ? icon : null
-    };
-    const shell = {
-      getBoundingClientRect: () => ({ left: 100, top: 50, width: 286 })
-    };
-    app.element = new class extends FakeElement {
-      addEventListener() {}
-      querySelector(selector) {
-        if (!domReady) return null;
-        if (selector === ".rm-storage-shell") return shell;
-        if (selector === "[data-storage-popover]") return popover;
-        return null;
-      }
-      querySelectorAll(selector) {
-        return domReady && selector === "[data-row-id]" ? [row] : [];
-      }
-    }();
+test("storage popover placement is derived from the selected grid cell", async () => {
+  const rows = Array.from({ length: 8 }, (_value, index) => ({
+    rowId: `row-${index + 1}`,
+    name: `Предмет ${index + 1}`,
+    quantity: 1
+  }));
+  const { app } = createApp({
+    configure: false,
+    getStorageSnapshot: async () => ({
+      tokenUuid: "Scene.scene.Token.chest",
+      name: "Бочка",
+      state: "opened",
+      rows,
+      coins: { gp: 2 }
+    })
+  });
 
-    const rendered = app._onRender({}, {});
-    releaseBaseRender();
-    await rendered;
-
-    assert.equal(styles.get("top"), "219px");
-    assert.equal(styles.get("left"), "166px");
-    assert.equal(styles.get("--rm-storage-popover-arrow-left"), "176px");
-  }
-  finally {
-    globalThis.requestAnimationFrame = previousAnimationFrame;
+  for (const [rowId, expected] of [
+    ["row-1", { anchorColumn: 0, anchorRow: 0, popoverAlignment: "left" }],
+    ["row-6", { anchorColumn: 1, anchorRow: 1, popoverAlignment: "center" }],
+    ["row-8", { anchorColumn: 3, anchorRow: 1, popoverAlignment: "right" }],
+    ["__coins", { anchorColumn: 0, anchorRow: 2, popoverAlignment: "left" }]
+  ]) {
+    app.activeRowId = rowId;
+    const context = await app._prepareContext();
+    assert.deepEqual({
+      anchorColumn: context.activePopover.anchorColumn,
+      anchorRow: context.activePopover.anchorRow,
+      popoverAlignment: context.activePopover.popoverAlignment
+    }, expected);
   }
 });
 
@@ -632,9 +614,13 @@ test("storage item popovers stay interactive above their grid", async () => {
   const template = await readFile(new URL("../templates/storage-app.hbs", import.meta.url), "utf8");
   assert.match(css, /\.rm-storage-item__popover\s*\{[^}]*pointer-events:\s*auto/isu);
   assert.match(css, /\.rm-storage-popover-layer\s*\{[^}]*position:\s*absolute[^}]*pointer-events:\s*none/isu);
+  assert.match(css, /\.rm-storage-grid\s*\{[^}]*position:\s*relative/isu);
+  assert.match(css, /top:\s*calc\(\(var\(--rm-storage-popover-anchor-row\)\s*\*\s*80px\)\s*\+\s*81px\)/isu);
   assert.match(css, /\.rebreya-storage-app\s+\.window-content\s*\{[^}]*overflow:\s*visible/isu);
   assert.doesNotMatch(css, /\.rm-storage-grid:has\(/u);
-  assert.match(template, /<\/div>\s*\{\{else\}\}[\s\S]*?\{\{#if activePopover\}\}\s*<div class="rm-storage-popover-layer"/u);
+  assert.match(template, /\{\{#if hasCoins\}\}[\s\S]*?\{\{\/if\}\}\s*\{\{#if activePopover\}\}\s*<div\s+class="rm-storage-popover-layer"/u);
+  assert.match(template, /--rm-storage-popover-anchor-column:\s*\{\{activePopover\.anchorColumn\}\}/u);
+  assert.match(template, /rm-storage-item__popover--\{\{activePopover\.popoverAlignment\}\}/u);
 });
 
 test("minimized storage hides all overflowing window content", async () => {

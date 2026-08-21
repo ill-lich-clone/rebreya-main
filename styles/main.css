@@ -13042,6 +13042,7 @@ summary:focus-visible {
 
 .rm-storage-grid {
   --rm-storage-columns: 3;
+  position: relative;
   display: grid;
   grid-template-columns: repeat(var(--rm-storage-columns), 72px);
   grid-auto-rows: 72px;
@@ -13129,8 +13130,8 @@ summary:focus-visible {
 
 .rm-storage-item__popover {
   position: absolute;
-  top: 0;
-  left: 50%;
+  top: calc((var(--rm-storage-popover-anchor-row) * 80px) + 81px);
+  left: calc((var(--rm-storage-popover-anchor-column) * 80px) + 36px);
   z-index: 2;
   pointer-events: auto;
   display: grid;
@@ -13174,7 +13175,7 @@ summary:focus-visible {
 .rm-storage-item__popover::before {
   position: absolute;
   top: -5px;
-  left: var(--rm-storage-popover-arrow-left, 50%);
+  left: 50%;
   width: 9px;
   height: 9px;
   border-top: 1px solid rgb(218 174 76 / 0.72);

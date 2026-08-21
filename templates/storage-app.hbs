@@ -96,16 +96,14 @@
           </button>
         </article>
       {{/if}}
-    </div>
-  {{else}}
-    <div class="rm-storage-empty" aria-label="Пусто">
-      <i class="fa-solid fa-box-open" aria-hidden="true"></i>
-    </div>
-  {{/if}}
 
-  {{#if activePopover}}
-    <div class="rm-storage-popover-layer" data-storage-popover-layer>
-      <div class="rm-storage-item__popover" data-storage-popover data-anchor-row-id="{{activePopover.anchorRowId}}">
+      {{#if activePopover}}
+    <div
+      class="rm-storage-popover-layer"
+      data-storage-popover-layer
+      style="--rm-storage-popover-anchor-column: {{activePopover.anchorColumn}}; --rm-storage-popover-anchor-row: {{activePopover.anchorRow}};"
+    >
+      <div class="rm-storage-item__popover rm-storage-item__popover--{{activePopover.popoverAlignment}}" data-storage-popover data-anchor-row-id="{{activePopover.anchorRowId}}">
         <button type="button" class="rm-storage-item__popover-close" data-action="storage-close-popover" aria-label="Закрыть">
           <i class="fa-solid fa-xmark" aria-hidden="true"></i>
         </button>
@@ -152,6 +150,12 @@
           {{/if}}
         {{/if}}
       </div>
+    </div>
+      {{/if}}
+    </div>
+  {{else}}
+    <div class="rm-storage-empty" aria-label="Пусто">
+      <i class="fa-solid fa-box-open" aria-hidden="true"></i>
     </div>
   {{/if}}
 </section>

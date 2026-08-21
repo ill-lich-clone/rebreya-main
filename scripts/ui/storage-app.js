@@ -184,13 +184,25 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
     if (hasCoins) validPopoverIds.add("__coins");
     if (this.activeRowId && !validPopoverIds.has(this.activeRowId)) this.activeRowId = "";
     const selectedRow = rows.find((row) => row.rowId === this.activeRowId) ?? null;
+    const selectedIndex = this.activeRowId === "__coins"
+      ? rows.length
+      : rows.findIndex((row) => row.rowId === this.activeRowId);
+    const selectedColumn = selectedIndex >= 0 ? selectedIndex % gridColumns : 0;
+    const popoverPlacement = selectedIndex >= 0 ? {
+      anchorColumn: selectedColumn,
+      anchorRow: Math.floor(selectedIndex / gridColumns),
+      popoverAlignment: selectedColumn === 0
+        ? "left"
+        : selectedColumn === gridColumns - 1 ? "right" : "center"
+    } : {};
     const activePopover = this.activeRowId === "__coins"
       ? {
           isCoins: true,
           anchorRowId: "__coins",
-          name: coinsLabel(coins)
+          name: coinsLabel(coins),
+          ...popoverPlacement
         }
-      : selectedRow ? { ...selectedRow, anchorRowId: selectedRow.rowId } : null;
+      : selectedRow ? { ...selectedRow, anchorRowId: selectedRow.rowId, ...popoverPlacement } : null;
     const breadcrumbs = [
       { index: 0, name: this.rootName || "Сундук" },
       ...this.path.map((rowId, index) => ({
@@ -275,8 +287,6 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const viewportWidth = Math.max(320, Number(globalThis.innerWidth) || 1920);
     const width = this.configure ? 430 : Math.min(viewportWidth - 32, Math.max(286, (columns * 80) + 46));
     this.setPosition?.({ width });
-    const positionPopover = globalThis.requestAnimationFrame ?? ((callback) => globalThis.setTimeout?.(callback, 0));
-    positionPopover?.(() => this.#positionPopover(root));
     root.querySelector?.(".window-header")?.addEventListener?.("pointerdown", () => this.#detachAnchor(), listenerOptions);
     if (this.anchorRequested && !this.anchorDetached) {
       const schedule = globalThis.requestAnimationFrame ?? ((callback) => globalThis.setTimeout?.(callback, 0));
@@ -297,31 +307,6 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
       console.error(`${MODULE_ID} | Storage quantity update failed.`, error);
       globalThis.ui?.notifications?.error(error?.message ?? "Не удалось изменить количество предмета.");
     }
-  }
-
-  #positionPopover(root) {
-    const shell = root?.querySelector?.(".rm-storage-shell");
-    const popover = root?.querySelector?.("[data-storage-popover]");
-    if (!shell || !popover) return false;
-    const anchorId = clean(popover.dataset?.anchorRowId);
-    const candidates = Array.from(root.querySelectorAll?.("[data-row-id]") ?? []);
-    const anchor = candidates.find((element) => clean(element.dataset?.rowId) === anchorId)
-      ?.querySelector?.(".rm-storage-item__icon")
-      ?? candidates.find((element) => clean(element.dataset?.rowId) === anchorId);
-    const shellRect = shell.getBoundingClientRect?.();
-    const anchorRect = anchor?.getBoundingClientRect?.();
-    const popoverRect = popover.getBoundingClientRect?.();
-    if (!shellRect || !anchorRect) return false;
-    const width = Math.max(160, Number(popoverRect?.width) || 224);
-    const center = (Number(anchorRect.left) + Number(anchorRect.right)) / 2 - Number(shellRect.left);
-    const half = width / 2;
-    const shellWidth = Math.max(width + 16, Number(shellRect.width) || width + 16);
-    const left = Math.min(shellWidth - half - 8, Math.max(half + 8, center));
-    const top = Number(anchorRect.bottom) - Number(shellRect.top) + 9;
-    popover.style?.setProperty?.("left", `${left}px`);
-    popover.style?.setProperty?.("top", `${top}px`);
-    popover.style?.setProperty?.("--rm-storage-popover-arrow-left", `${Math.max(12, Math.min(width - 12, half + center - left))}px`);
-    return true;
   }
 
   requestTokenAnchor() {
