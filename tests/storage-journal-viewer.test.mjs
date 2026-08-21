@@ -44,3 +44,13 @@ test("storage Journal viewer template uses safe text and whitelisted media witho
   assert.match(template, /<iframe[^>]*src="\{\{src\}\}"/u);
   assert.doesNotMatch(template, /uuid|data-action|edit|export|ownership|claim|drag|autoplay/iu);
 });
+
+test("storage Journal viewer keeps images proportional and narrower than a wide dialog", async () => {
+  const css = await readFile(new URL("../styles/main.css", import.meta.url), "utf8");
+  const imageRule = css.match(/\.rebreya-storage-journal-viewer__page img\s*\{(?<body>[^}]*)\}/u)?.groups?.body ?? "";
+
+  assert.match(imageRule, /width:\s*auto;/u);
+  assert.match(imageRule, /max-width:\s*min\(100%,\s*720px\);/u);
+  assert.match(imageRule, /height:\s*auto;/u);
+  assert.match(imageRule, /margin-inline:\s*auto;/u);
+});
