@@ -6,7 +6,8 @@ import { StorageTokenOverlayController } from "../ui/storage-token-overlay.js";
 
 export function buildStorageTokenActions(moduleApi, token, {
   isGM = false,
-  characterTokenUuid = ""
+  characterTokenUuid = "",
+  prepareConfigure = null
 } = {}) {
   const tokenUuid = String(token?.document?.uuid ?? token?.uuid ?? "").trim();
   const safeCharacterTokenUuid = String(characterTokenUuid ?? "").trim();
@@ -26,7 +27,10 @@ export function buildStorageTokenActions(moduleApi, token, {
       id: "configure",
       label: "Настроить",
       icon: "fa-solid fa-gear",
-      callback: () => moduleApi.openStorageApp({ tokenUuid, configure: true, anchorToToken: true })
+      callback: async () => {
+        await prepareConfigure?.();
+        return moduleApi.openStorageApp({ tokenUuid, configure: true, anchorToToken: true });
+      }
     });
   }
   return actions;
@@ -61,10 +65,14 @@ export function registerStorageTokenHooks(moduleApi, {
     }
     return access;
   };
-  const showTokenActions = (token) => {
+  const showTokenActions = (token, { corpse = false } = {}) => {
     const game = gameProvider();
     if (game?.user?.isGM === true) {
-      overlayController.showActions(token, buildStorageTokenActions(moduleApi, token, { isGM: true }));
+      const tokenUuid = String(token?.document?.uuid ?? token?.uuid ?? "").trim();
+      overlayController.showActions(token, buildStorageTokenActions(moduleApi, token, {
+        isGM: true,
+        prepareConfigure: corpse ? () => moduleApi.openStorage(tokenUuid) : null
+      }));
       return;
     }
     const access = resolvePlayerAccess(token, game);
@@ -74,19 +82,6 @@ export function registerStorageTokenHooks(moduleApi, {
       characterTokenUuid: access.characterTokenUuid
     }));
   };
-  const openCorpseStorage = async (token) => {
-    if (!isDeadNpcStorageTarget(token)) return;
-    const game = gameProvider();
-    const access = game?.user?.isGM === true ? null : resolvePlayerAccess(token, game);
-    if (game?.user?.isGM !== true && !access) return;
-    const tokenUuid = String(token?.document?.uuid ?? token?.uuid ?? "").trim();
-    await moduleApi.openStorageApp({
-      tokenUuid,
-      configure: false,
-      anchorToToken: true,
-      ...(access?.characterTokenUuid ? { characterTokenUuid: access.characterTokenUuid } : {})
-    });
-  };
   const bindPointerClick = (token) => {
     if ((!isStorageActor(token?.actor) && !isDeadNpcStorageTarget(token)) || typeof token?.on !== "function") return;
     let handler = pointerHandlers.get(token);
@@ -94,15 +89,11 @@ export function registerStorageTokenHooks(moduleApi, {
       handler = async (event) => {
         const button = Number(event?.button ?? event?.data?.button ?? 0);
         if (button !== 0) return;
-        if (isStorageActor(token?.actor)) {
-          showTokenActions(token);
+        const storageActor = isStorageActor(token?.actor);
+        const corpse = !storageActor && isDeadNpcStorageTarget(token);
+        if (storageActor || corpse) {
+          showTokenActions(token, { corpse });
           return;
-        }
-        try {
-          await openCorpseStorage(token);
-        }
-        catch (error) {
-          globalThis.ui?.notifications?.error(error?.message ?? "Не удалось открыть хранилище.");
         }
       };
       pointerHandlers.set(token, handler);

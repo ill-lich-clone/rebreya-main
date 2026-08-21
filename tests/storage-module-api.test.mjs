@@ -95,7 +95,7 @@ test("storage texture API rejects players and forwards an authorized GM mutation
   }
 });
 
-test("module composition materializes a corpse into token state and exposes it only through the read-only snapshot path", async () => {
+test("module composition materializes a corpse before allowing marker-guarded GM configuration", async () => {
   const gm = { active: true, id: "gm", isGM: true };
   const scene = { id: "scene" };
   const actor = {
@@ -190,14 +190,23 @@ test("module composition materializes a corpse into token state and exposes it o
     };
     moduleApi.storageOpenSoundService.playForToken = async () => {};
 
+    await assert.rejects(moduleApi.configureStorageToken(token.uuid, {}), /не отмечен/u);
     await moduleApi.storageService.open(token);
     const snapshot = await moduleApi.getStorageSnapshot(token.uuid);
 
     assert.equal(materializations, 1);
     assert.equal(snapshot.state, "opened");
     assert.deepEqual(snapshot.rows.map((row) => row.sourceId), ["laty"]);
-    await assert.rejects(moduleApi.configureStorageToken(token.uuid, {}), /не отмечен/u);
-    await assert.rejects(moduleApi.resetStorageToken(token.uuid), /не отмечен/u);
+    const configured = await moduleApi.configureStorageToken(token.uuid, { baseName: "Тело Чемпиона" });
+    assert.equal(configured.baseName, "Тело Чемпиона");
+    assert.equal(configured.corpseMaterialization.status, "complete");
+
+    const reset = await moduleApi.resetStorageToken(token.uuid);
+    assert.equal(reset.state, "empty");
+    assert.equal(reset.corpseMaterialization.status, "complete");
+    const reopened = await moduleApi.storageService.open(token);
+    assert.equal(materializations, 1);
+    assert.deepEqual(reopened.rows, []);
   }
   finally {
     restores.reverse().forEach((restore) => restore());

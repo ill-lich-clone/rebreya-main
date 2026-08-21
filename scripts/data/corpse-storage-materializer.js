@@ -1,5 +1,6 @@
 import { GEAR_COMPENDIUM_NAME, MODULE_ID } from "../constants.js";
 import { resolveRebreyaOrdinaryWeaponGearId } from "./item-classification.js?v=1.4.152-dead-npc-looting";
+import { formatDurabilityItemName } from "./durability-item-presentation.js?v=1.4.154-broken-item-name";
 
 export const CORPSE_MATERIALIZATION_VERSION = 1;
 
@@ -267,6 +268,7 @@ export class CorpseStorageMaterializer {
         itemData.flags ??= {};
         itemData.flags[MODULE_ID] ??= {};
         itemData.flags[MODULE_ID].durability = clone(broken);
+        itemData.name = formatDurabilityItemName(itemData.name, broken);
       }
       const embeddedId = cleanId(embedded?._id ?? embedded?.id);
       if (!embeddedId) continue;

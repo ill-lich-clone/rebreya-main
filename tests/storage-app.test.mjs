@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { MODULE_ID } from "../scripts/constants.js";
 
 class FakeApplicationV2 {
   constructor(options = {}) {
@@ -154,6 +155,36 @@ test("Journal rows expose a read-only view model and no transfer controls", asyn
   assert.match(template, /\{\{#if activePopover\.isJournal\}\}[\s\S]*?data-action="storage-read-journal"[\s\S]*?\{\{\/if\}\}/u);
   const journalBranch = template.match(/\{\{#if activePopover\.isJournal\}\}([\s\S]*?)\{\{else\}\}/u)?.[1] ?? "";
   assert.doesNotMatch(journalBranch, /storage-claim-self|storage-claim-party|data-storage-quantity|data-storage-row-drag/u);
+});
+
+test("storage row derives a visible broken suffix from the canonical persisted durability flag", async () => {
+  const { app } = createApp({
+    configure: false,
+    getStorageSnapshot: async () => ({
+      tokenUuid: "Scene.scene.Token.champion",
+      name: "Чемпион",
+      state: "opened",
+      rows: [{
+        rowId: "corpse-v1:plate:laty",
+        name: "Латы",
+        quantity: 1,
+        itemData: {
+          name: "Латы",
+          type: "equipment",
+          flags: {
+            [MODULE_ID]: {
+              durability: { eligible: true, state: "broken", breakStage: 1, hp: { value: 0, max: 30 } }
+            }
+          }
+        }
+      }],
+      coins: {}
+    })
+  });
+
+  const context = await app._prepareContext();
+
+  assert.equal(context.rows[0].name, "Латы (сломан)");
 });
 
 test("Journal read action passes nested access context and opens only the returned snapshot", async () => {

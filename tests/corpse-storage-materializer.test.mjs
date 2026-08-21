@@ -224,6 +224,8 @@ test("Champion materializes exactly four canonical gear rows with embedded quant
   assert.equal(result.rows.length, 4);
   assert.equal(result.rows[3].quantity, 20);
   assert.equal(result.rows[3].itemData.system.quantity, 20);
+  assert.equal(result.rows[2].name, "Латный доспех (сломан)");
+  assert.equal(result.rows[2].itemData.name, "Латный доспех (сломан)");
   assert.deepEqual(result.rows[2].itemData.flags[MODULE_ID].durability, brokenFlag);
   assert.equal(token.actor.items[3].system.equipped, true);
 });

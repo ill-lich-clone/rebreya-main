@@ -6,6 +6,7 @@ import {
 import { DurableMutationJournal } from "../application/durable-mutation-journal.js";
 import { WorldMutationCoordinator } from "../application/world-mutation-coordinator.js";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
+import { formatDurabilityItemName } from "./durability-item-presentation.js?v=1.4.154-broken-item-name";
 import {
   applyDurabilityDamage,
   buildInitialDurability,
@@ -416,6 +417,9 @@ export class DurabilityService {
     const payload = {
       [DURABILITY_FLAG_PATH]: toPlain(committedTransition.nextFlag)
     };
+    const currentName = cleanId(itemDataOf(item)?.name);
+    const nextName = formatDurabilityItemName(currentName, committedTransition.nextFlag);
+    if (nextName && nextName !== currentName) payload.name = nextName;
     if (clearEquipment) {
       payload["system.equipped"] = false;
       Object.assign(payload, clearAttunementPayload(itemDataOf(item)));

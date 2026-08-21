@@ -63,8 +63,8 @@ import {
   SOCKET_EVENT_INVENTORY_SOURCE_DEPLETION_RESULT,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_REQUEST,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_RESULT
-} from "./data/inventory-service.js?v=1.4.146-storage-persisted-items";
-import { DurabilityService } from "./data/durability-service.js?v=1.4.152-dead-npc-looting";
+} from "./data/inventory-service.js?v=1.4.154-corpse-storage-broken-name";
+import { DurabilityService } from "./data/durability-service.js?v=1.4.154-corpse-storage-broken-name";
 import { MapObjectTokenService } from "./data/map-object-token-service.js?v=1.4.97-map-object-token";
 import { HeroDollService } from "./data/hero-doll-service.js";
 import { ImplantService } from "./data/implant-service.js";
@@ -95,7 +95,8 @@ import {
 import {
   CorpseStorageMaterializer,
   isDeadNpcStorageTarget
-} from "./data/corpse-storage-materializer.js";
+} from "./data/corpse-storage-materializer.js?v=1.4.154-corpse-storage-broken-name";
+import { isMaterializedCorpseStorageState } from "./data/storage-object-kind.js?v=1.4.153-corpse-creature";
 import { StorageOpenSoundService } from "./data/storage-open-sound-service.js?v=1.4.145-coin-icons-storage-sound";
 import {
   isStorageTokenVisible,
@@ -193,7 +194,7 @@ import { runMapObjectTokenMacro } from "./integrations/map-object-token-macro.js
 import { refreshSmallTimeDateDisplay, registerSmallTimeIntegration, syncSmallTimeToCalendarTime } from "./integrations/smalltime-compat.js";
 import { registerRationFoodConversionHook } from "./integrations/ration-food-conversion.js";
 import { registerMagicWeaponTemplateHook } from "./integrations/magic-weapon-template.js?v=1.4.96";
-import { registerStorageTokenHooks } from "./integrations/storage-token-hooks.js?v=1.4.152-dead-npc-looting";
+import { registerStorageTokenHooks } from "./integrations/storage-token-hooks.js?v=1.4.154-corpse-storage-broken-name";
 import { registerCraftsmanGadgetHooks } from "./integrations/craftsman-gadget-hooks.js";
 import { registerSpellAutomationHooks } from "./integrations/spell-automation-hooks.js";
 import { registerLongRestHooks } from "./integrations/long-rest-hooks.js";
@@ -3435,11 +3436,19 @@ export class RebreyaMainModule {
       : this.socketCommandBus.request(STORAGE_TOKEN_CHARACTER_COMMAND, payload);
   }
 
-  async #resolveStorageToken(tokenUuid, { allowCorpse = false } = {}) {
+  async #resolveStorageToken(tokenUuid, {
+    allowCorpse = false,
+    allowMaterializedCorpse = false
+  } = {}) {
     const document = await globalThis.fromUuid?.(cleanSocketId(tokenUuid));
     const token = document?.document ?? document;
     if (!token?.actor) throw new Error("Токен хранилища не найден.");
-    if (!isStorageActor(token.actor) && !(allowCorpse && isDeadNpcStorageTarget(token))) {
+    const materializedCorpse = allowMaterializedCorpse
+      && isDeadNpcStorageTarget(token)
+      && isMaterializedCorpseStorageState(readStorageState(token));
+    if (!isStorageActor(token.actor)
+      && !(allowCorpse && isDeadNpcStorageTarget(token))
+      && !materializedCorpse) {
       throw new Error("Токен не отмечен как хранилище Rebreya.");
     }
     return token;
@@ -3495,7 +3504,7 @@ export class RebreyaMainModule {
     if (!globalThis.game?.user?.isGM) {
       throw new Error("Настраивать хранилища может только мастер.");
     }
-    const token = await this.#resolveStorageToken(tokenUuid);
+    const token = await this.#resolveStorageToken(tokenUuid, { allowMaterializedCorpse: true });
     const path = cleanStoragePath(request.path);
     const patch = {};
     if (Object.prototype.hasOwnProperty.call(config, "baseName")) {
@@ -3529,7 +3538,7 @@ export class RebreyaMainModule {
   async addManualStorageItem(tokenUuid, itemUuid, request = {}) {
     if (!globalThis.game?.user?.isGM) throw new Error("Добавлять предметы может только мастер.");
     const [token, item] = await Promise.all([
-      this.#resolveStorageToken(tokenUuid),
+      this.#resolveStorageToken(tokenUuid, { allowMaterializedCorpse: true }),
       globalThis.fromUuid?.(cleanSocketId(itemUuid))
     ]);
     if (!item || item.documentName !== "Item" && !(globalThis.Item && item instanceof globalThis.Item)) {
@@ -3570,7 +3579,7 @@ export class RebreyaMainModule {
 
   async updateStorageRowQuantity(tokenUuid, rowId, quantity, request = {}) {
     if (!globalThis.game?.user?.isGM) throw new Error("Изменять предметы может только мастер.");
-    const token = await this.#resolveStorageToken(tokenUuid);
+    const token = await this.#resolveStorageToken(tokenUuid, { allowMaterializedCorpse: true });
     const next = await this.storageService.updateRowQuantity(token, cleanSocketId(rowId), quantity, {
       path: cleanStoragePath(request.path)
     });
@@ -3580,7 +3589,7 @@ export class RebreyaMainModule {
 
   async deleteStorageRow(tokenUuid, rowId, request = {}) {
     if (!globalThis.game?.user?.isGM) throw new Error("Удалять предметы может только мастер.");
-    const token = await this.#resolveStorageToken(tokenUuid);
+    const token = await this.#resolveStorageToken(tokenUuid, { allowMaterializedCorpse: true });
     const next = await this.storageService.deleteRow(token, cleanSocketId(rowId), {
       path: cleanStoragePath(request.path)
     });
@@ -3590,22 +3599,24 @@ export class RebreyaMainModule {
 
   async resetStorageToken(tokenUuid, request = {}) {
     if (!globalThis.game?.user?.isGM) throw new Error("Сбрасывать хранилища может только мастер.");
-    const token = await this.#resolveStorageToken(tokenUuid);
+    const token = await this.#resolveStorageToken(tokenUuid, { allowMaterializedCorpse: true });
+    const path = cleanStoragePath(request.path);
+    const corpse = !path.length && isMaterializedCorpseStorageState(readStorageState(token));
     return this.storageService.configure(token, {
       generatedRows: [],
       generatedCoins: {},
       claimedRowIds: [],
       coinsClaimed: false,
-      state: "unopened",
-      displayMode: "unopened"
-    }, { path: cleanStoragePath(request.path) });
+      state: corpse ? "empty" : "unopened",
+      displayMode: corpse ? "empty" : "unopened"
+    }, { path });
   }
 
   async setStorageTextureMode(tokenUuid, mode, request = {}) {
     if (!globalThis.game?.user?.isGM) {
       throw new Error("Менять текстуру хранилища может только мастер.");
     }
-    const token = await this.#resolveStorageToken(tokenUuid);
+    const token = await this.#resolveStorageToken(tokenUuid, { allowMaterializedCorpse: true });
     return this.storageService.setTextureMode(token, mode, { path: cleanStoragePath(request.path) });
   }
 

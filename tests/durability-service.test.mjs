@@ -55,6 +55,7 @@ function setPath(target, path, value) {
 
 function createItem({
   id = "sword-item",
+  name = "Меч",
   uuid = `Actor.hero.Item.${id}`,
   type = "weapon",
   system = { equipped: true, attuned: true },
@@ -72,6 +73,7 @@ function createItem({
     _id: id,
     id,
     uuid,
+    name,
     type,
     system: clone(system),
     flags: {
@@ -476,6 +478,7 @@ test("breakItem clears equipped and supported attunement fields but preserves he
   assert.deepEqual(transition.nextFlag.hp, { value: 0, max: 15 });
   assert.deepEqual(item.updates[0], {
     [`flags.${MODULE_ID}.durability`]: transition.nextFlag,
+    name: "Меч (сломан)",
     "system.equipped": false,
     "system.attuned": false,
     "system.attunement": 0

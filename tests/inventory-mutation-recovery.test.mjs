@@ -135,6 +135,7 @@ test("broken lootgen grants persist full durability exactly once and do not merg
 
     assert.equal(group.items.contents.length, 1);
     assert.equal(group.items.contents[0].type, "weapon");
+    assert.equal(group.items.contents[0].name, "Стальной меч (сломан)");
     assert.deepEqual(group.items.contents[0].system.damage, sourceData.system.damage);
     assert.equal(group.items.contents[0].system.quantity, 1);
     assert.equal(group.items.contents[0].flags[MODULE_ID].durability.state, "broken");
@@ -162,7 +163,11 @@ test("broken lootgen grants persist full durability exactly once and do not merg
     });
 
     assert.equal(group.items.contents.length, 2);
-    assert.equal(group.items.contents.every((item) => item.name === gear.name && item.type === "weapon"), true);
+    assert.deepEqual(
+      group.items.contents.map((item) => item.name).sort(),
+      ["Стальной меч", "Стальной меч (сломан)"].sort()
+    );
+    assert.equal(group.items.contents.every((item) => item.type === "weapon"), true);
     assert.equal(group.items.contents.some((item) => item.flags[MODULE_ID].magical === true), false);
     const states = group.items.contents.map((item) => item.flags[MODULE_ID].durability?.state ?? "uninitialized");
     assert.deepEqual(states.sort(), ["broken", "uninitialized"]);
@@ -204,6 +209,40 @@ test("storage loot grants an item and coins to a character exactly once", async 
     assert.equal(hero.items.contents[0].system.quantity, 2);
     assert.equal(hero.system.currency.gp, 3);
     assert.equal(hero.system.currency.sp, 7);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("persisted broken corpse armor keeps its canonical flag and gains a visible Foundry item suffix", async () => {
+  const hero = createActor({ id: "corpse-loot-hero" });
+  const fixture = installFixture({ actors: [hero] });
+  const durability = {
+    version: 1,
+    eligible: true,
+    state: "broken",
+    breakStage: 1,
+    hp: { value: 0, max: 30 }
+  };
+
+  try {
+    await fixture.service.addLootgenRowToCharacterOnce({
+      rowId: "corpse-v1:plate:laty",
+      sourceType: "gear",
+      sourceId: "laty",
+      quantity: 1,
+      itemData: {
+        name: "Латы",
+        type: "equipment",
+        system: { quantity: 1, equipped: false },
+        flags: { [MODULE_ID]: { sourceType: "gear", gearId: "laty", durability } }
+      }
+    }, hero, "storage:item:corpse:plate:self");
+
+    assert.equal(hero.items.contents.length, 1);
+    assert.equal(hero.items.contents[0].name, "Латы (сломан)");
+    assert.deepEqual(hero.items.contents[0].flags[MODULE_ID].durability, durability);
   }
   finally {
     fixture.restore();

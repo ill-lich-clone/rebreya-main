@@ -4,6 +4,7 @@ import {
   isDurabilityEligible,
   resolveDurabilityProfile
 } from "./durability-rules.js";
+import { formatDurabilityItemName } from "./durability-item-presentation.js?v=1.4.154-broken-item-name";
 
 function clone(value) {
   if (value == null) {
@@ -141,5 +142,6 @@ export function applyLootgenBrokenDurability(itemData, {
   durability.breakStage = 1;
   durability.updatedAt = String(updatedAt ?? "").trim() || new Date().toISOString();
   result.flags[MODULE_ID].durability = durability;
+  result.name = formatDurabilityItemName(result.name, durability);
   return result;
 }

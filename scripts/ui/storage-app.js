@@ -2,6 +2,7 @@ import { MODULE_ID } from "../constants.js";
 import { getAppElement } from "../ui.js";
 import { placeTokenOverlay, storageTokenViewportBounds } from "./storage-token-overlay.js";
 import { openStorageJournalViewer } from "./storage-journal-viewer.js";
+import { formatDurabilityItemName } from "../data/durability-item-presentation.js?v=1.4.154-broken-item-name";
 import {
   buildStorageDragData,
   parseStorageDragData,
@@ -159,10 +160,11 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const rows = snapshotRows.map((row) => {
       const isJournal = row.rowKind === "journal";
       const isContainer = row.rowKind === "container" && Boolean(row.container);
+      const itemName = clean(row.name ?? row.itemData?.name) || "Предмет";
       return {
         ...clone(row),
         rowId: clean(row.rowId),
-        name: clean(row.name ?? row.itemData?.name) || "Предмет",
+        name: formatDurabilityItemName(itemName, row.itemData?.flags?.[MODULE_ID]?.durability),
         img: clean(row.img ?? row.itemData?.img),
         quantity: Math.max(1, Number(row.quantity ?? 1)),
         typeLabel: clean(row.typeLabel ?? row.itemData?.type) || "Предмет",

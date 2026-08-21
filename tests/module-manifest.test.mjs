@@ -63,8 +63,8 @@ test("module manifest loads the stable canonical entrypoint", async () => {
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const [entrypoint] = manifest.esmodules;
 
-  assert.equal(manifest.version, "1.4.153");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.153.js"]);
+  assert.equal(manifest.version, "1.4.154");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.154.js"]);
   assert.doesNotMatch(entrypoint, /[?#]/u);
 
   const entrypointSource = await readFile(new URL(entrypoint, manifestUrl), "utf8");
@@ -72,7 +72,7 @@ test("module manifest loads the stable canonical entrypoint", async () => {
     entrypointSource,
     [
       "// @rebreya-role versioned-entrypoint-cache-forwarder",
-      'import "./main.js?v=1.4.153-corpse-creature";',
+      'import "./main.js?v=1.4.154-corpse-storage-broken-name";',
       ""
     ].join("\n")
   );
@@ -214,6 +214,9 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
     new URL("../scripts/data/native-object-durability-service.js", import.meta.url),
     "utf8"
   );
+  const inventoryServiceSource = await readFile(new URL("../scripts/data/inventory-service.js", import.meta.url), "utf8");
+  const lootgenAppSource = await readFile(new URL("../scripts/ui/lootgen-app.js", import.meta.url), "utf8");
+  const lootgenGeneratorSource = await readFile(new URL("../scripts/data/lootgen-generator.js", import.meta.url), "utf8");
 
   assert.match(
     canonicalSource,
@@ -223,13 +226,15 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
   for (const importPath of [
     "data/trader-service.js?v=1.4.109-lazy-trader-restock",
     "data/downtime-service.js?v=1.4.96-craft-calendar",
-    "data/inventory-service.js?v=1.4.146-storage-persisted-items",
-    "data/durability-service.js?v=1.4.152-dead-npc-looting",
+    "data/inventory-service.js?v=1.4.154-corpse-storage-broken-name",
+    "data/durability-service.js?v=1.4.154-corpse-storage-broken-name",
+    "data/corpse-storage-materializer.js?v=1.4.154-corpse-storage-broken-name",
     "data/native-object-durability-service.js?v=1.4.153-corpse-creature",
     "data/crafting-service.js?v=1.4.96-craft-calendar",
     "data/craft-downtime-service.js?v=1.4.96-craft-calendar",
     "data/calendar-transition-coordinator.js?v=1.4.96-craft-calendar",
     "integrations/durability-hooks.js?v=1.4.153-corpse-creature",
+    "integrations/storage-token-hooks.js?v=1.4.154-corpse-storage-broken-name",
     "integrations/inventory-sync.js?v=1.4.96-durable-transfer",
     "data/gear-compendium.js?v=1.4.145-coin-icons-storage-sound",
     "data/storage-open-sound-service.js?v=1.4.145-coin-icons-storage-sound",
@@ -258,6 +263,14 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
     true,
     "native object resolution must share the corpse-safe classifier"
   );
+  for (const [source, importPath] of [
+    [inventoryServiceSource, "lootgen-durability.js?v=1.4.154-corpse-storage-broken-name"],
+    [lootgenAppSource, "data/lootgen-durability.js?v=1.4.154-corpse-storage-broken-name"],
+    [lootgenAppSource, "data/lootgen-generator.js?v=1.4.154-corpse-storage-broken-name"],
+    [lootgenGeneratorSource, "lootgen-durability.js?v=1.4.154-corpse-storage-broken-name"]
+  ]) {
+    assert.equal(source.includes(importPath), true, importPath);
+  }
 
   assert.match(
     canonicalSource,
@@ -277,7 +290,7 @@ test("module keeps recent published entrypoint URLs as canonical compatibility f
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
 
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.153.js"]);
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.154.js"]);
 
   for (const fileName of ["main-1.4.98.js", "main-1.4.99.js", "main-1.4.100.js"]) {
     const forwarderSource = await readFile(new URL(`../scripts/${fileName}`, import.meta.url), "utf8");
@@ -369,7 +382,7 @@ test("durability service and its persisted mutation journal are wired into the l
 
   assert.equal(constantsModule.DURABILITY_UPDATED_HOOK, "rebreya-main.durabilityUpdated");
   assert.equal(constantsModule.SETTINGS_KEYS.DURABILITY_MUTATION_JOURNAL, "durabilityMutationJournal");
-  assert.match(canonicalSource, /import \{ DurabilityService \} from "\.\/data\/durability-service\.js\?v=1\.4\.152-dead-npc-looting";/u);
+  assert.match(canonicalSource, /import \{ DurabilityService \} from "\.\/data\/durability-service\.js\?v=1\.4\.154-corpse-storage-broken-name";/u);
   assert.match(canonicalSource, /this\.inventoryService = new InventoryService\(this\);\s+this\.durabilityService = new DurabilityService\(this\);/u);
   assert.match(canonicalSource, /game\.settings\.register\(MODULE_ID, SETTINGS_KEYS\.DURABILITY_MUTATION_JOURNAL,/u);
   for (const method of ["initializeItem", "damageItem", "breakItem", "destroyItem", "getDurability", "isBroken"]) {

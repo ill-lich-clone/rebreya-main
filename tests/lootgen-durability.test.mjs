@@ -100,6 +100,8 @@ test("broken loot keeps normal item data and receives a full second durability p
   });
 
   assert.notEqual(result, itemData);
+  assert.equal(result.name, "Железный меч (сломан)");
+  assert.equal(itemData.name, "Железный меч");
   assert.deepEqual(result.system.damage, itemData.system.damage);
   assert.equal(result.flags["rebreya-main"].durability.state, "broken");
   assert.equal(result.flags["rebreya-main"].durability.breakStage, 1);
@@ -114,6 +116,16 @@ test("broken loot keeps normal item data and receives a full second durability p
   });
   assert.equal(result.flags["rebreya-main"].durability.updatedAt, "2026-07-16T12:00:00.000Z");
   assert.equal(itemData.flags["rebreya-main"].durability, undefined);
+
+  const repeated = applyLootgenBrokenDurability(result, {
+    isBroken: true,
+    sourceType: "gear",
+    sourceId: "iron-sword",
+    gear: { id: "iron-sword", predominantMaterialId: "iron" },
+    material: { id: "iron", name: "Железо" },
+    updatedAt: "2026-07-16T12:00:00.000Z"
+  });
+  assert.equal(repeated.name, "Железный меч (сломан)");
 });
 
 test("magic and ineligible loot never receive broken durability", () => {

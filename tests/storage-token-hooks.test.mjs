@@ -7,6 +7,7 @@ import { registerStorageTokenHooks } from "../scripts/integrations/storage-token
 function createHarness({ isGM = false, distance = 5 } = {}) {
   const listeners = new Map();
   const calls = [];
+  const openCalls = [];
   const tokenListeners = new Map();
   const scene = { id: "scene" };
   const user = { id: isGM ? "gm" : "player", isGM };
@@ -38,6 +39,7 @@ function createHarness({ isGM = false, distance = 5 } = {}) {
   };
   const moduleApi = {
     openStorageApp: async (options) => calls.push(options),
+    openStorage: async (...args) => openCalls.push(args),
     markStorageActor: async (actorUuid) => calls.push({ actorUuid })
   };
   const shown = [];
@@ -58,7 +60,7 @@ function createHarness({ isGM = false, distance = 5 } = {}) {
     }),
     overlayController
   });
-  return { listeners, calls, shown, feedback, moduleApi, storageToken, tokenListeners };
+  return { listeners, calls, openCalls, shown, feedback, moduleApi, storageToken, tokenListeners };
 }
 
 test("left-clicking storage offers only Open to a player", async () => {
@@ -125,7 +127,7 @@ test("storage pointer click is rebound after Foundry redraw removes token listen
   assert.deepEqual(harness.shown[0].map((action) => action.label), ["Открыть", "Настроить"]);
 });
 
-test("left-clicking a dead NPC opens the existing StorageApp directly for player and GM", async () => {
+test("left-clicking a dead NPC offers the existing storage actions to player and GM", async () => {
   const playerHarness = createHarness({ isGM: false });
   playerHarness.storageToken.actor.flags = {};
   playerHarness.storageToken.actor.system = { attributes: { hp: { value: 0 } } };
@@ -133,7 +135,9 @@ test("left-clicking a dead NPC opens the existing StorageApp directly for player
 
   await playerHarness.tokenListeners.get("pointertap")({ button: 0 });
 
-  assert.deepEqual(playerHarness.shown, []);
+  assert.deepEqual(playerHarness.shown[0].map((action) => action.label), ["Открыть"]);
+  assert.deepEqual(playerHarness.calls, []);
+  await playerHarness.shown[0][0].callback();
   assert.deepEqual(playerHarness.calls, [{
     tokenUuid: playerHarness.storageToken.document.uuid,
     configure: false,
@@ -147,10 +151,13 @@ test("left-clicking a dead NPC opens the existing StorageApp directly for player
   gmHarness.listeners.get("drawToken")(gmHarness.storageToken);
   await gmHarness.tokenListeners.get("pointertap")({ button: 0 });
 
-  assert.deepEqual(gmHarness.shown, []);
+  assert.deepEqual(gmHarness.shown[0].map((action) => action.label), ["Открыть", "Настроить"]);
+  assert.deepEqual(gmHarness.calls, []);
+  await gmHarness.shown[0][1].callback();
+  assert.deepEqual(gmHarness.openCalls, [[gmHarness.storageToken.document.uuid]]);
   assert.deepEqual(gmHarness.calls, [{
     tokenUuid: gmHarness.storageToken.document.uuid,
-    configure: false,
+    configure: true,
     anchorToToken: true
   }]);
 });
@@ -189,7 +196,7 @@ test("a distant player gets the existing local feedback instead of opening a cor
   }]);
 });
 
-test("corpse direct-open reports a rejected StorageApp request without an unhandled pointer promise", async () => {
+test("corpse pointer opens only the action menu without starting a direct StorageApp request", async () => {
   const previousUi = globalThis.ui;
   const errors = [];
   globalThis.ui = { notifications: { error: (message) => errors.push(message) } };
@@ -204,7 +211,9 @@ test("corpse direct-open reports a rejected StorageApp request without an unhand
 
     await assert.doesNotReject(harness.tokenListeners.get("pointertap")({ button: 0 }));
 
-    assert.deepEqual(errors, ["socket unavailable"]);
+    assert.deepEqual(harness.calls, []);
+    assert.deepEqual(harness.shown[0].map((action) => action.label), ["Открыть", "Настроить"]);
+    assert.deepEqual(errors, []);
   }
   finally {
     if (previousUi === undefined) delete globalThis.ui;

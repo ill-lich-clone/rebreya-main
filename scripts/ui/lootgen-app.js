@@ -6,14 +6,14 @@ import {
   collectBreakableManagedGearIds,
   normalizeBrokenEquipmentChance,
   normalizeLootgenBrokenMarker
-} from "../data/lootgen-durability.js";
+} from "../data/lootgen-durability.js?v=1.4.154-corpse-storage-broken-name";
 import { getAppElement } from "../ui.js";
 import {
   buildLootgenTypeFilterOptions,
   isLootgenTypeAllowed,
   resolveMagicLootgenTypeLabel
 } from "./lootgen-type-filters.js";
-import { generateLootgenResult, normalizeLootgenForm } from "../data/lootgen-generator.js?v=1.4.129-lootgen-row-cap";
+import { generateLootgenResult, normalizeLootgenForm } from "../data/lootgen-generator.js?v=1.4.154-corpse-storage-broken-name";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
