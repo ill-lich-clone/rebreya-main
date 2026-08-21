@@ -114,7 +114,7 @@ import {
   parseStorageDepositDragData,
   resolveStorageDepositSource
 } from "./data/storage-deposit-source.js?v=1.4.144-spreadsheet-coins-ground-repair";
-import { NativeObjectDurabilityService } from "./data/native-object-durability-service.js";
+import { NativeObjectDurabilityService } from "./data/native-object-durability-service.js?v=1.4.153-corpse-creature";
 import {
   StorageCommandService,
   isValidStorageClaimCoinsPayload,
@@ -185,7 +185,7 @@ import {
   reconcileBrokenEquippedArmor,
   reconcileNativeObjectDurability,
   registerDurabilityHooks
-} from "./integrations/durability-hooks.js?v=1.4.116-native-durability";
+} from "./integrations/durability-hooks.js?v=1.4.153-corpse-creature";
 import { patchEffectMacroCombatHooks } from "./integrations/effectmacro-compat.js";
 import { patchSmAirshipRenderSettingsHook } from "./integrations/sm-airship-compat.js";
 import { registerInventorySyncHooks } from "./integrations/inventory-sync.js?v=1.4.96-durable-transfer";

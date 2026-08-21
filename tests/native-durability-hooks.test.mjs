@@ -10,7 +10,9 @@ function applyPatch(target, patch) {
     const parts = path.split(".");
     let cursor = target;
     for (const part of parts.slice(0, -1)) cursor = (cursor[part] ??= {});
-    cursor[parts.at(-1)] = structuredClone(value);
+    const key = parts.at(-1);
+    if (key.startsWith("-=")) delete cursor[key.slice(2)];
+    else cursor[key] = structuredClone(value);
   }
 }
 
@@ -167,6 +169,52 @@ test("native reconciliation repairs chest and single ground-row projections", as
   assert.deepEqual(pile.delta.system.attributes.hp, { value: 4, max: 9, dt: 2 });
   assert.equal(pile.delta.system.attributes.ac.flat, 17);
   assert.equal(pile.bar1.attribute, "attributes.hp");
+});
+
+test("native reconciliation removes the legacy object projection from a materialized corpse NPC", async () => {
+  const { reconcileNativeObjectDurability } = await import(
+    `../scripts/integrations/durability-hooks.js?corpse-reconcile=${Date.now()}`
+  );
+  const { token } = createChest({ id: "champion" });
+  token.name = "Чемпион";
+  token.actor.type = "npc";
+  token.actorLink = false;
+  token.actor.prototypeToken = { bar1: { attribute: "" } };
+  token.flags[MODULE_ID].storage = buildStorageTokenState({
+    baseName: "Чемпион",
+    state: "opened",
+    corpseMaterialization: {
+      version: 1,
+      status: "complete",
+      sourceActorUuid: "Actor.champion",
+      sourceActorId: "champion"
+    }
+  });
+  token.delta = {
+    system: {
+      attributes: {
+        hp: { value: 18, max: 18, dt: 0 },
+        ac: { calc: "flat", flat: 15 },
+        movement: { walk: 30 }
+      }
+    }
+  };
+  token.bar1 = { attribute: "attributes.hp" };
+  const scene = { id: "scene", tokens: { contents: [token] } };
+
+  const reconciled = await reconcileNativeObjectDurability({
+    game: { scenes: { contents: [scene] } },
+    canvas: {},
+    isActiveGm: () => true
+  });
+
+  assert.deepEqual(reconciled, [token.uuid]);
+  assert.equal(token.flags[MODULE_ID].objectDurability, undefined);
+  assert.deepEqual(token.delta.system.attributes.hp, { value: 0 });
+  assert.equal(token.delta.system.attributes.ac, undefined);
+  assert.deepEqual(token.delta.system.attributes.movement, { walk: 30 });
+  assert.equal(token.bar1.attribute, "");
+  assert.equal(token.flags[MODULE_ID].storage.corpseMaterialization.status, "complete");
 });
 
 test("storage updates refresh only their matching native projection", async () => {

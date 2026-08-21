@@ -25,6 +25,11 @@ function candidates(target) {
   });
 }
 
+export function isMaterializedCorpseStorageState(value) {
+  return Number(value?.corpseMaterialization?.version) === 1
+    && value?.corpseMaterialization?.status === "complete";
+}
+
 export function storageObjectKind(target) {
   for (const candidate of candidates(target)) {
     const flags = objectFlags(candidate);
@@ -34,6 +39,7 @@ export function storageObjectKind(target) {
   }
   for (const candidate of candidates(target)) {
     const storage = objectFlags(candidate)?.storage;
+    if (isMaterializedCorpseStorageState(storage)) continue;
     if (storage?.enabled === true || Number(storage?.version) >= 1) {
       return "chest";
     }

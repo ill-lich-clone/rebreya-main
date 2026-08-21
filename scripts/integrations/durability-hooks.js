@@ -3,9 +3,12 @@ import {
   CHEST_OBJECT_DURABILITY,
   ensureStorageObjectDurability,
   readStorageObjectDurability
-} from "../data/native-object-durability-service.js";
+} from "../data/native-object-durability-service.js?v=1.4.153-corpse-creature";
 import { isDurabilityEligible } from "../data/durability-rules.js";
-import { storageObjectKind } from "../data/storage-object-kind.js";
+import {
+  isMaterializedCorpseStorageState,
+  storageObjectKind
+} from "../data/storage-object-kind.js?v=1.4.153-corpse-creature";
 import { readStorageState, STORAGE_UPDATED_HOOK } from "../data/storage-service.js";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 import { isNaturalWeapon } from "./held-items.js?v=1.4.96-npc-held-natural";
@@ -220,18 +223,42 @@ function allScenes(foundryGame, foundryCanvas) {
   return scenes;
 }
 
-function allStorageTokens(foundryGame, foundryCanvas) {
+function allSceneTokens(foundryGame, foundryCanvas) {
   const result = [];
   const seen = new Set();
   for (const scene of allScenes(foundryGame, foundryCanvas)) {
     for (const token of collectionValues(scene?.tokens)) {
       const key = cleanText(token?.uuid ?? `${scene?.id}.${token?.id}`);
-      if (!storageObjectKind(token) || (key && seen.has(key))) continue;
+      if (key && seen.has(key)) continue;
       if (key) seen.add(key);
       result.push(token);
     }
   }
   return result;
+}
+
+async function restoreCorpseCreatureProjection(token) {
+  const document = token?.document ?? token;
+  if (!document || typeof document.update !== "function"
+    || document?.actor?.type !== "npc"
+    || !isMaterializedCorpseStorageState(readStorageState(document))
+    || !readStorageObjectDurability(document)) {
+    return false;
+  }
+  const prototypeBar = cleanText(
+    document?.baseActor?.prototypeToken?.bar1?.attribute
+    ?? document?.actor?.prototypeToken?.bar1?.attribute
+  );
+  const patch = {
+    [`flags.${MODULE_ID}.-=objectDurability`]: null,
+    "delta.system.attributes.-=ac": null,
+    "delta.system.attributes.hp.value": 0,
+    "delta.system.attributes.hp.-=max": null,
+    "delta.system.attributes.hp.-=dt": null,
+    "bar1.attribute": prototypeBar
+  };
+  await document.update(patch);
+  return true;
 }
 
 async function projectNativeToken(token, { isActiveGm, ensureDurability }) {
@@ -264,7 +291,12 @@ export async function reconcileNativeObjectDurability({
 } = {}) {
   if (!isActiveGm()) return [];
   const reconciled = [];
-  for (const token of allStorageTokens(foundryGame, foundryCanvas)) {
+  for (const token of allSceneTokens(foundryGame, foundryCanvas)) {
+    if (await restoreCorpseCreatureProjection(token)) {
+      reconciled.push(cleanText(token.uuid ?? token.id));
+      continue;
+    }
+    if (!storageObjectKind(token)) continue;
     if (await projectNativeToken(token, { isActiveGm, ensureDurability })) {
       reconciled.push(cleanText(token.uuid ?? token.id));
     }

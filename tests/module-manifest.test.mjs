@@ -63,8 +63,8 @@ test("module manifest loads the stable canonical entrypoint", async () => {
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const [entrypoint] = manifest.esmodules;
 
-  assert.equal(manifest.version, "1.4.152");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.152.js"]);
+  assert.equal(manifest.version, "1.4.153");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.153.js"]);
   assert.doesNotMatch(entrypoint, /[?#]/u);
 
   const entrypointSource = await readFile(new URL(entrypoint, manifestUrl), "utf8");
@@ -72,7 +72,7 @@ test("module manifest loads the stable canonical entrypoint", async () => {
     entrypointSource,
     [
       "// @rebreya-role versioned-entrypoint-cache-forwarder",
-      'import "./main.js?v=1.4.152-dead-npc-looting";',
+      'import "./main.js?v=1.4.153-corpse-creature";',
       ""
     ].join("\n")
   );
@@ -209,6 +209,11 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
   const canonicalSource = await readCanonicalEntrypointSource();
   const traderServiceSource = await readFile(new URL("../scripts/data/trader-service.js", import.meta.url), "utf8");
   const durabilityServiceSource = await readFile(new URL("../scripts/data/durability-service.js", import.meta.url), "utf8");
+  const durabilityHooksSource = await readFile(new URL("../scripts/integrations/durability-hooks.js", import.meta.url), "utf8");
+  const nativeObjectDurabilitySource = await readFile(
+    new URL("../scripts/data/native-object-durability-service.js", import.meta.url),
+    "utf8"
+  );
 
   assert.match(
     canonicalSource,
@@ -220,10 +225,11 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
     "data/downtime-service.js?v=1.4.96-craft-calendar",
     "data/inventory-service.js?v=1.4.146-storage-persisted-items",
     "data/durability-service.js?v=1.4.152-dead-npc-looting",
+    "data/native-object-durability-service.js?v=1.4.153-corpse-creature",
     "data/crafting-service.js?v=1.4.96-craft-calendar",
     "data/craft-downtime-service.js?v=1.4.96-craft-calendar",
     "data/calendar-transition-coordinator.js?v=1.4.96-craft-calendar",
-    "integrations/durability-hooks.js?v=1.4.116-native-durability",
+    "integrations/durability-hooks.js?v=1.4.153-corpse-creature",
     "integrations/inventory-sync.js?v=1.4.96-durable-transfer",
     "data/gear-compendium.js?v=1.4.145-coin-icons-storage-sound",
     "data/storage-open-sound-service.js?v=1.4.145-coin-icons-storage-sound",
@@ -241,6 +247,16 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
     durabilityServiceSource.includes("durability-rules.js?v=1.4.144-spreadsheet-coins-ground-repair"),
     true,
     "durability rule changes need their own browser module cache key"
+  );
+  assert.equal(
+    durabilityHooksSource.includes("data/storage-object-kind.js?v=1.4.153-corpse-creature"),
+    true,
+    "corpse object classification changes need their own browser module cache key"
+  );
+  assert.equal(
+    nativeObjectDurabilitySource.includes("storage-object-kind.js?v=1.4.153-corpse-creature"),
+    true,
+    "native object resolution must share the corpse-safe classifier"
   );
 
   assert.match(
@@ -261,7 +277,7 @@ test("module keeps recent published entrypoint URLs as canonical compatibility f
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
 
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.152.js"]);
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.153.js"]);
 
   for (const fileName of ["main-1.4.98.js", "main-1.4.99.js", "main-1.4.100.js"]) {
     const forwarderSource = await readFile(new URL(`../scripts/${fileName}`, import.meta.url), "utf8");
