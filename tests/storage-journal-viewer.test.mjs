@@ -31,6 +31,7 @@ test("storage Journal viewer renders only the returned safe snapshot in a close-
   ]]);
   assert.equal(dialog.force, true);
   assert.equal(dialog.options.window.title, "Полевые заметки");
+  assert.deepEqual(dialog.options.position, { width: 760, height: "auto" });
   assert.deepEqual(dialog.options.buttons.map(({ action }) => action), ["close"]);
   assert.equal(dialog.options.content, "<section>rendered</section>");
 });

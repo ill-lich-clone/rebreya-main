@@ -9,6 +9,7 @@ export async function openStorageJournalViewer(snapshot, dependencies = {}) {
   const content = await renderTemplate(`modules/${MODULE_ID}/templates/storage-journal-viewer.hbs`, snapshot);
   const dialog = new DialogV2({
     window: { title: String(snapshot?.name ?? "").trim() || "Запись журнала" },
+    position: { width: 760, height: "auto" },
     content,
     buttons: [{ action: "close", label: "Закрыть", default: true }]
   });
