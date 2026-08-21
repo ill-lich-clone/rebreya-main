@@ -3,11 +3,12 @@ import {
   readStorageCoinDenomination,
   readStorageState,
   readStorageStateAtPath
-} from "./storage-service.js?v=1.4.146-storage-persisted-items";
+} from "./storage-service.js?v=1.4.152-dead-npc-looting";
 import { resolveStorageDepositSource } from "./storage-deposit-source.js?v=1.4.144-spreadsheet-coins-ground-repair";
 import { isStorageContainerRow, isStorageJournalRow } from "./storage-container-snapshot.js";
 import { MODULE_ID } from "../constants.js";
 import { escapeFoundryHtml } from "../shared/foundry-values.js";
+import { isDeadNpcStorageTarget } from "./corpse-storage-materializer.js";
 
 const STORAGE_ROW_DESTINATIONS = new Set(["self", "party", "character", "scene"]);
 const STORAGE_COIN_DESTINATIONS = new Set(["self", "party"]);
@@ -396,7 +397,7 @@ export class StorageCommandService {
   async #resolveAccess(payload, sender) {
     const tokenUuid = clean(payload?.tokenUuid);
     const storageToken = tokenDocument(await this.resolveToken(tokenUuid));
-    if (!storageToken || !isStorageActor(storageToken.actor)) {
+    if (!storageToken || (!isStorageActor(storageToken.actor) && !isDeadNpcStorageTarget(storageToken))) {
       throw new Error("Токен не является хранилищем Rebreya.");
     }
 

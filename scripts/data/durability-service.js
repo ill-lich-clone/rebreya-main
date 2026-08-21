@@ -223,6 +223,18 @@ export class DurabilityService {
     return this.#buildInitialFlag(item, { sourceType, sourceId });
   }
 
+  async getOrBuildBrokenDurability(item, { sourceType, sourceId } = {}) {
+    const flag = await this.getOrBuildDurability(item, { sourceType, sourceId });
+    if (!flag) {
+      return null;
+    }
+    const transition = markDurabilityBroken(flag);
+    if (transition.outcome !== "broken") {
+      return flag.state === "broken" ? toPlain(flag) : null;
+    }
+    return transitionWithTimestamp(transition, this.#timestamp()).nextFlag;
+  }
+
   async #initializeItem(item, { force = false, sourceType, sourceId } = {}) {
     const flag = force === true
       ? await this.#buildInitialFlag(item, { sourceType, sourceId })

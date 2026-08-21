@@ -1,6 +1,7 @@
 import { MODULE_ID } from "../constants.js";
 import { preflightStorageAccess } from "../data/storage-access.js";
 import { isStorageActor } from "../data/storage-service.js";
+import { isDeadNpcStorageTarget } from "../data/corpse-storage-materializer.js";
 import { StorageTokenOverlayController } from "../ui/storage-token-overlay.js";
 
 export function buildStorageTokenActions(moduleApi, token, {
@@ -40,38 +41,69 @@ export function registerStorageTokenHooks(moduleApi, {
   if (typeof hooks?.on !== "function") return false;
 
   const pointerHandlers = new WeakMap();
+  const showAccessFailure = (token, access) => {
+    if (access.reason === "distance") {
+      overlayController.showFeedback(token, "Подойдите ближе", { durationMs: 2000 });
+      return;
+    }
+    const messages = {
+      character: "Выберите принадлежащего вам персонажа.",
+      scene: "Персонаж и хранилище должны находиться на одной сцене.",
+      visibility: "Персонаж не видит это хранилище."
+    };
+    globalThis.ui?.notifications?.warn(messages[access.reason] ?? "Хранилище сейчас недоступно.");
+  };
+  const resolvePlayerAccess = (token, game) => {
+    const access = preflightStorageAccess(token, { game, canvas: canvasProvider() });
+    if (!access.allowed) {
+      showAccessFailure(token, access);
+      return null;
+    }
+    return access;
+  };
   const showTokenActions = (token) => {
     const game = gameProvider();
     if (game?.user?.isGM === true) {
       overlayController.showActions(token, buildStorageTokenActions(moduleApi, token, { isGM: true }));
       return;
     }
-    const access = preflightStorageAccess(token, { game, canvas: canvasProvider() });
-    if (access.reason === "distance") {
-      overlayController.showFeedback(token, "Подойдите ближе", { durationMs: 2000 });
-      return;
-    }
-    if (!access.allowed) {
-      const messages = {
-        character: "Выберите принадлежащего вам персонажа.",
-        scene: "Персонаж и хранилище должны находиться на одной сцене.",
-        visibility: "Персонаж не видит это хранилище."
-      };
-      globalThis.ui?.notifications?.warn(messages[access.reason] ?? "Хранилище сейчас недоступно.");
-      return;
-    }
+    const access = resolvePlayerAccess(token, game);
+    if (!access) return;
     overlayController.showActions(token, buildStorageTokenActions(moduleApi, token, {
       isGM: false,
       characterTokenUuid: access.characterTokenUuid
     }));
   };
+  const openCorpseStorage = async (token) => {
+    if (!isDeadNpcStorageTarget(token)) return;
+    const game = gameProvider();
+    const access = game?.user?.isGM === true ? null : resolvePlayerAccess(token, game);
+    if (game?.user?.isGM !== true && !access) return;
+    const tokenUuid = String(token?.document?.uuid ?? token?.uuid ?? "").trim();
+    await moduleApi.openStorageApp({
+      tokenUuid,
+      configure: false,
+      anchorToToken: true,
+      ...(access?.characterTokenUuid ? { characterTokenUuid: access.characterTokenUuid } : {})
+    });
+  };
   const bindPointerClick = (token) => {
-    if (!isStorageActor(token?.actor) || typeof token?.on !== "function") return;
+    if ((!isStorageActor(token?.actor) && !isDeadNpcStorageTarget(token)) || typeof token?.on !== "function") return;
     let handler = pointerHandlers.get(token);
     if (!handler) {
-      handler = (event) => {
+      handler = async (event) => {
         const button = Number(event?.button ?? event?.data?.button ?? 0);
-        if (button === 0) showTokenActions(token);
+        if (button !== 0) return;
+        if (isStorageActor(token?.actor)) {
+          showTokenActions(token);
+          return;
+        }
+        try {
+          await openCorpseStorage(token);
+        }
+        catch (error) {
+          globalThis.ui?.notifications?.error(error?.message ?? "Не удалось открыть хранилище.");
+        }
       };
       pointerHandlers.set(token, handler);
     }
@@ -80,7 +112,7 @@ export function registerStorageTokenHooks(moduleApi, {
   };
 
   hooks.on("controlToken", async (token, controlled) => {
-    if (!controlled || !isStorageActor(token?.actor)) return;
+    if (!controlled || (!isStorageActor(token?.actor) && !isDeadNpcStorageTarget(token))) return;
     bindPointerClick(token);
   });
   hooks.on("hoverToken", (token, hovered) => {

@@ -58,7 +58,7 @@ function createHarness({ isGM = false, distance = 5 } = {}) {
     }),
     overlayController
   });
-  return { listeners, calls, shown, feedback, storageToken, tokenListeners };
+  return { listeners, calls, shown, feedback, moduleApi, storageToken, tokenListeners };
 }
 
 test("left-clicking storage offers only Open to a player", async () => {
@@ -123,6 +123,93 @@ test("storage pointer click is rebound after Foundry redraw removes token listen
   assert.equal(harness.tokenListeners.get("pointertap"), originalHandler);
   harness.tokenListeners.get("pointertap")({ button: 0 });
   assert.deepEqual(harness.shown[0].map((action) => action.label), ["Открыть", "Настроить"]);
+});
+
+test("left-clicking a dead NPC opens the existing StorageApp directly for player and GM", async () => {
+  const playerHarness = createHarness({ isGM: false });
+  playerHarness.storageToken.actor.flags = {};
+  playerHarness.storageToken.actor.system = { attributes: { hp: { value: 0 } } };
+  playerHarness.listeners.get("drawToken")(playerHarness.storageToken);
+
+  await playerHarness.tokenListeners.get("pointertap")({ button: 0 });
+
+  assert.deepEqual(playerHarness.shown, []);
+  assert.deepEqual(playerHarness.calls, [{
+    tokenUuid: playerHarness.storageToken.document.uuid,
+    configure: false,
+    anchorToToken: true,
+    characterTokenUuid: "Scene.scene.Token.hero"
+  }]);
+
+  const gmHarness = createHarness({ isGM: true });
+  gmHarness.storageToken.actor.flags = {};
+  gmHarness.storageToken.actor.system = { attributes: { hp: { value: -2 } } };
+  gmHarness.listeners.get("drawToken")(gmHarness.storageToken);
+  await gmHarness.tokenListeners.get("pointertap")({ button: 0 });
+
+  assert.deepEqual(gmHarness.shown, []);
+  assert.deepEqual(gmHarness.calls, [{
+    tokenUuid: gmHarness.storageToken.document.uuid,
+    configure: false,
+    anchorToToken: true
+  }]);
+});
+
+test("corpse pointer handlers recheck HP and living unmarked NPCs never open", async () => {
+  const harness = createHarness({ isGM: false });
+  harness.storageToken.actor.flags = {};
+  harness.storageToken.actor.system = { attributes: { hp: { value: 0 } } };
+  harness.listeners.get("drawToken")(harness.storageToken);
+  const staleHandler = harness.tokenListeners.get("pointertap");
+
+  harness.storageToken.actor.system.attributes.hp.value = 1;
+  await staleHandler({ button: 0 });
+
+  assert.deepEqual(harness.calls, []);
+  assert.deepEqual(harness.shown, []);
+
+  harness.storageToken.removeAllListeners();
+  harness.listeners.get("drawToken")(harness.storageToken);
+  assert.equal(harness.tokenListeners.has("pointertap"), false);
+});
+
+test("a distant player gets the existing local feedback instead of opening a corpse", async () => {
+  const harness = createHarness({ isGM: false, distance: 10 });
+  harness.storageToken.actor.flags = {};
+  harness.storageToken.actor.system = { attributes: { hp: { value: 0 } } };
+  harness.listeners.get("drawToken")(harness.storageToken);
+
+  await harness.tokenListeners.get("pointertap")({ button: 0 });
+
+  assert.deepEqual(harness.calls, []);
+  assert.deepEqual(harness.feedback, [{
+    token: harness.storageToken,
+    text: "Подойдите ближе",
+    durationMs: 2000
+  }]);
+});
+
+test("corpse direct-open reports a rejected StorageApp request without an unhandled pointer promise", async () => {
+  const previousUi = globalThis.ui;
+  const errors = [];
+  globalThis.ui = { notifications: { error: (message) => errors.push(message) } };
+  try {
+    const harness = createHarness({ isGM: true });
+    harness.storageToken.actor.flags = {};
+    harness.storageToken.actor.system = { attributes: { hp: { value: 0 } } };
+    harness.moduleApi.openStorageApp = async () => {
+      throw new Error("socket unavailable");
+    };
+    harness.listeners.get("drawToken")(harness.storageToken);
+
+    await assert.doesNotReject(harness.tokenListeners.get("pointertap")({ button: 0 }));
+
+    assert.deepEqual(errors, ["socket unavailable"]);
+  }
+  finally {
+    if (previousUi === undefined) delete globalThis.ui;
+    else globalThis.ui = previousUi;
+  }
 });
 
 test("actor sheet header can mark an NPC as storage", async () => {

@@ -1,6 +1,10 @@
 import { MODULE_ID } from "../constants.js";
 import { normalizeLootgenForm } from "./lootgen-generator.js";
 import {
+  CORPSE_MATERIALIZATION_VERSION,
+  isDeadNpcStorageTarget
+} from "./corpse-storage-materializer.js";
+import {
   buildStorageContainerSnapshot,
   collectStorageContainerIds,
   isStorageContainerRow,
@@ -142,6 +146,24 @@ function normalizeTextures(value) {
   return STORAGE_TEXTURE_MODES.every((mode) => textures[mode]) ? textures : null;
 }
 
+function normalizeCorpseMaterialization(value) {
+  if (!value || typeof value !== "object") return null;
+  const sourceActorUuid = cleanId(value.sourceActorUuid);
+  const sourceActorId = cleanId(value.sourceActorId);
+  if (value.version !== CORPSE_MATERIALIZATION_VERSION
+    || value.status !== "complete"
+    || !sourceActorUuid
+    || !sourceActorId) {
+    return null;
+  }
+  return {
+    version: CORPSE_MATERIALIZATION_VERSION,
+    status: "complete",
+    sourceActorUuid,
+    sourceActorId
+  };
+}
+
 function hasUnclaimedContent(state) {
   const rows = visibleRows(state);
   const hasRows = rows.some((row, index) => !state.claimedRowIds.includes(String(row.rowId ?? index)));
@@ -222,6 +244,7 @@ export function buildStorageTokenState(input = {}) {
     generatedCoins: normalizeCoins(source.generatedCoins),
     claimedRowIds: normalizeClaimedRowIds(source.claimedRowIds),
     coinsClaimed: source.coinsClaimed === true,
+    corpseMaterialization: normalizeCorpseMaterialization(source.corpseMaterialization),
     state,
     textures,
     displayMode
@@ -290,13 +313,18 @@ export function deriveStorageDisplayName(state = {}) {
 export class StorageService {
   constructor({
     generate = async () => ({ rows: [], coins: {} }),
+    materializeFirstOpen = async () => null,
     onGeneratedOpen = async () => {},
     logger = console
   } = {}) {
     if (typeof generate !== "function") {
       throw new TypeError("StorageService requires a generate function.");
     }
+    if (typeof materializeFirstOpen !== "function") {
+      throw new TypeError("StorageService requires a first-open materializer function.");
+    }
     this.generate = generate;
+    this.materializeFirstOpen = materializeFirstOpen;
     this.onGeneratedOpen = typeof onGeneratedOpen === "function" ? onGeneratedOpen : async () => {};
     this.logger = logger;
     this.openTasks = new Map();
@@ -407,7 +435,7 @@ export class StorageService {
 
   async #openOnce(token, context) {
     const current = readStorageState(token);
-    if (current.state !== "unopened") {
+    if (current.corpseMaterialization?.status === "complete" || current.state !== "unopened") {
       return {
         generatedNow: false,
         state: clone(current),
@@ -417,17 +445,48 @@ export class StorageService {
       };
     }
 
-    const generated = await this.generate(current.template?.form ?? normalizeLootgenForm({}), {
-      token: resolveDocument(token),
-      state: clone(current),
-      context: clone(context)
-    });
+    const document = resolveDocument(token);
+    const materialized = document?.__storageRoot
+      ? null
+      : await this.materializeFirstOpen({
+          token: document,
+          state: clone(current),
+          context: clone(context)
+        });
+    let generated = materialized;
+    let corpseMaterialization = null;
+    let state = "opened";
+    if (materialized) {
+      if (!isDeadNpcStorageTarget(document)) {
+        throw new Error("Corpse target is no longer eligible for materialization.");
+      }
+      corpseMaterialization = normalizeCorpseMaterialization(materialized.corpseMaterialization);
+      if (!corpseMaterialization) {
+        throw new Error("Corpse materialization did not provide a valid complete marker.");
+      }
+      const candidate = buildStorageTokenState({
+        ...current,
+        generatedRows: materialized.rows,
+        generatedCoins: materialized.coins,
+        corpseMaterialization,
+        state: "opened"
+      });
+      state = hasUnclaimedContent(candidate) ? "opened" : "empty";
+    }
+    else {
+      generated = await this.generate(current.template?.form ?? normalizeLootgenForm({}), {
+        token: document,
+        state: clone(current),
+        context: clone(context)
+      });
+    }
     const next = await this.#write(token, {
       ...current,
       generatedRows: generated?.rows,
       generatedCoins: generated?.coins,
-      state: "opened",
-      displayMode: "opened"
+      corpseMaterialization,
+      state,
+      displayMode: state
     });
     try {
       await this.onGeneratedOpen({ token: resolveDocument(token), state: clone(next), context: clone(context) });

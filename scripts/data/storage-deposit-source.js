@@ -5,7 +5,7 @@ import {
   readStorageCoinDenomination,
   readStorageState,
   readStorageStateAtPath
-} from "./storage-service.js?v=1.4.144-spreadsheet-coins-ground-repair";
+} from "./storage-service.js?v=1.4.152-dead-npc-looting";
 import {
   buildStorageContainerRow,
   isStorageContainerRow,

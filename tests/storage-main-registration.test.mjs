@@ -73,14 +73,14 @@ test("main registers the storage deposit socket API and current cache keys", asy
   assert.match(main, /this\.storageContainerItemService = new StorageContainerItemService\(\);/u);
   assert.match(main, /await this\.storageGroundPileService\.repairLegacyCoinRows\(\);/u);
   for (const importPath of [
-    "data/storage-service.js?v=1.4.146-storage-persisted-items",
+    "data/storage-service.js?v=1.4.152-dead-npc-looting",
     "data/storage-open-sound-service.js?v=1.4.145-coin-icons-storage-sound",
     "data/storage-access.js?v=1.4.133-ground-item-polish",
     "data/storage-ground-pile-service.js?v=1.4.144-spreadsheet-coins-ground-repair",
     "data/storage-container-item-service.js?v=1.4.130-storage-player-fixes",
     "data/storage-deposit-source.js?v=1.4.144-spreadsheet-coins-ground-repair",
-    "data/storage-command-service.js?v=1.4.146-storage-persisted-items",
-    "integrations/storage-token-hooks.js?v=1.4.133-ground-item-polish",
+    "data/storage-command-service.js?v=1.4.152-dead-npc-looting",
+    "integrations/storage-token-hooks.js?v=1.4.152-dead-npc-looting",
     "combat/hooks.js?v=1.4.147-race-damage",
     "integrations/storage-transfer-drop.js?v=1.4.144-spreadsheet-coins-ground-repair",
     "integrations/storage-token-drop.js?v=1.4.132-storage-owned-character-resolution",
@@ -89,12 +89,12 @@ test("main registers the storage deposit socket API and current cache keys", asy
     assert.equal(main.includes(importPath), true, importPath);
   }
   for (const importPath of [
-    "storage-service.js?v=1.4.146-storage-persisted-items",
+    "storage-service.js?v=1.4.152-dead-npc-looting",
     "storage-deposit-source.js?v=1.4.144-spreadsheet-coins-ground-repair"
   ]) {
     assert.equal(storageCommand.includes(importPath), true, importPath);
   }
-  assert.equal(manifest.version, "1.4.151");
+  assert.equal(manifest.version, "1.4.152");
   assert.match(main, /await registerStorageContainerHierarchyHooks\(\{ Hooks \}\)/u);
 });
 

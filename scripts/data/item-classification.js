@@ -713,6 +713,10 @@ export function getRebreyaWeaponBaseItemDefinitions() {
     }));
 }
 
+export function resolveRebreyaOrdinaryWeaponGearId(name) {
+  return REBREYA_ORDINARY_WEAPON_PROFILE_BY_NAME.get(normalizeNameKey(name))?.gearId ?? "";
+}
+
 export function normalizeHeroDollSlots(value, fallback = []) {
   return buildHeroDollSlots(value, fallback);
 }

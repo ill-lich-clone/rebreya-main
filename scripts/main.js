@@ -64,7 +64,7 @@ import {
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_REQUEST,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_RESULT
 } from "./data/inventory-service.js?v=1.4.146-storage-persisted-items";
-import { DurabilityService } from "./data/durability-service.js?v=1.4.144-spreadsheet-coins-ground-repair";
+import { DurabilityService } from "./data/durability-service.js?v=1.4.152-dead-npc-looting";
 import { MapObjectTokenService } from "./data/map-object-token-service.js?v=1.4.97-map-object-token";
 import { HeroDollService } from "./data/hero-doll-service.js";
 import { ImplantService } from "./data/implant-service.js";
@@ -91,7 +91,11 @@ import {
   isStorageActor,
   readStorageState,
   readStorageStateAtPath
-} from "./data/storage-service.js?v=1.4.146-storage-persisted-items";
+} from "./data/storage-service.js?v=1.4.152-dead-npc-looting";
+import {
+  CorpseStorageMaterializer,
+  isDeadNpcStorageTarget
+} from "./data/corpse-storage-materializer.js";
 import { StorageOpenSoundService } from "./data/storage-open-sound-service.js?v=1.4.145-coin-icons-storage-sound";
 import {
   isStorageTokenVisible,
@@ -123,7 +127,7 @@ import {
   isValidStorageRestorePortablePayload,
   isValidStorageTokenCharacterPayload,
   storageCharacterTokenUuidForClaim
-} from "./data/storage-command-service.js?v=1.4.146-storage-persisted-items";
+} from "./data/storage-command-service.js?v=1.4.152-dead-npc-looting";
 import { registerCombatHooks } from "./combat/hooks.js?v=1.4.147-race-damage";
 import { CombatAttackService } from "./combat/attack-service.js?v=1.4.147-native-ammunition";
 import { ImplantAutomationService } from "./combat/implant-automation-service.js";
@@ -189,7 +193,7 @@ import { runMapObjectTokenMacro } from "./integrations/map-object-token-macro.js
 import { refreshSmallTimeDateDisplay, registerSmallTimeIntegration, syncSmallTimeToCalendarTime } from "./integrations/smalltime-compat.js";
 import { registerRationFoodConversionHook } from "./integrations/ration-food-conversion.js";
 import { registerMagicWeaponTemplateHook } from "./integrations/magic-weapon-template.js?v=1.4.96";
-import { registerStorageTokenHooks } from "./integrations/storage-token-hooks.js?v=1.4.133-ground-item-polish";
+import { registerStorageTokenHooks } from "./integrations/storage-token-hooks.js?v=1.4.152-dead-npc-looting";
 import { registerCraftsmanGadgetHooks } from "./integrations/craftsman-gadget-hooks.js";
 import { registerSpellAutomationHooks } from "./integrations/spell-automation-hooks.js";
 import { registerLongRestHooks } from "./integrations/long-rest-hooks.js";
@@ -1108,12 +1112,19 @@ export class RebreyaMainModule {
     this.travelMapService = new TravelMapService();
     this.inventoryService = new InventoryService(this);
     this.durabilityService = new DurabilityService(this);
+    this.corpseStorageMaterializer = new CorpseStorageMaterializer({
+      inventoryService: this.inventoryService,
+      durabilityService: this.durabilityService
+    });
     this.storageOpenSoundService = new StorageOpenSoundService({
       gameProvider: () => globalThis.game,
       isActiveGm: isActiveGmClient
     });
     this.storageService = new StorageService({
       generate: (form, context) => this.generateStorageLoot(form, context),
+      materializeFirstOpen: ({ token }) => isDeadNpcStorageTarget(token)
+        ? this.corpseStorageMaterializer.materialize(token)
+        : null,
       onGeneratedOpen: ({ token }) => this.storageOpenSoundService.playForToken(token)
     });
     this.builtinStorageActorService = new BuiltinStorageActorService({
@@ -3424,18 +3435,18 @@ export class RebreyaMainModule {
       : this.socketCommandBus.request(STORAGE_TOKEN_CHARACTER_COMMAND, payload);
   }
 
-  async #resolveStorageToken(tokenUuid, { requireMarked = true } = {}) {
+  async #resolveStorageToken(tokenUuid, { allowCorpse = false } = {}) {
     const document = await globalThis.fromUuid?.(cleanSocketId(tokenUuid));
     const token = document?.document ?? document;
     if (!token?.actor) throw new Error("Токен хранилища не найден.");
-    if (requireMarked && !isStorageActor(token.actor)) {
+    if (!isStorageActor(token.actor) && !(allowCorpse && isDeadNpcStorageTarget(token))) {
       throw new Error("Токен не отмечен как хранилище Rebreya.");
     }
     return token;
   }
 
   async getStorageSnapshot(tokenUuid, request = {}) {
-    const token = await this.#resolveStorageToken(tokenUuid);
+    const token = await this.#resolveStorageToken(tokenUuid, { allowCorpse: true });
     const path = cleanStoragePath(request.path);
     const state = readStorageStateAtPath(token, path);
     const combinedRows = [...state.manualRows, ...state.generatedRows];
@@ -3484,16 +3495,8 @@ export class RebreyaMainModule {
     if (!globalThis.game?.user?.isGM) {
       throw new Error("Настраивать хранилища может только мастер.");
     }
-    const token = await this.#resolveStorageToken(tokenUuid, { requireMarked: false });
+    const token = await this.#resolveStorageToken(tokenUuid);
     const path = cleanStoragePath(request.path);
-    if (!isStorageActor(token.actor)) {
-      if (typeof token.actor.setFlag === "function") {
-        await token.actor.setFlag(MODULE_ID, "storage", { enabled: true });
-      }
-      else {
-        await token.actor.update({ [`flags.${MODULE_ID}.storage`]: { enabled: true } });
-      }
-    }
     const patch = {};
     if (Object.prototype.hasOwnProperty.call(config, "baseName")) {
       patch.baseName = cleanSocketId(config.baseName) || cleanSocketId(token.name) || "Хранилище";

@@ -1737,6 +1737,44 @@ test("storage open returns a compact socket acknowledgement instead of the full 
   assert.equal("rows" in result, false);
 });
 
+test("dead NPC storage open reuses player access checks, allows GM, and rejects a living unmarked NPC", async () => {
+  const harness = createHarness();
+  harness.storageToken.actor.flags = {};
+  harness.storageToken.actor.system = { attributes: { hp: { value: 0 } } };
+
+  const playerResult = await harness.service.open({
+    tokenUuid: harness.storageToken.uuid,
+    characterTokenUuid: harness.characterToken.uuid
+  }, { sender: harness.player });
+
+  assert.deepEqual(Object.keys(playerResult).sort(), ["displayMode", "generatedNow", "state"]);
+
+  const gmHarness = createHarness();
+  gmHarness.storageToken.actor.flags = {};
+  gmHarness.storageToken.actor.system = { attributes: { hp: { value: -1 } } };
+  const gmResult = await gmHarness.service.open({
+    tokenUuid: gmHarness.storageToken.uuid,
+    characterTokenUuid: ""
+  }, { sender: gmHarness.gm });
+  assert.equal(gmResult.state, "opened");
+
+  const farHarness = createHarness({ distance: 6 });
+  farHarness.storageToken.actor.flags = {};
+  farHarness.storageToken.actor.system = { attributes: { hp: { value: 0 } } };
+  await assert.rejects(farHarness.service.open({
+    tokenUuid: farHarness.storageToken.uuid,
+    characterTokenUuid: farHarness.characterToken.uuid
+  }, { sender: farHarness.player }), /5 футов/iu);
+
+  const livingHarness = createHarness();
+  livingHarness.storageToken.actor.flags = {};
+  livingHarness.storageToken.actor.system = { attributes: { hp: { value: 1 } } };
+  await assert.rejects(livingHarness.service.open({
+    tokenUuid: livingHarness.storageToken.uuid,
+    characterTokenUuid: livingHarness.characterToken.uuid
+  }, { sender: livingHarness.player }), /не является хранилищем/iu);
+});
+
 test("repeated storage claims grant rows and coins only once and empty the token", async () => {
   const harness = createHarness();
   const access = {

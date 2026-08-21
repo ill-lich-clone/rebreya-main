@@ -38,6 +38,31 @@ function createStorageToken(id, name = "Сундук") {
   };
 }
 
+function makeDeadNpcStorageToken(id, actorId = "dead-npc") {
+  const token = createStorageToken(id, "Павшее существо");
+  token.uuid = `Scene.scene.Token.${id}`;
+  token.actor = {
+    id: actorId,
+    uuid: `Actor.${actorId}`,
+    type: "npc",
+    system: { attributes: { hp: { value: 0 } } }
+  };
+  return token;
+}
+
+function corpseResult(actorId, rows = []) {
+  return {
+    rows,
+    coins: {},
+    corpseMaterialization: {
+      version: 1,
+      status: "complete",
+      sourceActorUuid: `Actor.${actorId}`,
+      sourceActorId: actorId
+    }
+  };
+}
+
 test("storage owns coin denominations and reads only the exact managed flag", () => {
   assert.deepEqual(STORAGE_COIN_DENOMINATIONS, ["pp", "gp", "sp", "cp"]);
   assert.equal(readStorageCoinDenomination({
@@ -293,6 +318,126 @@ test("simultaneous first opens invoke the generated callback once after opening"
   await Promise.all([service.open(token), service.open(token)]);
 
   assert.deepEqual(opened, ["opened"]);
+});
+
+test("corpse first-open atomically stores a complete marker and stays empty without lootgen", async () => {
+  let materializations = 0;
+  let generations = 0;
+  const service = new StorageService({
+    materializeFirstOpen: async () => {
+      materializations += 1;
+      return corpseResult("troll");
+    },
+    generate: async () => {
+      generations += 1;
+      return { rows: [{ rowId: "must-not-exist" }], coins: {} };
+    }
+  });
+  const token = makeDeadNpcStorageToken("troll-token", "troll");
+
+  const [first, duplicate] = await Promise.all([service.open(token), service.open(token)]);
+
+  assert.equal(first.generatedNow, true);
+  assert.equal(duplicate.generatedNow, true);
+  assert.equal(materializations, 1);
+  assert.equal(generations, 0);
+  assert.equal(readStorageState(token).state, "empty");
+  assert.deepEqual(readStorageState(token).generatedRows, []);
+  assert.deepEqual(readStorageState(token).corpseMaterialization, {
+    version: 1,
+    status: "complete",
+    sourceActorUuid: "Actor.troll",
+    sourceActorId: "troll"
+  });
+
+  const reopenedByNewActiveGm = await new StorageService({
+    materializeFirstOpen: async () => {
+      materializations += 1;
+      return corpseResult("troll", [{ rowId: "duplicate" }]);
+    }
+  }).open(token);
+
+  assert.equal(reopenedByNewActiveGm.generatedNow, false);
+  assert.equal(materializations, 1);
+  assert.deepEqual(reopenedByNewActiveGm.rows, []);
+});
+
+test("corpse claims preserve the marker and never restore partially or fully claimed loot", async () => {
+  let materializations = 0;
+  const materializeFirstOpen = async () => {
+    materializations += 1;
+    return corpseResult("champion", [{
+      rowId: "corpse-v1:arrows:strely-20",
+      stackKey: "gear:strely-20",
+      sourceType: "gear",
+      sourceId: "strely-20",
+      quantity: 20,
+      itemData: { system: { quantity: 20 } }
+    }]);
+  };
+  const token = makeDeadNpcStorageToken("champion-token", "champion");
+  const service = new StorageService({ materializeFirstOpen });
+
+  await service.open(token);
+  await service.claim(token, { kind: "row", rowId: "corpse-v1:arrows:strely-20", quantity: 7 });
+  await new StorageService({ materializeFirstOpen }).open(token);
+
+  assert.equal(readStorageState(token).generatedRows[0].quantity, 13);
+  assert.equal(readStorageState(token).generatedRows[0].itemData.system.quantity, 13);
+  assert.equal(readStorageState(token).corpseMaterialization.status, "complete");
+  assert.equal(materializations, 1);
+
+  await service.claim(token, { kind: "row", rowId: "corpse-v1:arrows:strely-20", quantity: 13 });
+  await new StorageService({ materializeFirstOpen }).open(token);
+
+  assert.equal(readStorageState(token).state, "empty");
+  assert.deepEqual(readStorageState(token).claimedRowIds, ["corpse-v1:arrows:strely-20"]);
+  assert.equal(readStorageState(token).corpseMaterialization.status, "complete");
+  assert.equal(materializations, 1);
+});
+
+test("two dead tokens sharing one Actor keep independent corpse materialization state", async () => {
+  let materializations = 0;
+  const service = new StorageService({
+    materializeFirstOpen: async ({ token }) => {
+      materializations += 1;
+      return corpseResult("shared", [{
+        rowId: `corpse-v1:${token.id}:sword`,
+        sourceType: "gear",
+        sourceId: "sword",
+        quantity: 1,
+        itemData: { system: { quantity: 1 } }
+      }]);
+    }
+  });
+  const first = makeDeadNpcStorageToken("first-corpse", "shared");
+  const second = makeDeadNpcStorageToken("second-corpse", "shared");
+
+  await Promise.all([service.open(first), service.open(second)]);
+  await service.claim(first, { kind: "row", rowId: "corpse-v1:first-corpse:sword" });
+
+  assert.equal(materializations, 2);
+  assert.equal(readStorageState(first).state, "empty");
+  assert.equal(readStorageState(second).state, "opened");
+  assert.deepEqual(readStorageState(second).claimedRowIds, []);
+  assert.equal(readStorageState(first).corpseMaterialization.sourceActorId, "shared");
+  assert.equal(readStorageState(second).corpseMaterialization.sourceActorId, "shared");
+});
+
+test("corpse first-open rechecks HP before its atomic write and leaves no marker after healing", async () => {
+  const token = makeDeadNpcStorageToken("healed-before-write", "healed");
+  const service = new StorageService({
+    materializeFirstOpen: async () => {
+      token.actor.system.attributes.hp.value = 1;
+      return corpseResult("healed", [{ rowId: "must-not-persist" }]);
+    }
+  });
+
+  await assert.rejects(service.open(token), /no longer eligible/u);
+
+  assert.equal(readStorageState(token).state, "unopened");
+  assert.deepEqual(readStorageState(token).generatedRows, []);
+  assert.equal(readStorageState(token).corpseMaterialization, null);
 });
 
 test("generated callback failure does not roll back opened storage", async () => {
@@ -579,6 +724,44 @@ test("nested storage paths deposit and claim without replacing the root containe
   assert.equal(claim.row.quantity, 1);
   assert.equal(readStorageStateAtPath(token, ["bag-row"]).manualRows[0].quantity, 1);
   assert.equal(readStorageState(token).state, "opened");
+});
+
+test("corpse materialization is root-only and nested containers keep their normal first-open lifecycle", async () => {
+  let materializations = 0;
+  let generations = 0;
+  const service = new StorageService({
+    materializeFirstOpen: async () => {
+      materializations += 1;
+      return corpseResult("dead-with-bag", [{ rowId: "corpse-copy" }]);
+    },
+    generate: async () => {
+      generations += 1;
+      return { rows: [{ rowId: "nested-generated" }], coins: {} };
+    }
+  });
+  const token = makeDeadNpcStorageToken("dead-with-bag-token", "dead-with-bag");
+  const bagRow = buildStorageContainerRow({
+    containerId: "corpse-bag",
+    storageKind: "bag",
+    name: "Сумка",
+    state: {
+      baseName: "Сумка",
+      state: "unopened",
+      manualRows: [],
+      generatedRows: []
+    }
+  }, { rowId: "bag-row" });
+  await service.configure(token, { state: "opened", manualRows: [bagRow] });
+
+  await service.open(token, { path: ["bag-row"] });
+
+  assert.equal(materializations, 0);
+  assert.equal(generations, 1);
+  assert.deepEqual(
+    readStorageStateAtPath(token, ["bag-row"]).generatedRows.map((row) => row.rowId),
+    ["nested-generated"]
+  );
+  assert.equal(readStorageStateAtPath(token, ["bag-row"]).corpseMaterialization, null);
 });
 
 test("nested storage rejects self and ancestor container cycles", async () => {

@@ -313,6 +313,28 @@ test("getOrBuildDurability leaves ineligible items untouched", async () => {
   assert.equal(hookCalls.length, 0);
 });
 
+test("getOrBuildBrokenDurability derives the native broken state without updating its source item", async () => {
+  const cuirass = createItem({
+    id: "corpse-cuirass",
+    type: "equipment",
+    system: { equipped: true, properties: [], rarity: "" },
+    moduleFlags: { sourceType: "gear", gearId: "cuirass" }
+  });
+  const { service, hookCalls } = createService({ item: cuirass });
+
+  const broken = await service.getOrBuildBrokenDurability(cuirass, {
+    sourceType: "gear",
+    sourceId: "cuirass"
+  });
+
+  assert.equal(broken.state, "broken");
+  assert.equal(broken.breakStage, 1);
+  assert.deepEqual(broken.hp, { value: 0, max: 30 });
+  assert.equal(broken.updatedAt, FIXED_NOW);
+  assert.equal(cuirass.updates.length, 0);
+  assert.equal(hookCalls.length, 0);
+});
+
 test("initializeItem resolves model gear and material once with a complete plain update", async () => {
   const item = createItem();
   const { service, hookCalls } = createService({ item });
