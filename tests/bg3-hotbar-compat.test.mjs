@@ -155,6 +155,10 @@ class FakeElement {
     if (selector === "[data-rebreya-player-inventory-button='true']") {
       return this.children.find((child) => child.dataset.rebreyaPlayerInventoryButton === "true") ?? null;
     }
+    const utilityMatch = selector.match(/^\[data-rebreya-player-utility='([^']+)'\]$/u);
+    if (utilityMatch) {
+      return this.children.find((child) => child.dataset.rebreyaPlayerUtility === utilityMatch[1]) ?? null;
+    }
 
     if (selector === "#players") {
       for (const child of this.children) {
@@ -397,6 +401,12 @@ test("player list inventory button shows and refreshes the active group token", 
     getGroupContext: () => ({ groupActor: groupA }),
     openInventoryApp: async () => {
       opened.push(true);
+    },
+    openQuestLogApp: async () => {
+      opened.push("quest-log");
+    },
+    openEconomyApp: async () => {
+      opened.push("economy");
     }
   }, {
     viewport: {
@@ -416,11 +426,13 @@ test("player list inventory button shows and refreshes the active group token", 
     }
   });
 
-  const button = document.body.children[0];
+  const button = document.body.querySelector("[data-rebreya-player-inventory-button='true']");
+  const questButton = document.body.querySelector("[data-rebreya-player-utility='quest-log']");
+  const economyButton = document.body.querySelector("[data-rebreya-player-utility='economy']");
   assert.equal(inserted, true);
   assert.equal(insertedAgain, false);
   assert.equal(playersElement.children.length, 0);
-  assert.equal(document.body.children.length, 1);
+  assert.equal(document.body.children.length, 3);
   assert.equal(button.parentElement, document.body);
   assert.equal(button.dataset.rebreyaPlayerInventoryButton, "true");
   assert.equal(button.classList.contains("rm-player-inventory-button"), true);
@@ -431,13 +443,23 @@ test("player list inventory button shows and refreshes the active group token", 
   assert.equal(button.children[0].getAttribute("aria-hidden"), "true");
   assert.equal(button.style.left, "calc(clamp(220px, 8.5vw, 280px) + 8px)");
   assert.match(button.style.top, /vh$/u);
+  assert.equal(questButton.textContent, "Квест лог");
+  assert.equal(economyButton.textContent, "Экономика");
+  assert.equal(questButton.classList.contains("rm-player-inventory-utility-button"), true);
+  assert.equal(economyButton.classList.contains("rm-player-inventory-utility-button"), true);
+  assert.match(questButton.style.top, /vh$/u);
+  assert.match(economyButton.style.top, /vh$/u);
+  assert.ok(Number.parseFloat(questButton.style.top) < Number.parseFloat(button.style.top));
+  assert.ok(Number.parseFloat(economyButton.style.top) > Number.parseFloat(button.style.top));
 
   await button.listeners.click[0]({
     preventDefault() {},
     stopPropagation() {}
   });
+  await questButton.listeners.click[0]({ preventDefault() {}, stopPropagation() {} });
+  await economyButton.listeners.click[0]({ preventDefault() {}, stopPropagation() {} });
 
-  assert.deepEqual(opened, [true]);
+  assert.deepEqual(opened, [true, "quest-log", "economy"]);
 });
 
 test("player inventory button anchor prefers the outer player list app", () => {

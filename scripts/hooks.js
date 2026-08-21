@@ -15,8 +15,14 @@ const BG3_AUTO_POPULATE_CREATE_TOKEN_PATH = `/modules/${BG3_HOTBAR_MODULE_ID}/sc
 const BG3_DEATH_SAVES_PATCH_FLAG = Symbol.for(`${MODULE_ID}.bg3DeathSavesPatch`);
 const BG3_STORAGE_COMMON_ACTIONS_PATCH_FLAG = Symbol.for(`${MODULE_ID}.bg3StorageCommonActionsPatch`);
 const PLAYER_INVENTORY_BUTTON_SELECTOR = "[data-rebreya-player-inventory-button='true']";
+const PLAYER_INVENTORY_UTILITY_BUTTON_HEIGHT = 30;
+const PLAYER_INVENTORY_BUTTON_GAP = 6;
 const PLAYER_INVENTORY_BUTTON_LEFT = "calc(clamp(220px, 8.5vw, 280px) + 8px)";
 const PLAYER_INVENTORY_BUTTON_SIZE = 36;
+const PLAYER_INVENTORY_UTILITIES = Object.freeze([
+  { key: "quest-log", label: "Квест лог", method: "openQuestLogApp", direction: -1 },
+  { key: "economy", label: "Экономика", method: "openEconomyApp", direction: 1 }
+]);
 
 function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -312,16 +318,32 @@ export function positionPlayerInventoryQuickButton(button, playersElement, { vie
   }
 
   const centerY = rect.top + (rect.height * 0.58);
+  const minimumTop = PLAYER_INVENTORY_UTILITY_BUTTON_HEIGHT + PLAYER_INVENTORY_BUTTON_GAP + 8;
+  const maximumTop = viewportHeight
+    - PLAYER_INVENTORY_BUTTON_SIZE
+    - PLAYER_INVENTORY_BUTTON_GAP
+    - PLAYER_INVENTORY_UTILITY_BUTTON_HEIGHT
+    - 8;
   const top = Math.max(
-    8,
+    minimumTop,
     Math.min(
-      viewportHeight - PLAYER_INVENTORY_BUTTON_SIZE - 8,
+      maximumTop,
       centerY - (PLAYER_INVENTORY_BUTTON_SIZE / 2)
     )
   );
 
   button.style.left = PLAYER_INVENTORY_BUTTON_LEFT;
   button.style.top = formatViewportUnit(top, viewportHeight, "vh");
+  const buttonHost = ownerDocument?.body;
+  for (const utility of PLAYER_INVENTORY_UTILITIES) {
+    const utilityButton = buttonHost?.querySelector?.(`[data-rebreya-player-utility='${utility.key}']`);
+    if (!utilityButton?.style) continue;
+    const utilityTop = utility.direction < 0
+      ? top - PLAYER_INVENTORY_BUTTON_GAP - PLAYER_INVENTORY_UTILITY_BUTTON_HEIGHT
+      : top + PLAYER_INVENTORY_BUTTON_SIZE + PLAYER_INVENTORY_BUTTON_GAP;
+    utilityButton.style.left = PLAYER_INVENTORY_BUTTON_LEFT;
+    utilityButton.style.top = formatViewportUnit(utilityTop, viewportHeight, "vh");
+  }
   return true;
 }
 
@@ -367,6 +389,31 @@ function removeEmbeddedPlayerInventoryButton(playersElement, buttonHost) {
   }
 }
 
+function ensurePlayerInventoryUtilityButtons(buttonHost, ownerDocument, moduleApi) {
+  for (const utility of PLAYER_INVENTORY_UTILITIES) {
+    const selector = `[data-rebreya-player-utility='${utility.key}']`;
+    if (buttonHost.querySelector(selector)) continue;
+    const button = ownerDocument.createElement("button");
+    button.type = "button";
+    button.dataset.rebreyaPlayerUtility = utility.key;
+    button.classList?.add?.("rm-player-inventory-utility-button");
+    button.textContent = utility.label;
+    button.title = utility.label;
+    button.setAttribute?.("aria-label", utility.label);
+    button.addEventListener?.("click", async (event) => {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      try {
+        await (moduleApi ?? globalThis.game?.rebreyaMain)?.[utility.method]?.();
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to open ${utility.key} from player list launcher.`, error);
+      }
+    });
+    buttonHost.append?.(button);
+  }
+}
+
 export function ensurePlayerInventoryQuickButton(
   playersElement,
   moduleApi = globalThis.game?.rebreyaMain,
@@ -382,6 +429,7 @@ export function ensurePlayerInventoryQuickButton(
 
   const existingButton = buttonHost.querySelector(PLAYER_INVENTORY_BUTTON_SELECTOR);
   if (existingButton) {
+    ensurePlayerInventoryUtilityButtons(buttonHost, ownerDocument, moduleApi);
     updatePlayerInventoryQuickButtonImage(existingButton, moduleApi, ownerDocument);
     positionPlayerInventoryQuickButton(existingButton, playersElement, { viewport });
     return false;
@@ -413,6 +461,7 @@ export function ensurePlayerInventoryQuickButton(
   else {
     buttonHost.appendChild?.(button);
   }
+  ensurePlayerInventoryUtilityButtons(buttonHost, ownerDocument, moduleApi);
   positionPlayerInventoryQuickButton(button, playersElement, { viewport });
   return true;
 }

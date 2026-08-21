@@ -168,7 +168,7 @@ import { CraftsmanConstructorService } from "./combat/craftsman-constructor-serv
 import {
   refreshPlayerInventoryQuickButton,
   registerSceneControlsHook
-} from "./hooks.js?v=1.4.111-party-inventory-token-launcher";
+} from "./hooks.js?v=1.4.148-player-launcher-utilities";
 import {
   extendDnd5eItemTypes,
   registerDnd5eSheetExtensions,

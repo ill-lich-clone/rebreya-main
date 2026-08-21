@@ -5742,20 +5742,6 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       }, listenerOptions);
     });
 
-    element.querySelectorAll("[data-action='open-economy']").forEach((button) => {
-      button.addEventListener("click", () => this.moduleApi.openEconomyApp?.(), listenerOptions);
-    });
-    element.querySelectorAll("[data-action='open-quest-log']").forEach((button) => {
-      button.addEventListener("click", async () => {
-        try {
-          await this.moduleApi.openQuestLogApp?.();
-        }
-        catch (_error) {
-          // The composition root reports the user-facing integration error.
-        }
-      }, listenerOptions);
-    });
-
     const updateTravelRoute = async () => {
       const originCityId = cleanText(element.querySelector("[data-action='travel-origin']")?.value);
       const destinationCityId = cleanText(element.querySelector("[data-action='travel-destination']")?.value);

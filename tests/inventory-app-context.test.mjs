@@ -626,7 +626,7 @@ test("InventoryApp renders a compact header summary without redundant warehouse 
   assert.ok(pageIndex >= 0, "expected the scrollable book page");
   assert.match(template, /class="rm-shell rm-inventory-shell rm-inventory-shell--compact rm-inventory-book__page scrollable" data-tab="\{\{activeTab\}\}"/u);
   assert.ok(tabsIndex > pageIndex, "expected the tab rail after the book page");
-  assert.match(template, /data-action="open-economy"[\s\S]*data-action="open-quest-log"/u);
+  assert.doesNotMatch(template, /data-action="open-economy"|data-action="open-quest-log"/u);
   assert.match(template, /class="rm-inventory-book__controls"/u);
   assert.match(template, /class="rm-inventory-book__identity"/u);
   assert.match(template, /partyIdentity\.crestUrl/u);
@@ -713,37 +713,6 @@ test("InventoryApp compact currency labels preserve small values and abbreviate 
     assert.equal(formatCompactCurrencyAmount(1_250_000), "1.3м");
   }
   finally {
-    restoreFoundry();
-  }
-});
-
-test("InventoryApp external utility buttons open economy and the dedicated Rebreya quest log", async () => {
-  const restoreFoundry = installFoundryApplicationStub();
-  const dom = installMinimalDom();
-  const calls = [];
-  const economyButton = createFakeElement();
-  const questButton = createFakeElement();
-  const root = createFakeElement();
-  root.querySelector = () => null;
-  root.querySelectorAll = (selector) => {
-    if (selector === "[data-action='open-economy']") return [economyButton];
-    if (selector === "[data-action='open-quest-log']") return [questButton];
-    return [];
-  };
-  const app = new (await import(`../scripts/ui/inventory-app.js?external-utilities=${Date.now()}`)).InventoryApp(
-    createModuleApi({ calls })
-  );
-  app.element = root;
-
-  try {
-    await app._onRender({}, {});
-    economyButton.listeners.click[0]();
-    await questButton.listeners.click[0]();
-
-    assert.deepEqual(calls, [["openEconomyApp"], ["openQuestLogApp"]]);
-  }
-  finally {
-    dom.restore();
     restoreFoundry();
   }
 });

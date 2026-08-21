@@ -278,6 +278,37 @@
   pointer-events: none;
 }
 
+.rm-player-inventory-utility-button {
+  position: fixed;
+  width: 96px;
+  height: 30px;
+  padding: 4px 9px;
+  transform: translateX(-30px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 7px;
+  background: rgba(28, 29, 33, 0.96);
+  color: var(--rm-text-primary);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+  z-index: 100;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.rm-player-inventory-utility-button:hover,
+.rm-player-inventory-utility-button:focus-visible {
+  border-color: rgb(var(--rm-color-gold-rgb) / 0.65);
+  background: rgba(42, 43, 48, 0.98);
+  color: var(--rm-accent);
+}
+
+.rm-player-inventory-utility-button:focus-visible {
+  outline: 2px solid var(--rm-border-strong);
+  outline-offset: 2px;
+}
+
 .dnd5e2.sheet.actor.character:not(.minimized) .window-content::before {
   content: "";
   height: 380px;
@@ -5354,35 +5385,6 @@ summary:focus-visible {
 
 .rebreya-inventory-app.minimized .rm-inventory-book__tabs {
   display: none;
-}
-
-.rebreya-inventory-app .rm-inventory-book__utilities {
-  position: absolute;
-  z-index: -1;
-  top: 80px;
-  right: -104px;
-  display: grid;
-  gap: 7px;
-  width: 104px;
-}
-
-.rebreya-inventory-app.minimized .rm-inventory-book__utilities {
-  display: none;
-}
-
-.rebreya-inventory-app .rm-inventory-book__utility {
-  width: 104px;
-  min-height: 36px;
-  padding: 7px 8px 7px 12px;
-  border: 1px solid var(--rm-border-default);
-  border-left-color: var(--rm-border-strong);
-  border-radius: 0 8px 8px 0;
-  background: linear-gradient(90deg, rgb(var(--rm-color-surface-raised-rgb) / 0.96), rgb(var(--rm-color-ink-rgb) / 0.96));
-  color: var(--rm-text-secondary);
-  box-shadow: 3px 3px 8px rgb(0 0 0 / 0.34);
-  font-size: 12px;
-  font-weight: 700;
-  text-align: left;
 }
 
 .rebreya-inventory-app .rm-inventory-book__tab {
