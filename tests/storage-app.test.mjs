@@ -7,6 +7,10 @@ class FakeApplicationV2 {
     this.options = options;
   }
 
+  async _onRender() {
+    await this.baseRenderGate;
+  }
+
   async render() {}
 }
 
@@ -180,7 +184,7 @@ test("Journal read action passes nested access context and opens only the return
   }();
   app.render = async () => {};
   await app._prepareContext();
-  app._onRender({}, {});
+  await app._onRender({}, {});
   const control = {
     dataset: { action: "storage-read-journal", rowId: "journal-row" },
     closest(selector) { return selector === "[data-action]" ? this : null; }
@@ -255,7 +259,7 @@ test("clicking a texture mode sends the exact token and mode through the module 
     }
   }();
   app.element = root;
-  app._onRender({}, {});
+  await app._onRender({}, {});
   const control = {
     dataset: { action: "storage-set-texture", mode: "empty" },
     closest(selector) {
@@ -278,7 +282,7 @@ test("changing a storage quantity saves it without requiring the tiny check butt
     addEventListener(name, callback) { listeners.set(name, callback); }
   }();
   app.element = root;
-  app._onRender({}, {});
+  await app._onRender({}, {});
   const input = {
     value: "7",
     dataset: { rowId: "row-1" },
@@ -308,7 +312,7 @@ test("compact storage uses the token name only in the window title", async () =>
   }();
 
   const context = await app._prepareContext();
-  app._onRender(context, {});
+  await app._onRender(context, {});
 
   assert.equal(app.options.window.title, "Сундук");
   assert.equal(app.title, "Сундук");
@@ -386,7 +390,7 @@ test("PKM on a nested container still exposes transfer actions", async () => {
     addEventListener(name, callback) { listeners.set(name, callback); }
   }();
   await app._prepareContext();
-  app._onRender({}, {});
+  await app._onRender({}, {});
   const icon = {
     dataset: { action: "storage-open-container", rowId: "bag-row" },
     closest(selector) { return selector.includes("storage-open-container") ? this : null; }
@@ -429,7 +433,7 @@ test("matching token updates rerender from a fresh snapshot and unrelated update
       addEventListener() {}
     }();
     await app._prepareContext();
-    app._onRender({}, {});
+    await app._onRender({}, {});
 
     name = "Сундук (пусто)";
     await callbacks.get("updateToken")[0]({ uuid: app.tokenUuid });
@@ -465,7 +469,7 @@ test("newer snapshot requests win and hook subscriptions are removed on close", 
     });
     app.render = async () => {};
     app.element = new class extends FakeElement { addEventListener() {} }();
-    app._onRender({}, {});
+    await app._onRender({}, {});
 
     const first = app.scheduleSnapshotRefresh();
     const second = app.scheduleSnapshotRefresh();
@@ -498,7 +502,7 @@ test("LKM opens an item popover and its self action claims the row", async () =>
     addEventListener(name, callback) { listeners.set(name, callback); }
   }();
   await app._prepareContext();
-  app._onRender({}, {});
+  await app._onRender({}, {});
 
   const control = (action) => ({
     dataset: { action, rowId: "row-1" },
@@ -528,7 +532,7 @@ test("popover close control dismisses the active item popover", async () => {
     addEventListener(name, callback) { listeners.set(name, callback); }
   }();
   await app._prepareContext();
-  app._onRender({}, {});
+  await app._onRender({}, {});
   app.activeRowId = "row-1";
   const closeControl = {
     dataset: { action: "storage-close-popover" },
@@ -550,7 +554,7 @@ test("PKM opens the same item popover and suppresses the native menu", async () 
     addEventListener(name, callback) { listeners.set(name, callback); }
   }();
   await app._prepareContext();
-  app._onRender({}, {});
+  await app._onRender({}, {});
 
   let prevented = 0;
   let stopped = 0;
@@ -570,6 +574,57 @@ test("PKM opens the same item popover and suppresses the native menu", async () 
   assert.deepEqual(renders.at(-1), { force: true });
   assert.equal(prevented, 1);
   assert.equal(stopped, 1);
+});
+
+test("storage popover waits for the rendered DOM and anchors below the selected item", async () => {
+  const previousAnimationFrame = globalThis.requestAnimationFrame;
+  globalThis.requestAnimationFrame = (callback) => callback();
+  try {
+    const { app } = createApp();
+    let releaseBaseRender;
+    let domReady = false;
+    app.baseRenderGate = new Promise((resolve) => { releaseBaseRender = resolve; })
+      .then(() => { domReady = true; });
+    const styles = new Map();
+    const popover = {
+      dataset: { anchorRowId: "row-1" },
+      style: { setProperty: (name, value) => styles.set(name, value) },
+      getBoundingClientRect: () => ({ width: 224 })
+    };
+    const icon = {
+      getBoundingClientRect: () => ({ left: 294, right: 366, bottom: 260 })
+    };
+    const row = {
+      dataset: { rowId: "row-1" },
+      querySelector: (selector) => selector === ".rm-storage-item__icon" ? icon : null
+    };
+    const shell = {
+      getBoundingClientRect: () => ({ left: 100, top: 50, width: 286 })
+    };
+    app.element = new class extends FakeElement {
+      addEventListener() {}
+      querySelector(selector) {
+        if (!domReady) return null;
+        if (selector === ".rm-storage-shell") return shell;
+        if (selector === "[data-storage-popover]") return popover;
+        return null;
+      }
+      querySelectorAll(selector) {
+        return domReady && selector === "[data-row-id]" ? [row] : [];
+      }
+    }();
+
+    const rendered = app._onRender({}, {});
+    releaseBaseRender();
+    await rendered;
+
+    assert.equal(styles.get("top"), "219px");
+    assert.equal(styles.get("left"), "166px");
+    assert.equal(styles.get("--rm-storage-popover-arrow-left"), "176px");
+  }
+  finally {
+    globalThis.requestAnimationFrame = previousAnimationFrame;
+  }
 });
 
 test("storage item popovers stay interactive above their grid", async () => {
@@ -625,7 +680,7 @@ test("container title opens a nested path and breadcrumbs return to the root", a
     addEventListener(name, callback) { listeners.set(name, callback); }
   }();
   await app._prepareContext();
-  app._onRender({}, {});
+  await app._onRender({}, {});
   const control = (action, rowId = "bag-row", index = "0") => ({
     dataset: { action, rowId, index },
     closest(selector) { return selector === "[data-action]" ? this : null; }
@@ -652,7 +707,7 @@ test("GM configuration drop routes an item through the authoritative deposit API
     addEventListener(name, callback) { listeners.set(name, callback); }
   }();
   await app._prepareContext();
-  app._onRender({}, {});
+  await app._onRender({}, {});
   let prevented = 0;
   const dropzone = {
     closest(selector) { return selector === "[data-storage-dropzone]" ? this : null; }
@@ -691,7 +746,7 @@ test("GM configuration drop routes a JournalEntry reference through the authorit
     addEventListener(name, callback) { listeners.set(name, callback); }
   }();
   await app._prepareContext();
-  app._onRender({}, {});
+  await app._onRender({}, {});
   let prevented = 0;
   const dropzone = {
     closest(selector) { return selector === "[data-storage-dropzone]" ? this : null; }
@@ -746,7 +801,7 @@ test("ordinary player storage accepts a ground-pile row drop anywhere in its win
     addEventListener(name, callback) { listeners.set(name, callback); }
   }();
   await app._prepareContext();
-  app._onRender({}, {});
+  await app._onRender({}, {});
   let prevented = 0;
   let phase = "dragover";
   const dropEvent = {
@@ -787,7 +842,7 @@ test("ordinary storage leaves unsupported and editable-target drops to native be
     addEventListener(name, callback) { listeners.set(name, callback); }
   }();
   await app._prepareContext();
-  app._onRender({}, {});
+  await app._onRender({}, {});
   let prevented = 0;
   const unsupported = {
     target: { closest: () => null },

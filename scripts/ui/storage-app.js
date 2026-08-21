@@ -237,8 +237,8 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
     };
   }
 
-  _onRender(context, options) {
-    super._onRender?.(context, options);
+  async _onRender(context, options) {
+    await super._onRender?.(context, options);
     this.#registerLiveHooks();
     this.renderListenersAbortController?.abort();
     this.renderListenersAbortController = new AbortController();
