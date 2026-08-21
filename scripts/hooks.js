@@ -15,13 +15,12 @@ const BG3_AUTO_POPULATE_CREATE_TOKEN_PATH = `/modules/${BG3_HOTBAR_MODULE_ID}/sc
 const BG3_DEATH_SAVES_PATCH_FLAG = Symbol.for(`${MODULE_ID}.bg3DeathSavesPatch`);
 const BG3_STORAGE_COMMON_ACTIONS_PATCH_FLAG = Symbol.for(`${MODULE_ID}.bg3StorageCommonActionsPatch`);
 const PLAYER_INVENTORY_BUTTON_SELECTOR = "[data-rebreya-player-inventory-button='true']";
-const PLAYER_INVENTORY_UTILITY_BUTTON_HEIGHT = 30;
 const PLAYER_INVENTORY_BUTTON_GAP = 6;
 const PLAYER_INVENTORY_BUTTON_LEFT = "calc(clamp(220px, 8.5vw, 280px) + 8px)";
 const PLAYER_INVENTORY_BUTTON_SIZE = 36;
 const PLAYER_INVENTORY_UTILITIES = Object.freeze([
-  { key: "quest-log", label: "Квест лог", method: "openQuestLogApp", direction: -1 },
-  { key: "economy", label: "Экономика", method: "openEconomyApp", direction: 1 }
+  { key: "quest-log", label: "Квест лог", icon: "fa-book-open", method: "openQuestLogApp", direction: -1 },
+  { key: "economy", label: "Экономика", icon: "fa-coins", method: "openEconomyApp", direction: 1 }
 ]);
 
 function isPlainObject(value) {
@@ -318,11 +317,11 @@ export function positionPlayerInventoryQuickButton(button, playersElement, { vie
   }
 
   const centerY = rect.top + (rect.height * 0.58);
-  const minimumTop = PLAYER_INVENTORY_UTILITY_BUTTON_HEIGHT + PLAYER_INVENTORY_BUTTON_GAP + 8;
+  const minimumTop = PLAYER_INVENTORY_BUTTON_SIZE + PLAYER_INVENTORY_BUTTON_GAP + 8;
   const maximumTop = viewportHeight
     - PLAYER_INVENTORY_BUTTON_SIZE
     - PLAYER_INVENTORY_BUTTON_GAP
-    - PLAYER_INVENTORY_UTILITY_BUTTON_HEIGHT
+    - PLAYER_INVENTORY_BUTTON_SIZE
     - 8;
   const top = Math.max(
     minimumTop,
@@ -339,7 +338,7 @@ export function positionPlayerInventoryQuickButton(button, playersElement, { vie
     const utilityButton = buttonHost?.querySelector?.(`[data-rebreya-player-utility='${utility.key}']`);
     if (!utilityButton?.style) continue;
     const utilityTop = utility.direction < 0
-      ? top - PLAYER_INVENTORY_BUTTON_GAP - PLAYER_INVENTORY_UTILITY_BUTTON_HEIGHT
+      ? top - PLAYER_INVENTORY_BUTTON_GAP - PLAYER_INVENTORY_BUTTON_SIZE
       : top + PLAYER_INVENTORY_BUTTON_SIZE + PLAYER_INVENTORY_BUTTON_GAP;
     utilityButton.style.left = PLAYER_INVENTORY_BUTTON_LEFT;
     utilityButton.style.top = formatViewportUnit(utilityTop, viewportHeight, "vh");
@@ -397,9 +396,12 @@ function ensurePlayerInventoryUtilityButtons(buttonHost, ownerDocument, moduleAp
     button.type = "button";
     button.dataset.rebreyaPlayerUtility = utility.key;
     button.classList?.add?.("rm-player-inventory-utility-button");
-    button.textContent = utility.label;
     button.title = utility.label;
     button.setAttribute?.("aria-label", utility.label);
+    const icon = ownerDocument.createElement("i");
+    icon.classList?.add?.("fa-solid", utility.icon);
+    icon.setAttribute?.("aria-hidden", "true");
+    button.append?.(icon);
     button.addEventListener?.("click", async (event) => {
       event.preventDefault?.();
       event.stopPropagation?.();

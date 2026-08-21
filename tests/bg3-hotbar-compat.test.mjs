@@ -443,10 +443,14 @@ test("player list inventory button shows and refreshes the active group token", 
   assert.equal(button.children[0].getAttribute("aria-hidden"), "true");
   assert.equal(button.style.left, "calc(clamp(220px, 8.5vw, 280px) + 8px)");
   assert.match(button.style.top, /vh$/u);
-  assert.equal(questButton.textContent, "Квест лог");
-  assert.equal(economyButton.textContent, "Экономика");
   assert.equal(questButton.classList.contains("rm-player-inventory-utility-button"), true);
   assert.equal(economyButton.classList.contains("rm-player-inventory-utility-button"), true);
+  assert.equal(questButton.children.length, 1);
+  assert.equal(economyButton.children.length, 1);
+  assert.equal(questButton.children[0].tagName, "I");
+  assert.equal(economyButton.children[0].tagName, "I");
+  assert.equal(questButton.children[0].classList.contains("fa-book-open"), true);
+  assert.equal(economyButton.children[0].classList.contains("fa-coins"), true);
   assert.match(questButton.style.top, /vh$/u);
   assert.match(economyButton.style.top, /vh$/u);
   assert.ok(Number.parseFloat(questButton.style.top) < Number.parseFloat(button.style.top));
@@ -460,6 +464,19 @@ test("player list inventory button shows and refreshes the active group token", 
   await economyButton.listeners.click[0]({ preventDefault() {}, stopPropagation() {} });
 
   assert.deepEqual(opened, [true, "quest-log", "economy"]);
+});
+
+test("player launcher utility controls use the same round geometry as inventory", async () => {
+  const css = await readFile(new URL("../styles/main.css", import.meta.url), "utf8");
+
+  assert.match(
+    css,
+    /\.rm-player-inventory-utility-button\s*\{[^}]*width:\s*36px;[^}]*height:\s*36px;[^}]*border-radius:\s*50%;/u
+  );
+  assert.doesNotMatch(
+    css,
+    /\.rm-player-inventory-utility-button\s*\{[^}]*transform:\s*translateX/u
+  );
 });
 
 test("player inventory button anchor prefers the outer player list app", () => {
