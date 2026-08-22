@@ -1,0 +1,14 @@
+{
+  "paddedArmor": {
+    "steganyy-dospekh": {
+      "armor": {
+        "type": "light",
+        "baseItem": "padded",
+        "value": 11,
+        "dex": null,
+        "strength": 0,
+        "properties": ["stealthDisadvantage"]
+      }
+    }
+  }
+}

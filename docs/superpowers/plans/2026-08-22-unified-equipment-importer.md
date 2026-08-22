@@ -620,6 +620,7 @@ Required cases:
 
 - `Стёганый доспех`: armor type `light`, base item `padded`, value `11`, no dex cap, strength `0`, and `stealthDisadvantage`.
 - ammunition resolves its compatible weapon/ammunition references and preserves typed quantity/damage modifiers.
+- `Боеприпасы` is a raw two-table source (`B3:F17`, `B19:G...`); the second table's blank rank header and global hand-cannon die-step rule are declared by the registry rather than inferred from cell types.
 - explosive radius, save DC/ability, damage formula/type, uses, and properties are typed and validated.
 - attachment slot/compatibility/properties resolve through declared enum/reference maps.
 - upgrades retain stable IDs, price/weight/effects, and explicit compatibility references.

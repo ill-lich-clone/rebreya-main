@@ -1201,3 +1201,39 @@ test("renders an upgrade profile in the item description and managed flags", () 
   assert.match(created.system.description.value, /Атаки считаются серебряными/u);
   assert.match(created.system.description.value, /Серебро/u);
 });
+
+test("gear signature and debug metadata include sheet-owned ammunition explosive and attachment profiles", () => {
+  const profiles = {
+    ammunition: {
+      kind: "standard", quantity: 20, damageModifiers: [], damageType: "piercing",
+      compatibility: ["musket"], replaces: [], propertiesText: "", craftMisfire: null,
+      handCannonDamageDieStep: 0
+    },
+    explosive: {
+      damage: [{ formula: "1d4", type: "fire" }], saveDc: 13, saveAbility: "dex",
+      radius: 10, range: 60, uses: 1, deployment: "hand", delay: "Стандарт",
+      trigger: null, disarm: null, propertiesText: "Спасбросок Ловкости"
+    },
+    attachment: {
+      kind: "weaponAttachment", slots: { mode: "oneOf", values: ["top"] },
+      compatibility: [], propertiesText: "Игнорирует половину укрытия"
+    }
+  };
+  const source = {
+    id: "profile-signature-sentinel", name: "Профильный предмет", equipmentType: "Обвес",
+    description: "Проверка профилей.", ...profiles
+  };
+  const first = createDnd5eItemData(source, new Map());
+  const changed = createDnd5eItemData({
+    ...source,
+    ammunition: { ...profiles.ammunition, quantity: 10 }
+  }, new Map());
+
+  assert.notEqual(first.flags["rebreya-main"].signature, changed.flags["rebreya-main"].signature);
+  assert.deepEqual(first.flags["rebreya-main"].ammunition, profiles.ammunition);
+  assert.deepEqual(first.flags["rebreya-main"].explosive, profiles.explosive);
+  assert.deepEqual(first.flags["rebreya-main"].attachment, profiles.attachment);
+  assert.match(first.system.description.value, /Количество боеприпасов/u);
+  assert.match(first.system.description.value, /Радиус взрыва/u);
+  assert.match(first.system.description.value, /Слоты обвеса/u);
+});

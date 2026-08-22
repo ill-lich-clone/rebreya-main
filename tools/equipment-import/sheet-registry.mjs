@@ -86,11 +86,21 @@ export const SHEET_REGISTRY = Object.freeze({
   }),
   ammunition: declaration(6, {
     sheetTitle: "Боеприпасы",
-    range: "B3:G1005",
-    headerRows: [3],
-    dataStartRow: 4,
-    requiredHeaders: ["Боеприпас", "Цена", "Ранг", "Используется", "Вес"],
-    stableKeyHeader: "Боеприпас",
+    range: "B1:G1005",
+    headerRows: [],
+    dataStartRow: 1,
+    layout: "raw",
+    requiredHeaders: [],
+    stableKeyHeader: null,
+    sections: Object.freeze([
+      Object.freeze({ name: "standardAmmunition", range: "B3:F17", headerRow: 3 }),
+      Object.freeze({
+        name: "handCannonAmmunition",
+        range: "B19:G1005",
+        headerRow: 19,
+        headers: Object.freeze(["Боеприпас", "Цена", "Ранг", "Эффект", "Вес", "Правило ручницы"])
+      })
+    ]),
     adapter: "ammunition",
     outputCatalog: "gear"
   }),

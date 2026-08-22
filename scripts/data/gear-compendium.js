@@ -295,6 +295,9 @@ function buildGearSignature(item) {
     storageCoinDenomination: resolveGearCoinDenomination(item),
     weapon: isPlainObject(item.weapon) ? item.weapon : null,
     armor: isPlainObject(item.armor) ? item.armor : null,
+    ammunition: isPlainObject(item.ammunition) ? item.ammunition : null,
+    explosive: isPlainObject(item.explosive) ? item.explosive : null,
+    attachment: isPlainObject(item.attachment) ? item.attachment : null,
     implant: isPlainObject(item.implant) ? item.implant : null,
     upgrade: isPlainObject(item.upgrade) ? item.upgrade : null
   });
@@ -421,6 +424,9 @@ function resolveWeaponHandRequirement(weapon) {
 function buildMetadataRows(item, classification) {
   const itemSlotGroup = resolveItemSlotGroup(item, classification);
   const weapon = isPlainObject(item.weapon) ? item.weapon : {};
+  const ammunition = isPlainObject(item.ammunition) ? item.ammunition : {};
+  const explosive = isPlainObject(item.explosive) ? item.explosive : {};
+  const attachment = isPlainObject(item.attachment) ? item.attachment : {};
   const implant = isPlainObject(item.implant) ? item.implant : {};
   const upgrade = isPlainObject(item.upgrade) ? item.upgrade : {};
   const handRequirement = resolveWeaponHandRequirement(weapon);
@@ -479,6 +485,16 @@ function buildMetadataRows(item, classification) {
     ["Тип урона", weapon.damageTypeLabel],
     ["Руки", handRequirement?.source],
     ["Свойства оружия", weapon.propertiesText],
+    ["Количество боеприпасов", ammunition.quantity],
+    ["Совместимость боеприпаса", Array.isArray(ammunition.compatibility) ? ammunition.compatibility.join(", ") : null],
+    ["Заменяет боеприпасы", Array.isArray(ammunition.replaces) ? ammunition.replaces.join(", ") : null],
+    ["Свойства боеприпаса", ammunition.propertiesText],
+    ["Радиус взрыва", Number.isFinite(explosive.radius) ? `${explosive.radius} фт.` : null],
+    ["Сл взрывчатки", Number.isFinite(explosive.saveDc) ? `${explosive.saveAbility || "—"} ${explosive.saveDc}` : null],
+    ["Свойства взрывчатки", explosive.propertiesText],
+    ["Слоты обвеса", Array.isArray(attachment.slots?.values) ? attachment.slots.values.join(", ") : null],
+    ["Совместимость обвеса", Array.isArray(attachment.compatibility) ? attachment.compatibility.join(", ") : null],
+    ["Свойства обвеса", attachment.propertiesText],
     ["Очки модификации", implant.pointsText],
     ["Тип импланта", implant.type],
     ["Требования импланта", implant.requirements],
@@ -1142,7 +1158,10 @@ export function createDnd5eItemData(item, folderIdByPath, iconLookup = null) {
           ? lichWeaponPropertyValues
           : null,
         implant: clonePlainObject(item.implant),
-        upgrade: clonePlainObject(item.upgrade)
+        upgrade: clonePlainObject(item.upgrade),
+        ammunition: clonePlainObject(item.ammunition),
+        explosive: clonePlainObject(item.explosive),
+        attachment: clonePlainObject(item.attachment)
       }
     }
   };
