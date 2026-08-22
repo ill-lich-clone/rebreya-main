@@ -46,6 +46,22 @@ function makeMagicItem(overrides = {}) {
   };
 }
 
+test("magic item compendium preserves importer IDs as stable document identity", () => {
+  const imported = makeMagicItem({
+    id: "magic-source-0042",
+    name: "Переименованный предмет"
+  });
+  const [first] = magicItemsCompendium.normalizeMagicItems([imported]);
+  const [second] = magicItemsCompendium.normalizeMagicItems([structuredClone(imported)]);
+  const firstData = magicItemsCompendium.createMagicItemData(first, new Map());
+  const secondData = magicItemsCompendium.createMagicItemData(second, new Map());
+
+  assert.equal(first.id, "magic-source-0042");
+  assert.equal(firstData.flags["rebreya-main"].magicItemId, "magic-source-0042");
+  assert.equal(secondData.flags["rebreya-main"].magicItemId, firstData.flags["rebreya-main"].magicItemId);
+  assert.equal(secondData.flags["rebreya-main"].signature, firstData.flags["rebreya-main"].signature);
+});
+
 test("magic item compendium uses fixed costText as native price and keeps estimate in flags", () => {
   assert.equal(typeof magicItemsCompendium.normalizeMagicItems, "function");
   assert.equal(typeof magicItemsCompendium.createMagicItemData, "function");

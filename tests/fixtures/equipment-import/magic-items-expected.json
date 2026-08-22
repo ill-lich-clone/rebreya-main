@@ -1,0 +1,40 @@
+[
+  {
+    "id": "аметистовый-магнетит",
+    "name": "Аметистовый магнетит",
+    "type": "Магический предмет",
+    "rarity": "Очень редкий",
+    "itemType": "Чудесный предмет",
+    "itemSubtype": "",
+    "itemSlot": "Рука",
+    "source": "FTD",
+    "rank": 7,
+    "materials": "Стандартные",
+    "bargaining": "Удачные",
+    "costText": "10 000 зм",
+    "impact": "Минор",
+    "attunement": "0",
+    "isConsumable": false,
+    "description": "Точный текст с переносом.\nВторая строка описания.",
+    "value": 6000
+  },
+  {
+    "id": "боевая-кирка-камнетворца",
+    "name": "Боевая кирка камнетворца",
+    "type": "Магический предмет",
+    "rarity": "Очень редкий",
+    "itemType": "Оружие",
+    "itemSubtype": "Боевая кирка",
+    "itemSlot": "Рука",
+    "source": "BMT",
+    "rank": 8,
+    "materials": "Труднодоступные",
+    "bargaining": "Выгодные",
+    "costText": "(2d8kh1+1)*2500 зм",
+    "impact": "Мажор",
+    "attunement": "дварфом",
+    "isConsumable": false,
+    "description": "Описание кирки без преобразований.",
+    "value": 60000
+  }
+]
