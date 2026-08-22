@@ -6430,9 +6430,11 @@
         "id": "transport-v01-giganskiy-skorpion",
         "aliases": []
       },
-      "Городкой автобус": {
+      "Городской автобус": {
         "id": "transport-v01-gorodkoy-avtobus",
-        "aliases": []
+        "aliases": [
+          "Городкой автобус"
+        ]
       },
       "Гражданский автомобиль": {
         "id": "transport-v01-grazhdanskiy-avtomobil",

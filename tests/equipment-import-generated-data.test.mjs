@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 
 import { MAGIC_ITEMS } from "../magicItem.js";
 import { GENERATED_CATALOG_PATHS } from "../tools/equipment-import/pipeline.mjs";
-import { validateEquipmentOverrides } from "../tools/equipment-import/overrides.mjs";
+import { resolveStableIdentity, validateEquipmentOverrides } from "../tools/equipment-import/overrides.mjs";
 import { parseCurrentEquipmentBundle } from "../tools/equipment-import/serialization.mjs";
 
 const readJson = async (relative) => JSON.parse(await readFile(new URL(`../${relative}`, import.meta.url), "utf8"));
@@ -85,6 +85,12 @@ test("tracked catalogs preserve representative runtime fields and typed regressi
   assert.ok(materials.some((item) => item.id && item.name && item.source?.row));
   assert.ok(implants.some((item) => item.name === "Навесная броня" && item.implant?.pointsMin === 1));
   assert.ok(transport.some((item) => item.name === "Гражданский автомобиль" && item.consumption && item.travelSpeed));
+  assert.equal(resolveStableIdentity({
+    catalog: "transport",
+    sourceKey: "Городской автобус",
+    sourceName: "Городской автобус",
+    overrides
+  }), "transport-v01-gorodkoy-avtobus");
   assert.ok(MAGIC_ITEMS.some((item) => item.name === "Аметистовый магнетит" && item.description && item.value > 0));
 });
 
