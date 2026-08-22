@@ -195,9 +195,55 @@
         "sourceRef": "Импланты V0.1!A2",
         "itemSlot": "",
         "heroDollSlots": ""
+      },
+      {
+        "id": "uteplenie-oruzhiya",
+        "name": "Утепление оружия",
+        "equipmentType": "Усовершенствование",
+        "shopSubtype": "",
+        "priceText": "125 зм",
+        "priceValue": 125,
+        "priceDenomination": "gp",
+        "priceGoldEquivalent": 125,
+        "rank": 2,
+        "weight": null,
+        "volume": "",
+        "capacity": "",
+        "description": "Усовершенствование из шерсти чудовища.",
+        "predominantMaterialId": null,
+        "predominantMaterialName": "",
+        "linkedTool": "",
+        "value": "",
+        "multipleAppearance": "",
+        "source": "equipment-google-sheet",
+        "sourceIdentity": "усовершенствование|утепление оружия",
+        "sourceRef": "Усовершенствования V0.21!A6",
+        "itemSlot": "",
+        "heroDollSlots": ""
       }
     ],
-    "upgrades": [],
+    "upgrades": [
+      {
+        "name": "Шерсть чудовища",
+        "productId": "uteplenie-oruzhiya",
+        "canonicalName": "Утепление оружия",
+        "upgrade": {
+          "rank": 2,
+          "appliesTo": "Оружие",
+          "compatibility": [
+            "weapon"
+          ],
+          "effect": "Оружие защищает руки от холода.",
+          "priceGold": 125,
+          "sourceWeight": null,
+          "sourceMaterialName": "Шерсть чудовища",
+          "sourceMaterialId": "material-3",
+          "type": "Материал",
+          "sourceSheet": "Усовершенствования V0.21",
+          "sourceSheetRow": 6
+        }
+      }
+    ],
     "materials": [
       {
         "id": "material-3",

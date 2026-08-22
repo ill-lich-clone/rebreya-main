@@ -46,7 +46,24 @@ function workbookSnapshot() {
       specialAmmunition: { sheetKey: "specialAmmunition", sheetTitle: "Особые боеприпасы", range: "'Особые боеприпасы'!B2:H1000", rows: [] },
       explosives: { sheetKey: "explosives", sheetTitle: "Взрывчатка V0.0", range: "'Взрывчатка V0.0'!A1:N1000", rows: [] },
       attachments: { sheetKey: "attachments", sheetTitle: "Улучшения и обвесы V0.2", range: "'Улучшения и обвесы V0.2'!A1:AA1010", layout: "raw", values: [] },
-      upgrades: { sheetKey: "upgrades", sheetTitle: "Усовершенствования V0.21", range: "'Усовершенствования V0.21'!A1:G1000", rows: [] },
+      upgrades: {
+        sheetKey: "upgrades",
+        sheetTitle: "Усовершенствования V0.21",
+        range: "'Усовершенствования V0.21'!A1:G1000",
+        rows: [{
+          rowNumber: 6,
+          sourceIdentity: "Шерсть чудовища",
+          cells: {
+            Название: "Шерсть чудовища",
+            Ранг: "2",
+            "Применимо к": "Оружие",
+            Эффект: "Оружие защищает руки от холода.",
+            "Цена (зм)": "125 зм",
+            Источник: "Шерсть чудовища",
+            Тип: "Материал"
+          }
+        }]
+      },
       materials: { ...secondary.material, rows: [secondary.material.row] },
       implants: implantSnapshot(),
       transport: transportSnapshot(),

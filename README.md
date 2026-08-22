@@ -328,7 +328,16 @@ Hidden world state:
 - путешествия: `travel-network.json`;
 - magic items: корневой `magicItem.js`; feats: корневой `feat.js` плюс `feats-world-overrides.json`.
 
-Импортные инструменты: `tools/import-xlsx.ps1`, `import-materials.ps1`, `import-gear.ps1`, `sync-travel-network.mjs`, `apply-feat-automation.mjs`, `apply-race-automation.mjs`. `import-xlsx.ps1` генерирует module-owned city panorama paths; сами WebP перед релизом должны находиться в `assets/cities/`. Формат item-полей дополнительно описан в `docs/foundry-item-fields.md`.
+Единый импорт снаряжения и магических предметов запускается из корня репозитория:
+
+```powershell
+node tools/import-equipment.mjs
+node tools/import-equipment.mjs --apply
+```
+
+Первая команда всегда выполняет безопасный dry-run: через Google Sheets API читает утверждённую основную таблицу, строит все каталоги в памяти, показывает semantic diff и ничего не записывает. Вторая применяет тот же проверенный bundle одной транзакцией к `data/gear.json`, `data/upgrades.json`, `data/materials.json`, `data/implants.json`, `data/rebreya-transport-v01.json` и `magicItem.js`. Service-account берётся из `--credentials <path>`, `GOOGLE_APPLICATION_CREDENTIALS` либо ignored `tools/google-credentials.json`. Удаления требуют `--allow-removals`; потеря более 25 записей или 10% каталога дополнительно требует `--allow-large-diff`. Пустой каталог, потеря более половины и смена стабильного ID всегда блокируются. Для диагностики доступны `--snapshot <path>` и `--write-snapshot <path>`; snapshot содержит только строки таблицы и source metadata, без credentials/OAuth tokens. Полный список параметров: `node tools/import-equipment.mjs --help`.
+
+Остальные импортные инструменты: `tools/import-xlsx.ps1`, временно сохраняемые до финальной parity-проверки `import-materials.ps1`/`import-gear.ps1`, `sync-travel-network.mjs`, `apply-feat-automation.mjs`, `apply-race-automation.mjs`. `import-xlsx.ps1` владеет отдельным economy workbook workflow и генерирует module-owned city panorama paths; сами WebP перед релизом должны находиться в `assets/cities/`. Формат item-полей дополнительно описан в `docs/foundry-item-fields.md`.
 
 ## Проверки разработки
 
