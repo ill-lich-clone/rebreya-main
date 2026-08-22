@@ -678,6 +678,8 @@ git push -u origin lich_branch
 - Create: `tests/fixtures/equipment-import/secondary-catalogs-raw.json`
 - Create: `tests/fixtures/equipment-import/secondary-catalogs-expected.json`
 - Modify: `scripts/data/material-catalog-sync.js`
+- Modify: `tools/equipment-import/overrides.mjs`
+- Modify: `tests/equipment-import-overrides.test.mjs`
 - Modify: `scripts/data/transport-actor-builder.js` only if the generated transport contract can be made typed without breaking current consumers
 - Modify: `tests/material-catalog-sync.test.mjs`
 - Modify: `tests/transport-actor-builder.test.mjs` if its contract changes
@@ -733,7 +735,7 @@ Expected: all secondary-catalog and existing runtime consumer tests pass.
 **Step 5: Update passport and checkpoint**
 
 ```powershell
-git add tools/equipment-import/adapters/materials.mjs tools/equipment-import/adapters/implants.mjs tools/equipment-import/adapters/transport.mjs tests/equipment-import-secondary-catalogs.test.mjs tests/fixtures/equipment-import/secondary-catalogs-raw.json tests/fixtures/equipment-import/secondary-catalogs-expected.json scripts/data/material-catalog-sync.js tests/material-catalog-sync.test.mjs docs/function-passport.md
+git add tools/equipment-import/adapters/materials.mjs tools/equipment-import/adapters/implants.mjs tools/equipment-import/adapters/transport.mjs tools/equipment-import/overrides.mjs tests/equipment-import-secondary-catalogs.test.mjs tests/equipment-import-overrides.test.mjs tests/fixtures/equipment-import/secondary-catalogs-raw.json tests/fixtures/equipment-import/secondary-catalogs-expected.json scripts/data/material-catalog-sync.js tests/material-catalog-sync.test.mjs docs/function-passport.md
 if (git diff --name-only -- scripts/data/transport-actor-builder.js tests/transport-actor-builder.test.mjs) { git add scripts/data/transport-actor-builder.js tests/transport-actor-builder.test.mjs }
 git diff --cached --check
 git diff --cached --stat
@@ -1176,7 +1178,7 @@ git push -u origin lich_branch
 Run the migration helper once and review the resulting file before any live apply:
 
 ```powershell
-node --input-type=module -e "import { readFile, writeFile } from 'node:fs/promises'; import { buildInitialEquipmentOverrides } from './tools/equipment-import/overrides.mjs'; const [{ MAGIC_ITEMS }, gear, implants, transport] = await Promise.all([import('./magicItem.js'), readFile('./data/gear.json', 'utf8').then(JSON.parse), readFile('./data/implants.json', 'utf8').then(JSON.parse), readFile('./data/rebreya-transport-v01.json', 'utf8').then(JSON.parse)]); const result = buildInitialEquipmentOverrides({ gear, implants, transport, magicItems: MAGIC_ITEMS }); await writeFile('./data/equipment-import-overrides.json', JSON.stringify(result, null, 2) + '\n', 'utf8');"
+node --input-type=module -e "import { readFile, writeFile } from 'node:fs/promises'; import { buildInitialEquipmentOverrides } from './tools/equipment-import/overrides.mjs'; const [{ MAGIC_ITEMS }, gear, materials, implants, transport] = await Promise.all([import('./magicItem.js'), readFile('./data/gear.json', 'utf8').then(JSON.parse), readFile('./data/materials.json', 'utf8').then(JSON.parse), readFile('./data/implants.json', 'utf8').then(JSON.parse), readFile('./data/rebreya-transport-v01.json', 'utf8').then(JSON.parse)]); const result = buildInitialEquipmentOverrides({ gear, materials, implants, transport, magicItems: MAGIC_ITEMS }); await writeFile('./data/equipment-import-overrides.json', JSON.stringify(result, null, 2) + '\n', 'utf8');"
 ```
 
 Review duplicate/missing identity diagnostics and compare every migrated ID count to the current catalogs. Do not hand-edit around a collision; fix the declared source key or add one explicit reviewed mapping.

@@ -140,6 +140,13 @@ test("initial migration preserves current IDs and extracts only whitelisted enri
       foundrySubtype: "wondrous",
       implant: { effect: "Sheet-owned effect" }
     }],
+    materials: [{
+      id: "steel",
+      name: "Сталь",
+      linkedGoodId: "steel",
+      linkedGoodName: "Сталь",
+      weight: 1
+    }],
     transport: [{
       sourceId: "transport-cart",
       documentId: "lchtransport0001",
@@ -151,6 +158,7 @@ test("initial migration preserves current IDs and extracts only whitelisted enri
 
   assert.deepEqual(migrated.identities.gear["оружие|дротик"], { id: "dart", aliases: [] });
   assert.deepEqual(migrated.identities.implants["Механический глаз"], { id: "implant-eye", aliases: [] });
+  assert.deepEqual(migrated.identities.materials.Сталь, { id: "steel", aliases: [] });
   assert.deepEqual(migrated.identities.transport.Телега, { id: "transport-cart", aliases: [] });
   assert.deepEqual(migrated.identities.magicItems["магический-предмет|1"], {
     id: "аметистовый-магнетит",
@@ -162,6 +170,10 @@ test("initial migration preserves current IDs and extracts only whitelisted enri
   });
   assert.deepEqual(migrated.enrichment.transport["transport-cart"], {
     documentId: "lchtransport0001"
+  });
+  assert.deepEqual(migrated.enrichment.materials.steel, {
+    linkedGoodId: "steel",
+    linkedGoodName: "Сталь"
   });
   assert.equal(JSON.stringify(migrated).includes("damageFormula"), false);
   assert.equal(JSON.stringify(migrated).includes("Sheet-owned"), false);

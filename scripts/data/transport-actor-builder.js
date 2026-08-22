@@ -22,6 +22,8 @@ const SIGNATURE_FIELDS = Object.freeze([
   "travelSpeed",
   "breakdownThreshold",
   "consumption",
+  "fuelTank",
+  "range",
   "crew",
   "passengers",
   "strength",
@@ -45,6 +47,9 @@ const SIZE_IDS = Object.freeze({
   "Огромный": "huge",
   "Громадный": "grg"
 });
+const FUEL_RESOURCE_LABELS = Object.freeze([
+  "Жидкий уголь", "Уголь", "Мазут", "Керосин", "Бензин", "Дизель"
+]);
 
 function cleanText(value) {
   return String(value ?? "").trim();
@@ -128,13 +133,9 @@ function parseConsumption(value, typeLabel) {
     : lower.includes("фнт")
       ? "lb"
       : "";
-  const resource = lower.includes("жидкий уголь")
-    ? "Жидкий уголь"
-    : lower.includes("уголь")
-      ? "Уголь"
-      : typeLabel === "Скакун"
-        ? "Корм"
-        : "";
+  const resource = typeLabel === "Скакун"
+    ? "Корм"
+    : (FUEL_RESOURCE_LABELS.find((label) => lower.startsWith(label.toLocaleLowerCase("ru-RU"))) ?? "");
   return {
     kind: typeLabel === "Скакун" ? "feed" : "fuel",
     resource,
@@ -143,6 +144,21 @@ function parseConsumption(value, typeLabel) {
     cadence: typeLabel === "Скакун" ? "day" : "mile",
     raw
   };
+}
+
+function parseFuelTank(value) {
+  const raw = cleanText(value);
+  if (isMissing(raw)) return { value: null, unit: "", raw };
+  return {
+    value: firstNumber(raw),
+    unit: /галлон/iu.test(raw) ? "gal" : (/фнт|фунт/iu.test(raw) ? "lb" : ""),
+    raw
+  };
+}
+
+function parseRangeMiles(value) {
+  const raw = cleanText(value);
+  return { value: isMissing(raw) ? null : firstNumber(raw), unit: "mi", raw };
 }
 
 function movementMode(typeLabel) {
@@ -255,6 +271,8 @@ export function normalizeTransportEntry(raw = {}, index = 0) {
     priceData: parsePrice(source.price),
     rentalPriceData: parsePrice(source.rentalPrice),
     feedOrFuel: parseConsumption(source.consumption, typeLabel),
+    fuelTank: parseFuelTank(source.fuelTank),
+    range: parseRangeMiles(source.range),
     ...capacity,
     source
   };
@@ -354,6 +372,8 @@ export function buildTransportActorData(rawEntry) {
           travelSpeed: entry.travelSpeed,
           breakdownThreshold: entry.breakdownThreshold,
           consumption: entry.feedOrFuel,
+          fuelTank: entry.fuelTank,
+          range: entry.range,
           cargoCapacityLb: entry.cargoCapacityLb,
           towedCapacityLb: entry.towedCapacityLb,
           raw: {
@@ -367,6 +387,8 @@ export function buildTransportActorData(rawEntry) {
             passengers: entry.source.passengers,
             strength: entry.source.strength,
             cargoCapacity: entry.source.cargoCapacity,
+            fuelTank: entry.source.fuelTank,
+            range: entry.source.range,
             description: entry.source.description
           }
         }

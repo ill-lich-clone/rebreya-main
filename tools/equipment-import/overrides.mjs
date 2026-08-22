@@ -26,6 +26,7 @@ export const DEFAULT_ENRICHMENT_FIELDS = Object.freeze({
     "itemSlot",
     "heroDollSlots"
   ]),
+  materials: Object.freeze(["linkedGoodId", "linkedGoodName"]),
   transport: Object.freeze(["documentId"]),
   magicItems: Object.freeze([])
 });
@@ -241,13 +242,14 @@ function addMigratedRecord({ catalog, sourceKey, stableId, record, result, seenS
 export function buildInitialEquipmentOverrides({
   gear = [],
   implants = [],
+  materials = [],
   transport = [],
   magicItems = []
 } = {}) {
   const result = {
     schemaVersion: EQUIPMENT_OVERRIDE_SCHEMA_VERSION,
-    identities: { gear: {}, implants: {}, transport: {}, magicItems: {} },
-    enrichment: { gear: {}, implants: {}, transport: {}, magicItems: {} }
+    identities: { gear: {}, implants: {}, materials: {}, transport: {}, magicItems: {} },
+    enrichment: { gear: {}, implants: {}, materials: {}, transport: {}, magicItems: {} }
   };
   const definitions = [
     {
@@ -263,6 +265,13 @@ export function buildInitialEquipmentOverrides({
       sourceKey: (record) => String(record?.name ?? "").trim(),
       id: (record) => record.id,
       fields: DEFAULT_ENRICHMENT_FIELDS.implants
+    },
+    {
+      catalog: "materials",
+      records: materials,
+      sourceKey: (record) => String(record?.name ?? "").trim(),
+      id: (record) => record.id,
+      fields: DEFAULT_ENRICHMENT_FIELDS.materials
     },
     {
       catalog: "transport",

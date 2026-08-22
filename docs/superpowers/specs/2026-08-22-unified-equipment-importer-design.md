@@ -173,7 +173,7 @@ Join только по display name запрещён. Нормализованн
 
 Новый tracked `data/equipment-import-overrides.json` имеет `schemaVersion: 1` и разделы по каталогу. Ключом служит canonical source identity; значение содержит существующий stable `id`, aliases и только whitelisted enrichment fields.
 
-Первичная миграция извлекает IDs и manual enrichment из текущих `data/gear.json`, `data/implants.json`, `data/rebreya-transport-v01.json` и `magicItem.js`. После миграции generated runtime-файлы больше не читаются как enrichment input.
+Первичная миграция извлекает IDs и manual enrichment из текущих `data/gear.json`, `data/materials.json`, `data/implants.json`, `data/rebreya-transport-v01.json` и `magicItem.js`. Для materials сохраняются только `linkedGoodId/linkedGoodName`; после миграции generated runtime-файлы больше не читаются как enrichment input.
 
 Sheet-owned поля — name, type, price, rank, weight, description и профильные характеристики — override менять не может. Разрешены только поля, которых нет в таблице: stable ID/aliases, Foundry type/subtype/base item/folder, container metadata, hero-doll slots и явно перечисленные presentation/automation hints.
 

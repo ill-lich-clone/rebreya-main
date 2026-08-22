@@ -80,7 +80,12 @@ test("two-mode combat speed retains both values", () => {
 });
 
 test("vehicle builder writes native and Rebreya fields", () => {
-  const source = catalog.find((row) => row.name === "Гражданский автомобиль");
+  const source = {
+    ...catalog.find((row) => row.name === "Гражданский автомобиль"),
+    consumption: "Бензин, 1/16 галлона/милю",
+    fuelTank: "16 галлонов",
+    range: "256 миль"
+  };
   const actor = buildTransportActorData(source);
 
   assert.equal(actor._id, source.documentId);
@@ -105,7 +110,16 @@ test("vehicle builder writes native and Rebreya fields", () => {
   assert.equal(actor.flags["rebreya-main"].transport.instance, false);
   assert.equal(actor.flags["rebreya-main"].transport.defaultGroupRole, "transport");
   assert.equal(actor.flags["rebreya-main"].transport.sourceType, "Механический транспорт");
-  assert.equal(actor.flags["rebreya-main"].transport.consumption.raw, "Жидкий уголь 1/16 галлона");
+  assert.deepEqual(actor.flags["rebreya-main"].transport.consumption, {
+    kind: "fuel", resource: "Бензин", amount: 0.0625, unit: "gal", cadence: "mile",
+    raw: "Бензин, 1/16 галлона/милю"
+  });
+  assert.deepEqual(actor.flags["rebreya-main"].transport.fuelTank, {
+    value: 16, unit: "gal", raw: "16 галлонов"
+  });
+  assert.deepEqual(actor.flags["rebreya-main"].transport.range, {
+    value: 256, unit: "mi", raw: "256 миль"
+  });
   assert.equal(actor.flags["rebreya-main"].transport.raw.cargoCapacity, source.cargoCapacity);
   assert.equal(actor.prototypeToken.actorLink, true);
 });
