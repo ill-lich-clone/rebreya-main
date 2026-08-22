@@ -129,6 +129,11 @@ test("reference index resolves only exact canonical source keys and source coord
     index.gearByKey.get("снаряжение|сундук").sourceRef,
     "Общий компендиум снаряжения V0.1!A200"
   );
+  assert.equal(
+    index.gearBySourceRef.get("Оружие V0.36!A17").sourceKey,
+    "оружие|дротик"
+  );
+  assert.equal(index.resolveStableGearId(index.gearBySourceRef.get("Оружие V0.36!A17")), "dart");
 });
 
 test("base gear adapter maps formatted strings to the current runtime contract", () => {

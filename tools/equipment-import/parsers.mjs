@@ -236,7 +236,9 @@ export function parseDamageFormula(raw, context, { optional = false } = {}) {
     fail("missing-damage-formula", raw, context, "damage formula is required");
   }
   const normalized = text.replace(/[кК]/gu, "d").replace(/\s+/gu, "");
-  if (!/^(?:\d*d\d+|\d+)(?:[+-](?:\d*d\d+|\d+))*$/iu.test(normalized)) {
+  const diceTerm = String.raw`\d*d\d+(?:(?:kh|kl)\d+)?`;
+  const completeFormula = new RegExp(`^(?:${diceTerm}|\\d+)(?:[+-](?:${diceTerm}|\\d+))*$`, "iu");
+  if (!completeFormula.test(normalized)) {
     fail("invalid-damage-formula", raw, context, "damage formula does not match the complete dice grammar");
   }
   return normalized.toLowerCase();

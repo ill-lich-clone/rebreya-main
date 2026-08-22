@@ -36,7 +36,7 @@ function sourceReference(value, sourceKey, rowNumber) {
   return { sourceRef: value.trim(), sheetTitle: match[1], rowNumber: Number(match[3]) };
 }
 
-export function buildEquipmentReferenceIndex({ snapshots }) {
+export function buildEquipmentReferenceIndex({ snapshots, overrides }) {
   const snapshot = snapshots?.equipmentReferences;
   if (!snapshot || snapshot.layout !== "raw" || !Array.isArray(snapshot.values)) {
     fail("missing-reference-snapshot", "Missing raw equipment reference snapshot");
@@ -47,13 +47,21 @@ export function buildEquipmentReferenceIndex({ snapshots }) {
     if (String(header[index] ?? "").trim() !== required) fail("missing-reference-header", `Missing equipment reference header at column ${index + 1}: ${required}`);
   }
   const gearByKey = new Map();
+  const gearBySourceRef = new Map();
+  function addReference(sourceKey, reference) {
+    if (gearByKey.has(sourceKey)) fail("duplicate-reference-key", `Duplicate equipment reference key: ${sourceKey}`);
+    if (gearBySourceRef.has(reference.sourceRef)) {
+      fail("duplicate-source-reference", `Duplicate equipment source reference: ${reference.sourceRef}`);
+    }
+    gearByKey.set(sourceKey, reference);
+    gearBySourceRef.set(reference.sourceRef, reference);
+  }
   for (let index = 0; index < rows.length; index += 1) {
     const row = rows[index];
     const sourceKey = String(row[0] ?? "").trim();
     if (sourceKey) {
-      if (gearByKey.has(sourceKey)) fail("duplicate-reference-key", `Duplicate equipment reference key: ${sourceKey}`);
       const reference = sourceReference(row[9], sourceKey, index + 2);
-      gearByKey.set(sourceKey, {
+      addReference(sourceKey, {
         sourceKey,
         canonicalName: String(row[2] ?? "").trim(),
         equipmentType: String(row[1] ?? "").trim(),
@@ -63,12 +71,11 @@ export function buildEquipmentReferenceIndex({ snapshots }) {
 
     const manualKey = String(row[20] ?? "").trim();
     if (manualKey) {
-      if (gearByKey.has(manualKey)) fail("duplicate-reference-key", `Duplicate equipment reference key: ${manualKey}`);
       const catalogRow = Number(row[28]);
       if (!Number.isInteger(catalogRow) || catalogRow < 1) {
         fail("invalid-source-reference", `Invalid manual catalog row for ${manualKey}`, { rowNumber: index + 2 });
       }
-      gearByKey.set(manualKey, {
+      addReference(manualKey, {
         sourceKey: manualKey,
         canonicalName: String(row[23] ?? "").trim(),
         equipmentType: String(row[22] ?? "").trim(),
@@ -78,7 +85,18 @@ export function buildEquipmentReferenceIndex({ snapshots }) {
       });
     }
   }
-  return Object.freeze({ gearByKey });
+  return Object.freeze({
+    gearByKey,
+    gearBySourceRef,
+    resolveStableGearId(reference) {
+      return resolveStableIdentity({
+        catalog: "gear",
+        sourceKey: reference.sourceKey,
+        sourceName: reference.canonicalName,
+        overrides
+      });
+    }
+  });
 }
 
 function optionalRank(raw, context) {

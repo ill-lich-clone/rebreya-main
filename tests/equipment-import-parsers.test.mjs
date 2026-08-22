@@ -102,6 +102,7 @@ test("currency parser separates fixed and variable prices without extracting a p
 test("damage formula accepts a complete dice grammar and normalizes Cyrillic dice", () => {
   assert.equal(parseDamageFormula("1к4+1к4", context), "1d4+1d4");
   assert.equal(parseDamageFormula("2d6 + 3", context), "2d6+3");
+  assert.equal(parseDamageFormula("2d8kh1", context), "2d8kh1");
   assert.equal(parseDamageFormula("—", context, { optional: true }), null);
   assert.throws(() => parseDamageFormula("1d4 огонь", context), /damage formula/i);
 });
