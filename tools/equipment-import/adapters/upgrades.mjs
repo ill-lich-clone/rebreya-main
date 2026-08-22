@@ -1,5 +1,4 @@
 import { parseCurrency, parseInteger, parseRequiredText } from "../parsers.mjs";
-import { resolveStableIdentity } from "../overrides.mjs";
 import { ImportDiagnosticError, createImportDiagnostic, throwIfDiagnostics } from "../validation.mjs";
 
 const COMPATIBILITY = new Map([
@@ -15,6 +14,22 @@ const TYPES = new Set(["Материал", "Зачарование"]);
 const DASH = /^(?:-|–|—)$/u;
 
 function text(value) { return String(value ?? "").trim(); }
+function normalizedName(value) {
+  return text(value).normalize("NFKC").toLocaleLowerCase("ru-RU").replace(/ё/gu, "е").replace(/\s+/gu, " ");
+}
+function materialIdsByName(materials) {
+  const result = new Map();
+  for (const material of materials ?? []) {
+    const name = normalizedName(material?.name);
+    const id = text(material?.id);
+    if (!name || !id) continue;
+    if (result.has(name) && result.get(name) !== id) {
+      fail("duplicate-material-name", material?.name, {}, `Material name resolves to multiple stable IDs: ${material?.name}`);
+    }
+    result.set(name, id);
+  }
+  return result;
+}
 function context(snapshot, row, column) {
   return { sheetKey: snapshot.sheetKey, range: snapshot.range, rowNumber: row.rowNumber, column };
 }
@@ -22,7 +37,8 @@ function fail(code, value, ctx, message) {
   throw new ImportDiagnosticError(message, [createImportDiagnostic({ code, value, message, ...ctx })]);
 }
 
-export function adaptUpgradeCatalog({ snapshot, referenceIndex, overrides, diagnostics = [] }) {
+export function adaptUpgradeCatalog({ snapshot, referenceIndex, overrides, materials = [], diagnostics = [] }) {
+  const materialIndex = materialIdsByName(materials);
   const entries = [];
   for (const row of snapshot.rows ?? []) {
     const cells = row.cells ?? {};
@@ -58,9 +74,7 @@ export function adaptUpgradeCatalog({ snapshot, referenceIndex, overrides, diagn
         priceGold: price.goldEquivalent,
         sourceWeight: null,
         sourceMaterialName: hasMaterial ? sourceMaterialName : "",
-        sourceMaterialId: hasMaterial
-          ? resolveStableIdentity({ catalog: "materials", sourceKey: sourceMaterialName, sourceName: sourceMaterialName, overrides })
-          : null,
+        sourceMaterialId: hasMaterial ? materialIndex.get(normalizedName(sourceMaterialName)) ?? null : null,
         type,
         sourceSheet: snapshot.sheetTitle,
         sourceSheetRow: row.rowNumber

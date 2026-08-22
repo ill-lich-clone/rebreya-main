@@ -145,6 +145,7 @@ test("base gear adapter maps formatted strings to the current runtime contract",
     snapshot: baseSnapshot,
     referenceIndex,
     overrides: overrides(),
+    materials: [{ id: "zhelezo", name: "Железо" }, { id: "derevo", name: "Дерево" }],
     diagnostics: []
   });
 
@@ -178,6 +179,41 @@ test("base gear adapter maps formatted strings to the current runtime contract",
   assert.equal(result.items[1].id, "chest");
   assert.equal(result.items[1].foundryType, "container");
   assert.equal(result.items[1].containerCapacity, 300);
+});
+
+test("base gear keeps a non-catalog source name without inventing a material id", () => {
+  const reference = {
+    sourceKey: "снаряжение|кости тролля",
+    canonicalName: "Кости тролля",
+    equipmentType: "Снаряжение",
+    sourceRef: "Общий компендиум снаряжения V0.1!A700"
+  };
+  const result = adaptBaseGear({
+    snapshot: {
+      ...baseSnapshot,
+      rows: [{
+        rowNumber: 700,
+        cells: {
+          Название: "Кости тролля",
+          "Тип снаряжения": "Снаряжение",
+          Цена: "50 зм",
+          Ранг: "2",
+          Вес: "5 фнт",
+          "Преобладающий материал (источник)": "Тролль"
+        }
+      }]
+    },
+    referenceIndex: {
+      gearByKey: new Map([[reference.sourceKey, reference]]),
+      resolveStableGearId: () => "kosti-trollya"
+    },
+    overrides: { identities: { materials: {} }, enrichment: {} },
+    materials: [{ id: "zhelezo", name: "Железо" }],
+    diagnostics: []
+  });
+
+  assert.equal(result.items[0].predominantMaterialId, null);
+  assert.equal(result.items[0].predominantMaterialName, "Тролль");
 });
 
 test("base adapter uses type-specific weight rules and routes the live transport category", () => {

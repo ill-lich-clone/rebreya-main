@@ -237,7 +237,13 @@ test("upgrade adapter preserves stable product/material identities and typed com
   const reference = { sourceRef: "Усовершенствования V0.21!A6", sourceKey: "усовершенствование|серебрение оружия", canonicalName: "Серебрение оружия" };
   const referenceIndex = { gearBySourceRef: new Map([[reference.sourceRef, reference]]), resolveStableGearId: () => "serebrenie-oruzhiya" };
   const overrides = { identities: { materials: { Серебро: { id: "serebro", aliases: [] } } }, enrichment: {} };
-  assert.deepEqual(adaptUpgradeCatalog({ snapshot: upgradeSnapshot, referenceIndex, overrides, diagnostics: [] }), [{
+  assert.deepEqual(adaptUpgradeCatalog({
+    snapshot: upgradeSnapshot,
+    referenceIndex,
+    overrides,
+    materials: [{ id: "serebro", name: "Серебро" }],
+    diagnostics: []
+  }), [{
     name: "Серебро", productId: "serebrenie-oruzhiya", canonicalName: "Серебрение оружия",
     upgrade: {
       rank: 2, appliesTo: "Оружие", compatibility: ["weapon"], effect: "Считается серебряным оружием.",
@@ -245,6 +251,21 @@ test("upgrade adapter preserves stable product/material identities and typed com
       type: "Материал", sourceSheet: "Усовершенствования V0.21", sourceSheetRow: 6
     }
   }]);
+});
+
+test("upgrade adapter keeps a non-catalog source name without inventing a material id", () => {
+  const snapshot = structuredClone(upgradeSnapshot);
+  snapshot.rows[0].cells.Источник = "Оркус";
+  const reference = { sourceRef: "Усовершенствования V0.21!A6", canonicalName: "Кость Оркуса" };
+  const result = adaptUpgradeCatalog({
+    snapshot,
+    referenceIndex: { gearBySourceRef: new Map([[reference.sourceRef, reference]]), resolveStableGearId: () => "kost-orkusa" },
+    overrides: {},
+    materials: [{ id: "serebro", name: "Серебро" }],
+    diagnostics: []
+  });
+  assert.equal(result[0].upgrade.sourceMaterialId, null);
+  assert.equal(result[0].upgrade.sourceMaterialName, "Оркус");
 });
 
 test("upgrade adapter rejects unknown compatibility and missing product references", () => {

@@ -109,7 +109,31 @@ function optionalSourceText(raw) {
   return typeof raw === "string" ? raw.trim() : "";
 }
 
-export function adaptBaseGear({ snapshot, referenceIndex, overrides, diagnostics = [] }) {
+function normalizeMaterialName(value) {
+  return String(value ?? "")
+    .normalize("NFKC")
+    .trim()
+    .toLocaleLowerCase("ru-RU")
+    .replace(/ё/gu, "е")
+    .replace(/\s+/gu, " ");
+}
+
+function buildMaterialIdByName(materials) {
+  const result = new Map();
+  for (const material of materials ?? []) {
+    const name = normalizeMaterialName(material?.name);
+    const id = String(material?.id ?? "").trim();
+    if (!name || !id) continue;
+    if (result.has(name) && result.get(name) !== id) {
+      fail("duplicate-material-name", `Material name resolves to multiple stable IDs: ${material.name}`);
+    }
+    result.set(name, id);
+  }
+  return result;
+}
+
+export function adaptBaseGear({ snapshot, referenceIndex, overrides, materials = [], diagnostics = [] }) {
+  const materialIdByName = buildMaterialIdByName(materials);
   const items = [];
   const transportRows = [];
   for (const row of snapshot.rows ?? []) {
@@ -138,9 +162,7 @@ export function adaptBaseGear({ snapshot, referenceIndex, overrides, diagnostics
     const priceRaw = cells["Цена"] ?? "";
     const price = parseCurrency(priceRaw, contextFor(snapshot, row, "Цена"));
     const materialName = optionalSourceText(cells["Преобладающий материал (источник)"]);
-    const materialId = materialName
-      ? resolveStableIdentity({ catalog: "materials", sourceKey: materialName, sourceName: materialName, overrides })
-      : null;
+    const materialId = materialIdByName.get(normalizeMaterialName(materialName)) ?? null;
     const stableId = resolveStableIdentity({ catalog: "gear", sourceKey, sourceName: name, overrides });
     const generated = {
       id: stableId,

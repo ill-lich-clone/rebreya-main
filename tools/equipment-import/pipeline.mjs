@@ -262,10 +262,21 @@ export function buildEquipmentBundle({ workbookSnapshot, overrides }) {
   const diagnostics = [];
   const failures = new Set();
   const referenceIndex = buildEquipmentReferenceIndex({ snapshots: sheets, overrides: validatedOverrides });
+  const materials = collectAdapterDiagnostics(
+    diagnostics,
+    () => adaptMaterialsCatalog({ snapshot: sheets.materials, overrides: validatedOverrides, diagnostics: [] }),
+    []
+  );
 
   const base = collectAdapterDiagnostics(
     diagnostics,
-    () => adaptBaseGear({ snapshot: sheets.baseGear, referenceIndex, overrides: validatedOverrides, diagnostics: [] }),
+    () => adaptBaseGear({
+      snapshot: sheets.baseGear,
+      referenceIndex,
+      overrides: validatedOverrides,
+      materials,
+      diagnostics: []
+    }),
     { items: [], transportRows: [] },
     { failures, label: "baseGear" }
   );
@@ -307,12 +318,13 @@ export function buildEquipmentBundle({ workbookSnapshot, overrides }) {
     );
   const upgrades = collectAdapterDiagnostics(
     diagnostics,
-    () => adaptUpgradeCatalog({ snapshot: sheets.upgrades, referenceIndex, overrides: validatedOverrides, diagnostics: [] }),
-    []
-  );
-  const materials = collectAdapterDiagnostics(
-    diagnostics,
-    () => adaptMaterialsCatalog({ snapshot: sheets.materials, overrides: validatedOverrides, diagnostics: [] }),
+    () => adaptUpgradeCatalog({
+      snapshot: sheets.upgrades,
+      referenceIndex,
+      overrides: validatedOverrides,
+      materials,
+      diagnostics: []
+    }),
     []
   );
   const implants = collectAdapterDiagnostics(
