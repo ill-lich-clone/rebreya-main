@@ -81,9 +81,9 @@ export const SHEET_REGISTRY = Object.freeze({
   attachments: { sheetTitle: "Улучшения и обвесы V0.2", adapter: "attachments" },
   ammunition: { sheetTitle: "Боеприпасы", adapter: "ammunition" },
   specialAmmunition: {
-    acceptedTitles: ["Особые боеприпа", "Особые боеприпасы"],
+    sheetTitle: "Особые боеприпасы",
     adapter: "ammunition",
-    requireExactlyOneNonEmpty: true,
+    legacyMirrors: [{ sheetTitle: "Особые боеприпа", requireEquivalent: true }],
   },
   armor: { sheetTitle: "Доспехи V0.1", adapter: "armor" },
   explosives: { sheetTitle: "Взрывчатка V0.0", adapter: "explosives" },
