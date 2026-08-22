@@ -38,7 +38,7 @@ function overrides() {
 
 test("Node materials adapter owns all real encyclopedia rows and preserves literal G:M text", () => {
   const materials = adaptMaterialsCatalog({ snapshot: snapshot(), overrides: overrides(), diagnostics: [] });
-  assert.equal(materials.length, 247);
+  assert.equal(materials.length, fixture.sourceRows.length);
   assert.equal(materials.every((material) => material.isSynthetic === false), true);
 
   for (let index = 0; index < fixture.sourceRows.length; index += 1) {

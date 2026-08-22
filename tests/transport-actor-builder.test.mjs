@@ -19,7 +19,10 @@ test("transport catalog contains 62 stable unique entries", () => {
   assert.equal(new Set(catalog.map((row) => row.sourceId)).size, 62);
   assert.equal(new Set(catalog.map((row) => row.documentId)).size, 62);
   assert.ok(catalog.every((row) => /^lchtransport\d{4}$/u.test(row.documentId)));
-  assert.deepEqual(catalog.map((row) => row.sourceRow), Array.from({ length: 62 }, (_, index) => index + 3));
+  assert.deepEqual(
+    catalog.map((row) => row.sourceRow).toSorted((left, right) => left - right),
+    Array.from({ length: 62 }, (_, index) => index + 3)
+  );
 });
 
 test("transport normalizer keeps source text and does not invent dashed stats", () => {

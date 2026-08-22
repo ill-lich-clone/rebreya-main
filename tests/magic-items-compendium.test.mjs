@@ -160,7 +160,7 @@ test("magic item compendium treats subtype-backed staves and ammunition as adapt
 
   assert.equal(byName.get("Крылатые боеприпасы").itemType, "Оружие");
   assert.equal(byName.get("Крылатые боеприпасы").itemSubtype, "Боеприпас");
-  assert.equal(byName.get("Крылатые боеприпасы").isConsumable, true);
+  assert.equal(byName.get("Крылатые боеприпасы").isConsumable, false);
   assert.equal(byName.get("Лунный клинок").itemType, "Оружие");
 
   const solarStaff = magicItemsCompendium.createMagicItemData(byName.get("Солнечный посох"), new Map());

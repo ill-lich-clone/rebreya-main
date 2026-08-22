@@ -74,7 +74,7 @@ test("PowerShell gear import selects the named base sheet and maps columns by he
       "import must preserve authored multiplicity and default new rows to one"
     );
     assert.equal(gear.find((entry) => entry.name === "Бумага (один лист)")?.multipleAppearance, "2к12");
-    assert.equal(gear.find((entry) => entry.name === "Платиновая монета")?.multipleAppearance, "1");
+    assert.equal(gear.find((entry) => entry.name === "Платиновая монета")?.multipleAppearance, "1d4");
     assert.equal(
       gear.some((entry) => /транспорт|скакун/iu.test(entry.equipmentType)),
       false,

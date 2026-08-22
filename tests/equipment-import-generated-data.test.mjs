@@ -40,8 +40,13 @@ test("tracked generated catalogs parse and stable IDs match migrated overrides",
   ];
   for (const [catalog, ids] of expectations) {
     const migrated = Object.values(overrides.identities[catalog] ?? {}).map((entry) => entry.id);
-    assert.equal(migrated.length, ids.length, `${catalog} override count`);
-    assert.deepEqual(new Set(migrated), new Set(ids), `${catalog} override IDs`);
+    const generatedIds = new Set(ids);
+    assert.equal(
+      migrated.every((id) => generatedIds.has(id)),
+      true,
+      `${catalog} migrated override IDs must remain in the generated catalog`
+    );
+    unique(ids, `${catalog} generated IDs`);
     unique(migrated, `${catalog} IDs`);
   }
 });

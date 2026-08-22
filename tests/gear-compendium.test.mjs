@@ -366,9 +366,9 @@ test("real gear weapon data maps spreadsheet damage and properties to system key
   }
 
   assert.ok(byId.get("kinzhal").weapon.properties.includes("lchDeadly"));
-  assert.equal(byId.get("kinzhal").weapon.attackTraits.deadly, 1);
+  assert.equal(byId.get("kinzhal").weapon.lichWeaponPropertyValues.deadly, 1);
   assert.ok(byId.get("ruchnoy-topor").weapon.properties.includes("lchRku"));
-  assert.equal(byId.get("ruchnoy-topor").weapon.attackTraits.rku, 1);
+  assert.equal(byId.get("ruchnoy-topor").weapon.lichWeaponPropertyValues.rku, 1);
   assert.ok(byId.get("set").weapon.properties.includes("spc"));
   assert.ok(byId.get("arbalet-legkiy").weapon.properties.includes("lod"));
   assert.ok(byId.get("arbalet-legkiy").weapon.properties.includes("lchAim"));

@@ -169,8 +169,8 @@ test("sync reuses world.rebreya-materials and indexes all materials for search a
     assert.equal(createCompendiumCount, 0);
     assert.equal(createDocumentsCount, 1);
     assert.equal(packs.size, 1);
-    assert.equal(documents.length, 247);
-    assert.equal(index.length, 247);
+    assert.equal(documents.length, materials.length);
+    assert.equal(index.length, materials.length);
     assert.ok(indexEntry, "nullable material is present in the index created by sync");
     const document = await pack.getDocument(indexEntry._id);
     assert.equal(await service.openMaterial(material), document);

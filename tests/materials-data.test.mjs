@@ -7,8 +7,8 @@ const MATERIALS_URL = new URL("../data/materials.json", import.meta.url);
 const FIXTURE_URL = new URL("./fixtures/materials-encyclopedia.json", import.meta.url);
 const SPREADSHEET_ID = "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk";
 const SHEET_NAME = "Энциклопедия материалов";
-const CSV_SHA256 = "AF2E69169C70CB4165A671502C87AC96CD9D549B6E3E19BEDDF401FEEC5DEE82";
-const SOURCE_ROW_COUNT = 247;
+const WORKBOOK_FINGERPRINT = "8f43d895fdca227ab886ab4a2903cfaafa574534add8d30df64b9af38d7655a8";
+const SOURCE_ROW_COUNT = 250;
 const ORIGINAL_MATERIAL_COUNT = 45;
 
 const materialBytes = readFileSync(MATERIALS_URL);
@@ -77,10 +77,10 @@ function sourceProjection(material) {
   };
 }
 
-test("materials fixture is a raw positional snapshot of CSV rows 3-249", () => {
+test("materials fixture is a raw positional snapshot of CSV rows 3-252", () => {
   assert.equal(fixture.spreadsheetId, SPREADSHEET_ID);
   assert.equal(fixture.sheetName, SHEET_NAME);
-  assert.equal(fixture.csvSha256, CSV_SHA256);
+  assert.equal(fixture.workbookFingerprint, WORKBOOK_FINGERPRINT);
   assert.deepEqual(fixture.columns, [..."ABCDEFGHIJKLM"]);
   assert.equal(fixture.sourceRows.length, SOURCE_ROW_COUNT);
   assert.deepEqual(
@@ -111,7 +111,7 @@ test("materials data is valid UTF-8 and matches every raw source row", () => {
   }
 });
 
-test("materials data adds 202 records and preserves all 45 historical ids", () => {
+test("materials data adds 205 records and preserves all 45 historical ids", () => {
   const byName = new Map(materials.map((material) => [material.name, material]));
   const originalEntries = Object.entries(fixture.originalMaterialIds);
   const additions = materials.filter((material) => !Object.hasOwn(fixture.originalMaterialIds, material.name));
