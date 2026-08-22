@@ -180,6 +180,50 @@ test("base gear adapter maps formatted strings to the current runtime contract",
   assert.equal(result.items[1].containerCapacity, 300);
 });
 
+test("base adapter uses type-specific weight rules and routes the live transport category", () => {
+  const attachmentReference = {
+    sourceKey: "обвес|облегченный ствол",
+    canonicalName: "Облегчённый ствол",
+    sourceRef: "Улучшения и обвесы V0.2!B23"
+  };
+  const referenceIndex = {
+    gearByKey: new Map([[attachmentReference.sourceKey, attachmentReference]]),
+    resolveStableGearId: () => "light-barrel"
+  };
+  const snapshot = {
+    ...baseSnapshot,
+    rows: [
+      {
+        rowNumber: 234,
+        cells: {
+          Название: "Облегчённый ствол",
+          "Тип снаряжения": "Обвес",
+          Цена: "4000 зм",
+          Ранг: "5",
+          Вес: "-1 фнт",
+          Описание: "Уменьшает массу оружия."
+        }
+      },
+      {
+        rowNumber: 300,
+        cells: {
+          Название: "Гражданский автомобиль",
+          "Тип снаряжения": "Скакуны и транспорт",
+          Цена: "600 зм",
+          Ранг: "5",
+          Вес: "3000 фнт",
+          Описание: "Маршрутизируется в transport catalog."
+        }
+      }
+    ]
+  };
+
+  const result = adaptBaseGear({ snapshot, referenceIndex, overrides: { identities: {}, enrichment: {} }, diagnostics: [] });
+  assert.equal(result.items[0].weight, -1);
+  assert.equal(result.transportRows.length, 1);
+  assert.equal(result.transportRows[0].cells.Название, "Гражданский автомобиль");
+});
+
 test("base adapter rejects a row without an exact reference join", () => {
   const referenceIndex = buildEquipmentReferenceIndex({
     snapshots: { equipmentReferences: referenceSnapshot },

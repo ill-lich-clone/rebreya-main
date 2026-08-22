@@ -1,4 +1,5 @@
 import {
+  parseAttachmentWeightModifier,
   parseCurrency,
   parseInteger,
   parseOptionalText,
@@ -115,7 +116,8 @@ export function adaptBaseGear({ snapshot, referenceIndex, overrides, diagnostics
     const cells = row.cells ?? {};
     const name = parseRequiredText(cells["Название"], contextFor(snapshot, row, "Название"));
     const equipmentType = parseRequiredText(cells["Тип снаряжения"], contextFor(snapshot, row, "Тип снаряжения"));
-    if (equipmentType.toLocaleLowerCase("ru-RU") === "транспорт") {
+    const normalizedEquipmentType = equipmentType.toLocaleLowerCase("ru-RU");
+    if (["транспорт", "скакуны и транспорт"].includes(normalizedEquipmentType)) {
       transportRows.push(row);
       continue;
     }
@@ -150,7 +152,9 @@ export function adaptBaseGear({ snapshot, referenceIndex, overrides, diagnostics
       priceDenomination: price?.kind === "fixed" ? price.denomination : "gp",
       priceGoldEquivalent: price?.kind === "fixed" ? price.goldEquivalent : null,
       rank: optionalRank(cells["Ранг"], contextFor(snapshot, row, "Ранг")),
-      weight: parseWeight(cells["Вес"] ?? "—", contextFor(snapshot, row, "Вес")),
+      weight: normalizedEquipmentType === "обвес"
+        ? parseAttachmentWeightModifier(cells["Вес"] ?? "—", contextFor(snapshot, row, "Вес"))
+        : parseWeight(cells["Вес"] ?? "—", contextFor(snapshot, row, "Вес")),
       volume: optionalSourceText(cells["Объем"]),
       capacity: optionalSourceText(cells["Вместимость"]),
       description: parseOptionalText(cells["Описание"] ?? "", contextFor(snapshot, row, "Описание")) ?? "",
