@@ -913,13 +913,13 @@ test("gear compendium delegates managed lifecycle to the shared diff synchronize
   assert.doesNotMatch(source, /async function createManagedDocuments/u);
 });
 
-test("gear signatures include stable document ids so old compendium documents rebuild", () => {
+test("gear description template changes invalidate old compendium signatures", () => {
   const gear = JSON.parse(readFileSync(join(TESTS_DIR, "..", "data", "gear.json"), "utf8").replace(/^\uFEFF/u, ""));
   const katana = gear.find((item) => item.id === "katana");
   const created = createDnd5eItemData(katana, new Map());
   const signature = JSON.parse(created.flags["rebreya-main"].signature);
 
-  assert.equal(signature.templateVersion, 22);
+  assert.ok(signature.templateVersion > 22);
   assert.equal(created._id, createStableGearDocumentId("katana"));
   assert.equal(signature.stableDocumentId, created._id);
 });

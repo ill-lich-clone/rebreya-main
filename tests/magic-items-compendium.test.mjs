@@ -60,6 +60,7 @@ test("magic item compendium preserves importer IDs as stable document identity",
   assert.equal(firstData.flags["rebreya-main"].magicItemId, "magic-source-0042");
   assert.equal(secondData.flags["rebreya-main"].magicItemId, firstData.flags["rebreya-main"].magicItemId);
   assert.equal(secondData.flags["rebreya-main"].signature, firstData.flags["rebreya-main"].signature);
+  assert.ok(JSON.parse(firstData.flags["rebreya-main"].signature).templateVersion > 4);
 });
 
 test("magic item compendium uses fixed costText as native price and keeps estimate in flags", () => {

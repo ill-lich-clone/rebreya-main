@@ -27,7 +27,7 @@ const EFFECT_MODE_CUSTOM = 0;
 const EFFECT_MODE_ADD = 2;
 const EFFECT_MODE_UPGRADE = 4;
 const DEFAULT_MAGIC_ITEM_ICON = "systems/dnd5e/icons/svg/items/loot.svg";
-const MAGIC_TEMPLATE_VERSION = 4;
+const MAGIC_TEMPLATE_VERSION = 5;
 const NATIVE_INSTRUMENT_SPELL_ACTIVITY_VERSION = 1;
 const NATIVE_INSTRUMENT_SPELLS = {
   "бандура-фоклучан": [
