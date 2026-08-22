@@ -5,6 +5,7 @@ import { readFile } from "node:fs/promises";
 import * as importer from "../scripts/data/importer.js";
 import { DATA_SOURCE_MODES, MODULE_ID, SETTINGS_KEYS } from "../scripts/constants.js";
 import { normalizeEconomyDataset } from "../scripts/data/normalizer.js";
+import { parseCurrency } from "../tools/equipment-import/parsers.mjs";
 
 globalThis.foundry ??= {
   utils: {
@@ -185,6 +186,18 @@ test("builtin gear catalog gives every loot item an explicit valid multiplicity"
   assert.equal(byName.get("Бумага (один лист)")?.multipleAppearance, "2к12");
   assert.equal(byName.get("Стрелы (20)")?.multipleAppearance, "1");
   assert.equal(byName.get("Свеча")?.multipleAppearance, "2к6");
+});
+
+test("builtin fixed prices match complete source currency including spaced thousands", async () => {
+  const gear = JSON.parse(await readFile(new URL("../data/gear.json", import.meta.url), "utf8"));
+  for (const item of gear) {
+    const parsed = parseCurrency(String(item.priceText ?? ""), {
+      sheetKey: "gear", range: "data/gear.json", rowNumber: null, column: "priceText"
+    });
+    if (parsed?.kind !== "fixed") continue;
+    assert.equal(item.priceValue, parsed.value, `${item.name}: priceValue from ${item.priceText}`);
+    assert.equal(item.priceGoldEquivalent, parsed.goldEquivalent, `${item.name}: gold equivalent from ${item.priceText}`);
+  }
 });
 
 test("builtin dataset loader reads upgrade profiles and merges them into base gear", async () => {
