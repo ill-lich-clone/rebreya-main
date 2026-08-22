@@ -422,69 +422,13 @@ function resolveWeaponHandRequirement(weapon) {
 }
 
 function buildMetadataRows(item, classification) {
-  const itemSlotGroup = resolveItemSlotGroup(item, classification);
-  const weapon = isPlainObject(item.weapon) ? item.weapon : {};
   const ammunition = isPlainObject(item.ammunition) ? item.ammunition : {};
   const explosive = isPlainObject(item.explosive) ? item.explosive : {};
   const attachment = isPlainObject(item.attachment) ? item.attachment : {};
   const implant = isPlainObject(item.implant) ? item.implant : {};
   const upgrade = isPlainObject(item.upgrade) ? item.upgrade : {};
-  const handRequirement = resolveWeaponHandRequirement(weapon);
-  const itemSlotLabel = {
-    head: "Голова",
-    neck: "Шея",
-    shoulders: "Плечи",
-    bracers: "Наручи",
-    hand: "Рука",
-    chest: "Грудь",
-    belt: "Пояс",
-    legs: "Ноги",
-    ring: "Кольцо",
-    back: "Спина"
-  }[itemSlotGroup] ?? null;
-  const heroDollSlotLabels = mapSlotGroupToHeroDollSlots(itemSlotGroup, classification.heroDollSlots)
-    .map((slotId) => {
-      const slotName = {
-        head: "Голова",
-        neck: "Шея",
-        shoulders: "Плечи",
-        chest: "Грудь",
-        belt: "Пояс",
-        legs: "Ноги",
-        bracers: "Наручи",
-        leftHand: "Рука",
-        rightHand: "Рука",
-        ring1: "Кольцо 1",
-        ring2: "Кольцо 2",
-        back1: "Спина 1",
-        back2: "Спина 2",
-        back3: "Спина 3",
-        back4: "Спина 4",
-        back5: "Спина 5"
-      };
-      return slotName[slotId] ?? slotId;
-    });
 
   return [
-    ["Тип снаряжения", item.equipmentType],
-    ["Слот", itemSlotLabel],
-    ["Тип Foundry", classification.documentType],
-    ["Подтип Foundry", classification.systemTypeSubtype || classification.systemTypeValue || null],
-    ["Базовый предмет", classification.baseItem || null],
-    ["Папка", buildFolderPath(classification).join(" / ") || null],
-    ["Слоты куклы", heroDollSlotLabels.join(", ") || null],
-    ["Цена", item.priceText || null],
-    ["Ранг", clampRank(item.rank)],
-    ["Вес", item.weight ? `${item.weight} фнт.` : null],
-    ["Объем", item.volume],
-    ["Вместимость", item.capacity],
-    ["Преобладающий материал", item.predominantMaterialName],
-    ["Связанный инструмент", item.linkedTool],
-    ["Value", item.value],
-    ["Урон", weapon.damageFormula],
-    ["Тип урона", weapon.damageTypeLabel],
-    ["Руки", handRequirement?.source],
-    ["Свойства оружия", weapon.propertiesText],
     ["Количество боеприпасов", ammunition.quantity],
     ["Совместимость боеприпаса", Array.isArray(ammunition.compatibility) ? ammunition.compatibility.join(", ") : null],
     ["Заменяет боеприпасы", Array.isArray(ammunition.replaces) ? ammunition.replaces.join(", ") : null],
@@ -501,7 +445,10 @@ function buildMetadataRows(item, classification) {
     ["Эффект импланта", cleanString(implant.effect) !== cleanString(item.description) ? implant.effect : null],
     ["Применяется к", upgrade.appliesTo],
     ["Эффект усовершенствования", upgrade.effect],
-    ["Материал усовершенствования", upgrade.sourceMaterialName]
+    ["Материал усовершенствования", upgrade.sourceMaterialName],
+    ["Преобладающий материал", item.predominantMaterialName],
+    ["Связанный инструмент", item.linkedTool],
+    ["Value", item.value]
   ].filter(([, value]) => value !== null && value !== undefined && value !== "");
 }
 
@@ -511,14 +458,14 @@ function buildDescriptionHtml(item, classification) {
 
   return `
     <section class="rebreya-gear-item">
+      ${descriptionText
+        ? `<p>${escapeHtml(descriptionText)}</p>`
+        : "<p>Описание предмета пока не заполнено.</p>"}
       ${metadataRows.length ? `
         <ul>
           ${metadataRows.map(([label, value]) => `<li><strong>${escapeHtml(label)}:</strong> ${renderValue(value)}</li>`).join("")}
         </ul>
       ` : ""}
-      ${descriptionText
-        ? `<p>${escapeHtml(descriptionText)}</p>`
-        : "<p>Описание предмета пока не заполнено.</p>"}
     </section>
   `.trim();
 }

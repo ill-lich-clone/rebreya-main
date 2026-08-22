@@ -76,7 +76,7 @@ test("magic item compendium uses fixed costText as native price and keeps estima
   assert.equal(created.flags["rebreya-main"].priceGold, 60000);
   assert.equal(created.flags["rebreya-main"].value, 60000);
   assert.match(created.system.description.value, /Цена:<\/strong>\s*300000 зм/iu);
-  assert.match(created.system.description.value, /Оценка:<\/strong>\s*60000 зм/iu);
+  assert.match(created.system.description.value, /Вэлью:<\/strong>\s*60000 зм/iu);
 });
 
 test("magic item compendium keeps named weapon subtypes aligned with their source text", () => {
@@ -102,7 +102,7 @@ test("magic item compendium keeps named weapon subtypes aligned with their sourc
   assert.equal(tiamatFlailData.system.type.baseItem, "flail");
 });
 
-test("magic item compendium shows the item kind without the legacy magic type row", () => {
+test("magic item compendium renders description before its compact trade metadata", () => {
   const [normalizedItem] = magicItemsCompendium.normalizeMagicItems([
     makeMagicItem({
       name: "Механистический амулет",
@@ -119,9 +119,18 @@ test("magic item compendium shows the item kind without the legacy magic type ro
 
   assert.equal(normalizedItem.type, "Магический предмет");
   assert.equal(normalizedItem.itemSubtype, "");
-  assert.doesNotMatch(created.system.description.value, /<strong>Тип:<\/strong>/iu);
-  assert.doesNotMatch(created.system.description.value, /<strong>Подтип:<\/strong>\s*\?/iu);
-  assert.match(created.system.description.value, /<strong>Вид предмета:<\/strong>\s*Чудесный предмет/iu);
+  const descriptionHtml = created.system.description.value;
+  assert.ok(descriptionHtml.indexOf("Пока вы держите этот щит") < descriptionHtml.indexOf("Материалы:"));
+  assert.ok(descriptionHtml.indexOf("Материалы:") < descriptionHtml.indexOf("Торг:"));
+  assert.ok(descriptionHtml.indexOf("Торг:") < descriptionHtml.indexOf("Цена:"));
+  assert.ok(descriptionHtml.indexOf("Цена:") < descriptionHtml.indexOf("Вэлью:"));
+  assert.ok(descriptionHtml.indexOf("Вэлью:") < descriptionHtml.indexOf("Влиятельность:"));
+  for (const label of [
+    "Редкость", "Вид предмета", "Подтип", "Слот", "Слоты куклы", "Источник",
+    "Ранг", "Настройка", "Тип Foundry", "Подтип Foundry"
+  ]) {
+    assert.doesNotMatch(descriptionHtml, new RegExp(`<strong>${label}:<\\/strong>`, "u"));
+  }
   assert.doesNotMatch(created.system.description.value, /\?{3,}/u);
 });
 
@@ -145,7 +154,7 @@ test("magic item compendium leaves native price empty when costText is a formula
   assert.equal(created.flags["rebreya-main"].priceGold, 60000);
   assert.equal(created.flags["rebreya-main"].value, 60000);
   assert.match(created.system.description.value, /\(2d8kh1\+1\)\*5000 зм/iu);
-  assert.match(created.system.description.value, /Оценка:<\/strong>\s*60000 зм/iu);
+  assert.match(created.system.description.value, /Вэлью:<\/strong>\s*60000 зм/iu);
 });
 
 test("magic item compendium treats subtype-backed staves and ammunition as adaptable base items", () => {

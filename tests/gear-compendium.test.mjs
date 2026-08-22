@@ -1197,9 +1197,69 @@ test("renders an upgrade profile in the item description and managed flags", () 
   }, new Map());
 
   assert.deepEqual(created.flags["rebreya-main"].upgrade, upgrade);
-  assert.match(created.system.description.value, /Оружие/u);
-  assert.match(created.system.description.value, /Атаки считаются серебряными/u);
-  assert.match(created.system.description.value, /Серебро/u);
+  const descriptionHtml = created.system.description.value;
+  assert.ok(descriptionHtml.indexOf("Покрытие оружия серебром") < descriptionHtml.indexOf("Применяется к:"));
+  assert.ok(descriptionHtml.indexOf("Применяется к:") < descriptionHtml.indexOf("Эффект усовершенствования:"));
+  assert.ok(descriptionHtml.indexOf("Эффект усовершенствования:") < descriptionHtml.indexOf("Материал усовершенствования:"));
+  assert.match(descriptionHtml, /Оружие/u);
+  assert.match(descriptionHtml, /Атаки считаются серебряными/u);
+  assert.match(descriptionHtml, /Серебро/u);
+});
+
+test("gear descriptions omit native fields and show ordinary text before remaining metadata", () => {
+  const created = createDnd5eItemData({
+    id: "description-projection-sentinel",
+    name: "Испытательный клинок",
+    equipmentType: "Оружие",
+    description: "Обычное описание клинка.",
+    priceText: "15 зм",
+    rank: 2,
+    weight: 3,
+    volume: "2 фт³",
+    capacity: "5 фнт.",
+    predominantMaterialName: "Сталь",
+    linkedTool: "Инструменты кузнеца",
+    value: 45,
+    weapon: {
+      damageFormula: "1d8",
+      damageTypeLabel: "Рубящий",
+      hands: "Одноручное",
+      propertiesText: "Фехтовальное"
+    }
+  }, new Map());
+
+  const descriptionHtml = created.system.description.value;
+  assert.ok(descriptionHtml.indexOf("Обычное описание клинка") < descriptionHtml.indexOf("Преобладающий материал:"));
+  assert.ok(descriptionHtml.indexOf("Преобладающий материал:") < descriptionHtml.indexOf("Связанный инструмент:"));
+  assert.ok(descriptionHtml.indexOf("Связанный инструмент:") < descriptionHtml.indexOf("Value:"));
+  for (const label of [
+    "Тип снаряжения", "Слот", "Тип Foundry", "Подтип Foundry", "Базовый предмет", "Папка",
+    "Слоты куклы", "Цена", "Ранг", "Вес", "Объем", "Вместимость", "Урон", "Тип урона",
+    "Руки", "Свойства оружия"
+  ]) {
+    assert.doesNotMatch(descriptionHtml, new RegExp(`<strong>${label}:<\\/strong>`, "u"));
+  }
+});
+
+test("gear descriptions retain implant mechanics after the ordinary description", () => {
+  const created = createDnd5eItemData({
+    id: "implant-description-sentinel",
+    name: "Испытательный имплант",
+    equipmentType: "Имплант",
+    description: "Описание импланта.",
+    implant: {
+      pointsText: "2",
+      type: "Нейроимплант",
+      requirements: "Телосложение 13",
+      effect: "Даёт преимущество на проверки Восприятия."
+    }
+  }, new Map());
+
+  const descriptionHtml = created.system.description.value;
+  assert.ok(descriptionHtml.indexOf("Описание импланта") < descriptionHtml.indexOf("Очки модификации:"));
+  assert.ok(descriptionHtml.indexOf("Очки модификации:") < descriptionHtml.indexOf("Тип импланта:"));
+  assert.ok(descriptionHtml.indexOf("Тип импланта:") < descriptionHtml.indexOf("Требования импланта:"));
+  assert.ok(descriptionHtml.indexOf("Требования импланта:") < descriptionHtml.indexOf("Эффект импланта:"));
 });
 
 test("gear signature and debug metadata include sheet-owned ammunition explosive and attachment profiles", () => {
@@ -1233,7 +1293,9 @@ test("gear signature and debug metadata include sheet-owned ammunition explosive
   assert.deepEqual(first.flags["rebreya-main"].ammunition, profiles.ammunition);
   assert.deepEqual(first.flags["rebreya-main"].explosive, profiles.explosive);
   assert.deepEqual(first.flags["rebreya-main"].attachment, profiles.attachment);
-  assert.match(first.system.description.value, /Количество боеприпасов/u);
-  assert.match(first.system.description.value, /Радиус взрыва/u);
-  assert.match(first.system.description.value, /Слоты обвеса/u);
+  const descriptionHtml = first.system.description.value;
+  assert.ok(descriptionHtml.indexOf("Проверка профилей") < descriptionHtml.indexOf("Количество боеприпасов:"));
+  assert.match(descriptionHtml, /Количество боеприпасов/u);
+  assert.match(descriptionHtml, /Радиус взрыва/u);
+  assert.match(descriptionHtml, /Слоты обвеса/u);
 });

@@ -562,59 +562,12 @@ function getMagicItemIcon(item, _classification, iconLookup = null) {
 }
 
 function buildMetadataRows(item, classification) {
-  const itemSlotGroup = resolveItemSlotGroup(item, classification);
-  const itemSlotLabel = {
-    head: "Голова",
-    neck: "Шея",
-    shoulders: "Плечи",
-    bracers: "Наручи",
-    hand: "Рука",
-    chest: "Грудь",
-    belt: "Пояс",
-    legs: "Ноги",
-    ring: "Кольцо",
-    back: "Спина"
-  }[itemSlotGroup] ?? null;
-  const heroDollSlotLabels = mapSlotGroupToHeroDollSlots(itemSlotGroup, classification.heroDollSlots)
-    .map((slotId) => {
-      const slotName = {
-        head: "Голова",
-        neck: "Шея",
-        shoulders: "Плечи",
-        chest: "Грудь",
-        belt: "Пояс",
-        legs: "Ноги",
-        bracers: "Наручи",
-        leftHand: "Рука",
-        rightHand: "Рука",
-        ring1: "Кольцо 1",
-        ring2: "Кольцо 2",
-        back1: "Спина 1",
-        back2: "Спина 2",
-        back3: "Спина 3",
-        back4: "Спина 4",
-        back5: "Спина 5"
-      };
-      return slotName[slotId] ?? slotId;
-    })
-    .filter(Boolean);
-
   return [
-    ["Редкость", item.rarity],
-    ["Вид предмета", item.itemType],
-    ["Подтип", item.itemSubtype || null],
-    ["Слот", itemSlotLabel],
-    ["Слоты куклы", heroDollSlotLabels.join(", ") || null],
-    ["Источник", item.source || null],
-    ["Ранг", clampRank(item.rank)],
     ["Материалы", item.materials || null],
     ["Торг", item.bargaining || null],
     ["Цена", item.costText || null],
-    ["Оценка", item.priceGold ? `${item.priceGold} зм` : null],
-    ["Воздействие", item.impact || null],
-    ["Настройка", item.attunement || null],
-    ["Тип Foundry", classification.documentType],
-    ["Подтип Foundry", classification.systemTypeSubtype || classification.systemTypeValue || null]
+    ["Вэлью", item.priceGold ? `${item.priceGold} зм` : null],
+    ["Влиятельность", item.impact || null]
   ].filter(([, value]) => value !== null && value !== undefined && value !== "");
 }
 
@@ -622,14 +575,14 @@ function buildDescriptionHtml(item, classification) {
   const metadataRows = buildMetadataRows(item, classification);
   return `
     <section class="rebreya-gear-item">
+      ${item.description
+        ? `<p>${escapeHtml(item.description)}</p>`
+        : "<p>Описание магического предмета пока не заполнено.</p>"}
       ${metadataRows.length ? `
         <ul>
           ${metadataRows.map(([label, value]) => `<li><strong>${escapeHtml(label)}:</strong> ${escapeHtml(value)}</li>`).join("")}
         </ul>
       ` : ""}
-      ${item.description
-        ? `<p>${escapeHtml(item.description)}</p>`
-        : "<p>Описание магического предмета пока не заполнено.</p>"}
     </section>
   `.trim();
 }
