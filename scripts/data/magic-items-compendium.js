@@ -282,20 +282,12 @@ function buildMagicItemAutomationEffects(item) {
         id: buildMagicItemEffectId(item, `cloak-of-protection-${itemBonuses}`),
         name: `${item?.name}: Защита`,
         description: item?.description,
-        changes: [
-          {
-            key: "system.attributes.ac.bonus",
-            mode: EFFECT_MODE_ADD,
-            value: `${itemBonuses}`,
-            priority: 20
-          },
-          {
-            key: "system.bonuses.abilities.save",
-            mode: EFFECT_MODE_ADD,
-            value: `+${itemBonuses}`,
-            priority: 20
-          }
-        ]
+        changes: [{
+          key: "system.bonuses.abilities.save",
+          mode: EFFECT_MODE_ADD,
+          value: `+${itemBonuses}`,
+          priority: 20
+        }]
       })
     ];
   }

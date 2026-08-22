@@ -214,10 +214,12 @@ test("magic item compendium builds automation for selected magic items", () => {
 
   const cloakOfProtection = magicItemsCompendium.createMagicItemData(byName.get(cloakName), new Map());
   assert.equal(cloakOfProtection.effects.length, 1);
-  assert.equal(cloakOfProtection.effects[0].changes[0]?.key, "system.attributes.ac.bonus");
-  assert.equal(cloakOfProtection.effects[0].changes[0]?.value, "2");
-  assert.equal(cloakOfProtection.effects[0].changes[1]?.key, "system.bonuses.abilities.save");
-  assert.equal(cloakOfProtection.effects[0].changes[1]?.value, "+2");
+  assert.deepEqual(cloakOfProtection.effects[0].changes, [{
+    key: "system.bonuses.abilities.save",
+    mode: 2,
+    value: "+2",
+    priority: 20
+  }]);
 
   const watcherShield = magicItemsCompendium.createMagicItemData(byName.get(watcherShieldName), new Map());
   assert.equal(watcherShield.effects.length, 1);
