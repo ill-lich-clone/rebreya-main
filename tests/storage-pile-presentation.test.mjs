@@ -23,6 +23,23 @@ test("ground pile presentation uses the item itself for one visible row", () => 
   ]).name, "Меч");
 });
 
+test("Journal references do not turn a single ground item into a pile", () => {
+  assert.deepEqual(deriveGroundPilePresentation([
+    { name: "Меч", img: "icons/sword.webp", typeLabel: "Оружие", quantity: 1 },
+    {
+      rowKind: "journal",
+      sourceType: "journal",
+      sourceId: "JournalEntry.notes",
+      name: "Полевые заметки",
+      quantity: 1
+    }
+  ]), {
+    name: "Меч",
+    img: "icons/sword.webp",
+    categoryKey: "single"
+  });
+});
+
 test("ground pile presentation derives same-category and mixed pile tokens", () => {
   const weapons = deriveGroundPilePresentation([
     { name: "Меч", typeLabel: "Оружие", quantity: 1 },

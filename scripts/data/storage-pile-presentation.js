@@ -52,7 +52,12 @@ const PRESENTATION_BY_TYPE = new Map(STORAGE_PILE_PRESENTATIONS
   .map((entry) => [entry.normalizedTypeLabel, entry]));
 
 export function deriveGroundPilePresentation(rows = [], { coins = {}, preserveEmptyCoinPile = false } = {}) {
-  const visibleRows = (Array.isArray(rows) ? rows : []).filter((row) => row && typeof row === "object");
+  const visibleRows = (Array.isArray(rows) ? rows : []).filter((row) => (
+    row
+    && typeof row === "object"
+    && clean(row.rowKind).toLowerCase() !== "journal"
+    && clean(row.sourceType).toLowerCase() !== "journal"
+  ));
   const positiveDenominations = COIN_PRESENTATIONS.filter(({ denomination }) => {
     const amount = Number(coins?.[denomination] ?? 0);
     return Number.isFinite(amount) && Math.trunc(amount) > 0;

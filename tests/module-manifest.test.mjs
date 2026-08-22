@@ -63,8 +63,8 @@ test("module manifest loads the stable canonical entrypoint", async () => {
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const [entrypoint] = manifest.esmodules;
 
-  assert.equal(manifest.version, "1.4.154");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.154.js"]);
+  assert.equal(manifest.version, "1.4.155");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.155.js"]);
   assert.doesNotMatch(entrypoint, /[?#]/u);
 
   const entrypointSource = await readFile(new URL(entrypoint, manifestUrl), "utf8");
@@ -72,7 +72,7 @@ test("module manifest loads the stable canonical entrypoint", async () => {
     entrypointSource,
     [
       "// @rebreya-role versioned-entrypoint-cache-forwarder",
-      'import "./main.js?v=1.4.154-corpse-storage-broken-name";',
+      'import "./main.js?v=1.4.155-journal-pile-presentation";',
       ""
     ].join("\n")
   );
@@ -217,6 +217,10 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
   const inventoryServiceSource = await readFile(new URL("../scripts/data/inventory-service.js", import.meta.url), "utf8");
   const lootgenAppSource = await readFile(new URL("../scripts/ui/lootgen-app.js", import.meta.url), "utf8");
   const lootgenGeneratorSource = await readFile(new URL("../scripts/data/lootgen-generator.js", import.meta.url), "utf8");
+  const groundPileServiceSource = await readFile(
+    new URL("../scripts/data/storage-ground-pile-service.js", import.meta.url),
+    "utf8"
+  );
 
   assert.match(
     canonicalSource,
@@ -239,7 +243,7 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
     "data/gear-compendium.js?v=1.4.145-coin-icons-storage-sound",
     "data/storage-open-sound-service.js?v=1.4.145-coin-icons-storage-sound",
     "data/storage-service.js?v=1.4.152-dead-npc-looting",
-    "data/storage-ground-pile-service.js?v=1.4.144-spreadsheet-coins-ground-repair",
+    "data/storage-ground-pile-service.js?v=1.4.155-journal-pile-presentation",
     "data/storage-container-item-service.js?v=1.4.130-storage-player-fixes",
     "data/storage-deposit-source.js?v=1.4.144-spreadsheet-coins-ground-repair",
     "data/storage-command-service.js?v=1.4.152-dead-npc-looting",
@@ -271,6 +275,11 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
   ]) {
     assert.equal(source.includes(importPath), true, importPath);
   }
+  assert.equal(
+    groundPileServiceSource.includes("storage-pile-presentation.js?v=1.4.155-journal-pile-presentation"),
+    true,
+    "ground-pile presentation changes need their own browser module cache key"
+  );
 
   assert.match(
     canonicalSource,
@@ -290,7 +299,7 @@ test("module keeps recent published entrypoint URLs as canonical compatibility f
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
 
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.154.js"]);
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.155.js"]);
 
   for (const fileName of ["main-1.4.98.js", "main-1.4.99.js", "main-1.4.100.js"]) {
     const forwarderSource = await readFile(new URL(`../scripts/${fileName}`, import.meta.url), "utf8");

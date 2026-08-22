@@ -8,7 +8,7 @@ import {
 import {
   deriveGroundPilePresentation,
   isGroundPileToken
-} from "./storage-pile-presentation.js?v=1.4.144-spreadsheet-coins-ground-repair";
+} from "./storage-pile-presentation.js?v=1.4.155-journal-pile-presentation";
 
 function clone(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));
