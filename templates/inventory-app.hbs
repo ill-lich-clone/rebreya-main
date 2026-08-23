@@ -210,6 +210,13 @@
           {{/if}}
         </section>
 
+        {{#if canDropInventoryItems}}
+          <div class="rm-inventory-root-drop-target" data-folder-drop-id="" role="button" tabindex="0" aria-label="Переместить в корень склада">
+            <i class="fa-solid fa-box-open" aria-hidden="true"></i>
+            <span>Корень склада</span>
+          </div>
+        {{/if}}
+
         {{#if emptyInventory}}
           <p class="rm-empty">По текущему фильтру склад пуст.</p>
         {{else}}
@@ -222,6 +229,7 @@
                   data-folder-name="{{name}}"
                   data-depth="{{depth}}"
                   data-can-create-child="{{canCreateChild}}"
+                  {{#if ../canOrganizeInventory}}data-folder-drag="true" data-folder-drop-id="{{folderId}}" draggable="true"{{/if}}
                   role="treeitem"
                   aria-expanded="{{expanded}}"
                   tabindex="0"

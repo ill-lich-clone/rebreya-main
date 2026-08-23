@@ -70,6 +70,10 @@ const INVENTORY_SORT_OPTIONS = Object.freeze([
   { value: "quantity-desc", label: "Сортировка: количество" }
 ]);
 const INVENTORY_SORT_MODES = new Set(INVENTORY_SORT_OPTIONS.map((option) => option.value));
+const INVENTORY_FOLDER_DRAG_TYPE = "RebreyaInventoryFolder";
+const INVENTORY_TREE_DRAG_VERSION = 1;
+const INVENTORY_ITEM_FOLDER_DRAG_FLAG = "inventoryFolderDrag";
+const INVENTORY_DRAG_MIME_TYPES = Object.freeze(["text/plain", "text", "application/json", "text/uri-list"]);
 const COIN_LABELS = Object.freeze({
   pp: "пм",
   gp: "зм",
@@ -82,6 +86,90 @@ const CURRENCY_MULTIPLIERS = Object.freeze({
   sp: 10,
   cp: 1
 });
+
+function hasExactObjectKeys(value, keys) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const actualKeys = Object.keys(value).sort();
+  const expectedKeys = [...keys].sort();
+  return actualKeys.length === expectedKeys.length
+    && actualKeys.every((key, index) => key === expectedKeys[index]);
+}
+
+function requireInventoryDragId(value, label) {
+  const id = cleanText(value);
+  if (!id) throw new TypeError(`${label} is required for inventory drag data.`);
+  return id;
+}
+
+export function buildInventoryFolderDragData({ groupActorId, folderId } = {}) {
+  return {
+    type: INVENTORY_FOLDER_DRAG_TYPE,
+    rebreyaInventory: {
+      version: INVENTORY_TREE_DRAG_VERSION,
+      kind: "folder",
+      groupActorId: requireInventoryDragId(groupActorId, "groupActorId"),
+      folderId: requireInventoryDragId(folderId, "folderId")
+    }
+  };
+}
+
+export function extendInventoryItemDragData(basePayload, { groupActorId, itemId } = {}) {
+  if (!basePayload || typeof basePayload !== "object" || Array.isArray(basePayload) || basePayload.type !== "Item") {
+    throw new TypeError("A Foundry Item drag payload is required.");
+  }
+  const moduleFlags = basePayload.flags?.[MODULE_ID];
+  return {
+    ...basePayload,
+    flags: {
+      ...(basePayload.flags ?? {}),
+      [MODULE_ID]: {
+        ...(moduleFlags && typeof moduleFlags === "object" && !Array.isArray(moduleFlags) ? moduleFlags : {}),
+        [INVENTORY_ITEM_FOLDER_DRAG_FLAG]: {
+          version: INVENTORY_TREE_DRAG_VERSION,
+          kind: "item",
+          groupActorId: requireInventoryDragId(groupActorId, "groupActorId"),
+          itemId: requireInventoryDragId(itemId, "itemId")
+        }
+      }
+    }
+  };
+}
+
+export function readInventoryTreeDragData(dragData) {
+  if (!dragData || typeof dragData !== "object" || Array.isArray(dragData)) return null;
+
+  if (dragData.type === INVENTORY_FOLDER_DRAG_TYPE) {
+    if (!hasExactObjectKeys(dragData, ["type", "rebreyaInventory"])) return null;
+    const metadata = dragData.rebreyaInventory;
+    if (!hasExactObjectKeys(metadata, ["version", "kind", "groupActorId", "folderId"])) return null;
+    const groupActorId = cleanText(metadata.groupActorId);
+    const folderId = cleanText(metadata.folderId);
+    if (metadata.version !== INVENTORY_TREE_DRAG_VERSION || metadata.kind !== "folder" || !groupActorId || !folderId) {
+      return null;
+    }
+    return { version: INVENTORY_TREE_DRAG_VERSION, kind: "folder", groupActorId, folderId };
+  }
+
+  if (dragData.type !== "Item") return null;
+  const metadata = dragData.flags?.[MODULE_ID]?.[INVENTORY_ITEM_FOLDER_DRAG_FLAG];
+  if (!hasExactObjectKeys(metadata, ["version", "kind", "groupActorId", "itemId"])) return null;
+  const groupActorId = cleanText(metadata.groupActorId);
+  const itemId = cleanText(metadata.itemId);
+  if (metadata.version !== INVENTORY_TREE_DRAG_VERSION || metadata.kind !== "item" || !groupActorId || !itemId) {
+    return null;
+  }
+  return { version: INVENTORY_TREE_DRAG_VERSION, kind: "item", groupActorId, itemId };
+}
+
+function hasInventoryTreeDragMetadata(dragData) {
+  return Boolean(
+    dragData?.type === INVENTORY_FOLDER_DRAG_TYPE
+    || Object.prototype.hasOwnProperty.call(
+      dragData?.flags?.[MODULE_ID] ?? {},
+      INVENTORY_ITEM_FOLDER_DRAG_FLAG
+    )
+  );
+}
 const DOWNTIME_NON_ROLL_ACTION_TYPES = new Set(["resources", "itemChoice", "numericInput", "optionChoice", "rankChoice", "formulaRoll", "descriptionBlock", "downtimeResult"]);
 const DOWNTIME_NON_ROLL_ACTION_SUMMARY_LABELS = Object.freeze({
   resources: "Ресурсы",
@@ -3718,6 +3806,67 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.#openContextMenu({ x, y, anchor, title: folderName, actions });
   }
 
+  #resolveInventoryDropTarget(event, dropzone) {
+    const eventTarget = event?.target instanceof HTMLElement
+      ? event.target
+      : event?.target?.parentElement ?? null;
+    if (!eventTarget) return null;
+
+    let targetElement = eventTarget.closest?.("[data-folder-drop-id]") ?? null;
+    if (!targetElement && eventTarget === dropzone) targetElement = dropzone;
+    if (!targetElement || (targetElement !== dropzone && !dropzone.contains(targetElement))) return null;
+
+    const folderId = cleanText(targetElement.dataset?.folderDropId) || null;
+    if (folderId !== null && !this.inventoryFolderTreeCache?.foldersById.has(folderId)) return null;
+    return {
+      folderId,
+      targetElement,
+      highlightElement: targetElement.closest?.(".rm-inventory-folder-row[data-folder-id]") ?? targetElement
+    };
+  }
+
+  #resolveInventoryDropAction(dragData, folderId) {
+    if (!this.canDropInventoryItems || !this.inventoryFolderTreeCache) return null;
+    const internal = readInventoryTreeDragData(dragData);
+    if (internal) {
+      if (internal.groupActorId !== this.inventoryActorId) return null;
+      if (internal.kind === "folder") {
+        if (!this.inventoryFolderTreeCache.foldersById.has(internal.folderId)) return null;
+        if (folderId === internal.folderId) return null;
+        let currentId = folderId;
+        while (currentId !== null) {
+          if (currentId === internal.folderId) return null;
+          currentId = this.inventoryFolderTreeCache.foldersById.get(currentId)?.parentId ?? null;
+        }
+        return { kind: "folder", internal };
+      }
+      if (!this.inventoryFolderTreeCache.itemsById.has(internal.itemId)) return null;
+      return { kind: "item", internal };
+    }
+
+    if (hasInventoryTreeDragMetadata(dragData)) return null;
+    return dragData?.type === "Item" ? { kind: "external", dragData } : null;
+  }
+
+  async #applyInventoryDrop(action, folderId) {
+    const groupActorId = this.inventoryActorId;
+    if (action.kind === "folder") {
+      return this.moduleApi.moveInventoryFolder({
+        groupActorId,
+        folderId: action.internal.folderId,
+        parentId: folderId
+      });
+    }
+    if (action.kind === "item") {
+      return this.moduleApi.moveInventoryItemToFolder({
+        groupActorId,
+        itemId: action.internal.itemId,
+        folderId
+      });
+    }
+    return this.moduleApi.importInventoryDrop(action.dragData, { groupActorId, folderId });
+  }
+
   #openItemContextMenu(row, { x = 0, y = 0, anchor = null } = {}) {
     if (!(row instanceof HTMLElement)) {
       return;
@@ -6103,6 +6252,13 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.renderListenersAbortController = new AbortController();
     const listenerOptions = { signal: this.renderListenersAbortController.signal };
 
+    element.querySelectorAll(".is-drop-target-ready").forEach((node) => {
+      node.classList.remove("is-drop-target-ready");
+    });
+    element.querySelectorAll(".rm-inventory-drop-surface.is-dragover").forEach((node) => {
+      node.classList.remove("is-dragover");
+    });
+
     this.#rememberExpandedPartyMembers(element);
 
     element.querySelectorAll(".rm-party-row[data-actor-id]").forEach((row) => {
@@ -6124,20 +6280,55 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     element.querySelectorAll("[data-item-drag]").forEach((row) => {
       row.addEventListener("dragstart", (event) => {
         const uuid = event.currentTarget.dataset.itemUuid;
-        if (!uuid || !event.dataTransfer) {
+        const itemId = cleanText(event.currentTarget.dataset.itemId);
+        const groupActorId = this.inventoryActorId;
+        if (!uuid || !itemId || !groupActorId || !event.dataTransfer) {
           return;
         }
 
-        event.dataTransfer.effectAllowed = "all";
-        const payload = JSON.stringify(buildPartyInventoryItemDragData(uuid));
+        try {
+          event.dataTransfer.effectAllowed = "all";
+          const payload = JSON.stringify(extendInventoryItemDragData(
+            buildPartyInventoryItemDragData(uuid),
+            { groupActorId, itemId }
+          ));
+          for (const mimeType of INVENTORY_DRAG_MIME_TYPES) {
+            try {
+              event.dataTransfer.setData(mimeType, payload);
+            }
+            catch (_error) {
+              // Ignore MIME types unsupported by this browser.
+            }
+          }
+        }
+        catch (error) {
+          console.error(`${MODULE_ID} | Failed to start inventory Item drag.`, error);
+          ui.notifications?.error(error.message || "Не удалось начать перенос предмета.");
+        }
+      }, listenerOptions);
+    });
 
-        for (const mimeType of ["text/plain", "text", "application/json", "text/uri-list"]) {
-          try {
-            event.dataTransfer.setData(mimeType, payload);
+    element.querySelectorAll("[data-folder-drag]").forEach((row) => {
+      row.addEventListener("dragstart", (event) => {
+        const folderId = cleanText(event.currentTarget.dataset.folderId);
+        const groupActorId = this.inventoryActorId;
+        if (!folderId || !groupActorId || !event.dataTransfer) return;
+
+        try {
+          event.dataTransfer.effectAllowed = "all";
+          const payload = JSON.stringify(buildInventoryFolderDragData({ groupActorId, folderId }));
+          for (const mimeType of INVENTORY_DRAG_MIME_TYPES) {
+            try {
+              event.dataTransfer.setData(mimeType, payload);
+            }
+            catch (_error) {
+              // Ignore MIME types unsupported by this browser.
+            }
           }
-          catch (_error) {
-            // Ignore unsupported mime types
-          }
+        }
+        catch (error) {
+          console.error(`${MODULE_ID} | Failed to start inventory folder drag.`, error);
+          ui.notifications?.error(error.message || "Не удалось начать перенос папки.");
         }
       }, listenerOptions);
     });
@@ -6928,33 +7119,67 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     const dropzone = element.querySelector("[data-action='inventory-dropzone']");
     if (dropzone) {
+      let activeDropTarget = null;
+      const clearDropState = () => {
+        activeDropTarget?.classList?.remove("is-drop-target-ready");
+        activeDropTarget = null;
+        dropzone.classList.remove("is-dragover");
+      };
+      const readAcceptedDrop = (event) => {
+        let dragData;
+        try {
+          dragData = TextEditor.getDragEventData(event);
+        }
+        catch (_error) {
+          return null;
+        }
+        const target = this.#resolveInventoryDropTarget(event, dropzone);
+        if (!target) return null;
+        const action = this.#resolveInventoryDropAction(dragData, target.folderId);
+        return action ? { action, dragData, target } : null;
+      };
+
       dropzone.addEventListener("dragover", (event) => {
+        clearDropState();
+        const accepted = readAcceptedDrop(event);
+        if (!accepted) return;
         event.preventDefault();
+        if (event.dataTransfer) {
+          event.dataTransfer.dropEffect = accepted.action.kind === "external" ? "copy" : "move";
+        }
         dropzone.classList.add("is-dragover");
+        activeDropTarget = accepted.target.highlightElement;
+        activeDropTarget?.classList?.add("is-drop-target-ready");
       }, listenerOptions);
 
       dropzone.addEventListener("dragleave", (event) => {
         if (event.relatedTarget && dropzone.contains(event.relatedTarget)) {
           return;
         }
-        dropzone.classList.remove("is-dragover");
+        clearDropState();
       }, listenerOptions);
 
       dropzone.addEventListener("drop", async (event) => {
+        const accepted = readAcceptedDrop(event);
+        clearDropState();
+        if (!accepted) return;
         event.preventDefault();
-        dropzone.classList.remove("is-dragover");
 
         try {
-          const dragData = TextEditor.getDragEventData(event);
-          await this.moduleApi.importInventoryDrop(dragData);
-          ui.notifications?.info(this.canManage
-            ? "Предмет перенесён в партийный склад."
-            : "Запрос на перенос предмета отправлен мастеру.");
+          await this.#applyInventoryDrop(accepted.action, accepted.target.folderId);
+          const message = accepted.action.kind === "folder"
+            ? "Папка перемещена."
+            : accepted.action.kind === "item"
+              ? "Стэк предмета перемещён целиком."
+              : (this.canManage
+                ? "Предмет перенесён в партийный склад."
+                : "Запрос на перенос предмета отправлен мастеру.");
+          ui.notifications?.info(message);
           bringAppToFront(this);
         }
         catch (error) {
-          console.error(`${MODULE_ID} | Failed to import dropped inventory item.`, error);
-          ui.notifications?.error(error.message || "Не удалось перенести предмет в склад.");
+          console.error(`${MODULE_ID} | Failed to apply inventory tree drop.`, error);
+          ui.notifications?.error(error.message || "Не удалось переместить содержимое инвентаря.");
         }
       }, listenerOptions);
     }

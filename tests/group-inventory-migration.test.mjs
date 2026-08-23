@@ -415,8 +415,13 @@ test("getInventorySnapshot projects normalized Actor folder state without writin
 test("folder mutations normalize current Actor state and write exactly once only when changed", async () => {
   const sword = createItem({ id: "sword", name: "Sword", quantity: 7 });
   let itemUpdateCalls = 0;
+  let itemDeleteCalls = 0;
   sword.update = async () => {
     itemUpdateCalls += 1;
+    return sword;
+  };
+  sword.delete = async () => {
+    itemDeleteCalls += 1;
     return sword;
   };
   const groupActor = createActor({
@@ -437,6 +442,12 @@ test("folder mutations normalize current Actor state and write exactly once only
   });
   let resolveCalls = 0;
   const fixture = installInventoryFixture({ actors: [groupActor] });
+  let createEmbeddedCalls = 0;
+  const createEmbeddedDocuments = groupActor.createEmbeddedDocuments.bind(groupActor);
+  groupActor.createEmbeddedDocuments = async (...args) => {
+    createEmbeddedCalls += 1;
+    return createEmbeddedDocuments(...args);
+  };
   const service = new InventoryService({
     groupContextService: {
       resolveForGroup: (groupActorId) => {
@@ -489,6 +500,7 @@ test("folder mutations normalize current Actor state and write exactly once only
       folderId: "orphan",
       parentId: "weapons"
     })).changed, true);
+    const flagWritesBeforeItemMove = groupActor.setFlagCalls.length;
     const itemMove = await service.moveInventoryItemToFolder({
       groupActorId: "group-a",
       itemId: "sword",
@@ -496,7 +508,10 @@ test("folder mutations normalize current Actor state and write exactly once only
     });
     assert.equal(itemMove.changed, true);
     assert.equal(itemMove.itemId, "sword");
+    assert.equal(groupActor.setFlagCalls.length, flagWritesBeforeItemMove + 1);
     assert.equal(itemUpdateCalls, 0);
+    assert.equal(itemDeleteCalls, 0);
+    assert.equal(createEmbeddedCalls, 0);
     assert.equal(sword.system.quantity, 7);
 
     const deleted = await service.deleteInventoryFolder({ groupActorId: "group-a", folderId: "orphan" });

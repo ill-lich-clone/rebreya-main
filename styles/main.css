@@ -5914,6 +5914,34 @@ summary:focus-visible {
   flex: 0 0 34px;
 }
 
+.rm-inventory-root-drop-target {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 30px;
+  padding: 4px 10px;
+  border: 1px dashed var(--rm-border-subtle);
+  border-radius: var(--rm-ui-row-radius);
+  background: rgb(var(--rm-color-dark-rgb) / 0.42);
+  color: var(--rm-text-secondary);
+  font-size: 11px;
+  outline: none;
+}
+
+.rm-inventory-root-drop-target:hover,
+.rm-inventory-root-drop-target:focus-visible {
+  border-color: var(--rm-border-default);
+  color: var(--rm-text);
+}
+
+.rm-inventory-root-drop-target.is-drop-target-ready {
+  border-color: var(--rm-accent);
+  background: rgb(var(--rm-color-gold-rgb) / 0.12);
+  color: var(--rm-text);
+  box-shadow: inset 0 0 0 2px rgb(var(--rm-color-gold-rgb) / 0.24);
+}
+
 .rm-inventory-tree-row {
   --rm-inventory-tree-indent: 0px;
   min-width: 0;

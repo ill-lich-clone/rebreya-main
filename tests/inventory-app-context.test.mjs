@@ -51,6 +51,12 @@ function installMinimalDom() {
       this.style = {};
       this.children = [];
       this.listeners = {};
+      this.classes = new Set();
+      this.classList = {
+        add: (...names) => names.forEach((name) => this.classes.add(name)),
+        remove: (...names) => names.forEach((name) => this.classes.delete(name)),
+        contains: (name) => this.classes.has(name)
+      };
       this.open = false;
       this.className = "";
       this.textContent = "";
@@ -980,6 +986,300 @@ test("InventoryApp invalidates its folder snapshot after a command error and gat
   finally {
     console.error = previousConsoleError;
     globalThis.ui = previousUi;
+    dom.restore();
+    restoreFoundry();
+  }
+});
+
+test("inventory tree drag payload helpers preserve Foundry Item data and reject malformed metadata", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const {
+    buildInventoryFolderDragData,
+    extendInventoryItemDragData,
+    readInventoryTreeDragData
+  } = await import(`../scripts/ui/inventory-app.js?folder-drag-payload=${Date.now()}`);
+  const folderPayload = buildInventoryFolderDragData({ groupActorId: " group-a ", folderId: " weapons " });
+  const baseItemPayload = {
+    type: "Item",
+    uuid: "Actor.group-a.Item.sword",
+    flags: {
+      "rebreya-main": {
+        partyInventoryTransfer: { transferId: "transfer-1" }
+      },
+      other: { retained: true }
+    }
+  };
+  const itemPayload = extendInventoryItemDragData(baseItemPayload, {
+    groupActorId: "group-a",
+    itemId: "sword"
+  });
+
+  try {
+    assert.deepEqual(folderPayload, {
+      type: "RebreyaInventoryFolder",
+      rebreyaInventory: {
+        version: 1,
+        kind: "folder",
+        groupActorId: "group-a",
+        folderId: "weapons"
+      }
+    });
+    assert.deepEqual(itemPayload.flags["rebreya-main"].inventoryFolderDrag, {
+      version: 1,
+      kind: "item",
+      groupActorId: "group-a",
+      itemId: "sword"
+    });
+    assert.deepEqual(itemPayload.flags["rebreya-main"].partyInventoryTransfer, { transferId: "transfer-1" });
+    assert.deepEqual(itemPayload.flags.other, { retained: true });
+    assert.equal(baseItemPayload.flags["rebreya-main"].inventoryFolderDrag, undefined);
+    assert.deepEqual(readInventoryTreeDragData(folderPayload), folderPayload.rebreyaInventory);
+    assert.deepEqual(readInventoryTreeDragData(itemPayload), itemPayload.flags["rebreya-main"].inventoryFolderDrag);
+
+    for (const invalidPayload of [
+      { ...folderPayload, extra: true },
+      { ...folderPayload, rebreyaInventory: { ...folderPayload.rebreyaInventory, extra: true } },
+      { ...folderPayload, rebreyaInventory: { ...folderPayload.rebreyaInventory, folderId: "" } },
+      { type: "RebreyaInventoryFolder" },
+      { ...itemPayload, flags: { ...itemPayload.flags, "rebreya-main": {
+        ...itemPayload.flags["rebreya-main"],
+        inventoryFolderDrag: { ...itemPayload.flags["rebreya-main"].inventoryFolderDrag, extra: true }
+      } } },
+      { ...itemPayload, flags: { ...itemPayload.flags, "rebreya-main": {
+        ...itemPayload.flags["rebreya-main"],
+        inventoryFolderDrag: { version: 1, kind: "item", groupActorId: "group-a" }
+      } } }
+    ]) {
+      assert.equal(readInventoryTreeDragData(invalidPayload), null);
+    }
+  }
+  finally {
+    restoreFoundry();
+  }
+});
+
+test("InventoryApp serializes Item and folder drags and rejects cross-group, self and descendant targets", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const dom = installMinimalDom();
+  const previousGame = globalThis.game;
+  const previousFromUuidSync = globalThis.fromUuidSync;
+  const previousTextEditor = globalThis.TextEditor;
+  const previousSetTimeout = globalThis.setTimeout;
+  const previousClearTimeout = globalThis.clearTimeout;
+  globalThis.game = {
+    user: { id: "user-a" },
+    users: { activeGM: { id: "gm-a", active: true } }
+  };
+  globalThis.fromUuidSync = (uuid) => ({
+    uuid,
+    name: "Меч",
+    type: "loot",
+    flags: {},
+    system: { quantity: 7 }
+  });
+  globalThis.TextEditor = { getDragEventData: (event) => event.dragData };
+  globalThis.setTimeout = () => 0;
+  globalThis.clearTimeout = () => {};
+  const { InventoryApp, readInventoryTreeDragData } = await import(
+    `../scripts/ui/inventory-app.js?folder-drag-dom=${Date.now()}`
+  );
+  const snapshot = createFolderInventorySnapshot();
+  const app = new InventoryApp(createModuleApi({ inventorySnapshot: snapshot, getGroupContext: () => null }));
+  const itemRow = createFakeElement({ dataset: {
+    itemId: "deep-item",
+    itemUuid: "Actor.group-a.Item.deep-item"
+  } });
+  let sourceFolder;
+  sourceFolder = createFakeElement({
+    dataset: { folderId: "alpha", folderDropId: "alpha" },
+    closest: (selector) => selector === "[data-folder-drop-id]" || selector.includes("rm-inventory-folder-row")
+      ? sourceFolder
+      : null
+  });
+  let descendantFolder;
+  descendantFolder = createFakeElement({
+    dataset: { folderId: "alpha-2", folderDropId: "alpha-2" },
+    closest: (selector) => selector === "[data-folder-drop-id]" || selector.includes("rm-inventory-folder-row")
+      ? descendantFolder
+      : null
+  });
+  let targetFolder;
+  targetFolder = createFakeElement({
+    dataset: { folderId: "beta", folderDropId: "beta" },
+    closest: (selector) => selector === "[data-folder-drop-id]" || selector.includes("rm-inventory-folder-row")
+      ? targetFolder
+      : null
+  });
+  let rootTarget;
+  rootTarget = createFakeElement({
+    dataset: { folderDropId: "" },
+    closest: (selector) => selector === "[data-folder-drop-id]" ? rootTarget : null
+  });
+  const dropzone = createFakeElement();
+  dropzone.querySelector = () => null;
+  dropzone.querySelectorAll = () => [];
+  dropzone.contains = (node) => [sourceFolder, descendantFolder, targetFolder, rootTarget, itemRow].includes(node);
+  const root = createFakeElement();
+  root.querySelector = (selector) => selector === "[data-action='inventory-dropzone']" ? dropzone : null;
+  root.querySelectorAll = (selector) => {
+    if (selector === "[data-item-drag]") return [itemRow];
+    if (selector === "[data-folder-drag]") return [sourceFolder];
+    return [];
+  };
+  app.element = root;
+
+  const createDataTransfer = () => ({
+    effectAllowed: "",
+    values: new Map(),
+    setData(type, value) { this.values.set(type, value); }
+  });
+  const dragStart = (row) => {
+    const dataTransfer = createDataTransfer();
+    row.listeners.dragstart[0]({ currentTarget: row, dataTransfer });
+    return dataTransfer;
+  };
+  const dragOver = (target, dragData) => {
+    let prevented = false;
+    dropzone.listeners.dragover[0]({
+      target,
+      dragData,
+      preventDefault() { prevented = true; }
+    });
+    return prevented;
+  };
+
+  try {
+    await app._prepareContext();
+    await app._onRender({}, {});
+    const itemTransfer = dragStart(itemRow);
+    const folderTransfer = dragStart(sourceFolder);
+    const mimeTypes = ["text/plain", "text", "application/json", "text/uri-list"];
+    assert.deepEqual([...itemTransfer.values.keys()], mimeTypes);
+    assert.deepEqual([...folderTransfer.values.keys()], mimeTypes);
+    assert.equal(new Set(itemTransfer.values.values()).size, 1);
+    assert.equal(new Set(folderTransfer.values.values()).size, 1);
+    const itemDragData = JSON.parse(itemTransfer.values.get("application/json"));
+    const folderDragData = JSON.parse(folderTransfer.values.get("application/json"));
+    assert.deepEqual(readInventoryTreeDragData(itemDragData), {
+      version: 1,
+      kind: "item",
+      groupActorId: "group-a",
+      itemId: "deep-item"
+    });
+    assert.deepEqual(readInventoryTreeDragData(folderDragData), {
+      version: 1,
+      kind: "folder",
+      groupActorId: "group-a",
+      folderId: "alpha"
+    });
+
+    assert.equal(dragOver(targetFolder, folderDragData), true);
+    assert.equal(targetFolder.classList.contains("is-drop-target-ready"), true);
+    assert.equal(dragOver(sourceFolder, folderDragData), false);
+    assert.equal(sourceFolder.classList.contains("is-drop-target-ready"), false);
+    assert.equal(dragOver(descendantFolder, folderDragData), false);
+    assert.equal(dragOver(targetFolder, {
+      ...itemDragData,
+      flags: { ...itemDragData.flags, "rebreya-main": {
+        ...itemDragData.flags["rebreya-main"],
+        inventoryFolderDrag: {
+          ...itemDragData.flags["rebreya-main"].inventoryFolderDrag,
+          groupActorId: "group-b"
+        }
+      } }
+    }), false);
+    assert.equal(dragOver(rootTarget, folderDragData), true);
+    assert.equal(dropzone.classList.contains("is-dragover"), true);
+  }
+  finally {
+    globalThis.clearTimeout = previousClearTimeout;
+    globalThis.setTimeout = previousSetTimeout;
+    globalThis.TextEditor = previousTextEditor;
+    globalThis.fromUuidSync = previousFromUuidSync;
+    globalThis.game = previousGame;
+    dom.restore();
+    restoreFoundry();
+  }
+});
+
+test("InventoryApp routes internal and external drops to exact folder or root targets in main and popout", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const dom = installMinimalDom();
+  const previousTextEditor = globalThis.TextEditor;
+  const previousUi = globalThis.ui;
+  const calls = [];
+  globalThis.TextEditor = { getDragEventData: (event) => event.dragData };
+  globalThis.ui = { notifications: { info() {}, error() {} } };
+  const { InventoryApp, extendInventoryItemDragData, buildInventoryFolderDragData } = await import(
+    `../scripts/ui/inventory-app.js?folder-drop-routing=${Date.now()}`
+  );
+  const snapshot = createFolderInventorySnapshot();
+  const moduleApi = createModuleApi({ inventorySnapshot: snapshot, getGroupContext: () => null });
+  moduleApi.moveInventoryFolder = async (payload) => calls.push(["moveFolder", payload]);
+  moduleApi.moveInventoryItemToFolder = async (payload) => calls.push(["moveItem", payload]);
+  moduleApi.importInventoryDrop = async (dragData, options) => calls.push(["import", dragData, options]);
+  moduleApi.updateInventoryItemQuantity = async () => calls.push(["quantity"]);
+  moduleApi.deleteInventoryItem = async () => calls.push(["delete"]);
+  const baseItem = { type: "Item", uuid: "Actor.group-a.Item.deep-item", flags: {} };
+  const itemDrag = extendInventoryItemDragData(baseItem, { groupActorId: "group-a", itemId: "deep-item" });
+  const folderDrag = buildInventoryFolderDragData({ groupActorId: "group-a", folderId: "alpha" });
+  const externalDrag = { type: "Item", uuid: "Compendium.world.items.Item.external" };
+
+  const exerciseView = async (options = {}) => {
+    let folderTarget;
+    folderTarget = createFakeElement({
+      dataset: { folderDropId: "beta" },
+      closest: (selector) => selector === "[data-folder-drop-id]" || selector.includes("rm-inventory-folder-row")
+        ? folderTarget
+        : null
+    });
+    let rootTarget;
+    rootTarget = createFakeElement({
+      dataset: { folderDropId: "" },
+      closest: (selector) => selector === "[data-folder-drop-id]" ? rootTarget : null
+    });
+    const dropzone = createFakeElement();
+    dropzone.contains = (node) => node === folderTarget || node === rootTarget;
+    const root = createFakeElement();
+    root.querySelector = (selector) => selector === "[data-action='inventory-dropzone']" ? dropzone : null;
+    root.querySelectorAll = () => [];
+    const app = new InventoryApp(moduleApi, options);
+    app.element = root;
+    await app._prepareContext();
+    await app._onRender({}, {});
+    const drop = async (target, dragData) => {
+      let prevented = false;
+      await dropzone.listeners.drop[0]({
+        target,
+        dragData,
+        preventDefault() { prevented = true; }
+      });
+      assert.equal(prevented, true);
+    };
+    await drop(folderTarget, folderDrag);
+    await drop(folderTarget, itemDrag);
+    await drop(rootTarget, itemDrag);
+    await drop(folderTarget, externalDrag);
+  };
+
+  try {
+    await exerciseView();
+    await exerciseView({ groupActorId: "group-a", rootFolderId: "alpha", inventoryViewKey: "group-a:alpha" });
+    assert.deepEqual(calls, [
+      ["moveFolder", { groupActorId: "group-a", folderId: "alpha", parentId: "beta" }],
+      ["moveItem", { groupActorId: "group-a", itemId: "deep-item", folderId: "beta" }],
+      ["moveItem", { groupActorId: "group-a", itemId: "deep-item", folderId: null }],
+      ["import", externalDrag, { groupActorId: "group-a", folderId: "beta" }],
+      ["moveFolder", { groupActorId: "group-a", folderId: "alpha", parentId: "beta" }],
+      ["moveItem", { groupActorId: "group-a", itemId: "deep-item", folderId: "beta" }],
+      ["moveItem", { groupActorId: "group-a", itemId: "deep-item", folderId: null }],
+      ["import", externalDrag, { groupActorId: "group-a", folderId: "beta" }]
+    ]);
+    assert.equal(calls.some(([kind]) => kind === "quantity" || kind === "delete"), false);
+  }
+  finally {
+    globalThis.ui = previousUi;
+    globalThis.TextEditor = previousTextEditor;
     dom.restore();
     restoreFoundry();
   }
