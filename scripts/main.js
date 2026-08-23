@@ -52,7 +52,12 @@ import { TravelMapService } from "./data/travel-map-service.js?v=1.4.141-auraeff
 import {
   INVENTORY_CURRENCY_CONVERT_COMMAND,
   INVENTORY_CURRENCY_UPDATE_COMMAND,
+  INVENTORY_FOLDER_CREATE_COMMAND,
+  INVENTORY_FOLDER_DELETE_COMMAND,
+  INVENTORY_FOLDER_MOVE_COMMAND,
+  INVENTORY_FOLDER_RENAME_COMMAND,
   INVENTORY_IMPORT_COMMAND,
+  INVENTORY_ITEM_FOLDER_MOVE_COMMAND,
   INVENTORY_SALE_COMMAND,
   INVENTORY_TAKE_COMMAND,
   GROUP_TRANSPORT_REPLACE_STATE_COMMAND,
@@ -721,6 +726,53 @@ function isValidInventoryImportPayload(payload) {
     && isValidInventoryMutationId(payload.mutationId)
     && (payload.folderId === null
       || (isTrimmedNonEmptyString(payload.folderId) && payload.folderId.length <= 160));
+}
+
+function isValidInventoryFolderIdentifier(value) {
+  return isTrimmedNonEmptyString(value) && value.length <= 160;
+}
+
+function isValidNullableInventoryFolderIdentifier(value) {
+  return value === null || isValidInventoryFolderIdentifier(value);
+}
+
+function isValidInventoryFolderName(value) {
+  return isTrimmedNonEmptyString(value) && value.length <= 80;
+}
+
+function isValidInventoryFolderCreatePayload(payload) {
+  return hasExactKeys(payload, ["folderId", "groupActorId", "name", "parentId"])
+    && isValidInventoryFolderIdentifier(payload.groupActorId)
+    && isValidInventoryFolderIdentifier(payload.folderId)
+    && isValidInventoryFolderName(payload.name)
+    && isValidNullableInventoryFolderIdentifier(payload.parentId);
+}
+
+function isValidInventoryFolderRenamePayload(payload) {
+  return hasExactKeys(payload, ["folderId", "groupActorId", "name"])
+    && isValidInventoryFolderIdentifier(payload.groupActorId)
+    && isValidInventoryFolderIdentifier(payload.folderId)
+    && isValidInventoryFolderName(payload.name);
+}
+
+function isValidInventoryFolderMovePayload(payload) {
+  return hasExactKeys(payload, ["folderId", "groupActorId", "parentId"])
+    && isValidInventoryFolderIdentifier(payload.groupActorId)
+    && isValidInventoryFolderIdentifier(payload.folderId)
+    && isValidNullableInventoryFolderIdentifier(payload.parentId);
+}
+
+function isValidInventoryFolderDeletePayload(payload) {
+  return hasExactKeys(payload, ["folderId", "groupActorId"])
+    && isValidInventoryFolderIdentifier(payload.groupActorId)
+    && isValidInventoryFolderIdentifier(payload.folderId);
+}
+
+function isValidInventoryItemFolderMovePayload(payload) {
+  return hasExactKeys(payload, ["folderId", "groupActorId", "itemId"])
+    && isValidInventoryFolderIdentifier(payload.groupActorId)
+    && isValidInventoryFolderIdentifier(payload.itemId)
+    && isValidNullableInventoryFolderIdentifier(payload.folderId);
 }
 
 function isValidCurrencyInteger(value) {
@@ -1434,6 +1486,48 @@ export class RebreyaMainModule {
       authorize: (payload, { sender }) => this.#canSenderManageGroup(sender, payload.inventoryActorId),
       execute: (payload) => this.inventoryService.executeCurrencyConvertMutation(payload)
     });
+    const registerInventoryFolderMutation = (command, validate, methodName) => {
+      this.socketCommandBus.register(command, {
+        validate,
+        authorize: authorizeGroup,
+        execute: async (payload) => {
+          try {
+            return await this.runInventoryMutation(
+              () => this.inventoryService[methodName](payload),
+              { actorIdsFromResult: (result) => [result?.actorId] }
+            );
+          }
+          catch (error) {
+            throw new Error(error?.message || "Inventory folder mutation failed.", { cause: error });
+          }
+        }
+      });
+    };
+    registerInventoryFolderMutation(
+      INVENTORY_FOLDER_CREATE_COMMAND,
+      isValidInventoryFolderCreatePayload,
+      "createInventoryFolder"
+    );
+    registerInventoryFolderMutation(
+      INVENTORY_FOLDER_RENAME_COMMAND,
+      isValidInventoryFolderRenamePayload,
+      "renameInventoryFolder"
+    );
+    registerInventoryFolderMutation(
+      INVENTORY_FOLDER_MOVE_COMMAND,
+      isValidInventoryFolderMovePayload,
+      "moveInventoryFolder"
+    );
+    registerInventoryFolderMutation(
+      INVENTORY_FOLDER_DELETE_COMMAND,
+      isValidInventoryFolderDeletePayload,
+      "deleteInventoryFolder"
+    );
+    registerInventoryFolderMutation(
+      INVENTORY_ITEM_FOLDER_MOVE_COMMAND,
+      isValidInventoryItemFolderMovePayload,
+      "moveInventoryItemToFolder"
+    );
     this.socketCommandBus.register(STORAGE_OPEN_COMMAND, {
       validate: isValidStorageOpenPayload,
       authorize: (_payload, { sender }) => Boolean(sender),
@@ -4752,6 +4846,73 @@ export class RebreyaMainModule {
       () => this.inventoryService.updatePartyMember(actorId, patch),
       { actorIdsFromResult: () => [actorId] }
     );
+  }
+
+  async #runInventoryFolderMutation(command, payload, validate, methodName) {
+    if (!validate(payload)) {
+      throw new TypeError("Inventory folder command payload is invalid.");
+    }
+    const exactPayload = cloneSocketPayload(payload);
+    if (!isActiveGmClient(globalThis.game)) {
+      return this.socketCommandBus.request(command, exactPayload);
+    }
+    return this.runInventoryMutation(
+      () => this.inventoryService[methodName](exactPayload),
+      { actorIdsFromResult: (result) => [result?.actorId] }
+    );
+  }
+
+  createInventoryFolder(payload) {
+    return this.#runInventoryFolderMutation(
+      INVENTORY_FOLDER_CREATE_COMMAND,
+      payload,
+      isValidInventoryFolderCreatePayload,
+      "createInventoryFolder"
+    );
+  }
+
+  renameInventoryFolder(payload) {
+    return this.#runInventoryFolderMutation(
+      INVENTORY_FOLDER_RENAME_COMMAND,
+      payload,
+      isValidInventoryFolderRenamePayload,
+      "renameInventoryFolder"
+    );
+  }
+
+  moveInventoryFolder(payload) {
+    return this.#runInventoryFolderMutation(
+      INVENTORY_FOLDER_MOVE_COMMAND,
+      payload,
+      isValidInventoryFolderMovePayload,
+      "moveInventoryFolder"
+    );
+  }
+
+  deleteInventoryFolder(payload) {
+    return this.#runInventoryFolderMutation(
+      INVENTORY_FOLDER_DELETE_COMMAND,
+      payload,
+      isValidInventoryFolderDeletePayload,
+      "deleteInventoryFolder"
+    );
+  }
+
+  moveInventoryItemToFolder(payload) {
+    return this.#runInventoryFolderMutation(
+      INVENTORY_ITEM_FOLDER_MOVE_COMMAND,
+      payload,
+      isValidInventoryItemFolderMovePayload,
+      "moveInventoryItemToFolder"
+    );
+  }
+
+  getInventoryFolderUiState(groupActorId, folderIds = []) {
+    return this.inventoryService.getInventoryFolderUiState(groupActorId, folderIds);
+  }
+
+  setInventoryFolderExpanded(groupActorId, folderId, expanded) {
+    return this.inventoryService.setInventoryFolderExpanded(groupActorId, folderId, expanded);
   }
 
   async updateInventoryItemQuantity(itemId, nextQuantity) {

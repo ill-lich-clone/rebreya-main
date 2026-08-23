@@ -36,6 +36,7 @@ import {
   deleteInventoryFolder as deleteInventoryFolderState,
   moveInventoryFolder as moveInventoryFolderState,
   moveInventoryItemToFolder as moveInventoryItemToFolderState,
+  normalizeExpandedFolderIds,
   normalizeInventoryFolderState,
   renameInventoryFolder as renameInventoryFolderState
 } from "./inventory-folder-tree.js";
@@ -52,7 +53,14 @@ export const INVENTORY_SALE_COMMAND = "inventory.sale";
 export const INVENTORY_IMPORT_COMMAND = "inventory.import";
 export const INVENTORY_CURRENCY_UPDATE_COMMAND = "inventory.currency.update";
 export const INVENTORY_CURRENCY_CONVERT_COMMAND = "inventory.currency.convert";
+export const INVENTORY_FOLDER_CREATE_COMMAND = "inventory.folder.create";
+export const INVENTORY_FOLDER_RENAME_COMMAND = "inventory.folder.rename";
+export const INVENTORY_FOLDER_MOVE_COMMAND = "inventory.folder.move";
+export const INVENTORY_FOLDER_DELETE_COMMAND = "inventory.folder.delete";
+export const INVENTORY_ITEM_FOLDER_MOVE_COMMAND = "inventory.item.folder.move";
 export const GROUP_TRANSPORT_REPLACE_STATE_COMMAND = "group.transport.replaceState";
+const INVENTORY_FOLDER_UI_FLAG = "inventoryFolderUi";
+const INVENTORY_FOLDER_UI_STATE_VERSION = 1;
 const DEFAULT_PARTY_ACTOR_NAME = "Инвентарь группы Rebreya";
 const DEFAULT_PARTY_ACTOR_IMAGE = "icons/svg/item-bag.svg";
 const LOOTGEN_CHAT_ACTOR_NAME = "Лут Rebreya";
@@ -3473,6 +3481,75 @@ export class InventoryService {
 
   assignInventoryGrantFolder({ groupActorId, itemId, folderId = null }) {
     return this.#assignInventoryItemFolder({ groupActorId, itemId, folderId });
+  }
+
+  getInventoryFolderUiState(groupActorId, folderIds = []) {
+    const actorId = cleanId(groupActorId);
+    if (!actorId) {
+      throw new Error("Не указан групповой инвентарь для состояния папок.");
+    }
+    const rawState = game.user?.getFlag?.(MODULE_ID, INVENTORY_FOLDER_UI_FLAG);
+    const rawExpandedFolderIds = rawState?.version === INVENTORY_FOLDER_UI_STATE_VERSION
+      ? rawState?.groups?.[actorId]?.expandedFolderIds
+      : [];
+    return {
+      version: INVENTORY_FOLDER_UI_STATE_VERSION,
+      groupActorId: actorId,
+      expandedFolderIds: normalizeExpandedFolderIds(rawExpandedFolderIds, { folderIds })
+    };
+  }
+
+  setInventoryFolderExpanded(groupActorId, folderId, expanded) {
+    const actorId = cleanId(groupActorId);
+    const normalizedFolderId = cleanId(folderId);
+    const user = game.user ?? null;
+    const userId = cleanId(user?.id);
+    if (!actorId || !normalizedFolderId || typeof expanded !== "boolean" || !userId) {
+      throw new Error("Некорректное личное состояние папки инвентаря.");
+    }
+    if (typeof user?.getFlag !== "function" || typeof user?.setFlag !== "function") {
+      throw new Error("Пользовательское хранилище состояния папок недоступно.");
+    }
+    return this.mutationCoordinator.run(
+      `inventory-folder-ui:${userId}`,
+      async () => {
+        const actor = await this.getInventoryActor({ create: false, groupActorId: actorId });
+        const folderIds = this.#readInventoryFolderState(actor).folders.map((folder) => folder.id);
+        if (expanded && !folderIds.includes(normalizedFolderId)) {
+          throw new InventoryFolderStateError("folder-not-found", "Папка инвентаря не найдена.");
+        }
+        const rawState = user.getFlag(MODULE_ID, INVENTORY_FOLDER_UI_FLAG);
+        const rawExpandedFolderIds = rawState?.version === INVENTORY_FOLDER_UI_STATE_VERSION
+          ? rawState?.groups?.[actorId]?.expandedFolderIds
+          : [];
+        const expandedFolderIds = new Set(normalizeExpandedFolderIds(
+          rawExpandedFolderIds,
+          { folderIds }
+        ));
+        if (expanded) expandedFolderIds.add(normalizedFolderId);
+        else expandedFolderIds.delete(normalizedFolderId);
+        const groups = rawState?.version === INVENTORY_FOLDER_UI_STATE_VERSION
+          && rawState.groups
+          && typeof rawState.groups === "object"
+          && !Array.isArray(rawState.groups)
+          ? foundry.utils.deepClone(rawState.groups)
+          : {};
+        const nextExpandedFolderIds = normalizeExpandedFolderIds(
+          Array.from(expandedFolderIds),
+          { folderIds }
+        );
+        groups[actorId] = { expandedFolderIds: nextExpandedFolderIds };
+        await user.setFlag(MODULE_ID, INVENTORY_FOLDER_UI_FLAG, {
+          version: INVENTORY_FOLDER_UI_STATE_VERSION,
+          groups
+        });
+        return {
+          version: INVENTORY_FOLDER_UI_STATE_VERSION,
+          groupActorId: actorId,
+          expandedFolderIds: nextExpandedFolderIds
+        };
+      }
+    );
   }
 
   async mergeLegacyInventoryIntoGroup(groupActorId) {
