@@ -17,6 +17,10 @@ import { createStableGearDocumentId } from "../data/gear-document-ids.js";
 import { buildRebreyaArtisanToolConfig } from "../data/rebreya-tool-proficiencies.js";
 import { REBREYA_AMMUNITION_SUBTYPES } from "../data/ammunition-types.js";
 import {
+  WEAPON_PROPERTY_GLOSSARY,
+  getWeaponPropertyGlossaryEntry
+} from "../data/weapon-property-glossary.js";
+import {
   getRebreyaWeaponBaseItemDefinitions,
   getHeroDollSlotGroups,
   inferHeroDollSlotGroupFromSlots,
@@ -5525,6 +5529,108 @@ function getSheetPropertyRow(control) {
     ?? control;
 }
 
+let activeWeaponPropertyTooltip = null;
+
+function closeWeaponPropertyTooltip() {
+  const state = activeWeaponPropertyTooltip;
+  if (!state) {
+    return;
+  }
+
+  activeWeaponPropertyTooltip = null;
+  state.element?.remove?.();
+  document.removeEventListener?.("pointerdown", state.onPointerDown, true);
+  document.removeEventListener?.("keydown", state.onKeyDown, true);
+}
+
+function positionWeaponPropertyTooltip(element, event) {
+  const margin = 12;
+  const initialX = Number(event?.clientX) || margin;
+  const initialY = Number(event?.clientY) || margin;
+  const viewportWidth = Number(window.innerWidth) || 1920;
+  const viewportHeight = Number(window.innerHeight) || 1080;
+  const bounds = element.getBoundingClientRect?.() ?? { width: 380, height: 240 };
+  const left = Math.max(margin, Math.min(initialX + 12, viewportWidth - Number(bounds.width || 380) - margin));
+  const top = Math.max(margin, Math.min(initialY + 12, viewportHeight - Number(bounds.height || 240) - margin));
+  element.style.setProperty("left", `${left}px`);
+  element.style.setProperty("top", `${top}px`);
+}
+
+function openWeaponPropertyTooltip(propertyKey, event) {
+  const entry = getWeaponPropertyGlossaryEntry(propertyKey);
+  if (!entry) {
+    return;
+  }
+
+  event?.preventDefault?.();
+  event?.stopPropagation?.();
+  closeWeaponPropertyTooltip();
+
+  const tooltip = document.createElement("aside");
+  tooltip.classList.add("rm-weapon-property-tooltip");
+  tooltip.dataset.rebreyaWeaponPropertyTooltip = "true";
+  tooltip.setAttribute("role", "dialog");
+  tooltip.setAttribute("aria-label", `Описание свойства: ${entry.title}`);
+
+  const header = document.createElement("header");
+  header.classList.add("rm-weapon-property-tooltip__header");
+  const title = document.createElement("strong");
+  title.textContent = entry.title;
+  const closeButton = document.createElement("button");
+  closeButton.type = "button";
+  closeButton.classList.add("rm-weapon-property-tooltip__close");
+  closeButton.setAttribute("aria-label", "Закрыть описание свойства");
+  closeButton.textContent = "×";
+  header.append(title, closeButton);
+
+  const description = document.createElement("p");
+  description.classList.add("rm-weapon-property-tooltip__description");
+  description.textContent = entry.description;
+  tooltip.append(header, description);
+
+  const host = document.body ?? document.documentElement;
+  host?.append?.(tooltip);
+  positionWeaponPropertyTooltip(tooltip, event);
+
+  const onPointerDown = (pointerEvent) => {
+    if (!tooltip.contains(pointerEvent.target)) {
+      closeWeaponPropertyTooltip();
+    }
+  };
+  const onKeyDown = (keyEvent) => {
+    if (keyEvent.key === "Escape") {
+      closeWeaponPropertyTooltip();
+    }
+  };
+  activeWeaponPropertyTooltip = { element: tooltip, onPointerDown, onKeyDown };
+  closeButton.addEventListener("click", closeWeaponPropertyTooltip);
+  document.addEventListener?.("pointerdown", onPointerDown, true);
+  document.addEventListener?.("keydown", onKeyDown, true);
+}
+
+function bindWeaponPropertyGlossaryRow(row, propertyKey) {
+  if (!row || row.dataset?.rebreyaWeaponPropertyGlossaryBound === "true") {
+    return;
+  }
+  if (!getWeaponPropertyGlossaryEntry(propertyKey)) {
+    return;
+  }
+
+  row.dataset.rebreyaWeaponPropertyGlossaryBound = "true";
+  row.dataset.rebreyaWeaponPropertyKey = propertyKey;
+  row.classList?.add?.("rm-weapon-property-glossary-target");
+  row.setAttribute?.("title", "ПКМ: описание свойства");
+  row.addEventListener?.("contextmenu", (event) => openWeaponPropertyTooltip(propertyKey, event));
+}
+
+function bindWeaponPropertyGlossary(root) {
+  for (const propertyKey of Object.keys(WEAPON_PROPERTY_GLOSSARY)) {
+    for (const control of findSheetPropertyControls(root, propertyKey)) {
+      bindWeaponPropertyGlossaryRow(getSheetPropertyRow(control), propertyKey);
+    }
+  }
+}
+
 function findSheetPropertyFieldset(control, row) {
   return control?.closest?.("fieldset")
     ?? row?.closest?.("fieldset")
@@ -6100,6 +6206,7 @@ function upsertFirearmWeaponPropertiesField(root, app) {
     });
 
     row.append(input, text);
+    bindWeaponPropertyGlossaryRow(row, definition.key);
     grid.append(row);
   }
   fieldset.append(grid);
@@ -6119,6 +6226,7 @@ function bindItemSheetEnhancements(root, app, moduleApi = null) {
     return;
   }
 
+  closeWeaponPropertyTooltip();
   ensureEquipmentTypeOptions(root, item);
   upsertToolBaseItemOptions(root, app);
   upsertItemRankBadge(root, item);
@@ -6126,6 +6234,7 @@ function bindItemSheetEnhancements(root, app, moduleApi = null) {
   upsertItemSlotField(root, app);
   upsertFirearmWeaponPropertiesField(root, app);
   upsertWeaponAttackTraitsField(root, app);
+  bindWeaponPropertyGlossary(root);
   bindItemUpgradeSheet(root, app, moduleApi);
 }
 

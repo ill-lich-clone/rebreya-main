@@ -114,6 +114,10 @@ function installSheetExtensionStubs() {
       return this.attributes[name];
     }
 
+    hasAttribute(name) {
+      return Object.hasOwn(this.attributes, name);
+    }
+
     querySelector(selector) {
       return this.selectors[selector] ?? null;
     }
@@ -2688,6 +2692,128 @@ test("weapon item sheet removes firearm-only native property rows from non-firea
   finally {
     stubs.restore();
   }
+});
+
+test("weapon property right click opens its glossary tooltip and Escape closes it", async () => {
+  const stubs = installSheetExtensionStubs();
+  try {
+    const { registerDnd5eSheetExtensions } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?weapon-property-tooltip=${Date.now()}`);
+
+    const item = new globalThis.Item();
+    item.type = "weapon";
+    item.system = {
+      type: { value: "martialM" },
+      properties: { lchGrip: true }
+    };
+    item.flags = {};
+    item.getFlag = (scope, key) => item.flags?.[scope]?.[key];
+
+    const gripRow = new stubs.HTMLElement();
+    gripRow.tagName = "LABEL";
+    const gripControl = new stubs.HTMLElement();
+    gripControl.name = "system.properties.lchGrip";
+    gripRow.append(gripControl);
+
+    const selector = "dnd5e-checkbox[name='system.properties.lchGrip'], input[name='system.properties.lchGrip']";
+    const details = new stubs.HTMLElement();
+    const root = new stubs.HTMLElement({
+      selectors: { ".tab[data-tab='details']": details, [selector]: gripControl },
+      selectorAll: { [selector]: [gripControl] }
+    });
+
+    registerDnd5eSheetExtensions({});
+    stubs.hooks.get("renderItemSheet")({ item, isEditable: true }, root);
+
+    assert.equal(gripRow.listeners.contextmenu.length, 1);
+    let defaultPrevented = false;
+    gripRow.listeners.contextmenu[0]({
+      clientX: 240,
+      clientY: 160,
+      preventDefault() { defaultPrevented = true; },
+      stopPropagation() {}
+    });
+
+    assert.equal(defaultPrevented, true);
+    const tooltip = findTreeNode(stubs.document.documentElement, (node) => node.dataset?.rebreyaWeaponPropertyTooltip === "true");
+    assert.ok(tooltip, "glossary tooltip is appended as an HTML element");
+    assert.ok(findTreeNode(tooltip, (node) => node.textContent === "Смена хвата [Lich]"));
+    assert.ok(findTreeNode(tooltip, (node) => String(node.textContent).includes("изменить хват один раз в ход")));
+
+    assert.equal(stubs.document.listeners.keydown.length, 1);
+    stubs.document.listeners.keydown[0]({ key: "Escape" });
+    assert.equal(tooltip.removed, true);
+  }
+  finally {
+    stubs.restore();
+  }
+});
+
+test("firearm property right click replaces the previous glossary tooltip", async () => {
+  const stubs = installSheetExtensionStubs();
+  try {
+    const { registerDnd5eSheetExtensions } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?firearm-property-tooltip=${Date.now()}`);
+
+    const item = new globalThis.Item();
+    item.type = "weapon";
+    item.system = {
+      type: { value: "firearmPrimitive" },
+      properties: { lchFirearmMisfire: true }
+    };
+    item.flags = {};
+    item.getFlag = (scope, key) => item.flags?.[scope]?.[key];
+    item.update = async () => item;
+
+    const details = new stubs.HTMLElement();
+    const root = new stubs.HTMLElement({ selectors: { ".tab[data-tab='details']": details } });
+
+    registerDnd5eSheetExtensions({});
+    stubs.hooks.get("renderItemSheet")({ item, isEditable: true }, root);
+
+    const misfireRow = findTreeNode(details, (node) => node.dataset?.rebreyaFirearmPropertyRow === "lchFirearmMisfire");
+    const automaticRow = findTreeNode(details, (node) => node.dataset?.rebreyaFirearmPropertyRow === "lchFirearmAutomatic");
+    assert.equal(misfireRow.listeners.contextmenu.length, 1);
+    assert.equal(automaticRow.listeners.contextmenu.length, 1);
+
+    misfireRow.listeners.contextmenu[0]({ clientX: 50, clientY: 60, preventDefault() {}, stopPropagation() {} });
+    const firstTooltip = findTreeNode(stubs.document.documentElement, (node) => node.dataset?.rebreyaWeaponPropertyTooltip === "true");
+    assert.ok(findTreeNode(firstTooltip, (node) => node.textContent === "Осечка (значение)"));
+
+    automaticRow.listeners.contextmenu[0]({ clientX: 80, clientY: 90, preventDefault() {}, stopPropagation() {} });
+    assert.equal(firstTooltip.removed, true);
+    const secondTooltip = findTreeNode(stubs.document.documentElement, (node) => node.dataset?.rebreyaWeaponPropertyTooltip === "true");
+    assert.notEqual(secondTooltip, firstTooltip);
+    assert.ok(findTreeNode(secondTooltip, (node) => node.textContent === "Автоматическое"));
+    assert.ok(findTreeNode(secondTooltip, (node) => String(node.textContent).includes("45-футовый конус")));
+  }
+  finally {
+    stubs.restore();
+  }
+});
+
+test("weapon property glossary covers every Rebreya weapon and firearm property", async () => {
+  const { WEAPON_PROPERTY_GLOSSARY } = await import(`../scripts/data/weapon-property-glossary.js?coverage=${Date.now()}`);
+  const expectedKeys = [
+    "lchGrip", "lchPower", "lchSwing", "lchBackswing", "lchInterfere", "lchAim", "lchPush",
+    "lchTrip", "lchStrReq", "lchArcShot", "lchMechanism", "lchDash", "lchMku", "lchMu",
+    "lchRku", "lchWhirl", "lchReach", "lchPowerStrike", "lchMounted", "lchDeadly", "lchPoison",
+    "lchFirearmMisfire", "lchFirearmAmmunition", "lchFirearmAmmoProperty", "lchFirearmFireMode",
+    "lchFirearmReload", "lchFirearmConstruction", "lchFirearmAutomatic", "lchFirearmBoltAction",
+    "lchFirearmSemiAutomatic", "lchFirearmBulky", "lchFirearmScatter", "lchFirearmExplosive",
+    "lchFirearmRust", "lchFirearmInaccurate", "lchFirearmSurprise", "lchFirearmProneFire",
+    "lchFirearmWaterVulnerability", "lchFirearmOverheat", "lchFirearmMachineGun"
+  ];
+
+  for (const propertyKey of expectedKeys) {
+    assert.ok(WEAPON_PROPERTY_GLOSSARY[propertyKey]?.title, `${propertyKey} has a glossary title`);
+    assert.ok(WEAPON_PROPERTY_GLOSSARY[propertyKey]?.description, `${propertyKey} has a glossary description`);
+  }
+});
+
+test("main stylesheet renders weapon property descriptions as a fixed themed popover", async () => {
+  const css = await readFile(new URL("../styles/main.css", import.meta.url), "utf8");
+  assert.match(css, /\.rm-weapon-property-tooltip\s*\{[^}]*position:\s*fixed;/s);
+  assert.match(css, /\.rm-weapon-property-tooltip__header\s*\{/);
+  assert.match(css, /\.rm-weapon-property-tooltip__description\s*\{/);
 });
 
 test("selectDowntimeTemplateDocumentWithBrowser locks native dnd5e browser to downtime items", async () => {
