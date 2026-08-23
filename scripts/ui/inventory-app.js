@@ -74,6 +74,7 @@ const INVENTORY_FOLDER_DRAG_TYPE = "RebreyaInventoryFolder";
 const INVENTORY_TREE_DRAG_VERSION = 1;
 const INVENTORY_ITEM_FOLDER_DRAG_FLAG = "inventoryFolderDrag";
 const INVENTORY_DRAG_MIME_TYPES = Object.freeze(["text/plain", "text", "application/json", "text/uri-list"]);
+let activeInventoryTreeDragSession = null;
 const COIN_LABELS = Object.freeze({
   pp: "пм",
   gp: "зм",
@@ -6322,10 +6323,11 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
         try {
           event.dataTransfer.effectAllowed = "all";
-          const payload = JSON.stringify(extendInventoryItemDragData(
+          const dragData = extendInventoryItemDragData(
             buildPartyInventoryItemDragData(uuid),
             { groupActorId, itemId }
-          ));
+          );
+          const payload = JSON.stringify(dragData);
           for (const mimeType of INVENTORY_DRAG_MIME_TYPES) {
             try {
               event.dataTransfer.setData(mimeType, payload);
@@ -6334,11 +6336,15 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
               // Ignore MIME types unsupported by this browser.
             }
           }
+          activeInventoryTreeDragSession = { dataTransfer: event.dataTransfer, dragData };
         }
         catch (error) {
           console.error(`${MODULE_ID} | Failed to start inventory Item drag.`, error);
           ui.notifications?.error(error.message || "Не удалось начать перенос предмета.");
         }
+      }, listenerOptions);
+      row.addEventListener("dragend", () => {
+        activeInventoryTreeDragSession = null;
       }, listenerOptions);
     });
 
@@ -6350,7 +6356,8 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
         try {
           event.dataTransfer.effectAllowed = "all";
-          const payload = JSON.stringify(buildInventoryFolderDragData({ groupActorId, folderId }));
+          const dragData = buildInventoryFolderDragData({ groupActorId, folderId });
+          const payload = JSON.stringify(dragData);
           for (const mimeType of INVENTORY_DRAG_MIME_TYPES) {
             try {
               event.dataTransfer.setData(mimeType, payload);
@@ -6359,11 +6366,15 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
               // Ignore MIME types unsupported by this browser.
             }
           }
+          activeInventoryTreeDragSession = { dataTransfer: event.dataTransfer, dragData };
         }
         catch (error) {
           console.error(`${MODULE_ID} | Failed to start inventory folder drag.`, error);
           ui.notifications?.error(error.message || "Не удалось начать перенос папки.");
         }
+      }, listenerOptions);
+      row.addEventListener("dragend", () => {
+        activeInventoryTreeDragSession = null;
       }, listenerOptions);
     });
 
@@ -7172,14 +7183,42 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const action = this.#resolveInventoryDropAction(dragData, target.folderId);
         return action ? { action, dragData, target } : null;
       };
+      const readAcceptedDragOver = (event) => {
+        const target = this.#resolveInventoryDropTarget(event, dropzone);
+        if (!target) return null;
+
+        try {
+          const readableDragData = TextEditor.getDragEventData(event);
+          if (readableDragData && Object.keys(readableDragData).length > 0) {
+            const action = this.#resolveInventoryDropAction(readableDragData, target.folderId);
+            return action ? { action, target } : null;
+          }
+        }
+        catch (_error) {
+          // Browsers protect DataTransfer contents during dragover.
+        }
+
+        if (activeInventoryTreeDragSession?.dataTransfer === event.dataTransfer) {
+          const action = this.#resolveInventoryDropAction(
+            activeInventoryTreeDragSession.dragData,
+            target.folderId
+          );
+          return action ? { action, target } : null;
+        }
+
+        const transferTypes = Array.from(event.dataTransfer?.types ?? []);
+        return transferTypes.some((mimeType) => INVENTORY_DRAG_MIME_TYPES.includes(mimeType))
+          ? { action: null, target }
+          : null;
+      };
 
       dropzone.addEventListener("dragover", (event) => {
         clearDropState();
-        const accepted = readAcceptedDrop(event);
+        const accepted = readAcceptedDragOver(event);
         if (!accepted) return;
         event.preventDefault();
         if (event.dataTransfer) {
-          event.dataTransfer.dropEffect = accepted.action.kind === "external" ? "copy" : "move";
+          event.dataTransfer.dropEffect = accepted.action?.kind === "external" || !accepted.action ? "copy" : "move";
         }
         dropzone.classList.add("is-dragover");
         activeDropTarget = accepted.target.highlightElement;
@@ -7195,6 +7234,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
       dropzone.addEventListener("drop", async (event) => {
         const accepted = readAcceptedDrop(event);
+        activeInventoryTreeDragSession = null;
         clearDropState();
         if (!accepted) return;
         event.preventDefault();

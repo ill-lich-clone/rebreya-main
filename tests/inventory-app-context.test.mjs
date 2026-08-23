@@ -792,6 +792,14 @@ test("InventoryApp template renders accessible folder rows and fixed-depth item 
   assert.ok(createIndex > sortIndex);
   assert.match(template, /data-action="create-inventory-folder"[^>]*title="Создать папку"[^>]*aria-label="Создать папку"/u);
   assert.match(template, /\{\{#if canOrganizeInventory\}\}[\s\S]*data-action="create-inventory-folder"[\s\S]*\{\{\/if\}\}/u);
+  assert.doesNotMatch(template, /Корень склада/u);
+  assert.doesNotMatch(template, /rm-inventory-root-drop-target/u);
+  assert.match(template, /class="rm-compact-item-list rm-inventory-tree"[^>]*data-folder-drop-id=""/su);
+  assert.match(template, /class="rm-empty"[^>]*data-folder-drop-id=""/su);
+  const folderCreateRule = css.match(/\.rm-inventory-folder-create\s*\{(?<body>[^}]*)\}/u)?.groups?.body ?? "";
+  assert.match(folderCreateRule, /width:\s*44px;/u);
+  assert.match(folderCreateRule, /height:\s*44px;/u);
+  assert.match(css, /\.rm-compact-toolbar\s*\{[^}]*grid-template-columns:[^;]*44px;/su);
   assert.ok(template.includes("{{#each inventoryRows}}"));
   assert.match(folderBranch, /class="[^"]*rm-inventory-folder-row[^"]*"/u);
   assert.ok(folderBranch.includes('data-folder-id="{{folderId}}"'));
@@ -1350,6 +1358,136 @@ test("InventoryApp routes internal and external drops to exact folder or root ta
   finally {
     globalThis.ui = previousUi;
     globalThis.TextEditor = previousTextEditor;
+    dom.restore();
+    restoreFoundry();
+  }
+});
+
+test("InventoryApp accepts protected browser dragover and drops an Item on the root list surface", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const dom = installMinimalDom();
+  const previousGame = globalThis.game;
+  const previousFromUuidSync = globalThis.fromUuidSync;
+  const previousTextEditor = globalThis.TextEditor;
+  const previousUi = globalThis.ui;
+  const previousSetTimeout = globalThis.setTimeout;
+  const previousClearTimeout = globalThis.clearTimeout;
+  globalThis.game = {
+    user: { id: "user-a" },
+    users: { activeGM: { id: "gm-a", active: true } }
+  };
+  globalThis.fromUuidSync = (uuid) => ({
+    uuid,
+    name: "Глаз чудовища",
+    type: "loot",
+    flags: {},
+    system: { quantity: 1 }
+  });
+  globalThis.TextEditor = {
+    getDragEventData(event) {
+      try {
+        return JSON.parse(event.dataTransfer.getData("text/plain"));
+      }
+      catch (_error) {
+        return {};
+      }
+    }
+  };
+  globalThis.ui = { notifications: { info() {}, error() {} } };
+  globalThis.setTimeout = () => 0;
+  globalThis.clearTimeout = () => {};
+
+  const { InventoryApp } = await import(
+    `../scripts/ui/inventory-app.js?protected-folder-drop=${Date.now()}`
+  );
+  const calls = [];
+  const moduleApi = createModuleApi({
+    inventorySnapshot: createFolderInventorySnapshot(),
+    getGroupContext: () => null
+  });
+  moduleApi.moveInventoryItemToFolder = async (payload) => calls.push(payload);
+
+  let rootTarget;
+  const itemRow = createFakeElement({
+    dataset: {
+      itemId: "deep-item",
+      itemUuid: "Actor.group-a.Item.deep-item"
+    }
+  });
+  const rootItemRow = createFakeElement({
+    closest: (selector) => selector === "[data-folder-drop-id]" ? rootTarget : null
+  });
+  rootTarget = createFakeElement({
+    dataset: { folderDropId: "" },
+    closest: (selector) => selector === "[data-folder-drop-id]" ? rootTarget : null
+  });
+  let folderTarget;
+  folderTarget = createFakeElement({
+    dataset: { folderDropId: "beta" },
+    closest: (selector) => selector === "[data-folder-drop-id]" || selector.includes("rm-inventory-folder-row")
+      ? folderTarget
+      : null
+  });
+  const dropzone = createFakeElement();
+  dropzone.contains = (node) => [rootTarget, rootItemRow, folderTarget].includes(node);
+  const root = createFakeElement();
+  root.querySelector = (selector) => selector === "[data-action='inventory-dropzone']" ? dropzone : null;
+  root.querySelectorAll = (selector) => selector === "[data-item-drag]" ? [itemRow] : [];
+
+  const values = new Map();
+  let dragDataMode = "write";
+  const dataTransfer = {
+    effectAllowed: "",
+    dropEffect: "",
+    get types() {
+      return [...values.keys()];
+    },
+    setData(type, value) {
+      values.set(type, value);
+    },
+    getData(type) {
+      return dragDataMode === "read" ? values.get(type) ?? "" : "";
+    }
+  };
+  const dragOver = (target) => {
+    let prevented = false;
+    dropzone.listeners.dragover[0]({
+      target,
+      dataTransfer,
+      preventDefault() { prevented = true; }
+    });
+    return prevented;
+  };
+
+  try {
+    const app = new InventoryApp(moduleApi);
+    app.element = root;
+    await app._prepareContext();
+    await app._onRender({}, {});
+
+    itemRow.listeners.dragstart[0]({ currentTarget: itemRow, dataTransfer });
+    dragDataMode = "protected";
+    assert.equal(dragOver(folderTarget), true);
+    assert.equal(dragOver(rootItemRow), true);
+
+    dragDataMode = "read";
+    let prevented = false;
+    await dropzone.listeners.drop[0]({
+      target: rootItemRow,
+      dataTransfer,
+      preventDefault() { prevented = true; }
+    });
+
+    assert.equal(prevented, true);
+    assert.deepEqual(calls, [{ groupActorId: "group-a", itemId: "deep-item", folderId: null }]);
+  }
+  finally {
+    globalThis.clearTimeout = previousClearTimeout;
+    globalThis.setTimeout = previousSetTimeout;
+    globalThis.ui = previousUi;
+    globalThis.TextEditor = previousTextEditor;
+    globalThis.fromUuidSync = previousFromUuidSync;
+    globalThis.game = previousGame;
     dom.restore();
     restoreFoundry();
   }

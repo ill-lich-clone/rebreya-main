@@ -210,17 +210,10 @@
           {{/if}}
         </section>
 
-        {{#if canDropInventoryItems}}
-          <div class="rm-inventory-root-drop-target" data-folder-drop-id="" role="button" tabindex="0" aria-label="Переместить в корень склада">
-            <i class="fa-solid fa-box-open" aria-hidden="true"></i>
-            <span>Корень склада</span>
-          </div>
-        {{/if}}
-
         {{#if emptyInventory}}
-          <p class="rm-empty">По текущему фильтру склад пуст.</p>
+          <p class="rm-empty" {{#if canDropInventoryItems}}data-folder-drop-id=""{{/if}}>По текущему фильтру склад пуст.</p>
         {{else}}
-          <div class="rm-compact-item-list rm-inventory-tree" role="tree">
+          <div class="rm-compact-item-list rm-inventory-tree" {{#if canDropInventoryItems}}data-folder-drop-id=""{{/if}} role="tree">
             {{#each inventoryRows}}
               {{#if isFolder}}
                 <article
