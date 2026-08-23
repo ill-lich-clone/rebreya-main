@@ -339,9 +339,26 @@
                     </div>
                   </div>
 
+                  <div class="rm-party-row__capacity">
+                    <div class="rm-party-row__capacity-heading">
+                      <span>Грузоподъёмность</span>
+                      <strong class="{{#if isOverloaded}}rm-negative{{/if}}">{{rmNum inventoryWeight}} / {{rmNum capacityLb}} фнт.</strong>
+                    </div>
+                    <div
+                      class="rm-party-capacity-meter"
+                      role="meter"
+                      aria-label="Загрузка {{actorName}}: {{capacityUsedRawPercent}}%"
+                      aria-valuemin="0"
+                      aria-valuemax="100"
+                      aria-valuenow="{{capacityUsedPercent}}"
+                    >
+                      <div class="rm-party-capacity-meter__bar {{#if isOverloaded}}rm-negative{{/if}}" style="width: {{capacityUsedPercent}}%;"></div>
+                    </div>
+                  </div>
+
                   <div class="rm-party-row__stats">
                     <span class="rm-chip">СИЛ {{rmNum strength precision=0}}</span>
-                    <span class="rm-chip">Груз {{rmNum capacityLb}}</span>
+                    <span class="rm-chip">{{rmNum currencyGp precision=2}} ЗМ</span>
                     <span class="rm-chip">Эн. {{rmNum energyCurrent precision=0}} / {{rmNum energyMax precision=0}}</span>
                   </div>
                 </summary>

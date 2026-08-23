@@ -97,6 +97,7 @@ Definition of Done: код, тесты, `README.md` при изменении п
 - **Зачем:** управлять предметами/валютой/припасами активной группы и переносами к персонажам с recovery после частичной записи.
 - **Владелец:** `scripts/data/inventory-service.js`; hook reconciliation — `scripts/integrations/inventory-sync.js`; UI — `scripts/ui/inventory-app.js`.
 - **Чтение:** `getInventorySnapshot(options)`, `getPartySnapshot(options)`, `getRebreyaToolCatalog()`.
+- **Карточки участников:** `getPartySnapshot(options)` возвращает для каждого Actor его `inventoryWeight`, `capacityLb` и `currencyGp` — полный эквивалент `pp/gp/sp/cp` в ЗМ. `InventoryApp._prepareContext()` вычисляет ограниченный `capacityUsedPercent`, исходный процент и `isOverloaded`; вкладка «Группа» показывает эти данные без мутаций Actor.
 - **Мутации:** `updateInventoryItemQuantity(itemId, nextQuantity)`, `deleteInventoryItem(itemId)`, `takeInventoryItemToCharacter(itemId, options)`, `sellInventoryItem(itemId, quantity)`, `importInventoryDrop(dropData)`, `addModelItemToInventory(sourceType, sourceId, quantity)`, `breakInventoryItemToMaterial(itemId, quantity)`, `addPartySupply(resourceKey, quantity)`, `consumePartySuppliesOneDay(options)`, `updatePartyCurrency(values)`, `convertPartyCurrency(mode)`, `updatePartyMemberTool(actorId, toolId, patch)`, `setPartyMemberEnergy(actorId, currentEnergy)`, `restorePartyMemberEnergy(actorId, days)`.
 - **Storage grant:** `addLootgenRowToInventoryOnce(row, mutationId, { allowPersistedItemData = false } = {})` принимает сохранённый authoritative `itemData` только по явному флагу и только на active GM; обычная выдача Lootgen продолжает перестраивать предмет из канонического источника.
 - **UI-ввод чисел:** `promptNumericValue({ title, label, value, min, step, confirmLabel, allowRelative })` и `promptCurrencyDialog(currency)` создают диалоги с HTML `pattern`, совместимыми с Unicode Sets (`v`); `parseQuantityInputValue(rawValue, fallback, { relative, min })` и `parseCurrencyInputValue(rawValue, fallback)` превращают абсолютный или знаковый ввод в нормализованное значение до вызова API.
@@ -104,7 +105,7 @@ Definition of Done: код, тесты, `README.md` при изменении п
 - **Надёжность:** многошаговые переносы используют `inventoryMutationJournal`; terminal marker/receipt отделяется от preview и UI state.
 - **Куда править:** экономику переноса — `InventoryService`; Foundry create/update/delete hook — `inventory-sync.js`; форму/drag/drop — `inventory-app.js`; refresh только через `refreshInventoryViews({ actorIds })`.
 - **Нельзя:** удалять source Item до доказанного создания target, рендерить все Actor sheets или повторять ambiguous operation с новым mutation ID.
-- **Тесты:** `tests/inventory-mutation-recovery.test.mjs`, `inventory-sync-hooks.test.mjs`, `inventory-app-context.test.mjs`, `inventory-header-motion.test.mjs`, `party-inventory-crest.test.mjs`.
+- **Тесты:** `tests/inventory-mutation-recovery.test.mjs`, `group-inventory-migration.test.mjs`, `inventory-sync-hooks.test.mjs`, `inventory-app-context.test.mjs`, `inventory-header-motion.test.mjs`, `party-inventory-crest.test.mjs`.
 
 ### 8. Хранилища, контейнеры и piles на сцене
 

@@ -1746,6 +1746,7 @@ test("getPartySnapshot counts carried character inventory weight against party c
     name: "Hero",
     type: "character",
     isOwner: true,
+    currency: { pp: 2, gp: 3, sp: 4, cp: 5 },
     abilities: { str: { value: 10 } },
     items: [memberItem]
   });
@@ -1788,6 +1789,7 @@ test("getPartySnapshot counts carried character inventory weight against party c
     assert.equal(snapshot.inventoryWeight, 22);
     assert.equal(snapshot.freeCapacityLb, 128);
     assert.equal(snapshot.members[0].inventoryWeight, 12);
+    assert.equal(snapshot.members[0].currencyGp, 23.45);
   }
   finally {
     fixture.restore();

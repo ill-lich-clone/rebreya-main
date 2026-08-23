@@ -1772,6 +1772,48 @@ test("InventoryApp marks only overloaded cargo and empty header supplies as crit
   }
 });
 
+test("InventoryApp prepares per-member cargo meters and overload state", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  try {
+    const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?member-cargo=${Date.now()}`);
+    const app = new InventoryApp(createModuleApi({
+      partySnapshot: {
+        members: [
+          {
+            actorId: "member-a",
+            actorName: "Carrier",
+            inventoryWeight: 45,
+            capacityLb: 90,
+            currencyGp: 12.5
+          },
+          {
+            actorId: "member-b",
+            actorName: "Overloaded",
+            inventoryWeight: 135,
+            capacityLb: 120,
+            currencyGp: 23.45
+          }
+        ]
+      }
+    }));
+
+    const context = await app._prepareContext();
+    const carrier = context.party.members.find((member) => member.actorId === "member-a");
+    const overloaded = context.party.members.find((member) => member.actorId === "member-b");
+
+    assert.equal(carrier.capacityUsedPercent, 50);
+    assert.equal(carrier.isOverloaded, false);
+    assert.equal(carrier.currencyGp, 12.5);
+    assert.equal(overloaded.capacityUsedPercent, 100);
+    assert.equal(overloaded.capacityUsedRawPercent, 112.5);
+    assert.equal(overloaded.isOverloaded, true);
+    assert.equal(overloaded.currencyGp, 23.45);
+  }
+  finally {
+    restoreFoundry();
+  }
+});
+
 test("InventoryApp allows travel tab and maps travel snapshot into context", async () => {
   const restoreFoundry = installFoundryApplicationStub();
   try {

@@ -3875,10 +3875,24 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       this.sortMode = normalizeInventorySortMode(this.sortMode);
       const sortedInventoryItems = sortInventoryEntries(inventorySnapshot.items, this.sortMode);
       const itemValueSummary = buildInventoryValueSummary(inventorySnapshot.allItems ?? inventorySnapshot.items);
-      const partyMembers = (partySnapshot.members ?? []).map((member) => ({
-        ...member,
-        expanded: this.expandedPartyMembers.has(member.actorId)
-      }));
+      const partyMembers = (partySnapshot.members ?? []).map((member) => {
+        const memberInventoryWeight = Math.max(0, toNumber(member.inventoryWeight, 0));
+        const memberCapacityLb = Math.max(0, toNumber(member.capacityLb, 0));
+        const capacityUsedRawPercent = memberCapacityLb > 0
+          ? roundNumber((memberInventoryWeight / memberCapacityLb) * 100, 1)
+          : (memberInventoryWeight > 0 ? 100 : 0);
+
+        return {
+          ...member,
+          inventoryWeight: memberInventoryWeight,
+          capacityLb: memberCapacityLb,
+          currencyGp: Math.max(0, roundNumber(toNumber(member.currencyGp, 0), 2)),
+          capacityUsedRawPercent,
+          capacityUsedPercent: Math.min(100, Math.max(0, capacityUsedRawPercent)),
+          isOverloaded: memberInventoryWeight > memberCapacityLb,
+          expanded: this.expandedPartyMembers.has(member.actorId)
+        };
+      });
       const membershipManagedByNativeGroup = Boolean(partySnapshot.membershipManagedByNativeGroup);
       const addMemberDisabled = membershipManagedByNativeGroup || availableActors.length === 0;
       const craftHasCrafters = (craftSnapshot.crafters ?? []).length > 0;

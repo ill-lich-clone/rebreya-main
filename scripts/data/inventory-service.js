@@ -3844,6 +3844,7 @@ export class InventoryService {
           strengthSource: memberState.strOverride !== null ? "Ручная" : "Лист",
           capacityMultiplier,
           capacityLb,
+          currencyGp: roundNumber(actorCurrencyToCopper(actorDocument) / CURRENCY_MULTIPLIERS.gp, 2),
           capBonusLb: memberState.capBonusLb,
           foodPerDay: memberState.foodPerDay,
           waterGalPerDay: memberState.waterGalPerDay,

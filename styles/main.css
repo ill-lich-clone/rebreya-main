@@ -8227,7 +8227,7 @@ summary:focus-visible {
 .rm-party-row__summary {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(180px, 1fr) minmax(240px, 0.9fr) auto;
   gap: 12px;
   align-items: center;
   padding: 8px 34px 8px 10px;
@@ -8302,6 +8302,32 @@ summary:focus-visible {
   gap: 6px;
   flex-wrap: wrap;
   justify-content: flex-end;
+}
+
+.rm-party-row__capacity {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.rm-party-row__capacity-heading {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  justify-content: space-between;
+  color: var(--rm-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.rm-party-row__capacity-heading strong {
+  color: var(--rm-text);
+  white-space: nowrap;
+}
+
+.rm-party-row__capacity-heading strong.rm-negative {
+  color: var(--rm-negative);
 }
 
 .rm-party-row__body {
