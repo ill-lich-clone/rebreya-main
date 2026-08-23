@@ -18,7 +18,9 @@ function installFoundryApplicationStub() {
     applications: {
       api: {
         ApplicationV2: class {
-          constructor(_options = {}) {}
+          constructor(options = {}) {
+            this.applicationOptions = options;
+          }
           async _onRender() {}
         },
         HandlebarsApplicationMixin: (Base) => class extends Base {},
@@ -163,6 +165,7 @@ function createModuleApi({
   transportSnapshot,
   calendarSnapshot,
   calendarPreview,
+  inventoryFolderUiState = { expandedFolderIds: [] },
   calls = []
 }) {
   return {
@@ -342,6 +345,16 @@ function createModuleApi({
       calls.push(["clearDowntimeHistory"]);
       return {};
     },
+    async getInventoryFolderUiState(groupActorId, folderIds) {
+      calls.push(["getInventoryFolderUiState", groupActorId, folderIds]);
+      return typeof inventoryFolderUiState === "function"
+        ? inventoryFolderUiState(groupActorId, folderIds)
+        : inventoryFolderUiState;
+    },
+    async setInventoryFolderExpanded(groupActorId, folderId, expanded) {
+      calls.push(["setInventoryFolderExpanded", groupActorId, folderId, expanded]);
+      return { expandedFolderIds: expanded ? [folderId] : [] };
+    },
     async createDowntimeRequest(payload) {
       calls.push(["createDowntimeRequest", payload]);
       return {};
@@ -378,6 +391,55 @@ function createModuleApi({
   };
 }
 
+function createFolderInventorySnapshot() {
+  const item = (itemId, name, folderId, quantity, totalWeight, priceCopper, sourceType = "gear") => ({
+    itemId,
+    id: itemId,
+    name,
+    folderId,
+    sourceType,
+    sourceTypeLabel: sourceType === "material" ? "Материал" : "Снаряжение",
+    itemTypeLabel: sourceType === "material" ? "Материал" : "Предмет",
+    materialLabel: sourceType === "material" ? "Металл" : "",
+    quantity,
+    totalWeight,
+    priceCopper
+  });
+  const allItems = [
+    item("root-item", "Корневая вещь", null, 2, 4, 50),
+    item("alpha-item", "Припасы", "alpha", 3, 6, 100),
+    item("deep-item", "Реликвия", "alpha-5", 4, 8, 250, "material"),
+    item("beta-item", "Снаружи", "beta", 5, 10, 20)
+  ];
+  return {
+    actor: { id: "group-a", name: "Группа A", img: "group.webp", canEdit: false },
+    hasActor: true,
+    folders: [
+      { id: "beta", name: "Бета", parentId: null },
+      { id: "alpha", name: "Альфа", parentId: null },
+      { id: "alpha-2", name: "Уровень 2", parentId: "alpha" },
+      { id: "alpha-3", name: "Уровень 3", parentId: "alpha-2" },
+      { id: "alpha-4", name: "Уровень 4", parentId: "alpha-3" },
+      { id: "alpha-5", name: "Уровень 5", parentId: "alpha-4" }
+    ],
+    folderStateVersion: 1,
+    items: allItems,
+    allItems,
+    emptyInventory: false,
+    canDropInventoryItems: true,
+    groupContextError: "",
+    summary: {
+      distinctCount: 4,
+      totalQuantity: 14,
+      totalWeight: 28,
+      foodLb: 0,
+      waterGal: 0,
+      currencyLabel: "0 мм",
+      currency: { pp: 0, gp: 0, sp: 0, cp: 0, totalCopper: 0, label: "0 мм" }
+    }
+  };
+}
+
 function createFakeControl({ dataset = {}, value = "", disabled = false } = {}) {
   const control = createFakeElement({ dataset });
   control.value = value;
@@ -393,7 +455,8 @@ async function dispatchClick(button, { required = true } = {}) {
   }
   await listener({
     currentTarget: button,
-    preventDefault() {}
+    preventDefault() {},
+    stopPropagation() {}
   });
   return true;
 }
@@ -439,9 +502,8 @@ test("InventoryApp _prepareContext never creates Foundry documents while renderi
     assert.deepEqual(calls.find((call) => call[0] === "getInventorySnapshot"), [
       "getInventorySnapshot",
       {
-        search: "",
-        typeFilter: "all",
-        createActor: false
+        createActor: false,
+        groupActorId: ""
       }
     ]);
   }
@@ -450,100 +512,257 @@ test("InventoryApp _prepareContext never creates Foundry documents while renderi
   }
 });
 
-test("InventoryApp filters a cached inventory context without refetching unrelated snapshots", async () => {
+test("InventoryApp projects three searches from one cached folder model without world writes", async () => {
   const restoreFoundry = installFoundryApplicationStub();
-  const calls = [];
-  const entries = [
-    {
-      id: "crossbow",
-      name: "Арбалет, ручной",
-      sourceType: "gear",
-      sourceTypeLabel: "Снаряжение",
-      itemTypeLabel: "Оружие",
-      materialLabel: "Дерево",
-      quantity: 1,
-      totalWeight: 3,
-      priceCopper: 7500
-    },
-    {
-      id: "rope",
-      name: "Верёвка",
-      sourceType: "gear",
-      sourceTypeLabel: "Снаряжение",
-      itemTypeLabel: "Снаряжение",
-      materialLabel: "Пенька",
-      quantity: 1,
-      totalWeight: 10,
-      priceCopper: 100
-    }
-  ];
+  const dom = installMinimalDom();
+  const calls = {
+    getInventorySnapshot: 0,
+    getModel: 0,
+    socketRequest: 0,
+    setUserFlag: 0
+  };
+  const snapshot = createFolderInventorySnapshot();
   const moduleApi = createModuleApi({
-    inventorySnapshot: {
-      actor: { id: "group", name: "Группа", img: "group.webp", canEdit: true },
-      hasActor: true,
-      items: entries,
-      allItems: entries,
-      emptyInventory: false,
-      canDropInventoryItems: true,
-      groupContextError: "",
-      summary: {
-        distinctCount: 2,
-        totalQuantity: 2,
-        totalWeight: 13,
-        foodLb: 0,
-        waterGal: 0,
-        currencyLabel: "0 мм",
-        currency: { pp: 0, gp: 0, sp: 0, cp: 0, totalCopper: 0, label: "0 мм" }
-      }
-    },
-    calls,
-    getGroupContext: () => null
+    inventorySnapshot: snapshot,
+    inventoryFolderUiState: { expandedFolderIds: [] },
+    getGroupContext: () => null,
+    calls: []
   });
-  for (const method of [
-    "getInventorySnapshot",
-    "getPartySnapshot",
-    "getCraftSnapshot",
-    "getCalendarSnapshot",
-    "getTravelSnapshot",
-    "getTransportSnapshot",
-    "getDowntimeSnapshot"
-  ]) {
-    const original = moduleApi[method].bind(moduleApi);
-    moduleApi[method] = async (...args) => {
-      calls.push([method, args]);
-      return await original(...args);
-    };
-  }
+  moduleApi.getInventorySnapshot = async () => {
+    calls.getInventorySnapshot += 1;
+    calls.getModel += 1;
+    return snapshot;
+  };
   const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?cached-search=${Date.now()}`);
   const app = new InventoryApp(moduleApi);
+  const searchInput = createFakeControl();
+  const root = createFakeElement();
+  root.querySelector = (selector) => selector === "[data-action='search']" ? searchInput : null;
+  root.querySelectorAll = () => [];
+  const scheduledRenders = [];
+  window.setTimeout = (callback) => {
+    scheduledRenders.push(callback);
+    return scheduledRenders.length;
+  };
+  let renderPromise = null;
+  app.element = root;
+  app.render = () => {
+    renderPromise = app._prepareContext();
+    return renderPromise;
+  };
+  const runDebouncedSearch = async (search) => {
+    searchInput.value = search;
+    searchInput.selectionStart = search.length;
+    searchInput.selectionEnd = search.length;
+    searchInput.listeners.input[0]({ currentTarget: searchInput });
+    scheduledRenders.shift()();
+    return renderPromise;
+  };
 
   try {
     await app._prepareContext();
-    const callCounts = Object.fromEntries([
-      "getInventorySnapshot",
-      "getPartySnapshot",
-      "getCraftSnapshot",
-      "getCalendarSnapshot",
-      "getTravelSnapshot",
-      "getTransportSnapshot",
-      "getDowntimeSnapshot"
-    ].map((method) => [method, calls.filter((call) => call[0] === method).length]));
-    app.search = "арбалет";
-    app.inventorySearchRenderPending = true;
-    const context = await app._prepareContext();
+    await app._onRender({}, {});
+    const storedExpansion = [...app.expandedFolderIds];
 
-    assert.deepEqual(context.inventory.map((entry) => entry.name), ["Арбалет, ручной"]);
-    for (const method of [
-      "getInventorySnapshot",
-      "getPartySnapshot",
-      "getCraftSnapshot",
-      "getCalendarSnapshot",
-      "getTravelSnapshot",
-      "getTransportSnapshot",
-      "getDowntimeSnapshot"
-    ]) {
-      assert.equal(calls.filter((call) => call[0] === method).length, callCounts[method], method);
+    const itemMatch = await runDebouncedSearch("реликвия");
+    assert.deepEqual(
+      itemMatch.inventoryRows.map((row) => row.kind === "folder" ? row.folderId : row.itemId),
+      ["alpha", "alpha-2", "alpha-3", "alpha-4", "alpha-5", "deep-item"]
+    );
+    assert.equal(itemMatch.inventoryRows.filter((row) => row.kind === "folder").every((row) => row.searchExpanded), true);
+
+    const folderMatch = await runDebouncedSearch("альфа");
+    assert.deepEqual(folderMatch.inventoryRows.map((row) => row.kind === "folder" ? row.folderId : row.itemId), ["alpha"]);
+
+    await runDebouncedSearch("металл");
+
+    assert.deepEqual([...app.expandedFolderIds], storedExpansion);
+    assert.deepEqual(calls, {
+      getInventorySnapshot: 1,
+      getModel: 1,
+      socketRequest: 0,
+      setUserFlag: 0
+    });
+  }
+  finally {
+    dom.restore();
+    restoreFoundry();
+  }
+});
+
+test("InventoryApp builds folder-first rows, preserves totals on collapse and isolates personal expansion", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const snapshot = createFolderInventorySnapshot();
+  const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?folder-context=${Date.now()}`);
+  const expanded = ["alpha", "alpha-2", "alpha-3", "alpha-4", "alpha-5", "beta", "deleted-folder"];
+  const expandedApp = new InventoryApp(createModuleApi({
+    inventorySnapshot: snapshot,
+    inventoryFolderUiState: { expandedFolderIds: expanded },
+    getGroupContext: () => null
+  }));
+  const collapsedApp = new InventoryApp(createModuleApi({
+    inventorySnapshot: snapshot,
+    inventoryFolderUiState: { expandedFolderIds: ["beta"] },
+    getGroupContext: () => null
+  }));
+
+  try {
+    const expandedContext = await expandedApp._prepareContext();
+    const collapsedContext = await collapsedApp._prepareContext();
+
+    assert.deepEqual(
+      expandedContext.inventoryRows.map((row) => row.kind === "folder" ? row.folderId : row.itemId),
+      ["alpha", "alpha-2", "alpha-3", "alpha-4", "alpha-5", "deep-item", "alpha-item", "beta", "beta-item", "root-item"]
+    );
+    assert.deepEqual(
+      expandedContext.inventoryRows.filter((row) => row.kind === "folder").map((row) => [row.folderId, row.depth, row.recursiveItemCount]),
+      [
+        ["alpha", 1, 2],
+        ["alpha-2", 2, 1],
+        ["alpha-3", 3, 1],
+        ["alpha-4", 4, 1],
+        ["alpha-5", 5, 1],
+        ["beta", 1, 1]
+      ]
+    );
+    const deepItem = expandedContext.inventoryRows.find((row) => row.itemId === "deep-item");
+    assert.equal(deepItem.depth, 5);
+    assert.equal(deepItem.quantity, 4);
+    assert.equal(deepItem.totalWeight, 8);
+    assert.equal(deepItem.priceCopper, 250);
+    assert.equal(expandedContext.inventoryCount, 4);
+    assert.equal(collapsedContext.inventoryCount, 2);
+    assert.deepEqual(
+      collapsedContext.inventoryRows.map((row) => row.kind === "folder" ? row.folderId : row.itemId),
+      ["alpha", "beta", "beta-item", "root-item"]
+    );
+    for (const key of ["distinctCount", "totalQuantity", "totalWeight", "totalItemValueCopper"]) {
+      assert.equal(collapsedContext.summary[key], expandedContext.summary[key], key);
     }
+    assert.deepEqual([...expandedApp.expandedFolderIds], expanded.slice(0, -1));
+    assert.deepEqual([...collapsedApp.expandedFolderIds], ["beta"]);
+    assert.equal(expandedContext.canOrganizeInventory, true);
+  }
+  finally {
+    restoreFoundry();
+  }
+});
+
+test("InventoryApp popout context and cached search stay inside the selected folder subtree", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const snapshot = createFolderInventorySnapshot();
+  const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?folder-popout-context=${Date.now()}`);
+  const app = new InventoryApp(createModuleApi({
+    inventorySnapshot: snapshot,
+    inventoryFolderUiState: { expandedFolderIds: ["alpha-3", "alpha-4", "alpha-5"] },
+    getGroupContext: () => null
+  }), {
+    groupActorId: "group-a",
+    rootFolderId: "alpha-2",
+    inventoryViewKey: "folder-alpha-2",
+    position: { width: 640 }
+  });
+
+  try {
+    const context = await app._prepareContext();
+    assert.deepEqual(
+      context.inventoryRows.map((row) => row.kind === "folder" ? row.folderId : row.itemId),
+      ["alpha-3", "alpha-4", "alpha-5", "deep-item"]
+    );
+    assert.equal(context.inventoryActorId, "group-a");
+    assert.deepEqual(app.applicationOptions, { position: { width: 640 } });
+
+    app.search = "снаружи";
+    app.inventorySearchRenderPending = true;
+    const outsideSearch = await app._prepareContext();
+    assert.deepEqual(outsideSearch.inventoryRows, []);
+  }
+  finally {
+    restoreFoundry();
+  }
+});
+
+test("InventoryApp rolls back optimistic personal expansion without refetching the snapshot", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const dom = installMinimalDom();
+  const previousUi = globalThis.ui;
+  const previousConsoleError = console.error;
+  const errors = [];
+  console.error = () => {};
+  globalThis.ui = { notifications: { error: (message) => errors.push(message) } };
+  const snapshot = createFolderInventorySnapshot();
+  let snapshotCalls = 0;
+  let expansionCalls = 0;
+  const moduleApi = createModuleApi({
+    inventorySnapshot: snapshot,
+    inventoryFolderUiState: { expandedFolderIds: [] },
+    getGroupContext: () => null
+  });
+  moduleApi.getInventorySnapshot = async () => {
+    snapshotCalls += 1;
+    return snapshot;
+  };
+  moduleApi.setInventoryFolderExpanded = async () => {
+    expansionCalls += 1;
+    throw new Error("Личная настройка не сохранена.");
+  };
+  const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?folder-expansion=${Date.now()}`);
+  const app = new InventoryApp(moduleApi);
+  const toggle = createFakeControl({ dataset: { folderId: "alpha" } });
+  const root = createFakeElement();
+  root.querySelector = () => null;
+  root.querySelectorAll = (selector) => selector === "[data-action='toggle-inventory-folder']" ? [toggle] : [];
+  const renderedExpansionStates = [];
+  app.element = root;
+  app.render = async () => {
+    renderedExpansionStates.push([...app.expandedFolderIds]);
+    return app._prepareContext();
+  };
+
+  try {
+    await app._prepareContext();
+    await app._onRender({}, {});
+    await dispatchClick(toggle);
+
+    assert.deepEqual(renderedExpansionStates, [["alpha"], []]);
+    assert.deepEqual([...app.expandedFolderIds], []);
+    assert.equal(snapshotCalls, 1);
+    assert.equal(expansionCalls, 1);
+    assert.deepEqual(errors, ["Личная настройка не сохранена."]);
+  }
+  finally {
+    console.error = previousConsoleError;
+    globalThis.ui = previousUi;
+    dom.restore();
+    restoreFoundry();
+  }
+});
+
+test("InventoryApp refreshInventorySnapshot invalidates folder caches before the forced render", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const snapshot = createFolderInventorySnapshot();
+  let snapshotCalls = 0;
+  const moduleApi = createModuleApi({ inventorySnapshot: snapshot, getGroupContext: () => null });
+  moduleApi.getInventorySnapshot = async () => {
+    snapshotCalls += 1;
+    return snapshot;
+  };
+  const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?folder-refresh=${Date.now()}`);
+  const app = new InventoryApp(moduleApi);
+  const renders = [];
+  app.render = async (options) => {
+    renders.push(options);
+    return app._prepareContext();
+  };
+
+  try {
+    await app._prepareContext();
+    const firstTree = app.inventoryFolderTreeCache;
+    await app.refreshInventorySnapshot();
+
+    assert.equal(snapshotCalls, 2);
+    assert.notEqual(app.inventoryFolderTreeCache, firstTree);
+    assert.deepEqual(renders, [{ force: true, preserveScroll: true }]);
   }
   finally {
     restoreFoundry();

@@ -1,6 +1,12 @@
 ﻿import { MODULE_ID } from "../constants.js";
 import { REBREYA_TOOLS } from "../constants.js";
 import { GROUP_CONTEXT_ERRORS } from "../data/group-context-service.js";
+import {
+  buildInventoryFolderSearchIndex,
+  buildInventoryFolderTree,
+  normalizeExpandedFolderIds,
+  projectInventoryFolderRows
+} from "../data/inventory-folder-tree.js";
 import { buildPartyInventoryItemDragData } from "../integrations/inventory-sync.js";
 import { bringAppToFront, formatNumber, getAppElement } from "../ui.js";
 import {
@@ -2581,59 +2587,42 @@ function getInventoryEntryItemValueCopper(entry) {
   return Math.max(0, Math.floor(toNumber(entry?.priceCopper, 0) * Math.max(0, toNumber(entry?.quantity, 0))));
 }
 
-function sortInventoryEntries(entries, sortMode) {
+function compareInventoryEntries(left, right, sortMode) {
   const mode = normalizeInventorySortMode(sortMode);
   const compareName = (left, right) => cleanText(left?.name).localeCompare(cleanText(right?.name), "ru");
-  return [...(Array.isArray(entries) ? entries : [])].sort((left, right) => {
-    switch (mode) {
-      case "weight-desc": {
-        const result = toNumber(right?.totalWeight, 0) - toNumber(left?.totalWeight, 0);
-        return result || compareName(left, right);
-      }
-      case "price-desc": {
-        const result = getInventoryEntryItemValueCopper(right) - getInventoryEntryItemValueCopper(left);
-        return result || compareName(left, right);
-      }
-      case "category": {
-        const categoryResult = cleanText(left?.sourceTypeLabel).localeCompare(cleanText(right?.sourceTypeLabel), "ru")
-          || cleanText(left?.itemTypeLabel).localeCompare(cleanText(right?.itemTypeLabel), "ru");
-        return categoryResult || compareName(left, right);
-      }
-      case "quantity-desc": {
-        const result = toNumber(right?.quantity, 0) - toNumber(left?.quantity, 0);
-        return result || compareName(left, right);
-      }
-      case "name":
-      default:
-        return compareName(left, right);
+  switch (mode) {
+    case "weight-desc": {
+      const result = toNumber(right?.totalWeight, 0) - toNumber(left?.totalWeight, 0);
+      return result || compareName(left, right);
     }
-  });
+    case "price-desc": {
+      const result = getInventoryEntryItemValueCopper(right) - getInventoryEntryItemValueCopper(left);
+      return result || compareName(left, right);
+    }
+    case "category": {
+      const categoryResult = cleanText(left?.sourceTypeLabel).localeCompare(cleanText(right?.sourceTypeLabel), "ru")
+        || cleanText(left?.itemTypeLabel).localeCompare(cleanText(right?.itemTypeLabel), "ru");
+      return categoryResult || compareName(left, right);
+    }
+    case "quantity-desc": {
+      const result = toNumber(right?.quantity, 0) - toNumber(left?.quantity, 0);
+      return result || compareName(left, right);
+    }
+    case "name":
+    default:
+      return compareName(left, right);
+  }
 }
 
-function normalizeInventorySearchText(value) {
-  return String(value ?? "")
-    .trim()
-    .toLowerCase()
-    .replace(/['\u2019\u2018\u02BC\u02B9\u2032"\u201C\u201D\u00AB\u00BB]/gu, "")
-    .replace(/\s+/gu, " ");
+function sortInventoryEntries(entries, sortMode) {
+  return [...(Array.isArray(entries) ? entries : [])]
+    .sort((left, right) => compareInventoryEntries(left, right, sortMode));
 }
 
-function filterInventoryEntries(entries, { search = "", typeFilter = "all" } = {}) {
-  const normalizedSearch = normalizeInventorySearchText(search);
-  return (Array.isArray(entries) ? entries : []).filter((entry) => {
-    if (typeFilter !== "all" && entry.sourceType !== typeFilter) {
-      return false;
-    }
-    if (!normalizedSearch) {
-      return true;
-    }
-    return normalizeInventorySearchText([
-      entry.name,
-      entry.itemTypeLabel,
-      entry.materialLabel,
-      entry.sourceTypeLabel
-    ].join(" ")).includes(normalizedSearch);
-  });
+function sortInventoryFolderTreeItems(node, sortMode) {
+  if (!node) return;
+  node.items = sortInventoryEntries(node.items, sortMode);
+  for (const folder of node.folders ?? []) sortInventoryFolderTreeItems(folder, sortMode);
 }
 
 function buildInventoryValueSummary(entries) {
@@ -3125,8 +3114,22 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
   };
 
   constructor(moduleApi, options = {}) {
-    super(options);
+    const {
+      groupActorId = "",
+      rootFolderId = null,
+      inventoryViewKey = "main",
+      ...applicationOptions
+    } = options ?? {};
+    super(applicationOptions);
     this.moduleApi = moduleApi;
+    this.groupActorId = cleanText(groupActorId);
+    this.rootFolderId = cleanText(rootFolderId) || null;
+    this.inventoryViewKey = cleanText(inventoryViewKey) || "main";
+    this.expandedFolderIds = new Set();
+    this.inventorySnapshotCache = null;
+    this.inventoryFolderTreeCache = null;
+    this.inventorySearchIndexCache = null;
+    this.inventoryContextCache = null;
     this.activeTab = "inventory";
     this.search = "";
     this.typeFilter = "all";
@@ -3153,7 +3156,6 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.expandedPartyMembers = new Set();
     this.searchRenderTimeout = null;
     this.inventorySearchRenderPending = false;
-    this.inventorySearchContext = null;
     this.craftSearchRenderTimeout = null;
     this.craftMutationIds = new Map();
     this.actionFeedbackTimeout = null;
@@ -3172,6 +3174,19 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
   get id() {
     return `${MODULE_ID}-inventory-app`;
+  }
+
+  get inventoryActorId() {
+    return cleanText(this.inventorySnapshotCache?.actor?.id) || this.groupActorId;
+  }
+
+  async refreshInventorySnapshot({ preserveScroll = true } = {}) {
+    this.inventorySnapshotCache = null;
+    this.inventoryFolderTreeCache = null;
+    this.inventorySearchIndexCache = null;
+    this.inventoryContextCache = null;
+    this.inventorySearchRenderPending = false;
+    return this.render({ force: true, preserveScroll });
   }
 
   setActiveTab(tab, { render = true } = {}) {
@@ -3775,32 +3790,97 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     };
   }
 
+  #projectCachedInventoryContext() {
+    if (!this.inventoryContextCache || !this.inventoryFolderTreeCache || !this.inventorySearchIndexCache) {
+      return null;
+    }
+
+    this.sortMode = normalizeInventorySortMode(this.sortMode);
+    sortInventoryFolderTreeItems(this.inventoryFolderTreeCache.root, this.sortMode);
+    const projection = projectInventoryFolderRows({
+      tree: this.inventoryFolderTreeCache,
+      searchIndex: this.inventorySearchIndexCache,
+      rootFolderId: this.rootFolderId,
+      expandedFolderIds: [...this.expandedFolderIds],
+      search: this.search,
+      typeFilter: this.typeFilter
+    });
+    const inventoryRows = projection.rows;
+    const inventory = inventoryRows.filter((row) => row.kind === "item");
+    const inventoryRootFolder = projection.rootFolder
+      ? {
+          folderId: projection.rootFolder.folderId,
+          name: projection.rootFolder.name,
+          parentId: projection.rootFolder.parentId
+        }
+      : null;
+
+    return {
+      ...this.inventoryContextCache,
+      search: this.search,
+      typeFilter: this.typeFilter,
+      inventoryActorId: this.inventoryActorId,
+      inventoryRootFolder,
+      inventoryRootFolderMissing: projection.rootFolderMissing,
+      inventoryRows,
+      inventory,
+      inventoryCount: projection.visibleItemCount,
+      emptyInventory: projection.visibleItemCount === 0,
+      expandedFolderIds: [...this.expandedFolderIds],
+      typeOptions: this.inventoryContextCache.typeOptions.map((option) => ({
+        ...option,
+        selected: option.value === this.typeFilter
+      })),
+      sortMode: this.sortMode,
+      sortOptions: INVENTORY_SORT_OPTIONS.map((option) => ({
+        ...option,
+        selected: option.value === this.sortMode
+      }))
+    };
+  }
+
   async _prepareContext() {
-    if (this.inventorySearchRenderPending && this.inventorySearchContext) {
+    if (this.inventorySearchRenderPending) {
       this.inventorySearchRenderPending = false;
-      const cached = this.inventorySearchContext;
-      const inventory = sortInventoryEntries(filterInventoryEntries(cached.allItems, {
-        search: this.search,
-        typeFilter: this.typeFilter
-      }), this.sortMode);
-      return {
-        ...cached.context,
-        search: this.search,
-        typeFilter: this.typeFilter,
-        inventory,
-        inventoryCount: inventory.length,
-        emptyInventory: inventory.length === 0
-      };
+      const cachedContext = this.#projectCachedInventoryContext();
+      if (cachedContext) return cachedContext;
     }
     this.inventorySearchRenderPending = false;
     this.calendarDowntimeByIsoDate = {};
     this.groupActor = null;
     try {
       const inventorySnapshot = await this.moduleApi.getInventorySnapshot({
-        search: this.search,
-        typeFilter: this.typeFilter,
-        createActor: false
+        createActor: false,
+        groupActorId: this.groupActorId
       });
+      this.inventorySnapshotCache = inventorySnapshot;
+      const inventoryItems = inventorySnapshot.allItems ?? inventorySnapshot.items ?? [];
+      const itemFolderIds = Object.fromEntries(inventoryItems
+        .map((item) => [cleanText(item?.itemId ?? item?.id), cleanText(item?.folderId) || null])
+        .filter(([itemId]) => itemId));
+      this.inventoryFolderTreeCache = buildInventoryFolderTree({
+        state: {
+          version: inventorySnapshot.folderStateVersion,
+          folders: inventorySnapshot.folders ?? [],
+          itemFolderIds
+        },
+        items: inventoryItems,
+        compareItems: (left, right) => compareInventoryEntries(left, right, this.sortMode)
+      });
+      this.inventorySearchIndexCache = buildInventoryFolderSearchIndex(this.inventoryFolderTreeCache, {
+        itemText: (item) => [
+          item?.name,
+          item?.itemTypeLabel,
+          item?.materialLabel,
+          item?.sourceTypeLabel
+        ].join(" ")
+      });
+      const folderIds = [...this.inventoryFolderTreeCache.foldersById.keys()];
+      const inventoryActorId = this.inventoryActorId;
+      const folderUiState = inventoryActorId
+        ? await this.moduleApi.getInventoryFolderUiState?.(inventoryActorId, folderIds)
+        : null;
+      this.expandedFolderIds = new Set(normalizeExpandedFolderIds(folderUiState?.expandedFolderIds, { folderIds }));
       let group = null;
       let groupContextError = String(inventorySnapshot.groupContextError ?? "").trim();
       try {
@@ -3972,7 +4052,6 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         ])
       );
       this.sortMode = normalizeInventorySortMode(this.sortMode);
-      const sortedInventoryItems = sortInventoryEntries(inventorySnapshot.items, this.sortMode);
       const itemValueSummary = buildInventoryValueSummary(inventorySnapshot.allItems ?? inventorySnapshot.items);
       const partyMembers = (partySnapshot.members ?? []).map((member) => {
         const memberInventoryWeight = Math.max(0, toNumber(member.inventoryWeight, 0));
@@ -4131,9 +4210,10 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
           canEditCrest: Boolean(canManage && this.groupActor)
         },
         groupContextError,
-        inventory: sortedInventoryItems,
-        inventoryCount: sortedInventoryItems.length,
-        emptyInventory: inventorySnapshot.emptyInventory,
+        inventoryRows: [],
+        inventory: [],
+        inventoryCount: 0,
+        emptyInventory: true,
         summary: {
           ...inventorySnapshot.summary,
           currency,
@@ -4221,16 +4301,17 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         actionFeedback,
         canManage,
         canDropInventoryItems,
+        canOrganizeInventory: canDropInventoryItems,
         canEditCurrency
       };
-      this.inventorySearchContext = {
-        allItems: inventorySnapshot.allItems ?? inventorySnapshot.items ?? [],
-        context
-      };
-      return context;
+      this.inventoryContextCache = context;
+      return this.#projectCachedInventoryContext();
     }
     catch (error) {
-      this.inventorySearchContext = null;
+      this.inventorySnapshotCache = null;
+      this.inventoryFolderTreeCache = null;
+      this.inventorySearchIndexCache = null;
+      this.inventoryContextCache = null;
       console.error(`${MODULE_ID} | Failed to prepare inventory app.`, error);
       return {
         hasError: true,
@@ -6327,6 +6408,34 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       }, listenerOptions);
     }
 
+    element.querySelectorAll("[data-action='toggle-inventory-folder']").forEach((button) => {
+      button.addEventListener("click", async (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const folderId = cleanText(event.currentTarget.dataset.folderId);
+        const groupActorId = this.inventoryActorId;
+        if (!folderId || !groupActorId || !this.inventoryFolderTreeCache?.foldersById.has(folderId)) return;
+
+        const previousExpandedFolderIds = new Set(this.expandedFolderIds);
+        const expanded = !previousExpandedFolderIds.has(folderId);
+        if (expanded) this.expandedFolderIds.add(folderId);
+        else this.expandedFolderIds.delete(folderId);
+
+        try {
+          this.inventorySearchRenderPending = true;
+          await this.render({ force: true, preserveScroll: true });
+          await this.moduleApi.setInventoryFolderExpanded(groupActorId, folderId, expanded);
+        }
+        catch (error) {
+          this.expandedFolderIds = previousExpandedFolderIds;
+          this.inventorySearchRenderPending = true;
+          await this.render({ force: true, preserveScroll: true });
+          console.error(`${MODULE_ID} | Failed to persist inventory folder expansion.`, error);
+          ui.notifications?.error(error.message || "Не удалось изменить раскрытие папки.");
+        }
+      }, listenerOptions);
+    });
+
     element.querySelector("[data-action='search']")?.addEventListener("input", (event) => {
       this.search = event.currentTarget.value ?? "";
       this.inventorySearchRenderPending = true;
@@ -6343,11 +6452,13 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     element.querySelector("[data-action='type-filter']")?.addEventListener("change", (event) => {
       this.typeFilter = event.currentTarget.value || "all";
+      this.inventorySearchRenderPending = true;
       this.render({ force: true });
     }, listenerOptions);
 
     element.querySelector("[data-action='sort-mode']")?.addEventListener("change", (event) => {
       this.sortMode = normalizeInventorySortMode(event.currentTarget.value);
+      this.inventorySearchRenderPending = true;
       this.render({ force: true });
     }, listenerOptions);
 
@@ -7040,7 +7151,11 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     window.clearTimeout(this.actionFeedbackTimeout);
     this.searchRenderTimeout = null;
     this.inventorySearchRenderPending = false;
-    this.inventorySearchContext = null;
+    this.inventorySnapshotCache = null;
+    this.inventoryFolderTreeCache = null;
+    this.inventorySearchIndexCache = null;
+    this.inventoryContextCache = null;
+    this.expandedFolderIds.clear();
     this.craftSearchRenderTimeout = null;
     this.actionFeedbackTimeout = null;
     this.renderListenersAbortController?.abort();
