@@ -180,6 +180,15 @@ function cleanId(value) {
   return String(value ?? "").trim();
 }
 
+function normalizeInventoryFolderTarget(value) {
+  if (value === null || value === undefined) return null;
+  const folderId = cleanId(value);
+  if (!folderId) {
+    throw new Error("Inventory folder target must be a non-empty string or null.");
+  }
+  return folderId;
+}
+
 function createInventoryMutationId(prefix, requestedId = "") {
   const explicit = cleanId(requestedId);
   if (explicit) {
@@ -4534,8 +4543,14 @@ export class InventoryService {
     );
   }
 
-  addLootgenRowToInventoryOnce(row, mutationId, { allowPersistedItemData = false } = {}) {
+  addLootgenRowToInventoryOnce(
+    row,
+    mutationId,
+    { allowPersistedItemData = false, groupActorId = "", folderId = null } = {}
+  ) {
     const frozenRow = foundry.utils.deepClone(row ?? {});
+    const frozenGroupActorId = cleanId(groupActorId);
+    const frozenFolderId = normalizeInventoryFolderTarget(folderId);
     return this.mutationCoordinator.run(
       "inventory",
       () => {
@@ -4545,6 +4560,8 @@ export class InventoryService {
         return this.#executeInventoryGrantOnce({
           quantity: frozenRow.quantity,
           mutationId,
+          groupActorId: frozenGroupActorId,
+          folderId: frozenFolderId,
           buildItemData: () => this.buildLootgenItemData(frozenRow, { allowPersistedItemData })
         });
       }
@@ -4597,14 +4614,35 @@ export class InventoryService {
     });
   }
 
-  async #executeInventoryGrantOnce({ actor: requestedActor = null, quantity, mutationId, buildItemData }) {
+  async #executeInventoryGrantOnce({
+    actor: requestedActor = null,
+    quantity,
+    mutationId,
+    groupActorId = "",
+    folderId = null,
+    buildItemData
+  }) {
     const operationId = createInventoryMutationId("inventory-grant", mutationId);
     let record = await this.mutationJournal.find(operationId);
-    const actor = requestedActor ?? await this.getInventoryActor({ create: true });
+    const normalizedGroupActorId = cleanId(groupActorId);
+    const normalizedFolderId = normalizeInventoryFolderTarget(folderId);
+    if (normalizedFolderId !== null && !normalizedGroupActorId) {
+      throw new Error("Inventory folder target requires an explicit group Actor.");
+    }
+    const actor = requestedActor ?? await this.getInventoryActor({
+      create: true,
+      groupActorId: normalizedGroupActorId
+    });
     if (!requestedActor) {
       this.#assertCanManagePartyInventory(actor);
     }
     if (!actor) throw new Error("Не удалось получить инвентарь для выдачи лута.");
+    if (record && (
+      cleanId(record.groupActorId) !== normalizedGroupActorId
+      || normalizeInventoryFolderTarget(record.folderId) !== normalizedFolderId
+    )) {
+      throw new Error("Inventory mutation ID was reused with a different folder target.");
+    }
     if (!record) {
       const safeQuantity = Math.max(0.01, roundNumber(toNumber(quantity, 1), 2));
       const itemData = await buildItemData(safeQuantity);
@@ -4621,6 +4659,8 @@ export class InventoryService {
         kind: "grant",
         phase: "prepared",
         actorId: actor.id,
+        groupActorId: normalizedGroupActorId,
+        folderId: normalizedFolderId,
         itemData,
         targetReceipt: {
           itemId: candidate?.id ?? "",
@@ -4669,7 +4709,17 @@ export class InventoryService {
       });
     }
     if (record.phase === "target-created") {
-      record = await this.mutationJournal.checkpoint(operationId, "target-created", "committed");
+      if (record.targetReceipt.created && record.folderId !== null) {
+        await this.assignInventoryGrantFolder({
+          groupActorId: record.groupActorId,
+          itemId: record.targetItemId,
+          folderId: record.folderId
+        });
+      }
+      record = await this.mutationJournal.checkpoint(operationId, "target-created", "folder-assigned");
+    }
+    if (record.phase === "folder-assigned") {
+      record = await this.mutationJournal.checkpoint(operationId, "folder-assigned", "committed");
     }
     const result = {
       actorId: actor.id,
@@ -5728,8 +5778,13 @@ export class InventoryService {
     };
   }
 
-  async importDroppedItem(dropData) {
-    const actor = await this.getInventoryActor({ create: true });
+  async importDroppedItem(dropData, { groupActorId = "", folderId = null } = {}) {
+    const normalizedGroupActorId = cleanId(groupActorId);
+    const normalizedFolderId = normalizeInventoryFolderTarget(folderId);
+    const actor = await this.getInventoryActor({
+      create: true,
+      groupActorId: normalizedGroupActorId
+    });
     if (!actor) {
       throw new Error("Не удалось получить партийный инвентарь.");
     }
@@ -5761,7 +5816,8 @@ export class InventoryService {
       return this.moduleApi.socketCommandBus.request(INVENTORY_IMPORT_COMMAND, {
         inventoryActorId: actor.id,
         itemUuid: itemDocument.uuid,
-        mutationId: operationId
+        mutationId: operationId,
+        folderId: normalizedFolderId
       });
     }
 
@@ -5786,7 +5842,9 @@ export class InventoryService {
     }
 
     return this.#importItemDocument(actor, itemDocument, {
-      mutationId: operationId
+      mutationId: operationId,
+      groupActorId: actor.id,
+      folderId: normalizedFolderId
     });
   }
 
@@ -5819,13 +5877,16 @@ export class InventoryService {
   }
 
   async executeImportMutation(payload = {}) {
-    const inventoryActor = game.actors?.get?.(cleanId(payload.inventoryActorId)) ?? null;
+    const groupActorId = cleanId(payload.inventoryActorId);
+    const inventoryActor = await this.getInventoryActor({ create: false, groupActorId });
     const itemDocument = await resolveUuid(payload.itemUuid);
     if (!isManagedPartyGroup(inventoryActor) || !(itemDocument instanceof Item)) {
       throw new Error("Некорректные документы импорта предмета.");
     }
     await this.#importItemDocument(inventoryActor, itemDocument, {
-      mutationId: cleanId(payload.mutationId)
+      mutationId: cleanId(payload.mutationId),
+      groupActorId,
+      folderId: normalizeInventoryFolderTarget(payload.folderId)
     });
     return {
       actorId: inventoryActor.id,
@@ -5864,7 +5925,9 @@ export class InventoryService {
     }
 
     return this.#importItemDocument(targetActor, itemDocument, {
-      mutationId: cleanId(payload.mutationId)
+      mutationId: cleanId(payload.mutationId),
+      groupActorId: targetActor.id,
+      folderId: normalizeInventoryFolderTarget(payload.folderId)
     });
   }
 
@@ -6251,9 +6314,21 @@ export class InventoryService {
     );
   }
 
-  async #executeImportItemDocument(actor, itemDocument, { mutationId = "" } = {}) {
+  async #executeImportItemDocument(
+    actor,
+    itemDocument,
+    { mutationId = "", groupActorId = "", folderId = null } = {}
+  ) {
     const operationId = createInventoryMutationId("inventory-import", mutationId);
     let record = await this.mutationJournal.find(operationId);
+    const normalizedGroupActorId = cleanId(groupActorId || actor?.id);
+    const normalizedFolderId = normalizeInventoryFolderTarget(folderId);
+    if (record && (
+      cleanId(record.groupActorId) !== normalizedGroupActorId
+      || normalizeInventoryFolderTarget(record.folderId) !== normalizedFolderId
+    )) {
+      throw new Error("Inventory mutation ID was reused with a different folder target.");
+    }
     if (!record) {
       const sourceItemData = itemDocument.toObject();
       const importedItemData = sanitizeEmbeddedItemData(sourceItemData);
@@ -6273,6 +6348,8 @@ export class InventoryService {
         kind: "import",
         phase: "prepared",
         targetActorId: actor.id,
+        groupActorId: normalizedGroupActorId,
+        folderId: normalizedFolderId,
         sourceItemUuid: itemDocument.uuid,
         sourceActorId: isActorDocument(itemDocument.parent) ? itemDocument.parent.id : "",
         importedItemData,
@@ -6334,6 +6411,16 @@ export class InventoryService {
       });
     }
     if (record.phase === "target-created") {
+      if (record.targetReceipt.created && record.folderId !== null) {
+        await this.assignInventoryGrantFolder({
+          groupActorId: record.groupActorId,
+          itemId: record.targetItemId,
+          folderId: record.folderId
+        });
+      }
+      record = await this.mutationJournal.checkpoint(operationId, "target-created", "folder-assigned");
+    }
+    if (record.phase === "folder-assigned") {
       const sourceActor = isActorDocument(itemDocument.parent) ? itemDocument.parent : null;
       if (sourceActor) {
         const sourceStillExists = () => sourceActor.items?.get?.(itemDocument.id)
@@ -6370,7 +6457,7 @@ export class InventoryService {
                   }
                 }
               }
-              record = await this.mutationJournal.checkpoint(operationId, "target-created", "compensated", {
+              record = await this.mutationJournal.checkpoint(operationId, "folder-assigned", "compensated", {
                 failure: { code: error.code ?? "source-delete-failed", message: error.message }
               });
               await this.mutationJournal.finish(operationId, {
@@ -6381,7 +6468,7 @@ export class InventoryService {
             }
             catch (compensationError) {
               try {
-                await this.mutationJournal.checkpoint(operationId, "target-created", "reconciliation-required", {
+                await this.mutationJournal.checkpoint(operationId, "folder-assigned", "reconciliation-required", {
                   failure: { code: error.code ?? "source-delete-failed", message: error.message },
                   compensationFailure: { code: compensationError.code ?? "target-compensation-failed", message: compensationError.message }
                 });
@@ -6395,7 +6482,7 @@ export class InventoryService {
           }
         }
       }
-      record = await this.mutationJournal.checkpoint(operationId, "target-created", "source-debited");
+      record = await this.mutationJournal.checkpoint(operationId, "folder-assigned", "source-debited");
     }
     if (record.phase === "source-debited") {
       record = await this.mutationJournal.checkpoint(operationId, "source-debited", "committed");

@@ -54,6 +54,7 @@ async function createHarness({
     type: "character",
     testUserPermission: (user, permission) => user?.id === player.id && permission === "OWNER"
   };
+  const groupActor = { id: "group-a", type: "group" };
   const characterToken = {
     id: "hero-token",
     uuid: "Scene.scene.Token.hero",
@@ -100,6 +101,10 @@ async function createHarness({
   }
 
   const inventoryService = {
+    async getInventoryActor({ groupActorId = "" } = {}) {
+      if (groupActorId !== groupActor.id) throw new Error("group unavailable");
+      return groupActor;
+    },
     async addLootgenRowToCharacterOnce(row, actor, mutationId) {
       await recordGrant("row-self", mutationId, { row: clone(row), actor });
     },
@@ -132,7 +137,7 @@ async function createHarness({
       return data;
     }
   });
-  return { service, player, hero, storageToken, characterToken, messages, grants };
+  return { service, player, hero, groupActor, storageToken, characterToken, messages, grants };
 }
 
 function rowClaimPayload(harness, overrides = {}) {
@@ -176,6 +181,7 @@ test("a successful row claim to party names the group inventory destination", as
 
   await harness.service.claimRow(rowClaimPayload(harness, {
     destination: "party",
+    target: { groupActorId: harness.groupActor.id, folderId: null },
     mutationId: "claim-row-party",
     quantity: 1
   }), { sender: harness.player });

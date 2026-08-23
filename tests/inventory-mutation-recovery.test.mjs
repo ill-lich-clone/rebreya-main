@@ -604,20 +604,30 @@ function createActor({
   items = [],
   currency = {},
   managed = false,
+  flags = {},
   members = [],
   owners = [],
   throwAfterCreateOnce = false,
+  failSetFlagOnce = false,
   onCreate = null
 } = {}) {
   const actor = new globalThis.Actor();
   let createAckLost = false;
+  let setFlagFailurePending = failSetFlagOnce;
+  const actorFlags = clone(flags);
+  if (managed) {
+    actorFlags[MODULE_ID] ??= {};
+    actorFlags[MODULE_ID][REBREYA_GROUP_FLAGS.MANAGED] = true;
+  }
   Object.assign(actor, {
     id,
     uuid: `Actor.${id}`,
     name: id,
     type,
     isOwner,
-    flags: managed ? { [MODULE_ID]: { [REBREYA_GROUP_FLAGS.MANAGED]: true } } : {},
+    flags: actorFlags,
+    setFlagCalls: [],
+    createEmbeddedDocumentsCalls: 0,
     system: {
       currency: { pp: 0, gp: 0, ep: 0, sp: 0, cp: 0, ...currency },
       abilities: { str: { value: 10 }, con: { mod: 0 } },
@@ -632,6 +642,16 @@ function createActor({
     getFlag(scope, key) {
       return this.flags?.[scope]?.[key];
     },
+    async setFlag(scope, key, value) {
+      this.setFlagCalls.push({ scope, key, value: clone(value) });
+      if (setFlagFailurePending) {
+        setFlagFailurePending = false;
+        throw new Error("folder flag write failed");
+      }
+      this.flags[scope] ??= {};
+      this.flags[scope][key] = clone(value);
+      return value;
+    },
     testUserPermission(user, permission) {
       return permission === "OWNER" && (user?.isGM === true || owners.includes(user?.id));
     },
@@ -640,6 +660,7 @@ function createActor({
       return this;
     },
     async createEmbeddedDocuments(_documentName, documents) {
+      this.createEmbeddedDocumentsCalls += 1;
       const created = documents.map((document, index) => {
         const { _id, id: _ignoredId, name, type, img, flags, system, ...extraData } = clone(document);
         return createItem({
@@ -1426,6 +1447,253 @@ test("import compensates the target item when deleting the source fails", async 
     );
     assert.equal(group.items.contents.length, 0);
     assert.equal(hero.items.contents.includes(source), true);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("import merge preserves the existing stack folder instead of applying the requested target", async () => {
+  const existing = createItem({
+    id: "existing",
+    name: "Lantern",
+    quantity: 2,
+    flags: { [MODULE_ID]: { sourceType: "gear", sourceId: "lantern" } }
+  });
+  const source = createItem({
+    id: "import-source",
+    name: "Lantern",
+    quantity: 1,
+    flags: { [MODULE_ID]: { sourceType: "gear", sourceId: "lantern" } }
+  });
+  const hero = createActor({ id: "hero", items: [source] });
+  const group = createActor({
+    id: "group",
+    type: "group",
+    managed: true,
+    items: [existing],
+    members: [{ actor: hero }],
+    flags: {
+      [MODULE_ID]: {
+        inventoryFolders: {
+          version: 1,
+          folders: [
+            { id: "folder-old", name: "Old", parentId: null },
+            { id: "folder-new", name: "New", parentId: null }
+          ],
+          itemFolderIds: { existing: "folder-old" }
+        }
+      }
+    }
+  });
+  const fixture = installFixture({
+    group,
+    actors: [group, hero],
+    uuidDocuments: new Map([[source.uuid, source]])
+  });
+
+  try {
+    const result = await fixture.service.importDroppedItem(
+      { uuid: source.uuid, mutationId: "import-folder-merge" },
+      { groupActorId: "group", folderId: "folder-new" }
+    );
+
+    assert.equal(result.id, "group");
+    assert.equal(existing.system.quantity, 3);
+    assert.equal(group.createEmbeddedDocumentsCalls, 0);
+    assert.equal(group.getFlag(MODULE_ID, "inventoryFolders").itemFolderIds.existing, "folder-old");
+    assert.equal(group.setFlagCalls.length, 0);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("import retries folder assignment after create without duplicating the Item", async () => {
+  const source = createItem({ id: "import-source", name: "Rope", quantity: 1 });
+  const hero = createActor({ id: "hero", items: [source] });
+  const group = createActor({
+    id: "group",
+    type: "group",
+    managed: true,
+    members: [{ actor: hero }],
+    failSetFlagOnce: true,
+    flags: {
+      [MODULE_ID]: {
+        inventoryFolders: {
+          version: 1,
+          folders: [
+            { id: "folder-new", name: "New", parentId: null },
+            { id: "folder-other", name: "Other", parentId: null }
+          ],
+          itemFolderIds: {}
+        }
+      }
+    }
+  });
+  const fixture = installFixture({
+    group,
+    actors: [group, hero],
+    uuidDocuments: new Map([[source.uuid, source]])
+  });
+  const dropData = { uuid: source.uuid, mutationId: "import-folder-retry" };
+
+  try {
+    await assert.rejects(
+      () => fixture.service.importDroppedItem(dropData, {
+        groupActorId: "group",
+        folderId: "folder-new"
+      }),
+      /folder flag write failed/u
+    );
+    assert.equal(group.items.contents.length, 1);
+    assert.equal(group.createEmbeddedDocumentsCalls, 1);
+    assert.equal(hero.items.contents.includes(source), true);
+    assert.deepEqual(group.getFlag(MODULE_ID, "inventoryFolders").itemFolderIds, {});
+
+    await assert.rejects(
+      () => fixture.service.importDroppedItem(dropData, {
+        groupActorId: "group",
+        folderId: "folder-other"
+      }),
+      /different folder target/iu
+    );
+    await fixture.service.importDroppedItem(dropData, {
+      groupActorId: "group",
+      folderId: "folder-new"
+    });
+
+    assert.equal(group.items.contents.length, 1);
+    assert.equal(group.createEmbeddedDocumentsCalls, 1);
+    assert.equal(hero.items.contents.includes(source), false);
+    assert.equal(
+      group.getFlag(MODULE_ID, "inventoryFolders").itemFolderIds[group.items.contents[0].id],
+      "folder-new"
+    );
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("storage grant retries folder assignment after create without duplicating the Item", async () => {
+  const group = createActor({
+    id: "group",
+    type: "group",
+    managed: true,
+    failSetFlagOnce: true,
+    flags: {
+      [MODULE_ID]: {
+        inventoryFolders: {
+          version: 1,
+          folders: [{ id: "supplies", name: "Supplies", parentId: null }],
+          itemFolderIds: {}
+        }
+      }
+    }
+  });
+  const fixture = installFixture({ group, actors: [group] });
+  const row = {
+    rowId: "rope-row",
+    quantity: 1,
+    itemData: {
+      name: "Rope",
+      type: "loot",
+      system: { quantity: 1 },
+      flags: { [MODULE_ID]: { sourceType: "storage-manual" } }
+    }
+  };
+  const options = {
+    allowPersistedItemData: true,
+    groupActorId: "group",
+    folderId: "supplies"
+  };
+
+  try {
+    await assert.rejects(
+      () => fixture.service.addLootgenRowToInventoryOnce(row, "grant-folder-retry", options),
+      /folder flag write failed/u
+    );
+    assert.equal(group.items.contents.length, 1);
+    assert.equal(group.createEmbeddedDocumentsCalls, 1);
+
+    await fixture.service.addLootgenRowToInventoryOnce(row, "grant-folder-retry", options);
+    assert.equal(group.items.contents.length, 1);
+    assert.equal(group.createEmbeddedDocumentsCalls, 1);
+    assert.equal(
+      group.getFlag(MODULE_ID, "inventoryFolders").itemFolderIds[group.items.contents[0].id],
+      "supplies"
+    );
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("a damaged storage variant stays separate and the newly created stack receives its target folder", async () => {
+  const sourceFlags = { sourceType: "gear", sourceId: "sword" };
+  const intact = createItem({
+    id: "intact-sword",
+    name: "Sword",
+    quantity: 2,
+    flags: {
+      [MODULE_ID]: {
+        ...sourceFlags,
+        durability: { state: "intact", breakStage: 0, hp: { value: 10, max: 10 } }
+      }
+    }
+  });
+  const group = createActor({
+    id: "group",
+    type: "group",
+    managed: true,
+    items: [intact],
+    flags: {
+      [MODULE_ID]: {
+        inventoryFolders: {
+          version: 1,
+          folders: [
+            { id: "weapons", name: "Weapons", parentId: null },
+            { id: "damaged", name: "Damaged", parentId: null }
+          ],
+          itemFolderIds: { "intact-sword": "weapons" }
+        }
+      }
+    }
+  });
+  const fixture = installFixture({ group, actors: [group] });
+  const row = {
+    rowId: "broken-sword-row",
+    quantity: 1,
+    itemData: {
+      name: "Sword",
+      type: "weapon",
+      system: { quantity: 1 },
+      flags: {
+        [MODULE_ID]: {
+          ...sourceFlags,
+          durability: { state: "broken", breakStage: 1, hp: { value: 0, max: 10 } }
+        }
+      }
+    }
+  };
+
+  try {
+    await fixture.service.addLootgenRowToInventoryOnce(row, "grant-damaged-folder", {
+      allowPersistedItemData: true,
+      groupActorId: "group",
+      folderId: "damaged"
+    });
+
+    assert.equal(intact.system.quantity, 2);
+    assert.equal(group.items.contents.length, 2);
+    assert.equal(group.createEmbeddedDocumentsCalls, 1);
+    const damaged = group.items.contents.find((item) => item.id !== intact.id);
+    assert.equal(damaged.flags[MODULE_ID].durability.state, "broken");
+    assert.deepEqual(group.getFlag(MODULE_ID, "inventoryFolders").itemFolderIds, {
+      "intact-sword": "weapons",
+      [damaged.id]: "damaged"
+    });
   }
   finally {
     fixture.restore();

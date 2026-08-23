@@ -716,9 +716,11 @@ function isValidInventorySalePayload(payload) {
 }
 
 function isValidInventoryImportPayload(payload) {
-  return hasExactKeys(payload, ["inventoryActorId", "itemUuid", "mutationId"])
+  return hasExactKeys(payload, ["folderId", "inventoryActorId", "itemUuid", "mutationId"])
     && [payload.inventoryActorId, payload.itemUuid].every(isTrimmedNonEmptyString)
-    && isValidInventoryMutationId(payload.mutationId);
+    && isValidInventoryMutationId(payload.mutationId)
+    && (payload.folderId === null
+      || (isTrimmedNonEmptyString(payload.folderId) && payload.folderId.length <= 160));
 }
 
 function isValidCurrencyInteger(value) {
@@ -1444,7 +1446,9 @@ export class RebreyaMainModule {
     });
     this.socketCommandBus.register(STORAGE_CLAIM_ROW_COMMAND, {
       validate: isValidStorageClaimRowPayload,
-      authorize: (_payload, { sender }) => Boolean(sender),
+      authorize: (payload, { sender }) => Boolean(sender)
+        && (payload.destination !== "party"
+          || this.#canSenderManageGroup(sender, payload.target.groupActorId)),
       execute: (payload, { sender }) => this.storageCommandService.claimRow(payload, { sender })
     });
     this.socketCommandBus.register(STORAGE_CLAIM_COINS_COMMAND, {
@@ -3273,6 +3277,33 @@ export class RebreyaMainModule {
     const safeTokenUuid = cleanSocketId(tokenUuid);
     const safeDestination = cleanSocketId(destination);
     const path = cleanStoragePath(request.path);
+    let target = null;
+    if (safeDestination === "character") {
+      target = { actorUuid: cleanSocketId(request.target?.actorUuid) };
+    }
+    else if (safeDestination === "scene") {
+      target = {
+        sceneId: cleanSocketId(request.target?.sceneId),
+        x: Number(request.target?.x),
+        y: Number(request.target?.y)
+      };
+    }
+    else if (safeDestination === "party") {
+      const requestedGroupActorId = cleanSocketId(request.target?.groupActorId);
+      const groupActor = await this.inventoryService.getInventoryActor({
+        create: false,
+        groupActorId: requestedGroupActorId
+      });
+      if (!groupActor || groupActor.type !== "group") {
+        throw new Error("Не удалось разрешить групповой инвентарь для переноса.");
+      }
+      target = {
+        groupActorId: cleanSocketId(groupActor.id),
+        folderId: request.target?.folderId === null || request.target?.folderId === undefined
+          ? null
+          : cleanSocketId(request.target.folderId)
+      };
+    }
     const payload = {
       tokenUuid: safeTokenUuid,
       characterTokenUuid: storageCharacterTokenUuidForClaim({
@@ -3284,15 +3315,7 @@ export class RebreyaMainModule {
       rowId: cleanSocketId(rowId),
       destination: safeDestination,
       quantity: request.quantity === undefined ? null : Number(request.quantity),
-      target: safeDestination === "character"
-        ? { actorUuid: cleanSocketId(request.target?.actorUuid) }
-        : safeDestination === "scene"
-          ? {
-              sceneId: cleanSocketId(request.target?.sceneId),
-              x: Number(request.target?.x),
-              y: Number(request.target?.y)
-            }
-          : null,
+      target,
       mutationId: cleanSocketId(mutationId),
       ...(path.length ? { path } : {})
     };
@@ -4767,7 +4790,11 @@ export class RebreyaMainModule {
     );
   }
 
-  async importInventoryDrop(dropData) {
+  async importInventoryDrop(dropData, { groupActorId = "", folderId = null } = {}) {
+    const target = {
+      groupActorId: cleanSocketId(groupActorId),
+      folderId: folderId === null ? null : cleanSocketId(folderId)
+    };
     const storageDrop = parseStorageDragData(dropData);
     if (storageDrop) {
       const quantity = await promptStorageTransferQuantity(storageDrop.quantity);
@@ -4777,11 +4804,11 @@ export class RebreyaMainModule {
         storageDrop.rowId,
         "party",
         createSocketRequestId("storage-party-drop"),
-        { quantity }
+        { quantity, target }
       ));
     }
     return this.runInventoryMutation(
-      () => this.inventoryService.importDroppedItem(dropData)
+      () => this.inventoryService.importDroppedItem(dropData, target)
     );
   }
 

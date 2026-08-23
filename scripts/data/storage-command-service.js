@@ -84,7 +84,13 @@ function isValidStorageDepositSource(source) {
 }
 
 function isValidStorageTarget(destination, target) {
-  if (destination === "self" || destination === "party") return target === null;
+  if (destination === "self") return target === null;
+  if (destination === "party") {
+    return hasExactKeys(target, ["folderId", "groupActorId"])
+      && isTrimmedString(target.groupActorId, { required: true, max: 160 })
+      && (target.folderId === null
+        || isTrimmedString(target.folderId, { required: true, max: 160 }));
+  }
   if (destination === "character") {
     return hasExactKeys(target, ["actorUuid"])
       && isTrimmedString(target.actorUuid, { required: true });
@@ -492,6 +498,10 @@ export class StorageCommandService {
 
   async claimRow(payload = {}, { sender } = {}) {
     const destination = requireDestination(payload.destination);
+    const target = clone(payload.target);
+    if (destination === "party" && !isValidStorageTarget(destination, target)) {
+      throw new Error("Некорректная цель переноса из хранилища.");
+    }
     const mutationId = requireMutationId(payload.mutationId);
     const rowId = clean(payload.rowId);
     if (!rowId) throw new Error("Не указан предмет хранилища.");
@@ -529,6 +539,30 @@ export class StorageCommandService {
       if (!Number.isSafeInteger(quantity) || quantity < 1 || quantity > available) {
         throw new Error("Количество должно быть целым числом от 1 до доступного остатка.");
       }
+      let partyActor = null;
+      let partyTarget = null;
+      if (destination === "party") {
+        partyTarget = Object.freeze({
+          groupActorId: clean(target.groupActorId),
+          folderId: target.folderId === null ? null : clean(target.folderId)
+        });
+        partyActor = await this.inventoryService.getInventoryActor({
+          create: false,
+          groupActorId: partyTarget.groupActorId
+        });
+        if (!partyActor || clean(partyActor.id) !== partyTarget.groupActorId || partyActor.type !== "group") {
+          throw new Error("Party inventory group target is unavailable.");
+        }
+        if (partyTarget.folderId !== null) {
+          const snapshot = await this.inventoryService.getInventorySnapshot({
+            createActor: false,
+            groupActorId: partyTarget.groupActorId
+          });
+          if (!snapshot?.folders?.some((folder) => clean(folder?.id) === partyTarget.folderId)) {
+            throw new Error("Party inventory folder is unavailable.");
+          }
+        }
+      }
       const transferRow = clone(row);
       transferRow.quantity = quantity;
       transferRow.itemData ??= {};
@@ -545,9 +579,17 @@ export class StorageCommandService {
           await this.containerItemService.materializeToActorOnce(access.character, preparedTransferRow.container, grantId);
         }
         else if (destination === "party") {
-          const inventoryActor = await this.inventoryService.getInventoryActor({ create: true });
-          if (!inventoryActor) throw new Error("Не удалось получить партийный инвентарь.");
-          await this.containerItemService.materializeToActorOnce(inventoryActor, preparedTransferRow.container, grantId);
+          const root = await this.containerItemService.materializeToActorOnce(
+            partyActor,
+            preparedTransferRow.container,
+            grantId
+          );
+          if (!root?.id) throw new Error("Не удалось восстановить корень переносимого контейнера.");
+          await this.inventoryService.assignInventoryGrantFolder({
+            groupActorId: partyTarget.groupActorId,
+            itemId: root.id,
+            folderId: partyTarget.folderId
+          });
         }
         else if (destination === "character") {
           const targetActor = await this.#resolveCharacterTarget(payload.target, sender);
@@ -573,7 +615,11 @@ export class StorageCommandService {
         await this.inventoryService.addLootgenRowToInventoryOnce(
           preparedTransferRow,
           grantId,
-          { allowPersistedItemData: true }
+          {
+            allowPersistedItemData: true,
+            groupActorId: partyTarget.groupActorId,
+            folderId: partyTarget.folderId
+          }
         );
       }
       else if (destination === "character") {

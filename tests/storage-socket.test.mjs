@@ -48,7 +48,9 @@ function createHarness({
   processedCoinMutations = new Set(),
   executionOrder = [],
   durabilityService = null,
-  logResolve = true
+  logResolve = true,
+  folderIds = ["folder-a"],
+  rejectFolderAssignmentOnce = false
 } = {}) {
   const player = { id: "player", isGM: false };
   const gm = { id: "gm", isGM: true, active: true };
@@ -63,6 +65,10 @@ function createHarness({
     uuid: "Actor.target-hero",
     type: "character",
     testUserPermission: (user, permission) => user?.id === player.id && permission === "OWNER"
+  };
+  const groupActor = {
+    id: "group-a",
+    type: "group"
   };
   const characterToken = {
     id: "hero-token",
@@ -107,7 +113,30 @@ function createHarness({
   const refreshCalls = [];
   const depositResolveCalls = [];
   const journalReadCalls = [];
+  const folderAssignments = [];
+  let shouldRejectFolderAssignment = rejectFolderAssignmentOnce;
   const inventoryService = {
+    async getInventoryActor({ groupActorId = "" } = {}) {
+      if (groupActorId && groupActorId !== groupActor.id) {
+        throw new Error("Party inventory group target is unavailable.");
+      }
+      return groupActor;
+    },
+    async getInventorySnapshot({ groupActorId = "" } = {}) {
+      await this.getInventoryActor({ groupActorId });
+      return {
+        actorId: groupActor.id,
+        folders: folderIds.map((id) => ({ id }))
+      };
+    },
+    async assignInventoryGrantFolder(request) {
+      folderAssignments.push(clone(request));
+      if (shouldRejectFolderAssignment) {
+        shouldRejectFolderAssignment = false;
+        throw new Error("folder assignment failed");
+      }
+      return { itemId: request.itemId, folderId: request.folderId };
+    },
     async addLootgenRowToCharacterOnce(row, actor, mutationId) {
       if (rejectItemGrant) throw new Error("grant failed");
       if (!completed.has(mutationId)) itemGrants.push({ row: clone(row), actor, mutationId, destination: "self" });
@@ -191,6 +220,7 @@ function createHarness({
     gm,
     hero,
     targetHero,
+    groupActor,
     characterToken,
     storageToken,
     storageService,
@@ -202,7 +232,8 @@ function createHarness({
     groundFindCalls,
     refreshCalls,
     depositResolveCalls,
-    journalReadCalls
+    journalReadCalls,
+    folderAssignments
   };
 }
 
@@ -1339,6 +1370,56 @@ test("claiming a container materializes a native dnd5e tree instead of a flat lo
   assert.equal(readStorageState(harness.storageToken).state, "empty");
 });
 
+test("party container assignment completes before storage claim and retry reuses the materialized root", async () => {
+  const materialized = [];
+  const containerItemService = {
+    async materializeToActorOnce(actor, snapshot, mutationId) {
+      materialized.push({ actor, snapshot: clone(snapshot), mutationId });
+      return { id: "native-party-container" };
+    }
+  };
+  const harness = createHarness({
+    containerItemService,
+    rejectFolderAssignmentOnce: true
+  });
+  const containerRow = buildStorageContainerRow({
+    containerId: "portable-party-bag",
+    storageKind: "bag",
+    name: "Партийная сумка",
+    state: { baseName: "Партийная сумка", state: "opened", manualRows: [], generatedRows: [] }
+  }, { rowId: "portable-party-row" });
+  await harness.storageService.configure(harness.storageToken, {
+    state: "opened",
+    manualRows: [containerRow]
+  });
+  const request = {
+    tokenUuid: harness.storageToken.uuid,
+    characterTokenUuid: harness.characterToken.uuid,
+    rowId: "portable-party-row",
+    destination: "party",
+    quantity: 1,
+    target: { groupActorId: harness.groupActor.id, folderId: "folder-a" },
+    mutationId: "portable-party-claim"
+  };
+
+  await assert.rejects(
+    harness.service.claimRow(request, { sender: harness.player }),
+    /folder assignment failed/u
+  );
+  assert.equal(readStorageState(harness.storageToken).manualRows.length, 1);
+
+  await harness.service.claimRow(request, { sender: harness.player });
+
+  assert.equal(materialized.length, 2);
+  assert.equal(materialized[0].actor, harness.groupActor);
+  assert.equal(materialized[0].mutationId, materialized[1].mutationId);
+  assert.deepEqual(harness.folderAssignments, [
+    { groupActorId: "group-a", itemId: "native-party-container", folderId: "folder-a" },
+    { groupActorId: "group-a", itemId: "native-party-container", folderId: "folder-a" }
+  ]);
+  assert.equal(readStorageState(harness.storageToken).state, "empty");
+});
+
 test("storage deposits are idempotent and move the selected quantity once", async () => {
   const consumeCalls = [];
   const source = {
@@ -1788,7 +1869,7 @@ test("repeated storage claims grant rows and coins only once and empty the token
     rowId: "row-1",
     destination: "party",
     quantity: null,
-    target: null,
+    target: { groupActorId: harness.groupActor.id, folderId: null },
     mutationId: "claim-row-1"
   };
   await harness.service.claimRow(rowRequest, { sender: harness.player });
@@ -1803,7 +1884,11 @@ test("repeated storage claims grant rows and coins only once and empty the token
   await harness.service.claimCoins(coinRequest, { sender: harness.player });
 
   assert.equal(harness.itemGrants.length, 1);
-  assert.deepEqual(harness.itemGrants[0].options, { allowPersistedItemData: true });
+  assert.deepEqual(harness.itemGrants[0].options, {
+    allowPersistedItemData: true,
+    groupActorId: harness.groupActor.id,
+    folderId: null
+  });
   assert.equal(harness.coinGrants.length, 1);
   assert.equal(readStorageState(harness.storageToken).state, "empty");
   assert.equal(harness.storageToken.name, "Сундук (пусто)");
@@ -1835,7 +1920,7 @@ test("storage claim derives durability on its detached grant row", async () => {
     rowId: "row-1",
     destination: "party",
     quantity: 1,
-    target: null,
+    target: { groupActorId: harness.groupActor.id, folderId: "folder-a" },
     mutationId: "durable-storage-claim"
   }, { sender: harness.player });
 
@@ -1855,16 +1940,42 @@ test("storage rejects a character token the sender does not own", async () => {
   );
 });
 
-test("party storage claims accept an empty character token for a GM client", () => {
+test("party storage claims require an exact group and nullable folder target", () => {
   assert.equal(isValidStorageClaimRowPayload({
     tokenUuid: "Scene.scene.Token.chest",
     characterTokenUuid: "",
     rowId: "row-1",
     destination: "party",
     quantity: 1,
-    target: null,
+    target: { groupActorId: "group-a", folderId: null },
     mutationId: "claim-row-party"
   }), true);
+  assert.equal(isValidStorageClaimRowPayload({
+    tokenUuid: "Scene.scene.Token.chest",
+    characterTokenUuid: "",
+    rowId: "row-1",
+    destination: "party",
+    quantity: 1,
+    target: { groupActorId: "group-a", folderId: "folder-a" },
+    mutationId: "claim-row-party-folder"
+  }), true);
+  for (const target of [
+    null,
+    { groupActorId: "group-a" },
+    { groupActorId: " group-a", folderId: null },
+    { groupActorId: "group-a", folderId: " folder-a" },
+    { groupActorId: "group-a", folderId: null, extra: true }
+  ]) {
+    assert.equal(isValidStorageClaimRowPayload({
+      tokenUuid: "Scene.scene.Token.chest",
+      characterTokenUuid: "",
+      rowId: "row-1",
+      destination: "party",
+      quantity: 1,
+      target,
+      mutationId: "claim-row-party-invalid"
+    }), false);
+  }
   assert.equal(isValidStorageClaimCoinsPayload({
     tokenUuid: "Scene.scene.Token.chest",
     characterTokenUuid: "",
@@ -1919,7 +2030,7 @@ test("partial storage transfers grant and remove only the requested quantity", a
     rowId: "row-1",
     destination: "party",
     quantity: 2,
-    target: null,
+    target: { groupActorId: harness.groupActor.id, folderId: null },
     mutationId: "partial-row"
   }, { sender: harness.player });
 
@@ -1943,12 +2054,41 @@ test("failed destination grants do not decrement storage", async () => {
     rowId: "row-1",
     destination: "party",
     quantity: 2,
-    target: null,
+    target: { groupActorId: harness.groupActor.id, folderId: null },
     mutationId: "failed-row"
   }, { sender: harness.player }), /grant failed/u);
 
   assert.equal(readStorageState(harness.storageToken).generatedRows[0].quantity, 5);
   assert.deepEqual(readStorageState(harness.storageToken).claimedRowIds, []);
+});
+
+test("party storage claims re-resolve the exact group and reject unavailable folders before granting", async () => {
+  const harness = createHarness();
+  const access = {
+    tokenUuid: harness.storageToken.uuid,
+    characterTokenUuid: harness.characterToken.uuid
+  };
+  await harness.service.open(access, { sender: harness.player });
+  const base = {
+    ...access,
+    rowId: "row-1",
+    destination: "party",
+    quantity: 1
+  };
+
+  await assert.rejects(harness.service.claimRow({
+    ...base,
+    target: { groupActorId: "foreign-group", folderId: null },
+    mutationId: "foreign-party-target"
+  }, { sender: harness.player }), /group target is unavailable/iu);
+  await assert.rejects(harness.service.claimRow({
+    ...base,
+    target: { groupActorId: harness.groupActor.id, folderId: "missing-folder" },
+    mutationId: "missing-party-folder"
+  }, { sender: harness.player }), /folder.*unavailable/iu);
+
+  assert.equal(harness.itemGrants.length, 0);
+  assert.equal(readStorageState(harness.storageToken).generatedRows[0].quantity, 1);
 });
 
 test("duplicate partial mutations decrement once and competing quantities serialize", async () => {
@@ -1963,7 +2103,7 @@ test("duplicate partial mutations decrement once and competing quantities serial
     rowId: "row-1",
     destination: "party",
     quantity: 2,
-    target: null,
+    target: { groupActorId: harness.groupActor.id, folderId: null },
     mutationId: "same-partial"
   };
 

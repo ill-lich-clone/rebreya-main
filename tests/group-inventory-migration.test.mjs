@@ -2138,7 +2138,7 @@ test("getPartySnapshot counts carried character inventory weight against party c
   }
 });
 
-test("player inventory item drops into an unowned group actor are routed through the GM socket", async () => {
+test("player inventory Item imports use the exact typed GM payload with a folder target", async () => {
   const previousItem = globalThis.Item;
   const previousFromUuid = globalThis.fromUuid;
   const memberActor = createActor({ id: "member-1", name: "Hero", type: "character", isOwner: true });
@@ -2155,43 +2155,48 @@ test("player inventory item drops into an unowned group actor are routed through
   sourceItem.uuid = "Actor.member-1.Item.source-item";
   sourceItem.parent = memberActor;
   memberActor.items.contents.push(sourceItem);
-  const emitted = [];
+  const requests = [];
   const fixture = installInventoryFixture({
     actors: [groupActor, memberActor],
     user: { id: "player-1", isGM: false }
   });
   globalThis.Item = Object;
   globalThis.fromUuid = async (uuid) => (uuid === sourceItem.uuid ? sourceItem : null);
-  globalThis.game.socket = {
-    emit(channel, message) {
-      emitted.push({ channel, message });
-    }
-  };
   const service = new InventoryService({
     groupContextService: {
       resolveForCurrentUser: () => ({
         groupActor,
         members: [memberActor],
         canManage: true
-      })
+      }),
+      resolveForGroup: (groupActorId) => groupActorId === groupActor.id
+        ? { groupActor, members: [memberActor], canManage: true }
+        : null
+    },
+    socketCommandBus: {
+      async request(command, payload) {
+        requests.push({ command, payload: clone(payload) });
+        return groupActor;
+      }
     }
   });
 
   try {
-    const result = await service.importDroppedItem({ uuid: sourceItem.uuid });
+    const result = await service.importDroppedItem(
+      { uuid: sourceItem.uuid, mutationId: "typed-folder-import" },
+      { groupActorId: groupActor.id, folderId: "folder-new" }
+    );
 
     assert.equal(result, groupActor);
     assert.deepEqual(groupActor.items.contents, []);
     assert.equal(memberActor.items.contents.includes(sourceItem), true);
-    assert.deepEqual(emitted, [{
-      channel: "module.rebreya-main",
-      message: {
-        type: "inventory-import-request",
-        payload: {
-          itemUuid: sourceItem.uuid,
-          targetActorUuid: groupActor.uuid
-        },
-        senderId: "player-1"
+    assert.deepEqual(requests, [{
+      command: "inventory.import",
+      payload: {
+        inventoryActorId: groupActor.id,
+        itemUuid: sourceItem.uuid,
+        mutationId: "typed-folder-import",
+        folderId: "folder-new"
       }
     }]);
   }

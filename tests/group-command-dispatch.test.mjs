@@ -627,7 +627,8 @@ test("typed inventory mutations authorize group members and dispatch strict payl
       commandRequest("inventory.import", fixture.users.playerA.id, {
         inventoryActorId: fixture.groupA.id,
         itemUuid: "Actor.character-a.Item.source",
-        mutationId: "inventory-import-1"
+        mutationId: "inventory-import-1",
+        folderId: null
       }, "inventory-import"),
       commandRequest("inventory.currency.update", fixture.users.playerA.id, {
         inventoryActorId: fixture.groupA.id,
@@ -652,6 +653,40 @@ test("typed inventory mutations authorize group members and dispatch strict payl
       inventoryActorId: fixture.groupA.id,
       mode: "gp"
     }, "inventory-currency-denied"));
+    const invalidImports = [
+      commandRequest("inventory.import", fixture.users.playerA.id, {
+        groupActorId: fixture.groupA.id,
+        itemUuid: "Actor.character-a.Item.source",
+        mutationId: "inventory-import-old-shape"
+      }, "inventory-import-old-shape"),
+      commandRequest("inventory.import", fixture.users.playerA.id, {
+        inventoryActorId: fixture.groupA.id,
+        itemUuid: "Actor.character-a.Item.source",
+        mutationId: "inventory-import-missing-folder"
+      }, "inventory-import-missing-folder"),
+      commandRequest("inventory.import", fixture.users.playerA.id, {
+        inventoryActorId: fixture.groupA.id,
+        itemUuid: "Actor.character-a.Item.source",
+        mutationId: "inventory-import-extra",
+        folderId: null,
+        extra: true
+      }, "inventory-import-extra"),
+      commandRequest("inventory.import", fixture.users.playerA.id, {
+        inventoryActorId: fixture.groupA.id,
+        itemUuid: "Actor.character-a.Item.source",
+        mutationId: "inventory-import-untrimmed-folder",
+        folderId: " folder-a"
+      }, "inventory-import-untrimmed-folder")
+    ];
+    for (const request of invalidImports) {
+      await moduleApi.handleSocketMessage(request);
+    }
+    await moduleApi.handleSocketMessage(commandRequest("inventory.import", fixture.users.playerB.id, {
+      inventoryActorId: fixture.groupA.id,
+      itemUuid: "Actor.character-a.Item.source",
+      mutationId: "inventory-import-denied",
+      folderId: null
+    }, "inventory-import-denied"));
     await flushCommands();
 
     assert.deepEqual(calls.map(([kind]) => kind), ["take", "sale", "import", "currency-update", "currency-convert"]);
@@ -660,6 +695,10 @@ test("typed inventory mutations authorize group members and dispatch strict payl
     }
     assert.equal(resultFor(fixture, "inventory-sale-denied")?.error?.code, "unauthorized");
     assert.equal(resultFor(fixture, "inventory-currency-denied")?.error?.code, "unauthorized");
+    for (const request of invalidImports) {
+      assert.equal(resultFor(fixture, request.requestId)?.error?.code, "invalid-payload");
+    }
+    assert.equal(resultFor(fixture, "inventory-import-denied")?.error?.code, "unauthorized");
   }
   finally {
     globalThis.fromUuid = previousFromUuid;
@@ -699,7 +738,8 @@ test("typed inventory import lets group members copy compendium items into the p
     const request = commandRequest("inventory.import", fixture.users.playerA.id, {
       inventoryActorId: fixture.groupA.id,
       itemUuid: compendiumItem.uuid,
-      mutationId: "inventory-import-compendium"
+      mutationId: "inventory-import-compendium",
+      folderId: "folder-a"
     }, "inventory-import-compendium");
 
     await moduleApi.handleSocketMessage(request);
@@ -708,12 +748,113 @@ test("typed inventory import lets group members copy compendium items into the p
     assert.deepEqual(calls, [{
       inventoryActorId: fixture.groupA.id,
       itemUuid: compendiumItem.uuid,
-      mutationId: "inventory-import-compendium"
+      mutationId: "inventory-import-compendium",
+      folderId: "folder-a"
     }]);
     assert.equal(resultFor(fixture, request.requestId)?.ok, true);
   }
   finally {
     globalThis.fromUuid = previousFromUuid;
+    fixture.restore();
+  }
+});
+
+test("module API carries the exact party folder target through storage and direct Item import", async () => {
+  const fixture = installFixture();
+  try {
+    const moduleApi = new RebreyaMainModule();
+    const storageCalls = [];
+    const importCalls = [];
+    moduleApi.inventoryService.getInventoryActor = async (options) => {
+      assert.deepEqual(options, { create: false, groupActorId: fixture.groupA.id });
+      return fixture.groupA;
+    };
+    moduleApi.storageCommandService.claimRow = async (payload, context) => {
+      storageCalls.push({ payload: clone(payload), senderId: context.sender.id });
+      return { changed: true };
+    };
+    moduleApi.inventoryService.importDroppedItem = async (dropData, options) => {
+      importCalls.push({ dropData: clone(dropData), options: clone(options) });
+      return { actorId: fixture.groupA.id };
+    };
+
+    await moduleApi.claimStorageRow(
+      "Scene.scene.Token.chest",
+      "row-1",
+      "party",
+      "claim-party-folder",
+      {
+        quantity: 1,
+        target: { groupActorId: fixture.groupA.id, folderId: "folder-a" }
+      }
+    );
+    await moduleApi.importInventoryDrop(
+      { type: "Item", uuid: "Compendium.world.items.Item.torch" },
+      { groupActorId: fixture.groupA.id, folderId: "folder-a" }
+    );
+
+    assert.deepEqual(storageCalls, [{
+      payload: {
+        tokenUuid: "Scene.scene.Token.chest",
+        characterTokenUuid: "Scene.scene.Token.chest",
+        rowId: "row-1",
+        destination: "party",
+        quantity: 1,
+        target: { groupActorId: fixture.groupA.id, folderId: "folder-a" },
+        mutationId: "claim-party-folder"
+      },
+      senderId: fixture.users.gmA.id
+    }]);
+    assert.deepEqual(importCalls, [{
+      dropData: { type: "Item", uuid: "Compendium.world.items.Item.torch" },
+      options: { groupActorId: fixture.groupA.id, folderId: "folder-a" }
+    }]);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("typed party storage claims authorize membership in the exact target group", async () => {
+  const fixture = installFixture();
+  try {
+    const moduleApi = new RebreyaMainModule();
+    const calls = [];
+    moduleApi.storageCommandService.claimRow = async (payload, { sender }) => {
+      calls.push({ payload: clone(payload), senderId: sender.id });
+      return { changed: true };
+    };
+    const payload = {
+      tokenUuid: "Scene.scene.Token.chest",
+      characterTokenUuid: "Scene.scene.Token.hero",
+      rowId: "row-1",
+      destination: "party",
+      quantity: 1,
+      target: { groupActorId: fixture.groupA.id, folderId: null },
+      mutationId: "party-storage-authorized"
+    };
+    const authorized = commandRequest(
+      "storage.claim-row",
+      fixture.users.playerA.id,
+      payload,
+      "party-storage-authorized"
+    );
+    const unauthorized = commandRequest(
+      "storage.claim-row",
+      fixture.users.playerB.id,
+      { ...payload, mutationId: "party-storage-unauthorized" },
+      "party-storage-unauthorized"
+    );
+
+    await moduleApi.handleSocketMessage(authorized);
+    await moduleApi.handleSocketMessage(unauthorized);
+    await flushCommands();
+
+    assert.deepEqual(calls, [{ payload, senderId: fixture.users.playerA.id }]);
+    assert.equal(resultFor(fixture, authorized.requestId)?.ok, true);
+    assert.equal(resultFor(fixture, unauthorized.requestId)?.error?.code, "unauthorized");
+  }
+  finally {
     fixture.restore();
   }
 });
