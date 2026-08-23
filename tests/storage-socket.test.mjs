@@ -1809,6 +1809,40 @@ test("repeated storage claims grant rows and coins only once and empty the token
   assert.equal(harness.storageToken.name, "Сундук (пусто)");
 });
 
+test("storage claim derives durability on its detached grant row", async () => {
+  const durability = {
+    eligible: true,
+    state: "intact",
+    breakStage: 0,
+    hp: { value: 10, max: 10 }
+  };
+  const harness = createHarness({
+    durabilityService: {
+      async getOrBuildDurability(itemData) {
+        assert.equal(itemData.name, "Меч");
+        return clone(durability);
+      }
+    }
+  });
+  const access = {
+    tokenUuid: harness.storageToken.uuid,
+    characterTokenUuid: harness.characterToken.uuid
+  };
+  await harness.service.open(access, { sender: harness.player });
+
+  await harness.service.claimRow({
+    ...access,
+    rowId: "row-1",
+    destination: "party",
+    quantity: 1,
+    target: null,
+    mutationId: "durable-storage-claim"
+  }, { sender: harness.player });
+
+  assert.deepEqual(harness.itemGrants[0].row.itemData.flags[MODULE_ID].durability, durability);
+  assert.equal(readStorageState(harness.storageToken).generatedRows[0]?.itemData?.flags?.[MODULE_ID]?.durability, undefined);
+});
+
 test("storage rejects a character token the sender does not own", async () => {
   const harness = createHarness();
   const stranger = { id: "stranger", isGM: false };

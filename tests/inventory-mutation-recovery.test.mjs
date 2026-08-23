@@ -215,6 +215,76 @@ test("storage loot grants an item and coins to a character exactly once", async 
   }
 });
 
+test("storage gear with one canonical gear ID coalesces across different source documents", async () => {
+  const hero = createActor({ id: "crossbow-hero" });
+  const fixture = installFixture({ actors: [hero] });
+  const intactRow = (sourceId) => ({
+    rowId: `crossbow-${sourceId}`,
+    sourceType: "gear",
+    sourceId,
+    quantity: 1,
+    itemData: {
+      name: "Арбалет, ручной",
+      type: "weapon",
+      system: { quantity: 1, equipped: false },
+      flags: {
+        [MODULE_ID]: {
+          sourceType: "gear",
+          sourceId,
+          gearId: "arbalet-ruchnoy"
+        }
+      }
+    }
+  });
+
+  try {
+    for (const sourceId of [
+      "Compendium.world.rebreya-gear.Item.crossbow-a",
+      "Compendium.world.rebreya-gear.Item.crossbow-b",
+      "Compendium.world.rebreya-gear.Item.crossbow-c"
+    ]) {
+      await fixture.service.addLootgenRowToCharacterOnce(
+        intactRow(sourceId),
+        hero,
+        `storage:item:corpse:${sourceId}:self`
+      );
+    }
+
+    assert.equal(hero.items.contents.length, 1);
+    assert.equal(hero.items.contents[0].name, "Арбалет, ручной");
+    assert.equal(hero.items.contents[0].system.quantity, 3);
+
+    await fixture.service.addLootgenRowToCharacterOnce({
+      ...intactRow("Compendium.world.rebreya-gear.Item.crossbow-broken"),
+      itemData: {
+        ...intactRow("Compendium.world.rebreya-gear.Item.crossbow-broken").itemData,
+        flags: {
+          [MODULE_ID]: {
+            sourceType: "gear",
+            sourceId: "Compendium.world.rebreya-gear.Item.crossbow-broken",
+            gearId: "arbalet-ruchnoy",
+            durability: {
+              eligible: true,
+              state: "broken",
+              breakStage: 1,
+              hp: { value: 0, max: 10 }
+            }
+          }
+        }
+      }
+    }, hero, "storage:item:corpse:crossbow-broken:self");
+
+    assert.equal(hero.items.contents.length, 2);
+    assert.deepEqual(
+      hero.items.contents.map((item) => [item.name, item.system.quantity]).sort((left, right) => left[0].localeCompare(right[0], "ru")),
+      [["Арбалет, ручной", 3], ["Арбалет, ручной (сломан)", 1]]
+    );
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
 test("persisted broken corpse armor keeps its canonical flag and gains a visible Foundry item suffix", async () => {
   const hero = createActor({ id: "corpse-loot-hero" });
   const fixture = installFixture({ actors: [hero] });

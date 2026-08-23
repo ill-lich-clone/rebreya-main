@@ -2610,6 +2610,32 @@ function sortInventoryEntries(entries, sortMode) {
   });
 }
 
+function normalizeInventorySearchText(value) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/['\u2019\u2018\u02BC\u02B9\u2032"\u201C\u201D\u00AB\u00BB]/gu, "")
+    .replace(/\s+/gu, " ");
+}
+
+function filterInventoryEntries(entries, { search = "", typeFilter = "all" } = {}) {
+  const normalizedSearch = normalizeInventorySearchText(search);
+  return (Array.isArray(entries) ? entries : []).filter((entry) => {
+    if (typeFilter !== "all" && entry.sourceType !== typeFilter) {
+      return false;
+    }
+    if (!normalizedSearch) {
+      return true;
+    }
+    return normalizeInventorySearchText([
+      entry.name,
+      entry.itemTypeLabel,
+      entry.materialLabel,
+      entry.sourceTypeLabel
+    ].join(" ")).includes(normalizedSearch);
+  });
+}
+
 function buildInventoryValueSummary(entries) {
   const totalItemValueCopper = Math.max(0, Math.floor((Array.isArray(entries) ? entries : [])
     .reduce((sum, entry) => sum + getInventoryEntryItemValueCopper(entry), 0)));
@@ -3126,6 +3152,8 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.travelMutationSequence = 0;
     this.expandedPartyMembers = new Set();
     this.searchRenderTimeout = null;
+    this.inventorySearchRenderPending = false;
+    this.inventorySearchContext = null;
     this.craftSearchRenderTimeout = null;
     this.craftMutationIds = new Map();
     this.actionFeedbackTimeout = null;
@@ -3748,6 +3776,23 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   async _prepareContext() {
+    if (this.inventorySearchRenderPending && this.inventorySearchContext) {
+      this.inventorySearchRenderPending = false;
+      const cached = this.inventorySearchContext;
+      const inventory = sortInventoryEntries(filterInventoryEntries(cached.allItems, {
+        search: this.search,
+        typeFilter: this.typeFilter
+      }), this.sortMode);
+      return {
+        ...cached.context,
+        search: this.search,
+        typeFilter: this.typeFilter,
+        inventory,
+        inventoryCount: inventory.length,
+        emptyInventory: inventory.length === 0
+      };
+    }
+    this.inventorySearchRenderPending = false;
     this.calendarDowntimeByIsoDate = {};
     this.groupActor = null;
     try {
@@ -4060,7 +4105,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       const calendarCells = buildCalendarDowntimeCells(calendarSnapshot, downtimeSnapshot);
       this.calendarDowntimeByIsoDate = Object.fromEntries(calendarCells.map((cell) => [cell.isoDate, cell.downtime]));
 
-      return {
+      const context = {
         hasError: false,
         actor: inventorySnapshot.actor ?? {
           id: "",
@@ -4178,8 +4223,14 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         canDropInventoryItems,
         canEditCurrency
       };
+      this.inventorySearchContext = {
+        allItems: inventorySnapshot.allItems ?? inventorySnapshot.items ?? [],
+        context
+      };
+      return context;
     }
     catch (error) {
+      this.inventorySearchContext = null;
       console.error(`${MODULE_ID} | Failed to prepare inventory app.`, error);
       return {
         hasError: true,
@@ -6278,6 +6329,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     element.querySelector("[data-action='search']")?.addEventListener("input", (event) => {
       this.search = event.currentTarget.value ?? "";
+      this.inventorySearchRenderPending = true;
       this.focusRestore = {
         action: "search",
         start: event.currentTarget.selectionStart ?? this.search.length,
@@ -6987,6 +7039,8 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     window.clearTimeout(this.craftSearchRenderTimeout);
     window.clearTimeout(this.actionFeedbackTimeout);
     this.searchRenderTimeout = null;
+    this.inventorySearchRenderPending = false;
+    this.inventorySearchContext = null;
     this.craftSearchRenderTimeout = null;
     this.actionFeedbackTimeout = null;
     this.renderListenersAbortController?.abort();

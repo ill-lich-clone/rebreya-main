@@ -526,6 +526,29 @@ export function itemsCanRepresentSameTransfer(sourceItem, acceptedItem) {
     && durabilityTransferSignature(sourceItem) === durabilityTransferSignature(acceptedItem);
 }
 
+function inventoryStackIdentity(item) {
+  const itemData = item?.toObject?.() ?? item;
+  const flags = itemData?.flags?.[MODULE_ID] ?? {};
+  const identities = [
+    ["gear", flags.gearId],
+    ["material", flags.materialId],
+    ["magicItem", flags.magicItemId],
+    ["good", flags.linkedGoodId]
+  ];
+  const identity = identities.find(([, value]) => cleanId(value));
+  return identity ? `${identity[0]}:${cleanId(identity[1])}` : "";
+}
+
+function itemsCanMergeInInventory(sourceItem, acceptedItem) {
+  const sourceIdentity = inventoryStackIdentity(sourceItem);
+  const acceptedIdentity = inventoryStackIdentity(acceptedItem);
+  const sameStack = sourceIdentity || acceptedIdentity
+    ? Boolean(sourceIdentity && acceptedIdentity && sourceIdentity === acceptedIdentity)
+    : itemsCanRepresentSameTransfer(sourceItem, acceptedItem);
+  return sameStack
+    && durabilityTransferSignature(sourceItem) === durabilityTransferSignature(acceptedItem);
+}
+
 export function captureInventoryTransferIdentity(item) {
   if (!item) {
     return null;
@@ -3030,7 +3053,7 @@ export class InventoryService {
   }
 
   #findInventoryMergeCandidate(actor, itemData) {
-    return actor?.items?.contents?.find((candidate) => itemsCanRepresentSameTransfer(candidate, itemData)) ?? null;
+    return actor?.items?.contents?.find((candidate) => itemsCanMergeInInventory(candidate, itemData)) ?? null;
   }
 
   async #upsertInventoryItem(actor, itemData, quantity = null) {

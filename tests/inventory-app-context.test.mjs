@@ -450,6 +450,106 @@ test("InventoryApp _prepareContext never creates Foundry documents while renderi
   }
 });
 
+test("InventoryApp filters a cached inventory context without refetching unrelated snapshots", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const calls = [];
+  const entries = [
+    {
+      id: "crossbow",
+      name: "Арбалет, ручной",
+      sourceType: "gear",
+      sourceTypeLabel: "Снаряжение",
+      itemTypeLabel: "Оружие",
+      materialLabel: "Дерево",
+      quantity: 1,
+      totalWeight: 3,
+      priceCopper: 7500
+    },
+    {
+      id: "rope",
+      name: "Верёвка",
+      sourceType: "gear",
+      sourceTypeLabel: "Снаряжение",
+      itemTypeLabel: "Снаряжение",
+      materialLabel: "Пенька",
+      quantity: 1,
+      totalWeight: 10,
+      priceCopper: 100
+    }
+  ];
+  const moduleApi = createModuleApi({
+    inventorySnapshot: {
+      actor: { id: "group", name: "Группа", img: "group.webp", canEdit: true },
+      hasActor: true,
+      items: entries,
+      allItems: entries,
+      emptyInventory: false,
+      canDropInventoryItems: true,
+      groupContextError: "",
+      summary: {
+        distinctCount: 2,
+        totalQuantity: 2,
+        totalWeight: 13,
+        foodLb: 0,
+        waterGal: 0,
+        currencyLabel: "0 мм",
+        currency: { pp: 0, gp: 0, sp: 0, cp: 0, totalCopper: 0, label: "0 мм" }
+      }
+    },
+    calls,
+    getGroupContext: () => null
+  });
+  for (const method of [
+    "getInventorySnapshot",
+    "getPartySnapshot",
+    "getCraftSnapshot",
+    "getCalendarSnapshot",
+    "getTravelSnapshot",
+    "getTransportSnapshot",
+    "getDowntimeSnapshot"
+  ]) {
+    const original = moduleApi[method].bind(moduleApi);
+    moduleApi[method] = async (...args) => {
+      calls.push([method, args]);
+      return await original(...args);
+    };
+  }
+  const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?cached-search=${Date.now()}`);
+  const app = new InventoryApp(moduleApi);
+
+  try {
+    await app._prepareContext();
+    const callCounts = Object.fromEntries([
+      "getInventorySnapshot",
+      "getPartySnapshot",
+      "getCraftSnapshot",
+      "getCalendarSnapshot",
+      "getTravelSnapshot",
+      "getTransportSnapshot",
+      "getDowntimeSnapshot"
+    ].map((method) => [method, calls.filter((call) => call[0] === method).length]));
+    app.search = "арбалет";
+    app.inventorySearchRenderPending = true;
+    const context = await app._prepareContext();
+
+    assert.deepEqual(context.inventory.map((entry) => entry.name), ["Арбалет, ручной"]);
+    for (const method of [
+      "getInventorySnapshot",
+      "getPartySnapshot",
+      "getCraftSnapshot",
+      "getCalendarSnapshot",
+      "getTravelSnapshot",
+      "getTransportSnapshot",
+      "getDowntimeSnapshot"
+    ]) {
+      assert.equal(calls.filter((call) => call[0] === method).length, callCounts[method], method);
+    }
+  }
+  finally {
+    restoreFoundry();
+  }
+});
+
 test("InventoryApp keeps page width while book tabs render externally", async () => {
   const restoreFoundry = installFoundryApplicationStub();
   const { InventoryApp } = await import("../scripts/ui/inventory-app.js");

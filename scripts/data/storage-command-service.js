@@ -534,30 +534,31 @@ export class StorageCommandService {
       transferRow.itemData ??= {};
       transferRow.itemData.system ??= {};
       transferRow.itemData.system.quantity = quantity;
+      const preparedTransferRow = await this.#prepareGroundRow(transferRow);
       const grantId = mutationKey;
-      if (isStorageContainerRow(transferRow)) {
+      if (isStorageContainerRow(preparedTransferRow)) {
         if (!this.containerItemService) {
           throw new Error("Сервис переносимых контейнеров Rebreya недоступен.");
         }
         if (quantity !== 1) throw new Error("Контейнер можно переносить только целиком.");
         if (destination === "self") {
-          await this.containerItemService.materializeToActorOnce(access.character, transferRow.container, grantId);
+          await this.containerItemService.materializeToActorOnce(access.character, preparedTransferRow.container, grantId);
         }
         else if (destination === "party") {
           const inventoryActor = await this.inventoryService.getInventoryActor({ create: true });
           if (!inventoryActor) throw new Error("Не удалось получить партийный инвентарь.");
-          await this.containerItemService.materializeToActorOnce(inventoryActor, transferRow.container, grantId);
+          await this.containerItemService.materializeToActorOnce(inventoryActor, preparedTransferRow.container, grantId);
         }
         else if (destination === "character") {
           const targetActor = await this.#resolveCharacterTarget(payload.target, sender);
-          await this.containerItemService.materializeToActorOnce(targetActor, transferRow.container, grantId);
+          await this.containerItemService.materializeToActorOnce(targetActor, preparedTransferRow.container, grantId);
         }
         else {
           await this.#validateSceneTarget(payload.target, access, sender);
           if (typeof this.containerItemService.restoreSnapshotToScene !== "function") {
             throw new Error("Сервис восстановления контейнеров на сцене недоступен.");
           }
-          await this.containerItemService.restoreSnapshotToScene(transferRow.container, {
+          await this.containerItemService.restoreSnapshotToScene(preparedTransferRow.container, {
             sceneId: clean(payload.target.sceneId),
             x: Number(payload.target.x),
             y: Number(payload.target.y),
@@ -566,24 +567,23 @@ export class StorageCommandService {
         }
       }
       else if (destination === "self") {
-        await this.inventoryService.addLootgenRowToCharacterOnce(transferRow, access.character, grantId);
+        await this.inventoryService.addLootgenRowToCharacterOnce(preparedTransferRow, access.character, grantId);
       }
       else if (destination === "party") {
         await this.inventoryService.addLootgenRowToInventoryOnce(
-          transferRow,
+          preparedTransferRow,
           grantId,
           { allowPersistedItemData: true }
         );
       }
       else if (destination === "character") {
         const targetActor = await this.#resolveCharacterTarget(payload.target, sender);
-        await this.inventoryService.addLootgenRowToCharacterOnce(transferRow, targetActor, grantId);
+        await this.inventoryService.addLootgenRowToCharacterOnce(preparedTransferRow, targetActor, grantId);
       }
       else {
         await this.#validateSceneTarget(payload.target, access, sender);
-        const groundRow = await this.#prepareGroundRow(transferRow);
         await this.groundPileService.transferToScene({
-          row: groundRow,
+          row: preparedTransferRow,
           quantity,
           sceneId: clean(payload.target.sceneId),
           x: Number(payload.target.x),
