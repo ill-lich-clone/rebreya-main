@@ -3277,6 +3277,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.inventoryFolderTreeCache = null;
     this.inventorySearchIndexCache = null;
     this.inventoryContextCache = null;
+    this.missingRootCloseScheduled = false;
     this.activeTab = "inventory";
     this.search = "";
     this.typeFilter = "all";
@@ -3321,7 +3322,11 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   get id() {
-    return `${MODULE_ID}-inventory-app`;
+    if (this.inventoryViewKey === "main") {
+      return `${MODULE_ID}-inventory-app`;
+    }
+    const scopedToken = Array.from(this.inventoryViewKey, (character) => character.codePointAt(0).toString(16)).join("-");
+    return `${MODULE_ID}-inventory-folder-${scopedToken}`;
   }
 
   get inventoryActorId() {
@@ -4193,11 +4198,40 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     };
   }
 
+  #applyInventoryRootLifecycle(context) {
+    if (!this.rootFolderId || !context) {
+      return context;
+    }
+
+    if (context.inventoryRootFolder) {
+      this.missingRootCloseScheduled = false;
+      this.options ??= {};
+      this.options.window ??= {};
+      this.options.window.title = context.inventoryRootFolder.name;
+      return context;
+    }
+
+    if (context.inventoryRootFolderMissing && !this.missingRootCloseScheduled) {
+      this.missingRootCloseScheduled = true;
+      globalThis.queueMicrotask?.(() => {
+        globalThis.ui?.notifications?.info?.("Папка инвентаря удалена. Её содержимое перемещено на один уровень выше.");
+        void this.close?.();
+      });
+    }
+    return {
+      ...context,
+      inventoryRows: [],
+      inventory: [],
+      inventoryCount: 0,
+      emptyInventory: true
+    };
+  }
+
   async _prepareContext() {
     if (this.inventorySearchRenderPending) {
       this.inventorySearchRenderPending = false;
       const cachedContext = this.#projectCachedInventoryContext();
-      if (cachedContext) return cachedContext;
+      if (cachedContext) return this.#applyInventoryRootLifecycle(cachedContext);
     }
     this.inventorySearchRenderPending = false;
     this.calendarDowntimeByIsoDate = {};
@@ -4660,7 +4694,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         canEditCurrency
       };
       this.inventoryContextCache = context;
-      return this.#projectCachedInventoryContext();
+      return this.#applyInventoryRootLifecycle(this.#projectCachedInventoryContext());
     }
     catch (error) {
       this.inventorySnapshotCache = null;
@@ -7628,6 +7662,11 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.renderListenersAbortController?.abort();
     this.renderListenersAbortController = null;
     return super._preClose ? super._preClose(options) : undefined;
+  }
+
+  async _onClose(options) {
+    this.moduleApi?.unregisterInventoryFolderPopout?.(this.inventoryViewKey, this);
+    return super._onClose ? super._onClose(options) : undefined;
   }
 }
 

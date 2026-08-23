@@ -1379,6 +1379,7 @@ export class RebreyaMainModule {
     this.statesApp = null;
     this.globalEventsApp = null;
     this.inventoryApp = null;
+    this.inventoryFolderApps = new Map();
     this.groupsApp = null;
     this.cosmologyApp = null;
     this.lootgenApps = new Map();
@@ -5528,13 +5529,21 @@ export class RebreyaMainModule {
   }
 
   #appRefreshTask(app, options = {}) {
-    if (!app?.rendered || isApplicationMinimized(app) || typeof app.render !== "function") {
+    const {
+      refreshInventorySnapshot = false,
+      ...renderOptions
+    } = options;
+    const canRefreshInventorySnapshot = refreshInventorySnapshot
+      && typeof app?.refreshInventorySnapshot === "function";
+    if (!app?.rendered || isApplicationMinimized(app) || (!canRefreshInventorySnapshot && typeof app.render !== "function")) {
       return null;
     }
 
     return {
       key: app,
-      run: () => rerenderApp(app, { ...options, focus: false })
+      run: () => canRefreshInventorySnapshot
+        ? app.refreshInventorySnapshot(renderOptions)
+        : rerenderApp(app, { ...renderOptions, focus: false })
     };
   }
 
@@ -5577,8 +5586,21 @@ export class RebreyaMainModule {
     const waiters = this.inventoryRefreshWaiters.splice(0);
     this.inventoryRefreshActorIds.clear();
 
+    const targetActorIds = new Set(actorIds);
+    const inventoryViews = [
+      this.inventoryApp,
+      ...this.inventoryFolderApps.values()
+    ].filter((app, index, apps) => app && apps.indexOf(app) === index);
     const tasks = [
-      this.#appRefreshTask(this.inventoryApp, { preserveScroll: true }),
+      ...inventoryViews
+        .filter((app) => {
+          const inventoryActorId = String(app.inventoryActorId ?? app.groupActorId ?? "").trim();
+          return targetActorIds.size === 0 || !inventoryActorId || targetActorIds.has(inventoryActorId);
+        })
+        .map((app) => this.#appRefreshTask(app, {
+          preserveScroll: true,
+          refreshInventorySnapshot: true
+        })),
       ...this.#actorSheetRefreshTasks(actorIds, { allWhenEmpty: false })
     ].filter(Boolean);
 
@@ -5904,6 +5926,60 @@ export class RebreyaMainModule {
       notifyUser("error", "Не удалось открыть партийный инвентарь.");
       throw error;
     }
+  }
+
+  async openInventoryFolderPopout(groupActorId, folderId) {
+    const normalizedGroupActorId = String(groupActorId ?? "").trim();
+    const normalizedFolderId = String(folderId ?? "").trim();
+    if (!normalizedGroupActorId || !normalizedFolderId) {
+      throw new TypeError("Inventory folder popout requires groupActorId and folderId.");
+    }
+
+    const inventoryViewKey = `${normalizedGroupActorId}:${normalizedFolderId}`;
+    const existingApp = this.inventoryFolderApps.get(inventoryViewKey);
+    if (existingApp) {
+      await existingApp.render({ force: true });
+      bringAppToFront(existingApp);
+      return existingApp;
+    }
+
+    const snapshot = await this.getInventorySnapshot({
+      createActor: false,
+      groupActorId: normalizedGroupActorId
+    });
+    const folder = (snapshot?.folders ?? []).find((entry) => String(entry?.id ?? "").trim() === normalizedFolderId);
+    if (!folder) {
+      throw new Error("Папка инвентаря не найдена.");
+    }
+
+    const moduleVersion = game.modules?.get?.(MODULE_ID)?.version ?? "1.4.67";
+    const { InventoryApp } = await import(`./ui/inventory-app.js?v=${encodeURIComponent(moduleVersion)}`);
+    const app = new InventoryApp(this, {
+      groupActorId: normalizedGroupActorId,
+      rootFolderId: normalizedFolderId,
+      inventoryViewKey,
+      window: { title: String(folder.name ?? "Папка инвентаря") }
+    });
+    this.inventoryFolderApps.set(inventoryViewKey, app);
+    try {
+      await app.render({ force: true });
+    }
+    catch (error) {
+      this.unregisterInventoryFolderPopout(inventoryViewKey, app);
+      throw error;
+    }
+    bringAppToFront(app);
+    return app;
+  }
+
+  unregisterInventoryFolderPopout(inventoryViewKey, app) {
+    const normalizedViewKey = String(inventoryViewKey ?? "").trim();
+    if (!normalizedViewKey || this.inventoryFolderApps.get(normalizedViewKey) !== app) {
+      return false;
+    }
+
+    this.inventoryFolderApps.delete(normalizedViewKey);
+    return true;
   }
 
   async openGroupsApp() {

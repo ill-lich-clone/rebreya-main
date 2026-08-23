@@ -12,8 +12,9 @@ import {
 
 const SOCKET_CHANNEL = "module.rebreya-main";
 
-function flushAsyncHooks() {
-  return new Promise((resolve) => setImmediate(resolve));
+async function flushAsyncHooks() {
+  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
 function createTransferItem({
@@ -278,6 +279,42 @@ test("inventory sync hooks refresh inventory views for item and actor changes", 
   await flushAsyncHooks();
 
   assert.deepEqual(calls, ["initialize:sword", "refresh", "refresh"]);
+});
+
+test("inventory sync hooks coalesce affected Actor ids through the existing hook set", async () => {
+  const calls = [];
+  const hooks = {
+    listeners: {},
+    on(hookName, listener) {
+      this.listeners[hookName] ??= [];
+      this.listeners[hookName].push(listener);
+    }
+  };
+  const moduleApi = {
+    async refreshInventoryViews(options) {
+      calls.push(options);
+    }
+  };
+
+  registerInventorySyncHooks(moduleApi, {
+    Hooks: hooks,
+    debounceMs: 0,
+    force: true
+  });
+
+  assert.deepEqual(Object.keys(hooks.listeners).sort(), [
+    "createItem",
+    "deleteItem",
+    "updateActor",
+    "updateItem"
+  ]);
+  hooks.listeners.updateActor[0]({ id: "group-a", type: "group" }, {
+    flags: { "rebreya-main": { inventoryFolders: { version: 1 } } }
+  }, {}, "gm");
+  hooks.listeners.updateItem[0]({ id: "item-b", parent: { id: "group-b", type: "group" } }, {}, {}, "gm");
+  await flushAsyncHooks();
+
+  assert.deepEqual(calls, [{ actorIds: ["group-a", "group-b"] }]);
 });
 
 test("createItem defers legacy durability until delayed GM source depletion is observable", async () => {

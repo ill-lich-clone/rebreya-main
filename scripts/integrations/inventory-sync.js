@@ -13,9 +13,9 @@ const SOCKET_CHANNEL = `module.${MODULE_ID}`;
 let hookRegistered = false;
 let pendingTransfer = null;
 let pendingTransferTimeout = null;
-let refreshTimeout = null;
 const pendingAcceptedTransfers = new Map();
 const registeredSockets = new WeakSet();
+const inventoryRefreshSchedules = new WeakMap();
 let transferSequence = 0;
 
 function cleanId(value) {
@@ -392,36 +392,70 @@ function isInventoryRelevantActor(actor) {
   return actor?.type === "character" || actor?.type === "group";
 }
 
-async function refreshInventoryViews(moduleApi) {
-  if (typeof moduleApi?.refreshInventoryViews === "function") {
-    await moduleApi.refreshInventoryViews();
-    return;
-  }
+function inventoryActorIdOf(document) {
+  const actor = document?.type === "character" || document?.type === "group"
+    ? document
+    : document?.parent ?? document?.actor ?? null;
+  return cleanId(actor?.id);
+}
 
-  if (moduleApi?.inventoryApp?.rendered) {
-    await moduleApi.inventoryApp.render({ force: true, preserveScroll: true });
+async function refreshInventoryViews(moduleApi, actorIds = []) {
+  if (typeof moduleApi?.refreshInventoryViews === "function") {
+    await moduleApi.refreshInventoryViews({ actorIds });
   }
 }
 
-function scheduleInventoryRefresh(moduleApi, debounceMs = DEFAULT_REFRESH_DEBOUNCE_MS) {
+function scheduleInventoryRefresh(moduleApi, actorIds = [], debounceMs = DEFAULT_REFRESH_DEBOUNCE_MS) {
   if (!moduleApi) {
     return Promise.resolve(false);
   }
 
-  if (debounceMs <= 0) {
-    return refreshInventoryViews(moduleApi).then(() => true);
+  let schedule = inventoryRefreshSchedules.get(moduleApi);
+  if (!schedule) {
+    schedule = {
+      actorIds: new Set(),
+      timeout: null,
+      waiters: []
+    };
+    inventoryRefreshSchedules.set(moduleApi, schedule);
   }
 
-  if (refreshTimeout) {
-    globalThis.clearTimeout?.(refreshTimeout);
+  for (const actorId of actorIds ?? []) {
+    const normalizedActorId = cleanId(actorId);
+    if (normalizedActorId) {
+      schedule.actorIds.add(normalizedActorId);
+    }
   }
-  refreshTimeout = globalThis.setTimeout?.(() => {
-    refreshTimeout = null;
-    refreshInventoryViews(moduleApi).catch((error) => {
-      console.error(`${MODULE_ID} | Failed to refresh inventory views after document update.`, error);
-    });
-  }, debounceMs) ?? null;
-  return Promise.resolve(true);
+
+  const completion = new Promise((resolve, reject) => {
+    schedule.waiters.push({ resolve, reject });
+  });
+  if (schedule.timeout !== null) {
+    globalThis.clearTimeout?.(schedule.timeout);
+  }
+
+  const flush = async () => {
+    schedule.timeout = null;
+    const pendingActorIds = Array.from(schedule.actorIds);
+    const waiters = schedule.waiters.splice(0);
+    schedule.actorIds.clear();
+    try {
+      await refreshInventoryViews(moduleApi, pendingActorIds);
+      waiters.forEach(({ resolve }) => resolve(true));
+    }
+    catch (error) {
+      waiters.forEach(({ reject }) => reject(error));
+    }
+  };
+  if (typeof globalThis.setTimeout === "function") {
+    schedule.timeout = globalThis.setTimeout(() => {
+      void flush();
+    }, Math.max(0, debounceMs));
+  }
+  else {
+    void flush();
+  }
+  return completion;
 }
 
 export function registerInventorySyncHooks(moduleApi, { Hooks = globalThis.Hooks, debounceMs = DEFAULT_REFRESH_DEBOUNCE_MS, force = false } = {}) {
@@ -438,7 +472,7 @@ export function registerInventorySyncHooks(moduleApi, { Hooks = globalThis.Hooks
       options
     }, userId, moduleApi);
     if (!handledTransfer && isInventoryRelevantItem(item)) {
-      await scheduleInventoryRefresh(moduleApi, debounceMs);
+      await scheduleInventoryRefresh(moduleApi, [inventoryActorIdOf(item)], debounceMs);
     }
   };
   const onItemCreate = async (item, options = {}, userId = "") => {
@@ -450,13 +484,13 @@ export function registerInventorySyncHooks(moduleApi, { Hooks = globalThis.Hooks
       await initializeDurabilityItem(item, moduleApi);
     }
     if (!handledTransfer && isInventoryRelevantItem(item)) {
-      await scheduleInventoryRefresh(moduleApi, debounceMs);
+      await scheduleInventoryRefresh(moduleApi, [inventoryActorIdOf(item)], debounceMs);
     }
     return handledTransfer;
   };
   const onActorChange = async (actor) => {
     if (isInventoryRelevantActor(actor)) {
-      await scheduleInventoryRefresh(moduleApi, debounceMs);
+      await scheduleInventoryRefresh(moduleApi, [inventoryActorIdOf(actor)], debounceMs);
     }
   };
 

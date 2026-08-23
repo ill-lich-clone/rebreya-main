@@ -20,6 +20,7 @@ function installUiFixture() {
   const previousGame = globalThis.game;
   const previousUi = globalThis.ui;
   const previousFoundry = globalThis.foundry;
+  const previousWindow = globalThis.window;
   const calls = [];
 
   globalThis.game = {
@@ -35,7 +36,48 @@ function installUiFixture() {
       warn() {}
     }
   };
-  globalThis.foundry = { applications: { instances: [] } };
+  globalThis.window = {
+    clearTimeout: globalThis.clearTimeout,
+    setTimeout: globalThis.setTimeout
+  };
+  globalThis.foundry = {
+    applications: {
+      instances: [],
+      api: {
+        ApplicationV2: class {
+          constructor(options = {}) {
+            this.options = structuredClone(options);
+            this.rendered = false;
+            this.minimized = false;
+          }
+
+          async render(options = {}) {
+            this.rendered = true;
+            this.renderOptions = options;
+            return this;
+          }
+
+          async close(options = {}) {
+            await this._preClose?.(options);
+            this.rendered = false;
+            await this._onClose?.(options);
+          }
+
+          async _preClose() {}
+          async _onClose() {}
+
+          bringToFront() {
+            this.bringToFrontCalls = (this.bringToFrontCalls ?? 0) + 1;
+          }
+        },
+        HandlebarsApplicationMixin: (Base) => class extends Base {},
+        DialogV2: {}
+      }
+    },
+    utils: {
+      escapeHTML: (value) => String(value ?? "")
+    }
+  };
 
   const createApp = (name, actorId = "") => ({
     rendered: true,
@@ -53,6 +95,7 @@ function installUiFixture() {
       globalThis.game = previousGame;
       globalThis.ui = previousUi;
       globalThis.foundry = previousFoundry;
+      globalThis.window = previousWindow;
     }
   };
 }
@@ -314,6 +357,81 @@ test("inventory refresh without actor ids does not render every open Actor sheet
     await fixture.moduleApi.refreshInventoryViews();
 
     assert.deepEqual(fixture.calls.map((call) => call.name), ["inventory"]);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("folder popout registry reuses exact scopes, keeps distinct scopes separate and unregisters by identity", async () => {
+  const fixture = installUiFixture();
+  const userFlagWrites = [];
+  try {
+    globalThis.game.modules = new Map([[MODULE_ID, { version: `folder-popouts-${Date.now()}` }]]);
+    globalThis.game.user.setFlag = async (...args) => userFlagWrites.push(args);
+    fixture.moduleApi.inventoryService.getInventorySnapshot = async ({ groupActorId } = {}) => ({
+      actor: { id: groupActorId, type: "group" },
+      folders: [
+        { id: "weapons", name: "Оружие", parentId: null },
+        { id: "potions", name: "Зелья", parentId: null }
+      ]
+    });
+
+    const weapons = await fixture.moduleApi.openInventoryFolderPopout("group-a", "weapons");
+    const reusedWeapons = await fixture.moduleApi.openInventoryFolderPopout("group-a", "weapons");
+    const potions = await fixture.moduleApi.openInventoryFolderPopout("group-a", "potions");
+
+    assert.equal(reusedWeapons, weapons);
+    assert.notEqual(potions, weapons);
+    assert.equal(fixture.moduleApi.inventoryFolderApps.size, 2);
+    assert.equal(weapons.options.window.title, "Оружие");
+    assert.notEqual(weapons.id, potions.id);
+    assert.equal(weapons.inventoryViewKey, "group-a:weapons");
+    assert.equal(weapons.bringToFrontCalls, 2);
+    assert.deepEqual(userFlagWrites, []);
+
+    const replacement = { inventoryViewKey: weapons.inventoryViewKey };
+    fixture.moduleApi.unregisterInventoryFolderPopout(weapons.inventoryViewKey, replacement);
+    assert.equal(fixture.moduleApi.inventoryFolderApps.get(weapons.inventoryViewKey), weapons);
+    await weapons.close({ reason: "manual" });
+    assert.equal(fixture.moduleApi.inventoryFolderApps.has(weapons.inventoryViewKey), false);
+    assert.equal(fixture.moduleApi.inventoryFolderApps.get(potions.inventoryViewKey), potions);
+    assert.equal(new RebreyaMainModule().inventoryFolderApps.size, 0);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("inventory refresh targets only live views and Actor sheets in the affected group scope", async () => {
+  const fixture = installUiFixture();
+  const refreshCalls = [];
+  const inventoryView = (name, actorId, overrides = {}) => ({
+    rendered: true,
+    inventoryActorId: actorId,
+    async refreshInventorySnapshot(options) {
+      refreshCalls.push({ name, options });
+    },
+    ...overrides
+  });
+  try {
+    fixture.moduleApi.inventoryApp = inventoryView("main-a", "group-a");
+    fixture.moduleApi.inventoryFolderApps.set("group-a:weapons", inventoryView("weapons-a", "group-a"));
+    fixture.moduleApi.inventoryFolderApps.set("group-a:potions", inventoryView("potions-a", "group-a", { minimized: true }));
+    fixture.moduleApi.inventoryFolderApps.set("group-b:weapons", inventoryView("weapons-b", "group-b"));
+    fixture.moduleApi.inventoryFolderApps.set("group-a:closed", inventoryView("closed-a", "group-a", { rendered: false }));
+    globalThis.ui.windows = {
+      affected: fixture.createApp("actor-a", "group-a"),
+      unrelated: fixture.createApp("actor-b", "group-b")
+    };
+
+    await fixture.moduleApi.refreshInventoryViews({ actorIds: ["group-a"] });
+
+    assert.deepEqual(refreshCalls, [
+      { name: "main-a", options: { preserveScroll: true } },
+      { name: "weapons-a", options: { preserveScroll: true } }
+    ]);
+    assert.deepEqual(fixture.calls, [{ name: "actor-a", options: { force: true, focus: false } }]);
   }
   finally {
     fixture.restore();

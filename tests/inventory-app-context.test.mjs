@@ -20,8 +20,10 @@ function installFoundryApplicationStub() {
         ApplicationV2: class {
           constructor(options = {}) {
             this.applicationOptions = options;
+            this.options = structuredClone(options);
           }
           async _onRender() {}
+          async _onClose() {}
         },
         HandlebarsApplicationMixin: (Base) => class extends Base {},
         DialogV2: {}
@@ -987,6 +989,74 @@ test("InventoryApp invalidates its folder snapshot after a command error and gat
     console.error = previousConsoleError;
     globalThis.ui = previousUi;
     dom.restore();
+    restoreFoundry();
+  }
+});
+
+test("InventoryApp keeps a stable scoped identity, follows root renames and closes when its root disappears", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const previousUi = globalThis.ui;
+  const notifications = [];
+  globalThis.ui = {
+    notifications: {
+      info(message) {
+        notifications.push(message);
+      }
+    }
+  };
+  const snapshot = createFolderInventorySnapshot();
+  const unregisterCalls = [];
+  const moduleApi = {
+    ...createModuleApi({ inventorySnapshot: snapshot, getGroupContext: () => null }),
+    unregisterInventoryFolderPopout(inventoryViewKey, app) {
+      unregisterCalls.push([inventoryViewKey, app]);
+    }
+  };
+  const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?folder-popout-lifecycle=${Date.now()}`);
+  const app = new InventoryApp(moduleApi, {
+    groupActorId: "group-a",
+    rootFolderId: "alpha",
+    inventoryViewKey: "group-a:alpha"
+  });
+  const initialId = app.id;
+  let closeCalls = 0;
+  app.close = async () => {
+    closeCalls += 1;
+  };
+
+  try {
+    let context = await app._prepareContext();
+    assert.equal(app.options.window.title, "Альфа");
+    assert.equal(context.inventoryRootFolder.name, "Альфа");
+
+    snapshot.folders.find((folder) => folder.id === "alpha").name = "Оружие";
+    app.inventoryContextCache = null;
+    context = await app._prepareContext();
+    assert.equal(app.options.window.title, "Оружие");
+    assert.equal(app.id, initialId);
+
+    snapshot.folders.find((folder) => folder.id === "alpha").parentId = "beta";
+    app.inventoryContextCache = null;
+    context = await app._prepareContext();
+    await Promise.resolve();
+    assert.equal(context.inventoryRootFolder.parentId, "beta");
+    assert.equal(closeCalls, 0);
+
+    snapshot.folders = snapshot.folders.filter((folder) => folder.id !== "alpha");
+    app.inventoryContextCache = null;
+    context = await app._prepareContext();
+    await Promise.resolve();
+    assert.equal(context.inventoryRootFolderMissing, true);
+    assert.deepEqual(context.inventoryRows, []);
+    assert.equal(closeCalls, 1);
+    assert.equal(notifications.length, 1);
+    assert.match(notifications[0], /содержимое.*на один уровень выше/iu);
+
+    await app._onClose({ reason: "manual" });
+    assert.deepEqual(unregisterCalls, [["group-a:alpha", app]]);
+  }
+  finally {
+    globalThis.ui = previousUi;
     restoreFoundry();
   }
 });
