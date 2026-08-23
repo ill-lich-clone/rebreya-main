@@ -3347,7 +3347,22 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.contextMenuCleanup = null;
   }
 
-  #openContextMenu({ x, y, title = "", actions = [] }) {
+  #getContextMenuZIndex() {
+    const appElement = getAppElement(this);
+    const ownerWindow = appElement?.closest?.(".window-app, .application") ?? null;
+    const windows = Array.from(document.querySelectorAll(".window-app, .application"));
+    if (ownerWindow && !windows.includes(ownerWindow)) {
+      windows.push(ownerWindow);
+    }
+
+    const maxZIndex = windows.reduce((maxValue, node) => {
+      const currentValue = Number.parseInt(window.getComputedStyle(node).zIndex ?? "", 10);
+      return Number.isFinite(currentValue) ? Math.max(maxValue, currentValue) : maxValue;
+    }, 100);
+    return String(maxZIndex + 2);
+  }
+
+  #openContextMenu({ x, y, anchor = null, title = "", actions = [] }) {
     this.#closeContextMenu();
     if (!Array.isArray(actions) || !actions.length) {
       return;
@@ -3391,15 +3406,37 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     }
 
     document.body.appendChild(menuRoot);
+    const syncMenuLayer = () => {
+      const nextZIndex = this.#getContextMenuZIndex();
+      if (menuRoot.style.zIndex !== nextZIndex) {
+        menuRoot.style.zIndex = nextZIndex;
+      }
+    };
+    syncMenuLayer();
+    const windowLayerObserver = typeof MutationObserver === "function"
+      ? new MutationObserver(syncMenuLayer)
+      : null;
+    windowLayerObserver?.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["style"]
+    });
 
-    const bounds = menuRoot.getBoundingClientRect();
-    const maxLeft = window.innerWidth - bounds.width - 8;
-    const maxTop = window.innerHeight - bounds.height - 8;
-    const safeLeft = Math.max(8, Math.min(x, maxLeft));
-    const safeTop = Math.max(8, Math.min(y, maxTop));
+    const positionMenu = () => {
+      const anchorBounds = anchor?.getBoundingClientRect?.() ?? null;
+      const targetX = toNumber(anchorBounds?.right, x);
+      const targetY = toNumber(anchorBounds?.bottom, y);
+      const bounds = menuRoot.getBoundingClientRect();
+      const maxLeft = window.innerWidth - bounds.width - 8;
+      const maxTop = window.innerHeight - bounds.height - 8;
+      const safeLeft = Math.max(8, Math.min(targetX, maxLeft));
+      const safeTop = Math.max(8, Math.min(targetY, maxTop));
 
-    menuRoot.style.left = `${safeLeft}px`;
-    menuRoot.style.top = `${safeTop}px`;
+      menuRoot.style.left = `${safeLeft}px`;
+      menuRoot.style.top = `${safeTop}px`;
+    };
+    positionMenu();
 
     const handlePointerDown = (event) => {
       if (!menuRoot.contains(event.target)) {
@@ -3411,18 +3448,34 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         this.#closeContextMenu();
       }
     };
+    const handleAnchorChange = () => {
+      if (anchor?.isConnected === false) {
+        this.#closeContextMenu();
+        return;
+      }
+      positionMenu();
+    };
 
     document.addEventListener("pointerdown", handlePointerDown, true);
     document.addEventListener("keydown", handleKeyDown, true);
+    if (anchor) {
+      document.addEventListener("scroll", handleAnchorChange, true);
+      window.addEventListener?.("resize", handleAnchorChange);
+    }
 
     this.contextMenuCleanup = () => {
       document.removeEventListener("pointerdown", handlePointerDown, true);
       document.removeEventListener("keydown", handleKeyDown, true);
+      if (anchor) {
+        document.removeEventListener("scroll", handleAnchorChange, true);
+        window.removeEventListener?.("resize", handleAnchorChange);
+      }
+      windowLayerObserver?.disconnect();
       menuRoot.remove();
     };
   }
 
-  #openItemContextMenu(row, { x = 0, y = 0 } = {}) {
+  #openItemContextMenu(row, { x = 0, y = 0, anchor = null } = {}) {
     if (!(row instanceof HTMLElement)) {
       return;
     }
@@ -3477,6 +3530,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.#openContextMenu({
       x,
       y,
+      anchor,
       title: itemName,
       actions
     });
@@ -6830,7 +6884,8 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
           : toNumber(rect.bottom, toNumber(rect.top, 0) + toNumber(rect.height, 0));
         this.#openItemContextMenu(row, {
           x,
-          y
+          y,
+          anchor: event.currentTarget
         });
       }, listenerOptions);
     });

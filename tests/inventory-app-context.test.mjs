@@ -41,6 +41,7 @@ function installMinimalDom() {
   const previousDocument = globalThis.document;
   const previousWindow = globalThis.window;
   let appendedMenu = null;
+  const documentListeners = new Map();
 
   globalThis.HTMLElement = class FakeHTMLElement {
     constructor({ dataset = {}, closest = () => null } = {}) {
@@ -116,13 +117,25 @@ function installMinimalDom() {
     },
     createElement: () => createFakeElement(),
     querySelectorAll: () => [],
-    addEventListener() {},
-    removeEventListener() {}
+    addEventListener(type, listener) {
+      const listeners = documentListeners.get(type) ?? [];
+      listeners.push(listener);
+      documentListeners.set(type, listeners);
+    },
+    removeEventListener(type, listener) {
+      const listeners = documentListeners.get(type) ?? [];
+      documentListeners.set(type, listeners.filter((candidate) => candidate !== listener));
+    }
   };
 
   return {
     get appendedMenu() {
       return appendedMenu;
+    },
+    dispatchDocumentEvent(type, event = {}) {
+      for (const listener of documentListeners.get(type) ?? []) {
+        listener(event);
+      }
     },
     restore() {
       globalThis.HTMLElement = previousHTMLElement;
@@ -1190,6 +1203,219 @@ test("InventoryApp item service menu exposes stock actions without duplicate ope
     assert.match(menuText, /Забрать себе/u);
     assert.match(menuText, /Продать/u);
     assert.match(menuText, /Удалить/u);
+  }
+  finally {
+    dom.restore();
+    restoreFoundry();
+  }
+});
+
+test("InventoryApp item context menu is layered above the highest Foundry window", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const dom = installMinimalDom();
+  const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?item-menu-layer=${Date.now()}`);
+  const inventoryWindow = createFakeElement({
+    closest: () => inventoryWindow
+  });
+  inventoryWindow.style.zIndex = "612";
+  const neighboringWindow = createFakeElement({
+    closest: () => neighboringWindow
+  });
+  neighboringWindow.style.zIndex = "613";
+  const takeSelf = createFakeElement();
+  const itemRow = createFakeElement({
+    dataset: { itemName: "Silver Mirror" },
+    closest: () => itemRow
+  });
+  itemRow.querySelector = (selector) => selector === "[data-action='take-item-self']"
+    ? takeSelf
+    : null;
+  const menuButton = createFakeElement({
+    closest: () => itemRow
+  });
+  const root = createFakeElement({
+    closest: () => inventoryWindow
+  });
+  root.querySelector = () => null;
+  root.querySelectorAll = (selector) => {
+    if (selector === "[data-action='open-item-menu']") {
+      return [menuButton];
+    }
+    if (selector === ".rm-compact-item") {
+      return [itemRow];
+    }
+    return [];
+  };
+  globalThis.document.querySelectorAll = (selector) => selector === ".window-app, .application"
+    ? [inventoryWindow, neighboringWindow]
+    : [];
+  globalThis.window.getComputedStyle = (node) => ({
+    zIndex: node?.style?.zIndex ?? "auto"
+  });
+  const app = new InventoryApp(createModuleApi({
+    getGroupContext: () => null
+  }));
+  app.element = root;
+
+  try {
+    await app._onRender({}, {});
+    menuButton.listeners.click[0]({
+      currentTarget: menuButton,
+      clientX: 240,
+      clientY: 160,
+      preventDefault() {},
+      stopPropagation() {}
+    });
+
+    assert.equal(dom.appendedMenu.style.zIndex, "615");
+  }
+  finally {
+    dom.restore();
+    restoreFoundry();
+  }
+});
+
+test("InventoryApp item context menu follows Foundry window layer changes while open", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const dom = installMinimalDom();
+  const previousMutationObserver = globalThis.MutationObserver;
+  let layerObserver = null;
+  globalThis.MutationObserver = class MutationObserver {
+    constructor(callback) {
+      this.callback = callback;
+      layerObserver = this;
+    }
+
+    observe() {}
+
+    disconnect() {}
+  };
+  const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?item-menu-layer-change=${Date.now()}`);
+  const inventoryWindow = createFakeElement({
+    closest: () => inventoryWindow
+  });
+  inventoryWindow.style.zIndex = "612";
+  const neighboringWindow = createFakeElement({
+    closest: () => neighboringWindow
+  });
+  neighboringWindow.style.zIndex = "613";
+  const takeSelf = createFakeElement();
+  const itemRow = createFakeElement({
+    dataset: { itemName: "Silver Mirror" },
+    closest: () => itemRow
+  });
+  itemRow.querySelector = (selector) => selector === "[data-action='take-item-self']"
+    ? takeSelf
+    : null;
+  const menuButton = createFakeElement({
+    closest: () => itemRow
+  });
+  const root = createFakeElement({
+    closest: () => inventoryWindow
+  });
+  root.querySelector = () => null;
+  root.querySelectorAll = (selector) => {
+    if (selector === "[data-action='open-item-menu']") {
+      return [menuButton];
+    }
+    if (selector === ".rm-compact-item") {
+      return [itemRow];
+    }
+    return [];
+  };
+  globalThis.document.querySelectorAll = (selector) => selector === ".window-app, .application"
+    ? [inventoryWindow, neighboringWindow]
+    : [];
+  globalThis.window.getComputedStyle = (node) => ({
+    zIndex: node?.style?.zIndex ?? "auto"
+  });
+  const app = new InventoryApp(createModuleApi({
+    getGroupContext: () => null
+  }));
+  app.element = root;
+
+  try {
+    await app._onRender({}, {});
+    menuButton.listeners.click[0]({
+      currentTarget: menuButton,
+      clientX: 240,
+      clientY: 160,
+      preventDefault() {},
+      stopPropagation() {}
+    });
+    neighboringWindow.style.zIndex = "700";
+    layerObserver?.callback();
+
+    assert.equal(dom.appendedMenu.style.zIndex, "702");
+  }
+  finally {
+    globalThis.MutationObserver = previousMutationObserver;
+    dom.restore();
+    restoreFoundry();
+  }
+});
+
+test("InventoryApp item context menu follows its ellipsis button while inventory scrolls", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const dom = installMinimalDom();
+  const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?item-menu-scroll-anchor=${Date.now()}`);
+  let buttonRect = {
+    left: 180,
+    top: 90,
+    width: 32,
+    height: 32,
+    right: 212,
+    bottom: 122
+  };
+  const takeSelf = createFakeElement();
+  const itemRow = createFakeElement({
+    dataset: { itemName: "Silver Mirror" },
+    closest: () => itemRow
+  });
+  itemRow.querySelector = (selector) => selector === "[data-action='take-item-self']"
+    ? takeSelf
+    : null;
+  const menuButton = createFakeElement({
+    closest: () => itemRow
+  });
+  menuButton.getBoundingClientRect = () => buttonRect;
+  const root = createFakeElement();
+  root.querySelector = () => null;
+  root.querySelectorAll = (selector) => {
+    if (selector === "[data-action='open-item-menu']") {
+      return [menuButton];
+    }
+    if (selector === ".rm-compact-item") {
+      return [itemRow];
+    }
+    return [];
+  };
+  const app = new InventoryApp(createModuleApi({
+    getGroupContext: () => null
+  }));
+  app.element = root;
+
+  try {
+    await app._onRender({}, {});
+    menuButton.listeners.click[0]({
+      currentTarget: menuButton,
+      clientX: 190,
+      clientY: 100,
+      preventDefault() {},
+      stopPropagation() {}
+    });
+    buttonRect = {
+      left: 440,
+      top: 300,
+      width: 32,
+      height: 32,
+      right: 472,
+      bottom: 332
+    };
+    dom.dispatchDocumentEvent("scroll");
+
+    assert.equal(dom.appendedMenu.style.left, "472px");
+    assert.equal(dom.appendedMenu.style.top, "332px");
   }
   finally {
     dom.restore();
