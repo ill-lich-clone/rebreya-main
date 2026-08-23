@@ -29,6 +29,16 @@ import {
   normalizeTransportFuelConsumption,
   resolveTransportFuelConsumption
 } from "./transport-fuel-consumption.js";
+import {
+  INVENTORY_FOLDER_STATE_VERSION,
+  InventoryFolderStateError,
+  createInventoryFolder as createInventoryFolderState,
+  deleteInventoryFolder as deleteInventoryFolderState,
+  moveInventoryFolder as moveInventoryFolderState,
+  moveInventoryItemToFolder as moveInventoryItemToFolderState,
+  normalizeInventoryFolderState,
+  renameInventoryFolder as renameInventoryFolderState
+} from "./inventory-folder-tree.js";
 
 const SOCKET_CHANNEL = `module.${MODULE_ID}`;
 export const SOCKET_EVENT_INVENTORY_IMPORT_REQUEST = "inventory-import-request";
@@ -3294,7 +3304,22 @@ export class InventoryService {
     };
   }
 
-  async getInventoryActor({ create = false } = {}) {
+  async getInventoryActor({ create = false, groupActorId = "" } = {}) {
+    const requestedGroupActorId = cleanId(groupActorId);
+    if (requestedGroupActorId) {
+      this.lastGroupContextError = "";
+      const context = this.moduleApi.groupContextService?.resolveForGroup?.(requestedGroupActorId);
+      const resolvedActor = context?.groupActor ?? null;
+      if (
+        !resolvedActor
+        || resolvedActor.type !== "group"
+        || cleanId(resolvedActor.id) !== requestedGroupActorId
+      ) {
+        throw new Error("Не удалось разрешить указанный групповой инвентарь.");
+      }
+      return resolvedActor;
+    }
+
     const groupActor = this.#getGroupInventoryActor();
     if (groupActor) {
       return groupActor;
@@ -3335,6 +3360,110 @@ export class InventoryService {
     });
 
     return actor;
+  }
+
+  #readInventoryFolderState(actor) {
+    return normalizeInventoryFolderState(
+      actor?.getFlag?.(MODULE_ID, "inventoryFolders"),
+      {
+        itemIds: Array.isArray(actor?.items?.contents)
+          ? actor.items.contents.map((item) => cleanId(item?.id)).filter(Boolean)
+          : []
+      }
+    );
+  }
+
+  #writeInventoryFolderState(actor, nextState) {
+    return actor.setFlag(MODULE_ID, "inventoryFolders", nextState);
+  }
+
+  #mutateInventoryFolderState(groupActorId, operation) {
+    const actorId = cleanId(groupActorId);
+    if (!actorId) {
+      throw new Error("Не указан групповой инвентарь.");
+    }
+    return this.mutationCoordinator.run(
+      `inventory-folders:${actorId}`,
+      async () => {
+        const actor = await this.getInventoryActor({ create: false, groupActorId: actorId });
+        const rawState = actor?.getFlag?.(MODULE_ID, "inventoryFolders");
+        const currentState = this.#readInventoryFolderState(actor);
+        const operationResult = await operation({ actor, state: currentState });
+        const nextState = operationResult?.state ?? currentState;
+        const changed = JSON.stringify(rawState ?? null) !== JSON.stringify(nextState);
+        if (changed) {
+          await this.#writeInventoryFolderState(actor, nextState);
+        }
+        const resultFolderId = operationResult?.folderId == null
+          ? null
+          : cleanId(operationResult.folderId);
+        return {
+          actorId: actor.id,
+          folderId: resultFolderId,
+          changed,
+          deletedFolderId: cleanId(operationResult?.deletedFolderId),
+          ...(cleanId(operationResult?.itemId) ? { itemId: cleanId(operationResult.itemId) } : {})
+        };
+      }
+    );
+  }
+
+  createInventoryFolder({ groupActorId, folderId, name, parentId = null }) {
+    return this.#mutateInventoryFolderState(groupActorId, ({ state }) => ({
+      state: createInventoryFolderState(state, { folderId, name, parentId }),
+      folderId
+    }));
+  }
+
+  renameInventoryFolder({ groupActorId, folderId, name }) {
+    return this.#mutateInventoryFolderState(groupActorId, ({ state }) => ({
+      state: renameInventoryFolderState(state, { folderId, name }),
+      folderId
+    }));
+  }
+
+  moveInventoryFolder({ groupActorId, folderId, parentId = null }) {
+    return this.#mutateInventoryFolderState(groupActorId, ({ state }) => ({
+      state: moveInventoryFolderState(state, { folderId, parentId }),
+      folderId
+    }));
+  }
+
+  deleteInventoryFolder({ groupActorId, folderId }) {
+    return this.#mutateInventoryFolderState(groupActorId, ({ state }) => {
+      const normalizedFolderId = cleanId(folderId);
+      const existed = state.folders.some((folder) => folder.id === normalizedFolderId);
+      return {
+        state: deleteInventoryFolderState(state, { folderId: normalizedFolderId }),
+        folderId: normalizedFolderId,
+        deletedFolderId: existed ? normalizedFolderId : ""
+      };
+    });
+  }
+
+  #assignInventoryItemFolder({ groupActorId, itemId, folderId = null }) {
+    return this.#mutateInventoryFolderState(groupActorId, ({ actor, state }) => {
+      const normalizedItemId = cleanId(itemId);
+      const item = actor?.items?.get?.(normalizedItemId)
+        ?? actor?.items?.contents?.find?.((entry) => cleanId(entry?.id) === normalizedItemId)
+        ?? null;
+      if (!item) {
+        throw new InventoryFolderStateError("item-not-found", "Предмет не найден в партийном инвентаре.");
+      }
+      return {
+        state: moveInventoryItemToFolderState(state, { itemId: normalizedItemId, folderId }),
+        folderId,
+        itemId: normalizedItemId
+      };
+    });
+  }
+
+  moveInventoryItemToFolder({ groupActorId, itemId, folderId = null }) {
+    return this.#assignInventoryItemFolder({ groupActorId, itemId, folderId });
+  }
+
+  assignInventoryGrantFolder({ groupActorId, itemId, folderId = null }) {
+    return this.#assignInventoryItemFolder({ groupActorId, itemId, folderId });
   }
 
   async mergeLegacyInventoryIntoGroup(groupActorId) {
@@ -4079,12 +4208,19 @@ export class InventoryService {
     };
   }
 
-  async getInventorySnapshot({ search = "", typeFilter = "all", createActor = true } = {}) {
-    const actor = await this.getInventoryActor({ create: createActor });
+  async getInventorySnapshot({
+    search = "",
+    typeFilter = "all",
+    createActor = true,
+    groupActorId = ""
+  } = {}) {
+    const actor = await this.getInventoryActor({ create: createActor, groupActorId });
     if (!actor) {
       return {
         actor: null,
         hasActor: false,
+        folders: [],
+        folderStateVersion: INVENTORY_FOLDER_STATE_VERSION,
         items: [],
         allItems: [],
         emptyInventory: true,
@@ -4103,8 +4239,15 @@ export class InventoryService {
 
     const model = await this.moduleApi.getModel();
     const currency = buildCurrencySnapshot(actor);
+    const folderState = this.#readInventoryFolderState(actor);
     const allItems = actor.items.contents
-      .map((item) => this.#buildInventoryEntry(model, item))
+      .map((item) => {
+        const entry = this.#buildInventoryEntry(model, item);
+        return {
+          ...entry,
+          folderId: folderState.itemFolderIds[entry.itemId] ?? null
+        };
+      })
       .sort((left, right) => left.name.localeCompare(right.name, "ru"));
     const normalizedSearch = normalizeText(search);
     const filteredItems = allItems.filter((entry) => {
@@ -4144,6 +4287,8 @@ export class InventoryService {
         canEdit: actor.isOwner
       },
       hasActor: true,
+      folders: folderState.folders,
+      folderStateVersion: folderState.version,
       items: filteredItems,
       allItems,
       emptyInventory: filteredItems.length === 0,

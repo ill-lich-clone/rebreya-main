@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import { DOWNTIME_ITEM_TYPE, MODULE_ID } from "../scripts/constants.js";
 import { GROUP_CONTEXT_ERRORS } from "../scripts/data/group-context-service.js";
+import { WorldMutationCoordinator } from "../scripts/application/world-mutation-coordinator.js";
 import {
   INVENTORY_CURRENCY_CONVERT_COMMAND,
   INVENTORY_CURRENCY_UPDATE_COMMAND,
@@ -126,6 +127,7 @@ function createActor({
   abilities = {},
   members = []
 } = {}) {
+  const setFlagCalls = [];
   const actor = {
     id,
     uuid: `Actor.${id}`,
@@ -157,12 +159,14 @@ function createActor({
       get: (itemId) => actor.items.contents.find((item) => item.id === itemId) ?? null
     },
     flags: clone(flags),
+    setFlagCalls,
     getFlag(moduleId, key) {
       return this.flags?.[moduleId]?.[key];
     },
     async setFlag(moduleId, key, value) {
+      setFlagCalls.push({ moduleId, key, value: clone(value) });
       this.flags[moduleId] ??= {};
-      this.flags[moduleId][key] = value;
+      this.flags[moduleId][key] = clone(value);
       return value;
     },
     async update(patch) {
@@ -329,6 +333,344 @@ test("getInventorySnapshot classifies Rebreya downtime items as downtime templat
     assert.equal(snapshot.items[0].sourceTypeLabel, "Простой");
     assert.equal(snapshot.items[0].itemTypeLabel, "Простой");
     assert.deepEqual(filtered.items.map((item) => item.itemId), ["downtime-research"]);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("getInventorySnapshot projects normalized Actor folder state without writing it", async () => {
+  const sword = createItem({ id: "sword", name: "Sword", type: "weapon", quantity: 2, weight: 3 });
+  const torch = createItem({ id: "torch", name: "Torch", quantity: 4, weight: 1 });
+  const groupActor = createActor({
+    id: "group-a",
+    name: "Party A",
+    type: "group",
+    isOwner: true,
+    items: [sword, torch],
+    flags: {
+      [MODULE_ID]: {
+        inventoryFolders: {
+          version: 99,
+          folders: [
+            { id: "weapons", name: " Оружие ", parentId: "missing" }
+          ],
+          itemFolderIds: {
+            sword: "weapons",
+            stale: "weapons",
+            torch: "missing"
+          }
+        }
+      }
+    }
+  });
+  let resolveForGroupCalls = 0;
+  const fixture = installInventoryFixture({ actors: [groupActor] });
+  const service = new InventoryService({
+    groupContextService: {
+      resolveForGroup: (groupActorId) => {
+        resolveForGroupCalls += 1;
+        assert.equal(groupActorId, "group-a");
+        return { groupActor };
+      },
+      resolveForCurrentUser: () => assert.fail("explicit group lookup must not use current group")
+    },
+    getModel: async () => ({
+      materials: [],
+      materialById: new Map(),
+      materialByGoodId: new Map(),
+      gear: [],
+      gearById: new Map()
+    })
+  });
+
+  try {
+    const snapshot = await service.getInventorySnapshot({
+      createActor: false,
+      groupActorId: "group-a"
+    });
+
+    assert.equal(resolveForGroupCalls, 1);
+    assert.deepEqual(snapshot.folders, [
+      { id: "weapons", name: "Оружие", parentId: null }
+    ]);
+    assert.equal(snapshot.folderStateVersion, 1);
+    assert.equal(snapshot.allItems.find((row) => row.itemId === "sword").folderId, "weapons");
+    assert.equal(snapshot.allItems.find((row) => row.itemId === "torch").folderId, null);
+    assert.equal(groupActor.setFlagCalls.length, 0);
+
+    const summaryBefore = clone(snapshot.summary);
+    groupActor.flags[MODULE_ID].inventoryFolders = undefined;
+    const rootSnapshot = await service.getInventorySnapshot({ createActor: false, groupActorId: "group-a" });
+    assert.deepEqual(rootSnapshot.folders, []);
+    assert.ok(rootSnapshot.allItems.every((row) => row.folderId === null));
+    assert.deepEqual(rootSnapshot.summary, summaryBefore);
+    assert.equal(groupActor.setFlagCalls.length, 0);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("folder mutations normalize current Actor state and write exactly once only when changed", async () => {
+  const sword = createItem({ id: "sword", name: "Sword", quantity: 7 });
+  let itemUpdateCalls = 0;
+  sword.update = async () => {
+    itemUpdateCalls += 1;
+    return sword;
+  };
+  const groupActor = createActor({
+    id: "group-a",
+    name: "Party A",
+    type: "group",
+    isOwner: true,
+    items: [sword],
+    flags: {
+      [MODULE_ID]: {
+        inventoryFolders: {
+          version: 42,
+          folders: [{ id: "orphan", name: " Orphan ", parentId: "missing" }],
+          itemFolderIds: { stale: "orphan" }
+        }
+      }
+    }
+  });
+  let resolveCalls = 0;
+  const fixture = installInventoryFixture({ actors: [groupActor] });
+  const service = new InventoryService({
+    groupContextService: {
+      resolveForGroup: (groupActorId) => {
+        resolveCalls += 1;
+        assert.equal(groupActorId, "group-a");
+        return { groupActor };
+      }
+    },
+    worldMutationCoordinator: new WorldMutationCoordinator()
+  });
+
+  try {
+    const created = await service.createInventoryFolder({
+      groupActorId: "group-a",
+      folderId: "weapons",
+      name: " Weapons ",
+      parentId: null
+    });
+    assert.deepEqual(created, {
+      actorId: "group-a",
+      folderId: "weapons",
+      changed: true,
+      deletedFolderId: ""
+    });
+    assert.deepEqual(groupActor.setFlagCalls[0].value, {
+      version: 1,
+      folders: [
+        { id: "orphan", name: "Orphan", parentId: null },
+        { id: "weapons", name: "Weapons", parentId: null }
+      ],
+      itemFolderIds: {}
+    });
+
+    const replay = await service.createInventoryFolder({
+      groupActorId: "group-a",
+      folderId: "weapons",
+      name: "Weapons",
+      parentId: null
+    });
+    assert.equal(replay.changed, false);
+    assert.equal(groupActor.setFlagCalls.length, 1);
+
+    assert.equal((await service.renameInventoryFolder({
+      groupActorId: "group-a",
+      folderId: "weapons",
+      name: "Armory"
+    })).changed, true);
+    assert.equal((await service.moveInventoryFolder({
+      groupActorId: "group-a",
+      folderId: "orphan",
+      parentId: "weapons"
+    })).changed, true);
+    const itemMove = await service.moveInventoryItemToFolder({
+      groupActorId: "group-a",
+      itemId: "sword",
+      folderId: "orphan"
+    });
+    assert.equal(itemMove.changed, true);
+    assert.equal(itemMove.itemId, "sword");
+    assert.equal(itemUpdateCalls, 0);
+    assert.equal(sword.system.quantity, 7);
+
+    const deleted = await service.deleteInventoryFolder({ groupActorId: "group-a", folderId: "orphan" });
+    assert.equal(deleted.changed, true);
+    assert.equal(deleted.deletedFolderId, "orphan");
+    assert.equal(groupActor.getFlag(MODULE_ID, "inventoryFolders").itemFolderIds.sword, "weapons");
+    assert.equal(groupActor.setFlagCalls.length, 5);
+    assert.equal(resolveCalls, 6);
+
+    const missingDelete = await service.deleteInventoryFolder({ groupActorId: "group-a", folderId: "missing" });
+    assert.equal(missingDelete.changed, false);
+    assert.equal(missingDelete.deletedFolderId, "");
+    assert.equal(groupActor.setFlagCalls.length, 5);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("assignInventoryGrantFolder uses the canonical mutation path and rejects a missing Item", async () => {
+  const sword = createItem({ id: "sword", name: "Sword" });
+  const groupActor = createActor({
+    id: "group-a",
+    type: "group",
+    isOwner: true,
+    items: [sword],
+    flags: {
+      [MODULE_ID]: {
+        inventoryFolders: {
+          version: 1,
+          folders: [{ id: "weapons", name: "Weapons", parentId: null }],
+          itemFolderIds: {}
+        }
+      }
+    }
+  });
+  const fixture = installInventoryFixture({ actors: [groupActor] });
+  const service = new InventoryService({
+    groupContextService: { resolveForGroup: () => ({ groupActor }) },
+    worldMutationCoordinator: new WorldMutationCoordinator()
+  });
+
+  try {
+    const result = await service.assignInventoryGrantFolder({
+      groupActorId: "group-a",
+      itemId: "sword",
+      folderId: "weapons"
+    });
+    assert.equal(result.itemId, "sword");
+    assert.equal(result.changed, true);
+    assert.equal(groupActor.setFlagCalls.length, 1);
+    const rootResult = await service.assignInventoryGrantFolder({
+      groupActorId: "group-a",
+      itemId: "sword",
+      folderId: null
+    });
+    assert.equal(rootResult.folderId, null);
+    assert.equal(rootResult.changed, true);
+    assert.equal(groupActor.setFlagCalls.length, 2);
+    await assert.rejects(
+      () => service.assignInventoryGrantFolder({
+        groupActorId: "group-a",
+        itemId: "missing",
+        folderId: "weapons"
+      }),
+      (error) => error?.code === "item-not-found"
+    );
+    assert.equal(groupActor.setFlagCalls.length, 2);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("folder mutations re-resolve after queue wait and reject a stale cycle", async () => {
+  const initialActor = createActor({ id: "group-a", type: "group", isOwner: true });
+  const currentActor = createActor({
+    id: "group-a",
+    type: "group",
+    isOwner: true,
+    flags: {
+      [MODULE_ID]: {
+        inventoryFolders: {
+          version: 1,
+          folders: [
+            { id: "branch", name: "Branch", parentId: null },
+            { id: "target", name: "Target", parentId: "branch" }
+          ],
+          itemFolderIds: {}
+        }
+      }
+    }
+  });
+  const coordinator = new WorldMutationCoordinator();
+  let releaseQueue;
+  const blocker = coordinator.run("inventory-folders:group-a", () => new Promise((resolve) => {
+    releaseQueue = resolve;
+  }));
+  await new Promise((resolve) => setImmediate(resolve));
+  let resolvedActor = initialActor;
+  const fixture = installInventoryFixture({ actors: [initialActor, currentActor] });
+  const service = new InventoryService({
+    groupContextService: { resolveForGroup: () => ({ groupActor: resolvedActor }) },
+    worldMutationCoordinator: coordinator
+  });
+
+  try {
+    const pendingMove = service.moveInventoryFolder({
+      groupActorId: "group-a",
+      folderId: "branch",
+      parentId: "target"
+    });
+    resolvedActor = currentActor;
+    releaseQueue();
+    await blocker;
+    await assert.rejects(pendingMove, (error) => error?.code === "folder-cycle");
+    assert.equal(initialActor.setFlagCalls.length, 0);
+    assert.equal(currentActor.setFlagCalls.length, 0);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("folder mutation coordinator serializes one Actor and allows another Actor to proceed", async () => {
+  const groupA = createActor({ id: "group-a", type: "group", isOwner: true });
+  const groupB = createActor({ id: "group-b", type: "group", isOwner: true });
+  let releaseA;
+  const originalSetFlagA = groupA.setFlag.bind(groupA);
+  groupA.setFlag = async (...args) => {
+    await new Promise((resolve) => {
+      releaseA = resolve;
+    });
+    return originalSetFlagA(...args);
+  };
+  const fixture = installInventoryFixture({ actors: [groupA, groupB] });
+  const service = new InventoryService({
+    groupContextService: {
+      resolveForGroup: (groupActorId) => ({ groupActor: groupActorId === "group-a" ? groupA : groupB })
+    },
+    worldMutationCoordinator: new WorldMutationCoordinator()
+  });
+
+  try {
+    const firstA = service.createInventoryFolder({
+      groupActorId: "group-a",
+      folderId: "a-one",
+      name: "A one",
+      parentId: null
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    const secondA = service.createInventoryFolder({
+      groupActorId: "group-a",
+      folderId: "a-two",
+      name: "A two",
+      parentId: null
+    });
+    const resultB = await service.createInventoryFolder({
+      groupActorId: "group-b",
+      folderId: "b-one",
+      name: "B one",
+      parentId: null
+    });
+
+    assert.equal(resultB.changed, true);
+    assert.equal(groupB.setFlagCalls.length, 1);
+    assert.equal(groupA.setFlagCalls.length, 0);
+    releaseA();
+    await firstA;
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(groupA.setFlagCalls.length, 1);
+    releaseA();
+    await secondA;
+    assert.equal(groupA.setFlagCalls.length, 2);
   }
   finally {
     fixture.restore();
