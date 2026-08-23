@@ -4,6 +4,7 @@ import { GROUP_CONTEXT_ERRORS } from "../data/group-context-service.js";
 import {
   buildInventoryFolderSearchIndex,
   buildInventoryFolderTree,
+  MAX_INVENTORY_FOLDER_NAME_LENGTH,
   normalizeExpandedFolderIds,
   projectInventoryFolderRows
 } from "../data/inventory-folder-tree.js";
@@ -2748,6 +2749,64 @@ function readCurrencyValuesFromRoot(root, baseCurrency = {}) {
   };
 }
 
+async function promptInventoryFolderName({ title, initialName = "", confirmLabel = "Сохранить" } = {}) {
+  const dialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
+  if (typeof dialogV2?.wait !== "function") {
+    throw new Error("Диалог папки инвентаря недоступен.");
+  }
+
+  const rawName = await dialogV2.wait({
+    window: { title: cleanText(title) || "Папка инвентаря" },
+    content: `
+      <form class="rm-inventory-folder-dialog">
+        <div class="form-group">
+          <label>Название папки</label>
+          <input
+            type="text"
+            name="folderName"
+            value="${foundry.utils.escapeHTML(cleanText(initialName))}"
+            maxlength="${MAX_INVENTORY_FOLDER_NAME_LENGTH}"
+            required
+            autofocus
+            autocomplete="off"
+          >
+        </div>
+      </form>
+    `,
+    buttons: [
+      {
+        action: "confirm",
+        label: cleanText(confirmLabel) || "Сохранить",
+        icon: "fa-solid fa-check",
+        default: true,
+        callback: (_event, button) => button?.form?.elements?.folderName?.value ?? ""
+      },
+      {
+        action: "cancel",
+        label: "Отмена",
+        callback: () => null
+      }
+    ],
+    rejectClose: false
+  });
+  if (rawName === null || rawName === undefined || rawName === false) return null;
+
+  const name = cleanText(rawName);
+  if (!name) throw new Error("Название папки не может быть пустым.");
+  if (name.length > MAX_INVENTORY_FOLDER_NAME_LENGTH) {
+    throw new Error(`Название папки должно быть не длиннее ${MAX_INVENTORY_FOLDER_NAME_LENGTH} символов.`);
+  }
+  return name;
+}
+
+function createInventoryFolderId() {
+  const folderId = cleanText(globalThis.crypto?.randomUUID?.());
+  if (!folderId) {
+    throw new Error("Не удалось создать стабильный идентификатор папки.");
+  }
+  return folderId;
+}
+
 async function promptNumericValue({ title, label, value = "", min = 0, step = "0.01", confirmLabel = "Сохранить", allowRelative = false }) {
   return new Promise((resolve) => {
     let settled = false;
@@ -3165,6 +3224,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.actionFeedback = null;
     this.canManage = false;
     this.canDropInventoryItems = false;
+    this.canOrganizeInventory = false;
     this.groupActor = null;
     this.partyMembershipManagedByNativeGroup = false;
     this.scrollRestore = null;
@@ -3425,7 +3485,8 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     for (const action of actions) {
       const button = document.createElement("button");
       button.type = "button";
-      button.className = `rm-context-menu__item${action.danger ? " is-danger" : ""}`;
+      button.disabled = action.disabled === true;
+      button.className = `rm-context-menu__item${action.danger ? " is-danger" : ""}${button.disabled ? " is-disabled" : ""}`;
       if (action.icon) {
         const iconNode = document.createElement("i");
         iconNode.className = action.icon;
@@ -3436,10 +3497,11 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       labelNode.textContent = action.label ?? "";
       button.appendChild(labelNode);
 
-      button.addEventListener("click", () => {
+      button.addEventListener("click", async () => {
+        if (button.disabled) return;
         this.#closeContextMenu();
         try {
-          action.callback?.();
+          await action.callback?.();
         }
         catch (error) {
           console.error(`${MODULE_ID} | Context menu action failed.`, error);
@@ -3516,6 +3578,144 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       windowLayerObserver?.disconnect();
       menuRoot.remove();
     };
+  }
+
+  async #runInventoryFolderMutation(operation, { successMessage, errorMessage }) {
+    try {
+      const result = await operation();
+      ui.notifications?.info(successMessage);
+      return result;
+    }
+    catch (error) {
+      console.error(`${MODULE_ID} | Inventory folder action failed.`, error);
+      try {
+        await this.refreshInventorySnapshot({ preserveScroll: true });
+      }
+      catch (refreshError) {
+        console.error(`${MODULE_ID} | Failed to refresh inventory folders after command error.`, refreshError);
+      }
+      ui.notifications?.error(error.message || errorMessage);
+      return null;
+    }
+  }
+
+  async #createInventoryFolder(parentId = null) {
+    let name;
+    let folderId;
+    try {
+      name = await promptInventoryFolderName({
+        title: parentId ? "Создать вложенную папку" : "Создать папку",
+        confirmLabel: "Создать"
+      });
+      if (name === null) return null;
+      folderId = createInventoryFolderId();
+    }
+    catch (error) {
+      ui.notifications?.error(error.message || "Не удалось подготовить создание папки.");
+      return null;
+    }
+
+    const groupActorId = this.inventoryActorId;
+    return this.#runInventoryFolderMutation(
+      () => this.moduleApi.createInventoryFolder({
+        groupActorId,
+        folderId,
+        name,
+        parentId: cleanText(parentId) || null
+      }),
+      {
+        successMessage: `Папка «${name}» создана.`,
+        errorMessage: "Не удалось создать папку."
+      }
+    );
+  }
+
+  async #renameInventoryFolder(folderId, initialName) {
+    let name;
+    try {
+      name = await promptInventoryFolderName({
+        title: "Переименовать папку",
+        initialName,
+        confirmLabel: "Переименовать"
+      });
+      if (name === null) return null;
+    }
+    catch (error) {
+      ui.notifications?.error(error.message || "Не удалось подготовить переименование папки.");
+      return null;
+    }
+
+    const groupActorId = this.inventoryActorId;
+    return this.#runInventoryFolderMutation(
+      () => this.moduleApi.renameInventoryFolder({ groupActorId, folderId, name }),
+      {
+        successMessage: `Папка переименована в «${name}».`,
+        errorMessage: "Не удалось переименовать папку."
+      }
+    );
+  }
+
+  async #deleteInventoryFolder(folderId, folderName) {
+    const safeName = cleanText(folderName) || "Папка";
+    const confirmed = await confirmAction(
+      "Удалить папку",
+      `<p>Удалить папку «${foundry.utils.escapeHTML(safeName)}»?</p>
+       <p>Предметы и вложенные папки будут перемещены на один уровень выше и не будут удалены.</p>`
+    );
+    if (!confirmed) return null;
+
+    const groupActorId = this.inventoryActorId;
+    return this.#runInventoryFolderMutation(
+      () => this.moduleApi.deleteInventoryFolder({ groupActorId, folderId }),
+      {
+        successMessage: `Папка «${safeName}» удалена.`,
+        errorMessage: "Не удалось удалить папку."
+      }
+    );
+  }
+
+  async #openInventoryFolderPopout(folderId) {
+    const groupActorId = this.inventoryActorId;
+    if (typeof this.moduleApi.openInventoryFolderPopout !== "function") {
+      ui.notifications?.error("Отдельное окно папки пока недоступно.");
+      return null;
+    }
+    return this.moduleApi.openInventoryFolderPopout(groupActorId, folderId);
+  }
+
+  #openInventoryFolderContextMenu(row, { x = 0, y = 0, anchor = null } = {}) {
+    if (!(row instanceof HTMLElement) || !this.canOrganizeInventory) return;
+
+    const folderId = cleanText(row.dataset.folderId);
+    const folderName = cleanText(row.dataset.folderName) || "Папка";
+    if (!folderId) return;
+
+    const actions = [
+      {
+        label: "Создать вложенную папку",
+        icon: "fa-solid fa-folder-plus",
+        disabled: row.dataset.canCreateChild === "false",
+        callback: () => this.#createInventoryFolder(folderId)
+      },
+      {
+        label: "Переименовать",
+        icon: "fa-solid fa-pen",
+        callback: () => this.#renameInventoryFolder(folderId, folderName)
+      },
+      {
+        label: "Открыть отдельно",
+        icon: "fa-solid fa-up-right-from-square",
+        callback: () => this.#openInventoryFolderPopout(folderId)
+      },
+      {
+        label: "Удалить",
+        icon: "fa-solid fa-trash",
+        danger: true,
+        callback: () => this.#deleteInventoryFolder(folderId, folderName)
+      }
+    ];
+
+    this.#openContextMenu({ x, y, anchor, title: folderName, actions });
   }
 
   #openItemContextMenu(row, { x = 0, y = 0, anchor = null } = {}) {
@@ -3805,7 +4005,12 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       search: this.search,
       typeFilter: this.typeFilter
     });
-    const inventoryRows = projection.rows;
+    const inventoryRows = projection.rows.map((row) => ({
+      ...row,
+      isFolder: row.kind === "folder",
+      isItem: row.kind === "item",
+      isCollapsed: row.kind === "folder" && !row.expanded
+    }));
     const inventory = inventoryRows.filter((row) => row.kind === "item");
     const inventoryRootFolder = projection.rootFolder
       ? {
@@ -3825,7 +4030,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       inventoryRows,
       inventory,
       inventoryCount: projection.visibleItemCount,
-      emptyInventory: projection.visibleItemCount === 0,
+      emptyInventory: inventoryRows.length === 0,
       expandedFolderIds: [...this.expandedFolderIds],
       typeOptions: this.inventoryContextCache.typeOptions.map((option) => ({
         ...option,
@@ -4108,6 +4313,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       const canEditCurrency = Boolean(canManage || canDropInventoryItems);
       this.canManage = canManage;
       this.canDropInventoryItems = canDropInventoryItems;
+      this.canOrganizeInventory = canDropInventoryItems;
       this.partyMembershipManagedByNativeGroup = membershipManagedByNativeGroup;
 
       if (!availableActors.some((actor) => actor.id === this.selectedNewMemberId)) {
@@ -6406,6 +6612,42 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
           );
         }
       }, listenerOptions);
+    }
+
+    element.querySelectorAll("[data-action='create-inventory-folder']").forEach((button) => {
+      button.addEventListener("click", async (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        await this.#createInventoryFolder(this.rootFolderId);
+      }, listenerOptions);
+    });
+
+    element.querySelectorAll("[data-action='open-inventory-folder-menu']").forEach((button) => {
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const row = event.currentTarget.closest(".rm-inventory-folder-row[data-folder-id]");
+        if (!(row instanceof HTMLElement)) return;
+        const rect = event.currentTarget.getBoundingClientRect?.() ?? {};
+        this.#openInventoryFolderContextMenu(row, {
+          x: toNumber(rect.right, toNumber(rect.left, 0) + toNumber(rect.width, 0)),
+          y: toNumber(rect.bottom, toNumber(rect.top, 0) + toNumber(rect.height, 0)),
+          anchor: event.currentTarget
+        });
+      }, listenerOptions);
+    });
+
+    if (this.canOrganizeInventory) {
+      element.querySelectorAll(".rm-inventory-folder-row[data-folder-id]").forEach((row) => {
+        row.addEventListener("contextmenu", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          this.#openInventoryFolderContextMenu(event.currentTarget, {
+            x: event.clientX,
+            y: event.clientY
+          });
+        }, listenerOptions);
+      });
     }
 
     element.querySelectorAll("[data-action='toggle-inventory-folder']").forEach((button) => {

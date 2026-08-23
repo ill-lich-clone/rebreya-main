@@ -203,90 +203,125 @@
               {{/each}}
             </select>
           </div>
+          {{#if canOrganizeInventory}}
+            <button type="button" class="rm-icon-button rm-inventory-folder-create" data-action="create-inventory-folder" title="Создать папку" aria-label="Создать папку">
+              <i class="fa-solid fa-folder-plus" aria-hidden="true"></i>
+            </button>
+          {{/if}}
         </section>
 
         {{#if emptyInventory}}
           <p class="rm-empty">По текущему фильтру склад пуст.</p>
         {{else}}
-          <div class="rm-compact-item-list">
-            {{#each inventory}}
-              <article
-                class="rm-compact-item"
-                data-item-drag="true"
-                data-item-id="{{itemId}}"
-                data-item-name="{{name}}"
-                data-item-uuid="{{itemUuid}}"
-                data-source-type="{{sourceType}}"
-                data-source-id="{{sourceId}}"
-                data-source-name="{{sourceName}}"
-                data-quantity="{{quantity}}"
-                draggable="true"
-              >
-                <div class="rm-compact-item__main">
-                  <img class="rm-compact-item__image" src="{{img}}" alt="{{name}}">
-                  <div class="rm-compact-item__copy">
-                    <div class="rm-compact-item__title">
-                      {{#if canOpenEntry}}
-                        <button type="button" class="rm-link-button rm-link-button--accent rm-compact-item__name" data-action="open-compendium-entry" data-source-type="{{sourceType}}" data-source-id="{{sourceId}}" data-source-name="{{name}}">{{name}}</button>
-                      {{else}}
-                        <strong class="rm-compact-item__name">{{name}}</strong>
-                      {{/if}}
+          <div class="rm-compact-item-list rm-inventory-tree" role="tree">
+            {{#each inventoryRows}}
+              {{#if isFolder}}
+                <article
+                  class="rm-inventory-tree-row rm-inventory-tree-row--folder rm-inventory-folder-row {{#if isCollapsed}}is-collapsed{{/if}}"
+                  data-folder-id="{{folderId}}"
+                  data-folder-name="{{name}}"
+                  data-depth="{{depth}}"
+                  data-can-create-child="{{canCreateChild}}"
+                  role="treeitem"
+                  aria-expanded="{{expanded}}"
+                  tabindex="0"
+                >
+                  <div class="rm-inventory-folder-row__leading">
+                    <button type="button" class="rm-icon-button rm-inventory-folder-row__toggle" data-action="toggle-inventory-folder" data-folder-id="{{folderId}}" title="{{#if expanded}}Свернуть папку{{else}}Раскрыть папку{{/if}}" aria-label="{{#if expanded}}Свернуть папку{{else}}Раскрыть папку{{/if}}">
+                      <i class="fa-solid {{#if expanded}}fa-chevron-down{{else}}fa-chevron-right{{/if}}" aria-hidden="true"></i>
+                    </button>
+                    <i class="fa-solid fa-folder rm-inventory-folder-row__icon" aria-hidden="true"></i>
+                    <strong class="rm-inventory-folder-row__name">{{name}}</strong>
+                    <span class="rm-inventory-folder-row__count">{{rmNum recursiveItemCount precision=0}} поз.</span>
+                  </div>
+                  {{#if ../canOrganizeInventory}}
+                    <button type="button" class="rm-icon-button rm-inventory-folder-row__menu" data-action="open-inventory-folder-menu" title="Действия с папкой" aria-label="Действия с папкой">
+                      <i class="fa-solid fa-ellipsis" aria-hidden="true"></i>
+                    </button>
+                  {{/if}}
+                </article>
+              {{else}}
+                <article
+                  class="rm-compact-item rm-inventory-tree-row rm-inventory-tree-row--item"
+                  data-depth="{{depth}}"
+                  data-item-drag="true"
+                  data-item-id="{{itemId}}"
+                  data-item-name="{{name}}"
+                  data-item-uuid="{{itemUuid}}"
+                  data-source-type="{{sourceType}}"
+                  data-source-id="{{sourceId}}"
+                  data-source-name="{{sourceName}}"
+                  data-quantity="{{quantity}}"
+                  role="treeitem"
+                  tabindex="0"
+                  draggable="true"
+                >
+                  <div class="rm-compact-item__main">
+                    <img class="rm-compact-item__image" src="{{img}}" alt="{{name}}">
+                    <div class="rm-compact-item__copy">
+                      <div class="rm-compact-item__title">
+                        {{#if canOpenEntry}}
+                          <button type="button" class="rm-link-button rm-link-button--accent rm-compact-item__name" data-action="open-compendium-entry" data-source-type="{{sourceType}}" data-source-id="{{sourceId}}" data-source-name="{{name}}">{{name}}</button>
+                        {{else}}
+                          <strong class="rm-compact-item__name">{{name}}</strong>
+                        {{/if}}
+                      </div>
+
+                      <p class="rm-compact-item__meta">
+                        {{rmNum quantity}} шт.
+                        {{#if priceLabel}} • {{priceLabel}}{{/if}}
+                        • {{rmNum totalWeight}} фнт.
+                        {{#if itemTypeLabel}} • {{itemTypeLabel}}{{/if}}
+                        {{#if materialLabel}} • {{materialLabel}}{{/if}}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div class="rm-compact-item__side">
+                    <div class="rm-compact-item__metrics">
+                      <p>
+                        <span>Кол-во</span>
+                        <strong>{{rmNum quantity}}</strong>
+                      </p>
+                      <p>
+                        <span>Вес</span>
+                        <strong>{{rmNum totalWeight}} фнт.</strong>
+                      </p>
+                      <p>
+                        <span>Цена</span>
+                        <strong>{{#if priceLabel}}{{priceLabel}}{{else}}-{{/if}}</strong>
+                      </p>
                     </div>
 
-                    <p class="rm-compact-item__meta">
-                      {{rmNum quantity}} шт.
-                      {{#if priceLabel}} • {{priceLabel}}{{/if}}
-                      • {{rmNum totalWeight}} фнт.
-                      {{#if itemTypeLabel}} • {{itemTypeLabel}}{{/if}}
-                      {{#if materialLabel}} • {{materialLabel}}{{/if}}
-                    </p>
-                  </div>
-                </div>
+                    <button type="button" class="rm-icon-button rm-compact-item__menu" data-action="open-item-menu" title="Действия с предметом" aria-label="Действия с предметом">
+                      <i class="fa-solid fa-ellipsis"></i>
+                    </button>
+                    <div class="rm-compact-item__service-actions" hidden>
+                      {{#if ../canDropInventoryItems}}
+                        <button type="button" data-action="take-item-self" data-item-id="{{itemId}}" data-item-name="{{name}}" data-quantity="{{quantity}}"></button>
 
-                <div class="rm-compact-item__side">
-                  <div class="rm-compact-item__metrics">
-                    <p>
-                      <span>Кол-во</span>
-                      <strong>{{rmNum quantity}}</strong>
-                    </p>
-                    <p>
-                      <span>Вес</span>
-                      <strong>{{rmNum totalWeight}} фнт.</strong>
-                    </p>
-                    <p>
-                      <span>Цена</span>
-                      <strong>{{#if priceLabel}}{{priceLabel}}{{else}}-{{/if}}</strong>
-                    </p>
-                  </div>
+                        {{#if canSell}}
+                          <button type="button" data-action="sell-item" data-item-id="{{itemId}}" data-item-name="{{name}}" data-quantity="{{quantity}}"></button>
+                        {{/if}}
 
-                  <button type="button" class="rm-icon-button rm-compact-item__menu" data-action="open-item-menu" title="Действия с предметом" aria-label="Действия с предметом">
-                    <i class="fa-solid fa-ellipsis"></i>
-                  </button>
-                  <div class="rm-compact-item__service-actions" hidden>
-                    {{#if ../canDropInventoryItems}}
-                      <button type="button" data-action="take-item-self" data-item-id="{{itemId}}" data-item-name="{{name}}" data-quantity="{{quantity}}"></button>
-
-                      {{#if canSell}}
-                        <button type="button" data-action="sell-item" data-item-id="{{itemId}}" data-item-name="{{name}}" data-quantity="{{quantity}}"></button>
+                        <button type="button" data-action="delete-item" data-item-id="{{itemId}}" data-item-name="{{name}}"></button>
                       {{/if}}
 
-                      <button type="button" data-action="delete-item" data-item-id="{{itemId}}" data-item-name="{{name}}"></button>
-                    {{/if}}
+                      {{#if ../canManage}}
+                        <button type="button" class="rm-button rm-button--small rm-button--secondary" data-action="edit-item-quantity" data-item-id="{{itemId}}" data-item-name="{{name}}" data-quantity="{{quantity}}">
+                          <i class="fa-solid fa-pen"></i>
+                          <span>Изменить количество</span>
+                        </button>
 
-                    {{#if ../canManage}}
-                      <button type="button" class="rm-button rm-button--small rm-button--secondary" data-action="edit-item-quantity" data-item-id="{{itemId}}" data-item-name="{{name}}" data-quantity="{{quantity}}">
-                        <i class="fa-solid fa-pen"></i>
-                        <span>Изменить количество</span>
-                      </button>
-
-                      <button type="button" class="rm-button rm-button--small rm-button--secondary" data-action="break-item" data-item-id="{{itemId}}" data-item-name="{{name}}" data-quantity="{{quantity}}">
-                        <i class="fa-solid fa-hammer"></i>
-                        <span>Разобрать</span>
-                      </button>
-                    {{/if}}
+                        <button type="button" class="rm-button rm-button--small rm-button--secondary" data-action="break-item" data-item-id="{{itemId}}" data-item-name="{{name}}" data-quantity="{{quantity}}">
+                          <i class="fa-solid fa-hammer"></i>
+                          <span>Разобрать</span>
+                        </button>
+                      {{/if}}
+                    </div>
                   </div>
-                </div>
-              </article>
+                </article>
+              {{/if}}
             {{/each}}
           </div>
         {{/if}}

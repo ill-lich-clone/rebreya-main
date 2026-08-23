@@ -440,8 +440,8 @@ function createFolderInventorySnapshot() {
   };
 }
 
-function createFakeControl({ dataset = {}, value = "", disabled = false } = {}) {
-  const control = createFakeElement({ dataset });
+function createFakeControl({ dataset = {}, value = "", disabled = false, closest = () => null } = {}) {
+  const control = createFakeElement({ dataset, closest });
   control.value = value;
   control.disabled = disabled;
   return control;
@@ -765,6 +765,222 @@ test("InventoryApp refreshInventorySnapshot invalidates folder caches before the
     assert.deepEqual(renders, [{ force: true, preserveScroll: true }]);
   }
   finally {
+    restoreFoundry();
+  }
+});
+
+test("InventoryApp template renders accessible folder rows and fixed-depth item columns", async () => {
+  const template = await readFile(new URL("../templates/inventory-app.hbs", import.meta.url), "utf8");
+  const css = await readFile(new URL("../styles/main.css", import.meta.url), "utf8");
+  const script = await readFile(new URL("../scripts/ui/inventory-app.js", import.meta.url), "utf8");
+  const createButtons = template.match(/data-action="create-inventory-folder"/gu) ?? [];
+  const sortIndex = template.indexOf('data-action="sort-mode"');
+  const createIndex = template.indexOf('data-action="create-inventory-folder"');
+  const folderBranchStart = template.indexOf("{{#if isFolder}}");
+  const folderBranchEnd = template.indexOf('class="rm-compact-item rm-inventory-tree-row', folderBranchStart);
+  const folderBranch = template.slice(folderBranchStart, folderBranchEnd);
+
+  assert.equal(createButtons.length, 1);
+  assert.ok(createIndex > sortIndex);
+  assert.match(template, /data-action="create-inventory-folder"[^>]*title="Создать папку"[^>]*aria-label="Создать папку"/u);
+  assert.match(template, /\{\{#if canOrganizeInventory\}\}[\s\S]*data-action="create-inventory-folder"[\s\S]*\{\{\/if\}\}/u);
+  assert.ok(template.includes("{{#each inventoryRows}}"));
+  assert.match(folderBranch, /class="[^"]*rm-inventory-folder-row[^"]*"/u);
+  assert.ok(folderBranch.includes('data-folder-id="{{folderId}}"'));
+  assert.ok(folderBranch.includes('data-depth="{{depth}}"'));
+  assert.match(folderBranch, /data-action="toggle-inventory-folder"/u);
+  assert.equal((folderBranch.match(/fa-(?:solid|regular) fa-folder\b/gu) ?? []).length, 1);
+  assert.ok(folderBranch.includes("{{name}}"));
+  assert.ok(folderBranch.includes("{{rmNum recursiveItemCount precision=0}} поз."));
+  assert.match(folderBranch, /data-action="open-inventory-folder-menu"/u);
+  assert.doesNotMatch(folderBranch, />\s*(?:Кол-во|Вес|Цена)\s*</u);
+  assert.match(template.slice(folderBranchEnd), /class="[^"]*rm-compact-item[^"]*"[^>]*data-depth=/su);
+  for (const label of ["Создать вложенную папку", "Переименовать", "Открыть отдельно", "Удалить"]) {
+    assert.equal(script.includes(`label: "${label}"`), true, label);
+  }
+  for (const [kind, values] of [
+    ["folder", [0, 14, 28, 42, 56]],
+    ["item", [0, 14, 28, 42, 56, 70]]
+  ]) {
+    values.forEach((indent, index) => {
+      const depth = kind === "folder" ? index + 1 : index;
+      assert.match(
+        css,
+        new RegExp(`\\.rm-inventory-tree-row--${kind}\\[data-depth="${depth}"\\][^\\{]*\\{[^\\}]*--rm-inventory-tree-indent:\\s*${indent}px;`, "u")
+      );
+    });
+  }
+  for (const stateClass of ["hover", "focus-visible", "is-selected", "is-collapsed", "is-drop-target-ready"]) {
+    assert.equal(css.includes(stateClass), true, stateClass);
+  }
+});
+
+test("InventoryApp folder actions trim names, preserve IDs and target root or selected parents", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const dom = installMinimalDom();
+  const previousUi = globalThis.ui;
+  const cryptoDescriptor = Object.getOwnPropertyDescriptor(globalThis, "crypto");
+  const notifications = [];
+  const calls = [];
+  const confirmations = [];
+  const promptConfigs = [];
+  const promptValues = ["  Корень  ", "  Вложенная  ", "  Новое имя  ", "  Папка popout  ", "   ", "x".repeat(81)];
+  globalThis.ui = { notifications: {
+    info: (message) => notifications.push(["info", message]),
+    error: (message) => notifications.push(["error", message])
+  } };
+  Object.defineProperty(globalThis, "crypto", {
+    configurable: true,
+    value: { randomUUID: () => `folder-${calls.filter((call) => call[0] === "create").length + 1}` }
+  });
+  globalThis.foundry.applications.api.DialogV2.wait = async (config) => {
+    promptConfigs.push(config);
+    return promptValues.shift();
+  };
+  globalThis.foundry.applications.api.DialogV2.confirm = async (config) => {
+    confirmations.push(config);
+    return true;
+  };
+  const snapshot = createFolderInventorySnapshot();
+  const moduleApi = createModuleApi({ inventorySnapshot: snapshot, getGroupContext: () => null });
+  moduleApi.createInventoryFolder = async (payload) => {
+    calls.push(["create", payload]);
+    return payload;
+  };
+  moduleApi.renameInventoryFolder = async (payload) => {
+    calls.push(["rename", payload]);
+    return payload;
+  };
+  moduleApi.deleteInventoryFolder = async (payload) => {
+    calls.push(["delete", payload]);
+    return payload;
+  };
+  moduleApi.openInventoryFolderPopout = (groupActorId, folderId) => {
+    calls.push(["open", groupActorId, folderId]);
+  };
+  const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?folder-actions=${Date.now()}`);
+  const app = new InventoryApp(moduleApi);
+  const createButton = createFakeControl();
+  const folderRow = createFakeElement({ dataset: {
+    folderId: "alpha",
+    folderName: "Альфа",
+    canCreateChild: "true"
+  } });
+  folderRow.querySelector = () => null;
+  const menuButton = createFakeControl({ closest: () => folderRow });
+  const root = createFakeElement();
+  root.querySelector = () => null;
+  root.querySelectorAll = (selector) => {
+    if (selector === "[data-action='create-inventory-folder']") return [createButton];
+    if (selector === "[data-action='open-inventory-folder-menu']") return [menuButton];
+    if (selector === ".rm-inventory-folder-row[data-folder-id]") return [folderRow];
+    return [];
+  };
+  app.element = root;
+
+  const clickMenuAction = async (label) => {
+    await dispatchClick(menuButton);
+    const action = dom.appendedMenu.children.find((child) => collectText(child).includes(label));
+    assert.ok(action, label);
+    await dispatchClick(action);
+  };
+
+  try {
+    await app._prepareContext();
+    await app._onRender({}, {});
+    await dispatchClick(createButton);
+    await clickMenuAction("Создать вложенную папку");
+    await clickMenuAction("Переименовать");
+    await clickMenuAction("Открыть отдельно");
+    await clickMenuAction("Удалить");
+    folderRow.dataset.canCreateChild = "false";
+    await dispatchClick(menuButton);
+    const depthFiveActions = dom.appendedMenu.children.slice(1);
+    assert.deepEqual(depthFiveActions.map((action) => collectText(action)), [
+      "Создать вложенную папку",
+      "Переименовать",
+      "Открыть отдельно",
+      "Удалить"
+    ]);
+    assert.equal(depthFiveActions[0].disabled, true);
+    folderRow.dataset.canCreateChild = "true";
+    app.rootFolderId = "alpha-2";
+    await dispatchClick(createButton);
+    app.rootFolderId = null;
+    await dispatchClick(createButton);
+    await dispatchClick(createButton);
+
+    assert.deepEqual(calls, [
+      ["create", { groupActorId: "group-a", folderId: "folder-1", name: "Корень", parentId: null }],
+      ["create", { groupActorId: "group-a", folderId: "folder-2", name: "Вложенная", parentId: "alpha" }],
+      ["rename", { groupActorId: "group-a", folderId: "alpha", name: "Новое имя" }],
+      ["open", "group-a", "alpha"],
+      ["delete", { groupActorId: "group-a", folderId: "alpha" }],
+      ["create", { groupActorId: "group-a", folderId: "folder-3", name: "Папка popout", parentId: "alpha-2" }]
+    ]);
+    assert.match(promptConfigs[0].content, /maxlength="80"/u);
+    assert.match(promptConfigs[2].content, /value="Альфа"/u);
+    assert.equal(confirmations.length, 1);
+    assert.match(confirmations[0].content, /на один уровень выше/iu);
+    assert.match(confirmations[0].content, /не (?:будут )?удал/iu);
+    assert.equal(notifications.filter(([type]) => type === "error").length, 2);
+  }
+  finally {
+    if (cryptoDescriptor) Object.defineProperty(globalThis, "crypto", cryptoDescriptor);
+    else delete globalThis.crypto;
+    globalThis.ui = previousUi;
+    dom.restore();
+    restoreFoundry();
+  }
+});
+
+test("InventoryApp invalidates its folder snapshot after a command error and gates controls by participation", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const dom = installMinimalDom();
+  const previousUi = globalThis.ui;
+  const errors = [];
+  const previousConsoleError = console.error;
+  console.error = () => {};
+  globalThis.ui = { notifications: { info() {}, error: (message) => errors.push(message) } };
+  globalThis.foundry.applications.api.DialogV2.wait = async () => "Новая папка";
+  const snapshot = createFolderInventorySnapshot();
+  const moduleApi = createModuleApi({ inventorySnapshot: snapshot, getGroupContext: () => null });
+  moduleApi.createInventoryFolder = async () => {
+    throw new Error("Папка с таким ID уже существует.");
+  };
+  const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?folder-action-error=${Date.now()}`);
+  const app = new InventoryApp(moduleApi);
+  const createButton = createFakeControl();
+  const root = createFakeElement();
+  root.querySelector = () => null;
+  root.querySelectorAll = (selector) => selector === "[data-action='create-inventory-folder']" ? [createButton] : [];
+  let invalidations = 0;
+  app.element = root;
+  app.refreshInventorySnapshot = async () => {
+    invalidations += 1;
+  };
+
+  try {
+    await app._prepareContext();
+    await app._onRender({}, {});
+    await dispatchClick(createButton);
+    assert.equal(invalidations, 1);
+    assert.deepEqual(errors, ["Папка с таким ID уже существует."]);
+
+    const outsiderSnapshot = { ...snapshot, canDropInventoryItems: false, actor: { ...snapshot.actor, canEdit: false } };
+    const outsider = new InventoryApp(createModuleApi({
+      inventorySnapshot: outsiderSnapshot,
+      partySnapshot: { canManage: false, canDropInventoryItems: false },
+      getGroupContext: () => null
+    }));
+    const outsiderContext = await outsider._prepareContext();
+    assert.equal(outsiderContext.canOrganizeInventory, false);
+    assert.equal(app.canOrganizeInventory, true);
+  }
+  finally {
+    console.error = previousConsoleError;
+    globalThis.ui = previousUi;
+    dom.restore();
     restoreFoundry();
   }
 });
@@ -3621,7 +3837,7 @@ test("InventoryApp downtime controls do not define duplicate tooltip attributes"
 
 test("InventoryApp inventory rows are draggable without a redundant self-drag button", async () => {
   const template = await readFile(new URL("../templates/inventory-app.hbs", import.meta.url), "utf8");
-  const rowIndex = template.indexOf('class="rm-compact-item"');
+  const rowIndex = template.indexOf('class="rm-compact-item ');
 
   assert.ok(rowIndex >= 0, "inventory item row should exist");
   assert.match(
