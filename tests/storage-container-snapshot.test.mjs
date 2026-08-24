@@ -142,6 +142,22 @@ test("Journal read markers survive root, nested, portable, and rekeyed snapshot 
   assert.deepEqual(resolveStorageContainerPath(rekeyed, ["bag-row"]).state.readJournalRowIds, ["nested-notes"]);
 });
 
+test("pending bulk claim bindings survive portable and rekeyed container snapshots", () => {
+  const input = snapshot("bulk-bound", "Сумка");
+  input.state.bulkClaimMutations = [{
+    mutationKey: "storage:root:all:self:bulk-bound",
+    fingerprint: "request-fingerprint",
+    status: "pending"
+  }];
+
+  const root = buildStorageContainerSnapshot(input);
+  const portable = readPortableStorageContainerSnapshot(createPortableStorageContainerItemData(root));
+  const rekeyed = rekeyStorageContainerSnapshot(root, { createId: () => "bulk-bound-copy" });
+
+  assert.deepEqual(portable.state.bulkClaimMutations, root.state.bulkClaimMutations);
+  assert.deepEqual(rekeyed.state.bulkClaimMutations, root.state.bulkClaimMutations);
+});
+
 test("container snapshots reject duplicate ancestors and nesting deeper than eight levels", () => {
   const duplicateAncestor = snapshot("root", "Root", [
     buildStorageContainerRow(snapshot("root", "Duplicate"), { rowId: "duplicate" })

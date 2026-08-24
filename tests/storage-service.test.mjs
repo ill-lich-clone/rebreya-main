@@ -777,6 +777,84 @@ test("markJournalRead persists a shared marker inside the selected nested contai
   assert.deepEqual(readStorageState(token).readJournalRowIds, []);
 });
 
+test("bulk claim bindings are durable per nested scope and pending storage is bounded", async () => {
+  const service = new StorageService({ generate: async () => ({ rows: [], coins: {} }) });
+  const token = createStorageToken("bulk-bindings-root", "Сундук");
+  const bag = buildStorageContainerRow({
+    containerId: "bulk-bindings-bag",
+    storageKind: "bag",
+    name: "Сумка",
+    state: { state: "opened", manualRows: [], generatedRows: [] }
+  }, { rowId: "bag-row" });
+  await service.configure(token, { state: "opened", manualRows: [bag] });
+
+  const first = await service.bindBulkClaimMutation(token, "bulk-key", "fingerprint-a", { path: ["bag-row"] });
+  assert.equal(first.changed, true);
+  await assert.rejects(
+    service.bindBulkClaimMutation(token, "bulk-key", "fingerprint-b", { path: ["bag-row"] }),
+    /mutationId|параметр/iu
+  );
+  const complete = await service.completeBulkClaimMutation(token, "bulk-key", "fingerprint-a", {
+    path: ["bag-row"]
+  });
+  assert.equal(complete.changed, true);
+  assert.equal(
+    readStorageStateAtPath(token, ["bag-row"]).bulkClaimMutations[0].status,
+    "complete"
+  );
+
+  for (let index = 0; index < 100; index += 1) {
+    await service.bindBulkClaimMutation(token, `pending-${index}`, `fingerprint-${index}`, {
+      path: ["bag-row"]
+    });
+  }
+  await assert.rejects(
+    service.bindBulkClaimMutation(token, "pending-overflow", "fingerprint-overflow", { path: ["bag-row"] }),
+    /слишком много/iu
+  );
+  const nested = readStorageStateAtPath(token, ["bag-row"]);
+  assert.equal(nested.bulkClaimMutations.filter(({ status }) => status === "pending").length, 100);
+  assert.equal(nested.bulkClaimMutations.filter(({ status }) => status === "complete").length, 1);
+  assert.deepEqual(readStorageState(token).bulkClaimMutations, []);
+});
+
+test("storage state keeps at most one hundred completed bulk claim bindings", () => {
+  const state = buildStorageTokenState({
+    bulkClaimMutations: Array.from({ length: 125 }, (_, index) => ({
+      mutationKey: `complete-${index}`,
+      fingerprint: `fingerprint-${index}`,
+      status: "complete"
+    }))
+  });
+
+  assert.equal(state.bulkClaimMutations.length, 100);
+  assert.equal(state.bulkClaimMutations[0].mutationKey, "complete-25");
+  assert.equal(state.bulkClaimMutations.at(-1).mutationKey, "complete-124");
+});
+
+test("completing a bulk claim retains its receipt while evicting the oldest terminal binding", async () => {
+  const service = new StorageService({ generate: async () => ({ rows: [], coins: {} }) });
+  const token = createStorageToken("bulk-complete-rollover", "Сундук");
+  await service.configure(token, {
+    state: "opened",
+    bulkClaimMutations: [
+      { mutationKey: "current", fingerprint: "current-fingerprint", status: "pending" },
+      ...Array.from({ length: 100 }, (_, index) => ({
+        mutationKey: `complete-${index}`,
+        fingerprint: `fingerprint-${index}`,
+        status: "complete"
+      }))
+    ]
+  });
+
+  await service.completeBulkClaimMutation(token, "current", "current-fingerprint");
+
+  const bindings = readStorageState(token).bulkClaimMutations;
+  assert.equal(bindings.length, 100);
+  assert.equal(bindings.some(({ mutationKey }) => mutationKey === "current"), true);
+  assert.equal(bindings.some(({ mutationKey }) => mutationKey === "complete-0"), false);
+});
+
 test("corpse materialization is root-only and nested containers keep their normal first-open lifecycle", async () => {
   let materializations = 0;
   let generations = 0;

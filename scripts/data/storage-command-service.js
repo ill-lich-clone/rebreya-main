@@ -15,6 +15,7 @@ const STORAGE_COIN_DESTINATIONS = new Set(["self", "party"]);
 const STORAGE_COIN_DENOMINATIONS = new Set(["pp", "gp", "sp", "cp"]);
 const STORAGE_COIN_LABELS = Object.freeze({ pp: "пм", gp: "зм", sp: "см", cp: "мм" });
 const MAX_STORAGE_DISTANCE_FEET = 5;
+const MAX_MUTATION_FINGERPRINTS = 1000;
 
 function clean(value) {
   return String(value ?? "").trim();
@@ -57,6 +58,32 @@ function storagePath(value) {
 
 function storagePathKey(value) {
   return storagePath(value).join("/");
+}
+
+function storageQueueKey(tokenUuid) {
+  return `${clean(tokenUuid)}:storage`;
+}
+
+function canonicalRequestValue(value) {
+  if (Array.isArray(value)) return value.map(canonicalRequestValue);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.keys(value).sort().map((key) => [
+      key,
+      canonicalRequestValue(value[key])
+    ]));
+  }
+  return value;
+}
+
+function mutationRequestFingerprint(payload, sender) {
+  const request = {
+    ...(clone(payload) ?? {}),
+    path: storagePath(payload?.path)
+  };
+  return JSON.stringify(canonicalRequestValue({
+    request,
+    senderId: clean(sender?.id)
+  }));
 }
 
 function isValidStorageDepositSource(source) {
@@ -314,6 +341,7 @@ export class StorageCommandService {
     this.claimTasks = new Map();
     this.claimQueues = new Map();
     this.claimResults = new Map();
+    this.claimFingerprints = new Map();
   }
 
   async #prepareGroundRow(row, { sourceItem = null, sourceKind = "" } = {}) {
@@ -472,21 +500,67 @@ export class StorageCommandService {
     return { storageToken, characterToken, character };
   }
 
-  async #runMutation(queueKeys, mutationKey, operation) {
-    if (this.claimResults.has(mutationKey)) return this.claimResults.get(mutationKey);
-    const existing = this.claimTasks.get(mutationKey);
-    if (existing) return existing;
+  #assertMutationFingerprint(mutationKey, fingerprint) {
+    if (!fingerprint) return;
+    const existing = this.claimFingerprints.get(mutationKey);
+    if (existing !== undefined && existing !== fingerprint) {
+      throw new Error("Один mutationId нельзя повторно использовать с другими параметрами операции.");
+    }
+    if (existing === undefined) {
+      this.claimFingerprints.set(mutationKey, fingerprint);
+    }
+  }
 
-    const task = this.#enqueue(queueKeys, operation).then((result) => {
-      this.claimResults.set(mutationKey, result);
-      if (this.claimResults.size > 500) {
-        this.claimResults.delete(this.claimResults.keys().next().value);
-      }
+  #pruneMutationCaches() {
+    while (this.claimFingerprints.size > MAX_MUTATION_FINGERPRINTS) {
+      const evictableKey = Array.from(this.claimFingerprints.keys())
+        .find((key) => !this.claimTasks.has(key));
+      if (!evictableKey) return;
+      this.claimFingerprints.delete(evictableKey);
+      this.claimResults.delete(evictableKey);
+    }
+  }
+
+  async #runMutation(queueKeys, mutationKey, operation, { fingerprint = "", authorize = null } = {}) {
+    this.#assertMutationFingerprint(mutationKey, fingerprint);
+    if (this.claimResults.has(mutationKey)) {
+      const result = this.claimResults.get(mutationKey);
+      await authorize?.({ cachedResult: result });
       return result;
-    }).finally(() => {
-      this.claimTasks.delete(mutationKey);
-    });
+    }
+    const existing = this.claimTasks.get(mutationKey);
+    if (existing) {
+      await authorize?.({ inFlight: true });
+      return existing;
+    }
+
+    let operationScheduled = false;
+    const task = Promise.resolve()
+      .then(() => authorize?.({}))
+      .then(() => {
+        operationScheduled = true;
+        return this.#enqueue(queueKeys, operation);
+      })
+      .then((result) => {
+        this.claimResults.set(mutationKey, result);
+        if (this.claimResults.size > 500) {
+          const oldestKey = this.claimResults.keys().next().value;
+          this.claimResults.delete(oldestKey);
+          if (!this.claimTasks.has(oldestKey)) this.claimFingerprints.delete(oldestKey);
+        }
+        return result;
+      }).catch((error) => {
+        if ((!operationScheduled || error?.code === "STORAGE_MUTATION_CONFLICT")
+          && this.claimFingerprints.get(mutationKey) === fingerprint) {
+          this.claimFingerprints.delete(mutationKey);
+        }
+        throw error;
+      }).finally(() => {
+        this.claimTasks.delete(mutationKey);
+        this.#pruneMutationCaches();
+      });
     this.claimTasks.set(mutationKey, task);
+    this.#pruneMutationCaches();
     return task;
   }
 
@@ -506,28 +580,31 @@ export class StorageCommandService {
     });
   }
 
-  async #runClaim(sourceKey, mutationKey, operation) {
-    return this.#runMutation([sourceKey], mutationKey, operation);
+  async #runClaim(sourceKey, mutationKey, operation, options = {}) {
+    return this.#runMutation([sourceKey], mutationKey, operation, options);
   }
 
   async open(payload = {}, { sender } = {}) {
-    const access = await this.#resolveAccess(payload, sender);
-    const result = await this.storageService.open(access.storageToken, {
-      senderId: clean(sender?.id),
-      characterTokenUuid: clean(payload.characterTokenUuid),
-      path: storagePath(payload.path)
+    const tokenUuid = clean(payload.tokenUuid);
+    return this.#enqueue([storageQueueKey(tokenUuid)], async () => {
+      const access = await this.#resolveAccess(payload, sender);
+      const result = await this.storageService.open(access.storageToken, {
+        senderId: clean(sender?.id),
+        characterTokenUuid: clean(payload.characterTokenUuid),
+        path: storagePath(payload.path)
+      });
+      return {
+        generatedNow: result?.generatedNow === true,
+        state: clean(result?.state?.state) || "opened",
+        displayMode: clean(result?.state?.displayMode) || "opened"
+      };
     });
-    return {
-      generatedNow: result?.generatedNow === true,
-      state: clean(result?.state?.state) || "opened",
-      displayMode: clean(result?.state?.displayMode) || "opened"
-    };
   }
 
   async readJournal(payload = {}, { sender } = {}) {
     const tokenUuid = clean(payload.tokenUuid);
     const path = storagePath(payload.path);
-    return this.#enqueue([`${tokenUuid}:${storagePathKey(path)}:storage`], async () => {
+    return this.#enqueue([storageQueueKey(tokenUuid)], async () => {
       const access = await this.#resolveAccess(payload, sender);
       const state = readStorageStateAtPath(access.storageToken, path);
       if (state.state !== "opened") throw new Error("Сначала откройте хранилище.");
@@ -564,7 +641,18 @@ export class StorageCommandService {
       destination,
       mutationId
     });
-    return this.#runClaim(`${tokenUuid}:${storagePathKey(path)}:storage`, mutationKey, async () => {
+    const authorize = async ({ cachedResult = null } = {}) => {
+      const access = cachedResult?.sourceDeleted === true
+        ? null
+        : await this.#resolveAccess(payload, sender);
+      if (destination === "self" && access?.character?.type !== "character") {
+        throw new Error("Для получения лута себе выберите персонажа.");
+      }
+      if (destination === "party") await this.#resolvePartyTarget(target);
+      if (destination === "character") await this.#resolveCharacterTarget(payload.target, sender);
+      if (destination === "scene" && access) await this.#validateSceneTarget(payload.target, access, sender);
+    };
+    return this.#runClaim(storageQueueKey(tokenUuid), mutationKey, async () => {
       const access = await this.#resolveAccess(payload, sender);
       if (destination === "self" && access.character?.type !== "character") {
         throw new Error("Для получения лута себе выберите персонажа.");
@@ -574,7 +662,8 @@ export class StorageCommandService {
       const rows = [...state.manualRows, ...state.generatedRows];
       const row = rows.find((entry, index) => rowIdentity(entry, index) === rowId) ?? null;
       if (!row || state.claimedRowIds.includes(rowId)) {
-        return { changed: false, row: null, state };
+        const refresh = await this.#refreshSource(access.storageToken, readStorageState(access.storageToken));
+        return { changed: false, row: null, state, sourceDeleted: refresh.deleted === true };
       }
       if (isStorageJournalRow(row)) {
         throw new Error("Ссылку на журнал нельзя забрать из хранилища.");
@@ -680,6 +769,9 @@ export class StorageCommandService {
         });
       }
       return { ...result, sourceDeleted: refresh.deleted === true };
+    }, {
+      fingerprint: mutationRequestFingerprint(payload, sender),
+      authorize
     });
   }
 
@@ -692,7 +784,15 @@ export class StorageCommandService {
     const tokenUuid = clean(payload.tokenUuid);
     const path = storagePath(payload.path);
     const mutationKey = storageMutationId({ tokenUuid, path, kind: "coins", destination, mutationId });
-    return this.#runClaim(`${tokenUuid}:${storagePathKey(path)}:storage`, mutationKey, async () => {
+    const authorize = async ({ cachedResult = null } = {}) => {
+      const access = cachedResult?.sourceDeleted === true
+        ? null
+        : await this.#resolveAccess(payload, sender);
+      if (destination === "self" && access?.character?.type !== "character") {
+        throw new Error("Для получения монет себе выберите персонажа.");
+      }
+    };
+    return this.#runClaim(storageQueueKey(tokenUuid), mutationKey, async () => {
       const access = await this.#resolveAccess(payload, sender);
       if (destination === "self" && access.character?.type !== "character") {
         throw new Error("Для получения монет себе выберите персонажа.");
@@ -705,7 +805,8 @@ export class StorageCommandService {
         Math.max(0, Math.trunc(Number(state.manualCoins?.[key] ?? 0) + Number(state.generatedCoins?.[key] ?? 0)))
       ]));
       if (state.coinsClaimed || !keys.some((key) => coins[key] > 0)) {
-        return { changed: false, coins, state };
+        const refresh = await this.#refreshSource(access.storageToken, readStorageState(access.storageToken));
+        return { changed: false, coins, state, sourceDeleted: refresh.deleted === true };
       }
       const grantId = mutationKey;
       if (destination === "self") {
@@ -725,6 +826,9 @@ export class StorageCommandService {
         });
       }
       return { ...result, sourceDeleted: refresh.deleted === true };
+    }, {
+      fingerprint: mutationRequestFingerprint(payload, sender),
+      authorize
     });
   }
 
@@ -747,7 +851,17 @@ export class StorageCommandService {
       destination,
       mutationId
     });
-    return this.#runClaim(`${tokenUuid}:${storagePathKey(path)}:storage`, mutationKey, async () => {
+    const fingerprint = mutationRequestFingerprint(payload, sender);
+    const authorize = async ({ cachedResult = null } = {}) => {
+      const access = cachedResult?.sourceDeleted === true
+        ? null
+        : await this.#resolveAccess(payload, sender);
+      if (destination === "self" && access?.character?.type !== "character") {
+        throw new Error("Для получения лута себе выберите персонажа.");
+      }
+      if (destination === "party") await this.#resolvePartyTarget(target);
+    };
+    return this.#runClaim(storageQueueKey(tokenUuid), mutationKey, async () => {
       const access = await this.#resolveAccess(payload, sender);
       if (destination === "self" && access.character?.type !== "character") {
         throw new Error("Для получения лута себе выберите персонажа.");
@@ -757,8 +871,10 @@ export class StorageCommandService {
       if (destination === "party") {
         ({ actor: partyActor, target: partyTarget } = await this.#resolvePartyTarget(target));
       }
+      const stateBeforeBinding = readStorageStateAtPath(access.storageToken, path);
+      if (stateBeforeBinding.state === "unopened") throw new Error("Сначала откройте хранилище.");
+      await this.storageService.bindBulkClaimMutation(access.storageToken, mutationKey, fingerprint, { path });
       const initialState = readStorageStateAtPath(access.storageToken, path);
-      if (initialState.state === "unopened") throw new Error("Сначала откройте хранилище.");
       const claimed = new Set(initialState.claimedRowIds);
       const rows = [...initialState.manualRows, ...initialState.generatedRows]
         .map((row, index) => ({ row, rowId: rowIdentity(row, index) }))
@@ -876,11 +992,9 @@ export class StorageCommandService {
       }
 
       const changed = claimedRowIds.length > 0 || coinsChanged;
-      let sourceDeleted = false;
-      if (changed) {
-        const refresh = await this.#refreshSource(access.storageToken, readStorageState(access.storageToken));
-        sourceDeleted = refresh.deleted === true;
-      }
+      await this.storageService.completeBulkClaimMutation(access.storageToken, mutationKey, fingerprint, { path });
+      const refresh = await this.#refreshSource(access.storageToken, readStorageState(access.storageToken));
+      const sourceDeleted = refresh.deleted === true;
       const finalState = readStorageStateAtPath(access.storageToken, path);
       return {
         changed,
@@ -891,6 +1005,9 @@ export class StorageCommandService {
         state: finalState.state,
         displayMode: finalState.displayMode
       };
+    }, {
+      fingerprint,
+      authorize
     });
   }
 
@@ -932,7 +1049,7 @@ export class StorageCommandService {
       mutationId
     });
     const queueKeys = [
-      `${tokenUuid}:${storagePathKey(path)}:storage`,
+      storageQueueKey(tokenUuid),
       ["storage-row", "storage-token"].includes(sourceRef.kind)
         ? `${clean(sourceRef.tokenUuid)}:storage`
         : sourceRef.kind === "journal"

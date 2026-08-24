@@ -24,6 +24,8 @@ export const STORAGE_COIN_DENOMINATIONS = Object.freeze(["pp", "gp", "sp", "cp"]
 const STORAGE_COIN_DENOMINATION_SET = new Set(STORAGE_COIN_DENOMINATIONS);
 const COIN_KEYS = STORAGE_COIN_DENOMINATIONS;
 const STORAGE_KINDS = new Set(["chest", "bag", "pile"]);
+const MAX_PENDING_BULK_CLAIM_MUTATIONS = 100;
+const MAX_COMPLETE_BULK_CLAIM_MUTATIONS = 100;
 const NIGHT_GOGGLES_ICON = "modules/rebreya-main/templates/icons/Magic%20Items/%D0%9D%D0%BE%D1%87%D0%BD%D1%8B%D0%B5%20%D0%BE%D1%87%D0%BA%D0%B8.webp";
 
 export function readStorageCoinDenomination(item) {
@@ -174,6 +176,34 @@ function normalizeCorpseMaterialization(value) {
   };
 }
 
+function normalizeBulkClaimMutations(value) {
+  const pending = [];
+  const complete = [];
+  const seen = new Set();
+  for (const entry of Array.isArray(value) ? value : []) {
+    const mutationKey = cleanId(entry?.mutationKey);
+    const fingerprint = cleanId(entry?.fingerprint);
+    const status = entry?.status === "complete" ? "complete" : "pending";
+    if (!mutationKey || mutationKey.length > 2048
+      || !fingerprint || fingerprint.length > 8192
+      || seen.has(mutationKey)) {
+      continue;
+    }
+    seen.add(mutationKey);
+    (status === "complete" ? complete : pending).push({ mutationKey, fingerprint, status });
+  }
+  return [
+    ...pending.slice(-MAX_PENDING_BULK_CLAIM_MUTATIONS),
+    ...complete.slice(-MAX_COMPLETE_BULK_CLAIM_MUTATIONS)
+  ];
+}
+
+function bulkClaimMutationConflict(message) {
+  const error = new Error(message);
+  error.code = "STORAGE_MUTATION_CONFLICT";
+  return error;
+}
+
 function hasUnclaimedContent(state) {
   const rows = visibleRows(state);
   const hasRows = rows.some((row, index) => !state.claimedRowIds.includes(String(row.rowId ?? index)));
@@ -258,6 +288,7 @@ export function buildStorageTokenState(input = {}) {
     readJournalRowIds: normalizeReadJournalRowIds(source.readJournalRowIds, [...manualRows, ...generatedRows]),
     coinsClaimed: source.coinsClaimed === true,
     corpseMaterialization: normalizeCorpseMaterialization(source.corpseMaterialization),
+    bulkClaimMutations: normalizeBulkClaimMutations(source.bulkClaimMutations),
     state,
     textures,
     displayMode
@@ -451,6 +482,60 @@ export class StorageService {
       readJournalRowIds: [...current.readJournalRowIds, identity]
     });
     return { changed: true, rowId: identity, state };
+  }
+
+  async bindBulkClaimMutation(token, mutationKey, fingerprint, { path = [] } = {}) {
+    token = this.#scopedToken(token, path);
+    const current = readStorageState(token);
+    const key = cleanId(mutationKey);
+    const requestFingerprint = cleanId(fingerprint);
+    if (!key || !requestFingerprint) {
+      throw new Error("Для массовой выдачи нужны mutation key и fingerprint запроса.");
+    }
+    const existing = current.bulkClaimMutations.find((entry) => entry.mutationKey === key) ?? null;
+    if (existing) {
+      if (existing.fingerprint !== requestFingerprint) {
+        throw bulkClaimMutationConflict("Один mutationId нельзя повторно использовать с другими параметрами операции.");
+      }
+      return { changed: false, binding: clone(existing), state: clone(current) };
+    }
+    const pendingCount = current.bulkClaimMutations.filter((entry) => entry.status === "pending").length;
+    if (pendingCount >= MAX_PENDING_BULK_CLAIM_MUTATIONS) {
+      throw new Error("Слишком много незавершённых массовых выдач для этого хранилища.");
+    }
+    const binding = { mutationKey: key, fingerprint: requestFingerprint, status: "pending" };
+    const state = await this.#write(token, {
+      ...current,
+      bulkClaimMutations: [...current.bulkClaimMutations, binding]
+    });
+    return { changed: true, binding, state };
+  }
+
+  async completeBulkClaimMutation(token, mutationKey, fingerprint, { path = [] } = {}) {
+    token = this.#scopedToken(token, path);
+    const current = readStorageState(token);
+    const key = cleanId(mutationKey);
+    const requestFingerprint = cleanId(fingerprint);
+    const existing = current.bulkClaimMutations.find((entry) => entry.mutationKey === key) ?? null;
+    if (!existing || existing.fingerprint !== requestFingerprint) {
+      throw bulkClaimMutationConflict("Привязка массовой выдачи недоступна или не соответствует запросу.");
+    }
+    if (existing.status === "complete") {
+      return { changed: false, binding: clone(existing), state: clone(current) };
+    }
+    const bindings = [
+      ...current.bulkClaimMutations.filter((entry) => entry.mutationKey !== key),
+      { ...existing, status: "complete" }
+    ];
+    const state = await this.#write(token, {
+      ...current,
+      bulkClaimMutations: bindings
+    });
+    return {
+      changed: true,
+      binding: clone(state.bulkClaimMutations.find((entry) => entry.mutationKey === key)),
+      state
+    };
   }
 
   async open(token, context = {}) {

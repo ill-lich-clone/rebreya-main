@@ -20,7 +20,7 @@ function deferred() {
   return { promise, resolve };
 }
 
-function createHarness({ activeGm = true, beforeCreate, beforeUpdate } = {}) {
+function createHarness({ activeGm = true, beforeCreate, beforeUpdate, afterDelete } = {}) {
   const pileActor = {
     id: "pile-actor",
     flags: {
@@ -55,7 +55,11 @@ function createHarness({ activeGm = true, beforeCreate, beforeUpdate } = {}) {
           actor: pileActor,
           getFlag(scope, key) { return this.flags?.[scope]?.[key]; },
           async update(patch) { await beforeUpdate?.(); applyPatch(this, patch); return this; },
-          async delete() { tokens.splice(tokens.indexOf(this), 1); this.deleted = true; }
+          async delete() {
+            tokens.splice(tokens.indexOf(this), 1);
+            this.deleted = true;
+            await afterDelete?.(this);
+          }
         };
         tokens.push(token);
         return token;
@@ -228,6 +232,27 @@ test("claiming the last ordinary ground-pile row successfully deletes its token"
     state: "empty",
     claimedRowIds: [state.manualRows[0].rowId]
   });
+  assert.equal(result.deleted, true);
+  assert.equal(token.deleted, true);
+  assert.equal(tokens.length, 0);
+});
+
+test("final ordinary pile deletion treats a lost post-delete acknowledgement as success", async () => {
+  const { service, tokens } = createHarness({
+    afterDelete() {
+      throw new Error("delete acknowledgement lost");
+    }
+  });
+  await service.transferToScene({ row: sword, quantity: 1, sceneId: "scene", x: 300, y: 400, mutationId: "one" });
+  const token = tokens[0];
+  const state = readStorageState(token);
+
+  const result = await service.refreshAfterStorageMutation(token, {
+    ...state,
+    state: "empty",
+    claimedRowIds: [state.manualRows[0].rowId]
+  });
+
   assert.equal(result.deleted, true);
   assert.equal(token.deleted, true);
   assert.equal(tokens.length, 0);

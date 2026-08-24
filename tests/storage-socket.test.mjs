@@ -96,6 +96,7 @@ function createHarness({
       return this.flags?.[scope]?.[key];
     },
     async update(patch) {
+      await this.beforeUpdate?.(patch);
       applyPatch(this, patch);
       return this;
     }
@@ -193,14 +194,16 @@ function createHarness({
     },
     async refreshAfterStorageMutation(token, state) {
       refreshCalls.push({ token, state: clone(state) });
-      return refreshResult;
+      return typeof refreshResult === "function"
+        ? refreshResult(token, state, refreshCalls.length)
+        : refreshResult;
     }
   };
-  const service = new StorageCommandService({
+  const commandDependencies = {
     storageService,
     inventoryService,
     resolveToken: async (uuid) => documents.get(uuid) ?? null,
-    measureDistance: () => distance,
+    measureDistance: () => typeof distance === "function" ? distance() : distance,
     measurePointDistance: () => pointDistance,
     groundPileService,
     containerItemService,
@@ -217,7 +220,9 @@ function createHarness({
       depositResolveCalls.push(clone(args[0]));
       return typeof depositSource === "function" ? depositSource(...args) : depositSource;
     }
-  });
+  };
+  const createCommandService = () => new StorageCommandService(commandDependencies);
+  const service = createCommandService();
 
   return {
     player,
@@ -229,6 +234,7 @@ function createHarness({
     storageToken,
     storageService,
     service,
+    createCommandService,
     itemGrants,
     coinGrants,
     groundCalls,
@@ -606,6 +612,60 @@ test("concurrent Journal reads serialize on the storage source queue", async () 
 
   assert.equal(calls, 2);
   assert.deepEqual(readStorageState(harness.storageToken).readJournalRowIds, ["journal-row"]);
+});
+
+test("concurrent Journal reads in sibling containers preserve both root mutations", async () => {
+  const harness = createHarness();
+  const journalBag = (bagId, journalId) => buildStorageContainerRow({
+    containerId: bagId,
+    storageKind: "bag",
+    name: bagId,
+    state: {
+      state: "opened",
+      manualRows: [{
+        rowKind: "journal",
+        rowId: journalId,
+        sourceId: `JournalEntry.${journalId}`,
+        sourceType: "journal",
+        name: journalId,
+        quantity: 1
+      }],
+      generatedRows: []
+    }
+  }, { rowId: bagId });
+  await harness.storageService.configure(harness.storageToken, {
+    state: "opened",
+    manualRows: [journalBag("bag-a", "journal-a"), journalBag("bag-b", "journal-b")]
+  });
+
+  let releaseFirstUpdate;
+  let markFirstUpdateStarted;
+  let updateCalls = 0;
+  const firstUpdateGate = new Promise((resolve) => { releaseFirstUpdate = resolve; });
+  const firstUpdateStarted = new Promise((resolve) => { markFirstUpdateStarted = resolve; });
+  harness.storageToken.beforeUpdate = async () => {
+    updateCalls += 1;
+    if (updateCalls === 1) {
+      markFirstUpdateStarted();
+      await firstUpdateGate;
+    }
+  };
+
+  const request = (path, rowId) => ({
+    tokenUuid: harness.storageToken.uuid,
+    characterTokenUuid: harness.characterToken.uuid,
+    path: [path],
+    rowId
+  });
+  const first = harness.service.readJournal(request("bag-a", "journal-a"), { sender: harness.player });
+  await firstUpdateStarted;
+  const second = harness.service.readJournal(request("bag-b", "journal-b"), { sender: harness.player });
+  await new Promise((resolve) => setImmediate(resolve));
+  releaseFirstUpdate();
+  await Promise.all([first, second]);
+
+  assert.deepEqual(readStorageStateAtPath(harness.storageToken, ["bag-a"]).readJournalRowIds, ["journal-a"]);
+  assert.deepEqual(readStorageStateAtPath(harness.storageToken, ["bag-b"]).readJournalRowIds, ["journal-b"]);
 });
 
 test("storage Journal reads reject sourceType-only rows without authoritative Journal rowKind", async () => {
@@ -2240,6 +2300,221 @@ test("bulk claim grants mixed rows, containers, and coins once while skipping Jo
   assert.deepEqual(state.claimedRowIds, ["manual-row", "bag-row", "generated-row"]);
   assert.equal(state.coinsClaimed, true);
   assert.deepEqual(state.manualRows.filter((row) => row.rowKind === "journal").map((row) => row.rowId), ["journal-row"]);
+});
+
+test("concurrent bulk retries with one mutation ID join one target-first execution", async () => {
+  const harness = createHarness();
+  await harness.storageService.configure(harness.storageToken, {
+    state: "opened",
+    manualRows: [{
+      rowId: "concurrent-row",
+      rowKind: "item",
+      name: "Фляга",
+      quantity: 1,
+      itemData: { name: "Фляга", type: "loot", system: { quantity: 1 } }
+    }],
+    manualCoins: { sp: 3 }
+  });
+  const request = {
+    tokenUuid: harness.storageToken.uuid,
+    characterTokenUuid: harness.characterToken.uuid,
+    destination: "self",
+    target: null,
+    mutationId: "bulk-concurrent-retry"
+  };
+
+  const [first, second] = await Promise.all([
+    harness.service.claimAll(request, { sender: harness.player }),
+    harness.service.claimAll(request, { sender: harness.player })
+  ]);
+
+  assert.deepEqual(second, first);
+  assert.equal(harness.itemGrants.length, 1);
+  assert.equal(harness.coinGrants.length, 1);
+  assert.equal(harness.refreshCalls.length, 1);
+});
+
+test("sibling-container bulk claims serialize on one root token state", async () => {
+  const harness = createHarness();
+  const itemBag = (bagId, rowId) => buildStorageContainerRow({
+    containerId: bagId,
+    storageKind: "bag",
+    name: bagId,
+    state: {
+      state: "opened",
+      manualRows: [{
+        rowId,
+        rowKind: "item",
+        name: rowId,
+        quantity: 1,
+        itemData: { name: rowId, type: "loot", system: { quantity: 1 } }
+      }],
+      generatedRows: []
+    }
+  }, { rowId: bagId });
+  await harness.storageService.configure(harness.storageToken, {
+    state: "opened",
+    manualRows: [itemBag("bag-a", "row-a"), itemBag("bag-b", "row-b")]
+  });
+
+  let releaseFirstUpdate;
+  let markFirstUpdateStarted;
+  let updateCalls = 0;
+  const firstUpdateGate = new Promise((resolve) => { releaseFirstUpdate = resolve; });
+  const firstUpdateStarted = new Promise((resolve) => { markFirstUpdateStarted = resolve; });
+  harness.storageToken.beforeUpdate = async () => {
+    updateCalls += 1;
+    if (updateCalls === 1) {
+      markFirstUpdateStarted();
+      await firstUpdateGate;
+    }
+  };
+  const request = (path, mutationId) => ({
+    tokenUuid: harness.storageToken.uuid,
+    characterTokenUuid: harness.characterToken.uuid,
+    destination: "self",
+    target: null,
+    mutationId,
+    path: [path]
+  });
+
+  const first = harness.service.claimAll(request("bag-a", "bulk-bag-a"), { sender: harness.player });
+  await firstUpdateStarted;
+  const second = harness.service.claimAll(request("bag-b", "bulk-bag-b"), { sender: harness.player });
+  await new Promise((resolve) => setImmediate(resolve));
+  releaseFirstUpdate();
+  await Promise.all([first, second]);
+
+  assert.deepEqual(readStorageStateAtPath(harness.storageToken, ["bag-a"]).claimedRowIds, ["row-a"]);
+  assert.deepEqual(readStorageStateAtPath(harness.storageToken, ["bag-b"]).claimedRowIds, ["row-b"]);
+  assert.equal(harness.itemGrants.length, 2);
+});
+
+test("bulk claim retry resumes a failed source refresh without duplicate grants", async () => {
+  let refreshAttempts = 0;
+  const harness = createHarness({
+    refreshResult() {
+      refreshAttempts += 1;
+      if (refreshAttempts === 1) throw new Error("refresh failed once");
+      return { deleted: true };
+    }
+  });
+  await harness.storageService.configure(harness.storageToken, {
+    state: "opened",
+    manualRows: [{
+      rowId: "refresh-row",
+      rowKind: "item",
+      name: "Кремень",
+      quantity: 1,
+      itemData: { name: "Кремень", type: "loot", system: { quantity: 1 } }
+    }],
+    manualCoins: { cp: 2 }
+  });
+  const request = {
+    tokenUuid: harness.storageToken.uuid,
+    characterTokenUuid: harness.characterToken.uuid,
+    destination: "self",
+    target: null,
+    mutationId: "bulk-refresh-resume"
+  };
+
+  await assert.rejects(
+    harness.service.claimAll(request, { sender: harness.player }),
+    /refresh failed once/u
+  );
+  assert.equal(harness.itemGrants.length, 1);
+  assert.equal(harness.coinGrants.length, 1);
+
+  const retry = await harness.service.claimAll(request, { sender: harness.player });
+
+  assert.equal(retry.changed, false);
+  assert.equal(retry.sourceDeleted, true);
+  assert.equal(harness.itemGrants.length, 1);
+  assert.equal(harness.coinGrants.length, 1);
+  assert.equal(harness.refreshCalls.length, 2);
+});
+
+test("cached bulk claims revalidate live access and bind mutation IDs to one exact request", async () => {
+  let currentDistance = 5;
+  const selfHarness = createHarness({ distance: () => currentDistance });
+  await selfHarness.storageService.open(selfHarness.storageToken);
+  const selfRequest = {
+    tokenUuid: selfHarness.storageToken.uuid,
+    characterTokenUuid: selfHarness.characterToken.uuid,
+    destination: "self",
+    target: null,
+    mutationId: "bulk-live-access"
+  };
+  await selfHarness.service.claimAll(selfRequest, { sender: selfHarness.player });
+  currentDistance = 6;
+  await assert.rejects(
+    selfHarness.service.claimAll(selfRequest, { sender: selfHarness.player }),
+    /5 футов/iu
+  );
+
+  const partyHarness = createHarness();
+  await partyHarness.storageService.open(partyHarness.storageToken);
+  const partyRequest = {
+    tokenUuid: partyHarness.storageToken.uuid,
+    characterTokenUuid: partyHarness.characterToken.uuid,
+    destination: "party",
+    target: { groupActorId: partyHarness.groupActor.id, folderId: null },
+    mutationId: "bulk-bound-target"
+  };
+  await partyHarness.service.claimAll(partyRequest, { sender: partyHarness.player });
+  await assert.rejects(
+    partyHarness.service.claimAll({
+      ...partyRequest,
+      target: { groupActorId: partyHarness.groupActor.id, folderId: "folder-a" }
+    }, { sender: partyHarness.player }),
+    /mutationId|параметр/iu
+  );
+});
+
+test("bulk target binding survives an active-GM service restart after partial failure", async () => {
+  const harness = createHarness({
+    rejectFolderAssignmentOnce: true,
+    containerItemService: {
+      async materializeToActorOnce() {
+        return { id: "durable-bound-bag" };
+      }
+    }
+  });
+  const bagRow = buildStorageContainerRow({
+    containerId: "durable-bound-bag",
+    storageKind: "bag",
+    name: "Сумка связного",
+    state: { state: "opened", manualRows: [], generatedRows: [] }
+  }, { rowId: "durable-bound-row" });
+  await harness.storageService.configure(harness.storageToken, {
+    state: "opened",
+    manualRows: [bagRow]
+  });
+  const request = {
+    tokenUuid: harness.storageToken.uuid,
+    characterTokenUuid: harness.characterToken.uuid,
+    destination: "party",
+    target: { groupActorId: harness.groupActor.id, folderId: "folder-a" },
+    mutationId: "bulk-durable-target"
+  };
+
+  await assert.rejects(
+    harness.service.claimAll(request, { sender: harness.player }),
+    /folder assignment failed/u
+  );
+  const restartedService = harness.createCommandService();
+  await assert.rejects(
+    restartedService.claimAll({
+      ...request,
+      target: { groupActorId: harness.groupActor.id, folderId: null }
+    }, { sender: harness.player }),
+    /mutationId|параметр/iu
+  );
+  assert.deepEqual(readStorageState(harness.storageToken).claimedRowIds, []);
+
+  const resumed = await restartedService.claimAll(request, { sender: harness.player });
+  assert.equal(resumed.changed, true);
+  assert.deepEqual(readStorageState(harness.storageToken).claimedRowIds, ["durable-bound-row"]);
 });
 
 test("party bulk claim pins item, folder, and currency grants to the exact group", async () => {

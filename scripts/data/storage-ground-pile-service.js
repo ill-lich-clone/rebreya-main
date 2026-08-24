@@ -25,6 +25,19 @@ function collectionValues(collection) {
   return [];
 }
 
+function collectionContains(collection, document) {
+  const id = clean(document?.id);
+  if (!id) return null;
+  if (typeof collection?.get === "function") return collection.get(id) != null;
+  const inspectable = Array.isArray(collection?.contents)
+    || Array.isArray(collection)
+    || typeof collection?.values === "function";
+  if (!inspectable) return null;
+  return collectionValues(collection).some((entry) => (
+    entry === document || clean(entry?.id) === id
+  ));
+}
+
 function readFlag(document, key) {
   return document?.getFlag?.(MODULE_ID, key) ?? document?.flags?.[MODULE_ID]?.[key];
 }
@@ -454,8 +467,15 @@ export class StorageGroundPileService {
     const coins = unclaimedCoins(state);
     const hasCoins = hasPositiveCoins(coins);
     if (!rows.length && !hasCoins && groundFlag.coinPile !== true) {
-      if (typeof token?.delete === "function") await token.delete();
-      else await token?.parent?.deleteEmbeddedDocuments?.("Token", [token.id]);
+      const scene = token?.parent;
+      try {
+        if (typeof token?.delete === "function") await token.delete();
+        else await scene?.deleteEmbeddedDocuments?.("Token", [token.id]);
+      }
+      catch (error) {
+        const stillPresent = collectionContains(scene?.tokens, token);
+        if (token?.deleted !== true && token?._destroyed !== true && stillPresent !== false) throw error;
+      }
       return { deleted: true, state };
     }
     const presentation = deriveGroundPilePresentation(rows, {
