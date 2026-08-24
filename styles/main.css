@@ -4790,6 +4790,7 @@ summary:focus-visible {
 .rebreya-inventory-app .rm-inventory-book__header--inventory::before {
   transform-origin: 58% 48%;
   animation: rm-inventory-header-camera 37s ease-in-out infinite;
+  animation-delay: var(--rm-inventory-header-animation-delay, 0s);
 }
 
 .rebreya-inventory-app .rm-inventory-book__header--transport::before {
@@ -4820,6 +4821,7 @@ summary:focus-visible {
     ),
     radial-gradient(circle at 55% 48%, rgb(224 178 94 / 0.28), transparent 30%);
   animation: rm-inventory-header-light 17s ease-in-out infinite;
+  animation-delay: var(--rm-inventory-header-animation-delay, 0s);
 }
 
 .rebreya-inventory-app .rm-inventory-book__header--transport::after {

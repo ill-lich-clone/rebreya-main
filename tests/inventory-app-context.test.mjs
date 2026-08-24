@@ -50,7 +50,15 @@ function installMinimalDom() {
   globalThis.HTMLElement = class FakeHTMLElement {
     constructor({ dataset = {}, closest = () => null } = {}) {
       this.dataset = dataset;
-      this.style = {};
+      const styleValues = new Map();
+      this.style = {
+        setProperty(name, value) {
+          styleValues.set(name, value);
+        },
+        getPropertyValue(name) {
+          return styleValues.get(name) ?? "";
+        }
+      };
       this.children = [];
       this.listeners = {};
       this.classes = new Set();
@@ -1505,6 +1513,49 @@ test("InventoryApp keeps page width while book tabs render externally", async ()
     assert.equal(InventoryApp.DEFAULT_OPTIONS.position.height, 920);
   }
   finally {
+    restoreFoundry();
+  }
+});
+
+test("InventoryApp keeps the inventory header animation phase across full folder renders", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const dom = installMinimalDom();
+  const previousDateNow = Date.now;
+  let now = 1_000;
+  Date.now = () => now;
+  const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?header-phase=${Date.now()}`);
+  const app = new InventoryApp(createModuleApi({ getGroupContext: () => null }));
+  const makeRenderRoot = () => {
+    const header = createFakeElement();
+    const root = createFakeElement();
+    root.querySelector = (selector) => selector === ".rm-inventory-book__header--inventory" ? header : null;
+    root.querySelectorAll = () => [];
+    return { header, root };
+  };
+
+  try {
+    now = 3_500;
+    const firstRender = makeRenderRoot();
+    app.element = firstRender.root;
+    await app._onRender({}, {});
+
+    now = 8_500;
+    const folderToggleRender = makeRenderRoot();
+    app.element = folderToggleRender.root;
+    await app._onRender({}, {});
+
+    assert.equal(
+      firstRender.header.style.getPropertyValue("--rm-inventory-header-animation-delay"),
+      "-2.5s"
+    );
+    assert.equal(
+      folderToggleRender.header.style.getPropertyValue("--rm-inventory-header-animation-delay"),
+      "-7.5s"
+    );
+  }
+  finally {
+    Date.now = previousDateNow;
+    dom.restore();
     restoreFoundry();
   }
 });

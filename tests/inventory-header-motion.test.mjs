@@ -51,7 +51,7 @@ test("Inventory and Transport headers use slow compositor-friendly CSS motion", 
   );
   assert.match(
     css,
-    /\.rm-inventory-book__header--inventory::before\s*\{[^}]*animation:\s*rm-inventory-header-camera 37s ease-in-out infinite;/su
+    /\.rm-inventory-book__header--inventory::before\s*\{[^}]*animation:\s*rm-inventory-header-camera 37s ease-in-out infinite;[^}]*animation-delay:\s*var\(--rm-inventory-header-animation-delay, 0s\);/su
   );
   assert.match(
     css,
@@ -67,6 +67,7 @@ test("Inventory and Transport headers use slow compositor-friendly CSS motion", 
   assert.match(inventoryOverlay[1], /radial-gradient/u);
   assert.match(inventoryOverlay[1], /linear-gradient/u);
   assert.match(inventoryOverlay[1], /animation:\s*rm-inventory-header-light 17s ease-in-out infinite;/u);
+  assert.match(inventoryOverlay[1], /animation-delay:\s*var\(--rm-inventory-header-animation-delay, 0s\);/u);
   assert.doesNotMatch(inventoryOverlay[1], /steam|smoke|ellipse/iu);
 
   const transportOverlay = [...css.matchAll(/\.rm-inventory-book__header--transport::after\s*\{([^}]*)\}/gsu)]

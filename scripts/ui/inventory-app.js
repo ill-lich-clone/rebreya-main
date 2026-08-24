@@ -3270,6 +3270,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     } = options ?? {};
     super(applicationOptions);
     this.moduleApi = moduleApi;
+    this.inventoryHeaderAnimationStartedAt = Date.now();
     this.groupActorId = cleanText(groupActorId);
     this.rootFolderId = cleanText(rootFolderId) || null;
     this.inventoryViewKey = cleanText(inventoryViewKey) || "main";
@@ -6289,6 +6290,15 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const element = getAppElement(this);
     if (!element) {
       return;
+    }
+
+    const inventoryHeader = element.querySelector(".rm-inventory-book__header--inventory");
+    if (inventoryHeader instanceof HTMLElement) {
+      const elapsedSeconds = Math.max(0, Date.now() - this.inventoryHeaderAnimationStartedAt) / 1000;
+      inventoryHeader.style.setProperty(
+        "--rm-inventory-header-animation-delay",
+        `${-elapsedSeconds}s`
+      );
     }
 
     this.#closeContextMenu();
