@@ -3391,7 +3391,7 @@ export class InventoryService {
   }
 
   #writeInventoryFolderState(actor, nextState) {
-    return actor.setFlag(MODULE_ID, "inventoryFolders", nextState);
+    return actor.setFlag(MODULE_ID, "==inventoryFolders", nextState);
   }
 
   #mutateInventoryFolderState(groupActorId, operation) {

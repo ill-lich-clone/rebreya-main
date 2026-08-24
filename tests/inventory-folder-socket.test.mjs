@@ -37,7 +37,8 @@ function createUser(id, { isGM = false, flags = {} } = {}) {
     async setFlag(scope, key, value) {
       this.setFlagCalls.push({ scope, key, value: clone(value) });
       this.flags[scope] ??= {};
-      this.flags[scope][key] = clone(value);
+      const targetKey = key.startsWith("==") ? key.slice(2) : key;
+      this.flags[scope][targetKey] = clone(value);
       return value;
     }
   };
@@ -86,7 +87,8 @@ function createGroup(id, members, { folders = [], itemFolderIds = {}, items = []
     async setFlag(scope, key, value) {
       this.setFlagCalls.push({ scope, key, value: clone(value) });
       this.flags[scope] ??= {};
-      this.flags[scope][key] = clone(value);
+      const targetKey = key.startsWith("==") ? key.slice(2) : key;
+      this.flags[scope][targetKey] = clone(value);
       return value;
     }
   };

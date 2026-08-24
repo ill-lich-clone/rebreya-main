@@ -15,6 +15,22 @@ function clone(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));
 }
 
+function mergeFoundryFlagValue(target, source) {
+  const merged = clone(target) ?? {};
+  for (const [key, value] of Object.entries(source ?? {})) {
+    if (key.startsWith("-=")) {
+      delete merged[key.slice(2)];
+    }
+    else if (value && typeof value === "object" && !Array.isArray(value)) {
+      merged[key] = mergeFoundryFlagValue(merged[key], value);
+    }
+    else {
+      merged[key] = clone(value);
+    }
+  }
+  return merged;
+}
+
 function installFoundryUtils() {
   const previousFoundry = globalThis.foundry;
   globalThis.foundry = {
@@ -166,7 +182,8 @@ function createActor({
     async setFlag(moduleId, key, value) {
       setFlagCalls.push({ moduleId, key, value: clone(value) });
       this.flags[moduleId] ??= {};
-      this.flags[moduleId][key] = clone(value);
+      const targetKey = key.startsWith("==") ? key.slice(2) : key;
+      this.flags[moduleId][targetKey] = clone(value);
       return value;
     },
     async update(patch) {
@@ -525,6 +542,55 @@ test("folder mutations normalize current Actor state and write exactly once only
     assert.equal(missingDelete.changed, false);
     assert.equal(missingDelete.deletedFolderId, "");
     assert.equal(groupActor.setFlagCalls.length, 5);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("moving an inventory Item to root deletes membership under Foundry flag merge semantics", async () => {
+  const sword = createItem({ id: "sword", name: "Sword", quantity: 7 });
+  const groupActor = createActor({
+    id: "group-a",
+    type: "group",
+    isOwner: true,
+    items: [sword],
+    flags: {
+      [MODULE_ID]: {
+        inventoryFolders: {
+          version: 1,
+          folders: [{ id: "weapons", name: "Weapons", parentId: null }],
+          itemFolderIds: { sword: "weapons" }
+        }
+      }
+    }
+  });
+  groupActor.setFlag = async function setFlag(moduleId, key, value) {
+    this.setFlagCalls.push({ moduleId, key, value: clone(value) });
+    this.flags[moduleId] ??= {};
+    const replace = key.startsWith("==");
+    const targetKey = replace ? key.slice(2) : key;
+    this.flags[moduleId][targetKey] = replace
+      ? clone(value)
+      : mergeFoundryFlagValue(this.flags[moduleId][targetKey], value);
+    return this.flags[moduleId][targetKey];
+  };
+  const fixture = installInventoryFixture({ actors: [groupActor] });
+  const service = new InventoryService({
+    groupContextService: { resolveForGroup: () => ({ groupActor }) },
+    worldMutationCoordinator: new WorldMutationCoordinator()
+  });
+
+  try {
+    const result = await service.moveInventoryItemToFolder({
+      groupActorId: "group-a",
+      itemId: "sword",
+      folderId: null
+    });
+
+    assert.equal(result.changed, true);
+    assert.deepEqual(groupActor.getFlag(MODULE_ID, "inventoryFolders").itemFolderIds, {});
+    assert.equal(groupActor.setFlagCalls.length, 1);
   }
   finally {
     fixture.restore();

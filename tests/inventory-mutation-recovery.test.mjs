@@ -649,7 +649,8 @@ function createActor({
         throw new Error("folder flag write failed");
       }
       this.flags[scope] ??= {};
-      this.flags[scope][key] = clone(value);
+      const targetKey = key.startsWith("==") ? key.slice(2) : key;
+      this.flags[scope][targetKey] = clone(value);
       return value;
     },
     testUserPermission(user, permission) {
