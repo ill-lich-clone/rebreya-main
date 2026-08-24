@@ -92,11 +92,9 @@ export function measureStoragePointDistance(characterToken, point, { canvas = gl
   return Math.min(...distances.filter(Number.isFinite), Number.POSITIVE_INFINITY);
 }
 
-export function isStorageTokenVisible(storageToken, { canvas = globalThis.canvas } = {}) {
+export function isStorageTokenVisible(storageToken) {
   const document = storageTokenDocument(storageToken);
-  if (document?.hidden === true) return false;
-  const object = storageTokenObject(storageToken, canvas);
-  return object ? object.visible !== false : true;
+  return document?.hidden !== true;
 }
 
 export function preflightStorageAccess(storageToken, {

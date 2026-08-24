@@ -2,13 +2,14 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  isStorageTokenVisible,
   measureStoragePointDistance,
   measureStorageTokenDistance,
   preflightStorageAccess
 } from "../scripts/data/storage-access.js";
 
-function createToken({ id, uuid, actor, scene, x = 0, y = 0, visible = true }) {
-  const document = { id, uuid, actor, parent: scene, x, y, width: 1, height: 1 };
+function createToken({ id, uuid, actor, scene, x = 0, y = 0, visible = true, hidden = false }) {
+  const document = { id, uuid, actor, parent: scene, x, y, width: 1, height: 1, hidden };
   return {
     id,
     uuid,
@@ -18,6 +19,35 @@ function createToken({ id, uuid, actor, scene, x = 0, y = 0, visible = true }) {
     visible
   };
 }
+
+test("authoritative storage visibility ignores transient Token.object.visible from the active GM canvas", () => {
+  const storage = createToken({
+    id: "chest",
+    uuid: "Scene.scene.Token.chest",
+    scene: { id: "scene" },
+    actor: { type: "npc" },
+    visible: false
+  });
+  const canvas = {
+    tokens: {
+      get: () => ({ visible: false })
+    }
+  };
+
+  assert.equal(isStorageTokenVisible(storage, { canvas }), true);
+});
+
+test("authoritative storage visibility rejects a hidden TokenDocument", () => {
+  const storage = createToken({
+    id: "chest",
+    uuid: "Scene.scene.Token.chest",
+    scene: { id: "scene" },
+    actor: { type: "npc" },
+    hidden: true
+  });
+
+  assert.equal(isStorageTokenVisible(storage), false);
+});
 
 test("player preflight reports distance without authorizing the storage action", () => {
   const player = { id: "player", isGM: false };
