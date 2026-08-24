@@ -3818,6 +3818,15 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       : event?.target?.parentElement ?? null;
     if (!eventTarget) return null;
 
+    const itemTarget = eventTarget.closest?.(".rm-inventory-tree-row--item[data-item-id]") ?? null;
+    if (itemTarget && dropzone.contains(itemTarget)) {
+      return {
+        folderId: null,
+        targetElement: itemTarget,
+        highlightElement: itemTarget
+      };
+    }
+
     let targetElement = eventTarget.closest?.("[data-folder-drop-id]") ?? null;
     if (!targetElement && dropzone.contains(eventTarget)) targetElement = dropzone;
     if (!targetElement || (targetElement !== dropzone && !dropzone.contains(targetElement))) return null;

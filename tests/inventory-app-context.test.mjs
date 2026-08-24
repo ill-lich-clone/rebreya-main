@@ -1316,8 +1316,15 @@ test("InventoryApp routes internal and external drops to exact folder or root ta
       dataset: { folderDropId: "" },
       closest: (selector) => selector === "[data-folder-drop-id]" ? rootTarget : null
     });
+    let itemTarget;
+    itemTarget = createFakeElement({
+      dataset: { itemId: "other-item" },
+      closest: (selector) => selector === ".rm-inventory-tree-row--item[data-item-id]"
+        ? itemTarget
+        : selector === "[data-folder-drop-id]" ? folderTarget : null
+    });
     const dropzone = createFakeElement();
-    dropzone.contains = (node) => node === folderTarget || node === rootTarget;
+    dropzone.contains = (node) => node === folderTarget || node === rootTarget || node === itemTarget;
     const root = createFakeElement();
     root.querySelector = (selector) => selector === "[data-action='inventory-dropzone']" ? dropzone : null;
     root.querySelectorAll = () => [];
@@ -1336,6 +1343,7 @@ test("InventoryApp routes internal and external drops to exact folder or root ta
     };
     await drop(folderTarget, folderDrag);
     await drop(folderTarget, itemDrag);
+    await drop(itemTarget, itemDrag);
     await drop(rootTarget, itemDrag);
     await drop(folderTarget, externalDrag);
   };
@@ -1347,9 +1355,11 @@ test("InventoryApp routes internal and external drops to exact folder or root ta
       ["moveFolder", { groupActorId: "group-a", folderId: "alpha", parentId: "beta" }],
       ["moveItem", { groupActorId: "group-a", itemId: "deep-item", folderId: "beta" }],
       ["moveItem", { groupActorId: "group-a", itemId: "deep-item", folderId: null }],
+      ["moveItem", { groupActorId: "group-a", itemId: "deep-item", folderId: null }],
       ["import", externalDrag, { groupActorId: "group-a", folderId: "beta" }],
       ["moveFolder", { groupActorId: "group-a", folderId: "alpha", parentId: "beta" }],
       ["moveItem", { groupActorId: "group-a", itemId: "deep-item", folderId: "beta" }],
+      ["moveItem", { groupActorId: "group-a", itemId: "deep-item", folderId: null }],
       ["moveItem", { groupActorId: "group-a", itemId: "deep-item", folderId: null }],
       ["import", externalDrag, { groupActorId: "group-a", folderId: "beta" }]
     ]);
