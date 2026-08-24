@@ -19,6 +19,7 @@ import { DurableMutationJournal } from "../application/durable-mutation-journal.
 import { WorldMutationCoordinator } from "../application/world-mutation-coordinator.js";
 import { finiteNumber as toNumber } from "../shared/foundry-values.js";
 import { buildDurabilitySignature, isDurabilityEligible } from "./durability-rules.js";
+import { resolveInventoryDismantleOutputs } from "./inventory-ingress-descriptor.js";
 import { applyLootgenRowDurability } from "./lootgen-durability.js?v=1.4.154-corpse-storage-broken-name";
 import { formatDurabilityItemName } from "./durability-item-presentation.js?v=1.4.154-broken-item-name";
 import {
@@ -5268,28 +5269,16 @@ export class InventoryService {
     const itemData = item.toObject();
     const currentQuantity = getRawQuantity(itemData);
     const breakQuantity = Math.max(1, Math.min(currentQuantity, Math.floor(toNumber(quantity, 1))));
-    const itemWeight = getItemWeight(itemData);
-    const totalWeight = itemWeight * breakQuantity;
-    const materialWeight = Math.floor(Math.max(0, totalWeight * 0.5) * 100) / 100;
-    if (materialWeight <= 0) {
-      throw new Error("Недостаточно веса предмета для разборки на материалы.");
-    }
-
-    const sourceFlags = foundry.utils.deepClone(item.flags?.[MODULE_ID] ?? {});
-    const material = model.materialById?.get(sourceFlags.materialId)
-      ?? model.materialById?.get(sourceFlags.predominantMaterialId)
-      ?? model.materialByGoodId?.get(sourceFlags.linkedGoodId)
-      ?? model.materials.find((entry) => normalizeText(entry.name) === normalizeText(sourceFlags.predominantMaterialName))
-      ?? model.materials.find((entry) => normalizeText(entry.name) === normalizeText(sourceFlags.materialLabel))
-      ?? model.materials.find((entry) => normalizeText(entry.name) === normalizeText(sourceFlags.sourceName))
-      ?? null;
-
-    if (!material) {
+    const [output] = resolveInventoryDismantleOutputs(itemData, breakQuantity, { model });
+    const material = output
+      ? model.materialById?.get(output.sourceId) ?? null
+      : null;
+    if (!output || !material) {
       throw new Error("Для этого предмета не найден подходящий материал.");
     }
 
-    const materialItemData = this.#buildMaterialItemData(material, materialWeight);
-    await this.#upsertInventoryItem(actor, materialItemData, materialWeight);
+    const materialItemData = this.#buildMaterialItemData(material, output.quantity);
+    await this.#upsertInventoryItem(actor, materialItemData, output.quantity);
 
     const nextQuantity = roundNumber(currentQuantity - breakQuantity, 2);
     if (nextQuantity <= 0) {
@@ -5305,7 +5294,7 @@ export class InventoryService {
       itemName: item.name,
       breakQuantity,
       materialName: material.name,
-      materialWeight
+      materialWeight: output.quantity
     };
   }
 

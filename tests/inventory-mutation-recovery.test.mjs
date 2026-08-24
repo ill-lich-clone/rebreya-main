@@ -2,6 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { MODULE_ID, REBREYA_GROUP_FLAGS, SETTINGS_KEYS } from "../scripts/constants.js";
+import {
+  buildInventoryIngressDescriptor,
+  captureInventoryIngressIdentity
+} from "../scripts/data/inventory-ingress-descriptor.js";
 
 const previousActor = globalThis.Actor;
 const previousItem = globalThis.Item;
@@ -64,6 +68,151 @@ test("inventory transfer identity keeps durability-homogeneous stacks separate",
   ), false);
   assert.equal(itemsCanRepresentSameTransfer(makeData(null), makeData(null)), true);
   assert.equal(itemsCanRepresentSameTransfer(makeData(durability), makeData(null)), false);
+});
+
+test("production Lootgen, persisted Storage and external Item adapters preserve ingress descriptor parity", async () => {
+  const iron = { id: "iron", name: "Железо", type: "Металл" };
+  const gear = {
+    id: "canonical-sword",
+    name: "Канонический меч",
+    equipmentType: "Оружие",
+    rank: 2,
+    predominantMaterialId: iron.id,
+    predominantMaterialName: iron.name
+  };
+  const model = {
+    gear: [gear],
+    gearById: new Map([[gear.id, gear]]),
+    materials: [iron],
+    materialById: new Map([[iron.id, iron]]),
+    materialByGoodId: new Map()
+  };
+  const sourceData = {
+    _id: "canonical-sword-document",
+    name: gear.name,
+    type: "weapon",
+    system: {
+      quantity: 1,
+      equipped: false,
+      price: { value: 15, denomination: "gp" },
+      weight: { value: 3, units: "lb" },
+      type: { value: "martialM", subtype: "sword" }
+    },
+    flags: {
+      [MODULE_ID]: {
+        managed: true,
+        sourceType: "gear",
+        gearId: gear.id,
+        equipmentType: gear.equipmentType,
+        rank: gear.rank,
+        predominantMaterialId: iron.id,
+        predominantMaterialName: iron.name
+      }
+    }
+  };
+  const sourceDocument = {
+    id: sourceData._id,
+    uuid: `Compendium.world.rebreya-gear.Item.${sourceData._id}`,
+    toObject: () => clone(sourceData)
+  };
+  const gearPack = {
+    collection: "world.rebreya-gear",
+    async getIndex() {
+      return [{ _id: sourceData._id, flags: clone(sourceData.flags) }];
+    },
+    async getDocument(documentId) {
+      return documentId === sourceData._id ? sourceDocument : null;
+    }
+  };
+  const group = createActor({ id: "descriptor-group", type: "group", managed: true });
+  const fixture = installFixture({
+    group,
+    actors: [group],
+    packs: new Map([["world.rebreya-gear", gearPack]]),
+    moduleApi: { getModel: async () => model }
+  });
+
+  try {
+    const lootgenData = await fixture.service.buildLootgenItemData({
+      sourceType: "gear",
+      sourceId: gear.id,
+      quantity: 2
+    });
+    const storageData = await fixture.service.buildLootgenItemData({
+      quantity: 2,
+      itemData: clone(lootgenData)
+    }, { allowPersistedItemData: true });
+    const externalItem = {
+      toObject: () => ({ ...clone(lootgenData), name: "Переименованный меч" })
+    };
+    const descriptors = [lootgenData, storageData, externalItem.toObject()]
+      .map((itemData) => buildInventoryIngressDescriptor(itemData, { model }));
+
+    assert.deepEqual(descriptors[0], descriptors[1]);
+    assert.deepEqual(descriptors[1], descriptors[2]);
+    assert.deepEqual(captureInventoryIngressIdentity(descriptors[2], 2), {
+      sourceType: "gear",
+      sourceId: gear.id,
+      documentType: "weapon",
+      durabilityState: "intact",
+      quantity: 2
+    });
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("manual dismantle uses stable material metadata and never a presentation-name fallback", async () => {
+  const iron = { id: "iron", name: "Железо", type: "Металл", priceGold: 1, weight: 1 };
+  const model = {
+    materials: [iron],
+    materialById: new Map([[iron.id, iron]]),
+    materialByGoodId: new Map(),
+    gear: [],
+    gearById: new Map()
+  };
+  const source = createItem({
+    id: "unmanaged-material-name",
+    name: "Меч",
+    type: "weapon",
+    quantity: 1,
+    system: {
+      quantity: 1,
+      weight: { value: 3, units: "lb" },
+      price: { value: 1, denomination: "gp" }
+    },
+    flags: {
+      [MODULE_ID]: {
+        sourceType: "gear",
+        sourceId: "unknown-gear",
+        predominantMaterialName: iron.name
+      }
+    }
+  });
+  const group = createActor({
+    id: "manual-dismantle-group",
+    type: "group",
+    managed: true,
+    items: [source]
+  });
+  const fixture = installFixture({
+    group,
+    actors: [group],
+    moduleApi: { getModel: async () => model }
+  });
+
+  try {
+    await assert.rejects(
+      fixture.service.breakItemToMaterial(source.id, 1),
+      /материал|разбор/iu
+    );
+    assert.equal(group.items.contents.length, 1);
+    assert.equal(group.items.contents[0], source);
+  }
+  finally {
+    fixture.restore();
+  }
 });
 
 test("broken lootgen grants persist full durability exactly once and do not merge with intact gear", async () => {
