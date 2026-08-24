@@ -215,6 +215,55 @@ test("storage loot grants an item and coins to a character exactly once", async 
   }
 });
 
+test("storage party currency grants stay bound to the exact group across retries", async () => {
+  const requestedGroup = createActor({ id: "requested-group", type: "group", managed: true });
+  const currentGroup = createActor({ id: "current-group", type: "group", managed: true });
+  const groups = new Map([
+    [requestedGroup.id, requestedGroup],
+    [currentGroup.id, currentGroup]
+  ]);
+  const fixture = installFixture({
+    group: currentGroup,
+    actors: [...groups.values()],
+    moduleApi: {
+      groupContextService: {
+        resolveForCurrentUser: () => ({ groupActor: currentGroup, canManage: true }),
+        resolveForGroup: (groupActorId) => ({ groupActor: groups.get(groupActorId) ?? null, canManage: true })
+      }
+    }
+  });
+  const mutationId = "storage:coins:token-1:party";
+
+  try {
+    await fixture.service.addCurrencyToInventoryOnce(
+      { gp: 4, sp: 2 },
+      mutationId,
+      { groupActorId: requestedGroup.id }
+    );
+    await fixture.service.addCurrencyToInventoryOnce(
+      { gp: 4, sp: 2 },
+      mutationId,
+      { groupActorId: requestedGroup.id }
+    );
+
+    assert.equal(requestedGroup.system.currency.gp, 4);
+    assert.equal(requestedGroup.system.currency.sp, 2);
+    assert.equal(currentGroup.system.currency.gp, 0);
+    await assert.rejects(
+      fixture.service.addCurrencyToInventoryOnce(
+        { gp: 4, sp: 2 },
+        mutationId,
+        { groupActorId: currentGroup.id }
+      ),
+      /target|actor|групп/iu
+    );
+    assert.equal(currentGroup.system.currency.gp, 0);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
 test("storage gear with one canonical gear ID coalesces across different source documents", async () => {
   const hero = createActor({ id: "crossbow-hero" });
   const fixture = installFixture({ actors: [hero] });

@@ -4807,10 +4807,12 @@ export class InventoryService {
     return foundry.utils.deepClone(result);
   }
 
-  addCurrencyToInventoryOnce(coins = {}, mutationId = "") {
+  addCurrencyToInventoryOnce(coins = {}, mutationId = "", { groupActorId = "" } = {}) {
+    const frozenCoins = foundry.utils.deepClone(coins ?? {});
+    const requestedGroupActorId = cleanId(groupActorId);
     return this.mutationCoordinator.run(
       "inventory",
-      () => this.#executeAddCurrencyOnce(coins, mutationId)
+      () => this.#executeAddCurrencyOnce(frozenCoins, mutationId, { groupActorId: requestedGroupActorId })
     );
   }
 
@@ -4830,14 +4832,27 @@ export class InventoryService {
     );
   }
 
-  async #executeAddCurrencyOnce(coins, mutationId, { actor: requestedActor = null } = {}) {
+  async #executeAddCurrencyOnce(coins, mutationId, {
+    actor: requestedActor = null,
+    groupActorId = ""
+  } = {}) {
     const operationId = createInventoryMutationId("inventory-currency-grant", mutationId);
     let record = await this.mutationJournal.find(operationId);
-    const actor = requestedActor ?? await this.getInventoryActor({ create: true });
-    if (!requestedActor) {
+    const requestedGroupActorId = cleanId(groupActorId);
+    const actor = requestedActor ?? await this.getInventoryActor({
+      create: !requestedGroupActorId,
+      groupActorId: requestedGroupActorId
+    });
+    if (!requestedActor && !requestedGroupActorId) {
       this.#assertCanManagePartyInventory(actor);
     }
+    if (requestedGroupActorId && !isManagedPartyGroup(actor)) {
+      throw new Error("Указанный групповой инвентарь не управляется Rebreya.");
+    }
     if (!actor) throw new Error("Не удалось получить инвентарь для выдачи монет.");
+    if (record && cleanId(record.actorId) !== cleanId(actor.id)) {
+      throw this.#inventoryReconciliationError("Inventory currency grant target actor changed.");
+    }
     if (!record) {
       const before = buildCurrencySnapshot(actor);
       const after = {
