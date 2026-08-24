@@ -1363,7 +1363,7 @@ test("InventoryApp routes internal and external drops to exact folder or root ta
   }
 });
 
-test("InventoryApp accepts protected browser dragover and drops an Item on the root list surface", async () => {
+test("InventoryApp accepts protected browser dragover and treats any non-folder surface descendant as root", async () => {
   const restoreFoundry = installFoundryApplicationStub();
   const dom = installMinimalDom();
   const previousGame = globalThis.game;
@@ -1407,20 +1407,13 @@ test("InventoryApp accepts protected browser dragover and drops an Item on the r
   });
   moduleApi.moveInventoryItemToFolder = async (payload) => calls.push(payload);
 
-  let rootTarget;
   const itemRow = createFakeElement({
     dataset: {
       itemId: "deep-item",
       itemUuid: "Actor.group-a.Item.deep-item"
     }
   });
-  const rootItemRow = createFakeElement({
-    closest: (selector) => selector === "[data-folder-drop-id]" ? rootTarget : null
-  });
-  rootTarget = createFakeElement({
-    dataset: { folderDropId: "" },
-    closest: (selector) => selector === "[data-folder-drop-id]" ? rootTarget : null
-  });
+  const rootSurfaceChild = createFakeElement();
   let folderTarget;
   folderTarget = createFakeElement({
     dataset: { folderDropId: "beta" },
@@ -1429,7 +1422,7 @@ test("InventoryApp accepts protected browser dragover and drops an Item on the r
       : null
   });
   const dropzone = createFakeElement();
-  dropzone.contains = (node) => [rootTarget, rootItemRow, folderTarget].includes(node);
+  dropzone.contains = (node) => [rootSurfaceChild, folderTarget].includes(node);
   const root = createFakeElement();
   root.querySelector = (selector) => selector === "[data-action='inventory-dropzone']" ? dropzone : null;
   root.querySelectorAll = (selector) => selector === "[data-item-drag]" ? [itemRow] : [];
@@ -1468,12 +1461,12 @@ test("InventoryApp accepts protected browser dragover and drops an Item on the r
     itemRow.listeners.dragstart[0]({ currentTarget: itemRow, dataTransfer });
     dragDataMode = "protected";
     assert.equal(dragOver(folderTarget), true);
-    assert.equal(dragOver(rootItemRow), true);
+    assert.equal(dragOver(rootSurfaceChild), true);
 
     dragDataMode = "read";
     let prevented = false;
     await dropzone.listeners.drop[0]({
-      target: rootItemRow,
+      target: rootSurfaceChild,
       dataTransfer,
       preventDefault() { prevented = true; }
     });

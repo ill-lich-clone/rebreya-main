@@ -3819,7 +3819,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     if (!eventTarget) return null;
 
     let targetElement = eventTarget.closest?.("[data-folder-drop-id]") ?? null;
-    if (!targetElement && eventTarget === dropzone) targetElement = dropzone;
+    if (!targetElement && dropzone.contains(eventTarget)) targetElement = dropzone;
     if (!targetElement || (targetElement !== dropzone && !dropzone.contains(targetElement))) return null;
 
     const folderId = cleanText(targetElement.dataset?.folderDropId) || null;
