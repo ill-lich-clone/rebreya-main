@@ -254,23 +254,39 @@ test("storage command service validates a supplied durability derivation depende
   );
 });
 
-test("storage claim rejects a player outside five feet before granting an item", async () => {
-  const harness = createHarness({ distance: 10, visible: true });
-  await harness.storageService.open(harness.storageToken);
+test("storage claims allow exactly ten feet and reject a greater distance", async () => {
+  const near = createHarness({ distance: 10, visible: true });
+  await near.storageService.open(near.storageToken);
+
+  const accepted = await near.service.claimRow({
+    tokenUuid: near.storageToken.uuid,
+    characterTokenUuid: near.characterToken.uuid,
+    rowId: "row-1",
+    destination: "self",
+    quantity: null,
+    target: null,
+    mutationId: "claim-at-ten-feet"
+  }, { sender: near.player });
+
+  assert.equal(accepted.changed, true);
+  assert.equal(near.itemGrants.length, 1);
+
+  const far = createHarness({ distance: 11, visible: true });
+  await far.storageService.open(far.storageToken);
 
   await assert.rejects(
-    harness.service.claimRow({
-      tokenUuid: harness.storageToken.uuid,
-      characterTokenUuid: harness.characterToken.uuid,
+    far.service.claimRow({
+      tokenUuid: far.storageToken.uuid,
+      characterTokenUuid: far.characterToken.uuid,
       rowId: "row-1",
       destination: "self",
       quantity: null,
       target: null,
-      mutationId: "claim-1"
-    }, { sender: harness.player }),
-    /5 фут/iu
+      mutationId: "claim-beyond-ten-feet"
+    }, { sender: far.player }),
+    /10 фут/iu
   );
-  assert.equal(harness.itemGrants.length, 0);
+  assert.equal(far.itemGrants.length, 0);
 });
 
 function depositPayload(harness, overrides = {}) {
@@ -407,7 +423,7 @@ test("storage Journal reads re-run access checks and use only an authoritative u
   assert.deepEqual(journalOwnership, beforeOwnership);
   assert.deepEqual(readStorageState(harness.storageToken).readJournalRowIds, ["journal-row"]);
 
-  const farHarness = createHarness({ distance: 6 });
+  const farHarness = createHarness({ distance: 11 });
   await farHarness.storageService.configure(farHarness.storageToken, {
     state: "opened",
     manualRows: [readStorageState(harness.storageToken).manualRows[0]]
@@ -416,7 +432,7 @@ test("storage Journal reads re-run access checks and use only an authoritative u
     tokenUuid: farHarness.storageToken.uuid,
     characterTokenUuid: farHarness.characterToken.uuid,
     rowId: "journal-row"
-  }, { sender: farHarness.player }), /5 футов/iu);
+  }, { sender: farHarness.player }), /10 футов/iu);
 
   const hiddenHarness = createHarness({ visible: false });
   await assert.rejects(hiddenHarness.service.readJournal({
@@ -808,6 +824,39 @@ test("generic Item scene drop payload accepts an exact quantity and finite scene
   assert.equal(isValidStorageDropItemPayload({ ...payload, extra: true }), false);
 });
 
+test("player can drop an ordinary Item at exactly ten feet", async () => {
+  const harness = createHarness({
+    pointDistance: 10,
+    depositSource: {
+      kind: "item",
+      mode: "copy",
+      available: 1,
+      row: {
+        rowId: "ten-foot-item",
+        name: "Фляга",
+        quantity: 1,
+        itemData: { name: "Фляга", type: "loot", system: { quantity: 1 } }
+      },
+      canUserMove: () => true,
+      async consume() { return { kind: "copy" }; },
+      async restore() {}
+    }
+  });
+
+  const result = await harness.service.dropItemToScene({
+    itemUuid: "Item.ten-foot-item",
+    characterTokenUuid: harness.characterToken.uuid,
+    sceneId: "scene",
+    x: 200,
+    y: 100,
+    quantity: 1,
+    mutationId: "drop-at-ten-feet"
+  }, { sender: harness.player });
+
+  assert.equal(result.changed, true);
+  assert.equal(harness.groundCalls.length, 1);
+});
+
 test("managed coin scene payload validator accepts only the exact typed command", () => {
   assert.equal(typeof storageCommands.isValidStorageCoinDropPayload, "function");
   const { isValidStorageCoinDropPayload } = storageCommands;
@@ -850,7 +899,7 @@ test("managed coin drop re-resolves authority, consumes an owned stack, and tran
     async consume(quantity) { order.push("consume"); consumed.push(quantity); return { kind: "item-update" }; },
     async restore() { order.push("restore"); }
   };
-  const harness = createHarness({ depositSource: source, executionOrder: order, pointDistance: 5 });
+  const harness = createHarness({ depositSource: source, executionOrder: order, pointDistance: 10 });
   const result = await harness.service.dropCoinsToScene({
     itemUuid: "Actor.hero.Item.gold",
     denomination: "gp",
@@ -943,8 +992,8 @@ test("managed coin drop rejects stale denomination, excess quantity, ownership, 
     /прав/iu
   );
   await assert.rejects(
-    createHarness({ depositSource: source({ available: 3 }), pointDistance: 6 }).service.dropCoinsToScene(payload, { sender: { id: "player", isGM: false } }),
-    /5 фут/iu
+    createHarness({ depositSource: source({ available: 3 }), pointDistance: 11 }).service.dropCoinsToScene(payload, { sender: { id: "player", isGM: false } }),
+    /10 фут/iu
   );
   await assert.rejects(
     createHarness({ depositSource: source({ available: 3 }) }).service.dropCoinsToScene({ ...payload, characterTokenUuid: "" }, { sender: { id: "player", isGM: false } }),
@@ -1319,7 +1368,7 @@ test("ground durability derivation waits for quantity, ownership, and point vali
   for (const scenario of [
     { name: "quantity", sender: { id: "gm", isGM: true }, available: 0, canUserMove: true, pointDistance: 5 },
     { name: "ownership", sender: { id: "player", isGM: false }, available: 1, canUserMove: false, pointDistance: 5 },
-    { name: "point", sender: { id: "player", isGM: false }, available: 1, canUserMove: true, pointDistance: 6 }
+    { name: "point", sender: { id: "player", isGM: false }, available: 1, canUserMove: true, pointDistance: 11 }
   ]) {
     let derives = 0;
     let consumes = 0;
@@ -1938,10 +1987,10 @@ test("storage deposits reject distance and source ownership before mutation", as
     async consume() { consumeCalls.push(true); },
     async restore() {}
   };
-  const far = createHarness({ distance: 10, depositSource: source });
+  const far = createHarness({ distance: 11, depositSource: source });
   await assert.rejects(
     far.service.deposit(depositPayload(far), { sender: far.player }),
-    /5 фут/iu
+    /10 фут/iu
   );
 
   const near = createHarness({ depositSource: source });
@@ -2034,13 +2083,13 @@ test("dead NPC storage open reuses player access checks, allows GM, and rejects 
   }, { sender: gmHarness.gm });
   assert.equal(gmResult.state, "opened");
 
-  const farHarness = createHarness({ distance: 6 });
+  const farHarness = createHarness({ distance: 11 });
   farHarness.storageToken.actor.flags = {};
   farHarness.storageToken.actor.system = { attributes: { hp: { value: 0 } } };
   await assert.rejects(farHarness.service.open({
     tokenUuid: farHarness.storageToken.uuid,
     characterTokenUuid: farHarness.characterToken.uuid
-  }, { sender: farHarness.player }), /5 футов/iu);
+  }, { sender: farHarness.player }), /10 футов/iu);
 
   const livingHarness = createHarness();
   livingHarness.storageToken.actor.flags = {};
@@ -2446,10 +2495,10 @@ test("cached bulk claims revalidate live access and bind mutation IDs to one exa
     mutationId: "bulk-live-access"
   };
   await selfHarness.service.claimAll(selfRequest, { sender: selfHarness.player });
-  currentDistance = 6;
+  currentDistance = 11;
   await assert.rejects(
     selfHarness.service.claimAll(selfRequest, { sender: selfHarness.player }),
-    /5 футов/iu
+    /10 футов/iu
   );
 
   const partyHarness = createHarness();
@@ -2829,7 +2878,7 @@ test("sheet drop grants to an owned target character before decrementing source"
   assert.equal(harness.refreshCalls.length, 1);
 });
 
-test("canvas drop creates a ground pile only within five feet of the character", async () => {
+test("canvas drop creates a ground pile only within ten feet of the character", async () => {
   const events = [];
   const derivedFlag = {
     eligible: true,
@@ -2842,7 +2891,7 @@ test("canvas drop creates a ground pile only within five feet of the character",
   let derivedInput = null;
   const harness = createHarness({
     rowQuantity: 3,
-    pointDistance: 5,
+    pointDistance: 10,
     executionOrder: events,
     durabilityService: {
       async getOrBuildDurability(item) {
@@ -2882,7 +2931,7 @@ test("canvas drop creates a ground pile only within five feet of the character",
   );
   assert.equal(readStorageState(harness.storageToken).generatedRows[0].quantity, 1);
 
-  const far = createHarness({ rowQuantity: 3, pointDistance: 10 });
+  const far = createHarness({ rowQuantity: 3, pointDistance: 11 });
   await far.storageService.open(far.storageToken);
   await assert.rejects(far.service.claimRow({
     tokenUuid: far.storageToken.uuid,
@@ -2892,7 +2941,7 @@ test("canvas drop creates a ground pile only within five feet of the character",
     quantity: 1,
     target: { sceneId: "scene", x: 800, y: 800 },
     mutationId: "scene-too-far"
-  }, { sender: far.player }), /5 фут/iu);
+  }, { sender: far.player }), /10 фут/iu);
   assert.equal(far.groundCalls.length, 0);
   assert.equal(readStorageState(far.storageToken).generatedRows[0].quantity, 3);
 });

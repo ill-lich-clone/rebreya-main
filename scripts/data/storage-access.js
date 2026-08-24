@@ -1,4 +1,4 @@
-export const MAX_STORAGE_DISTANCE_FEET = 5;
+export const MAX_STORAGE_DISTANCE_FEET = 10;
 
 export function storageTokenDocument(token) {
   return token?.document ?? token ?? null;
@@ -31,18 +31,25 @@ function storageTokenFootprintCenters(token, { canvas = globalThis.canvas } = {}
   const width = Number(document?.width ?? 1);
   const height = Number(document?.height ?? 1);
   if (!Number.isFinite(gridSize) || gridSize <= 0
-    || !Number.isSafeInteger(width) || width < 1
-    || !Number.isSafeInteger(height) || height < 1) {
+    || !Number.isFinite(width) || width <= 0
+    || !Number.isFinite(height) || height <= 0) {
     return [storageTokenCenter(token, { canvas })];
   }
   const left = Number(document?.x ?? 0);
   const top = Number(document?.y ?? 0);
+  if (!Number.isFinite(left) || !Number.isFinite(top)) {
+    return [storageTokenCenter(token, { canvas })];
+  }
+  const firstColumn = Math.floor(left / gridSize);
+  const lastColumn = Math.ceil((left + width * gridSize) / gridSize - 1e-9) - 1;
+  const firstRow = Math.floor(top / gridSize);
+  const lastRow = Math.ceil((top + height * gridSize) / gridSize - 1e-9) - 1;
   const centers = [];
-  for (let column = 0; column < width; column += 1) {
-    for (let row = 0; row < height; row += 1) {
+  for (let column = firstColumn; column <= lastColumn; column += 1) {
+    for (let row = firstRow; row <= lastRow; row += 1) {
       centers.push({
-        x: left + (column + 0.5) * gridSize,
-        y: top + (row + 0.5) * gridSize
+        x: (column + 0.5) * gridSize,
+        y: (row + 0.5) * gridSize
       });
     }
   }

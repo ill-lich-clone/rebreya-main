@@ -95,7 +95,7 @@ test("GM storage actions include a gear configuration button", async () => {
 });
 
 test("a distant player sees token-local feedback instead of actions", () => {
-  const harness = createHarness({ isGM: false, distance: 10 });
+  const harness = createHarness({ isGM: false, distance: 11 });
   harness.listeners.get("hoverToken")(harness.storageToken, true);
   harness.tokenListeners.get("pointertap")({ button: 0 });
 
@@ -181,7 +181,7 @@ test("corpse pointer handlers recheck HP and living unmarked NPCs never open", a
 });
 
 test("a distant player gets the existing local feedback instead of opening a corpse", async () => {
-  const harness = createHarness({ isGM: false, distance: 10 });
+  const harness = createHarness({ isGM: false, distance: 11 });
   harness.storageToken.actor.flags = {};
   harness.storageToken.actor.system = { attributes: { hp: { value: 0 } } };
   harness.listeners.get("drawToken")(harness.storageToken);

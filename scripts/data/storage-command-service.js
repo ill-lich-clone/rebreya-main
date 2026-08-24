@@ -9,12 +9,12 @@ import { isStorageContainerRow, isStorageJournalRow } from "./storage-container-
 import { MODULE_ID } from "../constants.js";
 import { escapeFoundryHtml } from "../shared/foundry-values.js";
 import { isDeadNpcStorageTarget } from "./corpse-storage-materializer.js";
+import { MAX_STORAGE_DISTANCE_FEET } from "./storage-access.js";
 
 const STORAGE_ROW_DESTINATIONS = new Set(["self", "party", "character", "scene"]);
 const STORAGE_COIN_DESTINATIONS = new Set(["self", "party"]);
 const STORAGE_COIN_DENOMINATIONS = new Set(["pp", "gp", "sp", "cp"]);
 const STORAGE_COIN_LABELS = Object.freeze({ pp: "пм", gp: "зм", sp: "см", cp: "мм" });
-const MAX_STORAGE_DISTANCE_FEET = 5;
 const MAX_MUTATION_FINGERPRINTS = 1000;
 
 function clean(value) {
@@ -421,7 +421,7 @@ export class StorageCommandService {
     if (sender?.isGM !== true) {
       const distance = Number(await this.measurePointDistance(access.characterToken, target));
       if (!Number.isFinite(distance) || distance > MAX_STORAGE_DISTANCE_FEET) {
-        throw new Error("Предмет можно положить на землю только в пределах 5 футов от персонажа.");
+        throw new Error("Предмет можно положить на землю только в пределах 10 футов от персонажа.");
       }
     }
     if (!this.groundPileService?.transferToScene) {
@@ -493,7 +493,7 @@ export class StorageCommandService {
       }
       const distance = Number(await this.measureDistance(characterToken, storageToken));
       if (!Number.isFinite(distance) || distance > MAX_STORAGE_DISTANCE_FEET) {
-        throw new Error("Хранилище можно открыть только в пределах 5 футов.");
+        throw new Error("Хранилище можно открыть только в пределах 10 футов.");
       }
     }
 
@@ -1248,7 +1248,7 @@ export class StorageCommandService {
           y: Number(payload.y)
         }));
         if (!Number.isFinite(distance) || distance > MAX_STORAGE_DISTANCE_FEET) {
-          throw new Error("Предмет можно положить на землю только в пределах 5 футов от персонажа.");
+          throw new Error("Предмет можно положить на землю только в пределах 10 футов от персонажа.");
         }
       }
 
@@ -1386,7 +1386,7 @@ export class StorageCommandService {
           y: payload.y
         }));
         if (!Number.isFinite(distance) || distance > MAX_STORAGE_DISTANCE_FEET) {
-          throw new Error("Монеты можно положить на землю только в пределах 5 футов от персонажа.");
+          throw new Error("Монеты можно положить на землю только в пределах 10 футов от персонажа.");
         }
       }
 
