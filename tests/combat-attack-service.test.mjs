@@ -118,6 +118,7 @@ function makeActor(items, {
         }
       };
       this.updateCalls = [];
+      this.embeddedDocumentUpdateCalls = [];
     }
 
     getFlag(scope, key) {
@@ -136,6 +137,23 @@ function makeActor(items, {
         foundry.utils.setProperty(this, path, value);
       }
       return this;
+    }
+
+    async updateEmbeddedDocuments(documentName, patches = [], options = {}) {
+      this.embeddedDocumentUpdateCalls.push({
+        documentName,
+        patches: foundry.utils.deepClone(patches),
+        options: foundry.utils.deepClone(options)
+      });
+      const updated = [];
+      for (const patch of patches) {
+        const item = this.items.get(patch?._id);
+        if (!item) continue;
+        const { _id, ...update } = patch;
+        await item.update(update, options);
+        updated.push(item);
+      }
+      return updated;
     }
   }();
 
@@ -159,6 +177,7 @@ function makeFirearmItem({
   ammoState = null,
   jammed = null
 } = {}) {
+  const setFlagCalls = [];
   const updateCalls = [];
   const item = new class extends Item {
     constructor() {
@@ -194,6 +213,7 @@ function makeFirearmItem({
     }
 
     async setFlag(scope, key, value) {
+      setFlagCalls.push({ scope, key, value });
       this.flags[scope] ??= {};
       this.flags[scope][key] = value;
       return this;
@@ -217,6 +237,7 @@ function makeFirearmItem({
       return this;
     }
   }();
+  item.setFlagCalls = setFlagCalls;
   item.updateCalls = updateCalls;
   return item;
 }
@@ -1652,6 +1673,40 @@ test("empty firearm magazines should stop native activity use before an attack r
   assert.equal(TestRoll.queuedTotals.length, 1);
 });
 
+test("blocked empty firearm use does not rewrite unchanged ammo state", () => {
+  const weapon = makeFirearmItem({
+    name: "Револьвер (0/6)",
+    properties: {
+      lchFirearmAmmunition: true,
+      lchFirearmReload: true
+    },
+    values: {
+      ammunition: "Пистолетные",
+      reload: "Смена магазина 6"
+    },
+    ammoState: {
+      current: 0,
+      capacity: 6,
+      ammunition: "Пистолетные"
+    }
+  });
+  const actor = makeActor([weapon]);
+  const activity = {
+    type: "attack",
+    actor,
+    item: weapon,
+    attack: { type: { value: "firearm" } },
+    consumption: { targets: [] },
+    range: {}
+  };
+  const service = new CombatAttackService({});
+
+  const result = service.applyDnd5ePreUseActivity(activity, {}, {}, {});
+
+  assert.equal(result, false);
+  assert.equal(weapon.setFlagCalls.length + weapon.updateCalls.length, 0);
+});
+
 test("empty firearm magazines are reported unavailable for activity sheet badges", () => {
   TestRoll.queuedTotals = [15];
   const weapon = makeFirearmItem({
@@ -2030,6 +2085,41 @@ test("firearm misfire rolls an extra d20 and jams the weapon before the attack",
   assert.equal(weapon.name, "Пистолет (клин)");
   assert.equal(TestRoll.messages.length, 1);
   assert.match(TestRoll.messages[0].messageData.flavor, /Осечка/u);
+});
+
+test("firearm jams persist the base threshold, jam state and name through one Item write", () => {
+  TestRoll.queuedTotals = [2];
+  const weapon = makeFirearmItem({ name: "Пистолет" });
+  const activity = {
+    id: "attack-1",
+    type: "attack",
+    actor: {
+      id: "actor-a",
+      name: "Стрелок",
+      uuid: "Actor.actor-a"
+    },
+    item: weapon
+  };
+  const service = new CombatAttackService({});
+
+  const result = service.applyDnd5eAttackRollConfig({ subject: activity }, {}, {});
+
+  assert.equal(result, false);
+  assert.equal(weapon.setFlagCalls.length + weapon.updateCalls.length, 1);
+  assert.equal(weapon.updateCalls[0].name, "Пистолет (клин)");
+  assert.equal(weapon.updateCalls[0][`flags.${MODULE_ID}.firearmBaseMisfire`], 3);
+  assert.deepEqual(
+    {
+      value: weapon.updateCalls[0][`flags.${MODULE_ID}.firearmJammed`].value,
+      threshold: weapon.updateCalls[0][`flags.${MODULE_ID}.firearmJammed`].threshold,
+      rollTotal: weapon.updateCalls[0][`flags.${MODULE_ID}.firearmJammed`].rollTotal
+    },
+    {
+      value: true,
+      threshold: 3,
+      rollTotal: 2
+    }
+  );
 });
 
 test("arquebus attacks disable dnd5e ammunition selection so only reloading spends bullets", () => {
@@ -2521,6 +2611,45 @@ test("firearm attacks spend loaded ammunition and mark an empty magazine in the 
   assert.equal(TestRoll.queuedTotals.length, 0);
 });
 
+test("firearm shots persist ammo state and displayed count through one Item write", async () => {
+  TestRoll.queuedTotals = [15];
+  const weapon = makeFirearmItem({
+    name: "Карабин",
+    properties: {
+      lchFirearmAmmunition: true,
+      lchFirearmReload: true
+    },
+    values: {
+      ammunition: "Винтовочные",
+      reload: "Смена магазина 2"
+    },
+    ammoState: {
+      current: 2,
+      capacity: 2,
+      ammunition: "Винтовочные"
+    }
+  });
+  const actor = makeActor([weapon]);
+  const service = new CombatAttackService({});
+
+  await service.rollFirearmAttack(actor, weapon, { createMessage: false });
+
+  assert.equal(weapon.setFlagCalls.length + weapon.updateCalls.length, 1);
+  assert.equal(weapon.updateCalls[0].name, "Карабин (1/2)");
+  assert.deepEqual(
+    {
+      current: weapon.updateCalls[0][`flags.${MODULE_ID}.firearmAmmoState`].current,
+      capacity: weapon.updateCalls[0][`flags.${MODULE_ID}.firearmAmmoState`].capacity,
+      ammunition: weapon.updateCalls[0][`flags.${MODULE_ID}.firearmAmmoState`].ammunition
+    },
+    {
+      current: 1,
+      capacity: 2,
+      ammunition: "Винтовочные"
+    }
+  );
+});
+
 test("firearm attacks use dexterity at exactly ten pounds and strength above ten pounds", async () => {
   TestRoll.queuedTotals = [15, 15];
   TestRoll.messages = [];
@@ -2651,6 +2780,51 @@ test("reloading a firearm consumes matching actor ammunition and fills the magaz
     "Автоматическая винтовка (24/24): перезарядка."
   );
   assert.doesNotMatch(globalThis.ChatMessage.messages.at(-1)?.content ?? "", /боезапас|загружено/iu);
+});
+
+test("firearm reload batches ammunition stacks and weapon state into one embedded Item update", async () => {
+  const weapon = makeFirearmItem({
+    name: "Карабин",
+    properties: {
+      lchFirearmAmmunition: true,
+      lchFirearmReload: true
+    },
+    values: {
+      ammunition: "Винтовочные",
+      reload: "Смена магазина 4"
+    },
+    ammoState: {
+      current: 0,
+      capacity: 4,
+      ammunition: "Винтовочные"
+    }
+  });
+  const firstAmmo = makeAmmoItem({
+    id: "rifle-ammo-a",
+    name: "Винтовочный патрон A",
+    quantity: 2
+  });
+  const secondAmmo = makeAmmoItem({
+    id: "rifle-ammo-b",
+    name: "Винтовочный патрон B",
+    quantity: 3
+  });
+  const actor = makeActor([weapon, firstAmmo, secondAmmo]);
+  const service = new CombatAttackService({});
+
+  const result = await service.reloadFirearm(actor, weapon, { createMessage: false });
+
+  assert.equal(result.success, true);
+  assert.equal(result.loaded, 4);
+  assert.equal(firstAmmo.system.quantity, 0);
+  assert.equal(secondAmmo.system.quantity, 1);
+  assert.equal(weapon.getFlag(MODULE_ID, "firearmAmmoState").current, 4);
+  assert.equal(weapon.name, "Карабин (4/4)");
+  assert.equal(actor.embeddedDocumentUpdateCalls.length, 1);
+  assert.deepEqual(
+    actor.embeddedDocumentUpdateCalls[0].patches.map((patch) => patch._id),
+    ["rifle-ammo-a", "rifle-ammo-b", "pistol"]
+  );
 });
 
 test("firearm reload matches native Rebreya ammunition family instead of a name guess", async () => {

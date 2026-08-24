@@ -1397,17 +1397,56 @@ export class CombatAttackService {
     ui.notifications?.warn?.(`${weaponName}: не хватает патронов в магазине (${current}/${required}).`);
   }
 
-  #setFirearmAmmoStateSync(item, state) {
+  #setFirearmAmmoStateSync(item, state, { persist = true } = {}) {
     const capacity = Math.max(0, Math.floor(toNumber(state?.capacity, 0)));
     const current = capacity > 0 ? clampInteger(state?.current, 0, capacity) : 0;
+    const ammunition = cleanText(state?.ammunition);
+    const currentState = readDocumentFlag(item, MODULE_ID, FIREARM_AMMO_STATE_FLAG);
+    const nextName = withFirearmAmmoSuffix(item?.name, current, capacity);
+    const stateUnchanged = toNumber(currentState?.current, NaN) === current
+      && toNumber(currentState?.capacity, NaN) === capacity
+      && cleanText(currentState?.ammunition) === ammunition;
+    if (stateUnchanged && item?.name === nextName) {
+      return {
+        current,
+        capacity,
+        ammunition,
+        ...(cleanText(currentState?.updatedAt) ? { updatedAt: currentState.updatedAt } : {})
+      };
+    }
+
     const nextState = {
       current,
       capacity,
-      ammunition: cleanText(state?.ammunition),
+      ammunition,
       updatedAt: new Date().toISOString()
     };
-    this.#writeItemFlag(item, FIREARM_AMMO_STATE_FLAG, nextState);
-    this.#writeItemName(item, withFirearmAmmoSuffix(item?.name, current, capacity));
+    try {
+      item.flags ??= {};
+      item.flags[MODULE_ID] ??= {};
+      item.flags[MODULE_ID][FIREARM_AMMO_STATE_FLAG] = nextState;
+      item.name = nextName;
+    }
+    catch (_error) {
+      // The combined document update below remains the persisted source of truth.
+    }
+
+    if (persist === false) {
+      return nextState;
+    }
+
+    if (typeof item?.update === "function") {
+      Promise.resolve(item.update({
+        [`flags.${MODULE_ID}.${FIREARM_AMMO_STATE_FLAG}`]: nextState,
+        name: nextName
+      })).catch((error) => {
+        console.error(`${MODULE_ID} | Failed to persist firearm ammunition state.`, error);
+      });
+    }
+    else {
+      this.#writeItemFlag(item, FIREARM_AMMO_STATE_FLAG, nextState);
+      this.#writeItemName(item, nextName);
+    }
     return nextState;
   }
 
@@ -1578,7 +1617,7 @@ export class CombatAttackService {
         || wantedStem.includes(this.#ammunitionStem(item.name)));
   }
 
-  async #spendActorAmmunition(actor, weapon, ammunitionLabel, amount) {
+  #planActorAmmunitionSpend(actor, weapon, ammunitionLabel, amount) {
     const requested = Math.max(0, Math.floor(toNumber(amount, 0)));
     if (requested <= 0) {
       return {
@@ -1602,13 +1641,13 @@ export class CombatAttackService {
 
       const nextQuantity = quantity - spend;
       const path = this.#itemQuantityUpdatePath(ammoItem);
-      await ammoItem.update?.({ [path]: nextQuantity });
       updates.push({
         item: ammoItem,
         itemId: ammoItem.id,
         itemName: ammoItem.name,
         spent: spend,
-        remaining: nextQuantity
+        remaining: nextQuantity,
+        path
       });
       remaining -= spend;
     }
@@ -2437,23 +2476,6 @@ export class CombatAttackService {
     return clampInteger(fallback, 1, 10);
   }
 
-  #rememberFirearmBaseMisfire(item, currentThreshold) {
-    const existing = toNumber(readDocumentFlag(item, MODULE_ID, FIREARM_BASE_MISFIRE_FLAG), NaN);
-    if (Number.isFinite(existing)) {
-      return;
-    }
-
-    this.#writeItemFlag(
-      item,
-      FIREARM_BASE_MISFIRE_FLAG,
-      this.#resolveFirearmBaseMisfireThreshold(item, currentThreshold)
-    );
-  }
-
-  #markFirearmNameJammed(item) {
-    this.#writeItemName(item, withFirearmJamSuffix(item?.name));
-  }
-
   #createFirearmMisfireMessage(actor, item, result, options = {}) {
     if (options.createMessage === false) {
       return;
@@ -2505,15 +2527,47 @@ export class CombatAttackService {
   }
 
   #jamFirearm(actor, item, result, options = {}) {
-    this.#rememberFirearmBaseMisfire(item, result.threshold);
-    this.#markFirearmNameJammed(item);
+    const existingBaseMisfire = toNumber(
+      readDocumentFlag(item, MODULE_ID, FIREARM_BASE_MISFIRE_FLAG),
+      NaN
+    );
+    const baseMisfire = Number.isFinite(existingBaseMisfire)
+      ? clampInteger(existingBaseMisfire, 1, 10)
+      : this.#resolveFirearmBaseMisfireThreshold(item, result.threshold);
+    const nextName = withFirearmJamSuffix(item?.name);
     const jamState = {
       value: true,
       threshold: result.threshold,
       rollTotal: result.rollTotal,
       jammedAt: new Date().toISOString()
     };
-    this.#writeItemFlag(item, FIREARM_JAMMED_FLAG, jamState);
+    const update = {
+      [`flags.${MODULE_ID}.${FIREARM_JAMMED_FLAG}`]: jamState,
+      name: nextName,
+      ...(!Number.isFinite(existingBaseMisfire)
+        ? { [`flags.${MODULE_ID}.${FIREARM_BASE_MISFIRE_FLAG}`]: baseMisfire }
+        : {})
+    };
+    try {
+      item.flags ??= {};
+      item.flags[MODULE_ID] ??= {};
+      item.flags[MODULE_ID][FIREARM_JAMMED_FLAG] = jamState;
+      item.flags[MODULE_ID][FIREARM_BASE_MISFIRE_FLAG] = baseMisfire;
+      item.name = nextName;
+    }
+    catch (_error) {
+      // The combined document update below remains the persisted source of truth.
+    }
+    if (typeof item?.update === "function") {
+      Promise.resolve(item.update(update)).catch((error) => {
+        console.error(`${MODULE_ID} | Failed to persist firearm jam state.`, error);
+      });
+    }
+    else {
+      this.#writeItemFlag(item, FIREARM_JAMMED_FLAG, jamState);
+      this.#writeItemFlag(item, FIREARM_BASE_MISFIRE_FLAG, baseMisfire);
+      this.#writeItemName(item, nextName);
+    }
     this.#createFirearmMisfireMessage(actor, item, { ...result, jammed: true }, options);
     this.#notifyFirearmJammed(item);
   }
@@ -4431,7 +4485,7 @@ export class CombatAttackService {
       state.ammunition,
       missing
     );
-    const inventorySpent = await this.#spendActorAmmunition(
+    const inventorySpent = this.#planActorAmmunitionSpend(
       actor,
       weapon,
       state.ammunition,
@@ -4455,7 +4509,26 @@ export class CombatAttackService {
     const nextState = this.#setFirearmAmmoStateSync(weapon, {
       ...state,
       current: Math.min(state.capacity, state.current + totalSpent)
+    }, { persist: false });
+    const itemUpdates = inventorySpent.updates.map((update) => ({
+      _id: update.itemId,
+      [update.path]: update.remaining
+    }));
+    itemUpdates.push({
+      _id: weapon.id,
+      [`flags.${MODULE_ID}.${FIREARM_AMMO_STATE_FLAG}`]: nextState,
+      name: weapon.name
     });
+    if (typeof actor.updateEmbeddedDocuments === "function") {
+      await actor.updateEmbeddedDocuments("Item", itemUpdates);
+    }
+    else {
+      for (const update of inventorySpent.updates) {
+        await update.item?.update?.({ [update.path]: update.remaining });
+      }
+      const { _id, ...weaponUpdate } = itemUpdates.at(-1);
+      await weapon.update?.(weaponUpdate);
+    }
     this.#createFirearmChatMessage(
       actor,
       weapon,

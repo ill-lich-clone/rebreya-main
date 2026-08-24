@@ -135,7 +135,7 @@ import {
   storageCharacterTokenUuidForClaim
 } from "./data/storage-command-service.js?v=1.4.152-dead-npc-looting";
 import { registerCombatHooks } from "./combat/hooks.js?v=1.4.147-race-damage";
-import { CombatAttackService } from "./combat/attack-service.js?v=1.4.147-native-ammunition";
+import { CombatAttackService } from "./combat/attack-service.js?v=1.4.157-firearm-io-batching";
 import { ImplantAutomationService } from "./combat/implant-automation-service.js";
 import { SizeAutomationService } from "./combat/size-automation-service.js?v=1.4.110-character-size-authority";
 import { ReactionCapabilityIndex } from "./combat/reaction-capability-index.js";
