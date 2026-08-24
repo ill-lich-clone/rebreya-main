@@ -5820,8 +5820,28 @@ summary:focus-visible {
 }
 
 .rm-compact-toolbar {
-  grid-template-columns: minmax(0, 1.8fr) 180px 220px 44px;
+  grid-template-columns: minmax(0, 1fr) 180px 220px auto;
   margin: 10px 0;
+}
+
+.rm-inventory-toolbar-actions {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.rm-inventory-toolbar-actions .rm-icon-button {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+}
+
+.rm-inventory-toolbar-actions .rm-icon-button.is-active {
+  color: var(--rm-accent);
+  border-color: var(--rm-border-strong);
+  background: rgb(var(--rm-color-gold-rgb) / 0.14);
 }
 
 .rm-party-toolbar--compact {
@@ -5909,10 +5929,45 @@ summary:focus-visible {
   counter-reset: rm-compact-item;
 }
 
-.rm-inventory-folder-create {
-  width: 44px;
-  height: 44px;
-  flex: 0 0 44px;
+.rm-inventory-filter-editor,
+.rm-inventory-rule-list {
+  display: grid;
+  gap: 10px;
+}
+
+.rm-inventory-filter-editor__actions,
+.rm-inventory-rule-card__actions,
+.rm-inventory-rule-action {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.rm-inventory-rule-card {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--rm-border-default);
+  border-radius: var(--rm-radius-section);
+  background: var(--rm-surface-subtle);
+}
+
+.rm-inventory-rule-card.is-invalid,
+.rm-inventory-rule-condition.is-invalid {
+  border-color: var(--rm-danger);
+}
+
+.rm-inventory-rule-conditions {
+  display: grid;
+  gap: 6px;
+}
+
+.rm-inventory-rule-condition {
+  display: grid;
+  grid-template-columns: minmax(130px, 1fr) minmax(110px, 0.8fr) minmax(150px, 1.4fr) 34px;
+  gap: 6px;
+  align-items: center;
 }
 
 .rm-inventory-tree-row {

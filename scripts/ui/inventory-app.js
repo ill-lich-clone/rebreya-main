@@ -9,6 +9,11 @@ import {
   projectInventoryFolderRows
 } from "../data/inventory-folder-tree.js";
 import { buildPartyInventoryItemDragData } from "../integrations/inventory-sync.js";
+import {
+  INVENTORY_INGRESS_RULE_FIELD_DEFINITIONS,
+  normalizeInventoryIngressRule,
+  normalizeInventoryIngressRuleState
+} from "../data/inventory-ingress-rules.js";
 import { bringAppToFront, formatNumber, getAppElement } from "../ui.js";
 import {
   cleanText,
@@ -70,6 +75,11 @@ const INVENTORY_SORT_OPTIONS = Object.freeze([
   { value: "quantity-desc", label: "Сортировка: количество" }
 ]);
 const INVENTORY_SORT_MODES = new Set(INVENTORY_SORT_OPTIONS.map((option) => option.value));
+const INVENTORY_RULE_ACTION_OPTIONS = Object.freeze([
+  { value: "folder", label: "Переместить в папку" },
+  { value: "skip", label: "Пропустить" },
+  { value: "dismantle", label: "Разобрать" }
+]);
 const INVENTORY_FOLDER_DRAG_TYPE = "RebreyaInventoryFolder";
 const INVENTORY_TREE_DRAG_VERSION = 1;
 const INVENTORY_ITEM_FOLDER_DRAG_FLAG = "inventoryFolderDrag";
@@ -3359,6 +3369,9 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.search = "";
     this.typeFilter = "all";
     this.sortMode = "name";
+    this.inventoryMode = "items";
+    this.inventoryRuleDraft = null;
+    this.inventoryRuleDraftError = "";
     this.selectedNewMemberId = "";
     this.newMemberQuery = "";
     this.availablePartyActors = [];
@@ -3767,6 +3780,66 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       ui.notifications?.error(error.message || errorMessage);
       return null;
     }
+  }
+
+  async #runInventoryRuleMutation(operation) {
+    try {
+      const result = await operation();
+      this.inventoryRuleDraft = null;
+      this.inventoryRuleDraftError = "";
+      await this.refreshInventorySnapshot({ preserveScroll: true });
+      return result;
+    }
+    catch (error) {
+      this.inventoryRuleDraftError = error?.message || "Не удалось сохранить правило фильтрации.";
+      this.inventorySnapshotCache = null;
+      this.inventoryFolderTreeCache = null;
+      this.inventorySearchIndexCache = null;
+      this.inventoryContextCache = null;
+      await this.render({ force: true, preserveScroll: true });
+      globalThis.ui?.notifications?.error?.(this.inventoryRuleDraftError);
+      return null;
+    }
+  }
+
+  async #saveInventoryRuleDraft() {
+    let rule;
+    try {
+      rule = this.#normalizeInventoryRuleDraft();
+      this.inventoryRuleDraftError = "";
+    }
+    catch (error) {
+      this.inventoryRuleDraftError = error?.message || "Заполните правило.";
+      this.inventorySearchRenderPending = true;
+      await this.render({ force: true, preserveScroll: true });
+      return null;
+    }
+    const expectedRevision = normalizeInventoryIngressRuleState(
+      this.inventorySnapshotCache?.inventoryIngressRules ?? null
+    ).revision;
+    const payload = {
+      groupActorId: this.inventoryActorId,
+      operationId: globalThis.crypto.randomUUID(),
+      expectedRevision,
+      rule
+    };
+    return this.#runInventoryRuleMutation(() => (
+      this.inventoryRuleDraft.mode === "edit"
+        ? this.moduleApi.updateInventoryIngressRule(payload)
+        : this.moduleApi.createInventoryIngressRule(payload)
+    ));
+  }
+
+  async #deleteInventoryRule(ruleId) {
+    const expectedRevision = normalizeInventoryIngressRuleState(
+      this.inventorySnapshotCache?.inventoryIngressRules ?? null
+    ).revision;
+    return this.#runInventoryRuleMutation(() => this.moduleApi.deleteInventoryIngressRule({
+      groupActorId: this.inventoryActorId,
+      operationId: globalThis.crypto.randomUUID(),
+      expectedRevision,
+      ruleId
+    }));
   }
 
   async #createInventoryFolder(parentId = null) {
@@ -4230,6 +4303,130 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     };
   }
 
+  #newInventoryRuleDraft(rule = null) {
+    const source = rule ? foundry.utils.deepClone(rule) : null;
+    return {
+      mode: source ? "edit" : "create",
+      id: cleanText(source?.id) || globalThis.crypto.randomUUID(),
+      name: cleanText(source?.name),
+      conditions: (source?.conditions?.length ? source.conditions : [{
+        field: "sourceType",
+        operator: "is",
+        value: ""
+      }]).map((condition) => ({
+        field: cleanText(condition.field) || "sourceType",
+        operator: cleanText(condition.operator) || "is",
+        valueText: Array.isArray(condition.value) ? condition.value.join(", ") : String(condition.value ?? "")
+      })),
+      actionType: cleanText(source?.action?.type) || "folder",
+      folderId: cleanText(source?.action?.folderId) || ""
+    };
+  }
+
+  #parseInventoryRuleCondition(condition) {
+    const definition = INVENTORY_INGRESS_RULE_FIELD_DEFINITIONS[condition.field];
+    const text = String(condition.valueText ?? "").trim();
+    if (!definition || !definition.operators.includes(condition.operator) || !text) {
+      throw new Error("Заполните поле, оператор и значение каждого условия.");
+    }
+    let value = text;
+    if (definition.kind === "number") {
+      value = condition.operator === "between"
+        ? text.split(",").map((entry) => Number(entry.trim()))
+        : Number(text);
+    }
+    else if (definition.kind === "boolean") {
+      if (!["true", "false"].includes(text.toLowerCase())) {
+        throw new Error("Логическое значение должно быть true или false.");
+      }
+      value = text.toLowerCase() === "true";
+    }
+    else if (condition.operator === "in" || condition.operator === "notIn") {
+      value = text.split(",").map((entry) => entry.trim()).filter(Boolean);
+    }
+    return { field: condition.field, operator: condition.operator, value };
+  }
+
+  #normalizeInventoryRuleDraft() {
+    const draft = this.inventoryRuleDraft;
+    if (!draft) throw new Error("Черновик правила не найден.");
+    const action = draft.actionType === "folder"
+      ? { type: "folder", folderId: cleanText(draft.folderId) }
+      : { type: draft.actionType };
+    return normalizeInventoryIngressRule({
+      id: cleanText(draft.id),
+      name: cleanText(draft.name),
+      conditions: draft.conditions.map((condition) => this.#parseInventoryRuleCondition(condition)),
+      action
+    });
+  }
+
+  #prepareInventoryRuleDraftContext(folderOptions) {
+    if (!this.inventoryRuleDraft) return null;
+    const draft = this.inventoryRuleDraft;
+    return {
+      ...draft,
+      conditions: draft.conditions.map((condition, index) => {
+        const definition = INVENTORY_INGRESS_RULE_FIELD_DEFINITIONS[condition.field]
+          ?? INVENTORY_INGRESS_RULE_FIELD_DEFINITIONS.sourceType;
+        return {
+          ...condition,
+          index,
+          invalid: !cleanText(condition.valueText),
+          isBoolean: definition.kind === "boolean",
+          isNumber: definition.kind === "number" && condition.operator !== "between",
+          booleanOptions: ["true", "false"].map((value) => ({
+            value,
+            label: value === "true" ? "Да" : "Нет",
+            selected: value === String(condition.valueText).toLowerCase()
+          })),
+          fieldOptions: Object.keys(INVENTORY_INGRESS_RULE_FIELD_DEFINITIONS).map((value) => ({
+            value,
+            label: value,
+            selected: value === condition.field
+          })),
+          operatorOptions: definition.operators.map((value) => ({
+            value,
+            label: value,
+            selected: value === condition.operator
+          }))
+        };
+      }),
+      actionOptions: INVENTORY_RULE_ACTION_OPTIONS.map((option) => ({
+        ...option,
+        selected: option.value === draft.actionType
+      })),
+      showFolder: draft.actionType === "folder",
+      folderOptions: folderOptions.map((folder) => ({
+        value: folder.id,
+        label: folder.name,
+        selected: folder.id === draft.folderId
+      }))
+    };
+  }
+
+  #inventoryRuleContext() {
+    const state = normalizeInventoryIngressRuleState(
+      this.inventorySnapshotCache?.inventoryIngressRules ?? null
+    );
+    const folders = this.inventorySnapshotCache?.folders ?? [];
+    return {
+      inventoryFiltersActive: this.inventoryMode === "filters",
+      inventoryRulesRevision: state.revision,
+      inventoryRules: state.rules.map((rule) => ({
+        ...rule,
+        conditionLabels: rule.conditions.map((condition) => (
+          `${condition.field} ${condition.operator} ${Array.isArray(condition.value) ? condition.value.join(", ") : condition.value}`
+        )),
+        actionLabel: rule.action.type === "folder"
+          ? `Папка: ${folders.find((folder) => folder.id === rule.action.folderId)?.name ?? rule.action.folderId}`
+          : rule.action.type === "skip" ? "Пропустить" : "Разобрать"
+      })),
+      inventoryRuleDraft: this.#prepareInventoryRuleDraftContext(folders),
+      inventoryRuleDraftError: this.inventoryRuleDraftError
+    };
+  }
+
   #projectCachedInventoryContext() {
     if (!this.inventoryContextCache || !this.inventoryFolderTreeCache || !this.inventorySearchIndexCache) {
       return null;
@@ -4262,6 +4459,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     return {
       ...this.inventoryContextCache,
+      ...this.#inventoryRuleContext(),
       search: this.search,
       typeFilter: this.typeFilter,
       inventoryActorId: this.inventoryActorId,
@@ -6944,6 +7142,111 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       }, listenerOptions);
     }
 
+    element.querySelector("[data-action='toggle-inventory-filters']")?.addEventListener("click", async (event) => {
+      event.preventDefault();
+      this.inventoryMode = this.inventoryMode === "filters" ? "items" : "filters";
+      this.inventoryRuleDraftError = "";
+      this.inventorySearchRenderPending = true;
+      await this.render({ force: true, preserveScroll: true });
+    }, listenerOptions);
+
+    element.querySelector("[data-action='create-inventory-rule']")?.addEventListener("click", async () => {
+      if (!this.canOrganizeInventory) return;
+      this.inventoryRuleDraft = this.#newInventoryRuleDraft();
+      this.inventoryRuleDraftError = "";
+      this.inventorySearchRenderPending = true;
+      await this.render({ force: true, preserveScroll: true });
+    }, listenerOptions);
+
+    element.querySelectorAll("[data-action='edit-inventory-rule']").forEach((button) => {
+      button.addEventListener("click", async (event) => {
+        if (!this.canOrganizeInventory) return;
+        const ruleId = cleanText(event.currentTarget.dataset.ruleId);
+        const state = normalizeInventoryIngressRuleState(this.inventorySnapshotCache?.inventoryIngressRules ?? null);
+        const rule = state.rules.find((entry) => entry.id === ruleId);
+        if (!rule) return;
+        this.inventoryRuleDraft = this.#newInventoryRuleDraft(rule);
+        this.inventoryRuleDraftError = "";
+        this.inventorySearchRenderPending = true;
+        await this.render({ force: true, preserveScroll: true });
+      }, listenerOptions);
+    });
+
+    element.querySelectorAll("[data-action='delete-inventory-rule']").forEach((button) => {
+      button.addEventListener("click", async (event) => {
+        if (!this.canOrganizeInventory) return;
+        await this.#deleteInventoryRule(cleanText(event.currentTarget.dataset.ruleId));
+      }, listenerOptions);
+    });
+
+    element.querySelector("[data-action='inventory-rule-name']")?.addEventListener("input", (event) => {
+      if (this.inventoryRuleDraft) this.inventoryRuleDraft.name = event.currentTarget.value ?? "";
+    }, listenerOptions);
+
+    for (const action of ["inventory-rule-field", "inventory-rule-operator", "inventory-rule-value"]) {
+      element.querySelectorAll(`[data-action='${action}']`).forEach((control) => {
+        const eventName = action === "inventory-rule-value" && control.tagName !== "SELECT" ? "input" : "change";
+        control.addEventListener(eventName, async (event) => {
+          const index = Number(event.currentTarget.closest?.("[data-condition-index]")?.dataset?.conditionIndex);
+          const condition = this.inventoryRuleDraft?.conditions?.[index];
+          if (!condition) return;
+          if (action === "inventory-rule-field") {
+            condition.field = cleanText(event.currentTarget.value);
+            condition.operator = INVENTORY_INGRESS_RULE_FIELD_DEFINITIONS[condition.field]?.operators?.[0] ?? "is";
+            condition.valueText = INVENTORY_INGRESS_RULE_FIELD_DEFINITIONS[condition.field]?.kind === "boolean"
+              ? "true"
+              : "";
+          }
+          else if (action === "inventory-rule-operator") condition.operator = cleanText(event.currentTarget.value);
+          else condition.valueText = event.currentTarget.value ?? "";
+          this.inventoryRuleDraftError = "";
+          if (action !== "inventory-rule-value") {
+            this.inventorySearchRenderPending = true;
+            await this.render({ force: true, preserveScroll: true });
+          }
+        }, listenerOptions);
+      });
+    }
+
+    element.querySelector("[data-action='inventory-rule-action']")?.addEventListener("change", async (event) => {
+      if (!this.inventoryRuleDraft) return;
+      this.inventoryRuleDraft.actionType = cleanText(event.currentTarget.value);
+      this.inventoryRuleDraftError = "";
+      this.inventorySearchRenderPending = true;
+      await this.render({ force: true, preserveScroll: true });
+    }, listenerOptions);
+
+    element.querySelector("[data-action='inventory-rule-folder']")?.addEventListener("change", (event) => {
+      if (this.inventoryRuleDraft) this.inventoryRuleDraft.folderId = cleanText(event.currentTarget.value);
+    }, listenerOptions);
+
+    element.querySelector("[data-action='add-inventory-rule-condition']")?.addEventListener("click", async () => {
+      this.inventoryRuleDraft?.conditions.push({ field: "sourceType", operator: "is", valueText: "" });
+      this.inventorySearchRenderPending = true;
+      await this.render({ force: true, preserveScroll: true });
+    }, listenerOptions);
+
+    element.querySelectorAll("[data-action='remove-inventory-rule-condition']").forEach((button) => {
+      button.addEventListener("click", async (event) => {
+        const index = Number(event.currentTarget.closest?.("[data-condition-index]")?.dataset?.conditionIndex);
+        if (!this.inventoryRuleDraft?.conditions?.[index]) return;
+        this.inventoryRuleDraft.conditions.splice(index, 1);
+        this.inventorySearchRenderPending = true;
+        await this.render({ force: true, preserveScroll: true });
+      }, listenerOptions);
+    });
+
+    element.querySelector("[data-action='save-inventory-rule']")?.addEventListener("click", async () => {
+      if (this.canOrganizeInventory) await this.#saveInventoryRuleDraft();
+    }, listenerOptions);
+
+    element.querySelector("[data-action='cancel-inventory-rule']")?.addEventListener("click", async () => {
+      this.inventoryRuleDraft = null;
+      this.inventoryRuleDraftError = "";
+      this.inventorySearchRenderPending = true;
+      await this.render({ force: true, preserveScroll: true });
+    }, listenerOptions);
+
     element.querySelectorAll("[data-action='create-inventory-folder']").forEach((button) => {
       button.addEventListener("click", async (event) => {
         event.preventDefault();
@@ -7334,14 +7637,15 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         event.preventDefault();
 
         try {
-          await this.#applyInventoryDrop(accepted.action, accepted.target.folderId);
+          const result = await this.#applyInventoryDrop(accepted.action, accepted.target.folderId);
+          if (accepted.action.kind === "external") {
+            if (result?.cancelled === true || result == null) return;
+            bringAppToFront(this);
+            return;
+          }
           const message = accepted.action.kind === "folder"
             ? "Папка перемещена."
-            : accepted.action.kind === "item"
-              ? "Стэк предмета перемещён целиком."
-              : (this.canManage
-                ? "Предмет перенесён в партийный склад."
-                : "Запрос на перенос предмета отправлен мастеру.");
+            : "Стэк предмета перемещён целиком.";
           ui.notifications?.info(message);
           bringAppToFront(this);
         }

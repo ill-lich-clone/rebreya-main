@@ -606,6 +606,58 @@ test("InventoryApp projects three searches from one cached folder model without 
   }
 });
 
+test("InventoryApp exposes group ingress rules in the same cached app context without resetting its draft", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const snapshot = createFolderInventorySnapshot();
+  snapshot.inventoryIngressRules = {
+    version: 1,
+    revision: 4,
+    rules: [{
+      id: "weapons",
+      name: "Оружие",
+      conditions: [{ field: "sourceType", operator: "is", value: "gear" }],
+      action: { type: "folder", folderId: "beta" }
+    }]
+  };
+  let snapshotCalls = 0;
+  const moduleApi = createModuleApi({ inventorySnapshot: snapshot, getGroupContext: () => null });
+  const readSnapshot = moduleApi.getInventorySnapshot.bind(moduleApi);
+  moduleApi.getInventorySnapshot = async (...args) => {
+    snapshotCalls += 1;
+    return readSnapshot(...args);
+  };
+  const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?filter-context=${Date.now()}`);
+  const app = new InventoryApp(moduleApi);
+
+  try {
+    const items = await app._prepareContext();
+    assert.equal(items.inventoryFiltersActive, false);
+    assert.equal(items.inventoryRules[0].name, "Оружие");
+    assert.equal(items.inventoryRulesRevision, 4);
+
+    app.inventoryMode = "filters";
+    app.inventoryRuleDraft = {
+      mode: "create",
+      id: "draft-id",
+      name: "Черновик",
+      conditions: [{ field: "sourceType", operator: "is", valueText: "gear" }],
+      actionType: "skip",
+      folderId: ""
+    };
+    app.inventorySearchRenderPending = true;
+    const filters = await app._prepareContext();
+
+    assert.equal(filters.inventoryFiltersActive, true);
+    assert.equal(filters.inventoryRuleDraft.name, "Черновик");
+    assert.equal(filters.canOrganizeInventory, true);
+    assert.equal(snapshotCalls, 1);
+    assert.equal(app.id, "rebreya-main-inventory-app");
+  }
+  finally {
+    restoreFoundry();
+  }
+});
+
 test("InventoryApp builds folder-first rows, preserves totals on collapse and isolates personal expansion", async () => {
   const restoreFoundry = installFoundryApplicationStub();
   const snapshot = createFolderInventorySnapshot();
@@ -790,24 +842,33 @@ test("InventoryApp template renders accessible folder rows and fixed-depth item 
   const css = await readFile(new URL("../styles/main.css", import.meta.url), "utf8");
   const script = await readFile(new URL("../scripts/ui/inventory-app.js", import.meta.url), "utf8");
   const createButtons = template.match(/data-action="create-inventory-folder"/gu) ?? [];
+  const filterButtons = template.match(/data-action="toggle-inventory-filters"/gu) ?? [];
+  const searchIndex = template.indexOf('data-action="search"');
+  const typeIndex = template.indexOf('data-action="type-filter"');
   const sortIndex = template.indexOf('data-action="sort-mode"');
+  const filterIndex = template.indexOf('data-action="toggle-inventory-filters"');
   const createIndex = template.indexOf('data-action="create-inventory-folder"');
   const folderBranchStart = template.indexOf("{{#if isFolder}}");
   const folderBranchEnd = template.indexOf('class="rm-compact-item rm-inventory-tree-row', folderBranchStart);
   const folderBranch = template.slice(folderBranchStart, folderBranchEnd);
 
   assert.equal(createButtons.length, 1);
-  assert.ok(createIndex > sortIndex);
+  assert.equal(filterButtons.length, 1);
+  assert.ok(searchIndex < typeIndex && typeIndex < sortIndex && sortIndex < filterIndex && filterIndex < createIndex);
+  assert.match(template, /data-action="toggle-inventory-filters"[^>]*title="Фильтры входящего лута"[^>]*aria-label="Фильтры входящего лута"/u);
   assert.match(template, /data-action="create-inventory-folder"[^>]*title="Создать папку"[^>]*aria-label="Создать папку"/u);
   assert.match(template, /\{\{#if canOrganizeInventory\}\}[\s\S]*data-action="create-inventory-folder"[\s\S]*\{\{\/if\}\}/u);
   assert.doesNotMatch(template, /Корень склада/u);
   assert.doesNotMatch(template, /rm-inventory-root-drop-target/u);
   assert.match(template, /class="rm-compact-item-list rm-inventory-tree"[^>]*data-folder-drop-id=""/su);
   assert.match(template, /class="rm-empty"[^>]*data-folder-drop-id=""/su);
-  const folderCreateRule = css.match(/\.rm-inventory-folder-create\s*\{(?<body>[^}]*)\}/u)?.groups?.body ?? "";
-  assert.match(folderCreateRule, /width:\s*44px;/u);
-  assert.match(folderCreateRule, /height:\s*44px;/u);
-  assert.match(css, /\.rm-compact-toolbar\s*\{[^}]*grid-template-columns:[^;]*44px;/su);
+  const toolbarActionRule = css.match(/\.rm-inventory-toolbar-actions\s*\{(?<body>[^}]*)\}/u)?.groups?.body ?? "";
+  assert.match(toolbarActionRule, /display:\s*flex;/u);
+  assert.match(toolbarActionRule, /flex-wrap:\s*nowrap;/u);
+  assert.match(css, /\.rm-inventory-toolbar-actions\s+\.rm-icon-button\s*\{[^}]*width:\s*34px;[^}]*height:\s*34px;/su);
+  assert.match(css, /\.rm-compact-toolbar\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+180px\s+220px\s+auto;/su);
+  assert.doesNotMatch(css, /\.rm-inventory-folder-create\s*\{[^}]*44px/su);
+  assert.doesNotMatch(template, />\s*Правила лута\s*</u);
   assert.ok(template.includes("{{#each inventoryRows}}"));
   assert.match(folderBranch, /class="[^"]*rm-inventory-folder-row[^"]*"/u);
   assert.ok(folderBranch.includes('data-folder-id="{{folderId}}"'));
@@ -1089,6 +1150,170 @@ test("InventoryApp invalidates its folder snapshot after a command error and gat
   finally {
     console.error = previousConsoleError;
     globalThis.ui = previousUi;
+    dom.restore();
+    restoreFoundry();
+  }
+});
+
+test("InventoryApp validates local ingress drafts and sends revisioned create operations without optimistic state", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const dom = installMinimalDom();
+  const previousUi = globalThis.ui;
+  globalThis.ui = { notifications: { info() {}, error() {} } };
+  const snapshot = createFolderInventorySnapshot();
+  snapshot.inventoryIngressRules = { version: 1, revision: 7, rules: [] };
+  const moduleApi = createModuleApi({ inventorySnapshot: snapshot, getGroupContext: () => null });
+  const writes = [];
+  moduleApi.createInventoryIngressRule = async (payload) => {
+    writes.push(payload);
+    return { state: { version: 1, revision: 8, rules: [payload.rule] } };
+  };
+  const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?filter-create=${Date.now()}`);
+  const app = new InventoryApp(moduleApi);
+  const createButton = createFakeControl();
+  const saveButton = createFakeControl();
+  const root = createFakeElement();
+  let phase = "create";
+  root.querySelector = (selector) => {
+    if (phase === "create" && selector === "[data-action='create-inventory-rule']") return createButton;
+    if (phase === "save" && selector === "[data-action='save-inventory-rule']") return saveButton;
+    return null;
+  };
+  root.querySelectorAll = () => [];
+  app.element = root;
+  app.render = async () => app;
+  let refreshes = 0;
+  app.refreshInventorySnapshot = async () => { refreshes += 1; };
+
+  try {
+    await app._prepareContext();
+    await app._onRender({}, {});
+    await dispatchClick(createButton);
+    assert.match(app.inventoryRuleDraft.id, /^[0-9a-f-]{36}$/u);
+
+    phase = "save";
+    await app._onRender({}, {});
+    await dispatchClick(saveButton);
+    assert.equal(writes.length, 0);
+    assert.match(app.inventoryRuleDraftError, /Заполните/u);
+
+    app.inventoryRuleDraft.conditions[0].valueText = "gear";
+    app.inventoryRuleDraft.actionType = "skip";
+    await dispatchClick(saveButton);
+
+    assert.equal(writes.length, 1);
+    assert.equal(writes[0].groupActorId, "group-a");
+    assert.equal(writes[0].expectedRevision, 7);
+    assert.match(writes[0].operationId, /^[0-9a-f-]{36}$/u);
+    assert.deepEqual(writes[0].rule.conditions, [{ field: "sourceType", operator: "is", value: "gear" }]);
+    assert.deepEqual(writes[0].rule.action, { type: "skip" });
+    assert.equal(refreshes, 1);
+    assert.equal(app.inventoryRuleDraft, null);
+  }
+  finally {
+    globalThis.ui = previousUi;
+    dom.restore();
+    restoreFoundry();
+  }
+});
+
+test("InventoryApp keeps a conflicting rule draft open and invalidates its snapshot", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const dom = installMinimalDom();
+  const previousUi = globalThis.ui;
+  const errors = [];
+  globalThis.ui = { notifications: { error: (message) => errors.push(message) } };
+  const snapshot = createFolderInventorySnapshot();
+  snapshot.inventoryIngressRules = {
+    version: 1,
+    revision: 3,
+    rules: [{
+      id: "existing",
+      name: "Существующее",
+      conditions: [{ field: "sourceType", operator: "is", value: "gear" }],
+      action: { type: "skip" }
+    }]
+  };
+  const moduleApi = createModuleApi({ inventorySnapshot: snapshot, getGroupContext: () => null });
+  const updateCalls = [];
+  moduleApi.updateInventoryIngressRule = async (payload) => {
+    updateCalls.push(payload);
+    throw new Error("Правило Существующее пересекается: sourceType is gear");
+  };
+  const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?filter-conflict=${Date.now()}`);
+  const app = new InventoryApp(moduleApi);
+  const saveButton = createFakeControl();
+  const root = createFakeElement();
+  root.querySelector = (selector) => selector === "[data-action='save-inventory-rule']" ? saveButton : null;
+  root.querySelectorAll = () => [];
+  app.element = root;
+  app.render = async () => app;
+
+  try {
+    await app._prepareContext();
+    app.inventoryMode = "filters";
+    app.inventoryRuleDraft = {
+      mode: "edit",
+      id: "existing",
+      name: "Существующее",
+      conditions: [{ field: "sourceType", operator: "is", valueText: "gear" }],
+      actionType: "skip",
+      folderId: ""
+    };
+    await app._onRender({}, {});
+    await dispatchClick(saveButton);
+
+    assert.equal(app.inventoryMode, "filters");
+    assert.equal(updateCalls[0].expectedRevision, 3);
+    assert.equal(app.inventoryRuleDraft.id, "existing");
+    assert.match(app.inventoryRuleDraftError, /Существующее.*sourceType/u);
+    assert.equal(app.inventorySnapshotCache, null);
+    assert.deepEqual(errors, ["Правило Существующее пересекается: sourceType is gear"]);
+  }
+  finally {
+    globalThis.ui = previousUi;
+    dom.restore();
+    restoreFoundry();
+  }
+});
+
+test("InventoryApp delete rule uses the current snapshot revision and a fresh operation ID", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const dom = installMinimalDom();
+  const snapshot = createFolderInventorySnapshot();
+  snapshot.inventoryIngressRules = {
+    version: 1,
+    revision: 9,
+    rules: [{
+      id: "delete-me",
+      name: "Удалить",
+      conditions: [{ field: "sourceType", operator: "is", value: "gear" }],
+      action: { type: "skip" }
+    }]
+  };
+  const moduleApi = createModuleApi({ inventorySnapshot: snapshot, getGroupContext: () => null });
+  const calls = [];
+  moduleApi.deleteInventoryIngressRule = async (payload) => calls.push(payload);
+  const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?filter-delete=${Date.now()}`);
+  const app = new InventoryApp(moduleApi);
+  const deleteButton = createFakeControl({ dataset: { ruleId: "delete-me" } });
+  const root = createFakeElement();
+  root.querySelector = () => null;
+  root.querySelectorAll = (selector) => selector === "[data-action='delete-inventory-rule']" ? [deleteButton] : [];
+  app.element = root;
+  app.render = async () => app;
+  app.refreshInventorySnapshot = async () => {};
+
+  try {
+    await app._prepareContext();
+    await app._onRender({}, {});
+    await dispatchClick(deleteButton);
+    assert.equal(calls[0].groupActorId, "group-a");
+    assert.equal(calls[0].ruleId, "delete-me");
+    assert.equal(calls[0].expectedRevision, 9);
+    assert.match(calls[0].operationId, /^[0-9a-f-]{36}$/u);
+  }
+  finally {
     dom.restore();
     restoreFoundry();
   }

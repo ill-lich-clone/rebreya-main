@@ -203,13 +203,84 @@
               {{/each}}
             </select>
           </div>
-          {{#if canOrganizeInventory}}
-            <button type="button" class="rm-icon-button rm-inventory-folder-create" data-action="create-inventory-folder" title="Создать папку" aria-label="Создать папку">
-              <i class="fa-solid fa-folder-plus" aria-hidden="true"></i>
+          <div class="rm-inventory-toolbar-actions">
+            <button type="button" class="rm-icon-button {{#if inventoryFiltersActive}}is-active{{/if}}" data-action="toggle-inventory-filters" title="Фильтры входящего лута" aria-label="Фильтры входящего лута" aria-pressed="{{inventoryFiltersActive}}">
+              <i class="fa-solid fa-filter" aria-hidden="true"></i>
             </button>
-          {{/if}}
+            {{#if canOrganizeInventory}}
+              <button type="button" class="rm-icon-button rm-inventory-folder-create" data-action="create-inventory-folder" title="Создать папку" aria-label="Создать папку">
+                <i class="fa-solid fa-folder-plus" aria-hidden="true"></i>
+              </button>
+            {{/if}}
+          </div>
         </section>
 
+        {{#if inventoryFiltersActive}}
+          <section class="rm-inventory-filter-editor" aria-label="Фильтры входящего лута">
+            {{#if canOrganizeInventory}}
+              <div class="rm-inventory-filter-editor__actions">
+                <button type="button" class="rm-button rm-button--secondary" data-action="create-inventory-rule">
+                  <i class="fa-solid fa-plus" aria-hidden="true"></i> Создать правило
+                </button>
+              </div>
+            {{/if}}
+            {{#if inventoryRuleDraft}}
+              <article class="rm-inventory-rule-card is-editing {{#if inventoryRuleDraftError}}is-invalid{{/if}}" data-rule-draft>
+                <label>Название <input type="text" data-action="inventory-rule-name" value="{{inventoryRuleDraft.name}}" placeholder="Необязательно"></label>
+                <div class="rm-inventory-rule-conditions">
+                  {{#each inventoryRuleDraft.conditions}}
+                    <div class="rm-inventory-rule-condition {{#if invalid}}is-invalid{{/if}}" data-condition-index="{{index}}">
+                      <select data-action="inventory-rule-field" aria-label="Поле условия">
+                        {{#each fieldOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
+                      </select>
+                      <select data-action="inventory-rule-operator" aria-label="Оператор условия">
+                        {{#each operatorOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
+                      </select>
+                      {{#if isBoolean}}
+                        <select data-action="inventory-rule-value" aria-label="Значение условия">{{#each booleanOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select>
+                      {{else}}
+                        <input type="{{#if isNumber}}number{{else}}text{{/if}}" data-action="inventory-rule-value" value="{{valueText}}" placeholder="{{#if isNumber}}Число{{else}}Значение{{/if}}" aria-label="Значение условия">
+                      {{/if}}
+                      <button type="button" class="rm-icon-button" data-action="remove-inventory-rule-condition" title="Удалить условие" aria-label="Удалить условие"><i class="fa-solid fa-minus" aria-hidden="true"></i></button>
+                    </div>
+                  {{/each}}
+                </div>
+                <button type="button" class="rm-button rm-button--ghost" data-action="add-inventory-rule-condition">Добавить условие</button>
+                <div class="rm-inventory-rule-action">
+                  <select data-action="inventory-rule-action" aria-label="Действие правила">
+                    {{#each inventoryRuleDraft.actionOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
+                  </select>
+                  {{#if inventoryRuleDraft.showFolder}}
+                    <select data-action="inventory-rule-folder" aria-label="Целевая папка">
+                      {{#each inventoryRuleDraft.folderOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
+                    </select>
+                  {{/if}}
+                </div>
+                {{#if inventoryRuleDraftError}}<p class="rm-inline-status rm-inline-status--danger">{{inventoryRuleDraftError}}</p>{{/if}}
+                <div class="rm-inventory-rule-card__actions">
+                  <button type="button" class="rm-button rm-button--primary" data-action="save-inventory-rule">Сохранить</button>
+                  <button type="button" class="rm-button rm-button--secondary" data-action="cancel-inventory-rule">Отмена</button>
+                </div>
+              </article>
+            {{/if}}
+            <div class="rm-inventory-rule-list">
+              {{#each inventoryRules}}
+                <article class="rm-inventory-rule-card" data-rule-id="{{id}}">
+                  <div><strong>{{name}}</strong><span>{{actionLabel}}</span></div>
+                  <ul>{{#each conditionLabels}}<li>{{this}}</li>{{/each}}</ul>
+                  {{#if ../canOrganizeInventory}}
+                    <div class="rm-inventory-rule-card__actions">
+                      <button type="button" class="rm-icon-button" data-action="edit-inventory-rule" data-rule-id="{{id}}" title="Изменить правило" aria-label="Изменить правило"><i class="fa-solid fa-pen" aria-hidden="true"></i></button>
+                      <button type="button" class="rm-icon-button" data-action="delete-inventory-rule" data-rule-id="{{id}}" title="Удалить правило" aria-label="Удалить правило"><i class="fa-solid fa-trash" aria-hidden="true"></i></button>
+                    </div>
+                  {{/if}}
+                </article>
+              {{else}}
+                <p class="rm-empty">Правила не настроены.</p>
+              {{/each}}
+            </div>
+          </section>
+        {{else}}
         {{#if emptyInventory}}
           <p class="rm-empty" {{#if canDropInventoryItems}}data-folder-drop-id=""{{/if}}>По текущему фильтру склад пуст.</p>
         {{else}}
@@ -325,6 +396,7 @@
               {{/if}}
             {{/each}}
           </div>
+        {{/if}}
         {{/if}}
       </section>
     {{/if}}
