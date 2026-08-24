@@ -6257,8 +6257,6 @@ test("RebreyaMainModule routes the exact legacy mutation allowlist through the w
     { type: "inventory-item-action-request", payload: { action: "take", itemId: "item-1" } },
     { type: "trader-audit", payload: { action: "purchase" } },
     { type: "lootgen-claim-row", payload: { lootId: "loot-1", rowId: "row-1" } },
-    { type: "lootgen-claim-row-to-inventory", payload: { lootId: "loot-1", rowId: "row-1" } },
-    { type: "lootgen-claim-all-to-inventory", payload: { lootId: "loot-1" } },
     { type: "lootgen-claim-coins", payload: { lootId: "loot-1" } }
   ];
 
@@ -6326,12 +6324,6 @@ test("RebreyaMainModule routes the exact legacy mutation allowlist through the w
     };
     moduleApi.claimLootgenChatRow = async () => {
       effects.push("lootgen-claim-row");
-    };
-    moduleApi.claimLootgenChatRowToInventory = async () => {
-      effects.push("lootgen-claim-row-to-inventory");
-    };
-    moduleApi.claimLootgenChatAllToInventory = async () => {
-      effects.push("lootgen-claim-all-to-inventory");
     };
     moduleApi.claimLootgenChatCoins = async () => {
       effects.push("lootgen-claim-coins");

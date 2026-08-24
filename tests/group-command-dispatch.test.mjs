@@ -1206,6 +1206,10 @@ test("typed party storage claims authorize membership in the exact target group"
   try {
     const moduleApi = new RebreyaMainModule();
     const calls = [];
+    const refreshes = [];
+    moduleApi.refreshInventoryViews = async ({ actorIds }) => {
+      refreshes.push([...actorIds]);
+    };
     moduleApi.storageCommandService.claimRow = async (payload, { sender }) => {
       calls.push({ payload: clone(payload), senderId: sender.id });
       return { changed: true };
@@ -1238,6 +1242,7 @@ test("typed party storage claims authorize membership in the exact target group"
     await flushCommands();
 
     assert.deepEqual(calls, [{ payload, senderId: fixture.users.playerA.id }]);
+    assert.deepEqual(refreshes, [[fixture.groupA.id]]);
     assert.equal(resultFor(fixture, authorized.requestId)?.ok, true);
     assert.equal(resultFor(fixture, unauthorized.requestId)?.error?.code, "unauthorized");
   }

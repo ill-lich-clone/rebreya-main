@@ -290,3 +290,38 @@ test("composition root exposes safe public city reads and GM-only presentation m
   assert.match(updateMethodSource, /City presentation updates require a GM/u);
   assert.match(updateMethodSource, /refreshCityViews\(\{ cityIds: \[cityId\] \}\)/u);
 });
+
+test("composition root owns one inventory ingress graph and one batch dispatch helper", async () => {
+  const source = await readFile(new URL("../scripts/main.js", import.meta.url), "utf8");
+
+  assert.equal(source.match(/new InventoryIngressRuleCompilerCache\(/gu)?.length, 1);
+  assert.equal(source.match(/new InventoryIngressPlanner\(/gu)?.length, 1);
+  for (const command of [
+    "INVENTORY_INGRESS_LOOTGEN_COMMAND"
+  ]) {
+    assert.equal(source.match(new RegExp(`register\\(${command},`, "gu"))?.length, 1, command);
+  }
+  for (const command of [
+    "INVENTORY_INGRESS_RULE_CREATE_COMMAND",
+    "INVENTORY_INGRESS_RULE_UPDATE_COMMAND",
+    "INVENTORY_INGRESS_RULE_DELETE_COMMAND"
+  ]) {
+    assert.equal(source.match(new RegExp(`registerInventoryOrganizationMutation\\(\\s*${command},`, "gu"))?.length, 1, command);
+  }
+  for (const method of [
+    "getInventoryIngressRuleState",
+    "createInventoryIngressRule",
+    "updateInventoryIngressRule",
+    "deleteInventoryIngressRule",
+    "claimLootgenChatAllToInventory",
+    "claimStorageAll",
+    "importInventoryDrop"
+  ]) {
+    assert.match(source, new RegExp(`(?:async\\s+)?${method}\\(`, "u"), method);
+  }
+  assert.match(source, /async #dispatchInventoryIngress\(/u);
+  assert.equal(source.match(/game\.rebreyaMain\s*=\s*moduleApi/gu)?.length, 1);
+  assert.equal(source.match(/module\.api\s*=\s*moduleApi/gu)?.length, 1);
+  assert.doesNotMatch(source, /InventoryIngressFilterApp|new\s+InventoryIngress.*Application/u);
+  assert.doesNotMatch(source, /Hooks\.on\(["']createItem["'][\s\S]{0,300}inventoryIngress/iu);
+});

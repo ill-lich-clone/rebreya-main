@@ -11,11 +11,11 @@
 - Foundry VTT: minimum/verified `13`.
 - Основная система: `dnd5e`.
 - Обязательная зависимость: `statuscounter >= 3.0.4`.
-- Manifest загружает только `scripts/main.js`.
-- `scripts/main.js` — единственный composition root. Недавние опубликованные `scripts/main-1.4.98.js`, `scripts/main-1.4.99.js` и `scripts/main-1.4.100.js` оставлены только как совместимые forwarder-файлы для уже открытых вкладок игроков и запущенных экземпляров Foundry.
+- Manifest версии `1.4.159` загружает только тонкий `scripts/main-1.4.159.js`, который импортирует `scripts/main.js` с release cache-bust.
+- `scripts/main.js` — единственный composition root. Недавние опубликованные `scripts/main-1.4.*.js` оставлены только как совместимые forwarder-файлы для уже открытых вкладок игроков и запущенных экземпляров Foundry.
 - Runtime API публикуется как `game.rebreyaMain` и `game.modules.get("rebreya-main")?.api`.
 
-Новые versioned entrypoint-файлы больше не создаются. Совместимые `scripts/main-1.4.*.js`, если они нужны для недавно опубликованных версий, должны быть тонкими файлами вида `import "./main.js";` без query-параметров, чтобы не создавать второй composition root.
+Versioned entrypoint обязан оставаться минимальным cache-forwarder к `main.js`: он не создаёт сервисы, hooks или второй composition root.
 
 ## Что принадлежит модулю
 
@@ -291,6 +291,7 @@ await api.setCombatStatus("actor-id", "frightened", { value: 2 });
 - `getInventorySnapshot`, `getInventoryIngressRuleState`, `getPartySnapshot`, `addPartyMember`, `removePartyMember`, `updatePartyDefaults`, `updatePartyMember`, `updatePartyMemberTool`.
 - `createInventoryFolder`, `renameInventoryFolder`, `moveInventoryFolder`, `deleteInventoryFolder`, `moveInventoryItemToFolder`, `createInventoryIngressRule`, `updateInventoryIngressRule`, `deleteInventoryIngressRule` — group-scoped organization; rule writes требуют stable `operationId` и текущий `expectedRevision`.
 - Кнопка фильтра в toolbar существующего `InventoryApp` переключает это же окно между предметами и редактором group-scoped правил. Создание, изменение и удаление доступны тем же участникам, что организация папок; черновик валидируется локально, а conflict/revision/folder ошибки подтверждает authoritative active GM без optimistic world-state записи из UI.
+- Ровно одно совпавшее ingress-правило применяет `folder`, `skip` или `dismantle` только к новым Item, реально поступающим в целевой Group Actor из Lootgen, Storage или внешнего drop/import. Уже существующие Item, монеты и созданные при dismantle материалы повторно не фильтруются; потенциально пересекающиеся правила нельзя сохранить.
 - `updateInventoryItemQuantity`, `deleteInventoryItem`, `takeInventoryItemToCharacter`, `sellInventoryItem`, `importInventoryDrop`, `addModelItemToInventory`, `breakInventoryItemToMaterial`.
 - `importInventoryDrop(dropData, { groupActorId, folderId })` для внешнего Item и `addModelItemToInventory(sourceType, sourceId, quantity, { groupActorId?, folderId?, batchMutationId? })` пропускают новые Item через правила целевой группы; active GM повторно валидирует serialized plan. Внутренний перенос уже существующего Item остаётся обычной сменой папки. Typed `inventory.import` использует exact payload `{ inventoryActorId, itemUuid, mutationId, folderId, ingressPlan }`; ItemData и material outputs в plan не передаются.
 - `addPartySupply`, `consumePartySuppliesOneDay`, `updatePartyCurrency`, `convertPartyCurrency`, `setPartyMemberEnergy`, `restorePartyMemberEnergy`, `getRebreyaToolCatalog`.

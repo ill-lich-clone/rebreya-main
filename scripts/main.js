@@ -1715,7 +1715,12 @@ export class RebreyaMainModule {
       authorize: (payload, { sender }) => Boolean(sender)
         && (payload.destination !== "party"
           || this.#canSenderManageGroup(sender, payload.target.groupActorId)),
-      execute: (payload, { sender }) => this.storageCommandService.claimRow(payload, { sender })
+      execute: (payload, { sender }) => payload.destination === "party"
+        ? this.runInventoryMutation(
+          () => this.storageCommandService.claimRow(payload, { sender }),
+          { actorIdsFromResult: () => [payload.target.groupActorId] }
+        )
+        : this.storageCommandService.claimRow(payload, { sender })
     });
     this.socketCommandBus.register(STORAGE_CLAIM_COINS_COMMAND, {
       validate: isValidStorageClaimCoinsPayload,
@@ -1727,7 +1732,12 @@ export class RebreyaMainModule {
       authorize: (payload, { sender }) => Boolean(sender)
         && (payload.destination !== "party"
           || this.#canSenderManageGroup(sender, payload.target.groupActorId)),
-      execute: (payload, { sender }) => this.storageCommandService.claimAll(payload, { sender })
+      execute: (payload, { sender }) => payload.destination === "party"
+        ? this.runInventoryMutation(
+          () => this.storageCommandService.claimAll(payload, { sender }),
+          { actorIdsFromResult: () => [payload.target.groupActorId] }
+        )
+        : this.storageCommandService.claimAll(payload, { sender })
     });
     this.socketCommandBus.register(STORAGE_DEPOSIT_COMMAND, {
       validate: isValidStorageDepositPayload,
@@ -2617,18 +2627,35 @@ export class RebreyaMainModule {
     });
   }
 
-  async #dispatchLootgenInventoryIngress(payload) {
-    let result;
-    if (isActiveGmClient(game)) {
-      result = await this.runInventoryMutation(
-        () => this.#executeLootgenInventoryIngress(payload),
-        { actorIdsFromResult: () => [payload.groupActorId] }
+  async #dispatchInventoryIngress({ command, payload, validate, execute }) {
+    if (typeof validate !== "function" || !validate(payload)) {
+      throw new TypeError("Inventory ingress command payload is invalid.");
+    }
+    const exactPayload = cloneSocketPayload(payload);
+    const groupActorId = cleanSocketId(
+      exactPayload.groupActorId ?? exactPayload.target?.groupActorId
+    );
+    if (!groupActorId) {
+      throw new TypeError("Inventory ingress command requires a group Actor target.");
+    }
+    if (isActiveGmClient(globalThis.game)) {
+      return this.runInventoryMutation(
+        () => execute(exactPayload),
+        { actorIdsFromResult: () => [groupActorId] }
       );
     }
-    else {
-      result = await this.socketCommandBus.request(INVENTORY_INGRESS_LOOTGEN_COMMAND, payload);
-      await this.refreshInventoryViews({ actorIds: [payload.groupActorId] });
-    }
+    const result = await this.socketCommandBus.request(command, exactPayload);
+    await this.refreshInventoryViews({ actorIds: [groupActorId] });
+    return result;
+  }
+
+  async #dispatchLootgenInventoryIngress(payload) {
+    const result = await this.#dispatchInventoryIngress({
+      command: INVENTORY_INGRESS_LOOTGEN_COMMAND,
+      payload,
+      validate: isValidLootgenInventoryIngressPayload,
+      execute: (exactPayload) => this.#executeLootgenInventoryIngress(exactPayload)
+    });
     for (const rowId of result?.claimedRowIds ?? []) {
       this.#notifyLootgenChatClaim(payload.lootId, rowId, "row");
     }
@@ -3664,6 +3691,16 @@ export class RebreyaMainModule {
       mutationId: cleanSocketId(mutationId),
       ...(path.length ? { path } : {})
     };
+    if (safeDestination === "party") {
+      return this.#dispatchInventoryIngress({
+        command: STORAGE_CLAIM_ROW_COMMAND,
+        payload,
+        validate: isValidStorageClaimRowPayload,
+        execute: (exactPayload) => this.storageCommandService.claimRow(exactPayload, {
+          sender: globalThis.game?.user
+        })
+      });
+    }
     return isActiveGmClient(globalThis.game)
       ? this.storageCommandService.claimRow(payload, { sender: globalThis.game?.user })
       : this.socketCommandBus.request(STORAGE_CLAIM_ROW_COMMAND, payload);
@@ -3733,6 +3770,16 @@ export class RebreyaMainModule {
       mutationId: cleanSocketId(mutationId),
       ...(path.length ? { path } : {})
     };
+    if (safeDestination === "party") {
+      return this.#dispatchInventoryIngress({
+        command: STORAGE_CLAIM_ALL_COMMAND,
+        payload,
+        validate: isValidStorageClaimAllPayload,
+        execute: (exactPayload) => this.storageCommandService.claimAll(exactPayload, {
+          sender: globalThis.game?.user
+        })
+      });
+    }
     return isActiveGmClient(globalThis.game)
       ? this.storageCommandService.claimAll(payload, { sender: globalThis.game?.user })
       : this.socketCommandBus.request(STORAGE_CLAIM_ALL_COMMAND, payload);
@@ -5293,13 +5340,13 @@ export class RebreyaMainModule {
     if (storageDrop) {
       const quantity = await promptStorageTransferQuantity(storageDrop.quantity);
       if (quantity === null) return { cancelled: true };
-      return this.runInventoryMutation(() => this.claimStorageRow(
+      return this.claimStorageRow(
         storageDrop.tokenUuid,
         storageDrop.rowId,
         "party",
         createSocketRequestId("storage-party-drop"),
         { quantity, target }
-      ));
+      );
     }
     return this.runInventoryMutation(
       () => this.inventoryService.importDroppedItem(dropData, target)
