@@ -299,3 +299,35 @@ test("preview rejects non-exact rows and duplicate source keys before reading ru
   );
   assert.equal(calls.readRules, 0);
 });
+
+test("preview awaits asynchronous descriptor and dismantle adapters", async () => {
+  const planner = new InventoryIngressPlanner({
+    readRules: async () => ({ version: 1, revision: 1, rules: [] }),
+    buildDescriptor: async (itemData) => itemData.descriptor,
+    resolveDismantleOutputs: async (_itemData, quantity) => [{
+      sourceType: "material",
+      sourceId: "iron",
+      name: "Iron",
+      quantity
+    }],
+    compilerCache: {
+      get: () => ({
+        evaluateMany: () => [{ ruleId: "dismantle", action: { type: "dismantle" } }]
+      })
+    },
+    confirm: async () => ({ rootOverrideSourceKeys: [] })
+  });
+
+  const preview = await planner.preview({
+    groupActorId: "group-a",
+    rows: [row("async-row", {
+      sourceType: "gear",
+      sourceId: "sword",
+      documentType: "weapon",
+      durabilityState: "intact"
+    })]
+  });
+
+  assert.equal(preview.rows[0].identity.sourceId, "sword");
+  assert.equal(preview.rows[0].dismantlePreview[0].sourceId, "iron");
+});

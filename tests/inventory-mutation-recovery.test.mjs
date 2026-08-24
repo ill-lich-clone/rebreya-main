@@ -4,8 +4,11 @@ import assert from "node:assert/strict";
 import { MODULE_ID, REBREYA_GROUP_FLAGS, SETTINGS_KEYS } from "../scripts/constants.js";
 import {
   buildInventoryIngressDescriptor,
-  captureInventoryIngressIdentity
+  captureInventoryIngressIdentity,
+  resolveInventoryDismantleOutputs
 } from "../scripts/data/inventory-ingress-descriptor.js";
+import { InventoryIngressPlanner } from "../scripts/application/inventory-ingress-planner.js";
+import { InventoryIngressRuleCompilerCache } from "../scripts/data/inventory-ingress-rules.js";
 
 const previousActor = globalThis.Actor;
 const previousItem = globalThis.Item;
@@ -125,9 +128,10 @@ test("production Lootgen, persisted Storage and external Item adapters preserve 
     }
   };
   const group = createActor({ id: "descriptor-group", type: "group", managed: true });
-  const fixture = installFixture({
+  const fixture = createInventoryIngressFixture({
     group,
     actors: [group],
+    model,
     packs: new Map([["world.rebreya-gear", gearPack]]),
     moduleApi: { getModel: async () => model }
   });
@@ -265,9 +269,10 @@ test("broken lootgen grants persist full durability exactly once and do not merg
     }
   };
   const group = createActor({ id: "loot-group", type: "group", managed: true });
-  const fixture = installFixture({
+  const fixture = createInventoryIngressFixture({
     group,
     actors: [group],
+    model,
     packs: new Map([["world.rebreya-gear", gearPack]]),
     moduleApi: { getModel: async () => model }
   });
@@ -1016,6 +1021,947 @@ function buildSourceDepletionPayload(sourceItem, targetItem, transferId) {
   };
 }
 
+function createInventoryIngressFixture({
+  group,
+  actors = [group],
+  model = { gear: [], gearById: new Map(), materials: [], materialById: new Map(), materialByGoodId: new Map() },
+  plannerCalls = null,
+  ...fixtureOptions
+} = {}) {
+  let service = null;
+  const compilerCache = new InventoryIngressRuleCompilerCache();
+  const planner = new InventoryIngressPlanner({
+    readRules: (groupActorId) => {
+      if (plannerCalls) plannerCalls.readRules += 1;
+      return service.getInventoryIngressRuleState({ groupActorId });
+    },
+    buildDescriptor: (itemData) => {
+      if (plannerCalls) plannerCalls.buildDescriptor += 1;
+      return buildInventoryIngressDescriptor(itemData, { model });
+    },
+    resolveDismantleOutputs: (itemData, quantity) => {
+      if (plannerCalls) plannerCalls.resolveDismantle += 1;
+      return resolveInventoryDismantleOutputs(itemData, quantity, { model });
+    },
+    compilerCache: {
+      get(groupActorId, state) {
+        if (plannerCalls) plannerCalls.compile += 1;
+        const compiled = compilerCache.get(groupActorId, state);
+        return {
+          candidateRuleIds: (descriptor) => compiled.candidateRuleIds(descriptor),
+          evaluateMany(descriptors) {
+            if (plannerCalls) plannerCalls.evaluateMany += 1;
+            return compiled.evaluateMany(descriptors);
+          }
+        };
+      }
+    },
+    confirm: async () => ({ rootOverrideSourceKeys: [] })
+  });
+  const fixture = installFixture({
+    group,
+    actors,
+    ...fixtureOptions,
+    moduleApi: {
+      getModel: async () => model,
+      ...fixtureOptions.moduleApi,
+      inventoryIngressPlanner: planner
+    }
+  });
+  service = fixture.service;
+  return { ...fixture, planner };
+}
+
+function inventoryIngressItemData(sourceId, { name = sourceId, type = "weapon", quantity = 1 } = {}) {
+  return {
+    name,
+    type,
+    system: {
+      quantity,
+      price: { value: 1, denomination: "gp" },
+      weight: { value: 1, units: "lb" }
+    },
+    flags: {
+      [MODULE_ID]: {
+        sourceType: "gear",
+        sourceId,
+        gearId: sourceId
+      }
+    }
+  };
+}
+
+async function serializeIngressPlan(planner, {
+  groupActorId,
+  requestedFolderId = null,
+  rows,
+  rootOverrideSourceKeys = []
+}) {
+  const preview = await planner.preview({
+    groupActorId,
+    requestedFolderId,
+    rows,
+    batch: rows.length > 1
+  });
+  return planner.serialize(preview, { rootOverrideSourceKeys });
+}
+
+test("filtered folder ingress merges only in its target folder", async () => {
+  const rootUpdates = [];
+  const targetUpdates = [];
+  const otherUpdates = [];
+  const itemData = inventoryIngressItemData("sword", { name: "Sword" });
+  const rootStack = createItem({ id: "root-sword", ...itemData, quantity: 1, onUpdate: (_item, patch) => rootUpdates.push(patch) });
+  const targetStack = createItem({ id: "target-sword", ...itemData, quantity: 2, onUpdate: (_item, patch) => targetUpdates.push(patch) });
+  const otherStack = createItem({ id: "other-sword", ...itemData, quantity: 4, onUpdate: (_item, patch) => otherUpdates.push(patch) });
+  const group = createActor({
+    id: "ingress-scoped-group",
+    type: "group",
+    managed: true,
+    items: [rootStack, otherStack, targetStack],
+    flags: {
+      [MODULE_ID]: {
+        inventoryFolders: {
+          version: 1,
+          folders: [
+            { id: "weapons", name: "Weapons", parentId: null },
+            { id: "other", name: "Other", parentId: null }
+          ],
+          itemFolderIds: { "target-sword": "weapons", "other-sword": "other" }
+        },
+        inventoryIngressRules: {
+          version: 1,
+          revision: 1,
+          rules: [{
+            id: "swords-to-weapons",
+            name: "Swords",
+            conditions: [{ field: "sourceId", operator: "is", value: "sword" }],
+            action: { type: "folder", folderId: "weapons" }
+          }]
+        }
+      }
+    }
+  });
+  const fixture = createInventoryIngressFixture({ group });
+  const rows = [{ sourceKey: "row-1", quantity: 1, itemData, legacyFolderId: null, container: null }];
+  let debitCalls = 0;
+
+  try {
+    const serializedPlan = await serializeIngressPlan(fixture.planner, {
+      groupActorId: group.id,
+      requestedFolderId: null,
+      rows
+    });
+    const result = await fixture.service.commitInventoryIngressBatch({
+      groupActorId: group.id,
+      batchMutationId: "scoped-folder-batch",
+      sourceOrigin: "import",
+      serializedPlan
+    }, {
+      resolveRows: async () => clone(rows),
+      debitRow: async () => { debitCalls += 1; }
+    });
+
+    assert.equal(result.changed, true);
+    assert.equal(rootStack.system.quantity, 1);
+    assert.equal(otherStack.system.quantity, 4);
+    assert.equal(targetStack.system.quantity, 3);
+    assert.equal(rootUpdates.length, 0);
+    assert.equal(otherUpdates.length, 0);
+    assert.equal(targetUpdates.length, 1);
+    assert.equal(debitCalls, 1);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("filtered folder ingress creates and assigns a new stack when its target has no candidate", async () => {
+  const itemData = inventoryIngressItemData("axe", { name: "Axe" });
+  const rootStack = createItem({ id: "root-axe", ...itemData, quantity: 2 });
+  const group = createActor({
+    id: "ingress-create-group",
+    type: "group",
+    managed: true,
+    items: [rootStack],
+    flags: {
+      [MODULE_ID]: {
+        inventoryFolders: {
+          version: 1,
+          folders: [{ id: "weapons", name: "Weapons", parentId: null }],
+          itemFolderIds: {}
+        },
+        inventoryIngressRules: {
+          version: 1,
+          revision: 1,
+          rules: [{
+            id: "axes-to-weapons",
+            name: "Axes",
+            conditions: [{ field: "sourceId", operator: "is", value: "axe" }],
+            action: { type: "folder", folderId: "weapons" }
+          }]
+        }
+      }
+    }
+  });
+  const fixture = createInventoryIngressFixture({ group });
+  const rows = [{ sourceKey: "row-axe", quantity: 1, itemData, legacyFolderId: null, container: null }];
+
+  try {
+    const serializedPlan = await serializeIngressPlan(fixture.planner, { groupActorId: group.id, rows });
+    await fixture.service.commitInventoryIngressBatch({
+      groupActorId: group.id,
+      batchMutationId: "scoped-create-batch",
+      sourceOrigin: "import",
+      serializedPlan
+    }, {
+      resolveRows: async () => clone(rows),
+      debitRow: async () => {}
+    });
+
+    assert.equal(rootStack.system.quantity, 2);
+    assert.equal(group.items.contents.length, 2);
+    const created = group.items.contents.find((item) => item !== rootStack);
+    assert.equal(created.system.quantity, 1);
+    assert.equal(group.getFlag(MODULE_ID, "inventoryFolders").itemFolderIds[created.id], "weapons");
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("skip root override scopes merge to root and does not re-evaluate the created original", async () => {
+  const itemData = inventoryIngressItemData("rope", { name: "Rope", type: "loot" });
+  const rootStack = createItem({ id: "root-rope", ...itemData, quantity: 1 });
+  const folderStack = createItem({ id: "folder-rope", ...itemData, quantity: 8 });
+  const group = createActor({
+    id: "ingress-root-group",
+    type: "group",
+    managed: true,
+    items: [folderStack, rootStack],
+    flags: {
+      [MODULE_ID]: {
+        inventoryFolders: {
+          version: 1,
+          folders: [{ id: "supplies", name: "Supplies", parentId: null }],
+          itemFolderIds: { "folder-rope": "supplies" }
+        },
+        inventoryIngressRules: {
+          version: 1,
+          revision: 1,
+          rules: [{
+            id: "skip-rope",
+            name: "Skip rope",
+            conditions: [{ field: "sourceId", operator: "is", value: "rope" }],
+            action: { type: "skip" }
+          }]
+        }
+      }
+    }
+  });
+  const fixture = createInventoryIngressFixture({ group });
+  const rows = [{ sourceKey: "row-rope", quantity: 1, itemData, legacyFolderId: "supplies", container: null }];
+
+  try {
+    const serializedPlan = await serializeIngressPlan(fixture.planner, {
+      groupActorId: group.id,
+      rows,
+      rootOverrideSourceKeys: ["row-rope"]
+    });
+    await fixture.service.commitInventoryIngressBatch({
+      groupActorId: group.id,
+      batchMutationId: "root-override-batch",
+      sourceOrigin: "import",
+      serializedPlan
+    }, {
+      resolveRows: async () => clone(rows),
+      debitRow: async () => {}
+    });
+
+    assert.equal(rootStack.system.quantity, 2);
+    assert.equal(folderStack.system.quantity, 8);
+    assert.equal(group.items.contents.length, 2);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("unmatched ingress preserves legacy cross-folder merge behavior", async () => {
+  const itemData = inventoryIngressItemData("torch", { name: "Torch", type: "loot" });
+  const otherStack = createItem({ id: "other-torch", ...itemData, quantity: 3 });
+  const group = createActor({
+    id: "ingress-legacy-group",
+    type: "group",
+    managed: true,
+    items: [otherStack],
+    flags: {
+      [MODULE_ID]: {
+        inventoryFolders: {
+          version: 1,
+          folders: [
+            { id: "requested", name: "Requested", parentId: null },
+            { id: "other", name: "Other", parentId: null }
+          ],
+          itemFolderIds: { "other-torch": "other" }
+        }
+      }
+    }
+  });
+  const fixture = createInventoryIngressFixture({ group });
+  const rows = [{ sourceKey: "row-torch", quantity: 1, itemData, legacyFolderId: "requested", container: null }];
+
+  try {
+    const serializedPlan = await serializeIngressPlan(fixture.planner, {
+      groupActorId: group.id,
+      requestedFolderId: "requested",
+      rows
+    });
+    await fixture.service.commitInventoryIngressBatch({
+      groupActorId: group.id,
+      batchMutationId: "legacy-merge-batch",
+      sourceOrigin: "import",
+      serializedPlan
+    }, {
+      resolveRows: async () => clone(rows),
+      debitRow: async () => {}
+    });
+
+    assert.equal(group.items.contents.length, 1);
+    assert.equal(otherStack.system.quantity, 4);
+    assert.equal(group.getFlag(MODULE_ID, "inventoryFolders").itemFolderIds[otherStack.id], "other");
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("filtered skip performs no target mutation, folder write or source debit", async () => {
+  const itemData = inventoryIngressItemData("journal", { name: "Journal", type: "loot" });
+  const group = createActor({
+    id: "ingress-skip-group",
+    type: "group",
+    managed: true,
+    flags: {
+      [MODULE_ID]: {
+        inventoryIngressRules: {
+          version: 1,
+          revision: 1,
+          rules: [{
+            id: "skip-journals",
+            name: "Skip journals",
+            conditions: [{ field: "sourceId", operator: "is", value: "journal" }],
+            action: { type: "skip" }
+          }]
+        }
+      }
+    }
+  });
+  const fixture = createInventoryIngressFixture({ group });
+  const rows = [{ sourceKey: "journal-row", quantity: 1, itemData, legacyFolderId: null, container: null }];
+  let debitCalls = 0;
+
+  try {
+    const serializedPlan = await serializeIngressPlan(fixture.planner, { groupActorId: group.id, rows });
+    const result = await fixture.service.commitInventoryIngressBatch({
+      groupActorId: group.id,
+      batchMutationId: "skip-batch",
+      sourceOrigin: "storage",
+      serializedPlan
+    }, {
+      resolveRows: async () => clone(rows),
+      debitRow: async () => { debitCalls += 1; }
+    });
+
+    assert.equal(result.changed, false);
+    assert.equal(result.rows[0].changed, false);
+    assert.equal(group.createEmbeddedDocumentsCalls, 0);
+    assert.equal(group.setFlagCalls.length, 0);
+    assert.equal(group.items.contents.length, 0);
+    assert.equal(debitCalls, 0);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("public Lootgen and model grants enter the canonical group ingress planner", async () => {
+  const lootData = inventoryIngressItemData("public-loot", { name: "Public loot", type: "loot" });
+  const modelData = inventoryIngressItemData("public-model", { name: "Public model", type: "loot" });
+  const group = createActor({
+    id: "public-ingress-group",
+    type: "group",
+    managed: true,
+    flags: {
+      [MODULE_ID]: {
+        inventoryIngressRules: {
+          version: 1,
+          revision: 1,
+          rules: [{
+            id: "skip-public-loot",
+            name: "Skip public loot",
+            conditions: [{ field: "sourceId", operator: "is", value: "public-loot" }],
+            action: { type: "skip" }
+          }, {
+            id: "skip-public-model",
+            name: "Skip public model",
+            conditions: [{ field: "sourceId", operator: "is", value: "public-model" }],
+            action: { type: "skip" }
+          }]
+        }
+      }
+    }
+  });
+  const fixture = createInventoryIngressFixture({ group });
+  fixture.service.buildLootgenItemData = async () => clone(lootData);
+  fixture.service.buildModelItemData = async () => clone(modelData);
+
+  try {
+    const lootResult = await fixture.service.addLootgenRowToInventory({
+      sourceType: "gear",
+      sourceId: "public-loot",
+      quantity: 1,
+      directGrantId: "public-loot-batch"
+    });
+    const modelResult = await fixture.service.addModelItemToInventory(
+      "gear",
+      "public-model",
+      1,
+      { groupActorId: group.id, folderId: null, batchMutationId: "public-model-batch" }
+    );
+
+    assert.equal(lootResult.changed, false);
+    assert.equal(modelResult.changed, false);
+    assert.equal(group.createEmbeddedDocumentsCalls, 0);
+    assert.equal(group.items.contents.length, 0);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("external Item import uses its matched folder while same-group moves bypass filters", async () => {
+  const itemData = inventoryIngressItemData("import-axe", { name: "Import axe" });
+  const externalItem = createItem({ id: "external-axe", ...itemData, quantity: 1 });
+  const hero = createActor({ id: "import-hero", items: [externalItem] });
+  const existingItem = createItem({ id: "existing-axe", ...itemData, quantity: 1 });
+  const group = createActor({
+    id: "filtered-import-group",
+    type: "group",
+    managed: true,
+    items: [existingItem],
+    members: [{ actor: hero }],
+    flags: {
+      [MODULE_ID]: {
+        inventoryFolders: {
+          version: 1,
+          folders: [
+            { id: "weapons", name: "Weapons", parentId: null },
+            { id: "manual", name: "Manual", parentId: null }
+          ],
+          itemFolderIds: {}
+        },
+        inventoryIngressRules: {
+          version: 1,
+          revision: 1,
+          rules: [{
+            id: "axes-to-weapons",
+            name: "Axes to weapons",
+            conditions: [{ field: "sourceId", operator: "is", value: "import-axe" }],
+            action: { type: "folder", folderId: "weapons" }
+          }]
+        }
+      }
+    }
+  });
+  const uuidDocuments = new Map([
+    [externalItem.uuid, externalItem],
+    [existingItem.uuid, existingItem]
+  ]);
+  const fixture = createInventoryIngressFixture({ group, actors: [group, hero], uuidDocuments });
+
+  try {
+    const result = await fixture.service.importDroppedItem({
+      uuid: externalItem.uuid,
+      mutationId: "filtered-import"
+    }, {
+      groupActorId: group.id,
+      folderId: "manual"
+    });
+    assert.equal(result.changed, true);
+    assert.equal(hero.items.contents.length, 0);
+    assert.equal(group.items.contents.length, 2);
+    const imported = group.items.contents.find((item) => item.id !== existingItem.id);
+    assert.equal(group.getFlag(MODULE_ID, "inventoryFolders").itemFolderIds[imported.id], "weapons");
+
+    const moved = await fixture.service.importDroppedItem({
+      uuid: existingItem.uuid,
+      mutationId: "same-group-move"
+    }, {
+      groupActorId: group.id,
+      folderId: "manual"
+    });
+    assert.equal(moved.itemId, existingItem.id);
+    assert.equal(group.items.contents.length, 2);
+    assert.equal(group.getFlag(MODULE_ID, "inventoryFolders").itemFolderIds[existingItem.id], "manual");
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("filtered dismantle creates only canonical root material output", async () => {
+  const iron = { id: "iron", name: "Iron", type: "Metal", priceGold: 1, weight: 1 };
+  const model = {
+    gear: [],
+    gearById: new Map(),
+    materials: [iron],
+    materialById: new Map([[iron.id, iron]]),
+    materialByGoodId: new Map()
+  };
+  const itemData = {
+    ...inventoryIngressItemData("iron-sword", { name: "Iron sword", quantity: 2 }),
+    system: {
+      quantity: 2,
+      price: { value: 10, denomination: "gp" },
+      weight: { value: 4, units: "lb" }
+    },
+    flags: {
+      [MODULE_ID]: {
+        sourceType: "gear",
+        sourceId: "iron-sword",
+        gearId: "iron-sword",
+        predominantMaterialId: iron.id
+      }
+    }
+  };
+  const materialData = {
+    name: iron.name,
+    type: "loot",
+    quantity: 1,
+    flags: {
+      [MODULE_ID]: {
+        sourceType: "material",
+        sourceId: iron.id,
+        materialId: iron.id
+      }
+    }
+  };
+  const rootMaterial = createItem({ id: "root-iron", ...materialData });
+  const folderMaterial = createItem({ id: "folder-iron", ...materialData, quantity: 7 });
+  const group = createActor({
+    id: "ingress-dismantle-group",
+    type: "group",
+    managed: true,
+    items: [folderMaterial, rootMaterial],
+    flags: {
+      [MODULE_ID]: {
+        inventoryFolders: {
+          version: 1,
+          folders: [{ id: "materials", name: "Materials", parentId: null }],
+          itemFolderIds: { "folder-iron": "materials" }
+        },
+        inventoryIngressRules: {
+          version: 1,
+          revision: 1,
+          rules: [{
+            id: "dismantle-iron",
+            name: "Dismantle iron",
+            conditions: [{ field: "sourceId", operator: "is", value: "iron-sword" }],
+            action: { type: "dismantle" }
+          }]
+        }
+      }
+    }
+  });
+  const fixture = createInventoryIngressFixture({ group, model });
+  const rows = [{ sourceKey: "iron-sword-row", quantity: 2, itemData, legacyFolderId: "materials", container: null }];
+  let debitCalls = 0;
+
+  try {
+    const serializedPlan = await serializeIngressPlan(fixture.planner, { groupActorId: group.id, rows });
+    const result = await fixture.service.commitInventoryIngressBatch({
+      groupActorId: group.id,
+      batchMutationId: "dismantle-batch",
+      sourceOrigin: "lootgen",
+      serializedPlan
+    }, {
+      resolveRows: async () => clone(rows),
+      debitRow: async () => { debitCalls += 1; }
+    });
+
+    assert.equal(result.rows[0].action.type, "dismantle");
+    assert.equal(result.rows[0].derivedFolderId, null);
+    assert.equal(rootMaterial.system.quantity, 5);
+    assert.equal(folderMaterial.system.quantity, 7);
+    assert.equal(group.items.contents.length, 2);
+    assert.equal(group.items.contents.some((item) => item.name === itemData.name), false);
+    assert.equal(debitCalls, 1);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("ingress target create and merge recover lost acknowledgements without duplicate value", async () => {
+  const createData = inventoryIngressItemData("new-pack", { name: "New pack", type: "loot" });
+  const mergeData = inventoryIngressItemData("existing-pack", { name: "Existing pack", type: "loot" });
+  const mergeTarget = createItem({
+    id: "existing-pack",
+    ...mergeData,
+    quantity: 2,
+    throwAfterUpdateOnce: true
+  });
+  const group = createActor({
+    id: "ingress-ack-group",
+    type: "group",
+    managed: true,
+    items: [mergeTarget],
+    throwAfterCreateOnce: true
+  });
+  const fixture = createInventoryIngressFixture({ group });
+
+  try {
+    for (const [sourceKey, itemData, batchMutationId] of [
+      ["create-row", createData, "create-ack-batch"],
+      ["merge-row", mergeData, "merge-ack-batch"]
+    ]) {
+      const rows = [{ sourceKey, quantity: 1, itemData, legacyFolderId: null, container: null }];
+      const serializedPlan = await serializeIngressPlan(fixture.planner, { groupActorId: group.id, rows });
+      await fixture.service.commitInventoryIngressBatch({
+        groupActorId: group.id,
+        batchMutationId,
+        sourceOrigin: "public-model",
+        serializedPlan
+      }, {
+        resolveRows: async () => clone(rows),
+        debitRow: async () => {}
+      });
+    }
+
+    assert.equal(group.items.contents.filter((item) => item.name === createData.name).length, 1);
+    assert.equal(group.items.contents.find((item) => item.name === createData.name).system.quantity, 1);
+    assert.equal(mergeTarget.system.quantity, 3);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("ingress retry after source debit failure reuses target receipt and terminal retry is inert", async () => {
+  const itemData = inventoryIngressItemData("retry-item", { name: "Retry item", type: "loot" });
+  const group = createActor({ id: "ingress-retry-group", type: "group", managed: true });
+  const fixture = createInventoryIngressFixture({ group });
+  const rows = [{ sourceKey: "retry-row", quantity: 2, itemData, legacyFolderId: null, container: null }];
+  let resolveCalls = 0;
+  let debitCalls = 0;
+  let sourceQuantity = 2;
+  const callbacks = {
+    resolveRows: async () => {
+      resolveCalls += 1;
+      return clone(rows);
+    },
+    debitRow: async () => {
+      debitCalls += 1;
+      if (debitCalls === 1) throw new Error("source debit failed");
+      sourceQuantity = 0;
+    }
+  };
+
+  try {
+    const serializedPlan = await serializeIngressPlan(fixture.planner, { groupActorId: group.id, rows });
+    const request = {
+      groupActorId: group.id,
+      batchMutationId: "source-retry-batch",
+      sourceOrigin: "storage",
+      serializedPlan
+    };
+    await assert.rejects(fixture.service.commitInventoryIngressBatch(request, callbacks), /source debit failed/u);
+    assert.equal(group.items.contents.length, 1);
+    assert.equal(group.items.contents[0].system.quantity, 2);
+    assert.equal(sourceQuantity, 2);
+
+    const result = await fixture.service.commitInventoryIngressBatch(request, callbacks);
+    const terminalResult = await fixture.service.commitInventoryIngressBatch(request, callbacks);
+
+    assert.deepEqual(terminalResult, result);
+    assert.equal(group.items.contents.length, 1);
+    assert.equal(group.items.contents[0].system.quantity, 2);
+    assert.equal(sourceQuantity, 0);
+    assert.equal(resolveCalls, 2);
+    assert.equal(debitCalls, 2);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("ingress rejects stale source identity and reused batch IDs before target writes", async () => {
+  const originalData = inventoryIngressItemData("original", { name: "Original", type: "loot" });
+  const changedData = inventoryIngressItemData("changed", { name: "Changed", type: "loot" });
+  const group = createActor({ id: "ingress-stale-group", type: "group", managed: true });
+  const fixture = createInventoryIngressFixture({ group });
+  const originalRows = [{ sourceKey: "stale-row", quantity: 1, itemData: originalData, legacyFolderId: null, container: null }];
+
+  try {
+    const serializedPlan = await serializeIngressPlan(fixture.planner, { groupActorId: group.id, rows: originalRows });
+    const baseRequest = {
+      groupActorId: group.id,
+      batchMutationId: "stale-batch",
+      sourceOrigin: "import",
+      serializedPlan
+    };
+    await assert.rejects(
+      fixture.service.commitInventoryIngressBatch(baseRequest, {
+        resolveRows: async () => [{ ...originalRows[0], itemData: changedData }],
+        debitRow: async () => {}
+      }),
+      (error) => error?.code === "plan-stale"
+    );
+    assert.equal(group.createEmbeddedDocumentsCalls, 0);
+
+    await fixture.service.commitInventoryIngressBatch(baseRequest, {
+      resolveRows: async () => clone(originalRows),
+      debitRow: async () => {}
+    });
+    await assert.rejects(
+      fixture.service.commitInventoryIngressBatch({
+        ...baseRequest,
+        serializedPlan: { ...serializedPlan, requestedFolderId: "different" }
+      }, {
+        resolveRows: async () => clone(originalRows),
+        debitRow: async () => {}
+      }),
+      (error) => error?.code === "mutation-conflict"
+    );
+    assert.equal(group.items.contents.length, 1);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("ingress rejects stale rule revisions and removed target folders before value writes", async () => {
+  const itemData = inventoryIngressItemData("foldered", { name: "Foldered", type: "loot" });
+  const group = createActor({
+    id: "ingress-authority-group",
+    type: "group",
+    managed: true,
+    flags: {
+      [MODULE_ID]: {
+        inventoryFolders: {
+          version: 1,
+          folders: [{ id: "target", name: "Target", parentId: null }],
+          itemFolderIds: {}
+        },
+        inventoryIngressRules: {
+          version: 1,
+          revision: 1,
+          rules: [{
+            id: "folder-rule",
+            name: "Folder rule",
+            conditions: [{ field: "sourceId", operator: "is", value: "foldered" }],
+            action: { type: "folder", folderId: "target" }
+          }]
+        }
+      }
+    }
+  });
+  const fixture = createInventoryIngressFixture({ group });
+  const rows = [{ sourceKey: "folder-row", quantity: 1, itemData, legacyFolderId: null, container: null }];
+
+  try {
+    const revisionPlan = await serializeIngressPlan(fixture.planner, { groupActorId: group.id, rows });
+    group.flags[MODULE_ID].inventoryIngressRules.revision = 2;
+    await assert.rejects(
+      fixture.service.commitInventoryIngressBatch({
+        groupActorId: group.id,
+        batchMutationId: "stale-revision-batch",
+        sourceOrigin: "import",
+        serializedPlan: revisionPlan
+      }, {
+        resolveRows: async () => clone(rows),
+        debitRow: async () => {}
+      }),
+      (error) => error?.code === "plan-stale"
+    );
+    assert.equal(group.items.contents.length, 0);
+
+    group.flags[MODULE_ID].inventoryIngressRules.revision = 1;
+    const folderPlan = await serializeIngressPlan(fixture.planner, { groupActorId: group.id, rows });
+    group.flags[MODULE_ID].inventoryFolders.folders = [];
+    await assert.rejects(
+      fixture.service.commitInventoryIngressBatch({
+        groupActorId: group.id,
+        batchMutationId: "removed-folder-batch",
+        sourceOrigin: "import",
+        serializedPlan: folderPlan
+      }, {
+        resolveRows: async () => clone(rows),
+        debitRow: async () => {}
+      }),
+      (error) => error?.code === "folder-not-found"
+    );
+    assert.equal(group.items.contents.length, 0);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("nonterminal dismantle retry blocks when authoritative material output changes", async () => {
+  const iron = { id: "mutable-iron", name: "Iron", type: "Metal", priceGold: 1, weight: 1 };
+  const model = {
+    gear: [],
+    gearById: new Map(),
+    materials: [iron],
+    materialById: new Map([[iron.id, iron]]),
+    materialByGoodId: new Map()
+  };
+  const itemData = {
+    ...inventoryIngressItemData("mutable-sword", { name: "Mutable sword" }),
+    system: {
+      quantity: 1,
+      price: { value: 10, denomination: "gp" },
+      weight: { value: 2, units: "lb" }
+    },
+    flags: {
+      [MODULE_ID]: {
+        sourceType: "gear",
+        sourceId: "mutable-sword",
+        gearId: "mutable-sword",
+        predominantMaterialId: iron.id
+      }
+    }
+  };
+  const group = createActor({
+    id: "ingress-material-drift-group",
+    type: "group",
+    managed: true,
+    flags: {
+      [MODULE_ID]: {
+        inventoryIngressRules: {
+          version: 1,
+          revision: 1,
+          rules: [{
+            id: "dismantle-mutable",
+            name: "Dismantle mutable",
+            conditions: [{ field: "sourceId", operator: "is", value: "mutable-sword" }],
+            action: { type: "dismantle" }
+          }]
+        }
+      }
+    }
+  });
+  const fixture = createInventoryIngressFixture({ group, model });
+  const rows = [{ sourceKey: "mutable-row", quantity: 1, itemData, legacyFolderId: null, container: null }];
+
+  try {
+    const serializedPlan = await serializeIngressPlan(fixture.planner, { groupActorId: group.id, rows });
+    const request = {
+      groupActorId: group.id,
+      batchMutationId: "material-drift-batch",
+      sourceOrigin: "storage",
+      serializedPlan
+    };
+    await assert.rejects(
+      fixture.service.commitInventoryIngressBatch(request, {
+        resolveRows: async () => clone(rows),
+        debitRow: async () => { throw new Error("pause before debit"); }
+      }),
+      /pause before debit/u
+    );
+    assert.equal(group.items.contents.length, 1);
+    assert.equal(group.items.contents[0].system.quantity, 1);
+
+    iron.name = "Changed iron";
+    await assert.rejects(
+      fixture.service.commitInventoryIngressBatch(request, {
+        resolveRows: async () => clone(rows),
+        debitRow: async () => {}
+      }),
+      (error) => error?.code === "reconciliation-required"
+    );
+    assert.equal(group.items.contents.length, 1);
+    assert.equal(group.items.contents[0].system.quantity, 1);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("one filtered batch writes folder membership once for many created rows", async () => {
+  const rows = Array.from({ length: 100 }, (_, index) => ({
+    sourceKey: `row-${index}`,
+    quantity: 1,
+    itemData: inventoryIngressItemData(`item-${index}`, { name: `Item ${index}`, type: "loot" }),
+    legacyFolderId: null,
+    container: null
+  }));
+  const group = createActor({
+    id: "ingress-performance-group",
+    type: "group",
+    managed: true,
+    flags: {
+      [MODULE_ID]: {
+        inventoryFolders: {
+          version: 1,
+          folders: [{ id: "bulk", name: "Bulk", parentId: null }],
+          itemFolderIds: {}
+        },
+        inventoryIngressRules: {
+          version: 1,
+          revision: 1,
+          rules: [{
+            id: "all-loot",
+            name: "All loot",
+            conditions: [{ field: "documentType", operator: "is", value: "loot" }],
+            action: { type: "folder", folderId: "bulk" }
+          }]
+        }
+      }
+    }
+  });
+  const plannerCalls = {
+    readRules: 0,
+    buildDescriptor: 0,
+    resolveDismantle: 0,
+    compile: 0,
+    evaluateMany: 0
+  };
+  const fixture = createInventoryIngressFixture({ group, plannerCalls });
+  let debitCalls = 0;
+
+  try {
+    const serializedPlan = await serializeIngressPlan(fixture.planner, { groupActorId: group.id, rows });
+    for (const key of Object.keys(plannerCalls)) plannerCalls[key] = 0;
+    await fixture.service.commitInventoryIngressBatch({
+      groupActorId: group.id,
+      batchMutationId: "hundred-row-batch",
+      sourceOrigin: "lootgen",
+      serializedPlan
+    }, {
+      resolveRows: async () => clone(rows),
+      debitRow: async () => { debitCalls += 1; }
+    });
+
+    assert.equal(group.items.contents.length, 100);
+    assert.equal(group.setFlagCalls.filter((call) => call.key === "==inventoryFolders").length, 1);
+    assert.equal(debitCalls, 100);
+    assert.equal(Object.keys(group.getFlag(MODULE_ID, "inventoryFolders").itemFolderIds).length, 100);
+    assert.deepEqual(plannerCalls, {
+      readRules: 1,
+      buildDescriptor: 100,
+      resolveDismantle: 0,
+      compile: 1,
+      evaluateMany: 1
+    });
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
 test("distributed source depletion requires a captured identity and quantity", async () => {
   const gm = { id: "gm", isGM: true, active: true };
   const player = { id: "player", isGM: false, active: true };
@@ -1627,7 +2573,7 @@ test("sale reverses credited currency when source depletion fails", async () => 
   }
 });
 
-test("import compensates the target item when deleting the source fails", async () => {
+test("import source debit failure remains recoverable without duplicating target value", async () => {
   const source = createItem({ id: "import-source", name: "Lantern", quantity: 1, failDelete: true });
   const hero = createActor({ id: "hero", items: [source] });
   const group = createActor({
@@ -1637,15 +2583,22 @@ test("import compensates the target item when deleting the source fails", async 
     members: [{ actor: hero }]
   });
   const uuidDocuments = new Map([[source.uuid, source]]);
-  const fixture = installFixture({ group, actors: [group, hero], uuidDocuments });
+  const fixture = createInventoryIngressFixture({ group, actors: [group, hero], uuidDocuments });
 
   try {
     await assert.rejects(
       fixture.service.importDroppedItem({ uuid: source.uuid, mutationId: "import-failure" }),
       /source delete failed/u
     );
-    assert.equal(group.items.contents.length, 0);
+    assert.equal(group.items.contents.length, 1);
+    assert.equal(group.items.contents[0].system.quantity, 1);
     assert.equal(hero.items.contents.includes(source), true);
+    await assert.rejects(
+      fixture.service.importDroppedItem({ uuid: source.uuid, mutationId: "import-failure" }),
+      /source delete failed/u
+    );
+    assert.equal(group.items.contents.length, 1);
+    assert.equal(group.items.contents[0].system.quantity, 1);
   }
   finally {
     fixture.restore();
@@ -1685,7 +2638,7 @@ test("import merge preserves the existing stack folder instead of applying the r
       }
     }
   });
-  const fixture = installFixture({
+  const fixture = createInventoryIngressFixture({
     group,
     actors: [group, hero],
     uuidDocuments: new Map([[source.uuid, source]])
@@ -1697,7 +2650,7 @@ test("import merge preserves the existing stack folder instead of applying the r
       { groupActorId: "group", folderId: "folder-new" }
     );
 
-    assert.equal(result.id, "group");
+    assert.equal(result.actorId, "group");
     assert.equal(existing.system.quantity, 3);
     assert.equal(group.createEmbeddedDocumentsCalls, 0);
     assert.equal(group.getFlag(MODULE_ID, "inventoryFolders").itemFolderIds.existing, "folder-old");
@@ -1730,7 +2683,7 @@ test("import retries folder assignment after create without duplicating the Item
       }
     }
   });
-  const fixture = installFixture({
+  const fixture = createInventoryIngressFixture({
     group,
     actors: [group, hero],
     uuidDocuments: new Map([[source.uuid, source]])
@@ -1755,7 +2708,7 @@ test("import retries folder assignment after create without duplicating the Item
         groupActorId: "group",
         folderId: "folder-other"
       }),
-      /different folder target/iu
+      (error) => error?.code === "mutation-conflict"
     );
     await fixture.service.importDroppedItem(dropData, {
       groupActorId: "group",
@@ -1917,7 +2870,7 @@ test("repeating successful inventory mutation ids never applies an economic delt
     members: [{ actor: hero }]
   });
   const uuidDocuments = new Map([[importSource.uuid, importSource]]);
-  const fixture = installFixture({ group, actors: [group, hero], uuidDocuments });
+  const fixture = createInventoryIngressFixture({ group, actors: [group, hero], uuidDocuments });
 
   try {
     await fixture.service.takeInventoryItemToCharacter(takeSource.id, {

@@ -72,7 +72,15 @@ import {
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_REQUEST,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_RESULT
 } from "./data/inventory-service.js?v=1.4.156-inventory-folder-exports";
-import { normalizeInventoryIngressRule } from "./data/inventory-ingress-rules.js";
+import {
+  InventoryIngressRuleCompilerCache,
+  normalizeInventoryIngressRule
+} from "./data/inventory-ingress-rules.js";
+import {
+  buildInventoryIngressDescriptor,
+  resolveInventoryDismantleOutputs
+} from "./data/inventory-ingress-descriptor.js";
+import { InventoryIngressPlanner } from "./application/inventory-ingress-planner.js";
 import { DurabilityService } from "./data/durability-service.js?v=1.4.154-corpse-storage-broken-name";
 import { MapObjectTokenService } from "./data/map-object-token-service.js?v=1.4.97-map-object-token";
 import { HeroDollService } from "./data/hero-doll-service.js";
@@ -727,11 +735,74 @@ function isValidInventorySalePayload(payload) {
 }
 
 function isValidInventoryImportPayload(payload) {
-  return hasExactKeys(payload, ["folderId", "inventoryActorId", "itemUuid", "mutationId"])
+  return hasExactKeys(payload, ["folderId", "ingressPlan", "inventoryActorId", "itemUuid", "mutationId"])
     && [payload.inventoryActorId, payload.itemUuid].every(isTrimmedNonEmptyString)
     && isValidInventoryMutationId(payload.mutationId)
     && (payload.folderId === null
-      || (isTrimmedNonEmptyString(payload.folderId) && payload.folderId.length <= 160));
+      || (isTrimmedNonEmptyString(payload.folderId) && payload.folderId.length <= 160))
+    && isValidInventoryIngressPlan(payload.ingressPlan)
+    && payload.ingressPlan.groupActorId === payload.inventoryActorId
+    && payload.ingressPlan.requestedFolderId === payload.folderId;
+}
+
+function isValidInventoryIngressPlanAction(action) {
+  if (hasExactKeys(action, ["type"])) {
+    return action.type === "skip" || action.type === "dismantle";
+  }
+  return hasExactKeys(action, ["folderId", "type"])
+    && (action.type === "folder" || action.type === "legacy")
+    && isValidNullableInventoryFolderIdentifier(action.folderId);
+}
+
+function isValidInventoryIngressPlanIdentity(identity, quantity) {
+  return hasExactKeys(identity, [
+    "documentType", "durabilityState", "quantity", "sourceId", "sourceType"
+  ])
+    && [identity.documentType, identity.durabilityState, identity.sourceId, identity.sourceType]
+      .every((value) => typeof value === "string" && value === value.trim())
+    && Number.isFinite(identity.quantity)
+    && identity.quantity > 0
+    && identity.quantity === quantity;
+}
+
+function isValidInventoryIngressPlan(plan) {
+  if (!hasExactKeys(plan, [
+    "groupActorId", "requestedFolderId", "rootOverrideSourceKeys", "rows", "rulesRevision", "version"
+  ])
+    || plan.version !== 1
+    || !isValidInventoryFolderIdentifier(plan.groupActorId)
+    || !isValidInventoryIngressRuleRevision(plan.rulesRevision)
+    || !isValidNullableInventoryFolderIdentifier(plan.requestedFolderId)
+    || !Array.isArray(plan.rows)
+    || !Array.isArray(plan.rootOverrideSourceKeys)) {
+    return false;
+  }
+  const sourceKeys = new Set();
+  const actionableKeys = new Set();
+  for (const row of plan.rows) {
+    if (!hasExactKeys(row, ["action", "identity", "matchedRuleId", "quantity", "sourceKey"])
+      || !isValidInventoryFolderIdentifier(row.sourceKey)
+      || sourceKeys.has(row.sourceKey)
+      || !Number.isFinite(row.quantity)
+      || row.quantity <= 0
+      || !(row.matchedRuleId === null || isValidInventoryFolderIdentifier(row.matchedRuleId))
+      || !isValidInventoryIngressPlanAction(row.action)
+      || !isValidInventoryIngressPlanIdentity(row.identity, row.quantity)) {
+      return false;
+    }
+    sourceKeys.add(row.sourceKey);
+    if (row.action.type === "skip" || row.action.type === "dismantle") actionableKeys.add(row.sourceKey);
+  }
+  const overrides = new Set();
+  for (const sourceKey of plan.rootOverrideSourceKeys) {
+    if (!isValidInventoryFolderIdentifier(sourceKey)
+      || overrides.has(sourceKey)
+      || !actionableKeys.has(sourceKey)) {
+      return false;
+    }
+    overrides.add(sourceKey);
+  }
+  return true;
 }
 
 function isValidInventoryFolderIdentifier(value) {
@@ -1200,6 +1271,26 @@ export class RebreyaMainModule {
       fuelService: this.transportFuelService
     });
     this.travelMapService = new TravelMapService();
+    this.inventoryIngressRuleCompilerCache = new InventoryIngressRuleCompilerCache();
+    this.inventoryIngressPlanner = new InventoryIngressPlanner({
+      readRules: (groupActorId) => this.inventoryService.getInventoryIngressRuleState({ groupActorId }),
+      buildDescriptor: async (itemData) => buildInventoryIngressDescriptor(itemData, {
+        model: await this.getModel()
+      }),
+      resolveDismantleOutputs: async (itemData, quantity) => resolveInventoryDismantleOutputs(
+        itemData,
+        quantity,
+        { model: await this.getModel() }
+      ),
+      compilerCache: this.inventoryIngressRuleCompilerCache,
+      confirm: async (preview) => {
+        const moduleVersion = game.modules.get(MODULE_ID)?.version ?? "0";
+        const { promptInventoryIngressConfirmation } = await import(
+          `./ui/inventory-app.js?v=${encodeURIComponent(moduleVersion)}`
+        );
+        return promptInventoryIngressConfirmation(preview);
+      }
+    });
     this.inventoryService = new InventoryService(this);
     this.durabilityService = new DurabilityService(this);
     this.corpseStorageMaterializer = new CorpseStorageMaterializer({
@@ -5126,9 +5217,9 @@ export class RebreyaMainModule {
     );
   }
 
-  async addModelItemToInventory(sourceType, sourceId, quantity = 1) {
+  async addModelItemToInventory(sourceType, sourceId, quantity = 1, options = {}) {
     return this.runInventoryMutation(
-      () => this.inventoryService.addModelItemToInventory(sourceType, sourceId, quantity)
+      () => this.inventoryService.addModelItemToInventory(sourceType, sourceId, quantity, options)
     );
   }
 
@@ -5138,7 +5229,7 @@ export class RebreyaMainModule {
       throw new Error("Для выдачи строки Lootgen нужен стабильный идентификатор.");
     }
     return this.runInventoryMutation(
-      () => this.inventoryService.addLootgenRowToInventoryOnce(row, mutationId)
+      () => this.inventoryService.addLootgenRowToInventory(row)
     );
   }
 

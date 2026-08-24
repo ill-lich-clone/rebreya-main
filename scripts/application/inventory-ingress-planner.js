@@ -131,17 +131,17 @@ export class InventoryIngressPlanner {
     const detachedRows = normalizeRows(rows);
     const ruleState = await this.readRules(safeGroupActorId);
     const compiled = this.compilerCache.get(safeGroupActorId, ruleState);
-    const descriptors = detachedRows.map((row) => this.buildDescriptor(row.itemData));
+    const descriptors = await Promise.all(detachedRows.map((row) => this.buildDescriptor(row.itemData)));
     const decisions = compiled.evaluateMany(descriptors);
     if (!Array.isArray(decisions) || decisions.length !== detachedRows.length) {
       fail("invalid-decisions", "Compiled inventory ingress decisions do not match the requested rows.");
     }
-    const previewRows = detachedRows.map((row, index) => {
+    const previewRows = await Promise.all(detachedRows.map(async (row, index) => {
       const descriptor = descriptors[index];
       const decision = decisions[index];
       const action = previewAction(decision, row.legacyFolderId);
       const dismantlePreview = action.type === "dismantle"
-        ? clone(this.resolveDismantleOutputs(row.itemData, row.quantity))
+        ? clone(await this.resolveDismantleOutputs(row.itemData, row.quantity))
         : [];
       return deepFreeze({
         sourceKey: row.sourceKey,
@@ -152,7 +152,7 @@ export class InventoryIngressPlanner {
         action,
         dismantlePreview
       });
-    });
+    }));
     return deepFreeze({
       version: INVENTORY_INGRESS_PLAN_VERSION,
       groupActorId: safeGroupActorId,

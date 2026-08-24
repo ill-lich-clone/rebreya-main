@@ -298,6 +298,55 @@ function ingressRule({
   return { id, name, conditions, action };
 }
 
+function createNoMatchInventoryIngressPlanner() {
+  const serialize = (preview, { rootOverrideSourceKeys = [] } = {}) => ({
+    version: 1,
+    groupActorId: preview.groupActorId,
+    rulesRevision: preview.rulesRevision,
+    requestedFolderId: preview.requestedFolderId,
+    rows: preview.rows.map((row) => ({
+      sourceKey: row.sourceKey,
+      identity: clone(row.identity),
+      quantity: row.quantity,
+      matchedRuleId: null,
+      action: clone(row.action)
+    })),
+    rootOverrideSourceKeys: [...rootOverrideSourceKeys]
+  });
+  return {
+    async preview({ groupActorId, requestedFolderId, rows }) {
+      return {
+        version: 1,
+        groupActorId,
+        rulesRevision: 0,
+        requestedFolderId,
+        batch: rows.length > 1,
+        rows: rows.map((row) => ({
+          sourceKey: row.sourceKey,
+          displayName: row.itemData.name,
+          identity: {
+            sourceType: String(row.itemData.flags?.[MODULE_ID]?.sourceType ?? ""),
+            sourceId: String(row.itemData.flags?.[MODULE_ID]?.sourceId ?? ""),
+            documentType: String(row.itemData.type ?? ""),
+            durabilityState: "ineligible",
+            quantity: row.quantity
+          },
+          quantity: row.quantity,
+          matchedRuleId: null,
+          action: { type: "legacy", folderId: row.legacyFolderId },
+          dismantlePreview: []
+        }))
+      };
+    },
+    collectChoices: async () => ({ rootOverrideSourceKeys: [] }),
+    serialize,
+    assertParity(plan, preview) {
+      assert.deepEqual(plan, serialize(preview));
+      return true;
+    }
+  };
+}
+
 test("getInventoryActor returns resolved dnd5e group actor when group context exists", async () => {
   const groupActor = createActor({ id: "group-1", name: "Party", type: "group", isOwner: true });
   const fixture = installInventoryFixture({
@@ -2520,7 +2569,8 @@ test("player inventory Item imports use the exact typed GM payload with a folder
         requests.push({ command, payload: clone(payload) });
         return groupActor;
       }
-    }
+    },
+    inventoryIngressPlanner: createNoMatchInventoryIngressPlanner()
   });
 
   try {
@@ -2538,7 +2588,27 @@ test("player inventory Item imports use the exact typed GM payload with a folder
         inventoryActorId: groupActor.id,
         itemUuid: sourceItem.uuid,
         mutationId: "typed-folder-import",
-        folderId: "folder-new"
+        folderId: "folder-new",
+        ingressPlan: {
+          version: 1,
+          groupActorId: groupActor.id,
+          rulesRevision: 0,
+          requestedFolderId: "folder-new",
+          rows: [{
+            sourceKey: "item",
+            identity: {
+              sourceType: "",
+              sourceId: "",
+              documentType: "loot",
+              durabilityState: "ineligible",
+              quantity: 2
+            },
+            quantity: 2,
+            matchedRuleId: null,
+            action: { type: "legacy", folderId: "folder-new" }
+          }],
+          rootOverrideSourceKeys: []
+        }
       }
     }]);
   }
@@ -2920,7 +2990,8 @@ test("active GM applies a validated player inventory import socket request", asy
     },
     async getModel() {
       return {};
-    }
+    },
+    inventoryIngressPlanner: createNoMatchInventoryIngressPlanner()
   });
 
   try {
@@ -2931,7 +3002,7 @@ test("active GM applies a validated player inventory import socket request", asy
       senderId: "player"
     });
 
-    assert.equal(result, groupActor);
+    assert.equal(result.actorId, groupActor.id);
     assert.equal(groupActor.items.contents.length, 1);
     assert.equal(groupActor.items.contents[0].name, "Torch");
     assert.equal(groupActor.items.contents[0].system.quantity, 2);

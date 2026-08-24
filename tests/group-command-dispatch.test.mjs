@@ -610,6 +610,26 @@ test("typed inventory mutations authorize group members and dispatch strict payl
     globalThis.fromUuid = async (uuid) => uuid === "Actor.character-a.Item.source"
       ? sourceItem
       : null;
+    const importPlan = {
+      version: 1,
+      groupActorId: fixture.groupA.id,
+      rulesRevision: 0,
+      requestedFolderId: null,
+      rows: [{
+        sourceKey: "item",
+        identity: {
+          sourceType: "",
+          sourceId: "",
+          documentType: "loot",
+          durabilityState: "ineligible",
+          quantity: 1
+        },
+        quantity: 1,
+        matchedRuleId: null,
+        action: { type: "legacy", folderId: null }
+      }],
+      rootOverrideSourceKeys: []
+    };
     const requests = [
       commandRequest("inventory.take", fixture.users.playerA.id, {
         inventoryActorId: fixture.groupA.id,
@@ -628,7 +648,8 @@ test("typed inventory mutations authorize group members and dispatch strict payl
         inventoryActorId: fixture.groupA.id,
         itemUuid: "Actor.character-a.Item.source",
         mutationId: "inventory-import-1",
-        folderId: null
+        folderId: null,
+        ingressPlan: importPlan
       }, "inventory-import"),
       commandRequest("inventory.currency.update", fixture.users.playerA.id, {
         inventoryActorId: fixture.groupA.id,
@@ -669,13 +690,15 @@ test("typed inventory mutations authorize group members and dispatch strict payl
         itemUuid: "Actor.character-a.Item.source",
         mutationId: "inventory-import-extra",
         folderId: null,
+        ingressPlan: importPlan,
         extra: true
       }, "inventory-import-extra"),
       commandRequest("inventory.import", fixture.users.playerA.id, {
         inventoryActorId: fixture.groupA.id,
         itemUuid: "Actor.character-a.Item.source",
         mutationId: "inventory-import-untrimmed-folder",
-        folderId: " folder-a"
+        folderId: " folder-a",
+        ingressPlan: importPlan
       }, "inventory-import-untrimmed-folder")
     ];
     for (const request of invalidImports) {
@@ -685,7 +708,8 @@ test("typed inventory mutations authorize group members and dispatch strict payl
       inventoryActorId: fixture.groupA.id,
       itemUuid: "Actor.character-a.Item.source",
       mutationId: "inventory-import-denied",
-      folderId: null
+      folderId: null,
+      ingressPlan: importPlan
     }, "inventory-import-denied"));
     await flushCommands();
 
@@ -735,11 +759,32 @@ test("typed inventory import lets group members copy compendium items into the p
       return { action: "import" };
     };
     globalThis.fromUuid = async (uuid) => uuid === compendiumItem.uuid ? compendiumItem : null;
+    const ingressPlan = {
+      version: 1,
+      groupActorId: fixture.groupA.id,
+      rulesRevision: 0,
+      requestedFolderId: "folder-a",
+      rows: [{
+        sourceKey: "item",
+        identity: {
+          sourceType: "",
+          sourceId: "",
+          documentType: "loot",
+          durabilityState: "ineligible",
+          quantity: 1
+        },
+        quantity: 1,
+        matchedRuleId: null,
+        action: { type: "legacy", folderId: "folder-a" }
+      }],
+      rootOverrideSourceKeys: []
+    };
     const request = commandRequest("inventory.import", fixture.users.playerA.id, {
       inventoryActorId: fixture.groupA.id,
       itemUuid: compendiumItem.uuid,
       mutationId: "inventory-import-compendium",
-      folderId: "folder-a"
+      folderId: "folder-a",
+      ingressPlan
     }, "inventory-import-compendium");
 
     await moduleApi.handleSocketMessage(request);
@@ -749,7 +794,8 @@ test("typed inventory import lets group members copy compendium items into the p
       inventoryActorId: fixture.groupA.id,
       itemUuid: compendiumItem.uuid,
       mutationId: "inventory-import-compendium",
-      folderId: "folder-a"
+      folderId: "folder-a",
+      ingressPlan
     }]);
     assert.equal(resultFor(fixture, request.requestId)?.ok, true);
   }
