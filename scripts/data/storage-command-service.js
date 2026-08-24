@@ -9,7 +9,10 @@ import { isStorageContainerRow, isStorageJournalRow } from "./storage-container-
 import { MODULE_ID } from "../constants.js";
 import { escapeFoundryHtml } from "../shared/foundry-values.js";
 import { isDeadNpcStorageTarget } from "./corpse-storage-materializer.js";
-import { MAX_STORAGE_DISTANCE_FEET } from "./storage-access.js";
+import {
+  MAX_STORAGE_DISTANCE_FEET,
+  STORAGE_ACCESS_DISTANCE_ERROR_CODE
+} from "./storage-access.js";
 
 const STORAGE_ROW_DESTINATIONS = new Set(["self", "party", "character", "scene"]);
 const STORAGE_COIN_DESTINATIONS = new Set(["self", "party"]);
@@ -493,7 +496,9 @@ export class StorageCommandService {
       }
       const distance = Number(await this.measureDistance(characterToken, storageToken));
       if (!Number.isFinite(distance) || distance > MAX_STORAGE_DISTANCE_FEET) {
-        throw new Error("Хранилище можно открыть только в пределах 10 футов.");
+        const error = new Error("Хранилище можно открыть только в пределах 10 футов.");
+        error.code = STORAGE_ACCESS_DISTANCE_ERROR_CODE;
+        throw error;
       }
     }
 

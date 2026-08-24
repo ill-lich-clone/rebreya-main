@@ -1,4 +1,5 @@
 export const MAX_STORAGE_DISTANCE_FEET = 10;
+export const STORAGE_ACCESS_DISTANCE_ERROR_CODE = "storage-access-distance";
 
 export function storageTokenDocument(token) {
   return token?.document ?? token ?? null;

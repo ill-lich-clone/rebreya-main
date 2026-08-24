@@ -84,10 +84,12 @@ export class StorageTokenOverlayController {
       button.addEventListener("click", async (event) => {
         event?.stopPropagation?.();
         try {
-          await action?.callback?.();
+          const result = await action?.callback?.();
+          if (result === false) return;
           this.close();
         }
         catch (error) {
+          if (await action?.onError?.(error) === true) return;
           this.logger?.error?.(`${MODULE_ID} | Storage token action failed.`, error);
           globalThis.ui?.notifications?.error(error?.message ?? "Не удалось открыть хранилище.");
         }

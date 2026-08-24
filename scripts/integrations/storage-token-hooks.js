@@ -1,5 +1,8 @@
 import { MODULE_ID } from "../constants.js";
-import { preflightStorageAccess } from "../data/storage-access.js";
+import {
+  preflightStorageAccess,
+  STORAGE_ACCESS_DISTANCE_ERROR_CODE
+} from "../data/storage-access.js";
 import { isStorageActor } from "../data/storage-service.js";
 import { isDeadNpcStorageTarget } from "../data/corpse-storage-materializer.js";
 import { StorageTokenOverlayController } from "../ui/storage-token-overlay.js";
@@ -7,6 +10,8 @@ import { StorageTokenOverlayController } from "../ui/storage-token-overlay.js";
 export function buildStorageTokenActions(moduleApi, token, {
   isGM = false,
   characterTokenUuid = "",
+  resolveOpenAccess = null,
+  onOpenError = null,
   prepareConfigure = null
 } = {}) {
   const tokenUuid = String(token?.document?.uuid ?? token?.uuid ?? "").trim();
@@ -15,12 +20,20 @@ export function buildStorageTokenActions(moduleApi, token, {
     id: "open",
     label: "Открыть",
     icon: "fa-solid fa-box-open",
-    callback: () => moduleApi.openStorageApp({
-      tokenUuid,
-      configure: false,
-      anchorToToken: true,
-      ...(safeCharacterTokenUuid ? { characterTokenUuid: safeCharacterTokenUuid } : {})
-    })
+    callback: async () => {
+      const access = await resolveOpenAccess?.();
+      if (resolveOpenAccess && !access) return false;
+      const currentCharacterTokenUuid = String(
+        access?.characterTokenUuid ?? safeCharacterTokenUuid
+      ).trim();
+      return moduleApi.openStorageApp({
+        tokenUuid,
+        configure: false,
+        anchorToToken: true,
+        ...(currentCharacterTokenUuid ? { characterTokenUuid: currentCharacterTokenUuid } : {})
+      });
+    },
+    onError: onOpenError
   }];
   if (isGM) {
     actions.push({
@@ -65,6 +78,11 @@ export function registerStorageTokenHooks(moduleApi, {
     }
     return access;
   };
+  const handleOpenError = (token, error) => {
+    if (error?.code !== STORAGE_ACCESS_DISTANCE_ERROR_CODE) return false;
+    showAccessFailure(token, { reason: "distance" });
+    return true;
+  };
   const showTokenActions = (token, { corpse = false } = {}) => {
     const game = gameProvider();
     if (game?.user?.isGM === true) {
@@ -79,7 +97,9 @@ export function registerStorageTokenHooks(moduleApi, {
     if (!access) return;
     overlayController.showActions(token, buildStorageTokenActions(moduleApi, token, {
       isGM: false,
-      characterTokenUuid: access.characterTokenUuid
+      characterTokenUuid: access.characterTokenUuid,
+      resolveOpenAccess: () => resolvePlayerAccess(token, gameProvider()),
+      onOpenError: (error) => handleOpenError(token, error)
     }));
   };
   const bindPointerClick = (token) => {
@@ -111,7 +131,21 @@ export function registerStorageTokenHooks(moduleApi, {
   });
   hooks.on("drawToken", bindPointerClick);
   hooks.on("canvasPan", () => overlayController.reposition());
-  hooks.on("updateToken", () => overlayController.reposition());
+  hooks.on("updateToken", (document, changed = {}) => {
+    const geometryChanged = ["x", "y", "width", "height"]
+      .some((key) => Object.hasOwn(changed, key));
+    const currentUser = gameProvider()?.user;
+    const affectsAccess = overlayController.token?.document === document
+      || (
+        document?.actor?.type === "character"
+        && document.actor.testUserPermission?.(currentUser, "OWNER") === true
+      );
+    if (geometryChanged && affectsAccess) {
+      overlayController.close();
+      return;
+    }
+    overlayController.reposition();
+  });
   hooks.on("deleteToken", () => overlayController.close());
   hooks.on("canvasReady", () => overlayController.close());
   hooks.on("canvasTearDown", () => overlayController.close());
