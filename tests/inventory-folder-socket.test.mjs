@@ -468,6 +468,7 @@ test("module folder wrappers validate locally and route non-active clients throu
   try {
     const moduleApi = new RebreyaMainModule();
     const requests = [];
+    moduleApi.refreshInventoryViews = async () => {};
     moduleApi.socketCommandBus.request = async (command, payload) => {
       requests.push({ command, payload: clone(payload) });
       return { actorId: payload.groupActorId };
@@ -481,6 +482,41 @@ test("module folder wrappers validate locally and route non-active clients throu
   }
   finally {
     playerFixture.restore();
+  }
+});
+
+test("non-active item-to-root command refreshes the requester cache after the GM result", async () => {
+  const fixture = installFixture({ currentUserId: "player-a" });
+  try {
+    const moduleApi = new RebreyaMainModule();
+    const refreshCalls = [];
+    let resolveRequest;
+    moduleApi.socketCommandBus.request = () => new Promise((resolve) => {
+      resolveRequest = resolve;
+    });
+    moduleApi.refreshInventoryViews = async (request) => refreshCalls.push(clone(request));
+
+    const pendingMove = moduleApi.moveInventoryItemToFolder({
+      groupActorId: fixture.groupA.id,
+      itemId: "item-a",
+      folderId: null
+    });
+    await Promise.resolve();
+    assert.deepEqual(refreshCalls, []);
+
+    resolveRequest({
+      actorId: fixture.groupA.id,
+      folderId: null,
+      changed: true,
+      deletedFolderId: "",
+      itemId: "item-a"
+    });
+    await pendingMove;
+
+    assert.deepEqual(refreshCalls, [{ actorIds: [fixture.groupA.id] }]);
+  }
+  finally {
+    fixture.restore();
   }
 });
 

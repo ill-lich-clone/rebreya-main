@@ -4855,7 +4855,9 @@ export class RebreyaMainModule {
     }
     const exactPayload = cloneSocketPayload(payload);
     if (!isActiveGmClient(globalThis.game)) {
-      return this.socketCommandBus.request(command, exactPayload);
+      const result = await this.socketCommandBus.request(command, exactPayload);
+      await this.refreshInventoryViews({ actorIds: [exactPayload.groupActorId] });
+      return result;
     }
     return this.runInventoryMutation(
       () => this.inventoryService[methodName](exactPayload),
