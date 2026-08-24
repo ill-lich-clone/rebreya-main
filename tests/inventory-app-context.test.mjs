@@ -958,6 +958,91 @@ test("InventoryApp folder actions trim names, preserve IDs and target root or se
   }
 });
 
+test("inventory ingress confirmation opens only single-skip or one dismantle dialog and returns root overrides", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const waitConfigs = [];
+  globalThis.foundry.applications.api.DialogV2.wait = async (config) => {
+    waitConfigs.push(config);
+    if (config.window.title === "Фильтр входящего лута") {
+      return config.buttons.find((button) => button.action === "root").callback();
+    }
+    return config.buttons.find((button) => button.action === "confirm").callback(null, {
+      form: {
+        querySelectorAll: () => [
+          { checked: true, dataset: { sourceKey: "first" } },
+          { checked: false, dataset: { sourceKey: "second" } }
+        ]
+      }
+    });
+  };
+  const { promptInventoryIngressConfirmation } = await import(
+    `../scripts/ui/inventory-app.js?ingress-confirmation=${Date.now()}`
+  );
+  const base = {
+    version: 1,
+    groupActorId: "group-a",
+    rulesRevision: 1,
+    requestedFolderId: null,
+    batch: false
+  };
+
+  try {
+    assert.deepEqual(await promptInventoryIngressConfirmation({
+      ...base,
+      rows: [{ sourceKey: "folder", displayName: "Меч", action: { type: "folder", folderId: "weapons" } }]
+    }), { rootOverrideSourceKeys: [] });
+    assert.deepEqual(await promptInventoryIngressConfirmation({
+      ...base,
+      batch: true,
+      rows: [{ sourceKey: "skip", displayName: "Верёвка", action: { type: "skip" } }]
+    }), { rootOverrideSourceKeys: [] });
+    assert.equal(waitConfigs.length, 0);
+
+    assert.deepEqual(await promptInventoryIngressConfirmation({
+      ...base,
+      rows: [{ sourceKey: "single", displayName: "Верёвка", action: { type: "skip" } }]
+    }), { rootOverrideSourceKeys: ["single"] });
+    assert.deepEqual(waitConfigs[0].buttons.map((button) => button.label), [
+      "Не забирать",
+      "Всё равно добавить в корень",
+      "Отмена"
+    ]);
+
+    const dismantleResult = await promptInventoryIngressConfirmation({
+      ...base,
+      batch: true,
+      rows: [
+        {
+          sourceKey: "first",
+          displayName: "<Первый меч>",
+          action: { type: "dismantle" },
+          dismantlePreview: [{ name: "<Железо>", quantity: 2 }]
+        },
+        {
+          sourceKey: "second",
+          displayName: "Второй меч",
+          action: { type: "dismantle" },
+          dismantlePreview: [{ name: "Дерево", quantity: 1 }]
+        }
+      ]
+    });
+    assert.deepEqual(dismantleResult, { rootOverrideSourceKeys: ["second"] });
+    assert.equal(waitConfigs.length, 2);
+    assert.match(waitConfigs[1].content, /&lt;Первый меч&gt;/u);
+    assert.match(waitConfigs[1].content, /&lt;Железо&gt; × 2/u);
+    assert.equal(waitConfigs[1].content.includes("<Первый меч>"), false);
+
+    globalThis.foundry.applications.api.DialogV2.wait = async () => null;
+    assert.equal(await promptInventoryIngressConfirmation({
+      ...base,
+      rows: [{ sourceKey: "cancel", displayName: "Отмена", action: { type: "skip" } }]
+    }), null);
+  }
+  finally {
+    restoreFoundry();
+  }
+});
+
 test("InventoryApp invalidates its folder snapshot after a command error and gates controls by participation", async () => {
   const restoreFoundry = installFoundryApplicationStub();
   const dom = installMinimalDom();

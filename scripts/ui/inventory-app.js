@@ -2888,6 +2888,81 @@ async function promptInventoryFolderName({ title, initialName = "", confirmLabel
   return name;
 }
 
+export async function promptInventoryIngressConfirmation(preview) {
+  const rows = Array.isArray(preview?.rows) ? preview.rows : [];
+  const dismantleRows = rows.filter((row) => row?.action?.type === "dismantle");
+  const singleSkip = preview?.batch !== true
+    && rows.length === 1
+    && rows[0]?.action?.type === "skip"
+    ? rows[0]
+    : null;
+  if (dismantleRows.length === 0 && !singleSkip) {
+    return Object.freeze({ rootOverrideSourceKeys: Object.freeze([]) });
+  }
+  const dialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
+  if (typeof dialogV2?.wait !== "function") {
+    throw new Error("Диалог фильтра входящего лута недоступен.");
+  }
+  if (singleSkip) {
+    const result = await dialogV2.wait({
+      window: { title: "Фильтр входящего лута" },
+      content: `<p>Правило пропускает «${foundry.utils.escapeHTML(cleanText(singleSkip.displayName))}».</p>`,
+      buttons: [
+        {
+          action: "skip",
+          label: "Не забирать",
+          default: true,
+          callback: () => ({ rootOverrideSourceKeys: [] })
+        },
+        {
+          action: "root",
+          label: "Всё равно добавить в корень",
+          callback: () => ({ rootOverrideSourceKeys: [singleSkip.sourceKey] })
+        },
+        { action: "cancel", label: "Отмена", callback: () => null }
+      ],
+      rejectClose: false
+    });
+    return result == null || result === false ? null : result;
+  }
+
+  const content = dismantleRows.map((row) => {
+    const outputs = (Array.isArray(row.dismantlePreview) ? row.dismantlePreview : [])
+      .map((output) => (
+        `${foundry.utils.escapeHTML(cleanText(output?.name))} × ${foundry.utils.escapeHTML(String(output?.quantity ?? 0))}`
+      ))
+      .join(", ");
+    return `
+      <label class="rm-inventory-ingress-dismantle-row">
+        <input type="checkbox" data-ingress-dismantle-choice data-source-key="${foundry.utils.escapeHTML(row.sourceKey)}" checked>
+        <span><strong>${foundry.utils.escapeHTML(cleanText(row.displayName))}</strong>${outputs ? ` → ${outputs}` : ""}</span>
+      </label>
+    `;
+  }).join("");
+  const result = await dialogV2.wait({
+    window: { title: "Подтверждение разборки" },
+    content: `<form class="rm-inventory-ingress-dismantle-dialog">${content}</form>`,
+    buttons: [
+      {
+        action: "confirm",
+        label: "Подтвердить",
+        icon: "fa-solid fa-hammer",
+        default: true,
+        callback: (_event, button) => ({
+          rootOverrideSourceKeys: Array.from(
+            button?.form?.querySelectorAll?.("[data-ingress-dismantle-choice]") ?? []
+          ).filter((input) => input.checked !== true)
+            .map((input) => cleanText(input.dataset?.sourceKey))
+            .filter(Boolean)
+        })
+      },
+      { action: "cancel", label: "Отмена", callback: () => null }
+    ],
+    rejectClose: false
+  });
+  return result == null || result === false ? null : result;
+}
+
 function createInventoryFolderId() {
   const folderId = cleanText(globalThis.crypto?.randomUUID?.());
   if (!folderId) {
