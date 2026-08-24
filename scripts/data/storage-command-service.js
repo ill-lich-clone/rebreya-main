@@ -142,6 +142,17 @@ export function isValidStorageClaimCoinsPayload(payload) {
     && isTrimmedString(payload.mutationId, { required: true, max: 160 });
 }
 
+export function isValidStorageClaimAllPayload(payload) {
+  return hasLegacyOrPathKeys(payload, [
+    "characterTokenUuid", "destination", "mutationId", "target", "tokenUuid"
+  ])
+    && isTrimmedString(payload.tokenUuid, { required: true })
+    && isTrimmedString(payload.characterTokenUuid, { required: payload.destination === "self" })
+    && STORAGE_COIN_DESTINATIONS.has(payload.destination)
+    && isValidStorageTarget(payload.destination, payload.target)
+    && isTrimmedString(payload.mutationId, { required: true, max: 160 });
+}
+
 export function isValidStorageDepositPayload(payload) {
   return hasLegacyOrPathKeys(payload, [
     "characterTokenUuid", "mutationId", "quantity", "source", "tokenUuid"
@@ -345,6 +356,33 @@ export class StorageCommandService {
       throw new Error("У вас нет прав владельца на этого персонажа.");
     }
     return actor;
+  }
+
+  async #resolvePartyTarget(target) {
+    const partyTarget = Object.freeze({
+      groupActorId: clean(target?.groupActorId),
+      folderId: target?.folderId === null ? null : clean(target?.folderId)
+    });
+    if (!isValidStorageTarget("party", partyTarget)) {
+      throw new Error("Некорректная цель переноса из хранилища.");
+    }
+    const actor = await this.inventoryService.getInventoryActor({
+      create: false,
+      groupActorId: partyTarget.groupActorId
+    });
+    if (!actor || clean(actor.id) !== partyTarget.groupActorId || actor.type !== "group") {
+      throw new Error("Party inventory group target is unavailable.");
+    }
+    if (partyTarget.folderId !== null) {
+      const snapshot = await this.inventoryService.getInventorySnapshot({
+        createActor: false,
+        groupActorId: partyTarget.groupActorId
+      });
+      if (!snapshot?.folders?.some((folder) => clean(folder?.id) === partyTarget.folderId)) {
+        throw new Error("Party inventory folder is unavailable.");
+      }
+    }
+    return { actor, target: partyTarget };
   }
 
   async #validateSceneTarget(target, access, sender) {
@@ -552,26 +590,7 @@ export class StorageCommandService {
       let partyActor = null;
       let partyTarget = null;
       if (destination === "party") {
-        partyTarget = Object.freeze({
-          groupActorId: clean(target.groupActorId),
-          folderId: target.folderId === null ? null : clean(target.folderId)
-        });
-        partyActor = await this.inventoryService.getInventoryActor({
-          create: false,
-          groupActorId: partyTarget.groupActorId
-        });
-        if (!partyActor || clean(partyActor.id) !== partyTarget.groupActorId || partyActor.type !== "group") {
-          throw new Error("Party inventory group target is unavailable.");
-        }
-        if (partyTarget.folderId !== null) {
-          const snapshot = await this.inventoryService.getInventorySnapshot({
-            createActor: false,
-            groupActorId: partyTarget.groupActorId
-          });
-          if (!snapshot?.folders?.some((folder) => clean(folder?.id) === partyTarget.folderId)) {
-            throw new Error("Party inventory folder is unavailable.");
-          }
-        }
+        ({ actor: partyActor, target: partyTarget } = await this.#resolvePartyTarget(target));
       }
       const transferRow = clone(row);
       transferRow.quantity = quantity;
@@ -705,6 +724,169 @@ export class StorageCommandService {
         });
       }
       return result;
+    });
+  }
+
+  async claimAll(payload = {}, { sender } = {}) {
+    const destination = clean(payload.destination);
+    if (!STORAGE_COIN_DESTINATIONS.has(destination)) {
+      throw new Error("Всё содержимое можно забрать себе или в инвентарь группы.");
+    }
+    const target = clone(payload.target);
+    if (!isValidStorageTarget(destination, target)) {
+      throw new Error("Некорректная цель массового переноса из хранилища.");
+    }
+    const mutationId = requireMutationId(payload.mutationId);
+    const tokenUuid = clean(payload.tokenUuid);
+    const path = storagePath(payload.path);
+    const mutationKey = storageMutationId({
+      tokenUuid,
+      path,
+      kind: "all",
+      destination,
+      mutationId
+    });
+    return this.#runClaim(`${tokenUuid}:${storagePathKey(path)}:storage`, mutationKey, async () => {
+      const access = await this.#resolveAccess(payload, sender);
+      if (destination === "self" && access.character?.type !== "character") {
+        throw new Error("Для получения лута себе выберите персонажа.");
+      }
+      let partyActor = null;
+      let partyTarget = null;
+      if (destination === "party") {
+        ({ actor: partyActor, target: partyTarget } = await this.#resolvePartyTarget(target));
+      }
+      const initialState = readStorageStateAtPath(access.storageToken, path);
+      if (initialState.state === "unopened") throw new Error("Сначала откройте хранилище.");
+      const claimed = new Set(initialState.claimedRowIds);
+      const rows = [...initialState.manualRows, ...initialState.generatedRows]
+        .map((row, index) => ({ row, rowId: rowIdentity(row, index) }))
+        .filter(({ rowId }) => !claimed.has(rowId));
+      const skippedJournalRowIds = rows
+        .filter(({ row }) => isStorageJournalRow(row))
+        .map(({ rowId }) => rowId);
+      const claimedRowIds = [];
+
+      for (const { row, rowId } of rows) {
+        if (isStorageJournalRow(row)) continue;
+        const quantity = Math.max(1, Math.trunc(Number(
+          row.quantity ?? row.itemData?.system?.quantity ?? 1
+        )) || 1);
+        const transferRow = clone(row);
+        transferRow.quantity = quantity;
+        transferRow.itemData ??= {};
+        transferRow.itemData.system ??= {};
+        transferRow.itemData.system.quantity = quantity;
+        const preparedTransferRow = await this.#prepareGroundRow(transferRow);
+        const grantId = `${mutationKey}:row:${rowId}`;
+        if (isStorageContainerRow(preparedTransferRow)) {
+          if (!this.containerItemService) {
+            throw new Error("Сервис переносимых контейнеров Rebreya недоступен.");
+          }
+          if (destination === "self") {
+            await this.containerItemService.materializeToActorOnce(
+              access.character,
+              preparedTransferRow.container,
+              grantId
+            );
+          }
+          else {
+            const root = await this.containerItemService.materializeToActorOnce(
+              partyActor,
+              preparedTransferRow.container,
+              grantId
+            );
+            if (!root?.id) throw new Error("Не удалось восстановить корень переносимого контейнера.");
+            await this.inventoryService.assignInventoryGrantFolder({
+              groupActorId: partyTarget.groupActorId,
+              itemId: root.id,
+              folderId: partyTarget.folderId
+            });
+          }
+        }
+        else if (destination === "self") {
+          await this.inventoryService.addLootgenRowToCharacterOnce(
+            preparedTransferRow,
+            access.character,
+            grantId
+          );
+        }
+        else {
+          await this.inventoryService.addLootgenRowToInventoryOnce(
+            preparedTransferRow,
+            grantId,
+            {
+              allowPersistedItemData: true,
+              groupActorId: partyTarget.groupActorId,
+              folderId: partyTarget.folderId
+            }
+          );
+        }
+        const result = await this.storageService.claim(access.storageToken, {
+          kind: "row",
+          rowId,
+          quantity,
+          path
+        });
+        if (result.changed === true) {
+          claimedRowIds.push(rowId);
+          await this.#publishClaimMessage({
+            sender,
+            destination,
+            actor: access.character,
+            row: transferRow,
+            quantity
+          });
+        }
+      }
+
+      const stateBeforeCoins = readStorageStateAtPath(access.storageToken, path);
+      const coinKeys = ["pp", "gp", "sp", "cp"];
+      const coins = Object.fromEntries(coinKeys.map((key) => [
+        key,
+        Math.max(0, Math.trunc(
+          Number(stateBeforeCoins.manualCoins?.[key] ?? 0)
+          + Number(stateBeforeCoins.generatedCoins?.[key] ?? 0)
+        ))
+      ]));
+      let coinsChanged = false;
+      if (!stateBeforeCoins.coinsClaimed && coinKeys.some((key) => coins[key] > 0)) {
+        const grantId = `${mutationKey}:coins`;
+        if (destination === "self") {
+          await this.inventoryService.addCurrencyToCharacterOnce(coins, access.character, grantId);
+        }
+        else {
+          await this.inventoryService.addCurrencyToInventoryOnce(
+            coins,
+            grantId,
+            { groupActorId: partyTarget.groupActorId }
+          );
+        }
+        const result = await this.storageService.claim(access.storageToken, { kind: "coins", path });
+        coinsChanged = result.changed === true;
+        if (coinsChanged) {
+          await this.#publishClaimMessage({
+            sender,
+            destination,
+            actor: access.character,
+            coins
+          });
+        }
+      }
+
+      const changed = claimedRowIds.length > 0 || coinsChanged;
+      if (changed) {
+        await this.#refreshSource(access.storageToken, readStorageState(access.storageToken));
+      }
+      const finalState = readStorageStateAtPath(access.storageToken, path);
+      return {
+        changed,
+        claimedRowIds,
+        skippedJournalRowIds,
+        coinsChanged,
+        state: finalState.state,
+        displayMode: finalState.displayMode
+      };
     });
   }
 

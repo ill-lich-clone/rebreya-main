@@ -102,9 +102,15 @@ test("real storage command registrations validate envelopes and execute their co
   const gm = { id: "gm", isGM: true, active: true };
   const runtime = createModuleRuntime({ user: gm, users: [gm] });
   try {
-    const { RebreyaMainModule, STORAGE_COIN_DROP_COMMAND, STORAGE_JOURNAL_READ_COMMAND } = await import(
+    const {
+      RebreyaMainModule,
+      STORAGE_CLAIM_ALL_COMMAND,
+      STORAGE_COIN_DROP_COMMAND,
+      STORAGE_JOURNAL_READ_COMMAND
+    } = await import(
       `../scripts/main.js?storage-registration=${Date.now()}`
     );
+    assert.equal(STORAGE_CLAIM_ALL_COMMAND, "storage.claim-all");
     const moduleApi = new RebreyaMainModule();
     const calls = [];
     moduleApi.storageCommandService = {
@@ -115,6 +121,10 @@ test("real storage command registrations validate envelopes and execute their co
       async dropCoinsToScene(payload, context) {
         calls.push({ command: "coins", payload, context });
         return { created: true };
+      },
+      async claimAll(payload, context) {
+        calls.push({ command: "bulk", payload, context });
+        return { changed: true, claimedRowIds: ["row-1"] };
       }
     };
 
@@ -129,9 +139,17 @@ test("real storage command registrations validate envelopes and execute their co
       x: 100,
       y: 200
     };
+    const bulkPayload = {
+      tokenUuid: "Scene.scene.Token.chest",
+      characterTokenUuid: "Scene.scene.Token.hero",
+      destination: "self",
+      target: null,
+      mutationId: "bulk-command"
+    };
     for (const [command, requestId, payload] of [
       [STORAGE_JOURNAL_READ_COMMAND, "journal-valid", journalPayload],
-      [STORAGE_COIN_DROP_COMMAND, "coins-valid", coinPayload]
+      [STORAGE_COIN_DROP_COMMAND, "coins-valid", coinPayload],
+      [STORAGE_CLAIM_ALL_COMMAND, "bulk-valid", bulkPayload]
     ]) {
       assert.equal(moduleApi.socketCommandBus.handleMessage({
         type: COMMAND_REQUEST_TYPE, command, requestId, senderId: gm.id, payload
@@ -143,26 +161,89 @@ test("real storage command registrations validate envelopes and execute their co
         forUserId: gm.id,
         senderId: gm.id,
         ok: true,
-        data: command === STORAGE_JOURNAL_READ_COMMAND ? { name: "Journal", pages: [] } : { created: true }
+        data: command === STORAGE_JOURNAL_READ_COMMAND
+          ? { name: "Journal", pages: [] }
+          : command === STORAGE_CLAIM_ALL_COMMAND
+            ? { changed: true, claimedRowIds: ["row-1"] }
+            : { created: true }
       });
     }
     assert.deepEqual(calls.map(({ command, payload }) => ({ command, payload })), [
       { command: "journal", payload: journalPayload },
-      { command: "coins", payload: coinPayload }
+      { command: "coins", payload: coinPayload },
+      { command: "bulk", payload: bulkPayload }
     ]);
     assert.equal(calls[0].context.sender, gm);
     assert.equal(calls[1].context.sender, gm);
+    assert.equal(calls[2].context.sender, gm);
 
     for (const [command, requestId, payload] of [
       [STORAGE_JOURNAL_READ_COMMAND, "journal-invalid", { ...journalPayload, rowId: "" }],
-      [STORAGE_COIN_DROP_COMMAND, "coins-invalid", { ...coinPayload, denomination: "electrum" }]
+      [STORAGE_COIN_DROP_COMMAND, "coins-invalid", { ...coinPayload, denomination: "electrum" }],
+      [STORAGE_CLAIM_ALL_COMMAND, "bulk-invalid", { ...bulkPayload, target: {} }]
     ]) {
       assert.equal(moduleApi.socketCommandBus.handleMessage({
         type: COMMAND_REQUEST_TYPE, command, requestId, senderId: gm.id, payload
       }, { transportSenderId: gm.id }), true);
       assert.equal((await waitForSocketResult(runtime.emitted, requestId))?.error?.code, "invalid-payload");
     }
-    assert.equal(calls.length, 2);
+    assert.equal(calls.length, 3);
+  }
+  finally {
+    runtime.restore();
+  }
+});
+
+test("storage bulk party command rejects a sender who manages no member of the exact group", async () => {
+  const gm = { id: "gm", isGM: true, active: true };
+  const player = { id: "player", isGM: false, active: true };
+  const runtime = createModuleRuntime({ user: gm, users: [gm, player] });
+  try {
+    const { MODULE_ID, REBREYA_GROUP_FLAGS } = await import("../scripts/constants.js");
+    const { RebreyaMainModule, STORAGE_CLAIM_ALL_COMMAND } = await import(
+      `../scripts/main.js?storage-bulk-authorization=${Date.now()}`
+    );
+    const member = {
+      id: "member",
+      testUserPermission: () => false
+    };
+    const group = {
+      id: "group-a",
+      type: "group",
+      system: { members: [{ actor: member }] },
+      getFlag: (scope, key) => scope === MODULE_ID && key === REBREYA_GROUP_FLAGS.MANAGED
+    };
+    globalThis.game.actors = {
+      get: (id) => id === group.id ? group : null,
+      contents: [group]
+    };
+    const moduleApi = new RebreyaMainModule();
+    moduleApi.groupContextService.getRegistry = () => ({ groupsById: { [group.id]: { id: group.id } } });
+    let calls = 0;
+    moduleApi.storageCommandService = {
+      async claimAll() {
+        calls += 1;
+        return { changed: true };
+      }
+    };
+    const payload = {
+      tokenUuid: "Scene.scene.Token.chest",
+      characterTokenUuid: "Scene.scene.Token.hero",
+      destination: "party",
+      target: { groupActorId: group.id, folderId: null },
+      mutationId: "bulk-forbidden"
+    };
+
+    assert.equal(moduleApi.socketCommandBus.handleMessage({
+      type: COMMAND_REQUEST_TYPE,
+      command: STORAGE_CLAIM_ALL_COMMAND,
+      requestId: "bulk-forbidden",
+      senderId: player.id,
+      payload
+    }, { transportSenderId: player.id }), true);
+
+    assert.equal((await waitForSocketResult(runtime.emitted, "bulk-forbidden"))?.error?.code, "unauthorized");
+    assert.equal(calls, 0);
   }
   finally {
     runtime.restore();

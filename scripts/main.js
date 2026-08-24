@@ -123,6 +123,7 @@ import {
 import { NativeObjectDurabilityService } from "./data/native-object-durability-service.js?v=1.4.153-corpse-creature";
 import {
   StorageCommandService,
+  isValidStorageClaimAllPayload,
   isValidStorageClaimCoinsPayload,
   isValidStorageClaimRowPayload,
   isValidStorageCoinDropPayload,
@@ -286,6 +287,7 @@ export const STORAGE_OPEN_COMMAND = "storage.open";
 export const STORAGE_JOURNAL_READ_COMMAND = "storage.journal.read";
 export const STORAGE_CLAIM_ROW_COMMAND = "storage.claim-row";
 export const STORAGE_CLAIM_COINS_COMMAND = "storage.claim-coins";
+export const STORAGE_CLAIM_ALL_COMMAND = "storage.claim-all";
 export const STORAGE_DEPOSIT_COMMAND = "storage.deposit";
 export const STORAGE_COIN_DROP_COMMAND = "storage.coin.drop";
 export const STORAGE_DROP_ITEM_COMMAND = "storage.drop-item-to-scene";
@@ -1550,6 +1552,13 @@ export class RebreyaMainModule {
       validate: isValidStorageClaimCoinsPayload,
       authorize: (_payload, { sender }) => Boolean(sender),
       execute: (payload, { sender }) => this.storageCommandService.claimCoins(payload, { sender })
+    });
+    this.socketCommandBus.register(STORAGE_CLAIM_ALL_COMMAND, {
+      validate: isValidStorageClaimAllPayload,
+      authorize: (payload, { sender }) => Boolean(sender)
+        && (payload.destination !== "party"
+          || this.#canSenderManageGroup(sender, payload.target.groupActorId)),
+      execute: (payload, { sender }) => this.storageCommandService.claimAll(payload, { sender })
     });
     this.socketCommandBus.register(STORAGE_DEPOSIT_COMMAND, {
       validate: isValidStorageDepositPayload,
@@ -3438,6 +3447,45 @@ export class RebreyaMainModule {
     return isActiveGmClient(globalThis.game)
       ? this.storageCommandService.claimCoins(payload, { sender: globalThis.game?.user })
       : this.socketCommandBus.request(STORAGE_CLAIM_COINS_COMMAND, payload);
+  }
+
+  async claimStorageAll(tokenUuid, destination, mutationId, request = {}) {
+    const safeTokenUuid = cleanSocketId(tokenUuid);
+    const safeDestination = cleanSocketId(destination);
+    const path = cleanStoragePath(request.path);
+    let target = null;
+    if (safeDestination === "party") {
+      const requestedGroupActorId = cleanSocketId(request.target?.groupActorId);
+      const groupActor = await this.inventoryService.getInventoryActor({
+        create: false,
+        groupActorId: requestedGroupActorId
+      });
+      if (!groupActor || groupActor.type !== "group") {
+        throw new Error("Не удалось разрешить групповой инвентарь для массового переноса.");
+      }
+      target = {
+        groupActorId: cleanSocketId(groupActor.id),
+        folderId: request.target?.folderId === null || request.target?.folderId === undefined
+          ? null
+          : cleanSocketId(request.target.folderId)
+      };
+    }
+    const payload = {
+      tokenUuid: safeTokenUuid,
+      characterTokenUuid: storageCharacterTokenUuidForClaim({
+        controlledCharacterTokenUuid: this.#controlledCharacterTokenUuid(request.characterTokenUuid),
+        storageTokenUuid: safeTokenUuid,
+        destination: safeDestination,
+        isGM: globalThis.game?.user?.isGM === true
+      }),
+      destination: safeDestination,
+      target,
+      mutationId: cleanSocketId(mutationId),
+      ...(path.length ? { path } : {})
+    };
+    return isActiveGmClient(globalThis.game)
+      ? this.storageCommandService.claimAll(payload, { sender: globalThis.game?.user })
+      : this.socketCommandBus.request(STORAGE_CLAIM_ALL_COMMAND, payload);
   }
 
   async inspectStorageDepositSource(dragData) {

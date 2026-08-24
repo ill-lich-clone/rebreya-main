@@ -152,8 +152,10 @@ function createHarness({
       if (!completed.has(mutationId)) coinGrants.push({ coins: clone(coins), actor, mutationId, destination: "self" });
       completed.add(mutationId);
     },
-    async addCurrencyToInventoryOnce(coins, mutationId) {
-      if (!completed.has(mutationId)) coinGrants.push({ coins: clone(coins), mutationId, destination: "party" });
+    async addCurrencyToInventoryOnce(coins, mutationId, options) {
+      if (!completed.has(mutationId)) {
+        coinGrants.push({ coins: clone(coins), mutationId, options: clone(options), destination: "party" });
+      }
       completed.add(mutationId);
     }
   };
@@ -1730,6 +1732,58 @@ test("RebreyaMainModule sends an exact UUID-free storage Journal read payload", 
   }
 });
 
+test("RebreyaMainModule sends one exact storage bulk claim payload", async () => {
+  const previousGame = globalThis.game;
+  const previousCanvas = globalThis.canvas;
+  const previousHooks = globalThis.Hooks;
+  const gm = { id: "gm", isGM: true, active: true };
+  globalThis.game = { user: gm, users: { activeGM: gm } };
+  globalThis.canvas = { tokens: { controlled: [] } };
+  globalThis.Hooks = { once() {}, on() {} };
+  try {
+    const { RebreyaMainModule } = await import(`../scripts/main.js?storage-bulk=${Date.now()}`);
+    const moduleApi = new RebreyaMainModule();
+    const calls = [];
+    moduleApi.inventoryService = {
+      async getInventoryActor({ groupActorId }) {
+        return groupActorId === "group-a" ? { id: "group-a", type: "group" } : null;
+      }
+    };
+    moduleApi.storageCommandService = {
+      async claimAll(payload, context) {
+        calls.push({ payload: clone(payload), context });
+        return { changed: true };
+      }
+    };
+
+    await moduleApi.claimStorageAll(
+      "Scene.scene.Token.chest",
+      "party",
+      "bulk-main",
+      {
+        characterTokenUuid: "Scene.scene.Token.hero",
+        path: ["bag-row"],
+        target: { groupActorId: "group-a", folderId: null }
+      }
+    );
+
+    assert.deepEqual(calls[0].payload, {
+      tokenUuid: "Scene.scene.Token.chest",
+      characterTokenUuid: "Scene.scene.Token.hero",
+      destination: "party",
+      target: { groupActorId: "group-a", folderId: null },
+      mutationId: "bulk-main",
+      path: ["bag-row"]
+    });
+    assert.equal(calls[0].context.sender, gm);
+  }
+  finally {
+    globalThis.game = previousGame;
+    globalThis.canvas = previousCanvas;
+    globalThis.Hooks = previousHooks;
+  }
+});
+
 test("player storage snapshots omit Journal sources while GM diagnostics retain them", async () => {
   const previousGame = globalThis.game;
   const previousCanvas = globalThis.canvas;
@@ -2061,6 +2115,232 @@ test("party storage claims require an exact group and nullable folder target", (
     destination: "party",
     mutationId: "claim-coins-party"
   }), true);
+});
+
+test("storage bulk claim payload requires one exact self or party target", () => {
+  assert.equal(typeof storageCommands.isValidStorageClaimAllPayload, "function");
+  const self = {
+    tokenUuid: "Scene.scene.Token.chest",
+    characterTokenUuid: "Scene.scene.Token.hero",
+    destination: "self",
+    target: null,
+    mutationId: "claim-all-self"
+  };
+  const party = {
+    tokenUuid: "Scene.scene.Token.chest",
+    characterTokenUuid: "Scene.scene.Token.hero",
+    destination: "party",
+    target: { groupActorId: "group-a", folderId: null },
+    mutationId: "claim-all-party",
+    path: ["bag-row"]
+  };
+
+  assert.equal(storageCommands.isValidStorageClaimAllPayload(self), true);
+  assert.equal(storageCommands.isValidStorageClaimAllPayload(party), true);
+  for (const payload of [
+    { ...self, destination: "scene" },
+    { ...self, characterTokenUuid: "" },
+    { ...self, target: { groupActorId: "group-a", folderId: null } },
+    { ...party, target: null },
+    { ...party, target: { groupActorId: " group-a", folderId: null } },
+    { ...party, extra: true }
+  ]) {
+    assert.equal(storageCommands.isValidStorageClaimAllPayload(payload), false);
+  }
+});
+
+test("bulk claim grants mixed rows, containers, and coins once while skipping Journals", async () => {
+  const materializations = [];
+  const materialized = new Set();
+  const harness = createHarness({
+    containerItemService: {
+      async materializeToActorOnce(actor, snapshot, mutationId) {
+        if (!materialized.has(mutationId)) materializations.push({ actor, snapshot: clone(snapshot), mutationId });
+        materialized.add(mutationId);
+        return { id: "materialized-bag" };
+      }
+    }
+  });
+  const bagRow = buildStorageContainerRow({
+    containerId: "bulk-bag",
+    storageKind: "bag",
+    name: "Походная сумка",
+    state: { state: "opened", manualRows: [], generatedRows: [] }
+  }, { rowId: "bag-row" });
+  await harness.storageService.configure(harness.storageToken, {
+    state: "opened",
+    manualRows: [{
+      rowId: "manual-row",
+      rowKind: "item",
+      name: "Верёвка",
+      quantity: 2,
+      itemData: { name: "Верёвка", type: "loot", system: { quantity: 2 } }
+    }, {
+      rowKind: "journal",
+      rowId: "journal-row",
+      sourceId: "JournalEntry.bulk-notes",
+      sourceType: "journal",
+      name: "Записка",
+      quantity: 1
+    }, bagRow],
+    generatedRows: [{
+      rowId: "generated-row",
+      rowKind: "item",
+      name: "Факел",
+      quantity: 3,
+      itemData: { name: "Факел", type: "consumable", system: { quantity: 3 } }
+    }],
+    manualCoins: { gp: 4, sp: 2 }
+  });
+  const request = {
+    tokenUuid: harness.storageToken.uuid,
+    characterTokenUuid: harness.characterToken.uuid,
+    destination: "self",
+    target: null,
+    mutationId: "bulk-mixed"
+  };
+
+  const first = await harness.service.claimAll(request, { sender: harness.player });
+  const retry = await harness.service.claimAll(request, { sender: harness.player });
+
+  assert.deepEqual(retry, first);
+  assert.equal(first.changed, true);
+  assert.equal(typeof first.state, "string");
+  assert.equal(JSON.stringify(first).includes("JournalEntry."), false);
+  assert.deepEqual(first.claimedRowIds, ["manual-row", "bag-row", "generated-row"]);
+  assert.deepEqual(first.skippedJournalRowIds, ["journal-row"]);
+  assert.equal(harness.itemGrants.length, 2);
+  assert.equal(materializations.length, 1);
+  assert.equal(harness.coinGrants.length, 1);
+  assert.equal(harness.itemGrants.every(({ mutationId }) => mutationId.includes(":row:")), true);
+  assert.match(materializations[0].mutationId, /:row:bag-row$/u);
+  assert.match(harness.coinGrants[0].mutationId, /:coins$/u);
+  const state = readStorageState(harness.storageToken);
+  assert.deepEqual(state.claimedRowIds, ["manual-row", "bag-row", "generated-row"]);
+  assert.equal(state.coinsClaimed, true);
+  assert.deepEqual(state.manualRows.filter((row) => row.rowKind === "journal").map((row) => row.rowId), ["journal-row"]);
+});
+
+test("party bulk claim pins item, folder, and currency grants to the exact group", async () => {
+  const harness = createHarness();
+  await harness.storageService.configure(harness.storageToken, {
+    state: "opened",
+    manualRows: [{
+      rowId: "party-row",
+      rowKind: "item",
+      name: "Карта",
+      quantity: 1,
+      itemData: { name: "Карта", type: "loot", system: { quantity: 1 } }
+    }],
+    manualCoins: { gp: 1 }
+  });
+
+  await harness.service.claimAll({
+    tokenUuid: harness.storageToken.uuid,
+    characterTokenUuid: harness.characterToken.uuid,
+    destination: "party",
+    target: { groupActorId: harness.groupActor.id, folderId: "folder-a" },
+    mutationId: "bulk-party"
+  }, { sender: harness.player });
+
+  assert.deepEqual(harness.itemGrants[0].options, {
+    allowPersistedItemData: true,
+    groupActorId: harness.groupActor.id,
+    folderId: "folder-a"
+  });
+  assert.deepEqual(harness.coinGrants[0].options, { groupActorId: harness.groupActor.id });
+});
+
+test("bulk claim retry resumes after a partial target-first failure without duplicate grants", async () => {
+  const materialized = new Set();
+  const harness = createHarness({
+    rejectFolderAssignmentOnce: true,
+    containerItemService: {
+      async materializeToActorOnce(_actor, _snapshot, mutationId) {
+        materialized.add(mutationId);
+        return { id: "bulk-recovery-bag" };
+      }
+    }
+  });
+  const bagRow = buildStorageContainerRow({
+    containerId: "bulk-recovery-bag",
+    storageKind: "bag",
+    name: "Сумка",
+    state: { state: "opened", manualRows: [], generatedRows: [] }
+  }, { rowId: "recovery-bag-row" });
+  await harness.storageService.configure(harness.storageToken, {
+    state: "opened",
+    manualRows: [{
+      rowId: "recovery-item-row",
+      rowKind: "item",
+      name: "Мел",
+      quantity: 1,
+      itemData: { name: "Мел", type: "loot", system: { quantity: 1 } }
+    }, bagRow],
+    manualCoins: { cp: 7 }
+  });
+  const request = {
+    tokenUuid: harness.storageToken.uuid,
+    characterTokenUuid: harness.characterToken.uuid,
+    destination: "party",
+    target: { groupActorId: harness.groupActor.id, folderId: "folder-a" },
+    mutationId: "bulk-recovery"
+  };
+
+  await assert.rejects(harness.service.claimAll(request, { sender: harness.player }), /folder assignment failed/u);
+  assert.deepEqual(readStorageState(harness.storageToken).claimedRowIds, ["recovery-item-row"]);
+  assert.equal(harness.coinGrants.length, 0);
+
+  const result = await harness.service.claimAll(request, { sender: harness.player });
+
+  assert.equal(result.changed, true);
+  assert.deepEqual(result.claimedRowIds, ["recovery-bag-row"]);
+  assert.equal(harness.itemGrants.length, 1);
+  assert.equal(materialized.size, 1);
+  assert.equal(harness.coinGrants.length, 1);
+  assert.deepEqual(readStorageState(harness.storageToken).claimedRowIds, [
+    "recovery-item-row",
+    "recovery-bag-row"
+  ]);
+});
+
+test("bulk claim reuses storage authorization and the dead-NPC access path", async () => {
+  const unauthorized = createHarness();
+  await unauthorized.storageService.open(unauthorized.storageToken);
+  await assert.rejects(unauthorized.service.claimAll({
+    tokenUuid: unauthorized.storageToken.uuid,
+    characterTokenUuid: unauthorized.characterToken.uuid,
+    destination: "self",
+    target: null,
+    mutationId: "bulk-unauthorized"
+  }, { sender: { id: "stranger", isGM: false } }), /принадлежащего вам персонажа/iu);
+  assert.equal(unauthorized.itemGrants.length, 0);
+
+  const corpse = createHarness();
+  corpse.storageToken.actor.flags = {};
+  corpse.storageToken.actor.system = { attributes: { hp: { value: 0 } } };
+  await corpse.storageService.configure(corpse.storageToken, {
+    state: "opened",
+    manualRows: [{
+      rowId: "corpse-row",
+      rowKind: "item",
+      name: "Кинжал",
+      quantity: 1,
+      itemData: { name: "Кинжал", type: "weapon", system: { quantity: 1 } }
+    }]
+  });
+
+  const result = await corpse.service.claimAll({
+    tokenUuid: corpse.storageToken.uuid,
+    characterTokenUuid: corpse.characterToken.uuid,
+    destination: "self",
+    target: null,
+    mutationId: "bulk-corpse"
+  }, { sender: corpse.player });
+
+  assert.equal(result.changed, true);
+  assert.equal(corpse.itemGrants.length, 1);
+  assert.deepEqual(readStorageState(corpse.storageToken).claimedRowIds, ["corpse-row"]);
 });
 
 test("self storage claims still require a character token", () => {
