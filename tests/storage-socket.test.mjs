@@ -2977,6 +2977,46 @@ test("duplicate partial mutations decrement once and competing quantities serial
   assert.equal(harness.itemGrants.length, 2);
 });
 
+test("partial party debit survives a lost storage acknowledgement and service restart", async () => {
+  const harness = createHarness({ rowQuantity: 5 });
+  const access = {
+    tokenUuid: harness.storageToken.uuid,
+    characterTokenUuid: harness.characterToken.uuid
+  };
+  await harness.service.open(access, { sender: harness.player });
+  const request = {
+    ...access,
+    rowId: "row-1",
+    destination: "party",
+    quantity: 2,
+    target: { groupActorId: harness.groupActor.id, folderId: null },
+    mutationId: "partial-lost-ack"
+  };
+  const originalUpdate = harness.storageToken.update.bind(harness.storageToken);
+  let rejectAfterAppliedDebit = true;
+  harness.storageToken.update = async (patch) => {
+    const result = await originalUpdate(patch);
+    const nextState = patch[`flags.${MODULE_ID}.storage`];
+    if (rejectAfterAppliedDebit && nextState?.generatedRows?.[0]?.quantity === 3) {
+      rejectAfterAppliedDebit = false;
+      throw new Error("storage acknowledgement lost");
+    }
+    return result;
+  };
+
+  await assert.rejects(
+    harness.service.claimRow(request, { sender: harness.player }),
+    /acknowledgement lost/u
+  );
+  assert.equal(readStorageState(harness.storageToken).generatedRows[0].quantity, 3);
+
+  const recovered = await harness.createCommandService().claimRow(request, { sender: harness.player });
+
+  assert.equal(recovered.changed, true);
+  assert.equal(readStorageState(harness.storageToken).generatedRows[0].quantity, 3);
+  assert.equal(harness.itemGrants.length, 1);
+});
+
 test("storage row payload validation accepts only exact character and scene targets", () => {
   const base = {
     tokenUuid: "Scene.scene.Token.chest",

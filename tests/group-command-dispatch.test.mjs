@@ -918,6 +918,203 @@ test("Lootgen take-all previews once, sends one typed batch, and refreshes once"
   }
 });
 
+test("direct Lootgen take-all sends one optimized typed batch through the active GM", async () => {
+  const fixture = installFixture({ currentUserId: "player-a" });
+  const sources = Array.from({ length: 20 }, (_, index) => ({
+    sourceType: "gear",
+    sourceId: `gear-${index}`,
+    sourceDocumentId: "",
+    isBroken: false,
+    quantity: 1,
+    directGrantId: `direct-row-${index}`
+  }));
+  const rowIds = sources.map((row) => row.directGrantId);
+  const ingressPlan = buildLootgenIngressPlan(fixture.groupA.id, rowIds);
+  const moduleApi = new RebreyaMainModule();
+  const calls = { build: 0, preview: 0, collect: 0, socket: [], refresh: 0 };
+  moduleApi.inventoryService.buildLootgenItemData = async (row) => {
+    calls.build += 1;
+    return {
+      name: row.sourceId,
+      type: "loot",
+      system: { quantity: row.quantity },
+      flags: { [MODULE_ID]: { sourceType: row.sourceType, sourceId: row.sourceId } }
+    };
+  };
+  moduleApi.inventoryIngressPlanner = {
+    async preview(request) {
+      calls.preview += 1;
+      assert.equal(request.rows.length, 20);
+      assert.equal(request.batch, true);
+      return { request };
+    },
+    async collectChoices() {
+      calls.collect += 1;
+      return { rootOverrideSourceKeys: [] };
+    },
+    serialize() {
+      return ingressPlan;
+    }
+  };
+  moduleApi.socketCommandBus.request = async (command, payload) => {
+    calls.socket.push({ command, payload: clone(payload) });
+    return { changed: true, actorId: fixture.groupA.id, rows: [] };
+  };
+  moduleApi.refreshInventoryViews = async ({ actorIds }) => {
+    calls.refresh += 1;
+    assert.deepEqual(actorIds, [fixture.groupA.id]);
+  };
+
+  try {
+    const result = await moduleApi.addLootgenRowsToInventory(sources, {
+      coins: { pp: 0, gp: 3, sp: 0, cp: 0 },
+      batchMutationId: "direct-lootgen-batch"
+    });
+
+    assert.equal(result.changed, true);
+    assert.equal(calls.build, 20);
+    assert.equal(calls.preview, 1);
+    assert.equal(calls.collect, 1);
+    assert.equal(calls.refresh, 1);
+    assert.equal(calls.socket.length, 1);
+    assert.equal(calls.socket[0].command, "inventory.ingress.direct");
+    assert.deepEqual(calls.socket[0].payload.sources.map((row) => row.sourceKey), rowIds);
+    assert.deepEqual(calls.socket[0].payload.coins, { pp: 0, gp: 3, sp: 0, cp: 0 });
+    assert.deepEqual(calls.socket[0].payload.ingressPlan, ingressPlan);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("active GM revalidates and commits one direct Lootgen batch for the exact group", async () => {
+  const fixture = installFixture();
+  const sources = ["direct-a", "direct-b"].map((sourceKey) => ({
+    sourceKey,
+    sourceType: "gear",
+    sourceId: sourceKey,
+    sourceDocumentId: "",
+    isBroken: false,
+    quantity: 1
+  }));
+  const ingressPlan = buildLootgenIngressPlan(
+    fixture.groupA.id,
+    sources.map((source) => source.sourceKey)
+  );
+  const moduleApi = new RebreyaMainModule();
+  const calls = { builds: 0, commits: 0, coins: 0 };
+  moduleApi.inventoryService.buildLootgenItemData = async (source) => {
+    calls.builds += 1;
+    return {
+      name: source.sourceId,
+      type: "loot",
+      system: { quantity: source.quantity },
+      flags: { [MODULE_ID]: { sourceType: source.sourceType, sourceId: source.sourceId } }
+    };
+  };
+  moduleApi.inventoryService.commitInventoryIngressBatch = async (request, adapters) => {
+    calls.commits += 1;
+    assert.equal(request.groupActorId, fixture.groupA.id);
+    assert.equal(request.sourceOrigin, "lootgen");
+    assert.deepEqual((await adapters.resolveRows()).map((row) => row.sourceKey), ["direct-a", "direct-b"]);
+    return { actorId: fixture.groupA.id, changed: true, rows: [] };
+  };
+  moduleApi.inventoryService.addCurrencyToInventoryOnce = async (coins, mutationId, options) => {
+    calls.coins += 1;
+    assert.deepEqual(coins, { pp: 0, gp: 2, sp: 0, cp: 0 });
+    assert.equal(mutationId, "direct-command-batch:coins");
+    assert.deepEqual(options, { groupActorId: fixture.groupA.id });
+  };
+  moduleApi.refreshInventoryViews = async () => {};
+  const payload = {
+    batchMutationId: "direct-command-batch",
+    coins: { pp: 0, gp: 2, sp: 0, cp: 0 },
+    groupActorId: fixture.groupA.id,
+    ingressPlan,
+    sourceOrigin: "lootgen",
+    sources
+  };
+
+  try {
+    const authorized = commandRequest(
+      "inventory.ingress.direct",
+      fixture.users.playerA.id,
+      payload,
+      "direct-command-authorized"
+    );
+    await moduleApi.handleSocketMessage(authorized);
+    await flushCommands();
+
+    const authorizedResult = resultFor(fixture, authorized.requestId);
+    assert.equal(authorizedResult?.ok, true, JSON.stringify(authorizedResult));
+    assert.deepEqual(calls, { builds: 2, commits: 1, coins: 1 });
+
+    const denied = commandRequest(
+      "inventory.ingress.direct",
+      fixture.users.playerB.id,
+      payload,
+      "direct-command-denied"
+    );
+    await moduleApi.handleSocketMessage(denied);
+    await flushCommands();
+    assert.equal(resultFor(fixture, denied.requestId)?.error?.code, "unauthorized");
+    assert.deepEqual(calls, { builds: 2, commits: 1, coins: 1 });
+
+    const invalid = commandRequest(
+      "inventory.ingress.direct",
+      fixture.users.playerA.id,
+      { ...payload, sources: [{ ...sources[0], extra: true }, sources[1]] },
+      "direct-command-invalid"
+    );
+    await moduleApi.handleSocketMessage(invalid);
+    await flushCommands();
+    assert.equal(resultFor(fixture, invalid.requestId)?.error?.code, "invalid-payload");
+    assert.deepEqual(calls, { builds: 2, commits: 1, coins: 1 });
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("public model grants use the same single direct-ingress command", async () => {
+  const fixture = installFixture({ currentUserId: "player-a" });
+  const moduleApi = new RebreyaMainModule();
+  const plan = buildLootgenIngressPlan(fixture.groupA.id, ["item"]);
+  let socketCall = null;
+  moduleApi.inventoryService.buildModelItemData = async () => ({
+    name: "Model sword",
+    type: "weapon",
+    system: { quantity: 1 },
+    flags: { [MODULE_ID]: { sourceType: "gear", sourceId: "model-sword" } }
+  });
+  moduleApi.inventoryIngressPlanner = {
+    preview: async () => ({}),
+    collectChoices: async () => ({ rootOverrideSourceKeys: [] }),
+    serialize: () => plan
+  };
+  moduleApi.socketCommandBus.request = async (command, payload) => {
+    socketCall = { command, payload: clone(payload) };
+    return { actorId: fixture.groupA.id, changed: true, rows: [] };
+  };
+  moduleApi.refreshInventoryViews = async () => {};
+
+  try {
+    await moduleApi.addModelItemToInventory("gear", "model-sword", 1, {
+      groupActorId: fixture.groupA.id,
+      folderId: null,
+      batchMutationId: "public-model-command"
+    });
+
+    assert.equal(socketCall.command, "inventory.ingress.direct");
+    assert.equal(socketCall.payload.sourceOrigin, "public-model");
+    assert.equal(socketCall.payload.sources.length, 1);
+    assert.equal(socketCall.payload.ingressPlan.groupActorId, fixture.groupA.id);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
 test("typed Lootgen ingress validates and authorizes the exact group batch", async () => {
   const fixture = installFixture();
   const rowIds = ["loot-row-1"];

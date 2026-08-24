@@ -255,6 +255,7 @@ const SOCKET_EVENT_LOOTGEN_SHOW = "lootgen-show-result";
 const SOCKET_EVENT_LOOTGEN_CLAIM_ROW = "lootgen-claim-row";
 const SOCKET_EVENT_LOOTGEN_CLAIM_COINS = "lootgen-claim-coins";
 const INVENTORY_INGRESS_LOOTGEN_COMMAND = "inventory.ingress.lootgen";
+const INVENTORY_INGRESS_DIRECT_COMMAND = "inventory.ingress.direct";
 const SOCKET_EVENT_TRADER_AUDIT = "trader-audit";
 const SOCKET_EVENT_DOWNTIME_CREATE_REQUEST = "downtime-create-request";
 const SOCKET_EVENT_DOWNTIME_CREATE_RESULT = "downtime-create-result";
@@ -763,6 +764,44 @@ function isValidLootgenInventoryIngressPayload(payload) {
     && rowIds.every(isValidInventoryFolderIdentifier)
     && new Set(rowIds).size === rowIds.length
     && JSON.stringify(payload.ingressPlan.rows.map((row) => row.sourceKey)) === JSON.stringify(rowIds);
+}
+
+function isValidDirectInventoryIngressPayload(payload) {
+  if (!hasExactKeys(payload, [
+    "batchMutationId", "coins", "groupActorId", "ingressPlan", "sourceOrigin", "sources"
+  ])
+    || !isValidInventoryMutationId(payload.batchMutationId)
+    || !isValidInventoryFolderIdentifier(payload.groupActorId)
+    || !new Set(["lootgen", "public-model"]).has(payload.sourceOrigin)
+    || !Array.isArray(payload.sources)
+    || !payload.coins || typeof payload.coins !== "object" || Array.isArray(payload.coins)
+    || !hasExactKeys(payload.coins, ["cp", "gp", "pp", "sp"])
+    || !Object.values(payload.coins).every((value) => Number.isSafeInteger(value) && value >= 0)) {
+    return false;
+  }
+  const sources = payload.sources;
+  if (!sources.every((source) => (
+    hasExactKeys(source, [
+      "isBroken", "quantity", "sourceDocumentId", "sourceId", "sourceKey", "sourceType"
+    ])
+      && isValidInventoryFolderIdentifier(source.sourceKey)
+      && isTrimmedNonEmptyString(source.sourceType)
+      && isTrimmedNonEmptyString(source.sourceId)
+      && typeof source.sourceDocumentId === "string"
+      && source.sourceDocumentId === source.sourceDocumentId.trim()
+      && typeof source.isBroken === "boolean"
+      && Number.isFinite(source.quantity)
+      && source.quantity > 0
+  )) || new Set(sources.map((source) => source.sourceKey)).size !== sources.length) {
+    return false;
+  }
+  if (sources.length === 0) {
+    return payload.ingressPlan === null && Object.values(payload.coins).some((value) => value > 0);
+  }
+  return isValidSerializedInventoryIngressPlan(payload.ingressPlan)
+    && payload.ingressPlan.groupActorId === payload.groupActorId
+    && JSON.stringify(payload.ingressPlan.rows.map((row) => row.sourceKey))
+      === JSON.stringify(sources.map((source) => source.sourceKey));
 }
 
 function isValidInventoryFolderIdentifier(value) {
@@ -1630,6 +1669,14 @@ export class RebreyaMainModule {
       ),
       execute: (payload) => this.runInventoryMutation(
         () => this.#executeLootgenInventoryIngress(payload),
+        { actorIdsFromResult: () => [payload.groupActorId] }
+      )
+    });
+    this.socketCommandBus.register(INVENTORY_INGRESS_DIRECT_COMMAND, {
+      validate: isValidDirectInventoryIngressPayload,
+      authorize: (payload, { sender }) => this.#canSenderManageGroup(sender, payload.groupActorId),
+      execute: (payload) => this.runInventoryMutation(
+        () => this.#executeDirectInventoryIngress(payload),
         { actorIdsFromResult: () => [payload.groupActorId] }
       )
     });
@@ -2627,6 +2674,97 @@ export class RebreyaMainModule {
     });
   }
 
+  #normalizeDirectInventoryIngressCoins(coins = {}) {
+    return Object.fromEntries(["pp", "gp", "sp", "cp"].map((key) => [
+      key,
+      Math.max(0, Math.trunc(Number(coins?.[key] ?? 0)) || 0)
+    ]));
+  }
+
+  #normalizeDirectInventoryIngressSources(sources) {
+    return (Array.isArray(sources) ? sources : []).map((source) => ({
+      sourceKey: String(source?.sourceKey ?? source?.directGrantId ?? "").trim(),
+      sourceType: String(source?.sourceType ?? "").trim(),
+      sourceId: String(source?.sourceId ?? "").trim(),
+      sourceDocumentId: String(source?.sourceDocumentId ?? "").trim(),
+      isBroken: source?.isBroken === true,
+      quantity: Math.max(0.01, Math.round((Number(source?.quantity ?? 1) || 1) * 100) / 100)
+    }));
+  }
+
+  async #buildDirectInventoryIngressRows(sourceOrigin, sources, requestedFolderId) {
+    return Promise.all(sources.map(async (source) => ({
+      sourceKey: source.sourceKey,
+      quantity: source.quantity,
+      itemData: sourceOrigin === "lootgen"
+        ? await this.inventoryService.buildLootgenItemData(source)
+        : await this.inventoryService.buildModelItemData(
+          source.sourceType,
+          source.sourceId,
+          source.quantity
+        ),
+      legacyFolderId: requestedFolderId,
+      container: null
+    })));
+  }
+
+  async #prepareDirectInventoryIngress({
+    groupActorId,
+    sourceOrigin,
+    sources,
+    requestedFolderId = null
+  }) {
+    if (sources.length === 0) return null;
+    const rows = await this.#buildDirectInventoryIngressRows(sourceOrigin, sources, requestedFolderId);
+    const preview = await this.inventoryIngressPlanner.preview({
+      groupActorId,
+      requestedFolderId,
+      rows,
+      batch: rows.length > 1
+    });
+    const choices = await this.inventoryIngressPlanner.collectChoices(preview);
+    return choices === null ? null : this.inventoryIngressPlanner.serialize(preview, choices);
+  }
+
+  async #executeDirectInventoryIngress(payload) {
+    let ingressResult = {
+      actorId: payload.groupActorId,
+      batchMutationId: payload.batchMutationId,
+      changed: false,
+      rows: []
+    };
+    if (payload.sources.length > 0) {
+      const requestedFolderId = payload.ingressPlan.requestedFolderId ?? null;
+      ingressResult = await this.inventoryService.commitInventoryIngressBatch({
+        groupActorId: payload.groupActorId,
+        batchMutationId: payload.batchMutationId,
+        sourceOrigin: payload.sourceOrigin,
+        serializedPlan: payload.ingressPlan
+      }, {
+        resolveRows: () => this.#buildDirectInventoryIngressRows(
+          payload.sourceOrigin,
+          payload.sources,
+          requestedFolderId
+        ),
+        debitRow: async () => {}
+      });
+    }
+    const coins = this.#normalizeDirectInventoryIngressCoins(payload.coins);
+    const coinsGranted = Object.values(coins).some((value) => value > 0);
+    if (coinsGranted) {
+      await this.inventoryService.addCurrencyToInventoryOnce(
+        coins,
+        `${payload.batchMutationId}:coins`,
+        { groupActorId: payload.groupActorId }
+      );
+    }
+    return {
+      ...ingressResult,
+      changed: ingressResult.changed || coinsGranted,
+      coinsGranted
+    };
+  }
+
   async #dispatchInventoryIngress({ command, payload, validate, execute }) {
     if (typeof validate !== "function" || !validate(payload)) {
       throw new TypeError("Inventory ingress command payload is invalid.");
@@ -2661,6 +2799,15 @@ export class RebreyaMainModule {
     }
     if (result?.claimedCoins) this.#notifyLootgenChatClaim(payload.lootId, "", "coins");
     return result;
+  }
+
+  async #dispatchDirectInventoryIngress(payload) {
+    return this.#dispatchInventoryIngress({
+      command: INVENTORY_INGRESS_DIRECT_COMMAND,
+      payload,
+      validate: isValidDirectInventoryIngressPayload,
+      execute: (exactPayload) => this.#executeDirectInventoryIngress(exactPayload)
+    });
   }
 
   async claimLootgenChatRowToInventory(lootId, rowId, {
@@ -5376,9 +5523,38 @@ export class RebreyaMainModule {
   }
 
   async addModelItemToInventory(sourceType, sourceId, quantity = 1, options = {}) {
-    return this.runInventoryMutation(
-      () => this.inventoryService.addModelItemToInventory(sourceType, sourceId, quantity, options)
-    );
+    const context = this.groupContextService.resolveForCurrentUser();
+    const groupActorId = String(
+      options.groupActorId ?? context?.groupActor?.id ?? context?.groupId ?? ""
+    ).trim();
+    const batchMutationId = String(options.batchMutationId ?? "").trim()
+      || createSocketRequestId("inventory-model");
+    const requestedFolderId = options.folderId === null || options.folderId === undefined
+      ? null
+      : String(options.folderId).trim();
+    const sources = this.#normalizeDirectInventoryIngressSources([{
+      sourceKey: "item",
+      sourceType,
+      sourceId,
+      quantity
+    }]);
+    const ingressPlan = await this.#prepareDirectInventoryIngress({
+      groupActorId,
+      sourceOrigin: "public-model",
+      sources,
+      requestedFolderId
+    });
+    if (ingressPlan === null) {
+      return { actorId: groupActorId, batchMutationId, cancelled: true, changed: false, rows: [] };
+    }
+    return this.#dispatchDirectInventoryIngress({
+      batchMutationId,
+      coins: this.#normalizeDirectInventoryIngressCoins(),
+      groupActorId,
+      ingressPlan,
+      sourceOrigin: "public-model",
+      sources
+    });
   }
 
   async addLootgenRowToInventory(row = {}) {
@@ -5386,9 +5562,44 @@ export class RebreyaMainModule {
     if (!mutationId) {
       throw new Error("Для выдачи строки Lootgen нужен стабильный идентификатор.");
     }
-    return this.runInventoryMutation(
-      () => this.inventoryService.addLootgenRowToInventory(row)
-    );
+    return this.addLootgenRowsToInventory([row], { batchMutationId: mutationId });
+  }
+
+  async addLootgenRowsToInventory(rows = [], {
+    coins = {},
+    batchMutationId = ""
+  } = {}) {
+    const context = this.groupContextService.resolveForCurrentUser();
+    const groupActorId = String(context?.groupActor?.id ?? context?.groupId ?? "").trim();
+    const sources = this.#normalizeDirectInventoryIngressSources(rows);
+    const stableBatchMutationId = String(batchMutationId ?? "").trim();
+    if (!stableBatchMutationId) {
+      throw new Error("Для пакетной выдачи Lootgen нужен стабильный идентификатор.");
+    }
+    const normalizedCoins = this.#normalizeDirectInventoryIngressCoins(coins);
+    const ingressPlan = await this.#prepareDirectInventoryIngress({
+      groupActorId,
+      sourceOrigin: "lootgen",
+      sources,
+      requestedFolderId: null
+    });
+    if (sources.length > 0 && ingressPlan === null) {
+      return {
+        actorId: groupActorId,
+        batchMutationId: stableBatchMutationId,
+        cancelled: true,
+        changed: false,
+        rows: []
+      };
+    }
+    return this.#dispatchDirectInventoryIngress({
+      batchMutationId: stableBatchMutationId,
+      coins: normalizedCoins,
+      groupActorId,
+      ingressPlan,
+      sourceOrigin: "lootgen",
+      sources
+    });
   }
 
   async addLootgenCoinsToInventory(coins = {}, mutationId = "") {
@@ -5396,12 +5607,10 @@ export class RebreyaMainModule {
     if (!stableMutationId) {
       throw new Error("Для выдачи монет Lootgen нужен стабильный идентификатор.");
     }
-    if (!isActiveGmClient(game)) {
-      throw new Error("Только активный мастер может добавлять монеты Lootgen.");
-    }
-    return this.runInventoryMutation(
-      () => this.inventoryService.addCurrencyToInventoryOnce(coins, stableMutationId)
-    );
+    return this.addLootgenRowsToInventory([], {
+      coins,
+      batchMutationId: stableMutationId
+    });
   }
 
   getRebreyaToolCatalog() {

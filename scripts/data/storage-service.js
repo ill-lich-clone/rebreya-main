@@ -139,6 +139,18 @@ function normalizeClaimedRowIds(value) {
     .filter(Boolean)));
 }
 
+function normalizeRowClaimMutations(value) {
+  const byMutationId = new Map();
+  for (const entry of Array.isArray(value) ? value : []) {
+    const mutationId = cleanId(entry?.mutationId);
+    const rowId = cleanId(entry?.rowId);
+    const quantity = Number(entry?.quantity);
+    if (!mutationId || !rowId || !Number.isSafeInteger(quantity) || quantity < 1) continue;
+    byMutationId.set(mutationId, { mutationId, rowId, quantity });
+  }
+  return Array.from(byMutationId.values());
+}
+
 function normalizeReadJournalRowIds(value, rows) {
   const journalRowIds = new Set(rows
     .filter((row) => row?.rowKind === "journal" && cleanId(row?.sourceId))
@@ -285,6 +297,7 @@ export function buildStorageTokenState(input = {}) {
     generatedRows,
     generatedCoins: normalizeCoins(source.generatedCoins),
     claimedRowIds: normalizeClaimedRowIds(source.claimedRowIds),
+    rowClaimMutations: normalizeRowClaimMutations(source.rowClaimMutations),
     readJournalRowIds: normalizeReadJournalRowIds(source.readJournalRowIds, [...manualRows, ...generatedRows]),
     coinsClaimed: source.coinsClaimed === true,
     corpseMaterialization: normalizeCorpseMaterialization(source.corpseMaterialization),
@@ -646,6 +659,26 @@ export class StorageService {
     }
 
     const rowId = String(request?.rowId ?? "").trim();
+    const mutationId = cleanId(request?.mutationId);
+    const previousMutation = mutationId
+      ? current.rowClaimMutations.find((entry) => entry.mutationId === mutationId) ?? null
+      : null;
+    if (previousMutation) {
+      const requestedQuantity = request?.quantity === undefined
+        ? previousMutation.quantity
+        : Number(request.quantity);
+      if (previousMutation.rowId !== rowId || previousMutation.quantity !== requestedQuantity) {
+        const error = new Error("Один mutationId нельзя повторно использовать для другого списания из хранилища.");
+        error.code = "STORAGE_MUTATION_CONFLICT";
+        throw error;
+      }
+      return {
+        changed: true,
+        row: null,
+        quantity: previousMutation.quantity,
+        state: clone(current)
+      };
+    }
     const rows = visibleRows(current);
     const row = rows.find((entry, index) => String(entry.rowId ?? index) === rowId) ?? null;
     if (!row || current.claimedRowIds.includes(rowId)) {
@@ -684,7 +717,10 @@ export class StorageService {
       const state = await this.#write(token, {
         ...current,
         manualRows: updateRows(current.manualRows),
-        generatedRows: updateRows(current.generatedRows)
+        generatedRows: updateRows(current.generatedRows),
+        rowClaimMutations: mutationId
+          ? [...current.rowClaimMutations, { mutationId, rowId, quantity }]
+          : current.rowClaimMutations
       });
       return { changed: true, row: claimedRow, quantity, state };
     }
@@ -694,6 +730,9 @@ export class StorageService {
     const state = await this.#write(token, {
       ...current,
       claimedRowIds,
+      rowClaimMutations: mutationId
+        ? [...current.rowClaimMutations, { mutationId, rowId, quantity }]
+        : current.rowClaimMutations,
       state: nextState,
       displayMode: nextState === "empty" ? "empty" : current.displayMode
     });

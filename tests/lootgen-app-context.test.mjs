@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 class FakeApplicationV2 {
   constructor(options = {}) {
@@ -145,4 +146,13 @@ test("lootgen applies a selected template and remembers its selection", async ()
   assert.equal(app.itemCount, 4);
   assert.equal(app.budgetValue, 900);
   assert.equal(app.selectedTemplateId, template.id);
+});
+
+test("lootgen take-all delegates one batch instead of looping over row grants", () => {
+  const source = readFileSync(new URL("../scripts/ui/lootgen-app.js", import.meta.url), "utf8");
+  const body = source.match(/async #takeAllToInventory\(\) \{(?<body>[\s\S]*?)\n  \}\n\n  async #sendResultToChat/u)?.groups?.body ?? "";
+
+  assert.match(body, /addLootgenRowsToInventory\(/u);
+  assert.doesNotMatch(body, /addLootgenRowToInventory\(/u);
+  assert.doesNotMatch(body, /\bfor\s*\(/u);
 });

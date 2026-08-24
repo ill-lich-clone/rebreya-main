@@ -119,6 +119,7 @@ Versioned entrypoint обязан оставаться минимальным ca
 | `inventory.sale` | `InventoryService` | управление зарегистрированной группой |
 | `inventory.import` | `InventoryService` | отправитель владеет source Actor и состоит в группе |
 | `inventory.ingress.lootgen` | `LootClaimService` + `InventoryService` | GM или владелец участника целевой группы; trusted GM-authored Lootgen state |
+| `inventory.ingress.direct` | `RebreyaMainModule` + `InventoryService` | GM или владелец участника целевой группы; active GM заново строит ItemData из source IDs |
 | `inventory.ingress-rule.create` | `InventoryService` | GM или владелец участника зарегистрированной целевой группы |
 | `inventory.ingress-rule.update` | `InventoryService` | та же проверка группы |
 | `inventory.ingress-rule.delete` | `InventoryService` | та же проверка группы |
@@ -293,7 +294,7 @@ await api.setCombatStatus("actor-id", "frightened", { value: 2 });
 - Кнопка фильтра в toolbar существующего `InventoryApp` переключает это же окно между предметами и редактором group-scoped правил. Создание, изменение и удаление доступны тем же участникам, что организация папок; черновик валидируется локально, а conflict/revision/folder ошибки подтверждает authoritative active GM без optimistic world-state записи из UI.
 - Ровно одно совпавшее ingress-правило применяет `folder`, `skip` или `dismantle` только к новым Item, реально поступающим в целевой Group Actor из Lootgen, Storage или внешнего drop/import. Уже существующие Item, монеты и созданные при dismantle материалы повторно не фильтруются; потенциально пересекающиеся правила нельзя сохранить.
 - `updateInventoryItemQuantity`, `deleteInventoryItem`, `takeInventoryItemToCharacter`, `sellInventoryItem`, `importInventoryDrop`, `addModelItemToInventory`, `breakInventoryItemToMaterial`.
-- `importInventoryDrop(dropData, { groupActorId, folderId })` для внешнего Item и `addModelItemToInventory(sourceType, sourceId, quantity, { groupActorId?, folderId?, batchMutationId? })` пропускают новые Item через правила целевой группы; active GM повторно валидирует serialized plan. Внутренний перенос уже существующего Item остаётся обычной сменой папки. Typed `inventory.import` использует exact payload `{ inventoryActorId, itemUuid, mutationId, folderId, ingressPlan }`; ItemData и material outputs в plan не передаются.
+- `importInventoryDrop(dropData, { groupActorId, folderId })`, `addModelItemToInventory(sourceType, sourceId, quantity, { groupActorId?, folderId?, batchMutationId? })` и `addLootgenRowsToInventory(rows, { coins?, batchMutationId })` пропускают новые Item через правила целевой группы; active GM повторно строит ItemData из source IDs и валидирует serialized plan. Прямая кнопка Lootgen «Забрать всё» делает один preview, одну typed-команду и один refresh на весь batch; монеты идут в той же команде, но не входят в descriptors. Внутренний перенос уже существующего Item остаётся обычной сменой папки. Typed `inventory.import` использует exact payload `{ inventoryActorId, itemUuid, mutationId, folderId, ingressPlan }`; ItemData и material outputs в plan не передаются.
 - `addPartySupply`, `consumePartySuppliesOneDay`, `updatePartyCurrency`, `convertPartyCurrency`, `setPartyMemberEnergy`, `restorePartyMemberEnergy`, `getRebreyaToolCatalog`.
 - `getTravelSnapshot`, `syncTravelMapToken`, `setTravelRoute`, `advanceTravelHours`, `clearTravelRoute`.
 - `getCraftSnapshot`, `queueCraftTask`, `cancelCraftTask`, `processCraftOneDay`.
@@ -304,7 +305,7 @@ await api.setCombatStatus("actor-id", "frightened", { value: 2 });
 
 - `isTraderIntegrationAvailable`, `getCityTraderSummaries`, `getTraderSnapshot`, `purchaseTraderItem`, `createTraderSalePreview`, `sellTraderItem`, `updateTraderMetadata`.
 - `recordTraderAudit`, `getTradeAuditLog`, `rollbackTraderAuditEntry`.
-- `shareLootgenResult`, `createLootgenChatMessage`, `claimLootgenChatRow`, `claimLootgenChatCoins`, `claimLootgenChatRowToInventory`, `claimLootgenChatAllToInventory`, `restoreLootgenClearFromChat`.
+- `shareLootgenResult`, `createLootgenChatMessage`, `claimLootgenChatRow`, `claimLootgenChatCoins`, `claimLootgenChatRowToInventory`, `claimLootgenChatAllToInventory`, `restoreLootgenClearFromChat`, `addLootgenRowToInventory`, `addLootgenRowsToInventory`, `addLootgenCoinsToInventory`.
 - `listLootgenTemplates`, `getLootgenTemplate`, `saveLootgenTemplate`, `removeLootgenTemplate`.
 - `openStorageApp`, `getStorageSnapshot`, `markStorageActor`, `configureStorageToken`, `addManualStorageItem`, `removeManualStorageItem`, `resetStorageToken`, `openStorage`, `readStorageJournal(tokenUuid, rowId, request)`, `claimStorageRow`, `claimStorageCoins`, `claimStorageAll(tokenUuid, destination, mutationId, request)`, `inspectStorageDepositSource(dragData)`, `depositStorageItem`, `dropStorageItemToScene`.
 - `dropStorageCoinsToScene(itemUuid, denomination, { sceneId, x, y, quantity, characterTokenUuid?, mutationId? })` — managed Coin Item drop. Для non-GM всегда отправляет exact `storage.coin.drop` active-GM command; при отсутствии `mutationId` API создаёт стабильный ID текущей операции.

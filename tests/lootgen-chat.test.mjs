@@ -726,7 +726,9 @@ test("lootgen trusts only GM-authored chat state and journals direct grants", as
   assert.match(mainSource, /commitInventoryIngressBatch\(\{/u);
   assert.match(mainSource, /sourceOrigin: "lootgen"/u);
   assert.doesNotMatch(mainSource, /addLootgenChatRowToInventoryOnce\(/u);
-  assert.match(mainSource, /addCurrencyToInventoryOnce\(coins, stableMutationId\)/u);
+  assert.match(mainSource, /INVENTORY_INGRESS_DIRECT_COMMAND = "inventory\.ingress\.direct"/u);
+  assert.match(mainSource, /return this\.addLootgenRowsToInventory\(\[\], \{/u);
+  assert.match(appSource, /addLootgenRowsToInventory\(this\.generated\.rows/u);
   assert.match(generatorSource, /directGrantId: `lootgen:\$\{safeBatchId\}:row:\$\{index\}`/u);
   assert.match(generatorSource, /directCoinGrantId: `lootgen:\$\{safeBatchId\}:coins`/u);
   assert.doesNotMatch(appSource, /updatePartyCurrency\(\{/u);

@@ -797,16 +797,13 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   async #takeAllToInventory() {
-    for (const row of this.generated.rows) {
-      if (typeof this.moduleApi.addLootgenRowToInventory === "function") {
-        await this.moduleApi.addLootgenRowToInventory(row);
-      }
-      else {
-        throw new Error("Текущая версия склада не поддерживает безопасную выдачу Lootgen.");
-      }
+    if (typeof this.moduleApi.addLootgenRowsToInventory !== "function") {
+      throw new Error("Текущая версия склада не поддерживает безопасную пакетную выдачу Lootgen.");
     }
-
-    await this.#addCoinsToInventory();
+    await this.moduleApi.addLootgenRowsToInventory(this.generated.rows, {
+      coins: normalizeCoins(this.generated.coins ?? {}),
+      batchMutationId: this.generated.directCoinGrantId
+    });
   }
 
   async #sendResultToChat() {

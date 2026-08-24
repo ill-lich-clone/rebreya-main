@@ -499,11 +499,12 @@ export class StorageCommandService {
         }
         return clone(rows);
       },
-      debitRow: async (row) => {
+      debitRow: async (row, receipt = {}) => {
         const claim = await this.storageService.claim(storageToken, {
           kind: "row",
           rowId: row.sourceKey,
           quantity: row.quantity,
+          mutationId: `${mutationKey}:source:${clean(receipt.sourceKey) || row.sourceKey}`,
           path
         });
         sourceClaims.set(row.sourceKey, claim);
