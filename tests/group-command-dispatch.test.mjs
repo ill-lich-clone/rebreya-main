@@ -98,6 +98,7 @@ function installFixture({ currentUserId = "gm-a" } = {}) {
       contents: actors,
       get: (actorId) => actors.find((actor) => actor.id === actorId) ?? null
     },
+    messages: { contents: [] },
     settings: {
       settings: new Map([
         [`${MODULE_ID}.${SETTINGS_KEYS.GROUP_STATE}`, { scope: "world" }],
@@ -134,6 +135,29 @@ function installFixture({ currentUserId = "gm-a" } = {}) {
       globalThis.foundry = previousFoundry;
       globalThis.ui = previousUi;
     }
+  };
+}
+
+function buildLootgenIngressPlan(groupActorId, rowIds) {
+  return {
+    version: 1,
+    groupActorId,
+    rulesRevision: 2,
+    requestedFolderId: null,
+    rows: rowIds.map((sourceKey) => ({
+      sourceKey,
+      identity: {
+        sourceType: "gear",
+        sourceId: sourceKey,
+        documentType: "loot",
+        durabilityState: "ineligible",
+        quantity: 1
+      },
+      quantity: 1,
+      matchedRuleId: null,
+      action: { type: "legacy", folderId: null }
+    })),
+    rootOverrideSourceKeys: []
   };
 }
 
@@ -801,6 +825,305 @@ test("typed inventory import lets group members copy compendium items into the p
   }
   finally {
     globalThis.fromUuid = previousFromUuid;
+    fixture.restore();
+  }
+});
+
+test("Lootgen take-all previews once, sends one typed batch, and refreshes once", async () => {
+  const fixture = installFixture({ currentUserId: "player-a" });
+  const rowIds = Array.from({ length: 20 }, (_, index) => `loot-row-${index}`);
+  const state = {
+    lootId: "loot-batch",
+    createdBy: fixture.users.gmA.id,
+    rows: rowIds.map((rowId) => ({
+      rowId,
+      quantity: 1,
+      claimed: false,
+      itemData: {
+        name: rowId,
+        type: "loot",
+        system: { quantity: 1 },
+        flags: { [MODULE_ID]: { sourceType: "gear", sourceId: rowId } }
+      }
+    })),
+    coins: { gp: 3, totalCopper: 300 },
+    coinsClaimed: false
+  };
+  const message = {
+    id: "message-loot-batch",
+    author: fixture.users.gmA,
+    getFlag: (moduleId, key) => moduleId === MODULE_ID && key === "lootgenChat" ? state : null
+  };
+  game.messages.contents.push(message);
+  const moduleApi = new RebreyaMainModule();
+  const calls = { preview: 0, collect: 0, socket: [], refresh: 0, single: 0 };
+  moduleApi.claimLootgenChatRowToInventory = async () => {
+    calls.single += 1;
+    throw new Error("take-all must not dispatch per-row claims");
+  };
+  const ingressPlan = buildLootgenIngressPlan(fixture.groupA.id, rowIds);
+  moduleApi.inventoryIngressPlanner = {
+    async preview(request) {
+      calls.preview += 1;
+      assert.equal(request.rows.length, 20);
+      return { request };
+    },
+    async collectChoices() {
+      calls.collect += 1;
+      return { rootOverrideSourceKeys: [] };
+    },
+    serialize() {
+      return ingressPlan;
+    }
+  };
+  moduleApi.socketCommandBus.request = async (command, payload) => {
+    calls.socket.push({ command, payload: clone(payload) });
+    return {
+      changed: true,
+      claimedRowIds: rowIds,
+      claimedCoins: true,
+      receipt: { actorId: fixture.groupA.id }
+    };
+  };
+  moduleApi.refreshInventoryViews = async ({ actorIds }) => {
+    calls.refresh += 1;
+    assert.deepEqual(actorIds, [fixture.groupA.id]);
+  };
+
+  try {
+    const changed = await moduleApi.claimLootgenChatAllToInventory(state.lootId, {
+      claimId: "loot-batch-mutation",
+      quiet: true
+    });
+
+    assert.equal(changed, true);
+    assert.equal(calls.preview, 1);
+    assert.equal(calls.collect, 1);
+    assert.equal(calls.refresh, 1);
+    assert.equal(calls.single, 0);
+    assert.deepEqual(calls.socket, [{
+      command: "inventory.ingress.lootgen",
+      payload: {
+        batchMutationId: "loot-batch-mutation",
+        groupActorId: fixture.groupA.id,
+        lootId: state.lootId,
+        rowIds,
+        includeCoins: true,
+        ingressPlan
+      }
+    }]);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("typed Lootgen ingress validates and authorizes the exact group batch", async () => {
+  const fixture = installFixture();
+  const rowIds = ["loot-row-1"];
+  const ingressPlan = buildLootgenIngressPlan(fixture.groupA.id, rowIds);
+  const state = {
+    lootId: "loot-command",
+    createdBy: fixture.users.gmA.id,
+    rows: [],
+    coins: {},
+    coinsClaimed: true
+  };
+  game.messages.contents.push({
+    id: "message-loot-command",
+    author: fixture.users.gmA,
+    getFlag: (moduleId, key) => moduleId === MODULE_ID && key === "lootgenChat" ? state : null
+  });
+  const moduleApi = new RebreyaMainModule();
+  const calls = [];
+  moduleApi.lootClaimService.claimBatch = async (request) => {
+    calls.push(clone(request));
+    return { changed: true, claimedRowIds: rowIds, claimedCoins: false, receipt: null };
+  };
+  moduleApi.refreshInventoryViews = async () => {};
+  const payload = {
+    batchMutationId: "loot-command-batch",
+    groupActorId: fixture.groupA.id,
+    lootId: state.lootId,
+    rowIds,
+    includeCoins: false,
+    ingressPlan
+  };
+
+  try {
+    const request = commandRequest(
+      "inventory.ingress.lootgen",
+      fixture.users.playerA.id,
+      payload,
+      "loot-command-request"
+    );
+    await moduleApi.handleSocketMessage(request);
+    await flushCommands();
+
+    assert.deepEqual(calls, [{
+      messageId: "message-loot-command",
+      lootId: state.lootId,
+      claimId: payload.batchMutationId,
+      rowIds,
+      includeCoins: false,
+      ingressPlan
+    }]);
+    const lootCommandResult = resultFor(fixture, request.requestId);
+    assert.equal(lootCommandResult?.ok, true, JSON.stringify(lootCommandResult));
+
+    const invalid = commandRequest("inventory.ingress.lootgen", fixture.users.playerA.id, {
+      ...payload,
+      rowIds: ["different-row"]
+    }, "loot-command-invalid");
+    await moduleApi.handleSocketMessage(invalid);
+    await flushCommands();
+    assert.equal(resultFor(fixture, invalid.requestId)?.error?.code, "invalid-payload");
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("Lootgen cancel dispatches nothing and stale retry rebuilds a fresh preview", async () => {
+  const fixture = installFixture({ currentUserId: "player-a" });
+  const state = {
+    lootId: "loot-retry-preview",
+    createdBy: fixture.users.gmA.id,
+    rows: [{
+      rowId: "retry-row",
+      quantity: 1,
+      claimed: false,
+      itemData: {
+        name: "Retry row",
+        type: "loot",
+        system: { quantity: 1 },
+        flags: { [MODULE_ID]: { sourceType: "gear", sourceId: "retry-row" } }
+      }
+    }],
+    coins: {},
+    coinsClaimed: true
+  };
+  game.messages.contents.push({
+    id: "message-retry-preview",
+    author: fixture.users.gmA,
+    getFlag: (moduleId, key) => moduleId === MODULE_ID && key === "lootgenChat" ? state : null
+  });
+  const moduleApi = new RebreyaMainModule();
+  let previewCalls = 0;
+  let collectCalls = 0;
+  let socketCalls = 0;
+  const plan = buildLootgenIngressPlan(fixture.groupA.id, ["retry-row"]);
+  moduleApi.inventoryIngressPlanner = {
+    async preview() {
+      previewCalls += 1;
+      return {};
+    },
+    async collectChoices() {
+      collectCalls += 1;
+      return collectCalls === 1 ? null : { rootOverrideSourceKeys: [] };
+    },
+    serialize: () => plan
+  };
+  moduleApi.socketCommandBus.request = async () => {
+    socketCalls += 1;
+    throw Object.assign(new Error("stale plan"), { code: "plan-stale" });
+  };
+
+  try {
+    assert.equal(await moduleApi.claimLootgenChatRowToInventory(state.lootId, "retry-row"), false);
+    assert.equal(socketCalls, 0);
+    await assert.rejects(
+      moduleApi.claimLootgenChatRowToInventory(state.lootId, "retry-row"),
+      (error) => error?.code === "plan-stale"
+    );
+    await assert.rejects(
+      moduleApi.claimLootgenChatRowToInventory(state.lootId, "retry-row"),
+      (error) => error?.code === "plan-stale"
+    );
+    assert.equal(previewCalls, 3);
+    assert.equal(collectCalls, 3);
+    assert.equal(socketCalls, 2);
+    assert.equal(state.rows[0].claimed, false);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("Lootgen composition grant delegates Item rows once and handles coins outside descriptors", async () => {
+  const fixture = installFixture();
+  const moduleApi = new RebreyaMainModule();
+  const rowIds = ["folder-row", "skip-row"];
+  const ingressPlan = buildLootgenIngressPlan(fixture.groupA.id, rowIds);
+  const liveState = {
+    lootId: "loot-composed-grant",
+    rows: rowIds.map((rowId) => ({
+      rowId,
+      quantity: 1,
+      claimed: false,
+      itemData: {
+        name: rowId,
+        type: "loot",
+        system: { quantity: 1 },
+        flags: { [MODULE_ID]: { sourceType: "gear", sourceId: rowId } }
+      }
+    }))
+  };
+  const message = {
+    getFlag: () => liveState
+  };
+  const calls = { commit: 0, coins: 0, once: 0 };
+  moduleApi.inventoryService.addLootgenRowToInventoryOnce = async () => {
+    calls.once += 1;
+  };
+  moduleApi.inventoryService.commitInventoryIngressBatch = async (request, adapters) => {
+    calls.commit += 1;
+    assert.deepEqual((await adapters.resolveRows()).map((row) => row.sourceKey), rowIds);
+    assert.equal(request.sourceOrigin, "lootgen");
+    return {
+      actorId: fixture.groupA.id,
+      rows: [
+        { sourceKey: "folder-row", changed: true },
+        { sourceKey: "skip-row", changed: false }
+      ]
+    };
+  };
+  moduleApi.inventoryService.addCurrencyToInventoryOnce = async (_coins, mutationId, options) => {
+    calls.coins += 1;
+    assert.equal(mutationId, `loot-coins:${calls.coins === 1 ? "composed-batch" : "coins-only-batch"}`);
+    assert.deepEqual(options, calls.coins === 1 ? { groupActorId: fixture.groupA.id } : undefined);
+  };
+
+  try {
+    const result = await moduleApi.lootClaimService.grantBatch({
+      claimId: "composed-batch",
+      lootId: liveState.lootId,
+      rows: clone(liveState.rows),
+      coins: { gp: 1, totalCopper: 100 },
+      includeCoins: true,
+      ingressPlan,
+      message
+    });
+
+    assert.deepEqual(result.acceptedRowIds, ["folder-row"]);
+    assert.equal(result.coinsGranted, true);
+    assert.deepEqual(calls, { commit: 1, coins: 1, once: 0 });
+
+    const coinsOnlyResult = await moduleApi.lootClaimService.grantBatch({
+      claimId: "coins-only-batch",
+      lootId: liveState.lootId,
+      rows: [],
+      coins: { sp: 2, totalCopper: 20 },
+      includeCoins: true,
+      ingressPlan: null,
+      message
+    });
+
+    assert.deepEqual(coinsOnlyResult.acceptedRowIds, []);
+    assert.equal(coinsOnlyResult.coinsGranted, true);
+    assert.deepEqual(calls, { commit: 1, coins: 2, once: 0 });
+  }
+  finally {
     fixture.restore();
   }
 });

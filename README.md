@@ -118,6 +118,7 @@
 | `inventory.take` | `InventoryService` | отправитель владеет target Actor в этой группе |
 | `inventory.sale` | `InventoryService` | управление зарегистрированной группой |
 | `inventory.import` | `InventoryService` | отправитель владеет source Actor и состоит в группе |
+| `inventory.ingress.lootgen` | `LootClaimService` + `InventoryService` | GM или владелец участника целевой группы; trusted GM-authored Lootgen state |
 | `inventory.ingress-rule.create` | `InventoryService` | GM или владелец участника зарегистрированной целевой группы |
 | `inventory.ingress-rule.update` | `InventoryService` | та же проверка группы |
 | `inventory.ingress-rule.delete` | `InventoryService` | та же проверка группы |

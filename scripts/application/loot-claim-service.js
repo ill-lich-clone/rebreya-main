@@ -36,6 +36,7 @@ export class LootClaimService {
     writeState,
     grantRow,
     grantCoins,
+    grantBatch = null,
     coordinator = new WorldMutationCoordinator()
   } = {}) {
     for (const [name, operation] of Object.entries({ getMessage, readState, writeState, grantRow, grantCoins })) {
@@ -48,58 +49,95 @@ export class LootClaimService {
     this.writeState = writeState;
     this.grantRow = grantRow;
     this.grantCoins = grantCoins;
+    if (grantBatch !== null && typeof grantBatch !== "function") {
+      throw new TypeError("grantBatch must be a function");
+    }
+    this.grantBatch = grantBatch ?? (async ({ claimId, lootId, rows, coins, includeCoins, message }) => {
+      const acceptedRowIds = [];
+      for (const row of rows) {
+        const rowId = cleanId(row?.rowId);
+        await this.grantRow({ claimId, lootId, rowId, row: clone(row), message });
+        acceptedRowIds.push(rowId);
+      }
+      if (includeCoins) {
+        await this.grantCoins({ claimId, lootId, coins: clone(coins), message });
+      }
+      return {
+        acceptedRowIds,
+        coinsGranted: includeCoins,
+        receipt: { claimId }
+      };
+    });
     this.coordinator = coordinator;
   }
 
-  claimRow(request = {}) {
-    return this.#runClaim("row", request);
+  async claimRow(request = {}) {
+    const rowId = cleanId(request.rowId);
+    const result = await this.claimBatch({
+      messageId: request.messageId,
+      lootId: request.lootId,
+      claimId: request.claimId,
+      rowIds: rowId ? [rowId] : [],
+      includeCoins: false,
+      ingressPlan: null
+    });
+    return result.claimedRowIds.includes(rowId);
   }
 
-  claimCoins(request = {}) {
-    return this.#runClaim("coins", request);
+  async claimCoins(request = {}) {
+    const result = await this.claimBatch({
+      messageId: request.messageId,
+      lootId: request.lootId,
+      claimId: request.claimId,
+      rowIds: [],
+      includeCoins: true,
+      ingressPlan: null
+    });
+    return result.claimedCoins;
   }
 
-  async #runClaim(kind, request) {
+  async claimBatch(request = {}) {
     const claimId = cleanId(request.claimId);
     const lootId = cleanId(request.lootId);
     const messageId = cleanId(request.messageId);
-    const rowId = cleanId(request.rowId);
-    if (!claimId || !lootId || (kind === "row" && !rowId)) {
-      throw new TypeError("lootId, claimId, and rowId for row claims are required");
+    if (!claimId || !lootId || !Array.isArray(request.rowIds) || typeof request.includeCoins !== "boolean") {
+      throw new TypeError("lootId, claimId, rowIds, and includeCoins are required");
     }
+    const rowIds = request.rowIds.map(cleanId);
+    if (rowIds.some((rowId) => !rowId) || new Set(rowIds).size !== rowIds.length) {
+      throw new TypeError("Loot batch rowIds must be unique nonempty strings");
+    }
+    const ingressPlan = clone(request.ingressPlan ?? null);
+    const fingerprint = JSON.stringify({ lootId, rowIds, includeCoins: request.includeCoins, ingressPlan });
     const message = await this.getMessage({ messageId, lootId });
-    if (!message) {
-      throw new Error("Loot ChatMessage was not found");
-    }
+    if (!message) throw new Error("Loot ChatMessage was not found");
 
     return this.coordinator.run(`loot-claim:${message.id ?? messageId ?? lootId}`, async () => {
       let state = normalizeState(await this.readState(message), lootId);
-      if (state.lootId !== lootId) {
-        throw new Error("Loot claim does not match the ChatMessage");
-      }
+      if (state.lootId !== lootId) throw new Error("Loot claim does not match the ChatMessage");
       let claim = state.claims.find((entry) => cleanId(entry?.id) === claimId) ?? null;
       if (claim) {
-        if (claim.kind !== kind || (kind === "row" && claim.rowId !== rowId)) {
+        if (claim.kind !== "batch" || claim.fingerprint !== fingerprint) {
           throw new Error("Loot claim id conflicts with an existing claim");
         }
-        if (claim.phase === "committed") {
-          return claim.result === true;
-        }
+        if (claim.phase === "committed") return clone(claim.result);
       }
       else {
-        const alreadyClaimed = kind === "coins"
-          ? state.coinsClaimed === true
-          : state.rows.find((row) => cleanId(row?.rowId) === rowId)?.claimed === true;
-        if (alreadyClaimed) {
-          return false;
-        }
-        if (kind === "row" && !state.rows.some((row) => cleanId(row?.rowId) === rowId)) {
-          return false;
+        const availableRowIds = rowIds.filter((rowId) => {
+          const row = state.rows.find((entry) => cleanId(entry?.rowId) === rowId);
+          return row && row.claimed !== true;
+        });
+        const includeCoins = request.includeCoins && state.coinsClaimed !== true;
+        if (availableRowIds.length === 0 && !includeCoins) {
+          return { changed: false, claimedRowIds: [], claimedCoins: false, receipt: null };
         }
         claim = {
           id: claimId,
-          kind,
-          rowId: kind === "row" ? rowId : "",
+          kind: "batch",
+          fingerprint,
+          rowIds: availableRowIds,
+          includeCoins,
+          ingressPlan,
           phase: "prepared"
         };
         state.claims.push(claim);
@@ -109,50 +147,55 @@ export class LootClaimService {
       }
 
       if (claim.phase === "prepared") {
-        const row = kind === "row"
-          ? state.rows.find((entry) => cleanId(entry?.rowId) === rowId)
-          : null;
-        const receipt = kind === "row"
-          ? await this.grantRow({ claimId, lootId, rowId, row: clone(row), message })
-          : await this.grantCoins({ claimId, lootId, coins: clone(state.coins), message });
-        const next = normalizeState(await this.readState(message), lootId);
-        const nextClaim = next.claims.find((entry) => entry.id === claimId);
-        if (!nextClaim || nextClaim.phase !== "prepared") {
-          if (nextClaim?.phase !== "granted" && nextClaim?.phase !== "committed") {
-            throw new Error("Loot claim phase changed while granting value");
-          }
+        const selectedRows = claim.rowIds.map((rowId) => (
+          state.rows.find((row) => cleanId(row?.rowId) === rowId)
+        )).filter(Boolean);
+        const grantResult = await this.grantBatch({
+          claimId,
+          lootId,
+          rows: clone(selectedRows),
+          coins: clone(state.coins),
+          includeCoins: claim.includeCoins,
+          ingressPlan: clone(claim.ingressPlan),
+          message
+        });
+        const acceptedRowIds = Array.isArray(grantResult?.acceptedRowIds)
+          ? grantResult.acceptedRowIds.map(cleanId)
+          : [];
+        const selectedIds = new Set(claim.rowIds);
+        if (acceptedRowIds.some((rowId) => !selectedIds.has(rowId))
+          || new Set(acceptedRowIds).size !== acceptedRowIds.length) {
+          throw new Error("Loot batch grant returned invalid accepted rows");
         }
-        else {
-          nextClaim.phase = "granted";
-          nextClaim.receipt = clone(receipt);
-          state = await this.#writeAndConfirm(message, next, claimId, "granted");
-        }
-        claim = state.claims.find((entry) => entry.id === claimId) ?? nextClaim;
+        claim.phase = "granted";
+        claim.grantResult = {
+          acceptedRowIds,
+          coinsGranted: grantResult?.coinsGranted === true && claim.includeCoins,
+          receipt: clone(grantResult?.receipt ?? null)
+        };
+        state = await this.#writeAndConfirm(message, state, claimId, "granted");
+        claim = state.claims.find((entry) => entry.id === claimId);
       }
 
       if (claim.phase === "granted") {
-        state = normalizeState(await this.readState(message), lootId);
-        claim = state.claims.find((entry) => entry.id === claimId);
-        if (!claim) throw new Error("Loot claim disappeared before commit");
-        if (kind === "row") {
-          const row = state.rows.find((entry) => cleanId(entry?.rowId) === rowId);
-          if (!row) throw new Error("Loot row disappeared before commit");
-          row.claimed = true;
+        const accepted = new Set(claim.grantResult.acceptedRowIds);
+        for (const row of state.rows) {
+          if (accepted.has(cleanId(row?.rowId))) row.claimed = true;
         }
-        else {
-          state.coinsClaimed = true;
-        }
+        if (claim.grantResult.coinsGranted) state.coinsClaimed = true;
         claim.phase = "committed";
-        claim.result = true;
+        claim.result = {
+          changed: accepted.size > 0 || claim.grantResult.coinsGranted,
+          claimedRowIds: [...claim.grantResult.acceptedRowIds],
+          claimedCoins: claim.grantResult.coinsGranted,
+          receipt: clone(claim.grantResult.receipt)
+        };
         state.claims = retainClaims(state.claims);
-        await this.#writeAndConfirm(message, state, claimId, "committed");
-        return true;
+        state = await this.#writeAndConfirm(message, state, claimId, "committed");
+        claim = state.claims.find((entry) => entry.id === claimId);
       }
-
-      if (claim.phase === "committed") {
-        return claim.result === true;
-      }
-      throw new Error(`Unsupported loot claim phase: ${String(claim.phase)}`);
+      if (claim.phase === "committed") return clone(claim.result);
+      throw new Error(`Unsupported loot batch claim phase: ${String(claim.phase)}`);
     });
   }
 

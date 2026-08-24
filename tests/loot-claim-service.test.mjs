@@ -129,3 +129,115 @@ test("a new claim id cannot grant an already claimed row again", async () => {
   }), false);
   assert.equal(fixture.effects.rows, 1);
 });
+
+test("loot batch reads once, grants once, and commits only accepted filtered rows plus coins", async () => {
+  let state = {
+    lootId: "loot-batch",
+    rows: [
+      { rowId: "folder", name: "Sword", claimed: false },
+      { rowId: "skip", name: "Journal", claimed: false },
+      { rowId: "dismantle", name: "Axe", claimed: false }
+    ],
+    coins: { gp: 2, totalCopper: 200 },
+    coinsClaimed: false,
+    claims: []
+  };
+  const calls = { read: 0, write: 0, grantBatch: 0 };
+  const service = new LootClaimService({
+    getMessage: async () => ({ id: "message-batch" }),
+    readState: async () => {
+      calls.read += 1;
+      return clone(state);
+    },
+    writeState: async (_message, nextState) => {
+      calls.write += 1;
+      state = clone(nextState);
+    },
+    grantRow: async () => { throw new Error("per-row grant must not run"); },
+    grantCoins: async () => { throw new Error("separate coin grant must not run"); },
+    grantBatch: async ({ rows, coins, ingressPlan }) => {
+      calls.grantBatch += 1;
+      assert.deepEqual(rows.map((row) => row.rowId), ["folder", "skip", "dismantle"]);
+      assert.equal(coins.gp, 2);
+      assert.deepEqual(ingressPlan, { version: 1 });
+      return {
+        acceptedRowIds: ["folder", "dismantle"],
+        coinsGranted: true,
+        receipt: { batchMutationId: "batch-1" }
+      };
+    }
+  });
+
+  const result = await service.claimBatch({
+    messageId: "message-batch",
+    lootId: "loot-batch",
+    claimId: "batch-1",
+    rowIds: ["folder", "skip", "dismantle"],
+    includeCoins: true,
+    ingressPlan: { version: 1 }
+  });
+
+  assert.deepEqual(result, {
+    changed: true,
+    claimedRowIds: ["folder", "dismantle"],
+    claimedCoins: true,
+    receipt: { batchMutationId: "batch-1" }
+  });
+  assert.deepEqual(calls, { read: 1, write: 3, grantBatch: 1 });
+  assert.deepEqual(state.rows.map((row) => row.claimed), [true, false, true]);
+  assert.equal(state.coinsClaimed, true);
+});
+
+test("loot batch retry reuses its receipt and conflicting request fingerprint is rejected", async () => {
+  let state = {
+    lootId: "loot-retry",
+    rows: [{ rowId: "row-1", claimed: false }],
+    coins: {},
+    coinsClaimed: true,
+    claims: []
+  };
+  let failGrantedWrite = true;
+  let grantCalls = 0;
+  const service = new LootClaimService({
+    getMessage: async () => ({ id: "message-retry" }),
+    readState: async () => clone(state),
+    writeState: async (_message, nextState) => {
+      const claim = nextState.claims.find((entry) => entry.id === "batch-retry");
+      if (failGrantedWrite && claim?.phase === "granted") {
+        failGrantedWrite = false;
+        throw new Error("batch receipt write failed");
+      }
+      state = clone(nextState);
+    },
+    grantRow: async () => {},
+    grantCoins: async () => {},
+    grantBatch: async () => {
+      grantCalls += 1;
+      return {
+        acceptedRowIds: ["row-1"],
+        coinsGranted: false,
+        receipt: { stable: true }
+      };
+    }
+  });
+  const request = {
+    messageId: "message-retry",
+    lootId: "loot-retry",
+    claimId: "batch-retry",
+    rowIds: ["row-1"],
+    includeCoins: false,
+    ingressPlan: { version: 1 }
+  };
+
+  await assert.rejects(service.claimBatch(request), /batch receipt write failed/u);
+  const result = await service.claimBatch(request);
+  const terminal = await service.claimBatch(request);
+
+  assert.deepEqual(terminal, result);
+  assert.equal(grantCalls, 2);
+  assert.equal(state.rows[0].claimed, true);
+  await assert.rejects(
+    service.claimBatch({ ...request, rowIds: [] }),
+    /conflicts/u
+  );
+});

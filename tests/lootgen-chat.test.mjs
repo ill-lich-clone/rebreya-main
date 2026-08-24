@@ -704,13 +704,13 @@ test("only the active GM handles economic lootgen socket claims", async () => {
   const source = await readFile(new URL("../scripts/main.js", import.meta.url), "utf8");
   for (const eventName of [
     "SOCKET_EVENT_LOOTGEN_CLAIM_ROW",
-    "SOCKET_EVENT_LOOTGEN_CLAIM_ROW_TO_INVENTORY",
-    "SOCKET_EVENT_LOOTGEN_CLAIM_ALL_TO_INVENTORY",
     "SOCKET_EVENT_LOOTGEN_CLAIM_COINS"
   ]) {
     assert.match(source, new RegExp(`message\\.type === ${eventName} && isActiveGmClient\\(game\\)`, "u"));
     assert.doesNotMatch(source, new RegExp(`message\\.type === ${eventName} && game\\.user\\?\\.isGM`, "u"));
   }
+  assert.doesNotMatch(source, /SOCKET_EVENT_LOOTGEN_CLAIM_(ROW_TO_INVENTORY|ALL_TO_INVENTORY)/u);
+  assert.match(source, /INVENTORY_INGRESS_LOOTGEN_COMMAND = "inventory\.ingress\.lootgen"/u);
 });
 
 test("lootgen trusts only GM-authored chat state and journals direct grants", async () => {
@@ -723,7 +723,9 @@ test("lootgen trusts only GM-authored chat state and journals direct grants", as
   assert.match(mainSource, /const createdBy = String\(state\?\.createdBy/u);
   assert.match(mainSource, /messageUserId === createdBy/u);
   assert.match(mainSource, /author\?\.isGM === true/u);
-  assert.match(mainSource, /addLootgenRowToInventoryOnce\(row, mutationId\)/u);
+  assert.match(mainSource, /commitInventoryIngressBatch\(\{/u);
+  assert.match(mainSource, /sourceOrigin: "lootgen"/u);
+  assert.doesNotMatch(mainSource, /addLootgenChatRowToInventoryOnce\(/u);
   assert.match(mainSource, /addCurrencyToInventoryOnce\(coins, stableMutationId\)/u);
   assert.match(generatorSource, /directGrantId: `lootgen:\$\{safeBatchId\}:row:\$\{index\}`/u);
   assert.match(generatorSource, /directCoinGrantId: `lootgen:\$\{safeBatchId\}:coins`/u);
