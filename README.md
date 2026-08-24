@@ -94,7 +94,7 @@
 ### Журналы
 
 - `craftMutationJournal`: постановка, отмена и завершение крафта. Основные фазы: `prepared -> materials-debited -> task-persisted -> output-created/committed`; при ошибке — `compensated` или `reconciliation-required`.
-- `inventoryMutationJournal`: перенос, продажа, импорт и выдача лута. Основные фазы: `prepared -> target-created/currency-credited -> source-debited -> committed`; при ошибке — компенсация или явная сверка.
+- `inventoryMutationJournal`: перенос, продажа, импорт, выдача лута и revisioned операции ingress-правил. Экономические фазы: `prepared -> target-created/currency-credited -> source-debited -> committed`; rule CRUD сохраняет before/after Actor state до записи flag и восстанавливает потерянное acknowledgement; при неоднозначности требуется явная сверка.
 - Торговля использует `TradeTransactionService`, `trade-sale-transaction-workflow.js` и `trade-rollback-workflow.js`; состояние транзакции и audit принадлежат `TraderStateRepository`.
 - Chat-loot использует `LootClaimService`, координатор и флаг `flags.rebreya-main.lootgenChat`, поэтому одна строка/монеты не выдаются дважды.
 
@@ -118,6 +118,9 @@
 | `inventory.take` | `InventoryService` | отправитель владеет target Actor в этой группе |
 | `inventory.sale` | `InventoryService` | управление зарегистрированной группой |
 | `inventory.import` | `InventoryService` | отправитель владеет source Actor и состоит в группе |
+| `inventory.ingress-rule.create` | `InventoryService` | GM или владелец участника зарегистрированной целевой группы |
+| `inventory.ingress-rule.update` | `InventoryService` | та же проверка группы |
+| `inventory.ingress-rule.delete` | `InventoryService` | та же проверка группы |
 | `trader.purchase` | `TradeTransactionService` | отправитель владеет Actor-покупателем |
 | `trader.sell` | `TradeTransactionService` | отправитель владеет Actor-продавцом |
 
@@ -282,7 +285,8 @@ await api.setCombatStatus("actor-id", "frightened", { value: 2 });
 ### Группы, inventory, travel, craft и downtime
 
 - `getGroupRegistry`, `getGroupContext`, `registerPartyGroup`, `setActivePartyGroup`, `mergeLegacyInventoryIntoGroup`.
-- `getInventorySnapshot`, `getPartySnapshot`, `addPartyMember`, `removePartyMember`, `updatePartyDefaults`, `updatePartyMember`, `updatePartyMemberTool`.
+- `getInventorySnapshot`, `getInventoryIngressRuleState`, `getPartySnapshot`, `addPartyMember`, `removePartyMember`, `updatePartyDefaults`, `updatePartyMember`, `updatePartyMemberTool`.
+- `createInventoryFolder`, `renameInventoryFolder`, `moveInventoryFolder`, `deleteInventoryFolder`, `moveInventoryItemToFolder`, `createInventoryIngressRule`, `updateInventoryIngressRule`, `deleteInventoryIngressRule` — group-scoped organization; rule writes требуют stable `operationId` и текущий `expectedRevision`.
 - `updateInventoryItemQuantity`, `deleteInventoryItem`, `takeInventoryItemToCharacter`, `sellInventoryItem`, `importInventoryDrop`, `addModelItemToInventory`, `breakInventoryItemToMaterial`.
 - `addPartySupply`, `consumePartySuppliesOneDay`, `updatePartyCurrency`, `convertPartyCurrency`, `setPartyMemberEnergy`, `restorePartyMemberEnergy`, `getRebreyaToolCatalog`.
 - `getTravelSnapshot`, `syncTravelMapToken`, `setTravelRoute`, `advanceTravelHours`, `clearTravelRoute`.
@@ -322,6 +326,8 @@ Hidden world state:
 - `craftMutationJournal`, `inventoryMutationJournal`.
 - `connectionStates`, `referenceNotes`, `tradeRouteOverrides`, `statePolicies`, `cosmologyState`, `globalEventsState`, `globalEventsDraft`, `lootgenTemplates`.
 - `cityPresentationOverrides` — только непустые отличия `description`/`image` известных городов; сброс поля удаляет override и возвращает значение из `data/cities.json`.
+
+Group Actor хранит организацию инвентаря в раздельных flags `flags["rebreya-main"].inventoryFolders` и `flags["rebreya-main"].inventoryIngressRules`; UI/API не записывают их напрямую, а rule revision и folder references повторно проверяет active GM.
 
 Основные источники в `data/`:
 

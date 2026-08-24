@@ -7,6 +7,9 @@ import {
   INVENTORY_FOLDER_RENAME_COMMAND,
   INVENTORY_FOLDER_MOVE_COMMAND,
   INVENTORY_FOLDER_DELETE_COMMAND,
+  INVENTORY_INGRESS_RULE_CREATE_COMMAND,
+  INVENTORY_INGRESS_RULE_DELETE_COMMAND,
+  INVENTORY_INGRESS_RULE_UPDATE_COMMAND,
   INVENTORY_ITEM_FOLDER_MOVE_COMMAND
 } from "../scripts/data/inventory-service.js";
 import {
@@ -195,6 +198,13 @@ function resultFor(fixture, requestId) {
     .find((message) => message.type === COMMAND_RESULT_TYPE && message.requestId === requestId);
 }
 
+const FILTER_RULE = {
+  id: "broken-weapons",
+  name: "Сломанное оружие",
+  conditions: [{ field: "durabilityState", operator: "is", value: "broken" }],
+  action: { type: "skip" }
+};
+
 const COMMAND_CASES = [
   {
     command: INVENTORY_FOLDER_CREATE_COMMAND,
@@ -225,10 +235,43 @@ const COMMAND_CASES = [
     method: "moveInventoryItemToFolder",
     payload: { groupActorId: "group-a", itemId: "item-a", folderId: null },
     wrongValue: (payload) => ({ ...payload, folderId: 7 })
+  },
+  {
+    command: INVENTORY_INGRESS_RULE_CREATE_COMMAND,
+    method: "createInventoryIngressRule",
+    payload: {
+      groupActorId: "group-a",
+      operationId: "create-rule",
+      expectedRevision: 0,
+      rule: FILTER_RULE
+    },
+    wrongValue: (payload) => ({ ...payload, expectedRevision: -1 })
+  },
+  {
+    command: INVENTORY_INGRESS_RULE_UPDATE_COMMAND,
+    method: "updateInventoryIngressRule",
+    payload: {
+      groupActorId: "group-a",
+      operationId: "update-rule",
+      expectedRevision: 1,
+      rule: FILTER_RULE
+    },
+    wrongValue: (payload) => ({ ...payload, rule: { ...payload.rule, extra: true } })
+  },
+  {
+    command: INVENTORY_INGRESS_RULE_DELETE_COMMAND,
+    method: "deleteInventoryIngressRule",
+    payload: {
+      groupActorId: "group-a",
+      operationId: "delete-rule",
+      expectedRevision: 1,
+      ruleId: FILTER_RULE.id
+    },
+    wrongValue: (payload) => ({ ...payload, ruleId: null })
   }
 ];
 
-test("five folder commands dispatch exact payloads and refresh only the returned Actor", async () => {
+test("eight inventory organization commands dispatch exact payloads and refresh only the returned Actor", async () => {
   const fixture = installFixture();
   try {
     const moduleApi = new RebreyaMainModule();
@@ -265,7 +308,7 @@ test("five folder commands dispatch exact payloads and refresh only the returned
   }
 });
 
-test("folder command validators reject missing, extra, untrimmed and wrong nullable fields", async () => {
+test("inventory organization validators reject missing, extra, untrimmed and wrong typed fields", async () => {
   const fixture = installFixture();
   try {
     const moduleApi = new RebreyaMainModule();
@@ -314,6 +357,43 @@ test("folder command validators reject missing, extra, untrimmed and wrong nulla
   }
 });
 
+test("rule command validators require canonical exact rule values and safe revisions", async () => {
+  const fixture = installFixture();
+  try {
+    const moduleApi = new RebreyaMainModule();
+    let executions = 0;
+    moduleApi.inventoryService.createInventoryIngressRule = async () => {
+      executions += 1;
+      return { actorId: fixture.groupA.id };
+    };
+    const base = COMMAND_CASES.find((entry) => entry.command === INVENTORY_INGRESS_RULE_CREATE_COMMAND).payload;
+    const variants = [
+      { ...base, expectedRevision: 1.5 },
+      { ...base, operationId: " create-rule" },
+      { ...base, rule: { ...base.rule, name: " Сломанное оружие" } },
+      { ...base, rule: { ...base.rule, conditions: [{ ...base.rule.conditions[0], value: " broken" }] } },
+      { ...base, rule: { ...base.rule, action: { type: "skip", folderId: "weapons" } } }
+    ];
+    for (const [index, payload] of variants.entries()) {
+      await moduleApi.handleSocketMessage(commandRequest(
+        INVENTORY_INGRESS_RULE_CREATE_COMMAND,
+        fixture.users.playerA.id,
+        payload,
+        `invalid-rule-shape-${index}`
+      ));
+    }
+    await flushCommands();
+
+    assert.equal(executions, 0);
+    for (const index of variants.keys()) {
+      assert.equal(resultFor(fixture, `invalid-rule-shape-${index}`)?.error?.code, "invalid-payload");
+    }
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
 test("folder commands enforce the GM/member/foreign/unknown/transport authorization matrix", async () => {
   const fixture = installFixture();
   try {
@@ -349,6 +429,47 @@ test("folder commands enforce the GM/member/foreign/unknown/transport authorizat
     assert.equal(resultFor(fixture, "auth-foreign")?.error?.code, "unauthorized");
     assert.equal(resultFor(fixture, "auth-unknown")?.error?.code, "unknown-sender");
     assert.equal(resultFor(fixture, "auth-mismatch")?.error?.code, "sender-mismatch");
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("rule commands reuse the GM/member/foreign/unknown/transport authorization matrix", async () => {
+  const fixture = installFixture();
+  try {
+    const moduleApi = new RebreyaMainModule();
+    const senders = [];
+    moduleApi.refreshInventoryViews = async () => {};
+    moduleApi.inventoryService.createInventoryIngressRule = async (payload) => {
+      senders.push(payload.operationId);
+      return { actorId: payload.groupActorId, changed: true };
+    };
+    const payload = (operationId) => ({
+      groupActorId: fixture.groupA.id,
+      operationId,
+      expectedRevision: 0,
+      rule: { ...clone(FILTER_RULE), id: operationId, name: operationId }
+    });
+    const requests = [
+      commandRequest(INVENTORY_INGRESS_RULE_CREATE_COMMAND, fixture.users.gm.id, payload("gm"), "rule-auth-gm"),
+      commandRequest(INVENTORY_INGRESS_RULE_CREATE_COMMAND, fixture.users.playerA.id, payload("member"), "rule-auth-member"),
+      commandRequest(INVENTORY_INGRESS_RULE_CREATE_COMMAND, fixture.users.playerB.id, payload("foreign"), "rule-auth-foreign"),
+      commandRequest(INVENTORY_INGRESS_RULE_CREATE_COMMAND, "missing-user", payload("unknown"), "rule-auth-unknown")
+    ];
+    for (const request of requests) await moduleApi.handleSocketMessage(request);
+    await moduleApi.handleSocketMessage(
+      commandRequest(INVENTORY_INGRESS_RULE_CREATE_COMMAND, fixture.users.playerA.id, payload("forged"), "rule-auth-mismatch"),
+      fixture.users.playerB.id
+    );
+    await flushCommands();
+
+    assert.deepEqual(senders, ["gm", "member"]);
+    assert.equal(resultFor(fixture, "rule-auth-gm")?.ok, true);
+    assert.equal(resultFor(fixture, "rule-auth-member")?.ok, true);
+    assert.equal(resultFor(fixture, "rule-auth-foreign")?.error?.code, "unauthorized");
+    assert.equal(resultFor(fixture, "rule-auth-unknown")?.error?.code, "unknown-sender");
+    assert.equal(resultFor(fixture, "rule-auth-mismatch")?.error?.code, "sender-mismatch");
   }
   finally {
     fixture.restore();
@@ -411,7 +532,7 @@ test("queued folder moves re-read live Actor state and reject a newly formed cyc
     let enterBlock;
     const entered = new Promise((resolve) => { enterBlock = resolve; });
     const blocked = moduleApi.worldMutationCoordinator.run(
-      `inventory-folders:${fixture.groupA.id}`,
+      `inventory-organization:${fixture.groupA.id}`,
       async () => {
         enterBlock();
         await new Promise((resolve) => { releaseBlock = resolve; });
@@ -441,7 +562,7 @@ test("queued folder moves re-read live Actor state and reject a newly formed cyc
   }
 });
 
-test("module folder wrappers validate locally and route non-active clients through exact commands", async () => {
+test("module organization wrappers validate locally and route non-active clients through exact commands", async () => {
   const gmFixture = installFixture();
   try {
     const moduleApi = new RebreyaMainModule();

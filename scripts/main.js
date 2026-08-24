@@ -56,6 +56,9 @@ import {
   INVENTORY_FOLDER_DELETE_COMMAND,
   INVENTORY_FOLDER_MOVE_COMMAND,
   INVENTORY_FOLDER_RENAME_COMMAND,
+  INVENTORY_INGRESS_RULE_CREATE_COMMAND,
+  INVENTORY_INGRESS_RULE_DELETE_COMMAND,
+  INVENTORY_INGRESS_RULE_UPDATE_COMMAND,
   INVENTORY_IMPORT_COMMAND,
   INVENTORY_ITEM_FOLDER_MOVE_COMMAND,
   INVENTORY_SALE_COMMAND,
@@ -69,6 +72,7 @@ import {
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_REQUEST,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_RESULT
 } from "./data/inventory-service.js?v=1.4.156-inventory-folder-exports";
+import { normalizeInventoryIngressRule } from "./data/inventory-ingress-rules.js";
 import { DurabilityService } from "./data/durability-service.js?v=1.4.154-corpse-storage-broken-name";
 import { MapObjectTokenService } from "./data/map-object-token-service.js?v=1.4.97-map-object-token";
 import { HeroDollService } from "./data/hero-doll-service.js";
@@ -775,6 +779,35 @@ function isValidInventoryItemFolderMovePayload(payload) {
     && isValidInventoryFolderIdentifier(payload.groupActorId)
     && isValidInventoryFolderIdentifier(payload.itemId)
     && isValidNullableInventoryFolderIdentifier(payload.folderId);
+}
+
+function isCanonicalInventoryIngressRule(value) {
+  try {
+    return JSON.stringify(normalizeInventoryIngressRule(value)) === JSON.stringify(value);
+  }
+  catch (_error) {
+    return false;
+  }
+}
+
+function isValidInventoryIngressRuleRevision(value) {
+  return Number.isSafeInteger(value) && value >= 0;
+}
+
+function isValidInventoryIngressRuleWritePayload(payload) {
+  return hasExactKeys(payload, ["expectedRevision", "groupActorId", "operationId", "rule"])
+    && isValidInventoryFolderIdentifier(payload.groupActorId)
+    && isValidInventoryMutationId(payload.operationId)
+    && isValidInventoryIngressRuleRevision(payload.expectedRevision)
+    && isCanonicalInventoryIngressRule(payload.rule);
+}
+
+function isValidInventoryIngressRuleDeletePayload(payload) {
+  return hasExactKeys(payload, ["expectedRevision", "groupActorId", "operationId", "ruleId"])
+    && isValidInventoryFolderIdentifier(payload.groupActorId)
+    && isValidInventoryMutationId(payload.operationId)
+    && isValidInventoryIngressRuleRevision(payload.expectedRevision)
+    && isValidInventoryFolderIdentifier(payload.ruleId);
 }
 
 function isValidCurrencyInteger(value) {
@@ -1489,7 +1522,7 @@ export class RebreyaMainModule {
       authorize: (payload, { sender }) => this.#canSenderManageGroup(sender, payload.inventoryActorId),
       execute: (payload) => this.inventoryService.executeCurrencyConvertMutation(payload)
     });
-    const registerInventoryFolderMutation = (command, validate, methodName) => {
+    const registerInventoryOrganizationMutation = (command, validate, methodName) => {
       this.socketCommandBus.register(command, {
         validate,
         authorize: authorizeGroup,
@@ -1501,35 +1534,50 @@ export class RebreyaMainModule {
             );
           }
           catch (error) {
-            throw new Error(error?.message || "Inventory folder mutation failed.", { cause: error });
+            throw new Error(error?.message || "Inventory organization mutation failed.", { cause: error });
           }
         }
       });
     };
-    registerInventoryFolderMutation(
+    registerInventoryOrganizationMutation(
       INVENTORY_FOLDER_CREATE_COMMAND,
       isValidInventoryFolderCreatePayload,
       "createInventoryFolder"
     );
-    registerInventoryFolderMutation(
+    registerInventoryOrganizationMutation(
       INVENTORY_FOLDER_RENAME_COMMAND,
       isValidInventoryFolderRenamePayload,
       "renameInventoryFolder"
     );
-    registerInventoryFolderMutation(
+    registerInventoryOrganizationMutation(
       INVENTORY_FOLDER_MOVE_COMMAND,
       isValidInventoryFolderMovePayload,
       "moveInventoryFolder"
     );
-    registerInventoryFolderMutation(
+    registerInventoryOrganizationMutation(
       INVENTORY_FOLDER_DELETE_COMMAND,
       isValidInventoryFolderDeletePayload,
       "deleteInventoryFolder"
     );
-    registerInventoryFolderMutation(
+    registerInventoryOrganizationMutation(
       INVENTORY_ITEM_FOLDER_MOVE_COMMAND,
       isValidInventoryItemFolderMovePayload,
       "moveInventoryItemToFolder"
+    );
+    registerInventoryOrganizationMutation(
+      INVENTORY_INGRESS_RULE_CREATE_COMMAND,
+      isValidInventoryIngressRuleWritePayload,
+      "createInventoryIngressRule"
+    );
+    registerInventoryOrganizationMutation(
+      INVENTORY_INGRESS_RULE_UPDATE_COMMAND,
+      isValidInventoryIngressRuleWritePayload,
+      "updateInventoryIngressRule"
+    );
+    registerInventoryOrganizationMutation(
+      INVENTORY_INGRESS_RULE_DELETE_COMMAND,
+      isValidInventoryIngressRuleDeletePayload,
+      "deleteInventoryIngressRule"
     );
     this.socketCommandBus.register(STORAGE_OPEN_COMMAND, {
       validate: isValidStorageOpenPayload,
@@ -4898,9 +4946,9 @@ export class RebreyaMainModule {
     );
   }
 
-  async #runInventoryFolderMutation(command, payload, validate, methodName) {
+  async #runInventoryOrganizationMutation(command, payload, validate, methodName) {
     if (!validate(payload)) {
-      throw new TypeError("Inventory folder command payload is invalid.");
+      throw new TypeError("Inventory organization command payload is invalid.");
     }
     const exactPayload = cloneSocketPayload(payload);
     if (!isActiveGmClient(globalThis.game)) {
@@ -4915,7 +4963,7 @@ export class RebreyaMainModule {
   }
 
   createInventoryFolder(payload) {
-    return this.#runInventoryFolderMutation(
+    return this.#runInventoryOrganizationMutation(
       INVENTORY_FOLDER_CREATE_COMMAND,
       payload,
       isValidInventoryFolderCreatePayload,
@@ -4924,7 +4972,7 @@ export class RebreyaMainModule {
   }
 
   renameInventoryFolder(payload) {
-    return this.#runInventoryFolderMutation(
+    return this.#runInventoryOrganizationMutation(
       INVENTORY_FOLDER_RENAME_COMMAND,
       payload,
       isValidInventoryFolderRenamePayload,
@@ -4933,7 +4981,7 @@ export class RebreyaMainModule {
   }
 
   moveInventoryFolder(payload) {
-    return this.#runInventoryFolderMutation(
+    return this.#runInventoryOrganizationMutation(
       INVENTORY_FOLDER_MOVE_COMMAND,
       payload,
       isValidInventoryFolderMovePayload,
@@ -4942,7 +4990,7 @@ export class RebreyaMainModule {
   }
 
   deleteInventoryFolder(payload) {
-    return this.#runInventoryFolderMutation(
+    return this.#runInventoryOrganizationMutation(
       INVENTORY_FOLDER_DELETE_COMMAND,
       payload,
       isValidInventoryFolderDeletePayload,
@@ -4951,11 +4999,42 @@ export class RebreyaMainModule {
   }
 
   moveInventoryItemToFolder(payload) {
-    return this.#runInventoryFolderMutation(
+    return this.#runInventoryOrganizationMutation(
       INVENTORY_ITEM_FOLDER_MOVE_COMMAND,
       payload,
       isValidInventoryItemFolderMovePayload,
       "moveInventoryItemToFolder"
+    );
+  }
+
+  getInventoryIngressRuleState(payload) {
+    return this.inventoryService.getInventoryIngressRuleState(payload);
+  }
+
+  createInventoryIngressRule(payload) {
+    return this.#runInventoryOrganizationMutation(
+      INVENTORY_INGRESS_RULE_CREATE_COMMAND,
+      payload,
+      isValidInventoryIngressRuleWritePayload,
+      "createInventoryIngressRule"
+    );
+  }
+
+  updateInventoryIngressRule(payload) {
+    return this.#runInventoryOrganizationMutation(
+      INVENTORY_INGRESS_RULE_UPDATE_COMMAND,
+      payload,
+      isValidInventoryIngressRuleWritePayload,
+      "updateInventoryIngressRule"
+    );
+  }
+
+  deleteInventoryIngressRule(payload) {
+    return this.#runInventoryOrganizationMutation(
+      INVENTORY_INGRESS_RULE_DELETE_COMMAND,
+      payload,
+      isValidInventoryIngressRuleDeletePayload,
+      "deleteInventoryIngressRule"
     );
   }
 

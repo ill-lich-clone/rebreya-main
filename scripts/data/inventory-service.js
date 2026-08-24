@@ -20,6 +20,12 @@ import { WorldMutationCoordinator } from "../application/world-mutation-coordina
 import { finiteNumber as toNumber } from "../shared/foundry-values.js";
 import { buildDurabilitySignature, isDurabilityEligible } from "./durability-rules.js";
 import { resolveInventoryDismantleOutputs } from "./inventory-ingress-descriptor.js";
+import {
+  InventoryIngressRuleError,
+  findInventoryIngressRuleConflicts,
+  normalizeInventoryIngressRule,
+  normalizeInventoryIngressRuleState
+} from "./inventory-ingress-rules.js";
 import { applyLootgenRowDurability } from "./lootgen-durability.js?v=1.4.154-corpse-storage-broken-name";
 import { formatDurabilityItemName } from "./durability-item-presentation.js?v=1.4.154-broken-item-name";
 import {
@@ -59,6 +65,9 @@ export const INVENTORY_FOLDER_RENAME_COMMAND = "inventory.folder.rename";
 export const INVENTORY_FOLDER_MOVE_COMMAND = "inventory.folder.move";
 export const INVENTORY_FOLDER_DELETE_COMMAND = "inventory.folder.delete";
 export const INVENTORY_ITEM_FOLDER_MOVE_COMMAND = "inventory.item.folder.move";
+export const INVENTORY_INGRESS_RULE_CREATE_COMMAND = "inventory.ingress-rule.create";
+export const INVENTORY_INGRESS_RULE_UPDATE_COMMAND = "inventory.ingress-rule.update";
+export const INVENTORY_INGRESS_RULE_DELETE_COMMAND = "inventory.ingress-rule.delete";
 export const GROUP_TRANSPORT_REPLACE_STATE_COMMAND = "group.transport.replaceState";
 const INVENTORY_FOLDER_UI_FLAG = "inventoryFolderUi";
 const INVENTORY_FOLDER_UI_STATE_VERSION = 1;
@@ -3395,15 +3404,30 @@ export class InventoryService {
     return actor.setFlag(MODULE_ID, "==inventoryFolders", nextState);
   }
 
-  #mutateInventoryFolderState(groupActorId, operation) {
+  #readInventoryIngressRuleState(actor) {
+    return normalizeInventoryIngressRuleState(actor?.getFlag?.(MODULE_ID, "inventoryIngressRules"));
+  }
+
+  #writeInventoryIngressRuleState(actor, nextState) {
+    return actor.setFlag(MODULE_ID, "==inventoryIngressRules", nextState);
+  }
+
+  #runInventoryOrganizationMutation(groupActorId, operation) {
     const actorId = cleanId(groupActorId);
-    if (!actorId) {
-      throw new Error("Не указан групповой инвентарь.");
-    }
+    if (!actorId) throw new Error("Не указан групповой инвентарь.");
     return this.mutationCoordinator.run(
-      `inventory-folders:${actorId}`,
+      `inventory-organization:${actorId}`,
       async () => {
         const actor = await this.getInventoryActor({ create: false, groupActorId: actorId });
+        return operation(actor);
+      }
+    );
+  }
+
+  #mutateInventoryFolderState(groupActorId, operation) {
+    return this.#runInventoryOrganizationMutation(
+      groupActorId,
+      async (actor) => {
         const rawState = actor?.getFlag?.(MODULE_ID, "inventoryFolders");
         const currentState = this.#readInventoryFolderState(actor);
         const operationResult = await operation({ actor, state: currentState });
@@ -3448,8 +3472,18 @@ export class InventoryService {
   }
 
   deleteInventoryFolder({ groupActorId, folderId }) {
-    return this.#mutateInventoryFolderState(groupActorId, ({ state }) => {
+    return this.#mutateInventoryFolderState(groupActorId, ({ actor, state }) => {
       const normalizedFolderId = cleanId(folderId);
+      const dependentRules = this.#readInventoryIngressRuleState(actor).rules
+        .filter((rule) => rule.action.type === "folder" && rule.action.folderId === normalizedFolderId);
+      if (dependentRules.length > 0) {
+        const names = dependentRules.map((rule) => rule.name).join(", ");
+        throw new InventoryIngressRuleError(
+          "folder-in-use",
+          `Папка используется правилами входящего лута: ${names}.`,
+          { folderId: normalizedFolderId, ruleIds: dependentRules.map((rule) => rule.id) }
+        );
+      }
       const existed = state.folders.some((folder) => folder.id === normalizedFolderId);
       return {
         state: deleteInventoryFolderState(state, { folderId: normalizedFolderId }),
@@ -3482,6 +3516,194 @@ export class InventoryService {
 
   assignInventoryGrantFolder({ groupActorId, itemId, folderId = null }) {
     return this.#assignInventoryItemFolder({ groupActorId, itemId, folderId });
+  }
+
+  async getInventoryIngressRuleState({ groupActorId } = {}) {
+    const actor = await this.getInventoryActor({ create: false, groupActorId });
+    return this.#readInventoryIngressRuleState(actor);
+  }
+
+  #assertInventoryIngressRuleFolders(rules, folderState) {
+    const folderIds = new Set(folderState.folders.map((folder) => folder.id));
+    const missingRule = rules.find((rule) => (
+      rule.action.type === "folder" && !folderIds.has(rule.action.folderId)
+    ));
+    if (missingRule) {
+      throw new InventoryIngressRuleError(
+        "folder-not-found",
+        `Папка правила «${missingRule.name}» не найдена.`,
+        { ruleId: missingRule.id, folderId: missingRule.action.folderId }
+      );
+    }
+  }
+
+  #buildInventoryIngressRuleMutation(kind, currentState, request, folderState) {
+    if (!Number.isSafeInteger(request.expectedRevision) || request.expectedRevision < 0) {
+      throw new InventoryIngressRuleError("invalid-revision", "Ожидаемая ревизия правил некорректна.");
+    }
+    if (currentState.revision !== request.expectedRevision) {
+      throw new InventoryIngressRuleError(
+        "stale-revision",
+        `Правила входящего лута изменились (revision ${currentState.revision}).`,
+        { expectedRevision: request.expectedRevision, actualRevision: currentState.revision }
+      );
+    }
+    let rules = currentState.rules.map((rule) => foundry.utils.deepClone(rule));
+    let changed = false;
+    if (kind === "create") {
+      const rule = normalizeInventoryIngressRule(request.rule);
+      const existing = rules.find((entry) => entry.id === rule.id) ?? null;
+      if (existing) {
+        if (JSON.stringify(existing) !== JSON.stringify(rule)) {
+          throw new InventoryIngressRuleError("duplicate-rule-id", `Правило ${rule.id} уже существует.`, {
+            ruleId: rule.id
+          });
+        }
+      }
+      else {
+        rules.push(rule);
+        changed = true;
+      }
+    }
+    else if (kind === "update") {
+      const rule = normalizeInventoryIngressRule(request.rule);
+      const index = rules.findIndex((entry) => entry.id === rule.id);
+      if (index < 0) {
+        throw new InventoryIngressRuleError("rule-not-found", `Правило ${rule.id} не найдено.`, {
+          ruleId: rule.id
+        });
+      }
+      if (JSON.stringify(rules[index]) !== JSON.stringify(rule)) {
+        rules[index] = rule;
+        changed = true;
+      }
+    }
+    else {
+      const ruleId = cleanId(request.ruleId);
+      if (!ruleId) throw new InventoryIngressRuleError("invalid-rule-id", "Не указан ID правила.");
+      const nextRules = rules.filter((rule) => rule.id !== ruleId);
+      changed = nextRules.length !== rules.length;
+      rules = nextRules;
+    }
+    const nextState = normalizeInventoryIngressRuleState({
+      version: currentState.version,
+      revision: currentState.revision + (changed ? 1 : 0),
+      rules
+    });
+    this.#assertInventoryIngressRuleFolders(nextState.rules, folderState);
+    const conflicts = findInventoryIngressRuleConflicts(nextState.rules);
+    if (conflicts.length > 0) {
+      const nameById = new Map(nextState.rules.map((rule) => [rule.id, rule.name]));
+      const summary = conflicts.map((conflict) => (
+        `«${nameById.get(conflict.leftRuleId) ?? conflict.leftRuleId}» ↔ `
+        + `«${nameById.get(conflict.rightRuleId) ?? conflict.rightRuleId}»: `
+        + conflict.intersectingFields.join(", ")
+      )).join("; ");
+      throw new InventoryIngressRuleError("rule-conflict", `Правила входящего лута пересекаются: ${summary}.`, {
+        conflicts
+      });
+    }
+    return {
+      nextState,
+      outcome: {
+        actorId: cleanId(request.groupActorId),
+        operationId: cleanId(request.operationId),
+        changed,
+        state: nextState
+      }
+    };
+  }
+
+  #assertInventoryIngressRuleRecord(record, fingerprint) {
+    if (record?.kind !== "inventory-ingress-rule" || record?.fingerprint !== fingerprint) {
+      throw new InventoryIngressRuleError(
+        "mutation-conflict",
+        `Inventory ingress rule operation '${record?.id ?? ""}' has a different request.`
+      );
+    }
+  }
+
+  async #mutateInventoryIngressRule(kind, request) {
+    const groupActorId = cleanId(request?.groupActorId);
+    const operationId = cleanId(request?.operationId);
+    if (!groupActorId || !operationId) {
+      throw new InventoryIngressRuleError("invalid-operation", "Не указаны группа или operation ID.");
+    }
+    const canonicalRequest = kind === "delete"
+      ? { groupActorId, operationId, expectedRevision: request.expectedRevision, ruleId: cleanId(request.ruleId) }
+      : {
+          groupActorId,
+          operationId,
+          expectedRevision: request.expectedRevision,
+          rule: normalizeInventoryIngressRule(request.rule)
+        };
+    const fingerprint = JSON.stringify({ kind, ...canonicalRequest });
+    const recordId = `inventory-rule:${groupActorId}:${operationId}`;
+    return this.#runInventoryOrganizationMutation(groupActorId, async (actor) => {
+      let record = await this.mutationJournal.find(recordId);
+      if (record) {
+        this.#assertInventoryIngressRuleRecord(record, fingerprint);
+        if (record.terminal === true) {
+          if (record.result?.ok === false) throw new Error(record.result.error || "Rule mutation failed.");
+          return foundry.utils.deepClone(record.result?.value);
+        }
+      }
+      const liveState = this.#readInventoryIngressRuleState(actor);
+      if (!record) {
+        const { nextState, outcome } = this.#buildInventoryIngressRuleMutation(
+          kind,
+          liveState,
+          canonicalRequest,
+          this.#readInventoryFolderState(actor)
+        );
+        record = await this.mutationJournal.start({
+          id: recordId,
+          kind: "inventory-ingress-rule",
+          phase: "prepared",
+          fingerprint,
+          groupActorId,
+          beforeState: liveState,
+          afterState: nextState,
+          outcome
+        });
+        this.#assertInventoryIngressRuleRecord(record, fingerprint);
+      }
+      const liveMatchesBefore = JSON.stringify(liveState) === JSON.stringify(record.beforeState);
+      const liveMatchesAfter = JSON.stringify(liveState) === JSON.stringify(record.afterState);
+      if (!liveMatchesBefore && !liveMatchesAfter) {
+        throw new InventoryIngressRuleError(
+          "reconciliation-required",
+          "Состояние правил не совпадает с prepared mutation record."
+        );
+      }
+      if (record.phase === "prepared" && !liveMatchesAfter) {
+        try {
+          await this.#writeInventoryIngressRuleState(actor, record.afterState);
+        }
+        catch (error) {
+          const durableState = this.#readInventoryIngressRuleState(actor);
+          if (JSON.stringify(durableState) !== JSON.stringify(record.afterState)) throw error;
+        }
+      }
+      if (record.phase === "prepared") {
+        record = await this.mutationJournal.checkpoint(recordId, "prepared", "actor-written");
+      }
+      const result = foundry.utils.deepClone(record.outcome);
+      await this.mutationJournal.finish(recordId, { ok: true, value: result });
+      return result;
+    });
+  }
+
+  createInventoryIngressRule(request) {
+    return this.#mutateInventoryIngressRule("create", request);
+  }
+
+  updateInventoryIngressRule(request) {
+    return this.#mutateInventoryIngressRule("update", request);
+  }
+
+  deleteInventoryIngressRule(request) {
+    return this.#mutateInventoryIngressRule("delete", request);
   }
 
   getInventoryFolderUiState(groupActorId, folderIds = []) {
@@ -4308,6 +4530,7 @@ export class InventoryService {
         hasActor: false,
         folders: [],
         folderStateVersion: INVENTORY_FOLDER_STATE_VERSION,
+        inventoryIngressRules: normalizeInventoryIngressRuleState(null),
         items: [],
         allItems: [],
         emptyInventory: true,
@@ -4327,6 +4550,7 @@ export class InventoryService {
     const model = await this.moduleApi.getModel();
     const currency = buildCurrencySnapshot(actor);
     const folderState = this.#readInventoryFolderState(actor);
+    const inventoryIngressRules = this.#readInventoryIngressRuleState(actor);
     const allItems = actor.items.contents
       .map((item) => {
         const entry = this.#buildInventoryEntry(model, item);
@@ -4376,6 +4600,7 @@ export class InventoryService {
       hasActor: true,
       folders: folderState.folders,
       folderStateVersion: folderState.version,
+      inventoryIngressRules,
       items: filteredItems,
       allItems,
       emptyInventory: filteredItems.length === 0,

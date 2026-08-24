@@ -289,6 +289,15 @@ function installInventoryFixture({
   };
 }
 
+function ingressRule({
+  id = "broken-weapons",
+  name = "Сломанное оружие",
+  conditions = [{ field: "durabilityState", operator: "is", value: "broken" }],
+  action = { type: "folder", folderId: "weapons" }
+} = {}) {
+  return { id, name, conditions, action };
+}
+
 test("getInventoryActor returns resolved dnd5e group actor when group context exists", async () => {
   const groupActor = createActor({ id: "group-1", name: "Party", type: "group", isOwner: true });
   const fixture = installInventoryFixture({
@@ -548,6 +557,258 @@ test("folder mutations normalize current Actor state and write exactly once only
   }
 });
 
+test("group ingress rule CRUD persists revisioned Actor state and replays operation IDs exactly once", async () => {
+  const groupActor = createActor({
+    id: "group-rules",
+    type: "group",
+    isOwner: true,
+    flags: {
+      [MODULE_ID]: {
+        inventoryFolders: {
+          version: 1,
+          folders: [{ id: "weapons", name: "Оружие", parentId: null }],
+          itemFolderIds: {}
+        }
+      }
+    }
+  });
+  const fixture = installInventoryFixture({ actors: [groupActor] });
+  const service = new InventoryService({
+    groupContextService: { resolveForGroup: () => ({ groupActor }) },
+    worldMutationCoordinator: new WorldMutationCoordinator()
+  });
+  const createPayload = {
+    groupActorId: groupActor.id,
+    operationId: "create-broken-weapons",
+    expectedRevision: 0,
+    rule: ingressRule()
+  };
+
+  try {
+    assert.deepEqual(await service.getInventoryIngressRuleState({ groupActorId: groupActor.id }), {
+      version: 1,
+      revision: 0,
+      rules: []
+    });
+    const created = await service.createInventoryIngressRule(createPayload);
+    assert.equal(created.changed, true);
+    assert.equal(created.state.revision, 1);
+    assert.deepEqual(created.state.rules, [ingressRule()]);
+    assert.equal(groupActor.setFlagCalls.filter((call) => call.key === "==inventoryIngressRules").length, 1);
+
+    const replay = await service.createInventoryIngressRule(clone(createPayload));
+    assert.deepEqual(replay, created);
+    assert.equal(groupActor.setFlagCalls.filter((call) => call.key === "==inventoryIngressRules").length, 1);
+
+    const noOp = await service.updateInventoryIngressRule({
+      groupActorId: groupActor.id,
+      operationId: "update-no-op",
+      expectedRevision: 1,
+      rule: ingressRule()
+    });
+    assert.equal(noOp.changed, false);
+    assert.equal(noOp.state.revision, 1);
+    assert.equal(groupActor.setFlagCalls.filter((call) => call.key === "==inventoryIngressRules").length, 1);
+
+    const updated = await service.updateInventoryIngressRule({
+      groupActorId: groupActor.id,
+      operationId: "update-action",
+      expectedRevision: 1,
+      rule: ingressRule({ action: { type: "skip" } })
+    });
+    assert.equal(updated.changed, true);
+    assert.equal(updated.state.revision, 2);
+    assert.deepEqual(updated.state.rules[0].action, { type: "skip" });
+
+    await assert.rejects(
+      service.deleteInventoryIngressRule({
+        groupActorId: groupActor.id,
+        operationId: "stale-delete",
+        expectedRevision: 1,
+        ruleId: "broken-weapons"
+      }),
+      (error) => error?.code === "stale-revision"
+    );
+    const deleted = await service.deleteInventoryIngressRule({
+      groupActorId: groupActor.id,
+      operationId: "delete-rule",
+      expectedRevision: 2,
+      ruleId: "broken-weapons"
+    });
+    assert.equal(deleted.changed, true);
+    assert.equal(deleted.state.revision, 3);
+    assert.deepEqual(deleted.state.rules, []);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("rule mutation recovers an Actor write whose acknowledgement was lost", async () => {
+  const groupActor = createActor({ id: "group-rule-retry", type: "group", isOwner: true });
+  const originalSetFlag = groupActor.setFlag.bind(groupActor);
+  let loseAcknowledgement = true;
+  groupActor.setFlag = async (...args) => {
+    const result = await originalSetFlag(...args);
+    if (args[1] === "==inventoryIngressRules" && loseAcknowledgement) {
+      loseAcknowledgement = false;
+      throw new Error("rule flag acknowledgement lost");
+    }
+    return result;
+  };
+  const fixture = installInventoryFixture({ actors: [groupActor] });
+  const service = new InventoryService({
+    groupContextService: { resolveForGroup: () => ({ groupActor }) },
+    worldMutationCoordinator: new WorldMutationCoordinator()
+  });
+  const payload = {
+    groupActorId: groupActor.id,
+    operationId: "write-then-throw",
+    expectedRevision: 0,
+    rule: ingressRule({ action: { type: "skip" } })
+  };
+
+  try {
+    const result = await service.createInventoryIngressRule(payload);
+    assert.equal(result.state.revision, 1);
+    assert.deepEqual(await service.createInventoryIngressRule(payload), result);
+    assert.equal(groupActor.setFlagCalls.filter((call) => call.key === "==inventoryIngressRules").length, 1);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("rule save blocks conflicts and missing folders, while folder delete names dependent rules", async () => {
+  const groupActor = createActor({
+    id: "group-rule-conflicts",
+    type: "group",
+    isOwner: true,
+    flags: {
+      [MODULE_ID]: {
+        inventoryFolders: {
+          version: 1,
+          folders: [{ id: "weapons", name: "Оружие", parentId: null }],
+          itemFolderIds: {}
+        }
+      }
+    }
+  });
+  const fixture = installInventoryFixture({ actors: [groupActor] });
+  const service = new InventoryService({
+    groupContextService: { resolveForGroup: () => ({ groupActor }) },
+    worldMutationCoordinator: new WorldMutationCoordinator()
+  });
+
+  try {
+    await service.createInventoryIngressRule({
+      groupActorId: groupActor.id,
+      operationId: "first-rule",
+      expectedRevision: 0,
+      rule: ingressRule()
+    });
+    await assert.rejects(
+      service.createInventoryIngressRule({
+        groupActorId: groupActor.id,
+        operationId: "overlap-rule",
+        expectedRevision: 1,
+        rule: ingressRule({
+          id: "all-weapons",
+          name: "Всё оружие",
+          conditions: [{ field: "documentType", operator: "is", value: "weapon" }],
+          action: { type: "skip" }
+        })
+      }),
+      (error) => error?.code === "rule-conflict"
+        && /Сломанное оружие/u.test(error.message)
+        && /Всё оружие/u.test(error.message)
+        && /documentType/u.test(error.message)
+        && /durabilityState/u.test(error.message)
+    );
+    await assert.rejects(
+      service.updateInventoryIngressRule({
+        groupActorId: groupActor.id,
+        operationId: "missing-folder",
+        expectedRevision: 1,
+        rule: ingressRule({ action: { type: "folder", folderId: "missing" } })
+      }),
+      (error) => error?.code === "folder-not-found"
+    );
+    await assert.rejects(
+      service.deleteInventoryFolder({ groupActorId: groupActor.id, folderId: "weapons" }),
+      (error) => error?.code === "folder-in-use"
+        && /Сломанное оружие/u.test(error.message)
+    );
+    assert.equal(groupActor.setFlagCalls.filter((call) => call.key === "==inventoryFolders").length, 0);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("folder and rule mutations share one organization queue in both arrival orders", async () => {
+  async function runOrder(ruleFirst) {
+    const groupActor = createActor({
+      id: ruleFirst ? "group-rule-first" : "group-delete-first",
+      type: "group",
+      isOwner: true,
+      flags: {
+        [MODULE_ID]: {
+          inventoryFolders: {
+            version: 1,
+            folders: [{ id: "weapons", name: "Оружие", parentId: null }],
+            itemFolderIds: {}
+          }
+        }
+      }
+    });
+    const coordinator = new WorldMutationCoordinator();
+    const fixture = installInventoryFixture({ actors: [groupActor] });
+    const service = new InventoryService({
+      groupContextService: { resolveForGroup: () => ({ groupActor }) },
+      worldMutationCoordinator: coordinator
+    });
+    let release;
+    let entered;
+    const didEnter = new Promise((resolve) => { entered = resolve; });
+    const blocker = coordinator.run(`inventory-organization:${groupActor.id}`, async () => {
+      entered();
+      await new Promise((resolve) => { release = resolve; });
+    });
+    await didEnter;
+    const create = () => service.createInventoryIngressRule({
+      groupActorId: groupActor.id,
+      operationId: `${groupActor.id}-create`,
+      expectedRevision: 0,
+      rule: ingressRule()
+    });
+    const remove = () => service.deleteInventoryFolder({
+      groupActorId: groupActor.id,
+      folderId: "weapons"
+    });
+    const first = ruleFirst ? create() : remove();
+    const second = ruleFirst ? remove() : create();
+    release();
+    await blocker;
+    try {
+      if (ruleFirst) {
+        assert.equal((await first).changed, true);
+        await assert.rejects(second, (error) => error?.code === "folder-in-use");
+      }
+      else {
+        assert.equal((await first).deletedFolderId, "weapons");
+        await assert.rejects(second, (error) => error?.code === "folder-not-found");
+      }
+    }
+    finally {
+      fixture.restore();
+    }
+  }
+
+  await runOrder(true);
+  await runOrder(false);
+});
+
 test("moving an inventory Item to root deletes membership under Foundry flag merge semantics", async () => {
   const sword = createItem({ id: "sword", name: "Sword", quantity: 7 });
   const groupActor = createActor({
@@ -673,7 +934,7 @@ test("folder mutations re-resolve after queue wait and reject a stale cycle", as
   });
   const coordinator = new WorldMutationCoordinator();
   let releaseQueue;
-  const blocker = coordinator.run("inventory-folders:group-a", () => new Promise((resolve) => {
+  const blocker = coordinator.run("inventory-organization:group-a", () => new Promise((resolve) => {
     releaseQueue = resolve;
   }));
   await new Promise((resolve) => setImmediate(resolve));
