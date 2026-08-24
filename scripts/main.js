@@ -107,7 +107,7 @@ import {
   isStorageTokenVisible,
   measureStoragePointDistance,
   measureStorageTokenDistance
-} from "./data/storage-access.js?v=1.4.133-ground-item-polish";
+} from "./data/storage-access.js?v=1.4.158-storage-access-cache";
 import { BuiltinStorageActorService } from "./data/builtin-storage-actor-service.js";
 import { StorageGroundPileService } from "./data/storage-ground-pile-service.js?v=1.4.155-journal-pile-presentation";
 import { StorageContainerItemService } from "./data/storage-container-item-service.js?v=1.4.130-storage-player-fixes";
@@ -134,7 +134,7 @@ import {
   isValidStorageRestorePortablePayload,
   isValidStorageTokenCharacterPayload,
   storageCharacterTokenUuidForClaim
-} from "./data/storage-command-service.js?v=1.4.152-dead-npc-looting";
+} from "./data/storage-command-service.js?v=1.4.158-storage-access-cache";
 import { registerCombatHooks } from "./combat/hooks.js?v=1.4.147-race-damage";
 import { CombatAttackService } from "./combat/attack-service.js?v=1.4.157-firearm-io-batching";
 import { ImplantAutomationService } from "./combat/implant-automation-service.js";
@@ -200,7 +200,7 @@ import { runMapObjectTokenMacro } from "./integrations/map-object-token-macro.js
 import { refreshSmallTimeDateDisplay, registerSmallTimeIntegration, syncSmallTimeToCalendarTime } from "./integrations/smalltime-compat.js";
 import { registerRationFoodConversionHook } from "./integrations/ration-food-conversion.js";
 import { registerMagicWeaponTemplateHook } from "./integrations/magic-weapon-template.js?v=1.4.96";
-import { registerStorageTokenHooks } from "./integrations/storage-token-hooks.js?v=1.4.154-corpse-storage-broken-name";
+import { registerStorageTokenHooks } from "./integrations/storage-token-hooks.js?v=1.4.158-storage-access-cache";
 import { registerCraftsmanGadgetHooks } from "./integrations/craftsman-gadget-hooks.js";
 import { registerSpellAutomationHooks } from "./integrations/spell-automation-hooks.js";
 import { registerLongRestHooks } from "./integrations/long-rest-hooks.js";

@@ -1,5 +1,6 @@
 export const MAX_STORAGE_DISTANCE_FEET = 10;
 export const STORAGE_ACCESS_DISTANCE_ERROR_CODE = "storage-access-distance";
+export const STORAGE_ACCESS_DISTANCE_ERROR_MESSAGE = "Хранилище можно открыть только в пределах 10 футов.";
 
 export function storageTokenDocument(token) {
   return token?.document ?? token ?? null;

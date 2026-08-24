@@ -1,11 +1,12 @@
 import { MODULE_ID } from "../constants.js";
 import {
   preflightStorageAccess,
-  STORAGE_ACCESS_DISTANCE_ERROR_CODE
-} from "../data/storage-access.js";
+  STORAGE_ACCESS_DISTANCE_ERROR_CODE,
+  STORAGE_ACCESS_DISTANCE_ERROR_MESSAGE
+} from "../data/storage-access.js?v=1.4.158-storage-access-cache";
 import { isStorageActor } from "../data/storage-service.js";
 import { isDeadNpcStorageTarget } from "../data/corpse-storage-materializer.js";
-import { StorageTokenOverlayController } from "../ui/storage-token-overlay.js";
+import { StorageTokenOverlayController } from "../ui/storage-token-overlay.js?v=1.4.158-storage-access-cache";
 
 export function buildStorageTokenActions(moduleApi, token, {
   isGM = false,
@@ -79,7 +80,10 @@ export function registerStorageTokenHooks(moduleApi, {
     return access;
   };
   const handleOpenError = (token, error) => {
-    if (error?.code !== STORAGE_ACCESS_DISTANCE_ERROR_CODE) return false;
+    if (
+      error?.code !== STORAGE_ACCESS_DISTANCE_ERROR_CODE
+      && error?.message !== STORAGE_ACCESS_DISTANCE_ERROR_MESSAGE
+    ) return false;
     showAccessFailure(token, { reason: "distance" });
     return true;
   };

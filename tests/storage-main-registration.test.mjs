@@ -47,6 +47,7 @@ async function waitForSocketResult(emitted, requestId) {
 test("main registers the storage deposit socket API and current cache keys", async () => {
   const main = await readFile(new URL("../scripts/main.js", import.meta.url), "utf8");
   const storageCommand = await readFile(new URL("../scripts/data/storage-command-service.js", import.meta.url), "utf8");
+  const storageHooks = await readFile(new URL("../scripts/integrations/storage-token-hooks.js", import.meta.url), "utf8");
   const manifest = JSON.parse(await readFile(new URL("../module.json", import.meta.url), "utf8"));
 
   assert.match(main, /isValidStorageDepositPayload/u);
@@ -75,12 +76,12 @@ test("main registers the storage deposit socket API and current cache keys", asy
   for (const importPath of [
     "data/storage-service.js?v=1.4.152-dead-npc-looting",
     "data/storage-open-sound-service.js?v=1.4.145-coin-icons-storage-sound",
-    "data/storage-access.js?v=1.4.133-ground-item-polish",
+    "data/storage-access.js?v=1.4.158-storage-access-cache",
     "data/storage-ground-pile-service.js?v=1.4.155-journal-pile-presentation",
     "data/storage-container-item-service.js?v=1.4.130-storage-player-fixes",
     "data/storage-deposit-source.js?v=1.4.144-spreadsheet-coins-ground-repair",
-    "data/storage-command-service.js?v=1.4.152-dead-npc-looting",
-    "integrations/storage-token-hooks.js?v=1.4.154-corpse-storage-broken-name",
+    "data/storage-command-service.js?v=1.4.158-storage-access-cache",
+    "integrations/storage-token-hooks.js?v=1.4.158-storage-access-cache",
     "combat/hooks.js?v=1.4.147-race-damage",
     "integrations/storage-transfer-drop.js?v=1.4.144-spreadsheet-coins-ground-repair",
     "integrations/storage-token-drop.js?v=1.4.132-storage-owned-character-resolution",
@@ -90,11 +91,18 @@ test("main registers the storage deposit socket API and current cache keys", asy
   }
   for (const importPath of [
     "storage-service.js?v=1.4.152-dead-npc-looting",
-    "storage-deposit-source.js?v=1.4.144-spreadsheet-coins-ground-repair"
+    "storage-deposit-source.js?v=1.4.144-spreadsheet-coins-ground-repair",
+    "storage-access.js?v=1.4.158-storage-access-cache"
   ]) {
     assert.equal(storageCommand.includes(importPath), true, importPath);
   }
-  assert.equal(manifest.version, "1.4.157");
+  for (const importPath of [
+    "data/storage-access.js?v=1.4.158-storage-access-cache",
+    "ui/storage-token-overlay.js?v=1.4.158-storage-access-cache"
+  ]) {
+    assert.equal(storageHooks.includes(importPath), true, importPath);
+  }
+  assert.equal(manifest.version, "1.4.158");
   assert.match(main, /await registerStorageContainerHierarchyHooks\(\{ Hooks \}\)/u);
 });
 
