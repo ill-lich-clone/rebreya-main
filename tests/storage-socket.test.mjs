@@ -395,6 +395,7 @@ test("storage Journal reads re-run access checks and use only an authoritative u
   assert.deepEqual(snapshot, { name: "Полевые заметки", pages: [] });
   assert.deepEqual(readCalls, ["JournalEntry.authoritative"]);
   assert.deepEqual(journalOwnership, beforeOwnership);
+  assert.deepEqual(readStorageState(harness.storageToken).readJournalRowIds, ["journal-row"]);
 
   const farHarness = createHarness({ distance: 6 });
   await farHarness.storageService.configure(farHarness.storageToken, {
@@ -525,6 +526,82 @@ test("storage Journal reads require exact opened state instead of accepting empt
     rowId: "journal-row"
   }, { sender: harness.player }), /Сначала откройте/iu);
   assert.deepEqual(harness.journalReadCalls, []);
+});
+
+test("failed Journal reading does not persist a read marker", async () => {
+  const harness = createHarness({
+    journalReader: {
+      async read() {
+        throw new Error("Запись журнала недоступна.");
+      }
+    }
+  });
+  await harness.storageService.configure(harness.storageToken, {
+    state: "opened",
+    manualRows: [{
+      rowKind: "journal",
+      rowId: "journal-row",
+      sourceId: "JournalEntry.failed",
+      sourceType: "journal",
+      name: "Записка",
+      quantity: 1
+    }]
+  });
+
+  await assert.rejects(harness.service.readJournal({
+    tokenUuid: harness.storageToken.uuid,
+    characterTokenUuid: harness.characterToken.uuid,
+    rowId: "journal-row"
+  }, { sender: harness.player }), /недоступна/iu);
+
+  assert.deepEqual(readStorageState(harness.storageToken).readJournalRowIds, []);
+});
+
+test("concurrent Journal reads serialize on the storage source queue", async () => {
+  let releaseFirst;
+  let markFirstStarted;
+  let calls = 0;
+  const firstGate = new Promise((resolve) => { releaseFirst = resolve; });
+  const firstStarted = new Promise((resolve) => { markFirstStarted = resolve; });
+  const harness = createHarness({
+    journalReader: {
+      async read() {
+        calls += 1;
+        if (calls === 1) {
+          markFirstStarted();
+          await firstGate;
+        }
+        return { name: "Записка", pages: [] };
+      }
+    }
+  });
+  await harness.storageService.configure(harness.storageToken, {
+    state: "opened",
+    manualRows: [{
+      rowKind: "journal",
+      rowId: "journal-row",
+      sourceId: "JournalEntry.concurrent",
+      sourceType: "journal",
+      name: "Записка",
+      quantity: 1
+    }]
+  });
+  const request = {
+    tokenUuid: harness.storageToken.uuid,
+    characterTokenUuid: harness.characterToken.uuid,
+    rowId: "journal-row"
+  };
+
+  const first = harness.service.readJournal(request, { sender: harness.player });
+  await firstStarted;
+  const second = harness.service.readJournal(request, { sender: harness.player });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(calls, 1);
+  releaseFirst();
+  await Promise.all([first, second]);
+
+  assert.equal(calls, 2);
+  assert.deepEqual(readStorageState(harness.storageToken).readJournalRowIds, ["journal-row"]);
 });
 
 test("storage Journal reads reject sourceType-only rows without authoritative Journal rowKind", async () => {
@@ -1701,10 +1778,12 @@ test("player storage snapshots omit Journal sources while GM diagnostics retain 
         }
       ]
     });
+    await moduleApi.storageService.markJournalRead(harness.storageToken, "journal-row");
 
     const playerSnapshot = await moduleApi.getStorageSnapshot(harness.storageToken.uuid);
     assert.equal(playerSnapshot.rows.length, 3);
     assert.equal(playerSnapshot.rows.some((row) => "sourceId" in row), false);
+    assert.deepEqual(playerSnapshot.rows.map((row) => row.journalRead), [true, false, false]);
     assert.equal("manualRows" in playerSnapshot, false);
 
     globalThis.game.user = gm;

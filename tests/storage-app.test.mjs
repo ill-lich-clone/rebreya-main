@@ -135,6 +135,7 @@ test("Journal rows expose a read-only view model and no transfer controls", asyn
         rowKind: "journal",
         sourceId: "JournalEntry.private-notes",
         name: "Полевые заметки",
+        journalRead: true,
         quantity: 1
       }],
       coins: {}
@@ -144,6 +145,7 @@ test("Journal rows expose a read-only view model and no transfer controls", asyn
   const context = await app._prepareContext();
   const row = context.rows[0];
   assert.equal(row.isJournal, true);
+  assert.equal(row.name, "Полевые заметки (прочитана)");
   assert.equal(row.canDrag, false);
   assert.equal(row.canClaim, false);
   assert.equal(row.canOpenSource, false);
@@ -193,19 +195,29 @@ test("Journal read action passes nested access context and opens only the return
     pages: [{ pageId: "text-1", name: "День первый", type: "text", html: "<p>Безопасный текст</p>" }]
   };
   const viewerCalls = [];
+  let snapshotRequests = 0;
   const { app, journalReadCalls } = createApp({
     configure: false,
     appOptions: {
       path: ["bag-row"],
       characterTokenUuid: "Scene.scene.Token.hero"
     },
-    getStorageSnapshot: async () => ({
-      tokenUuid: "Scene.scene.Token.chest",
-      name: "Сумка",
-      state: "opened",
-      rows: [{ rowId: "journal-row", rowKind: "journal", name: "Полевые заметки", quantity: 1 }],
-      coins: {}
-    }),
+    getStorageSnapshot: async () => {
+      snapshotRequests += 1;
+      return {
+        tokenUuid: "Scene.scene.Token.chest",
+        name: "Сумка",
+        state: "opened",
+        rows: [{
+          rowId: "journal-row",
+          rowKind: "journal",
+          name: "Полевые заметки",
+          journalRead: snapshotRequests > 1,
+          quantity: 1
+        }],
+        coins: {}
+      };
+    },
     readStorageJournal: async () => snapshot,
     openStorageJournalViewer: async (receivedSnapshot) => viewerCalls.push(receivedSnapshot)
   });
@@ -229,6 +241,8 @@ test("Journal read action passes nested access context and opens only the return
     { path: ["bag-row"], characterTokenUuid: "Scene.scene.Token.hero" }
   ]]);
   assert.deepEqual(viewerCalls, [snapshot]);
+  assert.equal(snapshotRequests, 2);
+  assert.equal((await app._prepareContext()).rows[0].name, "Полевые заметки (прочитана)");
 });
 
 test("storage configuration exposes template and manual item controls to GMs", async () => {

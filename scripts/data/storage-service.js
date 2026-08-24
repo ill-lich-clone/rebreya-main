@@ -137,6 +137,16 @@ function normalizeClaimedRowIds(value) {
     .filter(Boolean)));
 }
 
+function normalizeReadJournalRowIds(value, rows) {
+  const journalRowIds = new Set(rows
+    .filter((row) => row?.rowKind === "journal" && cleanId(row?.sourceId))
+    .map((row) => cleanId(row?.rowId))
+    .filter(Boolean));
+  return Array.from(new Set((Array.isArray(value) ? value : [])
+    .map(cleanId)
+    .filter((rowId) => journalRowIds.has(rowId))));
+}
+
 function normalizeTextures(value) {
   if (!value || typeof value !== "object") return null;
   const textures = Object.fromEntries(STORAGE_TEXTURE_MODES.map((mode) => [
@@ -232,17 +242,20 @@ export function buildStorageTokenState(input = {}) {
   const displayMode = textures && STORAGE_TEXTURE_MODE_SET.has(source.displayMode)
     ? source.displayMode
     : state;
+  const manualRows = normalizeRows(source.manualRows);
+  const generatedRows = normalizeRows(source.generatedRows);
   return {
     version: STORAGE_VERSION,
     containerId: cleanId(source.containerId),
     storageKind: STORAGE_KINDS.has(cleanId(source.storageKind)) ? cleanId(source.storageKind) : "chest",
     baseName: cleanName(source.baseName),
     template: normalizeTemplate(source.template),
-    manualRows: normalizeRows(source.manualRows),
+    manualRows,
     manualCoins: normalizeCoins(source.manualCoins),
-    generatedRows: normalizeRows(source.generatedRows),
+    generatedRows,
     generatedCoins: normalizeCoins(source.generatedCoins),
     claimedRowIds: normalizeClaimedRowIds(source.claimedRowIds),
+    readJournalRowIds: normalizeReadJournalRowIds(source.readJournalRowIds, [...manualRows, ...generatedRows]),
     coinsClaimed: source.coinsClaimed === true,
     corpseMaterialization: normalizeCorpseMaterialization(source.corpseMaterialization),
     state,
@@ -416,6 +429,28 @@ export class StorageService {
       generatedRows: source.generatedRows === undefined ? current.generatedRows : source.generatedRows,
       generatedCoins: source.generatedCoins === undefined ? current.generatedCoins : source.generatedCoins
     });
+  }
+
+  async markJournalRead(token, rowId, { path = [] } = {}) {
+    token = this.#scopedToken(token, path);
+    const current = readStorageState(token);
+    const identity = cleanId(rowId);
+    const row = visibleRows(current).find((entry) => (
+      cleanId(entry?.rowId) === identity
+      && entry?.rowKind === "journal"
+      && cleanId(entry?.sourceId)
+    ));
+    if (!row || current.claimedRowIds.includes(identity)) {
+      throw new Error("Запись журнала недоступна.");
+    }
+    if (current.readJournalRowIds.includes(identity)) {
+      return { changed: false, rowId: identity, state: clone(current) };
+    }
+    const state = await this.#write(token, {
+      ...current,
+      readJournalRowIds: [...current.readJournalRowIds, identity]
+    });
+    return { changed: true, rowId: identity, state };
   }
 
   async open(token, context = {}) {

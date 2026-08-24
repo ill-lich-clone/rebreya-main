@@ -161,10 +161,13 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
       const isJournal = row.rowKind === "journal";
       const isContainer = row.rowKind === "container" && Boolean(row.container);
       const itemName = clean(row.name ?? row.itemData?.name) || "Предмет";
+      const displayName = isJournal && row.journalRead === true
+        ? `${itemName} (прочитана)`
+        : formatDurabilityItemName(itemName, row.itemData?.flags?.[MODULE_ID]?.durability);
       return {
         ...clone(row),
         rowId: clean(row.rowId),
-        name: formatDurabilityItemName(itemName, row.itemData?.flags?.[MODULE_ID]?.durability),
+        name: displayName,
         img: clean(row.img ?? row.itemData?.img),
         quantity: Math.max(1, Number(row.quantity ?? 1)),
         typeLabel: clean(row.typeLabel ?? row.itemData?.type) || "Предмет",
@@ -452,6 +455,7 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
     if (!row || row.rowKind !== "journal") throw new Error("Запись журнала уже недоступна.");
     const snapshot = await this.moduleApi.readStorageJournal(this.tokenUuid, rowId, this.#pathRequest());
     await this.openStorageJournalViewer(snapshot);
+    await this.#refresh();
   }
 
   async #onClick(event) {

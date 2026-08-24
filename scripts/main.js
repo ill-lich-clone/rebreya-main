@@ -3581,6 +3581,7 @@ export class RebreyaMainModule {
     const rows = combinedRows
       .map((row, index) => {
         const next = { ...foundry.utils.deepClone(row), rowId: cleanSocketId(row.rowId ?? index) };
+        next.journalRead = next.rowKind === "journal" && state.readJournalRowIds.includes(next.rowId);
         if (next.rowKind === "container" && next.container) {
           next.container = {
             containerId: cleanSocketId(next.container.containerId),

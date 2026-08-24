@@ -100,6 +100,28 @@ test("storage snapshots replace the removed goggles icon in row and persisted it
   assert.equal(state.generatedRows[0].itemData.img, expected);
 });
 
+test("storage keeps only unique read markers for canonical Journal rows", () => {
+  const state = buildStorageTokenState({
+    state: "opened",
+    manualRows: [{
+      rowKind: "journal",
+      rowId: "notes",
+      sourceId: "JournalEntry.notes",
+      sourceType: "journal",
+      name: "Записка",
+      quantity: 1
+    }, {
+      rowKind: "item",
+      rowId: "key",
+      name: "Ключ",
+      quantity: 1
+    }],
+    readJournalRowIds: [" notes ", "missing", "key", "notes"]
+  });
+
+  assert.deepEqual(state.readJournalRowIds, ["notes"]);
+});
+
 test("two storage tokens using one actor keep independent template snapshots", async () => {
   const service = new StorageService();
   const first = createStorageToken("first");
@@ -724,6 +746,35 @@ test("nested storage paths deposit and claim without replacing the root containe
   assert.equal(claim.row.quantity, 1);
   assert.equal(readStorageStateAtPath(token, ["bag-row"]).manualRows[0].quantity, 1);
   assert.equal(readStorageState(token).state, "opened");
+});
+
+test("markJournalRead persists a shared marker inside the selected nested container", async () => {
+  const service = new StorageService();
+  const token = createStorageToken("journal-root", "Сундук");
+  const journal = {
+    rowKind: "journal",
+    rowId: "nested-notes",
+    stackKey: "",
+    sourceId: "JournalEntry.nested-notes",
+    sourceType: "journal",
+    name: "Записка",
+    quantity: 1
+  };
+  const bagRow = buildStorageContainerRow({
+    containerId: "journal-bag",
+    storageKind: "bag",
+    name: "Сумка",
+    state: { state: "opened", manualRows: [journal], generatedRows: [] }
+  }, { rowId: "bag-row" });
+  await service.configure(token, { state: "opened", manualRows: [bagRow] });
+
+  const first = await service.markJournalRead(token, "nested-notes", { path: ["bag-row"] });
+  const retry = await service.markJournalRead(token, "nested-notes", { path: ["bag-row"] });
+
+  assert.equal(first.changed, true);
+  assert.equal(retry.changed, false);
+  assert.deepEqual(readStorageStateAtPath(token, ["bag-row"]).readJournalRowIds, ["nested-notes"]);
+  assert.deepEqual(readStorageState(token).readJournalRowIds, []);
 });
 
 test("corpse materialization is root-only and nested containers keep their normal first-open lifecycle", async () => {

@@ -138,6 +138,15 @@ function normalizeSnapshot(input, context) {
       .map(clean)
       .filter(Boolean)))
   };
+  const journalRowIds = new Set(stateRows(state)
+    .filter((row) => row?.rowKind === "journal" && clean(row?.sourceId))
+    .map((row) => clean(row?.rowId))
+    .filter(Boolean));
+  state.readJournalRowIds = Array.from(new Set(
+    (Array.isArray(sourceState.readJournalRowIds) ? sourceState.readJournalRowIds : [])
+      .map(clean)
+      .filter((rowId) => journalRowIds.has(rowId))
+  ));
 
   return {
     version: STORAGE_CONTAINER_SNAPSHOT_VERSION,

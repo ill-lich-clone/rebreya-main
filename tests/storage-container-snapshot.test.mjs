@@ -110,6 +110,38 @@ test("journal reference rows stay canonical across root, nested, portable, and r
   );
 });
 
+test("Journal read markers survive root, nested, portable, and rekeyed snapshot paths", () => {
+  const journal = {
+    rowKind: "journal",
+    rowId: "root-notes",
+    sourceId: "JournalEntry.root-notes",
+    sourceType: "journal",
+    name: "Корневая записка",
+    quantity: 1
+  };
+  const nested = snapshot("nested-read", "Сумка", [{ ...journal, rowId: "nested-notes" }]);
+  nested.state.readJournalRowIds = [" nested-notes ", "missing", "nested-notes"];
+  const input = snapshot("root-read", "Сундук", [
+    journal,
+    buildStorageContainerRow(nested, { rowId: "bag-row" })
+  ]);
+  input.state.readJournalRowIds = [" root-notes ", "missing", "root-notes"];
+
+  const root = buildStorageContainerSnapshot(input);
+  const portable = readPortableStorageContainerSnapshot(createPortableStorageContainerItemData(root));
+  let sequence = 0;
+  const rekeyed = rekeyStorageContainerSnapshot(root, {
+    createId: (prefix) => `${prefix}-copy-${sequence += 1}`
+  });
+
+  assert.deepEqual(root.state.readJournalRowIds, ["root-notes"]);
+  assert.deepEqual(resolveStorageContainerPath(root, ["bag-row"]).state.readJournalRowIds, ["nested-notes"]);
+  assert.deepEqual(portable.state.readJournalRowIds, ["root-notes"]);
+  assert.deepEqual(resolveStorageContainerPath(portable, ["bag-row"]).state.readJournalRowIds, ["nested-notes"]);
+  assert.deepEqual(rekeyed.state.readJournalRowIds, ["root-notes"]);
+  assert.deepEqual(resolveStorageContainerPath(rekeyed, ["bag-row"]).state.readJournalRowIds, ["nested-notes"]);
+});
+
 test("container snapshots reject duplicate ancestors and nesting deeper than eight levels", () => {
   const duplicateAncestor = snapshot("root", "Root", [
     buildStorageContainerRow(snapshot("root", "Duplicate"), { rowId: "duplicate" })

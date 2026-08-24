@@ -438,6 +438,20 @@ export class StorageCommandService {
     const existing = this.claimTasks.get(mutationKey);
     if (existing) return existing;
 
+    const task = this.#enqueue(queueKeys, operation).then((result) => {
+      this.claimResults.set(mutationKey, result);
+      if (this.claimResults.size > 500) {
+        this.claimResults.delete(this.claimResults.keys().next().value);
+      }
+      return result;
+    }).finally(() => {
+      this.claimTasks.delete(mutationKey);
+    });
+    this.claimTasks.set(mutationKey, task);
+    return task;
+  }
+
+  async #enqueue(queueKeys, operation) {
     const keys = Array.from(new Set((Array.isArray(queueKeys) ? queueKeys : [queueKeys])
       .map(clean)
       .filter(Boolean))).sort();
@@ -446,20 +460,11 @@ export class StorageCommandService {
     )));
     const queued = previous.then(operation);
     for (const key of keys) this.claimQueues.set(key, queued);
-    const task = queued.then((result) => {
-      this.claimResults.set(mutationKey, result);
-      if (this.claimResults.size > 500) {
-        this.claimResults.delete(this.claimResults.keys().next().value);
-      }
-      return result;
-    }).finally(() => {
-      this.claimTasks.delete(mutationKey);
+    return queued.finally(() => {
       for (const key of keys) {
         if (this.claimQueues.get(key) === queued) this.claimQueues.delete(key);
       }
     });
-    this.claimTasks.set(mutationKey, task);
-    return task;
   }
 
   async #runClaim(sourceKey, mutationKey, operation) {
@@ -481,19 +486,24 @@ export class StorageCommandService {
   }
 
   async readJournal(payload = {}, { sender } = {}) {
-    const access = await this.#resolveAccess(payload, sender);
+    const tokenUuid = clean(payload.tokenUuid);
     const path = storagePath(payload.path);
-    const state = readStorageStateAtPath(access.storageToken, path);
-    if (state.state !== "opened") throw new Error("Сначала откройте хранилище.");
+    return this.#enqueue([`${tokenUuid}:${storagePathKey(path)}:storage`], async () => {
+      const access = await this.#resolveAccess(payload, sender);
+      const state = readStorageStateAtPath(access.storageToken, path);
+      if (state.state !== "opened") throw new Error("Сначала откройте хранилище.");
 
-    const rowId = clean(payload.rowId);
-    const rows = [...state.manualRows, ...state.generatedRows];
-    const row = rows.find((entry, index) => rowIdentity(entry, index) === rowId) ?? null;
-    if (!row || state.claimedRowIds.includes(rowId)
-      || row.rowKind !== "journal" || !isStorageJournalRow(row)) {
-      throw new Error("Запись журнала недоступна.");
-    }
-    return this.journalReader.read(row.sourceId);
+      const rowId = clean(payload.rowId);
+      const rows = [...state.manualRows, ...state.generatedRows];
+      const row = rows.find((entry, index) => rowIdentity(entry, index) === rowId) ?? null;
+      if (!row || state.claimedRowIds.includes(rowId)
+        || row.rowKind !== "journal" || !isStorageJournalRow(row)) {
+        throw new Error("Запись журнала недоступна.");
+      }
+      const snapshot = await this.journalReader.read(row.sourceId);
+      await this.storageService.markJournalRead(access.storageToken, rowId, { path });
+      return snapshot;
+    });
   }
 
   async claimRow(payload = {}, { sender } = {}) {
