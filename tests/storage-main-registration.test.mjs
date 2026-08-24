@@ -44,6 +44,29 @@ async function waitForSocketResult(emitted, requestId) {
   return null;
 }
 
+function ingressPlan(groupActorId = "group-a", rowIds = ["row-1"]) {
+  return {
+    version: 1,
+    groupActorId,
+    rulesRevision: 0,
+    requestedFolderId: null,
+    rows: rowIds.map((sourceKey) => ({
+      sourceKey,
+      identity: {
+        sourceType: "",
+        sourceId: "",
+        documentType: "weapon",
+        durabilityState: "ineligible",
+        quantity: 1
+      },
+      quantity: 1,
+      matchedRuleId: null,
+      action: { type: "legacy", folderId: null }
+    })),
+    rootOverrideSourceKeys: []
+  };
+}
+
 test("main registers the storage deposit socket API and current cache keys", async () => {
   const main = await readFile(new URL("../scripts/main.js", import.meta.url), "utf8");
   const storageCommand = await readFile(new URL("../scripts/data/storage-command-service.js", import.meta.url), "utf8");
@@ -152,6 +175,7 @@ test("real storage command registrations validate envelopes and execute their co
       characterTokenUuid: "Scene.scene.Token.hero",
       destination: "self",
       target: null,
+      ingressPlan: null,
       mutationId: "bulk-command"
     };
     for (const [command, requestId, payload] of [
@@ -239,6 +263,7 @@ test("storage bulk party command rejects a sender who manages no member of the e
       characterTokenUuid: "Scene.scene.Token.hero",
       destination: "party",
       target: { groupActorId: group.id, folderId: null },
+      ingressPlan: ingressPlan(group.id),
       mutationId: "bulk-forbidden"
     };
 

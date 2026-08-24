@@ -533,6 +533,7 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
       }
       else if (action === "storage-claim-all-self" || action === "storage-claim-all-party") {
         const result = await this.#claimAll(action.endsWith("self") ? "self" : "party");
+        if (!result) return;
         this.activeRowId = "";
         if (result?.sourceDeleted === true) {
           await this.close?.();

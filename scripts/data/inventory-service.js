@@ -3134,6 +3134,7 @@ export class InventoryService {
       sourceKey: previewRow.sourceKey,
       sourceIdentity: foundry.utils.deepClone(previewRow.identity),
       itemData: foundry.utils.deepClone(sourceRow.itemData),
+      container: foundry.utils.deepClone(sourceRow.container),
       quantity: previewRow.quantity,
       matchedRuleId: previewRow.matchedRuleId,
       overrideToRoot,
@@ -3148,6 +3149,12 @@ export class InventoryService {
 
   async #prepareInventoryIngressTargetReceipts(actor, folderState, record, row, model) {
     const operationId = record.id;
+    if (row.container && row.effectiveType === "dismantle" && row.dismantlePreview.length === 0) {
+      throw new InventoryIngressRuleError(
+        "dismantle-unavailable",
+        `Portable container '${row.sourceKey}' cannot be dismantled.`
+      );
+    }
     const targetRows = row.effectiveType === "dismantle"
       ? row.dismantlePreview.map((output) => {
           const material = model?.materialById?.get?.(cleanId(output.sourceId)) ?? null;
@@ -3163,7 +3170,14 @@ export class InventoryService {
             scoped: true
           };
         })
-      : [{
+      : row.container
+        ? [{
+          container: foundry.utils.deepClone(row.container),
+          quantity: 1,
+          folderId: row.derivedFolderId,
+          scoped: row.effectiveType !== "legacy"
+        }]
+        : [{
           itemData: foundry.utils.deepClone(row.itemData),
           quantity: row.quantity,
           folderId: row.derivedFolderId,
@@ -3171,6 +3185,19 @@ export class InventoryService {
         }];
 
     return targetRows.map((target, outputIndex) => {
+      if (target.container) {
+        return {
+          outputIndex,
+          container: foundry.utils.deepClone(target.container),
+          itemId: "",
+          created: true,
+          beforeQuantity: 0,
+          afterQuantity: 1,
+          delta: 1,
+          folderId: target.folderId,
+          scoped: target.scoped
+        };
+      }
       const itemData = sanitizeEmbeddedItemData(target.itemData);
       foundry.utils.setProperty(itemData, "system.quantity", target.quantity);
       const candidate = this.#findInventoryMergeCandidate(actor, itemData, {
@@ -3201,7 +3228,25 @@ export class InventoryService {
     });
   }
 
-  async #applyInventoryIngressTargetReceipt(actor, record, row, receipt) {
+  async #applyInventoryIngressTargetReceipt(actor, record, row, receipt, grantContainer = null) {
+    if (receipt.container) {
+      if (typeof grantContainer !== "function") {
+        throw new InventoryIngressRuleError(
+          "container-grant-unavailable",
+          "Portable inventory ingress requires a container grant adapter."
+        );
+      }
+      const root = await grantContainer({
+        actor,
+        container: foundry.utils.deepClone(receipt.container),
+        sourceKey: row.sourceKey,
+        mutationId: `${record.id}:${row.sourceKey}`,
+        folderId: receipt.folderId
+      });
+      const itemId = cleanId(root?.id);
+      if (!itemId) throw this.#inventoryReconciliationError("Portable container root was not observed.");
+      return itemId;
+    }
     let item = receipt.created
       ? this.#findInventoryIngressMutationItem(actor, record.id, row.sourceKey, receipt.outputIndex)
       : actor.items.get(receipt.itemId);
@@ -3280,6 +3325,7 @@ export class InventoryService {
         groupActorId,
         batchMutationId,
         sourceOrigin,
+        recovering: Boolean(record),
         serializedPlan: foundry.utils.deepClone(serializedPlan)
       });
       const authoritativePreview = await planner.preview({
@@ -3350,7 +3396,7 @@ export class InventoryService {
         }
         const targetReceipts = [];
         for (const receipt of row.targetReceipts) {
-          const itemId = await this.#applyInventoryIngressTargetReceipt(actor, record, row, receipt);
+          const itemId = await this.#applyInventoryIngressTargetReceipt(actor, record, row, receipt, grantContainer);
           targetReceipts.push({ ...receipt, itemId });
         }
         const rows = record.rows.map((entry, index) => index === rowIndex
@@ -3424,15 +3470,36 @@ export class InventoryService {
         actorId: actor.id,
         batchMutationId,
         changed: record.rows.some((row) => row.effectiveType !== "skip"),
-        rows: record.rows.map((row) => ({
-          sourceKey: row.sourceKey,
-          matchedRuleId: row.matchedRuleId,
-          action: foundry.utils.deepClone(row.action),
-          overrideToRoot: row.overrideToRoot,
-          derivedFolderId: row.derivedFolderId,
-          changed: row.effectiveType !== "skip",
-          targetItemIds: row.targetReceipts.map((receipt) => receipt.itemId)
-        }))
+        rows: record.rows.map((row) => {
+          let filterOutcome = null;
+          if (row.matchedRuleId && row.overrideToRoot) {
+            filterOutcome = { type: "root" };
+          }
+          else if (row.matchedRuleId && row.effectiveType === "folder") {
+            const folder = folderState.folders.find((entry) => entry.id === row.derivedFolderId);
+            filterOutcome = {
+              type: "folder",
+              folderId: row.derivedFolderId,
+              folderName: cleanId(folder?.name) || row.derivedFolderId
+            };
+          }
+          else if (row.matchedRuleId && row.effectiveType === "dismantle") {
+            filterOutcome = {
+              type: "dismantle",
+              outputs: foundry.utils.deepClone(row.dismantlePreview)
+            };
+          }
+          return {
+            sourceKey: row.sourceKey,
+            matchedRuleId: row.matchedRuleId,
+            action: foundry.utils.deepClone(row.action),
+            overrideToRoot: row.overrideToRoot,
+            derivedFolderId: row.derivedFolderId,
+            changed: row.effectiveType !== "skip",
+            targetItemIds: row.targetReceipts.map((receipt) => receipt.itemId),
+            filterOutcome
+          };
+        })
       };
       await this.mutationJournal.finish(operationId, { ok: true, value: result });
       return foundry.utils.deepClone(result);

@@ -14,6 +14,7 @@ import {
   STORAGE_ACCESS_DISTANCE_ERROR_CODE,
   STORAGE_ACCESS_DISTANCE_ERROR_MESSAGE
 } from "./storage-access.js?v=1.4.158-storage-access-cache";
+import { isValidSerializedInventoryIngressPlan } from "../application/inventory-ingress-planner.js";
 
 const STORAGE_ROW_DESTINATIONS = new Set(["self", "party", "character", "scene"]);
 const STORAGE_COIN_DESTINATIONS = new Set(["self", "party"]);
@@ -135,6 +136,19 @@ function isValidStorageTarget(destination, target) {
   return false;
 }
 
+function isValidStorageIngressPlan(destination, target, ingressPlan, { rowId = "", quantity = null } = {}) {
+  if (destination !== "party") return ingressPlan === null;
+  if (!isValidSerializedInventoryIngressPlan(ingressPlan)
+    || ingressPlan.groupActorId !== target?.groupActorId
+    || ingressPlan.requestedFolderId !== target?.folderId) {
+    return false;
+  }
+  if (!rowId) return true;
+  return ingressPlan.rows.length === 1
+    && ingressPlan.rows[0].sourceKey === rowId
+    && (quantity === null || ingressPlan.rows[0].quantity === quantity);
+}
+
 function clone(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));
 }
@@ -154,13 +168,17 @@ export function isValidStorageJournalReadPayload(payload) {
 
 export function isValidStorageClaimRowPayload(payload) {
   return hasLegacyOrPathKeys(payload, [
-    "characterTokenUuid", "destination", "mutationId", "quantity", "rowId", "target", "tokenUuid"
+    "characterTokenUuid", "destination", "ingressPlan", "mutationId", "quantity", "rowId", "target", "tokenUuid"
   ])
     && isTrimmedString(payload.tokenUuid, { required: true })
     && isTrimmedString(payload.characterTokenUuid, { required: payload.destination === "self" })
     && isTrimmedString(payload.rowId, { required: true, max: 160 })
     && STORAGE_ROW_DESTINATIONS.has(payload.destination)
     && isValidStorageTarget(payload.destination, payload.target)
+    && isValidStorageIngressPlan(payload.destination, payload.target, payload.ingressPlan, {
+      rowId: payload.rowId,
+      quantity: payload.quantity
+    })
     && isOptionalQuantity(payload.quantity)
     && isTrimmedString(payload.mutationId, { required: true, max: 160 });
 }
@@ -175,12 +193,13 @@ export function isValidStorageClaimCoinsPayload(payload) {
 
 export function isValidStorageClaimAllPayload(payload) {
   return hasLegacyOrPathKeys(payload, [
-    "characterTokenUuid", "destination", "mutationId", "target", "tokenUuid"
+    "characterTokenUuid", "destination", "ingressPlan", "mutationId", "target", "tokenUuid"
   ])
     && isTrimmedString(payload.tokenUuid, { required: true })
     && isTrimmedString(payload.characterTokenUuid, { required: payload.destination === "self" })
     && STORAGE_COIN_DESTINATIONS.has(payload.destination)
     && isValidStorageTarget(payload.destination, payload.target)
+    && isValidStorageIngressPlan(payload.destination, payload.target, payload.ingressPlan)
     && isTrimmedString(payload.mutationId, { required: true, max: 160 });
 }
 
@@ -438,7 +457,98 @@ export class StorageCommandService {
       ?? { deleted: false, state };
   }
 
-  async #publishClaimMessage({ sender, destination, actor = null, row = null, quantity = null, coins = null } = {}) {
+  #inventoryIngressRow(row, rowId, quantity, legacyFolderId) {
+    return {
+      sourceKey: clean(rowId),
+      quantity,
+      itemData: clone(row?.itemData ?? {}),
+      legacyFolderId: legacyFolderId === null ? null : clean(legacyFolderId),
+      container: isStorageContainerRow(row) ? clone(row.container) : null
+    };
+  }
+
+  async #commitPartyIngress({
+    actor,
+    target,
+    storageToken,
+    path,
+    mutationKey,
+    ingressPlan,
+    rows
+  }) {
+    const sourceClaims = new Map();
+    const result = await this.inventoryService.commitInventoryIngressBatch({
+      groupActorId: target.groupActorId,
+      batchMutationId: mutationKey,
+      sourceOrigin: "storage",
+      serializedPlan: clone(ingressPlan)
+    }, {
+      resolveRows: async ({ recovering = false } = {}) => {
+        const liveState = readStorageStateAtPath(storageToken, path);
+        const liveRows = [...liveState.manualRows, ...liveState.generatedRows];
+        const liveById = new Map(liveRows.map((row, index) => [rowIdentity(row, index), row]));
+        for (const row of rows) {
+          const liveRow = liveById.get(row.sourceKey);
+          if (!liveRow) throw new Error(`Предмет хранилища '${row.sourceKey}' больше недоступен.`);
+          const available = Math.max(1, Math.trunc(Number(
+            liveRow.quantity ?? liveRow.itemData?.system?.quantity ?? 1
+          )) || 1);
+          if (!recovering && (liveState.claimedRowIds.includes(row.sourceKey) || available < row.quantity)) {
+            throw new Error(`Предмет хранилища '${row.sourceKey}' больше недоступен.`);
+          }
+        }
+        return clone(rows);
+      },
+      debitRow: async (row) => {
+        const claim = await this.storageService.claim(storageToken, {
+          kind: "row",
+          rowId: row.sourceKey,
+          quantity: row.quantity,
+          path
+        });
+        sourceClaims.set(row.sourceKey, claim);
+      },
+      grantContainer: async ({ container, mutationId }) => {
+        if (!this.containerItemService?.materializeToActorOnce) {
+          throw new Error("Сервис переносимых контейнеров Rebreya недоступен.");
+        }
+        return this.containerItemService.materializeToActorOnce(actor, container, mutationId);
+      }
+    });
+    return { result, sourceClaims };
+  }
+
+  #filterReceiptSuffix(filterOutcome) {
+    if (filterOutcome?.type === "folder") {
+      const folderName = escapeFoundryHtml(clean(filterOutcome.folderName) || "папка");
+      return `Отфильтровано в папку «${folderName}».`;
+    }
+    if (filterOutcome?.type === "dismantle") {
+      const outputs = (filterOutcome.outputs ?? [])
+        .map((output) => {
+          const name = escapeFoundryHtml(clean(output?.name) || clean(output?.sourceId) || "Материал");
+          const quantity = Number(output?.quantity);
+          return Number.isFinite(quantity) && quantity > 0 ? `${name} x${quantity}` : "";
+        })
+        .filter(Boolean)
+        .join(", ");
+      return outputs ? `Отфильтровано: разобрано на ${outputs}.` : "";
+    }
+    if (filterOutcome?.type === "root") {
+      return "Фильтрация пропущена; добавлено в корень.";
+    }
+    return "";
+  }
+
+  async #publishClaimMessage({
+    sender,
+    destination,
+    actor = null,
+    row = null,
+    quantity = null,
+    coins = null,
+    filterOutcome = null
+  } = {}) {
     if (!this.createChatMessage || !["self", "party"].includes(destination)) return false;
     const initiator = escapeFoundryHtml(clean(sender?.name) || "Игрок");
     const destinationLabel = destination === "party"
@@ -459,9 +569,10 @@ export class StorageCommandService {
         .join(", ");
     }
     if (!subject) return false;
+    const suffix = this.#filterReceiptSuffix(filterOutcome);
     try {
       await this.createChatMessage({
-        content: `<p><strong>${initiator}</strong> перемещает <strong>${subject}</strong> в ${destinationLabel}.</p>`
+        content: `<p><strong>${initiator}</strong> перемещает <strong>${subject}</strong> в ${destinationLabel}.${suffix ? `<br>${suffix}` : ""}</p>`
       });
       return true;
     }
@@ -667,7 +778,11 @@ export class StorageCommandService {
       if (state.state === "unopened") throw new Error("Сначала откройте хранилище.");
       const rows = [...state.manualRows, ...state.generatedRows];
       const row = rows.find((entry, index) => rowIdentity(entry, index) === rowId) ?? null;
-      if (!row || state.claimedRowIds.includes(rowId)) {
+      const plannedRow = payload.ingressPlan?.rows?.find((entry) => entry.sourceKey === rowId) ?? null;
+      const claimedForRecovery = destination === "party"
+        && state.claimedRowIds.includes(rowId)
+        && plannedRow;
+      if (!row || (state.claimedRowIds.includes(rowId) && !claimedForRecovery)) {
         const refresh = await this.#refreshSource(access.storageToken, readStorageState(access.storageToken));
         return { changed: false, row: null, state, sourceDeleted: refresh.deleted === true };
       }
@@ -677,10 +792,12 @@ export class StorageCommandService {
       const available = Math.max(1, Math.trunc(Number(
         row.quantity ?? row.itemData?.system?.quantity ?? 1
       )) || 1);
-      const quantity = payload.quantity === null || payload.quantity === undefined
-        ? available
-        : Number(payload.quantity);
-      if (!Number.isSafeInteger(quantity) || quantity < 1 || quantity > available) {
+      const quantity = claimedForRecovery
+        ? Number(plannedRow.quantity)
+        : payload.quantity === null || payload.quantity === undefined
+          ? available
+          : Number(payload.quantity);
+      if (!Number.isSafeInteger(quantity) || quantity < 1 || (!claimedForRecovery && quantity > available)) {
         throw new Error("Количество должно быть целым числом от 1 до доступного остатка.");
       }
       let partyActor = null;
@@ -695,26 +812,42 @@ export class StorageCommandService {
       transferRow.itemData.system.quantity = quantity;
       const preparedTransferRow = await this.#prepareGroundRow(transferRow);
       const grantId = mutationKey;
-      if (isStorageContainerRow(preparedTransferRow)) {
+      let result = null;
+      let filterResult = null;
+      if (destination === "party") {
+        if (isStorageContainerRow(preparedTransferRow) && quantity !== 1) {
+          throw new Error("Контейнер можно переносить только целиком.");
+        }
+        const ingressRow = this.#inventoryIngressRow(
+          preparedTransferRow,
+          rowId,
+          quantity,
+          partyTarget.folderId
+        );
+        const committed = await this.#commitPartyIngress({
+          actor: partyActor,
+          target: partyTarget,
+          storageToken: access.storageToken,
+          path,
+          mutationKey,
+          ingressPlan: payload.ingressPlan,
+          rows: [ingressRow]
+        });
+        filterResult = committed.result.rows[0] ?? null;
+        result = committed.sourceClaims.get(rowId) ?? {
+          changed: filterResult?.changed === true,
+          row: filterResult?.changed === true ? transferRow : null,
+          quantity: filterResult?.changed === true ? quantity : undefined,
+          state: readStorageStateAtPath(access.storageToken, path)
+        };
+      }
+      else if (isStorageContainerRow(preparedTransferRow)) {
         if (!this.containerItemService) {
           throw new Error("Сервис переносимых контейнеров Rebreya недоступен.");
         }
         if (quantity !== 1) throw new Error("Контейнер можно переносить только целиком.");
         if (destination === "self") {
           await this.containerItemService.materializeToActorOnce(access.character, preparedTransferRow.container, grantId);
-        }
-        else if (destination === "party") {
-          const root = await this.containerItemService.materializeToActorOnce(
-            partyActor,
-            preparedTransferRow.container,
-            grantId
-          );
-          if (!root?.id) throw new Error("Не удалось восстановить корень переносимого контейнера.");
-          await this.inventoryService.assignInventoryGrantFolder({
-            groupActorId: partyTarget.groupActorId,
-            itemId: root.id,
-            folderId: partyTarget.folderId
-          });
         }
         else if (destination === "character") {
           const targetActor = await this.#resolveCharacterTarget(payload.target, sender);
@@ -736,17 +869,6 @@ export class StorageCommandService {
       else if (destination === "self") {
         await this.inventoryService.addLootgenRowToCharacterOnce(preparedTransferRow, access.character, grantId);
       }
-      else if (destination === "party") {
-        await this.inventoryService.addLootgenRowToInventoryOnce(
-          preparedTransferRow,
-          grantId,
-          {
-            allowPersistedItemData: true,
-            groupActorId: partyTarget.groupActorId,
-            folderId: partyTarget.folderId
-          }
-        );
-      }
       else if (destination === "character") {
         const targetActor = await this.#resolveCharacterTarget(payload.target, sender);
         await this.inventoryService.addLootgenRowToCharacterOnce(preparedTransferRow, targetActor, grantId);
@@ -763,7 +885,9 @@ export class StorageCommandService {
           ownerUserId: clean(sender?.id)
         });
       }
-      const result = await this.storageService.claim(access.storageToken, { kind: "row", rowId, quantity, path });
+      if (destination !== "party") {
+        result = await this.storageService.claim(access.storageToken, { kind: "row", rowId, quantity, path });
+      }
       const refresh = await this.#refreshSource(access.storageToken, readStorageState(access.storageToken));
       if (result.changed === true) {
         await this.#publishClaimMessage({
@@ -771,7 +895,8 @@ export class StorageCommandService {
           destination,
           actor: access.character,
           row: transferRow,
-          quantity
+          quantity,
+          filterOutcome: filterResult?.filterOutcome ?? null
         });
       }
       return { ...result, sourceDeleted: refresh.deleted === true };
@@ -882,67 +1007,81 @@ export class StorageCommandService {
       await this.storageService.bindBulkClaimMutation(access.storageToken, mutationKey, fingerprint, { path });
       const initialState = readStorageStateAtPath(access.storageToken, path);
       const claimed = new Set(initialState.claimedRowIds);
+      const plannedById = new Map((payload.ingressPlan?.rows ?? []).map((row) => [row.sourceKey, row]));
       const rows = [...initialState.manualRows, ...initialState.generatedRows]
         .map((row, index) => ({ row, rowId: rowIdentity(row, index) }))
-        .filter(({ rowId }) => !claimed.has(rowId));
+        .filter(({ rowId }) => destination === "party" && payload.ingressPlan
+          ? plannedById.has(rowId)
+          : !claimed.has(rowId));
       const skippedJournalRowIds = rows
         .filter(({ row }) => isStorageJournalRow(row))
         .map(({ rowId }) => rowId);
       const claimedRowIds = [];
-
+      const preparedRows = [];
+      const partyReceipts = [];
       for (const { row, rowId } of rows) {
         if (isStorageJournalRow(row)) continue;
-        const quantity = Math.max(1, Math.trunc(Number(
-          row.quantity ?? row.itemData?.system?.quantity ?? 1
-        )) || 1);
+        const quantity = destination === "party" && plannedById.has(rowId)
+          ? Number(plannedById.get(rowId)?.quantity)
+          : Math.max(1, Math.trunc(Number(
+            row.quantity ?? row.itemData?.system?.quantity ?? 1
+          )) || 1);
         const transferRow = clone(row);
         transferRow.quantity = quantity;
         transferRow.itemData ??= {};
         transferRow.itemData.system ??= {};
         transferRow.itemData.system.quantity = quantity;
         const preparedTransferRow = await this.#prepareGroundRow(transferRow);
+        preparedRows.push({ rowId, quantity, transferRow, preparedTransferRow });
+      }
+
+      if (destination === "party" && preparedRows.length > 0) {
+        const ingressRows = preparedRows.map(({ rowId, quantity, preparedTransferRow }) => (
+          this.#inventoryIngressRow(preparedTransferRow, rowId, quantity, partyTarget.folderId)
+        ));
+        const committed = await this.#commitPartyIngress({
+          actor: partyActor,
+          target: partyTarget,
+          storageToken: access.storageToken,
+          path,
+          mutationKey,
+          ingressPlan: payload.ingressPlan,
+          rows: ingressRows
+        });
+        const transferById = new Map(preparedRows.map((entry) => [entry.rowId, entry]));
+        for (const outcome of committed.result.rows) {
+          if (outcome.changed !== true) continue;
+          const transfer = transferById.get(outcome.sourceKey);
+          if (!transfer) continue;
+          claimedRowIds.push(outcome.sourceKey);
+          partyReceipts.push({
+            sender,
+            destination,
+            actor: access.character,
+            row: transfer.transferRow,
+            quantity: transfer.quantity,
+            filterOutcome: outcome.filterOutcome ?? null
+          });
+        }
+      }
+      else if (destination === "self") {
+        for (const { rowId, quantity, transferRow, preparedTransferRow } of preparedRows) {
         const grantId = `${mutationKey}:row:${rowId}`;
         if (isStorageContainerRow(preparedTransferRow)) {
           if (!this.containerItemService) {
             throw new Error("Сервис переносимых контейнеров Rebreya недоступен.");
           }
-          if (destination === "self") {
-            await this.containerItemService.materializeToActorOnce(
-              access.character,
-              preparedTransferRow.container,
-              grantId
-            );
-          }
-          else {
-            const root = await this.containerItemService.materializeToActorOnce(
-              partyActor,
-              preparedTransferRow.container,
-              grantId
-            );
-            if (!root?.id) throw new Error("Не удалось восстановить корень переносимого контейнера.");
-            await this.inventoryService.assignInventoryGrantFolder({
-              groupActorId: partyTarget.groupActorId,
-              itemId: root.id,
-              folderId: partyTarget.folderId
-            });
-          }
-        }
-        else if (destination === "self") {
-          await this.inventoryService.addLootgenRowToCharacterOnce(
-            preparedTransferRow,
+          await this.containerItemService.materializeToActorOnce(
             access.character,
+            preparedTransferRow.container,
             grantId
           );
         }
         else {
-          await this.inventoryService.addLootgenRowToInventoryOnce(
+          await this.inventoryService.addLootgenRowToCharacterOnce(
             preparedTransferRow,
-            grantId,
-            {
-              allowPersistedItemData: true,
-              groupActorId: partyTarget.groupActorId,
-              folderId: partyTarget.folderId
-            }
+            access.character,
+            grantId
           );
         }
         const result = await this.storageService.claim(access.storageToken, {
@@ -961,6 +1100,7 @@ export class StorageCommandService {
             quantity
           });
         }
+      }
       }
 
       const stateBeforeCoins = readStorageStateAtPath(access.storageToken, path);
@@ -1001,6 +1141,7 @@ export class StorageCommandService {
       await this.storageService.completeBulkClaimMutation(access.storageToken, mutationKey, fingerprint, { path });
       const refresh = await this.#refreshSource(access.storageToken, readStorageState(access.storageToken));
       const sourceDeleted = refresh.deleted === true;
+      for (const receipt of partyReceipts) await this.#publishClaimMessage(receipt);
       const finalState = readStorageStateAtPath(access.storageToken, path);
       return {
         changed,

@@ -22,6 +22,29 @@ function clone(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));
 }
 
+function storageIngressPlan({ groupActorId = "group-a", folderId = null, rowIds = ["row-1"] } = {}) {
+  return {
+    version: 1,
+    groupActorId,
+    rulesRevision: 0,
+    requestedFolderId: folderId,
+    rows: rowIds.map((sourceKey) => ({
+      sourceKey,
+      identity: {
+        sourceType: "",
+        sourceId: "",
+        documentType: "weapon",
+        durabilityState: "ineligible",
+        quantity: 1
+      },
+      quantity: 1,
+      matchedRuleId: null,
+      action: { type: "legacy", folderId }
+    })),
+    rootOverrideSourceKeys: []
+  };
+}
+
 function applyPatch(target, patch) {
   for (const [path, value] of Object.entries(patch)) {
     const parts = path.split(".");
@@ -48,6 +71,7 @@ function createHarness({
   processedCoinMutations = new Set(),
   executionOrder = [],
   durabilityService = null,
+  ingressCommit = null,
   logResolve = true,
   folderIds = ["folder-a"],
   rejectFolderAssignmentOnce = false,
@@ -116,6 +140,7 @@ function createHarness({
   const depositResolveCalls = [];
   const journalReadCalls = [];
   const folderAssignments = [];
+  const ingressCommitCalls = [];
   let shouldRejectFolderAssignment = rejectFolderAssignmentOnce;
   const inventoryService = {
     async getInventoryActor({ groupActorId = "" } = {}) {
@@ -159,6 +184,61 @@ function createHarness({
         coinGrants.push({ coins: clone(coins), mutationId, options: clone(options), destination: "party" });
       }
       completed.add(mutationId);
+    },
+    async commitInventoryIngressBatch(request, adapters) {
+      ingressCommitCalls.push(clone(request));
+      if (typeof ingressCommit === "function") return ingressCommit(request, adapters);
+      const rows = await adapters.resolveRows();
+      const planned = new Map((request.serializedPlan?.rows ?? []).map((row) => [row.sourceKey, row]));
+      const overrides = new Set(request.serializedPlan?.rootOverrideSourceKeys ?? []);
+      const results = [];
+      for (const row of rows) {
+        const planRow = planned.get(row.sourceKey) ?? {
+          sourceKey: row.sourceKey,
+          matchedRuleId: null,
+          action: { type: "legacy", folderId: row.legacyFolderId ?? null }
+        };
+        const skipped = planRow?.action?.type === "skip" && !overrides.has(row.sourceKey);
+        if (!skipped) {
+          if (row.container) {
+            const root = await adapters.grantContainer({
+              actor: groupActor,
+              container: clone(row.container),
+              sourceKey: row.sourceKey,
+              mutationId: `inventory-ingress:${request.batchMutationId}:${row.sourceKey}`,
+              folderId: planRow?.action?.type === "folder" ? planRow.action.folderId : null
+            });
+            await inventoryService.assignInventoryGrantFolder({
+              groupActorId: request.groupActorId,
+              itemId: root.id,
+              folderId: planRow.action.folderId ?? null
+            });
+          }
+          else {
+            await inventoryService.addLootgenRowToInventoryOnce(row, request.batchMutationId, {
+              groupActorId: request.groupActorId,
+              folderId: planRow.action.folderId ?? null,
+              allowPersistedItemData: true
+            });
+          }
+          await adapters.debitRow(row, { sourceKey: row.sourceKey });
+        }
+        results.push({
+          sourceKey: row.sourceKey,
+          matchedRuleId: planRow?.matchedRuleId ?? null,
+          action: clone(planRow.action),
+          overrideToRoot: overrides.has(row.sourceKey),
+          derivedFolderId: ["folder", "legacy"].includes(planRow.action.type) ? planRow.action.folderId : null,
+          changed: !skipped,
+          targetItemIds: skipped ? [] : [row.container ? "materialized-bag" : "granted-item"]
+        });
+      }
+      return {
+        actorId: request.groupActorId,
+        batchMutationId: request.batchMutationId,
+        changed: results.some((row) => row.changed),
+        rows: results
+      };
     }
   };
   const storageService = new StorageService({
@@ -243,7 +323,8 @@ function createHarness({
     refreshCalls,
     depositResolveCalls,
     journalReadCalls,
-    folderAssignments
+    folderAssignments,
+    ingressCommitCalls
   };
 }
 
@@ -1847,10 +1928,12 @@ test("RebreyaMainModule sends one exact storage bulk claim payload", async () =>
   const previousGame = globalThis.game;
   const previousCanvas = globalThis.canvas;
   const previousHooks = globalThis.Hooks;
+  const previousFoundry = globalThis.foundry;
   const gm = { id: "gm", isGM: true, active: true };
   globalThis.game = { user: gm, users: { activeGM: gm } };
   globalThis.canvas = { tokens: { controlled: [] } };
   globalThis.Hooks = { once() {}, on() {} };
+  globalThis.foundry = { utils: { deepClone: clone } };
   try {
     const { RebreyaMainModule } = await import(`../scripts/main.js?storage-bulk=${Date.now()}`);
     const moduleApi = new RebreyaMainModule();
@@ -1859,6 +1942,20 @@ test("RebreyaMainModule sends one exact storage bulk claim payload", async () =>
       async getInventoryActor({ groupActorId }) {
         return groupActorId === "group-a" ? { id: "group-a", type: "group" } : null;
       }
+    };
+    const ingressPlan = storageIngressPlan();
+    moduleApi.getStorageSnapshot = async () => ({
+      rows: [{
+        rowId: "row-1",
+        rowKind: "item",
+        quantity: 1,
+        itemData: { name: "Sword", type: "weapon", system: { quantity: 1 } }
+      }]
+    });
+    moduleApi.inventoryIngressPlanner = {
+      async preview() { return {}; },
+      async collectChoices() { return { rootOverrideSourceKeys: [] }; },
+      serialize() { return ingressPlan; }
     };
     moduleApi.storageCommandService = {
       async claimAll(payload, context) {
@@ -1883,6 +1980,7 @@ test("RebreyaMainModule sends one exact storage bulk claim payload", async () =>
       characterTokenUuid: "Scene.scene.Token.hero",
       destination: "party",
       target: { groupActorId: "group-a", folderId: null },
+      ingressPlan,
       mutationId: "bulk-main",
       path: ["bag-row"]
     });
@@ -1892,6 +1990,7 @@ test("RebreyaMainModule sends one exact storage bulk claim payload", async () =>
     globalThis.game = previousGame;
     globalThis.canvas = previousCanvas;
     globalThis.Hooks = previousHooks;
+    globalThis.foundry = previousFoundry;
   }
 });
 
@@ -2204,6 +2303,8 @@ test("storage rejects a character token the sender does not own", async () => {
 });
 
 test("party storage claims require an exact group and nullable folder target", () => {
+  const rootPlan = storageIngressPlan();
+  const folderPlan = storageIngressPlan({ folderId: "folder-a" });
   assert.equal(isValidStorageClaimRowPayload({
     tokenUuid: "Scene.scene.Token.chest",
     characterTokenUuid: "",
@@ -2211,6 +2312,7 @@ test("party storage claims require an exact group and nullable folder target", (
     destination: "party",
     quantity: 1,
     target: { groupActorId: "group-a", folderId: null },
+    ingressPlan: rootPlan,
     mutationId: "claim-row-party"
   }), true);
   assert.equal(isValidStorageClaimRowPayload({
@@ -2220,8 +2322,29 @@ test("party storage claims require an exact group and nullable folder target", (
     destination: "party",
     quantity: 1,
     target: { groupActorId: "group-a", folderId: "folder-a" },
+    ingressPlan: folderPlan,
     mutationId: "claim-row-party-folder"
   }), true);
+  assert.equal(isValidStorageClaimRowPayload({
+    tokenUuid: "Scene.scene.Token.chest",
+    characterTokenUuid: "",
+    rowId: "row-1",
+    destination: "party",
+    quantity: 1,
+    target: { groupActorId: "group-a", folderId: null },
+    ingressPlan: null,
+    mutationId: "claim-row-party-no-plan"
+  }), false);
+  assert.equal(isValidStorageClaimRowPayload({
+    tokenUuid: "Scene.scene.Token.chest",
+    characterTokenUuid: "Scene.scene.Token.hero",
+    rowId: "row-1",
+    destination: "self",
+    quantity: 1,
+    target: null,
+    ingressPlan: rootPlan,
+    mutationId: "claim-row-self-with-plan"
+  }), false);
   for (const target of [
     null,
     { groupActorId: "group-a" },
@@ -2236,6 +2359,7 @@ test("party storage claims require an exact group and nullable folder target", (
       destination: "party",
       quantity: 1,
       target,
+      ingressPlan: rootPlan,
       mutationId: "claim-row-party-invalid"
     }), false);
   }
@@ -2254,6 +2378,7 @@ test("storage bulk claim payload requires one exact self or party target", () =>
     characterTokenUuid: "Scene.scene.Token.hero",
     destination: "self",
     target: null,
+    ingressPlan: null,
     mutationId: "claim-all-self"
   };
   const party = {
@@ -2261,6 +2386,7 @@ test("storage bulk claim payload requires one exact self or party target", () =>
     characterTokenUuid: "Scene.scene.Token.hero",
     destination: "party",
     target: { groupActorId: "group-a", folderId: null },
+    ingressPlan: storageIngressPlan(),
     mutationId: "claim-all-party",
     path: ["bag-row"]
   };
@@ -2277,6 +2403,31 @@ test("storage bulk claim payload requires one exact self or party target", () =>
   ]) {
     assert.equal(storageCommands.isValidStorageClaimAllPayload(payload), false);
   }
+});
+
+test("party bulk claim delegates all Item rows to one ingress commit while coins bypass descriptors", async () => {
+  const harness = createHarness();
+  await harness.storageService.open(harness.storageToken);
+  const ingressPlan = storageIngressPlan();
+  ingressPlan.rows[0].action = { type: "skip" };
+  ingressPlan.rows[0].matchedRuleId = "skip-weapons";
+
+  const result = await harness.service.claimAll({
+    tokenUuid: harness.storageToken.uuid,
+    characterTokenUuid: harness.characterToken.uuid,
+    destination: "party",
+    target: { groupActorId: harness.groupActor.id, folderId: null },
+    ingressPlan,
+    mutationId: "filtered-storage-bulk"
+  }, { sender: harness.player });
+
+  assert.equal(harness.ingressCommitCalls.length, 1);
+  assert.equal(harness.itemGrants.length, 0);
+  assert.equal(harness.coinGrants.length, 1);
+  assert.equal(result.coinsChanged, true);
+  assert.deepEqual(result.claimedRowIds, []);
+  assert.deepEqual(readStorageState(harness.storageToken).claimedRowIds, []);
+  assert.equal(readStorageState(harness.storageToken).coinsClaimed, true);
 });
 
 test("bulk claim grants mixed rows, containers, and coins once while skipping Journals", async () => {
@@ -2696,6 +2847,7 @@ test("self storage claims still require a character token", () => {
     destination: "self",
     quantity: 1,
     target: null,
+    ingressPlan: null,
     mutationId: "claim-row-self"
   }), false);
   assert.equal(isValidStorageClaimCoinsPayload({
@@ -2831,6 +2983,7 @@ test("storage row payload validation accepts only exact character and scene targ
     characterTokenUuid: "Scene.scene.Token.hero",
     rowId: "row-1",
     quantity: 1,
+    ingressPlan: null,
     mutationId: "drop-1"
   };
   assert.equal(isValidStorageClaimRowPayload({
@@ -2851,7 +3004,8 @@ test("storage row payload validation accepts only exact character and scene targ
   assert.equal(isValidStorageClaimRowPayload({
     ...base,
     destination: "party",
-    target: { actorUuid: "Actor.hero" }
+    target: { actorUuid: "Actor.hero" },
+    ingressPlan: storageIngressPlan()
   }), false);
 });
 

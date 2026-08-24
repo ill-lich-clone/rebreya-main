@@ -1656,15 +1656,17 @@ test("ingress retry after source debit failure reuses target receipt and termina
   let resolveCalls = 0;
   let debitCalls = 0;
   let sourceQuantity = 2;
+  const recoveryModes = [];
   const callbacks = {
-    resolveRows: async () => {
+    resolveRows: async ({ recovering }) => {
       resolveCalls += 1;
+      recoveryModes.push(recovering);
       return clone(rows);
     },
     debitRow: async () => {
       debitCalls += 1;
-      if (debitCalls === 1) throw new Error("source debit failed");
       sourceQuantity = 0;
+      if (debitCalls === 1) throw new Error("source debit acknowledgment lost");
     }
   };
 
@@ -1676,10 +1678,10 @@ test("ingress retry after source debit failure reuses target receipt and termina
       sourceOrigin: "storage",
       serializedPlan
     };
-    await assert.rejects(fixture.service.commitInventoryIngressBatch(request, callbacks), /source debit failed/u);
+    await assert.rejects(fixture.service.commitInventoryIngressBatch(request, callbacks), /source debit acknowledgment lost/u);
     assert.equal(group.items.contents.length, 1);
     assert.equal(group.items.contents[0].system.quantity, 2);
-    assert.equal(sourceQuantity, 2);
+    assert.equal(sourceQuantity, 0);
 
     const result = await fixture.service.commitInventoryIngressBatch(request, callbacks);
     const terminalResult = await fixture.service.commitInventoryIngressBatch(request, callbacks);
@@ -1690,6 +1692,96 @@ test("ingress retry after source debit failure reuses target receipt and termina
     assert.equal(sourceQuantity, 0);
     assert.equal(resolveCalls, 2);
     assert.equal(debitCalls, 2);
+    assert.deepEqual(recoveryModes, [false, true]);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("storage ingress materializes one portable container tree and assigns only its root folder", async () => {
+  const itemData = inventoryIngressItemData("portable-bag", { name: "Portable bag", type: "container" });
+  const group = createActor({
+    id: "container-ingress-group",
+    type: "group",
+    managed: true,
+    flags: {
+      [MODULE_ID]: {
+        inventoryFolders: {
+          version: 1,
+          folders: [{ id: "bags", name: "Bags", parentId: null }],
+          itemFolderIds: {}
+        },
+        inventoryIngressRules: {
+          version: 1,
+          revision: 1,
+          rules: [{
+            id: "bags-to-folder",
+            name: "Bags",
+            conditions: [{ field: "sourceId", operator: "is", value: "portable-bag" }],
+            action: { type: "folder", folderId: "bags" }
+          }]
+        }
+      }
+    }
+  });
+  const fixture = createInventoryIngressFixture({ group });
+  const rows = [{
+    sourceKey: "container-row",
+    quantity: 1,
+    itemData,
+    legacyFolderId: null,
+    container: { containerId: "portable-bag", children: [{ name: "Gem" }] }
+  }];
+  let grantCalls = 0;
+  let debitCalls = 0;
+  const grantContainer = async ({ actor, container, mutationId, folderId }) => {
+    grantCalls += 1;
+    assert.equal(actor, group);
+    assert.deepEqual(container, rows[0].container);
+    assert.equal(mutationId, "inventory-ingress:portable-container-batch:container-row");
+    assert.equal(folderId, "bags");
+    let root = actor.items.get("portable-root");
+    if (!root) {
+      root = createItem({ id: "portable-root", name: "Portable bag", type: "container" });
+      root.parent = actor;
+      actor.items.contents.push(root);
+    }
+    if (grantCalls === 1) throw new Error("container materialization acknowledgment lost");
+    return root;
+  };
+
+  try {
+    const serializedPlan = await serializeIngressPlan(fixture.planner, { groupActorId: group.id, rows });
+    const request = {
+      groupActorId: group.id,
+      batchMutationId: "portable-container-batch",
+      sourceOrigin: "storage",
+      serializedPlan
+    };
+    const callbacks = {
+      resolveRows: async () => clone(rows),
+      grantContainer,
+      debitRow: async () => { debitCalls += 1; }
+    };
+
+    await assert.rejects(
+      fixture.service.commitInventoryIngressBatch(request, callbacks),
+      /container materialization acknowledgment lost/u
+    );
+    assert.equal(group.items.contents.filter((item) => item.id === "portable-root").length, 1);
+    assert.equal(debitCalls, 0);
+
+    const result = await fixture.service.commitInventoryIngressBatch(request, callbacks);
+    const retry = await fixture.service.commitInventoryIngressBatch(request, callbacks);
+
+    assert.deepEqual(retry, result);
+    assert.equal(grantCalls, 2);
+    assert.equal(debitCalls, 1);
+    assert.equal(group.items.contents.filter((item) => item.id === "portable-root").length, 1);
+    assert.deepEqual(group.getFlag(MODULE_ID, "inventoryFolders").itemFolderIds, {
+      "portable-root": "bags"
+    });
   }
   finally {
     fixture.restore();

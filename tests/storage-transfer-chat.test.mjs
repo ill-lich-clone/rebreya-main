@@ -41,7 +41,9 @@ async function createHarness({
   playerName = "Игрок Алиса",
   heroName = "Герой Эйра",
   rejectGrant = false,
-  rejectSourceWrite = false
+  rejectSourceWrite = false,
+  partyFilterOutcome = null,
+  partyChanged = true
 } = {}) {
   const messages = [];
   const grants = [];
@@ -105,6 +107,9 @@ async function createHarness({
       if (groupActorId !== groupActor.id) throw new Error("group unavailable");
       return groupActor;
     },
+    async getInventorySnapshot() {
+      return { actorId: groupActor.id, folders: [{ id: "weapons", name: "Оружие" }] };
+    },
     async addLootgenRowToCharacterOnce(row, actor, mutationId) {
       await recordGrant("row-self", mutationId, { row: clone(row), actor });
     },
@@ -116,6 +121,27 @@ async function createHarness({
     },
     async addCurrencyToInventoryOnce(value, mutationId) {
       await recordGrant("coins-party", mutationId, { coins: clone(value) });
+    },
+    async commitInventoryIngressBatch(request, adapters) {
+      const ingressRows = await adapters.resolveRows();
+      const results = [];
+      for (const row of ingressRows) {
+        if (partyChanged) {
+          await this.addLootgenRowToInventoryOnce(row, request.batchMutationId);
+          await adapters.debitRow(row, { sourceKey: row.sourceKey });
+        }
+        results.push({
+          sourceKey: row.sourceKey,
+          matchedRuleId: null,
+          action: { type: "legacy", folderId: row.legacyFolderId },
+          overrideToRoot: false,
+          derivedFolderId: row.legacyFolderId,
+          changed: partyChanged,
+          targetItemIds: partyChanged ? ["granted-item"] : [],
+          filterOutcome: clone(partyFilterOutcome)
+        });
+      }
+      return { changed: partyChanged && results.length > 0, rows: results };
     }
   };
   const documents = new Map([
@@ -189,6 +215,65 @@ test("a successful row claim to party names the group inventory destination", as
   assert.equal(harness.messages.length, 1);
   assert.match(harness.messages[0].content, /1 × Меч/iu);
   assert.match(harness.messages[0].content, /группов.*инвентар/iu);
+});
+
+test("party storage receipt appends only escaped authoritative filter outcomes", async () => {
+  const folder = await createHarness({
+    rows: [itemRow({ name: "Меч <script>" })],
+    partyFilterOutcome: { type: "folder", folderId: "weapons", folderName: "Оружие <b>" }
+  });
+  await folder.service.claimRow(rowClaimPayload(folder, {
+    destination: "party",
+    target: { groupActorId: folder.groupActor.id, folderId: "weapons" },
+    ingressPlan: {},
+    mutationId: "claim-filter-folder"
+  }), { sender: folder.player });
+  assert.match(folder.messages[0].content, /Отфильтровано в папку «Оружие &lt;b&gt;»\./u);
+  assert.doesNotMatch(folder.messages[0].content, /<script>|<b>/u);
+
+  const dismantle = await createHarness({
+    partyFilterOutcome: {
+      type: "dismantle",
+      outputs: [
+        { sourceId: "iron", name: "Железо", quantity: 2 },
+        { sourceId: "wood", name: "Дерево", quantity: 1 }
+      ]
+    }
+  });
+  await dismantle.service.claimRow(rowClaimPayload(dismantle, {
+    destination: "party",
+    target: { groupActorId: dismantle.groupActor.id, folderId: null },
+    ingressPlan: {},
+    mutationId: "claim-filter-dismantle"
+  }), { sender: dismantle.player });
+  assert.match(dismantle.messages[0].content, /Отфильтровано: разобрано на Железо x2, Дерево x1\./u);
+
+  const root = await createHarness({ partyFilterOutcome: { type: "root" } });
+  const payload = rowClaimPayload(root, {
+    destination: "party",
+    target: { groupActorId: root.groupActor.id, folderId: null },
+    ingressPlan: {},
+    mutationId: "claim-filter-root"
+  });
+  await root.service.claimRow(payload, { sender: root.player });
+  await root.service.claimRow(payload, { sender: root.player });
+  assert.equal(root.messages.length, 1);
+  assert.match(root.messages[0].content, /Фильтрация пропущена; добавлено в корень\./u);
+  assert.doesNotMatch(root.messages[0].content, /row-sword|ingressPlan|sourceId|flags/u);
+
+  const skipped = await createHarness({
+    partyChanged: false,
+    partyFilterOutcome: { type: "skip" }
+  });
+  const skippedResult = await skipped.service.claimRow(rowClaimPayload(skipped, {
+    destination: "party",
+    target: { groupActorId: skipped.groupActor.id, folderId: null },
+    ingressPlan: {},
+    mutationId: "claim-filter-skip"
+  }), { sender: skipped.player });
+  assert.equal(skippedResult.changed, false);
+  assert.equal(skipped.messages.length, 0);
+  assert.deepEqual(readStorageState(skipped.storageToken).claimedRowIds, []);
 });
 
 test("coin claims to self render every positive denomination correctly", async () => {

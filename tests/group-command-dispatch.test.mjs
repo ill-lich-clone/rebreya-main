@@ -138,12 +138,12 @@ function installFixture({ currentUserId = "gm-a" } = {}) {
   };
 }
 
-function buildLootgenIngressPlan(groupActorId, rowIds) {
+function buildLootgenIngressPlan(groupActorId, rowIds, { folderId = null } = {}) {
   return {
     version: 1,
     groupActorId,
     rulesRevision: 2,
-    requestedFolderId: null,
+    requestedFolderId: folderId,
     rows: rowIds.map((sourceKey) => ({
       sourceKey,
       identity: {
@@ -155,7 +155,7 @@ function buildLootgenIngressPlan(groupActorId, rowIds) {
       },
       quantity: 1,
       matchedRuleId: null,
-      action: { type: "legacy", folderId: null }
+      action: { type: "legacy", folderId }
     })),
     rootOverrideSourceKeys: []
   };
@@ -1142,6 +1142,22 @@ test("module API carries the exact party folder target through storage and direc
       storageCalls.push({ payload: clone(payload), senderId: context.sender.id });
       return { changed: true };
     };
+    const storageIngressPlan = buildLootgenIngressPlan(fixture.groupA.id, ["row-1"], {
+      folderId: "folder-a"
+    });
+    moduleApi.getStorageSnapshot = async () => ({
+      rows: [{
+        rowId: "row-1",
+        rowKind: "item",
+        quantity: 1,
+        itemData: { name: "Sword", type: "weapon", system: { quantity: 1 } }
+      }]
+    });
+    moduleApi.inventoryIngressPlanner = {
+      async preview() { return {}; },
+      async collectChoices() { return { rootOverrideSourceKeys: [] }; },
+      serialize() { return storageIngressPlan; }
+    };
     moduleApi.inventoryService.importDroppedItem = async (dropData, options) => {
       importCalls.push({ dropData: clone(dropData), options: clone(options) });
       return { actorId: fixture.groupA.id };
@@ -1170,6 +1186,7 @@ test("module API carries the exact party folder target through storage and direc
         destination: "party",
         quantity: 1,
         target: { groupActorId: fixture.groupA.id, folderId: "folder-a" },
+        ingressPlan: storageIngressPlan,
         mutationId: "claim-party-folder"
       },
       senderId: fixture.users.gmA.id
@@ -1200,6 +1217,7 @@ test("typed party storage claims authorize membership in the exact target group"
       destination: "party",
       quantity: 1,
       target: { groupActorId: fixture.groupA.id, folderId: null },
+      ingressPlan: buildLootgenIngressPlan(fixture.groupA.id, ["row-1"]),
       mutationId: "party-storage-authorized"
     };
     const authorized = commandRequest(

@@ -32,6 +32,70 @@ function nullableId(value) {
   return value === null || cleanId(value) === value;
 }
 
+function wireId(value) {
+  return typeof value === "string"
+    && value.length > 0
+    && value.length <= 160
+    && cleanId(value) === value;
+}
+
+function validWireAction(action) {
+  if (hasExactKeys(action, ["type"])) {
+    return action.type === "skip" || action.type === "dismantle";
+  }
+  return hasExactKeys(action, ["folderId", "type"])
+    && (action.type === "folder" || action.type === "legacy")
+    && (action.folderId === null || wireId(action.folderId));
+}
+
+function validWireIdentity(identity, quantity) {
+  return hasExactKeys(identity, [
+    "documentType", "durabilityState", "quantity", "sourceId", "sourceType"
+  ])
+    && [identity.documentType, identity.durabilityState, identity.sourceId, identity.sourceType]
+      .every((value) => typeof value === "string" && cleanId(value) === value)
+    && Number.isFinite(identity.quantity)
+    && identity.quantity > 0
+    && identity.quantity === quantity;
+}
+
+export function isValidSerializedInventoryIngressPlan(plan) {
+  if (!hasExactKeys(plan, [
+    "groupActorId", "requestedFolderId", "rootOverrideSourceKeys", "rows", "rulesRevision", "version"
+  ])
+    || plan.version !== INVENTORY_INGRESS_PLAN_VERSION
+    || !wireId(plan.groupActorId)
+    || !Number.isSafeInteger(plan.rulesRevision)
+    || plan.rulesRevision < 0
+    || !(plan.requestedFolderId === null || wireId(plan.requestedFolderId))
+    || !Array.isArray(plan.rows)
+    || !Array.isArray(plan.rootOverrideSourceKeys)) {
+    return false;
+  }
+  const sourceKeys = new Set();
+  const actionableKeys = new Set();
+  for (const row of plan.rows) {
+    if (!hasExactKeys(row, ["action", "identity", "matchedRuleId", "quantity", "sourceKey"])
+      || !wireId(row.sourceKey)
+      || sourceKeys.has(row.sourceKey)
+      || !Number.isFinite(row.quantity)
+      || row.quantity <= 0
+      || !(row.matchedRuleId === null || wireId(row.matchedRuleId))
+      || !validWireAction(row.action)
+      || !validWireIdentity(row.identity, row.quantity)) {
+      return false;
+    }
+    sourceKeys.add(row.sourceKey);
+    if (row.action.type === "skip" || row.action.type === "dismantle") actionableKeys.add(row.sourceKey);
+  }
+  const overrides = new Set();
+  for (const sourceKey of plan.rootOverrideSourceKeys) {
+    if (!wireId(sourceKey) || overrides.has(sourceKey) || !actionableKeys.has(sourceKey)) return false;
+    overrides.add(sourceKey);
+  }
+  return true;
+}
+
 export class InventoryIngressPlanError extends Error {
   constructor(code, message, details = {}) {
     super(message);

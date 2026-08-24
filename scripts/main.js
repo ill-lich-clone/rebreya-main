@@ -80,7 +80,10 @@ import {
   buildInventoryIngressDescriptor,
   resolveInventoryDismantleOutputs
 } from "./data/inventory-ingress-descriptor.js";
-import { InventoryIngressPlanner } from "./application/inventory-ingress-planner.js";
+import {
+  InventoryIngressPlanner,
+  isValidSerializedInventoryIngressPlan
+} from "./application/inventory-ingress-planner.js";
 import { DurabilityService } from "./data/durability-service.js?v=1.4.154-corpse-storage-broken-name";
 import { MapObjectTokenService } from "./data/map-object-token-service.js?v=1.4.97-map-object-token";
 import { HeroDollService } from "./data/hero-doll-service.js";
@@ -737,7 +740,7 @@ function isValidInventoryImportPayload(payload) {
     && isValidInventoryMutationId(payload.mutationId)
     && (payload.folderId === null
       || (isTrimmedNonEmptyString(payload.folderId) && payload.folderId.length <= 160))
-    && isValidInventoryIngressPlan(payload.ingressPlan)
+    && isValidSerializedInventoryIngressPlan(payload.ingressPlan)
     && payload.ingressPlan.groupActorId === payload.inventoryActorId
     && payload.ingressPlan.requestedFolderId === payload.folderId;
 }
@@ -751,7 +754,7 @@ function isValidLootgenInventoryIngressPayload(payload) {
     || !isValidInventoryMutationId(payload.lootId)
     || typeof payload.includeCoins !== "boolean"
     || !Array.isArray(payload.rowIds)
-    || !isValidInventoryIngressPlan(payload.ingressPlan)
+    || !isValidSerializedInventoryIngressPlan(payload.ingressPlan)
     || payload.ingressPlan.groupActorId !== payload.groupActorId) {
     return false;
   }
@@ -760,66 +763,6 @@ function isValidLootgenInventoryIngressPayload(payload) {
     && rowIds.every(isValidInventoryFolderIdentifier)
     && new Set(rowIds).size === rowIds.length
     && JSON.stringify(payload.ingressPlan.rows.map((row) => row.sourceKey)) === JSON.stringify(rowIds);
-}
-
-function isValidInventoryIngressPlanAction(action) {
-  if (hasExactKeys(action, ["type"])) {
-    return action.type === "skip" || action.type === "dismantle";
-  }
-  return hasExactKeys(action, ["folderId", "type"])
-    && (action.type === "folder" || action.type === "legacy")
-    && isValidNullableInventoryFolderIdentifier(action.folderId);
-}
-
-function isValidInventoryIngressPlanIdentity(identity, quantity) {
-  return hasExactKeys(identity, [
-    "documentType", "durabilityState", "quantity", "sourceId", "sourceType"
-  ])
-    && [identity.documentType, identity.durabilityState, identity.sourceId, identity.sourceType]
-      .every((value) => typeof value === "string" && value === value.trim())
-    && Number.isFinite(identity.quantity)
-    && identity.quantity > 0
-    && identity.quantity === quantity;
-}
-
-function isValidInventoryIngressPlan(plan) {
-  if (!hasExactKeys(plan, [
-    "groupActorId", "requestedFolderId", "rootOverrideSourceKeys", "rows", "rulesRevision", "version"
-  ])
-    || plan.version !== 1
-    || !isValidInventoryFolderIdentifier(plan.groupActorId)
-    || !isValidInventoryIngressRuleRevision(plan.rulesRevision)
-    || !isValidNullableInventoryFolderIdentifier(plan.requestedFolderId)
-    || !Array.isArray(plan.rows)
-    || !Array.isArray(plan.rootOverrideSourceKeys)) {
-    return false;
-  }
-  const sourceKeys = new Set();
-  const actionableKeys = new Set();
-  for (const row of plan.rows) {
-    if (!hasExactKeys(row, ["action", "identity", "matchedRuleId", "quantity", "sourceKey"])
-      || !isValidInventoryFolderIdentifier(row.sourceKey)
-      || sourceKeys.has(row.sourceKey)
-      || !Number.isFinite(row.quantity)
-      || row.quantity <= 0
-      || !(row.matchedRuleId === null || isValidInventoryFolderIdentifier(row.matchedRuleId))
-      || !isValidInventoryIngressPlanAction(row.action)
-      || !isValidInventoryIngressPlanIdentity(row.identity, row.quantity)) {
-      return false;
-    }
-    sourceKeys.add(row.sourceKey);
-    if (row.action.type === "skip" || row.action.type === "dismantle") actionableKeys.add(row.sourceKey);
-  }
-  const overrides = new Set();
-  for (const sourceKey of plan.rootOverrideSourceKeys) {
-    if (!isValidInventoryFolderIdentifier(sourceKey)
-      || overrides.has(sourceKey)
-      || !actionableKeys.has(sourceKey)) {
-      return false;
-    }
-    overrides.add(sourceKey);
-  }
-  return true;
 }
 
 function isValidInventoryFolderIdentifier(value) {
@@ -3614,6 +3557,55 @@ export class RebreyaMainModule {
       : this.socketCommandBus.request(STORAGE_JOURNAL_READ_COMMAND, payload);
   }
 
+  #buildStorageInventoryIngressRows(snapshot, {
+    rowIds = null,
+    quantity = null,
+    legacyFolderId = null
+  } = {}) {
+    const requested = rowIds === null ? null : new Set(rowIds.map(cleanSocketId));
+    const rows = (snapshot?.rows ?? [])
+      .filter((row) => !isStorageJournalRow(row))
+      .filter((row) => requested === null || requested.has(cleanSocketId(row?.rowId)))
+      .map((row) => {
+        const available = Math.max(1, Math.trunc(Number(
+          row?.quantity ?? row?.itemData?.system?.quantity ?? 1
+        )) || 1);
+        const selectedQuantity = quantity === null ? available : Number(quantity);
+        const itemData = foundry.utils.deepClone(row?.itemData ?? {});
+        itemData.system ??= {};
+        itemData.system.quantity = selectedQuantity;
+        return {
+          sourceKey: cleanSocketId(row?.rowId),
+          quantity: selectedQuantity,
+          itemData,
+          legacyFolderId,
+          container: row?.rowKind === "container" ? foundry.utils.deepClone(row.container ?? null) : null
+        };
+      });
+    if (requested && rows.length !== requested.size) {
+      throw new Error("Предмет хранилища уже недоступен.");
+    }
+    return rows;
+  }
+
+  async #prepareStorageInventoryIngress({ tokenUuid, path, target, rowIds = null, quantity = null }) {
+    const snapshot = await this.getStorageSnapshot(tokenUuid, { path });
+    const rows = this.#buildStorageInventoryIngressRows(snapshot, {
+      rowIds,
+      quantity,
+      legacyFolderId: target.folderId
+    });
+    const preview = await this.inventoryIngressPlanner.preview({
+      groupActorId: target.groupActorId,
+      requestedFolderId: target.folderId,
+      rows,
+      batch: rows.length > 1
+    });
+    const choices = await this.inventoryIngressPlanner.collectChoices(preview);
+    if (choices === null) return null;
+    return this.inventoryIngressPlanner.serialize(preview, choices);
+  }
+
   async claimStorageRow(tokenUuid, rowId, destination, mutationId, request = {}) {
     const safeTokenUuid = cleanSocketId(tokenUuid);
     const safeDestination = cleanSocketId(destination);
@@ -3645,6 +3637,17 @@ export class RebreyaMainModule {
           : cleanSocketId(request.target.folderId)
       };
     }
+    const quantity = request.quantity === undefined ? null : Number(request.quantity);
+    const ingressPlan = safeDestination === "party"
+      ? await this.#prepareStorageInventoryIngress({
+        tokenUuid: safeTokenUuid,
+        path,
+        target,
+        rowIds: [cleanSocketId(rowId)],
+        quantity
+      })
+      : null;
+    if (safeDestination === "party" && ingressPlan === null) return null;
     const payload = {
       tokenUuid: safeTokenUuid,
       characterTokenUuid: storageCharacterTokenUuidForClaim({
@@ -3655,8 +3658,9 @@ export class RebreyaMainModule {
       }),
       rowId: cleanSocketId(rowId),
       destination: safeDestination,
-      quantity: request.quantity === undefined ? null : Number(request.quantity),
+      quantity,
       target,
+      ingressPlan,
       mutationId: cleanSocketId(mutationId),
       ...(path.length ? { path } : {})
     };
@@ -3707,6 +3711,14 @@ export class RebreyaMainModule {
           : cleanSocketId(request.target.folderId)
       };
     }
+    const ingressPlan = safeDestination === "party"
+      ? await this.#prepareStorageInventoryIngress({
+        tokenUuid: safeTokenUuid,
+        path,
+        target
+      })
+      : null;
+    if (safeDestination === "party" && ingressPlan === null) return null;
     const payload = {
       tokenUuid: safeTokenUuid,
       characterTokenUuid: storageCharacterTokenUuidForClaim({
@@ -3717,6 +3729,7 @@ export class RebreyaMainModule {
       }),
       destination: safeDestination,
       target,
+      ingressPlan,
       mutationId: cleanSocketId(mutationId),
       ...(path.length ? { path } : {})
     };

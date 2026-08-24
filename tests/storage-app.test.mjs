@@ -39,6 +39,8 @@ function createApp({
   getStorageSnapshot = null,
   inspectStorageDepositSource = null,
   readStorageJournal = null,
+  claimStorageRow = null,
+  claimStorageAll = null,
   claimStorageRowResult = { changed: true, sourceDeleted: false },
   claimStorageAllResult = { changed: true, sourceDeleted: false },
   openStorageJournalViewer = null,
@@ -79,11 +81,11 @@ function createApp({
     },
     async claimStorageRow(...args) {
       claimCalls.push(args);
-      return claimStorageRowResult;
+      return claimStorageRow ? claimStorageRow(...args) : claimStorageRowResult;
     },
     async claimStorageAll(...args) {
       bulkClaimCalls.push(args);
-      return claimStorageAllResult;
+      return claimStorageAll ? claimStorageAll(...args) : claimStorageAllResult;
     },
     async inspectStorageDepositSource(data) {
       if (inspectStorageDepositSource) return inspectStorageDepositSource(data);
@@ -224,6 +226,52 @@ test("successful final ground-pile claim closes without requesting the deleted t
     assert.equal(snapshotRequests, 1);
     assert.equal(closes, 1);
     assert.deepEqual(errors, []);
+  }
+  finally {
+    globalThis.ui = previousUi;
+  }
+});
+
+test("cancelled and stale party filter plans keep the storage row and request a fresh plan on retry", async () => {
+  const previousUi = globalThis.ui;
+  const errors = [];
+  globalThis.ui = { notifications: { error: (message) => errors.push(message) } };
+  try {
+    let attempts = 0;
+    const { app } = createApp({
+      configure: false,
+      claimStorageRow: async () => {
+        attempts += 1;
+        if (attempts === 1) {
+          const error = new Error("План устарел");
+          error.code = "plan-stale";
+          throw error;
+        }
+        return null;
+      }
+    });
+    const listeners = new Map();
+    let renders = 0;
+    app.render = async () => { renders += 1; };
+    app.element = new class extends FakeElement {
+      addEventListener(name, callback) { listeners.set(name, callback); }
+    }();
+    await app._prepareContext();
+    app.activeRowId = "row-1";
+    await app._onRender({}, {});
+    const control = {
+      dataset: { action: "storage-claim-party", rowId: "row-1" },
+      closest(selector) { return selector === "[data-action]" ? this : null; }
+    };
+
+    await listeners.get("click")({ target: control, preventDefault() {} });
+    await listeners.get("click")({ target: control, preventDefault() {} });
+
+    assert.equal(attempts, 2);
+    assert.equal(app.activeRowId, "row-1");
+    assert.equal(app.snapshot.rows.some((row) => row.rowId === "row-1"), true);
+    assert.equal(renders, 0);
+    assert.deepEqual(errors, ["План устарел"]);
   }
   finally {
     globalThis.ui = previousUi;

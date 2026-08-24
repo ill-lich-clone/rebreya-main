@@ -4,7 +4,8 @@ import test from "node:test";
 import {
   INVENTORY_INGRESS_PLAN_VERSION,
   InventoryIngressPlanError,
-  InventoryIngressPlanner
+  InventoryIngressPlanner,
+  isValidSerializedInventoryIngressPlan
 } from "../scripts/application/inventory-ingress-planner.js";
 
 function row(sourceKey, descriptor, {
@@ -330,4 +331,24 @@ test("preview awaits asynchronous descriptor and dismantle adapters", async () =
 
   assert.equal(preview.rows[0].identity.sourceId, "sword");
   assert.equal(preview.rows[0].dismantlePreview[0].sourceId, "iron");
+});
+
+test("serialized ingress plan validator accepts only the exact canonical wire shape", async () => {
+  const { planner } = createHarness({ decisions: [null] });
+  const preview = await planner.preview({
+    groupActorId: "group-a",
+    requestedFolderId: null,
+    rows: [row("row-a", {
+      sourceType: "gear",
+      sourceId: "sword",
+      documentType: "weapon",
+      durabilityState: "intact"
+    })]
+  });
+  const plan = planner.serialize(preview);
+
+  assert.equal(isValidSerializedInventoryIngressPlan(plan), true);
+  assert.equal(isValidSerializedInventoryIngressPlan({ ...plan, extra: true }), false);
+  assert.equal(isValidSerializedInventoryIngressPlan({ ...plan, rows: [{ ...plan.rows[0], quantity: 2 }] }), false);
+  assert.equal(isValidSerializedInventoryIngressPlan({ ...plan, rootOverrideSourceKeys: ["row-a"] }), false);
 });
