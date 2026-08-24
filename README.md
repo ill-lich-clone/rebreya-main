@@ -11,7 +11,7 @@
 - Foundry VTT: minimum/verified `13`.
 - Основная система: `dnd5e`.
 - Обязательная зависимость: `statuscounter >= 3.0.4`.
-- Manifest версии `1.4.159` загружает только тонкий `scripts/main-1.4.159.js`, который импортирует `scripts/main.js` с release cache-bust.
+- Manifest версии `1.4.160` загружает только тонкий `scripts/main-1.4.160.js`, который импортирует `scripts/main.js` с release cache-bust; import `inventory-service.js` также имеет отдельный cache-bust для актуальной поверхности command exports.
 - `scripts/main.js` — единственный composition root. Недавние опубликованные `scripts/main-1.4.*.js` оставлены только как совместимые forwarder-файлы для уже открытых вкладок игроков и запущенных экземпляров Foundry.
 - Runtime API публикуется как `game.rebreyaMain` и `game.modules.get("rebreya-main")?.api`.
 

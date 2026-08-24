@@ -71,7 +71,7 @@ import {
   SOCKET_EVENT_INVENTORY_SOURCE_DEPLETION_RESULT,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_REQUEST,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_RESULT
-} from "./data/inventory-service.js?v=1.4.156-inventory-folder-exports";
+} from "./data/inventory-service.js?v=1.4.160-inventory-ingress-rule-exports";
 import {
   InventoryIngressRuleCompilerCache,
   normalizeInventoryIngressRule

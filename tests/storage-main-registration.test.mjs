@@ -125,7 +125,7 @@ test("main registers the storage deposit socket API and current cache keys", asy
   ]) {
     assert.equal(storageHooks.includes(importPath), true, importPath);
   }
-  assert.equal(manifest.version, "1.4.159");
+  assert.equal(manifest.version, "1.4.160");
   assert.match(main, /await registerStorageContainerHierarchyHooks\(\{ Hooks \}\)/u);
 });
 

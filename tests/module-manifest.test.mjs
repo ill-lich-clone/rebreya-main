@@ -63,8 +63,8 @@ test("module manifest loads the stable canonical entrypoint", async () => {
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const [entrypoint] = manifest.esmodules;
 
-  assert.equal(manifest.version, "1.4.159");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.159.js"]);
+  assert.equal(manifest.version, "1.4.160");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.160.js"]);
   assert.doesNotMatch(entrypoint, /[?#]/u);
 
   const entrypointSource = await readFile(new URL(entrypoint, manifestUrl), "utf8");
@@ -72,7 +72,7 @@ test("module manifest loads the stable canonical entrypoint", async () => {
     entrypointSource,
     [
       "// @rebreya-role versioned-entrypoint-cache-forwarder",
-      'import "./main.js?v=1.4.159-inventory-ingress-filters";',
+      'import "./main.js?v=1.4.160-inventory-ingress-cache-fix";',
       ""
     ].join("\n")
   );
@@ -230,7 +230,7 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
   for (const importPath of [
     "data/trader-service.js?v=1.4.109-lazy-trader-restock",
     "data/downtime-service.js?v=1.4.96-craft-calendar",
-    "data/inventory-service.js?v=1.4.156-inventory-folder-exports",
+    "data/inventory-service.js?v=1.4.160-inventory-ingress-rule-exports",
     "data/durability-service.js?v=1.4.154-corpse-storage-broken-name",
     "data/corpse-storage-materializer.js?v=1.4.154-corpse-storage-broken-name",
     "data/native-object-durability-service.js?v=1.4.153-corpse-creature",
@@ -300,7 +300,7 @@ test("module keeps recent published entrypoint URLs as canonical compatibility f
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
 
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.159.js"]);
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.160.js"]);
 
   for (const fileName of ["main-1.4.98.js", "main-1.4.99.js", "main-1.4.100.js"]) {
     const forwarderSource = await readFile(new URL(`../scripts/${fileName}`, import.meta.url), "utf8");

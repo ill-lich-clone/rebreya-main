@@ -294,6 +294,11 @@ test("composition root exposes safe public city reads and GM-only presentation m
 test("composition root owns one inventory ingress graph and one batch dispatch helper", async () => {
   const source = await readFile(new URL("../scripts/main.js", import.meta.url), "utf8");
 
+  assert.match(
+    source,
+    /\.\/data\/inventory-service\.js\?v=1\.4\.160-inventory-ingress-rule-exports/u,
+    "inventory-service cache key must change with the ingress-rule command export surface"
+  );
   assert.equal(source.match(/new InventoryIngressRuleCompilerCache\(/gu)?.length, 1);
   assert.equal(source.match(/new InventoryIngressPlanner\(/gu)?.length, 1);
   for (const command of [
