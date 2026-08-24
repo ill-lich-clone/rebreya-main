@@ -71,6 +71,14 @@
     </form>
   {{/if}}
 
+  {{#if canClaimAll}}
+    <div class="rm-storage-item__actions rm-storage-claim-all">
+      <span>Залутать всё</span>
+      <button type="button" class="rm-button rm-button--primary" data-action="storage-claim-all-self">Себе</button>
+      <button type="button" class="rm-button rm-button--secondary" data-action="storage-claim-all-party">В группу</button>
+    </div>
+  {{/if}}
+
   {{#if hasGridItems}}
     <div class="rm-storage-grid" style="--rm-storage-columns: {{gridColumns}};">
       {{#each rows}}

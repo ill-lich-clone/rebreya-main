@@ -213,7 +213,7 @@ test("nearby drops outside pile bounds create another token and duplicate mutati
   assert.equal(readStorageState(tokens[0]).manualRows[0].quantity, 1);
 });
 
-test("empty ground pile cleanup deletes its token while nonempty piles refresh", async () => {
+test("claiming the last ordinary ground-pile row successfully deletes its token", async () => {
   const { service, tokens } = createHarness();
   await service.transferToScene({ row: sword, quantity: 2, sceneId: "scene", x: 300, y: 400, mutationId: "one" });
   const token = tokens[0];
@@ -223,7 +223,12 @@ test("empty ground pile cleanup deletes its token while nonempty piles refresh",
   await service.refreshAfterStorageMutation(token, state);
   assert.equal(token.name, "Меч");
 
-  await service.refreshAfterStorageMutation(token, { ...state, state: "empty", claimedRowIds: [state.manualRows[0].rowId] });
+  const result = await service.refreshAfterStorageMutation(token, {
+    ...state,
+    state: "empty",
+    claimedRowIds: [state.manualRows[0].rowId]
+  });
+  assert.equal(result.deleted, true);
   assert.equal(token.deleted, true);
   assert.equal(tokens.length, 0);
 });

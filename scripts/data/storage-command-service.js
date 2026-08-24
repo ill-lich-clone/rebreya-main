@@ -402,7 +402,8 @@ export class StorageCommandService {
   }
 
   async #refreshSource(storageToken, state) {
-    await this.groundPileService?.refreshAfterStorageMutation?.(storageToken, state);
+    return await this.groundPileService?.refreshAfterStorageMutation?.(storageToken, state)
+      ?? { deleted: false, state };
   }
 
   async #publishClaimMessage({ sender, destination, actor = null, row = null, quantity = null, coins = null } = {}) {
@@ -668,7 +669,7 @@ export class StorageCommandService {
         });
       }
       const result = await this.storageService.claim(access.storageToken, { kind: "row", rowId, quantity, path });
-      await this.#refreshSource(access.storageToken, readStorageState(access.storageToken));
+      const refresh = await this.#refreshSource(access.storageToken, readStorageState(access.storageToken));
       if (result.changed === true) {
         await this.#publishClaimMessage({
           sender,
@@ -678,7 +679,7 @@ export class StorageCommandService {
           quantity
         });
       }
-      return result;
+      return { ...result, sourceDeleted: refresh.deleted === true };
     });
   }
 
@@ -714,7 +715,7 @@ export class StorageCommandService {
         await this.inventoryService.addCurrencyToInventoryOnce(coins, grantId);
       }
       const result = await this.storageService.claim(access.storageToken, { kind: "coins", path });
-      await this.#refreshSource(access.storageToken, readStorageState(access.storageToken));
+      const refresh = await this.#refreshSource(access.storageToken, readStorageState(access.storageToken));
       if (result.changed === true) {
         await this.#publishClaimMessage({
           sender,
@@ -723,7 +724,7 @@ export class StorageCommandService {
           coins
         });
       }
-      return result;
+      return { ...result, sourceDeleted: refresh.deleted === true };
     });
   }
 
@@ -875,8 +876,10 @@ export class StorageCommandService {
       }
 
       const changed = claimedRowIds.length > 0 || coinsChanged;
+      let sourceDeleted = false;
       if (changed) {
-        await this.#refreshSource(access.storageToken, readStorageState(access.storageToken));
+        const refresh = await this.#refreshSource(access.storageToken, readStorageState(access.storageToken));
+        sourceDeleted = refresh.deleted === true;
       }
       const finalState = readStorageStateAtPath(access.storageToken, path);
       return {
@@ -884,6 +887,7 @@ export class StorageCommandService {
         claimedRowIds,
         skippedJournalRowIds,
         coinsChanged,
+        sourceDeleted,
         state: finalState.state,
         displayMode: finalState.displayMode
       };

@@ -229,6 +229,7 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
       hasBreadcrumbs: breadcrumbs.length > 1,
       hasRows: rows.length > 0,
       hasGridItems: gridItemCount > 0,
+      canClaimAll: rows.some((row) => row.canClaim) || hasCoins,
       gridColumns,
       coins,
       coinsLabel: coinsLabel(coins),
@@ -409,14 +410,22 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const available = Math.max(1, Math.trunc(Number(row.quantity ?? 1)) || 1);
     const quantity = await promptStorageTransferQuantity(available);
     if (quantity === null) return false;
-    await this.moduleApi.claimStorageRow(
+    return this.moduleApi.claimStorageRow(
       this.tokenUuid,
       rowId,
       destination,
       mutationId("storage-row"),
       { quantity, ...this.#pathRequest() }
     );
-    return true;
+  }
+
+  async #claimAll(destination) {
+    return this.moduleApi.claimStorageAll(
+      this.tokenUuid,
+      destination,
+      mutationId("storage-all"),
+      this.#pathRequest()
+    );
   }
 
   async #openContainer(rowId) {
@@ -502,17 +511,33 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
         return;
       }
       else if (action === "storage-claim-self" || action === "storage-claim-party") {
-        const changed = await this.#claimRow(rowId, action.endsWith("self") ? "self" : "party");
-        if (!changed) return;
+        const result = await this.#claimRow(rowId, action.endsWith("self") ? "self" : "party");
+        if (!result) return;
         this.activeRowId = "";
+        if (result.sourceDeleted === true) {
+          await this.close?.();
+          return;
+        }
       }
       else if (action === "storage-claim-coins-self" || action === "storage-claim-coins-party") {
-        await this.moduleApi.claimStorageCoins(
+        const result = await this.moduleApi.claimStorageCoins(
           this.tokenUuid,
           action.endsWith("self") ? "self" : "party",
           mutationId("storage-coins"),
           this.#pathRequest()
         );
+        if (result?.sourceDeleted === true) {
+          await this.close?.();
+          return;
+        }
+      }
+      else if (action === "storage-claim-all-self" || action === "storage-claim-all-party") {
+        const result = await this.#claimAll(action.endsWith("self") ? "self" : "party");
+        this.activeRowId = "";
+        if (result?.sourceDeleted === true) {
+          await this.close?.();
+          return;
+        }
       }
       else if (action === "storage-save-config") {
         const form = control.closest("form");

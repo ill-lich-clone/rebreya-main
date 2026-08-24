@@ -39,12 +39,15 @@ function createApp({
   getStorageSnapshot = null,
   inspectStorageDepositSource = null,
   readStorageJournal = null,
+  claimStorageRowResult = { changed: true, sourceDeleted: false },
+  claimStorageAllResult = { changed: true, sourceDeleted: false },
   openStorageJournalViewer = null,
   appOptions = {}
 } = {}) {
   globalThis.game.user.isGM = canManage;
   const textureCalls = [];
   const claimCalls = [];
+  const bulkClaimCalls = [];
   const depositCalls = [];
   const quantityCalls = [];
   const journalReadCalls = [];
@@ -76,6 +79,11 @@ function createApp({
     },
     async claimStorageRow(...args) {
       claimCalls.push(args);
+      return claimStorageRowResult;
+    },
+    async claimStorageAll(...args) {
+      bulkClaimCalls.push(args);
+      return claimStorageAllResult;
     },
     async inspectStorageDepositSource(data) {
       if (inspectStorageDepositSource) return inspectStorageDepositSource(data);
@@ -103,7 +111,15 @@ function createApp({
     ...(openStorageJournalViewer ? { openStorageJournalViewer } : {}),
     ...appOptions
   });
-  return { app, textureCalls, claimCalls, depositCalls, quantityCalls, journalReadCalls };
+  return {
+    app,
+    textureCalls,
+    claimCalls,
+    bulkClaimCalls,
+    depositCalls,
+    quantityCalls,
+    journalReadCalls
+  };
 }
 
 test("storage grid offers self and party destinations for rows and coins", async () => {
@@ -117,10 +133,101 @@ test("storage grid offers self and party destinations for rows and coins", async
   assert.match(template, /data-action="storage-claim-party"/u);
   assert.match(template, /data-action="storage-claim-coins-self"/u);
   assert.match(template, /data-action="storage-claim-coins-party"/u);
+  assert.match(template, />Залутать всё</u);
+  assert.match(template, /data-action="storage-claim-all-self"/u);
+  assert.match(template, /data-action="storage-claim-all-party"/u);
   assert.match(template, /\{\{#if configuration\.canSetTexture\}\}/u);
   assert.match(template, /data-action="storage-set-texture"/u);
   assert.match(template, /data-mode="\{\{mode\}\}"/u);
   assert.doesNotMatch(template, /storage-page/u);
+});
+
+test("storage bulk controls use the existing self and party destinations and hide for Journal-only storage", async () => {
+  const { app, bulkClaimCalls } = createApp({
+    configure: false,
+    appOptions: { characterTokenUuid: "Scene.scene.Token.hero", path: ["bag-row"] }
+  });
+  const listeners = new Map();
+  app.render = async () => {};
+  app.element = new class extends FakeElement {
+    addEventListener(name, callback) { listeners.set(name, callback); }
+  }();
+
+  const context = await app._prepareContext();
+  assert.equal(context.canClaimAll, true);
+  await app._onRender({}, {});
+  const control = {
+    dataset: { action: "storage-claim-all-party" },
+    closest(selector) { return selector === "[data-action]" ? this : null; }
+  };
+  await listeners.get("click")({ target: control, preventDefault() {} });
+
+  assert.equal(bulkClaimCalls.length, 1);
+  assert.equal(bulkClaimCalls[0][0], app.tokenUuid);
+  assert.equal(bulkClaimCalls[0][1], "party");
+  assert.match(bulkClaimCalls[0][2], /^storage-all-/u);
+  assert.deepEqual(bulkClaimCalls[0][3], {
+    path: ["bag-row"],
+    characterTokenUuid: "Scene.scene.Token.hero"
+  });
+
+  const journalOnly = createApp({
+    configure: false,
+    getStorageSnapshot: async () => ({
+      tokenUuid: "Scene.scene.Token.chest",
+      name: "Сундук",
+      state: "opened",
+      rows: [{ rowId: "notes", rowKind: "journal", name: "Записка", quantity: 1 }],
+      coins: {}
+    })
+  });
+  assert.equal((await journalOnly.app._prepareContext()).canClaimAll, false);
+});
+
+test("successful final ground-pile claim closes without requesting the deleted token snapshot", async () => {
+  const previousUi = globalThis.ui;
+  const errors = [];
+  globalThis.ui = { notifications: { error: (message) => errors.push(message) } };
+  try {
+    let snapshotRequests = 0;
+    const { app } = createApp({
+      configure: false,
+      claimStorageRowResult: { changed: true, sourceDeleted: true },
+      getStorageSnapshot: async () => {
+        snapshotRequests += 1;
+        if (snapshotRequests > 1) throw new Error("Токен хранилища не найден.");
+        return {
+          tokenUuid: "Scene.scene.Token.ground",
+          name: "Меч",
+          state: "opened",
+          rows: [{ rowId: "last-row", rowKind: "item", name: "Меч", quantity: 1 }],
+          coins: {}
+        };
+      }
+    });
+    const listeners = new Map();
+    let closes = 0;
+    app.close = async () => { closes += 1; };
+    app.render = async () => {};
+    app.element = new class extends FakeElement {
+      addEventListener(name, callback) { listeners.set(name, callback); }
+    }();
+    await app._prepareContext();
+    await app._onRender({}, {});
+    const control = {
+      dataset: { action: "storage-claim-self", rowId: "last-row" },
+      closest(selector) { return selector === "[data-action]" ? this : null; }
+    };
+
+    await listeners.get("click")({ target: control, preventDefault() {} });
+
+    assert.equal(snapshotRequests, 1);
+    assert.equal(closes, 1);
+    assert.deepEqual(errors, []);
+  }
+  finally {
+    globalThis.ui = previousUi;
+  }
 });
 
 test("Journal rows expose a read-only view model and no transfer controls", async () => {

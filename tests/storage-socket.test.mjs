@@ -50,7 +50,8 @@ function createHarness({
   durabilityService = null,
   logResolve = true,
   folderIds = ["folder-a"],
-  rejectFolderAssignmentOnce = false
+  rejectFolderAssignmentOnce = false,
+  refreshResult = null
 } = {}) {
   const player = { id: "player", isGM: false };
   const gm = { id: "gm", isGM: true, active: true };
@@ -192,6 +193,7 @@ function createHarness({
     },
     async refreshAfterStorageMutation(token, state) {
       refreshCalls.push({ token, state: clone(state) });
+      return refreshResult;
     }
   };
   const service = new StorageCommandService({
@@ -2025,6 +2027,25 @@ test("repeated storage claims grant rows and coins only once and empty the token
   assert.equal(harness.coinGrants.length, 1);
   assert.equal(readStorageState(harness.storageToken).state, "empty");
   assert.equal(harness.storageToken.name, "Сундук (пусто)");
+});
+
+test("storage claims report when the final ordinary ground pile was deleted", async () => {
+  const harness = createHarness({ refreshResult: { deleted: true } });
+  await harness.storageService.open(harness.storageToken);
+
+  const result = await harness.service.claimRow({
+    tokenUuid: harness.storageToken.uuid,
+    characterTokenUuid: harness.characterToken.uuid,
+    rowId: "row-1",
+    destination: "self",
+    quantity: null,
+    target: null,
+    mutationId: "claim-last-ground-row"
+  }, { sender: harness.player });
+
+  assert.equal(result.changed, true);
+  assert.equal(result.sourceDeleted, true);
+  assert.equal(harness.refreshCalls.length, 1);
 });
 
 test("storage claim derives durability on its detached grant row", async () => {
