@@ -7,11 +7,11 @@
 ## Совместимость и точка входа
 
 - Module ID: `rebreya-main`.
-- Версия: `1.4.112`.
+- Версия: `1.4.161`.
 - Foundry VTT: minimum/verified `13`.
 - Основная система: `dnd5e`.
 - Обязательная зависимость: `statuscounter >= 3.0.4`.
-- Manifest версии `1.4.160` загружает только тонкий `scripts/main-1.4.160.js`, который импортирует `scripts/main.js` с release cache-bust; import `inventory-service.js` также имеет отдельный cache-bust для актуальной поверхности command exports.
+- Manifest версии `1.4.161` загружает только тонкий `scripts/main-1.4.161.js`, который импортирует единственный composition root `scripts/main.js` с cache-bust `1.4.161-journal-scene-items`; изменённые storage command, pile и canvas-drop модули используют тот же release key.
 - `scripts/main.js` — единственный composition root. Недавние опубликованные `scripts/main-1.4.*.js` оставлены только как совместимые forwarder-файлы для уже открытых вкладок игроков и запущенных экземпляров Foundry.
 - Runtime API публикуется как `game.rebreyaMain` и `game.modules.get("rebreya-main")?.api`.
 
@@ -125,6 +125,7 @@ Versioned entrypoint обязан оставаться минимальным ca
 | `inventory.ingress-rule.delete` | `InventoryService` | та же проверка группы |
 | `storage.claim-row` | `StorageCommandService` + `InventoryService` для party ingress | прежняя проверка access; для группы также управление целевой группой |
 | `storage.claim-all` | `StorageCommandService` + `InventoryService` для party ingress | та же проверка access/group; один batch command |
+| `storage.journal.drop-to-scene` | `StorageCommandService` + `StorageGroundPileService` | только GM; source Journal повторно разрешается authoritative service |
 | `trader.purchase` | `TradeTransactionService` | отправитель владеет Actor-покупателем |
 | `trader.sell` | `TradeTransactionService` | отправитель владеет Actor-продавцом |
 

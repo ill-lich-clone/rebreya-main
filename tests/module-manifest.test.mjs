@@ -63,8 +63,8 @@ test("module manifest loads the stable canonical entrypoint", async () => {
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const [entrypoint] = manifest.esmodules;
 
-  assert.equal(manifest.version, "1.4.160");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.160.js"]);
+  assert.equal(manifest.version, "1.4.161");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.161.js"]);
   assert.doesNotMatch(entrypoint, /[?#]/u);
 
   const entrypointSource = await readFile(new URL(entrypoint, manifestUrl), "utf8");
@@ -72,7 +72,7 @@ test("module manifest loads the stable canonical entrypoint", async () => {
     entrypointSource,
     [
       "// @rebreya-role versioned-entrypoint-cache-forwarder",
-      'import "./main.js?v=1.4.160-inventory-ingress-cache-fix";',
+      'import "./main.js?v=1.4.161-journal-scene-items";',
       ""
     ].join("\n")
   );
@@ -244,11 +244,11 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
     "data/storage-open-sound-service.js?v=1.4.145-coin-icons-storage-sound",
     "data/storage-service.js?v=1.4.152-dead-npc-looting",
     "data/storage-access.js?v=1.4.158-storage-access-cache",
-    "data/storage-ground-pile-service.js?v=1.4.155-journal-pile-presentation",
+    "data/storage-ground-pile-service.js?v=1.4.161-journal-scene-items",
     "data/storage-container-item-service.js?v=1.4.130-storage-player-fixes",
     "data/storage-deposit-source.js?v=1.4.144-spreadsheet-coins-ground-repair",
-    "data/storage-command-service.js?v=1.4.158-storage-access-cache",
-    "integrations/storage-transfer-drop.js?v=1.4.144-spreadsheet-coins-ground-repair",
+    "data/storage-command-service.js?v=1.4.161-journal-scene-items",
+    "integrations/storage-transfer-drop.js?v=1.4.161-journal-scene-items",
     "integrations/storage-token-drop.js?v=1.4.132-storage-owned-character-resolution"
   ]) {
     assert.equal(canonicalSource.includes(importPath), true, importPath);
@@ -277,7 +277,7 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
     assert.equal(source.includes(importPath), true, importPath);
   }
   assert.equal(
-    groundPileServiceSource.includes("storage-pile-presentation.js?v=1.4.155-journal-pile-presentation"),
+    groundPileServiceSource.includes("storage-pile-presentation.js?v=1.4.161-journal-scene-items"),
     true,
     "ground-pile presentation changes need their own browser module cache key"
   );
@@ -300,7 +300,7 @@ test("module keeps recent published entrypoint URLs as canonical compatibility f
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
 
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.160.js"]);
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.161.js"]);
 
   for (const fileName of ["main-1.4.98.js", "main-1.4.99.js", "main-1.4.100.js"]) {
     const forwarderSource = await readFile(new URL(`../scripts/${fileName}`, import.meta.url), "utf8");

@@ -106,13 +106,13 @@ test("main registers the storage deposit socket API and current cache keys", asy
     "data/storage-service.js?v=1.4.152-dead-npc-looting",
     "data/storage-open-sound-service.js?v=1.4.145-coin-icons-storage-sound",
     "data/storage-access.js?v=1.4.158-storage-access-cache",
-    "data/storage-ground-pile-service.js?v=1.4.155-journal-pile-presentation",
+    "data/storage-ground-pile-service.js?v=1.4.161-journal-scene-items",
     "data/storage-container-item-service.js?v=1.4.130-storage-player-fixes",
     "data/storage-deposit-source.js?v=1.4.144-spreadsheet-coins-ground-repair",
-    "data/storage-command-service.js?v=1.4.158-storage-access-cache",
+    "data/storage-command-service.js?v=1.4.161-journal-scene-items",
     "integrations/storage-token-hooks.js?v=1.4.158-storage-access-cache",
     "combat/hooks.js?v=1.4.147-race-damage",
-    "integrations/storage-transfer-drop.js?v=1.4.144-spreadsheet-coins-ground-repair",
+    "integrations/storage-transfer-drop.js?v=1.4.161-journal-scene-items",
     "integrations/storage-token-drop.js?v=1.4.132-storage-owned-character-resolution",
     "integrations/storage-container-hierarchy.js?v=1.4.122-storage-container-cycle-repair"
   ]) {
@@ -131,7 +131,7 @@ test("main registers the storage deposit socket API and current cache keys", asy
   ]) {
     assert.equal(storageHooks.includes(importPath), true, importPath);
   }
-  assert.equal(manifest.version, "1.4.160");
+  assert.equal(manifest.version, "1.4.161");
   assert.match(main, /await registerStorageContainerHierarchyHooks\(\{ Hooks \}\)/u);
 });
 
