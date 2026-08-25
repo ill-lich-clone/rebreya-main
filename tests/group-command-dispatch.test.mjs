@@ -21,6 +21,16 @@ catch (error) {
   if (error?.code !== "ERR_MODULE_NOT_FOUND") throw error;
 }
 
+let downtimeMutationCommands = {};
+try {
+  downtimeMutationCommands = await import(
+    "../scripts/application/downtime-mutation-commands.js"
+  );
+}
+catch (error) {
+  if (error?.code !== "ERR_MODULE_NOT_FOUND") throw error;
+}
+
 const originalHooks = globalThis.Hooks;
 globalThis.Hooks = { once() {}, on() {} };
 const { RebreyaMainModule } = await import(`../scripts/main.js?group-command-dispatch=${Date.now()}`);
@@ -1968,6 +1978,236 @@ test("active GM resolves a synthetic actor UUID before applying an environment s
     globalThis.fromUuid = previousFromUuid;
     fixture.restore();
     globals.restore();
+  }
+});
+
+test("downtime mutation commands require exact safe payloads", () => {
+  const {
+    DOWNTIME_WEEKS_GRANT_COMMAND,
+    DOWNTIME_WEEKS_REVOKE_COMMAND,
+    DOWNTIME_HISTORY_CLEAR_COMMAND,
+    DOWNTIME_REQUEST_CREATE_COMMAND,
+    DOWNTIME_REQUEST_UPDATE_COMMAND,
+    DOWNTIME_REQUEST_SET_STATUS_COMMAND,
+    DOWNTIME_REQUEST_SET_CHECKS_COMMAND,
+    DOWNTIME_REQUEST_RECORD_CHECK_COMMAND,
+    DOWNTIME_PROJECT_CONTINUE_COMMAND,
+    DOWNTIME_PROJECT_CLOSE_COMMAND,
+    isValidDowntimeWeeksGrantPayload,
+    isValidDowntimeWeeksRevokePayload,
+    isValidDowntimeHistoryClearPayload,
+    isValidDowntimeRequestCreatePayload,
+    isValidDowntimeRequestUpdatePayload,
+    isValidDowntimeRequestSetStatusPayload,
+    isValidDowntimeRequestSetChecksPayload,
+    isValidDowntimeRequestRecordCheckPayload,
+    isValidDowntimeProjectContinuePayload,
+    isValidDowntimeProjectClosePayload
+  } = downtimeMutationCommands;
+  const request = {
+    groupId: "group-a",
+    actorId: "character-a",
+    actionId: "training",
+    title: "Training",
+    description: "",
+    weeks: 1,
+    craftProject: null,
+    targetActionSelections: []
+  };
+  const cases = [
+    [DOWNTIME_WEEKS_GRANT_COMMAND, isValidDowntimeWeeksGrantPayload, { groupId: "group-a", actorIds: ["character-a"], weeks: 1, reason: "", fromIsoDate: "" }],
+    [DOWNTIME_WEEKS_REVOKE_COMMAND, isValidDowntimeWeeksRevokePayload, { groupId: "group-a", actorIds: ["character-a"], weeks: 1, reason: "" }],
+    [DOWNTIME_HISTORY_CLEAR_COMMAND, isValidDowntimeHistoryClearPayload, { groupId: "group-a" }],
+    [DOWNTIME_REQUEST_CREATE_COMMAND, isValidDowntimeRequestCreatePayload, request],
+    [DOWNTIME_REQUEST_UPDATE_COMMAND, isValidDowntimeRequestUpdatePayload, { ...request, requestId: "downtime-1" }],
+    [DOWNTIME_REQUEST_SET_STATUS_COMMAND, isValidDowntimeRequestSetStatusPayload, { groupId: "group-a", requestId: "downtime-1", status: "approved", result: "" }],
+    [DOWNTIME_REQUEST_SET_CHECKS_COMMAND, isValidDowntimeRequestSetChecksPayload, { groupId: "group-a", requestId: "downtime-1", checks: [] }],
+    [DOWNTIME_REQUEST_RECORD_CHECK_COMMAND, isValidDowntimeRequestRecordCheckPayload, { groupId: "group-a", actorId: "character-a", requestId: "downtime-1", checkId: "check-1", result: { total: 17 } }],
+    [DOWNTIME_PROJECT_CONTINUE_COMMAND, isValidDowntimeProjectContinuePayload, { groupId: "group-a", actorId: "character-a", requestId: "downtime-1", checkId: "check-1", result: { total: 17 } }],
+    [DOWNTIME_PROJECT_CLOSE_COMMAND, isValidDowntimeProjectClosePayload, { groupId: "group-a", actorId: "character-a", requestId: "downtime-1" }]
+  ];
+
+  for (const [command, validate, payload] of cases) {
+    assert.equal(typeof command, "string");
+    assert.equal(validate?.(payload), true, command);
+    assert.equal(validate?.({ ...payload, extra: true }), false, `${command}: extra key`);
+  }
+  assert.equal(isValidDowntimeWeeksGrantPayload?.({ groupId: "group-a", actorIds: [], weeks: 0, reason: "", fromIsoDate: "" }), false);
+  assert.equal(isValidDowntimeRequestCreatePayload?.({ ...request, craftProject: [] }), false);
+  assert.equal(isValidDowntimeRequestSetChecksPayload?.({ groupId: "group-a", requestId: "downtime-1", checks: {}, }), false);
+  assert.equal(isValidDowntimeRequestRecordCheckPayload?.({ groupId: "group-a", actorId: "character-a", requestId: "downtime-1", checkId: "check-1", result: { constructor: "unsafe" } }), false);
+});
+
+test("downtime typed commands authorize exact group members and stamp the socket sender", async () => {
+  const fixture = installFixture({ includeGroupB: true });
+  try {
+    const moduleApi = new RebreyaMainModule();
+    const calls = [];
+    moduleApi.downtimeService = {
+      async grantWeeks(payload) { calls.push(["grant", clone(payload)]); return { actorIds: payload.actorIds }; },
+      async revokeWeeks(payload) { calls.push(["revoke", clone(payload)]); return { actorIds: payload.actorIds }; },
+      async clearHistory(payload) { calls.push(["clear", clone(payload)]); return { actorIds: [fixture.memberA.id] }; },
+      async createRequest(payload) { calls.push(["create", clone(payload)]); return { id: "request-create", actorId: payload.actorId }; },
+      async updateRequest(payload) { calls.push(["update", clone(payload)]); return { id: payload.requestId, actorId: payload.actorId }; },
+      async setRequestStatus(requestId, status, options) { calls.push(["status", requestId, status, clone(options)]); return { id: requestId, actorId: fixture.memberA.id }; },
+      async setRequestChecks(requestId, checks, options) { calls.push(["checks", requestId, clone(checks), clone(options)]); return { id: requestId, actorId: fixture.memberA.id }; },
+      async recordCheckResult(requestId, checkId, result, options) { calls.push(["record", requestId, checkId, clone(result), clone(options)]); return { id: requestId, actorId: fixture.memberA.id }; },
+      async continueProject(requestId, options) { calls.push(["continue", requestId, clone(options)]); return { id: requestId, actorId: fixture.memberA.id }; },
+      async closeProject(requestId, options) { calls.push(["close", requestId, clone(options)]); return { id: requestId, actorId: fixture.memberA.id }; }
+    };
+    const requestPayload = {
+      groupId: fixture.groupA.id,
+      actorId: fixture.memberA.id,
+      actionId: "training",
+      title: "Training",
+      description: "",
+      weeks: 1,
+      craftProject: null,
+      targetActionSelections: []
+    };
+    const requests = [
+      commandRequest("downtime.request.create", fixture.users.playerA.id, requestPayload, "downtime-create"),
+      commandRequest("downtime.request.update", fixture.users.playerA.id, { ...requestPayload, requestId: "downtime-1" }, "downtime-update"),
+      commandRequest("downtime.request.set-status", fixture.users.gmB.id, { groupId: fixture.groupA.id, requestId: "downtime-1", status: "approved", result: "ok" }, "downtime-status"),
+      commandRequest("downtime.request.set-checks", fixture.users.gmB.id, { groupId: fixture.groupA.id, requestId: "downtime-1", checks: [] }, "downtime-checks"),
+      commandRequest("downtime.request.record-check", fixture.users.playerA.id, { groupId: fixture.groupA.id, actorId: fixture.memberA.id, requestId: "downtime-1", checkId: "check-1", result: { total: 18 } }, "downtime-record"),
+      commandRequest("downtime.project.continue", fixture.users.playerA.id, { groupId: fixture.groupA.id, actorId: fixture.memberA.id, requestId: "downtime-1", checkId: "check-1", result: { total: 18 } }, "downtime-continue"),
+      commandRequest("downtime.project.close", fixture.users.playerA.id, { groupId: fixture.groupA.id, actorId: fixture.memberA.id, requestId: "downtime-1" }, "downtime-close"),
+      commandRequest("downtime.weeks.grant", fixture.users.gmB.id, { groupId: fixture.groupA.id, actorIds: [fixture.memberA.id], weeks: 1, reason: "", fromIsoDate: "" }, "downtime-grant"),
+      commandRequest("downtime.weeks.revoke", fixture.users.gmB.id, { groupId: fixture.groupA.id, actorIds: [fixture.memberA.id], weeks: 1, reason: "" }, "downtime-revoke"),
+      commandRequest("downtime.history.clear", fixture.users.gmB.id, { groupId: fixture.groupA.id }, "downtime-clear")
+    ];
+    for (const request of requests) await moduleApi.handleSocketMessage(request);
+    const denied = commandRequest("downtime.request.create", fixture.users.playerB.id, requestPayload, "downtime-foreign-owner");
+    const playerGrant = commandRequest("downtime.weeks.grant", fixture.users.playerA.id, { groupId: fixture.groupA.id, actorIds: [fixture.memberA.id], weeks: 1, reason: "", fromIsoDate: "" }, "downtime-player-grant");
+    await moduleApi.handleSocketMessage(denied);
+    await moduleApi.handleSocketMessage(playerGrant);
+    await flushCommands();
+
+    for (const request of requests) assert.equal(resultFor(fixture, request.requestId)?.ok, true, request.command);
+    assert.equal(resultFor(fixture, denied.requestId)?.error?.code, "unauthorized");
+    assert.equal(resultFor(fixture, playerGrant.requestId)?.error?.code, "unauthorized");
+    assert.deepEqual(calls.find(([name]) => name === "create")?.[1]?.submittedByUserId, fixture.users.playerA.id);
+    assert.equal(calls.find(([name]) => name === "record")?.[4]?.recordedByUserId, fixture.users.playerA.id);
+    assert.equal(calls.find(([name]) => name === "continue")?.[2]?.recordedByUserId, fixture.users.playerA.id);
+    assert.equal(calls.find(([name]) => name === "close")?.[2]?.projectClosedByUserId, fixture.users.playerA.id);
+    assert.deepEqual(calls.find(([name]) => name === "grant")?.[1], {
+      groupId: fixture.groupA.id,
+      actorIds: [fixture.memberA.id],
+      weeks: 1,
+      reason: "",
+      fromIsoDate: ""
+    });
+    assert.equal(fixture.writes.length, 0);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("inactive downtime callers await a typed result while legacy raw requests do nothing", async () => {
+  const fixture = installFixture({ currentUserId: "gm-b" });
+  try {
+    const moduleApi = new RebreyaMainModule();
+    let localWrites = 0;
+    let refreshes = 0;
+    moduleApi.downtimeService.createRequest = async () => {
+      localWrites += 1;
+      return { id: "local", actorId: fixture.memberA.id };
+    };
+    moduleApi.refreshDowntimeViews = async () => {
+      refreshes += 1;
+    };
+    const pending = moduleApi.createDowntimeRequest({
+      groupId: fixture.groupA.id,
+      actorId: fixture.memberA.id,
+      actionId: "training",
+      title: "Training",
+      description: "",
+      weeks: 1,
+      craftProject: null,
+      targetActionSelections: []
+    });
+    await flushCommands();
+    const outbound = fixture.emitted[0]?.message;
+    assert.deepEqual(outbound, {
+      type: COMMAND_REQUEST_TYPE,
+      command: "downtime.request.create",
+      requestId: outbound?.requestId,
+      senderId: fixture.users.gmB.id,
+      payload: {
+        groupId: fixture.groupA.id,
+        actorId: fixture.memberA.id,
+        actionId: "training",
+        title: "Training",
+        description: "",
+        weeks: 1,
+        craftProject: null,
+        targetActionSelections: []
+      }
+    });
+    assert.equal(localWrites, 0);
+    assert.equal(fixture.writes.length, 0);
+    await moduleApi.handleSocketMessage({
+      type: COMMAND_RESULT_TYPE,
+      command: outbound.command,
+      requestId: outbound.requestId,
+      forUserId: fixture.users.gmB.id,
+      senderId: fixture.users.gmA.id,
+      ok: true,
+      data: { id: "remote", actorId: fixture.memberA.id }
+    });
+    assert.deepEqual(await pending, { id: "remote", actorId: fixture.memberA.id });
+    assert.equal(refreshes, 1);
+
+    fixture.emitted.length = 0;
+    globalThis.game.user = fixture.users.gmA;
+    await moduleApi.handleSocketMessage({
+      type: "downtime-create-request",
+      requestId: "retired-downtime-request",
+      senderId: fixture.users.playerA.id,
+      payload: { groupId: fixture.groupA.id, actorId: fixture.memberA.id }
+    });
+    assert.equal(localWrites, 0);
+    assert.equal(fixture.writes.length, 0);
+    assert.equal(fixture.emitted.length, 0);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("downtime and calendar commands preserve concurrent changes to one group state", async () => {
+  const fixture = installFixture();
+  try {
+    const moduleApi = new RebreyaMainModule();
+    const grant = commandRequest("downtime.weeks.grant", fixture.users.gmB.id, {
+      groupId: fixture.groupA.id,
+      actorIds: [fixture.memberA.id],
+      weeks: 1,
+      reason: "",
+      fromIsoDate: "1200-01-03"
+    }, "downtime-concurrent-grant");
+    const calendar = commandRequest("group.calendar.patch", fixture.users.playerA.id, {
+      groupActorId: fixture.groupA.id,
+      patch: { isoDate: "1200-01-04" }
+    }, "downtime-concurrent-calendar");
+
+    await Promise.all([
+      moduleApi.handleSocketMessage(grant),
+      moduleApi.handleSocketMessage(calendar)
+    ]);
+    await flushCommands();
+
+    const groupState = fixture.store[SETTINGS_KEYS.GROUP_STATE].groupsById[fixture.groupA.id];
+    assert.equal(resultFor(fixture, grant.requestId)?.ok, true);
+    assert.equal(resultFor(fixture, calendar.requestId)?.ok, true);
+    assert.equal(groupState.calendar.isoDate, "1200-01-04");
+    assert.equal(moduleApi.downtimeService.getSnapshot({ actorId: fixture.memberA.id }).grants.length, 1);
+    assert.equal(fixture.maxConcurrentSettingWrites, 1);
+  }
+  finally {
+    fixture.restore();
   }
 });
 

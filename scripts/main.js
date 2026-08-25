@@ -134,6 +134,28 @@ import {
   isValidGroupRegistryActivatePayload,
   isValidGroupRegistryRegisterPayload
 } from "./application/group-registry-mutation-commands.js";
+import {
+  DOWNTIME_HISTORY_CLEAR_COMMAND,
+  DOWNTIME_PROJECT_CLOSE_COMMAND,
+  DOWNTIME_PROJECT_CONTINUE_COMMAND,
+  DOWNTIME_REQUEST_CREATE_COMMAND,
+  DOWNTIME_REQUEST_RECORD_CHECK_COMMAND,
+  DOWNTIME_REQUEST_SET_CHECKS_COMMAND,
+  DOWNTIME_REQUEST_SET_STATUS_COMMAND,
+  DOWNTIME_REQUEST_UPDATE_COMMAND,
+  DOWNTIME_WEEKS_GRANT_COMMAND,
+  DOWNTIME_WEEKS_REVOKE_COMMAND,
+  isValidDowntimeHistoryClearPayload,
+  isValidDowntimeProjectClosePayload,
+  isValidDowntimeProjectContinuePayload,
+  isValidDowntimeRequestCreatePayload,
+  isValidDowntimeRequestRecordCheckPayload,
+  isValidDowntimeRequestSetChecksPayload,
+  isValidDowntimeRequestSetStatusPayload,
+  isValidDowntimeRequestUpdatePayload,
+  isValidDowntimeWeeksGrantPayload,
+  isValidDowntimeWeeksRevokePayload
+} from "./application/downtime-mutation-commands.js";
 import { WorldMutationCoordinator } from "./application/world-mutation-coordinator.js";
 import { LootClaimService } from "./application/loot-claim-service.js";
 import {
@@ -299,26 +321,11 @@ const SOCKET_EVENT_LOOTGEN_CLAIM_ROW = "lootgen-claim-row";
 const SOCKET_EVENT_LOOTGEN_CLAIM_COINS = "lootgen-claim-coins";
 const INVENTORY_INGRESS_LOOTGEN_COMMAND = "inventory.ingress.lootgen";
 const INVENTORY_INGRESS_DIRECT_COMMAND = "inventory.ingress.direct";
-const SOCKET_EVENT_DOWNTIME_CREATE_REQUEST = "downtime-create-request";
-const SOCKET_EVENT_DOWNTIME_CREATE_RESULT = "downtime-create-result";
-const SOCKET_EVENT_DOWNTIME_UPDATE_REQUEST = "downtime-update-request";
-const SOCKET_EVENT_DOWNTIME_UPDATE_RESULT = "downtime-update-result";
-const SOCKET_EVENT_DOWNTIME_CHECK_RESULT_REQUEST = "downtime-check-result-request";
-const SOCKET_EVENT_DOWNTIME_CHECK_RESULT_RESULT = "downtime-check-result-result";
-const SOCKET_EVENT_DOWNTIME_PROJECT_CONTINUE_REQUEST = "downtime-project-continue-request";
-const SOCKET_EVENT_DOWNTIME_PROJECT_CONTINUE_RESULT = "downtime-project-continue-result";
-const SOCKET_EVENT_DOWNTIME_PROJECT_CLOSE_REQUEST = "downtime-project-close-request";
-const SOCKET_EVENT_DOWNTIME_PROJECT_CLOSE_RESULT = "downtime-project-close-result";
 const SOCKET_EVENT_DOWNTIME_UPDATED = "downtime-updated";
 const SOCKET_EVENT_TRAVEL_MAP_SYNC_REQUEST = "travel-map-sync-request";
 const GROUP_CALENDAR_TRANSITION_COMMAND = "group.calendar.transition";
 const INVENTORY_REFRESH_SETTLE_MS = 80;
 const LEGACY_WORLD_MUTATION_SOCKET_TYPES = new Set([
-  SOCKET_EVENT_DOWNTIME_CREATE_REQUEST,
-  SOCKET_EVENT_DOWNTIME_UPDATE_REQUEST,
-  SOCKET_EVENT_DOWNTIME_CHECK_RESULT_REQUEST,
-  SOCKET_EVENT_DOWNTIME_PROJECT_CONTINUE_REQUEST,
-  SOCKET_EVENT_DOWNTIME_PROJECT_CLOSE_REQUEST,
   SOCKET_EVENT_TRAVEL_MAP_SYNC_REQUEST,
   SOCKET_EVENT_RACE_AUTOMATION,
   SOCKET_EVENT_CHARACTER_CLASS_AUTOMATION,
@@ -444,47 +451,6 @@ const CALENDAR_TRANSITION_OPTION_KEYS = new Set([
   ...Object.keys(CALENDAR_TRANSITION_INTEGER_OPTION_LIMITS),
   ...CALENDAR_TRANSITION_STRING_OPTION_KEYS
 ]);
-
-function getGameUsers() {
-  const users = globalThis.game?.users;
-  if (!users) {
-    return [];
-  }
-
-  if (Array.isArray(users.contents)) {
-    return users.contents;
-  }
-
-  return Array.from(users).map((entry) => Array.isArray(entry) ? entry[1] : entry).filter(Boolean);
-}
-
-function getUserById(userId) {
-  const id = cleanSocketId(userId);
-  if (!id) {
-    return null;
-  }
-
-  return globalThis.game?.users?.get?.(id)
-    ?? getGameUsers().find((user) => user?.id === id)
-    ?? null;
-}
-
-function isActorOwnedByUser(actor, user) {
-  if (!actor || !user || actor.type !== "character") {
-    return false;
-  }
-
-  if (user.isGM) {
-    return true;
-  }
-
-  if (typeof actor.testUserPermission === "function") {
-    return actor.testUserPermission(user, "OWNER") === true;
-  }
-
-  const ownership = actor.ownership ?? actor._source?.ownership ?? {};
-  return Number(ownership[user.id] ?? 0) >= 3 || Number(ownership.default ?? 0) >= 3;
-}
 
 function getApplicationInstances(value) {
   if (!value) {
@@ -1778,6 +1744,93 @@ export class RebreyaMainModule {
         { actorIdsFromResult: () => [payload.groupActorId] }
       )
     });
+    const resolveAuthorizedDowntimeGroup = (groupId) => {
+      try {
+        const registry = this.groupContextService.getRegistry();
+        const safeGroupId = cleanSocketId(groupId);
+        const isManagedGroup = this.groupContextService
+          .getManagedGroupActors()
+          .some((groupActor) => groupActor?.id === safeGroupId);
+        if (!safeGroupId || !isManagedGroup || !registry?.groupsById?.[safeGroupId]) return null;
+        return this.groupContextService.resolveForGroup(safeGroupId);
+      }
+      catch {
+        return null;
+      }
+    };
+    const authorizeDowntimeOwner = (payload, { sender }) => {
+      try {
+        const context = resolveAuthorizedDowntimeGroup(payload.groupId);
+        const actor = (context.members ?? []).find((member) => member?.id === payload.actorId) ?? null;
+        return Boolean(actor) && (sender?.isGM === true || traderActorIsOwnedByUser(actor, sender));
+      }
+      catch {
+        return false;
+      }
+    };
+    const finishDowntimeMutation = (result) => {
+      this.#emitDowntimeUpdated({ actorIds: result.actorIds ?? [result.actorId], requestId: result.id });
+      return result;
+    };
+    const authorizeDowntimeAdmin = (payload, { sender }) => {
+      if (sender?.isGM !== true) return false;
+      return Boolean(resolveAuthorizedDowntimeGroup(payload.groupId));
+    };
+    this.privilegedMutationGateway.registerCommand(DOWNTIME_WEEKS_GRANT_COMMAND, {
+      validate: isValidDowntimeWeeksGrantPayload, authorize: authorizeDowntimeAdmin,
+      execute: async (payload) => finishDowntimeMutation(await this.downtimeService.grantWeeks(payload))
+    });
+    this.privilegedMutationGateway.registerCommand(DOWNTIME_WEEKS_REVOKE_COMMAND, {
+      validate: isValidDowntimeWeeksRevokePayload, authorize: authorizeDowntimeAdmin,
+      execute: async (payload) => finishDowntimeMutation(await this.downtimeService.revokeWeeks(payload))
+    });
+    this.privilegedMutationGateway.registerCommand(DOWNTIME_HISTORY_CLEAR_COMMAND, {
+      validate: isValidDowntimeHistoryClearPayload, authorize: authorizeDowntimeAdmin,
+      execute: async (payload) => finishDowntimeMutation(await this.downtimeService.clearHistory(payload))
+    });
+    this.privilegedMutationGateway.registerCommand(DOWNTIME_REQUEST_CREATE_COMMAND, {
+      validate: isValidDowntimeRequestCreatePayload, authorize: authorizeDowntimeOwner,
+      execute: async (payload, { sender }) => finishDowntimeMutation(await this.downtimeService.createRequest({
+        ...await this.#prepareDowntimeCraftPayload(payload), submittedByUserId: sender.id
+      }))
+    });
+    this.privilegedMutationGateway.registerCommand(DOWNTIME_REQUEST_UPDATE_COMMAND, {
+      validate: isValidDowntimeRequestUpdatePayload, authorize: authorizeDowntimeOwner,
+      execute: async (payload) => finishDowntimeMutation(await this.downtimeService.updateRequest(
+        await this.#prepareDowntimeCraftPayload(payload)
+      ))
+    });
+    this.privilegedMutationGateway.registerCommand(DOWNTIME_REQUEST_SET_STATUS_COMMAND, {
+      validate: isValidDowntimeRequestSetStatusPayload, authorize: authorizeDowntimeAdmin,
+      execute: async (payload) => finishDowntimeMutation(await this.downtimeService.setRequestStatus(
+        payload.requestId, payload.status, { groupId: payload.groupId, result: payload.result }
+      ))
+    });
+    this.privilegedMutationGateway.registerCommand(DOWNTIME_REQUEST_SET_CHECKS_COMMAND, {
+      validate: isValidDowntimeRequestSetChecksPayload, authorize: authorizeDowntimeAdmin,
+      execute: async (payload) => finishDowntimeMutation(await this.downtimeService.setRequestChecks(
+        payload.requestId, payload.checks, { groupId: payload.groupId }
+      ))
+    });
+    this.privilegedMutationGateway.registerCommand(DOWNTIME_REQUEST_RECORD_CHECK_COMMAND, {
+      validate: isValidDowntimeRequestRecordCheckPayload, authorize: authorizeDowntimeOwner,
+      execute: async (payload, { sender }) => finishDowntimeMutation(await this.downtimeService.recordCheckResult(
+        payload.requestId, payload.checkId, payload.result,
+        { groupId: payload.groupId, actorId: payload.actorId, recordedByUserId: sender.id }
+      ))
+    });
+    this.privilegedMutationGateway.registerCommand(DOWNTIME_PROJECT_CONTINUE_COMMAND, {
+      validate: isValidDowntimeProjectContinuePayload, authorize: authorizeDowntimeOwner,
+      execute: async (payload, { sender }) => finishDowntimeMutation(await this.downtimeService.continueProject(
+        payload.requestId, { groupId: payload.groupId, actorId: payload.actorId, checkId: payload.checkId, result: payload.result, recordedByUserId: sender.id }
+      ))
+    });
+    this.privilegedMutationGateway.registerCommand(DOWNTIME_PROJECT_CLOSE_COMMAND, {
+      validate: isValidDowntimeProjectClosePayload, authorize: authorizeDowntimeOwner,
+      execute: async (payload, { sender }) => finishDowntimeMutation(await this.downtimeService.closeProject(
+        payload.requestId, { groupId: payload.groupId, actorId: payload.actorId, projectClosedByUserId: sender.id }
+      ))
+    });
     this.socketCommandBus.register(GROUP_CALENDAR_PATCH_COMMAND, {
       validate: isValidCalendarPatchPayload,
       authorize: authorizeGroup,
@@ -2352,31 +2405,6 @@ export class RebreyaMainModule {
       return;
     }
 
-    if (message.type === SOCKET_EVENT_DOWNTIME_CREATE_RESULT) {
-      await this.#handleDowntimeCreateSocketResult(message);
-      return;
-    }
-
-    if (message.type === SOCKET_EVENT_DOWNTIME_UPDATE_RESULT) {
-      await this.#handleDowntimeUpdateSocketResult(message);
-      return;
-    }
-
-    if (message.type === SOCKET_EVENT_DOWNTIME_CHECK_RESULT_RESULT) {
-      await this.#handleDowntimeCheckResultSocketResult(message);
-      return;
-    }
-
-    if (message.type === SOCKET_EVENT_DOWNTIME_PROJECT_CONTINUE_RESULT) {
-      await this.#handleDowntimeProjectContinueSocketResult(message);
-      return;
-    }
-
-    if (message.type === SOCKET_EVENT_DOWNTIME_PROJECT_CLOSE_RESULT) {
-      await this.#handleDowntimeProjectCloseSocketResult(message);
-      return;
-    }
-
     if (message.type === SOCKET_EVENT_INVENTORY_IMPORT_RESULT) {
       if (message.forUserId !== game.user?.id) {
         return;
@@ -2433,41 +2461,6 @@ export class RebreyaMainModule {
 
     if (message.type === SOCKET_EVENT_DOWNTIME_UPDATED) {
       await this.#handleDowntimeUpdatedSocketMessage(message);
-      return;
-    }
-
-    if (message.type === SOCKET_EVENT_DOWNTIME_CREATE_REQUEST) {
-      if (game.user?.isGM) {
-        await this.#handleDowntimeCreateSocketRequest(message);
-      }
-      return;
-    }
-
-    if (message.type === SOCKET_EVENT_DOWNTIME_UPDATE_REQUEST) {
-      if (game.user?.isGM) {
-        await this.#handleDowntimeUpdateSocketRequest(message);
-      }
-      return;
-    }
-
-    if (message.type === SOCKET_EVENT_DOWNTIME_CHECK_RESULT_REQUEST) {
-      if (game.user?.isGM) {
-        await this.#handleDowntimeCheckResultSocketRequest(message);
-      }
-      return;
-    }
-
-    if (message.type === SOCKET_EVENT_DOWNTIME_PROJECT_CONTINUE_REQUEST) {
-      if (game.user?.isGM) {
-        await this.#handleDowntimeProjectContinueSocketRequest(message);
-      }
-      return;
-    }
-
-    if (message.type === SOCKET_EVENT_DOWNTIME_PROJECT_CLOSE_REQUEST) {
-      if (game.user?.isGM) {
-        await this.#handleDowntimeProjectCloseSocketRequest(message);
-      }
       return;
     }
 
@@ -4545,43 +4538,35 @@ export class RebreyaMainModule {
   }
 
   async grantDowntimeWeeks(payload = {}) {
-    const result = await this.downtimeService.grantWeeks(payload);
-    this.#emitDowntimeUpdated({
-      actorIds: result.actorIds
+    const groupId = this.#captureDowntimeGroupId(payload.groupId);
+    const result = await this.privilegedMutationGateway.mutate(DOWNTIME_WEEKS_GRANT_COMMAND, {
+      groupId, actorIds: Array.isArray(payload.actorIds) ? payload.actorIds : [], weeks: Number(payload.weeks),
+      reason: typeof payload.reason === "string" ? payload.reason : "", fromIsoDate: typeof payload.fromIsoDate === "string" ? payload.fromIsoDate : ""
     });
     await this.refreshDowntimeViews({ actorIds: result.actorIds });
     return result;
   }
 
   async revokeDowntimeWeeks(payload = {}) {
-    const result = await this.downtimeService.revokeWeeks(payload);
-    this.#emitDowntimeUpdated({
-      actorIds: result.actorIds
+    const groupId = this.#captureDowntimeGroupId(payload.groupId);
+    const result = await this.privilegedMutationGateway.mutate(DOWNTIME_WEEKS_REVOKE_COMMAND, {
+      groupId, actorIds: Array.isArray(payload.actorIds) ? payload.actorIds : [], weeks: Number(payload.weeks), reason: typeof payload.reason === "string" ? payload.reason : ""
     });
     await this.refreshDowntimeViews({ actorIds: result.actorIds });
     return result;
   }
 
-  async clearDowntimeHistory() {
-    const result = await this.downtimeService.clearHistory();
-    this.#emitDowntimeUpdated({
-      actorIds: result.actorIds
+  async clearDowntimeHistory({ groupId = "" } = {}) {
+    const result = await this.privilegedMutationGateway.mutate(DOWNTIME_HISTORY_CLEAR_COMMAND, {
+      groupId: this.#captureDowntimeGroupId(groupId)
     });
     await this.refreshDowntimeViews({ actorIds: result.actorIds });
     return result;
   }
 
   async createDowntimeRequest(payload = {}, { refreshActorSheets = true } = {}) {
-    if (!game.user?.isGM) {
-      return this.#requestDowntimeCreateViaGm(payload);
-    }
-
-    const validatedPayload = await this.#prepareDowntimeCraftPayload(payload);
-    const result = await this.downtimeService.createRequest(validatedPayload);
-    this.#emitDowntimeUpdated({
-      actorIds: [result.actorId],
-      requestId: result.id
-    });
+    const groupId = this.#captureDowntimeGroupId(payload.groupId);
+    const result = await this.privilegedMutationGateway.mutate(DOWNTIME_REQUEST_CREATE_COMMAND, this.#buildDowntimeRequestPayload(payload, { groupId }));
     await this.refreshDowntimeViews({
       actorIds: refreshActorSheets ? [result.actorId] : []
     });
@@ -4589,16 +4574,8 @@ export class RebreyaMainModule {
   }
 
   async updateDowntimeRequest(payload = {}, { refreshActorSheets = true } = {}) {
-    if (!game.user?.isGM) {
-      return this.#requestDowntimeUpdateViaGm(payload);
-    }
-
-    const validatedPayload = await this.#prepareDowntimeCraftPayload(payload);
-    const result = await this.downtimeService.updateRequest(validatedPayload);
-    this.#emitDowntimeUpdated({
-      actorIds: [result.actorId],
-      requestId: result.id
-    });
+    const groupId = this.#captureDowntimeGroupId(payload.groupId);
+    const result = await this.privilegedMutationGateway.mutate(DOWNTIME_REQUEST_UPDATE_COMMAND, this.#buildDowntimeRequestPayload(payload, { groupId, includeRequestId: true }));
     await this.refreshDowntimeViews({
       actorIds: refreshActorSheets ? [result.actorId] : []
     });
@@ -4609,9 +4586,30 @@ export class RebreyaMainModule {
     return this.craftingService.previewRequest(payload);
   }
 
+  #captureDowntimeGroupId(groupId = "") {
+    return cleanSocketId(groupId)
+      || cleanSocketId(this.groupContextService.resolveForCurrentUser()?.groupId);
+  }
+
+  #buildDowntimeRequestPayload(payload = {}, { groupId, includeRequestId = false } = {}) {
+    const safePayload = cloneSocketPayload(payload);
+    const request = {
+      groupId,
+      actorId: cleanSocketId(safePayload.actorId),
+      actionId: cleanSocketId(safePayload.actionId),
+      title: typeof safePayload.title === "string" ? safePayload.title : "",
+      description: typeof safePayload.description === "string" ? safePayload.description : "",
+      weeks: Number(safePayload.weeks ?? 1),
+      craftProject: isPlainObject(safePayload.craftProject) ? safePayload.craftProject : null,
+      targetActionSelections: Array.isArray(safePayload.targetActionSelections) ? safePayload.targetActionSelections : []
+    };
+    if (includeRequestId) request.requestId = cleanSocketId(safePayload.requestId);
+    return request;
+  }
+
   async #prepareDowntimeCraftPayload(payload = {}) {
     const safePayload = cloneSocketPayload(payload);
-    const craftProject = safePayload.craftProject && typeof safePayload.craftProject === "object"
+    const craftProject = isPlainObject(safePayload.craftProject)
       ? safePayload.craftProject
       : null;
     if (!craftProject || Object.keys(craftProject).length === 0) {
@@ -4641,630 +4639,8 @@ export class RebreyaMainModule {
     };
   }
 
-  async #requestDowntimeCreateViaGm(payload = {}) {
-    if (typeof game.socket?.emit !== "function") {
-      throw new Error("Сокет Foundry недоступен для отправки заявки мастеру.");
-    }
-
-    const requestId = createSocketRequestId("downtime-create");
-    const safePayload = cloneSocketPayload(payload);
-    safePayload.actorId = cleanSocketId(safePayload.actorId);
-    safePayload.groupId = cleanSocketId(safePayload.groupId);
-
-    game.socket.emit(SOCKET_CHANNEL, {
-      type: SOCKET_EVENT_DOWNTIME_CREATE_REQUEST,
-      requestId,
-      senderId: game.user?.id ?? "",
-      payload: safePayload
-    });
-    return {
-      ...safePayload,
-      requestId,
-      queued: true
-    };
-  }
-
-  async #requestDowntimeUpdateViaGm(payload = {}) {
-    if (typeof game.socket?.emit !== "function") {
-      throw new Error("Сокет Foundry недоступен для обновления заявки мастеру.");
-    }
-
-    const requestId = createSocketRequestId("downtime-update");
-    const safePayload = cloneSocketPayload(payload);
-    safePayload.actorId = cleanSocketId(safePayload.actorId);
-    safePayload.groupId = cleanSocketId(safePayload.groupId);
-    safePayload.requestId = cleanSocketId(safePayload.requestId);
-
-    game.socket.emit(SOCKET_CHANNEL, {
-      type: SOCKET_EVENT_DOWNTIME_UPDATE_REQUEST,
-      requestId,
-      senderId: game.user?.id ?? "",
-      payload: safePayload
-    });
-    return {
-      ...safePayload,
-      socketRequestId: requestId,
-      queued: true
-    };
-  }
-
-  async #handleDowntimeCreateSocketResult(message = {}) {
-    const forUserId = cleanSocketId(message.forUserId);
-    if (forUserId && forUserId !== cleanSocketId(game.user?.id)) {
-      return;
-    }
-
-    if (message.ok === false) {
-      ui.notifications?.error(String(message.error ?? "").trim() || "Мастер отклонил создание заявки простоя.");
-      return;
-    }
-
-  }
-
-  async #handleDowntimeUpdateSocketResult(message = {}) {
-    const forUserId = cleanSocketId(message.forUserId);
-    if (forUserId && forUserId !== cleanSocketId(game.user?.id)) {
-      return;
-    }
-
-    if (message.ok === false) {
-      ui.notifications?.error(String(message.error ?? "").trim() || "Мастер отклонил обновление заявки простоя.");
-      return;
-    }
-
-  }
-
   async #handleDowntimeUpdatedSocketMessage(message = {}) {
     await this.refreshDowntimeViews({ actorIds: message.actorIds });
-  }
-
-  async #refreshDowntimeViewsSafely(options = {}) {
-    try {
-      await this.refreshDowntimeViews(options);
-    }
-    catch (error) {
-      console.error(`${MODULE_ID} | Failed to refresh downtime views after a committed socket mutation.`, error);
-    }
-  }
-
-  async #handleDowntimeCreateSocketRequest(message = {}) {
-    const requestId = cleanSocketId(message.requestId);
-    const forUserId = cleanSocketId(message.senderId);
-
-    try {
-      const result = await this.#createDowntimeRequestFromSocket(message.payload ?? {}, {
-        senderId: forUserId
-      });
-      globalThis.ui?.notifications?.info?.(`Rebreya: заявка на простой от ${result.actorName ?? result.actorId ?? "игрока"}.`);
-
-      if (requestId) {
-        game.socket?.emit?.(SOCKET_CHANNEL, {
-          type: SOCKET_EVENT_DOWNTIME_CREATE_RESULT,
-          requestId,
-          forUserId,
-          senderId: game.user?.id ?? "",
-          ok: true,
-          data: cloneSocketPayload(result)
-        });
-      }
-
-      this.#emitDowntimeUpdated({
-        actorIds: [result.actorId],
-        requestId: result.id
-      });
-      await this.#refreshDowntimeViewsSafely({ actorIds: [result.actorId] });
-    }
-    catch (error) {
-      if (requestId) {
-        game.socket?.emit?.(SOCKET_CHANNEL, {
-          type: SOCKET_EVENT_DOWNTIME_CREATE_RESULT,
-          requestId,
-          forUserId,
-          senderId: game.user?.id ?? "",
-          ok: false,
-          error: error?.message ?? String(error)
-        });
-        return;
-      }
-
-      throw error;
-    }
-  }
-
-  async #handleDowntimeUpdateSocketRequest(message = {}) {
-    const requestId = cleanSocketId(message.requestId);
-    const forUserId = cleanSocketId(message.senderId);
-
-    try {
-      const result = await this.#updateDowntimeRequestFromSocket(message.payload ?? {}, {
-        senderId: forUserId
-      });
-
-      if (requestId) {
-        game.socket?.emit?.(SOCKET_CHANNEL, {
-          type: SOCKET_EVENT_DOWNTIME_UPDATE_RESULT,
-          requestId,
-          forUserId,
-          senderId: game.user?.id ?? "",
-          ok: true,
-          data: cloneSocketPayload(result)
-        });
-      }
-
-      this.#emitDowntimeUpdated({
-        actorIds: [result.actorId],
-        requestId: result.id
-      });
-      await this.#refreshDowntimeViewsSafely({ actorIds: [result.actorId] });
-    }
-    catch (error) {
-      if (requestId) {
-        game.socket?.emit?.(SOCKET_CHANNEL, {
-          type: SOCKET_EVENT_DOWNTIME_UPDATE_RESULT,
-          requestId,
-          forUserId,
-          senderId: game.user?.id ?? "",
-          ok: false,
-          error: error?.message ?? String(error)
-        });
-        return;
-      }
-
-      throw error;
-    }
-  }
-
-  async #createDowntimeRequestFromSocket(payload = {}, { senderId = "" } = {}) {
-    const senderUser = getUserById(senderId);
-    if (!senderUser) {
-      throw new Error("Игрок для заявки простоя не найден.");
-    }
-
-    const groupId = cleanSocketId(payload.groupId);
-    if (!groupId) {
-      throw new Error("Группа заявки простоя не найдена.");
-    }
-
-    const context = this.groupContextService.resolveForGroup(groupId);
-    const actorId = cleanSocketId(payload.actorId);
-    const actor = Array.from(context.members ?? []).find((memberActor) => memberActor?.id === actorId) ?? null;
-    if (!actor) {
-      throw new Error("Персонаж заявки простоя не найден в группе.");
-    }
-
-    if (!isActorOwnedByUser(actor, senderUser)) {
-      throw new Error("Игрок может отправлять простой только за своего персонажа.");
-    }
-
-    const validatedPayload = await this.#prepareDowntimeCraftPayload({
-      ...cloneSocketPayload(payload),
-      groupId,
-      actorId,
-      submittedByUserId: senderUser.id
-    });
-    const result = await this.downtimeService.createRequest(validatedPayload);
-    return result;
-  }
-
-  async #updateDowntimeRequestFromSocket(payload = {}, { senderId = "" } = {}) {
-    const senderUser = getUserById(senderId);
-    if (!senderUser) {
-      throw new Error("Игрок для обновления заявки простоя не найден.");
-    }
-
-    const groupId = cleanSocketId(payload.groupId);
-    if (!groupId) {
-      throw new Error("Группа заявки простоя не найдена.");
-    }
-
-    const context = this.groupContextService.resolveForGroup(groupId);
-    const actorId = cleanSocketId(payload.actorId);
-    const actor = Array.from(context.members ?? []).find((memberActor) => memberActor?.id === actorId) ?? null;
-    if (!actor) {
-      throw new Error("Персонаж заявки простоя не найден в группе.");
-    }
-
-    if (!isActorOwnedByUser(actor, senderUser)) {
-      throw new Error("Игрок может обновлять простой только за своего персонажа.");
-    }
-
-    const validatedPayload = await this.#prepareDowntimeCraftPayload({
-      ...cloneSocketPayload(payload),
-      groupId,
-      actorId
-    });
-    return this.downtimeService.updateRequest(validatedPayload);
-  }
-
-  async #requestDowntimeCheckResultViaGm(requestId, checkId, result = {}, options = {}) {
-    if (typeof game.socket?.emit !== "function") {
-      throw new Error("Сокет Foundry недоступен для записи результата простоя.");
-    }
-
-    const socketRequestId = createSocketRequestId("downtime-check-result");
-    const payload = {
-      groupId: cleanSocketId(options.groupId),
-      actorId: cleanSocketId(options.actorId),
-      requestId: cleanSocketId(requestId),
-      checkId: cleanSocketId(checkId),
-      result: cloneSocketPayload(result)
-    };
-
-    game.socket.emit(SOCKET_CHANNEL, {
-      type: SOCKET_EVENT_DOWNTIME_CHECK_RESULT_REQUEST,
-      requestId: socketRequestId,
-      senderId: game.user?.id ?? "",
-      payload
-    });
-    return {
-      requestId: payload.requestId,
-      checkId: payload.checkId,
-      socketRequestId,
-      queued: true
-    };
-  }
-
-  async #handleDowntimeCheckResultSocketResult(message = {}) {
-    const forUserId = cleanSocketId(message.forUserId);
-    if (forUserId && forUserId !== cleanSocketId(game.user?.id)) {
-      return;
-    }
-
-    if (message.ok === false) {
-      ui.notifications?.error(String(message.error ?? "").trim() || "Мастер отклонил запись результата простоя.");
-      return;
-    }
-
-  }
-
-  async #handleDowntimeCheckResultSocketRequest(message = {}) {
-    const requestId = cleanSocketId(message.requestId);
-    const forUserId = cleanSocketId(message.senderId);
-
-    try {
-      const result = await this.#recordDowntimeCheckResultFromSocket(message.payload ?? {}, {
-        senderId: forUserId
-      });
-
-      if (requestId) {
-        game.socket?.emit?.(SOCKET_CHANNEL, {
-          type: SOCKET_EVENT_DOWNTIME_CHECK_RESULT_RESULT,
-          requestId,
-          forUserId,
-          senderId: game.user?.id ?? "",
-          ok: true,
-          data: cloneSocketPayload(result)
-        });
-      }
-
-      this.#emitDowntimeUpdated({
-        actorIds: [result.actorId],
-        requestId: result.id
-      });
-      await this.#refreshDowntimeViewsSafely({ actorIds: [result.actorId] });
-    }
-    catch (error) {
-      if (requestId) {
-        game.socket?.emit?.(SOCKET_CHANNEL, {
-          type: SOCKET_EVENT_DOWNTIME_CHECK_RESULT_RESULT,
-          requestId,
-          forUserId,
-          senderId: game.user?.id ?? "",
-          ok: false,
-          error: error?.message ?? String(error)
-        });
-        return;
-      }
-
-      throw error;
-    }
-  }
-
-  async #recordDowntimeCheckResultFromSocket(payload = {}, { senderId = "" } = {}) {
-    const senderUser = getUserById(senderId);
-    if (!senderUser) {
-      throw new Error("Игрок для результата простоя не найден.");
-    }
-
-    const groupId = cleanSocketId(payload.groupId);
-    if (!groupId) {
-      throw new Error("Группа результата простоя не найдена.");
-    }
-
-    const context = this.groupContextService.resolveForGroup(groupId);
-    const actorId = cleanSocketId(payload.actorId);
-    const actor = Array.from(context.members ?? []).find((memberActor) => memberActor?.id === actorId) ?? null;
-    if (!actor) {
-      throw new Error("Персонаж результата простоя не найден в группе.");
-    }
-
-    if (!isActorOwnedByUser(actor, senderUser)) {
-      throw new Error("Игрок может записывать результат простоя только за своего персонажа.");
-    }
-
-    return this.downtimeService.recordCheckResult(
-      cleanSocketId(payload.requestId),
-      cleanSocketId(payload.checkId),
-      {
-        ...cloneSocketPayload(payload.result ?? {}),
-        recordedByUserId: senderUser.id
-      },
-      {
-        groupId,
-        actorId
-      }
-    );
-  }
-
-  async continueDowntimeProject({ requestId = "", groupId = "", actorId = "", checkId = "", result = {} } = {}) {
-    if (!game.user?.isGM) {
-      return this.#requestDowntimeProjectContinueViaGm({ requestId, groupId, actorId, checkId, result });
-    }
-
-    const options = {
-      actorId: cleanSocketId(actorId),
-      checkId: cleanSocketId(checkId),
-      result: cloneSocketPayload(result)
-    };
-    const safeGroupId = cleanSocketId(groupId);
-    if (safeGroupId) {
-      options.groupId = safeGroupId;
-    }
-
-    const continuedRequest = await this.downtimeService.continueProject(cleanSocketId(requestId), options);
-    this.#emitDowntimeUpdated({
-      actorIds: [continuedRequest.actorId],
-      requestId: continuedRequest.id
-    });
-    await this.refreshDowntimeViews({ actorIds: [continuedRequest.actorId] });
-    return continuedRequest;
-  }
-
-  async #requestDowntimeProjectContinueViaGm({ requestId = "", groupId = "", actorId = "", checkId = "", result = {} } = {}) {
-    if (typeof game.socket?.emit !== "function") {
-      throw new Error("Сокет Foundry недоступен для продолжения проекта.");
-    }
-
-    const socketRequestId = createSocketRequestId("downtime-project-continue");
-    const payload = {
-      groupId: cleanSocketId(groupId),
-      actorId: cleanSocketId(actorId),
-      requestId: cleanSocketId(requestId),
-      checkId: cleanSocketId(checkId),
-      result: cloneSocketPayload(result)
-    };
-
-    game.socket.emit(SOCKET_CHANNEL, {
-      type: SOCKET_EVENT_DOWNTIME_PROJECT_CONTINUE_REQUEST,
-      requestId: socketRequestId,
-      senderId: game.user?.id ?? "",
-      payload
-    });
-    return {
-      ...payload,
-      socketRequestId,
-      queued: true
-    };
-  }
-
-  async #handleDowntimeProjectContinueSocketResult(message = {}) {
-    const forUserId = cleanSocketId(message.forUserId);
-    if (forUserId && forUserId !== cleanSocketId(game.user?.id)) {
-      return;
-    }
-
-    if (message.ok === false) {
-      ui.notifications?.error(String(message.error ?? "").trim() || "Мастер отклонил продолжение проекта.");
-      return;
-    }
-
-  }
-
-  async #handleDowntimeProjectContinueSocketRequest(message = {}) {
-    const requestId = cleanSocketId(message.requestId);
-    const forUserId = cleanSocketId(message.senderId);
-
-    try {
-      const result = await this.#continueDowntimeProjectFromSocket(message.payload ?? {}, {
-        senderId: forUserId
-      });
-
-      if (requestId) {
-        game.socket?.emit?.(SOCKET_CHANNEL, {
-          type: SOCKET_EVENT_DOWNTIME_PROJECT_CONTINUE_RESULT,
-          requestId,
-          forUserId,
-          senderId: game.user?.id ?? "",
-          ok: true,
-          data: cloneSocketPayload(result)
-        });
-      }
-
-      this.#emitDowntimeUpdated({
-        actorIds: [result.actorId],
-        requestId: result.id
-      });
-      await this.#refreshDowntimeViewsSafely({ actorIds: [result.actorId] });
-    }
-    catch (error) {
-      if (requestId) {
-        game.socket?.emit?.(SOCKET_CHANNEL, {
-          type: SOCKET_EVENT_DOWNTIME_PROJECT_CONTINUE_RESULT,
-          requestId,
-          forUserId,
-          senderId: game.user?.id ?? "",
-          ok: false,
-          error: error?.message ?? String(error)
-        });
-        return;
-      }
-
-      throw error;
-    }
-  }
-
-  async #continueDowntimeProjectFromSocket(payload = {}, { senderId = "" } = {}) {
-    const senderUser = getUserById(senderId);
-    if (!senderUser) {
-      throw new Error("Игрок для продолжения проекта не найден.");
-    }
-
-    const groupId = cleanSocketId(payload.groupId);
-    if (!groupId) {
-      throw new Error("Группа проекта не найдена.");
-    }
-
-    const context = this.groupContextService.resolveForGroup(groupId);
-    const actorId = cleanSocketId(payload.actorId);
-    const actor = Array.from(context.members ?? []).find((memberActor) => memberActor?.id === actorId) ?? null;
-    if (!actor) {
-      throw new Error("Персонаж проекта не найден в группе.");
-    }
-
-    if (!isActorOwnedByUser(actor, senderUser)) {
-      throw new Error("Игрок может продолжать проект только своего персонажа.");
-    }
-
-    return this.downtimeService.continueProject(cleanSocketId(payload.requestId), {
-      groupId,
-      actorId,
-      checkId: cleanSocketId(payload.checkId),
-      result: {
-        ...cloneSocketPayload(payload.result ?? {}),
-        recordedByUserId: senderUser.id
-      }
-    });
-  }
-
-  async closeDowntimeProject({ requestId = "", groupId = "", actorId = "" } = {}) {
-    if (!game.user?.isGM) {
-      return this.#requestDowntimeProjectCloseViaGm({ requestId, groupId, actorId });
-    }
-
-    const options = {
-      actorId: cleanSocketId(actorId)
-    };
-    const safeGroupId = cleanSocketId(groupId);
-    if (safeGroupId) {
-      options.groupId = safeGroupId;
-    }
-
-    const result = await this.downtimeService.closeProject(cleanSocketId(requestId), options);
-    this.#emitDowntimeUpdated({
-      actorIds: [result.actorId],
-      requestId: result.id
-    });
-    await this.refreshDowntimeViews({ actorIds: [result.actorId] });
-    return result;
-  }
-
-  async #requestDowntimeProjectCloseViaGm({ requestId = "", groupId = "", actorId = "" } = {}) {
-    if (typeof game.socket?.emit !== "function") {
-      throw new Error("Сокет Foundry недоступен для закрытия проекта.");
-    }
-
-    const socketRequestId = createSocketRequestId("downtime-project-close");
-    const payload = {
-      groupId: cleanSocketId(groupId),
-      actorId: cleanSocketId(actorId),
-      requestId: cleanSocketId(requestId)
-    };
-
-    game.socket.emit(SOCKET_CHANNEL, {
-      type: SOCKET_EVENT_DOWNTIME_PROJECT_CLOSE_REQUEST,
-      requestId: socketRequestId,
-      senderId: game.user?.id ?? "",
-      payload
-    });
-    return {
-      ...payload,
-      socketRequestId,
-      queued: true
-    };
-  }
-
-  async #handleDowntimeProjectCloseSocketResult(message = {}) {
-    const forUserId = cleanSocketId(message.forUserId);
-    if (forUserId && forUserId !== cleanSocketId(game.user?.id)) {
-      return;
-    }
-
-    if (message.ok === false) {
-      ui.notifications?.error(String(message.error ?? "").trim() || "Мастер отклонил закрытие проекта.");
-      return;
-    }
-
-  }
-
-  async #handleDowntimeProjectCloseSocketRequest(message = {}) {
-    const requestId = cleanSocketId(message.requestId);
-    const forUserId = cleanSocketId(message.senderId);
-
-    try {
-      const result = await this.#closeDowntimeProjectFromSocket(message.payload ?? {}, {
-        senderId: forUserId
-      });
-
-      if (requestId) {
-        game.socket?.emit?.(SOCKET_CHANNEL, {
-          type: SOCKET_EVENT_DOWNTIME_PROJECT_CLOSE_RESULT,
-          requestId,
-          forUserId,
-          senderId: game.user?.id ?? "",
-          ok: true,
-          data: cloneSocketPayload(result)
-        });
-      }
-
-      this.#emitDowntimeUpdated({
-        actorIds: [result.actorId],
-        requestId: result.id
-      });
-      await this.#refreshDowntimeViewsSafely({ actorIds: [result.actorId] });
-    }
-    catch (error) {
-      if (requestId) {
-        game.socket?.emit?.(SOCKET_CHANNEL, {
-          type: SOCKET_EVENT_DOWNTIME_PROJECT_CLOSE_RESULT,
-          requestId,
-          forUserId,
-          senderId: game.user?.id ?? "",
-          ok: false,
-          error: error?.message ?? String(error)
-        });
-        return;
-      }
-
-      throw error;
-    }
-  }
-
-  async #closeDowntimeProjectFromSocket(payload = {}, { senderId = "" } = {}) {
-    const senderUser = getUserById(senderId);
-    if (!senderUser) {
-      throw new Error("Игрок для закрытия проекта не найден.");
-    }
-
-    const groupId = cleanSocketId(payload.groupId);
-    if (!groupId) {
-      throw new Error("Группа проекта не найдена.");
-    }
-
-    const context = this.groupContextService.resolveForGroup(groupId);
-    const actorId = cleanSocketId(payload.actorId);
-    const actor = Array.from(context.members ?? []).find((memberActor) => memberActor?.id === actorId) ?? null;
-    if (!actor) {
-      throw new Error("Персонаж проекта не найден в группе.");
-    }
-
-    if (!isActorOwnedByUser(actor, senderUser)) {
-      throw new Error("Игрок может закрывать проект только своего персонажа.");
-    }
-
-    return this.downtimeService.closeProject(cleanSocketId(payload.requestId), {
-      groupId,
-      actorId
-    });
   }
 
   #normalizeDowntimeActorIds(actorIds = []) {
@@ -5296,37 +4672,43 @@ export class RebreyaMainModule {
   }
 
   async setDowntimeRequestStatus(requestId, status, options = {}) {
-    const result = await this.downtimeService.setRequestStatus(requestId, status, options);
-    this.#emitDowntimeUpdated({
-      actorIds: [result.actorId],
-      requestId: result.id
+    const result = await this.privilegedMutationGateway.mutate(DOWNTIME_REQUEST_SET_STATUS_COMMAND, {
+      groupId: this.#captureDowntimeGroupId(options.groupId), requestId: cleanSocketId(requestId), status: cleanSocketId(status), result: options.result ?? ""
     });
     await this.refreshDowntimeViews({ actorIds: [result.actorId] });
     return result;
   }
 
-  async setDowntimeRequestChecks(requestId, checks = []) {
-    const result = await this.downtimeService.setRequestChecks(requestId, checks);
-    this.#emitDowntimeUpdated({
-      actorIds: [result.actorId],
-      requestId: result.id
+  async setDowntimeRequestChecks(requestId, checks = [], options = {}) {
+    const result = await this.privilegedMutationGateway.mutate(DOWNTIME_REQUEST_SET_CHECKS_COMMAND, {
+      groupId: this.#captureDowntimeGroupId(options.groupId), requestId: cleanSocketId(requestId), checks: Array.isArray(checks) ? checks : []
     });
     await this.refreshDowntimeViews({ actorIds: [result.actorId] });
     return result;
   }
 
   async recordDowntimeCheckResult(requestId, checkId, result = {}, options = {}) {
-    if (!game.user?.isGM) {
-      return this.#requestDowntimeCheckResultViaGm(requestId, checkId, result, options);
-    }
-
-    const updatedRequest = await this.downtimeService.recordCheckResult(requestId, checkId, result, options);
-    this.#emitDowntimeUpdated({
-      actorIds: [updatedRequest.actorId],
-      requestId: updatedRequest.id
+    const updatedRequest = await this.privilegedMutationGateway.mutate(DOWNTIME_REQUEST_RECORD_CHECK_COMMAND, {
+      groupId: this.#captureDowntimeGroupId(options.groupId), actorId: cleanSocketId(options.actorId), requestId: cleanSocketId(requestId), checkId: cleanSocketId(checkId), result: cloneSocketPayload(result)
     });
     await this.refreshDowntimeViews({ actorIds: [updatedRequest.actorId] });
     return updatedRequest;
+  }
+
+  async continueDowntimeProject({ requestId = "", groupId = "", actorId = "", checkId = "", result = {} } = {}) {
+    const continuedRequest = await this.privilegedMutationGateway.mutate(DOWNTIME_PROJECT_CONTINUE_COMMAND, {
+      groupId: this.#captureDowntimeGroupId(groupId), actorId: cleanSocketId(actorId), requestId: cleanSocketId(requestId), checkId: cleanSocketId(checkId), result: cloneSocketPayload(result)
+    });
+    await this.refreshDowntimeViews({ actorIds: [continuedRequest.actorId] });
+    return continuedRequest;
+  }
+
+  async closeDowntimeProject({ requestId = "", groupId = "", actorId = "" } = {}) {
+    const result = await this.privilegedMutationGateway.mutate(DOWNTIME_PROJECT_CLOSE_COMMAND, {
+      groupId: this.#captureDowntimeGroupId(groupId), actorId: cleanSocketId(actorId), requestId: cleanSocketId(requestId)
+    });
+    await this.refreshDowntimeViews({ actorIds: [result.actorId] });
+    return result;
   }
 
   getDowntimeActionCatalog() {

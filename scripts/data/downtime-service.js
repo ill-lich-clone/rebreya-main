@@ -2115,8 +2115,10 @@ export class DowntimeService {
     };
   }
 
-  async grantWeeks({ actorIds = [], weeks = 0, reason = "", fromIsoDate = "" } = {}) {
-    const context = this.#resolveContext();
+  async grantWeeks({ groupId = "", actorIds = [], weeks = 0, reason = "", fromIsoDate = "" } = {}) {
+    const context = cleanId(groupId)
+      ? this.moduleApi?.groupContextService?.resolveForGroup?.(cleanId(groupId))
+      : this.#resolveContext();
     this.#assertCanManage(context);
     const safeWeeks = this.#requirePositiveWeeks(weeks);
     const memberActorIds = this.#getMemberActorIds(context);
@@ -2129,7 +2131,7 @@ export class DowntimeService {
       throw new Error("No current group members selected.");
     }
 
-    const grantFromIsoDate = this.#resolveCurrentIsoDate(fromIsoDate);
+    const grantFromIsoDate = this.#resolveCurrentIsoDate(fromIsoDate, context);
     return this.#writeGroupState(context, (state) => {
       for (const actorId of targetActorIds) {
         const grantId = `downtime-grant-${Date.now()}-${actorId}-${state.grants.length + 1}`;
@@ -2178,8 +2180,10 @@ export class DowntimeService {
     });
   }
 
-  async revokeWeeks({ actorIds = [], weeks = 0, reason = "" } = {}) {
-    const context = this.#resolveContext();
+  async revokeWeeks({ groupId = "", actorIds = [], weeks = 0, reason = "" } = {}) {
+    const context = cleanId(groupId)
+      ? this.moduleApi?.groupContextService?.resolveForGroup?.(cleanId(groupId))
+      : this.#resolveContext();
     this.#assertCanManage(context);
     const safeWeeks = this.#requirePositiveWeeks(weeks);
     const memberActorIds = this.#getMemberActorIds(context);
@@ -2266,8 +2270,10 @@ export class DowntimeService {
     });
   }
 
-  async clearHistory() {
-    const context = this.#resolveContext();
+  async clearHistory({ groupId = "" } = {}) {
+    const context = cleanId(groupId)
+      ? this.moduleApi?.groupContextService?.resolveForGroup?.(cleanId(groupId))
+      : this.#resolveContext();
     this.#assertCanManage(context);
 
     return this.#writeGroupState(context, (state) => {
@@ -2455,7 +2461,7 @@ export class DowntimeService {
       }
 
       const previousWorkdays = Math.max(1, toWeeks(request.workdays, request.weeks * WORKDAYS_PER_WEEK));
-      const currentIsoDate = this.#resolveCurrentIsoDate();
+      const currentIsoDate = this.#resolveCurrentIsoDate("", context);
       const retainedPastOrCurrentWorkdays = state.scheduleSlots.filter((slot) => (
         slot.requestId === request.id
         && slot.status !== "processed"
@@ -2587,7 +2593,7 @@ export class DowntimeService {
     });
   }
 
-  async closeProject(requestId, { groupId = "", actorId = "" } = {}) {
+  async closeProject(requestId, { groupId = "", actorId = "", projectClosedByUserId = "" } = {}) {
     const context = cleanId(groupId)
       ? this.moduleApi?.groupContextService?.resolveForGroup?.(cleanId(groupId))
       : this.#resolveContext();
@@ -2611,13 +2617,13 @@ export class DowntimeService {
 
       request.projectClosed = true;
       request.projectClosedAt = Date.now();
-      request.projectClosedByUserId = cleanId(getCurrentUser()?.id);
+      request.projectClosedByUserId = cleanId(projectClosedByUserId) || cleanId(getCurrentUser()?.id);
       request.updatedAt = Date.now();
       return clone(request);
     });
   }
 
-  async continueProject(requestId, { groupId = "", actorId = "", checkId = "", result = {} } = {}) {
+  async continueProject(requestId, { groupId = "", actorId = "", checkId = "", result = {}, recordedByUserId = "" } = {}) {
     const context = cleanId(groupId)
       ? this.moduleApi?.groupContextService?.resolveForGroup?.(cleanId(groupId))
       : this.#resolveContext();
@@ -2686,14 +2692,19 @@ export class DowntimeService {
         max: projectCounter.max
       };
       clearWeeklyProjectResults(request);
-      applyCheckResultToRequest(request, safeCheckId, result);
+      applyCheckResultToRequest(request, safeCheckId, {
+        ...asObject(result),
+        recordedByUserId: cleanId(recordedByUserId) || cleanId(getCurrentUser()?.id)
+      });
       request.status = "completed";
       return clone(request);
     });
   }
 
-  async setRequestStatus(requestId, status, { result = "" } = {}) {
-    const context = this.#resolveContext();
+  async setRequestStatus(requestId, status, { groupId = "", result = "" } = {}) {
+    const context = cleanId(groupId)
+      ? this.moduleApi?.groupContextService?.resolveForGroup?.(cleanId(groupId))
+      : this.#resolveContext();
     this.#assertCanManage(context);
     const safeRequestId = cleanId(requestId);
     const nextStatus = cleanId(status);
@@ -2732,7 +2743,7 @@ export class DowntimeService {
         state.scheduleSlots = releaseFutureRequestSlots({
           slots: state.scheduleSlots,
           requestId: request.id,
-          currentIsoDate: this.#resolveCurrentIsoDate()
+          currentIsoDate: this.#resolveCurrentIsoDate("", context)
         });
         const retained = state.scheduleSlots.filter((slot) => (
           slot.requestId === request.id && slot.status !== "processed"
@@ -3270,8 +3281,10 @@ export class DowntimeService {
     });
   }
 
-  async setRequestChecks(requestId, checks = []) {
-    const context = this.#resolveContext();
+  async setRequestChecks(requestId, checks = [], { groupId = "" } = {}) {
+    const context = cleanId(groupId)
+      ? this.moduleApi?.groupContextService?.resolveForGroup?.(cleanId(groupId))
+      : this.#resolveContext();
     this.#assertCanManage(context);
     const safeRequestId = cleanId(requestId);
 
@@ -3292,7 +3305,7 @@ export class DowntimeService {
     });
   }
 
-  async recordCheckResult(requestId, checkId, result = {}, { groupId = "", actorId = "" } = {}) {
+  async recordCheckResult(requestId, checkId, result = {}, { groupId = "", actorId = "", recordedByUserId = "" } = {}) {
     const context = cleanId(groupId)
       ? this.moduleApi?.groupContextService?.resolveForGroup?.(cleanId(groupId))
       : this.#resolveContext();
@@ -3313,7 +3326,10 @@ export class DowntimeService {
         }
       }
 
-      applyCheckResultToRequest(request, safeCheckId, result);
+      applyCheckResultToRequest(request, safeCheckId, {
+        ...asObject(result),
+        recordedByUserId: cleanId(recordedByUserId) || cleanId(getCurrentUser()?.id)
+      });
       return clone(request);
     });
   }
@@ -3327,8 +3343,9 @@ export class DowntimeService {
     return context;
   }
 
-  #resolveCurrentIsoDate(explicitIsoDate = "") {
+  #resolveCurrentIsoDate(explicitIsoDate = "", context = null) {
     const isoDate = cleanString(explicitIsoDate)
+      || cleanString(context?.groupState?.calendar?.isoDate)
       || cleanString(this.moduleApi?.getCalendarSnapshot?.()?.isoDate)
       || cleanString(this.#resolveContext()?.groupState?.calendar?.isoDate)
       || new Date().toISOString().slice(0, 10);
@@ -3432,7 +3449,7 @@ export class DowntimeService {
       groupState.groupActorId = capturedGroupId;
       const state = normalizeDowntimeStateV2(
         groupState.downtimeState,
-        this.#resolveCurrentIsoDate()
+        this.#resolveCurrentIsoDate(context?.groupState?.calendar?.isoDate, context)
       );
       executionGuard?.();
       const result = await mutator(state);
