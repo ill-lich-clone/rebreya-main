@@ -323,6 +323,10 @@ function storageMutationId({ tokenUuid, path = [], kind, identity = "", destinat
   ].join(":");
 }
 
+function journalSceneMutationKey(mutationId) {
+  return ["storage", "journal-scene", requireMutationId(mutationId)].join(":");
+}
+
 function rowIdentity(row, index) {
   return clean(row?.rowId ?? index);
 }
@@ -1576,5 +1580,104 @@ export class StorageCommandService {
         throw error;
       }
     });
+  }
+
+  async dropJournalToScene(payload = {}, { sender } = {}) {
+    if (!isValidStorageJournalDropPayload(payload)) {
+      throw new Error("Некорректная команда переноса записи журнала на сцену.");
+    }
+    if (sender?.isGM !== true) {
+      throw new Error("Переносить записи журнала на сцену может только мастер.");
+    }
+    if (typeof this.groundPileService?.findProcessedMutationAtPoint !== "function"
+      || typeof this.groundPileService?.transferToScene !== "function") {
+      throw new Error("Сервис наземных куч Rebreya недоступен.");
+    }
+
+    const mutationKey = journalSceneMutationKey(payload.mutationId);
+    const fingerprint = mutationRequestFingerprint(payload, sender);
+    const pointRequest = {
+      sceneId: payload.sceneId,
+      x: payload.x,
+      y: payload.y,
+      mutationId: mutationKey
+    };
+    const authorize = async () => {
+      if (sender?.isGM !== true) {
+        throw new Error("Переносить записи журнала на сцену может только мастер.");
+      }
+    };
+
+    return this.#runMutation([
+      `${payload.journalUuid}:journal`,
+      `${payload.sceneId}:scene`
+    ], mutationKey, async () => {
+      const duplicate = this.groundPileService.findProcessedMutationAtPoint(pointRequest);
+      if (duplicate) {
+        return {
+          changed: false,
+          created: duplicate.created === true,
+          merged: duplicate.merged === true,
+          duplicate: true
+        };
+      }
+
+      const source = await this.resolveDepositSource({
+        kind: "journal",
+        journalUuid: payload.journalUuid
+      }, {
+        fromUuid: this.resolveDocument,
+        resolveToken: this.resolveToken,
+        storageService: this.storageService,
+        containerItemService: this.containerItemService
+      });
+      if (!source || source.kind !== "journal" || source.mode !== "copy"
+        || source.available !== 1 || source.canUserMove?.(sender) !== true
+        || !isStorageJournalRow(source.row)
+        || source.row?.rowKind !== "journal"
+        || clean(source.row?.sourceType).toLowerCase() !== "journal"
+        || !clean(source.row?.sourceId)
+        || !clean(source.row?.rowId)
+        || !clean(source.row?.name)
+        || source.row?.stackKey !== ""
+        || Number(source.row?.quantity) !== 1
+        || typeof source.consume !== "function" || typeof source.restore !== "function") {
+        throw new Error("Источник записи журнала для сцены недоступен.");
+      }
+
+      let receipt = null;
+      try {
+        receipt = await source.consume(1);
+        const created = await this.groundPileService.transferToScene({
+          row: clone(source.row),
+          quantity: 1,
+          sceneId: payload.sceneId,
+          x: payload.x,
+          y: payload.y,
+          mutationId: mutationKey,
+          ownerUserId: clean(sender.id)
+        });
+        return {
+          changed: created?.duplicate !== true,
+          created: created?.created === true,
+          merged: created?.merged === true,
+          duplicate: created?.duplicate === true
+        };
+      }
+      catch (error) {
+        if (receipt) {
+          try {
+            await source.restore(receipt);
+          }
+          catch (rollbackError) {
+            throw new AggregateError(
+              [error, rollbackError],
+              "Не удалось откатить выгрузку записи журнала на сцену."
+            );
+          }
+        }
+        throw error;
+      }
+    }, { fingerprint, authorize });
   }
 }

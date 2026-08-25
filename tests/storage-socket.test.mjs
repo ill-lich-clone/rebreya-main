@@ -69,6 +69,7 @@ function createHarness({
   groundFailure = null,
   coinGroundFailure = null,
   processedCoinMutations = new Set(),
+  processedGroundMutations = new Set(),
   executionOrder = [],
   durabilityService = null,
   ingressCommit = null,
@@ -256,6 +257,7 @@ function createHarness({
       executionOrder.push("find");
       groundFindCalls.push(clone(request));
       return processedCoinMutations.has(request.mutationId)
+        || processedGroundMutations.has(request.mutationId)
         ? { created: false, merged: false, duplicate: true, token: { uuid: "Scene.scene.Token.coin-pile" } }
         : null;
     },
@@ -270,7 +272,8 @@ function createHarness({
       executionOrder.push("transfer");
       if (groundFailure) throw groundFailure;
       groundCalls.push(clone(request));
-      return { created: true };
+      processedGroundMutations.add(request.mutationId);
+      return { created: true, merged: false, duplicate: false };
     },
     async refreshAfterStorageMutation(token, state) {
       refreshCalls.push({ token, state: clone(state) });
@@ -983,6 +986,199 @@ test("Journal scene drop accepts only the exact GM command payload", () => {
   assert.equal(isValidStorageJournalDropPayload({ ...payload, x: Number.NaN }), false);
   assert.equal(isValidStorageJournalDropPayload({ ...payload, characterTokenUuid: "Token.hero" }), false);
   assert.equal(isValidStorageJournalDropPayload({ ...payload, extra: true }), false);
+});
+
+test("GM Journal scene drop re-resolves one canonical reference and returns a compact result", async () => {
+  const events = [];
+  const harness = createHarness({
+    depositSource: {
+      kind: "journal",
+      mode: "copy",
+      available: 1,
+      row: {
+        rowKind: "journal",
+        rowId: "source-row",
+        stackKey: "",
+        sourceId: "JournalEntry.authoritative",
+        sourceType: "journal",
+        name: "Заметки Гартара",
+        img: "icons/book.webp",
+        quantity: 1
+      },
+      canUserMove: () => true,
+      async consume(quantity) { events.push(["consume", quantity]); return { kind: "copy" }; },
+      async restore(receipt) { events.push(["restore", receipt.kind]); }
+    }
+  });
+  const payload = {
+    journalUuid: "JournalEntry.authoritative",
+    mutationId: "journal-drop",
+    sceneId: "scene",
+    x: 100,
+    y: 200
+  };
+
+  const result = await harness.service.dropJournalToScene(payload, { sender: harness.gm });
+
+  assert.deepEqual(harness.depositResolveCalls, [{
+    kind: "journal",
+    journalUuid: "JournalEntry.authoritative"
+  }]);
+  assert.deepEqual(events, [["consume", 1]]);
+  assert.equal(harness.groundCalls[0].quantity, 1);
+  assert.equal(harness.groundCalls[0].row.rowKind, "journal");
+  assert.deepEqual(Object.keys(result).sort(), ["changed", "created", "duplicate", "merged"]);
+  assert.equal(JSON.stringify(result).includes("JournalEntry"), false);
+});
+
+test("Journal scene drop rejects non-GM and invalid authoritative sources before transfer", async () => {
+  let consumed = 0;
+  const canonical = (overrides = {}) => ({
+    kind: "journal",
+    mode: "copy",
+    available: 1,
+    row: {
+      rowKind: "journal",
+      rowId: "journal-row",
+      stackKey: "",
+      sourceId: "JournalEntry.notes",
+      sourceType: "journal",
+      name: "Запись",
+      quantity: 1
+    },
+    canUserMove: () => true,
+    async consume() { consumed += 1; return { kind: "copy" }; },
+    async restore() {},
+    ...overrides
+  });
+  const payload = {
+    journalUuid: "JournalEntry.notes",
+    mutationId: "journal-guards",
+    sceneId: "scene",
+    x: 100,
+    y: 200
+  };
+  const playerHarness = createHarness({ depositSource: canonical() });
+  await assert.rejects(
+    playerHarness.service.dropJournalToScene(payload, { sender: playerHarness.player }),
+    /только мастер/iu
+  );
+  assert.equal(playerHarness.depositResolveCalls.length, 0);
+  assert.equal(consumed, 0);
+
+  for (const [name, source] of [
+    ["kind", canonical({ kind: "item" })],
+    ["mode", canonical({ mode: "move" })],
+    ["available", canonical({ available: 2 })],
+    ["row", canonical({ row: { rowKind: "journal", quantity: 1 } })]
+  ]) {
+    const harness = createHarness({ depositSource: source });
+    await assert.rejects(
+      harness.service.dropJournalToScene({ ...payload, mutationId: `journal-guard-${name}` }, { sender: harness.gm }),
+      /Источник записи журнала/iu,
+      name
+    );
+    assert.equal(harness.groundCalls.length, 0, name);
+  }
+  assert.equal(consumed, 0);
+});
+
+test("failed Journal scene transfer restores its copy receipt and preserves rollback failures", async () => {
+  const events = [];
+  const source = {
+    kind: "journal",
+    mode: "copy",
+    available: 1,
+    row: {
+      rowKind: "journal",
+      rowId: "journal-row",
+      stackKey: "",
+      sourceId: "JournalEntry.notes",
+      sourceType: "journal",
+      name: "Запись",
+      quantity: 1
+    },
+    canUserMove: () => true,
+    async consume() { events.push("consume"); return { kind: "copy" }; },
+    async restore() { events.push("restore"); }
+  };
+  const payload = {
+    journalUuid: "JournalEntry.notes",
+    mutationId: "journal-rollback",
+    sceneId: "scene",
+    x: 100,
+    y: 200
+  };
+  const harness = createHarness({ depositSource: source, groundFailure: new Error("scene transfer failed") });
+  await assert.rejects(
+    harness.service.dropJournalToScene(payload, { sender: harness.gm }),
+    /scene transfer failed/u
+  );
+  assert.deepEqual(events, ["consume", "restore"]);
+
+  const aggregateHarness = createHarness({
+    groundFailure: new Error("scene transfer failed"),
+    depositSource: {
+      ...source,
+      async restore() { throw new Error("copy rollback failed"); }
+    }
+  });
+  await assert.rejects(
+    aggregateHarness.service.dropJournalToScene({ ...payload, mutationId: "journal-aggregate" }, {
+      sender: aggregateHarness.gm
+    }),
+    (error) => error instanceof AggregateError
+      && error.errors.some((entry) => /scene transfer failed/u.test(entry.message))
+      && error.errors.some((entry) => /copy rollback failed/u.test(entry.message))
+  );
+});
+
+test("Journal scene mutation is idempotent and bound to Journal, scene, point, and sender", async () => {
+  const processed = new Set();
+  const source = {
+    kind: "journal",
+    mode: "copy",
+    available: 1,
+    row: {
+      rowKind: "journal",
+      rowId: "journal-row",
+      stackKey: "",
+      sourceId: "JournalEntry.notes",
+      sourceType: "journal",
+      name: "Запись",
+      quantity: 1
+    },
+    canUserMove: () => true,
+    async consume() { return { kind: "copy" }; },
+    async restore() {}
+  };
+  const harness = createHarness({ depositSource: source, processedGroundMutations: processed });
+  const payload = {
+    journalUuid: "JournalEntry.notes",
+    mutationId: "journal-idempotent",
+    sceneId: "scene",
+    x: 100,
+    y: 200
+  };
+  const first = await harness.service.dropJournalToScene(payload, { sender: harness.gm });
+  const retry = await harness.service.dropJournalToScene(payload, { sender: harness.gm });
+  assert.deepEqual(retry, first);
+  assert.equal(harness.groundCalls.length, 1);
+  assert.equal(harness.depositResolveCalls.length, 1);
+
+  for (const [name, changed, sender] of [
+    ["Journal", { journalUuid: "JournalEntry.other" }, harness.gm],
+    ["scene", { sceneId: "other-scene" }, harness.gm],
+    ["point", { x: 101 }, harness.gm],
+    ["sender", {}, { id: "other-gm", isGM: true }]
+  ]) {
+    await assert.rejects(
+      harness.service.dropJournalToScene({ ...payload, ...changed }, { sender }),
+      /mutationId/iu,
+      name
+    );
+  }
+  assert.equal(harness.groundCalls.length, 1);
 });
 
 test("managed coin drop re-resolves authority, consumes an owned stack, and transfers only manual coins", async () => {
