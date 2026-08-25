@@ -163,11 +163,18 @@ export class SocketCommandBus {
     return this;
   }
 
-  request(command, payload) {
+  request(command, payload, { requestId = "" } = {}) {
     const game = this.#gameProvider();
     const senderId = String(game?.user?.id ?? "").trim();
-    const requestId = String(this.#idFactory() ?? "").trim();
-    if (!nonEmptyString(command) || !senderId || !requestId) {
+    if (typeof requestId !== "string") {
+      return Promise.reject(new SocketCommandError(
+        "invalid-request",
+        "Explicit socket request id must be a string"
+      ));
+    }
+    const normalizedRequestId = requestId.trim()
+      || String(this.#idFactory() ?? "").trim();
+    if (!nonEmptyString(command) || !senderId || !normalizedRequestId) {
       return Promise.reject(new SocketCommandError(
         "invalid-request",
         "Socket command, request id, and sender id are required"
@@ -177,7 +184,7 @@ export class SocketCommandBus {
     const envelope = {
       type: COMMAND_REQUEST_TYPE,
       command,
-      requestId,
+      requestId: normalizedRequestId,
       senderId,
       payload
     };
@@ -201,7 +208,7 @@ export class SocketCommandBus {
       ));
     }
 
-    const pendingKey = this.#pendingKey(requestId, command, senderId);
+    const pendingKey = this.#pendingKey(normalizedRequestId, command, senderId);
     if (this.#pending.has(pendingKey)) {
       return Promise.reject(new SocketCommandError(
         "duplicate-request",

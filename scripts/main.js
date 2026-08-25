@@ -93,6 +93,7 @@ import { CraftDowntimeService } from "./data/craft-downtime-service.js?v=1.4.96-
 import { ItemUpgradeService } from "./data/item-upgrade-service.js?v=1.4.96-item-upgrades";
 import { GROUP_CALENDAR_PATCH_COMMAND, CalendarService } from "./data/calendar-service.js";
 import { CalendarTransitionCoordinator } from "./data/calendar-transition-coordinator.js?v=1.4.96-craft-calendar";
+import { PrivilegedMutationGateway } from "./application/privileged-mutation-gateway.js";
 import { WorldMutationCoordinator } from "./application/world-mutation-coordinator.js";
 import { LootClaimService } from "./application/loot-claim-service.js";
 import {
@@ -1199,6 +1200,18 @@ function filterVisibleGlobalEvents(events = []) {
 export class RebreyaMainModule {
   constructor() {
     this.worldMutationCoordinator = new WorldMutationCoordinator();
+    this.socketCommandBus = new SocketCommandBus({
+      coordinator: this.worldMutationCoordinator,
+      gameProvider: () => globalThis.game
+    });
+    this.privilegedMutationGateway = new PrivilegedMutationGateway({
+      commandBus: this.socketCommandBus,
+      coordinator: this.worldMutationCoordinator,
+      gameProvider: () => globalThis.game,
+      getActiveGm,
+      isActiveGmClient,
+      operationIdFactory: () => createSocketRequestId("privileged-mutation")
+    });
     this.uiRefreshCoordinator = new UiRefreshCoordinator();
     this.inventoryRefreshActorIds = new Set();
     this.inventoryRefreshHoldCount = 0;
@@ -1210,10 +1223,6 @@ export class RebreyaMainModule {
       normalizeRegistry: normalizeGroupRegistry,
       normalizeGroupState,
       buildDefaultGroupState
-    });
-    this.socketCommandBus = new SocketCommandBus({
-      coordinator: this.worldMutationCoordinator,
-      gameProvider: () => globalThis.game
     });
     this.traderStateRepository = new TraderStateRepository({
       coordinator: this.worldMutationCoordinator,

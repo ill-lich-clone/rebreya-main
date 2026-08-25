@@ -285,6 +285,65 @@ test("SocketCommandBus correlates results by requestId, command, and forUserId",
   assert.deepEqual(timers.cleared, [1]);
 });
 
+test("SocketCommandBus uses an explicit request id without calling its id factory", async () => {
+  const emitted = [];
+  const timers = createFakeTimers();
+  const player = { id: "player-a", isGM: false, active: true };
+  const gm = { id: "gm-a", isGM: true, active: true };
+  const game = createGame({ users: [player, gm], currentUserId: player.id, activeGmId: gm.id, emitted });
+  let factoryCalls = 0;
+  const bus = new SocketCommandBus({
+    gameProvider: () => game,
+    idFactory: () => {
+      factoryCalls += 1;
+      return "factory-request";
+    },
+    setTimeoutFn: timers.setTimeoutFn,
+    clearTimeoutFn: timers.clearTimeoutFn
+  });
+
+  const pending = bus.request(
+    "group.calendar.setDate",
+    { day: 6 },
+    { requestId: "  explicit-request  " }
+  );
+
+  assert.equal(factoryCalls, 0);
+  assert.equal(emitted[0]?.message?.requestId, "explicit-request");
+  assert.equal(bus.handleMessage({
+    type: COMMAND_RESULT_TYPE,
+    command: "group.calendar.setDate",
+    requestId: "explicit-request",
+    forUserId: player.id,
+    senderId: gm.id,
+    ok: true,
+    data: "saved"
+  }), true);
+  assert.equal(await pending, "saved");
+});
+
+test("SocketCommandBus rejects a non-string explicit request id", async () => {
+  const emitted = [];
+  const player = { id: "player-a", isGM: false, active: true };
+  const gm = { id: "gm-a", isGM: true, active: true };
+  const game = createGame({ users: [player, gm], currentUserId: player.id, activeGmId: gm.id, emitted });
+  let factoryCalls = 0;
+  const bus = new SocketCommandBus({
+    gameProvider: () => game,
+    idFactory: () => {
+      factoryCalls += 1;
+      return "factory-request";
+    }
+  });
+
+  await assert.rejects(
+    bus.request("group.calendar.setDate", { day: 6 }, { requestId: 42 }),
+    (error) => error?.code === "invalid-request"
+  );
+  assert.equal(factoryCalls, 0);
+  assert.deepEqual(emitted, []);
+});
+
 test("SocketCommandBus ignores malformed correlated errors until a valid failure arrives", async () => {
   const emitted = [];
   const timers = createFakeTimers();

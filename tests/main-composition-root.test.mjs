@@ -5,6 +5,7 @@ import { readFile } from "node:fs/promises";
 import { SpellAutomationRegistry } from "../scripts/combat/spell-automation-registry.js";
 import { SpellInstanceRuntime } from "../scripts/combat/spell-instance-runtime.js";
 import { SummonLifecycleRuntime } from "../scripts/combat/summon-lifecycle-runtime.js";
+import { PrivilegedMutationGateway } from "../scripts/application/privileged-mutation-gateway.js";
 import { TransportCompendiumService } from "../scripts/data/transport-compendium.js";
 import { BuiltinStorageActorService } from "../scripts/data/builtin-storage-actor-service.js";
 import { StorageOpenSoundService } from "../scripts/data/storage-open-sound-service.js?v=1.4.145-coin-icons-storage-sound";
@@ -107,6 +108,7 @@ test("ready composes spell automation on one registry alongside legacy hook regi
     await Hooks.onceCallbacks.get("ready")();
 
     const moduleApi = module.api;
+    assert.ok(moduleApi.privilegedMutationGateway instanceof PrivilegedMutationGateway);
     assert.ok(moduleApi.builtinStorageActorService instanceof BuiltinStorageActorService);
     assert.equal("builtinCoinTemplateService" in moduleApi, false);
     assert.equal(typeof moduleApi.restoreBuiltinCoinTemplates, "undefined");
