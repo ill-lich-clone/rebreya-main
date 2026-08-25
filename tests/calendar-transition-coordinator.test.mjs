@@ -685,7 +685,121 @@ test("concurrent moves serialize from preview through domain stages and leave th
   }
 });
 
-test("a queued move fails closed if the active group changes before its job starts", async () => {
+test("moveToGroup keeps preview, queue, writes, journal, and callbacks in the captured group", async () => {
+  const callbackGroups = [];
+  const previewGroups = [];
+  const queueKeys = [];
+  const harness = createHarness();
+
+  try {
+    const groupB = createGroupActor("group-b");
+    globalThis.game.actors.contents.push(groupB);
+    globalThis.game.actors.get = (id) => globalThis.game.actors.contents.find((actor) => actor.id === id) ?? null;
+    const registry = harness.state[SETTINGS_KEYS.GROUP_STATE];
+    const groupACalendar = clone(registry.groupsById["group-a"].calendar);
+    registry.groupsById[groupB.id] = {
+      version: 1,
+      groupActorId: groupB.id,
+      calendar: { version: 1, isoDate: "2026-01-31", timeOfDaySeconds: 7200 }
+    };
+
+    const downtimeService = {
+      getSnapshot(_options = {}, { groupId = "" } = {}) {
+        const resolvedGroupId = groupId || registry.activeGroupActorId;
+        previewGroups.push(resolvedGroupId);
+        return {
+          groupId: resolvedGroupId,
+          calendarByIsoDate: {
+            "2026-02-01": createDowntimeSummary("2026-02-01", "request-group-b")
+          }
+        };
+      },
+      async processScheduledDate(isoDate, executionContext = {}) {
+        callbackGroups.push(["downtime", executionContext.groupId]);
+        return {
+          isoDate,
+          transitionId: executionContext.transitionId,
+          journalStatus: "completed",
+          processed: [],
+          blocked: [],
+          reconciliation: [],
+          skipped: []
+        };
+      }
+    };
+    const coordinator = harness.createCoordinator({
+      downtimeService,
+      coordinator: {
+        async run(key, operation) {
+          queueKeys.push(key);
+          return operation();
+        }
+      },
+      refreshGlobalEvents: async (_currentIsoDate, _previousIsoDate, executionContext = {}) => {
+        callbackGroups.push(["global-events", executionContext.groupId]);
+        return { changed: false };
+      },
+      resetTraderMonth: async (_count, _reason, executionContext = {}) => {
+        callbackGroups.push(["trader-month", executionContext.groupId]);
+        return { triggered: true };
+      },
+      processDayCycles: async (days, executionContext = {}) => {
+        callbackGroups.push(["day-cycles", executionContext.groupId]);
+        return { days, supplies: [], supplyTotals: {} };
+      },
+      refreshApps: async (executionContext = {}) => {
+        callbackGroups.push(["refresh-apps", executionContext.groupId]);
+      },
+      refreshSmallTime: async (executionContext = {}) => {
+        callbackGroups.push(["refresh-small-time", executionContext.groupId]);
+      }
+    });
+
+    const result = await coordinator.moveToGroup(groupB.id, {
+      toIsoDate: "2026-02-01",
+      processDowntime: true,
+      processSupplies: true,
+      processDailyCycles: true,
+      refreshApps: true,
+      refreshSmallTime: true,
+      reason: "group-b-calendar"
+    });
+
+    assert.equal(result.groupId, groupB.id);
+    assert.equal(result.fromIsoDate, "2026-01-31");
+    assert.equal(result.calendar.isoDate, "2026-02-01");
+    assert.deepEqual(queueKeys, ["calendar-transition:group-b"]);
+    assert.ok(previewGroups.length > 0);
+    assert.equal(previewGroups.every((groupId) => groupId === groupB.id), true);
+    assert.deepEqual(callbackGroups, [
+      ["downtime", groupB.id],
+      ["global-events", groupB.id],
+      ["trader-month", groupB.id],
+      ["day-cycles", groupB.id],
+      ["refresh-apps", groupB.id],
+      ["refresh-small-time", groupB.id]
+    ]);
+
+    const groupWrites = harness.writes.filter((write) => write.key === SETTINGS_KEYS.GROUP_STATE);
+    assert.ok(groupWrites.length > 0);
+    for (const write of groupWrites) {
+      assert.deepEqual(write.value.groupsById["group-a"].calendar, groupACalendar);
+    }
+    const committedRegistry = harness.state[SETTINGS_KEYS.GROUP_STATE];
+    assert.deepEqual(committedRegistry.groupsById["group-a"].calendar, groupACalendar);
+    assert.equal(committedRegistry.groupsById[groupB.id].calendar.isoDate, "2026-02-01");
+    assert.equal(
+      committedRegistry.groupsById[groupB.id].calendar.transitionJournal.entries
+        .every((entry) => entry.groupId === groupB.id),
+      true
+    );
+  }
+  finally {
+    harness.restore();
+  }
+});
+
+test("a queued move keeps its captured group if the active selection changes before its job starts", async () => {
   const calls = [];
   const queue = new WorldMutationCoordinator();
   const releaseQueue = createDeferred();
@@ -718,19 +832,23 @@ test("a queued move fails closed if the active group changes before its job star
       processDailyCycles: true,
       reason: "advance-days"
     });
-    const rejection = assert.rejects(queuedMove, /active Rebreya group changed/u);
 
     registry.activeGroupActorId = groupB.id;
     releaseQueue.resolve();
     await queueHead;
-    await rejection;
+    const result = await queuedMove;
 
     const committedRegistry = harness.state[SETTINGS_KEYS.GROUP_STATE];
-    assert.equal(committedRegistry.groupsById["group-a"].calendar.isoDate, "2026-07-20");
+    assert.equal(result.groupId, "group-a");
+    assert.equal(result.status, "completed");
+    assert.equal(committedRegistry.groupsById["group-a"].calendar.isoDate, "2026-07-21");
     assert.equal(committedRegistry.groupsById["group-b"].calendar.isoDate, "2030-01-01");
-    assert.equal(committedRegistry.groupsById["group-a"].calendar.transitionJournal, undefined);
+    assert.equal(
+      committedRegistry.groupsById["group-a"].calendar.transitionJournal.entries[0].groupId,
+      "group-a"
+    );
     assert.equal(committedRegistry.groupsById["group-b"].calendar.transitionJournal, undefined);
-    assert.deepEqual(calls, []);
+    assert.deepEqual(calls, [["events"], ["cycles"]]);
   }
   finally {
     releaseQueue.resolve();
@@ -1196,7 +1314,7 @@ test("GM failover during completion precommit lets the new GM finish the same tr
   }
 });
 
-test("callback guard prevents a transition from mutating a newly active group after await", async () => {
+test("callback guard retains the captured group after the active selection changes", async () => {
   const callbackStarted = createDeferred();
   const releaseCallback = createDeferred();
   const callbackContexts = [];
@@ -1213,9 +1331,7 @@ test("callback guard prevents a transition from mutating a newly active group af
         callbackStarted.resolve();
         await releaseCallback.promise;
         options.guard?.();
-        mutatedGroupIds.push(
-          harness.state[SETTINGS_KEYS.GROUP_STATE].activeGroupActorId
-        );
+        mutatedGroupIds.push(options.groupId);
         return { days: 1, supplies: [], supplyTotals: {} };
       }
     }
@@ -1248,25 +1364,18 @@ test("callback guard prevents a transition from mutating a newly active group af
 
     harness.state[SETTINGS_KEYS.GROUP_STATE].activeGroupActorId = groupB.id;
     releaseCallback.resolve();
-    await assert.rejects(interruptedMove, /active Rebreya group changed/u);
+    const result = await interruptedMove;
 
     const committedRegistry = harness.state[SETTINGS_KEYS.GROUP_STATE];
     const interruptedEntry = committedRegistry.groupsById["group-a"].calendar.transitionJournal.entries[0];
+    assert.equal(result.status, "completed");
     assert.deepEqual(callbackContexts, [{
       groupId: "group-a",
       transitionId: interruptedEntry.transitionId,
       sharesGuard: true
     }]);
-    assert.deepEqual(mutatedGroupIds, []);
+    assert.deepEqual(mutatedGroupIds, ["group-a"]);
     assert.equal(committedRegistry.groupsById["group-b"].calendar.transitionJournal, undefined);
-
-    committedRegistry.activeGroupActorId = "group-a";
-    const resumed = await coordinator.moveTo(options);
-
-    assert.equal(resumed.transitionId, interruptedEntry.transitionId);
-    assert.equal(resumed.status, "reconciliation-required");
-    assert.equal(callbackContexts.length, 1);
-    assert.deepEqual(mutatedGroupIds, []);
   }
   finally {
     releaseCallback.resolve();

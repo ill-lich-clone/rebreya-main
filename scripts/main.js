@@ -1612,7 +1612,10 @@ export class RebreyaMainModule {
     this.socketCommandBus.register(GROUP_CALENDAR_TRANSITION_COMMAND, {
       validate: isValidCalendarTransitionPayload,
       authorize: authorizeGroup,
-      execute: (payload) => this.calendarTransitionCoordinator.moveTo(payload.options)
+      execute: (payload) => this.calendarTransitionCoordinator.moveToGroup(
+        payload.groupActorId,
+        payload.options
+      )
     });
     this.socketCommandBus.register(GROUP_TRAVEL_REPLACE_STATE_COMMAND, {
       validate: isValidTravelReplacePayload,

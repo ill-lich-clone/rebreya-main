@@ -2062,11 +2062,17 @@ export class DowntimeService {
     return this.#getActionCatalog(context);
   }
 
-  getSnapshot({ actorId = "" } = {}) {
-    const context = this.#resolveContext();
+  getSnapshot({ actorId = "" } = {}, { groupId = "" } = {}) {
+    const requestedGroupId = cleanId(groupId);
+    const context = requestedGroupId
+      ? this.moduleApi?.groupContextService?.resolveForGroup?.(requestedGroupId)
+      : this.#resolveContext();
+    if (!context?.groupId || (requestedGroupId && cleanId(context.groupId) !== requestedGroupId)) {
+      throw new Error("Downtime snapshot requires its captured group context.");
+    }
     const state = normalizeDowntimeStateV2(
       context.groupState?.downtimeState,
-      this.#resolveCurrentIsoDate()
+      this.#resolveCurrentIsoDate(context.groupState?.calendar?.isoDate)
     );
     const selectedActorId = cleanId(actorId);
     const memberActorIds = new Set(context.memberActorIds ?? []);

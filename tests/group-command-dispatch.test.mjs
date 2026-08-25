@@ -51,7 +51,7 @@ function createGroup(id, members = []) {
   };
 }
 
-function installFixture({ currentUserId = "gm-a" } = {}) {
+function installFixture({ currentUserId = "gm-a", includeGroupB = false } = {}) {
   const previousGame = globalThis.game;
   const previousFoundry = globalThis.foundry;
   const previousUi = globalThis.ui;
@@ -60,9 +60,11 @@ function installFixture({ currentUserId = "gm-a" } = {}) {
   const playerA = { id: "player-a", isGM: false, active: true };
   const playerB = { id: "player-b", isGM: false, active: true };
   const memberA = createCharacter("character-a", playerA.id);
+  const memberB = createCharacter("character-b", playerB.id);
   const groupA = createGroup("group-a", [memberA]);
+  const groupB = createGroup("group-b", [memberB]);
   const users = createUsers([gmA, gmB, playerA, playerB], gmA.id);
-  const actors = [groupA, memberA];
+  const actors = includeGroupB ? [groupA, memberA, groupB, memberB] : [groupA, memberA];
   const emitted = [];
   const writes = [];
   const store = {
@@ -83,6 +85,13 @@ function installFixture({ currentUserId = "gm-a" } = {}) {
     [SETTINGS_KEYS.CALENDAR_STATE]: { version: 1, isoDate: "1300-01-01", timeOfDaySeconds: 0 },
     [SETTINGS_KEYS.COSMOLOGY_STATE]: { version: 1, mechanusEnabled: false, retained: "yes" }
   };
+  if (includeGroupB) {
+    store[SETTINGS_KEYS.GROUP_STATE].groupsById[groupB.id] = {
+      version: 1,
+      groupActorId: groupB.id,
+      calendar: { version: 1, isoDate: "1200-01-31", timeOfDaySeconds: 7200 }
+    };
+  }
 
   globalThis.foundry = {
     utils: {
@@ -126,7 +135,9 @@ function installFixture({ currentUserId = "gm-a" } = {}) {
     actors,
     emitted,
     groupA,
+    groupB,
     memberA,
+    memberB,
     store,
     users: { gmA, gmB, playerA, playerB },
     writes,
@@ -357,6 +368,55 @@ test("group.calendar.patch rejects invalid shapes and a sender outside the reque
       assert.equal(resultFor(fixture, requestId)?.error?.code, errorCode);
     }
     assert.equal(fixture.writes.length, 0);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("group.calendar.transition dispatches the authorized group instead of the active GM group", async () => {
+  const fixture = installFixture({ includeGroupB: true });
+  try {
+    const moduleApi = new RebreyaMainModule();
+    const calls = [];
+    moduleApi.calendarTransitionCoordinator = {
+      async moveTo() {
+        throw new Error("group.calendar.transition must not fall back to the active GM group");
+      },
+      async moveToGroup(groupActorId, options) {
+        calls.push({ groupActorId, options: clone(options) });
+        return { groupActorId, calendar: { isoDate: options.toIsoDate } };
+      }
+    };
+    const request = commandRequest(
+      "group.calendar.transition",
+      fixture.users.playerB.id,
+      {
+        groupActorId: fixture.groupB.id,
+        options: {
+          toIsoDate: "1200-02-01",
+          processDowntime: true,
+          processSupplies: true,
+          processDailyCycles: true
+        }
+      },
+      "calendar-transition-group-b"
+    );
+
+    await moduleApi.handleSocketMessage(request);
+    await flushCommands();
+
+    assert.deepEqual(calls, [{
+      groupActorId: fixture.groupB.id,
+      options: {
+        toIsoDate: "1200-02-01",
+        processDowntime: true,
+        processSupplies: true,
+        processDailyCycles: true
+      }
+    }]);
+    assert.equal(resultFor(fixture, request.requestId)?.ok, true);
+    assert.equal(resultFor(fixture, request.requestId)?.data?.groupActorId, fixture.groupB.id);
   }
   finally {
     fixture.restore();

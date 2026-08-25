@@ -343,7 +343,15 @@ export class CalendarService {
     );
   }
 
-  #getCurrentGroupContext() {
+  #getCurrentGroupContext(groupActorId = "") {
+    const requestedGroupActorId = String(groupActorId ?? "").trim();
+    if (requestedGroupActorId) {
+      if (!this.groupContextService?.resolveForGroup) {
+        throw new Error("Group context service is unavailable.");
+      }
+      return this.groupContextService.resolveForGroup(requestedGroupActorId);
+    }
+
     if (!this.groupContextService?.resolveForCurrentUser) {
       return null;
     }
@@ -360,9 +368,9 @@ export class CalendarService {
     }
   }
 
-  #getStateScope() {
+  #getStateScope(groupActorId = "") {
     const worldState = this.#getWorldState();
-    const groupContext = this.#getCurrentGroupContext();
+    const groupContext = this.#getCurrentGroupContext(groupActorId);
     if (!groupContext?.groupId) {
       return {
         type: "world",
@@ -450,12 +458,12 @@ export class CalendarService {
     };
   }
 
-  getSnapshot() {
-    return this.#buildSnapshot(this.#getStateScope().state);
+  getSnapshot({ groupActorId = "" } = {}) {
+    return this.#buildSnapshot(this.#getStateScope(groupActorId).state);
   }
 
-  previewTransition(toIsoDate) {
-    const scope = this.#getStateScope();
+  previewTransition(toIsoDate, { groupActorId = "" } = {}) {
+    const scope = this.#getStateScope(groupActorId);
     const fromState = normalizeCalendarState(scope.state);
     const fromDate = requireIsoDate(fromState.isoDate);
     const toDate = requireIsoDate(toIsoDate);
@@ -505,8 +513,8 @@ export class CalendarService {
     return this.previewTransition(toIsoDate(toDate));
   }
 
-  async setDate(year, month, day, options = {}) {
-    const scope = this.#getStateScope();
+  async setDate(year, month, day, options = {}, { groupActorId = "" } = {}) {
+    const scope = this.#getStateScope(groupActorId);
     const date = requireDateParts(year, month, day);
 
     const committedState = await this.#setState(scope, {
