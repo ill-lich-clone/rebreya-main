@@ -24,6 +24,21 @@ async function flushTasks() {
   await new Promise((resolve) => setImmediate(resolve));
 }
 
+function createActiveTraderStateRepository(gameProvider = () => globalThis.game) {
+  const coordinator = new WorldMutationCoordinator();
+  return new TraderStateRepository({
+    mutationGateway: {
+      commit(key, operation) {
+        return coordinator.run(key, () => operation(Object.freeze({
+          assertActiveGm() {}
+        })));
+      }
+    },
+    gameProvider,
+    normalizeState: normalizeTraderState
+  });
+}
+
 function installFoundryUtils() {
   const previousFoundry = globalThis.foundry;
   globalThis.foundry = {
@@ -84,7 +99,7 @@ test("resetAssortments aborts before persistence when authority changes during m
       modelRequested.resolve();
       return releaseModel.promise;
     }
-  });
+  }, { stateRepository: createActiveTraderStateRepository() });
 
   try {
     const resetting = service.resetAssortments({
@@ -192,7 +207,7 @@ test("trader snapshot resolves gear icons from the shared gear icon lookup", asy
         sourceEventNames: []
       }
     })
-  });
+  }, { stateRepository: createActiveTraderStateRepository() });
 
   try {
     const snapshot = await service.getTraderSnapshot(citySnapshot.id, "shop-tailor-shop");
@@ -306,7 +321,7 @@ test("trader snapshot refreshes stale monthly assortment on first GM open even w
         sourceEventNames: []
       }
     })
-  });
+  }, { stateRepository: createActiveTraderStateRepository() });
 
   try {
     const firstSnapshot = await service.getTraderSnapshot(citySnapshot.id, "materials-shop");
@@ -630,7 +645,9 @@ test("recordTradeAudit retains every nonterminal row and only the newest twenty 
   };
 
   try {
-    const service = new TraderService({});
+    const service = new TraderService({}, {
+      stateRepository: createActiveTraderStateRepository()
+    });
     await service.recordTradeAudit({
       id: "legacy-new-audit",
       type: "purchase",
@@ -653,6 +670,73 @@ test("recordTradeAudit retains every nonterminal row and only the newest twenty 
     assert.equal(state.tradeLog.find((row) => row.transactionId === "legacy-new-audit")?.legacy, true);
     assert.equal(state.tradeLog.some((row) => row.transactionId === "terminal_service_00000004"), true);
     assert.equal(state.tradeLog.some((row) => row.transactionId === "terminal_service_00000003"), false);
+  }
+  finally {
+    globalThis.game = previousGame;
+    restoreFoundry();
+  }
+});
+
+test("TraderService treats mutation without TraderStateRepository as a configuration error", async () => {
+  const restoreFoundry = installFoundryUtils();
+  const previousGame = globalThis.game;
+  let directWrites = 0;
+  globalThis.game = {
+    user: { id: "gm", isGM: true },
+    actors: { get: () => null },
+    settings: {
+      get: () => ({ version: 1, traders: {}, order: [], tradeLog: [] }),
+      set: async () => {
+        directWrites += 1;
+      }
+    }
+  };
+
+  try {
+    const service = new TraderService({});
+    await assert.rejects(
+      service.recordTradeAudit({ actorId: "actor-a", type: "purchase" }),
+      /Trader state repository is unavailable/u
+    );
+    assert.equal(directWrites, 0);
+  }
+  finally {
+    globalThis.game = previousGame;
+    restoreFoundry();
+  }
+});
+
+test("recordTradeAudit overwrites payload sender identity with the authoritative sender", async () => {
+  const restoreFoundry = installFoundryUtils();
+  const previousGame = globalThis.game;
+  let state = createEmptyTraderState();
+  globalThis.game = {
+    user: { id: "gm", isGM: true },
+    users: {
+      get: (id) => ({ id, name: id === "player-a" ? "Player A" : "GM" })
+    },
+    actors: { get: () => null },
+    settings: {
+      get: () => state,
+      set: async (_moduleId, _key, nextState) => {
+        state = nextState;
+      }
+    }
+  };
+
+  try {
+    const service = new TraderService({}, {
+      stateRepository: createActiveTraderStateRepository()
+    });
+    await service.recordTradeAudit({
+      actorId: "actor-a",
+      senderId: "forged-sender",
+      senderName: "Forged sender",
+      type: "purchase"
+    }, { senderId: "player-a" });
+
+    assert.equal(state.tradeLog[0].senderId, "player-a");
+    assert.equal(state.tradeLog[0].senderName, "Player A");
   }
   finally {
     globalThis.game = previousGame;
@@ -701,8 +785,16 @@ test("injected Trader state repository serializes legacy audit and transaction w
     }
   };
   globalThis.game = game;
+  const mutationCoordinator = new WorldMutationCoordinator();
   const repository = new TraderStateRepository({
-    coordinator: new WorldMutationCoordinator(),
+    mutationGateway: {
+      commit(_key, operation) {
+        return mutationCoordinator.run(
+          "setting:traderState",
+          () => operation(Object.freeze({ assertActiveGm() {} }))
+        );
+      }
+    },
     gameProvider: () => game,
     normalizeState: normalizeTraderState
   });

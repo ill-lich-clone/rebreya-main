@@ -6255,7 +6255,6 @@ test("RebreyaMainModule routes the exact legacy mutation allowlist through the w
     { type: "inventory-import-request", payload: { itemUuid: "Item.source" } },
     { type: "inventory-source-depletion-request", payload: { itemUuid: "Item.source" } },
     { type: "inventory-item-action-request", payload: { action: "take", itemId: "item-1" } },
-    { type: "trader-audit", payload: { action: "purchase" } },
     { type: "lootgen-claim-row", payload: { lootId: "loot-1", rowId: "row-1" } },
     { type: "lootgen-claim-coins", payload: { lootId: "loot-1" } }
   ];
@@ -6319,9 +6318,6 @@ test("RebreyaMainModule routes the exact legacy mutation allowlist through the w
       effects.push("inventory-item-action-request");
       return { id: "inventory-actioned", actorId: actor.id };
     };
-    moduleApi.traderService.recordTradeAudit = async () => {
-      effects.push("trader-audit");
-    };
     moduleApi.claimLootgenChatRow = async () => {
       effects.push("lootgen-claim-row");
     };
@@ -6346,7 +6342,7 @@ test("RebreyaMainModule routes the exact legacy mutation allowlist through the w
     const responseTypes = emitted.map(({ message }) => message.type);
     assert.deepEqual(coordinatorKeys, mutationTypes.map(() => "world"));
     assert.deepEqual(effects, mutationTypes);
-    assert.equal(openRefreshes, 1);
+    assert.equal(openRefreshes, 0);
     assert.equal(inventoryRefreshes, 3);
     for (const responseType of [
       "downtime-create-result",

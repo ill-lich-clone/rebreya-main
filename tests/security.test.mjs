@@ -457,7 +457,15 @@ test("trade audit keeps the latest twenty rows and rollback reverses a purchase"
     }
   };
 
-  const service = new TraderService({});
+  const service = new TraderService({}, {
+    stateRepository: {
+      read: () => state,
+      async mutate(mutator) {
+        const result = await mutator(state);
+        return result;
+      }
+    }
+  });
 
   try {
     for (let index = 0; index < 21; index += 1) {

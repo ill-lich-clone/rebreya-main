@@ -7,6 +7,16 @@ import {
   COMMAND_RESULT_TYPE
 } from "../scripts/infrastructure/foundry/socket-command-bus.js";
 
+let traderPublicMutationCommands = {};
+try {
+  traderPublicMutationCommands = await import(
+    "../scripts/application/trader-public-mutation-commands.js"
+  );
+}
+catch (error) {
+  if (error?.code !== "ERR_MODULE_NOT_FOUND") throw error;
+}
+
 const originalHooks = globalThis.Hooks;
 globalThis.Hooks = { once() {}, on() {} };
 const { RebreyaMainModule } = await import(`../scripts/main.js?trader-command-dispatch=${Date.now()}`);
@@ -122,6 +132,158 @@ function result(fixture, requestId) {
     message.type === COMMAND_RESULT_TYPE && message.requestId === requestId
   ));
 }
+
+test("trader public mutation commands expose exact safe payload contracts", () => {
+  const unsafePatch = Object.create(null);
+  unsafePatch.constructor = "spoof";
+
+  assert.equal(
+    traderPublicMutationCommands.TRADER_AUDIT_RECORD_COMMAND,
+    "trader.audit.record"
+  );
+  assert.equal(
+    traderPublicMutationCommands.TRADER_METADATA_UPDATE_COMMAND,
+    "trader.metadata.update"
+  );
+  assert.equal(
+    traderPublicMutationCommands.isValidTraderAuditRecordPayload?.({
+      operation: { actorId: "actor-a", type: "purchase" }
+    }),
+    true
+  );
+  assert.equal(
+    traderPublicMutationCommands.isValidTraderAuditRecordPayload?.({
+      operation: { actorId: "actor-a", action: () => {} }
+    }),
+    false
+  );
+  assert.equal(
+    traderPublicMutationCommands.isValidTraderMetadataUpdatePayload?.({
+      cityId: "city-a",
+      traderKey: "smith",
+      patch: { portrait: "portrait.webp" }
+    }),
+    true
+  );
+  assert.equal(
+    traderPublicMutationCommands.isValidTraderMetadataUpdatePayload?.({
+      cityId: "city-a",
+      traderKey: "smith",
+      patch: unsafePatch
+    }),
+    false
+  );
+});
+
+test("typed trader audit binds sender identity and metadata remains GM-only", async () => {
+  const fixture = installFixture();
+  try {
+    const moduleApi = new RebreyaMainModule();
+    const auditCalls = [];
+    const metadataCalls = [];
+    moduleApi.traderService.recordTradeAudit = async (operation, options) => {
+      auditCalls.push({ operation: clone(operation), options: clone(options) });
+      return { id: "audit-1", senderId: options.senderId };
+    };
+    moduleApi.traderService.updateTraderMetadata = async (...args) => {
+      metadataCalls.push(clone(args));
+      return { cityId: args[0], traderKey: args[1] };
+    };
+    const audit = request("trader.audit.record", fixture.users.player.id, {
+      operation: {
+        actorId: fixture.actors.character.id,
+        senderId: "forged-sender",
+        senderName: "Forged sender",
+        type: "purchase"
+      }
+    }, "audit-owner");
+    const metadata = request("trader.metadata.update", fixture.users.gmB.id, {
+      cityId: "city-a",
+      traderKey: "smith",
+      patch: { description: "Updated" }
+    }, "metadata-gm");
+    const deniedAudit = request("trader.audit.record", fixture.users.stranger.id, audit.payload, "audit-stranger");
+    const deniedMetadata = request("trader.metadata.update", fixture.users.player.id, metadata.payload, "metadata-player");
+
+    await dispatch(moduleApi, audit);
+    await dispatch(moduleApi, metadata);
+    await dispatch(moduleApi, deniedAudit);
+    await dispatch(moduleApi, deniedMetadata);
+
+    assert.deepEqual(auditCalls, [{
+      operation: audit.payload.operation,
+      options: { senderId: fixture.users.player.id }
+    }]);
+    assert.deepEqual(metadataCalls, [["city-a", "smith", { description: "Updated" }]]);
+    assert.equal(result(fixture, audit.requestId)?.ok, true);
+    assert.equal(result(fixture, metadata.requestId)?.ok, true);
+    assert.equal(result(fixture, deniedAudit.requestId)?.error?.code, "unauthorized");
+    assert.equal(result(fixture, deniedMetadata.requestId)?.error?.code, "unauthorized");
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("inactive GM routes trader audit through the typed command and raw audit messages do nothing", async () => {
+  const fixture = installFixture({ currentUserId: "gm-b" });
+  try {
+    const moduleApi = new RebreyaMainModule();
+    let rawAuditCalls = 0;
+    let refreshCalls = 0;
+    moduleApi.traderService.recordTradeAudit = async () => {
+      rawAuditCalls += 1;
+      return { id: "raw" };
+    };
+    moduleApi.refreshOpenApps = async () => {
+      refreshCalls += 1;
+    };
+
+    const pending = moduleApi.recordTraderAudit({
+      actorId: fixture.actors.character.id,
+      type: "purchase"
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    await new Promise((resolve) => setImmediate(resolve));
+    const outbound = fixture.emitted[0];
+    assert.deepEqual(outbound, {
+      type: COMMAND_REQUEST_TYPE,
+      command: "trader.audit.record",
+      requestId: outbound?.requestId,
+      senderId: fixture.users.gmB.id,
+      payload: {
+        operation: {
+          actorId: fixture.actors.character.id,
+          type: "purchase"
+        }
+      }
+    });
+    assert.equal(fixture.writes.length, 0);
+
+    await moduleApi.handleSocketMessage({
+      type: COMMAND_RESULT_TYPE,
+      command: outbound.command,
+      requestId: outbound.requestId,
+      forUserId: fixture.users.gmB.id,
+      senderId: fixture.users.gmA.id,
+      ok: true,
+      data: { id: "audit-authoritative" }
+    });
+    assert.deepEqual(await pending, { id: "audit-authoritative" });
+    assert.equal(fixture.writes.length, 0);
+    assert.equal(refreshCalls, 1);
+
+    await moduleApi.handleSocketMessage({
+      type: "trader-audit",
+      senderId: fixture.users.player.id,
+      payload: { actorId: fixture.actors.character.id, type: "purchase" }
+    });
+    assert.equal(rawAuditCalls, 0);
+  }
+  finally {
+    fixture.restore();
+  }
+});
 
 test("live module composes one shared durable trader engine", () => {
   const fixture = installFixture();

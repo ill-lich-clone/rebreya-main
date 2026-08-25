@@ -120,6 +120,12 @@ import {
   isValidEconomyTradeRouteUpdateMetadataPayload,
   isValidEconomyWorldDataResetPayload
 } from "./application/economy-mutation-commands.js";
+import {
+  TRADER_AUDIT_RECORD_COMMAND,
+  TRADER_METADATA_UPDATE_COMMAND,
+  isValidTraderAuditRecordPayload,
+  isValidTraderMetadataUpdatePayload
+} from "./application/trader-public-mutation-commands.js";
 import { WorldMutationCoordinator } from "./application/world-mutation-coordinator.js";
 import { LootClaimService } from "./application/loot-claim-service.js";
 import {
@@ -285,7 +291,6 @@ const SOCKET_EVENT_LOOTGEN_CLAIM_ROW = "lootgen-claim-row";
 const SOCKET_EVENT_LOOTGEN_CLAIM_COINS = "lootgen-claim-coins";
 const INVENTORY_INGRESS_LOOTGEN_COMMAND = "inventory.ingress.lootgen";
 const INVENTORY_INGRESS_DIRECT_COMMAND = "inventory.ingress.direct";
-const SOCKET_EVENT_TRADER_AUDIT = "trader-audit";
 const SOCKET_EVENT_DOWNTIME_CREATE_REQUEST = "downtime-create-request";
 const SOCKET_EVENT_DOWNTIME_CREATE_RESULT = "downtime-create-result";
 const SOCKET_EVENT_DOWNTIME_UPDATE_REQUEST = "downtime-update-request";
@@ -312,7 +317,6 @@ const LEGACY_WORLD_MUTATION_SOCKET_TYPES = new Set([
   SOCKET_EVENT_INVENTORY_IMPORT_REQUEST,
   SOCKET_EVENT_INVENTORY_SOURCE_DEPLETION_REQUEST,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_REQUEST,
-  SOCKET_EVENT_TRADER_AUDIT,
   SOCKET_EVENT_LOOTGEN_CLAIM_ROW,
   SOCKET_EVENT_LOOTGEN_CLAIM_COINS
 ]);
@@ -1256,7 +1260,7 @@ export class RebreyaMainModule {
       buildDefaultGroupState
     });
     this.traderStateRepository = new TraderStateRepository({
-      coordinator: this.worldMutationCoordinator,
+      mutationGateway: this.privilegedMutationGateway,
       gameProvider: () => globalThis.game,
       normalizeState: normalizeTraderState
     });
@@ -1718,6 +1722,30 @@ export class RebreyaMainModule {
         await this.traderService.resetState();
         return this.repository.resetWorldData();
       }
+    });
+    const resolveTraderActor = (actorId) => (
+      globalThis.game?.actors?.get?.(actorId)
+      ?? globalThis.game?.actors?.contents?.find?.((actor) => String(actor?.id) === String(actorId))
+      ?? null
+    );
+    this.privilegedMutationGateway.registerCommand(TRADER_AUDIT_RECORD_COMMAND, {
+      validate: isValidTraderAuditRecordPayload,
+      authorize: (payload, { sender }) => traderActorIsOwnedByUser(
+        resolveTraderActor(payload.operation.actorId),
+        sender
+      ),
+      execute: (payload, { sender }) => this.traderService.recordTradeAudit(payload.operation, {
+        senderId: sender.id
+      })
+    });
+    this.privilegedMutationGateway.registerCommand(TRADER_METADATA_UPDATE_COMMAND, {
+      validate: isValidTraderMetadataUpdatePayload,
+      authorize: (_payload, { sender }) => sender?.isGM === true,
+      execute: (payload) => this.traderService.updateTraderMetadata(
+        payload.cityId,
+        payload.traderKey,
+        payload.patch
+      )
     });
     this.socketCommandBus.register(GROUP_CALENDAR_PATCH_COMMAND, {
       validate: isValidCalendarPatchPayload,
@@ -2541,16 +2569,6 @@ export class RebreyaMainModule {
             error: error?.message ?? String(error)
           });
         }
-      }
-      return;
-    }
-
-    if (message.type === SOCKET_EVENT_TRADER_AUDIT) {
-      if (game.user?.isGM) {
-        await this.traderService.recordTradeAudit(message.payload ?? {}, {
-          senderId: message.senderId ?? ""
-        });
-        await this.refreshOpenApps();
       }
       return;
     }
@@ -3764,20 +3782,11 @@ export class RebreyaMainModule {
   }
 
   async recordTraderAudit(operation = {}) {
-    if (game.user?.isGM) {
-      const record = await this.traderService.recordTradeAudit(operation, {
-        senderId: operation.senderId ?? game.user?.id ?? ""
-      });
-      await this.refreshOpenApps();
-      return record;
-    }
-
-    game.socket?.emit?.(SOCKET_CHANNEL, {
-      type: SOCKET_EVENT_TRADER_AUDIT,
-      payload: foundry.utils.deepClone(operation),
-      senderId: game.user?.id ?? ""
+    const record = await this.privilegedMutationGateway.mutate(TRADER_AUDIT_RECORD_COMMAND, {
+      operation
     });
-    return null;
+    await this.refreshOpenApps();
+    return record;
   }
 
   getTradeAuditLog() {
@@ -3799,7 +3808,11 @@ export class RebreyaMainModule {
   }
 
   async updateTraderMetadata(cityId, traderKey, patch) {
-    const trader = await this.traderService.updateTraderMetadata(cityId, traderKey, patch);
+    const trader = await this.privilegedMutationGateway.mutate(TRADER_METADATA_UPDATE_COMMAND, {
+      cityId,
+      traderKey,
+      patch
+    });
     await this.refreshOpenApps();
     return trader;
   }

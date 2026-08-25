@@ -383,14 +383,17 @@ function normalizeTradeAuditRecord(operation = {}, { senderId = "" } = {}) {
     operation.totalCopper,
     type === "sale" ? operation.netPayoutCopper : operation.totalPriceCopper
   )));
-  const safeSenderId = String(senderId || operation.senderId || "").trim();
+  const authoritativeSenderId = String(senderId ?? "").trim();
+  const safeSenderId = authoritativeSenderId || String(operation.senderId ?? "").trim();
 
   const record = {
     id: String(operation.id ?? operation.transactionId ?? "").trim() || createTradeAuditId(),
     type,
     createdAt: Math.max(0, Math.floor(toNumber(operation.createdAt, Date.now()))),
     senderId: safeSenderId,
-    senderName: String(operation.senderName ?? getUserLabel(safeSenderId)).trim(),
+    senderName: authoritativeSenderId
+      ? getUserLabel(safeSenderId)
+      : String(operation.senderName ?? getUserLabel(safeSenderId)).trim(),
     actorId: String(operation.actorId ?? "").trim(),
     actorName: String(operation.actorName ?? "").trim(),
     cityId: String(operation.cityId ?? "").trim(),
@@ -1708,19 +1711,18 @@ export class TraderService {
   }
 
   async #setState(nextState) {
-    if (this.stateRepository) {
-      const normalized = normalizeTraderState(nextState);
-      await this.stateRepository.mutate((state) => {
-        for (const key of Object.keys(state)) {
-          delete state[key];
-        }
-        Object.assign(state, cloneTraderState(normalized));
-      });
-      return normalized;
+    if (typeof this.stateRepository?.mutate !== "function") {
+      throw new Error("Trader state repository is unavailable");
     }
 
-    await game.settings.set(MODULE_ID, SETTINGS_KEYS.TRADER_STATE, nextState);
-    return nextState;
+    const normalized = normalizeTraderState(nextState);
+    await this.stateRepository.mutate((state) => {
+      for (const key of Object.keys(state)) {
+        delete state[key];
+      }
+      Object.assign(state, cloneTraderState(normalized));
+    });
+    return normalized;
   }
 
   async #writeState(mutator, { guard = null } = {}) {
@@ -1730,21 +1732,16 @@ export class TraderService {
     const executionGuard = typeof guard === "function" ? guard : null;
     executionGuard?.();
 
-    if (this.stateRepository) {
-      return this.stateRepository.mutate(async (state) => {
-        executionGuard?.();
-        const result = await mutator(state);
-        executionGuard?.();
-        return result;
-      });
+    if (typeof this.stateRepository?.mutate !== "function") {
+      throw new Error("Trader state repository is unavailable");
     }
 
-    const state = this.#getState();
-    const result = await mutator(state);
-    executionGuard?.();
-    await this.#setState(state);
-    executionGuard?.();
-    return result;
+    return this.stateRepository.mutate(async (state) => {
+      executionGuard?.();
+      const result = await mutator(state);
+      executionGuard?.();
+      return result;
+    });
   }
 
   async #recordTradeAudit(operation = {}) {
