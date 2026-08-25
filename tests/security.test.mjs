@@ -24,12 +24,14 @@ test("scene storage and durability are owned by Rebreya and add no retired exter
   assert.equal(manifest.relationships.requires.some((entry) => entry.id === "item-piles"), false);
   assert.doesNotMatch([mainSource, ...runtimeSources].join("\n"), /item.?piles|itempiles/iu);
   for (const apiName of [
-    "openStorage", "readStorageJournal", "claimStorageRow", "claimStorageCoins", "configureStorageToken", "dropStorageCoinsToScene"
+    "openStorage", "readStorageJournal", "claimStorageRow", "claimStorageCoins", "configureStorageToken",
+    "dropStorageCoinsToScene", "dropStorageJournalToScene"
   ]) {
     assert.match(mainSource, new RegExp(`\\b${apiName}\\b`, "u"));
   }
   assert.match(mainSource, /STORAGE_JOURNAL_READ_COMMAND\s*=\s*"storage\.journal\.read"/u);
   assert.match(mainSource, /STORAGE_COIN_DROP_COMMAND\s*=\s*"storage\.coin\.drop"/u);
+  assert.match(mainSource, /STORAGE_JOURNAL_DROP_COMMAND\s*=\s*"storage\.journal\.drop-to-scene"/u);
   assert.doesNotMatch([mainSource, ...runtimeSources].join("\n"), /(?:currency|coin)(?:Store|Repository)/iu);
 });
 

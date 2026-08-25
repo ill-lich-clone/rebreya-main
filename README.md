@@ -307,8 +307,9 @@ await api.setCombatStatus("actor-id", "frightened", { value: 2 });
 - `recordTraderAudit`, `getTradeAuditLog`, `rollbackTraderAuditEntry`.
 - `shareLootgenResult`, `createLootgenChatMessage`, `claimLootgenChatRow`, `claimLootgenChatCoins`, `claimLootgenChatRowToInventory`, `claimLootgenChatAllToInventory`, `restoreLootgenClearFromChat`, `addLootgenRowToInventory`, `addLootgenRowsToInventory`, `addLootgenCoinsToInventory`.
 - `listLootgenTemplates`, `getLootgenTemplate`, `saveLootgenTemplate`, `removeLootgenTemplate`.
-- `openStorageApp`, `getStorageSnapshot`, `markStorageActor`, `configureStorageToken`, `addManualStorageItem`, `removeManualStorageItem`, `resetStorageToken`, `openStorage`, `readStorageJournal(tokenUuid, rowId, request)`, `claimStorageRow`, `claimStorageCoins`, `claimStorageAll(tokenUuid, destination, mutationId, request)`, `inspectStorageDepositSource(dragData)`, `depositStorageItem`, `dropStorageItemToScene`.
+- `openStorageApp`, `getStorageSnapshot`, `markStorageActor`, `configureStorageToken`, `addManualStorageItem`, `removeManualStorageItem`, `resetStorageToken`, `openStorage`, `readStorageJournal(tokenUuid, rowId, request)`, `claimStorageRow`, `claimStorageCoins`, `claimStorageAll(tokenUuid, destination, mutationId, request)`, `inspectStorageDepositSource(dragData)`, `depositStorageItem`, `dropStorageItemToScene`, `dropStorageJournalToScene`.
 - `dropStorageCoinsToScene(itemUuid, denomination, { sceneId, x, y, quantity, characterTokenUuid?, mutationId? })` — managed Coin Item drop. Для non-GM всегда отправляет exact `storage.coin.drop` active-GM command; при отсутствии `mutationId` API создаёт стабильный ID текущей операции.
+- `dropStorageJournalToScene(journalUuid, { sceneId, x, y, mutationId? })` отправляет exact `{journalUuid,mutationId,sceneId,x,y}` через GM-only typed command `storage.journal.drop-to-scene`; active GM вызывает тот же command service напрямую, остальные клиенты маршрутизируют запрос через active GM. Authoritative правила создания, идемпотентности и presentation описаны в разделе хранилищ.
 - `installItemUpgrade`, `removeItemUpgrade`, `setItemUpgradeCapacity`.
 
 ### Бой и космология

@@ -85,6 +85,12 @@ test("main registers the storage deposit socket API and current cache keys", asy
   assert.match(main, /register\(STORAGE_DROP_ITEM_COMMAND,\s*\{/u);
   assert.match(main, /this\.storageCommandService\.dropItemToScene\(payload,\s*\{ sender \}\)/u);
   assert.match(main, /async dropStorageItemToScene\(/u);
+  assert.match(main, /isValidStorageJournalDropPayload/u);
+  assert.match(main, /STORAGE_JOURNAL_DROP_COMMAND\s*=\s*"storage\.journal\.drop-to-scene"/u);
+  assert.match(main, /register\(STORAGE_JOURNAL_DROP_COMMAND,\s*\{/u);
+  assert.match(main, /authorize:\s*\(_payload,\s*\{ sender \}\)\s*=>\s*sender\?\.isGM\s*===\s*true/u);
+  assert.match(main, /this\.storageCommandService\.dropJournalToScene\(payload,\s*\{ sender \}\)/u);
+  assert.match(main, /async dropStorageJournalToScene\(/u);
   assert.doesNotMatch(main, /BuiltinCoinTemplateService|builtinCoinTemplateService|restoreBuiltinCoinTemplates/u);
   assert.match(main, /this\.storageJournalReader = new StorageJournalReader\(\{/u);
   assert.match(main, /registerStorageTokenDropHooks\(moduleApi/u);
@@ -131,12 +137,14 @@ test("main registers the storage deposit socket API and current cache keys", asy
 
 test("real storage command registrations validate envelopes and execute their composed handlers", async () => {
   const gm = { id: "gm", isGM: true, active: true };
-  const runtime = createModuleRuntime({ user: gm, users: [gm] });
+  const player = { id: "player", isGM: false, active: true };
+  const runtime = createModuleRuntime({ user: gm, users: [gm, player] });
   try {
     const {
       RebreyaMainModule,
       STORAGE_CLAIM_ALL_COMMAND,
       STORAGE_COIN_DROP_COMMAND,
+      STORAGE_JOURNAL_DROP_COMMAND,
       STORAGE_JOURNAL_READ_COMMAND
     } = await import(
       `../scripts/main.js?storage-registration=${Date.now()}`
@@ -152,6 +160,10 @@ test("real storage command registrations validate envelopes and execute their co
       async dropCoinsToScene(payload, context) {
         calls.push({ command: "coins", payload, context });
         return { created: true };
+      },
+      async dropJournalToScene(payload, context) {
+        calls.push({ command: "journal-drop", payload, context });
+        return { changed: true, created: true, merged: false, duplicate: false };
       },
       async claimAll(payload, context) {
         calls.push({ command: "bulk", payload, context });
@@ -170,6 +182,13 @@ test("real storage command registrations validate envelopes and execute their co
       x: 100,
       y: 200
     };
+    const journalDropPayload = {
+      journalUuid: "JournalEntry.notes",
+      mutationId: "journal-drop-command",
+      sceneId: "Scene.scene",
+      x: 100,
+      y: 200
+    };
     const bulkPayload = {
       tokenUuid: "Scene.scene.Token.chest",
       characterTokenUuid: "Scene.scene.Token.hero",
@@ -181,6 +200,7 @@ test("real storage command registrations validate envelopes and execute their co
     for (const [command, requestId, payload] of [
       [STORAGE_JOURNAL_READ_COMMAND, "journal-valid", journalPayload],
       [STORAGE_COIN_DROP_COMMAND, "coins-valid", coinPayload],
+      [STORAGE_JOURNAL_DROP_COMMAND, "journal-drop-valid", journalDropPayload],
       [STORAGE_CLAIM_ALL_COMMAND, "bulk-valid", bulkPayload]
     ]) {
       assert.equal(moduleApi.socketCommandBus.handleMessage({
@@ -195,6 +215,8 @@ test("real storage command registrations validate envelopes and execute their co
         ok: true,
         data: command === STORAGE_JOURNAL_READ_COMMAND
           ? { name: "Journal", pages: [] }
+          : command === STORAGE_JOURNAL_DROP_COMMAND
+            ? { changed: true, created: true, merged: false, duplicate: false }
           : command === STORAGE_CLAIM_ALL_COMMAND
             ? { changed: true, claimedRowIds: ["row-1"] }
             : { created: true }
@@ -203,15 +225,18 @@ test("real storage command registrations validate envelopes and execute their co
     assert.deepEqual(calls.map(({ command, payload }) => ({ command, payload })), [
       { command: "journal", payload: journalPayload },
       { command: "coins", payload: coinPayload },
+      { command: "journal-drop", payload: journalDropPayload },
       { command: "bulk", payload: bulkPayload }
     ]);
     assert.equal(calls[0].context.sender, gm);
     assert.equal(calls[1].context.sender, gm);
     assert.equal(calls[2].context.sender, gm);
+    assert.equal(calls[3].context.sender, gm);
 
     for (const [command, requestId, payload] of [
       [STORAGE_JOURNAL_READ_COMMAND, "journal-invalid", { ...journalPayload, rowId: "" }],
       [STORAGE_COIN_DROP_COMMAND, "coins-invalid", { ...coinPayload, denomination: "electrum" }],
+      [STORAGE_JOURNAL_DROP_COMMAND, "journal-drop-invalid", { ...journalDropPayload, extra: true }],
       [STORAGE_CLAIM_ALL_COMMAND, "bulk-invalid", { ...bulkPayload, target: {} }]
     ]) {
       assert.equal(moduleApi.socketCommandBus.handleMessage({
@@ -219,7 +244,17 @@ test("real storage command registrations validate envelopes and execute their co
       }, { transportSenderId: gm.id }), true);
       assert.equal((await waitForSocketResult(runtime.emitted, requestId))?.error?.code, "invalid-payload");
     }
-    assert.equal(calls.length, 3);
+    assert.equal(calls.length, 4);
+
+    assert.equal(moduleApi.socketCommandBus.handleMessage({
+      type: COMMAND_REQUEST_TYPE,
+      command: STORAGE_JOURNAL_DROP_COMMAND,
+      requestId: "journal-drop-player",
+      senderId: player.id,
+      payload: journalDropPayload
+    }, { transportSenderId: player.id }), true);
+    assert.equal((await waitForSocketResult(runtime.emitted, "journal-drop-player"))?.error?.code, "unauthorized");
+    assert.equal(calls.length, 4);
   }
   finally {
     runtime.restore();
@@ -344,6 +379,72 @@ test("real public coin API uses active-GM direct execution and player socket rou
     moduleApi.socketCommandBus.handleMessage({
       type: COMMAND_RESULT_TYPE,
       command: STORAGE_COIN_DROP_COMMAND,
+      requestId: outbound.requestId,
+      forUserId: player.id,
+      senderId: gm.id,
+      ok: true,
+      data: { routed: true }
+    });
+    assert.deepEqual(await pending, { routed: true });
+  }
+  finally {
+    runtime.restore();
+  }
+});
+
+test("real public Journal scene API uses active-GM direct execution and player socket routing", async () => {
+  const gm = { id: "gm", isGM: true, active: true };
+  const player = { id: "player", isGM: false, active: true };
+  const runtime = createModuleRuntime({ user: gm, users: [gm, player] });
+  try {
+    const { RebreyaMainModule, STORAGE_JOURNAL_DROP_COMMAND } = await import(
+      `../scripts/main.js?storage-journal-api=${Date.now()}`
+    );
+    const moduleApi = new RebreyaMainModule();
+    const directCalls = [];
+    moduleApi.storageCommandService = {
+      async dropJournalToScene(payload, context) {
+        directCalls.push({ payload, context });
+        return { direct: true };
+      }
+    };
+    const request = { sceneId: "scene", x: 100, y: 200, mutationId: "gm-journal-drop" };
+    assert.deepEqual(
+      await moduleApi.dropStorageJournalToScene(" JournalEntry.notes ", request),
+      { direct: true }
+    );
+    assert.deepEqual(directCalls[0].payload, {
+      journalUuid: "JournalEntry.notes",
+      mutationId: "gm-journal-drop",
+      sceneId: "scene",
+      x: 100,
+      y: 200
+    });
+    assert.equal(directCalls[0].context.sender, gm);
+
+    globalThis.game.user = player;
+    const pending = moduleApi.dropStorageJournalToScene("JournalEntry.notes", {
+      ...request,
+      mutationId: "player-journal-drop"
+    });
+    const outbound = runtime.emitted.at(-1).message;
+    assert.deepEqual(outbound, {
+      type: COMMAND_REQUEST_TYPE,
+      command: STORAGE_JOURNAL_DROP_COMMAND,
+      requestId: outbound.requestId,
+      senderId: player.id,
+      payload: {
+        journalUuid: "JournalEntry.notes",
+        mutationId: "player-journal-drop",
+        sceneId: "scene",
+        x: 100,
+        y: 200
+      }
+    });
+    assert.equal(directCalls.length, 1);
+    moduleApi.socketCommandBus.handleMessage({
+      type: COMMAND_RESULT_TYPE,
+      command: STORAGE_JOURNAL_DROP_COMMAND,
       requestId: outbound.requestId,
       forUserId: player.id,
       senderId: gm.id,

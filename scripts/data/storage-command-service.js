@@ -256,6 +256,15 @@ export function isValidStorageCoinDropPayload(payload) {
     && isTrimmedString(payload.mutationId, { required: true, max: 160 });
 }
 
+export function isValidStorageJournalDropPayload(payload) {
+  return hasExactKeys(payload, ["journalUuid", "mutationId", "sceneId", "x", "y"])
+    && isTrimmedString(payload.journalUuid, { required: true })
+    && isTrimmedString(payload.mutationId, { required: true, max: 160 })
+    && isTrimmedString(payload.sceneId, { required: true, max: 160 })
+    && Number.isFinite(payload.x)
+    && Number.isFinite(payload.y);
+}
+
 export function isValidStorageTokenCharacterPayload(payload) {
   return hasExactKeys(payload, ["actorUuid", "characterTokenUuid", "mutationId", "tokenUuid"])
     && isTrimmedString(payload.tokenUuid, { required: true })

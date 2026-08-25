@@ -144,6 +144,7 @@ import {
   isValidStorageCoinDropPayload,
   isValidStorageDepositPayload,
   isValidStorageDropItemPayload,
+  isValidStorageJournalDropPayload,
   isValidStorageJournalReadPayload,
   isValidStorageOpenPayload,
   isValidStorageRestorePortablePayload,
@@ -303,6 +304,7 @@ export const STORAGE_CLAIM_COINS_COMMAND = "storage.claim-coins";
 export const STORAGE_CLAIM_ALL_COMMAND = "storage.claim-all";
 export const STORAGE_DEPOSIT_COMMAND = "storage.deposit";
 export const STORAGE_COIN_DROP_COMMAND = "storage.coin.drop";
+export const STORAGE_JOURNAL_DROP_COMMAND = "storage.journal.drop-to-scene";
 export const STORAGE_DROP_ITEM_COMMAND = "storage.drop-item-to-scene";
 export const STORAGE_RESTORE_PORTABLE_COMMAND = "storage.restore-portable";
 export const STORAGE_TOKEN_CHARACTER_COMMAND = "storage.token-to-character";
@@ -1795,6 +1797,11 @@ export class RebreyaMainModule {
       validate: isValidStorageCoinDropPayload,
       authorize: (_payload, { sender }) => Boolean(sender),
       execute: (payload, { sender }) => this.storageCommandService.dropCoinsToScene(payload, { sender })
+    });
+    this.socketCommandBus.register(STORAGE_JOURNAL_DROP_COMMAND, {
+      validate: isValidStorageJournalDropPayload,
+      authorize: (_payload, { sender }) => sender?.isGM === true,
+      execute: (payload, { sender }) => this.storageCommandService.dropJournalToScene(payload, { sender })
     });
     this.socketCommandBus.register(STORAGE_DROP_ITEM_COMMAND, {
       validate: isValidStorageDropItemPayload,
@@ -4016,6 +4023,19 @@ export class RebreyaMainModule {
     return isActiveGmClient(globalThis.game)
       ? this.storageCommandService.dropItemToScene(payload, { sender: globalThis.game?.user })
       : this.socketCommandBus.request(STORAGE_DROP_ITEM_COMMAND, payload);
+  }
+
+  async dropStorageJournalToScene(journalUuid, request = {}) {
+    const payload = {
+      journalUuid: cleanSocketId(journalUuid),
+      sceneId: cleanSocketId(request.sceneId),
+      x: Number(request.x),
+      y: Number(request.y),
+      mutationId: cleanSocketId(request.mutationId) || createSocketRequestId("storage-journal-scene")
+    };
+    return isActiveGmClient(globalThis.game)
+      ? this.storageCommandService.dropJournalToScene(payload, { sender: globalThis.game?.user })
+      : this.socketCommandBus.request(STORAGE_JOURNAL_DROP_COMMAND, payload);
   }
 
   async dropStorageCoinsToScene(itemUuid, denomination, request = {}) {

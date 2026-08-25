@@ -968,6 +968,23 @@ test("managed coin scene payload validator accepts only the exact typed command"
   }
 });
 
+test("Journal scene drop accepts only the exact GM command payload", () => {
+  assert.equal(typeof storageCommands.isValidStorageJournalDropPayload, "function");
+  const { isValidStorageJournalDropPayload } = storageCommands;
+  const payload = {
+    journalUuid: "JournalEntry.notes",
+    mutationId: "journal-scene-1",
+    sceneId: "scene",
+    x: 100,
+    y: 200
+  };
+  assert.equal(isValidStorageJournalDropPayload(payload), true);
+  assert.equal(isValidStorageJournalDropPayload({ ...payload, journalUuid: " notes " }), false);
+  assert.equal(isValidStorageJournalDropPayload({ ...payload, x: Number.NaN }), false);
+  assert.equal(isValidStorageJournalDropPayload({ ...payload, characterTokenUuid: "Token.hero" }), false);
+  assert.equal(isValidStorageJournalDropPayload({ ...payload, extra: true }), false);
+});
+
 test("managed coin drop re-resolves authority, consumes an owned stack, and transfers only manual coins", async () => {
   const order = [];
   const consumed = [];
