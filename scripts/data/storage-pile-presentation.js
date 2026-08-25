@@ -1,4 +1,5 @@
 import { MODULE_ID } from "../constants.js";
+import { isStorageJournalRow } from "./storage-container-snapshot.js";
 
 const ASSET_ROOT = `modules/${MODULE_ID}/assets/storage/piles`;
 const COIN_PRESENTATIONS = Object.freeze([
@@ -30,6 +31,8 @@ const DEFINITIONS = [
   ["equipment", "Снаряжение", "Куча снаряжения", "equipment.png"],
   ["treasure", "Сокровища", "Куча сокровищ", "treasure.png"],
   ["materials", "Материал", "Куча материалов", "materials.png"],
+  ["journal-note", "", "", "journal-note.png"],
+  ["journal-notes", "", "Куча заметок", "journal-notes.png"],
   ["coins", "", "Куча монет", "coins.png"],
   ["mixed-items", "", "Куча предметов", "mixed-items.png"]
 ];
@@ -46,55 +49,38 @@ export const STORAGE_PILE_PRESENTATIONS = Object.freeze(DEFINITIONS.map(([
 
 const GENERIC_PRESENTATION = STORAGE_PILE_PRESENTATIONS.at(-1);
 const COIN_PRESENTATION = STORAGE_PILE_PRESENTATIONS.find((entry) => entry.key === "coins");
-const TREASURE_PRESENTATION = STORAGE_PILE_PRESENTATIONS.find((entry) => entry.key === "treasure");
+const JOURNAL_NOTE_PRESENTATION = STORAGE_PILE_PRESENTATIONS.find((entry) => entry.key === "journal-note");
+const JOURNAL_NOTES_PRESENTATION = STORAGE_PILE_PRESENTATIONS.find((entry) => entry.key === "journal-notes");
 const PRESENTATION_BY_TYPE = new Map(STORAGE_PILE_PRESENTATIONS
   .filter((entry) => entry.normalizedTypeLabel)
   .map((entry) => [entry.normalizedTypeLabel, entry]));
 
-export function deriveGroundPilePresentation(rows = [], { coins = {}, preserveEmptyCoinPile = false } = {}) {
-  const visibleRows = (Array.isArray(rows) ? rows : []).filter((row) => (
-    row
-    && typeof row === "object"
-    && clean(row.rowKind).toLowerCase() !== "journal"
-    && clean(row.sourceType).toLowerCase() !== "journal"
+export function deriveGroundPilePresentation(rows = [], {
+  coins = {},
+  preserveEmptyCoinPile = false,
+  readJournalRowIds = []
+} = {}) {
+  const availableRows = (Array.isArray(rows) ? rows : [])
+    .filter((row) => row && typeof row === "object");
+  const referenceRows = availableRows.filter((row) => isStorageJournalRow(row));
+  const ordinaryRows = availableRows.filter((row) => !isStorageJournalRow(row));
+  const journalRows = referenceRows.filter((row) => (
+    row.rowKind === "journal"
+    && clean(row.sourceType).toLowerCase() === "journal"
+    && clean(row.sourceId)
+    && clean(row.rowId)
+    && Number(row.quantity) === 1
   ));
+  const readIds = new Set((Array.isArray(readJournalRowIds) ? readJournalRowIds : [])
+    .map(clean)
+    .filter(Boolean));
   const positiveDenominations = COIN_PRESENTATIONS.filter(({ denomination }) => {
     const amount = Number(coins?.[denomination] ?? 0);
     return Number.isFinite(amount) && Math.trunc(amount) > 0;
   });
-  if (!visibleRows.length && positiveDenominations.length === 1) {
-    const [{ name, img }] = positiveDenominations;
-    return { name, img, categoryKey: COIN_PRESENTATION.key };
-  }
-  if (!visibleRows.length && positiveDenominations.length > 1) {
-    return {
-      name: COIN_PRESENTATION.name,
-      img: COIN_PRESENTATION.img,
-      categoryKey: COIN_PRESENTATION.key
-    };
-  }
-  if (!visibleRows.length && preserveEmptyCoinPile === true) {
-    return {
-      name: `${COIN_PRESENTATION.name} (пусто)`,
-      img: COIN_PRESENTATION.img,
-      categoryKey: COIN_PRESENTATION.key
-    };
-  }
 
-  const hasCoins = positiveDenominations.length > 0;
-  const allTreasure = visibleRows.length > 0 && visibleRows.every((row) => (
-    normalizeStoragePileCategory(row.typeLabel ?? row.itemData?.type) === TREASURE_PRESENTATION.normalizedTypeLabel
-  ));
-  if (hasCoins && allTreasure) {
-    return {
-      name: TREASURE_PRESENTATION.name,
-      img: TREASURE_PRESENTATION.img,
-      categoryKey: TREASURE_PRESENTATION.key
-    };
-  }
-
-  if (visibleRows.length === 1) {
-    const row = visibleRows[0];
+  if (ordinaryRows.length === 1) {
+    const row = ordinaryRows[0];
     const quantity = Math.max(1, Math.trunc(Number(
       row.quantity ?? row.itemData?.system?.quantity ?? 1
     )) || 1);
@@ -106,8 +92,8 @@ export function deriveGroundPilePresentation(rows = [], { coins = {}, preserveEm
     };
   }
 
-  if (visibleRows.length > 1) {
-    const labels = new Set(visibleRows.map((row) => normalizeStoragePileCategory(
+  if (ordinaryRows.length > 1) {
+    const labels = new Set(ordinaryRows.map((row) => normalizeStoragePileCategory(
       row.typeLabel ?? row.itemData?.type
     )).filter(Boolean));
     if (labels.size === 1) {
@@ -116,6 +102,47 @@ export function deriveGroundPilePresentation(rows = [], { coins = {}, preserveEm
         return { name: presentation.name, img: presentation.img, categoryKey: presentation.key };
       }
     }
+    return {
+      name: GENERIC_PRESENTATION.name,
+      img: GENERIC_PRESENTATION.img,
+      categoryKey: GENERIC_PRESENTATION.key
+    };
+  }
+
+  if (positiveDenominations.length === 1) {
+    const [{ name, img }] = positiveDenominations;
+    return { name, img, categoryKey: COIN_PRESENTATION.key };
+  }
+  if (positiveDenominations.length > 1) {
+    return {
+      name: COIN_PRESENTATION.name,
+      img: COIN_PRESENTATION.img,
+      categoryKey: COIN_PRESENTATION.key
+    };
+  }
+  if (preserveEmptyCoinPile === true) {
+    return {
+      name: `${COIN_PRESENTATION.name} (пусто)`,
+      img: COIN_PRESENTATION.img,
+      categoryKey: COIN_PRESENTATION.key
+    };
+  }
+
+  if (journalRows.length === 1) {
+    const [row] = journalRows;
+    const name = clean(row.name) || "Запись";
+    return {
+      name: readIds.has(clean(row.rowId)) ? `${name} (прочитано)` : name,
+      img: JOURNAL_NOTE_PRESENTATION.img,
+      categoryKey: JOURNAL_NOTE_PRESENTATION.key
+    };
+  }
+  if (journalRows.length > 1) {
+    return {
+      name: JOURNAL_NOTES_PRESENTATION.name,
+      img: JOURNAL_NOTES_PRESENTATION.img,
+      categoryKey: JOURNAL_NOTES_PRESENTATION.key
+    };
   }
 
   return {

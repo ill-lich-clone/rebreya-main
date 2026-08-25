@@ -40,6 +40,69 @@ test("Journal references do not turn a single ground item into a pile", () => {
   });
 });
 
+test("canonical Journal-only piles use unread, read, and multi-note presentations", () => {
+  const journal = (rowId, name) => ({
+    rowKind: "journal",
+    rowId,
+    stackKey: "",
+    sourceId: `JournalEntry.${rowId}`,
+    sourceType: "journal",
+    name,
+    img: "icons/book.webp",
+    quantity: 1
+  });
+
+  assert.deepEqual(deriveGroundPilePresentation([
+    journal("gartar", "Заметки Гартара")
+  ]), {
+    name: "Заметки Гартара",
+    img: `modules/${MODULE_ID}/assets/storage/piles/journal-note.png`,
+    categoryKey: "journal-note"
+  });
+  assert.equal(deriveGroundPilePresentation(
+    [journal("gartar", "Заметки Гартара")],
+    { readJournalRowIds: ["gartar"] }
+  ).name, "Заметки Гартара (прочитано)");
+  assert.deepEqual(deriveGroundPilePresentation([
+    journal("first", "Первая"),
+    journal("second", "Вторая")
+  ]), {
+    name: "Куча заметок",
+    img: `modules/${MODULE_ID}/assets/storage/piles/journal-notes.png`,
+    categoryKey: "journal-notes"
+  });
+});
+
+test("ordinary rows and coins keep priority over Journal-only presentation", () => {
+  const journal = {
+    rowKind: "journal",
+    rowId: "note",
+    stackKey: "",
+    sourceId: "JournalEntry.note",
+    sourceType: "journal",
+    name: "Запись",
+    quantity: 1
+  };
+  assert.deepEqual(deriveGroundPilePresentation([
+    { name: "Книга", img: "icons/book.webp", typeLabel: "Снаряжение", quantity: 1 },
+    journal
+  ]), {
+    name: "Книга",
+    img: "icons/book.webp",
+    categoryKey: "single"
+  });
+  assert.deepEqual(deriveGroundPilePresentation([journal], { coins: { gp: 2 } }), {
+    name: "Золотая монета",
+    img: "icons/commodities/currency/coins-plain-gold.webp",
+    categoryKey: "coins"
+  });
+  assert.deepEqual(deriveGroundPilePresentation([journal], { preserveEmptyCoinPile: true }), {
+    name: "Куча монет (пусто)",
+    img: `modules/${MODULE_ID}/assets/storage/piles/coins.png`,
+    categoryKey: "coins"
+  });
+});
+
 test("ground pile presentation derives same-category and mixed pile tokens", () => {
   const weapons = deriveGroundPilePresentation([
     { name: "Меч", typeLabel: "Оружие", quantity: 1 },
@@ -87,9 +150,9 @@ test("rows with coins preserve treasure and existing ordinary row presentation r
   assert.deepEqual(deriveGroundPilePresentation([
     { name: "Рубин", img: "icons/ruby.webp", typeLabel: "Сокровища", quantity: 1 }
   ], { coins: { gp: 3 } }), {
-    name: "Куча сокровищ",
-    img: `modules/${MODULE_ID}/assets/storage/piles/treasure.png`,
-    categoryKey: "treasure"
+    name: "Рубин",
+    img: "icons/ruby.webp",
+    categoryKey: "single"
   });
   assert.deepEqual(deriveGroundPilePresentation([
     { name: "Меч", img: "icons/sword.webp", typeLabel: "Оружие", quantity: 1 }

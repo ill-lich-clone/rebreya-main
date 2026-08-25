@@ -111,3 +111,23 @@ for (const denomination of ["cp", "sp", "gp", "pp"]) {
     assert.ok(alpha.some((value) => value > 0));
   });
 }
+
+for (const file of ["journal-note.png", "journal-notes.png"]) {
+  test(`${file} is a square PNG with real alpha transparency`, async () => {
+    const png = await readFile(new URL(`../assets/storage/piles/${file}`, import.meta.url));
+    const { header, idat } = parsePng(png);
+    assert.ok(header);
+    assert.ok([4, 6].includes(header.colorType));
+    assert.equal(header.bitDepth, 8);
+    assert.equal(header.interlace, 0);
+    assert.equal(header.width, header.height);
+    const bytesPerPixel = header.colorType === 6 ? 4 : 2;
+    const rows = unfilterRows(inflateSync(idat), header.width, header.height, bytesPerPixel);
+    const alphaOffset = bytesPerPixel - 1;
+    const alpha = rows.flatMap((row) => Array.from(
+      { length: header.width }, (_, x) => row[x * bytesPerPixel + alphaOffset]
+    ));
+    assert.ok(alpha.some((value) => value === 0));
+    assert.ok(alpha.some((value) => value > 0));
+  });
+}
