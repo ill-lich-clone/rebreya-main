@@ -102,6 +102,7 @@ import {
 } from "./application/public-economy-read-model.js";
 import { GroupStateRepository } from "./infrastructure/foundry/group-state-repository.js";
 import { TraderStateRepository } from "./infrastructure/foundry/trader-state-repository.js";
+import { WorldSettingMutationRepository } from "./infrastructure/foundry/world-setting-mutation-repository.js";
 import { getActiveGm, isActiveGmClient } from "./infrastructure/foundry/active-gm.js";
 import { SocketCommandBus } from "./infrastructure/foundry/socket-command-bus.js";
 import { UiRefreshCoordinator } from "./infrastructure/ui/ui-refresh-coordinator.js";
@@ -1211,6 +1212,10 @@ export class RebreyaMainModule {
       getActiveGm,
       isActiveGmClient,
       operationIdFactory: () => createSocketRequestId("privileged-mutation")
+    });
+    this.worldSettingMutationRepository = new WorldSettingMutationRepository({
+      mutationGateway: this.privilegedMutationGateway,
+      gameProvider: () => globalThis.game
     });
     this.uiRefreshCoordinator = new UiRefreshCoordinator();
     this.inventoryRefreshActorIds = new Set();
