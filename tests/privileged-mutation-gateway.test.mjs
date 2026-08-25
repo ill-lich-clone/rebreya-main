@@ -7,6 +7,7 @@ import {
 import { WorldMutationCoordinator } from "../scripts/application/world-mutation-coordinator.js";
 import { getActiveGm, isActiveGmClient } from "../scripts/infrastructure/foundry/active-gm.js";
 import { SocketCommandBus } from "../scripts/infrastructure/foundry/socket-command-bus.js";
+import { WorldSettingMutationRepository } from "../scripts/infrastructure/foundry/world-setting-mutation-repository.js";
 
 function createUsers(users, activeGmId = null) {
   const collection = new Map(users.map((user) => [String(user.id), user]));
@@ -79,6 +80,90 @@ function createSocketNetwork({ users, activeGmId }) {
       return client;
     }
   };
+}
+
+function createSharedSettingNetwork({ users, activeGmId, sharedSettings }) {
+  const clients = new Map();
+  const messages = [];
+
+  return {
+    messages,
+    sharedSettings,
+    setActiveGm(nextActiveGmId) {
+      for (const client of clients.values()) {
+        client.game.users.activeGM = client.game.users.get(String(nextActiveGmId)) ?? null;
+      }
+    },
+    createClient(currentUserId, options = {}) {
+      const game = createGame({ users, currentUserId, activeGmId });
+      const settingCalls = { get: 0, set: 0 };
+      game.settings = {
+        get(_moduleId, settingKey) {
+          settingCalls.get += 1;
+          return structuredClone(sharedSettings[settingKey]);
+        },
+        async set(_moduleId, settingKey, value) {
+          settingCalls.set += 1;
+          sharedSettings[settingKey] = structuredClone(value);
+          return structuredClone(sharedSettings[settingKey]);
+        }
+      };
+      game.socket.emit = (channel, message) => {
+        messages.push({ channel, message: structuredClone(message), senderId: currentUserId });
+        for (const client of clients.values()) {
+          client.commandBus.handleMessage(message, { transportSenderId: currentUserId });
+        }
+      };
+      const client = {
+        game,
+        settingCalls,
+        ...createGateway({ game, ...options })
+      };
+      client.repository = new WorldSettingMutationRepository({
+        mutationGateway: client.gateway,
+        gameProvider: () => game
+      });
+      clients.set(currentUserId, client);
+      return client;
+    }
+  };
+}
+
+function createDeferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
+function registerSharedSettingPatch(client, {
+  executions,
+  holdMutation = null,
+  observedDrafts = null
+}) {
+  client.gateway.registerCommand("settings.shared-patch", {
+    validate: (payload) => (
+      typeof payload?.field === "string"
+      && typeof payload?.value === "string"
+      && (payload.hold == null || typeof payload.hold === "boolean")
+    ),
+    authorize: (_payload, context) => context.sender.isGM === true,
+    execute: async (payload) => {
+      executions.count += 1;
+      return client.repository.mutateObject("sharedState", async (draft) => {
+        observedDrafts?.push(structuredClone(draft));
+        if (payload.hold === true) {
+          holdMutation?.started.resolve();
+          await holdMutation?.release.promise;
+        }
+        draft[payload.field] = payload.value;
+        return { field: payload.field, value: payload.value };
+      });
+    }
+  });
 }
 
 function createFakeTimers() {
@@ -501,4 +586,128 @@ test("executor guard failure after a privileged phase maps to ambiguous outcome"
     )
   );
   assert.equal(durableWrites, 1);
+});
+
+test("two instances route an inactive GM setting mutation to the active repository", async () => {
+  const gmA = { id: "gm-a", isGM: true, active: true };
+  const gmB = { id: "gm-b", isGM: true, active: true };
+  const network = createSharedSettingNetwork({
+    users: [gmA, gmB],
+    activeGmId: gmA.id,
+    sharedSettings: { sharedState: { active: "", inactive: "" } }
+  });
+  const activeClient = network.createClient(gmA.id);
+  const inactiveClient = network.createClient(gmB.id);
+  const activeExecutions = { count: 0 };
+  const inactiveExecutions = { count: 0 };
+  registerSharedSettingPatch(activeClient, { executions: activeExecutions });
+  registerSharedSettingPatch(inactiveClient, { executions: inactiveExecutions });
+
+  assert.deepEqual(
+    await inactiveClient.gateway.mutate(
+      "settings.shared-patch",
+      { field: "inactive", value: "routed" },
+      { operationId: "inactive-setting-operation" }
+    ),
+    { field: "inactive", value: "routed" }
+  );
+
+  assert.notStrictEqual(activeClient.game, inactiveClient.game);
+  assert.notStrictEqual(activeClient.coordinator, inactiveClient.coordinator);
+  assert.notStrictEqual(activeClient.gateway, inactiveClient.gateway);
+  assert.notStrictEqual(activeClient.repository, inactiveClient.repository);
+  assert.deepEqual(network.sharedSettings.sharedState, { active: "", inactive: "routed" });
+  assert.deepEqual(activeExecutions, { count: 1 });
+  assert.deepEqual(inactiveExecutions, { count: 0 });
+  assert.equal(network.messages.filter(({ message, senderId }) => (
+    message.type === "rebreya.command" && senderId === gmB.id
+  )).length, 1);
+  assert.equal(activeClient.settingCalls.set, 1);
+  assert.equal(inactiveClient.settingCalls.set, 0);
+});
+
+test("two instances reject a player setting mutation before any repository write", async () => {
+  const gm = { id: "gm-a", isGM: true, active: true };
+  const player = { id: "player-a", isGM: false, active: true };
+  const network = createSharedSettingNetwork({
+    users: [gm, player],
+    activeGmId: gm.id,
+    sharedSettings: { sharedState: { active: "", player: "" } }
+  });
+  const activeClient = network.createClient(gm.id);
+  const playerClient = network.createClient(player.id);
+  const activeExecutions = { count: 0 };
+  const playerExecutions = { count: 0 };
+  registerSharedSettingPatch(activeClient, { executions: activeExecutions });
+  registerSharedSettingPatch(playerClient, { executions: playerExecutions });
+
+  await assert.rejects(
+    playerClient.gateway.mutate(
+      "settings.shared-patch",
+      { field: "player", value: "forbidden" },
+      { operationId: "player-setting-operation" }
+    ),
+    (error) => error?.code === "unauthorized"
+  );
+
+  assert.deepEqual(network.sharedSettings.sharedState, { active: "", player: "" });
+  assert.deepEqual(activeExecutions, { count: 0 });
+  assert.deepEqual(playerExecutions, { count: 0 });
+  assert.equal(activeClient.settingCalls.set, 0);
+  assert.equal(playerClient.settingCalls.set, 0);
+});
+
+test("two instances serialize direct and routed setting edits without dropping either field", async () => {
+  const gmA = { id: "gm-a", isGM: true, active: true };
+  const gmB = { id: "gm-b", isGM: true, active: true };
+  const network = createSharedSettingNetwork({
+    users: [gmA, gmB],
+    activeGmId: gmA.id,
+    sharedSettings: { sharedState: { active: "", inactive: "" } }
+  });
+  const activeClient = network.createClient(gmA.id);
+  const inactiveClient = network.createClient(gmB.id);
+  const firstMutation = { started: createDeferred(), release: createDeferred() };
+  const activeExecutions = { count: 0 };
+  const inactiveExecutions = { count: 0 };
+  const activeDrafts = [];
+  registerSharedSettingPatch(activeClient, {
+    executions: activeExecutions,
+    holdMutation: firstMutation,
+    observedDrafts: activeDrafts
+  });
+  registerSharedSettingPatch(inactiveClient, { executions: inactiveExecutions });
+
+  const directMutation = activeClient.gateway.mutate(
+    "settings.shared-patch",
+    { field: "active", value: "direct", hold: true },
+    { operationId: "direct-setting-operation" }
+  );
+  await firstMutation.started.promise;
+  const routedMutation = inactiveClient.gateway.mutate(
+    "settings.shared-patch",
+    { field: "inactive", value: "routed" },
+    { operationId: "routed-setting-operation" }
+  );
+  await flushTasks();
+
+  assert.deepEqual(network.sharedSettings.sharedState, { active: "", inactive: "" });
+  assert.equal(activeClient.settingCalls.set, 0);
+  assert.equal(inactiveClient.settingCalls.set, 0);
+
+  firstMutation.release.resolve();
+  assert.deepEqual(await directMutation, { field: "active", value: "direct" });
+  assert.deepEqual(await routedMutation, { field: "inactive", value: "routed" });
+
+  assert.deepEqual(network.sharedSettings.sharedState, { active: "direct", inactive: "routed" });
+  assert.deepEqual(activeDrafts, [
+    { active: "", inactive: "" },
+    { active: "direct", inactive: "" }
+  ]);
+  assert.deepEqual(activeExecutions, { count: 2 });
+  assert.deepEqual(inactiveExecutions, { count: 0 });
+  assert.equal(activeClient.settingCalls.get, 2);
+  assert.equal(inactiveClient.settingCalls.get, 0);
+  assert.equal(activeClient.settingCalls.set, 2);
+  assert.equal(inactiveClient.settingCalls.set, 0);
 });
