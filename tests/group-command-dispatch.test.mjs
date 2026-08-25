@@ -11,6 +11,16 @@ import { normalizeTravelState } from "../scripts/data/travel-service.js";
 import { normalizeGroupTransportState } from "../scripts/data/group-context-service.js";
 import { requestSettingsUpdate } from "../scripts/legacy/settings-socket-relay.js";
 
+let groupRegistryMutationCommands = {};
+try {
+  groupRegistryMutationCommands = await import(
+    "../scripts/application/group-registry-mutation-commands.js"
+  );
+}
+catch (error) {
+  if (error?.code !== "ERR_MODULE_NOT_FOUND") throw error;
+}
+
 const originalHooks = globalThis.Hooks;
 globalThis.Hooks = { once() {}, on() {} };
 const { RebreyaMainModule } = await import(`../scripts/main.js?group-command-dispatch=${Date.now()}`);
@@ -299,6 +309,114 @@ function resultFor(fixture, requestId) {
     .map((entry) => entry.message)
     .find((message) => message.type === COMMAND_RESULT_TYPE && message.requestId === requestId);
 }
+
+test("group registry mutation commands expose exact group Actor payloads", () => {
+  assert.equal(
+    groupRegistryMutationCommands.GROUP_REGISTRY_REGISTER_COMMAND,
+    "group.registry.register"
+  );
+  assert.equal(
+    groupRegistryMutationCommands.GROUP_REGISTRY_ACTIVATE_COMMAND,
+    "group.registry.activate"
+  );
+  assert.equal(
+    groupRegistryMutationCommands.GROUP_INVENTORY_MERGE_LEGACY_COMMAND,
+    "group.inventory.merge-legacy"
+  );
+  for (const validate of [
+    groupRegistryMutationCommands.isValidGroupRegistryRegisterPayload,
+    groupRegistryMutationCommands.isValidGroupRegistryActivatePayload,
+    groupRegistryMutationCommands.isValidGroupInventoryMergeLegacyPayload
+  ]) {
+    assert.equal(validate?.({ groupActorId: "group-a" }), true);
+    assert.equal(validate?.({ groupActorId: " group-a " }), false);
+    assert.equal(validate?.({ groupActorId: "group-a", extra: true }), false);
+    assert.equal(validate?.({ groupActorId: "" }), false);
+  }
+});
+
+test("inactive GM routes group registry writers through typed commands and players cannot write locally", async () => {
+  const fixture = installFixture({ currentUserId: "gm-b", includeGroupB: true });
+  try {
+    const moduleApi = new RebreyaMainModule();
+    const calls = [];
+    let inventoryMutationCalls = 0;
+    moduleApi.groupContextService.registerGroup = async (...args) => {
+      calls.push(["register", ...args]);
+      return { groupId: args[0] };
+    };
+    moduleApi.groupContextService.setActiveGroup = async (...args) => {
+      calls.push(["activate", ...args]);
+      return { groupId: args[0] };
+    };
+    moduleApi.inventoryService.mergeLegacyInventoryIntoGroup = async (...args) => {
+      calls.push(["merge", ...args]);
+      return { groupActorId: args[0], noop: true };
+    };
+    moduleApi.runInventoryMutation = async (operation) => {
+      inventoryMutationCalls += 1;
+      return operation();
+    };
+
+    const invoke = async (command, operation, data) => {
+      const pending = operation();
+      await flushCommands();
+      const outbound = fixture.emitted.at(-1)?.message;
+      assert.deepEqual(outbound, {
+        type: COMMAND_REQUEST_TYPE,
+        command,
+        requestId: outbound?.requestId,
+        senderId: fixture.users.gmB.id,
+        payload: { groupActorId: fixture.groupB.id }
+      });
+      assert.equal(fixture.writes.length, 0);
+      await moduleApi.handleSocketMessage({
+        type: COMMAND_RESULT_TYPE,
+        command,
+        requestId: outbound.requestId,
+        forUserId: fixture.users.gmB.id,
+        senderId: fixture.users.gmA.id,
+        ok: true,
+        data
+      });
+      assert.deepEqual(await pending, data);
+    };
+
+    await invoke(
+      "group.registry.register",
+      () => moduleApi.registerPartyGroup(fixture.groupB.id),
+      { groupId: fixture.groupB.id }
+    );
+    await invoke(
+      "group.registry.activate",
+      () => moduleApi.setActivePartyGroup(fixture.groupB.id),
+      { groupId: fixture.groupB.id }
+    );
+    await invoke(
+      "group.inventory.merge-legacy",
+      () => moduleApi.mergeLegacyInventoryIntoGroup(fixture.groupB.id),
+      { groupActorId: fixture.groupB.id, noop: true }
+    );
+    assert.deepEqual(calls, []);
+    assert.equal(inventoryMutationCalls, 0);
+
+    globalThis.game.user = fixture.users.gmA;
+    const denied = commandRequest(
+      "group.registry.register",
+      fixture.users.playerA.id,
+      { groupActorId: fixture.groupA.id },
+      "group-register-player"
+    );
+    await moduleApi.handleSocketMessage(denied);
+    await flushCommands();
+    assert.equal(resultFor(fixture, denied.requestId)?.error?.code, "unauthorized");
+    assert.deepEqual(calls, []);
+    assert.equal(fixture.writes.length, 0);
+  }
+  finally {
+    fixture.restore();
+  }
+});
 
 test("RebreyaMainModule dispatches an authorized strict group.calendar.patch command", async () => {
   const fixture = installFixture();

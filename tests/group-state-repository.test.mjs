@@ -26,6 +26,18 @@ function clone(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));
 }
 
+function createMutationGateway({ assertActiveGm = () => {} } = {}) {
+  const coordinator = new WorldMutationCoordinator();
+  const commits = [];
+  return {
+    commits,
+    commit(queueKey, operation) {
+      commits.push(queueKey);
+      return coordinator.run(queueKey, () => operation(Object.freeze({ assertActiveGm })));
+    }
+  };
+}
+
 async function flushTasks() {
   await new Promise((resolve) => setImmediate(resolve));
 }
@@ -51,8 +63,9 @@ function createRepositoryFixture(initialRegistry = {}) {
       }
     }
   };
+  const mutationGateway = createMutationGateway();
   const repository = new GroupStateRepository({
-    coordinator: new WorldMutationCoordinator(),
+    mutationGateway,
     gameProvider: () => game,
     normalizeRegistry: normalizeGroupRegistry,
     normalizeGroupState,
@@ -61,6 +74,7 @@ function createRepositoryFixture(initialRegistry = {}) {
 
   return {
     game,
+    mutationGateway,
     reads,
     repository,
     get storedRegistry() {
@@ -92,6 +106,39 @@ test("GroupStateRepository read returns the normalized current world registry", 
   assert.equal(registry.groupsById["group-a"].initializedAt, 123);
   assert.equal(fixture.reads.length, 1);
   assert.equal(fixture.writes.length, 0);
+});
+
+test("GroupStateRepository commits registry writes through the active-GM group setting queue", async () => {
+  const expectedFailure = new Error("active GM changed");
+  const commits = [];
+  let writes = 0;
+  const repository = new GroupStateRepository({
+    mutationGateway: {
+      commit(queueKey, operation) {
+        commits.push(queueKey);
+        return operation(Object.freeze({
+          assertActiveGm() {
+            throw expectedFailure;
+          }
+        }));
+      }
+    },
+    gameProvider: () => ({
+      settings: {
+        get: () => ({ version: 1, groupsById: {} }),
+        set: async () => {
+          writes += 1;
+        }
+      }
+    }),
+    normalizeRegistry: normalizeGroupRegistry,
+    normalizeGroupState,
+    buildDefaultGroupState
+  });
+
+  await assert.rejects(repository.mutateRegistry(() => "never"), (error) => error === expectedFailure);
+  assert.deepEqual(commits, ["setting:groupState"]);
+  assert.equal(writes, 0);
 });
 
 test("GroupStateRepository mutateRegistry performs each fresh read inside one complete queued transaction", async () => {
@@ -262,39 +309,8 @@ test("GroupStateRepository recovers its global queue after a mutation rejects", 
   assert.equal(fixture.storedRegistry.activeGroupActorId, "group-b");
 });
 
-test("GroupStateRepository replaceRegistry serializes only its deprecated normalized writes", async () => {
+test("GroupStateRepository does not expose stale whole-registry replacement", () => {
   const fixture = createRepositoryFixture({ groupsById: {} });
-  const firstWriteGate = createDeferred();
-  const writesStarted = [];
-  fixture.game.settings.get = () => {
-    throw new Error("replaceRegistry must not read");
-  };
-  fixture.game.settings.set = async (_moduleId, _key, value) => {
-    writesStarted.push(value.activeGroupActorId);
-    if (writesStarted.length === 1) {
-      await firstWriteGate.promise;
-    }
-    fixture.storedRegistry = value;
-    fixture.writes.push(clone(value));
-    return value;
-  };
 
-  const first = fixture.repository.replaceRegistry({
-    activeGroupActorId: " group-a ",
-    groupsById: {}
-  });
-  const second = fixture.repository.replaceRegistry({
-    activeGroupActorId: " group-b ",
-    groupsById: {}
-  });
-
-  await flushTasks();
-  assert.deepEqual(writesStarted, ["group-a"]);
-  firstWriteGate.resolve();
-
-  assert.equal((await first).activeGroupActorId, "group-a");
-  assert.equal((await second).activeGroupActorId, "group-b");
-  assert.deepEqual(writesStarted, ["group-a", "group-b"]);
-  assert.equal(fixture.storedRegistry.version, 1);
-  assert.equal(fixture.storedRegistry.activeGroupActorId, "group-b");
+  assert.equal(typeof fixture.repository.replaceRegistry, "undefined");
 });

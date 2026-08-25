@@ -4236,37 +4236,32 @@ export class InventoryService {
     }
 
     const persistPairProgress = async (mutator) => {
-      const nextRegistry = this.moduleApi.groupContextService.getRegistry();
-      const groupState = nextRegistry.groupsById?.[groupActor.id]
-        ? foundry.utils.deepClone(nextRegistry.groupsById[groupActor.id])
-        : foundry.utils.deepClone(context.groupState ?? {});
-      groupState.groupActorId = groupActor.id;
-      groupState.migration = groupState.migration && typeof groupState.migration === "object" ? groupState.migration : {};
-      groupState.migration.legacyInventoryMergePairs = groupState.migration.legacyInventoryMergePairs
-        && typeof groupState.migration.legacyInventoryMergePairs === "object"
-        ? groupState.migration.legacyInventoryMergePairs
-        : {};
-      const nextPairState = {
-        legacyInventoryActorId: legacyActor.id,
-        groupActorId: groupActor.id,
-        currencyAppliedAt: 0,
-        completedAt: 0,
-        itemsByKey: {},
-        ...(groupState.migration.legacyInventoryMergePairs[pairKey] ?? {})
-      };
-      nextPairState.itemsByKey = nextPairState.itemsByKey && typeof nextPairState.itemsByKey === "object"
-        ? nextPairState.itemsByKey
-        : {};
-      mutator(nextPairState);
-      groupState.migration.legacyInventoryMergePairs[pairKey] = nextPairState;
-      if (Number(nextPairState.completedAt) > 0) {
-        groupState.migration.legacyInventoryMergedAt = nextPairState.completedAt;
-        groupState.migration.legacyInventoryActorId = legacyActor.id;
-      }
-      nextRegistry.groupsById = nextRegistry.groupsById ?? {};
-      nextRegistry.groupsById[groupActor.id] = groupState;
-      await this.moduleApi.groupContextService.setRegistry(nextRegistry);
-      return nextPairState;
+      return this.moduleApi.groupContextService.mutateGroupState(groupActor.id, (groupState) => {
+        groupState.groupActorId = groupActor.id;
+        groupState.migration = groupState.migration && typeof groupState.migration === "object" ? groupState.migration : {};
+        groupState.migration.legacyInventoryMergePairs = groupState.migration.legacyInventoryMergePairs
+          && typeof groupState.migration.legacyInventoryMergePairs === "object"
+          ? groupState.migration.legacyInventoryMergePairs
+          : {};
+        const nextPairState = {
+          legacyInventoryActorId: legacyActor.id,
+          groupActorId: groupActor.id,
+          currencyAppliedAt: 0,
+          completedAt: 0,
+          itemsByKey: {},
+          ...(groupState.migration.legacyInventoryMergePairs[pairKey] ?? {})
+        };
+        nextPairState.itemsByKey = nextPairState.itemsByKey && typeof nextPairState.itemsByKey === "object"
+          ? nextPairState.itemsByKey
+          : {};
+        mutator(nextPairState);
+        groupState.migration.legacyInventoryMergePairs[pairKey] = nextPairState;
+        if (Number(nextPairState.completedAt) > 0) {
+          groupState.migration.legacyInventoryMergedAt = nextPairState.completedAt;
+          groupState.migration.legacyInventoryActorId = legacyActor.id;
+        }
+        return nextPairState;
+      });
     };
 
     const sourceCurrency = buildCurrencySnapshot(legacyActor);

@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
+import { WorldMutationCoordinator } from "../scripts/application/world-mutation-coordinator.js";
 import { DOWNTIME_ITEM_TYPE, MODULE_ID, REBREYA_GROUP_FLAGS, SETTINGS_KEYS } from "../scripts/constants.js";
 import {
   GROUP_CONTEXT_ERRORS,
@@ -29,6 +30,19 @@ function createDeferred() {
 
 async function flushTasks() {
   await new Promise((resolve) => setImmediate(resolve));
+}
+
+function createActiveGroupContextService() {
+  const coordinator = new WorldMutationCoordinator();
+  return new GroupContextService({
+    mutationGateway: {
+      commit(queueKey, operation) {
+        return coordinator.run(queueKey, () => operation(Object.freeze({
+          assertActiveGm() {}
+        })));
+      }
+    }
+  });
 }
 
 function createCharacter(id, { ownerUserId = "player-1", type = "character" } = {}) {
@@ -238,7 +252,7 @@ test("GroupContextService registry path preserves downtime counter between write
   });
 
   try {
-    const groupContextService = new GroupContextService();
+    const groupContextService = createActiveGroupContextService();
     const service = new DowntimeService({ groupContextService });
 
     const first = await service.createRequest({
@@ -299,7 +313,7 @@ test("GroupContextService registry path recovers downtime counter from existing 
   });
 
   try {
-    const groupContextService = new GroupContextService();
+    const groupContextService = createActiveGroupContextService();
     const service = new DowntimeService({ groupContextService });
 
     const request = await service.createRequest({
@@ -635,7 +649,7 @@ test("GroupContextService registerGroup sets managed flag, creates state, and se
   const fixture = installGameFixture({ actors: [group], registry: {} });
 
   try {
-    const service = new GroupContextService();
+    const service = createActiveGroupContextService();
     const context = await service.registerGroup("group-a");
     const registry = fixture.settingsStore[SETTINGS_KEYS.GROUP_STATE];
 
@@ -649,6 +663,30 @@ test("GroupContextService registerGroup sets managed flag, creates state, and se
   }
   finally {
     Date.now = originalNow;
+    fixture.restore();
+  }
+});
+
+test("GroupContextService checks the active-GM guard after a managed flag write and before registry persistence", async () => {
+  const group = createGroup("group-a", [], { managed: false });
+  const fixture = installGameFixture({ actors: [group], registry: {} });
+  let guardCalls = 0;
+  const expectedFailure = new Error("active GM changed");
+
+  try {
+    await assert.rejects(
+      createActiveGroupContextService().registerGroup(group.id, {
+        guard() {
+          guardCalls += 1;
+          if (guardCalls === 2) throw expectedFailure;
+        }
+      }),
+      (error) => error === expectedFailure
+    );
+    assert.equal(group.getFlag(MODULE_ID, REBREYA_GROUP_FLAGS.MANAGED), true);
+    assert.deepEqual(fixture.settingsStore[SETTINGS_KEYS.GROUP_STATE], {});
+  }
+  finally {
     fixture.restore();
   }
 });
@@ -679,7 +717,7 @@ test("GroupContextService concurrent registrations read fresh state inside one g
   });
 
   try {
-    const service = new GroupContextService();
+    const service = createActiveGroupContextService();
     const first = service.registerGroup("group-a");
     const second = service.registerGroup("group-b");
 
@@ -727,7 +765,7 @@ test("GroupContextService setActiveGroup queues behind registration and preserve
   });
 
   try {
-    const service = new GroupContextService();
+    const service = createActiveGroupContextService();
     const registered = service.registerGroup("group-a");
     const activated = service.setActiveGroup("group-b");
 
@@ -750,72 +788,10 @@ test("GroupContextService setActiveGroup queues behind registration and preserve
   }
 });
 
-test("GroupContextService GM setRegistry uses the repository deprecated serialized replacement", async () => {
-  const firstWriteGate = createDeferred();
-  const writesStarted = [];
-  const fixture = installGameFixture({
-    registry: {},
-    async onSetSetting(_moduleId, key, value) {
-      if (key !== SETTINGS_KEYS.GROUP_STATE) {
-        return;
-      }
-      writesStarted.push(value.activeGroupActorId);
-      if (writesStarted.length === 1) {
-        await firstWriteGate.promise;
-      }
-    }
-  });
+test("GroupContextService does not expose stale whole-registry replacement", () => {
+  const service = createActiveGroupContextService();
 
-  try {
-    const service = new GroupContextService();
-    const first = service.setRegistry({ activeGroupActorId: "group-a", groupsById: {} });
-    const second = service.setRegistry({ activeGroupActorId: "group-b", groupsById: {} });
-
-    await flushTasks();
-    const writesWhileFirstWriteBlocked = [...writesStarted];
-    firstWriteGate.resolve();
-
-    assert.equal((await first).activeGroupActorId, "group-a");
-    assert.equal((await second).activeGroupActorId, "group-b");
-    assert.deepEqual(writesWhileFirstWriteBlocked, ["group-a"]);
-    assert.deepEqual(writesStarted, ["group-a", "group-b"]);
-  }
-  finally {
-    firstWriteGate.resolve();
-    fixture.restore();
-  }
-});
-
-test("GroupContextService setRegistry rejects raw world replacement for players", async () => {
-  const emitted = [];
-  const groupState = buildDefaultGroupState("group-a", { now: 111 });
-  const fixture = installGameFixture({
-    user: { id: "player-1", isGM: false },
-    registry: {},
-    socket: {
-      emit(channel, message) {
-        emitted.push([channel, message]);
-      }
-    }
-  });
-
-  try {
-    const nextRegistry = {
-      activeGroupActorId: "group-a",
-      groupsById: {
-        "group-a": groupState
-      }
-    };
-    await assert.rejects(
-      new GroupContextService().setRegistry(nextRegistry),
-      (error) => error?.code === "raw-setting-disabled" && error?.message === "raw-setting-disabled"
-    );
-    assert.deepEqual(fixture.settingsStore[SETTINGS_KEYS.GROUP_STATE], {});
-    assert.deepEqual(emitted, []);
-  }
-  finally {
-    fixture.restore();
-  }
+  assert.equal(typeof service.setRegistry, "undefined");
 });
 
 test("GroupContextService registerGroup return shape includes group context fields", async () => {
@@ -823,7 +799,7 @@ test("GroupContextService registerGroup return shape includes group context fiel
   const fixture = installGameFixture({ actors: [group], registry: {} });
 
   try {
-    const context = await new GroupContextService().registerGroup("group-a");
+    const context = await createActiveGroupContextService().registerGroup("group-a");
 
     assertGroupContextShape(context, group, { memberActorIds: ["character-a"] });
     assert.deepEqual(
@@ -843,7 +819,7 @@ test("GroupContextService setActiveGroup sets managed flag and active id", async
   const fixture = installGameFixture({ actors: [group], registry: {} });
 
   try {
-    const service = new GroupContextService();
+    const service = createActiveGroupContextService();
     const context = await service.setActiveGroup("group-b");
     const registry = fixture.settingsStore[SETTINGS_KEYS.GROUP_STATE];
 
@@ -865,7 +841,7 @@ test("GroupContextService setActiveGroup return shape includes group context fie
   const fixture = installGameFixture({ actors: [group], registry: {} });
 
   try {
-    const context = await new GroupContextService().setActiveGroup("group-b");
+    const context = await createActiveGroupContextService().setActiveGroup("group-b");
 
     assertGroupContextShape(context, group, { memberActorIds: ["character-b"] });
     assert.deepEqual(

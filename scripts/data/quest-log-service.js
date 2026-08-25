@@ -916,21 +916,23 @@ export class RebreyaQuestLogService {
       throw new Error("Rebreya group context is not available.");
     }
 
-    const registry = this.groupContextService?.getRegistry?.() ?? {
-      version: 1,
-      activeGroupActorId: context.groupId,
-      groupsById: {}
-    };
-    registry.groupsById ??= {};
-    const groupState = normalizeGroupState(context.groupId, registry.groupsById[context.groupId] ?? context.groupState ?? {});
-    groupState.questState.unlocksByQuestId[reward.targetQuestId] ??= {};
-    groupState.questState.unlocksByQuestId[reward.targetQuestId][reward.requirementId] = {
-      unlockedAt: this.now(),
-      sourceQuestId: sourceQuest.id,
-      sourceRewardId: reward.id
-    };
-    registry.groupsById[context.groupId] = groupState;
-    await this.groupContextService?.setRegistry?.(registry);
+    if (typeof this.groupContextService?.mutateGroupState !== "function") {
+      throw new Error("Rebreya group state persistence is unavailable.");
+    }
+    const groupState = await this.groupContextService.mutateGroupState(context.groupId, (freshGroupState) => {
+      const normalizedGroupState = normalizeGroupState(context.groupId, freshGroupState);
+      for (const key of Object.keys(freshGroupState)) {
+        delete freshGroupState[key];
+      }
+      Object.assign(freshGroupState, normalizedGroupState);
+      freshGroupState.questState.unlocksByQuestId[reward.targetQuestId] ??= {};
+      freshGroupState.questState.unlocksByQuestId[reward.targetQuestId][reward.requirementId] = {
+        unlockedAt: this.now(),
+        sourceQuestId: sourceQuest.id,
+        sourceRewardId: reward.id
+      };
+      return clone(freshGroupState);
+    }, { create: true });
 
     const targetQuest = this.getQuest(reward.targetQuestId);
     const evaluation = this.evaluateRequirementsForGroupState(targetQuest.id, context.groupId, groupState, {
@@ -990,18 +992,17 @@ export class RebreyaQuestLogService {
       throw new Error("Rebreya group context is not available.");
     }
 
-    const registry = this.groupContextService?.getRegistry?.() ?? {
-      version: 1,
-      activeGroupActorId: context.groupId,
-      groupsById: {}
-    };
-    registry.groupsById ??= {};
-    const groupState = normalizeGroupState(context.groupId, registry.groupsById[context.groupId] ?? context.groupState ?? {});
-    const result = updater(groupState.questState.activities);
-    registry.activeGroupActorId ||= context.groupId;
-    registry.groupsById[context.groupId] = groupState;
-    await this.groupContextService?.setRegistry?.(registry);
-    return result;
+    if (typeof this.groupContextService?.mutateGroupState !== "function") {
+      throw new Error("Rebreya group state persistence is unavailable.");
+    }
+    return this.groupContextService.mutateGroupState(context.groupId, (freshGroupState) => {
+      const normalizedGroupState = normalizeGroupState(context.groupId, freshGroupState);
+      for (const key of Object.keys(freshGroupState)) {
+        delete freshGroupState[key];
+      }
+      Object.assign(freshGroupState, normalizedGroupState);
+      return updater(freshGroupState.questState.activities);
+    }, { create: true });
   }
 
   async addRumorTopic(data = {}, groupActorId = "") {

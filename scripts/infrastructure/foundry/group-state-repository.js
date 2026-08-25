@@ -1,6 +1,6 @@
 import { MODULE_ID, SETTINGS_KEYS } from "../../constants.js";
 
-const GROUP_STATE_QUEUE_KEY = SETTINGS_KEYS.GROUP_STATE;
+const GROUP_STATE_QUEUE_KEY = `setting:${SETTINGS_KEYS.GROUP_STATE}`;
 
 function clone(value) {
   if (globalThis.foundry?.utils?.deepClone) {
@@ -12,19 +12,19 @@ function clone(value) {
 
 export class GroupStateRepository {
   #buildDefaultGroupState;
-  #coordinator;
   #gameProvider;
+  #mutationGateway;
   #normalizeGroupState;
   #normalizeRegistry;
 
   constructor({
-    coordinator,
+    mutationGateway = null,
     gameProvider,
     normalizeRegistry,
     normalizeGroupState,
     buildDefaultGroupState
   }) {
-    this.#coordinator = coordinator;
+    this.#mutationGateway = mutationGateway;
     this.#gameProvider = gameProvider;
     this.#normalizeRegistry = normalizeRegistry;
     this.#normalizeGroupState = normalizeGroupState;
@@ -36,14 +36,17 @@ export class GroupStateRepository {
   }
 
   mutateRegistry(mutator, { afterCommit = null } = {}) {
-    return this.#coordinator.run(GROUP_STATE_QUEUE_KEY, async () => {
-      const registry = this.#normalizeRegistry(clone(this.#readSetting()));
+    return this.#requireMutationGateway().commit(GROUP_STATE_QUEUE_KEY, async ({ assertActiveGm }) => {
+      const settings = this.#requireSettings({ write: true });
+      const registry = this.#normalizeRegistry(clone(settings.get(MODULE_ID, SETTINGS_KEYS.GROUP_STATE)));
       const result = await mutator(registry);
       const committedRegistry = this.#normalizeRegistry(clone(registry));
 
-      await this.#writeSetting(committedRegistry);
+      assertActiveGm();
+      await settings.set(MODULE_ID, SETTINGS_KEYS.GROUP_STATE, committedRegistry);
+      assertActiveGm();
       return typeof afterCommit === "function"
-        ? afterCommit(result, committedRegistry)
+        ? afterCommit(result, clone(committedRegistry))
         : result;
     });
   }
@@ -72,23 +75,22 @@ export class GroupStateRepository {
     }, { afterCommit });
   }
 
-  /**
-   * @deprecated Stale-unsafe whole-registry replacement for legacy GM writers only.
-   */
-  replaceRegistry(value) {
-    const registry = this.#normalizeRegistry(clone(value));
-
-    return this.#coordinator.run(GROUP_STATE_QUEUE_KEY, async () => {
-      await this.#writeSetting(registry);
-      return registry;
-    });
-  }
-
   #readSetting() {
     return this.#gameProvider()?.settings?.get?.(MODULE_ID, SETTINGS_KEYS.GROUP_STATE) ?? {};
   }
 
-  #writeSetting(value) {
-    return this.#gameProvider()?.settings?.set?.(MODULE_ID, SETTINGS_KEYS.GROUP_STATE, value);
+  #requireMutationGateway() {
+    if (typeof this.#mutationGateway?.commit !== "function") {
+      throw new Error("Group state mutation gateway is unavailable");
+    }
+    return this.#mutationGateway;
+  }
+
+  #requireSettings({ write = false } = {}) {
+    const settings = this.#gameProvider()?.settings;
+    if (typeof settings?.get !== "function" || (write && typeof settings?.set !== "function")) {
+      throw new Error("Foundry settings API is unavailable");
+    }
+    return settings;
   }
 }

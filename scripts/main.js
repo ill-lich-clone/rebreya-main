@@ -126,6 +126,14 @@ import {
   isValidTraderAuditRecordPayload,
   isValidTraderMetadataUpdatePayload
 } from "./application/trader-public-mutation-commands.js";
+import {
+  GROUP_INVENTORY_MERGE_LEGACY_COMMAND,
+  GROUP_REGISTRY_ACTIVATE_COMMAND,
+  GROUP_REGISTRY_REGISTER_COMMAND,
+  isValidGroupInventoryMergeLegacyPayload,
+  isValidGroupRegistryActivatePayload,
+  isValidGroupRegistryRegisterPayload
+} from "./application/group-registry-mutation-commands.js";
 import { WorldMutationCoordinator } from "./application/world-mutation-coordinator.js";
 import { LootClaimService } from "./application/loot-claim-service.js";
 import {
@@ -1253,7 +1261,7 @@ export class RebreyaMainModule {
     this.inventoryRefreshTimer = null;
     this.inventoryRefreshWaiters = [];
     this.groupStateRepository = new GroupStateRepository({
-      coordinator: this.worldMutationCoordinator,
+      mutationGateway: this.privilegedMutationGateway,
       gameProvider: () => globalThis.game,
       normalizeRegistry: normalizeGroupRegistry,
       normalizeGroupState,
@@ -1303,7 +1311,6 @@ export class RebreyaMainModule {
     });
     this.traderService.setTransactionService(this.tradeTransactionService);
     this.groupContextService = new GroupContextService({
-      coordinator: this.worldMutationCoordinator,
       groupStateRepository: this.groupStateRepository
     });
     this.questLogService = new RebreyaQuestLogService({ groupContextService: this.groupContextService });
@@ -1745,6 +1752,30 @@ export class RebreyaMainModule {
         payload.cityId,
         payload.traderKey,
         payload.patch
+      )
+    });
+    this.privilegedMutationGateway.registerCommand(GROUP_REGISTRY_REGISTER_COMMAND, {
+      validate: isValidGroupRegistryRegisterPayload,
+      authorize: (_payload, { sender }) => sender?.isGM === true,
+      execute: (payload, { assertActiveGm }) => this.groupContextService.registerGroup(
+        payload.groupActorId,
+        { guard: assertActiveGm }
+      )
+    });
+    this.privilegedMutationGateway.registerCommand(GROUP_REGISTRY_ACTIVATE_COMMAND, {
+      validate: isValidGroupRegistryActivatePayload,
+      authorize: (_payload, { sender }) => sender?.isGM === true,
+      execute: (payload, { assertActiveGm }) => this.groupContextService.setActiveGroup(
+        payload.groupActorId,
+        { guard: assertActiveGm }
+      )
+    });
+    this.privilegedMutationGateway.registerCommand(GROUP_INVENTORY_MERGE_LEGACY_COMMAND, {
+      validate: isValidGroupInventoryMergeLegacyPayload,
+      authorize: (_payload, { sender }) => sender?.isGM === true,
+      execute: (payload) => this.runInventoryMutation(
+        () => this.inventoryService.mergeLegacyInventoryIntoGroup(payload.groupActorId),
+        { actorIdsFromResult: () => [payload.groupActorId] }
       )
     });
     this.socketCommandBus.register(GROUP_CALENDAR_PATCH_COMMAND, {
@@ -5303,19 +5334,23 @@ export class RebreyaMainModule {
   }
 
   async registerPartyGroup(groupActorId) {
-    const result = await this.groupContextService.registerGroup(groupActorId);
+    const result = await this.privilegedMutationGateway.mutate(GROUP_REGISTRY_REGISTER_COMMAND, {
+      groupActorId
+    });
     await this.refreshOpenApps();
     return result;
   }
 
   async mergeLegacyInventoryIntoGroup(groupActorId) {
-    return this.runInventoryMutation(
-      () => this.inventoryService.mergeLegacyInventoryIntoGroup(groupActorId)
-    );
+    return this.privilegedMutationGateway.mutate(GROUP_INVENTORY_MERGE_LEGACY_COMMAND, {
+      groupActorId
+    });
   }
 
   async setActivePartyGroup(groupActorId) {
-    const result = await this.groupContextService.setActiveGroup(groupActorId);
+    const result = await this.privilegedMutationGateway.mutate(GROUP_REGISTRY_ACTIVATE_COMMAND, {
+      groupActorId
+    });
     await this.refreshOpenApps();
     await refreshForienQuestLogApps();
     await syncSmallTimeToCalendarTime(this);

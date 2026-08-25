@@ -1682,10 +1682,18 @@ function createGroupContextService(groupActor, fixture, { onSetRegistry = null }
     getRegistry() {
       return fixture.groupState;
     },
-    async setRegistry(nextRegistry) {
+    async mutateGroupState(groupActorId, mutator) {
+      assert.equal(groupActorId, groupActor.id);
+      const nextGroupState = foundry.utils.deepClone(
+        fixture.groupState.groupsById?.[groupActor.id] ?? {}
+      );
+      const result = await mutator(nextGroupState);
+      const nextRegistry = foundry.utils.deepClone(fixture.groupState);
+      nextRegistry.groupsById ??= {};
+      nextRegistry.groupsById[groupActor.id] = nextGroupState;
       await onSetRegistry?.(nextRegistry);
       await game.settings.set(MODULE_ID, "groupState", nextRegistry);
-      return nextRegistry;
+      return result;
     }
   };
 }

@@ -128,9 +128,18 @@ function createGroupContextService(groupContext, registry = {}) {
     getRegistry() {
       return currentRegistry;
     },
-    async setRegistry(value) {
-      currentRegistry = normalizeGroupRegistry(value);
-      return currentRegistry;
+    async mutateGroupState(groupActorId, mutator, { create = false } = {}) {
+      assert.equal(groupActorId, groupContext.groupId);
+      const existing = currentRegistry.groupsById[groupActorId] ?? groupContext.groupState;
+      if (!existing && !create) {
+        throw new Error(`Group state not found: ${groupActorId}`);
+      }
+      const groupState = normalizeGroupState(groupActorId, existing ?? {});
+      const result = await mutator(groupState);
+      currentRegistry.groupsById[groupActorId] = normalizeGroupState(groupActorId, groupState);
+      currentRegistry.activeGroupActorId ||= groupActorId;
+      groupContext.groupState = currentRegistry.groupsById[groupActorId];
+      return result;
     }
   };
 }

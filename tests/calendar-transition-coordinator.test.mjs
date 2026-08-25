@@ -105,7 +105,16 @@ function createHarness({
     }
   };
 
-  const groupContextService = new GroupContextService();
+  const groupMutationCoordinator = new WorldMutationCoordinator();
+  const groupContextService = new GroupContextService({
+    mutationGateway: {
+      commit(queueKey, operation) {
+        return groupMutationCoordinator.run(queueKey, () => operation(Object.freeze({
+          assertActiveGm() {}
+        })));
+      }
+    }
+  });
   const calendarService = new CalendarService({ groupContextService });
   const downtimeService = {
     getSnapshot() {
