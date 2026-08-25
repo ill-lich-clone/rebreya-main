@@ -94,6 +94,18 @@ import { ItemUpgradeService } from "./data/item-upgrade-service.js?v=1.4.96-item
 import { GROUP_CALENDAR_PATCH_COMMAND, CalendarService } from "./data/calendar-service.js";
 import { CalendarTransitionCoordinator } from "./data/calendar-transition-coordinator.js?v=1.4.96-craft-calendar";
 import { PrivilegedMutationGateway } from "./application/privileged-mutation-gateway.js";
+import {
+  GLOBAL_EVENTS_CREATE_COMMAND,
+  GLOBAL_EVENTS_DELETE_COMMAND,
+  GLOBAL_EVENTS_DUPLICATE_COMMAND,
+  GLOBAL_EVENTS_IMPORT_DEFAULTS_COMMAND,
+  GLOBAL_EVENTS_UPDATE_COMMAND,
+  isValidGlobalEventsCreatePayload,
+  isValidGlobalEventsDeletePayload,
+  isValidGlobalEventsDuplicatePayload,
+  isValidGlobalEventsImportDefaultsPayload,
+  isValidGlobalEventsUpdatePayload
+} from "./application/global-events-mutation-commands.js";
 import { WorldMutationCoordinator } from "./application/world-mutation-coordinator.js";
 import { LootClaimService } from "./application/loot-claim-service.js";
 import {
@@ -1618,6 +1630,42 @@ export class RebreyaMainModule {
     registerSummonLifecycleSocketCommand(this);
     registerTransportInstanceCommands(this.socketCommandBus, this.transportInstanceService);
     const authorizeGroup = (payload, { sender }) => this.#canSenderManageGroup(sender, payload.groupActorId);
+    const authorizeGlobalEvents = (_payload, { sender }) => sender?.isGM === true;
+    this.privilegedMutationGateway.registerCommand(GLOBAL_EVENTS_CREATE_COMMAND, {
+      validate: isValidGlobalEventsCreatePayload,
+      authorize: authorizeGlobalEvents,
+      execute: (payload) => this.#executeGlobalEventsMutation(
+        () => this.globalEventsService.createGlobalEvent(payload.data)
+      )
+    });
+    this.privilegedMutationGateway.registerCommand(GLOBAL_EVENTS_UPDATE_COMMAND, {
+      validate: isValidGlobalEventsUpdatePayload,
+      authorize: authorizeGlobalEvents,
+      execute: (payload) => this.#executeGlobalEventsMutation(
+        () => this.globalEventsService.updateGlobalEvent(payload.eventId, payload.patch)
+      )
+    });
+    this.privilegedMutationGateway.registerCommand(GLOBAL_EVENTS_DELETE_COMMAND, {
+      validate: isValidGlobalEventsDeletePayload,
+      authorize: authorizeGlobalEvents,
+      execute: (payload) => this.#executeGlobalEventsMutation(
+        () => this.globalEventsService.deleteGlobalEvent(payload.eventId)
+      )
+    });
+    this.privilegedMutationGateway.registerCommand(GLOBAL_EVENTS_DUPLICATE_COMMAND, {
+      validate: isValidGlobalEventsDuplicatePayload,
+      authorize: authorizeGlobalEvents,
+      execute: (payload) => this.#executeGlobalEventsMutation(
+        () => this.globalEventsService.duplicateGlobalEvent(payload.eventId)
+      )
+    });
+    this.privilegedMutationGateway.registerCommand(GLOBAL_EVENTS_IMPORT_DEFAULTS_COMMAND, {
+      validate: isValidGlobalEventsImportDefaultsPayload,
+      authorize: authorizeGlobalEvents,
+      execute: () => this.#executeGlobalEventsMutation(
+        () => this.globalEventsService.importDefaultGlobalEventTemplates()
+      )
+    });
     this.socketCommandBus.register(GROUP_CALENDAR_PATCH_COMMAND, {
       validate: isValidCalendarPatchPayload,
       authorize: authorizeGroup,
@@ -3431,49 +3479,45 @@ export class RebreyaMainModule {
     return effective;
   }
 
-  async createGlobalEvent(data = {}) {
-    const event = await this.globalEventsService.createGlobalEvent(data);
+  async #executeGlobalEventsMutation(operation) {
+    const result = await operation();
     if (this.globalEventsService.isAutoRecalculateEnabled()) {
       await this.repository.rebuildModel();
     }
-    await this.refreshOpenApps();
-    return event;
+    return result;
   }
 
-  async updateGlobalEvent(id, patch = {}) {
-    const event = await this.globalEventsService.updateGlobalEvent(id, patch);
-    if (this.globalEventsService.isAutoRecalculateEnabled()) {
-      await this.repository.rebuildModel();
-    }
-    await this.refreshOpenApps();
-    return event;
-  }
-
-  async deleteGlobalEvent(id) {
-    const result = await this.globalEventsService.deleteGlobalEvent(id);
-    if (this.globalEventsService.isAutoRecalculateEnabled()) {
-      await this.repository.rebuildModel();
-    }
+  async #dispatchGlobalEventsMutation(command, payload) {
+    const result = await this.privilegedMutationGateway.mutate(command, payload);
     await this.refreshOpenApps();
     return result;
   }
 
+  async createGlobalEvent(data = {}) {
+    return this.#dispatchGlobalEventsMutation(GLOBAL_EVENTS_CREATE_COMMAND, { data });
+  }
+
+  async updateGlobalEvent(id, patch = {}) {
+    return this.#dispatchGlobalEventsMutation(GLOBAL_EVENTS_UPDATE_COMMAND, {
+      eventId: String(id ?? "").trim(),
+      patch
+    });
+  }
+
+  async deleteGlobalEvent(id) {
+    return this.#dispatchGlobalEventsMutation(GLOBAL_EVENTS_DELETE_COMMAND, {
+      eventId: String(id ?? "").trim()
+    });
+  }
+
   async duplicateGlobalEvent(id) {
-    const duplicate = await this.globalEventsService.duplicateGlobalEvent(id);
-    if (this.globalEventsService.isAutoRecalculateEnabled()) {
-      await this.repository.rebuildModel();
-    }
-    await this.refreshOpenApps();
-    return duplicate;
+    return this.#dispatchGlobalEventsMutation(GLOBAL_EVENTS_DUPLICATE_COMMAND, {
+      eventId: String(id ?? "").trim()
+    });
   }
 
   async importDefaultGlobalEventTemplates() {
-    const imported = await this.globalEventsService.importDefaultGlobalEventTemplates();
-    if (this.globalEventsService.isAutoRecalculateEnabled()) {
-      await this.repository.rebuildModel();
-    }
-    await this.refreshOpenApps();
-    return imported;
+    return this.#dispatchGlobalEventsMutation(GLOBAL_EVENTS_IMPORT_DEFAULTS_COMMAND, {});
   }
 
   getCitySnapshot(cityId) {

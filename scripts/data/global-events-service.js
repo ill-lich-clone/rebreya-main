@@ -181,6 +181,16 @@ function defaultEvent() {
   };
 }
 
+function normalizeGlobalEventsState(rawState) {
+  const source = rawState && typeof rawState === "object" ? rawState : {};
+  const sourceEvents = Array.isArray(rawState) ? rawState : toArray(source.events);
+  return {
+    version: 1,
+    updatedAt: Math.max(0, Math.floor(toNumber(source.updatedAt, 0))),
+    events: sourceEvents.map((entry) => normalizeEvent(entry))
+  };
+}
+
 function normalizeEffect(rawEffect) {
   if (!rawEffect || typeof rawEffect !== "object") {
     return null;
@@ -470,14 +480,7 @@ export class GlobalEventsService {
   }
 
   #loadState() {
-    const rawState = game.settings.get(MODULE_ID, SETTINGS_KEYS.GLOBAL_EVENTS_STATE);
-    if (!rawState || typeof rawState !== "object") {
-      return { updatedAt: 0, events: [] };
-    }
-    if (Array.isArray(rawState)) {
-      return { updatedAt: 0, events: rawState };
-    }
-    return { updatedAt: Math.max(0, Math.floor(toNumber(rawState.updatedAt, 0))), events: toArray(rawState.events) };
+    return normalizeGlobalEventsState(game.settings.get(MODULE_ID, SETTINGS_KEYS.GLOBAL_EVENTS_STATE));
   }
 
   loadGlobalEvents() {
@@ -492,18 +495,33 @@ export class GlobalEventsService {
     return events.map((entry) => foundry.utils.deepClone(entry));
   }
 
-  async saveGlobalEvents(events) {
-    const now = Date.now();
-    const payload = {
-      version: 1,
-      updatedAt: now,
-      events: toArray(events).map((entry) => normalizeEvent({ ...entry, updatedAt: now }))
-    };
-    await game.settings.set(MODULE_ID, SETTINGS_KEYS.GLOBAL_EVENTS_STATE, payload);
-    this.#eventsCache = payload.events;
-    this.#eventsUpdatedAt = payload.updatedAt;
-    this.#invalidateCaches();
-    return payload.events.map((entry) => foundry.utils.deepClone(entry));
+  async #mutateGlobalEvents(mutator) {
+    const repository = this.moduleApi?.worldSettingMutationRepository;
+    if (typeof repository?.mutateObject !== "function") {
+      throw new Error("World setting mutation repository is unavailable");
+    }
+
+    return repository.mutateObject(
+      SETTINGS_KEYS.GLOBAL_EVENTS_STATE,
+      async (state) => {
+        const events = state.events;
+        const result = await mutator(events);
+        const now = Date.now();
+        state.version = 1;
+        state.updatedAt = now;
+        state.events = events.map((entry) => normalizeEvent({ ...entry, updatedAt: now }));
+        return result;
+      },
+      {
+        normalize: normalizeGlobalEventsState,
+        afterCommit: (result, committed) => {
+          this.#eventsCache = committed.events;
+          this.#eventsUpdatedAt = committed.updatedAt;
+          this.#invalidateCaches();
+          return result;
+        }
+      }
+    );
   }
 
   getAllGlobalEvents() {
@@ -560,61 +578,75 @@ export class GlobalEventsService {
   }
 
   async createGlobalEvent(data = {}) {
-    const validation = this.validateGlobalEvent(data, { dataset: this.moduleApi?.repository?.dataset ?? null });
-    if (!validation.valid) {
-      throw new Error(validation.errors.join(" "));
-    }
-    const events = this.getAllGlobalEvents();
-    const now = Date.now();
-    events.push({ ...validation.event, createdAt: now, updatedAt: now });
-    await this.saveGlobalEvents(events);
-    return this.getGlobalEventById(validation.event.id);
+    const eventId = await this.#mutateGlobalEvents((events) => {
+      const validation = this.validateGlobalEvent(data, { dataset: this.moduleApi?.repository?.dataset ?? null });
+      if (!validation.valid) {
+        throw new Error(validation.errors.join(" "));
+      }
+      const now = Date.now();
+      events.push({ ...validation.event, createdAt: now, updatedAt: now });
+      return validation.event.id;
+    });
+    return this.getGlobalEventById(eventId);
   }
 
   async updateGlobalEvent(id, patch = {}) {
     const targetId = String(id ?? "").trim();
-    const events = this.getAllGlobalEvents();
-    const index = events.findIndex((entry) => entry.id === targetId);
-    if (index < 0) {
-      throw new Error("РЎРѕР±С‹С‚РёРµ РЅРµ РЅР°Р№РґРµРЅРѕ.");
-    }
-    const merged = normalizeEvent(foundry.utils.mergeObject(foundry.utils.deepClone(events[index]), patch, {
-      inplace: false,
-      insertKeys: true,
-      overwrite: true
-    }));
-    merged.id = targetId;
-    merged.createdAt = events[index].createdAt;
-    merged.updatedAt = Date.now();
-    const validation = this.validateGlobalEvent(merged, { dataset: this.moduleApi?.repository?.dataset ?? null });
-    if (!validation.valid) {
-      throw new Error(validation.errors.join(" "));
-    }
-    events[index] = validation.event;
-    events[index].id = targetId;
-    events[index].createdAt = merged.createdAt;
-    events[index].updatedAt = merged.updatedAt;
-    await this.saveGlobalEvents(events);
+    await this.#mutateGlobalEvents((events) => {
+      const index = events.findIndex((entry) => entry.id === targetId);
+      if (index < 0) {
+        throw new Error("РЎРѕР±С‹С‚РёРµ РЅРµ РЅР°Р№РґРµРЅРѕ.");
+      }
+      const merged = normalizeEvent(foundry.utils.mergeObject(foundry.utils.deepClone(events[index]), patch, {
+        inplace: false,
+        insertKeys: true,
+        overwrite: true
+      }));
+      merged.id = targetId;
+      merged.createdAt = events[index].createdAt;
+      merged.updatedAt = Date.now();
+      const validation = this.validateGlobalEvent(merged, { dataset: this.moduleApi?.repository?.dataset ?? null });
+      if (!validation.valid) {
+        throw new Error(validation.errors.join(" "));
+      }
+      events[index] = validation.event;
+      events[index].id = targetId;
+      events[index].createdAt = merged.createdAt;
+      events[index].updatedAt = merged.updatedAt;
+    });
     return this.getGlobalEventById(targetId);
   }
 
   async deleteGlobalEvent(id) {
     const targetId = String(id ?? "").trim();
-    await this.saveGlobalEvents(this.getAllGlobalEvents().filter((entry) => entry.id !== targetId));
+    await this.#mutateGlobalEvents((events) => {
+      const index = events.findIndex((entry) => entry.id === targetId);
+      if (index >= 0) events.splice(index, 1);
+    });
     return true;
   }
 
   async duplicateGlobalEvent(id) {
-    const event = this.getGlobalEventById(id);
-    if (!event) {
-      throw new Error("РЎРѕР±С‹С‚РёРµ РЅРµ РЅР°Р№РґРµРЅРѕ.");
-    }
-    return this.createGlobalEvent({
-      ...event,
-      id: "",
-      name: `${event.name} (РєРѕРїРёСЏ)`,
-      active: false
+    const targetId = String(id ?? "").trim();
+    const duplicateId = await this.#mutateGlobalEvents((events) => {
+      const event = events.find((entry) => entry.id === targetId);
+      if (!event) {
+        throw new Error("РЎРѕР±С‹С‚РёРµ РЅРµ РЅР°Р№РґРµРЅРѕ.");
+      }
+      const validation = this.validateGlobalEvent({
+        ...event,
+        id: "",
+        name: `${event.name} (РєРѕРїРёСЏ)`,
+        active: false
+      }, { dataset: this.moduleApi?.repository?.dataset ?? null });
+      if (!validation.valid) {
+        throw new Error(validation.errors.join(" "));
+      }
+      const now = Date.now();
+      events.push({ ...validation.event, createdAt: now, updatedAt: now });
+      return validation.event.id;
     });
+    return this.getGlobalEventById(duplicateId);
   }
 
   #currentIsoDate() {
@@ -676,31 +708,37 @@ export class GlobalEventsService {
   async refreshEventActivationByDate(currentDate = null, previousDate = null) {
     const safeCurrentDate = normalizeIsoDate(currentDate) || this.#currentIsoDate();
     const safePreviousDate = normalizeIsoDate(previousDate);
-    const events = this.getAllGlobalEvents();
-    const started = [];
-    const ended = [];
-    let changed = false;
-    for (const event of events) {
-      if (event.trigger?.type === "manual") {
-        continue;
+    const activation = await this.#mutateGlobalEvents((events) => {
+      const started = [];
+      const ended = [];
+      let changed = false;
+      for (const event of events) {
+        if (event.trigger?.type === "manual") {
+          continue;
+        }
+        const wasActive = safePreviousDate ? this.isEventActive(event, safePreviousDate) : Boolean(event.active);
+        const nextActive = this.isEventActive(event, safeCurrentDate);
+        if (event.active !== nextActive) {
+          event.active = nextActive;
+          event.updatedAt = Date.now();
+          changed = true;
+        }
+        if (!wasActive && nextActive) {
+          started.push(foundry.utils.deepClone(event));
+        }
+        else if (wasActive && !nextActive) {
+          ended.push(foundry.utils.deepClone(event));
+        }
       }
-      const wasActive = safePreviousDate ? this.isEventActive(event, safePreviousDate) : Boolean(event.active);
-      const nextActive = this.isEventActive(event, safeCurrentDate);
-      if (event.active !== nextActive) {
-        event.active = nextActive;
-        event.updatedAt = Date.now();
-        changed = true;
-      }
-      if (!wasActive && nextActive) {
-        started.push(foundry.utils.deepClone(event));
-      }
-      else if (wasActive && !nextActive) {
-        ended.push(foundry.utils.deepClone(event));
-      }
-    }
-    if (changed) {
-      await this.saveGlobalEvents(events);
-    }
+      return {
+        changed,
+        started,
+        ended,
+        currentDate: safeCurrentDate,
+        previousDate: safePreviousDate
+      };
+    });
+    const { changed, started, ended } = activation;
     if (this.isNotificationsEnabled() && game.user?.isGM) {
       for (const event of started) {
         if (event.visibility?.showNotificationOnStart !== false) {
@@ -713,13 +751,7 @@ export class GlobalEventsService {
         }
       }
     }
-    return {
-      changed,
-      started,
-      ended,
-      currentDate: safeCurrentDate,
-      previousDate: safePreviousDate
-    };
+    return activation;
   }
 
   getActiveGlobalEvents(currentDate = null) {
@@ -1290,25 +1322,25 @@ export class GlobalEventsService {
   }
 
   async importDefaultGlobalEventTemplates() {
-    const templates = this.getDefaultGlobalEventTemplates();
-    const existingEvents = this.getAllGlobalEvents();
-    const existingIds = new Set(existingEvents.map((entry) => entry.id));
-    const now = Date.now();
-    const imported = [];
-    for (const template of templates) {
-      const nextEvent = foundry.utils.deepClone(template);
-      if (existingIds.has(nextEvent.id)) {
-        nextEvent.id = `global-event-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const importedIds = await this.#mutateGlobalEvents((events) => {
+      const existingIds = new Set(events.map((entry) => entry.id));
+      const now = Date.now();
+      const imported = [];
+      for (const template of this.getDefaultGlobalEventTemplates()) {
+        const nextEvent = foundry.utils.deepClone(template);
+        if (existingIds.has(nextEvent.id)) {
+          nextEvent.id = `global-event-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        }
+        nextEvent.createdAt = now;
+        nextEvent.updatedAt = now;
+        nextEvent.active = false;
+        events.push(nextEvent);
+        existingIds.add(nextEvent.id);
+        imported.push(nextEvent.id);
       }
-      nextEvent.createdAt = now;
-      nextEvent.updatedAt = now;
-      nextEvent.active = false;
-      existingEvents.push(nextEvent);
-      existingIds.add(nextEvent.id);
-      imported.push(nextEvent);
-    }
-    await this.saveGlobalEvents(existingEvents);
-    return imported.map((entry) => foundry.utils.deepClone(entry));
+      return imported;
+    });
+    return this.getAllGlobalEvents().filter((event) => importedIds.includes(event.id));
   }
 
   applyEventEffectsToEconomicNode(baseData = {}, context = {}) {
