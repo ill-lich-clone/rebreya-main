@@ -109,7 +109,7 @@ test("main registers the storage deposit socket API and current cache keys", asy
     "data/storage-ground-pile-service.js?v=1.4.161-journal-scene-items",
     "data/storage-container-item-service.js?v=1.4.130-storage-player-fixes",
     "data/storage-deposit-source.js?v=1.4.144-spreadsheet-coins-ground-repair",
-    "data/storage-command-service.js?v=1.4.161-journal-scene-items",
+    "data/storage-command-service.js?v=1.4.162-gm-journal-read",
     "integrations/storage-token-hooks.js?v=1.4.158-storage-access-cache",
     "combat/hooks.js?v=1.4.147-race-damage",
     "integrations/storage-transfer-drop.js?v=1.4.161-journal-scene-items",
@@ -131,7 +131,7 @@ test("main registers the storage deposit socket API and current cache keys", asy
   ]) {
     assert.equal(storageHooks.includes(importPath), true, importPath);
   }
-  assert.equal(manifest.version, "1.4.161");
+  assert.equal(manifest.version, "1.4.162");
   assert.match(main, /await registerStorageContainerHierarchyHooks\(\{ Hooks \}\)/u);
 });
 

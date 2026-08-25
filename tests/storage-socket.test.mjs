@@ -554,6 +554,67 @@ test("storage Journal reads re-run access checks and use only an authoritative u
   }, { sender: { id: "stranger", isGM: false } }), /принадлежащего вам персонажа/iu);
 });
 
+test("GM Journal reads return the safe snapshot without marking or publishing the read", async () => {
+  const harness = createHarness();
+  await harness.storageService.configure(harness.storageToken, {
+    state: "opened",
+    manualRows: [{
+      rowKind: "journal",
+      rowId: "journal-row",
+      stackKey: "",
+      sourceId: "JournalEntry.notes",
+      sourceType: "journal",
+      name: "Полевые заметки",
+      quantity: 1
+    }]
+  });
+  const request = {
+    tokenUuid: harness.storageToken.uuid,
+    characterTokenUuid: harness.characterToken.uuid,
+    rowId: "journal-row"
+  };
+
+  const snapshot = await harness.service.readJournal(request, { sender: harness.gm });
+
+  assert.deepEqual(snapshot, { name: "Полевые заметки", pages: [] });
+  assert.deepEqual(readStorageState(harness.storageToken).readJournalRowIds, []);
+  assert.deepEqual(harness.refreshCalls, []);
+  assert.deepEqual(harness.chatMessages, []);
+});
+
+test("the first player Journal read after a GM read marks and publishes exactly once", async () => {
+  const harness = createHarness();
+  await harness.storageService.configure(harness.storageToken, {
+    state: "opened",
+    manualRows: [{
+      rowKind: "journal",
+      rowId: "journal-row",
+      stackKey: "",
+      sourceId: "JournalEntry.notes",
+      sourceType: "journal",
+      name: "Полевые заметки",
+      quantity: 1
+    }]
+  });
+  const request = {
+    tokenUuid: harness.storageToken.uuid,
+    characterTokenUuid: harness.characterToken.uuid,
+    rowId: "journal-row"
+  };
+
+  await harness.service.readJournal(request, { sender: harness.gm });
+  assert.deepEqual(readStorageState(harness.storageToken).readJournalRowIds, []);
+  assert.deepEqual(harness.refreshCalls, []);
+  assert.deepEqual(harness.chatMessages, []);
+
+  await harness.service.readJournal(request, { sender: harness.player });
+  await harness.service.readJournal(request, { sender: harness.player });
+
+  assert.deepEqual(readStorageState(harness.storageToken).readJournalRowIds, ["journal-row"]);
+  assert.equal(harness.refreshCalls.length, 1);
+  assert.equal(harness.chatMessages.length, 1);
+});
+
 test("only the first successful Journal read refreshes the root pile and publishes one sanitized public message", async () => {
   const harness = createHarness({
     playerName: "<Игрок>",

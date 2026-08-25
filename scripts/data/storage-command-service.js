@@ -764,6 +764,7 @@ export class StorageCommandService {
         throw new Error("Запись журнала недоступна.");
       }
       const snapshot = await this.journalReader.read(row.sourceId);
+      if (sender?.isGM === true) return snapshot;
       const marked = await this.storageService.markJournalRead(access.storageToken, rowId, { path });
       if (marked.changed === true) {
         const rootState = readStorageState(access.storageToken);
