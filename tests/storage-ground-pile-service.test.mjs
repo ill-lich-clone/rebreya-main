@@ -112,6 +112,17 @@ const treasure = {
   itemData: { name: "Рубин", system: { quantity: 1 } }
 };
 
+const journalNote = {
+  rowKind: "journal",
+  rowId: "source-note",
+  stackKey: "",
+  sourceId: "JournalEntry.gartar",
+  sourceType: "journal",
+  name: "Заметки Гартара",
+  img: "icons/book.webp",
+  quantity: 1
+};
+
 const platinumCoinItemRow = {
   rowId: "legacy-platinum-coin",
   sourceType: "gear",
@@ -197,6 +208,86 @@ test("dropping on a pile stacks identical items and appends different items", as
   assert.equal(readStorageState(tokens[0]).manualRows.length, 2);
   assert.equal(tokens[0].name, "Куча оружия");
   assert.match(tokens[0].texture.src, /weapons\.png$/u);
+});
+
+test("Journal scene rows remain reference-only, quantity one, and never stack", async () => {
+  const { service, tokens } = createHarness();
+  await service.transferToScene({
+    row: journalNote,
+    quantity: 1,
+    sceneId: "scene",
+    x: 300,
+    y: 400,
+    mutationId: "journal-first"
+  });
+
+  assert.equal(tokens[0].name, "Заметки Гартара");
+  assert.equal(tokens[0].texture.src.endsWith("/journal-note.png"), true);
+  assert.equal(readStorageState(tokens[0]).manualRows[0].itemData, undefined);
+
+  await service.transferToScene({
+    row: {
+      ...journalNote,
+      rowId: "source-second",
+      sourceId: "JournalEntry.second",
+      name: "Вторая"
+    },
+    quantity: 1,
+    sceneId: "scene",
+    x: 300,
+    y: 400,
+    mutationId: "journal-second"
+  });
+
+  const state = readStorageState(tokens[0]);
+  assert.equal(state.manualRows.length, 2);
+  assert.deepEqual(state.manualRows.map((row) => row.quantity), [1, 1]);
+  assert.equal(state.manualRows.every((row) => row.itemData === undefined), true);
+  assert.equal(tokens[0].name, "Куча заметок");
+  assert.equal(tokens[0].texture.src.endsWith("/journal-notes.png"), true);
+});
+
+test("ground presentation reveals the surviving Journal and its shared read marker", async () => {
+  const { service, tokens } = createHarness();
+  await service.transferToScene({
+    row: sword,
+    quantity: 1,
+    sceneId: "scene",
+    x: 300,
+    y: 400,
+    mutationId: "item-first"
+  });
+  await service.transferToScene({
+    row: journalNote,
+    quantity: 1,
+    sceneId: "scene",
+    x: 300,
+    y: 400,
+    mutationId: "journal-second"
+  });
+
+  const token = tokens[0];
+  assert.equal(token.name, "Меч");
+  let state = readStorageState(token);
+  const itemRow = state.manualRows.find((row) => row.sourceType !== "journal");
+  const journalRow = state.manualRows.find((row) => row.sourceType === "journal");
+  const afterClaim = await service.refreshAfterStorageMutation(token, {
+    ...state,
+    claimedRowIds: [itemRow.rowId]
+  });
+
+  assert.equal(afterClaim.deleted, false);
+  assert.equal(token.name, "Заметки Гартара");
+  assert.equal(token.texture.src.endsWith("/journal-note.png"), true);
+
+  state = readStorageState(token);
+  const afterRead = await service.refreshAfterStorageMutation(token, {
+    ...state,
+    readJournalRowIds: [journalRow.rowId]
+  });
+  assert.equal(afterRead.deleted, false);
+  assert.equal(token.name, "Заметки Гартара (прочитано)");
+  assert.equal(tokens.length, 1);
 });
 
 test("nearby drops outside pile bounds create another token and duplicate mutations do nothing", async () => {
@@ -492,7 +583,7 @@ test("a claimed pure coin pile reopens with only incoming coins", async () => {
   assert.deepEqual(reopened.generatedCoins, { pp: 0, gp: 0, sp: 0, cp: 0 });
 });
 
-test("treasure rows with coins stay treasure piles and still delete when emptied", async () => {
+test("ordinary treasure rows keep their single-item presentation with coins and still delete when emptied", async () => {
   const { service, tokens } = createHarness();
   await service.transferSnapshotToScene({
     rows: [treasure],
@@ -511,8 +602,8 @@ test("treasure rows with coins stay treasure piles and still delete when emptied
   });
   const token = tokens[0];
   const state = readStorageState(token);
-  assert.equal(token.name, "Куча сокровищ");
-  assert.match(token.texture.src, /treasure\.png$/u);
+  assert.equal(token.name, "Рубин");
+  assert.equal(token.texture.src, "icons/ruby.webp");
   assert.equal(token.flags[MODULE_ID].groundPile.coinPile, false);
   assert.deepEqual(state.manualCoins, { pp: 0, gp: 4, sp: 0, cp: 0 });
 
@@ -527,7 +618,7 @@ test("treasure rows with coins stay treasure piles and still delete when emptied
   assert.equal(tokens.length, 0);
 });
 
-test("snapshot transfer passes coins into treasure presentation", async () => {
+test("snapshot transfer keeps ordinary item presentation ahead of coins", async () => {
   const { service, tokens } = createHarness();
   await service.transferSnapshotToScene({
     rows: [treasure],
@@ -538,8 +629,8 @@ test("snapshot transfer passes coins into treasure presentation", async () => {
     mutationId: "treasure-snapshot"
   });
 
-  assert.equal(tokens[0].name, "Куча сокровищ");
-  assert.match(tokens[0].texture.src, /treasure\.png$/u);
+  assert.equal(tokens[0].name, "Рубин");
+  assert.equal(tokens[0].texture.src, "icons/ruby.webp");
   assert.equal(tokens[0].flags[MODULE_ID].groundPile.coinPile, false);
 });
 
