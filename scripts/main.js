@@ -106,6 +106,20 @@ import {
   isValidGlobalEventsImportDefaultsPayload,
   isValidGlobalEventsUpdatePayload
 } from "./application/global-events-mutation-commands.js";
+import {
+  ECONOMY_CITY_PRESENTATION_UPDATE_COMMAND,
+  ECONOMY_CONNECTION_SET_ACTIVE_COMMAND,
+  ECONOMY_REFERENCE_UPDATE_DESCRIPTION_COMMAND,
+  ECONOMY_STATE_POLICY_UPDATE_COMMAND,
+  ECONOMY_TRADE_ROUTE_UPDATE_METADATA_COMMAND,
+  ECONOMY_WORLD_DATA_RESET_COMMAND,
+  isValidEconomyCityPresentationUpdatePayload,
+  isValidEconomyConnectionSetActivePayload,
+  isValidEconomyReferenceUpdateDescriptionPayload,
+  isValidEconomyStatePolicyUpdatePayload,
+  isValidEconomyTradeRouteUpdateMetadataPayload,
+  isValidEconomyWorldDataResetPayload
+} from "./application/economy-mutation-commands.js";
 import { WorldMutationCoordinator } from "./application/world-mutation-coordinator.js";
 import { LootClaimService } from "./application/loot-claim-service.js";
 import {
@@ -1251,7 +1265,9 @@ export class RebreyaMainModule {
       set: (value) => globalThis.game?.settings?.set(MODULE_ID, SETTINGS_KEYS.LOOTGEN_TEMPLATES, value),
       randomId: () => globalThis.randomID?.()
     });
-    this.repository = new EconomyRepository();
+    this.repository = new EconomyRepository({
+      worldSettingMutationRepository: this.worldSettingMutationRepository
+    });
     this.materialsCompendium = new MaterialsCompendiumService();
     this.gearCompendium = new GearCompendiumService();
     this.magicItemsCompendium = new MagicItemsCompendiumService();
@@ -1665,6 +1681,43 @@ export class RebreyaMainModule {
       execute: () => this.#executeGlobalEventsMutation(
         () => this.globalEventsService.importDefaultGlobalEventTemplates()
       )
+    });
+    const authorizeEconomy = (_payload, { sender }) => sender?.isGM === true;
+    this.privilegedMutationGateway.registerCommand(ECONOMY_CITY_PRESENTATION_UPDATE_COMMAND, {
+      validate: isValidEconomyCityPresentationUpdatePayload,
+      authorize: authorizeEconomy,
+      execute: (payload) => this.repository.updateCityPresentation(payload.cityId, payload.patch)
+    });
+    this.privilegedMutationGateway.registerCommand(ECONOMY_CONNECTION_SET_ACTIVE_COMMAND, {
+      validate: isValidEconomyConnectionSetActivePayload,
+      authorize: authorizeEconomy,
+      execute: (payload) => this.repository.setConnectionActive(payload.connectionId, payload.isActive)
+    });
+    this.privilegedMutationGateway.registerCommand(ECONOMY_REFERENCE_UPDATE_DESCRIPTION_COMMAND, {
+      validate: isValidEconomyReferenceUpdateDescriptionPayload,
+      authorize: authorizeEconomy,
+      execute: (payload) => this.repository.setReferenceNote(
+        `${payload.entryType}::${payload.entryId}`,
+        payload.description
+      )
+    });
+    this.privilegedMutationGateway.registerCommand(ECONOMY_TRADE_ROUTE_UPDATE_METADATA_COMMAND, {
+      validate: isValidEconomyTradeRouteUpdateMetadataPayload,
+      authorize: authorizeEconomy,
+      execute: (payload) => this.repository.setTradeRouteOverride(payload.connectionId, payload.patch)
+    });
+    this.privilegedMutationGateway.registerCommand(ECONOMY_STATE_POLICY_UPDATE_COMMAND, {
+      validate: isValidEconomyStatePolicyUpdatePayload,
+      authorize: authorizeEconomy,
+      execute: (payload) => this.repository.setStatePolicy(payload.stateId, payload.patch)
+    });
+    this.privilegedMutationGateway.registerCommand(ECONOMY_WORLD_DATA_RESET_COMMAND, {
+      validate: isValidEconomyWorldDataResetPayload,
+      authorize: authorizeEconomy,
+      execute: async () => {
+        await this.traderService.resetState();
+        return this.repository.resetWorldData();
+      }
     });
     this.socketCommandBus.register(GROUP_CALENDAR_PATCH_COMMAND, {
       validate: isValidCalendarPatchPayload,
@@ -3556,18 +3609,16 @@ export class RebreyaMainModule {
   }
 
   async updateCityPresentation(cityId, patch = {}) {
-    if (game.user?.isGM !== true) throw new Error("City presentation updates require a GM");
-    const result = await this.repository.updateCityPresentation(cityId, patch);
+    const result = await this.privilegedMutationGateway.mutate(ECONOMY_CITY_PRESENTATION_UPDATE_COMMAND, { cityId, patch });
     await this.refreshCityViews({ cityIds: [cityId] });
     return result;
   }
 
   async resetCityPresentation(cityId, fields = ["description", "image"]) {
-    if (game.user?.isGM !== true) throw new Error("City presentation updates require a GM");
     const allowed = new Set(["description", "image"]);
     const patch = Object.fromEntries((fields ?? []).filter((field) => allowed.has(field)).map((field) => [field, null]));
     if (!Object.keys(patch).length) return this.getCityPresentation(cityId);
-    const result = await this.repository.updateCityPresentation(cityId, patch);
+    const result = await this.privilegedMutationGateway.mutate(ECONOMY_CITY_PRESENTATION_UPDATE_COMMAND, { cityId, patch });
     await this.refreshCityViews({ cityIds: [cityId] });
     return result;
   }
@@ -3606,32 +3657,31 @@ export class RebreyaMainModule {
   }
 
   async setConnectionActive(connectionId, isActive) {
-    await this.repository.setConnectionActive(connectionId, isActive);
+    await this.privilegedMutationGateway.mutate(ECONOMY_CONNECTION_SET_ACTIVE_COMMAND, { connectionId, isActive });
     await this.refreshOpenApps();
     return this.repository.model;
   }
 
   async updateReferenceDescription(entryType, entryId, description) {
-    await this.repository.setReferenceNote(`${entryType}::${entryId}`, description);
+    await this.privilegedMutationGateway.mutate(ECONOMY_REFERENCE_UPDATE_DESCRIPTION_COMMAND, { entryType, entryId, description });
     await this.refreshOpenApps();
     return this.getReferenceEntrySnapshot(entryType, entryId);
   }
 
   async updateTradeRouteMetadata(connectionId, patch) {
-    const route = await this.repository.setTradeRouteOverride(connectionId, patch);
+    const route = await this.privilegedMutationGateway.mutate(ECONOMY_TRADE_ROUTE_UPDATE_METADATA_COMMAND, { connectionId, patch });
     await this.refreshOpenApps();
     return route;
   }
 
   async updateStatePolicy(stateId, patch) {
-    const policy = await this.repository.setStatePolicy(stateId, patch);
+    const policy = await this.privilegedMutationGateway.mutate(ECONOMY_STATE_POLICY_UPDATE_COMMAND, { stateId, patch });
     await this.refreshOpenApps();
     return policy;
   }
 
   async resetWorldData({ notify = false } = {}) {
-    await this.traderService.resetState();
-    const model = await this.repository.resetWorldData();
+    const model = await this.privilegedMutationGateway.mutate(ECONOMY_WORLD_DATA_RESET_COMMAND, {});
     if (notify) {
       ui.notifications?.info(game.i18n.localize("REBREYA_MAIN.Notifications.DataRestored"));
     }

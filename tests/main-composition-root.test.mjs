@@ -288,8 +288,8 @@ test("composition root exposes safe public city reads and GM-only presentation m
   assert.notEqual(updateStart, -1);
   assert.notEqual(updateEnd, -1);
   const updateMethodSource = source.slice(updateStart, updateEnd);
-  assert.match(updateMethodSource, /game\.user\?\.isGM\s*!==\s*true/u);
-  assert.match(updateMethodSource, /City presentation updates require a GM/u);
+  assert.match(updateMethodSource, /privilegedMutationGateway\.mutate\(ECONOMY_CITY_PRESENTATION_UPDATE_COMMAND/u);
+  assert.doesNotMatch(updateMethodSource, /game\.user\?\.isGM/u);
   assert.match(updateMethodSource, /refreshCityViews\(\{ cityIds: \[cityId\] \}\)/u);
 });
 

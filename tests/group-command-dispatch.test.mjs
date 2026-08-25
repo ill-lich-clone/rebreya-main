@@ -67,6 +67,8 @@ function installFixture({ currentUserId = "gm-a", includeGroupB = false } = {}) 
   const actors = includeGroupB ? [groupA, memberA, groupB, memberB] : [groupA, memberA];
   const emitted = [];
   const writes = [];
+  let activeSettingWrites = 0;
+  let maxConcurrentSettingWrites = 0;
   const store = {
     [SETTINGS_KEYS.GROUP_STATE]: {
       version: 1,
@@ -83,7 +85,12 @@ function installFixture({ currentUserId = "gm-a", includeGroupB = false } = {}) 
       }
     },
     [SETTINGS_KEYS.CALENDAR_STATE]: { version: 1, isoDate: "1300-01-01", timeOfDaySeconds: 0 },
-    [SETTINGS_KEYS.COSMOLOGY_STATE]: { version: 1, mechanusEnabled: false, retained: "yes" }
+    [SETTINGS_KEYS.COSMOLOGY_STATE]: { version: 1, mechanusEnabled: false, retained: "yes" },
+    [SETTINGS_KEYS.CONNECTION_STATES]: { retainedConnection: false },
+    [SETTINGS_KEYS.CITY_PRESENTATION_OVERRIDES]: { retainedCity: { description: "Retained" } },
+    [SETTINGS_KEYS.REFERENCE_NOTES]: { "city::retained": { description: "Retained" } },
+    [SETTINGS_KEYS.TRADE_ROUTE_OVERRIDES]: { retainedRoute: { description: "Retained", additionalPricePercent: 3 } },
+    [SETTINGS_KEYS.STATE_POLICIES]: { retainedState: { taxPercent: 1, generalDutyPercent: 2, bilateralDuties: {} } }
   };
   if (includeGroupB) {
     store[SETTINGS_KEYS.GROUP_STATE].groupsById[groupB.id] = {
@@ -119,9 +126,17 @@ function installFixture({ currentUserId = "gm-a", includeGroupB = false } = {}) 
       },
       async set(moduleId, key, value) {
         assert.equal(moduleId, MODULE_ID);
-        writes.push({ key, value: clone(value) });
-        store[key] = clone(value);
-        return value;
+        activeSettingWrites += 1;
+        maxConcurrentSettingWrites = Math.max(maxConcurrentSettingWrites, activeSettingWrites);
+        try {
+          await Promise.resolve();
+          writes.push({ key, value: clone(value) });
+          store[key] = clone(value);
+          return value;
+        }
+        finally {
+          activeSettingWrites -= 1;
+        }
       }
     },
     socket: {
@@ -139,6 +154,9 @@ function installFixture({ currentUserId = "gm-a", includeGroupB = false } = {}) 
     memberA,
     memberB,
     store,
+    get maxConcurrentSettingWrites() {
+      return maxConcurrentSettingWrites;
+    },
     users: { gmA, gmB, playerA, playerB },
     writes,
     restore() {
@@ -548,6 +566,159 @@ test("cosmology.setMechanus accepts only an exact boolean payload from a GM send
     await flushCommands();
     assert.equal(resultFor(fixture, unauthorized.requestId)?.error?.code, "unauthorized");
     assert.equal(resultFor(fixture, invalid.requestId)?.error?.code, "invalid-payload");
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("economy commands authorize GMs and preserve independent setting patches", async () => {
+  const fixture = installFixture();
+  try {
+    const moduleApi = new RebreyaMainModule();
+    const cityCalls = [];
+    moduleApi.repository.updateCityPresentation = async (...args) => {
+      cityCalls.push(args);
+      return { id: args[0] };
+    };
+
+    const requests = [
+      commandRequest(
+        "economy.city-presentation.update",
+        fixture.users.gmB.id,
+        { cityId: "city-a", patch: { description: "Updated" } },
+        "economy-city"
+      ),
+      commandRequest(
+        "economy.connection.set-active",
+        fixture.users.gmB.id,
+        { connectionId: "connection-a", isActive: false },
+        "economy-connection"
+      ),
+      commandRequest(
+        "economy.reference.update-description",
+        fixture.users.gmB.id,
+        { entryType: "city", entryId: "city-a", description: "Reference" },
+        "economy-reference"
+      ),
+      commandRequest(
+        "economy.trade-route.update-metadata",
+        fixture.users.gmB.id,
+        { connectionId: "route-a", patch: { additionalPricePercent: 7 } },
+        "economy-route"
+      ),
+      commandRequest(
+        "economy.state-policy.update",
+        fixture.users.gmB.id,
+        { stateId: "state-a", patch: { taxPercent: 4 } },
+        "economy-policy"
+      )
+    ];
+    for (const request of requests) {
+      await moduleApi.handleSocketMessage(request);
+    }
+    const unauthorized = commandRequest(
+      "economy.connection.set-active",
+      fixture.users.playerA.id,
+      { connectionId: "connection-player", isActive: false },
+      "economy-player"
+    );
+    await moduleApi.handleSocketMessage(unauthorized);
+    await flushCommands();
+
+    assert.deepEqual(cityCalls, [["city-a", { description: "Updated" }]]);
+    assert.equal(fixture.store[SETTINGS_KEYS.CONNECTION_STATES]["connection-a"], false);
+    assert.deepEqual(fixture.store[SETTINGS_KEYS.REFERENCE_NOTES]["city::city-a"], { description: "Reference" });
+    assert.deepEqual(fixture.store[SETTINGS_KEYS.TRADE_ROUTE_OVERRIDES]["route-a"], {
+      description: "",
+      additionalPricePercent: 7
+    });
+    assert.deepEqual(fixture.store[SETTINGS_KEYS.STATE_POLICIES]["state-a"], {
+      taxPercent: 4,
+      generalDutyPercent: 0,
+      bilateralDuties: {}
+    });
+    assert.equal(fixture.store[SETTINGS_KEYS.CONNECTION_STATES]["connection-player"], undefined);
+    assert.equal(resultFor(fixture, unauthorized.requestId)?.error?.code, "unauthorized");
+    assert.equal(fixture.maxConcurrentSettingWrites, 1);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("economy world reset writes every economy setting sequentially after trader state", async () => {
+  const fixture = installFixture();
+  try {
+    const moduleApi = new RebreyaMainModule();
+    const resetOrder = [];
+    moduleApi.traderService.resetState = async () => {
+      resetOrder.push(SETTINGS_KEYS.TRADER_STATE);
+      return 0;
+    };
+    const request = commandRequest(
+      "economy.world-data.reset",
+      fixture.users.gmB.id,
+      {},
+      "economy-reset"
+    );
+
+    await moduleApi.handleSocketMessage(request);
+    await flushCommands();
+
+    assert.equal(resultFor(fixture, request.requestId)?.ok, true);
+    assert.deepEqual(resetOrder, [SETTINGS_KEYS.TRADER_STATE]);
+    assert.deepEqual(fixture.writes.map((write) => write.key), [
+      SETTINGS_KEYS.CONNECTION_STATES,
+      SETTINGS_KEYS.CITY_PRESENTATION_OVERRIDES,
+      SETTINGS_KEYS.REFERENCE_NOTES,
+      SETTINGS_KEYS.TRADE_ROUTE_OVERRIDES,
+      SETTINGS_KEYS.STATE_POLICIES
+    ]);
+    assert.equal(fixture.maxConcurrentSettingWrites, 1);
+    for (const key of fixture.writes.map((write) => write.key)) {
+      assert.deepEqual(fixture.store[key], {});
+    }
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("an inactive GM routes economy writes through the typed command without a local setting write", async () => {
+  const fixture = installFixture({ currentUserId: "gm-b" });
+  try {
+    const moduleApi = new RebreyaMainModule();
+    let refreshCount = 0;
+    moduleApi.refreshOpenApps = async () => {
+      refreshCount += 1;
+    };
+
+    const pending = moduleApi.setConnectionActive("connection-a", false);
+    await flushCommands();
+    const request = fixture.emitted[0]?.message;
+    assert.deepEqual(request, {
+      type: COMMAND_REQUEST_TYPE,
+      command: "economy.connection.set-active",
+      requestId: request?.requestId,
+      senderId: fixture.users.gmB.id,
+      payload: { connectionId: "connection-a", isActive: false }
+    });
+    assert.equal(fixture.writes.length, 0);
+
+    await moduleApi.handleSocketMessage({
+      type: COMMAND_RESULT_TYPE,
+      command: request.command,
+      requestId: request.requestId,
+      forUserId: fixture.users.gmB.id,
+      senderId: fixture.users.gmA.id,
+      ok: true,
+      data: null
+    });
+
+    assert.equal(await pending, null);
+    assert.equal(fixture.writes.length, 0);
+    assert.equal(refreshCount, 1);
   }
   finally {
     fixture.restore();

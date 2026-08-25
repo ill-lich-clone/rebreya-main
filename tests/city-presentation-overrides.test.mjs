@@ -7,6 +7,7 @@ import {
 } from "../scripts/data/city-presentation-overrides.js";
 import { MODULE_ID, SETTINGS_KEYS } from "../scripts/constants.js";
 import { registerSettings } from "../scripts/settings.js";
+import * as economyCommands from "../scripts/application/economy-mutation-commands.js";
 
 test("city presentation overrides keep only known cities and supported fields", () => {
   const normalized = normalizeCityPresentationOverrides({
@@ -65,4 +66,36 @@ test("city presentation overrides register as hidden world state", () => {
   finally {
     globalThis.game = previousGame;
   }
+});
+
+test("economy mutation commands expose exact public contracts", () => {
+  const unsafeDuties = Object.create(null);
+  unsafeDuties.constructor = 5;
+
+  assert.deepEqual([
+    economyCommands.ECONOMY_CITY_PRESENTATION_UPDATE_COMMAND,
+    economyCommands.ECONOMY_CONNECTION_SET_ACTIVE_COMMAND,
+    economyCommands.ECONOMY_REFERENCE_UPDATE_DESCRIPTION_COMMAND,
+    economyCommands.ECONOMY_TRADE_ROUTE_UPDATE_METADATA_COMMAND,
+    economyCommands.ECONOMY_STATE_POLICY_UPDATE_COMMAND,
+    economyCommands.ECONOMY_WORLD_DATA_RESET_COMMAND
+  ], [
+    "economy.city-presentation.update",
+    "economy.connection.set-active",
+    "economy.reference.update-description",
+    "economy.trade-route.update-metadata",
+    "economy.state-policy.update",
+    "economy.world-data.reset"
+  ]);
+  assert.equal(economyCommands.isValidEconomyCityPresentationUpdatePayload?.({ cityId: "known", patch: { description: null } }), true);
+  assert.equal(economyCommands.isValidEconomyCityPresentationUpdatePayload?.({ cityId: "known", patch: {} }), false);
+  assert.equal(economyCommands.isValidEconomyConnectionSetActivePayload?.({ connectionId: "route", isActive: false }), true);
+  assert.equal(economyCommands.isValidEconomyReferenceUpdateDescriptionPayload?.({ entryType: "city", entryId: "known", description: "Text" }), true);
+  assert.equal(economyCommands.isValidEconomyTradeRouteUpdateMetadataPayload?.({ connectionId: "route", patch: { additionalPricePercent: 5 } }), true);
+  assert.equal(economyCommands.isValidEconomyStatePolicyUpdatePayload?.({ stateId: "state", patch: { bilateralDuties: { other: 5 } } }), true);
+  assert.equal(economyCommands.isValidEconomyWorldDataResetPayload?.({}), true);
+  assert.equal(economyCommands.isValidEconomyCityPresentationUpdatePayload?.({ cityId: "known", patch: { description: "ok", extra: true } }), false);
+  assert.equal(economyCommands.isValidEconomyTradeRouteUpdateMetadataPayload?.({ connectionId: "route", patch: { additionalPricePercent: Infinity } }), false);
+  assert.equal(economyCommands.isValidEconomyStatePolicyUpdatePayload?.({ stateId: "state", patch: { bilateralDuties: unsafeDuties } }), false);
+  assert.equal(economyCommands.isValidEconomyWorldDataResetPayload?.({ extra: true }), false);
 });

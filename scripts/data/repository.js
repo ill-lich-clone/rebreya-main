@@ -126,6 +126,19 @@ export class EconomyRepository {
   #tradeRouteSnapshotCache = new Map();
   #tradeRouteWarmupPromise = null;
   #globalEventsService = null;
+  #worldSettingMutationRepository;
+
+  constructor({ worldSettingMutationRepository = null } = {}) {
+    this.#worldSettingMutationRepository = worldSettingMutationRepository;
+  }
+
+  #mutateObjectSetting(key, mutator, options = {}) {
+    if (typeof this.#worldSettingMutationRepository?.mutateObject !== "function") {
+      throw new Error("World setting mutation repository is unavailable");
+    }
+
+    return this.#worldSettingMutationRepository.mutateObject(key, mutator, options);
+  }
 
   #getObjectSetting(key) {
     const value = game.settings.get(MODULE_ID, key);
@@ -299,11 +312,15 @@ export class EconomyRepository {
 
   async updateCityPresentation(cityId, patch = {}) {
     const knownCityIds = new Set(this.#model?.cities?.map((city) => city.id) ?? []);
-    const next = patchCityPresentationOverrides(
-      this.getCityPresentationOverrides(), cityId, patch, knownCityIds
-    );
-    await game.settings.set(MODULE_ID, SETTINGS_KEYS.CITY_PRESENTATION_OVERRIDES, next);
-    return this.getCityPresentation(cityId);
+    const city = this.#model?.cities?.find((entry) => entry.id === cityId) ?? null;
+    return this.#mutateObjectSetting(SETTINGS_KEYS.CITY_PRESENTATION_OVERRIDES, (draft) => {
+      const next = patchCityPresentationOverrides(draft, cityId, patch, knownCityIds);
+      Object.keys(draft).forEach((key) => delete draft[key]);
+      Object.assign(draft, next);
+    }, {
+      normalize: (value) => normalizeCityPresentationOverrides(value, knownCityIds),
+      afterCommit: (_result, committed) => mergeCityPresentation(city, committed)
+    });
   }
 
   getReferenceNotes() {
@@ -327,115 +344,94 @@ export class EconomyRepository {
   }
 
   async setConnectionActive(connectionId, isActive) {
-    const nextStates = this.getConnectionStates();
-    if (isActive) {
-      delete nextStates[connectionId];
-    }
-    else {
-      nextStates[connectionId] = false;
-    }
-
-    await game.settings.set(MODULE_ID, SETTINGS_KEYS.CONNECTION_STATES, nextStates);
-    if (this.#dataset) {
-      this.#buildModel();
-    }
-
-    return this.#model;
+    return this.#mutateObjectSetting(SETTINGS_KEYS.CONNECTION_STATES, (draft) => {
+      if (isActive) delete draft[connectionId];
+      else draft[connectionId] = false;
+    }, {
+      afterCommit: () => this.#dataset ? this.#buildModel() : this.#model
+    });
   }
 
   async setReferenceNote(noteKey, description) {
-    const nextNotes = this.getReferenceNotes();
     const nextDescription = String(description ?? "").trim();
-
-    if (nextDescription) {
-      nextNotes[noteKey] = {
-        description: nextDescription
-      };
-    }
-    else {
-      delete nextNotes[noteKey];
-    }
-
-    await game.settings.set(MODULE_ID, SETTINGS_KEYS.REFERENCE_NOTES, nextNotes);
-    return nextNotes[noteKey] ?? null;
+    return this.#mutateObjectSetting(SETTINGS_KEYS.REFERENCE_NOTES, (draft) => {
+      if (nextDescription) draft[noteKey] = { description: nextDescription };
+      else delete draft[noteKey];
+    }, { afterCommit: (_result, committed) => committed[noteKey] ?? null });
   }
 
   async setTradeRouteOverride(connectionId, patch = {}) {
-    const nextOverrides = this.getTradeRouteOverrides();
-    const currentOverride = nextOverrides[connectionId] ?? {};
-    const nextDescription = String(patch.description ?? currentOverride.description ?? "").trim();
-    const rawPrice = patch.additionalPricePercent ?? currentOverride.additionalPricePercent ?? 0;
-    const nextAdditionalPricePercent = Number.isFinite(Number(rawPrice)) ? Number(rawPrice) : 0;
-
-    if (!nextDescription && Math.abs(nextAdditionalPricePercent) < 1e-9) {
-      delete nextOverrides[connectionId];
-    }
-    else {
-      nextOverrides[connectionId] = {
-        description: nextDescription,
-        additionalPricePercent: nextAdditionalPricePercent
-      };
-    }
-
-    await game.settings.set(MODULE_ID, SETTINGS_KEYS.TRADE_ROUTE_OVERRIDES, nextOverrides);
-    if (this.#dataset) {
-      this.#buildModel();
-    }
-
-    return this.getTradeRoute(connectionId);
+    return this.#mutateObjectSetting(SETTINGS_KEYS.TRADE_ROUTE_OVERRIDES, (draft) => {
+      const currentOverride = draft[connectionId] ?? {};
+      const nextDescription = String(patch.description ?? currentOverride.description ?? "").trim();
+      const rawPrice = patch.additionalPricePercent ?? currentOverride.additionalPricePercent ?? 0;
+      const nextAdditionalPricePercent = Number.isFinite(Number(rawPrice)) ? Number(rawPrice) : 0;
+      if (!nextDescription && Math.abs(nextAdditionalPricePercent) < 1e-9) {
+        delete draft[connectionId];
+      }
+      else {
+        draft[connectionId] = {
+          description: nextDescription,
+          additionalPricePercent: nextAdditionalPricePercent
+        };
+      }
+    }, {
+      afterCommit: () => {
+        if (this.#dataset) this.#buildModel();
+        return this.getTradeRoute(connectionId);
+      }
+    });
   }
 
   async setStatePolicy(stateId, patch = {}) {
-    const nextPolicies = this.getStatePolicies();
-    const currentPolicy = nextPolicies[stateId] ?? {};
-    const nextPolicy = {
-      taxPercent: toNumber(patch.taxPercent ?? currentPolicy.taxPercent),
-      generalDutyPercent: toNumber(patch.generalDutyPercent ?? currentPolicy.generalDutyPercent),
-      bilateralDuties: {}
-    };
-
-    const sourceDuties = patch.bilateralDuties ?? currentPolicy.bilateralDuties ?? {};
-    for (const [targetStateId, value] of Object.entries(sourceDuties)) {
-      const safeTargetStateId = String(targetStateId ?? "").trim();
-      if (!safeTargetStateId) {
-        continue;
+    return this.#mutateObjectSetting(SETTINGS_KEYS.STATE_POLICIES, (draft) => {
+      const currentPolicy = draft[stateId] ?? {};
+      const nextPolicy = {
+        taxPercent: toNumber(patch.taxPercent ?? currentPolicy.taxPercent),
+        generalDutyPercent: toNumber(patch.generalDutyPercent ?? currentPolicy.generalDutyPercent),
+        bilateralDuties: {}
+      };
+      const sourceDuties = patch.bilateralDuties ?? currentPolicy.bilateralDuties ?? {};
+      for (const [targetStateId, value] of Object.entries(sourceDuties)) {
+        const safeTargetStateId = String(targetStateId ?? "").trim();
+        if (safeTargetStateId && Number.isFinite(toNumber(value))) {
+          nextPolicy.bilateralDuties[safeTargetStateId] = toNumber(value);
+        }
       }
-
-      const numericValue = toNumber(value);
-      if (!Number.isFinite(numericValue)) {
-        continue;
+      if (
+        Math.abs(nextPolicy.taxPercent) < 1e-9
+        && Math.abs(nextPolicy.generalDutyPercent) < 1e-9
+        && !Object.keys(nextPolicy.bilateralDuties).length
+      ) {
+        delete draft[stateId];
       }
-
-      nextPolicy.bilateralDuties[safeTargetStateId] = numericValue;
-    }
-
-    if (
-      Math.abs(nextPolicy.taxPercent) < 1e-9
-      && Math.abs(nextPolicy.generalDutyPercent) < 1e-9
-      && !Object.keys(nextPolicy.bilateralDuties).length
-    ) {
-      delete nextPolicies[stateId];
-    }
-    else {
-      nextPolicies[stateId] = nextPolicy;
-    }
-
-    await game.settings.set(MODULE_ID, SETTINGS_KEYS.STATE_POLICIES, nextPolicies);
-    if (this.#dataset) {
-      this.#buildModel();
-    }
-
-    return this.getStatePolicy(stateId);
+      else {
+        draft[stateId] = nextPolicy;
+      }
+    }, {
+      afterCommit: () => {
+        if (this.#dataset) this.#buildModel();
+        return this.getStatePolicy(stateId);
+      }
+    });
   }
 
   async resetWorldData() {
-    await Promise.all([
-      game.settings.set(MODULE_ID, SETTINGS_KEYS.CONNECTION_STATES, {}),
-      game.settings.set(MODULE_ID, SETTINGS_KEYS.CITY_PRESENTATION_OVERRIDES, {}),
-      game.settings.set(MODULE_ID, SETTINGS_KEYS.REFERENCE_NOTES, {}),
-      game.settings.set(MODULE_ID, SETTINGS_KEYS.TRADE_ROUTE_OVERRIDES, {}),
-      game.settings.set(MODULE_ID, SETTINGS_KEYS.STATE_POLICIES, {})
-    ]);
+    const repository = this.#worldSettingMutationRepository;
+    if (typeof repository?.replaceObject !== "function") {
+      throw new Error("World setting mutation repository is unavailable");
+    }
+
+    const settingKeys = [
+      SETTINGS_KEYS.CONNECTION_STATES,
+      SETTINGS_KEYS.CITY_PRESENTATION_OVERRIDES,
+      SETTINGS_KEYS.REFERENCE_NOTES,
+      SETTINGS_KEYS.TRADE_ROUTE_OVERRIDES,
+      SETTINGS_KEYS.STATE_POLICIES
+    ];
+    for (const key of settingKeys) {
+      await repository.replaceObject(key, {});
+    }
 
     if (this.#dataset) {
       this.#buildModel();
