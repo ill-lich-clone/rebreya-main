@@ -7,6 +7,7 @@ import {
   handleStorageCanvasDrop,
   registerStorageTransferDropHooks,
   transferFoundryItemDropToCanvas,
+  transferFoundryJournalDropToCanvas,
   transferPortableStorageItemDropToCanvas,
   transferStorageDropToCanvas,
   transferStorageDropToCharacter
@@ -23,6 +24,65 @@ const storageDrop = {
   rowId: "row-1",
   quantity: 5
 };
+
+test("NotesLayer leaves JournalEntry drops entirely to Foundry", async () => {
+  const calls = [];
+  const notes = {};
+  const canvas = { notes, activeLayer: notes, scene: { id: "scene" } };
+  const handled = handleStorageCanvasDrop(canvas, {
+    type: "JournalEntry", uuid: "JournalEntry.notes", x: 120, y: 180
+  }, {
+    async dropStorageJournalToScene(...args) { calls.push(args); }
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(handled, true);
+  assert.deepEqual(calls, []);
+});
+
+test("non-Notes layers route JournalEntry drops only to the Journal scene API", async () => {
+  const calls = [];
+  const canvas = { notes: {}, activeLayer: {}, scene: { id: "scene" } };
+  assert.equal(handleStorageCanvasDrop(canvas, {
+    type: "JournalEntry", uuid: "JournalEntry.notes", x: 120, y: 180
+  }, {
+    async dropStorageJournalToScene(...args) {
+      calls.push(args);
+      return { changed: true };
+    }
+  }), false);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(calls, [["JournalEntry.notes", { sceneId: "scene", x: 120, y: 180 }]]);
+});
+
+test("JournalEntryPage and malformed Journal drag data preserve Foundry behavior", () => {
+  const canvas = { notes: {}, activeLayer: {}, scene: { id: "scene" } };
+  assert.equal(handleStorageCanvasDrop(canvas, {
+    type: "JournalEntryPage", uuid: "JournalEntry.notes.JournalEntryPage.page", x: 1, y: 2
+  }, {}), true);
+  assert.equal(handleStorageCanvasDrop(canvas, {
+    type: "JournalEntry", uuid: "", x: 1, y: 2
+  }, {}), true);
+});
+
+test("Journal scene helper validates the exact drop point before calling the API", async () => {
+  const calls = [];
+  const result = await transferFoundryJournalDropToCanvas(
+    { scene: { id: "scene" } },
+    { type: "JournalEntry", uuid: "JournalEntry.notes", x: 120, y: 180 },
+    { async dropStorageJournalToScene(...args) { calls.push(args); return { changed: true }; } }
+  );
+
+  assert.deepEqual(result, { handled: true, result: { changed: true } });
+  assert.deepEqual(calls, [["JournalEntry.notes", { sceneId: "scene", x: 120, y: 180 }]]);
+  await assert.rejects(
+    transferFoundryJournalDropToCanvas(
+      { scene: { id: "scene" } },
+      { type: "JournalEntry", uuid: "JournalEntry.notes", x: Number.NaN, y: 180 },
+      { async dropStorageJournalToScene() { throw new Error("must not call"); } }
+    ),
+    /Не удалось определить место/u
+  );
+});
 
 test("character sheet drop asks quantity and targets that character", async () => {
   const calls = [];

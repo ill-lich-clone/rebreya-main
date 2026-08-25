@@ -161,6 +161,22 @@ export async function transferFoundryItemDropToCanvas(
   return { handled: true, cancelled: false, quantity, result };
 }
 
+export async function transferFoundryJournalDropToCanvas(canvas, data, moduleApi) {
+  const journalUuid = clean(data?.uuid);
+  if (clean(data?.type) !== "JournalEntry" || !journalUuid) return { handled: false };
+  if (typeof moduleApi?.dropStorageJournalToScene !== "function") {
+    throw new Error("API переноса записей журнала Rebreya на сцену недоступен.");
+  }
+  const sceneId = clean(canvas?.scene?.id ?? data?.sceneId);
+  const x = Number(data?.x);
+  const y = Number(data?.y);
+  if (!sceneId || !Number.isFinite(x) || !Number.isFinite(y)) {
+    throw new Error("Не удалось определить место для записи журнала на сцене.");
+  }
+  const result = await moduleApi.dropStorageJournalToScene(journalUuid, { sceneId, x, y });
+  return { handled: true, result };
+}
+
 export function handleStorageActorSheetDrop(actor, data, moduleApi, options = {}) {
   if (!parseStorageDragData(data)) return true;
   void transferStorageDropToCharacter(actor, data, moduleApi, options).catch(notifyDropError);
@@ -170,6 +186,11 @@ export function handleStorageActorSheetDrop(actor, data, moduleApi, options = {}
 export function handleStorageCanvasDrop(canvas, data, moduleApi, options = {}) {
   if (parseStorageDragData(data)) {
     void transferStorageDropToCanvas(canvas, data, moduleApi, options).catch(notifyDropError);
+    return false;
+  }
+  if (clean(data?.type) === "JournalEntry" && clean(data?.uuid)) {
+    if (canvas?.activeLayer === canvas?.notes) return true;
+    void transferFoundryJournalDropToCanvas(canvas, data, moduleApi).catch(notifyDropError);
     return false;
   }
   if (!["Item", "ItemUUID"].includes(clean(data?.type)) || !clean(data?.uuid)) return true;
