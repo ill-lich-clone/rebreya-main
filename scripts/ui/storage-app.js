@@ -162,7 +162,7 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
       const isContainer = row.rowKind === "container" && Boolean(row.container);
       const itemName = clean(row.name ?? row.itemData?.name) || "Предмет";
       const displayName = isJournal && row.journalRead === true
-        ? `${itemName} (прочитана)`
+        ? `${itemName} (прочитано)`
         : formatDurabilityItemName(itemName, row.itemData?.flags?.[MODULE_ID]?.durability);
       return {
         ...clone(row),

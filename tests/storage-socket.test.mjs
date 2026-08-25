@@ -76,9 +76,12 @@ function createHarness({
   logResolve = true,
   folderIds = ["folder-a"],
   rejectFolderAssignmentOnce = false,
-  refreshResult = null
+  refreshResult = null,
+  playerName = "Игрок",
+  createChatMessage = null,
+  logger = null
 } = {}) {
-  const player = { id: "player", isGM: false };
+  const player = { id: "player", name: playerName, isGM: false };
   const gm = { id: "gm", isGM: true, active: true };
   const hero = {
     id: "hero",
@@ -140,6 +143,8 @@ function createHarness({
   const refreshCalls = [];
   const depositResolveCalls = [];
   const journalReadCalls = [];
+  const chatMessages = [];
+  const warnings = [];
   const folderAssignments = [];
   const ingressCommitCalls = [];
   let shouldRejectFolderAssignment = rejectFolderAssignmentOnce;
@@ -298,6 +303,13 @@ function createHarness({
         return { name: "Полевые заметки", pages: [] };
       }
     },
+    createChatMessage: createChatMessage ?? (async (data) => {
+      chatMessages.push(clone(data));
+      return data;
+    }),
+    logger: logger ?? {
+      warn(...args) { warnings.push(args); }
+    },
     resolveDepositSource: async (...args) => {
       if (logResolve) executionOrder.push("resolve");
       depositResolveCalls.push(clone(args[0]));
@@ -326,6 +338,8 @@ function createHarness({
     refreshCalls,
     depositResolveCalls,
     journalReadCalls,
+    chatMessages,
+    warnings,
     folderAssignments,
     ingressCommitCalls
   };
@@ -540,6 +554,41 @@ test("storage Journal reads re-run access checks and use only an authoritative u
   }, { sender: { id: "stranger", isGM: false } }), /принадлежащего вам персонажа/iu);
 });
 
+test("only the first successful Journal read refreshes the root pile and publishes one sanitized public message", async () => {
+  const harness = createHarness({
+    playerName: "<Игрок>",
+    journalReader: { async read() { return { name: "Snapshot", pages: [] }; } }
+  });
+  await harness.storageService.configure(harness.storageToken, {
+    state: "opened",
+    manualRows: [{
+      rowKind: "journal",
+      rowId: "journal-row",
+      stackKey: "",
+      sourceId: "JournalEntry.notes",
+      sourceType: "journal",
+      name: "Запись <тайна>",
+      quantity: 1
+    }]
+  });
+  const request = {
+    tokenUuid: harness.storageToken.uuid,
+    characterTokenUuid: harness.characterToken.uuid,
+    rowId: "journal-row"
+  };
+
+  await harness.service.readJournal(request, { sender: harness.player });
+  await harness.service.readJournal(request, { sender: harness.player });
+
+  assert.equal(harness.refreshCalls.length, 1);
+  assert.equal(harness.refreshCalls[0].token, harness.storageToken);
+  assert.deepEqual(harness.refreshCalls[0].state, readStorageState(harness.storageToken));
+  assert.equal(harness.chatMessages.length, 1);
+  assert.equal(harness.chatMessages[0].whisper, undefined);
+  assert.match(harness.chatMessages[0].content, /&lt;Игрок&gt;.*Запись &lt;тайна&gt;/u);
+  assert.equal(JSON.stringify(harness.chatMessages).includes("JournalEntry.notes"), false);
+});
+
 test("storage Journal reads resolve nested state live and fail closed for unavailable rows", async () => {
   const harness = createHarness();
   const nestedJournal = {
@@ -580,6 +629,9 @@ test("storage Journal reads resolve nested state live and fail closed for unavai
 
   await harness.service.readJournal(request, { sender: harness.player });
   assert.deepEqual(harness.journalReadCalls, ["JournalEntry.nested"]);
+  assert.equal(harness.refreshCalls.length, 1);
+  assert.equal(harness.refreshCalls[0].token, harness.storageToken);
+  assert.deepEqual(harness.refreshCalls[0].state, readStorageState(harness.storageToken));
 
   const nestedState = readStorageStateAtPath(harness.storageToken, ["bag-row"]);
   nestedState.claimedRowIds = ["nested-journal"];
@@ -665,6 +717,37 @@ test("failed Journal reading does not persist a read marker", async () => {
   }, { sender: harness.player }), /недоступна/iu);
 
   assert.deepEqual(readStorageState(harness.storageToken).readJournalRowIds, []);
+  assert.equal(harness.refreshCalls.length, 0);
+  assert.equal(harness.chatMessages.length, 0);
+});
+
+test("Journal chat failure keeps the committed marker and records one warning", async () => {
+  const harness = createHarness({
+    createChatMessage: async () => { throw new Error("chat failed"); }
+  });
+  await harness.storageService.configure(harness.storageToken, {
+    state: "opened",
+    manualRows: [{
+      rowKind: "journal",
+      rowId: "journal-row",
+      stackKey: "",
+      sourceId: "JournalEntry.notes",
+      sourceType: "journal",
+      name: "Записка",
+      quantity: 1
+    }]
+  });
+
+  await harness.service.readJournal({
+    tokenUuid: harness.storageToken.uuid,
+    characterTokenUuid: harness.characterToken.uuid,
+    rowId: "journal-row"
+  }, { sender: harness.player });
+
+  assert.deepEqual(readStorageState(harness.storageToken).readJournalRowIds, ["journal-row"]);
+  assert.equal(harness.refreshCalls.length, 1);
+  assert.equal(harness.warnings.length, 1);
+  assert.match(String(harness.warnings[0][0]), /Journal read ChatMessage creation failed/u);
 });
 
 test("concurrent Journal reads serialize on the storage source queue", async () => {

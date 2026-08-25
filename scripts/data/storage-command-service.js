@@ -596,6 +596,22 @@ export class StorageCommandService {
     }
   }
 
+  async #publishJournalReadMessage({ sender, row } = {}) {
+    if (!this.createChatMessage) return false;
+    const readerName = escapeFoundryHtml(clean(sender?.name) || "Игрок");
+    const journalName = escapeFoundryHtml(clean(row?.name) || "Запись");
+    try {
+      await this.createChatMessage({
+        content: `<p><strong>${readerName}</strong> прочитал запись «<strong>${journalName}</strong>».</p>`
+      });
+      return true;
+    }
+    catch (error) {
+      this.logger?.warn?.(`${MODULE_ID} | Storage Journal read ChatMessage creation failed.`, error);
+      return false;
+    }
+  }
+
   async #resolveAccess(payload, sender) {
     const tokenUuid = clean(payload?.tokenUuid);
     const storageToken = tokenDocument(await this.resolveToken(tokenUuid));
@@ -748,7 +764,12 @@ export class StorageCommandService {
         throw new Error("Запись журнала недоступна.");
       }
       const snapshot = await this.journalReader.read(row.sourceId);
-      await this.storageService.markJournalRead(access.storageToken, rowId, { path });
+      const marked = await this.storageService.markJournalRead(access.storageToken, rowId, { path });
+      if (marked.changed === true) {
+        const rootState = readStorageState(access.storageToken);
+        await this.groundPileService?.refreshAfterStorageMutation?.(access.storageToken, rootState);
+        await this.#publishJournalReadMessage({ sender, row });
+      }
       return snapshot;
     });
   }

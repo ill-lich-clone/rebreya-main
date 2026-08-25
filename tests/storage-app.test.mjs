@@ -300,7 +300,7 @@ test("Journal rows expose a read-only view model and no transfer controls", asyn
   const context = await app._prepareContext();
   const row = context.rows[0];
   assert.equal(row.isJournal, true);
-  assert.equal(row.name, "Полевые заметки (прочитана)");
+  assert.equal(row.name, "Полевые заметки (прочитано)");
   assert.equal(row.canDrag, false);
   assert.equal(row.canClaim, false);
   assert.equal(row.canOpenSource, false);
@@ -397,7 +397,7 @@ test("Journal read action passes nested access context and opens only the return
   ]]);
   assert.deepEqual(viewerCalls, [snapshot]);
   assert.equal(snapshotRequests, 2);
-  assert.equal((await app._prepareContext()).rows[0].name, "Полевые заметки (прочитана)");
+  assert.equal((await app._prepareContext()).rows[0].name, "Полевые заметки (прочитано)");
 });
 
 test("storage configuration exposes template and manual item controls to GMs", async () => {
