@@ -108,8 +108,8 @@ test("vehicle builder writes native and Rebreya fields", () => {
   assert.equal(actor.system.crew.max, 1);
   assert.equal(actor.system.passengers.max, 4);
   assert.equal(actor.flags["rebreya-main"].transport.sourceId, source.sourceId);
-  assert.equal(actor.flags["rebreya-main"].transport.version, 3);
-  assert.match(actor.flags["rebreya-main"].signature, /^transport-v3:/u);
+  assert.equal(actor.flags["rebreya-main"].transport.version, 4);
+  assert.match(actor.flags["rebreya-main"].signature, /^transport-v4:/u);
   assert.equal(actor.flags["rebreya-main"].transport.instance, false);
   assert.equal(actor.flags["rebreya-main"].transport.defaultGroupRole, "transport");
   assert.equal(actor.flags["rebreya-main"].transport.sourceType, "Механический транспорт");
@@ -125,4 +125,12 @@ test("vehicle builder writes native and Rebreya fields", () => {
   });
   assert.equal(actor.flags["rebreya-main"].transport.raw.cargoCapacity, source.cargoCapacity);
   assert.equal(actor.prototypeToken.actorLink, true);
+});
+
+test("transport actor builder prefers a module-owned icon matched by vehicle name", () => {
+  const source = catalog.find((row) => row.name === "Линкор");
+  const iconPath = "modules/rebreya-main/templates/icons/Transport/%D0%9B%D0%B8%D0%BD%D0%BA%D0%BE%D1%80.webp";
+  const actor = buildTransportActorData(source, new Map([["линкор", iconPath]]));
+
+  assert.equal(actor.img, iconPath);
 });

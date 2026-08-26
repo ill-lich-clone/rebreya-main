@@ -331,6 +331,25 @@ test("transport speed repair restores only malformed imported fields on concrete
   assert.equal(actor.flags[MODULE_ID].transport.instanceState.reserveCurrent, 7);
 });
 
+test("transport repair replaces only a stock instance icon with the named source icon", async () => {
+  const source = catalog.find((row) => row.name === "Линкор");
+  const iconPath = "modules/rebreya-main/templates/icons/Transport/%D0%9B%D0%B8%D0%BD%D0%BA%D0%BE%D1%80.webp";
+  const sourceData = buildTransportActorData(source, new Map([["линкор", iconPath]]));
+  const updates = [];
+  const actor = structuredClone(sourceData);
+  actor.img = "icons/svg/anchor.svg";
+  actor.flags[MODULE_ID].transport.instance = true;
+  actor.update = async (patch) => updates.push(structuredClone(patch));
+
+  const result = await repairTransportInstanceSpeeds(
+    [actor],
+    new Map([[source.sourceId, sourceData]])
+  );
+
+  assert.deepEqual(result, { inspected: 1, updated: 1 });
+  assert.deepEqual(updates, [{ img: iconPath }]);
+});
+
 test("transport speed repair preserves deliberate non-zero world overrides", async () => {
   const source = catalog.find((row) => row.name === "Автомобиль «Кипятильник»");
   const sourceData = buildTransportActorData(source);

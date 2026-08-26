@@ -7,11 +7,17 @@ import {
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 import {
   buildTransportActorData,
-  normalizeTransportEntry
+  normalizeTransportEntry,
+  resolveTransportDefaultArtwork
 } from "./transport-actor-builder.js";
+import { buildNamedIconLookup } from "./compendium-utils.js";
 import { syncFlaggedManagedDocuments } from "./managed-compendium-sync.js";
 
 const EXPECTED_CATALOG_SIZE = 62;
+const TRANSPORT_ICON_SEARCH_PATHS = [
+  `modules/${MODULE_ID}/templates/icons/Transport`,
+  `modules/${MODULE_ID}/templates/icons`
+];
 
 function collectionValues(collection) {
   if (Array.isArray(collection)) return collection;
@@ -71,6 +77,14 @@ export async function repairTransportInstanceSpeeds(actors, actorDataBySourceId)
     inspected += 1;
 
     const patch = {};
+    const sourceArtwork = String(sourceData.img ?? "").trim();
+    const stockArtwork = resolveTransportDefaultArtwork(
+      sourceData.flags?.[MODULE_ID]?.transport?.sourceType
+    );
+    const currentArtwork = String(actor.img ?? "").trim();
+    if (sourceArtwork && sourceArtwork !== stockArtwork && (!currentArtwork || currentArtwork === stockArtwork)) {
+      patch.img = sourceArtwork;
+    }
     const sourceMovement = firstPositiveEntry(
       sourceData.system?.attributes?.movement,
       ["walk", "swim", "fly", "climb", "burrow"]
@@ -158,9 +172,10 @@ export class TransportCompendiumService {
     if (!Array.isArray(rows) || rows.length !== EXPECTED_CATALOG_SIZE) {
       throw new Error(`Transport catalog must contain exactly ${EXPECTED_CATALOG_SIZE} rows`);
     }
+    const iconLookup = await buildNamedIconLookup(TRANSPORT_ICON_SEARCH_PATHS, { forceRefresh: true });
     const prepared = rows.map((entry, index) => ({
       normalized: normalizeTransportEntry(entry, index),
-      actorData: buildTransportActorData(entry)
+      actorData: buildTransportActorData(entry, iconLookup)
     }));
     const normalized = prepared.map(({ normalized: entry }) => entry);
     const pack = await this.#ensurePack(game);

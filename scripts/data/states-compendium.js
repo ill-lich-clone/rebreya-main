@@ -9,9 +9,11 @@ import {
 } from "../constants.js";
 import { bringAppToFront } from "../ui.js";
 import {
+  buildNamedIconLookup,
   ensureCompendiumFolders,
   ensurePackSidebarFolder,
-  normalizeFolderPath
+  normalizeFolderPath,
+  resolveNamedIcon
 } from "./compendium-utils.js";
 import { syncManagedDocumentsOnActiveGm } from "./managed-compendium-sync.js";
 import { buildSlug } from "./item-classification.js";
@@ -24,7 +26,11 @@ const STATES_DATA_PATH = `modules/${MODULE_ID}/data/states-teyvankal-v02.json`;
 const COMPENDIUM_SIDEBAR_FOLDER = ["Ребрея"];
 const STATES_ROOT_FOLDER = "Государства Тейванкаля";
 const DEFAULT_STATE_ICON = "icons/svg/city.svg";
-const STATE_TEMPLATE_VERSION = 4;
+const STATE_TEMPLATE_VERSION = 5;
+const STATE_ICON_SEARCH_PATHS = [
+  `modules/${MODULE_ID}/templates/icons/States`,
+  `modules/${MODULE_ID}/templates/icons`
+];
 // State origin choices must apply immediately, even before the actor has class levels.
 const STATE_ADVANCEMENT_LEVEL = 0;
 const CULTURAL_FEAT_SECTION_KEY = "cultural";
@@ -309,6 +315,7 @@ function buildStateSignature(entry) {
     culturalFeatUuids: entry.culturalFeatResolution.itemUuids,
     missingCulturalFeatNames: entry.culturalFeatResolution.missingNames,
     usesFallbackCulturalFeatPool: Boolean(entry.culturalFeatResolution.usesFallbackPool),
+    img: entry.img,
     system: entry.system
   });
 }
@@ -414,14 +421,14 @@ async function getPackDocuments(pack) {
   return Array.isArray(documents) ? documents : [];
 }
 
-function createStateItemData(entry, folderIdByPath) {
+export function createStateItemData(entry, folderIdByPath, iconLookup = null) {
   const folderPath = entry.folderPath.join("/");
   const missingCulturalFeats = entry.culturalFeatResolution.missingNames;
 
   return {
     name: entry.state.name,
     type: STATE_ITEM_TYPE,
-    img: DEFAULT_STATE_ICON,
+    img: resolveNamedIcon(entry.state.name, iconLookup, entry.img || DEFAULT_STATE_ICON),
     folder: folderIdByPath.get(folderPath) ?? null,
     ownership: {
       default: CONST.DOCUMENT_OWNERSHIP_LEVELS.OBSERVER
@@ -559,7 +566,7 @@ export function resolveCulturalFeats(state, featLookupByName) {
   };
 }
 
-function prepareStateEntries(states, featLookupByName) {
+function prepareStateEntries(states, featLookupByName, iconLookup = null) {
   return states.map((state) => {
     const culturalFeatResolution = resolveCulturalFeats(state, featLookupByName);
     const advancement = [
@@ -571,6 +578,7 @@ function prepareStateEntries(states, featLookupByName) {
       state,
       culturalFeatResolution,
       system,
+      img: resolveNamedIcon(state.name, iconLookup, DEFAULT_STATE_ICON),
       folderPath: buildStateFolderPath(state),
       signature: ""
     };
@@ -624,7 +632,8 @@ export class StatesCompendiumService {
 
     const states = await loadStatesData();
     const featLookupByName = await buildFeatLookup();
-    const entries = prepareStateEntries(states, featLookupByName);
+    const iconLookup = await buildNamedIconLookup(STATE_ICON_SEARCH_PATHS, { forceRefresh: true });
+    const entries = prepareStateEntries(states, featLookupByName, iconLookup);
     const pack = await ensurePack();
     const documents = await getPackDocuments(pack);
 
@@ -647,8 +656,8 @@ export class StatesCompendiumService {
           console.warn(`${MODULE_ID} | Failed to prepare compendium folders for states pack.`, error);
         }
       },
-      createData: (entry) => createStateItemData(entry, folderIdByPath),
-      updateData: (_document, entry) => createStateItemData(entry, folderIdByPath)
+      createData: (entry) => createStateItemData(entry, folderIdByPath, iconLookup),
+      updateData: (_document, entry) => createStateItemData(entry, folderIdByPath, iconLookup)
     });
     return game.packs.get(PACK_ID) ?? pack;
   }

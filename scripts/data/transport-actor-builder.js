@@ -1,8 +1,9 @@
 import { MODULE_ID } from "../constants.js";
+import { resolveNamedIcon } from "./compendium-utils.js";
 
 const DASH = "—";
 const POUNDS_PER_TON = 2000;
-const TRANSPORT_VERSION = 3;
+const TRANSPORT_VERSION = 4;
 const DOCUMENT_ID_PATTERN = /^lchtransport\d{4}$/u;
 const SIGNATURE_FIELDS = Object.freeze([
   "sourceId",
@@ -182,11 +183,12 @@ function fnv1a(value) {
   return (hash >>> 0).toString(16).padStart(8, "0");
 }
 
-function buildTransportSignature(entry) {
+function buildTransportSignature(entry, artwork) {
   const source = Object.fromEntries(SIGNATURE_FIELDS.map((field) => [
     field,
     entry.source?.[field] ?? entry[field] ?? ""
   ]));
+  source.artwork = artwork;
   return `transport-v${TRANSPORT_VERSION}:${fnv1a(JSON.stringify(source))}`;
 }
 
@@ -282,14 +284,18 @@ export function resolveTransportDefaultArtwork(typeLabel) {
   return TYPE_ARTWORK[cleanText(typeLabel)] ?? "icons/svg/clockwork.svg";
 }
 
-export function buildTransportActorData(rawEntry) {
+export function buildTransportActorData(rawEntry, iconLookup = null) {
   const entry = normalizeTransportEntry(rawEntry);
   const hp = entry.hpMax == null
     ? { value: 0, max: 0, temp: 0, tempmax: 0, formula: "" }
     : { value: entry.hpMax, max: entry.hpMax, temp: 0, tempmax: 0, formula: "" };
   if (entry.breakdownThreshold != null) hp.mt = entry.breakdownThreshold;
 
-  const artwork = resolveTransportDefaultArtwork(entry.typeLabel);
+  const artwork = resolveNamedIcon(
+    entry.name,
+    iconLookup,
+    resolveTransportDefaultArtwork(entry.typeLabel)
+  );
   const movement = {
     burrow: 0,
     climb: 0,
@@ -356,7 +362,7 @@ export function buildTransportActorData(rawEntry) {
       [MODULE_ID]: {
         managed: true,
         sourceId: entry.sourceId,
-        signature: buildTransportSignature(entry),
+        signature: buildTransportSignature(entry, artwork),
         transport: {
           version: TRANSPORT_VERSION,
           sourceId: entry.sourceId,

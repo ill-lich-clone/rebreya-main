@@ -5,10 +5,12 @@ import {
   MODULE_ID
 } from "../constants.js";
 import {
+  buildNamedIconLookup,
   deduplicateCompendiumFolders,
   ensureCompendiumFolders,
   ensurePackSidebarFolder,
-  normalizeFolderPath
+  normalizeFolderPath,
+  resolveNamedIcon
 } from "./compendium-utils.js";
 import { syncManagedDocumentsOnActiveGm } from "./managed-compendium-sync.js";
 import { cloneFoundryValue as clone } from "../shared/foundry-values.js";
@@ -20,7 +22,11 @@ const DOWNTIME_DATA_PATH = `modules/${MODULE_ID}/data/downtime-activities-teyvan
 const COMPENDIUM_SIDEBAR_FOLDER = ["Ребрея"];
 const DOWNTIME_ROOT_FOLDER = "Простой";
 const DEFAULT_DOWNTIME_ICON = "systems/dnd5e/icons/svg/activity/utility.svg";
-const DOWNTIME_TEMPLATE_VERSION = 1;
+const DOWNTIME_TEMPLATE_VERSION = 2;
+const DOWNTIME_ICON_SEARCH_PATHS = [
+  `modules/${MODULE_ID}/templates/icons/Downtime`,
+  `modules/${MODULE_ID}/templates/icons`
+];
 const FALLBACK_OBSERVER_OWNERSHIP = 2;
 
 function asObject(value) {
@@ -238,15 +244,19 @@ function getObserverOwnership() {
   return globalThis.CONST?.DOCUMENT_OWNERSHIP_LEVELS?.OBSERVER ?? FALLBACK_OBSERVER_OWNERSHIP;
 }
 
-export function createDowntimeItemData(activity, folderIdByPath = new Map()) {
+export function createDowntimeItemData(activity, folderIdByPath = new Map(), iconLookup = null) {
   const folderPath = activity.folderPath.join("/");
-  const downtimeFlag = buildDowntimeFlag(activity);
+  const resolvedActivity = {
+    ...activity,
+    img: resolveNamedIcon(activity.name, iconLookup, activity.img || DEFAULT_DOWNTIME_ICON)
+  };
+  const downtimeFlag = buildDowntimeFlag(resolvedActivity);
 
   return {
     _id: createStableDowntimeDocumentId(activity.id),
     name: activity.name,
     type: DOWNTIME_ITEM_TYPE,
-    img: activity.img || DEFAULT_DOWNTIME_ICON,
+    img: resolvedActivity.img,
     folder: folderIdByPath.get(folderPath) ?? null,
     ownership: {
       default: getObserverOwnership()
@@ -261,7 +271,7 @@ export function createDowntimeItemData(activity, folderIdByPath = new Map()) {
         rank: activity.rank,
         automationStatus: activity.automationStatus,
         downtime: downtimeFlag,
-        signature: buildDowntimeSignature(activity)
+        signature: buildDowntimeSignature(resolvedActivity)
       }
     }
   };
@@ -381,7 +391,11 @@ export class DowntimeCompendiumService {
       return null;
     }
 
-    const activities = await loadDowntimeData();
+    const iconLookup = await buildNamedIconLookup(DOWNTIME_ICON_SEARCH_PATHS, { forceRefresh: true });
+    const activities = (await loadDowntimeData()).map((activity) => ({
+      ...activity,
+      img: resolveNamedIcon(activity.name, iconLookup, activity.img || DEFAULT_DOWNTIME_ICON)
+    }));
     const pack = await ensurePack();
     await deduplicateCompendiumFolders(pack, [DOWNTIME_ROOT_FOLDER]);
     const documents = await getPackDocuments(pack);
@@ -405,8 +419,8 @@ export class DowntimeCompendiumService {
           console.warn(`${MODULE_ID} | Failed to prepare compendium folders for downtime pack.`, error);
         }
       },
-      createData: (activity) => createDowntimeItemData(activity, folderIdByPath),
-      updateData: (_document, activity) => createDowntimeItemData(activity, folderIdByPath)
+      createData: (activity) => createDowntimeItemData(activity, folderIdByPath, iconLookup),
+      updateData: (_document, activity) => createDowntimeItemData(activity, folderIdByPath, iconLookup)
     });
     const activePack = game.packs.get(PACK_ID) ?? pack;
     await deduplicateCompendiumFolders(activePack, [DOWNTIME_ROOT_FOLDER]);
