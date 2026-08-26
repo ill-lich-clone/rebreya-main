@@ -169,6 +169,13 @@ export class PrivilegedMutationGateway {
 
     if (!this.#isActiveGmClient(game)) {
       const initialActiveGmId = cleanString(this.#getActiveGm(game)?.id);
+      if (!initialActiveGmId) {
+        throw new PrivilegedMutationError(
+          "active-gm-unavailable",
+          "No active GM is available for privileged mutation.",
+          { command: normalizedCommand, operationId: normalizedOperationId }
+        );
+      }
       return this.#requestWithRetry(
         normalizedCommand,
         clonedPayload,

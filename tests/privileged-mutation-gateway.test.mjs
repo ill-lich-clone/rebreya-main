@@ -296,6 +296,48 @@ test("player is authorized from the authenticated socket sender and never execut
   assert.equal(result?.message?.error?.code, "unauthorized");
 });
 
+test("gateway fails fast without an active GM and emits no socket request", async () => {
+  const player = { id: "player-a", isGM: false, active: true };
+  const emitted = [];
+  const timers = createFakeTimers();
+  const game = createGame({
+    users: [player],
+    currentUserId: player.id,
+    activeGmId: null,
+    emitted
+  });
+  const { gateway } = createGateway({
+    game,
+    commandBusOptions: {
+      setTimeoutFn: timers.setTimeoutFn,
+      clearTimeoutFn: timers.clearTimeoutFn
+    }
+  });
+  let settledError = null;
+
+  gateway.registerCommand("settings.no-active-gm", {
+    validate: () => true,
+    authorize: () => true,
+    execute: async () => "unexpected"
+  });
+
+  const mutation = gateway.mutate(
+    "settings.no-active-gm",
+    {},
+    { operationId: "no-active-gm-operation" }
+  ).catch((error) => {
+    settledError = error;
+  });
+  await flushTasks();
+
+  assert.equal(settledError?.code, "active-gm-unavailable");
+  assert.equal(settledError?.command, "settings.no-active-gm");
+  assert.equal(settledError?.operationId, "no-active-gm-operation");
+  assert.deepEqual(emitted, []);
+  assert.equal(timers.pending.size, 0);
+  await mutation;
+});
+
 test("timeout retry reuses the operation id and active GM executes once", async () => {
   const gmA = { id: "gm-a", isGM: true, active: true };
   const gmB = { id: "gm-b", isGM: true, active: true };

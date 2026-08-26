@@ -40,7 +40,6 @@ import {
   normalizeGroupState,
   normalizeGroupTransportState
 } from "./data/group-context-service.js";
-import { RebreyaQuestLogService } from "./data/quest-log-service.js";
 import { DowntimeService } from "./data/downtime-service.js?v=1.4.96-craft-calendar";
 import { CharacterDowntimeService } from "./data/character-downtime-service.js";
 import {
@@ -303,7 +302,6 @@ import {
 } from "./ui/storage-transfer-ui.js";
 import { getCraftsmanSubclasses } from "./integrations/craftsman-subclass-tracks.js";
 import { patchTransformCleanupUpdateActorHook } from "./integrations/transform-cleanup-compat.js";
-import { registerForienQuestLogIntegration, refreshForienQuestLogApps } from "./integrations/forien-quest-log.js?v=1.4.96";
 import { openRebreyaQuestLog } from "./integrations/rebreya-quest-log.js";
 import {
   SOCKET_EVENT_SET_SETTING,
@@ -1279,7 +1277,6 @@ export class RebreyaMainModule {
     this.groupContextService = new GroupContextService({
       groupStateRepository: this.groupStateRepository
     });
-    this.questLogService = new RebreyaQuestLogService({ groupContextService: this.groupContextService });
     this.downtimeService = new DowntimeService(this);
     this.characterDowntimeService = new CharacterDowntimeService(this);
     this.transportFuelService = new TransportFuelService({
@@ -4734,7 +4731,6 @@ export class RebreyaMainModule {
       groupActorId
     });
     await this.refreshOpenApps();
-    await refreshForienQuestLogApps();
     await syncSmallTimeToCalendarTime(this);
     return result;
   }
@@ -6418,13 +6414,6 @@ Hooks.once("ready", async () => {
   }
   catch (error) {
     console.error(`${MODULE_ID} | Failed to register transport vehicle sheet hook.`, error);
-  }
-
-  try {
-    await registerForienQuestLogIntegration(moduleApi);
-  }
-  catch (error) {
-    console.warn(`${MODULE_ID} | Failed to register Forien Quest Log integration.`, error);
   }
 
   try {

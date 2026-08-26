@@ -43,7 +43,7 @@ Versioned entrypoint обязан оставаться минимальным ca
 1. Патчатся EffectMacro и transform-cleanup.
 2. Создаётся один экземпляр `RebreyaMainModule`.
 3. API публикуется в `game.rebreyaMain` и module API.
-4. Регистрируются Forien Quest Log, combat hooks, Mechanus, SmallTime, feat choices, dnd5e sheets, loot chat, ration conversion, inventory sync и magic item templates.
+4. Регистрируются combat hooks, Mechanus, SmallTime, Rebreya Quest Log, feat choices, dnd5e sheets, loot chat, ration conversion, inventory sync и magic item templates.
 5. `initialize()` загружает модель, синхронизирует компендиумы и инициализирует runtime-сервисы.
 
 Повторную регистрацию hook-ов внутри UI или отдельных сервисов добавлять нельзя. Регистрация принадлежит `main.js`, `scripts/hooks.js`, `scripts/combat/hooks.js` или явно названной integration-функции.
@@ -238,7 +238,6 @@ Versioned entrypoint обязан оставаться минимальным ca
 | Inventory sync | `inventory-sync.js` | после Item/Actor mutations обновляет только связанные inventory views |
 | SmallTime | `smalltime-compat.js` | отображение календаря Rebreya и подтверждение расхода запасов при сдвиге world time |
 | Rebreya Quest Log | `rebreya-quest-log.js` | кнопка инвентаря открывает отдельный модуль только через его публичный `openQuestLog` API |
-| Legacy Forien Quest Log | `forien-quest-log.js`, `quest-log-service.js` | старый metadata/UI overlay-контур; новый launcher его не использует |
 | Rations | `ration-food-conversion.js` | созданные ration Items можно конвертировать в партийную еду |
 | Magic templates | `magic-weapon-template.js` | шаблон базового оружия/доспеха/щита/боеприпасов/инструмента для magic item |
 | BG3 Hotbar | `scripts/hooks.js` | подавляет auto-add служебных Items, чинит item-pile common actions/death saves |

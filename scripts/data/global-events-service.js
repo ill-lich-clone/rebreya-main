@@ -1,4 +1,5 @@
 ﻿import { MODULE_ID, SETTINGS_KEYS } from "../constants.js";
+import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 
 const DEFAULT_PRIORITY = 100;
 const EFFECT_MODES = new Set(["addPercent", "multiply", "flat", "override"]);
@@ -495,7 +496,7 @@ export class GlobalEventsService {
     return events.map((entry) => foundry.utils.deepClone(entry));
   }
 
-  async #mutateGlobalEvents(mutator) {
+  async #mutateGlobalEvents(mutator, { commitWhenChanged = false } = {}) {
     const repository = this.moduleApi?.worldSettingMutationRepository;
     if (typeof repository?.mutateObject !== "function") {
       throw new Error("World setting mutation repository is unavailable");
@@ -506,14 +507,19 @@ export class GlobalEventsService {
       async (state) => {
         const events = state.events;
         const result = await mutator(events);
-        const now = Date.now();
-        state.version = 1;
-        state.updatedAt = now;
-        state.events = events.map((entry) => normalizeEvent({ ...entry, updatedAt: now }));
+        if (!commitWhenChanged || result?.changed === true) {
+          const now = Date.now();
+          state.version = 1;
+          state.updatedAt = now;
+          state.events = events.map((entry) => normalizeEvent({ ...entry, updatedAt: now }));
+        }
         return result;
       },
       {
         normalize: normalizeGlobalEventsState,
+        shouldCommit: commitWhenChanged
+          ? (result) => result?.changed === true
+          : null,
         afterCommit: (result, committed) => {
           this.#eventsCache = committed.events;
           this.#eventsUpdatedAt = committed.updatedAt;
@@ -708,6 +714,15 @@ export class GlobalEventsService {
   async refreshEventActivationByDate(currentDate = null, previousDate = null) {
     const safeCurrentDate = normalizeIsoDate(currentDate) || this.#currentIsoDate();
     const safePreviousDate = normalizeIsoDate(previousDate);
+    if (!isActiveGmClient(globalThis.game)) {
+      return {
+        changed: false,
+        started: [],
+        ended: [],
+        currentDate: safeCurrentDate,
+        previousDate: safePreviousDate
+      };
+    }
     const activation = await this.#mutateGlobalEvents((events) => {
       const started = [];
       const ended = [];
@@ -737,7 +752,7 @@ export class GlobalEventsService {
         currentDate: safeCurrentDate,
         previousDate: safePreviousDate
       };
-    });
+    }, { commitWhenChanged: true });
     const { changed, started, ended } = activation;
     if (this.isNotificationsEnabled() && game.user?.isGM) {
       for (const event of started) {

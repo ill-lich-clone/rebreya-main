@@ -67,12 +67,15 @@ export class WorldSettingMutationRepository {
     );
   }
 
-  mutateObject(settingKey, mutator, { normalize, afterCommit = null } = {}) {
+  mutateObject(settingKey, mutator, { normalize, afterCommit = null, shouldCommit = null } = {}) {
     if (typeof mutator !== "function") {
       throw new TypeError("mutator must be a function");
     }
     if (afterCommit != null && typeof afterCommit !== "function") {
       throw new TypeError("afterCommit must be a function or null");
+    }
+    if (shouldCommit != null && typeof shouldCommit !== "function") {
+      throw new TypeError("shouldCommit must be a function or null");
     }
 
     const normalizeObject = resolveNormalize(normalize);
@@ -84,6 +87,9 @@ export class WorldSettingMutationRepository {
       );
       const result = await mutator(current);
       const committed = normalizeDetached(normalizeObject, current);
+      if (shouldCommit && !await shouldCommit(result, clone(committed))) {
+        return result;
+      }
 
       assertActiveGm();
       await settings.set(MODULE_ID, settingKey, clone(committed));

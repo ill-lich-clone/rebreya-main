@@ -45,7 +45,9 @@ function mergeObject(base, patch) {
 function createFixture({
   holdFirstWrite = false,
   initialValue = { version: 1, updatedAt: 0, events: [] },
-  onBeforeRepositoryOperation = null
+  onBeforeRepositoryOperation = null,
+  gameUser = { id: "gm-a", isGM: true, active: true },
+  gameUsers = null
 } = {}) {
   let globalEventId = 0;
   let current = clone(initialValue);
@@ -86,7 +88,7 @@ function createFixture({
     gameProvider: () => ({ settings })
   });
   const restores = [
-    replaceGlobal("game", { settings, user: { id: "gm-a", isGM: true } }),
+    replaceGlobal("game", { settings, user: gameUser, ...(gameUsers ? { users: gameUsers } : {}) }),
     replaceGlobal("foundry", {
       utils: {
         deepClone: clone,
@@ -192,6 +194,65 @@ test("calendar activation applies its patch to the fresh queued event state", as
       fixture.current().events.map((event) => event.id).sort(),
       ["event-a", "event-b"]
     );
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("calendar activation skips the durable write when event state is already current", async () => {
+  const datedEvent = {
+    ...eventData("event-a"),
+    active: true,
+    trigger: { type: "date", startDate: "2026-08-26", endDate: null },
+    duration: { mode: "untilDisabled", startDate: null, endDate: null },
+    createdAt: 10,
+    updatedAt: 20
+  };
+  const fixture = createFixture({
+    initialValue: { version: 1, updatedAt: 20, events: [datedEvent] }
+  });
+  try {
+    const before = fixture.current();
+    const result = await fixture.service.refreshEventActivationByDate("2026-08-26");
+
+    assert.equal(result.changed, false);
+    assert.deepEqual(fixture.current(), before);
+    assert.deepEqual(fixture.writes, []);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("calendar activation does not enter the world-state write path on a non-active client", async () => {
+  const player = { id: "player-a", isGM: false, active: true };
+  const fixture = createFixture({
+    initialValue: {
+      version: 1,
+      updatedAt: 0,
+      events: [{
+        ...eventData("event-a"),
+        active: false,
+        trigger: { type: "date", startDate: "2026-08-26", endDate: null },
+        duration: { mode: "untilDisabled", startDate: null, endDate: null }
+      }]
+    },
+    gameUser: player,
+    gameUsers: { activeGM: null, contents: [player] }
+  });
+  try {
+    const result = await fixture.service.refreshEventActivationByDate("2026-08-26");
+
+    assert.deepEqual(result, {
+      changed: false,
+      started: [],
+      ended: [],
+      currentDate: "2026-08-26",
+      previousDate: null
+    });
+    assert.deepEqual(fixture.commits, []);
+    assert.deepEqual(fixture.writes, []);
   }
   finally {
     fixture.restore();

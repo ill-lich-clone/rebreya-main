@@ -17,8 +17,7 @@
   ],
   "socket": true,
   "styles": [
-    "styles/main.css",
-    "styles/quest-log-enhancements.css"
+    "styles/main.css"
   ],
   "languages": [
     {

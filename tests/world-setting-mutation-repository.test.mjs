@@ -187,6 +187,31 @@ test("mutateObject skips writes and afterCommit when the mutator fails", async (
   assert.equal(afterCommitCalls, 0);
 });
 
+test("mutateObject returns a rejected draft result without a durable write", async () => {
+  const { repository, settingStore } = createRepository({ count: 1 });
+  let afterCommitCalls = 0;
+
+  const result = await repository.mutateObject(
+    "cityPresentationOverrides",
+    (draft) => {
+      draft.count = 2;
+      return { changed: false };
+    },
+    {
+      shouldCommit: (mutationResult) => mutationResult.changed === true,
+      afterCommit: () => {
+        afterCommitCalls += 1;
+        return "unexpected";
+      }
+    }
+  );
+
+  assert.deepEqual(result, { changed: false });
+  assert.deepEqual(settingStore.value, { count: 1 });
+  assert.deepEqual(settingStore.writes, []);
+  assert.equal(afterCommitCalls, 0);
+});
+
 test("mutateObject skips afterCommit when the setting write fails", async () => {
   const writeFailure = new Error("durable setting write failed");
   const { repository, settingStore } = createRepository(
