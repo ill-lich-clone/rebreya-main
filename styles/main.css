@@ -4511,8 +4511,15 @@ summary:focus-visible {
   align-items: center;
 }
 
+.rebreya-trader-dialog.rm-currency-dialog-window {
+  width: min(420px, calc(100vw - 32px)) !important;
+  max-width: calc(100vw - 32px);
+}
+
 .rm-currency-dialog-window .window-content {
-  min-width: min(420px, calc(100vw - 32px));
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
   box-sizing: border-box;
 }
 

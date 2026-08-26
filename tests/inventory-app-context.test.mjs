@@ -3118,7 +3118,7 @@ test("InventoryApp numeric prompt prevents native form submission and applies th
   }
 });
 
-test("InventoryApp currency dialog uses text inputs and currency-specific button sizing", async () => {
+test("InventoryApp currency dialog keeps its window within the viewport", async () => {
   const [appSource, css] = await Promise.all([
     readFile(new URL("../scripts/ui/inventory-app.js", import.meta.url), "utf8"),
     readFile(new URL("../styles/main.css", import.meta.url), "utf8")
@@ -3127,6 +3127,8 @@ test("InventoryApp currency dialog uses text inputs and currency-specific button
   assert.match(appSource, /class="rm-purchase-dialog rm-currency-dialog"/u);
   assert.match(appSource, /type="text"[^>]+inputmode="numeric"[^>]+data-field="currency-gp"/u);
   assert.match(appSource, /classes:\s*\["rebreya-main",\s*"rebreya-trader-dialog",\s*"rm-currency-dialog-window"\]/u);
+  assert.match(css, /\.rebreya-trader-dialog\.rm-currency-dialog-window\s*\{[^}]*width:\s*min\(420px,\s*calc\(100vw - 32px\)\)\s*!important;[^}]*max-width:\s*calc\(100vw - 32px\);/su);
+  assert.match(css, /\.rm-currency-dialog-window\s+\.window-content\s*\{[^}]*width:\s*100%;[^}]*min-width:\s*0;[^}]*max-width:\s*100%;/su);
   assert.match(css, /\.rebreya-trader-dialog\.rm-currency-dialog-window\s+\.dialog-buttons\s+\.(?:dialog-button|[^,{]+button)/u);
 });
 
