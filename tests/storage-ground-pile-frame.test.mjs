@@ -28,12 +28,13 @@ function createGroundPileToken() {
   };
 }
 
-test("ground-pile frame controller creates one attached persistent Sequencer frame", async () => {
+test("ground-pile frame controller replaces the legacy frame with one centered thin frame", async () => {
   const frameModule = await loadFrameModule();
   assert.equal(typeof frameModule.GroundPileFrameController, "function");
 
   const calls = [];
-  const effects = [];
+  const effects = [{ name: "rebreya-main.ground-pile-frame.Scene.scene-a.Token.pile-a" }];
+  const managerCalls = [];
   class FakeSequence {
     effect() {
       calls.push(["effect"]);
@@ -73,8 +74,14 @@ test("ground-pile frame controller creates one attached persistent Sequencer fra
     }
   }
   const effectManager = {
-    getEffects({ name }) {
+    getEffects({ name, sceneId }) {
+      managerCalls.push(["getEffects", { name, sceneId }]);
       return effects.filter((effect) => effect.name === name);
+    },
+    async endEffects({ name, sceneId }) {
+      managerCalls.push(["endEffects", { name, sceneId }]);
+      const index = effects.findIndex((effect) => effect.name === name);
+      if (index >= 0) effects.splice(index, 1);
     }
   };
   const game = {
@@ -104,10 +111,11 @@ test("ground-pile frame controller creates one attached persistent Sequencer fra
       width: 0.56,
       height: 0.56,
       radius: 0.045,
+      offset: { x: -0.28, y: -0.28, gridUnits: true },
       gridUnits: true,
       fillColor: 0x0f1116,
       fillAlpha: 0.08,
-      lineSize: 8,
+      lineSize: 3,
       lineColor: 0x0f1116
     }],
     ["shape", "roundedRect", {
@@ -115,14 +123,33 @@ test("ground-pile frame controller creates one attached persistent Sequencer fra
       width: 0.56,
       height: 0.56,
       radius: 0.045,
+      offset: { x: -0.28, y: -0.28, gridUnits: true },
       gridUnits: true,
       fillAlpha: 0,
-      lineSize: 3,
+      lineSize: 1.5,
       lineColor: 0xe0b25e
     }],
     ["aboveLighting", true],
     ["persist", true],
-    ["name", "rebreya-main.ground-pile-frame.Scene.scene-a.Token.pile-a"],
+    ["name", "rebreya-main.ground-pile-frame.v2.Scene.scene-a.Token.pile-a"],
     ["play"]
+  ]);
+  assert.deepEqual(managerCalls, [
+    ["getEffects", {
+      name: "rebreya-main.ground-pile-frame.v2.Scene.scene-a.Token.pile-a",
+      sceneId: "scene-a"
+    }],
+    ["getEffects", {
+      name: "rebreya-main.ground-pile-frame.Scene.scene-a.Token.pile-a",
+      sceneId: "scene-a"
+    }],
+    ["endEffects", {
+      name: "rebreya-main.ground-pile-frame.Scene.scene-a.Token.pile-a",
+      sceneId: "scene-a"
+    }],
+    ["getEffects", {
+      name: "rebreya-main.ground-pile-frame.v2.Scene.scene-a.Token.pile-a",
+      sceneId: "scene-a"
+    }]
   ]);
 });

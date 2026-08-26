@@ -63,8 +63,8 @@ test("module manifest loads the stable canonical entrypoint", async () => {
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const [entrypoint] = manifest.esmodules;
 
-  assert.equal(manifest.version, "1.4.163");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.163.js"]);
+  assert.equal(manifest.version, "1.4.164");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.164.js"]);
   assert.doesNotMatch(entrypoint, /[?#]/u);
 
   const entrypointSource = await readFile(new URL(entrypoint, manifestUrl), "utf8");
@@ -72,7 +72,7 @@ test("module manifest loads the stable canonical entrypoint", async () => {
     entrypointSource,
     [
       "// @rebreya-role versioned-entrypoint-cache-forwarder",
-      'import "./main.js?v=1.4.163-ground-pile-frame";',
+      'import "./main.js?v=1.4.164-ground-pile-frame-fix";',
       ""
     ].join("\n")
   );
@@ -238,7 +238,7 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
     "data/craft-downtime-service.js?v=1.4.96-craft-calendar",
     "data/calendar-transition-coordinator.js?v=1.4.96-craft-calendar",
     "integrations/durability-hooks.js?v=1.4.153-corpse-creature",
-    "integrations/storage-token-hooks.js?v=1.4.163-ground-pile-frame",
+    "integrations/storage-token-hooks.js?v=1.4.164-ground-pile-frame-fix",
     "integrations/inventory-sync.js?v=1.4.96-durable-transfer",
     "data/gear-compendium.js?v=1.4.145-coin-icons-storage-sound",
     "data/storage-open-sound-service.js?v=1.4.145-coin-icons-storage-sound",
@@ -300,7 +300,7 @@ test("module keeps recent published entrypoint URLs as canonical compatibility f
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
 
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.163.js"]);
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.164.js"]);
 
   for (const fileName of ["main-1.4.98.js", "main-1.4.99.js", "main-1.4.100.js"]) {
     const forwarderSource = await readFile(new URL(`../scripts/${fileName}`, import.meta.url), "utf8");

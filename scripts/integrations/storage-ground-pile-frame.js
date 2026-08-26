@@ -3,7 +3,8 @@ import { storageObjectKind } from "../data/storage-object-kind.js";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 
 const FRAME_SCALE = 1.12;
-const FRAME_NAME_PREFIX = `${MODULE_ID}.ground-pile-frame`;
+const LEGACY_FRAME_NAME_PREFIX = `${MODULE_ID}.ground-pile-frame`;
+const FRAME_NAME_PREFIX = `${LEGACY_FRAME_NAME_PREFIX}.v2`;
 
 function positive(value, fallback = 1) {
   const number = Number(value);
@@ -52,6 +53,7 @@ export class GroundPileFrameController {
       || game?.modules?.get?.("sequencer")?.active !== true
       || typeof SequenceClass !== "function"
       || typeof effectManager?.getEffects !== "function"
+      || typeof effectManager?.endEffects !== "function"
     ) return false;
 
     const uuid = tokenUuid(token);
@@ -60,10 +62,19 @@ export class GroundPileFrameController {
     const name = `${FRAME_NAME_PREFIX}.${uuid}`;
     try {
       if (effectManager.getEffects({ name, sceneId }).length > 0) return true;
+      const legacyName = `${LEGACY_FRAME_NAME_PREFIX}.${uuid}`;
+      if (effectManager.getEffects({ name: legacyName, sceneId }).length > 0) {
+        await effectManager.endEffects({ name: legacyName, sceneId });
+      }
       const document = tokenDocument(token);
       const width = rounded(positive(document?.width) * FRAME_SCALE);
       const height = rounded(positive(document?.height) * FRAME_SCALE);
       const radius = rounded(Math.min(width, height) * 0.08);
+      const offset = {
+        x: rounded(width * -0.5),
+        y: rounded(height * -0.5),
+        gridUnits: true
+      };
       await new SequenceClass()
         .effect()
         .attachTo(token, {
@@ -78,10 +89,11 @@ export class GroundPileFrameController {
           width,
           height,
           radius,
+          offset,
           gridUnits: true,
           fillColor: 0x0f1116,
           fillAlpha: 0.08,
-          lineSize: 8,
+          lineSize: 3,
           lineColor: 0x0f1116
         })
         .shape("roundedRect", {
@@ -89,9 +101,10 @@ export class GroundPileFrameController {
           width,
           height,
           radius,
+          offset,
           gridUnits: true,
           fillAlpha: 0,
-          lineSize: 3,
+          lineSize: 1.5,
           lineColor: 0xe0b25e
         })
         .aboveLighting(true)
