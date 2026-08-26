@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { MODULE_ID } from "../scripts/constants.js";
 import { registerStorageTokenHooks } from "../scripts/integrations/storage-token-hooks.js";
 
-function createHarness({ isGM = false, distance = 5 } = {}) {
+function createHarness({ isGM = false, distance = 5, frameController = null } = {}) {
   const listeners = new Map();
   const calls = [];
   const openCalls = [];
@@ -58,10 +58,48 @@ function createHarness({ isGM = false, distance = 5 } = {}) {
       grid: { measurePath: () => ({ distance }) },
       tokens: { controlled: [characterToken], placeables: [characterToken, storageToken], get: () => null }
     }),
-    overlayController
+    overlayController,
+    ...(frameController ? { frameController } : {})
   });
   return { listeners, calls, openCalls, shown, feedback, moduleApi, storageToken, tokenListeners };
 }
+
+test("drawing a ground pile ensures its persistent frame through the storage token owner", async () => {
+  const framed = [];
+  const frameController = {
+    async ensure(token) {
+      framed.push(token);
+      return true;
+    }
+  };
+  const harness = createHarness({ isGM: true, frameController });
+  harness.storageToken.actor.flags[MODULE_ID].groundPilePrototype = { enabled: true };
+
+  await harness.listeners.get("drawToken")(harness.storageToken);
+
+  assert.deepEqual(framed, [harness.storageToken]);
+});
+
+test("creating a ground-pile TokenDocument ensures its frame even off the viewed canvas", async () => {
+  const framed = [];
+  const frameController = {
+    async ensure(token) {
+      framed.push(token);
+      return true;
+    }
+  };
+  const harness = createHarness({ isGM: true, frameController });
+  const tokenDocument = {
+    ...harness.storageToken.document,
+    actor: harness.storageToken.actor
+  };
+  tokenDocument.actor.flags[MODULE_ID].groundPilePrototype = { enabled: true };
+  const createToken = harness.listeners.get("createToken");
+
+  assert.equal(typeof createToken, "function");
+  await createToken(tokenDocument);
+  assert.deepEqual(framed, [tokenDocument]);
+});
 
 test("left-clicking storage offers only Open to a player", async () => {
   const harness = createHarness({ isGM: false });

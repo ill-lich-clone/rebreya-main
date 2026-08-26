@@ -7,6 +7,7 @@ import {
 import { isStorageActor } from "../data/storage-service.js";
 import { isDeadNpcStorageTarget } from "../data/corpse-storage-materializer.js";
 import { StorageTokenOverlayController } from "../ui/storage-token-overlay.js?v=1.4.158-storage-access-cache";
+import { GroundPileFrameController } from "./storage-ground-pile-frame.js";
 
 export function buildStorageTokenActions(moduleApi, token, {
   isGM = false,
@@ -54,11 +55,21 @@ export function registerStorageTokenHooks(moduleApi, {
   hooks = globalThis.Hooks,
   gameProvider = () => globalThis.game,
   canvasProvider = () => globalThis.canvas,
-  overlayController = new StorageTokenOverlayController({ canvasProvider })
+  overlayController = new StorageTokenOverlayController({ canvasProvider }),
+  frameController = new GroundPileFrameController({ gameProvider })
 } = {}) {
   if (typeof hooks?.on !== "function") return false;
 
   const pointerHandlers = new WeakMap();
+  const ensureGroundPileFrame = async (token) => {
+    try {
+      return await frameController?.ensure?.(token) === true;
+    }
+    catch (error) {
+      console.debug(`${MODULE_ID} | Ground-pile frame hook was skipped.`, error);
+      return false;
+    }
+  };
   const showAccessFailure = (token, access) => {
     if (access.reason === "distance") {
       overlayController.showFeedback(token, "Подойдите ближе", { durationMs: 2000 });
@@ -133,7 +144,11 @@ export function registerStorageTokenHooks(moduleApi, {
   hooks.on("hoverToken", (token, hovered) => {
     if (hovered) bindPointerClick(token);
   });
-  hooks.on("drawToken", bindPointerClick);
+  hooks.on("createToken", ensureGroundPileFrame);
+  hooks.on("drawToken", (token) => {
+    bindPointerClick(token);
+    return ensureGroundPileFrame(token);
+  });
   hooks.on("canvasPan", () => overlayController.reposition());
   hooks.on("updateToken", (document, changed = {}) => {
     const geometryChanged = ["x", "y", "width", "height"]
