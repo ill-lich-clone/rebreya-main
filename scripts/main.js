@@ -166,6 +166,7 @@ import { TraderStateRepository } from "./infrastructure/foundry/trader-state-rep
 import { WorldSettingMutationRepository } from "./infrastructure/foundry/world-setting-mutation-repository.js";
 import { getActiveGm, isActiveGmClient } from "./infrastructure/foundry/active-gm.js";
 import { SocketCommandBus } from "./infrastructure/foundry/socket-command-bus.js";
+import { StorageTriggerPromptBroker } from "./infrastructure/foundry/storage-trigger-prompt-broker.js";
 import { UiRefreshCoordinator } from "./infrastructure/ui/ui-refresh-coordinator.js";
 import { GlobalEventsService } from "./data/global-events-service.js";
 import { LootgenTemplateCatalog } from "./data/lootgen-template-catalog.js?v=1.4.129-lootgen-row-cap";
@@ -1336,25 +1337,26 @@ export class RebreyaMainModule {
     this.storageTriggerDnd5eAdapter = new StorageTriggerDnd5eAdapter({
       fromUuid: (uuid) => globalThis.fromUuid?.(uuid)
     });
+    this.storageTriggerPromptBroker = new StorageTriggerPromptBroker({
+      gameProvider: () => globalThis.game,
+      showDialog: async (prompt) => {
+        const DialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
+        if (typeof DialogV2?.confirm !== "function") throw new Error("Foundry DialogV2 недоступен.");
+        const escape = globalThis.foundry?.utils?.escapeHTML ?? ((value) => String(value ?? ""));
+        return DialogV2.confirm({
+          window: { title: cleanSocketId(prompt?.title) || "Хранилище" },
+          content: `<p>${escape(cleanSocketId(prompt?.message))}</p>`,
+          yes: { label: cleanSocketId(prompt?.confirmLabel) || "Продолжить" },
+          no: { label: cleanSocketId(prompt?.cancelLabel) || "Отмена" }
+        });
+      }
+    });
     this.storageTriggerService = new StorageTriggerService({
       hasItem: (...args) => this.storageTriggerDnd5eAdapter.hasItem(...args),
       rollCheck: (...args) => this.storageTriggerDnd5eAdapter.rollCheck(...args),
       consumeItem: (...args) => this.storageTriggerDnd5eAdapter.consumeItem(...args),
       applyDamage: (...args) => this.storageTriggerDnd5eAdapter.applyDamage(...args),
-      showDialog: async (context, config) => {
-        if (cleanSocketId(context?.senderId) !== cleanSocketId(globalThis.game?.user?.id)) {
-          throw new Error("Диалог триггера должен быть показан на клиенте инициатора.");
-        }
-        const DialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
-        if (typeof DialogV2?.confirm !== "function") throw new Error("Foundry DialogV2 недоступен.");
-        const escape = globalThis.foundry?.utils?.escapeHTML ?? ((value) => String(value ?? ""));
-        return DialogV2.confirm({
-          window: { title: cleanSocketId(config?.title) || "Хранилище" },
-          content: `<p>${escape(cleanSocketId(config?.message))}</p>`,
-          yes: { label: cleanSocketId(config?.confirmLabel) || "Продолжить" },
-          no: { label: cleanSocketId(config?.cancelLabel) || "Отмена" }
-        });
-      },
+      showDialog: (context, config) => this.storageTriggerPromptBroker.request(context, config),
       createChatMessage: async (_context, config) => {
         const escape = globalThis.foundry?.utils?.escapeHTML ?? ((value) => String(value ?? ""));
         return globalThis.ChatMessage?.create?.({ content: `<p>${escape(cleanSocketId(config?.message))}</p>` });
@@ -2442,6 +2444,10 @@ export class RebreyaMainModule {
 
   async handleSocketMessage(message, senderId) {
     if (!message || typeof message !== "object") {
+      return;
+    }
+
+    if (await this.storageTriggerPromptBroker.handleMessage(message, senderId)) {
       return;
     }
 

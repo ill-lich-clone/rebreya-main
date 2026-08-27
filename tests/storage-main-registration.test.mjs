@@ -95,6 +95,8 @@ test("main registers the storage deposit socket API and current cache keys", asy
   assert.match(main, /this\.storageJournalReader = new StorageJournalReader\(\{/u);
   assert.match(main, /this\.storageTriggerDnd5eAdapter = new StorageTriggerDnd5eAdapter\(\{/u);
   assert.match(main, /this\.storageTriggerService = new StorageTriggerService\(\{/u);
+  assert.match(main, /this\.storageTriggerPromptBroker = new StorageTriggerPromptBroker\(\{/u);
+  assert.match(main, /this\.storageTriggerPromptBroker\.handleMessage\(message, senderId\)/u);
   assert.match(main, /triggerService:\s*this\.storageTriggerService/u);
   assert.match(main, /STORAGE_TRIGGER_READ_COMMAND\s*=\s*"storage\.triggers\.read"/u);
   assert.match(main, /STORAGE_TRIGGER_SAVE_COMMAND\s*=\s*"storage\.triggers\.save"/u);
