@@ -191,7 +191,7 @@ import { BuiltinStorageActorService } from "./data/builtin-storage-actor-service
 import { StorageGroundPileService } from "./data/storage-ground-pile-service.js?v=1.4.161-journal-scene-items";
 import { StorageContainerItemService } from "./data/storage-container-item-service.js?v=1.4.130-storage-player-fixes";
 import { isStorageJournalRow } from "./data/storage-container-snapshot.js";
-import { StorageTriggerService } from "./data/storage-trigger-service.js";
+import { StorageTriggerService } from "./data/storage-trigger-service.js?v=1.4.164-storage-key-feedback";
 import { StorageTriggerDnd5eAdapter } from "./data/storage-trigger-dnd5e-adapter.js";
 import {
   StorageJournalReader,
@@ -219,7 +219,7 @@ import {
   isValidStorageRestorePortablePayload,
   isValidStorageTokenCharacterPayload,
   storageCharacterTokenUuidForClaim
-} from "./data/storage-command-service.js?v=1.4.162-gm-journal-read";
+} from "./data/storage-command-service.js?v=1.4.164-storage-key-feedback";
 import { registerCombatHooks } from "./combat/hooks.js?v=1.4.147-race-damage";
 import { CombatAttackService } from "./combat/attack-service.js?v=1.4.157-firearm-io-batching";
 import { ImplantAutomationService } from "./combat/implant-automation-service.js";
@@ -285,7 +285,7 @@ import { runMapObjectTokenMacro } from "./integrations/map-object-token-macro.js
 import { refreshSmallTimeDateDisplay, registerSmallTimeIntegration, syncSmallTimeToCalendarTime } from "./integrations/smalltime-compat.js";
 import { registerRationFoodConversionHook } from "./integrations/ration-food-conversion.js";
 import { registerMagicWeaponTemplateHook } from "./integrations/magic-weapon-template.js?v=1.4.96";
-import { registerStorageTokenHooks } from "./integrations/storage-token-hooks.js?v=1.4.164-ground-pile-frame-fix";
+import { registerStorageTokenHooks } from "./integrations/storage-token-hooks.js?v=1.4.164-storage-key-feedback";
 import { registerCraftsmanGadgetHooks } from "./integrations/craftsman-gadget-hooks.js";
 import { registerSpellAutomationHooks } from "./integrations/spell-automation-hooks.js";
 import { registerLongRestHooks } from "./integrations/long-rest-hooks.js";

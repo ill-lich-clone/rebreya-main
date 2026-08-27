@@ -164,6 +164,43 @@ test("beforeOpen lock reveals the required item name only when explicitly enable
   });
 });
 
+test("onceGlobal lock retries denials and completes only after a successful item check", async () => {
+  const state = createEmptyStorageTriggerState();
+  state.chainsByEvent.beforeOpen = [{
+    id: "gold-lock", name: "Золотой замок", enabled: true, repeat: "onceGlobal", entryStepId: "key",
+    steps: [
+      {
+        id: "key", type: "conditionItem", config: { itemName: "Золотой ключ", showItemName: false },
+        successStepId: "allow", failureStepId: "deny"
+      },
+      { id: "allow", type: "allow", config: {} },
+      { id: "deny", type: "deny", config: { message: "Заперто." } }
+    ]
+  }];
+  let hasKey = false;
+  let checks = 0;
+  const service = new StorageTriggerService({
+    hasItem: async () => { checks += 1; return hasKey; },
+    persistRuntime: async (_context, mutate) => mutate(state)
+  });
+  const context = { tokenUuid: "Scene.s.Token.chest", senderId: "player", characterActorUuid: "Actor.hero" };
+
+  const denied = await service.execute("beforeOpen", state, { ...context, runId: "denied" });
+  assert.equal(denied.allowed, false);
+  assert.deepEqual(state.executionState.onceGlobal, {});
+
+  hasKey = true;
+  const unlocked = await service.execute("beforeOpen", state, { ...context, runId: "unlocked" });
+  assert.deepEqual(unlocked.usedItemNames, ["Золотой ключ"]);
+  assert.equal(state.executionState.onceGlobal["beforeOpen:gold-lock"], true);
+
+  hasKey = false;
+  const alreadyUnlocked = await service.execute("beforeOpen", state, { ...context, runId: "later" });
+  assert.equal(alreadyUnlocked.allowed, true);
+  assert.equal(alreadyUnlocked.usedItemNames, undefined);
+  assert.equal(checks, 2);
+});
+
 test("trigger runtime branches on a dnd5e save, applies damage, and reuses a durable completed run", async () => {
   const state = createEmptyStorageTriggerState();
   state.chainsByEvent.afterOpen = [{

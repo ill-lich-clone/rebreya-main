@@ -599,16 +599,15 @@ export class StorageCommandService {
   }
 
   async #publishClaimMessage({
-    sender,
     destination,
     actor = null,
+    characterToken = null,
     row = null,
     quantity = null,
     coins = null,
     filterOutcome = null
   } = {}) {
     if (!this.createChatMessage || !["self", "party"].includes(destination)) return false;
-    const initiator = escapeFoundryHtml(clean(sender?.name) || "Игрок");
     const destinationLabel = destination === "party"
       ? "групповой инвентарь"
       : `инвентарь ${escapeFoundryHtml(clean(actor?.name) || "персонажа")}`;
@@ -630,12 +629,47 @@ export class StorageCommandService {
     const suffix = this.#filterReceiptSuffix(filterOutcome);
     try {
       await this.createChatMessage({
-        content: `<p><strong>${initiator}</strong> перемещает <strong>${subject}</strong> в ${destinationLabel}.${suffix ? `<br>${suffix}` : ""}</p>`
+        speaker: this.#characterSpeaker(actor, characterToken),
+        content: `<p>Перемещает <strong>${subject}</strong> в ${destinationLabel}.${suffix ? `<br>${suffix}` : ""}</p>`
       });
       return true;
     }
     catch (error) {
       this.logger?.warn?.(`${MODULE_ID} | Storage claim ChatMessage creation failed.`, error);
+      return false;
+    }
+  }
+
+  #characterSpeaker(actor, token) {
+    const speaker = { alias: clean(actor?.name) || "Персонаж" };
+    const actorId = clean(actor?.id);
+    const tokenId = clean(tokenDocument(token)?.id);
+    const tokenSceneId = sceneId(token);
+    if (actorId) speaker.actor = actorId;
+    if (tokenSceneId) speaker.scene = tokenSceneId;
+    if (tokenId) speaker.token = tokenId;
+    return speaker;
+  }
+
+  async #publishOpenTriggerMessage({ actor, characterToken, storageToken, state, itemNames } = {}) {
+    if (!this.createChatMessage) return false;
+    const names = Array.from(new Set(
+      (Array.isArray(itemNames) ? itemNames : []).map(clean).filter(Boolean)
+    ));
+    if (names.length === 0) return false;
+    const itemLabel = names.map((name) => `«${escapeFoundryHtml(name)}»`).join(", ");
+    const storageName = escapeFoundryHtml(
+      clean(state?.baseName) || clean(storageToken?.name) || clean(storageToken?.actor?.name) || "хранилище"
+    );
+    try {
+      await this.createChatMessage({
+        speaker: this.#characterSpeaker(actor, characterToken),
+        content: `<p>Использует <strong>${itemLabel}</strong> и открывает <strong>«${storageName}»</strong>.</p>`
+      });
+      return true;
+    }
+    catch (error) {
+      this.logger?.warn?.(`${MODULE_ID} | Storage open ChatMessage creation failed.`, error);
       return false;
     }
   }
@@ -891,6 +925,8 @@ export class StorageCommandService {
     return this.#enqueue([storageQueueKey(tokenUuid)], async () => {
       const access = await this.#resolveAccess(payload, sender);
       const beforeState = readStorageStateAtPath(access.storageToken, storagePath(payload.path));
+      const beforeOpenRunId = `${clean(payload.mutationId)}:beforeOpen`;
+      const triggerRunWasComplete = beforeState.triggers?.executionState?.runs?.[beforeOpenRunId]?.status === "complete";
       const gate = await this.#executeTrigger("beforeOpen", payload, sender, access);
       if (gate?.allowed === false) {
         const error = new Error(clean(gate.message) || "Хранилище не удалось открыть.");
@@ -909,6 +945,15 @@ export class StorageCommandService {
             state: clean(result?.state?.state),
             displayMode: clean(result?.state?.displayMode)
           }
+        });
+      }
+      if (!triggerRunWasComplete && Array.isArray(gate?.usedItemNames) && gate.usedItemNames.length > 0) {
+        await this.#publishOpenTriggerMessage({
+          actor: access.character,
+          characterToken: access.characterToken,
+          storageToken: access.storageToken,
+          state: result?.state,
+          itemNames: gate.usedItemNames
         });
       }
       return {
@@ -1111,9 +1156,9 @@ export class StorageCommandService {
       const refresh = await this.#refreshSource(access.storageToken, readStorageState(access.storageToken));
       if (result.changed === true) {
         await this.#publishClaimMessage({
-          sender,
           destination,
           actor: access.character,
+          characterToken: access.characterToken,
           row: transferRow,
           quantity,
           filterOutcome: filterResult?.filterOutcome ?? null
@@ -1178,9 +1223,9 @@ export class StorageCommandService {
       const refresh = await this.#refreshSource(access.storageToken, readStorageState(access.storageToken));
       if (result.changed === true) {
         await this.#publishClaimMessage({
-          sender,
           destination,
           actor: access.character,
+          characterToken: access.characterToken,
           coins
         });
       }
@@ -1283,9 +1328,9 @@ export class StorageCommandService {
           if (!transfer) continue;
           claimedRowIds.push(outcome.sourceKey);
           partyReceipts.push({
-            sender,
             destination,
             actor: access.character,
+            characterToken: access.characterToken,
             row: transfer.transferRow,
             quantity: transfer.quantity,
             filterOutcome: outcome.filterOutcome ?? null
@@ -1321,9 +1366,9 @@ export class StorageCommandService {
         if (result.changed === true) {
           claimedRowIds.push(rowId);
           await this.#publishClaimMessage({
-            sender,
             destination,
             actor: access.character,
+            characterToken: access.characterToken,
             row: transferRow,
             quantity
           });
@@ -1357,9 +1402,9 @@ export class StorageCommandService {
         coinsChanged = result.changed === true;
         if (coinsChanged) {
           await this.#publishClaimMessage({
-            sender,
             destination,
             actor: access.character,
+            characterToken: access.characterToken,
             coins
           });
         }

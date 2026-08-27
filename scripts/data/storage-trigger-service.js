@@ -251,7 +251,12 @@ export class StorageTriggerService {
       case "conditionItem": {
         const success = Boolean(await this.hasItem(context, config));
         const requiredItemName = !success && config.showItemName === true ? clean(config.itemName) : "";
-        return choose(success, { success, ...(requiredItemName ? { requiredItemName } : {}) });
+        const usedItemName = success ? clean(config.itemName) : "";
+        return choose(success, {
+          success,
+          ...(requiredItemName ? { requiredItemName } : {}),
+          ...(usedItemName ? { usedItemName } : {})
+        });
       }
       case "conditionVariable": {
         const actual = state.variables[clean(config.name)];
@@ -364,6 +369,7 @@ export class StorageTriggerService {
       });
       run = state.executionState.runs[runId];
     }
+    const usedItemNames = [];
 
     for (const chain of state.chainsByEvent[event]) {
       if (chain?.enabled !== true) continue;
@@ -398,6 +404,10 @@ export class StorageTriggerService {
           run = state.executionState.runs[runId];
         }
         priorResults[stepId] = clone(receipt.result);
+        const usedItemName = clean(receipt.result?.usedItemName);
+        if (receipt.result?.success === true && usedItemName && !usedItemNames.includes(usedItemName)) {
+          usedItemNames.push(usedItemName);
+        }
         terminal = receipt.terminal;
         if (terminal) break;
         stepId = clean(receipt.nextStepId);
@@ -405,7 +415,7 @@ export class StorageTriggerService {
       await this.#commit(state, context, (draft) => {
         const currentRun = draft.executionState.runs[runId];
         if (!currentRun.completedChainIds.includes(chainId)) currentRun.completedChainIds.push(chainId);
-        if (repeatKey) {
+        if (repeatKey && terminal?.allowed !== false) {
           const bucket = chain.repeat === "onceGlobal" ? "onceGlobal" : "oncePerCharacter";
           draft.executionState[bucket][repeatKey] = true;
         }
@@ -420,7 +430,11 @@ export class StorageTriggerService {
         return result;
       }
     }
-    const result = { allowed: true, completedChainIds: clone(run.completedChainIds) };
+    const result = {
+      allowed: true,
+      completedChainIds: clone(run.completedChainIds),
+      ...(usedItemNames.length > 0 ? { usedItemNames: clone(usedItemNames) } : {})
+    };
     await this.#commit(state, context, (draft) => {
       Object.assign(draft.executionState.runs[runId], { status: "complete", result: clone(result) });
       pruneCompletedRuns(draft.executionState.runs);

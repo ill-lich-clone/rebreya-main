@@ -196,7 +196,11 @@ test("a successful partial row claim to self publishes one public message after 
   assert.equal(result.changed, true);
   assert.equal(harness.messages.length, 1);
   assert.equal(harness.messages[0].whisper, undefined);
-  assert.match(harness.messages[0].content, /Игрок Алиса/iu);
+  assert.deepEqual(harness.messages[0].speaker, {
+    alias: "Герой Эйра", actor: "hero", scene: "scene", token: "hero-token"
+  });
+  assert.doesNotMatch(harness.messages[0].content, /Игрок Алиса/iu);
+  assert.match(harness.messages[0].content, /^<p>Перемещает/iu);
   assert.match(harness.messages[0].content, /2 × Меч/iu);
   assert.match(harness.messages[0].content, /инвентар[ья].*Герой Эйра/iu);
   assert.equal(harness.messages[0].sourceStateAtCreate.manualRows[0].quantity, 1);
@@ -353,7 +357,7 @@ test("claim messages escape presentation names and never expose source identifie
 
   const content = harness.messages[0].content;
   assert.match(content, /&lt;script&gt;предмет&lt;\/script&gt;/u);
-  assert.match(content, /&lt;img src=x onerror=alert\(1\)&gt;/u);
+  assert.doesNotMatch(content, /img src=x|Игрок/iu);
   assert.match(content, /&lt;b&gt;Скрытый герой&lt;\/b&gt;/u);
   assert.doesNotMatch(content, /<script|<img|<b>/iu);
   assert.doesNotMatch(content, /Compendium\.secret|hidden-source|flags|sourceId/iu);

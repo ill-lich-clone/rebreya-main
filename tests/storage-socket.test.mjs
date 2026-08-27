@@ -2606,6 +2606,45 @@ test("storage beforeOpen runs after access, can deny before mutation, and afterO
   assert.deepEqual(hiddenEvents, []);
 });
 
+test("successful key-gated open publishes one character-authored receipt for one trigger run", async () => {
+  let harness;
+  const triggerService = {
+    async execute(event, _state, context) {
+      if (event !== "beforeOpen") return { allowed: true, completedChainIds: [] };
+      await harness.storageService.updateTriggerRuntime(context.storageToken, (draft) => {
+        draft.executionState.runs[context.runId] = {
+          fingerprint: context.fingerprint,
+          event,
+          status: "complete",
+          steps: {},
+          completedChainIds: ["gold-lock"],
+          result: { allowed: true, completedChainIds: ["gold-lock"], usedItemNames: ["Золотой ключ"] }
+        };
+      }, { path: context.path });
+      return { allowed: true, completedChainIds: ["gold-lock"], usedItemNames: ["Золотой ключ"] };
+    }
+  };
+  harness = createHarness({ triggerService });
+  harness.storageToken.name = "Керамический сосуд";
+  harness.hero.name = "Харлиф";
+  harness.characterToken.id = "harlif-token";
+  const payload = {
+    tokenUuid: harness.storageToken.uuid,
+    characterTokenUuid: harness.characterToken.uuid,
+    mutationId: "gold-key-open"
+  };
+
+  await harness.service.open(payload, { sender: harness.player });
+  await harness.service.open(payload, { sender: harness.player });
+
+  assert.equal(harness.chatMessages.length, 1);
+  assert.deepEqual(harness.chatMessages[0].speaker, {
+    alias: "Харлиф", actor: "hero", scene: "scene", token: "harlif-token"
+  });
+  assert.match(harness.chatMessages[0].content, /Использует.*Золотой ключ.*открывает.*Керамический сосуд/iu);
+  assert.doesNotMatch(harness.chatMessages[0].content, /Игрок/iu);
+});
+
 test("GM trigger commands read, revision-save, retry idempotently, and reset only executions", async () => {
   const harness = createHarness();
   const readPayload = { tokenUuid: harness.storageToken.uuid, path: [] };

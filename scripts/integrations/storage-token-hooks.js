@@ -91,6 +91,11 @@ export function registerStorageTokenHooks(moduleApi, {
     return access;
   };
   const handleOpenError = (token, error) => {
+    if (error?.code === "STORAGE_TRIGGER_DENIED") {
+      const message = String(error?.message ?? "").trim() || "Хранилище заперто.";
+      overlayController.showFeedback(token, message, { durationMs: 3000 });
+      return true;
+    }
     if (
       error?.code !== STORAGE_ACCESS_DISTANCE_ERROR_CODE
       && error?.message !== STORAGE_ACCESS_DISTANCE_ERROR_MESSAGE

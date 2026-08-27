@@ -145,6 +145,23 @@ test("a distant player sees token-local feedback instead of actions", () => {
   }]);
 });
 
+test("a denied storage trigger uses token-local feedback instead of a notification error", async () => {
+  const harness = createHarness({ isGM: false });
+  harness.listeners.get("drawToken")(harness.storageToken);
+  await harness.tokenListeners.get("pointertap")({ button: 0 });
+  const error = new Error("Хранилище заперто. Требуется предмет: «Золотой ключ».");
+  error.code = "STORAGE_TRIGGER_DENIED";
+
+  const handled = await harness.shown[0][0].onError(error);
+
+  assert.equal(handled, true);
+  assert.deepEqual(harness.feedback, [{
+    token: harness.storageToken,
+    text: "Хранилище заперто. Требуется предмет: «Золотой ключ».",
+    durationMs: 3000
+  }]);
+});
+
 test("an unowned storage token opens its action menu from a left pointer click", async () => {
   const harness = createHarness({ isGM: false });
   harness.listeners.get("hoverToken")(harness.storageToken, true);

@@ -72,7 +72,7 @@ test("module manifest loads the stable canonical entrypoint", async () => {
     entrypointSource,
     [
       "// @rebreya-role versioned-entrypoint-cache-forwarder",
-      'import "./main.js?v=1.4.164-ground-pile-frame-fix";',
+      'import "./main.js?v=1.4.164-storage-key-feedback";',
       ""
     ].join("\n")
   );
@@ -238,7 +238,8 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
     "data/craft-downtime-service.js?v=1.4.96-craft-calendar",
     "data/calendar-transition-coordinator.js?v=1.4.96-craft-calendar",
     "integrations/durability-hooks.js?v=1.4.153-corpse-creature",
-    "integrations/storage-token-hooks.js?v=1.4.164-ground-pile-frame-fix",
+    "data/storage-trigger-service.js?v=1.4.164-storage-key-feedback",
+    "integrations/storage-token-hooks.js?v=1.4.164-storage-key-feedback",
     "integrations/inventory-sync.js?v=1.4.96-durable-transfer",
     "data/gear-compendium.js?v=1.4.145-coin-icons-storage-sound",
     "data/storage-open-sound-service.js?v=1.4.145-coin-icons-storage-sound",
@@ -247,7 +248,7 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
     "data/storage-ground-pile-service.js?v=1.4.161-journal-scene-items",
     "data/storage-container-item-service.js?v=1.4.130-storage-player-fixes",
     "data/storage-deposit-source.js?v=1.4.144-spreadsheet-coins-ground-repair",
-    "data/storage-command-service.js?v=1.4.162-gm-journal-read",
+    "data/storage-command-service.js?v=1.4.164-storage-key-feedback",
     "integrations/storage-transfer-drop.js?v=1.4.161-journal-scene-items",
     "integrations/storage-token-drop.js?v=1.4.132-storage-owned-character-resolution"
   ]) {
