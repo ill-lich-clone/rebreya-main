@@ -71,14 +71,6 @@
     </form>
   {{/if}}
 
-  {{#if canClaimAll}}
-    <div class="rm-storage-item__actions rm-storage-claim-all">
-      <span>Залутать всё</span>
-      <button type="button" class="rm-button rm-button--primary" data-action="storage-claim-all-self">Себе</button>
-      <button type="button" class="rm-button rm-button--secondary" data-action="storage-claim-all-party">В группу</button>
-    </div>
-  {{/if}}
-
   {{#if hasGridItems}}
     <div class="rm-storage-grid" style="--rm-storage-columns: {{gridColumns}};">
       {{#each rows}}
@@ -164,6 +156,20 @@
   {{else}}
     <div class="rm-storage-empty" aria-label="Пусто">
       <i class="fa-solid fa-box-open" aria-hidden="true"></i>
+    </div>
+  {{/if}}
+
+  {{#if canClaimAll}}
+    <div class="rm-storage-claim-all-footer">
+      <button
+        type="button"
+        class="rm-button rm-button--primary rm-storage-claim-all-button"
+        data-action="storage-claim-all"
+        {{#if claimAllPending}}disabled{{/if}}
+      >
+        <i class="fa-solid fa-hand" aria-hidden="true"></i>
+        <span>Забрать всё</span>
+      </button>
     </div>
   {{/if}}
 </section>

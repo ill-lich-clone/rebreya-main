@@ -21,7 +21,8 @@ globalThis.foundry = {
   applications: {
     api: {
       ApplicationV2: FakeApplicationV2,
-      HandlebarsApplicationMixin: (Base) => Base
+      HandlebarsApplicationMixin: (Base) => Base,
+      DialogV2: { wait: async () => null }
     }
   },
   utils: { deepClone: (value) => structuredClone(value) }
@@ -30,7 +31,8 @@ globalThis.game = { user: { isGM: true } };
 globalThis.randomID = () => "storage-test-id";
 globalThis.HTMLElement = FakeElement;
 
-const { StorageApp } = await import("../scripts/ui/storage-app.js?storage-app-test");
+const storageAppModule = await import("../scripts/ui/storage-app.js?storage-app-test");
+const { StorageApp } = storageAppModule;
 
 function createApp({
   canManage = true,
@@ -135,16 +137,52 @@ test("storage grid offers self and party destinations for rows and coins", async
   assert.match(template, /data-action="storage-claim-party"/u);
   assert.match(template, /data-action="storage-claim-coins-self"/u);
   assert.match(template, /data-action="storage-claim-coins-party"/u);
-  assert.match(template, />Залутать всё</u);
-  assert.match(template, /data-action="storage-claim-all-self"/u);
-  assert.match(template, /data-action="storage-claim-all-party"/u);
+  assert.doesNotMatch(template, />Залутать всё</u);
+  assert.doesNotMatch(template, /storage-claim-all-(?:self|party)/u);
+  assert.match(template, /data-action="storage-claim-all"/u);
+  assert.match(template, />Забрать всё</u);
+  assert.match(
+    template,
+    /\{\{#if hasGridItems\}\}[\s\S]*?\{\{\/if\}\}[\s\S]*?\{\{#if canClaimAll\}\}[\s\S]*?data-action="storage-claim-all"/u
+  );
   assert.match(template, /\{\{#if configuration\.canSetTexture\}\}/u);
   assert.match(template, /data-action="storage-set-texture"/u);
   assert.match(template, /data-mode="\{\{mode\}\}"/u);
   assert.doesNotMatch(template, /storage-page/u);
 });
 
-test("storage bulk controls use the existing self and party destinations and hide for Journal-only storage", async () => {
+test("storage bulk destination dialog maps both standard actions and close to canonical results", async () => {
+  const previousWait = globalThis.foundry.applications.api.DialogV2.wait;
+  const configs = [];
+  try {
+    for (const { buttonIndex, expected } of [
+      { buttonIndex: 0, expected: "self" },
+      { buttonIndex: 1, expected: "party" },
+      { buttonIndex: 2, expected: null }
+    ]) {
+      globalThis.foundry.applications.api.DialogV2.wait = async (config) => {
+        configs.push(config);
+        return config.buttons[buttonIndex].callback();
+      };
+      assert.equal(await storageAppModule.promptStorageClaimAllDestination(), expected);
+    }
+    globalThis.foundry.applications.api.DialogV2.wait = async (config) => {
+      configs.push(config);
+      return config.close();
+    };
+    assert.equal(await storageAppModule.promptStorageClaimAllDestination(), null);
+    assert.deepEqual(
+      configs[0].buttons.map(({ label }) => label),
+      ["Забрать всё себе", "Забрать в инвентарь", "Отмена"]
+    );
+  }
+  finally {
+    globalThis.foundry.applications.api.DialogV2.wait = previousWait;
+  }
+});
+
+test("storage bulk action asks once and dispatches only the selected existing destination", async () => {
+  const previousWait = globalThis.foundry.applications.api.DialogV2.wait;
   const { app, bulkClaimCalls } = createApp({
     configure: false,
     appOptions: { characterTokenUuid: "Scene.scene.Token.hero", path: ["bag-row"] }
@@ -159,19 +197,29 @@ test("storage bulk controls use the existing self and party destinations and hid
   assert.equal(context.canClaimAll, true);
   await app._onRender({}, {});
   const control = {
-    dataset: { action: "storage-claim-all-party" },
+    dataset: { action: "storage-claim-all" },
     closest(selector) { return selector === "[data-action]" ? this : null; }
   };
-  await listeners.get("click")({ target: control, preventDefault() {} });
+  try {
+    for (const destination of [null, "self", "party"]) {
+      globalThis.foundry.applications.api.DialogV2.wait = async () => destination;
+      await listeners.get("click")({ target: control, preventDefault() {} });
+    }
 
-  assert.equal(bulkClaimCalls.length, 1);
-  assert.equal(bulkClaimCalls[0][0], app.tokenUuid);
-  assert.equal(bulkClaimCalls[0][1], "party");
-  assert.match(bulkClaimCalls[0][2], /^storage-all-/u);
-  assert.deepEqual(bulkClaimCalls[0][3], {
-    path: ["bag-row"],
-    characterTokenUuid: "Scene.scene.Token.hero"
-  });
+    assert.equal(bulkClaimCalls.length, 2);
+    assert.deepEqual(bulkClaimCalls.map((call) => call[1]), ["self", "party"]);
+    for (const call of bulkClaimCalls) {
+      assert.equal(call[0], app.tokenUuid);
+      assert.match(call[2], /^storage-all-/u);
+      assert.deepEqual(call[3], {
+        path: ["bag-row"],
+        characterTokenUuid: "Scene.scene.Token.hero"
+      });
+    }
+  }
+  finally {
+    globalThis.foundry.applications.api.DialogV2.wait = previousWait;
+  }
 
   const journalOnly = createApp({
     configure: false,
@@ -184,6 +232,74 @@ test("storage bulk controls use the existing self and party destinations and hid
     })
   });
   assert.equal((await journalOnly.app._prepareContext()).canClaimAll, false);
+});
+
+test("storage bulk action keeps one pending dialog or claim and restores its control state", async () => {
+  const previousWait = globalThis.foundry.applications.api.DialogV2.wait;
+  let dialogCalls = 0;
+  let resolveClaim;
+  const claimResult = new Promise((resolve) => { resolveClaim = resolve; });
+  const { app, bulkClaimCalls } = createApp({
+    configure: false,
+    claimStorageAll: async () => claimResult
+  });
+  const listeners = new Map();
+  app.render = async () => {};
+  app.element = new class extends FakeElement {
+    addEventListener(name, callback) { listeners.set(name, callback); }
+  }();
+  await app._prepareContext();
+  await app._onRender({}, {});
+  const control = {
+    dataset: { action: "storage-claim-all" },
+    closest(selector) { return selector === "[data-action]" ? this : null; }
+  };
+
+  try {
+    globalThis.foundry.applications.api.DialogV2.wait = async () => {
+      dialogCalls += 1;
+      return "self";
+    };
+    const firstClick = listeners.get("click")({ target: control, preventDefault() {} });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal((await app._prepareContext()).claimAllPending, true);
+    await listeners.get("click")({ target: control, preventDefault() {} });
+    assert.equal(dialogCalls, 1);
+    assert.equal(bulkClaimCalls.length, 1);
+
+    resolveClaim({ changed: true, sourceDeleted: false });
+    await firstClick;
+    assert.equal((await app._prepareContext()).claimAllPending, false);
+  }
+  finally {
+    globalThis.foundry.applications.api.DialogV2.wait = previousWait;
+  }
+});
+
+test("storage bulk action clears its pending guard when the pending-state render fails", async () => {
+  const previousConsoleError = console.error;
+  const { app, bulkClaimCalls } = createApp({ configure: false });
+  const listeners = new Map();
+  app.element = new class extends FakeElement {
+    addEventListener(name, callback) { listeners.set(name, callback); }
+  }();
+  await app._prepareContext();
+  await app._onRender({}, {});
+  app.render = async () => { throw new Error("render failed"); };
+  const control = {
+    dataset: { action: "storage-claim-all" },
+    closest(selector) { return selector === "[data-action]" ? this : null; }
+  };
+
+  try {
+    console.error = () => {};
+    await listeners.get("click")({ target: control, preventDefault() {} });
+    assert.equal(app.claimAllPending, false);
+    assert.equal(bulkClaimCalls.length, 0);
+  }
+  finally {
+    console.error = previousConsoleError;
+  }
 });
 
 test("successful final ground-pile claim closes without requesting the deleted token snapshot", async () => {

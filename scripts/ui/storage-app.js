@@ -34,6 +34,37 @@ function mutationId(prefix) {
   return `${prefix}-${Date.now()}-${random}`;
 }
 
+export async function promptStorageClaimAllDestination(
+  DialogV2 = globalThis.foundry?.applications?.api?.DialogV2
+) {
+  if (typeof DialogV2?.wait !== "function") {
+    throw new Error("Диалог выбора назначения добычи недоступен.");
+  }
+  const destination = await DialogV2.wait({
+    window: { title: "Забрать всё" },
+    content: "<p>Куда перенести содержимое хранилища?</p>",
+    buttons: [
+      {
+        action: "self",
+        label: "Забрать всё себе",
+        icon: "fa-solid fa-user",
+        default: true,
+        callback: () => "self"
+      },
+      {
+        action: "party",
+        label: "Забрать в инвентарь",
+        icon: "fa-solid fa-box-open",
+        callback: () => "party"
+      },
+      { action: "cancel", label: "Отмена", callback: () => null }
+    ],
+    rejectClose: false,
+    close: () => null
+  });
+  return destination === "self" || destination === "party" ? destination : null;
+}
+
 function dragEventData(event) {
   const foundryData = globalThis.TextEditor?.getDragEventData?.(event);
   if (foundryData != null) return foundryData;
@@ -102,6 +133,7 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.snapshot = null;
     this.snapshotRequest = 0;
     this.activeRowId = "";
+    this.claimAllPending = false;
     this.renderListenersAbortController = null;
     this.liveHookSubscriptions = [];
   }
@@ -230,6 +262,7 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
       hasRows: rows.length > 0,
       hasGridItems: gridItemCount > 0,
       canClaimAll: rows.some((row) => row.canClaim) || hasCoins,
+      claimAllPending: this.claimAllPending,
       gridColumns,
       coins,
       coinsLabel: coinsLabel(coins),
@@ -428,6 +461,23 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
     );
   }
 
+  async #promptAndClaimAll() {
+    if (this.claimAllPending) return null;
+    this.claimAllPending = true;
+    let result = null;
+    try {
+      await this.#renderCurrent();
+      const destination = await promptStorageClaimAllDestination();
+      if (!destination) return null;
+      result = await this.#claimAll(destination);
+      return result;
+    }
+    finally {
+      this.claimAllPending = false;
+      if (!result) await this.#renderCurrent();
+    }
+  }
+
   async #openContainer(rowId) {
     const row = this.#rowById(rowId);
     if (!row || row.rowKind !== "container" || !row.container) {
@@ -531,8 +581,8 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
           return;
         }
       }
-      else if (action === "storage-claim-all-self" || action === "storage-claim-all-party") {
-        const result = await this.#claimAll(action.endsWith("self") ? "self" : "party");
+      else if (action === "storage-claim-all") {
+        const result = await this.#promptAndClaimAll();
         if (!result) return;
         this.activeRowId = "";
         if (result?.sourceDeleted === true) {

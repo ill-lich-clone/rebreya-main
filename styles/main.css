@@ -13378,6 +13378,19 @@ summary:focus-visible {
   gap: 0.35rem;
 }
 
+.rm-storage-claim-all-footer {
+  display: flex;
+  justify-content: center;
+  padding-top: 2px;
+}
+
+.rm-storage-claim-all-button {
+  width: 100%;
+  min-height: 38px;
+  justify-content: center;
+  border-radius: var(--rm-ui-section-radius);
+}
+
 .rm-storage-coins {
   flex-wrap: wrap;
   padding: 0.75rem;
