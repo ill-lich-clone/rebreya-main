@@ -34,6 +34,8 @@ test("storage trigger dnd5e adapter resolves the authoritative character and ite
 
   assert.equal(await adapter.hasItem(context, { itemUuid: item.uuid }), true);
   assert.equal(await adapter.hasItem(context, { sourceId: "Compendium.keys.Item.iron" }), true);
+  assert.equal(await adapter.hasItem(context, { itemName: "  КЛЮЧ  " }), true);
+  assert.equal(await adapter.hasItem(context, { itemName: "Подозрительный ключ" }), false);
   assert.deepEqual(await adapter.rollCheck(context, { kind: "savingThrow", ability: "dex", dc: 14 }), {
     success: false, total: 12
   });

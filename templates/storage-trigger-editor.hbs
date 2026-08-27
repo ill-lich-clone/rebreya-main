@@ -39,7 +39,7 @@
       {{#if step}}
         <h3>Шаг — {{step.label}}</h3>
         <label>Тип<select data-field="step.type">{{#each stepTypeOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
-        {{#each configFields}}<label>{{label}}{{#if (eq type "textarea")}}<textarea data-field="step.config.{{name}}">{{value}}</textarea>{{else}}<input type="{{type}}" value="{{value}}" data-field="step.config.{{name}}">{{/if}}</label>{{/each}}
+        {{#each configFields}}<label>{{#if (eq type "checkbox")}}<input type="checkbox" data-field="step.config.{{name}}" {{#if checked}}checked{{/if}}> {{label}}{{else}}{{label}}{{#if (eq type "textarea")}}<textarea data-field="step.config.{{name}}">{{value}}</textarea>{{else}}<input type="{{type}}" value="{{value}}" data-field="step.config.{{name}}">{{/if}}{{/if}}</label>{{/each}}
         <label>Следующий шаг<select data-field="step.nextStepId">{{#each targetOptions}}<option value="{{value}}" {{#if nextSelected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
         <label>Успех<select data-field="step.successStepId">{{#each targetOptions}}<option value="{{value}}" {{#if successSelected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
         <label>Неудача<select data-field="step.failureStepId">{{#each targetOptions}}<option value="{{value}}" {{#if failureSelected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>

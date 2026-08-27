@@ -37,7 +37,7 @@ export function buildStorageLockTrigger() {
   return {
     id: identity("lock"), name: "Замок", enabled: true, repeat: "always", entryStepId: "has-key",
     steps: [
-      { id: "has-key", type: "conditionItem", config: { itemUuid: "" }, successStepId: "allow", failureStepId: "deny" },
+      { id: "has-key", type: "conditionItem", config: { itemName: "", showItemName: false }, successStepId: "allow", failureStepId: "deny" },
       { id: "allow", type: "allow", config: {} },
       { id: "deny", type: "deny", config: { message: "Хранилище заперто." } }
     ]
@@ -61,7 +61,7 @@ function stepLabel(step) {
 
 function configFields(step) {
   const fields = {
-    conditionItem: [["itemUuid", "UUID предмета", "text"]],
+    conditionItem: [["itemName", "Название предмета", "text"], ["showItemName", "Показывать название предмета", "checkbox"]],
     conditionVariable: [["name", "Переменная", "text"], ["operator", "Оператор", "text"], ["value", "Значение", "text"]],
     conditionResult: [["stepId", "Шаг-источник", "text"], ["operator", "Оператор", "text"], ["value", "Значение", "text"]],
     abilityCheck: [["ability", "Характеристика", "text"], ["dc", "Сложность", "number"]],
@@ -74,9 +74,19 @@ function configFields(step) {
     removeVariable: [["name", "Переменная", "text"]],
     macro: [["macroUuid", "UUID макроса", "text"]], deny: [["message", "Сообщение", "textarea"]]
   };
-  return (fields[step?.type] ?? []).map(([name, label, type]) => ({
-    name, label, type, value: step?.config?.[name] ?? ""
-  }));
+  return (fields[step?.type] ?? []).map(([name, label, type]) => {
+    const value = step?.config?.[name] ?? (type === "checkbox" ? false : "");
+    return { name, label, type, value, checked: value === true };
+  });
+}
+
+export async function resolveStorageTriggerItemDrop(data, { fromUuid = globalThis.fromUuid } = {}) {
+  const type = clean(data?.type);
+  const uuid = clean(data?.uuid);
+  if (!["Item", "Token"].includes(type) || !uuid || typeof fromUuid !== "function") return "";
+  const document = await fromUuid(uuid);
+  if (clean(document?.uuid) !== uuid || clean(document?.documentName) !== type) return "";
+  return clean(document?.name);
 }
 
 export class StorageTriggerEditor extends HandlebarsApplicationMixin(ApplicationV2) {
@@ -240,7 +250,7 @@ export class StorageTriggerEditor extends HandlebarsApplicationMixin(Application
     else if (field === "step.type") { step.type = clean(input.value); step.config = {}; }
     else if (field.startsWith("step.config.")) {
       const key = field.slice("step.config.".length); step.config ??= {};
-      step.config[key] = input.type === "number" ? Number(input.value) : input.value;
+      step.config[key] = input.type === "checkbox" ? input.checked === true : input.type === "number" ? Number(input.value) : input.value;
     }
     else if (field.startsWith("step.")) step[field.slice(5)] = clean(input.value);
     else return;
@@ -249,11 +259,22 @@ export class StorageTriggerEditor extends HandlebarsApplicationMixin(Application
 
   async #onDrop(event) {
     const step = this.#step();
-    if (!step || step.type !== "macro") return;
+    if (!step || !["conditionItem", "macro"].includes(step.type)) return;
     let data = globalThis.TextEditor?.getDragEventData?.(event);
     if (!data) try { data = JSON.parse(event.dataTransfer?.getData?.("text/plain") || "{}"); } catch (_error) { return; }
-    if (data?.type !== "Macro" || !clean(data.uuid)) return;
-    event.preventDefault?.(); step.config = { ...step.config, macroUuid: clean(data.uuid) }; this.#markDirty(); await this.#renderCurrent();
+    if (step.type === "conditionItem") {
+      const itemName = await resolveStorageTriggerItemDrop(data);
+      if (!itemName) return;
+      event.preventDefault?.();
+      step.config = { ...step.config, itemName };
+      delete step.config.itemUuid;
+      delete step.config.sourceId;
+    }
+    else {
+      if (data?.type !== "Macro" || !clean(data.uuid)) return;
+      event.preventDefault?.(); step.config = { ...step.config, macroUuid: clean(data.uuid) };
+    }
+    this.#markDirty(); await this.#renderCurrent();
   }
 
   async _onRender(context, options) {
@@ -269,7 +290,7 @@ export class StorageTriggerEditor extends HandlebarsApplicationMixin(Application
     root.addEventListener("click", (event) => run(this.#onClick(event)), listenerOptions);
     root.addEventListener("change", (event) => run(this.#onChange(event)), listenerOptions);
     root.addEventListener("drop", (event) => run(this.#onDrop(event)), listenerOptions);
-    root.addEventListener("dragover", (event) => { if (this.#step()?.type === "macro") event.preventDefault(); }, listenerOptions);
+    root.addEventListener("dragover", (event) => { if (["conditionItem", "macro"].includes(this.#step()?.type)) event.preventDefault(); }, listenerOptions);
   }
 
   async close(options = {}) {

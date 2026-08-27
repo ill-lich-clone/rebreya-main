@@ -17,7 +17,8 @@ globalThis.foundry = {
 const {
   StorageTriggerEditor,
   buildStorageLockTrigger,
-  buildStorageTrapTrigger
+  buildStorageTrapTrigger,
+  resolveStorageTriggerItemDrop
 } = await import(`../scripts/ui/storage-trigger-editor.js?test=${Date.now()}`);
 
 test("storage trigger editor is a separate wide four-event ApplicationV2 surface", async () => {
@@ -46,11 +47,39 @@ test("built-in lock and trap templates encode the approved native examples witho
   const trap = buildStorageTrapTrigger();
   assert.equal(lock.name, "Замок");
   assert.equal(lock.steps[0].type, "conditionItem");
+  assert.deepEqual(lock.steps[0].config, { itemName: "", showItemName: false });
   assert.equal(lock.steps.at(-1).type, "deny");
   assert.equal(trap.name, "Ловушка");
   assert.equal(trap.repeat, "oncePerCharacter");
   assert.deepEqual(trap.steps.map(({ type }) => type), ["savingThrow", "damage", "finish"]);
   assert.equal(JSON.stringify([lock, trap]).includes("cooldown"), false);
+});
+
+test("condition item inspector exposes a hidden-by-default name requirement", async () => {
+  const state = createEmptyStorageTriggerState();
+  state.chainsByEvent.beforeOpen.push(buildStorageLockTrigger());
+  const app = new StorageTriggerEditor({
+    async getStorageTriggers() { return { tokenUuid: "Token.chest", path: [], triggers: state }; }
+  }, "Token.chest");
+
+  const context = await app._prepareContext();
+
+  assert.deepEqual(context.configFields, [
+    { name: "itemName", label: "Название предмета", type: "text", value: "", checked: false },
+    { name: "showItemName", label: "Показывать название предмета", type: "checkbox", value: false, checked: false }
+  ]);
+});
+
+test("condition item drop resolves an Item or scene Token to its authoritative name", async () => {
+  const fromUuid = async (uuid) => ({
+    uuid,
+    documentName: uuid.includes(".Token.") ? "Token" : "Item",
+    name: uuid.includes(".Token.") ? " Медный ключ " : "Подозрительный ключ"
+  });
+
+  assert.equal(await resolveStorageTriggerItemDrop({ type: "Token", uuid: "Scene.room.Token.key" }, { fromUuid }), "Медный ключ");
+  assert.equal(await resolveStorageTriggerItemDrop({ type: "Item", uuid: "Actor.hero.Item.key" }, { fromUuid }), "Подозрительный ключ");
+  assert.equal(await resolveStorageTriggerItemDrop({ type: "JournalEntry", uuid: "JournalEntry.note" }, { fromUuid }), "");
 });
 
 test("storage trigger templates expose editor, reset, CRUD, inspector, and macro drop controls", async () => {

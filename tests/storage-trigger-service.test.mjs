@@ -134,6 +134,36 @@ test("beforeOpen lock denies without a key and oncePerCharacter trap persists on
   assert.deepEqual(result, { allowed: false, message: "Заперто.", completedChainIds: ["lock"] });
 });
 
+test("beforeOpen lock reveals the required item name only when explicitly enabled", async () => {
+  const state = createEmptyStorageTriggerState();
+  state.chainsByEvent.beforeOpen = [{
+    id: "named-lock", name: "Замок", enabled: true, repeat: "always", entryStepId: "key",
+    steps: [
+      {
+        id: "key", type: "conditionItem", config: { itemName: "Медный ключ", showItemName: true },
+        successStepId: "allow", failureStepId: "deny"
+      },
+      { id: "allow", type: "allow", config: {} },
+      { id: "deny", type: "deny", config: { message: "Хранилище заперто." } }
+    ]
+  }];
+  const service = new StorageTriggerService({
+    hasItem: async () => false,
+    persistRuntime: async (_context, mutate) => mutate(state)
+  });
+
+  const result = await service.execute("beforeOpen", state, {
+    runId: "named-open", tokenUuid: "Scene.s.Token.chest", senderId: "player",
+    characterActorUuid: "Actor.hero"
+  });
+
+  assert.deepEqual(result, {
+    allowed: false,
+    message: "Хранилище заперто. Требуется предмет: «Медный ключ».",
+    completedChainIds: ["named-lock"]
+  });
+});
+
 test("trigger runtime branches on a dnd5e save, applies damage, and reuses a durable completed run", async () => {
   const state = createEmptyStorageTriggerState();
   state.chainsByEvent.afterOpen = [{

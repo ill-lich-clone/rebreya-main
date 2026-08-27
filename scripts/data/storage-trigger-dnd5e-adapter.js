@@ -12,6 +12,10 @@ function itemSourceId(item) {
   return clean(item?.flags?.core?.sourceId ?? item?.getFlag?.("core", "sourceId"));
 }
 
+function normalizedItemName(value) {
+  return clean(value).replace(/\s+/gu, " ").toLocaleLowerCase("ru-RU");
+}
+
 function firstRollTotal(value) {
   const roll = Array.isArray(value) ? value[0] : value;
   const total = Number(roll?.total ?? roll);
@@ -46,12 +50,14 @@ export class StorageTriggerDnd5eAdapter {
     const actor = await this.#actor(context);
     const itemUuid = clean(config?.itemUuid);
     const sourceId = clean(config?.sourceId);
+    const itemName = normalizedItemName(config?.itemName);
     if (itemUuid) {
       const resolved = await this.fromUuid(itemUuid);
       return itemsOf(actor).find((item) => item === resolved && clean(item.uuid) === itemUuid) ?? null;
     }
     if (sourceId) return itemsOf(actor).find((item) => itemSourceId(item) === sourceId) ?? null;
-    throw new Error("Для шага предмета нужен itemUuid или sourceId.");
+    if (itemName) return itemsOf(actor).find((item) => normalizedItemName(item?.name) === itemName) ?? null;
+    throw new Error("Для шага предмета нужны itemName, itemUuid или sourceId.");
   }
 
   async hasItem(context, config) {

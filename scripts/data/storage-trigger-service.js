@@ -248,7 +248,11 @@ export class StorageTriggerService {
       result
     });
     switch (step.type) {
-      case "conditionItem": return choose(Boolean(await this.hasItem(context, config)));
+      case "conditionItem": {
+        const success = Boolean(await this.hasItem(context, config));
+        const requiredItemName = !success && config.showItemName === true ? clean(config.itemName) : "";
+        return choose(success, { success, ...(requiredItemName ? { requiredItemName } : {}) });
+      }
       case "conditionVariable": {
         const actual = state.variables[clean(config.name)];
         return choose(compareValues(actual, config.value, clean(config.operator) || "eq"), { success: true, value: actual });
@@ -324,10 +328,20 @@ export class StorageTriggerService {
         };
       }
       case "allow": return { terminal: { allowed: true }, result: { success: true } };
-      case "deny": return {
-        terminal: { allowed: false, message: clean(config.message) || "Действие запрещено." },
-        result: { success: false }
-      };
+      case "deny": {
+        const requiredItemName = Object.values(priorResults)
+          .map((result) => clean(result?.requiredItemName))
+          .filter(Boolean)
+          .at(-1) ?? "";
+        const message = clean(config.message) || "Действие запрещено.";
+        return {
+          terminal: {
+            allowed: false,
+            message: requiredItemName ? `${message} Требуется предмет: «${requiredItemName}».` : message
+          },
+          result: { success: false }
+        };
+      }
       case "finish": return { terminal: { allowed: true }, result: { success: true } };
       default: throw new Error(`Исполнитель шага ${step.type} недоступен.`);
     }
