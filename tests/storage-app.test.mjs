@@ -548,6 +548,12 @@ test("storage configuration exposes template and manual item controls to GMs", a
   assert.equal(context.rows[0].canEdit, true);
   assert.equal(context.gridColumns, 3);
   assert.equal(context.activePopover, null);
+  assert.equal(context.canClaimAll, false);
+});
+
+test("ordinary storage still exposes claim all when transferable contents exist", async () => {
+  const context = await createApp({ configure: false }).app._prepareContext();
+  assert.equal(context.canClaimAll, true);
 });
 
 test("storage configuration opens and resets triggers for the exact nested path", async () => {

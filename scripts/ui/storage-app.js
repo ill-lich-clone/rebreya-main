@@ -261,7 +261,7 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
       hasBreadcrumbs: breadcrumbs.length > 1,
       hasRows: rows.length > 0,
       hasGridItems: gridItemCount > 0,
-      canClaimAll: rows.some((row) => row.canClaim) || hasCoins,
+      canClaimAll: !this.configure && (rows.some((row) => row.canClaim) || hasCoins),
       claimAllPending: this.claimAllPending,
       gridColumns,
       coins,
