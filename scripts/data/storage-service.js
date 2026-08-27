@@ -12,6 +12,10 @@ import {
   resolveStorageContainerPath,
   updateStorageContainerPath
 } from "./storage-container-snapshot.js";
+import {
+  normalizeStorageTriggerState,
+  validateStorageTriggerDefinitions
+} from "./storage-trigger-service.js";
 
 export const STORAGE_ACTOR_FLAG = "storage";
 export const STORAGE_TOKEN_FLAG = "storage";
@@ -307,6 +311,7 @@ export function buildStorageTokenState(input = {}) {
     coinsClaimed: source.coinsClaimed === true,
     corpseMaterialization: normalizeCorpseMaterialization(source.corpseMaterialization),
     bulkClaimMutations: normalizeBulkClaimMutations(source.bulkClaimMutations),
+    triggers: normalizeStorageTriggerState(source.triggers),
     state,
     textures,
     displayMode
@@ -478,6 +483,48 @@ export class StorageService {
       generatedRows: source.generatedRows === undefined ? current.generatedRows : source.generatedRows,
       generatedCoins: source.generatedCoins === undefined ? current.generatedCoins : source.generatedCoins
     });
+  }
+
+  async saveTriggerDefinitions(token, definitions = {}, expectedRevision = 0, { path = [] } = {}) {
+    token = this.#scopedToken(token, path);
+    const current = readStorageState(token);
+    const revision = Number(expectedRevision);
+    if (!Number.isSafeInteger(revision) || revision !== current.triggers.revision) {
+      throw new Error("Конфигурация триггеров уже изменена: revision conflict.");
+    }
+    const candidate = normalizeStorageTriggerState({
+      ...current.triggers,
+      chainsByEvent: definitions?.chainsByEvent,
+      revision: revision + 1
+    });
+    const issues = validateStorageTriggerDefinitions(candidate);
+    if (issues.length) {
+      const error = new Error("Конфигурация триггеров содержит ошибки.");
+      error.code = "STORAGE_TRIGGER_VALIDATION";
+      error.issues = clone(issues);
+      throw error;
+    }
+    return this.#write(token, { ...current, triggers: candidate });
+  }
+
+  async updateTriggerRuntime(token, mutate, { path = [] } = {}) {
+    if (typeof mutate !== "function") throw new TypeError("Trigger runtime mutation must be a function.");
+    token = this.#scopedToken(token, path);
+    const current = readStorageState(token);
+    const draft = clone(current.triggers);
+    await mutate(draft);
+    const next = normalizeStorageTriggerState({
+      ...draft,
+      revision: current.triggers.revision,
+      chainsByEvent: current.triggers.chainsByEvent
+    });
+    return this.#write(token, { ...current, triggers: next });
+  }
+
+  async resetTriggerExecutions(token, { path = [] } = {}) {
+    return this.updateTriggerRuntime(token, (draft) => {
+      draft.executionState = { onceGlobal: {}, oncePerCharacter: {}, runs: {} };
+    }, { path });
   }
 
   async markJournalRead(token, rowId, { path = [] } = {}) {

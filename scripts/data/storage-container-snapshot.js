@@ -1,4 +1,5 @@
 import { MODULE_ID } from "../constants.js";
+import { normalizeStorageTriggerState } from "./storage-trigger-service.js";
 
 export const STORAGE_CONTAINER_FLAG = "storageContainer";
 export const STORAGE_CONTAINER_SNAPSHOT_VERSION = 1;
@@ -140,7 +141,8 @@ function normalizeSnapshot(input, context) {
     generatedRows: normalizeRows(sourceState.generatedRows, context),
     claimedRowIds: Array.from(new Set((Array.isArray(sourceState.claimedRowIds) ? sourceState.claimedRowIds : [])
       .map(clean)
-      .filter(Boolean)))
+      .filter(Boolean))),
+    triggers: normalizeStorageTriggerState(sourceState.triggers)
   };
   const journalRowIds = new Set(stateRows(state)
     .filter((row) => row?.rowKind === "journal" && clean(row?.sourceId))

@@ -13,6 +13,40 @@ import {
   readStorageStateAtPath
 } from "../scripts/data/storage-service.js";
 import { buildStorageContainerRow } from "../scripts/data/storage-container-snapshot.js";
+import { createEmptyStorageTriggerState } from "../scripts/data/storage-trigger-service.js";
+
+test("storage state projects an empty trigger section without an eager write", () => {
+  const token = createStorageToken("legacy-triggers");
+  assert.deepEqual(readStorageState(token).triggers, createEmptyStorageTriggerState());
+  assert.deepEqual(token.flags, {});
+});
+
+test("storage trigger definitions save by revision and reset executions without variables", async () => {
+  const token = createStorageToken("trigger-state");
+  const service = new StorageService();
+  const chainsByEvent = createEmptyStorageTriggerState().chainsByEvent;
+  chainsByEvent.beforeOpen.push({
+    id: "lock", name: "Замок", enabled: true, repeat: "onceGlobal", entryStepId: "deny",
+    steps: [{ id: "deny", type: "deny", config: { message: "Заперто" } }]
+  });
+  const saved = await service.saveTriggerDefinitions(token, { chainsByEvent }, 0);
+  assert.equal(saved.triggers.revision, 1);
+  assert.equal(saved.triggers.chainsByEvent.beforeOpen[0].id, "lock");
+  await assert.rejects(
+    service.saveTriggerDefinitions(token, { chainsByEvent }, 0),
+    /revision|изменена/iu
+  );
+
+  await service.updateTriggerRuntime(token, (runtime) => {
+    runtime.variables.locked = true;
+    runtime.executionState.onceGlobal.lock = true;
+    runtime.executionState.runs.run = { status: "complete" };
+  });
+  const reset = await service.resetTriggerExecutions(token);
+  assert.deepEqual(reset.triggers.variables, { locked: true });
+  assert.deepEqual(reset.triggers.executionState, { onceGlobal: {}, oncePerCharacter: {}, runs: {} });
+  assert.equal(reset.triggers.revision, 1);
+});
 
 function createStorageToken(id, name = "Сундук") {
   const flags = {};
