@@ -55,6 +55,8 @@ function createApp({
   const depositCalls = [];
   const quantityCalls = [];
   const journalReadCalls = [];
+  const triggerEditorCalls = [];
+  const triggerResetCalls = [];
   const moduleApi = {
     async getStorageSnapshot(...args) {
       if (getStorageSnapshot) return getStorageSnapshot(...args);
@@ -108,6 +110,12 @@ function createApp({
       return readStorageJournal
         ? readStorageJournal(...args)
         : { name: "Запись", pages: [] };
+    },
+    async openStorageTriggerEditor(...args) {
+      triggerEditorCalls.push(args);
+    },
+    async resetStorageTriggerExecutions(...args) {
+      triggerResetCalls.push(args);
     }
   };
   const app = new StorageApp(moduleApi, "Scene.scene.Token.chest", {
@@ -122,7 +130,9 @@ function createApp({
     bulkClaimCalls,
     depositCalls,
     quantityCalls,
-    journalReadCalls
+    journalReadCalls,
+    triggerEditorCalls,
+    triggerResetCalls
   };
 }
 
@@ -538,6 +548,27 @@ test("storage configuration exposes template and manual item controls to GMs", a
   assert.equal(context.rows[0].canEdit, true);
   assert.equal(context.gridColumns, 3);
   assert.equal(context.activePopover, null);
+});
+
+test("storage configuration opens and resets triggers for the exact nested path", async () => {
+  const { app, triggerEditorCalls, triggerResetCalls } = createApp({
+    appOptions: { path: ["bag"], characterTokenUuid: "Scene.scene.Token.hero" }
+  });
+  const listeners = new Map();
+  app.element = new class extends FakeElement { addEventListener(name, callback) { listeners.set(name, callback); } }();
+  app.render = async () => {};
+  await app._prepareContext();
+  await app._onRender({}, {});
+  const click = async (action) => listeners.get("click")({
+    target: { dataset: { action }, closest(selector) { return selector === "[data-action]" ? this : null; } },
+    preventDefault() {}
+  });
+
+  await click("storage-open-trigger-editor");
+  await click("storage-reset-triggers");
+
+  assert.deepEqual(triggerEditorCalls, [["Scene.scene.Token.chest", { path: ["bag"], characterTokenUuid: "Scene.scene.Token.hero" }]]);
+  assert.deepEqual(triggerResetCalls, [["Scene.scene.Token.chest", "", { path: ["bag"], characterTokenUuid: "Scene.scene.Token.hero" }]]);
 });
 
 test("storage configuration is hidden from players", async () => {

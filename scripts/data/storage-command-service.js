@@ -15,6 +15,7 @@ import {
   STORAGE_ACCESS_DISTANCE_ERROR_MESSAGE
 } from "./storage-access.js?v=1.4.158-storage-access-cache";
 import { isValidSerializedInventoryIngressPlan } from "../application/inventory-ingress-planner.js";
+import { STORAGE_TRIGGER_EVENTS } from "./storage-trigger-service.js";
 
 const STORAGE_ROW_DESTINATIONS = new Set(["self", "party", "character", "scene"]);
 const STORAGE_COIN_DESTINATIONS = new Set(["self", "party"]);
@@ -159,6 +160,42 @@ export function isValidStorageOpenPayload(payload) {
     && isTrimmedString(payload.tokenUuid, { required: true })
     && isTrimmedString(payload.characterTokenUuid)
     && isTrimmedString(payload.mutationId, { required: true, max: 160 });
+}
+
+function isValidStorageTriggerDefinitions(value) {
+  if (!hasExactKeys(value, ["chainsByEvent"])
+    || !hasExactKeys(value.chainsByEvent, [...STORAGE_TRIGGER_EVENTS].sort())) {
+    return false;
+  }
+  if (!STORAGE_TRIGGER_EVENTS.every((event) => (
+    Array.isArray(value.chainsByEvent[event]) && value.chainsByEvent[event].length <= 100
+  ))) return false;
+  try {
+    return JSON.stringify(value).length <= 500_000;
+  }
+  catch (_error) {
+    return false;
+  }
+}
+
+export function isValidStorageTriggerReadPayload(payload) {
+  return hasLegacyOrPathKeys(payload, ["tokenUuid"])
+    && isTrimmedString(payload.tokenUuid, { required: true });
+}
+
+export function isValidStorageTriggerSavePayload(payload) {
+  return hasLegacyOrPathKeys(payload, ["definitions", "expectedRevision", "operationId", "tokenUuid"])
+    && isTrimmedString(payload.tokenUuid, { required: true })
+    && isTrimmedString(payload.operationId, { required: true, max: 160 })
+    && Number.isSafeInteger(payload.expectedRevision)
+    && payload.expectedRevision >= 0
+    && isValidStorageTriggerDefinitions(payload.definitions);
+}
+
+export function isValidStorageTriggerResetPayload(payload) {
+  return hasLegacyOrPathKeys(payload, ["operationId", "tokenUuid"])
+    && isTrimmedString(payload.tokenUuid, { required: true })
+    && isTrimmedString(payload.operationId, { required: true, max: 160 });
 }
 
 export function isValidStorageJournalReadPayload(payload) {
@@ -788,6 +825,65 @@ export class StorageCommandService {
 
   async #runClaim(sourceKey, mutationKey, operation, options = {}) {
     return this.#runMutation([sourceKey], mutationKey, operation, options);
+  }
+
+  async #resolveTriggerAdmin(payload, sender) {
+    if (sender?.isGM !== true) throw new Error("Настраивать триггеры может только мастер.");
+    const tokenUuid = clean(payload?.tokenUuid);
+    const storageToken = tokenDocument(await this.resolveToken(tokenUuid));
+    if (!storageToken || (!isStorageActor(storageToken.actor) && !isDeadNpcStorageTarget(storageToken))) {
+      throw new Error("Токен не является хранилищем Rebreya.");
+    }
+    const path = storagePath(payload?.path);
+    readStorageStateAtPath(storageToken, path);
+    return { storageToken, path };
+  }
+
+  async readTriggers(payload = {}, { sender } = {}) {
+    const tokenUuid = clean(payload.tokenUuid);
+    return this.#enqueue([storageQueueKey(tokenUuid)], async () => {
+      const { storageToken, path } = await this.#resolveTriggerAdmin(payload, sender);
+      return {
+        tokenUuid,
+        path: clone(path),
+        triggers: clone(readStorageStateAtPath(storageToken, path).triggers)
+      };
+    });
+  }
+
+  async saveTriggers(payload = {}, { sender } = {}) {
+    const tokenUuid = clean(payload.tokenUuid);
+    const operationId = clean(payload.operationId);
+    const mutationKey = `storage:triggers:save:${operationId}`;
+    const fingerprint = mutationRequestFingerprint(payload, sender);
+    return this.#runMutation([storageQueueKey(tokenUuid)], mutationKey, async () => {
+      const { storageToken, path } = await this.#resolveTriggerAdmin(payload, sender);
+      const state = await this.storageService.saveTriggerDefinitions(
+        storageToken,
+        payload.definitions,
+        payload.expectedRevision,
+        { path }
+      );
+      return { tokenUuid, path: clone(path), triggers: clone(state.triggers) };
+    }, {
+      fingerprint,
+      authorize: () => this.#resolveTriggerAdmin(payload, sender)
+    });
+  }
+
+  async resetTriggers(payload = {}, { sender } = {}) {
+    const tokenUuid = clean(payload.tokenUuid);
+    const operationId = clean(payload.operationId);
+    const mutationKey = `storage:triggers:reset:${operationId}`;
+    const fingerprint = mutationRequestFingerprint(payload, sender);
+    return this.#runMutation([storageQueueKey(tokenUuid)], mutationKey, async () => {
+      const { storageToken, path } = await this.#resolveTriggerAdmin(payload, sender);
+      const state = await this.storageService.resetTriggerExecutions(storageToken, { path });
+      return { tokenUuid, path: clone(path), triggers: clone(state.triggers) };
+    }, {
+      fingerprint,
+      authorize: () => this.#resolveTriggerAdmin(payload, sender)
+    });
   }
 
   async open(payload = {}, { sender } = {}) {

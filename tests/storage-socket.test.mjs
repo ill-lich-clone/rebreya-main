@@ -14,10 +14,14 @@ import {
   isValidStorageDropItemPayload,
   isValidStorageJournalReadPayload,
   isValidStorageOpenPayload,
+  isValidStorageTriggerReadPayload,
+  isValidStorageTriggerResetPayload,
+  isValidStorageTriggerSavePayload,
   isValidStorageRestorePortablePayload,
   isValidStorageTokenCharacterPayload,
   storageCharacterTokenUuidForClaim
 } from "../scripts/data/storage-command-service.js";
+import { createEmptyStorageTriggerState } from "../scripts/data/storage-trigger-service.js";
 
 test("storage open payload requires one exact stable trigger mutation identity", () => {
   const payload = {
@@ -29,6 +33,20 @@ test("storage open payload requires one exact stable trigger mutation identity",
   assert.equal(isValidStorageOpenPayload({ ...payload, path: ["bag"] }), true);
   assert.equal(isValidStorageOpenPayload({ ...payload, mutationId: "" }), false);
   assert.equal(isValidStorageOpenPayload({ ...payload, extra: true }), false);
+});
+
+test("storage trigger editor payloads are exact, revisioned, and operation-bound", () => {
+  const read = { tokenUuid: "Scene.scene.Token.chest", path: ["bag"] };
+  const definitions = { chainsByEvent: createEmptyStorageTriggerState().chainsByEvent };
+  const save = { ...read, definitions, expectedRevision: 0, operationId: "save-1" };
+  const reset = { ...read, operationId: "reset-1" };
+  assert.equal(isValidStorageTriggerReadPayload(read), true);
+  assert.equal(isValidStorageTriggerReadPayload({ ...read, operationId: "x" }), false);
+  assert.equal(isValidStorageTriggerSavePayload(save), true);
+  assert.equal(isValidStorageTriggerSavePayload({ ...save, expectedRevision: -1 }), false);
+  assert.equal(isValidStorageTriggerSavePayload({ ...save, extra: true }), false);
+  assert.equal(isValidStorageTriggerResetPayload(reset), true);
+  assert.equal(isValidStorageTriggerResetPayload({ ...reset, operationId: "" }), false);
 });
 
 function clone(value) {
@@ -2586,6 +2604,41 @@ test("storage beforeOpen runs after access, can deny before mutation, and afterO
     mutationId: "hidden"
   }, { sender: hidden.player }), /не видит/iu);
   assert.deepEqual(hiddenEvents, []);
+});
+
+test("GM trigger commands read, revision-save, retry idempotently, and reset only executions", async () => {
+  const harness = createHarness();
+  const readPayload = { tokenUuid: harness.storageToken.uuid, path: [] };
+  await assert.rejects(
+    harness.service.readTriggers(readPayload, { sender: harness.player }),
+    /мастер|GM/iu
+  );
+
+  const initial = await harness.service.readTriggers(readPayload, { sender: harness.gm });
+  const definitions = structuredClone(initial.triggers.chainsByEvent);
+  definitions.beforeOpen.push({
+    id: "lock", name: "Замок", enabled: true, repeat: "onceGlobal", entryStepId: "deny",
+    steps: [{ id: "deny", type: "deny", config: { message: "Заперто." } }]
+  });
+  const savePayload = {
+    ...readPayload, definitions: { chainsByEvent: definitions }, expectedRevision: 0, operationId: "save-triggers"
+  };
+  const saved = await harness.service.saveTriggers(savePayload, { sender: harness.gm });
+  const retry = await harness.service.saveTriggers(savePayload, { sender: harness.gm });
+  assert.deepEqual(retry, saved);
+  assert.equal(saved.triggers.revision, 1);
+  assert.equal(saved.triggers.chainsByEvent.beforeOpen[0].id, "lock");
+
+  await harness.storageService.updateTriggerRuntime(harness.storageToken, (draft) => {
+    draft.variables.keep = true;
+    draft.executionState.onceGlobal.lock = true;
+    draft.executionState.runs.run = { status: "complete" };
+  });
+  const resetPayload = { ...readPayload, operationId: "reset-triggers" };
+  const reset = await harness.service.resetTriggers(resetPayload, { sender: harness.gm });
+  assert.deepEqual(reset.triggers.variables, { keep: true });
+  assert.deepEqual(reset.triggers.executionState, { onceGlobal: {}, oncePerCharacter: {}, runs: {} });
+  assert.equal(reset.triggers.revision, 1);
 });
 
 test("storage open returns a compact socket acknowledgement instead of the full nested contents", async () => {

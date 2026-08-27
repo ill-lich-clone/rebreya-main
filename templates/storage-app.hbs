@@ -25,6 +25,11 @@
       {{#if configuration.selectedTemplateName}}
         <p class="rm-muted">Сохранённый снимок: {{configuration.selectedTemplateName}}</p>
       {{/if}}
+      <section class="rm-storage-trigger-summary">
+        <div><strong>Триггеры</strong><span>{{configuration.triggerActiveCount}} активных цепочек</span></div>
+        <button type="button" class="rm-button rm-button--secondary" data-action="storage-open-trigger-editor"><i class="fa-solid fa-bolt"></i><span>Открыть редактор</span></button>
+        <button type="button" class="rm-icon-button" data-action="storage-reset-triggers" aria-label="Сбросить срабатывания"><i class="fa-solid fa-rotate-left"></i></button>
+      </section>
       {{#if configuration.canSetTexture}}
         <fieldset class="rm-storage-texture-modes">
           <legend>Внешний вид</legend>

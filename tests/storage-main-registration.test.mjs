@@ -96,6 +96,16 @@ test("main registers the storage deposit socket API and current cache keys", asy
   assert.match(main, /this\.storageTriggerDnd5eAdapter = new StorageTriggerDnd5eAdapter\(\{/u);
   assert.match(main, /this\.storageTriggerService = new StorageTriggerService\(\{/u);
   assert.match(main, /triggerService:\s*this\.storageTriggerService/u);
+  assert.match(main, /STORAGE_TRIGGER_READ_COMMAND\s*=\s*"storage\.triggers\.read"/u);
+  assert.match(main, /STORAGE_TRIGGER_SAVE_COMMAND\s*=\s*"storage\.triggers\.save"/u);
+  assert.match(main, /STORAGE_TRIGGER_RESET_COMMAND\s*=\s*"storage\.triggers\.reset"/u);
+  assert.match(main, /register\(STORAGE_TRIGGER_READ_COMMAND,\s*\{[\s\S]*?sender\?\.isGM\s*===\s*true/u);
+  assert.match(main, /register\(STORAGE_TRIGGER_SAVE_COMMAND,\s*\{[\s\S]*?sender\?\.isGM\s*===\s*true/u);
+  assert.match(main, /register\(STORAGE_TRIGGER_RESET_COMMAND,\s*\{[\s\S]*?sender\?\.isGM\s*===\s*true/u);
+  assert.match(main, /async getStorageTriggers\(/u);
+  assert.match(main, /async saveStorageTriggers\(/u);
+  assert.match(main, /async resetStorageTriggerExecutions\(/u);
+  assert.match(main, /async openStorageTriggerEditor\(/u);
   assert.match(main, /registerStorageTokenDropHooks\(moduleApi/u);
   assert.match(main, /STORAGE_TOKEN_CHARACTER_COMMAND\s*=\s*"storage\.token-to-character"/u);
   assert.match(main, /register\(STORAGE_TOKEN_CHARACTER_COMMAND,\s*\{/u);

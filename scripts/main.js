@@ -212,6 +212,9 @@ import {
   isValidStorageJournalDropPayload,
   isValidStorageJournalReadPayload,
   isValidStorageOpenPayload,
+  isValidStorageTriggerReadPayload,
+  isValidStorageTriggerResetPayload,
+  isValidStorageTriggerSavePayload,
   isValidStorageRestorePortablePayload,
   isValidStorageTokenCharacterPayload,
   storageCharacterTokenUuidForClaim
@@ -355,6 +358,9 @@ export const STORAGE_JOURNAL_DROP_COMMAND = "storage.journal.drop-to-scene";
 export const STORAGE_DROP_ITEM_COMMAND = "storage.drop-item-to-scene";
 export const STORAGE_RESTORE_PORTABLE_COMMAND = "storage.restore-portable";
 export const STORAGE_TOKEN_CHARACTER_COMMAND = "storage.token-to-character";
+export const STORAGE_TRIGGER_READ_COMMAND = "storage.triggers.read";
+export const STORAGE_TRIGGER_SAVE_COMMAND = "storage.triggers.save";
+export const STORAGE_TRIGGER_RESET_COMMAND = "storage.triggers.reset";
 export const DURABILITY_TARGET_DAMAGE_COMMAND = "durability.target.damage";
 const ENVIRONMENT_COMBAT_STATUS_IDS = new Set(["rebreya-surrounded", "rebreya-open-position"]);
 const ENVIRONMENT_STATUS_SOURCE = "rebreya-environment";
@@ -1637,6 +1643,7 @@ export class RebreyaMainModule {
     this.lootgenCounter = 0;
     this.latestLootgenResult = null;
     this.storageApps = new Map();
+    this.storageTriggerEditors = new Map();
     this.cityApps = new Map();
     this.traderV2Apps = new Map();
     this.tradeRouteApps = new Map();
@@ -2093,6 +2100,21 @@ export class RebreyaMainModule {
       validate: isValidStorageTokenCharacterPayload,
       authorize: (_payload, { sender }) => Boolean(sender),
       execute: (payload, { sender }) => this.storageCommandService.moveStorageTokenToCharacter(payload, { sender })
+    });
+    this.socketCommandBus.register(STORAGE_TRIGGER_READ_COMMAND, {
+      validate: isValidStorageTriggerReadPayload,
+      authorize: (_payload, { sender }) => sender?.isGM === true,
+      execute: (payload, { sender }) => this.storageCommandService.readTriggers(payload, { sender })
+    });
+    this.socketCommandBus.register(STORAGE_TRIGGER_SAVE_COMMAND, {
+      validate: isValidStorageTriggerSavePayload,
+      authorize: (_payload, { sender }) => sender?.isGM === true,
+      execute: (payload, { sender }) => this.storageCommandService.saveTriggers(payload, { sender })
+    });
+    this.socketCommandBus.register(STORAGE_TRIGGER_RESET_COMMAND, {
+      validate: isValidStorageTriggerResetPayload,
+      authorize: (_payload, { sender }) => sender?.isGM === true,
+      execute: (payload, { sender }) => this.storageCommandService.resetTriggers(payload, { sender })
     });
     this.socketCommandBus.register(DURABILITY_TARGET_DAMAGE_COMMAND, {
       validate: isValidDurabilityTargetDamagePayload,
@@ -3920,6 +3942,46 @@ export class RebreyaMainModule {
       : this.socketCommandBus.request(STORAGE_OPEN_COMMAND, payload);
   }
 
+  async getStorageTriggers(tokenUuid, request = {}) {
+    if (globalThis.game?.user?.isGM !== true) throw new Error("Настраивать триггеры может только мастер.");
+    const path = cleanStoragePath(request.path);
+    const payload = {
+      tokenUuid: cleanSocketId(tokenUuid),
+      ...(path.length ? { path } : {})
+    };
+    return isActiveGmClient(globalThis.game)
+      ? this.storageCommandService.readTriggers(payload, { sender: globalThis.game?.user })
+      : this.socketCommandBus.request(STORAGE_TRIGGER_READ_COMMAND, payload);
+  }
+
+  async saveStorageTriggers(tokenUuid, definitions, expectedRevision, operationId = "", request = {}) {
+    if (globalThis.game?.user?.isGM !== true) throw new Error("Настраивать триггеры может только мастер.");
+    const path = cleanStoragePath(request.path);
+    const payload = {
+      tokenUuid: cleanSocketId(tokenUuid),
+      definitions: foundry.utils.deepClone(definitions),
+      expectedRevision: Number(expectedRevision),
+      operationId: cleanSocketId(operationId) || createSocketRequestId("storage-triggers-save"),
+      ...(path.length ? { path } : {})
+    };
+    return isActiveGmClient(globalThis.game)
+      ? this.storageCommandService.saveTriggers(payload, { sender: globalThis.game?.user })
+      : this.socketCommandBus.request(STORAGE_TRIGGER_SAVE_COMMAND, payload);
+  }
+
+  async resetStorageTriggerExecutions(tokenUuid, operationId = "", request = {}) {
+    if (globalThis.game?.user?.isGM !== true) throw new Error("Настраивать триггеры может только мастер.");
+    const path = cleanStoragePath(request.path);
+    const payload = {
+      tokenUuid: cleanSocketId(tokenUuid),
+      operationId: cleanSocketId(operationId) || createSocketRequestId("storage-triggers-reset"),
+      ...(path.length ? { path } : {})
+    };
+    return isActiveGmClient(globalThis.game)
+      ? this.storageCommandService.resetTriggers(payload, { sender: globalThis.game?.user })
+      : this.socketCommandBus.request(STORAGE_TRIGGER_RESET_COMMAND, payload);
+  }
+
   async readStorageJournal(tokenUuid, rowId, request = {}) {
     const path = cleanStoragePath(request.path);
     const payload = {
@@ -4323,7 +4385,11 @@ export class RebreyaMainModule {
         manualRows: foundry.utils.deepClone(state.manualRows),
         manualCoins: foundry.utils.deepClone(state.manualCoins),
         textures: foundry.utils.deepClone(state.textures),
-        displayMode: state.displayMode
+        displayMode: state.displayMode,
+        triggerActiveCount: Object.values(state.triggers?.chainsByEvent ?? {})
+          .flat()
+          .filter((chain) => chain?.unsupported !== true && chain?.enabled === true)
+          .length
       } : {})
     };
   }
@@ -4460,7 +4526,13 @@ export class RebreyaMainModule {
     const safeCharacterTokenUuid = cleanSocketId(characterTokenUuid);
     if (!safeTokenUuid) throw new Error("Не указан токен хранилища.");
     if (configure) {
-      await this.configureStorageToken(safeTokenUuid, {}, { path: safePath });
+      if (globalThis.game?.user?.isGM !== true) throw new Error("Настраивать хранилища может только мастер.");
+      const token = await this.#resolveStorageToken(safeTokenUuid, { allowCorpse: true });
+      await this.storageService.open(token, {
+        senderId: cleanSocketId(globalThis.game?.user?.id),
+        path: safePath,
+        administrative: true
+      });
     }
     else {
       await this.openStorage(safeTokenUuid, {
@@ -4486,6 +4558,27 @@ export class RebreyaMainModule {
     else {
       app.characterTokenUuid = safeCharacterTokenUuid;
       if (anchorToToken) app.requestTokenAnchor?.();
+    }
+    await app.render({ force: true });
+    bringAppToFront(app);
+    return app;
+  }
+
+  async openStorageTriggerEditor(tokenUuid, request = {}) {
+    if (globalThis.game?.user?.isGM !== true) throw new Error("Настраивать триггеры может только мастер.");
+    const safeTokenUuid = cleanSocketId(tokenUuid);
+    const path = cleanStoragePath(request.path);
+    if (!safeTokenUuid) throw new Error("Не указан токен хранилища.");
+    const snapshot = await this.getStorageSnapshot(safeTokenUuid, { path });
+    const moduleVersion = game.modules.get(MODULE_ID)?.version ?? "1.4.96";
+    const { StorageTriggerEditor } = await import(
+      `./ui/storage-trigger-editor.js?v=${encodeURIComponent(`${moduleVersion}-storage-triggers`)}`
+    );
+    const key = [safeTokenUuid, ...path].join(":");
+    let app = this.storageTriggerEditors.get(key);
+    if (!app) {
+      app = new StorageTriggerEditor(this, safeTokenUuid, { path, storageName: cleanSocketId(snapshot?.name) });
+      this.storageTriggerEditors.set(key, app);
     }
     await app.render({ force: true });
     bringAppToFront(app);

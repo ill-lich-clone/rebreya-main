@@ -1,0 +1,51 @@
+<section class="rm-trigger-editor">
+  <header class="rm-trigger-editor__heading"><strong>Триггеры хранилища</strong><span>{{storageName}}</span></header>
+  <nav class="rm-trigger-editor__tabs" aria-label="Событие триггера">
+    {{#each events}}<button type="button" class="{{#if selected}}is-active{{/if}}" data-action="trigger-event" data-event="{{event}}">{{label}}</button>{{/each}}
+  </nav>
+  <div class="rm-trigger-editor__workspace">
+    <aside class="rm-trigger-editor__chains">
+      <div class="rm-trigger-editor__chain-list">
+        {{#each chains}}<button type="button" class="rm-trigger-chain{{#if selected}} is-active{{/if}}" data-action="trigger-select-chain" data-chain-id="{{id}}"><i class="fa-solid {{#if unsupported}}fa-triangle-exclamation{{else}}fa-bolt{{/if}}"></i><span>{{name}}</span><small>{{activeLabel}}</small></button>{{/each}}
+      </div>
+      <div class="rm-trigger-editor__templates">
+        <button type="button" data-action="trigger-add-chain"><i class="fa-solid fa-plus"></i> Цепочка</button>
+        <button type="button" data-action="trigger-template-lock"><i class="fa-solid fa-lock"></i> Шаблон: Замок</button>
+        <button type="button" data-action="trigger-template-trap"><i class="fa-solid fa-burst"></i> Шаблон: Ловушка</button>
+      </div>
+    </aside>
+    <main class="rm-trigger-editor__flow">
+      {{#if chain}}
+        <div class="rm-trigger-editor__chain-toolbar">
+          <input type="text" value="{{chain.name}}" data-field="chain.name" aria-label="Название цепочки" {{#unless chainSupported}}disabled{{/unless}}>
+          <label><input type="checkbox" data-field="chain.enabled" {{#if chain.enabled}}checked{{/if}} {{#unless chainSupported}}disabled{{/unless}}> Включена</label>
+          <select data-field="chain.repeat" {{#unless chainSupported}}disabled{{/unless}}>{{#each repeatOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select>
+          <button type="button" data-action="trigger-delete-chain" aria-label="Удалить цепочку"><i class="fa-solid fa-trash"></i></button>
+        </div>
+        {{#if chainSupported}}
+          <div class="rm-trigger-editor__step-list">
+            {{#each steps}}<article class="rm-trigger-step{{#if selected}} is-active{{/if}}">
+              <button type="button" class="rm-trigger-step__select" data-action="trigger-select-step" data-step-id="{{id}}"><b>{{number}}</b><span>{{label}}</span></button>
+              <button type="button" data-action="trigger-move-step" data-step-id="{{id}}" data-direction="-1" aria-label="Выше"><i class="fa-solid fa-arrow-up"></i></button>
+              <button type="button" data-action="trigger-move-step" data-step-id="{{id}}" data-direction="1" aria-label="Ниже"><i class="fa-solid fa-arrow-down"></i></button>
+              <button type="button" data-action="trigger-delete-step" data-step-id="{{id}}" aria-label="Удалить шаг"><i class="fa-solid fa-trash"></i></button>
+            </article>{{/each}}
+          </div>
+          <button type="button" class="rm-trigger-editor__add-step" data-action="trigger-add-step"><i class="fa-solid fa-plus"></i> Добавить шаг</button>
+        {{else}}<p class="rm-trigger-editor__unsupported">Цепочка создана более новой версией модуля и доступна только для удаления.</p>{{/if}}
+      {{else}}<div class="rm-trigger-editor__empty">Выберите цепочку или добавьте новую.</div>{{/if}}
+    </main>
+    <aside class="rm-trigger-editor__inspector">
+      {{#if step}}
+        <h3>Шаг — {{step.label}}</h3>
+        <label>Тип<select data-field="step.type">{{#each stepTypeOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+        {{#each configFields}}<label>{{label}}{{#if (eq type "textarea")}}<textarea data-field="step.config.{{name}}">{{value}}</textarea>{{else}}<input type="{{type}}" value="{{value}}" data-field="step.config.{{name}}">{{/if}}</label>{{/each}}
+        <label>Следующий шаг<select data-field="step.nextStepId">{{#each targetOptions}}<option value="{{value}}" {{#if nextSelected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+        <label>Успех<select data-field="step.successStepId">{{#each targetOptions}}<option value="{{value}}" {{#if successSelected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+        <label>Неудача<select data-field="step.failureStepId">{{#each targetOptions}}<option value="{{value}}" {{#if failureSelected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+        {{#if validationIssues}}<div class="rm-trigger-editor__errors">{{#each validationIssues}}<p>{{message}}{{code}}</p>{{/each}}</div>{{/if}}
+      {{else}}<div class="rm-trigger-editor__empty">Выберите шаг.</div>{{/if}}
+    </aside>
+  </div>
+  <footer class="rm-trigger-editor__footer"><span class="{{#if dirty}}is-dirty{{/if}}"><i class="fa-solid fa-circle"></i> {{#if dirty}}Есть несохранённые изменения{{else}}Изменения сохранены{{/if}}</span><div><button type="button" data-action="trigger-reset"><i class="fa-solid fa-rotate"></i> Сбросить срабатывания</button><button type="button" data-action="trigger-reload"><i class="fa-solid fa-arrows-rotate"></i> Перезагрузить</button><button type="button" class="rm-button rm-button--primary" data-action="trigger-save"><i class="fa-solid fa-floppy-disk"></i> Сохранить</button></div></footer>
+</section>

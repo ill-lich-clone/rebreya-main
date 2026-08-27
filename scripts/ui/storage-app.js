@@ -274,6 +274,7 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
         canAddManualItems: configurationEnabled,
         templateOptions: configurationEnabled ? clone(templates) : [],
         selectedTemplateName: clean(this.snapshot?.template?.name),
+        triggerActiveCount: Math.max(0, Math.trunc(Number(this.snapshot?.triggerActiveCount) || 0)),
         manualRows: configurationEnabled ? clone(this.snapshot?.manualRows ?? []) : [],
         canReset: configurationEnabled && ["opened", "empty"].includes(this.snapshot?.state),
         canSetTexture: configurationEnabled && hasTextureSet,
@@ -611,6 +612,13 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
       }
       else if (action === "storage-reset") {
         await this.moduleApi.resetStorageToken(this.tokenUuid, this.#pathRequest());
+      }
+      else if (action === "storage-open-trigger-editor") {
+        await this.moduleApi.openStorageTriggerEditor(this.tokenUuid, this.#pathRequest());
+        return;
+      }
+      else if (action === "storage-reset-triggers") {
+        await this.moduleApi.resetStorageTriggerExecutions(this.tokenUuid, "", this.#pathRequest());
       }
       else if (action === "storage-set-texture") {
         await this.moduleApi.setStorageTextureMode(this.tokenUuid, clean(control.dataset.mode), this.#pathRequest());
