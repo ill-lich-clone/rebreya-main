@@ -93,6 +93,9 @@ test("main registers the storage deposit socket API and current cache keys", asy
   assert.match(main, /async dropStorageJournalToScene\(/u);
   assert.doesNotMatch(main, /BuiltinCoinTemplateService|builtinCoinTemplateService|restoreBuiltinCoinTemplates/u);
   assert.match(main, /this\.storageJournalReader = new StorageJournalReader\(\{/u);
+  assert.match(main, /this\.storageTriggerDnd5eAdapter = new StorageTriggerDnd5eAdapter\(\{/u);
+  assert.match(main, /this\.storageTriggerService = new StorageTriggerService\(\{/u);
+  assert.match(main, /triggerService:\s*this\.storageTriggerService/u);
   assert.match(main, /registerStorageTokenDropHooks\(moduleApi/u);
   assert.match(main, /STORAGE_TOKEN_CHARACTER_COMMAND\s*=\s*"storage\.token-to-character"/u);
   assert.match(main, /register\(STORAGE_TOKEN_CHARACTER_COMMAND,\s*\{/u);
@@ -472,6 +475,7 @@ test("composed storage command service receives the module durability service in
     const { RebreyaMainModule } = await import(`../scripts/main.js?storage-durability=${Date.now()}`);
     const moduleApi = new RebreyaMainModule();
     assert.equal(moduleApi.storageCommandService.durabilityService, moduleApi.durabilityService);
+    assert.equal(moduleApi.storageCommandService.triggerService, moduleApi.storageTriggerService);
   }
   finally {
     runtime.restore();

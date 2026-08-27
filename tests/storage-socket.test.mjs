@@ -13,10 +13,23 @@ import {
   isValidStorageDepositPayload,
   isValidStorageDropItemPayload,
   isValidStorageJournalReadPayload,
+  isValidStorageOpenPayload,
   isValidStorageRestorePortablePayload,
   isValidStorageTokenCharacterPayload,
   storageCharacterTokenUuidForClaim
 } from "../scripts/data/storage-command-service.js";
+
+test("storage open payload requires one exact stable trigger mutation identity", () => {
+  const payload = {
+    tokenUuid: "Scene.scene.Token.chest",
+    characterTokenUuid: "Scene.scene.Token.hero",
+    mutationId: "open-1"
+  };
+  assert.equal(isValidStorageOpenPayload(payload), true);
+  assert.equal(isValidStorageOpenPayload({ ...payload, path: ["bag"] }), true);
+  assert.equal(isValidStorageOpenPayload({ ...payload, mutationId: "" }), false);
+  assert.equal(isValidStorageOpenPayload({ ...payload, extra: true }), false);
+});
 
 function clone(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));
@@ -79,12 +92,14 @@ function createHarness({
   refreshResult = null,
   playerName = "Игрок",
   createChatMessage = null,
-  logger = null
+  logger = null,
+  triggerService = null
 } = {}) {
   const player = { id: "player", name: playerName, isGM: false };
   const gm = { id: "gm", isGM: true, active: true };
   const hero = {
     id: "hero",
+    uuid: "Actor.hero",
     type: "character",
     testUserPermission: (user, permission) => user?.id === player.id && permission === "OWNER"
   };
@@ -296,6 +311,7 @@ function createHarness({
     groundPileService,
     containerItemService,
     durabilityService,
+    triggerService: triggerService ?? { async execute() { return { allowed: true, completedChainIds: [] }; } },
     isVisibleTo: () => visible,
     journalReader: journalReader ?? {
       async read(journalUuid) {
@@ -2528,6 +2544,50 @@ test("storage open rejects a token hidden from the player", async () => {
   assert.equal(readStorageState(harness.storageToken).state, "unopened");
 });
 
+test("storage beforeOpen runs after access, can deny before mutation, and afterOpen observes committed state", async () => {
+  const events = [];
+  let harness;
+  const triggerService = {
+    async execute(event, _state, context) {
+      events.push({ event, state: readStorageStateAtPath(context.storageToken, context.path).state, context });
+      return event === "beforeOpen" && context.runId === "deny:beforeOpen"
+        ? { allowed: false, message: "Хранилище заперто.", completedChainIds: ["lock"] }
+        : { allowed: true, completedChainIds: [] };
+    }
+  };
+  harness = createHarness({ triggerService });
+  await assert.rejects(harness.service.open({
+    tokenUuid: harness.storageToken.uuid,
+    characterTokenUuid: harness.characterToken.uuid,
+    mutationId: "deny"
+  }, { sender: harness.player }), /заперто/iu);
+  assert.equal(readStorageState(harness.storageToken).state, "unopened");
+  assert.deepEqual(events.map((entry) => [entry.event, entry.state]), [["beforeOpen", "unopened"]]);
+
+  events.length = 0;
+  await harness.service.open({
+    tokenUuid: harness.storageToken.uuid,
+    characterTokenUuid: harness.characterToken.uuid,
+    mutationId: "allow"
+  }, { sender: harness.player });
+  assert.deepEqual(events.map((entry) => [entry.event, entry.state]), [
+    ["beforeOpen", "unopened"], ["afterOpen", "opened"]
+  ]);
+  assert.equal(events[0].context.characterActorUuid, "Actor.hero");
+
+  const hiddenEvents = [];
+  const hidden = createHarness({
+    visible: false,
+    triggerService: { async execute(...args) { hiddenEvents.push(args); } }
+  });
+  await assert.rejects(hidden.service.open({
+    tokenUuid: hidden.storageToken.uuid,
+    characterTokenUuid: hidden.characterToken.uuid,
+    mutationId: "hidden"
+  }, { sender: hidden.player }), /не видит/iu);
+  assert.deepEqual(hiddenEvents, []);
+});
+
 test("storage open returns a compact socket acknowledgement instead of the full nested contents", async () => {
   const harness = createHarness();
 
@@ -2616,6 +2676,53 @@ test("repeated storage claims grant rows and coins only once and empty the token
   assert.equal(harness.coinGrants.length, 1);
   assert.equal(readStorageState(harness.storageToken).state, "empty");
   assert.equal(harness.storageToken.name, "Сундук (пусто)");
+});
+
+test("afterClaim uses committed summaries and emptied runs once before final pile refresh", async () => {
+  const order = [];
+  const events = [];
+  const harness = createHarness({
+    triggerService: {
+      async execute(event, _state, context) {
+        if (["afterClaim", "emptied"].includes(event)) {
+          order.push(event);
+          events.push({ event, summary: clone(context.claimSummary), state: readStorageStateAtPath(context.storageToken, context.path).state });
+        }
+        return { allowed: true, completedChainIds: [] };
+      }
+    },
+    refreshResult: () => {
+      order.push("refresh");
+      return { deleted: false };
+    }
+  });
+  await harness.storageService.configure(harness.storageToken, {
+    state: "opened",
+    manualRows: [{ rowId: "only", name: "Ключ", quantity: 1, itemData: { name: "Ключ", type: "loot", system: { quantity: 1 } } }],
+    manualCoins: {}, generatedRows: [], generatedCoins: {}, coinsClaimed: true
+  });
+  const payload = {
+    tokenUuid: harness.storageToken.uuid,
+    characterTokenUuid: harness.characterToken.uuid,
+    rowId: "only", destination: "self", quantity: 1, target: null, ingressPlan: null,
+    mutationId: "trigger-final-row"
+  };
+
+  const first = await harness.service.claimRow(payload, { sender: harness.player });
+  const retry = await harness.service.claimRow(payload, { sender: harness.player });
+
+  assert.equal(first.changed, true);
+  assert.deepEqual(retry, first);
+  assert.deepEqual(order, ["afterClaim", "emptied", "refresh"]);
+  assert.deepEqual(events, [{
+    event: "afterClaim",
+    summary: { kind: "row", rowId: "only", quantity: 1, destination: "self", state: "empty" },
+    state: "empty"
+  }, {
+    event: "emptied",
+    summary: { kind: "row", rowId: "only", quantity: 1, destination: "self", state: "empty" },
+    state: "empty"
+  }]);
 });
 
 test("storage claims report when the final ordinary ground pile was deleted", async () => {

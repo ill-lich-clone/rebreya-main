@@ -155,9 +155,10 @@ function clone(value) {
 }
 
 export function isValidStorageOpenPayload(payload) {
-  return hasLegacyOrPathKeys(payload, ["characterTokenUuid", "tokenUuid"])
+  return hasLegacyOrPathKeys(payload, ["characterTokenUuid", "mutationId", "tokenUuid"])
     && isTrimmedString(payload.tokenUuid, { required: true })
-    && isTrimmedString(payload.characterTokenUuid);
+    && isTrimmedString(payload.characterTokenUuid)
+    && isTrimmedString(payload.mutationId, { required: true, max: 160 });
 }
 
 export function isValidStorageJournalReadPayload(payload) {
@@ -343,6 +344,7 @@ export class StorageCommandService {
     groundPileService = null,
     containerItemService = null,
     durabilityService = null,
+    triggerService = null,
     journalReader,
     isVisibleTo,
     resolveDocument = (...args) => globalThis.fromUuid?.(...args),
@@ -370,6 +372,9 @@ export class StorageCommandService {
     this.groundPileService = groundPileService;
     this.containerItemService = containerItemService;
     this.durabilityService = durabilityService;
+    this.triggerService = triggerService && typeof triggerService.execute === "function"
+      ? triggerService
+      : { async execute() { return { allowed: true, completedChainIds: [] }; } };
     this.journalReader = journalReader;
     this.isVisibleTo = isVisibleTo;
     this.resolveDocument = resolveDocument;
@@ -649,6 +654,58 @@ export class StorageCommandService {
     return { storageToken, characterToken, character };
   }
 
+  #triggerContext(event, payload, sender, access, extra = {}) {
+    const path = storagePath(payload?.path);
+    const mutationId = clean(payload?.mutationId)
+      || `open-${clean(payload?.tokenUuid)}-${clean(sender?.id)}-${Date.now()}-${Math.random()}`;
+    const claimSummary = clone(extra.claimSummary ?? null);
+    return {
+      event,
+      runId: `${mutationId}:${event}`,
+      fingerprint: JSON.stringify(canonicalRequestValue({
+        event,
+        payload: clone(payload),
+        senderId: clean(sender?.id),
+        characterActorUuid: clean(access?.character?.uuid),
+        claimSummary
+      })),
+      storageToken: access.storageToken,
+      tokenUuid: clean(payload?.tokenUuid),
+      path,
+      senderId: clean(sender?.id),
+      characterActorUuid: clean(access?.character?.uuid),
+      claimSummary
+    };
+  }
+
+  async #executeTrigger(event, payload, sender, access, extra = {}) {
+    const path = storagePath(payload?.path);
+    const state = readStorageStateAtPath(access.storageToken, path);
+    return this.triggerService.execute(
+      event,
+      state.triggers,
+      this.#triggerContext(event, payload, sender, access, extra)
+    );
+  }
+
+  async #executePostTrigger(event, payload, sender, access, extra = {}) {
+    try {
+      return await this.#executeTrigger(event, payload, sender, access, extra);
+    }
+    catch (error) {
+      this.logger?.warn?.(`${MODULE_ID} | Storage ${event} trigger failed after commit.`, error);
+      return null;
+    }
+  }
+
+  async #executeCommittedClaimTriggers(payload, sender, access, beforeState, claimSummary) {
+    await this.#executePostTrigger("afterClaim", payload, sender, access, { claimSummary });
+    const finalState = readStorageStateAtPath(access.storageToken, storagePath(payload.path));
+    if (beforeState?.state !== "empty" && finalState.state === "empty") {
+      await this.#executePostTrigger("emptied", payload, sender, access, { claimSummary });
+    }
+  }
+
   #assertMutationFingerprint(mutationKey, fingerprint) {
     if (!fingerprint) return;
     const existing = this.claimFingerprints.get(mutationKey);
@@ -737,11 +794,27 @@ export class StorageCommandService {
     const tokenUuid = clean(payload.tokenUuid);
     return this.#enqueue([storageQueueKey(tokenUuid)], async () => {
       const access = await this.#resolveAccess(payload, sender);
+      const beforeState = readStorageStateAtPath(access.storageToken, storagePath(payload.path));
+      const gate = await this.#executeTrigger("beforeOpen", payload, sender, access);
+      if (gate?.allowed === false) {
+        const error = new Error(clean(gate.message) || "Хранилище не удалось открыть.");
+        error.code = "STORAGE_TRIGGER_DENIED";
+        throw error;
+      }
       const result = await this.storageService.open(access.storageToken, {
         senderId: clean(sender?.id),
         characterTokenUuid: clean(payload.characterTokenUuid),
         path: storagePath(payload.path)
       });
+      if (beforeState.state === "unopened" && result?.state?.state !== "unopened") {
+        await this.#executePostTrigger("afterOpen", payload, sender, access, {
+          claimSummary: {
+            generatedNow: result?.generatedNow === true,
+            state: clean(result?.state?.state),
+            displayMode: clean(result?.state?.displayMode)
+          }
+        });
+      }
       return {
         generatedNow: result?.generatedNow === true,
         state: clean(result?.state?.state) || "opened",
@@ -930,6 +1003,15 @@ export class StorageCommandService {
       if (destination !== "party") {
         result = await this.storageService.claim(access.storageToken, { kind: "row", rowId, quantity, path });
       }
+      if (result.changed === true) {
+        await this.#executeCommittedClaimTriggers(payload, sender, access, state, {
+          kind: "row",
+          rowId,
+          quantity,
+          destination,
+          state: clean(result.state?.state)
+        });
+      }
       const refresh = await this.#refreshSource(access.storageToken, readStorageState(access.storageToken));
       if (result.changed === true) {
         await this.#publishClaimMessage({
@@ -989,6 +1071,14 @@ export class StorageCommandService {
         await this.inventoryService.addCurrencyToInventoryOnce(coins, grantId);
       }
       const result = await this.storageService.claim(access.storageToken, { kind: "coins", path });
+      if (result.changed === true) {
+        await this.#executeCommittedClaimTriggers(payload, sender, access, state, {
+          kind: "coins",
+          coins,
+          destination,
+          state: clean(result.state?.state)
+        });
+      }
       const refresh = await this.#refreshSource(access.storageToken, readStorageState(access.storageToken));
       if (result.changed === true) {
         await this.#publishClaimMessage({
@@ -1181,6 +1271,17 @@ export class StorageCommandService {
 
       const changed = claimedRowIds.length > 0 || coinsChanged;
       await this.storageService.completeBulkClaimMutation(access.storageToken, mutationKey, fingerprint, { path });
+      if (changed) {
+        const committedState = readStorageStateAtPath(access.storageToken, path);
+        await this.#executeCommittedClaimTriggers(payload, sender, access, stateBeforeBinding, {
+          kind: "all",
+          claimedRowIds: clone(claimedRowIds),
+          skippedJournalRowIds: clone(skippedJournalRowIds),
+          coinsChanged,
+          destination,
+          state: clean(committedState.state)
+        });
+      }
       const refresh = await this.#refreshSource(access.storageToken, readStorageState(access.storageToken));
       const sourceDeleted = refresh.deleted === true;
       for (const receipt of partyReceipts) await this.#publishClaimMessage(receipt);

@@ -48,6 +48,37 @@ test("storage trigger definitions save by revision and reset executions without 
   assert.equal(reset.triggers.revision, 1);
 });
 
+test("storage trigger definition save preserves an unchanged opaque future chain", async () => {
+  const token = createStorageToken("future-trigger-state");
+  token.flags["rebreya-main"] = {
+    storage: {
+      triggers: {
+        version: 1,
+        revision: 3,
+        chainsByEvent: {
+          beforeOpen: [{
+            id: "future", name: "Future", enabled: true, repeat: "always", entryStepId: "future-step",
+            steps: [{ id: "future-step", type: "futureTeleport", config: { exact: [1, 2, 3] } }]
+          }]
+        }
+      }
+    }
+  };
+  const service = new StorageService();
+  const current = readStorageState(token).triggers;
+  const definitions = structuredClone(current.chainsByEvent);
+  definitions.afterOpen.push({
+    id: "known", name: "Known", enabled: true, repeat: "always", entryStepId: "finish",
+    steps: [{ id: "finish", type: "finish", config: {} }]
+  });
+
+  const saved = await service.saveTriggerDefinitions(token, { chainsByEvent: definitions }, 3);
+
+  assert.equal(saved.triggers.revision, 4);
+  assert.deepEqual(saved.triggers.chainsByEvent.beforeOpen[0], current.chainsByEvent.beforeOpen[0]);
+  assert.equal(saved.triggers.chainsByEvent.afterOpen[0].id, "known");
+});
+
 function createStorageToken(id, name = "Сундук") {
   const flags = {};
   return {

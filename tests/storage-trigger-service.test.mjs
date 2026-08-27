@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   STORAGE_TRIGGER_EVENTS,
+  StorageTriggerService,
   createEmptyStorageTriggerState,
   normalizeStorageTriggerState,
   validateStorageTriggerDefinitions
@@ -81,5 +82,133 @@ test("unsupported future chains survive normalization unchanged and are non-exec
   });
   assert.deepEqual(normalized.chainsByEvent.beforeOpen[0].definition, opaque);
   assert.equal(normalized.chainsByEvent.beforeOpen[0].unsupported, true);
+  assert.deepEqual(normalizeStorageTriggerState(normalized), normalized);
   assert.equal(validateStorageTriggerDefinitions(normalized).some((issue) => issue.code === "unsupported-step"), true);
+});
+
+test("trigger runtime prunes only the oldest completed run receipts", async () => {
+  const state = createEmptyStorageTriggerState();
+  for (let index = 0; index < 1001; index += 1) {
+    state.executionState.runs[`old-${index}`] = {
+      fingerprint: `fingerprint-${index}`, event: "afterOpen", status: "complete",
+      steps: {}, completedChainIds: [], result: { allowed: true, completedChainIds: [] }
+    };
+  }
+  state.executionState.runs.pending = {
+    fingerprint: "pending", event: "afterOpen", status: "pending", steps: {}, completedChainIds: []
+  };
+  let persisted = structuredClone(state);
+  const service = new StorageTriggerService({
+    persistRuntime: async (_context, mutate) => mutate(persisted)
+  });
+
+  await service.execute("afterOpen", persisted, {
+    runId: "new", fingerprint: "new", tokenUuid: "Token.chest", senderId: "gm"
+  });
+
+  assert.equal(persisted.executionState.runs["old-0"], undefined);
+  assert.equal(persisted.executionState.runs["old-1"], undefined);
+  assert.equal(persisted.executionState.runs.pending.status, "pending");
+  assert.equal(persisted.executionState.runs.new.status, "complete");
+  assert.equal(Object.values(persisted.executionState.runs).filter((run) => run.status === "complete").length, 1000);
+});
+
+test("beforeOpen lock denies without a key and oncePerCharacter trap persists only terminal runs", async () => {
+  const state = createEmptyStorageTriggerState();
+  state.chainsByEvent.beforeOpen = [{
+    id: "lock", name: "Замок", enabled: true, repeat: "always", entryStepId: "key",
+    steps: [
+      { id: "key", type: "conditionItem", config: { itemUuid: "Item.key" }, successStepId: "allow", failureStepId: "deny" },
+      { id: "allow", type: "allow", config: {} },
+      { id: "deny", type: "deny", config: { message: "Заперто." } }
+    ]
+  }];
+  const service = new StorageTriggerService({
+    hasItem: async () => false,
+    persistRuntime: async (_context, mutate) => mutate(state)
+  });
+  const result = await service.execute("beforeOpen", state, {
+    runId: "open-1", tokenUuid: "Scene.s.Token.chest", path: [], senderId: "player",
+    characterActorUuid: "Actor.hero"
+  });
+  assert.deepEqual(result, { allowed: false, message: "Заперто.", completedChainIds: ["lock"] });
+});
+
+test("trigger runtime branches on a dnd5e save, applies damage, and reuses a durable completed run", async () => {
+  const state = createEmptyStorageTriggerState();
+  state.chainsByEvent.afterOpen = [{
+    id: "needle-trap", name: "Игла", enabled: true, repeat: "oncePerCharacter", entryStepId: "save",
+    steps: [
+      { id: "save", type: "savingThrow", config: { ability: "dex", dc: 14 }, successStepId: "finish", failureStepId: "damage" },
+      { id: "damage", type: "damage", config: { formula: "2d6", damageType: "piercing" }, nextStepId: "finish" },
+      { id: "finish", type: "finish", config: {} }
+    ]
+  }];
+  let rolls = 0;
+  let damage = 0;
+  let persisted = structuredClone(state);
+  const service = new StorageTriggerService({
+    rollCheck: async (_context, config) => {
+      rolls += 1;
+      assert.deepEqual(config, { kind: "savingThrow", ability: "dex", dc: 14 });
+      return { success: false, total: 8 };
+    },
+    applyDamage: async () => { damage += 1; return { applied: 7 }; },
+    persistRuntime: async (_context, mutate) => {
+      mutate(persisted);
+      persisted = normalizeStorageTriggerState(persisted);
+      return persisted;
+    }
+  });
+  const context = {
+    runId: "open-2", fingerprint: "exact-open-2", tokenUuid: "Scene.s.Token.chest", path: [],
+    senderId: "player", characterActorUuid: "Actor.hero"
+  };
+
+  const first = await service.execute("afterOpen", persisted, context);
+  const retry = await service.execute("afterOpen", persisted, context);
+
+  assert.deepEqual(first, { allowed: true, completedChainIds: ["needle-trap"] });
+  assert.deepEqual(retry, first);
+  assert.equal(rolls, 1);
+  assert.equal(damage, 1);
+  assert.equal(persisted.executionState.oncePerCharacter["afterOpen:needle-trap:Actor.hero"], true);
+  assert.equal(persisted.executionState.runs["open-2"].status, "complete");
+});
+
+test("trigger variables and macro returns commit atomically while run fingerprints cannot be rebound", async () => {
+  const state = createEmptyStorageTriggerState();
+  state.chainsByEvent.beforeOpen = [{
+    id: "macro-lock", name: "Macro", enabled: true, repeat: "onceGlobal", entryStepId: "set",
+    steps: [
+      { id: "set", type: "setVariable", config: { name: "attempts", value: 1 }, nextStepId: "macro" },
+      { id: "macro", type: "macro", config: { macroUuid: "Macro.lock" }, nextStepId: "allow" },
+      { id: "allow", type: "allow", config: {} }
+    ]
+  }];
+  let persisted = structuredClone(state);
+  let frozen = false;
+  const service = new StorageTriggerService({
+    executeMacro: async (context) => {
+      frozen = Object.isFrozen(context) && Object.isFrozen(context.variables);
+      return { outcome: "continue", variables: { unlocked: true } };
+    },
+    persistRuntime: async (_context, mutate) => {
+      mutate(persisted);
+      persisted = normalizeStorageTriggerState(persisted);
+    }
+  });
+  const context = {
+    runId: "macro-1", fingerprint: "macro-fingerprint", tokenUuid: "Token.chest", path: ["bag"],
+    senderId: "gm", characterActorUuid: "Actor.hero"
+  };
+
+  await service.execute("beforeOpen", persisted, context);
+  assert.equal(frozen, true);
+  assert.deepEqual(persisted.variables, { attempts: 1, unlocked: true });
+  assert.equal(persisted.executionState.onceGlobal["beforeOpen:macro-lock"], true);
+  await assert.rejects(
+    service.execute("beforeOpen", persisted, { ...context, fingerprint: "other" }),
+    /run|fingerprint|параметр/iu
+  );
 });

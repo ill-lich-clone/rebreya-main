@@ -497,7 +497,27 @@ export class StorageService {
       chainsByEvent: definitions?.chainsByEvent,
       revision: revision + 1
     });
-    const issues = validateStorageTriggerDefinitions(candidate);
+    const opaqueCounts = new Map();
+    for (const event of Object.keys(current.triggers.chainsByEvent)) {
+      for (const chain of current.triggers.chainsByEvent[event]) {
+        if (chain?.unsupported !== true) continue;
+        const key = `${event}:${JSON.stringify(chain.definition)}`;
+        opaqueCounts.set(key, (opaqueCounts.get(key) ?? 0) + 1);
+      }
+    }
+    const changedOpaque = [];
+    for (const event of Object.keys(candidate.chainsByEvent)) {
+      for (const chain of candidate.chainsByEvent[event]) {
+        if (chain?.unsupported !== true) continue;
+        const key = `${event}:${JSON.stringify(chain.definition)}`;
+        const remaining = opaqueCounts.get(key) ?? 0;
+        if (remaining > 0) opaqueCounts.set(key, remaining - 1);
+        else changedOpaque.push({ code: "unsupported-step", event, chainId: String(chain.definition?.id ?? "") });
+      }
+    }
+    const issues = validateStorageTriggerDefinitions(candidate)
+      .filter((entry) => entry.code !== "unsupported-step")
+      .concat(changedOpaque);
     if (issues.length) {
       const error = new Error("Конфигурация триггеров содержит ошибки.");
       error.code = "STORAGE_TRIGGER_VALIDATION";

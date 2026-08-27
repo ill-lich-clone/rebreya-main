@@ -190,6 +190,8 @@ import { BuiltinStorageActorService } from "./data/builtin-storage-actor-service
 import { StorageGroundPileService } from "./data/storage-ground-pile-service.js?v=1.4.161-journal-scene-items";
 import { StorageContainerItemService } from "./data/storage-container-item-service.js?v=1.4.130-storage-player-fixes";
 import { isStorageJournalRow } from "./data/storage-container-snapshot.js";
+import { StorageTriggerService } from "./data/storage-trigger-service.js";
+import { StorageTriggerDnd5eAdapter } from "./data/storage-trigger-dnd5e-adapter.js";
 import {
   StorageJournalReader,
   createStorageJournalHtmlParser
@@ -1325,6 +1327,52 @@ export class RebreyaMainModule {
         : null,
       onGeneratedOpen: ({ token }) => this.storageOpenSoundService.playForToken(token)
     });
+    this.storageTriggerDnd5eAdapter = new StorageTriggerDnd5eAdapter({
+      fromUuid: (uuid) => globalThis.fromUuid?.(uuid)
+    });
+    this.storageTriggerService = new StorageTriggerService({
+      hasItem: (...args) => this.storageTriggerDnd5eAdapter.hasItem(...args),
+      rollCheck: (...args) => this.storageTriggerDnd5eAdapter.rollCheck(...args),
+      consumeItem: (...args) => this.storageTriggerDnd5eAdapter.consumeItem(...args),
+      applyDamage: (...args) => this.storageTriggerDnd5eAdapter.applyDamage(...args),
+      showDialog: async (context, config) => {
+        if (cleanSocketId(context?.senderId) !== cleanSocketId(globalThis.game?.user?.id)) {
+          throw new Error("Диалог триггера должен быть показан на клиенте инициатора.");
+        }
+        const DialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
+        if (typeof DialogV2?.confirm !== "function") throw new Error("Foundry DialogV2 недоступен.");
+        const escape = globalThis.foundry?.utils?.escapeHTML ?? ((value) => String(value ?? ""));
+        return DialogV2.confirm({
+          window: { title: cleanSocketId(config?.title) || "Хранилище" },
+          content: `<p>${escape(cleanSocketId(config?.message))}</p>`,
+          yes: { label: cleanSocketId(config?.confirmLabel) || "Продолжить" },
+          no: { label: cleanSocketId(config?.cancelLabel) || "Отмена" }
+        });
+      },
+      createChatMessage: async (_context, config) => {
+        const escape = globalThis.foundry?.utils?.escapeHTML ?? ((value) => String(value ?? ""));
+        return globalThis.ChatMessage?.create?.({ content: `<p>${escape(cleanSocketId(config?.message))}</p>` });
+      },
+      notify: async (_context, config) => {
+        const level = ["info", "warn", "error"].includes(cleanSocketId(config?.level))
+          ? cleanSocketId(config.level)
+          : "info";
+        return globalThis.ui?.notifications?.[level]?.(cleanSocketId(config?.message));
+      },
+      executeMacro: async (macroContext, config) => {
+        const macro = await globalThis.fromUuid?.(cleanSocketId(config?.macroUuid));
+        if (macro?.documentName !== "Macro" || typeof macro.execute !== "function") {
+          throw new Error("Макрос триггера не найден.");
+        }
+        return macro.execute(macroContext);
+      },
+      persistRuntime: (context, mutate) => this.storageService.updateTriggerRuntime(
+        context.storageToken,
+        mutate,
+        { path: cleanStoragePath(context.path) }
+      ),
+      logger: console
+    });
     this.builtinStorageActorService = new BuiltinStorageActorService({
       gameProvider: () => globalThis.game,
       folderProvider: () => globalThis.Folder,
@@ -1362,6 +1410,7 @@ export class RebreyaMainModule {
       groundPileService: this.storageGroundPileService,
       containerItemService: this.storageContainerItemService,
       durabilityService: this.durabilityService,
+      triggerService: this.storageTriggerService,
       journalReader: this.storageJournalReader,
       isVisibleTo: (storageToken) => isStorageTokenVisible(storageToken),
       createChatMessage: (data) => globalThis.ChatMessage?.create?.(data)
@@ -3863,6 +3912,7 @@ export class RebreyaMainModule {
     const payload = {
       tokenUuid: cleanSocketId(tokenUuid),
       characterTokenUuid: this.#controlledCharacterTokenUuid(request.characterTokenUuid),
+      mutationId: cleanSocketId(request.mutationId) || createSocketRequestId("storage-open"),
       ...(path.length ? { path } : {})
     };
     return isActiveGmClient(globalThis.game)
