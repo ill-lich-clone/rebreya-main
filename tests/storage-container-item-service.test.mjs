@@ -216,6 +216,7 @@ test("portable storage materializes only Items and keeps Journal references in i
     stackKey: "",
     sourceId: "JournalEntry.secret-notes",
     sourceType: "journal",
+    sourceDocumentName: "JournalEntry",
     name: "Полевые заметки",
     img: "icons/book.webp",
     quantity: 1

@@ -68,6 +68,7 @@ test("journal reference rows stay canonical across root, nested, portable, and r
     rowId: "journal-row",
     sourceId: "JournalEntry.secret-notes",
     sourceType: "journal",
+    sourceDocumentName: "JournalEntry",
     name: "Полевые заметки",
     img: "icons/book.webp",
     quantity: 99,
@@ -85,6 +86,7 @@ test("journal reference rows stay canonical across root, nested, portable, and r
     stackKey: "",
     sourceId: "JournalEntry.secret-notes",
     sourceType: "journal",
+    sourceDocumentName: "JournalEntry",
     name: "Полевые заметки",
     img: "icons/book.webp",
     quantity: 1
@@ -101,6 +103,14 @@ test("journal reference rows stay canonical across root, nested, portable, and r
     createPortableStorageContainerItemData(root)
   ).state.manualRows[0].sourceId, "JournalEntry.secret-notes");
   assert.equal(rekeyStorageContainerSnapshot(root).state.manualRows[0].sourceId, "JournalEntry.secret-notes");
+
+  const page = buildStorageContainerSnapshot(snapshot("page", "Шкатулка", [{
+    ...journal,
+    rowId: "page-row",
+    sourceId: "JournalEntry.notes.JournalEntryPage.page",
+    sourceDocumentName: "JournalEntryPage"
+  }]));
+  assert.equal(page.state.manualRows[0].sourceDocumentName, "JournalEntryPage");
   assert.throws(
     () => buildStorageContainerSnapshot(snapshot("invalid", "Сундук", [{
       rowKind: "journal",

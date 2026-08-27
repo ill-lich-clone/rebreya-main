@@ -1037,7 +1037,7 @@ test("GM configuration drop routes a JournalEntry reference through the authorit
   const { app, depositCalls } = createApp({
     configure: true,
     inspectStorageDepositSource: async (data) => ({
-      source: { kind: "journal", journalUuid: data.uuid },
+      source: { kind: "journal", sourceUuid: data.uuid, documentName: data.type },
       available: 1,
       mode: "copy"
     })
@@ -1065,7 +1065,8 @@ test("GM configuration drop routes a JournalEntry reference through the authorit
   assert.equal(depositCalls.length, 1);
   assert.deepEqual(depositCalls[0][1], {
     kind: "journal",
-    journalUuid: "JournalEntry.mechanus"
+    sourceUuid: "JournalEntry.mechanus",
+    documentName: "JournalEntry"
   });
   assert.equal(depositCalls[0][2], 1);
 });

@@ -183,7 +183,8 @@ test("real storage command registrations validate envelopes and execute their co
       y: 200
     };
     const journalDropPayload = {
-      journalUuid: "JournalEntry.notes",
+      sourceUuid: "JournalEntry.notes",
+      documentName: "JournalEntry",
       mutationId: "journal-drop-command",
       sceneId: "Scene.scene",
       x: 100,
@@ -410,11 +411,15 @@ test("real public Journal scene API uses active-GM direct execution and player s
     };
     const request = { sceneId: "scene", x: 100, y: 200, mutationId: "gm-journal-drop" };
     assert.deepEqual(
-      await moduleApi.dropStorageJournalToScene(" JournalEntry.notes ", request),
+      await moduleApi.dropStorageJournalToScene(" JournalEntry.notes ", {
+        ...request,
+        documentName: "JournalEntryPage"
+      }),
       { direct: true }
     );
     assert.deepEqual(directCalls[0].payload, {
-      journalUuid: "JournalEntry.notes",
+      sourceUuid: "JournalEntry.notes",
+      documentName: "JournalEntryPage",
       mutationId: "gm-journal-drop",
       sceneId: "scene",
       x: 100,
@@ -425,6 +430,7 @@ test("real public Journal scene API uses active-GM direct execution and player s
     globalThis.game.user = player;
     const pending = moduleApi.dropStorageJournalToScene("JournalEntry.notes", {
       ...request,
+      documentName: "JournalEntryPage",
       mutationId: "player-journal-drop"
     });
     const outbound = runtime.emitted.at(-1).message;
@@ -434,7 +440,8 @@ test("real public Journal scene API uses active-GM direct execution and player s
       requestId: outbound.requestId,
       senderId: player.id,
       payload: {
-        journalUuid: "JournalEntry.notes",
+        sourceUuid: "JournalEntry.notes",
+        documentName: "JournalEntryPage",
         mutationId: "player-journal-drop",
         sceneId: "scene",
         x: 100,

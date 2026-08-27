@@ -137,24 +137,32 @@ test("deposit drag parser accepts exact Journal entries, Foundry Items, and Rebr
     uuid: "JournalEntry.notes"
   }), {
     kind: "journal",
-    journalUuid: "JournalEntry.notes"
+    sourceUuid: "JournalEntry.notes",
+    documentName: "JournalEntry"
   });
   assert.deepEqual(parseStorageDepositDragData({
     kind: "journal",
-    journalUuid: "JournalEntry.notes"
+    sourceUuid: "JournalEntry.notes",
+    documentName: "JournalEntry"
   }), {
     kind: "journal",
-    journalUuid: "JournalEntry.notes"
+    sourceUuid: "JournalEntry.notes",
+    documentName: "JournalEntry"
   });
   assert.equal(parseStorageDepositDragData({
     kind: "journal",
-    journalUuid: "JournalEntry.notes",
+    sourceUuid: "JournalEntry.notes",
+    documentName: "JournalEntry",
     extra: true
   }), null);
-  assert.equal(parseStorageDepositDragData({
+  assert.deepEqual(parseStorageDepositDragData({
     type: "JournalEntryPage",
     uuid: "JournalEntry.notes.JournalEntryPage.page"
-  }), null);
+  }), {
+    kind: "journal",
+    sourceUuid: "JournalEntry.notes.JournalEntryPage.page",
+    documentName: "JournalEntryPage"
+  });
 });
 
 test("embedded actor item deposits move partial quantities and authorize only owners", async () => {
@@ -327,7 +335,8 @@ test("Journal deposits resolve an authoritative reference and copy without mutat
   const resolvedUuids = [];
   const source = await resolveStorageDepositSource({
     kind: "journal",
-    journalUuid: "JournalEntry.untrusted-drag-value"
+    sourceUuid: "JournalEntry.untrusted-drag-value",
+    documentName: "JournalEntry"
   }, {
     fromUuid: async (uuid) => {
       resolvedUuids.push(uuid);
@@ -348,6 +357,7 @@ test("Journal deposits resolve an authoritative reference and copy without mutat
     stackKey: "",
     sourceId: "JournalEntry.notes",
     sourceType: "journal",
+    sourceDocumentName: "JournalEntry",
     name: "Полевые заметки",
     img: "icons/book.webp",
     quantity: 1
@@ -362,20 +372,39 @@ test("Journal deposits resolve an authoritative reference and copy without mutat
   assert.equal(journal.deleted, false);
 });
 
-test("Journal deposits reject a resolved JournalEntryPage", async () => {
-  await assert.rejects(
-    resolveStorageDepositSource({
-      kind: "journal",
-      journalUuid: "JournalEntry.notes.JournalEntryPage.page"
-    }, {
-      fromUuid: async () => ({
-        uuid: "JournalEntry.notes.JournalEntryPage.page",
-        documentName: "JournalEntryPage",
-        parent: { uuid: "JournalEntry.notes", documentName: "JournalEntry" }
-      })
-    }),
-    /журнал|JournalEntry/iu
-  );
+test("Journal page deposits preserve the exact authoritative page identity", async () => {
+  const page = {
+    uuid: "JournalEntry.notes.JournalEntryPage.page",
+    documentName: "JournalEntryPage",
+    name: "Отдельная страница",
+    img: "icons/page.webp",
+    parent: { uuid: "JournalEntry.notes", documentName: "JournalEntry" }
+  };
+  const source = await resolveStorageDepositSource({
+    kind: "journal",
+    sourceUuid: page.uuid,
+    documentName: "JournalEntryPage"
+  }, { fromUuid: async () => page, createRowId: () => "page-row" });
+
+  assert.equal(source.journal, page);
+  assert.equal(source.sourceKey, page.uuid);
+  assert.deepEqual(source.row, {
+    rowKind: "journal",
+    rowId: "page-row",
+    stackKey: "",
+    sourceId: page.uuid,
+    sourceType: "journal",
+    sourceDocumentName: "JournalEntryPage",
+    name: "Отдельная страница",
+    img: "icons/page.webp",
+    quantity: 1
+  });
+
+  await assert.rejects(resolveStorageDepositSource({
+    kind: "journal",
+    sourceUuid: page.uuid,
+    documentName: "JournalEntry"
+  }, { fromUuid: async () => page }), /тип|JournalEntry/iu);
 });
 
 test("storage-row deposits consume and restore a ground pile quantity", async () => {

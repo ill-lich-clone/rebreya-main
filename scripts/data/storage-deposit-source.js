@@ -104,9 +104,9 @@ function isItemDocument(document) {
     || document?.constructor?.metadata?.name === "Item";
 }
 
-function isJournalEntryDocument(document) {
-  return document?.documentName === "JournalEntry"
-    || document?.constructor?.metadata?.name === "JournalEntry";
+function journalDocumentName(document) {
+  const name = clean(document?.documentName ?? document?.constructor?.metadata?.name);
+  return ["JournalEntry", "JournalEntryPage"].includes(name) ? name : "";
 }
 
 function isEmbeddedActorItem(item) {
@@ -134,7 +134,7 @@ function buildItemRow(item, available, createRowId) {
   };
 }
 
-function buildJournalRow(journal, createRowId) {
+function buildJournalRow(journal, documentName, createRowId) {
   const sourceId = clean(journal?.uuid);
   if (!sourceId) throw new Error("Журнал не имеет допустимого UUID.");
   return {
@@ -143,6 +143,7 @@ function buildJournalRow(journal, createRowId) {
     stackKey: "",
     sourceId,
     sourceType: "journal",
+    sourceDocumentName: documentName,
     name: clean(journal?.name) || "Журнал",
     img: clean(journal?.img),
     quantity: 1
@@ -185,10 +186,15 @@ function singleGroundItem(snapshot, document) {
 
 export function parseStorageDepositDragData(value) {
   const canonical = parsedObject(value);
-  if (hasExactKeys(canonical, ["journalUuid", "kind"])
+  if (hasExactKeys(canonical, ["documentName", "kind", "sourceUuid"])
     && canonical.kind === "journal"
-    && clean(canonical.journalUuid)) {
-    return { kind: "journal", journalUuid: clean(canonical.journalUuid) };
+    && ["JournalEntry", "JournalEntryPage"].includes(clean(canonical.documentName))
+    && clean(canonical.sourceUuid)) {
+    return {
+      kind: "journal",
+      sourceUuid: clean(canonical.sourceUuid),
+      documentName: clean(canonical.documentName)
+    };
   }
   if (canonical?.kind === "item" && clean(canonical.itemUuid)) {
     return { kind: "item", itemUuid: clean(canonical.itemUuid) };
@@ -225,9 +231,9 @@ export function parseStorageDepositDragData(value) {
     const tokenUuid = clean(payload.uuid ?? payload.tokenUuid);
     return tokenUuid ? { kind: "storage-token", tokenUuid } : null;
   }
-  if (clean(payload.type) === "JournalEntry") {
-    const journalUuid = clean(payload.uuid);
-    return journalUuid ? { kind: "journal", journalUuid } : null;
+  if (["JournalEntry", "JournalEntryPage"].includes(clean(payload.type))) {
+    const sourceUuid = clean(payload.uuid);
+    return sourceUuid ? { kind: "journal", sourceUuid, documentName: clean(payload.type) } : null;
   }
   if (!["Item", "ItemUUID"].includes(clean(payload.type))) return null;
   const itemUuid = clean(payload.uuid);
@@ -236,11 +242,15 @@ export function parseStorageDepositDragData(value) {
 
 async function resolveJournalSource(sourceRef, { fromUuid, createRowId }) {
   if (typeof fromUuid !== "function") throw new TypeError("Для журнала требуется разрешение UUID.");
-  const journal = await fromUuid(sourceRef.journalUuid);
-  if (!isJournalEntryDocument(journal)) {
-    throw new Error("Перетаскиваемый журнал JournalEntry не найден.");
+  const expectedDocumentName = clean(sourceRef.documentName);
+  if (!["JournalEntry", "JournalEntryPage"].includes(expectedDocumentName)) {
+    throw new Error("Не указан допустимый тип документа журнала.");
   }
-  const row = buildJournalRow(journal, createRowId);
+  const journal = await fromUuid(sourceRef.sourceUuid);
+  if (journalDocumentName(journal) !== expectedDocumentName) {
+    throw new Error(`Перетаскиваемый документ ${expectedDocumentName} не найден или имеет другой тип.`);
+  }
+  const row = buildJournalRow(journal, expectedDocumentName, createRowId);
   return {
     kind: "journal",
     mode: "copy",

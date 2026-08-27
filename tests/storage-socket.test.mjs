@@ -435,21 +435,21 @@ test("storage deposit payload validation accepts only exact item, Journal, and s
   assert.equal(isValidStorageDepositPayload({
     tokenUuid: base.tokenUuid,
     characterTokenUuid: "",
-    source: { kind: "journal", journalUuid: "JournalEntry.notes" },
+    source: { kind: "journal", sourceUuid: "JournalEntry.notes", documentName: "JournalEntry" },
     quantity: 1,
     mutationId: "journal-deposit"
   }), true);
   assert.equal(isValidStorageDepositPayload({
     tokenUuid: base.tokenUuid,
     characterTokenUuid: "",
-    source: { kind: "journal", journalUuid: "JournalEntry.notes", extra: true },
+    source: { kind: "journal", sourceUuid: "JournalEntry.notes", documentName: "JournalEntry", extra: true },
     quantity: 1,
     mutationId: "journal-deposit"
   }), false);
   assert.equal(isValidStorageDepositPayload({
     tokenUuid: base.tokenUuid,
     characterTokenUuid: "",
-    source: { kind: "journal", journalUuid: "JournalEntry.notes" },
+    source: { kind: "journal", sourceUuid: "JournalEntry.notes", documentName: "JournalEntry" },
     quantity: 1,
     mutationId: "journal-deposit",
     extra: true
@@ -488,8 +488,8 @@ test("storage Journal reads re-run access checks and use only an authoritative u
   const readCalls = [];
   const harness = createHarness({
     journalReader: {
-      async read(journalUuid) {
-        readCalls.push(journalUuid);
+      async read(sourceUuid, options) {
+        readCalls.push([sourceUuid, options]);
         return { name: "Полевые заметки", pages: [] };
       }
     }
@@ -502,6 +502,7 @@ test("storage Journal reads re-run access checks and use only an authoritative u
       stackKey: "",
       sourceId: "JournalEntry.authoritative",
       sourceType: "journal",
+      sourceDocumentName: "JournalEntryPage",
       name: "Полевые заметки",
       img: "icons/book.webp",
       quantity: 1
@@ -517,7 +518,9 @@ test("storage Journal reads re-run access checks and use only an authoritative u
   const snapshot = await harness.service.readJournal(payload, { sender: harness.player });
 
   assert.deepEqual(snapshot, { name: "Полевые заметки", pages: [] });
-  assert.deepEqual(readCalls, ["JournalEntry.authoritative"]);
+  assert.deepEqual(readCalls, [["JournalEntry.authoritative", {
+    documentName: "JournalEntryPage"
+  }]]);
   assert.deepEqual(journalOwnership, beforeOwnership);
   assert.deepEqual(readStorageState(harness.storageToken).readJournalRowIds, ["journal-row"]);
 
@@ -564,6 +567,7 @@ test("GM Journal reads return the safe snapshot without marking or publishing th
       stackKey: "",
       sourceId: "JournalEntry.notes",
       sourceType: "journal",
+      sourceDocumentName: "JournalEntry",
       name: "Полевые заметки",
       quantity: 1
     }]
@@ -592,6 +596,7 @@ test("the first player Journal read after a GM read marks and publishes exactly 
       stackKey: "",
       sourceId: "JournalEntry.notes",
       sourceType: "journal",
+      sourceDocumentName: "JournalEntry",
       name: "Полевые заметки",
       quantity: 1
     }]
@@ -1119,14 +1124,17 @@ test("Journal scene drop accepts only the exact GM command payload", () => {
   assert.equal(typeof storageCommands.isValidStorageJournalDropPayload, "function");
   const { isValidStorageJournalDropPayload } = storageCommands;
   const payload = {
-    journalUuid: "JournalEntry.notes",
+    sourceUuid: "JournalEntry.notes",
+    documentName: "JournalEntry",
     mutationId: "journal-scene-1",
     sceneId: "scene",
     x: 100,
     y: 200
   };
   assert.equal(isValidStorageJournalDropPayload(payload), true);
-  assert.equal(isValidStorageJournalDropPayload({ ...payload, journalUuid: " notes " }), false);
+  assert.equal(isValidStorageJournalDropPayload({ ...payload, sourceUuid: " notes " }), false);
+  assert.equal(isValidStorageJournalDropPayload({ ...payload, documentName: "JournalEntryPage" }), true);
+  assert.equal(isValidStorageJournalDropPayload({ ...payload, documentName: "Actor" }), false);
   assert.equal(isValidStorageJournalDropPayload({ ...payload, x: Number.NaN }), false);
   assert.equal(isValidStorageJournalDropPayload({ ...payload, characterTokenUuid: "Token.hero" }), false);
   assert.equal(isValidStorageJournalDropPayload({ ...payload, extra: true }), false);
@@ -1145,6 +1153,7 @@ test("GM Journal scene drop re-resolves one canonical reference and returns a co
         stackKey: "",
         sourceId: "JournalEntry.authoritative",
         sourceType: "journal",
+        sourceDocumentName: "JournalEntry",
         name: "Заметки Гартара",
         img: "icons/book.webp",
         quantity: 1
@@ -1155,7 +1164,8 @@ test("GM Journal scene drop re-resolves one canonical reference and returns a co
     }
   });
   const payload = {
-    journalUuid: "JournalEntry.authoritative",
+    sourceUuid: "JournalEntry.authoritative",
+    documentName: "JournalEntry",
     mutationId: "journal-drop",
     sceneId: "scene",
     x: 100,
@@ -1166,7 +1176,8 @@ test("GM Journal scene drop re-resolves one canonical reference and returns a co
 
   assert.deepEqual(harness.depositResolveCalls, [{
     kind: "journal",
-    journalUuid: "JournalEntry.authoritative"
+    sourceUuid: "JournalEntry.authoritative",
+    documentName: "JournalEntry"
   }]);
   assert.deepEqual(events, [["consume", 1]]);
   assert.equal(harness.groundCalls[0].quantity, 1);
@@ -1187,6 +1198,7 @@ test("Journal scene drop rejects non-GM and invalid authoritative sources before
       stackKey: "",
       sourceId: "JournalEntry.notes",
       sourceType: "journal",
+      sourceDocumentName: "JournalEntry",
       name: "Запись",
       quantity: 1
     },
@@ -1196,7 +1208,8 @@ test("Journal scene drop rejects non-GM and invalid authoritative sources before
     ...overrides
   });
   const payload = {
-    journalUuid: "JournalEntry.notes",
+    sourceUuid: "JournalEntry.notes",
+    documentName: "JournalEntry",
     mutationId: "journal-guards",
     sceneId: "scene",
     x: 100,
@@ -1239,6 +1252,7 @@ test("failed Journal scene transfer restores its copy receipt and preserves roll
       stackKey: "",
       sourceId: "JournalEntry.notes",
       sourceType: "journal",
+      sourceDocumentName: "JournalEntry",
       name: "Запись",
       quantity: 1
     },
@@ -1247,7 +1261,8 @@ test("failed Journal scene transfer restores its copy receipt and preserves roll
     async restore() { events.push("restore"); }
   };
   const payload = {
-    journalUuid: "JournalEntry.notes",
+    sourceUuid: "JournalEntry.notes",
+    documentName: "JournalEntry",
     mutationId: "journal-rollback",
     sceneId: "scene",
     x: 100,
@@ -1289,6 +1304,7 @@ test("Journal scene mutation is idempotent and bound to Journal, scene, point, a
       stackKey: "",
       sourceId: "JournalEntry.notes",
       sourceType: "journal",
+      sourceDocumentName: "JournalEntry",
       name: "Запись",
       quantity: 1
     },
@@ -1298,7 +1314,8 @@ test("Journal scene mutation is idempotent and bound to Journal, scene, point, a
   };
   const harness = createHarness({ depositSource: source, processedGroundMutations: processed });
   const payload = {
-    journalUuid: "JournalEntry.notes",
+    sourceUuid: "JournalEntry.notes",
+    documentName: "JournalEntry",
     mutationId: "journal-idempotent",
     sceneId: "scene",
     x: 100,
@@ -1311,7 +1328,8 @@ test("Journal scene mutation is idempotent and bound to Journal, scene, point, a
   assert.equal(harness.depositResolveCalls.length, 1);
 
   for (const [name, changed, sender] of [
-    ["Journal", { journalUuid: "JournalEntry.other" }, harness.gm],
+    ["Journal", { sourceUuid: "JournalEntry.other" }, harness.gm],
+    ["document kind", { documentName: "JournalEntryPage" }, harness.gm],
     ["scene", { sceneId: "other-scene" }, harness.gm],
     ["point", { x: 101 }, harness.gm],
     ["sender", {}, { id: "other-gm", isGM: true }]
@@ -2099,6 +2117,7 @@ test("Journal deposits are GM-only, quantity-one, re-resolved, and consumed only
       stackKey: "",
       sourceId: "JournalEntry.notes",
       sourceType: "journal",
+      sourceDocumentName: "JournalEntry",
       name: "Полевые заметки",
       img: "icons/book.webp",
       quantity: 1
@@ -2115,7 +2134,11 @@ test("Journal deposits are GM-only, quantity-one, re-resolved, and consumed only
     state: "empty",
     displayMode: "empty"
   });
-  const source = { kind: "journal", journalUuid: "JournalEntry.notes" };
+  const source = {
+    kind: "journal",
+    sourceUuid: "JournalEntry.notes",
+    documentName: "JournalEntry"
+  };
 
   await assert.rejects(
     harness.service.deposit(depositPayload(harness, {
@@ -2222,7 +2245,7 @@ test("RebreyaMainModule preserves the exact Journal source in an active-GM depos
 
     await moduleApi.depositStorageItem(
       "Scene.scene.Token.chest",
-      { kind: "journal", journalUuid: "JournalEntry.notes" },
+      { kind: "journal", sourceUuid: "JournalEntry.notes", documentName: "JournalEntry" },
       1,
       "journal-main",
       { characterTokenUuid: "" }
@@ -2230,7 +2253,8 @@ test("RebreyaMainModule preserves the exact Journal source in an active-GM depos
 
     assert.deepEqual(calls[0].payload.source, {
       kind: "journal",
-      journalUuid: "JournalEntry.notes"
+      sourceUuid: "JournalEntry.notes",
+      documentName: "JournalEntry"
     });
     assert.equal(calls[0].context.sender, gm);
   }

@@ -234,6 +234,28 @@ test("Journal reader enriches live text without secrets or document metadata and
   assert.match(secondSnapshot.pages[1].html, /Новая открытая запись/u);
 });
 
+test("Journal reader returns only the exact live JournalEntryPage without sibling leakage", async () => {
+  const { journal, textPage } = createJournalFixture();
+  textPage.parent = journal;
+  const { parseHtml } = createTestHtmlParser();
+  const reader = new StorageJournalReader({
+    fromUuid: async (uuid) => uuid === textPage.uuid ? textPage : null,
+    enrichHtml: async (content) => content.replace(/<section class="secret">[\s\S]*?<\/section>/gu, ""),
+    parseHtml
+  });
+
+  const snapshot = await reader.read(textPage.uuid, { documentName: "JournalEntryPage" });
+
+  assert.equal(snapshot.name, journal.name);
+  assert.deepEqual(snapshot.pages.map((page) => page.pageId), ["page-text"]);
+  assert.equal(JSON.stringify(snapshot).includes("page-image"), false);
+  assert.equal(JSON.stringify(snapshot).includes(textPage.uuid), false);
+  await assert.rejects(
+    reader.read(textPage.uuid, { documentName: "JournalEntry" }),
+    { message: "Запись журнала недоступна." }
+  );
+});
+
 test("Journal reader fails closed for deleted Journals, enrichment errors, and remaining unrevealed secrets", async () => {
   const { journal } = createJournalFixture();
   const storageRow = {

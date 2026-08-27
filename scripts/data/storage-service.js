@@ -86,6 +86,11 @@ function normalizeRows(rows) {
     .filter((row) => row && typeof row === "object")
     .map((row) => {
       const normalized = clone(row);
+      if (isStorageJournalRow(normalized)) {
+        normalized.sourceDocumentName = cleanId(normalized.sourceDocumentName) === "JournalEntryPage"
+          ? "JournalEntryPage"
+          : "JournalEntry";
+      }
       if (Object.hasOwn(normalized, "img")) {
         normalized.img = normalizeStorageItemIcon(normalized.img);
       }

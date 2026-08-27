@@ -58,12 +58,16 @@ function normalizeItemRow(row, createId) {
 function normalizeJournalRow(row, createId) {
   const sourceId = clean(row?.sourceId);
   if (!sourceId) throw new TypeError("Journal reference row requires sourceId.");
+  const sourceDocumentName = clean(row?.sourceDocumentName) === "JournalEntryPage"
+    ? "JournalEntryPage"
+    : "JournalEntry";
   return {
     rowKind: "journal",
     rowId: clean(row?.rowId) || createId("journal"),
     stackKey: "",
     sourceId,
     sourceType: "journal",
+    sourceDocumentName,
     name: clean(row?.name) || "Журнал",
     img: clean(row?.img),
     quantity: 1

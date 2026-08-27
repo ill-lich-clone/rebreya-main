@@ -29,6 +29,10 @@ function pageSort(page) {
   return Number.isFinite(value) ? value : 0;
 }
 
+function documentName(document) {
+  return clean(document?.documentName ?? document?.constructor?.metadata?.name);
+}
+
 export function createStorageJournalHtmlParser(documentProvider = () => globalThis.document) {
   if (typeof documentProvider !== "function") {
     throw new TypeError("Storage Journal HTML parser requires a document provider.");
@@ -100,47 +104,59 @@ export class StorageJournalReader {
     this.parseHtml = parseHtml;
   }
 
-  async read(journalUuid) {
-    try {
-      const journal = await this.fromUuid(clean(journalUuid));
-      if (journal?.documentName !== "JournalEntry") throw unavailable();
+  async #pageSnapshot(page) {
+    const type = clean(page?.type);
+    const snapshot = {
+      pageId: clean(page?.id),
+      name: clean(page?.name),
+      type,
+      sort: pageSort(page),
+      title: {
+        show: page?.title?.show === true,
+        level: Number.isFinite(Number(page?.title?.level)) ? Number(page.title.level) : 0
+      },
+      src: clean(page?.src),
+      caption: clean(page?.caption ?? page?.image?.caption)
+    };
+    if (type === "text") {
+      const html = await this.enrichHtml(clean(page?.text?.content), {
+        relativeTo: page,
+        secrets: false,
+        documents: false,
+        links: false,
+        embeds: false,
+        rolls: false,
+        custom: false
+      });
+      if (typeof html !== "string") throw unavailable();
+      snapshot.html = sanitizeJournalHtml(this.parseHtml(html));
+    }
+    return snapshot;
+  }
 
-      const pages = journalPages(journal).sort((left, right) => (
+  async read(sourceUuid, { documentName: expectedDocumentName = "JournalEntry" } = {}) {
+    try {
+      const source = await this.fromUuid(clean(sourceUuid));
+      if (!["JournalEntry", "JournalEntryPage"].includes(expectedDocumentName)
+        || documentName(source) !== expectedDocumentName) throw unavailable();
+
+      if (expectedDocumentName === "JournalEntryPage") {
+        if (documentName(source?.parent) !== "JournalEntry") throw unavailable();
+        return {
+          name: clean(source.parent.name),
+          pages: [await this.#pageSnapshot(source)]
+        };
+      }
+
+      const pages = journalPages(source).sort((left, right) => (
         pageSort(left) - pageSort(right)
         || clean(left?.id).localeCompare(clean(right?.id))
       ));
       const pageSnapshots = [];
       for (const page of pages) {
-        const type = clean(page?.type);
-        const snapshot = {
-          pageId: clean(page?.id),
-          name: clean(page?.name),
-          type,
-          sort: pageSort(page),
-          title: {
-            show: page?.title?.show === true,
-            level: Number.isFinite(Number(page?.title?.level)) ? Number(page.title.level) : 0
-          },
-          src: clean(page?.src),
-          caption: clean(page?.caption ?? page?.image?.caption)
-        };
-        if (type === "text") {
-          const html = await this.enrichHtml(clean(page?.text?.content), {
-            relativeTo: page,
-            secrets: false,
-            documents: false,
-            links: false,
-            embeds: false,
-            rolls: false,
-            custom: false
-          });
-          if (typeof html !== "string") throw unavailable();
-          const fragment = this.parseHtml(html);
-          snapshot.html = sanitizeJournalHtml(fragment);
-        }
-        pageSnapshots.push(snapshot);
+        pageSnapshots.push(await this.#pageSnapshot(page));
       }
-      return { name: clean(journal.name), pages: pageSnapshots };
+      return { name: clean(source.name), pages: pageSnapshots };
     }
     catch (_error) {
       throw unavailable();

@@ -669,6 +669,7 @@ test("Journal deposits store one non-stackable reference and remain GM-deletable
     stackKey: "must-not-stack",
     sourceId: "JournalEntry.notes",
     sourceType: "journal",
+    sourceDocumentName: "JournalEntryPage",
     name: "Полевые заметки",
     img: "icons/book.webp",
     quantity: 1
@@ -690,6 +691,7 @@ test("Journal deposits store one non-stackable reference and remain GM-deletable
     stackKey: "",
     sourceId: "JournalEntry.notes",
     sourceType: "journal",
+    sourceDocumentName: "JournalEntryPage",
     name: "Полевые заметки",
     img: "icons/book.webp",
     quantity: 1

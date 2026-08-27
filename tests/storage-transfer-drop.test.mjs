@@ -25,7 +25,7 @@ const storageDrop = {
   quantity: 5
 };
 
-test("NotesLayer leaves JournalEntry drops entirely to Foundry", async () => {
+test("NotesLayer leaves JournalEntry and JournalEntryPage drops entirely to Foundry", async () => {
   const calls = [];
   const notes = {};
   const canvas = { notes, activeLayer: notes, scene: { id: "scene" } };
@@ -36,6 +36,11 @@ test("NotesLayer leaves JournalEntry drops entirely to Foundry", async () => {
   });
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(handled, true);
+  assert.equal(handleStorageCanvasDrop(canvas, {
+    type: "JournalEntryPage", uuid: "JournalEntry.notes.JournalEntryPage.page", x: 120, y: 180
+  }, {
+    async dropStorageJournalToScene(...args) { calls.push(args); }
+  }), true);
   assert.deepEqual(calls, []);
 });
 
@@ -51,14 +56,25 @@ test("non-Notes layers route JournalEntry drops only to the Journal scene API", 
     }
   }), false);
   await new Promise((resolve) => setImmediate(resolve));
-  assert.deepEqual(calls, [["JournalEntry.notes", { sceneId: "scene", x: 120, y: 180 }]]);
+  assert.deepEqual(calls, [["JournalEntry.notes", {
+    documentName: "JournalEntry", sceneId: "scene", x: 120, y: 180
+  }]]);
 });
 
-test("JournalEntryPage and malformed Journal drag data preserve Foundry behavior", () => {
+test("non-Notes layers route JournalEntryPage drops to the same scene API", async () => {
   const canvas = { notes: {}, activeLayer: {}, scene: { id: "scene" } };
+  const calls = [];
   assert.equal(handleStorageCanvasDrop(canvas, {
     type: "JournalEntryPage", uuid: "JournalEntry.notes.JournalEntryPage.page", x: 1, y: 2
-  }, {}), true);
+  }, { async dropStorageJournalToScene(...args) { calls.push(args); } }), false);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(calls, [["JournalEntry.notes.JournalEntryPage.page", {
+    documentName: "JournalEntryPage", sceneId: "scene", x: 1, y: 2
+  }]]);
+});
+
+test("malformed Journal drag data preserves Foundry behavior", () => {
+  const canvas = { notes: {}, activeLayer: {}, scene: { id: "scene" } };
   assert.equal(handleStorageCanvasDrop(canvas, {
     type: "JournalEntry", uuid: "", x: 1, y: 2
   }, {}), true);
@@ -73,7 +89,9 @@ test("Journal scene helper validates the exact drop point before calling the API
   );
 
   assert.deepEqual(result, { handled: true, result: { changed: true } });
-  assert.deepEqual(calls, [["JournalEntry.notes", { sceneId: "scene", x: 120, y: 180 }]]);
+  assert.deepEqual(calls, [["JournalEntry.notes", {
+    documentName: "JournalEntry", sceneId: "scene", x: 120, y: 180
+  }]]);
   await assert.rejects(
     transferFoundryJournalDropToCanvas(
       { scene: { id: "scene" } },

@@ -4121,7 +4121,8 @@ export class RebreyaMainModule {
       : source?.kind === "journal"
         ? {
             kind: "journal",
-            journalUuid: cleanSocketId(source.journalUuid)
+            sourceUuid: cleanSocketId(source.sourceUuid),
+            documentName: cleanSocketId(source.documentName)
           }
       : {
           kind: "item",
@@ -4170,9 +4171,10 @@ export class RebreyaMainModule {
       : this.socketCommandBus.request(STORAGE_DROP_ITEM_COMMAND, payload);
   }
 
-  async dropStorageJournalToScene(journalUuid, request = {}) {
+  async dropStorageJournalToScene(sourceUuid, request = {}) {
     const payload = {
-      journalUuid: cleanSocketId(journalUuid),
+      sourceUuid: cleanSocketId(sourceUuid),
+      documentName: cleanSocketId(request.documentName) || "JournalEntry",
       sceneId: cleanSocketId(request.sceneId),
       x: Number(request.x),
       y: Number(request.y),

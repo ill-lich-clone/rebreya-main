@@ -92,9 +92,10 @@ function mutationRequestFingerprint(payload, sender) {
 }
 
 function isValidStorageDepositSource(source) {
-  if (hasExactKeys(source, ["journalUuid", "kind"])) {
+  if (hasExactKeys(source, ["documentName", "kind", "sourceUuid"])) {
     return source.kind === "journal"
-      && isTrimmedString(source.journalUuid, { required: true });
+      && ["JournalEntry", "JournalEntryPage"].includes(source.documentName)
+      && isTrimmedString(source.sourceUuid, { required: true });
   }
   if (hasExactKeys(source, ["itemUuid", "kind"])) {
     return source.kind === "item"
@@ -257,8 +258,9 @@ export function isValidStorageCoinDropPayload(payload) {
 }
 
 export function isValidStorageJournalDropPayload(payload) {
-  return hasExactKeys(payload, ["journalUuid", "mutationId", "sceneId", "x", "y"])
-    && isTrimmedString(payload.journalUuid, { required: true })
+  return hasExactKeys(payload, ["documentName", "mutationId", "sceneId", "sourceUuid", "x", "y"])
+    && ["JournalEntry", "JournalEntryPage"].includes(payload.documentName)
+    && isTrimmedString(payload.sourceUuid, { required: true })
     && isTrimmedString(payload.mutationId, { required: true, max: 160 })
     && isTrimmedString(payload.sceneId, { required: true, max: 160 })
     && Number.isFinite(payload.x)
@@ -763,7 +765,11 @@ export class StorageCommandService {
         || row.rowKind !== "journal" || !isStorageJournalRow(row)) {
         throw new Error("Запись журнала недоступна.");
       }
-      const snapshot = await this.journalReader.read(row.sourceId);
+      const snapshot = await this.journalReader.read(row.sourceId, {
+        documentName: clean(row.sourceDocumentName) === "JournalEntryPage"
+          ? "JournalEntryPage"
+          : "JournalEntry"
+      });
       if (sender?.isGM === true) return snapshot;
       const marked = await this.storageService.markJournalRead(access.storageToken, rowId, { path });
       if (marked.changed === true) {
@@ -1221,7 +1227,7 @@ export class StorageCommandService {
       : sourceRef.kind === "storage-token"
         ? clean(sourceRef.tokenUuid)
         : sourceRef.kind === "journal"
-          ? clean(sourceRef.journalUuid)
+          ? clean(sourceRef.sourceUuid)
           : clean(sourceRef.itemUuid);
     const mutationKey = storageMutationId({
       tokenUuid,
@@ -1236,7 +1242,7 @@ export class StorageCommandService {
       ["storage-row", "storage-token"].includes(sourceRef.kind)
         ? `${clean(sourceRef.tokenUuid)}:storage`
         : sourceRef.kind === "journal"
-          ? `${clean(sourceRef.journalUuid)}:journal`
+          ? `${clean(sourceRef.sourceUuid)}:journal`
           : `${clean(sourceRef.itemUuid)}:item`
     ];
 
@@ -1631,7 +1637,7 @@ export class StorageCommandService {
     };
 
     return this.#runMutation([
-      `${payload.journalUuid}:journal`,
+      `${payload.sourceUuid}:journal`,
       `${payload.sceneId}:scene`
     ], mutationKey, async () => {
       const duplicate = this.groundPileService.findProcessedMutationAtPoint(pointRequest);
@@ -1646,7 +1652,8 @@ export class StorageCommandService {
 
       const source = await this.resolveDepositSource({
         kind: "journal",
-        journalUuid: payload.journalUuid
+        sourceUuid: payload.sourceUuid,
+        documentName: payload.documentName
       }, {
         fromUuid: this.resolveDocument,
         resolveToken: this.resolveToken,
@@ -1658,6 +1665,7 @@ export class StorageCommandService {
         || !isStorageJournalRow(source.row)
         || source.row?.rowKind !== "journal"
         || clean(source.row?.sourceType).toLowerCase() !== "journal"
+        || clean(source.row?.sourceDocumentName) !== payload.documentName
         || !clean(source.row?.sourceId)
         || !clean(source.row?.rowId)
         || !clean(source.row?.name)
