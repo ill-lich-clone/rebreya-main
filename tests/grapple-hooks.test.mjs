@@ -122,6 +122,47 @@ test("source movement removes only coordinates and schedules one authoritative g
   assert.deepEqual(onlyPosition, {});
 });
 
+test("source drag recovers the requested waypoint after dnd5e removes blocked coordinates", async () => {
+  const env = environment();
+  const token = sourceToken();
+  const changed = {};
+  const options = {
+    movement: {
+      [token.id]: {
+        method: "dragging",
+        waypoints: [{ x: 110, y: 20, action: "walk" }],
+        constrainOptions: {}
+      }
+    }
+  };
+
+  assert.deepEqual(env.Hooks.call("preUpdateToken", token, changed, options, "player-a"), [false]);
+  await flush();
+
+  assert.deepEqual(env.calls.drag.map(({ x, y }) => [x, y]), [[110, 20]]);
+});
+
+test("source drag prefers the requested waypoint over coordinates clipped by dnd5e", async () => {
+  const env = environment();
+  const token = sourceToken();
+  const changed = { x: 10, y: 20, _movementHistory: [{ x: 10, y: 20 }] };
+  const options = {
+    movement: {
+      [token.id]: {
+        method: "dragging",
+        waypoints: [{ x: 110, y: 20, action: "walk" }],
+        constrainOptions: {}
+      }
+    }
+  };
+
+  assert.deepEqual(env.Hooks.call("preUpdateToken", token, changed, options, "player-a"), [false]);
+  assert.deepEqual(changed, {});
+  await flush();
+
+  assert.deepEqual(env.calls.drag.map(({ x, y }) => [x, y]), [[110, 20]]);
+});
+
 test("source movement reports a localized grapple error instead of an internal code", async () => {
   const error = new Error("outside-reach");
   error.code = "outside-reach";

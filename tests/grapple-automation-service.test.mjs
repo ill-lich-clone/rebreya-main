@@ -120,7 +120,15 @@ function makeToken(scene, id, actor, { x = 0, y = 0, width = 1, height = 1 } = {
   return token;
 }
 
-function makeScene() {
+function overlapsFootprint(a, b, gridSize) {
+  const aRight = a.x + (a.width * gridSize);
+  const aBottom = a.y + (a.height * gridSize);
+  const bRight = b.x + (b.width * gridSize);
+  const bBottom = b.y + (b.height * gridSize);
+  return a.x < bRight && aRight > b.x && a.y < bBottom && aBottom > b.y;
+}
+
+function makeScene({ emulateDnd5eTokenBlocking = false } = {}) {
   const batches = [];
   const scene = {
     id: "scene",
@@ -132,9 +140,28 @@ function makeScene() {
     async updateEmbeddedDocuments(type, updates, options) {
       assert.equal(type, "Token");
       batches.push({ updates: structuredClone(updates), options: structuredClone(options) });
+      const originalFootprints = this.tokens.contents.map(({ id, x, y, width, height }) => ({ id, x, y, width, height }));
       for (const update of updates) {
         const token = this.tokens.contents.find((entry) => entry.id === update._id);
-        applyPatch(token, update);
+        const patch = structuredClone(update);
+        const ignoreTokens = options?.movement?.[token.id]?.constrainOptions?.ignoreTokens === true;
+        if (emulateDnd5eTokenBlocking && !ignoreTokens && ("x" in patch || "y" in patch)) {
+          const destination = {
+            id: token.id,
+            x: Number(patch.x ?? token.x),
+            y: Number(patch.y ?? token.y),
+            width: token.width,
+            height: token.height
+          };
+          const blocked = originalFootprints.some((other) => (
+            other.id !== token.id && overlapsFootprint(destination, other, this.grid.size)
+          ));
+          if (blocked) {
+            delete patch.x;
+            delete patch.y;
+          }
+        }
+        applyPatch(token, patch);
       }
       if (this.failAfterBatch) {
         this.failAfterBatch = false;
@@ -150,9 +177,10 @@ function environment({
   sourceHands = 2,
   collision = false,
   emulateDaeDependentConditions = false,
+  emulateDnd5eTokenBlocking = false,
   useDefaultStatusEffectFactory = false
 } = {}) {
-  const scene = makeScene();
+  const scene = makeScene({ emulateDnd5eTokenBlocking });
   const sourceActor = makeActor("source", { hands: sourceHands });
   const targetActor = makeActor("target", { emulateDaeDependentConditions });
   const targetActor2 = makeActor("target-2", { emulateDaeDependentConditions });
@@ -429,6 +457,18 @@ test("drag moves source and every authoritative target by one shared delta in on
   assert.equal(env.scene.batches.length, 1);
   assert.equal(env.scene.batches[0].updates.length, 3);
   assert.equal(env.scene.batches[0].options[MODULE_ID].grappleBypass, true);
+});
+
+test("drag moves into a large target's old footprint without dnd5e clipping the shared delta", async () => {
+  const env = environment({ emulateDnd5eTokenBlocking: true });
+  env.target.width = 3;
+  env.target.height = 3;
+  await env.service.toggle({ sourceTokenUuid: env.source.uuid, targetTokenUuid: env.target.uuid, operationId: "create" });
+
+  await env.service.drag({ sourceTokenUuid: env.source.uuid, x: 100, y: 0, operationId: "drag-toward-target" });
+
+  assert.deepEqual([env.source.x, env.source.y], [100, 0]);
+  assert.deepEqual([env.target.x, env.target.y], [200, 0]);
 });
 
 test("drag preserves an existing grapple axis without rechecking natural reach", async () => {

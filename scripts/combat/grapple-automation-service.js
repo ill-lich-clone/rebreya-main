@@ -58,8 +58,15 @@ function tokenUpdateForLink(link) {
     : { [`flags.${MODULE_ID}.-=${GRAPPLE_LINK_FLAG}`]: null };
 }
 
-function bypassOptions() {
-  return { [MODULE_ID]: { [GRAPPLE_BYPASS_OPTION]: true } };
+function bypassOptions({ ignoreTokenCollisionsFor = [] } = {}) {
+  const options = { [MODULE_ID]: { [GRAPPLE_BYPASS_OPTION]: true } };
+  if (ignoreTokenCollisionsFor.length) {
+    options.movement = Object.fromEntries(ignoreTokenCollisionsFor.map((id) => [
+      id,
+      { constrainOptions: { ignoreTokens: true } }
+    ]));
+  }
+  return options;
 }
 
 function tokenUuid(token) {
@@ -248,11 +255,16 @@ export class GrappleAutomationService {
         updates.push({ _id: tokenId(target), x: validation.x, y: validation.y });
         rollbackUpdates.push({ _id: tokenId(target), x: Number(target.x), y: Number(target.y) });
       }
+      const movementTokenIds = updates.map((update) => update._id);
       try {
-        await scene.updateEmbeddedDocuments("Token", updates, bypassOptions());
+        await scene.updateEmbeddedDocuments("Token", updates, bypassOptions({
+          ignoreTokenCollisionsFor: movementTokenIds
+        }));
       }
       catch (error) {
-        await this.#rollback(error, [() => scene.updateEmbeddedDocuments("Token", rollbackUpdates, bypassOptions())]);
+        await this.#rollback(error, [() => scene.updateEmbeddedDocuments("Token", rollbackUpdates, bypassOptions({
+          ignoreTokenCollisionsFor: movementTokenIds
+        }))]);
       }
       return { moved: true, updates: clone(updates) };
     });

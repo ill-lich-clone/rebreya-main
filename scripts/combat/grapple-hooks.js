@@ -40,14 +40,22 @@ function hasPositionChange(changed) {
   return Object.hasOwn(changed ?? {}, "x") || Object.hasOwn(changed ?? {}, "y");
 }
 
-function takePosition(token, changed) {
+function requestedPosition(token, changed, options) {
+  const waypoints = options?.movement?.[clean(token?.id)]?.waypoints;
+  const requestedWaypoint = Array.isArray(waypoints) ? waypoints.at(-1) : null;
+  const source = requestedWaypoint && typeof requestedWaypoint === "object" ? requestedWaypoint : changed;
+  if (!hasPositionChange(source)) return null;
   const position = {
-    x: Number(Object.hasOwn(changed, "x") ? changed.x : token?.x),
-    y: Number(Object.hasOwn(changed, "y") ? changed.y : token?.y)
+    x: Number(Object.hasOwn(source, "x") ? source.x : token?.x),
+    y: Number(Object.hasOwn(source, "y") ? source.y : token?.y)
   };
+  return Number.isFinite(position.x) && Number.isFinite(position.y) ? position : null;
+}
+
+function removeMovementChanges(changed) {
   delete changed.x;
   delete changed.y;
-  return position;
+  delete changed._movementHistory;
 }
 
 function shouldCancelOriginalUpdate(changed) {
@@ -87,8 +95,9 @@ export function registerGrappleHooks(moduleApi, {
   };
 
   Hooks.on("preUpdateToken", (token, changed, options = {}, userId = "") => {
-    if (!hasPositionChange(changed)) return undefined;
     if (options?.[MODULE_ID]?.[GRAPPLE_BYPASS_OPTION] === true) return undefined;
+    const position = requestedPosition(token, changed, options);
+    if (!position) return undefined;
     const requesterUserId = clean(userId);
     const targetLink = documentFlag(token, GRAPPLE_LINK_FLAG);
     const sourceTokenUuid = clean(token?.uuid);
@@ -96,7 +105,7 @@ export function registerGrappleHooks(moduleApi, {
       reservation.kind === "grapple" && reservation.sourceTokenUuid === sourceTokenUuid
     ));
     if (!targetLink?.linkId && !isGrappleSource) return undefined;
-    const position = takePosition(token, changed);
+    removeMovementChanges(changed);
 
     if (targetLink?.linkId) {
       const linkId = clean(targetLink.linkId);
