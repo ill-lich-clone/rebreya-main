@@ -20,7 +20,7 @@ function targetTexture(token) {
 function cprResolution(width, height) {
   const maximum = Math.max(width, height);
   if (!Number.isInteger(maximum)) return 2;
-  return maximum % 2 === 0 ? 1 : -1;
+  return maximum % 2 === 0 ? -1 : 1;
 }
 
 function defaultOverlayFactory({ sourceToken, reachFeet, grid, markerRadiusPixels }) {
@@ -142,7 +142,7 @@ export class GrapplePlacementPreview {
       const result = await Crosshairs.showCrosshairs({
         x: target.x + ((target.width * Number(grid?.size)) / 2),
         y: target.y + ((target.height * Number(grid?.size)) / 2),
-        size: Number(grid?.distance) * Math.max(target.width, target.height),
+        size: (Number(grid?.distance) * Math.max(target.width, target.height)) / 2,
         icon: targetTexture(targetToken),
         drawIcon: true,
         drawOutline: true,

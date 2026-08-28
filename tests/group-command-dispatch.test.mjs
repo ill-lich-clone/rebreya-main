@@ -1044,6 +1044,34 @@ test("public grapple macros use one controlled source and the exact selected hel
   }
 });
 
+test("public grapple macro catches an asynchronous self-target failure and shows a warning", async () => {
+  const fixture = installFixture();
+  const previousCanvas = globalThis.canvas;
+  try {
+    const sourceUuid = "Scene.scene-a.Token.source-a";
+    const sourceDocument = { documentName: "Token", id: "source-a", uuid: sourceUuid };
+    const sourcePlaceable = { document: sourceDocument };
+    fixture.users.gmA.targets = new Set([sourcePlaceable]);
+    globalThis.canvas = { tokens: { controlled: [sourcePlaceable] } };
+    const warnings = [];
+    globalThis.ui.notifications.warn = (message) => warnings.push(message);
+    const moduleApi = new RebreyaMainModule();
+    moduleApi.grappleAutomationService = {
+      async toggle() {
+        throw Object.assign(new Error("invalid-target"), { code: "invalid-target" });
+      }
+    };
+
+    assert.equal(await moduleApi.toggleGrapple(), null);
+    assert.deepEqual(warnings, ["Нельзя схватить самого себя."]);
+  }
+  finally {
+    if (previousCanvas === undefined) delete globalThis.canvas;
+    else globalThis.canvas = previousCanvas;
+    fixture.restore();
+  }
+});
+
 test("performer.activePerformance.apply accepts only the source actor owner", async () => {
   const fixture = installFixture();
   try {

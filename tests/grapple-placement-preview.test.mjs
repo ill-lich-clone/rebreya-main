@@ -58,8 +58,8 @@ test("preview config uses the token image as a CPR icon instead of stretching it
   assert.equal(env.calls[0].config.texture, undefined);
   assert.equal(env.calls[0].config.icon, "frog.webp");
   assert.equal(env.calls[0].config.drawIcon, true);
-  assert.equal(env.calls[0].config.size, 10);
-  assert.equal(env.calls[0].config.resolution, 1);
+  assert.equal(env.calls[0].config.size, 5);
+  assert.equal(env.calls[0].config.resolution, -1);
   assert.equal(env.calls[0].config.drawOutline, true);
   assert.equal(env.overlays[0].options.markerRadiusPixels, 100);
   assert.equal(env.overlays[0].updates[0].valid, true);
@@ -69,8 +69,22 @@ test("preview config uses the token image as a CPR icon instead of stretching it
 test("odd footprint uses cell-center CPR snapping", async () => {
   const env = previewEnvironment({ result: { cancelled: false, x: 150, y: 50 } });
   await env.preview.choose({ sourceToken: token(), targetToken: token(), reachFeet: 5 });
-  assert.equal(env.calls[0].config.resolution, -1);
-  assert.equal(env.calls[0].config.size, 5);
+  assert.equal(env.calls[0].config.resolution, 1);
+  assert.equal(env.calls[0].config.size, 2.5);
+});
+
+test("three-cell target keeps its top-left centered on the confirmed CPR marker", async () => {
+  const env = previewEnvironment({ result: { cancelled: false, x: 350, y: 350 } });
+
+  const result = await env.preview.choose({
+    sourceToken: token(),
+    targetToken: token({ width: 3, height: 3, texture: "giant.webp" }),
+    reachFeet: 20
+  });
+
+  assert.deepEqual(result, { cancelled: false, x: 200, y: 200 });
+  assert.equal(env.calls[0].config.size, 7.5);
+  assert.equal(env.calls[0].config.resolution, 1);
 });
 
 test("preview cancellation is inert and always destroys the reach overlay", async () => {

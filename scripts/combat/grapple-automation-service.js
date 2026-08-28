@@ -168,6 +168,8 @@ export class GrappleAutomationService {
         await this.#releaseResolved(source, target, existing);
         return { action: "released", linkId: clean(existing.linkId) };
       }
+      const validation = this.#validatePlacement(source, target, { x: Number(target.x), y: Number(target.y) });
+      if (!validation.valid) throw codedError(validation.reason);
       return this.#createResolved(source, target);
     });
   }
@@ -327,9 +329,13 @@ export class GrappleAutomationService {
         const target = byUuid.get(reservation.targetTokenUuid);
         const targetLink = target && flag(target, GRAPPLE_LINK_FLAG);
         const effect = target && findManagedEffects(target.actor, reservation.linkId)[0];
+        const placement = target
+          ? this.#validatePlacement(source, target, { x: Number(target.x), y: Number(target.y) })
+          : null;
         if (
           target
           && effect
+          && placement?.valid
           && clean(targetLink?.linkId) === reservation.linkId
           && clean(targetLink?.sourceTokenUuid) === tokenUuid(source)
         ) {

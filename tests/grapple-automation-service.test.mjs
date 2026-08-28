@@ -130,6 +130,7 @@ function environment({ sourceHands = 2, collision = false } = {}) {
   const documents = new Map([source, target, target2, sourceActor, targetActor, targetActor2].map((doc) => [doc.uuid, doc]));
   let nextId = 0;
   const requests = [];
+  const collisionState = { value: collision };
   const service = new GrappleAutomationService({
     coordinator: new WorldMutationCoordinator(),
     commandBus: { async request(command, payload, options) { requests.push({ command, payload, options }); return { remote: true }; } },
@@ -138,9 +139,9 @@ function environment({ sourceHands = 2, collision = false } = {}) {
     isActiveGmClient: () => true,
     gameProvider: () => ({ user: { id: "gm", isGM: true } }),
     sceneRectProvider: () => ({ x: 0, y: 0, width: 2000, height: 2000 }),
-    checkCollision: () => collision
+    checkCollision: () => collisionState.value
   });
-  return { scene, sourceActor, targetActor, targetActor2, source, target, target2, service, requests };
+  return { scene, sourceActor, targetActor, targetActor2, source, target, target2, service, requests, collisionState };
 }
 
 function linkOf(token) {
@@ -226,6 +227,24 @@ test("toggle rejects zero hands and a target managed by another source", async (
   }), (error) => error?.code === "target-grappled-by-another-source");
 });
 
+test("toggle rejects self-targeting and a target whose nearest edge is outside natural reach", async () => {
+  const env = environment();
+  await assert.rejects(() => env.service.toggle({
+    sourceTokenUuid: env.source.uuid,
+    targetTokenUuid: env.source.uuid,
+    operationId: "self-target"
+  }), (error) => error?.code === "invalid-target");
+
+  env.target.x = 600;
+  await assert.rejects(() => env.service.toggle({
+    sourceTokenUuid: env.source.uuid,
+    targetTokenUuid: env.target.uuid,
+    operationId: "outside-reach"
+  }), (error) => error?.code === "outside-reach");
+  assert.deepEqual(env.sourceActor.getFlag(MODULE_ID, "handReservations") ?? [], []);
+  assert.equal(linkOf(env.target), undefined);
+});
+
 test("partially failed link creation rolls all managed state back", async () => {
   const env = environment();
   env.target.failAfterUpdate = true;
@@ -292,8 +311,9 @@ test("drag preserves an existing grapple axis without rechecking natural reach",
 });
 
 test("invalid dragged participant cancels the whole batch", async () => {
-  const env = environment({ collision: true });
+  const env = environment();
   await env.service.toggle({ sourceTokenUuid: env.source.uuid, targetTokenUuid: env.target.uuid, operationId: "create" });
+  env.collisionState.value = true;
   await assert.rejects(() => env.service.drag({
     sourceTokenUuid: env.source.uuid, x: 300, y: 0, operationId: "blocked-drag"
   }), (error) => error?.code === "wall-collision");
@@ -368,4 +388,19 @@ test("managed effect deletion and reconciliation clear only orphaned managed sta
   assert.deepEqual(await env.service.reconcileScene(env.scene), { removed: 1 });
   assert.deepEqual(env.sourceActor.getFlag(MODULE_ID, "handReservations") ?? [], []);
   assert.deepEqual(await env.service.reconcileScene(env.scene), { removed: 0 });
+});
+
+test("reconciliation releases a legacy grapple whose target is already outside natural reach", async () => {
+  const env = environment();
+  await env.service.toggle({
+    sourceTokenUuid: env.source.uuid,
+    targetTokenUuid: env.target.uuid,
+    operationId: "create"
+  });
+  env.target.x = 600;
+
+  assert.deepEqual(await env.service.reconcileScene(env.scene), { removed: 1 });
+  assert.deepEqual(env.sourceActor.getFlag(MODULE_ID, "handReservations") ?? [], []);
+  assert.equal(linkOf(env.target), undefined);
+  assert.equal(env.targetActor.effects.contents.length, 0);
 });

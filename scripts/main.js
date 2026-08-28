@@ -1715,9 +1715,9 @@ export class RebreyaMainModule {
       const targetTokenUuid = cleanSocketId(targets[0]?.document?.uuid ?? targets[0]?.uuid);
       const operationId = createSocketRequestId("grapple-toggle");
       const payload = { sourceTokenUuid, targetTokenUuid, operationId };
-      return isActiveGmClient(globalThis.game)
+      return await (isActiveGmClient(globalThis.game)
         ? this.grappleAutomationService.toggle(payload)
-        : this.socketCommandBus.request(GRAPPLE_TOGGLE_COMMAND, payload, { requestId: operationId });
+        : this.socketCommandBus.request(GRAPPLE_TOGGLE_COMMAND, payload, { requestId: operationId }));
     }
     catch (error) {
       this.#notifyGrappleError(error);
@@ -1760,9 +1760,9 @@ export class RebreyaMainModule {
         y: preview.y,
         operationId
       };
-      return isActiveGmClient(globalThis.game)
+      return await (isActiveGmClient(globalThis.game)
         ? this.grappleAutomationService.place(payload)
-        : this.socketCommandBus.request(GRAPPLE_PLACE_COMMAND, payload, { requestId: operationId });
+        : this.socketCommandBus.request(GRAPPLE_PLACE_COMMAND, payload, { requestId: operationId }));
     }
     catch (error) {
       this.#notifyGrappleError(error);
@@ -1773,6 +1773,7 @@ export class RebreyaMainModule {
   #notifyGrappleError(error) {
     const messages = {
       "no-free-hand": "Захват невозможен: нет свободной руки.",
+      "invalid-target": "Нельзя схватить самого себя.",
       "target-grappled-by-another-source": "Существо уже схвачено другим захватчиком.",
       "crosshairs-unavailable": "Визуальный маркер CPR недоступен.",
       "outside-reach": "Эта позиция находится вне природной досягаемости.",
