@@ -180,7 +180,7 @@ Use literal grid fixtures for 100 px / 5 ft and cover 1×1, 2×2, rectangular an
 
 - [ ] **Step 2: Write failing preview tests**
 
-Inject a fake public Crosshairs class and overlay adapter. Assert marker config uses target texture, `size = grid.distance * max(width, height) / 2`, and CPR-compatible resolution (`1` for odd, `-1` for even footprint). Assert cancellation returns without mutation and overlay cleanup occurs on success, cancellation, and thrown error.
+Inject a fake public Crosshairs class and overlay adapter. Assert marker config uses target texture and CPR's actual diameter contract: `size = grid.distance * max(width, height)`, with cell-center resolution `-1` for an odd footprint and grid-intersection resolution `1` for an even footprint. Assert cancellation returns without mutation and overlay cleanup occurs on success, cancellation, invalid confirmation, and thrown error.
 
 - [ ] **Step 3: Verify RED**
 
