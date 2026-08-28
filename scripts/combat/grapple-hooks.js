@@ -3,6 +3,8 @@ import { isActiveGmClient as defaultIsActiveGmClient } from "../infrastructure/f
 import { getActorHandReservations } from "../integrations/held-items.js";
 import { GRAPPLE_BYPASS_OPTION, GRAPPLE_LINK_FLAG } from "./grapple-automation-service.js";
 
+const patchedDragConstrainPrototypes = new WeakSet();
+
 function clean(value) {
   return String(value ?? "").trim();
 }
@@ -62,6 +64,29 @@ function shouldCancelOriginalUpdate(changed) {
   return Object.keys(changed ?? {}).length === 0 ? false : undefined;
 }
 
+function isGrappleSource(token) {
+  const document = token?.document ?? token;
+  const sourceTokenUuid = clean(document?.uuid);
+  const actor = token?.actor ?? document?.actor;
+  return getActorHandReservations(actor).some((reservation) => (
+    reservation.kind === "grapple" && reservation.sourceTokenUuid === sourceTokenUuid
+  ));
+}
+
+function patchDragConstrainOptions(TokenClass) {
+  const prototype = TokenClass?.prototype;
+  if (!prototype || patchedDragConstrainPrototypes.has(prototype)) return false;
+  const original = prototype._getDragConstrainOptions;
+  if (typeof original !== "function") return false;
+  prototype._getDragConstrainOptions = function rebreyaGrappleDragConstrainOptions(...args) {
+    const options = original.apply(this, args);
+    if (!isGrappleSource(this)) return options;
+    return { ...(options ?? {}), ignoreTokens: true };
+  };
+  patchedDragConstrainPrototypes.add(prototype);
+  return true;
+}
+
 const ERROR_MESSAGES = Object.freeze({
   "outside-reach": "схваченное существо нельзя переместить в эту точку",
   "outside-scene": "перемещение выходит за границы сцены",
@@ -75,9 +100,13 @@ export function registerGrappleHooks(moduleApi, {
   randomId = defaultRandomId,
   isActiveGmClient = defaultIsActiveGmClient,
   gameProvider = () => globalThis.game,
-  notifyError = defaultNotifyError
+  notifyError = defaultNotifyError,
+  TokenClass = globalThis.CONFIG?.Token?.objectClass
+    ?? globalThis.foundry?.canvas?.placeables?.Token
+    ?? globalThis.Token
 } = {}) {
   if (typeof Hooks?.on !== "function") throw new TypeError("Hooks.on is required");
+  patchDragConstrainOptions(TokenClass);
   const pendingTargetDialogs = new Map();
 
   const report = (error) => {
@@ -101,10 +130,7 @@ export function registerGrappleHooks(moduleApi, {
     const requesterUserId = clean(userId);
     const targetLink = documentFlag(token, GRAPPLE_LINK_FLAG);
     const sourceTokenUuid = clean(token?.uuid);
-    const isGrappleSource = getActorHandReservations(token?.actor).some((reservation) => (
-      reservation.kind === "grapple" && reservation.sourceTokenUuid === sourceTokenUuid
-    ));
-    if (!targetLink?.linkId && !isGrappleSource) return undefined;
+    if (!targetLink?.linkId && !isGrappleSource(token)) return undefined;
     removeMovementChanges(changed);
 
     if (targetLink?.linkId) {

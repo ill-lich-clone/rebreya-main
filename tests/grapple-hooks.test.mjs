@@ -68,7 +68,7 @@ async function flush() {
   await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
-function environment({ dialogChoice = "cancel", showMoveDialog = null, dragError = null } = {}) {
+function environment({ dialogChoice = "cancel", showMoveDialog = null, dragError = null, TokenClass = undefined } = {}) {
   const Hooks = hooksRegistry();
   const calls = { drag: [], releaseMove: [], effects: [], tokens: [], scenes: [], dialogs: [], errors: [] };
   const moduleApi = {
@@ -90,7 +90,8 @@ function environment({ dialogChoice = "cancel", showMoveDialog = null, dragError
     randomId: () => `operation-${calls.drag.length + calls.releaseMove.length + 1}`,
     isActiveGmClient: () => true,
     gameProvider: () => ({ user: { id: "player-a" } }),
-    notifyError: (message) => calls.errors.push(message)
+    notifyError: (message) => calls.errors.push(message),
+    TokenClass
   });
   return { Hooks, calls, moduleApi };
 }
@@ -100,6 +101,36 @@ test("registers one hook for each grapple lifecycle surface", () => {
   for (const event of ["preUpdateToken", "deleteActiveEffect", "deleteToken", "canvasReady", "ready"]) {
     assert.equal(env.Hooks.count(event), 1, event);
   }
+});
+
+test("source UI drag ignores token footprints during dnd5e preview pathfinding", () => {
+  class TokenPlaceable {
+    constructor(document) {
+      this.document = document;
+      this.actor = document.actor;
+    }
+
+    _getDragConstrainOptions() {
+      return { ignoreWalls: false, ignoreCost: false };
+    }
+  }
+
+  environment({ TokenClass: TokenPlaceable });
+
+  const source = new TokenPlaceable(sourceToken());
+  assert.deepEqual(source._getDragConstrainOptions(), {
+    ignoreWalls: false,
+    ignoreCost: false,
+    ignoreTokens: true
+  });
+
+  const ordinaryDocument = sourceToken();
+  ordinaryDocument.actor.flags[MODULE_ID].handReservations = [];
+  const ordinary = new TokenPlaceable(ordinaryDocument);
+  assert.deepEqual(ordinary._getDragConstrainOptions(), {
+    ignoreWalls: false,
+    ignoreCost: false
+  });
 });
 
 test("source movement removes only coordinates and schedules one authoritative grouped drag", async () => {
