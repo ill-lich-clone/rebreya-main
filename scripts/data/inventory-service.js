@@ -13,7 +13,8 @@ import {
   GROUP_CONTEXT_ERRORS,
   getGroupMemberActors,
   isManagedPartyGroup,
-  normalizeGroupTransportState
+  normalizeGroupTransportState,
+  resolveGroupMemberActor
 } from "./group-context-service.js";
 import { DurableMutationJournal } from "../application/durable-mutation-journal.js";
 import { WorldMutationCoordinator } from "../application/world-mutation-coordinator.js";
@@ -57,6 +58,7 @@ export const SOCKET_EVENT_INVENTORY_ITEM_ACTION_REQUEST = "inventory-item-action
 export const SOCKET_EVENT_INVENTORY_ITEM_ACTION_RESULT = "inventory-item-action-result";
 export const INVENTORY_TAKE_COMMAND = "inventory.take";
 export const INVENTORY_SALE_COMMAND = "inventory.sale";
+export const INVENTORY_DISMANTLE_COMMAND = "inventory.dismantle";
 export const INVENTORY_IMPORT_COMMAND = "inventory.import";
 export const INVENTORY_CURRENCY_UPDATE_COMMAND = "inventory.currency.update";
 export const INVENTORY_CURRENCY_CONVERT_COMMAND = "inventory.currency.convert";
@@ -2043,7 +2045,7 @@ export class InventoryService {
     }
   }
 
-  #resolveRecipientCharacter(actorId = "") {
+  #resolveRecipientCharacter(actorId = "", groupActor = null) {
     const safeActorId = cleanId(actorId);
     const explicitActor = safeActorId ? game.actors?.get?.(safeActorId) ?? null : null;
     const controlledActors = (globalThis.canvas?.tokens?.controlled ?? [])
@@ -2059,11 +2061,16 @@ export class InventoryService {
       throw new Error("Не выбран персонаж для получения предмета. Назначьте персонажа пользователю или выберите токен персонажа.");
     }
 
+    const memberActor = resolveGroupMemberActor(groupActor, actor);
+    if (isManagedPartyGroup(groupActor) && !memberActor) {
+      throw new Error("Персонаж для получения предмета не входит в выбранную группу.");
+    }
+
     if (!game.user?.isGM && actor.isOwner === false) {
       throw new Error("У вас нет прав на персонажа, который получает предмет.");
     }
 
-    return actor;
+    return memberActor ?? actor;
   }
 
   #assertInventoryActionSocketAvailable(actor) {
@@ -2998,6 +3005,208 @@ export class InventoryService {
       quantity: record.sourceReceipt.delta,
       gainedCopper: record.gainedCopper,
       currency: buildCurrencySnapshot(inventoryActor)
+    };
+    await this.mutationJournal.finish(operationId, { ok: true, value: result });
+    return foundry.utils.deepClone(result);
+  }
+
+  async #applyDismantleTargetReceipt(actor, operationId, record) {
+    const receipt = record.targetReceipt;
+    let item = receipt.created
+      ? this.#findMutationItem(actor, operationId)
+      : actor.items.get(receipt.itemId);
+    if (receipt.created) {
+      if (!item) {
+        try {
+          [item] = await actor.createEmbeddedDocuments("Item", [record.materialItemData]);
+        }
+        catch (error) {
+          item = this.#findMutationItem(actor, operationId);
+          if (!item) throw error;
+        }
+      }
+    }
+    else {
+      if (!item) throw this.#inventoryReconciliationError("Inventory dismantle material target disappeared.");
+      const currentQuantity = getRawQuantity(item.toObject());
+      if (!inventoryQuantitiesMatch(currentQuantity, receipt.afterQuantity)) {
+        if (!inventoryQuantitiesMatch(currentQuantity, receipt.beforeQuantity)) {
+          throw this.#inventoryReconciliationError("Inventory dismantle material quantity changed.");
+        }
+        try {
+          await item.update({ "system.quantity": receipt.afterQuantity });
+        }
+        catch (error) {
+          if (!inventoryQuantitiesMatch(getRawQuantity(item.toObject()), receipt.afterQuantity)) throw error;
+        }
+      }
+    }
+    if (!item || !inventoryQuantitiesMatch(getRawQuantity(item.toObject()), receipt.afterQuantity)) {
+      throw this.#inventoryReconciliationError("Inventory dismantle material credit was not observed.");
+    }
+    return item;
+  }
+
+  async #compensateDismantleTargetReceipt(actor, operationId, record) {
+    const receipt = record.targetReceipt;
+    let item = receipt.created
+      ? this.#findMutationItem(actor, operationId)
+      : actor.items.get(receipt.itemId);
+    if (!item) {
+      if (receipt.created) return;
+      throw this.#inventoryReconciliationError("Inventory dismantle material target disappeared before compensation.");
+    }
+    const currentQuantity = getRawQuantity(item.toObject());
+    if (receipt.created) {
+      if (!inventoryQuantitiesMatch(currentQuantity, receipt.afterQuantity)) {
+        throw this.#inventoryReconciliationError("Created dismantle material changed before compensation.");
+      }
+      try {
+        await item.delete();
+      }
+      catch (error) {
+        item = this.#findMutationItem(actor, operationId);
+        if (item) throw error;
+      }
+      if (this.#findMutationItem(actor, operationId)) {
+        throw this.#inventoryReconciliationError("Created dismantle material still exists after compensation.");
+      }
+      return;
+    }
+    if (inventoryQuantitiesMatch(currentQuantity, receipt.beforeQuantity)) return;
+    if (!inventoryQuantitiesMatch(currentQuantity, receipt.afterQuantity)) {
+      throw this.#inventoryReconciliationError("Merged dismantle material changed before compensation.");
+    }
+    try {
+      await item.update({ "system.quantity": receipt.beforeQuantity });
+    }
+    catch (error) {
+      if (!inventoryQuantitiesMatch(getRawQuantity(item.toObject()), receipt.beforeQuantity)) throw error;
+    }
+    if (!inventoryQuantitiesMatch(getRawQuantity(item.toObject()), receipt.beforeQuantity)) {
+      throw this.#inventoryReconciliationError("Merged dismantle material was not restored by compensation.");
+    }
+  }
+
+  #dismantleInventoryItemFromActor(inventoryActor, itemId, quantity = 1, options = {}) {
+    return this.mutationCoordinator.run(
+      "inventory",
+      () => this.#executeDismantleInventoryItem(inventoryActor, itemId, quantity, options)
+    );
+  }
+
+  async #executeDismantleInventoryItem(inventoryActor, itemId, quantity = 1, { mutationId = "" } = {}) {
+    const operationId = createInventoryMutationId("inventory-dismantle", mutationId);
+    const requestedQuantity = Math.max(1, Math.floor(toNumber(quantity, 1)));
+    const request = {
+      actorId: cleanId(inventoryActor?.id),
+      itemId: cleanId(itemId),
+      quantity: requestedQuantity
+    };
+    let record = await this.mutationJournal.find(operationId);
+    if (record && JSON.stringify(record.request ?? null) !== JSON.stringify(request)) {
+      throw new Error("Inventory dismantle mutation ID was reused with a different request.");
+    }
+    if (!record) {
+      const item = this.#getInventoryItem(inventoryActor, itemId);
+      const model = await this.moduleApi.getModel();
+      const itemData = item.toObject();
+      const currentQuantity = getRawQuantity(itemData);
+      const breakQuantity = Math.max(1, Math.min(currentQuantity, requestedQuantity));
+      const [output] = resolveInventoryDismantleOutputs(itemData, breakQuantity, { model });
+      const material = output
+        ? model.materialById?.get(output.sourceId) ?? null
+        : null;
+      if (!output || !material) {
+        throw new Error("Для этого предмета не найден подходящий материал.");
+      }
+      const materialItemData = this.#buildMaterialItemData(material, output.quantity);
+      const target = this.#findInventoryMergeCandidate(inventoryActor, materialItemData);
+      const targetBeforeQuantity = target ? getRawQuantity(target.toObject()) : 0;
+      if (!target) {
+        foundry.utils.setProperty(materialItemData, `flags.${MODULE_ID}.${INVENTORY_MUTATION_FLAG}`, {
+          id: operationId,
+          kind: "dismantle"
+        });
+      }
+      record = await this.mutationJournal.start({
+        id: operationId,
+        kind: "dismantle",
+        phase: "prepared",
+        request,
+        actorId: inventoryActor.id,
+        itemName: item.name,
+        materialName: material.name,
+        materialWeight: output.quantity,
+        materialItemData,
+        sourceReceipt: {
+          itemId: item.id,
+          beforeQuantity: currentQuantity,
+          afterQuantity: roundNumber(currentQuantity - breakQuantity, 2),
+          delta: breakQuantity
+        },
+        targetReceipt: {
+          itemId: target?.id ?? "",
+          created: !target,
+          beforeQuantity: targetBeforeQuantity,
+          afterQuantity: roundNumber(targetBeforeQuantity + output.quantity, 2),
+          delta: output.quantity
+        }
+      });
+    }
+
+    const terminal = this.#readInventoryTerminal(record);
+    if (terminal.terminal) return terminal.value;
+    if (record.phase === "prepared") {
+      const targetItem = await this.#applyDismantleTargetReceipt(inventoryActor, operationId, record);
+      record = await this.mutationJournal.checkpoint(operationId, "prepared", "target-credited", {
+        targetItemId: targetItem.id
+      });
+    }
+    if (record.phase === "target-credited") {
+      await this.#applyDismantleTargetReceipt(inventoryActor, operationId, record);
+      try {
+        await this.#applySourceReceipt(inventoryActor, record.sourceReceipt);
+      }
+      catch (error) {
+        try {
+          await this.#compensateDismantleTargetReceipt(inventoryActor, operationId, record);
+          record = await this.mutationJournal.checkpoint(operationId, "target-credited", "compensated", {
+            failure: { code: error.code ?? "source-debit-failed", message: error.message }
+          });
+          await this.mutationJournal.finish(operationId, {
+            ok: false,
+            code: error.code ?? "source-debit-failed",
+            error: error.message
+          });
+        }
+        catch (compensationError) {
+          try {
+            await this.mutationJournal.checkpoint(operationId, "target-credited", "reconciliation-required", {
+              failure: { code: error.code ?? "source-debit-failed", message: error.message },
+              compensationFailure: {
+                code: compensationError.code ?? "target-compensation-failed",
+                message: compensationError.message
+              }
+            });
+          }
+          catch {
+            // Preserve the compound failure below.
+          }
+          throw new AggregateError([error, compensationError], "Inventory dismantle and compensation both failed.");
+        }
+        throw error;
+      }
+      record = await this.mutationJournal.checkpoint(operationId, "target-credited", "source-debited");
+    }
+    if (record.phase === "source-debited") {
+      record = await this.mutationJournal.checkpoint(operationId, "source-debited", "committed");
+    }
+    const result = {
+      itemName: record.itemName,
+      breakQuantity: record.sourceReceipt.delta,
+      materialName: record.materialName,
+      materialWeight: record.materialWeight
     };
     await this.mutationJournal.finish(operationId, { ok: true, value: result });
     return foundry.utils.deepClone(result);
@@ -5066,7 +5275,7 @@ export class InventoryService {
       throw new Error("Не удалось получить партийный инвентарь.");
     }
 
-    const targetActor = this.#resolveRecipientCharacter(actorId);
+    const targetActor = this.#resolveRecipientCharacter(actorId, actor);
     const operationId = createInventoryMutationId("inventory-take", mutationId);
     if (!game.user?.isGM && typeof this.moduleApi.socketCommandBus?.request === "function") {
       return this.moduleApi.socketCommandBus.request(INVENTORY_TAKE_COMMAND, {
@@ -5948,45 +6157,20 @@ export class InventoryService {
     return this.#resolveCraftOutputItems(actor, result);
   }
 
-  async breakItemToMaterial(itemId, quantity = 1) {
+  async breakItemToMaterial(itemId, quantity = 1, { mutationId = "" } = {}) {
     const actor = await this.getInventoryActor({ create: true });
-    this.#assertCanManagePartyInventory(actor);
-    const item = actor?.items.get(itemId) ?? null;
-    if (!item) {
-      throw new Error("Предмет не найден в партийном инвентаре.");
-    }
-
-    const model = await this.moduleApi.getModel();
-    const itemData = item.toObject();
-    const currentQuantity = getRawQuantity(itemData);
-    const breakQuantity = Math.max(1, Math.min(currentQuantity, Math.floor(toNumber(quantity, 1))));
-    const [output] = resolveInventoryDismantleOutputs(itemData, breakQuantity, { model });
-    const material = output
-      ? model.materialById?.get(output.sourceId) ?? null
-      : null;
-    if (!output || !material) {
-      throw new Error("Для этого предмета не найден подходящий материал.");
-    }
-
-    const materialItemData = this.#buildMaterialItemData(material, output.quantity);
-    await this.#upsertInventoryItem(actor, materialItemData, output.quantity);
-
-    const nextQuantity = roundNumber(currentQuantity - breakQuantity, 2);
-    if (nextQuantity <= 0) {
-      await item.delete();
-    }
-    else {
-      await item.update({
-        "system.quantity": nextQuantity
+    const operationId = createInventoryMutationId("inventory-dismantle", mutationId);
+    const safeQuantity = Math.max(1, Math.floor(toNumber(quantity, 1)));
+    if (!game.user?.isGM && typeof this.moduleApi.socketCommandBus?.request === "function") {
+      return this.moduleApi.socketCommandBus.request(INVENTORY_DISMANTLE_COMMAND, {
+        inventoryActorId: actor.id,
+        itemId: cleanId(itemId),
+        mutationId: operationId,
+        quantity: safeQuantity
       });
     }
-
-    return {
-      itemName: item.name,
-      breakQuantity,
-      materialName: material.name,
-      materialWeight: output.quantity
-    };
+    this.#assertCanManagePartyInventory(actor);
+    return this.#dismantleInventoryItemFromActor(actor, itemId, safeQuantity, { mutationId: operationId });
   }
 
   async addPartyMember(actorId) {
@@ -6695,6 +6879,19 @@ export class InventoryService {
       throw new Error("Некорректный партийный склад для продажи.");
     }
     return this.#sellInventoryItemFromActor(
+      inventoryActor,
+      cleanId(payload.itemId),
+      payload.quantity,
+      { mutationId: cleanId(payload.mutationId) }
+    );
+  }
+
+  async executeDismantleMutation(payload = {}) {
+    const inventoryActor = game.actors?.get?.(cleanId(payload.inventoryActorId)) ?? null;
+    if (!isManagedPartyGroup(inventoryActor)) {
+      throw new Error("Некорректный партийный склад для разбора предмета.");
+    }
+    return this.#dismantleInventoryItemFromActor(
       inventoryActor,
       cleanId(payload.itemId),
       payload.quantity,

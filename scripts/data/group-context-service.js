@@ -363,6 +363,21 @@ export function getGroupMemberActorIds(groupActor) {
     .filter((actorId) => actorId);
 }
 
+export function resolveGroupMemberActor(groupActor, actor) {
+  const candidateIds = new Set([
+    actor?.id,
+    actor?.baseActor?.id,
+    actor?.token?.actorId,
+    actor?.token?.baseActor?.id
+  ].map((actorId) => cleanId(actorId)).filter(Boolean));
+  if (candidateIds.size === 0) {
+    return null;
+  }
+  return getGroupMemberActors(groupActor)
+    .find((memberActor) => candidateIds.has(cleanId(memberActor?.id)))
+    ?? null;
+}
+
 export function resolvePlayerGroupActor(
   groupActors = [],
   { userIsGM = false, isOwnedCharacter = () => false } = {}

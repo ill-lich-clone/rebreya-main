@@ -376,6 +376,13 @@
                           <button type="button" data-action="sell-item" data-item-id="{{itemId}}" data-item-name="{{name}}" data-quantity="{{quantity}}"></button>
                         {{/if}}
 
+                        {{#if ../canDismantleInventory}}
+                          <button type="button" class="rm-button rm-button--small rm-button--secondary" data-action="break-item" data-item-id="{{itemId}}" data-item-name="{{name}}" data-quantity="{{quantity}}">
+                            <i class="fa-solid fa-hammer"></i>
+                            <span>Разобрать</span>
+                          </button>
+                        {{/if}}
+
                         <button type="button" data-action="delete-item" data-item-id="{{itemId}}" data-item-name="{{name}}"></button>
                       {{/if}}
 
@@ -385,10 +392,6 @@
                           <span>Изменить количество</span>
                         </button>
 
-                        <button type="button" class="rm-button rm-button--small rm-button--secondary" data-action="break-item" data-item-id="{{itemId}}" data-item-name="{{name}}" data-quantity="{{quantity}}">
-                          <i class="fa-solid fa-hammer"></i>
-                          <span>Разобрать</span>
-                        </button>
                       {{/if}}
                     </div>
                   </div>

@@ -4974,6 +4974,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         actionFeedback,
         canManage,
         canDropInventoryItems,
+        canDismantleInventory: canDropInventoryItems,
         canOrganizeInventory: canDropInventoryItems,
         canEditCurrency
       };

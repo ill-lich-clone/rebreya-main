@@ -3165,6 +3165,7 @@ test("InventoryApp allows inventory drop users to edit party currency through th
 
     assert.equal(context.canManage, false);
     assert.equal(context.canDropInventoryItems, true);
+    assert.equal(context.canDismantleInventory, true);
     assert.equal(context.canEditCurrency, true);
   }
   finally {

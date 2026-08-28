@@ -39,7 +39,8 @@ import {
   isManagedPartyGroup,
   normalizeGroupRegistry,
   normalizeGroupState,
-  normalizeGroupTransportState
+  normalizeGroupTransportState,
+  resolveGroupMemberActor
 } from "./data/group-context-service.js";
 import { DowntimeService } from "./data/downtime-service.js?v=1.4.96-craft-calendar";
 import { CharacterDowntimeService } from "./data/character-downtime-service.js";
@@ -52,6 +53,7 @@ import { TravelMapService } from "./data/travel-map-service.js?v=1.4.141-auraeff
 import {
   INVENTORY_CURRENCY_CONVERT_COMMAND,
   INVENTORY_CURRENCY_UPDATE_COMMAND,
+  INVENTORY_DISMANTLE_COMMAND,
   INVENTORY_FOLDER_CREATE_COMMAND,
   INVENTORY_FOLDER_DELETE_COMMAND,
   INVENTORY_FOLDER_MOVE_COMMAND,
@@ -71,7 +73,7 @@ import {
   SOCKET_EVENT_INVENTORY_SOURCE_DEPLETION_RESULT,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_REQUEST,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_RESULT
-} from "./data/inventory-service.js?v=1.4.160-inventory-ingress-rule-exports";
+} from "./data/inventory-service.js?v=1.4.175-inventory-dismantle-member-auth";
 import {
   InventoryIngressRuleCompilerCache,
   normalizeInventoryIngressRule
@@ -771,6 +773,14 @@ function isValidInventorySalePayload(payload) {
     && [payload.inventoryActorId, payload.itemId].every(isTrimmedNonEmptyString)
     && isValidInventoryMutationId(payload.mutationId)
     && Number.isFinite(payload.quantity)
+    && payload.quantity > 0;
+}
+
+function isValidInventoryDismantlePayload(payload) {
+  return hasExactKeys(payload, ["inventoryActorId", "itemId", "mutationId", "quantity"])
+    && [payload.inventoryActorId, payload.itemId].every(isTrimmedNonEmptyString)
+    && isValidInventoryMutationId(payload.mutationId)
+    && Number.isSafeInteger(payload.quantity)
     && payload.quantity > 0;
 }
 
@@ -2113,6 +2123,11 @@ export class RebreyaMainModule {
       authorize: (payload, { sender }) => this.#canSenderManageGroup(sender, payload.inventoryActorId),
       execute: (payload) => this.inventoryService.executeSaleMutation(payload)
     });
+    this.socketCommandBus.register(INVENTORY_DISMANTLE_COMMAND, {
+      validate: isValidInventoryDismantlePayload,
+      authorize: (payload, { sender }) => this.#canSenderManageGroup(sender, payload.inventoryActorId),
+      execute: (payload) => this.inventoryService.executeDismantleMutation(payload)
+    });
     this.socketCommandBus.register(INVENTORY_IMPORT_COMMAND, {
       validate: isValidInventoryImportPayload,
       authorize: (payload, { sender }) => this.#canSenderImportInventoryItem(sender, payload),
@@ -2438,6 +2453,9 @@ export class RebreyaMainModule {
     if (sender?.isGM) {
       return true;
     }
+    if (documentIsOwnedByUser(groupActor, sender)) {
+      return true;
+    }
     return getGroupMemberActors(groupActor).some((actor) => actorIsOwnedByUser(actor, sender));
   }
 
@@ -2448,7 +2466,7 @@ export class RebreyaMainModule {
     const groupActor = resolveActorById(payload.inventoryActorId);
     const targetActor = resolveActorById(payload.targetActorId);
     return actorIsOwnedByUser(targetActor, sender)
-      && getGroupMemberActors(groupActor).some((actor) => actor?.id === targetActor?.id);
+      && Boolean(resolveGroupMemberActor(groupActor, targetActor));
   }
 
   async #canSenderImportInventoryItem(sender, payload) {
@@ -2464,7 +2482,7 @@ export class RebreyaMainModule {
       return isCompendiumItemDocument(item);
     }
     return traderActorIsOwnedByUser(sourceActor, sender)
-      && getGroupMemberActors(groupActor).some((actor) => actor?.id === sourceActor?.id);
+      && Boolean(resolveGroupMemberActor(groupActor, sourceActor));
   }
 
   async restoreBuiltinStorageActors() {

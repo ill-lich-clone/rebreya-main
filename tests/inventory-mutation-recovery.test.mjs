@@ -219,6 +219,368 @@ test("manual dismantle uses stable material metadata and never a presentation-na
   }
 });
 
+test("manual dismantle compensates credited material when source depletion fails", async () => {
+  const iron = { id: "iron", name: "Iron", type: "Metal", priceGold: 1, weight: 1 };
+  const model = {
+    gear: [],
+    gearById: new Map(),
+    materials: [iron],
+    materialById: new Map([[iron.id, iron]]),
+    materialByGoodId: new Map()
+  };
+  const source = createItem({
+    id: "dismantle-source",
+    name: "Iron sword",
+    type: "weapon",
+    quantity: 2,
+    failUpdate: true,
+    system: {
+      quantity: 2,
+      price: { value: 10, denomination: "gp" },
+      weight: { value: 4, units: "lb" }
+    },
+    flags: {
+      [MODULE_ID]: {
+        sourceType: "gear",
+        sourceId: "iron-sword",
+        gearId: "iron-sword",
+        predominantMaterialId: iron.id
+      }
+    }
+  });
+  const group = createActor({
+    id: "manual-dismantle-compensation-group",
+    type: "group",
+    managed: true,
+    items: [source]
+  });
+  const fixture = installFixture({
+    group,
+    actors: [group],
+    moduleApi: { getModel: async () => model }
+  });
+
+  try {
+    await assert.rejects(
+      fixture.service.breakItemToMaterial(source.id, 1, { mutationId: "dismantle-source-failure" }),
+      /source update failed/u
+    );
+    assert.deepEqual(group.items.contents, [source]);
+    assert.equal(source.system.quantity, 2);
+
+    await assert.rejects(
+      fixture.service.breakItemToMaterial(source.id, 1, { mutationId: "dismantle-source-failure" }),
+      /source update failed/u
+    );
+    assert.deepEqual(group.items.contents, [source]);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("manual dismantle restores a merged material stack when source depletion fails", async () => {
+  const iron = { id: "iron", name: "Iron", type: "Metal", priceGold: 1, weight: 1 };
+  const model = {
+    gear: [],
+    gearById: new Map(),
+    materials: [iron],
+    materialById: new Map([[iron.id, iron]]),
+    materialByGoodId: new Map()
+  };
+  const source = createItem({
+    id: "dismantle-source",
+    name: "Iron sword",
+    type: "weapon",
+    quantity: 2,
+    failUpdate: true,
+    system: {
+      quantity: 2,
+      price: { value: 10, denomination: "gp" },
+      weight: { value: 4, units: "lb" }
+    },
+    flags: {
+      [MODULE_ID]: {
+        sourceType: "gear",
+        sourceId: "iron-sword",
+        gearId: "iron-sword",
+        predominantMaterialId: iron.id
+      }
+    }
+  });
+  const materialStack = createItem({
+    id: "iron-stack",
+    name: iron.name,
+    type: "loot",
+    quantity: 5,
+    flags: {
+      [MODULE_ID]: {
+        sourceType: "material",
+        sourceId: iron.id,
+        materialId: iron.id,
+        predominantMaterialId: iron.id
+      }
+    }
+  });
+  const group = createActor({
+    id: "manual-dismantle-merge-compensation-group",
+    type: "group",
+    managed: true,
+    items: [source, materialStack]
+  });
+  const fixture = installFixture({
+    group,
+    actors: [group],
+    moduleApi: { getModel: async () => model }
+  });
+
+  try {
+    await assert.rejects(
+      fixture.service.breakItemToMaterial(source.id, 1, { mutationId: "dismantle-merge-failure" })
+    );
+    assert.equal(materialStack.system.quantity, 5);
+    assert.equal(source.system.quantity, 2);
+    assert.deepEqual(group.items.contents, [source, materialStack]);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("active GM dismantle executor commits one material credit across mutation retries", async () => {
+  const iron = { id: "iron", name: "Iron", type: "Metal", priceGold: 1, weight: 1 };
+  const model = {
+    gear: [],
+    gearById: new Map(),
+    materials: [iron],
+    materialById: new Map([[iron.id, iron]]),
+    materialByGoodId: new Map()
+  };
+  const source = createItem({
+    id: "dismantle-source",
+    name: "Iron sword",
+    type: "weapon",
+    quantity: 1,
+    system: {
+      quantity: 1,
+      price: { value: 10, denomination: "gp" },
+      weight: { value: 4, units: "lb" }
+    },
+    flags: {
+      [MODULE_ID]: {
+        sourceType: "gear",
+        sourceId: "iron-sword",
+        gearId: "iron-sword",
+        predominantMaterialId: iron.id
+      }
+    }
+  });
+  const group = createActor({
+    id: "manual-dismantle-executor-group",
+    type: "group",
+    managed: true,
+    items: [source]
+  });
+  const fixture = installFixture({
+    group,
+    actors: [group],
+    moduleApi: { getModel: async () => model }
+  });
+  const payload = {
+    inventoryActorId: group.id,
+    itemId: source.id,
+    mutationId: "dismantle-executor",
+    quantity: 1
+  };
+
+  try {
+    const first = await fixture.service.executeDismantleMutation(payload);
+    const retry = await fixture.service.executeDismantleMutation(payload);
+
+    assert.deepEqual(retry, first);
+    assert.deepEqual(first, {
+      itemName: source.name,
+      breakQuantity: 1,
+      materialName: iron.name,
+      materialWeight: 2
+    });
+    assert.equal(group.items.contents.length, 1);
+    assert.equal(group.items.contents[0].getFlag(MODULE_ID, "inventoryMutation")?.kind, "dismantle");
+    assert.equal(group.items.contents[0].system.quantity, 2);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("manual dismantle recovers a material creation whose acknowledgment was lost", async () => {
+  const iron = { id: "iron", name: "Iron", type: "Metal", priceGold: 1, weight: 1 };
+  const model = {
+    gear: [],
+    gearById: new Map(),
+    materials: [iron],
+    materialById: new Map([[iron.id, iron]]),
+    materialByGoodId: new Map()
+  };
+  const source = createItem({
+    id: "dismantle-source",
+    name: "Iron sword",
+    type: "weapon",
+    quantity: 1,
+    system: {
+      quantity: 1,
+      price: { value: 10, denomination: "gp" },
+      weight: { value: 4, units: "lb" }
+    },
+    flags: {
+      [MODULE_ID]: {
+        sourceType: "gear",
+        sourceId: "iron-sword",
+        gearId: "iron-sword",
+        predominantMaterialId: iron.id
+      }
+    }
+  });
+  const group = createActor({
+    id: "manual-dismantle-lost-ack-group",
+    type: "group",
+    managed: true,
+    items: [source],
+    throwAfterCreateOnce: true
+  });
+  const fixture = installFixture({
+    group,
+    actors: [group],
+    moduleApi: { getModel: async () => model }
+  });
+
+  try {
+    const result = await fixture.service.executeDismantleMutation({
+      inventoryActorId: group.id,
+      itemId: source.id,
+      mutationId: "dismantle-lost-create-ack",
+      quantity: 1
+    });
+
+    assert.equal(result.materialWeight, 2);
+    assert.equal(group.createEmbeddedDocumentsCalls, 1);
+    assert.equal(group.items.contents.length, 1);
+    assert.equal(group.items.contents[0].system.quantity, 2);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("manual dismantle restores a missing credited material before retrying source debit", async () => {
+  const iron = { id: "iron", name: "Iron", type: "Metal", priceGold: 1, weight: 1 };
+  const model = {
+    gear: [],
+    gearById: new Map(),
+    materials: [iron],
+    materialById: new Map([[iron.id, iron]]),
+    materialByGoodId: new Map()
+  };
+  const source = createItem({
+    id: "dismantle-source",
+    name: "Iron sword",
+    type: "weapon",
+    quantity: 1,
+    system: {
+      quantity: 1,
+      price: { value: 10, denomination: "gp" },
+      weight: { value: 4, units: "lb" }
+    },
+    flags: {
+      [MODULE_ID]: {
+        sourceType: "gear",
+        sourceId: "iron-sword",
+        gearId: "iron-sword",
+        predominantMaterialId: iron.id
+      }
+    }
+  });
+  const group = createActor({
+    id: "manual-dismantle-missing-target-group",
+    type: "group",
+    managed: true,
+    items: [source]
+  });
+  const fixture = installFixture({
+    group,
+    actors: [group],
+    moduleApi: { getModel: async () => model }
+  });
+  const payload = {
+    inventoryActorId: group.id,
+    itemId: source.id,
+    mutationId: "dismantle-missing-target-retry",
+    quantity: 1
+  };
+
+  try {
+    fixture.settingsStore[SETTINGS_KEYS.INVENTORY_MUTATION_JOURNAL] = {
+      version: 1,
+      records: [{
+        id: payload.mutationId,
+        kind: "dismantle",
+        phase: "target-credited",
+        terminal: false,
+        request: { actorId: group.id, itemId: source.id, quantity: 1 },
+        actorId: group.id,
+        itemName: source.name,
+        materialName: iron.name,
+        materialWeight: 2,
+        materialItemData: {
+          name: iron.name,
+          type: "loot",
+          img: "icons/commodities/materials/slime-thick-blue.webp",
+          system: {
+            description: { value: "", chat: "" },
+            unidentified: { description: "" },
+            quantity: 2,
+            price: { value: 1, denomination: "gp" },
+            weight: { value: 1, units: "lb" },
+            type: { value: "trade", subtype: iron.type }
+          },
+          flags: {
+            [MODULE_ID]: {
+              sourceType: "material",
+              sourceId: iron.id,
+              inventoryMutation: { id: payload.mutationId, kind: "dismantle" }
+            }
+          }
+        },
+        sourceReceipt: {
+          itemId: source.id,
+          beforeQuantity: 1,
+          afterQuantity: 0,
+          delta: 1
+        },
+        targetReceipt: {
+          itemId: "",
+          created: true,
+          beforeQuantity: 0,
+          afterQuantity: 2,
+          delta: 2
+        },
+        targetItemId: "missing-credited-material"
+      }]
+    };
+
+    const result = await fixture.service.executeDismantleMutation(payload);
+
+    assert.equal(result.materialWeight, 2);
+    assert.equal(group.createEmbeddedDocumentsCalls, 1);
+    assert.equal(group.items.contents.length, 1);
+    assert.equal(group.items.contents[0].system.quantity, 2);
+    assert.equal(group.items.contents[0].getFlag(MODULE_ID, "inventoryMutation")?.kind, "dismantle");
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
 test("broken lootgen grants persist full durability exactly once and do not merge with intact gear", async () => {
   const steel = { id: "steel", name: "Сталь" };
   const gear = {
@@ -2607,6 +2969,106 @@ test("craft output retry adopts the item created while the old GM lost authority
     const committed = fixture.settingsStore[SETTINGS_KEYS.INVENTORY_MUTATION_JOURNAL].records
       .find((record) => record.id === "failover-output");
     assert.equal(committed.terminal, true);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("take routes an owned synthetic token through its exact world group member", async () => {
+  const source = createItem({ id: "source", name: "Rope", quantity: 2 });
+  const hero = createActor({ id: "hero" });
+  const syntheticHero = createActor({ id: "synthetic-hero" });
+  syntheticHero.isToken = true;
+  syntheticHero.token = { actorId: hero.id };
+  const group = createActor({
+    id: "group",
+    type: "group",
+    managed: true,
+    items: [source],
+    members: [{ actor: hero }]
+  });
+  const player = { id: "player", isGM: false, active: true, character: null };
+  const gm = { id: "gm", isGM: true, active: true };
+  const calls = [];
+  const previousCanvas = globalThis.canvas;
+  globalThis.canvas = { tokens: { controlled: [{ actor: syntheticHero }] } };
+  const fixture = installFixture({
+    group,
+    actors: [group, hero],
+    user: player,
+    activeGM: gm,
+    moduleApi: {
+      socketCommandBus: {
+        async request(command, payload) {
+          calls.push({ command, payload: clone(payload) });
+          return { requested: true };
+        }
+      }
+    }
+  });
+
+  try {
+    await fixture.service.takeInventoryItemToCharacter(source.id, {
+      quantity: 1,
+      mutationId: "take-synthetic"
+    });
+
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].command, "inventory.take");
+    assert.equal(calls[0].payload.targetActorId, hero.id);
+  }
+  finally {
+    fixture.restore();
+    globalThis.canvas = previousCanvas;
+  }
+});
+
+test("player group member routes manual dismantle through the active GM typed command", async () => {
+  const source = createItem({ id: "dismantle-source", name: "Iron sword", type: "weapon", quantity: 1 });
+  const player = { id: "player", isGM: false, active: true };
+  const gm = { id: "gm", isGM: true, active: true };
+  const hero = createActor({ id: "hero", owners: [player.id] });
+  const group = createActor({
+    id: "group",
+    type: "group",
+    isOwner: false,
+    managed: true,
+    items: [source],
+    members: [{ actor: hero }]
+  });
+  const calls = [];
+  const fixture = installFixture({
+    group,
+    actors: [group, hero],
+    user: player,
+    activeGM: gm,
+    moduleApi: {
+      socketCommandBus: {
+        async request(command, payload) {
+          calls.push({ command, payload: clone(payload) });
+          return { requested: true };
+        }
+      }
+    }
+  });
+
+  try {
+    const result = await fixture.service.breakItemToMaterial(source.id, 1, {
+      mutationId: "dismantle-player"
+    });
+
+    assert.deepEqual(result, { requested: true });
+    assert.deepEqual(calls, [{
+      command: "inventory.dismantle",
+      payload: {
+        inventoryActorId: group.id,
+        itemId: source.id,
+        mutationId: "dismantle-player",
+        quantity: 1
+      }
+    }]);
+    assert.equal(group.items.contents.length, 1);
   }
   finally {
     fixture.restore();

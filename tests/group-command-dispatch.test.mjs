@@ -1266,6 +1266,100 @@ test("typed inventory mutations authorize group members and dispatch strict payl
   }
 });
 
+test("typed inventory dismantle authorizes the exact group member and rejects unsafe payloads", async () => {
+  const fixture = installFixture({ includeGroupB: true });
+  try {
+    const moduleApi = new RebreyaMainModule();
+    const calls = [];
+    moduleApi.inventoryService.executeDismantleMutation = async (payload) => {
+      calls.push(clone(payload));
+      return { action: "dismantle" };
+    };
+    const payload = {
+      inventoryActorId: fixture.groupA.id,
+      itemId: "stock-item",
+      mutationId: "inventory-dismantle-1",
+      quantity: 1
+    };
+    const authorized = commandRequest(
+      "inventory.dismantle",
+      fixture.users.playerA.id,
+      payload,
+      "inventory-dismantle-authorized"
+    );
+    const outsider = commandRequest(
+      "inventory.dismantle",
+      fixture.users.playerB.id,
+      payload,
+      "inventory-dismantle-outsider"
+    );
+    const invalid = commandRequest(
+      "inventory.dismantle",
+      fixture.users.playerA.id,
+      { ...payload, extra: true },
+      "inventory-dismantle-invalid"
+    );
+    const fractional = commandRequest(
+      "inventory.dismantle",
+      fixture.users.playerA.id,
+      { ...payload, quantity: 0.5 },
+      "inventory-dismantle-fractional"
+    );
+
+    await moduleApi.handleSocketMessage(authorized);
+    await moduleApi.handleSocketMessage(outsider);
+    await moduleApi.handleSocketMessage(invalid);
+    await moduleApi.handleSocketMessage(fractional);
+    await flushCommands();
+
+    assert.deepEqual(calls, [payload]);
+    assert.equal(resultFor(fixture, authorized.requestId)?.ok, true);
+    assert.equal(resultFor(fixture, outsider.requestId)?.error?.code, "unauthorized");
+    assert.equal(resultFor(fixture, invalid.requestId)?.error?.code, "invalid-payload");
+    assert.equal(resultFor(fixture, fractional.requestId)?.error?.code, "invalid-payload");
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("typed inventory dismantle preserves explicit ownership of the exact group Actor", async () => {
+  const fixture = installFixture({ includeGroupB: true });
+  try {
+    fixture.groupA.ownership = { [fixture.users.playerB.id]: 3 };
+    fixture.groupA.testUserPermission = (user, permission) => (
+      permission === "OWNER" && user?.id === fixture.users.playerB.id
+    );
+    const moduleApi = new RebreyaMainModule();
+    const calls = [];
+    moduleApi.inventoryService.executeDismantleMutation = async (payload) => {
+      calls.push(clone(payload));
+      return { action: "dismantle" };
+    };
+    const payload = {
+      inventoryActorId: fixture.groupA.id,
+      itemId: "stock-item",
+      mutationId: "inventory-dismantle-manager",
+      quantity: 1
+    };
+    const request = commandRequest(
+      "inventory.dismantle",
+      fixture.users.playerB.id,
+      payload,
+      "inventory-dismantle-manager"
+    );
+
+    await moduleApi.handleSocketMessage(request);
+    await flushCommands();
+
+    assert.deepEqual(calls, [payload]);
+    assert.equal(resultFor(fixture, request.requestId)?.ok, true);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
 test("typed inventory import lets group members copy compendium items into the party inventory", async () => {
   const fixture = installFixture();
   const previousFromUuid = globalThis.fromUuid;
@@ -1333,6 +1427,52 @@ test("typed inventory import lets group members copy compendium items into the p
       folderId: "folder-a",
       ingressPlan
     }]);
+    assert.equal(resultFor(fixture, request.requestId)?.ok, true);
+  }
+  finally {
+    globalThis.fromUuid = previousFromUuid;
+    fixture.restore();
+  }
+});
+
+test("typed inventory import recognizes an owned synthetic token actor through its exact group member", async () => {
+  const fixture = installFixture();
+  const previousFromUuid = globalThis.fromUuid;
+  try {
+    const moduleApi = new RebreyaMainModule();
+    const calls = [];
+    moduleApi.inventoryService.executeImportMutation = async (payload) => {
+      calls.push(clone(payload));
+      return { action: "import" };
+    };
+    const syntheticActor = {
+      id: "synthetic-character-a",
+      type: "character",
+      isToken: true,
+      token: { actorId: fixture.memberA.id },
+      ownership: { [fixture.users.playerA.id]: 3 }
+    };
+    globalThis.fromUuid = async (uuid) => uuid === "Scene.scene-a.Token.token-a.Item.source"
+      ? { parent: syntheticActor }
+      : null;
+    const payload = {
+      inventoryActorId: fixture.groupA.id,
+      itemUuid: "Scene.scene-a.Token.token-a.Item.source",
+      mutationId: "inventory-import-synthetic-1",
+      folderId: null,
+      ingressPlan: buildLootgenIngressPlan(fixture.groupA.id, ["item"])
+    };
+    const request = commandRequest(
+      "inventory.import",
+      fixture.users.playerA.id,
+      payload,
+      "inventory-import-synthetic"
+    );
+
+    await moduleApi.handleSocketMessage(request);
+    await flushCommands();
+
+    assert.deepEqual(calls, [payload]);
     assert.equal(resultFor(fixture, request.requestId)?.ok, true);
   }
   finally {
