@@ -24,21 +24,16 @@ test("Rebreya quest log adapter opens the dedicated module through its public AP
   assert.deepEqual(calls, [{ tabId: "active" }]);
 });
 
-test("Rebreya quest log adapter falls back to the lifecycle hook when an active client has no API", async () => {
+test("Rebreya quest log adapter never routes through a legacy hook when an active client has no API", async () => {
   const calls = [];
-  const result = await openRebreyaQuestLog({
-    game: { modules: new Map([["rebreya-quest-log", { active: true }]]) },
-    hooks: {
-      call(hook, options) {
-        calls.push([hook, options]);
-        return "hook-opened";
-      }
-    },
-    options: { tabId: "active" }
-  });
-
-  assert.equal(result, "hook-opened");
-  assert.deepEqual(calls, [["ForienQuestLog.Open.QuestLog", { tabId: "active" }]]);
+  await assert.rejects(
+    openRebreyaQuestLog({
+      game: { modules: new Map([["rebreya-quest-log", { active: true }]]) },
+      hooks: { call(...args) { calls.push(args); } }
+    }),
+    /rebreya-quest-log/u
+  );
+  assert.deepEqual(calls, []);
 });
 
 test("Rebreya quest log adapter fails clearly when the dedicated module API is unavailable", async () => {
