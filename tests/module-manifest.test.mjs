@@ -72,7 +72,7 @@ test("module manifest loads the stable canonical entrypoint", async () => {
     entrypointSource,
     [
       "// @rebreya-role versioned-entrypoint-cache-forwarder",
-      'import "./main.js?v=1.4.164-storage-key-feedback";',
+      'import "./main.js?v=1.4.164-storage-config-no-open";',
       ""
     ].join("\n")
   );

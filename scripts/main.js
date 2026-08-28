@@ -4534,11 +4534,15 @@ export class RebreyaMainModule {
     if (configure) {
       if (globalThis.game?.user?.isGM !== true) throw new Error("Настраивать хранилища может только мастер.");
       const token = await this.#resolveStorageToken(safeTokenUuid, { allowCorpse: true });
-      await this.storageService.open(token, {
-        senderId: cleanSocketId(globalThis.game?.user?.id),
-        path: safePath,
-        administrative: true
-      });
+      if (!isStorageActor(token.actor)
+        && isDeadNpcStorageTarget(token)
+        && !isMaterializedCorpseStorageState(readStorageState(token))) {
+        await this.storageService.open(token, {
+          senderId: cleanSocketId(globalThis.game?.user?.id),
+          path: safePath,
+          administrative: true
+        });
+      }
     }
     else {
       await this.openStorage(safeTokenUuid, {
