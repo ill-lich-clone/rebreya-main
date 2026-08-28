@@ -47,7 +47,9 @@ export class PanelToolRegistry {
 
   register(moduleId, definition) {
     const ownerId = requireString(moduleId, "Module id");
-    if (this.#moduleProvider(ownerId)?.active !== true) {
+    const ownerModule = this.#moduleProvider(ownerId);
+    const ownerRuntimeLoaded = ownerModule?.api && typeof ownerModule.api === "object";
+    if (ownerModule?.active !== true && !ownerRuntimeLoaded) {
       throw new Error(`Panel tool owner '${ownerId}' is not active`);
     }
 

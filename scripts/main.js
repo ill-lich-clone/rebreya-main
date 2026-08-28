@@ -288,7 +288,7 @@ import {
   refreshPlayerInventoryQuickButton,
   registerSceneControlsHook,
   unregisterExternalPanelTool
-} from "./hooks.js?v=1.4.170-panel-api-bootstrap";
+} from "./hooks.js?v=1.4.172-panel-owner-runtime";
 import {
   extendDnd5eItemTypes,
   registerDnd5eSheetExtensions,

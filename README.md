@@ -7,11 +7,11 @@
 ## Совместимость и точка входа
 
 - Module ID: `rebreya-main`.
-- Версия: `1.4.171`.
+- Версия: `1.4.172`.
 - Foundry VTT: minimum/verified `13`.
 - Основная система: `dnd5e`.
 - Обязательная зависимость: `statuscounter >= 3.0.4`.
-- Manifest версии `1.4.171` загружает только тонкий `scripts/main-1.4.171.js`, который содержит единственный `import "./main.js";`; Scene Controls hook использует release key `1.4.170-panel-api-bootstrap`, а storage trigger/command/token-hook модули сохраняют `1.4.164-storage-key-feedback`.
+- Manifest версии `1.4.172` загружает только тонкий `scripts/main-1.4.172.js`, который содержит единственный `import "./main.js";`; Scene Controls hook использует release key `1.4.172-panel-owner-runtime`, а storage trigger/command/token-hook модули сохраняют `1.4.164-storage-key-feedback`.
 - `scripts/main.js` — единственный composition root. Недавние опубликованные `scripts/main-1.4.*.js` оставлены только как совместимые forwarder-файлы для уже открытых вкладок игроков и запущенных экземпляров Foundry.
 - Узкий API регистрации panel tools публикуется в `game.modules.get("rebreya-main")?.api` уже на `init`, до первой сборки Scene Controls. Полный runtime API на `ready` публикуется как `game.rebreyaMain` и заменяет module API.
 

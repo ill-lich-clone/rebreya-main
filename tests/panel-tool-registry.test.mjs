@@ -15,10 +15,14 @@ function definition(overrides = {}) {
   };
 }
 
-function createRegistry({ activeModules = ["rebreya-gen"] } = {}) {
+function createRegistry({ activeModules = ["rebreya-gen"], loadedModules = [] } = {}) {
   const refreshes = [];
   const registry = new PanelToolRegistry({
-    moduleProvider: (id) => ({ id, active: activeModules.includes(id) }),
+    moduleProvider: (id) => ({
+      id,
+      active: activeModules.includes(id),
+      ...(loadedModules.includes(id) ? { api: {} } : {})
+    }),
     refresh: () => refreshes.push("refresh")
   });
   return { refreshes, registry };
@@ -37,6 +41,18 @@ test("panel registry registers one active owner and returns detached sorted tool
   assert.deepEqual(registry.list().map((tool) => tool.name), ["rebreya-gen-purchase", "later"]);
   assert.equal(registry.list()[0].title, "Закупка");
   assert.equal(refreshes.length, 2);
+});
+
+test("panel registry accepts an owner whose runtime API proves its module code is loaded", () => {
+  const { refreshes, registry } = createRegistry({
+    activeModules: [],
+    loadedModules: ["rebreya-gen"]
+  });
+
+  const result = registry.register("rebreya-gen", definition());
+
+  assert.equal(result.registered, true);
+  assert.equal(refreshes.length, 1);
 });
 
 test("panel registry is idempotent only for the identical owner definition", () => {
