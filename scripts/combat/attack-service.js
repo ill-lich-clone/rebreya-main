@@ -6,6 +6,7 @@ import {
   isCompatibleAmmunition
 } from "../data/ammunition-compatibility.js?v=1.4.147-native-ammunition";
 import { getCharacterSizeRule } from "./size-automation-service.js?v=1.4.109-character-size";
+import { getNaturalReachFeet } from "./natural-reach.js";
 import {
   buildHeldItemHandUpdate,
   canUseHeldItemForHandRequirement,
@@ -1840,11 +1841,11 @@ export class CombatAttackService {
 
   #resolveReachBonusFeet(item, options = {}) {
     const actor = options.actor ?? item.actor ?? item.parent ?? null;
-    const actorBonus = Math.max(0, toNumber(actor?.getFlag?.(MODULE_ID, "racialReachBonusFeet"), 0));
-    const runeKnightBonus = this.#resolveRuneKnightReachBonusFeet(actor);
+    const sizeBase = getCharacterSizeRule(actor?.system?.traits?.size).baseReachFeet;
+    const naturalBonus = Math.max(0, getNaturalReachFeet(actor) - sizeBase);
     const weaponBonus = this.#resolveWeaponReachBonusFeet(item, options);
 
-    return weaponBonus + actorBonus + runeKnightBonus;
+    return weaponBonus + naturalBonus;
   }
 
   #resolveFinalMeleeReachFeet(item, options = {}) {
@@ -1853,27 +1854,6 @@ export class CombatAttackService {
     const independentBonuses = this.#resolveReachBonusFeet(item, { ...options, actor });
 
     return Math.max(0, sizeBase + independentBonuses);
-  }
-
-  #resolveRuneKnightReachBonusFeet(actor) {
-    let maximum = 0;
-    for (const effect of collectionValues(actor?.effects)) {
-      if (effect?.disabled === true || effect?.isSuppressed === true) continue;
-      const automation = cleanText(foundry.utils.getProperty(
-        effect,
-        `flags.${MODULE_ID}.runeKnight.automation`
-      ));
-      const appliedSize = cleanText(foundry.utils.getProperty(
-        effect,
-        `flags.${MODULE_ID}.runeKnight.form.appliedActorSize`
-      )).toLowerCase();
-      if (automation !== "giant-might-form" || appliedSize !== "huge") continue;
-      maximum = Math.max(maximum, Math.max(0, toNumber(foundry.utils.getProperty(
-        effect,
-        `flags.${MODULE_ID}.runeKnight.reachBonus`
-      ), 0)));
-    }
-    return maximum;
   }
 
   #getLichAutomationState(item, options = {}) {

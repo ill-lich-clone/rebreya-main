@@ -4,6 +4,7 @@ export const DEFAULT_HAND_CAPACITY = 2;
 export const RACE_HANDS_FLAG = "hands";
 export const HAND_REQUIREMENT_FLAG = "handRequirement";
 export const HELD_ITEM_HANDS_FLAG = "heldHands";
+export const HAND_RESERVATIONS_FLAG = "handReservations";
 export const VERSATILE_BASE_DAMAGE_ORIGINAL_FLAG = "versatileBaseDamageOriginal";
 export const HAND_SLOTS = Object.freeze(["left", "right"]);
 export const HAND_SLOT_LABELS = Object.freeze({
@@ -99,11 +100,56 @@ function positiveInteger(value, fallback = 0) {
 }
 
 function readHandCapacity(value) {
+  if (value === undefined || value === null || value === "") {
+    return null;
+  }
   if (value && typeof value === "object" && !Array.isArray(value)) {
-    return positiveInteger(value.max ?? value.value ?? value.count ?? value.capacity, 0);
+    const declared = value.max ?? value.value ?? value.count ?? value.capacity;
+    return declared === undefined ? null : positiveInteger(declared, 0);
   }
 
   return positiveInteger(value, 0);
+}
+
+export function normalizeHandReservations(value) {
+  if (!Array.isArray(value)) return [];
+  const result = [];
+  const linkIds = new Set();
+  const handSlots = new Set();
+  for (const row of value) {
+    if (!row || typeof row !== "object" || Array.isArray(row)) continue;
+    const reservation = {
+      linkId: String(row.linkId ?? "").trim(),
+      kind: String(row.kind ?? "").trim(),
+      handSlot: normalizeHandSlot(row.handSlot),
+      sourceTokenUuid: String(row.sourceTokenUuid ?? "").trim(),
+      targetTokenUuid: String(row.targetTokenUuid ?? "").trim()
+    };
+    if (
+      !reservation.linkId
+      || !reservation.kind
+      || !reservation.handSlot
+      || !reservation.sourceTokenUuid
+      || !reservation.targetTokenUuid
+      || linkIds.has(reservation.linkId)
+      || handSlots.has(reservation.handSlot)
+    ) continue;
+    linkIds.add(reservation.linkId);
+    handSlots.add(reservation.handSlot);
+    result.push(reservation);
+  }
+  return result;
+}
+
+export function getActorHandReservations(actor) {
+  return normalizeHandReservations(getDocumentFlag(actor, HAND_RESERVATIONS_FLAG));
+}
+
+export function buildActorHandReservationsUpdate(reservations) {
+  const normalized = normalizeHandReservations(reservations);
+  return normalized.length
+    ? { [`flags.${MODULE_ID}.${HAND_RESERVATIONS_FLAG}`]: normalized }
+    : { [`flags.${MODULE_ID}.-=${HAND_RESERVATIONS_FLAG}`]: null };
 }
 
 function normalizeHandCounts(value) {
@@ -645,18 +691,20 @@ export function getHeldItemDamageFormulaPresentation(item, formula) {
 
 export function getActorHandCapacity(actor) {
   const actorCapacity = readHandCapacity(getDocumentFlag(actor, RACE_HANDS_FLAG));
-  let raceCapacity = 0;
-  if (actorCapacity <= 0) {
+  let raceCapacity = null;
+  if (actorCapacity === null) {
     for (const item of collectionValues(actor?.items)) {
       if (item?.type !== "race") {
         continue;
       }
-      raceCapacity = Math.max(raceCapacity, readHandCapacity(getDocumentFlag(item, RACE_HANDS_FLAG)));
+      const declared = readHandCapacity(getDocumentFlag(item, RACE_HANDS_FLAG));
+      if (declared === null) continue;
+      raceCapacity = Math.max(raceCapacity ?? 0, declared);
     }
   }
-  const baseCapacity = actorCapacity > 0
+  const baseCapacity = actorCapacity !== null
     ? actorCapacity
-    : raceCapacity > 0 ? raceCapacity : DEFAULT_HAND_CAPACITY;
+    : raceCapacity !== null ? raceCapacity : DEFAULT_HAND_CAPACITY;
   const aggregate = collectionValues(actor?.effects).find((effect) => (
     getDocumentFlag(effect, "implantAggregate") === true
   ));
@@ -693,6 +741,16 @@ export function getOccupiedHandSlots(actor, { exceptItem = null } = {}) {
         occupied.set(hand, item);
       }
     }
+  }
+
+  for (const reservation of getActorHandReservations(actor)) {
+    if (!validSlots.has(reservation.handSlot) || occupied.has(reservation.handSlot)) continue;
+    occupied.set(reservation.handSlot, {
+      id: reservation.linkId,
+      name: "Захват",
+      isHandReservation: true,
+      reservation
+    });
   }
 
   return occupied;
@@ -845,7 +903,7 @@ export function buildHeldItemEquipMenuActions(actor, item) {
       return {
       id: slot,
       ...presentation,
-      disabled: secondaryRestricted,
+      disabled: secondaryRestricted || occupied.get(slot)?.isHandReservation === true,
       carryOnly: singleHandCarryOnly,
       occupied: occupied.has(slot),
       replacements: itemReplacementDescriptors(occupied, [slot]),

@@ -153,6 +153,50 @@ test("installed extra limbs add secondary hand slots that can use only light wea
   );
 });
 
+test("explicit zero hands stays zero while missing hand data keeps the default", async () => {
+  const {
+    getActorHandCapacity,
+    getActorHandSlots
+  } = await import(`../scripts/integrations/held-items.js?zero-hands=${Date.now()}`);
+  const actorWithNoHands = makeActor([]);
+  actorWithNoHands.flags = { "rebreya-main": { hands: 0 } };
+  actorWithNoHands.getFlag = function getFlag(scope, key) {
+    return getPath(this.flags?.[scope], key);
+  };
+
+  assert.equal(getActorHandCapacity(actorWithNoHands), 0);
+  assert.deepEqual(getActorHandSlots(actorWithNoHands), []);
+  assert.equal(getActorHandCapacity(makeActor([])), 2);
+});
+
+test("grapple hand reservations remove only their exact slots from free hands", async () => {
+  const {
+    buildActorHandReservationsUpdate,
+    getActorHandReservations,
+    getFreeHandSlots,
+    HAND_RESERVATIONS_FLAG
+  } = await import(`../scripts/integrations/held-items.js?hand-reservations=${Date.now()}`);
+  const reservation = {
+    linkId: "link-1",
+    kind: "grapple",
+    handSlot: "left",
+    sourceTokenUuid: "Scene.scene.Token.source",
+    targetTokenUuid: "Scene.scene.Token.target"
+  };
+  const actor = makeActor([]);
+  actor.flags = { "rebreya-main": { handReservations: [reservation] } };
+  actor.getFlag = function getFlag(scope, key) {
+    return getPath(this.flags?.[scope], key);
+  };
+
+  assert.equal(HAND_RESERVATIONS_FLAG, "handReservations");
+  assert.deepEqual(getActorHandReservations(actor), [reservation]);
+  assert.deepEqual(getFreeHandSlots(actor), ["right"]);
+  assert.deepEqual(buildActorHandReservationsUpdate([reservation]), {
+    "flags.rebreya-main.handReservations": [reservation]
+  });
+});
+
 test("hand update patches equip items into a specific hand and can clear hand state", async () => {
   const {
     buildHeldItemHandUpdate,
