@@ -1,6 +1,7 @@
 ﻿import { MODULE_ID, SETTINGS_KEYS } from "./constants.js";
 
 import { isNativeStorageObject } from "./data/storage-object-kind.js";
+import { PanelToolRegistry } from "./ui/panel-tool-registry.js";
 
 let bg3HotbarSuppressionHookRegistered = false;
 let bg3HotbarDeathSavesCompatRegistered = false;
@@ -22,6 +23,10 @@ const PLAYER_INVENTORY_UTILITIES = Object.freeze([
   { key: "quest-log", label: "Квест лог", icon: "fa-book-open", method: "openQuestLogApp", direction: -1 },
   { key: "economy", label: "Экономика", icon: "fa-coins", method: "openEconomyApp", direction: 1 }
 ]);
+const externalPanelToolRegistry = new PanelToolRegistry({
+  moduleProvider: (moduleId) => globalThis.game?.modules?.get?.(moduleId) ?? null,
+  refresh: () => rerenderSceneControls()
+});
 
 function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -525,6 +530,14 @@ function rerenderSceneControls() {
   }
 }
 
+export function registerExternalPanelTool(moduleId, definition) {
+  return externalPanelToolRegistry.register(moduleId, definition);
+}
+
+export function unregisterExternalPanelTool(moduleId, toolName) {
+  return externalPanelToolRegistry.unregister(moduleId, toolName);
+}
+
 function createSafeAction(callback, errorLabel) {
   return async (_event, active = true) => {
     if (active === false) {
@@ -589,7 +602,7 @@ function buildToolsRecord() {
   const lootgenToolName = `${MODULE_ID}-lootgen`;
   const showEconomyButton = isEconomyButtonVisible();
 
-  return {
+  const tools = {
     [PANEL_TOOL_NAME]: {
       name: PANEL_TOOL_NAME,
       order: 0,
@@ -670,6 +683,31 @@ function buildToolsRecord() {
       )
     }
   };
+
+  for (const externalTool of externalPanelToolRegistry.list()) {
+    let visible = false;
+    try {
+      visible = externalTool.visible() === true;
+    }
+    catch (error) {
+      console.error(`${MODULE_ID} | ${externalTool.name} visibility check failed.`, error);
+    }
+
+    tools[externalTool.name] = {
+      name: externalTool.name,
+      order: externalTool.order,
+      title: externalTool.title,
+      icon: externalTool.icon,
+      button: true,
+      visible,
+      onChange: createSafeAction(
+        externalTool.onChange,
+        `${externalTool.name} control click failed.`
+      )
+    };
+  }
+
+  return tools;
 }
 
 function buildToolsArray() {

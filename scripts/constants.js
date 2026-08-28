@@ -175,6 +175,7 @@ export const SETTINGS_KEYS = {
   CRAFT_STATE: "craftState",
   CRAFT_MUTATION_JOURNAL: "craftMutationJournal",
   INVENTORY_MUTATION_JOURNAL: "inventoryMutationJournal",
+  PURCHASE_BASKET_JOURNAL: "purchaseBasketJournal",
   DURABILITY_MUTATION_JOURNAL: "durabilityMutationJournal",
   CALENDAR_STATE: "calendarState",
   CONNECTION_STATES: "connectionStates",

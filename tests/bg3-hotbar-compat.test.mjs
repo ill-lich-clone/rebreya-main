@@ -9,10 +9,12 @@ const {
   getBg3DeathSaveData,
   patchBg3HotbarDeathSavesContainer,
   patchBg3HotbarStorageCommonActions,
+  registerExternalPanelTool,
   registerSceneControlsHook,
   resolvePlayerInventoryButtonAnchor,
   shouldSkipBg3HotbarCommonActionsForActor,
-  shouldSuppressBg3HotbarAutoAdd
+  shouldSuppressBg3HotbarAutoAdd,
+  unregisterExternalPanelTool
 } = await import("../scripts/hooks.js");
 
 function withSceneControlsHandler(callback) {
@@ -31,6 +33,7 @@ function withSceneControlsHandler(callback) {
   };
   globalThis.game = {
     i18n: { localize: (key) => key },
+    modules: new Map([["rebreya-gen", { id: "rebreya-gen", active: true }]]),
     settings: { get: () => true },
     user: { isGM: true }
   };
@@ -67,6 +70,7 @@ function withSceneControlsHandlerForUser(user, callback) {
   };
   globalThis.game = {
     i18n: { localize: (key) => key },
+    modules: new Map([["rebreya-gen", { id: "rebreya-gen", active: true }]]),
     settings: { get: () => true },
     user
   };
@@ -579,6 +583,44 @@ test("scene controls create a separate Rebreya group for array controls", () => 
     assert.equal(cosmologyTool.title, "REBREYA_MAIN.Controls.OpenCosmology");
     assert.equal(cosmologyTool.icon, "fa-solid fa-solar-system");
     assert.equal(cosmologyTool.visible, true);
+  });
+});
+
+test("scene controls merge a registered external tool in record and array shapes", () => {
+  withSceneControlsHandler((handler) => {
+    let activations = 0;
+    const visible = () => true;
+    const onChange = () => { activations += 1; };
+    registerExternalPanelTool("rebreya-gen", {
+      name: "rebreya-gen-purchase",
+      title: "Закупка",
+      icon: "fa-solid fa-cart-shopping",
+      order: 45,
+      visible,
+      onChange
+    });
+
+    try {
+      const recordControls = { tokens: { name: "tokens", order: 20, tools: {} } };
+      handler(recordControls);
+      const recordTool = recordControls["rebreya-main-rebreya"].tools["rebreya-gen-purchase"];
+      assert.equal(recordTool.title, "Закупка");
+      assert.equal(recordTool.icon, "fa-solid fa-cart-shopping");
+      assert.equal(recordTool.visible, true);
+      assert.equal(recordTool.button, true);
+
+      const arrayControls = [{ name: "tokens", order: 20, tools: [] }];
+      handler(arrayControls);
+      const arrayTool = arrayControls
+        .find((control) => control.name === "rebreya-main-rebreya")
+        .tools.find((tool) => tool.name === "rebreya-gen-purchase");
+      assert.equal(arrayTool.title, "Закупка");
+      arrayTool.onChange(new Event("change"), true);
+      assert.equal(activations, 1);
+    }
+    finally {
+      unregisterExternalPanelTool("rebreya-gen", "rebreya-gen-purchase");
+    }
   });
 });
 

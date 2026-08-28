@@ -207,6 +207,13 @@ export function registerSettings() {
     default: {}
   });
 
+  game.settings.register(MODULE_ID, SETTINGS_KEYS.PURCHASE_BASKET_JOURNAL, {
+    scope: "world",
+    config: false,
+    type: Object,
+    default: { version: 1, records: [] }
+  });
+
   game.settings.register(MODULE_ID, SETTINGS_KEYS.CALENDAR_STATE, {
     scope: "world",
     config: false,

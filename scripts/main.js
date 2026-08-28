@@ -27,6 +27,7 @@ import { FeatChoiceAutomationService, registerFeatChoiceAutomationHooks } from "
 import { EconomyRepository } from "./data/repository.js?v=1.4.128-lootgen-multiplicity";
 import { TraderService, normalizeTraderState } from "./data/trader-service.js?v=1.4.109-lazy-trader-restock";
 import { TradeTransactionService } from "./features/trading/trade-transaction-service.js";
+import { PurchaseBasketService } from "./features/trading/purchase-basket-service.js";
 import {
   createTradeTransactionId,
   isValidTradeTransactionId
@@ -126,6 +127,10 @@ import {
   isValidTraderMetadataUpdatePayload
 } from "./application/trader-public-mutation-commands.js";
 import {
+  PURCHASE_BASKET_COMMIT_COMMAND,
+  isValidPurchaseBasketPayload
+} from "./application/purchase-basket-command.js";
+import {
   GROUP_INVENTORY_MERGE_LEGACY_COMMAND,
   GROUP_REGISTRY_ACTIVATE_COMMAND,
   GROUP_REGISTRY_REGISTER_COMMAND,
@@ -164,6 +169,8 @@ import {
 import { GroupStateRepository } from "./infrastructure/foundry/group-state-repository.js";
 import { TraderStateRepository } from "./infrastructure/foundry/trader-state-repository.js";
 import { WorldSettingMutationRepository } from "./infrastructure/foundry/world-setting-mutation-repository.js";
+import { PurchaseBasketJournalRepository } from "./infrastructure/foundry/purchase-basket-journal-repository.js";
+import { PurchaseBasketFoundryOperations } from "./infrastructure/foundry/purchase-basket-operations.js";
 import { getActiveGm, isActiveGmClient } from "./infrastructure/foundry/active-gm.js";
 import { SocketCommandBus } from "./infrastructure/foundry/socket-command-bus.js";
 import {
@@ -276,9 +283,11 @@ import { CraftsmanGadgetZoneService } from "./combat/craftsman-gadget-zone-servi
 import { CraftsmanVehicleService } from "./combat/craftsman-vehicle-service.js";
 import { CraftsmanConstructorService } from "./combat/craftsman-constructor-service.js";
 import {
+  registerExternalPanelTool,
   refreshPlayerInventoryQuickButton,
-  registerSceneControlsHook
-} from "./hooks.js?v=1.4.149-round-player-utilities";
+  registerSceneControlsHook,
+  unregisterExternalPanelTool
+} from "./hooks.js?v=1.4.168-purchase-basket";
 import {
   extendDnd5eItemTypes,
   registerDnd5eSheetExtensions,
@@ -1255,6 +1264,17 @@ export class RebreyaMainModule {
     this.worldSettingMutationRepository = new WorldSettingMutationRepository({
       mutationGateway: this.privilegedMutationGateway,
       gameProvider: () => globalThis.game
+    });
+    this.purchaseBasketJournalRepository = new PurchaseBasketJournalRepository({
+      worldSettingMutationRepository: this.worldSettingMutationRepository
+    });
+    this.purchaseBasketOperations = new PurchaseBasketFoundryOperations({
+      gameProvider: () => globalThis.game,
+      fromUuid: (uuid) => globalThis.fromUuid?.(uuid) ?? globalThis.foundry?.utils?.fromUuid?.(uuid)
+    });
+    this.purchaseBasketService = new PurchaseBasketService({
+      journal: this.purchaseBasketJournalRepository,
+      operations: this.purchaseBasketOperations
     });
     this.uiRefreshCoordinator = new UiRefreshCoordinator();
     this.inventoryRefreshActorIds = new Set();
@@ -2277,6 +2297,13 @@ export class RebreyaMainModule {
         ?? globalThis.game?.actors?.contents?.find?.((actor) => String(actor?.id) === payload.actorId),
       sender
     );
+    this.socketCommandBus.register(PURCHASE_BASKET_COMMIT_COMMAND, {
+      validate: isValidPurchaseBasketPayload,
+      authorize: authorizeTradeActor,
+      execute: (payload, { sender }) => this.purchaseBasketService.commit(payload, {
+        requestedByUserId: sender.id
+      })
+    });
     this.socketCommandBus.register(TRADER_PURCHASE_COMMAND, {
       validate: isValidTraderPurchasePayload,
       authorize: authorizeTradeActor,
@@ -3993,6 +4020,28 @@ export class RebreyaMainModule {
 
   getMaterialByGoodId(goodId) {
     return this.repository.getMaterialByGoodId(goodId);
+  }
+
+  registerPanelTool(moduleId, definition) {
+    return registerExternalPanelTool(moduleId, definition);
+  }
+
+  unregisterPanelTool(moduleId, toolName) {
+    return unregisterExternalPanelTool(moduleId, toolName);
+  }
+
+  async purchaseItemBasket(payload) {
+    if (!isValidPurchaseBasketPayload(payload)) {
+      throw new Error("Invalid purchase basket request");
+    }
+    if (isActiveGmClient(globalThis.game)) {
+      return this.purchaseBasketService.commit(payload, {
+        requestedByUserId: String(globalThis.game?.user?.id ?? "")
+      });
+    }
+    return this.socketCommandBus.request(PURCHASE_BASKET_COMMIT_COMMAND, payload, {
+      requestId: payload.transactionId
+    });
   }
 
   isTraderIntegrationAvailable() {

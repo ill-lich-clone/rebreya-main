@@ -7,11 +7,11 @@
 ## Совместимость и точка входа
 
 - Module ID: `rebreya-main`.
-- Версия: `1.4.167`.
+- Версия: `1.4.168`.
 - Foundry VTT: minimum/verified `13`.
 - Основная система: `dnd5e`.
 - Обязательная зависимость: `statuscounter >= 3.0.4`.
-- Manifest версии `1.4.167` загружает только тонкий `scripts/main-1.4.167.js`, который содержит единственный `import "./main.js";`; storage trigger/command/token-hook модули сохраняют release key `1.4.164-storage-key-feedback`.
+- Manifest версии `1.4.168` загружает только тонкий `scripts/main-1.4.168.js`, который содержит единственный `import "./main.js";`; Scene Controls hook использует release key `1.4.168-purchase-basket`, а storage trigger/command/token-hook модули сохраняют `1.4.164-storage-key-feedback`.
 - `scripts/main.js` — единственный composition root. Недавние опубликованные `scripts/main-1.4.*.js` оставлены только как совместимые forwarder-файлы для уже открытых вкладок игроков и запущенных экземпляров Foundry.
 - Runtime API публикуется как `game.rebreyaMain` и `game.modules.get("rebreya-main")?.api`.
 
@@ -270,6 +270,15 @@ Versioned entrypoint обязан оставаться минимальным ca
 const api = game.rebreyaMain;
 await api.openInventoryApp({ tab: "inventory" });
 await api.openTrader("city-id", "shop-key", { actorId: "actor-id" });
+api.registerPanelTool("rebreya-gen", {
+  name: "character-purchase",
+  title: "Закупка персонажа",
+  icon: "fas fa-basket-shopping",
+  order: 45,
+  visible: () => true,
+  onChange: () => game.modules.get("rebreya-gen")?.api?.openPurchaseApp()
+});
+await api.purchaseItemBasket({ transactionId, actorId, rows });
 await api.setCombatStatus("actor-id", "frightened", { value: 2 });
 ```
 
@@ -306,6 +315,8 @@ await api.setCombatStatus("actor-id", "frightened", { value: 2 });
 
 ### Trader, loot и item upgrades
 
+- `registerPanelTool(ownerModuleId, definition)`, `unregisterPanelTool(ownerModuleId, name)` — реестр кнопок сторонних активных модулей в канонической панели Scene Controls. Definition имеет exact shape `{ name, title, icon, order, visible, onChange }`; повторная идентичная регистрация идемпотентна, конфликт имён отклоняется, а обработчик исполняется только пока модуль-владелец активен.
+- `purchaseItemBasket({ transactionId, actorId, rows })` — единая recoverable покупка произвольных world Item без расходования источников. Каждая строка имеет exact shape `{ rowId, sourceUuid, quantity, unitPrice: { value, denomination } }`; active GM повторно разрешает Actor/Item, проверяет OWNER, доступные `pp/gp/ep/sp/cp`, создаёт Item одним batch и затем списывает кошелёк. Stable `transactionId` обеспечивает идемпотентный retry; durable journal доводит потерянный ответ до commit или точной компенсации, а неоднозначность переводит запись в `reconciliation-required`.
 - `isTraderIntegrationAvailable`, `getCityTraderSummaries`, `getTraderSnapshot`, `purchaseTraderItem`, `createTraderSalePreview`, `sellTraderItem`, `updateTraderMetadata`.
 - `recordTraderAudit`, `getTradeAuditLog`, `rollbackTraderAuditEntry`.
 - `shareLootgenResult`, `createLootgenChatMessage`, `claimLootgenChatRow`, `claimLootgenChatCoins`, `claimLootgenChatRowToInventory`, `claimLootgenChatAllToInventory`, `restoreLootgenClearFromChat`, `addLootgenRowToInventory`, `addLootgenRowsToInventory`, `addLootgenCoinsToInventory`.
