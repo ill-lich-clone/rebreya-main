@@ -63,19 +63,12 @@ test("module manifest loads the stable canonical entrypoint", async () => {
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const [entrypoint] = manifest.esmodules;
 
-  assert.equal(manifest.version, "1.4.164");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.164.js"]);
+  assert.equal(manifest.version, "1.4.165");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.165.js"]);
   assert.doesNotMatch(entrypoint, /[?#]/u);
 
   const entrypointSource = await readFile(new URL(entrypoint, manifestUrl), "utf8");
-  assert.equal(
-    entrypointSource,
-    [
-      "// @rebreya-role versioned-entrypoint-cache-forwarder",
-      'import "./main.js?v=1.4.164-storage-config-no-open";',
-      ""
-    ].join("\n")
-  );
+  assert.equal(entrypointSource, 'import "./main.js";\n');
 });
 
 test("canonical entrypoint cache-busts the player-list inventory token launcher", async () => {
@@ -301,7 +294,7 @@ test("module keeps recent published entrypoint URLs as canonical compatibility f
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
 
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.164.js"]);
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.165.js"]);
 
   for (const fileName of ["main-1.4.98.js", "main-1.4.99.js", "main-1.4.100.js"]) {
     const forwarderSource = await readFile(new URL(`../scripts/${fileName}`, import.meta.url), "utf8");

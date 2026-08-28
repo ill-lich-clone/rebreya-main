@@ -919,6 +919,131 @@ test("combat.status.set lets a character owner apply environment statuses throug
   }
 });
 
+test("grapple commands authorize the exact live source or target owner", async () => {
+  const fixture = installFixture();
+  const previousFromUuid = globalThis.fromUuid;
+  const previousCanvas = globalThis.canvas;
+  try {
+    const scene = { id: "scene-a" };
+    const sourceActor = { ownership: { [fixture.users.playerA.id]: 3 } };
+    const targetActor = { ownership: { [fixture.users.playerB.id]: 3 } };
+    const link = {
+      linkId: "link-a", kind: "grapple", handSlot: "left",
+      sourceTokenUuid: "Scene.scene-a.Token.source-a",
+      targetTokenUuid: "Scene.scene-a.Token.target-a"
+    };
+    const source = {
+      documentName: "Token", id: "source-a", uuid: link.sourceTokenUuid,
+      parent: scene, actor: sourceActor
+    };
+    const target = {
+      documentName: "Token", id: "target-a", uuid: link.targetTokenUuid,
+      parent: scene, actor: targetActor,
+      flags: { [MODULE_ID]: { grappleLink: link } },
+      getFlag(scope, key) { return this.flags?.[scope]?.[key]; }
+    };
+    globalThis.canvas = { scene };
+    globalThis.fromUuid = async (uuid) => ({ [source.uuid]: source, [target.uuid]: target })[uuid] ?? null;
+    const moduleApi = new RebreyaMainModule();
+    const calls = [];
+    moduleApi.grappleAutomationService = {
+      async toggle(payload) { calls.push(["toggle", clone(payload)]); return { action: "created" }; },
+      async drag(payload) { calls.push(["drag", clone(payload)]); return { moved: true }; },
+      async releaseAndMove(payload) { calls.push(["release", clone(payload)]); return { moved: true }; },
+      async place(payload) { calls.push(["place", clone(payload)]); return { moved: true }; }
+    };
+    const requests = [
+      commandRequest("combat.grapple.toggle", fixture.users.playerA.id, {
+        sourceTokenUuid: source.uuid, targetTokenUuid: target.uuid, operationId: "toggle-ok"
+      }, "toggle-ok"),
+      commandRequest("combat.grapple.toggle", fixture.users.playerB.id, {
+        sourceTokenUuid: source.uuid, targetTokenUuid: target.uuid, operationId: "toggle-denied"
+      }, "toggle-denied"),
+      commandRequest("combat.grapple.drag", fixture.users.playerA.id, {
+        sourceTokenUuid: source.uuid, x: 100, y: 200, operationId: "drag-ok", requesterUserId: fixture.users.playerA.id
+      }, "drag-ok"),
+      commandRequest("combat.grapple.release-and-move", fixture.users.playerB.id, {
+        targetTokenUuid: target.uuid, linkId: link.linkId, x: 300, y: 400,
+        operationId: "release-ok", requesterUserId: fixture.users.playerB.id
+      }, "release-ok"),
+      commandRequest("combat.grapple.release-and-move", fixture.users.playerA.id, {
+        targetTokenUuid: target.uuid, linkId: link.linkId, x: 300, y: 400,
+        operationId: "release-denied", requesterUserId: fixture.users.playerA.id
+      }, "release-denied"),
+      commandRequest("combat.grapple.release-and-move", fixture.users.playerB.id, {
+        targetTokenUuid: target.uuid, linkId: "stale", x: 300, y: 400,
+        operationId: "release-stale", requesterUserId: fixture.users.playerB.id
+      }, "release-stale")
+    ];
+    for (const request of requests) await moduleApi.handleSocketMessage(request);
+    await flushCommands();
+
+    assert.equal(resultFor(fixture, "toggle-ok")?.ok, true);
+    assert.equal(resultFor(fixture, "drag-ok")?.ok, true);
+    assert.equal(resultFor(fixture, "release-ok")?.ok, true);
+    assert.equal(resultFor(fixture, "toggle-denied")?.error?.code, "unauthorized");
+    assert.equal(resultFor(fixture, "release-denied")?.error?.code, "unauthorized");
+    assert.equal(resultFor(fixture, "release-stale")?.error?.code, "unauthorized");
+    assert.deepEqual(calls.map(([name]) => name), ["toggle", "drag", "release"]);
+  }
+  finally {
+    if (previousFromUuid === undefined) delete globalThis.fromUuid;
+    else globalThis.fromUuid = previousFromUuid;
+    if (previousCanvas === undefined) delete globalThis.canvas;
+    else globalThis.canvas = previousCanvas;
+    fixture.restore();
+  }
+});
+
+test("public grapple macros use one controlled source and the exact selected held target", async () => {
+  const fixture = installFixture();
+  const previousCanvas = globalThis.canvas;
+  const previousFromUuid = globalThis.fromUuid;
+  try {
+    const sourceUuid = "Scene.scene-a.Token.source-a";
+    const targetUuid = "Scene.scene-a.Token.target-a";
+    const reservation = {
+      linkId: "link-a", kind: "grapple", handSlot: "left",
+      sourceTokenUuid: sourceUuid, targetTokenUuid: targetUuid
+    };
+    const sourceDocument = {
+      documentName: "Token", id: "source-a", uuid: sourceUuid,
+      actor: {
+        flags: { [MODULE_ID]: { handReservations: [reservation] } },
+        items: { contents: [] }, effects: { contents: [] },
+        getFlag(scope, key) { return this.flags?.[scope]?.[key]; }
+      }
+    };
+    const targetDocument = { documentName: "Token", id: "target-a", uuid: targetUuid };
+    const sourcePlaceable = { document: sourceDocument };
+    const targetPlaceable = { document: targetDocument };
+    fixture.users.gmA.targets = new Set([targetPlaceable]);
+    globalThis.canvas = { tokens: { controlled: [sourcePlaceable] } };
+    globalThis.fromUuid = async (uuid) => uuid === targetUuid ? targetDocument : null;
+    const moduleApi = new RebreyaMainModule();
+    const calls = [];
+    moduleApi.grappleAutomationService = {
+      async toggle(payload) { calls.push(["toggle", clone(payload)]); return { action: "created" }; },
+      async choosePlacement(payload) { calls.push(["preview", clone(payload)]); return { cancelled: false, x: 250, y: 350 }; },
+      async place(payload) { calls.push(["place", clone(payload)]); return { moved: true }; }
+    };
+
+    assert.deepEqual(await moduleApi.toggleGrapple(), { action: "created" });
+    assert.deepEqual(await moduleApi.moveGrappled(), { moved: true });
+    assert.deepEqual(calls.map(([name]) => name), ["toggle", "preview", "place"]);
+    assert.equal(calls[0][1].sourceTokenUuid, sourceUuid);
+    assert.equal(calls[0][1].targetTokenUuid, targetUuid);
+    assert.deepEqual({ x: calls[2][1].x, y: calls[2][1].y }, { x: 250, y: 350 });
+  }
+  finally {
+    if (previousCanvas === undefined) delete globalThis.canvas;
+    else globalThis.canvas = previousCanvas;
+    if (previousFromUuid === undefined) delete globalThis.fromUuid;
+    else globalThis.fromUuid = previousFromUuid;
+    fixture.restore();
+  }
+});
+
 test("performer.activePerformance.apply accepts only the source actor owner", async () => {
   const fixture = installFixture();
   try {

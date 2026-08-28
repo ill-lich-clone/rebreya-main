@@ -166,6 +166,16 @@ import { TraderStateRepository } from "./infrastructure/foundry/trader-state-rep
 import { WorldSettingMutationRepository } from "./infrastructure/foundry/world-setting-mutation-repository.js";
 import { getActiveGm, isActiveGmClient } from "./infrastructure/foundry/active-gm.js";
 import { SocketCommandBus } from "./infrastructure/foundry/socket-command-bus.js";
+import {
+  GRAPPLE_DRAG_COMMAND,
+  GRAPPLE_PLACE_COMMAND,
+  GRAPPLE_RELEASE_AND_MOVE_COMMAND,
+  GRAPPLE_TOGGLE_COMMAND,
+  isValidGrappleDragPayload,
+  isValidGrapplePlacePayload,
+  isValidGrappleReleaseAndMovePayload,
+  isValidGrappleTogglePayload
+} from "./infrastructure/foundry/grapple-command-contract.js";
 import { StorageTriggerPromptBroker } from "./infrastructure/foundry/storage-trigger-prompt-broker.js";
 import { UiRefreshCoordinator } from "./infrastructure/ui/ui-refresh-coordinator.js";
 import { GlobalEventsService } from "./data/global-events-service.js";
@@ -257,6 +267,10 @@ import {
 } from "./combat/performer-automation-service.js?v=1.4.96";
 import { BardicInspirationCompatService } from "./combat/bardic-inspiration-compat-service.js";
 import { RaceAutomationService, SOCKET_EVENT_RACE_AUTOMATION } from "./combat/race-automation-service.js?v=1.4.147-race-damage";
+import { GrappleAutomationService, GRAPPLE_LINK_FLAG } from "./combat/grapple-automation-service.js";
+import { GrappleMacroService } from "./combat/grapple-macro-service.js";
+import { GrapplePlacementPreview } from "./combat/grapple-placement-preview.js";
+import { getActorHandReservations } from "./integrations/held-items.js";
 import { CraftsmanGadgetService } from "./combat/craftsman-gadget-service.js";
 import { CraftsmanGadgetZoneService } from "./combat/craftsman-gadget-zone-service.js";
 import { CraftsmanVehicleService } from "./combat/craftsman-vehicle-service.js";
@@ -1195,6 +1209,20 @@ function actorIsOwnedByUser(actor, user) {
   return Number(ownership[user.id] ?? 0) >= 3 || Number(ownership.default ?? 0) >= 3;
 }
 
+function documentIsOwnedByUser(document, user) {
+  if (!document || !user) return false;
+  if (user.isGM === true) return true;
+  if (typeof document.testUserPermission === "function") {
+    return document.testUserPermission(user, "OWNER");
+  }
+  const actor = document.actor ?? document;
+  if (typeof actor?.testUserPermission === "function") {
+    return actor.testUserPermission(user, "OWNER");
+  }
+  const ownership = actor?.ownership ?? actor?._source?.ownership ?? {};
+  return Number(ownership[user.id] ?? 0) >= 3 || Number(ownership.default ?? 0) >= 3;
+}
+
 function filterVisibleGlobalEvents(events = []) {
   const rows = Array.isArray(events) ? events : [];
   if (game.user?.isGM) {
@@ -1435,6 +1463,22 @@ export class RebreyaMainModule {
       macroProvider: () => globalThis.Macro,
       isActiveGmClient
     });
+    this.grapplePlacementPreview = new GrapplePlacementPreview();
+    this.grappleAutomationService = new GrappleAutomationService({
+      coordinator: this.worldMutationCoordinator,
+      commandBus: this.socketCommandBus,
+      placementPreview: this.grapplePlacementPreview,
+      fromUuid: (uuid) => globalThis.fromUuid?.(uuid),
+      randomId: () => globalThis.foundry?.utils?.randomID?.() ?? createSocketRequestId("grapple-link"),
+      isActiveGmClient,
+      gameProvider: () => globalThis.game
+    });
+    this.grappleMacroService = new GrappleMacroService({
+      gameProvider: () => globalThis.game,
+      folderProvider: () => globalThis.Folder,
+      macroProvider: () => globalThis.Macro,
+      isActiveGmClient
+    });
     this.lootClaimService = new LootClaimService({
       getMessage: ({ messageId, lootId }) => (
         (messageId ? globalThis.game?.messages?.get?.(messageId) : null)
@@ -1658,6 +1702,87 @@ export class RebreyaMainModule {
       service: this.mapObjectTokenService,
       ...options
     });
+  }
+
+  async toggleGrapple() {
+    try {
+      const controlled = globalThis.canvas?.tokens?.controlled ?? [];
+      const targets = Array.from(globalThis.game?.user?.targets ?? []);
+      if (controlled.length !== 1 || targets.length !== 1) {
+        throw Object.assign(new Error("Выберите одного захватчика и одну цель."), { code: "invalid-selection" });
+      }
+      const sourceTokenUuid = cleanSocketId(controlled[0]?.document?.uuid ?? controlled[0]?.uuid);
+      const targetTokenUuid = cleanSocketId(targets[0]?.document?.uuid ?? targets[0]?.uuid);
+      const operationId = createSocketRequestId("grapple-toggle");
+      const payload = { sourceTokenUuid, targetTokenUuid, operationId };
+      return isActiveGmClient(globalThis.game)
+        ? this.grappleAutomationService.toggle(payload)
+        : this.socketCommandBus.request(GRAPPLE_TOGGLE_COMMAND, payload, { requestId: operationId });
+    }
+    catch (error) {
+      this.#notifyGrappleError(error);
+      return null;
+    }
+  }
+
+  async moveGrappled() {
+    try {
+      const controlled = globalThis.canvas?.tokens?.controlled ?? [];
+      if (controlled.length !== 1) {
+        throw Object.assign(new Error("Выберите одного захватчика."), { code: "invalid-selection" });
+      }
+      const sourceToken = controlled[0]?.document ?? controlled[0];
+      const sourceTokenUuid = cleanSocketId(sourceToken?.uuid);
+      const reservations = getActorHandReservations(sourceToken?.actor)
+        .filter((row) => row.kind === "grapple" && row.sourceTokenUuid === sourceTokenUuid);
+      const selectedTargets = Array.from(globalThis.game?.user?.targets ?? [])
+        .map((token) => token?.document ?? token);
+      const selected = selectedTargets.length === 1
+        ? reservations.find((row) => row.targetTokenUuid === cleanSocketId(selectedTargets[0]?.uuid))
+        : null;
+      const reservation = selected
+        ?? (selectedTargets.length === 0 && reservations.length === 1 ? reservations[0] : null);
+      if (!reservation) {
+        throw Object.assign(new Error("Выберите одну удерживаемую цель."), { code: "invalid-selection" });
+      }
+      const targetToken = await globalThis.fromUuid?.(reservation.targetTokenUuid);
+      if (!targetToken) throw Object.assign(new Error("Схваченное существо не найдено."), { code: "stale-token" });
+      const preview = await this.grappleAutomationService.choosePlacement({
+        sourceTokenUuid,
+        targetTokenUuid: reservation.targetTokenUuid
+      });
+      if (preview.cancelled) return { cancelled: true };
+      const operationId = createSocketRequestId("grapple-place");
+      const payload = {
+        sourceTokenUuid,
+        targetTokenUuid: cleanSocketId(targetToken.uuid),
+        x: preview.x,
+        y: preview.y,
+        operationId
+      };
+      return isActiveGmClient(globalThis.game)
+        ? this.grappleAutomationService.place(payload)
+        : this.socketCommandBus.request(GRAPPLE_PLACE_COMMAND, payload, { requestId: operationId });
+    }
+    catch (error) {
+      this.#notifyGrappleError(error);
+      return null;
+    }
+  }
+
+  #notifyGrappleError(error) {
+    const messages = {
+      "no-free-hand": "Захват невозможен: нет свободной руки.",
+      "target-grappled-by-another-source": "Существо уже схвачено другим захватчиком.",
+      "crosshairs-unavailable": "Визуальный маркер CPR недоступен.",
+      "outside-reach": "Эта позиция находится вне природной досягаемости.",
+      "outside-scene": "Существо нельзя поставить за границей сцены.",
+      "wall-collision": "Существо нельзя переместить сквозь стену.",
+      "stale-link": "Связь захвата устарела. Повторите захват.",
+      "stale-token": "Один из токенов захвата больше недоступен."
+    };
+    const fallback = cleanSocketId(error?.message) || "Ошибка автоматики захвата.";
+    globalThis.ui?.notifications?.warn?.(messages[error?.code] ?? fallback);
   }
 
   getSpellAutomationDiagnostics() {
@@ -1925,6 +2050,29 @@ export class RebreyaMainModule {
       authorize: (payload, { sender }) => this.#canSenderSetCombatStatus(sender, payload),
       execute: (payload) => this.#executeCombatStatusSetCommand(payload)
     });
+    this.socketCommandBus.register(GRAPPLE_TOGGLE_COMMAND, {
+      validate: isValidGrappleTogglePayload,
+      authorize: (payload, { sender }) => this.#canSenderUseGrappleSource(sender, payload),
+      execute: (payload) => this.grappleAutomationService.toggle(payload)
+    });
+    this.socketCommandBus.register(GRAPPLE_PLACE_COMMAND, {
+      validate: isValidGrapplePlacePayload,
+      authorize: (payload, { sender }) => this.#canSenderUseGrappleSource(sender, payload),
+      execute: (payload) => this.grappleAutomationService.place(payload)
+    });
+    this.socketCommandBus.register(GRAPPLE_DRAG_COMMAND, {
+      validate: isValidGrappleDragPayload,
+      authorize: (payload, { sender }) => (
+        payload.requesterUserId === cleanSocketId(sender?.id)
+        && this.#canSenderUseGrappleSource(sender, payload)
+      ),
+      execute: (payload) => this.grappleAutomationService.drag(payload)
+    });
+    this.socketCommandBus.register(GRAPPLE_RELEASE_AND_MOVE_COMMAND, {
+      validate: isValidGrappleReleaseAndMovePayload,
+      authorize: (payload, { sender }) => this.#canSenderReleaseGrappledTarget(sender, payload),
+      execute: (payload) => this.grappleAutomationService.releaseAndMove(payload)
+    });
     this.socketCommandBus.register(PERFORMER_APPLY_RESULT_COMMAND, {
       validate: isValidPerformerApplyResultPayload,
       authorize: (payload, { sender }) => traderActorIsOwnedByUser(
@@ -2183,6 +2331,28 @@ export class RebreyaMainModule {
     return actorIsOwnedByUser(sourceActor, sender);
   }
 
+  async #resolveActiveGrappleToken(uuid) {
+    const token = await globalThis.fromUuid?.(cleanSocketId(uuid));
+    if (token?.documentName !== "Token") return null;
+    const activeScene = globalThis.canvas?.scene ?? globalThis.game?.scenes?.active ?? null;
+    if (activeScene && cleanSocketId(token.parent?.id) !== cleanSocketId(activeScene.id)) return null;
+    return token;
+  }
+
+  async #canSenderUseGrappleSource(sender, payload) {
+    const source = await this.#resolveActiveGrappleToken(payload?.sourceTokenUuid);
+    return documentIsOwnedByUser(source, sender);
+  }
+
+  async #canSenderReleaseGrappledTarget(sender, payload) {
+    if (payload?.requesterUserId !== cleanSocketId(sender?.id)) return false;
+    const target = await this.#resolveActiveGrappleToken(payload?.targetTokenUuid);
+    const link = target?.getFlag?.(MODULE_ID, GRAPPLE_LINK_FLAG)
+      ?? target?.flags?.[MODULE_ID]?.[GRAPPLE_LINK_FLAG];
+    return cleanSocketId(link?.linkId) === cleanSocketId(payload?.linkId)
+      && documentIsOwnedByUser(target, sender);
+  }
+
   async #executeCombatStatusSetCommand(payload) {
     const actor = payload.actorUuid
       ? await resolveActorByUuid(payload.actorUuid)
@@ -2325,6 +2495,20 @@ export class RebreyaMainModule {
     }
     catch (error) {
       console.warn(`${MODULE_ID} | Failed to sync managed map object documents.`, error);
+    }
+    try {
+      await this.grappleMacroService.syncManagedDocuments();
+    }
+    catch (error) {
+      console.warn(`${MODULE_ID} | Failed to sync managed grapple macros.`, error);
+    }
+    if (isActiveGmClient(globalThis.game) && globalThis.canvas?.scene) {
+      try {
+        await this.grappleAutomationService.reconcileScene(globalThis.canvas.scene);
+      }
+      catch (error) {
+        console.warn(`${MODULE_ID} | Failed to reconcile grapple links during initialization.`, error);
+      }
     }
     await this.restoreBuiltinStorageActors();
     if (isActiveGmClient(globalThis.game)) {

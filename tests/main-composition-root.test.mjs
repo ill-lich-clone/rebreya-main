@@ -9,6 +9,9 @@ import { PrivilegedMutationGateway } from "../scripts/application/privileged-mut
 import { TransportCompendiumService } from "../scripts/data/transport-compendium.js";
 import { BuiltinStorageActorService } from "../scripts/data/builtin-storage-actor-service.js";
 import { StorageOpenSoundService } from "../scripts/data/storage-open-sound-service.js?v=1.4.145-coin-icons-storage-sound";
+import { GrappleAutomationService } from "../scripts/combat/grapple-automation-service.js";
+import { GrappleMacroService } from "../scripts/combat/grapple-macro-service.js";
+import { GrapplePlacementPreview } from "../scripts/combat/grapple-placement-preview.js";
 import {
   COMMAND_REQUEST_TYPE,
   COMMAND_RESULT_TYPE
@@ -113,6 +116,14 @@ test("ready composes spell automation on one registry alongside legacy hook regi
     assert.equal("builtinCoinTemplateService" in moduleApi, false);
     assert.equal(typeof moduleApi.restoreBuiltinCoinTemplates, "undefined");
     assert.ok(moduleApi.storageOpenSoundService instanceof StorageOpenSoundService);
+    assert.ok(moduleApi.grappleAutomationService instanceof GrappleAutomationService);
+    assert.ok(moduleApi.grappleMacroService instanceof GrappleMacroService);
+    assert.ok(moduleApi.grapplePlacementPreview instanceof GrapplePlacementPreview);
+    assert.equal(typeof moduleApi.toggleGrapple, "function");
+    assert.equal(typeof moduleApi.moveGrappled, "function");
+    for (const hook of ["preUpdateToken", "deleteActiveEffect", "deleteToken", "canvasReady"]) {
+      assert.ok((Hooks.listeners.get(hook)?.length ?? 0) >= 1, hook);
+    }
     const restoredDocuments = {
       folder: { id: "storage-folder" },
       actors: [{ id: "copper" }]
@@ -252,6 +263,25 @@ test("composition root synchronizes the managed transport Actor compendium", asy
   assert.match(source, /await this\.transportCompendium\.sync\(\);/u);
   assert.match(source, /registerTransportGroupDropHooks\(moduleApi,\s*\{\s*Hooks\s*\}\);/u);
   assert.match(source, /registerTransportVehicleSheetHooks\(moduleApi,\s*\{\s*Hooks\s*\}\);/u);
+});
+
+test("composition root owns grapple services, typed commands, public macros, and managed sync", async () => {
+  const source = await readFile(new URL("../scripts/main.js", import.meta.url), "utf8");
+  assert.equal(source.match(/new GrappleAutomationService\(/gu)?.length, 1);
+  assert.equal(source.match(/new GrappleMacroService\(/gu)?.length, 1);
+  assert.equal(source.match(/new GrapplePlacementPreview\(/gu)?.length, 1);
+  for (const command of [
+    "GRAPPLE_TOGGLE_COMMAND",
+    "GRAPPLE_PLACE_COMMAND",
+    "GRAPPLE_DRAG_COMMAND",
+    "GRAPPLE_RELEASE_AND_MOVE_COMMAND"
+  ]) {
+    assert.equal(source.match(new RegExp(`socketCommandBus\\.register\\(${command},`, "gu"))?.length, 1, command);
+  }
+  assert.match(source, /async toggleGrapple\(\)/u);
+  assert.match(source, /async moveGrappled\(\)/u);
+  assert.match(source, /await this\.grappleMacroService\.syncManagedDocuments\(\)/u);
+  assert.match(source, /await this\.grappleAutomationService\.reconcileScene\(globalThis\.canvas\.scene\)/u);
 });
 
 test("composition root exposes safe public city reads and GM-only presentation mutations", async () => {

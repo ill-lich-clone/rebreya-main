@@ -1,5 +1,6 @@
 import { MODULE_ID } from "../constants.js";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
+import { registerGrappleHooks } from "./grapple-hooks.js";
 
 const HOOKS_REGISTERED_KEY = `${MODULE_ID}.combatHooksRegistered`;
 const CHARACTER_SHEET_RENDER_HOOKS = Object.freeze([
@@ -55,7 +56,8 @@ export function registerCombatHooks(moduleApi) {
   const hasRuneKnightService = Boolean(moduleApi?.runeKnightAutomationService);
   const hasSizeService = Boolean(moduleApi?.sizeAutomationService);
   const hasCurseEaterService = Boolean(moduleApi?.curseEaterAutomationService);
-  if (!hasStatusService && !hasAttackService && !hasRaceService && !hasFighterService && !hasSorcererService && !hasElementalAdeptService && !hasPaladinService && !hasPaladinDogmaService && !hasRogueService && !hasAttackRollBoostService && !hasPerformerService && !hasBardicInspirationCompatService && !hasEnvironmentService && !hasSpellService && !hasReactionCapabilityIndex && !hasRuneKnightService && !hasSizeService && !hasCurseEaterService) {
+  const hasGrappleService = Boolean(moduleApi?.grappleAutomationService);
+  if (!hasStatusService && !hasAttackService && !hasRaceService && !hasFighterService && !hasSorcererService && !hasElementalAdeptService && !hasPaladinService && !hasPaladinDogmaService && !hasRogueService && !hasAttackRollBoostService && !hasPerformerService && !hasBardicInspirationCompatService && !hasEnvironmentService && !hasSpellService && !hasReactionCapabilityIndex && !hasRuneKnightService && !hasSizeService && !hasCurseEaterService && !hasGrappleService) {
     return;
   }
 
@@ -63,6 +65,8 @@ export function registerCombatHooks(moduleApi) {
     return;
   }
   game[HOOKS_REGISTERED_KEY] = true;
+
+  if (hasGrappleService) registerGrappleHooks(moduleApi.grappleAutomationService);
 
   if (hasCurseEaterService) {
     const service = moduleApi.curseEaterAutomationService;
