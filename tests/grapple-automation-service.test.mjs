@@ -33,7 +33,10 @@ function applyPatch(document, patch) {
   }
 }
 
-function makeActor(id, { hands = 2 } = {}) {
+const GRAPPLED_STATUS_EFFECT_ID = "dnd5egrappled000";
+const GRAPPLED_STATUS_ICON = "systems/dnd5e/icons/svg/statuses/grappled.svg";
+
+function makeActor(id, { hands = 2, emulateDaeDependentConditions = false } = {}) {
   const actor = {
     id,
     uuid: `Actor.${id}`,
@@ -45,14 +48,22 @@ function makeActor(id, { hands = 2 } = {}) {
     async update(patch) { applyPatch(this, patch); return this; },
     async createEmbeddedDocuments(type, rows) {
       assert.equal(type, "ActiveEffect");
-      return rows.map((row, index) => {
+      const created = rows.map((row, index) => {
         const effect = {
           ...structuredClone(row),
-          id: `effect-${this.effects.contents.length + index + 1}`,
+          id: row._id ?? `effect-${this.effects.contents.length + index + 1}`,
           parent: this,
           getFlag(scope, key) { return getPath(this.flags?.[scope], key); },
+          async update(patch) { applyPatch(this, patch); return this; },
           toObject() {
-            const { parent, delete: ignoredDelete, getFlag: ignoredFlag, toObject: ignoredToObject, ...data } = this;
+            const {
+              parent,
+              delete: ignoredDelete,
+              getFlag: ignoredFlag,
+              toObject: ignoredToObject,
+              update: ignoredUpdate,
+              ...data
+            } = this;
             return structuredClone(data);
           },
           async delete() {
@@ -63,6 +74,22 @@ function makeActor(id, { hands = 2 } = {}) {
         this.effects.contents.push(effect);
         return effect;
       });
+
+      if (emulateDaeDependentConditions) {
+        for (const effect of created) {
+          if (effect.id === GRAPPLED_STATUS_EFFECT_ID || !effect.statuses?.includes?.("grappled")) continue;
+          const [autoCreated] = await this.createEmbeddedDocuments("ActiveEffect", [{
+            _id: GRAPPLED_STATUS_EFFECT_ID,
+            name: "Схваченный",
+            img: GRAPPLED_STATUS_ICON,
+            statuses: ["grappled"],
+            flags: { dae: { autoCreated: true } }
+          }]);
+          autoCreated.id = GRAPPLED_STATUS_EFFECT_ID;
+        }
+      }
+
+      return created;
     }
   };
   return actor;
@@ -119,11 +146,16 @@ function makeScene() {
   return scene;
 }
 
-function environment({ sourceHands = 2, collision = false } = {}) {
+function environment({
+  sourceHands = 2,
+  collision = false,
+  emulateDaeDependentConditions = false,
+  useDefaultStatusEffectFactory = false
+} = {}) {
   const scene = makeScene();
   const sourceActor = makeActor("source", { hands: sourceHands });
-  const targetActor = makeActor("target");
-  const targetActor2 = makeActor("target-2");
+  const targetActor = makeActor("target", { emulateDaeDependentConditions });
+  const targetActor2 = makeActor("target-2", { emulateDaeDependentConditions });
   const source = makeToken(scene, "source", sourceActor, { x: 0, y: 0 });
   const target = makeToken(scene, "target", targetActor, { x: 100, y: 0 });
   const target2 = makeToken(scene, "target-2", targetActor2, { x: 0, y: 100 });
@@ -131,7 +163,7 @@ function environment({ sourceHands = 2, collision = false } = {}) {
   let nextId = 0;
   const requests = [];
   const collisionState = { value: collision };
-  const service = new GrappleAutomationService({
+  const serviceOptions = {
     coordinator: new WorldMutationCoordinator(),
     commandBus: { async request(command, payload, options) { requests.push({ command, payload, options }); return { remote: true }; } },
     fromUuid: async (uuid) => documents.get(uuid) ?? null,
@@ -140,7 +172,16 @@ function environment({ sourceHands = 2, collision = false } = {}) {
     gameProvider: () => ({ user: { id: "gm", isGM: true } }),
     sceneRectProvider: () => ({ x: 0, y: 0, width: 2000, height: 2000 }),
     checkCollision: () => collisionState.value
-  });
+  };
+  if (!useDefaultStatusEffectFactory) {
+    serviceOptions.grappledStatusEffectDataFactory = async () => ({
+      _id: GRAPPLED_STATUS_EFFECT_ID,
+      name: "Схваченный",
+      img: GRAPPLED_STATUS_ICON,
+      statuses: ["grappled"]
+    });
+  }
+  const service = new GrappleAutomationService(serviceOptions);
   return { scene, sourceActor, targetActor, targetActor2, source, target, target2, service, requests, collisionState };
 }
 
@@ -205,6 +246,97 @@ test("toggle does not add a second visible grappled marker when another effect a
   assert.equal(visibleGrappled.length, 1);
   assert.deepEqual(managed.statuses, []);
   assert.equal(managed.icon, null);
+});
+
+test("toggle creates one canonical grapple marker when DAE dependent conditions are enabled", async () => {
+  const env = environment({ emulateDaeDependentConditions: true });
+
+  await env.service.toggle({
+    sourceTokenUuid: env.source.uuid,
+    targetTokenUuid: env.target.uuid,
+    operationId: "dae-single-marker"
+  });
+
+  assert.equal(env.targetActor.effects.contents.length, 1);
+  const [effect] = env.targetActor.effects.contents;
+  assert.equal(effect.id, GRAPPLED_STATUS_EFFECT_ID);
+  assert.equal(effect.img, GRAPPLED_STATUS_ICON);
+  assert.equal(effect.getFlag(MODULE_ID, "managed"), true);
+  assert.equal(effect.getFlag("dae", "autoCreated"), undefined);
+});
+
+test("default grapple status factory resolves the configured Foundry ActiveEffect document class", async () => {
+  const previousConfig = globalThis.CONFIG;
+  const previousGetDocumentClass = globalThis.getDocumentClass;
+  const previousActiveEffect = globalThis.ActiveEffect;
+  globalThis.getDocumentClass = undefined;
+  globalThis.ActiveEffect = undefined;
+  globalThis.CONFIG = {
+    ActiveEffect: {
+      documentClass: class TestActiveEffect {
+        static async fromStatusEffect(statusId) {
+          assert.equal(statusId, "grappled");
+          return {
+            toObject: () => ({
+              _id: GRAPPLED_STATUS_EFFECT_ID,
+              name: "Схваченный",
+              img: GRAPPLED_STATUS_ICON,
+              statuses: ["grappled"]
+            })
+          };
+        }
+      }
+    }
+  };
+
+  try {
+    const env = environment({ useDefaultStatusEffectFactory: true });
+    await env.service.toggle({
+      sourceTokenUuid: env.source.uuid,
+      targetTokenUuid: env.target.uuid,
+      operationId: "configured-active-effect-class"
+    });
+    assert.equal(env.targetActor.effects.contents[0].id, GRAPPLED_STATUS_EFFECT_ID);
+  }
+  finally {
+    globalThis.CONFIG = previousConfig;
+    globalThis.getDocumentClass = previousGetDocumentClass;
+    globalThis.ActiveEffect = previousActiveEffect;
+  }
+});
+
+test("reconciliation collapses a legacy managed grapple plus its DAE auto-created duplicate", async () => {
+  const env = environment();
+  const link = {
+    linkId: "legacy-duplicate",
+    kind: "grapple",
+    handSlot: "left",
+    sourceTokenUuid: env.source.uuid,
+    targetTokenUuid: env.target.uuid
+  };
+  env.sourceActor.flags[MODULE_ID].handReservations = [structuredClone(link)];
+  env.target.flags[MODULE_ID] = { [GRAPPLE_LINK_FLAG]: structuredClone(link) };
+  await env.targetActor.createEmbeddedDocuments("ActiveEffect", [{
+    name: "Схваченный",
+    img: GRAPPLED_STATUS_ICON,
+    statuses: ["grappled"],
+    flags: { [MODULE_ID]: { managed: true, [GRAPPLE_LINK_FLAG]: structuredClone(link) } }
+  }, {
+    _id: GRAPPLED_STATUS_EFFECT_ID,
+    name: "Схваченный",
+    img: GRAPPLED_STATUS_ICON,
+    statuses: ["grappled"],
+    flags: { dae: { autoCreated: true } }
+  }]);
+
+  assert.equal(env.targetActor.effects.contents.length, 2);
+  assert.deepEqual(await env.service.reconcileScene(env.scene), { removed: 0 });
+  assert.equal(env.targetActor.effects.contents.length, 1);
+  const [effect] = env.targetActor.effects.contents;
+  assert.equal(effect.id, GRAPPLED_STATUS_EFFECT_ID);
+  assert.equal(effect.getFlag(MODULE_ID, "managed"), true);
+  assert.deepEqual(effect.getFlag(MODULE_ID, GRAPPLE_LINK_FLAG), link);
+  assert.equal(effect.getFlag("dae", "autoCreated"), undefined);
 });
 
 test("toggle rejects zero hands and a target managed by another source", async () => {

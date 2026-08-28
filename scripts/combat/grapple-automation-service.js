@@ -12,7 +12,7 @@ export const GRAPPLE_BYPASS_OPTION = "grappleBypass";
 export const MAX_GRAPPLE_OPERATION_FINGERPRINTS = 256;
 
 const GRAPPLE_EFFECT_NAME = "Схваченный";
-const GRAPPLE_EFFECT_ICON = "systems/dnd5e/icons/svg/statuses/grappled.svg";
+const GRAPPLED_STATUS_ID = "grappled";
 
 function codedError(code, message = code) {
   const error = new Error(message);
@@ -41,6 +41,11 @@ function values(collection) {
 function flag(document, key) {
   if (typeof document?.getFlag === "function") return document.getFlag(MODULE_ID, key);
   return document?.flags?.[MODULE_ID]?.[key];
+}
+
+function scopedFlag(document, scope, key) {
+  if (typeof document?.getFlag === "function") return document.getFlag(scope, key);
+  return document?.flags?.[scope]?.[key];
 }
 
 function clone(value) {
@@ -87,6 +92,19 @@ function effectHasStatus(effect, statusId) {
   return Array.isArray(statuses) && statuses.includes(statusId);
 }
 
+async function defaultGrappledStatusEffectDataFactory() {
+  const ActiveEffectClass = globalThis.getDocumentClass?.("ActiveEffect")
+    ?? globalThis.CONFIG?.ActiveEffect?.documentClass
+    ?? globalThis.ActiveEffect;
+  if (typeof ActiveEffectClass?.fromStatusEffect !== "function") {
+    throw codedError("grapple-status-unavailable");
+  }
+  const effect = await ActiveEffectClass.fromStatusEffect(GRAPPLED_STATUS_ID);
+  const data = typeof effect?.toObject === "function" ? effect.toObject() : null;
+  if (!data || typeof data !== "object") throw codedError("grapple-status-unavailable");
+  return data;
+}
+
 function effectSource(effect) {
   const source = typeof effect?.toObject === "function" ? effect.toObject() : clone(effect);
   if (!source || typeof source !== "object") return null;
@@ -123,6 +141,7 @@ export class GrappleAutomationService {
   #coordinator;
   #fromUuid;
   #gameProvider;
+  #grappledStatusEffectDataFactory;
   #isActiveGmClient;
   #operationFingerprints = new Map();
   #placementPreview;
@@ -135,6 +154,7 @@ export class GrappleAutomationService {
     placementPreview = null,
     fromUuid = (uuid) => globalThis.fromUuid?.(uuid),
     randomId = () => globalThis.foundry?.utils?.randomID?.() ?? globalThis.crypto?.randomUUID?.(),
+    grappledStatusEffectDataFactory = defaultGrappledStatusEffectDataFactory,
     isActiveGmClient = () => false,
     gameProvider = () => globalThis.game,
     sceneRectProvider = defaultSceneRect,
@@ -148,6 +168,7 @@ export class GrappleAutomationService {
     this.#placementPreview = placementPreview;
     this.#fromUuid = fromUuid;
     this.#randomId = randomId;
+    this.#grappledStatusEffectDataFactory = grappledStatusEffectDataFactory;
     this.#isActiveGmClient = isActiveGmClient;
     this.#gameProvider = gameProvider;
     this.#sceneRectProvider = sceneRectProvider;
@@ -328,7 +349,7 @@ export class GrappleAutomationService {
         }
         const target = byUuid.get(reservation.targetTokenUuid);
         const targetLink = target && flag(target, GRAPPLE_LINK_FLAG);
-        const effect = target && findManagedEffects(target.actor, reservation.linkId)[0];
+        const effect = target && await this.#collapseLegacyDaeDuplicate(target.actor, reservation);
         const placement = target
           ? this.#validatePlacement(source, target, { x: Number(target.x), y: Number(target.y) })
           : null;
@@ -505,19 +526,44 @@ export class GrappleAutomationService {
 
   async #createEffect(actor, link) {
     if (typeof actor?.createEmbeddedDocuments !== "function") throw codedError("stale-actor");
-    const providesGrappledStatus = values(actor?.effects).some((effect) => effectHasStatus(effect, "grappled"));
+    const providesGrappledStatus = values(actor?.effects).some((effect) => effectHasStatus(effect, GRAPPLED_STATUS_ID));
+    const statusData = providesGrappledStatus
+      ? { name: GRAPPLE_EFFECT_NAME, img: null, icon: null, statuses: [] }
+      : await this.#grappledStatusEffectDataFactory();
+    const flags = clone(statusData?.flags ?? {});
+    flags[MODULE_ID] = {
+      ...(flags[MODULE_ID] ?? {}),
+      managed: true,
+      [GRAPPLE_LINK_FLAG]: clone(link)
+    };
     const [effect] = await actor.createEmbeddedDocuments("ActiveEffect", [{
-      name: GRAPPLE_EFFECT_NAME,
-      icon: providesGrappledStatus ? null : GRAPPLE_EFFECT_ICON,
-      statuses: providesGrappledStatus ? [] : ["grappled"],
-      flags: {
-        [MODULE_ID]: {
-          managed: true,
-          [GRAPPLE_LINK_FLAG]: clone(link)
-        }
-      }
-    }]);
+      ...clone(statusData),
+      flags
+    }], { keepId: !providesGrappledStatus });
     return effect;
+  }
+
+  async #collapseLegacyDaeDuplicate(actor, link) {
+    const managedEffects = findManagedEffects(actor, link.linkId);
+    const legacy = managedEffects.find((effect) => effectHasStatus(effect, GRAPPLED_STATUS_ID));
+    if (!legacy) return managedEffects[0] ?? null;
+
+    const canonical = values(actor?.effects).find((effect) => (
+      effect !== legacy
+      && effectHasStatus(effect, GRAPPLED_STATUS_ID)
+      && scopedFlag(effect, "dae", "autoCreated") === true
+    ));
+    if (!canonical || typeof canonical.update !== "function" || typeof legacy.delete !== "function") {
+      return legacy;
+    }
+
+    await canonical.update({
+      [`flags.${MODULE_ID}.managed`]: true,
+      [`flags.${MODULE_ID}.${GRAPPLE_LINK_FLAG}`]: clone(link),
+      "flags.dae.-=autoCreated": null
+    }, bypassOptions());
+    await legacy.delete(bypassOptions());
+    return canonical;
   }
 
   async #deleteEffects(actor, linkId) {
