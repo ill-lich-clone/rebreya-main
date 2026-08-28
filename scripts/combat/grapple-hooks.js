@@ -54,6 +54,13 @@ function shouldCancelOriginalUpdate(changed) {
   return Object.keys(changed ?? {}).length === 0 ? false : undefined;
 }
 
+const ERROR_MESSAGES = Object.freeze({
+  "outside-reach": "схваченное существо нельзя переместить в эту точку",
+  "outside-scene": "перемещение выходит за границы сцены",
+  "wall-collision": "перемещению мешает стена",
+  "stale-link": "связь захвата больше не существует"
+});
+
 export function registerGrappleHooks(moduleApi, {
   Hooks = globalThis.Hooks,
   showMoveDialog = defaultShowMoveDialog,
@@ -66,7 +73,8 @@ export function registerGrappleHooks(moduleApi, {
   const pendingTargetDialogs = new Map();
 
   const report = (error) => {
-    const detail = clean(error?.message) || "неизвестная ошибка";
+    const code = clean(error?.code);
+    const detail = ERROR_MESSAGES[code] ?? (clean(error?.message) || "неизвестная ошибка");
     notifyError(`Автоматика захвата: ${detail}`);
   };
   const schedule = (operation) => {

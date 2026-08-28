@@ -45,7 +45,7 @@ function previewEnvironment({ result = { cancelled: false, x: 250, y: 150 }, thr
   return { preview, calls, overlays };
 }
 
-test("preview config draws a target-sized CPR marker and returns snapped top-left", async () => {
+test("preview config uses the token image as a CPR icon instead of stretching it across the marker", async () => {
   const env = previewEnvironment({ result: { cancelled: false, x: 250, y: 150 } });
   const result = await env.preview.choose({
     sourceToken: token({ x: 0, y: 100 }),
@@ -55,7 +55,9 @@ test("preview config draws a target-sized CPR marker and returns snapped top-lef
 
   assert.deepEqual(result, { cancelled: false, x: 150, y: 50 });
   assert.equal(env.calls.length, 1);
-  assert.equal(env.calls[0].config.texture, "frog.webp");
+  assert.equal(env.calls[0].config.texture, undefined);
+  assert.equal(env.calls[0].config.icon, "frog.webp");
+  assert.equal(env.calls[0].config.drawIcon, true);
   assert.equal(env.calls[0].config.size, 10);
   assert.equal(env.calls[0].config.resolution, 1);
   assert.equal(env.calls[0].config.drawOutline, true);

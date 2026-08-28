@@ -81,6 +81,12 @@ function findManagedEffects(actor, linkId) {
   return values(actor?.effects).filter((effect) => clean(effectLink(effect)?.linkId) === clean(linkId));
 }
 
+function effectHasStatus(effect, statusId) {
+  const statuses = effect?.statuses;
+  if (statuses instanceof Set) return statuses.has(statusId);
+  return Array.isArray(statuses) && statuses.includes(statusId);
+}
+
 function effectSource(effect) {
   const source = typeof effect?.toObject === "function" ? effect.toObject() : clone(effect);
   if (!source || typeof source !== "object") return null;
@@ -202,8 +208,9 @@ export class GrappleAutomationService {
       const scene = source.parent;
       if (typeof scene?.updateEmbeddedDocuments !== "function") throw codedError("invalid-scene");
       const delta = { x: payload.x - Number(source.x), y: payload.y - Number(source.y) };
-      const movedSource = { ...source, document: undefined, x: payload.x, y: payload.y };
-      this.#assertInsideScene(movedSource, scene);
+      const sourcePosition = { x: payload.x, y: payload.y };
+      const sourceValidation = this.#validateTranslation(source, sourcePosition);
+      if (!sourceValidation.valid) throw codedError(sourceValidation.reason);
       const updates = [{ _id: tokenId(source), x: payload.x, y: payload.y }];
       const rollbackUpdates = [{ _id: tokenId(source), x: Number(source.x), y: Number(source.y) }];
       for (const reservation of getActorHandReservations(source.actor)) {
@@ -213,7 +220,7 @@ export class GrappleAutomationService {
         const liveLink = this.#assertLiveLink(source, target, reservation.linkId);
         if (!findManagedEffects(target.actor, liveLink.linkId).length) throw codedError("stale-link");
         const position = { x: Number(target.x) + delta.x, y: Number(target.y) + delta.y };
-        const validation = this.#validatePlacement(movedSource, target, position);
+        const validation = this.#validateTranslation(target, position);
         if (!validation.valid) throw codedError(validation.reason);
         updates.push({ _id: tokenId(target), x: validation.x, y: validation.y });
         rollbackUpdates.push({ _id: tokenId(target), x: Number(target.x), y: Number(target.y) });
@@ -492,10 +499,11 @@ export class GrappleAutomationService {
 
   async #createEffect(actor, link) {
     if (typeof actor?.createEmbeddedDocuments !== "function") throw codedError("stale-actor");
+    const providesGrappledStatus = values(actor?.effects).some((effect) => effectHasStatus(effect, "grappled"));
     const [effect] = await actor.createEmbeddedDocuments("ActiveEffect", [{
       name: GRAPPLE_EFFECT_NAME,
-      icon: GRAPPLE_EFFECT_ICON,
-      statuses: ["grappled"],
+      icon: providesGrappledStatus ? null : GRAPPLE_EFFECT_ICON,
+      statuses: providesGrappledStatus ? [] : ["grappled"],
       flags: {
         [MODULE_ID]: {
           managed: true,
@@ -526,8 +534,34 @@ export class GrappleAutomationService {
     });
   }
 
-  #assertInsideScene(token, scene) {
-    const footprint = tokenFootprint(token);
+  #validateTranslation(token, position) {
+    const scene = token.parent;
+    const grid = sceneGrid(scene);
+    const current = tokenFootprint(token);
+    const target = tokenFootprint(token, position);
+    try {
+      this.#assertInsideScene(token, scene, position);
+    }
+    catch (error) {
+      if (error?.code === "outside-scene") return { valid: false, reason: error.code, x: target.x, y: target.y };
+      throw error;
+    }
+    const sourcePoint = {
+      x: current.x + ((current.width * grid.size) / 2),
+      y: current.y + ((current.height * grid.size) / 2)
+    };
+    const targetPoint = {
+      x: target.x + ((target.width * grid.size) / 2),
+      y: target.y + ((target.height * grid.size) / 2)
+    };
+    if (this.#checkCollision({ sourceToken: token, targetToken: token, position: target, sourcePoint, targetPoint })) {
+      return { valid: false, reason: "wall-collision", x: target.x, y: target.y };
+    }
+    return { valid: true, reason: null, x: target.x, y: target.y };
+  }
+
+  #assertInsideScene(token, scene, position = null) {
+    const footprint = tokenFootprint(token, position);
     const grid = sceneGrid(scene);
     const rect = this.#sceneRectProvider(scene);
     const right = footprint.x + (footprint.width * grid.size);

@@ -180,6 +180,32 @@ test("toggle reserves first free hands, creates dedicated effects, and supports 
   assert.equal(env.targetActor2.effects.contents.length, 1);
 });
 
+test("toggle does not add a second visible grappled marker when another effect already provides the status", async () => {
+  const env = environment();
+  env.targetActor.effects.contents.push({
+    id: "external-grappled",
+    name: "Схвачен (внешний)",
+    icon: "systems/dnd5e/icons/svg/statuses/grappled.svg",
+    statuses: ["grappled"],
+    flags: {}
+  });
+
+  await env.service.toggle({
+    sourceTokenUuid: env.source.uuid,
+    targetTokenUuid: env.target.uuid,
+    operationId: "reuse-visible-status"
+  });
+
+  const visibleGrappled = env.targetActor.effects.contents.filter((effect) => (
+    effect.statuses?.includes?.("grappled")
+    || effect.icon === "systems/dnd5e/icons/svg/statuses/grappled.svg"
+  ));
+  const managed = env.targetActor.effects.contents.find((effect) => effect.getFlag?.(MODULE_ID, "managed") === true);
+  assert.equal(visibleGrappled.length, 1);
+  assert.deepEqual(managed.statuses, []);
+  assert.equal(managed.icon, null);
+});
+
 test("toggle rejects zero hands and a target managed by another source", async () => {
   const noHands = environment({ sourceHands: 0 });
   await assert.rejects(() => noHands.service.toggle({
@@ -252,6 +278,17 @@ test("drag moves source and every authoritative target by one shared delta in on
   assert.equal(env.scene.batches.length, 1);
   assert.equal(env.scene.batches[0].updates.length, 3);
   assert.equal(env.scene.batches[0].options[MODULE_ID].grappleBypass, true);
+});
+
+test("drag preserves an existing grapple axis without rechecking natural reach", async () => {
+  const env = environment();
+  await env.service.toggle({ sourceTokenUuid: env.source.uuid, targetTokenUuid: env.target.uuid, operationId: "create" });
+  env.target.x = 600;
+
+  await env.service.drag({ sourceTokenUuid: env.source.uuid, x: 100, y: 100, operationId: "drag-existing-axis" });
+
+  assert.deepEqual([env.source.x, env.source.y], [100, 100]);
+  assert.deepEqual([env.target.x, env.target.y], [700, 100]);
 });
 
 test("invalid dragged participant cancels the whole batch", async () => {

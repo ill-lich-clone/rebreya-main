@@ -7,11 +7,11 @@
 ## Совместимость и точка входа
 
 - Module ID: `rebreya-main`.
-- Версия: `1.4.165`.
+- Версия: `1.4.166`.
 - Foundry VTT: minimum/verified `13`.
 - Основная система: `dnd5e`.
 - Обязательная зависимость: `statuscounter >= 3.0.4`.
-- Manifest версии `1.4.165` загружает только тонкий `scripts/main-1.4.165.js`, который содержит единственный `import "./main.js";`; storage trigger/command/token-hook модули сохраняют release key `1.4.164-storage-key-feedback`.
+- Manifest версии `1.4.166` загружает только тонкий `scripts/main-1.4.166.js`, который содержит единственный `import "./main.js";`; storage trigger/command/token-hook модули сохраняют release key `1.4.164-storage-key-feedback`.
 - `scripts/main.js` — единственный composition root. Недавние опубликованные `scripts/main-1.4.*.js` оставлены только как совместимые forwarder-файлы для уже открытых вкладок игроков и запущенных экземпляров Foundry.
 - Runtime API публикуется как `game.rebreyaMain` и `game.modules.get("rebreya-main")?.api`.
 
@@ -320,8 +320,8 @@ await api.setCombatStatus("actor-id", "frightened", { value: 2 });
 - `getCombatStatusDefinitions`, `normalizeCombatStatusId`, `getCombatStatus`, `setCombatStatus`, `clearCombatStatus`, `setCombatStatusValue`, `applyDecayingDamage`, `syncBloodiedStatuses`.
 - `getReactionState`, `canUseReaction`, `refreshReaction`, `consumeReaction`.
 - `rollWeaponAttack`, `rollFirearmAttack`, `clearFirearmJam`, `maintainFirearm`, `resolveProvokedAttack`, `resolveParry`, `resolveInterception`.
-- `toggleGrapple()` — macro API после вручную разрешённой проверки Захвата: требует ровно один контролируемый токен-захватчик и ровно одну выбранную цель, резервирует первую свободную руку, добавляет цели отдельный managed-статус `grappled` и повторным вызовом снимает ту же связь. Проверка, размерное ограничение успешности и бросок не автоматизируются; при явно нулевом числе или отсутствии свободных рук захват невозможен.
-- `moveGrappled()` — требует одного контролируемого захватчика; при одной удерживаемой цели выбирает её автоматически, при нескольких — требует выбрать ровно одну из них target-ом. Публичный CPR Crosshairs показывает круг размером с footprint цели и область природной досягаемости без оружейных бонусов; ближайший край большого токена может оставаться в досягаемости, токены разрешено перекрывать, стены и границы сцены запрещены. Обычное движение захватчика переносит все его удерживаемые цели тем же delta с сохранением взаимной оси. Попытка отдельно двигать цель предлагает `Отменить захват` или `Отменить перемещение`.
+- `toggleGrapple()` — macro API после вручную разрешённой проверки Захвата: требует ровно один контролируемый токен-захватчик и ровно одну выбранную цель, резервирует первую свободную руку, добавляет цели отдельный managed-статус `grappled` и повторным вызовом снимает ту же связь. Если `grappled` уже предоставлен другим ActiveEffect, managed-связь остаётся невидимой и не создаёт второй маркер. Проверка, размерное ограничение успешности и бросок не автоматизируются; при явно нулевом числе или отсутствии свободных рук захват невозможен.
+- `moveGrappled()` — требует одного контролируемого захватчика; при одной удерживаемой цели выбирает её автоматически, при нескольких — требует выбрать ровно одну из них target-ом. Публичный CPR Crosshairs показывает изображение цели как иконку внутри круга размером с её footprint и область природной досягаемости без оружейных бонусов; ближайший край большого токена может оставаться в досягаемости, токены разрешено перекрывать, стены и границы сцены запрещены. Обычное движение захватчика переносит все его удерживаемые цели тем же delta с сохранением взаимной оси и не проверяет reach повторно, но по-прежнему атомарно запрещает стены и выход за сцену. Попытка отдельно двигать цель предлагает `Отменить захват` или `Отменить перемещение`.
 - `getCosmologyState`, `isMechanusEnabled`, `setMechanusEnabled`.
 
 `initialize`, `handleSocketMessage`, `handleLootgenChatItemCreated`, `handleGlobalEventsConfigChange`, `syncFeatsFromWorldCompendium`, `refreshInventoryViews`, `refreshDowntimeViews`, `refreshCosmologyViews`, `refreshCityViews`, `runInventoryMutation` и `unregisterLootgenApp` — lifecycle/internal coordination surface; не использовать их как доменный API макроса без отдельной причины. `refreshCityViews({ cityIds = [] } = {})` обновляет только запрошенные instances единственного `cityApps` cache (или все открытые города при пустом списке), не поднимая окна над остальными.

@@ -68,11 +68,14 @@ async function flush() {
   await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
-function environment({ dialogChoice = "cancel", showMoveDialog = null } = {}) {
+function environment({ dialogChoice = "cancel", showMoveDialog = null, dragError = null } = {}) {
   const Hooks = hooksRegistry();
   const calls = { drag: [], releaseMove: [], effects: [], tokens: [], scenes: [], dialogs: [], errors: [] };
   const moduleApi = {
-    async requestDragFromTokenUpdate(payload) { calls.drag.push(payload); },
+    async requestDragFromTokenUpdate(payload) {
+      calls.drag.push(payload);
+      if (dragError) throw dragError;
+    },
     async requestReleaseAndMove(payload) { calls.releaseMove.push(payload); },
     async handleManagedEffectDeleted(effect) { calls.effects.push(effect); },
     async handleTokenDeleted(token) { calls.tokens.push(token); },
@@ -117,6 +120,17 @@ test("source movement removes only coordinates and schedules one authoritative g
   const onlyPosition = { x: 700 };
   assert.deepEqual(env.Hooks.call("preUpdateToken", token, onlyPosition, {}, "player-a"), [false]);
   assert.deepEqual(onlyPosition, {});
+});
+
+test("source movement reports a localized grapple error instead of an internal code", async () => {
+  const error = new Error("outside-reach");
+  error.code = "outside-reach";
+  const env = environment({ dragError: error });
+
+  env.Hooks.call("preUpdateToken", sourceToken(), { x: 500, y: 600 }, {}, "player-a");
+  await flush();
+
+  assert.deepEqual(env.calls.errors, ["Автоматика захвата: схваченное существо нельзя переместить в эту точку"]);
 });
 
 test("grapple bypass preserves the original movement patch", async () => {
