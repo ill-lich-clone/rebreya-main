@@ -106,8 +106,26 @@ function makeToken(scene, id, actor, { x = 0, y = 0, width = 1, height = 1 } = {
     flags: {},
     texture: { src: `${id}.webp` },
     getFlag(scope, key) { return getPath(this.flags?.[scope], key); },
-    async update(patch) {
-      applyPatch(this, patch);
+    async update(patch, options = {}) {
+      const constrainedPatch = structuredClone(patch);
+      const ignoreTokens = options?.movement?.[this.id]?.constrainOptions?.ignoreTokens === true;
+      if (scene.emulateDnd5eTokenBlocking && !ignoreTokens && ("x" in constrainedPatch || "y" in constrainedPatch)) {
+        const destination = {
+          id: this.id,
+          x: Number(constrainedPatch.x ?? this.x),
+          y: Number(constrainedPatch.y ?? this.y),
+          width: this.width,
+          height: this.height
+        };
+        const blocked = scene.tokens.contents.some((other) => (
+          other.id !== this.id && overlapsFootprint(destination, other, scene.grid.size)
+        ));
+        if (blocked) {
+          delete constrainedPatch.x;
+          delete constrainedPatch.y;
+        }
+      }
+      applyPatch(this, constrainedPatch);
       if (this.failAfterUpdate || (this.failPositionAfterUpdate && Object.hasOwn(patch, "x"))) {
         this.failAfterUpdate = false;
         this.failPositionAfterUpdate = false;
@@ -136,6 +154,7 @@ function makeScene({ emulateDnd5eTokenBlocking = false } = {}) {
     height: 2000,
     grid: { size: 100, distance: 5 },
     tokens: { contents: [] },
+    emulateDnd5eTokenBlocking,
     batches,
     async updateEmbeddedDocuments(type, updates, options) {
       assert.equal(type, "Token");
@@ -443,6 +462,25 @@ test("place revalidates natural reach against a large target footprint", async (
   }), (error) => error?.code === "outside-reach");
 });
 
+test("place can overlap the grapple source when dnd5e token blocking is enabled", async () => {
+  const env = environment({ emulateDnd5eTokenBlocking: true });
+  await env.service.toggle({
+    sourceTokenUuid: env.source.uuid,
+    targetTokenUuid: env.target.uuid,
+    operationId: "create-overlap"
+  });
+
+  await env.service.place({
+    sourceTokenUuid: env.source.uuid,
+    targetTokenUuid: env.target.uuid,
+    x: 0,
+    y: 0,
+    operationId: "place-overlap"
+  });
+
+  assert.deepEqual([env.target.x, env.target.y], [0, 0]);
+});
+
 test("drag moves source and every authoritative target by one shared delta in one batch", async () => {
   const env = environment();
   await env.service.toggle({ sourceTokenUuid: env.source.uuid, targetTokenUuid: env.target.uuid, operationId: "create-1" });
@@ -520,6 +558,55 @@ test("failed place, grouped drag, and release-and-move restore prior positions a
   assert.equal(linkOf(env.target).linkId, link.linkId);
   assert.equal(env.sourceActor.getFlag(MODULE_ID, "handReservations").length, 1);
   assert.equal(env.targetActor.effects.contents.length, 1);
+});
+
+test("release-and-move can overlap another token when dnd5e token blocking is enabled", async () => {
+  const env = environment({ emulateDnd5eTokenBlocking: true });
+  await env.service.toggle({
+    sourceTokenUuid: env.source.uuid,
+    targetTokenUuid: env.target.uuid,
+    operationId: "create-release-overlap"
+  });
+  const link = structuredClone(linkOf(env.target));
+
+  await env.service.releaseAndMove({
+    targetTokenUuid: env.target.uuid,
+    linkId: link.linkId,
+    x: 0,
+    y: 0,
+    operationId: "release-overlap"
+  });
+
+  assert.deepEqual([env.target.x, env.target.y], [0, 0]);
+});
+
+test("failed release-and-move restores an overlapping grapple position despite dnd5e token blocking", async () => {
+  const env = environment({ emulateDnd5eTokenBlocking: true });
+  await env.service.toggle({
+    sourceTokenUuid: env.source.uuid,
+    targetTokenUuid: env.target.uuid,
+    operationId: "create-overlap-rollback"
+  });
+  await env.service.place({
+    sourceTokenUuid: env.source.uuid,
+    targetTokenUuid: env.target.uuid,
+    x: 0,
+    y: 0,
+    operationId: "place-overlap-rollback"
+  });
+  const link = structuredClone(linkOf(env.target));
+  env.target.failPositionAfterUpdate = true;
+
+  await assert.rejects(() => env.service.releaseAndMove({
+    targetTokenUuid: env.target.uuid,
+    linkId: link.linkId,
+    x: 500,
+    y: 500,
+    operationId: "failed-release-overlap"
+  }), /token-update-failed/u);
+
+  assert.deepEqual([env.target.x, env.target.y], [0, 0]);
+  assert.equal(linkOf(env.target).linkId, link.linkId);
 });
 
 test("operation ids are replay-safe and cannot be rebound to another payload", async () => {

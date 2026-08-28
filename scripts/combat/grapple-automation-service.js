@@ -216,11 +216,12 @@ export class GrappleAutomationService {
       const validation = this.#validatePlacement(source, target, { x: payload.x, y: payload.y });
       if (!validation.valid) throw codedError(validation.reason);
       const previousPosition = { x: Number(target.x), y: Number(target.y) };
+      const movementOptions = { ignoreTokenCollisionsFor: [tokenId(target)] };
       try {
-        await target.update({ x: validation.x, y: validation.y }, bypassOptions());
+        await target.update({ x: validation.x, y: validation.y }, bypassOptions(movementOptions));
       }
       catch (error) {
-        await this.#rollback(error, [() => target.update(previousPosition, bypassOptions())]);
+        await this.#rollback(error, [() => target.update(previousPosition, bypassOptions(movementOptions))]);
       }
       return { moved: true, x: validation.x, y: validation.y };
     });
@@ -285,8 +286,9 @@ export class GrappleAutomationService {
       const source = await this.#resolveToken(liveLink.sourceTokenUuid);
       const snapshot = this.#snapshotLink(source, target, liveLink);
       await this.#releaseResolved(source, target, liveLink);
+      const movementOptions = { ignoreTokenCollisionsFor: [tokenId(target)] };
       try {
-        await target.update({ x: payload.x, y: payload.y }, bypassOptions());
+        await target.update({ x: payload.x, y: payload.y }, bypassOptions(movementOptions));
       }
       catch (error) {
         await this.#rollback(error, [() => this.#restoreSnapshot(snapshot)]);
@@ -513,7 +515,7 @@ export class GrappleAutomationService {
     await snapshot.target.update({
       ...snapshot.position,
       ...tokenUpdateForLink(snapshot.targetFlag)
-    }, bypassOptions());
+    }, bypassOptions({ ignoreTokenCollisionsFor: [tokenId(snapshot.target)] }));
     const linkId = clean(snapshot.targetFlag?.linkId);
     await this.#deleteEffects(snapshot.targetActor, linkId);
     if (snapshot.effectSources.length) {
