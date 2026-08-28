@@ -9,6 +9,7 @@ const {
   getBg3DeathSaveData,
   patchBg3HotbarDeathSavesContainer,
   patchBg3HotbarStorageCommonActions,
+  publishPanelToolApi,
   registerExternalPanelTool,
   registerSceneControlsHook,
   resolvePlayerInventoryButtonAnchor,
@@ -16,6 +17,25 @@ const {
   shouldSuppressBg3HotbarAutoAdd,
   unregisterExternalPanelTool
 } = await import("../scripts/hooks.js");
+
+test("panel registration API is publishable during init before the full module API exists", () => {
+  const calls = [];
+  const moduleEntry = { api: { existing: true } };
+
+  const api = publishPanelToolApi(moduleEntry, {
+    register: (...args) => calls.push(["register", ...args]),
+    unregister: (...args) => calls.push(["unregister", ...args])
+  });
+
+  assert.equal(moduleEntry.api, api);
+  assert.equal(api.existing, true);
+  api.registerPanelTool("rebreya-gen", { name: "purchase" });
+  api.unregisterPanelTool("rebreya-gen", "purchase");
+  assert.deepEqual(calls, [
+    ["register", "rebreya-gen", { name: "purchase" }],
+    ["unregister", "rebreya-gen", "purchase"]
+  ]);
+});
 
 function withSceneControlsHandler(callback) {
   const previousHooks = globalThis.Hooks;

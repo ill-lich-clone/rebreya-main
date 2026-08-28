@@ -538,6 +538,26 @@ export function unregisterExternalPanelTool(moduleId, toolName) {
   return externalPanelToolRegistry.unregister(moduleId, toolName);
 }
 
+export function publishPanelToolApi(moduleEntry, {
+  register = registerExternalPanelTool,
+  unregister = unregisterExternalPanelTool
+} = {}) {
+  if (!moduleEntry || typeof moduleEntry !== "object") {
+    return null;
+  }
+
+  const currentApi = moduleEntry.api && typeof moduleEntry.api === "object"
+    ? moduleEntry.api
+    : {};
+  const panelApi = {
+    ...currentApi,
+    registerPanelTool: (moduleId, definition) => register(moduleId, definition),
+    unregisterPanelTool: (moduleId, toolName) => unregister(moduleId, toolName)
+  };
+  moduleEntry.api = panelApi;
+  return panelApi;
+}
+
 function createSafeAction(callback, errorLabel) {
   return async (_event, active = true) => {
     if (active === false) {

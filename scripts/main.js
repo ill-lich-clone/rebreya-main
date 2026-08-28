@@ -283,11 +283,12 @@ import { CraftsmanGadgetZoneService } from "./combat/craftsman-gadget-zone-servi
 import { CraftsmanVehicleService } from "./combat/craftsman-vehicle-service.js";
 import { CraftsmanConstructorService } from "./combat/craftsman-constructor-service.js";
 import {
+  publishPanelToolApi,
   registerExternalPanelTool,
   refreshPlayerInventoryQuickButton,
   registerSceneControlsHook,
   unregisterExternalPanelTool
-} from "./hooks.js?v=1.4.168-purchase-basket";
+} from "./hooks.js?v=1.4.170-panel-api-bootstrap";
 import {
   extendDnd5eItemTypes,
   registerDnd5eSheetExtensions,
@@ -6658,6 +6659,13 @@ export class RebreyaMainModule {
 }
 
 Hooks.once("init", () => {
+  try {
+    publishPanelToolApi(game.modules.get(MODULE_ID));
+  }
+  catch (error) {
+    console.error(`${MODULE_ID} | Failed to publish panel tool API.`, error);
+  }
+
   try {
     ensureModuleStylesheet();
   }
