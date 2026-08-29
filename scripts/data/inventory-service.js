@@ -20,7 +20,7 @@ import { DurableMutationJournal } from "../application/durable-mutation-journal.
 import { WorldMutationCoordinator } from "../application/world-mutation-coordinator.js";
 import { finiteNumber as toNumber } from "../shared/foundry-values.js";
 import { buildDurabilitySignature, isDurabilityEligible } from "./durability-rules.js";
-import { resolveInventoryDismantleOutputs } from "./inventory-ingress-descriptor.js?v=1.4.177-integer-dismantle-repair";
+import { resolveInventoryDismantleOutputs } from "./inventory-ingress-descriptor.js?v=1.4.178-missing-legacy-dismantle-target";
 import {
   InventoryIngressRuleError,
   findInventoryIngressRuleConflicts,
@@ -3093,16 +3093,50 @@ export class InventoryService {
     const state = normalizeInventoryMutationJournal(
       game.settings.get(MODULE_ID, SETTINGS_KEYS.INVENTORY_MUTATION_JOURNAL)
     );
-    const records = state.records.filter((record) => {
+    const fractionalRecords = state.records.filter((record) => {
       const afterQuantity = Number(record?.targetReceipt?.afterQuantity);
       return record?.kind === "dismantle"
         && record?.phase === "prepared"
-        && record?.terminal !== true
         && cleanId(record?.actorId) === actorId
         && Number.isFinite(afterQuantity)
         && afterQuantity > 0
         && !Number.isSafeInteger(afterQuantity);
-    }).reverse();
+    });
+    const records = fractionalRecords
+      .filter((record) => record?.terminal !== true)
+      .reverse();
+    const missingMergeWasCreatedByLegacyCredit = (record) => {
+      const receipt = record?.targetReceipt ?? {};
+      const materialIdentity = inventoryStackIdentity(record?.materialItemData);
+      if (!materialIdentity) return false;
+      return fractionalRecords.some((candidate) => {
+        const candidateReceipt = candidate?.targetReceipt ?? {};
+        const candidateId = cleanId(candidate?.id);
+        return candidateReceipt.created === true
+          && candidateId
+          && (candidate?.terminal !== true
+            || candidate?.result?.code === "legacy-fractional-dismantle-repaired")
+          && cleanId(candidate?.request?.actorId) === actorId
+          && cleanId(candidate?.request?.itemId) === cleanId(record?.request?.itemId)
+          && Number(candidate?.request?.quantity) === Number(record?.request?.quantity)
+          && cleanId(candidate?.sourceReceipt?.itemId) === cleanId(record?.sourceReceipt?.itemId)
+          && inventoryQuantitiesMatch(
+            candidate?.sourceReceipt?.beforeQuantity,
+            record?.sourceReceipt?.beforeQuantity
+          )
+          && inventoryQuantitiesMatch(
+            candidate?.sourceReceipt?.afterQuantity,
+            record?.sourceReceipt?.afterQuantity
+          )
+          && inventoryQuantitiesMatch(candidate?.sourceReceipt?.delta, record?.sourceReceipt?.delta)
+          && inventoryStackIdentity(candidate?.materialItemData) === materialIdentity
+          && inventoryQuantitiesMatch(
+            Math.max(0, Math.round(Number(candidateReceipt.afterQuantity))),
+            receipt.beforeQuantity
+          )
+          && !this.#findMutationItem(actor, candidateId);
+      });
+    };
 
     for (const record of records) {
       const recordId = cleanId(record.id);
@@ -3146,27 +3180,31 @@ export class InventoryService {
       }
       else {
         if (!targetItem) {
-          throw this.#inventoryReconciliationError(
-            `Legacy fractional dismantle '${record.id}' merge target disappeared before repair.`
-          );
+          if (!missingMergeWasCreatedByLegacyCredit(record)) {
+            throw this.#inventoryReconciliationError(
+              `Legacy fractional dismantle '${record.id}' merge target disappeared before repair.`
+            );
+          }
         }
-        const currentQuantity = getRawQuantity(targetItem.toObject());
-        if (!inventoryQuantitiesMatch(currentQuantity, receipt.beforeQuantity)) {
-          if (!inventoryQuantitiesMatch(currentQuantity, coercedAfterQuantity)) {
-            throw this.#inventoryReconciliationError(
-              `Legacy fractional dismantle '${record.id}' merge target changed before repair.`
-            );
-          }
-          try {
-            await targetItem.update({ "system.quantity": receipt.beforeQuantity });
-          }
-          catch (error) {
-            if (!inventoryQuantitiesMatch(getRawQuantity(targetItem.toObject()), receipt.beforeQuantity)) throw error;
-          }
-          if (!inventoryQuantitiesMatch(getRawQuantity(targetItem.toObject()), receipt.beforeQuantity)) {
-            throw this.#inventoryReconciliationError(
-              `Legacy fractional dismantle '${record.id}' merge target was not restored.`
-            );
+        else {
+          const currentQuantity = getRawQuantity(targetItem.toObject());
+          if (!inventoryQuantitiesMatch(currentQuantity, receipt.beforeQuantity)) {
+            if (!inventoryQuantitiesMatch(currentQuantity, coercedAfterQuantity)) {
+              throw this.#inventoryReconciliationError(
+                `Legacy fractional dismantle '${record.id}' merge target changed before repair.`
+              );
+            }
+            try {
+              await targetItem.update({ "system.quantity": receipt.beforeQuantity });
+            }
+            catch (error) {
+              if (!inventoryQuantitiesMatch(getRawQuantity(targetItem.toObject()), receipt.beforeQuantity)) throw error;
+            }
+            if (!inventoryQuantitiesMatch(getRawQuantity(targetItem.toObject()), receipt.beforeQuantity)) {
+              throw this.#inventoryReconciliationError(
+                `Legacy fractional dismantle '${record.id}' merge target was not restored.`
+              );
+            }
           }
         }
       }

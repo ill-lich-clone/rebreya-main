@@ -745,6 +745,142 @@ test("manual dismantle repairs legacy fractional credits before applying a new i
   }
 });
 
+test("manual dismantle accepts a missing legacy merge target already removed with its created credit", async () => {
+  const silver = { id: "silver", name: "Silver", type: "Mineral", priceGold: 5, weight: 1 };
+  const model = {
+    gear: [],
+    gearById: new Map(),
+    materials: [silver],
+    materialById: new Map([[silver.id, silver]]),
+    materialByGoodId: new Map()
+  };
+  const source = createItem({
+    id: "broken-amulet",
+    name: "Broken amulet",
+    type: "loot",
+    quantity: 3,
+    system: {
+      quantity: 3,
+      price: { value: 5, denomination: "gp" },
+      weight: { value: 1, units: "lb" }
+    },
+    flags: {
+      [MODULE_ID]: {
+        sourceType: "gear",
+        sourceId: "silver-amulet",
+        gearId: "silver-amulet",
+        predominantMaterialId: silver.id
+      }
+    }
+  });
+  const group = createActor({
+    id: "legacy-missing-target-dismantle-group",
+    type: "group",
+    managed: true,
+    items: [source]
+  });
+  const fixture = installFixture({
+    group,
+    actors: [group],
+    moduleApi: { getModel: async () => model }
+  });
+  const firstMutationId = "inventory-dismantle-legacy-created-missing";
+  const secondMutationId = "inventory-dismantle-legacy-merged-missing";
+  const sourceReceipt = {
+    itemId: source.id,
+    beforeQuantity: 3,
+    afterQuantity: 0,
+    delta: 3
+  };
+  const materialFlags = {
+    sourceType: "material",
+    sourceId: silver.id,
+    materialId: silver.id,
+    predominantMaterialId: silver.id
+  };
+
+  try {
+    fixture.settingsStore[SETTINGS_KEYS.INVENTORY_MUTATION_JOURNAL] = {
+      version: 1,
+      records: [{
+        id: firstMutationId,
+        kind: "dismantle",
+        phase: "prepared",
+        terminal: false,
+        request: { actorId: group.id, itemId: source.id, quantity: 3 },
+        actorId: group.id,
+        itemName: source.name,
+        materialName: silver.name,
+        materialWeight: 1.5,
+        materialItemData: {
+          name: silver.name,
+          type: "loot",
+          system: { quantity: 1.5 },
+          flags: {
+            [MODULE_ID]: {
+              ...clone(materialFlags),
+              inventoryMutation: { id: firstMutationId, kind: "dismantle" }
+            }
+          }
+        },
+        sourceReceipt: clone(sourceReceipt),
+        targetReceipt: {
+          itemId: "",
+          created: true,
+          beforeQuantity: 0,
+          afterQuantity: 1.5,
+          delta: 1.5
+        }
+      }, {
+        id: secondMutationId,
+        kind: "dismantle",
+        phase: "prepared",
+        terminal: false,
+        request: { actorId: group.id, itemId: source.id, quantity: 3 },
+        actorId: group.id,
+        itemName: source.name,
+        materialName: silver.name,
+        materialWeight: 1.5,
+        materialItemData: {
+          name: silver.name,
+          type: "loot",
+          system: { quantity: 1.5 },
+          flags: { [MODULE_ID]: clone(materialFlags) }
+        },
+        sourceReceipt: clone(sourceReceipt),
+        targetReceipt: {
+          itemId: "missing-rounded-silver",
+          created: false,
+          beforeQuantity: 2,
+          afterQuantity: 3.5,
+          delta: 1.5
+        }
+      }]
+    };
+
+    const result = await fixture.service.executeDismantleMutation({
+      inventoryActorId: group.id,
+      itemId: source.id,
+      mutationId: "inventory-dismantle-after-missing-legacy-target",
+      quantity: 3
+    });
+
+    assert.equal(result.materialWeight, 1);
+    assert.equal(group.items.contents.length, 1);
+    assert.equal(group.items.contents[0].name, silver.name);
+    assert.equal(group.items.contents[0].system.quantity, 1);
+    const records = fixture.settingsStore[SETTINGS_KEYS.INVENTORY_MUTATION_JOURNAL].records;
+    for (const mutationId of [firstMutationId, secondMutationId]) {
+      const record = records.find((entry) => entry.id === mutationId);
+      assert.equal(record.terminal, true);
+      assert.equal(record.result?.code, "legacy-fractional-dismantle-repaired");
+    }
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
 test("manual dismantle refuses to repair a legacy fractional target changed by another mutation", async () => {
   const silver = { id: "silver", name: "Silver", type: "Mineral", priceGold: 5, weight: 1 };
   const model = {
