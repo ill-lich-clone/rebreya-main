@@ -21,6 +21,7 @@ await game.rebreyaMain.syncEquippedMagicItems({ dryRun: true })
 В область входят:
 
 - расширение существующих builders в `scripts/data/magic-items-compendium.js`;
+- расширение существующего attack workflow только для бонуса Перчаток двуручного боя, зависящего от живого состояния рук Rebreya;
 - обновление managed-компендиума через существующий `MagicItemsCompendiumService.sync()`;
 - перенос managed effects и activities в уже существующие надетые/настроенные embedded Items;
 - точная совместимость со старыми world-копиями и карточками из `dnd5e`, `laaru-dnd5-hw` и `fifthpendium-artificer-525`;
@@ -87,7 +88,7 @@ Pure helpers разрешения identity и merge embedded-данных мог
 3. Заряды хранятся в activity uses или в явном общем item-resource, когда несколько activities используют общий пул.
 4. Обычные действия выражаются native `utility`, `attack`, `save` или иным подходящим activity type.
 5. Нативный `system.magicalBonus` оружия/брони не дублируется эффектом.
-6. Условный бонус не превращается в безусловный. Если dnd5e/DAE/MIDI-QOL не может выразить условие точно, создаётся activity для ручного применения либо механика остаётся `manual`.
+6. Условный бонус не превращается в безусловный. Если условие уже имеет канонического runtime-владельца, автоматизация расширяет его; в частности, состояние рук читается только через `scripts/integrations/held-items.js`. В остальных случаях создаётся activity для ручного применения либо механика остаётся `manual`.
 7. Нарративное действие может иметь utility activity, публикующую правило в chat, но не притворяется полностью автоматизированным.
 8. Managed effects и activities получают стабильные IDs и `flags.rebreya-main.magicItemAutomation: true`.
 9. Attunement-state принадлежит embedded Item и миграцией не меняется.
@@ -112,7 +113,7 @@ Pure helpers разрешения identity и merge embedded-данных мог
 | `уроборос` и варианты колец характеристики | definition хранит bonus/max; compendium не выбирает характеристику | manual-choice; embedded suffix `(Сила)`/`(Ловкость)` разрешает точный managed effect, иначе `unresolvedChoices` |
 | `живые-перчатки` | выбор skill/tool proficiency и expertise не угадывается | manual-choice; существующий выбор/effect сохраняется |
 | `эльфийская-кольчуга` | native armor bonus сохраняется; proficiency без штрафа остаётся native/manual, если нет точного dnd5e effect path | native/partial |
-| `перчатки-двуручного-боя` | не добавлять безусловные `+2` ко всему melee damage | manual: требуется доказуемое условие двух одновременно удерживаемых melee weapons |
+| `перчатки-двуручного-боя` | добавить `+2` ровно один раз к damage roll текущего melee weapon, только когда Actor держит минимум два разных melee weapon в разных руках Rebreya | full через существующие `heldHands` и `CombatAttackService`; постоянный Active Effect запрещён |
 | `амулет-защиты-от-обнаружения-и-поиска` | не создавать фиктивный immunity flag | manual: divination targeting требует профильной интеграции |
 | `медальон-затягивающихся-ран` | не подменять стабилизацию и удвоение Hit Dice пустым effect | manual: требуется отдельный death/rest workflow, отсутствующий в этой задаче |
 
@@ -144,6 +145,22 @@ Pure helpers разрешения identity и merge embedded-данных мог
 | `Зелье лечения 1-го уровня` | добавить/сохранить native healing consumption только через gear-owner, не превращать gear row в magic-item identity |
 | `Меч мести` | native weapon `+1` сохраняется; curse остаётся manual, поскольку требует выбора цели и принуждения атаковать |
 | `Особый Кинжал телепортации` | `unresolved`: текущая карточка является переименованным mundane dagger и не содержит описания телепортационной механики |
+
+## Условный бонус Перчаток двуручного боя
+
+Перчатки не получают damage Active Effect: такой effect неизбежно применил бы `+2` к атакам, для которых условие двух оружий не выполнено. Канонический владелец проверки — существующий attack workflow `CombatAttackService`, а источник состояния рук — только `scripts/integrations/held-items.js`.
+
+Во время построения damage roll бонус применяется, только если одновременно истинны все условия:
+
+1. Actor имеет equipped Item с точным `magicItemId: перчатки-двуручного-боя`.
+2. Текущий атакующий Item является melee weapon и сам удерживается хотя бы в одной руке по `getItemHeldHands(item)`.
+3. Actor держит минимум два разных equipped melee weapon Items.
+4. Эти два документа занимают минимум два разных hand slots из `getActorHandSlots(actor)`; одно двуручное оружие, занимающее обе руки, не считается двумя оружиями.
+5. Текущий атакующий Item входит в найденную пару/набор.
+
+Проверка выполняется заново для каждого damage roll и поэтому сразу учитывает смену оружия, освобождение руки, резерв руки захватом и дополнительные руки от имплантов. Бонус добавляется один раз к итоговому damage roll текущего оружия, а не к каждой damage part. Рукопашная атака не удерживаемым оружием, ranged weapon, natural weapon без отдельного удерживаемого Item и одно оружие в двух руках бонус не получают.
+
+Pure predicate определения подходящей пары может находиться в `held-items.js`; решение добавить бонус к конкретному roll остаётся в `CombatAttackService`. Новый глобальный hook или второй источник состояния рук не создаётся.
 
 ## Identity resolution и конфликтующие evidence
 
@@ -244,8 +261,11 @@ README описывает apply- и dry-run-вызовы и явно преду�
 
 - `scripts/data/magic-items-compendium.js` — canonical definitions, effects, activities, signature и method-owner;
 - optional `scripts/data/magic-item-embedded-sync.js` — pure identity/merge helpers без самостоятельного lifecycle;
+- `scripts/integrations/held-items.js` — pure predicate двух разных melee weapons в разных canonical hand slots;
+- `scripts/combat/attack-service.js` — единственное runtime-применение `+2` к подходящему damage roll Перчаток двуручного боя;
 - `scripts/main.js` — один public delegate;
 - `tests/magic-items-compendium.test.mjs` — compendium projections;
+- `tests/held-items.test.mjs` и `tests/combat-attack-service.test.mjs` — hand predicate и одноразовый conditional damage bonus;
 - новый `tests/magic-item-equipped-sync.test.mjs` — world migration contract;
 - `tests/main-composition-root.test.mjs` — public API composition;
 - `README.md` — console API;
@@ -266,6 +286,7 @@ README описывает apply- и dry-run-вызовы и явно преду�
 - stable effect/activity IDs и managed flags;
 - включение versioned automation projection в signature;
 - отсутствие effects/activities у control/manual предметов;
+- отсутствие безусловного damage Active Effect у Перчаток двуручного боя;
 - новое additive darkvision-поведение Ночных очков;
 - прежние native instrument activities не регрессируют.
 
@@ -288,6 +309,17 @@ README описывает apply- и dry-run-вызовы и явно преду�
 - продолжение после ошибки одного Actor;
 - полный reason-coded report.
 
+`tests/held-items.test.mjs` и `tests/combat-attack-service.test.mjs` дополнительно доказывают:
+
+- два разных melee weapons в `left`/`right` дают бонус;
+- дополнительные canonical hand slots также поддерживаются;
+- одно двуручное оружие в двух руках не считается двумя оружиями;
+- два документа в одном malformed hand slot не дают бонус;
+- ranged, natural/unheld и неэкипированные weapons не дают бонус;
+- освобождение или reservation руки немедленно выключает бонус;
+- damage roll получает ровно один `+2`, независимо от числа damage parts;
+- отсутствие/снятие Перчаток двуручного боя выключает бонус.
+
 ### Composition и manifest
 
 - `tests/main-composition-root.test.mjs` проверяет delegate;
@@ -305,6 +337,7 @@ README описывает apply- и dry-run-вызовы и явно преду�
 5. второй apply возвращает нулевое число изменений;
 6. unresolved/manual items перечислены с причиной, а не молча пропущены;
 7. cached spells создаются/удаляются dnd5e, а не Rebreya;
-8. `docs/function-passport.md`, README, module version и forwarder синхронизированы;
-9. выполнены focused и полные проверки из `AGENTS.md`;
-10. commit отправлен в `origin/lich_branch` без force push.
+8. Перчатки двуручного боя дают `+2` только при подтверждённых двух разных melee weapons в разных руках Rebreya;
+9. `docs/function-passport.md`, README, module version и forwarder синхронизированы;
+10. выполнены focused и полные проверки из `AGENTS.md`;
+11. commit отправлен в `origin/lich_branch` без force push.
