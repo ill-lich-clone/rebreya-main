@@ -60,6 +60,151 @@ const NATIVE_INSTRUMENT_SPELLS = {
     { name: "Полёт", id: "yfbK8gZqESlaoY5t", level: 3 }
   ]
 };
+const CHARGED_MAGIC_ITEM_SPELLS = {
+  "печатка-гильдии-ракдоса": {
+    uses: { max: 3, recovery: "1d3" },
+    spells: [
+      {
+        name: "Hellish Rebuke",
+        id: "phbsplHellishReb",
+        level: 1,
+        cost: 1,
+        activation: "reaction",
+        pack: "spells24"
+      }
+    ]
+  },
+  "ушной-червь": {
+    uses: { max: 4, recovery: "1d4" },
+    spells: [
+      {
+        name: "Detect Thoughts",
+        id: "phbsplDetectThou",
+        level: 2,
+        cost: 2,
+        activation: "action",
+        pack: "spells24",
+        saveDc: 15
+      },
+      {
+        name: "Dissonant Whispers",
+        id: "phbsplDissonantW",
+        level: 1,
+        cost: 1,
+        activation: "action",
+        pack: "spells24",
+        saveDc: 15
+      }
+    ]
+  }
+};
+const MAGIC_ITEM_UTILITY_DEFINITIONS = {
+  "кинжал-яда": {
+    uses: { max: 1, recovery: null },
+    activities: [{
+      key: "coat-blade-with-poison",
+      name: "Покрыть клинок ядом",
+      activation: "action",
+      cost: 1,
+      chatFlavor: "Клинок покрывается ядом на 1 минуту или до следующего попадания. После попадания используйте отдельную activity спасброска яда."
+    }]
+  },
+  "механистический-амулет": {
+    uses: { max: 1, recovery: null },
+    activities: [{
+      key: "take-ten-on-attack",
+      name: "Принять 10 на броске атаки",
+      activation: "special",
+      cost: 1,
+      chatFlavor: "Вместо броска к20 выберите значение 10 на кости для текущего броска атаки."
+    }]
+  },
+  "таранный-щит": {
+    uses: { max: 3, recovery: "1d3" },
+    activities: [{
+      key: "battering-shove",
+      name: "Усиленный толчок",
+      activation: "special",
+      cost: 1,
+      chatFlavor: "После успешного обычного толчка выберите: оттолкнуть цель ещё на 10 футов, сбить её с ног или применить оба результата."
+    }]
+  },
+  "развевающийся-плащ": {
+    activities: [{
+      key: "billow-cloak",
+      name: "Драматично развеять плащ",
+      activation: "bonus",
+      cost: null,
+      chatFlavor: "Плащ драматично развевается."
+    }]
+  },
+  "трубка-дымных-чудовищ": {
+    activities: [{
+      key: "exhale-smoke-creature",
+      name: "Выдохнуть дымное существо",
+      activation: "action",
+      cost: null,
+      chatFlavor: "Облако дыма принимает форму существа размером не более 1-футового куба и через несколько секунд рассеивается."
+    }]
+  },
+  "фонарь-обнаружения": {
+    activities: [
+      {
+        key: "open-lantern",
+        name: "Открыть фонарь",
+        activation: "action",
+        cost: null,
+        chatFlavor: "Откройте фонарь. Свет и обнаружение невидимого применяются вручную к текущему Token."
+      },
+      {
+        key: "lower-lantern-hood",
+        name: "Опустить козырёк",
+        activation: "action",
+        cost: null,
+        chatFlavor: "Опустите козырёк: фонарь оставляет тусклый свет в пределах 5 футов. Состояние Token изменяется вручную."
+      }
+    ]
+  },
+  "универсальный-инструмент-1": {
+    uses: { max: 1, recovery: null },
+    activities: [
+      {
+        key: "transform-tool",
+        name: "Изменить форму инструмента",
+        activation: "action",
+        cost: null,
+        chatFlavor: "Выберите форму одного вида инструментов ремесленника."
+      },
+      {
+        key: "choose-cantrip",
+        name: "Выбрать заговор",
+        activation: "action",
+        cost: 1,
+        chatFlavor: "Выберите неизвестный заговор из списка любого класса; в течение 8 часов он считается для вас заговором изобретателя."
+      }
+    ]
+  },
+  "амулет-благочестия-1": {
+    uses: { max: 1, recovery: null },
+    activities: [{
+      key: "free-channel-divinity",
+      name: "Божественный канал без расхода",
+      activation: "special",
+      cost: 1,
+      chatFlavor: "Используйте Божественный канал без расхода его actor-resource."
+    }]
+  },
+  "барабан-задающего-ритм-1": {
+    uses: { max: 1, recovery: null },
+    activities: [{
+      key: "restore-bardic-inspiration",
+      name: "Восстановить Бардовское вдохновение",
+      activation: "action",
+      cost: 1,
+      chatFlavor: "Восстановите одну израсходованную кость Бардовского вдохновения."
+    }]
+  }
+};
 const MODULE_ICONS_BASE_PATH = `modules/${MODULE_ID}/templates/icons`;
 const MAGIC_ICON_SEARCH_PATHS = [`${MODULE_ICONS_BASE_PATH}/Magic Items`, MODULE_ICONS_BASE_PATH];
 const BELLMAN_POWER_ITEM_NAME = "Жемчужина силы";
@@ -180,13 +325,133 @@ function resolveNativeInstrumentSpellDefinition(item) {
   return NATIVE_INSTRUMENT_SPELLS[String(item?.id ?? "").trim()] ?? null;
 }
 
-function buildNativeInstrumentSpellActivities(item) {
-  const spells = resolveNativeInstrumentSpellDefinition(item);
-  if (!spells) {
+function itemUseConsumptionTarget(value = "1") {
+  return {
+    type: "itemUses",
+    target: "",
+    value,
+    scaling: {
+      mode: "",
+      formula: ""
+    }
+  };
+}
+
+function buildFormulaRecovery(max, formula) {
+  return {
+    spent: 0,
+    max: String(max),
+    recovery: [{
+      period: "dawn",
+      type: "formula",
+      formula
+    }]
+  };
+}
+
+function buildDawnUses(definition) {
+  if (!definition) {
     return null;
   }
+  if (definition.recovery) {
+    return buildFormulaRecovery(definition.max, definition.recovery);
+  }
+  return {
+    spent: 0,
+    max: String(definition.max),
+    recovery: [{
+      period: "dawn",
+      type: "recoverAll",
+      formula: ""
+    }]
+  };
+}
 
-  return Object.fromEntries(spells.map((spell) => {
+function buildUtilityActivity(item, definition) {
+  const activityId = stableHashId(
+    `magic-item:${item.id}:activity:${definition.key}`,
+    "magic-item-activity"
+  );
+  return [activityId, {
+    _id: activityId,
+    type: "utility",
+    name: definition.name,
+    activation: {
+      type: definition.activation,
+      value: definition.activation === "special" ? null : 1,
+      condition: "",
+      override: false
+    },
+    consumption: {
+      scaling: { allowed: false, max: "" },
+      spellSlot: false,
+      targets: definition.cost === null
+        ? []
+        : [itemUseConsumptionTarget(String(definition.cost))]
+    },
+    description: {
+      chatFlavor: definition.chatFlavor
+    },
+    flags: {
+      [MODULE_ID]: {
+        magicItemAutomation: true
+      }
+    }
+  }];
+}
+
+function buildPoisonDaggerSaveActivity(item) {
+  const activityId = stableHashId(
+    `magic-item:${item.id}:activity:poison-save`,
+    "magic-item-activity"
+  );
+  return [activityId, {
+    _id: activityId,
+    type: "save",
+    name: "Яд: спасбросок после попадания",
+    activation: {
+      type: "special",
+      value: null,
+      condition: "После попадания отравленным клинком",
+      override: false
+    },
+    consumption: {
+      scaling: { allowed: false, max: "" },
+      spellSlot: false,
+      targets: []
+    },
+    save: {
+      ability: ["con"],
+      dc: { calculation: "", formula: "15" }
+    },
+    damage: {
+      onSave: "none",
+      parts: [{
+        number: 2,
+        denomination: 10,
+        bonus: "",
+        types: ["poison"],
+        custom: { enabled: false, formula: "" },
+        scaling: { mode: "", number: 1, formula: "" }
+      }]
+    },
+    description: {
+      chatFlavor: "При провале цель получает 2к10 урона ядом и становится отравленной на 1 минуту."
+    },
+    flags: {
+      [MODULE_ID]: {
+        magicItemAutomation: true
+      }
+    }
+  }];
+}
+
+function buildMagicItemActivities(item) {
+  const itemId = String(item?.id ?? "").trim();
+  const instrumentSpells = resolveNativeInstrumentSpellDefinition(item);
+  const chargedDefinition = CHARGED_MAGIC_ITEM_SPELLS[itemId] ?? null;
+  const spells = instrumentSpells ?? chargedDefinition?.spells ?? [];
+  const entries = spells.map((spell) => {
     const activityId = stableHashId(
       `magic-item:${item.id}:spell:${spell.id}`,
       "magic-item-activity"
@@ -196,7 +461,7 @@ function buildNativeInstrumentSpellActivities(item) {
       type: "cast",
       name: spell.name,
       activation: {
-        type: "action",
+        type: spell.activation ?? "action",
         value: 1,
         condition: ""
       },
@@ -206,12 +471,14 @@ function buildNativeInstrumentSpellActivities(item) {
           max: ""
         },
         spellSlot: false,
-        targets: [{
-          type: "activityUses",
-          value: "1"
-        }]
+        targets: chargedDefinition
+          ? [itemUseConsumptionTarget(String(spell.cost ?? 1))]
+          : [{
+            type: "activityUses",
+            value: "1"
+          }]
       },
-      uses: {
+      ...(chargedDefinition ? {} : { uses: {
         spent: 0,
         max: "1",
         recovery: [{
@@ -219,19 +486,32 @@ function buildNativeInstrumentSpellActivities(item) {
           type: "recoverAll",
           formula: ""
         }]
-      },
+      } }),
       spell: {
         ability: "",
-        challenge: {
-          override: false
-        },
+        challenge: spell.saveDc
+          ? { attack: null, save: spell.saveDc, override: true }
+          : { override: false },
         level: spell.level,
         properties: ["vocal", "somatic", "material"],
         spellbook: true,
-        uuid: `Compendium.dnd5e.spells.Item.${spell.id}`
+        uuid: `Compendium.dnd5e.${spell.pack ?? "spells"}.Item.${spell.id}`
+      },
+      flags: {
+        [MODULE_ID]: {
+          magicItemAutomation: true
+        }
       }
     }];
-  }));
+  });
+  const utilityDefinition = MAGIC_ITEM_UTILITY_DEFINITIONS[itemId];
+  for (const definition of utilityDefinition?.activities ?? []) {
+    entries.push(buildUtilityActivity(item, definition));
+  }
+  if (itemId === "кинжал-яда") {
+    entries.push(buildPoisonDaggerSaveActivity(item));
+  }
+  return entries.length ? Object.fromEntries(entries) : null;
 }
 
 function buildPassiveMagicItemEffect({
@@ -286,15 +566,22 @@ function resolveMagicItemAutomationDefinition(item) {
   const normalizedPouchName = normalizeMatchText(HOARDING_POUCH_ITEM_NAME);
   const normalizedWatcherShieldName = normalizeMatchText(WATCHER_SHIELD_ITEM_NAME);
   const normalizedRingPrefix = normalizeMatchText(RING_BONUS_ITEM_PREFIX);
+  const passiveDefinition = PASSIVE_MAGIC_ITEM_CHANGE_DEFINITIONS.get(itemId) ?? null;
+  const chargedDefinition = CHARGED_MAGIC_ITEM_SPELLS[itemId] ?? null;
+  const utilityDefinition = MAGIC_ITEM_UTILITY_DEFINITIONS[itemId] ?? null;
 
-  if (PASSIVE_MAGIC_ITEM_CHANGE_DEFINITIONS.has(itemId)) {
+  if (passiveDefinition || chargedDefinition || utilityDefinition) {
+    const uses = chargedDefinition?.uses ?? utilityDefinition?.uses ?? null;
     return {
       version: MAGIC_ITEM_AUTOMATION_VERSION,
-      kind: "passive",
+      kind: passiveDefinition && (chargedDefinition || utilityDefinition)
+        ? "passive-and-activities"
+        : passiveDefinition ? "passive" : "activities",
       coverage: PARTIAL_PASSIVE_MAGIC_ITEM_IDS.has(itemId) ? "partial" : "full",
+      sharedUses: buildDawnUses(uses),
       note: itemId === "лунный-серп-1"
         ? "Бонус к лечению заклинаниями остаётся ручным: native healing bonus расширил бы механику на другие источники лечения."
-        : "Автоматизируется статическим переносимым эффектом."
+        : "Автоматизируется managed effects и native activities предмета."
     };
   }
 
@@ -627,7 +914,10 @@ function buildMagicSignature(item) {
   const classification = classifyMagicItem(item);
   const itemSlot = resolveItemSlotGroup(item, classification);
   const heroDollSlots = mapSlotGroupToHeroDollSlots(itemSlot, classification.heroDollSlots);
-  const nativeInstrumentSpellActivities = buildNativeInstrumentSpellActivities(item);
+  const magicItemActivities = buildMagicItemActivities(item);
+  const nativeInstrumentSpellActivities = resolveNativeInstrumentSpellDefinition(item)
+    ? magicItemActivities
+    : null;
   const magicItemAutomation = resolveMagicItemAutomationDefinition(item);
   const magicItemAutomationEffects = buildMagicItemAutomationEffects(item);
   return JSON.stringify({
@@ -660,7 +950,8 @@ function buildMagicSignature(item) {
       magicItemAutomation: {
         version: MAGIC_ITEM_AUTOMATION_VERSION,
         definition: magicItemAutomation,
-        effects: magicItemAutomationEffects
+        effects: magicItemAutomationEffects,
+        activities: magicItemActivities
       }
     } : {}),
     ...(nativeInstrumentSpellActivities ? {
@@ -775,10 +1066,17 @@ export function createMagicItemData(item, folderIdByPath, iconLookup = null) {
   const descriptionHtml = buildDescriptionHtml(item, classification);
   const magicItemAutomation = resolveMagicItemAutomationDefinition(item);
   const systemData = buildSystemData(item, classification, descriptionHtml);
-  const nativeInstrumentSpellActivities = buildNativeInstrumentSpellActivities(item);
+  const magicItemActivities = buildMagicItemActivities(item);
 
-  if (nativeInstrumentSpellActivities) {
-    systemData.activities = nativeInstrumentSpellActivities;
+  if (magicItemActivities) {
+    systemData.activities = magicItemActivities;
+  }
+
+  const itemId = String(item?.id ?? "").trim();
+  const sharedUses = CHARGED_MAGIC_ITEM_SPELLS[itemId]?.uses
+    ?? MAGIC_ITEM_UTILITY_DEFINITIONS[itemId]?.uses;
+  if (sharedUses) {
+    systemData.uses = buildDawnUses(sharedUses);
   }
 
   if (magicItemAutomation?.kind === "bagOfHolding") {

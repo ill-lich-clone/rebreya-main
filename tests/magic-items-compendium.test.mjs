@@ -458,3 +458,133 @@ test("magic instruments expose independent native cast activities", () => {
     false
   );
 });
+
+test("charged magic items expose native spell activities with shared item uses", () => {
+  const sourceById = new Map(MAGIC_ITEMS.map((item) => [item.id, item]));
+  const normalized = magicItemsCompendium.normalizeMagicItems([
+    sourceById.get("печатка-гильдии-ракдоса"),
+    sourceById.get("ушной-червь")
+  ]);
+  const createdById = new Map(normalized.map((item) => [
+    item.id,
+    magicItemsCompendium.createMagicItemData(item, new Map())
+  ]));
+  const expectedUsesById = new Map([
+    ["печатка-гильдии-ракдоса", {
+      spent: 0,
+      max: "3",
+      recovery: [{ period: "dawn", type: "formula", formula: "1d3" }]
+    }],
+    ["ушной-червь", {
+      spent: 0,
+      max: "4",
+      recovery: [{ period: "dawn", type: "formula", formula: "1d4" }]
+    }]
+  ]);
+  const expectedSpells = [
+    ["печатка-гильдии-ракдоса", "Hellish Rebuke", "Compendium.dnd5e.spells24.Item.phbsplHellishReb", 1, "1"],
+    ["ушной-червь", "Detect Thoughts", "Compendium.dnd5e.spells24.Item.phbsplDetectThou", 2, "2"],
+    ["ушной-червь", "Dissonant Whispers", "Compendium.dnd5e.spells24.Item.phbsplDissonantW", 1, "1"]
+  ];
+
+  for (const [itemId, expectedUses] of expectedUsesById) {
+    const created = createdById.get(itemId);
+    assert.deepEqual(created.system.uses, expectedUses, itemId);
+    const signature = JSON.parse(created.flags["rebreya-main"].signature);
+    assert.deepEqual(signature.magicItemAutomation.activities, created.system.activities, itemId);
+  }
+
+  for (const [itemId, name, uuid, level, cost] of expectedSpells) {
+    const created = createdById.get(itemId);
+    const activity = Object.values(created.system.activities ?? {})
+      .find((entry) => entry.name === name);
+    assert.ok(activity, `${itemId}:${name}`);
+    assert.equal(activity.type, "cast");
+    assert.equal(activity._id.length, 16);
+    assert.equal(activity.spell.uuid, uuid);
+    assert.equal(activity.spell.level, level);
+    assert.equal(activity.spell.spellbook, true);
+    assert.equal(activity.consumption.spellSlot, false);
+    assert.deepEqual(activity.consumption.targets, [{
+      type: "itemUses",
+      target: "",
+      value: cost,
+      scaling: { mode: "", formula: "" }
+    }]);
+    assert.equal(activity.flags["rebreya-main"].magicItemAutomation, true);
+    if (itemId === "ушной-червь") {
+      assert.deepEqual(activity.spell.challenge, { attack: null, save: 15, override: true });
+    }
+  }
+});
+
+test("magic items expose approved native utility and poison save activities", () => {
+  const sourceById = new Map(MAGIC_ITEMS.map((item) => [item.id, item]));
+  const utilityCases = [
+    ["кинжал-яда", "Покрыть клинок ядом", "action", "1"],
+    ["механистический-амулет", "Принять 10 на броске атаки", "special", "1"],
+    ["таранный-щит", "Усиленный толчок", "special", "1"],
+    ["развевающийся-плащ", "Драматично развеять плащ", "bonus", null],
+    ["трубка-дымных-чудовищ", "Выдохнуть дымное существо", "action", null],
+    ["фонарь-обнаружения", "Открыть фонарь", "action", null],
+    ["фонарь-обнаружения", "Опустить козырёк", "action", null],
+    ["универсальный-инструмент-1", "Изменить форму инструмента", "action", null],
+    ["универсальный-инструмент-1", "Выбрать заговор", "action", "1"],
+    ["амулет-благочестия-1", "Божественный канал без расхода", "special", "1"],
+    ["барабан-задающего-ритм-1", "Восстановить Бардовское вдохновение", "action", "1"]
+  ];
+  const ids = [...new Set(utilityCases.map(([id]) => id))];
+  const createdById = new Map(magicItemsCompendium.normalizeMagicItems(
+    ids.map((id) => sourceById.get(id))
+  ).map((item) => [item.id, magicItemsCompendium.createMagicItemData(item, new Map())]));
+
+  for (const [itemId, name, activation, cost] of utilityCases) {
+    const activity = Object.values(createdById.get(itemId).system.activities ?? {})
+      .find((entry) => entry.name === name);
+    assert.ok(activity, `${itemId}:${name}`);
+    assert.equal(activity.type, "utility");
+    assert.equal(activity.activation.type, activation);
+    assert.equal(activity._id.length, 16);
+    assert.equal(activity.flags["rebreya-main"].magicItemAutomation, true);
+    assert.deepEqual(
+      activity.consumption.targets,
+      cost === null ? [] : [{
+        type: "itemUses",
+        target: "",
+        value: cost,
+        scaling: { mode: "", formula: "" }
+      }],
+      `${itemId}:${name}`
+    );
+  }
+
+  assert.deepEqual(createdById.get("кинжал-яда").system.uses, {
+    spent: 0,
+    max: "1",
+    recovery: [{ period: "dawn", type: "recoverAll", formula: "" }]
+  });
+  assert.deepEqual(createdById.get("таранный-щит").system.uses, {
+    spent: 0,
+    max: "3",
+    recovery: [{ period: "dawn", type: "formula", formula: "1d3" }]
+  });
+
+  const poisonSave = Object.values(createdById.get("кинжал-яда").system.activities)
+    .find((entry) => entry.name === "Яд: спасбросок после попадания");
+  assert.ok(poisonSave);
+  assert.equal(poisonSave.type, "save");
+  assert.deepEqual(poisonSave.save, {
+    ability: ["con"],
+    dc: { calculation: "", formula: "15" }
+  });
+  assert.deepEqual(poisonSave.damage.parts[0], {
+    number: 2,
+    denomination: 10,
+    bonus: "",
+    types: ["poison"],
+    custom: { enabled: false, formula: "" },
+    scaling: { mode: "", number: 1, formula: "" }
+  });
+  assert.match(poisonSave.description.chatFlavor, /отравлен.+1 минут/iu);
+  assert.deepEqual(poisonSave.consumption.targets, []);
+});
