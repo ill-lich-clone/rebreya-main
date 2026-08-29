@@ -12,7 +12,7 @@ import {
   buildMagicItemAutomationProjection,
   buildMagicItemIdentityIndex,
   resolveEmbeddedMagicItemIdentity
-} from "./magic-item-embedded-sync.js?v=1.4.183-midi-empty-flags";
+} from "./magic-item-embedded-sync.js?v=1.4.184-canonical-item-source";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 import {
   buildSlug,

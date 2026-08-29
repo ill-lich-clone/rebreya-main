@@ -365,14 +365,15 @@ export function buildEmbeddedMagicItemPatch(item, projection, resolution) {
     return { status: "unresolved", reason: resolution?.reason ?? "identity-not-resolved" };
   }
 
-  const existingEffects = effectSources(item?.effects);
+  const itemSource = documentSource(item) ?? {};
+  const existingEffects = effectSources(itemSource.effects);
   const projectedEffects = Array.isArray(projection?.effects) ? projection.effects : [];
   const effects = mergeEffects(existingEffects, projectedEffects);
   if (!effects) {
     return { status: "unresolved", reason: "automation-conflict" };
   }
 
-  const existingActivities = activitySources(item?.system?.activities);
+  const existingActivities = activitySources(itemSource?.system?.activities);
   const projectedActivities = objectActivities(projection?.activities);
   const activities = mergeActivities(existingActivities, projectedActivities);
   if (!activities) {
@@ -382,10 +383,10 @@ export function buildEmbeddedMagicItemPatch(item, projection, resolution) {
   const system = { activities };
   if (projection?.uses) {
     system.uses = cloneValue(projection.uses);
-    system.uses.spent = item?.system?.uses?.spent ?? system.uses.spent;
+    system.uses.spent = itemSource?.system?.uses?.spent ?? system.uses.spent;
   }
 
-  const existingFlags = embeddedItemFlags(item?.flags);
+  const existingFlags = embeddedItemFlags(itemSource.flags);
   const flags = cloneValue(existingFlags);
   flags[MODULE_ID] = {
     ...(flags[MODULE_ID] ?? {}),
@@ -399,7 +400,7 @@ export function buildEmbeddedMagicItemPatch(item, projection, resolution) {
   const effectsChanged = !sameValue(effects, existingEffects);
   const activitiesChanged = !sameValue(activities, existingActivities);
   const usesChanged = projection?.uses
-    ? !sameValue(system.uses, item?.system?.uses)
+    ? !sameValue(system.uses, itemSource?.system?.uses)
     : false;
   const flagsChanged = !sameValue(flags, existingFlags);
   if (!effectsChanged && !activitiesChanged && !usesChanged && !flagsChanged) {
@@ -409,7 +410,7 @@ export function buildEmbeddedMagicItemPatch(item, projection, resolution) {
   return {
     status: "updated",
     update: {
-      _id: cleanText(item?._id ?? item?.id),
+      _id: cleanText(itemSource?._id ?? item?._id ?? item?.id),
       effects,
       system,
       flags

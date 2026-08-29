@@ -337,6 +337,21 @@ test("embedded merge recognizes current Foundry effect and activity collections 
       magicItemId: "печатка-гильдии-ракдоса",
       signature: "live-signature",
       magicItemAutomation: { version: 1, kind: "activities" }
+    }),
+    toObject: () => ({
+      _id: "live-owned-item",
+      name: "Печатка гильдии Ракдоса",
+      effects: [structuredClone(effectSource)],
+      system: {
+        activities: { "managed-activity": structuredClone(activitySource) },
+        uses: { spent: 0, max: "3", recovery: [] }
+      },
+      flags: moduleFlags({
+        sourceType: "magicItem",
+        magicItemId: "печатка-гильдии-ракдоса",
+        signature: "live-signature",
+        magicItemAutomation: { version: 1, kind: "activities" }
+      })
     })
   };
 
@@ -401,6 +416,49 @@ test("embedded merge omits midi-qol's transient empty on-use macro list", () => 
     }
   };
   assert.deepEqual(embeddedSync.buildEmbeddedMagicItemPatch(liveAfterFoundryUpdate, projection, {
+    status: "resolved",
+    magicItemId: "щит-3",
+    reason: "stable-id",
+    identityPatch: {}
+  }), { status: "unchanged" });
+});
+
+test("embedded merge compares canonical item source instead of live system model defaults", () => {
+  const source = {
+    _id: "live-shield-source",
+    name: "Щит +3",
+    effects: [],
+    system: {
+      activities: {},
+      uses: { spent: 0, max: "", recovery: [] }
+    },
+    flags: moduleFlags({
+      sourceType: "magicItem",
+      magicItemId: "щит-3",
+      signature: "shield-signature",
+      magicItemAutomation: { version: 1, kind: "passive" }
+    })
+  };
+  const item = {
+    ...structuredClone(source),
+    system: {
+      ...structuredClone(source.system),
+      uses: {
+        ...structuredClone(source.system.uses),
+        schemaDefault: "live-model-only"
+      }
+    },
+    toObject: () => structuredClone(source)
+  };
+
+  assert.deepEqual(embeddedSync.buildEmbeddedMagicItemPatch(item, {
+    magicItemId: "щит-3",
+    signature: "shield-signature",
+    automationDefinition: { version: 1, kind: "passive" },
+    effects: [],
+    activities: {},
+    uses: { spent: 0, max: "", recovery: [] }
+  }, {
     status: "resolved",
     magicItemId: "щит-3",
     reason: "stable-id",
