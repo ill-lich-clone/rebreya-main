@@ -73,7 +73,7 @@ import {
   SOCKET_EVENT_INVENTORY_SOURCE_DEPLETION_RESULT,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_REQUEST,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_RESULT
-} from "./data/inventory-service.js?v=1.4.178-missing-legacy-dismantle-target";
+} from "./data/inventory-service.js?v=1.4.179-dismantle-minimum-quantity";
 import {
   InventoryIngressRuleCompilerCache,
   normalizeInventoryIngressRule
@@ -81,7 +81,7 @@ import {
 import {
   buildInventoryIngressDescriptor,
   resolveInventoryDismantleOutputs
-} from "./data/inventory-ingress-descriptor.js?v=1.4.178-missing-legacy-dismantle-target";
+} from "./data/inventory-ingress-descriptor.js?v=1.4.179-dismantle-minimum-quantity";
 import {
   InventoryIngressPlanner,
   isValidSerializedInventoryIngressPlan

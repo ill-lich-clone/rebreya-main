@@ -3026,6 +3026,83 @@ test("InventoryApp numeric dialogs accept signed deltas with v-compatible input 
   }
 });
 
+test("InventoryApp dismantle prompt starts at the canonical whole-output minimum", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const dom = installMinimalDom();
+  const previousDialog = globalThis.Dialog;
+  const previousUi = globalThis.ui;
+  const calls = [];
+  const breakButton = createFakeElement({
+    dataset: {
+      itemId: "broken-amulet",
+      itemName: "Broken amulet",
+      quantity: "3",
+      minQuantity: "2"
+    }
+  });
+  const appRoot = createFakeElement();
+  appRoot.querySelector = () => null;
+  appRoot.querySelectorAll = (selector) => (
+    selector === "[data-action='break-item']" ? [breakButton] : []
+  );
+  globalThis.ui = {
+    notifications: {
+      info() {},
+      error() {}
+    },
+    windows: {}
+  };
+  globalThis.Dialog = class Dialog {
+    static instances = [];
+
+    constructor(config, options = {}) {
+      this.config = config;
+      this.options = options;
+      Dialog.instances.push(this);
+    }
+
+    render() {}
+  };
+
+  try {
+    const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?dismantle-minimum=${Date.now()}`);
+    const moduleApi = createModuleApi({ getGroupContext: () => null });
+    moduleApi.breakInventoryItemToMaterial = async (itemId, quantity) => {
+      calls.push({ itemId, quantity });
+      return {
+        breakQuantity: quantity,
+        itemName: "Broken amulet",
+        materialWeight: 1,
+        materialName: "Silver"
+      };
+    };
+    const app = new InventoryApp(moduleApi);
+    app.element = appRoot;
+    app.canDropInventoryItems = true;
+
+    await app._onRender({}, {});
+    const actionPromise = breakButton.listeners.click[0]({ currentTarget: breakButton });
+    const dialog = globalThis.Dialog.instances.at(-1);
+    assert.match(dialog.config.content, /Сколько разбирать \(2-3\)/u);
+    assert.match(dialog.config.content, /value="2"/u);
+    assert.match(dialog.config.content, /min="2"/u);
+    const dialogRoot = createFakeElement();
+    dialogRoot.querySelector = (selector) => (
+      selector === "[data-field='numeric-value']" ? { value: "1" } : null
+    );
+    dialog.config.buttons.confirm.callback(dialogRoot);
+    await actionPromise;
+
+    assert.deepEqual(calls, [{ itemId: "broken-amulet", quantity: 2 }]);
+  }
+  finally {
+    globalThis.Dialog = previousDialog;
+    globalThis.ui = previousUi;
+    dom.restore();
+    restoreFoundry();
+  }
+});
+
 test("InventoryApp numeric prompt prevents native form submission and applies the supply edit once", async () => {
   const restoreFoundry = installFoundryApplicationStub();
   const dom = installMinimalDom();

@@ -205,6 +205,27 @@ test("dismantle outputs stay within dnd5e integer Item quantity", () => {
   assert.deepEqual(resolveInventoryDismantleOutputs(itemData, 1, { model }), []);
 });
 
+test("dismantle minimum quantity is the first stack size that yields one whole material unit", async () => {
+  const descriptorModule = await import(
+    `../scripts/data/inventory-ingress-descriptor.js?minimum-quantity=${Date.now()}`
+  );
+  assert.equal(typeof descriptorModule.resolveInventoryDismantleMinimumQuantity, "function");
+  const model = createModel();
+  const itemData = createSwordData();
+  itemData.system.weight = { value: 1, units: "lb" };
+  itemData.system.quantity = 3;
+
+  assert.equal(
+    descriptorModule.resolveInventoryDismantleMinimumQuantity(itemData, { model }),
+    2
+  );
+  itemData.system.quantity = 1;
+  assert.equal(
+    descriptorModule.resolveInventoryDismantleMinimumQuantity(itemData, { model }),
+    null
+  );
+});
+
 test("returns no dismantle output for zero weight, unknown material, material or container", () => {
   const model = createModel();
   const fixtures = [

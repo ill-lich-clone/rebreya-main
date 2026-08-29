@@ -7440,12 +7440,16 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const itemId = event.currentTarget.dataset.itemId;
         const itemName = event.currentTarget.dataset.itemName ?? "предмет";
         const maxQuantity = Math.max(1, toInteger(event.currentTarget.dataset.quantity, 1));
+        const minQuantity = Math.max(
+          1,
+          Math.min(maxQuantity, toInteger(event.currentTarget.dataset.minQuantity, 1))
+        );
         try {
           const quantity = await promptNumericValue({
             title: `Разбор: ${itemName}`,
-            label: `Сколько разбирать (1-${maxQuantity})`,
-            value: "1",
-            min: 1,
+            label: `Сколько разбирать (${minQuantity}-${maxQuantity})`,
+            value: String(minQuantity),
+            min: minQuantity,
             step: "1",
             confirmLabel: "Разобрать"
           });
@@ -7453,7 +7457,10 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
             return;
           }
 
-          const safeQuantity = Math.max(1, Math.min(maxQuantity, toInteger(quantity, 1)));
+          const safeQuantity = Math.max(
+            minQuantity,
+            Math.min(maxQuantity, toInteger(quantity, minQuantity))
+          );
           const result = await this.moduleApi.breakInventoryItemToMaterial(itemId, safeQuantity);
           ui.notifications?.info(`Разобрано: ${result.breakQuantity} x ${result.itemName} -> ${result.materialWeight} фнт. (${result.materialName}).`);
         }

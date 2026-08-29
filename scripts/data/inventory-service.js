@@ -20,7 +20,10 @@ import { DurableMutationJournal } from "../application/durable-mutation-journal.
 import { WorldMutationCoordinator } from "../application/world-mutation-coordinator.js";
 import { finiteNumber as toNumber } from "../shared/foundry-values.js";
 import { buildDurabilitySignature, isDurabilityEligible } from "./durability-rules.js";
-import { resolveInventoryDismantleOutputs } from "./inventory-ingress-descriptor.js?v=1.4.178-missing-legacy-dismantle-target";
+import {
+  resolveInventoryDismantleMinimumQuantity,
+  resolveInventoryDismantleOutputs
+} from "./inventory-ingress-descriptor.js?v=1.4.179-dismantle-minimum-quantity";
 import {
   InventoryIngressRuleError,
   findInventoryIngressRuleConflicts,
@@ -3245,6 +3248,12 @@ export class InventoryService {
       const itemData = item.toObject();
       const currentQuantity = getRawQuantity(itemData);
       const breakQuantity = Math.max(1, Math.min(currentQuantity, requestedQuantity));
+      const minimumQuantity = resolveInventoryDismantleMinimumQuantity(itemData, { model });
+      if (minimumQuantity !== null && breakQuantity < minimumQuantity) {
+        throw new Error(
+          `Из выбранного количества не получается целой единицы материала. Нужно разобрать минимум ${minimumQuantity} шт.`
+        );
+      }
       const [output] = resolveInventoryDismantleOutputs(itemData, breakQuantity, { model });
       const material = output
         ? model.materialById?.get(output.sourceId) ?? null
@@ -4060,6 +4069,7 @@ export class InventoryService {
     });
 
     const priceCopper = priceToCopper(foundry.utils.getProperty(itemData, "system.price") ?? {});
+    const dismantleMinQuantity = resolveInventoryDismantleMinimumQuantity(itemData, { model });
 
     return {
       itemId: item.id,
@@ -4081,6 +4091,8 @@ export class InventoryService {
       transport,
       isFood,
       isWater,
+      canDismantle: dismantleMinQuantity !== null,
+      dismantleMinQuantity,
       canSell: !isMagicalInventoryItem(itemData) && priceCopper > 0
     };
   }

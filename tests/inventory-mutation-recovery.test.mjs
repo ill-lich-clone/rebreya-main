@@ -219,6 +219,65 @@ test("manual dismantle uses stable material metadata and never a presentation-na
   }
 });
 
+test("manual dismantle publishes and enforces the minimum whole-output quantity", async () => {
+  const iron = { id: "iron", name: "Iron", type: "Metal", priceGold: 1, weight: 1 };
+  const model = {
+    gear: [],
+    gearById: new Map(),
+    materials: [iron],
+    materialById: new Map([[iron.id, iron]]),
+    materialByGoodId: new Map()
+  };
+  const source = createItem({
+    id: "light-dismantle-stack",
+    name: "Light broken gear",
+    type: "loot",
+    quantity: 3,
+    system: {
+      quantity: 3,
+      weight: { value: 1, units: "lb" },
+      price: { value: 1, denomination: "gp" }
+    },
+    flags: {
+      [MODULE_ID]: {
+        sourceType: "gear",
+        sourceId: "light-gear",
+        predominantMaterialId: iron.id
+      }
+    }
+  });
+  const group = createActor({
+    id: "minimum-dismantle-group",
+    type: "group",
+    managed: true,
+    items: [source]
+  });
+  const fixture = installFixture({
+    group,
+    actors: [group],
+    moduleApi: { getModel: async () => model }
+  });
+
+  try {
+    const snapshot = await fixture.service.getInventorySnapshot({ groupActorId: group.id });
+    const entry = snapshot.items.find((item) => item.itemId === source.id);
+    assert.equal(entry?.dismantleMinQuantity, 2);
+    assert.equal(entry?.canDismantle, true);
+    await assert.rejects(
+      fixture.service.breakItemToMaterial(source.id, 1),
+      /минимум 2/u
+    );
+    assert.equal(source.system.quantity, 3);
+    assert.equal(
+      fixture.settingsStore[SETTINGS_KEYS.INVENTORY_MUTATION_JOURNAL]?.records,
+      undefined
+    );
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
 test("manual dismantle compensates credited material when source depletion fails", async () => {
   const iron = { id: "iron", name: "Iron", type: "Metal", priceGold: 1, weight: 1 };
   const model = {

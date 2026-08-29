@@ -143,10 +143,24 @@ function resolveMaterialProfile(itemData, model) {
   return material ? { material, materialId: sourceMaterialId } : null;
 }
 
-export function canResolveInventoryDismantle(itemData, { model } = {}) {
+export function resolveInventoryDismantleMinimumQuantity(itemData, { model } = {}) {
   const availableQuantity = Math.max(0, Math.floor(finiteNumber(itemData?.system?.quantity) ?? 1));
-  return Math.floor(unitWeightPounds(itemData) * availableQuantity * 0.5) > 0
-    && Boolean(resolveMaterialProfile(itemData, model));
+  const unitWeight = unitWeightPounds(itemData);
+  if (availableQuantity <= 0 || unitWeight <= 0 || !resolveMaterialProfile(itemData, model)) return null;
+  let minimumQuantity = Math.max(1, Math.ceil(2 / unitWeight));
+  while (minimumQuantity <= availableQuantity
+    && Math.floor(unitWeight * minimumQuantity * 0.5) <= 0) {
+    minimumQuantity += 1;
+  }
+  while (minimumQuantity > 1
+    && Math.floor(unitWeight * (minimumQuantity - 1) * 0.5) > 0) {
+    minimumQuantity -= 1;
+  }
+  return minimumQuantity <= availableQuantity ? minimumQuantity : null;
+}
+
+export function canResolveInventoryDismantle(itemData, { model } = {}) {
+  return resolveInventoryDismantleMinimumQuantity(itemData, { model }) !== null;
 }
 
 export function resolveInventoryDismantleOutputs(itemData, quantity, { model } = {}) {
