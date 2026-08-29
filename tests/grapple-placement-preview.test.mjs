@@ -87,6 +87,59 @@ test("three-cell target keeps its top-left centered on the confirmed CPR marker"
   assert.equal(env.calls[0].config.resolution, 1);
 });
 
+test("large source preview expands reach from its occupied edge-cell centers", async () => {
+  const drawCalls = [];
+  const previousPixi = globalThis.PIXI;
+  const previousCanvas = globalThis.canvas;
+  class Graphics {
+    clear() {}
+    lineStyle() {}
+    drawCircle(...args) { drawCalls.push(["circle", ...args]); }
+    drawRoundedRect(...args) { drawCalls.push(["rounded-rect", ...args]); }
+    destroy() {}
+  }
+  const overlayLayer = {
+    addChild(graphics) { graphics.parent = this; },
+    removeChild(graphics) { graphics.parent = null; }
+  };
+  const Crosshairs = {
+    async showCrosshairs(_config, callbacks) {
+      const crosshair = {
+        inFlight: false,
+        document: { x: 400, y: 150 },
+        draw() {},
+        label: ""
+      };
+      await callbacks.show(crosshair);
+      return { cancelled: false, x: 400, y: 150 };
+    }
+  };
+  globalThis.PIXI = { Graphics };
+  globalThis.canvas = { interface: { grid: overlayLayer } };
+
+  try {
+    const preview = new GrapplePlacementPreview({
+      crosshairsProvider: () => Crosshairs,
+      gridProvider: () => grid,
+      sceneRectProvider: () => ({ x: 0, y: 0, width: 1000, height: 1000 }),
+      checkCollision: () => false,
+      wait: async () => {}
+    });
+
+    assert.deepEqual(await preview.choose({
+      sourceToken: token({ width: 3, height: 3 }),
+      targetToken: token(),
+      reachFeet: 5
+    }), { cancelled: false, x: 350, y: 100 });
+    assert.deepEqual(drawCalls[0], ["rounded-rect", -100, -100, 500, 500, 150]);
+  } finally {
+    if (previousPixi === undefined) delete globalThis.PIXI;
+    else globalThis.PIXI = previousPixi;
+    if (previousCanvas === undefined) delete globalThis.canvas;
+    else globalThis.canvas = previousCanvas;
+  }
+});
+
 test("preview cancellation is inert and always destroys the reach overlay", async () => {
   const env = previewEnvironment({ result: { cancelled: true, x: 0, y: 0 } });
   assert.deepEqual(await env.preview.choose({

@@ -21,10 +21,6 @@ function normalizedGrid(grid) {
   };
 }
 
-function clamp(value, minimum, maximum) {
-  return Math.max(minimum, Math.min(maximum, value));
-}
-
 export function tokenFootprint(token, position = null) {
   const document = tokenDocument(token);
   return {
@@ -35,25 +31,42 @@ export function tokenFootprint(token, position = null) {
   };
 }
 
-export function grapplePlacementDistanceFeet(sourceToken, targetToken, position, grid) {
+export function grappleReachOriginRect(sourceToken, grid) {
   const normalized = normalizedGrid(grid);
   const source = tokenFootprint(sourceToken);
-  const target = tokenFootprint(targetToken, position);
-  const sourceCenter = {
-    x: source.x + ((source.width * normalized.size) / 2),
-    y: source.y + ((source.height * normalized.size) / 2)
+  const sourceWidthPixels = source.width * normalized.size;
+  const sourceHeightPixels = source.height * normalized.size;
+  const insetX = Math.min(normalized.size / 2, sourceWidthPixels / 2);
+  const insetY = Math.min(normalized.size / 2, sourceHeightPixels / 2);
+  return {
+    left: source.x + insetX,
+    top: source.y + insetY,
+    right: source.x + sourceWidthPixels - insetX,
+    bottom: source.y + sourceHeightPixels - insetY
   };
+}
+
+export function grapplePlacementDistanceFeet(sourceToken, targetToken, position, grid) {
+  const normalized = normalizedGrid(grid);
+  const target = tokenFootprint(targetToken, position);
+  const sourceReachRect = grappleReachOriginRect(sourceToken, normalized);
   const targetRect = {
     left: target.x,
     top: target.y,
     right: target.x + (target.width * normalized.size),
     bottom: target.y + (target.height * normalized.size)
   };
-  const nearest = {
-    x: clamp(sourceCenter.x, targetRect.left, targetRect.right),
-    y: clamp(sourceCenter.y, targetRect.top, targetRect.bottom)
-  };
-  const pixelDistance = Math.hypot(nearest.x - sourceCenter.x, nearest.y - sourceCenter.y);
+  const horizontalGap = Math.max(
+    sourceReachRect.left - targetRect.right,
+    targetRect.left - sourceReachRect.right,
+    0
+  );
+  const verticalGap = Math.max(
+    sourceReachRect.top - targetRect.bottom,
+    targetRect.top - sourceReachRect.bottom,
+    0
+  );
+  const pixelDistance = Math.hypot(horizontalGap, verticalGap);
   return (pixelDistance / normalized.size) * normalized.distance;
 }
 

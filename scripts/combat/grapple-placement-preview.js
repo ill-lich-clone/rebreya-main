@@ -1,5 +1,6 @@
 import {
   grapplePlacementDistanceFeet,
+  grappleReachOriginRect,
   tokenFootprint,
   validateGrapplePlacement
 } from "./grapple-geometry.js";
@@ -26,17 +27,33 @@ function cprResolution(width, height) {
 function defaultOverlayFactory({ sourceToken, reachFeet, grid, markerRadiusPixels }) {
   const Graphics = globalThis.PIXI?.Graphics;
   if (typeof Graphics !== "function") return { update() {}, destroy() {} };
-  const source = tokenFootprint(sourceToken);
-  const center = {
-    x: source.x + ((source.width * grid.size) / 2),
-    y: source.y + ((source.height * grid.size) / 2)
-  };
+  const origin = grappleReachOriginRect(sourceToken, grid);
   const radius = ((reachFeet / grid.distance) * grid.size) + markerRadiusPixels;
+  const width = origin.right - origin.left;
+  const height = origin.bottom - origin.top;
   const graphics = new Graphics();
   const redraw = (valid) => {
     graphics.clear();
     graphics.lineStyle(6, valid ? VALID_COLOR : INVALID_COLOR, 0.9);
-    graphics.drawCircle(center.x, center.y, radius);
+    if (width === 0 && height === 0) {
+      graphics.drawCircle(origin.left, origin.top, radius);
+    } else if (typeof graphics.drawRoundedRect === "function") {
+      graphics.drawRoundedRect(
+        origin.left - radius,
+        origin.top - radius,
+        width + (radius * 2),
+        height + (radius * 2),
+        radius
+      );
+    } else {
+      graphics.roundRect(
+        origin.left - radius,
+        origin.top - radius,
+        width + (radius * 2),
+        height + (radius * 2),
+        radius
+      );
+    }
   };
   redraw(true);
   const parent = globalThis.canvas?.interface?.grid ?? globalThis.canvas?.stage;
