@@ -348,6 +348,66 @@ test("embedded merge recognizes current Foundry effect and activity collections 
   }), { status: "unchanged" });
 });
 
+test("embedded merge omits midi-qol's transient empty on-use macro list", () => {
+  const effectSource = managedEffect();
+  const projection = {
+    magicItemId: "щит-3",
+    signature: "new-signature",
+    automationDefinition: { version: 1, kind: "passive" },
+    effects: [effectSource],
+    activities: {},
+    uses: null
+  };
+  const item = {
+    _id: "live-shield-item",
+    name: "Щит +3",
+    effects: [effectSource],
+    system: { activities: {}, uses: null },
+    flags: {
+      ...moduleFlags({
+        sourceType: "magicItem",
+        magicItemId: "щит-3",
+        signature: "old-signature",
+        magicItemAutomation: { version: 1, kind: "passive" }
+      }),
+      "midi-qol": {
+        onUseMacroParts: {
+          items: []
+        },
+        otherRuntimeFlag: true
+      }
+    }
+  };
+
+  const patch = embeddedSync.buildEmbeddedMagicItemPatch(item, projection, {
+    status: "resolved",
+    magicItemId: "щит-3",
+    reason: "stable-id",
+    identityPatch: {}
+  });
+
+  assert.equal(patch.status, "updated");
+  assert.equal(Object.hasOwn(patch.update.flags["midi-qol"].onUseMacroParts, "items"), false);
+  assert.equal(patch.update.flags["midi-qol"].otherRuntimeFlag, true);
+
+  const liveAfterFoundryUpdate = {
+    ...structuredClone(item),
+    flags: {
+      ...structuredClone(patch.update.flags),
+      "midi-qol": {
+        ...structuredClone(patch.update.flags["midi-qol"]),
+        onUseMacroParts: { items: [] }
+      }
+    }
+  };
+  assert.deepEqual(embeddedSync.buildEmbeddedMagicItemPatch(liveAfterFoundryUpdate, projection, {
+    status: "resolved",
+    magicItemId: "щит-3",
+    reason: "stable-id",
+    identityPatch: {}
+  }), { status: "unchanged" });
+});
+
 globalThis.foundry ??= {
   utils: {
     deepClone: (value) => structuredClone(value),

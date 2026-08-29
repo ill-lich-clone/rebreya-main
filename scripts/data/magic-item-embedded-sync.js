@@ -56,6 +56,15 @@ function sameValue(left, right) {
   return JSON.stringify(stableValue(left)) === JSON.stringify(stableValue(right));
 }
 
+function embeddedItemFlags(value) {
+  const flags = cloneValue(value ?? {});
+  const midiOnUseMacroParts = flags?.["midi-qol"]?.onUseMacroParts;
+  if (Array.isArray(midiOnUseMacroParts?.items) && midiOnUseMacroParts.items.length === 0) {
+    delete midiOnUseMacroParts.items;
+  }
+  return flags;
+}
+
 function getModuleFlags(document) {
   return document?.flags?.[MODULE_ID] ?? {};
 }
@@ -376,7 +385,8 @@ export function buildEmbeddedMagicItemPatch(item, projection, resolution) {
     system.uses.spent = item?.system?.uses?.spent ?? system.uses.spent;
   }
 
-  const flags = cloneValue(item?.flags ?? {});
+  const existingFlags = embeddedItemFlags(item?.flags);
+  const flags = cloneValue(existingFlags);
   flags[MODULE_ID] = {
     ...(flags[MODULE_ID] ?? {}),
     ...(resolution.identityPatch ?? {}),
@@ -391,7 +401,7 @@ export function buildEmbeddedMagicItemPatch(item, projection, resolution) {
   const usesChanged = projection?.uses
     ? !sameValue(system.uses, item?.system?.uses)
     : false;
-  const flagsChanged = !sameValue(flags, item?.flags ?? {});
+  const flagsChanged = !sameValue(flags, existingFlags);
   if (!effectsChanged && !activitiesChanged && !usesChanged && !flagsChanged) {
     return { status: "unchanged" };
   }
