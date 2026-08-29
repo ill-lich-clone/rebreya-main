@@ -240,7 +240,7 @@ import {
   storageCharacterTokenUuidForClaim
 } from "./data/storage-command-service.js?v=1.4.164-storage-key-feedback";
 import { registerCombatHooks } from "./combat/hooks.js?v=1.4.171-grapple-ui-path";
-import { CombatAttackService } from "./combat/attack-service.js?v=1.4.157-firearm-io-batching";
+import { CombatAttackService } from "./combat/attack-service.js?v=1.4.181-dual-wield-gloves";
 import { ImplantAutomationService } from "./combat/implant-automation-service.js";
 import { SizeAutomationService } from "./combat/size-automation-service.js?v=1.4.110-character-size-authority";
 import { ReactionCapabilityIndex } from "./combat/reaction-capability-index.js";
@@ -6625,6 +6625,10 @@ export class RebreyaMainModule {
 
   async openMagicItemById(magicItemId, fallbackName = "") {
     return this.magicItemsCompendium.openMagicItem(magicItemId, fallbackName);
+  }
+
+  async syncEquippedMagicItems(options = {}) {
+    return this.magicItemsCompendium.syncEquippedMagicItems(options);
   }
 
   async syncFeatsFromWorldCompendium(options = {}) {

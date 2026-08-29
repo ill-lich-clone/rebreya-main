@@ -296,7 +296,16 @@ await api.setCombatStatus("actor-id", "frightened", { value: 2 });
 - `setConnectionActive`, `updateTradeRouteMetadata`, `getStatePolicies`, `getEffectiveStatePolicy`, `updateStatePolicy`, `getReferenceEntrySnapshot`, `updateReferenceDescription`.
 - `getAllGlobalEvents`, `getActiveGlobalEvents`, `getEventsAffectingCity`, `getEventsAffectingCityGood`, `getEventsAffectingRoute`, `getEventsAffectingState`.
 - `createGlobalEvent`, `updateGlobalEvent`, `deleteGlobalEvent`, `duplicateGlobalEvent`, `importDefaultGlobalEventTemplates`.
-- `getMaterialByGoodId`, `openMaterialByGoodId`, `openMaterialById`, `openGearById`, `openMagicItemById`, `openFeatById`, `openBackgroundById`, `openStateById`, `openTradeEntry`.
+- `getMaterialByGoodId`, `openMaterialByGoodId`, `openMaterialById`, `openGearById`, `openMagicItemById`, `syncEquippedMagicItems`, `openFeatById`, `openBackgroundById`, `openStateById`, `openTradeEntry`.
+
+`syncEquippedMagicItems({ dryRun })` доступен только active GM в мире dnd5e. Он сначала обновляет managed-компендиум магических предметов, затем добавляет актуальные managed effects/activities уже надетым или настроенным предметам персонажей, не заменяя пользовательские автоматизации и потраченные заряды. Предварительная проверка и применение из консоли:
+
+```js
+const preview = await game.rebreyaMain.syncEquippedMagicItems({ dryRun: true });
+const applied = await game.rebreyaMain.syncEquippedMagicItems();
+```
+
+Оба вызова возвращают reason-coded report и печатают компактную таблицу. `Особый Кинжал телепортации`, `Зелье заживления ран` и `Зелье лечения 1-го уровня` намеренно пропускаются.
 
 ### Группы, inventory, travel, craft и downtime
 

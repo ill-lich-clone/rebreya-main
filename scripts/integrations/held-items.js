@@ -724,6 +724,34 @@ export function getActorHandSlots(actor) {
   return slots;
 }
 
+export function hasDistinctHeldItemsInDifferentHands(actor, currentItem, { predicate = () => true } = {}) {
+  if (!actor || !currentItem || typeof predicate !== "function") {
+    return false;
+  }
+  const validSlots = new Set(getActorHandSlots(actor));
+  const reservedSlots = new Set(getActorHandReservations(actor).map((reservation) => reservation.handSlot));
+  const placements = [];
+  for (const item of collectionValues(actor.items)) {
+    if (!predicate(item)) continue;
+    for (const slot of getItemHeldHands(item)) {
+      if (!validSlots.has(slot) || reservedSlots.has(slot)) continue;
+      placements.push({ item, itemId: itemId(item), slot });
+    }
+  }
+
+  for (let leftIndex = 0; leftIndex < placements.length; leftIndex += 1) {
+    const left = placements[leftIndex];
+    for (let rightIndex = leftIndex + 1; rightIndex < placements.length; rightIndex += 1) {
+      const right = placements[rightIndex];
+      if (!left.itemId || !right.itemId || left.itemId === right.itemId || left.slot === right.slot) continue;
+      if (sameItem(left.item, currentItem) || sameItem(right.item, currentItem)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 export function getOccupiedHandSlots(actor, { exceptItem = null } = {}) {
   const occupied = new Map();
   const validSlots = new Set(getActorHandSlots(actor));

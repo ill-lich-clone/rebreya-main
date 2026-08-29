@@ -10,8 +10,9 @@ import { getNaturalReachFeet } from "./natural-reach.js";
 import {
   buildHeldItemHandUpdate,
   canUseHeldItemForHandRequirement,
-  getItemHeldHands
-} from "../integrations/held-items.js?v=1.4.96-npc-held-natural";
+  getItemHeldHands,
+  hasDistinctHeldItemsInDifferentHands
+} from "../integrations/held-items.js?v=1.4.181-dual-wield-gloves";
 
 const FIREARM_WEAPON_TYPES = new Set(["firearmPrimitive", "firearmAdvanced"]);
 const WEAPON_TYPE_SIMPLE_PREFIX = "simple";
@@ -44,6 +45,7 @@ const PROVOKED_ATTACK_REACTION_KIND = "provoked-attack";
 const PARRY_REACTION_KIND = "parry";
 const INTERCEPTION_REACTION_KIND = "interception";
 const FIGHTER_DOMINANCE_TARGET = "fighter-dominance";
+const DUAL_WIELD_GLOVES_MAGIC_ITEM_ID = "перчатки-двуручного-боя";
 const PATCHED_USAGE_BUTTON_PROTOTYPES = new WeakSet();
 function heldItemUpdateOptions() {
   return { render: false };
@@ -704,6 +706,29 @@ function isEquippedItem(item) {
   }
 
   return true;
+}
+
+function hasDualWieldGlovesDamageBonus(actor, currentItem) {
+  if (!actor || !isMeleeWeaponItem(currentItem) || !isEquippedItem(currentItem)) {
+    return false;
+  }
+  const hasEquippedGloves = collectionValues(actor.items).some((item) => (
+    item?.getFlag?.(MODULE_ID, "magicItemId") === DUAL_WIELD_GLOVES_MAGIC_ITEM_ID
+    && isEquippedItem(item)
+  ));
+  if (!hasEquippedGloves) {
+    return false;
+  }
+  return hasDistinctHeldItemsInDifferentHands(actor, currentItem, {
+    predicate: (item) => isMeleeWeaponItem(item) && isEquippedItem(item)
+  });
+}
+
+function hasEquivalentFlatTwoPart(parts) {
+  return (Array.isArray(parts) ? parts : []).some((part) => {
+    const formula = String(part ?? "").replace(/\s+/gu, "");
+    return formula === "+2" || formula === "2";
+  });
 }
 
 function getItemWeightLb(item) {
@@ -3887,6 +3912,7 @@ export class CombatAttackService {
       const mu = Math.max(0, Math.floor(toNumber(automation.mu, 0)));
       const mku = Math.max(0, Math.floor(toNumber(automation.mku, 0)));
       const rku = Math.max(0, Math.floor(toNumber(automation.rku, 0)));
+      const dualWieldGloves = hasDualWieldGlovesDamageBonus(activity.actor ?? item?.actor, item);
 
       const workflowCritical = (
         config?.workflow?.isCritical === true
@@ -3899,7 +3925,7 @@ export class CombatAttackService {
         || recentOutcome?.rkuCriticalOnHit === true
       );
 
-      if (mu <= 0 && mku <= 0 && !rkuCriticalOnHit) {
+      if (mu <= 0 && mku <= 0 && !rkuCriticalOnHit && !dualWieldGloves) {
         return true;
       }
 
@@ -3917,6 +3943,11 @@ export class CombatAttackService {
       }
 
       baseDamageRollConfig.options ??= {};
+
+      if (dualWieldGloves && !hasEquivalentFlatTwoPart(baseDamageRollConfig.parts)) {
+        baseDamageRollConfig.parts ??= [];
+        baseDamageRollConfig.parts.push("+2");
+      }
 
       if (mku > 0) {
         const currentBonusDice = Math.max(

@@ -298,3 +298,172 @@ test("embedded merge suppresses equivalent custom automation, refuses conflicts,
     reason: "automation-conflict"
   });
 });
+
+globalThis.foundry ??= {
+  utils: {
+    deepClone: (value) => structuredClone(value),
+    escapeHTML: (value) => String(value ?? ""),
+    getProperty: (object, path) => path.split(".").reduce((value, key) => value?.[key], object)
+  }
+};
+globalThis.CONST ??= { DOCUMENT_OWNERSHIP_LEVELS: { OBSERVER: 2 } };
+
+const { MagicItemsCompendiumService } = await import("../scripts/data/magic-items-compendium.js");
+
+function makePackDocument({ id, name, magicItemId, effectValue = "+1" }) {
+  const source = {
+    _id: id,
+    name,
+    uuid: `Compendium.world.rebreya-magic-items.Item.${id}`,
+    system: { activities: {}, uses: null },
+    effects: [managedEffect({ value: effectValue })],
+    flags: moduleFlags({
+      managed: true,
+      sourceType: "magicItem",
+      magicItemId,
+      signature: `signature-${magicItemId}`,
+      magicItemAutomation: { version: 1, kind: "passive" }
+    })
+  };
+  return { ...source, toObject: () => structuredClone(source) };
+}
+
+function makeOwnedItem({ id, name, magicItemId, equipped = true, attuned = false }) {
+  return {
+    _id: id,
+    id,
+    name,
+    type: "equipment",
+    system: { equipped, attuned, activities: {}, uses: null },
+    effects: [],
+    flags: moduleFlags({ magicItemId })
+  };
+}
+
+function applyEmbeddedUpdates(actor, updates) {
+  for (const update of updates) {
+    const item = actor.items.contents.find((entry) => entry.id === update._id);
+    item.system = { ...item.system, ...structuredClone(update.system) };
+    item.effects = structuredClone(update.effects);
+    item.flags = structuredClone(update.flags);
+  }
+}
+
+test("equipped sync guards the GM boundary and aborts before actors when compendium sync fails", async () => {
+  const writes = [];
+  const gameFixture = {
+    system: { id: "dnd5e" },
+    actors: { contents: [{ updateEmbeddedDocuments: (...args) => writes.push(args) }] },
+    packs: new Map()
+  };
+  const service = new MagicItemsCompendiumService({
+    gameProvider: () => gameFixture,
+    consoleProvider: () => ({ table() {} }),
+    isActiveGm: () => false
+  });
+
+  assert.deepEqual(await service.syncEquippedMagicItems(), {
+    dryRun: false,
+    actorsScanned: 0,
+    itemsScanned: 0,
+    updated: [],
+    unchanged: [],
+    unresolved: [],
+    unresolvedChoices: [],
+    skipped: [],
+    errors: [{ actorId: "", actorName: "", itemId: "", itemName: "", reason: "not-active-gm" }]
+  });
+  assert.equal(writes.length, 0);
+
+  service.isActiveGm = () => true;
+  service.sync = async () => {
+    throw new Error("compendium unavailable");
+  };
+  await assert.rejects(service.syncEquippedMagicItems(), /compendium unavailable/u);
+  assert.equal(writes.length, 0);
+});
+
+test("equipped sync plans detached rows, batches once per character, continues after actor errors, and is idempotent", async () => {
+  const events = [];
+  const tables = [];
+  const packDocuments = [
+    makePackDocument({ id: "night-goggles", name: "Ночные очки", magicItemId: "ночные-очки" }),
+    makePackDocument({ id: "luck-stone", name: "Камень удачи", magicItemId: "камень-удачи" })
+  ];
+  const pack = {
+    getDocuments: async () => {
+      events.push("pack");
+      return packDocuments;
+    }
+  };
+  const failedActor = {
+    id: "actor-failed",
+    name: "Первый герой",
+    type: "character",
+    items: { contents: [makeOwnedItem({ id: "night-owned", name: "Goggles of Night", magicItemId: "ночные-очки" })] },
+    updateEmbeddedDocuments: async () => {
+      events.push("failed-write");
+      throw new Error("actor locked");
+    }
+  };
+  const successfulActor = {
+    id: "actor-success",
+    name: "Второй герой",
+    type: "character",
+    items: { contents: [
+      makeOwnedItem({ id: "luck-owned", name: "Камень удачи", magicItemId: "камень-удачи", equipped: false, attuned: true }),
+      makeOwnedItem({ id: "deferred-owned", name: "Особый Кинжал телепортации", magicItemId: "особый-кинжал", equipped: true }),
+      makeOwnedItem({ id: "inactive-owned", name: "Ночные очки", magicItemId: "ночные-очки", equipped: false, attuned: false })
+    ] },
+    writes: [],
+    async updateEmbeddedDocuments(type, updates) {
+      events.push("success-write");
+      this.writes.push({ type, updates: structuredClone(updates) });
+      applyEmbeddedUpdates(this, updates);
+    }
+  };
+  const npc = { id: "npc-1", name: "NPC", type: "npc", items: { contents: [] } };
+  const gameFixture = {
+    system: { id: "dnd5e" },
+    actors: { contents: [failedActor, npc, successfulActor] },
+    packs: new Map([["world.rebreya-magic-items", pack]])
+  };
+  const service = new MagicItemsCompendiumService({
+    gameProvider: () => gameFixture,
+    consoleProvider: () => ({ table: (rows) => tables.push(structuredClone(rows)) }),
+    isActiveGm: () => true
+  });
+  service.sync = async () => {
+    events.push("sync");
+    return pack;
+  };
+
+  const preview = await service.syncEquippedMagicItems({ dryRun: true });
+  assert.deepEqual(Object.keys(preview), [
+    "dryRun", "actorsScanned", "itemsScanned", "updated", "unchanged",
+    "unresolved", "unresolvedChoices", "skipped", "errors"
+  ]);
+  assert.equal(preview.actorsScanned, 2);
+  assert.equal(preview.itemsScanned, 4);
+  assert.equal(preview.updated.length, 2);
+  assert.equal(preview.skipped.some((row) => row.itemId === "deferred-owned" && row.reason === "deferred-current-iteration"), true);
+  assert.equal(preview.skipped.some((row) => row.itemId === "inactive-owned" && row.reason === "not-equipped-or-attuned"), true);
+  assert.equal(successfulActor.writes.length, 0);
+  assert.deepEqual(events.slice(0, 2), ["sync", "pack"]);
+
+  events.length = 0;
+  const applied = await service.syncEquippedMagicItems();
+  assert.equal(applied.updated.length, 1);
+  assert.equal(applied.errors.some((row) => row.actorId === "actor-failed" && row.reason === "actor-update-failed"), true);
+  assert.equal(successfulActor.writes.length, 1);
+  assert.equal(successfulActor.writes[0].type, "Item");
+  assert.deepEqual(successfulActor.writes[0].updates.map((update) => update._id), ["luck-owned"]);
+  assert.equal(successfulActor.writes[0].updates.some((update) => update._id === "deferred-owned"), false);
+  assert.equal(tables.length >= 2, true);
+  assert.equal(tables.at(-1).every((row) => Object.hasOwn(row, "reason")), true);
+
+  const repeated = await service.syncEquippedMagicItems();
+  assert.equal(repeated.updated.length, 0);
+  assert.equal(repeated.unchanged.some((row) => row.itemId === "luck-owned"), true);
+  assert.equal(successfulActor.writes.length, 1);
+});

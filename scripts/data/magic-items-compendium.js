@@ -8,6 +8,13 @@ import {
 } from "./compendium-utils.js";
 import { syncManagedDocumentsOnActiveGm } from "./managed-compendium-sync.js";
 import {
+  buildEmbeddedMagicItemPatch,
+  buildMagicItemAutomationProjection,
+  buildMagicItemIdentityIndex,
+  resolveEmbeddedMagicItemIdentity
+} from "./magic-item-embedded-sync.js";
+import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
+import {
   buildSlug,
   classifyMagicItem,
   inferHeroDollSlotGroupFromSlots,
@@ -1223,6 +1230,16 @@ async function findMagicItemDocument(pack, magicItemId, fallbackName = "") {
 }
 
 export class MagicItemsCompendiumService {
+  constructor({
+    gameProvider = () => globalThis.game,
+    consoleProvider = () => globalThis.console,
+    isActiveGm = isActiveGmClient
+  } = {}) {
+    this.gameProvider = gameProvider;
+    this.consoleProvider = consoleProvider;
+    this.isActiveGm = isActiveGm;
+  }
+
   async sync(items = MAGIC_ITEMS) {
     if (!game.user?.isGM || !isDnd5eWorld()) {
       return null;
@@ -1268,6 +1285,156 @@ export class MagicItemsCompendiumService {
       }
     });
     return game.packs.get(PACK_ID) ?? pack;
+  }
+
+  async syncEquippedMagicItems({ dryRun = false } = {}) {
+    const foundryGame = this.gameProvider?.() ?? globalThis.game;
+    const report = {
+      dryRun: dryRun === true,
+      actorsScanned: 0,
+      itemsScanned: 0,
+      updated: [],
+      unchanged: [],
+      unresolved: [],
+      unresolvedChoices: [],
+      skipped: [],
+      errors: []
+    };
+    const emptyRow = (reason) => ({
+      actorId: "",
+      actorName: "",
+      itemId: "",
+      itemName: "",
+      reason
+    });
+
+    if (foundryGame?.system?.id !== DND5E_SYSTEM_ID) {
+      report.errors.push(emptyRow("not-dnd5e-world"));
+      return report;
+    }
+    if (!this.isActiveGm?.(foundryGame)) {
+      report.errors.push(emptyRow("not-active-gm"));
+      return report;
+    }
+
+    const syncedPack = await this.sync();
+    const pack = foundryGame.packs?.get?.(PACK_ID) ?? syncedPack;
+    if (!pack) {
+      throw new Error(`Magic items compendium '${PACK_ID}' is unavailable after sync.`);
+    }
+    const packDocuments = await getPackDocuments(pack);
+    const packSources = packDocuments.map((document) => {
+      const source = typeof document?.toObject === "function" ? document.toObject() : foundry.utils.deepClone(document);
+      source.uuid = String(document?.uuid ?? source?.uuid ?? "");
+      return source;
+    });
+    const index = buildMagicItemIdentityIndex(MAGIC_ITEMS, packSources);
+    const projections = new Map(packDocuments
+      .map((document) => buildMagicItemAutomationProjection(document))
+      .filter((projection) => projection.magicItemId)
+      .map((projection) => [projection.magicItemId, projection]));
+    const actors = Array.isArray(foundryGame.actors?.contents)
+      ? foundryGame.actors.contents
+      : Array.from(foundryGame.actors?.values?.() ?? []);
+
+    for (const actor of actors) {
+      const actorId = String(actor?.id ?? actor?._id ?? "");
+      const actorName = String(actor?.name ?? "");
+      if (actor?.type !== "character") {
+        report.skipped.push({ actorId, actorName, itemId: "", itemName: "", reason: "unsupported-actor-type" });
+        continue;
+      }
+
+      report.actorsScanned += 1;
+      const items = Array.isArray(actor.items?.contents)
+        ? actor.items.contents
+        : Array.from(actor.items?.values?.() ?? []);
+      report.itemsScanned += items.length;
+      const updates = [];
+      const plannedRows = [];
+
+      for (const item of items) {
+        const row = {
+          actorId,
+          actorName,
+          itemId: String(item?.id ?? item?._id ?? ""),
+          itemName: String(item?.name ?? ""),
+          reason: ""
+        };
+        if (item?.system?.equipped !== true && item?.system?.attuned !== true) {
+          report.skipped.push({ ...row, reason: "not-equipped-or-attuned" });
+          continue;
+        }
+
+        const resolution = resolveEmbeddedMagicItemIdentity(item, index);
+        if (resolution.status === "deferred") {
+          report.skipped.push({ ...row, reason: resolution.reason });
+          continue;
+        }
+        if (resolution.status === "native") {
+          report.skipped.push({ ...row, reason: resolution.reason });
+          continue;
+        }
+        if (resolution.status === "unresolved-choice") {
+          report.unresolvedChoices.push({ ...row, reason: resolution.reason });
+          continue;
+        }
+        if (resolution.status !== "resolved") {
+          report.unresolved.push({ ...row, reason: resolution.reason });
+          continue;
+        }
+
+        const projection = projections.get(resolution.magicItemId);
+        if (!projection) {
+          report.unresolved.push({ ...row, reason: "automation-projection-not-found" });
+          continue;
+        }
+        const merge = buildEmbeddedMagicItemPatch(item, projection, resolution);
+        if (merge.status === "unresolved") {
+          report.unresolved.push({ ...row, reason: merge.reason });
+          continue;
+        }
+        if (merge.status === "unchanged") {
+          report.unchanged.push({ ...row, reason: "already-current" });
+          continue;
+        }
+        updates.push(merge.update);
+        plannedRows.push({ ...row, reason: report.dryRun ? "dry-run-update" : "updated" });
+      }
+
+      if (!updates.length) {
+        continue;
+      }
+      if (report.dryRun) {
+        report.updated.push(...plannedRows);
+        continue;
+      }
+      try {
+        await actor.updateEmbeddedDocuments("Item", updates);
+        report.updated.push(...plannedRows);
+      }
+      catch (error) {
+        report.errors.push({
+          actorId,
+          actorName,
+          itemId: "",
+          itemName: "",
+          reason: "actor-update-failed"
+        });
+        this.consoleProvider?.()?.warn?.(`${MODULE_ID} | Failed to sync equipped magic items for '${actorName}'.`, error);
+      }
+    }
+
+    const tableRows = [
+      ...report.updated.map((row) => ({ status: "updated", ...row })),
+      ...report.unchanged.map((row) => ({ status: "unchanged", ...row })),
+      ...report.unresolved.map((row) => ({ status: "unresolved", ...row })),
+      ...report.unresolvedChoices.map((row) => ({ status: "unresolved-choice", ...row })),
+      ...report.skipped.map((row) => ({ status: "skipped", ...row })),
+      ...report.errors.map((row) => ({ status: "error", ...row }))
+    ];
+    this.consoleProvider?.()?.table?.(tableRows);
+    return report;
   }
 
   async getMagicItemDocument(magicItemId, fallbackName = "") {

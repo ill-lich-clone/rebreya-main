@@ -1247,6 +1247,96 @@ test("held versatile damage roll config uses the item-provided base damage as-is
   assert.deepEqual(config.rolls[0].parts, ["1d8", "@mod"]);
 });
 
+function makeDuelistGloves({ equipped = true } = {}) {
+  return new class extends Item {
+    constructor() {
+      super();
+      this.id = "duelist-gloves";
+      this.name = "Перчатки двуручного боя";
+      this.type = "equipment";
+      this.system = { equipped };
+      this.flags = { [MODULE_ID]: { magicItemId: "перчатки-двуручного-боя" } };
+    }
+
+    getFlag(scope, key) {
+      return this.flags?.[scope]?.[key];
+    }
+  }();
+}
+
+function makeDamageConfig(actor, item, parts = ["1d8", "@mod"]) {
+  return {
+    subject: {
+      id: "attack-activity",
+      type: "attack",
+      actor,
+      item,
+      attack: { type: { value: "melee" } },
+      range: {}
+    },
+    rolls: [
+      { base: true, parts: [...parts], data: {} },
+      { base: false, parts: ["1d6"], data: {} }
+    ]
+  };
+}
+
+test("duelist gloves add one flat damage part only for two distinct held melee weapons in live hands", () => {
+  const left = makeWeaponItem({ id: "left-sword", heldHands: ["left"] });
+  const right = makeWeaponItem({ id: "right-sword", heldHands: ["right"] });
+  const gloves = makeDuelistGloves();
+  const actor = makeActor([left, right, gloves]);
+  const config = makeDamageConfig(actor, left, ["1d8", "@mod", "1d4"]);
+  const service = new CombatAttackService({});
+
+  assert.equal(service.applyDnd5eDamageRollConfig(config, {}, {}), true);
+  assert.deepEqual(config.rolls[0].parts, ["1d8", "@mod", "1d4", "+2"]);
+  assert.deepEqual(config.rolls[1].parts, ["1d6"]);
+  assert.equal(service.applyDnd5eDamageRollConfig(config, {}, {}), true);
+  assert.deepEqual(config.rolls[0].parts, ["1d8", "@mod", "1d4", "+2"]);
+});
+
+test("duelist gloves reject missing equipment, invalid weapon pairs, unheld attacks, and reserved hands", () => {
+  const service = new CombatAttackService({});
+  const evaluate = ({
+    glovesEquipped = true,
+    includeGloves = true,
+    leftHands = ["left"],
+    rightHands = ["right"],
+    leftType = "simpleM",
+    rightType = "simpleM",
+    reserveRight = false
+  } = {}) => {
+    const left = makeWeaponItem({ id: "left-weapon", heldHands: leftHands });
+    const right = makeWeaponItem({ id: "right-weapon", heldHands: rightHands });
+    left.system.type.value = leftType;
+    right.system.type.value = rightType;
+    const items = [left, right];
+    if (includeGloves) items.push(makeDuelistGloves({ equipped: glovesEquipped }));
+    const actor = makeActor(items);
+    if (reserveRight) {
+      actor.flags[MODULE_ID].handReservations = [{
+        linkId: "grapple-1",
+        kind: "grapple",
+        handSlot: "right",
+        sourceTokenUuid: "Scene.scene.Token.source",
+        targetTokenUuid: "Scene.scene.Token.target"
+      }];
+    }
+    const config = makeDamageConfig(actor, left);
+    service.applyDnd5eDamageRollConfig(config, {}, {});
+    return config.rolls[0].parts;
+  };
+
+  assert.deepEqual(evaluate({ includeGloves: false }), ["1d8", "@mod"]);
+  assert.deepEqual(evaluate({ glovesEquipped: false }), ["1d8", "@mod"]);
+  assert.deepEqual(evaluate({ leftHands: ["left", "right"], rightHands: [] }), ["1d8", "@mod"]);
+  assert.deepEqual(evaluate({ leftHands: [], rightHands: ["right"] }), ["1d8", "@mod"]);
+  assert.deepEqual(evaluate({ rightType: "simpleR" }), ["1d8", "@mod"]);
+  assert.deepEqual(evaluate({ leftType: "natural" }), ["1d8", "@mod"]);
+  assert.deepEqual(evaluate({ reserveRight: true }), ["1d8", "@mod"]);
+});
+
 test("standalone held versatile sheet attacks do not roll separate damage", async () => {
   const weapon = makeWeaponItem({
     heldHands: ["left", "right"],

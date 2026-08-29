@@ -111,6 +111,19 @@ test("ready composes spell automation on one registry alongside legacy hook regi
     await Hooks.onceCallbacks.get("ready")();
 
     const moduleApi = module.api;
+    const equippedSyncResult = { dryRun: true, updated: [] };
+    let equippedSyncOptions = null;
+    moduleApi.magicItemsCompendium = {
+      async syncEquippedMagicItems(options) {
+        equippedSyncOptions = options;
+        return equippedSyncResult;
+      }
+    };
+    assert.equal(
+      await moduleApi.syncEquippedMagicItems({ dryRun: true }),
+      equippedSyncResult
+    );
+    assert.deepEqual(equippedSyncOptions, { dryRun: true });
     assert.ok(moduleApi.privilegedMutationGateway instanceof PrivilegedMutationGateway);
     assert.ok(moduleApi.builtinStorageActorService instanceof BuiltinStorageActorService);
     assert.equal("builtinCoinTemplateService" in moduleApi, false);
