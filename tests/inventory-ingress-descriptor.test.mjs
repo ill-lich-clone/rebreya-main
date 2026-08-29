@@ -187,6 +187,24 @@ test("resolves frozen canonical dismantle outputs with the 50 percent floor rule
   assert.equal("document" in outputs[0], false);
 });
 
+test("dismantle outputs stay within dnd5e integer Item quantity", () => {
+  const model = createModel();
+  const itemData = createSwordData();
+  itemData.system.weight = { value: 1, units: "lb" };
+  itemData.system.quantity = 3;
+
+  assert.equal(canResolveInventoryDismantle(itemData, { model }), true);
+  assert.deepEqual(resolveInventoryDismantleOutputs(itemData, 3, { model }), [{
+    sourceType: "material",
+    sourceId: "iron",
+    name: "Железо",
+    quantity: 1
+  }]);
+  itemData.system.quantity = 1;
+  assert.equal(canResolveInventoryDismantle(itemData, { model }), false);
+  assert.deepEqual(resolveInventoryDismantleOutputs(itemData, 1, { model }), []);
+});
+
 test("returns no dismantle output for zero weight, unknown material, material or container", () => {
   const model = createModel();
   const fixtures = [

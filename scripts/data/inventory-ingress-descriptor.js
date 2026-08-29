@@ -144,7 +144,9 @@ function resolveMaterialProfile(itemData, model) {
 }
 
 export function canResolveInventoryDismantle(itemData, { model } = {}) {
-  return unitWeightPounds(itemData) > 0 && Boolean(resolveMaterialProfile(itemData, model));
+  const availableQuantity = Math.max(0, Math.floor(finiteNumber(itemData?.system?.quantity) ?? 1));
+  return Math.floor(unitWeightPounds(itemData) * availableQuantity * 0.5) > 0
+    && Boolean(resolveMaterialProfile(itemData, model));
 }
 
 export function resolveInventoryDismantleOutputs(itemData, quantity, { model } = {}) {
@@ -152,7 +154,7 @@ export function resolveInventoryDismantleOutputs(itemData, quantity, { model } =
   const unitWeight = unitWeightPounds(itemData);
   const profile = resolveMaterialProfile(itemData, model);
   if (!(safeQuantity > 0) || unitWeight <= 0 || !profile) return deepFreeze([]);
-  const outputQuantity = Math.floor(unitWeight * safeQuantity * 0.5 * 100) / 100;
+  const outputQuantity = Math.floor(unitWeight * safeQuantity * 0.5);
   if (outputQuantity <= 0) return deepFreeze([]);
   const sourceId = cleanString(profile.material.id ?? profile.materialId);
   if (!sourceId) return deepFreeze([]);

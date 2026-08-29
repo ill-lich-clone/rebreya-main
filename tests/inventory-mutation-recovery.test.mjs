@@ -581,6 +581,276 @@ test("manual dismantle restores a missing credited material before retrying sour
   }
 });
 
+test("manual dismantle repairs legacy fractional credits before applying a new integer result", async () => {
+  const silver = { id: "silver", name: "Silver", type: "Mineral", priceGold: 5, weight: 1 };
+  const model = {
+    gear: [],
+    gearById: new Map(),
+    materials: [silver],
+    materialById: new Map([[silver.id, silver]]),
+    materialByGoodId: new Map()
+  };
+  const source = createItem({
+    id: "broken-amulet",
+    name: "Broken amulet",
+    type: "loot",
+    quantity: 3,
+    system: {
+      quantity: 3,
+      price: { value: 5, denomination: "gp" },
+      weight: { value: 1, units: "lb" }
+    },
+    flags: {
+      [MODULE_ID]: {
+        sourceType: "gear",
+        sourceId: "silver-amulet",
+        gearId: "silver-amulet",
+        predominantMaterialId: silver.id
+      }
+    }
+  });
+  const firstMutationId = "inventory-dismantle-legacy-created";
+  const secondMutationId = "inventory-dismantle-legacy-merged";
+  const corruptedSilver = createItem({
+    id: "rounded-silver",
+    name: silver.name,
+    type: "loot",
+    quantity: 4,
+    flags: {
+      [MODULE_ID]: {
+        sourceType: "material",
+        sourceId: silver.id,
+        materialId: silver.id,
+        predominantMaterialId: silver.id,
+        inventoryMutation: { id: firstMutationId, kind: "dismantle" }
+      }
+    }
+  });
+  const group = createActor({
+    id: "legacy-fractional-dismantle-group",
+    type: "group",
+    managed: true,
+    items: [source, corruptedSilver]
+  });
+  const fixture = installFixture({
+    group,
+    actors: [group],
+    moduleApi: { getModel: async () => model }
+  });
+  const sourceReceipt = {
+    itemId: source.id,
+    beforeQuantity: 3,
+    afterQuantity: 0,
+    delta: 3
+  };
+  const baseMaterialItemData = {
+    name: silver.name,
+    type: "loot",
+    img: "icons/commodities/materials/slime-thick-blue.webp",
+    system: {
+      description: { value: "", chat: "" },
+      unidentified: { description: "" },
+      quantity: 1.5,
+      price: { value: 5, denomination: "gp" },
+      weight: { value: 1, units: "lb" },
+      type: { value: "trade", subtype: silver.type }
+    },
+    flags: {
+      [MODULE_ID]: {
+        sourceType: "material",
+        sourceId: silver.id,
+        materialId: silver.id,
+        predominantMaterialId: silver.id
+      }
+    }
+  };
+
+  try {
+    fixture.settingsStore[SETTINGS_KEYS.INVENTORY_MUTATION_JOURNAL] = {
+      version: 1,
+      records: [{
+        id: firstMutationId,
+        kind: "dismantle",
+        phase: "prepared",
+        terminal: false,
+        request: { actorId: group.id, itemId: source.id, quantity: 3 },
+        actorId: group.id,
+        itemName: source.name,
+        materialName: silver.name,
+        materialWeight: 1.5,
+        materialItemData: {
+          ...clone(baseMaterialItemData),
+          flags: {
+            [MODULE_ID]: {
+              ...clone(baseMaterialItemData.flags[MODULE_ID]),
+              inventoryMutation: { id: firstMutationId, kind: "dismantle" }
+            }
+          }
+        },
+        sourceReceipt: clone(sourceReceipt),
+        targetReceipt: {
+          itemId: "",
+          created: true,
+          beforeQuantity: 0,
+          afterQuantity: 1.5,
+          delta: 1.5
+        }
+      }, {
+        id: secondMutationId,
+        kind: "dismantle",
+        phase: "prepared",
+        terminal: false,
+        request: { actorId: group.id, itemId: source.id, quantity: 3 },
+        actorId: group.id,
+        itemName: source.name,
+        materialName: silver.name,
+        materialWeight: 1.5,
+        materialItemData: clone(baseMaterialItemData),
+        sourceReceipt: clone(sourceReceipt),
+        targetReceipt: {
+          itemId: corruptedSilver.id,
+          created: false,
+          beforeQuantity: 2,
+          afterQuantity: 3.5,
+          delta: 1.5
+        }
+      }]
+    };
+
+    const result = await fixture.service.executeDismantleMutation({
+      inventoryActorId: group.id,
+      itemId: source.id,
+      mutationId: "inventory-dismantle-integer-after-repair",
+      quantity: 3
+    });
+
+    assert.equal(result.materialWeight, 1);
+    assert.equal(group.items.contents.length, 1);
+    assert.equal(group.items.contents[0].name, silver.name);
+    assert.equal(group.items.contents[0].system.quantity, 1);
+    assert.equal(group.createEmbeddedDocumentsCalls, 1);
+    const records = fixture.settingsStore[SETTINGS_KEYS.INVENTORY_MUTATION_JOURNAL].records;
+    for (const mutationId of [firstMutationId, secondMutationId]) {
+      const record = records.find((entry) => entry.id === mutationId);
+      assert.equal(record.terminal, true);
+      assert.deepEqual(record.result, {
+        ok: false,
+        code: "legacy-fractional-dismantle-repaired",
+        error: "Legacy fractional dismantle credit was compensated before retry."
+      });
+    }
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("manual dismantle refuses to repair a legacy fractional target changed by another mutation", async () => {
+  const silver = { id: "silver", name: "Silver", type: "Mineral", priceGold: 5, weight: 1 };
+  const model = {
+    gear: [],
+    gearById: new Map(),
+    materials: [silver],
+    materialById: new Map([[silver.id, silver]]),
+    materialByGoodId: new Map()
+  };
+  const source = createItem({
+    id: "broken-amulet",
+    name: "Broken amulet",
+    type: "loot",
+    quantity: 3,
+    system: {
+      quantity: 3,
+      price: { value: 5, denomination: "gp" },
+      weight: { value: 1, units: "lb" }
+    },
+    flags: {
+      [MODULE_ID]: {
+        sourceType: "gear",
+        sourceId: "silver-amulet",
+        gearId: "silver-amulet",
+        predominantMaterialId: silver.id
+      }
+    }
+  });
+  const changedSilver = createItem({
+    id: "changed-silver",
+    name: silver.name,
+    type: "loot",
+    quantity: 5,
+    flags: {
+      [MODULE_ID]: {
+        sourceType: "material",
+        sourceId: silver.id,
+        materialId: silver.id,
+        predominantMaterialId: silver.id
+      }
+    }
+  });
+  const group = createActor({
+    id: "unsafe-legacy-fractional-dismantle-group",
+    type: "group",
+    managed: true,
+    items: [source, changedSilver]
+  });
+  const fixture = installFixture({
+    group,
+    actors: [group],
+    moduleApi: { getModel: async () => model }
+  });
+  const legacyMutationId = "inventory-dismantle-legacy-unsafe";
+
+  try {
+    fixture.settingsStore[SETTINGS_KEYS.INVENTORY_MUTATION_JOURNAL] = {
+      version: 1,
+      records: [{
+        id: legacyMutationId,
+        kind: "dismantle",
+        phase: "prepared",
+        terminal: false,
+        request: { actorId: group.id, itemId: source.id, quantity: 3 },
+        actorId: group.id,
+        itemName: source.name,
+        materialName: silver.name,
+        materialWeight: 1.5,
+        materialItemData: {},
+        sourceReceipt: {
+          itemId: source.id,
+          beforeQuantity: 3,
+          afterQuantity: 0,
+          delta: 3
+        },
+        targetReceipt: {
+          itemId: changedSilver.id,
+          created: false,
+          beforeQuantity: 2,
+          afterQuantity: 3.5,
+          delta: 1.5
+        }
+      }]
+    };
+
+    await assert.rejects(
+      fixture.service.executeDismantleMutation({
+        inventoryActorId: group.id,
+        itemId: source.id,
+        mutationId: "inventory-dismantle-after-unsafe-repair",
+        quantity: 3
+      }),
+      /merge target changed before repair/u
+    );
+
+    assert.equal(source.system.quantity, 3);
+    assert.equal(changedSilver.system.quantity, 5);
+    const [record] = fixture.settingsStore[SETTINGS_KEYS.INVENTORY_MUTATION_JOURNAL].records;
+    assert.equal(record.id, legacyMutationId);
+    assert.equal(record.terminal, false);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
 test("broken lootgen grants persist full durability exactly once and do not merge with intact gear", async () => {
   const steel = { id: "steel", name: "Сталь" };
   const gear = {

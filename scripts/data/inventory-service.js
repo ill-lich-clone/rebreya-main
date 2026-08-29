@@ -20,7 +20,7 @@ import { DurableMutationJournal } from "../application/durable-mutation-journal.
 import { WorldMutationCoordinator } from "../application/world-mutation-coordinator.js";
 import { finiteNumber as toNumber } from "../shared/foundry-values.js";
 import { buildDurabilitySignature, isDurabilityEligible } from "./durability-rules.js";
-import { resolveInventoryDismantleOutputs } from "./inventory-ingress-descriptor.js";
+import { resolveInventoryDismantleOutputs } from "./inventory-ingress-descriptor.js?v=1.4.177-integer-dismantle-repair";
 import {
   InventoryIngressRuleError,
   findInventoryIngressRuleConflicts,
@@ -3088,10 +3088,104 @@ export class InventoryService {
     }
   }
 
+  async #repairLegacyFractionalDismantleMutations(actor) {
+    const actorId = cleanId(actor?.id);
+    const state = normalizeInventoryMutationJournal(
+      game.settings.get(MODULE_ID, SETTINGS_KEYS.INVENTORY_MUTATION_JOURNAL)
+    );
+    const records = state.records.filter((record) => {
+      const afterQuantity = Number(record?.targetReceipt?.afterQuantity);
+      return record?.kind === "dismantle"
+        && record?.phase === "prepared"
+        && record?.terminal !== true
+        && cleanId(record?.actorId) === actorId
+        && Number.isFinite(afterQuantity)
+        && afterQuantity > 0
+        && !Number.isSafeInteger(afterQuantity);
+    }).reverse();
+
+    for (const record of records) {
+      const recordId = cleanId(record.id);
+      if (!recordId
+        || cleanId(record.request?.actorId) !== actorId
+        || cleanId(record.request?.itemId) !== cleanId(record.sourceReceipt?.itemId)) {
+        throw this.#inventoryReconciliationError("Legacy fractional dismantle record has an invalid request scope.");
+      }
+      const sourceState = this.#sourceReceiptState(actor, record.sourceReceipt);
+      if (!sourceState.before) {
+        throw this.#inventoryReconciliationError(
+          `Legacy fractional dismantle '${recordId}' source changed before repair.`
+        );
+      }
+
+      const receipt = record.targetReceipt;
+      const coercedAfterQuantity = Math.max(0, Math.round(Number(receipt.afterQuantity)));
+      let targetItem = receipt.created
+        ? this.#findMutationItem(actor, recordId)
+        : actor.items.get(cleanId(receipt.itemId));
+      if (receipt.created) {
+        if (targetItem) {
+          if (!inventoryQuantitiesMatch(getRawQuantity(targetItem.toObject()), coercedAfterQuantity)) {
+            throw this.#inventoryReconciliationError(
+              `Legacy fractional dismantle '${record.id}' created target changed before repair.`
+            );
+          }
+          try {
+            await targetItem.delete();
+          }
+          catch (error) {
+            targetItem = this.#findMutationItem(actor, recordId);
+            if (targetItem) throw error;
+          }
+          if (this.#findMutationItem(actor, recordId)) {
+            throw this.#inventoryReconciliationError(
+              `Legacy fractional dismantle '${record.id}' created target still exists after repair.`
+            );
+          }
+        }
+      }
+      else {
+        if (!targetItem) {
+          throw this.#inventoryReconciliationError(
+            `Legacy fractional dismantle '${record.id}' merge target disappeared before repair.`
+          );
+        }
+        const currentQuantity = getRawQuantity(targetItem.toObject());
+        if (!inventoryQuantitiesMatch(currentQuantity, receipt.beforeQuantity)) {
+          if (!inventoryQuantitiesMatch(currentQuantity, coercedAfterQuantity)) {
+            throw this.#inventoryReconciliationError(
+              `Legacy fractional dismantle '${record.id}' merge target changed before repair.`
+            );
+          }
+          try {
+            await targetItem.update({ "system.quantity": receipt.beforeQuantity });
+          }
+          catch (error) {
+            if (!inventoryQuantitiesMatch(getRawQuantity(targetItem.toObject()), receipt.beforeQuantity)) throw error;
+          }
+          if (!inventoryQuantitiesMatch(getRawQuantity(targetItem.toObject()), receipt.beforeQuantity)) {
+            throw this.#inventoryReconciliationError(
+              `Legacy fractional dismantle '${record.id}' merge target was not restored.`
+            );
+          }
+        }
+      }
+
+      await this.mutationJournal.finish(recordId, {
+        ok: false,
+        code: "legacy-fractional-dismantle-repaired",
+        error: "Legacy fractional dismantle credit was compensated before retry."
+      });
+    }
+  }
+
   #dismantleInventoryItemFromActor(inventoryActor, itemId, quantity = 1, options = {}) {
     return this.mutationCoordinator.run(
       "inventory",
-      () => this.#executeDismantleInventoryItem(inventoryActor, itemId, quantity, options)
+      async () => {
+        await this.#repairLegacyFractionalDismantleMutations(inventoryActor);
+        return this.#executeDismantleInventoryItem(inventoryActor, itemId, quantity, options);
+      }
     );
   }
 
