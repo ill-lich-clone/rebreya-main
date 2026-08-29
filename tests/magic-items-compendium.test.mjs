@@ -235,8 +235,8 @@ test("magic item compendium builds automation for selected magic items", () => {
   const nightGoggles = magicItemsCompendium.createMagicItemData(byName.get(nightGogglesName), new Map());
   assert.equal(nightGoggles.effects.length, 1);
   assert.equal(nightGoggles.effects[0].changes[0]?.key, "system.attributes.senses.darkvision");
-  assert.equal(nightGoggles.effects[0].changes[0]?.value, "60");
-  assert.equal(nightGoggles.effects[0].changes[0]?.mode, 4);
+  assert.equal(nightGoggles.effects[0].changes[0]?.value, "+60");
+  assert.equal(nightGoggles.effects[0].changes[0]?.mode, 2);
 
   const cloakOfProtection = magicItemsCompendium.createMagicItemData(byName.get(cloakName), new Map());
   assert.equal(cloakOfProtection.effects.length, 1);
@@ -284,6 +284,80 @@ test("magic item compendium builds automation for selected magic items", () => {
     assert.equal(automation?.bonus, expectedBonus);
     assert.equal(automation?.maxAbilityScore, expectedMaxAbilityScore);
   }
+});
+
+test("magic item compendium projects the approved passive automation matrix", () => {
+  const sourceById = new Map(MAGIC_ITEMS.map((item) => [item.id, item]));
+  const expectedChangesById = new Map([
+    ["амулет-благочестия-1", [
+      ["system.bonuses.msak.attack", 2, "+1"],
+      ["system.bonuses.rsak.attack", 2, "+1"],
+      ["system.bonuses.spell.dc", 2, "+1"]
+    ]],
+    ["барабан-задающего-ритм-1", [
+      ["system.bonuses.msak.attack", 2, "+1"],
+      ["system.bonuses.rsak.attack", 2, "+1"],
+      ["system.bonuses.spell.dc", 2, "+1"]
+    ]],
+    ["лунный-серп-1", [
+      ["system.bonuses.msak.attack", 2, "+1"],
+      ["system.bonuses.rsak.attack", 2, "+1"],
+      ["system.bonuses.spell.dc", 2, "+1"]
+    ]],
+    ["универсальный-инструмент-1", [
+      ["system.bonuses.msak.attack", 2, "+1"],
+      ["system.bonuses.rsak.attack", 2, "+1"],
+      ["system.bonuses.spell.dc", 2, "+1"]
+    ]],
+    ["обруч-заклинателя-2", [
+      ["system.skills.arc.bonuses.check", 2, "+2"]
+    ]],
+    ["пояс-атлета-1", [
+      ["system.skills.ath.bonuses.check", 2, "+1"]
+    ]],
+    ["камень-удачи", [
+      ["system.bonuses.abilities.check", 2, "+1"],
+      ["system.bonuses.abilities.save", 2, "+1"]
+    ]],
+    ["пояс-силы-холмового-великана", [
+      ["system.abilities.str.value", 2, "+3"],
+      ["system.abilities.str.max", 4, "21"]
+    ]],
+    ["очки-орлиного-зрения", [
+      ["flags.midi-qol.advantage.skill.prc", 0, "1"]
+    ]]
+  ]);
+  const normalized = magicItemsCompendium.normalizeMagicItems(
+    [...expectedChangesById.keys()].map((id) => sourceById.get(id))
+  );
+
+  for (const item of normalized) {
+    const created = magicItemsCompendium.createMagicItemData(item, new Map());
+    const actual = created.effects.flatMap((effect) => effect.changes)
+      .map(({ key, mode, value }) => [key, mode, value]);
+    assert.deepEqual(actual, expectedChangesById.get(item.id), item.id);
+    assert.equal(created.effects.every((effect) => effect._id.length === 16), true, item.id);
+    assert.equal(
+      created.effects.every((effect) => effect.flags["rebreya-main"].magicItemAutomation === true),
+      true,
+      item.id
+    );
+    assert.equal(created.flags["rebreya-main"].magicItemAutomation.version, 1, item.id);
+    const signature = JSON.parse(created.flags["rebreya-main"].signature);
+    assert.equal(signature.magicItemAutomation.version, 1, item.id);
+    assert.deepEqual(signature.magicItemAutomation.effects, created.effects, item.id);
+  }
+
+  const [gloves, lunarSickle] = magicItemsCompendium.normalizeMagicItems([
+    sourceById.get("перчатки-двуручного-боя"),
+    sourceById.get("лунный-серп-1")
+  ]).map((item) => magicItemsCompendium.createMagicItemData(item, new Map()));
+
+  assert.equal(gloves.effects.length, 0);
+  assert.equal(
+    lunarSickle.effects.some((effect) => effect.changes.some((change) => change.key === "system.bonuses.healing")),
+    false
+  );
 });
 
 test("magic instruments expose independent native cast activities", () => {

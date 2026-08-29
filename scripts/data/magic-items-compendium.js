@@ -28,6 +28,7 @@ const EFFECT_MODE_ADD = 2;
 const EFFECT_MODE_UPGRADE = 4;
 const DEFAULT_MAGIC_ITEM_ICON = "systems/dnd5e/icons/svg/items/loot.svg";
 const MAGIC_TEMPLATE_VERSION = 5;
+const MAGIC_ITEM_AUTOMATION_VERSION = 1;
 const NATIVE_INSTRUMENT_SPELL_ACTIVITY_VERSION = 1;
 const NATIVE_INSTRUMENT_SPELLS = {
   "бандура-фоклучан": [
@@ -74,6 +75,87 @@ const RING_BONUS_VARIANTS = [
 ];
 const RING_BONUS_VARIANTS_NORMALIZED = RING_BONUS_VARIANTS
   .map((entry) => ({ ...entry, normalizedId: normalizeMatchText(entry.id) }));
+const PASSIVE_MAGIC_ITEM_CHANGE_DEFINITIONS = new Map([
+  ["амулет-благочестия-1", {
+    suffix: "devout-spellcasting",
+    label: "Благочестие",
+    changes: [
+      { key: "system.bonuses.msak.attack", mode: EFFECT_MODE_ADD, value: "+1", priority: 20 },
+      { key: "system.bonuses.rsak.attack", mode: EFFECT_MODE_ADD, value: "+1", priority: 20 },
+      { key: "system.bonuses.spell.dc", mode: EFFECT_MODE_ADD, value: "+1", priority: 20 }
+    ]
+  }],
+  ["барабан-задающего-ритм-1", {
+    suffix: "rhythm-maker-spellcasting",
+    label: "Ритм заклинаний",
+    changes: [
+      { key: "system.bonuses.msak.attack", mode: EFFECT_MODE_ADD, value: "+1", priority: 20 },
+      { key: "system.bonuses.rsak.attack", mode: EFFECT_MODE_ADD, value: "+1", priority: 20 },
+      { key: "system.bonuses.spell.dc", mode: EFFECT_MODE_ADD, value: "+1", priority: 20 }
+    ]
+  }],
+  ["лунный-серп-1", {
+    suffix: "moon-sickle-spellcasting",
+    label: "Лунная магия",
+    changes: [
+      { key: "system.bonuses.msak.attack", mode: EFFECT_MODE_ADD, value: "+1", priority: 20 },
+      { key: "system.bonuses.rsak.attack", mode: EFFECT_MODE_ADD, value: "+1", priority: 20 },
+      { key: "system.bonuses.spell.dc", mode: EFFECT_MODE_ADD, value: "+1", priority: 20 }
+    ]
+  }],
+  ["универсальный-инструмент-1", {
+    suffix: "all-purpose-tool-spellcasting",
+    label: "Универсальная магия",
+    changes: [
+      { key: "system.bonuses.msak.attack", mode: EFFECT_MODE_ADD, value: "+1", priority: 20 },
+      { key: "system.bonuses.rsak.attack", mode: EFFECT_MODE_ADD, value: "+1", priority: 20 },
+      { key: "system.bonuses.spell.dc", mode: EFFECT_MODE_ADD, value: "+1", priority: 20 }
+    ]
+  }],
+  ["обруч-заклинателя-2", {
+    suffix: "spellcaster-circlet-arcana",
+    label: "Знание магии",
+    changes: [
+      { key: "system.skills.arc.bonuses.check", mode: EFFECT_MODE_ADD, value: "+2", priority: 20 }
+    ]
+  }],
+  ["пояс-атлета-1", {
+    suffix: "athlete-belt-athletics",
+    label: "Атлетизм",
+    changes: [
+      { key: "system.skills.ath.bonuses.check", mode: EFFECT_MODE_ADD, value: "+1", priority: 20 }
+    ]
+  }],
+  ["камень-удачи", {
+    suffix: "luck-stone",
+    label: "Удача",
+    changes: [
+      { key: "system.bonuses.abilities.check", mode: EFFECT_MODE_ADD, value: "+1", priority: 20 },
+      { key: "system.bonuses.abilities.save", mode: EFFECT_MODE_ADD, value: "+1", priority: 20 }
+    ]
+  }],
+  ["пояс-силы-холмового-великана", {
+    suffix: "hill-giant-strength",
+    label: "Сила холмового великана",
+    changes: [
+      { key: "system.abilities.str.value", mode: EFFECT_MODE_ADD, value: "+3", priority: 20 },
+      { key: "system.abilities.str.max", mode: EFFECT_MODE_UPGRADE, value: "21", priority: 20 }
+    ]
+  }],
+  ["очки-орлиного-зрения", {
+    suffix: "eagle-eyes-perception",
+    label: "Орлиное зрение",
+    changes: [
+      { key: "flags.midi-qol.advantage.skill.prc", mode: EFFECT_MODE_CUSTOM, value: "1", priority: 20 }
+    ]
+  }]
+]);
+const PARTIAL_PASSIVE_MAGIC_ITEM_IDS = new Set([
+  "амулет-благочестия-1",
+  "лунный-серп-1",
+  "очки-орлиного-зрения",
+  "универсальный-инструмент-1"
+]);
 
 function stableHashId(seed, scope = "id") {
   const source = `${scope}:${seed}`;
@@ -198,11 +280,23 @@ function parseItemBonusFromName(itemName) {
 }
 
 function resolveMagicItemAutomationDefinition(item) {
+  const itemId = String(item?.id ?? "").trim();
   const normalizedName = normalizeMatchText(item?.name);
   const normalizedPoweName = normalizeMatchText(BELLMAN_POWER_ITEM_NAME);
   const normalizedPouchName = normalizeMatchText(HOARDING_POUCH_ITEM_NAME);
   const normalizedWatcherShieldName = normalizeMatchText(WATCHER_SHIELD_ITEM_NAME);
   const normalizedRingPrefix = normalizeMatchText(RING_BONUS_ITEM_PREFIX);
+
+  if (PASSIVE_MAGIC_ITEM_CHANGE_DEFINITIONS.has(itemId)) {
+    return {
+      version: MAGIC_ITEM_AUTOMATION_VERSION,
+      kind: "passive",
+      coverage: PARTIAL_PASSIVE_MAGIC_ITEM_IDS.has(itemId) ? "partial" : "full",
+      note: itemId === "лунный-серп-1"
+        ? "Бонус к лечению заклинаниями остаётся ручным: native healing bonus расширил бы механику на другие источники лечения."
+        : "Автоматизируется статическим переносимым эффектом."
+    };
+  }
 
   if (normalizedName === normalizedPouchName) {
     return {
@@ -255,6 +349,18 @@ function resolveMagicItemAutomationDefinition(item) {
 function buildMagicItemAutomationEffects(item) {
   const normalizedName = normalizeMatchText(item?.name);
   const itemBonuses = parseItemBonusFromName(item?.name);
+  const passiveDefinition = PASSIVE_MAGIC_ITEM_CHANGE_DEFINITIONS.get(String(item?.id ?? "").trim());
+
+  if (passiveDefinition) {
+    return [
+      buildPassiveMagicItemEffect({
+        id: buildMagicItemEffectId(item, passiveDefinition.suffix),
+        name: `${item?.name}: ${passiveDefinition.label}`,
+        description: item?.description,
+        changes: passiveDefinition.changes
+      })
+    ];
+  }
 
   if (normalizedName === normalizeMatchText("Ночные очки")) {
     return [
@@ -264,8 +370,8 @@ function buildMagicItemAutomationEffects(item) {
         description: item?.description,
         changes: [{
           key: "system.attributes.senses.darkvision",
-          mode: EFFECT_MODE_UPGRADE,
-          value: "60",
+          mode: EFFECT_MODE_ADD,
+          value: "+60",
           priority: 20
         }]
       })
@@ -522,6 +628,8 @@ function buildMagicSignature(item) {
   const itemSlot = resolveItemSlotGroup(item, classification);
   const heroDollSlots = mapSlotGroupToHeroDollSlots(itemSlot, classification.heroDollSlots);
   const nativeInstrumentSpellActivities = buildNativeInstrumentSpellActivities(item);
+  const magicItemAutomation = resolveMagicItemAutomationDefinition(item);
+  const magicItemAutomationEffects = buildMagicItemAutomationEffects(item);
   return JSON.stringify({
     templateVersion: MAGIC_TEMPLATE_VERSION,
     id: item.id,
@@ -548,6 +656,13 @@ function buildMagicSignature(item) {
     folderPath: buildFolderPath(classification),
     heroDollSlots,
     firearmClass: classification.firearmClass,
+    ...(magicItemAutomation || magicItemAutomationEffects.length ? {
+      magicItemAutomation: {
+        version: MAGIC_ITEM_AUTOMATION_VERSION,
+        definition: magicItemAutomation,
+        effects: magicItemAutomationEffects
+      }
+    } : {}),
     ...(nativeInstrumentSpellActivities ? {
       nativeInstrumentSpellActivities: {
         version: NATIVE_INSTRUMENT_SPELL_ACTIVITY_VERSION,
