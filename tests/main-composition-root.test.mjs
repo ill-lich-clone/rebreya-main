@@ -112,18 +112,22 @@ test("ready composes spell automation on one registry alongside legacy hook regi
 
     const moduleApi = module.api;
     const equippedSyncResult = { dryRun: true, updated: [] };
-    let equippedSyncOptions = null;
+    const ownedSyncOptions = [];
     moduleApi.magicItemsCompendium = {
-      async syncEquippedMagicItems(options) {
-        equippedSyncOptions = options;
+      async syncOwnedMagicItems(options) {
+        ownedSyncOptions.push(options);
         return equippedSyncResult;
       }
     };
     assert.equal(
+      await moduleApi.syncOwnedMagicItems({ dryRun: true }),
+      equippedSyncResult
+    );
+    assert.equal(
       await moduleApi.syncEquippedMagicItems({ dryRun: true }),
       equippedSyncResult
     );
-    assert.deepEqual(equippedSyncOptions, { dryRun: true });
+    assert.deepEqual(ownedSyncOptions, [{ dryRun: true }, { dryRun: true }]);
     assert.ok(moduleApi.privilegedMutationGateway instanceof PrivilegedMutationGateway);
     assert.ok(moduleApi.builtinStorageActorService instanceof BuiltinStorageActorService);
     assert.equal("builtinCoinTemplateService" in moduleApi, false);

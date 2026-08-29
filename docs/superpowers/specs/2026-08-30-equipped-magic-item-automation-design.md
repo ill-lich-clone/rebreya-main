@@ -1,20 +1,10 @@
-# Equipped Magic Item Automation Design
+# Owned Magic Item Automation Design
 
 ## Статус и наблюдаемый результат
 
-После реализации managed-компендиум `world.rebreya-magic-items` публикует нативные dnd5e 5.2.5 effects и activities для поддержанных магических предметов. GM может вручную выполнить:
+После реализации managed-компендиум `world.rebreya-magic-items` публикует нативные dnd5e 5.2.5 effects и activities для поддержанных магических предметов. При `initialize()` и `reloadData()` active GM автоматически синхронизирует pack, затем проходит по всем world Actor типа `character` и переносит актуальную managed-автоматизацию во все распознанные embedded-копии независимо от equipped/attuned. Повторный lifecycle-run не создаёт дубликаты, не сбрасывает runtime-состояние и не требует ручной команды.
 
-```js
-await game.rebreyaMain.syncEquippedMagicItems()
-```
-
-Команда сначала синхронизирует компендиум, затем проходит по всем world Actor типа `character` и переносит актуальную managed-автоматизацию только в предметы с `system.equipped === true` или `system.attuned === true`. Повторный запуск не создаёт дубликаты и не сбрасывает runtime-состояние предметов.
-
-Предварительный просмотр выполняется без world mutations:
-
-```js
-await game.rebreyaMain.syncEquippedMagicItems({ dryRun: true })
-```
+`game.rebreyaMain.syncOwnedMagicItems({ dryRun: true })` остаётся только диагностическим API без world mutations; прежний `syncEquippedMagicItems(options)` является совместимым alias.
 
 ## Подтверждённая область задачи
 
@@ -23,19 +13,19 @@ await game.rebreyaMain.syncEquippedMagicItems({ dryRun: true })
 - расширение существующих builders в `scripts/data/magic-items-compendium.js`;
 - расширение существующего attack workflow только для бонуса Перчаток двуручного боя, зависящего от живого состояния рук Rebreya;
 - обновление managed-компендиума через существующий `MagicItemsCompendiumService.sync()`;
-- перенос managed effects и activities в уже существующие надетые/настроенные embedded Items;
+- автоматический перенос managed effects и activities во все уже существующие embedded Items character Actor;
 - точная совместимость со старыми world-копиями и карточками из `dnd5e`, `laaru-dnd5-hw` и `fifthpendium-artificer-525`;
 - обработка всех world Actor типа `character`, а не только текущей сцены или одной группы;
-- компактный console report и полный возвращаемый result object.
+- подавление пустых writes по authoritative Foundry document diff и полный возвращаемый result object.
 
 Из области исключены:
 
-- NPC, group/vehicle Actor и ненадетые предметы;
+- NPC и group/vehicle Actor;
 - `Особый Кинжал телепортации`, `Зелье заживления ран` и `Зелье лечения 1-го уровня`: в текущей итерации команда сообщает для них `deferred` и не изменяет их embedded Items или compendium-проекции;
 - автоматическое включение или выключение attunement;
 - fuzzy matching по похожим названиям;
 - полная замена embedded Item копией из компендиума;
-- глобальные hooks для постоянного ремонта предметов;
+- отдельные глобальные hooks для постоянного ремонта предметов вне общего `initialize()`/`reloadData()` lifecycle;
 - автоматическое принятие решений за игрока;
 - реализация сложной ситуационной логики, которую нельзя корректно выразить Active Effect или native activity.
 
@@ -186,15 +176,16 @@ Pure predicate определения подходящей пары может �
 
 ## Embedded merge contract
 
-`MagicItemsCompendiumService.syncEquippedMagicItems({ dryRun = false } = {})` выполняет:
+`MagicItemsCompendiumService.syncOwnedMagicItems({ dryRun = false, reportToConsole = true } = {})` выполняет:
 
 1. Проверяет dnd5e world и что текущий пользователь — active GM.
 2. Вызывает существующий `sync()` и прерывает actor phase при ошибке compendium sync.
 3. Загружает актуальные managed documents из `world.rebreya-magic-items` и строит detached automation projections.
 4. Последовательно проходит все world Actor `type === "character"`.
-5. Для каждого `equipped`/`attuned` Item разрешает identity и строит patch.
-6. В `dryRun` только возвращает план.
-7. В apply-mode вызывает один `actor.updateEmbeddedDocuments("Item", updates)` на Actor.
+5. Для каждого Item независимо от equipped/attuned разрешает identity и строит patch.
+6. Сверяет candidate update с `item.toObject()` через `foundry.utils.diffObject`; пустой diff переводит строку в `unchanged` без write.
+7. В `dryRun` только возвращает план.
+8. В apply-mode вызывает один `actor.updateEmbeddedDocuments("Item", updates)` на Actor.
 
 Patch сохраняет:
 
@@ -220,7 +211,7 @@ Patch заменяет только:
 
 Новые cast activities следуют уже принятому контракту `docs/superpowers/specs/2026-08-16-native-instrument-spell-activities-design.md`: official UUID, cached spells dnd5e, отсутствие actor spell-slot consumption и детерминированные IDs.
 
-Эта спецификация намеренно расширяет прежнюю границу: уже существующие embedded Items теперь могут получить managed activities ручной GM-командой. dnd5e продолжает владеть созданием и удалением cached spells. Миграция не создаёт cached spell Items напрямую.
+Эта спецификация намеренно расширяет прежнюю границу: уже существующие embedded Items получают managed activities автоматически в общем lifecycle синхронизации данных. dnd5e продолжает владеть созданием и удалением cached spells. Миграция не создаёт cached spell Items напрямую.
 
 ## Ошибки и возвращаемый результат
 
@@ -240,23 +231,27 @@ Patch заменяет только:
 }
 ```
 
-`updated`, `unchanged`, `unresolved`, `unresolvedChoices`, `skipped` и `errors` содержат компактные detached rows с actor/item IDs, именами и reason code. Метод также вызывает `console.table()` для итоговых rows и возвращает полный object для дальнейшего анализа.
+`updated`, `unchanged`, `unresolved`, `unresolvedChoices`, `skipped` и `errors` содержат компактные detached rows с actor/item IDs, именами и reason code. Метод возвращает полный object для анализа и вызывает `console.table()` только при `reportToConsole:true`; автоматический lifecycle передаёт `false`.
 
 Ошибка одного Actor фиксируется и не останавливает остальные Actor. Глобальный rollback не создаётся: actor update выполняется одним batch, а вся операция идемпотентна и допускает безопасный retry. Ошибка compendium sync останавливает весь actor phase до первой world mutation.
 
 ## Публичный API
 
-`RebreyaMainModule` получает тонкий delegate:
+`RebreyaMainModule` получает canonical delegate и совместимый alias:
 
 ```js
+async syncOwnedMagicItems(options = {}) {
+  return this.magicItemsCompendium.syncOwnedMagicItems(options);
+}
+
 async syncEquippedMagicItems(options = {}) {
-  return this.magicItemsCompendium.syncEquippedMagicItems(options);
+  return this.syncOwnedMagicItems(options);
 }
 ```
 
-Поскольку `game.rebreyaMain` и `game.modules.get("rebreya-main")?.api` указывают на один instance, отдельный publisher или socket route не создаётся. Команда GM-only и предназначена для ручного запуска в консоли; player socket command не нужен.
+Поскольку `game.rebreyaMain` и `game.modules.get("rebreya-main")?.api` указывают на один instance, отдельный publisher или socket route не создаётся. Операция GM-only; штатный путь — автоматический `initialize()`/`reloadData()`, player socket command не нужен.
 
-README описывает apply- и dry-run-вызовы и явно предупреждает, что метод меняет все надетые/настроенные предметы всех character Actor мира.
+README описывает автоматический lifecycle, охват всех embedded Items character Actor и необязательный diagnostic API.
 
 ## Изменяемые файлы и владельцы
 
@@ -298,7 +293,8 @@ README описывает apply- и dry-run-вызовы и явно преду�
 - active-GM и dnd5e guards;
 - обязательный compendium sync до actor phase;
 - сканирование всех и только `character` Actor;
-- фильтр `equipped || attuned`;
+- обработку надетых, настроенных и лежащих в инвентаре распознанных предметов;
+- подавление write при пустом authoritative Foundry diff;
 - отсутствие writes в `dryRun`;
 - exact identity, registered aliases, generic +N patterns и conflict refusal;
 - regression аномального кольца Кэссиди через exact migration rule;
@@ -324,6 +320,7 @@ README описывает apply- и dry-run-вызовы и явно преду�
 ### Composition и manifest
 
 - `tests/main-composition-root.test.mjs` проверяет delegate;
+- `tests/main-magic-item-lifecycle.test.mjs` проверяет автоматический запуск из общего managed-compendium lifecycle;
 - `tests/module-manifest.test.mjs` проверяет новую versioned entrypoint-ссылку;
 - при изменении публичного API проверяется README contract.
 
@@ -333,9 +330,9 @@ README описывает apply- и dry-run-вызовы и явно преду�
 
 1. focused-тесты проходят;
 2. compendium sync создаёт ожидаемые effects/activities и не переписывает unmanaged documents;
-3. `dryRun` на реальном мире выдаёт отчёт без world writes;
-4. apply-команда обновляет все однозначно разрешённые надетые/настроенные предметы character Actor;
-5. второй apply возвращает нулевое число изменений;
+3. `initialize()` и `reloadData()` автоматически синхронизируют pack и все однозначно разрешённые embedded Items character Actor;
+4. надетые, настроенные и лежащие в инвентаре предметы проходят один и тот же merge contract;
+5. пустой Foundry diff не вызывает Actor write, а повторный lifecycle-run возвращает нулевое число изменений;
 6. unresolved/manual items перечислены с причиной, а не молча пропущены;
 7. cached spells создаются/удаляются dnd5e, а не Rebreya;
 8. Перчатки двуручного боя дают `+2` только при подтверждённых двух разных melee weapons в разных руках Rebreya;

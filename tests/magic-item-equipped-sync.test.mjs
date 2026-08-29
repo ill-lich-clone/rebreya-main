@@ -516,7 +516,7 @@ function applyEmbeddedUpdates(actor, updates) {
   }
 }
 
-test("equipped sync guards the GM boundary and aborts before actors when compendium sync fails", async () => {
+test("owned sync guards the GM boundary and aborts before actors when compendium sync fails", async () => {
   const writes = [];
   const gameFixture = {
     system: { id: "dnd5e" },
@@ -550,7 +550,98 @@ test("equipped sync guards the GM boundary and aborts before actors when compend
   assert.equal(writes.length, 0);
 });
 
-test("equipped sync plans detached rows, batches once per character, continues after actor errors, and is idempotent", async () => {
+test("owned sync updates recognized magic items that are only stored in character inventory", async () => {
+  const packDocument = makePackDocument({
+    id: "night-goggles",
+    name: "Ночные очки",
+    magicItemId: "ночные-очки"
+  });
+  const pack = { getDocuments: async () => [packDocument] };
+  const storedItem = makeOwnedItem({
+    id: "stored-night-goggles",
+    name: "Ночные очки",
+    magicItemId: "ночные-очки",
+    equipped: false,
+    attuned: false
+  });
+  const actor = {
+    id: "character-with-stored-item",
+    name: "Герой",
+    type: "character",
+    items: { contents: [storedItem] },
+    writes: [],
+    async updateEmbeddedDocuments(type, updates) {
+      this.writes.push({ type, updates: structuredClone(updates) });
+    }
+  };
+  const gameFixture = {
+    system: { id: "dnd5e" },
+    actors: { contents: [actor] },
+    packs: new Map([["world.rebreya-magic-items", pack]])
+  };
+  const service = new MagicItemsCompendiumService({
+    gameProvider: () => gameFixture,
+    consoleProvider: () => ({ table() {} }),
+    isActiveGm: () => true
+  });
+  service.sync = async () => pack;
+
+  const report = await service.syncEquippedMagicItems();
+
+  assert.equal(report.updated.some((row) => row.itemId === storedItem.id), true);
+  assert.equal(actor.writes.length, 1);
+  assert.deepEqual(actor.writes[0].updates.map((update) => update._id), [storedItem.id]);
+});
+
+test("owned sync trusts Foundry's empty document diff and avoids an empty actor write", async () => {
+  const packDocument = makePackDocument({
+    id: "night-goggles",
+    name: "Ночные очки",
+    magicItemId: "ночные-очки"
+  });
+  const pack = { getDocuments: async () => [packDocument] };
+  const storedSource = makeOwnedItem({
+    id: "already-current-goggles",
+    name: "Ночные очки",
+    magicItemId: "ночные-очки",
+    equipped: false,
+    attuned: false
+  });
+  const storedItem = {
+    ...storedSource,
+    toObject: () => structuredClone(storedSource)
+  };
+  const actor = {
+    id: "character-with-current-item",
+    name: "Герой",
+    type: "character",
+    items: { contents: [storedItem] },
+    writes: [],
+    async updateEmbeddedDocuments(type, updates) {
+      this.writes.push({ type, updates: structuredClone(updates) });
+    }
+  };
+  const gameFixture = {
+    system: { id: "dnd5e" },
+    actors: { contents: [actor] },
+    packs: new Map([["world.rebreya-magic-items", pack]])
+  };
+  const service = new MagicItemsCompendiumService({
+    gameProvider: () => gameFixture,
+    consoleProvider: () => ({ table() {} }),
+    diffObject: () => ({}),
+    isActiveGm: () => true
+  });
+  service.sync = async () => pack;
+
+  const report = await service.syncEquippedMagicItems();
+
+  assert.equal(report.updated.length, 0);
+  assert.equal(report.unchanged.some((row) => row.itemId === storedItem.id), true);
+  assert.equal(actor.writes.length, 0);
+});
+
+test("owned sync plans detached rows, batches once per character, continues after actor errors, and is idempotent", async () => {
   const events = [];
   const tables = [];
   const packDocuments = [
@@ -612,19 +703,19 @@ test("equipped sync plans detached rows, batches once per character, continues a
   ]);
   assert.equal(preview.actorsScanned, 2);
   assert.equal(preview.itemsScanned, 4);
-  assert.equal(preview.updated.length, 2);
+  assert.equal(preview.updated.length, 3);
   assert.equal(preview.skipped.some((row) => row.itemId === "deferred-owned" && row.reason === "deferred-current-iteration"), true);
-  assert.equal(preview.skipped.some((row) => row.itemId === "inactive-owned" && row.reason === "not-equipped-or-attuned"), true);
+  assert.equal(preview.updated.some((row) => row.itemId === "inactive-owned"), true);
   assert.equal(successfulActor.writes.length, 0);
   assert.deepEqual(events.slice(0, 2), ["sync", "pack"]);
 
   events.length = 0;
   const applied = await service.syncEquippedMagicItems();
-  assert.equal(applied.updated.length, 1);
+  assert.equal(applied.updated.length, 2);
   assert.equal(applied.errors.some((row) => row.actorId === "actor-failed" && row.reason === "actor-update-failed"), true);
   assert.equal(successfulActor.writes.length, 1);
   assert.equal(successfulActor.writes[0].type, "Item");
-  assert.deepEqual(successfulActor.writes[0].updates.map((update) => update._id), ["luck-owned"]);
+  assert.deepEqual(successfulActor.writes[0].updates.map((update) => update._id), ["luck-owned", "inactive-owned"]);
   assert.equal(successfulActor.writes[0].updates.some((update) => update._id === "deferred-owned"), false);
   assert.equal(tables.length >= 2, true);
   assert.equal(tables.at(-1).every((row) => Object.hasOwn(row, "reason")), true);
@@ -632,5 +723,6 @@ test("equipped sync plans detached rows, batches once per character, continues a
   const repeated = await service.syncEquippedMagicItems();
   assert.equal(repeated.updated.length, 0);
   assert.equal(repeated.unchanged.some((row) => row.itemId === "luck-owned"), true);
+  assert.equal(repeated.unchanged.some((row) => row.itemId === "inactive-owned"), true);
   assert.equal(successfulActor.writes.length, 1);
 });

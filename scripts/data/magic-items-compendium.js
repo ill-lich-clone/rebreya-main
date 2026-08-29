@@ -1233,10 +1233,12 @@ export class MagicItemsCompendiumService {
   constructor({
     gameProvider = () => globalThis.game,
     consoleProvider = () => globalThis.console,
+    diffObject = null,
     isActiveGm = isActiveGmClient
   } = {}) {
     this.gameProvider = gameProvider;
     this.consoleProvider = consoleProvider;
+    this.diffObject = diffObject;
     this.isActiveGm = isActiveGm;
   }
 
@@ -1287,7 +1289,11 @@ export class MagicItemsCompendiumService {
     return game.packs.get(PACK_ID) ?? pack;
   }
 
-  async syncEquippedMagicItems({ dryRun = false } = {}) {
+  async syncEquippedMagicItems(options = {}) {
+    return this.syncOwnedMagicItems(options);
+  }
+
+  async syncOwnedMagicItems({ dryRun = false, reportToConsole = true } = {}) {
     const foundryGame = this.gameProvider?.() ?? globalThis.game;
     const report = {
       dryRun: dryRun === true,
@@ -1361,11 +1367,6 @@ export class MagicItemsCompendiumService {
           itemName: String(item?.name ?? ""),
           reason: ""
         };
-        if (item?.system?.equipped !== true && item?.system?.attuned !== true) {
-          report.skipped.push({ ...row, reason: "not-equipped-or-attuned" });
-          continue;
-        }
-
         const resolution = resolveEmbeddedMagicItemIdentity(item, index);
         if (resolution.status === "deferred") {
           report.skipped.push({ ...row, reason: resolution.reason });
@@ -1398,6 +1399,14 @@ export class MagicItemsCompendiumService {
           report.unchanged.push({ ...row, reason: "already-current" });
           continue;
         }
+        const diffObject = this.diffObject ?? globalThis.foundry?.utils?.diffObject;
+        if (typeof diffObject === "function" && typeof item?.toObject === "function") {
+          const documentDiff = diffObject(item.toObject(), merge.update);
+          if (documentDiff && typeof documentDiff === "object" && Object.keys(documentDiff).length === 0) {
+            report.unchanged.push({ ...row, reason: "already-current" });
+            continue;
+          }
+        }
         updates.push(merge.update);
         plannedRows.push({ ...row, reason: report.dryRun ? "dry-run-update" : "updated" });
       }
@@ -1421,7 +1430,7 @@ export class MagicItemsCompendiumService {
           itemName: "",
           reason: "actor-update-failed"
         });
-        this.consoleProvider?.()?.warn?.(`${MODULE_ID} | Failed to sync equipped magic items for '${actorName}'.`, error);
+        this.consoleProvider?.()?.warn?.(`${MODULE_ID} | Failed to sync owned magic items for '${actorName}'.`, error);
       }
     }
 
@@ -1433,7 +1442,9 @@ export class MagicItemsCompendiumService {
       ...report.skipped.map((row) => ({ status: "skipped", ...row })),
       ...report.errors.map((row) => ({ status: "error", ...row }))
     ];
-    this.consoleProvider?.()?.table?.(tableRows);
+    if (reportToConsole === true) {
+      this.consoleProvider?.()?.table?.(tableRows);
+    }
     return report;
   }
 

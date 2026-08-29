@@ -3,7 +3,7 @@ import { MODULE_ID, SETTINGS_KEYS } from "./constants.js";
 import { MaterialsCompendiumService } from "./data/materials-compendium.js";
 import { GearCompendiumService } from "./data/gear-compendium.js?v=1.4.145-coin-icons-storage-sound";
 import { repairWorldAmmunitionCompatibility } from "./data/ammunition-compatibility.js?v=1.4.147-native-ammunition";
-import { MagicItemsCompendiumService } from "./data/magic-items-compendium.js?v=1.4.184-equipped-sync-idempotence";
+import { MagicItemsCompendiumService } from "./data/magic-items-compendium.js?v=1.4.185-auto-owned-items";
 import { FeatsCompendiumService } from "./data/feats-compendium.js";
 import { BackgroundsCompendiumService } from "./data/backgrounds-compendium.js";
 import { StatesCompendiumService } from "./data/states-compendium.js";
@@ -3495,7 +3495,7 @@ export class RebreyaMainModule {
     }
 
     try {
-      await this.magicItemsCompendium.sync();
+      await this.magicItemsCompendium.syncOwnedMagicItems({ reportToConsole: false });
     }
     catch (error) {
       console.error(`${MODULE_ID} | Failed to sync magic items compendium.`, error);
@@ -6628,7 +6628,11 @@ export class RebreyaMainModule {
   }
 
   async syncEquippedMagicItems(options = {}) {
-    return this.magicItemsCompendium.syncEquippedMagicItems(options);
+    return this.syncOwnedMagicItems(options);
+  }
+
+  async syncOwnedMagicItems(options = {}) {
+    return this.magicItemsCompendium.syncOwnedMagicItems(options);
   }
 
   async syncFeatsFromWorldCompendium(options = {}) {

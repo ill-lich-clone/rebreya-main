@@ -63,8 +63,8 @@ test("module manifest loads the stable canonical entrypoint", async () => {
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const [entrypoint] = manifest.esmodules;
 
-  assert.equal(manifest.version, "1.4.184");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.184.js"]);
+  assert.equal(manifest.version, "1.4.185");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.185.js"]);
   assert.doesNotMatch(entrypoint, /[?#]/u);
 
   const entrypointSource = await readFile(new URL(entrypoint, manifestUrl), "utf8");
@@ -299,7 +299,7 @@ test("module keeps recent published entrypoint URLs as canonical compatibility f
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
 
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.184.js"]);
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.185.js"]);
 
   for (const fileName of ["main-1.4.98.js", "main-1.4.99.js", "main-1.4.100.js"]) {
     const forwarderSource = await readFile(new URL(`../scripts/${fileName}`, import.meta.url), "utf8");
@@ -616,7 +616,7 @@ test("held item integrations preserve their released cache bust", async () => {
   );
 });
 
-test("magic item equipped sync cache-busts live document normalization", async () => {
+test("automatic owned magic item sync cache-busts its live service graph", async () => {
   const entrypointSource = await readCanonicalEntrypointSource();
   const compendiumSource = await readFile(
     new URL("../scripts/data/magic-items-compendium.js", import.meta.url),
@@ -625,7 +625,7 @@ test("magic item equipped sync cache-busts live document normalization", async (
 
   assert.match(
     entrypointSource,
-    /magic-items-compendium\.js\?v=1\.4\.184-equipped-sync-idempotence/u
+    /magic-items-compendium\.js\?v=1\.4\.185-auto-owned-items/u
   );
   assert.match(
     compendiumSource,
