@@ -264,6 +264,34 @@ function objectActivities(value) {
   return value;
 }
 
+function collectionDocuments(value) {
+  if (!value) return [];
+  if (Array.isArray(value)) return value;
+  if (Array.isArray(value.contents)) return value.contents;
+  if (typeof value.values === "function") return Array.from(value.values());
+  return [];
+}
+
+function documentSource(document) {
+  return cloneValue(typeof document?.toObject === "function" ? document.toObject() : document);
+}
+
+function effectSources(value) {
+  return collectionDocuments(value).map(documentSource);
+}
+
+function activitySources(value) {
+  const collection = collectionDocuments(value);
+  if (collection.length || Array.isArray(value) || Array.isArray(value?.contents) || typeof value?.values === "function") {
+    return Object.fromEntries(collection.map((activity) => {
+      const source = documentSource(activity);
+      return [cleanText(source?._id ?? activity?.id), source];
+    }).filter(([id]) => id));
+  }
+  return Object.fromEntries(Object.entries(objectActivities(value))
+    .map(([id, activity]) => [id, documentSource(activity)]));
+}
+
 export function buildMagicItemAutomationProjection(packItem) {
   const source = typeof packItem?.toObject === "function"
     ? packItem.toObject()
@@ -328,14 +356,14 @@ export function buildEmbeddedMagicItemPatch(item, projection, resolution) {
     return { status: "unresolved", reason: resolution?.reason ?? "identity-not-resolved" };
   }
 
-  const existingEffects = Array.isArray(item?.effects) ? item.effects : [];
+  const existingEffects = effectSources(item?.effects);
   const projectedEffects = Array.isArray(projection?.effects) ? projection.effects : [];
   const effects = mergeEffects(existingEffects, projectedEffects);
   if (!effects) {
     return { status: "unresolved", reason: "automation-conflict" };
   }
 
-  const existingActivities = objectActivities(item?.system?.activities);
+  const existingActivities = activitySources(item?.system?.activities);
   const projectedActivities = objectActivities(projection?.activities);
   const activities = mergeActivities(existingActivities, projectedActivities);
   if (!activities) {

@@ -299,6 +299,55 @@ test("embedded merge suppresses equivalent custom automation, refuses conflicts,
   });
 });
 
+test("embedded merge recognizes current Foundry effect and activity collections as already applied", () => {
+  const effectSource = managedEffect();
+  const activitySource = managedActivity();
+  const asFoundryCollection = (sources) => {
+    const documents = sources.map((source) => ({
+      ...structuredClone(source),
+      id: source._id,
+      toObject: () => structuredClone(source)
+    }));
+    const collection = {};
+    Object.defineProperty(collection, "contents", { enumerable: false, value: documents });
+    Object.defineProperty(collection, "values", {
+      enumerable: false,
+      value: () => documents.values()
+    });
+    return collection;
+  };
+  const projection = {
+    magicItemId: "печатка-гильдии-ракдоса",
+    signature: "live-signature",
+    automationDefinition: { version: 1, kind: "activities" },
+    effects: [effectSource],
+    activities: { "managed-activity": activitySource },
+    uses: { spent: 0, max: "3", recovery: [] }
+  };
+  const item = {
+    _id: "live-owned-item",
+    name: "Печатка гильдии Ракдоса",
+    effects: asFoundryCollection([effectSource]),
+    system: {
+      activities: asFoundryCollection([activitySource]),
+      uses: { spent: 0, max: "3", recovery: [] }
+    },
+    flags: moduleFlags({
+      sourceType: "magicItem",
+      magicItemId: "печатка-гильдии-ракдоса",
+      signature: "live-signature",
+      magicItemAutomation: { version: 1, kind: "activities" }
+    })
+  };
+
+  assert.deepEqual(embeddedSync.buildEmbeddedMagicItemPatch(item, projection, {
+    status: "resolved",
+    magicItemId: "печатка-гильдии-ракдоса",
+    reason: "stable-id",
+    identityPatch: {}
+  }), { status: "unchanged" });
+});
+
 globalThis.foundry ??= {
   utils: {
     deepClone: (value) => structuredClone(value),
