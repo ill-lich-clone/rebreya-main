@@ -15,7 +15,7 @@
 - `scripts/main.js` — единственный composition root. Недавние опубликованные `scripts/main-1.4.*.js` оставлены только как совместимые forwarder-файлы для уже открытых вкладок игроков и запущенных экземпляров Foundry.
 - Узкий API регистрации panel tools публикуется в `game.modules.get("rebreya-main")?.api` уже на `init`, до первой сборки Scene Controls. Полный runtime API на `ready` публикуется как `game.rebreyaMain` и заменяет module API.
 
-Versioned entrypoint обязан оставаться минимальным cache-forwarder к `main.js`: он не создаёт сервисы, hooks или второй composition root.
+Versioned entrypoint обязан оставаться минимальным cache-forwarder к `main.js`: он не создаёт сервисы, hooks или второй composition root. Уже опубликованные entrypoint-файлы не удаляются, чтобы клиенты со старым закэшированным manifest не получали 404 и всё равно запускали актуальный composition root.
 
 ## Что принадлежит модулю
 
