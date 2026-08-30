@@ -168,7 +168,7 @@ Pure predicate определения подходящей пары может �
 Порядок решения:
 
 1. Совпадающие stable ID и compendium source дают authoritative identity.
-2. Один stable ID принимается, если exact name является каноническим именем или зарегистрированным вариантом шаблона, например `Лунный серп +1 (Серп)`.
+2. Один stable ID принимается, если exact name является каноническим именем/зарегистрированным alias либо карточка имеет полный набор trusted flags шаблона Rebreya: `sourceType:magicItem`, `magicEquipmentTemplate:true` и непустой `magicEquipmentGearId`. Один произвольный старый `magicItemId` без этих evidence не принимается.
 3. External source принимается только через явный alias к каноническому предмету либо как `native external`, который не требует Rebreya-патча.
 4. Конфликтующие evidence не разрешаются эвристикой. Требуется явное compatibility rule либо результат `unresolved`.
 
@@ -191,7 +191,7 @@ Patch сохраняет:
 
 - `_id`, name и img embedded Item, если отдельное точное migration rule не меняет managed identity;
 - `system.quantity`, `system.equipped`, `system.attuned`;
-- item-level uses и activity `uses.spent` для совпадающих stable activity IDs;
+- item-level uses и activity `uses.spent` для совпадающих stable activity IDs и мигрируемых механически эквивалентных legacy activities;
 - inventory folders, containers, durability, upgrades, held-hands и остальные runtime flags;
 - сторонние и пользовательские effects/activities;
 - cached-spell lifecycle, принадлежащий dnd5e.
@@ -203,9 +203,9 @@ Patch заменяет только:
 - managed automation definition/signature/identity flags, когда identity доказана;
 - отсутствующие canonical properties, необходимые конкретной автоматизации.
 
-Эквивалентный сторонний effect не дублируется. Эквивалентность определяется нормализованной mechanical signature: effect change keys/modes/values либо activity type + linked spell UUID + resource contract. Совпадение только по display name недостаточно.
+Ручной effect игрока является владельцем каждого своего change key. Совпавшие managed changes не добавляются, а непересекающиеся changes того же canonical effect сохраняются отдельным managed effect; это удаляет двойной бонус без потери дополнительной механики предмета.
 
-Удаление стороннего effect/activity запрещено. Если сторонний элемент конфликтует с canonical projection, Item получает `unresolved` с причиной `automation-conflict` и не изменяется.
+Механически эквивалентная legacy activity заменяется activity со stable managed ID и сохраняет `uses.spent`. Эквивалентность activity определяется нормализованными type + linked spell UUID + resource contract без runtime `uses.spent` и пустых default-объектов. Совпадение только по display name недостаточно. Неэквивалентная сторонняя activity не удаляется; если она конфликтует с canonical projection по ID или spell UUID, Item получает `unresolved` с причиной `automation-conflict` и не изменяется.
 
 ## Совместимость с native cast activities
 

@@ -148,6 +148,31 @@ test("embedded identity handles explicit choices, native external items, and exa
   }, index).status, "unresolved");
 });
 
+test("embedded identity trusts a known stable id after the Rebreya magic equipment template renames the item", () => {
+  const index = makeIndex();
+
+  assert.deepEqual(embeddedSync.resolveEmbeddedMagicItemIdentity({
+    name: "Ночные очки (Очки)",
+    type: "equipment",
+    flags: moduleFlags({
+      sourceType: "magicItem",
+      magicItemId: "ночные-очки",
+      magicEquipmentTemplate: true,
+      magicEquipmentGearId: "очки"
+    })
+  }, index), {
+    status: "resolved",
+    magicItemId: "ночные-очки",
+    reason: "trusted-template-stable-id",
+    identityPatch: {}
+  });
+
+  assert.equal(embeddedSync.resolveEmbeddedMagicItemIdentity({
+    name: "Совсем другой амулет",
+    flags: moduleFlags({ magicItemId: "ночные-очки" })
+  }, index).status, "unresolved");
+});
+
 test("compendium projection detaches only managed automation documents", () => {
   const customEffect = managedEffect({ id: "custom-effect", managed: false });
   const customActivity = managedActivity({ id: "custom-activity", managed: false });
@@ -255,7 +280,7 @@ test("embedded merge replaces only managed automation and preserves runtime stat
   assert.equal(result.update.flags[MODULE_ID].signature, "canonical-signature");
 });
 
-test("embedded merge suppresses equivalent custom automation, refuses conflicts, and becomes a no-op", () => {
+test("embedded merge lets manual effect keys override managed automation and becomes a no-op", () => {
   const equivalentEffect = managedEffect({ id: "custom-equivalent", managed: false });
   const baseItem = {
     _id: "owned-item-0002",
@@ -293,10 +318,144 @@ test("embedded merge suppresses equivalent custom automation, refuses conflicts,
 
   const conflictItem = structuredClone(baseItem);
   conflictItem.effects[0].changes[0].value = "+2";
-  assert.deepEqual(embeddedSync.buildEmbeddedMagicItemPatch(conflictItem, projection, resolution), {
-    status: "unresolved",
-    reason: "automation-conflict"
+  const manualOverride = embeddedSync.buildEmbeddedMagicItemPatch(conflictItem, projection, resolution);
+  assert.equal(manualOverride.status, "updated");
+  assert.deepEqual(manualOverride.update.effects, conflictItem.effects);
+});
+
+test("embedded merge removes a managed duplicate while retaining uncovered managed changes", () => {
+  const manualStrength = {
+    _id: "manual-strength",
+    name: "Пояс силы холмового великана",
+    changes: [{
+      key: "system.abilities.str.value",
+      mode: 2,
+      value: "+3",
+      priority: null
+    }],
+    flags: {}
+  };
+  const projectedBelt = {
+    _id: "managed-belt",
+    name: "Пояс силы холмового великана: Сила холмового великана",
+    changes: [
+      { key: "system.abilities.str.value", mode: 2, value: "+3", priority: 20 },
+      { key: "system.abilities.str.max", mode: 4, value: "21", priority: 20 }
+    ],
+    flags: moduleFlags({ magicItemAutomation: true })
+  };
+  const item = {
+    _id: "owned-belt",
+    name: "Пояс силы холмового великана",
+    system: { activities: {}, uses: null },
+    effects: [structuredClone(projectedBelt), manualStrength],
+    flags: moduleFlags({ magicItemId: "пояс-силы-холмового-великана" })
+  };
+
+  const patch = embeddedSync.buildEmbeddedMagicItemPatch(item, {
+    magicItemId: "пояс-силы-холмового-великана",
+    signature: "belt-signature",
+    automationDefinition: { version: 1, kind: "passive" },
+    effects: [projectedBelt],
+    activities: {},
+    uses: null
+  }, {
+    status: "resolved",
+    magicItemId: "пояс-силы-холмового-великана",
+    reason: "stable-id",
+    identityPatch: {}
   });
+
+  assert.equal(patch.status, "updated");
+  assert.equal(patch.update.effects.length, 2);
+  assert.deepEqual(patch.update.effects[0], manualStrength);
+  assert.deepEqual(patch.update.effects[1].changes, [{
+    key: "system.abilities.str.max",
+    mode: 4,
+    value: "21",
+    priority: 20
+  }]);
+
+  const applied = structuredClone(item);
+  applied.effects = patch.update.effects;
+  applied.system = { ...applied.system, ...patch.update.system };
+  applied.flags = patch.update.flags;
+  assert.deepEqual(embeddedSync.buildEmbeddedMagicItemPatch(applied, {
+    magicItemId: "пояс-силы-холмового-великана",
+    signature: "belt-signature",
+    automationDefinition: { version: 1, kind: "passive" },
+    effects: [projectedBelt],
+    activities: {},
+    uses: null
+  }, {
+    status: "resolved",
+    magicItemId: "пояс-силы-холмового-великана",
+    reason: "stable-id",
+    identityPatch: {}
+  }), { status: "unchanged" });
+});
+
+test("embedded merge migrates equivalent legacy spell activities and preserves spent uses", () => {
+  const legacyActivity = managedActivity({
+    id: "legacy-activity",
+    spent: 1,
+    managed: false
+  });
+  legacyActivity.consumption.targets[0].scaling = {};
+  const projectedActivity = managedActivity({
+    id: "managed-activity",
+    spent: 0,
+    managed: true
+  });
+  const item = {
+    _id: "owned-instrument",
+    name: "Лира Кли",
+    effects: [],
+    system: {
+      activities: { "legacy-activity": legacyActivity },
+      uses: null
+    },
+    flags: moduleFlags({ magicItemId: "лира-кли" })
+  };
+
+  const patch = embeddedSync.buildEmbeddedMagicItemPatch(item, {
+    magicItemId: "лира-кли",
+    signature: "instrument-signature",
+    automationDefinition: null,
+    effects: [],
+    activities: { "managed-activity": projectedActivity },
+    uses: null
+  }, {
+    status: "resolved",
+    magicItemId: "лира-кли",
+    reason: "stable-id",
+    identityPatch: {}
+  });
+
+  assert.equal(patch.status, "updated");
+  assert.equal(Object.hasOwn(patch.update.system.activities, "legacy-activity"), false);
+  assert.equal(patch.update.system.activities["managed-activity"].uses.spent, 1);
+  assert.equal(
+    patch.update.system.activities["managed-activity"].flags[MODULE_ID].magicItemAutomation,
+    true
+  );
+
+  const applied = structuredClone(item);
+  applied.system = { ...applied.system, ...patch.update.system };
+  applied.flags = patch.update.flags;
+  assert.deepEqual(embeddedSync.buildEmbeddedMagicItemPatch(applied, {
+    magicItemId: "лира-кли",
+    signature: "instrument-signature",
+    automationDefinition: null,
+    effects: [],
+    activities: { "managed-activity": projectedActivity },
+    uses: null
+  }, {
+    status: "resolved",
+    magicItemId: "лира-кли",
+    reason: "stable-id",
+    identityPatch: {}
+  }), { status: "unchanged" });
 });
 
 test("embedded merge recognizes current Foundry effect and activity collections as already applied", () => {

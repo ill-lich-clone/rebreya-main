@@ -76,6 +76,15 @@ function getMagicItemId(document) {
   ));
 }
 
+function hasTrustedMagicEquipmentTemplateIdentity(document) {
+  const flags = getModuleFlags(document);
+  return Boolean(
+    flags.sourceType === "magicItem"
+    && flags.magicEquipmentTemplate === true
+    && cleanText(flags.magicEquipmentGearId)
+  );
+}
+
 function resolveAbilityChoice(normalizedName) {
   const match = normalizedName.match(/\(([^)]+)\)$/u);
   const ability = ABILITY_CHOICES.get(normalizeText(match?.[1]));
@@ -167,6 +176,7 @@ export function resolveEmbeddedMagicItemIdentity(item, index) {
 
   const stableId = getMagicItemId(item);
   const stableKnown = stableId && index?.catalogById?.has(stableId);
+  const trustedTemplateStable = stableKnown && hasTrustedMagicEquipmentTemplateIdentity(item);
   const sourceId = index?.magicItemIdByCompendiumSource?.get(compendiumSource) ?? "";
   let nameId = index?.catalogByName?.get(normalizedName) ?? "";
   let reason = nameId ? "exact-name" : "";
@@ -191,7 +201,7 @@ export function resolveEmbeddedMagicItemIdentity(item, index) {
     return { status: "unresolved", reason: "identity-conflict", evidence: uniqueEvidence };
   }
 
-  if (stableKnown && !sourceId && !nameId) {
+  if (stableKnown && !sourceId && !nameId && !trustedTemplateStable) {
     return { status: "unresolved", reason: "stable-id-name-conflict", evidence: [stableId] };
   }
 
@@ -215,24 +225,14 @@ export function resolveEmbeddedMagicItemIdentity(item, index) {
 
   return resolved(
     magicItemId,
-    reason || (sourceId ? "compendium-source" : "stable-id")
+    reason || (sourceId
+      ? "compendium-source"
+      : trustedTemplateStable ? "trusted-template-stable-id" : "stable-id")
   );
 }
 
 function isManagedAutomation(document) {
   return getModuleFlags(document).magicItemAutomation === true;
-}
-
-function buildEffectMechanicalSignature(effect) {
-  const changes = Array.isArray(effect?.changes) ? effect.changes : [];
-  return JSON.stringify(changes
-    .map(({ key, mode, value, priority }) => ({
-      key: cleanText(key),
-      mode: Number(mode),
-      value: String(value ?? ""),
-      priority: Number(priority ?? 0)
-    }))
-    .sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right))));
 }
 
 function effectKeys(effect) {
@@ -241,17 +241,33 @@ function effectKeys(effect) {
     .filter(Boolean));
 }
 
-function hasOverlappingEffectKeys(left, right) {
-  const leftKeys = effectKeys(left);
-  return [...effectKeys(right)].some((key) => leftKeys.has(key));
+function compactMechanicalValue(value) {
+  if (Array.isArray(value)) {
+    return value
+      .map(compactMechanicalValue)
+      .filter((entry) => entry !== undefined);
+  }
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+  const compacted = Object.fromEntries(Object.entries(value)
+    .map(([key, entry]) => [key, compactMechanicalValue(entry)])
+    .filter(([, entry]) => entry !== undefined));
+  return Object.keys(compacted).length ? compacted : undefined;
 }
 
 function buildActivityMechanicalSignature(activity) {
+  const uses = activity?.uses && typeof activity.uses === "object"
+    ? { ...activity.uses }
+    : null;
+  if (uses) {
+    delete uses.spent;
+  }
   return JSON.stringify(stableValue({
     type: cleanText(activity?.type),
     spellUuid: cleanText(activity?.spell?.uuid),
-    consumption: activity?.consumption ?? null,
-    uses: activity?.uses ?? null
+    consumption: compactMechanicalValue(activity?.consumption ?? null),
+    uses: compactMechanicalValue(uses)
   }));
 }
 
@@ -325,39 +341,49 @@ export function buildMagicItemAutomationProjection(packItem) {
 function mergeEffects(existingEffects, projectedEffects) {
   const unmanaged = existingEffects.filter((effect) => !isManagedAutomation(effect));
   const merged = unmanaged.map(cloneValue);
+  const unmanagedKeys = new Set(unmanaged.flatMap((effect) => [...effectKeys(effect)]));
   for (const projectedEffect of projectedEffects) {
-    const signature = buildEffectMechanicalSignature(projectedEffect);
-    if (unmanaged.some((effect) => buildEffectMechanicalSignature(effect) === signature)) {
+    const nextEffect = cloneValue(projectedEffect);
+    const projectedChanges = Array.isArray(nextEffect?.changes) ? nextEffect.changes : [];
+    nextEffect.changes = projectedChanges.filter((change) => (
+      !unmanagedKeys.has(cleanText(change?.key))
+    ));
+    if (projectedChanges.length && !nextEffect.changes.length) {
       continue;
     }
-    if (unmanaged.some((effect) => hasOverlappingEffectKeys(effect, projectedEffect))) {
-      return null;
-    }
-    merged.push(cloneValue(projectedEffect));
+    merged.push(nextEffect);
   }
   return merged;
 }
 
 function mergeActivities(existingActivities, projectedActivities) {
-  const unmanagedEntries = Object.entries(existingActivities)
-    .filter(([, activity]) => !isManagedAutomation(activity));
-  const merged = Object.fromEntries(unmanagedEntries.map(([id, activity]) => [id, cloneValue(activity)]));
+  const unmanaged = new Map(Object.entries(existingActivities)
+    .filter(([, activity]) => !isManagedAutomation(activity)));
+  const managed = {};
   for (const [id, projectedActivity] of Object.entries(projectedActivities)) {
     const signature = buildActivityMechanicalSignature(projectedActivity);
-    if (unmanagedEntries.some(([, activity]) => buildActivityMechanicalSignature(activity) === signature)) {
-      continue;
+    const equivalentEntry = [...unmanaged.entries()].find(([, activity]) => (
+      buildActivityMechanicalSignature(activity) === signature
+    ));
+    let previousActivity = existingActivities[id];
+    if (equivalentEntry) {
+      const [legacyId, legacyActivity] = equivalentEntry;
+      unmanaged.delete(legacyId);
+      previousActivity = legacyActivity;
     }
-    if (unmanagedEntries.some(([, activity]) => activitiesConflict(activity, projectedActivity))) {
+    if ([...unmanaged.values()].some((activity) => activitiesConflict(activity, projectedActivity))) {
       return null;
     }
     const nextActivity = cloneValue(projectedActivity);
-    const previousActivity = existingActivities[id];
     if (previousActivity?.uses && nextActivity?.uses) {
       nextActivity.uses.spent = previousActivity.uses.spent ?? nextActivity.uses.spent;
     }
-    merged[id] = nextActivity;
+    managed[id] = nextActivity;
   }
-  return merged;
+  return {
+    ...Object.fromEntries([...unmanaged.entries()].map(([id, activity]) => [id, cloneValue(activity)])),
+    ...managed
+  };
 }
 
 export function buildEmbeddedMagicItemPatch(item, projection, resolution) {
