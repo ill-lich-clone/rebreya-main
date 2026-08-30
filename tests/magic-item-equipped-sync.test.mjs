@@ -800,7 +800,48 @@ test("owned sync trusts Foundry's empty document diff and avoids an empty actor 
   assert.equal(actor.writes.length, 0);
 });
 
-test("owned sync plans detached rows, batches once per character, continues after actor errors, and is idempotent", async () => {
+test("owned sync isolates embedded Item updates so dnd5e cached-spell cleanup cannot reuse batch options", async () => {
+  const packDocuments = [
+    makePackDocument({ id: "night-goggles", name: "Ночные очки", magicItemId: "ночные-очки" }),
+    makePackDocument({ id: "luck-stone", name: "Камень удачи", magicItemId: "камень-удачи" })
+  ];
+  const pack = { getDocuments: async () => packDocuments };
+  const actor = {
+    id: "character-with-two-magic-items",
+    name: "Герой",
+    type: "character",
+    items: { contents: [
+      makeOwnedItem({ id: "night-owned", name: "Ночные очки", magicItemId: "ночные-очки" }),
+      makeOwnedItem({ id: "luck-owned", name: "Камень удачи", magicItemId: "камень-удачи" })
+    ] },
+    writes: [],
+    async updateEmbeddedDocuments(type, updates) {
+      if (updates.length > 1) {
+        throw new Error("dnd5e reused removedCachedItems across a batch");
+      }
+      this.writes.push({ type, updates: structuredClone(updates) });
+      applyEmbeddedUpdates(this, updates);
+    }
+  };
+  const gameFixture = {
+    system: { id: "dnd5e" },
+    actors: { contents: [actor] },
+    packs: new Map([["world.rebreya-magic-items", pack]])
+  };
+  const service = new MagicItemsCompendiumService({
+    gameProvider: () => gameFixture,
+    consoleProvider: () => ({ table() {}, warn() {} }),
+    isActiveGm: () => true
+  });
+  service.sync = async () => pack;
+
+  const report = await service.syncOwnedMagicItems();
+
+  assert.deepEqual(report.errors, []);
+  assert.deepEqual(actor.writes.map(({ updates }) => updates[0]._id), ["night-owned", "luck-owned"]);
+});
+
+test("owned sync plans detached rows, isolates writes, continues after item errors, and is idempotent", async () => {
   const events = [];
   const tables = [];
   const packDocuments = [
@@ -871,11 +912,20 @@ test("owned sync plans detached rows, batches once per character, continues afte
   events.length = 0;
   const applied = await service.syncEquippedMagicItems();
   assert.equal(applied.updated.length, 2);
-  assert.equal(applied.errors.some((row) => row.actorId === "actor-failed" && row.reason === "actor-update-failed"), true);
-  assert.equal(successfulActor.writes.length, 1);
+  assert.equal(applied.errors.some((row) => (
+    row.actorId === "actor-failed"
+    && row.itemId === "night-owned"
+    && row.reason === "item-update-failed"
+  )), true);
+  assert.equal(successfulActor.writes.length, 2);
   assert.equal(successfulActor.writes[0].type, "Item");
-  assert.deepEqual(successfulActor.writes[0].updates.map((update) => update._id), ["luck-owned", "inactive-owned"]);
-  assert.equal(successfulActor.writes[0].updates.some((update) => update._id === "deferred-owned"), false);
+  assert.deepEqual(successfulActor.writes.flatMap(({ updates }) => updates.map((update) => update._id)), [
+    "luck-owned",
+    "inactive-owned"
+  ]);
+  assert.equal(successfulActor.writes.some(({ updates }) => (
+    updates.some((update) => update._id === "deferred-owned")
+  )), false);
   assert.equal(tables.length >= 2, true);
   assert.equal(tables.at(-1).every((row) => Object.hasOwn(row, "reason")), true);
 
@@ -883,5 +933,5 @@ test("owned sync plans detached rows, batches once per character, continues afte
   assert.equal(repeated.updated.length, 0);
   assert.equal(repeated.unchanged.some((row) => row.itemId === "luck-owned"), true);
   assert.equal(repeated.unchanged.some((row) => row.itemId === "inactive-owned"), true);
-  assert.equal(successfulActor.writes.length, 1);
+  assert.equal(successfulActor.writes.length, 2);
 });

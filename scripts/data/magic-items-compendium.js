@@ -12,7 +12,7 @@ import {
   buildMagicItemAutomationProjection,
   buildMagicItemIdentityIndex,
   resolveEmbeddedMagicItemIdentity
-} from "./magic-item-embedded-sync.js?v=1.4.189-expanded-magic-item-automation";
+} from "./magic-item-embedded-sync.js?v=1.4.190-owned-magic-item-update-isolation";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 import {
   buildSlug,
@@ -3587,19 +3587,19 @@ export class MagicItemsCompendiumService {
         report.updated.push(...plannedRows);
         continue;
       }
-      try {
-        await actor.updateEmbeddedDocuments("Item", updates);
-        report.updated.push(...plannedRows);
-      }
-      catch (error) {
-        report.errors.push({
-          actorId,
-          actorName,
-          itemId: "",
-          itemName: "",
-          reason: "actor-update-failed"
-        });
-        this.consoleProvider?.()?.warn?.(`${MODULE_ID} | Failed to sync owned magic items for '${actorName}'.`, error);
+      for (let index = 0; index < updates.length; index += 1) {
+        const plannedRow = plannedRows[index];
+        try {
+          await actor.updateEmbeddedDocuments("Item", [updates[index]]);
+          report.updated.push(plannedRow);
+        }
+        catch (error) {
+          report.errors.push({ ...plannedRow, reason: "item-update-failed" });
+          this.consoleProvider?.()?.warn?.(
+            `${MODULE_ID} | Failed to sync owned magic item '${plannedRow.itemName}' for '${actorName}'.`,
+            error
+          );
+        }
       }
     }
 
