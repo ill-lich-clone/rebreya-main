@@ -4,6 +4,15 @@ const DEFERRED_EMBEDDED_ITEM_NAMES = new Set([
   "зелье заживления ран",
   "зелье лечения 1 го уровня"
 ]);
+const DND5E_ACTIVITY_ITEM_TYPES = new Set([
+  "consumable",
+  "equipment",
+  "facility",
+  "feat",
+  "spell",
+  "tool",
+  "weapon"
+]);
 const REGISTERED_ALIASES = new Map([
   ["goggles of night", "ночные-очки"]
 ]);
@@ -515,17 +524,25 @@ export function buildEmbeddedMagicItemPatch(item, projection, resolution) {
     return { status: "unresolved", reason: "automation-conflict" };
   }
 
+  const itemType = cleanText(itemSource?.type ?? item?.type);
+  const supportsActivities = !itemType || DND5E_ACTIVITY_ITEM_TYPES.has(itemType);
   const existingActivities = activitySources(itemSource?.system?.activities);
   const projectedActivities = objectActivities(projection?.activities);
-  const activities = mergeActivities(existingActivities, projectedActivities);
+  const activities = supportsActivities
+    ? mergeActivities(existingActivities, projectedActivities)
+    : {};
   if (!activities) {
     return { status: "unresolved", reason: "automation-conflict" };
   }
 
-  const system = { activities };
-  if (projection?.uses) {
+  const system = supportsActivities ? { activities } : {};
+  if (supportsActivities && projection?.uses) {
     system.uses = cloneValue(projection.uses);
     system.uses.spent = itemSource?.system?.uses?.spent ?? system.uses.spent;
+  }
+  else if (!supportsActivities) {
+    if (Object.hasOwn(itemSource?.system ?? {}, "activities")) system["-=activities"] = null;
+    if (Object.hasOwn(itemSource?.system ?? {}, "uses")) system["-=uses"] = null;
   }
 
   const existingFlags = embeddedItemFlags(itemSource.flags);
@@ -540,10 +557,14 @@ export function buildEmbeddedMagicItemPatch(item, projection, resolution) {
   };
 
   const effectsChanged = !sameValue(effects, existingEffects);
-  const activitiesChanged = !sameValue(activities, existingActivities);
-  const usesChanged = projection?.uses
-    ? !sameValue(system.uses, itemSource?.system?.uses)
-    : false;
+  const activitiesChanged = supportsActivities
+    ? !sameValue(activities, existingActivities)
+    : Object.hasOwn(system, "-=activities");
+  const usesChanged = supportsActivities
+    ? projection?.uses
+      ? !sameValue(system.uses, itemSource?.system?.uses)
+      : false
+    : Object.hasOwn(system, "-=uses");
   const flagsChanged = !sameValue(flags, existingFlags);
   if (!effectsChanged && !activitiesChanged && !usesChanged && !flagsChanged) {
     return { status: "unchanged" };

@@ -384,6 +384,42 @@ test("embedded merge replaces only managed automation and preserves runtime stat
   assert.equal(result.update.flags[MODULE_ID].signature, "canonical-signature");
 });
 
+test("embedded merge removes invalid activity fields from dnd5e Item types without ActivitiesTemplate", () => {
+  const item = {
+    _id: "owned-loot-item",
+    name: "Магическая драгоценность",
+    type: "loot",
+    system: {
+      quantity: 1,
+      activities: { "invalid-activity": managedActivity() },
+      uses: { spent: 1, max: "3", recovery: [] }
+    },
+    effects: [],
+    flags: moduleFlags({ magicItemId: "магическая-драгоценность" })
+  };
+  const projection = {
+    magicItemId: "магическая-драгоценность",
+    signature: "loot-signature",
+    automationDefinition: { version: 1, kind: "activities" },
+    effects: [],
+    activities: { "managed-activity": managedActivity() },
+    uses: { spent: 0, max: "3", recovery: [] }
+  };
+
+  const result = embeddedSync.buildEmbeddedMagicItemPatch(item, projection, {
+    status: "resolved",
+    magicItemId: "магическая-драгоценность",
+    reason: "stable-id",
+    identityPatch: {}
+  });
+
+  assert.equal(result.status, "updated");
+  assert.deepEqual(result.update.system, {
+    "-=activities": null,
+    "-=uses": null
+  });
+});
+
 test("embedded merge lets manual effect keys override managed automation and becomes a no-op", () => {
   const equivalentEffect = managedEffect({ id: "custom-equivalent", managed: false });
   const baseItem = {

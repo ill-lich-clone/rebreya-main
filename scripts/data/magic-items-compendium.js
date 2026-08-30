@@ -12,7 +12,7 @@ import {
   buildMagicItemAutomationProjection,
   buildMagicItemIdentityIndex,
   resolveEmbeddedMagicItemIdentity
-} from "./magic-item-embedded-sync.js?v=1.4.191-magic-item-runtime";
+} from "./magic-item-embedded-sync.js?v=1.4.192-unsupported-item-activity-repair";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 import {
   buildSlug,
