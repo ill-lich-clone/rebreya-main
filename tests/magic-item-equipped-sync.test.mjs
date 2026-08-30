@@ -36,6 +36,7 @@ function makeIndex() {
     { id: "ночные-очки", name: "Ночные очки" },
     { id: "механистический-амулет", name: "Механистический амулет" },
     { id: "уроборос", name: "Уроборос" },
+    { id: "кольцо-характеристики-обычное", name: "Кольцо характеристики необычное" },
     { id: "живые-перчатки", name: "Живые перчатки" },
     { id: "оружие-1", name: "Оружие +1" },
     { id: "доспех-1", name: "Доспех +1" }
@@ -118,6 +119,13 @@ test("embedded identity handles explicit choices, native external items, and exa
     name: "Уроборос",
     flags: moduleFlags({ magicItemId: "уроборос" })
   }, index).status, "unresolved-choice");
+  assert.deepEqual(embeddedSync.resolveEmbeddedMagicItemIdentity({
+    name: "Кольцо характеристики необычное",
+    flags: moduleFlags({
+      magicItemId: "кольцо-характеристики-обычное",
+      magicItemRuntime: { abilityChoice: { ability: "wis", appliedBonus: 2 } }
+    })
+  }, index).choice, { ability: "wis", appliedBonus: 2 });
 
   assert.deepEqual(embeddedSync.resolveEmbeddedMagicItemIdentity({
     name: "Плащ защиты",
@@ -146,6 +154,102 @@ test("embedded identity handles explicit choices, native external items, and exa
     system: { magicalBonus: 2 },
     flags: {}
   }, index).status, "unresolved");
+});
+
+test("embedded projection materializes ability-ring choice and conditional natural armor", () => {
+  const ringProjection = {
+    magicItemId: "кольцо-характеристики-обычное",
+    signature: "ring-signature",
+    automationDefinition: {
+      kind: "abilityRing",
+      coverage: "full",
+      bonus: 2,
+      maxAbilityScore: 12
+    },
+    effects: [],
+    activities: {},
+    uses: null
+  };
+  const ring = {
+    _id: "owned-ring",
+    name: "Кольцо характеристики необычное",
+    actor: { items: [] },
+    system: { activities: {}, equipped: true },
+    effects: [],
+    flags: moduleFlags({
+      magicItemId: "кольцо-характеристики-обычное",
+      magicItemRuntime: { abilityChoice: { ability: "wis", appliedBonus: 2 } }
+    })
+  };
+  const ringPatch = embeddedSync.buildEmbeddedMagicItemPatch(ring, ringProjection, {
+    status: "resolved",
+    magicItemId: "кольцо-характеристики-обычное",
+    reason: "stable-id",
+    choice: { ability: "wis", appliedBonus: 2 },
+    identityPatch: {}
+  });
+  assert.equal(ringPatch.status, "updated");
+  assert.deepEqual(ringPatch.update.effects[0].changes.map(({ key, mode, value }) => [key, mode, value]), [
+    ["system.abilities.wis.value", 2, "+2"],
+    ["system.abilities.wis.max", 4, "12"]
+  ]);
+
+  const naturalArmorEffect = {
+    _id: "natural-armor-effect",
+    changes: [{ key: "system.attributes.ac.bonus", mode: 2, value: "+1", priority: 20 }],
+    disabled: false,
+    flags: moduleFlags({ magicItemAutomation: true, condition: "no-equipped-armor" })
+  };
+  const wornArmor = { _id: "armor", type: "equipment", system: { equipped: true, type: { value: "medium" } } };
+  const amulet = {
+    _id: "amulet",
+    name: "Амулет естественной брони +1",
+    actor: { items: [wornArmor] },
+    system: { activities: {}, equipped: true },
+    effects: [],
+    flags: moduleFlags({ magicItemId: "амулет-естественной-брони-1" })
+  };
+  const amuletPatch = embeddedSync.buildEmbeddedMagicItemPatch(amulet, {
+    magicItemId: "амулет-естественной-брони-1",
+    signature: "amulet-signature",
+    automationDefinition: { kind: "passive", coverage: "partial" },
+    effects: [naturalArmorEffect],
+    activities: {},
+    uses: null
+  }, {
+    status: "resolved",
+    magicItemId: "амулет-естественной-брони-1",
+    reason: "stable-id",
+    identityPatch: {}
+  });
+  assert.equal(amuletPatch.update.effects[0].disabled, true);
+
+  const bracers = {
+    _id: "bracers",
+    name: "Наручи защиты",
+    actor: { items: [{ _id: "shield", type: "equipment", system: { equipped: true, type: { value: "shield" } } }] },
+    system: { activities: {}, equipped: true },
+    effects: [],
+    flags: moduleFlags({ magicItemId: "наручи-защиты" })
+  };
+  const bracersPatch = embeddedSync.buildEmbeddedMagicItemPatch(bracers, {
+    magicItemId: "наручи-защиты",
+    signature: "bracers-signature",
+    automationDefinition: { kind: "passive", coverage: "partial" },
+    effects: [{
+      ...naturalArmorEffect,
+      _id: "bracers-effect",
+      flags: moduleFlags({ magicItemAutomation: true, condition: "no-equipped-armor-or-shield" })
+    }],
+    activities: {},
+    uses: null
+  }, {
+    status: "resolved",
+    magicItemId: "наручи-защиты",
+    reason: "stable-id",
+    identityPatch: {}
+  });
+  assert.equal(bracersPatch.update.effects[0].disabled, true);
 });
 
 test("embedded identity trusts a known stable id after the Rebreya magic equipment template renames the item", () => {

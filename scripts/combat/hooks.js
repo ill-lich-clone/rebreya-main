@@ -57,7 +57,8 @@ export function registerCombatHooks(moduleApi) {
   const hasSizeService = Boolean(moduleApi?.sizeAutomationService);
   const hasCurseEaterService = Boolean(moduleApi?.curseEaterAutomationService);
   const hasGrappleService = Boolean(moduleApi?.grappleAutomationService);
-  if (!hasStatusService && !hasAttackService && !hasRaceService && !hasFighterService && !hasSorcererService && !hasElementalAdeptService && !hasPaladinService && !hasPaladinDogmaService && !hasRogueService && !hasAttackRollBoostService && !hasPerformerService && !hasBardicInspirationCompatService && !hasEnvironmentService && !hasSpellService && !hasReactionCapabilityIndex && !hasRuneKnightService && !hasSizeService && !hasCurseEaterService && !hasGrappleService) {
+  const hasMagicItemsCompendium = Boolean(moduleApi?.magicItemsCompendium);
+  if (!hasStatusService && !hasAttackService && !hasRaceService && !hasFighterService && !hasSorcererService && !hasElementalAdeptService && !hasPaladinService && !hasPaladinDogmaService && !hasRogueService && !hasAttackRollBoostService && !hasPerformerService && !hasBardicInspirationCompatService && !hasEnvironmentService && !hasSpellService && !hasReactionCapabilityIndex && !hasRuneKnightService && !hasSizeService && !hasCurseEaterService && !hasGrappleService && !hasMagicItemsCompendium) {
     return;
   }
 
@@ -65,6 +66,24 @@ export function registerCombatHooks(moduleApi) {
     return;
   }
   game[HOOKS_REGISTERED_KEY] = true;
+
+  if (hasMagicItemsCompendium) {
+    Hooks.on("dnd5e.rollHitDie", (rolls, context) => {
+      try {
+        return moduleApi.magicItemsCompendium.applyDnd5eRollHitDie(rolls, context);
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to apply magic-item Hit Die healing.`, error);
+        return true;
+      }
+    });
+    Hooks.on("dnd5e.postUseActivity", (activity, usageConfig, results) => {
+      moduleApi.magicItemsCompendium.applyDnd5ePostUseActivity(activity, usageConfig, results).catch((error) => {
+        console.error(`${MODULE_ID} | Failed to apply magic-item activity automation.`, error);
+      });
+      return true;
+    });
+  }
 
   if (hasGrappleService) registerGrappleHooks(moduleApi.grappleAutomationService);
 

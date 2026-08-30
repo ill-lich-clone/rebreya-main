@@ -15,6 +15,14 @@ const ABILITY_CHOICES = new Map([
   ["мудрость", "wis"],
   ["харизма", "cha"]
 ]);
+const ABILITY_RING_IDS = new Set([
+  "уроборос",
+  "кольцо-характеристики-обычное",
+  "кольцо-характеристики-необычное",
+  "кольцо-характеристики-редкое",
+  "кольцо-характеристики-очень-редкое"
+]);
+const ARMOR_TYPES = new Set(["light", "medium", "heavy"]);
 
 function cleanText(value) {
   return String(value ?? "").trim();
@@ -89,6 +97,19 @@ function resolveAbilityChoice(normalizedName) {
   const match = normalizedName.match(/\(([^)]+)\)$/u);
   const ability = ABILITY_CHOICES.get(normalizeText(match?.[1]));
   return ability ? { ability } : null;
+}
+
+function runtimeAbilityChoice(document) {
+  const choice = getModuleFlags(document)?.magicItemRuntime?.abilityChoice;
+  const ability = cleanText(choice?.ability);
+  if (![...ABILITY_CHOICES.values()].includes(ability)) {
+    return null;
+  }
+  const appliedBonus = Number(choice?.appliedBonus);
+  return {
+    ability,
+    ...(Number.isFinite(appliedBonus) && appliedBonus >= 0 ? { appliedBonus } : {})
+  };
 }
 
 function resolved(magicItemId, reason, extras = {}) {
@@ -187,8 +208,18 @@ export function resolveEmbeddedMagicItemIdentity(item, index) {
     reason = "registered-alias";
   }
 
+  const explicitAbilityChoice = resolveAbilityChoice(normalizedName);
+  if (explicitAbilityChoice && normalizedName.includes("кольцо характеристики")) {
+    const matchingRing = [...index?.catalogById?.values?.() ?? []].find((row) => (
+      normalizeText(row?.name) === normalizeText(normalizedName.replace(/\s*\([^)]+\)$/u, ""))
+    ));
+    if (matchingRing?.id) {
+      nameId = matchingRing.id;
+      reason = "explicit-choice";
+    }
+  }
   const ouroborosChoice = normalizedName.startsWith(`${normalizeText("Уроборос")} (`)
-    ? resolveAbilityChoice(normalizedName)
+    ? explicitAbilityChoice
     : null;
   if (ouroborosChoice) {
     nameId = "уроборос";
@@ -211,8 +242,8 @@ export function resolveEmbeddedMagicItemIdentity(item, index) {
   }
 
   const magicItemId = uniqueEvidence[0];
-  if (magicItemId === "уроборос") {
-    const choice = ouroborosChoice ?? resolveAbilityChoice(normalizedName);
+  if (ABILITY_RING_IDS.has(magicItemId)) {
+    const choice = runtimeAbilityChoice(item) ?? ouroborosChoice ?? explicitAbilityChoice;
     if (!choice) {
       return {
         status: "unresolved-choice",
@@ -229,6 +260,91 @@ export function resolveEmbeddedMagicItemIdentity(item, index) {
       ? "compendium-source"
       : trustedTemplateStable ? "trusted-template-stable-id" : "stable-id")
   );
+}
+
+function stableHashId(seed, scope = "id") {
+  const source = `${scope}:${seed}`;
+  let hashA = 0x811c9dc5;
+  let hashB = 0x9e3779b9;
+  for (const char of source) {
+    const code = char.codePointAt(0) ?? 0;
+    hashA = Math.imul(hashA ^ code, 0x01000193) >>> 0;
+    hashB = Math.imul(hashB + code + ((hashB << 6) >>> 0) + (hashB >>> 2), 0x85ebca6b) >>> 0;
+  }
+  const token = `${hashA.toString(36)}${hashB.toString(36)}`.replace(/[^a-z0-9]/gu, "");
+  return token.padEnd(16, "0").slice(0, 16);
+}
+
+function buildAbilityRingEffect(projection, resolution) {
+  const definition = projection?.automationDefinition;
+  if (definition?.kind !== "abilityRing") return null;
+  const ability = cleanText(resolution?.choice?.ability);
+  const declaredBonus = Math.max(0, Number(definition?.bonus) || 0);
+  const appliedBonus = Math.max(0, Number(resolution?.choice?.appliedBonus ?? declaredBonus) || 0);
+  const maximum = Math.max(0, Number(definition?.maxAbilityScore) || 0);
+  if (![...ABILITY_CHOICES.values()].includes(ability) || !appliedBonus || !maximum) {
+    return null;
+  }
+  const magicItemId = cleanText(projection?.magicItemId ?? resolution?.magicItemId);
+  const id = stableHashId(`magic-item:${magicItemId}:ability-ring`, "magic-item-effect");
+  return {
+    _id: id,
+    name: `Кольцо характеристики: ${ability.toUpperCase()}`,
+    type: "base",
+    system: {},
+    changes: [
+      { key: `system.abilities.${ability}.value`, mode: 2, value: `+${appliedBonus}`, priority: 20 },
+      { key: `system.abilities.${ability}.max`, mode: 4, value: String(maximum), priority: 20 }
+    ],
+    disabled: false,
+    duration: {
+      startTime: null, seconds: null, combat: null, rounds: null, turns: null,
+      startRound: null, startTurn: null
+    },
+    description: definition.note ?? "",
+    origin: null,
+    transfer: true,
+    statuses: [],
+    sort: 0,
+    flags: { [MODULE_ID]: { managed: true, magicItemAutomation: true, abilityRing: true } }
+  };
+}
+
+function hasEquippedArmor(item) {
+  const actor = item?.actor ?? item?.parent ?? null;
+  return collectionDocuments(actor?.items).some((candidate) => (
+    cleanText(candidate?._id ?? candidate?.id) !== cleanText(item?._id ?? item?.id)
+    && candidate?.type === "equipment"
+    && candidate?.system?.equipped === true
+    && ARMOR_TYPES.has(cleanText(candidate?.system?.type?.value))
+  ));
+}
+
+function hasEquippedShield(item) {
+  const actor = item?.actor ?? item?.parent ?? null;
+  return collectionDocuments(actor?.items).some((candidate) => (
+    cleanText(candidate?._id ?? candidate?.id) !== cleanText(item?._id ?? item?.id)
+    && candidate?.type === "equipment"
+    && candidate?.system?.equipped === true
+    && cleanText(candidate?.system?.type?.value) === "shield"
+  ));
+}
+
+function projectRuntimeEffects(item, projection, resolution) {
+  const effects = (Array.isArray(projection?.effects) ? projection.effects : []).map(cloneValue);
+  const ringEffect = buildAbilityRingEffect(projection, resolution);
+  if (ringEffect) effects.push(ringEffect);
+  const suppressNaturalArmor = hasEquippedArmor(item);
+  for (const effect of effects) {
+    const condition = getModuleFlags(effect)?.condition;
+    if (condition === "no-equipped-armor") {
+      effect.disabled = suppressNaturalArmor;
+    }
+    else if (condition === "no-equipped-armor-or-shield") {
+      effect.disabled = suppressNaturalArmor || hasEquippedShield(item);
+    }
+  }
+  return effects;
 }
 
 function isManagedAutomation(document) {
@@ -393,7 +509,7 @@ export function buildEmbeddedMagicItemPatch(item, projection, resolution) {
 
   const itemSource = documentSource(item) ?? {};
   const existingEffects = effectSources(itemSource.effects);
-  const projectedEffects = Array.isArray(projection?.effects) ? projection.effects : [];
+  const projectedEffects = projectRuntimeEffects(item, projection, resolution);
   const effects = mergeEffects(existingEffects, projectedEffects);
   if (!effects) {
     return { status: "unresolved", reason: "automation-conflict" };

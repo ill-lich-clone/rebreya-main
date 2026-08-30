@@ -12,7 +12,7 @@ import {
   buildMagicItemAutomationProjection,
   buildMagicItemIdentityIndex,
   resolveEmbeddedMagicItemIdentity
-} from "./magic-item-embedded-sync.js?v=1.4.190-owned-magic-item-update-isolation";
+} from "./magic-item-embedded-sync.js?v=1.4.191-magic-item-runtime";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 import {
   buildSlug,
@@ -35,7 +35,7 @@ const EFFECT_MODE_ADD = 2;
 const EFFECT_MODE_UPGRADE = 4;
 const DEFAULT_MAGIC_ITEM_ICON = "systems/dnd5e/icons/svg/items/loot.svg";
 const MAGIC_TEMPLATE_VERSION = 5;
-const MAGIC_ITEM_AUTOMATION_VERSION = 3;
+const MAGIC_ITEM_AUTOMATION_VERSION = 4;
 const NATIVE_INSTRUMENT_SPELL_ACTIVITY_VERSION = 1;
 const spell24 = (name, id, level, options = {}) => ({
   name,
@@ -584,6 +584,129 @@ const CHARGED_MAGIC_ITEM_SPELLS = {
   }
 };
 const MAGIC_ITEM_UTILITY_DEFINITIONS = {
+  "амулет-пьяницы": {
+    activities: [{
+      key: "drinking-healing",
+      type: "heal",
+      name: "Восстановить хиты после напитка",
+      activation: "special",
+      cost: 1,
+      uses: { max: 1 },
+      healing: { formula: "4d4 + 4", types: ["healing"] },
+      chatFlavor: "После того как вы выпили пинту пива, эля, медовухи или вина, восстановите 4к4 + 4 хита."
+    }]
+  },
+  "колода-карточного-шулера": {
+    activities: [{
+      key: "deadly-deal",
+      type: "attack",
+      name: "Смертельная сдача",
+      activation: "action",
+      cost: null,
+      attack: { ability: "dex", value: "ranged", classification: "spell", range: 120 },
+      damage: { formula: "1d8", types: ["force"] },
+      chatFlavor: "Метните спектральную карту дальнобойной атакой заклинанием, используя Ловкость."
+    }]
+  },
+  "бусина-силы": {
+    activities: [{
+      key: "force-bead",
+      type: "save",
+      name: "Бросить бусину силы",
+      activation: "action",
+      cost: 1,
+      uses: { max: 1, noRecovery: true },
+      ability: "dex",
+      dc: 15,
+      damage: { number: 5, denomination: 4, types: ["force"], onSave: "none" },
+      chatFlavor: "Существа в радиусе 10 футов совершают спасбросок Ловкости Сл 15; при провале получают 5к4 урона силовым полем. Сфера обрабатывается вручную."
+    }]
+  },
+  "железные-ленты-биларро": {
+    activities: [{
+      key: "iron-bands",
+      type: "attack",
+      name: "Бросить железные ленты",
+      activation: "action",
+      cost: 1,
+      uses: { max: 1 },
+      attack: { ability: "dex", value: "ranged", classification: "weapon", range: 60 },
+      chatFlavor: "При попадании цель становится опутанной. Снятие состояния и уничтожение лент обрабатываются вручную."
+    }]
+  },
+  "кольцо-тарана": {
+    uses: { max: 3, recovery: "1d3" },
+    activities: [{
+      key: "ram-creature",
+      type: "attack",
+      name: "Таранить существо",
+      activation: "action",
+      cost: 1,
+      attack: { ability: "none", bonus: "+7", flat: true, value: "ranged", classification: "spell", range: 60 },
+      damage: { formula: "2d10", types: ["force"] },
+      chatFlavor: "Базовое использование 1 заряда: 2к10 урона силовым полем и толчок на 5 футов. Масштабирование до 3 зарядов и воздействие на предметы выполняются вручную."
+    }]
+  },
+  "вечно-горящий-фонарь": {
+    activities: [
+      {
+        key: "lantern-on",
+        name: "Включить фонарь",
+        activation: "action",
+        cost: null,
+        runtime: { action: "token-light-on", light: { bright: 60, dim: 120, angle: 60 } },
+        chatFlavor: "Включите направленный яркий/тусклый свет 60/120 футов на активном Token владельца."
+      },
+      {
+        key: "lantern-off",
+        name: "Потушить фонарь",
+        activation: "action",
+        cost: null,
+        runtime: { action: "token-light-off" },
+        chatFlavor: "Потушите фонарь и восстановите прежние параметры света Token владельца."
+      }
+    ]
+  },
+  "жемчужина-силы": {
+    activities: [{
+      key: "restore-spell-slot",
+      name: "Восстановить ячейку заклинания",
+      activation: "action",
+      cost: 1,
+      uses: { max: 1 },
+      runtime: { action: "restore-spell-slot" },
+      chatFlavor: "Выберите израсходованную ячейку 1–3 уровня и восстановите её."
+    }]
+  },
+  "обмотки-безоружного-мастерства-1": {
+    activities: [{ key: "unarmed-strike", type: "attack", name: "Безоружный удар +1", activation: "action", cost: null, bonus: 1 }]
+  },
+  "обмотки-безоружного-мастерства-2": {
+    activities: [{ key: "unarmed-strike", type: "attack", name: "Безоружный удар +2", activation: "action", cost: null, bonus: 2 }]
+  },
+  "обмотки-безоружного-мастерства-3": {
+    activities: [{ key: "unarmed-strike", type: "attack", name: "Безоружный удар +3", activation: "action", cost: null, bonus: 3 }]
+  },
+  "рунный-ключ-ракдоса": {
+    activities: [{
+      key: "transform-cackler",
+      name: "Превратить ключ в зубоскала",
+      activation: "action",
+      cost: 1,
+      uses: { max: 1, noRecovery: true },
+      chatFlavor: "Разместите зубоскала в пределах 5 футов. Token, часовая длительность и ручное восстановление через 36 часов остаются за Мастером."
+    }]
+  },
+  "рунный-ключ-симиков": {
+    activities: [{
+      key: "transform-krasis",
+      name: "Превратить ключ в красиса 1-й категории",
+      activation: "action",
+      cost: 1,
+      uses: { max: 1, noRecovery: true },
+      chatFlavor: "Разместите красиса 1-й категории с указанными адаптациями. Token, длительность и ручное восстановление через 36 часов остаются за Мастером."
+    }]
+  },
   "кинжал-яда": {
     uses: { max: 1, recovery: null },
     activities: [{
@@ -1461,6 +1584,29 @@ const MAGIC_ITEM_UTILITY_DEFINITIONS = {
   }
 };
 
+for (const id of [
+  "алхимический-сборник",
+  "архив-астромантии",
+  "атлас-бесконечных-горизонтов",
+  "гремящий-трактат",
+  "двойственная-рукопись",
+  "книга-начинающего-сердцееда",
+  "кодекс-планолога",
+  "сборник-защитных-стихов",
+  "фолиант-души-и-плоти"
+]) {
+  MAGIC_ITEM_UTILITY_DEFINITIONS[id] = {
+    uses: { max: 3, recovery: "1d3" },
+    activities: [{
+      key: "replace-prepared-spell",
+      name: "Заменить подготовленное заклинание",
+      activation: "minute",
+      cost: 1,
+      chatFlavor: "В течение 1 минуты изучайте книгу, затем замените одно подготовленное заклинание волшебника заклинанием указанной в описании школы. Сам выбор выполняется вручную."
+    }]
+  };
+}
+
 for (const itemId of ["амулет-благочестия-2", "амулет-благочестия-3"]) {
   MAGIC_ITEM_UTILITY_DEFINITIONS[itemId] = {
     uses: { max: 1 },
@@ -1527,7 +1673,6 @@ for (const itemId of [
 }
 const MODULE_ICONS_BASE_PATH = `modules/${MODULE_ID}/templates/icons`;
 const MAGIC_ICON_SEARCH_PATHS = [`${MODULE_ICONS_BASE_PATH}/Magic Items`, MODULE_ICONS_BASE_PATH];
-const BELLMAN_POWER_ITEM_NAME = "Жемчужина силы";
 const HOARDING_POUCH_ITEM_NAME = "Сумка хранения";
 const WATCHER_SHIELD_ITEM_NAME = "Щит часового";
 const RING_BONUS_ITEM_PREFIX = "Кольцо характеристики";
@@ -1540,6 +1685,18 @@ const RING_BONUS_VARIANTS = [
 ];
 const RING_BONUS_VARIANTS_NORMALIZED = RING_BONUS_VARIANTS
   .map((entry) => ({ ...entry, normalizedId: normalizeMatchText(entry.id) }));
+const EXTERNAL_MAGIC_ITEM_AUTOMATION_DEFINITIONS = new Map([
+  ["перчатки-двуручного-боя", {
+    kind: "combatAttackService",
+    coverage: "full",
+    note: "CombatAttackService уже добавляет +2 к урону только когда в разных руках удерживаются два рукопашных оружия."
+  }],
+  ["медальон-затягивающихся-ран", {
+    kind: "doubleHitDieHealing",
+    coverage: "partial",
+    note: "Лечение каждой потраченной Костью Хитов удваивается через dnd5e rollHitDie; автоматическая стабилизация в начале хода остаётся ручной."
+  }]
+]);
 const PASSIVE_MAGIC_ITEM_CHANGE_DEFINITIONS = new Map([
   ["амулет-благочестия-1", {
     suffix: "devout-spellcasting",
@@ -1727,6 +1884,31 @@ for (const bonus of [1, 2, 3]) {
 }
 
 for (const [id, definition] of new Map([
+  ["амулет-естественной-брони-1", {
+    ...flatPassive("natural-armor-1", "Естественная броня", "system.attributes.ac.bonus", "+1", true),
+    flags: { [MODULE_ID]: { condition: "no-equipped-armor" } }
+  }],
+  ["амулет-естественной-брони-2", {
+    ...flatPassive("natural-armor-2", "Естественная броня", "system.attributes.ac.bonus", "+2", true),
+    flags: { [MODULE_ID]: { condition: "no-equipped-armor" } }
+  }],
+  ["амулет-естественной-брони-3", {
+    ...flatPassive("natural-armor-3", "Естественная броня", "system.attributes.ac.bonus", "+3", true),
+    flags: { [MODULE_ID]: { condition: "no-equipped-armor" } }
+  }],
+  ["наручи-защиты", {
+    ...flatPassive("bracers-defense", "Защита", "system.attributes.ac.bonus", "+2", true),
+    flags: { [MODULE_ID]: { condition: "no-equipped-armor-or-shield" } }
+  }],
+  ["охраняющий-доспех-3", flatPassive(
+    "fortifying-hp-10", "Укрепление", "system.attributes.hp.bonuses.overall", "+10", true
+  )],
+  ["укрепляющий-доспех-10", flatPassive(
+    "fortifying-hp-30", "Укрепление", "system.attributes.hp.bonuses.overall", "+30", true
+  )],
+  ["укрепляющий-доспех-20", flatPassive(
+    "fortifying-hp-50", "Укрепление", "system.attributes.hp.bonuses.overall", "+50", true
+  )],
   ["амулет-здоровья", {
     suffix: "constitution",
     label: "Здоровье",
@@ -1781,6 +1963,7 @@ for (const [id, definition] of new Map([
 
 const NATIVE_MAGIC_ITEM_BONUSES = new Map([
   ["оружие-1", 1], ["оружие-2", 2], ["оружие-3", 3],
+  ["боеприпас-1", 1], ["боеприпас-2", 2], ["боеприпас-3", 3],
   ["доспех-1", 1], ["доспех-2", 2], ["доспех-3", 3],
   ["щит-1", 1], ["щит-2", 2], ["щит-3", 3],
   ["боевая-кирка-камнетворца", 1], ["булава-кары", 1], ["волна", 3],
@@ -1943,6 +2126,25 @@ const PARTIAL_PASSIVE_MAGIC_ITEM_IDS = new Set([
   "универсальный-инструмент-1"
 ]);
 const PARTIAL_ACTIVITY_MAGIC_ITEM_IDS = new Set([
+  "амулет-пьяницы",
+  "колода-карточного-шулера",
+  "бусина-силы",
+  "железные-ленты-биларро",
+  "кольцо-тарана",
+  "алхимический-сборник",
+  "архив-астромантии",
+  "атлас-бесконечных-горизонтов",
+  "гремящий-трактат",
+  "двойственная-рукопись",
+  "книга-начинающего-сердцееда",
+  "кодекс-планолога",
+  "сборник-защитных-стихов",
+  "фолиант-души-и-плоти",
+  "обмотки-безоружного-мастерства-1",
+  "обмотки-безоружного-мастерства-2",
+  "обмотки-безоружного-мастерства-3",
+  "рунный-ключ-ракдоса",
+  "рунный-ключ-симиков",
   "аметистовый-магнетит",
   "боевая-кирка-камнетворца",
   "визор-данота",
@@ -2077,6 +2279,32 @@ const PARTIAL_ACTIVITY_MAGIC_ITEM_IDS = new Set([
   "щит-пылающего-дредноута"
 ]);
 const ACTIVITY_AUTOMATION_NOTES = new Map([
+  ["амулет-пьяницы", "Activity раз в рассвет бросает лечение 4к4 + 4; проверка, что владелец выпил подходящую пинту, остаётся ручной."],
+  ["колода-карточного-шулера", "Смертельная сдача автоматизирована как дальнобойная атака заклинанием Ловкостью на 120 футов с уроном 1к8 силовым полем; разбрасывание карт остаётся ручным без подтверждённого spell UUID."],
+  ["бусина-силы", "Одноразовая activity автоматизирует спасбросок Ловкости Сл 15 и 5к4 урона силовым полем при провале; заключение, выталкивание и перемещение сферы остаются ручными."],
+  ["железные-ленты-биларро", "Activity раз в рассвет автоматизирует дальнобойную атаку Ловкостью на 60 футов; опутывание, освобождение и уничтожение лент остаются ручными."],
+  ["кольцо-тарана", "Activity автоматизирует базовую атаку +7 за 1 заряд и 2к10 урона силовым полем; расход 2–3 зарядов, усиление урона/толчка и проверка против предмета остаются ручными."],
+  ["наручи-защиты", "Бонус +2 к КД проецируется только при отсутствии надетого доспеха и используемого щита; после изменения экипировки до следующей managed-синхронизации условие проверяется вручную."],
+  ["алхимический-сборник", "Общий пул 3 зарядов с восстановлением 1к3 и минутная activity замены подготовленного заклинания автоматизированы; выбор заклинания и превращение предмета остаются ручными."],
+  ["архив-астромантии", "Общий пул 3 зарядов с восстановлением 1к3 и минутная activity замены подготовленного заклинания автоматизированы; выбор заклинания и реакционный к4 остаются ручными."],
+  ["атлас-бесконечных-горизонтов", "Общий пул 3 зарядов с восстановлением 1к3 и минутная activity замены подготовленного заклинания автоматизированы; выбор заклинания и реакционная телепортация остаются ручными."],
+  ["гремящий-трактат", "Общий пул 3 зарядов с восстановлением 1к3 и минутная activity замены подготовленного заклинания автоматизированы; выбор заклинания и реакционный урон/сбивание остаются ручными."],
+  ["двойственная-рукопись", "Общий пул 3 зарядов с восстановлением 1к3 и минутная activity замены подготовленного заклинания автоматизированы; выбор заклинания и реакционная помеха остаются ручными."],
+  ["книга-начинающего-сердцееда", "Общий пул 3 зарядов с восстановлением 1к3 и минутная activity замены подготовленного заклинания автоматизированы; выбор заклинания и помеха на спасбросок остаются ручными."],
+  ["кодекс-планолога", "Общий пул 3 зарядов с восстановлением 1к3 и минутная activity замены подготовленного заклинания автоматизированы; выбор заклинания и преимущество призванного существа остаются ручными."],
+  ["сборник-защитных-стихов", "Общий пул 3 зарядов с восстановлением 1к3 и минутная activity замены подготовленного заклинания автоматизированы; выбор заклинания, волшебный замок и временные хиты остаются ручными."],
+  ["фолиант-души-и-плоти", "Общий пул 3 зарядов с восстановлением 1к3 и минутная activity замены подготовленного заклинания автоматизированы; выбор заклинания и облик нежити остаются ручными."],
+  ["амулет-естественной-брони-1", "Бонус +1 к КД проецируется только без доспеха; после изменения экипировки до следующей managed-синхронизации условие проверяется вручную."],
+  ["амулет-естественной-брони-2", "Бонус +2 к КД проецируется только без доспеха; после изменения экипировки до следующей managed-синхронизации условие проверяется вручную."],
+  ["амулет-естественной-брони-3", "Бонус +3 к КД проецируется только без доспеха; после изменения экипировки до следующей managed-синхронизации условие проверяется вручную."],
+  ["охраняющий-доспех-3", "Максимум хитов +10 автоматизирован effect; явное уменьшение текущих хитов на 10 при снятии доспеха остаётся ручным."],
+  ["укрепляющий-доспех-10", "Максимум хитов +30 автоматизирован effect; явное уменьшение текущих хитов на 30 при снятии доспеха остаётся ручным."],
+  ["укрепляющий-доспех-20", "Максимум хитов +50 автоматизирован effect; явное уменьшение текущих хитов на 50 при снятии доспеха остаётся ручным."],
+  ["обмотки-безоружного-мастерства-1", "Базовый магический безоружный удар Силой с бонусом +1 автоматизирован; монашеская кость, Ловкость и другие замены базового безоружного удара настраиваются вручную."],
+  ["обмотки-безоружного-мастерства-2", "Базовый магический безоружный удар Силой с бонусом +2 автоматизирован; монашеская кость, Ловкость и другие замены базового безоружного удара настраиваются вручную."],
+  ["обмотки-безоружного-мастерства-3", "Базовый магический безоружный удар Силой с бонусом +3 автоматизирован; монашеская кость, Ловкость и другие замены базового безоружного удара настраиваются вручную."],
+  ["рунный-ключ-ракдоса", "Действие превращения и одно доступное использование автоматизированы; зубоскал отсутствует в установленных dnd5e Actor packs, поэтому Token, управление, часовая длительность и ручное восстановление через 36 часов остаются ручными."],
+  ["рунный-ключ-симиков", "Действие превращения и одно доступное использование автоматизированы; красис 1-й категории отсутствует в установленных dnd5e Actor packs, поэтому Token, адаптации, длительность и ручное восстановление через 36 часов остаются ручными."],
   ["аметистовый-магнетит", "Заклинание и два простых действия автоматизированы; преимущество на спасброски Силы и остальные свойства остаются ручными."],
   ["посох-огня", "Заклинания и общий пул зарядов автоматизированы; проверка уничтожения после расхода последнего заряда остаётся ручной."],
   ["посох-мороза", "Заклинания и общий пул зарядов автоматизированы; проверка уничтожения после расхода последнего заряда остаётся ручной."],
@@ -2258,9 +2486,6 @@ const DEFERRED_MAGIC_ITEM_AUDIT_NAMES = new Set([
   "зелье лечения 1-го уровня"
 ]);
 const CONDITIONAL_MAGIC_ITEM_AUDIT_REASONS = new Map([
-  ["амулет-естественной-брони-1", "Бонус к КД условен: действует только без доспеха; постоянный effect был бы неверным."],
-  ["амулет-естественной-брони-2", "Бонус к КД условен: действует только без доспеха; постоянный effect был бы неверным."],
-  ["амулет-естественной-брони-3", "Бонус к КД условен: действует только без доспеха; постоянный effect был бы неверным."],
   ["печатка-гильдии-груул", "Compelled Duel отсутствует в установленных dnd5e compendium; создавать неподтверждённый UUID нельзя."],
   ["печатка-гильдии-иззет", "Chaos Bolt отсутствует в установленных dnd5e compendium; создавать неподтверждённый UUID нельзя."]
 ]);
@@ -2410,13 +2635,88 @@ function buildUtilityActivity(item, definition) {
       },
       damage: buildActivityDamage(definition)
     } : {}),
+    ...(definition.type === "heal" ? {
+      healing: {
+        number: null,
+        denomination: null,
+        bonus: "",
+        types: definition.healing?.types ?? ["healing"],
+        custom: { enabled: true, formula: definition.healing?.formula ?? "0" },
+        scaling: { mode: "", number: 1, formula: "" }
+      }
+    } : {}),
     description: {
       chatFlavor: definition.chatFlavor
     },
     flags: {
       [MODULE_ID]: {
-        magicItemAutomation: true
+        magicItemAutomation: true,
+        ...(definition.runtime ? { magicItemRuntime: structuredClone(definition.runtime) } : {})
       }
+    }
+  }];
+}
+
+function buildAttackActivity(item, definition) {
+  const activityId = stableHashId(
+    `magic-item:${item.id}:activity:${definition.key}`,
+    "magic-item-activity"
+  );
+  const unarmedBonus = Math.max(0, Math.floor(toNumber(definition.bonus, 0)));
+  const attack = definition.attack ?? {
+    ability: "str",
+    bonus: `+${unarmedBonus}`,
+    flat: false,
+    value: "melee",
+    classification: "unarmed"
+  };
+  const damage = definition.damage ?? (definition.attack ? null : {
+    formula: `1 + @mod + ${unarmedBonus}`,
+    types: ["bludgeoning"]
+  });
+  return [activityId, {
+    _id: activityId,
+    type: "attack",
+    name: definition.name,
+    activation: { type: definition.activation ?? "action", value: 1, condition: "", override: false },
+    consumption: {
+      scaling: { allowed: false, max: "" },
+      spellSlot: false,
+      targets: definition.cost === null
+        ? []
+        : definition.uses
+          ? [{ type: "activityUses", value: String(definition.cost ?? 1) }]
+          : [itemUseConsumptionTarget(String(definition.cost ?? 1))]
+    },
+    ...(definition.uses ? { uses: buildDawnUses(definition.uses) } : {}),
+    attack: {
+      ability: attack.ability ?? "none",
+      bonus: attack.bonus ?? "",
+      critical: { threshold: null },
+      flat: attack.flat === true,
+      type: { value: attack.value ?? "melee", classification: attack.classification ?? "weapon" }
+    },
+    damage: {
+      critical: { bonus: "" },
+      includeBase: false,
+      parts: damage ? [{
+        number: null,
+        denomination: null,
+        bonus: "",
+        types: damage.types ?? [],
+        custom: { enabled: true, formula: damage.formula ?? "0" },
+        scaling: { mode: "", number: 1, formula: "" }
+      }] : []
+    },
+    ...(Number.isFinite(Number(attack.range)) ? {
+      range: { value: Number(attack.range), units: "ft", special: "", override: true }
+    } : {}),
+    description: {
+      chatFlavor: definition.chatFlavor
+        ?? "Базовый безоружный удар Силой. Монашескую кость и иной модификатор при необходимости настройте в activity вручную."
+    },
+    flags: {
+      [MODULE_ID]: { magicItemAutomation: true }
     }
   }];
 }
@@ -2529,7 +2829,9 @@ function buildMagicItemActivities(item) {
   });
   const utilityDefinition = MAGIC_ITEM_UTILITY_DEFINITIONS[itemId];
   for (const definition of utilityDefinition?.activities ?? []) {
-    entries.push(buildUtilityActivity(item, definition));
+    entries.push(definition.type === "attack"
+      ? buildAttackActivity(item, definition)
+      : buildUtilityActivity(item, definition));
   }
   if (itemId === "кинжал-яда") {
     entries.push(buildPoisonDaggerSaveActivity(item));
@@ -2568,11 +2870,12 @@ function buildPassiveMagicItemEffect({
     statuses: [],
     sort: 0,
     flags: {
+      ...flags,
       [MODULE_ID]: {
         managed: true,
-        magicItemAutomation: true
-      },
-      ...flags
+        magicItemAutomation: true,
+        ...(flags?.[MODULE_ID] ?? {})
+      }
     }
   };
 }
@@ -2585,13 +2888,30 @@ function parseItemBonusFromName(itemName) {
 function resolveMagicItemAutomationDefinition(item) {
   const itemId = String(item?.id ?? "").trim();
   const normalizedName = normalizeMatchText(item?.name);
-  const normalizedPoweName = normalizeMatchText(BELLMAN_POWER_ITEM_NAME);
   const normalizedPouchName = normalizeMatchText(HOARDING_POUCH_ITEM_NAME);
   const normalizedWatcherShieldName = normalizeMatchText(WATCHER_SHIELD_ITEM_NAME);
   const normalizedRingPrefix = normalizeMatchText(RING_BONUS_ITEM_PREFIX);
   const passiveDefinition = PASSIVE_MAGIC_ITEM_CHANGE_DEFINITIONS.get(itemId) ?? null;
   const chargedDefinition = CHARGED_MAGIC_ITEM_SPELLS[itemId] ?? null;
   const utilityDefinition = MAGIC_ITEM_UTILITY_DEFINITIONS[itemId] ?? null;
+  const externalDefinition = EXTERNAL_MAGIC_ITEM_AUTOMATION_DEFINITIONS.get(itemId) ?? null;
+
+  if (externalDefinition) {
+    return {
+      version: MAGIC_ITEM_AUTOMATION_VERSION,
+      ...externalDefinition
+    };
+  }
+
+  if (itemId === "жемчужина-силы") {
+    return {
+      version: MAGIC_ITEM_AUTOMATION_VERSION,
+      kind: "pearlOfPower",
+      coverage: "full",
+      sharedUses: null,
+      note: "Activity раз в рассвет предлагает выбрать израсходованную ячейку 1–3 уровня и восстанавливает её."
+    };
+  }
 
   if (passiveDefinition || chargedDefinition || utilityDefinition) {
     const uses = chargedDefinition?.uses ?? utilityDefinition?.uses ?? null;
@@ -2627,14 +2947,6 @@ function resolveMagicItemAutomationDefinition(item) {
     };
   }
 
-  if (normalizedName === normalizedPoweName) {
-    return {
-      kind: "pearlOfPower",
-      coverage: "manual",
-      note: "Требуется ручной выбор и восстановление ячейки заклинания после использования."
-    };
-  }
-
   if (normalizedName.startsWith(normalizedWatcherShieldName)) {
     return {
       kind: "itemAbility",
@@ -2652,10 +2964,10 @@ function resolveMagicItemAutomationDefinition(item) {
 
     return {
       kind: "abilityRing",
-      coverage: "manual-choice",
+      coverage: "full",
       bonus: variant.bonus,
       maxAbilityScore: variant.maxAbilityScore,
-      note: `Выберите одну характеристику для повышения на ${variant.bonus} (максимум ${variant.maxAbilityScore}).`
+      note: `Long-rest pipeline предлагает выбрать характеристику и проецирует повышение на ${variant.bonus} без превышения ${variant.maxAbilityScore}.`
     };
   }
 
@@ -2720,7 +3032,9 @@ export function buildMagicItemAutomationManifest(items = MAGIC_ITEMS) {
     }
 
     if (NATIVE_MAGIC_BONUS_AUDIT_IDS.has(id)) {
-      const isWeapon = item?.itemType === "Оружие" || id.startsWith("оружие-");
+      const isWeapon = item?.itemType === "Оружие"
+        || id.startsWith("оружие-")
+        || id.startsWith("боеприпас-");
       const partial = PARTIAL_NATIVE_MAGIC_ITEM_IDS.has(id);
       return {
         id,
@@ -2809,7 +3123,8 @@ function buildMagicItemAutomationEffects(item) {
         id: buildMagicItemEffectId(item, passiveDefinition.suffix),
         name: `${item?.name}: ${passiveDefinition.label}`,
         description: item?.description,
-        changes: passiveDefinition.changes
+        changes: passiveDefinition.changes,
+        flags: passiveDefinition.flags ?? {}
       })
     ];
   }
@@ -3235,7 +3550,7 @@ export function createMagicItemData(item, folderIdByPath, iconLookup = null) {
 
   const nativeMagicBonus = NATIVE_MAGIC_ITEM_BONUSES.get(String(item?.id ?? "").trim());
   if (nativeMagicBonus) {
-    if (classification.documentType === "weapon") {
+    if (classification.documentType === "weapon" || classification.documentType === "consumable") {
       systemData.magicalBonus = nativeMagicBonus;
     }
     else if (classification.documentType === "equipment") {
@@ -3398,17 +3713,290 @@ async function findMagicItemDocument(pack, magicItemId, fallbackName = "") {
   }) ?? null;
 }
 
+function collectionValues(value) {
+  if (!value) return [];
+  if (Array.isArray(value)) return value;
+  if (Array.isArray(value.contents)) return value.contents;
+  if (typeof value.values === "function") return Array.from(value.values());
+  return [];
+}
+
+function magicItemIdOf(document) {
+  return String(
+    document?.getFlag?.(MODULE_ID, "magicItemId")
+    ?? document?.flags?.[MODULE_ID]?.magicItemId
+    ?? ""
+  ).trim();
+}
+
+function activityRuntime(activity) {
+  return activity?.getFlag?.(MODULE_ID, "magicItemRuntime")
+    ?? activity?.flags?.[MODULE_ID]?.magicItemRuntime
+    ?? null;
+}
+
+function sourceLight(tokenDocument) {
+  const light = tokenDocument?.toObject?.()?.light
+    ?? tokenDocument?._source?.light
+    ?? tokenDocument?.light?.toObject?.()
+    ?? tokenDocument?.light
+    ?? {};
+  return structuredClone(light);
+}
+
+const ABILITY_LABELS = new Map([
+  ["str", "Сила"],
+  ["dex", "Ловкость"],
+  ["con", "Телосложение"],
+  ["int", "Интеллект"],
+  ["wis", "Мудрость"],
+  ["cha", "Харизма"]
+]);
+
 export class MagicItemsCompendiumService {
   constructor({
     gameProvider = () => globalThis.game,
     consoleProvider = () => globalThis.console,
     diffObject = null,
-    isActiveGm = isActiveGmClient
+    isActiveGm = isActiveGmClient,
+    promptSpellSlot = null,
+    promptAbilityChoice = null
   } = {}) {
     this.gameProvider = gameProvider;
     this.consoleProvider = consoleProvider;
     this.diffObject = diffObject;
     this.isActiveGm = isActiveGm;
+    this.promptSpellSlot = promptSpellSlot;
+    this.promptAbilityChoice = promptAbilityChoice;
+  }
+
+  registerLongRestSteps(pipeline) {
+    if (typeof pipeline?.registerStep !== "function") return false;
+    pipeline.registerStep({
+      id: "magic-items.ability-rings",
+      label: "Кольца характеристик",
+      order: 250,
+      interactive: true,
+      isEligible: ({ actor }) => this.#abilityRings(actor).length > 0,
+      run: ({ actor, progress }) => this.chooseAbilityRingsAfterLongRest(actor, { progress })
+    });
+    return true;
+  }
+
+  async chooseAbilityRingsAfterLongRest(actor, { progress = null } = {}) {
+    let changed = false;
+    for (const item of this.#abilityRings(actor)) {
+      const definition = this.#abilityRingDefinition(item);
+      if (!definition) continue;
+      const options = [...ABILITY_LABELS].map(([ability, label]) => {
+        const previous = item?.flags?.[MODULE_ID]?.magicItemRuntime?.abilityChoice;
+        const current = toNumber(actor?.system?.abilities?.[ability]?.value, 0);
+        const base = Math.max(0, current - (previous?.ability === ability ? toNumber(previous.appliedBonus, 0) : 0));
+        const appliedBonus = Math.max(0, Math.min(definition.bonus, definition.maxAbilityScore - base));
+        return { ability, label, base, appliedBonus };
+      }).filter((choice) => choice.appliedBonus > 0);
+      if (!options.length) continue;
+      const ability = await this.#promptAbilityRing(actor, item, options, progress);
+      const selected = options.find((choice) => choice.ability === ability);
+      if (!selected) continue;
+      changed = (await this.#applyAbilityRingChoice(item, definition, selected)) || changed;
+    }
+    return { status: changed ? "completed" : "skipped" };
+  }
+
+  async applyDnd5ePostUseActivity(activity, usageConfig = {}) {
+    const runtime = activityRuntime(activity);
+    if (!runtime?.action) return true;
+    if (runtime.action === "restore-spell-slot") {
+      const actor = activity?.actor ?? activity?.item?.actor ?? null;
+      const slots = this.#restorableSpellSlots(actor);
+      const configuredLevel = Math.floor(toNumber(usageConfig?.rebreyaMagicItem?.spellSlotLevel, 0));
+      const level = slots.some((slot) => slot.level === configuredLevel)
+        ? configuredLevel
+        : await this.#promptSpellSlot(actor, slots);
+      const slot = actor?.system?.spells?.[`spell${level}`];
+      if (level < 1 || level > 3 || !slot || toNumber(slot.value, 0) >= toNumber(slot.max, 0)) {
+        const spent = toNumber(activity?.uses?.spent, 0);
+        await activity?.item?.update?.({
+          [`system.activities.${activity?.id ?? activity?._id}.uses.spent`]: Math.max(0, spent - 1)
+        });
+        return true;
+      }
+      await actor.update({ [`system.spells.spell${level}.value`]: toNumber(slot.value, 0) + 1 });
+      return true;
+    }
+    if (runtime.action === "token-light-on" || runtime.action === "token-light-off") {
+      return this.#applyTokenLight(activity?.item, runtime);
+    }
+    return true;
+  }
+
+  applyDnd5eRollHitDie(rolls, context = {}) {
+    const actor = context?.subject ?? context?.actor ?? null;
+    const medallion = collectionValues(actor?.items).find((item) => (
+      magicItemIdOf(item) === "медальон-затягивающихся-ран"
+      && item?.system?.equipped !== false
+      && item?.system?.attuned !== false
+    ));
+    if (!medallion) return true;
+    const rolledHealing = collectionValues(rolls)
+      .reduce((total, roll) => total + Math.max(0, toNumber(roll?.total, 0)), 0);
+    const current = toNumber(actor?.system?.attributes?.hp?.value, 0);
+    const maximum = toNumber(
+      actor?.system?.attributes?.hp?.effectiveMax ?? actor?.system?.attributes?.hp?.max,
+      current
+    );
+    const prepared = toNumber(context?.updates?.actor?.["system.attributes.hp.value"], current);
+    if (rolledHealing > 0 && context?.updates?.actor) {
+      context.updates.actor["system.attributes.hp.value"] = Math.min(maximum, prepared + rolledHealing);
+    }
+    return true;
+  }
+
+  #abilityRingDefinition(item) {
+    const stableId = magicItemIdOf(item);
+    const normalizedBaseName = normalizeMatchText(item?.name).replace(/\s*\([^)]+\)$/u, "");
+    const source = MAGIC_ITEMS.find((entry) => (
+      (stableId && entry.id === stableId)
+      || normalizeMatchText(entry.name) === normalizedBaseName
+    ));
+    const definition = source ? resolveMagicItemAutomationDefinition(source) : null;
+    return definition?.kind === "abilityRing"
+      ? { ...definition, magicItemId: source.id }
+      : null;
+  }
+
+  #abilityRings(actor) {
+    return collectionValues(actor?.items).filter((item) => (
+      item?.system?.equipped !== false
+      && item?.system?.attuned !== false
+      && Boolean(this.#abilityRingDefinition(item))
+    ));
+  }
+
+  #restorableSpellSlots(actor) {
+    const slots = [];
+    for (let level = 1; level <= 3; level += 1) {
+      const slot = actor?.system?.spells?.[`spell${level}`];
+      const value = toNumber(slot?.value, 0);
+      const max = toNumber(slot?.max, 0);
+      if (max > 0 && value < max) slots.push({ level, value, max });
+    }
+    return slots;
+  }
+
+  async #promptSpellSlot(actor, slots) {
+    if (typeof this.promptSpellSlot === "function") {
+      return Math.floor(toNumber(await this.promptSpellSlot({ actor, slots }), 0));
+    }
+    const DialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
+    if (typeof DialogV2?.input !== "function") return 0;
+    const options = slots.map(({ level, value, max }) => (
+      `<option value="${level}">${level}-й уровень (${value}/${max})</option>`
+    )).join("");
+    const selected = await DialogV2.input({
+      window: { title: "Жемчужина силы" },
+      content: `<form><label>Восстановить ячейку <select name="spellSlotLevel">${options}</select></label></form>`,
+      ok: {
+        label: "Восстановить",
+        callback: (_event, button, dialog) => Number(
+          button?.form?.elements?.spellSlotLevel?.value
+          ?? dialog?.element?.querySelector?.("[name='spellSlotLevel']")?.value
+          ?? 0
+        )
+      },
+      rejectClose: false,
+      modal: true
+    });
+    return Math.floor(toNumber(selected, 0));
+  }
+
+  async #promptAbilityRing(actor, item, choices, progress) {
+    if (typeof this.promptAbilityChoice === "function") {
+      return String(await this.promptAbilityChoice({ actor, item, choices, progress }) ?? "").trim();
+    }
+    const DialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
+    if (typeof DialogV2?.input !== "function") return "";
+    const options = choices.map(({ ability, label, base, appliedBonus }) => (
+      `<option value="${ability}">${escapeHtml(label)}: ${base} + ${appliedBonus}</option>`
+    )).join("");
+    return String(await DialogV2.input({
+      window: { title: progress?.title?.("Кольца характеристик") ?? "Кольца характеристик" },
+      content: `${progress?.header?.("Кольца характеристик") ?? ""}<form><label>${escapeHtml(item.name)} <select name="ability">${options}</select></label></form>`,
+      ok: {
+        label: "Выбрать",
+        callback: (_event, button, dialog) => (
+          button?.form?.elements?.ability?.value
+          ?? dialog?.element?.querySelector?.("[name='ability']")?.value
+          ?? ""
+        )
+      },
+      rejectClose: false,
+      modal: true
+    }) ?? "").trim();
+  }
+
+  async #applyAbilityRingChoice(item, definition, choice) {
+    const packDocument = await this.getMagicItemDocument(definition.magicItemId, item?.name ?? "");
+    if (!packDocument || typeof item?.update !== "function") return false;
+    const projection = buildMagicItemAutomationProjection(packDocument);
+    const source = typeof item?.toObject === "function"
+      ? item.toObject()
+      : structuredClone(item ?? {});
+    source.flags ??= {};
+    source.flags[MODULE_ID] ??= {};
+    source.flags[MODULE_ID].sourceType = "magicItem";
+    source.flags[MODULE_ID].magicItemId = definition.magicItemId;
+    source.flags[MODULE_ID].magicItemRuntime ??= {};
+    source.flags[MODULE_ID].magicItemRuntime.abilityChoice = {
+      ability: choice.ability,
+      appliedBonus: choice.appliedBonus
+    };
+    const synthetic = {
+      ...source,
+      actor: item?.actor ?? item?.parent ?? null,
+      parent: item?.parent ?? item?.actor ?? null,
+      toObject: () => structuredClone(source)
+    };
+    const merge = buildEmbeddedMagicItemPatch(synthetic, projection, {
+      status: "resolved",
+      magicItemId: definition.magicItemId,
+      reason: "long-rest-choice",
+      choice: { ability: choice.ability, appliedBonus: choice.appliedBonus },
+      identityPatch: {}
+    });
+    if (merge.status !== "updated") return false;
+    await item.update(merge.update);
+    return true;
+  }
+
+  async #applyTokenLight(item, runtime) {
+    const actor = item?.actor ?? item?.parent ?? null;
+    const tokenDocuments = collectionValues(actor?.getActiveTokens?.(true, true) ?? actor?.getActiveTokens?.())
+      .map((token) => token?.document ?? token)
+      .filter((token) => typeof token?.update === "function");
+    if (!tokenDocuments.length) {
+      globalThis.ui?.notifications?.warn?.(`${item?.name ?? "Фонарь"}: у владельца нет активного Token.`);
+      return true;
+    }
+    const stored = structuredClone(item?.flags?.[MODULE_ID]?.magicItemRuntime?.tokenLights ?? {});
+    if (runtime.action === "token-light-on") {
+      for (const token of tokenDocuments) {
+        const key = String(token?.uuid ?? token?.id ?? "").trim();
+        if (key && !stored[key]) stored[key] = sourceLight(token);
+        await token.update({ light: { ...sourceLight(token), ...(runtime.light ?? {}) } });
+      }
+      await item?.update?.({ [`flags.${MODULE_ID}.magicItemRuntime.tokenLights`]: stored });
+      return true;
+    }
+    for (const token of tokenDocuments) {
+      const key = String(token?.uuid ?? token?.id ?? "").trim();
+      const previous = stored[key];
+      if (previous) await token.update({ light: previous });
+      else await token.update({ light: { ...sourceLight(token), bright: 0, dim: 0, angle: 360 } });
+    }
+    await item?.update?.({ [`flags.${MODULE_ID}.magicItemRuntime.tokenLights`]: {} });
+    return true;
   }
 
   async sync(items = MAGIC_ITEMS) {
@@ -3618,7 +4206,8 @@ export class MagicItemsCompendiumService {
   }
 
   async getMagicItemDocument(magicItemId, fallbackName = "") {
-    const pack = game.packs.get(PACK_ID);
+    const foundryGame = this.gameProvider?.() ?? globalThis.game;
+    const pack = foundryGame?.packs?.get?.(PACK_ID);
     if (!pack) {
       return null;
     }

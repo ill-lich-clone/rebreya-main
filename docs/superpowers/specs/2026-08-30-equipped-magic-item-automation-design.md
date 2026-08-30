@@ -272,7 +272,9 @@ README описывает автоматический lifecycle, охват в�
 
 ## Результат полного аудита каталога
 
-Acceptance corpus охватывает все 655 stable rows `MAGIC_ITEMS`. Канонический машинный manifest строится `buildMagicItemAutomationManifest(items = MAGIC_ITEMS)`, а rarity-aware gap report — `buildMagicItemAutomationGapReport(items = MAGIC_ITEMS)`; их reviewable snapshot находится в `docs/magic-item-automation-audit.md`. После продолжения data-driven прохода классификация каталога: 210 `full`, 170 `partial`, 275 `manual`; три исключённые world-карточки перечислены отдельно как `deferred`, поскольку они не являются строками `MAGIC_ITEMS`.
+Acceptance corpus охватывает все 655 stable rows `MAGIC_ITEMS`. Канонический машинный manifest строится `buildMagicItemAutomationManifest(items = MAGIC_ITEMS)`, а rarity-aware gap report — `buildMagicItemAutomationGapReport(items = MAGIC_ITEMS)`; их reviewable snapshot находится в `docs/magic-item-automation-audit.md`. После повторного data-driven прохода классификация каталога: 221 `full`, 197 `partial`, 237 `manual`; три исключённые world-карточки перечислены отдельно как `deferred`, поскольку они не являются строками `MAGIC_ITEMS`.
+
+Runtime-часть не создаёт нового lifecycle owner: `MagicItemsCompendiumService` регистрирует один interactive long-rest step для всех вариантов Колец характеристики, обрабатывает managed activities Жемчужины силы и Вечно горящего фонаря и корректирует подготовленный dnd5e `rollHitDie` update Медальона затягивающихся ран. Pure embedded projection материализует выбранный бонус кольца и отключает условный managed AC effect Амулета естественной брони или Наручей защиты при конфликтующей экипировке. `registerCombatHooks` только маршрутизирует существующие dnd5e activity/Hit Die события в этот сервис.
 
 | Редкость | Всего | Full | Partial | Manual |
 | --- | ---: | ---: | ---: | ---: |

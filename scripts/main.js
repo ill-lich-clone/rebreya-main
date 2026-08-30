@@ -3,7 +3,7 @@ import { MODULE_ID, SETTINGS_KEYS } from "./constants.js";
 import { MaterialsCompendiumService } from "./data/materials-compendium.js";
 import { GearCompendiumService } from "./data/gear-compendium.js?v=1.4.145-coin-icons-storage-sound";
 import { repairWorldAmmunitionCompatibility } from "./data/ammunition-compatibility.js?v=1.4.147-native-ammunition";
-import { MagicItemsCompendiumService } from "./data/magic-items-compendium.js?v=1.4.190-owned-magic-item-update-isolation";
+import { MagicItemsCompendiumService } from "./data/magic-items-compendium.js?v=1.4.191-magic-item-runtime";
 import { FeatsCompendiumService } from "./data/feats-compendium.js";
 import { BackgroundsCompendiumService } from "./data/backgrounds-compendium.js";
 import { StatesCompendiumService } from "./data/states-compendium.js";
@@ -239,7 +239,7 @@ import {
   isValidStorageTokenCharacterPayload,
   storageCharacterTokenUuidForClaim
 } from "./data/storage-command-service.js?v=1.4.164-storage-key-feedback";
-import { registerCombatHooks } from "./combat/hooks.js?v=1.4.171-grapple-ui-path";
+import { registerCombatHooks } from "./combat/hooks.js?v=1.4.191-magic-item-runtime";
 import { CombatAttackService } from "./combat/attack-service.js?v=1.4.181-dual-wield-gloves";
 import { ImplantAutomationService } from "./combat/implant-automation-service.js";
 import { SizeAutomationService } from "./combat/size-automation-service.js?v=1.4.110-character-size-authority";
@@ -1702,7 +1702,8 @@ export class RebreyaMainModule {
       this.paladinAutomationService,
       this.craftsmanGadgetService,
       this.craftsmanConstructorService,
-      this.implantService
+      this.implantService,
+      this.magicItemsCompendium
     ]) {
       service.registerLongRestSteps?.(this.longRestPipelineService);
     }

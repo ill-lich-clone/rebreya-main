@@ -63,8 +63,8 @@ test("module manifest loads the stable canonical entrypoint", async () => {
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const [entrypoint] = manifest.esmodules;
 
-  assert.equal(manifest.version, "1.4.190");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.190.js"]);
+  assert.equal(manifest.version, "1.4.191");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.191.js"]);
   assert.doesNotMatch(entrypoint, /[?#]/u);
 
   const entrypointSource = await readFile(new URL(entrypoint, manifestUrl), "utf8");
@@ -299,7 +299,7 @@ test("module keeps recent published entrypoint URLs as canonical compatibility f
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
 
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.190.js"]);
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.191.js"]);
 
   for (const fileName of ["main-1.4.98.js", "main-1.4.99.js", "main-1.4.100.js"]) {
     const forwarderSource = await readFile(new URL(`../scripts/${fileName}`, import.meta.url), "utf8");
@@ -498,7 +498,7 @@ test("combat automation imports preserve their released cache busts", async () =
 
   assert.match(
     entrypointSource,
-    /combat\/hooks\.js\?v=1\.4\.171-grapple-ui-path/u,
+    /combat\/hooks\.js\?v=1\.4\.191-magic-item-runtime/u,
   );
   assert.match(
     entrypointSource,
@@ -557,7 +557,7 @@ test("paladin dogma automation is constructed and routed through the current com
   );
   assert.match(
     entrypointSource,
-    /combat\/hooks\.js\?v=1\.4\.171-grapple-ui-path/u
+    /combat\/hooks\.js\?v=1\.4\.191-magic-item-runtime/u
   );
   assert.match(
     entrypointSource,
@@ -625,11 +625,11 @@ test("automatic owned magic item sync cache-busts its live service graph", async
 
   assert.match(
     entrypointSource,
-    /magic-items-compendium\.js\?v=1\.4\.190-owned-magic-item-update-isolation/u
+    /magic-items-compendium\.js\?v=1\.4\.191-magic-item-runtime/u
   );
   assert.match(
     compendiumSource,
-    /magic-item-embedded-sync\.js\?v=1\.4\.190-owned-magic-item-update-isolation/u
+    /magic-item-embedded-sync\.js\?v=1\.4\.191-magic-item-runtime/u
   );
 });
 
