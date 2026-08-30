@@ -46,6 +46,83 @@ function makeMagicItem(overrides = {}) {
   };
 }
 
+test("magic item automation manifest audits every stable catalog row", () => {
+  assert.equal(typeof magicItemsCompendium.buildMagicItemAutomationManifest, "function");
+
+  const manifest = magicItemsCompendium.buildMagicItemAutomationManifest();
+  assert.equal(manifest.length, MAGIC_ITEMS.length);
+  assert.equal(manifest.length, 655);
+  assert.equal(new Set(manifest.map((row) => row.id)).size, MAGIC_ITEMS.length);
+  assert.deepEqual(
+    manifest.map(({ id, name }) => ({ id, name })),
+    MAGIC_ITEMS.map(({ id, name }) => ({ id, name }))
+  );
+
+  const allowedStatuses = new Set(["full", "partial", "manual", "deferred"]);
+  for (const row of manifest) {
+    assert.ok(allowedStatuses.has(row.status), `${row.id}:${row.status}`);
+    assert.equal(typeof row.existingAutomation, "string", row.id);
+    assert.ok(row.existingAutomation.trim(), row.id);
+    assert.equal(typeof row.proposedAutomation, "string", row.id);
+    assert.ok(row.proposedAutomation.trim(), row.id);
+    assert.equal(typeof row.reason, "string", row.id);
+    assert.ok(row.reason.trim(), row.id);
+  }
+
+  const byId = new Map(manifest.map((row) => [row.id, row]));
+  for (const id of ["оружие-1", "оружие-2", "оружие-3", "доспех-1", "доспех-2", "доспех-3", "щит-1", "щит-2", "щит-3"]) {
+    assert.equal(byId.get(id).status, "full", id);
+    assert.match(byId.get(id).proposedAutomation, /system\.(?:armor\.)?magicalBonus/iu, id);
+    assert.match(byId.get(id).reason, /native dnd5e/iu, id);
+  }
+
+  assert.equal(byId.get("амулет-благочестия-1").status, "partial");
+  assert.match(byId.get("амулет-благочестия-1").existingAutomation, /managed effect.*activity/iu);
+  assert.equal(byId.get("амулет-естественной-брони-1").status, "manual");
+  assert.match(byId.get("амулет-естественной-брони-1").reason, /услов.*без доспех/iu);
+});
+
+test("magic item automation manifest preserves exact deferred world-card rulings", () => {
+  const deferredRows = magicItemsCompendium.buildMagicItemAutomationManifest([
+    { id: "world-special-dagger", name: "Особый Кинжал телепортации" },
+    { id: "world-wound-potion", name: "Зелье заживления ран" },
+    { id: "world-level-one-potion", name: "Зелье лечения 1-го уровня" }
+  ]);
+
+  assert.deepEqual(deferredRows.map(({ name, status }) => ({ name, status })), [
+    { name: "Особый Кинжал телепортации", status: "deferred" },
+    { name: "Зелье заживления ран", status: "deferred" },
+    { name: "Зелье лечения 1-го уровня", status: "deferred" }
+  ]);
+  for (const row of deferredRows) {
+    assert.match(row.reason, /отдельн.*решени/iu, row.name);
+  }
+});
+
+test("magic item automation manifest distinguishes complete and partial activity coverage", () => {
+  const ids = [
+    "шлем-понимания-языков",
+    "аметистовый-магнетит",
+    "посох-огня",
+    "печатка-гильдии-груул",
+    "печатка-гильдии-иззет"
+  ];
+  const sourceById = new Map(MAGIC_ITEMS.map((item) => [item.id, item]));
+  const byId = new Map(magicItemsCompendium.buildMagicItemAutomationManifest(
+    ids.map((id) => sourceById.get(id))
+  ).map((row) => [row.id, row]));
+
+  assert.equal(byId.get("шлем-понимания-языков").status, "full");
+  assert.equal(byId.get("аметистовый-магнетит").status, "partial");
+  assert.match(byId.get("аметистовый-магнетит").reason, /остальн|ручн/iu);
+  assert.equal(byId.get("посох-огня").status, "partial");
+  assert.match(byId.get("посох-огня").reason, /последн.*заряд|уничтож/iu);
+  for (const id of ["печатка-гильдии-груул", "печатка-гильдии-иззет"]) {
+    assert.equal(byId.get(id).status, "manual", id);
+    assert.match(byId.get(id).reason, /отсутств.*установлен.*compendium/iu, id);
+  }
+});
+
 test("magic item compendium preserves importer IDs as stable document identity", () => {
   const imported = makeMagicItem({
     id: "magic-source-0042",
@@ -249,7 +326,10 @@ test("magic item compendium builds automation for selected magic items", () => {
 
   const watcherShield = magicItemsCompendium.createMagicItemData(byName.get(watcherShieldName), new Map());
   assert.equal(watcherShield.effects.length, 1);
-  assert.match(watcherShield.effects[0].changes.map((entry) => entry.key).join("|"), /flags\.midi-qol\.advantage\.ability\.check\.dex/u);
+  assert.deepEqual(watcherShield.effects[0].changes.map((entry) => entry.key), [
+    "system.attributes.init.roll.mode",
+    "system.skills.prc.roll.mode"
+  ]);
 
   const hoardingPouch = magicItemsCompendium.createMagicItemData(byName.get(hoardingPouchName), new Map());
   assert.equal(hoardingPouch.type, "container");
@@ -324,7 +404,7 @@ test("magic item compendium projects the approved passive automation matrix", ()
       ["system.abilities.str.max", 4, "21"]
     ]],
     ["очки-орлиного-зрения", [
-      ["flags.midi-qol.advantage.skill.prc", 0, "1"]
+      ["system.skills.prc.roll.mode", 2, "1"]
     ]]
   ]);
   const normalized = magicItemsCompendium.normalizeMagicItems(
@@ -358,6 +438,348 @@ test("magic item compendium projects the approved passive automation matrix", ()
     lunarSickle.effects.some((effect) => effect.changes.some((change) => change.key === "system.bonuses.healing")),
     false
   );
+});
+
+test("magic item compendium projects every flat skill bonus family", () => {
+  const families = new Map([
+    ["амулет-натуралиста", "nat"],
+    ["брошь-дипломата", "per"],
+    ["линзы-сыщика", "inv"],
+    ["маска-лжеца", "dec"],
+    ["медальон-религиозности", "rel"],
+    ["обруч-заклинателя", "arc"],
+    ["очки-летописца", "his"],
+    ["очки-наблюдателя", "prc"],
+    ["очки-проницательности", "ins"],
+    ["перчатки-виртуоза", "prf"],
+    ["перчатки-лекаря", "med"],
+    ["перчатки-ловкача", "slt"],
+    ["перчатки-укротителя", "ani"],
+    ["плащ-лазутчика", "ste"],
+    ["пояс-атлета", "ath"],
+    ["сапоги-акробата", "acr"],
+    ["сапоги-следопыта", "sur"],
+    ["угрожающий-амулет", "itm"]
+  ]);
+  const sourceById = new Map(MAGIC_ITEMS.map((item) => [item.id, item]));
+
+  for (const [family, skillId] of families) {
+    for (const bonus of [1, 2, 3]) {
+      const itemId = `${family}-${bonus}`;
+      const [normalized] = magicItemsCompendium.normalizeMagicItems([sourceById.get(itemId)]);
+      const created = magicItemsCompendium.createMagicItemData(normalized, new Map());
+      assert.deepEqual(created.effects[0]?.changes, [{
+        key: `system.skills.${skillId}.bonuses.check`,
+        mode: 2,
+        value: `+${bonus}`,
+        priority: 20
+      }], itemId);
+    }
+  }
+});
+
+test("magic item compendium uses native magical bonuses without duplicate effects", () => {
+  const sourceById = new Map(MAGIC_ITEMS.map((item) => [item.id, item]));
+  const cases = [
+    ["оружие-1", "system.magicalBonus", 1],
+    ["оружие-2", "system.magicalBonus", 2],
+    ["оружие-3", "system.magicalBonus", 3],
+    ["доспех-1", "system.armor.magicalBonus", 1],
+    ["доспех-2", "system.armor.magicalBonus", 2],
+    ["доспех-3", "system.armor.magicalBonus", 3],
+    ["щит-1", "system.armor.magicalBonus", 1],
+    ["щит-2", "system.armor.magicalBonus", 2],
+    ["щит-3", "system.armor.magicalBonus", 3],
+    ["кинжал-яда", "system.magicalBonus", 1],
+    ["дварфийский-метатель", "system.magicalBonus", 3],
+    ["демонический-доспех", "system.armor.magicalBonus", 1],
+    ["щит-черепахи", "system.armor.magicalBonus", 1],
+    ["боевая-кирка-камнетворца", "system.magicalBonus", 1],
+    ["булава-кары", "system.magicalBonus", 1],
+    ["волна", "system.magicalBonus", 3],
+    ["вор-девяти-жизней", "system.magicalBonus", 2],
+    ["двуручный-серебряный-меч", "system.magicalBonus", 3],
+    ["длинный-лук-исцеляющего-очага", "system.magicalBonus", 3],
+    ["доспех-из-драконьей-чешуи", "system.armor.magicalBonus", 1],
+    ["доспех-истовости-3", "system.armor.magicalBonus", 1],
+    ["доспех-последней-битвы", "system.armor.magicalBonus", 1],
+    ["драконье-копье", "system.magicalBonus", 3],
+    ["живой-доспех", "system.armor.magicalBonus", 1],
+    ["защитник", "system.magicalBonus", 3],
+    ["зловещий-коготь", "system.magicalBonus", 1],
+    ["игла-починки", "system.magicalBonus", 1],
+    ["клинок-ахерона", "system.magicalBonus", 1],
+    ["клинок-удачи", "system.magicalBonus", 1],
+    ["кольчуга-ифритов", "system.armor.magicalBonus", 3],
+    ["красивый-проклепанный-кожаный-доспех", "system.armor.magicalBonus", 1],
+    ["крик-жнеца", "system.magicalBonus", 2],
+    ["кровавый-топор", "system.magicalBonus", 2],
+    ["латы-дварфов", "system.armor.magicalBonus", 2],
+    ["ледяной-кинжал", "system.magicalBonus", 2],
+    ["меч-головоруб", "system.magicalBonus", 3],
+    ["меч-мести", "system.magicalBonus", 1],
+    ["меч-ответа", "system.magicalBonus", 3],
+    ["меч-отцов", "system.magicalBonus", 1],
+    ["меч-плановых-измерений", "system.magicalBonus", 3],
+    ["молот-грома", "system.magicalBonus", 1],
+    ["молот-рунного-фокуса", "system.magicalBonus", 3],
+    ["оружие-драконьего-гнева-восходящий", "system.magicalBonus", 1],
+    ["оружие-драконьего-гнева-пробуждающийся", "system.magicalBonus", 1],
+    ["оружие-драконьего-гнева-пробужденный", "system.magicalBonus", 1],
+    ["оружие-повеления-трона", "system.magicalBonus", 1],
+    ["оружие-разрушения-силы", "system.magicalBonus", 2],
+    ["охраняющий-доспех-1", "system.armor.magicalBonus", 2],
+    ["охраняющий-доспех-2", "system.armor.magicalBonus", 3],
+    ["последний-рассвет", "system.magicalBonus", 2],
+    ["праща-двух-зайцев", "system.magicalBonus", 1],
+    ["разрушающий-цеп", "system.magicalBonus", 1],
+    ["ритуальный-нож-ракдосов", "system.magicalBonus", 1],
+    ["сверкающий-лунный-лук", "system.magicalBonus", 1],
+    ["святой-мститель", "system.magicalBonus", 3],
+    ["секира-кровавой-ярости", "system.magicalBonus", 2],
+    ["сокрушитель", "system.magicalBonus", 3],
+    ["солнечный-молот", "system.magicalBonus", 2],
+    ["таранный-щит", "system.armor.magicalBonus", 1],
+    ["топор-берсерка", "system.magicalBonus", 1],
+    ["трезубец-зова-приливов", "system.magicalBonus", 2],
+    ["убийца-великанов", "system.magicalBonus", 1],
+    ["убийца-драконов", "system.magicalBonus", 1],
+    ["убийца-мертвецов", "system.magicalBonus", 1],
+    ["хватающий-кнут", "system.magicalBonus", 1],
+    ["цеп-тиамат", "system.magicalBonus", 3],
+    ["черный-клинок", "system.magicalBonus", 3],
+    ["эльфийская-кольчуга", "system.armor.magicalBonus", 1],
+    ["эльфийский-метатель", "system.magicalBonus", 3],
+    ["посох-грома-и-молнии", "system.magicalBonus", 2],
+    ["посох-корневых-холмов", "system.magicalBonus", 1],
+    ["посох-леса", "system.magicalBonus", 2],
+    ["посох-магов", "system.magicalBonus", 2],
+    ["посох-силы", "system.magicalBonus", 2],
+    ["посох-ударов", "system.magicalBonus", 3],
+    ["солнечный-посох", "system.magicalBonus", 1]
+  ];
+
+  for (const [itemId, path, expected] of cases) {
+    const [normalized] = magicItemsCompendium.normalizeMagicItems([sourceById.get(itemId)]);
+    const created = magicItemsCompendium.createMagicItemData(normalized, new Map());
+    const actual = path.split(".").slice(1).reduce((value, key) => value?.[key], created.system);
+    assert.equal(actual, expected, itemId);
+    assert.equal(created.effects.some((effect) => effect.changes.some((change) => (
+      change.key === "system.bonuses.mwak.attack"
+      || change.key === "system.bonuses.mwak.damage"
+      || change.key === "system.attributes.ac.bonus"
+    ))), false, itemId);
+  }
+});
+
+test("magic item compendium projects every flat spellcasting bonus family", () => {
+  const families = new Map([
+    ["амулет-благочестия", { dc: true }],
+    ["барабан-задающего-ритм", { dc: true }],
+    ["лунный-серп", { dc: true }],
+    ["универсальный-инструмент", { dc: true }],
+    ["жезл-хранителя-договора", { dc: true }],
+    ["волшебная-палочка-боевого-мага", { dc: false }]
+  ]);
+  const sourceById = new Map(MAGIC_ITEMS.map((item) => [item.id, item]));
+
+  for (const [family, { dc }] of families) {
+    for (const bonus of [1, 2, 3]) {
+      const itemId = `${family}-${bonus}`;
+      const [normalized] = magicItemsCompendium.normalizeMagicItems([sourceById.get(itemId)]);
+      const created = magicItemsCompendium.createMagicItemData(normalized, new Map());
+      assert.deepEqual(created.effects[0]?.changes.map(({ key, value }) => [key, value]), [
+        ["system.bonuses.msak.attack", `+${bonus}`],
+        ["system.bonuses.rsak.attack", `+${bonus}`],
+        ...(dc ? [["system.bonuses.spell.dc", `+${bonus}`]] : [])
+      ], itemId);
+    }
+  }
+});
+
+test("magic item compendium projects representative core dnd5e passive paths", () => {
+  const sourceById = new Map(MAGIC_ITEMS.map((item) => [item.id, item]));
+  const expected = new Map([
+    ["амулет-благочестия-3", [
+      ["system.bonuses.msak.attack", 2, "+3"],
+      ["system.bonuses.rsak.attack", 2, "+3"],
+      ["system.bonuses.spell.dc", 2, "+3"]
+    ]],
+    ["амулет-здоровья", [
+      ["system.abilities.con.value", 2, "+4"],
+      ["system.abilities.con.max", 4, "19"]
+    ]],
+    ["сапоги-странника", [
+      ["system.attributes.movement.walk", 2, "+10"],
+      ["system.skills.sur.roll.mode", 2, "1"]
+    ]],
+    ["брошь-защиты", [
+      ["system.traits.dr.value", 2, "force"]
+    ]],
+    ["татуировка-с-клеймом-царства-теней", [
+      ["system.attributes.senses.darkvision", 4, "60"],
+      ["system.skills.ste.roll.mode", 2, "1"]
+    ]],
+    ["жезл-бдительности", [
+      ["system.attributes.ac.bonus", 2, "+1"],
+      ["system.bonuses.abilities.save", 2, "+1"],
+      ["system.attributes.init.roll.mode", 2, "1"],
+      ["system.skills.prc.roll.mode", 2, "1"]
+    ]],
+    ["щит-часового", [
+      ["system.attributes.init.roll.mode", 2, "1"],
+      ["system.skills.prc.roll.mode", 2, "1"]
+    ]]
+  ]);
+
+  for (const [itemId, changes] of expected) {
+    const [normalized] = magicItemsCompendium.normalizeMagicItems([sourceById.get(itemId)]);
+    const created = magicItemsCompendium.createMagicItemData(normalized, new Map());
+    assert.deepEqual(created.effects[0]?.changes.map((change) => [
+      change.key,
+      change.mode,
+      change.value
+    ]), changes, itemId);
+  }
+});
+
+test("gap-scan flat AC and spell-attack rows receive only their unconditional bonuses", () => {
+  const sourceById = new Map(MAGIC_ITEMS.map((item) => [item.id, item]));
+  for (const bonus of [1, 2, 3]) {
+    const itemId = `кольцо-защиты-${bonus}`;
+    const [item] = magicItemsCompendium.normalizeMagicItems([sourceById.get(itemId)]);
+    const created = magicItemsCompendium.createMagicItemData(item, new Map());
+    assert.deepEqual(created.effects[0]?.changes.map(({ key, mode, value }) => [key, mode, value]), [
+      ["system.attributes.ac.bonus", 2, `+${bonus}`]
+    ], itemId);
+  }
+
+  const nativeCases = [
+    ["охотничье-пальто", "system.armor.magicalBonus", 1],
+    ["посох-ослепляющий-небеса", "system.magicalBonus", 1]
+  ];
+  for (const [itemId, path, bonus] of nativeCases) {
+    const [item] = magicItemsCompendium.normalizeMagicItems([sourceById.get(itemId)]);
+    const created = magicItemsCompendium.createMagicItemData(item, new Map());
+    const value = path === "system.magicalBonus"
+      ? created.system.magicalBonus
+      : created.system.armor?.magicalBonus;
+    assert.equal(value, bonus, itemId);
+    assert.equal(created.effects.some((effect) => effect.changes.some((change) => change.key === "system.attributes.ac.bonus")), false, itemId);
+  }
+
+  for (const itemId of ["посох-костяного-когтя", "посох-ослепляющий-небеса"]) {
+    const [item] = magicItemsCompendium.normalizeMagicItems([sourceById.get(itemId)]);
+    const created = magicItemsCompendium.createMagicItemData(item, new Map());
+    assert.deepEqual(created.effects[0]?.changes.map(({ key, mode, value }) => [key, mode, value]), [
+      ["system.bonuses.msak.attack", 2, "+1"],
+      ["system.bonuses.rsak.attack", 2, "+1"]
+    ], itemId);
+  }
+
+  for (const conditionalId of ["наручи-защиты", "ловящий-стрелы-щит", "щит-парии", "маска-шута"]) {
+    const [item] = magicItemsCompendium.normalizeMagicItems([sourceById.get(conditionalId)]);
+    assert.deepEqual(magicItemsCompendium.createMagicItemData(item, new Map()).effects, [], conditionalId);
+  }
+});
+
+test("magic item compendium projects the audited unconditional passive catalog", () => {
+  const expected = new Map([
+    ["адамантитовый-щит", [["system.bonuses.abilities.save", 2, "+1"]]],
+    ["доспех-истовости-1", [["system.bonuses.abilities.save", 2, "+2"]]],
+    ["доспех-истовости-2", [["system.bonuses.abilities.save", 2, "+3"]]],
+    ["доспех-истовости-3", [["system.bonuses.abilities.save", 2, "+1"]]],
+    ["охраняющий-доспех-1", [["system.bonuses.abilities.save", 2, "+2"]]],
+    ["охраняющий-доспех-2", [["system.bonuses.abilities.save", 2, "+3"]]],
+    ["клинок-удачи", [["system.bonuses.abilities.save", 2, "+1"]]],
+    ["мантия-звезд", [["system.bonuses.abilities.save", 2, "+1"]]],
+    ["укус-харкона", [
+      ["system.bonuses.abilities.check", 2, "+1"],
+      ["system.bonuses.abilities.save", 2, "+1"]
+    ]],
+    ["великая-повязка-интеллекта", [
+      ["system.abilities.int.value", 2, "+3"],
+      ["system.abilities.int.max", 4, "25"]
+    ]],
+    ["повязка-интеллекта", [
+      ["system.abilities.int.value", 2, "+3"],
+      ["system.abilities.int.max", 4, "19"]
+    ]],
+    ["пояс-силы-громового-великана", [
+      ["system.abilities.str.value", 2, "+7"],
+      ["system.abilities.str.max", 4, "29"]
+    ]],
+    ["пояс-силы-каменного-великана", [
+      ["system.abilities.str.value", 2, "+4"],
+      ["system.abilities.str.max", 4, "23"]
+    ]],
+    ["пояс-силы-облачного-великана", [
+      ["system.abilities.str.value", 2, "+7"],
+      ["system.abilities.str.max", 4, "27"]
+    ]],
+    ["пояс-силы-огненного-великана", [
+      ["system.abilities.str.value", 2, "+5"],
+      ["system.abilities.str.max", 4, "25"]
+    ]],
+    ["рукавицы-силы-огра", [
+      ["system.abilities.str.value", 2, "+4"],
+      ["system.abilities.str.max", 4, "16"]
+    ]],
+    ["пояс-дварфов", [
+      ["system.abilities.con.value", 2, "+2"],
+      ["system.abilities.con.max", 4, "20"]
+    ]],
+    ["сфера-вуали", [
+      ["system.abilities.wis.value", 2, "+2"],
+      ["system.abilities.wis.max", 2, "+2"],
+      ["system.attributes.senses.darkvision", 2, "+60"]
+    ]],
+    ["амулет-молниеносного-движения", [["system.attributes.movement.walk", 2, "+15"]]],
+    ["кольцо-плавания", [["system.attributes.movement.swim", 4, "40"]]],
+    ["сапоги-ходьбы-и-прыжков", [["system.attributes.movement.walk", 4, "30"]]],
+    ["мантия-плута", [["system.attributes.senses.darkvision", 2, "+60"]]],
+    ["светящийся-рунический-пигмент", [["system.attributes.senses.darkvision", 2, "+30"]]],
+    ["амулет-святилища", [["system.traits.dr.value", 2, "necrotic"]]],
+    ["двуручный-серебряный-меч", [
+      ["system.traits.dr.value", 2, "psychic"],
+      ["system.traits.ci.value", 2, "charmed"]
+    ]],
+    ["живой-доспех", [
+      ["system.traits.dr.value", 2, "necrotic"],
+      ["system.traits.dr.value", 2, "psychic"],
+      ["system.traits.dr.value", 2, "poison"]
+    ]],
+    ["кольчуга-ифритов", [["system.traits.di.value", 2, "fire"]]],
+    ["кираса-камнелома", [
+      ["system.traits.dr.value", 2, "bludgeoning"],
+      ["system.traits.dr.value", 2, "piercing"],
+      ["system.traits.dr.value", 2, "slashing"],
+      ["system.traits.ci.value", 2, "prone"]
+    ]],
+    ["жезл-адского-пламени", [["system.traits.dr.value", 2, "fire"]]],
+    ["мантия-мистраля", [["system.traits.dr.value", 2, "cold"]]],
+    ["морозный-клинок", [["system.traits.dr.value", 2, "fire"]]],
+    ["посох-мороза", [["system.traits.dr.value", 2, "cold"]]],
+    ["посох-огня", [["system.traits.dr.value", 2, "fire"]]],
+    ["шлем-череп", [
+      ["system.traits.dr.value", 2, "cold"],
+      ["system.traits.dr.value", 2, "poison"],
+      ["system.traits.dr.value", 2, "necrotic"]
+    ]],
+    ["эгида-эвриаллы", [
+      ["system.traits.dr.value", 2, "poison"],
+      ["system.traits.ci.value", 2, "petrified"]
+    ]],
+    ["перчатки-воровства", [["system.skills.slt.bonuses.check", 2, "+5"]]],
+    ["очки-орлиного-зрения", [["system.skills.prc.roll.mode", 2, "1"]]]
+  ]);
+  const sourceById = new Map(MAGIC_ITEMS.map((item) => [item.id, item]));
+
+  for (const [itemId, changes] of expected) {
+    const [normalized] = magicItemsCompendium.normalizeMagicItems([sourceById.get(itemId)]);
+    const created = magicItemsCompendium.createMagicItemData(normalized, new Map());
+    assert.deepEqual(created.effects[0]?.changes.map(({ key, mode, value }) => [key, mode, value]), changes, itemId);
+  }
 });
 
 test("magic instruments expose independent native cast activities", () => {
@@ -518,6 +940,247 @@ test("charged magic items expose native spell activities with shared item uses",
   }
 });
 
+test("catalog spell activities cover shared, separate, unlimited, and scalable resource contracts", () => {
+  const sourceById = new Map(MAGIC_ITEMS.map((item) => [item.id, item]));
+  const itemIds = [
+    "посох-огня",
+    "посох-мороза",
+    "волшебная-палочка-сковывания",
+    "волшебная-палочка-огненных-шаров",
+    "трезубец-зова-приливов",
+    "шлем-телепатии",
+    "шлем-понимания-языков",
+    "шлем-телепортации"
+  ];
+  const createdById = new Map(magicItemsCompendium.normalizeMagicItems(
+    itemIds.map((id) => sourceById.get(id))
+  ).map((item) => [item.id, magicItemsCompendium.createMagicItemData(item, new Map())]));
+
+  const expectedShared = new Map([
+    ["посох-огня", ["10", "1d6 + 4"]],
+    ["посох-мороза", ["10", "1d6 + 4"]],
+    ["волшебная-палочка-сковывания", ["7", "1d6 + 1"]],
+    ["волшебная-палочка-огненных-шаров", ["7", "1d6 + 1"]],
+    ["трезубец-зова-приливов", ["3", "1d3"]],
+    ["шлем-телепортации", ["3", "1d3"]]
+  ]);
+  for (const [itemId, [max, formula]] of expectedShared) {
+    assert.deepEqual(createdById.get(itemId).system.uses, {
+      spent: 0,
+      max,
+      recovery: [{ period: "dawn", type: "formula", formula }]
+    }, itemId);
+  }
+
+  const spellCases = [
+    ["посох-огня", "Burning Hands", "phbsplBurningHan", 1, "1"],
+    ["посох-огня", "Fireball", "phbsplFireball00", 3, "3"],
+    ["посох-огня", "Wall of Fire", "phbsplWallofFire", 4, "4"],
+    ["посох-мороза", "Cone of Cold", "phbsplConeofCold", 5, "5"],
+    ["посох-мороза", "Fog Cloud", "phbsplFogCloud00", 1, "1"],
+    ["посох-мороза", "Ice Storm", "phbsplIceStorm00", 4, "4"],
+    ["посох-мороза", "Wall of Ice", "phbsplWallofIce0", 6, "4"],
+    ["волшебная-палочка-сковывания", "Hold Monster", "phbsplHoldMonste", 5, "5"],
+    ["волшебная-палочка-сковывания", "Hold Person", "phbsplHoldPerson", 2, "2"],
+    ["трезубец-зова-приливов", "Control Water", "phbsplControlWat", 4, "1"],
+    ["трезубец-зова-приливов", "Tsunami", "phbsplTsunami000", 8, "3"],
+    ["шлем-телепортации", "Teleport", "phbsplTeleport00", 7, "1"]
+  ];
+  for (const [itemId, name, spellId, level, cost] of spellCases) {
+    const activity = Object.values(createdById.get(itemId).system.activities ?? {})
+      .find((entry) => entry.name === name);
+    assert.ok(activity, `${itemId}:${name}`);
+    assert.equal(activity.spell.uuid, `Compendium.dnd5e.spells24.Item.${spellId}`);
+    assert.equal(activity.spell.level, level);
+    assert.deepEqual(activity.consumption.targets[0], {
+      type: "itemUses",
+      target: "",
+      value: cost,
+      scaling: { mode: "", formula: "" }
+    });
+  }
+
+  const scalable = Object.values(createdById.get("волшебная-палочка-огненных-шаров").system.activities)[0];
+  assert.equal(scalable.consumption.scaling.allowed, true);
+  assert.equal(scalable.consumption.scaling.max, "min(@item.uses.value,3)");
+  assert.deepEqual(scalable.consumption.targets[0].scaling, { mode: "amount", formula: "" });
+
+  const telepathy = Object.values(createdById.get("шлем-телепатии").system.activities);
+  const detectThoughts = telepathy.find((activity) => activity.name === "Detect Thoughts");
+  const suggestion = telepathy.find((activity) => activity.name === "Suggestion");
+  assert.deepEqual(detectThoughts.consumption.targets, []);
+  assert.equal(detectThoughts.uses, undefined);
+  assert.deepEqual(detectThoughts.spell.challenge, { attack: null, save: 13, override: true });
+  assert.deepEqual(suggestion.consumption.targets, [{ type: "activityUses", value: "1" }]);
+  assert.deepEqual(suggestion.uses, {
+    spent: 0,
+    max: "1",
+    recovery: [{ period: "dawn", type: "recoverAll", formula: "" }]
+  });
+
+  const comprehend = Object.values(createdById.get("шлем-понимания-языков").system.activities)[0];
+  assert.equal(comprehend.spell.uuid, "Compendium.dnd5e.spells24.Item.phbsplComprehend");
+  assert.deepEqual(comprehend.consumption.targets, []);
+  assert.equal(comprehend.uses, undefined);
+});
+
+test("all guild signets expose their one explicit spell through the shared three-charge pool", () => {
+  const expected = new Map([
+    ["печатка-гильдии-азориус", "phbsplEnsnaringS"],
+    ["печатка-гильдии-бороса", "phbsplHeroism000"],
+    ["печатка-гильдии-голгари", "phbsplEntangle00"],
+    ["печатка-гильдии-димир", "phbsplDisguiseSe"],
+    ["печатка-гильдии-орзова", "phbsplCommand000"],
+    ["печатка-гильдии-ракдоса", "phbsplHellishReb"],
+    ["печатка-гильдии-селезнии", "phbsplCharmPerso"],
+    ["печатка-гильдии-симиков", "phbsplExpeditiou"]
+  ]);
+  const sourceById = new Map(MAGIC_ITEMS.map((item) => [item.id, item]));
+
+  for (const [itemId, spellId] of expected) {
+    const [item] = magicItemsCompendium.normalizeMagicItems([sourceById.get(itemId)]);
+    const created = magicItemsCompendium.createMagicItemData(item, new Map());
+    assert.deepEqual(created.system.uses, {
+      spent: 0,
+      max: "3",
+      recovery: [{ period: "dawn", type: "formula", formula: "1d3" }]
+    }, itemId);
+    const activities = Object.values(created.system.activities ?? {});
+    assert.equal(activities.length, 1, itemId);
+    assert.equal(activities[0].spell.uuid, `Compendium.dnd5e.spells24.Item.${spellId}`, itemId);
+    assert.equal(activities[0].consumption.targets[0].value, "1", itemId);
+  }
+
+  for (const unsupportedId of ["печатка-гильдии-груул", "печатка-гильдии-иззет"]) {
+    const [unsupported] = magicItemsCompendium.normalizeMagicItems([sourceById.get(unsupportedId)]);
+    const data = magicItemsCompendium.createMagicItemData(unsupported, new Map());
+    assert.equal(data.system.activities, undefined, unsupportedId);
+    assert.equal(magicItemsCompendium.buildMagicItemAutomationManifest([unsupported])[0].status, "manual");
+  }
+});
+
+test("remaining named instruments expose every explicit once-per-dawn spell", () => {
+  const expectedById = new Map([
+    ["арфа-анструт", ["phbsplControlWea", "phbEvilAndGoodPr", "phbsplLevitate00", "phbsplCureWounds", "phbsplInvisibili", "phbsplFly0000000", "phbsplWallofThor"]],
+    ["арфа-оллава", ["phbsplControlWea", "phbEvilAndGoodPr", "phbsplLevitate00", "phbsplInvisibili", "phbsplFireStorm0", "phbsplConfusion0", "phbsplFly0000000"]],
+    ["мандолина-канаит", ["phbEvilAndGoodPr", "phbProtectionFro", "phbsplLevitate00", "phbsplCureWounds", "phbsplDispelMagi", "phbsplInvisibili", "phbsplFly0000000"]],
+    ["цитра-мак-фуирми", ["phbsplBarkskin00", "phbEvilAndGoodPr", "phbsplLevitate00", "phbsplCureWounds", "phbsplInvisibili", "phbsplFly0000000", "phbsplFogCloud00"]]
+  ]);
+  const sourceById = new Map(MAGIC_ITEMS.map((item) => [item.id, item]));
+  for (const [itemId, spellIds] of expectedById) {
+    const [item] = magicItemsCompendium.normalizeMagicItems([sourceById.get(itemId)]);
+    const created = magicItemsCompendium.createMagicItemData(item, new Map());
+    const activities = Object.values(created.system.activities ?? {});
+    assert.deepEqual(
+      activities.map((activity) => activity.spell.uuid),
+      spellIds.map((id) => `Compendium.dnd5e.spells24.Item.${id}`),
+      itemId
+    );
+    for (const activity of activities) {
+      assert.deepEqual(activity.consumption.targets, [{ type: "activityUses", value: "1" }]);
+      assert.deepEqual(activity.uses?.recovery, [{ period: "dawn", type: "recoverAll", formula: "" }]);
+    }
+  }
+});
+
+test("straightforward catalog spell items use exact native spell and resource projections", () => {
+  const cases = [
+    ["волшебная-палочка-обнаружения-магии", "Detect Magic", "phbsplDetectMagi", "3", "1d3", "1"],
+    ["волшебная-палочка-молний", "Lightning Bolt", "phbsplLightningB", "7", "1d6 + 1", "1"],
+    ["волшебная-палочка-паутины", "Web", "phbsplWeb0000000", "7", "1d6 + 1", "1"],
+    ["волшебная-палочка-превращения", "Polymorph", "phbsplPolymorph0", "7", "1d6 + 1", "1"],
+    ["волшебная-палочка-снарядов", "Magic Missile", "phbsplMagicMissi", "7", "1d6 + 1", "1"],
+    ["посох-лечения", "Mass Cure Wounds", "phbsplMassCureWo", "10", "1d6 + 4", "5"],
+    ["трезубец-командования-рыбами", "Dominate Beast", "phbsplDominateBe", "3", "1d3", "1"],
+    ["медальон-мыслей", "Detect Thoughts", "phbsplDetectThou", "3", "1d3", "1"],
+    ["кольцо-затуманивания", "Fog Cloud", "phbsplFogCloud00", "3", "1d3", "1"]
+  ];
+  const sourceById = new Map(MAGIC_ITEMS.map((item) => [item.id, item]));
+  for (const [itemId, name, spellId, max, recovery, cost] of cases) {
+    const [item] = magicItemsCompendium.normalizeMagicItems([sourceById.get(itemId)]);
+    const created = magicItemsCompendium.createMagicItemData(item, new Map());
+    assert.deepEqual(created.system.uses, {
+      spent: 0,
+      max,
+      recovery: [{ period: "dawn", type: "formula", formula: recovery }]
+    }, itemId);
+    const activity = Object.values(created.system.activities ?? {})
+      .find((entry) => entry.name === name);
+    assert.ok(activity, `${itemId}:${name}`);
+    assert.equal(activity.spell.uuid, `Compendium.dnd5e.spells24.Item.${spellId}`);
+    assert.equal(activity.consumption.targets[0].value, cost);
+  }
+
+  const independentCases = [
+    ["игла-починки", "Mending", "phbsplMending000", null, "action"],
+    ["шапка-маскировки", "Disguise Self", "phbsplDisguiseSe", null, "action"],
+    ["татуировка-маскарада", "Disguise Self", "phbsplDisguiseSe", "dawn", "action"],
+    ["сапоги-странника", "Expeditious Retreat", "phbsplExpeditiou", "dawn", "bonus"],
+    ["плащ-шарлатана", "Dimension Door", "phbsplDimensionD", "dawn", "action"]
+  ];
+  for (const [itemId, name, spellId, limit, activation] of independentCases) {
+    const [item] = magicItemsCompendium.normalizeMagicItems([sourceById.get(itemId)]);
+    const created = magicItemsCompendium.createMagicItemData(item, new Map());
+    const activity = Object.values(created.system.activities ?? {})
+      .find((entry) => entry.name === name);
+    assert.ok(activity, `${itemId}:${name}`);
+    assert.equal(activity.spell.uuid, `Compendium.dnd5e.spells24.Item.${spellId}`);
+    assert.equal(activity.activation.type, activation);
+    assert.deepEqual(activity.consumption.targets, limit
+      ? [{ type: "activityUses", value: "1" }]
+      : []);
+    assert.equal(activity.uses?.max, limit ? "1" : undefined);
+  }
+});
+
+test("audited single-spell catalog rows expose their unambiguous cast activity", () => {
+  const cases = [
+    ["аметистовый-магнетит", "phbsplReverseGra", "3"],
+    ["амулет-святилища", "phbsplSparetheDy", null],
+    ["боевая-кирка-камнетворца", "phbsplMeldintoSt", "activity"],
+    ["ветвь-с-колокольчиками", "phbEvilAndGoodPr", "1"],
+    ["визор-данота", "phbsplAntimagicF", "activity"],
+    ["доспех-антимагии", "phbsplAntimagicF", "activity"],
+    ["доспех-защиты", "phbsplBeaconofHo", "activity"],
+    ["доспех-зефира", "phbsplWindWall00", "activity"],
+    ["доспехи-мрака", "phbsplCalmEmotio", "1"],
+    ["доспехи-фей", "phbsplCompulsion", "1"],
+    ["жезл-адского-пламени", "phbsplHellishReb", "activity"],
+    ["камни-послания", "phbsplSending000", "activity"],
+    ["кираса-баланса", "phbsplLesserRest", "2"],
+    ["кираса-камнелома", "phbsplWallofSton", "activity"],
+    ["книга-фокусов", "phbsplPrestidigi", "1"],
+    ["книга-чудотворства", "phbsplThaumaturg", "1"],
+    ["колода-оракула", "phbsplDivination", "activity"],
+    ["корона-несущего-гнев", "phbsplFear000000", "activity"],
+    ["мантия-мистраля", "phbsplSleetStorm", "activity"],
+    ["обруч-сжигания", "phbsplScorchingR", "activity"],
+    ["очки-распознавания-объектов", "phbsplIdentify00", "activity"],
+    ["плащ-летучей-мыши", "phbsplPolymorph0", "activity"],
+    ["плащ-паука", "phbsplWeb0000000", "activity"],
+    ["сокрушитель-сумерек", "phbsplSunbeam000", "activity"],
+    ["тиара-кружащихся-комет", "phbsplIceStorm00", "3"],
+    ["штормовой-пояс", "phbsplControlWea", "activity"]
+  ];
+  const sourceById = new Map(MAGIC_ITEMS.map((item) => [item.id, item]));
+  for (const [itemId, spellId, resource] of cases) {
+    const [item] = magicItemsCompendium.normalizeMagicItems([sourceById.get(itemId)]);
+    const created = magicItemsCompendium.createMagicItemData(item, new Map());
+    const activity = Object.values(created.system.activities ?? {})
+      .find((entry) => entry.spell?.uuid === `Compendium.dnd5e.spells24.Item.${spellId}`);
+    assert.ok(activity, itemId);
+    if (resource === null) {
+      assert.deepEqual(activity.consumption.targets, [], itemId);
+    } else if (resource === "activity") {
+      assert.deepEqual(activity.consumption.targets, [{ type: "activityUses", value: "1" }], itemId);
+      assert.equal(activity.uses.max, "1", itemId);
+    } else {
+      assert.equal(activity.consumption.targets[0]?.type, "itemUses", itemId);
+      assert.equal(activity.consumption.targets[0]?.value, resource, itemId);
+    }
+  }
+});
+
 test("magic items expose approved native utility and poison save activities", () => {
   const sourceById = new Map(MAGIC_ITEMS.map((item) => [item.id, item]));
   const utilityCases = [
@@ -531,7 +1194,16 @@ test("magic items expose approved native utility and poison save activities", ()
     ["универсальный-инструмент-1", "Изменить форму инструмента", "action", null],
     ["универсальный-инструмент-1", "Выбрать заговор", "action", "1"],
     ["амулет-благочестия-1", "Божественный канал без расхода", "special", "1"],
-    ["барабан-задающего-ритм-1", "Восстановить Бардовское вдохновение", "action", "1"]
+    ["барабан-задающего-ритм-1", "Восстановить Бардовское вдохновение", "action", "1"],
+    ["аметистовый-магнетит", "Звёздный полёт", "bonus", "1"],
+    ["аметистовый-магнетит", "Гравитационный бросок", "action", "1"],
+    ["амулет-святилища", "Пробудить руну", "reaction", "1"],
+    ["ветвь-с-колокольчиками", "Обнаружить существ", "bonus", "1"],
+    ["волшебная-палочка-сковывания", "Помощь в освобождении", "reaction", "1"],
+    ["доспех-антимагии", "Защита от заклинания", "reaction", "1"],
+    ["тиара-кружащихся-комет", "Звёздный полёт", "bonus", "1"],
+    ["сокрушитель-сумерек", "Зажечь навершие", "bonus", null],
+    ["сокрушитель-сумерек", "Погасить навершие", "action", null]
   ];
   const ids = [...new Set(utilityCases.map(([id]) => id))];
   const createdById = new Map(magicItemsCompendium.normalizeMagicItems(
@@ -567,6 +1239,16 @@ test("magic items expose approved native utility and poison save activities", ()
     spent: 0,
     max: "3",
     recovery: [{ period: "dawn", type: "formula", formula: "1d3" }]
+  });
+  assert.deepEqual(createdById.get("амулет-святилища").system.uses, {
+    spent: 0,
+    max: "1",
+    recovery: [{ period: "dawn", type: "recoverAll", formula: "" }]
+  });
+  assert.deepEqual(createdById.get("доспех-антимагии").system.uses, {
+    spent: 0,
+    max: "1",
+    recovery: [{ period: "dawn", type: "recoverAll", formula: "" }]
   });
 
   const poisonSave = Object.values(createdById.get("кинжал-яда").system.activities)

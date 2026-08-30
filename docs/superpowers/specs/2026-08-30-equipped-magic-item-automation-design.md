@@ -270,6 +270,12 @@ README описывает автоматический lifecycle, охват в�
 
 `magicItem.js` является generated source и вручную не редактируется. Он меняется только через unified equipment importer, если source-описание или stable identity действительно требует исправления.
 
+## Результат полного аудита каталога
+
+Первичный acceptance corpus расширен на все 655 stable rows `MAGIC_ITEMS`. Канонический машинный manifest строится `buildMagicItemAutomationManifest(items = MAGIC_ITEMS)`, а его reviewable snapshot находится в `docs/magic-item-automation-audit.md`. На версии 1.4.187 итоговая классификация каталога: 197 `full`, 59 `partial`, 399 `manual`; три исключённые world-карточки перечислены отдельно как `deferred`, поскольку они не являются строками `MAGIC_ITEMS`.
+
+Проекция дополнительно покрывает все явные семейства skill/spell bonuses, native weapon/armor/shield magical bonuses, подтверждённые unconditional resistance/immunity/movement/senses paths, все семь именованных инструментов бардов, однозначные guild signets с доступным official spell UUID, типовые волшебные палочки/посохи/трезубцы и отдельные простые `unlimited`, `1/dawn`, shared-charge cast/utility activities. Если часть свойства (условие, уничтожение на последнем заряде, выбор формы/цели или runtime mutation) не выражается native dnd5e activity/effect, строка остаётся `partial` с причиной; отсутствующие в установленных spell packs `Chaos Bolt` и `Compelled Duel` не получают выдуманных UUID.
+
 ## Focused-тесты
 
 ### Compendium projection
