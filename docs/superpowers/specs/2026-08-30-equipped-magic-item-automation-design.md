@@ -272,15 +272,15 @@ README описывает автоматический lifecycle, охват в�
 
 ## Результат полного аудита каталога
 
-Acceptance corpus охватывает все 655 stable rows `MAGIC_ITEMS`. Канонический машинный manifest строится `buildMagicItemAutomationManifest(items = MAGIC_ITEMS)`, а rarity-aware gap report — `buildMagicItemAutomationGapReport(items = MAGIC_ITEMS)`; их reviewable snapshot находится в `docs/magic-item-automation-audit.md`. После второго прохода классификация каталога: 209 `full`, 151 `partial`, 295 `manual`; три исключённые world-карточки перечислены отдельно как `deferred`, поскольку они не являются строками `MAGIC_ITEMS`.
+Acceptance corpus охватывает все 655 stable rows `MAGIC_ITEMS`. Канонический машинный manifest строится `buildMagicItemAutomationManifest(items = MAGIC_ITEMS)`, а rarity-aware gap report — `buildMagicItemAutomationGapReport(items = MAGIC_ITEMS)`; их reviewable snapshot находится в `docs/magic-item-automation-audit.md`. После продолжения data-driven прохода классификация каталога: 210 `full`, 170 `partial`, 275 `manual`; три исключённые world-карточки перечислены отдельно как `deferred`, поскольку они не являются строками `MAGIC_ITEMS`.
 
 | Редкость | Всего | Full | Partial | Manual |
 | --- | ---: | ---: | ---: | ---: |
 | Обычный | 102 | 32 | 16 | 54 |
-| Необычный | 165 | 62 | 37 | 66 |
-| Редкий | 187 | 61 | 38 | 88 |
-| Очень редкий | 120 | 32 | 36 | 52 |
-| Легендарный | 79 | 22 | 24 | 33 |
+| Необычный | 165 | 63 | 42 | 60 |
+| Редкий | 187 | 61 | 45 | 81 |
+| Очень редкий | 120 | 32 | 39 | 49 |
+| Легендарный | 79 | 22 | 28 | 29 |
 | Артефакт | 1 | 0 | 0 | 1 |
 | Без редкости | 1 | 0 | 0 | 1 |
 

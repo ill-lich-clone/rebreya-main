@@ -156,7 +156,7 @@ test("magic item automation gap report groups every rarity and flags manual pros
   assert.equal(candidates.has("gap-unclassified"), false);
 });
 
-test("second-pass catalog gap report locks coverage totals by rarity", () => {
+test("catalog gap report locks current coverage totals by rarity", () => {
   const report = magicItemsCompendium.buildMagicItemAutomationGapReport();
   assert.equal(report.total, 655);
   assert.deepEqual(
@@ -170,10 +170,10 @@ test("second-pass catalog gap report locks coverage totals by rarity", () => {
     })),
     [
       { rarity: "Обычный", total: 102, full: 32, partial: 16, manual: 54, candidates: 23 },
-      { rarity: "Необычный", total: 165, full: 62, partial: 37, manual: 66, candidates: 47 },
-      { rarity: "Редкий", total: 187, full: 61, partial: 38, manual: 88, candidates: 74 },
-      { rarity: "Очень редкий", total: 120, full: 32, partial: 36, manual: 52, candidates: 39 },
-      { rarity: "Легендарный", total: 79, full: 22, partial: 24, manual: 33, candidates: 32 },
+      { rarity: "Необычный", total: 165, full: 63, partial: 42, manual: 60, candidates: 41 },
+      { rarity: "Редкий", total: 187, full: 61, partial: 45, manual: 81, candidates: 67 },
+      { rarity: "Очень редкий", total: 120, full: 32, partial: 39, manual: 49, candidates: 36 },
+      { rarity: "Легендарный", total: 79, full: 22, partial: 28, manual: 29, candidates: 28 },
       { rarity: "Артефакт", total: 1, full: 0, partial: 0, manual: 1, candidates: 1 },
       { rarity: "Без редкости", total: 1, full: 0, partial: 0, manual: 1, candidates: 0 }
     ]
@@ -506,9 +506,9 @@ test("magic item compendium projects the approved passive automation matrix", ()
       true,
       item.id
     );
-    assert.equal(created.flags["rebreya-main"].magicItemAutomation.version, 2, item.id);
+    assert.equal(created.flags["rebreya-main"].magicItemAutomation.version, 3, item.id);
     const signature = JSON.parse(created.flags["rebreya-main"].signature);
-    assert.equal(signature.magicItemAutomation.version, 2, item.id);
+    assert.equal(signature.magicItemAutomation.version, 3, item.id);
     assert.deepEqual(signature.magicItemAutomation.effects, created.effects, item.id);
   }
 
@@ -1613,6 +1613,94 @@ test("second-pass activities cover attack overrides and newly audited legacy par
   assert.equal(Object.values(createdById.get("посох-ослепляющий-небеса").system.activities)
     .some(({ type, save }) => type === "save" && save.dc.formula === "15"), true);
   assert.equal(Object.values(createdById.get("эгида-эвриаллы").system.activities).length, 4);
+});
+
+test("third-pass manual candidates expose their unambiguous native subset", () => {
+  const sourceById = new Map(MAGIC_ITEMS.map((item) => [item.id, item]));
+  const partialIds = [
+    "волшебная-палочка-секретов",
+    "вечнодымящаяся-бутылка",
+    "татуировка-жутких-когтей",
+    "свирель-канализации",
+    "волшебная-палочка-обнаружения-врагов",
+    "волшебная-палочка-паралича",
+    "волшебная-палочка-страха",
+    "камень-сияния",
+    "крылья-полета",
+    "солнечный-клинок",
+    "язык-пламени",
+    "амулет-планов",
+    "плащ-невидимости",
+    "сапоги-скорости",
+    "татуировка-поглощения",
+    "татуировка-призрачных-шагов",
+    "железная-фляга",
+    "кольцо-призыва-джинна",
+    "щит-пылающего-дредноута"
+  ];
+  const itemIds = ["медальон-здоровья", ...partialIds];
+  const createdById = new Map(magicItemsCompendium.normalizeMagicItems(
+    itemIds.map((id) => sourceById.get(id))
+  ).map((item) => [item.id, magicItemsCompendium.createMagicItemData(item, new Map())]));
+  const manifestById = new Map(magicItemsCompendium.buildMagicItemAutomationManifest(
+    itemIds.map((id) => sourceById.get(id))
+  ).map((row) => [row.id, row]));
+
+  assert.equal(manifestById.get("медальон-здоровья").status, "full");
+  assert.deepEqual(createdById.get("медальон-здоровья").effects[0].changes, [{
+    key: "system.traits.ci.value",
+    mode: 2,
+    value: "diseased",
+    priority: 20
+  }]);
+  for (const id of partialIds) {
+    assert.equal(manifestById.get(id).status, "partial", id);
+    assert.match(manifestById.get(id).reason, /ручн|не автомат|не проец/iu, id);
+  }
+
+  const expectedUses = new Map([
+    ["волшебная-палочка-секретов", ["3", "dawn", "formula", "1d3"]],
+    ["волшебная-палочка-обнаружения-врагов", ["7", "dawn", "formula", "1d6 + 1"]],
+    ["волшебная-палочка-паралича", ["7", "dawn", "formula", "1d6 + 1"]],
+    ["волшебная-палочка-страха", ["7", "dawn", "formula", "1d6 + 1"]],
+    ["камень-сияния", ["50", null, null, null]],
+    ["плащ-невидимости", ["120", null, null, null]],
+    ["сапоги-скорости", ["10", "lr", "recoverAll", ""]],
+    ["татуировка-поглощения", ["1", "dawn", "recoverAll", ""]],
+    ["татуировка-призрачных-шагов", ["3", "dawn", "recoverAll", ""]],
+    ["кольцо-призыва-джинна", ["1", null, null, null]]
+  ]);
+  for (const [id, [max, period, type, formula]] of expectedUses) {
+    const uses = createdById.get(id).system.uses;
+    assert.equal(uses.max, max, id);
+    assert.equal(uses.spent, 0, id);
+    assert.equal(uses.recovery[0]?.period ?? null, period, id);
+    assert.equal(uses.recovery[0]?.type ?? null, type, id);
+    assert.equal(uses.recovery[0]?.formula ?? null, formula, id);
+  }
+
+  const paralysis = Object.values(createdById.get("волшебная-палочка-паралича").system.activities)[0];
+  assert.deepEqual(paralysis.save, { ability: ["con"], dc: { calculation: "", formula: "15" } });
+  const fearActivities = Object.values(createdById.get("волшебная-палочка-страха").system.activities);
+  assert.equal(fearActivities.some(({ spell }) => spell?.uuid === "Compendium.dnd5e.spells24.Item.phbsplCommand000"), true);
+  assert.equal(fearActivities.some(({ save, consumption }) => (
+    save?.dc?.formula === "15" && consumption.targets[0]?.value === "2"
+  )), true);
+
+  const planeShift = Object.values(createdById.get("амулет-планов").system.activities)[0];
+  assert.equal(planeShift.spell.uuid, "Compendium.dnd5e.spells24.Item.phbsplPlaneShift");
+  assert.deepEqual(planeShift.consumption.targets, []);
+  assert.equal(createdById.get("солнечный-клинок").system.magicalBonus, 2);
+
+  const brilliance = Object.values(createdById.get("камень-сияния").system.activities);
+  assert.deepEqual(brilliance.map(({ name, consumption }) => [name, consumption.targets[0]?.value ?? null]), [
+    ["Включить или выключить свет", null],
+    ["Ослепляющий луч", "1"],
+    ["Ослепляющий конус", "5"]
+  ]);
+  const dreadnought = Object.values(createdById.get("щит-пылающего-дредноута").system.activities);
+  assert.equal(dreadnought.some(({ name }) => name === "Активировать щит"), true);
+  assert.equal(dreadnought.some(({ save }) => save?.dc?.formula === "8 + @prof + @abilities.str.mod"), true);
 });
 
 test("every partial manifest row replaces the generic note with a concrete manual remainder", () => {

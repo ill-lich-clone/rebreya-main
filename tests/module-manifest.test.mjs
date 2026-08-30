@@ -63,8 +63,8 @@ test("module manifest loads the stable canonical entrypoint", async () => {
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const [entrypoint] = manifest.esmodules;
 
-  assert.equal(manifest.version, "1.4.188");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.188.js"]);
+  assert.equal(manifest.version, "1.4.189");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.189.js"]);
   assert.doesNotMatch(entrypoint, /[?#]/u);
 
   const entrypointSource = await readFile(new URL(entrypoint, manifestUrl), "utf8");
@@ -299,7 +299,7 @@ test("module keeps recent published entrypoint URLs as canonical compatibility f
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
 
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.188.js"]);
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.189.js"]);
 
   for (const fileName of ["main-1.4.98.js", "main-1.4.99.js", "main-1.4.100.js"]) {
     const forwarderSource = await readFile(new URL(`../scripts/${fileName}`, import.meta.url), "utf8");
@@ -625,11 +625,11 @@ test("automatic owned magic item sync cache-busts its live service graph", async
 
   assert.match(
     entrypointSource,
-    /magic-items-compendium\.js\?v=1\.4\.188-rarity-magic-item-automation/u
+    /magic-items-compendium\.js\?v=1\.4\.189-expanded-magic-item-automation/u
   );
   assert.match(
     compendiumSource,
-    /magic-item-embedded-sync\.js\?v=1\.4\.188-rarity-magic-item-automation/u
+    /magic-item-embedded-sync\.js\?v=1\.4\.189-expanded-magic-item-automation/u
   );
 });
 
