@@ -272,9 +272,19 @@ README описывает автоматический lifecycle, охват в�
 
 ## Результат полного аудита каталога
 
-Первичный acceptance corpus расширен на все 655 stable rows `MAGIC_ITEMS`. Канонический машинный manifest строится `buildMagicItemAutomationManifest(items = MAGIC_ITEMS)`, а его reviewable snapshot находится в `docs/magic-item-automation-audit.md`. На версии 1.4.187 итоговая классификация каталога: 197 `full`, 59 `partial`, 399 `manual`; три исключённые world-карточки перечислены отдельно как `deferred`, поскольку они не являются строками `MAGIC_ITEMS`.
+Acceptance corpus охватывает все 655 stable rows `MAGIC_ITEMS`. Канонический машинный manifest строится `buildMagicItemAutomationManifest(items = MAGIC_ITEMS)`, а rarity-aware gap report — `buildMagicItemAutomationGapReport(items = MAGIC_ITEMS)`; их reviewable snapshot находится в `docs/magic-item-automation-audit.md`. После второго прохода классификация каталога: 209 `full`, 151 `partial`, 295 `manual`; три исключённые world-карточки перечислены отдельно как `deferred`, поскольку они не являются строками `MAGIC_ITEMS`.
 
-Проекция дополнительно покрывает все явные семейства skill/spell bonuses, native weapon/armor/shield magical bonuses, подтверждённые unconditional resistance/immunity/movement/senses paths, все семь именованных инструментов бардов, однозначные guild signets с доступным official spell UUID, типовые волшебные палочки/посохи/трезубцы и отдельные простые `unlimited`, `1/dawn`, shared-charge cast/utility activities. Если часть свойства (условие, уничтожение на последнем заряде, выбор формы/цели или runtime mutation) не выражается native dnd5e activity/effect, строка остаётся `partial` с причиной; отсутствующие в установленных spell packs `Chaos Bolt` и `Compelled Duel` не получают выдуманных UUID.
+| Редкость | Всего | Full | Partial | Manual |
+| --- | ---: | ---: | ---: | ---: |
+| Обычный | 102 | 32 | 16 | 54 |
+| Необычный | 165 | 62 | 37 | 66 |
+| Редкий | 187 | 61 | 38 | 88 |
+| Очень редкий | 120 | 32 | 36 | 52 |
+| Легендарный | 79 | 22 | 24 | 33 |
+| Артефакт | 1 | 0 | 0 | 1 |
+| Без редкости | 1 | 0 | 0 | 1 |
+
+Проекция дополнительно покрывает все явные семейства skill/spell bonuses, native weapon/armor/shield magical bonuses, подтверждённые unconditional resistance/immunity/movement/senses paths, все семь именованных инструментов бардов, однозначные guild signets с доступным official spell UUID, типовые волшебные палочки/посохи/трезубцы и простые `unlimited`, независимые dawn/rest, невосстанавливаемые и shared-charge cast/utility/save activities. Несколько activities с общим пулом расходуют один `system.uses`; независимые свойства владеют собственным `activity.uses`. Если часть свойства (условие, уничтожение на последнем заряде, выбор формы/цели, случайная таблица или runtime mutation) не выражается native dnd5e activity/effect, строка остаётся `partial` с точным перечнем ручного остатка; отсутствующие в установленных spell packs заклинания, включая `Chaos Bolt`, `Compelled Duel`, `Summon Construct` и `Arcane Gate`, не получают выдуманных UUID.
 
 ## Focused-тесты
 
@@ -285,6 +295,8 @@ README описывает автоматический lifecycle, охват в�
 - точные effect keys/modes/values для каждого `effect`-предмета;
 - отсутствие двойного native weapon/armor bonus;
 - точные activity type, activation, spell UUID, uses, shared-resource costs и recovery;
+- rarity-aware итоги и список manual-кандидатов по prose-сигналам;
+- отдельные rest/dawn resources и невосстанавливаемые пулы с `recovery: []`;
 - stable effect/activity IDs и managed flags;
 - включение versioned automation projection в signature;
 - отсутствие effects/activities у control/manual предметов;
