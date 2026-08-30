@@ -51,8 +51,9 @@ function replaceGlobal(name, value) {
 
 test("ready composes spell automation on one registry alongside legacy hook registrations", async () => {
   const Hooks = createHooks();
-  const module = {};
+  const module = { version: "1.4.194" };
   const emittedSocketMessages = [];
+  const createdChatMessages = [];
   const activeGm = { active: true, id: "gm", isGM: true };
   let actorLookups = 0;
   let timerCalls = 0;
@@ -61,6 +62,12 @@ test("ready composes spell automation on one registry alongside legacy hook regi
     replaceGlobal("Actor", class Actor {}),
     replaceGlobal("Item", class Item {}),
     replaceGlobal("Macro", class Macro {}),
+    replaceGlobal("ChatMessage", {
+      async create(data) {
+        createdChatMessages.push(structuredClone(data));
+        return { id: "module-version-notice" };
+      }
+    }),
     replaceGlobal("CONFIG", {}),
     replaceGlobal("fromUuid", async () => {
       actorLookups += 1;
@@ -109,6 +116,12 @@ test("ready composes spell automation on one registry alongside legacy hook regi
     RebreyaMainModule.prototype.initialize = async () => {};
 
     await Hooks.onceCallbacks.get("ready")();
+
+    assert.deepEqual(createdChatMessages, [{
+      user: "gm",
+      whisper: ["gm"],
+      content: "<p>Rebreya Main v1.4.194 загружен.</p>"
+    }]);
 
     const moduleApi = module.api;
     const equippedSyncResult = { dryRun: true, updated: [] };

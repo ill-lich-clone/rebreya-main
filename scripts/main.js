@@ -1,5 +1,6 @@
 // @rebreya-role canonical-composition-root
-import { MODULE_ID, SETTINGS_KEYS } from "./constants.js";
+import { MODULE_ID, MODULE_TITLE, SETTINGS_KEYS } from "./constants.js";
+import { escapeFoundryHtml } from "./shared/foundry-values.js";
 import { MaterialsCompendiumService } from "./data/materials-compendium.js";
 import { GearCompendiumService } from "./data/gear-compendium.js?v=1.4.145-coin-icons-storage-sound";
 import { repairWorldAmmunitionCompatibility } from "./data/ammunition-compatibility.js?v=1.4.147-native-ammunition";
@@ -395,6 +396,30 @@ const ENVIRONMENT_STATUS_VERSION = "surrounded-ac-1";
 const COUNTERSPELL_AUTOMATION_ENABLED = true;
 let socketModuleApi = null;
 const queuedSocketMessages = [];
+
+export async function publishModuleVersionNotice({
+  moduleEntry = globalThis.game?.modules?.get?.(MODULE_ID),
+  user = globalThis.game?.user,
+  createChatMessage = globalThis.ChatMessage?.create?.bind(globalThis.ChatMessage),
+  logger = console
+} = {}) {
+  const userId = String(user?.id ?? "").trim();
+  const version = String(moduleEntry?.version ?? "").trim();
+  if (!userId || !version || typeof createChatMessage !== "function") return false;
+
+  try {
+    await createChatMessage({
+      user: userId,
+      whisper: [userId],
+      content: `<p>${MODULE_TITLE} v${escapeFoundryHtml(version)} загружен.</p>`
+    });
+    return true;
+  }
+  catch (error) {
+    logger?.warn?.(`${MODULE_ID} | Failed to publish module version notice.`, error);
+    return false;
+  }
+}
 
 function registerDurabilitySettings() {
   game.settings.register(MODULE_ID, SETTINGS_KEYS.DURABILITY_MUTATION_JOURNAL, {
@@ -6961,6 +6986,7 @@ Hooks.once("ready", async () => {
 
   try {
     await moduleApi.initialize();
+    await publishModuleVersionNotice({ moduleEntry: module, user: game.user });
   }
   catch (error) {
     console.error(`${MODULE_ID} | Failed to initialize module.`, error);

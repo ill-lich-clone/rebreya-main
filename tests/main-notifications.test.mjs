@@ -94,3 +94,61 @@ test("openInventoryApp keeps the original failure when Foundry notifications are
     fixture.restore();
   }
 });
+
+test("module version notice whispers the loaded manifest version only to the current user", async () => {
+  const fixture = installMainModuleFixture();
+  const created = [];
+
+  try {
+    const main = await import(`../scripts/main.js?notification-version=${Date.now()}`);
+    assert.equal(typeof main.publishModuleVersionNotice, "function");
+
+    const published = await main.publishModuleVersionNotice({
+      moduleEntry: { version: "9.8.<7>" },
+      user: { id: "player-17" },
+      createChatMessage: async (data) => {
+        created.push(data);
+        return { id: "notice-1" };
+      }
+    });
+
+    assert.equal(published, true);
+    assert.deepEqual(created, [{
+      user: "player-17",
+      whisper: ["player-17"],
+      content: "<p>Rebreya Main v9.8.&lt;7&gt; загружен.</p>"
+    }]);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("module version notice failure stays presentation-only", async () => {
+  const fixture = installMainModuleFixture();
+  const warnings = [];
+
+  try {
+    const main = await import(`../scripts/main.js?notification-version-error=${Date.now()}`);
+    assert.equal(typeof main.publishModuleVersionNotice, "function");
+
+    const published = await main.publishModuleVersionNotice({
+      moduleEntry: { version: "9.8.7" },
+      user: { id: "player-17" },
+      createChatMessage: async () => {
+        throw new Error("chat unavailable");
+      },
+      logger: {
+        warn(...args) {
+          warnings.push(args);
+        }
+      }
+    });
+
+    assert.equal(published, false);
+    assert.match(String(warnings[0]?.[0] ?? ""), /Failed to publish module version notice/u);
+  }
+  finally {
+    fixture.restore();
+  }
+});
