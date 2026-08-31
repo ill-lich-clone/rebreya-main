@@ -233,6 +233,14 @@ function hasUnclaimedContent(state) {
   return hasRows || hasCoins;
 }
 
+function hasUnclaimedManualContent(state) {
+  const hasRows = normalizeRows(state.manualRows)
+    .some((row, index) => !state.claimedRowIds.includes(String(row.rowId ?? index)));
+  const coins = normalizeCoins(state.manualCoins);
+  const hasCoins = !state.coinsClaimed && COIN_KEYS.some((key) => coins[key] > 0);
+  return hasRows || hasCoins;
+}
+
 function requirePositiveQuantity(value) {
   const quantity = Number(value);
   if (!Number.isSafeInteger(quantity) || quantity < 1) {
@@ -301,6 +309,7 @@ export function buildStorageTokenState(input = {}) {
     storageKind: STORAGE_KINDS.has(cleanId(source.storageKind)) ? cleanId(source.storageKind) : "chest",
     baseName: cleanName(source.baseName),
     template: normalizeTemplate(source.template),
+    mixGeneratedLoot: source.mixGeneratedLoot === true,
     manualRows,
     manualCoins: normalizeCoins(source.manualCoins),
     generatedRows,
@@ -659,9 +668,11 @@ export class StorageService {
           context: clone(context)
         });
     let generated = materialized;
+    let generatedNow = false;
     let corpseMaterialization = null;
     let state = "opened";
     if (materialized) {
+      generatedNow = true;
       if (!isDeadNpcStorageTarget(document)) {
         throw new Error("Corpse target is no longer eligible for materialization.");
       }
@@ -678,12 +689,16 @@ export class StorageService {
       });
       state = hasUnclaimedContent(candidate) ? "opened" : "empty";
     }
+    else if (hasUnclaimedManualContent(current) && current.mixGeneratedLoot !== true) {
+      generated = { rows: [], coins: {} };
+    }
     else {
       generated = await this.generate(current.template?.form ?? normalizeLootgenForm({}), {
         token: document,
         state: clone(current),
         context: clone(context)
       });
+      generatedNow = true;
     }
     const next = await this.#write(token, {
       ...current,
@@ -700,7 +715,7 @@ export class StorageService {
       this.logger?.warn?.(`${MODULE_ID} | Storage opened callback failed.`, error);
     }
     return {
-      generatedNow: true,
+      generatedNow,
       state: next,
       rows: visibleRows(next),
       coins: mergeCoins(next.manualCoins, next.generatedCoins),

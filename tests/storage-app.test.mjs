@@ -57,6 +57,7 @@ function createApp({
   const journalReadCalls = [];
   const triggerEditorCalls = [];
   const triggerResetCalls = [];
+  const configCalls = [];
   const moduleApi = {
     async getStorageSnapshot(...args) {
       if (getStorageSnapshot) return getStorageSnapshot(...args);
@@ -68,6 +69,7 @@ function createApp({
         rows: [{ rowId: "row-1", name: "Меч", quantity: 1, typeLabel: "Оружие", img: "icons/sword.webp" }],
         coins: { pp: 0, gp: 2, sp: 0, cp: 0 },
         manualRows: [],
+        mixGeneratedLoot: true,
         template: { name: "Простой сундук", form: {} },
         textures: withTextures ? {
           unopened: "closed.webp",
@@ -116,6 +118,9 @@ function createApp({
     },
     async resetStorageTriggerExecutions(...args) {
       triggerResetCalls.push(args);
+    },
+    async configureStorageToken(...args) {
+      configCalls.push(args);
     }
   };
   const app = new StorageApp(moduleApi, "Scene.scene.Token.chest", {
@@ -132,7 +137,8 @@ function createApp({
     quantityCalls,
     journalReadCalls,
     triggerEditorCalls,
-    triggerResetCalls
+    triggerResetCalls,
+    configCalls
   };
 }
 
@@ -533,6 +539,7 @@ test("storage configuration exposes template and manual item controls to GMs", a
   assert.equal(context.configuration.templateOptions[0].name, "Простой сундук");
   assert.equal(context.configuration.canAddManualItems, true);
   assert.equal(context.configuration.baseName, "Chest");
+  assert.equal(context.configuration.mixGeneratedLoot, true);
   assert.equal(context.configuration.canSetTexture, true);
   assert.equal(context.configuration.displayMode, "opened");
   assert.deepEqual(
@@ -549,6 +556,43 @@ test("storage configuration exposes template and manual item controls to GMs", a
   assert.equal(context.gridColumns, 3);
   assert.equal(context.activePopover, null);
   assert.equal(context.canClaimAll, false);
+});
+
+test("storage configuration saves the mixed-loot checkbox with the existing fields", async () => {
+  const { app, configCalls } = createApp();
+  const listeners = new Map();
+  app.render = async () => {};
+  app.element = new class extends FakeElement {
+    addEventListener(name, callback) { listeners.set(name, callback); }
+  }();
+  await app._prepareContext();
+  await app._onRender({}, {});
+  const form = {
+    elements: {
+      baseName: { value: "Сундук мастера" },
+      templateId: { value: "simple" },
+      mixGeneratedLoot: { checked: true }
+    }
+  };
+  const control = {
+    dataset: { action: "storage-save-config" },
+    closest(selector) {
+      if (selector === "[data-action]") return this;
+      if (selector === "form") return form;
+      return null;
+    }
+  };
+
+  await listeners.get("click")({ target: control, preventDefault() {} });
+
+  assert.deepEqual(configCalls[0], [
+    app.tokenUuid,
+    { baseName: "Сундук мастера", templateId: "simple", mixGeneratedLoot: true },
+    {}
+  ]);
+  const template = await readFile(new URL("../templates/storage-app.hbs", import.meta.url), "utf8");
+  assert.match(template, /name="mixGeneratedLoot"/u);
+  assert.match(template, />Подмешивать случайный лут</u);
 });
 
 test("ordinary storage still exposes claim all when transferable contents exist", async () => {

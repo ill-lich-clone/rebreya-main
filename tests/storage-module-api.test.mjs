@@ -288,8 +288,12 @@ test("module composition materializes a corpse before allowing marker-guarded GM
     actor.system.attributes.hp.value = 7;
     const driftedSnapshot = await moduleApi.getStorageSnapshot(token.uuid);
     assert.deepEqual(driftedSnapshot.rows.map((row) => row.sourceId), ["laty"]);
-    const configured = await moduleApi.configureStorageToken(token.uuid, { baseName: "Тело Чемпиона" });
+    const configured = await moduleApi.configureStorageToken(token.uuid, {
+      baseName: "Тело Чемпиона",
+      mixGeneratedLoot: true
+    });
     assert.equal(configured.baseName, "Тело Чемпиона");
+    assert.equal(configured.mixGeneratedLoot, true);
     assert.equal(configured.corpseMaterialization.status, "complete");
 
     const reset = await moduleApi.resetStorageToken(token.uuid);

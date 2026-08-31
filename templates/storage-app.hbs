@@ -25,6 +25,10 @@
       {{#if configuration.selectedTemplateName}}
         <p class="rm-muted">Сохранённый снимок: {{configuration.selectedTemplateName}}</p>
       {{/if}}
+      <label class="rm-storage-config__toggle">
+        <input type="checkbox" name="mixGeneratedLoot" {{#if configuration.mixGeneratedLoot}}checked{{/if}}>
+        <span>Подмешивать случайный лут</span>
+      </label>
       <section class="rm-storage-trigger-summary">
         <div><strong>Триггеры</strong><span>{{configuration.triggerActiveCount}} активных цепочек</span></div>
         <button type="button" class="rm-button rm-button--secondary" data-action="storage-open-trigger-editor"><i class="fa-solid fa-bolt"></i><span>Открыть редактор</span></button>

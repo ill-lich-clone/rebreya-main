@@ -4669,6 +4669,7 @@ export class RebreyaMainModule {
       ...(canManage ? {
         baseName: state.baseName,
         template: foundry.utils.deepClone(state.template),
+        mixGeneratedLoot: state.mixGeneratedLoot,
         manualRows: foundry.utils.deepClone(state.manualRows),
         manualCoins: foundry.utils.deepClone(state.manualCoins),
         textures: foundry.utils.deepClone(state.textures),
@@ -4696,6 +4697,12 @@ export class RebreyaMainModule {
       const template = templateId ? this.lootgenTemplateCatalog.get(templateId) : null;
       if (templateId && !template) throw new Error("Шаблон Lootgen не найден.");
       patch.template = template ? { name: template.name, form: template.form } : null;
+    }
+    if (Object.prototype.hasOwnProperty.call(config, "mixGeneratedLoot")) {
+      if (typeof config.mixGeneratedLoot !== "boolean") {
+        throw new Error("Настройка смешивания случайного лута должна быть логическим значением.");
+      }
+      patch.mixGeneratedLoot = config.mixGeneratedLoot;
     }
     return this.storageService.configure(token, patch, { path });
   }

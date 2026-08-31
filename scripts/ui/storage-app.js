@@ -274,6 +274,7 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
         canAddManualItems: configurationEnabled,
         templateOptions: configurationEnabled ? clone(templates) : [],
         selectedTemplateName: clean(this.snapshot?.template?.name),
+        mixGeneratedLoot: this.snapshot?.mixGeneratedLoot === true,
         triggerActiveCount: Math.max(0, Math.trunc(Number(this.snapshot?.triggerActiveCount) || 0)),
         manualRows: configurationEnabled ? clone(this.snapshot?.manualRows ?? []) : [],
         canReset: configurationEnabled && ["opened", "empty"].includes(this.snapshot?.state),
@@ -595,7 +596,8 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const form = control.closest("form");
         await this.moduleApi.configureStorageToken(this.tokenUuid, {
           baseName: clean(form?.elements?.baseName?.value),
-          templateId: clean(form?.elements?.templateId?.value)
+          templateId: clean(form?.elements?.templateId?.value),
+          mixGeneratedLoot: form?.elements?.mixGeneratedLoot?.checked === true
         }, this.#pathRequest());
       }
       else if (action === "storage-remove-manual-item") {

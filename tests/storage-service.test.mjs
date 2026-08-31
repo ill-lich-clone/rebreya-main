@@ -215,7 +215,7 @@ test("opening once merges manual rows and a generated result", async () => {
   });
   const token = createStorageToken("chest");
 
-  await service.configure(token, { manualRows: [{ rowId: "manual" }] });
+  await service.configure(token, { manualRows: [{ rowId: "manual" }], mixGeneratedLoot: true });
   const first = await service.open(token, {});
   const second = await service.open(token, {});
 
@@ -224,6 +224,55 @@ test("opening once merges manual rows and a generated result", async () => {
   assert.equal(first.generatedNow, true);
   assert.equal(second.generatedNow, false);
   assert.equal(generationCount, 1);
+});
+
+test("storage mixed-loot mode defaults false and manual first-open skips generation", async () => {
+  assert.equal(buildStorageTokenState({}).mixGeneratedLoot, false);
+  assert.equal(buildStorageTokenState({ mixGeneratedLoot: true }).mixGeneratedLoot, true);
+  let generationCount = 0;
+  const service = new StorageService({
+    generate: async () => {
+      generationCount += 1;
+      return { rows: [{ rowId: "generated" }], coins: { gp: 2 } };
+    }
+  });
+  const token = createStorageToken("manual-only");
+  await service.configure(token, {
+    manualRows: [{ rowId: "manual", quantity: 1 }],
+    manualCoins: { sp: 3 }
+  });
+
+  const result = await service.open(token);
+
+  assert.equal(generationCount, 0);
+  assert.equal(result.generatedNow, false);
+  assert.deepEqual(result.rows.map((row) => row.rowId), ["manual"]);
+  assert.equal(result.coins.sp, 3);
+  assert.equal(result.coins.gp, 0);
+  assert.deepEqual(readStorageState(token).generatedRows, []);
+});
+
+test("mixed manual coins generate once and no-manual storage keeps default generation", async () => {
+  const forms = [];
+  const service = new StorageService({
+    generate: async (form) => {
+      forms.push(form);
+      return { rows: [{ rowId: "generated" }], coins: { gp: 2 } };
+    }
+  });
+  const mixed = createStorageToken("mixed-coins");
+  await service.configure(mixed, { manualCoins: { sp: 3 }, mixGeneratedLoot: true });
+  const mixedResult = await service.open(mixed);
+  await service.open(mixed);
+  assert.equal(forms.length, 1);
+  assert.equal(mixedResult.coins.gp, 2);
+  assert.equal(mixedResult.coins.sp, 3);
+
+  const defaultStorage = createStorageToken("default-generation");
+  const defaultResult = await service.open(defaultStorage);
+  assert.equal(forms.length, 2);
+  assert.equal(defaultResult.generatedNow, true);
+  assert.equal(defaultResult.rows[0].rowId, "generated");
 });
 
 test("storage actor marker and empty display name use Rebreya-owned flags", () => {
