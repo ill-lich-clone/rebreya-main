@@ -215,11 +215,11 @@ import { StorageGroundPileService } from "./data/storage-ground-pile-service.js?
 import { StorageContainerItemService } from "./data/storage-container-item-service.js?v=1.4.130-storage-player-fixes";
 import { isStorageJournalRow } from "./data/storage-container-snapshot.js";
 import { StorageTriggerService } from "./data/storage-trigger-service.js?v=1.4.197-door-trigger-target";
-import { DoorTriggerTargetRepository, readDoorTriggerTarget } from "./data/door-trigger-target.js?v=1.4.197-door-trigger-target";
+import { DoorTriggerTargetRepository, readDoorTriggerTarget } from "./data/door-trigger-target.js?v=1.4.199-door-overlay-anchor";
 import { measureDoorDistanceFeet, preflightDoorAccess } from "./data/door-access.js?v=1.4.197-door-trigger-target";
 import { TriggerTargetCoordinator } from "./application/trigger-target-coordinator.js?v=1.4.197-door-trigger-target";
 import { StorageTriggerTargetAdapter } from "./data/storage-trigger-target-adapter.js?v=1.4.197-door-trigger-target";
-import { DoorTriggerTargetAdapter } from "./data/door-trigger-target-adapter.js?v=1.4.197-door-trigger-target";
+import { DoorTriggerTargetAdapter } from "./data/door-trigger-target-adapter.js?v=1.4.199-door-overlay-anchor";
 import {
   DoorTriggerCommandService,
   isValidDoorOpenPayload,
@@ -328,7 +328,7 @@ import { refreshSmallTimeDateDisplay, registerSmallTimeIntegration, syncSmallTim
 import { registerRationFoodConversionHook } from "./integrations/ration-food-conversion.js";
 import { registerMagicWeaponTemplateHook } from "./integrations/magic-weapon-template.js?v=1.4.96";
 import { registerStorageTokenHooks } from "./integrations/storage-token-hooks.js?v=1.4.197-door-trigger-target";
-import { registerDoorTriggerHooks } from "./integrations/door-trigger-hooks.js?v=1.4.197-door-trigger-target";
+import { registerDoorTriggerHooks } from "./integrations/door-trigger-hooks.js?v=1.4.199-door-overlay-anchor";
 import { registerCraftsmanGadgetHooks } from "./integrations/craftsman-gadget-hooks.js";
 import { registerSpellAutomationHooks } from "./integrations/spell-automation-hooks.js";
 import { registerLongRestHooks } from "./integrations/long-rest-hooks.js";
@@ -383,7 +383,7 @@ const LEGACY_WORLD_MUTATION_SOCKET_TYPES = new Set([
   SOCKET_EVENT_LOOTGEN_CLAIM_COINS
 ]);
 const MODULE_STYLE_PATH = `modules/${MODULE_ID}/styles/main.css`;
-const MODULE_STYLE_VERSION = "1.4.197-door-trigger-target";
+const MODULE_STYLE_VERSION = "1.4.199-door-overlay-anchor";
 const SECONDS_PER_HOUR = 3600;
 const SECONDS_PER_DAY = 86400;
 const TRAVEL_DAY_HOURS = 8;
@@ -5041,7 +5041,7 @@ export class RebreyaMainModule {
       app = new TriggerEditor(this, { kind: "door", uuid: safeWallUuid, path: [] }, {
         targetName: cleanSocketId(wall?.name) || "Дверь",
         availableEvents: ["beforeOpen", "afterOpen"],
-        canToggleEnabled: true
+        canToggleEnabled: false
       });
       this.doorTriggerEditors.set(safeWallUuid, app);
     }

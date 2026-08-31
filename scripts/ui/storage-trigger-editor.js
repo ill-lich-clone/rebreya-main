@@ -153,14 +153,14 @@ export class TriggerEditor extends HandlebarsApplicationMixin(ApplicationV2) {
     this.target = Object.freeze({ kind, uuid, path: Object.freeze(path) });
     this.transport = TARGET_TRANSPORT[kind];
     this.availableEvents = normalizedEvents(options.availableEvents);
-    this.canToggleEnabled = options.canToggleEnabled === true && kind === "door";
+    this.canToggleEnabled = false;
     this.targetName = clean(options.targetName) || (kind === "door" ? "Дверь" : "Хранилище");
     this.storageName = this.targetName;
     this.tokenUuid = kind === "storage" ? uuid : "";
     this.path = path;
     this.snapshot = null;
     this.draft = null;
-    this.enabled = kind === "storage";
+    this.enabled = true;
     this.event = this.availableEvents.includes(options.event) ? options.event : this.availableEvents[0];
     this.chainId = "";
     this.stepId = "";
@@ -176,7 +176,7 @@ export class TriggerEditor extends HandlebarsApplicationMixin(ApplicationV2) {
 
   async #load() {
     this.snapshot = await this.transport.read(this.moduleApi, this.target);
-    this.enabled = this.target.kind === "storage" ? true : this.snapshot.enabled === true;
+    this.enabled = true;
     this.draft = Object.fromEntries(this.availableEvents.map((event) => [
       event,
       clone(this.snapshot.triggers.chainsByEvent[event] ?? [])
@@ -239,13 +239,13 @@ export class TriggerEditor extends HandlebarsApplicationMixin(ApplicationV2) {
   async saveDraft() {
     try {
       const result = await this.transport.save(this.moduleApi, this.target, {
-        enabled: this.enabled,
+        enabled: true,
         definitions: this.#definitions(),
         expectedRevision: this.snapshot.triggers.revision,
         operationId: identity("trigger-save")
       });
       this.snapshot = result;
-      this.enabled = this.target.kind === "storage" ? true : result.enabled === true;
+      this.enabled = true;
       this.draft = Object.fromEntries(this.availableEvents.map((event) => [
         event,
         clone(result.triggers.chainsByEvent[event] ?? [])
@@ -322,8 +322,7 @@ export class TriggerEditor extends HandlebarsApplicationMixin(ApplicationV2) {
     const field = clean(input?.dataset?.field);
     if (!field) return;
     const chain = this.#chain(); const step = this.#step();
-    if (field === "target.enabled" && this.canToggleEnabled) this.enabled = input.checked === true;
-    else if (field === "chain.name") chain.name = clean(input.value);
+    if (field === "chain.name") chain.name = clean(input.value);
     else if (field === "chain.enabled") chain.enabled = input.checked === true;
     else if (field === "chain.repeat") chain.repeat = clean(input.value);
     else if (field === "step.type") { step.type = clean(input.value); step.config = {}; }

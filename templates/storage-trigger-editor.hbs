@@ -1,5 +1,5 @@
 <section class="rm-trigger-editor">
-  <header class="rm-trigger-editor__heading"><strong>Триггеры {{targetKindLabel}}</strong><span>{{targetName}}</span>{{#if canToggleEnabled}}<label class="rm-trigger-editor__enabled"><input type="checkbox" data-field="target.enabled" {{#if enabled}}checked{{/if}}> Механика двери включена</label>{{/if}}</header>
+  <header class="rm-trigger-editor__heading"><strong>Триггеры {{targetKindLabel}}</strong><span>{{targetName}}</span></header>
   <nav class="rm-trigger-editor__tabs rm-trigger-editor__tabs--{{eventCount}}" aria-label="Событие триггера">
     {{#each events}}<button type="button" class="{{#if selected}}is-active{{/if}}" data-action="trigger-event" data-event="{{event}}">{{label}}</button>{{/each}}
   </nav>

@@ -23,7 +23,7 @@ const {
   resolveStorageTriggerItemDrop
 } = await import(`../scripts/ui/storage-trigger-editor.js?test=${Date.now()}`);
 
-test("door trigger editor exposes two events and saves enabled state", async () => {
+test("door trigger editor exposes two events and saves an implicitly active target", async () => {
   const state = createEmptyStorageTriggerState();
   const saves = [];
   const app = new TriggerEditor({
@@ -48,8 +48,7 @@ test("door trigger editor exposes two events and saves enabled state", async () 
   assert.deepEqual(context.events.map(({ event }) => event), ["beforeOpen", "afterOpen"]);
   assert.equal(context.targetName, "Северная дверь");
   assert.equal(context.targetKindLabel, "двери");
-  assert.equal(context.canToggleEnabled, true);
-  app.enabled = true;
+  assert.equal(context.canToggleEnabled, false);
   await app.saveDraft();
   assert.equal(saves.length, 1);
   assert.equal(saves[0].enabled, true);
@@ -132,7 +131,7 @@ test("storage trigger templates expose editor, reset, CRUD, inspector, and macro
   ]) assert.match(editor, new RegExp(`data-action="${action}"`, "u"));
   assert.match(editor, /data-field="step\.type"/u);
   assert.match(editor, /step\.config\.\{\{name\}\}/u);
-  assert.match(editor, /data-field="target\.enabled"/u);
+  assert.doesNotMatch(editor, /data-field="target\.enabled"/u);
   assert.match(storage, /data-action="storage-open-trigger-editor"/u);
   assert.match(storage, /data-action="storage-reset-triggers"/u);
   assert.doesNotMatch(editor, /cooldown|перезаряд/iu);

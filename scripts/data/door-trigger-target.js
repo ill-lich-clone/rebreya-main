@@ -105,9 +105,12 @@ export function normalizeDoorTriggerTargetState(value) {
 
 export function readDoorTriggerTarget(wall) {
   const raw = wall?.flags?.[MODULE_ID]?.[DOOR_TRIGGER_TARGET_FLAG];
+  const configured = raw !== undefined && raw !== null;
+  const normalized = normalizeDoorTriggerTargetState(raw);
   return {
-    configured: raw !== undefined && raw !== null,
-    ...normalizeDoorTriggerTargetState(raw)
+    configured,
+    ...normalized,
+    enabled: configured && !normalized.unsupported
   };
 }
 
@@ -132,7 +135,7 @@ export class DoorTriggerTargetRepository {
   }
 
   async saveDefinitions(wall, {
-    enabled = false,
+    enabled: _enabled = true,
     definitions = {},
     expectedRevision = 0
   } = {}) {
@@ -158,7 +161,7 @@ export class DoorTriggerTargetRepository {
     if (issues.length) throw validationError(issues);
     return this.#write(wall, {
       version: 1,
-      enabled: enabled === true,
+      enabled: true,
       triggers: candidate
     });
   }

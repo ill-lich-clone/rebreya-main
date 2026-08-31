@@ -243,7 +243,7 @@ test("beforeOpen deny returns sanitized typed failure without changing the wall"
   assert.equal(harness.wall.updates.filter(({ patch }) => Object.hasOwn(patch, "ds")).length, 0);
 });
 
-test("door open revalidates ownership scene secret type enabled distance and state", async () => {
+test("door open revalidates ownership scene secret type distance and state", async () => {
   const unowned = createHarness({ owner: false });
   await configure(unowned);
   assert.equal((await unowned.service.open(openPayload("owner"), { sender: unowned.player }).catch((error) => error)).code, DOOR_ERROR_CODES.CHARACTER_UNAVAILABLE);
@@ -256,9 +256,9 @@ test("door open revalidates ownership scene secret type enabled distance and sta
   await configure(secret);
   assert.equal((await secret.service.open(openPayload("secret"), { sender: secret.player }).catch((error) => error)).code, DOOR_ERROR_CODES.UNAVAILABLE);
 
-  const disabled = createHarness();
-  await configure(disabled, { enabled: false });
-  assert.equal((await disabled.service.open(openPayload("disabled"), { sender: disabled.player }).catch((error) => error)).code, DOOR_ERROR_CODES.DISABLED);
+  const legacyDisabled = createHarness();
+  await configure(legacyDisabled, { enabled: false });
+  assert.equal((await legacyDisabled.service.open(openPayload("legacy-disabled"), { sender: legacyDisabled.player })).opened, true);
 
   const changed = createHarness();
   await configure(changed, { beforeOpen: [finishChain()] });

@@ -65,6 +65,17 @@ test("door target normalization keeps forbidden event buckets empty", () => {
   assert.deepEqual(normalized.triggers.chainsByEvent.emptied, []);
 });
 
+test("a configured supported door target is active without a separate enabled switch", () => {
+  const snapshot = readDoorTriggerTarget(wallWith({
+    version: 1,
+    enabled: false,
+    triggers: createEmptyStorageTriggerState()
+  }));
+
+  assert.equal(snapshot.configured, true);
+  assert.equal(snapshot.enabled, true);
+});
+
 test("door repository saves enabled and definitions with revision checking", async () => {
   const wall = wallWith();
   const repository = new DoorTriggerTargetRepository();

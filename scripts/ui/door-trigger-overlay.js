@@ -15,6 +15,26 @@ function wallUuidOf(control) {
   return String(control?.wall?.document?.uuid ?? control?.wall?.uuid ?? "").trim();
 }
 
+function finite(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : 0;
+}
+
+export function doorControlOverlayAnchor(control) {
+  return {
+    get bounds() {
+      const position = control?.position ?? {};
+      const hitArea = control?.hitArea ?? {};
+      return {
+        x: finite(position.x) + finite(hitArea.x),
+        y: finite(position.y) + finite(hitArea.y),
+        width: finite(hitArea.width),
+        height: finite(hitArea.height)
+      };
+    }
+  };
+}
+
 export function doorTriggerFeedbackForError(error) {
   const code = String(error?.code ?? "").trim();
   if (code === "DOOR_TRIGGER_DENIED") {
@@ -45,7 +65,7 @@ export class DoorTriggerOverlayController {
     if (!wallUuid || typeof onOpen !== "function") return false;
     this.wallUuid = wallUuid;
     this.control = control;
-    const shown = this.overlay.showActions?.(control, [{
+    const shown = this.overlay.showActions?.(doorControlOverlayAnchor(control), [{
       id: "open",
       label: "Открыть",
       icon: "fa-solid fa-door-open",
@@ -64,7 +84,7 @@ export class DoorTriggerOverlayController {
   showFeedback(control, text, options = {}) {
     this.wallUuid = wallUuidOf(control);
     this.control = control;
-    return this.overlay.showFeedback?.(control, text, options) === true;
+    return this.overlay.showFeedback?.(doorControlOverlayAnchor(control), text, options) === true;
   }
 
   reposition() {

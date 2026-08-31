@@ -45,3 +45,20 @@ test("door overlay clears only the matching exact wall", () => {
   assert.equal(controller.clear("Scene.room.Wall.north"), true);
   assert.equal(closes, 1);
 });
+
+test("door overlay anchors feedback to the DoorControl hit area in canvas coordinates", () => {
+  const calls = [];
+  const overlay = {
+    showFeedback(anchor, text, options) { calls.push({ anchor, text, options }); return true; }
+  };
+  const controller = new DoorTriggerOverlayController({ overlay });
+  const control = {
+    position: { x: 480, y: 280 },
+    hitArea: { x: -2, y: -2, width: 44, height: 44 },
+    wall: { document: { uuid: "Scene.room.Wall.north" } }
+  };
+
+  assert.equal(controller.showFeedback(control, "Нужен ключ", { durationMs: 3000 }), true);
+  assert.deepEqual(calls[0].anchor.bounds, { x: 478, y: 278, width: 44, height: 44 });
+  assert.equal(calls[0].text, "Нужен ключ");
+});

@@ -1,4 +1,4 @@
-import { DoorTriggerOverlayController } from "../ui/door-trigger-overlay.js?v=1.4.197-door-trigger-target";
+import { DoorTriggerOverlayController } from "../ui/door-trigger-overlay.js?v=1.4.199-door-overlay-anchor";
 
 const WRAPPER = Symbol.for("rebreya-main.door-trigger-control");
 const REGISTRATIONS = new WeakMap();
