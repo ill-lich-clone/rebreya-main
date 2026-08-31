@@ -27,7 +27,7 @@ export function storageTokenCenter(token, { canvas = globalThis.canvas } = {}) {
   };
 }
 
-function storageTokenFootprintCenters(token, { canvas = globalThis.canvas } = {}) {
+export function storageTokenFootprintCenters(token, { canvas = globalThis.canvas } = {}) {
   const document = storageTokenDocument(token);
   const gridSize = Number(document?.parent?.grid?.size ?? canvas?.grid?.size ?? canvas?.dimensions?.size ?? 100);
   const width = Number(document?.width ?? 1);
@@ -80,13 +80,20 @@ function measureSquareGridSteps(from, to, sceneGrid) {
   return Math.max(columnSteps, rowSteps) * gridDistance;
 }
 
+export function measureStorageGridDistance(from, to, {
+  sceneGrid = globalThis.canvas?.scene?.grid,
+  canvas = globalThis.canvas
+} = {}) {
+  return measureSquareGridSteps(from, to, sceneGrid) ?? measureGridDistance(from, to, canvas);
+}
+
 export function measureStorageTokenDistance(characterToken, storageToken, { canvas = globalThis.canvas } = {}) {
   const sceneGrid = storageTokenDocument(characterToken)?.parent?.grid
     ?? storageTokenDocument(storageToken)?.parent?.grid
     ?? canvas?.scene?.grid;
   const distances = storageTokenFootprintCenters(characterToken, { canvas }).flatMap((from) => (
     storageTokenFootprintCenters(storageToken, { canvas }).map((to) => (
-      measureSquareGridSteps(from, to, sceneGrid) ?? measureGridDistance(from, to, canvas)
+      measureStorageGridDistance(from, to, { sceneGrid, canvas })
     ))
   ));
   return Math.min(...distances.filter(Number.isFinite), Number.POSITIVE_INFINITY);
@@ -97,7 +104,7 @@ export function measureStoragePointDistance(characterToken, point, { canvas = gl
   if (!Number.isFinite(to.x) || !Number.isFinite(to.y)) return Number.POSITIVE_INFINITY;
   const sceneGrid = storageTokenDocument(characterToken)?.parent?.grid ?? canvas?.scene?.grid;
   const distances = storageTokenFootprintCenters(characterToken, { canvas })
-    .map((from) => measureSquareGridSteps(from, to, sceneGrid) ?? measureGridDistance(from, to, canvas));
+    .map((from) => measureStorageGridDistance(from, to, { sceneGrid, canvas }));
   return Math.min(...distances.filter(Number.isFinite), Number.POSITIVE_INFINITY);
 }
 
