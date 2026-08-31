@@ -13121,6 +13121,7 @@ summary:focus-visible {
 .rm-trigger-editor__footer > span i { font-size: 0.55rem; }
 .rm-trigger-editor__footer > span.is-dirty { color: #f0b13e; }
 .rm-trigger-editor__footer > div { display: flex; gap: 8px; }
+.rm-door-trigger-actions button { min-width: 112px; }
 
 @media (max-width: 900px) {
   .rm-trigger-editor__workspace { grid-template-columns: 190px minmax(330px, 1fr); overflow: auto; }
