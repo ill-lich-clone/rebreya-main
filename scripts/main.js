@@ -4776,6 +4776,16 @@ export class RebreyaMainModule {
     return next;
   }
 
+  async setStorageRowBroken(tokenUuid, rowId, broken, request = {}) {
+    if (!globalThis.game?.user?.isGM) throw new Error("Изменять состояние предмета может только мастер.");
+    const token = await this.#resolveStorageToken(tokenUuid, { allowMaterializedCorpse: true });
+    const next = await this.storageService.setRowBroken(token, cleanSocketId(rowId), broken, {
+      path: cleanStoragePath(request.path)
+    });
+    await this.storageGroundPileService.refreshAfterStorageMutation(token, readStorageState(token));
+    return next;
+  }
+
   async deleteStorageRow(tokenUuid, rowId, request = {}) {
     if (!globalThis.game?.user?.isGM) throw new Error("Удалять предметы может только мастер.");
     const token = await this.#resolveStorageToken(tokenUuid, { allowMaterializedCorpse: true });

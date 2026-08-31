@@ -150,6 +150,9 @@
           {{#if activePopover.canEdit}}
             <div class="rm-storage-item__edit" data-storage-row data-row-id="{{activePopover.rowId}}">
               <input data-storage-quantity data-row-id="{{activePopover.rowId}}" type="number" min="1" step="1" value="{{activePopover.quantity}}" aria-label="Количество" {{#if activePopover.isContainer}}disabled{{/if}}>
+              {{#if activePopover.canToggleBroken}}
+                <label class="rm-storage-item__broken-toggle"><input data-storage-broken data-row-id="{{activePopover.rowId}}" type="checkbox" {{#if activePopover.broken}}checked{{/if}}>Сломано</label>
+              {{/if}}
               {{#unless activePopover.isContainer}}
                 <button type="button" class="rm-icon-button" data-action="storage-update-row" data-row-id="{{activePopover.rowId}}" aria-label="Сохранить количество"><i class="fa-solid fa-check"></i></button>
               {{/unless}}

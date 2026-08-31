@@ -417,6 +417,19 @@ export function markDurabilityBroken(flag) {
   return { outcome: "broken", nextFlag, appliedDamage: 0 };
 }
 
+export function markDurabilityIntact(flag) {
+  const maxHp = Number(flag?.hp?.max);
+  if (!flag || flag.eligible === false || normalizeToken(flag.state) === "destroyed"
+    || !Number.isFinite(maxHp) || maxHp <= 0) {
+    return ignoredTransition(flag);
+  }
+  const nextFlag = cloneDurabilityFlag(flag);
+  nextFlag.state = "intact";
+  nextFlag.breakStage = 0;
+  nextFlag.hp = { value: maxHp, max: maxHp };
+  return { outcome: "intact", nextFlag, appliedDamage: 0 };
+}
+
 export function markDurabilityDestroyed(flag) {
   if (!flag || flag.eligible === false) {
     return ignoredTransition(flag);

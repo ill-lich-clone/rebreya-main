@@ -10,6 +10,7 @@ import {
   isDurabilityEligible,
   markDurabilityBroken,
   markDurabilityDestroyed,
+  markDurabilityIntact,
   resolveDurabilityProfile
 } from "../scripts/data/durability-rules.js";
 
@@ -497,6 +498,21 @@ test("explicit break and destroy transitions keep zero HP without a second pool"
   assert.equal(destroyed.nextFlag.state, "destroyed");
   assert.equal(destroyed.nextFlag.breakStage, 2);
   assert.deepEqual(destroyed.nextFlag.hp, { value: 0, max: 15 });
+});
+
+test("explicit repair restores full HP while preserving durability metadata", () => {
+  const intact = buildInitialDurability(resolveFromMaterialName("Сталь"));
+  const broken = markDurabilityBroken(intact).nextFlag;
+  broken.initializedFrom = { sourceType: "gear", sourceId: "shield" };
+
+  const repaired = markDurabilityIntact(broken);
+
+  assert.equal(repaired.outcome, "intact");
+  assert.equal(repaired.nextFlag.state, "intact");
+  assert.equal(repaired.nextFlag.breakStage, 0);
+  assert.deepEqual(repaired.nextFlag.hp, { value: 15, max: 15 });
+  assert.deepEqual(repaired.nextFlag.initializedFrom, broken.initializedFrom);
+  assert.equal(broken.state, "broken");
 });
 
 test("damage transitions never mutate their input flag", () => {

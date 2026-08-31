@@ -678,6 +678,56 @@ test("row durability updates only the selected item data and emits storageUpdate
   }
 });
 
+test("storage durability toggle breaks and fully repairs only canonical durable rows", async () => {
+  const service = new StorageService();
+  const token = createStorageToken("durability-toggle");
+  const durability = {
+    version: 1,
+    eligible: true,
+    state: "intact",
+    breakStage: 0,
+    hp: { value: 8, max: 15 },
+    initializedFrom: { sourceType: "gear", sourceId: "shield" }
+  };
+  await service.configure(token, {
+    state: "opened",
+    manualRows: [{
+      rowId: "shield",
+      quantity: 1,
+      itemData: { flags: { ["rebreya-main"]: { durability } } }
+    }]
+  });
+
+  const broken = await service.setRowBroken(token, "shield", true);
+  const brokenFlag = broken.manualRows[0].itemData.flags["rebreya-main"].durability;
+  assert.equal(brokenFlag.state, "broken");
+  assert.equal(brokenFlag.breakStage, 1);
+  assert.deepEqual(brokenFlag.hp, { value: 0, max: 15 });
+  assert.deepEqual(brokenFlag.initializedFrom, durability.initializedFrom);
+
+  const repaired = await service.setRowBroken(token, "shield", false);
+  const repairedFlag = repaired.manualRows[0].itemData.flags["rebreya-main"].durability;
+  assert.equal(repairedFlag.state, "intact");
+  assert.equal(repairedFlag.breakStage, 0);
+  assert.deepEqual(repairedFlag.hp, { value: 15, max: 15 });
+});
+
+test("storage durability toggle rejects journals, malformed flags, and non-boolean requests", async () => {
+  const service = new StorageService();
+  const token = createStorageToken("durability-toggle-invalid");
+  await service.configure(token, {
+    state: "opened",
+    manualRows: [
+      { rowId: "plain", quantity: 1, itemData: { flags: {} } },
+      { rowId: "journal", rowKind: "journal", quantity: 1, journal: { uuid: "JournalEntry.notes" } }
+    ]
+  });
+
+  await assert.rejects(service.setRowBroken(token, "plain", true), /прочност/iu);
+  await assert.rejects(service.setRowBroken(token, "journal", true), /журнал/iu);
+  await assert.rejects(service.setRowBroken(token, "plain", "true"), /логическ/iu);
+});
+
 test("depositing into empty storage reopens the same token with its opened texture", async () => {
   const service = new StorageService();
   const token = createStorageToken("deposit-empty");

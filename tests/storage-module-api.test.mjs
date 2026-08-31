@@ -170,6 +170,70 @@ test("storage texture API rejects players and forwards an authorized GM mutation
   }
 });
 
+test("storage broken-state API is GM-only and forwards the exact row, value, and nested path", async () => {
+  const gm = { active: true, id: "gm", isGM: true };
+  const storageActor = {
+    type: "npc",
+    flags: { [MODULE_ID]: { storage: { enabled: true } } },
+    getFlag(scope, key) { return this.flags?.[scope]?.[key]; }
+  };
+  const token = { actor: storageActor, name: "Сундук", uuid: "Scene.scene.Token.chest", flags: {} };
+  const game = {
+    modules: new Map([[MODULE_ID, {}]]),
+    socket: { emit() {}, on() {} },
+    system: { id: "dnd5e" },
+    user: gm,
+    users: { activeGM: gm, contents: [gm] },
+    messages: { contents: [] },
+    settings: { get: () => false }
+  };
+  const restores = [
+    replaceGlobal("Hooks", createHooks()),
+    replaceGlobal("Actor", class Actor {}),
+    replaceGlobal("Item", class Item {}),
+    replaceGlobal("Macro", class Macro {}),
+    replaceGlobal("CONFIG", {}),
+    replaceGlobal("fromUuid", async (uuid) => uuid === token.uuid ? token : null),
+    replaceGlobal("foundry", {
+      utils: {
+        getProperty(source, path) { return path.split(".").reduce((value, key) => value?.[key], source); },
+        deepClone: (value) => structuredClone(value)
+      }
+    }),
+    replaceGlobal("ui", { notifications: { error() {}, info() {}, warn() {} } }),
+    replaceGlobal("game", game)
+  ];
+
+  try {
+    const { RebreyaMainModule } = await import(`../scripts/main.js?storage-broken-api=${Date.now()}`);
+    const moduleApi = new RebreyaMainModule();
+    const writes = [];
+    moduleApi.storageService.setRowBroken = async (...args) => {
+      writes.push(args);
+      return { state: "opened", manualRows: [] };
+    };
+    moduleApi.storageGroundPileService.refreshAfterStorageMutation = async () => {};
+
+    game.user.isGM = false;
+    await assert.rejects(
+      moduleApi.setStorageRowBroken(token.uuid, "shield", true, { path: ["bag"] }),
+      /только мастер/u
+    );
+    assert.deepEqual(writes, []);
+
+    game.user.isGM = true;
+    await moduleApi.setStorageRowBroken(token.uuid, "shield", true, { path: ["bag"] });
+    assert.equal(writes.length, 1);
+    assert.equal(writes[0][0], token);
+    assert.equal(writes[0][1], "shield");
+    assert.equal(writes[0][2], true);
+    assert.deepEqual(writes[0][3], { path: ["bag"] });
+  }
+  finally {
+    restores.reverse().forEach((restore) => restore());
+  }
+});
+
 test("module composition materializes a corpse before allowing marker-guarded GM configuration", async () => {
   class FakeApplicationV2 {}
   const gm = { active: true, id: "gm", isGM: true };

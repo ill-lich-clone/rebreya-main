@@ -54,6 +54,7 @@ function createApp({
   const bulkClaimCalls = [];
   const depositCalls = [];
   const quantityCalls = [];
+  const brokenCalls = [];
   const journalReadCalls = [];
   const triggerEditorCalls = [];
   const triggerResetCalls = [];
@@ -107,6 +108,9 @@ function createApp({
     async updateStorageRowQuantity(...args) {
       quantityCalls.push(args);
     },
+    async setStorageRowBroken(...args) {
+      brokenCalls.push(args);
+    },
     async readStorageJournal(...args) {
       journalReadCalls.push(args);
       return readStorageJournal
@@ -135,6 +139,7 @@ function createApp({
     bulkClaimCalls,
     depositCalls,
     quantityCalls,
+    brokenCalls,
     journalReadCalls,
     triggerEditorCalls,
     triggerResetCalls,
@@ -476,6 +481,35 @@ test("storage row derives a visible broken suffix from the canonical persisted d
   assert.equal(context.rows[0].name, "Латы (сломан)");
 });
 
+test("GM storage popover exposes the broken toggle only for canonical durable items", async () => {
+  const { app } = createApp({
+    getStorageSnapshot: async () => ({
+      tokenUuid: "Scene.scene.Token.chest",
+      name: "Сундук",
+      state: "opened",
+      rows: [{
+        rowId: "shield",
+        name: "Щит",
+        quantity: 1,
+        itemData: {
+          flags: {
+            [MODULE_ID]: {
+              durability: { version: 1, eligible: true, state: "broken", breakStage: 1, hp: { value: 0, max: 15 } }
+            }
+          }
+        }
+      }],
+      coins: {}
+    })
+  });
+  app.activeRowId = "shield";
+
+  const context = await app._prepareContext();
+
+  assert.equal(context.activePopover.canToggleBroken, true);
+  assert.equal(context.activePopover.broken, true);
+});
+
 test("Journal read action passes nested access context and opens only the returned snapshot", async () => {
   const snapshot = {
     name: "Полевые заметки",
@@ -635,6 +669,8 @@ test("storage template exposes generated-row quantity and delete controls to GMs
   assert.match(template, /data-action="storage-update-row"/u);
   assert.match(template, /data-action="storage-delete-row"/u);
   assert.match(template, /data-storage-quantity/u);
+  assert.match(template, /data-storage-broken/u);
+  assert.match(template, />Сломано</u);
   assert.match(template, /class="rm-storage-popover-layer"/u);
   assert.match(template, /data-anchor-row-id="\{\{activePopover\.anchorRowId\}\}"/u);
 });
@@ -693,6 +729,30 @@ test("changing a storage quantity saves it without requiring the tiny check butt
     "row-1",
     7,
     {}
+  ]]);
+});
+
+test("changing the broken toggle sends the exact row and nested path through the module API", async () => {
+  const { app, brokenCalls } = createApp({ appOptions: { path: ["bag-row"] } });
+  const listeners = new Map();
+  const root = new class extends FakeElement {
+    addEventListener(name, callback) { listeners.set(name, callback); }
+  }();
+  app.element = root;
+  await app._onRender({}, {});
+  const input = {
+    checked: true,
+    dataset: { rowId: "row-1" },
+    matches: (selector) => selector === "[data-storage-broken]"
+  };
+
+  await listeners.get("change")({ target: input });
+
+  assert.deepEqual(brokenCalls, [[
+    "Scene.scene.Token.chest",
+    "row-1",
+    true,
+    { path: ["bag-row"] }
   ]]);
 });
 

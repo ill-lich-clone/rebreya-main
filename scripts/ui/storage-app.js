@@ -192,6 +192,14 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const rows = snapshotRows.map((row) => {
       const isJournal = row.rowKind === "journal";
       const isContainer = row.rowKind === "container" && Boolean(row.container);
+      const durability = row.itemData?.flags?.[MODULE_ID]?.durability;
+      const durabilityState = clean(durability?.state).toLowerCase();
+      const canToggleBroken = configurationEnabled
+        && durability?.version === 1
+        && durability?.eligible === true
+        && ["intact", "broken"].includes(durabilityState)
+        && Number.isFinite(Number(durability?.hp?.max))
+        && Number(durability.hp.max) > 0;
       const itemName = clean(row.name ?? row.itemData?.name) || "Предмет";
       const displayName = isJournal && row.journalRead === true
         ? `${itemName} (прочитано)`
@@ -212,6 +220,8 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
         isContainer,
         primaryAction: isContainer ? "storage-open-container" : "storage-toggle-row",
         canEdit: configurationEnabled && !isJournal,
+        canToggleBroken,
+        broken: durabilityState === "broken",
         canDelete: isJournal ? canManage : configurationEnabled,
         active: this.activeRowId === clean(row.rowId),
         showQuantity: !isJournal && !isContainer && Math.max(1, Number(row.quantity ?? 1)) > 1
@@ -302,7 +312,7 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
     if (windowTitleElement) windowTitleElement.textContent = windowTitle;
     const listenerOptions = { signal: this.renderListenersAbortController.signal };
     root.addEventListener("click", (event) => this.#onClick(event), listenerOptions);
-    root.addEventListener("change", (event) => this.#onQuantityChange(event), listenerOptions);
+    root.addEventListener("change", (event) => this.#onStorageChange(event), listenerOptions);
     root.addEventListener("contextmenu", (event) => this.#onContextMenu(event), listenerOptions);
     root.addEventListener("drop", (event) => this.#onDrop(event), listenerOptions);
     root.addEventListener("dragstart", (event) => this.#onDragStart(event), listenerOptions);
@@ -335,8 +345,20 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
     }
   }
 
-  async #onQuantityChange(event) {
+  async #onStorageChange(event) {
     const input = event.target;
+    if (input?.matches?.("[data-storage-broken]")) {
+      const rowId = clean(input.dataset?.rowId);
+      try {
+        await this.moduleApi.setStorageRowBroken(this.tokenUuid, rowId, input.checked === true, this.#pathRequest());
+        await this.#refresh();
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Storage broken-state update failed.`, error);
+        globalThis.ui?.notifications?.error(error?.message ?? "Не удалось изменить состояние предмета.");
+      }
+      return;
+    }
     if (!input?.matches?.("[data-storage-quantity]")) return;
     const rowId = clean(input.dataset?.rowId);
     const quantity = Number(input.value);

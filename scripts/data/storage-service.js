@@ -1,6 +1,10 @@
 import { MODULE_ID } from "../constants.js";
 import { normalizeLootgenForm } from "./lootgen-generator.js";
 import {
+  markDurabilityBroken,
+  markDurabilityIntact
+} from "./durability-rules.js?v=1.4.195-storage-row-broken";
+import {
   CORPSE_MATERIALIZATION_VERSION,
   isDeadNpcStorageTarget
 } from "./storage-corpse-target.js?v=1.4.195-storage-corpse-target";
@@ -959,6 +963,33 @@ export class StorageService {
       row.itemData.flags ??= {};
       row.itemData.flags[MODULE_ID] ??= {};
       row.itemData.flags[MODULE_ID].durability = clone(durability);
+      return row;
+    }, { path });
+  }
+
+  async setRowBroken(token, rowId, broken, { path = [] } = {}) {
+    if (typeof broken !== "boolean") {
+      throw new TypeError("Состояние поломки должно быть логическим значением.");
+    }
+    return this.#mutateEditableRow(token, rowId, (row) => {
+      if (isStorageJournalRow(row)) {
+        throw new Error("Ссылку на журнал нельзя пометить сломанной.");
+      }
+      const durability = row.itemData?.flags?.[MODULE_ID]?.durability;
+      const maxHp = Number(durability?.hp?.max);
+      const state = String(durability?.state ?? "").trim().toLowerCase();
+      if (durability?.version !== 1 || durability?.eligible !== true
+        || !["intact", "broken"].includes(state)
+        || !Number.isFinite(maxHp) || maxHp <= 0) {
+        throw new Error("У предмета нет канонического состояния прочности Rebreya.");
+      }
+      const transition = broken
+        ? markDurabilityBroken(durability)
+        : markDurabilityIntact(durability);
+      if (transition.outcome === "ignored") {
+        throw new Error("Состояние прочности предмета нельзя изменить.");
+      }
+      row.itemData.flags[MODULE_ID].durability = transition.nextFlag;
       return row;
     }, { path });
   }

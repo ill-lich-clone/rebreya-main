@@ -13246,6 +13246,18 @@ summary:focus-visible {
   width: 3.5rem;
 }
 
+.rm-storage-item__edit .rm-storage-item__broken-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  white-space: nowrap;
+}
+
+.rm-storage-item__edit .rm-storage-item__broken-toggle input {
+  width: auto;
+  margin: 0;
+}
+
 .rm-storage-item__quantity {
   position: absolute;
   right: 4px;
