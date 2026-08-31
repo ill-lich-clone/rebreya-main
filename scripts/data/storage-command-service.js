@@ -3,8 +3,8 @@ import {
   readStorageCoinDenomination,
   readStorageState,
   readStorageStateAtPath
-} from "./storage-service.js?v=1.4.152-dead-npc-looting";
-import { resolveStorageDepositSource } from "./storage-deposit-source.js?v=1.4.144-spreadsheet-coins-ground-repair";
+} from "./storage-service.js?v=1.4.195-storage-administration";
+import { resolveStorageDepositSource } from "./storage-deposit-source.js?v=1.4.195-storage-administration";
 import { isStorageContainerRow, isStorageJournalRow } from "./storage-container-snapshot.js";
 import { MODULE_ID } from "../constants.js";
 import { escapeFoundryHtml } from "../shared/foundry-values.js";

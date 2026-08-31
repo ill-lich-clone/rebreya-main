@@ -195,10 +195,10 @@ import {
   isStorageActor,
   readStorageState,
   readStorageStateAtPath
-} from "./data/storage-service.js?v=1.4.152-dead-npc-looting";
+} from "./data/storage-service.js?v=1.4.195-storage-administration";
 import {
   CorpseStorageMaterializer
-} from "./data/corpse-storage-materializer.js?v=1.4.154-corpse-storage-broken-name";
+} from "./data/corpse-storage-materializer.js?v=1.4.195-storage-administration";
 import {
   isCorpseStorageTarget,
   isDeadNpcStorageTarget,
@@ -211,7 +211,7 @@ import {
   measureStorageTokenDistance
 } from "./data/storage-access.js?v=1.4.158-storage-access-cache";
 import { BuiltinStorageActorService } from "./data/builtin-storage-actor-service.js";
-import { StorageGroundPileService } from "./data/storage-ground-pile-service.js?v=1.4.161-journal-scene-items";
+import { StorageGroundPileService } from "./data/storage-ground-pile-service.js?v=1.4.195-storage-administration";
 import { StorageContainerItemService } from "./data/storage-container-item-service.js?v=1.4.130-storage-player-fixes";
 import { isStorageJournalRow } from "./data/storage-container-snapshot.js";
 import { StorageTriggerService } from "./data/storage-trigger-service.js?v=1.4.164-storage-key-feedback";
@@ -223,7 +223,7 @@ import {
 import {
   parseStorageDepositDragData,
   resolveStorageDepositSource
-} from "./data/storage-deposit-source.js?v=1.4.144-spreadsheet-coins-ground-repair";
+} from "./data/storage-deposit-source.js?v=1.4.195-storage-administration";
 import { NativeObjectDurabilityService } from "./data/native-object-durability-service.js?v=1.4.153-corpse-creature";
 import {
   StorageCommandService,
@@ -242,7 +242,7 @@ import {
   isValidStorageRestorePortablePayload,
   isValidStorageTokenCharacterPayload,
   storageCharacterTokenUuidForClaim
-} from "./data/storage-command-service.js?v=1.4.164-storage-key-feedback";
+} from "./data/storage-command-service.js?v=1.4.195-storage-administration";
 import { registerCombatHooks } from "./combat/hooks.js?v=1.4.191-magic-item-runtime";
 import { CombatAttackService } from "./combat/attack-service.js?v=1.4.181-dual-wield-gloves";
 import { ImplantAutomationService } from "./combat/implant-automation-service.js";
@@ -315,7 +315,7 @@ import { runMapObjectTokenMacro } from "./integrations/map-object-token-macro.js
 import { refreshSmallTimeDateDisplay, registerSmallTimeIntegration, syncSmallTimeToCalendarTime } from "./integrations/smalltime-compat.js";
 import { registerRationFoodConversionHook } from "./integrations/ration-food-conversion.js";
 import { registerMagicWeaponTemplateHook } from "./integrations/magic-weapon-template.js?v=1.4.96";
-import { registerStorageTokenHooks } from "./integrations/storage-token-hooks.js?v=1.4.164-storage-key-feedback";
+import { registerStorageTokenHooks } from "./integrations/storage-token-hooks.js?v=1.4.195-storage-administration";
 import { registerCraftsmanGadgetHooks } from "./integrations/craftsman-gadget-hooks.js";
 import { registerSpellAutomationHooks } from "./integrations/spell-automation-hooks.js";
 import { registerLongRestHooks } from "./integrations/long-rest-hooks.js";

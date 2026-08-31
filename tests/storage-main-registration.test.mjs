@@ -80,6 +80,7 @@ test("main registers the storage deposit socket API and current cache keys", asy
   assert.match(main, /this\.storageCommandService\.deposit\(payload,\s*\{ sender \}\)/u);
   assert.match(main, /async inspectStorageDepositSource\(/u);
   assert.match(main, /async depositStorageItem\(/u);
+  assert.match(main, /async setStorageRowBroken\(/u);
   assert.match(main, /isValidStorageDropItemPayload/u);
   assert.match(main, /STORAGE_DROP_ITEM_COMMAND\s*=\s*"storage\.drop-item-to-scene"/u);
   assert.match(main, /register\(STORAGE_DROP_ITEM_COMMAND,\s*\{/u);
@@ -118,15 +119,15 @@ test("main registers the storage deposit socket API and current cache keys", asy
   assert.match(main, /this\.storageContainerItemService = new StorageContainerItemService\(\);/u);
   assert.match(main, /await this\.storageGroundPileService\.repairLegacyCoinRows\(\);/u);
   for (const importPath of [
-    "data/storage-service.js?v=1.4.152-dead-npc-looting",
+    "data/storage-service.js?v=1.4.195-storage-administration",
     "data/storage-open-sound-service.js?v=1.4.145-coin-icons-storage-sound",
     "data/storage-access.js?v=1.4.158-storage-access-cache",
-    "data/storage-ground-pile-service.js?v=1.4.161-journal-scene-items",
+    "data/storage-ground-pile-service.js?v=1.4.195-storage-administration",
     "data/storage-container-item-service.js?v=1.4.130-storage-player-fixes",
-    "data/storage-deposit-source.js?v=1.4.144-spreadsheet-coins-ground-repair",
-    "data/storage-command-service.js?v=1.4.164-storage-key-feedback",
+    "data/storage-deposit-source.js?v=1.4.195-storage-administration",
+    "data/storage-command-service.js?v=1.4.195-storage-administration",
     "data/storage-trigger-service.js?v=1.4.164-storage-key-feedback",
-    "integrations/storage-token-hooks.js?v=1.4.164-storage-key-feedback",
+    "integrations/storage-token-hooks.js?v=1.4.195-storage-administration",
     "combat/hooks.js?v=1.4.191-magic-item-runtime",
     "integrations/storage-transfer-drop.js?v=1.4.161-journal-scene-items",
     "integrations/storage-token-drop.js?v=1.4.132-storage-owned-character-resolution",
@@ -135,19 +136,20 @@ test("main registers the storage deposit socket API and current cache keys", asy
     assert.equal(main.includes(importPath), true, importPath);
   }
   for (const importPath of [
-    "storage-service.js?v=1.4.152-dead-npc-looting",
-    "storage-deposit-source.js?v=1.4.144-spreadsheet-coins-ground-repair",
+    "storage-service.js?v=1.4.195-storage-administration",
+    "storage-deposit-source.js?v=1.4.195-storage-administration",
     "storage-access.js?v=1.4.158-storage-access-cache"
   ]) {
     assert.equal(storageCommand.includes(importPath), true, importPath);
   }
   for (const importPath of [
     "data/storage-access.js?v=1.4.158-storage-access-cache",
-    "ui/storage-token-overlay.js?v=1.4.158-storage-access-cache"
+    "ui/storage-token-overlay.js?v=1.4.158-storage-access-cache",
+    "storage-ground-pile-frame.js?v=1.4.195-storage-administration"
   ]) {
     assert.equal(storageHooks.includes(importPath), true, importPath);
   }
-  assert.equal(manifest.version, "1.4.194");
+  assert.equal(manifest.version, "1.4.195");
   assert.match(main, /await registerStorageContainerHierarchyHooks\(\{ Hooks \}\)/u);
 });
 

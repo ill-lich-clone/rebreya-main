@@ -63,12 +63,12 @@ test("module manifest loads the stable canonical entrypoint", async () => {
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const [entrypoint] = manifest.esmodules;
 
-  assert.equal(manifest.version, "1.4.194");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.194.js"]);
+  assert.equal(manifest.version, "1.4.195");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.195.js"]);
   assert.doesNotMatch(entrypoint, /[?#]/u);
 
   const entrypointSource = await readFile(new URL(entrypoint, manifestUrl), "utf8");
-  assert.equal(entrypointSource, 'import "./main.js?v=1.4.194";\n');
+  assert.equal(entrypointSource, 'import "./main.js?v=1.4.195";\n');
 });
 
 test("canonical entrypoint cache-busts the player-list inventory token launcher", async () => {
@@ -234,23 +234,23 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
     "data/inventory-service.js?v=1.4.179-dismantle-minimum-quantity",
     "data/inventory-ingress-descriptor.js?v=1.4.179-dismantle-minimum-quantity",
     "data/durability-service.js?v=1.4.154-corpse-storage-broken-name",
-    "data/corpse-storage-materializer.js?v=1.4.154-corpse-storage-broken-name",
+    "data/corpse-storage-materializer.js?v=1.4.195-storage-administration",
     "data/native-object-durability-service.js?v=1.4.153-corpse-creature",
     "data/crafting-service.js?v=1.4.96-craft-calendar",
     "data/craft-downtime-service.js?v=1.4.96-craft-calendar",
     "data/calendar-transition-coordinator.js?v=1.4.96-craft-calendar",
     "integrations/durability-hooks.js?v=1.4.153-corpse-creature",
     "data/storage-trigger-service.js?v=1.4.164-storage-key-feedback",
-    "integrations/storage-token-hooks.js?v=1.4.164-storage-key-feedback",
+    "integrations/storage-token-hooks.js?v=1.4.195-storage-administration",
     "integrations/inventory-sync.js?v=1.4.96-durable-transfer",
     "data/gear-compendium.js?v=1.4.145-coin-icons-storage-sound",
     "data/storage-open-sound-service.js?v=1.4.145-coin-icons-storage-sound",
-    "data/storage-service.js?v=1.4.152-dead-npc-looting",
+    "data/storage-service.js?v=1.4.195-storage-administration",
     "data/storage-access.js?v=1.4.158-storage-access-cache",
-    "data/storage-ground-pile-service.js?v=1.4.161-journal-scene-items",
+    "data/storage-ground-pile-service.js?v=1.4.195-storage-administration",
     "data/storage-container-item-service.js?v=1.4.130-storage-player-fixes",
-    "data/storage-deposit-source.js?v=1.4.144-spreadsheet-coins-ground-repair",
-    "data/storage-command-service.js?v=1.4.164-storage-key-feedback",
+    "data/storage-deposit-source.js?v=1.4.195-storage-administration",
+    "data/storage-command-service.js?v=1.4.195-storage-administration",
     "integrations/storage-transfer-drop.js?v=1.4.161-journal-scene-items",
     "integrations/storage-token-drop.js?v=1.4.132-storage-owned-character-resolution"
   ]) {
@@ -307,7 +307,7 @@ test("module keeps recent published entrypoint URLs as canonical compatibility f
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
 
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.194.js"]);
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.195.js"]);
 
   for (const fileName of ["main-1.4.98.js", "main-1.4.99.js", "main-1.4.100.js"]) {
     const forwarderSource = await readFile(new URL(`../scripts/${fileName}`, import.meta.url), "utf8");

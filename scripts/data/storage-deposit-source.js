@@ -5,7 +5,7 @@ import {
   readStorageCoinDenomination,
   readStorageState,
   readStorageStateAtPath
-} from "./storage-service.js?v=1.4.152-dead-npc-looting";
+} from "./storage-service.js?v=1.4.195-storage-administration";
 import {
   buildStorageContainerRow,
   isStorageContainerRow,

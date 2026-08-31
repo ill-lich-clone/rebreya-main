@@ -7,7 +7,7 @@ import {
 import { isStorageActor } from "../data/storage-service.js";
 import { isCorpseStorageTarget } from "../data/storage-corpse-target.js?v=1.4.195-storage-corpse-target";
 import { StorageTokenOverlayController } from "../ui/storage-token-overlay.js?v=1.4.158-storage-access-cache";
-import { GroundPileFrameController } from "./storage-ground-pile-frame.js";
+import { GroundPileFrameController } from "./storage-ground-pile-frame.js?v=1.4.195-storage-administration";
 
 export function buildStorageTokenActions(moduleApi, token, {
   isGM = false,
