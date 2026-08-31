@@ -2715,6 +2715,21 @@ test("dead NPC storage open reuses player access checks, allows GM, and rejects 
   }, { sender: gmHarness.gm });
   assert.equal(gmResult.state, "opened");
 
+  const materializedHarness = createHarness();
+  materializedHarness.storageToken.actor.flags = {};
+  materializedHarness.storageToken.actor.system = { attributes: { hp: { value: 7 } } };
+  materializedHarness.storageToken.flags[MODULE_ID] = {
+    storage: {
+      state: "opened",
+      corpseMaterialization: { version: 1, status: "complete" }
+    }
+  };
+  const materializedResult = await materializedHarness.service.open({
+    tokenUuid: materializedHarness.storageToken.uuid,
+    characterTokenUuid: materializedHarness.characterToken.uuid
+  }, { sender: materializedHarness.player });
+  assert.equal(materializedResult.state, "opened");
+
   const farHarness = createHarness({ distance: 11 });
   farHarness.storageToken.actor.flags = {};
   farHarness.storageToken.actor.system = { attributes: { hp: { value: 0 } } };

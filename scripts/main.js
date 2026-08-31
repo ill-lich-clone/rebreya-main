@@ -197,10 +197,13 @@ import {
   readStorageStateAtPath
 } from "./data/storage-service.js?v=1.4.152-dead-npc-looting";
 import {
-  CorpseStorageMaterializer,
-  isDeadNpcStorageTarget
+  CorpseStorageMaterializer
 } from "./data/corpse-storage-materializer.js?v=1.4.154-corpse-storage-broken-name";
-import { isMaterializedCorpseStorageState } from "./data/storage-object-kind.js?v=1.4.153-corpse-creature";
+import {
+  isCorpseStorageTarget,
+  isDeadNpcStorageTarget,
+  isMaterializedCorpseStorageState
+} from "./data/storage-corpse-target.js?v=1.4.195-storage-corpse-target";
 import { StorageOpenSoundService } from "./data/storage-open-sound-service.js?v=1.4.145-coin-icons-storage-sound";
 import {
   isStorageTokenVisible,
@@ -4618,10 +4621,9 @@ export class RebreyaMainModule {
     const token = document?.document ?? document;
     if (!token?.actor) throw new Error("Токен хранилища не найден.");
     const materializedCorpse = allowMaterializedCorpse
-      && isDeadNpcStorageTarget(token)
       && isMaterializedCorpseStorageState(readStorageState(token));
     if (!isStorageActor(token.actor)
-      && !(allowCorpse && isDeadNpcStorageTarget(token))
+      && !(allowCorpse && isCorpseStorageTarget(token))
       && !materializedCorpse) {
       throw new Error("Токен не отмечен как хранилище Rebreya.");
     }

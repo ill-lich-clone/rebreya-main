@@ -218,6 +218,10 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
     new URL("../scripts/data/storage-ground-pile-service.js", import.meta.url),
     "utf8"
   );
+  const storageServiceSource = await readFile(new URL("../scripts/data/storage-service.js", import.meta.url), "utf8");
+  const storageCommandSource = await readFile(new URL("../scripts/data/storage-command-service.js", import.meta.url), "utf8");
+  const materializerSource = await readFile(new URL("../scripts/data/corpse-storage-materializer.js", import.meta.url), "utf8");
+  const storageTokenHooksSource = await readFile(new URL("../scripts/integrations/storage-token-hooks.js", import.meta.url), "utf8");
 
   assert.match(
     canonicalSource,
@@ -280,6 +284,10 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
     true,
     "ground-pile presentation changes need their own browser module cache key"
   );
+  const corpseTargetCacheKey = "storage-corpse-target.js?v=1.4.195-storage-corpse-target";
+  for (const source of [canonicalSource, storageServiceSource, storageCommandSource, materializerSource, storageTokenHooksSource]) {
+    assert.equal(source.includes(corpseTargetCacheKey), true, "corpse target owners must share one browser module URL");
+  }
 
   assert.match(
     canonicalSource,

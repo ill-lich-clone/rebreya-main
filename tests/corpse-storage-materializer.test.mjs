@@ -2,10 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { MODULE_ID } from "../scripts/constants.js";
-import {
-  CorpseStorageMaterializer,
-  isDeadNpcStorageTarget
-} from "../scripts/data/corpse-storage-materializer.js";
+import * as corpseStorage from "../scripts/data/corpse-storage-materializer.js";
+
+const { CorpseStorageMaterializer, isDeadNpcStorageTarget } = corpseStorage;
 
 function clone(value) {
   return value == null ? value : structuredClone(value);
@@ -105,6 +104,21 @@ function npcToken({ id = "corpse", hp = 0, items = [], actorId = "npc" } = {}) {
     }
   };
 }
+
+test("corpse target contract keeps a complete materialized NPC accessible after HP drift", () => {
+  assert.equal(typeof corpseStorage.isCorpseStorageTarget, "function");
+  const token = npcToken({ hp: 7 });
+  token.flags = {
+    [MODULE_ID]: {
+      storage: {
+        corpseMaterialization: { version: 1, status: "complete" }
+      }
+    }
+  };
+
+  assert.equal(corpseStorage.isCorpseStorageTarget(token), true);
+  assert.equal(corpseStorage.isCorpseStorageTarget(npcToken({ hp: 7 })), false);
+});
 
 const CHAMPION_GEAR = [
   canonicalDocument({

@@ -285,6 +285,9 @@ test("module composition materializes a corpse before allowing marker-guarded GM
     assert.equal(materializations, 1);
     assert.equal(snapshot.state, "opened");
     assert.deepEqual(snapshot.rows.map((row) => row.sourceId), ["laty"]);
+    actor.system.attributes.hp.value = 7;
+    const driftedSnapshot = await moduleApi.getStorageSnapshot(token.uuid);
+    assert.deepEqual(driftedSnapshot.rows.map((row) => row.sourceId), ["laty"]);
     const configured = await moduleApi.configureStorageToken(token.uuid, { baseName: "Тело Чемпиона" });
     assert.equal(configured.baseName, "Тело Чемпиона");
     assert.equal(configured.corpseMaterialization.status, "complete");

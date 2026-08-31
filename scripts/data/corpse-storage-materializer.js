@@ -1,8 +1,17 @@
 import { GEAR_COMPENDIUM_NAME, MODULE_ID } from "../constants.js";
 import { resolveRebreyaOrdinaryWeaponGearId } from "./item-classification.js?v=1.4.152-dead-npc-looting";
 import { formatDurabilityItemName } from "./durability-item-presentation.js?v=1.4.154-broken-item-name";
+import {
+  CORPSE_MATERIALIZATION_VERSION,
+  isCorpseStorageTarget,
+  isDeadNpcStorageTarget
+} from "./storage-corpse-target.js?v=1.4.195-storage-corpse-target";
 
-export const CORPSE_MATERIALIZATION_VERSION = 1;
+export {
+  CORPSE_MATERIALIZATION_VERSION,
+  isCorpseStorageTarget,
+  isDeadNpcStorageTarget
+};
 
 const GEAR_PACK_ID = `world.${GEAR_COMPENDIUM_NAME}`;
 const CANONICAL_UUID_PREFIX = `Compendium.${GEAR_PACK_ID}.Item.`;
@@ -40,22 +49,6 @@ function resolveTokenDocument(token) {
 function actorOf(token) {
   const document = resolveTokenDocument(token);
   return document?.actor ?? token?.actor ?? null;
-}
-
-function isMarkedStorageActor(actor) {
-  const marker = typeof actor?.getFlag === "function"
-    ? actor.getFlag(MODULE_ID, "storage")
-    : actor?.flags?.[MODULE_ID]?.storage;
-  return marker?.enabled === true;
-}
-
-export function isDeadNpcStorageTarget(token) {
-  const actor = actorOf(token);
-  if (!actor || normalizeToken(actor.type) !== "npc" || isMarkedStorageActor(actor)) {
-    return false;
-  }
-  const hp = actor?.system?.attributes?.hp?.value;
-  return typeof hp === "number" && Number.isFinite(hp) && hp <= 0;
 }
 
 function canonicalFlags(data) {

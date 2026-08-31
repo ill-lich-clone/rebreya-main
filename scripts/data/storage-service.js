@@ -3,7 +3,7 @@ import { normalizeLootgenForm } from "./lootgen-generator.js";
 import {
   CORPSE_MATERIALIZATION_VERSION,
   isDeadNpcStorageTarget
-} from "./corpse-storage-materializer.js";
+} from "./storage-corpse-target.js?v=1.4.195-storage-corpse-target";
 import {
   buildStorageContainerSnapshot,
   collectStorageContainerIds,

@@ -8,7 +8,7 @@ import { resolveStorageDepositSource } from "./storage-deposit-source.js?v=1.4.1
 import { isStorageContainerRow, isStorageJournalRow } from "./storage-container-snapshot.js";
 import { MODULE_ID } from "../constants.js";
 import { escapeFoundryHtml } from "../shared/foundry-values.js";
-import { isDeadNpcStorageTarget } from "./corpse-storage-materializer.js";
+import { isCorpseStorageTarget } from "./storage-corpse-target.js?v=1.4.195-storage-corpse-target";
 import {
   MAX_STORAGE_DISTANCE_FEET,
   STORAGE_ACCESS_DISTANCE_ERROR_CODE,
@@ -693,7 +693,7 @@ export class StorageCommandService {
   async #resolveAccess(payload, sender) {
     const tokenUuid = clean(payload?.tokenUuid);
     const storageToken = tokenDocument(await this.resolveToken(tokenUuid));
-    if (!storageToken || (!isStorageActor(storageToken.actor) && !isDeadNpcStorageTarget(storageToken))) {
+    if (!storageToken || (!isStorageActor(storageToken.actor) && !isCorpseStorageTarget(storageToken))) {
       throw new Error("Токен не является хранилищем Rebreya.");
     }
 

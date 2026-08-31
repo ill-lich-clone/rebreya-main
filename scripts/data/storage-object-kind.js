@@ -1,4 +1,7 @@
 import { MODULE_ID } from "../constants.js";
+import { isMaterializedCorpseStorageState } from "./storage-corpse-target.js?v=1.4.195-storage-corpse-target";
+
+export { isMaterializedCorpseStorageState };
 
 function objectFlags(value) {
   if (!value || typeof value !== "object") return null;
@@ -23,11 +26,6 @@ function candidates(target) {
     seen.add(value);
     return true;
   });
-}
-
-export function isMaterializedCorpseStorageState(value) {
-  return Number(value?.corpseMaterialization?.version) === 1
-    && value?.corpseMaterialization?.status === "complete";
 }
 
 export function storageObjectKind(target) {

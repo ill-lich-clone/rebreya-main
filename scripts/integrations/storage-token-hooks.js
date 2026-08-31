@@ -5,7 +5,7 @@ import {
   STORAGE_ACCESS_DISTANCE_ERROR_MESSAGE
 } from "../data/storage-access.js?v=1.4.158-storage-access-cache";
 import { isStorageActor } from "../data/storage-service.js";
-import { isDeadNpcStorageTarget } from "../data/corpse-storage-materializer.js";
+import { isCorpseStorageTarget } from "../data/storage-corpse-target.js?v=1.4.195-storage-corpse-target";
 import { StorageTokenOverlayController } from "../ui/storage-token-overlay.js?v=1.4.158-storage-access-cache";
 import { GroundPileFrameController } from "./storage-ground-pile-frame.js";
 
@@ -123,14 +123,14 @@ export function registerStorageTokenHooks(moduleApi, {
     }));
   };
   const bindPointerClick = (token) => {
-    if ((!isStorageActor(token?.actor) && !isDeadNpcStorageTarget(token)) || typeof token?.on !== "function") return;
+    if ((!isStorageActor(token?.actor) && !isCorpseStorageTarget(token)) || typeof token?.on !== "function") return;
     let handler = pointerHandlers.get(token);
     if (!handler) {
       handler = async (event) => {
         const button = Number(event?.button ?? event?.data?.button ?? 0);
         if (button !== 0) return;
         const storageActor = isStorageActor(token?.actor);
-        const corpse = !storageActor && isDeadNpcStorageTarget(token);
+        const corpse = !storageActor && isCorpseStorageTarget(token);
         if (storageActor || corpse) {
           showTokenActions(token, { corpse });
           return;
