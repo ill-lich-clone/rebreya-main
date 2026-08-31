@@ -64,7 +64,7 @@ function createHarness({ isGM = false, distance = 5, frameController = null } = 
   return { listeners, calls, openCalls, shown, feedback, moduleApi, storageToken, tokenListeners };
 }
 
-test("drawing a ground pile ensures its persistent frame through the storage token owner", async () => {
+test("drawing a ground pile requests persistent-frame cleanup through the storage token owner", async () => {
   const framed = [];
   const frameController = {
     async ensure(token) {
@@ -73,6 +73,7 @@ test("drawing a ground pile ensures its persistent frame through the storage tok
     }
   };
   const harness = createHarness({ isGM: true, frameController });
+  framed.length = 0;
   harness.storageToken.actor.flags[MODULE_ID].groundPilePrototype = { enabled: true };
 
   await harness.listeners.get("drawToken")(harness.storageToken);
@@ -80,7 +81,7 @@ test("drawing a ground pile ensures its persistent frame through the storage tok
   assert.deepEqual(framed, [harness.storageToken]);
 });
 
-test("creating a ground-pile TokenDocument ensures its frame even off the viewed canvas", async () => {
+test("creating a ground-pile TokenDocument requests frame cleanup even off the viewed canvas", async () => {
   const framed = [];
   const frameController = {
     async ensure(token) {
@@ -89,6 +90,7 @@ test("creating a ground-pile TokenDocument ensures its frame even off the viewed
     }
   };
   const harness = createHarness({ isGM: true, frameController });
+  framed.length = 0;
   const tokenDocument = {
     ...harness.storageToken.document,
     actor: harness.storageToken.actor
@@ -99,6 +101,22 @@ test("creating a ground-pile TokenDocument ensures its frame even off the viewed
   assert.equal(typeof createToken, "function");
   await createToken(tokenDocument);
   assert.deepEqual(framed, [tokenDocument]);
+});
+
+test("registration and canvasReady clean persistent frames from current canvas tokens", async () => {
+  const framed = [];
+  const frameController = {
+    async ensure(token) {
+      framed.push(token);
+      return true;
+    }
+  };
+  const harness = createHarness({ isGM: true, frameController });
+
+  assert.equal(framed.length, 2);
+  framed.length = 0;
+  await harness.listeners.get("canvasReady")();
+  assert.equal(framed.length, 2);
 });
 
 test("left-clicking storage offers only Open to a player", async () => {

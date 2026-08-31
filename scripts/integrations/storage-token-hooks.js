@@ -70,6 +70,11 @@ export function registerStorageTokenHooks(moduleApi, {
       return false;
     }
   };
+  const cleanupCanvasGroundPileFrames = async () => {
+    const tokens = canvasProvider()?.tokens?.placeables ?? [];
+    await Promise.all(tokens.map((token) => ensureGroundPileFrame(token)));
+  };
+  void cleanupCanvasGroundPileFrames();
   const showAccessFailure = (token, access) => {
     if (access.reason === "distance") {
       overlayController.showFeedback(token, "Подойдите ближе", { durationMs: 2000 });
@@ -143,7 +148,7 @@ export function registerStorageTokenHooks(moduleApi, {
   };
 
   hooks.on("controlToken", async (token, controlled) => {
-    if (!controlled || (!isStorageActor(token?.actor) && !isDeadNpcStorageTarget(token))) return;
+    if (!controlled || (!isStorageActor(token?.actor) && !isCorpseStorageTarget(token))) return;
     bindPointerClick(token);
   });
   hooks.on("hoverToken", (token, hovered) => {
@@ -171,7 +176,10 @@ export function registerStorageTokenHooks(moduleApi, {
     overlayController.reposition();
   });
   hooks.on("deleteToken", () => overlayController.close());
-  hooks.on("canvasReady", () => overlayController.close());
+  hooks.on("canvasReady", async () => {
+    overlayController.close();
+    await cleanupCanvasGroundPileFrames();
+  });
   hooks.on("canvasTearDown", () => overlayController.close());
 
   hooks.on("getActorSheetHeaderButtons", (app, buttons) => {
