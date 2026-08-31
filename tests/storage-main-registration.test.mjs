@@ -98,7 +98,6 @@ test("main registers the storage deposit socket API and current cache keys", asy
   assert.match(main, /this\.storageTriggerService = new StorageTriggerService\(\{/u);
   assert.match(main, /this\.storageTriggerPromptBroker = new StorageTriggerPromptBroker\(\{/u);
   assert.match(main, /this\.storageTriggerPromptBroker\.handleMessage\(message, senderId\)/u);
-  assert.match(main, /triggerService:\s*this\.storageTriggerService/u);
   assert.match(main, /STORAGE_TRIGGER_READ_COMMAND\s*=\s*"storage\.triggers\.read"/u);
   assert.match(main, /STORAGE_TRIGGER_SAVE_COMMAND\s*=\s*"storage\.triggers\.save"/u);
   assert.match(main, /STORAGE_TRIGGER_RESET_COMMAND\s*=\s*"storage\.triggers\.reset"/u);
@@ -109,6 +108,20 @@ test("main registers the storage deposit socket API and current cache keys", asy
   assert.match(main, /async saveStorageTriggers\(/u);
   assert.match(main, /async resetStorageTriggerExecutions\(/u);
   assert.match(main, /async openStorageTriggerEditor\(/u);
+  assert.match(main, /this\.triggerTargetCoordinator = new TriggerTargetCoordinator\(\{/u);
+  assert.match(main, /this\.doorTriggerCommandService = new DoorTriggerCommandService\(\{/u);
+  assert.match(main, /triggerTargetCoordinator:\s*this\.triggerTargetCoordinator/u);
+  assert.match(main, /DOOR_OPEN_COMMAND\s*=\s*"door\.open"/u);
+  assert.match(main, /DOOR_TRIGGER_READ_COMMAND\s*=\s*"door\.triggers\.read"/u);
+  assert.match(main, /DOOR_TRIGGER_SAVE_COMMAND\s*=\s*"door\.triggers\.save"/u);
+  assert.match(main, /DOOR_TRIGGER_RESET_COMMAND\s*=\s*"door\.triggers\.reset"/u);
+  assert.match(main, /getDoorTriggerPreflight\(/u);
+  assert.match(main, /async getDoorTriggers\(/u);
+  assert.match(main, /async saveDoorTriggers\(/u);
+  assert.match(main, /async resetDoorTriggerExecutions\(/u);
+  assert.match(main, /async attemptDoorOpen\(/u);
+  assert.match(main, /async openDoorTriggerEditor\(/u);
+  assert.match(main, /registerDoorTriggerHooks\(moduleApi/u);
   assert.match(main, /registerStorageTokenDropHooks\(moduleApi/u);
   assert.match(main, /STORAGE_TOKEN_CHARACTER_COMMAND\s*=\s*"storage\.token-to-character"/u);
   assert.match(main, /register\(STORAGE_TOKEN_CHARACTER_COMMAND,\s*\{/u);
@@ -121,13 +134,13 @@ test("main registers the storage deposit socket API and current cache keys", asy
   for (const importPath of [
     "data/storage-service.js?v=1.4.195-storage-administration",
     "data/storage-open-sound-service.js?v=1.4.145-coin-icons-storage-sound",
-    "data/storage-access.js?v=1.4.158-storage-access-cache",
+    "data/storage-access.js?v=1.4.197-door-trigger-target",
     "data/storage-ground-pile-service.js?v=1.4.195-storage-administration",
     "data/storage-container-item-service.js?v=1.4.130-storage-player-fixes",
     "data/storage-deposit-source.js?v=1.4.195-storage-administration",
-    "data/storage-command-service.js?v=1.4.195-storage-administration",
-    "data/storage-trigger-service.js?v=1.4.164-storage-key-feedback",
-    "integrations/storage-token-hooks.js?v=1.4.195-storage-administration",
+    "data/storage-command-service.js?v=1.4.197-door-trigger-target",
+    "data/storage-trigger-service.js?v=1.4.197-door-trigger-target",
+    "integrations/storage-token-hooks.js?v=1.4.197-door-trigger-target",
     "combat/hooks.js?v=1.4.191-magic-item-runtime",
     "integrations/storage-transfer-drop.js?v=1.4.161-journal-scene-items",
     "integrations/storage-token-drop.js?v=1.4.132-storage-owned-character-resolution",
@@ -138,19 +151,66 @@ test("main registers the storage deposit socket API and current cache keys", asy
   for (const importPath of [
     "storage-service.js?v=1.4.195-storage-administration",
     "storage-deposit-source.js?v=1.4.195-storage-administration",
-    "storage-access.js?v=1.4.158-storage-access-cache"
+    "storage-access.js?v=1.4.197-door-trigger-target"
   ]) {
     assert.equal(storageCommand.includes(importPath), true, importPath);
   }
   for (const importPath of [
-    "data/storage-access.js?v=1.4.158-storage-access-cache",
-    "ui/storage-token-overlay.js?v=1.4.158-storage-access-cache",
+    "data/storage-access.js?v=1.4.197-door-trigger-target",
+    "ui/storage-token-overlay.js?v=1.4.197-door-trigger-target",
     "storage-ground-pile-frame.js?v=1.4.195-storage-administration"
   ]) {
     assert.equal(storageHooks.includes(importPath), true, importPath);
   }
-  assert.equal(manifest.version, "1.4.196");
+  assert.equal(manifest.version, "1.4.197");
   assert.match(main, /await registerStorageContainerHierarchyHooks\(\{ Hooks \}\)/u);
+});
+
+test("real door command registrations validate and execute exact typed routes", async () => {
+  const gm = { id: "gm", isGM: true, active: true };
+  const player = { id: "player", isGM: false, active: true };
+  const runtime = createModuleRuntime({ user: gm, users: [gm, player] });
+  try {
+    const main = await import(`../scripts/main.js?door-registration=${Date.now()}`);
+    const moduleApi = new main.RebreyaMainModule();
+    const calls = [];
+    moduleApi.doorTriggerCommandService = {
+      async open(payload, context) { calls.push(["open", payload, context]); return { opened: true }; },
+      async readTriggers(payload, context) { calls.push(["read", payload, context]); return { enabled: false, triggers: {} }; },
+      async saveTriggers(payload, context) { calls.push(["save", payload, context]); return { enabled: payload.enabled, triggers: {} }; },
+      async resetTriggers(payload, context) { calls.push(["reset", payload, context]); return { enabled: true, triggers: {} }; }
+    };
+    const definitions = {
+      chainsByEvent: { beforeOpen: [], afterOpen: [], afterClaim: [], emptied: [] }
+    };
+    const requests = [
+      [main.DOOR_OPEN_COMMAND, "door-open", { wallUuid: "Scene.room.Wall.north", characterTokenUuid: "Scene.room.Token.hero", mutationId: "open-1" }],
+      [main.DOOR_TRIGGER_READ_COMMAND, "door-read", { wallUuid: "Scene.room.Wall.north" }],
+      [main.DOOR_TRIGGER_SAVE_COMMAND, "door-save", { wallUuid: "Scene.room.Wall.north", enabled: true, definitions, expectedRevision: 0, operationId: "save-1" }],
+      [main.DOOR_TRIGGER_RESET_COMMAND, "door-reset", { wallUuid: "Scene.room.Wall.north", operationId: "reset-1" }]
+    ];
+    for (const [command, requestId, payload] of requests) {
+      assert.equal(moduleApi.socketCommandBus.handleMessage({
+        type: COMMAND_REQUEST_TYPE, command, requestId, senderId: gm.id, payload
+      }, { transportSenderId: gm.id }), true);
+      assert.equal((await waitForSocketResult(runtime.emitted, requestId))?.ok, true);
+    }
+    assert.deepEqual(calls.map(([name]) => name), ["open", "read", "save", "reset"]);
+    assert.equal(calls.every(([, , context]) => context.sender === gm), true);
+
+    assert.equal(moduleApi.socketCommandBus.handleMessage({
+      type: COMMAND_REQUEST_TYPE,
+      command: main.DOOR_TRIGGER_READ_COMMAND,
+      requestId: "door-player-read",
+      senderId: player.id,
+      payload: { wallUuid: "Scene.room.Wall.north" }
+    }, { transportSenderId: player.id }), true);
+    assert.equal((await waitForSocketResult(runtime.emitted, "door-player-read"))?.error?.code, "unauthorized");
+    assert.equal(calls.length, 4);
+  }
+  finally {
+    runtime.restore();
+  }
 });
 
 test("real storage command registrations validate envelopes and execute their composed handlers", async () => {
@@ -490,7 +550,7 @@ test("composed storage command service receives the module durability service in
     const { RebreyaMainModule } = await import(`../scripts/main.js?storage-durability=${Date.now()}`);
     const moduleApi = new RebreyaMainModule();
     assert.equal(moduleApi.storageCommandService.durabilityService, moduleApi.durabilityService);
-    assert.equal(moduleApi.storageCommandService.triggerService, moduleApi.storageTriggerService);
+    assert.equal(moduleApi.storageCommandService.triggerTargetCoordinator, moduleApi.triggerTargetCoordinator);
   }
   finally {
     runtime.restore();

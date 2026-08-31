@@ -1,5 +1,5 @@
-import { createTriggerTargetRef } from "./trigger-target-coordinator.js";
-import { MAX_DOOR_DISTANCE_FEET } from "../data/door-access.js";
+import { createTriggerTargetRef } from "./trigger-target-coordinator.js?v=1.4.197-door-trigger-target";
+import { MAX_DOOR_DISTANCE_FEET } from "../data/door-access.js?v=1.4.197-door-trigger-target";
 
 const MODULE_ID = "rebreya-main";
 const MAX_DEFINITIONS_LENGTH = 500_000;

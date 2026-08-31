@@ -13,14 +13,14 @@ import {
   MAX_STORAGE_DISTANCE_FEET,
   STORAGE_ACCESS_DISTANCE_ERROR_CODE,
   STORAGE_ACCESS_DISTANCE_ERROR_MESSAGE
-} from "./storage-access.js?v=1.4.158-storage-access-cache";
+} from "./storage-access.js?v=1.4.197-door-trigger-target";
 import { isValidSerializedInventoryIngressPlan } from "../application/inventory-ingress-planner.js";
-import { STORAGE_TRIGGER_EVENTS } from "./storage-trigger-service.js";
+import { STORAGE_TRIGGER_EVENTS } from "./storage-trigger-service.js?v=1.4.197-door-trigger-target";
 import {
   TriggerTargetCoordinator,
   createTriggerTargetRef
-} from "../application/trigger-target-coordinator.js";
-import { StorageTriggerTargetAdapter } from "./storage-trigger-target-adapter.js";
+} from "../application/trigger-target-coordinator.js?v=1.4.197-door-trigger-target";
+import { StorageTriggerTargetAdapter } from "./storage-trigger-target-adapter.js?v=1.4.197-door-trigger-target";
 
 const STORAGE_ROW_DESTINATIONS = new Set(["self", "party", "character", "scene"]);
 const STORAGE_COIN_DESTINATIONS = new Set(["self", "party"]);

@@ -1,4 +1,4 @@
-import { DOOR_TRIGGER_EVENTS } from "./door-trigger-target.js";
+import { DOOR_TRIGGER_EVENTS } from "./door-trigger-target.js?v=1.4.197-door-trigger-target";
 
 export class DoorTriggerTargetAdapter {
   constructor({ repository } = {}) {

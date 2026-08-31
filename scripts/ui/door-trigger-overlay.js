@@ -1,4 +1,4 @@
-import { StorageTokenOverlayController } from "./storage-token-overlay.js";
+import { StorageTokenOverlayController } from "./storage-token-overlay.js?v=1.4.197-door-trigger-target";
 
 const HANDLED_MESSAGES = Object.freeze({
   DOOR_CHARACTER_REQUIRED: "Выберите своего персонажа",

@@ -2,7 +2,7 @@ import {
   createEmptyStorageTriggerState,
   normalizeStorageTriggerState,
   validateStorageTriggerDefinitions
-} from "./storage-trigger-service.js";
+} from "./storage-trigger-service.js?v=1.4.197-door-trigger-target";
 
 const MODULE_ID = "rebreya-main";
 

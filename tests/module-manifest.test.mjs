@@ -63,8 +63,8 @@ test("module manifest loads an unpinned canonical entrypoint for page-refresh up
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const [entrypoint] = manifest.esmodules;
 
-  assert.equal(manifest.version, "1.4.196");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.196.js"]);
+  assert.equal(manifest.version, "1.4.197");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.197.js"]);
   assert.doesNotMatch(entrypoint, /[?#]/u);
 
   const entrypointSource = await readFile(new URL(entrypoint, manifestUrl), "utf8");
@@ -240,17 +240,17 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
     "data/craft-downtime-service.js?v=1.4.96-craft-calendar",
     "data/calendar-transition-coordinator.js?v=1.4.96-craft-calendar",
     "integrations/durability-hooks.js?v=1.4.153-corpse-creature",
-    "data/storage-trigger-service.js?v=1.4.164-storage-key-feedback",
-    "integrations/storage-token-hooks.js?v=1.4.195-storage-administration",
+    "data/storage-trigger-service.js?v=1.4.197-door-trigger-target",
+    "integrations/storage-token-hooks.js?v=1.4.197-door-trigger-target",
     "integrations/inventory-sync.js?v=1.4.96-durable-transfer",
     "data/gear-compendium.js?v=1.4.145-coin-icons-storage-sound",
     "data/storage-open-sound-service.js?v=1.4.145-coin-icons-storage-sound",
     "data/storage-service.js?v=1.4.195-storage-administration",
-    "data/storage-access.js?v=1.4.158-storage-access-cache",
+    "data/storage-access.js?v=1.4.197-door-trigger-target",
     "data/storage-ground-pile-service.js?v=1.4.195-storage-administration",
     "data/storage-container-item-service.js?v=1.4.130-storage-player-fixes",
     "data/storage-deposit-source.js?v=1.4.195-storage-administration",
-    "data/storage-command-service.js?v=1.4.195-storage-administration",
+    "data/storage-command-service.js?v=1.4.197-door-trigger-target",
     "integrations/storage-transfer-drop.js?v=1.4.161-journal-scene-items",
     "integrations/storage-token-drop.js?v=1.4.132-storage-owned-character-resolution"
   ]) {
@@ -307,7 +307,7 @@ test("module keeps recent published entrypoint URLs as canonical compatibility f
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
 
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.196.js"]);
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.197.js"]);
 
   for (const fileName of ["main-1.4.98.js", "main-1.4.99.js", "main-1.4.100.js"]) {
     const forwarderSource = await readFile(new URL(`../scripts/${fileName}`, import.meta.url), "utf8");
@@ -481,7 +481,7 @@ test("legacy settings relay fails closed when a world-setting socket is unavaila
 test("module stylesheet cache bust loads the storage deposit interaction styles", async () => {
   const entrypointSource = await readCanonicalEntrypointSource();
 
-  assert.match(entrypointSource, /const MODULE_STYLE_VERSION = "1\.4\.120-storage-character-drop";/u);
+  assert.match(entrypointSource, /const MODULE_STYLE_VERSION = "1\.4\.197-door-trigger-target";/u);
   assert.match(entrypointSource, /const stylesheetHref = `\$\{MODULE_STYLE_PATH\}\?v=\$\{encodeURIComponent\(MODULE_STYLE_VERSION\)\}`;/u);
   assert.doesNotMatch(entrypointSource, /module\?\.version\s*\?\?/u);
 });

@@ -209,12 +209,24 @@ import {
   isStorageTokenVisible,
   measureStoragePointDistance,
   measureStorageTokenDistance
-} from "./data/storage-access.js?v=1.4.158-storage-access-cache";
+} from "./data/storage-access.js?v=1.4.197-door-trigger-target";
 import { BuiltinStorageActorService } from "./data/builtin-storage-actor-service.js";
 import { StorageGroundPileService } from "./data/storage-ground-pile-service.js?v=1.4.195-storage-administration";
 import { StorageContainerItemService } from "./data/storage-container-item-service.js?v=1.4.130-storage-player-fixes";
 import { isStorageJournalRow } from "./data/storage-container-snapshot.js";
-import { StorageTriggerService } from "./data/storage-trigger-service.js?v=1.4.164-storage-key-feedback";
+import { StorageTriggerService } from "./data/storage-trigger-service.js?v=1.4.197-door-trigger-target";
+import { DoorTriggerTargetRepository, readDoorTriggerTarget } from "./data/door-trigger-target.js?v=1.4.197-door-trigger-target";
+import { measureDoorDistanceFeet, preflightDoorAccess } from "./data/door-access.js?v=1.4.197-door-trigger-target";
+import { TriggerTargetCoordinator } from "./application/trigger-target-coordinator.js?v=1.4.197-door-trigger-target";
+import { StorageTriggerTargetAdapter } from "./data/storage-trigger-target-adapter.js?v=1.4.197-door-trigger-target";
+import { DoorTriggerTargetAdapter } from "./data/door-trigger-target-adapter.js?v=1.4.197-door-trigger-target";
+import {
+  DoorTriggerCommandService,
+  isValidDoorOpenPayload,
+  isValidDoorTriggerReadPayload,
+  isValidDoorTriggerResetPayload,
+  isValidDoorTriggerSavePayload
+} from "./application/door-trigger-command-service.js?v=1.4.197-door-trigger-target";
 import { StorageTriggerDnd5eAdapter } from "./data/storage-trigger-dnd5e-adapter.js";
 import {
   StorageJournalReader,
@@ -242,7 +254,7 @@ import {
   isValidStorageRestorePortablePayload,
   isValidStorageTokenCharacterPayload,
   storageCharacterTokenUuidForClaim
-} from "./data/storage-command-service.js?v=1.4.195-storage-administration";
+} from "./data/storage-command-service.js?v=1.4.197-door-trigger-target";
 import { registerCombatHooks } from "./combat/hooks.js?v=1.4.191-magic-item-runtime";
 import { CombatAttackService } from "./combat/attack-service.js?v=1.4.181-dual-wield-gloves";
 import { ImplantAutomationService } from "./combat/implant-automation-service.js";
@@ -315,7 +327,8 @@ import { runMapObjectTokenMacro } from "./integrations/map-object-token-macro.js
 import { refreshSmallTimeDateDisplay, registerSmallTimeIntegration, syncSmallTimeToCalendarTime } from "./integrations/smalltime-compat.js";
 import { registerRationFoodConversionHook } from "./integrations/ration-food-conversion.js";
 import { registerMagicWeaponTemplateHook } from "./integrations/magic-weapon-template.js?v=1.4.96";
-import { registerStorageTokenHooks } from "./integrations/storage-token-hooks.js?v=1.4.195-storage-administration";
+import { registerStorageTokenHooks } from "./integrations/storage-token-hooks.js?v=1.4.197-door-trigger-target";
+import { registerDoorTriggerHooks } from "./integrations/door-trigger-hooks.js?v=1.4.197-door-trigger-target";
 import { registerCraftsmanGadgetHooks } from "./integrations/craftsman-gadget-hooks.js";
 import { registerSpellAutomationHooks } from "./integrations/spell-automation-hooks.js";
 import { registerLongRestHooks } from "./integrations/long-rest-hooks.js";
@@ -370,7 +383,7 @@ const LEGACY_WORLD_MUTATION_SOCKET_TYPES = new Set([
   SOCKET_EVENT_LOOTGEN_CLAIM_COINS
 ]);
 const MODULE_STYLE_PATH = `modules/${MODULE_ID}/styles/main.css`;
-const MODULE_STYLE_VERSION = "1.4.120-storage-character-drop";
+const MODULE_STYLE_VERSION = "1.4.197-door-trigger-target";
 const SECONDS_PER_HOUR = 3600;
 const SECONDS_PER_DAY = 86400;
 const TRAVEL_DAY_HOURS = 8;
@@ -392,6 +405,10 @@ export const STORAGE_TOKEN_CHARACTER_COMMAND = "storage.token-to-character";
 export const STORAGE_TRIGGER_READ_COMMAND = "storage.triggers.read";
 export const STORAGE_TRIGGER_SAVE_COMMAND = "storage.triggers.save";
 export const STORAGE_TRIGGER_RESET_COMMAND = "storage.triggers.reset";
+export const DOOR_OPEN_COMMAND = "door.open";
+export const DOOR_TRIGGER_READ_COMMAND = "door.triggers.read";
+export const DOOR_TRIGGER_SAVE_COMMAND = "door.triggers.save";
+export const DOOR_TRIGGER_RESET_COMMAND = "door.triggers.reset";
 export const DURABILITY_TARGET_DAMAGE_COMMAND = "durability.target.damage";
 const ENVIRONMENT_COMBAT_STATUS_IDS = new Set(["rebreya-surrounded", "rebreya-open-position"]);
 const ENVIRONMENT_STATUS_SOURCE = "rebreya-environment";
@@ -1468,6 +1485,20 @@ export class RebreyaMainModule {
       ),
       logger: console
     });
+    this.doorTriggerRepository = new DoorTriggerTargetRepository();
+    this.triggerTargetCoordinator = new TriggerTargetCoordinator({
+      triggerService: this.storageTriggerService,
+      adapters: {
+        storage: new StorageTriggerTargetAdapter({ storageService: this.storageService }),
+        door: new DoorTriggerTargetAdapter({ repository: this.doorTriggerRepository })
+      }
+    });
+    this.doorTriggerCommandService = new DoorTriggerCommandService({
+      coordinator: this.triggerTargetCoordinator,
+      resolveDocument: (uuid) => globalThis.fromUuid?.(uuid),
+      measureDistance: measureDoorDistanceFeet,
+      logger: console
+    });
     this.builtinStorageActorService = new BuiltinStorageActorService({
       gameProvider: () => globalThis.game,
       folderProvider: () => globalThis.Folder,
@@ -1505,7 +1536,7 @@ export class RebreyaMainModule {
       groundPileService: this.storageGroundPileService,
       containerItemService: this.storageContainerItemService,
       durabilityService: this.durabilityService,
-      triggerService: this.storageTriggerService,
+      triggerTargetCoordinator: this.triggerTargetCoordinator,
       journalReader: this.storageJournalReader,
       isVisibleTo: (storageToken) => isStorageTokenVisible(storageToken),
       createChatMessage: (data) => globalThis.ChatMessage?.create?.(data)
@@ -1750,6 +1781,7 @@ export class RebreyaMainModule {
     this.latestLootgenResult = null;
     this.storageApps = new Map();
     this.storageTriggerEditors = new Map();
+    this.doorTriggerEditors = new Map();
     this.cityApps = new Map();
     this.traderV2Apps = new Map();
     this.tradeRouteApps = new Map();
@@ -2331,6 +2363,26 @@ export class RebreyaMainModule {
       validate: isValidStorageTriggerResetPayload,
       authorize: (_payload, { sender }) => sender?.isGM === true,
       execute: (payload, { sender }) => this.storageCommandService.resetTriggers(payload, { sender })
+    });
+    this.socketCommandBus.register(DOOR_OPEN_COMMAND, {
+      validate: isValidDoorOpenPayload,
+      authorize: (_payload, { sender }) => Boolean(sender),
+      execute: (payload, { sender }) => this.doorTriggerCommandService.open(payload, { sender })
+    });
+    this.socketCommandBus.register(DOOR_TRIGGER_READ_COMMAND, {
+      validate: isValidDoorTriggerReadPayload,
+      authorize: (_payload, { sender }) => sender?.isGM === true,
+      execute: (payload, { sender }) => this.doorTriggerCommandService.readTriggers(payload, { sender })
+    });
+    this.socketCommandBus.register(DOOR_TRIGGER_SAVE_COMMAND, {
+      validate: isValidDoorTriggerSavePayload,
+      authorize: (_payload, { sender }) => sender?.isGM === true,
+      execute: (payload, { sender }) => this.doorTriggerCommandService.saveTriggers(payload, { sender })
+    });
+    this.socketCommandBus.register(DOOR_TRIGGER_RESET_COMMAND, {
+      validate: isValidDoorTriggerResetPayload,
+      authorize: (_payload, { sender }) => sender?.isGM === true,
+      execute: (payload, { sender }) => this.doorTriggerCommandService.resetTriggers(payload, { sender })
     });
     this.socketCommandBus.register(DURABILITY_TARGET_DAMAGE_COMMAND, {
       validate: isValidDurabilityTargetDamagePayload,
@@ -4230,6 +4282,67 @@ export class RebreyaMainModule {
       : this.socketCommandBus.request(STORAGE_OPEN_COMMAND, payload);
   }
 
+  getDoorTriggerPreflight(wallUuid) {
+    const safeWallUuid = cleanSocketId(wallUuid);
+    let wall = globalThis.fromUuidSync?.(safeWallUuid) ?? null;
+    if (!wall) {
+      const match = /^Scene\.([^.]+)\.Wall\.([^.]+)$/u.exec(safeWallUuid);
+      if (match && String(globalThis.canvas?.scene?.id ?? "") === match[1]) {
+        wall = globalThis.canvas?.scene?.walls?.get?.(match[2]) ?? null;
+      }
+    }
+    const target = readDoorTriggerTarget(wall);
+    return {
+      configured: target.configured === true,
+      enabled: target.enabled === true,
+      ...preflightDoorAccess(wall, { game: globalThis.game, canvas: globalThis.canvas })
+    };
+  }
+
+  async getDoorTriggers(wallUuid) {
+    if (globalThis.game?.user?.isGM !== true) throw new Error("Настраивать триггеры может только мастер.");
+    const payload = { wallUuid: cleanSocketId(wallUuid) };
+    return isActiveGmClient(globalThis.game)
+      ? this.doorTriggerCommandService.readTriggers(payload, { sender: globalThis.game?.user })
+      : this.socketCommandBus.request(DOOR_TRIGGER_READ_COMMAND, payload);
+  }
+
+  async saveDoorTriggers(wallUuid, enabled, definitions, expectedRevision, operationId = "") {
+    if (globalThis.game?.user?.isGM !== true) throw new Error("Настраивать триггеры может только мастер.");
+    const payload = {
+      wallUuid: cleanSocketId(wallUuid),
+      enabled: enabled === true,
+      definitions: globalThis.foundry?.utils?.deepClone?.(definitions) ?? JSON.parse(JSON.stringify(definitions)),
+      expectedRevision: Number(expectedRevision),
+      operationId: cleanSocketId(operationId) || createSocketRequestId("door-triggers-save")
+    };
+    return isActiveGmClient(globalThis.game)
+      ? this.doorTriggerCommandService.saveTriggers(payload, { sender: globalThis.game?.user })
+      : this.socketCommandBus.request(DOOR_TRIGGER_SAVE_COMMAND, payload);
+  }
+
+  async resetDoorTriggerExecutions(wallUuid, operationId = "") {
+    if (globalThis.game?.user?.isGM !== true) throw new Error("Настраивать триггеры может только мастер.");
+    const payload = {
+      wallUuid: cleanSocketId(wallUuid),
+      operationId: cleanSocketId(operationId) || createSocketRequestId("door-triggers-reset")
+    };
+    return isActiveGmClient(globalThis.game)
+      ? this.doorTriggerCommandService.resetTriggers(payload, { sender: globalThis.game?.user })
+      : this.socketCommandBus.request(DOOR_TRIGGER_RESET_COMMAND, payload);
+  }
+
+  async attemptDoorOpen(wallUuid, mutationId = "", request = {}) {
+    const payload = {
+      wallUuid: cleanSocketId(wallUuid),
+      characterTokenUuid: this.#controlledCharacterTokenUuid(request.characterTokenUuid),
+      mutationId: cleanSocketId(mutationId) || createSocketRequestId("door-open")
+    };
+    return isActiveGmClient(globalThis.game)
+      ? this.doorTriggerCommandService.open(payload, { sender: globalThis.game?.user })
+      : this.socketCommandBus.request(DOOR_OPEN_COMMAND, payload);
+  }
+
   async getStorageTriggers(tokenUuid, request = {}) {
     if (globalThis.game?.user?.isGM !== true) throw new Error("Настраивать триггеры может только мастер.");
     const path = cleanStoragePath(request.path);
@@ -4888,6 +5001,31 @@ export class RebreyaMainModule {
     if (!app) {
       app = new StorageTriggerEditor(this, safeTokenUuid, { path, storageName: cleanSocketId(snapshot?.name) });
       this.storageTriggerEditors.set(key, app);
+    }
+    await app.render({ force: true });
+    bringAppToFront(app);
+    return app;
+  }
+
+  async openDoorTriggerEditor(wallUuid) {
+    if (globalThis.game?.user?.isGM !== true) throw new Error("Настраивать триггеры может только мастер.");
+    const safeWallUuid = cleanSocketId(wallUuid);
+    if (!safeWallUuid) throw new Error("Не указана дверь.");
+    const wall = await globalThis.fromUuid?.(safeWallUuid);
+    const none = Number(globalThis.CONST?.WALL_DOOR_TYPES?.NONE ?? 0);
+    if (wall?.documentName !== "Wall" || Number(wall?.door) === none) throw new Error("Дверь недоступна.");
+    const moduleVersion = globalThis.game?.modules?.get?.(MODULE_ID)?.version ?? "1.4.197";
+    const { TriggerEditor } = await import(
+      `./ui/storage-trigger-editor.js?v=${encodeURIComponent(`${moduleVersion}-door-trigger-target`)}`
+    );
+    let app = this.doorTriggerEditors.get(safeWallUuid);
+    if (!app) {
+      app = new TriggerEditor(this, { kind: "door", uuid: safeWallUuid, path: [] }, {
+        targetName: cleanSocketId(wall?.name) || "Дверь",
+        availableEvents: ["beforeOpen", "afterOpen"],
+        canToggleEnabled: true
+      });
+      this.doorTriggerEditors.set(safeWallUuid, app);
     }
     await app.render({ force: true });
     bringAppToFront(app);
@@ -6974,6 +7112,13 @@ Hooks.once("ready", async () => {
   }
   catch (error) {
     console.error(`${MODULE_ID} | Failed to register storage token hooks.`, error);
+  }
+
+  try {
+    registerDoorTriggerHooks(moduleApi, { hooks: Hooks });
+  }
+  catch (error) {
+    console.error(`${MODULE_ID} | Failed to register door trigger hooks.`, error);
   }
 
   try {

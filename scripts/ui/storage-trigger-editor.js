@@ -1,6 +1,6 @@
 import { MODULE_ID } from "../constants.js";
 import { getAppElement } from "../ui.js";
-import { STORAGE_TRIGGER_EVENTS } from "../data/storage-trigger-service.js";
+import { STORAGE_TRIGGER_EVENTS } from "../data/storage-trigger-service.js?v=1.4.197-door-trigger-target";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 

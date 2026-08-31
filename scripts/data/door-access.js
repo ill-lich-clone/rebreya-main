@@ -2,7 +2,7 @@ import {
   measureStorageGridDistance,
   storageTokenDocument,
   storageTokenFootprintCenters
-} from "./storage-access.js";
+} from "./storage-access.js?v=1.4.197-door-trigger-target";
 
 export const MAX_DOOR_DISTANCE_FEET = 10;
 
