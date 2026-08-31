@@ -420,11 +420,29 @@ const queuedSocketMessages = [];
 export async function publishModuleVersionNotice({
   moduleEntry = globalThis.game?.modules?.get?.(MODULE_ID),
   user = globalThis.game?.user,
+  fetchManifest = globalThis.fetch?.bind?.(globalThis),
   createChatMessage = globalThis.ChatMessage?.create?.bind(globalThis.ChatMessage),
   logger = console
 } = {}) {
   const userId = String(user?.id ?? "").trim();
-  const version = String(moduleEntry?.version ?? "").trim();
+  let version = String(moduleEntry?.version ?? "").trim();
+
+  if (typeof fetchManifest === "function") {
+    try {
+      const response = await fetchManifest(
+        `modules/${MODULE_ID}/module.json?reload=${Date.now()}`,
+        { cache: "no-store" }
+      );
+      if (response?.ok) {
+        const manifest = await response.json();
+        version = String(manifest?.version ?? "").trim() || version;
+      }
+    }
+    catch {
+      // A stale Foundry package registry is still preferable to losing the notice entirely.
+    }
+  }
+
   if (!userId || !version || typeof createChatMessage !== "function") return false;
 
   try {
