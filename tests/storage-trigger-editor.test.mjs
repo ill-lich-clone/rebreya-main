@@ -15,11 +15,47 @@ globalThis.foundry = {
 };
 
 const {
+  TriggerEditor,
   StorageTriggerEditor,
+  buildDoorLockTrigger,
   buildStorageLockTrigger,
   buildStorageTrapTrigger,
   resolveStorageTriggerItemDrop
 } = await import(`../scripts/ui/storage-trigger-editor.js?test=${Date.now()}`);
+
+test("door trigger editor exposes two events and saves enabled state", async () => {
+  const state = createEmptyStorageTriggerState();
+  const saves = [];
+  const app = new TriggerEditor({
+    async getDoorTriggers() {
+      return { wallUuid: "Scene.room.Wall.north", enabled: false, triggers: state };
+    },
+    async saveDoorTriggers(wallUuid, enabled, definitions, expectedRevision, operationId) {
+      saves.push({ wallUuid, enabled, definitions, expectedRevision, operationId });
+      return {
+        wallUuid,
+        enabled,
+        triggers: { ...state, revision: expectedRevision + 1, chainsByEvent: definitions.chainsByEvent }
+      };
+    }
+  }, { kind: "door", uuid: "Scene.room.Wall.north", path: [] }, {
+    targetName: "Северная дверь",
+    availableEvents: ["beforeOpen", "afterOpen"],
+    canToggleEnabled: true
+  });
+
+  const context = await app._prepareContext();
+  assert.deepEqual(context.events.map(({ event }) => event), ["beforeOpen", "afterOpen"]);
+  assert.equal(context.targetName, "Северная дверь");
+  assert.equal(context.targetKindLabel, "двери");
+  assert.equal(context.canToggleEnabled, true);
+  app.enabled = true;
+  await app.saveDraft();
+  assert.equal(saves.length, 1);
+  assert.equal(saves[0].enabled, true);
+  assert.deepEqual(Object.keys(saves[0].definitions.chainsByEvent), ["beforeOpen", "afterOpen", "afterClaim", "emptied"]);
+  assert.deepEqual(saves[0].definitions.chainsByEvent.afterClaim, []);
+});
 
 test("storage trigger editor is a separate wide four-event ApplicationV2 surface", async () => {
   const state = createEmptyStorageTriggerState();
@@ -38,17 +74,20 @@ test("storage trigger editor is a separate wide four-event ApplicationV2 surface
     ["afterClaim", "После получения"], ["emptied", "Опустело"]
   ]);
   assert.equal(context.storageName, "Кухонный буфет");
+  assert.equal(context.canToggleEnabled, false);
   assert.equal(context.chains[0].name, "Замок");
   assert.deepEqual(context.steps.map(({ label }) => label), ["Проверка предмета", "Разрешить", "Запретить"]);
 });
 
 test("built-in lock and trap templates encode the approved native examples without cooldown", () => {
   const lock = buildStorageLockTrigger();
+  const doorLock = buildDoorLockTrigger();
   const trap = buildStorageTrapTrigger();
   assert.equal(lock.name, "Замок");
   assert.equal(lock.steps[0].type, "conditionItem");
   assert.deepEqual(lock.steps[0].config, { itemName: "", showItemName: false });
   assert.equal(lock.steps.at(-1).type, "deny");
+  assert.equal(doorLock.steps.at(-1).config.message, "Дверь заперта.");
   assert.equal(trap.name, "Ловушка");
   assert.equal(trap.repeat, "oncePerCharacter");
   assert.deepEqual(trap.steps.map(({ type }) => type), ["savingThrow", "damage", "finish"]);
@@ -93,6 +132,7 @@ test("storage trigger templates expose editor, reset, CRUD, inspector, and macro
   ]) assert.match(editor, new RegExp(`data-action="${action}"`, "u"));
   assert.match(editor, /data-field="step\.type"/u);
   assert.match(editor, /step\.config\.\{\{name\}\}/u);
+  assert.match(editor, /data-field="target\.enabled"/u);
   assert.match(storage, /data-action="storage-open-trigger-editor"/u);
   assert.match(storage, /data-action="storage-reset-triggers"/u);
   assert.doesNotMatch(editor, /cooldown|перезаряд/iu);

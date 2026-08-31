@@ -44,6 +44,12 @@ export function buildStorageLockTrigger() {
   };
 }
 
+export function buildDoorLockTrigger() {
+  const trigger = buildStorageLockTrigger();
+  trigger.steps.at(-1).config.message = "Дверь заперта.";
+  return trigger;
+}
+
 export function buildStorageTrapTrigger() {
   return {
     id: identity("trap"), name: "Ловушка", enabled: true, repeat: "oncePerCharacter", entryStepId: "save",
@@ -89,24 +95,73 @@ export async function resolveStorageTriggerItemDrop(data, { fromUuid = globalThi
   return clean(document?.name);
 }
 
-export class StorageTriggerEditor extends HandlebarsApplicationMixin(ApplicationV2) {
+const TARGET_TRANSPORT = Object.freeze({
+  storage: {
+    read: (api, target) => api.getStorageTriggers(target.uuid, { path: target.path }),
+    save: (api, target, input) => api.saveStorageTriggers(
+      target.uuid,
+      input.definitions,
+      input.expectedRevision,
+      input.operationId,
+      { path: target.path }
+    ),
+    reset: (api, target, operationId) => api.resetStorageTriggerExecutions(
+      target.uuid,
+      operationId,
+      { path: target.path }
+    )
+  },
+  door: {
+    read: (api, target) => api.getDoorTriggers(target.uuid),
+    save: (api, target, input) => api.saveDoorTriggers(
+      target.uuid,
+      input.enabled,
+      input.definitions,
+      input.expectedRevision,
+      input.operationId
+    ),
+    reset: (api, target, operationId) => api.resetDoorTriggerExecutions(target.uuid, operationId)
+  }
+});
+
+function normalizedEvents(value) {
+  const events = (Array.isArray(value) ? value : STORAGE_TRIGGER_EVENTS)
+    .map(clean)
+    .filter((event, index, all) => STORAGE_TRIGGER_EVENTS.includes(event) && all.indexOf(event) === index);
+  return events.length ? events : ["beforeOpen"];
+}
+
+export class TriggerEditor extends HandlebarsApplicationMixin(ApplicationV2) {
   static DEFAULT_OPTIONS = {
     classes: ["rebreya-main", "rebreya-storage-trigger-editor"],
-    window: { title: "Триггеры хранилища", icon: "fa-solid fa-bolt", resizable: true },
+    window: { title: "Триггеры", icon: "fa-solid fa-bolt", resizable: true },
     position: { width: 1120, height: 720 }
   };
 
   static PARTS = { main: { root: true, template: `modules/${MODULE_ID}/templates/storage-trigger-editor.hbs` } };
 
-  constructor(moduleApi, tokenUuid, options = {}) {
+  constructor(moduleApi, target, options = {}) {
     super(options);
     this.moduleApi = moduleApi;
-    this.tokenUuid = clean(tokenUuid);
-    this.path = (Array.isArray(options.path) ? options.path : []).map(clean).filter(Boolean).slice(0, 8);
-    this.storageName = clean(options.storageName) || "Хранилище";
+    const kind = clean(target?.kind);
+    if (!TARGET_TRANSPORT[kind]) throw new TypeError("Неизвестный тип цели триггеров.");
+    const uuid = clean(target?.uuid);
+    if (!uuid) throw new TypeError("Для редактора требуется UUID цели.");
+    const path = kind === "storage"
+      ? (Array.isArray(target?.path) ? target.path : []).map(clean).filter(Boolean).slice(0, 8)
+      : [];
+    this.target = Object.freeze({ kind, uuid, path: Object.freeze(path) });
+    this.transport = TARGET_TRANSPORT[kind];
+    this.availableEvents = normalizedEvents(options.availableEvents);
+    this.canToggleEnabled = options.canToggleEnabled === true && kind === "door";
+    this.targetName = clean(options.targetName) || (kind === "door" ? "Дверь" : "Хранилище");
+    this.storageName = this.targetName;
+    this.tokenUuid = kind === "storage" ? uuid : "";
+    this.path = path;
     this.snapshot = null;
     this.draft = null;
-    this.event = STORAGE_TRIGGER_EVENTS.includes(options.event) ? options.event : "beforeOpen";
+    this.enabled = kind === "storage";
+    this.event = this.availableEvents.includes(options.event) ? options.event : this.availableEvents[0];
     this.chainId = "";
     this.stepId = "";
     this.dirty = false;
@@ -115,13 +170,17 @@ export class StorageTriggerEditor extends HandlebarsApplicationMixin(Application
   }
 
   get id() {
-    const scope = [this.tokenUuid, ...this.path].join("-").replace(/[^a-z0-9_-]/giu, "-");
-    return `${MODULE_ID}-storage-triggers-${scope}`;
+    const scope = [this.target.uuid, ...this.target.path].join("-").replace(/[^a-z0-9_-]/giu, "-");
+    return `${MODULE_ID}-${this.target.kind}-triggers-${scope}`;
   }
 
   async #load() {
-    this.snapshot = await this.moduleApi.getStorageTriggers(this.tokenUuid, { path: this.path });
-    this.draft = clone(this.snapshot.triggers.chainsByEvent);
+    this.snapshot = await this.transport.read(this.moduleApi, this.target);
+    this.enabled = this.target.kind === "storage" ? true : this.snapshot.enabled === true;
+    this.draft = Object.fromEntries(this.availableEvents.map((event) => [
+      event,
+      clone(this.snapshot.triggers.chainsByEvent[event] ?? [])
+    ]));
     this.chainId = clean(this.draft[this.event]?.[0]?.id);
     this.stepId = clean(this.draft[this.event]?.[0]?.entryStepId);
     this.dirty = false;
@@ -146,9 +205,14 @@ export class StorageTriggerEditor extends HandlebarsApplicationMixin(Application
     }));
     const targetOptions = [{ value: "", label: "Завершить цепочку" }, ...steps.map((entry) => ({ value: entry.id, label: entry.label }))];
     return {
+      targetName: this.targetName,
+      targetKindLabel: this.target.kind === "door" ? "двери" : "хранилища",
+      canToggleEnabled: this.canToggleEnabled,
+      enabled: this.enabled,
+      eventCount: this.availableEvents.length,
       storageName: this.storageName,
       dirty: this.dirty,
-      events: STORAGE_TRIGGER_EVENTS.map((event) => ({ event, label: EVENT_LABELS[event], selected: event === this.event })),
+      events: this.availableEvents.map((event) => ({ event, label: EVENT_LABELS[event], selected: event === this.event })),
       chains, hasChains: chains.length > 0, chain, chainSupported: chain && chain.unsupported !== true,
       steps, hasSteps: steps.length > 0, step: step ? { ...clone(step), label: stepLabel(step) } : null,
       repeatOptions: [
@@ -163,17 +227,29 @@ export class StorageTriggerEditor extends HandlebarsApplicationMixin(Application
 
   async #renderCurrent() { await this.render({ force: true }); }
 
-  async #save() {
+  #definitions() {
+    return {
+      chainsByEvent: Object.fromEntries(STORAGE_TRIGGER_EVENTS.map((event) => [
+        event,
+        this.availableEvents.includes(event) ? clone(this.draft[event] ?? []) : []
+      ]))
+    };
+  }
+
+  async saveDraft() {
     try {
-      const result = await this.moduleApi.saveStorageTriggers(
-        this.tokenUuid,
-        { chainsByEvent: clone(this.draft) },
-        this.snapshot.triggers.revision,
-        identity("trigger-save"),
-        { path: this.path }
-      );
+      const result = await this.transport.save(this.moduleApi, this.target, {
+        enabled: this.enabled,
+        definitions: this.#definitions(),
+        expectedRevision: this.snapshot.triggers.revision,
+        operationId: identity("trigger-save")
+      });
       this.snapshot = result;
-      this.draft = clone(result.triggers.chainsByEvent);
+      this.enabled = this.target.kind === "storage" ? true : result.enabled === true;
+      this.draft = Object.fromEntries(this.availableEvents.map((event) => [
+        event,
+        clone(result.triggers.chainsByEvent[event] ?? [])
+      ]));
       this.dirty = false;
       this.validationIssues = [];
     }
@@ -196,7 +272,9 @@ export class StorageTriggerEditor extends HandlebarsApplicationMixin(Application
     }
     else if (action === "trigger-select-step") this.stepId = clean(control.dataset.stepId);
     else if (action === "trigger-template-lock" || action === "trigger-template-trap") {
-      const template = action.endsWith("lock") ? buildStorageLockTrigger() : buildStorageTrapTrigger();
+      const template = action.endsWith("lock")
+        ? (this.target.kind === "door" ? buildDoorLockTrigger() : buildStorageLockTrigger())
+        : buildStorageTrapTrigger();
       const targetEvent = action.endsWith("lock") ? "beforeOpen" : "afterOpen";
       this.event = targetEvent; this.draft[targetEvent].push(template); this.chainId = template.id; this.stepId = template.entryStepId; this.#markDirty();
     }
@@ -232,9 +310,9 @@ export class StorageTriggerEditor extends HandlebarsApplicationMixin(Application
       if (index >= 0 && target >= 0 && target < chain.steps.length) [chain.steps[index], chain.steps[target]] = [chain.steps[target], chain.steps[index]];
       this.#markDirty();
     }
-    else if (action === "trigger-save") await this.#save();
+    else if (action === "trigger-save") await this.saveDraft();
     else if (action === "trigger-reload") await this.#load();
-    else if (action === "trigger-reset") await this.moduleApi.resetStorageTriggerExecutions(this.tokenUuid, identity("trigger-reset"), { path: this.path });
+    else if (action === "trigger-reset") await this.transport.reset(this.moduleApi, this.target, identity("trigger-reset"));
     else return;
     await this.#renderCurrent();
   }
@@ -244,7 +322,8 @@ export class StorageTriggerEditor extends HandlebarsApplicationMixin(Application
     const field = clean(input?.dataset?.field);
     if (!field) return;
     const chain = this.#chain(); const step = this.#step();
-    if (field === "chain.name") chain.name = clean(input.value);
+    if (field === "target.enabled" && this.canToggleEnabled) this.enabled = input.checked === true;
+    else if (field === "chain.name") chain.name = clean(input.value);
     else if (field === "chain.enabled") chain.enabled = input.checked === true;
     else if (field === "chain.repeat") chain.repeat = clean(input.value);
     else if (field === "step.type") { step.type = clean(input.value); step.config = {}; }
@@ -302,5 +381,28 @@ export class StorageTriggerEditor extends HandlebarsApplicationMixin(Application
     }
     this.listeners?.abort();
     return super.close(options);
+  }
+}
+
+export class StorageTriggerEditor extends TriggerEditor {
+  static DEFAULT_OPTIONS = {
+    ...TriggerEditor.DEFAULT_OPTIONS,
+    window: {
+      ...TriggerEditor.DEFAULT_OPTIONS.window,
+      title: "Триггеры хранилища"
+    }
+  };
+
+  constructor(moduleApi, tokenUuid, options = {}) {
+    super(moduleApi, {
+      kind: "storage",
+      uuid: clean(tokenUuid),
+      path: options.path
+    }, {
+      ...options,
+      targetName: clean(options.storageName) || "Хранилище",
+      availableEvents: STORAGE_TRIGGER_EVENTS,
+      canToggleEnabled: false
+    });
   }
 }
