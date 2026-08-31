@@ -58,17 +58,17 @@ test("module manifest declares the physical Craftsman gadget Item type", async (
   });
 });
 
-test("module manifest loads the stable canonical entrypoint", async () => {
+test("module manifest loads an unpinned canonical entrypoint for page-refresh updates", async () => {
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const [entrypoint] = manifest.esmodules;
 
-  assert.equal(manifest.version, "1.4.195");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.195.js"]);
+  assert.equal(manifest.version, "1.4.196");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.196.js"]);
   assert.doesNotMatch(entrypoint, /[?#]/u);
 
   const entrypointSource = await readFile(new URL(entrypoint, manifestUrl), "utf8");
-  assert.equal(entrypointSource, 'import "./main.js?v=1.4.195";\n');
+  assert.equal(entrypointSource, 'import "./main.js";\n');
 });
 
 test("canonical entrypoint cache-busts the player-list inventory token launcher", async () => {
@@ -307,7 +307,7 @@ test("module keeps recent published entrypoint URLs as canonical compatibility f
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
 
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.195.js"]);
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.196.js"]);
 
   for (const fileName of ["main-1.4.98.js", "main-1.4.99.js", "main-1.4.100.js"]) {
     const forwarderSource = await readFile(new URL(`../scripts/${fileName}`, import.meta.url), "utf8");
@@ -325,8 +325,8 @@ test("module keeps recent published entrypoint URLs as canonical compatibility f
   }
 });
 
-test("module keeps immediately previous published entrypoints available to cached clients", async () => {
-  for (const fileName of ["main-1.4.191.js", "main-1.4.192.js"]) {
+test("module keeps immediately previous entrypoints unpinned for page-refresh updates", async () => {
+  for (const fileName of ["main-1.4.194.js", "main-1.4.195.js"]) {
     const forwarderSource = await readFile(new URL(`../scripts/${fileName}`, import.meta.url), "utf8");
 
     assert.equal(forwarderSource, 'import "./main.js";\n', fileName);
