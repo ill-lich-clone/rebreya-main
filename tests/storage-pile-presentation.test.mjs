@@ -23,6 +23,34 @@ test("ground pile presentation uses the item itself for one visible row", () => 
   ]).name, "Меч");
 });
 
+test("single broken ground item exposes its durability state in the token name", () => {
+  assert.deepEqual(deriveGroundPilePresentation([{
+    name: "Латы",
+    img: "icons/plate.webp",
+    typeLabel: "Доспех",
+    quantity: 1,
+    itemData: {
+      name: "Латы",
+      type: "equipment",
+      flags: {
+        [MODULE_ID]: {
+          durability: {
+            version: 1,
+            eligible: true,
+            state: "broken",
+            breakStage: 1,
+            hp: { value: 0, max: 30 }
+          }
+        }
+      }
+    }
+  }]), {
+    name: "Латы (сломан)",
+    img: "icons/plate.webp",
+    categoryKey: "single"
+  });
+});
+
 test("Journal references do not turn a single ground item into a pile", () => {
   assert.deepEqual(deriveGroundPilePresentation([
     { name: "Меч", img: "icons/sword.webp", typeLabel: "Оружие", quantity: 1 },

@@ -712,6 +712,43 @@ test("storage durability toggle breaks and fully repairs only canonical durable 
   assert.deepEqual(repairedFlag.hp, { value: 15, max: 15 });
 });
 
+test("storage durability toggle lazily initializes eligible gear before breaking it", async () => {
+  const service = new StorageService({
+    getOrBuildDurability: async () => ({
+      version: 1,
+      eligible: true,
+      state: "intact",
+      breakStage: 0,
+      hp: { value: 30, max: 30 },
+      initializedFrom: { sourceType: "gear", sourceId: "plate" }
+    })
+  });
+  const token = createStorageToken("lazy-durability-toggle");
+  await service.configure(token, {
+    state: "opened",
+    manualRows: [{
+      rowId: "plate",
+      sourceType: "gear",
+      sourceId: "plate",
+      quantity: 1,
+      itemData: {
+        name: "Латы",
+        type: "equipment",
+        system: { quantity: 1, properties: [], rarity: "" },
+        flags: {}
+      }
+    }]
+  });
+
+  const next = await service.setRowBroken(token, "plate", true);
+  const durability = next.manualRows[0].itemData.flags["rebreya-main"].durability;
+
+  assert.equal(durability.state, "broken");
+  assert.equal(durability.breakStage, 1);
+  assert.deepEqual(durability.hp, { value: 0, max: 30 });
+  assert.deepEqual(durability.initializedFrom, { sourceType: "gear", sourceId: "plate" });
+});
+
 test("storage durability toggle rejects journals, malformed flags, and non-boolean requests", async () => {
   const service = new StorageService();
   const token = createStorageToken("durability-toggle-invalid");

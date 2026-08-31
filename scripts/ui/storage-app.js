@@ -3,6 +3,7 @@ import { getAppElement } from "../ui.js";
 import { placeTokenOverlay, storageTokenViewportBounds } from "./storage-token-overlay.js";
 import { openStorageJournalViewer } from "./storage-journal-viewer.js";
 import { formatDurabilityItemName } from "../data/durability-item-presentation.js?v=1.4.154-broken-item-name";
+import { isDurabilityEligible } from "../data/durability-rules.js?v=1.4.200-storage-broken-presentation";
 import {
   buildStorageDragData,
   parseStorageDragData,
@@ -194,12 +195,15 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
       const isContainer = row.rowKind === "container" && Boolean(row.container);
       const durability = row.itemData?.flags?.[MODULE_ID]?.durability;
       const durabilityState = clean(durability?.state).toLowerCase();
-      const canToggleBroken = configurationEnabled
-        && durability?.version === 1
+      const hasToggleableDurability = durability?.version === 1
         && durability?.eligible === true
         && ["intact", "broken"].includes(durabilityState)
         && Number.isFinite(Number(durability?.hp?.max))
         && Number(durability.hp.max) > 0;
+      const canToggleBroken = configurationEnabled && (
+        hasToggleableDurability
+        || (durability == null && isDurabilityEligible(row.itemData))
+      );
       const itemName = clean(row.name ?? row.itemData?.name) || "Предмет";
       const displayName = isJournal && row.journalRead === true
         ? `${itemName} (прочитано)`

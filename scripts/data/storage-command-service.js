@@ -3,7 +3,7 @@ import {
   readStorageCoinDenomination,
   readStorageState,
   readStorageStateAtPath
-} from "./storage-service.js?v=1.4.195-storage-administration";
+} from "./storage-service.js?v=1.4.200-storage-broken-presentation";
 import { resolveStorageDepositSource } from "./storage-deposit-source.js?v=1.4.195-storage-administration";
 import { isStorageContainerRow, isStorageJournalRow } from "./storage-container-snapshot.js";
 import { MODULE_ID } from "../constants.js";

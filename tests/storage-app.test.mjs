@@ -510,6 +510,34 @@ test("GM storage popover exposes the broken toggle only for canonical durable it
   assert.equal(context.activePopover.broken, true);
 });
 
+test("GM storage popover exposes the broken toggle for eligible uninitialized gear", async () => {
+  const { app } = createApp({
+    getStorageSnapshot: async () => ({
+      tokenUuid: "Scene.scene.Token.plate",
+      name: "Латы",
+      state: "opened",
+      rows: [{
+        rowId: "plate",
+        name: "Латы",
+        quantity: 1,
+        itemData: {
+          name: "Латы",
+          type: "equipment",
+          system: { quantity: 1, properties: [], rarity: "" },
+          flags: {}
+        }
+      }],
+      coins: {}
+    })
+  });
+  app.activeRowId = "plate";
+
+  const context = await app._prepareContext();
+
+  assert.equal(context.activePopover.canToggleBroken, true);
+  assert.equal(context.activePopover.broken, false);
+});
+
 test("Journal read action passes nested access context and opens only the returned snapshot", async () => {
   const snapshot = {
     name: "Полевые заметки",
@@ -627,6 +655,11 @@ test("storage configuration saves the mixed-loot checkbox with the existing fiel
   const template = await readFile(new URL("../templates/storage-app.hbs", import.meta.url), "utf8");
   assert.match(template, /name="mixGeneratedLoot"/u);
   assert.match(template, />Подмешивать случайный лут</u);
+  assert.match(
+    template,
+    /data-action="storage-save-config"[\s\S]*?>Сохранить<\/[\s\S]*?name="mixGeneratedLoot"/u
+  );
+  assert.doesNotMatch(template, /Сохранить настройки/u);
 });
 
 test("ordinary storage still exposes claim all when transferable contents exist", async () => {
@@ -666,7 +699,7 @@ test("storage configuration is hidden from players", async () => {
 
 test("storage template exposes generated-row quantity and delete controls to GMs", async () => {
   const template = await readFile(new URL("../templates/storage-app.hbs", import.meta.url), "utf8");
-  assert.match(template, /data-action="storage-update-row"/u);
+  assert.doesNotMatch(template, /data-action="storage-update-row"/u);
   assert.match(template, /data-action="storage-delete-row"/u);
   assert.match(template, /data-storage-quantity/u);
   assert.match(template, /data-storage-broken/u);

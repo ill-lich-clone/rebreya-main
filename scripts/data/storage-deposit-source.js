@@ -5,7 +5,7 @@ import {
   readStorageCoinDenomination,
   readStorageState,
   readStorageStateAtPath
-} from "./storage-service.js?v=1.4.195-storage-administration";
+} from "./storage-service.js?v=1.4.200-storage-broken-presentation";
 import {
   buildStorageContainerRow,
   isStorageContainerRow,

@@ -13065,6 +13065,30 @@ summary:focus-visible {
   grid-column: 1 / -1;
 }
 
+.rm-storage-config__actions {
+  flex-wrap: wrap;
+}
+
+.rm-storage-config__save-group,
+.rm-storage-config__toggle {
+  display: inline-flex;
+  align-items: center;
+}
+
+.rm-storage-config__save-group {
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
+.rm-storage-config__toggle {
+  gap: 0.35rem;
+  white-space: nowrap;
+}
+
+.rm-storage-config__toggle input {
+  margin: 0;
+}
+
 .rm-storage-trigger-summary {
   display: grid;
   grid-template-columns: 1fr auto auto;

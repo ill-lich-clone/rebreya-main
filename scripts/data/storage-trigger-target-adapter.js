@@ -1,5 +1,5 @@
 import { STORAGE_TRIGGER_EVENTS } from "./storage-trigger-service.js?v=1.4.197-door-trigger-target";
-import { readStorageStateAtPath } from "./storage-service.js?v=1.4.195-storage-administration";
+import { readStorageStateAtPath } from "./storage-service.js?v=1.4.200-storage-broken-presentation";
 
 export class StorageTriggerTargetAdapter {
   constructor({ storageService } = {}) {

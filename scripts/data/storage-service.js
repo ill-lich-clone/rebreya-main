@@ -394,6 +394,7 @@ export function deriveStorageDisplayName(state = {}) {
 export class StorageService {
   constructor({
     generate = async () => ({ rows: [], coins: {} }),
+    getOrBuildDurability = async () => null,
     materializeFirstOpen = async () => null,
     onGeneratedOpen = async () => {},
     logger = console
@@ -404,7 +405,11 @@ export class StorageService {
     if (typeof materializeFirstOpen !== "function") {
       throw new TypeError("StorageService requires a first-open materializer function.");
     }
+    if (typeof getOrBuildDurability !== "function") {
+      throw new TypeError("StorageService requires a durability builder function.");
+    }
     this.generate = generate;
+    this.getOrBuildDurability = getOrBuildDurability;
     this.materializeFirstOpen = materializeFirstOpen;
     this.onGeneratedOpen = typeof onGeneratedOpen === "function" ? onGeneratedOpen : async () => {};
     this.logger = logger;
@@ -971,11 +976,30 @@ export class StorageService {
     if (typeof broken !== "boolean") {
       throw new TypeError("Состояние поломки должно быть логическим значением.");
     }
-    return this.#mutateEditableRow(token, rowId, (row) => {
+    const scopedToken = this.#scopedToken(token, path);
+    const current = readStorageState(scopedToken);
+    const id = String(rowId ?? "").trim();
+    if (!id || current.claimedRowIds.includes(id)) {
+      throw new Error("Предмет уже забран или недоступен для изменения.");
+    }
+    const sourceRow = [...current.manualRows, ...current.generatedRows]
+      .find((row) => String(row?.rowId ?? "").trim() === id);
+    if (!sourceRow) throw new Error("Предмет хранилища не найден.");
+    if (isStorageJournalRow(sourceRow)) {
+      throw new Error("Ссылку на журнал нельзя пометить сломанной.");
+    }
+    const persistedDurability = sourceRow.itemData?.flags?.[MODULE_ID]?.durability;
+    const derivedDurability = persistedDurability == null
+      ? await this.getOrBuildDurability(sourceRow.itemData, {
+          sourceType: String(sourceRow.sourceType ?? "").trim(),
+          sourceId: String(sourceRow.sourceId ?? "").trim()
+        })
+      : null;
+    return this.#mutateEditableRow(scopedToken, id, (row) => {
       if (isStorageJournalRow(row)) {
         throw new Error("Ссылку на журнал нельзя пометить сломанной.");
       }
-      const durability = row.itemData?.flags?.[MODULE_ID]?.durability;
+      const durability = row.itemData?.flags?.[MODULE_ID]?.durability ?? derivedDurability;
       const maxHp = Number(durability?.hp?.max);
       const state = String(durability?.state ?? "").trim().toLowerCase();
       if (durability?.version !== 1 || durability?.eligible !== true
@@ -989,9 +1013,12 @@ export class StorageService {
       if (transition.outcome === "ignored") {
         throw new Error("Состояние прочности предмета нельзя изменить.");
       }
+      row.itemData ??= {};
+      row.itemData.flags ??= {};
+      row.itemData.flags[MODULE_ID] ??= {};
       row.itemData.flags[MODULE_ID].durability = transition.nextFlag;
       return row;
-    }, { path });
+    });
   }
 
   async deleteRow(token, rowId, { path = [] } = {}) {

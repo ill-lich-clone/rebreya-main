@@ -25,10 +25,6 @@
       {{#if configuration.selectedTemplateName}}
         <p class="rm-muted">Сохранённый снимок: {{configuration.selectedTemplateName}}</p>
       {{/if}}
-      <label class="rm-storage-config__toggle">
-        <input type="checkbox" name="mixGeneratedLoot" {{#if configuration.mixGeneratedLoot}}checked{{/if}}>
-        <span>Подмешивать случайный лут</span>
-      </label>
       <section class="rm-storage-trigger-summary">
         <div><strong>Триггеры</strong><span>{{configuration.triggerActiveCount}} активных цепочек</span></div>
         <button type="button" class="rm-button rm-button--secondary" data-action="storage-open-trigger-editor"><i class="fa-solid fa-bolt"></i><span>Открыть редактор</span></button>
@@ -54,9 +50,15 @@
         </fieldset>
       {{/if}}
       <div class="rm-storage-config__actions">
-        <button type="button" class="rm-button rm-button--primary" data-action="storage-save-config">
-          <i class="fa-solid fa-floppy-disk"></i><span>Сохранить настройки</span>
-        </button>
+        <div class="rm-storage-config__save-group">
+          <button type="button" class="rm-button rm-button--primary" data-action="storage-save-config">
+            <i class="fa-solid fa-floppy-disk"></i><span>Сохранить</span>
+          </button>
+          <label class="rm-storage-config__toggle">
+            <input type="checkbox" name="mixGeneratedLoot" {{#if configuration.mixGeneratedLoot}}checked{{/if}}>
+            <span>Подмешивать случайный лут</span>
+          </label>
+        </div>
         {{#if configuration.canReset}}
           <button type="button" class="rm-button rm-button--secondary" data-action="storage-reset">
             <i class="fa-solid fa-rotate-left"></i><span>Сбросить содержимое</span>
@@ -153,9 +155,6 @@
               {{#if activePopover.canToggleBroken}}
                 <label class="rm-storage-item__broken-toggle"><input data-storage-broken data-row-id="{{activePopover.rowId}}" type="checkbox" {{#if activePopover.broken}}checked{{/if}}>Сломано</label>
               {{/if}}
-              {{#unless activePopover.isContainer}}
-                <button type="button" class="rm-icon-button" data-action="storage-update-row" data-row-id="{{activePopover.rowId}}" aria-label="Сохранить количество"><i class="fa-solid fa-check"></i></button>
-              {{/unless}}
               <button type="button" class="rm-icon-button" data-action="storage-delete-row" data-row-id="{{activePopover.rowId}}" aria-label="Удалить предмет"><i class="fa-solid fa-trash"></i></button>
             </div>
           {{/if}}

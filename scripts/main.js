@@ -195,7 +195,7 @@ import {
   isStorageActor,
   readStorageState,
   readStorageStateAtPath
-} from "./data/storage-service.js?v=1.4.195-storage-administration";
+} from "./data/storage-service.js?v=1.4.200-storage-broken-presentation";
 import {
   CorpseStorageMaterializer
 } from "./data/corpse-storage-materializer.js?v=1.4.195-storage-administration";
@@ -211,7 +211,7 @@ import {
   measureStorageTokenDistance
 } from "./data/storage-access.js?v=1.4.197-door-trigger-target";
 import { BuiltinStorageActorService } from "./data/builtin-storage-actor-service.js";
-import { StorageGroundPileService } from "./data/storage-ground-pile-service.js?v=1.4.195-storage-administration";
+import { StorageGroundPileService } from "./data/storage-ground-pile-service.js?v=1.4.200-storage-broken-presentation";
 import { StorageContainerItemService } from "./data/storage-container-item-service.js?v=1.4.130-storage-player-fixes";
 import { isStorageJournalRow } from "./data/storage-container-snapshot.js";
 import { StorageTriggerService } from "./data/storage-trigger-service.js?v=1.4.197-door-trigger-target";
@@ -383,7 +383,7 @@ const LEGACY_WORLD_MUTATION_SOCKET_TYPES = new Set([
   SOCKET_EVENT_LOOTGEN_CLAIM_COINS
 ]);
 const MODULE_STYLE_PATH = `modules/${MODULE_ID}/styles/main.css`;
-const MODULE_STYLE_VERSION = "1.4.199-door-overlay-anchor";
+const MODULE_STYLE_VERSION = "1.4.200-storage-broken-presentation";
 const SECONDS_PER_HOUR = 3600;
 const SECONDS_PER_DAY = 86400;
 const TRAVEL_DAY_HOURS = 8;
@@ -1451,6 +1451,7 @@ export class RebreyaMainModule {
     });
     this.storageService = new StorageService({
       generate: (form, context) => this.generateStorageLoot(form, context),
+      getOrBuildDurability: (item, options) => this.durabilityService.getOrBuildDurability(item, options),
       materializeFirstOpen: ({ token }) => isDeadNpcStorageTarget(token)
         ? this.corpseStorageMaterializer.materialize(token)
         : null,
