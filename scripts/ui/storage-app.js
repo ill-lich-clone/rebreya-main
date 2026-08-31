@@ -689,7 +689,10 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
         inspected.source,
         quantity,
         mutationId("storage-window-deposit"),
-        this.#pathRequest()
+        {
+          ...this.#pathRequest(),
+          ...(this.configure ? { administrative: true } : {})
+        }
       );
       await this.#refresh();
     }

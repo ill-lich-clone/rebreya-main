@@ -1112,6 +1112,7 @@ test("GM configuration drop routes an item through the authoritative deposit API
   });
   assert.equal(depositCalls[0][2], 1);
   assert.match(depositCalls[0][3], /^storage-window-deposit-/u);
+  assert.deepEqual(depositCalls[0][4], { administrative: true });
 });
 
 test("GM configuration drop routes a JournalEntry reference through the authoritative deposit API", async () => {

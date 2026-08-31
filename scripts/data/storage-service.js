@@ -28,6 +28,7 @@ export const STORAGE_COIN_DENOMINATIONS = Object.freeze(["pp", "gp", "sp", "cp"]
 const STORAGE_COIN_DENOMINATION_SET = new Set(STORAGE_COIN_DENOMINATIONS);
 const COIN_KEYS = STORAGE_COIN_DENOMINATIONS;
 const STORAGE_KINDS = new Set(["chest", "bag", "pile"]);
+const STORAGE_DEPOSIT_PRESENTATIONS = new Set(["gameplay", "administrative"]);
 const MAX_PENDING_BULK_CLAIM_MUTATIONS = 100;
 const MAX_COMPLETE_BULK_CLAIM_MUTATIONS = 100;
 const NIGHT_GOGGLES_ICON = "modules/rebreya-main/templates/icons/Magic%20Items/%D0%9D%D0%BE%D1%87%D0%BD%D1%8B%D0%B5%20%D0%BE%D1%87%D0%BA%D0%B8.webp";
@@ -826,12 +827,15 @@ export class StorageService {
     return { changed: true, row: claimedRow, quantity, state };
   }
 
-  async depositRow(token, row, { quantity, path = [] } = {}) {
+  async depositRow(token, row, { quantity, path = [], presentation = "gameplay" } = {}) {
     token = this.#scopedToken(token, path);
     if (!row || typeof row !== "object" || Array.isArray(row)) {
       throw new TypeError("Предмет для добавления в хранилище должен быть объектом.");
     }
     const current = readStorageState(token);
+    if (!STORAGE_DEPOSIT_PRESENTATIONS.has(presentation)) {
+      throw new Error("Неизвестный режим добавления предмета в хранилище.");
+    }
     const amount = requirePositiveQuantity(quantity ?? row.quantity ?? row.itemData?.system?.quantity);
     const journalRow = isStorageJournalRow(row);
     if (journalRow && amount !== 1) {
@@ -895,12 +899,15 @@ export class StorageService {
       manualRows.push(deposited);
     }
 
+    const nextPresentation = presentation === "administrative" && current.state !== "opened"
+      ? "unopened"
+      : "opened";
     const state = await this.#write(token, {
       ...current,
       manualRows,
       generatedRows,
-      state: "opened",
-      displayMode: "opened"
+      state: nextPresentation,
+      displayMode: nextPresentation
     });
     return { changed: true, merged, rowId, quantity: amount, state };
   }

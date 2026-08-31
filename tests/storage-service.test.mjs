@@ -714,6 +714,62 @@ test("depositing into empty storage reopens the same token with its opened textu
   assert.equal(token.name, "Сундук");
 });
 
+test("administrative deposits preserve opened state and keep closed storage unopened", async () => {
+  const service = new StorageService();
+  const expectedByState = [
+    ["unopened", "unopened", "unopened", "closed.webp"],
+    ["empty", "unopened", "unopened", "closed.webp"],
+    ["opened", "opened", "opened", "open.webp"]
+  ];
+  for (const [initial, expectedState, expectedMode, expectedTexture] of expectedByState) {
+    const token = createStorageToken(`admin-${initial}`);
+    await service.configure(token, {
+      state: initial,
+      displayMode: initial,
+      textures: { unopened: "closed.webp", opened: "open.webp", empty: "empty.webp" }
+    });
+    await service.depositRow(token, {
+      rowId: `row-${initial}`,
+      sourceId: `Item.${initial}`,
+      quantity: 1,
+      itemData: { system: { quantity: 1 } }
+    }, { quantity: 1, presentation: "administrative" });
+
+    assert.equal(readStorageState(token).state, expectedState, initial);
+    assert.equal(readStorageState(token).displayMode, expectedMode, initial);
+    assert.equal(token.texture.src, expectedTexture, initial);
+  }
+});
+
+test("administrative nested deposit keeps an unopened container closed without replacing root state", async () => {
+  const service = new StorageService();
+  const token = createStorageToken("admin-nested");
+  const bagRow = buildStorageContainerRow({
+    containerId: "closed-bag",
+    storageKind: "bag",
+    name: "Закрытая сумка",
+    state: {
+      baseName: "Закрытая сумка",
+      state: "unopened",
+      displayMode: "unopened",
+      manualRows: [],
+      generatedRows: []
+    }
+  }, { rowId: "closed-bag-row" });
+  await service.configure(token, { state: "opened", manualRows: [bagRow] });
+
+  await service.depositRow(token, {
+    rowId: "nested-gem",
+    sourceId: "Item.gem",
+    quantity: 1,
+    itemData: { system: { quantity: 1 } }
+  }, { quantity: 1, path: ["closed-bag-row"], presentation: "administrative" });
+
+  assert.equal(readStorageState(token).state, "opened");
+  assert.equal(readStorageStateAtPath(token, ["closed-bag-row"]).state, "unopened");
+  assert.equal(readStorageStateAtPath(token, ["closed-bag-row"]).displayMode, "unopened");
+});
+
 test("depositing an equivalent item merges its stack and leaves claimed rows untouched", async () => {
   const service = new StorageService();
   const token = createStorageToken("deposit-merge");

@@ -445,6 +445,16 @@ test("storage deposit payload validation accepts only exact item, Journal, and s
   }), true);
   assert.equal(isValidStorageDepositPayload({
     ...base,
+    administrative: true,
+    source: { kind: "item", itemUuid: "Actor.hero.Item.arrow" }
+  }), true);
+  assert.equal(isValidStorageDepositPayload({
+    ...base,
+    administrative: "true",
+    source: { kind: "item", itemUuid: "Actor.hero.Item.arrow" }
+  }), false);
+  assert.equal(isValidStorageDepositPayload({
+    ...base,
     source: {
       kind: "storage-row",
       tokenUuid: "Scene.scene.Token.pile",
@@ -2138,6 +2148,54 @@ test("storage deposits are idempotent and move the selected quantity once", asyn
   assert.equal(readStorageState(harness.storageToken).state, "opened");
 });
 
+test("administrative deposit is GM-only and selects closed presentation authoritatively", async () => {
+  const consumeCalls = [];
+  const source = {
+    kind: "item",
+    mode: "copy",
+    available: 1,
+    sourceKey: "Compendium.world.items.Item.gem",
+    row: {
+      rowId: "admin-gem",
+      sourceId: "Compendium.world.items.Item.gem",
+      name: "Самоцвет",
+      quantity: 1,
+      itemData: { name: "Самоцвет", type: "loot", system: { quantity: 1 } }
+    },
+    canUserMove: () => true,
+    async consume(quantity) { consumeCalls.push(quantity); return { kind: "copy" }; },
+    async restore() {}
+  };
+  const harness = createHarness({ depositSource: source });
+  await harness.storageService.configure(harness.storageToken, {
+    state: "empty",
+    displayMode: "empty",
+    textures: { unopened: "closed.webp", opened: "open.webp", empty: "empty.webp" }
+  });
+
+  await assert.rejects(
+    harness.service.deposit(depositPayload(harness, {
+      administrative: true,
+      quantity: 1,
+      mutationId: "admin-player"
+    }), { sender: harness.player }),
+    /только мастер/iu
+  );
+  assert.deepEqual(consumeCalls, []);
+
+  await harness.service.deposit(depositPayload(harness, {
+    administrative: true,
+    characterTokenUuid: "",
+    quantity: 1,
+    mutationId: "admin-gm"
+  }), { sender: harness.gm });
+
+  assert.deepEqual(consumeCalls, [1]);
+  assert.equal(readStorageState(harness.storageToken).state, "unopened");
+  assert.equal(readStorageState(harness.storageToken).displayMode, "unopened");
+  assert.equal(harness.storageToken.texture.src, "closed.webp");
+});
+
 test("Journal deposits are GM-only, quantity-one, re-resolved, and consumed only after authorization", async () => {
   const consumeCalls = [];
   const journalSource = {
@@ -2282,7 +2340,7 @@ test("RebreyaMainModule preserves the exact Journal source in an active-GM depos
       { kind: "journal", sourceUuid: "JournalEntry.notes", documentName: "JournalEntry" },
       1,
       "journal-main",
-      { characterTokenUuid: "" }
+      { characterTokenUuid: "", administrative: true }
     );
 
     assert.deepEqual(calls[0].payload.source, {
@@ -2290,6 +2348,7 @@ test("RebreyaMainModule preserves the exact Journal source in an active-GM depos
       sourceUuid: "JournalEntry.notes",
       documentName: "JournalEntry"
     });
+    assert.equal(calls[0].payload.administrative, true);
     assert.equal(calls[0].context.sender, gm);
   }
   finally {
@@ -2729,6 +2788,11 @@ test("dead NPC storage open reuses player access checks, allows GM, and rejects 
     characterTokenUuid: materializedHarness.characterToken.uuid
   }, { sender: materializedHarness.player });
   assert.equal(materializedResult.state, "opened");
+  const materializedTriggers = await materializedHarness.service.readTriggers({
+    tokenUuid: materializedHarness.storageToken.uuid,
+    path: []
+  }, { sender: materializedHarness.gm });
+  assert.equal(materializedTriggers.tokenUuid, materializedHarness.storageToken.uuid);
 
   const farHarness = createHarness({ distance: 11 });
   farHarness.storageToken.actor.flags = {};

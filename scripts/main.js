@@ -4535,6 +4535,7 @@ export class RebreyaMainModule {
       source: safeSource,
       quantity: Number(quantity),
       mutationId: cleanSocketId(mutationId),
+      ...(request.administrative === true ? { administrative: true } : {}),
       ...(path.length ? { path } : {})
     };
     return isActiveGmClient(globalThis.game)

@@ -243,14 +243,15 @@ export function isValidStorageClaimAllPayload(payload) {
 }
 
 export function isValidStorageDepositPayload(payload) {
-  return hasLegacyOrPathKeys(payload, [
-    "characterTokenUuid", "mutationId", "quantity", "source", "tokenUuid"
-  ])
+  const legacyKeys = ["characterTokenUuid", "mutationId", "quantity", "source", "tokenUuid"];
+  const administrativeKeys = ["administrative", ...legacyKeys];
+  return (hasLegacyOrPathKeys(payload, legacyKeys) || hasLegacyOrPathKeys(payload, administrativeKeys))
     && isTrimmedString(payload.tokenUuid, { required: true })
     && isTrimmedString(payload.characterTokenUuid)
     && isValidStorageDepositSource(payload.source)
     && Number.isSafeInteger(payload.quantity)
     && payload.quantity >= 1
+    && (payload.administrative === undefined || typeof payload.administrative === "boolean")
     && isTrimmedString(payload.mutationId, { required: true, max: 160 });
 }
 
@@ -865,7 +866,7 @@ export class StorageCommandService {
     if (sender?.isGM !== true) throw new Error("Настраивать триггеры может только мастер.");
     const tokenUuid = clean(payload?.tokenUuid);
     const storageToken = tokenDocument(await this.resolveToken(tokenUuid));
-    if (!storageToken || (!isStorageActor(storageToken.actor) && !isDeadNpcStorageTarget(storageToken))) {
+    if (!storageToken || (!isStorageActor(storageToken.actor) && !isCorpseStorageTarget(storageToken))) {
       throw new Error("Токен не является хранилищем Rebreya.");
     }
     const path = storagePath(payload?.path);
@@ -1454,6 +1455,13 @@ export class StorageCommandService {
     if (!Number.isSafeInteger(quantity) || quantity < 1) {
       throw new Error("Количество должно быть целым числом не меньше 1.");
     }
+    if (payload.administrative !== undefined && typeof payload.administrative !== "boolean") {
+      throw new Error("Административный режим добавления должен быть логическим значением.");
+    }
+    const administrative = payload.administrative === true;
+    if (administrative && sender?.isGM !== true) {
+      throw new Error("Административно добавлять предметы может только мастер.");
+    }
     if (sourceRef.kind === "journal" && sender?.isGM !== true) {
       throw new Error("Добавлять ссылки на журнал может только мастер.");
     }
@@ -1519,7 +1527,11 @@ export class StorageCommandService {
       let deposited = null;
       let sourceReceipt = null;
       try {
-        deposited = await this.storageService.depositRow(access.storageToken, source.row, { quantity, path });
+        deposited = await this.storageService.depositRow(access.storageToken, source.row, {
+          quantity,
+          path,
+          presentation: administrative ? "administrative" : "gameplay"
+        });
         sourceReceipt = await source.consume(quantity);
       }
       catch (error) {
