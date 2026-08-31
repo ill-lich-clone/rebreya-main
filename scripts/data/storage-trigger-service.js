@@ -221,7 +221,10 @@ export class StorageTriggerService {
 
   async #commit(state, context, mutate) {
     mutate(state);
-    await this.persistRuntime(context, mutate);
+    const persistRuntime = typeof context?.persistRuntime === "function"
+      ? context.persistRuntime
+      : this.persistRuntime;
+    await persistRuntime(context, mutate);
   }
 
   #repeatKey(event, chain, context) {

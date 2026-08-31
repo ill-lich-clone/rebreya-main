@@ -21,6 +21,23 @@ test("storage triggers normalize legacy storage to an empty detached v1 state", 
   assert.equal(second.variables.changed, undefined);
 });
 
+test("execution context persistence overrides the constructor fallback", async () => {
+  const state = createEmptyStorageTriggerState();
+  const calls = [];
+  const service = new StorageTriggerService({
+    persistRuntime: async () => { calls.push("fallback"); }
+  });
+  await service.execute("beforeOpen", state, {
+    runId: "context-persistence",
+    fingerprint: "context-persistence",
+    persistRuntime: async (_context, mutate) => {
+      calls.push("context");
+      mutate(state);
+    }
+  });
+  assert.deepEqual(calls, ["context", "context"]);
+});
+
 test("storage trigger validation accepts ordered lock and trap examples", () => {
   const state = createEmptyStorageTriggerState();
   state.chainsByEvent.beforeOpen.push({

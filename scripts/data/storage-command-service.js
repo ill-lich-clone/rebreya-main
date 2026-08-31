@@ -16,6 +16,11 @@ import {
 } from "./storage-access.js?v=1.4.158-storage-access-cache";
 import { isValidSerializedInventoryIngressPlan } from "../application/inventory-ingress-planner.js";
 import { STORAGE_TRIGGER_EVENTS } from "./storage-trigger-service.js";
+import {
+  TriggerTargetCoordinator,
+  createTriggerTargetRef
+} from "../application/trigger-target-coordinator.js";
+import { StorageTriggerTargetAdapter } from "./storage-trigger-target-adapter.js";
 
 const STORAGE_ROW_DESTINATIONS = new Set(["self", "party", "character", "scene"]);
 const STORAGE_COIN_DESTINATIONS = new Set(["self", "party"]);
@@ -383,6 +388,7 @@ export class StorageCommandService {
     containerItemService = null,
     durabilityService = null,
     triggerService = null,
+    triggerTargetCoordinator = null,
     journalReader,
     isVisibleTo,
     resolveDocument = (...args) => globalThis.fromUuid?.(...args),
@@ -410,9 +416,16 @@ export class StorageCommandService {
     this.groundPileService = groundPileService;
     this.containerItemService = containerItemService;
     this.durabilityService = durabilityService;
-    this.triggerService = triggerService && typeof triggerService.execute === "function"
+    const executionService = triggerService && typeof triggerService.execute === "function"
       ? triggerService
       : { async execute() { return { allowed: true, completedChainIds: [] }; } };
+    this.triggerTargetCoordinator = triggerTargetCoordinator
+      && typeof triggerTargetCoordinator.execute === "function"
+      ? triggerTargetCoordinator
+      : new TriggerTargetCoordinator({
+          triggerService: executionService,
+          adapters: { storage: new StorageTriggerTargetAdapter({ storageService }) }
+        });
     this.journalReader = journalReader;
     this.isVisibleTo = isVisibleTo;
     this.resolveDocument = resolveDocument;
@@ -752,11 +765,12 @@ export class StorageCommandService {
 
   async #executeTrigger(event, payload, sender, access, extra = {}) {
     const path = storagePath(payload?.path);
-    const state = readStorageStateAtPath(access.storageToken, path);
-    return this.triggerService.execute(
+    const target = createTriggerTargetRef("storage", payload?.tokenUuid, { path });
+    return this.triggerTargetCoordinator.execute(
+      target,
       event,
-      state.triggers,
-      this.#triggerContext(event, payload, sender, access, extra)
+      this.#triggerContext(event, payload, sender, access, extra),
+      { document: access.storageToken }
     );
   }
 
@@ -878,10 +892,12 @@ export class StorageCommandService {
     const tokenUuid = clean(payload.tokenUuid);
     return this.#enqueue([storageQueueKey(tokenUuid)], async () => {
       const { storageToken, path } = await this.#resolveTriggerAdmin(payload, sender);
+      const target = createTriggerTargetRef("storage", tokenUuid, { path });
+      const snapshot = await this.triggerTargetCoordinator.read(target, { document: storageToken });
       return {
         tokenUuid,
         path: clone(path),
-        triggers: clone(readStorageStateAtPath(storageToken, path).triggers)
+        triggers: clone(snapshot.triggers)
       };
     });
   }
@@ -893,13 +909,12 @@ export class StorageCommandService {
     const fingerprint = mutationRequestFingerprint(payload, sender);
     return this.#runMutation([storageQueueKey(tokenUuid)], mutationKey, async () => {
       const { storageToken, path } = await this.#resolveTriggerAdmin(payload, sender);
-      const state = await this.storageService.saveTriggerDefinitions(
-        storageToken,
-        payload.definitions,
-        payload.expectedRevision,
-        { path }
-      );
-      return { tokenUuid, path: clone(path), triggers: clone(state.triggers) };
+      const target = createTriggerTargetRef("storage", tokenUuid, { path });
+      const snapshot = await this.triggerTargetCoordinator.saveDefinitions(target, {
+        definitions: payload.definitions,
+        expectedRevision: payload.expectedRevision
+      }, { document: storageToken });
+      return { tokenUuid, path: clone(path), triggers: clone(snapshot.triggers) };
     }, {
       fingerprint,
       authorize: () => this.#resolveTriggerAdmin(payload, sender)
@@ -913,8 +928,9 @@ export class StorageCommandService {
     const fingerprint = mutationRequestFingerprint(payload, sender);
     return this.#runMutation([storageQueueKey(tokenUuid)], mutationKey, async () => {
       const { storageToken, path } = await this.#resolveTriggerAdmin(payload, sender);
-      const state = await this.storageService.resetTriggerExecutions(storageToken, { path });
-      return { tokenUuid, path: clone(path), triggers: clone(state.triggers) };
+      const target = createTriggerTargetRef("storage", tokenUuid, { path });
+      const snapshot = await this.triggerTargetCoordinator.resetExecutions(target, { document: storageToken });
+      return { tokenUuid, path: clone(path), triggers: clone(snapshot.triggers) };
     }, {
       fingerprint,
       authorize: () => this.#resolveTriggerAdmin(payload, sender)
