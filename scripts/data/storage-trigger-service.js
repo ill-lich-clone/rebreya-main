@@ -314,15 +314,22 @@ export class StorageTriggerService {
         return choose(result?.success === true, { success: result?.success === true, value: clone(result?.value) });
       }
       case "macro": {
+        const targetKind = clean(context.targetKind) || "storage";
         const macroContext = deepFreeze({
           event,
           runId: clean(context.runId),
           stepId: clean(step.id),
-          tokenUuid: clean(context.tokenUuid),
-          path: clone(Array.isArray(context.path) ? context.path : []),
+          targetKind,
+          targetUuid: clean(context.targetUuid) || clean(context.tokenUuid),
+          sceneId: clean(context.sceneId),
           senderId: clean(context.senderId),
           characterActorUuid: clean(context.characterActorUuid),
-          claimSummary: clone(context.claimSummary ?? null),
+          characterTokenUuid: clean(context.characterTokenUuid),
+          ...(targetKind === "storage" ? {
+            tokenUuid: clean(context.tokenUuid),
+            path: clone(Array.isArray(context.path) ? context.path : []),
+            claimSummary: clone(context.claimSummary ?? null)
+          } : {}),
           variables: clone(state.variables),
           priorResults: clone(priorResults)
         });
