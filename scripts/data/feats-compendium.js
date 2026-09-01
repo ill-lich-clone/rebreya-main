@@ -10,12 +10,13 @@ import {
 } from "./compendium-utils.js";
 import { syncManagedDocumentsOnActiveGm } from "./managed-compendium-sync.js";
 import { buildSlug } from "./item-classification.js";
+import { renderDescriptionMarkdown } from "./markdown-description.js";
 
 const PACK_ID = `world.${FEATS_COMPENDIUM_NAME}`;
 const DND5E_SYSTEM_ID = "dnd5e";
 const COMPENDIUM_SIDEBAR_FOLDER = ["Ребрея"];
 const DEFAULT_FEAT_ICON = "icons/svg/book.svg";
-const FEAT_TEMPLATE_VERSION = 1;
+const FEAT_TEMPLATE_VERSION = 2;
 const FEAT_ROOT_FOLDER = "Черты V0.8";
 const MODULE_ICONS_BASE_PATH = `modules/${MODULE_ID}/templates/icons`;
 const FEAT_ICON_SEARCH_PATHS = [`${MODULE_ICONS_BASE_PATH}/Feats`, MODULE_ICONS_BASE_PATH];
@@ -70,16 +71,37 @@ function isDnd5eWorld() {
   return game.system?.id === DND5E_SYSTEM_ID;
 }
 
+function hasTrustedDescriptionHtml(value) {
+  return /<\/?(?:p|table|thead|tbody|tr|td|th|ul|ol|li|h[1-6]|div|section|strong|em|br|blockquote)\b[^>]*>/iu.test(String(value ?? ""));
+}
+
+function normalizeHtmlTableCellNewlines(value) {
+  return String(value ?? "").replace(
+    /(<(td|th)\b[^>]*>)([\s\S]*?)(<\/\2>)/giu,
+    (_match, openingTag, _tagName, content, closingTag) => (
+      `${openingTag}${content.replace(/\r\n?|\n/gu, "<br>")}${closingTag}`
+    )
+  );
+}
+
+export function renderFeatDescription(value) {
+  const description = cleanString(value);
+  if (!description) return "";
+  return hasTrustedDescriptionHtml(description)
+    ? normalizeHtmlTableCellNewlines(description)
+    : renderDescriptionMarkdown(description);
+}
+
 function normalizeDescription(rawDescription) {
   if (isPlainObject(rawDescription)) {
     return {
-      value: cleanString(rawDescription.value),
-      chat: cleanString(rawDescription.chat)
+      value: renderFeatDescription(rawDescription.value),
+      chat: renderFeatDescription(rawDescription.chat)
     };
   }
 
   return {
-    value: cleanString(rawDescription),
+    value: renderFeatDescription(rawDescription),
     chat: ""
   };
 }

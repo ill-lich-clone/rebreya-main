@@ -255,7 +255,7 @@ export function validateEquipmentBundle({ bundle, workbookSnapshot }) {
   return deepFreeze(bundle);
 }
 
-export function buildEquipmentBundle({ workbookSnapshot, overrides }) {
+export function buildEquipmentBundle({ workbookSnapshot, overrides, descriptionTableContracts = null }) {
   requireWorkbookSnapshot(workbookSnapshot);
   const sheets = deepFreeze(structuredClone(workbookSnapshot.sheets));
   const validatedOverrides = validateEquipmentOverrides(overrides);
@@ -339,7 +339,13 @@ export function buildEquipmentBundle({ workbookSnapshot, overrides }) {
   );
   const magicItems = collectAdapterDiagnostics(
     diagnostics,
-    () => adaptMagicItemsCatalog({ snapshots: sheets, referenceIndex, overrides: validatedOverrides, diagnostics: [] }),
+    () => adaptMagicItemsCatalog({
+      snapshots: sheets,
+      referenceIndex,
+      overrides: validatedOverrides,
+      descriptionTableContracts,
+      diagnostics: []
+    }),
     []
   );
 

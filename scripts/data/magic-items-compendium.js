@@ -26,6 +26,7 @@ import {
   escapeFoundryHtml as escapeHtml,
   finiteNumber as toNumber
 } from "../shared/foundry-values.js";
+import { renderDescriptionMarkdown } from "./markdown-description.js";
 
 const PACK_ID = `world.${MAGIC_ITEMS_COMPENDIUM_NAME}`;
 const DND5E_SYSTEM_ID = "dnd5e";
@@ -34,7 +35,7 @@ const EFFECT_MODE_CUSTOM = 0;
 const EFFECT_MODE_ADD = 2;
 const EFFECT_MODE_UPGRADE = 4;
 const DEFAULT_MAGIC_ITEM_ICON = "systems/dnd5e/icons/svg/items/loot.svg";
-const MAGIC_TEMPLATE_VERSION = 5;
+const MAGIC_TEMPLATE_VERSION = 6;
 const MAGIC_ITEM_AUTOMATION_VERSION = 4;
 const NATIVE_INSTRUMENT_SPELL_ACTIVITY_VERSION = 1;
 const spell24 = (name, id, level, options = {}) => ({
@@ -3459,10 +3460,11 @@ function buildMetadataRows(item, classification) {
 
 function buildDescriptionHtml(item, classification) {
   const metadataRows = buildMetadataRows(item, classification);
+  const renderedDescription = renderDescriptionMarkdown(item.description);
   return `
     <section class="rebreya-gear-item">
-      ${item.description
-        ? `<p>${escapeHtml(item.description)}</p>`
+      ${renderedDescription
+        ? renderedDescription
         : "<p>Описание магического предмета пока не заполнено.</p>"}
       ${metadataRows.length ? `
         <ul>

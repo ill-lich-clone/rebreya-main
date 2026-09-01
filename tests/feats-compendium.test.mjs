@@ -20,12 +20,25 @@ globalThis.foundry ??= {
   }
 };
 
-const { normalizeFeatItems } = await import("../scripts/data/feats-compendium.js");
+const { normalizeFeatItems, renderFeatDescription } = await import("../scripts/data/feats-compendium.js");
 
 function loadBundleItems() {
   const bundleUrl = new URL("../cherty-v08-foundry-2014-import-pack/cherty-v08-foundry-2014-bundle.json", import.meta.url);
   return JSON.parse(readFileSync(bundleUrl, "utf8")).items;
 }
+
+test("feat descriptions preserve trusted HTML tables and make cell newlines readable", () => {
+  const html = renderFeatDescription("<p>До.</p><table><tbody><tr><td>Первая строка\nВторая строка</td></tr></tbody></table>");
+  assert.equal(html, "<p>До.</p><table><tbody><tr><td>Первая строка<br>Вторая строка</td></tr></tbody></table>");
+
+  const markdown = renderFeatDescription("Первый абзац.\n\n| к4 | Эффект |\n| --- | --- |\n| 1 | Текст |");
+  assert.match(markdown, /<p>Первый абзац\.<\/p><table>/u);
+
+  const feat = normalizeFeatItems(loadBundleItems()).find((item) => item.name === "Создание особых боеприпасов");
+  assert.ok(feat);
+  assert.match(feat.system.description.value, /<table[\s\S]*<br>[\s\S]*<\/table>/u);
+  assert.doesNotMatch(feat.system.description.value, /<(?:td|th)\b[^>]*>[^<]*\n/iu);
+});
 
 test("Elemental Adept remains one repeatable runtime-managed feat without choice documents", () => {
   const bundleItems = loadBundleItems();

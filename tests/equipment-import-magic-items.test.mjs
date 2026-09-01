@@ -50,6 +50,63 @@ test("magic item adapter preserves source gameplay text and parses typed fields"
   assert.equal(result[1].costText, "(2d8kh1+1)*2500 зм");
 });
 
+test("magic item adapter normalizes contracted tables and rejects structural loss", () => {
+  const snapshot = structuredClone(raw);
+  snapshot.rows = [snapshot.rows[0]];
+  snapshot.rows[0].cells.Описание = "До.\n\nк4        Эффект\n1        Первый\n2        Второй\n\nПосле.";
+  const descriptionTableContracts = {
+    schemaVersion: 1,
+    items: {
+      "аметистовый-магнетит": {
+        sourceUrl: "https://dnd.su/items/1-test/",
+        tables: [{ header: ["к4", "Эффект"], rowCount: 2, layout: "spaced-lines" }]
+      }
+    }
+  };
+
+  const [item] = adaptMagicItemsCatalog({
+    snapshots: { magicItems: snapshot },
+    overrides: overrides(),
+    referenceIndex: referenceIndex(),
+    descriptionTableContracts,
+    diagnostics: []
+  });
+  assert.match(item.description, /\| к4 \| Эффект \|\n\| --- \| --- \|/u);
+
+  snapshot.rows[0].cells.Описание = "До.\n\nк4 Эффект\n1 Первый\n2 Второй\n\nПосле.";
+  assert.throws(
+    () => adaptMagicItemsCatalog({
+      snapshots: { magicItems: snapshot },
+      overrides: overrides(),
+      referenceIndex: referenceIndex(),
+      descriptionTableContracts,
+      diagnostics: []
+    }),
+    (error) => error.diagnostics?.some((entry) => (
+      entry.code === "magic-item-description-table-structure"
+      && entry.rowNumber === 2
+      && entry.column === "Описание"
+    ))
+  );
+
+  const orphanedContracts = structuredClone(descriptionTableContracts);
+  orphanedContracts.items["удаленный-предмет"] = {
+    sourceUrl: "https://dnd.su/items/2-removed/",
+    tables: [{ header: ["к4", "Эффект"], rowCount: 1, layout: "spaced-lines" }]
+  };
+  snapshot.rows[0].cells.Описание = "До.\n\nк4        Эффект\n1        Первый\n2        Второй\n\nПосле.";
+  assert.throws(
+    () => adaptMagicItemsCatalog({
+      snapshots: { magicItems: snapshot },
+      overrides: overrides(),
+      referenceIndex: referenceIndex(),
+      descriptionTableContracts: orphanedContracts,
+      diagnostics: []
+    }),
+    (error) => error.diagnostics?.some((entry) => entry.code === "missing-magic-item-description-table-owner")
+  );
+});
+
 test("magic item adapter rejects malformed complete values with coordinates", () => {
   for (const [column, value, code] of [
     ["Value", "6 00", "invalid-number"],

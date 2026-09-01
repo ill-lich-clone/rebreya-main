@@ -15,6 +15,7 @@ import {
   createImportDiagnostic,
   throwIfDiagnostics
 } from "../validation.mjs";
+import { normalizeMagicItemDescriptionTables } from "../magic-item-description-tables.mjs";
 
 const DASH = /^(?:-|–|—)$/u;
 const MAGIC_ITEM_TYPE = "Магический предмет";
@@ -190,7 +191,13 @@ function validateBaseEquipmentReference({ itemType, itemSubtype, snapshot, row, 
   referenceIndex.resolveStableGearId(reference);
 }
 
-export function adaptMagicItemsCatalog({ snapshots, overrides, referenceIndex, diagnostics = [] }) {
+export function adaptMagicItemsCatalog({
+  snapshots,
+  overrides,
+  referenceIndex,
+  descriptionTableContracts = null,
+  diagnostics = []
+}) {
   const snapshot = snapshots?.magicItems ?? snapshots;
   if (!snapshot) fail("missing-magic-items-snapshot", "", {}, "Magic items snapshot is required");
   const items = [];
@@ -219,7 +226,7 @@ export function adaptMagicItemsCatalog({ snapshots, overrides, referenceIndex, d
     sourceNumbers.set(sourceNumber, row.rowNumber);
 
     const name = parseRequiredText(cells.Название, context(snapshot, row, "Название"));
-    const description = parseRequiredText(cells.Описание, context(snapshot, row, "Описание"));
+    let description = parseRequiredText(cells.Описание, context(snapshot, row, "Описание"));
     const rarity = optionalEnum(cells.Редкость, context(snapshot, row, "Редкость"), RARITIES, "magic item rarity");
     const itemType = optionalEnum(cells.Тип, context(snapshot, row, "Тип"), ITEM_TYPES, "magic item type");
     const itemSubtype = missing(cells.Подтип) ? "" : text(cells.Подтип);
@@ -248,6 +255,14 @@ export function adaptMagicItemsCatalog({ snapshots, overrides, referenceIndex, d
 
     const sourceKey = buildMagicItemSourceKey({ sourceNumber });
     const stableId = resolveStableIdentity({ catalog: "magicItems", sourceKey, sourceName: name, overrides });
+    description = normalizeMagicItemDescriptionTables({
+      stableId,
+      itemName: name,
+      description,
+      contracts: descriptionTableContracts,
+      context: context(snapshot, row, "Описание"),
+      diagnostics
+    });
     if (stableIds.has(stableId)) {
       diagnostics.push(createImportDiagnostic({
         code: "duplicate-magic-item-id",
@@ -281,6 +296,18 @@ export function adaptMagicItemsCatalog({ snapshots, overrides, referenceIndex, d
       description,
       value: optionalValue(cells.Value, context(snapshot, row, "Value"))
     });
+  }
+
+  for (const stableId of Object.keys(descriptionTableContracts?.items ?? {}).sort()) {
+    if (stableIds.has(stableId)) continue;
+    diagnostics.push(createImportDiagnostic({
+      code: "missing-magic-item-description-table-owner",
+      sheetKey: snapshot.sheetKey,
+      range: snapshot.range,
+      column: "№",
+      value: stableId,
+      message: `Magic item table contract ${stableId} no longer resolves to a source row`
+    }));
   }
 
   throwIfDiagnostics(diagnostics, "Magic items catalog adaptation failed");

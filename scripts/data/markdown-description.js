@@ -82,7 +82,26 @@ function splitTableRow(value) {
     return null;
   }
   const normalized = text.replace(/^\|/u, "").replace(/\|$/u, "");
-  const cells = normalized.split("|").map((cell) => cell.trim());
+  const cells = [];
+  let cell = "";
+  let escaped = false;
+  for (const character of normalized) {
+    if (escaped) {
+      cell += character;
+      escaped = false;
+    }
+    else if (character === "\\") {
+      escaped = true;
+    }
+    else if (character === "|") {
+      cells.push(cell.trim());
+      cell = "";
+    }
+    else {
+      cell += character;
+    }
+  }
+  cells.push(cell.trim());
   return cells.length ? cells : null;
 }
 

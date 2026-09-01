@@ -12,6 +12,7 @@ import {
 } from "./equipment-import/sheet-registry.mjs";
 import { buildRawWorkbookSnapshot } from "./equipment-import/snapshot.mjs";
 import { validateEquipmentOverrides } from "./equipment-import/overrides.mjs";
+import { validateMagicItemDescriptionTableContracts } from "./equipment-import/magic-item-description-tables.mjs";
 import { buildEquipmentBundle, GENERATED_CATALOG_PATHS } from "./equipment-import/pipeline.mjs";
 import {
   EquipmentDiffGuardError,
@@ -155,6 +156,11 @@ async function loadOverrides(cwd) {
   return validateEquipmentOverrides(JSON.parse(source));
 }
 
+async function loadMagicItemDescriptionTableContracts(cwd) {
+  const source = await fs.readFile(path.join(cwd, "data", "magic-item-description-tables.json"), "utf8");
+  return validateMagicItemDescriptionTableContracts(JSON.parse(source));
+}
+
 async function loadCurrentFiles(cwd) {
   const files = new Map();
   for (const relativePath of Object.values(GENERATED_CATALOG_PATHS)) {
@@ -226,8 +232,10 @@ export async function runEquipmentImporterCli({
   }
 
   let overrides;
+  let descriptionTableContracts;
   try {
     overrides = await loadOverrides(cwd);
+    descriptionTableContracts = await loadMagicItemDescriptionTableContracts(cwd);
   } catch (error) {
     stderr.write(`Validation failed: ${conciseError(error)}\n`);
     return 4;
@@ -252,7 +260,7 @@ export async function runEquipmentImporterCli({
   let nextBundle;
   let currentBundle;
   try {
-    nextBundle = buildEquipmentBundle({ workbookSnapshot, overrides });
+    nextBundle = buildEquipmentBundle({ workbookSnapshot, overrides, descriptionTableContracts });
     currentBundle = parseCurrentEquipmentBundle({ filesByPath: await loadCurrentFiles(cwd) });
   } catch (error) {
     stderr.write(`Validation failed: ${conciseError(error)}\n`);

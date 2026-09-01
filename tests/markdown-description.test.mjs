@@ -87,3 +87,11 @@ test("safe markdown links render their labels without exposing markup syntax", (
   assert.match(html, /\[опасная ссылка\]\(javascript:alert\(1\)\)/u);
   assert.doesNotThrow(() => verifyDescriptionTextPreserved(markdown, html));
 });
+
+test("escaped pipes remain visible inside markdown table cells", () => {
+  const markdown = "| к4 | Эффект |\n| --- | --- |\n| 1 | Огонь \\| лёд |";
+  const html = renderDescriptionMarkdown(markdown);
+
+  assert.match(html, /<td>Огонь \| лёд<\/td>/u);
+  assert.doesNotThrow(() => verifyDescriptionTextPreserved(markdown, html));
+});

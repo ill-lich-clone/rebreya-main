@@ -29,6 +29,11 @@ async function setup(t, currentBundle = bundle) {
     `${JSON.stringify(core.overrides, null, 2)}\n`,
     "utf8"
   );
+  await fs.writeFile(
+    path.join(cwd, "data", "magic-item-description-tables.json"),
+    `${JSON.stringify({ schemaVersion: 1, items: {} }, null, 2)}\n`,
+    "utf8"
+  );
   return cwd;
 }
 

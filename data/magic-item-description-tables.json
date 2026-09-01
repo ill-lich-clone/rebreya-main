@@ -1,0 +1,156 @@
+{
+  "schemaVersion": 1,
+  "items": {
+    "алхимический-сосуд": {
+      "sourceUrl": "https://dnd.su/items/2-alchemy-jug/",
+      "tables": [{ "header": ["Жидкость", "Макс. объём"], "rowCount": 10, "layout": "spaced-lines" }]
+    },
+    "аппарат-квалиша": {
+      "sourceUrl": "https://dnd.su/items/6-apparatus-of-kwalish/",
+      "tables": [{ "header": ["Рычаг", "Вверх", "Вниз"], "rowCount": 10, "layout": "spaced-lines" }]
+    },
+    "бутылка-с-ифритом": {
+      "sourceUrl": "https://dnd.su/items/11-efreeti-bottle/",
+      "tables": [{ "header": ["к100", "Эффект"], "rowCount": 3, "layout": "spaced-lines" }]
+    },
+    "волшебная-палочка-чудес": {
+      "sourceUrl": "https://dnd.su/items/28-wand-of-wonder/",
+      "tables": [{ "header": ["к100", "Эффект"], "rowCount": 22, "layout": "spaced-lines" }]
+    },
+    "доспех-из-драконьей-чешуи": {
+      "sourceUrl": "https://dnd.su/items/34-dragon-scale-mail/",
+      "tables": [{ "header": ["Дракон", "Сопротивление"], "rowCount": 10, "layout": "spaced-lines" }]
+    },
+    "железная-фляга": {
+      "sourceUrl": "https://dnd.su/items/48-iron-flask/",
+      "tables": [{ "header": ["к100", "Содержимое"], "rowCount": 30, "layout": "spaced-lines" }]
+    },
+    "защитная-сфера": {
+      "sourceUrl": "https://dnd.su/items/2257-orb-of-shielding/",
+      "tables": [{ "header": ["Планарный Материал", "Вид урона"], "rowCount": 8, "layout": "spaced-lines" }]
+    },
+    "камень-элементаля": {
+      "sourceUrl": "https://dnd.su/items/83-elemental-gem/",
+      "tables": [{ "header": ["Камень", "Призываемый элементаль"], "rowCount": 4, "layout": "spaced-lines" }]
+    },
+    "ковер-самолет": {
+      "sourceUrl": "https://dnd.su/items/87-carpet-of-flying/",
+      "tables": [{ "header": ["к100", "Размер", "Грузоподъёмность", "Скорость полёта"], "rowCount": 4, "layout": "spaced-lines" }]
+    },
+    "колода-диких-карт": {
+      "sourceUrl": "https://dnd.su/items/7233-deck-of-wild-cards/",
+      "tables": [{ "header": ["к4", "Масть", "Эффект"], "rowCount": 4, "layout": "key-plus-spaced" }]
+    },
+    "колода-еще-больших-вещей": {
+      "sourceUrl": "https://dnd.su/items/7236-deck-of-many-more-things/",
+      "tables": [{ "header": ["к100", "Карта"], "rowCount": 67, "layout": "spaced-lines" }]
+    },
+    "колода-иллюзий": {
+      "sourceUrl": "https://dnd.su/items/88-deck-of-illusions/",
+      "tables": [{ "header": ["Карта", "Иллюзия"], "rowCount": 33, "layout": "spaced-lines" }]
+    },
+    "колода-многих-вещей": {
+      "sourceUrl": "https://dnd.su/items/89-deck-of-many-things/",
+      "tables": [{ "header": ["Игральная карта", "Карта"], "rowCount": 22, "layout": "spaced-lines" }]
+    },
+    "кольцо-падающих-звезд": {
+      "sourceUrl": "https://dnd.su/items/99-ring-of-shooting-stars/",
+      "tables": [{ "header": ["Шары", "Урон электричеством"], "rowCount": 4, "layout": "spaced-lines" }]
+    },
+    "кольцо-сопротивления": {
+      "sourceUrl": "https://dnd.su/items/107-ring-of-resistance/",
+      "tables": [{ "header": ["к10", "Вид урона", "Камень"], "rowCount": 10, "layout": "spaced-lines" }]
+    },
+    "куб-силового-поля": {
+      "sourceUrl": "https://dnd.su/items/120-cube-of-force/",
+      "tables": [
+        { "header": ["Грань", "Заряды", "Эффект"], "rowCount": 6, "layout": "spaced-lines" },
+        { "header": ["Заклинание или предмет", "Потеря зарядов"], "rowCount": 5, "layout": "paired-lines" }
+      ]
+    },
+    "лунный-клинок": {
+      "sourceUrl": "https://dnd.su/items/2231-moonblade/",
+      "tables": [{ "header": ["к100", "Свойство"], "rowCount": 12, "layout": "spaced-lines" }]
+    },
+    "мантия-полезных-предметов": {
+      "sourceUrl": "https://dnd.su/items/130-robe-of-useful-items/",
+      "tables": [{ "header": ["к100", "Заплатка"], "rowCount": 13, "layout": "spaced-lines" }]
+    },
+    "меч-ответа": {
+      "sourceUrl": "https://dnd.su/items/146-sword-of-answering/",
+      "tables": [{ "header": ["Название", "Мировоззрение", "Камень"], "rowCount": 9, "layout": "spaced-lines" }]
+    },
+    "ожерелье-молитвенных-четок": {
+      "sourceUrl": "https://dnd.su/items/157-necklace-of-prayer-beads/",
+      "tables": [{ "header": ["к20", "Бусина...", "Заклинание"], "rowCount": 6, "layout": "spaced-lines" }]
+    },
+    "осколок-эссенции-внешних-планов": {
+      "sourceUrl": "https://dnd.su/items/2217-outer-essence-shard/",
+      "tables": [{ "header": ["к4", "Свойство"], "rowCount": 4, "layout": "spaced-lines" }]
+    },
+    "осколок-эссенции-стихийных-планов": {
+      "sourceUrl": "https://dnd.su/items/2218-elemental-essence-shard/",
+      "tables": [{ "header": ["к4", "Свойство"], "rowCount": 4, "layout": "spaced-lines" }]
+    },
+    "перо-кваля": {
+      "sourceUrl": "https://dnd.su/items/167-quaals-feather-token/",
+      "tables": [{ "header": ["к100", "Эффект"], "rowCount": 6, "layout": "spaced-lines" }]
+    },
+    "пиксида-пандемония": {
+      "sourceUrl": "https://dnd.su/items/2105-pyxis-of-pandemonium/",
+      "tables": [{ "header": ["к8", "Бедствие"], "rowCount": 8, "layout": "spaced-lines" }]
+    },
+    "посох-магов": {
+      "sourceUrl": "https://dnd.su/items/190-staff-of-the-magi/",
+      "tables": [{ "header": ["Расстояние от исходной точки", "Урон"], "rowCount": 3, "layout": "spaced-lines" }]
+    },
+    "посох-силы": {
+      "sourceUrl": "https://dnd.su/items/196-staff-of-power/",
+      "tables": [{ "header": ["Расстояние от исходной точки", "Урон"], "rowCount": 3, "layout": "spaced-lines" }]
+    },
+    "пропитанная-древесная-фокусировка": {
+      "sourceUrl": "https://dnd.su/items/2265-imbued-wood-focus/",
+      "tables": [{ "header": ["Древесина", "Вид урона"], "rowCount": 8, "layout": "spaced-lines" }]
+    },
+    "свиток-защиты": {
+      "sourceUrl": "https://dnd.su/items/211-scroll-of-protection/",
+      "tables": [{ "header": ["к100", "Вид существ"], "rowCount": 8, "layout": "spaced-lines" }]
+    },
+    "снаряды-альтемоны-для-пращи": {
+      "sourceUrl": "https://dnd.su/items/2104-sling-bullets-of-althemone/",
+      "tables": [{ "header": ["к4", "Снаряд"], "rowCount": 4, "layout": "spaced-lines" }]
+    },
+    "справочник-по-големам": {
+      "sourceUrl": "https://dnd.su/items/219-manual-of-golems/",
+      "tables": [{ "header": ["к20", "Голем", "Время", "Стоимость"], "rowCount": 4, "layout": "spaced-lines" }]
+    },
+    "сумка-с-бобами": {
+      "sourceUrl": "https://dnd.su/items/225-bag-of-beans/",
+      "tables": [{ "header": ["к100", "Эффект"], "rowCount": 12, "layout": "spaced-lines" }]
+    },
+    "сумка-фокусов": {
+      "sourceUrl": "https://dnd.su/items/226-bag-of-tricks/",
+      "tables": [
+        { "header": ["к8", "Существо"], "rowCount": 8, "layout": "spaced-lines" },
+        { "header": ["к8", "Существо"], "rowCount": 8, "layout": "spaced-lines" },
+        { "header": ["к8", "Существо"], "rowCount": 8, "layout": "spaced-lines" }
+      ]
+    },
+    "сфера-аннигиляции": {
+      "sourceUrl": "https://dnd.su/items/228-sphere-of-annihilation/",
+      "tables": [{ "header": ["к100", "Результат"], "rowCount": 3, "layout": "spaced-lines" }]
+    },
+    "татуировка-поглощения": {
+      "sourceUrl": "https://dnd.su/items/2483-absorbing-tattoo/",
+      "tables": [{ "header": ["к10", "Тип урона", "Цвет"], "rowCount": 10, "layout": "spaced-lines" }]
+    },
+    "телескопический-транспортер": {
+      "sourceUrl": "https://dnd.su/items/7254-telescopic-transporter/",
+      "tables": [{ "header": ["к6", "Неудача"], "rowCount": 6, "layout": "spaced-lines" }]
+    },
+    "шлем-богов": {
+      "sourceUrl": "https://dnd.su/items/2103-helm-of-the-gods/",
+      "tables": [{ "header": ["Бог", "Заклинание"], "rowCount": 15, "layout": "spaced-lines" }]
+    }
+  }
+}

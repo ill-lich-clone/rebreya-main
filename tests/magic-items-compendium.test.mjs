@@ -667,6 +667,27 @@ test("magic item compendium builds automation for selected magic items", () => {
   }
 });
 
+test("magic item compendium renders paragraphs and canonical markdown tables", () => {
+  const [normalizedItem] = magicItemsCompendium.normalizeMagicItems([
+    makeMagicItem({
+      description: [
+        "Первый абзац.",
+        "",
+        "| к4 | Эффект |",
+        "| --- | --- |",
+        "| 1 | <опасный текст> |",
+        "",
+        "Второй абзац."
+      ].join("\n")
+    })
+  ]);
+
+  const html = magicItemsCompendium.createMagicItemData(normalizedItem, new Map()).system.description.value;
+  assert.match(html, /<p>Первый абзац\.<\/p>/u);
+  assert.match(html, /<table>[\s\S]*<th>к4<\/th>[\s\S]*<td>&lt;опасный текст&gt;<\/td>[\s\S]*<\/table>/u);
+  assert.match(html, /<p>Второй абзац\.<\/p>/u);
+});
+
 test("magic item compendium projects the approved passive automation matrix", () => {
   const sourceById = new Map(MAGIC_ITEMS.map((item) => [item.id, item]));
   const expectedChangesById = new Map([
