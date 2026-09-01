@@ -174,7 +174,7 @@ export function validateAssetCollection(assets = []) {
   return true;
 }
 
-function assertSourceInsideSafeArea(cellPath, geometry) {
+function assertSourceInsideCell(cellPath, geometry) {
   const box = parseBoundingBox(run("magick", [
     cellPath,
     "-alpha", "extract",
@@ -184,12 +184,9 @@ function assertSourceInsideSafeArea(cellPath, geometry) {
   ]));
   const right = box.x + box.width;
   const bottom = box.y + box.height;
-  const localSafeRight = geometry.width - geometry.gutter;
-  const localSafeBottom = geometry.height - geometry.gutter;
   if (box.width <= 0 || box.height <= 0) throw new Error("processed source cell is empty");
-  if (box.x < geometry.gutter || box.y < geometry.gutter
-    || right > localSafeRight || bottom > localSafeBottom) {
-    throw new Error("source bounding box intersects the atlas gutter");
+  if (box.x <= 0 || box.y <= 0 || right >= geometry.width || bottom >= geometry.height) {
+    throw new Error("source bounding box touches or crosses the cell boundary");
   }
 }
 
@@ -257,7 +254,7 @@ export function processAtlas({
         throw new Error(`${entry.sourceType}:${entry.sourceId}: source alpha channel is required`);
       }
       try {
-        assertSourceInsideSafeArea(cellPath, geometry);
+        assertSourceInsideCell(cellPath, geometry);
       } catch (error) {
         throw new Error(`${entry.sourceType}:${entry.sourceId}: ${error.message}`, { cause: error });
       }

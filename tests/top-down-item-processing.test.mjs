@@ -181,8 +181,43 @@ test("atlas processing leaves no partial production files when a later cell fail
         { sourceType: "gear", sourceId: "safe", assetPath: "assets/top-down/items/gear/safe.webp", atlasId: "primary-001", cellIndex: 0, scaleClass: "long" },
         { sourceType: "gear", sourceId: "gutter", assetPath: "assets/top-down/items/gear/gutter.webp", atlasId: "primary-001", cellIndex: 1, scaleClass: "long" }
       ]
-    }), /gear:gutter: source bounding box intersects the atlas gutter/u);
+    }), /gear:gutter: source bounding box touches or crosses the cell boundary/u);
     assert.equal(existsSync(firstOutput), false);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("atlas processing normalizes an unclipped source into the output safe gutter", async () => {
+  const tempRoot = await mkdtemp(join(tmpdir(), "rebreya-topdown-normalize-gutter-"));
+  const outputRoot = join(tempRoot, "module");
+  const atlasPath = join(tempRoot, "atlas.png");
+  try {
+    const generated = spawnSync("magick", [
+      "-size", "3000x3000", "xc:none",
+      "-fill", "#7c3aed", "-draw", "rectangle 5,10 595,590",
+      atlasPath
+    ], { encoding: "utf8" });
+    assert.equal(generated.status, 0, generated.stderr);
+
+    const [result] = processAtlas({
+      atlasPath,
+      atlasId: "primary-001",
+      moduleRoot: outputRoot,
+      matteMethod: "alpha",
+      entries: [{
+        sourceType: "gear",
+        sourceId: "large-but-unclipped",
+        assetPath: "assets/top-down/items/gear/large-but-unclipped.webp",
+        atlasId: "primary-001",
+        cellIndex: 0,
+        scaleClass: "standard"
+      }]
+    });
+
+    assert.equal(result.metadata.alphaBoundingBox.width, 384);
+    assert.ok(result.metadata.alphaBoundingBox.x >= 24);
+    assert.ok(result.metadata.alphaBoundingBox.y >= 24);
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
   }
