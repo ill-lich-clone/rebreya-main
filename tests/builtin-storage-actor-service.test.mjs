@@ -99,6 +99,7 @@ test("built-in storage Actor data creates an unlinked closed NPC with independen
   assert.equal(data.flags[MODULE_ID].storage.enabled, true);
   assert.equal(data.flags[MODULE_ID][BUILTIN_STORAGE_PRESET_FLAG].id, "wood-dark-copper");
   assert.equal(data.prototypeToken.actorLink, false);
+  assert.equal(data.prototypeToken.disposition, 0);
   assert.equal(data.prototypeToken.sight.enabled, false);
   assert.equal(data.prototypeToken.name, "Сундук");
   assert.equal(data.prototypeToken.texture.src, preset.textures.unopened);
@@ -124,6 +125,8 @@ test("ground pile Actor data creates an unlinked already-open storage prototype"
   assert.equal(data.flags[MODULE_ID].storage.enabled, true);
   assert.equal(data.flags[MODULE_ID].groundPilePrototype.enabled, true);
   assert.equal(data.prototypeToken.actorLink, false);
+  assert.equal(data.prototypeToken.disposition, 0);
+  assert.equal(data.prototypeToken.sight.enabled, false);
   assert.equal(data.prototypeToken.flags[MODULE_ID].groundPile.enabled, true);
   assert.equal(storage.storageKind, "pile");
   assert.equal(storage.state, "opened");
@@ -263,6 +266,7 @@ test("sync reconciles existing built-in Actors into the oldest storage folder wi
   for (const actor of harness.actors) {
     assert.equal(actor.updates.length, 1);
     assert.equal(actor.updates[0].folder, canonical.id);
+    assert.equal(actor.updates[0]["prototypeToken.disposition"], 0);
     assert.equal(actor.updates[0]["prototypeToken.sight.enabled"], false);
   }
   assert.deepEqual(
@@ -330,5 +334,69 @@ test("sync migrates only automatically inherited scene token names to the preset
   assert.equal(automatic.updates.length, 1);
   assert.equal(automatic.updates[0].name, "Сундук");
   assert.equal(automatic.updates[0][`flags.${MODULE_ID}.storage`].baseName, "Сундук");
-  assert.equal(custom.updates.length, 0);
+  assert.equal(custom.updates.length, 1);
+  assert.equal(custom.updates[0].disposition, 0);
+  assert.equal(custom.updates[0]["sight.enabled"], false);
+  assert.equal(Object.hasOwn(custom.updates[0], "name"), false);
+});
+
+test("sync neutralizes managed storage scene tokens without renaming a ground item", async () => {
+  const harness = createHarness();
+  await harness.service.sync();
+  const copper = harness.actors.find((actor) => (
+    actor.getFlag(MODULE_ID, BUILTIN_STORAGE_PRESET_FLAG).id === "wood-dark-copper"
+  ));
+  const groundPile = harness.actors.find((actor) => (
+    actor.getFlag(MODULE_ID, BUILTIN_STORAGE_PRESET_FLAG).id === "ground-pile"
+  ));
+  const createToken = ({ actorId, name, flags }) => ({
+    actorId,
+    name,
+    disposition: -1,
+    sight: { enabled: true, range: 60 },
+    flags,
+    updates: [],
+    async update(patch) {
+      this.updates.push(structuredClone(patch));
+      for (const [path, value] of Object.entries(patch)) {
+        const parts = path.split(".");
+        let cursor = this;
+        for (const part of parts.slice(0, -1)) cursor = (cursor[part] ??= {});
+        cursor[parts.at(-1)] = structuredClone(value);
+      }
+    }
+  });
+  const storageToken = createToken({
+    actorId: copper.id,
+    name: "Мой сундук",
+    flags: { [MODULE_ID]: { storage: { baseName: "Мой сундук" } } }
+  });
+  const itemToken = createToken({
+    actorId: groundPile.id,
+    name: "Латы",
+    flags: {
+      [MODULE_ID]: {
+        storage: { baseName: "Латы" },
+        groundPile: { enabled: true }
+      }
+    }
+  });
+  const foreignToken = createToken({ actorId: "ordinary-npc", name: "Враг", flags: {} });
+  harness.scenes.push({ tokens: { contents: [storageToken, itemToken, foreignToken] } });
+
+  await harness.service.sync();
+
+  for (const token of [storageToken, itemToken]) {
+    assert.equal(token.updates.length, 1);
+    assert.equal(token.updates[0].disposition, 0);
+    assert.equal(token.updates[0]["sight.enabled"], false);
+  }
+  assert.equal(Object.hasOwn(itemToken.updates[0], "name"), false);
+  assert.equal(foreignToken.updates.length, 0);
+
+  await harness.service.sync();
+
+  assert.equal(storageToken.updates.length, 1);
+  assert.equal(itemToken.updates.length, 1);
+  assert.equal(foreignToken.updates.length, 0);
 });

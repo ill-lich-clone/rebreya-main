@@ -159,6 +159,7 @@ test("canvas transfer creates an unlinked independent ground pile token", async 
   assert.equal(result.created, true);
   assert.equal(tokens.length, 1);
   assert.equal(tokens[0].actorLink, false);
+  assert.equal(tokens[0].disposition, 0);
   assert.deepEqual(tokens[0].sight, { enabled: false, range: 60 });
   assert.equal(tokens[0].width, 0.5);
   assert.equal(tokens[0].height, 0.5);
@@ -170,6 +171,27 @@ test("canvas transfer creates an unlinked independent ground pile token", async 
   assert.equal(tokens[0].flags[MODULE_ID].groundPile.coinPile, false);
   assert.equal(readStorageState(tokens[0]).manualRows[0].quantity, 2);
   assert.equal(readStorageState(tokens[0]).state, "opened");
+});
+
+test("ground pile refresh repairs hostile disposition and enabled sight", async () => {
+  const { service, tokens } = createHarness();
+  await service.transferToScene({
+    row: sword,
+    quantity: 1,
+    sceneId: "scene",
+    x: 300,
+    y: 400,
+    mutationId: "repair-presentation"
+  });
+  const token = tokens[0];
+  token.disposition = -1;
+  token.sight.enabled = true;
+
+  await service.refreshAfterStorageMutation(token, readStorageState(token));
+
+  assert.equal(token.disposition, 0);
+  assert.equal(token.sight.enabled, false);
+  assert.equal(token.sight.range, 60);
 });
 
 test("a player who drops an item owns the created synthetic pile actor", async () => {

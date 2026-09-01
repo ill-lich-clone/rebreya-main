@@ -26,6 +26,11 @@ function collectionValues(collection) {
   return [];
 }
 
+function neutralTokenDisposition() {
+  const disposition = Number(globalThis.CONST?.TOKEN_DISPOSITIONS?.NEUTRAL ?? 0);
+  return Number.isFinite(disposition) ? disposition : 0;
+}
+
 function collectionContains(collection, document) {
   const id = clean(document?.id);
   if (!id) return null;
@@ -262,6 +267,8 @@ export class StorageGroundPileService {
     await token.update({
       [`flags.${MODULE_ID}.storage`]: normalized,
       [`flags.${MODULE_ID}.groundPile`]: groundPile,
+      disposition: neutralTokenDisposition(),
+      "sight.enabled": false,
       name: presentation.name,
       "texture.src": presentation.img,
       ...resize,
@@ -447,6 +454,7 @@ export class StorageGroundPileService {
       ...prototype,
       actorId: actor.id,
       actorLink: false,
+      disposition: neutralTokenDisposition(),
       sight: {
         ...(clone(prototype.sight) ?? {}),
         enabled: false

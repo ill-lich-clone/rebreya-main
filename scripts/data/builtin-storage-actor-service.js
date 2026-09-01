@@ -32,6 +32,11 @@ function collectionValues(collection) {
   return [];
 }
 
+function neutralTokenDisposition() {
+  const disposition = Number(globalThis.CONST?.TOKEN_DISPOSITIONS?.NEUTRAL ?? 0);
+  return Number.isFinite(disposition) ? disposition : 0;
+}
+
 function readPresetId(actor) {
   const flag = typeof actor?.getFlag === "function"
     ? actor.getFlag(MODULE_ID, BUILTIN_STORAGE_PRESET_FLAG)
@@ -83,6 +88,7 @@ export function buildBuiltinStorageActorData(preset, folderId) {
     },
     prototypeToken: {
       ...clone(preset.prototypeToken),
+      disposition: neutralTokenDisposition(),
       sight: {
         ...(clone(preset.prototypeToken.sight) ?? {}),
         enabled: false
@@ -163,6 +169,7 @@ export class BuiltinStorageActorService {
     await actor.update({
       ...(String(currentFolderId ?? "") !== String(folderId ?? "") ? { folder: folderId } : {}),
       "prototypeToken.name": preset.prototypeToken.name,
+      "prototypeToken.disposition": neutralTokenDisposition(),
       "prototypeToken.sight.enabled": false,
       [`prototypeToken.flags.${MODULE_ID}.storage`]: buildStorageTokenState({
         ...initial,
@@ -195,11 +202,25 @@ export class BuiltinStorageActorService {
     for (const scene of collectionValues(game?.scenes)) {
       for (const token of collectionValues(scene?.tokens)) {
         const preset = actorPresets.get(token?.actorId);
-        if (!preset || preset.groundPile === true || String(token?.name ?? "").trim() !== preset.name || typeof token?.update !== "function") continue;
+        if (!preset || typeof token?.update !== "function") continue;
+        const inheritedName = preset.groundPile !== true
+          && String(token?.name ?? "").trim() === preset.name;
+        const presentationNeedsRepair = Number(token?.disposition) !== neutralTokenDisposition()
+          || token?.sight?.enabled !== false;
+        if (!inheritedName && !presentationNeedsRepair) continue;
         const current = token?.flags?.[MODULE_ID]?.storage ?? {};
         await token.update({
-          name: preset.prototypeToken.name,
-          [`flags.${MODULE_ID}.storage`]: buildStorageTokenState({ ...current, baseName: preset.prototypeToken.name })
+          ...(presentationNeedsRepair ? {
+            disposition: neutralTokenDisposition(),
+            "sight.enabled": false
+          } : {}),
+          ...(inheritedName ? {
+            name: preset.prototypeToken.name,
+            [`flags.${MODULE_ID}.storage`]: buildStorageTokenState({
+              ...current,
+              baseName: preset.prototypeToken.name
+            })
+          } : {})
         });
       }
     }

@@ -63,8 +63,8 @@ test("module manifest loads an unpinned canonical entrypoint for page-refresh up
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const [entrypoint] = manifest.esmodules;
 
-  assert.equal(manifest.version, "1.4.200");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.200.js"]);
+  assert.equal(manifest.version, "1.4.201");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.201.js"]);
   assert.doesNotMatch(entrypoint, /[?#]/u);
 
   const entrypointSource = await readFile(new URL(entrypoint, manifestUrl), "utf8");
@@ -247,7 +247,8 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
     "data/storage-open-sound-service.js?v=1.4.145-coin-icons-storage-sound",
     "data/storage-service.js?v=1.4.200-storage-broken-presentation",
     "data/storage-access.js?v=1.4.197-door-trigger-target",
-    "data/storage-ground-pile-service.js?v=1.4.200-storage-broken-presentation",
+    "data/builtin-storage-actor-service.js?v=1.4.201-storage-token-neutral",
+    "data/storage-ground-pile-service.js?v=1.4.201-storage-token-neutral",
     "data/storage-container-item-service.js?v=1.4.130-storage-player-fixes",
     "data/storage-deposit-source.js?v=1.4.195-storage-administration",
     "data/storage-command-service.js?v=1.4.197-door-trigger-target",
@@ -307,7 +308,7 @@ test("module keeps recent published entrypoint URLs as canonical compatibility f
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
 
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.200.js"]);
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.201.js"]);
 
   for (const fileName of ["main-1.4.98.js", "main-1.4.99.js", "main-1.4.100.js"]) {
     const forwarderSource = await readFile(new URL(`../scripts/${fileName}`, import.meta.url), "utf8");
