@@ -258,7 +258,11 @@ function createContactSheet(context, options) {
   const output = resolve(String(options.output ?? ""));
   if (!atlasId || !options.output) throw new Error("contact-sheet requires --atlas-id and --output");
   const entries = context.manifest.entries
-    .filter((entry) => entry.atlasId === atlasId)
+    .filter((entry) => (
+      entry.atlasId === atlasId
+      && entry.technicalQa === "passed"
+      && existsSync(resolve(moduleRoot, entry.assetPath))
+    ))
     .sort((left, right) => left.cellIndex - right.cellIndex);
   if (!entries.length) throw new Error(`Unknown or empty atlas: ${atlasId}`);
   const args = ["montage"];

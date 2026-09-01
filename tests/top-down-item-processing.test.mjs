@@ -92,7 +92,8 @@ test("real atlas processing crops fixed cells and writes transparent 512px WebP"
   try {
     const generated = spawnSync("magick", [
       "-size", "3000x3000", "xc:#18e818",
-      "-fill", "#7f1d1d", "-draw", "rectangle 100,250 500,350",
+      "-fill", "#075807", "-draw", "rectangle 0,200 80,400",
+      "-fill", "#a06020", "-draw", "rectangle 100,250 500,350",
       "-fill", "#1d4ed8", "-draw", "ellipse 900,300 180,180 0,360",
       atlasPath
     ], { encoding: "utf8" });
@@ -137,14 +138,20 @@ test("real atlas processing crops fixed cells and writes transparent 512px WebP"
       assert.equal(validateProcessedAsset(metadata, result.entry), true);
       const spill = spawnSync("magick", [
         result.outputPath,
-        "-alpha", "off",
-        "-fx", "g-max(r,b)",
+        "-fx", "a*(g-max(r,b))",
         "-format", "%[fx:maxima]",
         "info:"
       ], { encoding: "utf8", windowsHide: true });
       assert.equal(spill.status, 0, spill.stderr);
       assert.ok(Number(spill.stdout) <= 0.01, `green spill=${spill.stdout}`);
     }
+    const retainedGreen = spawnSync("magick", [
+      results[0].outputPath,
+      "-format", "%[fx:p{256,256}.g]",
+      "info:"
+    ], { encoding: "utf8", windowsHide: true });
+    assert.equal(retainedGreen.status, 0, retainedGreen.stderr);
+    assert.ok(Number(retainedGreen.stdout) > 0.25, `object green channel=${retainedGreen.stdout}`);
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
   }
@@ -188,6 +195,7 @@ test("atlas processing preserves a genuine transparent source without chroma mat
   try {
     const generated = spawnSync("magick", [
       "-size", "3000x3000", "xc:none",
+      "-fill", "rgba(255,0,0,0.005)", "-draw", "rectangle 0,0 20,20",
       "-fill", "#00ff00", "-draw", "rectangle 30,250 530,350",
       atlasPath
     ], { encoding: "utf8" });
@@ -324,6 +332,34 @@ test("pipeline CLI records visual decisions for explicit entry keys only", async
       { status: "accepted", visualQa: "passed" },
       { status: "planned", visualQa: "pending" }
     ]);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("pipeline contact sheet includes only technically processed files", async () => {
+  const tempRoot = await mkdtemp(join(tmpdir(), "rebreya-topdown-contact-"));
+  const manifestPath = join(tempRoot, "manifest.json");
+  const existingPath = join(tempRoot, "existing.webp");
+  const outputPath = join(tempRoot, "contact.png");
+  try {
+    const generated = spawnSync("magick", ["-size", "64x64", "xc:red", existingPath], { encoding: "utf8" });
+    assert.equal(generated.status, 0, generated.stderr);
+    const entries = [
+      { sourceType: "gear", sourceId: "existing", name: "Existing", assetPath: existingPath, atlasId: "primary-001", cellIndex: 0, status: "processing", technicalQa: "passed" },
+      { sourceType: "gear", sourceId: "missing", name: "Missing", assetPath: join(tempRoot, "missing.webp"), atlasId: "primary-001", cellIndex: 1, status: "planned", technicalQa: "pending" }
+    ];
+    await writeFile(manifestPath, `${JSON.stringify({ entries }, null, 2)}\n`, "utf8");
+    const result = spawnSync(process.execPath, [
+      fileURLToPath(new URL("tools/top-down-item-assets.mjs", moduleRoot)),
+      "contact-sheet",
+      "--manifest", manifestPath,
+      "--atlas-id", "primary-001",
+      "--output", outputPath
+    ], { cwd: new URL(".", moduleRoot), encoding: "utf8", windowsHide: true });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(JSON.parse(result.stdout).entries, 1);
+    assert.equal(existsSync(outputPath), true);
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
   }

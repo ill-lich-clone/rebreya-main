@@ -40,9 +40,18 @@ function run(command, args) {
 
 function chromaDespill(chromaColor) {
   switch (clean(chromaColor).toLowerCase()) {
-    case "#ff0000": return { channel: "R", expression: "min(r,min(g,b))" };
-    case "#00ff00": return { channel: "G", expression: "min(g,min(r,b))" };
-    case "#0000ff": return { channel: "B", expression: "min(b,min(r,g))" };
+    case "#ff0000": return { channel: "R", expression: "min(r,max(g,b))" };
+    case "#00ff00": return { channel: "G", expression: "min(g,max(r,b))" };
+    case "#0000ff": return { channel: "B", expression: "min(b,max(r,g))" };
+    default: return null;
+  }
+}
+
+function chromaAlphaExpression(chromaColor) {
+  switch (clean(chromaColor).toLowerCase()) {
+    case "#ff0000": return "min(a,clamp((max(g,b)-r+0.12)/0.12))";
+    case "#00ff00": return "min(a,clamp((max(r,b)-g+0.12)/0.12))";
+    case "#0000ff": return "min(a,clamp((max(r,g)-b+0.12)/0.12))";
     default: return null;
   }
 }
@@ -166,7 +175,13 @@ export function validateAssetCollection(assets = []) {
 }
 
 function assertSourceInsideSafeArea(cellPath, geometry) {
-  const box = inspectImage(cellPath).alphaBoundingBox;
+  const box = parseBoundingBox(run("magick", [
+    cellPath,
+    "-alpha", "extract",
+    "-threshold", "1%",
+    "-format", "%@",
+    "info:"
+  ]));
   const right = box.x + box.width;
   const bottom = box.y + box.height;
   const localSafeRight = geometry.width - geometry.gutter;
@@ -226,11 +241,16 @@ export function processAtlas({
           "-fuzz", `${chromaFuzz}%`,
           "-transparent", chromaColor
         );
+        const alphaExpression = chromaAlphaExpression(chromaColor);
+        if (alphaExpression) {
+          cropArguments.push("-channel", "A", "-fx", alphaExpression, "+channel");
+        }
         const despill = chromaDespill(chromaColor);
         if (despill) {
           cropArguments.push("-channel", despill.channel, "-fx", despill.expression, "+channel");
         }
       }
+      cropArguments.push("-channel", "A", "-fx", "a <= 0.01 ? 0 : a", "+channel");
       cropArguments.push(cellPath);
       run("magick", cropArguments);
       if (matteMethod === "alpha" && inspectImage(cellPath).hasAlpha !== true) {
@@ -244,16 +264,20 @@ export function processAtlas({
       const outputPath = resolve(moduleRoot, entry.assetPath);
       const temporaryOutputPath = join(workRoot, `output-${String(index).padStart(2, "0")}.webp`);
       const target = TOP_DOWN_SCALE_TARGETS[clean(entry.scaleClass)] ?? TOP_DOWN_SCALE_TARGETS.standard;
-      run("magick", [
+      const outputArguments = [
         cellPath,
         "-trim", "+repage",
         "-resize", `${target}x${target}`,
         "-gravity", "center",
         "-background", "none",
-        "-extent", `${TOP_DOWN_OUTPUT_SIZE}x${TOP_DOWN_OUTPUT_SIZE}`,
-        "-define", "webp:lossless=true",
-        temporaryOutputPath
-      ]);
+        "-extent", `${TOP_DOWN_OUTPUT_SIZE}x${TOP_DOWN_OUTPUT_SIZE}`
+      ];
+      const outputDespill = matteMethod === "chroma" ? chromaDespill(chromaColor) : null;
+      if (outputDespill) {
+        outputArguments.push("-channel", outputDespill.channel, "-fx", outputDespill.expression, "+channel");
+      }
+      outputArguments.push("-define", "webp:lossless=true", temporaryOutputPath);
+      run("magick", outputArguments);
       const metadata = inspectImage(temporaryOutputPath);
       validateProcessedAsset(metadata, entry);
       staged.push({ entry, outputPath, temporaryOutputPath, metadata });
