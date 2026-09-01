@@ -35,7 +35,7 @@ const EFFECT_MODE_CUSTOM = 0;
 const EFFECT_MODE_ADD = 2;
 const EFFECT_MODE_UPGRADE = 4;
 const DEFAULT_MAGIC_ITEM_ICON = "systems/dnd5e/icons/svg/items/loot.svg";
-const MAGIC_TEMPLATE_VERSION = 7;
+const MAGIC_TEMPLATE_VERSION = 8;
 const MAGIC_ITEM_AUTOMATION_VERSION = 4;
 const NATIVE_INSTRUMENT_SPELL_ACTIVITY_VERSION = 1;
 const spell24 = (name, id, level, options = {}) => ({
@@ -3331,8 +3331,98 @@ export function parseFixedPriceTextToGold(value) {
   }
 }
 
+function parseMaximumDiceExpression(value) {
+  const expression = String(value ?? "")
+    .toLowerCase()
+    .replace(/[к]/gu, "d")
+    .replace(/\s+/gu, "");
+  let index = 0;
+
+  function parsePrimary() {
+    if (expression[index] === "(") {
+      index += 1;
+      const result = parseAddition();
+      if (expression[index] !== ")") return null;
+      index += 1;
+      return result;
+    }
+
+    const dice = /^(\d*)d(\d+)(?:(?:kh|kl)(\d+))?/u.exec(expression.slice(index));
+    if (dice) {
+      index += dice[0].length;
+      const count = Number(dice[1] || 1);
+      const sides = Number(dice[2]);
+      const kept = dice[3] === undefined ? count : Number(dice[3]);
+      if (![count, sides, kept].every(Number.isSafeInteger)
+        || count < 1 || sides < 1 || kept < 1 || kept > count) return null;
+      return kept * sides;
+    }
+
+    const numeric = /^\d+(?:\.\d+)?/u.exec(expression.slice(index));
+    if (!numeric) return null;
+    index += numeric[0].length;
+    return Number(numeric[0]);
+  }
+
+  function parseMultiplication() {
+    let result = parsePrimary();
+    if (result === null) return null;
+    while (expression[index] === "*") {
+      index += 1;
+      const right = parsePrimary();
+      if (right === null) return null;
+      result *= right;
+    }
+    return result;
+  }
+
+  function parseAddition() {
+    let result = parseMultiplication();
+    if (result === null) return null;
+    while (expression[index] === "+") {
+      index += 1;
+      const right = parseMultiplication();
+      if (right === null) return null;
+      result += right;
+    }
+    return result;
+  }
+
+  const result = parseAddition();
+  return index === expression.length && Number.isFinite(result) && result >= 0 ? result : null;
+}
+
+export function parseMaximumPriceTextToGold(value) {
+  const text = String(value ?? "").trim().replace(/,/gu, ".");
+  const match = /^(.+?)\s*(пм|pp|эм|ep|зм|gp|см|sp|мм|cp)$/iu.exec(text);
+  if (!match) return null;
+
+  const maximum = parseMaximumDiceExpression(match[1]);
+  if (maximum === null) return null;
+
+  switch (match[2].toLowerCase()) {
+    case "пм":
+    case "pp":
+      return maximum * 10;
+    case "эм":
+    case "ep":
+      return maximum * 0.5;
+    case "зм":
+    case "gp":
+      return maximum;
+    case "см":
+    case "sp":
+      return maximum * 0.1;
+    case "мм":
+    case "cp":
+      return maximum * 0.01;
+    default:
+      return null;
+  }
+}
+
 function getNativeMagicItemPrice(item) {
-  const parsedCostGold = parseFixedPriceTextToGold(item?.costText);
+  const parsedCostGold = parseMaximumPriceTextToGold(item?.costText);
   if (parsedCostGold === null) {
     return {
       value: null,

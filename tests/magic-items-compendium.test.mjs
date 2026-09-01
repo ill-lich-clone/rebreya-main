@@ -513,7 +513,7 @@ test("magic item compendium renders description before its compact trade metadat
   assert.doesNotMatch(created.system.description.value, /\?{3,}/u);
 });
 
-test("magic item compendium leaves native price empty when costText is a formula", () => {
+test("magic item compendium uses the maximum formula result as native price", () => {
   const [normalizedItem] = magicItemsCompendium.normalizeMagicItems([
     makeMagicItem({
       name: "Пояс силы облачного великана",
@@ -527,13 +527,41 @@ test("magic item compendium leaves native price empty when costText is a formula
   const created = magicItemsCompendium.createMagicItemData(normalizedItem, new Map());
 
   assert.deepEqual(created.system.price, {
-    value: null,
+    value: 45000,
     denomination: "gp"
   });
   assert.equal(created.flags["rebreya-main"].priceGold, 60000);
   assert.equal(created.flags["rebreya-main"].value, 60000);
   assert.match(created.system.description.value, /\(2d8kh1\+1\)\*5000 зм/iu);
   assert.match(created.system.description.value, /Вэлью:<\/strong>\s*60000 зм/iu);
+});
+
+test("magic item price formulas resolve their maximum without evaluating arbitrary code", () => {
+  const cases = [
+    ["2d6kh1*100 зм", 600],
+    ["2d6kl1*1000 зм", 6000],
+    ["(2d8kh1+1)*5000 зм", 45000],
+    ["(2d8kl1+1)*5000 зм", 45000],
+    ["2d6*25000 зм", 300000],
+    ["100 + 1d6*10 зм", 160],
+    ["Цена зависит от уровня", null],
+    ["1d6*100 + globalThis.process.exit() зм", null]
+  ];
+
+  for (const [costText, expected] of cases) {
+    assert.equal(magicItemsCompendium.parseMaximumPriceTextToGold(costText), expected, costText);
+  }
+});
+
+test("every numeric magic item cost has a native fixed or maximum price", () => {
+  const normalizedItems = magicItemsCompendium.normalizeMagicItems(MAGIC_ITEMS);
+
+  for (const item of normalizedItems) {
+    if (!item.costText || /цена зависит от уровня/iu.test(item.costText)) continue;
+    const created = magicItemsCompendium.createMagicItemData(item, new Map());
+    assert.equal(Number.isFinite(created.system.price.value), true, `${item.name}: ${item.costText}`);
+    assert.ok(created.system.price.value >= 0, `${item.name}: ${item.costText}`);
+  }
 });
 
 test("magic item compendium treats subtype-backed staves and ammunition as adaptable base items", () => {
