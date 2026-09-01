@@ -203,6 +203,10 @@ export function processAtlas({
   if (!new Set(["alpha", "chroma"]).has(matteMethod)) {
     throw new Error("matteMethod must be alpha or chroma");
   }
+  const atlasMetadata = inspectImage(atlasPath);
+  if (atlasMetadata.width !== atlasMetadata.height) {
+    throw new Error(`atlas source must be square, received ${atlasMetadata.width}x${atlasMetadata.height}`);
+  }
   const selected = entries.filter((entry) => clean(entry?.atlasId) === clean(atlasId));
   if (!selected.length) throw new Error(`No manifest entries found for atlas ${atlasId}`);
   const workRoot = mkdtempSync(join(tmpdir(), "rebreya-topdown-atlas-"));

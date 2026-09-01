@@ -223,6 +223,37 @@ test("atlas processing normalizes an unclipped source into the output safe gutte
   }
 });
 
+test("atlas processing rejects a non-square source before resizing the grid", async () => {
+  const tempRoot = await mkdtemp(join(tmpdir(), "rebreya-topdown-square-atlas-"));
+  const outputRoot = join(tempRoot, "module");
+  const atlasPath = join(tempRoot, "atlas.png");
+  try {
+    const generated = spawnSync("magick", [
+      "-size", "1536x1024", "xc:none",
+      "-fill", "#2563eb", "-draw", "circle 150,100 190,100",
+      atlasPath
+    ], { encoding: "utf8" });
+    assert.equal(generated.status, 0, generated.stderr);
+
+    assert.throws(() => processAtlas({
+      atlasPath,
+      atlasId: "primary-001",
+      moduleRoot: outputRoot,
+      matteMethod: "alpha",
+      entries: [{
+        sourceType: "material",
+        sourceId: "distorted",
+        assetPath: "assets/top-down/items/material/distorted.webp",
+        atlasId: "primary-001",
+        cellIndex: 0,
+        scaleClass: "standard"
+      }]
+    }), /atlas source must be square/u);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("atlas processing preserves a genuine transparent source without chroma matting", async () => {
   const tempRoot = await mkdtemp(join(tmpdir(), "rebreya-topdown-alpha-"));
   const outputRoot = join(tempRoot, "module");
