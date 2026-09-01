@@ -95,16 +95,42 @@ function atlasPlan(manifest, atlasId) {
   };
 }
 
+function requestedKeys(options) {
+  return String(options.keys ?? "").split(",").map((value) => value.trim()).filter(Boolean);
+}
+
+function selectEntries(manifest, options, { requireAtlas = false } = {}) {
+  const keys = requestedKeys(options);
+  if (keys.length) {
+    if (new Set(keys).size !== keys.length) throw new Error("Entry keys must be unique");
+    const byKey = new Map(manifest.entries.map((entry) => [topDownEntryKey(entry), entry]));
+    return keys.map((key) => {
+      const entry = byKey.get(key);
+      if (!entry) throw new Error(`Unknown manifest key: ${key}`);
+      return entry;
+    });
+  }
+  const atlasId = String(options["atlas-id"] ?? "").trim();
+  if (!atlasId && requireAtlas) throw new Error("--atlas-id or --keys is required");
+  return manifest.entries.filter((entry) => entry.atlasId === atlasId);
+}
+
 function runProcessAtlas(context, options) {
   const atlasId = String(options["atlas-id"] ?? "").trim();
   const input = resolve(String(options.input ?? ""));
   if (!atlasId || !options.input) throw new Error("process-atlas requires --atlas-id and --input");
+  const selected = selectEntries(context.manifest, options);
+  if (options.keys && selected.some((entry) => entry.atlasId !== atlasId)) {
+    throw new Error("Every --keys entry must belong to --atlas-id");
+  }
   const results = processAtlas({
     atlasPath: input,
     atlasId,
-    entries: context.manifest.entries,
+    entries: options.keys ? selected : context.manifest.entries,
     moduleRoot,
     chromaColor: options.chroma ?? "#00ff00",
+    chromaFuzz: Number(options.fuzz ?? 12),
+    matteMethod: options.matte ?? "chroma",
     force: options.force === true
   });
   const generationHash = createHash("sha256").update(readFileSync(input)).digest("hex");
@@ -117,7 +143,7 @@ function runProcessAtlas(context, options) {
     entry.visualQa = "pending";
     entry.generationHash = generationHash;
     entry.assetHash = result.metadata.contentHash;
-    entry.matteMethod = "chroma";
+    entry.matteMethod = options.matte ?? "chroma";
   }
   writeJsonAtomic(context.manifestPath, context.manifest);
   return { atlasId, processed: results.length };
@@ -125,9 +151,8 @@ function runProcessAtlas(context, options) {
 
 function runVisualDecision(context, options, passed) {
   const atlasId = String(options["atlas-id"] ?? "").trim();
-  if (!atlasId) throw new Error("visual decision requires --atlas-id");
-  const entries = context.manifest.entries.filter((entry) => entry.atlasId === atlasId);
-  if (!entries.length) throw new Error(`Unknown or empty atlas: ${atlasId}`);
+  const entries = selectEntries(context.manifest, options, { requireAtlas: true });
+  if (!entries.length) throw new Error(`Unknown or empty atlas: ${atlasId || "entry selection"}`);
   for (const entry of entries) {
     if (passed && entry.technicalQa !== "passed") {
       throw new Error(`${topDownEntryKey(entry)} has not passed technical QA`);
@@ -136,11 +161,11 @@ function runVisualDecision(context, options, passed) {
     entry.status = passed ? "accepted" : "rejected";
   }
   writeJsonAtomic(context.manifestPath, context.manifest);
-  return { atlasId, status: passed ? "accepted" : "rejected", entries: entries.length };
+  return { atlasId: atlasId || null, status: passed ? "accepted" : "rejected", entries: entries.length };
 }
 
 function assignRetryAtlas(context, options) {
-  const keys = String(options.keys ?? "").split(",").map((value) => value.trim()).filter(Boolean);
+  const keys = requestedKeys(options);
   if (!keys.length || keys.length > 25) throw new Error("assign-retry requires 1 to 25 comma-separated --keys");
   if (new Set(keys).size !== keys.length) throw new Error("assign-retry keys must be unique");
   const entryByKey = new Map(context.manifest.entries.map((entry) => [topDownEntryKey(entry), entry]));
@@ -265,6 +290,12 @@ function main() {
     case "reject-atlas":
       result = runVisualDecision(context, options, false);
       break;
+    case "accept-entries":
+      result = runVisualDecision(context, options, true);
+      break;
+    case "reject-entries":
+      result = runVisualDecision(context, options, false);
+      break;
     case "assign-retry":
       result = assignRetryAtlas(context, options);
       break;
@@ -278,7 +309,7 @@ function main() {
       result = createContactSheet(context, options);
       break;
     default:
-      throw new Error("Usage: top-down-item-assets.mjs <plan|process-atlas|accept-atlas|reject-atlas|assign-retry|validate|generate-runtime-catalog|contact-sheet> [options]");
+      throw new Error("Usage: top-down-item-assets.mjs <plan|process-atlas|accept-atlas|reject-atlas|accept-entries|reject-entries|assign-retry|validate|generate-runtime-catalog|contact-sheet> [options]");
   }
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
 }

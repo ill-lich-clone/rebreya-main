@@ -1,5 +1,13 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  unlinkSync
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -7,6 +15,7 @@ import { spawnSync } from "node:child_process";
 export const TOP_DOWN_ATLAS_SIZE = 3000;
 export const TOP_DOWN_GRID_SIZE = 5;
 export const TOP_DOWN_CELL_GUTTER = 48;
+export const TOP_DOWN_ALPHA_CELL_GUTTER = 24;
 export const TOP_DOWN_OUTPUT_SIZE = 512;
 
 export const TOP_DOWN_SCALE_TARGETS = Object.freeze({
@@ -27,6 +36,15 @@ function run(command, args) {
     throw new Error(`${command} failed (${result.status}): ${clean(result.stderr || result.stdout)}`);
   }
   return clean(result.stdout);
+}
+
+function chromaDespill(chromaColor) {
+  switch (clean(chromaColor).toLowerCase()) {
+    case "#ff0000": return { channel: "R", expression: "min(r,min(g,b))" };
+    case "#00ff00": return { channel: "G", expression: "min(g,min(r,b))" };
+    case "#0000ff": return { channel: "B", expression: "min(b,min(r,g))" };
+    default: return null;
+  }
 }
 
 function parseBoundingBox(value) {
@@ -166,36 +184,65 @@ export function processAtlas({
   entries = [],
   moduleRoot,
   chromaColor = "#00ff00",
+  chromaFuzz = 12,
+  matteMethod = "chroma",
   force = false
 } = {}) {
+  if (!new Set(["alpha", "chroma"]).has(matteMethod)) {
+    throw new Error("matteMethod must be alpha or chroma");
+  }
   const selected = entries.filter((entry) => clean(entry?.atlasId) === clean(atlasId));
   if (!selected.length) throw new Error(`No manifest entries found for atlas ${atlasId}`);
   const workRoot = mkdtempSync(join(tmpdir(), "rebreya-topdown-atlas-"));
   const normalizedPath = join(workRoot, "normalized.png");
   try {
+    const destinations = selected.map((entry) => ({
+      entry,
+      outputPath: resolve(moduleRoot, entry.assetPath)
+    }));
+    for (const destination of destinations) {
+      if (existsSync(destination.outputPath) && force !== true) {
+        throw new Error(`Refusing to overwrite existing asset: ${destination.entry.assetPath}`);
+      }
+    }
     run("magick", [atlasPath, "-resize", `${TOP_DOWN_ATLAS_SIZE}x${TOP_DOWN_ATLAS_SIZE}!`, normalizedPath]);
-    const results = [];
-    for (const entry of selected) {
+    const staged = [];
+    for (let index = 0; index < selected.length; index += 1) {
+      const entry = selected[index];
       const geometry = atlasCellGeometry({
         atlasSize: TOP_DOWN_ATLAS_SIZE,
-        cellIndex: entry.cellIndex
+        cellIndex: entry.cellIndex,
+        gutter: matteMethod === "alpha" ? TOP_DOWN_ALPHA_CELL_GUTTER : TOP_DOWN_CELL_GUTTER
       });
       const cellPath = join(workRoot, `cell-${String(entry.cellIndex).padStart(2, "0")}.png`);
-      run("magick", [
+      const cropArguments = [
         normalizedPath,
         "-crop", `${geometry.width}x${geometry.height}+${geometry.x}+${geometry.y}`,
-        "+repage",
-        "-alpha", "on",
-        "-fuzz", "8%",
-        "-transparent", chromaColor,
-        cellPath
-      ]);
-      assertSourceInsideSafeArea(cellPath, geometry);
-      const outputPath = resolve(moduleRoot, entry.assetPath);
-      if (existsSync(outputPath) && force !== true) {
-        throw new Error(`Refusing to overwrite existing asset: ${entry.assetPath}`);
+        "+repage"
+      ];
+      if (matteMethod === "chroma") {
+        cropArguments.push(
+          "-alpha", "on",
+          "-fuzz", `${chromaFuzz}%`,
+          "-transparent", chromaColor
+        );
+        const despill = chromaDespill(chromaColor);
+        if (despill) {
+          cropArguments.push("-channel", despill.channel, "-fx", despill.expression, "+channel");
+        }
       }
-      mkdirSync(dirname(outputPath), { recursive: true });
+      cropArguments.push(cellPath);
+      run("magick", cropArguments);
+      if (matteMethod === "alpha" && inspectImage(cellPath).hasAlpha !== true) {
+        throw new Error(`${entry.sourceType}:${entry.sourceId}: source alpha channel is required`);
+      }
+      try {
+        assertSourceInsideSafeArea(cellPath, geometry);
+      } catch (error) {
+        throw new Error(`${entry.sourceType}:${entry.sourceId}: ${error.message}`, { cause: error });
+      }
+      const outputPath = resolve(moduleRoot, entry.assetPath);
+      const temporaryOutputPath = join(workRoot, `output-${String(index).padStart(2, "0")}.webp`);
       const target = TOP_DOWN_SCALE_TARGETS[clean(entry.scaleClass)] ?? TOP_DOWN_SCALE_TARGETS.standard;
       run("magick", [
         cellPath,
@@ -205,14 +252,34 @@ export function processAtlas({
         "-background", "none",
         "-extent", `${TOP_DOWN_OUTPUT_SIZE}x${TOP_DOWN_OUTPUT_SIZE}`,
         "-define", "webp:lossless=true",
-        outputPath
+        temporaryOutputPath
       ]);
-      const metadata = inspectImage(outputPath);
+      const metadata = inspectImage(temporaryOutputPath);
       validateProcessedAsset(metadata, entry);
-      results.push({ entry, outputPath, metadata });
+      staged.push({ entry, outputPath, temporaryOutputPath, metadata });
     }
-    validateAssetCollection(results);
-    return results;
+    validateAssetCollection(staged);
+
+    const committed = [];
+    try {
+      for (let index = 0; index < staged.length; index += 1) {
+        const result = staged[index];
+        mkdirSync(dirname(result.outputPath), { recursive: true });
+        const backupPath = existsSync(result.outputPath)
+          ? join(workRoot, `backup-${String(index).padStart(2, "0")}.webp`)
+          : "";
+        if (backupPath) copyFileSync(result.outputPath, backupPath);
+        copyFileSync(result.temporaryOutputPath, result.outputPath);
+        committed.push({ outputPath: result.outputPath, backupPath });
+      }
+    } catch (error) {
+      for (const result of committed.reverse()) {
+        if (result.backupPath) copyFileSync(result.backupPath, result.outputPath);
+        else if (existsSync(result.outputPath)) unlinkSync(result.outputPath);
+      }
+      throw error;
+    }
+    return staged.map(({ temporaryOutputPath: _temporaryOutputPath, ...result }) => result);
   } finally {
     rmSync(workRoot, { recursive: true, force: true });
   }

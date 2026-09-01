@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { existsSync } from "node:fs";
 import test from "node:test";
 
 import {
@@ -90,7 +91,7 @@ test("real atlas processing crops fixed cells and writes transparent 512px WebP"
   await mkdir(outputRoot, { recursive: true });
   try {
     const generated = spawnSync("magick", [
-      "-size", "3000x3000", "xc:#00ff00",
+      "-size", "3000x3000", "xc:#18e818",
       "-fill", "#7f1d1d", "-draw", "rectangle 100,250 500,350",
       "-fill", "#1d4ed8", "-draw", "ellipse 900,300 180,180 0,360",
       atlasPath
@@ -134,35 +135,121 @@ test("real atlas processing crops fixed cells and writes transparent 512px WebP"
       assert.equal(metadata.hasAlpha, true);
       assert.ok(metadata.visiblePixels > 0);
       assert.equal(validateProcessedAsset(metadata, result.entry), true);
+      const spill = spawnSync("magick", [
+        result.outputPath,
+        "-alpha", "off",
+        "-fx", "g-max(r,b)",
+        "-format", "%[fx:maxima]",
+        "info:"
+      ], { encoding: "utf8", windowsHide: true });
+      assert.equal(spill.status, 0, spill.stderr);
+      assert.ok(Number(spill.stdout) <= 0.01, `green spill=${spill.stdout}`);
     }
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
   }
 });
 
-test("pipeline CLI emits a deterministic 25-cell generation plan", () => {
-  const result = spawnSync(process.execPath, [
-    fileURLToPath(new URL("tools/top-down-item-assets.mjs", moduleRoot)),
-    "plan",
-    "--atlas-id", "primary-001"
-  ], {
-    cwd: new URL(".", moduleRoot),
-    encoding: "utf8",
-    windowsHide: true
-  });
-  assert.equal(result.status, 0, result.stderr);
-  const plan = JSON.parse(result.stdout);
-  assert.equal(plan.atlasId, "primary-001");
-  assert.equal(plan.cells.length, 25);
-  assert.deepEqual(plan.cells[0], {
-    cellIndex: 0,
-    key: "gear:abak",
-    name: "Абак",
-    visualType: "Снаряжение",
-    promptInput: "Абак | Снаряжение | счётное устройство с костяшками, позволяющее быстро производить арифметические расчёты, вести учёт ресурсов, денег или времени."
-  });
-  assert.match(plan.prompt, /strict orthographic 90-degree overhead/u);
-  assert.match(plan.prompt, /CELL 01 — gear:abak — Абак/u);
+test("atlas processing leaves no partial production files when a later cell fails", async () => {
+  const tempRoot = await mkdtemp(join(tmpdir(), "rebreya-topdown-rollback-"));
+  const outputRoot = join(tempRoot, "module");
+  const atlasPath = join(tempRoot, "atlas.png");
+  const firstOutput = join(outputRoot, "assets/top-down/items/gear/safe.webp");
+  await mkdir(outputRoot, { recursive: true });
+  try {
+    const generated = spawnSync("magick", [
+      "-size", "3000x3000", "xc:#00ff00",
+      "-fill", "#7f1d1d", "-draw", "rectangle 100,250 500,350",
+      "-fill", "#1d4ed8", "-draw", "rectangle 600,250 900,350",
+      atlasPath
+    ], { encoding: "utf8" });
+    assert.equal(generated.status, 0, generated.stderr);
+
+    assert.throws(() => processAtlas({
+      atlasPath,
+      atlasId: "primary-001",
+      moduleRoot: outputRoot,
+      chromaColor: "#00ff00",
+      entries: [
+        { sourceType: "gear", sourceId: "safe", assetPath: "assets/top-down/items/gear/safe.webp", atlasId: "primary-001", cellIndex: 0, scaleClass: "long" },
+        { sourceType: "gear", sourceId: "gutter", assetPath: "assets/top-down/items/gear/gutter.webp", atlasId: "primary-001", cellIndex: 1, scaleClass: "long" }
+      ]
+    }), /gear:gutter: source bounding box intersects the atlas gutter/u);
+    assert.equal(existsSync(firstOutput), false);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("atlas processing preserves a genuine transparent source without chroma matting", async () => {
+  const tempRoot = await mkdtemp(join(tmpdir(), "rebreya-topdown-alpha-"));
+  const outputRoot = join(tempRoot, "module");
+  const atlasPath = join(tempRoot, "atlas.png");
+  try {
+    const generated = spawnSync("magick", [
+      "-size", "3000x3000", "xc:none",
+      "-fill", "#00ff00", "-draw", "rectangle 30,250 530,350",
+      atlasPath
+    ], { encoding: "utf8" });
+    assert.equal(generated.status, 0, generated.stderr);
+    const [result] = processAtlas({
+      atlasPath,
+      atlasId: "primary-001",
+      moduleRoot: outputRoot,
+      matteMethod: "alpha",
+      entries: [{
+        sourceType: "gear",
+        sourceId: "alpha-blade",
+        assetPath: "assets/top-down/items/gear/alpha-blade.webp",
+        atlasId: "primary-001",
+        cellIndex: 0,
+        scaleClass: "long"
+      }]
+    });
+    assert.equal(result.metadata.hasAlpha, true);
+    assert.equal(result.metadata.alphaBoundingBox.width, 432);
+    assert.equal(result.metadata.alphaBoundingBox.height, 87);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("pipeline CLI emits a deterministic 25-cell generation plan", async () => {
+  const tempRoot = await mkdtemp(join(tmpdir(), "rebreya-topdown-plan-"));
+  const manifestPath = join(tempRoot, "manifest.json");
+  try {
+    const manifest = JSON.parse(await readFile(new URL("data/top-down-item-assets.json", moduleRoot), "utf8"));
+    manifest.entries.slice(0, 25).forEach((entry, cellIndex) => {
+      entry.atlasId = "primary-001";
+      entry.cellIndex = cellIndex;
+    });
+    await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+    const result = spawnSync(process.execPath, [
+      fileURLToPath(new URL("tools/top-down-item-assets.mjs", moduleRoot)),
+      "plan",
+      "--manifest", manifestPath,
+      "--atlas-id", "primary-001"
+    ], {
+      cwd: new URL(".", moduleRoot),
+      encoding: "utf8",
+      windowsHide: true
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const plan = JSON.parse(result.stdout);
+    assert.equal(plan.atlasId, "primary-001");
+    assert.equal(plan.cells.length, 25);
+    assert.deepEqual(plan.cells[0], {
+      cellIndex: 0,
+      key: "gear:abak",
+      name: "Абак",
+      visualType: "Снаряжение",
+      promptInput: "Абак | Снаряжение | счётное устройство с костяшками, позволяющее быстро производить арифметические расчёты, вести учёт ресурсов, денег или времени."
+    });
+    assert.match(plan.prompt, /strict orthographic 90-degree overhead/u);
+    assert.match(plan.prompt, /CELL 01 — gear:abak — Абак/u);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
 });
 
 test("pipeline CLI moves rejected cells to a new append-only retry atlas", async () => {
@@ -171,6 +258,7 @@ test("pipeline CLI moves rejected cells to a new append-only retry atlas", async
   try {
     const manifest = JSON.parse(await readFile(new URL("data/top-down-item-assets.json", moduleRoot), "utf8"));
     const keys = manifest.entries.slice(0, 2).map((entry) => `${entry.sourceType}:${entry.sourceId}`);
+    const untouchedAtlasId = manifest.entries[2].atlasId;
     for (const entry of manifest.entries.slice(0, 2)) entry.status = "rejected";
     await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
 
@@ -186,6 +274,11 @@ test("pipeline CLI moves rejected cells to a new append-only retry atlas", async
     });
     assert.equal(result.status, 0, result.stderr);
     const updated = JSON.parse(await readFile(manifestPath, "utf8"));
+    const retryNumbers = manifest.entries
+      .map((entry) => /^retry-(\d+)$/u.exec(entry.atlasId)?.[1])
+      .filter(Boolean)
+      .map(Number);
+    const expectedAtlasId = `retry-${String(Math.max(0, ...retryNumbers) + 1).padStart(3, "0")}`;
     assert.deepEqual(updated.entries.slice(0, 2).map((entry) => ({
       atlasId: entry.atlasId,
       cellIndex: entry.cellIndex,
@@ -193,10 +286,44 @@ test("pipeline CLI moves rejected cells to a new append-only retry atlas", async
       technicalQa: entry.technicalQa,
       visualQa: entry.visualQa
     })), [
-      { atlasId: "retry-001", cellIndex: 0, status: "planned", technicalQa: "pending", visualQa: "pending" },
-      { atlasId: "retry-001", cellIndex: 1, status: "planned", technicalQa: "pending", visualQa: "pending" }
+      { atlasId: expectedAtlasId, cellIndex: 0, status: "planned", technicalQa: "pending", visualQa: "pending" },
+      { atlasId: expectedAtlasId, cellIndex: 1, status: "planned", technicalQa: "pending", visualQa: "pending" }
     ]);
-    assert.equal(updated.entries[2].atlasId, "primary-001");
+    assert.equal(updated.entries[2].atlasId, untouchedAtlasId);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("pipeline CLI records visual decisions for explicit entry keys only", async () => {
+  const tempRoot = await mkdtemp(join(tmpdir(), "rebreya-topdown-decisions-"));
+  const manifestPath = join(tempRoot, "manifest.json");
+  try {
+    const manifest = JSON.parse(await readFile(new URL("data/top-down-item-assets.json", moduleRoot), "utf8"));
+    const [first, second] = manifest.entries;
+    for (const entry of [first, second]) {
+      entry.status = "processing";
+      entry.technicalQa = "passed";
+    }
+    await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+    for (const [command, key] of [
+      ["reject-entries", `${first.sourceType}:${first.sourceId}`],
+      ["accept-entries", `${second.sourceType}:${second.sourceId}`]
+    ]) {
+      const result = spawnSync(process.execPath, [
+        fileURLToPath(new URL("tools/top-down-item-assets.mjs", moduleRoot)),
+        command,
+        "--manifest", manifestPath,
+        "--keys", key
+      ], { cwd: new URL(".", moduleRoot), encoding: "utf8", windowsHide: true });
+      assert.equal(result.status, 0, result.stderr);
+    }
+    const updated = JSON.parse(await readFile(manifestPath, "utf8"));
+    assert.deepEqual(updated.entries.slice(0, 3).map(({ status, visualQa }) => ({ status, visualQa })), [
+      { status: "rejected", visualQa: "failed" },
+      { status: "accepted", visualQa: "passed" },
+      { status: "planned", visualQa: "pending" }
+    ]);
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
   }
