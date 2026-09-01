@@ -671,7 +671,8 @@ test("magic item compendium renders paragraphs and canonical markdown tables", (
   const [normalizedItem] = magicItemsCompendium.normalizeMagicItems([
     makeMagicItem({
       description: [
-        "Первый абзац.",
+        "Первое свойство.",
+        "Второе свойство.",
         "",
         "| к4 | Эффект |",
         "| --- | --- |",
@@ -683,7 +684,7 @@ test("magic item compendium renders paragraphs and canonical markdown tables", (
   ]);
 
   const html = magicItemsCompendium.createMagicItemData(normalizedItem, new Map()).system.description.value;
-  assert.match(html, /<p>Первый абзац\.<\/p>/u);
+  assert.match(html, /<p>Первое свойство\.<br>Второе свойство\.<\/p>/u);
   assert.match(html, /<table>[\s\S]*<th>к4<\/th>[\s\S]*<td>&lt;опасный текст&gt;<\/td>[\s\S]*<\/table>/u);
   assert.match(html, /<p>Второй абзац\.<\/p>/u);
 });

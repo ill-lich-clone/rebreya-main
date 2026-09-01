@@ -16,7 +16,7 @@ const PACK_ID = `world.${FEATS_COMPENDIUM_NAME}`;
 const DND5E_SYSTEM_ID = "dnd5e";
 const COMPENDIUM_SIDEBAR_FOLDER = ["Ребрея"];
 const DEFAULT_FEAT_ICON = "icons/svg/book.svg";
-const FEAT_TEMPLATE_VERSION = 2;
+const FEAT_TEMPLATE_VERSION = 3;
 const FEAT_ROOT_FOLDER = "Черты V0.8";
 const MODULE_ICONS_BASE_PATH = `modules/${MODULE_ID}/templates/icons`;
 const FEAT_ICON_SEARCH_PATHS = [`${MODULE_ICONS_BASE_PATH}/Feats`, MODULE_ICONS_BASE_PATH];
@@ -89,7 +89,7 @@ export function renderFeatDescription(value) {
   if (!description) return "";
   return hasTrustedDescriptionHtml(description)
     ? normalizeHtmlTableCellNewlines(description)
-    : renderDescriptionMarkdown(description);
+    : renderDescriptionMarkdown(description, { preserveSingleNewlines: true });
 }
 
 function normalizeDescription(rawDescription) {

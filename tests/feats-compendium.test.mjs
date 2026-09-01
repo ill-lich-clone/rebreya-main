@@ -34,6 +34,11 @@ test("feat descriptions preserve trusted HTML tables and make cell newlines read
   const markdown = renderFeatDescription("Первый абзац.\n\n| к4 | Эффект |\n| --- | --- |\n| 1 | Текст |");
   assert.match(markdown, /<p>Первый абзац\.<\/p><table>/u);
 
+  assert.equal(
+    renderFeatDescription("Первое свойство.\nВторое свойство."),
+    "<p>Первое свойство.<br>Второе свойство.</p>"
+  );
+
   const feat = normalizeFeatItems(loadBundleItems()).find((item) => item.name === "Создание особых боеприпасов");
   assert.ok(feat);
   assert.match(feat.system.description.value, /<table[\s\S]*<br>[\s\S]*<\/table>/u);

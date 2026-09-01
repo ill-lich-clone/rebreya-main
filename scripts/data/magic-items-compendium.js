@@ -35,7 +35,7 @@ const EFFECT_MODE_CUSTOM = 0;
 const EFFECT_MODE_ADD = 2;
 const EFFECT_MODE_UPGRADE = 4;
 const DEFAULT_MAGIC_ITEM_ICON = "systems/dnd5e/icons/svg/items/loot.svg";
-const MAGIC_TEMPLATE_VERSION = 6;
+const MAGIC_TEMPLATE_VERSION = 7;
 const MAGIC_ITEM_AUTOMATION_VERSION = 4;
 const NATIVE_INSTRUMENT_SPELL_ACTIVITY_VERSION = 1;
 const spell24 = (name, id, level, options = {}) => ({
@@ -3460,7 +3460,7 @@ function buildMetadataRows(item, classification) {
 
 function buildDescriptionHtml(item, classification) {
   const metadataRows = buildMetadataRows(item, classification);
-  const renderedDescription = renderDescriptionMarkdown(item.description);
+  const renderedDescription = renderDescriptionMarkdown(item.description, { preserveSingleNewlines: true });
   return `
     <section class="rebreya-gear-item">
       ${renderedDescription

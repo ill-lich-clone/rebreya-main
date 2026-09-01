@@ -149,13 +149,13 @@ function parseListLine(value) {
   };
 }
 
-function renderJoinedLines(lines) {
+function renderJoinedLines(lines, { preserveSingleNewlines = false } = {}) {
   let html = "";
   for (let index = 0; index < lines.length; index += 1) {
     const raw = String(lines[index] ?? "");
     if (index > 0) {
       const previous = String(lines[index - 1] ?? "");
-      html += / {2,}$/u.test(previous) ? "<br>" : " ";
+      html += preserveSingleNewlines || / {2,}$/u.test(previous) ? "<br>" : " ";
     }
     html += renderInline(raw.trim());
   }
@@ -175,7 +175,7 @@ function isLikelyStandaloneHeading(line) {
   return Boolean(text) && text.length <= 72 && !/[.!?;:,]$/u.test(text);
 }
 
-function renderParagraphLines(lines) {
+function renderParagraphLines(lines, options) {
   const segments = [];
   for (const rawLine of lines) {
     const line = String(rawLine ?? "").trim();
@@ -198,10 +198,10 @@ function renderParagraphLines(lines) {
     }
   }
 
-  return segments.map((segment) => renderJoinedLines(segment)).join("<br>");
+  return segments.map((segment) => renderJoinedLines(segment, options)).join("<br>");
 }
 
-function renderList(lines, startIndex, indent, ordered) {
+function renderList(lines, startIndex, indent, ordered, options) {
   const tag = ordered ? "ol" : "ul";
   const items = [];
   let index = startIndex;
@@ -221,7 +221,7 @@ function renderList(lines, startIndex, indent, ordered) {
         if (nextItem.indent <= indent) {
           break;
         }
-        const child = renderList(lines, index, nextItem.indent, nextItem.ordered);
+        const child = renderList(lines, index, nextItem.indent, nextItem.ordered, options);
         nested.push(child.html);
         index = child.nextIndex;
         continue;
@@ -235,7 +235,7 @@ function renderList(lines, startIndex, indent, ordered) {
       index += 1;
     }
 
-    items.push(`<li>${renderJoinedLines(contentLines)}${nested.join("")}</li>`);
+    items.push(`<li>${renderJoinedLines(contentLines, options)}${nested.join("")}</li>`);
   }
 
   return { html: `<${tag}>${items.join("")}</${tag}>`, nextIndex: index };
@@ -252,7 +252,7 @@ function isBlockStart(lines, index) {
   return Boolean(renderTable(lines, index));
 }
 
-function renderBlocks(value) {
+function renderBlocks(value, options) {
   const lines = normalizeNewlines(value).split("\n");
   const output = [];
   let index = 0;
@@ -280,7 +280,7 @@ function renderBlocks(value) {
 
     const listItem = parseListLine(lines[index]);
     if (listItem) {
-      const list = renderList(lines, index, listItem.indent, listItem.ordered);
+      const list = renderList(lines, index, listItem.indent, listItem.ordered, options);
       output.push(list.html);
       index = list.nextIndex;
       continue;
@@ -292,7 +292,7 @@ function renderBlocks(value) {
         quoteLines.push(lines[index].replace(/^>\s?/u, ""));
         index += 1;
       }
-      output.push(`<blockquote><p>${renderJoinedLines(quoteLines)}</p></blockquote>`);
+      output.push(`<blockquote><p>${renderJoinedLines(quoteLines, options)}</p></blockquote>`);
       continue;
     }
 
@@ -301,7 +301,7 @@ function renderBlocks(value) {
       paragraph.push(lines[index]);
       index += 1;
     }
-    output.push(`<p>${renderParagraphLines(paragraph)}</p>`);
+    output.push(`<p>${renderParagraphLines(paragraph, options)}</p>`);
   }
 
   return output.join("");
@@ -382,13 +382,13 @@ export function verifyDescriptionTextPreserved(markdown, html) {
   }
 }
 
-export function renderDescriptionMarkdown(value) {
+export function renderDescriptionMarkdown(value, options = {}) {
   const markdown = normalizeNewlines(value).trim();
   if (!markdown) {
     return "";
   }
 
-  const html = renderBlocks(markdown);
+  const html = renderBlocks(markdown, options);
   verifyDescriptionTextPreserved(markdown, html);
   return html;
 }
