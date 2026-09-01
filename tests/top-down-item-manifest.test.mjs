@@ -129,6 +129,18 @@ test("manifest validation rejects missing, unknown, duplicate-key, and duplicate
   );
 });
 
+test("manifest validation accepts append-only retry atlas assignments", () => {
+  const manifest = synchronizeTopDownManifest({
+    manifest: null,
+    gear: gear.slice(0, 4),
+    materials: []
+  });
+  Object.assign(manifest.entries[2], { atlasId: "retry-001", cellIndex: 0, status: "rejected" });
+  Object.assign(manifest.entries[3], { atlasId: "retry-001", cellIndex: 1, status: "rejected" });
+
+  assert.equal(validateTopDownManifest({ manifest, gear: gear.slice(0, 4), materials: [] }), true);
+});
+
 test("checked-in manifest matches the canonical catalogs", async () => {
   const manifest = JSON.parse(await readFile(
     new URL("data/top-down-item-assets.json", moduleRoot),

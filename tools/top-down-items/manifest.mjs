@@ -153,7 +153,7 @@ export function validateTopDownManifest({ manifest, gear = [], materials = [] } 
     if (path !== `assets/top-down/items/${entry?.sourceType}/${clean(entry?.sourceId)}.webp`) {
       diagnostics.push(`invalid asset path: ${key}`);
     }
-    if (!/^primary-\d{3}$/u.test(clean(entry?.atlasId))) diagnostics.push(`invalid atlasId: ${key}`);
+    if (!/^(?:primary|retry)-\d{3}$/u.test(clean(entry?.atlasId))) diagnostics.push(`invalid atlasId: ${key}`);
     if (!Number.isInteger(entry?.cellIndex) || entry.cellIndex < 0 || entry.cellIndex >= 25) {
       diagnostics.push(`invalid cellIndex: ${key}`);
     }
