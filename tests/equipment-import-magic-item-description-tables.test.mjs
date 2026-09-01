@@ -153,7 +153,7 @@ test("uncontracted descriptions remain byte-for-byte sheet owned", () => {
   }), description);
 });
 
-test("tracked contracts cover 36 current catalog items and all 39 tables normalize idempotently", async () => {
+test("tracked contracts cover 34 current catalog items and all 37 tables normalize idempotently", async () => {
   const rawContracts = JSON.parse(await readFile(
     new URL("../data/magic-item-description-tables.json", import.meta.url),
     "utf8"
@@ -162,7 +162,7 @@ test("tracked contracts cover 36 current catalog items and all 39 tables normali
   const itemsById = new Map(MAGIC_ITEMS.map((item) => [item.id, item]));
   let tableCount = 0;
 
-  assert.equal(Object.keys(validated.items).length, 36);
+  assert.equal(Object.keys(validated.items).length, 34);
   for (const [stableId, itemContract] of Object.entries(validated.items)) {
     const item = itemsById.get(stableId);
     assert.ok(item, `missing contracted catalog item ${stableId}`);
@@ -183,5 +183,5 @@ test("tracked contracts cover 36 current catalog items and all 39 tables normali
     assert.equal(second, first, `${item.name} normalization must be idempotent`);
     tableCount += itemContract.tables.length;
   }
-  assert.equal(tableCount, 39);
+  assert.equal(tableCount, 37);
 });

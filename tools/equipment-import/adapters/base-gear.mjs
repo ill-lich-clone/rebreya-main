@@ -69,21 +69,40 @@ export function buildEquipmentReferenceIndex({ snapshots, overrides }) {
         ...reference
       });
     }
+  }
 
+  for (let index = 0; index < rows.length; index += 1) {
+    const row = rows[index];
     const manualKey = String(row[20] ?? "").trim();
     if (manualKey) {
+      const manualType = String(row[22] ?? "").trim();
+      const manualName = String(row[23] ?? "").trim();
+      const canonical = gearByKey.get(manualKey);
+      if (canonical && canonical.equipmentType === manualType && canonical.canonicalName === manualName) {
+        continue;
+      }
       const catalogRow = Number(row[28]);
       if (!Number.isInteger(catalogRow) || catalogRow < 1) {
         fail("invalid-source-reference", `Invalid manual catalog row for ${manualKey}`, { rowNumber: index + 2 });
       }
       addReference(manualKey, {
         sourceKey: manualKey,
-        canonicalName: String(row[23] ?? "").trim(),
-        equipmentType: String(row[22] ?? "").trim(),
+        canonicalName: manualName,
+        equipmentType: manualType,
         sourceRef: `Общий компендиум снаряжения V0.1!A${catalogRow}`,
         sheetTitle: "Общий компендиум снаряжения V0.1",
         rowNumber: catalogRow
       });
+    }
+  }
+  for (const [canonicalKey, entry] of Object.entries(overrides?.identities?.gear ?? {})) {
+    const reference = gearByKey.get(canonicalKey);
+    if (!reference) continue;
+    for (const alias of entry.aliases ?? []) {
+      if (gearByKey.has(alias) && gearByKey.get(alias) !== reference) {
+        fail("duplicate-reference-key", `Duplicate equipment reference key: ${alias}`);
+      }
+      gearByKey.set(alias, reference);
     }
   }
   return Object.freeze({
@@ -146,7 +165,15 @@ export function adaptBaseGear({ snapshot, referenceIndex, overrides, materials =
       continue;
     }
     const sourceKey = buildCanonicalEquipmentSourceKey({ equipmentType, name });
-    const reference = referenceIndex.gearByKey.get(sourceKey);
+    const reviewedIdentity = overrides?.identities?.gear?.[sourceKey];
+    const reference = referenceIndex.gearByKey.get(sourceKey) ?? (reviewedIdentity ? {
+      sourceKey,
+      canonicalName: name,
+      equipmentType,
+      sourceRef: `${snapshot.sheetTitle}!A${row.rowNumber}`,
+      sheetTitle: snapshot.sheetTitle,
+      rowNumber: row.rowNumber
+    } : null);
     if (!reference) {
       diagnostics.push(createImportDiagnostic({
         code: "missing-equipment-reference",
@@ -175,8 +202,8 @@ export function adaptBaseGear({ snapshot, referenceIndex, overrides, materials =
       priceGoldEquivalent: price?.kind === "fixed" ? price.goldEquivalent : null,
       rank: optionalRank(cells["Ранг"], contextFor(snapshot, row, "Ранг")),
       weight: normalizedEquipmentType === "обвес"
-        ? parseAttachmentWeightModifier(cells["Вес"] ?? "—", contextFor(snapshot, row, "Вес"))
-        : parseWeight(cells["Вес"] ?? "—", contextFor(snapshot, row, "Вес")),
+        ? parseAttachmentWeightModifier(cells["Вес"] || "—", contextFor(snapshot, row, "Вес"))
+        : parseWeight(cells["Вес"] || "—", contextFor(snapshot, row, "Вес")),
       volume: optionalSourceText(cells["Объем"]),
       capacity: optionalSourceText(cells["Вместимость"]),
       description: parseOptionalText(cells["Описание"] ?? "", contextFor(snapshot, row, "Описание")) ?? "",

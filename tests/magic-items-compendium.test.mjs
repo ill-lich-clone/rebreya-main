@@ -51,7 +51,7 @@ test("magic item automation manifest audits every stable catalog row", () => {
 
   const manifest = magicItemsCompendium.buildMagicItemAutomationManifest();
   assert.equal(manifest.length, MAGIC_ITEMS.length);
-  assert.equal(manifest.length, 655);
+  assert.equal(manifest.length, 654);
   assert.equal(new Set(manifest.map((row) => row.id)).size, MAGIC_ITEMS.length);
   assert.deepEqual(
     manifest.map(({ id, name }) => ({ id, name })),
@@ -352,7 +352,7 @@ test("magic item automation gap report groups every rarity and flags manual pros
 
 test("catalog gap report locks current coverage totals by rarity", () => {
   const report = magicItemsCompendium.buildMagicItemAutomationGapReport();
-  assert.equal(report.total, 655);
+  assert.equal(report.total, 654);
   assert.deepEqual(
     report.rarities.map(({ rarity, total, full, partial, manual, manualCandidates }) => ({
       rarity,
@@ -366,7 +366,7 @@ test("catalog gap report locks current coverage totals by rarity", () => {
       { rarity: "Обычный", total: 102, full: 34, partial: 16, manual: 52, candidates: 21 },
       { rarity: "Необычный", total: 165, full: 67, partial: 50, manual: 48, candidates: 33 },
       { rarity: "Редкий", total: 187, full: 63, partial: 61, manual: 63, candidates: 51 },
-      { rarity: "Очень редкий", total: 120, full: 34, partial: 42, manual: 44, candidates: 33 },
+      { rarity: "Очень редкий", total: 119, full: 34, partial: 41, manual: 44, candidates: 33 },
       { rarity: "Легендарный", total: 79, full: 23, partial: 28, manual: 28, candidates: 27 },
       { rarity: "Артефакт", total: 1, full: 0, partial: 0, manual: 1, candidates: 1 },
       { rarity: "Без редкости", total: 1, full: 0, partial: 0, manual: 1, candidates: 0 }

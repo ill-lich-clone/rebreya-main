@@ -29,8 +29,8 @@ function sourceIdentity(catalog, entry) {
     case "upgrades": return entry?.upgrade?.sourceSheet && entry?.upgrade?.sourceSheetRow
       ? `${entry.upgrade.sourceSheet}!${entry.upgrade.sourceSheetRow}`
       : "";
-    case "materials": return entry?.source?.sheetName && entry?.source?.row
-      ? `${entry.source.sheetName}!${entry.source.row}`
+    case "materials": return displayName(entry)
+      ? `material:${displayName(entry).toLocaleLowerCase("ru-RU")}`
       : "";
     case "implants": return entry?.implant?.sourceSheet && entry?.implant?.sourceSheetRow
       ? `${entry.implant.sourceSheet}!${entry.implant.sourceSheetRow}`

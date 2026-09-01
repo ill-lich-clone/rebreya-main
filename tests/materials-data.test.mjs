@@ -7,8 +7,8 @@ const MATERIALS_URL = new URL("../data/materials.json", import.meta.url);
 const FIXTURE_URL = new URL("./fixtures/materials-encyclopedia.json", import.meta.url);
 const SPREADSHEET_ID = "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk";
 const SHEET_NAME = "Энциклопедия материалов";
-const WORKBOOK_FINGERPRINT = "8f43d895fdca227ab886ab4a2903cfaafa574534add8d30df64b9af38d7655a8";
-const SOURCE_ROW_COUNT = 250;
+const WORKBOOK_FINGERPRINT = "804f8a558d15af42615f95aeec6ec9a24663c411a6842a7b0e11f286dc545070";
+const SOURCE_ROW_COUNT = 270;
 const ORIGINAL_MATERIAL_COUNT = 45;
 
 const materialBytes = readFileSync(MATERIALS_URL);
@@ -77,7 +77,7 @@ function sourceProjection(material) {
   };
 }
 
-test("materials fixture is a raw positional snapshot of CSV rows 3-252", () => {
+test("materials fixture is a raw positional snapshot of sheet rows 3-272", () => {
   assert.equal(fixture.spreadsheetId, SPREADSHEET_ID);
   assert.equal(fixture.sheetName, SHEET_NAME);
   assert.equal(fixture.workbookFingerprint, WORKBOOK_FINGERPRINT);
@@ -91,7 +91,7 @@ test("materials fixture is a raw positional snapshot of CSV rows 3-252", () => {
   assert.equal(Object.keys(fixture.originalMaterialIds).length, ORIGINAL_MATERIAL_COUNT);
 
   assert.equal(fixture.sourceRows.find(({ row }) => row === 43).cells[7], "Малое зачарование  остроты, защиты и стойкости");
-  assert.equal(fixture.sourceRows.find(({ row }) => row === 171).cells[6].endsWith(" "), true);
+  assert.equal(fixture.sourceRows.find(({ row }) => row === 191).cells[6].endsWith(" "), true);
 });
 
 test("materials data is valid UTF-8 and matches every raw source row", () => {
@@ -111,7 +111,7 @@ test("materials data is valid UTF-8 and matches every raw source row", () => {
   }
 });
 
-test("materials data adds 205 records and preserves all 45 historical ids", () => {
+test("materials data adds 225 records and preserves all 45 historical ids", () => {
   const byName = new Map(materials.map((material) => [material.name, material]));
   const originalEntries = Object.entries(fixture.originalMaterialIds);
   const additions = materials.filter((material) => !Object.hasOwn(fixture.originalMaterialIds, material.name));

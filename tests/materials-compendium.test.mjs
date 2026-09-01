@@ -45,7 +45,7 @@ test("material signature and rendered description include applications and alche
 });
 
 test("material rendering retains literal trailing source description whitespace", () => {
-  const material = materials.find(({ source }) => source?.row === 171);
+  const material = materials.find(({ name }) => name === "Кристаллы забытых Титанов");
   assert.equal(material.description.endsWith(" "), true);
 
   const created = materialsModule.createDnd5eItemData(material, new Map());

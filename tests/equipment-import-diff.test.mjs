@@ -87,6 +87,21 @@ test("same source moving to another stable ID is identity churn and always block
   );
 });
 
+test("material row movement does not masquerade as stable identity churn", () => {
+  const current = bundle({ materials: [
+    entry("materials", "zhelezo", 10, { name: "Железо" }),
+    entry("materials", "stal", 11, { name: "Сталь" })
+  ] });
+  const next = bundle({ materials: [
+    entry("materials", "zhelezo", 11, { name: "Железо" }),
+    entry("materials", "stal", 10, { name: "Сталь" })
+  ] });
+  const diff = diffEquipmentBundles({ currentBundle: current, nextBundle: next });
+
+  assert.equal(diff.catalogs.materials.identityChurn.length, 0);
+  assert.deepEqual(diff.catalogs.materials.changed.map((entry) => entry.fields), [["source.row"], ["source.row"]]);
+});
+
 test("a removal requires allow-removals", () => {
   const current = bundle({ gear: gearRows(10) });
   const next = bundle({ gear: gearRows(9) });

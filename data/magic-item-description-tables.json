@@ -17,10 +17,6 @@
       "sourceUrl": "https://dnd.su/items/28-wand-of-wonder/",
       "tables": [{ "header": ["к100", "Эффект"], "rowCount": 22, "layout": "spaced-lines" }]
     },
-    "доспех-из-драконьей-чешуи": {
-      "sourceUrl": "https://dnd.su/items/34-dragon-scale-mail/",
-      "tables": [{ "header": ["Дракон", "Сопротивление"], "rowCount": 10, "layout": "spaced-lines" }]
-    },
     "железная-фляга": {
       "sourceUrl": "https://dnd.su/items/48-iron-flask/",
       "tables": [{ "header": ["к100", "Содержимое"], "rowCount": 30, "layout": "spaced-lines" }]
@@ -52,10 +48,6 @@
     "колода-многих-вещей": {
       "sourceUrl": "https://dnd.su/items/89-deck-of-many-things/",
       "tables": [{ "header": ["Игральная карта", "Карта"], "rowCount": 22, "layout": "spaced-lines" }]
-    },
-    "кольцо-падающих-звезд": {
-      "sourceUrl": "https://dnd.su/items/99-ring-of-shooting-stars/",
-      "tables": [{ "header": ["Шары", "Урон электричеством"], "rowCount": 4, "layout": "spaced-lines" }]
     },
     "кольцо-сопротивления": {
       "sourceUrl": "https://dnd.su/items/107-ring-of-resistance/",

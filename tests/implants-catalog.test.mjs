@@ -29,7 +29,8 @@ function loadImplants() {
 
 test("implant catalog preserves all named spreadsheet rows and exact armor metadata", () => {
   const implants = loadImplants();
-  assert.equal(implants.length, 91);
+  assert.equal(implants.length, 92);
+  assert.ok(implants.some((entry) => entry.name === "Язык вурдалака"));
   assert.ok(implants.some((entry) => entry.name === "Парик суккуба"));
   assert.ok(implants.some((entry) => entry.name === "Облегчённый корпус авто"));
   assert.equal(implants.some((entry) => entry.name === "Облегчённый корпус"), false);

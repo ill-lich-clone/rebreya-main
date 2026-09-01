@@ -208,7 +208,33 @@ test("divergent legacy special-ammunition sheet blocks the workbook snapshot", (
 test("production registry covers the approved spreadsheet and canonical special ammunition", () => {
   assert.equal(EQUIPMENT_SPREADSHEET_ID, "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk");
   assert.equal(SHEET_REGISTRY.baseGear.sheetTitle, "Общий компендиум снаряжения V0.1");
+  assert.equal(SHEET_REGISTRY.baseGear.range, "A1:N830");
   assert.equal(SHEET_REGISTRY.materials.sheetTitle, "Энциклопедия материалов");
   assert.equal(SHEET_REGISTRY.magicItems.sheetTitle, "Магические предметы V0");
+  assert.equal(SHEET_REGISTRY.ammunition.sheetTitle, "Боеприпасы V0.1");
   assert.equal(SHEET_REGISTRY.specialAmmunition.sheetTitle, "Особые боеприпасы");
+});
+
+test("production magic-item registry tolerates the source-only charges column before Value", () => {
+  const declaration = SHEET_REGISTRY.magicItems;
+  const headers = [
+    "№", "Название", "Редкость", "Тип", "Подтип", "Слот", "Источник", "Ранг", "Материалы",
+    "Торги", "Стоимость", "Влиятельность", "Настройка", "Настройка детали", "Расходник", "РЕВОРК",
+    "Заряды", "Описание", "Value"
+  ];
+  const values = [headers, [
+    "1", "Аметистовый магнетит", "Очень редкий", "Чудестный предмет", "", "Спина", "FTD", "7",
+    "Стандартные", "Удачные", "10000 зм", "Минор", "1", "0", "FALSE", "Выполнен", "3",
+    "Описание", "6000"
+  ]];
+
+  const snapshot = buildRawWorkbookSnapshot({
+    spreadsheetId: "sheet-id",
+    metadata: { sheets: [{ properties: { sheetId: 1, title: declaration.sheetTitle, index: 16 } }] },
+    valueRanges: [{ range: `'${declaration.sheetTitle}'!A1:S1004`, values }],
+    registry: { magicItems: declaration }
+  });
+
+  assert.equal(snapshot.sheets.magicItems.rows[0].cells["Заряды"], "3");
+  assert.equal(snapshot.sheets.magicItems.rows[0].cells.Value, "6000");
 });

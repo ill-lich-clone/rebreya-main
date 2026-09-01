@@ -2911,5 +2911,37 @@
     "shopSubtype": "",
     "source": "gear-workbook-implants-v0.1",
     "weight": 0
+  },
+  {
+    "description": "Вы можете использовать язык для совершения безоружных ударов. Если вы совершаете атаку ими, вы наносите урон некротической энергией, равный 1к3 + ваш модификатор Силы, вместо дробящего урона, обычного для безоружного удара.",
+    "equipmentType": "Имплант",
+    "foundryFolder": "Импланты/Магические/Волшебные",
+    "foundrySubtype": "wondrous",
+    "foundryType": "equipment",
+    "heroDollSlots": [],
+    "id": "implant-язык-вурдалака",
+    "implant": {
+      "effect": "Вы можете использовать язык для совершения безоружных ударов. Если вы совершаете атаку ими, вы наносите урон некротической энергией, равный 1к3 + ваш модификатор Силы, вместо дробящего урона, обычного для безоружного удара.",
+      "installable": true,
+      "kind": "magical",
+      "magical": true,
+      "pointsMax": 1,
+      "pointsMin": 1,
+      "pointsText": "1",
+      "requirements": "—",
+      "sourceSheet": "Импланты V0.1",
+      "sourceSheetRow": 93,
+      "type": "Волшебные"
+    },
+    "itemSlot": "",
+    "name": "Язык вурдалака",
+    "priceDenomination": "gp",
+    "priceGoldEquivalent": 25,
+    "priceText": "25 зм",
+    "priceValue": 25,
+    "rank": 1,
+    "shopSubtype": "",
+    "source": "gear-workbook-implants-v0.1",
+    "weight": 0
   }
 ]

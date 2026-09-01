@@ -16,7 +16,7 @@ function declaration(registryOrder, definition) {
 export const SHEET_REGISTRY = Object.freeze({
   baseGear: declaration(0, {
     sheetTitle: "Общий компендиум снаряжения V0.1",
-    range: "A1:M806",
+    range: "A1:N830",
     headerRows: [1],
     dataStartRow: 3,
     requiredHeaders: ["Название", "Тип снаряжения", "Цена", "Ранг", "Вес", "Описание"],
@@ -85,13 +85,13 @@ export const SHEET_REGISTRY = Object.freeze({
     outputCatalog: "gear"
   }),
   ammunition: declaration(6, {
-    sheetTitle: "Боеприпасы",
-    range: "B1:G1005",
-    headerRows: [],
-    dataStartRow: 1,
-    layout: "raw",
-    requiredHeaders: [],
-    stableKeyHeader: null,
+    sheetTitle: "Боеприпасы V0.1",
+    range: "A1:K1000",
+    headerRows: [1],
+    dataStartRow: 3,
+    requiredHeaders: ["Название", "Урон 1", "Урон 2", "Тип урона", "Тип урона 2", "Ранг", "Вес", "Подходящее оружие", "Эффект", "Цена"],
+    optionalHeaders: ["Источник"],
+    stableKeyHeader: "Название",
     sections: Object.freeze([
       Object.freeze({ name: "standardAmmunition", range: "B3:F17", headerRow: 3 }),
       Object.freeze({
@@ -175,11 +175,11 @@ export const SHEET_REGISTRY = Object.freeze({
   }),
   magicItems: declaration(13, {
     sheetTitle: "Магические предметы V0",
-    range: "A1:R1004",
+    range: "A1:S1004",
     headerRows: [1],
     dataStartRow: 2,
     requiredHeaders: ["№", "Название", "Редкость", "Тип", "Источник", "Ранг", "Стоимость", "Настройка", "Описание", "Value"],
-    optionalHeaders: ["Подтип", "Слот", "Материалы", "Торги", "Влиятельность", "Настройка детали", "Расходник", "РЕВОРК"],
+    optionalHeaders: ["Подтип", "Слот", "Материалы", "Торги", "Влиятельность", "Настройка детали", "Расходник", "РЕВОРК", "Заряды"],
     stableKeyHeader: "№",
     adapter: "magicItems",
     outputCatalog: "magicItems"

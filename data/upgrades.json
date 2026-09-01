@@ -1567,8 +1567,8 @@
     }
   },
   {
-    "canonicalName": "Очаровательная тетева",
-    "name": "Очаровательная тетева",
+    "canonicalName": "Очаровательная тетива",
+    "name": "Очаровательная тетива",
     "productId": "очаровательная-тетева",
     "upgrade": {
       "appliesTo": "Оружие (дальнобойное)",
@@ -1583,6 +1583,26 @@
       "sourceMaterialName": "Волосы суккуба",
       "sourceSheet": "Усовершенствования V0.21",
       "sourceSheetRow": 91,
+      "sourceWeight": null,
+      "type": "Материал"
+    }
+  },
+  {
+    "canonicalName": "Шипастая отделка доспеха",
+    "name": "Шипастая отделка доспеха",
+    "productId": "шипастая-отделка-доспеха",
+    "upgrade": {
+      "appliesTo": "Верхняя одежда",
+      "compatibility": [
+        "outerwear"
+      ],
+      "effect": "Когда по вам совершают атаку, то атакующий получает 2 колющего урона после совершения атаки, независимо от результата",
+      "priceGold": 250,
+      "rank": 3,
+      "sourceMaterialId": "material-шипастые-шипы",
+      "sourceMaterialName": "Шипастые шипы",
+      "sourceSheet": "Усовершенствования V0.21",
+      "sourceSheetRow": 92,
       "sourceWeight": null,
       "type": "Материал"
     }

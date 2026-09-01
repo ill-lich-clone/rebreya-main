@@ -38,6 +38,15 @@ function sanitizeText(value, secrets = []) {
   return sanitized;
 }
 
+function rangeStartIdentity(range) {
+  const value = String(range ?? "");
+  const separatorIndex = value.lastIndexOf("!");
+  if (separatorIndex < 0) return value.toUpperCase();
+  const sheet = value.slice(0, separatorIndex);
+  const start = value.slice(separatorIndex + 1).split(":", 1)[0].replaceAll("$", "").toUpperCase();
+  return `${sheet}!${start}`;
+}
+
 export class GoogleSheetsApiError extends Error {
   constructor(message, { status = 0, attempts = 1, cause = null } = {}) {
     super(message, cause ? { cause } : undefined);
@@ -238,10 +247,12 @@ export function createGoogleSheetsClient({
         maxRetries,
         operation: "Google Sheets values request"
       });
-      const returned = new Map((response.valueRanges ?? []).map((entry) => [entry.range, entry]));
+      const returnedRanges = response.valueRanges ?? [];
+      const returned = new Map(returnedRanges.map((entry) => [entry.range, entry]));
+      const returnedByStart = new Map(returnedRanges.map((entry) => [rangeStartIdentity(entry.range), entry]));
       return ranges.map((range) => ({
         range,
-        values: returned.get(range)?.values ?? []
+        values: (returned.get(range) ?? returnedByStart.get(rangeStartIdentity(range)))?.values ?? []
       }));
     }
   });

@@ -36,7 +36,7 @@ export { buildGearIconLookup };
 const PACK_ID = `world.${GEAR_COMPENDIUM_NAME}`;
 const DND5E_SYSTEM_ID = "dnd5e";
 const COMPENDIUM_SIDEBAR_FOLDER = ["Ребрея"];
-const GEAR_TEMPLATE_VERSION = 23;
+const GEAR_TEMPLATE_VERSION = 24;
 const GEAR_CONTAINER_CONTENT_SOURCE_TYPE = "gearContainerContent";
 const STORAGE_COIN_DENOMINATIONS = new Set(["pp", "gp", "sp", "cp"]);
 const STORAGE_COIN_DENOMINATION_BY_NAME = Object.freeze({
@@ -214,17 +214,20 @@ function parseAmmunitionSourcePack(item, classification) {
 
   const name = cleanString(item.name);
   const match = name.match(/\s*\((\d+)\)\s*$/u);
-  if (!match) {
+  const profileQuantity = Math.floor(toFiniteNumber(item?.ammunition?.quantity, 0));
+  if (!match && profileQuantity < 1) {
     return null;
   }
 
-  const quantity = Math.max(1, Math.floor(toFiniteNumber(match[1], 1)));
+  const quantity = match
+    ? Math.max(1, Math.floor(toFiniteNumber(match[1], 1)))
+    : profileQuantity;
   const sourceWeight = Math.max(0, toFiniteNumber(item.weight, 0));
   const sourcePriceGoldEquivalent = Math.max(0, toFiniteNumber(item.priceGoldEquivalent ?? item.priceValue, 0));
 
   return {
     quantity,
-    actorName: cleanString(name.replace(/\s*\(\d+\)\s*$/u, ""), name),
+    actorName: match ? cleanString(name.replace(/\s*\(\d+\)\s*$/u, ""), name) : name,
     sourceWeight,
     sourcePriceGoldEquivalent,
     actorWeight: roundDecimal(sourceWeight / quantity),

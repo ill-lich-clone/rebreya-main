@@ -47,7 +47,7 @@ const FIREARM_CLASSES = new Map([
 const FIREARM_SUBHEADINGS = new Set(["короткоствольное", "длинноствольное"]);
 const AMMUNITION_FAMILIES = new Set([
   "Мушкетные", "Картечный", "Картечные", "Пистолетные", "Ракетные", "Винтовочный",
-  "Топливный бак", "Ядра", "Батарея", "Стальной болт + батарея", "Ракетный",
+  "Топливный бак", "Ядра", "Батарея", "Стальной болт + батарея", "Ракетный", "Ракетный выстрел",
   "Заряды антиматерии", "Тепловая батарея"
 ]);
 const FIREARM_ONLY_HEADERS = Object.freeze([
@@ -55,6 +55,7 @@ const FIREARM_ONLY_HEADERS = Object.freeze([
   "Свойство боеприпасов", "Тип стрельбы", "Перезарядка", "Различие конструкции", "Внезапность"
 ]);
 const ROCKET_LAUNCHER_RULE = "Ручница использует ракетные боеприпасы, урон и цена которых зависит от типа боеприпаса";
+const GENERIC_ROCKET_AMMUNITION_RULE = "Оружие использует ракетные боеприпасы, урон и цена которых зависит от типа боеприпаса";
 const FIREARM_SPECIAL_RULES = new Set([
   "Особое",
   "Особое (вместо совершения атаки выстреливает дробью в виде линии шириной 5 футов в пределах дистанции. Сл спасброска расчитывается как для автоматического огня)",
@@ -292,7 +293,7 @@ export function parseWeaponProperties(raw, context = {}) {
 function parseFirearmAdditional(raw, context, properties, labels, values) {
   const value = present(raw);
   if (!value) return;
-  if (value === ROCKET_LAUNCHER_RULE) {
+  if (value === ROCKET_LAUNCHER_RULE || value === GENERIC_ROCKET_AMMUNITION_RULE) {
     for (const token of value.split(",").map((part) => part.trim())) addUnique(labels, token);
     return;
   }

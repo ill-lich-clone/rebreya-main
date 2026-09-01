@@ -127,6 +127,18 @@ test("firearm parser preserves every declared typed value", () => {
   ]);
 });
 
+test("firearm parser accepts the live singular rocket ammunition family", () => {
+  const row = structuredClone(raw.firearms.rows[1]);
+  row.cells.Боеприпасы = "Ракетный выстрел";
+  const profile = parseFirearmProfile(row, {
+    sheetKey: "firearms",
+    range: raw.firearms.range,
+    firearmClass: "advanced"
+  });
+
+  assert.equal(profile.lichWeaponPropertyValues.ammunition, "Ракетный выстрел");
+});
+
 test("firearm parser accepts the exact descriptive rocket-launcher rule without treating prose as tokens", () => {
   const row = structuredClone(raw.firearms.rows[1]);
   row.cells.Урон = "Особое";
@@ -142,4 +154,17 @@ test("firearm parser accepts the exact descriptive rocket-launcher rule without 
   assert.equal(profile.properties.includes("spc"), false);
   assert.equal(profile.damageFormula, "");
   assert.equal(profile.range, null);
+});
+
+test("firearm parser accepts the live generic rocket-ammunition description", () => {
+  const row = structuredClone(raw.firearms.rows[1]);
+  row.cells["Дополнительные свойства"] = "Оружие использует ракетные боеприпасы, урон и цена которых зависит от типа боеприпаса";
+  const profile = parseFirearmProfile(row, {
+    sheetKey: "firearms",
+    range: raw.firearms.range,
+    firearmClass: "advanced"
+  });
+
+  assert.match(profile.propertiesText, /Оружие использует ракетные боеприпасы/);
+  assert.equal(profile.properties.includes("spc"), false);
 });

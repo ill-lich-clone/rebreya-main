@@ -54,7 +54,7 @@ test("tracked generated catalogs parse and stable IDs match migrated overrides",
 test("tracked catalogs preserve representative runtime fields and typed regressions", () => {
   const byGearName = new Map(gear.map((item) => [item.name, item]));
   const expectedWeights = {
-    "Арбалетные болты (20)": 1.5,
+    "Арбалетный болт (20)": 1.5,
     "Снаряды для пращи (20)": 1.5,
     "Зелье лечения 1-го уровня": 0.5,
     "Зеркало, стальное": 0.5,

@@ -115,6 +115,36 @@ test("range fetch requests formatted rows and restores requested range order", a
   assert.doesNotMatch(valuesCall.url, /BEGIN PRIVATE KEY|token-value/);
 });
 
+test("range fetch keeps values when Sheets trims the requested grid bounds", async () => {
+  const client = createGoogleSheetsClient({
+    now: () => 1_700_000_000_000,
+    fetchImpl: async (url) => {
+      if (String(url) === SERVICE_ACCOUNT.token_uri) {
+        return jsonResponse({ access_token: "token-value", expires_in: 3600 });
+      }
+      return jsonResponse({
+        spreadsheetId: "sheet-id",
+        valueRanges: [{
+          range: "'Magic Items'!A1:S1003",
+          majorDimension: "ROWS",
+          values: [["Name", "Value"]]
+        }]
+      });
+    }
+  });
+
+  const result = await client.fetchRanges({
+    spreadsheetId: "sheet-id",
+    ranges: ["'Magic Items'!A1:V1004"],
+    serviceAccount: SERVICE_ACCOUNT
+  });
+
+  assert.deepEqual(result, [{
+    range: "'Magic Items'!A1:V1004",
+    values: [["Name", "Value"]]
+  }]);
+});
+
 test("metadata fetch retries transient failures with bounded increasing delays", async () => {
   let metadataAttempts = 0;
   const delays = [];

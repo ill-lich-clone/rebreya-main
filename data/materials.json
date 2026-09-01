@@ -17,7 +17,7 @@
     "priceGold": 0.02,
     "rank": 1,
     "source": {
-      "row": 226,
+      "row": 245,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -43,7 +43,7 @@
     "priceGold": 150,
     "rank": 3,
     "source": {
-      "row": 229,
+      "row": 248,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -69,7 +69,7 @@
     "priceGold": 0.01,
     "rank": 0,
     "source": {
-      "row": 217,
+      "row": 236,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -95,7 +95,7 @@
     "priceGold": 0.05,
     "rank": 1,
     "source": {
-      "row": 245,
+      "row": 264,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -121,7 +121,7 @@
     "priceGold": 0.01,
     "rank": 0,
     "source": {
-      "row": 214,
+      "row": 233,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -147,7 +147,7 @@
     "priceGold": 0.05,
     "rank": 1,
     "source": {
-      "row": 216,
+      "row": 235,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -173,7 +173,7 @@
     "priceGold": 0.01,
     "rank": 0,
     "source": {
-      "row": 212,
+      "row": 231,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -199,7 +199,7 @@
     "priceGold": 0.02,
     "rank": 1,
     "source": {
-      "row": 224,
+      "row": 243,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -225,7 +225,7 @@
     "priceGold": 0.02,
     "rank": 1,
     "source": {
-      "row": 215,
+      "row": 234,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -251,7 +251,7 @@
     "priceGold": 0.05,
     "rank": 1,
     "source": {
-      "row": 231,
+      "row": 250,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -277,7 +277,7 @@
     "priceGold": 0.02,
     "rank": 0,
     "source": {
-      "row": 219,
+      "row": 238,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -303,7 +303,7 @@
     "priceGold": 0.1,
     "rank": 1,
     "source": {
-      "row": 218,
+      "row": 237,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -329,7 +329,7 @@
     "priceGold": 0.5,
     "rank": 2,
     "source": {
-      "row": 232,
+      "row": 251,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -355,7 +355,7 @@
     "priceGold": 0.02,
     "rank": 1,
     "source": {
-      "row": 223,
+      "row": 242,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -381,7 +381,7 @@
     "priceGold": 0.1,
     "rank": 1,
     "source": {
-      "row": 236,
+      "row": 255,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -1184,19 +1184,19 @@
     "linkedGoodId": null,
     "linkedGoodName": null,
     "name": "Кровьтрава",
-    "priceGold": 10,
+    "priceGold": 15,
     "rank": 1,
     "source": {
       "row": 127,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
-    "subtype": "Повсеместно",
+    "subtype": "Жаркие земли",
     "type": "Растение",
     "weight": 1
   },
   {
-    "alchemyAspects": "45 З",
+    "alchemyAspects": "42 З",
     "applications": {
       "alchemy": "Расщепление на аспекты",
       "crafting": "Недоступно",
@@ -1210,14 +1210,14 @@
     "linkedGoodId": null,
     "linkedGoodName": null,
     "name": "Хромовая слизь",
-    "priceGold": 400,
+    "priceGold": 500,
     "rank": 4,
     "source": {
-      "row": 128,
+      "row": 153,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
-    "subtype": "Берега, Подземье",
+    "subtype": "Общее, Гиблые земли",
     "type": "Растение",
     "weight": 1
   },
@@ -1239,11 +1239,11 @@
     "priceGold": 50,
     "rank": 2,
     "source": {
-      "row": 129,
+      "row": 143,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
-    "subtype": "Пустыни, Горы",
+    "subtype": "Ветреные земли",
     "type": "Растение",
     "weight": 1
   },
@@ -1274,7 +1274,7 @@
     "weight": 5
   },
   {
-    "alchemyAspects": "18 Нэ",
+    "alchemyAspects": "15 Нэ",
     "applications": {
       "alchemy": "Расщепление на аспекты",
       "crafting": "Недоступно",
@@ -1291,16 +1291,16 @@
     "priceGold": 15,
     "rank": 1,
     "source": {
-      "row": 130,
+      "row": 138,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
-    "subtype": "Леса, Болота",
+    "subtype": "Гиблые земли",
     "type": "Растение",
     "weight": 1
   },
   {
-    "alchemyAspects": "14 З",
+    "alchemyAspects": "15 З",
     "applications": {
       "alchemy": "Расщепление на аспекты",
       "crafting": "Недоступно",
@@ -1314,14 +1314,14 @@
     "linkedGoodId": null,
     "linkedGoodName": null,
     "name": "Фенхелейвый шёлк",
-    "priceGold": 50,
-    "rank": 2,
+    "priceGold": 15,
+    "rank": 1,
     "source": {
       "row": 131,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
-    "subtype": "Арктика, Подземье",
+    "subtype": "Плодородные земли",
     "type": "Растение",
     "weight": 1
   },
@@ -1340,14 +1340,14 @@
     "linkedGoodId": null,
     "linkedGoodName": null,
     "name": "Кисть Генгкоу",
-    "priceGold": 200,
-    "rank": 3,
+    "priceGold": 50,
+    "rank": 2,
     "source": {
-      "row": 132,
+      "row": 140,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
-    "subtype": "Холмы, Подземье",
+    "subtype": "Общее, Плодородные земли",
     "type": "Растение",
     "weight": 1
   },
@@ -1369,16 +1369,16 @@
     "priceGold": 15,
     "rank": 1,
     "source": {
-      "row": 133,
+      "row": 132,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
-    "subtype": "Берега, Луга",
+    "subtype": "Каменистые земли",
     "type": "Растение",
     "weight": 1
   },
   {
-    "alchemyAspects": "16 Вз",
+    "alchemyAspects": "15 Вз",
     "applications": {
       "alchemy": "Расщепление на аспекты",
       "crafting": "Недоступно",
@@ -1399,12 +1399,12 @@
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
-    "subtype": "Берега, Луга, Холмы",
+    "subtype": "Гиблые земли",
     "type": "Растение",
     "weight": 1
   },
   {
-    "alchemyAspects": "11 Пэ",
+    "alchemyAspects": "15 Пэ",
     "applications": {
       "alchemy": "Расщепление на аспекты",
       "crafting": "Недоступно",
@@ -1418,19 +1418,19 @@
     "linkedGoodId": null,
     "linkedGoodName": null,
     "name": "Корень Мандрагоры",
-    "priceGold": 50,
-    "rank": 2,
+    "priceGold": 15,
+    "rank": 1,
     "source": {
       "row": 135,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
-    "subtype": "Повсеместно",
+    "subtype": "Общее, Жаркие земли",
     "type": "Растение",
     "weight": 1
   },
   {
-    "alchemyAspects": "12 О",
+    "alchemyAspects": "15 О",
     "applications": {
       "alchemy": "Расщепление на аспекты",
       "crafting": "Недоступно",
@@ -1444,14 +1444,14 @@
     "linkedGoodId": null,
     "linkedGoodName": null,
     "name": "Семена Молочая",
-    "priceGold": 5,
+    "priceGold": 15,
     "rank": 1,
     "source": {
-      "row": 136,
+      "row": 128,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
-    "subtype": "Повсеместно",
+    "subtype": "Каменистые земли",
     "type": "Растение",
     "weight": 1
   },
@@ -1470,19 +1470,19 @@
     "linkedGoodId": null,
     "linkedGoodName": null,
     "name": "Корень дикого Шалфея",
-    "priceGold": 5,
+    "priceGold": 15,
     "rank": 1,
     "source": {
-      "row": 137,
+      "row": 133,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
-    "subtype": "Повсеместно",
+    "subtype": "Общее, Ветреные земли",
     "type": "Растение",
     "weight": 1
   },
   {
-    "alchemyAspects": "19 Вд",
+    "alchemyAspects": "30 Вд",
     "applications": {
       "alchemy": "Расщепление на аспекты",
       "crafting": "Недоступно",
@@ -1499,16 +1499,16 @@
     "priceGold": 200,
     "rank": 3,
     "source": {
-      "row": 138,
+      "row": 146,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
-    "subtype": "Арктика, Горы",
+    "subtype": "Гиблые земли",
     "type": "Растение",
     "weight": 1
   },
   {
-    "alchemyAspects": "25 Нэ",
+    "alchemyAspects": "15 Нэ",
     "applications": {
       "alchemy": "Расщепление на аспекты",
       "crafting": "Недоступно",
@@ -1525,11 +1525,11 @@
     "priceGold": 15,
     "rank": 1,
     "source": {
-      "row": 139,
+      "row": 137,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
-    "subtype": "Берега, Болота",
+    "subtype": "Водные земли",
     "type": "Растение",
     "weight": 1
   },
@@ -1560,7 +1560,7 @@
     "weight": 4
   },
   {
-    "alchemyAspects": "80 О",
+    "alchemyAspects": "105 О",
     "applications": {
       "alchemy": "Расщепление на аспекты",
       "crafting": "Недоступно",
@@ -1574,19 +1574,19 @@
     "linkedGoodId": null,
     "linkedGoodName": null,
     "name": "Дыхание Василиска",
-    "priceGold": 12000,
-    "rank": 7,
+    "priceGold": 20000,
+    "rank": 8,
     "source": {
-      "row": 140,
+      "row": 175,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
-    "subtype": "Горы",
+    "subtype": "Общее, Гиблые земли",
     "type": "Растение",
     "weight": 1
   },
   {
-    "alchemyAspects": "12 Вд",
+    "alchemyAspects": "15 Вд",
     "applications": {
       "alchemy": "Расщепление на аспекты",
       "crafting": "Недоступно",
@@ -1603,16 +1603,16 @@
     "priceGold": 15,
     "rank": 1,
     "source": {
-      "row": 141,
+      "row": 130,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
-    "subtype": "Пустыни, Луга",
+    "subtype": "Водные земли",
     "type": "Растение",
     "weight": 1
   },
   {
-    "alchemyAspects": "16 Вз",
+    "alchemyAspects": "30 Вз",
     "applications": {
       "alchemy": "Расщепление на аспекты",
       "crafting": "Недоступно",
@@ -1626,19 +1626,19 @@
     "linkedGoodId": null,
     "linkedGoodName": null,
     "name": "Цветы Дракуса",
-    "priceGold": 15,
-    "rank": 1,
+    "priceGold": 200,
+    "rank": 3,
     "source": {
-      "row": 142,
+      "row": 148,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
-    "subtype": "Пустыни, Луга, Горы",
+    "subtype": "Водные земли",
     "type": "Растение",
     "weight": 1
   },
   {
-    "alchemyAspects": "47 Вз",
+    "alchemyAspects": "55 Вз",
     "applications": {
       "alchemy": "Расщепление на аспекты",
       "crafting": "Недоступно",
@@ -1652,19 +1652,19 @@
     "linkedGoodId": null,
     "linkedGoodName": null,
     "name": "Замороженные саженцы",
-    "priceGold": 900,
+    "priceGold": 1000,
     "rank": 5,
     "source": {
-      "row": 143,
+      "row": 160,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
-    "subtype": "Арктика, Болота",
+    "subtype": "Ветреные земли",
     "type": "Растение",
     "weight": 1
   },
   {
-    "alchemyAspects": "14 Пэ",
+    "alchemyAspects": "15 Пэ",
     "applications": {
       "alchemy": "Расщепление на аспекты",
       "crafting": "Недоступно",
@@ -1678,19 +1678,19 @@
     "linkedGoodId": null,
     "linkedGoodName": null,
     "name": "Листья Харрады",
-    "priceGold": 5,
+    "priceGold": 15,
     "rank": 1,
     "source": {
-      "row": 144,
+      "row": 136,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
-    "subtype": "Лес",
+    "subtype": "Плодородные земли",
     "type": "Растение",
     "weight": 1
   },
   {
-    "alchemyAspects": "23 Нэ",
+    "alchemyAspects": "22 Нэ",
     "applications": {
       "alchemy": "Расщепление на аспекты",
       "crafting": "Недоступно",
@@ -1707,16 +1707,16 @@
     "priceGold": 50,
     "rank": 2,
     "source": {
-      "row": 145,
+      "row": 144,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
-    "subtype": "Повсеместно",
+    "subtype": "Каменистые земли",
     "type": "Растение",
     "weight": 1
   },
   {
-    "alchemyAspects": "39 Нэ",
+    "alchemyAspects": "42 Нэ",
     "applications": {
       "alchemy": "Расщепление на аспекты",
       "crafting": "Недоступно",
@@ -1730,19 +1730,19 @@
     "linkedGoodId": null,
     "linkedGoodName": null,
     "name": "Сияющий синтоцвет",
-    "priceGold": 400,
+    "priceGold": 500,
     "rank": 4,
     "source": {
-      "row": 146,
+      "row": 156,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
-    "subtype": "Подземье",
+    "subtype": "Жаркие земли",
     "type": "Растение",
     "weight": 1
   },
   {
-    "alchemyAspects": "31 З",
+    "alchemyAspects": "55 З",
     "applications": {
       "alchemy": "Расщепление на аспекты",
       "crafting": "Недоступно",
@@ -1756,19 +1756,19 @@
     "linkedGoodId": null,
     "linkedGoodName": null,
     "name": "Ягоды шипоцвета",
-    "priceGold": 200,
-    "rank": 3,
+    "priceGold": 1000,
+    "rank": 5,
     "source": {
-      "row": 147,
+      "row": 159,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
-    "subtype": "Пустыни, Болота",
+    "subtype": "Каменистые земли",
     "type": "Растение",
     "weight": 1
   },
   {
-    "alchemyAspects": "17 О",
+    "alchemyAspects": "30 О",
     "applications": {
       "alchemy": "Расщепление на аспекты",
       "crafting": "Недоступно",
@@ -1782,19 +1782,19 @@
     "linkedGoodId": null,
     "linkedGoodName": null,
     "name": "Лепестки Змееуста",
-    "priceGold": 5,
-    "rank": 1,
+    "priceGold": 200,
+    "rank": 3,
     "source": {
-      "row": 148,
+      "row": 145,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
-    "subtype": "Повсеместно",
+    "subtype": "Плодородные земли",
     "type": "Растение",
     "weight": 1
   },
   {
-    "alchemyAspects": "20 З",
+    "alchemyAspects": "30 З",
     "applications": {
       "alchemy": "Расщепление на аспекты",
       "crafting": "Недоступно",
@@ -1808,14 +1808,14 @@
     "linkedGoodId": null,
     "linkedGoodName": null,
     "name": "Корень Стрела",
-    "priceGold": 15,
+    "priceGold": 200,
     "rank": 3,
     "source": {
-      "row": 149,
+      "row": 147,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
-    "subtype": "Пустыни, Луга, Леса",
+    "subtype": "Общее, Жаркие земли",
     "type": "Растение",
     "weight": 1
   },
@@ -1846,7 +1846,7 @@
     "weight": 1
   },
   {
-    "alchemyAspects": "35 О",
+    "alchemyAspects": "42 О",
     "applications": {
       "alchemy": "Расщепление на аспекты",
       "crafting": "Недоступно",
@@ -1860,19 +1860,19 @@
     "linkedGoodId": null,
     "linkedGoodName": null,
     "name": "Синий Кривожаб",
-    "priceGold": 800,
-    "rank": 5,
+    "priceGold": 500,
+    "rank": 4,
     "source": {
-      "row": 150,
+      "row": 151,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
-    "subtype": "Берега, Леса, Болота",
+    "subtype": "Ветреные земли",
     "type": "Растение",
     "weight": 1
   },
   {
-    "alchemyAspects": "44 Пэ",
+    "alchemyAspects": "42 Пэ",
     "applications": {
       "alchemy": "Расщепление на аспекты",
       "crafting": "Недоступно",
@@ -1886,19 +1886,19 @@
     "linkedGoodId": null,
     "linkedGoodName": null,
     "name": "Ко-Глонд",
-    "priceGold": 350,
+    "priceGold": 500,
     "rank": 4,
     "source": {
-      "row": 151,
+      "row": 155,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
-    "subtype": "Берега, Пустыни",
+    "subtype": "Водные земли",
     "type": "Растение",
     "weight": 1
   },
   {
-    "alchemyAspects": "85 Вз",
+    "alchemyAspects": "70 Вз",
     "applications": {
       "alchemy": "Расщепление на аспекты",
       "crafting": "Недоступно",
@@ -1915,16 +1915,16 @@
     "priceGold": 5000,
     "rank": 6,
     "source": {
-      "row": 152,
+      "row": 166,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
-    "subtype": "Холмы, Болота, Подземье",
+    "subtype": "Общее, Каменистые земли",
     "type": "Растение",
     "weight": 1
   },
   {
-    "alchemyAspects": "50 Нэ",
+    "alchemyAspects": "55 Нэ",
     "applications": {
       "alchemy": "Расщепление на аспекты",
       "crafting": "Недоступно",
@@ -1938,14 +1938,14 @@
     "linkedGoodId": null,
     "linkedGoodName": null,
     "name": "Дьявольский плющ",
-    "priceGold": 350,
-    "rank": 4,
+    "priceGold": 1000,
+    "rank": 5,
     "source": {
-      "row": 153,
+      "row": 162,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
-    "subtype": "Арктика, Подземье",
+    "subtype": "Гиблые земли",
     "type": "Растение",
     "weight": 1
   },
@@ -1964,19 +1964,19 @@
     "linkedGoodId": null,
     "linkedGoodName": null,
     "name": "Водополох",
-    "priceGold": 400,
+    "priceGold": 500,
     "rank": 4,
     "source": {
-      "row": 154,
+      "row": 152,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
-    "subtype": "Берега, Болота",
+    "subtype": "Каменистые земли",
     "type": "Растение",
     "weight": 1
   },
   {
-    "alchemyAspects": "26 О",
+    "alchemyAspects": "22 О",
     "applications": {
       "alchemy": "Расщепление на аспекты",
       "crafting": "Недоступно",
@@ -1993,16 +1993,16 @@
     "priceGold": 50,
     "rank": 2,
     "source": {
-      "row": 155,
+      "row": 139,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
-    "subtype": "Арктика, Леса, Холмы",
+    "subtype": "Гиблые земли",
     "type": "Растение",
     "weight": 1
   },
   {
-    "alchemyAspects": "40 Пэ",
+    "alchemyAspects": "55 Пэ",
     "applications": {
       "alchemy": "Расщепление на аспекты",
       "crafting": "Недоступно",
@@ -2016,19 +2016,19 @@
     "linkedGoodId": null,
     "linkedGoodName": null,
     "name": "Светопыль",
-    "priceGold": 500,
-    "rank": 4,
+    "priceGold": 1000,
+    "rank": 5,
     "source": {
-      "row": 156,
+      "row": 161,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
-    "subtype": "Горы, Подземье",
+    "subtype": "Плодородные земли",
     "type": "Растение",
     "weight": 1
   },
   {
-    "alchemyAspects": "95 Вд",
+    "alchemyAspects": "85 Вд",
     "applications": {
       "alchemy": "Расщепление на аспекты",
       "crafting": "Недоступно",
@@ -2042,19 +2042,19 @@
     "linkedGoodId": null,
     "linkedGoodName": null,
     "name": "Порошок морплоти",
-    "priceGold": 15000,
+    "priceGold": 10000,
     "rank": 7,
     "source": {
-      "row": 157,
+      "row": 170,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
-    "subtype": "Горы, Подземье",
+    "subtype": "Каменистые земли",
     "type": "Растение",
     "weight": 1
   },
   {
-    "alchemyAspects": "25 З",
+    "alchemyAspects": "22 З",
     "applications": {
       "alchemy": "Расщепление на аспекты",
       "crafting": "Недоступно",
@@ -2071,16 +2071,16 @@
     "priceGold": 50,
     "rank": 2,
     "source": {
-      "row": 158,
+      "row": 141,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
-    "subtype": "Леса, Холмы",
+    "subtype": "Водные земли",
     "type": "Растение",
     "weight": 1
   },
   {
-    "alchemyAspects": "58 Пэ",
+    "alchemyAspects": "70 Пэ",
     "applications": {
       "alchemy": "Расщепление на аспекты",
       "crafting": "Недоступно",
@@ -2094,14 +2094,14 @@
     "linkedGoodId": null,
     "linkedGoodName": null,
     "name": "Изначальный бальзам",
-    "priceGold": 300,
-    "rank": 4,
+    "priceGold": 5000,
+    "rank": 6,
     "source": {
-      "row": 159,
+      "row": 167,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
-    "subtype": "Горы, Болота, Подземье",
+    "subtype": "Гиблые земли",
     "type": "Растение",
     "weight": 1
   },
@@ -2132,7 +2132,7 @@
     "weight": 3
   },
   {
-    "alchemyAspects": "60 Нэ",
+    "alchemyAspects": "70 Нэ",
     "applications": {
       "alchemy": "Расщепление на аспекты",
       "crafting": "Недоступно",
@@ -2146,19 +2146,19 @@
     "linkedGoodId": null,
     "linkedGoodName": null,
     "name": "Каменный вьюн",
-    "priceGold": 600,
-    "rank": 5,
+    "priceGold": 5000,
+    "rank": 6,
     "source": {
-      "row": 160,
+      "row": 168,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
-    "subtype": "Холмы, Горы",
+    "subtype": "Плодородные земли",
     "type": "Растение",
     "weight": 1
   },
   {
-    "alchemyAspects": "11 Вз",
+    "alchemyAspects": "22 Вз",
     "applications": {
       "alchemy": "Расщепление на аспекты",
       "crafting": "Недоступно",
@@ -2172,19 +2172,19 @@
     "linkedGoodId": null,
     "linkedGoodName": null,
     "name": "Бобы Сцили",
-    "priceGold": 15,
-    "rank": 1,
+    "priceGold": 50,
+    "rank": 2,
     "source": {
-      "row": 161,
+      "row": 142,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
-    "subtype": "Пустыни, Луга",
+    "subtype": "Жаркие земли",
     "type": "Растение",
     "weight": 1
   },
   {
-    "alchemyAspects": "47 Вд",
+    "alchemyAspects": "15 Вд",
     "applications": {
       "alchemy": "Расщепление на аспекты",
       "crafting": "Недоступно",
@@ -2201,16 +2201,16 @@
     "priceGold": 15,
     "rank": 1,
     "source": {
-      "row": 162,
+      "row": 129,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
-    "subtype": "Арктика, Подземье",
+    "subtype": "Ветреные земли",
     "type": "Растение",
     "weight": 1
   },
   {
-    "alchemyAspects": "75 О",
+    "alchemyAspects": "85 О",
     "applications": {
       "alchemy": "Расщепление на аспекты",
       "crafting": "Недоступно",
@@ -2224,14 +2224,14 @@
     "linkedGoodId": null,
     "linkedGoodName": null,
     "name": "Листохвост",
-    "priceGold": 8000,
+    "priceGold": 10000,
     "rank": 7,
     "source": {
-      "row": 163,
+      "row": 169,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
-    "subtype": "Луга, Холмы",
+    "subtype": "Ветреные земли",
     "type": "Растение",
     "weight": 1
   },
@@ -2250,19 +2250,19 @@
     "linkedGoodId": null,
     "linkedGoodName": null,
     "name": "Вердинская крапива",
-    "priceGold": 60,
-    "rank": 2,
+    "priceGold": 200,
+    "rank": 3,
     "source": {
-      "row": 164,
+      "row": 150,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
-    "subtype": "Леса",
+    "subtype": "Ветреные земли",
     "type": "Растение",
     "weight": 1
   },
   {
-    "alchemyAspects": "32 Пэ",
+    "alchemyAspects": "30 Пэ",
     "applications": {
       "alchemy": "Расщепление на аспекты",
       "crafting": "Недоступно",
@@ -2276,19 +2276,19 @@
     "linkedGoodId": null,
     "linkedGoodName": null,
     "name": "Корень пустоты",
-    "priceGold": 150,
+    "priceGold": 200,
     "rank": 3,
     "source": {
-      "row": 165,
+      "row": 149,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
-    "subtype": "Арктика, Пустыня",
+    "subtype": "Каменистые земли",
     "type": "Растение",
     "weight": 1
   },
   {
-    "alchemyAspects": "80 З",
+    "alchemyAspects": "70 З",
     "applications": {
       "alchemy": "Расщепление на аспекты",
       "crafting": "Недоступно",
@@ -2305,16 +2305,16 @@
     "priceGold": 5000,
     "rank": 6,
     "source": {
-      "row": 166,
+      "row": 165,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
-    "subtype": "Лес, Подземье",
+    "subtype": "Ветреные земли",
     "type": "Растение",
     "weight": 1
   },
   {
-    "alchemyAspects": "44 Вз",
+    "alchemyAspects": "42 Вз",
     "applications": {
       "alchemy": "Расщепление на аспекты",
       "crafting": "Недоступно",
@@ -2328,14 +2328,14 @@
     "linkedGoodId": null,
     "linkedGoodName": null,
     "name": "Зловонная луковица",
-    "priceGold": 600,
+    "priceGold": 500,
     "rank": 4,
     "source": {
-      "row": 167,
+      "row": 154,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
-    "subtype": "Берега, Болота",
+    "subtype": "Плодородные земли",
     "type": "Растение",
     "weight": 1
   },
@@ -2357,7 +2357,7 @@
     "priceGold": 500,
     "rank": 4,
     "source": {
-      "row": 168,
+      "row": 189,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -2383,7 +2383,7 @@
     "priceGold": 250,
     "rank": 3,
     "source": {
-      "row": 169,
+      "row": 190,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -2435,7 +2435,7 @@
     "priceGold": 500,
     "rank": 5,
     "source": {
-      "row": 170,
+      "row": 191,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -2461,7 +2461,7 @@
     "priceGold": 375,
     "rank": 3,
     "source": {
-      "row": 171,
+      "row": 192,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -2487,7 +2487,7 @@
     "priceGold": 1250,
     "rank": 5,
     "source": {
-      "row": 172,
+      "row": 193,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -2513,7 +2513,7 @@
     "priceGold": 125,
     "rank": 3,
     "source": {
-      "row": 173,
+      "row": 194,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -2539,7 +2539,7 @@
     "priceGold": 125,
     "rank": 5,
     "source": {
-      "row": 174,
+      "row": 195,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -2565,7 +2565,7 @@
     "priceGold": 500,
     "rank": 6,
     "source": {
-      "row": 175,
+      "row": 196,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -2591,7 +2591,7 @@
     "priceGold": 125,
     "rank": 7,
     "source": {
-      "row": 176,
+      "row": 197,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -2617,7 +2617,7 @@
     "priceGold": 375,
     "rank": 4,
     "source": {
-      "row": 177,
+      "row": 198,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -2643,7 +2643,7 @@
     "priceGold": 500,
     "rank": 3,
     "source": {
-      "row": 178,
+      "row": 199,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -2669,7 +2669,7 @@
     "priceGold": 1000,
     "rank": 7,
     "source": {
-      "row": 179,
+      "row": 200,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -2721,7 +2721,7 @@
     "priceGold": 250,
     "rank": 5,
     "source": {
-      "row": 180,
+      "row": 201,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -2738,7 +2738,7 @@
       "knowledge": "Недоступно",
       "upgrade": "Корень драконьего дерева"
     },
-    "description": "Всё ещё адамантий, но освящённый храмовыми жрецами так, чтобы он мог помочь носителю использовать магию. ",
+    "description": "Всё ещё адамантий, но освящённый храмовыми жрецами так, чтобы он мог помочь носителю использовать магию.",
     "id": "material-181",
     "isSynthetic": false,
     "linkedGoodId": null,
@@ -2747,11 +2747,11 @@
     "priceGold": 875,
     "rank": 6,
     "source": {
-      "row": 181,
+      "row": 187,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
-    "subtype": "Повсеместно",
+    "subtype": "Общее",
     "type": "Растение",
     "weight": 4
   },
@@ -2773,7 +2773,7 @@
     "priceGold": 3000,
     "rank": 8,
     "source": {
-      "row": 182,
+      "row": 202,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -2799,7 +2799,7 @@
     "priceGold": 1200,
     "rank": 6,
     "source": {
-      "row": 183,
+      "row": 203,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -2825,7 +2825,7 @@
     "priceGold": 2000,
     "rank": 9,
     "source": {
-      "row": 184,
+      "row": 204,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -2851,7 +2851,7 @@
     "priceGold": 1625,
     "rank": 8,
     "source": {
-      "row": 185,
+      "row": 205,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -2877,7 +2877,7 @@
     "priceGold": null,
     "rank": null,
     "source": {
-      "row": 186,
+      "row": 206,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -2903,7 +2903,7 @@
     "priceGold": 1000,
     "rank": 5,
     "source": {
-      "row": 187,
+      "row": 207,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -2955,7 +2955,7 @@
     "priceGold": 1,
     "rank": null,
     "source": {
-      "row": 189,
+      "row": 208,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -2967,7 +2967,7 @@
     "alchemyAspects": "",
     "applications": {
       "alchemy": "Недоступно",
-      "crafting": "Кожанный доспех +1",
+      "crafting": "Доспех +1",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
       "upgrade": "Шкура чудовища"
@@ -3007,7 +3007,7 @@
     "priceGold": 1,
     "rank": null,
     "source": {
-      "row": 190,
+      "row": 209,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -3033,7 +3033,7 @@
     "priceGold": 1,
     "rank": null,
     "source": {
-      "row": 191,
+      "row": 210,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -3059,7 +3059,7 @@
     "priceGold": 1,
     "rank": null,
     "source": {
-      "row": 192,
+      "row": 211,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -3085,7 +3085,7 @@
     "priceGold": 1,
     "rank": null,
     "source": {
-      "row": 193,
+      "row": 212,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -3111,7 +3111,7 @@
     "priceGold": 1,
     "rank": null,
     "source": {
-      "row": 194,
+      "row": 213,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -3137,7 +3137,7 @@
     "priceGold": 1,
     "rank": null,
     "source": {
-      "row": 195,
+      "row": 214,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -3163,7 +3163,7 @@
     "priceGold": 1,
     "rank": null,
     "source": {
-      "row": 196,
+      "row": 215,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -3189,7 +3189,7 @@
     "priceGold": 1,
     "rank": null,
     "source": {
-      "row": 197,
+      "row": 216,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -3215,7 +3215,7 @@
     "priceGold": 1,
     "rank": null,
     "source": {
-      "row": 198,
+      "row": 217,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -3241,7 +3241,7 @@
     "priceGold": 1,
     "rank": null,
     "source": {
-      "row": 199,
+      "row": 218,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -3293,7 +3293,7 @@
     "priceGold": 1,
     "rank": null,
     "source": {
-      "row": 200,
+      "row": 219,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -3319,7 +3319,7 @@
     "priceGold": 1,
     "rank": null,
     "source": {
-      "row": 201,
+      "row": 220,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -3345,7 +3345,7 @@
     "priceGold": 1,
     "rank": null,
     "source": {
-      "row": 202,
+      "row": 221,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -3371,7 +3371,7 @@
     "priceGold": 1,
     "rank": null,
     "source": {
-      "row": 203,
+      "row": 222,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -3501,7 +3501,7 @@
     "priceGold": 1,
     "rank": 0,
     "source": {
-      "row": 249,
+      "row": 268,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -5642,15 +5642,41 @@
     "weight": 2
   },
   {
+    "alchemyAspects": "105 Пэ",
+    "applications": {
+      "alchemy": "Расщепление на аспекты",
+      "crafting": "Недоступно",
+      "implant": "Недоступно",
+      "knowledge": "Травничество, распознавание и места произрастания",
+      "upgrade": "Недоступно"
+    },
+    "description": "Высокий белый цветок с сердцевиной, мерцающей в такт ветру; стебель почти не гнётся под порывами.",
+    "id": "material-белое-сердцецветье",
+    "isSynthetic": false,
+    "linkedGoodId": null,
+    "linkedGoodName": null,
+    "name": "Белое сердцецветье",
+    "priceGold": 20000,
+    "rank": 8,
+    "source": {
+      "row": 179,
+      "sheetName": "Энциклопедия материалов",
+      "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
+    },
+    "subtype": "Ветреные земли",
+    "type": "Растение",
+    "weight": 1
+  },
+  {
     "alchemyAspects": "",
     "applications": {
       "alchemy": "Недоступно",
       "crafting": "Недоступно",
       "implant": "Парик суккуба",
       "knowledge": "Недоступно",
-      "upgrade": "Очаровательная тетева"
+      "upgrade": "Очаровательная тетива"
     },
-    "description": "Волосы, практически парик суккуба. Используется по прамому назначению либо для создания тетевы",
+    "description": "Волосы, практически парик суккуба. Используется по прамому назначению либо для создания тетивы",
     "id": "material-волосы-суккуба",
     "isSynthetic": false,
     "linkedGoodId": null,
@@ -5659,13 +5685,221 @@
     "priceGold": 50,
     "rank": 2,
     "source": {
-      "row": 252,
+      "row": 271,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
     "subtype": "Суккуб / Инкуб",
     "type": "Существо",
     "weight": 0.5
+  },
+  {
+    "alchemyAspects": "105 Вз",
+    "applications": {
+      "alchemy": "Расщепление на аспекты",
+      "crafting": "Недоступно",
+      "implant": "Недоступно",
+      "knowledge": "Травничество, распознавание и места произрастания",
+      "upgrade": "Недоступно"
+    },
+    "description": "Сухая лиана, закрученная в тугие спирали; при надрыве выбрасывает струю горячего воздуха.",
+    "id": "material-вьюн-сирокко",
+    "isSynthetic": false,
+    "linkedGoodId": null,
+    "linkedGoodName": null,
+    "name": "Вьюн сирокко",
+    "priceGold": 20000,
+    "rank": 8,
+    "source": {
+      "row": 178,
+      "sheetName": "Энциклопедия материалов",
+      "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
+    },
+    "subtype": "Жаркие земли",
+    "type": "Растение",
+    "weight": 1
+  },
+  {
+    "alchemyAspects": "85 Вз",
+    "applications": {
+      "alchemy": "Расщепление на аспекты",
+      "crafting": "Недоступно",
+      "implant": "Недоступно",
+      "knowledge": "Травничество, распознавание и места произрастания",
+      "upgrade": "Недоступно"
+    },
+    "description": "Фиолетовая орхидея с тонкими светящимися прожилками; между лепестками иногда проскакивают крошечные разряды.",
+    "id": "material-грозовая-орхидея",
+    "isSynthetic": false,
+    "linkedGoodId": null,
+    "linkedGoodName": null,
+    "name": "Грозовая орхидея",
+    "priceGold": 10000,
+    "rank": 7,
+    "source": {
+      "row": 172,
+      "sheetName": "Энциклопедия материалов",
+      "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
+    },
+    "subtype": "Плодородные земли",
+    "type": "Растение",
+    "weight": 1
+  },
+  {
+    "alchemyAspects": "55 О",
+    "applications": {
+      "alchemy": "Расщепление на аспекты",
+      "crafting": "Недоступно",
+      "implant": "Недоступно",
+      "knowledge": "Травничество, распознавание и места произрастания",
+      "upgrade": "Недоступно"
+    },
+    "description": "Толстый медно-красный лист, сохраняющий жар даже ночью; на изломе выпускает сухой горячий пар.",
+    "id": "material-жаролист",
+    "isSynthetic": false,
+    "linkedGoodId": null,
+    "linkedGoodName": null,
+    "name": "Жаролист",
+    "priceGold": 1000,
+    "rank": 5,
+    "source": {
+      "row": 157,
+      "sheetName": "Энциклопедия материалов",
+      "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
+    },
+    "subtype": "Жаркие земли",
+    "type": "Растение",
+    "weight": 1
+  },
+  {
+    "alchemyAspects": "55 Вд",
+    "applications": {
+      "alchemy": "Расщепление на аспекты",
+      "crafting": "Недоступно",
+      "implant": "Недоступно",
+      "knowledge": "Травничество, распознавание и места произрастания",
+      "upgrade": "Недоступно"
+    },
+    "description": "Крошечные белёсые пластины, собирающиеся на поверхности спокойной воды; каждая блестит, словно влажная жемчужина.",
+    "id": "material-жемчужная-ряска",
+    "isSynthetic": false,
+    "linkedGoodId": null,
+    "linkedGoodName": null,
+    "name": "Жемчужная ряска",
+    "priceGold": 1000,
+    "rank": 5,
+    "source": {
+      "row": 158,
+      "sheetName": "Энциклопедия материалов",
+      "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
+    },
+    "subtype": "Общее, Водные земли",
+    "type": "Растение",
+    "weight": 1
+  },
+  {
+    "alchemyAspects": "70 О",
+    "applications": {
+      "alchemy": "Расщепление на аспекты",
+      "crafting": "Недоступно",
+      "implant": "Недоступно",
+      "knowledge": "Травничество, распознавание и места произрастания",
+      "upgrade": "Недоступно"
+    },
+    "description": "Жёсткий красный цветок, похожий на ветвистый коралл; даже под водой его сердцевина остаётся горячей.",
+    "id": "material-коралловый-жароцвет",
+    "isSynthetic": false,
+    "linkedGoodId": null,
+    "linkedGoodName": null,
+    "name": "Коралловый жароцвет",
+    "priceGold": 5000,
+    "rank": 6,
+    "source": {
+      "row": 163,
+      "sheetName": "Энциклопедия материалов",
+      "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
+    },
+    "subtype": "Водные земли",
+    "type": "Растение",
+    "weight": 1
+  },
+  {
+    "alchemyAspects": "105 Нэ",
+    "applications": {
+      "alchemy": "Расщепление на аспекты",
+      "crafting": "Недоступно",
+      "implant": "Недоступно",
+      "knowledge": "Травничество, распознавание и места произрастания",
+      "upgrade": "Недоступно"
+    },
+    "description": "Чёрный круглый корень с тонким золотым ободком; на ярком свету отбрасывает слишком резкую тень.",
+    "id": "material-корень-черного-солнца",
+    "isSynthetic": false,
+    "linkedGoodId": null,
+    "linkedGoodName": null,
+    "name": "Корень Чёрного Солнца",
+    "priceGold": 20000,
+    "rank": 8,
+    "source": {
+      "row": 180,
+      "sheetName": "Энциклопедия материалов",
+      "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
+    },
+    "subtype": "Каменистые земли",
+    "type": "Растение",
+    "weight": 1
+  },
+  {
+    "alchemyAspects": "85 З",
+    "applications": {
+      "alchemy": "Расщепление на аспекты",
+      "crafting": "Недоступно",
+      "implant": "Недоступно",
+      "knowledge": "Травничество, распознавание и места произрастания",
+      "upgrade": "Недоступно"
+    },
+    "description": "Разветвлённый прозрачный корень, растущий сквозь мёртвую почву; внутри медленно темнеют минеральные включения.",
+    "id": "material-кристаллокорень",
+    "isSynthetic": false,
+    "linkedGoodId": null,
+    "linkedGoodName": null,
+    "name": "Кристаллокорень",
+    "priceGold": 10000,
+    "rank": 7,
+    "source": {
+      "row": 171,
+      "sheetName": "Энциклопедия материалов",
+      "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
+    },
+    "subtype": "Гиблые земли",
+    "type": "Растение",
+    "weight": 1
+  },
+  {
+    "alchemyAspects": "70 Вд",
+    "applications": {
+      "alchemy": "Расщепление на аспекты",
+      "crafting": "Недоступно",
+      "implant": "Недоступно",
+      "knowledge": "Травничество, распознавание и места произрастания",
+      "upgrade": "Недоступно"
+    },
+    "description": "Серые капли, проступающие на обугленных стеблях перед рассветом; остаются холодными даже на раскалённой почве.",
+    "id": "material-пепельная-роса",
+    "isSynthetic": false,
+    "linkedGoodId": null,
+    "linkedGoodName": null,
+    "name": "Пепельная роса",
+    "priceGold": 5000,
+    "rank": 6,
+    "source": {
+      "row": 164,
+      "sheetName": "Энциклопедия материалов",
+      "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
+    },
+    "subtype": "Жаркие земли",
+    "type": "Растение",
+    "weight": 1
   },
   {
     "alchemyAspects": "",
@@ -5685,13 +5919,299 @@
     "priceGold": 500,
     "rank": 3,
     "source": {
-      "row": 250,
+      "row": 269,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
     "subtype": "Виверна",
     "type": "Существо",
     "weight": 10
+  },
+  {
+    "alchemyAspects": "105 Вд",
+    "applications": {
+      "alchemy": "Расщепление на аспекты",
+      "crafting": "Недоступно",
+      "implant": "Недоступно",
+      "knowledge": "Травничество, распознавание и места произрастания",
+      "upgrade": "Недоступно"
+    },
+    "description": "Толстый голубовато-серый корень, ритмично набухающий и сжимающийся, словно от невидимого прилива.",
+    "id": "material-приливный-корень",
+    "isSynthetic": false,
+    "linkedGoodId": null,
+    "linkedGoodName": null,
+    "name": "Приливный корень",
+    "priceGold": 20000,
+    "rank": 8,
+    "source": {
+      "row": 176,
+      "sheetName": "Энциклопедия материалов",
+      "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
+    },
+    "subtype": "Плодородные земли",
+    "type": "Растение",
+    "weight": 1
+  },
+  {
+    "alchemyAspects": "105 З",
+    "applications": {
+      "alchemy": "Расщепление на аспекты",
+      "crafting": "Недоступно",
+      "implant": "Недоступно",
+      "knowledge": "Травничество, распознавание и места произрастания",
+      "upgrade": "Недоступно"
+    },
+    "description": "Тяжёлый известковый корень с множеством пор; цепляется за камень и обрастает минеральными пластинами.",
+    "id": "material-рифовый-корень",
+    "isSynthetic": false,
+    "linkedGoodId": null,
+    "linkedGoodName": null,
+    "name": "Рифовый корень",
+    "priceGold": 20000,
+    "rank": 8,
+    "source": {
+      "row": 177,
+      "sheetName": "Энциклопедия материалов",
+      "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
+    },
+    "subtype": "Водные земли",
+    "type": "Растение",
+    "weight": 1
+  },
+  {
+    "alchemyAspects": "130 Вз",
+    "applications": {
+      "alchemy": "Расщепление на аспекты",
+      "crafting": "Недоступно",
+      "implant": "Недоступно",
+      "knowledge": "Травничество, распознавание и места произрастания",
+      "upgrade": "Недоступно"
+    },
+    "description": "Лёгкое серебристое семя, не падающее на землю и медленно кружащее даже в закрытом сосуде.",
+    "id": "material-семя-вечного-ветра",
+    "isSynthetic": false,
+    "linkedGoodId": null,
+    "linkedGoodName": null,
+    "name": "Семя Вечного Ветра",
+    "priceGold": 40000,
+    "rank": 9,
+    "source": {
+      "row": 184,
+      "sheetName": "Энциклопедия материалов",
+      "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
+    },
+    "subtype": "Ветреные земли",
+    "type": "Растение",
+    "weight": 1
+  },
+  {
+    "alchemyAspects": "130 Вд",
+    "applications": {
+      "alchemy": "Расщепление на аспекты",
+      "crafting": "Недоступно",
+      "implant": "Недоступно",
+      "knowledge": "Травничество, распознавание и места произрастания",
+      "upgrade": "Недоступно"
+    },
+    "description": "Гладкое синее семя, внутри которого перекатывается капля воды, не подчиняющаяся движению оболочки.",
+    "id": "material-семя-мирового-прилива",
+    "isSynthetic": false,
+    "linkedGoodId": null,
+    "linkedGoodName": null,
+    "name": "Семя Мирового Прилива",
+    "priceGold": 40000,
+    "rank": 9,
+    "source": {
+      "row": 182,
+      "sheetName": "Энциклопедия материалов",
+      "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
+    },
+    "subtype": "Водные земли",
+    "type": "Растение",
+    "weight": 1
+  },
+  {
+    "alchemyAspects": "130 О",
+    "applications": {
+      "alchemy": "Расщепление на аспекты",
+      "crafting": "Недоступно",
+      "implant": "Недоступно",
+      "knowledge": "Травничество, распознавание и места произрастания",
+      "upgrade": "Недоступно"
+    },
+    "description": "Полупрозрачное алое семя с мерцающей искрой внутри; его оболочка постоянно остаётся тёплой.",
+    "id": "material-семя-первого-пламени",
+    "isSynthetic": false,
+    "linkedGoodId": null,
+    "linkedGoodName": null,
+    "name": "Семя Первого Пламени",
+    "priceGold": 40000,
+    "rank": 9,
+    "source": {
+      "row": 181,
+      "sheetName": "Энциклопедия материалов",
+      "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
+    },
+    "subtype": "Жаркие земли",
+    "type": "Растение",
+    "weight": 1
+  },
+  {
+    "alchemyAspects": "130 Пэ",
+    "applications": {
+      "alchemy": "Расщепление на аспекты",
+      "crafting": "Недоступно",
+      "implant": "Недоступно",
+      "knowledge": "Травничество, распознавание и места произрастания",
+      "upgrade": "Недоступно"
+    },
+    "description": "Золотисто-зелёное семя, покрытое тонкими жилками; рядом с влагой быстро пускает росток и вновь засыпает.",
+    "id": "material-семя-первожизни",
+    "isSynthetic": false,
+    "linkedGoodId": null,
+    "linkedGoodName": null,
+    "name": "Семя Первожизни",
+    "priceGold": 40000,
+    "rank": 9,
+    "source": {
+      "row": 185,
+      "sheetName": "Энциклопедия материалов",
+      "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
+    },
+    "subtype": "Плодородные земли",
+    "type": "Растение",
+    "weight": 1
+  },
+  {
+    "alchemyAspects": "130 З",
+    "applications": {
+      "alchemy": "Расщепление на аспекты",
+      "crafting": "Недоступно",
+      "implant": "Недоступно",
+      "knowledge": "Травничество, распознавание и места произрастания",
+      "upgrade": "Недоступно"
+    },
+    "description": "Серое многогранное семя, неотличимое от гальки, пока по его поверхности не проступят тонкие зелёные линии.",
+    "id": "material-семя-первокамня",
+    "isSynthetic": false,
+    "linkedGoodId": null,
+    "linkedGoodName": null,
+    "name": "Семя Первокамня",
+    "priceGold": 40000,
+    "rank": 9,
+    "source": {
+      "row": 183,
+      "sheetName": "Энциклопедия материалов",
+      "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
+    },
+    "subtype": "Каменистые земли",
+    "type": "Растение",
+    "weight": 1
+  },
+  {
+    "alchemyAspects": "130 Нэ",
+    "applications": {
+      "alchemy": "Расщепление на аспекты",
+      "crafting": "Недоступно",
+      "implant": "Недоступно",
+      "knowledge": "Травничество, распознавание и места произрастания",
+      "upgrade": "Недоступно"
+    },
+    "description": "Матово-чёрное семя, поглощающее блики; рядом с ним тени кажутся глубже и почти неподвижными.",
+    "id": "material-семя-последней-тени",
+    "isSynthetic": false,
+    "linkedGoodId": null,
+    "linkedGoodName": null,
+    "name": "Семя Последней Тени",
+    "priceGold": 40000,
+    "rank": 9,
+    "source": {
+      "row": 186,
+      "sheetName": "Энциклопедия материалов",
+      "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
+    },
+    "subtype": "Общее, Гиблые земли",
+    "type": "Растение",
+    "weight": 1
+  },
+  {
+    "alchemyAspects": "85 Пэ",
+    "applications": {
+      "alchemy": "Расщепление на аспекты",
+      "crafting": "Недоступно",
+      "implant": "Недоступно",
+      "knowledge": "Травничество, распознавание и места произрастания",
+      "upgrade": "Недоступно"
+    },
+    "description": "Кольцо золотистых лепестков окружает плотную светящуюся сердцевину; растение раскрывается только под прямым светом.",
+    "id": "material-солнечный-венец",
+    "isSynthetic": false,
+    "linkedGoodId": null,
+    "linkedGoodName": null,
+    "name": "Солнечный венец",
+    "priceGold": 10000,
+    "rank": 7,
+    "source": {
+      "row": 173,
+      "sheetName": "Энциклопедия материалов",
+      "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
+    },
+    "subtype": "Общее, Водные земли",
+    "type": "Растение",
+    "weight": 1
+  },
+  {
+    "alchemyAspects": "85 Нэ",
+    "applications": {
+      "alchemy": "Расщепление на аспекты",
+      "crafting": "Недоступно",
+      "implant": "Недоступно",
+      "knowledge": "Травничество, распознавание и места произрастания",
+      "upgrade": "Недоступно"
+    },
+    "description": "Чёрный цветок с багровыми прожилками; его лепестки медленно тлеют, но не превращаются в пепел.",
+    "id": "material-углецвет",
+    "isSynthetic": false,
+    "linkedGoodId": null,
+    "linkedGoodName": null,
+    "name": "Углецвет",
+    "priceGold": 10000,
+    "rank": 7,
+    "source": {
+      "row": 174,
+      "sheetName": "Энциклопедия материалов",
+      "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
+    },
+    "subtype": "Жаркие земли",
+    "type": "Растение",
+    "weight": 1
+  },
+  {
+    "alchemyAspects": "",
+    "applications": {
+      "alchemy": "Недоступно",
+      "crafting": "Дьвольские боеприпасы",
+      "implant": "Недоступно",
+      "knowledge": "Недоступно",
+      "upgrade": "Шипастая отделка доспеха"
+    },
+    "description": "Шипастые дьяволы славяться своими шипами и они даже после того как были извлечены используются для доспехов и в качестве боеприпасов",
+    "id": "material-шипастые-шипы",
+    "isSynthetic": false,
+    "linkedGoodId": null,
+    "linkedGoodName": null,
+    "name": "Шипастые шипы",
+    "priceGold": 250,
+    "rank": 3,
+    "source": {
+      "row": 272,
+      "sheetName": "Энциклопедия материалов",
+      "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
+    },
+    "subtype": "Шипастый дьявол",
+    "type": "Существо",
+    "weight": 5
   },
   {
     "alchemyAspects": "",
@@ -5711,7 +6231,7 @@
     "priceGold": 25,
     "rank": 1,
     "source": {
-      "row": 251,
+      "row": 270,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -5737,7 +6257,7 @@
     "priceGold": 0.5,
     "rank": 2,
     "source": {
-      "row": 206,
+      "row": 225,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -5763,7 +6283,7 @@
     "priceGold": 0.02,
     "rank": 1,
     "source": {
-      "row": 241,
+      "row": 260,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -5789,7 +6309,7 @@
     "priceGold": 2,
     "rank": 1,
     "source": {
-      "row": 242,
+      "row": 261,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -5815,7 +6335,7 @@
     "priceGold": 0.2,
     "rank": 1,
     "source": {
-      "row": 248,
+      "row": 267,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -5841,7 +6361,7 @@
     "priceGold": 0.2,
     "rank": 1,
     "source": {
-      "row": 207,
+      "row": 226,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -5867,7 +6387,7 @@
     "priceGold": 0.02,
     "rank": 1,
     "source": {
-      "row": 244,
+      "row": 263,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -5893,7 +6413,7 @@
     "priceGold": 0.1,
     "rank": 1,
     "source": {
-      "row": 227,
+      "row": 246,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -5919,7 +6439,7 @@
     "priceGold": 500,
     "rank": 4,
     "source": {
-      "row": 211,
+      "row": 230,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -5945,7 +6465,7 @@
     "priceGold": 40,
     "rank": 3,
     "source": {
-      "row": 235,
+      "row": 254,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -5971,7 +6491,7 @@
     "priceGold": 0.01,
     "rank": 0,
     "source": {
-      "row": 240,
+      "row": 259,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -5997,7 +6517,7 @@
     "priceGold": 0.5,
     "rank": 1,
     "source": {
-      "row": 243,
+      "row": 262,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -6023,7 +6543,7 @@
     "priceGold": 0.1,
     "rank": 1,
     "source": {
-      "row": 246,
+      "row": 265,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -6049,7 +6569,7 @@
     "priceGold": 5,
     "rank": 3,
     "source": {
-      "row": 234,
+      "row": 253,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -6075,7 +6595,7 @@
     "priceGold": 2,
     "rank": 3,
     "source": {
-      "row": 233,
+      "row": 252,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -6101,7 +6621,7 @@
     "priceGold": 5,
     "rank": 3,
     "source": {
-      "row": 209,
+      "row": 228,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -6127,7 +6647,7 @@
     "priceGold": 0.03,
     "rank": 1,
     "source": {
-      "row": 222,
+      "row": 241,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -6153,7 +6673,7 @@
     "priceGold": 100,
     "rank": 1,
     "source": {
-      "row": 221,
+      "row": 240,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -6179,7 +6699,7 @@
     "priceGold": 0.01,
     "rank": 0,
     "source": {
-      "row": 213,
+      "row": 232,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -6205,7 +6725,7 @@
     "priceGold": 0.02,
     "rank": 1,
     "source": {
-      "row": 230,
+      "row": 249,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -6231,7 +6751,7 @@
     "priceGold": 0.05,
     "rank": 1,
     "source": {
-      "row": 247,
+      "row": 266,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -6257,7 +6777,7 @@
     "priceGold": 0.2,
     "rank": 1,
     "source": {
-      "row": 237,
+      "row": 256,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -6283,7 +6803,7 @@
     "priceGold": 0.2,
     "rank": 1,
     "source": {
-      "row": 205,
+      "row": 224,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -6309,7 +6829,7 @@
     "priceGold": 0.1,
     "rank": 1,
     "source": {
-      "row": 225,
+      "row": 244,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -6335,7 +6855,7 @@
     "priceGold": 0.05,
     "rank": 1,
     "source": {
-      "row": 208,
+      "row": 227,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -6361,7 +6881,7 @@
     "priceGold": 0.05,
     "rank": 1,
     "source": {
-      "row": 220,
+      "row": 239,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -6387,7 +6907,7 @@
     "priceGold": 0.02,
     "rank": 0,
     "source": {
-      "row": 238,
+      "row": 257,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -6413,7 +6933,7 @@
     "priceGold": 0.05,
     "rank": 1,
     "source": {
-      "row": 228,
+      "row": 247,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -6439,7 +6959,7 @@
     "priceGold": 0.1,
     "rank": 1,
     "source": {
-      "row": 204,
+      "row": 223,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -6465,7 +6985,7 @@
     "priceGold": 100,
     "rank": 4,
     "source": {
-      "row": 239,
+      "row": 258,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },
@@ -6491,7 +7011,7 @@
     "priceGold": 50,
     "rank": 3,
     "source": {
-      "row": 210,
+      "row": 229,
       "sheetName": "Энциклопедия материалов",
       "spreadsheetId": "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
     },

@@ -82,7 +82,7 @@ function overrides() {
     schemaVersion: 1,
     identities: {
       gear: {
-        "оружие|дротик": "dart",
+        "оружие|дротик": { id: "dart", aliases: ["оружие|дротик новый"] },
         "снаряжение|сундук": "chest"
       },
       materials: {
@@ -121,6 +121,7 @@ test("reference index resolves only exact canonical source keys and source coord
     rowNumber: 17
   });
   assert.equal(index.gearByKey.has("Дротик"), false);
+  assert.equal(index.gearByKey.get("оружие|дротик новый").sourceRef, "Оружие V0.36!A17");
   assert.equal(
     index.gearByKey.get("обвес|коллиматорный прицел").sourceRef,
     "Улучшения и обвесы V0.2!B10"
@@ -134,6 +135,22 @@ test("reference index resolves only exact canonical source keys and source coord
     "оружие|дротик"
   );
   assert.equal(index.resolveStableGearId(index.gearBySourceRef.get("Оружие V0.36!A17")), "dart");
+});
+
+test("reference index prefers an identical canonical row over its stale manual duplicate", () => {
+  const values = structuredClone(referenceSnapshot.values);
+  values.splice(1, 0, [
+    ...Array(20).fill(""), "оружие|дротик", "Немагическое снаряжение V0.1!A112", "Оружие",
+    "Дротик", "5 мм", "0", "1/4 фнт", "Каталог (ручное)", "112"
+  ]);
+
+  const index = buildEquipmentReferenceIndex({
+    snapshots: { equipmentReferences: { ...referenceSnapshot, values } },
+    overrides: overrides()
+  });
+
+  assert.equal(index.gearByKey.get("оружие|дротик").sourceRef, "Оружие V0.36!A17");
+  assert.equal(index.gearBySourceRef.has("Общий компендиум снаряжения V0.1!A112"), false);
 });
 
 test("base gear adapter maps formatted strings to the current runtime contract", () => {
@@ -214,6 +231,26 @@ test("base gear keeps a non-catalog source name without inventing a material id"
 
   assert.equal(result.items[0].predominantMaterialId, null);
   assert.equal(result.items[0].predominantMaterialName, "Тролль");
+});
+
+test("base gear accepts a new source row only when an exact reviewed identity owns it", () => {
+  const reviewedOverrides = validateEquipmentOverrides({
+    schemaVersion: 1,
+    identities: { gear: { "снаряжение|мыло": "mylo" } },
+    enrichment: { gear: {} }
+  });
+  const result = adaptBaseGear({
+    snapshot: {
+      ...baseSnapshot,
+      rows: [{ rowNumber: 58, cells: { Название: "Мыло", "Тип снаряжения": "Снаряжение", Цена: "", Ранг: "", Вес: "" } }]
+    },
+    referenceIndex: { gearByKey: new Map(), resolveStableGearId: () => "mylo" },
+    overrides: reviewedOverrides,
+    diagnostics: []
+  });
+
+  assert.equal(result.items[0].id, "mylo");
+  assert.equal(result.items[0].sourceRef, "Общий компендиум снаряжения V0.1!A58");
 });
 
 test("base adapter uses type-specific weight rules and routes the live transport category", () => {

@@ -63,11 +63,18 @@ function ammunitionReferenceIndex() {
   const entries = [
     ["Боеприпасы!B4", "mushketnyy-patron-20"],
     ["Боеприпасы!B20", "standartnyy-10"],
-    ["Боеприпасы!H3", "broneboynyy-10"]
+    ["Боеприпасы!H3", "broneboynyy-10"],
+    ["Особые боеприпасы!B4", "obsolete-broneboynye-puli-10"],
+    ["Боеприпасы!H4", "obsolete-broneboynye-puli-10"],
+    ["Боеприпасы!H5", "obolochennye-puli-10"]
   ];
   const gearBySourceRef = new Map(entries.map(([sourceRef]) => [sourceRef, { sourceRef, sourceKey: sourceRef }]));
   const ids = new Map(entries);
-  return { gearBySourceRef, resolveStableGearId: (reference) => ids.get(reference.sourceRef) };
+  return {
+    gearBySourceRef,
+    gearByKey: new Map([["боеприпас|оболоченная (10)", gearBySourceRef.get("Боеприпасы!H5")]]),
+    resolveStableGearId: (reference) => ids.get(reference.sourceRef)
+  };
 }
 
 const ammunitionSnapshots = {
@@ -121,6 +128,93 @@ test("ammunition adapter types quantity, damage modifiers, and declared compatib
     replaces: ["musket", "rifle"], propertiesText: "Игнорируют 2 БУ и БС у доспеха цели",
     craftMisfire: 3, handCannonDamageDieStep: 0
   } });
+});
+
+test("special ammunition resolves its exact canonical name before stale legacy coordinates", () => {
+  const referenceIndex = ammunitionReferenceIndex();
+  const snapshot = {
+    ammunition: { ...ammunitionSnapshots.ammunition, values: [] },
+    specialAmmunition: {
+      ...ammunitionSnapshots.specialAmmunition,
+      rows: [{
+        rowNumber: 5,
+        sourceIdentity: "Оболоченная (10)",
+        cells: {
+          Боеприпас: "Оболоченная (10)", Цена: "500 ЗМ", Ранг: "", Заменяет: "Мушкетный и Винтовочные",
+          Вес: "1 фнт", Свойства: "Универсальная оболоченная пуля", "Осечка при крафте": "2"
+        }
+      }]
+    }
+  };
+
+  const fragments = adaptAmmunitionProfiles({ snapshot, referenceIndex, diagnostics: [] });
+  assert.equal(fragments.get("obolochennye-puli-10").ammunition.kind, "special");
+  assert.equal(fragments.has("obsolete-broneboynye-puli-10"), false);
+});
+
+test("ammunition adapter reads the unified V0.1 table from canonical A-column references", () => {
+  const entries = [
+    ["Боеприпасы V0.1!A3", "mushketnyy-patron-20"],
+    ["Боеприпасы V0.1!A15", "raketnyy-vystrel-standartnyy-10"],
+    ["Боеприпасы V0.1!A28", "dyavolskie-boepripasy-20"],
+    ["Боеприпасы!H3", "broneboynyy-10"]
+  ];
+  const gearBySourceRef = new Map(entries.map(([sourceRef]) => [sourceRef, { sourceRef }]));
+  const ids = new Map(entries);
+  const fragments = adaptAmmunitionProfiles({
+    snapshot: {
+      ammunition: {
+        sheetKey: "ammunition",
+        sheetTitle: "Боеприпасы V0.1",
+        range: "'Боеприпасы V0.1'!A1:K1000",
+        rows: [
+          { rowNumber: 3, cells: { Название: "Мушкетный патрон (20)", "Урон 1": "—", "Урон 2": "—", "Тип урона": "—", "Тип урона 2": "—", "Подходящее оружие": "Мушкеты, кремнивые пистолеты, многоствольные кремнивые пистолеты, аркебузы, колесцовые оружия", Эффект: "" } },
+          { rowNumber: 15, cells: { Название: "Ракетный выстрел стандартный (10)", "Урон 1": "2к6", "Урон 2": "—", "Тип урона": "колющий", "Тип урона 2": "—", "Подходящее оружие": "Ручной гранатомёт, ручница", Эффект: "Разброс (1к6)." } },
+          { rowNumber: 28, cells: { Название: "Дьявольские боеприпасы (20)", "Урон 1": "—", "Урон 2": "—", "Тип урона": "—", "Тип урона 2": "—", "Подходящее оружие": "Оружие, использующее физические боеприпасы", Эффект: "Дополнительный урон небожителям." } }
+        ]
+      },
+      specialAmmunition: ammunitionSnapshots.specialAmmunition
+    },
+    referenceIndex: { gearBySourceRef, resolveStableGearId: (reference) => ids.get(reference.sourceRef) },
+    diagnostics: []
+  });
+
+  assert.deepEqual(fragments.get("mushketnyy-patron-20").ammunition.compatibility, ["musket", "flintlock-pistol", "multibarrel-flintlock-pistol", "arquebus", "wheellock"]);
+  assert.deepEqual(fragments.get("raketnyy-vystrel-standartnyy-10").ammunition.damageModifiers, [{ formula: "2d6", type: "piercing" }]);
+  assert.equal(fragments.get("raketnyy-vystrel-standartnyy-10").ammunition.handCannonDamageDieStep, -1);
+  assert.deepEqual(fragments.get("dyavolskie-boepripasy-20").ammunition.compatibility, ["all"]);
+  assert.equal(fragments.get("broneboynyy-10").ammunition.kind, "special");
+});
+
+test("unified ammunition preserves an unsupported live damage expression as source mechanics", () => {
+  const snapshot = {
+    ammunition: {
+      sheetKey: "ammunition",
+      sheetTitle: "Боеприпасы V0.1",
+      range: "'Боеприпасы V0.1'!A1:K1000",
+      rows: [{
+        rowNumber: 20,
+        cells: {
+          "Название": "Ракетный выстрел поджигающий (10)",
+          "Урон 1": "2к6",
+          "Урон 2": "6(-2)",
+          "Тип урона": "огнём",
+          "Тип урона 2": "Затухающий урон огнём",
+          "Подходящее оружие": "Ручной гранатомёт, ручница",
+          "Эффект": "Разброс."
+        }
+      }]
+    },
+    specialAmmunition: { rows: [] }
+  };
+  const reference = { id: "legacy-id" };
+  const referenceIndex = {
+    gearBySourceRef: new Map([["Боеприпасы V0.1!A20", reference]]),
+    resolveStableGearId: () => "legacy-id"
+  };
+
+  const result = adaptAmmunitionProfiles({ snapshot, referenceIndex });
+  assert.equal(result.get("legacy-id").ammunition.propertiesText, "Разброс. 6(-2) Затухающий урон огнём");
 });
 
 test("ammunition adapter rejects unknown compatibility and malformed damage modifiers", () => {
