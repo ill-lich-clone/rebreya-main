@@ -87,7 +87,7 @@ function splitTableRow(value) {
   let escaped = false;
   for (const character of normalized) {
     if (escaped) {
-      cell += character;
+      cell += character === "|" ? character : `\\${character}`;
       escaped = false;
     }
     else if (character === "\\") {
@@ -100,6 +100,9 @@ function splitTableRow(value) {
     else {
       cell += character;
     }
+  }
+  if (escaped) {
+    cell += "\\";
   }
   cells.push(cell.trim());
   return cells.length ? cells : null;

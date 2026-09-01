@@ -96,6 +96,14 @@ test("escaped pipes remain visible inside markdown table cells", () => {
   assert.doesNotThrow(() => verifyDescriptionTextPreserved(markdown, html));
 });
 
+test("escaped markdown link labels remain parseable inside table cells", () => {
+  const markdown = "| Уровень | Заклинание |\n| --- | --- |\n| 1 | [*щит \\[shield\\]*](https://example.com/shield) |";
+  const html = renderDescriptionMarkdown(markdown);
+
+  assert.match(html, /<td><a href="https:\/\/example\.com\/shield"><em>щит \[shield\]<\/em><\/a><\/td>/u);
+  assert.doesNotThrow(() => verifyDescriptionTextPreserved(markdown, html));
+});
+
 test("single source newlines remain explicit line breaks", () => {
   const markdown = "Первое свойство.\nВторое свойство.\nТретье свойство.";
   const html = renderDescriptionMarkdown(markdown, { preserveSingleNewlines: true });
