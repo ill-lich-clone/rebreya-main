@@ -7067,7 +7067,98 @@
     }
   },
   "enrichment": {
-    "gear": {},
+    "gear": {
+      "bochka": {
+        "containerCapacity": {
+          "volume": 4,
+          "volumeUnits": "ft3"
+        },
+        "foundrySubtype": "barrel",
+        "foundryType": "container"
+      },
+      "burdyuk": {
+        "foundrySubtype": "flask",
+        "foundryType": "container"
+      },
+      "butylka-steklyannaya": {
+        "foundrySubtype": "bottle",
+        "foundryType": "container"
+      },
+      "flakon": {
+        "foundrySubtype": "vial",
+        "foundryType": "container"
+      },
+      "flyaga-ili-bol-shaya-kruzhka": {
+        "foundrySubtype": "tankard",
+        "foundryType": "container"
+      },
+      "gorshok-zheleznyy": {
+        "foundrySubtype": "pot",
+        "foundryType": "container"
+      },
+      "korzina": {
+        "containerCapacity": {
+          "volume": 2,
+          "volumeUnits": "ft3",
+          "weight": 40,
+          "units": "lb"
+        },
+        "foundrySubtype": "basket",
+        "foundryType": "container"
+      },
+      "koshel": {
+        "containerCapacity": {
+          "volume": 0.2,
+          "volumeUnits": "ft3",
+          "weight": 6,
+          "units": "lb"
+        },
+        "foundrySubtype": "pouch",
+        "foundryType": "container"
+      },
+      "kuvshin-ili-grafin": {
+        "foundrySubtype": "jug",
+        "foundryType": "container"
+      },
+      "meshok": {
+        "containerCapacity": {
+          "volume": 1,
+          "volumeUnits": "ft3",
+          "weight": 30,
+          "units": "lb"
+        },
+        "foundrySubtype": "sack",
+        "foundryType": "container"
+      },
+      "ryukzak": {
+        "containerCapacity": {
+          "volume": 1,
+          "volumeUnits": "ft3",
+          "weight": 30,
+          "units": "lb"
+        },
+        "foundrySubtype": "backpack",
+        "foundryType": "container"
+      },
+      "sunduk": {
+        "containerCapacity": {
+          "volume": 12,
+          "volumeUnits": "ft3",
+          "weight": 300,
+          "units": "lb"
+        },
+        "foundrySubtype": "chest",
+        "foundryType": "container"
+      },
+      "vedro": {
+        "containerCapacity": {
+          "volume": 0.5,
+          "volumeUnits": "ft3"
+        },
+        "foundrySubtype": "bucket",
+        "foundryType": "container"
+      }
+    },
     "implants": {
       "implant-adamantovaya-obolochka": {
         "foundryFolder": "Импланты/Механические/Без типа",

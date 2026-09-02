@@ -1095,6 +1095,36 @@ test("creates container compendium data with dnd5e capacity and Rebreya contents
   ]);
 });
 
+test("catalog equipment containers use native dnd5e types and explicit solid capacity", () => {
+  const gear = JSON.parse(readFileSync(join(TESTS_DIR, "..", "data", "gear.json"), "utf8").replace(/^\uFEFF/u, ""));
+  const byId = new Map(gear.map((item) => [item.id, item]));
+  const expected = [
+    { id: "bochka", subtype: "barrel", volume: 4, weight: null },
+    { id: "burdyuk", subtype: "flask", volume: null, weight: null },
+    { id: "butylka-steklyannaya", subtype: "bottle", volume: null, weight: null },
+    { id: "vedro", subtype: "bucket", volume: 0.5, weight: null },
+    { id: "gorshok-zheleznyy", subtype: "pot", volume: null, weight: null },
+    { id: "korzina", subtype: "basket", volume: 2, weight: 40 },
+    { id: "koshel", subtype: "pouch", volume: 0.2, weight: 6 },
+    { id: "kuvshin-ili-grafin", subtype: "jug", volume: null, weight: null },
+    { id: "meshok", subtype: "sack", volume: 1, weight: 30 },
+    { id: "ryukzak", subtype: "backpack", volume: 1, weight: 30 },
+    { id: "sunduk", subtype: "chest", volume: 12, weight: 300 },
+    { id: "flakon", subtype: "vial", volume: null, weight: null },
+    { id: "flyaga-ili-bol-shaya-kruzhka", subtype: "tankard", volume: null, weight: null }
+  ];
+
+  for (const container of expected) {
+    const source = byId.get(container.id);
+    assert.ok(source, `missing catalog item ${container.id}`);
+    const created = createDnd5eItemData(source, new Map());
+    assert.equal(created.type, "container", container.id);
+    assert.equal(created.system.type.value, container.subtype, container.id);
+    assert.equal(created.system.capacity.volume.value, container.volume, container.id);
+    assert.equal(created.system.capacity.weight.value, container.weight, container.id);
+  }
+});
+
 test("creates contained compendium documents linked to their parent container", async () => {
   const module = await import("../scripts/data/gear-compendium.js");
 
