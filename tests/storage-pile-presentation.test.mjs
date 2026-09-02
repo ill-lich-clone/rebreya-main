@@ -26,29 +26,29 @@ test("ground pile presentation uses the item itself for one visible row", () => 
 test("single managed gear and material rows use their canonical top-down textures", () => {
   assert.deepEqual(deriveGroundPilePresentation([{
     sourceType: "gear",
-    sourceId: "rapira",
-    name: "Рапира",
-    img: "icons/rapier-item-icon.webp",
-    typeLabel: "Оружие",
+    sourceId: "revol-ver",
+    name: "Револьвер",
+    img: "icons/revolver-item-icon.webp",
+    typeLabel: "Огнестрельное оружие",
     quantity: 1,
     itemData: {
-      img: "icons/rapier-item-icon.webp",
+      img: "icons/revolver-item-icon.webp",
       flags: {
         [MODULE_ID]: {
           sourceType: "gear",
-          sourceId: "rapira",
-          gearId: "rapira"
+          sourceId: "revol-ver",
+          gearId: "revol-ver"
         }
       }
     }
   }]), {
-    name: "Рапира",
-    img: `modules/${MODULE_ID}/assets/top-down/items/gear/rapira.webp`,
+    name: "Револьвер",
+    img: `modules/${MODULE_ID}/assets/top-down/items/gear/revol-ver.webp`,
     categoryKey: "single",
     topDownItem: true,
     tokenSize: 0.5,
-    textureScale: 1.5,
-    rotationSeed: "gear:rapira"
+    textureScale: 1,
+    rotationSeed: "gear:revol-ver"
   });
 
   assert.equal(deriveGroundPilePresentation([{
@@ -70,7 +70,7 @@ test("single managed gear and material rows use their canonical top-down texture
   }]).img, `modules/${MODULE_ID}/assets/top-down/items/material/material-10.webp`);
 });
 
-test("single managed armor uses a full grid cell without long-item scaling", () => {
+test("single managed armor uses a full grid cell with its curated texture scale", () => {
   assert.deepEqual(deriveGroundPilePresentation([{
     rowId: "source-laty",
     sourceType: "gear",
@@ -94,7 +94,7 @@ test("single managed armor uses a full grid cell without long-item scaling", () 
     categoryKey: "single",
     topDownItem: true,
     tokenSize: 1,
-    textureScale: 1,
+    textureScale: 1.5,
     rotationSeed: "source-laty"
   });
 });

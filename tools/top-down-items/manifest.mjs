@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { canonicalCatalogId } from "../../scripts/shared/canonical-catalog-id.js";
 
-export const TOP_DOWN_MANIFEST_SCHEMA_VERSION = 1;
+export const TOP_DOWN_MANIFEST_SCHEMA_VERSION = 2;
 export const TOP_DOWN_ATLAS_CAPACITY = 25;
 
 const VALID_SOURCE_TYPES = new Set(["gear", "material"]);
@@ -66,6 +66,7 @@ function baseEntry(sourceType, source, sourceId) {
     promptInput: input,
     promptHash: promptHash(input),
     scaleClass: scaleClass(sourceType, source),
+    tokenScale: 1,
     atlasId: "",
     cellIndex: -1,
     assetPath: `assets/top-down/items/${sourceType}/${sourceId}.webp`,
@@ -137,7 +138,8 @@ export function synchronizeTopDownManifest({ manifest, gear = [], materials = []
       visualQa: promptChanged ? "pending" : clean(previous.visualQa) || current.visualQa,
       generationHash: promptChanged ? "" : clean(previous.generationHash),
       assetHash: promptChanged ? "" : clean(previous.assetHash),
-      matteMethod: promptChanged ? "" : clean(previous.matteMethod)
+      matteMethod: promptChanged ? "" : clean(previous.matteMethod),
+      tokenScale: [1, 1.5].includes(previous.tokenScale) ? previous.tokenScale : current.tokenScale
     };
   });
   return {
@@ -182,6 +184,7 @@ export function validateTopDownManifest({ manifest, gear = [], materials = [] } 
     if (!VALID_STATUSES.has(clean(entry?.status))) diagnostics.push(`invalid status: ${key}`);
     if (!VALID_QA_STATUSES.has(clean(entry?.technicalQa))) diagnostics.push(`invalid technicalQa: ${key}`);
     if (!VALID_QA_STATUSES.has(clean(entry?.visualQa))) diagnostics.push(`invalid visualQa: ${key}`);
+    if (![1, 1.5].includes(entry?.tokenScale)) diagnostics.push(`invalid tokenScale: ${key}`);
   }
   for (const key of canonicalKeys) {
     if (!seenKeys.has(key)) diagnostics.push(`missing manifest key: ${key}`);

@@ -152,6 +152,20 @@ const longsword = managedCanonicalRow({
   typeLabel: "Оружие"
 });
 
+const halberd = managedCanonicalRow({
+  sourceType: "gear",
+  sourceId: "alebarda",
+  name: "Алебарда",
+  typeLabel: "Оружие"
+});
+
+const revolver = managedCanonicalRow({
+  sourceType: "gear",
+  sourceId: "revol-ver",
+  name: "Револьвер",
+  typeLabel: "Огнестрельное оружие"
+});
+
 const monsterHoof = managedCanonicalRow({
   sourceType: "material",
   sourceId: "material-10",
@@ -250,12 +264,12 @@ test("managed gear and material drops create tokens with canonical top-down text
   }
 });
 
-test("managed long items use 1.5 texture scale and a stable per-spawn angle", async () => {
+test("curated long items use 1.5 texture scale and a stable per-spawn angle", async () => {
   const first = createHarness({ idFactory: () => "stable-long-row" });
   const second = createHarness({ idFactory: () => "stable-long-row" });
   const different = createHarness({ idFactory: () => "different-long-row" });
   const request = {
-    row: rapier,
+    row: halberd,
     quantity: 1,
     sceneId: "scene",
     x: 300,
@@ -280,6 +294,23 @@ test("managed long items use 1.5 texture scale and a stable per-spawn angle", as
   assert.equal(first.tokens[0].rotation, rotationBeforeRetry);
 });
 
+test("compact firearms keep standard texture scale", async () => {
+  const { service, tokens } = createHarness();
+  await service.transferToScene({
+    row: revolver,
+    quantity: 1,
+    sceneId: "scene",
+    x: 300,
+    y: 400,
+    mutationId: "revolver-create"
+  });
+
+  assert.equal(tokens[0].width, 0.5);
+  assert.equal(tokens[0].height, 0.5);
+  assert.equal(tokens[0].texture.scaleX, 1);
+  assert.equal(tokens[0].texture.scaleY, 1);
+});
+
 test("managed armor occupies one full grid cell", async () => {
   const { service, tokens } = createHarness();
   await service.transferToScene({
@@ -295,8 +326,8 @@ test("managed armor occupies one full grid cell", async () => {
   assert.equal(tokens[0].height, 1);
   assert.equal(tokens[0].x, 250);
   assert.equal(tokens[0].y, 350);
-  assert.equal(tokens[0].texture.scaleX, 1);
-  assert.equal(tokens[0].texture.scaleY, 1);
+  assert.equal(tokens[0].texture.scaleX, 1.5);
+  assert.equal(tokens[0].texture.scaleY, 1.5);
 });
 
 test("managed merge uses the existing pile texture then restores the survivor top-down texture", async () => {

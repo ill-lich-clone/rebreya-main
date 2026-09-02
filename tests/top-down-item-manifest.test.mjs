@@ -19,7 +19,7 @@ test("canonical manifest entries cover every gear and material ID once", () => {
   const entries = buildCanonicalTopDownEntries({ gear, materials });
   const keys = entries.map(topDownEntryKey);
 
-  assert.equal(TOP_DOWN_MANIFEST_SCHEMA_VERSION, 1);
+  assert.equal(TOP_DOWN_MANIFEST_SCHEMA_VERSION, 2);
   assert.equal(TOP_DOWN_ATLAS_CAPACITY, 25);
   assert.equal(entries.length, 1015);
   assert.equal(new Set(keys).size, 1015);
@@ -27,6 +27,7 @@ test("canonical manifest entries cover every gear and material ID once", () => {
   assert.equal(entries.filter((entry) => entry.sourceType === "material").length, 270);
   assert.equal(new Set(entries.map((entry) => entry.atlasId)).size, 41);
   assert.ok(entries.every((entry) => entry.cellIndex >= 0 && entry.cellIndex < 25));
+  assert.ok(entries.every((entry) => entry.tokenScale === 1));
 
   const rapier = entries.find((entry) => topDownEntryKey(entry) === "gear:rapira");
   assert.deepEqual({
@@ -85,7 +86,8 @@ test("manifest synchronization preserves accepted work and stable placement", ()
     visualQa: "passed",
     generationHash: "generation-7",
     assetHash: "asset-7",
-    matteMethod: "chroma"
+    matteMethod: "chroma",
+    tokenScale: 1.5
   });
 
   const synchronized = synchronizeTopDownManifest({
@@ -105,7 +107,8 @@ test("manifest synchronization preserves accepted work and stable placement", ()
     visualQa: preserved.visualQa,
     generationHash: preserved.generationHash,
     assetHash: preserved.assetHash,
-    matteMethod: preserved.matteMethod
+    matteMethod: preserved.matteMethod,
+    tokenScale: preserved.tokenScale
   }, {
     atlasId: accepted.entries[7].atlasId,
     cellIndex: accepted.entries[7].cellIndex,
@@ -114,7 +117,8 @@ test("manifest synchronization preserves accepted work and stable placement", ()
     visualQa: "passed",
     generationHash: "generation-7",
     assetHash: "asset-7",
-    matteMethod: "chroma"
+    matteMethod: "chroma",
+    tokenScale: 1.5
   });
   assert.equal(synchronized.entries.length, 31);
 });
@@ -216,6 +220,20 @@ test("manifest validation accepts append-only retry atlas assignments", () => {
   assert.equal(validateTopDownManifest({ manifest, gear: gear.slice(0, 4), materials: [] }), true);
 });
 
+test("manifest validation rejects unsupported runtime texture scales", () => {
+  const manifest = synchronizeTopDownManifest({
+    manifest: null,
+    gear: gear.slice(0, 1),
+    materials: []
+  });
+  manifest.entries[0].tokenScale = 2;
+
+  assert.throws(
+    () => validateTopDownManifest({ manifest, gear: gear.slice(0, 1), materials: [] }),
+    /invalid tokenScale/u
+  );
+});
+
 test("checked-in manifest matches the canonical catalogs", async () => {
   const manifest = JSON.parse(await readFile(
     new URL("data/top-down-item-assets.json", moduleRoot),
@@ -224,4 +242,9 @@ test("checked-in manifest matches the canonical catalogs", async () => {
 
   assert.equal(validateTopDownManifest({ manifest, gear, materials }), true);
   assert.equal(manifest.entries.length, 1015);
+  assert.ok(manifest.entries.every((entry) => [1, 1.5].includes(entry.tokenScale)));
+  const byKey = new Map(manifest.entries.map((entry) => [topDownEntryKey(entry), entry]));
+  assert.equal(byKey.get("gear:revol-ver").tokenScale, 1);
+  assert.equal(byKey.get("gear:alebarda").tokenScale, 1.5);
+  assert.equal(byKey.get("gear:laty").tokenScale, 1.5);
 });

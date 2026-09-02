@@ -1,7 +1,7 @@
 import { MODULE_ID } from "../constants.js";
 import {
   TOP_DOWN_ITEM_ARMOR_KEYS,
-  TOP_DOWN_ITEM_LONG_KEYS,
+  TOP_DOWN_ITEM_TOKEN_SCALES,
   TOP_DOWN_ITEM_TEXTURES
 } from "./top-down-item-texture-catalog.js";
 
@@ -42,8 +42,8 @@ function resolveTopDownItemKey(row) {
 
 export function resolveTopDownItemPresentation(row, {
   textures = TOP_DOWN_ITEM_TEXTURES,
-  longKeys = TOP_DOWN_ITEM_LONG_KEYS,
-  armorKeys = TOP_DOWN_ITEM_ARMOR_KEYS
+  armorKeys = TOP_DOWN_ITEM_ARMOR_KEYS,
+  tokenScales = TOP_DOWN_ITEM_TOKEN_SCALES
 } = {}) {
   const key = resolveTopDownItemKey(row);
   const img = key ? textures.get(key) : null;
@@ -51,7 +51,7 @@ export function resolveTopDownItemPresentation(row, {
   return {
     img,
     visualType: armorKeys.has(key) ? "Доспех" : "",
-    scaleClass: longKeys.has(key) ? "long" : "standard"
+    textureScale: tokenScales.get(key) ?? 1
   };
 }
 

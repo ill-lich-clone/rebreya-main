@@ -2,8 +2,14 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { MODULE_ID } from "../scripts/constants.js";
-import { TOP_DOWN_ITEM_TEXTURES } from "../scripts/data/top-down-item-texture-catalog.js";
-import { resolveTopDownItemTexture } from "../scripts/data/top-down-item-texture-resolver.js";
+import {
+  TOP_DOWN_ITEM_TEXTURES,
+  TOP_DOWN_ITEM_TOKEN_SCALES
+} from "../scripts/data/top-down-item-texture-catalog.js";
+import {
+  resolveTopDownItemPresentation,
+  resolveTopDownItemTexture
+} from "../scripts/data/top-down-item-texture-resolver.js";
 
 function managedRow(sourceType, sourceId, moduleIdentity = {}) {
   return {
@@ -33,6 +39,21 @@ test("managed gear identities resolve distinct canonical top-down textures", () 
   assert.equal(
     resolveTopDownItemTexture(managedRow("gear", "dlinnyy-mech", { gearId: "dlinnyy-mech" })),
     "modules/rebreya-main/assets/top-down/items/gear/dlinnyy-mech.webp"
+  );
+});
+
+test("runtime texture scale is curated per gear identity instead of inferred from weapon type", () => {
+  assert.equal(
+    resolveTopDownItemPresentation(managedRow("gear", "revol-ver", { gearId: "revol-ver" })).textureScale,
+    1
+  );
+  assert.equal(
+    resolveTopDownItemPresentation(managedRow("gear", "alebarda", { gearId: "alebarda" })).textureScale,
+    1.5
+  );
+  assert.equal(
+    resolveTopDownItemPresentation(managedRow("gear", "laty", { gearId: "laty" })).textureScale,
+    1.5
   );
 });
 
@@ -132,6 +153,22 @@ test("generated runtime catalog covers every accepted manifest entry", async () 
     assert.equal(
       TOP_DOWN_ITEM_TEXTURES.get(`${entry.sourceType}:${entry.sourceId}`),
       `modules/rebreya-main/${entry.assetPath}`,
+      `${entry.sourceType}:${entry.sourceId}`
+    );
+  }
+});
+
+test("generated runtime scale overrides match every curated manifest value", async () => {
+  const manifest = (await import("../data/top-down-item-assets.json", {
+    with: { type: "json" }
+  })).default;
+  const enlarged = manifest.entries.filter((entry) => entry.tokenScale !== 1);
+
+  assert.equal(TOP_DOWN_ITEM_TOKEN_SCALES.size, enlarged.length);
+  for (const entry of manifest.entries) {
+    assert.equal(
+      TOP_DOWN_ITEM_TOKEN_SCALES.get(`${entry.sourceType}:${entry.sourceId}`) ?? 1,
+      entry.tokenScale,
       `${entry.sourceType}:${entry.sourceId}`
     );
   }

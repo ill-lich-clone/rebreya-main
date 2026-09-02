@@ -9,7 +9,7 @@ import { isStorageJournalRow } from "./storage-container-snapshot.js";
 import {
   deriveGroundPilePresentation,
   isGroundPileToken
-} from "./storage-pile-presentation.js?v=1.4.209-top-down-item-presentation";
+} from "./storage-pile-presentation.js?v=1.4.210-curated-item-scale";
 
 function clone(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));
