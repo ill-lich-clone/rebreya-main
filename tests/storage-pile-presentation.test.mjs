@@ -44,7 +44,11 @@ test("single managed gear and material rows use their canonical top-down texture
   }]), {
     name: "Рапира",
     img: `modules/${MODULE_ID}/assets/top-down/items/gear/rapira.webp`,
-    categoryKey: "single"
+    categoryKey: "single",
+    topDownItem: true,
+    tokenSize: 0.5,
+    textureScale: 1.5,
+    rotationSeed: "gear:rapira"
   });
 
   assert.equal(deriveGroundPilePresentation([{
@@ -64,6 +68,35 @@ test("single managed gear and material rows use their canonical top-down texture
       }
     }
   }]).img, `modules/${MODULE_ID}/assets/top-down/items/material/material-10.webp`);
+});
+
+test("single managed armor uses a full grid cell without long-item scaling", () => {
+  assert.deepEqual(deriveGroundPilePresentation([{
+    rowId: "source-laty",
+    sourceType: "gear",
+    sourceId: "laty",
+    name: "Латы",
+    img: "icons/plate-item-icon.webp",
+    typeLabel: "Доспех",
+    quantity: 1,
+    itemData: {
+      flags: {
+        [MODULE_ID]: {
+          sourceType: "gear",
+          sourceId: "laty",
+          gearId: "laty"
+        }
+      }
+    }
+  }]), {
+    name: "Латы",
+    img: `modules/${MODULE_ID}/assets/top-down/items/gear/laty.webp`,
+    categoryKey: "single",
+    topDownItem: true,
+    tokenSize: 1,
+    textureScale: 1,
+    rotationSeed: "source-laty"
+  });
 });
 
 test("single external rows retain their current Item image fallback", () => {

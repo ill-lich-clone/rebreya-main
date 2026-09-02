@@ -9,7 +9,7 @@ import { isStorageJournalRow } from "./storage-container-snapshot.js";
 import {
   deriveGroundPilePresentation,
   isGroundPileToken
-} from "./storage-pile-presentation.js?v=1.4.208-top-down-item-textures";
+} from "./storage-pile-presentation.js?v=1.4.209-top-down-item-presentation";
 
 function clone(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));
@@ -17,6 +17,15 @@ function clone(value) {
 
 function clean(value) {
   return String(value ?? "").trim();
+}
+
+function deterministicRotation(seed) {
+  let hash = 2166136261;
+  for (const character of clean(seed)) {
+    hash ^= character.codePointAt(0);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0) % 360;
 }
 
 function collectionValues(collection) {
@@ -252,18 +261,25 @@ export class StorageGroundPileService {
       coinPile: presentation.categoryKey === "coins",
       mutationIds: Array.from(new Set(mutationIds.map(clean).filter(Boolean))).slice(-100)
     };
-    const resize = {};
-    if (presentation.categoryKey === "coins") {
-      const gridSize = Math.max(1, Number(token?.parent?.grid?.size ?? token?.parent?.grid?.sizeX ?? 100) || 100);
-      const currentWidth = Math.max(0.5, Number(token?.width ?? 1));
-      const currentHeight = Math.max(0.5, Number(token?.height ?? 1));
-      const centerX = Number(token?.x ?? 0) + currentWidth * gridSize / 2;
-      const centerY = Number(token?.y ?? 0) + currentHeight * gridSize / 2;
-      resize.width = 0.5;
-      resize.height = 0.5;
-      resize.x = centerX - gridSize / 4;
-      resize.y = centerY - gridSize / 4;
-    }
+    const rows = visibleRows(state);
+    const hasCoins = hasPositiveCoins(unclaimedCoins(state));
+    const tinyGroundItem = presentation.categoryKey === "coins" || (rows.length === 1
+      && rows[0]?.rowKind !== "container"
+      && !rows[0]?.container
+      && !hasCoins);
+    const targetSize = presentation.tokenSize
+      ?? (tinyGroundItem ? 0.5 : 1);
+    const gridSize = Math.max(1, Number(token?.parent?.grid?.size ?? token?.parent?.grid?.sizeX ?? 100) || 100);
+    const currentWidth = Math.max(0.5, Number(token?.width ?? 1));
+    const currentHeight = Math.max(0.5, Number(token?.height ?? 1));
+    const centerX = Number(token?.x ?? 0) + currentWidth * gridSize / 2;
+    const centerY = Number(token?.y ?? 0) + currentHeight * gridSize / 2;
+    const resize = {
+      width: targetSize,
+      height: targetSize,
+      x: centerX - targetSize * gridSize / 2,
+      y: centerY - targetSize * gridSize / 2
+    };
     await token.update({
       [`flags.${MODULE_ID}.storage`]: normalized,
       [`flags.${MODULE_ID}.groundPile`]: groundPile,
@@ -271,6 +287,9 @@ export class StorageGroundPileService {
       "sight.enabled": false,
       name: presentation.name,
       "texture.src": presentation.img,
+      "texture.scaleX": presentation.topDownItem ? presentation.textureScale : 1,
+      "texture.scaleY": presentation.topDownItem ? presentation.textureScale : 1,
+      rotation: presentation.topDownItem ? deterministicRotation(presentation.rotationSeed) : 0,
       ...resize,
       ...(clean(ownerUserId) ? { delta: ownedSyntheticActorDelta(token?.delta, ownerUserId) } : {})
     });
@@ -447,8 +466,10 @@ export class StorageGroundPileService {
       && rows[0]?.rowKind !== "container"
       && !rows[0]?.container
       && !hasCoins);
-    const tokenWidth = tinyGroundItem ? 0.5 : Math.max(1, Number(prototype.width ?? 1));
-    const tokenHeight = tinyGroundItem ? 0.5 : Math.max(1, Number(prototype.height ?? 1));
+    const tokenWidth = presentation.tokenSize
+      ?? (tinyGroundItem ? 0.5 : Math.max(1, Number(prototype.width ?? 1)));
+    const tokenHeight = presentation.tokenSize
+      ?? (tinyGroundItem ? 0.5 : Math.max(1, Number(prototype.height ?? 1)));
     const gridSize = Math.max(1, Number(scene?.grid?.size ?? scene?.grid?.sizeX ?? 100) || 100);
     const data = {
       ...prototype,
@@ -465,7 +486,17 @@ export class StorageGroundPileService {
       y: pointY - tokenHeight * gridSize / 2,
       width: tokenWidth,
       height: tokenHeight,
-      texture: { ...(clone(prototype.texture) ?? {}), src: presentation.img },
+      texture: {
+        ...(clone(prototype.texture) ?? {}),
+        src: presentation.img,
+        ...(presentation.topDownItem ? {
+          scaleX: presentation.textureScale,
+          scaleY: presentation.textureScale
+        } : {})
+      },
+      ...(presentation.topDownItem ? {
+        rotation: deterministicRotation(presentation.rotationSeed)
+      } : {}),
       flags: {
         ...(clone(prototype.flags) ?? {}),
         [MODULE_ID]: {

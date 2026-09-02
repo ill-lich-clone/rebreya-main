@@ -1,13 +1,15 @@
 import { MODULE_ID } from "../constants.js";
-import { TOP_DOWN_ITEM_TEXTURES } from "./top-down-item-texture-catalog.js";
+import {
+  TOP_DOWN_ITEM_ARMOR_KEYS,
+  TOP_DOWN_ITEM_LONG_KEYS,
+  TOP_DOWN_ITEM_TEXTURES
+} from "./top-down-item-texture-catalog.js";
 
 function clean(value) {
   return String(value ?? "").trim();
 }
 
-export function resolveTopDownItemTexture(row, {
-  textures = TOP_DOWN_ITEM_TEXTURES
-} = {}) {
+function resolveTopDownItemKey(row) {
   if (!row || typeof row !== "object") return null;
 
   const flags = row.itemData?.flags?.[MODULE_ID];
@@ -35,5 +37,27 @@ export function resolveTopDownItemTexture(row, {
   const sourceId = identities[0] ?? "";
   if (!sourceId || identities.some((identity) => identity !== sourceId)) return null;
 
-  return textures.get(`${sourceType}:${sourceId}`) ?? null;
+  return `${sourceType}:${sourceId}`;
+}
+
+export function resolveTopDownItemPresentation(row, {
+  textures = TOP_DOWN_ITEM_TEXTURES,
+  longKeys = TOP_DOWN_ITEM_LONG_KEYS,
+  armorKeys = TOP_DOWN_ITEM_ARMOR_KEYS
+} = {}) {
+  const key = resolveTopDownItemKey(row);
+  const img = key ? textures.get(key) : null;
+  if (!img) return null;
+  return {
+    img,
+    visualType: armorKeys.has(key) ? "Доспех" : "",
+    scaleClass: longKeys.has(key) ? "long" : "standard"
+  };
+}
+
+export function resolveTopDownItemTexture(row, {
+  textures = TOP_DOWN_ITEM_TEXTURES
+} = {}) {
+  const key = resolveTopDownItemKey(row);
+  return key ? textures.get(key) ?? null : null;
 }

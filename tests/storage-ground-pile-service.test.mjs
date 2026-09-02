@@ -20,7 +20,7 @@ function deferred() {
   return { promise, resolve };
 }
 
-function createHarness({ activeGm = true, beforeCreate, beforeUpdate, afterDelete } = {}) {
+function createHarness({ activeGm = true, beforeCreate, beforeUpdate, afterDelete, idFactory } = {}) {
   const pileActor = {
     id: "pile-actor",
     flags: {
@@ -75,7 +75,7 @@ function createHarness({ activeGm = true, beforeCreate, beforeUpdate, afterDelet
   const service = new StorageGroundPileService({
     gameProvider: () => game,
     isActiveGm: () => activeGm,
-    idFactory: () => `pile-row-${++nextId}`
+    idFactory: idFactory ?? (() => `pile-row-${++nextId}`)
   });
   return { service, scene, tokens, pileActor, game };
 }
@@ -159,6 +159,13 @@ const monsterHoof = managedCanonicalRow({
   typeLabel: "Материал"
 });
 
+const plateArmor = managedCanonicalRow({
+  sourceType: "gear",
+  sourceId: "laty",
+  name: "Латы",
+  typeLabel: "Доспех"
+});
+
 const journalNote = {
   rowKind: "journal",
   rowId: "source-note",
@@ -236,9 +243,60 @@ test("managed gear and material drops create tokens with canonical top-down text
     });
 
     assert.equal(tokens[0].texture.src, expectedTexture);
+    assert.equal(Number.isInteger(tokens[0].rotation), true);
+    assert.equal(tokens[0].rotation >= 0 && tokens[0].rotation < 360, true);
     assert.equal(tokens[0].flags[MODULE_ID].groundPile.enabled, true);
     assert.equal(readStorageState(tokens[0]).manualRows[0].itemData.img, row.itemData.img);
   }
+});
+
+test("managed long items use 1.5 texture scale and a stable per-spawn angle", async () => {
+  const first = createHarness({ idFactory: () => "stable-long-row" });
+  const second = createHarness({ idFactory: () => "stable-long-row" });
+  const different = createHarness({ idFactory: () => "different-long-row" });
+  const request = {
+    row: rapier,
+    quantity: 1,
+    sceneId: "scene",
+    x: 300,
+    y: 400,
+    mutationId: "long-item-create"
+  };
+
+  await first.service.transferToScene(request);
+  await second.service.transferToScene(request);
+  await different.service.transferToScene(request);
+
+  assert.equal(first.tokens[0].width, 0.5);
+  assert.equal(first.tokens[0].height, 0.5);
+  assert.equal(first.tokens[0].texture.scaleX, 1.5);
+  assert.equal(first.tokens[0].texture.scaleY, 1.5);
+  assert.equal(first.tokens[0].rotation, second.tokens[0].rotation);
+  assert.notEqual(first.tokens[0].rotation, different.tokens[0].rotation);
+
+  const rotationBeforeRetry = first.tokens[0].rotation;
+  const duplicate = await first.service.transferToScene(request);
+  assert.equal(duplicate.duplicate, true);
+  assert.equal(first.tokens[0].rotation, rotationBeforeRetry);
+});
+
+test("managed armor occupies one full grid cell", async () => {
+  const { service, tokens } = createHarness();
+  await service.transferToScene({
+    row: plateArmor,
+    quantity: 1,
+    sceneId: "scene",
+    x: 300,
+    y: 400,
+    mutationId: "plate-create"
+  });
+
+  assert.equal(tokens[0].width, 1);
+  assert.equal(tokens[0].height, 1);
+  assert.equal(tokens[0].x, 250);
+  assert.equal(tokens[0].y, 350);
+  assert.equal(tokens[0].texture.scaleX, 1);
+  assert.equal(tokens[0].texture.scaleY, 1);
 });
 
 test("managed merge uses the existing pile texture then restores the survivor top-down texture", async () => {
@@ -263,6 +321,11 @@ test("managed merge uses the existing pile texture then restores the survivor to
     mutationId: "managed-longsword"
   });
   assert.equal(tokens[0].texture.src, `modules/${MODULE_ID}/assets/storage/piles/weapons.png`);
+  assert.equal(tokens[0].width, 1);
+  assert.equal(tokens[0].height, 1);
+  assert.equal(tokens[0].rotation, 0);
+  assert.equal(tokens[0].texture.scaleX, 1);
+  assert.equal(tokens[0].texture.scaleY, 1);
 
   const state = readStorageState(tokens[0]);
   const rapierRow = state.manualRows.find((row) => row.itemData?.flags?.[MODULE_ID]?.gearId === "rapira");
@@ -277,6 +340,11 @@ test("managed merge uses the existing pile texture then restores the survivor to
     tokens[0].texture.src,
     `modules/${MODULE_ID}/assets/top-down/items/gear/dlinnyy-mech.webp`
   );
+  assert.equal(tokens[0].width, 0.5);
+  assert.equal(tokens[0].height, 0.5);
+  assert.equal(tokens[0].texture.scaleX, 1.5);
+  assert.equal(tokens[0].texture.scaleY, 1.5);
+  assert.notEqual(tokens[0].rotation, 0);
 });
 
 test("ground pile refresh repairs hostile disposition and enabled sight", async () => {

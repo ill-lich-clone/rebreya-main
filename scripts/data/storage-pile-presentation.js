@@ -1,7 +1,7 @@
 import { MODULE_ID } from "../constants.js";
 import { isStorageJournalRow } from "./storage-container-snapshot.js";
 import { formatDurabilityItemName } from "./durability-item-presentation.js?v=1.4.200-storage-broken-presentation";
-import { resolveTopDownItemTexture } from "./top-down-item-texture-resolver.js?v=1.4.208-top-down-item-textures";
+import { resolveTopDownItemPresentation } from "./top-down-item-texture-resolver.js?v=1.4.209-top-down-item-presentation";
 
 const ASSET_ROOT = `modules/${MODULE_ID}/assets/storage/piles`;
 const COIN_PRESENTATIONS = Object.freeze([
@@ -83,6 +83,7 @@ export function deriveGroundPilePresentation(rows = [], {
 
   if (ordinaryRows.length === 1) {
     const row = ordinaryRows[0];
+    const topDownPresentation = resolveTopDownItemPresentation(row);
     const quantity = Math.max(1, Math.trunc(Number(
       row.quantity ?? row.itemData?.system?.quantity ?? 1
     )) || 1);
@@ -90,11 +91,19 @@ export function deriveGroundPilePresentation(rows = [], {
       clean(row.name ?? row.itemData?.name) || "Предмет",
       row.itemData?.flags?.[MODULE_ID]?.durability
     );
-    return {
+    const presentation = {
       name: quantity > 1 ? `${name} (${quantity})` : name,
-      img: resolveTopDownItemTexture(row)
+      img: topDownPresentation?.img
         ?? (clean(row.img ?? row.itemData?.img) || GENERIC_PRESENTATION.img),
       categoryKey: "single"
+    };
+    if (!topDownPresentation) return presentation;
+    return {
+      ...presentation,
+      topDownItem: true,
+      tokenSize: normalizeStoragePileCategory(topDownPresentation.visualType) === "доспех" ? 1 : 0.5,
+      textureScale: topDownPresentation.scaleClass === "long" ? 1.5 : 1,
+      rotationSeed: clean(row.rowId) || `${clean(row.sourceType)}:${clean(row.sourceId)}`
     };
   }
 
