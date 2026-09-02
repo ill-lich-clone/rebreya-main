@@ -409,8 +409,83 @@ Live QA выполняется в Foundry VTT 13/dnd5e после автомат
 | `yashchik-derevyannyy` | Ящик, деревянный | 1×1 |
 | `korobka-derevyannaya` | Коробка, деревянная | 1×1 |
 
-`StorageGroundPileService` остаётся единственным владельцем TokenDocument create/update. Для перечисленных предметов он записывает отдельные `width` и `height`, сохраняет центр токена при single↔pile transition и выбирает устойчивый по `rowId` угол только из `0/90/180/270`. Merge нескольких предметов, coins и storage presets остаются `1×1` с rotation `0`; surviving single item восстанавливает собственный размер и режим поворота.
+`StorageGroundPileService` остаётся единственным владельцем TokenDocument create/update. Для перечисленных предметов он записывает отдельные `width` и `height` и сохраняет центр токена при single↔pile transition. Квадратная мебель и вызовы без явно выбранной ориентации получают устойчивый по `rowId` угол только из `0/90/180/270`; клиентский выбор для прямоугольной мебели уточнён в разделе 18. Merge нескольких предметов, coins и storage presets остаются `1×1` с rotation `0`; surviving single item восстанавливает собственный размер и режим поворота.
 
 Чтобы квадратный прозрачный холст не заставлял прямоугольную мебель выглядеть маленькой и не искажал сам рисунок, прямоугольные top-down WebP механически перепаковываются на прозрачный холст с отношением сторон, соответствующим footprint. Изображение масштабируется только равномерно, без изменения пропорций и перерисовки; manifest сохраняет обновлённый asset hash, а техническая QA проверяет alpha, непустой bounding box и безопасные края относительно фактических размеров файла.
 
 Новых world flags, hooks, socket routes и canvas-drop owners не вводится. `Item.img`, stable ID/UUID, authorization, mutation idempotency и fallback сторонних предметов не меняются.
+
+## 18. Утверждённое расширение: выбор ориентации прямоугольной мебели
+
+### 18.1. Наблюдаемое поведение
+
+При переносе на сцену canonical предмета мебели с footprint, у которого `tokenWidth !== tokenHeight`, инициировавший drop клиент после выбора количества показывает диалог ориентации. Пользователь выбирает строго `0°`, `90°`, `180°` или `270°`; только после подтверждения существующий ground-pile workflow расходует источник и создаёт Scene Token.
+
+- `0°` и `180°` используют canonical `tokenWidth × tokenHeight`.
+- `90°` и `270°` используют переставленные `tokenHeight × tokenWidth`.
+- Точка drop остаётся центром создаваемого токена.
+- Текстура равномерно масштабируется так, чтобы после поворота занимать рассчитанный footprint без искажения и уменьшения из-за `texture.fit: "contain"`.
+- Кнопка отмены завершает drop без consume, Token creation и socket command.
+- Выбранная при создании ориентация считается окончательной. Последующее ручное изменение `TokenDocument.rotation` штатными средствами Foundry является только визуальным и не запускает автоматическую перестановку механических `width`/`height`.
+
+Диалог не показывается для квадратной мебели, прочих gear items, материалов, монет, Journal, portable storage, multi-item piles, built-in storage presets и внешних/повреждённых Item, для которых strict module-owned resolver не вернул rectangular footprint.
+
+### 18.2. Выбранный подход
+
+Выбран простой клиентский диалог до authoritative команды. Canvas preview/ghost placement отклонён как отдельный интерактивный режим, который неоправданно расширяет canvas-drop workflow. Внешний макрос отклонён как ручной второй владелец layout, способный рассинхронизировать rotation, texture scale и механический footprint.
+
+Диалог использует штатный Foundry v13 UI и четыре явных действия. Он показывает название предмета, top-down thumbnail и итоговый размер для каждого направления. По умолчанию выделен `0°`; Enter подтверждает его, Escape и закрытие окна равнозначны отмене. Отдельная Application и новый canvas Hook не создаются.
+
+### 18.3. Data flow и владельцы
+
+Существующий владелец `dropCanvasData` в `scripts/integrations/storage-transfer-drop.js` остаётся единственной точкой перехвата:
+
+1. Разбирает Item или storage-row drag data и определяет сцену/точку.
+2. Получает safe inspection источника через существующий `inspectStorageDepositSource()`.
+3. Inspection дополнительно возвращает только производный optional placement descriptor: canonical `width`, `height` и `rotationMode`; клиент не передаёт собственные размеры.
+4. Запрашивает количество прежним диалогом.
+5. Только для `rotationMode === "cardinal"` и `width !== height` запрашивает ориентацию.
+6. Передаёт выбранный optional `rotation` через существующий API и существующий socket route:
+   - direct Item drop — в payload `dropStorageItemToScene()`;
+   - storage-row claim на сцену — в `target` существующего `claimStorageRow()`.
+7. Active GM повторно разрешает live source, выводит canonical presentation и принимает rotation только для rectangular cardinal furniture. Клиентский placement descriptor не является authoritative.
+8. `StorageGroundPileService` остаётся единственным владельцем TokenDocument create/update и рассчитывает итоговые rotation, width, height, x/y и texture scale одной pure layout-функцией.
+
+Новый socket route, второй canvas-drop owner и прямые world mutations из UI не вводятся. Exact payload validators расширяются только optional cardinal rotation и отклоняют нецелые, произвольные и нечисловые значения. Старый payload без rotation остаётся валидным и использует прежний детерминированный cardinal fallback, поэтому программные вызовы и mixed persisted state не требуют миграции.
+
+### 18.4. Layout и merge
+
+Pure layout принимает canonical presentation и итоговый cardinal rotation. Для нечётной четверти оборота он переставляет стороны. Так как rectangular WebP уже имеет canonical aspect ratio, при `90°/270°` базовый `textureScale` умножается на `max(width / height, height / width)`; после поворота mesh совпадает с осевым механическим footprint. Для `0°/180°` используется базовый scale.
+
+При создании `x/y` рассчитываются от точки drop и итоговых сторон. При обновлении существующего одиночного furniture token центр сохраняется тем же center-preserving правилом, которое уже использует `#writePile()`.
+
+Выбор из нового диалога применяется только при создании нового ground token. Если drop попадает в существующую кучу:
+
+- multi-item или coin presentation сохраняет прежние `1×1`, scale `1`, rotation `0`;
+- surviving/stacked single rectangular furniture сохраняет текущую cardinal rotation существующего токена и пересчитывает согласованный layout из неё;
+- выбранная в диалоге ориентация не переориентирует существующий token;
+- duplicate retry с тем же mutation ID не меняет layout повторно.
+
+Новых persisted flags не требуется: согласованные `rotation`, `width`, `height` и texture scale уже сохраняются в TokenDocument. Stable gear/material IDs, UUID, `Item.img`, storage flags и manifest schema не меняются.
+
+### 18.5. Ошибки и совместимость
+
+- Закрытие/отмена orientation dialog не считается ошибкой и сохраняет источник.
+- Ошибка inspection, авторизации, socket или создания проходит через существующий error/rollback path.
+- Active GM игнорирует optional rotation для square/non-furniture presentation и не доверяет клиентским размерам.
+- Отсутствующий top-down asset или strict identity продолжает использовать текущий fallback без orientation dialog.
+- Portable containers, сундуки, бочки, монеты, Journal и built-in storage textures не меняются.
+- Player drop сохраняет controlled-character distance check, sender authorization и active-GM execution.
+
+### 18.6. Focused TDD и приёмка
+
+До production code добавляется focused coverage:
+
+- `storage-transfer-drop`: rectangular Item и storage row вызывают orientation prompt после quantity; cancel не вызывает command; square/external/coin/Journal routes prompt не вызывают;
+- storage module API и socket validators: optional `0|90|180|270` проходит, остальные значения отклоняются, старый payload остаётся валидным;
+- `storage-command-service`: active GM передаёт только проверенную ориентацию и сохраняет прежние authorization/rollback contracts;
+- `storage-ground-pile-service`: `0/180` создают canonical footprint, `90/270` переставляют стороны и компенсируют scale, центр совпадает с drop point;
+- merge/retry: существующая single furniture orientation сохраняется, multi-item pile сбрасывается к прежней presentation, duplicate не меняет layout;
+- coin piles, fallback и built-in storage presets проходят прежние regression tests.
+
+После реализации обновляются соответствующий раздел `docs/function-passport.md`, `module.json` и versioned forwarder. Выполняются focused tests и полный набор проверок из `AGENTS.md`. Live Foundry QA в этом этапе не запускается по текущему указанию пользователя; ручная проверка GM/player drop, cancel, reload и четырёх ориентаций остаётся отдельным последующим шагом.
