@@ -4,6 +4,16 @@ export function isGroundPileCardinalRotation(value) {
   return Number.isInteger(value) && GROUND_PILE_CARDINAL_ROTATIONS.includes(value);
 }
 
+export function deterministicStorageTokenRotation(seed, mode = "full") {
+  let hash = 2166136261;
+  for (const character of String(seed ?? "").trim()) {
+    hash ^= character.codePointAt(0);
+    hash = Math.imul(hash, 16777619);
+  }
+  const value = hash >>> 0;
+  return mode === "cardinal" ? (value % 4) * 90 : value % 360;
+}
+
 export function buildGroundPileTokenLayout({
   width,
   height,

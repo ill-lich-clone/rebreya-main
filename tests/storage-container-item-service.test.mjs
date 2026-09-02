@@ -520,6 +520,7 @@ test("a canonical gear container restores to the scene with its top-down present
   );
   assert.equal(created[0].width, 0.5);
   assert.equal(created[0].height, 0.5);
+  assert.equal(created[0].rotation, 52);
 });
 
 test("a restored bag does not inherit the fallback ground-pile marker", async () => {

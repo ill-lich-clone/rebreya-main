@@ -21,7 +21,7 @@ import {
   createTriggerTargetRef
 } from "../application/trigger-target-coordinator.js?v=1.4.197-door-trigger-target";
 import { StorageTriggerTargetAdapter } from "./storage-trigger-target-adapter.js?v=1.4.197-door-trigger-target";
-import { isGroundPileCardinalRotation } from "./storage-ground-pile-layout.js?v=1.4.213-furniture-orientation";
+import { isGroundPileCardinalRotation } from "./storage-ground-pile-layout.js?v=1.4.215-container-rotation";
 
 const STORAGE_ROW_DESTINATIONS = new Set(["self", "party", "character", "scene"]);
 const STORAGE_COIN_DESTINATIONS = new Set(["self", "party"]);

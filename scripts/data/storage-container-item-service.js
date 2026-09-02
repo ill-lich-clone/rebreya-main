@@ -9,6 +9,10 @@ import {
   readPortableStorageContainerSnapshot
 } from "./storage-container-snapshot.js";
 import { resolveTopDownItemPresentation } from "./top-down-item-texture-resolver.js?v=1.4.211-furniture-footprints";
+import {
+  buildGroundPileTokenLayout,
+  deterministicStorageTokenRotation
+} from "./storage-ground-pile-layout.js?v=1.4.215-container-rotation";
 
 export const STORAGE_CONTAINER_MEMBER_FLAG = "storageContainerMember";
 export const STORAGE_CONTAINER_MUTATION_FLAG = "storageContainerMutation";
@@ -468,6 +472,12 @@ export class StorageContainerItemService {
     const topDownSize = topDown
       ? (topDown.visualType === "Доспех" ? 1 : 0.5)
       : null;
+    const topDownLayout = topDown ? buildGroundPileTokenLayout({
+      width: topDown.tokenWidth ?? topDownSize,
+      height: topDown.tokenHeight ?? topDownSize,
+      textureScale: topDown.textureScale,
+      rotationMode: topDown.rotationMode
+    }, deterministicStorageTokenRotation(normalized.containerId, topDown.rotationMode)) : null;
     const stableMutationId = clean(mutationId) || randomId("storage-container-scene");
     const scene = await this.resolveScene(clean(sceneId));
     if (!scene || typeof scene.createEmbeddedDocuments !== "function") {
@@ -522,17 +532,19 @@ export class StorageContainerItemService {
         : clean(presented.name) || normalized.name,
       x: Number(x),
       y: Number(y),
-      ...(topDown ? {
-        width: topDown.tokenWidth ?? topDownSize,
-        height: topDown.tokenHeight ?? topDownSize
+      ...(topDownLayout ? {
+        width: topDownLayout.width,
+        height: topDownLayout.height,
+        rotation: topDownLayout.rotation
       } : {}),
       texture: {
         ...(clone(prototypeData.texture) ?? {}),
         ...(clone(presented.texture) ?? {}),
         src: clean(topDown?.img) || clean(normalized.img) || clean(presented.texture?.src) || clean(prototypeData.texture?.src),
-        ...(topDown ? {
-          scaleX: topDown.textureScale,
-          scaleY: topDown.textureScale
+        ...(topDownLayout ? {
+          scaleX: topDownLayout.textureScale,
+          scaleY: topDownLayout.textureScale,
+          ...(topDown.rotationMode === "cardinal" ? { fit: "contain" } : {})
         } : {})
       },
       flags: {

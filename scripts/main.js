@@ -211,9 +211,9 @@ import {
   measureStorageTokenDistance
 } from "./data/storage-access.js?v=1.4.197-door-trigger-target";
 import { BuiltinStorageActorService } from "./data/builtin-storage-actor-service.js?v=1.4.201-storage-token-neutral";
-import { StorageGroundPileService } from "./data/storage-ground-pile-service.js?v=1.4.213-furniture-orientation";
+import { StorageGroundPileService } from "./data/storage-ground-pile-service.js?v=1.4.215-container-rotation";
 import { deriveGroundPilePlacement } from "./data/storage-pile-presentation.js?v=1.4.213-furniture-orientation";
-import { StorageContainerItemService } from "./data/storage-container-item-service.js?v=1.4.214-container-top-down";
+import { StorageContainerItemService } from "./data/storage-container-item-service.js?v=1.4.215-container-rotation";
 import { isStorageJournalRow } from "./data/storage-container-snapshot.js";
 import { StorageTriggerService } from "./data/storage-trigger-service.js?v=1.4.197-door-trigger-target";
 import { DoorTriggerTargetRepository, readDoorTriggerTarget } from "./data/door-trigger-target.js?v=1.4.199-door-overlay-anchor";
@@ -255,7 +255,7 @@ import {
   isValidStorageRestorePortablePayload,
   isValidStorageTokenCharacterPayload,
   storageCharacterTokenUuidForClaim
-} from "./data/storage-command-service.js?v=1.4.213-furniture-orientation";
+} from "./data/storage-command-service.js?v=1.4.215-container-rotation";
 import { registerCombatHooks } from "./combat/hooks.js?v=1.4.191-magic-item-runtime";
 import { CombatAttackService } from "./combat/attack-service.js?v=1.4.181-dual-wield-gloves";
 import { ImplantAutomationService } from "./combat/implant-automation-service.js";
@@ -323,6 +323,7 @@ import {
 } from "./integrations/durability-hooks.js?v=1.4.153-corpse-creature";
 import { patchEffectMacroCombatHooks } from "./integrations/effectmacro-compat.js";
 import { patchSmAirshipRenderSettingsHook } from "./integrations/sm-airship-compat.js";
+import { patchDnd5eTooltipRaceGuard } from "./integrations/dnd5e-tooltip-compat.js?v=1.4.215-tooltip-race";
 import { registerInventorySyncHooks } from "./integrations/inventory-sync.js?v=1.4.96-durable-transfer";
 import { runMapObjectTokenMacro } from "./integrations/map-object-token-macro.js?v=1.4.97-map-object-token";
 import { refreshSmallTimeDateDisplay, registerSmallTimeIntegration, syncSmallTimeToCalendarTime } from "./integrations/smalltime-compat.js";
@@ -6980,6 +6981,13 @@ if (Hooks.on instanceof Function) {
 }
 
 Hooks.once("ready", async () => {
+  try {
+    patchDnd5eTooltipRaceGuard();
+  }
+  catch (error) {
+    console.warn(`${MODULE_ID} | Failed to patch dnd5e tooltip race.`, error);
+  }
+
   try {
     patchEffectMacroCombatHooks();
   }

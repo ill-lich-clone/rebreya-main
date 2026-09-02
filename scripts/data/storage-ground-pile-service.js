@@ -12,8 +12,9 @@ import {
 } from "./storage-pile-presentation.js?v=1.4.213-furniture-orientation";
 import {
   buildGroundPileTokenLayout,
+  deterministicStorageTokenRotation,
   isGroundPileCardinalRotation
-} from "./storage-ground-pile-layout.js?v=1.4.213-furniture-orientation";
+} from "./storage-ground-pile-layout.js?v=1.4.215-container-rotation";
 
 function clone(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));
@@ -21,16 +22,6 @@ function clone(value) {
 
 function clean(value) {
   return String(value ?? "").trim();
-}
-
-function deterministicRotation(seed, mode = "full") {
-  let hash = 2166136261;
-  for (const character of clean(seed)) {
-    hash ^= character.codePointAt(0);
-    hash = Math.imul(hash, 16777619);
-  }
-  const value = hash >>> 0;
-  return mode === "cardinal" ? (value % 4) * 90 : value % 360;
 }
 
 function isRectangularCardinalPresentation(presentation) {
@@ -309,7 +300,7 @@ export class StorageGroundPileService {
     const rotation = presentation.topDownItem
       ? (preserveRotation
         ? Number(token.rotation)
-        : deterministicRotation(presentation.rotationSeed, presentation.rotationMode))
+        : deterministicStorageTokenRotation(presentation.rotationSeed, presentation.rotationMode))
       : 0;
     const layout = presentationLayout(presentation, targetWidth, targetHeight, rotation);
     const gridSize = Math.max(1, Number(token?.parent?.grid?.size ?? token?.parent?.grid?.sizeX ?? 100) || 100);
@@ -524,7 +515,7 @@ export class StorageGroundPileService {
       ? rotation
       : undefined;
     const finalRotation = presentation.topDownItem
-      ? (explicitRotation ?? deterministicRotation(presentation.rotationSeed, presentation.rotationMode))
+      ? (explicitRotation ?? deterministicStorageTokenRotation(presentation.rotationSeed, presentation.rotationMode))
       : 0;
     const layout = presentationLayout(presentation, tokenWidth, tokenHeight, finalRotation);
     const gridSize = Math.max(1, Number(scene?.grid?.size ?? scene?.grid?.sizeX ?? 100) || 100);

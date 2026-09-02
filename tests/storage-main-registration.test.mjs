@@ -136,10 +136,10 @@ test("main registers the storage deposit socket API and current cache keys", asy
     "data/storage-open-sound-service.js?v=1.4.145-coin-icons-storage-sound",
     "data/storage-access.js?v=1.4.197-door-trigger-target",
     "data/builtin-storage-actor-service.js?v=1.4.201-storage-token-neutral",
-    "data/storage-ground-pile-service.js?v=1.4.213-furniture-orientation",
-    "data/storage-container-item-service.js?v=1.4.214-container-top-down",
+    "data/storage-ground-pile-service.js?v=1.4.215-container-rotation",
+    "data/storage-container-item-service.js?v=1.4.215-container-rotation",
     "data/storage-deposit-source.js?v=1.4.195-storage-administration",
-    "data/storage-command-service.js?v=1.4.213-furniture-orientation",
+    "data/storage-command-service.js?v=1.4.215-container-rotation",
     "data/storage-trigger-service.js?v=1.4.197-door-trigger-target",
     "integrations/storage-token-hooks.js?v=1.4.197-door-trigger-target",
     "combat/hooks.js?v=1.4.191-magic-item-runtime",
@@ -163,7 +163,7 @@ test("main registers the storage deposit socket API and current cache keys", asy
   ]) {
     assert.equal(storageHooks.includes(importPath), true, importPath);
   }
-  assert.equal(manifest.version, "1.4.214");
+  assert.equal(manifest.version, "1.4.215");
   assert.match(main, /await registerStorageContainerHierarchyHooks\(\{ Hooks \}\)/u);
 });
 
