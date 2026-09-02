@@ -7,7 +7,7 @@ import { SpellInstanceRuntime } from "../scripts/combat/spell-instance-runtime.j
 import { SummonLifecycleRuntime } from "../scripts/combat/summon-lifecycle-runtime.js";
 import { PrivilegedMutationGateway } from "../scripts/application/privileged-mutation-gateway.js";
 import { TransportCompendiumService } from "../scripts/data/transport-compendium.js";
-import { BuiltinStorageActorService } from "../scripts/data/builtin-storage-actor-service.js?v=1.4.201-storage-token-neutral";
+import { BuiltinStorageActorService } from "../scripts/data/builtin-storage-actor-service.js?v=1.4.216-storage-token-vision";
 import { StorageOpenSoundService } from "../scripts/data/storage-open-sound-service.js?v=1.4.145-coin-icons-storage-sound";
 import { GrappleAutomationService } from "../scripts/combat/grapple-automation-service.js";
 import { GrappleMacroService } from "../scripts/combat/grapple-macro-service.js";

@@ -16,6 +16,74 @@ function createHooks() {
   return { once() {}, on() {} };
 }
 
+test("marking a storage Actor immediately runs the canonical storage Actor sync", async () => {
+  class FakeApplicationV2 {}
+  const actor = {
+    uuid: "Actor.storage",
+    name: "Новое хранилище",
+    type: "npc",
+    flags: {},
+    async setFlag(scope, key, value) {
+      (this.flags[scope] ??= {})[key] = structuredClone(value);
+    }
+  };
+  const gm = { active: true, id: "gm", isGM: true };
+  const restores = [
+    replaceGlobal("Hooks", createHooks()),
+    replaceGlobal("Actor", class Actor {}),
+    replaceGlobal("Item", class Item {}),
+    replaceGlobal("Macro", class Macro {}),
+    replaceGlobal("HTMLElement", class HTMLElement {}),
+    replaceGlobal("CONFIG", {}),
+    replaceGlobal("fromUuid", async (uuid) => uuid === actor.uuid ? actor : null),
+    replaceGlobal("foundry", {
+      applications: {
+        api: {
+          ApplicationV2: FakeApplicationV2,
+          HandlebarsApplicationMixin: (Base) => Base
+        }
+      },
+      utils: {
+        deepClone: (value) => structuredClone(value),
+        getProperty(source, path) {
+          return path.split(".").reduce((value, key) => value?.[key], source);
+        }
+      }
+    }),
+    replaceGlobal("ui", { notifications: { error() {}, info() {}, warn() {} } }),
+    replaceGlobal("game", {
+      modules: new Map([[MODULE_ID, { version: "1.4.216" }]]),
+      socket: { emit() {}, on() {} },
+      system: { id: "dnd5e" },
+      user: gm,
+      users: { activeGM: gm, contents: [gm] },
+      messages: { contents: [] },
+      settings: { get: () => false }
+    })
+  ];
+
+  try {
+    const { RebreyaMainModule } = await import(`../scripts/main.js?storage-mark-vision=${Date.now()}`);
+    let syncCalls = 0;
+    const context = {
+      builtinStorageActorService: {
+        async sync() {
+          syncCalls += 1;
+          assert.equal(actor.flags[MODULE_ID].storage.enabled, true);
+        }
+      }
+    };
+
+    const result = await RebreyaMainModule.prototype.markStorageActor.call(context, actor.uuid);
+
+    assert.equal(result, actor);
+    assert.equal(syncCalls, 1);
+  }
+  finally {
+    restores.reverse().forEach((restore) => restore());
+  }
+});
+
 test("storage source inspection exposes only safe canonical placement metadata", async () => {
   class FakeApplicationV2 {}
   const itemData = (uuid, flags) => ({

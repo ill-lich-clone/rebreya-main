@@ -210,7 +210,7 @@ import {
   measureStoragePointDistance,
   measureStorageTokenDistance
 } from "./data/storage-access.js?v=1.4.197-door-trigger-target";
-import { BuiltinStorageActorService } from "./data/builtin-storage-actor-service.js?v=1.4.201-storage-token-neutral";
+import { BuiltinStorageActorService } from "./data/builtin-storage-actor-service.js?v=1.4.216-storage-token-vision";
 import { StorageGroundPileService } from "./data/storage-ground-pile-service.js?v=1.4.215-container-rotation";
 import { deriveGroundPilePlacement } from "./data/storage-pile-presentation.js?v=1.4.213-furniture-orientation";
 import { StorageContainerItemService } from "./data/storage-container-item-service.js?v=1.4.215-container-rotation";
@@ -4859,6 +4859,7 @@ export class RebreyaMainModule {
     else {
       await actor.update({ [`flags.${MODULE_ID}.storage`]: { enabled: true } });
     }
+    await this.builtinStorageActorService.sync();
     globalThis.ui?.notifications?.info(`Актёр «${actor.name}» отмечен как хранилище.`);
     return actor;
   }

@@ -84,8 +84,28 @@ function makeActorUpdatable(actor) {
   actor.updates = [];
   actor.update = async function update(patch) {
     this.updates.push(structuredClone(patch));
+    for (const [path, value] of Object.entries(patch)) {
+      const parts = path.split(".");
+      let cursor = this;
+      for (const part of parts.slice(0, -1)) cursor = (cursor[part] ??= {});
+      cursor[parts.at(-1)] = structuredClone(value);
+    }
   };
   return actor;
+}
+
+function makeTokenUpdatable(token) {
+  token.updates = [];
+  token.update = async function update(patch) {
+    this.updates.push(structuredClone(patch));
+    for (const [path, value] of Object.entries(patch)) {
+      const parts = path.split(".");
+      let cursor = this;
+      for (const part of parts.slice(0, -1)) cursor = (cursor[part] ??= {});
+      cursor[parts.at(-1)] = structuredClone(value);
+    }
+  };
+  return token;
 }
 
 test("built-in storage Actor data creates an unlinked closed NPC with independent token state", () => {
@@ -174,6 +194,217 @@ test("active GM creates the root folder and every built-in storage Actor exactly
     EXPECTED_SYNC_IDS
   );
   assert.deepEqual(second.actors, first.actors);
+});
+
+test("sync disables prototype sight for every classified persistent storage Actor only", async () => {
+  const harness = createHarness();
+  const storageFolder = {
+    id: "storage-folder",
+    name: BUILTIN_STORAGE_FOLDER_NAME,
+    type: "Actor",
+    folder: null
+  };
+  harness.folders.push(storageFolder);
+  const markedStorage = makeActorUpdatable({
+    id: "marked-storage",
+    type: "npc",
+    folder: null,
+    flags: { [MODULE_ID]: { storage: { enabled: true } } },
+    prototypeToken: { sight: { enabled: true, range: 60 } }
+  });
+  const groundPilePrototype = makeActorUpdatable({
+    id: "ground-pile-prototype",
+    type: "npc",
+    folder: null,
+    flags: { [MODULE_ID]: { groundPilePrototype: { enabled: true } } },
+    prototypeToken: { sight: { enabled: true } }
+  });
+  const folderOnlyNpc = makeActorUpdatable({
+    id: "folder-only",
+    type: "npc",
+    folder: storageFolder,
+    flags: {},
+    prototypeToken: { sight: { enabled: true } }
+  });
+  const corpseOnlyNpc = makeActorUpdatable({
+    id: "corpse-only",
+    type: "npc",
+    folder: null,
+    flags: {},
+    prototypeToken: {
+      sight: { enabled: true },
+      flags: {
+        [MODULE_ID]: {
+          storage: {
+            version: 1,
+            corpseMaterialization: { version: 1, status: "complete" }
+          }
+        }
+      }
+    }
+  });
+  const ordinaryNpc = makeActorUpdatable({
+    id: "ordinary-npc",
+    type: "npc",
+    folder: null,
+    flags: {},
+    prototypeToken: { sight: { enabled: true } }
+  });
+  const character = makeActorUpdatable({
+    id: "character",
+    type: "character",
+    folder: null,
+    flags: {},
+    prototypeToken: { sight: { enabled: true } }
+  });
+  const transport = makeActorUpdatable({
+    id: "transport",
+    type: "vehicle",
+    folder: null,
+    flags: {},
+    prototypeToken: { sight: { enabled: true } }
+  });
+  harness.actors.push(
+    markedStorage,
+    groundPilePrototype,
+    folderOnlyNpc,
+    corpseOnlyNpc,
+    ordinaryNpc,
+    character,
+    transport
+  );
+
+  await harness.service.sync();
+
+  for (const actor of [markedStorage, groundPilePrototype]) {
+    assert.deepEqual(actor.updates, [{ "prototypeToken.sight.enabled": false }]);
+    assert.equal(actor.prototypeToken.sight.enabled, false);
+  }
+  for (const actor of [folderOnlyNpc, corpseOnlyNpc, ordinaryNpc, character, transport]) {
+    assert.equal(actor.updates.length, 0, actor.id);
+    assert.equal(actor.prototypeToken.sight.enabled, true, actor.id);
+  }
+});
+
+test("sync disables sight on classified storage tokens across scenes without touching ordinary or corpse tokens", async () => {
+  const harness = createHarness();
+  const markedStorage = makeActorUpdatable({
+    id: "marked-storage",
+    type: "npc",
+    flags: { [MODULE_ID]: { storage: { enabled: true } } },
+    prototypeToken: { sight: { enabled: false } }
+  });
+  const groundPilePrototype = makeActorUpdatable({
+    id: "ground-pile-prototype",
+    type: "npc",
+    flags: { [MODULE_ID]: { groundPilePrototype: { enabled: true } } },
+    prototypeToken: { sight: { enabled: false } }
+  });
+  const ordinaryNpc = makeActorUpdatable({
+    id: "ordinary-npc",
+    type: "npc",
+    flags: {},
+    prototypeToken: { sight: { enabled: true } }
+  });
+  harness.actors.push(markedStorage, groundPilePrototype, ordinaryNpc);
+
+  const markedToken = makeTokenUpdatable({
+    id: "marked-token",
+    actorId: markedStorage.id,
+    sight: { enabled: true, range: 60 },
+    flags: {}
+  });
+  const pileToken = makeTokenUpdatable({
+    id: "pile-token",
+    actorId: groundPilePrototype.id,
+    sight: { enabled: true },
+    flags: {}
+  });
+  const tokenOnlyStorage = makeTokenUpdatable({
+    id: "token-only-storage",
+    actorId: ordinaryNpc.id,
+    sight: { enabled: true },
+    flags: { [MODULE_ID]: { storage: { version: 1, state: "opened" } } }
+  });
+  const corpseToken = makeTokenUpdatable({
+    id: "corpse-token",
+    actorId: ordinaryNpc.id,
+    actor: ordinaryNpc,
+    sight: { enabled: true },
+    flags: {
+      [MODULE_ID]: {
+        storage: {
+          version: 1,
+          corpseMaterialization: { version: 1, status: "complete" }
+        }
+      }
+    }
+  });
+  const ordinaryToken = makeTokenUpdatable({
+    id: "ordinary-token",
+    actorId: ordinaryNpc.id,
+    actor: ordinaryNpc,
+    sight: { enabled: true },
+    flags: {}
+  });
+  const characterToken = makeTokenUpdatable({
+    id: "character-token",
+    actorId: "character",
+    sight: { enabled: true },
+    flags: {}
+  });
+  const transportToken = makeTokenUpdatable({
+    id: "transport-token",
+    actorId: "transport",
+    sight: { enabled: true },
+    flags: {}
+  });
+  harness.scenes.push(
+    { id: "scene-a", tokens: { contents: [markedToken, corpseToken, ordinaryToken] } },
+    { id: "scene-b", tokens: { contents: [pileToken, tokenOnlyStorage, characterToken, transportToken] } }
+  );
+
+  await harness.service.sync();
+
+  for (const token of [markedToken, pileToken, tokenOnlyStorage]) {
+    assert.deepEqual(token.updates, [{ "sight.enabled": false }]);
+    assert.equal(token.sight.enabled, false);
+  }
+  for (const token of [corpseToken, ordinaryToken, characterToken, transportToken]) {
+    assert.equal(token.updates.length, 0, token.id);
+    assert.equal(token.sight.enabled, true, token.id);
+  }
+});
+
+test("a repeated sync writes nothing when storage Actor prototypes and scene tokens are already correct", async () => {
+  const harness = createHarness();
+  await harness.service.sync();
+  for (const actor of harness.actors) makeActorUpdatable(actor);
+
+  const markedStorage = makeActorUpdatable({
+    id: "marked-storage",
+    type: "npc",
+    flags: { [MODULE_ID]: { storage: { enabled: true } } },
+    prototypeToken: { sight: { enabled: true } }
+  });
+  harness.actors.push(markedStorage);
+  const markedToken = makeTokenUpdatable({
+    id: "marked-token",
+    actorId: markedStorage.id,
+    sight: { enabled: true },
+    flags: {}
+  });
+  harness.scenes.push({ id: "scene-a", tokens: { contents: [markedToken] } });
+
+  await harness.service.sync();
+  const actorWrites = harness.actors.reduce((total, actor) => total + (actor.updates?.length ?? 0), 0);
+  const tokenWrites = markedToken.updates.length;
+  await harness.service.sync();
+
+  assert.equal(actorWrites, 1);
+  assert.equal(tokenWrites, 1);
+  assert.equal(harness.actors.reduce((total, actor) => total + (actor.updates?.length ?? 0), 0), actorWrites);
+  assert.equal(markedToken.updates.length, tokenWrites);
 });
 
 test("sync reuses the deterministic oldest storage folder at any nesting level", async () => {
@@ -266,11 +497,11 @@ test("sync reconciles existing built-in Actors into the oldest storage folder wi
   for (const actor of harness.actors) {
     assert.equal(actor.updates.length, 1);
     assert.equal(actor.updates[0].folder, canonical.id);
-    assert.equal(actor.updates[0]["prototypeToken.disposition"], 0);
-    assert.equal(actor.updates[0]["prototypeToken.sight.enabled"], false);
+    assert.equal(Object.hasOwn(actor.updates[0], "prototypeToken.disposition"), false);
+    assert.equal(Object.hasOwn(actor.updates[0], "prototypeToken.sight.enabled"), false);
   }
   assert.deepEqual(
-    harness.actors[0].updates[0][`prototypeToken.flags.${MODULE_ID}.storage`].manualRows,
+    harness.actors[0].prototypeToken.flags[MODULE_ID].storage.manualRows,
     preservedRows
   );
 });
