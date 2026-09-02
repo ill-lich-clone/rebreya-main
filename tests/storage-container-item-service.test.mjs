@@ -465,6 +465,63 @@ test("a native container without a stored actor uses the Rebreya fallback storag
   assert.equal(created[0].texture.src, snapshot.img);
 });
 
+test("a canonical gear container restores to the scene with its top-down presentation", async () => {
+  const actor = createActor();
+  const [pouch] = await actor.createEmbeddedDocuments("Item", [{
+    name: "Кошель",
+    type: "container",
+    img: "modules/rebreya-main/assets/gear/koshel.webp",
+    system: {
+      quantity: 1,
+      type: { value: "pouch" },
+      currency: {},
+      capacity: { volume: { value: 0.2, units: "ft3" }, weight: { value: 6, units: "lb" } }
+    },
+    flags: {
+      [MODULE_ID]: {
+        sourceType: "gear",
+        sourceId: "koshel",
+        gearId: "koshel"
+      }
+    }
+  }]);
+  const snapshot = await new StorageContainerItemService().captureFromItem(pouch);
+  const created = [];
+  const scene = {
+    id: "scene",
+    tokens: { contents: [] },
+    async createEmbeddedDocuments(_type, documents) {
+      created.push(clone(documents[0]));
+      return [{ ...clone(documents[0]), id: "pouch-token" }];
+    }
+  };
+  const fallbackActor = {
+    id: "ground-storage",
+    async getTokenDocument() {
+      return { toObject: () => ({ actorId: this.id, width: 1, height: 1, texture: { src: "fallback.webp" } }) };
+    }
+  };
+  const service = new StorageContainerItemService({
+    resolveScene: () => scene,
+    resolveActor: () => null,
+    resolveFallbackActor: () => fallbackActor
+  });
+
+  await service.restoreSnapshotToScene(snapshot, {
+    sceneId: scene.id,
+    x: 100,
+    y: 200,
+    mutationId: "koshel-scene"
+  });
+
+  assert.equal(
+    created[0].texture.src,
+    "modules/rebreya-main/assets/top-down/items/gear/koshel.webp"
+  );
+  assert.equal(created[0].width, 0.5);
+  assert.equal(created[0].height, 0.5);
+});
+
 test("a restored bag does not inherit the fallback ground-pile marker", async () => {
   const created = [];
   const scene = {

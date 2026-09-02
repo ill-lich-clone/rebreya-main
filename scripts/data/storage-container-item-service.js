@@ -8,6 +8,7 @@ import {
   isStorageJournalRow,
   readPortableStorageContainerSnapshot
 } from "./storage-container-snapshot.js";
+import { resolveTopDownItemPresentation } from "./top-down-item-texture-resolver.js?v=1.4.211-furniture-footprints";
 
 export const STORAGE_CONTAINER_MEMBER_FLAG = "storageContainerMember";
 export const STORAGE_CONTAINER_MUTATION_FLAG = "storageContainerMutation";
@@ -69,6 +70,22 @@ function nativeStorageKind(item) {
   return "bag";
 }
 
+function canonicalItemIdentity(item) {
+  const source = item?.flags?.[MODULE_ID];
+  if (!source || typeof source !== "object" || Array.isArray(source)) return {};
+  return Object.fromEntries(["sourceType", "sourceId", "gearId", "materialId"]
+    .map((key) => [key, clean(source[key])])
+    .filter(([, value]) => value));
+}
+
+function containerTopDownPresentation(snapshot) {
+  const identity = snapshot?.presentation?.itemIdentity;
+  if (!identity || typeof identity !== "object" || Array.isArray(identity)) return null;
+  return resolveTopDownItemPresentation({
+    itemData: { flags: { [MODULE_ID]: clone(identity) } }
+  });
+}
+
 function nativeContainerSnapshot(item) {
   const name = clean(item?.name) || "Хранилище";
   const currency = clone(item?.system?.currency) ?? {};
@@ -88,7 +105,10 @@ function nativeContainerSnapshot(item) {
       generatedCoins: {},
       coinsClaimed: false
     },
-    presentation: { itemSystem: clone(item?.system) ?? {} }
+    presentation: {
+      itemSystem: clone(item?.system) ?? {},
+      itemIdentity: canonicalItemIdentity(item)
+    }
   });
 }
 
@@ -444,6 +464,10 @@ export class StorageContainerItemService {
 
   async restoreSnapshotToScene(snapshot, { sceneId, x, y, mutationId, ownerUserId = "" } = {}) {
     const normalized = buildStorageContainerSnapshot(snapshot);
+    const topDown = containerTopDownPresentation(normalized);
+    const topDownSize = topDown
+      ? (topDown.visualType === "Доспех" ? 1 : 0.5)
+      : null;
     const stableMutationId = clean(mutationId) || randomId("storage-container-scene");
     const scene = await this.resolveScene(clean(sceneId));
     if (!scene || typeof scene.createEmbeddedDocuments !== "function") {
@@ -498,10 +522,18 @@ export class StorageContainerItemService {
         : clean(presented.name) || normalized.name,
       x: Number(x),
       y: Number(y),
+      ...(topDown ? {
+        width: topDown.tokenWidth ?? topDownSize,
+        height: topDown.tokenHeight ?? topDownSize
+      } : {}),
       texture: {
         ...(clone(prototypeData.texture) ?? {}),
         ...(clone(presented.texture) ?? {}),
-        src: clean(normalized.img) || clean(presented.texture?.src) || clean(prototypeData.texture?.src)
+        src: clean(topDown?.img) || clean(normalized.img) || clean(presented.texture?.src) || clean(prototypeData.texture?.src),
+        ...(topDown ? {
+          scaleX: topDown.textureScale,
+          scaleY: topDown.textureScale
+        } : {})
       },
       flags: {
         ...(clone(prototypeData.flags) ?? {}),
