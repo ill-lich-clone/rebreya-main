@@ -366,10 +366,13 @@ test("managed furniture uses curated footprints and stable cardinal rotations", 
   await first.service.transferToScene(request);
   await second.service.transferToScene(request);
 
-  assert.equal(first.tokens[0].width, 3);
-  assert.equal(first.tokens[0].height, 2);
-  assert.equal(first.tokens[0].x, 150);
-  assert.equal(first.tokens[0].y, 300);
+  const quarterTurn = first.tokens[0].rotation === 90 || first.tokens[0].rotation === 270;
+  assert.equal(first.tokens[0].width, quarterTurn ? 2 : 3);
+  assert.equal(first.tokens[0].height, quarterTurn ? 3 : 2);
+  assert.equal(first.tokens[0].x, quarterTurn ? 200 : 150);
+  assert.equal(first.tokens[0].y, quarterTurn ? 250 : 300);
+  assert.equal(first.tokens[0].texture.scaleX, quarterTurn ? 1.5 : 1);
+  assert.equal(first.tokens[0].texture.scaleY, quarterTurn ? 1.5 : 1);
   assert.equal(first.tokens[0].texture.fit, "contain");
   assert.ok([0, 90, 180, 270].includes(first.tokens[0].rotation));
   assert.equal(first.tokens[0].rotation, second.tokens[0].rotation);
@@ -385,10 +388,133 @@ test("managed furniture uses curated footprints and stable cardinal rotations", 
     row: bed,
     mutationId: "bed-create"
   });
-  assert.equal(bedHarness.tokens[0].width, 1);
-  assert.equal(bedHarness.tokens[0].height, 2);
-  assert.equal(bedHarness.tokens[0].x, 250);
-  assert.equal(bedHarness.tokens[0].y, 300);
+  const bedQuarterTurn = bedHarness.tokens[0].rotation === 90 || bedHarness.tokens[0].rotation === 270;
+  assert.equal(bedHarness.tokens[0].width, bedQuarterTurn ? 2 : 1);
+  assert.equal(bedHarness.tokens[0].height, bedQuarterTurn ? 1 : 2);
+  assert.equal(bedHarness.tokens[0].x, bedQuarterTurn ? 200 : 250);
+  assert.equal(bedHarness.tokens[0].y, bedQuarterTurn ? 350 : 300);
+  assert.equal(bedHarness.tokens[0].texture.scaleX, bedQuarterTurn ? 2 : 1);
+  assert.equal(bedHarness.tokens[0].texture.scaleY, bedQuarterTurn ? 2 : 1);
+});
+
+test("explicit furniture orientation swaps footprint around the drop center and compensates texture scale", async () => {
+  for (const rotation of [0, 90, 180, 270]) {
+    const { service, tokens } = createHarness();
+    await service.transferToScene({
+      row: bed,
+      quantity: 1,
+      sceneId: "scene",
+      x: 300,
+      y: 400,
+      mutationId: `bed-${rotation}`,
+      rotation
+    });
+    const quarterTurn = rotation === 90 || rotation === 270;
+    assert.equal(tokens[0].rotation, rotation);
+    assert.equal(tokens[0].width, quarterTurn ? 2 : 1);
+    assert.equal(tokens[0].height, quarterTurn ? 1 : 2);
+    assert.equal(tokens[0].x, quarterTurn ? 200 : 250);
+    assert.equal(tokens[0].y, quarterTurn ? 350 : 300);
+    assert.equal(tokens[0].texture.scaleX, quarterTurn ? 2 : 1);
+    assert.equal(tokens[0].texture.scaleY, quarterTurn ? 2 : 1);
+  }
+
+  const tableHarness = createHarness();
+  await tableHarness.service.transferToScene({
+    row: bigTable,
+    quantity: 1,
+    sceneId: "scene",
+    x: 300,
+    y: 400,
+    mutationId: "table-90",
+    rotation: 90
+  });
+  assert.equal(tableHarness.tokens[0].rotation, 90);
+  assert.equal(tableHarness.tokens[0].width, 2);
+  assert.equal(tableHarness.tokens[0].height, 3);
+  assert.equal(tableHarness.tokens[0].x, 200);
+  assert.equal(tableHarness.tokens[0].y, 250);
+  assert.equal(tableHarness.tokens[0].texture.scaleX, 1.5);
+  assert.equal(tableHarness.tokens[0].texture.scaleY, 1.5);
+});
+
+test("ground-pile owner rejects invalid orientation and ignores explicit orientation outside rectangular furniture", async () => {
+  const invalid = createHarness();
+  await assert.rejects(() => invalid.service.transferToScene({
+    row: bed,
+    quantity: 1,
+    sceneId: "scene",
+    x: 300,
+    y: 400,
+    mutationId: "bed-invalid",
+    rotation: 45
+  }), /0, 90, 180, or 270/);
+  assert.equal(invalid.tokens.length, 0);
+
+  for (const row of [chair, rapier]) {
+    const explicit = createHarness({ idFactory: () => "stable-ignored-orientation" });
+    const omitted = createHarness({ idFactory: () => "stable-ignored-orientation" });
+    const request = {
+      row,
+      quantity: 1,
+      sceneId: "scene",
+      x: 300,
+      y: 400,
+      mutationId: `ignored-${row.name}`
+    };
+    await explicit.service.transferToScene({ ...request, rotation: 90 });
+    await omitted.service.transferToScene(request);
+    assert.equal(explicit.tokens[0].rotation, omitted.tokens[0].rotation);
+    assert.equal(explicit.tokens[0].width, omitted.tokens[0].width);
+    assert.equal(explicit.tokens[0].height, omitted.tokens[0].height);
+    assert.equal(explicit.tokens[0].texture.scaleX, omitted.tokens[0].texture.scaleX);
+  }
+});
+
+test("furniture merge preserves the existing final orientation until presentation changes", async () => {
+  const { service, tokens } = createHarness();
+  const request = {
+    row: bed,
+    quantity: 1,
+    sceneId: "scene",
+    x: 300,
+    y: 400,
+    mutationId: "bed-create-90",
+    rotation: 90
+  };
+  await service.transferToScene(request);
+  await service.transferToScene({
+    ...request,
+    mutationId: "bed-merge-ignored-rotation",
+    rotation: 0
+  });
+  assert.equal(tokens[0].rotation, 90);
+  assert.equal(tokens[0].width, 2);
+  assert.equal(tokens[0].height, 1);
+  assert.equal(tokens[0].x, 200);
+  assert.equal(tokens[0].y, 350);
+  assert.equal(tokens[0].texture.scaleX, 2);
+
+  const duplicate = await service.transferToScene({
+    ...request,
+    mutationId: "bed-merge-ignored-rotation",
+    rotation: 270
+  });
+  assert.equal(duplicate.duplicate, true);
+  assert.equal(tokens[0].rotation, 90);
+
+  await service.transferToScene({
+    ...request,
+    row: chair,
+    mutationId: "chair-merge",
+    rotation: 270
+  });
+  assert.equal(tokens[0].rotation, 0);
+  assert.equal(tokens[0].width, 1);
+  assert.equal(tokens[0].height, 1);
+  assert.equal(tokens[0].x, 250);
+  assert.equal(tokens[0].y, 350);
+  assert.equal(tokens[0].texture.scaleX, 1);
 });
 
 test("furniture merge resets pile layout and restores the surviving footprint around its center", async () => {
@@ -423,10 +549,12 @@ test("furniture merge resets pile layout and restores the surviving footprint ar
     claimedRowIds: [chairRow.rowId]
   });
 
-  assert.equal(tokens[0].width, 3);
-  assert.equal(tokens[0].height, 2);
-  assert.equal(tokens[0].x, 150);
-  assert.equal(tokens[0].y, 300);
+  const quarterTurn = tokens[0].rotation === 90 || tokens[0].rotation === 270;
+  assert.equal(tokens[0].width, quarterTurn ? 2 : 3);
+  assert.equal(tokens[0].height, quarterTurn ? 3 : 2);
+  assert.equal(tokens[0].x, quarterTurn ? 200 : 150);
+  assert.equal(tokens[0].y, quarterTurn ? 250 : 300);
+  assert.equal(tokens[0].texture.scaleX, quarterTurn ? 1.5 : 1);
   assert.ok([0, 90, 180, 270].includes(tokens[0].rotation));
 });
 

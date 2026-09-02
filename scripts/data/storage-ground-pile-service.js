@@ -9,7 +9,11 @@ import { isStorageJournalRow } from "./storage-container-snapshot.js";
 import {
   deriveGroundPilePresentation,
   isGroundPileToken
-} from "./storage-pile-presentation.js?v=1.4.211-furniture-footprints";
+} from "./storage-pile-presentation.js?v=1.4.212-furniture-orientation";
+import {
+  buildGroundPileTokenLayout,
+  isGroundPileCardinalRotation
+} from "./storage-ground-pile-layout.js?v=1.4.212-furniture-orientation";
 
 function clone(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));
@@ -27,6 +31,27 @@ function deterministicRotation(seed, mode = "full") {
   }
   const value = hash >>> 0;
   return mode === "cardinal" ? (value % 4) * 90 : value % 360;
+}
+
+function isRectangularCardinalPresentation(presentation) {
+  const width = Number(presentation?.tokenWidth);
+  const height = Number(presentation?.tokenHeight);
+  return presentation?.topDownItem === true
+    && presentation?.rotationMode === "cardinal"
+    && Number.isFinite(width)
+    && width > 0
+    && Number.isFinite(height)
+    && height > 0
+    && width !== height;
+}
+
+function presentationLayout(presentation, width, height, rotation) {
+  return buildGroundPileTokenLayout({
+    width,
+    height,
+    textureScale: presentation?.topDownItem ? presentation.textureScale : 1,
+    rotationMode: presentation?.rotationMode
+  }, rotation);
 }
 
 function collectionValues(collection) {
@@ -272,16 +297,31 @@ export class StorageGroundPileService {
       ?? (tinyGroundItem ? 0.5 : 1);
     const targetWidth = presentation.tokenWidth ?? targetSize;
     const targetHeight = presentation.tokenHeight ?? targetSize;
+    const previousState = readStorageState(token);
+    const previousPresentation = deriveGroundPilePresentation(visibleRows(previousState), {
+      coins: unclaimedCoins(previousState),
+      preserveEmptyCoinPile: readFlag(token, "groundPile")?.coinPile === true,
+      readJournalRowIds: previousState.readJournalRowIds
+    });
+    const preserveRotation = isRectangularCardinalPresentation(previousPresentation)
+      && isRectangularCardinalPresentation(presentation)
+      && isGroundPileCardinalRotation(Number(token?.rotation));
+    const rotation = presentation.topDownItem
+      ? (preserveRotation
+        ? Number(token.rotation)
+        : deterministicRotation(presentation.rotationSeed, presentation.rotationMode))
+      : 0;
+    const layout = presentationLayout(presentation, targetWidth, targetHeight, rotation);
     const gridSize = Math.max(1, Number(token?.parent?.grid?.size ?? token?.parent?.grid?.sizeX ?? 100) || 100);
     const currentWidth = Math.max(0.5, Number(token?.width ?? 1));
     const currentHeight = Math.max(0.5, Number(token?.height ?? 1));
     const centerX = Number(token?.x ?? 0) + currentWidth * gridSize / 2;
     const centerY = Number(token?.y ?? 0) + currentHeight * gridSize / 2;
     const resize = {
-      width: targetWidth,
-      height: targetHeight,
-      x: centerX - targetWidth * gridSize / 2,
-      y: centerY - targetHeight * gridSize / 2
+      width: layout.width,
+      height: layout.height,
+      x: centerX - layout.width * gridSize / 2,
+      y: centerY - layout.height * gridSize / 2
     };
     await token.update({
       [`flags.${MODULE_ID}.storage`]: normalized,
@@ -290,19 +330,17 @@ export class StorageGroundPileService {
       "sight.enabled": false,
       name: presentation.name,
       "texture.src": presentation.img,
-      "texture.scaleX": presentation.topDownItem ? presentation.textureScale : 1,
-      "texture.scaleY": presentation.topDownItem ? presentation.textureScale : 1,
+      "texture.scaleX": layout.textureScale,
+      "texture.scaleY": layout.textureScale,
       ...(presentation.rotationMode === "cardinal" ? { "texture.fit": "contain" } : {}),
-      rotation: presentation.topDownItem
-        ? deterministicRotation(presentation.rotationSeed, presentation.rotationMode)
-        : 0,
+      rotation: layout.rotation,
       ...resize,
       ...(clean(ownerUserId) ? { delta: ownedSyntheticActorDelta(token?.delta, ownerUserId) } : {})
     });
     return normalized;
   }
 
-  async transferToScene({ row, quantity, sceneId, x, y, mutationId, ownerUserId = "" } = {}) {
+  async transferToScene({ row, quantity, sceneId, x, y, mutationId, ownerUserId = "", rotation } = {}) {
     const incoming = this.#prepareRow(row, quantity);
     const denomination = coinRowDenomination(incoming);
     return this.#transferPreparedSnapshot({
@@ -312,7 +350,8 @@ export class StorageGroundPileService {
       x,
       y,
       mutationId,
-      ownerUserId
+      ownerUserId,
+      rotation
     });
   }
 
@@ -379,7 +418,10 @@ export class StorageGroundPileService {
     return this.#runSceneMutation(request.sceneId, () => this.#transferPreparedSnapshotNow(request));
   }
 
-  async #transferPreparedSnapshotNow({ rows, coins, sceneId, x, y, mutationId, ownerUserId = "" }) {
+  async #transferPreparedSnapshotNow({ rows, coins, sceneId, x, y, mutationId, ownerUserId = "", rotation }) {
+    if (rotation !== undefined && !isGroundPileCardinalRotation(rotation)) {
+      throw new Error("Ground-pile furniture rotation must be 0, 90, 180, or 270 degrees.");
+    }
     const game = this.#requireActiveGm();
     const scene = this.#resolveScene(game, sceneId);
     if (!scene || typeof scene.createEmbeddedDocuments !== "function") {
@@ -478,6 +520,13 @@ export class StorageGroundPileService {
       ?? (tinyGroundItem ? 0.5 : Math.max(1, Number(prototype.height ?? 1)));
     const tokenWidth = presentation.tokenWidth ?? tokenSize;
     const tokenHeight = presentation.tokenHeight ?? tokenHeightDefault;
+    const explicitRotation = isRectangularCardinalPresentation(presentation) && rotation !== undefined
+      ? rotation
+      : undefined;
+    const finalRotation = presentation.topDownItem
+      ? (explicitRotation ?? deterministicRotation(presentation.rotationSeed, presentation.rotationMode))
+      : 0;
+    const layout = presentationLayout(presentation, tokenWidth, tokenHeight, finalRotation);
     const gridSize = Math.max(1, Number(scene?.grid?.size ?? scene?.grid?.sizeX ?? 100) || 100);
     const data = {
       ...prototype,
@@ -490,22 +539,20 @@ export class StorageGroundPileService {
       },
       delta: ownedSyntheticActorDelta(prototype.delta, ownerUserId),
       name: presentation.name,
-      x: pointX - tokenWidth * gridSize / 2,
-      y: pointY - tokenHeight * gridSize / 2,
-      width: tokenWidth,
-      height: tokenHeight,
+      x: pointX - layout.width * gridSize / 2,
+      y: pointY - layout.height * gridSize / 2,
+      width: layout.width,
+      height: layout.height,
       texture: {
         ...(clone(prototype.texture) ?? {}),
         src: presentation.img,
         ...(presentation.topDownItem ? {
-          scaleX: presentation.textureScale,
-          scaleY: presentation.textureScale,
+          scaleX: layout.textureScale,
+          scaleY: layout.textureScale,
           ...(presentation.rotationMode === "cardinal" ? { fit: "contain" } : {})
         } : {})
       },
-      ...(presentation.topDownItem ? {
-        rotation: deterministicRotation(presentation.rotationSeed, presentation.rotationMode)
-      } : {}),
+      ...(presentation.topDownItem ? { rotation: layout.rotation } : {}),
       flags: {
         ...(clone(prototype.flags) ?? {}),
         [MODULE_ID]: {
