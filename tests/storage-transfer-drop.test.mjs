@@ -134,6 +134,64 @@ test("canvas drop targets the exact scene point and cancellation preserves sourc
   assert.equal(calls.length, 1);
 });
 
+test("rectangular storage-row canvas drop prompts orientation after quantity", async () => {
+  const calls = [];
+  const order = [];
+  const result = await transferStorageDropToCanvas(
+    { scene: { id: "scene" } },
+    { ...storageDrop, x: 240, y: 360 },
+    {
+      async inspectStorageDepositSource(source) {
+        order.push("inspect");
+        assert.equal(source.rowId, storageDrop.rowId);
+        return {
+          name: "Кровать",
+          img: "bed.webp",
+          placement: { width: 1, height: 2, rotationMode: "cardinal" }
+        };
+      },
+      async claimStorageRow(...args) {
+        order.push("claim");
+        calls.push(args);
+        return { changed: true };
+      }
+    },
+    {
+      prompt: async () => { order.push("quantity"); return 2; },
+      promptRotation: async () => { order.push("rotation"); return 90; }
+    }
+  );
+
+  assert.equal(result.rotation, 90);
+  assert.deepEqual(order, ["inspect", "quantity", "rotation", "claim"]);
+  assert.deepEqual(calls[0][4], {
+    quantity: 2,
+    target: { sceneId: "scene", x: 240, y: 360, rotation: 90 }
+  });
+});
+
+test("cancelling rectangular storage-row orientation preserves the source", async () => {
+  let claims = 0;
+  const result = await transferStorageDropToCanvas(
+    { scene: { id: "scene" } },
+    { ...storageDrop, quantity: 1, x: 240, y: 360 },
+    {
+      async inspectStorageDepositSource() {
+        return {
+          name: "Кровать",
+          img: "bed.webp",
+          placement: { width: 1, height: 2, rotationMode: "cardinal" }
+        };
+      },
+      async claimStorageRow() { claims += 1; }
+    },
+    { promptRotation: async () => null }
+  );
+
+  assert.deepEqual(result, { handled: true, cancelled: true });
+  assert.equal(claims, 0);
+});
+
 test("canvas drop on a character token moves the storage row to that character", async () => {
   const calls = [];
   const actor = { type: "character", uuid: "Actor.hero" };
@@ -220,6 +278,87 @@ test("ordinary inventory and compendium Items drop onto the exact scene point", 
   assert.equal(result.quantity, 3);
   assert.deepEqual(calls[0][0], "Actor.hero.Item.arrow");
   assert.deepEqual(calls[0][1], { sceneId: "scene", x: 240, y: 360, quantity: 3 });
+});
+
+test("rectangular Foundry Item drop prompts orientation after quantity", async () => {
+  const calls = [];
+  const order = [];
+  const result = await transferFoundryItemDropToCanvas(
+    { scene: { id: "scene" } },
+    { type: "Item", uuid: "Actor.hero.Item.bed", x: 120, y: 180 },
+    {
+      async inspectStorageDepositSource() {
+        order.push("inspect");
+        return {
+          available: 2,
+          name: "Кровать",
+          img: "bed.webp",
+          placement: { width: 1, height: 2, rotationMode: "cardinal" }
+        };
+      },
+      async dropStorageItemToScene(...args) {
+        order.push("drop");
+        calls.push(args);
+        return { changed: true };
+      }
+    },
+    {
+      prompt: async () => { order.push("quantity"); return 1; },
+      promptRotation: async () => { order.push("rotation"); return 270; }
+    }
+  );
+
+  assert.equal(result.rotation, 270);
+  assert.deepEqual(order, ["inspect", "quantity", "rotation", "drop"]);
+  assert.deepEqual(calls, [["Actor.hero.Item.bed", {
+    sceneId: "scene",
+    x: 120,
+    y: 180,
+    quantity: 1,
+    rotation: 270
+  }]]);
+});
+
+test("orientation cancellation aborts rectangular Item drop while square placement bypasses it", async () => {
+  const calls = [];
+  const rectangularApi = {
+    async inspectStorageDepositSource() {
+      return {
+        available: 1,
+        name: "Кровать",
+        img: "bed.webp",
+        placement: { width: 1, height: 2, rotationMode: "cardinal" }
+      };
+    },
+    async dropStorageItemToScene(...args) { calls.push(args); }
+  };
+  const cancelled = await transferFoundryItemDropToCanvas(
+    { scene: { id: "scene" } },
+    { type: "Item", uuid: "Item.bed", x: 1, y: 2 },
+    rectangularApi,
+    { promptRotation: async () => null }
+  );
+  assert.deepEqual(cancelled, { handled: true, cancelled: true });
+  assert.equal(calls.length, 0);
+
+  const square = await transferFoundryItemDropToCanvas(
+    { scene: { id: "scene" } },
+    { type: "Item", uuid: "Item.chair", x: 3, y: 4 },
+    {
+      async inspectStorageDepositSource() {
+        return {
+          available: 1,
+          name: "Стул",
+          img: "chair.webp",
+          placement: { width: 1, height: 1, rotationMode: "cardinal" }
+        };
+      },
+      async dropStorageItemToScene(...args) { calls.push(args); return { changed: true }; }
+    },
+    { promptRotation: async () => { throw new Error("must not prompt"); } }
+  );
+  assert.equal(square.handled, true);
+  assert.deepEqual(calls[0][1], { sceneId: "scene", x: 3, y: 4, quantity: 1 });
 });
 
 test("managed Coin Items route only to the physical currency pile API", async () => {

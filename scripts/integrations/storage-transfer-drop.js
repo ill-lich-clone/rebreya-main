@@ -2,6 +2,7 @@ import { MODULE_ID } from "../constants.js";
 import {
   parseStorageDragData,
   promptStorageCoinQuantity,
+  promptStorageGroundPileRotation,
   promptStorageTransferQuantity
 } from "../ui/storage-transfer-ui.js";
 import { isPortableStorageContainerItem } from "../data/storage-container-snapshot.js";
@@ -17,6 +18,32 @@ function createMutationId() {
     ?? globalThis.crypto?.randomUUID?.()
     ?? Math.random().toString(36).slice(2);
   return `storage-drop-${random}`;
+}
+
+function rectangularPlacement(inspected) {
+  const placement = inspected?.placement;
+  const width = Number(placement?.width);
+  const height = Number(placement?.height);
+  if (placement?.rotationMode !== "cardinal"
+    || !Number.isFinite(width)
+    || width <= 0
+    || !Number.isFinite(height)
+    || height <= 0
+    || width === height) return null;
+  return {
+    name: clean(inspected?.name),
+    img: clean(inspected?.img),
+    width,
+    height,
+    rotationMode: "cardinal"
+  };
+}
+
+async function promptPlacementRotation(inspected, promptRotation) {
+  const placement = rectangularPlacement(inspected);
+  if (!placement) return { required: false, rotation: null };
+  const rotation = await promptStorageGroundPileRotation(placement, { prompt: promptRotation });
+  return { required: true, rotation };
 }
 
 function notifyDropError(error) {
@@ -67,7 +94,10 @@ export async function transferStorageDropToCharacter(actor, data, moduleApi, { p
   return { handled: true, cancelled: false, quantity, result };
 }
 
-export async function transferStorageDropToCanvas(canvas, data, moduleApi, { prompt } = {}) {
+export async function transferStorageDropToCanvas(canvas, data, moduleApi, {
+  prompt,
+  promptRotation
+} = {}) {
   const payload = parseStorageDragData(data);
   if (!payload) return { handled: false };
   const sceneId = clean(canvas?.scene?.id ?? data?.sceneId);
@@ -83,8 +113,15 @@ export async function transferStorageDropToCanvas(canvas, data, moduleApi, { pro
   if (typeof moduleApi?.claimStorageRow !== "function") {
     throw new Error("API хранилища Rebreya недоступен.");
   }
+  const inspected = typeof moduleApi?.inspectStorageDepositSource === "function"
+    ? await moduleApi.inspectStorageDepositSource(payload)
+    : null;
   const quantity = await promptStorageTransferQuantity(payload.quantity, { prompt });
   if (quantity === null) return { handled: true, cancelled: true };
+  const orientation = await promptPlacementRotation(inspected, promptRotation);
+  if (orientation.required && orientation.rotation === null) {
+    return { handled: true, cancelled: true };
+  }
   const result = await moduleApi.claimStorageRow(
     payload.tokenUuid,
     payload.rowId,
@@ -92,11 +129,22 @@ export async function transferStorageDropToCanvas(canvas, data, moduleApi, { pro
     createMutationId(),
     {
       quantity,
-      target: { sceneId, x, y },
+      target: {
+        sceneId,
+        x,
+        y,
+        ...(orientation.required ? { rotation: orientation.rotation } : {})
+      },
       ...(payload.path?.length ? { path: payload.path } : {})
     }
   );
-  return { handled: true, cancelled: false, quantity, result };
+  return {
+    handled: true,
+    cancelled: false,
+    quantity,
+    ...(orientation.required ? { rotation: orientation.rotation } : {}),
+    result
+  };
 }
 
 export async function transferPortableStorageItemDropToCanvas(
@@ -126,7 +174,7 @@ export async function transferFoundryItemDropToCanvas(
   canvas,
   data,
   moduleApi,
-  { prompt } = {}
+  { prompt, promptRotation } = {}
 ) {
   const itemUuid = clean(data?.uuid);
   if (!itemUuid || !["Item", "ItemUUID"].includes(clean(data?.type))) return { handled: false };
@@ -157,8 +205,24 @@ export async function transferFoundryItemDropToCanvas(
   }
   const quantity = await promptStorageTransferQuantity(inspected.available, { prompt });
   if (quantity === null) return { handled: true, cancelled: true };
-  const result = await moduleApi.dropStorageItemToScene(itemUuid, { sceneId, x, y, quantity });
-  return { handled: true, cancelled: false, quantity, result };
+  const orientation = await promptPlacementRotation(inspected, promptRotation);
+  if (orientation.required && orientation.rotation === null) {
+    return { handled: true, cancelled: true };
+  }
+  const result = await moduleApi.dropStorageItemToScene(itemUuid, {
+    sceneId,
+    x,
+    y,
+    quantity,
+    ...(orientation.required ? { rotation: orientation.rotation } : {})
+  });
+  return {
+    handled: true,
+    cancelled: false,
+    quantity,
+    ...(orientation.required ? { rotation: orientation.rotation } : {}),
+    result
+  };
 }
 
 export async function transferFoundryJournalDropToCanvas(canvas, data, moduleApi) {

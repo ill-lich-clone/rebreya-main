@@ -13510,6 +13510,27 @@ summary:focus-visible {
   font-size: 2rem;
 }
 
+.rm-storage-orientation-dialog {
+  display: grid;
+  justify-items: center;
+  gap: 0.5rem;
+  text-align: center;
+}
+
+.rm-storage-orientation-dialog__preview {
+  display: block;
+  width: auto;
+  max-width: 128px;
+  height: auto;
+  max-height: 128px;
+  object-fit: contain;
+}
+
+.rm-storage-orientation-dialog__size {
+  margin: 0;
+  color: var(--color-text-dark-secondary);
+}
+
 @media (max-width: 560px) {
   .rm-storage-config {
     grid-template-columns: 1fr;

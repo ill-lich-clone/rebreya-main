@@ -5,6 +5,7 @@ import * as storageTransferUi from "../scripts/ui/storage-transfer-ui.js";
 import {
   buildStorageDragData,
   parseStorageDragData,
+  promptStorageGroundPileRotation,
   promptStorageTransferQuantity,
   storageGridColumns
 } from "../scripts/ui/storage-transfer-ui.js";
@@ -56,6 +57,50 @@ test("quantity prompt bypasses one item, supports cancellation, and validates bo
   await assert.rejects(
     promptStorageTransferQuantity(5, { prompt: async () => 6 }),
     /Количество/u
+  );
+});
+
+test("ground furniture orientation prompts only for rectangular cardinal placement", async () => {
+  const bed = {
+    name: "Кровать",
+    img: "modules/rebreya-main/assets/top-down/items/gear/krovat.webp",
+    width: 1,
+    height: 2,
+    rotationMode: "cardinal"
+  };
+  const seen = [];
+  assert.equal(await promptStorageGroundPileRotation(bed, {
+    prompt: async (placement) => {
+      seen.push(placement);
+      return 90;
+    }
+  }), 90);
+  assert.deepEqual(seen, [bed]);
+  assert.equal(await promptStorageGroundPileRotation(bed, { prompt: async () => null }), null);
+
+  let bypassPrompts = 0;
+  assert.equal(await promptStorageGroundPileRotation({
+    ...bed,
+    name: "Стул",
+    width: 1,
+    height: 1
+  }, { prompt: async () => { bypassPrompts += 1; return 90; } }), null);
+  assert.equal(await promptStorageGroundPileRotation(null, {
+    prompt: async () => { bypassPrompts += 1; return 90; }
+  }), null);
+  assert.equal(bypassPrompts, 0);
+});
+
+test("ground furniture orientation rejects non-cardinal prompt results", async () => {
+  await assert.rejects(
+    promptStorageGroundPileRotation({
+      name: "Кровать",
+      img: "bed.webp",
+      width: 1,
+      height: 2,
+      rotationMode: "cardinal"
+    }, { prompt: async () => 45 }),
+    /0, 90, 180 или 270/u
   );
 });
 

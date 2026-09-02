@@ -1,3 +1,5 @@
+import { escapeFoundryHtml } from "../shared/foundry-values.js";
+
 export const STORAGE_DRAG_TYPE = "RebreyaStorageClaim";
 
 function clean(value) {
@@ -81,6 +83,38 @@ async function defaultQuantityPrompt({ max, value }) {
   });
 }
 
+async function defaultGroundPileRotationPrompt({ name, img, width, height }) {
+  const DialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
+  if (typeof DialogV2?.wait !== "function") {
+    const fallback = globalThis.prompt?.("Ориентация: 0, 90, 180 или 270", "0");
+    return fallback === null ? null : Number(fallback);
+  }
+  const displayName = clean(name) || "Предмет";
+  const safeName = escapeFoundryHtml(displayName);
+  const safeImg = escapeFoundryHtml(clean(img));
+  const size = (rotation) => rotation === 90 || rotation === 270
+    ? `${height}×${width}`
+    : `${width}×${height}`;
+  return DialogV2.wait({
+    window: { title: `Ориентация: ${displayName}` },
+    position: { width: 460 },
+    content: `
+      <section class="rm-storage-orientation-dialog">
+        ${safeImg ? `<img class="rm-storage-orientation-dialog__preview" src="${safeImg}" alt="${safeName}">` : ""}
+        <p>Выберите направление предмета на сцене.</p>
+        <p class="rm-storage-orientation-dialog__size">Исходный размер: ${width}×${height}</p>
+      </section>
+    `,
+    buttons: [0, 90, 180, 270].map((rotation) => ({
+      action: `rotation-${rotation}`,
+      label: `${rotation}° — ${size(rotation)}`,
+      default: rotation === 0,
+      callback: () => rotation
+    })),
+    rejectClose: false
+  });
+}
+
 export async function promptStorageTransferQuantity(maxQuantity, { prompt = defaultQuantityPrompt } = {}) {
   const max = positiveInteger(maxQuantity);
   if (!max) throw new Error("В источнике нет доступных предметов.");
@@ -92,6 +126,25 @@ export async function promptStorageTransferQuantity(maxQuantity, { prompt = defa
     throw new Error(`Количество должно быть целым числом от 1 до ${max}.`);
   }
   return quantity;
+}
+
+export async function promptStorageGroundPileRotation(placement, {
+  prompt = defaultGroundPileRotationPrompt
+} = {}) {
+  const width = Number(placement?.width);
+  const height = Number(placement?.height);
+  if (placement?.rotationMode !== "cardinal"
+    || !Number.isFinite(width)
+    || width <= 0
+    || !Number.isFinite(height)
+    || height <= 0
+    || width === height) return null;
+  const value = await prompt({ ...placement, width, height });
+  if (value === null || value === undefined || value === false || value === "") return null;
+  if (!Number.isInteger(value) || ![0, 90, 180, 270].includes(value)) {
+    throw new Error("Ориентация должна быть равна 0, 90, 180 или 270 градусам.");
+  }
+  return value;
 }
 
 export async function promptStorageCoinQuantity(maxQuantity = null, { prompt = defaultQuantityPrompt } = {}) {
