@@ -1118,6 +1118,21 @@ export const TOP_DOWN_ITEM_TOKEN_SCALES = new Map(Object.freeze([
   ["gear:zashchitnaya-rubashka", 1.5]
 ]));
 
+export const TOP_DOWN_ITEM_FOOTPRINTS = new Map(Object.freeze([
+  ["gear:korobka-derevyannaya", Object.freeze({ width: 1, height: 1, rotationMode: "cardinal" })],
+  ["gear:krovat", Object.freeze({ width: 1, height: 2, rotationMode: "cardinal" })],
+  ["gear:prilavok", Object.freeze({ width: 2, height: 1, rotationMode: "cardinal" })],
+  ["gear:shkaf", Object.freeze({ width: 2, height: 1, rotationMode: "cardinal" })],
+  ["gear:skamya", Object.freeze({ width: 2, height: 1, rotationMode: "cardinal" })],
+  ["gear:stellazh", Object.freeze({ width: 2, height: 1, rotationMode: "cardinal" })],
+  ["gear:stol-bolshoy", Object.freeze({ width: 3, height: 2, rotationMode: "cardinal" })],
+  ["gear:stol-pismennyy", Object.freeze({ width: 2, height: 1, rotationMode: "cardinal" })],
+  ["gear:stol-prostoy", Object.freeze({ width: 2, height: 2, rotationMode: "cardinal" })],
+  ["gear:stul", Object.freeze({ width: 1, height: 1, rotationMode: "cardinal" })],
+  ["gear:verstak", Object.freeze({ width: 2, height: 1, rotationMode: "cardinal" })],
+  ["gear:yashchik-derevyannyy", Object.freeze({ width: 1, height: 1, rotationMode: "cardinal" })]
+]));
+
 export const TOP_DOWN_ITEM_ARMOR_KEYS = new Set(Object.freeze([
   "gear:bakler",
   "gear:ballisticheskiy-shchit",

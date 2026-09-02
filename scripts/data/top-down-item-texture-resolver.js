@@ -1,9 +1,10 @@
 import { MODULE_ID } from "../constants.js";
 import {
   TOP_DOWN_ITEM_ARMOR_KEYS,
+  TOP_DOWN_ITEM_FOOTPRINTS,
   TOP_DOWN_ITEM_TOKEN_SCALES,
   TOP_DOWN_ITEM_TEXTURES
-} from "./top-down-item-texture-catalog.js";
+} from "./top-down-item-texture-catalog.js?v=1.4.211-furniture-footprints";
 
 function clean(value) {
   return String(value ?? "").trim();
@@ -43,15 +44,20 @@ function resolveTopDownItemKey(row) {
 export function resolveTopDownItemPresentation(row, {
   textures = TOP_DOWN_ITEM_TEXTURES,
   armorKeys = TOP_DOWN_ITEM_ARMOR_KEYS,
-  tokenScales = TOP_DOWN_ITEM_TOKEN_SCALES
+  tokenScales = TOP_DOWN_ITEM_TOKEN_SCALES,
+  footprints = TOP_DOWN_ITEM_FOOTPRINTS
 } = {}) {
   const key = resolveTopDownItemKey(row);
   const img = key ? textures.get(key) : null;
   if (!img) return null;
+  const footprint = footprints.get(key);
   return {
     img,
     visualType: armorKeys.has(key) ? "Доспех" : "",
-    textureScale: tokenScales.get(key) ?? 1
+    textureScale: tokenScales.get(key) ?? 1,
+    tokenWidth: footprint?.width ?? null,
+    tokenHeight: footprint?.height ?? null,
+    rotationMode: footprint?.rotationMode ?? "full"
   };
 }
 

@@ -235,6 +235,9 @@ function runtimeCatalogSource(manifest) {
   const tokenScales = accepted
     .filter((entry) => entry.tokenScale !== 1)
     .map((entry) => `  [${JSON.stringify(topDownEntryKey(entry))}, ${JSON.stringify(entry.tokenScale)}]`);
+  const footprints = accepted
+    .filter((entry) => entry.rotationMode === "cardinal")
+    .map((entry) => `  [${JSON.stringify(topDownEntryKey(entry))}, Object.freeze({ width: ${JSON.stringify(entry.tokenWidth)}, height: ${JSON.stringify(entry.tokenHeight)}, rotationMode: "cardinal" })]`);
   const armorKeys = accepted
     .filter((entry) => entry.visualType === "Доспех")
     .map((entry) => `  ${JSON.stringify(topDownEntryKey(entry))}`);
@@ -249,6 +252,10 @@ function runtimeCatalogSource(manifest) {
     "",
     "export const TOP_DOWN_ITEM_TOKEN_SCALES = new Map(Object.freeze([",
     tokenScales.join(",\n"),
+    "]));",
+    "",
+    "export const TOP_DOWN_ITEM_FOOTPRINTS = new Map(Object.freeze([",
+    footprints.join(",\n"),
     "]));",
     "",
     "export const TOP_DOWN_ITEM_ARMOR_KEYS = new Set(Object.freeze([",

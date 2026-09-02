@@ -99,6 +99,42 @@ test("single managed armor uses a full grid cell with its curated texture scale"
   });
 });
 
+test("single managed furniture exposes its curated rectangular footprint and cardinal rotation", () => {
+  const bigTable = deriveGroundPilePresentation([{
+    rowId: "table-row",
+    sourceType: "gear",
+    sourceId: "stol-bolshoy",
+    name: "Стол, большой",
+    typeLabel: "Снаряжение",
+    quantity: 1,
+    itemData: {
+      flags: {
+        [MODULE_ID]: { sourceType: "gear", sourceId: "stol-bolshoy", gearId: "stol-bolshoy" }
+      }
+    }
+  }]);
+  assert.equal(bigTable.tokenWidth, 3);
+  assert.equal(bigTable.tokenHeight, 2);
+  assert.equal(bigTable.rotationMode, "cardinal");
+  assert.equal(bigTable.rotationSeed, "table-row");
+
+  const bed = deriveGroundPilePresentation([{
+    sourceType: "gear",
+    sourceId: "krovat",
+    name: "Кровать",
+    typeLabel: "Снаряжение",
+    quantity: 1,
+    itemData: {
+      flags: {
+        [MODULE_ID]: { sourceType: "gear", sourceId: "krovat", gearId: "krovat" }
+      }
+    }
+  }]);
+  assert.equal(bed.tokenWidth, 1);
+  assert.equal(bed.tokenHeight, 2);
+  assert.equal(bed.rotationMode, "cardinal");
+});
+
 test("single external rows retain their current Item image fallback", () => {
   assert.equal(deriveGroundPilePresentation([{
     sourceType: "gear",

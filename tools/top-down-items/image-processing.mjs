@@ -136,8 +136,20 @@ export function inspectImage(path) {
 
 export function validateProcessedAsset(metadata, entry) {
   const problems = [];
+  const tokenWidth = Number(entry?.tokenWidth);
+  const tokenHeight = Number(entry?.tokenHeight);
+  const rectangular = entry?.rotationMode === "cardinal"
+    && Number.isFinite(tokenWidth) && tokenWidth > 0
+    && Number.isFinite(tokenHeight) && tokenHeight > 0;
+  const expected = rectangular && tokenWidth >= tokenHeight
+    ? { width: 512, height: Math.round(512 * tokenHeight / tokenWidth) }
+    : rectangular
+      ? { width: Math.round(512 * tokenWidth / tokenHeight), height: 512 }
+      : { width: 512, height: 512 };
   if (clean(metadata?.format).toUpperCase() !== "WEBP") problems.push("format must be WEBP");
-  if (metadata?.width !== 512 || metadata?.height !== 512) problems.push("dimensions must be 512x512");
+  if (metadata?.width !== expected.width || metadata?.height !== expected.height) {
+    problems.push(`dimensions must be ${expected.width}x${expected.height}`);
+  }
   if (metadata?.hasAlpha !== true) problems.push("alpha channel is required");
   if (!Number.isFinite(metadata?.visiblePixels) || metadata.visiblePixels <= 0) problems.push("image is empty");
   const box = metadata?.alphaBoundingBox ?? {};
@@ -145,11 +157,18 @@ export function validateProcessedAsset(metadata, entry) {
   if (!boxValues.every(Number.isFinite) || box.width <= 0 || box.height <= 0) {
     problems.push("alpha bounding box is empty");
   } else {
-    const edge = Math.min(box.x, box.y, 512 - box.x - box.width, 512 - box.y - box.height);
+    const edge = Math.min(
+      box.x,
+      box.y,
+      expected.width - box.x - box.width,
+      expected.height - box.y - box.height
+    );
     if (edge < 24) problems.push("alpha bounding box crosses the safe edge");
     const target = TOP_DOWN_SCALE_TARGETS[clean(entry?.scaleClass)] ?? TOP_DOWN_SCALE_TARGETS.standard;
     const longest = Math.max(box.width, box.height);
-    if (longest < Math.floor(target * 0.9) || longest > target + 2) {
+    const minimumTarget = Math.min(target, Math.min(expected.width, expected.height) - 48);
+    const maximumTarget = Math.max(target, Math.max(expected.width, expected.height) - 48);
+    if (longest < Math.floor(minimumTarget * 0.9) || longest > maximumTarget + 2) {
       problems.push(`visual scale must target ${target}px`);
     }
   }

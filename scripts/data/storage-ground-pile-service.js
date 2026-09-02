@@ -9,7 +9,7 @@ import { isStorageJournalRow } from "./storage-container-snapshot.js";
 import {
   deriveGroundPilePresentation,
   isGroundPileToken
-} from "./storage-pile-presentation.js?v=1.4.210-curated-item-scale";
+} from "./storage-pile-presentation.js?v=1.4.211-furniture-footprints";
 
 function clone(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));
@@ -19,13 +19,14 @@ function clean(value) {
   return String(value ?? "").trim();
 }
 
-function deterministicRotation(seed) {
+function deterministicRotation(seed, mode = "full") {
   let hash = 2166136261;
   for (const character of clean(seed)) {
     hash ^= character.codePointAt(0);
     hash = Math.imul(hash, 16777619);
   }
-  return (hash >>> 0) % 360;
+  const value = hash >>> 0;
+  return mode === "cardinal" ? (value % 4) * 90 : value % 360;
 }
 
 function collectionValues(collection) {
@@ -269,16 +270,18 @@ export class StorageGroundPileService {
       && !hasCoins);
     const targetSize = presentation.tokenSize
       ?? (tinyGroundItem ? 0.5 : 1);
+    const targetWidth = presentation.tokenWidth ?? targetSize;
+    const targetHeight = presentation.tokenHeight ?? targetSize;
     const gridSize = Math.max(1, Number(token?.parent?.grid?.size ?? token?.parent?.grid?.sizeX ?? 100) || 100);
     const currentWidth = Math.max(0.5, Number(token?.width ?? 1));
     const currentHeight = Math.max(0.5, Number(token?.height ?? 1));
     const centerX = Number(token?.x ?? 0) + currentWidth * gridSize / 2;
     const centerY = Number(token?.y ?? 0) + currentHeight * gridSize / 2;
     const resize = {
-      width: targetSize,
-      height: targetSize,
-      x: centerX - targetSize * gridSize / 2,
-      y: centerY - targetSize * gridSize / 2
+      width: targetWidth,
+      height: targetHeight,
+      x: centerX - targetWidth * gridSize / 2,
+      y: centerY - targetHeight * gridSize / 2
     };
     await token.update({
       [`flags.${MODULE_ID}.storage`]: normalized,
@@ -289,7 +292,10 @@ export class StorageGroundPileService {
       "texture.src": presentation.img,
       "texture.scaleX": presentation.topDownItem ? presentation.textureScale : 1,
       "texture.scaleY": presentation.topDownItem ? presentation.textureScale : 1,
-      rotation: presentation.topDownItem ? deterministicRotation(presentation.rotationSeed) : 0,
+      ...(presentation.rotationMode === "cardinal" ? { "texture.fit": "contain" } : {}),
+      rotation: presentation.topDownItem
+        ? deterministicRotation(presentation.rotationSeed, presentation.rotationMode)
+        : 0,
       ...resize,
       ...(clean(ownerUserId) ? { delta: ownedSyntheticActorDelta(token?.delta, ownerUserId) } : {})
     });
@@ -466,10 +472,12 @@ export class StorageGroundPileService {
       && rows[0]?.rowKind !== "container"
       && !rows[0]?.container
       && !hasCoins);
-    const tokenWidth = presentation.tokenSize
+    const tokenSize = presentation.tokenSize
       ?? (tinyGroundItem ? 0.5 : Math.max(1, Number(prototype.width ?? 1)));
-    const tokenHeight = presentation.tokenSize
+    const tokenHeightDefault = presentation.tokenSize
       ?? (tinyGroundItem ? 0.5 : Math.max(1, Number(prototype.height ?? 1)));
+    const tokenWidth = presentation.tokenWidth ?? tokenSize;
+    const tokenHeight = presentation.tokenHeight ?? tokenHeightDefault;
     const gridSize = Math.max(1, Number(scene?.grid?.size ?? scene?.grid?.sizeX ?? 100) || 100);
     const data = {
       ...prototype,
@@ -491,11 +499,12 @@ export class StorageGroundPileService {
         src: presentation.img,
         ...(presentation.topDownItem ? {
           scaleX: presentation.textureScale,
-          scaleY: presentation.textureScale
+          scaleY: presentation.textureScale,
+          ...(presentation.rotationMode === "cardinal" ? { fit: "contain" } : {})
         } : {})
       },
       ...(presentation.topDownItem ? {
-        rotation: deterministicRotation(presentation.rotationSeed)
+        rotation: deterministicRotation(presentation.rotationSeed, presentation.rotationMode)
       } : {}),
       flags: {
         ...(clone(prototype.flags) ?? {}),

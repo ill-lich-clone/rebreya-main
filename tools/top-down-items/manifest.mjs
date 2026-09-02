@@ -1,12 +1,27 @@
 import { createHash } from "node:crypto";
 import { canonicalCatalogId } from "../../scripts/shared/canonical-catalog-id.js";
 
-export const TOP_DOWN_MANIFEST_SCHEMA_VERSION = 2;
+export const TOP_DOWN_MANIFEST_SCHEMA_VERSION = 3;
 export const TOP_DOWN_ATLAS_CAPACITY = 25;
 
 const VALID_SOURCE_TYPES = new Set(["gear", "material"]);
 const VALID_STATUSES = new Set(["planned", "processing", "rejected", "accepted"]);
 const VALID_QA_STATUSES = new Set(["pending", "failed", "passed"]);
+
+function validTokenDimension(value) {
+  return Number.isFinite(value) && value > 0 && Number.isInteger(value * 2);
+}
+
+function tokenFootprint(entry) {
+  if (!validTokenDimension(entry?.tokenWidth)
+    || !validTokenDimension(entry?.tokenHeight)
+    || entry?.rotationMode !== "cardinal") return {};
+  return {
+    tokenWidth: entry.tokenWidth,
+    tokenHeight: entry.tokenHeight,
+    rotationMode: entry.rotationMode
+  };
+}
 
 function clean(value) {
   return String(value ?? "").trim().replace(/\s+/gu, " ");
@@ -139,7 +154,8 @@ export function synchronizeTopDownManifest({ manifest, gear = [], materials = []
       generationHash: promptChanged ? "" : clean(previous.generationHash),
       assetHash: promptChanged ? "" : clean(previous.assetHash),
       matteMethod: promptChanged ? "" : clean(previous.matteMethod),
-      tokenScale: [1, 1.5].includes(previous.tokenScale) ? previous.tokenScale : current.tokenScale
+      tokenScale: [1, 1.5].includes(previous.tokenScale) ? previous.tokenScale : current.tokenScale,
+      ...tokenFootprint(previous)
     };
   });
   return {
@@ -185,6 +201,11 @@ export function validateTopDownManifest({ manifest, gear = [], materials = [] } 
     if (!VALID_QA_STATUSES.has(clean(entry?.technicalQa))) diagnostics.push(`invalid technicalQa: ${key}`);
     if (!VALID_QA_STATUSES.has(clean(entry?.visualQa))) diagnostics.push(`invalid visualQa: ${key}`);
     if (![1, 1.5].includes(entry?.tokenScale)) diagnostics.push(`invalid tokenScale: ${key}`);
+    const footprintFields = [entry?.tokenWidth, entry?.tokenHeight, entry?.rotationMode];
+    if (footprintFields.some((value) => value !== undefined)
+      && Object.keys(tokenFootprint(entry)).length === 0) {
+      diagnostics.push(`invalid token footprint: ${key}`);
+    }
   }
   for (const key of canonicalKeys) {
     if (!seenKeys.has(key)) diagnostics.push(`missing manifest key: ${key}`);

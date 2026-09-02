@@ -180,6 +180,27 @@ const plateArmor = managedCanonicalRow({
   typeLabel: "Доспех"
 });
 
+const bigTable = managedCanonicalRow({
+  sourceType: "gear",
+  sourceId: "stol-bolshoy",
+  name: "Стол, большой",
+  typeLabel: "Снаряжение"
+});
+
+const chair = managedCanonicalRow({
+  sourceType: "gear",
+  sourceId: "stul",
+  name: "Стул",
+  typeLabel: "Снаряжение"
+});
+
+const bed = managedCanonicalRow({
+  sourceType: "gear",
+  sourceId: "krovat",
+  name: "Кровать",
+  typeLabel: "Снаряжение"
+});
+
 const journalNote = {
   rowKind: "journal",
   rowId: "source-note",
@@ -328,6 +349,85 @@ test("managed armor occupies one full grid cell", async () => {
   assert.equal(tokens[0].y, 350);
   assert.equal(tokens[0].texture.scaleX, 1.5);
   assert.equal(tokens[0].texture.scaleY, 1.5);
+});
+
+test("managed furniture uses curated footprints and stable cardinal rotations", async () => {
+  const first = createHarness({ idFactory: () => "stable-furniture-row" });
+  const second = createHarness({ idFactory: () => "stable-furniture-row" });
+  const request = {
+    row: bigTable,
+    quantity: 1,
+    sceneId: "scene",
+    x: 300,
+    y: 400,
+    mutationId: "big-table-create"
+  };
+
+  await first.service.transferToScene(request);
+  await second.service.transferToScene(request);
+
+  assert.equal(first.tokens[0].width, 3);
+  assert.equal(first.tokens[0].height, 2);
+  assert.equal(first.tokens[0].x, 150);
+  assert.equal(first.tokens[0].y, 300);
+  assert.equal(first.tokens[0].texture.fit, "contain");
+  assert.ok([0, 90, 180, 270].includes(first.tokens[0].rotation));
+  assert.equal(first.tokens[0].rotation, second.tokens[0].rotation);
+
+  const rotationBeforeRetry = first.tokens[0].rotation;
+  const duplicate = await first.service.transferToScene(request);
+  assert.equal(duplicate.duplicate, true);
+  assert.equal(first.tokens[0].rotation, rotationBeforeRetry);
+
+  const bedHarness = createHarness();
+  await bedHarness.service.transferToScene({
+    ...request,
+    row: bed,
+    mutationId: "bed-create"
+  });
+  assert.equal(bedHarness.tokens[0].width, 1);
+  assert.equal(bedHarness.tokens[0].height, 2);
+  assert.equal(bedHarness.tokens[0].x, 250);
+  assert.equal(bedHarness.tokens[0].y, 300);
+});
+
+test("furniture merge resets pile layout and restores the surviving footprint around its center", async () => {
+  const { service, tokens } = createHarness();
+  await service.transferToScene({
+    row: bigTable,
+    quantity: 1,
+    sceneId: "scene",
+    x: 300,
+    y: 400,
+    mutationId: "table-create"
+  });
+  await service.transferToScene({
+    row: chair,
+    quantity: 1,
+    sceneId: "scene",
+    x: 300,
+    y: 400,
+    mutationId: "chair-merge"
+  });
+
+  assert.equal(tokens[0].width, 1);
+  assert.equal(tokens[0].height, 1);
+  assert.equal(tokens[0].x, 250);
+  assert.equal(tokens[0].y, 350);
+  assert.equal(tokens[0].rotation, 0);
+
+  const state = readStorageState(tokens[0]);
+  const chairRow = state.manualRows.find((row) => row.itemData?.flags?.[MODULE_ID]?.gearId === "stul");
+  await service.refreshAfterStorageMutation(tokens[0], {
+    ...state,
+    claimedRowIds: [chairRow.rowId]
+  });
+
+  assert.equal(tokens[0].width, 3);
+  assert.equal(tokens[0].height, 2);
+  assert.equal(tokens[0].x, 150);
+  assert.equal(tokens[0].y, 300);
+  assert.ok([0, 90, 180, 270].includes(tokens[0].rotation));
 });
 
 test("managed merge uses the existing pile texture then restores the survivor top-down texture", async () => {

@@ -19,7 +19,7 @@ test("canonical manifest entries cover every gear and material ID once", () => {
   const entries = buildCanonicalTopDownEntries({ gear, materials });
   const keys = entries.map(topDownEntryKey);
 
-  assert.equal(TOP_DOWN_MANIFEST_SCHEMA_VERSION, 2);
+  assert.equal(TOP_DOWN_MANIFEST_SCHEMA_VERSION, 3);
   assert.equal(TOP_DOWN_ATLAS_CAPACITY, 25);
   assert.equal(entries.length, 1015);
   assert.equal(new Set(keys).size, 1015);
@@ -87,7 +87,10 @@ test("manifest synchronization preserves accepted work and stable placement", ()
     generationHash: "generation-7",
     assetHash: "asset-7",
     matteMethod: "chroma",
-    tokenScale: 1.5
+    tokenScale: 1.5,
+    tokenWidth: 3,
+    tokenHeight: 2,
+    rotationMode: "cardinal"
   });
 
   const synchronized = synchronizeTopDownManifest({
@@ -108,7 +111,10 @@ test("manifest synchronization preserves accepted work and stable placement", ()
     generationHash: preserved.generationHash,
     assetHash: preserved.assetHash,
     matteMethod: preserved.matteMethod,
-    tokenScale: preserved.tokenScale
+    tokenScale: preserved.tokenScale,
+    tokenWidth: preserved.tokenWidth,
+    tokenHeight: preserved.tokenHeight,
+    rotationMode: preserved.rotationMode
   }, {
     atlasId: accepted.entries[7].atlasId,
     cellIndex: accepted.entries[7].cellIndex,
@@ -118,7 +124,10 @@ test("manifest synchronization preserves accepted work and stable placement", ()
     generationHash: "generation-7",
     assetHash: "asset-7",
     matteMethod: "chroma",
-    tokenScale: 1.5
+    tokenScale: 1.5,
+    tokenWidth: 3,
+    tokenHeight: 2,
+    rotationMode: "cardinal"
   });
   assert.equal(synchronized.entries.length, 31);
 });
@@ -234,6 +243,26 @@ test("manifest validation rejects unsupported runtime texture scales", () => {
   );
 });
 
+test("manifest validation rejects incomplete or unsupported token footprints", () => {
+  const manifest = synchronizeTopDownManifest({
+    manifest: null,
+    gear: gear.slice(0, 1),
+    materials: []
+  });
+
+  Object.assign(manifest.entries[0], { tokenWidth: 2, rotationMode: "cardinal" });
+  assert.throws(
+    () => validateTopDownManifest({ manifest, gear: gear.slice(0, 1), materials: [] }),
+    /invalid token footprint/u
+  );
+
+  Object.assign(manifest.entries[0], { tokenHeight: 1, rotationMode: "free" });
+  assert.throws(
+    () => validateTopDownManifest({ manifest, gear: gear.slice(0, 1), materials: [] }),
+    /invalid token footprint/u
+  );
+});
+
 test("checked-in manifest matches the canonical catalogs", async () => {
   const manifest = JSON.parse(await readFile(
     new URL("data/top-down-item-assets.json", moduleRoot),
@@ -247,4 +276,23 @@ test("checked-in manifest matches the canonical catalogs", async () => {
   assert.equal(byKey.get("gear:revol-ver").tokenScale, 1);
   assert.equal(byKey.get("gear:alebarda").tokenScale, 1.5);
   assert.equal(byKey.get("gear:laty").tokenScale, 1.5);
+  assert.deepEqual(
+    [...byKey.entries()]
+      .filter(([, entry]) => entry.rotationMode === "cardinal")
+      .map(([key, entry]) => [key, entry.tokenWidth, entry.tokenHeight]),
+    [
+      ["gear:korobka-derevyannaya", 1, 1],
+      ["gear:krovat", 1, 2],
+      ["gear:prilavok", 2, 1],
+      ["gear:shkaf", 2, 1],
+      ["gear:skamya", 2, 1],
+      ["gear:stellazh", 2, 1],
+      ["gear:stol-bolshoy", 3, 2],
+      ["gear:stol-pismennyy", 2, 1],
+      ["gear:stol-prostoy", 2, 2],
+      ["gear:stul", 1, 1],
+      ["gear:verstak", 2, 1],
+      ["gear:yashchik-derevyannyy", 1, 1]
+    ]
+  );
 });

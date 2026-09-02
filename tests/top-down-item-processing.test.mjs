@@ -68,6 +68,47 @@ test("processed asset validation rejects invalid format, alpha, emptiness, scale
   }
 });
 
+test("processed asset validation uses the curated rectangular footprint dimensions", () => {
+  const entry = {
+    sourceType: "gear",
+    sourceId: "stol-pismennyy",
+    scaleClass: "standard",
+    tokenWidth: 2,
+    tokenHeight: 1,
+    rotationMode: "cardinal"
+  };
+  const valid = {
+    format: "WEBP",
+    width: 512,
+    height: 256,
+    hasAlpha: true,
+    visiblePixels: 24000,
+    alphaBoundingBox: { x: 96, y: 24, width: 320, height: 208 },
+    contentHash: "hash-desk"
+  };
+
+  assert.equal(validateProcessedAsset(valid, entry), true);
+  assert.throws(
+    () => validateProcessedAsset({ ...valid, height: 512 }, entry),
+    /dimensions must be 512x256/u
+  );
+  assert.throws(
+    () => validateProcessedAsset({
+      ...valid,
+      alphaBoundingBox: { x: 96, y: 1, width: 320, height: 208 }
+    }, entry),
+    /safe edge/u
+  );
+
+  const bed = { ...entry, sourceId: "krovat", tokenWidth: 1, tokenHeight: 2 };
+  assert.equal(validateProcessedAsset({
+    ...valid,
+    width: 256,
+    height: 512,
+    alphaBoundingBox: { x: 24, y: 80, width: 208, height: 352 }
+  }, bed), true);
+});
+
 test("asset collection validation rejects duplicate content hashes", () => {
   const metadata = {
     format: "WEBP",

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import { MODULE_ID } from "../scripts/constants.js";
 import {
+  TOP_DOWN_ITEM_FOOTPRINTS,
   TOP_DOWN_ITEM_TEXTURES,
   TOP_DOWN_ITEM_TOKEN_SCALES
 } from "../scripts/data/top-down-item-texture-catalog.js";
@@ -54,6 +55,31 @@ test("runtime texture scale is curated per gear identity instead of inferred fro
   assert.equal(
     resolveTopDownItemPresentation(managedRow("gear", "laty", { gearId: "laty" })).textureScale,
     1.5
+  );
+});
+
+test("runtime presentation exposes curated furniture footprints and legacy defaults", () => {
+  assert.deepEqual(
+    resolveTopDownItemPresentation(managedRow("gear", "stol-bolshoy", { gearId: "stol-bolshoy" })),
+    {
+      img: "modules/rebreya-main/assets/top-down/items/gear/stol-bolshoy.webp",
+      visualType: "",
+      textureScale: 1,
+      tokenWidth: 3,
+      tokenHeight: 2,
+      rotationMode: "cardinal"
+    }
+  );
+  assert.deepEqual(
+    resolveTopDownItemPresentation(managedRow("gear", "rapira", { gearId: "rapira" })),
+    {
+      img: "modules/rebreya-main/assets/top-down/items/gear/rapira.webp",
+      visualType: "",
+      textureScale: 1.5,
+      tokenWidth: null,
+      tokenHeight: null,
+      rotationMode: "full"
+    }
   );
 });
 
@@ -169,6 +195,27 @@ test("generated runtime scale overrides match every curated manifest value", asy
     assert.equal(
       TOP_DOWN_ITEM_TOKEN_SCALES.get(`${entry.sourceType}:${entry.sourceId}`) ?? 1,
       entry.tokenScale,
+      `${entry.sourceType}:${entry.sourceId}`
+    );
+  }
+});
+
+test("generated runtime footprint overrides match every curated manifest value", async () => {
+  const manifest = (await import("../data/top-down-item-assets.json", {
+    with: { type: "json" }
+  })).default;
+  const footprints = manifest.entries.filter((entry) => entry.rotationMode === "cardinal");
+
+  assert.equal(TOP_DOWN_ITEM_FOOTPRINTS.size, 12);
+  assert.equal(TOP_DOWN_ITEM_FOOTPRINTS.size, footprints.length);
+  for (const entry of footprints) {
+    assert.deepEqual(
+      TOP_DOWN_ITEM_FOOTPRINTS.get(`${entry.sourceType}:${entry.sourceId}`),
+      {
+        width: entry.tokenWidth,
+        height: entry.tokenHeight,
+        rotationMode: "cardinal"
+      },
       `${entry.sourceType}:${entry.sourceId}`
     );
   }

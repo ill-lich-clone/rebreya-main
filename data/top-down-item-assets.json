@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "atlas": {
     "columns": 5,
     "rows": 5,
@@ -4736,6 +4736,9 @@
       "promptHash": "e7e890f220ab4c44980c4c23a718f5136afe1aa339e24f5b7dc0690bf534c804",
       "scaleClass": "standard",
       "tokenScale": 1,
+      "tokenWidth": 1,
+      "tokenHeight": 1,
+      "rotationMode": "cardinal",
       "atlasId": "primary-010",
       "cellIndex": 11,
       "assetPath": "assets/top-down/items/gear/korobka-derevyannaya.webp",
@@ -5176,6 +5179,9 @@
       "promptHash": "b2020640f4af6fdc6e21b2ac65e40dee402c1e4c990f1266aa9accd15fb4aa02",
       "scaleClass": "standard",
       "tokenScale": 1,
+      "tokenWidth": 1,
+      "tokenHeight": 2,
+      "rotationMode": "cardinal",
       "atlasId": "primary-011",
       "cellIndex": 8,
       "assetPath": "assets/top-down/items/gear/krovat.webp",
@@ -5183,7 +5189,7 @@
       "technicalQa": "passed",
       "visualQa": "passed",
       "generationHash": "826c08364d825786ac0679da6fd0dc5072c9873c4be95fced84f2bc3eb646ed6",
-      "assetHash": "d230a536adff2c2c6ebd5e1f1b8bf9de50d53c4883ecdb6f8678cdb2657b73cd",
+      "assetHash": "376399a689e0025b82106e083274f86e65c96568b8fd4568c683c78070a6195d",
       "matteMethod": "alpha"
     },
     {
@@ -9196,6 +9202,9 @@
       "promptHash": "bc6a089d9c6097365f1f983091d35991e52cf334f702c071db2074228aeaafa4",
       "scaleClass": "standard",
       "tokenScale": 1,
+      "tokenWidth": 2,
+      "tokenHeight": 1,
+      "rotationMode": "cardinal",
       "atlasId": "primary-019",
       "cellIndex": 9,
       "assetPath": "assets/top-down/items/gear/prilavok.webp",
@@ -9203,7 +9212,7 @@
       "technicalQa": "passed",
       "visualQa": "passed",
       "generationHash": "45dc077fd62bb11faf60294caff5c3202aa893c3d4a44cf6c178af5557e9121b",
-      "assetHash": "dc4115057a2534f62d2d9aaa4b79b45bc88920f848bf6cf97798158c5b002151",
+      "assetHash": "ec03ffcbfbdd18c80e99db555c4fc22a2c58034df31e6294e23b13e57e703003",
       "matteMethod": "alpha"
     },
     {
@@ -10776,6 +10785,9 @@
       "promptHash": "6853dfcddf28c05321d746843c5f23e8b8ef95bc9880b2861af3f046d82fb41f",
       "scaleClass": "standard",
       "tokenScale": 1,
+      "tokenWidth": 2,
+      "tokenHeight": 1,
+      "rotationMode": "cardinal",
       "atlasId": "retry-053",
       "cellIndex": 20,
       "assetPath": "assets/top-down/items/gear/shkaf.webp",
@@ -10783,7 +10795,7 @@
       "technicalQa": "passed",
       "visualQa": "passed",
       "generationHash": "3c698e9dfe2d040146aebff6faca82da358bec68750d4699b0bcf58e5aa395a3",
-      "assetHash": "121814c5259ca89110501de1f2f08018ae5690e0be74943d4fb50704a1c78746",
+      "assetHash": "bc6a7d79e6aad9a6c890f314193cbef30d9fb5d07433952865ca12ef51568466",
       "matteMethod": "alpha"
     },
     {
@@ -11096,6 +11108,9 @@
       "promptHash": "57c670b0f57b0b71bf4b0558315197d5f3d2d2dfce44f85f9603209acb629b14",
       "scaleClass": "standard",
       "tokenScale": 1,
+      "tokenWidth": 2,
+      "tokenHeight": 1,
+      "rotationMode": "cardinal",
       "atlasId": "primary-023",
       "cellIndex": 4,
       "assetPath": "assets/top-down/items/gear/skamya.webp",
@@ -11103,7 +11118,7 @@
       "technicalQa": "passed",
       "visualQa": "passed",
       "generationHash": "daceb15831defc487a2b9664ef75df1e6fd3ab83d89de1478b4165a2b31d0aae",
-      "assetHash": "16e1c67643cb0b6e148b75b43894ce9c984c3b71c5a601ec5e4efc902ddefced",
+      "assetHash": "1053a369a7ee967d5f1fb15f101fa8d9bbb012368331e46d6145a283928275a4",
       "matteMethod": "alpha"
     },
     {
@@ -11396,6 +11411,9 @@
       "promptHash": "8193383e64b6f3e96d089ebba8767da57b922940acc771699075ddb3eec96f0c",
       "scaleClass": "standard",
       "tokenScale": 1,
+      "tokenWidth": 2,
+      "tokenHeight": 1,
+      "rotationMode": "cardinal",
       "atlasId": "retry-054",
       "cellIndex": 9,
       "assetPath": "assets/top-down/items/gear/stellazh.webp",
@@ -11403,7 +11421,7 @@
       "technicalQa": "passed",
       "visualQa": "passed",
       "generationHash": "32213be0c63926bae8f81550cf85a467dbc1ac1c61edf8778271b0938b48dbce",
-      "assetHash": "667f39ee7785361d9ec42facc5d7aa2eaccd2ba298815889426e8aca37b0b4e9",
+      "assetHash": "1d03cbb1d32d4dee84dd9a88e50b49795c3124bde5b718b44fd643d4e9d6b265",
       "matteMethod": "alpha"
     },
     {
@@ -11416,6 +11434,9 @@
       "promptHash": "25ba3cf9100b2963fdae64c382225e6fad65ac45ebcf658fa579b251d0fb91d8",
       "scaleClass": "standard",
       "tokenScale": 1,
+      "tokenWidth": 3,
+      "tokenHeight": 2,
+      "rotationMode": "cardinal",
       "atlasId": "retry-054",
       "cellIndex": 10,
       "assetPath": "assets/top-down/items/gear/stol-bolshoy.webp",
@@ -11423,7 +11444,7 @@
       "technicalQa": "passed",
       "visualQa": "passed",
       "generationHash": "32213be0c63926bae8f81550cf85a467dbc1ac1c61edf8778271b0938b48dbce",
-      "assetHash": "c62c8984a95e87f6167b75a14ac82a7750ad5dd2c8ca71dc20d17ddc50b9bbe4",
+      "assetHash": "5238797e0e756359939ac681a5490fb382daf45ce0cb6efd9436f639a1f17ef7",
       "matteMethod": "alpha"
     },
     {
@@ -11436,6 +11457,9 @@
       "promptHash": "4f61bb3a9b05b92ec9125ae927597bd49283f7735212ef65049238a21e13174f",
       "scaleClass": "standard",
       "tokenScale": 1,
+      "tokenWidth": 2,
+      "tokenHeight": 1,
+      "rotationMode": "cardinal",
       "atlasId": "primary-023",
       "cellIndex": 21,
       "assetPath": "assets/top-down/items/gear/stol-pismennyy.webp",
@@ -11443,7 +11467,7 @@
       "technicalQa": "passed",
       "visualQa": "passed",
       "generationHash": "daceb15831defc487a2b9664ef75df1e6fd3ab83d89de1478b4165a2b31d0aae",
-      "assetHash": "d18aaa3f50083b151167f22f38c59a73cb16a8515f2f138707d6d2b1960e42cd",
+      "assetHash": "c6e243b5cea1f5ebaf6681130642553f7634e6f099af8f1ae232d1e9a8261046",
       "matteMethod": "alpha"
     },
     {
@@ -11456,6 +11480,9 @@
       "promptHash": "19cc7e468e28f048c9432a721083fbb01016e5f555386eada9b367c9286a942f",
       "scaleClass": "standard",
       "tokenScale": 1,
+      "tokenWidth": 2,
+      "tokenHeight": 2,
+      "rotationMode": "cardinal",
       "atlasId": "retry-054",
       "cellIndex": 11,
       "assetPath": "assets/top-down/items/gear/stol-prostoy.webp",
@@ -11536,6 +11563,9 @@
       "promptHash": "d460af7680f5c3d7902c3e1190a472278c5c66fa72633a84a39815a04035a396",
       "scaleClass": "standard",
       "tokenScale": 1,
+      "tokenWidth": 1,
+      "tokenHeight": 1,
+      "rotationMode": "cardinal",
       "atlasId": "primary-024",
       "cellIndex": 1,
       "assetPath": "assets/top-down/items/gear/stul.webp",
@@ -12936,6 +12966,9 @@
       "promptHash": "24287272c97d92da911d7be2f5516c2405fc618954d24229ef7a69685a09bc74",
       "scaleClass": "standard",
       "tokenScale": 1,
+      "tokenWidth": 2,
+      "tokenHeight": 1,
+      "rotationMode": "cardinal",
       "atlasId": "retry-056",
       "cellIndex": 8,
       "assetPath": "assets/top-down/items/gear/verstak.webp",
@@ -12943,7 +12976,7 @@
       "technicalQa": "passed",
       "visualQa": "passed",
       "generationHash": "2090f6f938a40b2dd80131e9d3fc8e41badcbeaa54d3b1ff54a678e581668933",
-      "assetHash": "f6ce42a5555ac9739fdbe2d80b88571356283661a9ed9e2ea21a6446b0706e17",
+      "assetHash": "fffcf478087ac19ee8fa2811ea8f6cb6228f10421adf703467895f7041863665",
       "matteMethod": "alpha"
     },
     {
@@ -13296,6 +13329,9 @@
       "promptHash": "5311efc0f1f366c60cc5ba15fe7dad9679df379d4357569f83e713ac5313671e",
       "scaleClass": "standard",
       "tokenScale": 1,
+      "tokenWidth": 1,
+      "tokenHeight": 1,
+      "rotationMode": "cardinal",
       "atlasId": "primary-027",
       "cellIndex": 14,
       "assetPath": "assets/top-down/items/gear/yashchik-derevyannyy.webp",
