@@ -44,6 +44,34 @@ test("canonical manifest entries cover every gear and material ID once", () => {
   });
 });
 
+test("canonical manifest entries use the same normalized IDs as the runtime catalog", () => {
+  const entries = buildCanonicalTopDownEntries({
+    gear: [{ id: "железный-ключ", name: "Железный ключ" }],
+    materials: [
+      { id: "material-язык", name: "Язык" },
+      { id: "material-белое-сердцецветье", name: "Белое сердцецветье" }
+    ]
+  });
+
+  assert.deepEqual(entries.map((entry) => ({
+    key: topDownEntryKey(entry),
+    assetPath: entry.assetPath
+  })), [
+    {
+      key: "gear:zheleznyy-klyuch",
+      assetPath: "assets/top-down/items/gear/zheleznyy-klyuch.webp"
+    },
+    {
+      key: "material:material-beloe-serdtsetsvet-e",
+      assetPath: "assets/top-down/items/material/material-beloe-serdtsetsvet-e.webp"
+    },
+    {
+      key: "material:material-yazyk",
+      assetPath: "assets/top-down/items/material/material-yazyk.webp"
+    }
+  ]);
+});
+
 test("manifest synchronization preserves accepted work and stable placement", () => {
   const initial = synchronizeTopDownManifest({
     manifest: null,
@@ -89,6 +117,53 @@ test("manifest synchronization preserves accepted work and stable placement", ()
     matteMethod: "chroma"
   });
   assert.equal(synchronized.entries.length, 31);
+});
+
+test("manifest synchronization migrates accepted raw Cyrillic IDs without regenerating assets", () => {
+  const source = { id: "железный-ключ", name: "Железный ключ" };
+  const legacy = {
+    schemaVersion: TOP_DOWN_MANIFEST_SCHEMA_VERSION,
+    atlas: { columns: 5, rows: 5, capacity: TOP_DOWN_ATLAS_CAPACITY },
+    entries: [{
+      ...buildCanonicalTopDownEntries({ gear: [{ ...source, id: "zheleznyy-klyuch" }] })[0],
+      sourceId: source.id,
+      assetPath: `assets/top-down/items/gear/${source.id}.webp`,
+      atlasId: "primary-030",
+      cellIndex: 7,
+      status: "accepted",
+      technicalQa: "passed",
+      visualQa: "passed",
+      generationHash: "generation-key",
+      assetHash: "asset-key",
+      matteMethod: "alpha"
+    }]
+  };
+
+  const [entry] = synchronizeTopDownManifest({ manifest: legacy, gear: [source] }).entries;
+
+  assert.deepEqual({
+    sourceId: entry.sourceId,
+    assetPath: entry.assetPath,
+    atlasId: entry.atlasId,
+    cellIndex: entry.cellIndex,
+    status: entry.status,
+    technicalQa: entry.technicalQa,
+    visualQa: entry.visualQa,
+    generationHash: entry.generationHash,
+    assetHash: entry.assetHash,
+    matteMethod: entry.matteMethod
+  }, {
+    sourceId: "zheleznyy-klyuch",
+    assetPath: "assets/top-down/items/gear/zheleznyy-klyuch.webp",
+    atlasId: "primary-030",
+    cellIndex: 7,
+    status: "accepted",
+    technicalQa: "passed",
+    visualQa: "passed",
+    generationHash: "generation-key",
+    assetHash: "asset-key",
+    matteMethod: "alpha"
+  });
 });
 
 test("manifest validation rejects missing, unknown, duplicate-key, and duplicate-path entries", () => {

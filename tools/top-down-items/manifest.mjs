@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { canonicalCatalogId } from "../../scripts/shared/canonical-catalog-id.js";
 
 export const TOP_DOWN_MANIFEST_SCHEMA_VERSION = 1;
 export const TOP_DOWN_ATLAS_CAPACITY = 25;
@@ -39,8 +40,20 @@ function promptHash(value) {
   return createHash("sha256").update(value, "utf8").digest("hex");
 }
 
-function baseEntry(sourceType, source) {
-  const sourceId = clean(source?.id);
+function canonicalSourceRecords(sourceType, sources) {
+  const usedIds = new Set();
+  return (Array.isArray(sources) ? sources : []).map((source) => {
+    const rawSourceId = clean(source?.id) || clean(source?.name);
+    const baseId = canonicalCatalogId(rawSourceId);
+    let sourceId = baseId;
+    let suffix = 2;
+    while (usedIds.has(sourceId)) sourceId = `${baseId}-${suffix++}`;
+    usedIds.add(sourceId);
+    return { sourceType, source, rawSourceId, sourceId };
+  });
+}
+
+function baseEntry(sourceType, source, sourceId) {
   const input = promptInput(sourceType, source);
   return {
     sourceType,
@@ -88,14 +101,21 @@ export function topDownEntryKey(entry) {
 
 export function buildCanonicalTopDownEntries({ gear = [], materials = [] } = {}) {
   const entries = [
-    ...(Array.isArray(gear) ? gear : []).map((source) => baseEntry("gear", source)),
-    ...(Array.isArray(materials) ? materials : []).map((source) => baseEntry("material", source))
-  ].sort(compareEntries);
+    ...canonicalSourceRecords("gear", gear),
+    ...canonicalSourceRecords("material", materials)
+  ].map(({ sourceType, source, sourceId }) => baseEntry(sourceType, source, sourceId)).sort(compareEntries);
   return entries.map((entry, index) => ({ ...entry, ...placementAt(index) }));
 }
 
 export function synchronizeTopDownManifest({ manifest, gear = [], materials = [] } = {}) {
   const canonical = buildCanonicalTopDownEntries({ gear, materials });
+  const legacyKeyByCanonicalKey = new Map([
+    ...canonicalSourceRecords("gear", gear),
+    ...canonicalSourceRecords("material", materials)
+  ].map(({ sourceType, rawSourceId, sourceId }) => [
+    `${sourceType}:${sourceId}`,
+    `${sourceType}:${rawSourceId}`
+  ]));
   const previousEntries = Array.isArray(manifest?.entries) ? manifest.entries : [];
   const previousByKey = new Map(previousEntries.map((entry) => [topDownEntryKey(entry), entry]));
   let nextOrdinal = previousEntries.reduce(
@@ -103,7 +123,9 @@ export function synchronizeTopDownManifest({ manifest, gear = [], materials = []
     -1
   ) + 1;
   const entries = canonical.map((current) => {
-    const previous = previousByKey.get(topDownEntryKey(current));
+    const currentKey = topDownEntryKey(current);
+    const previous = previousByKey.get(currentKey)
+      ?? previousByKey.get(legacyKeyByCanonicalKey.get(currentKey));
     if (!previous) return { ...current, ...placementAt(nextOrdinal++) };
     const promptChanged = clean(previous.promptHash) !== current.promptHash;
     return {
