@@ -63,8 +63,8 @@ test("module manifest loads an unpinned canonical entrypoint for page-refresh up
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const [entrypoint] = manifest.esmodules;
 
-  assert.equal(manifest.version, "1.4.212");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.212.js"]);
+  assert.equal(manifest.version, "1.4.213");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.213.js"]);
   assert.doesNotMatch(entrypoint, /[?#]/u);
 
   const entrypointSource = await readFile(new URL(entrypoint, manifestUrl), "utf8");
@@ -248,11 +248,11 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
     "data/storage-service.js?v=1.4.200-storage-broken-presentation",
     "data/storage-access.js?v=1.4.197-door-trigger-target",
     "data/builtin-storage-actor-service.js?v=1.4.201-storage-token-neutral",
-    "data/storage-ground-pile-service.js?v=1.4.212-furniture-orientation",
+    "data/storage-ground-pile-service.js?v=1.4.213-furniture-orientation",
     "data/storage-container-item-service.js?v=1.4.130-storage-player-fixes",
     "data/storage-deposit-source.js?v=1.4.195-storage-administration",
-    "data/storage-command-service.js?v=1.4.197-door-trigger-target",
-    "integrations/storage-transfer-drop.js?v=1.4.161-journal-scene-items",
+    "data/storage-command-service.js?v=1.4.213-furniture-orientation",
+    "integrations/storage-transfer-drop.js?v=1.4.213-furniture-orientation",
     "integrations/storage-token-drop.js?v=1.4.132-storage-owned-character-resolution"
   ]) {
     assert.equal(canonicalSource.includes(importPath), true, importPath);
@@ -281,12 +281,12 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
     assert.equal(source.includes(importPath), true, importPath);
   }
   assert.equal(
-    groundPileServiceSource.includes("storage-pile-presentation.js?v=1.4.212-furniture-orientation"),
+    groundPileServiceSource.includes("storage-pile-presentation.js?v=1.4.213-furniture-orientation"),
     true,
     "ground-pile presentation changes need their own browser module cache key"
   );
   assert.equal(
-    canonicalSource.includes("storage-ground-pile-service.js?v=1.4.212-furniture-orientation"),
+    canonicalSource.includes("storage-ground-pile-service.js?v=1.4.213-furniture-orientation"),
     true,
     "ground-pile token layout changes need their own browser module cache key"
   );
@@ -313,7 +313,7 @@ test("module keeps recent published entrypoint URLs as canonical compatibility f
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
 
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.212.js"]);
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.213.js"]);
 
   for (const fileName of ["main-1.4.98.js", "main-1.4.99.js", "main-1.4.100.js"]) {
     const forwarderSource = await readFile(new URL(`../scripts/${fileName}`, import.meta.url), "utf8");

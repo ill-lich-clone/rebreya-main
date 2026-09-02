@@ -9,11 +9,11 @@ import { isStorageJournalRow } from "./storage-container-snapshot.js";
 import {
   deriveGroundPilePresentation,
   isGroundPileToken
-} from "./storage-pile-presentation.js?v=1.4.212-furniture-orientation";
+} from "./storage-pile-presentation.js?v=1.4.213-furniture-orientation";
 import {
   buildGroundPileTokenLayout,
   isGroundPileCardinalRotation
-} from "./storage-ground-pile-layout.js?v=1.4.212-furniture-orientation";
+} from "./storage-ground-pile-layout.js?v=1.4.213-furniture-orientation";
 
 function clone(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));
