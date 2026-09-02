@@ -1097,6 +1097,12 @@ test("generic Item scene drop payload accepts an exact quantity and finite scene
     mutationId: "item-scene"
   };
   assert.equal(isValidStorageDropItemPayload(payload), true);
+  for (const rotation of [0, 90, 180, 270]) {
+    assert.equal(isValidStorageDropItemPayload({ ...payload, rotation }), true);
+  }
+  for (const rotation of [45, -90, 360, "90", null]) {
+    assert.equal(isValidStorageDropItemPayload({ ...payload, rotation }), false);
+  }
   assert.equal(isValidStorageDropItemPayload({ ...payload, quantity: 0 }), false);
   assert.equal(isValidStorageDropItemPayload({ ...payload, extra: true }), false);
 });
@@ -1127,11 +1133,13 @@ test("player can drop an ordinary Item at exactly ten feet", async () => {
     x: 200,
     y: 100,
     quantity: 1,
+    rotation: 90,
     mutationId: "drop-at-ten-feet"
   }, { sender: harness.player });
 
   assert.equal(result.changed, true);
   assert.equal(harness.groundCalls.length, 1);
+  assert.equal(harness.groundCalls[0].rotation, 90);
 });
 
 test("managed coin scene payload validator accepts only the exact typed command", () => {
@@ -3695,6 +3703,20 @@ test("storage row payload validation accepts only exact character and scene targ
     destination: "scene",
     target: { sceneId: "scene", x: 100, y: 200 }
   }), true);
+  for (const rotation of [0, 90, 180, 270]) {
+    assert.equal(isValidStorageClaimRowPayload({
+      ...base,
+      destination: "scene",
+      target: { sceneId: "scene", x: 100, y: 200, rotation }
+    }), true);
+  }
+  for (const rotation of [45, -90, 360, "90", null]) {
+    assert.equal(isValidStorageClaimRowPayload({
+      ...base,
+      destination: "scene",
+      target: { sceneId: "scene", x: 100, y: 200, rotation }
+    }), false);
+  }
   assert.equal(isValidStorageClaimRowPayload({
     ...base,
     destination: "scene",
@@ -3769,7 +3791,7 @@ test("canvas drop creates a ground pile only within ten feet of the character", 
     rowId: "row-1",
     destination: "scene",
     quantity: 2,
-    target: { sceneId: "scene", x: 400, y: 500 },
+    target: { sceneId: "scene", x: 400, y: 500, rotation: 270 },
     mutationId: "scene-drop"
   }, { sender: harness.player });
 
@@ -3778,6 +3800,7 @@ test("canvas drop creates a ground pile only within ten feet of the character", 
   assert.equal(derivedInput.system.quantity, 2);
   assert.deepEqual(harness.groundCalls[0].row.itemData.flags[MODULE_ID].durability, derivedFlag);
   assert.equal(harness.groundCalls[0].quantity, 2);
+  assert.equal(harness.groundCalls[0].rotation, 270);
   assert.deepEqual(
     { sceneId: harness.groundCalls[0].sceneId, x: harness.groundCalls[0].x, y: harness.groundCalls[0].y },
     { sceneId: "scene", x: 400, y: 500 }

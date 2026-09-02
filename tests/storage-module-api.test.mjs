@@ -96,6 +96,87 @@ test("storage source inspection exposes only safe canonical placement metadata",
   }
 });
 
+test("storage scene APIs serialize optional furniture rotation without changing legacy payloads", async () => {
+  class FakeApplicationV2 {}
+  const gm = { active: true, id: "gm", isGM: true };
+  const restores = [
+    replaceGlobal("Hooks", createHooks()),
+    replaceGlobal("Actor", class Actor {}),
+    replaceGlobal("Item", class Item {}),
+    replaceGlobal("Macro", class Macro {}),
+    replaceGlobal("HTMLElement", class HTMLElement {}),
+    replaceGlobal("CONFIG", {}),
+    replaceGlobal("foundry", {
+      applications: {
+        api: {
+          ApplicationV2: FakeApplicationV2,
+          HandlebarsApplicationMixin: (Base) => Base
+        }
+      },
+      utils: {
+        deepClone: (value) => structuredClone(value),
+        getProperty(source, path) {
+          return path.split(".").reduce((value, key) => value?.[key], source);
+        }
+      }
+    }),
+    replaceGlobal("game", {
+      modules: new Map([[MODULE_ID, { version: "1.4.211" }]]),
+      socket: { emit() {}, on() {} },
+      system: { id: "dnd5e" },
+      user: gm,
+      users: { activeGM: gm, contents: [gm] },
+      messages: { contents: [] },
+      settings: { get: () => false }
+    })
+  ];
+
+  try {
+    const { RebreyaMainModule } = await import(`../scripts/main.js?storage-orientation-api=${Date.now()}`);
+    const moduleApi = new RebreyaMainModule();
+    const itemPayloads = [];
+    const claimPayloads = [];
+    moduleApi.storageCommandService.dropItemToScene = async (payload) => {
+      itemPayloads.push(structuredClone(payload));
+      return { changed: true };
+    };
+    moduleApi.storageCommandService.claimRow = async (payload) => {
+      claimPayloads.push(structuredClone(payload));
+      return { changed: true };
+    };
+
+    await moduleApi.dropStorageItemToScene("Item.bed", {
+      characterTokenUuid: "Scene.scene.Token.hero",
+      sceneId: "scene",
+      x: 100,
+      y: 200,
+      quantity: 1,
+      rotation: 90,
+      mutationId: "bed-drop"
+    });
+    await moduleApi.dropStorageItemToScene("Item.chair", {
+      characterTokenUuid: "Scene.scene.Token.hero",
+      sceneId: "scene",
+      x: 300,
+      y: 400,
+      quantity: 1,
+      mutationId: "chair-drop"
+    });
+    await moduleApi.claimStorageRow("Scene.scene.Token.chest", "bed-row", "scene", "bed-claim", {
+      characterTokenUuid: "Scene.scene.Token.hero",
+      quantity: 1,
+      target: { sceneId: "scene", x: 500, y: 600, rotation: 270 }
+    });
+
+    assert.equal(itemPayloads[0].rotation, 90);
+    assert.equal(Object.hasOwn(itemPayloads[1], "rotation"), false);
+    assert.equal(claimPayloads[0].target.rotation, 270);
+  }
+  finally {
+    restores.reverse().forEach((restore) => restore());
+  }
+});
+
 test("opening GM settings for a marked storage does not perform first-open generation", async () => {
   class FakeApplicationV2 {}
   const gm = { active: true, id: "gm", isGM: true };

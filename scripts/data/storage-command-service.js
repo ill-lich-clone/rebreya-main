@@ -21,6 +21,7 @@ import {
   createTriggerTargetRef
 } from "../application/trigger-target-coordinator.js?v=1.4.197-door-trigger-target";
 import { StorageTriggerTargetAdapter } from "./storage-trigger-target-adapter.js?v=1.4.197-door-trigger-target";
+import { isGroundPileCardinalRotation } from "./storage-ground-pile-layout.js?v=1.4.212-furniture-orientation";
 
 const STORAGE_ROW_DESTINATIONS = new Set(["self", "party", "character", "scene"]);
 const STORAGE_COIN_DESTINATIONS = new Set(["self", "party"]);
@@ -135,10 +136,13 @@ function isValidStorageTarget(destination, target) {
       && isTrimmedString(target.actorUuid, { required: true });
   }
   if (destination === "scene") {
-    return hasExactKeys(target, ["sceneId", "x", "y"])
+    const exactShape = hasExactKeys(target, ["sceneId", "x", "y"])
+      || hasExactKeys(target, ["rotation", "sceneId", "x", "y"]);
+    return exactShape
       && isTrimmedString(target.sceneId, { required: true, max: 160 })
       && Number.isFinite(target.x)
-      && Number.isFinite(target.y);
+      && Number.isFinite(target.y)
+      && (target.rotation === undefined || isGroundPileCardinalRotation(target.rotation));
   }
   return false;
 }
@@ -273,9 +277,12 @@ export function isValidStorageRestorePortablePayload(payload) {
 }
 
 export function isValidStorageDropItemPayload(payload) {
-  return hasExactKeys(payload, [
+  const exactShape = hasExactKeys(payload, [
     "characterTokenUuid", "itemUuid", "mutationId", "quantity", "sceneId", "x", "y"
-  ])
+  ]) || hasExactKeys(payload, [
+    "characterTokenUuid", "itemUuid", "mutationId", "quantity", "rotation", "sceneId", "x", "y"
+  ]);
+  return exactShape
     && isTrimmedString(payload.characterTokenUuid)
     && isTrimmedString(payload.itemUuid, { required: true })
     && isTrimmedString(payload.sceneId, { required: true, max: 160 })
@@ -283,6 +290,7 @@ export function isValidStorageDropItemPayload(payload) {
     && Number.isFinite(payload.y)
     && Number.isSafeInteger(payload.quantity)
     && payload.quantity >= 1
+    && (payload.rotation === undefined || isGroundPileCardinalRotation(payload.rotation))
     && isTrimmedString(payload.mutationId, { required: true, max: 160 });
 }
 
@@ -1155,7 +1163,8 @@ export class StorageCommandService {
           x: Number(payload.target.x),
           y: Number(payload.target.y),
           mutationId: grantId,
-          ownerUserId: clean(sender?.id)
+          ownerUserId: clean(sender?.id),
+          ...(payload.target.rotation !== undefined ? { rotation: payload.target.rotation } : {})
         });
       }
       if (destination !== "party") {
@@ -1753,7 +1762,8 @@ export class StorageCommandService {
           x: Number(payload.x),
           y: Number(payload.y),
           mutationId: mutationKey,
-          ownerUserId: clean(sender?.id)
+          ownerUserId: clean(sender?.id),
+          ...(payload.rotation !== undefined ? { rotation: payload.rotation } : {})
         });
         return { changed: true, ...created };
       }

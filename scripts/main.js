@@ -4477,7 +4477,10 @@ export class RebreyaMainModule {
       target = {
         sceneId: cleanSocketId(request.target?.sceneId),
         x: Number(request.target?.x),
-        y: Number(request.target?.y)
+        y: Number(request.target?.y),
+        ...(request.target?.rotation !== undefined
+          ? { rotation: Number(request.target.rotation) }
+          : {})
       };
     }
     else if (safeDestination === "party") {
@@ -4699,6 +4702,7 @@ export class RebreyaMainModule {
       x: Number(request.x),
       y: Number(request.y),
       quantity: Number(request.quantity),
+      ...(request.rotation !== undefined ? { rotation: Number(request.rotation) } : {}),
       mutationId: cleanSocketId(request.mutationId) || createSocketRequestId("storage-item-scene")
     };
     return isActiveGmClient(globalThis.game)
