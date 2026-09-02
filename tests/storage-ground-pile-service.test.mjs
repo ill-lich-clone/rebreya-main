@@ -112,6 +112,53 @@ const treasure = {
   itemData: { name: "Рубин", system: { quantity: 1 } }
 };
 
+function managedCanonicalRow({ sourceType, sourceId, name, typeLabel }) {
+  const identityField = sourceType === "gear" ? "gearId" : "materialId";
+  const moduleFlags = {
+    managed: true,
+    [identityField]: sourceId,
+    ...(sourceType === "gear" ? { sourceType: "gear" } : {})
+  };
+  return {
+    rowId: `source-${sourceId}`,
+    sourceType: sourceType === "gear" ? "weapon" : "loot",
+    sourceId: `Compendium.world.rebreya-${sourceType}.Item.${sourceId}-document`,
+    name,
+    img: `icons/${sourceId}-item-icon.webp`,
+    typeLabel,
+    quantity: 1,
+    itemData: {
+      name,
+      img: `icons/${sourceId}-item-icon.webp`,
+      system: { quantity: 1 },
+      flags: {
+        [MODULE_ID]: moduleFlags
+      }
+    }
+  };
+}
+
+const rapier = managedCanonicalRow({
+  sourceType: "gear",
+  sourceId: "rapira",
+  name: "Рапира",
+  typeLabel: "Оружие"
+});
+
+const longsword = managedCanonicalRow({
+  sourceType: "gear",
+  sourceId: "dlinnyy-mech",
+  name: "Длинный меч",
+  typeLabel: "Оружие"
+});
+
+const monsterHoof = managedCanonicalRow({
+  sourceType: "material",
+  sourceId: "material-10",
+  name: "Копыто чудовища",
+  typeLabel: "Материал"
+});
+
 const journalNote = {
   rowKind: "journal",
   rowId: "source-note",
@@ -171,6 +218,65 @@ test("canvas transfer creates an unlinked independent ground pile token", async 
   assert.equal(tokens[0].flags[MODULE_ID].groundPile.coinPile, false);
   assert.equal(readStorageState(tokens[0]).manualRows[0].quantity, 2);
   assert.equal(readStorageState(tokens[0]).state, "opened");
+});
+
+test("managed gear and material drops create tokens with canonical top-down textures", async () => {
+  for (const [row, expectedTexture] of [
+    [rapier, `modules/${MODULE_ID}/assets/top-down/items/gear/rapira.webp`],
+    [monsterHoof, `modules/${MODULE_ID}/assets/top-down/items/material/material-10.webp`]
+  ]) {
+    const { service, tokens } = createHarness();
+    await service.transferToScene({
+      row,
+      quantity: 1,
+      sceneId: "scene",
+      x: 300,
+      y: 400,
+      mutationId: `create-${row.itemData.flags[MODULE_ID].gearId ?? row.itemData.flags[MODULE_ID].materialId}`
+    });
+
+    assert.equal(tokens[0].texture.src, expectedTexture);
+    assert.equal(tokens[0].flags[MODULE_ID].groundPile.enabled, true);
+    assert.equal(readStorageState(tokens[0]).manualRows[0].itemData.img, row.itemData.img);
+  }
+});
+
+test("managed merge uses the existing pile texture then restores the survivor top-down texture", async () => {
+  const { service, tokens } = createHarness();
+  const request = {
+    row: rapier,
+    quantity: 1,
+    sceneId: "scene",
+    x: 300,
+    y: 400,
+    mutationId: "managed-rapier"
+  };
+
+  await service.transferToScene(request);
+  const duplicate = await service.transferToScene(request);
+  assert.equal(duplicate.duplicate, true);
+  assert.equal(readStorageState(tokens[0]).manualRows.length, 1);
+
+  await service.transferToScene({
+    ...request,
+    row: longsword,
+    mutationId: "managed-longsword"
+  });
+  assert.equal(tokens[0].texture.src, `modules/${MODULE_ID}/assets/storage/piles/weapons.png`);
+
+  const state = readStorageState(tokens[0]);
+  const rapierRow = state.manualRows.find((row) => row.itemData?.flags?.[MODULE_ID]?.gearId === "rapira");
+  const refreshed = await service.refreshAfterStorageMutation(tokens[0], {
+    ...state,
+    claimedRowIds: [rapierRow.rowId]
+  });
+
+  assert.equal(refreshed.deleted, false);
+  assert.equal(tokens[0].name, "Длинный меч");
+  assert.equal(
+    tokens[0].texture.src,
+    `modules/${MODULE_ID}/assets/top-down/items/gear/dlinnyy-mech.webp`
+  );
 });
 
 test("ground pile refresh repairs hostile disposition and enabled sight", async () => {

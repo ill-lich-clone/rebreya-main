@@ -23,6 +23,61 @@ test("ground pile presentation uses the item itself for one visible row", () => 
   ]).name, "Меч");
 });
 
+test("single managed gear and material rows use their canonical top-down textures", () => {
+  assert.deepEqual(deriveGroundPilePresentation([{
+    sourceType: "gear",
+    sourceId: "rapira",
+    name: "Рапира",
+    img: "icons/rapier-item-icon.webp",
+    typeLabel: "Оружие",
+    quantity: 1,
+    itemData: {
+      img: "icons/rapier-item-icon.webp",
+      flags: {
+        [MODULE_ID]: {
+          sourceType: "gear",
+          sourceId: "rapira",
+          gearId: "rapira"
+        }
+      }
+    }
+  }]), {
+    name: "Рапира",
+    img: `modules/${MODULE_ID}/assets/top-down/items/gear/rapira.webp`,
+    categoryKey: "single"
+  });
+
+  assert.equal(deriveGroundPilePresentation([{
+    sourceType: "material",
+    sourceId: "material-10",
+    name: "Копыто чудовища",
+    img: "icons/hoof-item-icon.webp",
+    typeLabel: "Материал",
+    quantity: 1,
+    itemData: {
+      flags: {
+        [MODULE_ID]: {
+          sourceType: "material",
+          sourceId: "material-10",
+          materialId: "material-10"
+        }
+      }
+    }
+  }]).img, `modules/${MODULE_ID}/assets/top-down/items/material/material-10.webp`);
+});
+
+test("single external rows retain their current Item image fallback", () => {
+  assert.equal(deriveGroundPilePresentation([{
+    sourceType: "gear",
+    sourceId: "rapira",
+    name: "Сторонняя рапира",
+    img: "icons/external-rapier.webp",
+    typeLabel: "Оружие",
+    quantity: 1,
+    itemData: { flags: {} }
+  }]).img, "icons/external-rapier.webp");
+});
+
 test("single broken ground item exposes its durability state in the token name", () => {
   assert.deepEqual(deriveGroundPilePresentation([{
     name: "Латы",

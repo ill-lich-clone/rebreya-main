@@ -374,11 +374,14 @@ test("pipeline CLI records visual decisions for explicit entry keys only", async
   const manifestPath = join(tempRoot, "manifest.json");
   try {
     const manifest = JSON.parse(await readFile(new URL("data/top-down-item-assets.json", moduleRoot), "utf8"));
-    const [first, second] = manifest.entries;
+    const [first, second, untouched] = manifest.entries;
     for (const entry of [first, second]) {
       entry.status = "processing";
       entry.technicalQa = "passed";
     }
+    untouched.status = "planned";
+    untouched.technicalQa = "pending";
+    untouched.visualQa = "pending";
     await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
     for (const [command, key] of [
       ["reject-entries", `${first.sourceType}:${first.sourceId}`],

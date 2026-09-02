@@ -1,6 +1,7 @@
 import { MODULE_ID } from "../constants.js";
 import { isStorageJournalRow } from "./storage-container-snapshot.js";
 import { formatDurabilityItemName } from "./durability-item-presentation.js?v=1.4.200-storage-broken-presentation";
+import { resolveTopDownItemTexture } from "./top-down-item-texture-resolver.js?v=1.4.207-top-down-item-textures";
 
 const ASSET_ROOT = `modules/${MODULE_ID}/assets/storage/piles`;
 const COIN_PRESENTATIONS = Object.freeze([
@@ -91,7 +92,8 @@ export function deriveGroundPilePresentation(rows = [], {
     );
     return {
       name: quantity > 1 ? `${name} (${quantity})` : name,
-      img: clean(row.img ?? row.itemData?.img) || GENERIC_PRESENTATION.img,
+      img: resolveTopDownItemTexture(row)
+        ?? (clean(row.img ?? row.itemData?.img) || GENERIC_PRESENTATION.img),
       categoryKey: "single"
     };
   }
