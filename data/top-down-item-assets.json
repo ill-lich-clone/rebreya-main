@@ -75,12 +75,12 @@
       "atlasId": "retry-062",
       "cellIndex": 0,
       "assetPath": "assets/top-down/items/gear/adamantinovoe-pokrytie.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "94314b5aeb19c713dc92553fa36cd0e3197fb71227e75fcf5adce7b6e626d9b1",
+      "assetHash": "50f912e9132bcd51e7521bbec02c2534cc832b16c95b33f50007af60c5269096",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -94,12 +94,12 @@
       "atlasId": "retry-062",
       "cellIndex": 1,
       "assetPath": "assets/top-down/items/gear/adamantovaya-obolochka.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "94314b5aeb19c713dc92553fa36cd0e3197fb71227e75fcf5adce7b6e626d9b1",
+      "assetHash": "87566421bf14b5ee844ac1cf51cd78649505914dbdcb07150e5357af414a5546",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -113,12 +113,12 @@
       "atlasId": "retry-062",
       "cellIndex": 2,
       "assetPath": "assets/top-down/items/gear/adamantovaya-pulya-10.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "94314b5aeb19c713dc92553fa36cd0e3197fb71227e75fcf5adce7b6e626d9b1",
+      "assetHash": "cf500acfbc55cafa02945dc9a80a4e148e1d8f5012f3681fb48cf4e11733f49e",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -132,12 +132,12 @@
       "atlasId": "retry-062",
       "cellIndex": 3,
       "assetPath": "assets/top-down/items/gear/adaptivnaya-platforma-leviafan.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "94314b5aeb19c713dc92553fa36cd0e3197fb71227e75fcf5adce7b6e626d9b1",
+      "assetHash": "d865eff9d4710ef2cb49ac8199fb542fc3d450d4d9e2c82598eff91057c128ae",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -303,12 +303,12 @@
       "atlasId": "retry-062",
       "cellIndex": 4,
       "assetPath": "assets/top-down/items/gear/amulet-svyashchennyy-simvol.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "94314b5aeb19c713dc92553fa36cd0e3197fb71227e75fcf5adce7b6e626d9b1",
+      "assetHash": "3fd196475242c28498086ad0d3ebee547c80bddc58b517eebe951fe95917a80c",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -322,12 +322,12 @@
       "atlasId": "retry-062",
       "cellIndex": 5,
       "assetPath": "assets/top-down/items/gear/antimaterial-naya-vintovka.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "94314b5aeb19c713dc92553fa36cd0e3197fb71227e75fcf5adce7b6e626d9b1",
+      "assetHash": "be501dfeb3c4f7fe24f71324ae6d33b2be5397132702347c90701ff16330e836",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -341,12 +341,12 @@
       "atlasId": "retry-062",
       "cellIndex": 6,
       "assetPath": "assets/top-down/items/gear/antimaterial-nyy-revol-ver.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "94314b5aeb19c713dc92553fa36cd0e3197fb71227e75fcf5adce7b6e626d9b1",
+      "assetHash": "4a7201ff4750900c5fdcb279a5cac211a3c2cf569b1ee507ab8bd57a87bc5a19",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -360,12 +360,12 @@
       "atlasId": "retry-062",
       "cellIndex": 7,
       "assetPath": "assets/top-down/items/gear/arbalet-legkiy.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "94314b5aeb19c713dc92553fa36cd0e3197fb71227e75fcf5adce7b6e626d9b1",
+      "assetHash": "e9b2b5f821b7faf3ba92dac58abbdbea8ecf4631a9fd18a9148db3fe4c6d3d8c",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -398,12 +398,12 @@
       "atlasId": "retry-062",
       "cellIndex": 8,
       "assetPath": "assets/top-down/items/gear/arbalet-tyazhelyy.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "94314b5aeb19c713dc92553fa36cd0e3197fb71227e75fcf5adce7b6e626d9b1",
+      "assetHash": "e26dbb24d70673a6cf3340ad9fca69efe121ba2a6088710eedca5ae2edd99c44",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -417,12 +417,12 @@
       "atlasId": "retry-062",
       "cellIndex": 9,
       "assetPath": "assets/top-down/items/gear/arbaletnye-bolty-20.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "94314b5aeb19c713dc92553fa36cd0e3197fb71227e75fcf5adce7b6e626d9b1",
+      "assetHash": "708357ce7f0a4c849249b946143945b8f3439f13a1f7168a2272fdd8ba20f0a1",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -436,12 +436,12 @@
       "atlasId": "retry-062",
       "cellIndex": 10,
       "assetPath": "assets/top-down/items/gear/arkebuza.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "94314b5aeb19c713dc92553fa36cd0e3197fb71227e75fcf5adce7b6e626d9b1",
+      "assetHash": "773eca6fd848a2410bf657e8298aa75b137084763e18f98be05c4e260810d751",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -455,12 +455,12 @@
       "atlasId": "retry-062",
       "cellIndex": 11,
       "assetPath": "assets/top-down/items/gear/astralnoe-zhalo.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "94314b5aeb19c713dc92553fa36cd0e3197fb71227e75fcf5adce7b6e626d9b1",
+      "assetHash": "e699e18583eb49d8ead2a23b43d410a4d1f34d542652ec0614289ff6c89e3ce8",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -474,12 +474,12 @@
       "atlasId": "retry-062",
       "cellIndex": 12,
       "assetPath": "assets/top-down/items/gear/astronomicheskie-napolnye-chasy.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "94314b5aeb19c713dc92553fa36cd0e3197fb71227e75fcf5adce7b6e626d9b1",
+      "assetHash": "48f5e40066d3707f4571e4f65c61eb7cd93304ba244e2ebce418a1670d28445e",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -778,12 +778,12 @@
       "atlasId": "retry-063",
       "cellIndex": 0,
       "assetPath": "assets/top-down/items/gear/boevaya-bronya-shef-povara.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "f58460acad7c27e0023de5488be87d88d2444e3549b998a9885f8ecc8f0adbe0",
+      "assetHash": "86196ab42e02e4f42fa05e00c512267b297b52af23c053a21acc9ca8292bb13a",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -1481,12 +1481,12 @@
       "atlasId": "retry-063",
       "cellIndex": 1,
       "assetPath": "assets/top-down/items/gear/dragun.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "f58460acad7c27e0023de5488be87d88d2444e3549b998a9885f8ecc8f0adbe0",
+      "assetHash": "542545e1b84202302597ed26bdb8a9960ed65cc2ac8f585a6b80f3e470721507",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -2222,12 +2222,12 @@
       "atlasId": "retry-063",
       "cellIndex": 2,
       "assetPath": "assets/top-down/items/gear/garmata.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "f58460acad7c27e0023de5488be87d88d2444e3549b998a9885f8ecc8f0adbe0",
+      "assetHash": "4d589876775c1e6c1a90c54053cabf2fe30a63ce00d389dde63ff5b4cd6a1c8e",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -2241,12 +2241,12 @@
       "atlasId": "retry-063",
       "cellIndex": 3,
       "assetPath": "assets/top-down/items/gear/gauss-pulemyot.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "f58460acad7c27e0023de5488be87d88d2444e3549b998a9885f8ecc8f0adbe0",
+      "assetHash": "7134014400a401621c1038ca144ed0aa54efdc36849d308735c1c210d930b103",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -2260,12 +2260,12 @@
       "atlasId": "retry-063",
       "cellIndex": 4,
       "assetPath": "assets/top-down/items/gear/gauss-vintovka.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "f58460acad7c27e0023de5488be87d88d2444e3549b998a9885f8ecc8f0adbe0",
+      "assetHash": "435eb383b5e3783ceb096d4e7d17a6f63192dea8914435c3fa4e737cf84d0266",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -3305,12 +3305,12 @@
       "atlasId": "retry-064",
       "cellIndex": 0,
       "assetPath": "assets/top-down/items/gear/kamennyy-fontannyy-ansambl.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "bb2b611021db4ae596b870c8d61d6f2431aea8db862947936f544b49b73cac7b",
+      "assetHash": "b3f139965c09731cb8575e3fb4f04f0dae4769d8f7e9cb1a5d47df7b3c916fca",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -3723,12 +3723,12 @@
       "atlasId": "retry-064",
       "cellIndex": 1,
       "assetPath": "assets/top-down/items/gear/khrebet-beskonechnoy-ploti.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "bb2b611021db4ae596b870c8d61d6f2431aea8db862947936f544b49b73cac7b",
+      "assetHash": "7a732e99855ca9781770404f86099b3a9062b29b466a3a38c1ba2c2280a94e7b",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -3742,12 +3742,12 @@
       "atlasId": "retry-064",
       "cellIndex": 2,
       "assetPath": "assets/top-down/items/gear/khrebet-chudovishcha.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "bb2b611021db4ae596b870c8d61d6f2431aea8db862947936f544b49b73cac7b",
+      "assetHash": "a87713f17a45104ccbea820a1839b8b49f7514eaf2bc8dbf851f4544c726d0e6",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -3799,12 +3799,12 @@
       "atlasId": "retry-064",
       "cellIndex": 3,
       "assetPath": "assets/top-down/items/gear/kineticheskie-botinki.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "bb2b611021db4ae596b870c8d61d6f2431aea8db862947936f544b49b73cac7b",
+      "assetHash": "bc8b4368be3a10520e917a203787110707beda142ebba9c5c2bf218b203fe757",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -3856,12 +3856,12 @@
       "atlasId": "retry-064",
       "cellIndex": 4,
       "assetPath": "assets/top-down/items/gear/kirasa.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "bb2b611021db4ae596b870c8d61d6f2431aea8db862947936f544b49b73cac7b",
+      "assetHash": "1431985ffeb7723e89e886c746247ab3a6199f6b73790e176ffc8ac85841238e",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -3989,12 +3989,12 @@
       "atlasId": "retry-064",
       "cellIndex": 5,
       "assetPath": "assets/top-down/items/gear/kogot-chudovishcha.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "bb2b611021db4ae596b870c8d61d6f2431aea8db862947936f544b49b73cac7b",
+      "assetHash": "3ba89785e936771d3d57e5293579e879018610cca658c86a3a43fa563da8fdff",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -4008,12 +4008,12 @@
       "atlasId": "retry-064",
       "cellIndex": 6,
       "assetPath": "assets/top-down/items/gear/kogot-chudovishcha-2.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "bb2b611021db4ae596b870c8d61d6f2431aea8db862947936f544b49b73cac7b",
+      "assetHash": "fa6481b96c8d5fccb940b77667a19f4898449c7a43f57bfd16373c555f31f007",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -4027,12 +4027,12 @@
       "atlasId": "retry-064",
       "cellIndex": 7,
       "assetPath": "assets/top-down/items/gear/kol-chuga.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "bb2b611021db4ae596b870c8d61d6f2431aea8db862947936f544b49b73cac7b",
+      "assetHash": "31f59b587768da16e96d81dd2de8d3945fe50c68ad9624267494e1ed0c4c3d27",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -4046,12 +4046,12 @@
       "atlasId": "retry-064",
       "cellIndex": 8,
       "assetPath": "assets/top-down/items/gear/kol-chuzhnaya-rubakha.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "bb2b611021db4ae596b870c8d61d6f2431aea8db862947936f544b49b73cac7b",
+      "assetHash": "796a524b5b25689efe95a9813d74c83df0ce355d4251745aef502d8588d0d627",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -4084,12 +4084,12 @@
       "atlasId": "retry-064",
       "cellIndex": 9,
       "assetPath": "assets/top-down/items/gear/kolchan.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "bb2b611021db4ae596b870c8d61d6f2431aea8db862947936f544b49b73cac7b",
+      "assetHash": "33e07fab13557258ae854c2d2ff1958e32531590273c0679aff41a045cd8d027",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -4103,12 +4103,12 @@
       "atlasId": "retry-064",
       "cellIndex": 10,
       "assetPath": "assets/top-down/items/gear/kolechnyy-dospekh.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "bb2b611021db4ae596b870c8d61d6f2431aea8db862947936f544b49b73cac7b",
+      "assetHash": "20780ae8b855dec97ba81ec45fd4ad3da4bd6335273708f4f8d19795cc3310be",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -4179,12 +4179,12 @@
       "atlasId": "retry-064",
       "cellIndex": 11,
       "assetPath": "assets/top-down/items/gear/kolossalnyy-ekzoskelet-gefest.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "bb2b611021db4ae596b870c8d61d6f2431aea8db862947936f544b49b73cac7b",
+      "assetHash": "d203d739274860437d8866f5addef907ae67f44607d364eb05eefa03e7f3d41b",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -5034,12 +5034,12 @@
       "atlasId": "retry-064",
       "cellIndex": 12,
       "assetPath": "assets/top-down/items/gear/laty.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "bb2b611021db4ae596b870c8d61d6f2431aea8db862947936f544b49b73cac7b",
+      "assetHash": "8d3670f9aee2a7eeba4e1e50347976a13b940951fc3ae8f5b19d9c171f6b20c9",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -5053,12 +5053,12 @@
       "atlasId": "retry-064",
       "cellIndex": 13,
       "assetPath": "assets/top-down/items/gear/lazernaya-vintovka.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "bb2b611021db4ae596b870c8d61d6f2431aea8db862947936f544b49b73cac7b",
+      "assetHash": "fbfe78e8873d5c19bf5146a888d7c8599e860b9ba98e81de6b40d1cf5d5c1bdf",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -5338,12 +5338,12 @@
       "atlasId": "retry-064",
       "cellIndex": 14,
       "assetPath": "assets/top-down/items/gear/lyogkaya-sluzhebnaya-bronya.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "bb2b611021db4ae596b870c8d61d6f2431aea8db862947936f544b49b73cac7b",
+      "assetHash": "70ec21fe94d74b7d1055024f6bcae333e9a09edc6df359114ac30561d45e1711",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -6098,12 +6098,12 @@
       "atlasId": "retry-064",
       "cellIndex": 15,
       "assetPath": "assets/top-down/items/gear/miniakula.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "bb2b611021db4ae596b870c8d61d6f2431aea8db862947936f544b49b73cac7b",
+      "assetHash": "c4ce9bc3d5f8741f291beaeac41734328e69dcd0b2fd6590cf69ead530b33da2",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -6174,12 +6174,12 @@
       "atlasId": "retry-065",
       "cellIndex": 0,
       "assetPath": "assets/top-down/items/gear/mnogostvol-nyy-kremnevyy-pistolet.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "8eaa576798cf88725995ff929d7beb82947e82562141ec04bc3e3b9d4c9a6f8c",
+      "assetHash": "e7bff376ae87ecd479183c651488660b2de3ef70564e8a2b345c47f08c17ada0",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -6573,12 +6573,12 @@
       "atlasId": "retry-065",
       "cellIndex": 1,
       "assetPath": "assets/top-down/items/gear/mushket.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "8eaa576798cf88725995ff929d7beb82947e82562141ec04bc3e3b9d4c9a6f8c",
+      "assetHash": "4802964e2d30d413d6211483b5da6798e9653d8da7f60fac30109af099129628",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -6611,12 +6611,12 @@
       "atlasId": "retry-065",
       "cellIndex": 2,
       "assetPath": "assets/top-down/items/gear/mushketon.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "8eaa576798cf88725995ff929d7beb82947e82562141ec04bc3e3b9d4c9a6f8c",
+      "assetHash": "3b18d30c6dac25832cde66eed36cd8e0bad0b8d805c3806277424e1df14807f2",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -7143,12 +7143,12 @@
       "atlasId": "retry-065",
       "cellIndex": 3,
       "assetPath": "assets/top-down/items/gear/obrez.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "8eaa576798cf88725995ff929d7beb82947e82562141ec04bc3e3b9d4c9a6f8c",
+      "assetHash": "a5ddca46ef87276fb892151b82b6d41f8475d6b417564baf461a5b05db205f1f",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -7314,12 +7314,12 @@
       "atlasId": "retry-065",
       "cellIndex": 4,
       "assetPath": "assets/top-down/items/gear/ognemyot.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "8eaa576798cf88725995ff929d7beb82947e82562141ec04bc3e3b9d4c9a6f8c",
+      "assetHash": "7c91a3ce7cfe4440b2c6d7227705b779d2434b34d82f2e31bf42eac5393ef702",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -8036,12 +8036,12 @@
       "atlasId": "retry-065",
       "cellIndex": 5,
       "assetPath": "assets/top-down/items/gear/pekhotnaya-shturmovaya-bronya.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "8eaa576798cf88725995ff929d7beb82947e82562141ec04bc3e3b9d4c9a6f8c",
+      "assetHash": "a22bc15a917e8732111b72db782e54ba2e2f6ff9dd5206cb2c08408761f844f9",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -8207,12 +8207,12 @@
       "atlasId": "retry-065",
       "cellIndex": 6,
       "assetPath": "assets/top-down/items/gear/pistolet.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "8eaa576798cf88725995ff929d7beb82947e82562141ec04bc3e3b9d4c9a6f8c",
+      "assetHash": "b7a2f55aa5896c5eef73584126be99a096c50e308b95a3190f120c9214dab87c",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -8511,12 +8511,12 @@
       "atlasId": "retry-065",
       "cellIndex": 7,
       "assetPath": "assets/top-down/items/gear/poluavtomaticheskaya-vintovka.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "8eaa576798cf88725995ff929d7beb82947e82562141ec04bc3e3b9d4c9a6f8c",
+      "assetHash": "12ced21731e4de684e4a4857e9246bb921a7fbe3aed95a734fccbcadbf6f0842",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -8530,12 +8530,12 @@
       "atlasId": "retry-065",
       "cellIndex": 8,
       "assetPath": "assets/top-down/items/gear/polulaty.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "8eaa576798cf88725995ff929d7beb82947e82562141ec04bc3e3b9d4c9a6f8c",
+      "assetHash": "e36421cb5930655fca2a77db8856ad307549ccda3ff48ff8eda6ad0fbbe8be93",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -8910,12 +8910,12 @@
       "atlasId": "retry-065",
       "cellIndex": 9,
       "assetPath": "assets/top-down/items/gear/proklyat-e-tyazhesti-zhizni.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "8eaa576798cf88725995ff929d7beb82947e82562141ec04bc3e3b9d4c9a6f8c",
+      "assetHash": "0437d58e98fd3073881d438e029754ac6e2c2a8662009cc38d55e9b348669d01",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -8929,12 +8929,12 @@
       "atlasId": "retry-065",
       "cellIndex": 10,
       "assetPath": "assets/top-down/items/gear/proklyat-e-voli-k-zhizni.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "8eaa576798cf88725995ff929d7beb82947e82562141ec04bc3e3b9d4c9a6f8c",
+      "assetHash": "4c363cb1995a0b675f85562b1f82bbd248f0ff80b650b2dde38e45159b8d738e",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -8948,12 +8948,12 @@
       "atlasId": "retry-065",
       "cellIndex": 11,
       "assetPath": "assets/top-down/items/gear/proklyat-e-zhizni-i-smerti.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "8eaa576798cf88725995ff929d7beb82947e82562141ec04bc3e3b9d4c9a6f8c",
+      "assetHash": "68476a43a963543fe6dee041d4b4da55a8739961a81d7708b16754b6a89766bb",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -8967,12 +8967,12 @@
       "atlasId": "retry-065",
       "cellIndex": 12,
       "assetPath": "assets/top-down/items/gear/proklyopannyy-kozhanyy-dospekh.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "8eaa576798cf88725995ff929d7beb82947e82562141ec04bc3e3b9d4c9a6f8c",
+      "assetHash": "2d562eb7c76deb1d41ab728c1bf77e1b5a5d9e2092a2d814cfd744b62c2e3f9f",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -8986,12 +8986,12 @@
       "atlasId": "retry-065",
       "cellIndex": 13,
       "assetPath": "assets/top-down/items/gear/protivopekhotnaya-mina.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "8eaa576798cf88725995ff929d7beb82947e82562141ec04bc3e3b9d4c9a6f8c",
+      "assetHash": "18eb857f1b6e86f29d0f045bfaf090f2a01d05e984f493fa7e1e992b0a852bf8",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -9005,12 +9005,12 @@
       "atlasId": "retry-065",
       "cellIndex": 14,
       "assetPath": "assets/top-down/items/gear/protivotankovoya-mina.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "8eaa576798cf88725995ff929d7beb82947e82562141ec04bc3e3b9d4c9a6f8c",
+      "assetHash": "7a6443c2ffbbff3303c4923f4a840fadfbcab9ae35c68d03ede69007926d1072",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -9024,12 +9024,12 @@
       "atlasId": "retry-065",
       "cellIndex": 15,
       "assetPath": "assets/top-down/items/gear/pulevaya-granata-10.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "8eaa576798cf88725995ff929d7beb82947e82562141ec04bc3e3b9d4c9a6f8c",
+      "assetHash": "29bfd2d3a4ec68bc0ccaf251ccee80e290ca17be3d38f30190c27acd6bc1ed18",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -9119,12 +9119,12 @@
       "atlasId": "retry-065",
       "cellIndex": 16,
       "assetPath": "assets/top-down/items/gear/raketnaya-tyaga-orion.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "8eaa576798cf88725995ff929d7beb82947e82562141ec04bc3e3b9d4c9a6f8c",
+      "assetHash": "16ca53eea6f589e2980a90854271f2d8a360e8b48dee5abfefb572a97eb522ae",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -9138,12 +9138,12 @@
       "atlasId": "retry-065",
       "cellIndex": 17,
       "assetPath": "assets/top-down/items/gear/raketnyy-vystrel-3.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "8eaa576798cf88725995ff929d7beb82947e82562141ec04bc3e3b9d4c9a6f8c",
+      "assetHash": "91ae6daa5a199994785f96a2eea9e58d96695371eb78cc71d3cb10c5e6fd1ebf",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -9157,12 +9157,12 @@
       "atlasId": "retry-065",
       "cellIndex": 18,
       "assetPath": "assets/top-down/items/gear/rapira.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "8eaa576798cf88725995ff929d7beb82947e82562141ec04bc3e3b9d4c9a6f8c",
+      "assetHash": "b9afd18b4388ed45e40e795ae47d16f68efe95dd7db4a24bbb603cd9d04cbf90",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -9176,12 +9176,12 @@
       "atlasId": "retry-053",
       "cellIndex": 0,
       "assetPath": "assets/top-down/items/gear/raspisanie-perevozok.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "3c698e9dfe2d040146aebff6faca82da358bec68750d4699b0bcf58e5aa395a3",
+      "assetHash": "e43185487778aedf6f9d0587d71a2f40965d9cac8d41c03bf2f13fd19b3bd50b",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -9233,12 +9233,12 @@
       "atlasId": "retry-053",
       "cellIndex": 1,
       "assetPath": "assets/top-down/items/gear/razgonshchik-snaryadov.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "3c698e9dfe2d040146aebff6faca82da358bec68750d4699b0bcf58e5aa395a3",
+      "assetHash": "a7b0ce473a21d4aae3bc38a61c86849b4afcb70ca93c62eb82c916c8dfb35965",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -9252,12 +9252,12 @@
       "atlasId": "retry-053",
       "cellIndex": 2,
       "assetPath": "assets/top-down/items/gear/razrisovannyy-korpus.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "3c698e9dfe2d040146aebff6faca82da358bec68750d4699b0bcf58e5aa395a3",
+      "assetHash": "bd64b67ca12d0b093cfbf5b414f40cd20467cef7b54c3eca41fd1297a5e067d3",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -9290,12 +9290,12 @@
       "atlasId": "retry-053",
       "cellIndex": 3,
       "assetPath": "assets/top-down/items/gear/regeneriruyushchaya-plot.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "3c698e9dfe2d040146aebff6faca82da358bec68750d4699b0bcf58e5aa395a3",
+      "assetHash": "cbb8015f3b130eaaedb8fd84fbffed76519bbe63f39e3ac3487eaec5eaf095af",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -9328,12 +9328,12 @@
       "atlasId": "retry-053",
       "cellIndex": 4,
       "assetPath": "assets/top-down/items/gear/relikvariy-svyashchennyy-simvol.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "3c698e9dfe2d040146aebff6faca82da358bec68750d4699b0bcf58e5aa395a3",
+      "assetHash": "f224a2a2aaab59d29d6317252a46aad22b3772fda523809d7be74f9bfa87a515",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -9366,12 +9366,12 @@
       "atlasId": "retry-053",
       "cellIndex": 5,
       "assetPath": "assets/top-down/items/gear/revol-ver.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "3c698e9dfe2d040146aebff6faca82da358bec68750d4699b0bcf58e5aa395a3",
+      "assetHash": "656601dc50bb26f960e89fdf17140d051650eb90dc1f90191ece98018fee6d93",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -9385,12 +9385,12 @@
       "atlasId": "retry-053",
       "cellIndex": 6,
       "assetPath": "assets/top-down/items/gear/reznaya-arfa-iz-ekzoticheskoy-drevesiny-s-inkrustatsiey.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "3c698e9dfe2d040146aebff6faca82da358bec68750d4699b0bcf58e5aa395a3",
+      "assetHash": "ae8a8dbc823ff02500e282b30651ca15dad58fcf90ad8d8f79c75e6451306db4",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -9442,12 +9442,12 @@
       "atlasId": "retry-053",
       "cellIndex": 7,
       "assetPath": "assets/top-down/items/gear/reznaya-statuetka-slonovoy-kosti.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "3c698e9dfe2d040146aebff6faca82da358bec68750d4699b0bcf58e5aa395a3",
+      "assetHash": "960554737072b115d799da7cc3218918f1d2320a64e2b680923176aa52d97eab",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -9480,12 +9480,12 @@
       "atlasId": "retry-053",
       "cellIndex": 8,
       "assetPath": "assets/top-down/items/gear/ritualnoe-oblachenie-arkhiereya.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "3c698e9dfe2d040146aebff6faca82da358bec68750d4699b0bcf58e5aa395a3",
+      "assetHash": "f2c9799dff6f8231126540a58f6b188a6d597753b6a73c4686d3426c1fc840b3",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -9537,12 +9537,12 @@
       "atlasId": "retry-053",
       "cellIndex": 9,
       "assetPath": "assets/top-down/items/gear/ruchnitsa.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "3c698e9dfe2d040146aebff6faca82da358bec68750d4699b0bcf58e5aa395a3",
+      "assetHash": "11dde36f37d2b2997ef717f325c7549eb6b23f5066aad727c75486e119faaebe",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -9556,12 +9556,12 @@
       "atlasId": "retry-053",
       "cellIndex": 15,
       "assetPath": "assets/top-down/items/gear/ruchnoy-granatomyot.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "3c698e9dfe2d040146aebff6faca82da358bec68750d4699b0bcf58e5aa395a3",
+      "assetHash": "34c305d731ea4f5a4acb9985f028b04634cfcb8ea4f7e39c0c77395914c31a84",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -9632,12 +9632,12 @@
       "atlasId": "retry-053",
       "cellIndex": 10,
       "assetPath": "assets/top-down/items/gear/ryasa.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "3c698e9dfe2d040146aebff6faca82da358bec68750d4699b0bcf58e5aa395a3",
+      "assetHash": "499bd9fb5c74eb5f85e33988af1cf7fbcaa7cb9679206aa366ff3c1391e837b8",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -9689,12 +9689,12 @@
       "atlasId": "retry-053",
       "cellIndex": 11,
       "assetPath": "assets/top-down/items/gear/sadovaya-statuya.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "3c698e9dfe2d040146aebff6faca82da358bec68750d4699b0bcf58e5aa395a3",
+      "assetHash": "827d2c8425513c3841fb3517ec8e370272fcec7e6439d62fb5180f2d8d9b8fb3",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -9708,12 +9708,12 @@
       "atlasId": "retry-053",
       "cellIndex": 16,
       "assetPath": "assets/top-down/items/gear/samodel-noe-rpu.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "3c698e9dfe2d040146aebff6faca82da358bec68750d4699b0bcf58e5aa395a3",
+      "assetHash": "c20de4984600480552520c997e121d9e2b35f3ee497eba7d208d313dbc03c744",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -9784,12 +9784,12 @@
       "atlasId": "retry-053",
       "cellIndex": 12,
       "assetPath": "assets/top-down/items/gear/semeynyy-diptikh.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "3c698e9dfe2d040146aebff6faca82da358bec68750d4699b0bcf58e5aa395a3",
+      "assetHash": "3f6cc1a3ec679744f9fda6c35d3000921c0142a808f573074884df322a9fcea3",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -9879,12 +9879,12 @@
       "atlasId": "retry-053",
       "cellIndex": 13,
       "assetPath": "assets/top-down/items/gear/serebrenie-oruzhiya.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "3c698e9dfe2d040146aebff6faca82da358bec68750d4699b0bcf58e5aa395a3",
+      "assetHash": "29e48fac6757e281f30e547e48d7abb03de119b74aa8245ccd11320c0b5e818c",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -9974,12 +9974,12 @@
       "atlasId": "retry-053",
       "cellIndex": 14,
       "assetPath": "assets/top-down/items/gear/serebryannaya-pulya-10.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "3c698e9dfe2d040146aebff6faca82da358bec68750d4699b0bcf58e5aa395a3",
+      "assetHash": "bf71e6f644c9d2aa9655f06c08d3038b05fe24c02ab412700634764dc4514407",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -10050,12 +10050,12 @@
       "atlasId": "retry-053",
       "cellIndex": 17,
       "assetPath": "assets/top-down/items/gear/serp.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "3c698e9dfe2d040146aebff6faca82da358bec68750d4699b0bcf58e5aa395a3",
+      "assetHash": "de9f822cb1cbad32e95978fb39d5f12c6f77ebe285e458ea2b645e6c923155be",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -10069,12 +10069,12 @@
       "atlasId": "retry-053",
       "cellIndex": 18,
       "assetPath": "assets/top-down/items/gear/set.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "3c698e9dfe2d040146aebff6faca82da358bec68750d4699b0bcf58e5aa395a3",
+      "assetHash": "1f2df840794a4c5a781ea472b303f8c32c78085aab1543b7262053d25a971630",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -10202,12 +10202,12 @@
       "atlasId": "retry-053",
       "cellIndex": 19,
       "assetPath": "assets/top-down/items/gear/shest-10-futov.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "3c698e9dfe2d040146aebff6faca82da358bec68750d4699b0bcf58e5aa395a3",
+      "assetHash": "cd2843db80ac3d4f0c041f0109b5f06e0e3521b793c997ca153daf20aecfb24f",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -10240,12 +10240,12 @@
       "atlasId": "retry-053",
       "cellIndex": 20,
       "assetPath": "assets/top-down/items/gear/shkaf.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "3c698e9dfe2d040146aebff6faca82da358bec68750d4699b0bcf58e5aa395a3",
+      "assetHash": "121814c5259ca89110501de1f2f08018ae5690e0be74943d4fb50704a1c78746",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -10259,12 +10259,12 @@
       "atlasId": "retry-053",
       "cellIndex": 21,
       "assetPath": "assets/top-down/items/gear/shkatulka-dlya-ukrasheniy-reznaya.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "3c698e9dfe2d040146aebff6faca82da358bec68750d4699b0bcf58e5aa395a3",
+      "assetHash": "41da36d7d153f4b4d2821e16aee483605724d4a2df1499e30b01921b7fdd8324",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -10278,12 +10278,12 @@
       "atlasId": "retry-053",
       "cellIndex": 22,
       "assetPath": "assets/top-down/items/gear/shkura-chudovishcha.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "3c698e9dfe2d040146aebff6faca82da358bec68750d4699b0bcf58e5aa395a3",
+      "assetHash": "5063867f99ff72264f907db07a0a84496381ccab224ef111911c5edff226bfec",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -10297,12 +10297,12 @@
       "atlasId": "retry-053",
       "cellIndex": 23,
       "assetPath": "assets/top-down/items/gear/shkurnyy-dospekh.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "3c698e9dfe2d040146aebff6faca82da358bec68750d4699b0bcf58e5aa395a3",
+      "assetHash": "f0eae95b685dc7c000d812d44980cd1ec41a053bfa44bc0feb360560ae6c3669",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -10316,12 +10316,12 @@
       "atlasId": "retry-053",
       "cellIndex": 24,
       "assetPath": "assets/top-down/items/gear/shlyambur.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "3c698e9dfe2d040146aebff6faca82da358bec68750d4699b0bcf58e5aa395a3",
+      "assetHash": "e73673fdca5a73115c67cc3a75d88eb9a0ae49eebb745824dd6140a03d7e3a75",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -10335,12 +10335,12 @@
       "atlasId": "retry-054",
       "cellIndex": 0,
       "assetPath": "assets/top-down/items/gear/shtyk.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "32213be0c63926bae8f81550cf85a467dbc1ac1c61edf8778271b0938b48dbce",
+      "assetHash": "d4aba894b769bdfbc62ff13f2278fc420ee99d33ccb1e8e08bcaa3c77d8ab7df",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -10354,12 +10354,12 @@
       "atlasId": "retry-054",
       "cellIndex": 1,
       "assetPath": "assets/top-down/items/gear/shyolkovaya-mantiya-s-zolotoy-vyshivkoy.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "32213be0c63926bae8f81550cf85a467dbc1ac1c61edf8778271b0938b48dbce",
+      "assetHash": "76dfad78c85819c03a8cdfc599638442cb448c3825864e66bd068c5a567d7432",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -10373,12 +10373,12 @@
       "atlasId": "retry-054",
       "cellIndex": 2,
       "assetPath": "assets/top-down/items/gear/shyolkovyy-vecherniy-kostyum.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "32213be0c63926bae8f81550cf85a467dbc1ac1c61edf8778271b0938b48dbce",
+      "assetHash": "0e17fd90bd133933790fb03e3bef76211b354bf96cb6799a98c045c91aa96ff4",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -10392,12 +10392,12 @@
       "atlasId": "retry-054",
       "cellIndex": 3,
       "assetPath": "assets/top-down/items/gear/shyopot-t-my.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "32213be0c63926bae8f81550cf85a467dbc1ac1c61edf8778271b0938b48dbce",
+      "assetHash": "991890249a38a14b8cc960386feb616405328063f0f0260d37131b5bbe8781f2",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -10430,12 +10430,12 @@
       "atlasId": "retry-054",
       "cellIndex": 4,
       "assetPath": "assets/top-down/items/gear/sil-naya-sverdlovka.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "32213be0c63926bae8f81550cf85a467dbc1ac1c61edf8778271b0938b48dbce",
+      "assetHash": "a75cecbdf1296de3324f9375cb6ab23e14fb8a86ef022a5bdeed348011f196ff",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -10449,12 +10449,12 @@
       "atlasId": "retry-054",
       "cellIndex": 5,
       "assetPath": "assets/top-down/items/gear/silnye-nogi.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "32213be0c63926bae8f81550cf85a467dbc1ac1c61edf8778271b0938b48dbce",
+      "assetHash": "4b89607c0d16c1b528af5ff1a181c59edecf6fd8444d7cb4030b48084723c595",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -10696,12 +10696,12 @@
       "atlasId": "retry-054",
       "cellIndex": 6,
       "assetPath": "assets/top-down/items/gear/spinnoy-protez.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "32213be0c63926bae8f81550cf85a467dbc1ac1c61edf8778271b0938b48dbce",
+      "assetHash": "8d322484f57221054518d803987cc2263a3d28f6747ad46889a1ac97e81dc1e5",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -10753,12 +10753,12 @@
       "atlasId": "retry-054",
       "cellIndex": 7,
       "assetPath": "assets/top-down/items/gear/standartnyy-10.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "32213be0c63926bae8f81550cf85a467dbc1ac1c61edf8778271b0938b48dbce",
+      "assetHash": "34b6a73035d6dd21e95238f074e00edad4d57fa6ed8c355e6c6f395353221d71",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -10791,12 +10791,12 @@
       "atlasId": "retry-054",
       "cellIndex": 8,
       "assetPath": "assets/top-down/items/gear/steklyannaya-lyustra-dlya-dvortsovogo-zala.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "32213be0c63926bae8f81550cf85a467dbc1ac1c61edf8778271b0938b48dbce",
+      "assetHash": "0753a7cf4129f52d0c0e53063401514baafad43f6d93cbba6f643a20efd03c14",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -10829,12 +10829,12 @@
       "atlasId": "retry-054",
       "cellIndex": 9,
       "assetPath": "assets/top-down/items/gear/stellazh.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "32213be0c63926bae8f81550cf85a467dbc1ac1c61edf8778271b0938b48dbce",
+      "assetHash": "667f39ee7785361d9ec42facc5d7aa2eaccd2ba298815889426e8aca37b0b4e9",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -10848,12 +10848,12 @@
       "atlasId": "retry-054",
       "cellIndex": 10,
       "assetPath": "assets/top-down/items/gear/stol-bolshoy.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "32213be0c63926bae8f81550cf85a467dbc1ac1c61edf8778271b0938b48dbce",
+      "assetHash": "c62c8984a95e87f6167b75a14ac82a7750ad5dd2c8ca71dc20d17ddc50b9bbe4",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -10886,12 +10886,12 @@
       "atlasId": "retry-054",
       "cellIndex": 11,
       "assetPath": "assets/top-down/items/gear/stol-prostoy.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "32213be0c63926bae8f81550cf85a467dbc1ac1c61edf8778271b0938b48dbce",
+      "assetHash": "7b83cdad70f6a3fa5abddc5e7739606bc180bc02f237c8570ece519da633f114",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -10924,12 +10924,12 @@
       "atlasId": "retry-054",
       "cellIndex": 12,
       "assetPath": "assets/top-down/items/gear/strely-20.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "32213be0c63926bae8f81550cf85a467dbc1ac1c61edf8778271b0938b48dbce",
+      "assetHash": "c616752893f76ebeed562efb43501f72f0a415b1499d06e565f20a9786c0aea8",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -11076,12 +11076,12 @@
       "atlasId": "retry-054",
       "cellIndex": 13,
       "assetPath": "assets/top-down/items/gear/sverkhtyazhelaya-shturmovaya-bronya.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "32213be0c63926bae8f81550cf85a467dbc1ac1c61edf8778271b0938b48dbce",
+      "assetHash": "8dd48e4857a162d59bf388921e5b8766283ff67b457684f2b87501fbe22ed817",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -11152,12 +11152,12 @@
       "atlasId": "retry-054",
       "cellIndex": 14,
       "assetPath": "assets/top-down/items/gear/takticheskaya-bronya.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "32213be0c63926bae8f81550cf85a467dbc1ac1c61edf8778271b0938b48dbce",
+      "assetHash": "4c6dcdd32a85575d769606238ae77be90f9c4047247a3ac7b854a3d85dce3f83",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -11209,12 +11209,12 @@
       "atlasId": "retry-054",
       "cellIndex": 15,
       "assetPath": "assets/top-down/items/gear/taran-portativnyy.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "32213be0c63926bae8f81550cf85a467dbc1ac1c61edf8778271b0938b48dbce",
+      "assetHash": "727961ee835f8492a2a8fd782dd40ab8037b15676ca0939321195d34d5131723",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -11228,12 +11228,12 @@
       "atlasId": "retry-054",
       "cellIndex": 16,
       "assetPath": "assets/top-down/items/gear/teatralnyy-kostyum-primadonny.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "32213be0c63926bae8f81550cf85a467dbc1ac1c61edf8778271b0938b48dbce",
+      "assetHash": "dee123dd8f9711dc4c5f3e95321c6ad9ad4ce9c22d13b0a7cf00c54ffdc9f41a",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -11247,12 +11247,12 @@
       "atlasId": "retry-054",
       "cellIndex": 17,
       "assetPath": "assets/top-down/items/gear/tekhnicheskoe-rukovodstvo.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "32213be0c63926bae8f81550cf85a467dbc1ac1c61edf8778271b0938b48dbce",
+      "assetHash": "b952d80167de8e2976f6adb23edaaaae26a0292576e9200ddef9ada4b6e306d7",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -11304,12 +11304,12 @@
       "atlasId": "retry-054",
       "cellIndex": 18,
       "assetPath": "assets/top-down/items/gear/tesla-vintovka.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "32213be0c63926bae8f81550cf85a467dbc1ac1c61edf8778271b0938b48dbce",
+      "assetHash": "b2a730067369e75c98e6dd3f7fb5b6134882eb4186758dec3880cb3b12e35c4e",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -11323,12 +11323,12 @@
       "atlasId": "retry-054",
       "cellIndex": 19,
       "assetPath": "assets/top-down/items/gear/tipovye-blanki-20.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "32213be0c63926bae8f81550cf85a467dbc1ac1c61edf8778271b0938b48dbce",
+      "assetHash": "12450c7eac0dc48766a737fb77cfc69734bc5665abcaf22474a01b48bbe823dc",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -11342,12 +11342,12 @@
       "atlasId": "retry-054",
       "cellIndex": 20,
       "assetPath": "assets/top-down/items/gear/tisovaya-palochka-fokusirovka-druidov.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "32213be0c63926bae8f81550cf85a467dbc1ac1c61edf8778271b0938b48dbce",
+      "assetHash": "bfffce95ea659e632fc2a4fa320c32504ef4bcd486ecd688b236fea414563de5",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -11361,12 +11361,12 @@
       "atlasId": "retry-054",
       "cellIndex": 21,
       "assetPath": "assets/top-down/items/gear/tochil-nyy-kamen.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "32213be0c63926bae8f81550cf85a467dbc1ac1c61edf8778271b0938b48dbce",
+      "assetHash": "8b6f07a949517d2b300380ad9de38f2eb5b376c2b0c27e034d6ebfabb3366003",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -11399,12 +11399,12 @@
       "atlasId": "retry-054",
       "cellIndex": 22,
       "assetPath": "assets/top-down/items/gear/toplivnyy-bak-1.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "32213be0c63926bae8f81550cf85a467dbc1ac1c61edf8778271b0938b48dbce",
+      "assetHash": "0c8e2dd98880b2843d78cd39d76958ce58db2c6ee8b68b3e305966d7e7c0f323",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -11437,12 +11437,12 @@
       "atlasId": "retry-054",
       "cellIndex": 23,
       "assetPath": "assets/top-down/items/gear/totem-fokusirovka-druidov.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "32213be0c63926bae8f81550cf85a467dbc1ac1c61edf8778271b0938b48dbce",
+      "assetHash": "71a44ed9eb16e887891109a4d6b4de7fea48e89b1ad86b3ba6cf47730c278712",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -11513,12 +11513,12 @@
       "atlasId": "retry-054",
       "cellIndex": 24,
       "assetPath": "assets/top-down/items/gear/triptikh-altarnyy.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "32213be0c63926bae8f81550cf85a467dbc1ac1c61edf8778271b0938b48dbce",
+      "assetHash": "946d8be59fe61aedbf759169f86a302151eb6b1d04b709ec8f2de9958b017366",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -11532,12 +11532,12 @@
       "atlasId": "retry-055",
       "cellIndex": 0,
       "assetPath": "assets/top-down/items/gear/triptikh-o-dinastii.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "723b36c1010ffb6ceda152c018fb3019db86b20af1cecefebc6eafaf2de9bdef",
+      "assetHash": "fd42068f2c52c8bb926880015e946b3c6b3a4c512692ea838dc3e1778f6618a7",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -11551,12 +11551,12 @@
       "atlasId": "retry-055",
       "cellIndex": 1,
       "assetPath": "assets/top-down/items/gear/trutnitsa.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "723b36c1010ffb6ceda152c018fb3019db86b20af1cecefebc6eafaf2de9bdef",
+      "assetHash": "32520f54f7e196dc425e09ee4bf48a1c71cb3739c801d80dade39631a3669880",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -11627,12 +11627,12 @@
       "atlasId": "retry-055",
       "cellIndex": 2,
       "assetPath": "assets/top-down/items/gear/tsepnoy-serp.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "723b36c1010ffb6ceda152c018fb3019db86b20af1cecefebc6eafaf2de9bdef",
+      "assetHash": "05c7b822b51e4e23360f34066026caf288a064a771f5327a1ee6127d0d7719f4",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -11665,12 +11665,12 @@
       "atlasId": "retry-055",
       "cellIndex": 3,
       "assetPath": "assets/top-down/items/gear/tseremonialnoe-plate-dvoryanki.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "723b36c1010ffb6ceda152c018fb3019db86b20af1cecefebc6eafaf2de9bdef",
+      "assetHash": "ccfe841e09806a047205725da79e6e87994c56fc4612122242391ecac4a363c8",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -11684,12 +11684,12 @@
       "atlasId": "retry-055",
       "cellIndex": 4,
       "assetPath": "assets/top-down/items/gear/tseremonialnyy-komplekt-pervosvyashchennika.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "723b36c1010ffb6ceda152c018fb3019db86b20af1cecefebc6eafaf2de9bdef",
+      "assetHash": "d05f43a9c090eab83108173d09d3a0c82c7a30ec0fcdda59eae3d57ec12ff5a7",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -11703,12 +11703,12 @@
       "atlasId": "retry-055",
       "cellIndex": 5,
       "assetPath": "assets/top-down/items/gear/tseremonialnyy-svadebnyy-naryad-aristokrata.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "723b36c1010ffb6ceda152c018fb3019db86b20af1cecefebc6eafaf2de9bdef",
+      "assetHash": "9e2e0317e530270e9bf0f64d20fedba24f6423ecef62bd43b9356689ba847079",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -11722,12 +11722,12 @@
       "atlasId": "retry-055",
       "cellIndex": 6,
       "assetPath": "assets/top-down/items/gear/tsikl-dvortsovykh-vitrazhey.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "723b36c1010ffb6ceda152c018fb3019db86b20af1cecefebc6eafaf2de9bdef",
+      "assetHash": "037ec892b98db34454f2e4a45a049edb94e7669745b431c153557dabca892f2a",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -11741,12 +11741,12 @@
       "atlasId": "retry-055",
       "cellIndex": 7,
       "assetPath": "assets/top-down/items/gear/tsitrin.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "723b36c1010ffb6ceda152c018fb3019db86b20af1cecefebc6eafaf2de9bdef",
+      "assetHash": "ab61edd5123ba3d0546c658751ec5b4d74dd1252fd09ab311e8695f0b0fe3a8d",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -11760,12 +11760,12 @@
       "atlasId": "retry-055",
       "cellIndex": 8,
       "assetPath": "assets/top-down/items/gear/tyazhelaya-sluzhebnaya-bronya.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "723b36c1010ffb6ceda152c018fb3019db86b20af1cecefebc6eafaf2de9bdef",
+      "assetHash": "c9a7cbe5db2d78aeb8c26b6617499a489329e47a7b8c652b71b44b9780fda48d",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -11779,12 +11779,12 @@
       "atlasId": "retry-055",
       "cellIndex": 9,
       "assetPath": "assets/top-down/items/gear/tyazhelaya-vintovka.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "723b36c1010ffb6ceda152c018fb3019db86b20af1cecefebc6eafaf2de9bdef",
+      "assetHash": "c7338d6c29b1209f699dd0590718d0ac3a14696cb2fcb73d50c3bce897edacca",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -11798,12 +11798,12 @@
       "atlasId": "retry-055",
       "cellIndex": 10,
       "assetPath": "assets/top-down/items/gear/tyazhelyy-pistolet.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "723b36c1010ffb6ceda152c018fb3019db86b20af1cecefebc6eafaf2de9bdef",
+      "assetHash": "70418b94d1aa0b4733006dd97d22f6665fa9f6a53d13e20e0829f76c89b75e53",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -11817,12 +11817,12 @@
       "atlasId": "retry-055",
       "cellIndex": 11,
       "assetPath": "assets/top-down/items/gear/tyazhelyy-plashch.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "723b36c1010ffb6ceda152c018fb3019db86b20af1cecefebc6eafaf2de9bdef",
+      "assetHash": "103f0bb4976b0f4287ff776202140f3ee21fe5dec7abe0eadc5ff1dd0fe29fc1",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -11836,12 +11836,12 @@
       "atlasId": "retry-055",
       "cellIndex": 12,
       "assetPath": "assets/top-down/items/gear/uchebnik.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "723b36c1010ffb6ceda152c018fb3019db86b20af1cecefebc6eafaf2de9bdef",
+      "assetHash": "5ca42cb4fb02915202fe76feb34436c706e20bfa318a0408f83c434f7bb8fc84",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -11855,12 +11855,12 @@
       "atlasId": "retry-055",
       "cellIndex": 13,
       "assetPath": "assets/top-down/items/gear/udarnyy-10.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "723b36c1010ffb6ceda152c018fb3019db86b20af1cecefebc6eafaf2de9bdef",
+      "assetHash": "acee7ebfdda568e5dfebcd7e9af02dd820bfbb2c9e7c6e962da8243c4a2618ed",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -11874,12 +11874,12 @@
       "atlasId": "retry-055",
       "cellIndex": 14,
       "assetPath": "assets/top-down/items/gear/ukrashennaya-dragotsennostyami-zolotaya-korona.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "723b36c1010ffb6ceda152c018fb3019db86b20af1cecefebc6eafaf2de9bdef",
+      "assetHash": "95b62c319a8e895c1ffcd140bb5e0c3b104b27aae90485e5092bf5a873376981",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -11893,12 +11893,12 @@
       "atlasId": "retry-055",
       "cellIndex": 15,
       "assetPath": "assets/top-down/items/gear/ukrashennoe-dragotsennostyami-platinovoe-kol-tso.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "723b36c1010ffb6ceda152c018fb3019db86b20af1cecefebc6eafaf2de9bdef",
+      "assetHash": "d4a47e7e0dca03a9be3105d036b214d68f8bd580398d6e4ab1b12c4368c79bfe",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -11912,12 +11912,12 @@
       "atlasId": "retry-055",
       "cellIndex": 16,
       "assetPath": "assets/top-down/items/gear/ukreplennyy-plashch.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "723b36c1010ffb6ceda152c018fb3019db86b20af1cecefebc6eafaf2de9bdef",
+      "assetHash": "449540aa18dbfe6db398dee7e9fc5c6a126003d7fd05db7adb09f3e963cc8188",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -11931,12 +11931,12 @@
       "atlasId": "retry-055",
       "cellIndex": 17,
       "assetPath": "assets/top-down/items/gear/ukreplennyy-shchit.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "723b36c1010ffb6ceda152c018fb3019db86b20af1cecefebc6eafaf2de9bdef",
+      "assetHash": "480173b98475429980615a8e6457c4394badf76bb53d26b1f95666282830b3bc",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -11950,12 +11950,12 @@
       "atlasId": "retry-055",
       "cellIndex": 18,
       "assetPath": "assets/top-down/items/gear/ukreplyonnye-sustavy.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "723b36c1010ffb6ceda152c018fb3019db86b20af1cecefebc6eafaf2de9bdef",
+      "assetHash": "5d38af4bad0b9ea5a7074d0a0ef0ef980639aecc6277100c157c99aff6d03a6f",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -11969,12 +11969,12 @@
       "atlasId": "retry-055",
       "cellIndex": 19,
       "assetPath": "assets/top-down/items/gear/ultrazvukovye-datchiki.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "723b36c1010ffb6ceda152c018fb3019db86b20af1cecefebc6eafaf2de9bdef",
+      "assetHash": "df6eb9c522340df1ed9a9a1a0d3740d356ed529a715ee16f5c25593e5a1de442",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -12045,12 +12045,12 @@
       "atlasId": "retry-055",
       "cellIndex": 20,
       "assetPath": "assets/top-down/items/gear/uplotnitel-snaryadov.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "723b36c1010ffb6ceda152c018fb3019db86b20af1cecefebc6eafaf2de9bdef",
+      "assetHash": "d2cbf1e603c5c9e9cf3163e6db809dafa82c0b843229929c0379c26f6f7af06d",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -12064,12 +12064,12 @@
       "atlasId": "retry-055",
       "cellIndex": 21,
       "assetPath": "assets/top-down/items/gear/uravnitel.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "723b36c1010ffb6ceda152c018fb3019db86b20af1cecefebc6eafaf2de9bdef",
+      "assetHash": "6ec7ba8715b3227e9528d7bac656b867edf4f91652f507c7082e5c98cdf5d0fa",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -12083,12 +12083,12 @@
       "atlasId": "retry-055",
       "cellIndex": 22,
       "assetPath": "assets/top-down/items/gear/usilennaya-obolochka.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "723b36c1010ffb6ceda152c018fb3019db86b20af1cecefebc6eafaf2de9bdef",
+      "assetHash": "535a043a201fdd0d667df7c6c5ca04c8987cd7e8591942cfe736d3226457c749",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -12102,12 +12102,12 @@
       "atlasId": "retry-055",
       "cellIndex": 23,
       "assetPath": "assets/top-down/items/gear/usilennye-ladoni.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "723b36c1010ffb6ceda152c018fb3019db86b20af1cecefebc6eafaf2de9bdef",
+      "assetHash": "2ebd447d431e60b24b2fa5f6f23de6339d82b51ddd27d4cb458b594499ba8059",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -12121,12 +12121,12 @@
       "atlasId": "retry-055",
       "cellIndex": 24,
       "assetPath": "assets/top-down/items/gear/utolshchyonnye-kolyosa.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "723b36c1010ffb6ceda152c018fb3019db86b20af1cecefebc6eafaf2de9bdef",
+      "assetHash": "c6ac4d4a3eaa74ad361cbd354a131d063cc198f6f2c8dc7afb419238d35750c5",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -12140,12 +12140,12 @@
       "atlasId": "retry-056",
       "cellIndex": 0,
       "assetPath": "assets/top-down/items/gear/utyazhelyonnyy-korpus.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "2090f6f938a40b2dd80131e9d3fc8e41badcbeaa54d3b1ff54a678e581668933",
+      "assetHash": "6616a779e766c91fc58b73336a75c99561f9790297b2a679cfab11d72641f868",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -12159,12 +12159,12 @@
       "atlasId": "retry-056",
       "cellIndex": 1,
       "assetPath": "assets/top-down/items/gear/utyazhelyonnyy-stvol.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "2090f6f938a40b2dd80131e9d3fc8e41badcbeaa54d3b1ff54a678e581668933",
+      "assetHash": "9da32505ed221e102b0b4376576e642093c9509ec039acf862fca1bddd756fce",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -12178,12 +12178,12 @@
       "atlasId": "retry-056",
       "cellIndex": 2,
       "assetPath": "assets/top-down/items/gear/uvelichitel-noe-steklo.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "2090f6f938a40b2dd80131e9d3fc8e41badcbeaa54d3b1ff54a678e581668933",
+      "assetHash": "07a04941a995b324ddfaafa716fb349824fc71a9256cc0cf89570dba2c2da663",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -12197,12 +12197,12 @@
       "atlasId": "retry-056",
       "cellIndex": 3,
       "assetPath": "assets/top-down/items/gear/vedro.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "2090f6f938a40b2dd80131e9d3fc8e41badcbeaa54d3b1ff54a678e581668933",
+      "assetHash": "098d4adaa0d232d3b91b1d14b2330555cb1bbdbab7630dc7bc92c4b9981b495d",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -12216,12 +12216,12 @@
       "atlasId": "retry-056",
       "cellIndex": 4,
       "assetPath": "assets/top-down/items/gear/velikaya-oskolochnaya-granata.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "2090f6f938a40b2dd80131e9d3fc8e41badcbeaa54d3b1ff54a678e581668933",
+      "assetHash": "8ef9bbcf1d96e2baba298d593048b22ede2a3112657483e62916e77c71cec424",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -12235,12 +12235,12 @@
       "atlasId": "retry-056",
       "cellIndex": 5,
       "assetPath": "assets/top-down/items/gear/velikoe-khranilishche-energii.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "2090f6f938a40b2dd80131e9d3fc8e41badcbeaa54d3b1ff54a678e581668933",
+      "assetHash": "7e0998fccddfca15c8ec82cf4e0039b145718e7e94d75afb4b1b59450a0376c5",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -12254,12 +12254,12 @@
       "atlasId": "retry-056",
       "cellIndex": 6,
       "assetPath": "assets/top-down/items/gear/velikoe-zacharovanie-ostroty.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "2090f6f938a40b2dd80131e9d3fc8e41badcbeaa54d3b1ff54a678e581668933",
+      "assetHash": "3d51114e36ba626bde369bc7b7744ccfd46eacc2ba366084151d819c52d676de",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -12273,12 +12273,12 @@
       "atlasId": "retry-056",
       "cellIndex": 7,
       "assetPath": "assets/top-down/items/gear/velikoe-zacharovanie-zashchity.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "2090f6f938a40b2dd80131e9d3fc8e41badcbeaa54d3b1ff54a678e581668933",
+      "assetHash": "dee9a984151a9658bc12d0184ad189cff480bae7805d3ea51f2ce84ae3f568c0",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -12292,12 +12292,12 @@
       "atlasId": "retry-056",
       "cellIndex": 8,
       "assetPath": "assets/top-down/items/gear/verstak.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "2090f6f938a40b2dd80131e9d3fc8e41badcbeaa54d3b1ff54a678e581668933",
+      "assetHash": "f6ce42a5555ac9739fdbe2d80b88571356283661a9ed9e2ea21a6446b0706e17",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -12311,12 +12311,12 @@
       "atlasId": "retry-056",
       "cellIndex": 9,
       "assetPath": "assets/top-down/items/gear/veryovka-pen-kovaya-50-futov.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "2090f6f938a40b2dd80131e9d3fc8e41badcbeaa54d3b1ff54a678e581668933",
+      "assetHash": "4b289824bd144474150061d29d89764e9a78a70d63fb6b42dae434f94bf05225",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -12330,12 +12330,12 @@
       "atlasId": "retry-056",
       "cellIndex": 10,
       "assetPath": "assets/top-down/items/gear/veryovka-shyolkovaya-50-futov.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "2090f6f938a40b2dd80131e9d3fc8e41badcbeaa54d3b1ff54a678e581668933",
+      "assetHash": "cf9cc56fc4fbc2e7d5c829c7d982d71e4f120ed749b02fd32e238aa9c9af6d7d",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -12349,12 +12349,12 @@
       "atlasId": "retry-056",
       "cellIndex": 11,
       "assetPath": "assets/top-down/items/gear/vesy-torgovye.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "2090f6f938a40b2dd80131e9d3fc8e41badcbeaa54d3b1ff54a678e581668933",
+      "assetHash": "7fd110e6345761a3fe078fb60fd6f4e2abb1b4199a4ff7455d491712f1a7f20e",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -13090,12 +13090,12 @@
       "atlasId": "retry-056",
       "cellIndex": 12,
       "assetPath": "assets/top-down/items/gear/zhezl-fokusirovka.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "2090f6f938a40b2dd80131e9d3fc8e41badcbeaa54d3b1ff54a678e581668933",
+      "assetHash": "3c5b9de22c9bf9d5b0392228677275a68d4221bb7c088c2db98606c26981edb8",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -13147,12 +13147,12 @@
       "atlasId": "retry-056",
       "cellIndex": 13,
       "assetPath": "assets/top-down/items/gear/zhivoy-koren.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "2090f6f938a40b2dd80131e9d3fc8e41badcbeaa54d3b1ff54a678e581668933",
+      "assetHash": "195c668f745eb074b1ed1807783fcfe0666fb9f179b3a998f47e2633338203b5",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -13166,12 +13166,12 @@
       "atlasId": "retry-056",
       "cellIndex": 14,
       "assetPath": "assets/top-down/items/gear/zhivoy-koren-dospekh.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "2090f6f938a40b2dd80131e9d3fc8e41badcbeaa54d3b1ff54a678e581668933",
+      "assetHash": "54045296388190faba5b825d4ab001e874922b047c7daae93d610cb81d07afb2",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -13185,12 +13185,12 @@
       "atlasId": "retry-056",
       "cellIndex": 15,
       "assetPath": "assets/top-down/items/gear/zhurnal-ili-al-manakh.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "2090f6f938a40b2dd80131e9d3fc8e41badcbeaa54d3b1ff54a678e581668933",
+      "assetHash": "54a52d40e5d9a3dcd8e0fa3367f07e2e2fa498ba6f75ddb83855080564603a83",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -13242,12 +13242,12 @@
       "atlasId": "retry-056",
       "cellIndex": 16,
       "assetPath": "assets/top-down/items/gear/zolotaya-muzykal-naya-shkatulka.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "2090f6f938a40b2dd80131e9d3fc8e41badcbeaa54d3b1ff54a678e581668933",
+      "assetHash": "35b04c80abb6e4a091a44439dd7c82b0b29296c50f3a07f8f084b2dc66644b4d",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -13299,12 +13299,12 @@
       "atlasId": "retry-056",
       "cellIndex": 17,
       "assetPath": "assets/top-down/items/gear/zolotoy-byust-pravitelya.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "2090f6f938a40b2dd80131e9d3fc8e41badcbeaa54d3b1ff54a678e581668933",
+      "assetHash": "2aa12dfd039017168396bbe50be094c27dd9c6593e858517093cbc3770acb1b3",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -13736,12 +13736,12 @@
       "atlasId": "retry-056",
       "cellIndex": 18,
       "assetPath": "assets/top-down/items/gear/боеприпасы-из-эльфийской-стали-20.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "2090f6f938a40b2dd80131e9d3fc8e41badcbeaa54d3b1ff54a678e581668933",
+      "assetHash": "af6641e440d4ff6c93f60ba67ad25c537e37631cc0f62c6c34e3fcd7d0181f1d",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "gear",
@@ -14458,12 +14458,12 @@
       "atlasId": "retry-056",
       "cellIndex": 19,
       "assetPath": "assets/top-down/items/material/material-10.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "2090f6f938a40b2dd80131e9d3fc8e41badcbeaa54d3b1ff54a678e581668933",
+      "assetHash": "adbed74d29e5695cbf7abbaae6ef338320346d67aa4c576a429d83baa1d16a77",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -14477,12 +14477,12 @@
       "atlasId": "retry-056",
       "cellIndex": 20,
       "assetPath": "assets/top-down/items/material/material-100.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "2090f6f938a40b2dd80131e9d3fc8e41badcbeaa54d3b1ff54a678e581668933",
+      "assetHash": "179e29f44926662897d2b3b6a26ffd2e815121145c1bd2e668275b6cf77d1909",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -14496,12 +14496,12 @@
       "atlasId": "retry-056",
       "cellIndex": 21,
       "assetPath": "assets/top-down/items/material/material-101.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "2090f6f938a40b2dd80131e9d3fc8e41badcbeaa54d3b1ff54a678e581668933",
+      "assetHash": "b440a0b4ab7452744e6dc48dff8011043b3609ab35e62ab31d057f1426cf81e1",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -14515,12 +14515,12 @@
       "atlasId": "retry-056",
       "cellIndex": 22,
       "assetPath": "assets/top-down/items/material/material-102.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "2090f6f938a40b2dd80131e9d3fc8e41badcbeaa54d3b1ff54a678e581668933",
+      "assetHash": "a931445383002bd490b10af1f019910ab9b6befd920e581b4a6dd36f8a5e2c04",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -14534,12 +14534,12 @@
       "atlasId": "retry-056",
       "cellIndex": 23,
       "assetPath": "assets/top-down/items/material/material-103.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "2090f6f938a40b2dd80131e9d3fc8e41badcbeaa54d3b1ff54a678e581668933",
+      "assetHash": "0f66663138c82984d05ce8b8ea5b936fb2b18062027d03bf610a9b448ea820a5",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -14553,12 +14553,12 @@
       "atlasId": "retry-056",
       "cellIndex": 24,
       "assetPath": "assets/top-down/items/material/material-104.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "2090f6f938a40b2dd80131e9d3fc8e41badcbeaa54d3b1ff54a678e581668933",
+      "assetHash": "a0513fc28f27f679dc0ddffa9356d879084c27b09b5614e14a820e7a6bafcad3",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -14572,12 +14572,12 @@
       "atlasId": "retry-057",
       "cellIndex": 0,
       "assetPath": "assets/top-down/items/material/material-105.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "96f43a259351af95515c7ecc65514ce3f373fdb890f9d4cee2edb028d9d35520",
+      "assetHash": "975aead0166c5b67dce5d68e7d65c22a026608e1e00b98d0599233681e3c3e5a",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -14591,12 +14591,12 @@
       "atlasId": "retry-057",
       "cellIndex": 1,
       "assetPath": "assets/top-down/items/material/material-106.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "96f43a259351af95515c7ecc65514ce3f373fdb890f9d4cee2edb028d9d35520",
+      "assetHash": "0ccd46506f662cf85f4b65f6aef9408c9c76d5eee3d878944d72724074e50282",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -14610,12 +14610,12 @@
       "atlasId": "retry-057",
       "cellIndex": 2,
       "assetPath": "assets/top-down/items/material/material-107.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "96f43a259351af95515c7ecc65514ce3f373fdb890f9d4cee2edb028d9d35520",
+      "assetHash": "62836e1212a5d7559039988525fe8884d3ef298b176f41a9b613363d8027d02b",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -14629,12 +14629,12 @@
       "atlasId": "retry-057",
       "cellIndex": 3,
       "assetPath": "assets/top-down/items/material/material-108.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "96f43a259351af95515c7ecc65514ce3f373fdb890f9d4cee2edb028d9d35520",
+      "assetHash": "c8266f7f9db332996dc367f53764a5030e35509008e32f455036794470edf757",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -14667,12 +14667,12 @@
       "atlasId": "retry-057",
       "cellIndex": 4,
       "assetPath": "assets/top-down/items/material/material-11.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "96f43a259351af95515c7ecc65514ce3f373fdb890f9d4cee2edb028d9d35520",
+      "assetHash": "ed1a5f4d114429906eb3f9e818f13407642de84db86f9545acf5e8bb653f1929",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -14705,12 +14705,12 @@
       "atlasId": "retry-057",
       "cellIndex": 5,
       "assetPath": "assets/top-down/items/material/material-111.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "96f43a259351af95515c7ecc65514ce3f373fdb890f9d4cee2edb028d9d35520",
+      "assetHash": "10e573007d527946c58ccc81f6b8f5cc9dee2ebb11094db01957a65ec88a9734",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -14724,12 +14724,12 @@
       "atlasId": "retry-057",
       "cellIndex": 6,
       "assetPath": "assets/top-down/items/material/material-112.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "96f43a259351af95515c7ecc65514ce3f373fdb890f9d4cee2edb028d9d35520",
+      "assetHash": "a0a769c494670c7395c6ac0ecc93be439a1321b1b340f87bfe9585b51867025b",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -15028,12 +15028,12 @@
       "atlasId": "retry-057",
       "cellIndex": 7,
       "assetPath": "assets/top-down/items/material/material-127.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "96f43a259351af95515c7ecc65514ce3f373fdb890f9d4cee2edb028d9d35520",
+      "assetHash": "6f94839f2c72950cbddbf7b0d77801f95633f86da9d4e3af435462be0cf39111",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -15047,12 +15047,12 @@
       "atlasId": "retry-057",
       "cellIndex": 8,
       "assetPath": "assets/top-down/items/material/material-128.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "96f43a259351af95515c7ecc65514ce3f373fdb890f9d4cee2edb028d9d35520",
+      "assetHash": "b867f97af0109df4603b8bc1ff56ec99b0da191ff17b8445c6967d98639c250c",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -15066,12 +15066,12 @@
       "atlasId": "retry-057",
       "cellIndex": 9,
       "assetPath": "assets/top-down/items/material/material-129.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "96f43a259351af95515c7ecc65514ce3f373fdb890f9d4cee2edb028d9d35520",
+      "assetHash": "c5d8ac09c7fd9e571b3b79ed7f660d8e79e403ded0d889700ff5e2db9249cbe1",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -15104,12 +15104,12 @@
       "atlasId": "retry-057",
       "cellIndex": 10,
       "assetPath": "assets/top-down/items/material/material-130.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "96f43a259351af95515c7ecc65514ce3f373fdb890f9d4cee2edb028d9d35520",
+      "assetHash": "62c41fb05c78dd8c62c96ce6982a8a08f5a121fe4575c090963d7e42751a7132",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -15123,12 +15123,12 @@
       "atlasId": "retry-057",
       "cellIndex": 11,
       "assetPath": "assets/top-down/items/material/material-131.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "96f43a259351af95515c7ecc65514ce3f373fdb890f9d4cee2edb028d9d35520",
+      "assetHash": "93c26486caf6171751e2113bd0e05d36c0a6503a89177823549ae3243259674a",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -15142,12 +15142,12 @@
       "atlasId": "retry-057",
       "cellIndex": 12,
       "assetPath": "assets/top-down/items/material/material-132.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "96f43a259351af95515c7ecc65514ce3f373fdb890f9d4cee2edb028d9d35520",
+      "assetHash": "d49e69d796d8924d9b7e83bbfd32c5ec98c51daa0e4fd5abb7400c00e25409e8",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -15180,12 +15180,12 @@
       "atlasId": "retry-057",
       "cellIndex": 13,
       "assetPath": "assets/top-down/items/material/material-134.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "96f43a259351af95515c7ecc65514ce3f373fdb890f9d4cee2edb028d9d35520",
+      "assetHash": "45ecfa04385d923953823b80c676ac235c9a1b03a2f54abebe9ac9e23c2403f5",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -15199,12 +15199,12 @@
       "atlasId": "retry-057",
       "cellIndex": 14,
       "assetPath": "assets/top-down/items/material/material-135.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "96f43a259351af95515c7ecc65514ce3f373fdb890f9d4cee2edb028d9d35520",
+      "assetHash": "afa5e1ef4f921ce00b0415ff7e236a511deffa32b5f9fe409d232e2682fe8de1",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -15978,12 +15978,12 @@
       "atlasId": "retry-057",
       "cellIndex": 15,
       "assetPath": "assets/top-down/items/material/material-172.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "96f43a259351af95515c7ecc65514ce3f373fdb890f9d4cee2edb028d9d35520",
+      "assetHash": "e750588f241fe5ee7dcc11539b841a8f473abcacbf25e228f081697eeb834c58",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -16016,12 +16016,12 @@
       "atlasId": "retry-057",
       "cellIndex": 16,
       "assetPath": "assets/top-down/items/material/material-174.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "96f43a259351af95515c7ecc65514ce3f373fdb890f9d4cee2edb028d9d35520",
+      "assetHash": "573626912481c24e65d9cf04cb8cfb030021ebf9fea62182b705a1b4289bb6b7",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -16035,12 +16035,12 @@
       "atlasId": "retry-057",
       "cellIndex": 17,
       "assetPath": "assets/top-down/items/material/material-175.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "96f43a259351af95515c7ecc65514ce3f373fdb890f9d4cee2edb028d9d35520",
+      "assetHash": "3413011180f7700b960734bf0584dc07fedc7e009173eb7f30958d246b075cee",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -16054,12 +16054,12 @@
       "atlasId": "retry-057",
       "cellIndex": 18,
       "assetPath": "assets/top-down/items/material/material-176.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "96f43a259351af95515c7ecc65514ce3f373fdb890f9d4cee2edb028d9d35520",
+      "assetHash": "8e985a498265127fb9b8d3c25f584325f97434c3286a7dfe32e51cc9f8047ea0",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -16073,12 +16073,12 @@
       "atlasId": "retry-057",
       "cellIndex": 19,
       "assetPath": "assets/top-down/items/material/material-177.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "96f43a259351af95515c7ecc65514ce3f373fdb890f9d4cee2edb028d9d35520",
+      "assetHash": "d016c9ffe3e61cba912c9ca6336eb44d29e3b2830647eed11262e0da3689c7c6",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -16092,12 +16092,12 @@
       "atlasId": "retry-057",
       "cellIndex": 20,
       "assetPath": "assets/top-down/items/material/material-178.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "96f43a259351af95515c7ecc65514ce3f373fdb890f9d4cee2edb028d9d35520",
+      "assetHash": "b366fa64de919d2d56a3025c36550b89e9e96246ea84e6f8bcb986298666869b",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -16111,12 +16111,12 @@
       "atlasId": "retry-057",
       "cellIndex": 21,
       "assetPath": "assets/top-down/items/material/material-179.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "96f43a259351af95515c7ecc65514ce3f373fdb890f9d4cee2edb028d9d35520",
+      "assetHash": "bea86f2bbd06200b5dd802d68e9c044351c9a72899426d923defac52024aeb26",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -16130,12 +16130,12 @@
       "atlasId": "retry-057",
       "cellIndex": 22,
       "assetPath": "assets/top-down/items/material/material-18.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "96f43a259351af95515c7ecc65514ce3f373fdb890f9d4cee2edb028d9d35520",
+      "assetHash": "dd922f9f04dc4fda390fd036c4333dd7509628f3dd16132110123cdcf8b77719",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -16149,12 +16149,12 @@
       "atlasId": "retry-057",
       "cellIndex": 23,
       "assetPath": "assets/top-down/items/material/material-180.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "96f43a259351af95515c7ecc65514ce3f373fdb890f9d4cee2edb028d9d35520",
+      "assetHash": "89fa41b6d1de177e46a316c2b7ef7e68790a93e2411ade478716fc817fa07560",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -16358,12 +16358,12 @@
       "atlasId": "retry-057",
       "cellIndex": 24,
       "assetPath": "assets/top-down/items/material/material-190.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "96f43a259351af95515c7ecc65514ce3f373fdb890f9d4cee2edb028d9d35520",
+      "assetHash": "ca0202c0ef81313aa5abbbedbbff20d5daa999ec3da7b390e5bc66ab41474a2f",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -16377,12 +16377,12 @@
       "atlasId": "retry-058",
       "cellIndex": 0,
       "assetPath": "assets/top-down/items/material/material-191.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "25e8ea91fd55efa7c9e9d57af6e1af88f140bea5745e4d9e7b01ffeb364da9a5",
+      "assetHash": "e94fc2b651980b0690502bf87d297d136fbf61b934ba0dfb4d50a7d6384827f9",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -16396,12 +16396,12 @@
       "atlasId": "retry-058",
       "cellIndex": 1,
       "assetPath": "assets/top-down/items/material/material-192.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "25e8ea91fd55efa7c9e9d57af6e1af88f140bea5745e4d9e7b01ffeb364da9a5",
+      "assetHash": "6db9c416e5fe81f66d9b13263e4488d27e88c58e58992fad91145d8650f1171a",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -16415,12 +16415,12 @@
       "atlasId": "retry-058",
       "cellIndex": 2,
       "assetPath": "assets/top-down/items/material/material-193.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "25e8ea91fd55efa7c9e9d57af6e1af88f140bea5745e4d9e7b01ffeb364da9a5",
+      "assetHash": "540a518f572e3c66772ec47024dd0cbd03258c62650f48422105107ca1ab098b",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -16434,12 +16434,12 @@
       "atlasId": "retry-058",
       "cellIndex": 3,
       "assetPath": "assets/top-down/items/material/material-194.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "25e8ea91fd55efa7c9e9d57af6e1af88f140bea5745e4d9e7b01ffeb364da9a5",
+      "assetHash": "fbde6db05281e50135b0b535d042cfffedeb365ac9bece6c536e25919f46f375",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -16453,12 +16453,12 @@
       "atlasId": "retry-058",
       "cellIndex": 4,
       "assetPath": "assets/top-down/items/material/material-195.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "25e8ea91fd55efa7c9e9d57af6e1af88f140bea5745e4d9e7b01ffeb364da9a5",
+      "assetHash": "3d5fdebd147b10925d6a943e9d903de715ce5703b9ca96ecd4fe9b37bedcc4ea",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -16472,12 +16472,12 @@
       "atlasId": "retry-058",
       "cellIndex": 5,
       "assetPath": "assets/top-down/items/material/material-196.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "25e8ea91fd55efa7c9e9d57af6e1af88f140bea5745e4d9e7b01ffeb364da9a5",
+      "assetHash": "38f50b1891d69d0142f1561368024d46fc4c771830a4c11995500d97018b9864",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -16491,12 +16491,12 @@
       "atlasId": "retry-058",
       "cellIndex": 6,
       "assetPath": "assets/top-down/items/material/material-197.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "25e8ea91fd55efa7c9e9d57af6e1af88f140bea5745e4d9e7b01ffeb364da9a5",
+      "assetHash": "26b7eb9e117865f9a4fd47538784e17f6472b61ba2a05ba77fd2e44dfdd31f9d",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -16510,12 +16510,12 @@
       "atlasId": "retry-058",
       "cellIndex": 7,
       "assetPath": "assets/top-down/items/material/material-198.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "25e8ea91fd55efa7c9e9d57af6e1af88f140bea5745e4d9e7b01ffeb364da9a5",
+      "assetHash": "c63867675b3385e0e1d1ea65ec4c4f38acbeb5c168cf35ad5566f84be149cca1",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -16529,12 +16529,12 @@
       "atlasId": "retry-058",
       "cellIndex": 8,
       "assetPath": "assets/top-down/items/material/material-199.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "25e8ea91fd55efa7c9e9d57af6e1af88f140bea5745e4d9e7b01ffeb364da9a5",
+      "assetHash": "82471aaf65ff851a4169a7c2f5ee82740bb0f423e609b5bca1670a1155077ada",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -16548,12 +16548,12 @@
       "atlasId": "retry-058",
       "cellIndex": 9,
       "assetPath": "assets/top-down/items/material/material-20.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "25e8ea91fd55efa7c9e9d57af6e1af88f140bea5745e4d9e7b01ffeb364da9a5",
+      "assetHash": "0a26949084db34fd699036a68699d79b13d7863c57a947e9e27f0a8ba8baa273",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -16567,12 +16567,12 @@
       "atlasId": "retry-058",
       "cellIndex": 10,
       "assetPath": "assets/top-down/items/material/material-200.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "25e8ea91fd55efa7c9e9d57af6e1af88f140bea5745e4d9e7b01ffeb364da9a5",
+      "assetHash": "31d3146e6d6a5a07a57d25882f6fd98bc48bfbfa7cb9bc1151138fee7d0d309c",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -16586,12 +16586,12 @@
       "atlasId": "retry-058",
       "cellIndex": 11,
       "assetPath": "assets/top-down/items/material/material-201.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "25e8ea91fd55efa7c9e9d57af6e1af88f140bea5745e4d9e7b01ffeb364da9a5",
+      "assetHash": "f0fddefe14cddb3967a2086a130a950e83fb30a8c9633247e3c438452c56cd5f",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -16605,12 +16605,12 @@
       "atlasId": "retry-058",
       "cellIndex": 12,
       "assetPath": "assets/top-down/items/material/material-202.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "25e8ea91fd55efa7c9e9d57af6e1af88f140bea5745e4d9e7b01ffeb364da9a5",
+      "assetHash": "9923b25c1e63bd2689e10be1605357d8948972a028bd815f8b640fd719afd7ed",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -16624,12 +16624,12 @@
       "atlasId": "retry-058",
       "cellIndex": 13,
       "assetPath": "assets/top-down/items/material/material-203.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "25e8ea91fd55efa7c9e9d57af6e1af88f140bea5745e4d9e7b01ffeb364da9a5",
+      "assetHash": "cc6a8b1d0dfcb7b9bf0e773c1eac77063ca5cfef126da66cf61213b65f49f627",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -16700,12 +16700,12 @@
       "atlasId": "retry-058",
       "cellIndex": 14,
       "assetPath": "assets/top-down/items/material/material-24.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "25e8ea91fd55efa7c9e9d57af6e1af88f140bea5745e4d9e7b01ffeb364da9a5",
+      "assetHash": "c699136d5ef85fbbd3ca2165c43d8054987c89d73aaf84bb30df301c1707b7cb",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -16814,12 +16814,12 @@
       "atlasId": "retry-058",
       "cellIndex": 15,
       "assetPath": "assets/top-down/items/material/material-29.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "25e8ea91fd55efa7c9e9d57af6e1af88f140bea5745e4d9e7b01ffeb364da9a5",
+      "assetHash": "9cb07ccb2dc13533127ee222f96afbb48ffb05917e75afc32dd14c07213757b9",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -16833,12 +16833,12 @@
       "atlasId": "retry-058",
       "cellIndex": 16,
       "assetPath": "assets/top-down/items/material/material-3.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "25e8ea91fd55efa7c9e9d57af6e1af88f140bea5745e4d9e7b01ffeb364da9a5",
+      "assetHash": "758f7d62e3b5a1426b56d653521497461d9ab793b79e5eb2361fe155a43f95d4",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -16871,12 +16871,12 @@
       "atlasId": "retry-058",
       "cellIndex": 17,
       "assetPath": "assets/top-down/items/material/material-31.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "25e8ea91fd55efa7c9e9d57af6e1af88f140bea5745e4d9e7b01ffeb364da9a5",
+      "assetHash": "5104f00bf93c6a7b596844355a056b7061fcf81ac7f8abddca03c3962e72a962",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -16890,12 +16890,12 @@
       "atlasId": "retry-058",
       "cellIndex": 18,
       "assetPath": "assets/top-down/items/material/material-32.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "25e8ea91fd55efa7c9e9d57af6e1af88f140bea5745e4d9e7b01ffeb364da9a5",
+      "assetHash": "475f0354ce62bb9ff46a4d30addb68a5b58930d86defc222bfa6452abc302c93",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -16909,12 +16909,12 @@
       "atlasId": "retry-058",
       "cellIndex": 19,
       "assetPath": "assets/top-down/items/material/material-33.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "25e8ea91fd55efa7c9e9d57af6e1af88f140bea5745e4d9e7b01ffeb364da9a5",
+      "assetHash": "fa13285ee6710c32bcccf9a9662c740f40f0d528a9fe3c5e2ed4516c0f51e796",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -16928,12 +16928,12 @@
       "atlasId": "retry-058",
       "cellIndex": 20,
       "assetPath": "assets/top-down/items/material/material-34.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "25e8ea91fd55efa7c9e9d57af6e1af88f140bea5745e4d9e7b01ffeb364da9a5",
+      "assetHash": "4bd79e184aab56a189df445b500817c1209a8cd3c2ffd6128ecc82ac9efcf9f8",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -16947,12 +16947,12 @@
       "atlasId": "retry-058",
       "cellIndex": 21,
       "assetPath": "assets/top-down/items/material/material-35.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "25e8ea91fd55efa7c9e9d57af6e1af88f140bea5745e4d9e7b01ffeb364da9a5",
+      "assetHash": "354b4cc72b8c21b9cacfc5faaf6663196ee024d02d235f5517c6c89a3b5edaa1",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -16966,12 +16966,12 @@
       "atlasId": "retry-058",
       "cellIndex": 22,
       "assetPath": "assets/top-down/items/material/material-36.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "25e8ea91fd55efa7c9e9d57af6e1af88f140bea5745e4d9e7b01ffeb364da9a5",
+      "assetHash": "e317ad0c3ea53bbbaeef9310e21a43f94edee10b24e7af7ddd4784ca3b0dc3c6",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -16985,12 +16985,12 @@
       "atlasId": "retry-058",
       "cellIndex": 23,
       "assetPath": "assets/top-down/items/material/material-37.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "25e8ea91fd55efa7c9e9d57af6e1af88f140bea5745e4d9e7b01ffeb364da9a5",
+      "assetHash": "cc835d6d5ad2a6bc644d322b2ff71b677912003a522d09622908f8480bd89ddf",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -17004,12 +17004,12 @@
       "atlasId": "retry-058",
       "cellIndex": 24,
       "assetPath": "assets/top-down/items/material/material-38.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "25e8ea91fd55efa7c9e9d57af6e1af88f140bea5745e4d9e7b01ffeb364da9a5",
+      "assetHash": "539df1845e424c746d5d8e977dd2dcb3803865f7a8ccd7b9ec3df0a85338e49a",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -17023,12 +17023,12 @@
       "atlasId": "retry-059",
       "cellIndex": 0,
       "assetPath": "assets/top-down/items/material/material-39.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "41bec13d7a37dcbd8580a2bd02e1a530be311b6c62c09ab28267d799dd2bd8db",
+      "assetHash": "7138a5bb6fc0aa6c4e169072a273c67550c2f07ca848fe64624504f79228c385",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -17042,12 +17042,12 @@
       "atlasId": "retry-059",
       "cellIndex": 1,
       "assetPath": "assets/top-down/items/material/material-4.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "41bec13d7a37dcbd8580a2bd02e1a530be311b6c62c09ab28267d799dd2bd8db",
+      "assetHash": "f8a7b394d951cdb4ac46063b6a72742f018b9c174bd4cdb9af113d22a90d91b9",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -17061,12 +17061,12 @@
       "atlasId": "retry-059",
       "cellIndex": 2,
       "assetPath": "assets/top-down/items/material/material-40.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "41bec13d7a37dcbd8580a2bd02e1a530be311b6c62c09ab28267d799dd2bd8db",
+      "assetHash": "9d103b3cca941b9b74df86a3073110a103ebe599e90935d2f5b31a35dcfa562f",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -17080,12 +17080,12 @@
       "atlasId": "retry-059",
       "cellIndex": 3,
       "assetPath": "assets/top-down/items/material/material-41.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "41bec13d7a37dcbd8580a2bd02e1a530be311b6c62c09ab28267d799dd2bd8db",
+      "assetHash": "4ef303d406be01b292d3bc67ce36290e49281487dba972b59672d509f6300a22",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -17099,12 +17099,12 @@
       "atlasId": "retry-059",
       "cellIndex": 4,
       "assetPath": "assets/top-down/items/material/material-42.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "41bec13d7a37dcbd8580a2bd02e1a530be311b6c62c09ab28267d799dd2bd8db",
+      "assetHash": "d4b4b9d116c3a3008df8918676d9809c77504ead5736274a8a13e421737dd345",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -17213,12 +17213,12 @@
       "atlasId": "retry-059",
       "cellIndex": 5,
       "assetPath": "assets/top-down/items/material/material-48.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "41bec13d7a37dcbd8580a2bd02e1a530be311b6c62c09ab28267d799dd2bd8db",
+      "assetHash": "e7551341afc678253d944ca97c361b3eb4fa6e20a1fccf70cac6eaa644727cb8",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -17251,12 +17251,12 @@
       "atlasId": "retry-059",
       "cellIndex": 6,
       "assetPath": "assets/top-down/items/material/material-5.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "41bec13d7a37dcbd8580a2bd02e1a530be311b6c62c09ab28267d799dd2bd8db",
+      "assetHash": "f573138d09116753ce6779b3fb02d6aa8eba6806644a79dc2b84c989232921ec",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -17270,12 +17270,12 @@
       "atlasId": "retry-059",
       "cellIndex": 7,
       "assetPath": "assets/top-down/items/material/material-50.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "41bec13d7a37dcbd8580a2bd02e1a530be311b6c62c09ab28267d799dd2bd8db",
+      "assetHash": "2026983a2f9964eed111f395ee738c3836bd6939ae36aee40d2f38b571d7527e",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -17289,12 +17289,12 @@
       "atlasId": "retry-059",
       "cellIndex": 8,
       "assetPath": "assets/top-down/items/material/material-51.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "41bec13d7a37dcbd8580a2bd02e1a530be311b6c62c09ab28267d799dd2bd8db",
+      "assetHash": "0056024f9f32a639f22890fa9b9f0de91e9bf2e363554cb3e53eef29ed664bed",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -17308,12 +17308,12 @@
       "atlasId": "retry-059",
       "cellIndex": 9,
       "assetPath": "assets/top-down/items/material/material-52.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "41bec13d7a37dcbd8580a2bd02e1a530be311b6c62c09ab28267d799dd2bd8db",
+      "assetHash": "936c901ec80defebc55d10a32254b06efa3c3382721ff27903456b3a9cf1d307",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -17327,12 +17327,12 @@
       "atlasId": "retry-059",
       "cellIndex": 10,
       "assetPath": "assets/top-down/items/material/material-53.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "41bec13d7a37dcbd8580a2bd02e1a530be311b6c62c09ab28267d799dd2bd8db",
+      "assetHash": "dec5c4a63b495109a30b12feba8c6d527ff13e813ba72a693eb63ef813ccffcd",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -17346,12 +17346,12 @@
       "atlasId": "retry-059",
       "cellIndex": 11,
       "assetPath": "assets/top-down/items/material/material-54.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "41bec13d7a37dcbd8580a2bd02e1a530be311b6c62c09ab28267d799dd2bd8db",
+      "assetHash": "bc34b37c6b0fa1a49feb6befc09ee8bcdcf0f6709a8f6c880a43b225efa34f84",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -17365,12 +17365,12 @@
       "atlasId": "retry-059",
       "cellIndex": 12,
       "assetPath": "assets/top-down/items/material/material-55.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "41bec13d7a37dcbd8580a2bd02e1a530be311b6c62c09ab28267d799dd2bd8db",
+      "assetHash": "0fd5147a82945341e238ca14e4996b65ce87e9920daffe299fd5c5360c7bf991",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -17384,12 +17384,12 @@
       "atlasId": "retry-059",
       "cellIndex": 13,
       "assetPath": "assets/top-down/items/material/material-56.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "41bec13d7a37dcbd8580a2bd02e1a530be311b6c62c09ab28267d799dd2bd8db",
+      "assetHash": "193bae2a11cd8d5447c28f542d5fbe7d867c3aa6b4ac42c23d6f5ed99564e2fe",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -17403,12 +17403,12 @@
       "atlasId": "retry-059",
       "cellIndex": 14,
       "assetPath": "assets/top-down/items/material/material-57.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "41bec13d7a37dcbd8580a2bd02e1a530be311b6c62c09ab28267d799dd2bd8db",
+      "assetHash": "c87aadc39e47817003f178ae8913effc18a87ad9005e170a304f8bbbacd6d60a",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -17422,12 +17422,12 @@
       "atlasId": "retry-059",
       "cellIndex": 15,
       "assetPath": "assets/top-down/items/material/material-58.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "41bec13d7a37dcbd8580a2bd02e1a530be311b6c62c09ab28267d799dd2bd8db",
+      "assetHash": "bd9408038c56f7e3cf7f8c6fb20295384ba5b5c95708e9e2fafe90177adfb4b6",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -17441,12 +17441,12 @@
       "atlasId": "retry-059",
       "cellIndex": 16,
       "assetPath": "assets/top-down/items/material/material-59.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "41bec13d7a37dcbd8580a2bd02e1a530be311b6c62c09ab28267d799dd2bd8db",
+      "assetHash": "44bdc04114ffd12664357fb46beef3c2fe55eeaf7222e2faa7c2bb01669a578a",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -17460,12 +17460,12 @@
       "atlasId": "retry-059",
       "cellIndex": 17,
       "assetPath": "assets/top-down/items/material/material-6.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "41bec13d7a37dcbd8580a2bd02e1a530be311b6c62c09ab28267d799dd2bd8db",
+      "assetHash": "88d36b6655bc8341352205048eb88c2740e9b2e983648f512633331cd8c7b691",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -17479,12 +17479,12 @@
       "atlasId": "retry-059",
       "cellIndex": 18,
       "assetPath": "assets/top-down/items/material/material-60.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "41bec13d7a37dcbd8580a2bd02e1a530be311b6c62c09ab28267d799dd2bd8db",
+      "assetHash": "1da4cefea61fa134d8af069294082f7bc0448d142094cb0db30ba116d7fda208",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -17498,12 +17498,12 @@
       "atlasId": "retry-059",
       "cellIndex": 19,
       "assetPath": "assets/top-down/items/material/material-61.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "41bec13d7a37dcbd8580a2bd02e1a530be311b6c62c09ab28267d799dd2bd8db",
+      "assetHash": "2f373487f138e356ef8708887c833c579bce1b1fa35d75e7257eb2d2a9b2ca16",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -17517,12 +17517,12 @@
       "atlasId": "retry-059",
       "cellIndex": 20,
       "assetPath": "assets/top-down/items/material/material-62.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "41bec13d7a37dcbd8580a2bd02e1a530be311b6c62c09ab28267d799dd2bd8db",
+      "assetHash": "e596c3eb4015c0c8c7fbcacb22f5872ddbaf0fd6e224001fed9ae39184e5f2b3",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -17536,12 +17536,12 @@
       "atlasId": "retry-059",
       "cellIndex": 21,
       "assetPath": "assets/top-down/items/material/material-63.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "41bec13d7a37dcbd8580a2bd02e1a530be311b6c62c09ab28267d799dd2bd8db",
+      "assetHash": "95711e570ec1c0838a68d83bf667c6cc105e2146ffbfcd2f4261ecb36573ea08",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -17555,12 +17555,12 @@
       "atlasId": "retry-059",
       "cellIndex": 22,
       "assetPath": "assets/top-down/items/material/material-64.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "41bec13d7a37dcbd8580a2bd02e1a530be311b6c62c09ab28267d799dd2bd8db",
+      "assetHash": "84bd8292bf7cbfd282ee2082424882c833c70340bd83eed3bc6b74df2ada639a",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -17574,12 +17574,12 @@
       "atlasId": "retry-059",
       "cellIndex": 23,
       "assetPath": "assets/top-down/items/material/material-65.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "41bec13d7a37dcbd8580a2bd02e1a530be311b6c62c09ab28267d799dd2bd8db",
+      "assetHash": "df557ffd5f324924a8eb94530676d959245400b367d2617669df6fdfd2233de0",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -17897,12 +17897,12 @@
       "atlasId": "retry-059",
       "cellIndex": 24,
       "assetPath": "assets/top-down/items/material/material-80.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "41bec13d7a37dcbd8580a2bd02e1a530be311b6c62c09ab28267d799dd2bd8db",
+      "assetHash": "e1d7ee8e18cf41dd11128041beb2cabc725c3a21402599d6b60278a8dcbcf530",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -17992,12 +17992,12 @@
       "atlasId": "retry-060",
       "cellIndex": 0,
       "assetPath": "assets/top-down/items/material/material-85.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "c938e467dcae24fe3daa1ca7a4f03944fa9832231aaef8b486832952fc5765e7",
+      "assetHash": "a8e81bff3551675cd267356f5f79ef3f4135e4b56bc124a606de3555fdbf3522",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -18068,12 +18068,12 @@
       "atlasId": "retry-060",
       "cellIndex": 1,
       "assetPath": "assets/top-down/items/material/material-89.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "c938e467dcae24fe3daa1ca7a4f03944fa9832231aaef8b486832952fc5765e7",
+      "assetHash": "fcf9b37bb11af7a069b8c2bdc6f6ea4bcb116c1716893bddf2dcd8cb71dcd483",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -18087,12 +18087,12 @@
       "atlasId": "retry-060",
       "cellIndex": 2,
       "assetPath": "assets/top-down/items/material/material-9.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "c938e467dcae24fe3daa1ca7a4f03944fa9832231aaef8b486832952fc5765e7",
+      "assetHash": "97932703c2bc9d907a58ec0c8de787199d7f82d043c507b29eb46d9b4e303416",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -18106,12 +18106,12 @@
       "atlasId": "retry-060",
       "cellIndex": 3,
       "assetPath": "assets/top-down/items/material/material-90.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "c938e467dcae24fe3daa1ca7a4f03944fa9832231aaef8b486832952fc5765e7",
+      "assetHash": "e9326c72aa26ee4d22beb2ebc9a57aa676036c6225ee117847f41f55c7517e9b",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -18125,12 +18125,12 @@
       "atlasId": "retry-060",
       "cellIndex": 4,
       "assetPath": "assets/top-down/items/material/material-91.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "c938e467dcae24fe3daa1ca7a4f03944fa9832231aaef8b486832952fc5765e7",
+      "assetHash": "4c24f93f3f379a52a78129db4a6b2d802fd260392ff2483df7faf80a349986aa",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -18144,12 +18144,12 @@
       "atlasId": "retry-060",
       "cellIndex": 5,
       "assetPath": "assets/top-down/items/material/material-92.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "c938e467dcae24fe3daa1ca7a4f03944fa9832231aaef8b486832952fc5765e7",
+      "assetHash": "7d6ab97aae45f20b70d960f4447fd74494deef55fc123595ac6668634552c663",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -18163,12 +18163,12 @@
       "atlasId": "retry-060",
       "cellIndex": 6,
       "assetPath": "assets/top-down/items/material/material-93.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "c938e467dcae24fe3daa1ca7a4f03944fa9832231aaef8b486832952fc5765e7",
+      "assetHash": "9697abbe76736b6c488f0a44c1c0d0628e92186bcc56fb3ad0394e8d92bb51fa",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -18182,12 +18182,12 @@
       "atlasId": "retry-060",
       "cellIndex": 7,
       "assetPath": "assets/top-down/items/material/material-94.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "c938e467dcae24fe3daa1ca7a4f03944fa9832231aaef8b486832952fc5765e7",
+      "assetHash": "a2e521f0f7d09952c32b121d20d750f648ff657fef51e1e5d3147adc7390d293",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -18201,12 +18201,12 @@
       "atlasId": "retry-060",
       "cellIndex": 8,
       "assetPath": "assets/top-down/items/material/material-95.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "c938e467dcae24fe3daa1ca7a4f03944fa9832231aaef8b486832952fc5765e7",
+      "assetHash": "c1b8915df2d65b9ff695bf23a2c43bf4df92cb9401fa6cea4f7d677e30464759",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -18220,12 +18220,12 @@
       "atlasId": "retry-060",
       "cellIndex": 9,
       "assetPath": "assets/top-down/items/material/material-96.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "c938e467dcae24fe3daa1ca7a4f03944fa9832231aaef8b486832952fc5765e7",
+      "assetHash": "9a4748c1c10704ce5a681d89b8bf282861f13f3a714efa91cdc79a4c8cba8e08",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -18239,12 +18239,12 @@
       "atlasId": "retry-060",
       "cellIndex": 10,
       "assetPath": "assets/top-down/items/material/material-97.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "c938e467dcae24fe3daa1ca7a4f03944fa9832231aaef8b486832952fc5765e7",
+      "assetHash": "92298d679202c8cd91795a2ab2be8fa224cc1289dc6b5b8e272bcd001a4b67bb",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -18258,12 +18258,12 @@
       "atlasId": "retry-060",
       "cellIndex": 11,
       "assetPath": "assets/top-down/items/material/material-98.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "c938e467dcae24fe3daa1ca7a4f03944fa9832231aaef8b486832952fc5765e7",
+      "assetHash": "664cdadcf8799cf06e8fa2a5beb04f11a2ff5e8832dfaa28b29d6749aaad8e78",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -18277,12 +18277,12 @@
       "atlasId": "retry-060",
       "cellIndex": 12,
       "assetPath": "assets/top-down/items/material/material-99.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "c938e467dcae24fe3daa1ca7a4f03944fa9832231aaef8b486832952fc5765e7",
+      "assetHash": "fa10d528b89b13fc783b921bfac74499c969dcb55bfd6712aa2232aa82666fe7",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -18296,12 +18296,12 @@
       "atlasId": "retry-060",
       "cellIndex": 13,
       "assetPath": "assets/top-down/items/material/material-белое-сердцецветье.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "c938e467dcae24fe3daa1ca7a4f03944fa9832231aaef8b486832952fc5765e7",
+      "assetHash": "3fa3cad1529db34230fb4320a33d116b0d342b4e2466e8955dd438e679f79985",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -18315,12 +18315,12 @@
       "atlasId": "retry-060",
       "cellIndex": 14,
       "assetPath": "assets/top-down/items/material/material-волосы-суккуба.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "c938e467dcae24fe3daa1ca7a4f03944fa9832231aaef8b486832952fc5765e7",
+      "assetHash": "2c87d0013733f15aa9e46ec895e733d52484069ba0dac0f10a5f719df655e09a",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -18334,12 +18334,12 @@
       "atlasId": "retry-060",
       "cellIndex": 15,
       "assetPath": "assets/top-down/items/material/material-вьюн-сирокко.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "c938e467dcae24fe3daa1ca7a4f03944fa9832231aaef8b486832952fc5765e7",
+      "assetHash": "7c87ff647948ab477c472c5ea67e84dc01242d495b857542d0f8170d3358c340",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -18353,12 +18353,12 @@
       "atlasId": "retry-060",
       "cellIndex": 16,
       "assetPath": "assets/top-down/items/material/material-грозовая-орхидея.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "c938e467dcae24fe3daa1ca7a4f03944fa9832231aaef8b486832952fc5765e7",
+      "assetHash": "35b0e2e54fd3a3aa21f9ab894e9ed1dd1e4cb5c6a32fadd134921532ce02563d",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -18372,12 +18372,12 @@
       "atlasId": "retry-060",
       "cellIndex": 17,
       "assetPath": "assets/top-down/items/material/material-жаролист.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "c938e467dcae24fe3daa1ca7a4f03944fa9832231aaef8b486832952fc5765e7",
+      "assetHash": "4f644fb68e0f685a62a074ab8efbf40e854f91b2882e7b49e73bb5cdfc980660",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -18391,12 +18391,12 @@
       "atlasId": "retry-060",
       "cellIndex": 18,
       "assetPath": "assets/top-down/items/material/material-жемчужная-ряска.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "c938e467dcae24fe3daa1ca7a4f03944fa9832231aaef8b486832952fc5765e7",
+      "assetHash": "cf13a8fd3688facb2b8077cec99b6587d68eeeabbfee3de49ad75620aa7ecbf2",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -18410,12 +18410,12 @@
       "atlasId": "retry-060",
       "cellIndex": 19,
       "assetPath": "assets/top-down/items/material/material-коралловый-жароцвет.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "c938e467dcae24fe3daa1ca7a4f03944fa9832231aaef8b486832952fc5765e7",
+      "assetHash": "c747e131700d66167902483aab1f539ed3c2b050b110bbbc417a9f4b6b3625ab",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -18429,12 +18429,12 @@
       "atlasId": "retry-060",
       "cellIndex": 20,
       "assetPath": "assets/top-down/items/material/material-корень-черного-солнца.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "c938e467dcae24fe3daa1ca7a4f03944fa9832231aaef8b486832952fc5765e7",
+      "assetHash": "27d209b138fc365f3c758ff77fa3e36c7b6697fb52f9e1a61b5747173e844c5b",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -18448,12 +18448,12 @@
       "atlasId": "retry-060",
       "cellIndex": 21,
       "assetPath": "assets/top-down/items/material/material-кристаллокорень.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "c938e467dcae24fe3daa1ca7a4f03944fa9832231aaef8b486832952fc5765e7",
+      "assetHash": "68184a62a4d63cc9f328fae6a8cc873ef169512e09946e0a3aae414333a39cb9",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -18467,12 +18467,12 @@
       "atlasId": "retry-060",
       "cellIndex": 22,
       "assetPath": "assets/top-down/items/material/material-пепельная-роса.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "c938e467dcae24fe3daa1ca7a4f03944fa9832231aaef8b486832952fc5765e7",
+      "assetHash": "49a2126087a26a518e1852d2ba09ed4231e1a9f7eaac7e90e90e87247f1d80ac",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -18486,12 +18486,12 @@
       "atlasId": "retry-060",
       "cellIndex": 23,
       "assetPath": "assets/top-down/items/material/material-печень-виверны.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "c938e467dcae24fe3daa1ca7a4f03944fa9832231aaef8b486832952fc5765e7",
+      "assetHash": "012f1dc77eb80a01870a5b4d2b0c5afcfa4b3df0d2201daa2ea7fff30602c710",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -18505,12 +18505,12 @@
       "atlasId": "retry-060",
       "cellIndex": 24,
       "assetPath": "assets/top-down/items/material/material-приливный-корень.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "c938e467dcae24fe3daa1ca7a4f03944fa9832231aaef8b486832952fc5765e7",
+      "assetHash": "12006401e700db4c8fc143c7d5bac8f51544cd66653339977d50196023f843e1",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -18524,12 +18524,12 @@
       "atlasId": "retry-061",
       "cellIndex": 0,
       "assetPath": "assets/top-down/items/material/material-рифовый-корень.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "0d5eb8346fc99eaf42e4efac99c8d75154655c734c91bc0b07ab9af729c704bd",
+      "assetHash": "5e8a1b7d155a115f26a1849dbdb6e13b0fa1ede633e00558f0ce27b52c60f83b",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -18752,12 +18752,12 @@
       "atlasId": "retry-061",
       "cellIndex": 1,
       "assetPath": "assets/top-down/items/material/muka.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "0d5eb8346fc99eaf42e4efac99c8d75154655c734c91bc0b07ab9af729c704bd",
+      "assetHash": "1382f18c8fcd3a64e3879ba89339a1322800d7b47241e197e651908724c469bc",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -18790,12 +18790,12 @@
       "atlasId": "retry-061",
       "cellIndex": 2,
       "assetPath": "assets/top-down/items/material/myod.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "0d5eb8346fc99eaf42e4efac99c8d75154655c734c91bc0b07ab9af729c704bd",
+      "assetHash": "0bd87f15265cd3df339ead53e5c7e86948ce46c8763018ddeb56bdfca6d42d6a",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -18809,12 +18809,12 @@
       "atlasId": "retry-061",
       "cellIndex": 3,
       "assetPath": "assets/top-down/items/material/olovo.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "0d5eb8346fc99eaf42e4efac99c8d75154655c734c91bc0b07ab9af729c704bd",
+      "assetHash": "b1a8f76152c32e3f20c10fae793f6985f0f5e5c9478b861a70103f4103d70dbe",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -18847,12 +18847,12 @@
       "atlasId": "retry-061",
       "cellIndex": 4,
       "assetPath": "assets/top-down/items/material/pergament.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "0d5eb8346fc99eaf42e4efac99c8d75154655c734c91bc0b07ab9af729c704bd",
+      "assetHash": "5037aab53d8b565184ae4289e6486d375813f9218675147acb3abee1d284a423",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
@@ -18904,12 +18904,12 @@
       "atlasId": "retry-061",
       "cellIndex": 5,
       "assetPath": "assets/top-down/items/material/pshenitsa.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "0d5eb8346fc99eaf42e4efac99c8d75154655c734c91bc0b07ab9af729c704bd",
+      "assetHash": "14ba8e7359582140af5bf354f814bbc3bf4da20f0561a5f0b8ffe6bcbd57d40b",
+      "matteMethod": "alpha"
     },
     {
       "sourceType": "material",
