@@ -172,6 +172,19 @@ export function deriveGroundPilePresentation(rows = [], {
   };
 }
 
+export function deriveGroundPilePlacement(row) {
+  const presentation = deriveGroundPilePresentation(row ? [row] : []);
+  const width = Number(presentation?.tokenWidth);
+  const height = Number(presentation?.tokenHeight);
+  if (presentation?.topDownItem !== true
+    || presentation.rotationMode !== "cardinal"
+    || !Number.isFinite(width)
+    || width <= 0
+    || !Number.isFinite(height)
+    || height <= 0) return null;
+  return { width, height, rotationMode: "cardinal" };
+}
+
 export function isGroundPileToken(token) {
   const document = token?.document ?? token;
   const flag = typeof document?.getFlag === "function"

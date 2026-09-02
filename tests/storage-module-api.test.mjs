@@ -16,6 +16,86 @@ function createHooks() {
   return { once() {}, on() {} };
 }
 
+test("storage source inspection exposes only safe canonical placement metadata", async () => {
+  class FakeApplicationV2 {}
+  const itemData = (uuid, flags) => ({
+    uuid,
+    documentName: "Item",
+    name: uuid.endsWith("bed") ? "Кровать" : "Сторонняя кровать",
+    type: "loot",
+    img: "icons/bed.webp",
+    system: { quantity: 1 },
+    flags,
+    toObject() {
+      return {
+        name: this.name,
+        type: this.type,
+        img: this.img,
+        system: structuredClone(this.system),
+        flags: structuredClone(this.flags)
+      };
+    }
+  });
+  const bed = itemData("Compendium.rebreya-main.gear.Item.bed", {
+    [MODULE_ID]: { sourceType: "gear", sourceId: "krovat", gearId: "krovat" }
+  });
+  const external = itemData("Compendium.external.gear.Item.bed", {});
+  const documents = new Map([[bed.uuid, bed], [external.uuid, external]]);
+  const restores = [
+    replaceGlobal("Hooks", createHooks()),
+    replaceGlobal("Actor", class Actor {}),
+    replaceGlobal("Item", class Item {}),
+    replaceGlobal("Macro", class Macro {}),
+    replaceGlobal("HTMLElement", class HTMLElement {}),
+    replaceGlobal("CONFIG", {}),
+    replaceGlobal("fromUuid", async (uuid) => documents.get(uuid) ?? null),
+    replaceGlobal("foundry", {
+      applications: {
+        api: {
+          ApplicationV2: FakeApplicationV2,
+          HandlebarsApplicationMixin: (Base) => Base
+        }
+      },
+      utils: {
+        deepClone: (value) => structuredClone(value),
+        getProperty(source, path) {
+          return path.split(".").reduce((value, key) => value?.[key], source);
+        }
+      }
+    }),
+    replaceGlobal("game", {
+      modules: new Map([[MODULE_ID, { version: "1.4.211" }]]),
+      socket: { emit() {}, on() {} },
+      system: { id: "dnd5e" },
+      user: { active: true, id: "gm", isGM: true },
+      users: { contents: [] },
+      messages: { contents: [] },
+      settings: { get: () => false }
+    })
+  ];
+
+  try {
+    const { RebreyaMainModule } = await import(`../scripts/main.js?storage-placement-inspection=${Date.now()}`);
+    const context = { storageService: {}, storageContainerItemService: {} };
+    const managed = await RebreyaMainModule.prototype.inspectStorageDepositSource.call(
+      context,
+      { kind: "item", itemUuid: bed.uuid }
+    );
+    assert.deepEqual(managed.placement, { width: 1, height: 2, rotationMode: "cardinal" });
+    assert.equal(managed.name, "Кровать");
+    assert.equal(managed.available, 1);
+
+    const fallback = await RebreyaMainModule.prototype.inspectStorageDepositSource.call(
+      context,
+      { kind: "item", itemUuid: external.uuid }
+    );
+    assert.equal(fallback.placement, null);
+  }
+  finally {
+    restores.reverse().forEach((restore) => restore());
+  }
+});
+
 test("opening GM settings for a marked storage does not perform first-open generation", async () => {
   class FakeApplicationV2 {}
   const gm = { active: true, id: "gm", isGM: true };

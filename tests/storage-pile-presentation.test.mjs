@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 
 import { MODULE_ID } from "../scripts/constants.js";
 import {
+  deriveGroundPilePlacement,
   deriveGroundPilePresentation,
   isGroundPileToken,
   STORAGE_PILE_PRESENTATIONS
@@ -133,6 +134,40 @@ test("single managed furniture exposes its curated rectangular footprint and car
   assert.equal(bed.tokenWidth, 1);
   assert.equal(bed.tokenHeight, 2);
   assert.equal(bed.rotationMode, "cardinal");
+});
+
+test("ground-pile placement metadata is exposed only for canonical furniture footprints", () => {
+  const managed = (gearId, name) => ({
+    sourceType: "gear",
+    sourceId: gearId,
+    name,
+    typeLabel: "Снаряжение",
+    quantity: 1,
+    itemData: {
+      flags: {
+        [MODULE_ID]: { sourceType: "gear", sourceId: gearId, gearId }
+      }
+    }
+  });
+
+  assert.deepEqual(deriveGroundPilePlacement(managed("krovat", "Кровать")), {
+    width: 1,
+    height: 2,
+    rotationMode: "cardinal"
+  });
+  assert.deepEqual(deriveGroundPilePlacement(managed("stul", "Стул")), {
+    width: 1,
+    height: 1,
+    rotationMode: "cardinal"
+  });
+  assert.equal(deriveGroundPilePlacement({
+    sourceType: "gear",
+    sourceId: "krovat",
+    name: "Сторонняя кровать",
+    img: "icons/external-bed.webp",
+    quantity: 1,
+    itemData: { flags: {} }
+  }), null);
 });
 
 test("single external rows retain their current Item image fallback", () => {
