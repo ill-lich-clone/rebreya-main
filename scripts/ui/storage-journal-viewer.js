@@ -24,7 +24,7 @@ export async function openStorageJournalViewer(snapshot, dependencies = {}) {
           }
           catch (error) {
             notifications?.error?.(error?.message || "Не удалось добавить запись в инвентарь.");
-            throw error;
+            return false;
           }
         }
       }]

@@ -59,7 +59,7 @@ test("record Item Journal viewer has no action buttons", async () => {
   assert.deepEqual(dialog.options.buttons, []);
 });
 
-test("Journal record action distinguishes an existing Item and propagates failures", async () => {
+test("Journal record action distinguishes an existing Item and handles failures without rejection", async () => {
   const notifications = [];
   let dialog;
   class FakeDialogV2 {
@@ -76,12 +76,15 @@ test("Journal record action distinguishes an existing Item and propagates failur
   assert.deepEqual(notifications, ["Эта запись уже есть в инвентаре."]);
 
   const failure = new Error("write failed");
+  const errors = [];
   await openStorageJournalViewer({ name: "Запись", pages: [] }, {
     renderTemplate: async () => "<section></section>",
     dialogClass: FakeDialogV2,
+    notifications: { error: (message) => errors.push(message) },
     onRecord: async () => { throw failure; }
   });
-  await assert.rejects(dialog.options.buttons[0].callback(), failure);
+  assert.equal(await dialog.options.buttons[0].callback(), false);
+  assert.deepEqual(errors, ["write failed"]);
 });
 
 test("storage Journal viewer template uses safe text and whitelisted media without document controls", async () => {

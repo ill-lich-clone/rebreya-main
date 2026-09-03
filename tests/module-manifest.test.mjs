@@ -63,8 +63,8 @@ test("module manifest loads an unpinned canonical entrypoint for page-refresh up
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const [entrypoint] = manifest.esmodules;
 
-  assert.equal(manifest.version, "1.4.217");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.217.js"]);
+  assert.equal(manifest.version, "1.4.218");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.218.js"]);
   assert.doesNotMatch(entrypoint, /[?#]/u);
 
   const entrypointSource = await readFile(new URL(entrypoint, manifestUrl), "utf8");
@@ -138,7 +138,7 @@ test("production registers the hidden GiantTribe advancement before race compend
   );
   assert.match(
     entrypointSource,
-    /dnd5e-sheet-extensions\.js\?v=1\.4\.217-journal-record-items/u
+    /dnd5e-sheet-extensions\.js\?v=1\.4\.218-journal-record-error/u
   );
   assert.match(
     entrypointSource,
@@ -227,7 +227,7 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
 
   assert.match(
     canonicalSource,
-    /integrations\/dnd5e-sheet-extensions\.js\?v=1\.4\.217-journal-record-items/u
+    /integrations\/dnd5e-sheet-extensions\.js\?v=1\.4\.218-journal-record-error/u
   );
 
   for (const importPath of [
@@ -306,9 +306,9 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
     /storage-app\.js\?v=\$\{encodeURIComponent\(`\$\{moduleVersion\}-journal-record-items`\)\}/u
   );
   assert.match(storageCommandSource, /journal-record-item\.js\?v=1\.4\.217-journal-record-items/u);
-  assert.match(storageAppSource, /storage-journal-viewer\.js\?v=1\.4\.217-journal-record-items/u);
+  assert.match(storageAppSource, /storage-journal-viewer\.js\?v=1\.4\.218-journal-record-error/u);
   assert.match(sheetSource, /journal-record-item\.js\?v=1\.4\.217-journal-record-items/u);
-  assert.match(sheetSource, /storage-journal-viewer\.js\?v=1\.4\.217-journal-record-items/u);
+  assert.match(sheetSource, /storage-journal-viewer\.js\?v=1\.4\.218-journal-record-error/u);
   assert.match(
     traderServiceSource,
     /engine\/trader-engine\.js\?v=1\.4\.109-lazy-trader-restock/u
@@ -319,7 +319,7 @@ test("module keeps recent published entrypoint URLs as canonical compatibility f
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
 
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.217.js"]);
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.218.js"]);
 
   for (const fileName of ["main-1.4.98.js", "main-1.4.99.js", "main-1.4.100.js"]) {
     const forwarderSource = await readFile(new URL(`../scripts/${fileName}`, import.meta.url), "utf8");
@@ -628,7 +628,7 @@ test("held item integrations preserve their released cache bust", async () => {
 
   assert.match(
     entrypointSource,
-    /dnd5e-sheet-extensions\.js\?v=1\.4\.217-journal-record-items/u,
+    /dnd5e-sheet-extensions\.js\?v=1\.4\.218-journal-record-error/u,
   );
   assert.match(
     entrypointSource,

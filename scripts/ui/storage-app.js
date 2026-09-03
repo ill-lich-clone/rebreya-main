@@ -1,7 +1,7 @@
 import { MODULE_ID } from "../constants.js";
 import { getAppElement } from "../ui.js";
 import { placeTokenOverlay, storageTokenViewportBounds } from "./storage-token-overlay.js";
-import { openStorageJournalViewer } from "./storage-journal-viewer.js?v=1.4.217-journal-record-items";
+import { openStorageJournalViewer } from "./storage-journal-viewer.js?v=1.4.218-journal-record-error";
 import { formatDurabilityItemName } from "../data/durability-item-presentation.js?v=1.4.154-broken-item-name";
 import { isDurabilityEligible } from "../data/durability-rules.js?v=1.4.200-storage-broken-presentation";
 import {
