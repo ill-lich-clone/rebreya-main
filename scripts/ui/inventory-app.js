@@ -4025,7 +4025,9 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     }
 
     if (hasInventoryTreeDragMetadata(dragData)) return null;
-    return dragData?.type === "Item" ? { kind: "external", dragData } : null;
+    return ["Item", "JournalEntry", "JournalEntryPage"].includes(dragData?.type)
+      ? { kind: "external", dragData }
+      : null;
   }
 
   async #applyInventoryDrop(action, folderId) {

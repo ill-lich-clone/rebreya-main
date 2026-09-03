@@ -578,6 +578,18 @@ test("Journal record payloads expose only authoritative storage identity or one 
   assert.equal(isValidStorageJournalRecordPayload({ ...record, groupActorId: " group-a " }), false);
   assert.equal(isValidStorageJournalRecordPayload({ ...record, extra: true }), false);
 
+  const directDrop = {
+    sourceUuid: "JournalEntry.notes.JournalEntryPage.page-a",
+    documentName: "JournalEntryPage",
+    groupActorId: "group-a",
+    folderId: "folder-a",
+    mutationId: "journal-record-drop-1"
+  };
+  assert.equal(storageCommands.isValidJournalRecordDropPayload(directDrop), true);
+  assert.equal(storageCommands.isValidJournalRecordDropPayload({ ...directDrop, documentName: "Item" }), false);
+  assert.equal(storageCommands.isValidJournalRecordDropPayload({ ...directDrop, sourceUuid: " page-a " }), false);
+  assert.equal(storageCommands.isValidJournalRecordDropPayload({ ...directDrop, extra: true }), false);
+
   assert.equal(isValidJournalRecordReadPayload({ itemUuid: "Actor.hero.Item.record" }), true);
   assert.equal(isValidJournalRecordReadPayload({ itemUuid: " Actor.hero.Item.record " }), false);
   assert.equal(isValidJournalRecordReadPayload({ itemUuid: "" }), false);
@@ -690,6 +702,44 @@ test("Journal record creation repeats storage access and sends GM records to the
   assert.equal(repeated.created, false);
   assert.equal(repeated.itemId, recorded.itemId);
   assert.equal(harness.groupActor.items.contents.length, 1);
+});
+
+test("direct Journal page drop creates one linked record in the exact group and remains idempotent", async () => {
+  const harness = createHarness();
+  const journalPage = {
+    uuid: "JournalEntry.notes.JournalEntryPage.page-a",
+    documentName: "JournalEntryPage",
+    name: "Предупреждение",
+    img: "icons/book.webp"
+  };
+  harness.documents.set(journalPage.uuid, journalPage);
+  const request = {
+    sourceUuid: journalPage.uuid,
+    documentName: journalPage.documentName,
+    groupActorId: harness.groupActor.id,
+    folderId: "folder-a",
+    mutationId: "record-drop-1"
+  };
+
+  const [first, concurrent] = await Promise.all([
+    harness.service.recordJournalDrop(request, { sender: harness.gm }),
+    harness.service.recordJournalDrop({ ...request, mutationId: "record-drop-2" }, { sender: harness.gm })
+  ]);
+
+  assert.equal(harness.groupActor.items.contents.length, 1);
+  assert.deepEqual(harness.groupActor.items.contents[0].flags[MODULE_ID].journalRecord, {
+    version: 1,
+    sourceUuid: journalPage.uuid,
+    documentName: journalPage.documentName
+  });
+  assert.equal(harness.groupActor.items.contents[0].name, journalPage.name);
+  assert.deepEqual([first.created, concurrent.created].sort(), [false, true]);
+  assert.equal(first.itemId, concurrent.itemId);
+  assert.equal(harness.folderAssignments.at(-1).folderId, "folder-a");
+  await assert.rejects(
+    harness.service.recordJournalDrop({ ...request, mutationId: "record-drop-player" }, { sender: harness.player }),
+    /мастер/iu
+  );
 });
 
 test("reading a Journal record authorizes its parent Actor and returns the exact buttonless snapshot source", async () => {

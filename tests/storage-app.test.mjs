@@ -1266,6 +1266,47 @@ test("GM configuration drop routes a JournalEntry reference through the authorit
   assert.equal(depositCalls[0][2], 1);
 });
 
+test("GM configuration drop routes a JournalEntryPage reference through the authoritative deposit API", async () => {
+  const { app, depositCalls } = createApp({
+    configure: true,
+    inspectStorageDepositSource: async (data) => ({
+      source: { kind: "journal", sourceUuid: data.uuid, documentName: data.type },
+      available: 1,
+      mode: "copy"
+    })
+  });
+  const listeners = new Map();
+  app.render = async () => {};
+  app.element = new class extends FakeElement {
+    addEventListener(name, callback) { listeners.set(name, callback); }
+  }();
+  await app._prepareContext();
+  await app._onRender({}, {});
+  let prevented = 0;
+  const dropzone = {
+    closest(selector) { return selector === "[data-storage-dropzone]" ? this : null; }
+  };
+  await listeners.get("drop")({
+    target: dropzone,
+    preventDefault: () => { prevented += 1; },
+    dataTransfer: {
+      getData: () => JSON.stringify({
+        type: "JournalEntryPage",
+        uuid: "JournalEntry.mechanus.JournalEntryPage.warning"
+      })
+    }
+  });
+
+  assert.equal(prevented, 1);
+  assert.equal(depositCalls.length, 1);
+  assert.deepEqual(depositCalls[0][1], {
+    kind: "journal",
+    sourceUuid: "JournalEntry.mechanus.JournalEntryPage.warning",
+    documentName: "JournalEntryPage"
+  });
+  assert.equal(depositCalls[0][2], 1);
+});
+
 test("ordinary player storage accepts a ground-pile row drop anywhere in its window", async () => {
   const source = {
     type: "RebreyaStorageClaim",

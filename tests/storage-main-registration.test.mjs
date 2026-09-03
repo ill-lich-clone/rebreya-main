@@ -94,6 +94,9 @@ test("main registers the storage deposit socket API and current cache keys", asy
   assert.match(main, /authorize:\s*\(_payload,\s*\{ sender \}\)\s*=>\s*sender\?\.isGM\s*===\s*true/u);
   assert.match(main, /this\.storageCommandService\.dropJournalToScene\(payload,\s*\{ sender \}\)/u);
   assert.match(main, /async dropStorageJournalToScene\(/u);
+  assert.match(main, /STORAGE_JOURNAL_RECORD_DROP_COMMAND\s*=\s*"storage\.journal\.record-drop"/u);
+  assert.match(main, /register\(STORAGE_JOURNAL_RECORD_DROP_COMMAND,\s*\{/u);
+  assert.match(main, /this\.storageCommandService\.recordJournalDrop\(payload,\s*\{ sender \}\)/u);
   assert.doesNotMatch(main, /BuiltinCoinTemplateService|builtinCoinTemplateService|restoreBuiltinCoinTemplates/u);
   assert.match(main, /this\.storageJournalReader = new StorageJournalReader\(\{/u);
   assert.match(main, /this\.storageTriggerDnd5eAdapter = new StorageTriggerDnd5eAdapter\(\{/u);
@@ -141,7 +144,7 @@ test("main registers the storage deposit socket API and current cache keys", asy
     "data/storage-ground-pile-service.js?v=1.4.215-container-rotation",
     "data/storage-container-item-service.js?v=1.4.215-container-rotation",
     "data/storage-deposit-source.js?v=1.4.195-storage-administration",
-    "data/storage-command-service.js?v=1.4.219-journal-record-group",
+    "data/storage-command-service.js?v=1.4.222-journal-record-drop",
     "data/storage-trigger-service.js?v=1.4.197-door-trigger-target",
     "integrations/storage-token-hooks.js?v=1.4.197-door-trigger-target",
     "combat/hooks.js?v=1.4.191-magic-item-runtime",
@@ -169,7 +172,7 @@ test("main registers the storage deposit socket API and current cache keys", asy
   ]) {
     assert.equal(storageHooks.includes(importPath), true, importPath);
   }
-  assert.equal(manifest.version, "1.4.221");
+  assert.equal(manifest.version, "1.4.222");
   assert.match(main, /await registerStorageContainerHierarchyHooks\(\{ Hooks \}\)/u);
 });
 
@@ -232,12 +235,14 @@ test("real storage command registrations validate envelopes and execute their co
       STORAGE_JOURNAL_DROP_COMMAND,
       STORAGE_JOURNAL_READ_COMMAND,
       STORAGE_JOURNAL_READ_RECORD_COMMAND,
+      STORAGE_JOURNAL_RECORD_DROP_COMMAND,
       STORAGE_JOURNAL_RECORD_COMMAND
     } = await import(
       `../scripts/main.js?storage-registration=${Date.now()}`
     );
     assert.equal(STORAGE_CLAIM_ALL_COMMAND, "storage.claim-all");
     const moduleApi = new RebreyaMainModule();
+    moduleApi.refreshInventoryViews = async () => undefined;
     const calls = [];
     moduleApi.storageCommandService = {
       async readJournal(payload, context) {
@@ -247,6 +252,10 @@ test("real storage command registrations validate envelopes and execute their co
       async recordJournal(payload, context) {
         calls.push({ command: "journal-record", payload, context });
         return { created: true, actorId: "hero", itemId: "record", itemUuid: "Actor.hero.Item.record" };
+      },
+      async recordJournalDrop(payload, context) {
+        calls.push({ command: "journal-record-drop", payload, context });
+        return { created: true, actorId: "group-a", itemId: "record", itemUuid: "Actor.group-a.Item.record" };
       },
       async readJournalRecord(payload, context) {
         calls.push({ command: "journal-read-record", payload, context });
@@ -275,6 +284,13 @@ test("real storage command registrations validate envelopes and execute their co
       mutationId: "journal-record-command"
     };
     const journalReadRecordPayload = { itemUuid: "Actor.hero.Item.record" };
+    const journalRecordDropPayload = {
+      sourceUuid: "JournalEntry.notes.JournalEntryPage.page-a",
+      documentName: "JournalEntryPage",
+      groupActorId: "group-a",
+      folderId: null,
+      mutationId: "journal-record-drop-command"
+    };
     const coinPayload = {
       characterTokenUuid: "Scene.scene.Token.hero",
       denomination: "gp",
@@ -304,6 +320,7 @@ test("real storage command registrations validate envelopes and execute their co
     for (const [command, requestId, payload] of [
       [STORAGE_JOURNAL_READ_COMMAND, "journal-valid", journalPayload],
       [STORAGE_JOURNAL_RECORD_COMMAND, "journal-record-valid", journalRecordPayload],
+      [STORAGE_JOURNAL_RECORD_DROP_COMMAND, "journal-record-drop-valid", journalRecordDropPayload],
       [STORAGE_JOURNAL_READ_RECORD_COMMAND, "journal-read-record-valid", journalReadRecordPayload],
       [STORAGE_COIN_DROP_COMMAND, "coins-valid", coinPayload],
       [STORAGE_JOURNAL_DROP_COMMAND, "journal-drop-valid", journalDropPayload],
@@ -323,6 +340,8 @@ test("real storage command registrations validate envelopes and execute their co
           ? { name: "Journal", pages: [] }
           : command === STORAGE_JOURNAL_RECORD_COMMAND
             ? { created: true, actorId: "hero", itemId: "record", itemUuid: "Actor.hero.Item.record" }
+          : command === STORAGE_JOURNAL_RECORD_DROP_COMMAND
+            ? { created: true, actorId: "group-a", itemId: "record", itemUuid: "Actor.group-a.Item.record" }
           : command === STORAGE_JOURNAL_READ_RECORD_COMMAND
             ? { name: "Recorded Journal", pages: [] }
           : command === STORAGE_JOURNAL_DROP_COMMAND
@@ -335,6 +354,7 @@ test("real storage command registrations validate envelopes and execute their co
     assert.deepEqual(calls.map(({ command, payload }) => ({ command, payload })), [
       { command: "journal", payload: journalPayload },
       { command: "journal-record", payload: journalRecordPayload },
+      { command: "journal-record-drop", payload: journalRecordDropPayload },
       { command: "journal-read-record", payload: journalReadRecordPayload },
       { command: "coins", payload: coinPayload },
       { command: "journal-drop", payload: journalDropPayload },
@@ -346,6 +366,7 @@ test("real storage command registrations validate envelopes and execute their co
     for (const [command, requestId, payload] of [
       [STORAGE_JOURNAL_READ_COMMAND, "journal-invalid", { ...journalPayload, rowId: "" }],
       [STORAGE_JOURNAL_RECORD_COMMAND, "journal-record-invalid", { ...journalRecordPayload, sourceUuid: "JournalEntry.evil" }],
+      [STORAGE_JOURNAL_RECORD_DROP_COMMAND, "journal-record-drop-invalid", { ...journalRecordDropPayload, extra: true }],
       [STORAGE_JOURNAL_READ_RECORD_COMMAND, "journal-read-record-invalid", { ...journalReadRecordPayload, extra: true }],
       [STORAGE_COIN_DROP_COMMAND, "coins-invalid", { ...coinPayload, denomination: "electrum" }],
       [STORAGE_JOURNAL_DROP_COMMAND, "journal-drop-invalid", { ...journalDropPayload, extra: true }],
@@ -356,7 +377,7 @@ test("real storage command registrations validate envelopes and execute their co
       }, { transportSenderId: gm.id }), true);
       assert.equal((await waitForSocketResult(runtime.emitted, requestId))?.error?.code, "invalid-payload");
     }
-    assert.equal(calls.length, 6);
+    assert.equal(calls.length, 7);
 
     assert.equal(moduleApi.socketCommandBus.handleMessage({
       type: COMMAND_REQUEST_TYPE,
@@ -366,7 +387,18 @@ test("real storage command registrations validate envelopes and execute their co
       payload: journalDropPayload
     }, { transportSenderId: player.id }), true);
     assert.equal((await waitForSocketResult(runtime.emitted, "journal-drop-player"))?.error?.code, "unauthorized");
-    assert.equal(calls.length, 6);
+    assert.equal(moduleApi.socketCommandBus.handleMessage({
+      type: COMMAND_REQUEST_TYPE,
+      command: STORAGE_JOURNAL_RECORD_DROP_COMMAND,
+      requestId: "journal-record-drop-player",
+      senderId: player.id,
+      payload: journalRecordDropPayload
+    }, { transportSenderId: player.id }), true);
+    assert.equal(
+      (await waitForSocketResult(runtime.emitted, "journal-record-drop-player"))?.error?.code,
+      "unauthorized"
+    );
+    assert.equal(calls.length, 7);
   }
   finally {
     runtime.restore();

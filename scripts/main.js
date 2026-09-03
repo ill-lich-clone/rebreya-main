@@ -246,6 +246,7 @@ import {
   isValidStorageCoinDropPayload,
   isValidStorageDepositPayload,
   isValidStorageDropItemPayload,
+  isValidJournalRecordDropPayload,
   isValidJournalRecordReadPayload,
   isValidStorageJournalDropPayload,
   isValidStorageJournalReadPayload,
@@ -257,7 +258,7 @@ import {
   isValidStorageRestorePortablePayload,
   isValidStorageTokenCharacterPayload,
   storageCharacterTokenUuidForClaim
-} from "./data/storage-command-service.js?v=1.4.219-journal-record-group";
+} from "./data/storage-command-service.js?v=1.4.222-journal-record-drop";
 import { registerCombatHooks } from "./combat/hooks.js?v=1.4.191-magic-item-runtime";
 import { CombatAttackService } from "./combat/attack-service.js?v=1.4.181-dual-wield-gloves";
 import { ImplantAutomationService } from "./combat/implant-automation-service.js";
@@ -398,6 +399,7 @@ const TRADER_SELL_COMMAND = "trader.sell";
 export const STORAGE_OPEN_COMMAND = "storage.open";
 export const STORAGE_JOURNAL_READ_COMMAND = "storage.journal.read";
 export const STORAGE_JOURNAL_RECORD_COMMAND = "storage.journal.record";
+export const STORAGE_JOURNAL_RECORD_DROP_COMMAND = "storage.journal.record-drop";
 export const STORAGE_JOURNAL_READ_RECORD_COMMAND = "storage.journal.read-record";
 export const STORAGE_CLAIM_ROW_COMMAND = "storage.claim-row";
 export const STORAGE_CLAIM_COINS_COMMAND = "storage.claim-coins";
@@ -2320,6 +2322,14 @@ export class RebreyaMainModule {
       validate: isValidStorageJournalRecordPayload,
       authorize: (_payload, { sender }) => Boolean(sender),
       execute: (payload, { sender }) => this.storageCommandService.recordJournal(payload, { sender })
+    });
+    this.socketCommandBus.register(STORAGE_JOURNAL_RECORD_DROP_COMMAND, {
+      validate: isValidJournalRecordDropPayload,
+      authorize: (_payload, { sender }) => sender?.isGM === true,
+      execute: (payload, { sender }) => this.runInventoryMutation(
+        () => this.storageCommandService.recordJournalDrop(payload, { sender }),
+        { actorIdsFromResult: (result) => [result?.actorId] }
+      )
     });
     this.socketCommandBus.register(STORAGE_JOURNAL_READ_RECORD_COMMAND, {
       validate: isValidJournalRecordReadPayload,
@@ -5031,7 +5041,7 @@ export class RebreyaMainModule {
     }
     const moduleVersion = game.modules.get(MODULE_ID)?.version ?? "1.4.96";
     const { StorageApp } = await import(
-      `./ui/storage-app.js?v=${encodeURIComponent(`${moduleVersion}-journal-record-items`)}`
+      `./ui/storage-app.js?v=${encodeURIComponent(`${moduleVersion}-journal-record-drop`)}`
     );
     const key = `${safeTokenUuid}:${configure ? "configure" : "open"}`;
     let app = this.storageApps.get(key);
@@ -5710,6 +5720,23 @@ export class RebreyaMainModule {
         createSocketRequestId("storage-party-drop"),
         { quantity, target }
       );
+    }
+    const journalDrop = parseStorageDepositDragData(dropData);
+    if (journalDrop?.kind === "journal") {
+      const payload = {
+        sourceUuid: journalDrop.sourceUuid,
+        documentName: journalDrop.documentName,
+        groupActorId: target.groupActorId,
+        folderId: target.folderId,
+        mutationId: createSocketRequestId("storage-journal-record-drop")
+      };
+      if (!payload.groupActorId) throw new Error("Не удалось определить группу назначения.");
+      return isActiveGmClient(globalThis.game)
+        ? this.runInventoryMutation(
+            () => this.storageCommandService.recordJournalDrop(payload, { sender: globalThis.game?.user }),
+            { actorIdsFromResult: (result) => [result?.actorId] }
+          )
+        : this.socketCommandBus.request(STORAGE_JOURNAL_RECORD_DROP_COMMAND, payload);
     }
     return this.runInventoryMutation(
       () => this.inventoryService.importDroppedItem(dropData, target)

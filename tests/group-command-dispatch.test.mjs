@@ -1982,6 +1982,7 @@ test("module API carries the exact party folder target through storage and direc
   try {
     const moduleApi = new RebreyaMainModule();
     const storageCalls = [];
+    const journalRecordCalls = [];
     const importCalls = [];
     moduleApi.inventoryService.getInventoryActor = async (options) => {
       assert.deepEqual(options, { create: false, groupActorId: fixture.groupA.id });
@@ -1990,6 +1991,10 @@ test("module API carries the exact party folder target through storage and direc
     moduleApi.storageCommandService.claimRow = async (payload, context) => {
       storageCalls.push({ payload: clone(payload), senderId: context.sender.id });
       return { changed: true };
+    };
+    moduleApi.storageCommandService.recordJournalDrop = async (payload, context) => {
+      journalRecordCalls.push({ payload: clone(payload), senderId: context.sender.id });
+      return { actorId: fixture.groupA.id, created: true };
     };
     const storageIngressPlan = buildLootgenIngressPlan(fixture.groupA.id, ["row-1"], {
       folderId: "folder-a"
@@ -2026,6 +2031,13 @@ test("module API carries the exact party folder target through storage and direc
       { type: "Item", uuid: "Compendium.world.items.Item.torch" },
       { groupActorId: fixture.groupA.id, folderId: "folder-a" }
     );
+    await moduleApi.importInventoryDrop(
+      {
+        type: "JournalEntryPage",
+        uuid: "JournalEntry.notes.JournalEntryPage.warning"
+      },
+      { groupActorId: fixture.groupA.id, folderId: "folder-a" }
+    );
 
     assert.deepEqual(storageCalls, [{
       payload: {
@@ -2044,6 +2056,27 @@ test("module API carries the exact party folder target through storage and direc
       dropData: { type: "Item", uuid: "Compendium.world.items.Item.torch" },
       options: { groupActorId: fixture.groupA.id, folderId: "folder-a" }
     }]);
+    assert.equal(journalRecordCalls.length, 1);
+    assert.match(
+      journalRecordCalls[0].payload.mutationId,
+      /^storage-journal-record-drop-\d+-[a-z0-9]+$/u
+    );
+    assert.deepEqual({
+      ...journalRecordCalls[0],
+      payload: {
+        ...journalRecordCalls[0].payload,
+        mutationId: "<generated>"
+      }
+    }, {
+      payload: {
+        sourceUuid: "JournalEntry.notes.JournalEntryPage.warning",
+        documentName: "JournalEntryPage",
+        groupActorId: fixture.groupA.id,
+        folderId: "folder-a",
+        mutationId: "<generated>"
+      },
+      senderId: fixture.users.gmA.id
+    });
   }
   finally {
     fixture.restore();

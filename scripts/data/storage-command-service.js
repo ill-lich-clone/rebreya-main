@@ -228,6 +228,15 @@ export function isValidStorageJournalRecordPayload(payload) {
     && isTrimmedString(payload.mutationId, { required: true, max: 160 });
 }
 
+export function isValidJournalRecordDropPayload(payload) {
+  return hasExactKeys(payload, ["documentName", "folderId", "groupActorId", "mutationId", "sourceUuid"])
+    && ["JournalEntry", "JournalEntryPage"].includes(payload.documentName)
+    && isTrimmedString(payload.sourceUuid, { required: true })
+    && isTrimmedString(payload.groupActorId, { required: true, max: 160 })
+    && isTrimmedString(payload.mutationId, { required: true, max: 160 })
+    && (payload.folderId === null || isTrimmedString(payload.folderId, { required: true, max: 160 }));
+}
+
 export function isValidJournalRecordReadPayload(payload) {
   return hasExactKeys(payload, ["itemUuid"])
     && isTrimmedString(payload.itemUuid, { required: true });
@@ -1073,25 +1082,70 @@ export class StorageCommandService {
           ? "JournalEntryPage"
           : "JournalEntry"
       };
-      let item = findJournalRecordItem(targetActor, reference);
-      let created = false;
-      if (!item) {
-        const createdItems = await targetActor.createEmbeddedDocuments?.(
-          "Item",
-          [buildJournalRecordItemData({ ...row, sourceDocumentName: reference.documentName })],
-          { renderSheet: false }
-        );
-        item = createdItems?.[0] ?? null;
-        if (!item) throw new Error("Не удалось добавить запись в инвентарь.");
-        created = true;
-      }
-      return {
-        created,
-        actorId: clean(targetActor.id),
-        itemId: clean(item.id),
-        itemUuid: clean(item.uuid) || `${clean(targetActor.uuid)}.Item.${clean(item.id)}`
-      };
+      return this.#storeJournalRecord(targetActor, {
+        ...row,
+        sourceDocumentName: reference.documentName
+      });
     });
+  }
+
+  async recordJournalDrop(payload = {}, { sender } = {}) {
+    requireMutationId(payload.mutationId);
+    if (sender?.isGM !== true) throw new Error("Переносить запись в группу может только мастер.");
+    const sourceUuid = clean(payload.sourceUuid);
+    const documentName = clean(payload.documentName);
+    const groupActorId = clean(payload.groupActorId);
+    const folderId = payload.folderId === null ? null : clean(payload.folderId);
+    return this.#enqueue([`journal-record:${groupActorId}`], async () => {
+      const targetActor = await this.inventoryService.getInventoryActor({ create: false, groupActorId });
+      if (targetActor?.type !== "group" || clean(targetActor.id) !== groupActorId) {
+        throw new Error("Не удалось определить группу назначения.");
+      }
+      const journal = await this.resolveDocument(sourceUuid);
+      if (journal?.documentName !== documentName
+        || !["JournalEntry", "JournalEntryPage"].includes(documentName)) {
+        throw new Error("Запись журнала недоступна.");
+      }
+      return this.#storeJournalRecord(targetActor, {
+        rowKind: "journal",
+        sourceId: sourceUuid,
+        sourceDocumentName: documentName,
+        name: clean(journal.name) || clean(journal.parent?.name) || "Журнал",
+        img: clean(journal.img) || clean(journal.src) || clean(journal.parent?.img) || "icons/svg/book.svg"
+      }, { folderId });
+    });
+  }
+
+  async #storeJournalRecord(targetActor, row, { folderId = null } = {}) {
+    const reference = {
+      sourceUuid: clean(row.sourceId),
+      documentName: clean(row.sourceDocumentName)
+    };
+    let item = findJournalRecordItem(targetActor, reference);
+    let created = false;
+    if (!item) {
+      const createdItems = await targetActor.createEmbeddedDocuments?.(
+        "Item",
+        [buildJournalRecordItemData(row)],
+        { renderSheet: false }
+      );
+      item = createdItems?.[0] ?? null;
+      if (!item) throw new Error("Не удалось добавить запись в инвентарь.");
+      created = true;
+    }
+    if (folderId !== null) {
+      await this.inventoryService.assignInventoryGrantFolder({
+        groupActorId: clean(targetActor.id),
+        itemId: clean(item.id),
+        folderId
+      });
+    }
+    return {
+      created,
+      actorId: clean(targetActor.id),
+      itemId: clean(item.id),
+      itemUuid: clean(item.uuid) || `${clean(targetActor.uuid)}.Item.${clean(item.id)}`
+    };
   }
 
   async readJournalRecord(payload = {}, { sender } = {}) {

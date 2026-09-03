@@ -1624,6 +1624,10 @@ test("InventoryApp routes internal and external drops to exact folder or root ta
   const itemDrag = extendInventoryItemDragData(baseItem, { groupActorId: "group-a", itemId: "deep-item" });
   const folderDrag = buildInventoryFolderDragData({ groupActorId: "group-a", folderId: "alpha" });
   const externalDrag = { type: "Item", uuid: "Compendium.world.items.Item.external" };
+  const journalPageDrag = {
+    type: "JournalEntryPage",
+    uuid: "JournalEntry.notes.JournalEntryPage.warning"
+  };
 
   const exerciseView = async (options = {}) => {
     let folderTarget;
@@ -1668,6 +1672,7 @@ test("InventoryApp routes internal and external drops to exact folder or root ta
     await drop(itemTarget, itemDrag);
     await drop(rootTarget, itemDrag);
     await drop(folderTarget, externalDrag);
+    await drop(folderTarget, journalPageDrag);
   };
 
   try {
@@ -1679,11 +1684,13 @@ test("InventoryApp routes internal and external drops to exact folder or root ta
       ["moveItem", { groupActorId: "group-a", itemId: "deep-item", folderId: null }],
       ["moveItem", { groupActorId: "group-a", itemId: "deep-item", folderId: null }],
       ["import", externalDrag, { groupActorId: "group-a", folderId: "beta" }],
+      ["import", journalPageDrag, { groupActorId: "group-a", folderId: "beta" }],
       ["moveFolder", { groupActorId: "group-a", folderId: "alpha", parentId: "beta" }],
       ["moveItem", { groupActorId: "group-a", itemId: "deep-item", folderId: "beta" }],
       ["moveItem", { groupActorId: "group-a", itemId: "deep-item", folderId: null }],
       ["moveItem", { groupActorId: "group-a", itemId: "deep-item", folderId: null }],
-      ["import", externalDrag, { groupActorId: "group-a", folderId: "beta" }]
+      ["import", externalDrag, { groupActorId: "group-a", folderId: "beta" }],
+      ["import", journalPageDrag, { groupActorId: "group-a", folderId: "beta" }]
     ]);
     assert.equal(calls.some(([kind]) => kind === "quantity" || kind === "delete"), false);
   }
