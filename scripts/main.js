@@ -257,7 +257,7 @@ import {
   isValidStorageRestorePortablePayload,
   isValidStorageTokenCharacterPayload,
   storageCharacterTokenUuidForClaim
-} from "./data/storage-command-service.js?v=1.4.217-journal-record-items";
+} from "./data/storage-command-service.js?v=1.4.219-journal-record-group";
 import { registerCombatHooks } from "./combat/hooks.js?v=1.4.191-magic-item-runtime";
 import { CombatAttackService } from "./combat/attack-service.js?v=1.4.181-dual-wield-gloves";
 import { ImplantAutomationService } from "./combat/implant-automation-service.js";
@@ -4434,9 +4434,13 @@ export class RebreyaMainModule {
 
   async recordStorageJournal(tokenUuid, rowId, mutationId = "", request = {}) {
     const path = cleanStoragePath(request.path);
+    const groupContext = globalThis.game?.user?.isGM === true
+      ? this.groupContextService.resolveForCurrentUser()
+      : null;
     const payload = {
       tokenUuid: cleanSocketId(tokenUuid),
       characterTokenUuid: this.#controlledCharacterTokenUuid(request.characterTokenUuid),
+      groupActorId: cleanSocketId(groupContext?.groupActor?.id ?? groupContext?.groupId),
       rowId: cleanSocketId(rowId),
       mutationId: cleanSocketId(mutationId) || createSocketRequestId("storage-journal-record"),
       ...(path.length ? { path } : {})

@@ -148,7 +148,24 @@ function createHarness({
   };
   const groupActor = {
     id: "group-a",
-    type: "group"
+    uuid: "Actor.group-a",
+    type: "group",
+    items: { contents: [] },
+    async createEmbeddedDocuments(type, rows) {
+      assert.equal(type, "Item");
+      return rows.map((row, index) => {
+        const item = {
+          ...clone(row),
+          id: `group-journal-record-${this.items.contents.length + index + 1}`,
+          documentName: "Item",
+          parent: this
+        };
+        item.uuid = `${this.uuid}.Item.${item.id}`;
+        this.items.contents.push(item);
+        documents.set(item.uuid, item);
+        return item;
+      });
+    }
   };
   const characterToken = {
     id: "hero-token",
@@ -550,6 +567,7 @@ test("Journal record payloads expose only authoritative storage identity or one 
   const record = {
     tokenUuid: "Scene.scene.Token.chest",
     characterTokenUuid: "Scene.scene.Token.hero",
+    groupActorId: "",
     rowId: "journal-row",
     mutationId: "journal-record-1"
   };
@@ -557,6 +575,7 @@ test("Journal record payloads expose only authoritative storage identity or one 
   assert.equal(isValidStorageJournalRecordPayload({ ...record, path: ["bag-row"] }), true);
   assert.equal(isValidStorageJournalRecordPayload({ ...record, sourceUuid: "JournalEntry.evil" }), false);
   assert.equal(isValidStorageJournalRecordPayload({ ...record, mutationId: "" }), false);
+  assert.equal(isValidStorageJournalRecordPayload({ ...record, groupActorId: " group-a " }), false);
   assert.equal(isValidStorageJournalRecordPayload({ ...record, extra: true }), false);
 
   assert.equal(isValidJournalRecordReadPayload({ itemUuid: "Actor.hero.Item.record" }), true);
@@ -584,6 +603,7 @@ test("recording a Journal row creates one exact Item on the authoritative reader
   const request = {
     tokenUuid: harness.storageToken.uuid,
     characterTokenUuid: harness.characterToken.uuid,
+    groupActorId: "",
     rowId: "journal-row",
     mutationId: "record-1"
   };
@@ -616,7 +636,7 @@ test("recording a Journal row creates one exact Item on the authoritative reader
   assert.equal(harness.hero.items.contents.length, 1);
 });
 
-test("Journal record creation repeats storage access and requires a concrete reader character", async () => {
+test("Journal record creation repeats storage access and sends GM records to the active group", async () => {
   const harness = createHarness({ distance: 11 });
   await harness.storageService.configure(harness.storageToken, {
     state: "opened",
@@ -633,6 +653,7 @@ test("Journal record creation repeats storage access and requires a concrete rea
   const request = {
     tokenUuid: harness.storageToken.uuid,
     characterTokenUuid: harness.characterToken.uuid,
+    groupActorId: "",
     rowId: "journal-row",
     mutationId: "record-1"
   };
@@ -643,9 +664,32 @@ test("Journal record creation repeats storage access and requires a concrete rea
   );
   await assert.rejects(
     harness.service.recordJournal({ ...request, characterTokenUuid: "" }, { sender: harness.gm }),
-    /выберите персонажа/iu
+    /активную группу/iu
   );
+  const recorded = await harness.service.recordJournal({
+    ...request,
+    characterTokenUuid: "",
+    groupActorId: harness.groupActor.id,
+    mutationId: "record-gm"
+  }, { sender: harness.gm });
+  assert.equal(recorded.actorId, harness.groupActor.id);
+  assert.equal(recorded.created, true);
   assert.equal(harness.hero.items.contents.length, 0);
+  assert.equal(harness.groupActor.items.contents.length, 1);
+  assert.deepEqual(harness.groupActor.items.contents[0].flags[MODULE_ID].journalRecord, {
+    version: 1,
+    sourceUuid: "JournalEntry.notes",
+    documentName: "JournalEntry"
+  });
+  const repeated = await harness.service.recordJournal({
+    ...request,
+    characterTokenUuid: "",
+    groupActorId: harness.groupActor.id,
+    mutationId: "record-gm-repeat"
+  }, { sender: harness.gm });
+  assert.equal(repeated.created, false);
+  assert.equal(repeated.itemId, recorded.itemId);
+  assert.equal(harness.groupActor.items.contents.length, 1);
 });
 
 test("reading a Journal record authorizes its parent Actor and returns the exact buttonless snapshot source", async () => {
@@ -685,6 +729,22 @@ test("reading a Journal record authorizes its parent Actor and returns the exact
   assert.deepEqual(readStorageState(harness.storageToken).readJournalRowIds, []);
   assert.deepEqual(harness.refreshCalls, []);
   assert.deepEqual(harness.chatMessages, []);
+
+  const [groupItem] = await harness.groupActor.createEmbeddedDocuments("Item", [{
+    name: "Групповые заметки",
+    type: "loot",
+    flags: {
+      [MODULE_ID]: {
+        journalRecord: {
+          version: 1,
+          sourceUuid: "JournalEntry.group-notes",
+          documentName: "JournalEntry"
+        }
+      }
+    }
+  }]);
+  await harness.service.readJournalRecord({ itemUuid: groupItem.uuid }, { sender: harness.gm });
+  assert.deepEqual(calls.at(-1), ["JournalEntry.group-notes", { documentName: "JournalEntry" }]);
 
   await assert.rejects(
     harness.service.readJournalRecord({ itemUuid: item.uuid }, { sender: { id: "stranger", isGM: false } }),

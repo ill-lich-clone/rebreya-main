@@ -141,7 +141,7 @@ test("main registers the storage deposit socket API and current cache keys", asy
     "data/storage-ground-pile-service.js?v=1.4.215-container-rotation",
     "data/storage-container-item-service.js?v=1.4.215-container-rotation",
     "data/storage-deposit-source.js?v=1.4.195-storage-administration",
-    "data/storage-command-service.js?v=1.4.217-journal-record-items",
+    "data/storage-command-service.js?v=1.4.219-journal-record-group",
     "data/storage-trigger-service.js?v=1.4.197-door-trigger-target",
     "integrations/storage-token-hooks.js?v=1.4.197-door-trigger-target",
     "combat/hooks.js?v=1.4.191-magic-item-runtime",
@@ -169,7 +169,7 @@ test("main registers the storage deposit socket API and current cache keys", asy
   ]) {
     assert.equal(storageHooks.includes(importPath), true, importPath);
   }
-  assert.equal(manifest.version, "1.4.218");
+  assert.equal(manifest.version, "1.4.219");
   assert.match(main, /await registerStorageContainerHierarchyHooks\(\{ Hooks \}\)/u);
 });
 
@@ -270,6 +270,7 @@ test("real storage command registrations validate envelopes and execute their co
     const journalRecordPayload = {
       tokenUuid: "Scene.scene.Token.chest",
       characterTokenUuid: "Scene.scene.Token.hero",
+      groupActorId: "group-a",
       rowId: "journal-row",
       mutationId: "journal-record-command"
     };
@@ -586,6 +587,9 @@ test("public Journal record APIs use active-GM execution and exact player socket
       STORAGE_JOURNAL_RECORD_COMMAND
     } = await import(`../scripts/main.js?storage-journal-record-api=${Date.now()}`);
     const moduleApi = new RebreyaMainModule();
+    moduleApi.groupContextService = {
+      resolveForCurrentUser: () => ({ groupActor: { id: "group-a" } })
+    };
     const directCalls = [];
     moduleApi.storageCommandService = {
       async recordJournal(payload, context) {
@@ -609,6 +613,7 @@ test("public Journal record APIs use active-GM execution and exact player socket
       {
         tokenUuid: "Scene.scene.Token.chest",
         characterTokenUuid: "Scene.scene.Token.hero",
+        groupActorId: "group-a",
         rowId: "journal-row",
         mutationId: "record-1",
         path: ["bag-row"]
@@ -637,6 +642,7 @@ test("public Journal record APIs use active-GM execution and exact player socket
     assert.deepEqual(recordOutbound.payload, {
       tokenUuid: "Scene.scene.Token.chest",
       characterTokenUuid: "Scene.scene.Token.hero",
+      groupActorId: "",
       rowId: "journal-row",
       mutationId: "record-2"
     });

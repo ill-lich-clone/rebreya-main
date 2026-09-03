@@ -220,9 +220,10 @@ export function isValidStorageJournalReadPayload(payload) {
 }
 
 export function isValidStorageJournalRecordPayload(payload) {
-  return hasLegacyOrPathKeys(payload, ["characterTokenUuid", "mutationId", "rowId", "tokenUuid"])
+  return hasLegacyOrPathKeys(payload, ["characterTokenUuid", "groupActorId", "mutationId", "rowId", "tokenUuid"])
     && isTrimmedString(payload.tokenUuid, { required: true })
     && isTrimmedString(payload.characterTokenUuid)
+    && isTrimmedString(payload.groupActorId)
     && isTrimmedString(payload.rowId, { required: true, max: 160 })
     && isTrimmedString(payload.mutationId, { required: true, max: 160 });
 }
@@ -1044,7 +1045,17 @@ export class StorageCommandService {
     requireMutationId(payload.mutationId);
     return this.#enqueue([storageQueueKey(tokenUuid)], async () => {
       const access = await this.#resolveAccess(payload, sender);
-      if (access.character?.type !== "character") {
+      let targetActor = access.character;
+      if (sender?.isGM === true) {
+        const groupActorId = clean(payload.groupActorId);
+        targetActor = groupActorId
+          ? await this.inventoryService.getInventoryActor({ create: false, groupActorId })
+          : null;
+        if (targetActor?.type !== "group" || clean(targetActor.id) !== groupActorId) {
+          throw new Error("Не удалось определить активную группу.");
+        }
+      }
+      else if (targetActor?.type !== "character") {
         throw new Error("Для записи выберите персонажа.");
       }
       const state = readStorageStateAtPath(access.storageToken, path);
@@ -1062,10 +1073,10 @@ export class StorageCommandService {
           ? "JournalEntryPage"
           : "JournalEntry"
       };
-      let item = findJournalRecordItem(access.character, reference);
+      let item = findJournalRecordItem(targetActor, reference);
       let created = false;
       if (!item) {
-        const createdItems = await access.character.createEmbeddedDocuments?.(
+        const createdItems = await targetActor.createEmbeddedDocuments?.(
           "Item",
           [buildJournalRecordItemData({ ...row, sourceDocumentName: reference.documentName })],
           { renderSheet: false }
@@ -1076,9 +1087,9 @@ export class StorageCommandService {
       }
       return {
         created,
-        actorId: clean(access.character.id),
+        actorId: clean(targetActor.id),
         itemId: clean(item.id),
-        itemUuid: clean(item.uuid) || `${clean(access.character.uuid)}.Item.${clean(item.id)}`
+        itemUuid: clean(item.uuid) || `${clean(targetActor.uuid)}.Item.${clean(item.id)}`
       };
     });
   }
@@ -1086,11 +1097,11 @@ export class StorageCommandService {
   async readJournalRecord(payload = {}, { sender } = {}) {
     const item = await this.resolveDocument(clean(payload.itemUuid));
     const actor = item?.parent ?? null;
-    if (item?.documentName !== "Item" || actor?.type !== "character") {
+    if (item?.documentName !== "Item" || !["character", "group"].includes(actor?.type)) {
       throw new Error("Запись журнала недоступна.");
     }
     if (sender?.isGM !== true && actor.testUserPermission?.(sender, "OWNER") !== true) {
-      throw new Error("У вас нет прав владельца на этого персонажа.");
+      throw new Error("У вас нет прав владельца на этот инвентарь.");
     }
     const reference = readJournalRecordFlag(item);
     if (!reference) throw new Error("Запись журнала недоступна.");
