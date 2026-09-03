@@ -12,7 +12,9 @@ import {
   isValidStorageClaimRowPayload,
   isValidStorageDepositPayload,
   isValidStorageDropItemPayload,
+  isValidJournalRecordReadPayload,
   isValidStorageJournalReadPayload,
+  isValidStorageJournalRecordPayload,
   isValidStorageOpenPayload,
   isValidStorageTriggerReadPayload,
   isValidStorageTriggerResetPayload,
@@ -119,6 +121,22 @@ function createHarness({
     id: "hero",
     uuid: "Actor.hero",
     type: "character",
+    items: { contents: [] },
+    async createEmbeddedDocuments(type, rows) {
+      assert.equal(type, "Item");
+      return rows.map((row, index) => {
+        const item = {
+          ...clone(row),
+          id: `journal-record-${this.items.contents.length + index + 1}`,
+          documentName: "Item",
+          parent: this
+        };
+        item.uuid = `${this.uuid}.Item.${item.id}`;
+        this.items.contents.push(item);
+        documents.set(item.uuid, item);
+        return item;
+      });
+    },
     testUserPermission: (user, permission) => user?.id === player.id && permission === "OWNER"
   };
   const scene = { id: "scene" };
@@ -337,6 +355,7 @@ function createHarness({
         return { name: "Полевые заметки", pages: [] };
       }
     },
+    resolveDocument: async (uuid) => documents.get(uuid) ?? null,
     createChatMessage: createChatMessage ?? (async (data) => {
       chatMessages.push(clone(data));
       return data;
@@ -372,6 +391,7 @@ function createHarness({
     refreshCalls,
     depositResolveCalls,
     journalReadCalls,
+    documents,
     chatMessages,
     warnings,
     folderAssignments,
@@ -524,6 +544,163 @@ test("storage Journal read payload accepts only exact root and path identities w
   assert.equal(isValidStorageJournalReadPayload({ ...root, characterTokenUuid: " hero " }), false);
   assert.equal(isValidStorageJournalReadPayload({ ...root, path: [""] }), false);
   assert.equal(isValidStorageJournalReadPayload({ ...root, path: Array(9).fill("row") }), false);
+});
+
+test("Journal record payloads expose only authoritative storage identity or one embedded Item UUID", () => {
+  const record = {
+    tokenUuid: "Scene.scene.Token.chest",
+    characterTokenUuid: "Scene.scene.Token.hero",
+    rowId: "journal-row",
+    mutationId: "journal-record-1"
+  };
+  assert.equal(isValidStorageJournalRecordPayload(record), true);
+  assert.equal(isValidStorageJournalRecordPayload({ ...record, path: ["bag-row"] }), true);
+  assert.equal(isValidStorageJournalRecordPayload({ ...record, sourceUuid: "JournalEntry.evil" }), false);
+  assert.equal(isValidStorageJournalRecordPayload({ ...record, mutationId: "" }), false);
+  assert.equal(isValidStorageJournalRecordPayload({ ...record, extra: true }), false);
+
+  assert.equal(isValidJournalRecordReadPayload({ itemUuid: "Actor.hero.Item.record" }), true);
+  assert.equal(isValidJournalRecordReadPayload({ itemUuid: " Actor.hero.Item.record " }), false);
+  assert.equal(isValidJournalRecordReadPayload({ itemUuid: "" }), false);
+  assert.equal(isValidJournalRecordReadPayload({ itemUuid: "Actor.hero.Item.record", extra: true }), false);
+});
+
+test("recording a Journal row creates one exact Item on the authoritative reader and is idempotent", async () => {
+  const harness = createHarness();
+  await harness.storageService.configure(harness.storageToken, {
+    state: "opened",
+    manualRows: [{
+      rowKind: "journal",
+      rowId: "journal-row",
+      stackKey: "",
+      sourceId: "JournalEntry.notes.JournalEntryPage.page-a",
+      sourceType: "journal",
+      sourceDocumentName: "JournalEntryPage",
+      name: "Полевые заметки",
+      img: "icons/book.webp",
+      quantity: 1
+    }]
+  });
+  const request = {
+    tokenUuid: harness.storageToken.uuid,
+    characterTokenUuid: harness.characterToken.uuid,
+    rowId: "journal-row",
+    mutationId: "record-1"
+  };
+
+  const [first, concurrent] = await Promise.all([
+    harness.service.recordJournal(request, { sender: harness.player }),
+    harness.service.recordJournal({ ...request, mutationId: "record-2" }, { sender: harness.player })
+  ]);
+
+  assert.equal(harness.hero.items.contents.length, 1);
+  assert.deepEqual(harness.hero.items.contents[0].flags[MODULE_ID].journalRecord, {
+    version: 1,
+    sourceUuid: "JournalEntry.notes.JournalEntryPage.page-a",
+    documentName: "JournalEntryPage"
+  });
+  assert.equal(harness.hero.items.contents[0].name, "Полевые заметки");
+  assert.equal(harness.hero.items.contents[0].type, "loot");
+  assert.deepEqual([first.created, concurrent.created].sort(), [false, true]);
+  assert.equal(first.actorId, "hero");
+  assert.equal(concurrent.actorId, "hero");
+  assert.equal(first.itemId, concurrent.itemId);
+
+  const existing = harness.hero.items.contents.shift();
+  harness.documents.delete(existing.uuid);
+  const recreated = await harness.service.recordJournal(
+    { ...request, mutationId: "record-3" },
+    { sender: harness.player }
+  );
+  assert.equal(recreated.created, true);
+  assert.equal(harness.hero.items.contents.length, 1);
+});
+
+test("Journal record creation repeats storage access and requires a concrete reader character", async () => {
+  const harness = createHarness({ distance: 11 });
+  await harness.storageService.configure(harness.storageToken, {
+    state: "opened",
+    manualRows: [{
+      rowKind: "journal",
+      rowId: "journal-row",
+      sourceId: "JournalEntry.notes",
+      sourceType: "journal",
+      sourceDocumentName: "JournalEntry",
+      name: "Заметки",
+      quantity: 1
+    }]
+  });
+  const request = {
+    tokenUuid: harness.storageToken.uuid,
+    characterTokenUuid: harness.characterToken.uuid,
+    rowId: "journal-row",
+    mutationId: "record-1"
+  };
+
+  await assert.rejects(
+    harness.service.recordJournal(request, { sender: harness.player }),
+    /10 футов/iu
+  );
+  await assert.rejects(
+    harness.service.recordJournal({ ...request, characterTokenUuid: "" }, { sender: harness.gm }),
+    /выберите персонажа/iu
+  );
+  assert.equal(harness.hero.items.contents.length, 0);
+});
+
+test("reading a Journal record authorizes its parent Actor and returns the exact buttonless snapshot source", async () => {
+  const calls = [];
+  const harness = createHarness({
+    journalReader: {
+      async read(sourceUuid, options) {
+        calls.push([sourceUuid, options]);
+        return { name: "Полевые заметки", pages: [{ pageId: "page-a" }] };
+      }
+    }
+  });
+  const [item] = await harness.hero.createEmbeddedDocuments("Item", [{
+    name: "Полевые заметки",
+    type: "loot",
+    flags: {
+      [MODULE_ID]: {
+        journalRecord: {
+          version: 1,
+          sourceUuid: "JournalEntry.notes.JournalEntryPage.page-a",
+          documentName: "JournalEntryPage"
+        }
+      }
+    }
+  }]);
+
+  const snapshot = await harness.service.readJournalRecord(
+    { itemUuid: item.uuid },
+    { sender: harness.player }
+  );
+
+  assert.deepEqual(snapshot, { name: "Полевые заметки", pages: [{ pageId: "page-a" }] });
+  assert.deepEqual(calls, [[
+    "JournalEntry.notes.JournalEntryPage.page-a",
+    { documentName: "JournalEntryPage" }
+  ]]);
+  assert.deepEqual(readStorageState(harness.storageToken).readJournalRowIds, []);
+  assert.deepEqual(harness.refreshCalls, []);
+  assert.deepEqual(harness.chatMessages, []);
+
+  await assert.rejects(
+    harness.service.readJournalRecord({ itemUuid: item.uuid }, { sender: { id: "stranger", isGM: false } }),
+    /прав владельца/iu
+  );
+  item.flags[MODULE_ID].journalRecord.version = 2;
+  await assert.rejects(
+    harness.service.readJournalRecord({ itemUuid: item.uuid }, { sender: harness.player }),
+    /недоступна/iu
+  );
+  const ordinary = { id: "ordinary", uuid: "Actor.hero.Item.ordinary", documentName: "Item", parent: harness.hero, flags: {} };
+  harness.documents.set(ordinary.uuid, ordinary);
+  await assert.rejects(
+    harness.service.readJournalRecord({ itemUuid: ordinary.uuid }, { sender: harness.player }),
+    /недоступна/iu
+  );
 });
 
 test("storage Journal reads re-run access checks and use only an authoritative unclaimed row source", async () => {

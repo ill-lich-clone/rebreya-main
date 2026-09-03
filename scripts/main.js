@@ -246,8 +246,10 @@ import {
   isValidStorageCoinDropPayload,
   isValidStorageDepositPayload,
   isValidStorageDropItemPayload,
+  isValidJournalRecordReadPayload,
   isValidStorageJournalDropPayload,
   isValidStorageJournalReadPayload,
+  isValidStorageJournalRecordPayload,
   isValidStorageOpenPayload,
   isValidStorageTriggerReadPayload,
   isValidStorageTriggerResetPayload,
@@ -255,7 +257,7 @@ import {
   isValidStorageRestorePortablePayload,
   isValidStorageTokenCharacterPayload,
   storageCharacterTokenUuidForClaim
-} from "./data/storage-command-service.js?v=1.4.215-container-rotation";
+} from "./data/storage-command-service.js?v=1.4.217-journal-record-items";
 import { registerCombatHooks } from "./combat/hooks.js?v=1.4.191-magic-item-runtime";
 import { CombatAttackService } from "./combat/attack-service.js?v=1.4.181-dual-wield-gloves";
 import { ImplantAutomationService } from "./combat/implant-automation-service.js";
@@ -312,7 +314,7 @@ import {
   extendDnd5eItemTypes,
   registerDnd5eSheetExtensions,
   registerRebreyaWeaponBaseItemsFromGearPack
-} from "./integrations/dnd5e-sheet-extensions.js?v=1.4.147-native-ammunition";
+} from "./integrations/dnd5e-sheet-extensions.js?v=1.4.217-journal-record-items";
 import { registerHeldShieldArmorClassPatch } from "./integrations/held-shield-ac.js?v=1.4.96";
 import { registerTravelMapHooks } from "./integrations/travel-map-hooks.js?v=1.4.141-auraeffects-inactive-scene";
 import {
@@ -395,6 +397,8 @@ const TRADER_PURCHASE_COMMAND = "trader.purchase";
 const TRADER_SELL_COMMAND = "trader.sell";
 export const STORAGE_OPEN_COMMAND = "storage.open";
 export const STORAGE_JOURNAL_READ_COMMAND = "storage.journal.read";
+export const STORAGE_JOURNAL_RECORD_COMMAND = "storage.journal.record";
+export const STORAGE_JOURNAL_READ_RECORD_COMMAND = "storage.journal.read-record";
 export const STORAGE_CLAIM_ROW_COMMAND = "storage.claim-row";
 export const STORAGE_CLAIM_COINS_COMMAND = "storage.claim-coins";
 export const STORAGE_CLAIM_ALL_COMMAND = "storage.claim-all";
@@ -1559,6 +1563,7 @@ export class RebreyaMainModule {
       durabilityService: this.durabilityService,
       triggerTargetCoordinator: this.triggerTargetCoordinator,
       journalReader: this.storageJournalReader,
+      resolveDocument: (uuid) => globalThis.fromUuid?.(uuid),
       isVisibleTo: (storageToken) => isStorageTokenVisible(storageToken),
       createChatMessage: (data) => globalThis.ChatMessage?.create?.(data)
     });
@@ -2310,6 +2315,16 @@ export class RebreyaMainModule {
       validate: isValidStorageJournalReadPayload,
       authorize: (_payload, { sender }) => Boolean(sender),
       execute: (payload, { sender }) => this.storageCommandService.readJournal(payload, { sender })
+    });
+    this.socketCommandBus.register(STORAGE_JOURNAL_RECORD_COMMAND, {
+      validate: isValidStorageJournalRecordPayload,
+      authorize: (_payload, { sender }) => Boolean(sender),
+      execute: (payload, { sender }) => this.storageCommandService.recordJournal(payload, { sender })
+    });
+    this.socketCommandBus.register(STORAGE_JOURNAL_READ_RECORD_COMMAND, {
+      validate: isValidJournalRecordReadPayload,
+      authorize: (_payload, { sender }) => Boolean(sender),
+      execute: (payload, { sender }) => this.storageCommandService.readJournalRecord(payload, { sender })
     });
     this.socketCommandBus.register(STORAGE_CLAIM_ROW_COMMAND, {
       validate: isValidStorageClaimRowPayload,
@@ -4417,6 +4432,27 @@ export class RebreyaMainModule {
       : this.socketCommandBus.request(STORAGE_JOURNAL_READ_COMMAND, payload);
   }
 
+  async recordStorageJournal(tokenUuid, rowId, mutationId = "", request = {}) {
+    const path = cleanStoragePath(request.path);
+    const payload = {
+      tokenUuid: cleanSocketId(tokenUuid),
+      characterTokenUuid: this.#controlledCharacterTokenUuid(request.characterTokenUuid),
+      rowId: cleanSocketId(rowId),
+      mutationId: cleanSocketId(mutationId) || createSocketRequestId("storage-journal-record"),
+      ...(path.length ? { path } : {})
+    };
+    return isActiveGmClient(globalThis.game)
+      ? this.storageCommandService.recordJournal(payload, { sender: globalThis.game?.user })
+      : this.socketCommandBus.request(STORAGE_JOURNAL_RECORD_COMMAND, payload);
+  }
+
+  async readJournalRecord(itemUuid) {
+    const payload = { itemUuid: cleanSocketId(itemUuid) };
+    return isActiveGmClient(globalThis.game)
+      ? this.storageCommandService.readJournalRecord(payload, { sender: globalThis.game?.user })
+      : this.socketCommandBus.request(STORAGE_JOURNAL_READ_RECORD_COMMAND, payload);
+  }
+
   #buildStorageInventoryIngressRows(snapshot, {
     rowIds = null,
     quantity = null,
@@ -4991,7 +5027,7 @@ export class RebreyaMainModule {
     }
     const moduleVersion = game.modules.get(MODULE_ID)?.version ?? "1.4.96";
     const { StorageApp } = await import(
-      `./ui/storage-app.js?v=${encodeURIComponent(`${moduleVersion}-storage-window-drops`)}`
+      `./ui/storage-app.js?v=${encodeURIComponent(`${moduleVersion}-journal-record-items`)}`
     );
     const key = `${safeTokenUuid}:${configure ? "configure" : "open"}`;
     let app = this.storageApps.get(key);

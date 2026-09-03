@@ -41,6 +41,7 @@ function createApp({
   getStorageSnapshot = null,
   inspectStorageDepositSource = null,
   readStorageJournal = null,
+  recordStorageJournal = null,
   claimStorageRow = null,
   claimStorageAll = null,
   claimStorageRowResult = { changed: true, sourceDeleted: false },
@@ -56,6 +57,7 @@ function createApp({
   const quantityCalls = [];
   const brokenCalls = [];
   const journalReadCalls = [];
+  const journalRecordCalls = [];
   const triggerEditorCalls = [];
   const triggerResetCalls = [];
   const configCalls = [];
@@ -117,6 +119,10 @@ function createApp({
         ? readStorageJournal(...args)
         : { name: "Запись", pages: [] };
     },
+    async recordStorageJournal(...args) {
+      journalRecordCalls.push(args);
+      return recordStorageJournal ? recordStorageJournal(...args) : { created: true };
+    },
     async openStorageTriggerEditor(...args) {
       triggerEditorCalls.push(args);
     },
@@ -141,6 +147,7 @@ function createApp({
     quantityCalls,
     brokenCalls,
     journalReadCalls,
+    journalRecordCalls,
     triggerEditorCalls,
     triggerResetCalls,
     configCalls
@@ -538,14 +545,14 @@ test("GM storage popover exposes the broken toggle for eligible uninitialized ge
   assert.equal(context.activePopover.broken, false);
 });
 
-test("Journal read action passes nested access context and opens only the returned snapshot", async () => {
+test("Journal read action passes nested access context and one stable record callback", async () => {
   const snapshot = {
     name: "Полевые заметки",
     pages: [{ pageId: "text-1", name: "День первый", type: "text", html: "<p>Безопасный текст</p>" }]
   };
   const viewerCalls = [];
   let snapshotRequests = 0;
-  const { app, journalReadCalls } = createApp({
+  const { app, journalReadCalls, journalRecordCalls } = createApp({
     configure: false,
     appOptions: {
       path: ["bag-row"],
@@ -568,7 +575,7 @@ test("Journal read action passes nested access context and opens only the return
       };
     },
     readStorageJournal: async () => snapshot,
-    openStorageJournalViewer: async (receivedSnapshot) => viewerCalls.push(receivedSnapshot)
+    openStorageJournalViewer: async (receivedSnapshot, options) => viewerCalls.push([receivedSnapshot, options])
   });
   const listeners = new Map();
   app.element = new class extends FakeElement {
@@ -589,7 +596,20 @@ test("Journal read action passes nested access context and opens only the return
     "journal-row",
     { path: ["bag-row"], characterTokenUuid: "Scene.scene.Token.hero" }
   ]]);
-  assert.deepEqual(viewerCalls, [snapshot]);
+  assert.equal(viewerCalls.length, 1);
+  assert.equal(viewerCalls[0][0], snapshot);
+  assert.equal(typeof viewerCalls[0][1].onRecord, "function");
+  await viewerCalls[0][1].onRecord();
+  await viewerCalls[0][1].onRecord();
+  assert.equal(journalRecordCalls.length, 2);
+  assert.equal(journalRecordCalls[0][0], "Scene.scene.Token.chest");
+  assert.equal(journalRecordCalls[0][1], "journal-row");
+  assert.match(journalRecordCalls[0][2], /^storage-journal-record-/u);
+  assert.equal(journalRecordCalls[1][2], journalRecordCalls[0][2]);
+  assert.deepEqual(journalRecordCalls[0][3], {
+    path: ["bag-row"],
+    characterTokenUuid: "Scene.scene.Token.hero"
+  });
   assert.equal(snapshotRequests, 2);
   assert.equal((await app._prepareContext()).rows[0].name, "Полевые заметки (прочитано)");
 });

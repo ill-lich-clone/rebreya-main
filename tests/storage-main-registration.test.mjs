@@ -71,6 +71,8 @@ test("main registers the storage deposit socket API and current cache keys", asy
   const main = await readFile(new URL("../scripts/main.js", import.meta.url), "utf8");
   const storageCommand = await readFile(new URL("../scripts/data/storage-command-service.js", import.meta.url), "utf8");
   const storageHooks = await readFile(new URL("../scripts/integrations/storage-token-hooks.js", import.meta.url), "utf8");
+  const storageApp = await readFile(new URL("../scripts/ui/storage-app.js", import.meta.url), "utf8");
+  const sheetExtensions = await readFile(new URL("../scripts/integrations/dnd5e-sheet-extensions.js", import.meta.url), "utf8");
   const manifest = JSON.parse(await readFile(new URL("../module.json", import.meta.url), "utf8"));
 
   assert.match(main, /isValidStorageDepositPayload/u);
@@ -139,7 +141,7 @@ test("main registers the storage deposit socket API and current cache keys", asy
     "data/storage-ground-pile-service.js?v=1.4.215-container-rotation",
     "data/storage-container-item-service.js?v=1.4.215-container-rotation",
     "data/storage-deposit-source.js?v=1.4.195-storage-administration",
-    "data/storage-command-service.js?v=1.4.215-container-rotation",
+    "data/storage-command-service.js?v=1.4.217-journal-record-items",
     "data/storage-trigger-service.js?v=1.4.197-door-trigger-target",
     "integrations/storage-token-hooks.js?v=1.4.197-door-trigger-target",
     "combat/hooks.js?v=1.4.191-magic-item-runtime",
@@ -156,6 +158,10 @@ test("main registers the storage deposit socket API and current cache keys", asy
   ]) {
     assert.equal(storageCommand.includes(importPath), true, importPath);
   }
+  assert.equal(storageCommand.includes("journal-record-item.js?v=1.4.217-journal-record-items"), true);
+  assert.equal(storageApp.includes("storage-journal-viewer.js?v=1.4.217-journal-record-items"), true);
+  assert.equal(sheetExtensions.includes("journal-record-item.js?v=1.4.217-journal-record-items"), true);
+  assert.equal(sheetExtensions.includes("storage-journal-viewer.js?v=1.4.217-journal-record-items"), true);
   for (const importPath of [
     "data/storage-access.js?v=1.4.197-door-trigger-target",
     "ui/storage-token-overlay.js?v=1.4.197-door-trigger-target",
@@ -163,7 +169,7 @@ test("main registers the storage deposit socket API and current cache keys", asy
   ]) {
     assert.equal(storageHooks.includes(importPath), true, importPath);
   }
-  assert.equal(manifest.version, "1.4.216");
+  assert.equal(manifest.version, "1.4.217");
   assert.match(main, /await registerStorageContainerHierarchyHooks\(\{ Hooks \}\)/u);
 });
 
@@ -224,7 +230,9 @@ test("real storage command registrations validate envelopes and execute their co
       STORAGE_CLAIM_ALL_COMMAND,
       STORAGE_COIN_DROP_COMMAND,
       STORAGE_JOURNAL_DROP_COMMAND,
-      STORAGE_JOURNAL_READ_COMMAND
+      STORAGE_JOURNAL_READ_COMMAND,
+      STORAGE_JOURNAL_READ_RECORD_COMMAND,
+      STORAGE_JOURNAL_RECORD_COMMAND
     } = await import(
       `../scripts/main.js?storage-registration=${Date.now()}`
     );
@@ -235,6 +243,14 @@ test("real storage command registrations validate envelopes and execute their co
       async readJournal(payload, context) {
         calls.push({ command: "journal", payload, context });
         return { name: "Journal", pages: [] };
+      },
+      async recordJournal(payload, context) {
+        calls.push({ command: "journal-record", payload, context });
+        return { created: true, actorId: "hero", itemId: "record", itemUuid: "Actor.hero.Item.record" };
+      },
+      async readJournalRecord(payload, context) {
+        calls.push({ command: "journal-read-record", payload, context });
+        return { name: "Recorded Journal", pages: [] };
       },
       async dropCoinsToScene(payload, context) {
         calls.push({ command: "coins", payload, context });
@@ -251,6 +267,13 @@ test("real storage command registrations validate envelopes and execute their co
     };
 
     const journalPayload = { tokenUuid: "Scene.scene.Token.chest", characterTokenUuid: "", rowId: "journal-row" };
+    const journalRecordPayload = {
+      tokenUuid: "Scene.scene.Token.chest",
+      characterTokenUuid: "Scene.scene.Token.hero",
+      rowId: "journal-row",
+      mutationId: "journal-record-command"
+    };
+    const journalReadRecordPayload = { itemUuid: "Actor.hero.Item.record" };
     const coinPayload = {
       characterTokenUuid: "Scene.scene.Token.hero",
       denomination: "gp",
@@ -279,6 +302,8 @@ test("real storage command registrations validate envelopes and execute their co
     };
     for (const [command, requestId, payload] of [
       [STORAGE_JOURNAL_READ_COMMAND, "journal-valid", journalPayload],
+      [STORAGE_JOURNAL_RECORD_COMMAND, "journal-record-valid", journalRecordPayload],
+      [STORAGE_JOURNAL_READ_RECORD_COMMAND, "journal-read-record-valid", journalReadRecordPayload],
       [STORAGE_COIN_DROP_COMMAND, "coins-valid", coinPayload],
       [STORAGE_JOURNAL_DROP_COMMAND, "journal-drop-valid", journalDropPayload],
       [STORAGE_CLAIM_ALL_COMMAND, "bulk-valid", bulkPayload]
@@ -295,6 +320,10 @@ test("real storage command registrations validate envelopes and execute their co
         ok: true,
         data: command === STORAGE_JOURNAL_READ_COMMAND
           ? { name: "Journal", pages: [] }
+          : command === STORAGE_JOURNAL_RECORD_COMMAND
+            ? { created: true, actorId: "hero", itemId: "record", itemUuid: "Actor.hero.Item.record" }
+          : command === STORAGE_JOURNAL_READ_RECORD_COMMAND
+            ? { name: "Recorded Journal", pages: [] }
           : command === STORAGE_JOURNAL_DROP_COMMAND
             ? { changed: true, created: true, merged: false, duplicate: false }
           : command === STORAGE_CLAIM_ALL_COMMAND
@@ -304,17 +333,19 @@ test("real storage command registrations validate envelopes and execute their co
     }
     assert.deepEqual(calls.map(({ command, payload }) => ({ command, payload })), [
       { command: "journal", payload: journalPayload },
+      { command: "journal-record", payload: journalRecordPayload },
+      { command: "journal-read-record", payload: journalReadRecordPayload },
       { command: "coins", payload: coinPayload },
       { command: "journal-drop", payload: journalDropPayload },
       { command: "bulk", payload: bulkPayload }
     ]);
     assert.equal(calls[0].context.sender, gm);
-    assert.equal(calls[1].context.sender, gm);
-    assert.equal(calls[2].context.sender, gm);
-    assert.equal(calls[3].context.sender, gm);
+    assert.equal(calls.every(({ context }) => context.sender === gm), true);
 
     for (const [command, requestId, payload] of [
       [STORAGE_JOURNAL_READ_COMMAND, "journal-invalid", { ...journalPayload, rowId: "" }],
+      [STORAGE_JOURNAL_RECORD_COMMAND, "journal-record-invalid", { ...journalRecordPayload, sourceUuid: "JournalEntry.evil" }],
+      [STORAGE_JOURNAL_READ_RECORD_COMMAND, "journal-read-record-invalid", { ...journalReadRecordPayload, extra: true }],
       [STORAGE_COIN_DROP_COMMAND, "coins-invalid", { ...coinPayload, denomination: "electrum" }],
       [STORAGE_JOURNAL_DROP_COMMAND, "journal-drop-invalid", { ...journalDropPayload, extra: true }],
       [STORAGE_CLAIM_ALL_COMMAND, "bulk-invalid", { ...bulkPayload, target: {} }]
@@ -324,7 +355,7 @@ test("real storage command registrations validate envelopes and execute their co
       }, { transportSenderId: gm.id }), true);
       assert.equal((await waitForSocketResult(runtime.emitted, requestId))?.error?.code, "invalid-payload");
     }
-    assert.equal(calls.length, 4);
+    assert.equal(calls.length, 6);
 
     assert.equal(moduleApi.socketCommandBus.handleMessage({
       type: COMMAND_REQUEST_TYPE,
@@ -334,7 +365,7 @@ test("real storage command registrations validate envelopes and execute their co
       payload: journalDropPayload
     }, { transportSenderId: player.id }), true);
     assert.equal((await waitForSocketResult(runtime.emitted, "journal-drop-player"))?.error?.code, "unauthorized");
-    assert.equal(calls.length, 4);
+    assert.equal(calls.length, 6);
   }
   finally {
     runtime.restore();
@@ -538,6 +569,103 @@ test("real public Journal scene API uses active-GM direct execution and player s
       data: { routed: true }
     });
     assert.deepEqual(await pending, { routed: true });
+  }
+  finally {
+    runtime.restore();
+  }
+});
+
+test("public Journal record APIs use active-GM execution and exact player socket payloads", async () => {
+  const gm = { id: "gm", isGM: true, active: true };
+  const player = { id: "player", isGM: false, active: true };
+  const runtime = createModuleRuntime({ user: gm, users: [gm, player] });
+  try {
+    const {
+      RebreyaMainModule,
+      STORAGE_JOURNAL_READ_RECORD_COMMAND,
+      STORAGE_JOURNAL_RECORD_COMMAND
+    } = await import(`../scripts/main.js?storage-journal-record-api=${Date.now()}`);
+    const moduleApi = new RebreyaMainModule();
+    const directCalls = [];
+    moduleApi.storageCommandService = {
+      async recordJournal(payload, context) {
+        directCalls.push(["record", payload, context]);
+        return { created: true };
+      },
+      async readJournalRecord(payload, context) {
+        directCalls.push(["read-record", payload, context]);
+        return { name: "Запись", pages: [] };
+      }
+    };
+
+    assert.deepEqual(await moduleApi.recordStorageJournal(
+      " Scene.scene.Token.chest ",
+      " journal-row ",
+      " record-1 ",
+      { characterTokenUuid: "Scene.scene.Token.hero", path: ["bag-row"] }
+    ), { created: true });
+    assert.deepEqual(directCalls[0], [
+      "record",
+      {
+        tokenUuid: "Scene.scene.Token.chest",
+        characterTokenUuid: "Scene.scene.Token.hero",
+        rowId: "journal-row",
+        mutationId: "record-1",
+        path: ["bag-row"]
+      },
+      { sender: gm }
+    ]);
+    assert.deepEqual(await moduleApi.readJournalRecord(" Actor.hero.Item.record "), {
+      name: "Запись",
+      pages: []
+    });
+    assert.deepEqual(directCalls[1], [
+      "read-record",
+      { itemUuid: "Actor.hero.Item.record" },
+      { sender: gm }
+    ]);
+
+    globalThis.game.user = player;
+    const pendingRecord = moduleApi.recordStorageJournal(
+      "Scene.scene.Token.chest",
+      "journal-row",
+      "record-2",
+      { characterTokenUuid: "Scene.scene.Token.hero" }
+    );
+    const recordOutbound = runtime.emitted.at(-1).message;
+    assert.equal(recordOutbound.command, STORAGE_JOURNAL_RECORD_COMMAND);
+    assert.deepEqual(recordOutbound.payload, {
+      tokenUuid: "Scene.scene.Token.chest",
+      characterTokenUuid: "Scene.scene.Token.hero",
+      rowId: "journal-row",
+      mutationId: "record-2"
+    });
+    moduleApi.socketCommandBus.handleMessage({
+      type: COMMAND_RESULT_TYPE,
+      command: STORAGE_JOURNAL_RECORD_COMMAND,
+      requestId: recordOutbound.requestId,
+      forUserId: player.id,
+      senderId: gm.id,
+      ok: true,
+      data: { created: false }
+    });
+    assert.deepEqual(await pendingRecord, { created: false });
+
+    const pendingRead = moduleApi.readJournalRecord("Actor.hero.Item.record");
+    const readOutbound = runtime.emitted.at(-1).message;
+    assert.equal(readOutbound.command, STORAGE_JOURNAL_READ_RECORD_COMMAND);
+    assert.deepEqual(readOutbound.payload, { itemUuid: "Actor.hero.Item.record" });
+    moduleApi.socketCommandBus.handleMessage({
+      type: COMMAND_RESULT_TYPE,
+      command: STORAGE_JOURNAL_READ_RECORD_COMMAND,
+      requestId: readOutbound.requestId,
+      forUserId: player.id,
+      senderId: gm.id,
+      ok: true,
+      data: { name: "Запись", pages: [] }
+    });
+    assert.deepEqual(await pendingRead, { name: "Запись", pages: [] });
+    assert.equal(directCalls.length, 2);
   }
   finally {
     runtime.restore();

@@ -15,7 +15,9 @@ import { registerCraftsmanGadgetItemType } from "./craftsman-gadget-item-type.js
 import { bringAppToFront } from "../ui.js";
 import { createStableGearDocumentId } from "../data/gear-document-ids.js";
 import { buildRebreyaArtisanToolConfig } from "../data/rebreya-tool-proficiencies.js";
+import { isJournalRecordItem } from "../data/journal-record-item.js?v=1.4.217-journal-record-items";
 import { REBREYA_AMMUNITION_SUBTYPES } from "../data/ammunition-types.js";
+import { openStorageJournalViewer } from "../ui/storage-journal-viewer.js?v=1.4.217-journal-record-items";
 import {
   WEAPON_PROPERTY_GLOSSARY,
   getWeaponPropertyGlossaryEntry
@@ -6257,6 +6259,41 @@ function resolveActorItem(actor, itemId) {
   return items.find((item) => cleanText(item?.id ?? item?._id) === id) ?? null;
 }
 
+export function bindJournalRecordInventoryLinks(root, {
+  actor,
+  moduleApi,
+  openViewer = openStorageJournalViewer
+} = {}) {
+  if (!root?.querySelectorAll || !actor || typeof moduleApi?.readJournalRecord !== "function") {
+    return;
+  }
+
+  for (const row of root.querySelectorAll("[data-item-id]")) {
+    const item = resolveActorItem(actor, row?.dataset?.itemId);
+    if (!isJournalRecordItem(item)) {
+      continue;
+    }
+    const title = row.querySelector?.(".item-name .name .title");
+    if (!title || title.dataset.rebreyaJournalRecordBound === "true") {
+      continue;
+    }
+    title.dataset.rebreyaJournalRecordBound = "true";
+    title.addEventListener("click", async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      try {
+        const snapshot = await moduleApi.readJournalRecord(item.uuid);
+        await openViewer(snapshot);
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to open journal record item.`, error);
+        globalThis.ui?.notifications?.error?.(error?.message || "Не удалось открыть запись журнала.");
+      }
+    });
+  }
+}
+
 function resolveItemActivity(item, activityId) {
   const id = cleanText(activityId);
   if (!item || !id) {
@@ -7293,6 +7330,12 @@ export function registerDnd5eSheetExtensions(moduleApi) {
         console.error(`${MODULE_ID} | Failed to bind actor sheet item upgrade drops.`, error);
       }
       try {
+        bindJournalRecordInventoryLinks(root, { actor, moduleApi });
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to bind journal record inventory links.`, error);
+      }
+      try {
         bindNativeStateCard(root, app);
       }
       catch (error) {
@@ -7408,6 +7451,12 @@ export function registerDnd5eSheetExtensions(moduleApi) {
       }
       catch (error) {
         console.error(`${MODULE_ID} | Failed to bind actor sheet item upgrade drops on ApplicationV2 render.`, error);
+      }
+      try {
+        bindJournalRecordInventoryLinks(root, { actor, moduleApi });
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to bind journal record inventory links on ApplicationV2 render.`, error);
       }
       try {
         bindNativeStateCard(root, app);

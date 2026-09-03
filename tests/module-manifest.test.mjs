@@ -63,8 +63,8 @@ test("module manifest loads an unpinned canonical entrypoint for page-refresh up
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const [entrypoint] = manifest.esmodules;
 
-  assert.equal(manifest.version, "1.4.216");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.216.js"]);
+  assert.equal(manifest.version, "1.4.217");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.217.js"]);
   assert.doesNotMatch(entrypoint, /[?#]/u);
 
   const entrypointSource = await readFile(new URL(entrypoint, manifestUrl), "utf8");
@@ -138,7 +138,7 @@ test("production registers the hidden GiantTribe advancement before race compend
   );
   assert.match(
     entrypointSource,
-    /dnd5e-sheet-extensions\.js\?v=1\.4\.147-native-ammunition/u
+    /dnd5e-sheet-extensions\.js\?v=1\.4\.217-journal-record-items/u
   );
   assert.match(
     entrypointSource,
@@ -220,12 +220,14 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
   );
   const storageServiceSource = await readFile(new URL("../scripts/data/storage-service.js", import.meta.url), "utf8");
   const storageCommandSource = await readFile(new URL("../scripts/data/storage-command-service.js", import.meta.url), "utf8");
+  const storageAppSource = await readFile(new URL("../scripts/ui/storage-app.js", import.meta.url), "utf8");
+  const sheetSource = await readFile(new URL("../scripts/integrations/dnd5e-sheet-extensions.js", import.meta.url), "utf8");
   const materializerSource = await readFile(new URL("../scripts/data/corpse-storage-materializer.js", import.meta.url), "utf8");
   const storageTokenHooksSource = await readFile(new URL("../scripts/integrations/storage-token-hooks.js", import.meta.url), "utf8");
 
   assert.match(
     canonicalSource,
-    /integrations\/dnd5e-sheet-extensions\.js\?v=1\.4\.147-native-ammunition/u
+    /integrations\/dnd5e-sheet-extensions\.js\?v=1\.4\.217-journal-record-items/u
   );
 
   for (const importPath of [
@@ -251,7 +253,7 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
     "data/storage-ground-pile-service.js?v=1.4.215-container-rotation",
     "data/storage-container-item-service.js?v=1.4.215-container-rotation",
     "data/storage-deposit-source.js?v=1.4.195-storage-administration",
-    "data/storage-command-service.js?v=1.4.215-container-rotation",
+    "data/storage-command-service.js?v=1.4.217-journal-record-items",
     "integrations/storage-transfer-drop.js?v=1.4.213-furniture-orientation",
     "integrations/storage-token-drop.js?v=1.4.132-storage-owned-character-resolution"
   ]) {
@@ -301,8 +303,12 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
   );
   assert.match(
     canonicalSource,
-    /storage-app\.js\?v=\$\{encodeURIComponent\(`\$\{moduleVersion\}-storage-window-drops`\)\}/u
+    /storage-app\.js\?v=\$\{encodeURIComponent\(`\$\{moduleVersion\}-journal-record-items`\)\}/u
   );
+  assert.match(storageCommandSource, /journal-record-item\.js\?v=1\.4\.217-journal-record-items/u);
+  assert.match(storageAppSource, /storage-journal-viewer\.js\?v=1\.4\.217-journal-record-items/u);
+  assert.match(sheetSource, /journal-record-item\.js\?v=1\.4\.217-journal-record-items/u);
+  assert.match(sheetSource, /storage-journal-viewer\.js\?v=1\.4\.217-journal-record-items/u);
   assert.match(
     traderServiceSource,
     /engine\/trader-engine\.js\?v=1\.4\.109-lazy-trader-restock/u
@@ -313,7 +319,7 @@ test("module keeps recent published entrypoint URLs as canonical compatibility f
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
 
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.216.js"]);
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.217.js"]);
 
   for (const fileName of ["main-1.4.98.js", "main-1.4.99.js", "main-1.4.100.js"]) {
     const forwarderSource = await readFile(new URL(`../scripts/${fileName}`, import.meta.url), "utf8");
@@ -622,7 +628,7 @@ test("held item integrations preserve their released cache bust", async () => {
 
   assert.match(
     entrypointSource,
-    /dnd5e-sheet-extensions\.js\?v=1\.4\.147-native-ammunition/u,
+    /dnd5e-sheet-extensions\.js\?v=1\.4\.217-journal-record-items/u,
   );
   assert.match(
     entrypointSource,

@@ -1,7 +1,7 @@
 import { MODULE_ID } from "../constants.js";
 import { getAppElement } from "../ui.js";
 import { placeTokenOverlay, storageTokenViewportBounds } from "./storage-token-overlay.js";
-import { openStorageJournalViewer } from "./storage-journal-viewer.js";
+import { openStorageJournalViewer } from "./storage-journal-viewer.js?v=1.4.217-journal-record-items";
 import { formatDurabilityItemName } from "../data/durability-item-presentation.js?v=1.4.154-broken-item-name";
 import { isDurabilityEligible } from "../data/durability-rules.js?v=1.4.200-storage-broken-presentation";
 import {
@@ -541,7 +541,15 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const row = this.#rowById(rowId);
     if (!row || row.rowKind !== "journal") throw new Error("Запись журнала уже недоступна.");
     const snapshot = await this.moduleApi.readStorageJournal(this.tokenUuid, rowId, this.#pathRequest());
-    await this.openStorageJournalViewer(snapshot);
+    const recordMutationId = mutationId("storage-journal-record");
+    await this.openStorageJournalViewer(snapshot, {
+      onRecord: () => this.moduleApi.recordStorageJournal(
+        this.tokenUuid,
+        rowId,
+        recordMutationId,
+        this.#pathRequest()
+      )
+    });
     await this.#refresh();
   }
 

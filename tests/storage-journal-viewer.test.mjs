@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 
 const { openStorageJournalViewer } = await import("../scripts/ui/storage-journal-viewer.js?storage-journal-viewer-test");
 
-test("storage Journal viewer renders only the returned safe snapshot in a close-only dialog", async () => {
+test("ordinary storage Journal viewer offers only the record action", async () => {
   const snapshot = {
     name: "Полевые заметки",
     pages: [
@@ -13,6 +13,8 @@ test("storage Journal viewer renders only the returned safe snapshot in a close-
     ]
   };
   const renderCalls = [];
+  const recordCalls = [];
+  const notifications = [];
   let dialog = null;
   class FakeDialogV2 {
     constructor(options) { this.options = options; dialog = this; }
@@ -21,7 +23,9 @@ test("storage Journal viewer renders only the returned safe snapshot in a close-
 
   const result = await openStorageJournalViewer(snapshot, {
     renderTemplate: async (...args) => { renderCalls.push(args); return "<section>rendered</section>"; },
-    dialogClass: FakeDialogV2
+    dialogClass: FakeDialogV2,
+    notifications: { info: (message) => notifications.push(message) },
+    onRecord: async () => { recordCalls.push("record"); return { created: true }; }
   });
 
   assert.equal(result, dialog);
@@ -32,8 +36,52 @@ test("storage Journal viewer renders only the returned safe snapshot in a close-
   assert.equal(dialog.force, true);
   assert.equal(dialog.options.window.title, "Полевые заметки");
   assert.deepEqual(dialog.options.position, { width: 760, height: "auto" });
-  assert.deepEqual(dialog.options.buttons.map(({ action }) => action), ["close"]);
+  assert.deepEqual(dialog.options.buttons.map(({ action, label }) => [action, label]), [["record", "Записать"]]);
   assert.equal(dialog.options.content, "<section>rendered</section>");
+
+  await dialog.options.buttons[0].callback();
+  assert.deepEqual(recordCalls, ["record"]);
+  assert.deepEqual(notifications, ["Запись добавлена в инвентарь."]);
+});
+
+test("record Item Journal viewer has no action buttons", async () => {
+  let dialog;
+  class FakeDialogV2 {
+    constructor(options) { this.options = options; dialog = this; }
+    render() { return this; }
+  }
+
+  await openStorageJournalViewer({ name: "Запись", pages: [] }, {
+    renderTemplate: async () => "<section></section>",
+    dialogClass: FakeDialogV2
+  });
+
+  assert.deepEqual(dialog.options.buttons, []);
+});
+
+test("Journal record action distinguishes an existing Item and propagates failures", async () => {
+  const notifications = [];
+  let dialog;
+  class FakeDialogV2 {
+    constructor(options) { this.options = options; dialog = this; }
+    render() { return this; }
+  }
+  await openStorageJournalViewer({ name: "Запись", pages: [] }, {
+    renderTemplate: async () => "<section></section>",
+    dialogClass: FakeDialogV2,
+    notifications: { info: (message) => notifications.push(message) },
+    onRecord: async () => ({ created: false })
+  });
+  await dialog.options.buttons[0].callback();
+  assert.deepEqual(notifications, ["Эта запись уже есть в инвентаре."]);
+
+  const failure = new Error("write failed");
+  await openStorageJournalViewer({ name: "Запись", pages: [] }, {
+    renderTemplate: async () => "<section></section>",
+    dialogClass: FakeDialogV2,
+    onRecord: async () => { throw failure; }
+  });
+  await assert.rejects(dialog.options.buttons[0].callback(), failure);
 });
 
 test("storage Journal viewer template uses safe text and whitelisted media without document controls", async () => {

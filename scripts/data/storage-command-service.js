@@ -22,6 +22,11 @@ import {
 } from "../application/trigger-target-coordinator.js?v=1.4.197-door-trigger-target";
 import { StorageTriggerTargetAdapter } from "./storage-trigger-target-adapter.js?v=1.4.197-door-trigger-target";
 import { isGroundPileCardinalRotation } from "./storage-ground-pile-layout.js?v=1.4.215-container-rotation";
+import {
+  buildJournalRecordItemData,
+  findJournalRecordItem,
+  readJournalRecordFlag
+} from "./journal-record-item.js?v=1.4.217-journal-record-items";
 
 const STORAGE_ROW_DESTINATIONS = new Set(["self", "party", "character", "scene"]);
 const STORAGE_COIN_DESTINATIONS = new Set(["self", "party"]);
@@ -212,6 +217,19 @@ export function isValidStorageJournalReadPayload(payload) {
     && isTrimmedString(payload.tokenUuid, { required: true })
     && isTrimmedString(payload.characterTokenUuid)
     && isTrimmedString(payload.rowId, { required: true, max: 160 });
+}
+
+export function isValidStorageJournalRecordPayload(payload) {
+  return hasLegacyOrPathKeys(payload, ["characterTokenUuid", "mutationId", "rowId", "tokenUuid"])
+    && isTrimmedString(payload.tokenUuid, { required: true })
+    && isTrimmedString(payload.characterTokenUuid)
+    && isTrimmedString(payload.rowId, { required: true, max: 160 })
+    && isTrimmedString(payload.mutationId, { required: true, max: 160 });
+}
+
+export function isValidJournalRecordReadPayload(payload) {
+  return hasExactKeys(payload, ["itemUuid"])
+    && isTrimmedString(payload.itemUuid, { required: true });
 }
 
 export function isValidStorageClaimRowPayload(payload) {
@@ -1017,6 +1035,67 @@ export class StorageCommandService {
         await this.#publishJournalReadMessage({ sender, row });
       }
       return snapshot;
+    });
+  }
+
+  async recordJournal(payload = {}, { sender } = {}) {
+    const tokenUuid = clean(payload.tokenUuid);
+    const path = storagePath(payload.path);
+    requireMutationId(payload.mutationId);
+    return this.#enqueue([storageQueueKey(tokenUuid)], async () => {
+      const access = await this.#resolveAccess(payload, sender);
+      if (access.character?.type !== "character") {
+        throw new Error("Для записи выберите персонажа.");
+      }
+      const state = readStorageStateAtPath(access.storageToken, path);
+      if (state.state !== "opened") throw new Error("Сначала откройте хранилище.");
+      const rowId = clean(payload.rowId);
+      const rows = [...state.manualRows, ...state.generatedRows];
+      const row = rows.find((entry, index) => rowIdentity(entry, index) === rowId) ?? null;
+      if (!row || state.claimedRowIds.includes(rowId)
+        || row.rowKind !== "journal" || !isStorageJournalRow(row)) {
+        throw new Error("Запись журнала недоступна.");
+      }
+      const reference = {
+        sourceUuid: clean(row.sourceId),
+        documentName: clean(row.sourceDocumentName) === "JournalEntryPage"
+          ? "JournalEntryPage"
+          : "JournalEntry"
+      };
+      let item = findJournalRecordItem(access.character, reference);
+      let created = false;
+      if (!item) {
+        const createdItems = await access.character.createEmbeddedDocuments?.(
+          "Item",
+          [buildJournalRecordItemData({ ...row, sourceDocumentName: reference.documentName })],
+          { renderSheet: false }
+        );
+        item = createdItems?.[0] ?? null;
+        if (!item) throw new Error("Не удалось добавить запись в инвентарь.");
+        created = true;
+      }
+      return {
+        created,
+        actorId: clean(access.character.id),
+        itemId: clean(item.id),
+        itemUuid: clean(item.uuid) || `${clean(access.character.uuid)}.Item.${clean(item.id)}`
+      };
+    });
+  }
+
+  async readJournalRecord(payload = {}, { sender } = {}) {
+    const item = await this.resolveDocument(clean(payload.itemUuid));
+    const actor = item?.parent ?? null;
+    if (item?.documentName !== "Item" || actor?.type !== "character") {
+      throw new Error("Запись журнала недоступна.");
+    }
+    if (sender?.isGM !== true && actor.testUserPermission?.(sender, "OWNER") !== true) {
+      throw new Error("У вас нет прав владельца на этого персонажа.");
+    }
+    const reference = readJournalRecordFlag(item);
+    if (!reference) throw new Error("Запись журнала недоступна.");
+    return this.journalReader.read(reference.sourceUuid, {
+      documentName: reference.documentName
     });
   }
 
