@@ -870,6 +870,10 @@ test("InventoryApp template renders accessible folder rows and fixed-depth item 
   assert.doesNotMatch(css, /\.rm-inventory-folder-create\s*\{[^}]*44px/su);
   assert.doesNotMatch(template, />\s*Правила лута\s*</u);
   assert.ok(template.includes("{{#each inventoryRows}}"));
+  assert.match(
+    template,
+    /\{\{#if isJournalRecord\}\}[\s\S]*data-action="open-item-sheet"[\s\S]*\{\{else\}\}[\s\S]*\{\{#if canOpenEntry\}\}/u
+  );
   assert.match(folderBranch, /class="[^"]*rm-inventory-folder-row[^"]*"/u);
   assert.ok(folderBranch.includes('data-folder-id="{{folderId}}"'));
   assert.ok(folderBranch.includes('data-depth="{{depth}}"'));
@@ -2613,6 +2617,50 @@ test("InventoryApp item service menu exposes stock actions without duplicate ope
   }
   finally {
     dom.restore();
+    restoreFoundry();
+  }
+});
+
+test("openInventoryItem opens exact Journal records in the read-only viewer and preserves ordinary Item sheets", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  try {
+    const { openInventoryItem } = await import(`../scripts/ui/inventory-app.js?journal-link=${Date.now()}`);
+    const calls = [];
+    const moduleApi = {
+      async readJournalRecord(itemUuid) {
+        calls.push(["read", itemUuid]);
+        return { name: "Полевые заметки", pages: [{ name: "Страница" }] };
+      }
+    };
+    const journalItem = {
+      uuid: "Actor.group.Item.record",
+      flags: {
+        "rebreya-main": {
+          journalRecord: {
+            version: 1,
+            sourceUuid: "JournalEntry.notes",
+            documentName: "JournalEntry"
+          }
+        }
+      },
+      sheet: { render: () => calls.push(["sheet", "record"]) }
+    };
+    const ordinaryItem = {
+      uuid: "Actor.group.Item.rope",
+      flags: {},
+      sheet: { render: () => calls.push(["sheet", "ordinary"]) }
+    };
+    const openViewer = async (snapshot) => calls.push(["viewer", snapshot]);
+
+    assert.equal(await openInventoryItem(journalItem, { moduleApi, openViewer }), "journal");
+    assert.equal(await openInventoryItem(ordinaryItem, { moduleApi, openViewer }), "sheet");
+    assert.deepEqual(calls, [
+      ["read", "Actor.group.Item.record"],
+      ["viewer", { name: "Полевые заметки", pages: [{ name: "Страница" }] }],
+      ["sheet", "ordinary"]
+    ]);
+  }
+  finally {
     restoreFoundry();
   }
 });

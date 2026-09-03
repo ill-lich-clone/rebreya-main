@@ -332,10 +332,14 @@
                     <img class="rm-compact-item__image" src="{{img}}" alt="{{name}}">
                     <div class="rm-compact-item__copy">
                       <div class="rm-compact-item__title">
-                        {{#if canOpenEntry}}
-                          <button type="button" class="rm-link-button rm-link-button--accent rm-compact-item__name" data-action="open-compendium-entry" data-source-type="{{sourceType}}" data-source-id="{{sourceId}}" data-source-name="{{name}}">{{name}}</button>
+                        {{#if isJournalRecord}}
+                          <button type="button" class="rm-link-button rm-link-button--accent rm-compact-item__name" data-action="open-item-sheet" data-item-id="{{itemId}}">{{name}}</button>
                         {{else}}
-                          <strong class="rm-compact-item__name">{{name}}</strong>
+                          {{#if canOpenEntry}}
+                            <button type="button" class="rm-link-button rm-link-button--accent rm-compact-item__name" data-action="open-compendium-entry" data-source-type="{{sourceType}}" data-source-id="{{sourceId}}" data-source-name="{{name}}">{{name}}</button>
+                          {{else}}
+                            <strong class="rm-compact-item__name">{{name}}</strong>
+                          {{/if}}
                         {{/if}}
                       </div>
 

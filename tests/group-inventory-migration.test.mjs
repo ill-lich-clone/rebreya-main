@@ -414,6 +414,53 @@ test("getInventorySnapshot classifies Rebreya downtime items as downtime templat
   }
 });
 
+test("getInventorySnapshot marks only exact Journal record Items as readable links", async () => {
+  const journalRecord = createItem({
+    id: "journal-record",
+    name: "Полевые заметки",
+    flags: {
+      [MODULE_ID]: {
+        journalRecord: {
+          version: 1,
+          sourceUuid: "JournalEntry.notes",
+          documentName: "JournalEntry"
+        }
+      }
+    }
+  });
+  const ordinary = createItem({ id: "ordinary", name: "Верёвка" });
+  const malformed = createItem({
+    id: "malformed",
+    name: "Поддельная запись",
+    flags: { [MODULE_ID]: { journalRecord: { sourceUuid: "JournalEntry.notes" } } }
+  });
+  const groupActor = createActor({
+    id: "group-1",
+    name: "Party",
+    type: "group",
+    isOwner: true,
+    items: [journalRecord, ordinary, malformed]
+  });
+  const fixture = installInventoryFixture({ actors: [groupActor] });
+  const service = new InventoryService({
+    groupContextService: { resolveForCurrentUser: () => ({ groupActor }) },
+    getModel: async () => ({
+      materials: [], materialById: new Map(), materialByGoodId: new Map(),
+      gear: [], gearById: new Map()
+    })
+  });
+
+  try {
+    const snapshot = await service.getInventorySnapshot();
+    assert.equal(snapshot.items.find((item) => item.itemId === "journal-record")?.isJournalRecord, true);
+    assert.equal(snapshot.items.find((item) => item.itemId === "ordinary")?.isJournalRecord, false);
+    assert.equal(snapshot.items.find((item) => item.itemId === "malformed")?.isJournalRecord, false);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
 test("getInventorySnapshot projects normalized Actor folder state without writing it", async () => {
   const sword = createItem({ id: "sword", name: "Sword", type: "weapon", quantity: 2, weight: 3 });
   const torch = createItem({ id: "torch", name: "Torch", quantity: 4, weight: 1 });

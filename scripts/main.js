@@ -74,7 +74,7 @@ import {
   SOCKET_EVENT_INVENTORY_SOURCE_DEPLETION_RESULT,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_REQUEST,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_RESULT
-} from "./data/inventory-service.js?v=1.4.179-dismantle-minimum-quantity";
+} from "./data/inventory-service.js?v=1.4.220-journal-record-link";
 import {
   InventoryIngressRuleCompilerCache,
   normalizeInventoryIngressRule

@@ -32,6 +32,7 @@ import {
 } from "./inventory-ingress-rules.js";
 import { applyLootgenRowDurability } from "./lootgen-durability.js?v=1.4.154-corpse-storage-broken-name";
 import { formatDurabilityItemName } from "./durability-item-presentation.js?v=1.4.154-broken-item-name";
+import { isJournalRecordItem } from "./journal-record-item.js?v=1.4.217-journal-record-items";
 import {
   buildTransportFuelInventorySnapshot,
   normalizeTransportFuelSelector
@@ -4086,6 +4087,7 @@ export class InventoryService {
       sourceId,
       sourceName: item.name,
       canOpenEntry: sourceType === "material" || sourceType === "gear" || sourceType === "magicItem",
+      isJournalRecord: isJournalRecordItem(item),
       itemTypeLabel,
       materialLabel,
       transport,

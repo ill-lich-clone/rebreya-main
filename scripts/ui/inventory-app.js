@@ -23,7 +23,23 @@ import {
   openPartyInventoryCrestPicker,
   resolvePartyInventoryCrest
 } from "./party-inventory-crest.js";
+import { isJournalRecordItem } from "../data/journal-record-item.js?v=1.4.217-journal-record-items";
+import { openStorageJournalViewer } from "./storage-journal-viewer.js?v=1.4.218-journal-record-error";
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
+
+export async function openInventoryItem(item, {
+  moduleApi,
+  openViewer = openStorageJournalViewer
+} = {}) {
+  if (isJournalRecordItem(item)) {
+    const snapshot = await moduleApi.readJournalRecord(item.uuid);
+    await openViewer(snapshot);
+    return "journal";
+  }
+  await item?.sheet?.render?.(true);
+  bringAppToFront(item?.sheet);
+  return "sheet";
+}
 
 const KNOWN_GROUP_CONTEXT_ERROR_MESSAGES = new Set([
   GROUP_CONTEXT_ERRORS.GM_NO_ACTIVE_GROUP,
@@ -4995,14 +5011,16 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   async #openItemSheet(itemId) {
-    const actor = await this.moduleApi.inventoryService.getInventoryActor({ create: true });
+    const actor = await this.moduleApi.inventoryService.getInventoryActor({
+      create: true,
+      groupActorId: this.inventoryActorId
+    });
     const item = actor?.items.get(itemId) ?? null;
     if (!item) {
       throw new Error("Предмет уже не найден в складе.");
     }
 
-    await item.sheet?.render?.(true);
-    bringAppToFront(item.sheet);
+    await openInventoryItem(item, { moduleApi: this.moduleApi });
   }
 
   async #promptSupply(resourceKey) {
