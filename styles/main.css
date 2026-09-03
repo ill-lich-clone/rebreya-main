@@ -13065,6 +13065,10 @@ summary:focus-visible {
   grid-column: 1 / -1;
 }
 
+.rm-storage-journal-dialog--readonly .form-footer {
+  display: none;
+}
+
 .rm-storage-config__actions {
   flex-wrap: wrap;
 }

@@ -159,9 +159,9 @@ test("main registers the storage deposit socket API and current cache keys", asy
     assert.equal(storageCommand.includes(importPath), true, importPath);
   }
   assert.equal(storageCommand.includes("journal-record-item.js?v=1.4.217-journal-record-items"), true);
-  assert.equal(storageApp.includes("storage-journal-viewer.js?v=1.4.218-journal-record-error"), true);
+  assert.equal(storageApp.includes("storage-journal-viewer.js?v=1.4.221-journal-readonly-dialog"), true);
   assert.equal(sheetExtensions.includes("journal-record-item.js?v=1.4.217-journal-record-items"), true);
-  assert.equal(sheetExtensions.includes("storage-journal-viewer.js?v=1.4.218-journal-record-error"), true);
+  assert.equal(sheetExtensions.includes("storage-journal-viewer.js?v=1.4.221-journal-readonly-dialog"), true);
   for (const importPath of [
     "data/storage-access.js?v=1.4.197-door-trigger-target",
     "ui/storage-token-overlay.js?v=1.4.197-door-trigger-target",
@@ -169,7 +169,7 @@ test("main registers the storage deposit socket API and current cache keys", asy
   ]) {
     assert.equal(storageHooks.includes(importPath), true, importPath);
   }
-  assert.equal(manifest.version, "1.4.220");
+  assert.equal(manifest.version, "1.4.221");
   assert.match(main, /await registerStorageContainerHierarchyHooks\(\{ Hooks \}\)/u);
 });
 

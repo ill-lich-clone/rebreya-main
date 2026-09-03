@@ -44,10 +44,14 @@ test("ordinary storage Journal viewer offers only the record action", async () =
   assert.deepEqual(notifications, ["Запись добавлена в инвентарь."]);
 });
 
-test("record Item Journal viewer has no action buttons", async () => {
+test("record Item Journal viewer satisfies DialogV2 while exposing no visible action buttons", async () => {
   let dialog;
   class FakeDialogV2 {
-    constructor(options) { this.options = options; dialog = this; }
+    constructor(options) {
+      if (!options.buttons?.length) throw new Error("You must define at least one entry in config.buttons");
+      this.options = options;
+      dialog = this;
+    }
     render() { return this; }
   }
 
@@ -56,7 +60,20 @@ test("record Item Journal viewer has no action buttons", async () => {
     dialogClass: FakeDialogV2
   });
 
-  assert.deepEqual(dialog.options.buttons, []);
+  assert.deepEqual(dialog.options.classes, [
+    "rm-storage-journal-dialog",
+    "rm-storage-journal-dialog--readonly"
+  ]);
+  assert.deepEqual(dialog.options.buttons, [{
+    action: "readonly",
+    label: "",
+    type: "button",
+    disabled: true,
+    class: "rm-storage-journal-viewer__sentinel",
+    style: { display: "none" }
+  }]);
+  const css = await readFile(new URL("../styles/main.css", import.meta.url), "utf8");
+  assert.match(css, /\.rm-storage-journal-dialog--readonly\s+\.form-footer\s*\{[^}]*display:\s*none;/su);
 });
 
 test("Journal record action distinguishes an existing Item and handles failures without rejection", async () => {

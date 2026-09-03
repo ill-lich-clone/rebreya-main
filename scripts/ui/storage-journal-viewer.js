@@ -28,8 +28,19 @@ export async function openStorageJournalViewer(snapshot, dependencies = {}) {
           }
         }
       }]
-    : [];
+    : [{
+        action: "readonly",
+        label: "",
+        type: "button",
+        disabled: true,
+        class: "rm-storage-journal-viewer__sentinel",
+        style: { display: "none" }
+      }];
   const dialog = new DialogV2({
+    classes: [
+      "rm-storage-journal-dialog",
+      ...(typeof onRecord === "function" ? [] : ["rm-storage-journal-dialog--readonly"])
+    ],
     window: { title: String(snapshot?.name ?? "").trim() || "Запись журнала" },
     position: { width: 760, height: "auto" },
     content,

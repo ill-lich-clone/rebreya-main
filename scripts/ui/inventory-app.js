@@ -24,7 +24,7 @@ import {
   resolvePartyInventoryCrest
 } from "./party-inventory-crest.js";
 import { isJournalRecordItem } from "../data/journal-record-item.js?v=1.4.217-journal-record-items";
-import { openStorageJournalViewer } from "./storage-journal-viewer.js?v=1.4.218-journal-record-error";
+import { openStorageJournalViewer } from "./storage-journal-viewer.js?v=1.4.221-journal-readonly-dialog";
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
 export async function openInventoryItem(item, {

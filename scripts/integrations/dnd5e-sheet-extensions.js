@@ -17,7 +17,7 @@ import { createStableGearDocumentId } from "../data/gear-document-ids.js";
 import { buildRebreyaArtisanToolConfig } from "../data/rebreya-tool-proficiencies.js";
 import { isJournalRecordItem } from "../data/journal-record-item.js?v=1.4.217-journal-record-items";
 import { REBREYA_AMMUNITION_SUBTYPES } from "../data/ammunition-types.js";
-import { openStorageJournalViewer } from "../ui/storage-journal-viewer.js?v=1.4.218-journal-record-error";
+import { openStorageJournalViewer } from "../ui/storage-journal-viewer.js?v=1.4.221-journal-readonly-dialog";
 import {
   WEAPON_PROPERTY_GLOSSARY,
   getWeaponPropertyGlossaryEntry
