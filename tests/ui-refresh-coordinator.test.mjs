@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { UiRefreshCoordinator } from "../scripts/infrastructure/ui/ui-refresh-coordinator.js";
 import { MODULE_ID, SETTINGS_KEYS } from "../scripts/constants.js";
 import { registerSettings } from "../scripts/settings.js";
-import { registerInventorySyncHooks } from "../scripts/integrations/inventory-sync.js";
+import { buildPartyInventoryItemDragData, handleAcceptedPartyInventoryItem, registerInventorySyncHooks } from "../scripts/integrations/inventory-sync.js";
 
 const originalHooks = globalThis.Hooks;
 globalThis.Hooks = { once() {}, on() {} };
@@ -516,3 +516,39 @@ test("inventory take socket result routes refresh to the affected Actor sheet", 
     fixture.restore();
   }
 });
+
+for (const route of ["accepted-item", "socket-request", "socket-result"]) {
+  test(`party transfer refreshes only the source inventory and recipient sheet: ${route}`, async () => {
+    const fixture = installUiFixture();
+    try {
+      game.user.active = true;
+      game.users.activeGM = game.user;
+      const affected = fixture.createApp("source-inventory");
+      affected.inventoryActorId = "source-group";
+      const unrelated = fixture.createApp("other-inventory");
+      unrelated.inventoryActorId = "other-group";
+      fixture.moduleApi.inventoryApp = affected;
+      fixture.moduleApi.inventoryFolderApps.set("other", unrelated);
+      ui.windows = { hero: fixture.createApp("recipient", "hero"), other: fixture.createApp("other-sheet", "other-hero") };
+      const result = { handled: true, actorId: "source-group", targetActorId: "hero" };
+      fixture.moduleApi.inventoryService.handlePartyInventorySourceDepletionSocketRequest = async () => result;
+      fixture.moduleApi.inventoryService.handleAcceptedPartyInventoryItem = async () => result;
+      fixture.moduleApi.initializeItem = async () => {};
+      if (route === "accepted-item") {
+        const source = { uuid: "Actor.source-group.Item.torch", name: "Torch", type: "loot", system: { quantity: 1 } };
+        const target = { ...source, uuid: "Actor.hero.Item.copy", parent: { id: "hero", type: "character" } };
+        buildPartyInventoryItemDragData(source.uuid, source);
+        await handleAcceptedPartyInventoryItem(target, {}, "gm", fixture.moduleApi);
+      }
+      else {
+        await fixture.moduleApi.handleSocketMessage({
+          type: route === "socket-request" ? "inventory-source-depletion-request" : "inventory-source-depletion-result",
+          senderId: route === "socket-request" ? "player" : "other-gm", forUserId: "gm", ok: true,
+          actorId: "source-group", targetActorId: "hero"
+        });
+      }
+      assert.deepEqual(fixture.calls.map(call => call.name).sort(), ["recipient", "source-inventory"]);
+    }
+    finally { fixture.restore(); }
+  });
+}

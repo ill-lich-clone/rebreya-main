@@ -1,4 +1,4 @@
-import { normalizeLootgenForm } from "./lootgen-generator.js?v=1.4.129-lootgen-row-cap";
+import { normalizeLootgenForm } from "./lootgen-generator.js?v=1.4.223-coin-reserve";
 
 const CATALOG_VERSION = 2;
 

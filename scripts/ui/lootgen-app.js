@@ -13,7 +13,7 @@ import {
   isLootgenTypeAllowed,
   resolveMagicLootgenTypeLabel
 } from "./lootgen-type-filters.js";
-import { generateLootgenResult, normalizeLootgenForm } from "../data/lootgen-generator.js?v=1.4.154-corpse-storage-broken-name";
+import { generateLootgenResult, normalizeLootgenForm } from "../data/lootgen-generator.js?v=1.4.223-coin-reserve";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
@@ -319,6 +319,7 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.itemCount = 8;
     this.optimalItemQuantity = 4;
     this.budgetValue = 5000;
+    this.coinBudgetPercent = 20;
     this.includeGear = true;
     this.includeCoins = true;
     this.includeMagicItems = false;
@@ -403,6 +404,7 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
       itemCount: this.itemCount,
       optimalItemQuantity: this.optimalItemQuantity,
       budgetValue: this.budgetValue,
+      coinBudgetPercent: this.coinBudgetPercent,
       includeGear: this.includeGear,
       includeCoins: this.includeCoins,
       includeMagicItems: this.includeMagicItems,
@@ -420,6 +422,7 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.itemCount = form.itemCount;
     this.optimalItemQuantity = form.optimalItemQuantity;
     this.budgetValue = form.budgetValue;
+    this.coinBudgetPercent = form.coinBudgetPercent;
     this.includeGear = form.includeGear;
     this.includeCoins = form.includeCoins;
     this.includeMagicItems = form.includeMagicItems;
@@ -737,6 +740,7 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
       itemCount: this.itemCount,
       optimalItemQuantity: this.optimalItemQuantity,
       budgetValue: this.budgetValue,
+      coinBudgetPercent: this.coinBudgetPercent,
       includeCoins: this.includeCoins,
       brokenEquipmentChance: this.brokenEquipmentChance,
       batchId: randomID(),
@@ -910,6 +914,7 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
         itemCount: this.itemCount,
         optimalItemQuantity: this.optimalItemQuantity,
         budgetValue: this.budgetValue,
+        coinBudgetPercent: this.coinBudgetPercent,
         includeGear: this.includeGear,
         includeCoins: this.includeCoins,
         includeMagicItems: this.includeMagicItems,
@@ -995,7 +1000,7 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
             return;
           }
 
-          if (fieldName === "magicPercent" || fieldName === "brokenEquipmentChance") {
+          if (fieldName === "magicPercent" || fieldName === "brokenEquipmentChance" || fieldName === "coinBudgetPercent") {
             this[fieldName] = fieldName === "brokenEquipmentChance"
               ? normalizeBrokenEquipmentChance(input.value)
               : Math.min(100, Math.max(0, toInteger(input.value, this[fieldName])));

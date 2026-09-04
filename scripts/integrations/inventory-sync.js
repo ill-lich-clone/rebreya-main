@@ -362,20 +362,28 @@ export async function handleAcceptedPartyInventoryItem(item, _options = {}, user
   }
 
   clearPendingTransfer();
-  const operation = () => moduleApi?.inventoryService?.handleAcceptedPartyInventoryItem?.(item, transfer);
+  const operation = async () => {
+    const result = await moduleApi?.inventoryService?.handleAcceptedPartyInventoryItem?.(item, transfer);
+    if (result?.handled) {
+      // Track the receipt before waiting for UI: the GM response may arrive during rendering.
+      if (result.requested === true) {
+        const pending = rememberAcceptedTransfer(item, result, moduleApi, transfer);
+        await settleAcceptedTransfer(pending);
+      }
+      else {
+        await initializeDurabilityItem(item, moduleApi);
+      }
+    }
+    return result;
+  };
   const result = typeof moduleApi?.runInventoryMutation === "function"
-    ? await moduleApi.runInventoryMutation(operation)
+    ? await moduleApi.runInventoryMutation(operation, {
+      actorIdsFromResult: (outcome) => [outcome?.actorId, outcome?.targetActorId]
+    })
     : await operation();
   if (result?.handled) {
     if (typeof moduleApi?.runInventoryMutation !== "function") {
-      await moduleApi?.refreshInventoryViews?.();
-    }
-    if (result.requested === true) {
-      const pending = rememberAcceptedTransfer(item, result, moduleApi, transfer);
-      await settleAcceptedTransfer(pending);
-    }
-    else {
-      await initializeDurabilityItem(item, moduleApi);
+      await moduleApi?.refreshInventoryViews?.({ actorIds: [result.actorId, result.targetActorId] });
     }
     return true;
   }

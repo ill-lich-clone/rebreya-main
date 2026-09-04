@@ -289,6 +289,10 @@ await api.setCombatStatus("actor-id", "frightened", { value: 2 });
 
 ### Модель и окна
 
+Lootgen: в настройках генерации доступна «Доля бюджета на монеты, %». Новое окно резервирует 20% бюджета до подбора предметов; неизрасходованный остаток также становится монетами. Значение 0 сохраняет прежнюю выдачу только остатка, 100 направляет весь бюджет в монеты. Выключение монет отменяет резерв. Старые сохранённые шаблоны без этого поля используют 0%.
+
+Перенос из партийного окна привязан к группе исходного предмета и подтверждается active GM, включая перенос игроком с правами владельца группы или вторым GM. Партийный инвентарь хранит отдельные Item-документы. При синхронизации материалов active GM обновляет их прежние стандартные иконки по точному ID; пользовательские картинки, количество и прочность сохраняются.
+
 - `getModel`, `reloadData`, `resetWorldData`, `refreshOpenApps`.
 - `openEconomyApp`, `openQuestLogApp`, `openCityApp`, `openWorldTradeRoutesApp`, `openTradeRouteApp`, `openStatesApp`, `openGlobalEventsApp`, `openReferenceInfoApp`.
 - `openInventoryApp`, `openGroupsApp`, `openPartyInventorySheet`, `openLootgenApp`, `openCosmologyApp`.

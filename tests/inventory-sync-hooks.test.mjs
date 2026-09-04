@@ -849,3 +849,45 @@ test("createItem initializes an ordinary embedded item only on the current clien
     globalThis.game = previousGame;
   }
 });
+
+test("a GM rejection received while the mutation waits for UI refresh still rolls back the accepted copy", async () => {
+  const previousGame = globalThis.game;
+  const previousFromUuid = globalThis.fromUuid;
+  const calls = [];
+  let socketListener;
+  const source = createTransferItem({ id: "source", sourceId: "torch", uuid: "Actor.group.Item.source", parentType: "group" });
+  const target = createTransferItem({ id: "copy", sourceId: "torch", uuid: "Actor.hero.Item.copy", calls });
+  globalThis.game = {
+    user: { id: "player-early-rejection" },
+    users: { activeGM: { id: "gm", isGM: true, active: true } },
+    socket: { on(_channel, listener) { socketListener = listener; } }
+  };
+  globalThis.fromUuid = async uuid => uuid === source.uuid ? source : target;
+  const moduleApi = {
+    inventoryService: {
+      async handleAcceptedPartyInventoryItem(_item, transfer) {
+        return { ...transfer, handled: true, requested: true };
+      }
+    },
+    async runInventoryMutation(operation) {
+      const result = await operation();
+      socketListener({
+        type: SOCKET_EVENT_INVENTORY_SOURCE_DEPLETION_RESULT, forUserId: game.user.id,
+        transferId: result.transferId, sourceItemUuid: source.uuid, targetItemUuid: target.uuid,
+        ok: false, error: "rejected"
+      });
+      await flushAsyncHooks();
+      return result;
+    }
+  };
+  try {
+    registerInventorySyncHooks(moduleApi, { Hooks: { on() {} }, force: true });
+    buildPartyInventoryItemDragData(source.uuid, source);
+    await handleAcceptedPartyInventoryItem(target, {}, game.user.id, moduleApi);
+    assert.deepEqual(calls, [["delete", target.uuid]]);
+  }
+  finally {
+    globalThis.game = previousGame;
+    globalThis.fromUuid = previousFromUuid;
+  }
+});

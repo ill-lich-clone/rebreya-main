@@ -48,6 +48,7 @@ export function normalizeLootgenForm(raw = {}) {
     itemCount: clampInteger(source.itemCount, 1, 40, 8),
     optimalItemQuantity: clampInteger(source.optimalItemQuantity, 1, 100, 4),
     budgetValue: Math.max(0, toInteger(source.budgetValue, 5000)),
+    coinBudgetPercent: clampInteger(source.coinBudgetPercent, 0, 100, 0),
     magicPercent: clampInteger(source.magicPercent, 0, 100, 25),
     brokenEquipmentChance: clampInteger(source.brokenEquipmentChance, 0, 100, 0),
     includeGear: source.includeGear !== false,
@@ -205,6 +206,7 @@ export function generateLootgenResult({
   itemCount = 1,
   optimalItemQuantity = 4,
   budgetValue = 0,
+  coinBudgetPercent = 0,
   includeCoins = true,
   brokenEquipmentChance = 0,
   batchId = "",
@@ -221,6 +223,7 @@ export function generateLootgenResult({
     itemCount,
     optimalItemQuantity,
     budgetValue,
+    coinBudgetPercent,
     includeMagicItems,
     magicPercent,
     includeCoins,
@@ -236,7 +239,8 @@ export function generateLootgenResult({
   const forceMagicOnly = form.includeMagicItems && magicChance >= 0.999;
   const maxRows = form.itemCount;
   const safeBudgetValue = form.budgetValue;
-  let remainingValue = safeBudgetValue;
+  const coinReserve = form.includeCoins ? Math.floor(safeBudgetValue * form.coinBudgetPercent / 100) : 0;
+  let remainingValue = safeBudgetValue - coinReserve;
   const picks = [];
   const selectedIdentities = new Set();
   const selectedCandidates = [];
@@ -341,7 +345,7 @@ export function generateLootgenResult({
 
   let rows = aggregateRows(picks);
   const spentValue = rows.reduce((sum, row) => sum + row.totalValue, 0);
-  const coins = form.includeCoins ? randomCoinsFromValue(remainingValue, random) : randomCoinsFromValue(0, random);
+  const coins = randomCoinsFromValue(form.includeCoins ? remainingValue + coinReserve : 0, random);
   const safeBatchId = String(batchId ?? "").trim();
   rows = rows.map((row, index) => ({
     ...row,

@@ -3,6 +3,7 @@ import { bringAppToFront } from "../ui.js";
 import { escapeFoundryHtml as escapeHtml } from "../shared/foundry-values.js";
 import { buildNamedIconLookup, ensurePackSidebarFolder, resolveNamedIcon } from "./compendium-utils.js";
 import { syncManagedDocumentsOnActiveGm } from "./managed-compendium-sync.js";
+import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 
 const PACK_ID = `world.${MATERIALS_COMPENDIUM_NAME}`;
 const DND5E_SYSTEM_ID = "dnd5e";
@@ -330,6 +331,26 @@ async function findMaterialDocument(pack, material) {
 }
 
 export class MaterialsCompendiumService {
+  async syncPartyItemIcons(materials = [], iconLookup = null) {
+    if (!isActiveGmClient(game) || !isDnd5eWorld()) return 0;
+    const byId = new Map(materials.map(material => [material.id, material]));
+    let updated = 0;
+    for (const actor of game.actors?.contents ?? []) {
+      if (actor.type !== "group" || actor.flags?.[MODULE_ID]?.managedPartyGroup !== true) continue;
+      for (const item of actor.items?.contents ?? []) {
+        if (!isActiveGmClient(game)) return updated;
+        const flags = item.flags?.[MODULE_ID];
+        const material = flags?.managed === true ? byId.get(flags.materialId) : null;
+        if (!material || item.img !== getMaterialIcon(material)) continue;
+        const img = resolveNamedIcon(material.name, iconLookup, "");
+        if (!img || img === item.img) continue;
+        await actor.updateEmbeddedDocuments("Item", [{ _id: item.id, img }]);
+        updated += 1;
+      }
+    }
+    return updated;
+  }
+
   async sync(materials = []) {
     if (!game.user?.isGM || !isDnd5eWorld()) {
       return null;
@@ -362,6 +383,7 @@ export class MaterialsCompendiumService {
         return data;
       }
     });
+    await this.syncPartyItemIcons(safeMaterials, iconLookup);
     return game.packs.get(PACK_ID) ?? pack;
   }
 

@@ -114,6 +114,22 @@ test("lootgen carries the soft quantity target through context and saved templat
   assert.equal(savedPayload.form.optimalItemQuantity, 7);
 });
 
+test("lootgen exposes a coin reserve for new windows and preserves it in saved templates", async () => {
+  let savedPayload;
+  const app = new LootgenApp({
+    getModel: async () => ({ gear: [], materials: [] }),
+    listLootgenTemplates: () => [],
+    saveLootgenTemplate: async payload => { savedPayload = payload; return { id: "reserve", ...payload }; }
+  }, { appKey: "coin-reserve" });
+  assert.equal((await app._prepareContext({})).form.coinBudgetPercent, 20);
+  app.applyLootgenTemplate({ form: { coinBudgetPercent: 35 } });
+  await app.saveTemplateFromName("Резерв монет");
+  assert.equal((await app._prepareContext({})).form.coinBudgetPercent, 35);
+  assert.equal(savedPayload.form.coinBudgetPercent, 35);
+  app.applyLootgenTemplate({ form: {} });
+  assert.equal((await app._prepareContext({})).form.coinBudgetPercent, 0);
+});
+
 test("lootgen deletes a selected template only after confirmation", async () => {
   const removed = [];
   const template = { id: "codex-test", name: "Codex test", form: {} };

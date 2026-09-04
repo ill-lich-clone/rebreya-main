@@ -22,6 +22,7 @@ test("lootgen generator normalizes a reusable form snapshot", () => {
     itemCount: 3,
     optimalItemQuantity: 4,
     budgetValue: 0,
+    coinBudgetPercent: 0,
     magicPercent: 25,
     brokenEquipmentChance: 0,
     includeGear: false,
@@ -37,6 +38,33 @@ test("lootgen generator normalizes the soft quantity target", () => {
   assert.equal(normalizeLootgenForm({ optimalItemQuantity: "7" }).optimalItemQuantity, 7);
   assert.equal(normalizeLootgenForm({ optimalItemQuantity: 0 }).optimalItemQuantity, 1);
 });
+
+test("coin reserve is bounded and missing legacy values preserve the old budget", () => {
+  assert.equal(normalizeLootgenForm({}).coinBudgetPercent, 0);
+  assert.equal(normalizeLootgenForm({ coinBudgetPercent: "20" }).coinBudgetPercent, 20);
+  assert.equal(normalizeLootgenForm({ coinBudgetPercent: -1 }).coinBudgetPercent, 0);
+  assert.equal(normalizeLootgenForm({ coinBudgetPercent: 101 }).coinBudgetPercent, 100);
+  assert.equal(normalizeLootgenForm({ coinBudgetPercent: "invalid" }).coinBudgetPercent, 0);
+});
+
+for (const scenario of [
+  { percent: 20, includeCoins: true, spent: 800, coins: 201 },
+  { percent: 100, includeCoins: true, spent: 0, coins: 1001 },
+  { percent: 0, includeCoins: true, spent: 1000, coins: 1 },
+  { percent: 20, includeCoins: false, spent: 1000, coins: 0 }
+]) {
+  test(`lootgen reserves ${scenario.percent}% for coins when enabled=${scenario.includeCoins}`, () => {
+    const result = generateLootgenResult({
+      mundanePool: [{ sourceType: "gear", sourceId: "ration", name: "Рацион", value: 100, multipleAppearance: "1", stackable: true }],
+      budgetValue: 1001, itemCount: 1, coinBudgetPercent: scenario.percent,
+      includeCoins: scenario.includeCoins, random: () => 0.5
+    });
+    assert.equal(result.spentValue, scenario.spent);
+    assert.equal(result.coins.totalCopper, scenario.coins);
+    assert.equal(result.totalItems, scenario.spent / 100);
+    assert.ok(result.spentValue + result.coins.totalCopper <= 1001);
+  });
+}
 
 test("lootgen rolls an authored package formula once for a valueless source", () => {
   const result = generateLootgenResult({

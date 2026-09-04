@@ -42,6 +42,7 @@ test("catalog saves a named normalized Lootgen template", async () => {
     itemCount: 2,
     optimalItemQuantity: 4,
     budgetValue: 5000,
+    coinBudgetPercent: 0,
     magicPercent: 25,
     brokenEquipmentChance: 0,
     includeGear: true,

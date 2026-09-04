@@ -29,6 +29,50 @@ test("materials compendium exposes item data creation for focused verification",
   assert.equal(typeof materialsModule.createDnd5eItemData, "function");
 });
 
+test("party material icon sync replaces only legacy defaults and is idempotent", async () => {
+  const previousGame = globalThis.game;
+  const coal = materials.find(material => material.id === "ugol");
+  const bezoar = materials.find(material => material.id === "material-35");
+  const items = [coal, bezoar].map((material, index) => ({
+    id: `legacy-${index}`, name: `Переименованный ${material.name}`,
+    img: index === 0 ? "icons/commodities/metal/ingot-iron.webp" : "icons/commodities/leather/leather-bolt-brown.webp",
+    flags: { "rebreya-main": { managed: true, materialId: material.id, durability: { hp: { value: 4 } } } },
+    system: { quantity: 7 }
+  }));
+  items.push({ ...structuredClone(items[0]), id: "custom", img: "worlds/custom/coal.webp" });
+  items.push({ ...structuredClone(items[0]), id: "unmanaged", flags: { "rebreya-main": { materialId: coal.id } } });
+  const updates = [];
+  const actor = {
+    type: "group", flags: { "rebreya-main": { managedPartyGroup: true } }, items: { contents: items },
+    async updateEmbeddedDocuments(type, patches) {
+      assert.equal(type, "Item");
+      updates.push(...patches);
+      for (const patch of patches) Object.assign(items.find(item => item.id === patch._id), patch);
+    }
+  };
+  globalThis.game = {
+    user: { id: "gm", isGM: true, active: true }, system: { id: "dnd5e" }, actors: { contents: [actor] }
+  };
+  const lookup = new Map([["уголь", "modules/rebreya-main/templates/icons/Materials/Уголь.webp"],
+    ["чудовищный безоар", "modules/rebreya-main/templates/icons/Materials/Чудовищный безоар.webp"]]);
+  try {
+    const service = new materialsModule.MaterialsCompendiumService();
+    await service.syncPartyItemIcons([coal, bezoar], lookup);
+    await service.syncPartyItemIcons([coal, bezoar], lookup);
+    assert.deepEqual(updates, [
+      { _id: "legacy-0", img: lookup.get("уголь") },
+      { _id: "legacy-1", img: lookup.get("чудовищный безоар") }
+    ]);
+    assert.deepEqual(items.map(item => item.system.quantity), [7, 7, 7, 7]);
+    assert.equal(items[0].flags["rebreya-main"].durability.hp.value, 4);
+    items[0].img = "icons/commodities/metal/ingot-iron.webp";
+    game.users = { activeGM: { id: "other-gm", isGM: true, active: true } };
+    await service.syncPartyItemIcons([coal, bezoar], lookup);
+    assert.equal(updates.length, 2);
+  }
+  finally { globalThis.game = previousGame; }
+});
+
 test("material signature and rendered description include applications and alchemy aspects", () => {
   const material = materials.find(({ name }) => name === "Шерсть чудовища");
   const created = materialsModule.createDnd5eItemData(material, new Map());

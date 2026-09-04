@@ -2828,7 +2828,12 @@ test("active GM executes party currency socket mutations on the managed group ac
   }
 });
 
-test("accepted party inventory item deletes the source item when the user manages the group inventory", async () => {
+for (const { activeGroupMatchesSource, targetIsMember } of [
+  { activeGroupMatchesSource: true, targetIsMember: true },
+  { activeGroupMatchesSource: false, targetIsMember: true },
+  { activeGroupMatchesSource: false, targetIsMember: false }
+]) {
+test(`accepted party inventory item validates its source group (current group matches: ${activeGroupMatchesSource}, recipient is member: ${targetIsMember})`, async () => {
   const previousItem = globalThis.Item;
   const previousFromUuid = globalThis.fromUuid;
   const sourceItem = createItem({ id: "source-item", name: "Torch", quantity: 2 });
@@ -2848,7 +2853,7 @@ test("accepted party inventory item deletes the source item when the user manage
     type: "group",
     isOwner: true,
     flags: { [MODULE_ID]: { managedPartyGroup: true } },
-    members: [{ actor: memberActor }],
+    members: targetIsMember ? [{ actor: memberActor }] : [],
     items: [sourceItem]
   });
   const fixture = installInventoryFixture({
@@ -2869,7 +2874,7 @@ test("accepted party inventory item deletes the source item when the user manage
   const service = new InventoryService({
     groupContextService: {
       resolveForCurrentUser: () => ({
-        groupActor,
+        groupActor: activeGroupMatchesSource ? groupActor : createActor({ id: "other-party", type: "group" }),
         members: [memberActor],
         canManage: true
       })
@@ -2878,7 +2883,7 @@ test("accepted party inventory item deletes the source item when the user manage
 
   try {
     const expectedIdentity = captureInventoryTransferIdentity(sourceItem);
-    const result = await service.handleAcceptedPartyInventoryItem(acceptedItem, {
+    const accept = () => service.handleAcceptedPartyInventoryItem(acceptedItem, {
       sourceItemUuid: sourceItem.uuid,
       transferId: "party-transfer:gm-direct",
       targetItemUuid: acceptedItem.uuid,
@@ -2893,8 +2898,16 @@ test("accepted party inventory item deletes the source item when the user manage
       }
     });
 
+    if (!targetIsMember) {
+      await assert.rejects(accept, /не входит в эту группу/u);
+      assert.equal(groupActor.items.contents.includes(sourceItem), true);
+      return;
+    }
+    const result = await accept();
     assert.equal(result.handled, true);
     assert.equal(result.requested, false);
+    assert.equal(result.actorId, groupActor.id);
+    assert.equal(result.targetActorId, memberActor.id);
     assert.equal(groupActor.items.contents.includes(sourceItem), false);
     assert.equal(memberActor.items.contents.includes(acceptedItem), true);
   }
@@ -2905,7 +2918,14 @@ test("accepted party inventory item deletes the source item when the user manage
   }
 });
 
-test("accepted party inventory item routes source deletion through the GM when the group is unowned", async () => {
+}
+
+for (const requester of [
+  { label: "unowned group", isOwner: false, isGM: false },
+  { label: "owned group", isOwner: true, isGM: false },
+  { label: "non-active GM", isOwner: true, isGM: true }
+]) {
+test(`accepted party inventory item routes source deletion through the active GM: ${requester.label}`, async () => {
   const previousItem = globalThis.Item;
   const previousFromUuid = globalThis.fromUuid;
   const sourceItem = createItem({ id: "source-item", name: "Torch", quantity: 2 });
@@ -2923,7 +2943,7 @@ test("accepted party inventory item routes source deletion through the GM when t
     id: "group-1",
     name: "Party",
     type: "group",
-    isOwner: false,
+    isOwner: requester.isOwner,
     flags: { [MODULE_ID]: { managedPartyGroup: true } },
     members: [{ actor: memberActor }],
     items: [sourceItem]
@@ -2931,7 +2951,7 @@ test("accepted party inventory item routes source deletion through the GM when t
   const emitted = [];
   const fixture = installInventoryFixture({
     actors: [groupActor, memberActor],
-    user: { id: "player-1", isGM: false }
+    user: { id: "player-1", isGM: requester.isGM }
   });
   globalThis.game.users = {
     activeGM: { id: "gm", isGM: true, active: true }
@@ -2976,6 +2996,8 @@ test("accepted party inventory item routes source deletion through the GM when t
 
     assert.equal(result.handled, true);
     assert.equal(result.requested, true);
+    assert.equal(result.actorId, groupActor.id);
+    assert.equal(result.targetActorId, memberActor.id);
     assert.equal(groupActor.items.contents.includes(sourceItem), true);
     assert.deepEqual(emitted, [{
       channel: "module.rebreya-main",
@@ -3000,6 +3022,8 @@ test("accepted party inventory item routes source deletion through the GM when t
     globalThis.fromUuid = previousFromUuid;
   }
 });
+
+}
 
 test("active GM applies a validated player inventory import socket request", async () => {
   const previousItem = globalThis.Item;

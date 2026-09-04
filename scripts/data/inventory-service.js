@@ -7157,9 +7157,8 @@ export class InventoryService {
       };
     }
 
-    const inventoryActor = await this.getInventoryActor({ create: false });
     const sourceActor = isActorDocument(sourceItem.parent) ? sourceItem.parent : null;
-    if (!inventoryActor || !sourceActor || sourceActor.id !== inventoryActor.id) {
+    if (!isManagedPartyGroup(sourceActor)) {
       return {
         handled: false,
         reason: "sourceNotPartyInventory"
@@ -7192,7 +7191,7 @@ export class InventoryService {
       targetReceipt: normalizedTargetReceipt
     };
 
-    if (!this.canManagePartyInventory(inventoryActor)) {
+    if (!isExplicitActiveGmClient()) {
       if (!getActiveGm()?.id || getActiveGm()?.active === false || typeof game.socket?.emit !== "function") {
         throw new Error("Не удалось отправить запрос на удаление исходного предмета мастеру.");
       }
@@ -7205,6 +7204,8 @@ export class InventoryService {
       return {
         handled: true,
         requested: true,
+        actorId: sourceActor.id,
+        targetActorId: targetActor.id,
         transferId: safeTransferId,
         sourceItemUuid: sourceItem.uuid,
         targetItemUuid: itemDocument.uuid,
@@ -7401,6 +7402,8 @@ export class InventoryService {
 
     const result = {
       handled: true,
+      actorId: record.sourceActorId,
+      targetActorId: record.targetActorId,
       transferId: request.transferId,
       sourceItemUuid: request.sourceItemUuid,
       targetItemUuid: request.targetItemUuid,

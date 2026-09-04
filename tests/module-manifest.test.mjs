@@ -63,8 +63,8 @@ test("module manifest loads an unpinned canonical entrypoint for page-refresh up
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const [entrypoint] = manifest.esmodules;
 
-  assert.equal(manifest.version, "1.4.222");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.222.js"]);
+  assert.equal(manifest.version, "1.4.223");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.223.js"]);
   assert.doesNotMatch(entrypoint, /[?#]/u);
 
   const entrypointSource = await readFile(new URL(entrypoint, manifestUrl), "utf8");
@@ -244,7 +244,7 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
     "integrations/durability-hooks.js?v=1.4.153-corpse-creature",
     "data/storage-trigger-service.js?v=1.4.197-door-trigger-target",
     "integrations/storage-token-hooks.js?v=1.4.197-door-trigger-target",
-    "integrations/inventory-sync.js?v=1.4.96-durable-transfer",
+    "integrations/inventory-sync.js?v=1.4.223-party-transfer",
     "data/gear-compendium.js?v=1.4.145-coin-icons-storage-sound",
     "data/storage-open-sound-service.js?v=1.4.145-coin-icons-storage-sound",
     "data/storage-service.js?v=1.4.200-storage-broken-presentation",
@@ -277,7 +277,7 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
   for (const [source, importPath] of [
     [inventoryServiceSource, "lootgen-durability.js?v=1.4.154-corpse-storage-broken-name"],
     [lootgenAppSource, "data/lootgen-durability.js?v=1.4.154-corpse-storage-broken-name"],
-    [lootgenAppSource, "data/lootgen-generator.js?v=1.4.154-corpse-storage-broken-name"],
+    [lootgenAppSource, "data/lootgen-generator.js?v=1.4.223-coin-reserve"],
     [lootgenGeneratorSource, "lootgen-durability.js?v=1.4.154-corpse-storage-broken-name"]
   ]) {
     assert.equal(source.includes(importPath), true, importPath);
@@ -319,7 +319,7 @@ test("module keeps recent published entrypoint URLs as canonical compatibility f
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
 
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.222.js"]);
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.223.js"]);
 
   for (const fileName of ["main-1.4.98.js", "main-1.4.99.js", "main-1.4.100.js"]) {
     const forwarderSource = await readFile(new URL(`../scripts/${fileName}`, import.meta.url), "utf8");

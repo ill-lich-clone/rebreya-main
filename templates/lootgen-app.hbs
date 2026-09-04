@@ -74,6 +74,10 @@
           </summary>
           <div class="rm-lootgen-settings__content">
             <div class="rm-field">
+              <label for="rm-coin-reserve-{{appKey}}" title="Эта доля бюджета сохраняется для монет до подбора предметов. Неизрасходованный остаток тоже добавляется к монетам. При выключенных монетах резерв не применяется.">Доля бюджета на монеты, %</label>
+              <input id="rm-coin-reserve-{{appKey}}" type="number" min="0" max="100" step="1" value="{{form.coinBudgetPercent}}" data-field="coinBudgetPercent">
+            </div>
+            <div class="rm-field">
               <label title="Шанс включить магический предмет в выдачу (0-100%).">% магических предметов</label>
               <input type="number" min="0" max="100" step="1" value="{{form.magicPercent}}" data-field="magicPercent">
             </div>
@@ -93,7 +97,7 @@
               </label>
               <label class="rm-lootgen-check">
                 <input type="checkbox" {{#if form.includeCoins}}checked{{/if}} data-field="includeCoins">
-                <span>Остаток в монеты</span>
+                <span>Монеты: резерв и остаток</span>
               </label>
             </div>
 

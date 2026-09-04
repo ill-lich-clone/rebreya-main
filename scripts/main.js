@@ -327,7 +327,7 @@ import {
 import { patchEffectMacroCombatHooks } from "./integrations/effectmacro-compat.js";
 import { patchSmAirshipRenderSettingsHook } from "./integrations/sm-airship-compat.js";
 import { patchDnd5eTooltipRaceGuard } from "./integrations/dnd5e-tooltip-compat.js?v=1.4.215-tooltip-race";
-import { registerInventorySyncHooks } from "./integrations/inventory-sync.js?v=1.4.96-durable-transfer";
+import { registerInventorySyncHooks } from "./integrations/inventory-sync.js?v=1.4.223-party-transfer";
 import { runMapObjectTokenMacro } from "./integrations/map-object-token-macro.js?v=1.4.97-map-object-token";
 import { refreshSmallTimeDateDisplay, registerSmallTimeIntegration, syncSmallTimeToCalendarTime } from "./integrations/smalltime-compat.js";
 import { registerRationFoodConversionHook } from "./integrations/ration-food-conversion.js";
@@ -2858,7 +2858,7 @@ export class RebreyaMainModule {
       }
 
       if (message.ok) {
-        await this.refreshInventoryViews();
+        await this.refreshInventoryViews({ actorIds: [message.actorId, message.targetActorId] });
       }
       else {
         ui.notifications?.error(message.error || "Мастер не смог удалить исходный предмет склада.");
@@ -2960,7 +2960,8 @@ export class RebreyaMainModule {
           const result = await this.runInventoryMutation(
             () => this.inventoryService.handlePartyInventorySourceDepletionSocketRequest(message.payload ?? {}, {
               senderId: forUserId
-            })
+            }),
+            { actorIdsFromResult: (result) => [result?.actorId, result?.targetActorId] }
           );
           if (!result) {
             return;
@@ -2973,6 +2974,8 @@ export class RebreyaMainModule {
             transferId,
             sourceItemUuid,
             targetItemUuid,
+            actorId: result.actorId,
+            targetActorId: result.targetActorId,
             ok: true
           });
         }

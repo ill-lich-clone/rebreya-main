@@ -8,7 +8,7 @@ import {
   normalizeExpandedFolderIds,
   projectInventoryFolderRows
 } from "../data/inventory-folder-tree.js";
-import { buildPartyInventoryItemDragData } from "../integrations/inventory-sync.js";
+import { buildPartyInventoryItemDragData } from "../integrations/inventory-sync.js?v=1.4.223-party-transfer";
 import {
   INVENTORY_INGRESS_RULE_FIELD_DEFINITIONS,
   normalizeInventoryIngressRule,

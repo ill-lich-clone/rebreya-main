@@ -5007,7 +5007,7 @@ test("RebreyaMainModule routes party inventory source depletion through the acti
     let refreshCount = 0;
     moduleApi.inventoryService.handlePartyInventorySourceDepletionSocketRequest = async (payload, options) => {
       handled = { payload, options };
-      return { handled: true };
+      return { handled: true, actorId: "group-1", targetActorId: "member-1" };
     };
     moduleApi.refreshInventoryViews = async () => {
       refreshCount += 1;
@@ -5045,6 +5045,8 @@ test("RebreyaMainModule routes party inventory source depletion through the acti
         transferId: "party-transfer:source-to-target",
         sourceItemUuid: "Actor.group-1.Item.item-1",
         targetItemUuid: "Actor.member-1.Item.item-1",
+        actorId: "group-1",
+        targetActorId: "member-1",
         ok: true
       }
     }]);
