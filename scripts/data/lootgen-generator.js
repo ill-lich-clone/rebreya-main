@@ -37,6 +37,12 @@ function normalizeFilterMap(value) {
     .filter(([key]) => key));
 }
 
+export function isLootgenUpgrade(row = {}) {
+  if (String(row.upgrade?.type ?? "").trim()) return true;
+  return [row.equipmentType, row.typeLabel].some(value =>
+    /^(?:усовершенствование|зачарование|проклятье|проклятие)$/iu.test(String(value ?? "").trim()));
+}
+
 export function normalizeLootgenForm(raw = {}) {
   const source = raw && typeof raw === "object" ? raw : {};
   const rankMin = clampInteger(source.rankMin, 0, 10, 0);
@@ -241,8 +247,8 @@ export function generateLootgenResult({
     brokenEquipmentChance
   });
   const safeMundanePool = (Array.isArray(mundanePool) ? mundanePool : [])
-    .filter(row => !lootgenCoinDenomination(row));
-  const safeMagicPool = Array.isArray(magicPool) ? magicPool : [];
+    .filter(row => !lootgenCoinDenomination(row) && !isLootgenUpgrade(row));
+  const safeMagicPool = (Array.isArray(magicPool) ? magicPool : []).filter(row => !isLootgenUpgrade(row));
   if (!safeMundanePool.length && !safeMagicPool.length
     && !(form.includeCoins && Array.isArray(mundanePool) && mundanePool.some(lootgenCoinDenomination))) {
     throw new Error("Для выбранных параметров нет доступных предметов.");

@@ -6,6 +6,22 @@ import {
   normalizeLootgenForm
 } from "../scripts/data/lootgen-generator.js";
 
+test("upgrades, enchantments and curses never enter random loot in either pool", () => {
+  const excluded = [
+    { equipmentType: "Усовершенствование" },
+    { typeLabel: "Зачарование" },
+    { typeLabel: "Проклятье" },
+    { upgrade: { type: "Материал" } }
+  ].map((data, i) => ({ ...data, sourceId: `excluded-${i}`, name: `Excluded ${i}`, value: 1 }));
+  for (const pool of ["mundanePool", "magicPool"]) {
+    const result = generateLootgenResult({
+      [pool]: [...excluded, { sourceId: "ordinary", name: "Проклятый меч", value: 1 }],
+      budgetValue: 100, itemCount: 10, includeMagicItems: true, includeCoins: false, random: () => 0
+    });
+    assert.deepEqual(result.rows.map(row => row.sourceId), ["ordinary"]);
+  }
+});
+
 test("canonical coin candidates become currency rather than ordinary loot Items", () => {
   const result = generateLootgenResult({
     mundanePool: [{ sourceType: "gear", sourceId: "mednaya-moneta", value: 2, multipleAppearance: "1", stackable: true }],

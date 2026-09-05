@@ -13,7 +13,7 @@ import {
   isLootgenTypeAllowed,
   resolveMagicLootgenTypeLabel
 } from "./lootgen-type-filters.js";
-import { generateLootgenResult, normalizeLootgenForm } from "../data/lootgen-generator.js?v=1.4.225-physical-coins";
+import { generateLootgenResult, isLootgenUpgrade, normalizeLootgenForm } from "../data/lootgen-generator.js?v=1.4.230-no-upgrades";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
@@ -563,7 +563,7 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
   #buildGearTypeOptions(model) {
     return buildLootgenTypeFilterOptions(
       [
-        ...(model?.gear ?? []).map((item) => item?.equipmentType ?? "Снаряжение"),
+        ...(model?.gear ?? []).filter(item => !isLootgenUpgrade(item)).map((item) => item?.equipmentType ?? "Снаряжение"),
         ...((model?.materials ?? []).length ? [MATERIAL_LOOTGEN_TYPE_LABEL] : [])
       ],
       this.gearTypeFilters
@@ -597,6 +597,7 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     if (this.includeGear) {
       for (const gearItem of model.gear ?? []) {
+        if (isLootgenUpgrade(gearItem)) continue;
         const bargaining = gearItem.bargaining ?? gearItem.itemBargaining ?? "";
         if (isBargainingBlocked(bargaining)) {
           continue;

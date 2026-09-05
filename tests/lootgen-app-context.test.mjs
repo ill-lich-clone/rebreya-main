@@ -78,6 +78,21 @@ test("lootgen asks for a template name through a Foundry dialog", async () => {
   assert.equal(name, "Простой сундук");
 });
 
+test("lootgen hides upgrade categories even when an old template enables them", async () => {
+  const app = new LootgenApp({
+    getModel: async () => ({ gear: [
+      { equipmentType: "Усовершенствование" },
+      { equipmentType: "Зачарование" },
+      { equipmentType: "Проклятье" },
+      { equipmentType: "Оружие" }
+    ], materials: [{ id: "iron" }] }),
+    listLootgenTemplates: () => []
+  });
+  app.gearTypeFilters = { "усовершенствование": true };
+  const context = await app._prepareContext();
+  assert.deepEqual(context.form.gearTypeOptions.map(row => row.label).sort(), ["Материал", "Оружие"]);
+});
+
 test("lootgen context exposes saved templates to a GM", async () => {
   const savedTemplate = {
     id: "simple-chest",
