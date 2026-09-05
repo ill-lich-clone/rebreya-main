@@ -531,6 +531,7 @@ test("scene controls create a separate Rebreya group for record controls", () =>
 
     assert.deepEqual(controls.tokens.tools, {});
     assert.ok(controls["rebreya-main-rebreya"]);
+    assert.equal(controls["rebreya-main-rebreya"].icon, "rebreya-main-control-icon");
     assert.equal(controls["rebreya-main-rebreya"].activeTool, "rebreya-main-panel");
     assert.equal(controls["rebreya-main-rebreya"].tools["rebreya-main-panel"].onChange, undefined);
     assert.equal(controls["rebreya-main-rebreya"].tools["rebreya-main-panel"].button, undefined);
@@ -551,6 +552,19 @@ test("scene controls create a separate Rebreya group for record controls", () =>
     assert.equal(cosmologyTool.icon, "fa-solid fa-solar-system");
     assert.equal(cosmologyTool.visible, true);
   });
+});
+
+test("Rebreya scene control renders its bundled image icon", async () => {
+  const [css, icon] = await Promise.all([
+    readFile(new URL("../styles/main.css", import.meta.url), "utf8"),
+    readFile(new URL("../assets/ui/rebreya-control-icon.png", import.meta.url))
+  ]);
+
+  assert.ok(icon.byteLength > 0);
+  assert.match(
+    css,
+    /#scene-controls-controls\s+\.layer\.rebreya-main-control-icon\s*\{[^}]*background:\s*url\("\.\.\/assets\/ui\/rebreya-control-icon\.png"\)\s+center\s*\/\s*contain\s+no-repeat;/su
+  );
 });
 
 test("scene controls remove the hidden Rebreya placeholder row from layout", async () => {

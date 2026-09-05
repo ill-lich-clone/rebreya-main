@@ -234,6 +234,11 @@
   display: none;
 }
 
+#scene-controls-controls .layer.rebreya-main-control-icon {
+  background: url("../assets/ui/rebreya-control-icon.png") center / contain no-repeat;
+  color: transparent;
+}
+
 .rm-player-inventory-button {
   position: fixed;
   left: calc(clamp(220px, 8.5vw, 280px) + 8px);

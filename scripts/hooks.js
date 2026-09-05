@@ -745,7 +745,7 @@ function buildControlRecord(controlsRecord) {
     name: controlName,
     order,
     title: game.i18n.localize("REBREYA_MAIN.Controls.GroupTitle"),
-    icon: "fa-solid fa-box-open",
+    icon: "rebreya-main-control-icon",
     visible: true,
     onChange: createRebreyaControlChange(),
     tools: buildToolsRecord(),
