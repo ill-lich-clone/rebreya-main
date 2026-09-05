@@ -327,6 +327,35 @@ const upgradeSnapshot = {
   } }]
 };
 
+test("upgrade adapter retains curses with no material source", () => {
+  const snapshot = structuredClone(upgradeSnapshot);
+  Object.assign(snapshot.rows[0].cells, {
+    Название: "Проклятье", Тип: "Проклятье", Источник: "—", Ранг: "5"
+  });
+  const reference = { sourceRef: "Усовершенствования V0.21!A6", canonicalName: "Проклятье" };
+  const rows = adaptUpgradeCatalog({ snapshot, diagnostics: [], materials: [],
+    referenceIndex: { gearBySourceRef: new Map([[reference.sourceRef, reference]]), resolveStableGearId: () => "curse" }
+  });
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].upgrade.type, "Проклятье");
+  assert.equal(rows[0].upgrade.rank, 5);
+  assert.equal(rows[0].upgrade.sourceMaterialId, null);
+  assert.equal(rows[0].upgrade.sourceMaterialName, "");
+});
+
+test("all reviewed curse rows reproduce the shipped profiles by stable gear identity", async () => {
+  const snapshot = JSON.parse(await readFile(new URL("curse-upgrades-source.json", fixtureRoot), "utf8"));
+  const gear = JSON.parse(await readFile(new URL("../data/gear.json", import.meta.url), "utf8"));
+  const materials = JSON.parse(await readFile(new URL("../data/materials.json", import.meta.url), "utf8"));
+  const shipped = JSON.parse(await readFile(new URL("../data/upgrades.json", import.meta.url), "utf8"));
+  const rows = adaptUpgradeCatalog({ snapshot, materials, diagnostics: [], referenceIndex: {
+    gearBySourceRef: new Map(gear.map((row) => [row.sourceRef, { ...row, canonicalName: row.name }])),
+    resolveStableGearId: (row) => row.id
+  } });
+  assert.equal(rows.length, 11);
+  for (const row of rows) assert.deepEqual(shipped.find((entry) => entry.productId === row.productId), row);
+});
+
 test("upgrade adapter preserves stable product/material identities and typed compatibility", () => {
   const reference = { sourceRef: "Усовершенствования V0.21!A6", sourceKey: "усовершенствование|серебрение оружия", canonicalName: "Серебрение оружия" };
   const referenceIndex = { gearBySourceRef: new Map([[reference.sourceRef, reference]]), resolveStableGearId: () => "serebrenie-oruzhiya" };

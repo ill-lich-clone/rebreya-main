@@ -1720,7 +1720,9 @@ export class RebreyaMainModule {
       notifyError: (message) => globalThis.ui?.notifications?.error?.(message)
     });
     this.runeKnightAutomationService = new RuneKnightAutomationService(this);
-    this.curseEaterAutomationService = new CurseEaterAutomationService();
+    this.curseEaterAutomationService = new CurseEaterAutomationService({
+      getUpgradeCatalog: async () => (await this.getModel()).gearById
+    });
     this.combatStatusService = new CombatStatusService(this);
     this.implantAutomationService = new ImplantAutomationService(this);
     this.combatAttackService = new CombatAttackService(this);

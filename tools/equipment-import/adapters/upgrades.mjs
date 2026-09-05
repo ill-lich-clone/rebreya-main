@@ -10,7 +10,7 @@ const COMPATIBILITY = new Map([
   ["Оружие (Дальнобойное)", ["weapon", "ranged"]], ["Оружие (дальнобойное)", ["weapon", "ranged"]],
   ["Оружие (рукопашное)", ["weapon", "melee"]]
 ]);
-const TYPES = new Set(["Материал", "Зачарование"]);
+const TYPES = new Set(["Материал", "Зачарование", "Проклятье"]);
 const DASH = /^(?:-|–|—)$/u;
 
 function text(value) { return String(value ?? "").trim(); }
@@ -43,7 +43,6 @@ export function adaptUpgradeCatalog({ snapshot, referenceIndex, overrides, mater
   for (const row of snapshot.rows ?? []) {
     const cells = row.cells ?? {};
     const type = text(cells.Тип);
-    if (type === "Проклятье") continue;
     if (!TYPES.has(type)) fail("unknown-upgrade-type", type, context(snapshot, row, "Тип"), `Unknown upgrade type: ${type}`);
     const appliesTo = parseRequiredText(cells["Применимо к"], context(snapshot, row, "Применимо к"));
     const compatibility = COMPATIBILITY.get(appliesTo);

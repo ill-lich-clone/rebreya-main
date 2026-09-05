@@ -92,9 +92,13 @@ function normalizeItemRarity(item) {
     ?? CURSE_EATER_RARITY.common;
 }
 
-function readUpgradeProfile(upgrade) {
+function readUpgradeProfile(upgrade, upgradeCatalog = null) {
   const profile = readModuleFlag(upgrade, "upgrade");
-  return profile && typeof profile === "object" ? profile : {};
+  if (profile && typeof profile === "object" && normalizeText(profile.type)) return profile;
+  // Older catalog copies lack the profile. Resolve their stable identity without
+  // rewriting player-owned Items or treating a matching display name as identity.
+  const gearId = String(readModuleFlag(upgrade, "gearId") ?? "").trim();
+  return (gearId && upgradeCatalog?.get?.(gearId)?.upgrade) || {};
 }
 
 export function curseRankToRarity(rank) {
@@ -105,25 +109,25 @@ export function curseRankToRarity(rank) {
   return Math.floor((safeRank - 1) / 2);
 }
 
-export function getEffectiveCursedItemRarity(item) {
+export function getEffectiveCursedItemRarity(item, upgradeCatalog = null) {
   const curseRarities = getInstalledUpgradeItems(item)
-    .map(readUpgradeProfile)
+    .map((upgrade) => readUpgradeProfile(upgrade, upgradeCatalog))
     .filter((profile) => isCurseText(profile.type))
     .map((profile) => curseRankToRarity(profile.rank));
   return Math.max(normalizeItemRarity(item), ...curseRarities);
 }
 
-function isCursedItem(item) {
+function isCursedItem(item, upgradeCatalog = null) {
   const description = getProperty(item, "system.description.value")
     ?? getProperty(item, "system.description")
     ?? "";
   return isCurseText(description)
     || getInstalledUpgradeItems(item)
-      .map(readUpgradeProfile)
+      .map((upgrade) => readUpgradeProfile(upgrade, upgradeCatalog))
       .some((profile) => isCurseText(profile.type));
 }
 
-export function collectActiveCursedItems(actor) {
+export function collectActiveCursedItems(actor, upgradeCatalog = null) {
   const slots = readModuleFlag(actor, "heroDoll")?.slots ?? {};
   const itemIds = [...new Set(
     Object.values(slots)
@@ -136,11 +140,11 @@ export function collectActiveCursedItems(actor) {
     .map((itemId) => actor?.items?.get?.(itemId)
       ?? actorItems.find((item) => String(item?.id ?? item?._id ?? "") === itemId)
       ?? null)
-    .filter((item) => item && isCursedItem(item))
+    .filter((item) => item && isCursedItem(item, upgradeCatalog))
     .map((item) => ({
       itemId: String(item.id ?? item._id ?? ""),
       itemName: String(item.name ?? ""),
-      rarity: getEffectiveCursedItemRarity(item)
+      rarity: getEffectiveCursedItemRarity(item, upgradeCatalog)
     }))
     .sort((left, right) => (
       (left.rarity - right.rarity)
@@ -464,8 +468,9 @@ export class CurseEaterAutomationService {
       }
     }
 
+    const upgradeCatalog = hasFeat ? await this.options.getUpgradeCatalog?.() : null;
     const progress = hasFeat
-      ? calculateCurseEaterProgress(collectActiveCursedItems(actor))
+      ? calculateCurseEaterProgress(collectActiveCursedItems(actor, upgradeCatalog))
       : emptyProgress;
     const managedEffects = collectionValues(actor.effects).filter(isManagedCurseEaterEffect);
     const previousTier = managedEffectTier(managedEffects[0]);

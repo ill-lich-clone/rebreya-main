@@ -340,6 +340,8 @@ Lootgen: в настройках генерации доступна «Доля 
 - `dropStorageJournalToScene(sourceUuid, { documentName?, sceneId, x, y, mutationId? })` отправляет exact `{sourceUuid,documentName,mutationId,sceneId,x,y}` через GM-only typed command `storage.journal.drop-to-scene`; `documentName` принимает `JournalEntry` или `JournalEntryPage`. Active GM вызывает тот же command service напрямую, остальные клиенты маршрутизируют запрос через active GM. Authoritative правила создания, идемпотентности и presentation описаны в разделе хранилищ.
 - `installItemUpgrade`, `removeItemUpgrade`, `setItemUpgradeCapacity`.
 
+Проклятья из каталога усовершенствований учитываются «Пожирателем проклятий» после установки на предмет в кукле героя. Ранги 1–2 / 3–4 / 5–6 / 7–8 / 9–10 соответствуют обычной / необычной / редкой / очень редкой / легендарной редкости; берётся максимум редкости предмета и установленных проклятий. Несколько проклятий на одном предмете дают один предмет для ступеней. Старые копии без профиля распознаются по сохранённому `gearId`; пользовательский профиль с указанным типом сохраняет приоритет. Это учёт ступеней черты, а не автоматическое исполнение всех эффектов проклятий и зачарований.
+
 ### Бой и космология
 
 - `getCombatStatusDefinitions`, `normalizeCombatStatusId`, `getCombatStatus`, `setCombatStatus`, `clearCombatStatus`, `setCombatStatusValue`, `applyDecayingDamage`, `syncBloodiedStatuses`.

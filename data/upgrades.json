@@ -1606,5 +1606,226 @@
       "sourceWeight": null,
       "type": "Материал"
     }
+  },
+  {
+    "name": "Проклятье молниеносной реакции",
+    "productId": "proklyat-e-molnienosnoy-reaktsii",
+    "canonicalName": "Проклятье молниеносной реакции",
+    "upgrade": {
+      "rank": 5,
+      "appliesTo": "Чудестный предмет",
+      "compatibility": [
+        "wondrous-item"
+      ],
+      "effect": "Вы получаете бонус к проверкам инициативы +4\nПРОКЛЯТЬЕ: Вы не можете использовать реакции до конца первого раунда сражения.",
+      "priceGold": 1000,
+      "sourceWeight": null,
+      "sourceMaterialName": "",
+      "sourceMaterialId": null,
+      "type": "Проклятье",
+      "sourceSheet": "Усовершенствования V0.21",
+      "sourceSheetRow": 2
+    }
+  },
+  {
+    "name": "Проклятье преследующего успеха",
+    "productId": "proklyat-e-presleduyushchego-uspekha",
+    "canonicalName": "Проклятье преследующего успеха",
+    "upgrade": {
+      "rank": 8,
+      "appliesTo": "Чудестный предмет",
+      "compatibility": [
+        "wondrous-item"
+      ],
+      "effect": "Когда вы проваливаете спасбросок, вместо этого вы можете выбрать преуспеть в нём. Использовав эту особенность вам необходимо завершить продолжительный отдых, прежде, чем использовать её снова.\nПРОКЛЯТЬЕ: После того как вы используете эту особенность вы автоматически проваливаете следующий спасбросок без возможности преуспеть в нём",
+      "priceGold": 5000,
+      "sourceWeight": null,
+      "sourceMaterialName": "",
+      "sourceMaterialId": null,
+      "type": "Проклятье",
+      "sourceSheet": "Усовершенствования V0.21",
+      "sourceSheetRow": 3
+    }
+  },
+  {
+    "name": "Проклятье жизни и смерти",
+    "productId": "proklyat-e-zhizni-i-smerti",
+    "canonicalName": "Проклятье жизни и смерти",
+    "upgrade": {
+      "rank": 4,
+      "appliesTo": "Чудестный предмет",
+      "compatibility": [
+        "wondrous-item"
+      ],
+      "effect": "Вы совершаете спасброски смерти с преимуществом\nПРОКЛЯТЬЕ: Когда ваши хиты опускаются до 0, то вы сразу же получаете 1 проваленный спасбросок",
+      "priceGold": 750,
+      "sourceWeight": null,
+      "sourceMaterialName": "",
+      "sourceMaterialId": null,
+      "type": "Проклятье",
+      "sourceSheet": "Усовершенствования V0.21",
+      "sourceSheetRow": 4
+    }
+  },
+  {
+    "name": "Проклятье тяжести жизни",
+    "productId": "proklyat-e-tyazhesti-zhizni",
+    "canonicalName": "Проклятье тяжести жизни",
+    "upgrade": {
+      "rank": 2,
+      "appliesTo": "Чудестный предмет",
+      "compatibility": [
+        "wondrous-item"
+      ],
+      "effect": "После совершения проверки инициативы вы получаете временные хиты равные вашему БМ + модификатор Телосложения\nПРОКЛЯТЬЕ: Пока у вас существуют эти хиты ваша скорость уменьшается на 10 футов.",
+      "priceGold": 100,
+      "sourceWeight": null,
+      "sourceMaterialName": "",
+      "sourceMaterialId": null,
+      "type": "Проклятье",
+      "sourceSheet": "Усовершенствования V0.21",
+      "sourceSheetRow": 5
+    }
+  },
+  {
+    "name": "Проклятье кровопускания",
+    "productId": "proklyat-e-krovopuskaniya",
+    "canonicalName": "Проклятье кровопускания",
+    "upgrade": {
+      "rank": 7,
+      "appliesTo": "Оружие",
+      "compatibility": [
+        "weapon"
+      ],
+      "effect": "Оружие наносит дополнительно 1к6 рубящего урона при попадании.\nПРОКЛЯТЬЕ: Когда вы впервые за ход попадаете атакой этим оружием, то сами получаете этот дополнительный урон",
+      "priceGold": 3000,
+      "sourceWeight": null,
+      "sourceMaterialName": "",
+      "sourceMaterialId": null,
+      "type": "Проклятье",
+      "sourceSheet": "Усовершенствования V0.21",
+      "sourceSheetRow": 17
+    }
+  },
+  {
+    "name": "Проклятье скорбящего прошлого",
+    "productId": "proklyat-e-skorbyashchego-proshlogo",
+    "canonicalName": "Проклятье скорбящего прошлого",
+    "upgrade": {
+      "rank": 10,
+      "appliesTo": "Оружие",
+      "compatibility": [
+        "weapon"
+      ],
+      "effect": "Вы совершаете атаки по Окружённым противникам с преимуществом\nПРОКЛЯТЬЕ: Вы получаете штраф -2 к броскам атаки по Окружённым противника",
+      "priceGold": 12500,
+      "sourceWeight": null,
+      "sourceMaterialName": "",
+      "sourceMaterialId": null,
+      "type": "Проклятье",
+      "sourceSheet": "Усовершенствования V0.21",
+      "sourceSheetRow": 18
+    }
+  },
+  {
+    "name": "Проклятье притягивание снарядов",
+    "productId": "proklyat-e-prityagivanie-snaryadov",
+    "canonicalName": "Проклятье притягивание снарядов",
+    "upgrade": {
+      "rank": 5,
+      "appliesTo": "Верхняя одежда (Щит)",
+      "compatibility": [
+        "outerwear",
+        "shield"
+      ],
+      "effect": "Вы получаете сопротивление урону от дальнобойных атак оружием, пока держите этот щит. \nПРОКЛЯТЬЕ: Каждый раз, когда по цели, находящейся в пределах 10 футов от вас, совершается дальнобойная атака оружием, проклятье заставляет стать целью вас.",
+      "priceGold": 6000,
+      "sourceWeight": null,
+      "sourceMaterialName": "",
+      "sourceMaterialId": null,
+      "type": "Проклятье",
+      "sourceSheet": "Усовершенствования V0.21",
+      "sourceSheetRow": 19
+    }
+  },
+  {
+    "name": "Проклятье огненной души",
+    "productId": "proklyat-e-ognennoy-dushi",
+    "canonicalName": "Проклятье огненной души",
+    "upgrade": {
+      "rank": 4,
+      "appliesTo": "Верхняя одежда",
+      "compatibility": [
+        "outerwear"
+      ],
+      "effect": "Вы получаете Поглощение урона огнём 2\nПРОКЛЯТЬЕ: Вы получаете Слабость к урону холодом 2",
+      "priceGold": 1250,
+      "sourceWeight": null,
+      "sourceMaterialName": "",
+      "sourceMaterialId": null,
+      "type": "Проклятье",
+      "sourceSheet": "Усовершенствования V0.21",
+      "sourceSheetRow": 29
+    }
+  },
+  {
+    "name": "Проклятье воли к жизни",
+    "productId": "proklyat-e-voli-k-zhizni",
+    "canonicalName": "Проклятье воли к жизни",
+    "upgrade": {
+      "rank": 6,
+      "appliesTo": "Верхняя одежда",
+      "compatibility": [
+        "outerwear"
+      ],
+      "effect": "Если вы Окровавлены, то получаете бонус +2 к КД\nПРОКЛЯТЬЕ: Пока вы не Окровавлены вы получаете штраф -2 к КД",
+      "priceGold": 1000,
+      "sourceWeight": null,
+      "sourceMaterialName": "",
+      "sourceMaterialId": null,
+      "type": "Проклятье",
+      "sourceSheet": "Усовершенствования V0.21",
+      "sourceSheetRow": 30
+    }
+  },
+  {
+    "name": "Проклятье цепей",
+    "productId": "proklyat-e-tsepey",
+    "canonicalName": "Проклятье цепей",
+    "upgrade": {
+      "rank": 5,
+      "appliesTo": "Чудестный предмет",
+      "compatibility": [
+        "wondrous-item"
+      ],
+      "effect": "Когда существо проваливает спасбросок против вашего эффекта, который только наносит урон, то вы можете покрыть цель адскими цепями. Цель до конца своего следующего хода становиться Опутанной. Вы можете использовать эту особенность не чаще, чем раз в минуту.\nПРОКЛЯТЬЕ: Когда цель преуспевает в спасброске против вашего эффекта, который наносит только урон и Проклятье цепей находиться на перезарядке, то вы становитесь жертвой цепей.",
+      "priceGold": 2500,
+      "sourceWeight": null,
+      "sourceMaterialName": "Демонический рог",
+      "sourceMaterialId": "material-55",
+      "type": "Проклятье",
+      "sourceSheet": "Усовершенствования V0.21",
+      "sourceSheetRow": 69
+    }
+  },
+  {
+    "name": "Проклятье обсидиана",
+    "productId": "proklyat-e-obsidiana",
+    "canonicalName": "Проклятье обсидиана",
+    "upgrade": {
+      "rank": 6,
+      "appliesTo": "Оружие",
+      "compatibility": [
+        "weapon"
+      ],
+      "effect": "Когда вы совершаете атаку этим оружием, то вы получаете бонус +1 к КД до начала своего следующего хода.\nПРОКЛЯТЬЕ: Если вы в свой ход не совершаете действие Атака, то получаете штраф -1 к кд до начала своего следующего хода.",
+      "priceGold": 3000,
+      "sourceWeight": null,
+      "sourceMaterialName": "Обсидиановый осколок",
+      "sourceMaterialId": "material-67",
+      "type": "Проклятье",
+      "sourceSheet": "Усовершенствования V0.21",
+      "sourceSheetRow": 77
+    }
   }
 ]

@@ -1,5 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { mergeGearCatalogExtensions } from "../scripts/data/importer.js";
+import { createDnd5eItemData } from "../scripts/data/gear-compendium.js";
 
 import { registerCombatHooks } from "../scripts/combat/hooks.js";
 import {
@@ -110,6 +113,56 @@ function managedEffects(actor) {
   return [...actor.effects.values()].filter((effect) =>
     effect.flags?.["rebreya-main"]?.curseEater?.managed === true);
 }
+
+function shippedGear() {
+  const read = (name) => JSON.parse(readFileSync(new URL(`../data/${name}.json`, import.meta.url), "utf8"));
+  return mergeGearCatalogExtensions(read("gear"), { upgrades: read("upgrades") });
+}
+
+test("shipped curses retain profiles in Foundry documents and unlock HP on a second host", async () => {
+  globalThis.CONST ??= { DOCUMENT_OWNERSHIP_LEVELS: { OBSERVER: 2 } };
+  const gear = shippedGear();
+  const curses = gear.filter((item) => item.name.startsWith("Проклятье"));
+  assert.equal(curses.length, 11);
+  for (const row of curses) {
+    const data = createDnd5eItemData(row, new Map());
+    assert.equal(data.flags["rebreya-main"].upgrade?.type, "Проклятье", row.name);
+    assert.equal(data.flags["rebreya-main"].upgrade.rank, row.rank, row.name);
+  }
+  const profile = gear.find((item) => item.id === "proklyat-e-molnienosnoy-reaktsii").upgrade;
+  const feat = makeItem("feat", { type: "feat", identifier: "pozhiratel-proklyatiy" });
+  const sword = makeItem("sword", { rarity: "uncommon", description: "Проклятье" });
+  const ring = makeItem("ring", { rarity: "uncommon", installed: ["curse"] });
+  const curse = makeItem("curse", { upgrade: profile });
+  const actor = makeActor([feat, sword, ring, curse], { rightHand: { itemId: "sword" }, ring1: { itemId: "ring" } });
+  const service = new CurseEaterAutomationService();
+  assert.equal((await service.syncActor(actor)).tier, 2);
+  assert.ok(managedEffects(actor)[0].changes.some((c) => c.key === "system.attributes.hp.bonuses.overall" && c.value === "@prof"));
+  ring.flags["rebreya-main"].itemUpgrades.installed = [];
+  assert.equal((await service.syncActor(actor)).tier, 1);
+  assert.equal(managedEffects(actor)[0].changes.some((c) => c.key === "system.attributes.hp.bonuses.overall"), false);
+});
+
+test("legacy installed curse resolves only by stable catalog id without overwriting its data", async () => {
+  const feat = makeItem("feat", { type: "feat", identifier: "pozhiratel-proklyatiy" });
+  const sword = makeItem("sword", { rarity: "uncommon", description: "Проклятье" });
+  const ring = makeItem("ring", { installed: ["curse"] });
+  const curse = makeItem("curse");
+  curse.flags["rebreya-main"].gearId = "legacy-curse";
+  const actor = makeActor([feat, sword, ring, curse], { rightHand: { itemId: "sword" }, ring1: { itemId: "ring" } });
+  const before = structuredClone(curse.flags);
+  const service = new CurseEaterAutomationService({ getUpgradeCatalog: async () => new Map([
+    ["legacy-curse", { upgrade: { type: "Проклятье", rank: 5 } }]
+  ]) });
+  assert.equal((await service.syncActor(actor)).tier, 2);
+  assert.deepEqual(curse.flags, before);
+  curse.flags["rebreya-main"].upgrade = { type: "Материал", rank: 5 };
+  assert.equal((await service.syncActor(actor)).tier, 1);
+  delete curse.flags["rebreya-main"].upgrade;
+  delete curse.flags["rebreya-main"].gearId;
+  curse.name = "legacy-curse";
+  assert.equal((await service.syncActor(actor)).tier, 1);
+});
 
 test("curse ranks map to the five non-artifact rarity bands", () => {
   assert.deepEqual(
