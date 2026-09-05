@@ -604,6 +604,100 @@ test("failed updateItem depletion restores the merge receipt without deleting th
   }
 });
 
+test("active GM native drag rolls back the accepted target when source debit is confirmed unchanged", async () => {
+  const previousGame = globalThis.game;
+  const previousFromUuid = globalThis.fromUuid;
+  const gm = { id: "gm-local-rollback", isGM: true, active: true };
+  globalThis.game = { user: gm, users: { activeGM: gm } };
+  const sourceItemUuid = "Actor.group.Item.local-failed-source";
+  const sourceItem = createTransferItem({
+    id: "local-failed-source",
+    uuid: sourceItemUuid,
+    sourceId: "local-failed-source",
+    parentType: "group"
+  });
+  globalThis.fromUuid = async (uuid) => uuid === sourceItemUuid ? sourceItem : null;
+  buildPartyInventoryItemDragData(sourceItemUuid, sourceItem);
+  const calls = [];
+  const acceptedItem = createTransferItem({
+    id: "local-failed-target",
+    uuid: "Actor.hero.Item.local-failed-target",
+    sourceId: "local-failed-source",
+    calls
+  });
+  const error = Object.assign(new Error("source debit failed"), {
+    code: "source-debit-failed",
+    inventoryTransferMode: "simple"
+  });
+  const moduleApi = {
+    inventoryService: {
+      async handleAcceptedPartyInventoryItem() {
+        calls.push(["transfer"]);
+        throw error;
+      }
+    }
+  };
+
+  try {
+    await assert.rejects(
+      handleAcceptedPartyInventoryItem(acceptedItem, {}, gm.id, moduleApi),
+      (caught) => caught === error
+    );
+    assert.deepEqual(calls, [["transfer"], ["delete", acceptedItem.uuid]]);
+  }
+  finally {
+    globalThis.game = previousGame;
+    globalThis.fromUuid = previousFromUuid;
+  }
+});
+
+test("active GM native drag reports manual review when its accepted target drifts before rollback", async () => {
+  const previousGame = globalThis.game;
+  const previousFromUuid = globalThis.fromUuid;
+  const gm = { id: "gm-local-drift", isGM: true, active: true };
+  globalThis.game = { user: gm, users: { activeGM: gm } };
+  const source = createTransferItem({
+    id: "local-drift-source",
+    uuid: "Actor.group.Item.local-drift-source",
+    sourceId: "local-drift-source",
+    parentType: "group"
+  });
+  globalThis.fromUuid = async (uuid) => uuid === source.uuid ? source : null;
+  buildPartyInventoryItemDragData(source.uuid, source);
+  const calls = [];
+  const target = createTransferItem({
+    id: "local-drift-target",
+    uuid: "Actor.hero.Item.local-drift-target",
+    sourceId: "local-drift-source",
+    calls
+  });
+  const moduleApi = {
+    inventoryService: {
+      async handleAcceptedPartyInventoryItem() {
+        target.system.quantity = 2;
+        const error = new Error("source debit failed");
+        error.code = "source-debit-failed";
+        error.inventoryTransferMode = "simple";
+        throw error;
+      }
+    }
+  };
+
+  try {
+    await assert.rejects(
+      handleAcceptedPartyInventoryItem(target, {}, gm.id, moduleApi),
+      (error) => error?.code === "transfer-manual-review"
+        && error?.inventoryTransferMode === "simple"
+    );
+    assert.equal(target.system.quantity, 2);
+    assert.deepEqual(calls, []);
+  }
+  finally {
+    globalThis.game = previousGame;
+    globalThis.fromUuid = previousFromUuid;
+  }
+});
+
 test("an observed source delete settles once before its delayed response", async () => {
   const previousGame = globalThis.game;
   const previousFromUuid = globalThis.fromUuid;

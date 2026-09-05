@@ -610,13 +610,34 @@ export class StorageCommandService {
         return clone(rows);
       },
       debitRow: async (row, receipt = {}) => {
-        const claim = await this.storageService.claim(storageToken, {
+        const sourceMutationId = `${mutationKey}:source:${clean(receipt.sourceKey) || row.sourceKey}`;
+        const claimRequest = {
           kind: "row",
           rowId: row.sourceKey,
           quantity: row.quantity,
-          mutationId: `${mutationKey}:source:${clean(receipt.sourceKey) || row.sourceKey}`,
+          mutationId: sourceMutationId,
           path
-        });
+        };
+        let claim;
+        try {
+          claim = await this.storageService.claim(storageToken, claimRequest);
+        }
+        catch (error) {
+          const liveState = readStorageStateAtPath(storageToken, path);
+          const confirmed = liveState.rowClaimMutations.find((entry) => entry.mutationId === sourceMutationId) ?? null;
+          if (!confirmed) throw error;
+          if (confirmed.rowId !== row.sourceKey || confirmed.quantity !== row.quantity) {
+            const conflict = new Error("Storage source debit receipt conflicts with the requested row.");
+            conflict.code = "STORAGE_MUTATION_CONFLICT";
+            throw conflict;
+          }
+          claim = {
+            changed: true,
+            row: null,
+            quantity: confirmed.quantity,
+            state: clone(liveState)
+          };
+        }
         sourceClaims.set(row.sourceKey, claim);
       },
       grantContainer: async ({ container, mutationId }) => {
@@ -1328,6 +1349,7 @@ export class StorageCommandService {
           quantity: filterResult?.changed === true ? quantity : undefined,
           state: readStorageStateAtPath(access.storageToken, path)
         };
+        result.inventoryTransferMode = committed.result.inventoryTransferMode;
       }
       else if (isStorageContainerRow(preparedTransferRow)) {
         if (!this.containerItemService) {
@@ -1530,6 +1552,7 @@ export class StorageCommandService {
       const claimedRowIds = [];
       const preparedRows = [];
       const partyReceipts = [];
+      let inventoryTransferMode;
       for (const { row, rowId } of rows) {
         if (isStorageJournalRow(row)) continue;
         const quantity = destination === "party" && plannedById.has(rowId)
@@ -1559,6 +1582,7 @@ export class StorageCommandService {
           ingressPlan: payload.ingressPlan,
           rows: ingressRows
         });
+        inventoryTransferMode = committed.result.inventoryTransferMode;
         const transferById = new Map(preparedRows.map((entry) => [entry.rowId, entry]));
         for (const outcome of committed.result.rows) {
           if (outcome.changed !== true) continue;
@@ -1672,7 +1696,8 @@ export class StorageCommandService {
         coinsChanged,
         sourceDeleted,
         state: finalState.state,
-        displayMode: finalState.displayMode
+        displayMode: finalState.displayMode,
+        ...(inventoryTransferMode ? { inventoryTransferMode } : {})
       };
     }, {
       fingerprint,

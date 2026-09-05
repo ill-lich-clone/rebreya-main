@@ -195,6 +195,47 @@ export class DurableMutationJournal {
     });
   }
 
+  recordTerminal(record, result) {
+    if (!isPlainObject(record)) {
+      return Promise.reject(new TypeError("record must be a plain object"));
+    }
+    const mutationId = this.#requireId(record.id);
+    const phase = this.#requirePhase(record.phase);
+    const fingerprint = cleanId(record.fingerprint);
+    if (!fingerprint) {
+      return Promise.reject(new TypeError("record fingerprint must be a non-empty string"));
+    }
+
+    return this.#coordinator.run("durable-mutation-journal", async () => {
+      const state = await this.#readNormalizedState();
+      const existing = this.#findRecord(state, mutationId);
+      if (existing) {
+        if (existing.terminal === true && cleanId(existing.fingerprint) === fingerprint) {
+          return clone(existing);
+        }
+        throw new DurableMutationJournalError(
+          "record-conflict",
+          `Mutation ${mutationId} conflicts with an existing record`,
+          {
+            mutationId,
+            currentPhase: existing.phase,
+            currentFingerprint: cleanId(existing.fingerprint),
+            expectedFingerprint: fingerprint
+          }
+        );
+      }
+
+      return this.#persistRecord(state, {
+        ...clone(record),
+        id: mutationId,
+        phase,
+        fingerprint,
+        terminal: true,
+        result: clone(result)
+      });
+    });
+  }
+
   #requireId(value) {
     const id = cleanId(value);
     if (!id) {

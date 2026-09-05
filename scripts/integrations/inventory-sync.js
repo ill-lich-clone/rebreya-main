@@ -220,6 +220,11 @@ async function handleSourceDepletionResult(message) {
     pending.approved = true;
     return settleAcceptedTransfer(pending);
   }
+  if (cleanId(message?.inventoryTransferMode) === "simple"
+    && cleanId(message?.code) === "transfer-manual-review") {
+    pendingAcceptedTransfers.delete(pending.transferId);
+    return false;
+  }
   return rollbackAcceptedTransfer(pending);
 }
 
@@ -363,27 +368,93 @@ export async function handleAcceptedPartyInventoryItem(item, _options = {}, user
 
   clearPendingTransfer();
   const operation = async () => {
-    const result = await moduleApi?.inventoryService?.handleAcceptedPartyInventoryItem?.(item, transfer);
+    const pending = rememberAcceptedTransfer(item, {
+      transferId: transfer.transferId,
+      sourceItemUuid: transfer.sourceItemUuid,
+      targetItemUuid: transfer.targetItemUuid,
+      targetReceipt: transfer.targetReceipt
+    }, moduleApi, transfer);
+    let result;
+    try {
+      result = await moduleApi?.inventoryService?.handleAcceptedPartyInventoryItem?.(item, transfer);
+    }
+    catch (error) {
+      if (error?.code === "source-debit-failed") {
+        let rolledBack = false;
+        let rollbackError = null;
+        try {
+          rolledBack = await rollbackAcceptedTransfer(pending);
+        }
+        catch (caughtRollbackError) {
+          rollbackError = caughtRollbackError;
+        }
+        if (!rolledBack) {
+          if (pending) pendingAcceptedTransfers.delete(pending.transferId);
+          const manualError = new Error("Native inventory transfer target requires manual review after source debit failure.");
+          manualError.code = "transfer-manual-review";
+          manualError.inventoryTransferMode = "simple";
+          manualError.sourceItemUuid = transfer.sourceItemUuid;
+          manualError.targetItemUuid = transfer.targetItemUuid;
+          manualError.sourceActorId = cleanId(error?.sourceActorId);
+          manualError.targetActorId = cleanId(error?.targetActorId);
+          manualError.debitError = cleanId(error?.message);
+          if (rollbackError) manualError.rollbackError = cleanId(rollbackError?.message);
+          throw manualError;
+        }
+      }
+      else if (pending) {
+        pendingAcceptedTransfers.delete(pending.transferId);
+      }
+      throw error;
+    }
     if (result?.handled) {
-      // Track the receipt before waiting for UI: the GM response may arrive during rendering.
+      // The receipt was registered before dispatch so a synchronous GM result cannot race it.
       if (result.requested === true) {
-        const pending = rememberAcceptedTransfer(item, result, moduleApi, transfer);
         await settleAcceptedTransfer(pending);
       }
       else {
-        await initializeDurabilityItem(item, moduleApi);
+        if (pending) await completeAcceptedTransfer(pending);
+        else await initializeDurabilityItem(item, moduleApi);
       }
+    }
+    else if (pending) {
+      pendingAcceptedTransfers.delete(pending.transferId);
     }
     return result;
   };
   const result = typeof moduleApi?.runInventoryMutation === "function"
     ? await moduleApi.runInventoryMutation(operation, {
-      actorIdsFromResult: (outcome) => [outcome?.actorId, outcome?.targetActorId]
+      actorIdsFromResult: (outcome, error) => [
+        outcome?.actorId ?? error?.sourceActorId,
+        outcome?.targetActorId ?? error?.targetActorId
+      ],
+      awaitRefresh: (outcome, error) => (
+        (outcome?.inventoryTransferMode ?? error?.inventoryTransferMode) !== "simple"
+      )
     })
     : await operation();
   if (result?.handled) {
     if (typeof moduleApi?.runInventoryMutation !== "function") {
-      await moduleApi?.refreshInventoryViews?.({ actorIds: [result.actorId, result.targetActorId] });
+      let refreshTask;
+      try {
+        refreshTask = Promise.resolve(moduleApi?.refreshInventoryViews?.({
+          actorIds: [result.actorId, result.targetActorId]
+        }));
+      }
+      catch (error) {
+        refreshTask = Promise.reject(error);
+      }
+      if (result?.inventoryTransferMode === "simple") {
+        Promise.resolve(refreshTask).catch((error) => {
+          console.error(`${MODULE_ID} | Deferred inventory refresh failed.`, error);
+          globalThis.ui?.notifications?.warn?.(
+            "Инвентарь изменён, но интерфейс не удалось обновить автоматически."
+          );
+        });
+      }
+      else {
+        await refreshTask;
+      }
     }
     return true;
   }

@@ -8,7 +8,7 @@ import {
   normalizeExpandedFolderIds,
   projectInventoryFolderRows
 } from "../data/inventory-folder-tree.js";
-import { buildPartyInventoryItemDragData } from "../integrations/inventory-sync.js?v=1.4.223-party-transfer";
+import { buildPartyInventoryItemDragData } from "../integrations/inventory-sync.js?v=1.4.226-inventory-transfer";
 import {
   INVENTORY_INGRESS_RULE_FIELD_DEFINITIONS,
   normalizeInventoryIngressRule,
@@ -26,6 +26,22 @@ import {
 import { isJournalRecordItem } from "../data/journal-record-item.js?v=1.4.217-journal-record-items";
 import { openStorageJournalViewer } from "./storage-journal-viewer.js?v=1.4.221-journal-readonly-dialog";
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
+
+export function formatInventoryTransferError(error, itemName = "предмет") {
+  const name = cleanText(itemName) || "предмет";
+  const sourceActorId = cleanText(error?.sourceActorId);
+  const targetActorId = cleanText(error?.targetActorId);
+  const endpoints = sourceActorId || targetActorId
+    ? ` Источник: ${sourceActorId || "неизвестен"}; получатель: ${targetActorId || "неизвестен"}.`
+    : "";
+  if (error?.code === "transfer-failed-compensated") {
+    return `Не удалось перенести «${name}»: добавление получателю отменено, источник сохранён.${endpoints}`;
+  }
+  if (error?.code === "transfer-manual-review") {
+    return `Перенос «${name}» требует ручной сверки источника и получателя.${endpoints}`;
+  }
+  return error?.message || "Не удалось забрать предмет из склада.";
+}
 
 export async function openInventoryItem(item, {
   moduleApi,
@@ -7522,7 +7538,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         }
         catch (error) {
           console.error(`${MODULE_ID} | Failed to take inventory item.`, error);
-          ui.notifications?.error(error.message || "Не удалось забрать предмет из склада.");
+          ui.notifications?.error(formatInventoryTransferError(error, itemName));
         }
       }, listenerOptions);
     });

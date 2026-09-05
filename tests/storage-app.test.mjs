@@ -32,7 +32,77 @@ globalThis.randomID = () => "storage-test-id";
 globalThis.HTMLElement = FakeElement;
 
 const storageAppModule = await import("../scripts/ui/storage-app.js?storage-app-test");
-const { StorageApp } = storageAppModule;
+const { StorageApp, formatStorageTransferError } = storageAppModule;
+
+test("storage transfer errors report accepted, failed and untouched rows", () => {
+  assert.equal(
+    formatStorageTransferError({
+      code: "inventory-ingress-partial",
+      completedSourceKeys: ["accepted-a", "accepted-b"],
+      failedSourceKey: "failed-c",
+      unprocessedSourceKeys: ["later-d"]
+    }),
+    "Перенесено строк: 2; ошибка на строке «failed-c»; не обработано: 1. Повторите действие только для оставшихся строк."
+  );
+  assert.match(
+    formatStorageTransferError({
+      code: "transfer-manual-review",
+      completedSourceKeys: ["accepted-a"],
+      failedSourceKey: "uncertain-b"
+    }),
+    /ручн.*сверк.*Перенесено строк до остановки: 1/iu
+  );
+});
+
+test("storage refreshes its source snapshot after a structured partial transfer rejection", async () => {
+  const previousConsoleError = console.error;
+  let snapshotCalls = 0;
+  let renderCalls = 0;
+  const error = Object.assign(new Error("partial storage transfer"), {
+    code: "inventory-ingress-partial",
+    inventoryTransferMode: "simple",
+    completedSourceKeys: ["row-1"],
+    failedSourceKey: "row-2",
+    unprocessedSourceKeys: []
+  });
+  const { app } = createApp({
+    configure: false,
+    getStorageSnapshot: async () => {
+      snapshotCalls += 1;
+      return {
+        tokenUuid: "Scene.scene.Token.chest",
+        name: "Сундук",
+        state: "opened",
+        rows: [{ rowId: "row-1", name: "Меч", quantity: 1 }],
+        coins: {}
+      };
+    },
+    claimStorageRow: async () => { throw error; }
+  });
+  const listeners = new Map();
+  app.element = new class extends FakeElement {
+    addEventListener(name, callback) { listeners.set(name, callback); }
+  }();
+  app.render = async () => { renderCalls += 1; };
+
+  try {
+    console.error = () => {};
+    await app._prepareContext();
+    await app._onRender({}, {});
+    const control = {
+      dataset: { action: "storage-claim-self", rowId: "row-1" },
+      closest(selector) { return selector === "[data-action]" ? this : null; }
+    };
+    await listeners.get("click")({ target: control, preventDefault() {} });
+    await new Promise((resolve) => setImmediate(resolve));
+
+    assert.equal(snapshotCalls, 2);
+    assert.equal(renderCalls, 1);
+  }
+  finally {
+    console.error = previousConsoleError;
+  }
+});
 
 test("coin stacks expose their canonical item card and standard storage drag payload", async () => {
   const { app } = createApp({ configure: false });

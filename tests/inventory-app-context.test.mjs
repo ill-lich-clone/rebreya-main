@@ -4,6 +4,30 @@ import { readFile, stat } from "node:fs/promises";
 
 import { GROUP_CONTEXT_ERRORS } from "../scripts/data/group-context-service.js";
 
+test("take transfer errors distinguish compensated and manual outcomes", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  try {
+    const { formatInventoryTransferError } = await import(
+      `../scripts/ui/inventory-app.js?transfer-errors=${Date.now()}`
+    );
+    assert.match(
+      formatInventoryTransferError({
+        code: "transfer-failed-compensated",
+        sourceActorId: "party",
+        targetActorId: "hero"
+      }, "Верёвка"),
+      /добавление получателю отменено.*party.*hero/u
+    );
+    assert.match(
+      formatInventoryTransferError({ code: "transfer-manual-review" }, "Верёвка"),
+      /ручной сверки/u
+    );
+  }
+  finally {
+    restoreFoundry();
+  }
+});
+
 function installFoundryApplicationStub() {
   const previousFoundry = globalThis.foundry;
   globalThis.foundry = {

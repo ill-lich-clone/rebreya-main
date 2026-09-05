@@ -470,6 +470,82 @@ test("multi-document inventory hooks wait for the mutation boundary and render o
   }
 });
 
+test("runInventoryMutation can return before a scoped refresh settles", async () => {
+  const fixture = installUiFixture();
+  let rejectRefresh;
+  let refreshCalls = 0;
+  let mutationResolved = false;
+  const warnings = [];
+  const previousConsoleError = console.error;
+  try {
+    console.error = () => {};
+    globalThis.ui.notifications.warn = (message) => warnings.push(message);
+    fixture.moduleApi.refreshInventoryViews = async ({ actorIds }) => {
+      refreshCalls += 1;
+      assert.deepEqual(actorIds, ["group-a", "hero-a"]);
+      return new Promise((_resolve, reject) => { rejectRefresh = reject; });
+    };
+
+    const mutation = fixture.moduleApi.runInventoryMutation(
+      async () => ({ actorId: "hero-a", sourceActorId: "group-a", changed: true }),
+      {
+        awaitRefresh: false,
+        actorIdsFromResult: (result) => [result.sourceActorId, result.actorId]
+      }
+    ).then((result) => {
+      mutationResolved = true;
+      return result;
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    assert.equal(mutationResolved, true);
+    assert.equal(refreshCalls, 1);
+    assert.deepEqual(await mutation, { actorId: "hero-a", sourceActorId: "group-a", changed: true });
+
+    rejectRefresh(new Error("render failed"));
+    await Promise.resolve();
+    await Promise.resolve();
+    assert.deepEqual(warnings, ["Инвентарь изменён, но интерфейс не удалось обновить автоматически."]);
+  }
+  finally {
+    console.error = previousConsoleError;
+    fixture.restore();
+  }
+});
+
+test("simple take failure schedules deferred refresh for the exact source and target Actors", async () => {
+  const fixture = installUiFixture();
+  const refreshedScopes = [];
+  try {
+    fixture.moduleApi.refreshInventoryViews = async ({ actorIds }) => {
+      refreshedScopes.push(actorIds);
+    };
+    fixture.moduleApi.inventoryService.takeInventoryItemToCharacter = async () => {
+      const error = new Error("manual review required");
+      Object.assign(error, {
+        code: "transfer-manual-review",
+        inventoryTransferMode: "simple",
+        sourceActorId: "source-group",
+        targetActorId: "target-hero"
+      });
+      throw error;
+    };
+
+    await assert.rejects(
+      fixture.moduleApi.takeInventoryItemToCharacter("item-a"),
+      (error) => error?.code === "transfer-manual-review"
+    );
+    await Promise.resolve();
+
+    assert.deepEqual(refreshedScopes, [["source-group", "target-hero"]]);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
 test("take inventory refresh uses the Actor resolved by the service result", async () => {
   const fixture = installUiFixture();
   try {

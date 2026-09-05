@@ -394,6 +394,46 @@ test("SocketCommandBus ignores malformed correlated errors until a valid failure
   assert.deepEqual(timers.cleared, [1]);
 });
 
+test("SocketCommandBus preserves safe structured command failure details", async () => {
+  const emitted = [];
+  const timers = createFakeTimers();
+  const player = { id: "player-a", isGM: false, active: true };
+  const gm = { id: "gm-a", isGM: true, active: true };
+  const game = createGame({ users: [player, gm], currentUserId: player.id, activeGmId: gm.id, emitted });
+  const bus = new SocketCommandBus({
+    gameProvider: () => game,
+    idFactory: () => "partial-result",
+    setTimeoutFn: timers.setTimeoutFn,
+    clearTimeoutFn: timers.clearTimeoutFn
+  });
+  const pending = bus.request("storage.claim.all", {});
+
+  assert.equal(bus.handleMessage({
+    type: COMMAND_RESULT_TYPE,
+    command: "storage.claim.all",
+    requestId: "partial-result",
+    forUserId: player.id,
+    senderId: gm.id,
+    ok: false,
+    error: {
+      code: "inventory-ingress-partial",
+      message: "Inventory ingress stopped after a row failure.",
+      details: {
+        completedSourceKeys: ["row-1"],
+        failedSourceKey: "row-2",
+        unprocessedSourceKeys: ["row-3"]
+      }
+    }
+  }), true);
+
+  await assert.rejects(
+    pending,
+    (error) => error?.code === "inventory-ingress-partial"
+      && error?.failedSourceKey === "row-2"
+      && JSON.stringify(error?.completedSourceKeys) === JSON.stringify(["row-1"])
+  );
+});
+
 test("SocketCommandBus times requests out after exactly 10000 ms", async () => {
   const emitted = [];
   const timers = createFakeTimers();

@@ -3497,6 +3497,99 @@ test("party bulk claim delegates all Item rows to one ingress commit while coins
   assert.equal(readStorageState(harness.storageToken).coinsClaimed, true);
 });
 
+test("party bulk claim preserves the accepted storage subset when inventory ingress stops", async () => {
+  let harness;
+  harness = createHarness({
+    ingressCommit: async (request, adapters) => {
+      const rows = await adapters.resolveRows();
+      await adapters.debitRow(rows[0], { sourceKey: rows[0].sourceKey });
+      const error = new Error("Inventory ingress stopped after a row failure.");
+      error.code = "inventory-ingress-partial";
+      error.details = {
+        actorId: request.groupActorId,
+        batchMutationId: request.batchMutationId,
+        completedSourceKeys: [rows[0].sourceKey],
+        skippedSourceKeys: [],
+        failedSourceKey: rows[1].sourceKey,
+        unprocessedSourceKeys: [],
+        inventoryTransferMode: "simple"
+      };
+      Object.assign(error, error.details);
+      throw error;
+    }
+  });
+  await harness.storageService.configure(harness.storageToken, {
+    state: "opened",
+    manualRows: ["accepted", "failed"].map((rowId) => ({
+      rowId,
+      rowKind: "item",
+      name: rowId,
+      quantity: 1,
+      itemData: { name: rowId, type: "loot", system: { quantity: 1 } }
+    })),
+    generatedRows: [],
+    manualCoins: {},
+    generatedCoins: {},
+    coinsClaimed: true
+  });
+
+  await assert.rejects(
+    harness.service.claimAll({
+      tokenUuid: harness.storageToken.uuid,
+      characterTokenUuid: harness.characterToken.uuid,
+      destination: "party",
+      target: { groupActorId: harness.groupActor.id, folderId: null },
+      ingressPlan: storageIngressPlan({ rowIds: ["accepted", "failed"] }),
+      mutationId: "partial-storage-bulk"
+    }, { sender: harness.player }),
+    (error) => error?.code === "inventory-ingress-partial"
+      && JSON.stringify(error?.completedSourceKeys) === JSON.stringify(["accepted"])
+      && error?.failedSourceKey === "failed"
+  );
+  assert.deepEqual(readStorageState(harness.storageToken).claimedRowIds, ["accepted"]);
+});
+
+test("party ingress confirms a Storage row debit whose update acknowledgement is lost", async () => {
+  const harness = createHarness({
+    ingressCommit: async (request, adapters) => {
+      const [row] = await adapters.resolveRows();
+      await adapters.debitRow(row, { sourceKey: row.sourceKey });
+      return {
+        actorId: request.groupActorId,
+        batchMutationId: request.batchMutationId,
+        changed: true,
+        rows: [{ sourceKey: row.sourceKey, changed: true }],
+        inventoryTransferMode: "simple"
+      };
+    }
+  });
+  await harness.storageService.open(harness.storageToken);
+  let acknowledgementLost = false;
+  harness.storageToken.beforeUpdate = async (patch) => {
+    if (acknowledgementLost) return;
+    acknowledgementLost = true;
+    applyPatch(harness.storageToken, patch);
+    throw new Error("storage update acknowledgement lost");
+  };
+
+  const result = await harness.service.claimRow({
+    tokenUuid: harness.storageToken.uuid,
+    characterTokenUuid: harness.characterToken.uuid,
+    rowId: "row-1",
+    quantity: 1,
+    destination: "party",
+    target: { groupActorId: harness.groupActor.id, folderId: null },
+    ingressPlan: storageIngressPlan(),
+    mutationId: "storage-lost-ack"
+  }, { sender: harness.player });
+
+  assert.equal(result.changed, true);
+  assert.deepEqual(readStorageState(harness.storageToken).claimedRowIds, ["row-1"]);
+  const [receipt] = readStorageState(harness.storageToken).rowClaimMutations;
+  assert.match(receipt.mutationId, /storage-lost-ack:source:row-1$/u);
+  assert.deepEqual({ rowId: receipt.rowId, quantity: receipt.quantity }, { rowId: "row-1", quantity: 1 });
+});
+
 test("bulk claim grants mixed rows, containers, and coins once while skipping Journals", async () => {
   const materializations = [];
   const materialized = new Set();
@@ -4044,7 +4137,7 @@ test("duplicate partial mutations decrement once and competing quantities serial
   assert.equal(harness.itemGrants.length, 2);
 });
 
-test("partial party debit survives a lost storage acknowledgement and service restart", async () => {
+test("partial party debit confirms a lost storage acknowledgement and survives service restart", async () => {
   const harness = createHarness({ rowQuantity: 5 });
   const access = {
     tokenUuid: harness.storageToken.uuid,
@@ -4071,10 +4164,8 @@ test("partial party debit survives a lost storage acknowledgement and service re
     return result;
   };
 
-  await assert.rejects(
-    harness.service.claimRow(request, { sender: harness.player }),
-    /acknowledgement lost/u
-  );
+  const first = await harness.service.claimRow(request, { sender: harness.player });
+  assert.equal(first.changed, true);
   assert.equal(readStorageState(harness.storageToken).generatedRows[0].quantity, 3);
 
   const recovered = await harness.createCommandService().claimRow(request, { sender: harness.player });

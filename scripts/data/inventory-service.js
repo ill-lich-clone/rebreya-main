@@ -1813,6 +1813,8 @@ export class InventoryService {
       writeState: (state) => game.settings.set(MODULE_ID, SETTINGS_KEYS.INVENTORY_MUTATION_JOURNAL, state),
       normalizeState: normalizeInventoryMutationJournal
     });
+    this.simpleMutationFingerprints = new Map();
+    this.simpleIngressExecutions = new Map();
   }
 
   #normalizeMemberState(member, fallbackRole = "member") {
@@ -2140,12 +2142,87 @@ export class InventoryService {
     if (record.result?.ok === false) {
       const error = new Error(record.result.error || "Inventory mutation was compensated.");
       error.code = record.result.code || "inventory-mutation-failed";
+      if (record.result.details && typeof record.result.details === "object") {
+        error.details = foundry.utils.deepClone(record.result.details);
+        Object.assign(error, foundry.utils.deepClone(record.result.details));
+      }
       throw error;
     }
     return {
       terminal: true,
       value: foundry.utils.deepClone(record.result?.value)
     };
+  }
+
+  #simpleMutationFingerprint(operationType, request) {
+    return JSON.stringify({ operationType, ...request });
+  }
+
+  #claimSimpleMutationFingerprint(operationId, fingerprint) {
+    const current = this.simpleMutationFingerprints.get(operationId);
+    if (current && current !== fingerprint) {
+      const error = new Error(`Inventory mutation '${operationId}' conflicts with another request.`);
+      error.code = "mutation-conflict";
+      throw error;
+    }
+    if (!current) {
+      this.simpleMutationFingerprints.set(operationId, fingerprint);
+      while (this.simpleMutationFingerprints.size > 256) {
+        this.simpleMutationFingerprints.delete(this.simpleMutationFingerprints.keys().next().value);
+      }
+    }
+  }
+
+  #assertSimpleMutationRecord(record, fingerprint) {
+    if (record?.kind === "inventory-simple-v1" && cleanId(record.fingerprint) === fingerprint) {
+      return;
+    }
+    const error = new Error(`Inventory mutation '${record?.id ?? ""}' conflicts with the simple transfer request.`);
+    error.code = "mutation-conflict";
+    throw error;
+  }
+
+  #simpleTransferError(code, message, details = {}) {
+    const error = new Error(message);
+    error.code = code;
+    error.details = foundry.utils.deepClone(details);
+    Object.assign(error, foundry.utils.deepClone(details));
+    return error;
+  }
+
+  async #recordSimpleTerminal(record, result) {
+    try {
+      this.#assertSourceDepletionAuthority();
+      await this.mutationJournal.recordTerminal(record, result);
+      this.#assertSourceDepletionAuthority();
+      return { auditPersisted: true, auditError: null };
+    }
+    catch (auditError) {
+      return { auditPersisted: false, auditError };
+    }
+  }
+
+  async #finishSimpleFailure(record, error, details = {}) {
+    const code = cleanId(error?.code) || "inventory-transfer-failed";
+    const message = cleanId(error?.message) || "Inventory transfer failed.";
+    const outcomeDetails = {
+      inventoryTransferMode: "simple",
+      ...foundry.utils.deepClone(details)
+    };
+    const audit = await this.#recordSimpleTerminal(record, {
+      ok: false,
+      code,
+      error: message,
+      details: outcomeDetails
+    });
+    const failure = this.#simpleTransferError(code, message, {
+      ...outcomeDetails,
+      ...(audit.auditPersisted ? {} : {
+        auditPersisted: false,
+        auditWarning: cleanId(audit.auditError?.message) || "Inventory audit outcome was not persisted."
+      })
+    });
+    throw failure;
   }
 
   #inventoryReconciliationError(message) {
@@ -2760,18 +2837,258 @@ export class InventoryService {
   }
 
   #takeInventoryItemFromActor(inventoryActor, itemId, targetActor, quantity = 1, options = {}) {
-    return this.mutationCoordinator.run(
+    const operationId = createInventoryMutationId("inventory-take", options.mutationId);
+    const fingerprint = this.#simpleMutationFingerprint("take", {
+      sourceActorId: cleanId(inventoryActor?.id),
+      sourceItemId: cleanId(itemId),
+      targetActorId: cleanId(targetActor?.id),
+      quantity: Math.max(0.01, roundNumber(toNumber(quantity, 1), 2))
+    });
+    this.#claimSimpleMutationFingerprint(operationId, fingerprint);
+    return this.mutationCoordinator.runIdempotent(
       "inventory",
-      () => this.#executeTakeInventoryItem(inventoryActor, itemId, targetActor, quantity, options)
+      `inventory-simple:take:${operationId}:${fingerprint}`,
+      () => this.#executeTakeInventoryItem(inventoryActor, itemId, targetActor, quantity, {
+        ...options,
+        mutationId: operationId,
+        fingerprint
+      })
     );
   }
 
-  async #executeTakeInventoryItem(inventoryActor, itemId, targetActor, quantity = 1, { mutationId = "" } = {}) {
+  async #executeTakeInventoryItem(inventoryActor, itemId, targetActor, quantity = 1, {
+    mutationId = "",
+    fingerprint = ""
+  } = {}) {
     if (!isActorDocument(targetActor) || targetActor.type !== "character") {
       throw new Error("Предмет можно забрать только в лист персонажа.");
     }
     const operationId = createInventoryMutationId("inventory-take", mutationId);
-    let record = await this.mutationJournal.find(operationId);
+    const existing = await this.mutationJournal.find(operationId);
+    if (existing?.kind !== "inventory-simple-v1") {
+      if (existing) {
+        return this.#executeLegacyTakeInventoryItem(
+          inventoryActor,
+          itemId,
+          targetActor,
+          quantity,
+          { mutationId: operationId },
+          existing
+        );
+      }
+    }
+    else {
+      this.#assertSimpleMutationRecord(existing, fingerprint);
+      const terminal = this.#readInventoryTerminal(existing);
+      if (terminal.terminal) return terminal.value;
+      throw this.#simpleTransferError(
+        "transfer-manual-review",
+        "Inventory transfer has an incomplete simple terminal record.",
+        { operationId, sourceActorId: inventoryActor.id, targetActorId: targetActor.id }
+      );
+    }
+
+    this.#assertSourceDepletionAuthority();
+    const orphanedTarget = this.#findMutationItem(targetActor, operationId);
+    if (orphanedTarget) {
+      throw this.#simpleTransferError(
+        "transfer-manual-review",
+        "Inventory target exists without a terminal transfer outcome; verify source and recipient manually.",
+        {
+          operationId,
+          sourceActorId: inventoryActor.id,
+          targetActorId: targetActor.id,
+          sourceItemId: cleanId(itemId),
+          targetItemId: orphanedTarget.id
+        }
+      );
+    }
+    const item = this.#getInventoryItem(inventoryActor, itemId);
+    const itemData = sanitizeEmbeddedItemData(item.toObject());
+    const beforeQuantity = getRawQuantity(itemData);
+    if (beforeQuantity <= 0) {
+      throw new Error("Inventory item quantity must be greater than zero to take it.");
+    }
+    const takeQuantity = Math.max(0.01, Math.min(beforeQuantity, roundNumber(toNumber(quantity, 1), 2)));
+    const sourceReceipt = {
+      itemId: item.id,
+      beforeQuantity,
+      afterQuantity: roundNumber(beforeQuantity - takeQuantity, 2),
+      delta: takeQuantity
+    };
+    foundry.utils.setProperty(itemData, "system.quantity", takeQuantity);
+    foundry.utils.setProperty(itemData, `flags.${MODULE_ID}.${INVENTORY_MUTATION_FLAG}`, {
+      id: operationId,
+      kind: "take"
+    });
+    const terminalRecord = {
+      id: operationId,
+      kind: "inventory-simple-v1",
+      phase: "committed",
+      fingerprint,
+      operationType: "take",
+      sourceActorId: inventoryActor.id,
+      targetActorId: targetActor.id
+    };
+
+    let createdItem = this.#findMutationItem(targetActor, operationId);
+    if (createdItem) {
+      await this.#finishSimpleFailure(
+        terminalRecord,
+        this.#simpleTransferError(
+          "transfer-manual-review",
+          "Inventory target already exists without a terminal transfer outcome."
+        ),
+        {
+          operationId,
+          sourceActorId: inventoryActor.id,
+          targetActorId: targetActor.id,
+          sourceItemId: item.id,
+          targetItemId: createdItem.id,
+          expectedSourceQuantity: beforeQuantity,
+          expectedTargetQuantity: takeQuantity
+        }
+      );
+    }
+
+    try {
+      this.#assertSourceDepletionAuthority();
+      [createdItem] = await targetActor.createEmbeddedDocuments("Item", [itemData], {
+        renderSheet: false
+      });
+      this.#assertSourceDepletionAuthority();
+    }
+    catch (error) {
+      this.#assertSourceDepletionAuthority();
+      createdItem = this.#findMutationItem(targetActor, operationId);
+      if (!createdItem) {
+        await this.#finishSimpleFailure(terminalRecord, error, {
+          operationId,
+          sourceActorId: inventoryActor.id,
+          targetActorId: targetActor.id,
+          sourceItemId: item.id
+        });
+      }
+    }
+    if (!createdItem
+      || !inventoryQuantitiesMatch(getRawQuantity(createdItem.toObject()), takeQuantity)) {
+      await this.#finishSimpleFailure(
+        terminalRecord,
+        this.#simpleTransferError(
+          "transfer-manual-review",
+          "Created inventory target could not be verified."
+        ),
+        {
+          operationId,
+          sourceActorId: inventoryActor.id,
+          targetActorId: targetActor.id,
+          sourceItemId: item.id,
+          targetItemId: createdItem?.id ?? "",
+          expectedTargetQuantity: takeQuantity
+        }
+      );
+    }
+
+    try {
+      this.#assertSourceDepletionAuthority();
+      await this.#applySourceReceipt(inventoryActor, sourceReceipt);
+      this.#assertSourceDepletionAuthority();
+    }
+    catch (debitError) {
+      const sourceState = this.#sourceReceiptState(inventoryActor, sourceReceipt);
+      if (!sourceState.before) {
+        await this.#finishSimpleFailure(
+          terminalRecord,
+          this.#simpleTransferError(
+            "transfer-manual-review",
+            "Inventory transfer requires manual review after source quantity drift."
+          ),
+          {
+            operationId,
+            sourceActorId: inventoryActor.id,
+            targetActorId: targetActor.id,
+            sourceItemId: item.id,
+            targetItemId: createdItem.id,
+            sourceBeforeQuantity: beforeQuantity,
+            sourceAfterQuantity: sourceReceipt.afterQuantity,
+            targetExpectedQuantity: takeQuantity,
+            debitError: cleanId(debitError?.message)
+          }
+        );
+      }
+      try {
+        this.#assertSourceDepletionAuthority();
+        await this.#compensateCreatedMutationItem(targetActor, operationId, takeQuantity);
+        this.#assertSourceDepletionAuthority();
+      }
+      catch (rollbackError) {
+        await this.#finishSimpleFailure(
+          terminalRecord,
+          this.#simpleTransferError(
+            "transfer-manual-review",
+            "Inventory transfer requires manual review after source debit failure."
+          ),
+          {
+            operationId,
+            sourceActorId: inventoryActor.id,
+            targetActorId: targetActor.id,
+            sourceItemId: item.id,
+            targetItemId: createdItem.id,
+            sourceBeforeQuantity: beforeQuantity,
+            sourceAfterQuantity: sourceReceipt.afterQuantity,
+            targetExpectedQuantity: takeQuantity,
+            debitError: cleanId(debitError?.message),
+            rollbackError: cleanId(rollbackError?.message)
+          }
+        );
+      }
+      await this.#finishSimpleFailure(
+        terminalRecord,
+        this.#simpleTransferError(
+          "transfer-failed-compensated",
+          cleanId(debitError?.message) || "Inventory source debit failed and target credit was rolled back."
+        ),
+        {
+          operationId,
+          sourceActorId: inventoryActor.id,
+          targetActorId: targetActor.id,
+          sourceItemId: item.id,
+          sourceBeforeQuantity: beforeQuantity,
+          sourceAfterQuantity: sourceReceipt.afterQuantity,
+          targetItemId: createdItem.id
+        }
+      );
+    }
+
+    const result = {
+      itemName: item.name,
+      quantity: takeQuantity,
+      actorId: targetActor.id,
+      sourceActorId: inventoryActor.id,
+      createdItemId: createdItem.id,
+      inventoryTransferMode: "simple"
+    };
+    const audit = await this.#recordSimpleTerminal(terminalRecord, { ok: true, value: result });
+    if (!audit.auditPersisted) {
+      return {
+        ...foundry.utils.deepClone(result),
+        auditPersisted: false,
+        auditWarning: cleanId(audit.auditError?.message) || "Inventory audit outcome was not persisted."
+      };
+    }
+    return foundry.utils.deepClone(result);
+  }
+
+  async #executeLegacyTakeInventoryItem(
+    inventoryActor,
+    itemId,
+    targetActor,
+    quantity = 1,
+    { mutationId = "" } = {},
+    existingRecord = null
+  ) {
+    const operationId = createInventoryMutationId("inventory-take", mutationId);
+    let record = existingRecord;
     if (!record) {
       const item = this.#getInventoryItem(inventoryActor, itemId);
       const itemData = sanitizeEmbeddedItemData(item.toObject());
@@ -3454,7 +3771,7 @@ export class InventoryService {
     }) ?? null;
   }
 
-  #findInventoryIngressMutationItem(actor, mutationId, sourceKey, outputIndex) {
+  #findInventoryIngressMutationItem(actor, mutationId, sourceKey, outputIndex = undefined) {
     return actor?.items?.contents?.find((item) => {
       const marker = item?.getFlag?.(MODULE_ID, INVENTORY_MUTATION_FLAG)
         ?? item?.flags?.[MODULE_ID]?.[INVENTORY_MUTATION_FLAG]
@@ -3462,7 +3779,7 @@ export class InventoryService {
       return cleanId(marker.id) === mutationId
         && marker.kind === "ingress"
         && cleanId(marker.sourceKey) === sourceKey
-        && Number(marker.outputIndex) === outputIndex;
+        && (outputIndex === undefined || Number(marker.outputIndex) === outputIndex);
     }) ?? null;
   }
 
@@ -3635,6 +3952,425 @@ export class InventoryService {
   }
 
   async commitInventoryIngressBatch(request, {
+    resolveRows,
+    debitRow,
+    grantContainer = null
+  } = {}) {
+    const exactKeys = ["groupActorId", "batchMutationId", "sourceOrigin", "serializedPlan"];
+    if (!request || typeof request !== "object" || Array.isArray(request)
+      || Object.keys(request).length !== exactKeys.length
+      || !exactKeys.every((key) => Object.hasOwn(request, key))) {
+      throw new InventoryIngressRuleError("invalid-batch", "Inventory ingress batch request has an invalid shape.");
+    }
+    const groupActorId = cleanId(request.groupActorId);
+    const batchMutationId = cleanId(request.batchMutationId);
+    const sourceOrigin = cleanId(request.sourceOrigin);
+    if (!groupActorId || !batchMutationId
+      || !new Set(["lootgen", "storage", "import", "public-model"]).has(sourceOrigin)
+      || typeof resolveRows !== "function" || typeof debitRow !== "function") {
+      throw new InventoryIngressRuleError("invalid-batch", "Inventory ingress batch dependencies or identity are invalid.");
+    }
+    if (grantContainer !== null && typeof grantContainer !== "function") {
+      throw new InventoryIngressRuleError("invalid-batch", "Inventory ingress container grant must be a function.");
+    }
+    const planner = this.moduleApi.inventoryIngressPlanner;
+    if (!planner || typeof planner.preview !== "function" || typeof planner.assertParity !== "function") {
+      throw new InventoryIngressRuleError("planner-unavailable", "Inventory ingress planner is unavailable.");
+    }
+    const serializedPlan = foundry.utils.deepClone(request.serializedPlan);
+    const fingerprint = JSON.stringify({ groupActorId, batchMutationId, sourceOrigin, serializedPlan });
+    const operationId = `inventory-ingress:${batchMutationId}`;
+    const existing = await this.mutationJournal.find(operationId);
+    if (existing?.kind === "inventory-simple-v1") {
+      this.#assertSimpleMutationRecord(existing, fingerprint);
+      const terminal = this.#readInventoryTerminal(existing);
+      if (terminal.terminal) return terminal.value;
+      throw this.#simpleTransferError(
+        "transfer-manual-review",
+        "Inventory ingress has an incomplete simple terminal record.",
+        { operationId, groupActorId }
+      );
+    }
+    if (existing) {
+      return this.#commitLegacyInventoryIngressBatch(request, { resolveRows, debitRow, grantContainer });
+    }
+
+    this.#claimSimpleMutationFingerprint(operationId, fingerprint);
+    const cachedExecution = this.simpleIngressExecutions.get(operationId);
+    if (cachedExecution) {
+      if (cachedExecution.fingerprint !== fingerprint) {
+        throw this.#simpleTransferError(
+          "mutation-conflict",
+          `Inventory mutation '${operationId}' conflicts with another request.`
+        );
+      }
+      const cachedDecision = await cachedExecution.promise;
+      if (cachedDecision.mode === "legacy") {
+        return this.#commitLegacyInventoryIngressBatch(request, { resolveRows, debitRow, grantContainer });
+      }
+      return cachedDecision.value;
+    }
+    const execution = this.mutationCoordinator.run(
+      "inventory",
+      async () => {
+        const queuedExisting = await this.mutationJournal.find(operationId);
+        if (queuedExisting?.kind === "inventory-simple-v1") {
+          this.#assertSimpleMutationRecord(queuedExisting, fingerprint);
+          const terminal = this.#readInventoryTerminal(queuedExisting);
+          if (terminal.terminal) return { mode: "simple", value: terminal.value };
+          throw this.#simpleTransferError(
+            "transfer-manual-review",
+            "Inventory ingress has an incomplete simple terminal record.",
+            { operationId, groupActorId }
+          );
+        }
+        if (queuedExisting) return { mode: "legacy" };
+
+        const sourceRows = await resolveRows({
+          groupActorId,
+          batchMutationId,
+          sourceOrigin,
+          recovering: false,
+          serializedPlan: foundry.utils.deepClone(serializedPlan)
+        });
+        const authoritativePreview = await planner.preview({
+          groupActorId,
+          requestedFolderId: serializedPlan?.requestedFolderId ?? null,
+          rows: sourceRows,
+          batch: Array.isArray(sourceRows) && sourceRows.length > 1
+        });
+        planner.assertParity(serializedPlan, authoritativePreview);
+        const sourceByKey = new Map(sourceRows.map((row) => [cleanId(row.sourceKey), row]));
+        const overrideKeys = new Set(serializedPlan.rootOverrideSourceKeys ?? []);
+        const simpleEligible = authoritativePreview.rows.every((previewRow) => {
+          const sourceRow = sourceByKey.get(previewRow.sourceKey);
+          const effectiveType = overrideKeys.has(previewRow.sourceKey) ? "root" : previewRow.action.type;
+          return !sourceRow?.container && effectiveType !== "dismantle";
+        });
+        if (!simpleEligible) return { mode: "legacy" };
+
+        return {
+          mode: "simple",
+          value: await this.#commitSimpleInventoryIngressBatch(request, {
+            debitRow,
+            fingerprint,
+            sourceRows,
+            authoritativePreview
+          })
+        };
+      }
+    );
+    const executionEntry = { fingerprint, promise: execution, settled: false };
+    this.simpleIngressExecutions.set(operationId, executionEntry);
+    const rememberSettlement = () => {
+      if (this.simpleIngressExecutions.get(operationId) !== executionEntry) return;
+      executionEntry.settled = true;
+      let settledCount = [...this.simpleIngressExecutions.values()]
+        .filter((entry) => entry.settled === true)
+        .length;
+      if (settledCount <= 256) return;
+      for (const [cachedOperationId, cachedEntry] of this.simpleIngressExecutions) {
+        if (cachedEntry.settled !== true) continue;
+        this.simpleIngressExecutions.delete(cachedOperationId);
+        settledCount -= 1;
+        if (settledCount <= 256) break;
+      }
+    };
+    const discardExecution = () => {
+      if (this.simpleIngressExecutions.get(operationId) === executionEntry) {
+        this.simpleIngressExecutions.delete(operationId);
+      }
+    };
+    execution.then(
+      (settledDecision) => settledDecision?.mode === "simple"
+        ? rememberSettlement()
+        : discardExecution(),
+      (error) => error?.inventoryTransferMode === "simple"
+        ? rememberSettlement()
+        : discardExecution()
+    );
+    let decision;
+    try {
+      decision = await execution;
+    }
+    catch (error) {
+      if (error?.inventoryTransferMode !== "simple") {
+        this.simpleIngressExecutions.delete(operationId);
+      }
+      throw error;
+    }
+    if (decision.mode === "legacy") {
+      this.simpleIngressExecutions.delete(operationId);
+      return this.#commitLegacyInventoryIngressBatch(request, { resolveRows, debitRow, grantContainer });
+    }
+    return decision.value;
+  }
+
+  async #rollbackSimpleInventoryIngressTarget(actor, record, row, receipt) {
+    if (receipt.created) {
+      let item = this.#findInventoryIngressMutationItem(actor, record.id, row.sourceKey, receipt.outputIndex);
+      if (!item) return;
+      if (!inventoryQuantitiesMatch(getRawQuantity(item.toObject()), receipt.afterQuantity)) {
+        throw this.#inventoryReconciliationError("Inventory ingress created target changed before rollback.");
+      }
+      try {
+        await item.delete();
+      }
+      catch (error) {
+        item = this.#findInventoryIngressMutationItem(actor, record.id, row.sourceKey, receipt.outputIndex);
+        if (item) throw error;
+      }
+      if (this.#findInventoryIngressMutationItem(actor, record.id, row.sourceKey, receipt.outputIndex)) {
+        throw this.#inventoryReconciliationError("Inventory ingress created target still exists after rollback.");
+      }
+      return;
+    }
+
+    const item = actor.items.get(receipt.itemId);
+    if (!item) {
+      throw this.#inventoryReconciliationError("Inventory ingress merge target disappeared before rollback.");
+    }
+    const currentQuantity = getRawQuantity(item.toObject());
+    if (inventoryQuantitiesMatch(currentQuantity, receipt.beforeQuantity)) return;
+    if (!inventoryQuantitiesMatch(currentQuantity, receipt.afterQuantity)) {
+      throw this.#inventoryReconciliationError("Inventory ingress merge target changed before rollback.");
+    }
+    try {
+      await item.update({ "system.quantity": receipt.beforeQuantity });
+    }
+    catch (error) {
+      if (!inventoryQuantitiesMatch(getRawQuantity(item.toObject()), receipt.beforeQuantity)) throw error;
+    }
+    if (!inventoryQuantitiesMatch(getRawQuantity(item.toObject()), receipt.beforeQuantity)) {
+      throw this.#inventoryReconciliationError("Inventory ingress merge target was not restored.");
+    }
+  }
+
+  #inventoryIngressResultRow(row) {
+    let filterOutcome = null;
+    if (row.matchedRuleId && row.overrideToRoot) {
+      filterOutcome = { type: "root" };
+    }
+    else if (row.matchedRuleId && row.effectiveType === "folder") {
+      filterOutcome = {
+        type: "folder",
+        folderId: row.derivedFolderId,
+        folderName: cleanId(row.derivedFolderName) || row.derivedFolderId
+      };
+    }
+    return {
+      sourceKey: row.sourceKey,
+      matchedRuleId: row.matchedRuleId,
+      action: foundry.utils.deepClone(row.action),
+      overrideToRoot: row.overrideToRoot,
+      derivedFolderId: row.derivedFolderId,
+      changed: row.effectiveType !== "skip",
+      targetItemIds: row.targetReceipts.map((receipt) => receipt.itemId),
+      filterOutcome
+    };
+  }
+
+  async #commitSimpleInventoryIngressBatch(request, {
+    debitRow,
+    fingerprint,
+    sourceRows,
+    authoritativePreview
+  }) {
+    const groupActorId = cleanId(request.groupActorId);
+    const batchMutationId = cleanId(request.batchMutationId);
+    const sourceOrigin = cleanId(request.sourceOrigin);
+    const serializedPlan = foundry.utils.deepClone(request.serializedPlan);
+    const operationId = `inventory-ingress:${batchMutationId}`;
+    const planner = this.moduleApi.inventoryIngressPlanner;
+
+    return this.#runInventoryOrganizationMutation(groupActorId, async (actor) => {
+      this.#assertSourceDepletionAuthority();
+      const existing = await this.mutationJournal.find(operationId);
+      if (existing) {
+        this.#assertSimpleMutationRecord(existing, fingerprint);
+        const terminal = this.#readInventoryTerminal(existing);
+        if (terminal.terminal) return terminal.value;
+      }
+
+      planner.assertParity(serializedPlan, authoritativePreview);
+
+      const sourceByKey = new Map(sourceRows.map((row) => [cleanId(row.sourceKey), row]));
+      const overrideKeys = new Set(serializedPlan.rootOverrideSourceKeys ?? []);
+      let folderState = this.#readInventoryFolderState(actor);
+      const folderIds = new Set(folderState.folders.map((folder) => folder.id));
+      const rows = authoritativePreview.rows.map((previewRow) => this.#inventoryIngressDerivedRow(
+        previewRow,
+        sourceByKey.get(previewRow.sourceKey),
+        overrideKeys.has(previewRow.sourceKey)
+      ));
+      if (rows.some((row) => row.container || row.effectiveType === "dismantle")) {
+        throw new InventoryIngressRuleError(
+          "plan-stale",
+          "Inventory ingress became ineligible for the simple transfer path."
+        );
+      }
+      const missingFolder = rows.find((row) => row.derivedFolderId !== null && !folderIds.has(row.derivedFolderId));
+      if (missingFolder) {
+        throw new InventoryFolderStateError("folder-not-found", "Inventory ingress target folder was not found.");
+      }
+      for (const row of rows) {
+        const folder = folderState.folders.find((entry) => entry.id === row.derivedFolderId);
+        row.derivedFolderName = cleanId(folder?.name);
+      }
+
+      const inMemoryRecord = { id: operationId, rows };
+      const completedSourceKeys = [];
+      const skippedSourceKeys = [];
+      const resultRows = [];
+      let failedSourceKey = "";
+      let failure = null;
+      let rollbackFailure = null;
+
+      for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
+        const row = rows[rowIndex];
+        if (row.effectiveType === "skip") {
+          skippedSourceKeys.push(row.sourceKey);
+          resultRows.push(this.#inventoryIngressResultRow(row));
+          continue;
+        }
+        if (this.#findInventoryIngressMutationItem(actor, inMemoryRecord.id, row.sourceKey)) {
+          failedSourceKey = row.sourceKey;
+          failure = this.#simpleTransferError(
+            "transfer-manual-review",
+            "Inventory ingress has target value without a terminal outcome; manual review is required."
+          );
+          rollbackFailure = failure;
+          break;
+        }
+        row.targetReceipts = await this.#prepareInventoryIngressTargetReceipts(
+          actor,
+          folderState,
+          inMemoryRecord,
+          row,
+          null
+        );
+        try {
+          for (const receipt of row.targetReceipts) {
+            this.#assertSourceDepletionAuthority();
+            receipt.itemId = await this.#applyInventoryIngressTargetReceipt(actor, inMemoryRecord, row, receipt, null);
+            this.#assertSourceDepletionAuthority();
+            if (receipt.created) {
+              folderState = moveInventoryItemToFolderState(folderState, {
+                itemId: receipt.itemId,
+                folderId: receipt.folderId
+              });
+            }
+          }
+          await debitRow(sourceByKey.get(row.sourceKey), {
+            groupActorId,
+            batchMutationId,
+            sourceOrigin,
+            sourceKey: row.sourceKey,
+            targetReceipts: foundry.utils.deepClone(row.targetReceipts)
+          });
+          this.#assertSourceDepletionAuthority();
+          completedSourceKeys.push(row.sourceKey);
+          resultRows.push(this.#inventoryIngressResultRow(row));
+        }
+        catch (error) {
+          failedSourceKey = row.sourceKey;
+          failure = error;
+          try {
+            for (const receipt of [...row.targetReceipts].reverse()) {
+              this.#assertSourceDepletionAuthority();
+              await this.#rollbackSimpleInventoryIngressTarget(actor, inMemoryRecord, row, receipt);
+              this.#assertSourceDepletionAuthority();
+              if (receipt.created) {
+                folderState = moveInventoryItemToFolderState(folderState, {
+                  itemId: receipt.itemId,
+                  folderId: null
+                });
+              }
+            }
+          }
+          catch (errorDuringRollback) {
+            rollbackFailure = errorDuringRollback;
+          }
+          break;
+        }
+      }
+
+      const folderStateBeforeWrite = this.#readInventoryFolderState(actor);
+      if (JSON.stringify(folderStateBeforeWrite) !== JSON.stringify(folderState)) {
+        try {
+          this.#assertSourceDepletionAuthority();
+          await this.#writeInventoryFolderState(actor, folderState);
+          this.#assertSourceDepletionAuthority();
+        }
+        catch (folderError) {
+          if (JSON.stringify(this.#readInventoryFolderState(actor)) !== JSON.stringify(folderState)) {
+            failure ??= folderError;
+            rollbackFailure ??= folderError;
+          }
+        }
+      }
+
+      const unprocessedSourceKeys = failedSourceKey
+        ? rows.slice(rows.findIndex((row) => row.sourceKey === failedSourceKey) + 1).map((row) => row.sourceKey)
+        : [];
+      const partialDetails = {
+        actorId: actor.id,
+        batchMutationId,
+        changed: completedSourceKeys.length > 0,
+        completedSourceKeys,
+        skippedSourceKeys,
+        failedSourceKey,
+        unprocessedSourceKeys,
+        rows: resultRows
+      };
+      const terminalRecord = {
+        id: operationId,
+        kind: "inventory-simple-v1",
+        phase: "committed",
+        fingerprint,
+        operationType: "ingress-batch",
+        groupActorId: actor.id
+      };
+
+      if (failure) {
+        const manualReview = Boolean(rollbackFailure);
+        const code = manualReview ? "transfer-manual-review" : "inventory-ingress-partial";
+        await this.#finishSimpleFailure(
+          terminalRecord,
+          this.#simpleTransferError(code, cleanId(failure.message) || "Inventory ingress stopped after a row failure."),
+          {
+            ...partialDetails,
+            code,
+            failure: cleanId(failure.message),
+            ...(rollbackFailure ? { rollbackFailure: cleanId(rollbackFailure.message) } : {})
+          }
+        );
+      }
+
+      const result = {
+        actorId: actor.id,
+        batchMutationId,
+        changed: completedSourceKeys.length > 0,
+        completedSourceKeys,
+        skippedSourceKeys,
+        failedSourceKey: "",
+        unprocessedSourceKeys: [],
+        rows: resultRows,
+        inventoryTransferMode: "simple"
+      };
+      const audit = await this.#recordSimpleTerminal(terminalRecord, { ok: true, value: result });
+      if (!audit.auditPersisted) {
+        return {
+          ...foundry.utils.deepClone(result),
+          auditPersisted: false,
+          auditWarning: cleanId(audit.auditError?.message) || "Inventory audit outcome was not persisted."
+        };
+      }
+      return foundry.utils.deepClone(result);
+    });
+  }
+
+  async #commitLegacyInventoryIngressBatch(request, {
     resolveRows,
     debitRow,
     grantContainer = null
@@ -7052,13 +7788,14 @@ export class InventoryService {
     if (!isManagedPartyGroup(inventoryActor) || !(itemDocument instanceof Item)) {
       throw new Error("Некорректные документы импорта предмета.");
     }
-    await this.#importItemDocument(inventoryActor, itemDocument, {
+    const importResult = await this.#importItemDocument(inventoryActor, itemDocument, {
       mutationId: cleanId(payload.mutationId),
       groupActorId,
       folderId: normalizeInventoryFolderTarget(payload.folderId),
       serializedPlan: payload.ingressPlan
     });
     return {
+      ...foundry.utils.deepClone(importResult),
       actorId: inventoryActor.id,
       itemUuid: cleanId(payload.itemUuid)
     };
@@ -7209,7 +7946,8 @@ export class InventoryService {
         transferId: safeTransferId,
         sourceItemUuid: sourceItem.uuid,
         targetItemUuid: itemDocument.uuid,
-        targetReceipt: normalizedTargetReceipt
+        targetReceipt: normalizedTargetReceipt,
+        inventoryTransferMode: "simple"
       };
     }
 
@@ -7355,9 +8093,123 @@ export class InventoryService {
 
   async #executePartyInventorySourceDepletion(request) {
     this.#assertSourceDepletionAuthority();
-    let record = await this.#awaitSourceDepletionAuthority(
+    const fingerprint = this.#simpleMutationFingerprint("party-source-depletion", request);
+    const existing = await this.#awaitSourceDepletionAuthority(
       () => this.mutationJournal.find(request.transferId)
     );
+    if (existing?.kind !== "inventory-simple-v1") {
+      if (existing) return this.#executeLegacyPartyInventorySourceDepletion(request, existing);
+    }
+    else {
+      this.#assertSimpleMutationRecord(existing, fingerprint);
+      const terminal = this.#readInventoryTerminal(existing);
+      if (terminal.terminal) return terminal.value;
+      throw this.#simpleTransferError(
+        "transfer-manual-review",
+        "Party inventory source depletion has an incomplete simple terminal record.",
+        { operationId: request.transferId }
+      );
+    }
+
+    const sourceItem = await resolveUuid(request.sourceItemUuid);
+    if (!isItemDocument(sourceItem)) {
+      throw this.#simpleTransferError(
+        "transfer-manual-review",
+        "Party inventory source is missing without a terminal transfer outcome.",
+        {
+          operationId: request.transferId,
+          sourceItemUuid: request.sourceItemUuid,
+          targetItemUuid: request.targetItemUuid
+        }
+      );
+    }
+    const sourceActor = isActorDocument(sourceItem.parent) ? sourceItem.parent : null;
+    if (!isManagedPartyGroup(sourceActor)) {
+      throw new Error("Исходный предмет не находится в партийном складе.");
+    }
+    const { targetActor, targetItem } = await this.#resolveSourceDepletionParticipants(request, sourceActor.id);
+    if (!itemsCanRepresentSameTransfer(sourceItem, targetItem)
+      || !inventoryTransferIdentityMatches(sourceItem, request.expectedIdentity)
+      || !inventoryTransferIdentityMatches(targetItem, request.expectedIdentity)
+      || !inventoryQuantitiesMatch(getRawQuantity(sourceItem.toObject()), request.expectedQuantity)
+      || !inventoryQuantitiesMatch(getRawQuantity(targetItem.toObject()), request.targetReceipt.afterQuantity)) {
+      throw this.#simpleTransferError(
+        "transfer-manual-review",
+        "Received item no longer matches the captured source transfer.",
+        {
+          operationId: request.transferId,
+          sourceActorId: sourceActor.id,
+          targetActorId: targetActor.id,
+          sourceItemUuid: request.sourceItemUuid,
+          targetItemUuid: request.targetItemUuid
+        }
+      );
+    }
+
+    const terminalRecord = {
+      id: request.transferId,
+      kind: "inventory-simple-v1",
+      phase: "committed",
+      fingerprint,
+      operationType: "party-source-depletion",
+      sourceActorId: sourceActor.id,
+      targetActorId: targetActor.id
+    };
+    try {
+      this.#assertSourceDepletionAuthority();
+      await this.#applySourceReceipt(sourceActor, {
+        itemId: sourceItem.id,
+        beforeQuantity: request.expectedQuantity,
+        afterQuantity: 0,
+        delta: request.expectedQuantity
+      });
+      this.#assertSourceDepletionAuthority();
+    }
+    catch (error) {
+      const sourceState = this.#sourceReceiptState(sourceActor, {
+        itemId: sourceItem.id,
+        beforeQuantity: request.expectedQuantity,
+        afterQuantity: 0
+      });
+      const code = sourceState.before ? "source-debit-failed" : "transfer-manual-review";
+      await this.#finishSimpleFailure(
+        terminalRecord,
+        this.#simpleTransferError(code, cleanId(error?.message) || "Party inventory source debit failed."),
+        {
+          operationId: request.transferId,
+          sourceActorId: sourceActor.id,
+          targetActorId: targetActor.id,
+          sourceItemUuid: request.sourceItemUuid,
+          targetItemUuid: request.targetItemUuid,
+          expectedSourceQuantity: request.expectedQuantity
+        }
+      );
+    }
+
+    const result = {
+      handled: true,
+      actorId: sourceActor.id,
+      targetActorId: targetActor.id,
+      transferId: request.transferId,
+      sourceItemUuid: request.sourceItemUuid,
+      targetItemUuid: request.targetItemUuid,
+      targetReceipt: request.targetReceipt,
+      inventoryTransferMode: "simple"
+    };
+    const audit = await this.#recordSimpleTerminal(terminalRecord, { ok: true, value: result });
+    if (!audit.auditPersisted) {
+      return {
+        ...foundry.utils.deepClone(result),
+        auditPersisted: false,
+        auditWarning: cleanId(audit.auditError?.message) || "Inventory audit outcome was not persisted."
+      };
+    }
+    return foundry.utils.deepClone(result);
+  }
+
+  async #executeLegacyPartyInventorySourceDepletion(request, existingRecord = null) {
+    this.#assertSourceDepletionAuthority();
+    let record = existingRecord;
     if (!record) {
       record = await this.#prepareSourceDepletionRecord(request);
     }
@@ -7420,8 +8272,28 @@ export class InventoryService {
       return false;
     }
     const request = this.#normalizeSourceDepletionRequest(payload, senderId);
-    return this.mutationCoordinator.run(
+    const fingerprint = this.#simpleMutationFingerprint("party-source-depletion", request);
+    const existing = await this.mutationJournal.find(request.transferId);
+    if (existing?.kind !== "inventory-simple-v1") {
+      if (existing) {
+        return this.mutationCoordinator.run(
+          "inventory",
+          async () => this.#executeLegacyPartyInventorySourceDepletion(
+            request,
+            await this.mutationJournal.find(request.transferId)
+          )
+        );
+      }
+    }
+    else {
+      this.#assertSimpleMutationRecord(existing, fingerprint);
+      const terminal = this.#readInventoryTerminal(existing);
+      if (terminal.terminal) return terminal.value;
+    }
+    this.#claimSimpleMutationFingerprint(request.transferId, fingerprint);
+    return this.mutationCoordinator.runIdempotent(
       "inventory",
+      `inventory-simple:party-source-depletion:${request.transferId}:${fingerprint}`,
       () => this.#executePartyInventorySourceDepletion(request)
     );
   }

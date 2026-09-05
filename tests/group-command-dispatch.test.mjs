@@ -1124,7 +1124,7 @@ test("typed inventory mutations authorize group members and dispatch strict payl
     const calls = [];
     moduleApi.inventoryService.executeTakeMutation = async (payload) => {
       calls.push(["take", clone(payload)]);
-      return { action: "take" };
+      return { action: "take", inventoryTransferMode: "simple" };
     };
     moduleApi.inventoryService.executeSaleMutation = async (payload) => {
       calls.push(["sale", clone(payload)]);
@@ -1635,6 +1635,67 @@ test("direct Lootgen take-all sends one optimized typed batch through the active
     assert.deepEqual(calls.socket[0].payload.ingressPlan, ingressPlan);
   }
   finally {
+    fixture.restore();
+  }
+});
+
+test("player ingress rejection still schedules a non-blocking scoped refresh for a simple partial result", async () => {
+  const fixture = installFixture({ currentUserId: "player-a" });
+  const moduleApi = new RebreyaMainModule();
+  const source = {
+    sourceType: "gear",
+    sourceId: "partial-source",
+    sourceDocumentId: "",
+    isBroken: false,
+    quantity: 1,
+    directGrantId: "partial-row"
+  };
+  const ingressPlan = buildLootgenIngressPlan(fixture.groupA.id, [source.directGrantId]);
+  let refreshCalls = 0;
+  let releaseRefresh;
+  moduleApi.inventoryService.buildLootgenItemData = async () => ({
+    name: "Partial source",
+    type: "loot",
+    system: { quantity: 1 },
+    flags: { [MODULE_ID]: { sourceType: "gear", sourceId: source.sourceId } }
+  });
+  moduleApi.inventoryIngressPlanner = {
+    async preview(request) { return { request }; },
+    async collectChoices() { return { rootOverrideSourceKeys: [] }; },
+    serialize() { return ingressPlan; }
+  };
+  moduleApi.socketCommandBus.request = async () => {
+    const error = new Error("partial inventory ingress");
+    error.code = "inventory-ingress-partial";
+    error.inventoryTransferMode = "simple";
+    error.changed = true;
+    error.completedSourceKeys = [source.directGrantId];
+    throw error;
+  };
+  moduleApi.refreshInventoryViews = async ({ actorIds }) => {
+    refreshCalls += 1;
+    assert.deepEqual(actorIds, [fixture.groupA.id]);
+    await new Promise((resolve) => { releaseRefresh = resolve; });
+  };
+
+  try {
+    const rejection = moduleApi.addLootgenRowsToInventory([source], {
+      batchMutationId: "partial-player-batch"
+    }).then(
+      () => ({ resolved: true }),
+      (error) => ({ resolved: false, error })
+    );
+    const outcome = await Promise.race([
+      rejection,
+      new Promise((resolve) => setTimeout(() => resolve({ timedOut: true }), 50))
+    ]);
+    assert.equal(outcome.timedOut, undefined);
+    assert.equal(outcome.resolved, false);
+    assert.equal(outcome.error.code, "inventory-ingress-partial");
+    assert.equal(refreshCalls, 1);
+  }
+  finally {
+    releaseRefresh?.();
     fixture.restore();
   }
 });

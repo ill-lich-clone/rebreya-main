@@ -12,6 +12,36 @@ function cleanId(value) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function normalizeInventoryPartialFailure(error) {
+  const code = cleanId(error?.code);
+  const completedSourceKeys = Array.isArray(error?.completedSourceKeys)
+    ? error.completedSourceKeys.map(cleanId).filter(Boolean)
+    : [];
+  const failedSourceKey = cleanId(error?.failedSourceKey);
+  const hasStructuredOutcome = Boolean(failedSourceKey)
+    || completedSourceKeys.length > 0
+    || error?.changed === true;
+  if (!new Set(["inventory-ingress-partial", "transfer-manual-review"]).has(code)
+    || !hasStructuredOutcome) return null;
+  return {
+    code,
+    message: cleanId(error.message) || "Inventory ingress completed only part of the loot claim.",
+    actorId: cleanId(error.actorId),
+    batchMutationId: cleanId(error.batchMutationId),
+    completedSourceKeys,
+    skippedSourceKeys: Array.isArray(error?.skippedSourceKeys)
+      ? error.skippedSourceKeys.map(cleanId).filter(Boolean)
+      : [],
+    failedSourceKey,
+    unprocessedSourceKeys: Array.isArray(error?.unprocessedSourceKeys)
+      ? error.unprocessedSourceKeys.map(cleanId).filter(Boolean)
+      : [],
+    changed: error?.changed === true || completedSourceKeys.length > 0,
+    rows: Array.isArray(error?.rows) ? clone(error.rows) : [],
+    inventoryTransferMode: cleanId(error?.inventoryTransferMode)
+  };
+}
+
 function normalizeState(value, lootId) {
   const state = value && typeof value === "object" && !Array.isArray(value)
     ? clone(value)
@@ -120,7 +150,7 @@ export class LootClaimService {
         if (claim.kind !== "batch" || claim.fingerprint !== fingerprint) {
           throw new Error("Loot claim id conflicts with an existing claim");
         }
-        if (claim.phase === "committed") return clone(claim.result);
+        if (claim.phase === "committed") return this.#returnBatchResult(claim.result);
       }
       else {
         const availableRowIds = rowIds.filter((rowId) => {
@@ -150,15 +180,31 @@ export class LootClaimService {
         const selectedRows = claim.rowIds.map((rowId) => (
           state.rows.find((row) => cleanId(row?.rowId) === rowId)
         )).filter(Boolean);
-        const grantResult = await this.grantBatch({
-          claimId,
-          lootId,
-          rows: clone(selectedRows),
-          coins: clone(state.coins),
-          includeCoins: claim.includeCoins,
-          ingressPlan: clone(claim.ingressPlan),
-          message
-        });
+        let grantResult;
+        let partialFailure = null;
+        try {
+          grantResult = await this.grantBatch({
+            claimId,
+            lootId,
+            rows: clone(selectedRows),
+            coins: clone(state.coins),
+            includeCoins: claim.includeCoins,
+            ingressPlan: clone(claim.ingressPlan),
+            message
+          });
+        }
+        catch (error) {
+          partialFailure = normalizeInventoryPartialFailure(error);
+          if (!partialFailure) throw error;
+          grantResult = {
+            acceptedRowIds: partialFailure.completedSourceKeys,
+            coinsGranted: false,
+            receipt: {
+              actorId: partialFailure.actorId,
+              batchMutationId: partialFailure.batchMutationId || claimId
+            }
+          };
+        }
         const acceptedRowIds = Array.isArray(grantResult?.acceptedRowIds)
           ? grantResult.acceptedRowIds.map(cleanId)
           : [];
@@ -171,7 +217,9 @@ export class LootClaimService {
         claim.grantResult = {
           acceptedRowIds,
           coinsGranted: grantResult?.coinsGranted === true && claim.includeCoins,
-          receipt: clone(grantResult?.receipt ?? null)
+          receipt: clone(grantResult?.receipt ?? null),
+          partialFailure: clone(partialFailure),
+          inventoryTransferMode: cleanId(grantResult?.inventoryTransferMode)
         };
         state = await this.#writeAndConfirm(message, state, claimId, "granted");
         claim = state.claims.find((entry) => entry.id === claimId);
@@ -188,15 +236,32 @@ export class LootClaimService {
           changed: accepted.size > 0 || claim.grantResult.coinsGranted,
           claimedRowIds: [...claim.grantResult.acceptedRowIds],
           claimedCoins: claim.grantResult.coinsGranted,
-          receipt: clone(claim.grantResult.receipt)
+          receipt: clone(claim.grantResult.receipt),
+          ...(claim.grantResult.partialFailure
+            ? { partialFailure: clone(claim.grantResult.partialFailure) }
+            : {}),
+          ...(claim.grantResult.inventoryTransferMode
+            ? { inventoryTransferMode: claim.grantResult.inventoryTransferMode }
+            : {})
         };
         state.claims = retainClaims(state.claims);
         state = await this.#writeAndConfirm(message, state, claimId, "committed");
         claim = state.claims.find((entry) => entry.id === claimId);
       }
-      if (claim.phase === "committed") return clone(claim.result);
+      if (claim.phase === "committed") return this.#returnBatchResult(claim.result);
       throw new Error(`Unsupported loot batch claim phase: ${String(claim.phase)}`);
     });
+  }
+
+  #returnBatchResult(result) {
+    const detached = clone(result);
+    const partialFailure = detached?.partialFailure;
+    if (!partialFailure) return detached;
+    const error = new Error(partialFailure.message || "Inventory ingress completed only part of the loot claim.");
+    error.code = partialFailure.code || "inventory-ingress-partial";
+    error.details = clone(partialFailure);
+    Object.assign(error, clone(partialFailure));
+    throw error;
   }
 
   async #writeAndConfirm(message, state, claimId, expectedPhase) {

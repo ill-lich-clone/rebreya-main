@@ -12,10 +12,20 @@ const DEFAULT_MUTATION_KEY = "world";
 const textEncoder = new TextEncoder();
 
 export class SocketCommandError extends Error {
-  constructor(code, message) {
+  constructor(code, message, details = null) {
     super(message);
     this.name = "SocketCommandError";
     this.code = code;
+    const detached = normalizeErrorDetails(details);
+    if (detached) {
+      this.details = detached;
+      const reserved = new Set([
+        "name", "message", "code", "stack", "cause", "details", "__proto__", "prototype", "constructor"
+      ]);
+      for (const [key, value] of Object.entries(detached)) {
+        if (!reserved.has(key)) this[key] = value;
+      }
+    }
   }
 }
 
@@ -54,7 +64,19 @@ function isValidResultError(error) {
     isPlainObject(error)
     && nonEmptyString(error.code)
     && nonEmptyString(error.message)
+    && (error.details === undefined || isPlainObject(error.details))
   );
+}
+
+function normalizeErrorDetails(value) {
+  if (!isPlainObject(value)) return null;
+  try {
+    const detached = JSON.parse(JSON.stringify(value));
+    return isPlainObject(detached) ? detached : null;
+  }
+  catch {
+    return null;
+  }
 }
 
 function requestCorrelation(message) {
@@ -95,11 +117,13 @@ function findUser(game, userId) {
 
 function normalizeError(error, fallbackCode, fallbackMessage) {
   if (error instanceof SocketCommandError) {
-    return { code: error.code, message: error.message };
+    const details = normalizeErrorDetails(error.details);
+    return { code: error.code, message: error.message, ...(details ? { details } : {}) };
   }
   const code = nonEmptyString(error?.code) ? error.code : fallbackCode;
   const message = nonEmptyString(error?.message) ? error.message : fallbackMessage;
-  return { code, message };
+  const details = normalizeErrorDetails(error?.details);
+  return { code, message, ...(details ? { details } : {}) };
 }
 
 function errorOutcome(code, message) {
@@ -400,7 +424,7 @@ export class SocketCommandBus {
       "command-failed",
       "Socket command failed"
     );
-    pending.reject(new SocketCommandError(error.code, error.message));
+    pending.reject(new SocketCommandError(error.code, error.message, error.details ?? null));
   }
 
   #emitOutcome(correlation, outcome, game) {

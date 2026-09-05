@@ -2389,8 +2389,10 @@ test("takeInventoryItemToCharacter moves one party inventory item to a character
     isOwner: true
   });
   const fixture = installInventoryFixture({
-    actors: [groupActor, heroActor]
+    actors: [groupActor, heroActor],
+    user: { id: "gm", isGM: true, active: true }
   });
+  globalThis.game.users = { activeGM: globalThis.game.user };
   const service = new InventoryService({
     groupContextService: {
       resolveForCurrentUser: () => ({ groupActor })

@@ -2475,7 +2475,7 @@ test("ingress target create and merge recover lost acknowledgements without dupl
   }
 });
 
-test("ingress retry after source debit failure reuses target receipt and terminal retry is inert", async () => {
+test("ordinary ingress rolls back the current target after source debit failure and terminal retry is inert", async () => {
   const itemData = inventoryIngressItemData("retry-item", { name: "Retry item", type: "loot" });
   const group = createActor({ id: "ingress-retry-group", type: "group", managed: true });
   const fixture = createInventoryIngressFixture({ group });
@@ -2492,8 +2492,7 @@ test("ingress retry after source debit failure reuses target receipt and termina
     },
     debitRow: async () => {
       debitCalls += 1;
-      sourceQuantity = 0;
-      if (debitCalls === 1) throw new Error("source debit acknowledgment lost");
+      throw new Error("source debit failed");
     }
   };
 
@@ -2505,21 +2504,24 @@ test("ingress retry after source debit failure reuses target receipt and termina
       sourceOrigin: "storage",
       serializedPlan
     };
-    await assert.rejects(fixture.service.commitInventoryIngressBatch(request, callbacks), /source debit acknowledgment lost/u);
-    assert.equal(group.items.contents.length, 1);
-    assert.equal(group.items.contents[0].system.quantity, 2);
-    assert.equal(sourceQuantity, 0);
+    await assert.rejects(
+      fixture.service.commitInventoryIngressBatch(request, callbacks),
+      (error) => error?.code === "inventory-ingress-partial"
+        && error?.failedSourceKey === "retry-row"
+    );
+    assert.equal(group.items.contents.length, 0);
+    assert.equal(sourceQuantity, 2);
 
-    const result = await fixture.service.commitInventoryIngressBatch(request, callbacks);
-    const terminalResult = await fixture.service.commitInventoryIngressBatch(request, callbacks);
-
-    assert.deepEqual(terminalResult, result);
-    assert.equal(group.items.contents.length, 1);
-    assert.equal(group.items.contents[0].system.quantity, 2);
-    assert.equal(sourceQuantity, 0);
-    assert.equal(resolveCalls, 2);
-    assert.equal(debitCalls, 2);
-    assert.deepEqual(recoveryModes, [false, true]);
+    await assert.rejects(
+      fixture.service.commitInventoryIngressBatch(request, callbacks),
+      (error) => error?.code === "inventory-ingress-partial"
+        && error?.failedSourceKey === "retry-row"
+    );
+    assert.equal(group.items.contents.length, 0);
+    assert.equal(sourceQuantity, 2);
+    assert.equal(resolveCalls, 1);
+    assert.equal(debitCalls, 1);
+    assert.deepEqual(recoveryModes, [false]);
   }
   finally {
     fixture.restore();
@@ -2996,7 +2998,77 @@ test("distributed source depletion observes a delete whose acknowledgment was lo
     const record = fixture.settingsStore[SETTINGS_KEYS.INVENTORY_MUTATION_JOURNAL].records
       .find((entry) => entry.id === payload.transferId);
     assert.equal(record.terminal, true);
-    assert.equal(record.kind, "party-inventory-source-depletion");
+    assert.equal(record.kind, "inventory-simple-v1");
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("concurrent retries of a legacy prepared source depletion re-read the terminal record inside the queue", async () => {
+  const gm = { id: "gm", isGM: true, active: true };
+  const player = { id: "player", isGM: false, active: true };
+  let deleteCalls = 0;
+  const source = createItem({
+    id: "legacy-concurrent-source",
+    name: "Legacy concurrent source",
+    quantity: 1,
+    flags: { [MODULE_ID]: { sourceType: "gear", sourceId: "legacy-concurrent" } },
+    onDelete: () => { deleteCalls += 1; }
+  });
+  const target = createItem({
+    id: "legacy-concurrent-target",
+    name: source.name,
+    quantity: 1,
+    flags: clone(source.flags)
+  });
+  const hero = createActor({ id: "legacy-concurrent-hero", items: [target], owners: [player.id] });
+  const group = createActor({
+    id: "legacy-concurrent-group",
+    type: "group",
+    managed: true,
+    items: [source],
+    members: [{ actor: hero }]
+  });
+  const fixture = installFixture({
+    group,
+    actors: [group, hero],
+    uuidDocuments: new Map([[source.uuid, source], [target.uuid, target], [hero.uuid, hero]]),
+    user: gm,
+    activeGM: gm,
+    users: [player],
+    hideDeletedUuidDocuments: true
+  });
+  const payload = buildSourceDepletionPayload(source, target, "party-transfer:legacy-concurrent");
+  fixture.settingsStore[SETTINGS_KEYS.INVENTORY_MUTATION_JOURNAL] = {
+    version: 1,
+    records: [{
+      id: payload.transferId,
+      kind: "party-inventory-source-depletion",
+      phase: "prepared",
+      request: {
+        transferId: payload.transferId,
+        senderId: player.id,
+        sourceItemUuid: payload.sourceItemUuid,
+        targetItemUuid: payload.targetItemUuid,
+        targetActorUuid: payload.targetActorUuid,
+        expectedIdentity: clone(payload.expectedIdentity),
+        expectedQuantity: payload.expectedQuantity,
+        targetReceipt: clone(payload.targetReceipt)
+      },
+      sourceActorId: group.id,
+      targetActorId: hero.id
+    }]
+  };
+
+  try {
+    const [first, second] = await Promise.all([
+      fixture.service.handlePartyInventorySourceDepletionSocketRequest(payload, { senderId: player.id }),
+      fixture.service.handlePartyInventorySourceDepletionSocketRequest(payload, { senderId: player.id })
+    ]);
+    assert.deepEqual(second, first);
+    assert.equal(deleteCalls, 1);
+    assert.equal(group.items.contents.includes(source), false);
   }
   finally {
     fixture.restore();
@@ -3038,9 +3110,10 @@ test("distributed source depletion survives source-deleted journal ACK loss", as
     users: [player],
     hideDeletedUuidDocuments: true,
     afterSettingsSet: ({ key, value }) => {
-      const phase = value?.records?.find((entry) => entry.id === "party-transfer:journal-ack-lost")?.phase;
+      const record = value?.records?.find((entry) => entry.id === "party-transfer:journal-ack-lost");
       if (key === SETTINGS_KEYS.INVENTORY_MUTATION_JOURNAL
-        && phase === "source-depleted"
+        && record?.phase === "committed"
+        && record?.kind === "inventory-simple-v1"
         && !checkpointAckLost) {
         checkpointAckLost = true;
         throw new Error("source-deleted journal acknowledgment lost");
@@ -3067,7 +3140,7 @@ test("distributed source depletion survives source-deleted journal ACK loss", as
   }
 });
 
-test("a new active GM completes a prepared source deletion without a second effect", async () => {
+test("a new active GM does not resume simple source deletion without a terminal outcome", async () => {
   const oldGm = { id: "old-gm", isGM: true, active: true };
   const newGm = { id: "new-gm", isGM: true, active: true };
   const player = { id: "player", isGM: false, active: true };
@@ -3113,14 +3186,14 @@ test("a new active GM completes a prepared source deletion without a second effe
       /active GM/iu
     );
     globalThis.game.user = newGm;
-    const retry = await fixture.service.handlePartyInventorySourceDepletionSocketRequest(payload, { senderId: player.id });
-
-    assert.equal(retry.handled, true);
+    await assert.rejects(
+      fixture.service.handlePartyInventorySourceDepletionSocketRequest(payload, { senderId: player.id }),
+      (error) => error?.code === "transfer-manual-review"
+    );
     assert.equal(deleteCalls, 1);
     assert.equal(group.items.contents.includes(source), false);
-    const record = fixture.settingsStore[SETTINGS_KEYS.INVENTORY_MUTATION_JOURNAL].records
-      .find((entry) => entry.id === payload.transferId);
-    assert.equal(record.terminal, true);
+    const records = fixture.settingsStore[SETTINGS_KEYS.INVENTORY_MUTATION_JOURNAL].records ?? [];
+    assert.equal(records.some((entry) => entry.id === payload.transferId), false);
   }
   finally {
     fixture.restore();
@@ -3592,7 +3665,7 @@ test("sale reverses credited currency when source depletion fails", async () => 
   }
 });
 
-test("import source debit failure remains recoverable without duplicating target value", async () => {
+test("import source debit failure compensates target value and replays the terminal failure", async () => {
   const source = createItem({ id: "import-source", name: "Lantern", quantity: 1, failDelete: true });
   const hero = createActor({ id: "hero", items: [source] });
   const group = createActor({
@@ -3609,15 +3682,13 @@ test("import source debit failure remains recoverable without duplicating target
       fixture.service.importDroppedItem({ uuid: source.uuid, mutationId: "import-failure" }),
       /source delete failed/u
     );
-    assert.equal(group.items.contents.length, 1);
-    assert.equal(group.items.contents[0].system.quantity, 1);
+    assert.equal(group.items.contents.length, 0);
     assert.equal(hero.items.contents.includes(source), true);
     await assert.rejects(
       fixture.service.importDroppedItem({ uuid: source.uuid, mutationId: "import-failure" }),
       /source delete failed/u
     );
-    assert.equal(group.items.contents.length, 1);
-    assert.equal(group.items.contents[0].system.quantity, 1);
+    assert.equal(group.items.contents.length, 0);
   }
   finally {
     fixture.restore();
@@ -3680,7 +3751,7 @@ test("import merge preserves the existing stack folder instead of applying the r
   }
 });
 
-test("import retries folder assignment after create without duplicating the Item", async () => {
+test("import reports terminal partial outcome when final folder assignment fails", async () => {
   const source = createItem({ id: "import-source", name: "Rope", quantity: 1 });
   const hero = createActor({ id: "hero", items: [source] });
   const group = createActor({
@@ -3719,7 +3790,7 @@ test("import retries folder assignment after create without duplicating the Item
     );
     assert.equal(group.items.contents.length, 1);
     assert.equal(group.createEmbeddedDocumentsCalls, 1);
-    assert.equal(hero.items.contents.includes(source), true);
+    assert.equal(hero.items.contents.includes(source), false);
     assert.deepEqual(group.getFlag(MODULE_ID, "inventoryFolders").itemFolderIds, {});
 
     await assert.rejects(
@@ -3729,18 +3800,18 @@ test("import retries folder assignment after create without duplicating the Item
       }),
       (error) => error?.code === "mutation-conflict"
     );
-    await fixture.service.importDroppedItem(dropData, {
-      groupActorId: "group",
-      folderId: "folder-new"
-    });
+    await assert.rejects(
+      () => fixture.service.importDroppedItem(dropData, {
+        groupActorId: "group",
+        folderId: "folder-new"
+      }),
+      (error) => error?.code === "transfer-manual-review"
+    );
 
     assert.equal(group.items.contents.length, 1);
     assert.equal(group.createEmbeddedDocumentsCalls, 1);
     assert.equal(hero.items.contents.includes(source), false);
-    assert.equal(
-      group.getFlag(MODULE_ID, "inventoryFolders").itemFolderIds[group.items.contents[0].id],
-      "folder-new"
-    );
+    assert.deepEqual(group.getFlag(MODULE_ID, "inventoryFolders").itemFolderIds, {});
   }
   finally {
     fixture.restore();

@@ -25,6 +25,33 @@ function clean(value) {
   return String(value ?? "").trim();
 }
 
+export function formatStorageTransferError(error) {
+  const completed = Array.isArray(error?.completedSourceKeys)
+    ? error.completedSourceKeys.map(clean).filter(Boolean)
+    : [];
+  const failed = clean(error?.failedSourceKey);
+  const unprocessed = Array.isArray(error?.unprocessedSourceKeys)
+    ? error.unprocessedSourceKeys.map(clean).filter(Boolean)
+    : [];
+  if (error?.code === "transfer-manual-review") {
+    const progress = completed.length
+      ? ` Перенесено строк до остановки: ${completed.length}.`
+      : "";
+    return failed
+      ? `Перенос остановлен на строке «${failed}». Требуется ручная сверка хранилища и партийного инвентаря.${progress}`
+      : `Перенос требует ручной сверки хранилища и партийного инвентаря.${progress}`;
+  }
+  if (completed.length || failed || error?.code === "inventory-ingress-partial") {
+    const parts = [
+      `Перенесено строк: ${completed.length}`,
+      failed ? `ошибка на строке «${failed}»` : "пакет завершён частично",
+      `не обработано: ${unprocessed.length}`
+    ];
+    return `${parts.join("; ")}. Повторите действие только для оставшихся строк.`;
+  }
+  return error?.message ?? "Не удалось выполнить действие хранилища.";
+}
+
 function clone(value) {
   return globalThis.foundry?.utils?.deepClone
     ? globalThis.foundry.utils.deepClone(value)
@@ -679,7 +706,12 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
     }
     catch (error) {
       console.error(`${MODULE_ID} | Storage action failed.`, error);
-      globalThis.ui?.notifications?.error(error?.message ?? "Не удалось выполнить действие хранилища.");
+      if (["inventory-ingress-partial", "transfer-manual-review"].includes(clean(error?.code))) {
+        Promise.resolve(this.#refresh()).catch((refreshError) => {
+          console.error(`${MODULE_ID} | Storage refresh after partial transfer failed.`, refreshError);
+        });
+      }
+      globalThis.ui?.notifications?.error(formatStorageTransferError(error));
     }
   }
 
