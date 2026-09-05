@@ -1,3 +1,4 @@
+import { splitLegacyCoinRows, migrateLegacyCoinRowsInState } from "./storage-service.js";
 import { MODULE_ID } from "../constants.js";
 import { GROUND_PILE_PRESET_ID } from "./builtin-storage-presets.js";
 import {
@@ -135,54 +136,6 @@ function coinRowDenomination(row) {
   return readStorageCoinDenomination(row?.itemData ?? row);
 }
 
-function splitLegacyCoinRows(rows, claimedRowIds) {
-  const claimed = new Set(claimedRowIds ?? []);
-  const keptRows = [];
-  let convertedCoins = normalizedCoins({});
-  let convertedRows = 0;
-  const removedRowIds = [];
-  for (const row of Array.isArray(rows) ? rows : []) {
-    const denomination = coinRowDenomination(row);
-    if (!denomination) {
-      keptRows.push(clone(row));
-      continue;
-    }
-    const rowId = clean(row?.rowId);
-    removedRowIds.push(rowId);
-    convertedRows += 1;
-    if (claimed.has(rowId)) continue;
-    const quantity = Number(row?.quantity ?? row?.itemData?.system?.quantity);
-    if (!Number.isSafeInteger(quantity) || quantity < 1) {
-      throw new Error("Количество managed Coin Item в наземной куче должно быть положительным безопасным целым числом.");
-    }
-    convertedCoins = addManualCoinsChecked(convertedCoins, { [denomination]: quantity });
-  }
-  return { rows: keptRows, convertedCoins, convertedRows, removedRowIds };
-}
-
-function migrateLegacyCoinRowsInState(state) {
-  const claimedRowIds = state?.claimedRowIds ?? [];
-  const manual = splitLegacyCoinRows(state?.manualRows, claimedRowIds);
-  const generated = splitLegacyCoinRows(state?.generatedRows, claimedRowIds);
-  const convertedRows = manual.convertedRows + generated.convertedRows;
-  if (convertedRows === 0) return null;
-  const convertedCoins = addManualCoinsChecked(manual.convertedCoins, generated.convertedCoins);
-  const hasConvertedCoins = hasPositiveCoins(convertedCoins);
-  const discardClaimedBalances = hasConvertedCoins && state?.coinsClaimed === true;
-  const removed = new Set([...manual.removedRowIds, ...generated.removedRowIds].filter(Boolean));
-  return {
-    state: {
-      ...state,
-      manualRows: manual.rows,
-      generatedRows: generated.rows,
-      claimedRowIds: claimedRowIds.filter((rowId) => !removed.has(clean(rowId))),
-      manualCoins: addManualCoinsChecked(discardClaimedBalances ? {} : state?.manualCoins, convertedCoins),
-      generatedCoins: discardClaimedBalances ? normalizedCoins({}) : state?.generatedCoins,
-      coinsClaimed: hasConvertedCoins ? false : state?.coinsClaimed
-    },
-    convertedRows
-  };
-}
 
 function tokenContainsPoint(token, scene, x, y) {
   const gridSize = Math.max(1, Number(scene?.grid?.size ?? scene?.grid?.sizeX ?? 100) || 100);

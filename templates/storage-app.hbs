@@ -100,13 +100,14 @@
           </button>
         </article>
       {{/each}}
-      {{#if hasCoins}}
-        <article class="rm-storage-item rm-storage-item--coins" data-row-id="__coins">
-          <button type="button" class="rm-storage-item__icon" data-action="storage-toggle-coins" aria-expanded="{{coinsExpanded}}" aria-label="Открыть монеты: {{coinsLabel}}">
-            <i class="fa-solid fa-coins rm-storage-item__placeholder"></i>
+      {{#each coinRows}}
+        <article class="rm-storage-item rm-storage-item--coins" data-row-id="{{rowId}}">
+          <button type="button" class="rm-storage-item__icon" data-action="storage-toggle-coins" data-row-id="{{rowId}}" aria-expanded="{{expanded}}" aria-label="Открыть монеты: {{name}}">
+            <img src="{{img}}" alt="{{name}}">
+            <span class="rm-storage-item__quantity">{{quantity}}</span>
           </button>
         </article>
-      {{/if}}
+      {{/each}}
 
       {{#if activePopover}}
     <div

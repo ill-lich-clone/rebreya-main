@@ -137,14 +137,14 @@ test("main registers the storage deposit socket API and current cache keys", asy
   assert.match(main, /this\.storageContainerItemService = new StorageContainerItemService\(\);/u);
   assert.match(main, /await this\.storageGroundPileService\.repairLegacyCoinRows\(\);/u);
   for (const importPath of [
-    "data/storage-service.js?v=1.4.200-storage-broken-presentation",
+    "data/storage-service.js?v=1.4.224-coin-stacks",
     "data/storage-open-sound-service.js?v=1.4.145-coin-icons-storage-sound",
     "data/storage-access.js?v=1.4.197-door-trigger-target",
     "data/builtin-storage-actor-service.js?v=1.4.216-storage-token-vision",
-    "data/storage-ground-pile-service.js?v=1.4.215-container-rotation",
+    "data/storage-ground-pile-service.js?v=1.4.224-coin-stacks",
     "data/storage-container-item-service.js?v=1.4.215-container-rotation",
     "data/storage-deposit-source.js?v=1.4.195-storage-administration",
-    "data/storage-command-service.js?v=1.4.222-journal-record-drop",
+    "data/storage-command-service.js?v=1.4.224-coin-stacks",
     "data/storage-trigger-service.js?v=1.4.197-door-trigger-target",
     "integrations/storage-token-hooks.js?v=1.4.197-door-trigger-target",
     "combat/hooks.js?v=1.4.191-magic-item-runtime",
@@ -155,7 +155,7 @@ test("main registers the storage deposit socket API and current cache keys", asy
     assert.equal(main.includes(importPath), true, importPath);
   }
   for (const importPath of [
-    "storage-service.js?v=1.4.200-storage-broken-presentation",
+    "storage-service.js?v=1.4.224-coin-stacks",
     "storage-deposit-source.js?v=1.4.195-storage-administration",
     "storage-access.js?v=1.4.197-door-trigger-target"
   ]) {
@@ -172,7 +172,7 @@ test("main registers the storage deposit socket API and current cache keys", asy
   ]) {
     assert.equal(storageHooks.includes(importPath), true, importPath);
   }
-  assert.equal(manifest.version, "1.4.223");
+  assert.equal(manifest.version, "1.4.224");
   assert.match(main, /await registerStorageContainerHierarchyHooks\(\{ Hooks \}\)/u);
 });
 

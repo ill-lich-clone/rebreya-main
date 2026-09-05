@@ -1,4 +1,4 @@
-import { normalizeLootgenForm } from "./lootgen-generator.js?v=1.4.223-coin-reserve";
+import { normalizeLootgenForm } from "./lootgen-generator.js?v=1.4.224-coin-stacks";
 
 const CATALOG_VERSION = 2;
 

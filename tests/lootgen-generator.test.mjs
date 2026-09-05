@@ -6,6 +6,23 @@ import {
   normalizeLootgenForm
 } from "../scripts/data/lootgen-generator.js";
 
+test("canonical coin candidates become currency rather than ordinary loot Items", () => {
+  const result = generateLootgenResult({
+    mundanePool: [{ sourceType: "gear", sourceId: "mednaya-moneta", value: 2, multipleAppearance: "1", stackable: true }],
+    budgetValue: 47, itemCount: 1, includeCoins: true, random: () => 0
+  });
+  assert.equal(result.rows.length, 0);
+  assert.equal(result.coins.cp, 47);
+  assert.equal(result.spentValue + result.coins.totalCopper, 47);
+});
+
+test("disabled currency excludes canonical coin candidates without matching ordinary names", () => {
+  const coin = { sourceType: "gear", sourceId: "zolotaya-moneta", name: "Золотая монета", value: 200 };
+  assert.throws(() => generateLootgenResult({ mundanePool: [coin], budgetValue: 1000, includeCoins: false }), /нет доступных предметов/u);
+  const ordinary = generateLootgenResult({ mundanePool: [{ ...coin, sourceId: "coin-shaped-medallion" }], budgetValue: 200, includeCoins: false });
+  assert.equal(ordinary.rows[0].sourceId, "coin-shaped-medallion");
+});
+
 test("lootgen generator normalizes a reusable form snapshot", () => {
   assert.deepEqual(normalizeLootgenForm({
     rankMin: "4",

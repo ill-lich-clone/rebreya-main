@@ -15,6 +15,52 @@ import {
 import { buildStorageContainerRow } from "../scripts/data/storage-container-snapshot.js";
 import { createEmptyStorageTriggerState } from "../scripts/data/storage-trigger-service.js";
 
+test("opening a chest folds unclaimed coin Items into currency exactly once", async () => {
+  const token = createStorageToken("coin-chest");
+  token.flags["rebreya-main"] = { storage: {
+    state: "opened", manualCoins: { gp: 1 }, generatedCoins: { cp: 6 },
+    generatedRows: [{ rowId: "copper", quantity: 41, itemData: {
+      flags: { "rebreya-main": { storageCoinTemplate: { version: 1, denomination: "cp" } } }
+    } }]
+  } };
+  const service = new StorageService();
+  const first = await service.open(token);
+  assert.equal(first.rows.length, 0);
+  assert.deepEqual(first.coins, { pp: 0, gp: 1, sp: 0, cp: 47 });
+  assert.deepEqual((await service.open(token)).coins, first.coins);
+});
+
+test("claiming one coin denomination leaves the other denominations available", async () => {
+  const token = createStorageToken("coin-denominations");
+  token.flags["rebreya-main"] = { storage: {
+    state: "opened", manualCoins: { gp: 2, cp: 41 }, generatedCoins: { cp: 6 }
+  } };
+  const service = new StorageService();
+  const result = await service.claim(token, { kind: "coins", denomination: "cp" });
+  assert.deepEqual(result.coins, { pp: 0, gp: 0, sp: 0, cp: 47 });
+  assert.equal(result.state.coinsClaimed, false);
+  assert.equal(result.state.manualCoins.gp, 2);
+  assert.equal(result.state.manualCoins.cp + result.state.generatedCoins.cp, 0);
+  assert.equal((await service.claim(token, { kind: "coins", denomination: "cp" })).changed, false);
+  assert.equal((await service.claim(token, { kind: "coins", denomination: "gp" })).state.state, "empty");
+});
+
+test("old claimed currency and claimed coin Items are not credited again on opening", async () => {
+  const token = createStorageToken("claimed-coin-chest");
+  const coin = (rowId, quantity) => ({ rowId, quantity, itemData: {
+    flags: { "rebreya-main": { storageCoinTemplate: { version: 1, denomination: "cp" } } }
+  } });
+  token.flags["rebreya-main"] = { storage: {
+    state: "opened", coinsClaimed: true, manualCoins: { gp: 20 }, generatedCoins: { cp: 6 },
+    manualRows: [coin("taken", 90)], generatedRows: [coin("remaining", 41)], claimedRowIds: ["taken"]
+  } };
+  const service = new StorageService();
+  const result = await service.open(token);
+  assert.deepEqual(result.coins, { pp: 0, gp: 0, sp: 0, cp: 41 });
+  assert.equal(result.rows.length, 0);
+  assert.deepEqual((await service.open(token)).coins, result.coins);
+});
+
 test("storage state projects an empty trigger section without an eager write", () => {
   const token = createStorageToken("legacy-triggers");
   assert.deepEqual(readStorageState(token).triggers, createEmptyStorageTriggerState());

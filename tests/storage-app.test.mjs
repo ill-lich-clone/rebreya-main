@@ -34,6 +34,37 @@ globalThis.HTMLElement = FakeElement;
 const storageAppModule = await import("../scripts/ui/storage-app.js?storage-app-test");
 const { StorageApp } = storageAppModule;
 
+test("storage presents a separate physical coin stack per denomination", async () => {
+  const { app } = createApp({ getStorageSnapshot: async () => ({
+    state: "opened", rows: [], coins: { gp: 1, sp: 1, cp: 47 }
+  }) });
+  app.activeRowId = "__coins:cp";
+  const context = await app._prepareContext();
+  assert.deepEqual(context.coinRows.map(row => [row.denomination, row.quantity]), [["gp", 1], ["sp", 1], ["cp", 47]]);
+  assert.equal(context.activePopover.denomination, "cp");
+  assert.equal(context.activePopover.name, "47 мм");
+  assert.ok(context.coinRows.every(row => row.img.endsWith("-moneta.webp")));
+});
+
+test("a click inside a replaced grid does not immediately close its popover", async () => {
+  const previousDocument = globalThis.document;
+  const documentListeners = new Map();
+  globalThis.document = { addEventListener: (name, handler) => documentListeners.set(name, handler) };
+  try {
+    const { app } = createApp();
+    app.element = new class extends FakeElement {
+      addEventListener() {}
+      contains() { return false; }
+    }();
+    const context = await app._prepareContext();
+    await app._onRender(context);
+    app.activeRowId = "__coins:gp";
+    documentListeners.get("click")({ target: {}, composedPath: () => [app.element] });
+    assert.equal(app.activeRowId, "__coins:gp");
+  }
+  finally { globalThis.document = previousDocument; }
+});
+
 function createApp({
   canManage = true,
   configure = true,
@@ -1128,7 +1159,7 @@ test("storage item popovers stay interactive above their grid", async () => {
   assert.match(css, /top:\s*calc\(\(var\(--rm-storage-popover-anchor-row\)\s*\*\s*80px\)\s*\+\s*81px\)/isu);
   assert.match(css, /\.rebreya-storage-app\s+\.window-content\s*\{[^}]*overflow:\s*visible/isu);
   assert.doesNotMatch(css, /\.rm-storage-grid:has\(/u);
-  assert.match(template, /\{\{#if hasCoins\}\}[\s\S]*?\{\{\/if\}\}\s*\{\{#if activePopover\}\}\s*<div\s+class="rm-storage-popover-layer"/u);
+  assert.match(template, /\{\{#each coinRows\}\}[\s\S]*?\{\{\/each\}\}\s*\{\{#if activePopover\}\}\s*<div\s+class="rm-storage-popover-layer"/u);
   assert.match(template, /--rm-storage-popover-anchor-column:\s*\{\{activePopover\.anchorColumn\}\}/u);
   assert.match(template, /rm-storage-item__popover--\{\{activePopover\.popoverAlignment\}\}/u);
 });

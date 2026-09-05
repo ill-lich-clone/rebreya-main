@@ -189,7 +189,14 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const hasTextureSet = TEXTURE_MODES.every(({ mode }) => clean(this.snapshot?.textures?.[mode]));
     const snapshotRows = this.snapshot?.rows ?? [];
     const hasCoins = COIN_KEYS.some((key) => coins[key] > 0);
-    const gridItemCount = snapshotRows.length + (hasCoins ? 1 : 0);
+    const coinImages = { pp: "platinovaya", gp: "zolotaya", sp: "serebryannaya", cp: "mednaya" };
+    const coinRows = COIN_KEYS.filter(key => coins[key] > 0).map(denomination => ({
+      rowId: `__coins:${denomination}`, denomination, quantity: coins[denomination],
+      name: coinsLabel({ [denomination]: coins[denomination] }),
+      img: `modules/rebreya-main/assets/top-down/items/gear/${coinImages[denomination]}-moneta.webp`,
+      expanded: this.activeRowId === `__coins:${denomination}`
+    }));
+    const gridItemCount = snapshotRows.length + coinRows.length;
     const gridColumns = storageGridColumns(gridItemCount);
     const rows = snapshotRows.map((row) => {
       const isJournal = row.rowKind === "journal";
@@ -233,11 +240,13 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
       };
     });
     const validPopoverIds = new Set(rows.map((row) => row.rowId));
-    if (hasCoins) validPopoverIds.add("__coins");
+    for (const row of coinRows) validPopoverIds.add(row.rowId);
+    if (this.activeRowId === "__coins") this.activeRowId = coinRows[0]?.rowId ?? "";
     if (this.activeRowId && !validPopoverIds.has(this.activeRowId)) this.activeRowId = "";
     const selectedRow = rows.find((row) => row.rowId === this.activeRowId) ?? null;
-    const selectedIndex = this.activeRowId === "__coins"
-      ? rows.length
+    const selectedCoin = coinRows.find(row => row.rowId === this.activeRowId);
+    const selectedIndex = selectedCoin
+      ? rows.length + coinRows.indexOf(selectedCoin)
       : rows.findIndex((row) => row.rowId === this.activeRowId);
     const selectedColumn = selectedIndex >= 0 ? selectedIndex % gridColumns : 0;
     const popoverPlacement = selectedIndex >= 0 ? {
@@ -247,11 +256,11 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
         ? "left"
         : selectedColumn === gridColumns - 1 ? "right" : "center"
     } : {};
-    const activePopover = this.activeRowId === "__coins"
+    const activePopover = selectedCoin
       ? {
           isCoins: true,
-          anchorRowId: "__coins",
-          name: coinsLabel(coins),
+          ...selectedCoin,
+          anchorRowId: selectedCoin.rowId,
           ...popoverPlacement
         }
       : selectedRow ? { ...selectedRow, anchorRowId: selectedRow.rowId, ...popoverPlacement } : null;
@@ -280,6 +289,7 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
       claimAllPending: this.claimAllPending,
       gridColumns,
       coins,
+      coinRows,
       coinsLabel: coinsLabel(coins),
       hasCoins,
       coinsExpanded: this.activeRowId === "__coins",
@@ -327,7 +337,7 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
       }
     }, listenerOptions);
     globalThis.document?.addEventListener?.("click", (event) => {
-      if (!this.activeRowId || root.contains?.(event.target)) return;
+      if (!this.activeRowId || root.contains?.(event.target) || event.composedPath?.().includes(root)) return;
       this.activeRowId = "";
       void this.#renderCurrent();
     }, listenerOptions);
@@ -337,7 +347,7 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
       void this.#renderCurrent();
     }, listenerOptions);
     const gridCount = (this.snapshot?.rows?.length ?? 0)
-      + (COIN_KEYS.some((key) => Number(this.snapshot?.coins?.[key] ?? 0) > 0) ? 1 : 0);
+      + COIN_KEYS.filter((key) => Number(this.snapshot?.coins?.[key] ?? 0) > 0).length;
     const columns = storageGridColumns(gridCount);
     root.style?.setProperty?.("--rm-storage-columns", String(columns));
     const viewportWidth = Math.max(320, Number(globalThis.innerWidth) || 1920);
@@ -572,7 +582,7 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
         return;
       }
       else if (action === "storage-toggle-coins") {
-        this.activeRowId = this.activeRowId === "__coins" ? "" : "__coins";
+        this.activeRowId = this.activeRowId === rowId ? "" : rowId;
         await this.#renderCurrent();
         return;
       }
@@ -611,7 +621,7 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
           this.tokenUuid,
           action.endsWith("self") ? "self" : "party",
           mutationId("storage-coins"),
-          this.#pathRequest()
+          { ...this.#pathRequest(), denomination: this.activeRowId.split(":")[1] }
         );
         if (result?.sourceDeleted === true) {
           await this.close?.();

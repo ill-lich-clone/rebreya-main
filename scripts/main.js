@@ -195,7 +195,7 @@ import {
   isStorageActor,
   readStorageState,
   readStorageStateAtPath
-} from "./data/storage-service.js?v=1.4.200-storage-broken-presentation";
+} from "./data/storage-service.js?v=1.4.224-coin-stacks";
 import {
   CorpseStorageMaterializer
 } from "./data/corpse-storage-materializer.js?v=1.4.195-storage-administration";
@@ -211,7 +211,7 @@ import {
   measureStorageTokenDistance
 } from "./data/storage-access.js?v=1.4.197-door-trigger-target";
 import { BuiltinStorageActorService } from "./data/builtin-storage-actor-service.js?v=1.4.216-storage-token-vision";
-import { StorageGroundPileService } from "./data/storage-ground-pile-service.js?v=1.4.215-container-rotation";
+import { StorageGroundPileService } from "./data/storage-ground-pile-service.js?v=1.4.224-coin-stacks";
 import { deriveGroundPilePlacement } from "./data/storage-pile-presentation.js?v=1.4.213-furniture-orientation";
 import { StorageContainerItemService } from "./data/storage-container-item-service.js?v=1.4.215-container-rotation";
 import { isStorageJournalRow } from "./data/storage-container-snapshot.js";
@@ -258,7 +258,7 @@ import {
   isValidStorageRestorePortablePayload,
   isValidStorageTokenCharacterPayload,
   storageCharacterTokenUuidForClaim
-} from "./data/storage-command-service.js?v=1.4.222-journal-record-drop";
+} from "./data/storage-command-service.js?v=1.4.224-coin-stacks";
 import { registerCombatHooks } from "./combat/hooks.js?v=1.4.191-magic-item-runtime";
 import { CombatAttackService } from "./combat/attack-service.js?v=1.4.181-dual-wield-gloves";
 import { ImplantAutomationService } from "./combat/implant-automation-service.js";
@@ -4609,6 +4609,7 @@ export class RebreyaMainModule {
       }),
       destination: safeDestination,
       mutationId: cleanSocketId(mutationId),
+      ...(request.denomination !== undefined ? { denomination: request.denomination } : {}),
       ...(path.length ? { path } : {})
     };
     return isActiveGmClient(globalThis.game)

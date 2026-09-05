@@ -50,6 +50,63 @@ function clone(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));
 }
 
+function addManualCoinsChecked(left, right) {
+  const merged = mergeCoins(left, right);
+  if (Object.values(merged).some(value => !Number.isSafeInteger(value))) {
+    throw new Error("Coin balance exceeds safe integer range.");
+  }
+  return merged;
+}
+
+export function splitLegacyCoinRows(rows, claimedRowIds) {
+  const claimed = new Set(claimedRowIds ?? []);
+  const keptRows = [];
+  let convertedCoins = normalizeCoins({});
+  let convertedRows = 0;
+  const removedRowIds = [];
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const denomination = readStorageCoinDenomination(row?.itemData ?? row);
+    if (!denomination) {
+      keptRows.push(clone(row));
+      continue;
+    }
+    const rowId = cleanId(row?.rowId);
+    removedRowIds.push(rowId);
+    convertedRows += 1;
+    if (claimed.has(rowId)) continue;
+    const quantity = Number(row?.quantity ?? row?.itemData?.system?.quantity);
+    if (!Number.isSafeInteger(quantity) || quantity < 1) {
+      throw new Error("Количество managed Coin Item в наземной куче должно быть положительным безопасным целым числом.");
+    }
+    convertedCoins = addManualCoinsChecked(convertedCoins, { [denomination]: quantity });
+  }
+  return { rows: keptRows, convertedCoins, convertedRows, removedRowIds };
+}
+
+export function migrateLegacyCoinRowsInState(state) {
+  const claimedRowIds = state?.claimedRowIds ?? [];
+  const manual = splitLegacyCoinRows(state?.manualRows, claimedRowIds);
+  const generated = splitLegacyCoinRows(state?.generatedRows, claimedRowIds);
+  const convertedRows = manual.convertedRows + generated.convertedRows;
+  if (convertedRows === 0) return null;
+  const convertedCoins = addManualCoinsChecked(manual.convertedCoins, generated.convertedCoins);
+  const hasConvertedCoins = COIN_KEYS.some(key => convertedCoins[key] > 0);
+  const discardClaimedBalances = hasConvertedCoins && state?.coinsClaimed === true;
+  const removed = new Set([...manual.removedRowIds, ...generated.removedRowIds].filter(Boolean));
+  return {
+    state: {
+      ...state,
+      manualRows: manual.rows,
+      generatedRows: generated.rows,
+      claimedRowIds: claimedRowIds.filter((rowId) => !removed.has(cleanId(rowId))),
+      manualCoins: addManualCoinsChecked(discardClaimedBalances ? {} : state?.manualCoins, convertedCoins),
+      generatedCoins: discardClaimedBalances ? normalizeCoins({}) : state?.generatedCoins,
+      coinsClaimed: hasConvertedCoins ? false : state?.coinsClaimed
+    },
+    convertedRows
+  };
+}
+
 function cleanName(value, fallback = "Хранилище") {
   const name = String(value ?? "").trim().replace(/\s+/gu, " ");
   return name || fallback;
@@ -465,6 +522,7 @@ export class StorageService {
   }
 
   async #write(token, state) {
+    state = migrateLegacyCoinRowsInState(state)?.state ?? state;
     const document = resolveDocument(token);
     if (typeof document?.update !== "function") {
       throw new TypeError("Storage token must support update.");
@@ -658,7 +716,9 @@ export class StorageService {
   }
 
   async #openOnce(token, context) {
-    const current = readStorageState(token);
+    let current = readStorageState(token);
+    const migrated = migrateLegacyCoinRowsInState(current);
+    if (migrated) current = await this.#write(token, migrated.state);
     if (current.corpseMaterialization?.status === "complete" || current.state !== "unopened") {
       return {
         generatedNow: false,
@@ -741,14 +801,26 @@ export class StorageService {
     }
 
     if (request?.kind === "coins") {
+      const denomination = request.denomination;
+      if (denomination !== undefined && !COIN_KEYS.includes(denomination)) {
+        throw new Error("Некорректный номинал монет.");
+      }
       const coins = mergeCoins(current.manualCoins, current.generatedCoins);
+      if (denomination) for (const key of COIN_KEYS) if (key !== denomination) coins[key] = 0;
       if (current.coinsClaimed || !COIN_KEYS.some((key) => coins[key] > 0)) {
         return { changed: false, coins, state: clone(current) };
       }
-      const nextState = hasUnclaimedContent({ ...current, coinsClaimed: true }) ? "opened" : "empty";
+      const remaining = denomination ? {
+        manualCoins: { ...current.manualCoins, [denomination]: 0 },
+        generatedCoins: { ...current.generatedCoins, [denomination]: 0 }
+      } : {};
+      const coinsClaimed = !denomination || !COIN_KEYS.some(key =>
+        remaining.manualCoins[key] + remaining.generatedCoins[key] > 0);
+      const nextState = hasUnclaimedContent({ ...current, ...remaining, coinsClaimed }) ? "opened" : "empty";
       const state = await this.#write(token, {
         ...current,
-        coinsClaimed: true,
+        ...remaining,
+        coinsClaimed,
         state: nextState,
         displayMode: nextState === "empty" ? "empty" : current.displayMode
       });

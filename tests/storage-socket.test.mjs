@@ -25,6 +25,24 @@ import {
 } from "../scripts/data/storage-command-service.js";
 import { createEmptyStorageTriggerState } from "../scripts/data/storage-trigger-service.js";
 
+test("coin claims validate a denomination and credit only the selected stack", async () => {
+  const harness = createHarness();
+  const access = { tokenUuid: harness.storageToken.uuid, characterTokenUuid: harness.characterToken.uuid };
+  await harness.service.open(access, { sender: harness.player });
+  const state = readStorageState(harness.storageToken);
+  await harness.storageToken.update({ [`flags.${MODULE_ID}.storage`]: { ...state, manualCoins: { gp: 2, cp: 41 }, generatedCoins: {} } });
+  const request = { ...access, destination: "self", mutationId: "one-stack", denomination: "cp" };
+  assert.equal(isValidStorageClaimCoinsPayload(request), true);
+  assert.equal(isValidStorageClaimCoinsPayload({ ...request, denomination: "ep" }), false);
+  const result = await harness.service.claimCoins(request, { sender: harness.player });
+  assert.deepEqual(result.coins, { pp: 0, gp: 0, sp: 0, cp: 41 });
+  assert.equal(readStorageState(harness.storageToken).manualCoins.gp, 2);
+  await harness.service.claimCoins(request, { sender: harness.player });
+  assert.equal(harness.coinGrants.length, 1);
+  assert.deepEqual(harness.coinGrants[0].coins, { pp: 0, gp: 0, sp: 0, cp: 41 });
+  assert.equal(harness.itemGrants.length, 0);
+});
+
 test("storage open payload requires one exact stable trigger mutation identity", () => {
   const payload = {
     tokenUuid: "Scene.scene.Token.chest",

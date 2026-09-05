@@ -3,7 +3,7 @@ import {
   readStorageCoinDenomination,
   readStorageState,
   readStorageStateAtPath
-} from "./storage-service.js?v=1.4.200-storage-broken-presentation";
+} from "./storage-service.js?v=1.4.224-coin-stacks";
 import { resolveStorageDepositSource } from "./storage-deposit-source.js?v=1.4.195-storage-administration";
 import { isStorageContainerRow, isStorageJournalRow } from "./storage-container-snapshot.js";
 import { MODULE_ID } from "../constants.js";
@@ -260,7 +260,9 @@ export function isValidStorageClaimRowPayload(payload) {
 }
 
 export function isValidStorageClaimCoinsPayload(payload) {
-  return hasLegacyOrPathKeys(payload, ["characterTokenUuid", "destination", "mutationId", "tokenUuid"])
+  return (hasLegacyOrPathKeys(payload, ["characterTokenUuid", "destination", "mutationId", "tokenUuid"])
+    || hasLegacyOrPathKeys(payload, ["characterTokenUuid", "denomination", "destination", "mutationId", "tokenUuid"]))
+    && (payload.denomination === undefined || ["pp", "gp", "sp", "cp"].includes(payload.denomination))
     && isTrimmedString(payload.tokenUuid, { required: true })
     && isTrimmedString(payload.characterTokenUuid, { required: payload.destination === "self" })
     && STORAGE_COIN_DESTINATIONS.has(payload.destination)
@@ -1346,6 +1348,8 @@ export class StorageCommandService {
     if (!STORAGE_COIN_DESTINATIONS.has(destination)) {
       throw new Error("Монеты можно забрать себе или в инвентарь группы.");
     }
+    const denomination = payload.denomination;
+    if (denomination !== undefined && !["pp", "gp", "sp", "cp"].includes(denomination)) throw new Error("Некорректный номинал монет.");
     const mutationId = requireMutationId(payload.mutationId);
     const tokenUuid = clean(payload.tokenUuid);
     const path = storagePath(payload.path);
@@ -1370,6 +1374,7 @@ export class StorageCommandService {
         key,
         Math.max(0, Math.trunc(Number(state.manualCoins?.[key] ?? 0) + Number(state.generatedCoins?.[key] ?? 0)))
       ]));
+      if (denomination) for (const key of keys) if (key !== denomination) coins[key] = 0;
       if (state.coinsClaimed || !keys.some((key) => coins[key] > 0)) {
         const refresh = await this.#refreshSource(access.storageToken, readStorageState(access.storageToken));
         return { changed: false, coins, state, sourceDeleted: refresh.deleted === true };
@@ -1381,7 +1386,7 @@ export class StorageCommandService {
       else {
         await this.inventoryService.addCurrencyToInventoryOnce(coins, grantId);
       }
-      const result = await this.storageService.claim(access.storageToken, { kind: "coins", path });
+      const result = await this.storageService.claim(access.storageToken, { kind: "coins", path, ...(denomination ? { denomination } : {}) });
       if (result.changed === true) {
         await this.#executeCommittedClaimTriggers(payload, sender, access, state, {
           kind: "coins",
