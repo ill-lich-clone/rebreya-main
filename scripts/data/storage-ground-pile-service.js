@@ -10,7 +10,7 @@ import { isStorageJournalRow } from "./storage-container-snapshot.js";
 import {
   deriveGroundPilePresentation,
   isGroundPileToken
-} from "./storage-pile-presentation.js?v=1.4.213-furniture-orientation";
+} from "./storage-pile-presentation.js?v=1.4.227-coin-sprites";
 import {
   buildGroundPileTokenLayout,
   deterministicStorageTokenRotation,
@@ -550,7 +550,13 @@ export class StorageGroundPileService {
       await this.#runSceneMutation(scene?.id, async () => {
         for (const token of collectionValues(scene?.tokens)) {
           if (!isGroundPileToken(token)) continue;
-          const migration = migrateLegacyCoinRowsInState(readStorageState(token));
+          const current = readStorageState(token);
+          const legacyCoinIcon = readFlag(token, "groundPile")?.coinPile === true && (
+            /^icons\/commodities\/currency\/(?:coins-plain-gold|coins-assorted-mix-(?:platinum|silver|copper))\.webp$/u.test(clean(token.texture?.src))
+            || /^modules\/rebreya-main\/assets\/top-down\/items\/gear\/(?:platinovaya|zolotaya|serebryannaya|mednaya)-moneta\.webp$/u.test(clean(token.texture?.src))
+          );
+          const migration = migrateLegacyCoinRowsInState(current)
+            ?? (legacyCoinIcon ? { state: current, convertedRows: 0 } : null);
           if (!migration) continue;
           const groundFlag = clone(readFlag(token, "groundPile")) ?? {};
           const presentation = deriveGroundPilePresentation(visibleRows(migration.state), {

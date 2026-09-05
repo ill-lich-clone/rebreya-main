@@ -4,12 +4,18 @@ import { formatDurabilityItemName } from "./durability-item-presentation.js?v=1.
 import { resolveTopDownItemPresentation } from "./top-down-item-texture-resolver.js?v=1.4.211-furniture-footprints";
 
 const ASSET_ROOT = `modules/${MODULE_ID}/assets/storage/piles`;
+const COIN_ASSET_ROOT = `modules/${MODULE_ID}/assets/top-down/items/coins`;
 const COIN_PRESENTATIONS = Object.freeze([
-  Object.freeze({ denomination: "pp", name: "Платиновая монета", img: "icons/commodities/currency/coins-assorted-mix-platinum.webp" }),
-  Object.freeze({ denomination: "gp", name: "Золотая монета", img: "icons/commodities/currency/coins-plain-gold.webp" }),
-  Object.freeze({ denomination: "sp", name: "Серебряная монета", img: "icons/commodities/currency/coins-assorted-mix-silver.webp" }),
-  Object.freeze({ denomination: "cp", name: "Медная монета", img: "icons/commodities/currency/coins-assorted-mix-copper.webp" })
+  Object.freeze({ denomination: "pp", name: "Платиновая монета" }),
+  Object.freeze({ denomination: "gp", name: "Золотая монета" }),
+  Object.freeze({ denomination: "sp", name: "Серебряная монета" }),
+  Object.freeze({ denomination: "cp", name: "Медная монета" })
 ]);
+
+function coinSpritePath(denomination, amount) {
+  const variant = amount > 50 ? "pile" : String(amount).padStart(2, "0");
+  return `${COIN_ASSET_ROOT}/${denomination}-${variant}.webp`;
+}
 
 function clean(value) {
   return String(value ?? "").trim().replace(/\s+/gu, " ");
@@ -76,9 +82,13 @@ export function deriveGroundPilePresentation(rows = [], {
   const readIds = new Set((Array.isArray(readJournalRowIds) ? readJournalRowIds : [])
     .map(clean)
     .filter(Boolean));
-  const positiveDenominations = COIN_PRESENTATIONS.filter(({ denomination }) => {
+  const positiveDenominations = COIN_PRESENTATIONS.flatMap((presentation) => {
+    const { denomination } = presentation;
     const amount = Number(coins?.[denomination] ?? 0);
-    return Number.isFinite(amount) && Math.trunc(amount) > 0;
+    const normalizedAmount = Math.trunc(amount);
+    return Number.isFinite(amount) && normalizedAmount > 0
+      ? [{ ...presentation, amount: normalizedAmount }]
+      : [];
   });
 
   if (ordinaryRows.length === 1) {
@@ -130,8 +140,12 @@ export function deriveGroundPilePresentation(rows = [], {
   }
 
   if (positiveDenominations.length === 1) {
-    const [{ name, img }] = positiveDenominations;
-    return { name, img, categoryKey: COIN_PRESENTATION.key };
+    const [{ denomination, name, amount }] = positiveDenominations;
+    return {
+      name,
+      img: coinSpritePath(denomination, amount),
+      categoryKey: COIN_PRESENTATION.key
+    };
   }
   if (positiveDenominations.length > 1) {
     return {

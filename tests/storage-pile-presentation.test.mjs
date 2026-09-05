@@ -280,7 +280,7 @@ test("ordinary rows and coins keep priority over Journal-only presentation", () 
   });
   assert.deepEqual(deriveGroundPilePresentation([journal], { coins: { gp: 2 } }), {
     name: "Золотая монета",
-    img: "icons/commodities/currency/coins-plain-gold.webp",
+    img: `modules/${MODULE_ID}/assets/top-down/items/coins/gp-02.webp`,
     categoryKey: "coins"
   });
   assert.deepEqual(deriveGroundPilePresentation([journal], { preserveEmptyCoinPile: true }), {
@@ -311,7 +311,7 @@ test("ground pile presentation derives same-category and mixed pile tokens", () 
 test("pure coin piles use denomination, mixed coin, and preserved-empty presentations", () => {
   assert.deepEqual(deriveGroundPilePresentation([], { coins: { gp: 8 } }), {
     name: "Золотая монета",
-    img: "icons/commodities/currency/coins-plain-gold.webp",
+    img: `modules/${MODULE_ID}/assets/top-down/items/coins/gp-08.webp`,
     categoryKey: "coins"
   });
   assert.deepEqual(deriveGroundPilePresentation([], { coins: { gp: 8, sp: 3 } }), {
@@ -323,7 +323,7 @@ test("pure coin piles use denomination, mixed coin, and preserved-empty presenta
     coins: { pp: 0, gp: -2, sp: "3", cp: Number.NaN }
   }), {
     name: "Серебряная монета",
-    img: "icons/commodities/currency/coins-assorted-mix-silver.webp",
+    img: `modules/${MODULE_ID}/assets/top-down/items/coins/sp-03.webp`,
     categoryKey: "coins"
   });
   assert.deepEqual(deriveGroundPilePresentation([], { preserveEmptyCoinPile: true }), {
@@ -331,6 +331,42 @@ test("pure coin piles use denomination, mixed coin, and preserved-empty presenta
     img: `modules/${MODULE_ID}/assets/storage/piles/coins.png`,
     categoryKey: "coins"
   });
+});
+
+test("pure denomination coin sprites cover exact balances 01-50 and pile at 51+", () => {
+  const names = {
+    pp: "Платиновая монета",
+    gp: "Золотая монета",
+    sp: "Серебряная монета",
+    cp: "Медная монета"
+  };
+
+  for (const [denomination, name] of Object.entries(names)) {
+    for (let amount = 1; amount <= 50; amount += 1) {
+      const presentation = deriveGroundPilePresentation([], {
+        coins: { [denomination]: amount }
+      });
+      assert.deepEqual(presentation, {
+        name,
+        img: `modules/${MODULE_ID}/assets/top-down/items/coins/${denomination}-${String(amount).padStart(2, "0")}.webp`,
+        categoryKey: "coins"
+      });
+      const relativePath = presentation.img.replace(`modules/${MODULE_ID}/`, "../");
+      assert.equal(existsSync(fileURLToPath(new URL(relativePath, import.meta.url))), true);
+    }
+    for (const amount of [51, 500, Number.MAX_SAFE_INTEGER]) {
+      const presentation = deriveGroundPilePresentation([], {
+        coins: { [denomination]: amount }
+      });
+      assert.deepEqual(presentation, {
+        name,
+        img: `modules/${MODULE_ID}/assets/top-down/items/coins/${denomination}-pile.webp`,
+        categoryKey: "coins"
+      });
+      const relativePath = presentation.img.replace(`modules/${MODULE_ID}/`, "../");
+      assert.equal(existsSync(fileURLToPath(new URL(relativePath, import.meta.url))), true);
+    }
+  }
 });
 
 test("rows with coins preserve treasure and existing ordinary row presentation rules", () => {
@@ -389,5 +425,12 @@ test("every storage pile category points to a bundled PNG token", () => {
     const absolutePath = fileURLToPath(new URL(relativePath, import.meta.url));
     assert.equal(existsSync(absolutePath), true, `${presentation.key}: ${absolutePath}`);
     assert.match(absolutePath, /\.png$/u);
+  }
+});
+
+test("each physical coin denomination uses its exact-count module sprite", () => {
+  for (const denomination of ["cp", "sp", "gp", "pp"]) {
+    assert.equal(deriveGroundPilePresentation([], { coins: { [denomination]: 3 } }).img,
+      `modules/${MODULE_ID}/assets/top-down/items/coins/${denomination}-03.webp`);
   }
 });

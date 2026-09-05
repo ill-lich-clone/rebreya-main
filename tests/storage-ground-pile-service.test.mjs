@@ -818,7 +818,7 @@ test("coin transfer creates and merges a pure manual-coin pile idempotently", as
   assert.equal(created.created, true);
   assert.equal(tokens.length, 1);
   assert.equal(tokens[0].name, "Золотая монета");
-  assert.match(tokens[0].texture.src, /coins-plain-gold\.webp$/u);
+  assert.equal(tokens[0].texture.src, `modules/${MODULE_ID}/assets/top-down/items/coins/gp-05.webp`);
   assert.equal(tokens[0].flags[MODULE_ID].groundPile.coinPile, true);
   assert.equal(readStorageState(tokens[0]).manualRows.length, 0);
   assert.deepEqual(readStorageState(tokens[0]).manualCoins, { pp: 0, gp: 5, sp: 0, cp: 0 });
@@ -845,6 +845,107 @@ test("coin transfer creates and merges a pure manual-coin pile idempotently", as
   assert.equal(tokens[0].name, "Куча монет");
   assert.equal(tokens[0].texture.src, `modules/${MODULE_ID}/assets/storage/piles/coins.png`);
   assert.deepEqual(readStorageState(tokens[0]).manualCoins, { pp: 0, gp: 5, sp: 3, cp: 0 });
+});
+
+test("coin balance transitions swap sprites on the same centered owned token for every denomination", async () => {
+  for (const denomination of ["pp", "gp", "sp", "cp"]) {
+    const { service, tokens } = createHarness();
+    await service.transferCoinsToScene({
+      coins: { [denomination]: 3 },
+      sceneId: "scene",
+      x: 300,
+      y: 400,
+      mutationId: `coin-transition-${denomination}`,
+      ownerUserId: "player-1"
+    });
+    const token = tokens[0];
+    const uuid = token.uuid;
+    const ownership = structuredClone(token.delta.ownership);
+    const center = () => ({
+      x: token.x + token.width * token.parent.grid.size / 2,
+      y: token.y + token.height * token.parent.grid.size / 2
+    });
+    const sprite = (amount) => amount > 50
+      ? `modules/${MODULE_ID}/assets/top-down/items/coins/${denomination}-pile.webp`
+      : `modules/${MODULE_ID}/assets/top-down/items/coins/${denomination}-${String(amount).padStart(2, "0")}.webp`;
+    const setCount = async (amount) => {
+      const state = readStorageState(token);
+      state.manualCoins = { pp: 0, gp: 0, sp: 0, cp: 0, [denomination]: amount };
+      state.generatedCoins = { pp: 0, gp: 0, sp: 0, cp: 0 };
+      state.coinsClaimed = false;
+      return service.refreshAfterStorageMutation(token, state);
+    };
+
+    assert.equal(token.texture.src, sprite(3));
+    await setCount(2); // 3 -> 2
+    assert.equal(token.texture.src, sprite(2));
+    await setCount(10);
+    await setCount(11); // 10 -> 11
+    assert.equal(token.texture.src, sprite(11));
+    await setCount(50);
+    await setCount(51); // 50 -> 51
+    assert.equal(token.texture.src, sprite(51));
+    await setCount(50); // 51 -> 50
+    assert.equal(token.texture.src, sprite(50));
+    await setCount(50); // idempotent presentation refresh
+    assert.equal(token.texture.src, sprite(50));
+    await setCount(1);
+    await setCount(0); // 1 -> 0
+    assert.equal(token.texture.src, `modules/${MODULE_ID}/assets/storage/piles/coins.png`);
+    assert.equal(readStorageState(token).manualCoins[denomination], 0);
+    assert.equal(tokens.length, 1);
+    assert.equal(token.uuid, uuid);
+    assert.deepEqual(center(), { x: 300, y: 400 });
+    assert.deepEqual(token.delta.ownership, ownership);
+  }
+});
+
+test("rejected coin sprite refresh rolls back balance and presentation for every denomination", async () => {
+  for (const denomination of ["pp", "gp", "sp", "cp"]) {
+    let rejectUpdate = false;
+    const { service, tokens } = createHarness({
+      beforeUpdate() {
+        if (rejectUpdate) throw new Error("simulated token update rejection");
+      }
+    });
+    await service.transferCoinsToScene({
+      coins: { [denomination]: 3 },
+      sceneId: "scene",
+      x: 300,
+      y: 400,
+      mutationId: `coin-rollback-${denomination}`
+    });
+    const token = tokens[0];
+    const before = structuredClone({
+      name: token.name,
+      texture: token.texture,
+      flags: token.flags,
+      x: token.x,
+      y: token.y,
+      width: token.width,
+      height: token.height,
+      uuid: token.uuid
+    });
+    const rejectedState = readStorageState(token);
+    rejectedState.manualCoins[denomination] = 2;
+    rejectUpdate = true;
+
+    await assert.rejects(
+      service.refreshAfterStorageMutation(token, rejectedState),
+      /simulated token update rejection/u
+    );
+    assert.deepEqual({
+      name: token.name,
+      texture: token.texture,
+      flags: token.flags,
+      x: token.x,
+      y: token.y,
+      width: token.width,
+      height: token.height,
+      uuid: token.uuid
+    }, before);
+    assert.equal(readStorageState(token).manualCoins[denomination], 3);
+  }
 });
 
 test("coin merge rejects unsafe cumulative balances for every denomination without changing the pile", async () => {
@@ -1257,4 +1358,26 @@ test("active GM idempotently migrates legacy Coin Item rows into manualCoins and
   assert.equal(token.height, 0.5);
   assert.equal(token.x, 275);
   assert.equal(token.y, 375);
+});
+
+test("legacy coin texture repair migrates stock and old module icons while preserving balances and custom icons", async () => {
+  const { service, tokens } = createHarness();
+  await service.transferCoinsToScene({
+    coins: { gp: 5 },
+    sceneId: "scene",
+    x: 300,
+    y: 400,
+    mutationId: "repair-coin-icon"
+  });
+  tokens[0].texture.src = "icons/commodities/currency/coins-plain-gold.webp";
+  assert.equal((await service.repairLegacyCoinRows()).repairedTokens, 1);
+  assert.equal(tokens[0].texture.src, `modules/${MODULE_ID}/assets/top-down/items/coins/gp-05.webp`);
+  assert.equal(readStorageState(tokens[0]).manualCoins.gp, 5);
+  assert.equal((await service.repairLegacyCoinRows()).repairedTokens, 0);
+  tokens[0].texture.src = `modules/${MODULE_ID}/assets/top-down/items/gear/zolotaya-moneta.webp`;
+  assert.equal((await service.repairLegacyCoinRows()).repairedTokens, 1);
+  assert.equal(tokens[0].texture.src, `modules/${MODULE_ID}/assets/top-down/items/coins/gp-05.webp`);
+  tokens[0].texture.src = "custom-coin.webp";
+  await service.repairLegacyCoinRows();
+  assert.equal(tokens[0].texture.src, "custom-coin.webp");
 });
