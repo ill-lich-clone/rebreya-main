@@ -1,3 +1,4 @@
+import { buildStorageCoinRow, storageCoinRowDenomination, assertStorageCoinTransferAvailable } from "./storage-service.js";
 import { MODULE_ID } from "../constants.js";
 import { GROUND_PILE_PRESET_ID } from "./builtin-storage-presets.js";
 import {
@@ -452,7 +453,8 @@ async function resolveStorageRowSource(sourceRef, {
   const path = Array.isArray(sourceRef.path) ? sourceRef.path.map(clean).filter(Boolean).slice(0, 8) : [];
   const state = readStorageStateAtPath(token, path);
   const rowId = clean(sourceRef.rowId);
-  const row = storageRows(state).find((entry) => clean(entry?.rowId) === rowId) ?? null;
+  const row = storageCoinRowDenomination(rowId) ? buildStorageCoinRow(state, rowId)
+    : storageRows(state).find((entry) => clean(entry?.rowId) === rowId) ?? null;
   if (!row || state.claimedRowIds.includes(rowId)) {
     throw new Error("Предмет исходного хранилища уже недоступен.");
   }
@@ -485,8 +487,10 @@ async function resolveStorageRowSource(sourceRef, {
     async consume(requestedQuantity) {
       const quantity = requireQuantity(requestedQuantity, available);
       const beforeState = readStorageStateAtPath(token, path);
+      assertStorageCoinTransferAvailable(beforeState);
       const result = await storageService.claim(token, {
-        kind: "row",
+        kind: storageCoinRowDenomination(rowId) ? "coins" : "row",
+        ...(storageCoinRowDenomination(rowId) ? { denomination: storageCoinRowDenomination(rowId) } : {}),
         rowId,
         quantity,
         path
@@ -556,6 +560,7 @@ async function resolveStorageTokenSource(sourceRef, { resolveToken, storageServi
           throw new TypeError("Для частичного переноса наземного предмета требуется StorageService.");
         }
         const beforeState = readStorageState(document);
+        assertStorageCoinTransferAvailable(beforeState);
         const result = await storageService.claim(document, {
           kind: "row",
           rowId: clean(groundItem.rowId),

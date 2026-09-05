@@ -34,6 +34,29 @@ globalThis.HTMLElement = FakeElement;
 const storageAppModule = await import("../scripts/ui/storage-app.js?storage-app-test");
 const { StorageApp } = storageAppModule;
 
+test("coin stacks expose their canonical item card and standard storage drag payload", async () => {
+  const { app } = createApp({ configure: false });
+  const listeners = new Map();
+  const opened = [];
+  app.moduleApi.openTradeEntry = async (...args) => opened.push(args);
+  app.element = new class extends FakeElement {
+    addEventListener(name, callback) { listeners.set(name, callback); }
+  }();
+  app.render = async () => {};
+  await app._prepareContext();
+  await app._onRender({}, {});
+  const source = { dataset: { rowId: "__coins:gp" } };
+  const payloads = [];
+  listeners.get("dragstart")({ target: { closest: () => source }, dataTransfer: { setData: (_type, data) => payloads.push(JSON.parse(data)) } });
+  assert.equal(payloads[0]?.type, "RebreyaStorageClaim");
+  assert.equal(payloads[0]?.rowId, "__coins:gp");
+  assert.equal(payloads[0]?.quantity, 2);
+  await listeners.get("click")({ target: { closest: () => ({ dataset: { action: "storage-open-item", rowId: "__coins:gp" } }) } });
+  assert.deepEqual(opened[0], ["gear", "zolotaya-moneta", "Золотая монета"]);
+  const template = await readFile(new URL("../templates/storage-app.hbs", import.meta.url), "utf8");
+  assert.match(template, /rm-storage-item--coins[^>]*draggable="true"[^>]*data-storage-row-drag/u);
+});
+
 test("storage presents a separate physical coin stack per denomination", async () => {
   const { app } = createApp({ getStorageSnapshot: async () => ({
     state: "opened", rows: [], coins: { gp: 1, sp: 1, cp: 47 }

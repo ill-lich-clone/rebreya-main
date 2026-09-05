@@ -239,6 +239,14 @@ test("storage scene APIs serialize optional furniture rotation without changing 
     assert.equal(itemPayloads[0].rotation, 90);
     assert.equal(Object.hasOwn(itemPayloads[1], "rotation"), false);
     assert.equal(claimPayloads[0].target.rotation, 270);
+    moduleApi.inventoryService.getInventoryActor = async () => ({ id: "party", type: "group" });
+    moduleApi.runInventoryMutation = async operation => operation();
+    moduleApi.getStorageSnapshot = async () => { throw new Error("Coin rows must not enter the Item planner"); };
+    await moduleApi.claimStorageRow("Scene.scene.Token.chest", "__coins:cp", "party", "coin-to-party", {
+      quantity: 3, target: { groupActorId: "party", folderId: null }
+    });
+    assert.equal(claimPayloads[1].ingressPlan, null);
+    assert.equal(claimPayloads[1].target.groupActorId, "party");
   }
   finally {
     restores.reverse().forEach((restore) => restore());

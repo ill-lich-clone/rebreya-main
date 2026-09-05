@@ -101,7 +101,7 @@
         </article>
       {{/each}}
       {{#each coinRows}}
-        <article class="rm-storage-item rm-storage-item--coins" data-row-id="{{rowId}}">
+        <article class="rm-storage-item rm-storage-item--coins" draggable="true" data-storage-row-drag data-row-id="{{rowId}}">
           <button type="button" class="rm-storage-item__icon" data-action="storage-toggle-coins" data-row-id="{{rowId}}" aria-expanded="{{expanded}}" aria-label="Открыть монеты: {{name}}">
             <img src="{{img}}" alt="{{name}}">
             <span class="rm-storage-item__quantity">{{quantity}}</span>
@@ -120,7 +120,7 @@
           <i class="fa-solid fa-xmark" aria-hidden="true"></i>
         </button>
         {{#if activePopover.isCoins}}
-          <strong class="rm-storage-item__name rm-storage-item__name--plain">{{activePopover.name}}</strong>
+          <button type="button" class="rm-storage-item__name" data-action="storage-open-item" data-row-id="{{activePopover.rowId}}">{{activePopover.name}}</button>
           <div class="rm-storage-item__actions">
             <button type="button" class="rm-button rm-button--primary" data-action="storage-claim-coins-self">Себе</button>
             <button type="button" class="rm-button rm-button--secondary" data-action="storage-claim-coins-party">В группу</button>

@@ -13,7 +13,7 @@ import {
   isLootgenTypeAllowed,
   resolveMagicLootgenTypeLabel
 } from "./lootgen-type-filters.js";
-import { generateLootgenResult, normalizeLootgenForm } from "../data/lootgen-generator.js?v=1.4.224-coin-stacks";
+import { generateLootgenResult, normalizeLootgenForm } from "../data/lootgen-generator.js?v=1.4.225-physical-coins";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 

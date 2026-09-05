@@ -46,6 +46,38 @@ export function readStorageCoinDenomination(item) {
   return STORAGE_COIN_DENOMINATION_SET.has(denomination) ? denomination : null;
 }
 
+export function storageCoinRowDenomination(rowId) {
+  const match = /^__coins:(pp|gp|sp|cp)$/u.exec(String(rowId ?? ""));
+  return match?.[1] ?? null;
+}
+
+export function pendingStorageCoinTransfer(state) {
+  return state?.bulkClaimMutations?.find(entry => entry.status === "pending" && entry.mutationKey.startsWith("coin-transfer:")) ?? null;
+}
+
+export function assertStorageCoinTransferAvailable(state, mutationKey = "") {
+  const pending = pendingStorageCoinTransfer(state);
+  if (pending && pending.mutationKey !== `coin-transfer:${mutationKey}`) {
+    throw new Error("Перенос монет не завершён. Повторите исходный перенос перед другой выдачей монет.");
+  }
+}
+
+export function buildStorageCoinRow(state, rowId) {
+  const denomination = storageCoinRowDenomination(rowId);
+  if (!denomination || state?.coinsClaimed === true) return null;
+  const quantity = Number(state?.manualCoins?.[denomination] ?? 0) + Number(state?.generatedCoins?.[denomination] ?? 0);
+  if (!Number.isSafeInteger(quantity) || quantity <= 0) return null;
+  const sources = { pp: ["platinovaya-moneta", "Платиновая монета"], gp: ["zolotaya-moneta", "Золотая монета"], sp: ["serebryannaya-moneta", "Серебряная монета"], cp: ["mednaya-moneta", "Медная монета"] };
+  const [sourceId, name] = sources[denomination];
+  const img = `modules/${MODULE_ID}/assets/top-down/items/gear/${sourceId}.webp`;
+  return { rowId, rowKind: "item", sourceType: "gear", sourceId, name, img, quantity, denomination,
+    itemData: { name, img, type: "loot", system: { quantity }, flags: { [MODULE_ID]: {
+      managed: true, sourceType: "gear", gearId: sourceId,
+      storageCoinTemplate: { version: 1, denomination }
+    } } }
+  };
+}
+
 function clone(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));
 }
@@ -801,17 +833,35 @@ export class StorageService {
     }
 
     if (request?.kind === "coins") {
+      assertStorageCoinTransferAvailable(current, cleanId(request.mutationId));
       const denomination = request.denomination;
       if (denomination !== undefined && !COIN_KEYS.includes(denomination)) {
         throw new Error("Некорректный номинал монет.");
       }
       const coins = mergeCoins(current.manualCoins, current.generatedCoins);
+      const mutationId = cleanId(request.mutationId);
+      const rowId = `__coins:${denomination}`;
+      const previous = mutationId ? current.rowClaimMutations.find(entry => entry.mutationId === mutationId) : null;
+      if (previous) {
+        if (previous.rowId !== rowId || (request.quantity !== undefined && Number(request.quantity) !== previous.quantity)) {
+          throw new Error("Один mutationId нельзя повторно использовать для другого списания монет.");
+        }
+        return { changed: true, coins: { ...normalizeCoins(), [denomination]: previous.quantity }, state: clone(current) };
+      }
       if (denomination) for (const key of COIN_KEYS) if (key !== denomination) coins[key] = 0;
+      const available = denomination ? coins[denomination] : 0;
+      if (request.quantity !== undefined) {
+        const quantity = Number(request.quantity);
+        if (!denomination || !Number.isSafeInteger(quantity) || quantity < 1 || quantity > available) {
+          throw new Error("Некорректное количество монет для переноса.");
+        }
+        coins[denomination] = quantity;
+      }
       if (current.coinsClaimed || !COIN_KEYS.some((key) => coins[key] > 0)) {
         return { changed: false, coins, state: clone(current) };
       }
       const remaining = denomination ? {
-        manualCoins: { ...current.manualCoins, [denomination]: 0 },
+        manualCoins: { ...current.manualCoins, [denomination]: available - coins[denomination] },
         generatedCoins: { ...current.generatedCoins, [denomination]: 0 }
       } : {};
       const coinsClaimed = !denomination || !COIN_KEYS.some(key =>
@@ -820,6 +870,9 @@ export class StorageService {
       const state = await this.#write(token, {
         ...current,
         ...remaining,
+        rowClaimMutations: mutationId && denomination
+          ? [...current.rowClaimMutations, { mutationId, rowId, quantity: coins[denomination] }]
+          : current.rowClaimMutations,
         coinsClaimed,
         state: nextState,
         displayMode: nextState === "empty" ? "empty" : current.displayMode

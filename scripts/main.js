@@ -1,3 +1,4 @@
+import { storageCoinRowDenomination } from "./data/storage-service.js";
 // @rebreya-role canonical-composition-root
 import { MODULE_ID, MODULE_TITLE, SETTINGS_KEYS } from "./constants.js";
 import { escapeFoundryHtml } from "./shared/foundry-values.js";
@@ -195,7 +196,7 @@ import {
   isStorageActor,
   readStorageState,
   readStorageStateAtPath
-} from "./data/storage-service.js?v=1.4.224-coin-stacks";
+} from "./data/storage-service.js?v=1.4.225-physical-coins";
 import {
   CorpseStorageMaterializer
 } from "./data/corpse-storage-materializer.js?v=1.4.195-storage-administration";
@@ -211,7 +212,7 @@ import {
   measureStorageTokenDistance
 } from "./data/storage-access.js?v=1.4.197-door-trigger-target";
 import { BuiltinStorageActorService } from "./data/builtin-storage-actor-service.js?v=1.4.216-storage-token-vision";
-import { StorageGroundPileService } from "./data/storage-ground-pile-service.js?v=1.4.224-coin-stacks";
+import { StorageGroundPileService } from "./data/storage-ground-pile-service.js?v=1.4.225-physical-coins";
 import { deriveGroundPilePlacement } from "./data/storage-pile-presentation.js?v=1.4.213-furniture-orientation";
 import { StorageContainerItemService } from "./data/storage-container-item-service.js?v=1.4.215-container-rotation";
 import { isStorageJournalRow } from "./data/storage-container-snapshot.js";
@@ -236,7 +237,7 @@ import {
 import {
   parseStorageDepositDragData,
   resolveStorageDepositSource
-} from "./data/storage-deposit-source.js?v=1.4.195-storage-administration";
+} from "./data/storage-deposit-source.js?v=1.4.225-physical-coins";
 import { NativeObjectDurabilityService } from "./data/native-object-durability-service.js?v=1.4.153-corpse-creature";
 import {
   StorageCommandService,
@@ -258,7 +259,7 @@ import {
   isValidStorageRestorePortablePayload,
   isValidStorageTokenCharacterPayload,
   storageCharacterTokenUuidForClaim
-} from "./data/storage-command-service.js?v=1.4.224-coin-stacks";
+} from "./data/storage-command-service.js?v=1.4.225-physical-coins";
 import { registerCombatHooks } from "./combat/hooks.js?v=1.4.191-magic-item-runtime";
 import { CombatAttackService } from "./combat/attack-service.js?v=1.4.181-dual-wield-gloves";
 import { ImplantAutomationService } from "./combat/implant-automation-service.js";
@@ -4554,7 +4555,8 @@ export class RebreyaMainModule {
       };
     }
     const quantity = request.quantity === undefined ? null : Number(request.quantity);
-    const ingressPlan = safeDestination === "party"
+    const coinRow = Boolean(storageCoinRowDenomination(rowId));
+    const ingressPlan = safeDestination === "party" && !coinRow
       ? await this.#prepareStorageInventoryIngress({
         tokenUuid: safeTokenUuid,
         path,
@@ -4563,7 +4565,7 @@ export class RebreyaMainModule {
         quantity
       })
       : null;
-    if (safeDestination === "party" && ingressPlan === null) return null;
+    if (safeDestination === "party" && !coinRow && ingressPlan === null) return null;
     const payload = {
       tokenUuid: safeTokenUuid,
       characterTokenUuid: storageCharacterTokenUuidForClaim({

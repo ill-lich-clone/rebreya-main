@@ -16,6 +16,19 @@ test("canonical coin candidates become currency rather than ordinary loot Items"
   assert.equal(result.spentValue + result.coins.totalCopper, 47);
 });
 
+test("coins never consume the requested ordinary item row limit", () => {
+  const result = generateLootgenResult({
+    mundanePool: [
+      { sourceType: "gear", sourceId: "mednaya-moneta", name: "Coin", value: 1 },
+      ...Array.from({ length: 5 }, (_, i) => ({ sourceType: "gear", sourceId: `ordinary-${i}`, name: `Ordinary ${i}`, value: 10, stackable: false }))
+    ],
+    budgetValue: 100, itemCount: 5, includeCoins: true, random: () => 0
+  });
+  assert.equal(result.rows.length, 5);
+  assert.equal(result.coins.totalCopper, 50);
+  assert.equal(result.spentValue, 50);
+});
+
 test("disabled currency excludes canonical coin candidates without matching ordinary names", () => {
   const coin = { sourceType: "gear", sourceId: "zolotaya-moneta", name: "Золотая монета", value: 200 };
   assert.throws(() => generateLootgenResult({ mundanePool: [coin], budgetValue: 1000, includeCoins: false }), /нет доступных предметов/u);

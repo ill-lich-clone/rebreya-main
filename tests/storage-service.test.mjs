@@ -45,6 +45,19 @@ test("claiming one coin denomination leaves the other denominations available", 
   assert.equal((await service.claim(token, { kind: "coins", denomination: "gp" })).state.state, "empty");
 });
 
+test("partial coin depletion is idempotent across repeated requests", async () => {
+  const token = createStorageToken("partial-coins");
+  token.flags["rebreya-main"] = { storage: { state: "opened", manualCoins: { cp: 8, gp: 1 } } };
+  const service = new StorageService();
+  const request = { kind: "coins", denomination: "cp", quantity: 3, mutationId: "drop-three" };
+  const first = await service.claim(token, request);
+  assert.equal(first.coins.cp, 3);
+  assert.equal(first.state.manualCoins.cp + first.state.generatedCoins.cp, 5);
+  const retry = await service.claim(token, request);
+  assert.equal(retry.state.manualCoins.cp + retry.state.generatedCoins.cp, 5);
+  await assert.rejects(service.claim(token, { ...request, quantity: 4 }), /mutationId|повторно/u);
+});
+
 test("old claimed currency and claimed coin Items are not credited again on opening", async () => {
   const token = createStorageToken("claimed-coin-chest");
   const coin = (rowId, quantity) => ({ rowId, quantity, itemData: {

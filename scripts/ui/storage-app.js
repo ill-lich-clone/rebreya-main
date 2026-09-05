@@ -1,3 +1,4 @@
+import { buildStorageCoinRow } from "../data/storage-service.js";
 import { MODULE_ID } from "../constants.js";
 import { getAppElement } from "../ui.js";
 import { placeTokenOverlay, storageTokenViewportBounds } from "./storage-token-overlay.js";
@@ -191,7 +192,7 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const hasCoins = COIN_KEYS.some((key) => coins[key] > 0);
     const coinImages = { pp: "platinovaya", gp: "zolotaya", sp: "serebryannaya", cp: "mednaya" };
     const coinRows = COIN_KEYS.filter(key => coins[key] > 0).map(denomination => ({
-      rowId: `__coins:${denomination}`, denomination, quantity: coins[denomination],
+      ...buildStorageCoinRow({ manualCoins: coins }, `__coins:${denomination}`),
       name: coinsLabel({ [denomination]: coins[denomination] }),
       img: `modules/rebreya-main/assets/top-down/items/gear/${coinImages[denomination]}-moneta.webp`,
       expanded: this.activeRowId === `__coins:${denomination}`
@@ -472,7 +473,8 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   #rowById(rowId) {
-    return (this.snapshot?.rows ?? []).find((row) => clean(row?.rowId) === clean(rowId)) ?? null;
+    return (this.snapshot?.rows ?? []).find((row) => clean(row?.rowId) === clean(rowId))
+      ?? buildStorageCoinRow({ manualCoins: this.snapshot?.coins }, clean(rowId));
   }
 
   async #claimRow(rowId, destination) {

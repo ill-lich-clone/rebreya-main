@@ -43,6 +43,87 @@ test("coin claims validate a denomination and credit only the selected stack", a
   assert.equal(harness.itemGrants.length, 0);
 });
 
+for (const destination of ["scene", "character", "party"]) {
+  test(`physical coin row moves partly to ${destination} without creating an inventory Item`, async () => {
+    const h = createHarness();
+    const access = { tokenUuid: h.storageToken.uuid, characterTokenUuid: h.characterToken.uuid };
+    await h.service.open(access, { sender: h.player });
+    await h.storageToken.update({ [`flags.${MODULE_ID}.storage`]: {
+      ...readStorageState(h.storageToken), manualCoins: { cp: 8, gp: 1 }, generatedCoins: {}
+    } });
+    const target = destination === "party" ? { groupActorId: h.groupActor.id, folderId: null }
+      : destination === "character" ? { actorUuid: h.targetHero.uuid }
+      : { sceneId: h.storageToken.parent.id, x: 100, y: 100 };
+    const request = { ...access, rowId: "__coins:cp", destination, target, quantity: 3, ingressPlan: null, mutationId: "physical-three" };
+    assert.equal(isValidStorageClaimRowPayload(request), true);
+    const result = await h.service.claimRow(request, { sender: h.player });
+    assert.equal(result.changed, true);
+    const state = readStorageState(h.storageToken);
+    assert.equal(state.manualCoins.cp + state.generatedCoins.cp, 5);
+    assert.equal(state.manualCoins.gp, 1);
+    assert.equal(h.itemGrants.length, 0);
+    assert.equal(destination === "scene" ? h.groundCoinCalls.length : h.coinGrants.length, 1);
+    await h.service.claimRow(request, { sender: h.player });
+    assert.equal(readStorageState(h.storageToken).manualCoins.cp + readStorageState(h.storageToken).generatedCoins.cp, 5);
+    await h.createCommandService().claimRow(request, { sender: h.player });
+    assert.equal(destination === "scene" ? h.groundCoinCalls.length : h.coinGrants.length, 1);
+    if (destination === "scene") {
+      h.service.inventoryService.mutationJournal.find = async () => null;
+      h.service.inventoryService.mutationJournal.finish = async () => { throw new Error("record-not-found"); };
+      await h.createCommandService().claimRow(request, { sender: h.player });
+      assert.equal(h.groundCoinCalls.length, 1);
+    }
+  });
+}
+
+test("a granted coin transfer reserves its source across a failed debit and competing claims", async () => {
+  const h = createHarness();
+  const access = { tokenUuid: h.storageToken.uuid, characterTokenUuid: h.characterToken.uuid };
+  await h.service.open(access, { sender: h.player });
+  await h.storageToken.update({ [`flags.${MODULE_ID}.storage`]: {
+    ...readStorageState(h.storageToken), manualCoins: { cp: 8 }, generatedCoins: {}
+  } });
+  const originalClaim = h.storageService.claim.bind(h.storageService);
+  let failDebit = true;
+  h.storageService.claim = async (...args) => {
+    if (failDebit && args[1].kind === "coins") { failDebit = false; throw new Error("debit failed"); }
+    return originalClaim(...args);
+  };
+  const request = { ...access, rowId: "__coins:cp", quantity: 3, destination: "self", target: null, ingressPlan: null, mutationId: "reserved-three" };
+  await assert.rejects(h.service.claimRow(request, { sender: h.player }), /debit failed/u);
+  assert.equal(h.coinGrants.length, 1);
+  const restarted = h.createCommandService();
+  await assert.rejects(restarted.claimCoins({ ...access, destination: "self", mutationId: "steal-rest" }, { sender: h.player }), /не завершён/u);
+  await assert.rejects(restarted.claimRow({ ...request, quantity: 8, mutationId: "different-claim" }, { sender: h.player }), /не завершён/u);
+  await restarted.claimRow({ ...request, mutationId: "retry-from-new-click" }, { sender: h.player });
+  await h.createCommandService().claimRow({ ...request, mutationId: "retry-from-new-click" }, { sender: h.player });
+  assert.equal(h.coinGrants.length, 1);
+  assert.equal(readStorageState(h.storageToken).manualCoins.cp, 5);
+  await restarted.claimCoins({ ...access, destination: "self", mutationId: "remaining-five" }, { sender: h.player });
+  assert.equal(h.coinGrants.reduce((sum, grant) => sum + Number(grant.coins.cp ?? 0), 0), 8);
+});
+
+test("scene coin grant survives target pickup before a failed source debit is retried", async () => {
+  const processed = new Set();
+  const h = createHarness({ processedCoinMutations: processed });
+  const access = { tokenUuid: h.storageToken.uuid, characterTokenUuid: h.characterToken.uuid };
+  await h.service.open(access, { sender: h.player });
+  await h.storageToken.update({ [`flags.${MODULE_ID}.storage`]: { ...readStorageState(h.storageToken), manualCoins: { cp: 8 }, generatedCoins: {} } });
+  const originalClaim = h.storageService.claim.bind(h.storageService);
+  let failDebit = true;
+  h.storageService.claim = async (...args) => {
+    if (failDebit && args[1].kind === "coins") { failDebit = false; throw new Error("debit failed"); }
+    return originalClaim(...args);
+  };
+  const request = { ...access, rowId: "__coins:cp", quantity: 3, destination: "scene", target: { sceneId: h.storageToken.parent.id, x: 100, y: 100 }, ingressPlan: null, mutationId: "ground-three" };
+  await assert.rejects(h.service.claimRow(request, { sender: h.player }), /debit failed/u);
+  assert.equal(h.groundCoinCalls.length, 1);
+  processed.clear(); // The created pile has been picked up or removed from its original point.
+  await h.createCommandService().claimRow(request, { sender: h.player });
+  assert.equal(h.groundCoinCalls.length, 1);
+  assert.equal(readStorageState(h.storageToken).manualCoins.cp, 5);
+});
+
 test("storage open payload requires one exact stable trigger mutation identity", () => {
   const payload = {
     tokenUuid: "Scene.scene.Token.chest",
@@ -235,6 +316,20 @@ function createHarness({
   const ingressCommitCalls = [];
   let shouldRejectFolderAssignment = rejectFolderAssignmentOnce;
   const inventoryService = {
+    mutationJournal: (() => {
+      const records = new Map();
+      return {
+        async find(id) { return clone(records.get(id) ?? null); },
+        async start(record) { records.set(record.id, clone(record)); return clone(record); },
+        async checkpoint(id, expected, phase) {
+          const record = records.get(id);
+          assert.equal(record.phase, expected);
+          record.phase = phase;
+          return clone(record);
+        },
+        async finish() {}
+      };
+    })(),
     async getInventoryActor({ groupActorId = "" } = {}) {
       if (groupActorId && groupActorId !== groupActor.id) {
         throw new Error("Party inventory group target is unavailable.");

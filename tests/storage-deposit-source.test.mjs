@@ -97,6 +97,22 @@ function createStorageToken() {
   };
 }
 
+test("currency-backed rows resolve as physical sources and consume only the requested coins", async () => {
+  const token = createStorageToken();
+  token.flags[MODULE_ID] = { storage: { state: "opened", manualCoins: { cp: 8, gp: 1 } } };
+  const storageService = new StorageService();
+  const source = await resolveStorageDepositSource({ kind: "storage-row", tokenUuid: token.uuid, rowId: "__coins:cp", quantity: 8 }, {
+    resolveToken: async () => token, storageService
+  });
+  assert.equal(source.available, 8);
+  assert.equal(source.row.sourceId, "mednaya-moneta");
+  const receipt = await source.consume(3);
+  assert.equal(readStorageState(token).manualCoins.cp, 5);
+  assert.equal(readStorageState(token).manualCoins.gp, 1);
+  await source.restore(receipt);
+  assert.equal(readStorageState(token).manualCoins.cp, 8);
+});
+
 test("deposit drag parser accepts exact Journal entries, Foundry Items, and Rebreya storage rows", () => {
   assert.deepEqual(parseStorageDepositDragData({
     type: "Item",

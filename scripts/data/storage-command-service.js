@@ -1,10 +1,11 @@
+import { buildStorageCoinRow, storageCoinRowDenomination, pendingStorageCoinTransfer, assertStorageCoinTransferAvailable } from "./storage-service.js";
 import {
   isStorageActor,
   readStorageCoinDenomination,
   readStorageState,
   readStorageStateAtPath
-} from "./storage-service.js?v=1.4.224-coin-stacks";
-import { resolveStorageDepositSource } from "./storage-deposit-source.js?v=1.4.195-storage-administration";
+} from "./storage-service.js?v=1.4.225-physical-coins";
+import { resolveStorageDepositSource } from "./storage-deposit-source.js?v=1.4.225-physical-coins";
 import { isStorageContainerRow, isStorageJournalRow } from "./storage-container-snapshot.js";
 import { MODULE_ID } from "../constants.js";
 import { escapeFoundryHtml } from "../shared/foundry-values.js";
@@ -251,10 +252,10 @@ export function isValidStorageClaimRowPayload(payload) {
     && isTrimmedString(payload.rowId, { required: true, max: 160 })
     && STORAGE_ROW_DESTINATIONS.has(payload.destination)
     && isValidStorageTarget(payload.destination, payload.target)
-    && isValidStorageIngressPlan(payload.destination, payload.target, payload.ingressPlan, {
+    && (storageCoinRowDenomination(payload.rowId) ? payload.ingressPlan === null : isValidStorageIngressPlan(payload.destination, payload.target, payload.ingressPlan, {
       rowId: payload.rowId,
       quantity: payload.quantity
-    })
+    }))
     && isOptionalQuantity(payload.quantity)
     && isTrimmedString(payload.mutationId, { required: true, max: 160 });
 }
@@ -1166,6 +1167,26 @@ export class StorageCommandService {
     });
   }
 
+  async #grantCoinPileOnce(request) {
+    const journal = this.inventoryService?.mutationJournal;
+    if (!journal) throw new Error("Журнал переноса монет недоступен.");
+    const id = `storage-coin-pile:${request.mutationId}`;
+    const fingerprint = JSON.stringify(request);
+    let record = await journal.find(id);
+    if (record && record.fingerprint !== fingerprint) throw new Error("Coin pile mutationId conflict.");
+    if (record?.phase === "committed") return;
+    if (record?.phase === "dispatched") {
+      const observed = await this.groundPileService.findProcessedMutationAtPoint(request);
+      if (!observed) throw new Error("Результат создания монет не подтверждён. Требуется сверка переноса; повторная выдача заблокирована.");
+    }
+    else {
+      record ??= await journal.start({ id, kind: "storage-coin-pile", phase: "prepared", fingerprint });
+      await journal.checkpoint(id, "prepared", "dispatched");
+      await this.groundPileService.transferCoinsToScene(request);
+    }
+    await journal.checkpoint(id, "dispatched", "committed");
+  }
+
   async claimRow(payload = {}, { sender } = {}) {
     const destination = requireDestination(payload.destination);
     const target = clone(payload.target);
@@ -1203,8 +1224,30 @@ export class StorageCommandService {
       }
       const state = readStorageStateAtPath(access.storageToken, path);
       if (state.state === "unopened") throw new Error("Сначала откройте хранилище.");
-      const rows = [...state.manualRows, ...state.generatedRows];
-      const row = rows.find((entry, index) => rowIdentity(entry, index) === rowId) ?? null;
+      const coinDenomination = storageCoinRowDenomination(rowId);
+      const coinIntent = coinDenomination ? mutationRequestFingerprint({ ...payload, mutationId: "" }, sender) : "";
+      const coinBinding = coinDenomination ? state.bulkClaimMutations.find(entry => entry.mutationKey === `coin-transfer:${mutationKey}`)
+        ?? pendingStorageCoinTransfer(state) : null;
+      const coinReservation = coinBinding ? JSON.parse(coinBinding.fingerprint) : null;
+      if (coinReservation && coinReservation.request !== coinIntent) throw new Error("Перенос монет не завершён или mutationId использован с другими параметрами. Повторите исходный перенос.");
+      const grantId = coinReservation?.grantId ?? (coinBinding ? coinBinding.mutationKey.slice("coin-transfer:".length) : mutationKey);
+      if (coinBinding && grantId !== mutationKey) {
+        await this.storageService.bindBulkClaimMutation(access.storageToken, `coin-transfer:${mutationKey}`, coinBinding.fingerprint, { path });
+        await this.storageService.completeBulkClaimMutation(access.storageToken, `coin-transfer:${mutationKey}`, coinBinding.fingerprint, { path });
+      }
+      const priorCoinClaim = coinDenomination && state.rowClaimMutations.find(entry => entry.mutationId === grantId);
+      if (priorCoinClaim) {
+        if (priorCoinClaim.rowId !== rowId || (payload.quantity != null && Number(payload.quantity) !== priorCoinClaim.quantity)) throw new Error("Coin mutationId conflict.");
+        if (coinBinding) await this.storageService.completeBulkClaimMutation(access.storageToken, `coin-transfer:${grantId}`, coinBinding.fingerprint, { path });
+        if (destination === "scene" && await this.inventoryService.mutationJournal.find(`storage-coin-pile:${grantId}`)) {
+          await this.inventoryService.mutationJournal.finish(`storage-coin-pile:${grantId}`, { ok: true, value: { granted: true } });
+        }
+        const refresh = await this.#refreshSource(access.storageToken, readStorageState(access.storageToken));
+        return { changed: true, quantity: priorCoinClaim.quantity, state, sourceDeleted: refresh.deleted === true };
+      }
+      const coinRow = buildStorageCoinRow(state, rowId);
+      const rows = [...state.manualRows, ...state.generatedRows, ...(coinRow ? [coinRow] : [])];
+      const row = coinDenomination ? coinRow : rows.find((entry, index) => rowIdentity(entry, index) === rowId) ?? null;
       const plannedRow = payload.ingressPlan?.rows?.find((entry) => entry.sourceKey === rowId) ?? null;
       const claimedForRecovery = destination === "party"
         && state.claimedRowIds.includes(rowId)
@@ -1219,7 +1262,7 @@ export class StorageCommandService {
       const available = Math.max(1, Math.trunc(Number(
         row.quantity ?? row.itemData?.system?.quantity ?? 1
       )) || 1);
-      const quantity = claimedForRecovery
+      const quantity = coinReservation ? coinReservation.quantity : claimedForRecovery
         ? Number(plannedRow.quantity)
         : payload.quantity === null || payload.quantity === undefined
           ? available
@@ -1237,11 +1280,29 @@ export class StorageCommandService {
       transferRow.itemData ??= {};
       transferRow.itemData.system ??= {};
       transferRow.itemData.system.quantity = quantity;
-      const preparedTransferRow = await this.#prepareGroundRow(transferRow);
-      const grantId = mutationKey;
+      const preparedTransferRow = coinDenomination ? transferRow : await this.#prepareGroundRow(transferRow);
       let result = null;
       let filterResult = null;
-      if (destination === "party") {
+      if (coinDenomination) {
+        const reservationFingerprint = coinBinding?.fingerprint ?? JSON.stringify({ request: coinIntent, quantity, grantId });
+        await this.storageService.bindBulkClaimMutation(access.storageToken, `coin-transfer:${grantId}`, reservationFingerprint, { path });
+        const coins = { [coinDenomination]: quantity };
+        if (destination === "party") {
+          await this.inventoryService.addCurrencyToInventoryOnce(coins, grantId, { groupActorId: partyActor.id });
+        }
+        else if (destination === "scene") {
+          await this.#validateSceneTarget(payload.target, access, sender);
+          await this.#grantCoinPileOnce({ coins, sceneId: clean(payload.target.sceneId), x: Number(payload.target.x), y: Number(payload.target.y), mutationId: grantId, ownerUserId: clean(sender?.id) });
+        }
+        else {
+          const actor = destination === "self" ? access.character : await this.#resolveCharacterTarget(payload.target, sender);
+          await this.inventoryService.addCurrencyToCharacterOnce(coins, actor, grantId);
+        }
+        result = await this.storageService.claim(access.storageToken, { kind: "coins", denomination: coinDenomination, quantity, mutationId: grantId, path });
+        await this.storageService.completeBulkClaimMutation(access.storageToken, `coin-transfer:${grantId}`, reservationFingerprint, { path });
+        if (destination === "scene") await this.inventoryService.mutationJournal.finish(`storage-coin-pile:${grantId}`, { ok: true, value: { granted: true } });
+      }
+      else if (destination === "party") {
         if (isStorageContainerRow(preparedTransferRow) && quantity !== 1) {
           throw new Error("Контейнер можно переносить только целиком.");
         }
@@ -1313,7 +1374,7 @@ export class StorageCommandService {
           ...(payload.target.rotation !== undefined ? { rotation: payload.target.rotation } : {})
         });
       }
-      if (destination !== "party") {
+      if (destination !== "party" && !coinDenomination) {
         result = await this.storageService.claim(access.storageToken, { kind: "row", rowId, quantity, path });
       }
       if (result.changed === true) {
@@ -1368,6 +1429,7 @@ export class StorageCommandService {
         throw new Error("Для получения монет себе выберите персонажа.");
       }
       const state = readStorageStateAtPath(access.storageToken, path);
+      assertStorageCoinTransferAvailable(state);
       if (state.state === "unopened") throw new Error("Сначала откройте хранилище.");
       const keys = ["pp", "gp", "sp", "cp"];
       const coins = Object.fromEntries(keys.map((key) => [
@@ -1451,6 +1513,7 @@ export class StorageCommandService {
         ({ actor: partyActor, target: partyTarget } = await this.#resolvePartyTarget(target));
       }
       const stateBeforeBinding = readStorageStateAtPath(access.storageToken, path);
+      assertStorageCoinTransferAvailable(stateBeforeBinding);
       if (stateBeforeBinding.state === "unopened") throw new Error("Сначала откройте хранилище.");
       await this.storageService.bindBulkClaimMutation(access.storageToken, mutationKey, fingerprint, { path });
       const initialState = readStorageStateAtPath(access.storageToken, path);

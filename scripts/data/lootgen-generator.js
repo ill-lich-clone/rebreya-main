@@ -241,12 +241,10 @@ export function generateLootgenResult({
     brokenEquipmentChance
   });
   const safeMundanePool = (Array.isArray(mundanePool) ? mundanePool : [])
-    .filter(row => form.includeCoins || !lootgenCoinDenomination(row))
-    .map(row => lootgenCoinDenomination(row)
-      ? { ...row, value: COIN_MULTIPLIERS[lootgenCoinDenomination(row)], breakable: false }
-      : row);
+    .filter(row => !lootgenCoinDenomination(row));
   const safeMagicPool = Array.isArray(magicPool) ? magicPool : [];
-  if (!safeMundanePool.length && !safeMagicPool.length) {
+  if (!safeMundanePool.length && !safeMagicPool.length
+    && !(form.includeCoins && Array.isArray(mundanePool) && mundanePool.some(lootgenCoinDenomination))) {
     throw new Error("Для выбранных параметров нет доступных предметов.");
   }
 
@@ -359,13 +357,8 @@ export function generateLootgenResult({
   }
 
   let rows = aggregateRows(picks);
-  const coinRows = rows.filter(row => lootgenCoinDenomination(row));
-  rows = rows.filter(row => !lootgenCoinDenomination(row));
   const spentValue = rows.reduce((sum, row) => sum + row.totalValue, 0);
-  let coins = randomCoinsFromValue(form.includeCoins ? remainingValue + coinReserve : 0, random);
-  for (const row of coinRows) coins[lootgenCoinDenomination(row)] += row.quantity;
-  coins = normalizeCoins(coins);
-  coins.label = formatCoinsLabel(coins);
+  const coins = randomCoinsFromValue(form.includeCoins ? remainingValue + coinReserve : 0, random);
   const safeBatchId = String(batchId ?? "").trim();
   rows = rows.map((row, index) => ({
     ...row,
