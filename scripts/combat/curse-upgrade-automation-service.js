@@ -48,8 +48,12 @@ export function buildCurseUpgradeEffect(source, actor, state = {}) {
   if (source.key === "lightning") changes.push(change("system.attributes.init.bonus", 4));
   if (source.key === "will") changes.push(change("system.attributes.ac.bonus", actor.statuses?.has?.("rebreya-bloodied") ? 2 : -2));
   if (source.key === "burden" && state.burdenActive && Number(actor.system?.attributes?.hp?.temp) > 0) {
-    for (const [kind, raw] of Object.entries(actor._source?.system?.attributes?.movement ?? actor.system?.attributes?.movement ?? {})) {
-      if (!["walk", "burrow", "climb", "fly", "swim"].includes(kind)) continue;
+    const movement = actor.system?.attributes?.movement ?? {};
+    const baseMovement = actor._source?.system?.attributes?.movement ?? movement;
+    for (const kind of ["walk", "burrow", "climb", "fly", "swim"]) {
+      // dnd5e fills an absent/empty actor speed from its species before applying effects.
+      // Read that unmodified source, not the already reduced derived speed.
+      const raw = baseMovement[kind] || movement.fromSpecies?.[kind];
       const speed = Number(raw);
       if (Number.isFinite(speed) && speed > 0) changes.push(change(`system.attributes.movement.${kind}`, -Math.min(10, speed)));
       else if (raw && Number(actor.system?.attributes?.movement?.[kind]) > 0) changes.push(change(`system.attributes.movement.${kind}`, -10));

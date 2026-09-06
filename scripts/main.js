@@ -269,7 +269,7 @@ import { ReactionQueueService } from "./combat/reaction-queue-service.js";
 import { LongRestPipelineService } from "./rest/long-rest-pipeline-service.js";
 import { RuneKnightAutomationService } from "./combat/rune-knight-automation-service.js";
 import { CurseEaterAutomationService } from "./combat/curse-eater-automation-service.js";
-import { CurseUpgradeAutomationService } from "./combat/curse-upgrade-automation-service.js";
+import { CurseUpgradeAutomationService } from "./combat/curse-upgrade-automation-service.js?v=1.4.232-species-speed";
 import { registerCurseUpgradeSocketCommands } from "./integrations/curse-upgrade-socket.js";
 import { SpellAutomationService } from "./combat/spell-automation-service.js?v=1.4.109-counterspell-sanitize";
 import { SpellAutomationRegistry } from "./combat/spell-automation-registry.js";

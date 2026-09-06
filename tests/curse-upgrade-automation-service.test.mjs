@@ -3,6 +3,22 @@ import assert from "node:assert/strict";
 import { collectCurseUpgradeSources, buildCurseUpgradeEffect, CurseUpgradeAutomationService } from "../scripts/combat/curse-upgrade-automation-service.js";
 
 const ns = "rebreya-main";
+test("burden reduces species-inherited movement and remains stable after derived speed reaches zero", () => {
+  const { actor } = fixture("tyazhesti-zhizni");
+  actor.system.attributes.hp.temp = 3;
+  actor._source = { system: { attributes: { movement: { units: null, hover: false } } } };
+  actor.system.attributes.movement = { walk: 30, fly: 0, fromSpecies: { walk: "30" } };
+  const source = collectCurseUpgradeSources(actor)[0];
+  const project = () => buildCurseUpgradeEffect(source, actor, { burdenActive: true }).changes;
+  assert.deepEqual(project(), [{ key: "system.attributes.movement.walk", value: "-10", mode: 2, priority: 20 }]);
+  actor.system.attributes.movement.walk = 20;
+  assert.equal(project()[0].value, "-10");
+  actor.system.attributes.movement.fromSpecies.walk = "5";
+  actor.system.attributes.movement.walk = 0;
+  assert.equal(project()[0].value, "-5");
+  actor.system.attributes.hp.temp = 0;
+  assert.deepEqual(project(), []);
+});
 function fixture(key = "voli-k-zhizni") {
   const actor = { id: "actor", type: "character", flags: { [ns]: { heroDoll: { slots: { rightHand: { itemId: "host" } } } } },
     statuses: new Set(), system: { attributes: { hp: { value: 10, temp: 0 }, death: { failure: 0 } } }, effects: new Map(), items: new Map() };
