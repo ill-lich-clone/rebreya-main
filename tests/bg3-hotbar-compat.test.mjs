@@ -563,7 +563,7 @@ test("Rebreya scene control renders its bundled image icon", async () => {
   assert.ok(icon.byteLength > 0);
   assert.match(
     css,
-    /#scene-controls\s+\.layer\[data-control="rebreya-main-rebreya"\]\s*\{[^}]*background-image:\s*url\("\/modules\/rebreya-main\/assets\/ui\/rebreya-control-icon\.png"\)\s*!important;/su
+    /#scene-controls\s+\.layer\[data-control="rebreya-main-rebreya"\]\s*\{[^}]*background-image:\s*url\("\/modules\/rebreya-main\/assets\/ui\/rebreya-control-icon\.png"\)\s*!important;[^}]*background-size:\s*70%;[^}]*filter:\s*grayscale\(100%\);/su
   );
 });
 

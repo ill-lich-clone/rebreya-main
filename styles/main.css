@@ -238,8 +238,9 @@
   background-image: url("/modules/rebreya-main/assets/ui/rebreya-control-icon.png") !important;
   background-position: center;
   background-repeat: no-repeat;
-  background-size: contain;
+  background-size: 70%;
   color: transparent;
+  filter: grayscale(100%);
 }
 
 .rm-player-inventory-button {
