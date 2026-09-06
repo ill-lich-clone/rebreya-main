@@ -56,9 +56,10 @@ export function registerCombatHooks(moduleApi) {
   const hasRuneKnightService = Boolean(moduleApi?.runeKnightAutomationService);
   const hasSizeService = Boolean(moduleApi?.sizeAutomationService);
   const hasCurseEaterService = Boolean(moduleApi?.curseEaterAutomationService);
+  const curseUpgrades = moduleApi?.curseUpgradeAutomationService;
   const hasGrappleService = Boolean(moduleApi?.grappleAutomationService);
   const hasMagicItemsCompendium = Boolean(moduleApi?.magicItemsCompendium);
-  if (!hasStatusService && !hasAttackService && !hasRaceService && !hasFighterService && !hasSorcererService && !hasElementalAdeptService && !hasPaladinService && !hasPaladinDogmaService && !hasRogueService && !hasAttackRollBoostService && !hasPerformerService && !hasBardicInspirationCompatService && !hasEnvironmentService && !hasSpellService && !hasReactionCapabilityIndex && !hasRuneKnightService && !hasSizeService && !hasCurseEaterService && !hasGrappleService && !hasMagicItemsCompendium) {
+  if (!hasStatusService && !hasAttackService && !hasRaceService && !hasFighterService && !hasSorcererService && !hasElementalAdeptService && !hasPaladinService && !hasPaladinDogmaService && !hasRogueService && !hasAttackRollBoostService && !hasPerformerService && !hasBardicInspirationCompatService && !hasEnvironmentService && !hasSpellService && !hasReactionCapabilityIndex && !hasRuneKnightService && !hasSizeService && !hasCurseEaterService && !hasGrappleService && !hasMagicItemsCompendium && !curseUpgrades) {
     return;
   }
 
@@ -66,6 +67,42 @@ export function registerCombatHooks(moduleApi) {
     return;
   }
   game[HOOKS_REGISTERED_KEY] = true;
+
+  if (curseUpgrades) {
+    const report = error => console.error(`${MODULE_ID} | Curse upgrade automation failed.`, error);
+    const run = promise => Promise.resolve(promise).catch(report);
+    Hooks.on("preUpdateActor", (actor, changed, options) => curseUpgrades.preUpdateActor(actor, changed, options));
+    Hooks.on("updateActor", (actor, changed, options) => run(curseUpgrades.actorUpdated(actor, changed, options)));
+    for (const event of ["createItem", "deleteItem", "createActiveEffect", "deleteActiveEffect"]) {
+      Hooks.on(event, (document, options) => run(curseUpgrades.handleChanged(document, options)));
+    }
+    for (const event of ["updateItem", "updateActiveEffect"]) Hooks.on(event, (document, _changed, options) => run(curseUpgrades.handleChanged(document, options)));
+    Hooks.on("dnd5e.preUseActivity", activity => curseUpgrades.preUse(activity));
+    Hooks.on("dnd5e.preRollDeathSave", config => curseUpgrades.preDeathSave(config));
+    Hooks.on("dnd5e.rollInitiative", (actor, combatants) => run(curseUpgrades.initiative(actor, combatants)));
+    Hooks.on("updateCombatant", (combatant, changed) => { if (Object.hasOwn(changed, "initiative")) return run(curseUpgrades.initiative(combatant.actor, [combatant])); });
+    Hooks.on("combatTurnChange", (combat, previous, current) => run(curseUpgrades.combatChanged(combat, previous, current)));
+    Hooks.on("updateWorldTime", () => run(curseUpgrades.expireOutsideCombat()));
+    Hooks.on("dnd5e.preRollDamage", config => curseUpgrades.damage.preRollDamage(config));
+    Hooks.on("dnd5e.preApplyDamage", (actor, amount, updates, options) => curseUpgrades.preApplyDamage(actor, amount, updates, options));
+    Hooks.on("dnd5e.preCalculateDamage", (actor, damages, options) => curseUpgrades.damage.preCalculateDamage(actor, damages, options));
+    Hooks.on("midi-qol.dnd5ePreCalculateDamage", (actor, damages, options) => curseUpgrades.damage.midiPreCalculateDamage(actor, damages, options));
+    Hooks.on("dnd5e.calculateDamage", (actor, damages, options) => curseUpgrades.damage.calculateDamage(actor, damages, options));
+    Hooks.on("midi-qol.dnd5eCalculateDamage", (actor, damages, options) => curseUpgrades.damage.midiCalculateDamage(actor, damages, options));
+    Hooks.on("midi-qol.postCheckSaves", workflow => curseUpgrades.saves.applyMidiPostCheckSaves(workflow));
+    Hooks.on("dnd5e.preRollAttack", config => curseUpgrades.attacks.preRollAttack(config));
+    Hooks.on("midi-qol.preAttackRoll", workflow => curseUpgrades.attacks.midiPreAttackRoll(workflow));
+    Hooks.on("midi-qol.preTargetDamageApplication", (token, context) => curseUpgrades.damage.preTargetDamageApplication(token, context));
+    Hooks.on("midi-qol.RollComplete", async workflow => {
+      try { await curseUpgrades.bloodHit(workflow); }
+      finally { curseUpgrades.attacks.releaseWorkflow(workflow); }
+    });
+    Hooks.on("midi-qol.preAbort", workflow => curseUpgrades.attacks.releaseWorkflow(workflow));
+    Hooks.on("dnd5e.rollAttack", (rolls, data) => {
+      const activity = data?.subject; const actor = activity?.actor ?? activity?.item?.actor;
+      if (actor && activity.item?.type === "weapon" && rolls?.length) return run(curseUpgrades.attackOccurred(actor, activity.item, globalThis.crypto.randomUUID()));
+    });
+  }
 
   if (hasMagicItemsCompendium) {
     Hooks.on("dnd5e.rollHitDie", (rolls, context) => {

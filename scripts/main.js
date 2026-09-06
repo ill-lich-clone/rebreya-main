@@ -260,8 +260,8 @@ import {
   isValidStorageTokenCharacterPayload,
   storageCharacterTokenUuidForClaim
 } from "./data/storage-command-service.js?v=1.4.226-inventory-transfer";
-import { registerCombatHooks } from "./combat/hooks.js?v=1.4.191-magic-item-runtime";
-import { CombatAttackService } from "./combat/attack-service.js?v=1.4.181-dual-wield-gloves";
+import { registerCombatHooks } from "./combat/hooks.js?v=1.4.231-curse-upgrades";
+import { CombatAttackService } from "./combat/attack-service.js?v=1.4.231-curse-upgrades";
 import { ImplantAutomationService } from "./combat/implant-automation-service.js";
 import { SizeAutomationService } from "./combat/size-automation-service.js?v=1.4.110-character-size-authority";
 import { ReactionCapabilityIndex } from "./combat/reaction-capability-index.js";
@@ -269,6 +269,8 @@ import { ReactionQueueService } from "./combat/reaction-queue-service.js";
 import { LongRestPipelineService } from "./rest/long-rest-pipeline-service.js";
 import { RuneKnightAutomationService } from "./combat/rune-knight-automation-service.js";
 import { CurseEaterAutomationService } from "./combat/curse-eater-automation-service.js";
+import { CurseUpgradeAutomationService } from "./combat/curse-upgrade-automation-service.js";
+import { registerCurseUpgradeSocketCommands } from "./integrations/curse-upgrade-socket.js";
 import { SpellAutomationService } from "./combat/spell-automation-service.js?v=1.4.109-counterspell-sanitize";
 import { SpellAutomationRegistry } from "./combat/spell-automation-registry.js";
 import { SpellInstanceRuntime } from "./combat/spell-instance-runtime.js";
@@ -1723,6 +1725,7 @@ export class RebreyaMainModule {
     this.curseEaterAutomationService = new CurseEaterAutomationService({
       getUpgradeCatalog: async () => (await this.getModel()).gearById
     });
+    this.curseUpgradeAutomationService = new CurseUpgradeAutomationService(this);
     this.combatStatusService = new CombatStatusService(this);
     this.implantAutomationService = new ImplantAutomationService(this);
     this.combatAttackService = new CombatAttackService(this);
@@ -1785,6 +1788,7 @@ export class RebreyaMainModule {
       isActiveGmClient: () => isActiveGmClient(globalThis.game)
     });
     for (const service of [
+      this.curseUpgradeAutomationService,
       this.runeKnightAutomationService,
       this.performerAutomationService,
       this.fighterAutomationService,
@@ -1923,6 +1927,7 @@ export class RebreyaMainModule {
   }
 
   #registerTypedSocketCommands() {
+    registerCurseUpgradeSocketCommands(this);
     registerCraftsmanGadgetSocketCommand(this);
     registerSpellInstanceSocketCommand(this);
     registerSummonLifecycleSocketCommand(this);
@@ -2757,6 +2762,8 @@ export class RebreyaMainModule {
 
     try {
       await this.curseEaterAutomationService.initialize();
+      await this.curseUpgradeAutomationService.initialize();
+      this.curseUpgradeAutomationService.registerNativeSaveWrapper();
     }
     catch (error) {
       console.warn(`${MODULE_ID} | Failed to initialize Curse Eater automation.`, error);
@@ -6038,12 +6045,20 @@ export class RebreyaMainModule {
 
   async installItemUpgrade(hostItem, upgradeItem, options = {}) {
     const result = await this.itemUpgradeService.installItemUpgrade(hostItem, upgradeItem, options);
+    await this.curseUpgradeAutomationService.requestSync(hostItem.actor ?? hostItem.parent);
     await this.refreshOpenApps();
     return result;
   }
 
+  async resolveCurseUpgradeSave(actorOrUuid, { saved, death = false, eventId = globalThis.crypto.randomUUID() } = {}) {
+    const actor = typeof actorOrUuid === "string" ? await globalThis.fromUuid(actorOrUuid) : actorOrUuid;
+    if (!actor?.uuid || typeof saved !== "boolean") throw new Error("Укажите персонажа и результат спасброска.");
+    return this.curseUpgradeAutomationService.resolveSaveRequest({ actorUuid: actor.uuid, eventId, saved, death, damageOnly: false });
+  }
+
   async removeItemUpgrade(hostItem, upgradeItemOrId) {
     const result = await this.itemUpgradeService.removeItemUpgrade(hostItem, upgradeItemOrId);
+    await this.curseUpgradeAutomationService.requestSync(hostItem.actor ?? hostItem.parent);
     await this.refreshOpenApps();
     return result;
   }

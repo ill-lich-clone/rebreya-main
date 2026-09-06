@@ -408,3 +408,7 @@ Definition of Done: код, тесты, `README.md` при изменении п
 - **Не синхронизировался pack:** проверь active GM, managed/source/signature flags, stable ID collision и dependency order.
 - **Как выбрать тест:** owner service → `<owner>.test.mjs`; typed command → `*-socket`/`*-command-dispatch`; recovery → `*-recovery`/transaction; UI → `*-app-context`/`*-ui`; compatibility → одноимённый integration test.
 - **Как найти вход:** `rg -n "имяМетода|COMMAND_NAME|flag|hook" scripts tests README.md docs/function-passport.md`; затем читай только найденный service, composition wiring и focused-тест.
+
+## Автоматизация проклятий-усовершенствований
+
+Владелец, сигнатуры, data flow, hooks, sockets, ограничения и focused-тесты: [паспорт проклятий](curse-upgrades-function-passport.md).

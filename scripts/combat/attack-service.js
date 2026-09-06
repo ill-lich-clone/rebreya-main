@@ -4186,7 +4186,7 @@ export class CombatAttackService {
     }
 
     const safeRequiredUses = Math.max(1, Math.floor(toNumber(requiredUses, 1)));
-    if (actorHasReactionSuppression(actor)) {
+    if (actorHasReactionSuppression(actor) || this.moduleApi?.curseUpgradeAutomationService?.blocksReaction(actor)) {
       return {
         actorId: state.actorId,
         canUse: false,
