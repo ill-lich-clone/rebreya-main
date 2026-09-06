@@ -234,8 +234,11 @@
   display: none;
 }
 
-#scene-controls-controls .layer.rebreya-main-control-icon {
-  background: url("../assets/ui/rebreya-control-icon.png") center / contain no-repeat;
+#scene-controls .layer[data-control="rebreya-main-rebreya"] {
+  background-image: url("/modules/rebreya-main/assets/ui/rebreya-control-icon.png") !important;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: contain;
   color: transparent;
 }
 

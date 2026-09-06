@@ -563,7 +563,7 @@ test("Rebreya scene control renders its bundled image icon", async () => {
   assert.ok(icon.byteLength > 0);
   assert.match(
     css,
-    /#scene-controls-controls\s+\.layer\.rebreya-main-control-icon\s*\{[^}]*background:\s*url\("\.\.\/assets\/ui\/rebreya-control-icon\.png"\)\s+center\s*\/\s*contain\s+no-repeat;/su
+    /#scene-controls\s+\.layer\[data-control="rebreya-main-rebreya"\]\s*\{[^}]*background-image:\s*url\("\/modules\/rebreya-main\/assets\/ui\/rebreya-control-icon\.png"\)\s*!important;/su
   );
 });
 
@@ -598,6 +598,7 @@ test("scene controls create a separate Rebreya group for array controls", () => 
     assert.deepEqual(tokenControl.tools, []);
     const rebreyaIndex = controls.findIndex((control) => control?.name === "rebreya-main-rebreya");
     assert.equal(rebreyaIndex, 2);
+    assert.equal(controls[rebreyaIndex].icon, "rebreya-main-control-icon");
     assert.equal(controls[rebreyaIndex].activeTool, "rebreya-main-panel");
     assert.equal(controls[rebreyaIndex].tools.find((tool) => tool.name === "rebreya-main-panel").onChange, undefined);
     assert.equal(controls[rebreyaIndex].tools.find((tool) => tool.name === "rebreya-main-panel").button, undefined);
