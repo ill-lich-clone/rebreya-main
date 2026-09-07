@@ -25,7 +25,7 @@ import {
 } from "./party-inventory-crest.js";
 import { isJournalRecordItem } from "../data/journal-record-item.js?v=1.4.217-journal-record-items";
 import { openStorageJournalViewer } from "./storage-journal-viewer.js?v=1.4.221-journal-readonly-dialog";
-import { promptInventoryItemAddition } from "./inventory-item-add-dialog.js?v=1.4.243";
+import { promptInventoryItemAddition } from "./inventory-item-add-dialog.js?v=1.4.245";
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
 export function formatInventoryTransferError(error, itemName = "предмет") {
