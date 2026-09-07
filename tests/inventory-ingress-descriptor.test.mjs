@@ -111,6 +111,34 @@ test("Lootgen, persisted Storage and external drop wrappers have descriptor pari
   });
 });
 
+test("manual ingress keeps an explicit non-catalog identity even when its name matches gear", () => {
+  const descriptor = buildInventoryIngressDescriptor({
+    name: "Железный меч",
+    type: "loot",
+    system: {
+      quantity: 3,
+      price: { value: 4, denomination: "gp" },
+      weight: { value: 2.5, units: "lb" },
+      type: { value: "loot", subtype: "Прочее" }
+    },
+    flags: {
+      [MODULE_ID]: {
+        sourceType: "manual",
+        sourceId: "manual-entry-1",
+        itemType: "Прочее",
+        predominantMaterialName: "Ткань",
+        manualEntry: { version: 1, manualEntryId: "manual-entry-1" }
+      }
+    }
+  }, { model: createModel() });
+
+  assert.equal(descriptor.sourceType, "manual");
+  assert.equal(descriptor.sourceId, "manual-entry-1");
+  assert.equal(descriptor.unitWeight, 2.5);
+  assert.equal(descriptor.unitValue, 400);
+  assert.equal(descriptor.predominantMaterialId, "");
+});
+
 test("derives ordinary, magic and material source kinds from stable managed metadata", () => {
   const model = createModel();
   const ordinary = createSwordData();

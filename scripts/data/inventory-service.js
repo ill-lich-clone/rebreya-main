@@ -53,7 +53,7 @@ import {
   normalizeInventoryFolderState,
   renameInventoryFolder as renameInventoryFolderState
 } from "./inventory-folder-tree.js";
-import { resolveGearItemIcon } from "./gear-icon-resolver.js?v=1.4.239";
+import { resolveGearItemIcon } from "./gear-icon-resolver.js?v=1.4.243";
 
 const SOCKET_CHANNEL = `module.${MODULE_ID}`;
 export const SOCKET_EVENT_INVENTORY_IMPORT_REQUEST = "inventory-import-request";
@@ -729,6 +729,10 @@ function normalizeInventorySourceType(value) {
 
   if (["custom", "other", "прочее"].includes(compact)) {
     return "custom";
+  }
+
+  if (["manual", "manualentry", "textentry", "ручной", "текстоваязапись"].includes(compact)) {
+    return "manual";
   }
 
   return "";
@@ -3971,7 +3975,7 @@ export class InventoryService {
     const batchMutationId = cleanId(request.batchMutationId);
     const sourceOrigin = cleanId(request.sourceOrigin);
     if (!groupActorId || !batchMutationId
-      || !new Set(["lootgen", "storage", "import", "public-model"]).has(sourceOrigin)
+      || !new Set(["lootgen", "storage", "import", "public-model", "manual-entry"]).has(sourceOrigin)
       || typeof resolveRows !== "function" || typeof debitRow !== "function") {
       throw new InventoryIngressRuleError("invalid-batch", "Inventory ingress batch dependencies or identity are invalid.");
     }
@@ -4390,7 +4394,7 @@ export class InventoryService {
     const batchMutationId = cleanId(request.batchMutationId);
     const sourceOrigin = cleanId(request.sourceOrigin);
     if (!groupActorId || !batchMutationId
-      || !new Set(["lootgen", "storage", "import", "public-model"]).has(sourceOrigin)
+      || !new Set(["lootgen", "storage", "import", "public-model", "manual-entry"]).has(sourceOrigin)
       || typeof resolveRows !== "function" || typeof debitRow !== "function") {
       throw new InventoryIngressRuleError("invalid-batch", "Inventory ingress batch dependencies or identity are invalid.");
     }
@@ -4711,15 +4715,17 @@ export class InventoryService {
     const sourceFlags = foundry.utils.deepClone(item.flags?.[MODULE_ID] ?? {});
     const itemName = normalizeText(item.name);
     const normalizedSourceType = normalizeInventorySourceType(sourceFlags.sourceType);
+    const isManualSource = normalizedSourceType === "manual"
+      || Number(sourceFlags.manualEntry?.version) === 1;
     const isMagicFlag = normalizedSourceType === "magicItem"
       || Boolean(sourceFlags.magicItemId)
       || Boolean(sourceFlags.magicId)
       || normalizeInventorySourceType(sourceFlags.itemType) === "magicItem"
       || normalizeInventorySourceType(sourceFlags.magicItemType) === "magicItem"
       || Boolean(sourceFlags.magical);
-    const matchingMaterials = (model.materials ?? [])
+    const matchingMaterials = isManualSource ? [] : (model.materials ?? [])
       .filter((material) => normalizeText(material.name) === itemName);
-    const matchingGear = (model.gear ?? [])
+    const matchingGear = isManualSource ? [] : (model.gear ?? [])
       .filter((gearItem) => normalizeText(gearItem.name) === itemName);
     const matchedMaterial = model.materialById?.get(sourceFlags.materialId)
       ?? model.materialById?.get(sourceFlags.sourceId)
@@ -5530,6 +5536,161 @@ export class InventoryService {
     }, {
       renderSheet: false
     });
+  }
+
+  async getInventoryAddCatalog() {
+    const model = await this.moduleApi.getModel();
+    const indexFor = async (packName, fields) => {
+      const pack = game.packs.get(`world.${packName}`) ?? null;
+      if (!pack) return [];
+      try {
+        return Array.from(await pack.getIndex({ fields }));
+      }
+      catch (error) {
+        console.warn(`${MODULE_ID} | Failed to read inventory add catalog '${packName}'.`, error);
+        return [];
+      }
+    };
+    const [materialIndex, gearIndex, magicIndex] = await Promise.all([
+      indexFor(MATERIALS_COMPENDIUM_NAME, [`flags.${MODULE_ID}.materialId`]),
+      indexFor(GEAR_COMPENDIUM_NAME, [
+        `flags.${MODULE_ID}.gearId`,
+        `flags.${MODULE_ID}.sourceId`
+      ]),
+      indexFor(MAGIC_ITEMS_COMPENDIUM_NAME, [
+        `flags.${MODULE_ID}.magicItemId`,
+        `flags.${MODULE_ID}.magicItemType`,
+        `flags.${MODULE_ID}.predominantMaterialName`,
+        "system.price",
+        "system.type",
+        "system.weight"
+      ])
+    ]);
+    const indexedIcon = (index, flagNames, sourceId, fallbackName, fallbackIcon) => {
+      const matched = index.find((entry) => flagNames.some((flagName) => (
+        cleanId(foundry.utils.getProperty(entry, `flags.${MODULE_ID}.${flagName}`)) === cleanId(sourceId)
+      ))) ?? index.find((entry) => normalizeText(entry?.name) === normalizeText(fallbackName));
+      return normalizeInventoryIconPath(matched?.img) || fallbackIcon;
+    };
+    const modelRows = [
+      ...(model.materials ?? []).map((material) => ({
+        id: `material:${material.id}`,
+        sourceType: "material",
+        sourceId: material.id,
+        name: material.name,
+        img: indexedIcon(
+          materialIndex,
+          ["materialId"],
+          material.id,
+          material.name,
+          "icons/commodities/materials/slime-thick-blue.webp"
+        ),
+        itemTypeLabel: material.type || "Материал",
+        materialLabel: material.name,
+        unitWeight: Math.max(0, roundNumber(toNumber(material.weight, 0), 5)),
+        unitPriceValue: Math.max(0, roundNumber(toNumber(material.priceGold, 0), 5)),
+        unitPriceDenomination: "gp"
+      })),
+      ...(model.gear ?? []).map((gearItem) => ({
+        id: `gear:${gearItem.id}`,
+        sourceType: "gear",
+        sourceId: gearItem.id,
+        name: gearItem.name,
+        img: indexedIcon(
+          gearIndex,
+          ["gearId", "sourceId"],
+          gearItem.id,
+          gearItem.name,
+          resolveGearItemIcon(gearItem)
+        ),
+        itemTypeLabel: gearItem.equipmentType || "Снаряжение",
+        materialLabel: gearItem.predominantMaterialName || "",
+        unitWeight: Math.max(0, roundNumber(toNumber(gearItem.weight, 0), 5)),
+        unitPriceValue: Math.max(0, roundNumber(
+          toNumber(gearItem.priceGoldEquivalent, toNumber(gearItem.priceValue, 0)),
+          5
+        )),
+        unitPriceDenomination: "gp"
+      }))
+    ];
+    const magicRows = magicIndex.map((entry) => {
+      const sourceId = cleanId(foundry.utils.getProperty(entry, `flags.${MODULE_ID}.magicItemId`));
+      const price = foundry.utils.getProperty(entry, "system.price") ?? {};
+      return {
+        id: `magicItem:${sourceId}`,
+        sourceType: "magicItem",
+        sourceId,
+        name: cleanId(entry?.name),
+        img: normalizeInventoryIconPath(entry?.img) || "icons/svg/item-bag.svg",
+        itemTypeLabel: cleanId(foundry.utils.getProperty(entry, `flags.${MODULE_ID}.magicItemType`))
+          || cleanId(foundry.utils.getProperty(entry, "system.type.subtype"))
+          || "Магический предмет",
+        materialLabel: cleanId(foundry.utils.getProperty(entry, `flags.${MODULE_ID}.predominantMaterialName`)),
+        unitWeight: Math.max(0, roundNumber(getItemWeight(entry), 5)),
+        unitPriceValue: Math.max(0, roundNumber(toNumber(price?.value, 0), 5)),
+        unitPriceDenomination: new Set(["pp", "gp", "sp", "cp"]).has(cleanId(price?.denomination).toLowerCase())
+          ? cleanId(price.denomination).toLowerCase()
+          : "gp"
+      };
+    }).filter((entry) => entry.sourceId && entry.name);
+    return [...modelRows, ...magicRows]
+      .sort((left, right) => left.name.localeCompare(right.name, "ru", { sensitivity: "base", numeric: true }))
+      .map((entry) => foundry.utils.deepClone(entry));
+  }
+
+  buildManualInventoryItemData(manualEntry, quantity = 1) {
+    const exactKeys = [
+      "itemType", "manualEntryId", "material", "name", "unitPriceDenomination", "unitPriceValue", "unitWeight"
+    ];
+    if (!manualEntry || typeof manualEntry !== "object" || Array.isArray(manualEntry)
+      || Object.keys(manualEntry).length !== exactKeys.length
+      || !exactKeys.every((key) => Object.hasOwn(manualEntry, key))) {
+      throw new Error("Ручная запись предмета имеет неверный формат.");
+    }
+    const manualEntryId = cleanId(manualEntry.manualEntryId);
+    const name = cleanId(manualEntry.name);
+    const itemType = cleanId(manualEntry.itemType) || "Прочее";
+    const material = cleanId(manualEntry.material);
+    const safeQuantity = Number(quantity);
+    const unitWeight = Number(manualEntry.unitWeight);
+    const unitPriceValue = Number(manualEntry.unitPriceValue);
+    const unitPriceDenomination = cleanId(manualEntry.unitPriceDenomination).toLowerCase();
+    if (!manualEntryId || !name || !Number.isSafeInteger(safeQuantity) || safeQuantity <= 0
+      || !Number.isFinite(unitWeight) || unitWeight < 0
+      || !Number.isFinite(unitPriceValue) || unitPriceValue < 0
+      || !new Set(["pp", "gp", "sp", "cp"]).has(unitPriceDenomination)) {
+      throw new Error("Проверьте поля ручной записи предмета.");
+    }
+    return {
+      name,
+      type: "loot",
+      img: "icons/svg/item-bag.svg",
+      system: {
+        description: { value: "", chat: "" },
+        unidentified: { description: "" },
+        quantity: safeQuantity,
+        price: { value: roundNumber(unitPriceValue, 5), denomination: unitPriceDenomination },
+        weight: { value: roundNumber(unitWeight, 5), units: "lb" },
+        type: { value: "loot", subtype: itemType }
+      },
+      flags: {
+        [MODULE_ID]: {
+          sourceType: "manual",
+          sourceId: manualEntryId,
+          itemType,
+          predominantMaterialName: material,
+          manualEntry: {
+            version: 1,
+            manualEntryId,
+            unitWeight: roundNumber(unitWeight, 5),
+            unitPriceValue: roundNumber(unitPriceValue, 5),
+            unitPriceDenomination,
+            itemType,
+            material
+          }
+        }
+      }
+    };
   }
 
   async buildModelItemData(sourceType, sourceId, quantity = 1) {

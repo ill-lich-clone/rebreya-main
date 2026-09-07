@@ -25,6 +25,7 @@ import {
 } from "./party-inventory-crest.js";
 import { isJournalRecordItem } from "../data/journal-record-item.js?v=1.4.217-journal-record-items";
 import { openStorageJournalViewer } from "./storage-journal-viewer.js?v=1.4.221-journal-readonly-dialog";
+import { promptInventoryItemAddition } from "./inventory-item-add-dialog.js?v=1.4.243";
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
 export function formatInventoryTransferError(error, itemName = "предмет") {
@@ -5044,18 +5045,31 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   async #createInventoryItem() {
-    const actor = await this.moduleApi.inventoryService.getInventoryActor({
-      create: false,
-      groupActorId: this.inventoryActorId
+    const groupActorId = cleanText(this.inventoryActorId);
+    const folderId = this.rootFolderId === null ? null : cleanText(this.rootFolderId);
+    if (!groupActorId) throw new Error("Склад группы не найден.");
+    const targetFolder = folderId
+      ? this.inventoryFolderTreeCache?.folderById?.get?.(folderId) ?? null
+      : null;
+    return promptInventoryItemAddition({
+      targetLabel: targetFolder?.name
+        ? `«${targetFolder.name}»`
+        : folderId
+          ? "выбранная папка"
+          : "корень склада",
+      loadCatalog: () => this.moduleApi.getInventoryAddCatalog(),
+      submitCatalogItem: (entry, quantity, attempt) => this.moduleApi.addModelItemToInventory(
+        entry.sourceType,
+        entry.sourceId,
+        quantity,
+        { groupActorId, folderId, batchMutationId: attempt.batchMutationId }
+      ),
+      submitManualItem: (manualEntry, attempt) => this.moduleApi.addManualInventoryItem(
+        manualEntry,
+        manualEntry.quantity,
+        { groupActorId, folderId, batchMutationId: attempt.batchMutationId }
+      )
     });
-    if (!actor) {
-      throw new Error("Склад группы не найден.");
-    }
-    if (typeof globalThis.Item?.createDialog !== "function") {
-      throw new Error("Диалог создания предмета недоступен.");
-    }
-
-    return globalThis.Item.createDialog({}, { parent: actor });
   }
 
   async #promptSupply(resourceKey) {
@@ -7313,7 +7327,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       button.addEventListener("click", async (event) => {
         event.preventDefault();
         event.stopPropagation();
-        if (!this.canManage) return;
+        if (!this.canDropInventoryItems && !this.canOrganizeInventory) return;
         try {
           await this.#createInventoryItem();
         }

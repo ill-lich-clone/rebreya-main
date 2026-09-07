@@ -1810,6 +1810,9 @@ test("public model grants use the same single direct-ingress command", async () 
     return { actorId: fixture.groupA.id, changed: true, rows: [] };
   };
   moduleApi.refreshInventoryViews = async () => {};
+  moduleApi.groupContextService.resolveForCurrentUser = () => {
+    throw new Error("the selected group changed after the dialog opened");
+  };
 
   try {
     await moduleApi.addModelItemToInventory("gear", "model-sword", 1, {
@@ -1822,6 +1825,132 @@ test("public model grants use the same single direct-ingress command", async () 
     assert.equal(socketCall.payload.sourceOrigin, "public-model");
     assert.equal(socketCall.payload.sources.length, 1);
     assert.equal(socketCall.payload.ingressPlan.groupActorId, fixture.groupA.id);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("manual inventory additions use the same direct-ingress command and preserve the captured target", async () => {
+  const fixture = installFixture({ currentUserId: "player-a" });
+  const moduleApi = new RebreyaMainModule();
+  const plan = buildLootgenIngressPlan(fixture.groupA.id, ["item"]);
+  let socketCall = null;
+  moduleApi.inventoryService.buildManualInventoryItemData = (descriptor, quantity) => ({
+    name: descriptor.name,
+    type: "loot",
+    system: { quantity, weight: { value: descriptor.unitWeight, units: "lb" } },
+    flags: { [MODULE_ID]: { sourceType: "manual", sourceId: descriptor.manualEntryId } }
+  });
+  moduleApi.inventoryIngressPlanner = {
+    preview: async (request) => {
+      assert.equal(request.groupActorId, fixture.groupA.id);
+      assert.equal(request.requestedFolderId, "folder-a");
+      return {};
+    },
+    collectChoices: async () => ({ rootOverrideSourceKeys: [] }),
+    serialize: () => plan
+  };
+  moduleApi.socketCommandBus.request = async (command, payload) => {
+    socketCall = { command, payload: clone(payload) };
+    return { actorId: fixture.groupA.id, changed: true, rows: [] };
+  };
+  moduleApi.refreshInventoryViews = async () => {};
+
+  try {
+    await moduleApi.addManualInventoryItem({
+      manualEntryId: "manual-entry-1",
+      name: "Дорожный набор",
+      unitWeight: 2.5,
+      unitPriceValue: 4,
+      unitPriceDenomination: "gp",
+      itemType: "Прочее",
+      material: "Ткань"
+    }, 3, {
+      groupActorId: fixture.groupA.id,
+      folderId: "folder-a",
+      batchMutationId: "manual-batch-1"
+    });
+
+    assert.equal(socketCall.command, "inventory.ingress.direct");
+    assert.equal(socketCall.payload.sourceOrigin, "manual-entry");
+    assert.equal(socketCall.payload.batchMutationId, "manual-batch-1");
+    assert.equal(socketCall.payload.sources[0].sourceId, "manual-entry-1");
+    assert.equal(socketCall.payload.sources[0].quantity, 3);
+    assert.equal(socketCall.payload.sources[0].manualEntry.unitPriceValue, 4);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("active GM rebuilds a strict manual descriptor before authoritative ingress", async () => {
+  const fixture = installFixture();
+  const moduleApi = new RebreyaMainModule();
+  const ingressPlan = buildLootgenIngressPlan(fixture.groupA.id, ["item"]);
+  const manualEntry = {
+    manualEntryId: "manual-entry-2",
+    name: "Полевой набор",
+    unitWeight: 2.5,
+    unitPriceValue: 4,
+    unitPriceDenomination: "gp",
+    itemType: "Прочее",
+    material: "Ткань"
+  };
+  const payload = {
+    batchMutationId: "manual-batch-2",
+    coins: { pp: 0, gp: 0, sp: 0, cp: 0 },
+    groupActorId: fixture.groupA.id,
+    ingressPlan,
+    sourceOrigin: "manual-entry",
+    sources: [{
+      sourceKey: "item",
+      sourceType: "manual",
+      sourceId: manualEntry.manualEntryId,
+      sourceDocumentId: "",
+      isBroken: false,
+      quantity: 3,
+      manualEntry
+    }]
+  };
+  let built = null;
+  let commits = 0;
+  moduleApi.inventoryService.buildManualInventoryItemData = (descriptor, quantity) => {
+    built = { descriptor: clone(descriptor), quantity };
+    return { name: descriptor.name, type: "loot", system: { quantity }, flags: { [MODULE_ID]: { sourceType: "manual", sourceId: descriptor.manualEntryId } } };
+  };
+  moduleApi.inventoryService.commitInventoryIngressBatch = async (request, adapters) => {
+    commits += 1;
+    assert.equal(request.sourceOrigin, "manual-entry");
+    const rows = await adapters.resolveRows();
+    assert.equal(rows[0].itemData.name, manualEntry.name);
+    return { actorId: fixture.groupA.id, changed: true, rows: [] };
+  };
+  moduleApi.refreshInventoryViews = async () => {};
+
+  try {
+    const request = commandRequest(
+      "inventory.ingress.direct",
+      fixture.users.playerA.id,
+      payload,
+      "manual-command-authorized"
+    );
+    await moduleApi.handleSocketMessage(request);
+    await flushCommands();
+    assert.equal(resultFor(fixture, request.requestId)?.ok, true);
+    assert.deepEqual(built, { descriptor: manualEntry, quantity: 3 });
+    assert.equal(commits, 1);
+
+    const invalid = commandRequest(
+      "inventory.ingress.direct",
+      fixture.users.playerA.id,
+      { ...payload, sources: [{ ...payload.sources[0], manualEntry: { ...manualEntry, extra: true } }] },
+      "manual-command-invalid"
+    );
+    await moduleApi.handleSocketMessage(invalid);
+    await flushCommands();
+    assert.equal(resultFor(fixture, invalid.requestId)?.error?.code, "invalid-payload");
+    assert.equal(commits, 1);
   }
   finally {
     fixture.restore();

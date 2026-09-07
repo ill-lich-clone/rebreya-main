@@ -75,7 +75,7 @@ import {
   SOCKET_EVENT_INVENTORY_SOURCE_DEPLETION_RESULT,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_REQUEST,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_RESULT
-} from "./data/inventory-service.js?v=1.4.239-inventory-ui";
+} from "./data/inventory-service.js?v=1.4.243-inventory-add";
 import {
   InventoryIngressRuleCompilerCache,
   normalizeInventoryIngressRule
@@ -895,7 +895,7 @@ function isValidDirectInventoryIngressPayload(payload) {
   ])
     || !isValidInventoryMutationId(payload.batchMutationId)
     || !isValidInventoryFolderIdentifier(payload.groupActorId)
-    || !new Set(["lootgen", "public-model"]).has(payload.sourceOrigin)
+    || !new Set(["lootgen", "public-model", "manual-entry"]).has(payload.sourceOrigin)
     || !Array.isArray(payload.sources)
     || !payload.coins || typeof payload.coins !== "object" || Array.isArray(payload.coins)
     || !hasExactKeys(payload.coins, ["cp", "gp", "pp", "sp"])
@@ -903,10 +903,24 @@ function isValidDirectInventoryIngressPayload(payload) {
     return false;
   }
   const sources = payload.sources;
-  if (!sources.every((source) => (
-    hasExactKeys(source, [
-      "isBroken", "quantity", "sourceDocumentId", "sourceId", "sourceKey", "sourceType"
+  const manualKeys = [
+    "isBroken", "manualEntry", "quantity", "sourceDocumentId", "sourceId", "sourceKey", "sourceType"
+  ];
+  const modelKeys = ["isBroken", "quantity", "sourceDocumentId", "sourceId", "sourceKey", "sourceType"];
+  const isManualEntry = (value) => value && typeof value === "object" && !Array.isArray(value)
+    && hasExactKeys(value, [
+      "itemType", "manualEntryId", "material", "name", "unitPriceDenomination", "unitPriceValue", "unitWeight"
     ])
+    && isValidInventoryMutationId(value.manualEntryId)
+    && isTrimmedNonEmptyString(value.name)
+    && value.name.length <= 160
+    && typeof value.itemType === "string" && value.itemType === value.itemType.trim() && value.itemType.length <= 160
+    && typeof value.material === "string" && value.material === value.material.trim() && value.material.length <= 160
+    && Number.isFinite(value.unitWeight) && value.unitWeight >= 0
+    && Number.isFinite(value.unitPriceValue) && value.unitPriceValue >= 0
+    && new Set(["pp", "gp", "sp", "cp"]).has(value.unitPriceDenomination);
+  if (!sources.every((source) => (
+    hasExactKeys(source, payload.sourceOrigin === "manual-entry" ? manualKeys : modelKeys)
       && isValidInventoryFolderIdentifier(source.sourceKey)
       && isTrimmedNonEmptyString(source.sourceType)
       && isTrimmedNonEmptyString(source.sourceId)
@@ -915,6 +929,14 @@ function isValidDirectInventoryIngressPayload(payload) {
       && typeof source.isBroken === "boolean"
       && Number.isFinite(source.quantity)
       && source.quantity > 0
+      && (payload.sourceOrigin !== "manual-entry" || (
+        source.sourceType === "manual"
+        && source.sourceDocumentId === ""
+        && source.isBroken === false
+        && Number.isSafeInteger(source.quantity)
+        && isManualEntry(source.manualEntry)
+        && source.sourceId === source.manualEntry.manualEntryId
+      ))
   )) || new Set(sources.map((source) => source.sourceKey)).size !== sources.length) {
     return false;
   }
@@ -3343,14 +3365,28 @@ export class RebreyaMainModule {
   }
 
   #normalizeDirectInventoryIngressSources(sources) {
-    return (Array.isArray(sources) ? sources : []).map((source) => ({
-      sourceKey: String(source?.sourceKey ?? source?.directGrantId ?? "").trim(),
-      sourceType: String(source?.sourceType ?? "").trim(),
-      sourceId: String(source?.sourceId ?? "").trim(),
-      sourceDocumentId: String(source?.sourceDocumentId ?? "").trim(),
-      isBroken: source?.isBroken === true,
-      quantity: Math.max(0.01, Math.round((Number(source?.quantity ?? 1) || 1) * 100) / 100)
-    }));
+    return (Array.isArray(sources) ? sources : []).map((source) => {
+      const normalized = {
+        sourceKey: String(source?.sourceKey ?? source?.directGrantId ?? "").trim(),
+        sourceType: String(source?.sourceType ?? "").trim(),
+        sourceId: String(source?.sourceId ?? "").trim(),
+        sourceDocumentId: String(source?.sourceDocumentId ?? "").trim(),
+        isBroken: source?.isBroken === true,
+        quantity: Math.max(0.01, Math.round((Number(source?.quantity ?? 1) || 1) * 100) / 100)
+      };
+      if (source?.manualEntry && typeof source.manualEntry === "object" && !Array.isArray(source.manualEntry)) {
+        normalized.manualEntry = {
+          manualEntryId: String(source.manualEntry.manualEntryId ?? "").trim(),
+          name: String(source.manualEntry.name ?? "").trim(),
+          unitWeight: Number(source.manualEntry.unitWeight),
+          unitPriceValue: Number(source.manualEntry.unitPriceValue),
+          unitPriceDenomination: String(source.manualEntry.unitPriceDenomination ?? "").trim().toLowerCase(),
+          itemType: String(source.manualEntry.itemType ?? "").trim(),
+          material: String(source.manualEntry.material ?? "").trim()
+        };
+      }
+      return normalized;
+    });
   }
 
   async #buildDirectInventoryIngressRows(sourceOrigin, sources, requestedFolderId) {
@@ -3359,11 +3395,13 @@ export class RebreyaMainModule {
       quantity: source.quantity,
       itemData: sourceOrigin === "lootgen"
         ? await this.inventoryService.buildLootgenItemData(source)
-        : await this.inventoryService.buildModelItemData(
-          source.sourceType,
-          source.sourceId,
-          source.quantity
-        ),
+        : sourceOrigin === "manual-entry"
+          ? this.inventoryService.buildManualInventoryItemData(source.manualEntry, source.quantity)
+          : await this.inventoryService.buildModelItemData(
+            source.sourceType,
+            source.sourceId,
+            source.quantity
+          ),
       legacyFolderId: requestedFolderId,
       container: null
     })));
@@ -5876,10 +5914,10 @@ export class RebreyaMainModule {
   }
 
   async addModelItemToInventory(sourceType, sourceId, quantity = 1, options = {}) {
-    const context = this.groupContextService.resolveForCurrentUser();
-    const groupActorId = String(
-      options.groupActorId ?? context?.groupActor?.id ?? context?.groupId ?? ""
-    ).trim();
+    const explicitGroupActorId = String(options.groupActorId ?? "").trim();
+    const context = explicitGroupActorId ? null : this.groupContextService.resolveForCurrentUser();
+    const groupActorId = explicitGroupActorId
+      || String(context?.groupActor?.id ?? context?.groupId ?? "").trim();
     const batchMutationId = String(options.batchMutationId ?? "").trim()
       || createSocketRequestId("inventory-model");
     const requestedFolderId = options.folderId === null || options.folderId === undefined
@@ -5906,6 +5944,50 @@ export class RebreyaMainModule {
       groupActorId,
       ingressPlan,
       sourceOrigin: "public-model",
+      sources
+    });
+  }
+
+  async getInventoryAddCatalog() {
+    return this.inventoryService.getInventoryAddCatalog();
+  }
+
+  async addManualInventoryItem(manualEntry, quantity = 1, options = {}) {
+    const explicitGroupActorId = String(options.groupActorId ?? "").trim();
+    const context = explicitGroupActorId ? null : this.groupContextService.resolveForCurrentUser();
+    const groupActorId = explicitGroupActorId
+      || String(context?.groupActor?.id ?? context?.groupId ?? "").trim();
+    const batchMutationId = String(options.batchMutationId ?? "").trim()
+      || createSocketRequestId("inventory-manual");
+    const requestedFolderId = options.folderId === null || options.folderId === undefined
+      ? null
+      : String(options.folderId).trim();
+    const manualEntryId = String(manualEntry?.manualEntryId ?? "").trim()
+      || createSocketRequestId("manual-entry");
+    const sources = this.#normalizeDirectInventoryIngressSources([{
+      sourceKey: "item",
+      sourceType: "manual",
+      sourceId: manualEntryId,
+      sourceDocumentId: "",
+      isBroken: false,
+      quantity,
+      manualEntry: { ...manualEntry, manualEntryId }
+    }]);
+    const ingressPlan = await this.#prepareDirectInventoryIngress({
+      groupActorId,
+      sourceOrigin: "manual-entry",
+      sources,
+      requestedFolderId
+    });
+    if (ingressPlan === null) {
+      return { actorId: groupActorId, batchMutationId, cancelled: true, changed: false, rows: [] };
+    }
+    return this.#dispatchDirectInventoryIngress({
+      batchMutationId,
+      coins: this.#normalizeDirectInventoryIngressCoins(),
+      groupActorId,
+      ingressPlan,
+      sourceOrigin: "manual-entry",
       sources
     });
   }

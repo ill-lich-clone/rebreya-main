@@ -880,10 +880,11 @@ test("InventoryApp template renders accessible folder rows and fixed-depth item 
 
   assert.equal(createButtons.length, 1);
   assert.equal(createItemButtons.length, 1);
+  assert.match(script, /inventory-item-add-dialog\.js\?v=1\.4\.243/u);
   assert.equal(filterButtons.length, 1);
   assert.ok(createItemIndex < searchIndex && searchIndex < typeIndex && typeIndex < sortIndex && sortIndex < filterIndex && filterIndex < createIndex);
-  assert.match(template, /data-action="create-inventory-item"[^>]*title="Создать предмет"[^>]*aria-label="Создать предмет"/u);
-  assert.match(template, /\{\{#if canManage\}\}[\s\S]*data-action="create-inventory-item"[\s\S]*\{\{\/if\}\}/u);
+  assert.match(template, /data-action="create-inventory-item"[^>]*title="Добавить предмет"[^>]*aria-label="Добавить предмет"/u);
+  assert.match(template, /\{\{#if canDropInventoryItems\}\}[\s\S]*data-action="create-inventory-item"[\s\S]*\{\{\/if\}\}/u);
   assert.match(template, /data-action="toggle-inventory-filters"[^>]*title="Фильтры входящего лута"[^>]*aria-label="Фильтры входящего лута"/u);
   assert.match(template, /data-action="create-inventory-folder"[^>]*title="Создать папку"[^>]*aria-label="Создать папку"/u);
   assert.match(template, /\{\{#if canOrganizeInventory\}\}[\s\S]*data-action="create-inventory-folder"[\s\S]*\{\{\/if\}\}/u);
@@ -1204,18 +1205,18 @@ test("InventoryApp invalidates its folder snapshot after a command error and gat
   }
 });
 
-test("InventoryApp create-item control opens the Foundry Item dialog for the inventory Actor", async () => {
+test("InventoryApp create-item control opens the Rebreya add-item dialog with a captured target", async () => {
   const restoreFoundry = installFoundryApplicationStub();
   const dom = installMinimalDom();
-  const previousItem = globalThis.Item;
+  const previousDialog = globalThis.Dialog;
   const previousUi = globalThis.ui;
-  const actor = { id: "group-a" };
   const dialogCalls = [];
-  globalThis.Item = {
-    async createDialog(data, operation) {
-      dialogCalls.push([data, operation]);
-      return null;
+  globalThis.Dialog = class {
+    constructor(data, options) {
+      dialogCalls.push({ data, options });
+      this.data = data;
     }
+    render() { this.data.close(); }
   };
   globalThis.ui = { notifications: { error() {} } };
   const moduleApi = createModuleApi({
@@ -1223,12 +1224,9 @@ test("InventoryApp create-item control opens the Foundry Item dialog for the inv
     partySnapshot: { canManage: true },
     getGroupContext: () => null
   });
-  moduleApi.inventoryService = {
-    async getInventoryActor(options) {
-      assert.deepEqual(options, { create: false, groupActorId: "group-a" });
-      return actor;
-    }
-  };
+  moduleApi.getInventoryAddCatalog = async () => [];
+  moduleApi.addModelItemToInventory = async () => {};
+  moduleApi.addManualInventoryItem = async () => {};
   const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?create-item=${Date.now()}`);
   const app = new InventoryApp(moduleApi);
   const createButton = createFakeControl();
@@ -1241,10 +1239,14 @@ test("InventoryApp create-item control opens the Foundry Item dialog for the inv
     await app._prepareContext();
     await app._onRender({}, {});
     await dispatchClick(createButton);
-    assert.deepEqual(dialogCalls, [[{}, { parent: actor }]]);
+    assert.equal(dialogCalls.length, 1);
+    assert.equal(dialogCalls[0].data.title, "Добавить предмет");
+    assert.match(dialogCalls[0].data.content, /data-inventory-item-add-form/u);
+    assert.equal(dialogCalls[0].options.width, 720);
+    assert.equal(dialogCalls[0].options.height, 720);
   }
   finally {
-    globalThis.Item = previousItem;
+    globalThis.Dialog = previousDialog;
     globalThis.ui = previousUi;
     dom.restore();
     restoreFoundry();

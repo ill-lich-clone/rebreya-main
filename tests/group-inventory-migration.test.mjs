@@ -450,6 +450,115 @@ test("getInventorySnapshot classifies Rebreya downtime items as downtime templat
   }
 });
 
+test("manual inventory item data preserves unit economics and never falls back to a same-name catalog entry", async () => {
+  const fixture = installInventoryFixture();
+  const service = new InventoryService({
+    getModel: async () => ({
+      materials: [],
+      materialById: new Map(),
+      materialByGoodId: new Map(),
+      gear: [{ id: "catalog-kit", name: "Дорожный набор", equipmentType: "Каталожное", predominantMaterialName: "Сталь" }],
+      gearById: new Map([["catalog-kit", { id: "catalog-kit", name: "Дорожный набор", equipmentType: "Каталожное", predominantMaterialName: "Сталь" }]])
+    })
+  });
+
+  try {
+    const itemData = service.buildManualInventoryItemData({
+      manualEntryId: "manual-entry-1",
+      name: "Дорожный набор",
+      unitWeight: 2.5,
+      unitPriceValue: 4,
+      unitPriceDenomination: "gp",
+      itemType: "Прочее",
+      material: "Ткань"
+    }, 3);
+    assert.equal(itemData.system.quantity, 3);
+    assert.deepEqual(itemData.system.weight, { value: 2.5, units: "lb" });
+    assert.deepEqual(itemData.system.price, { value: 4, denomination: "gp" });
+    assert.equal(itemData.flags[MODULE_ID].sourceType, "manual");
+    assert.equal(itemData.flags[MODULE_ID].sourceId, "manual-entry-1");
+
+    const manualItem = createItem({
+      id: "manual-item",
+      name: itemData.name,
+      type: itemData.type,
+      flags: itemData.flags,
+      extra: { system: itemData.system }
+    });
+    const groupActor = createActor({ id: "group-1", name: "Party", type: "group", isOwner: true, items: [manualItem] });
+    game.actors.contents.push(groupActor);
+    service.moduleApi.groupContextService = { resolveForCurrentUser: () => ({ groupActor }) };
+    const snapshot = await service.getInventorySnapshot();
+    assert.equal(snapshot.items[0].sourceType, "manual");
+    assert.equal(snapshot.items[0].sourceId, "manual-entry-1");
+    assert.equal(snapshot.items[0].itemTypeLabel, "Прочее");
+    assert.equal(snapshot.items[0].materialLabel, "Ткань");
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("inventory add catalog projects canonical model and managed-pack icons without creating documents", async () => {
+  const fixture = installInventoryFixture();
+  let indexReads = 0;
+  const pack = (rows) => ({
+    async getIndex() {
+      indexReads += 1;
+      return rows;
+    }
+  });
+  game.packs = new Map([
+    ["world.rebreya-materials", pack([{
+      _id: "material-doc",
+      name: "Дуб",
+      img: "icons/material-oak.webp",
+      flags: { [MODULE_ID]: { materialId: "oak" } }
+    }])],
+    ["world.rebreya-gear", pack([{
+      _id: "gear-doc",
+      name: "Верёвка",
+      img: "icons/gear-rope.webp",
+      flags: { [MODULE_ID]: { gearId: "rope" } }
+    }])],
+    ["world.rebreya-magic-items", pack([{
+      _id: "magic-doc",
+      name: "Стеклянный ключ",
+      img: "icons/magic-key.webp",
+      system: {
+        weight: { value: 0.25, units: "lb" },
+        price: { value: 12, denomination: "gp" },
+        type: { subtype: "Ключ" }
+      },
+      flags: { [MODULE_ID]: { magicItemId: "glass-key", predominantMaterialName: "Стекло" } }
+    }])]
+  ]);
+  const service = new InventoryService({
+    getModel: async () => ({
+      materials: [{ id: "oak", name: "Дуб", type: "Дерево", weight: 1, priceGold: 0.2 }],
+      materialById: new Map(),
+      materialByGoodId: new Map(),
+      gear: [{ id: "rope", name: "Верёвка", equipmentType: "Снаряжение", weight: 10, priceGoldEquivalent: 1, predominantMaterialName: "Пенька" }],
+      gearById: new Map()
+    })
+  });
+
+  try {
+    const catalog = await service.getInventoryAddCatalog();
+    assert.equal(indexReads, 3);
+    const byId = new Map(catalog.map((entry) => [entry.sourceId, entry]));
+    assert.equal(byId.get("oak").img, "icons/material-oak.webp");
+    assert.equal(byId.get("rope").img, "icons/gear-rope.webp");
+    assert.equal(byId.get("glass-key").img, "icons/magic-key.webp");
+    assert.equal(byId.get("glass-key").unitWeight, 0.25);
+    assert.equal(byId.get("glass-key").unitPriceValue, 12);
+    assert.equal(byId.get("glass-key").materialLabel, "Стекло");
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
 test("getInventorySnapshot marks only exact Journal record Items as readable links", async () => {
   const journalRecord = createItem({
     id: "journal-record",
