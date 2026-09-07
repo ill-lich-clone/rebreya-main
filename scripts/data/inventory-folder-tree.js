@@ -10,6 +10,39 @@ export class InventoryFolderStateError extends Error {
   }
 }
 
+export function resolveInventoryDropFolderId({ target, state, itemIds = [], rootFolderId = null } = {}) {
+  const invalidTarget = () => {
+    throw new InventoryFolderStateError("invalid-drop-target", "Цель переноса больше недоступна. Обновите инвентарь.");
+  };
+  let folderId;
+  switch (target?.kind) {
+    case "item": {
+      const id = cleanId(target.id);
+      const exists = itemIds instanceof Map || itemIds instanceof Set
+        ? itemIds.has(id)
+        : Array.isArray(itemIds) && itemIds.includes(id);
+      if (!id || !exists) return invalidTarget();
+      folderId = state?.itemFolderIds?.[id] ?? null;
+      break;
+    }
+    case "folder":
+      folderId = cleanId(target.id);
+      if (!folderId) return invalidTarget();
+      break;
+    case "background":
+      folderId = rootFolderId;
+      break;
+    case "root":
+      return null;
+    default:
+      return invalidTarget();
+  }
+  if (folderId !== null && !(state?.folders ?? []).some((folder) => folder.id === folderId)) {
+    return invalidTarget();
+  }
+  return folderId;
+}
+
 function isObject(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }

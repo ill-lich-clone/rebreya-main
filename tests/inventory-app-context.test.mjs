@@ -64,6 +64,17 @@ function createFakeElement({ dataset = {}, closest = () => null } = {}) {
   return new HTMLElement({ dataset, closest });
 }
 
+async function answerFolderDialog(config, { action = "confirm", name = "" } = {}) {
+  if (["close", "escape"].includes(action)) {
+    assert.equal(config.rejectClose, false);
+    return null;
+  }
+  const button = config.buttons.find((entry) => entry.action === action);
+  const result = await button.callback(null, { form: { elements: { folderName: { value: name } } } });
+  // Foundry v13 falls back to the action when a button callback returns nullish.
+  return result ?? button.action;
+}
+
 function installMinimalDom() {
   const previousHTMLElement = globalThis.HTMLElement;
   const previousDocument = globalThis.document;
@@ -971,7 +982,7 @@ test("InventoryApp folder actions trim names, preserve IDs and target root or se
   });
   globalThis.foundry.applications.api.DialogV2.wait = async (config) => {
     promptConfigs.push(config);
-    return promptValues.shift();
+    return answerFolderDialog(config, { name: promptValues.shift() });
   };
   globalThis.foundry.applications.api.DialogV2.confirm = async (config) => {
     confirmations.push(config);
@@ -1064,6 +1075,76 @@ test("InventoryApp folder actions trim names, preserve IDs and target root or se
   finally {
     if (cryptoDescriptor) Object.defineProperty(globalThis, "crypto", cryptoDescriptor);
     else delete globalThis.crypto;
+    globalThis.ui = previousUi;
+    dom.restore();
+    restoreFoundry();
+  }
+});
+
+test("folder result distinguishes cancellation from the confirmed literal cancel name", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  try {
+    const { normalizeInventoryFolderDialogResult: normalize } = await import(
+      "../scripts/ui/inventory-app.js?folder-result-contract"
+    );
+    for (const result of [null, undefined, false, "cancel", { confirmed: false }]) {
+      assert.equal(normalize(result), null);
+    }
+    assert.equal(normalize({ confirmed: true, name: " cancel " }), "cancel");
+    assert.throws(() => normalize({ confirmed: true, name: "   " }));
+    assert.throws(() => normalize({ confirmed: true, name: "x".repeat(81) }));
+  }
+  finally { restoreFoundry(); }
+});
+
+test("InventoryApp folder cancel, Escape and close never create or rename a folder", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const dom = installMinimalDom();
+  const previousUi = globalThis.ui;
+  const calls = [];
+  const errors = [];
+  globalThis.ui = { notifications: { info() {}, error: (message) => errors.push(message) } };
+  let choice;
+  globalThis.foundry.applications.api.DialogV2.wait = (config) => answerFolderDialog(config, choice);
+  const moduleApi = createModuleApi({ inventorySnapshot: createFolderInventorySnapshot(), getGroupContext: () => null });
+  moduleApi.createInventoryFolder = async (payload) => calls.push(["create", payload]);
+  moduleApi.renameInventoryFolder = async (payload) => calls.push(["rename", payload]);
+  const { InventoryApp } = await import("../scripts/ui/inventory-app.js?folder-cancel-actions");
+  const app = new InventoryApp(moduleApi);
+  const createButton = createFakeControl();
+  const folderRow = createFakeElement({ dataset: { folderId: "alpha", folderName: "Альфа" } });
+  folderRow.querySelector = () => null;
+  const menuButton = createFakeControl({ closest: () => folderRow });
+  const root = createFakeElement();
+  root.querySelector = () => null;
+  root.querySelectorAll = (selector) => {
+    if (selector === "[data-action='create-inventory-folder']") return [createButton];
+    if (selector === "[data-action='open-inventory-folder-menu']") return [menuButton];
+    return [];
+  };
+  app.element = root;
+  const rename = async () => {
+    await dispatchClick(menuButton);
+    await dispatchClick(dom.appendedMenu.children.find((child) => collectText(child).includes("Переименовать")));
+  };
+  try {
+    await app._prepareContext();
+    await app._onRender({}, {});
+    for (const action of ["cancel", "escape", "close"]) {
+      choice = { action };
+      await dispatchClick(createButton);
+      await rename();
+      assert.deepEqual(calls, [], action);
+    }
+    assert.deepEqual(errors, []);
+    choice = { action: "confirm", name: " cancel " };
+    await dispatchClick(createButton);
+    await rename();
+    assert.deepEqual(calls.map(([kind, payload]) => [kind, payload.name]), [
+      ["create", "cancel"], ["rename", "cancel"]
+    ]);
+  }
+  finally {
     globalThis.ui = previousUi;
     dom.restore();
     restoreFoundry();
@@ -1163,7 +1244,7 @@ test("InventoryApp invalidates its folder snapshot after a command error and gat
   const previousConsoleError = console.error;
   console.error = () => {};
   globalThis.ui = { notifications: { info() {}, error: (message) => errors.push(message) } };
-  globalThis.foundry.applications.api.DialogV2.wait = async () => "Новая папка";
+  globalThis.foundry.applications.api.DialogV2.wait = (config) => answerFolderDialog(config, { name: "Новая папка" });
   const snapshot = createFolderInventorySnapshot();
   const moduleApi = createModuleApi({ inventorySnapshot: snapshot, getGroupContext: () => null });
   moduleApi.createInventoryFolder = async () => {
@@ -1739,7 +1820,7 @@ test("InventoryApp routes internal and external drops to exact folder or root ta
     });
     let itemTarget;
     itemTarget = createFakeElement({
-      dataset: { itemId: "other-item" },
+      dataset: { itemId: "alpha-item" },
       closest: (selector) => selector === ".rm-inventory-tree-row--item[data-item-id]"
         ? itemTarget
         : selector === "[data-folder-drop-id]" ? folderTarget : null
@@ -1776,13 +1857,13 @@ test("InventoryApp routes internal and external drops to exact folder or root ta
     assert.deepEqual(calls, [
       ["moveFolder", { groupActorId: "group-a", folderId: "alpha", parentId: "beta" }],
       ["moveItem", { groupActorId: "group-a", itemId: "deep-item", folderId: "beta" }],
-      ["moveItem", { groupActorId: "group-a", itemId: "deep-item", folderId: null }],
+      ["moveItem", { groupActorId: "group-a", itemId: "deep-item", folderId: "alpha" }],
       ["moveItem", { groupActorId: "group-a", itemId: "deep-item", folderId: null }],
       ["import", externalDrag, { groupActorId: "group-a", folderId: "beta" }],
       ["import", journalPageDrag, { groupActorId: "group-a", folderId: "beta" }],
       ["moveFolder", { groupActorId: "group-a", folderId: "alpha", parentId: "beta" }],
       ["moveItem", { groupActorId: "group-a", itemId: "deep-item", folderId: "beta" }],
-      ["moveItem", { groupActorId: "group-a", itemId: "deep-item", folderId: null }],
+      ["moveItem", { groupActorId: "group-a", itemId: "deep-item", folderId: "alpha" }],
       ["moveItem", { groupActorId: "group-a", itemId: "deep-item", folderId: null }],
       ["import", externalDrag, { groupActorId: "group-a", folderId: "beta" }],
       ["import", journalPageDrag, { groupActorId: "group-a", folderId: "beta" }]
@@ -1790,6 +1871,81 @@ test("InventoryApp routes internal and external drops to exact folder or root ta
     assert.equal(calls.some(([kind]) => kind === "quantity" || kind === "delete"), false);
   }
   finally {
+    globalThis.ui = previousUi;
+    globalThis.TextEditor = previousTextEditor;
+    dom.restore();
+    restoreFoundry();
+  }
+});
+
+test("InventoryApp revalidates item destinations on drop and cancels stale targets with a refresh", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const dom = installMinimalDom();
+  const previousTextEditor = globalThis.TextEditor;
+  const previousUi = globalThis.ui;
+  const previousConsoleError = console.error;
+  globalThis.TextEditor = { getDragEventData: (event) => event.dragData };
+  const warnings = [];
+  globalThis.ui = { notifications: { info() {}, warn(message) { warnings.push(message); }, error() {} } };
+  console.error = () => {};
+  const { InventoryApp, extendInventoryItemDragData } = await import("../scripts/ui/inventory-app.js?fresh-drop-target");
+  const dragData = extendInventoryItemDragData({ type: "Item", uuid: "Actor.group-a.Item.root-item" },
+    { groupActorId: "group-a", itemId: "root-item" });
+  const cases = [
+    { name: "deep item", itemId: "deep-item", expected: "alpha-5" },
+    { name: "root item in popout", itemId: "root-item", rootFolderId: "alpha", expected: null },
+    { name: "popout background", rootFolderId: "alpha", expected: "alpha" },
+    { name: "main background", expected: null },
+    { name: "changed membership", itemId: "alpha-item", change: (s) => { s.allItems.find(i => i.itemId === "alpha-item").folderId = "beta"; }, expected: "beta" },
+    { name: "deleted target", itemId: "alpha-item", change: (s) => { s.allItems = s.allItems.filter(i => i.itemId !== "alpha-item"); }, rejected: true },
+    { name: "deleted popout root", rootFolderId: "alpha", change: (s) => { s.folders = s.folders.filter(f => f.id !== "alpha"); }, rejected: true },
+    { name: "lost permission", itemId: "alpha-item", change: (s) => { s.canDropInventoryItems = false; }, rejected: true },
+    { name: "wrong snapshot actor", itemId: "alpha-item", change: (s) => { s.actor.id = "group-b"; }, rejected: true }
+  ];
+  try {
+    for (const scenario of cases) {
+      warnings.length = 0;
+      let snapshot = createFolderInventorySnapshot();
+      const calls = [];
+      const reads = [];
+      let refreshes = 0;
+      const moduleApi = createModuleApi({ inventorySnapshot: snapshot, getGroupContext: () => null });
+      moduleApi.getInventorySnapshot = async (options) => { reads.push(options); return snapshot; };
+      moduleApi.moveInventoryItemToFolder = async (payload) => calls.push(payload);
+      let target;
+      target = createFakeElement({ dataset: scenario.itemId ? { itemId: scenario.itemId } : {},
+        closest: (selector) => scenario.itemId && selector === ".rm-inventory-tree-row--item[data-item-id]" ? target : null });
+      const dropzone = createFakeElement();
+      dropzone.contains = (node) => node === target;
+      const root = createFakeElement();
+      root.querySelector = (selector) => selector === "[data-action='inventory-dropzone']" ? dropzone : null;
+      root.querySelectorAll = () => [];
+      const app = new InventoryApp(moduleApi, { groupActorId: "group-a", rootFolderId: scenario.rootFolderId ?? null });
+      app.element = root;
+      app.refreshInventorySnapshot = async () => { refreshes++; };
+      await app._prepareContext();
+      await app._onRender({}, {});
+      reads.length = 0;
+      const event = { target, dragData, dataTransfer: {}, preventDefault() {} };
+      dropzone.listeners.dragover[0](event);
+      assert.equal(reads.length, 0, "hover uses the rendered cache");
+      snapshot = structuredClone(snapshot);
+      scenario.change?.(snapshot);
+      await dropzone.listeners.drop[0](event);
+      assert.deepEqual(reads, [{ createActor: false, groupActorId: "group-a" }], scenario.name);
+      assert.equal(dropzone.classList.contains("is-dragover"), false);
+      assert.equal(target.classList.contains("is-drop-target-ready"), false);
+      if (scenario.rejected) {
+        assert.deepEqual(calls, [], scenario.name);
+        assert.equal(refreshes, 1, scenario.name);
+        assert.equal(warnings.length, 1, scenario.name);
+      } else {
+        assert.deepEqual(calls, [{ groupActorId: "group-a", itemId: "root-item", folderId: scenario.expected }], scenario.name);
+      }
+    }
+  }
+  finally {
+    console.error = previousConsoleError;
     globalThis.ui = previousUi;
     globalThis.TextEditor = previousTextEditor;
     dom.restore();

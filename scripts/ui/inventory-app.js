@@ -4,10 +4,12 @@ import { GROUP_CONTEXT_ERRORS } from "../data/group-context-service.js";
 import {
   buildInventoryFolderSearchIndex,
   buildInventoryFolderTree,
+  InventoryFolderStateError,
   MAX_INVENTORY_FOLDER_NAME_LENGTH,
   normalizeExpandedFolderIds,
-  projectInventoryFolderRows
-} from "../data/inventory-folder-tree.js";
+  projectInventoryFolderRows,
+  resolveInventoryDropFolderId
+} from "../data/inventory-folder-tree.js?v=1.4.246-folder-drop";
 import { buildPartyInventoryItemDragData } from "../integrations/inventory-sync.js?v=1.4.226-inventory-transfer";
 import {
   INVENTORY_INGRESS_RULE_FIELD_DEFINITIONS,
@@ -2881,13 +2883,23 @@ function readCurrencyValuesFromRoot(root, baseCurrency = {}) {
   };
 }
 
+export function normalizeInventoryFolderDialogResult(result) {
+  if (result?.confirmed !== true) return null;
+  const name = typeof result.name === "string" ? result.name.trim() : "";
+  if (!name) throw new Error("Название папки не может быть пустым.");
+  if (name.length > MAX_INVENTORY_FOLDER_NAME_LENGTH) {
+    throw new Error(`Название папки должно быть не длиннее ${MAX_INVENTORY_FOLDER_NAME_LENGTH} символов.`);
+  }
+  return name;
+}
+
 async function promptInventoryFolderName({ title, initialName = "", confirmLabel = "Сохранить" } = {}) {
   const dialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
   if (typeof dialogV2?.wait !== "function") {
     throw new Error("Диалог папки инвентаря недоступен.");
   }
 
-  const rawName = await dialogV2.wait({
+  const result = await dialogV2.wait({
     window: { title: cleanText(title) || "Папка инвентаря" },
     content: `
       <form class="rm-inventory-folder-dialog">
@@ -2911,24 +2923,20 @@ async function promptInventoryFolderName({ title, initialName = "", confirmLabel
         label: cleanText(confirmLabel) || "Сохранить",
         icon: "fa-solid fa-check",
         default: true,
-        callback: (_event, button) => button?.form?.elements?.folderName?.value ?? ""
+        callback: (_event, button) => ({
+          confirmed: true,
+          name: button?.form?.elements?.folderName?.value ?? ""
+        })
       },
       {
         action: "cancel",
         label: "Отмена",
-        callback: () => null
+        callback: () => ({ confirmed: false })
       }
     ],
     rejectClose: false
   });
-  if (rawName === null || rawName === undefined || rawName === false) return null;
-
-  const name = cleanText(rawName);
-  if (!name) throw new Error("Название папки не может быть пустым.");
-  if (name.length > MAX_INVENTORY_FOLDER_NAME_LENGTH) {
-    throw new Error(`Название папки должно быть не длиннее ${MAX_INVENTORY_FOLDER_NAME_LENGTH} символов.`);
-  }
-  return name;
+  return normalizeInventoryFolderDialogResult(result);
 }
 
 export async function promptInventoryIngressConfirmation(preview) {
@@ -3994,7 +4002,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.#openContextMenu({ x, y, anchor, title: folderName, actions });
   }
 
-  #resolveInventoryDropTarget(event, dropzone) {
+  #readInventoryDropTarget(event, dropzone) {
     const eventTarget = event?.target instanceof HTMLElement
       ? event.target
       : event?.target?.parentElement ?? null;
@@ -4003,7 +4011,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const itemTarget = eventTarget.closest?.(".rm-inventory-tree-row--item[data-item-id]") ?? null;
     if (itemTarget && dropzone.contains(itemTarget)) {
       return {
-        folderId: null,
+        reference: { kind: "item", id: cleanText(itemTarget.dataset?.itemId) },
         targetElement: itemTarget,
         highlightElement: itemTarget
       };
@@ -4014,30 +4022,48 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     if (!targetElement || (targetElement !== dropzone && !dropzone.contains(targetElement))) return null;
 
     const folderId = cleanText(targetElement.dataset?.folderDropId) || null;
-    if (folderId !== null && !this.inventoryFolderTreeCache?.foldersById.has(folderId)) return null;
     return {
-      folderId,
+      reference: targetElement === dropzone
+        ? { kind: "background" }
+        : folderId === null ? { kind: "root" } : { kind: "folder", id: folderId },
       targetElement,
       highlightElement: targetElement.closest?.(".rm-inventory-folder-row[data-folder-id]") ?? targetElement
     };
   }
 
-  #resolveInventoryDropAction(dragData, folderId) {
-    if (!this.canDropInventoryItems || !this.inventoryFolderTreeCache) return null;
+  #resolveInventoryDropTarget(target, tree = this.inventoryFolderTreeCache, rootFolderId = this.rootFolderId) {
+    if (!target || !tree) return null;
+    return {
+      ...target,
+      folderId: resolveInventoryDropFolderId({
+        target: target.reference,
+        state: tree.state,
+        itemIds: tree.itemsById,
+        rootFolderId
+      })
+    };
+  }
+
+  #resolveInventoryDropAction(dragData, folderId, {
+    tree = this.inventoryFolderTreeCache,
+    groupActorId = this.inventoryActorId,
+    canDrop = this.canDropInventoryItems
+  } = {}) {
+    if (!canDrop || !tree) return null;
     const internal = readInventoryTreeDragData(dragData);
     if (internal) {
-      if (internal.groupActorId !== this.inventoryActorId) return null;
+      if (internal.groupActorId !== groupActorId) return null;
       if (internal.kind === "folder") {
-        if (!this.inventoryFolderTreeCache.foldersById.has(internal.folderId)) return null;
+        if (!tree.foldersById.has(internal.folderId)) return null;
         if (folderId === internal.folderId) return null;
         let currentId = folderId;
         while (currentId !== null) {
           if (currentId === internal.folderId) return null;
-          currentId = this.inventoryFolderTreeCache.foldersById.get(currentId)?.parentId ?? null;
+          currentId = tree.foldersById.get(currentId)?.parentId ?? null;
         }
         return { kind: "folder", internal };
       }
-      if (!this.inventoryFolderTreeCache.itemsById.has(internal.itemId)) return null;
+      if (!tree.itemsById.has(internal.itemId)) return null;
       return { kind: "item", internal };
     }
 
@@ -4047,8 +4073,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       : null;
   }
 
-  async #applyInventoryDrop(action, folderId) {
-    const groupActorId = this.inventoryActorId;
+  async #applyInventoryDrop(action, folderId, groupActorId = this.inventoryActorId) {
     if (action.kind === "folder") {
       return this.moduleApi.moveInventoryFolder({
         groupActorId,
@@ -7665,13 +7690,19 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         catch (_error) {
           return null;
         }
-        const target = this.#resolveInventoryDropTarget(event, dropzone);
+        const target = this.#readInventoryDropTarget(event, dropzone);
         if (!target) return null;
-        const action = this.#resolveInventoryDropAction(dragData, target.folderId);
-        return action ? { action, dragData, target } : null;
+        if (!readInventoryTreeDragData(dragData)
+          && (hasInventoryTreeDragMetadata(dragData)
+            || !["Item", "JournalEntry", "JournalEntryPage"].includes(dragData?.type))) return null;
+        return { dragData, target };
       };
       const readAcceptedDragOver = (event) => {
-        const target = this.#resolveInventoryDropTarget(event, dropzone);
+        let target;
+        try {
+          target = this.#resolveInventoryDropTarget(this.#readInventoryDropTarget(event, dropzone));
+        }
+        catch (_error) { return null; }
         if (!target) return null;
 
         try {
@@ -7721,27 +7752,60 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
       dropzone.addEventListener("drop", async (event) => {
         const accepted = readAcceptedDrop(event);
+        const groupActorId = this.inventoryActorId;
+        const rootFolderId = this.rootFolderId;
         activeInventoryTreeDragSession = null;
         clearDropState();
         if (!accepted) return;
         event.preventDefault();
 
         try {
-          const result = await this.#applyInventoryDrop(accepted.action, accepted.target.folderId);
-          if (accepted.action.kind === "external") {
+          const snapshot = await this.moduleApi.getInventorySnapshot({ createActor: false, groupActorId });
+          if (listenerOptions.signal.aborted) return;
+          if (this.inventoryActorId !== groupActorId || this.rootFolderId !== rootFolderId
+            || cleanText(snapshot?.actor?.id) !== groupActorId) {
+            throw new InventoryFolderStateError("invalid-drop-target", "Группа инвентаря изменилась. Повторите перенос.");
+          }
+          const items = snapshot.allItems ?? snapshot.items ?? [];
+          const tree = buildInventoryFolderTree({
+            state: {
+              version: snapshot.folderStateVersion,
+              folders: snapshot.folders ?? [],
+              itemFolderIds: Object.fromEntries(items.map((item) => [
+                cleanText(item?.itemId ?? item?.id), cleanText(item?.folderId) || null
+              ]))
+            },
+            items
+          });
+          const target = this.#resolveInventoryDropTarget(accepted.target, tree, rootFolderId);
+          const action = this.#resolveInventoryDropAction(accepted.dragData, target.folderId, {
+            tree, groupActorId, canDrop: Boolean(snapshot.canDropInventoryItems || snapshot.actor?.canEdit)
+          });
+          if (!action) {
+            ui.notifications?.warn?.("Перенос больше недоступен. Проверьте предмет, папку и права доступа.");
+            await this.refreshInventorySnapshot();
+            return;
+          }
+          const result = await this.#applyInventoryDrop(action, target.folderId, groupActorId);
+          if (action.kind === "external") {
             if (result?.cancelled === true || result == null) return;
             bringAppToFront(this);
             return;
           }
-          const message = accepted.action.kind === "folder"
+          const message = action.kind === "folder"
             ? "Папка перемещена."
             : "Стэк предмета перемещён целиком.";
           ui.notifications?.info(message);
           bringAppToFront(this);
         }
         catch (error) {
-          console.error(`${MODULE_ID} | Failed to apply inventory tree drop.`, error);
-          ui.notifications?.error(error.message || "Не удалось переместить содержимое инвентаря.");
+          if (error?.code === "invalid-drop-target") {
+            ui.notifications?.warn?.(error.message);
+          } else {
+            console.error(`${MODULE_ID} | Failed to apply inventory tree drop.`, error);
+            ui.notifications?.error(error.message || "Не удалось переместить содержимое инвентаря.");
+          }
+          await this.refreshInventorySnapshot();
         }
       }, listenerOptions);
     }

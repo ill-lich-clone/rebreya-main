@@ -31,6 +31,37 @@ function makeState(folders, itemFolderIds = {}) {
   return { version: 1, folders, itemFolderIds };
 }
 
+test("drop destination follows the exact item membership and distinguishes popout background from root", async () => {
+  const { resolveInventoryDropFolderId: resolve } = await import("../scripts/data/inventory-folder-tree.js");
+  const state = makeState([
+    { id: "bag", name: "Сумка", parentId: null },
+    { id: "deep", name: "Сумка", parentId: "bag" }
+  ], { inside: "deep" });
+  const before = structuredClone(state);
+  const base = { state, itemIds: ["inside", "root"], rootFolderId: "bag" };
+  for (const [target, expected] of [
+    [{ kind: "item", id: "inside" }, "deep"],
+    [{ kind: "item", id: "root" }, null],
+    [{ kind: "folder", id: "bag" }, "bag"],
+    [{ kind: "background" }, "bag"],
+    [{ kind: "root" }, null]
+  ]) assert.equal(resolve({ ...base, target }), expected);
+  assert.equal(resolve({ ...base, rootFolderId: null, target: { kind: "background" } }), null);
+  assert.deepEqual(state, before);
+});
+
+test("drop destination rejects stale items, missing folders and malformed targets instead of falling back to root", async () => {
+  const { resolveInventoryDropFolderId: resolve } = await import("../scripts/data/inventory-folder-tree.js");
+  const state = makeState([{ id: "bag", name: "Сумка", parentId: null }], { orphan: "deleted" });
+  const base = { state, itemIds: ["orphan"], rootFolderId: null };
+  for (const target of [
+    { kind: "item", id: "missing" }, { kind: "item", id: "orphan" },
+    { kind: "folder", id: "deleted" }, { kind: "folder", id: "" },
+    { kind: "unknown" }, null
+  ]) assertFolderError(() => resolve({ ...base, target }), "invalid-drop-target");
+  assertFolderError(() => resolve({ ...base, rootFolderId: "deleted", target: { kind: "background" } }), "invalid-drop-target");
+});
+
 test("folder state constants and empty state expose the versioned contract", () => {
   assert.equal(INVENTORY_FOLDER_STATE_VERSION, 1);
   assert.equal(MAX_INVENTORY_FOLDER_DEPTH, 5);
