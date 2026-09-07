@@ -471,6 +471,9 @@
                     >
                       <div class="rm-party-capacity-meter__bar {{#if isOverloaded}}rm-negative{{/if}}" style="width: {{capacityUsedPercent}}%;"></div>
                     </div>
+                    {{#each magicalContainers}}
+                      <p class="rm-muted">{{name}}: {{rmNum contentsWeightLb}}{{#if hasWeightCapacity}} / {{rmNum capacityLb}}{{/if}} фнт. внутри</p>
+                    {{/each}}
                   </div>
 
                   <div class="rm-party-row__stats">

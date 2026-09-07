@@ -2586,6 +2586,125 @@ test("getPartySnapshot counts carried character inventory weight against party c
   }
 });
 
+test("getPartySnapshot uses container-aware carried weight and reports magical storage separately", async (t) => {
+  const physical = (id, weight, container = null, extraSystem = {}, type = "loot") => {
+    const item = createItem({ id, name: id, type, weight });
+    Object.assign(item.system, { container, ...extraSystem });
+    return item;
+  };
+  const bag = (id = "bag", container = null) => physical(id, 15, container, {
+    properties: new Set(["weightlessContents"]),
+    capacity: { weight: { value: 500, units: "lb" } }
+  }, "container");
+  const pack = (id = "pack", container = null) => physical(id, 5, container, {}, "container");
+  const scenarios = [
+    { name: "bag with 27 pounds inside", items: () => [bag(), physical("books", 27, "bag")], weight: 15, stored: 27 },
+    { name: "bag plus outside load", items: () => [bag(), physical("books", 27, "bag"), physical("rope", 10)], weight: 25, stored: 27 },
+    { name: "ordinary backpack includes its contents once", items: () => [pack(), physical("books", 27, "pack")], weight: 32 },
+    { name: "ordinary nested containers", items: () => [pack(), pack("inner", "pack"), physical("books", 27, "inner")], weight: 37 },
+    { name: "ordinary backpack inside magical bag", items: () => [bag(), pack("pack", "bag"), physical("books", 27, "pack")], weight: 15, stored: 32 },
+    { name: "magical bag inside ordinary backpack", items: () => [pack(), bag("bag", "pack"), physical("books", 27, "bag")], weight: 20, stored: 27 },
+    { name: "renamed container with array properties", items: () => {
+      const item = bag("Совсем другое имя");
+      item.system.properties = ["weightlessContents"];
+      return [item, physical("books", 27, item.id)];
+    }, weight: 15, stored: 27 },
+    { name: "dangling container does not hide an item", items: () => [physical("rope", 10, "missing")], weight: 10 },
+    { name: "cyclic containers do not hang or disappear", items: () => [pack("a", "b"), pack("b", "a"), physical("books", 27, "a")], weight: 37 },
+    { name: "native root weight and contents are not double counted", items: () => {
+      const item = bag();
+      item.system.totalWeightIn = (units) => {
+        assert.equal(units, "lb");
+        return 15;
+      };
+      item.system.contentsWeight = 27;
+      return [item, physical("books", 27, "bag")];
+    }, weight: 15, stored: 27 },
+    { name: "native unit conversion is respected", items: () => {
+      const item = physical("metric", 10);
+      item.system.weight.units = "kg";
+      item.system.totalWeightIn = (units) => {
+        assert.equal(units, "lb");
+        return 25;
+      };
+      return [item];
+    }, weight: 25 },
+    { name: "native ordinary container includes currency and children once", items: () => {
+      const item = pack();
+      item.system.totalWeightIn = () => 33;
+      return [item, physical("books", 27, "pack")];
+    }, weight: 33 },
+    { name: "legacy conversion uses dnd5e weight units", items: () => {
+      const item = physical("metric", 10);
+      item.system.weight.units = "kg";
+      return [item];
+    }, weight: 25 },
+    { name: "native zero effective weight must not fall back to raw weight", items: () => {
+      const item = physical("weightless", 10);
+      item.system.totalWeightIn = () => 0;
+      return [item];
+    }, weight: 0 },
+    { name: "removing contents updates carried weight and storage", items: () => [bag(), physical("books", 27, "bag")], weight: 15, stored: 27, extract: true },
+    { name: "moving a bag to group inventory does not duplicate its weight", items: () => [bag(), physical("books", 27, "bag")], weight: 15, stored: 27, transfer: true }
+  ];
+
+  for (const scenario of scenarios) {
+    await t.test(scenario.name, async () => {
+      const items = scenario.items();
+      const memberActor = createActor({ id: "member-1", type: "character", isOwner: true, items });
+      const groupActor = createActor({
+        id: "group-1", type: "group", isOwner: true,
+        flags: { [MODULE_ID]: { managedPartyGroup: true } },
+        members: [{ actor: memberActor }],
+        items: [physical("group-rope", 10)]
+      });
+      const fixture = installInventoryFixture({ actors: [groupActor, memberActor] });
+      const service = new InventoryService({
+        groupContextService: { resolveForCurrentUser: () => ({ groupActor, members: [memberActor], canManage: true }) },
+        async getModel() { return { materials: [], materialById: new Map(), materialByGoodId: new Map(), gear: [], gearById: new Map() }; }
+      });
+      const before = items.map((item) => item.toObject());
+      try {
+        const snapshot = await service.getPartySnapshot();
+        assert.equal(snapshot.members[0].inventoryWeight, scenario.weight);
+        assert.equal(snapshot.memberInventoryWeight, scenario.weight);
+        assert.equal(snapshot.inventoryWeight, scenario.weight + 10);
+        assert.equal(snapshot.members[0].capacityLb, 150, "storage is not a strength bonus");
+        assert.equal(snapshot.freeCapacityLb, 140 - scenario.weight);
+        if (scenario.stored !== undefined) {
+          assert.equal(snapshot.members[0].magicalContainers.length, 1);
+          assert.equal(snapshot.members[0].magicalContainers[0].contentsWeightLb, scenario.stored);
+          assert.equal(snapshot.members[0].magicalContainers[0].capacityLb, 500);
+        }
+        else {
+          assert.deepEqual(snapshot.members[0].magicalContainers, []);
+        }
+        assert.deepEqual(items.map((item) => item.toObject()), before, "snapshot must not mutate Items");
+        if (scenario.extract) {
+          items.find((item) => item.id === "books").system.container = null;
+          const after = await service.getPartySnapshot();
+          assert.equal(after.members[0].inventoryWeight, 42);
+          assert.equal(after.members[0].magicalContainers[0].contentsWeightLb, 0);
+          assert.equal(after.inventoryWeight, 52);
+        }
+        if (scenario.transfer) {
+          const transferred = memberActor.items.contents.splice(0);
+          for (const item of transferred) item.parent = groupActor;
+          groupActor.items.contents.push(...transferred);
+          const after = await service.getPartySnapshot();
+          assert.equal(after.members[0].inventoryWeight, 0);
+          assert.deepEqual(after.members[0].magicalContainers, []);
+          assert.equal(after.partyInventoryWeight, 25);
+          assert.equal(after.inventoryWeight, snapshot.inventoryWeight);
+          const inventorySnapshot = await service.getInventorySnapshot({ createActor: false });
+          assert.equal(inventorySnapshot.summary.totalWeight, 25);
+        }
+      }
+      finally { fixture.restore(); }
+    });
+  }
+});
+
 test("player inventory Item imports use the exact typed GM payload with a folder target", async () => {
   const previousItem = globalThis.Item;
   const previousFromUuid = globalThis.fromUuid;

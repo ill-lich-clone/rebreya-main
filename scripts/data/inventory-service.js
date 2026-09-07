@@ -19,6 +19,7 @@ import {
 import { DurableMutationJournal } from "../application/durable-mutation-journal.js";
 import { WorldMutationCoordinator } from "../application/world-mutation-coordinator.js";
 import { finiteNumber as toNumber } from "../shared/foundry-values.js";
+import { buildActorInventoryWeightSnapshot } from "./inventory-weight.js";
 import { buildDurabilitySignature, isDurabilityEligible } from "./durability-rules.js";
 import {
   resolveInventoryDismantleMinimumQuantity,
@@ -3709,13 +3710,6 @@ export class InventoryService {
     return created ?? null;
   }
 
-  #getInventoryWeight(actor) {
-    return roundNumber(actor.items.contents.reduce((sum, item) => {
-      const itemData = item.toObject();
-      return sum + (getRawQuantity(itemData) * getItemWeight(itemData));
-    }, 0), 2);
-  }
-
   #isNativeGroupInventoryActor(actor) {
     return actor?.type === "group";
   }
@@ -5749,13 +5743,15 @@ export class InventoryService {
   async getPartySnapshot({ actor = null } = {}) {
     const state = this.#getState();
     const inventoryActor = actor ?? await this.getInventoryActor({ create: false });
-    const partyInventoryWeight = inventoryActor ? this.#getInventoryWeight(inventoryActor) : 0;
+    const partyWeightSnapshot = buildActorInventoryWeightSnapshot(inventoryActor);
+    const partyInventoryWeight = partyWeightSnapshot.weightLb;
     const model = inventoryActor ? await this.moduleApi.getModel() : null;
 
     const membershipManagedByNativeGroup = this.#isNativeGroupInventoryActor(inventoryActor);
     const partyMembers = this.#buildPartyMemberRows(state, inventoryActor)
       .map(({ actorId, actor: actorDocument, memberState }) => {
-        const inventoryWeight = actorDocument ? this.#getInventoryWeight(actorDocument) : 0;
+        const weightSnapshot = buildActorInventoryWeightSnapshot(actorDocument);
+        const inventoryWeight = weightSnapshot.weightLb;
         const effectiveStrength = memberState.strOverride ?? getActorStrength(actorDocument);
         const capacityMultiplier = memberState.capModOverride ?? state.defaultCapMod;
         const legacyCapacityLb = memberState.role === "transport"
@@ -5800,6 +5796,7 @@ export class InventoryService {
           role: memberState.role,
           roleLabel: getRoleLabel(memberState.role),
           inventoryWeight,
+          magicalContainers: weightSnapshot.magicalContainers,
           strength: effectiveStrength,
           strengthSource: memberState.strOverride !== null ? "Ручная" : "Лист",
           capacityMultiplier,
@@ -6080,7 +6077,7 @@ export class InventoryService {
     const summary = {
       distinctCount: allItems.length,
       totalQuantity: roundNumber(allItems.reduce((sum, entry) => sum + entry.quantity, 0), 2),
-      totalWeight: roundNumber(allItems.reduce((sum, entry) => sum + entry.totalWeight, 0), 2),
+      totalWeight: buildActorInventoryWeightSnapshot(actor).weightLb,
       foodLb: roundNumber(allItems.reduce((sum, entry) => sum + (entry.isFood ? entry.quantity : 0), 0), 2),
       waterGal: roundNumber(allItems.reduce((sum, entry) => sum + (entry.isWater ? entry.quantity : 0), 0), 2),
       currencyLabel: currency.label,

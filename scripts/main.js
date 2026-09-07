@@ -75,7 +75,7 @@ import {
   SOCKET_EVENT_INVENTORY_SOURCE_DEPLETION_RESULT,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_REQUEST,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_RESULT
-} from "./data/inventory-service.js?v=1.4.226-inventory-transfer";
+} from "./data/inventory-service.js?v=1.4.235-container-weight";
 import {
   InventoryIngressRuleCompilerCache,
   normalizeInventoryIngressRule
