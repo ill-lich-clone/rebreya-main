@@ -1,102 +1,58 @@
 # Rebreya Main: роадмап развития
 
-Дата: 2026-09-07. База: ccc9f59e, module 1.4.245.
+Дата: 2026-09-07. База подробного планирования: 652ba859, module 1.4.245.
 Спецификация: [программа и общие инварианты](../specs/2026-09-07-module-development-design.md).
+Подробные планы: [единый индекс и общие контракты](2026-09-07-module-development/README.md).
 
-Это последовательность самостоятельных этапов, а не разрешение реализовать все подсистемы одним заходом. Каждый этап — отдельная задача, focused tests, live QA по характеру изменения, паспорт, version bump клиентских файлов, commit/push в lich_branch.
+По уточнению пользователя работу продолжаем в текущей задаче без смены модели. Каждый этап имеет свой проверяемый результат, focused tests, live QA, обновление паспорта, version bump клиентских изменений и commit/push в lich_branch. В текущей поставке подготовлена документация; реализация R0 ещё не начата.
 
-## Выбранный подход
+## Порядок развития
 
-Рекомендуется сначала устранить ежедневные ошибки UI и определить индивидуальную идентичность предметов, затем подключать боевые и экономические расширения. Альтернатива «сначала обезоруживание» быстрее даёт новый macro, но перенос выбитого предмета всё равно зависит от сохранности экземпляров. Единый большой релиз всех пунктов затруднит диагностику потерь world-state и проверку стоимости, поэтому программа разбита на результаты.
+Сначала исправляем ежедневные ошибки папок и отображения, затем обеспечиваем сохранность отдельных экземпляров. На эту основу опираются обезоруживание, улучшенный лут и заполненные контейнеры.
 
-Приоритет — предложенный, не оценка календарных сроков. S/M/L обозначают относительную сложность; L делится на несколько партий по owner, а не растягивает один чат. Внешние игровые вопросы отмечены Q в основной спецификации.
+S/M/L — относительная сложность, а не календарная оценка. Большие этапы разбиты на задачи внутри подробных планов. Игровые допущения Q2 и точное UI-размещение Q3 зафиксированы в основной спецификации и профильных планах; они не мешают подготовке остальных этапов.
 
-## Этапы
+## Этапы и подробные планы
 
-| Этап | Результат | Зависимости | Размер / рекомендуемая модель | Готовность |
+| Этап / план | Наблюдаемый результат | Зависимости | Размер | Приёмка |
 |---|---|---|---|---|
-| R0 | Отмена не создаёт cancel; drop на Item наследует его папку | Нет | S / Terra medium | Диалог и root/folder/popout drag regression + live |
-| R1 | Popover высокого хранилища и кукла: fixed cells, scoped styles, tooltip | Нет; helper сначала | M / Terra medium, два узких commits | Viewport QA и identity-free UI regression |
-| R2 | Цвет папки сохраняется у всех участников | R0 | S / Terra medium | Совместимые старые flags, права, concurrency |
-| R3 | Частичный перенос и отдельный экземпляр для куклы | R0; UI R1 можно независимо | L / Sol high для транзакционного контракта, Terra high для реализации | Quantity conservation, host links, failure/retry |
-| R4 | Coverage manifest 91 upgrades, compatibility и единый value | Нет; ключи экземпляров согласовать с R3 | M / Sol high, механический manifest Luna medium | 91 классифицированная строка, price composition tests |
-| R5 | Два счётчика под местом Механуса | Уточнение UI в reputation.md | M / Terra medium | GM-only edits, revision/replay, layout QA |
-| R6 | Macro «Обезоруживание» рядом с захватом | R3, Q2 | L / Sol high | Roll/save ownership, один ground transfer, GM/player QA |
-| R7 | Только бонусы и простые эффекты непроклятых upgrades | R4; сложные исключены пользователем | M / Terra medium по provider | Матрица simple/недоступно, curse regressions |
-| R8 | Лутген выдаёт улучшенные hosts с полной ценой | R4, R3; existing curses/готовое простое подмножество R7 | L / Sol high | Budget, trusted claims, materialized upgrade links |
-| R9 | Лутген выдаёт контейнеры с лутом внутри общего бюджета | R8 | L / Sol high | Nested budget, capacity, parent/child claim recovery |
-| R10 | GM открывает окно на 10 минут со списком действий | R1 helper при использовании | M / Sol high для state/socket, Terra medium UI | Выборы, reconnect, one session/group; без resource/time writes |
-| R11 — отложен | Восстановления КО и кости хитов | Только после нового запроса и отдельной спецификации | Модель определить тогда | Не входит в текущую реализацию |
+| [R0 — папки](2026-09-07-module-development/r0-folder-behavior.md) | Отмена не создаёт cancel; drop на Item наследует его папку | Нет | S | Диалог и root/folder/popout drag regression + live |
+| [R1 — окна и кукла](2026-09-07-module-development/r1-overlays-hero-ui.md) | Popover высокого хранилища помещается в viewport; fixed cells и styled tooltip куклы | Helper перед UI | M | Геометрия, cleanup/focus, viewport QA |
+| [R2 — цвета папок](2026-09-07-module-development/r2-folder-colors.md) | Цвет сохраняется и синхронизируется у участников | R0 | S | Старые flags, права, concurrency |
+| [R3 — экземпляры](2026-09-07-module-development/r3-item-instances.md) | Частичный перенос сохраняет количество; экипированная единица имеет отдельный Item ID | R0; UI R1 | L | Quantity conservation, host links, failure/retry |
+| [R4 — правила и value](2026-09-07-module-development/r4-upgrade-rules-value.md) | Manifest91 upgrades, общая compatibility и единый расчёт цены | Stable identity R3 | M | Все91 строки, strict rules, price composition |
+| [R5 — репутация](2026-09-07-module-development/r5-reputation.md) | Два счётчика под местом Механуса | UI-варианты в плане; R1 для варианта с popover | M | GM-only edits, revision/replay, layout QA |
+| [R6 — обезоруживание](2026-09-07-module-development/r6-disarm.md) | Macro рядом с захватом; save выбирает защитник; одна вещь падает рядом | R3, Q2 | L | Формула, роли, один ground transfer, GM/player QA |
+| [R7 — простые upgrades](2026-09-07-module-development/r7-simple-upgrades.md) | Полностью работают допущенные бонусы и простые эффекты; сложные помечены недоступными | R4 | M/L | Проверка42 кандидатов, existing curse regressions |
+| [R8 — улучшенный лут](2026-09-07-module-development/r8-upgraded-loot.md) | Генерация и выдача улучшенных hosts с полной ценой | R3/R4; existing curses или готовое подмножество R7 | L | Budget, trusted result/claims, materialized links |
+| [R9 — заполненные контейнеры](2026-09-07-module-development/r9-nested-loot.md) | Содержимое, оболочка и монеты входят в общий бюджет | R8 | L | Nested budget, capacity, целостность дерева/recovery |
+| [R10 — десятиминутная сцена](2026-09-07-module-development/r10-scene-window.md) | GM открывает окно участникам; они выбирают действия | Существующие state/socket/UI owners | M | Выборы, reconnect, одна session/group, ноль resource/time writes |
+| [R11 — отложенное расширение](2026-09-07-module-development/r11-rest-extension-deferred.md) | Подробно описаны будущие восстановление КО и HD | Новый запрос и решение правил; R10 | L, условно | Пока только план; не входит в разрешённую реализацию |
 
-Рекомендуемая очередь: R0 → R1 → R2 → R3 → R4 → R5 → R6 → R7 → R8 → R9 → R10. R11 отложен по ответу пользователя.
-R4/R5/R10 можно переставить раньше по приоритету игры; R8/R9 не требуют завершения всей автоматизации R7. Параллельная правка общего main.js или inventory-service.js не рекомендуется.
+Очередь: R0 → R1 → R2 → R3 → R4 → R5 → R6 → R7 → R8 → R9 → R10. R11 остаётся отложенным по ответу пользователя. R4/R5/R10 можно переставить по игровому приоритету; R8/R9 используют только уже доступные upgrades.
 
-## Узкие циклы внутри этапов
+## Что описано в каждом плане
 
-Для каждого цикла: прочитать только соответствующую спецификацию и раздел паспорта → найти declaration/callers → focused failing regression → минимальная реализация → focused green → live QA → паспорт/README/version → полная проверка → review diff → commit/push.
+- Конкретный результат, границы и зависимости.
+- Существующий владелец поведения и точные изменяемые/новые файлы.
+- Предлагаемые сигнатуры, DTO, flags и typed commands.
+- Последовательность действий с чекбоксами и конкретным ядром тестов.
+- Права, повторные запросы, частичные сбои и совместимость старых данных.
+- Focused-команды, live-сценарии, документация, версия и Git.
 
-- R0a: структурированный результат folder dialog. R0b: единый resolver membership для hover/drop. Оба входят в первую задачу.
+Межэтапные контракты экземпляра, цены и составного Item находятся в [README комплекта](2026-09-07-module-development/README.md). Его изменения синхронизируются с зависимыми планами. Будущие методы попадают в function passport только вместе с фактической реализацией.
 
-- R1a: anchored overlay и storage popover. R1b: fixed hero cells и styled tooltip, без изменения Item identity.
+## Условия выпуска реализации
 
-- R3a: quantity operation с fresh validation/recovery. R3b: HeroDollService использует выделение экземпляра, distinct Item IDs сохраняются.
+- По каждому исходному подпункту пройдена наблюдаемая проверка.
+- При изменении world-state проверены права, отсутствие GM, повторные запросы и частичные сбои.
+- Предметы, upgrades, содержимое и монеты не теряются и не дублируются.
+- Старые API/flags/ChatMessage/templates читаются либо имеют проверенную миграцию.
+- Клиентские изменения получили новую version и актуальный forwarder.
+- Изменённые методы записаны в паспорт, public contract — в README.
+- Выполнены focused и live по этапу, затем один полный test/syntax/JSON/diff цикл из общего контракта; в отчёте реальные passed/failed и ошибки.
+- Изменения закоммичены и отправлены только в lich_branch, без чужих файлов и force push.
 
-- R4a: уточнить owner/test mappings по готовой [91-row матрице](../specs/2026-09-07-module-development/upgrade-scope.md): 11 existing curses, 42 простых кандидата, 38 исключений. R4b: общие compatibility/value функции и tests.
+## Следующий исполняемый этап
 
-- R6a: pure rules + формула/size/save contract. R6b: validated operation/roll card. R6c: recoverable ground transfer + managed macro; этап готов только после R6c.
-
-- R7: отдельные партии пассивных бонусов и простых damage/modifier effects. Новые activities/ресурсы/ауры не реализовывать; сложные явно помечать как недоступные.
-
-- R8a: descriptor/value/aggregation. R8b: trusted serialization и claim/materialization. R9 добавляет рекурсивное содержимое и UI preview только поверх этой границы.
-
-- R10a: authority/session/выборы. R10b: участники/overlay/закрытие без продвижения календаря. R11 не начинать.
-
-## Условия выпуска
-
-- По каждому исходному подпункту есть наблюдаемая проверка из спецификации.
-
-- Проверены rights/no-active-GM/retry/частичные сбои там, где меняются ресурсы.
-
-- Ни один Item/upgrade/container не потерян и не продублирован.
-
-- Клиентские changes имеют новую version и актуальный forwarder.
-
-- Старые API/flags/ChatMessage/template schemas читаются либо имеют tested migration.
-
-- Новые методы записаны в паспорт; public contract — в README.
-
-- Полная проверка: node --test tests/*.test.mjs; git diff --check; node --check tracked JS/MJS; ConvertFrom-Json tracked JSON. Отчёт содержит passed/failed и реальные ошибки.
-
-- Новая задача начинается после зафиксированного результата текущей, не через бесконечное «продолжай».
-
-## Handoff первой реализации
-
-Рекомендуемая модель: **Terra medium** — два известных UI-контракта с одним основным владельцем и focused-тестами. Следующий самостоятельный этап выполнять в новой задаче.
-
-```text
-Реализуй только R0: отмена создания/переименования папки не создаёт имя cancel; drop на строку Item отправляет переносимое в настоящую папку этого Item, в корень — только если target Item в корне. Фон folder popout означает его rootFolderId.
-
-Репозиторий: D:/FoundryVTT/Data/modules/rebreya-main.
-Перед реализацией прочитай:
-1. AGENTS.md.
-2. docs/superpowers/specs/2026-09-07-module-development-design.md — общие инварианты.
-3. docs/superpowers/specs/2026-09-07-module-development/inventory-storage-ui.md — только R0.
-4. docs/function-passport.md — разделы 7 и 19, находи через rg; не загружай весь проект.
-
-Владелец: scripts/ui/inventory-app.js, promptInventoryFolderName(), #createInventoryFolder(), #renameInventoryFolder(), #resolveInventoryDropTarget(). Folder state остаётся у InventoryService и inventory-folder-tree.js.
-Подтверждённая причина cancel: установленный Foundry 13.351 DialogV2 использует callbackResult ?? button.action. Callback null даёт строку cancel. Используй структурированный confirmed/name результат; имя cancel, введённое вручную и подтверждённое, допустимо.
-Current drop contract: любой Item даёт folderId:null. Меняется именно он; подсветка и drop должны использовать одинаковую цель из свежего snapshot.
-
-Не реализуй partial quantity, folder colors, куклу, усовершенствования или остальные этапы. Не меняй данные мира из UI, роли/ACL, ingress rules и protected membership без необходимости. Cancel/Escape/close = ноль mutations. Сохрани self/descendant/cross-group ограничения. Исчезнувшая цель не должна тихо отправлять Item в корень.
-
-Сначала focused regressions:
-node --test tests/inventory-app-context.test.mjs tests/inventory-folder-tree.test.mjs tests/inventory-folder-socket.test.mjs
-В тесте диалога воспроизведи nullish fallback Foundry. Покрой Confirm/cancel/Escape/close, буквальное имя cancel, root/folder/deep folder/filtered Item/popout background, long hover и stale target.
-После реализации — эти focused tests, live GM/player проверка в отдельном тестовом мире и полная проверка из AGENTS.md. Не называй Node-тесты live QA.
-
-Обнови docs/function-passport.md для изменённых/новых/удалённых методов и README, если меняется публичный контракт. Подними module.json version, синхронно создай scripts/main-<version>.js с импортом main.js и обнови esmodules; проверь runtime-ссылки.
-
-Обязательный Git: git status --short --branch; git branch --show-current; git fetch origin; git rev-list --left-right --count HEAD...origin/main; git log --oneline HEAD..origin/main; сравни HEAD с origin/lich_branch. Если основной remote master — проверь аналогично. Работай только в lich_branch. Чужие незакоммиченные изменения, опережение remote lich_branch или конфликт основной ветки — остановись и сообщи. Перед commit проверь git diff --check, git diff --stat и содержательный diff. Stage только файлы R0, осмысленный commit, git push -u origin lich_branch. Никакого force push или commit/push в main/master.
-
-База исследования: ccc9f59e, модуль 1.4.245, Foundry 13.351, dnd5e 5.2.5. На этой базе проверено 3618 passed/0 failed, 689 JS/MJS syntax и 45 JSON без ошибок. Реализация начинается с актуального fetch, не с предположения, что ветка осталась прежней.
-```
+Первый план — [R0](2026-09-07-module-development/r0-folder-behavior.md). При переходе к коду начать с его двух regressions: структурированный результат DialogV2 и разрешение папки по свежему target Item. Сохранить scope этого этапа, выполнить его проверки и Git-процесс, затем переходить к следующему плану в текущей задаче.

@@ -17,7 +17,7 @@ aggregateRows() сейчас использует sourceType/sourceId/broken; э
 Форма: переключатель «Предметы с усовершенствованиями», вероятность 0..100, максимум улучшений на host в пределах его capacity, фильтр разрешённых типов/рангов. В старых templates флаг выключен; старый результат при тех же random inputs сохраняется.
 
 Предлагаемый versioned result v2 хранит stable row ID и detached descriptor:
-{instanceKey,sourceType,sourceId,quantity,isBroken,upgrades:[{sourceId,slotIndex,choices}],container:null|snapshot}.
+{version:2,instanceKey,sourceType,sourceId,quantity,isBroken,upgrades:[{instanceKey,sourceId,slotIndex,choices}],container:null|snapshot}.
 quantity составной индивидуальной вещи равен 1; одинаковые экземпляры имеют разные instanceKey. Plain stacks сохраняют прежнюю агрегацию. Upgrades не сливаются только по имени или базовому sourceId.
 
 Генерация: выбрать совместимые host и upgrades через rules R4 → посчитать полную цену → принять только если в remaining budget. Не выбирать сначала максимально дорогой base, затем безлимитно навешивать upgrades. Максимум attempts/кандидатов ограничен; отсутствие подходящих upgrades даёт обычный host или диагностируемый пропуск, не infinite retry.
@@ -29,6 +29,8 @@ quantity составной индивидуальной вещи равен 1; 
 Материализация: создаются host и embedded upgrade children с новыми world IDs, затем согласованные installed links и system.container. Stable catalog IDs не заменяются document IDs. Snapshot/adapter ремапит hostItemId/itemId и не оставляет ссылки на исходный Actor/compendium. Активные эффекты появляются через обычный sync владельца, не через второй набор lootgen effects.
 
 Authoritative выдача заново разрешает descriptor из trusted generated state. Typed payload клиента передаёт только lootId/row IDs/operation ID/выбор назначения. Direct выдача расширяется safe descriptor reference и GM-side validation, не произвольным ItemData. Все row-level claims одного host включают его upgrades.
+
+Подробный [план R8](../../plans/2026-09-07-module-development/r8-upgraded-loot.md) конкретизирует эту границу: composed result готовит active GM через prepareLootgenGeneratedResult(form), сохраняет в существующем GM-authored Lootgen ChatMessage state и выдаёт через claim по ссылкам. Прямая выдача использует подготовленную GM-only запись; публикация раскрывает её же без новой генерации. Legacy plain preview сохраняется. Catalog/rules drift до первого grant даёт stale result; recovery после подготовленного графа использует его сохранённые данные.
 
 ## R9: заполненные хранилища
 
@@ -46,7 +48,7 @@ Authoritative выдача заново разрешает descriptor из trust
 
 Инвариант: B = сумма(value всех top-level деревьев) + top-level currencyValue + unusedValue.
 value(tree) = shellBase + installedUpgrades + childTrees + internalCurrency.
-Каждый физический/денежный компонент участвует ровно один раз, unusedValue>=0. Existing spentValue сохраняет свою семантику стоимости предметных строк; отчёт отдельно отображает общую сумму и остаток, не меняя смысл старого поля.
+Каждый физический/денежный компонент участвует ровно один раз, unusedValue>=0. Existing spentValue включает стоимость оболочек, upgrades и предметов без валюты. Новое currencyValue включает внутренние и внешние монеты, totalValue=spentValue+currencyValue. Row.totalValue контейнера включает внутреннюю валюту, поэтому её вычитают при расчёте spentValue; отчёт отдельно показывает общую сумму и остаток. Подробный [план R9](../../plans/2026-09-07-module-development/r9-nested-loot.md) фиксирует ledger и traversal существующего snapshot.
 
 Пример в единицах value: B=10000; оболочка=1000; upgrade=2000; содержимое=3000; монеты внутри=1000; внешние монеты=3000. Итог 10000. Нельзя повторно прибавить цену child как отдельную строку или второй reserve.
 

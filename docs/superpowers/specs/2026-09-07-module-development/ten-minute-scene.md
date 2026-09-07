@@ -32,15 +32,14 @@ GM выбирает группу, персонажа с длительным д�
 - scripts/infrastructure/foundry/scene-activity-command-contract.js — exact commands.
 Composition использует existing gateway/coordinator, без raw socket bypass.
 
-Hidden world setting sceneActivityState v1 через WorldSettingMutationRepository:
-{sessionId,revision,status,groupActorId,initiatingActorUuid,participantActorUuids,durationMinutes,openedAt,selectionByActor}.
-status: open/completed/cancelled. История bounded; здесь только общие намерения, не секреты и скрытые Item details.
+Hidden world setting sceneActivityState v1 через WorldSettingMutationRepository хранит envelope {version:1,activeByGroup,groupRevisions,history,recentOperations}. Session: {sessionId,revision,status,groupActorId,initiatingActorUuid,participantActorUuids,durationMinutes,openedAt,selectionByActor}.
+status: open/completed/cancelled. История последних 64 sessions и 256 operation receipts; groupRevisions сохраняется для защиты от старого start после вытеснения receipt. Здесь только общие намерения, не секреты и скрытые Item details. Точные переходы — в [плане R10](../../plans/2026-09-07-module-development/r10-scene-window.md).
 
 Одна active session на группу. Actor IDs проверяются по группе; текст bounded/escaped. Неприглашённый не выполняет choose/finish даже зная session ID.
 
 Команды:
 
-- scene-activity.start: GM-only; groupActorId, initiatingActorUuid, participants, durationMinutes, operationId;
+- scene-activity.start: GM-only; groupActorId, expectedGroupRevision, initiatingActorUuid, participantActorUuids, durationMinutes, operationId;
 
 - scene-activity.choose: sessionId, actorUuid, actionId/text, expectedRevision, operationId; OWNER своего participant Actor или GM;
 
@@ -57,7 +56,8 @@ GM start; два игрока выбирают/меняют; чужой Actor о
 Live GM+два player: один overlay/participant; видимые GM статусы; mouse/keyboard; 1280×720/1920×1080; длинный текст; отсутствие новых console errors.
 Готовность — окно, список и сохранение выборов. Автоматический отдых не входит.
 
-## R11: только отложенная идея
+## R11: отложенное расширение
 
 Восстановление умений КО и кости хитов не реализовывать без нового запроса и отдельной спецификации. Тогда решить full shortRest против selected recovery, authority/receipt и idempotency.
+Подробный [условный план R11](../../plans/2026-09-07-module-development/r11-rest-extension-deferred.md) описывает оба режима, native adapters, recovery и проверки, сохраняя это ограничение.
 Проверенные будущие точки: actor.shortRest(config), actor.rollHitDie(config,dialog,message) dnd5e 5.2.5. Первый восстанавливает больше выбранного списка, второй уже меняет ресурс/HP. LongRestPipelineService не запускать для КО. Наличие этих API не разрешает подключать их в R10.
