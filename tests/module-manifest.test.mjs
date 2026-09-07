@@ -63,8 +63,8 @@ test("module manifest loads an unpinned canonical entrypoint for page-refresh up
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const [entrypoint] = manifest.esmodules;
 
-  assert.equal(manifest.version, "1.4.238");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.238.js"]);
+  assert.equal(manifest.version, "1.4.239");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.239.js"]);
   assert.doesNotMatch(entrypoint, /[?#]/u);
 
   const entrypointSource = await readFile(new URL(entrypoint, manifestUrl), "utf8");
@@ -233,7 +233,7 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
   for (const importPath of [
     "data/trader-service.js?v=1.4.109-lazy-trader-restock",
     "data/downtime-service.js?v=1.4.96-craft-calendar",
-    "data/inventory-service.js?v=1.4.238-inventory-ui",
+    "data/inventory-service.js?v=1.4.239-inventory-ui",
     "data/inventory-ingress-descriptor.js?v=1.4.179-dismantle-minimum-quantity",
     "data/durability-service.js?v=1.4.154-corpse-storage-broken-name",
     "data/corpse-storage-materializer.js?v=1.4.195-storage-administration",
@@ -319,7 +319,7 @@ test("module keeps recent published entrypoint URLs as canonical compatibility f
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
 
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.238.js"]);
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.239.js"]);
 
   for (const fileName of ["main-1.4.98.js", "main-1.4.99.js", "main-1.4.100.js"]) {
     const forwarderSource = await readFile(new URL(`../scripts/${fileName}`, import.meta.url), "utf8");

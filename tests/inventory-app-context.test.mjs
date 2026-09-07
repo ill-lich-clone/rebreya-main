@@ -866,19 +866,24 @@ test("InventoryApp template renders accessible folder rows and fixed-depth item 
   const css = await readFile(new URL("../styles/main.css", import.meta.url), "utf8");
   const script = await readFile(new URL("../scripts/ui/inventory-app.js", import.meta.url), "utf8");
   const createButtons = template.match(/data-action="create-inventory-folder"/gu) ?? [];
+  const createItemButtons = template.match(/data-action="create-inventory-item"/gu) ?? [];
   const filterButtons = template.match(/data-action="toggle-inventory-filters"/gu) ?? [];
   const searchIndex = template.indexOf('data-action="search"');
   const typeIndex = template.indexOf('data-action="type-filter"');
   const sortIndex = template.indexOf('data-action="sort-mode"');
   const filterIndex = template.indexOf('data-action="toggle-inventory-filters"');
   const createIndex = template.indexOf('data-action="create-inventory-folder"');
+  const createItemIndex = template.indexOf('data-action="create-inventory-item"');
   const folderBranchStart = template.indexOf("{{#if isFolder}}");
   const folderBranchEnd = template.indexOf('class="rm-compact-item rm-inventory-tree-row', folderBranchStart);
   const folderBranch = template.slice(folderBranchStart, folderBranchEnd);
 
   assert.equal(createButtons.length, 1);
+  assert.equal(createItemButtons.length, 1);
   assert.equal(filterButtons.length, 1);
-  assert.ok(createIndex < searchIndex && searchIndex < typeIndex && typeIndex < sortIndex && sortIndex < filterIndex);
+  assert.ok(createItemIndex < searchIndex && searchIndex < typeIndex && typeIndex < sortIndex && sortIndex < filterIndex && filterIndex < createIndex);
+  assert.match(template, /data-action="create-inventory-item"[^>]*title="Создать предмет"[^>]*aria-label="Создать предмет"/u);
+  assert.match(template, /\{\{#if canManage\}\}[\s\S]*data-action="create-inventory-item"[\s\S]*\{\{\/if\}\}/u);
   assert.match(template, /data-action="toggle-inventory-filters"[^>]*title="Фильтры входящего лута"[^>]*aria-label="Фильтры входящего лута"/u);
   assert.match(template, /data-action="create-inventory-folder"[^>]*title="Создать папку"[^>]*aria-label="Создать папку"/u);
   assert.match(template, /\{\{#if canOrganizeInventory\}\}[\s\S]*data-action="create-inventory-folder"[\s\S]*\{\{\/if\}\}/u);
@@ -917,7 +922,8 @@ test("InventoryApp template renders accessible folder rows and fixed-depth item 
   assert.doesNotMatch(itemMeta, /\{\{rmNum totalWeight\}\}/u);
   assert.match(itemBranch, /<span>Цена за 1 шт\.<\/span>/u);
   assert.match(css, /\.rm-compact-item__image\s*\{[^}]*object-fit:\s*contain;/u);
-  assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+104px;[^}]*height:\s*100%;[^}]*overflow:\s*hidden;/u);
+  assert.match(css, /\.rebreya-inventory-app \.window-content\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+104px;[^}]*overflow:\s*hidden;/u);
+  assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book\s*\{[^}]*display:\s*contents;/u);
   assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__tabs\s*\{[^}]*position:\s*relative;[^}]*right:\s*auto;/su);
   assert.match(css, /@media \(max-width:\s*900px\)\s*\{[\s\S]*?\.rm-compact-toolbar\s*\{[^}]*grid-template-columns:\s*auto\s+minmax\(0,\s*1fr\);/u);
   assert.match(css, /\.rm-context-menu__item\s*\{[^}]*justify-content:\s*flex-start;/u);
@@ -1192,6 +1198,53 @@ test("InventoryApp invalidates its folder snapshot after a command error and gat
   }
   finally {
     console.error = previousConsoleError;
+    globalThis.ui = previousUi;
+    dom.restore();
+    restoreFoundry();
+  }
+});
+
+test("InventoryApp create-item control opens the Foundry Item dialog for the inventory Actor", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const dom = installMinimalDom();
+  const previousItem = globalThis.Item;
+  const previousUi = globalThis.ui;
+  const actor = { id: "group-a" };
+  const dialogCalls = [];
+  globalThis.Item = {
+    async createDialog(data, operation) {
+      dialogCalls.push([data, operation]);
+      return null;
+    }
+  };
+  globalThis.ui = { notifications: { error() {} } };
+  const moduleApi = createModuleApi({
+    inventorySnapshot: createFolderInventorySnapshot(),
+    partySnapshot: { canManage: true },
+    getGroupContext: () => null
+  });
+  moduleApi.inventoryService = {
+    async getInventoryActor(options) {
+      assert.deepEqual(options, { create: false, groupActorId: "group-a" });
+      return actor;
+    }
+  };
+  const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?create-item=${Date.now()}`);
+  const app = new InventoryApp(moduleApi);
+  const createButton = createFakeControl();
+  const root = createFakeElement();
+  root.querySelector = () => null;
+  root.querySelectorAll = (selector) => selector === "[data-action='create-inventory-item']" ? [createButton] : [];
+  app.element = root;
+
+  try {
+    await app._prepareContext();
+    await app._onRender({}, {});
+    await dispatchClick(createButton);
+    assert.deepEqual(dialogCalls, [[{}, { parent: actor }]]);
+  }
+  finally {
+    globalThis.Item = previousItem;
     globalThis.ui = previousUi;
     dom.restore();
     restoreFoundry();
@@ -2190,9 +2243,8 @@ test("InventoryApp compact currency labels preserve small values and abbreviate 
 test("InventoryApp reserves window geometry for book tabs and keeps the character-style artwork mask", async () => {
   const css = await readFile(new URL("../styles/main.css", import.meta.url), "utf8");
 
-  assert.match(css, /\.rebreya-inventory-app \.window-content\s*\{[^}]*position:\s*relative;[^}]*overflow:\s*visible;/u);
-  assert.doesNotMatch(css, /\.rebreya-inventory-app \.window-content\s*\{[^}]*grid-template-columns:/u);
-  assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+104px;[^}]*height:\s*100%;/u);
+  assert.match(css, /\.rebreya-inventory-app \.window-content\s*\{[^}]*position:\s*relative;[^}]*display:\s*grid;[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+104px;[^}]*overflow:\s*hidden;/u);
+  assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book\s*\{[^}]*display:\s*contents;/u);
   assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__tabs\s*\{[^}]*position:\s*relative;[^}]*grid-column:\s*2;[^}]*right:\s*auto;/u);
   assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__page\s*\{[^}]*overflow-y:\s*auto;/u);
   assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__header\s*\{[^}]*height:\s*300px;[^}]*min-height:\s*300px;/u);

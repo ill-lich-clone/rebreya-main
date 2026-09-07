@@ -194,9 +194,9 @@
         </div>
 
         <section class="rm-compact-toolbar">
-          {{#if canOrganizeInventory}}
-            <button type="button" class="rm-icon-button rm-inventory-folder-create" data-action="create-inventory-folder" title="Создать папку" aria-label="Создать папку">
-              <i class="fa-solid fa-folder-plus" aria-hidden="true"></i>
+          {{#if canManage}}
+            <button type="button" class="rm-icon-button rm-inventory-item-create" data-action="create-inventory-item" title="Создать предмет" aria-label="Создать предмет">
+              <i class="fa-solid fa-plus" aria-hidden="true"></i>
             </button>
           {{/if}}
           <div class="rm-field">
@@ -220,6 +220,11 @@
             <button type="button" class="rm-icon-button {{#if inventoryFiltersActive}}is-active{{/if}}" data-action="toggle-inventory-filters" title="Фильтры входящего лута" aria-label="Фильтры входящего лута" aria-pressed="{{inventoryFiltersActive}}">
               <i class="fa-solid fa-filter" aria-hidden="true"></i>
             </button>
+            {{#if canOrganizeInventory}}
+              <button type="button" class="rm-icon-button rm-inventory-folder-create" data-action="create-inventory-folder" title="Создать папку" aria-label="Создать папку">
+                <i class="fa-solid fa-folder-plus" aria-hidden="true"></i>
+              </button>
+            {{/if}}
           </div>
         </section>
 

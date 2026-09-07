@@ -4738,11 +4738,12 @@ summary:focus-visible {
 
 .rebreya-inventory-app .window-content {
   position: relative;
-  display: block;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 104px;
   min-width: 0;
   min-height: 0;
   padding: 0;
-  overflow: visible;
+  overflow: hidden;
   background: transparent !important;
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
@@ -4750,12 +4751,7 @@ summary:focus-visible {
 }
 
 .rebreya-inventory-app .rm-inventory-book {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 104px;
-  height: 100%;
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
+  display: contents;
 }
 
 .rebreya-inventory-app {
@@ -13114,7 +13110,7 @@ summary:focus-visible {
 }
 
 @media (max-width: 900px) {
-  .rebreya-inventory-app .rm-inventory-book {
+  .rebreya-inventory-app .window-content {
     grid-template-columns: minmax(0, 1fr) 92px;
   }
 
@@ -13127,7 +13123,7 @@ summary:focus-visible {
     grid-template-columns: auto minmax(0, 1fr);
   }
 
-  .rm-compact-toolbar > .rm-inventory-folder-create {
+  .rm-compact-toolbar > .rm-inventory-item-create {
     grid-column: 1;
     grid-row: 1;
   }

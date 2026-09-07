@@ -358,7 +358,7 @@ test("composition root owns one inventory ingress graph and one batch dispatch h
 
   assert.match(
     source,
-    /\.\/data\/inventory-service\.js\?v=1\.4\.238-inventory-ui/u,
+    /\.\/data\/inventory-service\.js\?v=1\.4\.239-inventory-ui/u,
     "inventory-service cache key must change with the inventory UI projection"
   );
   assert.equal(source.match(/new InventoryIngressRuleCompilerCache\(/gu)?.length, 1);

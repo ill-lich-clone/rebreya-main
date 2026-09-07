@@ -5043,6 +5043,21 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     await openInventoryItem(item, { moduleApi: this.moduleApi });
   }
 
+  async #createInventoryItem() {
+    const actor = await this.moduleApi.inventoryService.getInventoryActor({
+      create: false,
+      groupActorId: this.inventoryActorId
+    });
+    if (!actor) {
+      throw new Error("Склад группы не найден.");
+    }
+    if (typeof globalThis.Item?.createDialog !== "function") {
+      throw new Error("Диалог создания предмета недоступен.");
+    }
+
+    return globalThis.Item.createDialog({}, { parent: actor });
+  }
+
   async #promptSupply(resourceKey) {
     const quantity = await promptNumericValue({
       title: resourceKey === "water" ? "Изменить воду" : "Изменить еду",
@@ -7291,6 +7306,21 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         event.preventDefault();
         event.stopPropagation();
         await this.#createInventoryFolder(this.rootFolderId);
+      }, listenerOptions);
+    });
+
+    element.querySelectorAll("[data-action='create-inventory-item']").forEach((button) => {
+      button.addEventListener("click", async (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!this.canManage) return;
+        try {
+          await this.#createInventoryItem();
+        }
+        catch (error) {
+          console.error(`${MODULE_ID} | Failed to create inventory Item.`, error);
+          ui.notifications?.error(error.message || "Не удалось создать предмет.");
+        }
       }, listenerOptions);
     });
 
