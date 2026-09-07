@@ -12,6 +12,23 @@ import {
 
 const SOCKET_CHANNEL = "module.rebreya-main";
 
+test("container mechanics updates refresh the exact owning actor scope", async () => {
+  const listeners = {};
+  const calls = [];
+  registerInventorySyncHooks({ refreshInventoryViews: async scope => calls.push(scope.actorIds) }, {
+    Hooks: { on(name, callback) { listeners[name] = callback; } }, debounceMs: 0, force: true
+  });
+  for (const type of ["character", "group"]) {
+    const item = { id: "bag", type: "container", parent: { id: type, type } };
+    for (const field of ["container", "capacity.weight.value", "capacity.weight.units", "properties", "quantity", "weight.value"]) {
+      listeners.updateItem(item, { [`system.${field}`]: 1 }, {}, "remote");
+      await flushAsyncHooks();
+      assert.deepEqual(calls.at(-1), [type]);
+    }
+  }
+  assert.equal(calls.length, 12);
+});
+
 async function flushAsyncHooks() {
   await new Promise((resolve) => setImmediate(resolve));
   await new Promise((resolve) => setTimeout(resolve, 0));

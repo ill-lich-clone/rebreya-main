@@ -109,8 +109,21 @@ export function buildActorInventoryWeightSnapshot(actor) {
       name: String(item.name ?? ""),
       contentsWeightLb: roundWeight(contentsWeight(item)),
       capacityLb: roundWeight(pounds(capacity?.value, capacity?.units)),
-      hasWeightCapacity: capacity?.value != null && Number.isFinite(Number(capacity.value))
+      hasWeightCapacity: capacity?.value != null && capacity.value !== "" && Number.isFinite(Number(capacity.value)) && Number(capacity.value) >= 0
     };
   });
   return { weightLb, magicalContainers };
+}
+
+/** Warehouse accounting; physical weight and strength capacity remain unchanged. */
+export function buildInventoryStorageProfile(weightSnapshots, baseCapacityLb = 0) {
+  const containers = weightSnapshots.flatMap((snapshot) => snapshot.magicalContainers ?? []);
+  const physicalWeightLb = roundWeight(weightSnapshots.reduce((sum, snapshot) => sum + snapshot.weightLb, 0));
+  const containerCapacityLb = roundWeight(containers.reduce((sum, container) => sum + (container.hasWeightCapacity ? container.capacityLb : 0), 0));
+  const containerUsedLb = roundWeight(containers.reduce((sum, container) => sum + container.contentsWeightLb, 0));
+  const weightLb = roundWeight(physicalWeightLb + containerUsedLb);
+  const capacityLb = roundWeight(baseCapacityLb + containerCapacityLb);
+  const freeCapacityLb = roundWeight(capacityLb - weightLb);
+  return { baseCapacityLb, physicalWeightLb, containerCapacityLb, containerUsedLb,
+    weightLb, capacityLb, freeCapacityLb, overloadLb: Math.max(0, -freeCapacityLb) };
 }

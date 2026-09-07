@@ -1,4 +1,4 @@
-﻿import {
+import {
   DOWNTIME_ITEM_TYPE,
   ENERGY_BASE_DAYS,
   ENERGY_MIN_DAYS,
@@ -19,7 +19,7 @@ import {
 import { DurableMutationJournal } from "../application/durable-mutation-journal.js";
 import { WorldMutationCoordinator } from "../application/world-mutation-coordinator.js";
 import { finiteNumber as toNumber } from "../shared/foundry-values.js";
-import { buildActorInventoryWeightSnapshot } from "./inventory-weight.js";
+import { buildActorInventoryWeightSnapshot, buildInventoryStorageProfile } from "./inventory-weight.js?v=1.4.237";
 import { buildDurabilitySignature, isDurabilityEligible } from "./durability-rules.js";
 import {
   resolveInventoryDismantleMinimumQuantity,
@@ -5748,7 +5748,13 @@ export class InventoryService {
     const model = inventoryActor ? await this.moduleApi.getModel() : null;
 
     const membershipManagedByNativeGroup = this.#isNativeGroupInventoryActor(inventoryActor);
+    const seenActorIds = new Set([inventoryActor?.id]);
     const partyMembers = this.#buildPartyMemberRows(state, inventoryActor)
+      .filter(({ actorId }) => {
+        if (seenActorIds.has(actorId)) return false;
+        seenActorIds.add(actorId);
+        return true;
+      })
       .map(({ actorId, actor: actorDocument, memberState }) => {
         const weightSnapshot = buildActorInventoryWeightSnapshot(actorDocument);
         const inventoryWeight = weightSnapshot.weightLb;
@@ -5797,6 +5803,7 @@ export class InventoryService {
           roleLabel: getRoleLabel(memberState.role),
           inventoryWeight,
           magicalContainers: weightSnapshot.magicalContainers,
+          storage: buildInventoryStorageProfile([weightSnapshot], capacityLb),
           strength: effectiveStrength,
           strengthSource: memberState.strOverride !== null ? "Ручная" : "Лист",
           capacityMultiplier,
@@ -5874,6 +5881,9 @@ export class InventoryService {
       availableActors,
       membershipManagedByNativeGroup,
       totalCapacityLb,
+      storage: buildInventoryStorageProfile([partyWeightSnapshot, ...partyMembers.map((member) => ({
+        weightLb: member.inventoryWeight, magicalContainers: member.magicalContainers
+      }))], totalCapacityLb),
       totalFoodPerDay,
       totalWaterGalPerDay,
       totalEnergyCurrent,

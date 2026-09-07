@@ -3570,12 +3570,17 @@ test("InventoryApp prepares per-member cargo meters and overload state", async (
     const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?member-cargo=${Date.now()}`);
     const app = new InventoryApp(createModuleApi({
       partySnapshot: {
+        inventoryWeight: 1868.3,
+        totalCapacityLb: 1350,
+        freeCapacityLb: -518.3,
+        storage: { weightLb: 1895.3, capacityLb: 1850, freeCapacityLb: -45.3, overloadLb: 45.3 },
         members: [
           {
             actorId: "member-a",
             actorName: "Carrier",
             inventoryWeight: 45,
             capacityLb: 90,
+            storage: { weightLb: 123.92, capacityLb: 635, freeCapacityLb: 511.08, overloadLb: 0 },
             currencyGp: 12.5
           },
           {
@@ -3590,10 +3595,17 @@ test("InventoryApp prepares per-member cargo meters and overload state", async (
     }));
 
     const context = await app._prepareContext();
+    assert.equal(context.party.storageWeightLb, 1895.3);
+    assert.equal(context.party.storageCapacityLb, 1850);
+    assert.equal(context.summary.freeCapacityLb, -45.3);
+    assert.equal(context.party.dashboard.weight.badgeLabel, "Перегруз 45.3 фнт.");
+    assert.equal(context.party.capacityUsedRawPercent, 102.4);
     const carrier = context.party.members.find((member) => member.actorId === "member-a");
     const overloaded = context.party.members.find((member) => member.actorId === "member-b");
 
-    assert.equal(carrier.capacityUsedPercent, 50);
+    assert.equal(carrier.capacityUsedPercent, 19.5);
+    assert.equal(carrier.inventoryWeight, 45);
+    assert.equal(carrier.capacityLb, 90);
     assert.equal(carrier.isOverloaded, false);
     assert.equal(carrier.currencyGp, 12.5);
     assert.equal(overloaded.capacityUsedPercent, 100);

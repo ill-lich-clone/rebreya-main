@@ -4674,9 +4674,9 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         id: actor.id,
         name: actor.name
       }));
-      const totalCapacityLb = toNumber(partySnapshot.totalCapacityLb, 0);
-      const inventoryWeight = toNumber(partySnapshot.inventoryWeight, 0);
-      const freeCapacityLb = roundNumber(toNumber(partySnapshot.freeCapacityLb, 0), 2);
+      const totalCapacityLb = toNumber(partySnapshot.storage?.capacityLb ?? partySnapshot.totalCapacityLb, 0);
+      const inventoryWeight = toNumber(partySnapshot.storage?.weightLb ?? partySnapshot.inventoryWeight, 0);
+      const freeCapacityLb = roundNumber(toNumber(partySnapshot.storage?.freeCapacityLb ?? partySnapshot.freeCapacityLb, 0), 2);
       const capacityUsedRawPercent = totalCapacityLb > 0
         ? roundNumber((inventoryWeight / totalCapacityLb) * 100, 1)
         : 0;
@@ -4760,16 +4760,16 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       this.sortMode = normalizeInventorySortMode(this.sortMode);
       const itemValueSummary = buildInventoryValueSummary(inventorySnapshot.allItems ?? inventorySnapshot.items);
       const partyMembers = (partySnapshot.members ?? []).map((member) => {
-        const memberInventoryWeight = Math.max(0, toNumber(member.inventoryWeight, 0));
-        const memberCapacityLb = Math.max(0, toNumber(member.capacityLb, 0));
+        const memberInventoryWeight = Math.max(0, toNumber(member.storage?.weightLb ?? member.inventoryWeight, 0));
+        const memberCapacityLb = Math.max(0, toNumber(member.storage?.capacityLb ?? member.capacityLb, 0));
         const capacityUsedRawPercent = memberCapacityLb > 0
           ? roundNumber((memberInventoryWeight / memberCapacityLb) * 100, 1)
           : (memberInventoryWeight > 0 ? 100 : 0);
 
         return {
           ...member,
-          inventoryWeight: memberInventoryWeight,
-          capacityLb: memberCapacityLb,
+          storageWeightLb: memberInventoryWeight,
+          storageCapacityLb: memberCapacityLb,
           currencyGp: Math.max(0, roundNumber(toNumber(member.currencyGp, 0), 2)),
           capacityUsedRawPercent,
           capacityUsedPercent: Math.min(100, Math.max(0, capacityUsedRawPercent)),
@@ -4926,12 +4926,14 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
           currency,
           currencyDisplay,
           ...itemValueSummary,
-          partyCapacityLb: partySnapshot.totalCapacityLb,
+          partyCapacityLb: totalCapacityLb,
           freeCapacityLb,
           freeCapacityClass: freeCapacityLb < 0 ? "rm-negative" : "rm-positive"
         },
         party: {
           ...partySnapshot,
+          storageWeightLb: inventoryWeight,
+          storageCapacityLb: totalCapacityLb,
           freeCapacityLb,
           foodDaysLeft,
           waterDaysLeft,

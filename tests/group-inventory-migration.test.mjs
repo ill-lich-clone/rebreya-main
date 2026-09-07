@@ -1,4 +1,40 @@
 import test from "node:test";
+import { buildActorInventoryWeightSnapshot, buildInventoryStorageProfile } from "../scripts/data/inventory-weight.js";
+
+test("warehouse profile preserves physical load and accounts for nested, metric and unknown containers", () => {
+  const bag = (id, parent = null, capacity = { value: 500, units: "lb" }) => ({
+    id, type: "container", system: { container: parent, weight: { value: 15, units: "lb" },
+      properties: ["weightlessContents"], capacity: { weight: capacity } }
+  });
+  const load = (id, value, parent = null) => ({
+    id, type: "loot", system: { container: parent, quantity: 1, weight: { value, units: "lb" } }
+  });
+  const read = (items, base = 135) => buildInventoryStorageProfile([buildActorInventoryWeightSnapshot({ items })], base);
+  const cassidy = read([bag("bag"), load("inside", 27, "bag"), load("outside", 81.92)]);
+  assert.deepEqual(cassidy, { baseCapacityLb: 135, physicalWeightLb: 96.92,
+    containerCapacityLb: 500, containerUsedLb: 27, weightLb: 123.92,
+    capacityLb: 635, freeCapacityLb: 511.08, overloadLb: 0 });
+  const party = read([bag("bag"), load("inside", 27, "bag"), load("outside", 1853.3)], 1350);
+  assert.equal(party.weightLb, 1895.3);
+  assert.equal(party.capacityLb, 1850);
+  assert.equal(party.overloadLb, 45.3);
+  const nested = read([bag("outer"), bag("inner", "outer"), load("inside", 27, "inner")]);
+  assert.equal(nested.physicalWeightLb, 15);
+  assert.equal(nested.containerUsedLb, 42);
+  assert.equal(nested.containerCapacityLb, 1000);
+  assert.equal(nested.weightLb, 57);
+  const multiple = read([bag("outer"), bag("inner"), load("inside", 27, "inner")]);
+  assert.equal(multiple.weightLb, nested.weightLb);
+  assert.equal(multiple.freeCapacityLb, nested.freeCapacityLb);
+  assert.equal(read([bag("metric", null, { value: 200, units: "kg" })]).containerCapacityLb, 500);
+  for (const capacity of [undefined, { value: "" }, { value: -1 }, { value: "unknown" }]) {
+    const unknown = bag("bag");
+    unknown.system.capacity = { weight: capacity, volume: { value: 500, units: "cuft" } };
+    const snapshot = read([unknown, load("inside", 27, "bag")]);
+    assert.equal(snapshot.containerCapacityLb, 0);
+    assert.equal(snapshot.containerUsedLb, 27);
+  }
+});
 import assert from "node:assert/strict";
 
 import { DOWNTIME_ITEM_TYPE, MODULE_ID } from "../scripts/constants.js";
@@ -2599,6 +2635,9 @@ test("getPartySnapshot uses container-aware carried weight and reports magical s
   const pack = (id = "pack", container = null) => physical(id, 5, container, {}, "container");
   const scenarios = [
     { name: "bag with 27 pounds inside", items: () => [bag(), physical("books", 27, "bag")], weight: 15, stored: 27 },
+    { name: "empty bag", items: () => [bag()], weight: 15, stored: 0 },
+    { name: "full bag", items: () => [bag(), physical("books", 500, "bag")], weight: 15, stored: 500 },
+    { name: "overfull bag", items: () => [bag(), physical("books", 550, "bag")], weight: 15, stored: 550 },
     { name: "bag plus outside load", items: () => [bag(), physical("books", 27, "bag"), physical("rope", 10)], weight: 25, stored: 27 },
     { name: "ordinary backpack includes its contents once", items: () => [pack(), physical("books", 27, "pack")], weight: 32 },
     { name: "ordinary nested containers", items: () => [pack(), pack("inner", "pack"), physical("books", 27, "inner")], weight: 37 },
@@ -2671,6 +2710,10 @@ test("getPartySnapshot uses container-aware carried weight and reports magical s
         assert.equal(snapshot.inventoryWeight, scenario.weight + 10);
         assert.equal(snapshot.members[0].capacityLb, 150, "storage is not a strength bonus");
         assert.equal(snapshot.freeCapacityLb, 140 - scenario.weight);
+        const storage = snapshot.storage;
+        assert.equal(storage.weightLb, snapshot.inventoryWeight + (scenario.stored ?? 0));
+        assert.equal(storage.capacityLb, 150 + (scenario.stored !== undefined ? 500 : 0));
+        assert.equal(storage.freeCapacityLb, storage.capacityLb - storage.weightLb);
         if (scenario.stored !== undefined) {
           assert.equal(snapshot.members[0].magicalContainers.length, 1);
           assert.equal(snapshot.members[0].magicalContainers[0].contentsWeightLb, scenario.stored);
@@ -2696,6 +2739,7 @@ test("getPartySnapshot uses container-aware carried weight and reports magical s
           assert.deepEqual(after.members[0].magicalContainers, []);
           assert.equal(after.partyInventoryWeight, 25);
           assert.equal(after.inventoryWeight, snapshot.inventoryWeight);
+          assert.deepEqual(after.storage, snapshot.storage, "ownership transfer preserves party storage");
           const inventorySnapshot = await service.getInventorySnapshot({ createActor: false });
           assert.equal(inventorySnapshot.summary.totalWeight, 25);
         }
