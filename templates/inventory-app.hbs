@@ -100,6 +100,13 @@
         </div>
 
         <div class="rm-inventory-book__controls">
+          {{#if tabs.isCalendar}}
+            <section class="rm-inventory-book__calendar-today rm-inventory-book__panel" aria-label="Сегодняшняя дата">
+              <h3>Сегодняшняя дата</h3>
+              <p><strong>{{calendar.weekdayLabel}}, {{calendar.day}} {{calendar.monthName}} {{calendar.year}}</strong></p>
+              <p>Луна: {{calendar.moon.phaseLabel}} (возраст ~{{rmNum calendar.moon.ageDays precision=2}} дн.)</p>
+            </section>
+          {{else}}
           <section class="rm-inventory-book__summary" aria-label="Сводка партийных запасов">
             <article class="rm-inventory-book__cargo rm-inventory-book__panel">
               <div class="rm-inventory-book__metric-heading">
@@ -159,6 +166,7 @@
               </article>
             </div>
           </section>
+          {{/if}}
         </div>
       </header>
 
@@ -186,6 +194,11 @@
         </div>
 
         <section class="rm-compact-toolbar">
+          {{#if canOrganizeInventory}}
+            <button type="button" class="rm-icon-button rm-inventory-folder-create" data-action="create-inventory-folder" title="Создать папку" aria-label="Создать папку">
+              <i class="fa-solid fa-folder-plus" aria-hidden="true"></i>
+            </button>
+          {{/if}}
           <div class="rm-field">
             <input type="search" value="{{search}}" placeholder="Поиск: название, тип, материал" data-action="search">
           </div>
@@ -207,11 +220,6 @@
             <button type="button" class="rm-icon-button {{#if inventoryFiltersActive}}is-active{{/if}}" data-action="toggle-inventory-filters" title="Фильтры входящего лута" aria-label="Фильтры входящего лута" aria-pressed="{{inventoryFiltersActive}}">
               <i class="fa-solid fa-filter" aria-hidden="true"></i>
             </button>
-            {{#if canOrganizeInventory}}
-              <button type="button" class="rm-icon-button rm-inventory-folder-create" data-action="create-inventory-folder" title="Создать папку" aria-label="Создать папку">
-                <i class="fa-solid fa-folder-plus" aria-hidden="true"></i>
-              </button>
-            {{/if}}
           </div>
         </section>
 
@@ -344,10 +352,7 @@
                       </div>
 
                       <p class="rm-compact-item__meta">
-                        {{rmNum quantity}} шт.
-                        {{#if priceLabel}} • {{priceLabel}}{{/if}}
-                        • {{rmNum totalWeight}} фнт.
-                        {{#if itemTypeLabel}} • {{itemTypeLabel}}{{/if}}
+                        {{#if itemTypeLabel}}{{itemTypeLabel}}{{/if}}
                         {{#if materialLabel}} • {{materialLabel}}{{/if}}
                       </p>
                     </div>
@@ -364,7 +369,7 @@
                         <strong>{{rmNum totalWeight}} фнт.</strong>
                       </p>
                       <p>
-                        <span>Цена</span>
+                        <span>Цена за 1 шт.</span>
                         <strong>{{#if priceLabel}}{{priceLabel}}{{else}}-{{/if}}</strong>
                       </p>
                     </div>
@@ -1114,19 +1119,10 @@
 
     {{#if tabs.isCalendar}}
       <section class="rm-panel rm-panel--full rm-panel--compact">
-        <div class="rm-panel__header rm-panel__header--compact">
-          <h3>Календарь</h3>
-          <span class="rm-muted">{{calendar.weekdayLabel}}</span>
-        </div>
-
-        <section class="rm-calendar-hero">
-          <div class="rm-calendar-hero__meta">
-            <h4>Сегодняшняя дата</h4>
-            <p><strong>Дата:</strong> {{calendar.weekdayLabel}}, {{calendar.day}} {{calendar.monthName}} {{calendar.year}}</p>
-            <p><strong>Луна:</strong> {{calendar.moon.phaseLabel}} (возраст ~{{rmNum calendar.moon.ageDays precision=2}} дн.)</p>
-            <p><strong>Календарь:</strong> {{calendar.monthYearLabel}}</p>
+        <section class="rm-calendar-panel">
+          <div class="rm-calendar-grid__heading">
+            <h3>{{calendar.monthYearLabel}}</h3>
           </div>
-
           <div class="rm-calendar-grid">
             {{#each calendar.weekdayHeaders}}
               <span class="rm-calendar-grid__weekday">{{this}}</span>

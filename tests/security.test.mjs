@@ -713,6 +713,61 @@ test("party inventory snapshot remaps removed core supply icon paths", async () 
   }
 });
 
+test("party inventory projection preserves custom icons and replaces only placeholder icons from the stable gear source", async () => {
+  const restoreFoundry = installFoundryUtils();
+  const previousGame = globalThis.game;
+  const actor = {
+    id: "party-inventory",
+    name: "Party Inventory",
+    isOwner: true,
+    system: { currency: {} },
+    items: {
+      contents: [
+        {
+          id: "custom-icon",
+          uuid: "Actor.party.Item.custom-icon",
+          name: "Бензин (1 галлон)",
+          type: "loot",
+          img: "worlds/rebreya/uploads/fuel.png",
+          flags: { "rebreya-main": { sourceType: "gear", sourceId: "catalog-fuel", gearId: "catalog-fuel" } },
+          toObject: () => ({ system: { quantity: 1, weight: { value: 1 }, price: {} } })
+        },
+        {
+          id: "placeholder-icon",
+          uuid: "Actor.party.Item.placeholder-icon",
+          name: "Переименованный бензин",
+          type: "loot",
+          img: "icons/svg/item-bag.svg",
+          flags: { "rebreya-main": { sourceType: "gear", sourceId: "catalog-fuel", gearId: "catalog-fuel" } },
+          toObject: () => ({ system: { quantity: 1, weight: { value: 1 }, price: {} } })
+        }
+      ]
+    }
+  };
+  globalThis.game = {
+    user: { id: "gm", isGM: true },
+    actors: { get: (id) => id === actor.id ? actor : null },
+    settings: { get: () => ({ inventoryActorId: actor.id }) }
+  };
+  const service = new InventoryService({
+    getModel: async () => ({
+      materials: [], materialById: new Map(), materialByGoodId: new Map(),
+      gear: [{ id: "catalog-fuel", name: "Бензин (1 галлон)", equipmentType: "Снаряжение" }],
+      gearById: new Map([["catalog-fuel", { id: "catalog-fuel", name: "Бензин (1 галлон)", equipmentType: "Снаряжение" }]])
+    })
+  });
+
+  try {
+    const snapshot = await service.getInventorySnapshot();
+    assert.equal(snapshot.allItems.find((entry) => entry.itemId === "custom-icon").img, "worlds/rebreya/uploads/fuel.png");
+    assert.notEqual(snapshot.allItems.find((entry) => entry.itemId === "placeholder-icon").img, "icons/svg/item-bag.svg");
+  }
+  finally {
+    globalThis.game = previousGame;
+    restoreFoundry();
+  }
+});
+
 test("InventoryService converts ration items into Rebreya food supply pounds", async () => {
   const restoreFoundry = installFoundryUtils();
   const previousGame = globalThis.game;

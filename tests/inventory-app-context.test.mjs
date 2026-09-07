@@ -878,7 +878,7 @@ test("InventoryApp template renders accessible folder rows and fixed-depth item 
 
   assert.equal(createButtons.length, 1);
   assert.equal(filterButtons.length, 1);
-  assert.ok(searchIndex < typeIndex && typeIndex < sortIndex && sortIndex < filterIndex && filterIndex < createIndex);
+  assert.ok(createIndex < searchIndex && searchIndex < typeIndex && typeIndex < sortIndex && sortIndex < filterIndex);
   assert.match(template, /data-action="toggle-inventory-filters"[^>]*title="Фильтры входящего лута"[^>]*aria-label="Фильтры входящего лута"/u);
   assert.match(template, /data-action="create-inventory-folder"[^>]*title="Создать папку"[^>]*aria-label="Создать папку"/u);
   assert.match(template, /\{\{#if canOrganizeInventory\}\}[\s\S]*data-action="create-inventory-folder"[\s\S]*\{\{\/if\}\}/u);
@@ -888,9 +888,9 @@ test("InventoryApp template renders accessible folder rows and fixed-depth item 
   assert.match(template, /class="rm-empty"[^>]*data-folder-drop-id=""/su);
   const toolbarActionRule = css.match(/\.rm-inventory-toolbar-actions\s*\{(?<body>[^}]*)\}/u)?.groups?.body ?? "";
   assert.match(toolbarActionRule, /display:\s*flex;/u);
-  assert.match(toolbarActionRule, /flex-wrap:\s*nowrap;/u);
+  assert.match(toolbarActionRule, /flex-wrap:\s*wrap;/u);
   assert.match(css, /\.rm-inventory-toolbar-actions\s+\.rm-icon-button\s*\{[^}]*width:\s*34px;[^}]*height:\s*34px;/su);
-  assert.match(css, /\.rm-compact-toolbar\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+180px\s+220px\s+auto;/su);
+  assert.match(css, /\.rm-compact-toolbar\s*\{[^}]*grid-template-columns:\s*auto\s+minmax\(180px,\s*1fr\)\s+180px\s+220px\s+auto;/su);
   assert.doesNotMatch(css, /\.rm-inventory-folder-create\s*\{[^}]*44px/su);
   assert.doesNotMatch(template, />\s*Правила лута\s*</u);
   assert.ok(template.includes("{{#each inventoryRows}}"));
@@ -908,6 +908,21 @@ test("InventoryApp template renders accessible folder rows and fixed-depth item 
   assert.match(folderBranch, /data-action="open-inventory-folder-menu"/u);
   assert.doesNotMatch(folderBranch, />\s*(?:Кол-во|Вес|Цена)\s*</u);
   assert.match(template.slice(folderBranchEnd), /class="[^"]*rm-compact-item[^"]*"[^>]*data-depth=/su);
+  const itemBranch = template.slice(folderBranchEnd, template.indexOf("{{#if tabs.isParty}}", folderBranchEnd));
+  assert.match(itemBranch, /\{\{#if itemTypeLabel\}\}\s*\{\{itemTypeLabel\}\}/u);
+  assert.match(itemBranch, /\{\{#if materialLabel\}\}\s*•\s*\{\{materialLabel\}\}/u);
+  const itemMeta = itemBranch.match(/<p class="rm-compact-item__meta">([\s\S]*?)<\/p>/u)?.[1] ?? "";
+  assert.doesNotMatch(itemMeta, /\{\{rmNum quantity\}\}/u);
+  assert.doesNotMatch(itemMeta, /\{\{priceLabel\}\}/u);
+  assert.doesNotMatch(itemMeta, /\{\{rmNum totalWeight\}\}/u);
+  assert.match(itemBranch, /<span>Цена за 1 шт\.<\/span>/u);
+  assert.match(css, /\.rm-compact-item__image\s*\{[^}]*object-fit:\s*contain;/u);
+  assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+104px;[^}]*height:\s*100%;[^}]*overflow:\s*hidden;/u);
+  assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__tabs\s*\{[^}]*position:\s*relative;[^}]*right:\s*auto;/su);
+  assert.match(css, /@media \(max-width:\s*900px\)\s*\{[\s\S]*?\.rm-compact-toolbar\s*\{[^}]*grid-template-columns:\s*auto\s+minmax\(0,\s*1fr\);/u);
+  assert.match(css, /\.rm-context-menu__item\s*\{[^}]*justify-content:\s*flex-start;/u);
+  assert.match(template, /rm-inventory-book__calendar-today/u);
+  assert.doesNotMatch(template, />\s*КАЛЕНДАРЬ\s*</u);
   for (const label of ["Создать вложенную папку", "Переименовать", "Открыть отдельно", "Удалить"]) {
     assert.equal(script.includes(`label: "${label}"`), true, label);
   }
@@ -2172,12 +2187,13 @@ test("InventoryApp compact currency labels preserve small values and abbreviate 
   }
 });
 
-test("InventoryApp positions external book tabs and keeps the character-style artwork mask", async () => {
+test("InventoryApp reserves window geometry for book tabs and keeps the character-style artwork mask", async () => {
   const css = await readFile(new URL("../styles/main.css", import.meta.url), "utf8");
 
   assert.match(css, /\.rebreya-inventory-app \.window-content\s*\{[^}]*position:\s*relative;[^}]*overflow:\s*visible;/u);
   assert.doesNotMatch(css, /\.rebreya-inventory-app \.window-content\s*\{[^}]*grid-template-columns:/u);
-  assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book\s*\{[^}]*display:\s*contents;/u);
+  assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+104px;[^}]*height:\s*100%;/u);
+  assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__tabs\s*\{[^}]*position:\s*relative;[^}]*grid-column:\s*2;[^}]*right:\s*auto;/u);
   assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__page\s*\{[^}]*overflow-y:\s*auto;/u);
   assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__header\s*\{[^}]*height:\s*300px;[^}]*min-height:\s*300px;/u);
   assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__header::before\s*\{[^}]*var\(--rm-party-inventory-header-image\)[^}]*mask-image:\s*linear-gradient\(180deg,\s*#000 0%,\s*#000 58%,\s*rgb\(0 0 0 \/ 0\.72\) 75%,\s*transparent 100%\);/u);
@@ -2201,7 +2217,7 @@ test("InventoryApp positions external book tabs and keeps the character-style ar
   assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__inventory-meta\s*\{/u);
   assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__route\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\) auto;/u);
   assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__supply\[data-action="edit-supply"\]\s*\{[^}]*cursor:\s*context-menu;/u);
-  assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__tabs\s*\{[^}]*position:\s*absolute;[^}]*right:\s*-\d+px;[^}]*grid-auto-flow:\s*row;/u);
+  assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__tabs\s*\{[^}]*position:\s*relative;[^}]*right:\s*auto;[^}]*grid-auto-flow:\s*row;[^}]*overflow-y:\s*auto;/u);
   assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__summary\s*\{/u);
   assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__cargo-tooltip\s*\{/u);
   assert.match(
@@ -2256,7 +2272,7 @@ test("InventoryApp uses one surface component across compact header panels", asy
   const template = await readFile(new URL("../templates/inventory-app.hbs", import.meta.url), "utf8");
   const css = await readFile(new URL("../styles/main.css", import.meta.url), "utf8");
 
-  assert.equal((template.match(/rm-inventory-book__panel/gu) ?? []).length, 13);
+  assert.equal((template.match(/rm-inventory-book__panel/gu) ?? []).length, 14);
   assert.match(
     css,
     /\.rebreya-inventory-app \.rm-inventory-book__header \.rm-inventory-book__panel\s*\{[^}]*border:\s*1px solid rgb\(var\(--rm-color-gold-rgb\) \/ 0\.3\);[^}]*border-radius:\s*6px;[^}]*background:\s*rgb\(var\(--rm-color-ink-rgb\) \/ 0\.94\);[^}]*box-shadow:/u

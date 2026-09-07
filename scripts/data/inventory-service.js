@@ -53,6 +53,7 @@ import {
   normalizeInventoryFolderState,
   renameInventoryFolder as renameInventoryFolderState
 } from "./inventory-folder-tree.js";
+import { resolveGearItemIcon } from "./gear-icon-resolver.js?v=1.4.238";
 
 const SOCKET_CHANNEL = `module.${MODULE_ID}`;
 export const SOCKET_EVENT_INVENTORY_IMPORT_REQUEST = "inventory-import-request";
@@ -688,10 +689,20 @@ const LEGACY_CORE_ICON_REPLACEMENTS = new Map([
   ["icons/consumables/food/bowl-oatmeal-brown.webp", FOOD_SUPPLY_ICON],
   ["icons/consumables/water/waterskin-leather-blue.webp", WATER_SUPPLY_ICON]
 ]);
+const INVENTORY_ICON_PLACEHOLDERS = new Set([
+  "icons/svg/item-bag.svg",
+  "icons/svg/item-bag.svg",
+  "systems/dnd5e/icons/svg/items/loot.svg"
+]);
 
 function normalizeInventoryIconPath(value) {
   const path = String(value ?? "").trim();
   return LEGACY_CORE_ICON_REPLACEMENTS.get(path) ?? path;
+}
+
+function isUsableInventoryIcon(value) {
+  const path = normalizeInventoryIconPath(value);
+  return Boolean(path) && !INVENTORY_ICON_PLACEHOLDERS.has(path);
 }
 
 function normalizeInventorySourceType(value) {
@@ -4706,15 +4717,17 @@ export class InventoryService {
       || normalizeInventorySourceType(sourceFlags.itemType) === "magicItem"
       || normalizeInventorySourceType(sourceFlags.magicItemType) === "magicItem"
       || Boolean(sourceFlags.magical);
+    const matchingMaterials = (model.materials ?? [])
+      .filter((material) => normalizeText(material.name) === itemName);
+    const matchingGear = (model.gear ?? [])
+      .filter((gearItem) => normalizeText(gearItem.name) === itemName);
     const matchedMaterial = model.materialById?.get(sourceFlags.materialId)
       ?? model.materialById?.get(sourceFlags.sourceId)
       ?? model.materialByGoodId?.get(sourceFlags.linkedGoodId)
-      ?? model.materials.find((material) => normalizeText(material.name) === itemName)
-      ?? null;
+      ?? (matchingMaterials.length === 1 ? matchingMaterials[0] : null);
     const matchedGear = model.gearById?.get(sourceFlags.gearId)
       ?? model.gearById?.get(sourceFlags.sourceId)
-      ?? model.gear.find((gearItem) => normalizeText(gearItem.name) === itemName)
-      ?? null;
+      ?? (matchingGear.length === 1 ? matchingGear[0] : null);
     const resourceKey = String(sourceFlags.resourceKey ?? "").trim().toLowerCase();
     let sourceType = normalizedSourceType;
     if (!sourceType) {
@@ -4806,7 +4819,9 @@ export class InventoryService {
       itemId: item.id,
       itemUuid: item.uuid,
       name: item.name,
-      img: normalizeInventoryIconPath(item.img),
+      img: isUsableInventoryIcon(item.img)
+        ? normalizeInventoryIconPath(item.img)
+        : (matchedGear ? resolveGearItemIcon(matchedGear) : normalizeInventoryIconPath(item.img)),
       quantity,
       weightEach,
       totalWeight,
