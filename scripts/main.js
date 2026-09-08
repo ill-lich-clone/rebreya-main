@@ -109,7 +109,7 @@ import { DisarmService } from "./combat/disarm-service.js?v=1.4.276";
 import { DisarmRollAdapter } from "./integrations/disarm-roll-adapter.js?v=1.4.252";
 import { DisarmDocuments } from "./infrastructure/foundry/disarm-documents.js?v=1.4.252";
 import { DISARM_ACTIONS, isValidDisarmPayload, authorizeDisarmSender } from "./infrastructure/foundry/disarm-command-contract.js?v=1.4.276";
-import { resolveDisarmSelection, promptDisarm, promptDisarmBaseline, buildDisarmChatContent, bindDisarmChat } from "./ui/disarm-dialog.js?v=1.4.276";
+import { resolveDisarmSelection, promptDisarm, promptDisarmBaseline, buildDisarmChatContent, bindDisarmChat } from "./ui/disarm-dialog.js?v=1.4.281";
 import { REPUTATION_UPDATE_COMMAND, isValidReputationPayload, authorizeReputationUpdate } from "./infrastructure/foundry/reputation-command-contract.js?v=1.4.251";
 import { GROUP_CALENDAR_PATCH_COMMAND, CalendarService } from "./data/calendar-service.js";
 import { CalendarTransitionCoordinator } from "./data/calendar-transition-coordinator.js?v=1.4.96-craft-calendar";
@@ -1973,14 +1973,17 @@ export class RebreyaMainModule {
   async publishDisarmOperation(record) {
     if (!isActiveGmClient(globalThis.game)) return;
     const content = buildDisarmChatContent(record);
+    const sourceTokenParts = record.intent.sourceTokenUuid.split(".");
+    const speaker = { alias: record.sourceName, actor: record.sourceActorUuid.split(".").at(-1),
+      scene: sourceTokenParts[1], token: sourceTokenParts.at(-1) };
     const existing = game.messages.contents.find(message => message.author?.isGM
       && message.getFlag(MODULE_ID, "disarmOperationId") === record.intent.operationId);
-    const changed = !existing || existing.content !== content;
+    const changed = !existing || existing.content !== content || Object.entries(speaker).some(([key,value]) => existing.speaker?.[key] !== value);
     const rolls = [record.attackRoll, record.saveRoll, record.directionRoll].filter(Boolean).map(roll => Roll.fromData(roll.json));
     if (!isActiveGmClient(globalThis.game)) return;
     if (existing) {
-      if (changed) await existing.update({ content, rolls });
-    } else await ChatMessage.create({ content, rolls, speaker: { alias: record.sourceName }, flags: { [MODULE_ID]: { disarmOperationId: record.intent.operationId } } });
+      if (changed) await existing.update({ content, rolls, speaker });
+    } else await ChatMessage.create({ content, rolls, speaker, flags: { [MODULE_ID]: { disarmOperationId: record.intent.operationId } } });
     if (record.phase === "completed" && record.dropped && changed) {
       const actor = await fromUuid(record.targetActorUuid);
       if (actor) await this.refreshInventoryViews({ actorIds: [actor.id] });

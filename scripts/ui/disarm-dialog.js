@@ -23,7 +23,9 @@ export async function promptDisarm(preview) {
   if (!weapon || !item) throw new Error("Выбранный предмет недоступен.");
   const confirmed = await dialog.confirm({ window: { title: "Подтвердить обезоруживание" },
     content: `<div class="rm-disarm-form"><p>${escape(weapon.name)} → ${escape(item.name)}</p><p>Формула: <strong>${escape(weapon.plan.formula ?? "Мастер должен подтвердить исходную характеристику и владение")}</strong>.</p>
-      <p>Только характеристика и владение; без качества, магического бонуса, временных добавок и бонусов черт.</p>
+      <p>В броске используются только характеристика и владение оружием.</p>
+      ${weapon.plan.excludedModifiers?.length ? `<p>Не учитываются: ${weapon.plan.excludedModifiers.map(value => escape(value)).join("; ")}.</p>` : ""}
+      ${weapon.plan.unresolvedModifiers?.length ? `<p>Мастер должен подтвердить: ${weapon.plan.unresolvedModifiers.map(value => escape(({ "ability-baseline": "исходное значение характеристики", "proficiency-baseline": "вклад владения оружием" })[value] ?? "исходные значения броска")).join("; ")}.</p>` : ""}
       ${item.heldHands >= 2 ? "<p>Предмет удерживают двумя руками: атака с помехой.</p>" : ""}<p><strong>Расход: 1 атака.</strong> Кнопка не предоставляет дополнительную атаку.</p></div>`, rejectClose: false });
   return confirmed ? { weaponItemUuid: weapon.uuid, targetItemUuid: item.uuid, weaponMode: weapon.mode } : null;
 }
@@ -63,7 +65,7 @@ export function buildDisarmChatContent(record) {
     ${pending ? `<p>Защитник выбирает Силу или Ловкость.${record.strSaveAdvantage ? " Сила — с преимуществом из-за размера." : ""}</p><div class="rm-disarm-actions" data-disarm-responder="${escape(record.responderUserId)}"><button data-disarm-save="str">Сила</button><button data-disarm-save="dex">Ловкость</button></div>` : ""}
     ${pending ? `<button data-disarm-reassign data-responder-revision="${escape(record.responderRevision ?? 0)}">Сменить отвечающего</button>` : ""}
     ${record.responderDecisions?.length ? `<p>Причина смены отвечающего: ${escape(record.responderDecisions.at(-1).reason)}</p>` : ""}
-    ${record.saveRoll ? `<p>${record.saveAbility === "str" ? "Сила" : "Ловкость"}: <strong>${record.saveRoll.total}</strong> · ${record.dropped ? "предмет выбит" : "предмет удержан"}.</p>` : ""}
+    ${record.saveRoll ? `<p>${escape(record.targetName)} · ${record.saveAbility === "str" ? "Сила" : "Ловкость"}: <strong>${record.saveRoll.total}</strong> · ${record.dropped ? "предмет выбит" : "предмет удержан"}.</p>` : ""}
     ${record.directionRoll ? `<p>Случайная точка: ${record.directionRoll.total} из ${record.dropPoints.length}; ${record.destination.x}, ${record.destination.y}.</p>` : ""}
     ${record.error ? `<p role="alert">${escape(record.error)}</p>` : ""}
     <button data-disarm-resume>Открыть / продолжить</button>

@@ -8,7 +8,7 @@
 
 ## Контракт актуальности паспорта
 
-Обезоруживание, его typed workflow, managed macro, стены и физический снимок предмета при падении/подборе: [паспорт R6](disarm-function-passport.md). Дополняет application/storage/combat/UI sections и профиль R3.
+Обезоруживание, его typed workflow, native Actor/Token speaker и пояснения baseline, managed macro, стены и физический снимок предмета при падении/подборе: [паспорт R6](disarm-function-passport.md). Дополняет application/storage/combat/UI sections и профиль R3.
 
 `docs/function-passport.md` — обязательная часть реализации, а не историческая заметка. Любое изменение поведения должно в том же commit обновлять соответствующий паспорт ниже.
 

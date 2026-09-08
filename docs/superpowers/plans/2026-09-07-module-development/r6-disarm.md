@@ -57,7 +57,7 @@ assert.deepEqual(calculateDisarmDropCell({
 - [x] Отсутствующие булевы modifier flags нормализовать false. Неизвестный size, нечисловой total, направление вне 1..8 и некорректная сетка — typed error, не бросок с угаданными данными.
 - [x] Карта к8: С, СВ, В, ЮВ, Ю, ЮЗ, З, СЗ. Для большого footprint использовать внешнюю клетку соответствующего края; при чётной ширине выбрать одну из двух центральных клеток детерминированно и показать её GM. Не возвращать точку внутри крупного токена.
 - [x] Adapter экспортирует buildDisarmRollPlan({actor,weapon,mode,context}) → {formula,ability,proficiencyContribution,excludedModifiers,unresolvedModifiers}. Контекст содержит только проверенные текущие условия и согласованный baseline; чтение уже derived attack bonus не подходит.
-- [ ] Отдельные fixtures: finesse, непрофильное оружие, половинная/двойная proficiency, magical +N, Bless, временная прибавка ability, постоянный feat override. Нельзя пропускать временный бонус через buffed ability modifier. Сложный provenance переводит операцию на видимое GM-решение до roll.
+- [x] Отдельные fixtures: finesse, непрофильное оружие, половинная/двойная proficiency, magical +N, Bless, временная прибавка ability, постоянный feat override. Нельзя пропускать временный бонус через buffed ability modifier. Сложный provenance переводит операцию на видимое GM-решение до roll.
 - [x] Атака задаёт только DC. Nat1/20 сохраняются для отображения, не дают автоуспех/автопровал. Save использует разрешённые обычные модификаторы спасброска; запрет временных бонусов относится к броску атаки из правила.
 
 **Проверка:** node --test tests/disarm-rules.test.mjs tests/disarm-roll-adapter.test.mjs tests/held-items.test.mjs tests/combat-attack-service.test.mjs.
@@ -66,12 +66,12 @@ assert.deepEqual(calculateDisarmDropCell({
 
 **Файлы:** создать scripts/combat/disarm-service.js, scripts/infrastructure/foundry/disarm-command-contract.js, tests/disarm-service.test.mjs, tests/disarm-socket.test.mjs; изменить scripts/main.js; journal/repository подключать существующими владельцами.
 
-- [ ] Сервис DisarmService({journal,coordinator,resolveDocuments,rollAdapter,storageCommands,refresh}) с методами start(intent,context), chooseSave(intent,context), resume(operationId,context), cancel(operationId,context). Context несёт authenticated sender и assertAuthority. UI только public disarm({sourceTokenUuid?,targetTokenUuid?}) и presentation.
+- [x] Сервис DisarmService({journal,coordinator,documents,rollAdapter,storageCommands,publish,gameProvider}) с методами start(intent,context), chooseSave(intent,context), resume(operationId,context), cancel(operationId,context). Context несёт authenticated sender и assertAuthority. UI только public disarm({sourceTokenUuid?,targetTokenUuid?}) и presentation.
 - [x] Команды exact:
   - disarm.start: {operationId,sourceTokenUuid,targetTokenUuid,weaponItemUuid,targetItemUuid,weaponMode};
   - disarm.resolve-save: {operationId,saveAbility}, только str/dex от назначенного OWNER цели или GM.
   - Если нужен manual baseline/total: отдельная GM-only command с reason и сохранённым решением, а не необязательное player поле total.
-- [ ] Gateway валидирует типы/длины/лишние поля; authority повторно разрешает документы и проверяет source ownership, одну сцену, допустимую дистанцию/видимость, weapon mode, размер и текущие held hands. Список target items — разрешённая публичная проекция удерживаемого; скрытое содержимое инвентаря не отправлять игроку.
+- [x] Gateway валидирует типы/длины/лишние поля; authority повторно разрешает документы и проверяет source ownership, одну сцену, допустимую дистанцию/видимость, weapon mode, размер и текущие held hands. Список target items — разрешённая публичная проекция удерживаемого; скрытое содержимое инвентаря не отправлять игроку.
 - [ ] Для v1 computation обоих бросков исполняет active GM через roll adapter после выбора человека. Игрок выбирает save ability, но не передаёт total или формулу. Result публикуется от имени соответствующего Actor. Это сохраняет выбор защитника и закрывает произвольный player total.
 - [x] Зафиксировать responderUserId при начале ожидания: один online OWNER; при отсутствии — GM. Смена responder только явным GM решением с записью причины. Несколько владельцев не получают право на несколько бросков.
 - [x] Phases: prepared → attack-rolling → attack-rolled → awaiting-save → save-rolling → save-resolved → drop-prepared → drop-committed → completed; cancelled/conflict/manual-review терминальны.
@@ -90,7 +90,7 @@ assert.deepEqual(calculateDisarmDropCell({
 
 - [x] Выделить внутри StorageCommandService метод dropDisarmedItem(intent,context), доступный только internal вызову DisarmService. Intent содержит operationId, trusted source/item identity, quantity=1, destination и уже разрешённую authority capability; capability создаётся внутри composition/service, не принимается из typed payload.
 - [x] Повторно проверить провал save и соответствие item/рук сохранённой атаке. Обычный dropItemToScene сохраняет прежнюю ACL; игрок не получает общий способ перемещать чужие вещи.
-- [ ] Создать подготовленный snapshot одной физической вещи. Использовать R3 для plain stack и существующий storage graph/snapshot для host с upgrades или контейнера. Содержимое, durability и пользовательские flags не восстанавливать из каталога.
+- [x] Создать подготовленный snapshot одной физической вещи. Использовать R3 для plain stack и существующий storage graph/snapshot для host с upgrades или контейнера. Содержимое, durability и пользовательские flags не восстанавливать из каталога.
 - [x] До source debit сохранить destination/IDs и transfer receipt. Ground pile создаётся/находится по operation ID. Снятие held/equipped и HeroDoll slot проходит через их владельцев в той же recoverable операции; прямое редактирование flags из карточки запрещено.
 - [x] Успешный save вызывает ноль storage writes. По уточнению пользователя стены и границы исключаются до случайного выбора. Восемь вариантов — к8, иначе кость по числу вариантов. Hex использует соседние offsets, gridless — восемь направлений. Без допустимых точек списания нет.
 - [ ] Fault injection после destination create, source debit, release hands, doll state, journal commit и потерянного acknowledgement. Во всех recoverable случаях один экземпляр, один ground receipt; неоднозначный конфликт не чинить вторым drop.
@@ -103,7 +103,7 @@ assert.deepEqual(calculateDisarmDropCell({
 
 - [x] Добавить buildDisarmMacroData(folderId) и stable sourceId в существующий GrappleMacroService.syncManagedDocuments(). Не переименовывать владельца и не создавать второго folder lifecycle.
 - [x] Скрипт macro вызывает только game.rebreyaMain.disarm(); sync на active GM создаёт третий managed macro один раз в exact папке Macro/Ребрея. Одноимённый пользовательский macro не трогать.
-- [ ] Диалоги показывают источник/цель, предмет, формулу, excluded/unresolved modifiers, помеху, «Расход: 1 атака». Save dialog показывает str/dex и преимущество только у str при меньшем атакующем. Текст/имена экранировать.
+- [x] Диалоги показывают источник/цель, предмет, формулу, excluded/unresolved modifiers, помеху, «Расход: 1 атака». Save dialog показывает str/dex и преимущество только у str при меньшем атакующем. Текст/имена экранировать.
 - [ ] Tests на zero/multiple tokens/targets, cancel каждого шага, focus/keyboard, повтор клика и снятие listeners при close. Срок жизни UI не является сроком жизни journal operation.
 - [ ] Live GM+player: выполнить все size/hand/save ветки, отключить владельца, проверить pickup выбитой вещи, reload и повтор macro. Обычная атака, захват и перемещение схваченного сохраняют поведение.
 - [x] Обновить паспорт 2/8/16/19 и публичный disarm API в README. Зафиксировать, как учитывается одна атака; не заявлять автоматический attack budget, которого нет.
@@ -114,8 +114,8 @@ assert.deepEqual(calculateDisarmDropCell({
 - [ ] Пройти перечисленные live-сценарии в выделенном тестовом Foundry-мире. Сохранить viewport, версии, GM/player и console result. Если live недоступен, оставить этот пункт открытым.
 - [x] Обновить профильные методы паспорта и README при изменении public contract.
 - [x] Поднять актуальную patch version в module.json; создать/переименовать versioned forwarder с единственным import "./main.js"; обновить esmodules. Проверить отсутствие старых runtime-entrypoint ссылок.
-- [ ] Выполнить один полный цикл команд из README этого комплекта, проверить содержательный diff, stat и diff --check.
-- [ ] Stage только перечисленных файлов текущего этапа и обязательных manifest/docs; осмысленный commit; git push -u origin lich_branch. Проверить чистую рабочую копию и HEAD...origin/lich_branch = 0/0. Не включать чужие изменения.
+- [x] Выполнить один полный цикл команд из README этого комплекта, проверить содержательный diff, stat и diff --check.
+- [x] Stage только перечисленных файлов текущего этапа и обязательных manifest/docs; осмысленный commit; git push -u origin lich_branch. Проверить чистую рабочую копию и HEAD...origin/lich_branch = 0/0. Не включать чужие изменения.
 
 **Предлагаемый commit:** feat: add authoritative disarm workflow and managed macro.
 
@@ -153,3 +153,13 @@ Native testovyj3, Foundry13.351/dnd5e5.2.5, CODEX→active Gamemaster: disarm.pr
 
 Focused disarm owners + main-composition-root + module-manifest: **85 passed / 0 failed** до исправления native required; изменённый dialog после исправления **6/0**. Service/socket regressions покрывают причины, GM identity, forged/player payload, offline/non-owner target, stale revision, lost ack, replay после завершения, оба порядка save/reassign и отзыв OWNER. Native multiuser/смена GM остаются открытыми.
 `node --test tests/*.test.mjs`: **4013 passed / 0 failed**; синтаксис796 JS/MJS и JSON46 —0 ошибок. `git diff --check` чисто. После native формы dialogs0, временный результат удалён; новых ошибок модуля в console нет.
+
+## Карточка Actor и пояснения baseline — 1.4.281
+
+Карточка обезоруживания содержит native speaker actor/scene/token, а не только alias; при изменении этой проекции существующая карточка обновляется. Save подписан именем защитника. В подтверждении перечислены исключённые добавки и указано, нужно ли мастеру подтвердить характеристику, вклад владения или оба значения. Неизвестный reason code не показывается пользователю как техническая строка. Новые test cases не добавлены: расширен существующий cancellation/confirmation case, focused dialog6/0.
+
+Native Foundry13.351/dnd5e5.2.5, CODEX,1292×920: DialogV2 selection→confirmation показывает все пояснения, screenshot проверен, bounds top162.75/bottom757.25; No возвращает null и не создаёт operation. ChatMessage constructor/validate принял speaker реального QA attacker/token; id=null, количество сообщений не изменилось. Публичной QA-карточки не создавалось. Active GM по-прежнему отвечает Unknown socket command: disarm.reassign-responder; отдельного player среди active users нет.
+
+Сверены и закрыты устаревшие отметки реализации/fixtures/gateway/snapshot/диалогов по production owners и существующим disarm-roll-adapter/documents/socket/storage/dialog тестам, вошедшим в полный прогон версии1.4.280 (4022/0). Общая fault matrix, synthetic-token и multiplayer/publication gates остаются открытыми; эти отметки не закрываются одной проверкой UI.
+
+Проверки 1.4.281: dialog6/0; node --test tests/*.test.mjs —4022 passed /0 failed; node --check —797 JS/MJS, JSON parse —46 файлов, ошибок0; git diff --check чисто. Новые test cases не добавлены.

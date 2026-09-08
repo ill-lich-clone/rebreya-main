@@ -41,7 +41,13 @@ test("cancel at selection or confirmation returns no mutation intent",async()=>{
     assert.equal(await promptDisarm(preview),null);
     foundry.applications.api.DialogV2.wait=async()=>({weapon:0,item:0});
     assert.equal(await promptDisarm(preview),null);
-    foundry.applications.api.DialogV2.confirm=async()=>true;
+    preview.weapons[0].modes[0].plan.excludedModifiers=["<quality>"];
+    preview.weapons[0].modes[0].plan.unresolvedModifiers=["ability-baseline","proficiency-baseline"];
+    foundry.applications.api.DialogV2.confirm=async({content})=>{
+      assert.match(content,/&lt;quality&gt;/u);assert.doesNotMatch(content,/<quality>/u);
+      assert.match(content,/исходное значение характеристики/u);assert.match(content,/вклад владения оружием/u);
+      return true;
+    };
     assert.deepEqual(await promptDisarm(preview),{weaponItemUuid:"w",targetItemUuid:"i",weaponMode:"melee"});
   }finally{globalThis.foundry=previous;}
 });
