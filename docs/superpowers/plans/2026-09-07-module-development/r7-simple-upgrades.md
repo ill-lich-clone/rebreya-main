@@ -68,14 +68,14 @@
 | essentsiya-sveta-2 | Absorption 3 radiant и 3 от undead по полному правилу; источник damage должен быть известен |
 
 - [ ] Coverage test сравнивает множества productId матрицы/manifest/scenarios; every simple-implemented имеет actual executable case и owner. Для unsupported хранить reason, а не заглушку effect.
-- [ ] Существующие 11 curses отмечать existing-curse; их service/cooldowns/debts не копировать в новый provider.
+- [x] Существующие 11 curses отмечать existing-curse; их service/cooldowns/debts не копировать в новый provider.
 
 ## Задача R7.2 — чистая проекция и обратимый lifecycle
 
 **Файлы:** новые scripts/automation/item-upgrade-projections.js, scripts/automation/item-upgrade-automation-service.js, tests/item-upgrade-projections.test.mjs, tests/item-upgrade-automation-service.test.mjs; существующие scripts/data/item-upgrade-service.js, scripts/main.js и канонические lifecycle hooks.
 
 - [ ] Чистый API buildSimpleUpgradeContributions({actor,hosts,manifest,capabilities}) → {contributions,unavailable}. Hosts содержат original data и валидные installed links. Contribution: {key,hostItemId,upgradeItemId,effectKey,scope,operation,value,condition}; scope actor/host/roll, operation — ограниченный enum adapter, не произвольный eval/path клиента.
-- [ ] Ключ buildUpgradeContributionKey({actorUuid,hostItemId,upgradeItemId,effectKey,projectionVersion}) собирать без коллизий:
+- [x] Ключ buildUpgradeContributionKey({actorUuid,hostItemId,upgradeItemId,effectKey,projectionVersion}) собирать без коллизий:
 
 ```js
 export function buildUpgradeContributionKey({
@@ -87,36 +87,36 @@ export function buildUpgradeContributionKey({
 }
 ```
 
-- [ ] ItemUpgradeAutomationService({readActor,project,applyManaged,queue}) экспортирует requestSync(actorUuid,reason) и syncActor(actorUuid). readActor даёт свежие source и installed состояния; project — функция выше; applyManaged меняет только contributions данного владельца; queue объединяет одновременные requests одного Actor.
+- [x] Реализован ItemUpgradeAutomationService(moduleApi,options={}) с requestSync(actorOrUuid,reason) и syncActor(actorOrUuid). readHosts/project читают свежие source и installed состояния; syncActor меняет только managed contributions данного владельца; существующий WorldMutationCoordinator объединяет одновременные requests одного Actor. Фактический контракт записан в docs/simple-item-upgrades-function-passport.md.
 - [ ] До реализации написать тест: install → sync → sync не накапливает bonus; unequip/remove/transfer/сломанное состояние убирает только вклад соответствующего upgrade. Условия broken/attuned/held задаются R4 profile, а не одинаковым предположением для всех.
-- [ ] Источником служат _source/канонический baseline, не поле после предыдущего projection. Если требуется managed ActiveEffect, пометить его собственным source key и применять actor/host change через проверенный native path. Не добавлять один эффект одновременно в AE и prepareData.
-- [ ] AC интегрировать с существующим bonus path, walk — с наследуемым base движения, а вес/armor properties — с исходными данными host. Перед выбором path проверить локальную dnd5e schema и существующий adapter тестом; строка path из похожей версии не доказательство.
-- [ ] Изменение исходного веса/AC самим пользователем во время активности должно стать новой базой. Снятие upgrade не восстанавливает устаревшую копию Item поверх его редактирования.
-- [ ] На активном GM делать только необходимые persisted managed writes; derived read projections могут рассчитываться локально одинаково. Loop suppression основан на source key/сравнении результата, не на глобальном пропуске всех Item hooks.
-- [ ] Синхронизация после install/remove, переноса host/child, equipped/held/attuned, релевантного Actor update и ready. Один общий lifecycle subscription, cleanup и очередь; не по hook на строку каталога.
-- [ ] Две одинаковые вещи с разными Item IDs дают независимые contributions. Две копии same-name profiles учитываются по записанной stacking policy, а не name. Копии effect IDs не мигрируют между Actor.
-- [ ] Сохранить пользовательские ActiveEffects и все curse-owned contributions. Regression проверяет совместное ношение curse и simple upgrade на разных hosts.
+- [x] Источником служат _source/канонический baseline, не поле после предыдущего projection. Если требуется managed ActiveEffect, пометить его собственным source key и применять actor/host change через проверенный native path. Не добавлять один эффект одновременно в AE и prepareData.
+- [x] AC интегрировать с существующим bonus path, walk — с наследуемым base движения, а вес/armor properties — с исходными данными host. Перед выбором path проверить локальную dnd5e schema и существующий adapter тестом; строка path из похожей версии не доказательство.
+- [x] Изменение исходного веса/AC самим пользователем во время активности должно стать новой базой. Снятие upgrade не восстанавливает устаревшую копию Item поверх его редактирования.
+- [x] На активном GM делать только необходимые persisted managed writes; derived read projections могут рассчитываться локально одинаково. Loop suppression основан на source key/сравнении результата, не на глобальном пропуске всех Item hooks.
+- [x] Синхронизация после install/remove, переноса host/child, equipped/held/attuned, релевантного Actor update и ready. Один общий lifecycle subscription, cleanup и очередь; не по hook на строку каталога.
+- [x] Две одинаковые вещи с разными Item IDs дают независимые contributions. Две копии same-name profiles учитываются по записанной stacking policy, а не name. Копии effect IDs не мигрируют между Actor.
+- [x] Сохранить пользовательские ActiveEffects и все curse-owned contributions. Regression проверяет совместное ношение curse и simple upgrade на разных hosts.
 
 ## Задача R7.3 — атаки, damage, absorption и обязательный выбор
 
 **Файлы:** существующие scripts/combat/attack-service.js и найденные через паспорт attack/damage/native adapters; scripts/automation/item-upgrade-projections.js; новые tests/item-upgrade-roll-modifiers.test.mjs и tests/item-upgrade-absorption.test.mjs; tests/item-upgrade-service.test.mjs.
 
-- [ ] Экспортировать evaluateSimpleUpgradeRoll({host,attack,target,contributions}) → {attackBonus,advantage,damageParts,properties,diagnostics}; она вызывается существующим владельцем атаки, не инициирует новый roll.
+- [x] Экспортировать evaluateSimpleUpgradeRoll({host,attack,target,contributions}) → {attackBonus,advantage,damageParts,properties,diagnostics}; она вызывается существующим владельцем атаки, не инициирует новый roll.
 - [ ] attack содержит уже разрешённые mode/advantage, primary packet и damage classification. target содержит тип и passive Perception только если они известны authority. Не парсить локализованное имя монстра и не угадывать отсутствие скрытого поля.
-- [ ] Concrete source isolation test: host A с огненной мазью даёт ровно один дополнительный fire 1d6; атака host B, вторичный packet и повторный hook не получают его снова. Critical обрабатывается штатным owner один раз, без ручного второго удвоения.
-- [ ] Для святой стали умножать dice count исходной базовой формулы. Пример 1d8 + 1d6 fire → radiant 2d8 + прежний 1d6 fire, без превращения всей формулы в 2d8+2d6 и без повторного 4d8 на следующей атаке. Проверить catalog exceptions перед implemented.
-- [ ] Predicate по advantage оценивается после штатной отмены преимуществ/помех. Unknown target → объяснимое отсутствие условного эффекта; actor-wide advantage не используется как подмена результата конкретной атаки.
+- [x] Concrete source isolation test: host A с огненной мазью даёт ровно один дополнительный fire 1d6; атака host B, вторичный packet и повторный hook не получают его снова. Critical обрабатывается штатным owner один раз, без ручного второго удвоения.
+- [x] Для святой стали умножать dice count исходной базовой формулы. Пример 1d8 + 1d6 fire → radiant 2d8 + прежний 1d6 fire, без превращения всей формулы в 2d8+2d6 и без повторного 4d8 на следующей атаке. Проверить catalog exceptions перед implemented.
+- [x] Predicate по advantage оценивается после штатной отмены преимуществ/помех. Unknown target → объяснимое отсутствие условного эффекта; actor-wide advantage не используется как подмена результата конкретной атаки.
 - [ ] Absorption/weakness добавлять через существующий damage reducer в его принятом порядке. Не писать post-update HP компенсацию. Проверить смешанные damage types, magical/nonmagical, unknown source, radiant+undead intersection и native/MIDI capability; нельзя дважды снизить один packet.
-- [ ] Если порядок stacking для конкретного полного catalog rule не определён существующими правилами, не объявлять профиль implemented до решения. Сохранить diagnostic reason.
-- [ ] Для choices использовать finite whitelist damage types из системы. ItemUpgradeService сохраняет choices на установленной единице; cancel до выбора — нет split/install/effects. Перенос/reload не запрашивает выбор заново. Старый профиль с отсутствующим choice получает статус «требуется выбор», не случайное значение.
-- [ ] Lootgen R8 использует тот же валидатор choices. Валидный generated choice становится сохранённым параметром upgrade, не новым UI prompt при claim.
+- [x] Если порядок stacking для конкретного полного catalog rule не определён существующими правилами, не объявлять профиль implemented до решения. Сохранить diagnostic reason.
+- [x] Для choices использовать finite whitelist damage types из системы. ItemUpgradeService сохраняет choices на установленной единице; cancel до выбора — нет split/install/effects. Перенос/reload не запрашивает выбор заново. Старый профиль с отсутствующим choice получает статус «требуется выбор», не случайное значение.
+- [x] Lootgen R8 использует тот же валидатор choices. Валидный generated choice становится сохранённым параметром upgrade, не новым UI prompt при claim.
 
 ## Задача R7.4 — статусы в UI и выпуск двух партий
 
 **Файлы:** scripts/integrations/item-upgrade-sheet.js, профильный template/styles, data/upgrade-automation-manifest.json, tests/item-upgrade-simple-coverage.test.mjs; README и паспорт 14–17, curse passport только если изменились общие сигнатуры.
 
 - [ ] Новая установка/выбор в лутгене показывает только existing-curse/simple-implemented с полной compatibility. Недоступные позиции можно просмотреть с точной надписью пользователя и причиной; не выдавать их за работающую кнопку.
-- [ ] Старые Item с complex profile не удалять, не очищать их installed links и пользовательские эффекты. Read показывает статус и оставляет данные.
+- [x] Старые Item с complex profile не удалять, не очищать их installed links и пользовательские эффекты. Read показывает статус и оставляет данные.
 - [ ] Партию пассивных проекций завершить focused/live до подключения attack predicates. В каждом commit manifest отмечает implemented только реально готовые профили; промежуточный релиз не заявляет готовность всех 42.
 - [ ] Финальная таблица содержит 91 строку, 11 existing curses; все 42 candidates получили implemented либо unavailable с причиной, незавершённых candidate нет. Число implemented не фиксировать заранее.
 - [ ] Live: install/equip/remove/reload, две одинаковые вещи, перенос другому Actor, изменение исходного веса, две руки, цель нужного/другого типа, native и подключённые optional integrations. Ноль новых console errors.
@@ -127,10 +127,10 @@ export function buildUpgradeContributionKey({
 
 - [ ] Выполнить полный профиль focused-тестов этого плана; записать фактические passed/failed.
 - [ ] Пройти перечисленные live-сценарии в выделенном тестовом Foundry-мире. Сохранить viewport, версии, GM/player и console result. Если live недоступен, оставить этот пункт открытым.
-- [ ] Обновить профильные методы паспорта и README при изменении public contract.
-- [ ] Поднять актуальную patch version в module.json; создать/переименовать versioned forwarder с единственным import "./main.js"; обновить esmodules. Проверить отсутствие старых runtime-entrypoint ссылок.
-- [ ] Выполнить один полный цикл команд из README этого комплекта, проверить содержательный diff, stat и diff --check.
-- [ ] Stage только перечисленных файлов текущего этапа и обязательных manifest/docs; осмысленный commit; git push -u origin lich_branch. Проверить чистую рабочую копию и HEAD...origin/lich_branch = 0/0. Не включать чужие изменения.
+- [x] Обновить профильные методы паспорта и README при изменении public contract.
+- [x] Поднять актуальную patch version в module.json; создать/переименовать versioned forwarder с единственным import "./main.js"; обновить esmodules. Проверить отсутствие старых runtime-entrypoint ссылок.
+- [x] Выполнить один полный цикл команд из README этого комплекта, проверить содержательный diff, stat и diff --check.
+- [x] Stage только перечисленных файлов текущего этапа и обязательных manifest/docs; осмысленный commit; git push -u origin lich_branch. Проверить чистую рабочую копию и HEAD...origin/lich_branch = 0/0. Не включать чужие изменения.
 
 **Предлагаемые commits:** feat: project passive item upgrade bonuses; feat: apply supported item upgrade roll modifiers.
 
@@ -175,3 +175,13 @@ Focused: `node --test tests/item-upgrade*.test.mjs tests/curse-upgrade*.test.mjs
 При финальном ревью добавлен regression для MIDI noCalc: такой slice не участвует в расходе плоского поглощения рассчитанного slice. До исправления получалось9.5+10 вместо9+10; после — корректно. Focused absorption/curse damage — **24 passed / 0 failed**; полный прогон повторён после этой правки.
 
 Окончательная проверка партии: `node --test tests/*.test.mjs` — **3800 passed / 0 failed**. Синтаксис **755 JS/MJS и 46 JSON, 0 ошибок**; два файла, изменённые после первого полного syntax pass, повторно проверены `node --check`; `git diff --check` чисто. Module/forwarder/esmodules — 1.4.255.
+
+## Сверка реализации R7 — 2026-09-08, код 69a4ac23
+
+Исправлены устаревшие отметки реализации, без расширения набора тестов. Источники: ItemUpgradeAutomationService.readHosts/project/requestSync/syncActor и native projection; buildSimpleUpgradeContributions и JSON tuple key; существующие tests/item-upgrade-projections.test.mjs, item-upgrade-automation-service.test.mjs, item-upgrade-roll-modifiers.test.mjs, item-upgrade-absorption.test.mjs, item-upgrade-choices.test.mjs и item-upgrade-service.test.mjs. Их проверки входят в последний полный прогон 4021/0 для кода 69a4ac23. После него менялись только документы; повторный прогон не нужен.
+
+Подтверждены отдельные физические вклады, сохранение чужих/curse effects, отсутствие накопления при sync и native prepare, новая база после source edits, ограниченные projections и сохранённые choices. Native подтверждение dnd5e/MIDI и его границы описаны в записях партий выше. Отметка реализации не закрывает всю многопользовательскую приёмку.
+
+Реально открыто: два спорных правила поглощения (35 implemented, 2 candidate, 11 existing-curse, 43 unavailable), полная связка каталожной матрицы с исполняемыми сценариями и остаток live GM/player/synthetic-token/transfer workflow. Два candidate не допускаются к автоматизации до решения правил. Активный Gamemaster по-прежнему возвращает Unknown socket command: disarm.reassign-responder; текущий запрос с отсутствующим QA operationId не менял игровой мир.
+
+Точные несоответствия контракта оставлены открытыми: effectKey сейчас входит в сериализованный key, но не возвращается отдельным полем Contribution; targetData читает доступную native модель цели, отдельная authority-проверка раскрытия target fields в этом адаптере не доказана. Это не отмечено как выполненное.
