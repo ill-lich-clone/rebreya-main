@@ -1,4 +1,4 @@
-import { createLootgenCatalogReader } from "./lootgen-catalog-reader.js?v=1.4.264";
+import { createLootgenCatalogReader } from "./lootgen-catalog-reader.js?v=1.4.265";
 import { loadUpgradeAutomationManifest } from "./upgrade-automation-manifest.js?v=1.4.255";
 import { MODULE_ID, GEAR_COMPENDIUM_NAME, MAGIC_ITEMS_COMPENDIUM_NAME } from "../constants.js";
 import { resolveLootgenItemValue } from "./item-value.js?v=1.4.264";
@@ -245,6 +245,9 @@ export async function readLootgenGearIndex() {
         "type",
         "system.type",
         "system.quantity",
+        "system.weight",
+        "system.volume",
+        "system.capacity",
         "_stats.modifiedTime",
         `flags.${MODULE_ID}.equipmentType`,
         `flags.${MODULE_ID}.upgradeCompatibilityTags`,

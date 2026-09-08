@@ -3,7 +3,7 @@ import { buildLootgenGeneratedState, assertLootgenCatalogCurrent } from "./appli
 import { normalizeLootgenForm } from "./data/lootgen-generator.js?v=1.4.256";
 import { storageCoinRowDenomination } from "./data/storage-service.js";
 // @rebreya-role canonical-composition-root
-import { LootgenSourceCatalog } from "./data/lootgen-source-catalog.js?v=1.4.264";
+import { LootgenSourceCatalog } from "./data/lootgen-source-catalog.js?v=1.4.265";
 import { MODULE_ID, MODULE_TITLE, SETTINGS_KEYS } from "./constants.js";
 import { escapeFoundryHtml } from "./shared/foundry-values.js";
 import { MaterialsCompendiumService } from "./data/materials-compendium.js";

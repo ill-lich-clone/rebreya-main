@@ -53,8 +53,8 @@ assert.equal(value.totalValue + 3000, 10000);
 **Файлы:** scripts/data/lootgen-generator.js, scripts/data/lootgen-template-catalog.js; новые scripts/data/lootgen-container-rules.js, tests/lootgen-container-budget.test.mjs, tests/lootgen-container-rules.test.mjs.
 
 - [ ] Форма: enableFilledContainers=false у старых templates, filledContainerChance integer0..100, generationDepth default1/max3. itemCount продолжает ограничивать top-level rows, не скрытые children.
-- [ ] Pure resolveLootgenContainerProfile(catalogRow) → {eligible,reason,capacity,weightlessContents}. capacity имеет проверенные тип/единицу/предел из existing dnd5e/storage adapter. Неизвестная жёсткая вместимость → ineligible, не Infinity.
-- [ ] Pure canFitLootgenContents({profile,currentContents,candidate}) → {fits,reason}. Учитывать unit conversion, upgrades weight, уже занятый объём/вес и nested container policy. WeightlessContents меняет carried weight по существующему правилу, но не отменяет жёсткую вместимость оболочки.
+- [x] Pure resolveLootgenContainerProfile(catalogRow) → {eligible,reason,capacity,weightlessContents}. capacity имеет проверенные тип/единицу/предел из existing dnd5e/storage adapter. Неизвестная жёсткая вместимость → ineligible, не Infinity.
+- [x] Pure canFitLootgenContents({profile,currentContents,candidate}) → {fits,reason}. Учитывать unit conversion, upgrades weight, уже занятый объём/вес и nested container policy. WeightlessContents меняет carried weight по существующему правилу, но не отменяет жёсткую вместимость оболочки.
 - [ ] Один shared generation ledger: {itemBudgetRemaining,coinBudgetRemaining,documentsRemaining,attemptsRemaining}. Coin reserve считается ровно один раз до generation, как раньше. Child получает ограниченный sub-budget, но использует общий document/attempt cap.
 - [ ] Алгоритм одной container candidate:
   1. проверить известную цену/профиль и цену shell+upgrades через R4;
@@ -65,7 +65,7 @@ assert.equal(value.totalValue + 3000, 10000);
   6. построить canonical snapshot и проверить итог evaluateItemValue;
   7. принять candidate целиком либо вернуть все её reservations.
 - [ ] Не давать child исходный B и не вычислять новый процент coin reserve. При включённых монетах остаток в конце распределяется existing denomination logic; часть внутри уже вычтена из общей currency pool.
-- [ ] Конкретный checked budget helper:
+- [x] Конкретный checked budget helper:
 
 ```js
 export function debitLootgenBudget(remaining, amount) {
@@ -126,3 +126,11 @@ export function debitLootgenBudget(remaining, amount) {
 Добавлены exact composition metadata в canonical v1 snapshot и one-level value reader. Shared evaluator считает remaining children/manual+generated coins, проверяет общие IDs/depth8/documents200. Snapshot normalize/rekey/portable сохраняет source identity. Legacy snapshots читаются, но без подтверждённой composition не принимаются как новый priced candidate. Descriptor boundary для генерации пока по-прежнему не принимает container; bounded fill, capacity и tree grant/capture остаются открыты.
 
 Проверки основы: focused `node --test tests/lootgen*.test.mjs tests/item-value.test.mjs tests/storage-container*.test.mjs tests/storage-service.test.mjs tests/storage-socket.test.mjs tests/inventory-mutation-recovery.test.mjs` — **388 passed / 0 failed**. `node --test tests/*.test.mjs` — **3888 passed / 0 failed**; `node --check` **776 JS/MJS**, JSON parse **46**, ошибок **0**; `git diff --check` чисто. Native browser testovyj3/CODEX, Foundry13.351/dnd5e5.2.5: actual modules264 + detached canonical fixture дают total7000 (1000 shell+2000 upgrade+3000 child+1000 coins), после claimed child/coins —3000. World writes0. Сквозная generation→materialization→capture/drop/pickup ещё открыта.
+
+## Основа вместимости — 1.4.265
+
+Pure profile/fit/debit и physical catalog reader реализованы. В index добавлены weight/volume/capacity. Native dnd5e5.2.5 ContainerData хранит count/volume/weight, quantity1; computeCapacity штатно выбирает count либо weight и не оценивает физический объём вещей. У каталога обычных предметов volume пустой; пользователю направлен вопрос о первой версии проверки weight/count и только известного volume. До уточнения helper требует все объявленные measurements, отсутствующий volume даёт unknown-volume; filling пока не включён.
+
+Native testovyj3/CODEX: 13 gear containers,7 имеют объявленные пределы,6 дают unknown-capacity. Сундук:300 lb/12 ft3; ровно300/12 помещается,301 lb отклоняется, неизвестный volume отклоняется. Источники прочитаны без world writes.
+
+Проверки вместимости: focused `node --test tests/lootgen*.test.mjs tests/item-value.test.mjs tests/storage-container*.test.mjs tests/storage-service.test.mjs tests/storage-socket.test.mjs tests/inventory-mutation-recovery.test.mjs` — **396 passed / 0 failed**. `node --test tests/*.test.mjs` — **3896 passed / 0 failed**; синтаксис **778 JS/MJS и 46 JSON**, ошибок **0**; `git diff --check` чисто. Полная генерация/выдача контейнеров по-прежнему не включена; после решения вопроса объёма нужны общий ledger, representation boundary, canonical materializer/capture и native lifecycle.

@@ -42,3 +42,12 @@ test("enabled generation combines real catalog prices and compatibility before s
   assert.equal(generated.rows.length,1);assert.equal(generated.rows[0].descriptor.upgrades[0].sourceId,"zacharovanie-ostroty");
   assert.equal(generated.rows[0].value,120);assert.equal(generated.spentValue,120);
 });
+test("gear index requests native weight, volume and capacity for bounded container filling",async()=>{
+  const {readLootgenGearIndex}=await import("../scripts/data/lootgen-source-catalog.js");
+  const previous=globalThis.game;let fields;
+  try{
+    globalThis.game={packs:{get:()=>({getIndex:async options=>{fields=options.fields;return [];}})}};
+    assert.deepEqual(await readLootgenGearIndex(),[]);
+    for(const field of ["system.weight","system.volume","system.capacity","system.properties"])assert.ok(fields.includes(field),field);
+  }finally{if(previous===undefined)delete globalThis.game;else globalThis.game=previous;}
+});

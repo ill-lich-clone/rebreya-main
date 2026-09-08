@@ -4,6 +4,17 @@ import { createLootgenCatalogReader } from "../scripts/data/lootgen-catalog-read
 import { evaluateItemValue } from "../scripts/data/item-value.js";
 const gear=(id,system={},flags={})=>({_id:id,type:"weapon",system:{type:{value:"martialM"},...system},flags:{"rebreya-main":{managed:true,sourceType:"gear",sourceId:id,gearId:id,...flags}}});
 const manifest=[{productId:"sharp",decision:"simple-implemented",profile:{compatibility:["weapon"],type:"Зачарование",rank:1}}];
+test("physical catalog projections preserve native capacity, weight and properties without sharing mutable sources",()=>{
+  const source={...gear("chest",{capacity:{weight:{value:300,units:"lb"}},weight:{value:25,units:"lb"},properties:["weightlessContents"]}),type:"container"};
+  const reader=createLootgenCatalogReader({gearIndex:[source]});
+  const component={sourceType:"gear",sourceId:"chest"};
+  assert.equal(reader.resolveContainerProfile(component).capacity.weightLb,300);
+  const projection=reader.readPhysicalItem(component);projection.system.weight.value=999;
+  assert.equal(reader.readPhysicalItem(component).system.weight.value,25);
+  assert.equal(reader.resolveContainerProfile(component).weightlessContents,true);
+  assert.equal(reader.readPhysicalItem({sourceType:"gear",sourceId:"missing"}),null);
+  assert.equal(reader.resolveContainerProfile({sourceType:"material",sourceId:"missing"}).eligible,false);
+});
 test("catalog reader resolves full value and native compatibility from stable IDs",()=>{
   const reader=createLootgenCatalogReader({model:{gear:[{id:"sword",value:100},{id:"sharp",value:20}],materials:[]},gearIndex:[gear("sword"),gear("sharp")],manifest});
   const host=reader.describeUpgradeHost({sourceType:"gear",sourceId:"sword"});
