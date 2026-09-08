@@ -1,4 +1,4 @@
-import { normalizeLootgenComposition } from "./lootgen-item-descriptor.js?v=1.4.264";
+import { normalizeLootgenComposition } from "./lootgen-composition.js?v=1.4.268";
 import { ItemValueError, addItemValue } from "./item-value.js?v=1.4.264";
 
 const object=value=>value!==null && typeof value==="object" && !Array.isArray(value);

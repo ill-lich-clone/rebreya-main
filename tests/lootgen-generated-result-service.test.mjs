@@ -7,6 +7,10 @@ import { itemInstanceFingerprint } from "../scripts/application/item-instance-wo
 import { createStableGearDocumentId } from "../scripts/data/gear-document-ids.js";
 
 const request={operationId:"prepare-one",form:normalizeLootgenForm({enableUpgrades:true})};
+
+test("prepared request accepts filled containers without enabling upgrades",()=>{
+  assert.equal(isValidPrepareLootgenPayload({form:normalizeLootgenForm({enableUpgrades:false,enableFilledContainers:true})}),true);
+});
 const context={requesterId:"requester",authorId:"gm"};
 
 for(const pending of [false,true])test(`R9 defaults preserve a legacy R8 preparation fingerprint (${pending?"pending":"ready"})`,async()=>{

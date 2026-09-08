@@ -2830,12 +2830,13 @@ test("lootgen.prepare-result is GM-only and forwards the stable request ID witho
   const fixture=installFixture();
   try {
     const moduleApi=new RebreyaMainModule();const calls=[];
-    moduleApi.lootgenGeneratedResultService.prepare=async(request,context)=>{calls.push({request,context});context.assertAuthority();return {lootId:"loot",messageId:"message"};};
+    moduleApi.lootgenGeneratedResultService.prepare=async(request,context)=>{calls.push({request,context});context.assertAuthority();return {lootId:"loot",messageId:"message",state:{largeTree:"x".repeat(100000)}};};
     const {normalizeLootgenForm}=await import("../scripts/data/lootgen-generator.js");
     const form=normalizeLootgenForm({enableUpgrades:true});
     const gmRequest=commandRequest("lootgen.prepare-result",fixture.users.gmB.id,{form,operationId:"prepare-gm"},"prepare-gm");
     await moduleApi.handleSocketMessage(gmRequest);await flushCommands();
     assert.equal(resultFor(fixture,"prepare-gm").ok,true);assert.equal(calls[0].request.operationId,"prepare-gm");
+    assert.deepEqual(resultFor(fixture,"prepare-gm").data,{lootId:"loot",messageId:"message"});
     assert.equal(calls[0].context.requesterId,fixture.users.gmB.id);assert.equal(calls[0].context.authorId,fixture.users.gmA.id);
     for(const [sender,payload,requestId] of [[fixture.users.playerA.id,{form,operationId:"prepare-player"},"prepare-player"],[fixture.users.gmB.id,{form,operationId:"prepare-forged",itemData:{}},"prepare-forged"]]){
       await moduleApi.handleSocketMessage(commandRequest("lootgen.prepare-result",sender,payload,requestId));await flushCommands();
@@ -2869,6 +2870,17 @@ test("prepared loot uses the canonical publisher with GM whispers and stays outs
     assert.doesNotMatch(messages.get(result.messageId).content,/data-lootgen-chat-action="claim-|draggable="true"/u);
     await assert.rejects(moduleApi.claimLootgenChatRow(result.lootId,"row",{quiet:true}),/не найдено/u);
   } finally {if(previousChat===undefined)delete globalThis.ChatMessage;else globalThis.ChatMessage=previousChat;fixture.restore();}
+});
+
+test("prepared public API waits for Chat replication after a compact reply without repeating the mutation",async()=>{
+  const fixture=installFixture();
+  try{
+    const moduleApi=new RebreyaMainModule();let mutations=0,reads=0;
+    moduleApi.privilegedMutationGateway.mutate=async()=>{mutations++;return {lootId:"loot",messageId:"message"};};
+    moduleApi.getLootgenGeneratedResult=()=>{reads++;if(reads<3)throw new Error("not replicated yet");return {lootId:"loot",messageId:"message",state:{generationReady:true,resultVersion:2}};};
+    const result=await moduleApi.prepareLootgenGeneratedResult({enableFilledContainers:true,enableUpgrades:false});
+    assert.equal(result.state.generationReady,true);assert.equal(mutations,1);assert.equal(reads,3);
+  }finally{fixture.restore();}
 });
 
 test("trusted loot grant checks catalog before preparation and preserves recovery after catalog changes",async()=>{

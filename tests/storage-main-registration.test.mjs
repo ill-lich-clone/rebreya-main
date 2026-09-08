@@ -142,7 +142,7 @@ test("main registers the storage deposit socket API and current cache keys", asy
     "data/storage-access.js?v=1.4.197-door-trigger-target",
     "data/builtin-storage-actor-service.js?v=1.4.216-storage-token-vision",
     "data/storage-ground-pile-service.js?v=1.4.227-coin-sprites",
-    "data/storage-container-item-service.js?v=1.4.267",
+    "data/storage-container-item-service.js?v=1.4.268",
     "data/storage-deposit-source.js?v=1.4.225-physical-coins",
     "data/storage-command-service.js?v=1.4.257",
     "data/storage-trigger-service.js?v=1.4.197-door-trigger-target",

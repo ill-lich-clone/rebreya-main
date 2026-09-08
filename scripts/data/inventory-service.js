@@ -1,6 +1,6 @@
 import { ItemInstanceWorkflow, itemInstanceFingerprint } from "../application/item-instance-workflow.js?v=1.4.249-item-instances";
 import { RUNTIME_ITEM_GRAPH_FLAG, buildRuntimeGraphDocuments, materializeRuntimeItemGraph } from "./runtime-item-graph.js?v=1.4.267-native-schema";
-import { readLootgenPreparedComposition } from "./lootgen-prepared-item.js?v=1.4.257";
+import { readLootgenPreparedComposition } from "./lootgen-prepared-item.js?v=1.4.268";
 import { ItemInstanceDocuments } from "../infrastructure/foundry/item-instance-documents.js?v=1.4.249-item-instances";
 import {
   DOWNTIME_ITEM_TYPE,
@@ -29,7 +29,7 @@ import {
   getInventoryDismantleBlockReason,
   resolveInventoryDismantleMinimumQuantity,
   resolveInventoryDismantleOutputs
-} from "./inventory-ingress-descriptor.js?v=1.4.257";
+} from "./inventory-ingress-descriptor.js?v=1.4.268";
 import {
   InventoryIngressRuleError,
   findInventoryIngressRuleConflicts,
@@ -5890,7 +5890,11 @@ export class InventoryService {
   }
 
   async buildLootgenItemData(row = {}, { allowPersistedItemData = false } = {}) {
-    if(row.descriptor?.container!=null)throw new Error("Выдача контейнера требует подготовки полного дерева предметов.");
+    if(row.descriptor?.container!=null){
+      const prepared=allowPersistedItemData?readLootgenPreparedComposition(row.itemData):null;
+      if(!prepared || itemInstanceFingerprint(prepared.descriptor)!==itemInstanceFingerprint(row.descriptor)
+        || itemInstanceFingerprint(row.runtimeGraph)!==itemInstanceFingerprint(row.itemData.flags[MODULE_ID][RUNTIME_ITEM_GRAPH_FLAG]))throw new Error("Выдача контейнера требует подготовки полного дерева предметов.");
+    }
     const safeQuantity = Math.max(0.01, roundNumber(toNumber(row.quantity, 1), 2));
     if (allowPersistedItemData && row.itemData && typeof row.itemData === "object") {
       const persistedItemData = sanitizeEmbeddedItemData(row.itemData);

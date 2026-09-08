@@ -1,5 +1,5 @@
-import { LootgenGeneratedResultService, LOOTGEN_PREPARE_RESULT_COMMAND, isValidPrepareLootgenPayload } from "./application/lootgen-generated-result-service.js?v=1.4.266";
-import { buildLootgenGeneratedState, assertLootgenCatalogCurrent } from "./application/lootgen-generated-state.js?v=1.4.266";
+import { LootgenGeneratedResultService, LOOTGEN_PREPARE_RESULT_COMMAND, isValidPrepareLootgenPayload } from "./application/lootgen-generated-result-service.js?v=1.4.268";
+import { buildLootgenGeneratedState, assertLootgenCatalogCurrent } from "./application/lootgen-generated-state.js?v=1.4.268";
 import { normalizeLootgenForm } from "./data/lootgen-generator.js?v=1.4.266";
 import { storageCoinRowDenomination } from "./data/storage-service.js";
 // @rebreya-role canonical-composition-root
@@ -80,7 +80,7 @@ import {
   SOCKET_EVENT_INVENTORY_SOURCE_DEPLETION_RESULT,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_REQUEST,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_RESULT
-} from "./data/inventory-service.js?v=1.4.267";
+} from "./data/inventory-service.js?v=1.4.268";
 import {
   InventoryIngressRuleCompilerCache,
   normalizeInventoryIngressRule
@@ -88,7 +88,7 @@ import {
 import {
   buildInventoryIngressDescriptor,
   resolveInventoryDismantleOutputs
-} from "./data/inventory-ingress-descriptor.js?v=1.4.257";
+} from "./data/inventory-ingress-descriptor.js?v=1.4.268";
 import {
   InventoryIngressPlanner,
   isValidSerializedInventoryIngressPlan
@@ -178,7 +178,7 @@ import {
   isValidDowntimeWeeksRevokePayload
 } from "./application/downtime-mutation-commands.js";
 import { WorldMutationCoordinator } from "./application/world-mutation-coordinator.js";
-import { LootClaimService } from "./application/loot-claim-service.js?v=1.4.260";
+import { LootClaimService } from "./application/loot-claim-service.js?v=1.4.268";
 import {
   buildPublicCitySnapshot,
   buildPublicEconomySnapshot
@@ -227,7 +227,7 @@ import {
 import { BuiltinStorageActorService } from "./data/builtin-storage-actor-service.js?v=1.4.216-storage-token-vision";
 import { StorageGroundPileService } from "./data/storage-ground-pile-service.js?v=1.4.227-coin-sprites";
 import { deriveGroundPilePlacement } from "./data/storage-pile-presentation.js?v=1.4.227-coin-sprites";
-import { StorageContainerItemService } from "./data/storage-container-item-service.js?v=1.4.267";
+import { StorageContainerItemService } from "./data/storage-container-item-service.js?v=1.4.268";
 import { isStorageJournalRow } from "./data/storage-container-snapshot.js";
 import { StorageTriggerService } from "./data/storage-trigger-service.js?v=1.4.197-door-trigger-target";
 import { DoorTriggerTargetRepository, readDoorTriggerTarget } from "./data/door-trigger-target.js?v=1.4.199-door-overlay-anchor";
@@ -1514,6 +1514,7 @@ export class RebreyaMainModule {
       buildState: (form, context) => buildLootgenGeneratedState(form, context, {
         catalog: this.lootgenSourceCatalog,
         buildItemData: row => this.inventoryService.buildLootgenItemData(row),
+        prepareContainerGraph: (snapshot,adapters) => this.storageContainerItemService.prepareItemGraph(snapshot,adapters),
         createDocumentId: () => foundry.utils.randomID()
       }),
       findMessage: messageId => this.#readLootgenMessage(messageId),
@@ -2109,9 +2110,12 @@ export class RebreyaMainModule {
       validate: payload => hasExactKeys(payload,["form","operationId"]) && isValidPrepareLootgenPayload({form:payload.form})
         && isTrimmedNonEmptyString(payload.operationId) && payload.operationId.length<=256 && !/[\u0000-\u001f\u007f]/u.test(payload.operationId),
       authorize: (_payload, { sender }) => sender?.isGM === true,
-      execute: ({ form, operationId }, context) => this.lootgenGeneratedResultService.prepare({form,operationId}, {
-        requesterId: context.sender.id, authorId: game.user.id, assertAuthority: context.assertActiveGm
-      })
+      execute: async ({ form, operationId }, context) => {
+        const result=await this.lootgenGeneratedResultService.prepare({form,operationId}, {
+          requesterId: context.sender.id, authorId: game.user.id, assertAuthority: context.assertActiveGm
+        });
+        return {lootId:result.lootId,messageId:result.messageId};
+      }
     });
     for (const action of DISARM_ACTIONS) this.privilegedMutationGateway.registerCommand(`disarm.${action}`, {
       validate: payload => isValidDisarmPayload(action, payload),
@@ -3462,12 +3466,26 @@ export class RebreyaMainModule {
     }
   }
 
-  prepareLootgenGeneratedResult(form, {operationId=createSocketRequestId("lootgen-prepare")}={}) {
-    return this.privilegedMutationGateway.mutate(LOOTGEN_PREPARE_RESULT_COMMAND, {form:normalizeLootgenForm(form),operationId});
+  async prepareLootgenGeneratedResult(form, {operationId=createSocketRequestId("lootgen-prepare")}={}) {
+    const reference=await this.privilegedMutationGateway.mutate(LOOTGEN_PREPARE_RESULT_COMMAND, {form:normalizeLootgenForm(form),operationId});
+    return this.#hydrateLootgenGeneratedResult(reference);
   }
 
-  publishLootgenGeneratedResult(lootId) {
-    return this.privilegedMutationGateway.mutate("lootgen.publish-result",{lootId});
+  async publishLootgenGeneratedResult(lootId) {
+    const reference=await this.privilegedMutationGateway.mutate("lootgen.publish-result",{lootId});
+    return this.#hydrateLootgenGeneratedResult(reference,{published:true});
+  }
+
+  async #hydrateLootgenGeneratedResult(reference,{published=false}={}) {
+    // Chat replication can trail the compact socket acknowledgement; never reroll while waiting.
+    for(let attempt=0;attempt<50;attempt++){
+      let result;
+      try {result=this.getLootgenGeneratedResult(reference.lootId);} catch {}
+      if(result?.messageId===reference.messageId && result.state.generationReady===true
+        && (!published || result.state.published===true))return result;
+      await new Promise(resolve=>setTimeout(resolve,50));
+    }
+    throw Object.assign(new Error("Результат сохранён, но ещё не получен этим клиентом. Повторите действие с той же операцией."),{code:"lootgen-result-replication-pending"});
   }
 
   getLootgenGeneratedResult(lootId) {
@@ -3501,7 +3519,7 @@ export class RebreyaMainModule {
         entry=read();
         if(!published())throw new Error("Не удалось подтвердить публикацию добычи.");
       }
-      return {messageId:message.id,lootId,state:entry.state};
+      return {messageId:message.id,lootId};
     });
   }
 

@@ -5257,6 +5257,27 @@ test("prepared lootgen ingress records graph IDs before writes and recovers only
   } finally {fixture.restore();}
 });
 
+test("prepared filled-container party ingress debits its source only after the whole tree exists",async()=>{
+  const group=createActor({id:"filled-group",type:"group",managed:true}),fixture=createInventoryIngressFixture({group});
+  group.items.has=id=>Boolean(group.items.get(id));
+  try{
+    const {makePreparedContainerGraph}=await import("./helpers/lootgen-prepared-container-fixture.mjs");
+    const {descriptor,graph}=await makePreparedContainerGraph();
+    const rows=[{sourceKey:"chest-row",quantity:1,itemData:buildLootgenPreparedItem(descriptor,{graph,unitValue:7000}),container:null,legacyFolderId:null}];
+    const serializedPlan=await serializeIngressPlan(fixture.planner,{groupActorId:group.id,rows});
+    const request={groupActorId:group.id,batchMutationId:"filled-party",sourceOrigin:"lootgen",serializedPlan};
+    let calls=0,debits=0;const create=group.createEmbeddedDocuments.bind(group);
+    group.createEmbeddedDocuments=async(type,docs,opts)=>{calls++;if(calls===1){await create(type,docs.slice(0,1),opts);throw new Error("partial");}assert.equal(docs.length,2);return create(type,docs,opts);};
+    const callbacks={resolveRows:async()=>clone(rows),debitRow:async()=>{assert.equal(group.items.contents.length,3);debits++;},allowPreparedLootgenGraph:true};
+    await assert.rejects(fixture.service.commitInventoryIngressBatch(request,callbacks),{code:"graph-manual-review"});
+    assert.equal(debits,0);assert.equal(group.items.contents.length,1);
+    await fixture.service.commitInventoryIngressBatch(request,callbacks);
+    assert.equal(debits,1);assert.equal(calls,2);assert.equal(group.items.contents.length,3);
+    const root=group.items.contents.find(item=>item.type==="container"),host=group.items.contents.find(item=>item.type==="weapon");
+    assert.equal(host.system.container,root.id);assert.equal(root.system.currency.cp,1000);
+  }finally{fixture.restore();}
+});
+
 test("manual dismantle of an installed host rejects before any document write",async()=>{
   const host=createItem({id:"host",type:"weapon",flags:{[MODULE_ID]:{itemUpgrades:{installed:[{itemId:"child",slotIndex:1}]}}}});
   const group=createActor({id:"dismantle-composed",type:"group",managed:true,items:[host]});
@@ -5305,6 +5326,25 @@ test("prepared character grant persists exact graph IDs and resumes without rebu
     hero.items.contents.splice(0);
     assert.deepEqual(await fixture.service.addLootgenRowToCharacterOnce(row,hero,"prepared-character",options),result);
     assert.equal(hero.items.contents.length,0);assert.equal(catalogReads,1);
+  }finally{fixture.restore();}
+});
+
+test("prepared filled-container character grant acknowledges only the full graph and survives partial writes",async()=>{
+  const hero=createActor({id:"filled-hero"}),fixture=installFixture({actors:[hero]});
+  try{
+    const {makePreparedContainerGraph}=await import("./helpers/lootgen-prepared-container-fixture.mjs");
+    const {buildLootgenPreparedItem}=await import("../scripts/data/lootgen-prepared-item.js");
+    const {descriptor,graph}=await makePreparedContainerGraph();
+    const row={quantity:1,descriptor,itemData:buildLootgenPreparedItem(descriptor,{graph,unitValue:7000})};
+    let calls=0;const create=hero.createEmbeddedDocuments.bind(hero);
+    hero.createEmbeddedDocuments=async(type,docs,opts)=>{calls++;if(calls===1){await create(type,docs.slice(0,1),opts);throw new Error("partial");}assert.equal(docs.length,2);return create(type,docs,opts);};
+    await assert.rejects(fixture.service.addLootgenRowToCharacterOnce(row,hero,"filled-character",{allowPreparedLootgenGraph:true}),{code:"graph-manual-review"});
+    assert.equal(hero.items.contents.length,1);
+    const result=await fixture.service.addLootgenRowToCharacterOnce(row,hero,"filled-character",{allowPreparedLootgenGraph:true});
+    assert.equal(hero.items.contents.length,3);assert.equal(calls,2);
+    const root=hero.items.get(result.itemId),host=hero.items.contents.find(item=>item.type==="weapon"),upgrade=hero.items.contents.find(item=>item.type==="loot");
+    assert.equal(host.system.container,root.id);assert.equal(upgrade.system.container,host.id);
+    assert.equal(root.system.currency.cp,1000);assert.equal(root.flags[MODULE_ID].lootgenComposition,undefined);
   }finally{fixture.restore();}
 });
 

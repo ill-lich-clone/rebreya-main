@@ -102,7 +102,7 @@ export function debitLootgenBudget(remaining, amount) {
 **Файлы:** scripts/ui/lootgen-app.js, scripts/ui/lootgen-chat.js, templates/lootgen-app.hbs, профильный chat template/styles; scripts/application/loot-claim-service.js, scripts/main.js; tests/lootgen-chat.test.mjs, tests/loot-claim-service.test.mjs, tests/lootgen-app-context.test.mjs.
 
 - [ ] Показывать container одной top-level забираемой строкой. Preview раскрывает дерево и breakdown shell/upgrades/contents/internal coins; отображение не создаёт новые rows и не запускает random.
-- [ ] Chat claim принимает только top-level row ID. Нельзя отправить child ID из preview либо parent+child одновременно; rejected request не делает частичную выдачу обходным путём.
+- [x] Chat claim принимает только top-level row ID. Нельзя отправить child ID из preview либо parent+child одновременно; rejected request не делает частичную выдачу обходным путём.
 - [ ] После materialization частичный доступ идёт через существующий Storage UI. Там сохраняются прежние правила доступа/папок/переноса; не добавлять второй mini-inventory внутри Chat.
 - [ ] Два разных сундука не aggregate даже с одинаковыми source/contents. Reload и смена GM перечитывают trusted persisted result. Удалённый/забранный target не регенерируется при повторном открытии.
 - [ ] Старые Chat v1 и сохранённые templates claimable. Boundary upgrade только добавляет representation defaults, не новую стоимость и random.
@@ -151,3 +151,12 @@ R8 default form fingerprint совместим с уже сохранённым�
 Canonical StorageContainerItemService получил единый detached planner с catalog shell/host upgrades и persistent receipt в существующем inventory journal. Pending partial writes восстанавливаются по сохранённым IDs; изменённые/удалённые наблюдавшиеся Items требуют сверки. Capture хранит только фактический остаток, upgrades внутри host graph, shell ItemData в presentation; native ep переводится в sp с сохранением value. Native grant→capture→restore прошёл для 3 настоящих Item с монетами, QA Actors удалены. Focused расширенного storage/lootgen/runtime набора до последней защитной проверки — 485 passed / 0 failed; окончательный focused storage-container-item-service + runtime-item-graph — 31/0. Полный node --test tests/*.test.mjs на итоговом коде — 3927 passed / 0 failed. node --check: 780 JS/MJS; JSON parse: 46; ошибок 0. git diff --check чисто. Native partial batch 3→1 затем retry создаёт только 2 missing, terminal deletion не регенерируется; QA Actors удалены.
 
 Открыто: descriptor/prepared result boundary и nested catalog fingerprint, Chat/UI R9.4, полная сквозная generation→claim→scene drop/pickup с active GM/player и source-debit recovery. Объём неизвестных предметов остаётся рабочим допущением R9.2. Legacy custom effects проверяются сохранением live transport; нестандартные привязки custom effects требуют отдельной проверки.
+
+
+## R9.3/R9.4 — prepared boundary и socket (1.4.268)
+
+Полный container descriptor проходит bounded tree validation и canonical planner при подготовке сохранённого результата. Prepared marker проверяет каждый host/upgrade/parent/currency; container compositionKey SHA-256 занимает71 символ вместо полного дерева. Typed prepare/publish возвращают компактные ссылки, public API ждёт репликацию Chat без reroll. Fingerprint учитывает nested source prices/capacities/coin weight. Character/party ingress восстанавливают partial tree и списывают source только после всех Item. Запрос preview child либо parent+child отвергается до любых writes.
+
+Native testovyj3/CODEX13.351/dnd5e5.2.5: настоящее дерево38 Item, state263874 bytes, value5003 до/после native grant/capture, полный ledger10000; QA Actor удалён. Chat publish/active-GM socket этим тестом не выполнялись. Открыто: controls enableFilledContainers/chance/depth, preview tree и breakdown, storage template path, полный пользовательский lifecycle/две сессии.
+
+Проверки 1.4.268: focused lootgen/storage/inventory/contracts — 580 passed / 0 failed; после strict top-level claim focused loot-claim-service/group-command-dispatch/inventory-mutation-recovery —154/0. Итоговый node --test tests/*.test.mjs —3940 passed / 0 failed. node --check —784 JS/MJS; JSON parse —46; ошибок0. git diff --check чисто. Live evidence указан выше; UI и multiplayer checks остаются открыты.

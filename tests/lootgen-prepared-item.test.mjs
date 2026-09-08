@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { buildCompositeItemGraph } from "../scripts/data/composite-item-graph.js";
 import { buildLootgenPreparedItem, readLootgenPreparedComposition } from "../scripts/data/lootgen-prepared-item.js";
 import { buildInventoryIngressDescriptor, captureInventoryIngressIdentity } from "../scripts/data/inventory-ingress-descriptor.js";
+import { makePreparedContainerGraph } from "./helpers/lootgen-prepared-container-fixture.mjs";
 
 async function fixture(){
   const descriptor={version:2,instanceKey:"h",sourceType:"gear",sourceId:"sword",quantity:1,isBroken:false,container:null,upgrades:[{instanceKey:"u",sourceId:"zacharovanie-ostroty",slotIndex:1,choices:{}}]};
@@ -30,4 +31,39 @@ test("prepared composition validates full root/child links, price and canonical 
     const f=await fixture();mutate(f.item);assert.throws(()=>readLootgenPreparedComposition(f.item));
   }
   assert.equal(readLootgenPreparedComposition({flags:{}}),null);
+});
+
+test("prepared container includes every host and upgrade while its wire identity stays bounded",async()=>{
+  const {descriptor,graph}=await makePreparedContainerGraph();
+  const item=buildLootgenPreparedItem(descriptor,{graph,unitValue:7000});
+  const prepared=readLootgenPreparedComposition(item);
+  assert.equal(prepared.unitValue,7000);assert.match(prepared.compositionKey,/^sha256:[0-9a-f]{64}$/u);
+  assert.equal(item.flags['rebreya-main'].runtimeItemGraph.nodes.length,3);
+  assert.equal(item.system.price.value,10);
+  assert.equal(buildInventoryIngressDescriptor(item).unitValue,7000);
+  assert.equal(captureInventoryIngressIdentity(buildInventoryIngressDescriptor(item),1).compositionKey,prepared.compositionKey);
+});
+
+test("prepared container rejects missing, duplicate, reparented, unlisted and mispriced graph contents",async()=>{
+  for(const corrupt of [
+    i=>i.flags['rebreya-main'].runtimeItemGraph.nodes.pop(),
+    i=>i.flags['rebreya-main'].runtimeItemGraph.nodes[1].system.container=null,
+    i=>i.flags['rebreya-main'].runtimeItemGraph.nodes[1].flags['rebreya-main'].storageContainerMember.composition.sourceId='other',
+    i=>i.flags['rebreya-main'].runtimeItemGraph.nodes[2].flags['rebreya-main'].installedUpgrade.hostItemId='other',
+    i=>i.flags['rebreya-main'].runtimeItemGraph.nodes[0].system.currency.cp++,
+    i=>i.flags['rebreya-main'].runtimeItemGraph.nodes.push({...structuredClone(i.flags['rebreya-main'].runtimeItemGraph.nodes[1]),_id:'1234567890123456'}),
+    i=>i.system.currency.cp++,
+    i=>i.flags['rebreya-main'].lootgenComposition.descriptor.container.state.manualCoins.cp++
+  ]){
+    const {descriptor,graph}=await makePreparedContainerGraph(),item=buildLootgenPreparedItem(descriptor,{graph,unitValue:7000});
+    corrupt(item);assert.throws(()=>readLootgenPreparedComposition(item));
+  }
+});
+
+test("200-document container keeps the exact composition digest within the socket identity budget",async()=>{
+  const {descriptor,graph}=await makePreparedContainerGraph({plainChildren:197});
+  const item=buildLootgenPreparedItem(descriptor,{graph,unitValue:7000});
+  assert.equal(graph.documents.length,200);assert.ok(JSON.stringify(item).length>65536);
+  const identity=captureInventoryIngressIdentity(buildInventoryIngressDescriptor(item),1);
+  assert.equal(identity.compositionKey.length,71);assert.ok(JSON.stringify(identity).length<1024);
 });

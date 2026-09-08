@@ -29,7 +29,7 @@ export function isValidPrepareLootgenPayload(payload) {
     const form = payload.form;
     if (!form || typeof form !== "object" || Array.isArray(form)
       || Object.keys(form).sort().join(",") !== Object.keys(normalizeLootgenForm(form)).sort().join(",")) return false;
-    return form?.enableUpgrades === true && Number.isSafeInteger(form.budgetValue)
+    return (form?.enableUpgrades === true || form?.enableFilledContainers === true) && Number.isSafeInteger(form.budgetValue)
       && JSON.stringify(form).length <= 16384
       && itemInstanceFingerprint(form) === itemInstanceFingerprint(normalizeLootgenForm(form));
   } catch { return false; }

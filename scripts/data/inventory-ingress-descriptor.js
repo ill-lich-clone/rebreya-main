@@ -1,6 +1,6 @@
 import { MODULE_ID } from "../constants.js";
 import { isDurabilityEligible } from "./durability-rules.js";
-import { readLootgenPreparedComposition } from "./lootgen-prepared-item.js?v=1.4.257";
+import { readLootgenPreparedComposition } from "./lootgen-prepared-item.js?v=1.4.268";
 
 const COPPER_MULTIPLIERS = Object.freeze({ pp: 1000, gp: 100, ep: 50, sp: 10, cp: 1 });
 const DURABILITY_STATES = new Set(["intact", "damaged", "broken", "destroyed"]);

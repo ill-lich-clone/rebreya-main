@@ -2,10 +2,22 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { LootClaimService } from "../scripts/application/loot-claim-service.js";
+import { makeValuedContainer } from "./helpers/lootgen-container-fixture.mjs";
 
 function clone(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));
 }
+
+test("prepared Chat accepts only top-level rows and rejects parent-plus-preview-child before any write or grant",async()=>{
+  const {descriptor}=makeValuedContainer();let writes=0,grants=0;
+  const state={lootId:"nested",resultVersion:2,rows:[{rowId:"root",descriptor,claimed:false}],coins:{gp:2,totalCopper:200},coinsClaimed:false,claims:[]};
+  const service=new LootClaimService({getMessage:()=>({id:"message"}),readState:()=>clone(state),
+    writeState:()=>{writes++;},grantRow:()=>{grants++;},grantCoins:()=>{grants++;},grantBatch:()=>{grants++;}});
+  for(const rowIds of [["child-row"],["root","child-row"]]){
+    await assert.rejects(service.claimBatch({lootId:"nested",claimId:rowIds.join("-"),rowIds,includeCoins:true}),{code:"invalid-lootgen-row"});
+  }
+  assert.equal(writes,0);assert.equal(grants,0);assert.equal(state.rows[0].claimed,false);
+});
 
 function createFixture({ failWrite } = {}) {
   let state = {

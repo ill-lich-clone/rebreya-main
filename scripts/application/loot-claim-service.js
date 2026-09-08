@@ -153,6 +153,9 @@ export class LootClaimService {
         if (claim.phase === "committed") return this.#returnBatchResult(claim.result);
       }
       else {
+        if (state.resultVersion === 2 && rowIds.some(rowId => !state.rows.some(row => cleanId(row?.rowId) === rowId))) {
+          throw Object.assign(new Error("Из карточки лута можно забрать только целую строку верхнего уровня."), {code:"invalid-lootgen-row"});
+        }
         const availableRowIds = rowIds.filter((rowId) => {
           const row = state.rows.find((entry) => cleanId(entry?.rowId) === rowId);
           return row && row.claimed !== true;

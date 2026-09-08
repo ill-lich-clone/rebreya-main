@@ -1,5 +1,5 @@
-import { normalizeLootgenComposition } from "./lootgen-item-descriptor.js?v=1.4.264";
-import { buildCompositeItemGraph } from "./composite-item-graph.js?v=1.4.259";
+import { normalizeLootgenComposition } from "./lootgen-composition.js?v=1.4.268";
+import { buildCompositeItemGraph } from "./composite-item-graph.js?v=1.4.268";
 import { buildRuntimeGraphDocuments, materializeRuntimeItemGraph } from "./runtime-item-graph.js?v=1.4.267-native-schema";
 import { itemInstanceFingerprint } from "../application/item-instance-workflow.js";
 import { WorldMutationCoordinator } from "../application/world-mutation-coordinator.js";
@@ -318,12 +318,12 @@ export class StorageContainerItemService {
   }
 
   /** One detached plan for every shell, content Item and installed upgrade. No world writes. */
-  async prepareItemGraph(snapshot, {actorId = ""} = {}) {
+  async prepareItemGraph(snapshot, {actorId = "",createDocumentId=this.createDocumentId,buildItemData=this.buildItemData,getManifest=this.getManifest} = {}) {
     const normalized = buildStorageContainerSnapshot(snapshot);
     const documents = [], documentIds = new Set(), instances = new Set();
     let manifest;
     const allocate = () => {
-      const id = this.createDocumentId();
+      const id = createDocumentId();
       if (typeof id !== "string" || !/^[a-zA-Z0-9]{16}$/u.test(id) || documentIds.has(id) || documentIds.size >= 200) treeConflict("document-identity-or-limit");
       documentIds.add(id); return id;
     };
@@ -338,19 +338,19 @@ export class StorageContainerItemService {
       const liveGraph = fallback?.flags?.[MODULE_ID]?.runtimeItemGraph;
       if (liveGraph) {
         if (quantity !== 1 || liveGraph.nodes?.[0]?.system?.quantity !== 1) treeConflict("stacked-upgrade-host");
-        const plan = buildRuntimeGraphDocuments(liveGraph,`storage-host:${this.createDocumentId()}`,fallback,{actorId});
+        const plan = buildRuntimeGraphDocuments(liveGraph,`storage-host:${createDocumentId()}`,fallback,{actorId});
         nodes = plan.documents;
         for (const node of nodes) {
           if (documentIds.has(node._id) || documentIds.size >= 200) treeConflict("document-identity-or-limit");
           documentIds.add(node._id);
         }
       } else if (composition && !fallback?.flags?.[MODULE_ID]?.storageCapturedHost) {
-        if (typeof this.buildItemData !== "function") treeConflict("catalog-builder-required");
-        manifest ??= await this.getManifest();
+        if (typeof buildItemData !== "function") treeConflict("catalog-builder-required");
+        manifest ??= await getManifest();
         const graph = await buildCompositeItemGraph({...composition, quantity, container:null}, {
           actorId, manifest, createDocumentId:allocate,
-          buildBase:(sourceType,sourceId)=>this.buildItemData({sourceType,sourceId,quantity,isBroken:composition.isBroken}),
-          buildUpgrade:sourceId=>this.buildItemData({sourceType:"gear",sourceId,quantity:1,isBroken:false})
+          buildBase:(sourceType,sourceId)=>buildItemData({sourceType,sourceId,quantity,isBroken:composition.isBroken}),
+          buildUpgrade:sourceId=>buildItemData({sourceType:"gear",sourceId,quantity:1,isBroken:false})
         });
         nodes = graph.documents;
       } else {

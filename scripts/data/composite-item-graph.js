@@ -1,4 +1,4 @@
-import { normalizeLootgenItemDescriptor } from "./lootgen-item-descriptor.js?v=1.4.256";
+import { normalizeLootgenItemDescriptor } from "./lootgen-item-descriptor.js?v=1.4.268";
 import { buildUpgradeHostDescriptor, profileSignature, getItemUpgradeCategory, ITEM_UPGRADES_HOST_FLAG, INSTALLED_UPGRADE_FLAG } from "./item-upgrade-service.js?v=1.4.255";
 import { validateUpgradeInstallation } from "./item-upgrade-rules.js?v=1.4.250";
 import { buildHeldItemWornUpdate } from "../integrations/held-items.js";
@@ -25,6 +25,7 @@ function cleanCatalogItem(source, id) {
 /** Builds trusted detached catalog data only. The ingress journal owns persistence and recovery. */
 export async function buildCompositeItemGraph(raw, { buildBase, buildUpgrade, createDocumentId, manifest = [], actorId = "" } = {}) {
   const descriptor = normalizeLootgenItemDescriptor(raw);
+  if (descriptor.container !== null) fail("container-requires-storage-planner");
   if (typeof buildBase !== "function" || typeof buildUpgrade !== "function" || typeof createDocumentId !== "function") fail("builders");
   const ids = new Set(), nextId = () => {
     const id=createDocumentId();
