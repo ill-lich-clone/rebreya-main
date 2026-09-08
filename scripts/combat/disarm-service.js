@@ -17,6 +17,7 @@ export class DisarmService {
   }
   #authorize(record, context, save = false) {
     const sender = this.#sender(context);
+    if (save === true && sender.id !== record.responderUserId) throw new DisarmError("unauthorized", "Сначала мастер должен назначить отвечающего за спасбросок.");
     if (!sender.isGM && sender.id !== (save ? record.responderUserId : record.senderId)
       && !(save === null && sender.id === record.responderUserId)) throw new DisarmError("unauthorized");
   }
@@ -34,6 +35,7 @@ export class DisarmService {
     return { operationId: record.intent.operationId, phase: record.phase, sourceName: record.sourceName,
       targetName: record.targetName, itemName: record.itemName, senderId: record.senderId,
       responderUserId: record.responderUserId, attackPlan: record.attackPlan,
+      responderRevision: record.responderRevision ?? 0, responderDecision: record.responderDecisions?.at(-1) ?? null,
       attackTotal: record.attackRoll?.total ?? null, saveTotal: record.saveRoll?.total ?? null,
       saveAbility: record.saveAbility ?? null, dropped: record.dropped ?? false,
       attackMode: record.attackMode, strSaveAdvantage: record.strSaveAdvantage,
@@ -80,6 +82,31 @@ export class DisarmService {
       if (current.phase === "attack-rolled") return this.#phase(current, "awaiting-save", {}, context);
       return this.#finish(current, "manual-review", { error: `Бросок атаки не подтверждён: ${error.message}` }, context);
     }
+  }
+  async reassignResponder(intent, context) {
+    const sender = this.#sender(context);
+    if (!sender.isGM) throw new DisarmError("unauthorized");
+    if (!Number.isSafeInteger(intent.expectedResponderRevision) || intent.expectedResponderRevision < 0
+      || typeof intent.responderUserId !== "string" || !intent.responderUserId.trim() || intent.responderUserId.length > 128
+      || typeof intent.reason !== "string" || !intent.reason.trim() || intent.reason.length > 240) throw new DisarmError("invalid-responder", "Укажите отвечающего и причину смены.");
+    return this.coordinator.run("disarm-operations", async () => {
+      let record = await this.journal.find(this.#id(intent.operationId));
+      if (!record) throw new DisarmError("operation-not-found");
+      const fingerprint = itemInstanceFingerprint({ intent, gmId: sender.id });
+      const decisions = record.responderDecisions ?? [];
+      if (decisions.at(-1)?.fingerprint === fingerprint) return this.#present(record);
+      if ((record.responderRevision ?? 0) !== intent.expectedResponderRevision) throw new DisarmError("operation-conflict", "Отвечающий уже изменился. Откройте актуальную карточку.");
+      if (record.terminal || record.phase !== "awaiting-save") throw new DisarmError("phase-conflict", "Смена отвечающего доступна только до спасброска.");
+      if (decisions.length >= 64) throw new DisarmError("operation-conflict", "Достигнут предел смен отвечающего для этой попытки.");
+      const user = this.gameProvider().users.get(intent.responderUserId);
+      const live = await this.documents.revalidate(record);
+      if (!user?.active || (!user.isGM && !live.targetActor.testUserPermission?.(user, "OWNER"))) throw new DisarmError("invalid-responder", "Выберите подключённого владельца защитника или мастера.");
+      const decision = { fingerprint, gmId: sender.id, previousResponderUserId: record.responderUserId,
+        responderUserId: user.id, reason: intent.reason.trim(), revision: intent.expectedResponderRevision + 1 };
+      record = await this.#phase(record, record.phase, { responderUserId: user.id, responderRevision: decision.revision,
+        responderDecisions: [...decisions, decision] }, context);
+      return this.#present(record);
+    });
   }
   async chooseSave(intent, context) {
     if (!["str", "dex"].includes(intent.saveAbility)) throw new DisarmError("invalid-save");

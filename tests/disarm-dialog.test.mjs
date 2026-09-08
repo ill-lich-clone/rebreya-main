@@ -1,11 +1,37 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { resolveDisarmSelection, promptDisarm, promptDisarmBaseline, buildDisarmChatContent } from "../scripts/ui/disarm-dialog.js";
+import * as dialogs from "../scripts/ui/disarm-dialog.js";
 test("explicit tokens or exactly one controlled source and one target; no automatic guess",()=>{
   assert.throws(()=>resolveDisarmSelection({},[],[]));
   assert.throws(()=>resolveDisarmSelection({},[{uuid:"a"},{uuid:"b"}],[{uuid:"c"}]));
   assert.deepEqual(resolveDisarmSelection({},[{document:{uuid:"source"}}],[{document:{uuid:"target"}}]),{sourceTokenUuid:"source",targetTokenUuid:"target"});
   assert.deepEqual(resolveDisarmSelection({sourceTokenUuid:"a",targetTokenUuid:"b"},[],[]),{sourceTokenUuid:"a",targetTokenUuid:"b"});
+});
+
+test("GM responder dialog carries the captured revision and escaped active users; cancel is inert",async()=>{
+  assert.equal(typeof dialogs.promptDisarmResponder,"function");
+  const previous=globalThis.foundry;let action="confirm";
+  try {
+    globalThis.foundry={applications:{api:{DialogV2:{wait:async config=>{
+      assert.ok(config.content.includes("&lt;owner&gt;"));assert.ok(!config.content.includes("Offline"));
+      let onInput;const reason={value:"",addEventListener:(_event,callback)=>{onInput=callback;}},confirm={},cancel={};
+      config.render({}, {element:{querySelector:selector=>selector.includes("name=")?reason:selector.includes("confirm")?confirm:cancel}});
+      assert.equal(confirm.disabled,true);reason.value=" ";onInput();assert.equal(confirm.disabled,true);
+      reason.value="Связь потеряна";onInput();assert.equal(confirm.disabled,false);assert.equal(cancel.formNoValidate,true);
+      const button=config.buttons.find(b=>b.action===action);
+      return button.callback({}, {form:{elements:{namedItem:name=>({value:name==="reason"?"Связь потеряна":"owner"})}}})??button.action;
+    }}}}};
+    const users=[{id:"owner",name:"<owner>",active:true},{id:"off",name:"Offline",active:false}];
+    assert.deepEqual(await dialogs.promptDisarmResponder("op",2,users),{operationId:"op",expectedResponderRevision:2,responderUserId:"owner",reason:"Связь потеряна"});
+    action="cancel";assert.equal(await dialogs.promptDisarmResponder("op",2,users),false);
+  }finally{globalThis.foundry=previous;}
+});
+
+test("pending chat exposes reassignment revision and escapes the recorded reason",()=>{
+  const html=buildDisarmChatContent({intent:{operationId:"op"},phase:"awaiting-save",responderUserId:"owner",responderRevision:2,responderDecisions:[{reason:"<img src=x onerror=alert(1)>"}]});
+  assert.match(html,/data-disarm-reassign/u);assert.match(html,/data-responder-revision="2"/u);
+  assert.match(html,/&lt;img/u);assert.ok(!html.includes("<img"));
 });
 test("cancel at selection or confirmation returns no mutation intent",async()=>{
   const previous=globalThis.foundry;

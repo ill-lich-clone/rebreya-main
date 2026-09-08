@@ -16,8 +16,71 @@ function fixture() {
     storageCommands:{async dropDisarmedItem(){calls.drop++;return {tokenUuid:"Scene.s.Token.ground"};}},
     publish:async()=>{calls.publish++;},gameProvider:()=>({users,user:gm})});
   const context={sender,assertAuthority(){}};
-  return {service,journal,calls,rolls,documents,intent,context,defender,gm};
+  return {service,journal,calls,rolls,documents,intent,context,defender,gm,users};
 }
+
+test("GM must explicitly reassign the defender with a reason before choosing their save",async()=>{
+  const f=fixture();f.gm.active=true;await f.service.start(f.intent,f.context);
+  await assert.rejects(f.service.chooseSave({operationId:"op",saveAbility:"str"},{...f.context,sender:f.gm}),e=>e.code==="unauthorized");
+  const intent={operationId:"op",expectedResponderRevision:0,responderUserId:f.gm.id,reason:"Владелец отключился"};
+  const result=await f.service.reassignResponder(intent,{...f.context,sender:f.gm});
+  assert.equal(result.responderUserId,f.gm.id);assert.equal(result.responderRevision,1);
+  assert.equal(result.responderDecision.reason,intent.reason);assert.equal(result.responderDecision.gmId,f.gm.id);
+  await assert.rejects(f.service.chooseSave({operationId:"op",saveAbility:"dex"},{...f.context,sender:f.defender}),e=>e.code==="unauthorized");
+  await f.service.chooseSave({operationId:"op",saveAbility:"str"},{...f.context,sender:f.gm});
+  const replay=await f.service.reassignResponder(intent,{...f.context,sender:f.gm});
+  assert.equal(replay.phase,"completed");assert.equal(replay.responderRevision,1);assert.equal(f.calls.save,1);assert.equal(f.calls.attack,1);
+});
+
+test("reassignment validates live GM, active target OWNER, reason and revision without rolling",async()=>{
+  const f=fixture();f.gm.active=true;f.defender.active=true;await f.service.start(f.intent,f.context);
+  const context={...f.context,sender:f.gm},intent={operationId:"op",expectedResponderRevision:0,responderUserId:f.defender.id,reason:"Другой владелец"};
+  f.documents.revalidate=async()=>({targetActor:{testUserPermission:user=>user===f.defender}});
+  await assert.rejects(f.service.reassignResponder(intent,f.context),e=>e.code==="unauthorized");
+  await assert.rejects(f.service.reassignResponder(intent,{...context,sender:{...f.gm}}),e=>e.code==="unauthorized");
+  for(const patch of [{reason:" "},{reason:"x".repeat(241)},{expectedResponderRevision:-1},{expectedResponderRevision:0.5}])
+    await assert.rejects(f.service.reassignResponder({...intent,...patch},context),e=>e.code==="invalid-responder");
+  f.users.set("other",{id:"other",active:true});
+  for(const responderUserId of ["other","missing"])
+    await assert.rejects(f.service.reassignResponder({...intent,responderUserId},context),e=>e.code==="invalid-responder");
+  f.defender.active=false;
+  await assert.rejects(f.service.reassignResponder(intent,context),e=>e.code==="invalid-responder");f.defender.active=true;
+  await f.service.reassignResponder({...intent,responderUserId:f.gm.id},context);
+  await assert.rejects(f.service.reassignResponder(intent,context),e=>e.code==="operation-conflict");
+  await f.service.reassignResponder({...intent,expectedResponderRevision:1},context);
+  await assert.rejects(f.service.reassignResponder({...intent,responderUserId:f.gm.id},context),e=>e.code==="operation-conflict");
+  assert.equal((await f.journal.find("disarm:op")).responderRevision,2);assert.equal(f.calls.save,0);assert.equal(f.calls.attack,1);
+});
+
+test("reassignment acknowledgement loss replays one durable decision and does not roll",async()=>{
+  const f=fixture();f.gm.active=true;await f.service.start(f.intent,f.context);
+  const original=f.journal.checkpoint.bind(f.journal);let writes=0;
+  f.journal.checkpoint=async(...args)=>{const result=await original(...args);if(++writes===1)throw Error("lost acknowledgement");return result;};
+  const intent={operationId:"op",expectedResponderRevision:0,responderUserId:f.gm.id,reason:"Отключение владельца"},context={...f.context,sender:f.gm};
+  await assert.rejects(f.service.reassignResponder(intent,context),/lost acknowledgement/);
+  assert.equal((await f.service.reassignResponder(intent,context)).responderRevision,1);
+  assert.equal(writes,1);assert.equal(f.calls.save,0);assert.equal(f.calls.attack,1);
+});
+
+test("save and reassignment serialize: neither order permits an extra defender roll",async()=>{
+  for(const saveFirst of [true,false]){
+    const f=fixture();f.gm.active=true;await f.service.start(f.intent,f.context);
+    const save=()=>f.service.chooseSave({operationId:"op",saveAbility:"str"},{...f.context,sender:f.defender});
+    const reassign=()=>f.service.reassignResponder({operationId:"op",expectedResponderRevision:0,responderUserId:f.gm.id,reason:"Смена владельца"},{...f.context,sender:f.gm});
+    const results=await Promise.allSettled(saveFirst?[save(),reassign()]:[reassign(),save()]);
+    assert.equal(results[0].status,"fulfilled");assert.equal(results[1].status,"rejected");
+    assert.equal(results[1].reason.code,saveFirst?"phase-conflict":"unauthorized");assert.equal(f.calls.save,saveFirst?1:0);
+  }
+});
+
+test("reassigned OWNER loses the right to roll when live ownership is revoked",async()=>{
+  const f=fixture();f.defender.active=true;let allowed=true;await f.service.start(f.intent,f.context);
+  f.documents.revalidate=async()=>({targetActor:{testUserPermission:()=>allowed}});
+  await f.service.reassignResponder({operationId:"op",expectedResponderRevision:0,responderUserId:f.defender.id,reason:"Подтвердить владельца"},{...f.context,sender:f.gm});
+  allowed=false;
+  await assert.rejects(f.service.chooseSave({operationId:"op",saveAbility:"str"},{...f.context,sender:f.defender}),e=>e.code==="unauthorized");
+  assert.equal(f.calls.save,0);assert.equal((await f.journal.find("disarm:op")).phase,"awaiting-save");
+});
 test("one attack, assigned save and one drop; replay does not resolve removed source",async()=>{
   const f=fixture(); const started=await f.service.start(f.intent,f.context);
   assert.equal(started.phase,"awaiting-save"); assert.equal(f.calls.attack,1);

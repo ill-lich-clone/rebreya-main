@@ -37,6 +37,22 @@ export async function promptDisarmBaseline(operationId) {
     buttons: [{ action: "confirm", label: "Подтвердить и бросить", callback: (_e, button) => ({ operationId, abilityScore: Number(button.form.elements.namedItem("abilityScore").value), proficiencyContribution: Number(button.form.elements.namedItem("proficiencyContribution").value), reason: button.form.elements.namedItem("reason").value }) },
       { action: "cancel", label: "Отмена", callback: () => false }], rejectClose: false });
 }
+export async function promptDisarmResponder(operationId, expectedResponderRevision, users = globalThis.game?.users?.contents ?? []) {
+  return foundry.applications.api.DialogV2.wait({ window: { title: "Кто отвечает за спасбросок" },
+    content: `<div class="rm-disarm-form"><p>Выберите подключённого владельца защитника или мастера. Назначение не выполняет бросок.</p>
+      <label>Отвечающий<select name="responderUserId" required>${users.filter(user => user.active).map(user => `<option value="${escape(user.id)}">${escape(user.name)}</option>`).join("")}</select></label>
+      <label>Причина смены<input name="reason" maxlength="240" required></label></div>`,
+    render: (_e, dialog) => {
+      const root = dialog.element?.[0] ?? dialog.element, reason = root?.querySelector('[name="reason"]');
+      const confirm = root?.querySelector("[data-action='confirm']"), cancel = root?.querySelector("[data-action='cancel']");
+      if (cancel) cancel.formNoValidate = true;
+      const validate = () => { if (confirm) confirm.disabled = !reason?.value.trim(); };
+      reason?.addEventListener("input", validate); validate();
+    },
+    buttons: [{ action: "confirm", label: "Назначить", callback: (_e, button) => ({ operationId, expectedResponderRevision,
+      responderUserId: button.form.elements.namedItem("responderUserId").value, reason: button.form.elements.namedItem("reason").value }) },
+      { action: "cancel", label: "Отмена", callback: () => false }], rejectClose: false });
+}
 export function buildDisarmChatContent(record) {
   const pending = record.phase === "awaiting-save", id = record.intent.operationId;
   return `<section class="rm-disarm-chat" data-disarm-operation="${escape(id)}"><h3>Обезоруживание</h3><p>${escape(record.sourceName)} → ${escape(record.targetName)}</p>
@@ -45,6 +61,8 @@ export function buildDisarmChatContent(record) {
     ${record.attackRoll ? `<p>Сл спасброска: <strong>${record.attackRoll.total}</strong></p>` : ""}
     <p>${escape(phases[record.phase] ?? record.phase)}</p>
     ${pending ? `<p>Защитник выбирает Силу или Ловкость.${record.strSaveAdvantage ? " Сила — с преимуществом из-за размера." : ""}</p><div class="rm-disarm-actions" data-disarm-responder="${escape(record.responderUserId)}"><button data-disarm-save="str">Сила</button><button data-disarm-save="dex">Ловкость</button></div>` : ""}
+    ${pending ? `<button data-disarm-reassign data-responder-revision="${escape(record.responderRevision ?? 0)}">Сменить отвечающего</button>` : ""}
+    ${record.responderDecisions?.length ? `<p>Причина смены отвечающего: ${escape(record.responderDecisions.at(-1).reason)}</p>` : ""}
     ${record.saveRoll ? `<p>${record.saveAbility === "str" ? "Сила" : "Ловкость"}: <strong>${record.saveRoll.total}</strong> · ${record.dropped ? "предмет выбит" : "предмет удержан"}.</p>` : ""}
     ${record.directionRoll ? `<p>Случайная точка: ${record.directionRoll.total} из ${record.dropPoints.length}; ${record.destination.x}, ${record.destination.y}.</p>` : ""}
     ${record.error ? `<p role="alert">${escape(record.error)}</p>` : ""}
@@ -58,7 +76,9 @@ export function bindDisarmChat(message, html, api) {
   if (!id || !root || !message.author?.isGM) return;
   listeners.get(root)?.abort(); const controller = new AbortController(); listeners.set(root, controller);
   const responder = root.querySelector("[data-disarm-responder]");
-  if (responder && !game.user.isGM && responder.dataset.disarmResponder !== game.user.id) responder.hidden = true;
+  if (responder && responder.dataset.disarmResponder !== game.user.id) responder.hidden = true;
+  const reassign = root.querySelector("[data-disarm-reassign]");
+  if (reassign && !game.user.isGM) reassign.hidden = true;
   const cancel = root.querySelector("[data-disarm-cancel]");
   if (cancel && !game.user.isGM && cancel.dataset.disarmSender !== game.user.id) cancel.hidden = true;
   root.addEventListener("click", async event => {
@@ -66,6 +86,11 @@ export function bindDisarmChat(message, html, api) {
     button.disabled = true;
     try {
       if (button.dataset.disarmSave) await api.requestDisarmAction("resolve-save", { operationId: id, saveAbility: button.dataset.disarmSave });
+      else if (button.hasAttribute("data-disarm-reassign")) {
+        if (!game.user.isGM) return;
+        const intent = await promptDisarmResponder(id, Number(button.dataset.responderRevision));
+        if (intent) await api.requestDisarmAction("reassign-responder", intent);
+      }
       else if (button.hasAttribute("data-disarm-cancel")) await api.requestDisarmAction("cancel", { operationId: id });
       else if (button.hasAttribute("data-disarm-resume")) await api.openDisarmOperation(id);
     } catch (error) { ui.notifications.error(error.message); }

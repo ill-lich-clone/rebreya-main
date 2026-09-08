@@ -22,6 +22,16 @@ test("sender must be authenticated; baseline requires GM, ownership belongs to l
   assert.equal(authorizeDisarmSender("start",{sender:{...gm},game}),false);
 });
 
+test("responder reassignment has an exact bounded GM-only contract",()=>{
+  const p={operationId:"one",expectedResponderRevision:0,responderUserId:"owner",reason:"Disconnected"};
+  assert.equal(isValidDisarmPayload("reassign-responder",p),true);
+  for(const patch of [{expectedResponderRevision:-1},{expectedResponderRevision:1.5},{reason:" "},{reason:"x".repeat(241)},{responderUserId:""},{total:20}])
+    assert.equal(isValidDisarmPayload("reassign-responder",{...p,...patch}),false);
+  const gm={id:"gm",isGM:true},player={id:"p"},game={users:new Map([[gm.id,gm],[player.id,player]])};
+  assert.equal(authorizeDisarmSender("reassign-responder",{sender:player,game}),false);
+  assert.equal(authorizeDisarmSender("reassign-responder",{sender:gm,game}),true);
+});
+
 test("real gateway forwards disarm from player and second GM only to active GM; rejects forged formula and player baseline", async () => {
   const users = [{ id: "a", isGM: true, active: true }, { id: "b", isGM: true, active: true }, { id: "p", isGM: false, active: true }];
   const clients = [], calls = []; let requestId = 0;
@@ -31,7 +41,7 @@ test("real gateway forwards disarm from player and second GM only to active GM; 
     const coordinator = new WorldMutationCoordinator();
     const bus = new SocketCommandBus({ coordinator, gameProvider: () => game });
     const gateway = new PrivilegedMutationGateway({ commandBus: bus, coordinator, gameProvider: () => game, getActiveGm, isActiveGmClient, operationIdFactory: () => `disarm-test-${++requestId}` });
-    for (const action of ["start", "set-baseline"]) gateway.registerCommand(`disarm.${action}`, {
+    for (const action of ["start", "set-baseline", "reassign-responder"]) gateway.registerCommand(`disarm.${action}`, {
       validate: p => isValidDisarmPayload(action, p),
       authorize: (_p, { sender }) => authorizeDisarmSender(action, { sender, game }),
       execute: async (_p, context) => { await context.assertActiveGm(); calls.push([user.id, context.sender.id, action]); return { ok: true }; }
@@ -44,8 +54,12 @@ test("real gateway forwards disarm from player and second GM only to active GM; 
   assert.deepEqual(calls, [["a", "a", "start"], ["a", "b", "start"], ["a", "p", "start"]]);
   await assert.rejects(clients[2].gateway.mutate("disarm.start", { ...base, formula: "100" }));
   await assert.rejects(clients[2].gateway.mutate("disarm.set-baseline", { operationId: "one", abilityScore: 16, proficiencyContribution: 2, reason: "manual" }), e => e.code === "unauthorized");
+  const reassignment={operationId:"one",expectedResponderRevision:0,responderUserId:"b",reason:"Disconnected"};
+  await assert.rejects(clients[2].gateway.mutate("disarm.reassign-responder",reassignment),e=>e.code==="unauthorized");
+  await clients[1].gateway.mutate("disarm.reassign-responder",reassignment);
+  assert.deepEqual(calls.at(-1),["a","b","reassign-responder"]);
   for (const c of clients) c.game.users.activeGM = null;
   for (const u of users) u.active = false;
   await assert.rejects(clients[1].gateway.mutate("disarm.start", base), e => e.code === "active-gm-unavailable");
-  assert.equal(calls.length, 3);
+  assert.equal(calls.length, 4);
 });

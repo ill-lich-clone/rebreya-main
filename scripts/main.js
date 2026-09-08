@@ -105,11 +105,11 @@ import { CraftDowntimeService } from "./data/craft-downtime-service.js?v=1.4.96-
 import { ItemUpgradeService } from "./data/item-upgrade-service.js?v=1.4.255";
 import { ItemUpgradeAutomationService } from "./automation/item-upgrade-automation-service.js?v=1.4.255";
 import { ReputationService } from "./application/reputation-service.js?v=1.4.251";
-import { DisarmService } from "./combat/disarm-service.js?v=1.4.273";
+import { DisarmService } from "./combat/disarm-service.js?v=1.4.276";
 import { DisarmRollAdapter } from "./integrations/disarm-roll-adapter.js?v=1.4.252";
 import { DisarmDocuments } from "./infrastructure/foundry/disarm-documents.js?v=1.4.252";
-import { DISARM_ACTIONS, isValidDisarmPayload, authorizeDisarmSender } from "./infrastructure/foundry/disarm-command-contract.js?v=1.4.252";
-import { resolveDisarmSelection, promptDisarm, promptDisarmBaseline, buildDisarmChatContent, bindDisarmChat } from "./ui/disarm-dialog.js?v=1.4.252";
+import { DISARM_ACTIONS, isValidDisarmPayload, authorizeDisarmSender } from "./infrastructure/foundry/disarm-command-contract.js?v=1.4.276";
+import { resolveDisarmSelection, promptDisarm, promptDisarmBaseline, buildDisarmChatContent, bindDisarmChat } from "./ui/disarm-dialog.js?v=1.4.276";
 import { REPUTATION_UPDATE_COMMAND, isValidReputationPayload, authorizeReputationUpdate } from "./infrastructure/foundry/reputation-command-contract.js?v=1.4.251";
 import { GROUP_CALENDAR_PATCH_COMMAND, CalendarService } from "./data/calendar-service.js";
 import { CalendarTransitionCoordinator } from "./data/calendar-transition-coordinator.js?v=1.4.96-craft-calendar";
@@ -2133,6 +2133,7 @@ export class RebreyaMainModule {
         if (action === "start") return this.disarmService.start(payload, guarded);
         if (action === "resolve-save") return this.disarmService.chooseSave(payload, guarded);
         if (action === "set-baseline") return this.disarmService.setBaseline(payload, guarded);
+        if (action === "reassign-responder") return this.disarmService.reassignResponder(payload, guarded);
         return this.disarmService[action](payload.operationId, guarded);
       }
     });
