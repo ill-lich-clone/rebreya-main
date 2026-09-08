@@ -147,3 +147,15 @@ Live: testovyj3, Foundry 13.351, dnd5e 5.2.5, CODEX (не active GM), viewport 1
 **Открытая приёмка:** активный Gamemaster ещё не обновлён. Поэтому автоматическая запись managed AE через его lifecycle, отдельный player, перенос между Actor и полный replay после GM reload остаются открытыми. Проверка native полей временным QA effect не подменяет проверку этого маршрута. Runtime не подделывает authority и не выполняет GM-only writes на CODEX.
 
 Проверки партии: `node --test tests/*.test.mjs` — **3771 passed / 0 failed**; синтаксис **746 JS/MJS и 46 JSON, 0 ошибок**; `git diff --check` без ошибок. До окончательных HP/coverage additions профильный набор давал 88/0; новые focused projection/service/coverage проверки и полный запуск подтверждают окончательный состав. Версия module.json/forwarder/esmodules — 1.4.253.
+
+## Оружейная партия — 2026-09-08, 1.4.254
+
+Добавлены 15 полных профилей: Малое зачарование остроты, Сухожилие чудовища, Зачарование остроты, Огненная мазь, Ледяная мазь, Зачарование некромантии, Дьявольское железо, Эльфийская сталь, Искажающая сталь, Кристаллы забытых титанов, Коричневая сталь, Кости мантикоры, Ночная сталь, Осколки метеоритных звёзд, Священная сталь. Manifest: 27 implemented, 10 candidate, 11 existing-curse, 43 unavailable. Поглощение/choices и итоговая приёмка R7 остаются открытыми.
+
+Native adapter вызывается существующим CombatAttackService; он не создаёт броски или отдельный damage engine. Дедупликация относится к конфигурации конкретного броска; вклад изолирован своим host и primary packet. Target predicates и преимущество конкретной атаки проверяются без догадок; неодинаковые цели требуют отдельных бросков. Священная сталь меняет базовые dice derived Item, дополнительные fire/cold/etc сохраняются. Контракты и все методы — в паспорте простой автоматизации.
+
+Live, тот же testovyj3 / Foundry13.351 / dnd5e5.2.5 / CODEX: реальные install трёх upgrades на временный weapon. Native rollAttack: `1d20 + 1 + 3 + 2`; rollDamage: radiant `2d8 + 3 + 1` и fire `1d6`; critical: radiant `4d8 + 3 + 1` и fire `2d6`. Броски выполнены без публикации сообщений и без изменения HP. Source остаётся `1d8 slashing`; изменение source number на2 даёт derived4, снятие стали возвращает2/slashing. QA Actor и все embedded Items удалены. Найдено и исправлено повторное добавление native base packets при initialization: Actor.reset вместо прямого prepareData. После reset/reload ровно один base packet.
+
+Focused: `node --test tests/item-upgrade*.test.mjs tests/upgrade-automation-manifest.test.mjs tests/module-manifest.test.mjs tests/combat-attack-service.test.mjs` — **153 passed / 0 failed**. Полный MIDI workflow с targeted conditions, отдельный player и managed AE lifecycle после обновления активного GM ещё требуют приёмки; direct native damage/attack не подменяют её.
+
+Полная проверка: `node --test tests/*.test.mjs` — **3785 passed / 0 failed**; `node --check` для **751 JS/MJS**, parse **46 JSON**, **0 ошибок**; `git diff --check` чисто.

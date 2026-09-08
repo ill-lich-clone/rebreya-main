@@ -1,9 +1,12 @@
 import { evaluateUpgradeActivation } from "../data/item-upgrade-rules.js?v=1.4.250";
+import { SIMPLE_UPGRADE_ROLL_PROFILES } from "./item-upgrade-roll-modifiers.js?v=1.4.254";
 
 const actor = (path, value) => ({ scope: "actor", operation: "add", path, value });
 const host = (operation, value) => ({ scope: "host", operation, value });
 const ac = actor("system.attributes.ac.bonus", 1), saves = actor("system.bonuses.abilities.save", 1);
 export const SIMPLE_UPGRADE_PROFILES = Object.freeze({
+  ...SIMPLE_UPGRADE_ROLL_PROFILES,
+  "svyashchennaya-stal": [host("radiant-double-base", true)],
   "dushevnoe-zacharovanie": [actor("system.skills.per.bonuses.check", 1), actor("system.skills.prf.bonuses.check", 1)],
   "oskolok-cherepa-chudovishcha": [actor("system.skills.itm.bonuses.check", 1)],
   "koren-drakonego-dereva": [actor("system.attributes.hp.bonuses.overall", 5)],
@@ -28,7 +31,7 @@ export function buildSimpleUpgradeContributions({ actor: actorData, hosts, manif
     const effects = SIMPLE_UPGRADE_PROFILES[upgrade.sourceId];
     const entry = manifest?.find(row => row.productId === upgrade.sourceId);
     if (!effects || !upgrade.valid || (manifest && entry?.decision !== "simple-implemented")) continue;
-    const activation = entry?.activation ?? (upgrade.sourceId === "zacharovanie-lyogkosti" ? "carried" : "equipped");
+    const activation = entry?.activation ?? (SIMPLE_UPGRADE_ROLL_PROFILES[upgrade.sourceId] || upgrade.sourceId === "svyashchennaya-stal" ? "held" : upgrade.sourceId === "zacharovanie-lyogkosti" ? "carried" : "equipped");
     if (!evaluateUpgradeActivation(item.descriptor, actorData, { activation, worksWhenBroken: entry?.worksWhenBroken ?? false }).active) continue;
     if (capabilities && effects.some(effect => !capabilities.has(effect.scope))) {
       unavailable.push({ hostItemId: item.id, upgradeItemId: upgrade.id, reason: "Нет поддержанного native modifier adapter." }); continue;
@@ -36,6 +39,13 @@ export function buildSimpleUpgradeContributions({ actor: actorData, hosts, manif
     if (effects.some(effect => effect.operation === "reduce-weight-lb")
       && (!Number.isFinite(item.source.system?.weight?.value) || !["lb", "kg"].includes(item.source.system.weight.units))) {
       unavailable.push({ hostItemId: item.id, upgradeItemId: upgrade.id, reason: "Неизвестные значение или единицы веса предмета." }); continue;
+    }
+    if (effects.some(effect => effect.operation === "radiant-double-base")) {
+      const damage = item.source.system?.damage;
+      if (!Number.isSafeInteger(damage?.base?.number) || damage.base.number <= 0
+        || [damage.base, damage.versatile].some(part => part?.custom?.enabled || /\d+d\d+/iu.test(part?.bonus ?? ""))) {
+        unavailable.push({ hostItemId: item.id, upgradeItemId: upgrade.id, reason: "Святая сталь требует выделенных базовых костей оружия без custom-формулы." }); continue;
+      }
     }
     for (const [index, effect] of effects.entries()) {
       if (effect.condition === "original-no-stealth-disadvantage" && new Set(item.source.system?.properties ?? []).has("stealthDisadvantage")) continue;
@@ -51,12 +61,21 @@ export function buildSimpleUpgradeContributions({ actor: actorData, hosts, manif
 
 /** Called once during each native Item active-effect preparation; system is fresh derived data, never _source. */
 export function projectSimpleUpgradeItem(system, contributions) {
+  let radiantBaseApplied = false;
   for (const contribution of contributions.filter(c => c.scope === "host")) {
     if (contribution.operation === "remove-stealth-disadvantage") system.properties?.delete?.("stealthDisadvantage");
     if (contribution.operation === "remove-strength-requirement") system.strength = 0;
     if (contribution.operation === "reduce-weight-lb" && system.weight && Number.isFinite(system.weight.value)) {
       const factor = { lb: 1, kg: 0.45359237 }[system.weight.units];
       if (factor) system.weight.value = Math.max(0, system.weight.value - contribution.value * factor);
+    }
+    if (contribution.operation === "radiant-double-base" && !radiantBaseApplied) {
+      radiantBaseApplied = true;
+      for (const part of [system.damage?.base, system.damage?.versatile]) {
+        if (!part || !Number.isSafeInteger(part.number) || part.number <= 0) continue;
+        part.number *= 2;
+        part.types = new Set(["radiant"]);
+      }
     }
   }
   return system;

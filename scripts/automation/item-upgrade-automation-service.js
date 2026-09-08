@@ -1,19 +1,26 @@
 import { MODULE_ID } from "../constants.js";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
-import { buildUpgradeHostDescriptor, profileSignature } from "../data/item-upgrade-service.js?v=1.4.253";
-import { loadUpgradeAutomationManifest } from "../data/upgrade-automation-manifest.js?v=1.4.253";
+import { buildUpgradeHostDescriptor, profileSignature } from "../data/item-upgrade-service.js?v=1.4.254";
+import { loadUpgradeAutomationManifest } from "../data/upgrade-automation-manifest.js?v=1.4.254";
 import { validateUpgradeInstallation } from "../data/item-upgrade-rules.js?v=1.4.250";
-import { buildSimpleUpgradeContributions, projectSimpleUpgradeItem } from "./item-upgrade-projections.js?v=1.4.253";
+import { buildSimpleUpgradeContributions, projectSimpleUpgradeItem } from "./item-upgrade-projections.js?v=1.4.254";
+import { SimpleUpgradeRollAdapter } from "../integrations/item-upgrade-roll-adapter.js?v=1.4.254";
 
 const FLAG = "simpleItemUpgrade", PATCH = Symbol.for("rebreya-main.simple-upgrade-item-effects");
 const values = collection => Array.from(collection?.contents ?? collection?.values?.() ?? collection ?? []);
 const getFlag = (document, key) => document?.flags?.[MODULE_ID]?.[key] ?? document?.getFlag?.(MODULE_ID, key);
+const damageSnapshot = system => Object.fromEntries(["base", "versatile"].filter(key => system.damage?.[key])
+  .map(key => [key, { number: system.damage[key].number, types: Array.from(system.damage[key].types ?? []) }]));
 
-/** Owns passive contributions only; installed links remain owned by ItemUpgradeService. */
+/** Owns simple passive and roll contributions; installed links remain owned by ItemUpgradeService. */
 export class ItemUpgradeAutomationService {
   constructor(moduleApi, options = {}) {
     this.moduleApi = moduleApi; this.options = options; this.manifest = []; this.pending = new Map(); this.hostAdapterReady = false;
     this.itemProjections = new WeakMap();
+    this.rolls = new SimpleUpgradeRollAdapter(this, { getWorkflow: activity => {
+      const workflows = this.moduleApi.curseUpgradeAutomationService?.attacks?.activityWorkflows?.get(activity);
+      return workflows?.size === 1 ? [...workflows][0] : null;
+    } });
   }
   isAuthority() { return this.options.isAuthority?.() ?? isActiveGmClient(globalThis.game); }
   readHosts(actor, hostItem = null) {
@@ -38,7 +45,7 @@ export class ItemUpgradeAutomationService {
   project(actor, hostItem = null) {
     return this.options.project?.(actor) ?? buildSimpleUpgradeContributions({ actor: { uuid: actor.uuid, type: actor.type,
       source: { system: { attributes: { hp: { max: actor._source?.system?.attributes?.hp?.max ?? null } } } } }, hosts: this.readHosts(actor, hostItem), manifest: this.manifest,
-      capabilities: new Set(this.hostAdapterReady ? ["actor", "host"] : ["actor"]) });
+      capabilities: new Set(this.hostAdapterReady ? ["actor", "host", "roll"] : ["actor", "roll"]) });
   }
   requestSync(actorOrUuid, reason = "changed") {
     const uuid = typeof actorOrUuid === "string" ? actorOrUuid : actorOrUuid?.uuid;
@@ -85,10 +92,10 @@ export class ItemUpgradeAutomationService {
   applyItemProjection(item) {
     if (!item.actor || !this.manifest.length || !getFlag(item, "itemUpgrades")?.installed?.length) return;
     const contributions = this.project(item.actor, item).contributions;
-    const before = { weight: item.system.weight?.value, strength: item.system.strength, stealth: item.system.properties?.has?.("stealthDisadvantage") };
+    const before = { weight: item.system.weight?.value, strength: item.system.strength, stealth: item.system.properties?.has?.("stealthDisadvantage"), damage: damageSnapshot(item.system) };
     projectSimpleUpgradeItem(item.system, contributions);
     this.itemProjections.set(item, { system: item.system, source: profileSignature(item.toObject().system), before,
-      after: { weight: item.system.weight?.value, strength: item.system.strength, stealth: item.system.properties?.has?.("stealthDisadvantage") } });
+      after: { weight: item.system.weight?.value, strength: item.system.strength, stealth: item.system.properties?.has?.("stealthDisadvantage"), damage: damageSnapshot(item.system) } });
   }
   restoreItemProjection(item) {
     const prior = this.itemProjections.get(item); this.itemProjections.delete(item);
@@ -97,6 +104,12 @@ export class ItemUpgradeAutomationService {
     if (prior.before.weight !== prior.after.weight && item.system.weight?.value === prior.after.weight) item.system.weight.value = prior.before.weight;
     if (prior.before.strength !== prior.after.strength && item.system.strength === prior.after.strength) item.system.strength = prior.before.strength;
     if (prior.before.stealth === true && prior.after.stealth === false && item.system.properties?.has?.("stealthDisadvantage") === false) item.system.properties.add("stealthDisadvantage");
+    for (const key of ["base", "versatile"]) {
+      const before = prior.before.damage?.[key], after = prior.after.damage?.[key], current = item.system.damage?.[key];
+      if (!before || !after || !current) continue;
+      if (before.number !== after.number && current.number === after.number) current.number = before.number;
+      if (profileSignature(before.types) !== profileSignature(after.types) && profileSignature(Array.from(current.types ?? [])) === profileSignature(after.types)) current.types = new Set(before.types);
+    }
   }
   registerItemDataPatch() {
     const prototype = globalThis.CONFIG?.Item?.documentClass?.prototype;
@@ -115,7 +128,8 @@ export class ItemUpgradeAutomationService {
     this.manifest = await (this.options.getManifest?.() ?? loadUpgradeAutomationManifest());
     this.registerItemDataPatch();
     for (const actor of values(globalThis.game?.actors)) {
-      actor.prepareData?.();
+      // Native dnd5e final preparation appends base damage parts. Reset the models first.
+      actor.reset?.();
       await this.requestSync(actor, "ready");
     }
   }

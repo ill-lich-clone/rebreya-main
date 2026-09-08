@@ -102,25 +102,35 @@
   },
   {
     "productId": "dyavolskoe-zhelezo",
-    "decision": "simple-candidate",
+    "decision": "simple-implemented",
     "effectKind": "host-attack-modifier",
     "reason": "+2 урона против небожителей; predicate текущей цели.",
     "owner": [
       "scripts/combat/attack-service.js",
-      "scripts/combat/curse-upgrade-attacks.js"
+      "scripts/integrations/item-upgrade-roll-adapter.js",
+      "scripts/automation/item-upgrade-roll-modifiers.js"
     ],
     "tests": [
       {
-        "path": "tests/item-upgrade-automation-service.test.mjs",
-        "status": "planned-R7"
+        "path": "tests/item-upgrade-projections.test.mjs",
+        "status": "existing"
+      },
+      {
+        "path": "tests/item-upgrade-roll-modifiers.test.mjs",
+        "status": "existing"
+      },
+      {
+        "path": "tests/item-upgrade-roll-adapter.test.mjs",
+        "status": "existing"
       }
     ],
     "capabilities": [
       "dnd5e-native",
-      "R7-full-effect-verification-required",
-      "midi-qol-optional",
-      "host-and-packet-scope"
-    ]
+      "weapon-attack-context"
+    ],
+    "activation": "held",
+    "worksWhenBroken": false,
+    "stacking": "Independent installed Items add numeric/dice bonuses; advantage sources use native cancellation."
   },
   {
     "productId": "ektoplazma-2",
@@ -133,25 +143,35 @@
   },
   {
     "productId": "elfiyskaya-stal",
-    "decision": "simple-candidate",
+    "decision": "simple-implemented",
     "effectKind": "host-attack-modifier",
     "reason": "+2 урона против нежити.",
     "owner": [
       "scripts/combat/attack-service.js",
-      "scripts/combat/curse-upgrade-attacks.js"
+      "scripts/integrations/item-upgrade-roll-adapter.js",
+      "scripts/automation/item-upgrade-roll-modifiers.js"
     ],
     "tests": [
       {
-        "path": "tests/item-upgrade-automation-service.test.mjs",
-        "status": "planned-R7"
+        "path": "tests/item-upgrade-projections.test.mjs",
+        "status": "existing"
+      },
+      {
+        "path": "tests/item-upgrade-roll-modifiers.test.mjs",
+        "status": "existing"
+      },
+      {
+        "path": "tests/item-upgrade-roll-adapter.test.mjs",
+        "status": "existing"
       }
     ],
     "capabilities": [
       "dnd5e-native",
-      "R7-full-effect-verification-required",
-      "midi-qol-optional",
-      "host-and-packet-scope"
-    ]
+      "weapon-attack-context"
+    ],
+    "activation": "held",
+    "worksWhenBroken": false,
+    "stacking": "Independent installed Items add numeric/dice bonuses; advantage sources use native cancellation."
   },
   {
     "productId": "essentsiya-koshmarov",
@@ -270,25 +290,35 @@
   },
   {
     "productId": "iskazhayushchaya-stal",
-    "decision": "simple-candidate",
+    "decision": "simple-implemented",
     "effectKind": "host-attack-modifier",
     "reason": "+2 урона против элементалей.",
     "owner": [
       "scripts/combat/attack-service.js",
-      "scripts/combat/curse-upgrade-attacks.js"
+      "scripts/integrations/item-upgrade-roll-adapter.js",
+      "scripts/automation/item-upgrade-roll-modifiers.js"
     ],
     "tests": [
       {
-        "path": "tests/item-upgrade-automation-service.test.mjs",
-        "status": "planned-R7"
+        "path": "tests/item-upgrade-projections.test.mjs",
+        "status": "existing"
+      },
+      {
+        "path": "tests/item-upgrade-roll-modifiers.test.mjs",
+        "status": "existing"
+      },
+      {
+        "path": "tests/item-upgrade-roll-adapter.test.mjs",
+        "status": "existing"
       }
     ],
     "capabilities": [
       "dnd5e-native",
-      "R7-full-effect-verification-required",
-      "midi-qol-optional",
-      "host-and-packet-scope"
-    ]
+      "weapon-attack-context"
+    ],
+    "activation": "held",
+    "worksWhenBroken": false,
+    "stacking": "Independent installed Items add numeric/dice bonuses; advantage sources use native cancellation."
   },
   {
     "productId": "khitinovoe-pokrytie",
@@ -392,91 +422,131 @@
   },
   {
     "productId": "korichnevaya-stal",
-    "decision": "simple-candidate",
+    "decision": "simple-implemented",
     "effectKind": "host-attack-modifier",
     "reason": "+2 к атаке против гуманоидов.",
     "owner": [
       "scripts/combat/attack-service.js",
-      "scripts/combat/curse-upgrade-attacks.js"
+      "scripts/integrations/item-upgrade-roll-adapter.js",
+      "scripts/automation/item-upgrade-roll-modifiers.js"
     ],
     "tests": [
       {
-        "path": "tests/item-upgrade-automation-service.test.mjs",
-        "status": "planned-R7"
+        "path": "tests/item-upgrade-projections.test.mjs",
+        "status": "existing"
+      },
+      {
+        "path": "tests/item-upgrade-roll-modifiers.test.mjs",
+        "status": "existing"
+      },
+      {
+        "path": "tests/item-upgrade-roll-adapter.test.mjs",
+        "status": "existing"
       }
     ],
     "capabilities": [
       "dnd5e-native",
-      "R7-full-effect-verification-required",
-      "midi-qol-optional",
-      "host-and-packet-scope"
-    ]
+      "weapon-attack-context"
+    ],
+    "activation": "held",
+    "worksWhenBroken": false,
+    "stacking": "Independent installed Items add numeric/dice bonuses; advantage sources use native cancellation."
   },
   {
     "productId": "kosti-mantikory",
-    "decision": "simple-candidate",
+    "decision": "simple-implemented",
     "effectKind": "host-attack-modifier",
     "reason": "+1d4 яда против гуманоидов.",
     "owner": [
       "scripts/combat/attack-service.js",
-      "scripts/combat/curse-upgrade-attacks.js"
+      "scripts/integrations/item-upgrade-roll-adapter.js",
+      "scripts/automation/item-upgrade-roll-modifiers.js"
     ],
     "tests": [
       {
-        "path": "tests/item-upgrade-automation-service.test.mjs",
-        "status": "planned-R7"
+        "path": "tests/item-upgrade-projections.test.mjs",
+        "status": "existing"
+      },
+      {
+        "path": "tests/item-upgrade-roll-modifiers.test.mjs",
+        "status": "existing"
+      },
+      {
+        "path": "tests/item-upgrade-roll-adapter.test.mjs",
+        "status": "existing"
       }
     ],
     "capabilities": [
       "dnd5e-native",
-      "R7-full-effect-verification-required",
-      "midi-qol-optional",
-      "host-and-packet-scope"
-    ]
+      "weapon-attack-context"
+    ],
+    "activation": "held",
+    "worksWhenBroken": false,
+    "stacking": "Independent installed Items add numeric/dice bonuses; advantage sources use native cancellation."
   },
   {
     "productId": "kristally-zabytykh-titanov",
-    "decision": "simple-candidate",
+    "decision": "simple-implemented",
     "effectKind": "host-attack-modifier",
     "reason": "+2 урона против великанов/исчадий.",
     "owner": [
       "scripts/combat/attack-service.js",
-      "scripts/combat/curse-upgrade-attacks.js"
+      "scripts/integrations/item-upgrade-roll-adapter.js",
+      "scripts/automation/item-upgrade-roll-modifiers.js"
     ],
     "tests": [
       {
-        "path": "tests/item-upgrade-automation-service.test.mjs",
-        "status": "planned-R7"
+        "path": "tests/item-upgrade-projections.test.mjs",
+        "status": "existing"
+      },
+      {
+        "path": "tests/item-upgrade-roll-modifiers.test.mjs",
+        "status": "existing"
+      },
+      {
+        "path": "tests/item-upgrade-roll-adapter.test.mjs",
+        "status": "existing"
       }
     ],
     "capabilities": [
       "dnd5e-native",
-      "R7-full-effect-verification-required",
-      "midi-qol-optional",
-      "host-and-packet-scope"
-    ]
+      "weapon-attack-context"
+    ],
+    "activation": "held",
+    "worksWhenBroken": false,
+    "stacking": "Independent installed Items add numeric/dice bonuses; advantage sources use native cancellation."
   },
   {
     "productId": "ledyanaya-maz",
-    "decision": "simple-candidate",
+    "decision": "simple-implemented",
     "effectKind": "host-attack-modifier",
     "reason": "+1d6 холода своим оружием.",
     "owner": [
       "scripts/combat/attack-service.js",
-      "scripts/combat/curse-upgrade-attacks.js"
+      "scripts/integrations/item-upgrade-roll-adapter.js",
+      "scripts/automation/item-upgrade-roll-modifiers.js"
     ],
     "tests": [
       {
-        "path": "tests/item-upgrade-automation-service.test.mjs",
-        "status": "planned-R7"
+        "path": "tests/item-upgrade-projections.test.mjs",
+        "status": "existing"
+      },
+      {
+        "path": "tests/item-upgrade-roll-modifiers.test.mjs",
+        "status": "existing"
+      },
+      {
+        "path": "tests/item-upgrade-roll-adapter.test.mjs",
+        "status": "existing"
       }
     ],
     "capabilities": [
       "dnd5e-native",
-      "R7-full-effect-verification-required",
-      "midi-qol-optional",
-      "host-and-packet-scope"
-    ]
+      "weapon-attack-context"
+    ],
+    "activation": "held",
+    "worksWhenBroken": false,
+    "stacking": "Independent installed Items add numeric/dice bonuses; advantage sources use native cancellation."
   },
   {
     "productId": "ledyanoy-klyk-2",
@@ -515,25 +585,35 @@
   },
   {
     "productId": "maloe-zacharovanie-ostroty",
-    "decision": "simple-candidate",
+    "decision": "simple-implemented",
     "effectKind": "host-attack-modifier",
     "reason": "+1 к урону своего оружия.",
     "owner": [
       "scripts/combat/attack-service.js",
-      "scripts/combat/curse-upgrade-attacks.js"
+      "scripts/integrations/item-upgrade-roll-adapter.js",
+      "scripts/automation/item-upgrade-roll-modifiers.js"
     ],
     "tests": [
       {
-        "path": "tests/item-upgrade-automation-service.test.mjs",
-        "status": "planned-R7"
+        "path": "tests/item-upgrade-projections.test.mjs",
+        "status": "existing"
+      },
+      {
+        "path": "tests/item-upgrade-roll-modifiers.test.mjs",
+        "status": "existing"
+      },
+      {
+        "path": "tests/item-upgrade-roll-adapter.test.mjs",
+        "status": "existing"
       }
     ],
     "capabilities": [
       "dnd5e-native",
-      "R7-full-effect-verification-required",
-      "midi-qol-optional",
-      "host-and-packet-scope"
-    ]
+      "weapon-attack-context"
+    ],
+    "activation": "held",
+    "worksWhenBroken": false,
+    "stacking": "Independent installed Items add numeric/dice bonuses; advantage sources use native cancellation."
   },
   {
     "productId": "maloe-zacharovanie-stoykosti",
@@ -633,69 +713,99 @@
   },
   {
     "productId": "nochnaya-stal",
-    "decision": "simple-candidate",
+    "decision": "simple-implemented",
     "effectKind": "host-attack-modifier",
     "reason": "Advantage при passive Perception цели <12; только известная текущая цель.",
     "owner": [
       "scripts/combat/attack-service.js",
-      "scripts/combat/curse-upgrade-attacks.js"
+      "scripts/integrations/item-upgrade-roll-adapter.js",
+      "scripts/automation/item-upgrade-roll-modifiers.js"
     ],
     "tests": [
       {
-        "path": "tests/item-upgrade-automation-service.test.mjs",
-        "status": "planned-R7"
+        "path": "tests/item-upgrade-projections.test.mjs",
+        "status": "existing"
+      },
+      {
+        "path": "tests/item-upgrade-roll-modifiers.test.mjs",
+        "status": "existing"
+      },
+      {
+        "path": "tests/item-upgrade-roll-adapter.test.mjs",
+        "status": "existing"
       }
     ],
     "capabilities": [
       "dnd5e-native",
-      "R7-full-effect-verification-required",
-      "midi-qol-optional",
-      "host-and-packet-scope"
-    ]
+      "weapon-attack-context"
+    ],
+    "activation": "held",
+    "worksWhenBroken": false,
+    "stacking": "Independent installed Items add numeric/dice bonuses; advantage sources use native cancellation."
   },
   {
     "productId": "ognennaya-maz",
-    "decision": "simple-candidate",
+    "decision": "simple-implemented",
     "effectKind": "host-attack-modifier",
     "reason": "+1d6 огня своим оружием.",
     "owner": [
       "scripts/combat/attack-service.js",
-      "scripts/combat/curse-upgrade-attacks.js"
+      "scripts/integrations/item-upgrade-roll-adapter.js",
+      "scripts/automation/item-upgrade-roll-modifiers.js"
     ],
     "tests": [
       {
-        "path": "tests/item-upgrade-automation-service.test.mjs",
-        "status": "planned-R7"
+        "path": "tests/item-upgrade-projections.test.mjs",
+        "status": "existing"
+      },
+      {
+        "path": "tests/item-upgrade-roll-modifiers.test.mjs",
+        "status": "existing"
+      },
+      {
+        "path": "tests/item-upgrade-roll-adapter.test.mjs",
+        "status": "existing"
       }
     ],
     "capabilities": [
       "dnd5e-native",
-      "R7-full-effect-verification-required",
-      "midi-qol-optional",
-      "host-and-packet-scope"
-    ]
+      "weapon-attack-context"
+    ],
+    "activation": "held",
+    "worksWhenBroken": false,
+    "stacking": "Independent installed Items add numeric/dice bonuses; advantage sources use native cancellation."
   },
   {
     "productId": "oskolki-meteoritnykh-zvyozd",
-    "decision": "simple-candidate",
+    "decision": "simple-implemented",
     "effectKind": "host-attack-modifier",
     "reason": "+2 damage при уже определённом advantage этой атаки.",
     "owner": [
       "scripts/combat/attack-service.js",
-      "scripts/combat/curse-upgrade-attacks.js"
+      "scripts/integrations/item-upgrade-roll-adapter.js",
+      "scripts/automation/item-upgrade-roll-modifiers.js"
     ],
     "tests": [
       {
-        "path": "tests/item-upgrade-automation-service.test.mjs",
-        "status": "planned-R7"
+        "path": "tests/item-upgrade-projections.test.mjs",
+        "status": "existing"
+      },
+      {
+        "path": "tests/item-upgrade-roll-modifiers.test.mjs",
+        "status": "existing"
+      },
+      {
+        "path": "tests/item-upgrade-roll-adapter.test.mjs",
+        "status": "existing"
       }
     ],
     "capabilities": [
       "dnd5e-native",
-      "R7-full-effect-verification-required",
-      "midi-qol-optional",
-      "host-and-packet-scope"
-    ]
+      "weapon-attack-context"
+    ],
+    "activation": "held",
+    "worksWhenBroken": false,
+    "stacking": "Independent installed Items add numeric/dice bonuses; advantage sources use native cancellation."
   },
   {
     "productId": "oskolok-cherepa-chudovishcha",
@@ -959,47 +1069,66 @@
   },
   {
     "productId": "sukhozhilie-chudovishcha",
-    "decision": "simple-candidate",
+    "decision": "simple-implemented",
     "effectKind": "host-attack-modifier",
     "reason": "+1 к damage своего оружия.",
     "owner": [
       "scripts/combat/attack-service.js",
-      "scripts/combat/curse-upgrade-attacks.js"
+      "scripts/integrations/item-upgrade-roll-adapter.js",
+      "scripts/automation/item-upgrade-roll-modifiers.js"
     ],
     "tests": [
       {
-        "path": "tests/item-upgrade-automation-service.test.mjs",
-        "status": "planned-R7"
+        "path": "tests/item-upgrade-projections.test.mjs",
+        "status": "existing"
+      },
+      {
+        "path": "tests/item-upgrade-roll-modifiers.test.mjs",
+        "status": "existing"
+      },
+      {
+        "path": "tests/item-upgrade-roll-adapter.test.mjs",
+        "status": "existing"
       }
     ],
     "capabilities": [
       "dnd5e-native",
-      "R7-full-effect-verification-required",
-      "midi-qol-optional",
-      "host-and-packet-scope"
-    ]
+      "weapon-attack-context"
+    ],
+    "activation": "held",
+    "worksWhenBroken": false,
+    "stacking": "Independent installed Items add numeric/dice bonuses; advantage sources use native cancellation."
   },
   {
     "productId": "svyashchennaya-stal",
-    "decision": "simple-candidate",
+    "decision": "simple-implemented",
     "effectKind": "host-attack-modifier",
     "reason": "Radiant и ×2 базовые dice своего оружия; pure source projection без удвоения уже derived dice.",
     "owner": [
-      "scripts/combat/attack-service.js",
-      "scripts/combat/curse-upgrade-attacks.js"
+      "scripts/automation/item-upgrade-projections.js",
+      "scripts/automation/item-upgrade-automation-service.js"
     ],
     "tests": [
       {
-        "path": "tests/item-upgrade-automation-service.test.mjs",
-        "status": "planned-R7"
+        "path": "tests/item-upgrade-projections.test.mjs",
+        "status": "existing"
+      },
+      {
+        "path": "tests/item-upgrade-roll-modifiers.test.mjs",
+        "status": "existing"
+      },
+      {
+        "path": "tests/item-upgrade-roll-adapter.test.mjs",
+        "status": "existing"
       }
     ],
     "capabilities": [
       "dnd5e-native",
-      "R7-full-effect-verification-required",
-      "midi-qol-optional",
-      "host-and-packet-scope"
-    ]
+      "weapon-attack-context"
+    ],
+    "activation": "held",
+    "worksWhenBroken": false,
+    "stacking": "Base weapon dice doubled once; damage type replacement is idempotent."
   },
   {
     "productId": "velikoe-zacharovanie-ostroty",
@@ -1059,47 +1188,67 @@
   },
   {
     "productId": "zacharovanie-nekromantii",
-    "decision": "simple-candidate",
+    "decision": "simple-implemented",
     "effectKind": "host-attack-modifier",
     "reason": "+1d3 necrotic своим оружием.",
     "owner": [
       "scripts/combat/attack-service.js",
-      "scripts/combat/curse-upgrade-attacks.js"
+      "scripts/integrations/item-upgrade-roll-adapter.js",
+      "scripts/automation/item-upgrade-roll-modifiers.js"
     ],
     "tests": [
       {
-        "path": "tests/item-upgrade-automation-service.test.mjs",
-        "status": "planned-R7"
+        "path": "tests/item-upgrade-projections.test.mjs",
+        "status": "existing"
+      },
+      {
+        "path": "tests/item-upgrade-roll-modifiers.test.mjs",
+        "status": "existing"
+      },
+      {
+        "path": "tests/item-upgrade-roll-adapter.test.mjs",
+        "status": "existing"
       }
     ],
     "capabilities": [
       "dnd5e-native",
-      "R7-full-effect-verification-required",
-      "midi-qol-optional",
-      "host-and-packet-scope"
-    ]
+      "weapon-attack-context"
+    ],
+    "activation": "held",
+    "worksWhenBroken": false,
+    "stacking": "Independent installed Items add numeric/dice bonuses; advantage sources use native cancellation."
   },
   {
     "productId": "zacharovanie-ostroty",
-    "decision": "simple-candidate",
+    "decision": "simple-implemented",
     "effectKind": "host-attack-modifier",
     "reason": "+1 attack и damage своего оружия.",
     "owner": [
       "scripts/combat/attack-service.js",
-      "scripts/combat/curse-upgrade-attacks.js"
+      "scripts/integrations/item-upgrade-roll-adapter.js",
+      "scripts/automation/item-upgrade-roll-modifiers.js"
     ],
     "tests": [
       {
-        "path": "tests/item-upgrade-automation-service.test.mjs",
-        "status": "planned-R7"
+        "path": "tests/item-upgrade-projections.test.mjs",
+        "status": "existing"
+      },
+      {
+        "path": "tests/item-upgrade-roll-modifiers.test.mjs",
+        "status": "existing"
+      },
+      {
+        "path": "tests/item-upgrade-roll-adapter.test.mjs",
+        "status": "existing"
       }
     ],
     "capabilities": [
       "dnd5e-native",
-      "R7-full-effect-verification-required",
-      "midi-qol-optional",
-      "host-and-packet-scope"
-    ]
+      "weapon-attack-context"
+    ],
+    "activation": "held",
+    "worksWhenBroken": false,
+    "stacking": "Independent installed Items add numeric/dice bonuses; advantage sources use native cancellation."
   },
   {
     "productId": "zacharovanie-pogloshcheniya",

@@ -58,3 +58,43 @@ test("native preparation repeats without accumulating weight and honors a source
     item.applyActiveEffects(); assert.equal(item.system.weight.value, 15);
   } finally { globalThis.CONFIG = previous; }
 });
+
+test("initialize resets native actor models before preparing existing activities", async () => {
+  const previous = globalThis.game;
+  let resets = 0;
+  const actor = { uuid: "Actor.ready", reset() { resets++; }, prepareData() { assert.fail("Direct prepareData duplicates native base damage parts"); } };
+  const service = new ItemUpgradeAutomationService({}, { getManifest: async () => [], isAuthority: () => false });
+  service.registerItemDataPatch = () => false;
+  try {
+    globalThis.game = { system: { id: "dnd5e" }, actors: { contents: [actor] } };
+    await service.initialize();
+    assert.equal(resets, 1);
+  } finally { globalThis.game = previous; }
+});
+
+test("holy steel restores only its own base dice and respects source edits and removal", () => {
+  const previous = globalThis.CONFIG;
+  class Item {
+    constructor() {
+      this.actor = {}; this.source = { damage: { base: { number: 1, types: ["slashing"] } } };
+      this.system = { damage: { base: { number: 1, types: new Set(["slashing"]) } } };
+      this.flags = { "rebreya-main": { itemUpgrades: { installed: [{}] } } };
+    }
+    toObject() { return { system: structuredClone(this.source) }; }
+    applyActiveEffects() {}
+  }
+  const service = new ItemUpgradeAutomationService({}, { project: () => ({ contributions: [{ scope: "host", operation: "radiant-double-base", value: true }] }) });
+  service.manifest = [{}];
+  try {
+    globalThis.CONFIG = { Item: { documentClass: Item } }; service.registerItemDataPatch();
+    const item = new Item(); item.applyActiveEffects(); item.applyActiveEffects();
+    assert.equal(item.system.damage.base.number, 2);
+    assert.deepEqual([...item.system.damage.base.types], ["radiant"]);
+    item.source.damage.base.number = 2;
+    item.system = { damage: { base: { number: 2, types: new Set(["slashing"]) } } };
+    item.applyActiveEffects(); assert.equal(item.system.damage.base.number, 4);
+    service.options.project = () => ({ contributions: [] });
+    item.applyActiveEffects(); assert.equal(item.system.damage.base.number, 2);
+    assert.deepEqual([...item.system.damage.base.types], ["slashing"]);
+  } finally { globalThis.CONFIG = previous; }
+});

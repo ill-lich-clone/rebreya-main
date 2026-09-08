@@ -1,5 +1,5 @@
 import { MODULE_ID } from "../constants.js";
-import { loadUpgradeAutomationManifest, getUpgradeAvailability } from "./upgrade-automation-manifest.js?v=1.4.253";
+import { loadUpgradeAutomationManifest, getUpgradeAvailability } from "./upgrade-automation-manifest.js?v=1.4.254";
 import { resolveUpgradeProfile, validateUpgradeInstallation, validateUpgradeCapacity, UpgradeRuleError } from "./item-upgrade-rules.js?v=1.4.250";
 import { getItemHeldHands, isItemEquipped } from "../integrations/held-items.js";
 

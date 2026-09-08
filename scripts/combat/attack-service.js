@@ -3589,6 +3589,7 @@ export class CombatAttackService {
 
     try {
       const item = activity.item;
+      if (this.moduleApi.itemUpgradeAutomationService?.rolls.preRollAttack(config) === false) return false;
       if (this.#blockJammedFirearm(item)) {
         return false;
       }
@@ -3908,6 +3909,7 @@ export class CombatAttackService {
 
     try {
       const item = activity.item;
+      if (this.moduleApi.itemUpgradeAutomationService?.rolls.preRollDamage(config, message) === false) return false;
       const automation = this.#getLichAutomationState(item);
       const mu = Math.max(0, Math.floor(toNumber(automation.mu, 0)));
       const mku = Math.max(0, Math.floor(toNumber(automation.mku, 0)));
@@ -4871,9 +4873,15 @@ export class CombatAttackService {
     const proficiencyBonus = this.#isAttackProficient(actor, weapon, options)
       ? getActorProficiencyBonus(actor)
       : 0;
-    const situationalBonus = toNumber(options.bonus, 0);
+    const upgradeModifiers = this.moduleApi.itemUpgradeAutomationService?.rolls.evaluate(weapon, { primary: false },
+      this.#resolveActor(options.targetActor ?? options.targetId ?? options.targetToken ?? null));
+    const situationalBonus = toNumber(options.bonus, 0) + (upgradeModifiers?.attackBonus ?? 0);
     const attackBonus = abilityMod + proficiencyBonus + situationalBonus;
-    const rollMode = resolveRollMode(options);
+    let rollMode = resolveRollMode(options);
+    if (upgradeModifiers?.advantage) {
+      if (["disadvantage", "heroicDisadvantage"].includes(rollMode)) rollMode = "normal";
+      else if (rollMode === "normal") rollMode = "advantage";
+    }
     const d20Formula = buildD20Formula(rollMode);
 
     const formula = `${d20Formula} + @abilityMod + @proficiencyBonus + @situationalBonus`;

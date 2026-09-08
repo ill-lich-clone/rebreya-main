@@ -62,3 +62,18 @@ test("HP uses the native hard-coded maximum path for NPC and explicit character 
     assert.equal(result.contributions[0].path, "system.attributes.hp.max");
   }
 });
+
+test("holy steel doubles only the weapon's base dice and changes their type, leaving extra fire dice", () => {
+  const h = host("svyashchennaya-stal");
+  h.source.system.damage = { base: { number: 1, denomination: 8, bonus: "", types: ["slashing"] }, versatile: { number: 1, denomination: 10, bonus: "", types: ["slashing"] } };
+  const system = structuredClone(h.source.system);
+  system.damage.base.types = new Set(system.damage.base.types); system.damage.versatile.types = new Set(system.damage.versatile.types);
+  system.extraDamage = { number: 1, denomination: 6, types: new Set(["fire"]) };
+  projectSimpleUpgradeItem(system, project([h]).contributions);
+  assert.equal(system.damage.base.number, 2); assert.equal(system.damage.versatile.number, 2);
+  assert.deepEqual([...system.damage.base.types], ["radiant"]);
+  assert.equal(system.extraDamage.number, 1); assert.deepEqual([...system.extraDamage.types], ["fire"]);
+  assert.equal(h.source.system.damage.base.number, 1);
+  h.source.system.damage.base.custom = { enabled: true, formula: "2d6 + 1d4" };
+  assert.equal(project([h]).contributions.length, 0); assert.equal(project([h]).unavailable.length, 1);
+});
