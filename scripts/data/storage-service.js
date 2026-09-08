@@ -1,5 +1,5 @@
 import { MODULE_ID } from "../constants.js";
-import { normalizeLootgenForm } from "./lootgen-generator.js";
+import { normalizeLootgenForm } from "./lootgen-generator.js?v=1.4.266";
 import {
   markDurabilityBroken,
   markDurabilityIntact

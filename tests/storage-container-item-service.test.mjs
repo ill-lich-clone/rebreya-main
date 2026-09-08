@@ -744,3 +744,23 @@ test("a restored bag does not inherit the fallback ground-pile marker", async ()
   assert.equal(created[0].flags[MODULE_ID].storage.storageKind, "bag");
   assert.equal(created[0].flags[MODULE_ID].groundPile, undefined);
 });
+
+test("prepared container capture freezes every host and upgrade before catalog changes",async()=>{
+  const {makePreparedContainerGraph}=await import("./helpers/lootgen-prepared-container-fixture.mjs");
+  const {buildLootgenPreparedItem}=await import("../scripts/data/lootgen-prepared-item.js");
+  const {descriptor,graph}=await makePreparedContainerGraph();
+  graph.documents[1].effects=[{_id:"customEffect0001",name:"Saved effect",changes:[]}];
+  const itemData=buildLootgenPreparedItem(descriptor,{graph,unitValue:7000}),before=structuredClone(itemData);
+  const service=new StorageContainerItemService({buildItemData:()=>{throw new Error("saved items must not use the catalog");}});
+  const snapshot=await service.capturePreparedContainer(itemData);
+  assert.equal(snapshot.state.manualRows.length,1);assert.equal(snapshot.state.lootgenComposition.instanceKey,descriptor.instanceKey);
+  assert.equal(snapshot.state.manualRows[0].composition.upgrades.length,1);
+  assert.equal(snapshot.state.manualRows[0].itemData.flags[MODULE_ID].runtimeItemGraph.nodes.length,2);
+  const restored=await service.prepareItemGraph(snapshot);
+  assert.equal(restored.nodes.length,3);assert.deepEqual(restored.nodes[1].effects,graph.documents[1].effects);
+  assert.equal(restored.nodes[2].system.container,restored.nodes[1]._id);
+  assert.equal(restored.nodes[0].system.currency.cp,1000);
+  assert.deepEqual(itemData,before);
+  const corrupt=structuredClone(itemData);corrupt.flags[MODULE_ID].runtimeItemGraph.nodes.pop();
+  await assert.rejects(service.capturePreparedContainer(corrupt));
+});

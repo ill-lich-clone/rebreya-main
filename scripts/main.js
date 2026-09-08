@@ -203,13 +203,13 @@ import {
 import { StorageTriggerPromptBroker } from "./infrastructure/foundry/storage-trigger-prompt-broker.js";
 import { UiRefreshCoordinator } from "./infrastructure/ui/ui-refresh-coordinator.js";
 import { GlobalEventsService } from "./data/global-events-service.js";
-import { LootgenTemplateCatalog } from "./data/lootgen-template-catalog.js?v=1.4.256-composed";
+import { LootgenTemplateCatalog } from "./data/lootgen-template-catalog.js?v=1.4.270";
 import {
   StorageService,
   isStorageActor,
   readStorageState,
   readStorageStateAtPath
-} from "./data/storage-service.js?v=1.4.225-physical-coins";
+} from "./data/storage-service.js?v=1.4.270";
 import {
   CorpseStorageMaterializer
 } from "./data/corpse-storage-materializer.js?v=1.4.195-storage-administration";
@@ -227,8 +227,8 @@ import {
 import { BuiltinStorageActorService } from "./data/builtin-storage-actor-service.js?v=1.4.216-storage-token-vision";
 import { StorageGroundPileService } from "./data/storage-ground-pile-service.js?v=1.4.227-coin-sprites";
 import { deriveGroundPilePlacement } from "./data/storage-pile-presentation.js?v=1.4.227-coin-sprites";
-import { StorageContainerItemService } from "./data/storage-container-item-service.js?v=1.4.268";
-import { isStorageJournalRow } from "./data/storage-container-snapshot.js";
+import { StorageContainerItemService } from "./data/storage-container-item-service.js?v=1.4.270";
+import { isStorageJournalRow, buildStorageContainerRow } from "./data/storage-container-snapshot.js";
 import { StorageTriggerService } from "./data/storage-trigger-service.js?v=1.4.197-door-trigger-target";
 import { DoorTriggerTargetRepository, readDoorTriggerTarget } from "./data/door-trigger-target.js?v=1.4.199-door-overlay-anchor";
 import { measureDoorDistanceFeet, preflightDoorAccess } from "./data/door-access.js?v=1.4.197-door-trigger-target";
@@ -272,7 +272,7 @@ import {
   isValidStorageRestorePortablePayload,
   isValidStorageTokenCharacterPayload,
   storageCharacterTokenUuidForClaim
-} from "./data/storage-command-service.js?v=1.4.257";
+} from "./data/storage-command-service.js?v=1.4.270";
 import { registerCombatHooks } from "./combat/hooks.js?v=1.4.253-simple-upgrades";
 import { CombatAttackService } from "./combat/attack-service.js?v=1.4.254-simple-upgrades";
 import { ImplantAutomationService } from "./combat/implant-automation-service.js";
@@ -6786,7 +6786,26 @@ export class RebreyaMainModule {
     if (!isActiveGmClient(globalThis.game)) {
       throw new Error("Содержимое хранилища может генерировать только активный мастер.");
     }
-    if (form.enableUpgrades || form.enableFilledContainers) throw new Error("Генерация улучшенных предметов и заполненных контейнеров внутри хранилищ пока недоступна.");
+    if (form.enableUpgrades || form.enableFilledContainers) {
+      const operationId=createSocketRequestId("storage-loot");
+      const generated=await buildLootgenGeneratedState(form,{operationId,lootId:operationId,authorId:game.user.id},{
+        catalog:this.lootgenSourceCatalog,buildItemData:row=>this.inventoryService.buildLootgenItemData(row),
+        prepareContainerGraph:(snapshot,adapters)=>this.storageContainerItemService.prepareItemGraph(snapshot,adapters),
+        createDocumentId:()=>foundry.utils.randomID()
+      });
+      const rows=[];
+      for(const row of generated.rows){
+        if(row.descriptor.container){
+          const snapshot=await this.storageContainerItemService.capturePreparedContainer(row.itemData);
+          rows.push({...buildStorageContainerRow(snapshot,{rowId:row.rowId}),value:row.value,totalValue:row.totalValue,
+            itemData:foundry.utils.deepClone(snapshot.presentation.itemData)});
+        }else{
+          const {quantity,container,...composition}=row.descriptor;
+          rows.push({...row,rowKind:"item",composition,runtimeGraph:foundry.utils.deepClone(row.itemData.flags?.[MODULE_ID]?.runtimeItemGraph)});
+        }
+      }
+      return {rows,coins:foundry.utils.deepClone(generated.coins)};
+    }
     const generated = await this.lootgenSourceCatalog.generate(form, {batchId:createSocketRequestId("loot"),generatedAt:new Date().toISOString()});
     const rows = [];
     for (const [index, row] of (generated.rows ?? []).entries()) {

@@ -3063,11 +3063,37 @@ test("prepared coins-only ingress credits once and commits the trusted source wi
     assert.equal(credits,1);assert.equal(commits,1);assert.equal(state.coinsClaimed,true);
   }finally{fixture.restore();}
 });
-test("storage generation rejects filled templates before the container materializer is connected",async()=>{
-  const fixture=installFixture();
+test("storage templates prepare upgrades and filled containers without Chat or catalog reconstruction",async()=>{
+  const fixture=installFixture(),oldRandom=Math.random;let id=0;
   try{
+    Math.random=()=>0;foundry.utils.randomID=()=>String(++id).padStart(16,"0");
+    const {LootgenSourceCatalog}=await import("../scripts/data/lootgen-source-catalog.js");
+    const {StorageService,readStorageState}=await import("../scripts/data/storage-service.js");
     const moduleApi=new RebreyaMainModule();
-    moduleApi.lootgenSourceCatalog.generate=()=>{throw new Error("must not generate a root-only storage row");};
-    await assert.rejects(moduleApi.generateStorageLoot({enableFilledContainers:true}),/пока недоступна/u);
-  }finally{fixture.restore();}
+    const gear=[{id:"chest",name:"Chest",rank:1,value:30,equipmentType:"Хранилище"},{id:"sword",name:"Sword",rank:1,value:100,equipmentType:"Оружие"},{id:"zacharovanie-ostroty",name:"Sharp",rank:1,value:20,equipmentType:"Усовершенствование"}];
+    const build=row=>({name:row.sourceId,type:row.sourceId==="chest"?"container":row.sourceId==="sword"?"weapon":"loot",
+      system:{quantity:row.quantity??1,price:{value:gear.find(g=>g.id===row.sourceId).value/100,denomination:"gp"},weight:{value:1,units:"lb"},capacity:{weight:{value:100,units:"lb"}},type:{value:"martialM"}},flags:{[MODULE_ID]:{managed:true,gearId:row.sourceId}}});
+    moduleApi.lootgenSourceCatalog=new LootgenSourceCatalog({getCoinWeight:()=>0.02,getModel:async()=>({gear}),getGearIndex:async()=>gear.map(row=>build({sourceId:row.id})),getMagicDocuments:async()=>[],getManifest:async()=>[{productId:"zacharovanie-ostroty",decision:"simple-implemented",profile:{type:"Зачарование",rank:1,compatibility:["weapon"]}}]});
+    moduleApi.inventoryService.buildLootgenItemData=async row=>build(row);
+    const form={enableFilledContainers:true,filledContainerChance:100,generationDepth:1,enableUpgrades:true,upgradeChance:100,includeGear:true,includeCoins:true,coinBudgetPercent:20,itemCount:1,optimalItemQuantity:1,budgetValue:500,rankMin:1,rankMax:1};
+    let loseAck=false;
+    const token={id:"template-test",flags:{},async update(patch){this.flags[MODULE_ID]={storage:structuredClone(patch['flags.'+MODULE_ID+'.storage'])};if(loseAck){loseAck=false;throw new Error("lost storage acknowledgement");}}};
+    let generations=0;const service=new StorageService({generate:async f=>{generations++;return moduleApi.generateStorageLoot(f);}});
+    await service.configure(token,{template:{name:"Filled",form}});
+    loseAck=true;await assert.rejects(service.open(token),/lost storage acknowledgement/u);
+    const opened=await service.open(token),root=opened.rows[0];
+    assert.equal(root.rowKind,"container");assert.equal(root.quantity,1);assert.ok(root.container.state.manualRows.length>0);
+    assert.ok(root.container.state.manualRows.some(row=>row.composition.upgrades.length===1));
+    const expectedDocs=1+root.container.state.manualRows.reduce((n,row)=>n+1+row.composition.upgrades.length,0);
+    const snapshot=structuredClone(root.container);
+    moduleApi.lootgenSourceCatalog.getModel=async()=>({gear:gear.filter(row=>row.id!=="chest")});
+    const loose=await moduleApi.generateStorageLoot({...form,enableFilledContainers:false,budgetValue:120,includeCoins:false});
+    assert.equal(loose.rows.length,1);assert.equal(loose.rows[0].composition.upgrades.length,1);
+    assert.equal(loose.rows[0].runtimeGraph.nodes.length,2);assert.equal(loose.rows[0].totalValue,120);
+    moduleApi.inventoryService.buildLootgenItemData=()=>{throw new Error("catalog changed");};
+    const graph=await moduleApi.storageContainerItemService.prepareItemGraph(snapshot);
+    assert.equal(graph.nodes.length,expectedDocs);assert.equal(game.messages.contents.length,0);
+    const replay=await new StorageService({generate:()=>{throw new Error("must not reroll");}}).open(token);
+    assert.deepEqual(replay.rows,opened.rows);assert.equal(generations,1);assert.deepEqual(readStorageState(token).generatedRows,opened.rows);
+  }finally{Math.random=oldRandom;fixture.restore();}
 });

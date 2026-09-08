@@ -1,3 +1,4 @@
+import { readLootgenPreparedComposition } from "./lootgen-prepared-item.js?v=1.4.268";
 import { normalizeLootgenComposition } from "./lootgen-composition.js?v=1.4.268";
 import { buildCompositeItemGraph } from "./composite-item-graph.js?v=1.4.268";
 import { buildRuntimeGraphDocuments, materializeRuntimeItemGraph } from "./runtime-item-graph.js?v=1.4.267-native-schema";
@@ -479,7 +480,19 @@ export class StorageContainerItemService {
     const actor = item?.parent?.documentName === "Actor" || item?.parent?.type
       ? item.parent
       : item?.actor ?? null;
-    const allItems = itemCollection(actor);
+    return this.#captureItemTree(item,itemCollection(actor));
+  }
+
+  /** Freeze a validated detached generation graph into the canonical portable snapshot. No native documents or catalog reads. */
+  async capturePreparedContainer(itemData) {
+    const prepared=readLootgenPreparedComposition(itemData);
+    if(!prepared?.descriptor.container)throw new Error("Требуется подготовленный контейнер с полным составом.");
+    const graph=itemData.flags[MODULE_ID].runtimeItemGraph;
+    const items=graph.nodes.map(data=>({...clone(data),id:data._id}));
+    return this.#captureItemTree(items.find(item=>item.id===graph.rootId),items);
+  }
+
+  async #captureItemTree(item,allItems) {
     const visit = async (current, ancestors = new Set()) => {
       const base = readPortableStorageContainerSnapshot(current) ?? nativeContainerSnapshot(current);
       const storedState = base.state ?? {};
