@@ -13,7 +13,7 @@ import {
   createPortableStorageContainerItemData,
   isStorageJournalRow,
   readPortableStorageContainerSnapshot
-} from "./storage-container-snapshot.js";
+} from "./storage-container-snapshot.js?v=1.4.277";
 import { resolveTopDownItemPresentation } from "./top-down-item-texture-resolver.js?v=1.4.211-furniture-footprints";
 import {
   buildGroundPileTokenLayout,
@@ -247,6 +247,12 @@ function resetUnclaimedJournalRows(state) {
   };
 }
 
+const STORAGE_CONTAINER_ITEM_PRESENTATION_FLAG = "storageContainerItemPresentation";
+function containerItemPresentation(presentation) {
+  return Object.fromEntries(["itemData", "itemSystem", "itemIdentity"]
+    .filter(key => presentation?.[key] != null).map(key => [key, clone(presentation[key])]));
+}
+
 function containerOptions(snapshot, parentContainerId) {
   const storedSystem = snapshot?.presentation?.itemSystem ?? {};
   const capacity = storedSystem.capacity ?? {};
@@ -273,6 +279,7 @@ export function buildStorageContainerSnapshotFromToken(token) {
     img,
     state,
     presentation: {
+      ...containerItemPresentation(readFlag(document, STORAGE_CONTAINER_ITEM_PRESENTATION_FLAG)),
       actorId: clean(document?.actorId ?? document?.actor?.id ?? token?.actor?.id),
       tokenData: {
         name: clean(document?.name ?? token?.name) || "Сундук",
@@ -663,7 +670,8 @@ export class StorageContainerItemService {
       [STORAGE_CONTAINER_MUTATION_FLAG]: {
         id: stableMutationId,
         kind: "scene-restore"
-      }
+      },
+      [STORAGE_CONTAINER_ITEM_PRESENTATION_FLAG]: containerItemPresentation(normalized.presentation)
     };
     if (normalized.storageKind === "pile") moduleFlags.groundPile = { enabled: true };
     else delete moduleFlags.groundPile;

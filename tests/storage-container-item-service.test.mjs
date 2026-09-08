@@ -555,6 +555,9 @@ test("portable container restores to a scene token once with the same storage st
   });
 
   const snapshot = bagSnapshot();
+  snapshot.presentation.itemData = {name:"Authored shell",type:"container",system:{quantity:1,description:{value:"Keep my description"}},flags:{custom:{durability:7}}};
+  snapshot.presentation.itemSystem = {weight:{value:2,units:"lb"}};
+  snapshot.presentation.itemIdentity = {sourceType:"gear",sourceId:"authored-shell"};
   snapshot.presentation.tokenData = { sight: { enabled: true, range: 60 } };
   const first = await service.restoreSnapshotToScene(snapshot, {
     sceneId: scene.id,
@@ -577,6 +580,47 @@ test("portable container restores to a scene token once with the same storage st
   assert.deepEqual(created[0].documents[0].sight, { enabled: false, range: 60 });
   assert.equal(created[0].documents[0].flags[MODULE_ID].storage.containerId, "bag-1");
   assert.equal(created[0].documents[0].flags[MODULE_ID].storageContainerMutation.id, "scene-restore");
+  // The token state owns contents; shell data must survive without storing a second contents tree.
+  first.flags[MODULE_ID].storage.manualRows=[];
+  const recaptured=buildStorageContainerSnapshotFromToken(first);
+  assert.deepEqual(recaptured.presentation.itemData,snapshot.presentation.itemData);
+  assert.deepEqual(recaptured.presentation.itemSystem,snapshot.presentation.itemSystem);
+  assert.deepEqual(recaptured.presentation.itemIdentity,snapshot.presentation.itemIdentity);
+  assert.deepEqual(recaptured.state.manualRows,[]);
+});
+
+test("generic container grant matches dnd5e without a system.type field",async()=>{
+  const actor=createActor(),options=durableOptions(),create=actor.createEmbeddedDocuments.bind(actor);
+  actor.createEmbeddedDocuments=async(type,documents,opts)=>create(type,documents.map(source=>{
+    const data=clone(source);if(data.type==="container")delete data.system.type;return data;
+  }),opts);
+  const root=await new StorageContainerItemService(options).materializeToActorOnce(actor,bagSnapshot(),"native-container-schema");
+  assert.equal(root.type,"container");assert.equal((await options.journal.listPending()).length,0);
+  assert.equal(actor.items.contents.length,4);
+});
+
+test("scene round trip preserves an authored shell upgrade and only current token contents",async()=>{
+  const source=createActor();
+  const [shell]=await source.createEmbeddedDocuments("Item",[{_id:"old-shell",name:"Custom chest",type:"container",system:{quantity:1,currency:{gp:3}},
+    flags:{custom:{durability:8},[MODULE_ID]:{itemUpgrades:{installed:[{itemId:"old-upgrade",slotIndex:1}]}}}}]);
+  await source.createEmbeddedDocuments("Item",[{_id:"old-upgrade",name:"Custom upgrade",type:"loot",system:{quantity:1,container:shell.id},
+    flags:{[MODULE_ID]:{gearId:"custom-upgrade",installedUpgrade:{hostItemId:shell.id,hostActorId:source.id,slotIndex:1}}}},
+    {_id:"old-content",name:"Removed after drop",type:"loot",system:{quantity:2,container:shell.id},flags:{}}]);
+  const scene={id:"scene",tokens:{contents:[]},async createEmbeddedDocuments(_type,documents){
+    const tokens=documents.map(data=>({...clone(data),id:"scene-token",getFlag(scope,key){return this.flags?.[scope]?.[key];}}));
+    this.tokens.contents.push(...tokens);return tokens;
+  }};
+  const options={...durableOptions(),resolveScene:()=>scene,resolveFallbackActor:()=>({id:"prototype"})};
+  const service=new StorageContainerItemService(options),snapshot=await service.captureFromItem(shell);
+  const token=await service.restoreSnapshotToScene(snapshot,{sceneId:"scene",x:100,y:100,mutationId:"drop-authored-shell"});
+  token.flags[MODULE_ID].storage.manualRows=[];
+  const target=createActor();target.id="target";target.uuid="Actor.target";
+  const restored=await service.materializeToActorOnce(target,buildStorageContainerSnapshotFromToken(token),"pickup-authored-shell");
+  assert.equal(target.items.contents.length,2);assert.equal(restored.flags.custom.durability,8);assert.equal(restored.system.currency.gp,3);
+  const upgrade=target.items.get(restored.flags[MODULE_ID].itemUpgrades.installed[0].itemId);
+  assert.equal(upgrade.system.container,restored.id);assert.equal(upgrade.flags[MODULE_ID].installedUpgrade.hostItemId,restored.id);
+  assert.equal(upgrade.flags[MODULE_ID].installedUpgrade.hostActorId,target.id);
+  assert.equal((await service.captureFromItem(restored)).state.manualRows.length,0);
 });
 
 test("a player who drops a container owns its synthetic scene actor", async () => {

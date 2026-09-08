@@ -6,7 +6,7 @@ import {
   readStorageState,
   readStorageStateAtPath
 } from "./storage-service.js?v=1.4.270";
-import { resolveStorageDepositSource } from "./storage-deposit-source.js?v=1.4.225-physical-coins";
+import { resolveStorageDepositSource } from "./storage-deposit-source.js?v=1.4.277";
 import { isStorageContainerRow, isStorageJournalRow } from "./storage-container-snapshot.js";
 import { MODULE_ID } from "../constants.js";
 import { escapeFoundryHtml } from "../shared/foundry-values.js";

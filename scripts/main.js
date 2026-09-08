@@ -230,7 +230,7 @@ import {
 import { BuiltinStorageActorService } from "./data/builtin-storage-actor-service.js?v=1.4.216-storage-token-vision";
 import { StorageGroundPileService } from "./data/storage-ground-pile-service.js?v=1.4.227-coin-sprites";
 import { deriveGroundPilePlacement } from "./data/storage-pile-presentation.js?v=1.4.227-coin-sprites";
-import { StorageContainerItemService } from "./data/storage-container-item-service.js?v=1.4.270";
+import { StorageContainerItemService } from "./data/storage-container-item-service.js?v=1.4.277";
 import { isStorageJournalRow, buildStorageContainerRow } from "./data/storage-container-snapshot.js";
 import { StorageTriggerService } from "./data/storage-trigger-service.js?v=1.4.197-door-trigger-target";
 import { DoorTriggerTargetRepository, readDoorTriggerTarget } from "./data/door-trigger-target.js?v=1.4.199-door-overlay-anchor";
@@ -253,7 +253,7 @@ import {
 import {
   parseStorageDepositDragData,
   resolveStorageDepositSource
-} from "./data/storage-deposit-source.js?v=1.4.225-physical-coins";
+} from "./data/storage-deposit-source.js?v=1.4.277";
 import { NativeObjectDurabilityService } from "./data/native-object-durability-service.js?v=1.4.153-corpse-creature";
 import {
   StorageCommandService,
@@ -275,7 +275,7 @@ import {
   isValidStorageRestorePortablePayload,
   isValidStorageTokenCharacterPayload,
   storageCharacterTokenUuidForClaim
-} from "./data/storage-command-service.js?v=1.4.274";
+} from "./data/storage-command-service.js?v=1.4.277";
 import { registerCombatHooks } from "./combat/hooks.js?v=1.4.253-simple-upgrades";
 import { CombatAttackService } from "./combat/attack-service.js?v=1.4.254-simple-upgrades";
 import { ImplantAutomationService } from "./combat/implant-automation-service.js";

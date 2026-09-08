@@ -328,9 +328,6 @@ export function createPortableStorageContainerItemData(snapshot, {
   weightlessContents = false
 } = {}) {
   const normalized = buildStorageContainerSnapshot(snapshot);
-  const containerType = normalized.storageKind === "bag"
-    ? "backpack"
-    : normalized.storageKind === "pile" ? "sack" : "chest";
   return {
     name: normalized.name,
     type: "container",
@@ -338,7 +335,6 @@ export function createPortableStorageContainerItemData(snapshot, {
     system: {
       quantity: 1,
       container: clean(parentContainerId) || null,
-      type: { value: containerType },
       weight: { value: Math.max(0, Number(weight) || 0), units: "lb" },
       capacity: {
         count: Math.max(0, Math.trunc(Number(capacityCount) || 0)),
