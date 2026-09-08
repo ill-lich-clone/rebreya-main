@@ -350,6 +350,9 @@ Definition of Done: код, тесты, `README.md` при изменении п
 
 ### 16. Боевые статусы, реакции, атаки и космология
 
+- **R5 — репутация на странице «Группа» инвентаря:** [профильный паспорт](reputation-function-passport.md) описывает public `getReputation`/`updateReputation`, exact GM command, atomic Actor receipt, pure rules, InventoryApp/ReputationPanel и scoped refresh. Космология не менялась.
+
+
 - **Зачем:** единообразно применять статусы/ресурсы реакции и проводить weapon/firearm/reaction resolution.
 - **Владельцы:** статусы — `scripts/combat/status-service.js` + `status-definitions.js`; реакции — `reaction-queue-service.js` + `reaction-capability-index.js`; атаки — `attack-service.js`, roll boosts — `attack-roll-boost-service.js`.
 - **Внешние методы:** `getCombatStatusDefinitions()`, `normalizeCombatStatusId(statusInput, fallback)`, `getCombatStatus(actorOrId, statusInput)`, `setCombatStatus(actorOrId, statusInput, options)`, `clearCombatStatus(actorOrId, statusInput, options)`, `setCombatStatusValue(actorOrId, statusInput, value, meta)`, `applyDecayingDamage(actorOrId, amount, options)`, `syncBloodiedStatuses()`, `getReactionState(actorOrId)`, `canUseReaction(actorOrId, requiredUses)`, `refreshReaction(actorOrId, options)`, `consumeReaction(actorOrId, options)`, `rollWeaponAttack()`, `rollFirearmAttack()`, `clearFirearmJam()`, `maintainFirearm()`, `resolveProvokedAttack()`, `resolveParry()`, `resolveInterception()`.

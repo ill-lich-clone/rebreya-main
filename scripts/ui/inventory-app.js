@@ -1,5 +1,6 @@
-import { planItemInstanceMutation } from "../data/item-instance-rules.js";
-﻿import { MODULE_ID } from "../constants.js";
+﻿import { planItemInstanceMutation } from "../data/item-instance-rules.js";
+import { ReputationPanel } from "./reputation-panel.js?v=1.4.251";
+import { MODULE_ID } from "../constants.js";
 import { REBREYA_TOOLS } from "../constants.js";
 import { GROUP_CONTEXT_ERRORS } from "../data/group-context-service.js";
 import {
@@ -3456,6 +3457,9 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     } = options ?? {};
     super(applicationOptions);
     this.moduleApi = moduleApi;
+    this.reputationPanel = new ReputationPanel(moduleApi, { render: () => this.refreshReputationPanel() });
+    this.reputationActorIds = [];
+    this.reputationRefreshSequence = 0;
     this.inventoryHeaderAnimationStartedAt = Date.now();
     this.groupActorId = cleanText(groupActorId);
     this.rootFolderId = cleanText(rootFolderId) || null;
@@ -4765,6 +4769,9 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         groupContextError = groupContextError || error.message || "Не удалось определить группу Rebreya.";
       }
       const partySnapshot = await this.moduleApi.getPartySnapshot();
+      this.reputationActorIds = (partySnapshot.members ?? []).map(member => member.actorId).filter(Boolean);
+      const reputationHtml = this.activeTab === "party" && typeof this.moduleApi.getReputation === "function"
+        ? await this.reputationPanel.renderContent(this.reputationActorIds.map(id => game.actors?.get?.(id)).filter(Boolean)) : "";
       const craftSnapshot = await this.moduleApi.getCraftSnapshot({
         search: this.craftSearch,
         crafterActorId: this.craftCrafterActorId
@@ -5076,6 +5083,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
           freeCapacityLb,
           freeCapacityClass: freeCapacityLb < 0 ? "rm-negative" : "rm-positive"
         },
+        reputationHtml,
         party: {
           ...partySnapshot,
           storageWeightLb: inventoryWeight,
@@ -6771,12 +6779,26 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     });
   }
 
+  async refreshReputationPanel() {
+    const sequence = ++this.reputationRefreshSequence;
+    const root = getAppElement(this)?.querySelector("[data-reputation-panel]");
+    if (!root || this.activeTab !== "party") return;
+    const html = await this.reputationPanel.renderContent(this.reputationActorIds.map(id => game.actors?.get?.(id)).filter(Boolean));
+    if (sequence !== this.reputationRefreshSequence || !root.isConnected) return;
+    const wrapper = document.createElement("div"); wrapper.innerHTML = html;
+    const panel = wrapper.firstElementChild;
+    root.replaceWith(panel);
+    this.reputationPanel.bind(panel);
+  }
+
   async _onRender(context, options) {
     await super._onRender(context, options);
     const element = getAppElement(this);
     if (!element) {
       return;
     }
+
+    this.reputationPanel.bind(element.querySelector("[data-reputation-panel]"));
 
     const inventoryHeader = element.querySelector(".rm-inventory-book__header--inventory");
     if (inventoryHeader instanceof HTMLElement) {
@@ -8382,6 +8404,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   async _onClose(options) {
+    this.reputationPanel.close();
     this.moduleApi?.unregisterInventoryFolderPopout?.(this.inventoryViewKey, this);
     return super._onClose ? super._onClose(options) : undefined;
   }

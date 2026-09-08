@@ -1,4 +1,4 @@
-# R5 — Слава и дурная слава под Механусом: Implementation Plan
+# R5 — Слава и дурная слава в инвентаре → Группа: Implementation Plan
 
 > **Для исполнения:** использовать superpowers:executing-plans последовательно в текущей задаче. Пользователь явно выбрал продолжение здесь; перенос в новый чат, смена модели и subagents не требуются. Чекбоксы отмечаются только после выполнения, а не при чтении плана.
 
@@ -17,14 +17,12 @@
 - Приведённый JS — конкретные контракты/ядро тестов для планируемой реализации, а не код, уже добавленный в runtime. Новые символы определяются в задачах ниже; существующие названы с владельцем.
 
 **Goal:** Два независимых счётчика сохраняются для явно выбранного персонажа и редактируются GM.
-**Architecture:** pure rules → Actor service/gateway → существующий CosmologyApp либо anchor панели; не character XP UI.
+**Architecture:** pure rules → Actor service/gateway → ReputationPanel в существующем InventoryApp, страница «Группа».
 **Spec:** [reputation.md](../../specs/2026-09-07-module-development/reputation.md).
 
 ## Решение размещения
 
-Точно согласовано «под местом Механуса». Технический вариант по умолчанию в спецификации — внутри CosmologyApp сразу после секции Механуса. План R5.3A конкретно описывает его. Если пользователь уточнит «под кнопкой панели», выполнить R5.3B вместо A; оба одновременно не делать. Data/API tasks R5.1–2 одинаковы.
-
-Предлагаемые defaults из спецификации: character Actor, integer>=0, GM-only writes, no automatic bonuses. Это новые правила данных для MVP, не заявленные пользователем социальные thresholds.
+Уточнение пользователя 2026-09-08: «внутрь инвентаря на страницу группа». Оно заменяет прежние варианты Космологии/панельной кнопки. Данные персонажа, integer>=0, GM-only writes, без автоматических бонусов.
 
 ## Задача R5.1 — Состояние и optimistic update
 
@@ -33,7 +31,7 @@
 request={expectedRevision,change,reason,operationId}; change={set:{fame,infamy}} либо {delta:{fame,infamy}}.
 MAX_REPUTATION_HISTORY=50; reason trimmed1..240; ID nonempty<=128; strict number/no string coercion.
 
-- [ ] Pure tests:
+- [x] Pure tests:
 ```js
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -50,11 +48,11 @@ test("negative and stale changes fail",()=>{
   reason:"Правка",operationId:"o2"},{gmId:"gm",timestamp:100}));
 });
 ```
-- [ ] Red: node --test tests/reputation-rules.test.mjs.
-- [ ] Реализовать exact change union, finite safe integer, result>=0; unchanged values не создают второй delta effect. Reads legacy возвращают detached defaults без write.
-- [ ] Replay operationId ищется в recentChanges до revision check; same fingerprint возвращает saved next outcome, altered payload → operation-conflict. Старый ID вне bounded history со stale expectedRevision не принимается.
-- [ ] history record хранит ID/fingerprint/gm/timestamp/before/after и revision, slice(-50). Не показывать причине raw HTML.
-- [ ] Дополнить tests: maxsafe overflow, delta negative allowed если result>=0, invalid string, both set+delta,61 operations, duplicate/conflicting ID.
+- [x] Red: node --test tests/reputation-rules.test.mjs.
+- [x] Реализовать exact change union, finite safe integer, result>=0; unchanged values не создают второй delta effect. Reads legacy возвращают detached defaults без write.
+- [x] Replay operationId ищется в recentChanges до revision check; same fingerprint возвращает saved next outcome, altered payload → operation-conflict. Старый ID вне bounded history со stale expectedRevision не принимается.
+- [x] history record хранит ID/fingerprint/gm/timestamp/before/after и revision, slice(-50). Не показывать причине raw HTML.
+- [x] Дополнить tests: maxsafe overflow, delta negative allowed если result>=0, invalid string, both set+delta,61 operations, duplicate/conflicting ID.
 
 ## Задача R5.2 — Один GM mutation path
 
@@ -64,51 +62,70 @@ test("negative and stale changes fail",()=>{
 **Service:** ReputationService({resolveActor,coordinator,mutationGateway,refresh}).read(actorUuid); update(request,context).
 **Command:** reputation.update; exact keys, authenticated GM only.
 
-- [ ] Socket test truth table: valid GM true, OWNER-player false, unknown User false; extra ItemData/senderId rejected; actor.type !==character rejected. Ни одна отказанная команда не вызывает actor.update.
-- [ ] Gateway direct active GM и inactive GM typed route должны исполнить один и тот же executor. Не вызывать mutate из executor повторно.
-- [ ] В actor queue fresh-read flag, применить pure change, один actor.update({["flags.rebreya-main.reputation"]:next}) с authority guards. Mutation включает history/receipt и values атомарно.
-- [ ] Exception после actor.update → readback operation receipt; verified success возвращается, unknown → ambiguous-outcome без повторной delta. Тест fake Actor throw-after-write обязателен.
-- [ ] Refresh только projection выбранного actorUuid. Два concurrent GMs с revision0: один success, второй stale, значения первого сохраняются.
-- [ ] Get возвращает доступную actor projection; public read не открывает hidden чужие Actor только потому, что UUID известен.
+- [x] Socket test truth table: valid GM true, OWNER-player false, unknown User false; extra ItemData/senderId rejected; actor.type !==character rejected. Ни одна отказанная команда не вызывает actor.update.
+- [x] Gateway direct active GM и inactive GM typed route должны исполнить один и тот же executor. Не вызывать mutate из executor повторно.
+- [x] В actor queue fresh-read flag, применить pure change, один actor.update({["flags.rebreya-main.reputation"]:next}) с authority guards. Mutation включает history/receipt и values атомарно.
+- [x] Exception после actor.update → readback operation receipt; verified success возвращается, unknown → ambiguous-outcome без повторной delta. Тест fake Actor throw-after-write обязателен.
+- [x] Refresh только projection выбранного actorUuid. Два concurrent GMs с revision0: один success, второй stale, значения первого сохраняются.
+- [x] Get возвращает доступную actor projection; public read не открывает hidden чужие Actor только потому, что UUID известен.
 
-## Задача R5.3A — Карточка в Космологии
+## Задача R5.3 — Панель на странице «Группа»
 
-**Modify:** scripts/ui/cosmology-app.js, templates/cosmology-app.hbs, styles/main.css.
-**Create test:** tests/reputation-ui.test.mjs.
-**Consumes:** public API выше; selectedActorUuid — local app state.
+**Modify:** scripts/ui/inventory-app.js, templates/inventory-app.hbs, styles/main.css.
+**Create:** scripts/ui/reputation-panel.js, templates/reputation-panel.hbs, tests/reputation-ui.test.mjs.
 
-- [ ] Context test: отсутствие выбранного Actor не выбирает последний controlled token; counters read-only placeholder «Выберите персонажа». Actor selection не меняет сохранённые значения.
-- [ ] В _prepareContext добавить actor options и {actorUuid,name,fame,infamy,revision,canEdit}. После последнего DOM section Механуса вставить отдельную section data-reputation-panel.
-- [ ] Два числа и edit form set/delta/reason; submit замораживает captured actorUuid/revision до await, чтобы переключение dropdown не применило изменения другому Actor.
-- [ ] Cancel не вызывает API; invalid local input не отправляется; stale показывает свежие values и требует нового явного submit.
-- [ ] Все строки escaped; events принадлежат lifecycle приложения. Изменение счётчика не вызывает setMechanusEnabled.
-- [ ] Тесты assert порядок template Mechanus→reputation, mutation payload exact, rerender без двойного handler.
-
-## Задача R5.3B — Альтернатива под кнопкой панели
-
-Выполнять только при выборе пользователем panel placement; не создаёт второй app.
-**Modify:** scripts/hooks.js buildToolsRecord()/панельный DOM render, styles/main.css; tests/bg3-hotbar-compat.test.mjs и reputation-ui.
-
-- [ ] Добавить presentation row после stable control rebreya-main-cosmology, не искать локализованный title. Поддержать record/array controls legacy variants, которые уже покрывает bg3-hotbar-compat.
-- [ ] Рендерить два counters с явным выбранным actor label; если формат scene control допускает только кнопки, сделать одну кнопку открытия inline popover с двумя полями сразу под anchor через R1 AnchoredOverlay. Не присваивать HTML строку title.
-- [ ] Selector Actor и edit route используют ровно тот же public API; readonly player не получает GM toggles. Не заменять скрытый cosmology control пустым GM видимым placeholder для всех.
-- [ ] Проверить tools order после35 и до40 без collision, teardown/rebuild панели, theme/zoom. Тест обоих controls forms гарантирует сохранение existing tools.
-- [ ] Из спецификации убрать невыбранную альтернативу после ответа, не оставлять двойное размещение.
+- [x] Варианты Космологии/панельной кнопки исключены. В Космологии нет счётчиков; existing file восстановлен без изменений.
+- [x] Явный выбор character-участника текущей группы, только доступные Actor; default «Выберите персонажа», без controlled-token fallback.
+- [x] Два независимых значения, GM edit form set/delta/reason и read-only player context. Captured actorUuid/revision сохраняются на время await, изменение выбора не меняет target.
+- [x] Cancel no-op, invalid local input не отправляется. Stale закрывает старую форму, показывает свежие данные и требует явной новой правки. Ambiguous retry хранит exact payload/operationId.
+- [x] Reasons/names экранирует отдельный Handlebars template. Trusted rendered HTML вставляется в inventory template; raw Actor строки не интерполируются как HTML.
+- [x] Scoped refresh заменяет только data-reputation-panel, не пересчитывает inventory/economy. Generation guard отбрасывает старый render; AbortController исключает duplicate listeners и очищается при close.
+- [x] Tests: placement только внутри party, no selected actor, no writes on cancel, strict local parse, переключение Actor во время submit, stale/retry, rerender и teardown.
 
 ## Проверки этапа
 
 ```powershell
-node --test tests/reputation-rules.test.mjs tests/reputation-service.test.mjs tests/reputation-socket.test.mjs tests/reputation-ui.test.mjs tests/group-command-dispatch.test.mjs tests/main-composition-root.test.mjs tests/bg3-hotbar-compat.test.mjs tests/cosmology-mechanus-rolls.test.mjs
+node --test tests/reputation-rules.test.mjs tests/reputation-service.test.mjs tests/reputation-socket.test.mjs tests/reputation-ui.test.mjs tests/group-command-dispatch.test.mjs tests/main-composition-root.test.mjs tests/bg3-hotbar-compat.test.mjs tests/cosmology-mechanus-rolls.test.mjs tests/inventory-app-context.test.mjs
 ```
 Live: selectedActor1/2, concurrent edit, close/cancel, reload, narrow window, GM/player, unchanged Mechanus behavior. Snapshot values доказывают независимые fame/infamy.
 
-**Docs:** паспорт2/16/19, README public API. Commit: feat: add actor fame and infamy counters below Mechanus.
+**Docs:** паспорт2/16/19, README public API. Commit: feat: add actor fame and infamy on inventory group page.
 
 ## Выпуск этапа
 
-- [ ] Выполнить полный профиль focused-тестов этого плана; записать фактические passed/failed.
+- [x] Выполнить полный профиль focused-тестов этого плана; записать фактические passed/failed.
 - [ ] Пройти перечисленные live-сценарии в выделенном тестовом Foundry-мире. Сохранить viewport, версии, GM/player и console result. Если live недоступен, оставить этот пункт открытым.
-- [ ] Обновить профильные методы паспорта и README при изменении public contract.
-- [ ] Поднять актуальную patch version в module.json; создать/переименовать versioned forwarder с единственным import "./main.js"; обновить esmodules. Проверить отсутствие старых runtime-entrypoint ссылок.
-- [ ] Выполнить один полный цикл команд из README этого комплекта, проверить содержательный diff, stat и diff --check.
+- [x] Обновить профильные методы паспорта и README при изменении public contract.
+- [x] Поднять актуальную patch version в module.json; создать/переименовать versioned forwarder с единственным import "./main.js"; обновить esmodules. Проверить отсутствие старых runtime-entrypoint ссылок.
+- [x] Выполнить один полный цикл команд из README этого комплекта, проверить содержательный diff, stat и diff --check.
 - [ ] Stage только перечисленных файлов текущего этапа и обязательных manifest/docs; осмысленный commit; git push -u origin lich_branch. Проверить чистую рабочую копию и HEAD...origin/lich_branch = 0/0. Не включать чужие изменения.
+
+## Фактический результат — 2026-09-08
+
+Реализовано в 1.4.251: два независимых счётчика character Actor, GM-only set/delta с причиной, история 50 правок, явный выбор участника на странице «Группа» партийного инвентаря. Космология и её шаблон не изменены. Typed command использует существующий gateway; atomic receipt защищает повтор, revision — конкурирующие правки. Обновляется только карточка выбранного персонажа.
+
+### Автоматические проверки
+
+- TDD: новые rules/service/contract сначала падали из-за отсутствующих импортов; UI — из-за отсутствующих методов/размещения. Добавлено 19 профильных тестов.
+- Focused-команда из раздела выше плюс `tests/module-manifest.test.mjs`: **254 passed / 0 failed**.
+- `node --test tests/*.test.mjs`: **3717 passed / 0 failed / 0 skipped**. После полного прогона усилены только два существующих теста (разные authenticated GM и очистка выбора при смене группы); focused-профиль повторно прошёл 254/0. Runtime после полного прогона не менялся.
+- `node --check` для 722 tracked/new JS/MJS: 0 ошибок. `ConvertFrom-Json` для 46 JSON: 0 ошибок. `git diff --check`: чисто.
+- Проверены direct/inactive GM маршруты через реальный gateway/bus в mock network, запрет player/forged sender, отсутствие active GM, потеря authority, concurrent revision, throw-before/after-write, exact retry/conflict. 51 операция с длинными Unicode причинами оставляет историю на Actor, компактный write response не переполняет envelope.
+
+### Проверка в Foundry
+
+Мир `testovyj3`, Foundry 13.351, dnd5e 5.2.5; CODEX — GM requester, Gamemaster — active GM. Viewport 1292×920. После обновления active GM штатная команда `reputation.update` выполняется; прежняя ошибка unknown-command устранена обновлением сессии.
+
+- Временные character Actor добавлены в существующую тестовую группу штатным `Actor.update(system.members)`. Попытка legacy addPartyMember была отклонена до записи штатным ограничением управления составом через dnd5e группу.
+- Счётчики первого Actor: 4/3 → UI +2/0 → 6/3; конкурирующая правка +1 дала 7/3, submit старой формы отклонён как stale. Второй Actor через UI получил 1/8 независимо от первого.
+- Exact native retry вернул сохранённый результат без второй записи; изменённая причина с тем же operationId дала operation-conflict, значения сохранились.
+- Причина `QA: <b>награда</b>` отображается буквальным текстом; HTML-элемент не создаётся. Default selection пустой; смена Actor явно меняет карточку. Cancel проверен без записи; финальный контроллер также покрыт Node-тестом отмены.
+- После reload значения 7/3 и 1/8 сохранились. Репутация есть в инвентаре → «Группа», в открытой Космологии её нет; значение Механуса осталось true.
+- В окне 720×780 сама карточка репутации помещается без горизонтального переполнения, длинное имя переносится. В прежних строках участников ниже карточки есть наложение текста при такой ширине; это отдельный дефект существующей страницы.
+- После проверки удалены оба временных Actor и только их записи из свежего списка группы. Остальные шесть участников сохранены. Последняя проверка browser error logs после reload/cleanup: пусто.
+
+Ограничения: отдельная живая player-сессия не проверена; player permissions/read-only покрыты Node. Active GM загрузил реализацию до последнего сокращения write response: native проверки прошли с небольшими ответами с history, окончательный компактный response и большая Unicode history проверены Node. Серверная module metadata ещё показывает 1.4.238, при этом CODEX после reload выполняет обновлённый код; manifest/forwarder в репозитории — 1.4.251. MCP capture был выключен, визуальная проверка выполнена обычными browser screenshots.
+
+### Git
+
+До stage: lich_branch, HEAD b6fb0d53; после fetch HEAD...origin/main = 344/0, HEAD...origin/lich_branch = 0/0. Все изменения относятся к R5. Commit/push фиксируются после успешного выполнения.

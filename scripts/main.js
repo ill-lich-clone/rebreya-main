@@ -96,6 +96,8 @@ import { ImplantService } from "./data/implant-service.js";
 import { CraftingService } from "./data/crafting-service.js?v=1.4.96-craft-calendar";
 import { CraftDowntimeService } from "./data/craft-downtime-service.js?v=1.4.96-craft-calendar";
 import { ItemUpgradeService } from "./data/item-upgrade-service.js?v=1.4.250";
+import { ReputationService } from "./application/reputation-service.js?v=1.4.251";
+import { REPUTATION_UPDATE_COMMAND, isValidReputationPayload, authorizeReputationUpdate } from "./infrastructure/foundry/reputation-command-contract.js?v=1.4.251";
 import { GROUP_CALENDAR_PATCH_COMMAND, CalendarService } from "./data/calendar-service.js";
 import { CalendarTransitionCoordinator } from "./data/calendar-transition-coordinator.js?v=1.4.96-craft-calendar";
 import { PrivilegedMutationGateway } from "./application/privileged-mutation-gateway.js";
@@ -1399,6 +1401,12 @@ export class RebreyaMainModule {
       operations: this.purchaseBasketOperations
     });
     this.uiRefreshCoordinator = new UiRefreshCoordinator();
+    this.reputationService = new ReputationService({
+      resolveActor: async (uuid) => /^Actor\.[A-Za-z0-9]{16}$/u.test(uuid ?? "") ? globalThis.game?.actors?.get?.(uuid.slice(6)) : null,
+      coordinator: this.worldMutationCoordinator,
+      mutationGateway: this.privilegedMutationGateway,
+      refresh: (actorUuid) => this.refreshReputationViews(actorUuid)
+    });
     this.inventoryRefreshActorIds = new Set();
     this.inventoryRefreshHoldCount = 0;
     this.inventoryRefreshTimer = null;
@@ -1482,7 +1490,7 @@ export class RebreyaMainModule {
       confirm: async (preview) => {
         const moduleVersion = game.modules.get(MODULE_ID)?.version ?? "0";
         const { promptInventoryIngressConfirmation } = await import(
-          `./ui/inventory-app.js?v=${encodeURIComponent(moduleVersion)}`
+          "./ui/inventory-app.js?v=1.4.251-reputation"
         );
         return promptInventoryIngressConfirmation(preview);
       }
@@ -1976,6 +1984,11 @@ export class RebreyaMainModule {
   }
 
   #registerTypedSocketCommands() {
+    this.privilegedMutationGateway.registerCommand(REPUTATION_UPDATE_COMMAND, {
+      validate: isValidReputationPayload,
+      authorize: authorizeReputationUpdate,
+      execute: (payload, context) => this.reputationService.update(payload, context)
+    });
     for (const [command, mode] of [[HERO_DOLL_ASSIGN_COMMAND,"assign"],[HERO_DOLL_NORMALIZE_COMMAND,"normalize"],[HERO_DOLL_CLEAR_COMMAND,"clear"]]) {
       this.privilegedMutationGateway.registerCommand(command, {
         validate: isValidHeroDollAssignPayload,
@@ -2726,6 +2739,7 @@ export class RebreyaMainModule {
   }
 
   async initialize() {
+    this.registerReputationRefreshHooks();
     if (globalThis.game?.user?.isGM === true) {
       try {
         await this.lootgenTemplateCatalog.migrate();
@@ -6797,6 +6811,30 @@ export class RebreyaMainModule {
     await this.uiRefreshCoordinator.request(task ? [task] : []);
   }
 
+  registerReputationRefreshHooks() {
+    if (this.reputationRefreshHooksRegistered) return;
+    this.reputationRefreshHooksRegistered = true;
+    const refresh = (actor) => { void this.refreshReputationViews(actor.uuid).catch(error => console.warn(`${MODULE_ID} | Reputation refresh failed.`, error)); };
+    Hooks.on("updateActor", (actor, change) => {
+      if (Object.keys(change ?? {}).some(key => key === "flags" || key.startsWith(`flags.${MODULE_ID}.reputation`) || key === "name" || key === "ownership")) refresh(actor);
+    });
+    Hooks.on("deleteActor", refresh);
+  }
+
+  async refreshReputationViews(actorUuid) {
+    const panel = this.inventoryApp?.reputationPanel;
+    if (!panel || panel.selectedActorUuid !== actorUuid || panel.reputationPending) return;
+    await this.inventoryApp.refreshReputationPanel();
+  }
+
+  getReputation(actorOrUuid) {
+    return this.reputationService.read(typeof actorOrUuid === "string" ? actorOrUuid : actorOrUuid?.uuid);
+  }
+
+  updateReputation(request) {
+    return this.reputationService.requestUpdate(request);
+  }
+
   async refreshCityViews({ cityIds = [] } = {}) {
     const requested = new Set((cityIds ?? []).map((id) => String(id ?? "").trim()).filter(Boolean));
     const apps = requested.size
@@ -7012,8 +7050,7 @@ export class RebreyaMainModule {
 
   async openInventoryApp(options = {}) {
     try {
-      const moduleVersion = game.modules?.get?.(MODULE_ID)?.version ?? "1.4.67";
-      const { InventoryApp } = await import(`./ui/inventory-app.js?v=${encodeURIComponent(moduleVersion)}`);
+      const { InventoryApp } = await import("./ui/inventory-app.js?v=1.4.251-reputation");
 
       if (!this.inventoryApp) {
         this.inventoryApp = new InventoryApp(this);
@@ -7060,7 +7097,7 @@ export class RebreyaMainModule {
     }
 
     const moduleVersion = game.modules?.get?.(MODULE_ID)?.version ?? "1.4.67";
-    const { InventoryApp } = await import(`./ui/inventory-app.js?v=${encodeURIComponent(moduleVersion)}`);
+    const { InventoryApp } = await import("./ui/inventory-app.js?v=1.4.251-reputation");
     const app = new InventoryApp(this, {
       groupActorId: normalizedGroupActorId,
       rootFolderId: normalizedFolderId,

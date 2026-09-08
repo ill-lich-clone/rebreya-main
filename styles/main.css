@@ -13797,3 +13797,21 @@ summary:focus-visible {
 /* R4: read-only availability, including historical installations. */
 .rm-item-upgrades__availability { display: grid; gap: 0.25rem; padding: 0.6rem; margin-block: 0.4rem; border-inline-start: 3px solid var(--color-border-light-primary, #8a7862); overflow-wrap: anywhere; }
 .rm-item-upgrades__availability small { opacity: 0.8; line-height: 1.4; }
+
+/* Reputation is scoped to the Group page in the existing inventory. */
+.rebreya-inventory-app .rm-reputation { margin-top: 1rem; padding: 1.2rem; border: 1px solid var(--rm-border, #655b4b); border-radius: 12px; background: var(--rm-panel, rgba(30, 32, 38, .3)); }
+.rebreya-inventory-app .rm-reputation__header { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: .75rem; }
+.rebreya-inventory-app .rm-reputation__header h3 { margin: 0; }
+.rebreya-inventory-app .rm-reputation label { display: grid; gap: .35rem; min-width: 0; }
+.rebreya-inventory-app .rm-reputation__header label { flex: 1 1 220px; max-width: 100%; }
+.rebreya-inventory-app .rm-reputation select, .rebreya-inventory-app .rm-reputation input { width: 100%; min-width: 0; }
+.rebreya-inventory-app .rm-reputation__actor { overflow-wrap: anywhere; margin-block: .75rem; }
+.rebreya-inventory-app .rm-reputation__counters, .rebreya-inventory-app .rm-reputation__fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; margin-bottom: .8rem; }
+.rebreya-inventory-app .rm-reputation__counters > div { display: grid; gap: .4rem; padding: .9rem; border: 1px solid var(--rm-border, #655b4b); border-radius: 8px; text-align: center; }
+.rebreya-inventory-app .rm-reputation__counters strong { font-size: 1.8rem; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.rebreya-inventory-app .rm-reputation__form fieldset { display: grid; gap: .75rem; border: 0; padding: 0; min-width: 0; }
+.rebreya-inventory-app .rm-reputation__actions { display: flex; gap: .5rem; margin-top: .75rem; }
+.rebreya-inventory-app .rm-reputation__error { padding: .6rem; border-inline-start: 3px solid #c87362; overflow-wrap: anywhere; }
+.rebreya-inventory-app .rm-reputation__history { margin-top: .9rem; }
+.rebreya-inventory-app .rm-reputation__history li { margin-block: .6rem; overflow-wrap: anywhere; }
+.rebreya-inventory-app .rm-reputation__history li span { display: block; font-size: .85em; opacity: .85; }
