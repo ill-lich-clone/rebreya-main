@@ -37,6 +37,27 @@ function snapshot(containerId, name, rows = []) {
   };
 }
 
+test("generated storage composition is exact metadata and preserves its catalog identity through portable flags",()=>{
+  const metadata={version:2,instanceKey:"shell",sourceType:"gear",sourceId:"catalog-chest",isBroken:false,upgrades:[]};
+  const input=snapshot("generated","Сундук");input.state.lootgenComposition=metadata;
+  const row=buildStorageContainerRow(input,{rowId:"generated-row"});
+  assert.deepEqual(row.composition,metadata);assert.equal(row.sourceId,"catalog-chest");
+  const portable=createPortableStorageContainerItemData(input);
+  assert.deepEqual(readPortableStorageContainerSnapshot(portable).state.lootgenComposition,metadata);
+  for(const extra of [{container:{}},{quantity:1},{value:100}]){
+    assert.throws(()=>buildStorageContainerSnapshot({...input,state:{...input.state,lootgenComposition:{...metadata,...extra}}}));
+  }
+});
+
+test("generated rows reject mismatched shell composition and invalid composed quantity instead of normalizing away data",()=>{
+  const metadata={version:2,instanceKey:"shell",sourceType:"gear",sourceId:"catalog-chest",isBroken:false,upgrades:[]};
+  const input=snapshot("generated","Сундук");input.state.lootgenComposition=metadata;
+  const row=buildStorageContainerRow(input,{rowId:"generated-row"});row.composition.sourceId="other";
+  assert.throws(()=>buildStorageContainerSnapshot(snapshot("outer","Внешний",[row])),/Conflicting/u);
+  const upgraded={...metadata,upgrades:[{instanceKey:"upgrade",sourceId:"upgrade",slotIndex:1,choices:{}}]};
+  assert.throws(()=>buildStorageContainerSnapshot(snapshot("outer","Внешний",[{rowId:"bad",quantity:2,composition:upgraded}])),/quantity/u);
+});
+
 test("container rows are unique quantity-one rows and ordinary rows remain stackable items", () => {
   const nested = snapshot("bag-1", "Сумка хранения");
   const row = buildStorageContainerRow(nested, { rowId: "row-bag" });

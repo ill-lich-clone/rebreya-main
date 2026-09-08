@@ -1,6 +1,7 @@
 import { UpgradeRuleError } from "./item-upgrade-rules.js?v=1.4.250";
 import { buildUpgradeHostDescriptor, profileSignature } from "./item-upgrade-service.js?v=1.4.255";
-import { resolveLootgenItemValue } from "./item-value.js?v=1.4.250";
+import { resolveLootgenItemValue } from "./item-value.js?v=1.4.264";
+import { readContainerValueNodes } from "./lootgen-container-value-adapter.js?v=1.4.264";
 
 const MODULE_ID="rebreya-main";
 const values=rows=>Array.isArray(rows)?rows:Array.from(rows?.values?.()??[]);
@@ -54,6 +55,7 @@ export function createLootgenCatalogReader({model={},gearIndex=[],magicDocuments
     return null;
   }
   return Object.freeze({
+    readContainerValueNodes,
     resolveValueComponent(component) {
       const source=sourceFor(component);if(!source)return null;
       const entry=component.sourceType==="gear"?upgrades.get(id(component.sourceId)):null;

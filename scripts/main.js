@@ -1,9 +1,9 @@
 import { LootgenGeneratedResultService, LOOTGEN_PREPARE_RESULT_COMMAND, isValidPrepareLootgenPayload } from "./application/lootgen-generated-result-service.js?v=1.4.259";
-import { buildLootgenGeneratedState, assertLootgenCatalogCurrent } from "./application/lootgen-generated-state.js?v=1.4.260";
+import { buildLootgenGeneratedState, assertLootgenCatalogCurrent } from "./application/lootgen-generated-state.js?v=1.4.264";
 import { normalizeLootgenForm } from "./data/lootgen-generator.js?v=1.4.256";
 import { storageCoinRowDenomination } from "./data/storage-service.js";
 // @rebreya-role canonical-composition-root
-import { LootgenSourceCatalog } from "./data/lootgen-source-catalog.js?v=1.4.259";
+import { LootgenSourceCatalog } from "./data/lootgen-source-catalog.js?v=1.4.264";
 import { MODULE_ID, MODULE_TITLE, SETTINGS_KEYS } from "./constants.js";
 import { escapeFoundryHtml } from "./shared/foundry-values.js";
 import { MaterialsCompendiumService } from "./data/materials-compendium.js";

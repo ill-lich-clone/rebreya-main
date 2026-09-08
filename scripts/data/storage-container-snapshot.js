@@ -1,5 +1,6 @@
 import { MODULE_ID } from "../constants.js";
 import { normalizeStorageTriggerState } from "./storage-trigger-service.js";
+import { normalizeLootgenComposition } from "./lootgen-item-descriptor.js?v=1.4.264";
 
 export const STORAGE_CONTAINER_FLAG = "storageContainer";
 export const STORAGE_CONTAINER_SNAPSHOT_VERSION = 1;
@@ -46,6 +47,11 @@ function visibleContainerRow(snapshot, rowId) {
 
 function normalizeItemRow(row, createId) {
   const normalized = clone(row) ?? {};
+  if(normalized.composition!==undefined){
+    normalized.composition=normalizeLootgenComposition(normalized.composition);
+    if(!Number.isSafeInteger(normalized.quantity) || normalized.quantity<1
+      || (normalized.composition.upgrades.length && normalized.quantity!==1))throw new TypeError("Invalid composed storage quantity.");
+  }
   const quantity = positiveQuantity(normalized.quantity ?? normalized.itemData?.system?.quantity, 1);
   normalized.rowKind = "item";
   normalized.rowId = clean(normalized.rowId) || createId("row");
@@ -81,11 +87,14 @@ function normalizeContainerRow(row, context) {
     depth: context.depth + 1
   });
   const rowId = clean(row?.rowId) || context.createId("row");
+  const composition=row?.composition??nested.state.lootgenComposition;
+  const metadata=composition===undefined?null:normalizeLootgenComposition(composition);
+  if(metadata && (row.quantity!==1 || JSON.stringify(metadata)!==JSON.stringify(nested.state.lootgenComposition)))throw new TypeError("Conflicting container composition.");
   return {
     rowKind: "container",
     rowId,
     stackKey: "",
-    sourceId: clean(row?.sourceId) || `storage-container:${nested.containerId}`,
+    sourceId: metadata?.sourceId || clean(row?.sourceId) || `storage-container:${nested.containerId}`,
     sourceType: "container",
     name: nested.name,
     img: nested.img,
@@ -100,6 +109,7 @@ function normalizeContainerRow(row, context) {
         quantity: 1
       }
     },
+    ...(metadata?{composition:metadata}:{}),
     container: nested
   };
 }
@@ -144,6 +154,7 @@ function normalizeSnapshot(input, context) {
       .filter(Boolean))),
     triggers: normalizeStorageTriggerState(sourceState.triggers)
   };
+  if(sourceState.lootgenComposition!==undefined)state.lootgenComposition=normalizeLootgenComposition(sourceState.lootgenComposition);
   const journalRowIds = new Set(stateRows(state)
     .filter((row) => row?.rowKind === "journal" && clean(row?.sourceId))
     .map((row) => clean(row?.rowId))
@@ -193,7 +204,7 @@ export function rekeyStorageContainerSnapshot(input = {}, { createId = createSta
     for (const row of stateRows(current.state)) {
       if (!isStorageContainerRow(row)) continue;
       visit(row.container);
-      row.sourceId = `storage-container:${row.container.containerId}`;
+      row.sourceId = row.composition?.sourceId ?? `storage-container:${row.container.containerId}`;
     }
   };
   visit(snapshot);
@@ -206,7 +217,7 @@ export function buildStorageContainerRow(snapshot, { rowId = "", createId = crea
     rowKind: "container",
     rowId: clean(rowId) || createId("row"),
     stackKey: "",
-    sourceId: `storage-container:${normalized.containerId}`,
+    sourceId: normalized.state.lootgenComposition?.sourceId ?? `storage-container:${normalized.containerId}`,
     sourceType: "container",
     name: normalized.name,
     img: normalized.img,
@@ -217,6 +228,7 @@ export function buildStorageContainerRow(snapshot, { rowId = "", createId = crea
       img: normalized.img,
       system: { quantity: 1 }
     },
+    ...(normalized.state.lootgenComposition?{composition:clone(normalized.state.lootgenComposition)}:{}),
     container: normalized
   };
 }

@@ -35,6 +35,14 @@ export function normalizeLootgenItemDescriptor(raw, { legacy = false } = {}) {
 
 export function validateLootgenItemDescriptor(raw) { return normalizeLootgenItemDescriptor(raw); }
 
+/** Storage owns quantity and the only nested tree; composition metadata contains neither. */
+export function normalizeLootgenComposition(raw) {
+  const keys=HOST_KEYS.filter(key=>key!=="quantity" && key!=="container");
+  if(!exact(raw,keys))fail("storage-composition");
+  const {quantity,container,...composition}=normalizeLootgenItemDescriptor({...raw,quantity:1,container:null});
+  return composition;
+}
+
 export function getLootgenAggregationKey(raw) {
   const value = normalizeLootgenItemDescriptor(raw);
   if (!value.upgrades.length && value.container === null) return `${value.sourceType}:${value.sourceId}:${value.isBroken ? "broken" : "intact"}`;

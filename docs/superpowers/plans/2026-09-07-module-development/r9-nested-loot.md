@@ -26,13 +26,13 @@
 
 **Файлы:** scripts/data/storage-container-snapshot.js, scripts/data/item-value.js, scripts/data/lootgen-item-descriptor.js; новый scripts/data/lootgen-container-value-adapter.js, tests/lootgen-container-value.test.mjs; расширить tests/storage-container-snapshot.test.mjs.
 
-- [ ] Canonical nesting остаётся row.container в StorageContainerSnapshot v1. Для generated rows добавить optional composition metadata без поля container: {version:2,instanceKey,sourceType,sourceId,isBroken,upgrades}. Quantity остаётся row.quantity. Snapshot не содержит вторую полную копию того же дерева.
+- [x] Canonical nesting остаётся row.container в StorageContainerSnapshot v1. Для generated rows добавить optional composition metadata без поля container: {version:2,instanceKey,sourceType,sourceId,isBroken,upgrades}. Quantity остаётся row.quantity. Snapshot не содержит вторую полную копию того же дерева.
 - [ ] Сведения о catalog shell корня хранить как state.lootgenComposition с тем же metadata shape. Outer descriptor.container ссылается на snapshot; при materialization/capture сохранять stable shell sourceId и установленный состав. Неподготовленные legacy snapshots по-прежнему читаются.
-- [ ] Реализовать readContainerValueNodes(snapshot) → {containerId,entries,currencyValue}. entries — readonly projection неclaimed Item/container rows в общий descriptor v2, собираемый из row.composition и единственного row.container; root shell в entries не входит. currencyValue — оставшиеся manualCoins+generatedCoins с учётом существующего claimed state.
-- [ ] Этот reader подключается в catalogReader R4. evaluateItemValue сам ведёт единственный traversal context seen instance/container IDs + depth + count. Не сбрасывать visited set на каждом child.
+- [x] Реализовать readContainerValueNodes(snapshot) → {containerId,entries,currencyValue}. entries — readonly projection неclaimed Item/container rows в общий descriptor v2, собираемый из row.composition и единственного row.container; root shell в entries не входит. currencyValue — оставшиеся manualCoins+generatedCoins с учётом существующего claimed state.
+- [x] Этот reader подключается в catalogReader R4. evaluateItemValue сам ведёт единственный traversal context seen instance/container IDs + depth + count. Не сбрасывать visited set на каждом child.
 - [ ] Upgrade children входят в upgrades соответствующего host и не появляются второй ordinary contents row. Snapshot normalize/capture/remap должен сохранять такую границу, иначе value удвоится.
-- [ ] Unknown price/неподтверждённая legacy композиция исключает новый budget candidate с diagnostic, но не блокирует старый переносимый контейнер как предмет в существующем storage UI.
-- [ ] Ключевой value test использует buildStorageContainerSnapshot из существующего владельца и новый helper fixture makeValuedContainer({shellValue,upgradeValue,childValue,internalCoins}) в tests/helpers/lootgen-container-fixture.mjs. Helper создаёт настоящий v1 snapshot, model lookup и три стабильных descriptor identities, без mock, возвращающего готовую сумму:
+- [x] Unknown price/неподтверждённая legacy композиция исключает новый budget candidate с diagnostic, но не блокирует старый переносимый контейнер как предмет в существующем storage UI.
+- [x] Ключевой value test использует buildStorageContainerSnapshot из существующего владельца и новый helper fixture makeValuedContainer({shellValue,upgradeValue,childValue,internalCoins}) в tests/helpers/lootgen-container-fixture.mjs. Helper создаёт настоящий v1 snapshot, model lookup и три стабильных descriptor identities, без mock, возвращающего готовую сумму:
 
 ```js
 const { descriptor, catalogReader } = makeValuedContainer({
@@ -46,7 +46,7 @@ assert.equal(value.totalValue, 7000);
 assert.equal(value.totalValue + 3000, 10000);
 ```
 
-- [ ] Добавить nested shell, две валютные секции, claimed child, duplicate/shared identity, cycle и depth8/9; quantity контейнера>1 reject. Internal currency ни разу не попадает одновременно в child descriptor и top-level coins.
+- [x] Добавить nested shell, две валютные секции, claimed child, duplicate/shared identity, cycle и depth8/9; quantity контейнера>1 reject. Internal currency ни разу не попадает одновременно в child descriptor и top-level coins.
 
 ## Задача R9.2 — bounded generation и вместимость
 
@@ -120,3 +120,9 @@ export function debitLootgenBudget(remaining, amount) {
 - [ ] Stage только перечисленных файлов текущего этапа и обязательных manifest/docs; осмысленный commit; git push -u origin lich_branch. Проверить чистую рабочую копию и HEAD...origin/lich_branch = 0/0. Не включать чужие изменения.
 
 **Предлагаемые commits:** feat: budget generated loot container trees; feat: materialize nested loot with preserved item links.
+
+## Реализация основы стоимости — 1.4.264
+
+Добавлены exact composition metadata в canonical v1 snapshot и one-level value reader. Shared evaluator считает remaining children/manual+generated coins, проверяет общие IDs/depth8/documents200. Snapshot normalize/rekey/portable сохраняет source identity. Legacy snapshots читаются, но без подтверждённой composition не принимаются как новый priced candidate. Descriptor boundary для генерации пока по-прежнему не принимает container; bounded fill, capacity и tree grant/capture остаются открыты.
+
+Проверки основы: focused `node --test tests/lootgen*.test.mjs tests/item-value.test.mjs tests/storage-container*.test.mjs tests/storage-service.test.mjs tests/storage-socket.test.mjs tests/inventory-mutation-recovery.test.mjs` — **388 passed / 0 failed**. `node --test tests/*.test.mjs` — **3888 passed / 0 failed**; `node --check` **776 JS/MJS**, JSON parse **46**, ошибок **0**; `git diff --check` чисто. Native browser testovyj3/CODEX, Foundry13.351/dnd5e5.2.5: actual modules264 + detached canonical fixture дают total7000 (1000 shell+2000 upgrade+3000 child+1000 coins), после claimed child/coins —3000. World writes0. Сквозная generation→materialization→capture/drop/pickup ещё открыта.
