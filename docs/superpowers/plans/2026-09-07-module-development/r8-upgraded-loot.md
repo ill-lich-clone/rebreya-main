@@ -101,9 +101,9 @@ assert.equal(child.system.container, graph.rootItemId);
 
 **Файлы:** scripts/main.js, scripts/ui/lootgen-app.js, scripts/ui/lootgen-chat.js, scripts/application/loot-claim-service.js, templates/lootgen-app.hbs и фактический chat template через rg; tests/lootgen-chat.test.mjs, tests/loot-claim-service.test.mjs, tests/lootgen-app-context.test.mjs, tests/group-command-dispatch.test.mjs.
 
-- [ ] Для нового composed режима ввести GM-only public prepareLootgenGeneratedResult(form) и typed lootgen.prepare-result с exact normalized form/operationId. Active GM генерирует один immutable result v2; request не содержит ItemData, arbitrary effects, price или готовый player graph.
+- [x] Для нового composed режима ввести GM-only public prepareLootgenGeneratedResult(form) и typed lootgen.prepare-result с exact normalized form/operationId. Active GM генерирует один immutable result v2; request не содержит ItemData, arbitrary effects, price или готовый player graph.
 - [ ] Хранить подготовленный result в существующем trusted GM-authored Lootgen ChatMessage state через его canonical publisher. Подготовка для прямой выдачи создаёт запись, видимую только GM; публикация игрокам раскрывает ту же запись, не генерирует вторую. Обычный legacy plain preview сохраняет старое поведение.
-- [ ] prepare receipt связывает operationId, lootId, form fingerprint и message. Повтор запроса возвращает тот же result. Если запись уже создана, а ответ потерялся, находить её по receipt до нового random.
+- [x] prepare receipt связывает operationId, lootId, form fingerprint и message. Повтор запроса возвращает тот же result. Если запись уже создана, а ответ потерялся, находить её по receipt до нового random.
 - [ ] UI «Забрать»/прямая выдача для composed rows использует существующий trusted claim route по lootId/rowIds. Клиент передаёт destination/ingress choices и operation ID; список upgrades active GM читает из записи. Не расширять generic direct ingress правом принять player composition.
 - [ ] Сохранить прежний смысл sourceOrigin для plain/manual/model callers. Там, где отображение требует новый resultVersion, читать v1 без перерасчёта; v2 snapshot сохраняет принятый value и catalog/rules fingerprint.
 - [ ] До первой выдачи при несовместимом изменении каталога/availability показать stale result и предложить новую генерацию. После prepared graph/grant receipt recovery использует сохранённые trusted данные; catalog drift не запускает новую выдачу и не переписывает уже полученные вещи.
@@ -153,3 +153,11 @@ Native testovyj3, CODEX, Foundry13.351/dnd5e5.2.5: создание root+child, 
 Открыты durable prepare-result/Chat receipt/catalog drift, UI улучшений и сквозная выдача. Подготовленные snapshots ещё не публикуются новым маршрутом; R8 не завершён.
 
 Проверки третьей части: `node --test tests/*.test.mjs` — **3830 passed / 0 failed**; `node --check` — **769 JS/MJS**, JSON parse — **46 файлов**, ошибок **0**. `git diff --check` чисто. Native source/price/обычный UI проверены; prepare-result и authoritative claims остаются открытыми.
+
+### Четвёртая часть R8 — 1.4.259
+
+Подключён GM-only prepare-result с exact normalized form, canonical private Chat publisher и persisted result before Chat create. Fault tests подтверждают отсутствие reroll при потерянных ответах/повторах и запрет замены чужой записи. GenerationReady появляется после receipt; unpublished draft не имеет claim/drag controls и не входит в прежний поиск выдачи. Сохранённые custom profiles исключаются из генерации и не перезаписываются builder.
+
+Native без world writes: реальные шаблоны → два полных graph по2 nodes, total6400; fresh catalog fingerprint совпал, все745 gear entries имеют modifiedTime. Actual GM socket/private Chat write ещё не проверены. Следующее обязательное продолжение: публикация той же записи, catalog drift gate перед первым claim, безопасная выдача персонажу, UI composed mode/preview/прямая выдача и end-to-end QA. R8 не завершён.
+
+Проверки четвёртой части: `node --test tests/*.test.mjs` — **3849 passed / 0 failed**; `node --check` — **773 JS/MJS**, JSON parse — **46 файлов**, ошибок **0**; `git diff --check` чисто. Native detached preparation с финальным profile guard: 2 composed rows, total6400, fresh fingerprint совпал. Публикация и выдача этим прогоном не подтверждаются.

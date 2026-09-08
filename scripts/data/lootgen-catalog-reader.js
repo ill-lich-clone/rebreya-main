@@ -1,4 +1,5 @@
-import { buildUpgradeHostDescriptor } from "./item-upgrade-service.js?v=1.4.255";
+import { UpgradeRuleError } from "./item-upgrade-rules.js?v=1.4.250";
+import { buildUpgradeHostDescriptor, profileSignature } from "./item-upgrade-service.js?v=1.4.255";
 import { resolveLootgenItemValue } from "./item-value.js?v=1.4.250";
 
 const MODULE_ID="rebreya-main";
@@ -55,13 +56,18 @@ export function createLootgenCatalogReader({model={},gearIndex=[],magicDocuments
   return Object.freeze({
     resolveValueComponent(component) {
       const source=sourceFor(component);if(!source)return null;
+      const entry=component.sourceType==="gear"?upgrades.get(id(component.sourceId)):null;
+      const stored=flags(gearDocuments.get(id(component.sourceId))).upgrade;
+      if(entry && stored && typeof stored==="object" && !Array.isArray(stored) && profileSignature(stored)!==profileSignature(entry.profile)) {
+        throw new UpgradeRuleError("unavailable",{reason:"Сохранён пользовательский профиль; его автоматизация не подтверждена."});
+      }
       const price=component.sourceType==="magicItem"?magicPrice(source):modelPrice(source,component.sourceType);
       if(component.sourceType==="gear" && upgrades.has(id(component.sourceId)) && !gearDocuments.has(id(component.sourceId)))price.priceKnown=false;
       return {...price,upgradeProfile:component.sourceType==="gear"?structuredClone(upgrades.get(id(component.sourceId))?.profile??null):null,includedUpgradeSourceIds:[]};
     },
     describeUpgradeHost(component) {
       const source=component?.sourceType==="gear"?gearDocuments.get(id(component.sourceId)):component?.sourceType==="magicItem"?magic.get(id(component.sourceId)):null;
-      if(!source || flags(source).itemUpgrades?.installed?.length)return null;
+      if(!source || flags(source).itemUpgrades?.installed?.length || flags(source).upgrade || flags(source).itemUpgradeTemplate===true)return null;
       const host=buildUpgradeHostDescriptor(source);
       return {...host,quantity:1,isEquipped:false,isAttuned:false,isHeld:false,isBroken:component.isBroken===true};
     }

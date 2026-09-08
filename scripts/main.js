@@ -1,6 +1,9 @@
+import { LootgenGeneratedResultService, LOOTGEN_PREPARE_RESULT_COMMAND, isValidPrepareLootgenPayload } from "./application/lootgen-generated-result-service.js?v=1.4.259";
+import { buildLootgenGeneratedState } from "./application/lootgen-generated-state.js?v=1.4.259";
+import { normalizeLootgenForm } from "./data/lootgen-generator.js?v=1.4.256";
 import { storageCoinRowDenomination } from "./data/storage-service.js";
 // @rebreya-role canonical-composition-root
-import { LootgenSourceCatalog } from "./data/lootgen-source-catalog.js?v=1.4.258";
+import { LootgenSourceCatalog } from "./data/lootgen-source-catalog.js?v=1.4.259";
 import { MODULE_ID, MODULE_TITLE, SETTINGS_KEYS } from "./constants.js";
 import { escapeFoundryHtml } from "./shared/foundry-values.js";
 import { MaterialsCompendiumService } from "./data/materials-compendium.js";
@@ -376,7 +379,7 @@ import {
   handleSettingsUpdateSocketResponse,
   registerSettings
 } from "./settings.js";
-import { buildLootgenChatContent, buildLootgenStatusContent, registerLootgenChatHooks } from "./ui/lootgen-chat.js?v=1.4.96-durability";
+import { buildLootgenChatContent, buildLootgenStatusContent, registerLootgenChatHooks } from "./ui/lootgen-chat.js?v=1.4.259";
 import { bringAppToFront, notifyUser, registerHandlebarsHelpers, rerenderApp } from "./ui.js";
 import { promptDurabilityOutcome } from "./ui/durability-outcome-dialog.js";
 
@@ -1505,6 +1508,22 @@ export class RebreyaMainModule {
     });
     this.inventoryService = new InventoryService(this);
     this.durabilityService = new DurabilityService(this);
+    this.lootgenGeneratedResultService = new LootgenGeneratedResultService({
+      journal: this.inventoryService.mutationJournal,
+      coordinator: this.worldMutationCoordinator,
+      buildState: (form, context) => buildLootgenGeneratedState(form, context, {
+        catalog: this.lootgenSourceCatalog,
+        buildItemData: row => this.inventoryService.buildLootgenItemData(row),
+        createDocumentId: () => foundry.utils.randomID()
+      }),
+      findMessage: messageId => this.#readLootgenMessage(messageId),
+      createMessage: (state, { messageId }) => {
+        const whisper = Array.from(game.users?.contents ?? game.users?.values?.() ?? []).filter(user=>user.isGM).map(user=>user.id);
+        if (!whisper.length) throw new Error("Не найден мастер для сохранения закрытого результата лута.");
+        return this.#createLootgenChatDocument({...state,published:false}, {messageId,whisper});
+      },
+      activateMessage: messageId => this.#activateLootgenGeneratedMessage(messageId)
+    });
     this.corpseStorageMaterializer = new CorpseStorageMaterializer({
       inventoryService: this.inventoryService,
       durabilityService: this.durabilityService
@@ -2070,6 +2089,13 @@ export class RebreyaMainModule {
   }
 
   #registerTypedSocketCommands() {
+    this.privilegedMutationGateway.registerCommand(LOOTGEN_PREPARE_RESULT_COMMAND, {
+      validate: isValidPrepareLootgenPayload,
+      authorize: (_payload, { sender }) => sender?.isGM === true,
+      execute: ({ form }, context) => this.lootgenGeneratedResultService.prepare({form,operationId:context.operationId}, {
+        requesterId: context.sender.id, authorId: game.user.id, assertAuthority: context.assertActiveGm
+      })
+    });
     for (const action of DISARM_ACTIONS) this.privilegedMutationGateway.registerCommand(`disarm.${action}`, {
       validate: payload => isValidDisarmPayload(action, payload),
       authorize: (_payload, context) => authorizeDisarmSender(action, context),
@@ -3337,21 +3363,10 @@ export class RebreyaMainModule {
     }
 
     return game.messages.contents.find((message) => {
-      const state = message.getFlag(MODULE_ID, "lootgenChat") ?? null;
-      const createdBy = String(state?.createdBy ?? "").trim();
-      const messageUserId = String(
-        message?.author?.id
-        ?? message?.user?.id
-        ?? message?.user
-        ?? ""
-      ).trim();
-      const author = game.users?.get?.(createdBy)
-        ?? Array.from(game.users?.contents ?? []).find((user) => user?.id === createdBy)
-        ?? null;
-      return String(state?.lootId ?? "") === safeLootId
-        && Boolean(createdBy)
-        && messageUserId === createdBy
-        && author?.isGM === true;
+      const envelope = this.#readLootgenMessage(message, {cloneState:false});
+      const state = envelope?.state;
+      return envelope?.trusted === true && String(state?.lootId ?? "") === safeLootId
+        && (state.resultVersion !== 2 || (state.generationReady === true && state.published === true));
     }) ?? null;
   }
 
@@ -3390,6 +3405,48 @@ export class RebreyaMainModule {
     for (const app of this.lootgenApps.values()) {
       app?.handleLootgenChatClaim?.(lootId, rowId, claimType);
     }
+  }
+
+  #readLootgenMessage(messageOrId, {cloneState=true}={}) {
+    const message = typeof messageOrId === "string"
+      ? game.messages?.get?.(messageOrId) ?? game.messages?.contents?.find(entry=>entry.id===messageOrId)
+      : messageOrId;
+    if (!message) return null;
+    const rawState = message.getFlag(MODULE_ID,"lootgenChat") ?? {};
+    const state = cloneState ? foundry.utils.deepClone(rawState) : rawState;
+    const createdBy = String(state?.createdBy ?? "").trim();
+    const messageUserId = String(message.author?.id ?? message.user?.id ?? message.user ?? "").trim();
+    const author = game.users?.get?.(createdBy) ?? game.users?.contents?.find(user=>user.id===createdBy);
+    return {id:message.id,state,trusted:Boolean(createdBy) && messageUserId === createdBy && author?.isGM === true};
+  }
+
+  async #createLootgenChatDocument(state, {messageId=null,whisper=null}={}) {
+    if (!game.user?.isGM) throw new Error("Отправлять лут в чат может только ГМ.");
+    return ChatMessage.create({
+      ...(messageId ? {_id:messageId} : {}),
+      ...(whisper ? {whisper} : {}),
+      user: state.createdBy,
+      speaker: ChatMessage.getSpeaker(),
+      content: buildLootgenChatContent(state),
+      flags: {[MODULE_ID]:{lootgenChat:state}}
+    }, {keepId:Boolean(messageId)});
+  }
+
+  async #activateLootgenGeneratedMessage(messageId) {
+    const envelope = this.#readLootgenMessage(messageId);
+    if (!envelope?.trusted || envelope.state.resultVersion!==2) throw new Error("Подготовленный результат лута недоступен.");
+    if (envelope.state.generationReady===true) return;
+    const state = {...envelope.state,generationReady:true};
+    const message = game.messages.get(messageId);
+    try {
+      await message.update({content:buildLootgenChatContent(state),[`flags.${MODULE_ID}.lootgenChat`]:state});
+    } catch (error) {
+      if (this.#readLootgenMessage(messageId)?.state.generationReady!==true) throw error;
+    }
+  }
+
+  prepareLootgenGeneratedResult(form, {operationId=createSocketRequestId("lootgen-prepare")}={}) {
+    return this.privilegedMutationGateway.mutate(LOOTGEN_PREPARE_RESULT_COMMAND, {form:normalizeLootgenForm(form)}, {operationId});
   }
 
   async createLootgenChatMessage(payload = {}, options = {}) {
@@ -3449,16 +3506,7 @@ export class RebreyaMainModule {
       totalItems: payload.totalItems ?? chatRows.reduce((sum, row) => sum + Number(row.quantity ?? 0), 0)
     };
 
-    const message = await ChatMessage.create({
-      user: game.user?.id,
-      speaker: ChatMessage.getSpeaker(),
-      content: buildLootgenChatContent(state),
-      flags: {
-        [MODULE_ID]: {
-          lootgenChat: state
-        }
-      }
-    });
+    const message = await this.#createLootgenChatDocument(state);
 
     return {
       lootId,

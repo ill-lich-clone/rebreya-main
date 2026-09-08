@@ -2825,3 +2825,45 @@ test("legacy requestSettingsUpdate rejects world writes locally for compatibilit
     fixture.restore();
   }
 });
+
+test("lootgen.prepare-result is GM-only and forwards the stable request ID without client ItemData",async()=>{
+  const fixture=installFixture();
+  try {
+    const moduleApi=new RebreyaMainModule();const calls=[];
+    moduleApi.lootgenGeneratedResultService.prepare=async(request,context)=>{calls.push({request,context});context.assertAuthority();return {lootId:"loot",messageId:"message"};};
+    const {normalizeLootgenForm}=await import("../scripts/data/lootgen-generator.js");
+    const form=normalizeLootgenForm({enableUpgrades:true});
+    const gmRequest=commandRequest("lootgen.prepare-result",fixture.users.gmB.id,{form},"prepare-gm");
+    await moduleApi.handleSocketMessage(gmRequest);await flushCommands();
+    assert.equal(resultFor(fixture,"prepare-gm").ok,true);assert.equal(calls[0].request.operationId,"prepare-gm");
+    assert.equal(calls[0].context.requesterId,fixture.users.gmB.id);assert.equal(calls[0].context.authorId,fixture.users.gmA.id);
+    for(const [sender,payload,requestId] of [[fixture.users.playerA.id,{form},"prepare-player"],[fixture.users.gmB.id,{form,itemData:{}},"prepare-forged"]]){
+      await moduleApi.handleSocketMessage(commandRequest("lootgen.prepare-result",sender,payload,requestId));await flushCommands();
+      assert.equal(resultFor(fixture,requestId).ok,false);
+    }
+    assert.equal(calls.length,1);
+  }finally{fixture.restore();}
+});
+
+test("prepared loot uses the canonical publisher with GM whispers and stays outside claim lookup",async()=>{
+  const fixture=installFixture(),previousChat=globalThis.ChatMessage;
+  try {
+    foundry.utils.escapeHTML=value=>String(value);
+    const messages=new Map();Object.defineProperty(messages,"contents",{get:()=>[...messages.values()]});game.messages=messages;
+    const created=[];
+    globalThis.ChatMessage={getSpeaker:()=>({}),create:async(data,options)=>{
+      created.push({data:clone(data),options});
+      const message={id:data._id,author:game.users.get(data.user),flags:clone(data.flags),content:data.content,
+        getFlag(scope,key){return this.flags[scope]?.[key];},async update(patch){this.flags[MODULE_ID].lootgenChat=clone(patch["flags."+MODULE_ID+".lootgenChat"]);this.content=patch.content;return this;}};
+      messages.set(message.id,message);return message;
+    }};
+    const moduleApi=new RebreyaMainModule();
+    moduleApi.lootgenGeneratedResultService.buildState=async()=>({rows:[{rowId:"row",name:"Sword",quantity:1,totalValue:120,upgrades:[]}],coins:{totalCopper:0}});
+    const result=await moduleApi.prepareLootgenGeneratedResult({enableUpgrades:true},{operationId:"prepare-publisher"});
+    assert.equal(created.length,1);assert.equal(created[0].options.keepId,true);
+    assert.deepEqual(created[0].data.whisper.sort(),[fixture.users.gmA.id,fixture.users.gmB.id].sort());
+    assert.equal(result.state.generationReady,true);assert.equal(result.state.published,false);
+    assert.doesNotMatch(messages.get(result.messageId).content,/data-lootgen-chat-action/u);
+    await assert.rejects(moduleApi.claimLootgenChatRow(result.lootId,"row",{quiet:true}),/не найдено/u);
+  } finally {if(previousChat===undefined)delete globalThis.ChatMessage;else globalThis.ChatMessage=previousChat;fixture.restore();}
+});

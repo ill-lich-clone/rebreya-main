@@ -26,3 +26,10 @@ test("invalid identities, unavailable/ incompatible profiles and host capacity r
   const d=descriptor();d.upgrades.push({...d.upgrades[0],instanceKey:"u2",slotIndex:2});
   await assert.rejects(buildCompositeItemGraph(d,options()),e=>e.code==="capacity");
 });
+
+test("graph preparation does not replace an explicit custom upgrade profile",async()=>{
+  const custom={compatibility:["weapon"],activation:"custom"};
+  const opts=options();opts.buildUpgrade=async()=>({name:"Custom",type:"loot",system:{quantity:1},flags:{"rebreya-main":{upgrade:custom}}});
+  await assert.rejects(buildCompositeItemGraph(descriptor(),opts),error=>error.code==="invalid-composite-graph");
+  assert.equal(custom.activation,"custom");
+});

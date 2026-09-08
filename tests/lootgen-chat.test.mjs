@@ -733,3 +733,13 @@ test("lootgen trusts only GM-authored chat state and journals direct grants", as
   assert.match(generatorSource, /directCoinGrantId: `lootgen:\$\{safeBatchId\}:coins`/u);
   assert.doesNotMatch(appSource, /updatePartyCurrency\(\{/u);
 });
+
+test("unpublished prepared loot is an escaped noninteractive GM preview",async()=>{
+  const restore=installLootgenChatFoundryStubs();
+  try {
+    const {buildLootgenChatContent}=await import("../scripts/ui/lootgen-chat.js?prepared-preview");
+    const content=buildLootgenChatContent({resultVersion:2,generationReady:true,published:false,lootId:"draft",rows:[{name:"<Sword>",quantity:1,totalValue:120,upgrades:[{name:"<Sharp>"}]}]});
+    assert.match(content,/&lt;Sword&gt;/u);assert.match(content,/&lt;Sharp&gt;/u);
+    assert.doesNotMatch(content,/data-lootgen-chat-action|draggable="true"/u);
+  }finally{restore();}
+});

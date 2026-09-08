@@ -1,5 +1,5 @@
 import { normalizeLootgenItemDescriptor } from "./lootgen-item-descriptor.js?v=1.4.256";
-import { buildUpgradeHostDescriptor, getItemUpgradeCategory, ITEM_UPGRADES_HOST_FLAG, INSTALLED_UPGRADE_FLAG } from "./item-upgrade-service.js?v=1.4.255";
+import { buildUpgradeHostDescriptor, profileSignature, getItemUpgradeCategory, ITEM_UPGRADES_HOST_FLAG, INSTALLED_UPGRADE_FLAG } from "./item-upgrade-service.js?v=1.4.255";
 import { validateUpgradeInstallation } from "./item-upgrade-rules.js?v=1.4.250";
 import { buildHeldItemWornUpdate } from "../integrations/held-items.js";
 
@@ -45,7 +45,10 @@ export async function buildCompositeItemGraph(raw, { buildBase, buildUpgrade, cr
     const child=cleanCatalogItem(await buildUpgrade(upgrade.sourceId,upgrade.choices),installed[index].itemId);
     const profile=manifest.find(row=>row.productId===upgrade.sourceId).profile;
     child.system.quantity=1;child.system.container=root._id;
-    const flags=child.flags[MODULE_ID];delete flags[ITEM_UPGRADES_HOST_FLAG];
+    const flags=child.flags[MODULE_ID];
+    if (flags.upgrade && typeof flags.upgrade === "object" && !Array.isArray(flags.upgrade)
+      && profileSignature(flags.upgrade) !== profileSignature(profile)) fail("custom-upgrade-profile");
+    delete flags[ITEM_UPGRADES_HOST_FLAG];
     Object.assign(flags,{gearId:upgrade.sourceId,upgrade:structuredClone(profile),itemUpgradeTemplate:true,upgradeChoices:structuredClone(upgrade.choices),
       [INSTALLED_UPGRADE_FLAG]:{hostActorId:actorId,hostItemId:root._id,slotIndex:upgrade.slotIndex,category}});
     children.push(child);links.push({hostItemId:root._id,upgradeItemId:child._id,slotIndex:upgrade.slotIndex});

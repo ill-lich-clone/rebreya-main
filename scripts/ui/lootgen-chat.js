@@ -306,6 +306,14 @@ function renderLootgenChatRow(row) {
 }
 
 export function buildLootgenChatContent(state = {}) {
+  if (state.resultVersion === 2 && state.published !== true) {
+    const rows = Array.isArray(state.rows) ? state.rows : [];
+    return `<section class="rm-chat-loot"><header class="rm-chat-loot__header"><h3>Подготовленная добыча</h3></header>
+      <p>${state.generationReady === true ? "Результат сохранён." : "Подготовка результата…"}</p>
+      <ul>${rows.map(row=>`<li>${escapeHtml(row.name)} ×${escapeHtml(row.quantity)} — ${escapeHtml(formatNumber(row.totalValue))} value
+        ${row.upgrades?.length ? `<small> · ${row.upgrades.map(upgrade=>escapeHtml(upgrade.name)).join(", ")}</small>` : ""}</li>`).join("")}</ul>
+      <p>Монеты: ${escapeHtml(formatCoinsLabel(state.coins))}</p></section>`;
+  }
   const rows = Array.isArray(state.rows) ? state.rows : [];
   const availableRows = rows.filter((row) => !row.claimed);
   const coins = normalizeCoins(state.coins ?? {});

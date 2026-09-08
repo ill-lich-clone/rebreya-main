@@ -37,3 +37,9 @@ test("upgrade component missing its source document is not selectable",()=>{
   const reader=createLootgenCatalogReader({model:{gear:[{id:"sharp",value:20}]},manifest});
   assert.equal(reader.resolveValueComponent({sourceType:"gear",sourceId:"sharp"}).priceKnown,false);
 });
+
+test("an explicit custom source profile is unavailable rather than replaced by the manifest",()=>{
+  const reader=createLootgenCatalogReader({model:{gear:[{id:"sharp",value:20}]},gearIndex:[gear("sharp",{},{upgrade:{compatibility:["weapon"],activation:"custom"}})],manifest});
+  assert.throws(()=>reader.resolveValueComponent({sourceType:"gear",sourceId:"sharp"}),error=>error.code==="unavailable");
+  assert.equal(reader.describeUpgradeHost({sourceType:"gear",sourceId:"sharp"}),null);
+});
