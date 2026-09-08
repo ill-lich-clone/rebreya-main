@@ -542,6 +542,7 @@ test("scene controls create a separate Rebreya group for record controls", () =>
       "rebreya-main-groups",
       "rebreya-main-calendar",
       "rebreya-main-cosmology",
+      "rebreya-main-scene-activity",
       "rebreya-main-lootgen"
     ]);
     const groupsTool = controls["rebreya-main-rebreya"].tools["rebreya-main-groups"];
@@ -609,6 +610,7 @@ test("scene controls create a separate Rebreya group for array controls", () => 
       "rebreya-main-groups",
       "rebreya-main-calendar",
       "rebreya-main-cosmology",
+      "rebreya-main-scene-activity",
       "rebreya-main-lootgen"
     ]);
     const groupsTool = controls[rebreyaIndex].tools.find((tool) => tool.name === "rebreya-main-groups");
@@ -709,5 +711,13 @@ test("scene controls deactivate the tiles layer before Rebreya app buttons run",
     controls["rebreya-main-rebreya"].onChange(new Event("change"), true);
 
     assert.equal(deactivationCount, 1);
+  });
+});
+
+test("scene activity tool is available to GMs and hidden from players",()=>{
+  for(const isGM of [true,false])withSceneControlsHandlerForUser({isGM},handler=>{
+    const controls={tokens:{name:"tokens",order:1,tools:{}}};handler(controls);
+    const tool=controls["rebreya-main-rebreya"].tools["rebreya-main-scene-activity"];
+    assert.equal(tool.visible,isGM);assert.equal(tool.title,"Открыть сцену");assert.equal(typeof tool.onChange,"function");
   });
 });

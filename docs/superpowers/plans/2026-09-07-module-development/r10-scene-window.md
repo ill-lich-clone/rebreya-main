@@ -68,18 +68,18 @@ assert.equal(choice.result.changed, true);
 
 **Файлы:** новые scripts/application/scene-activity-service.js, scripts/infrastructure/foundry/scene-activity-command-contract.js, tests/scene-activity-service.test.mjs, tests/scene-activity-socket.test.mjs; изменить scripts/main.js и каноническое место регистрации settings через rg.
 
-- [ ] SceneActivityService({repository,resolveContext,refresh}) с start(intent,sender), choose(intent,sender), finish(intent,sender), cancel(intent,sender), getSnapshot({groupActorId,viewer}). Repository — WorldSettingMutationRepository для sceneActivityState, не второй settings store.
-- [ ] Public API: openSceneActivityApp({groupActorId,sessionId?}), startSceneActivity(payload), chooseSceneActivity(payload), finishSceneActivity(payload), cancelSceneActivity(payload), getSceneActivitySnapshot({groupActorId}). Названия reducers/service/API различаются своим владельцем, UI получает только публичный API.
-- [ ] Typed scene-activity.start/choose/finish/cancel: exact payload из R10.1. Для finish/cancel status определяется command route, не отдельным доверенным player полем. Metadata sender берётся из gateway, не payload.
-- [ ] Новый state/config default регистрируется в существующем registerSettings пути. UI не вызывает game.settings.set. Не вкладывать внешнюю world queue внутрь executor ещё раз; одна короткая repository mutation заново читает state/права и применяет reducer.
-- [ ] Auth: start/finish/cancel GM; choose GM либо OWNER именно своего invited Actor. UUID канонизировать существующим group member resolver; знание session ID не разрешает выбор за другого. Ушедший из группы участник больше не мутирует session.
-- [ ] В одной записи сохранять transition + receipt. При write error делать readback по operationId; подтверждённая запись возвращает результат, неизвестная — исходную ошибку без автоматического повторного start.
-- [ ] No GM — объяснимая ошибка до write; смена active GM проверяется guard перед каждой mutation. Two-GM race в одной группе не создаёт две open sessions.
-- [ ] Broadcast содержит invalidation session/group/revision, без произвольного вызываемого кода. Клиент перечитывает snapshot; повтор/перестановка notifications не применяет старую revision поверх новой.
-- [ ] Ready/reconnect получает только доступные open sessions. Completed/cancelled не открываются повторно. Смена Foundry Scene не отменяет session, не вызывает activate/view другой карты.
-- [ ] Snapshot — публичные намерения, имена допустимых участников и read-only choices. Hidden setting не считать хранилищем секретов: не сохранять в нём скрытые Item/умения/GM notes. View projection для GM включает всех, для игрока — доступный контекст и собственные controls.
-- [ ] Service tests используют repository stub с сохранением state между новым экземпляром service. Verify one write per transition, duplicate/noop zero writes, readback-after-error, unauthorized zero writes, два быстрых выбора разных Actor с stale/retry.
-- [ ] Отдельный integration spy запрещает actor.update, updateEmbeddedDocuments, shortRest, rollHitDie и любые world-time/calendar adapters: все счётчики вызовов равны нулю при start/choose/finish/cancel/reconnect.
+- [x] SceneActivityService({repository,resolveContext,refresh}) с start(intent,sender), choose(intent,sender), finish(intent,sender), cancel(intent,sender), getSnapshot({groupActorId,viewer}). Repository — WorldSettingMutationRepository для sceneActivityState, не второй settings store.
+- [x] Public API: openSceneActivityApp({groupActorId,sessionId?}), startSceneActivity(payload), chooseSceneActivity(payload), finishSceneActivity(payload), cancelSceneActivity(payload), getSceneActivitySnapshot({groupActorId}). Названия reducers/service/API различаются своим владельцем, UI получает только публичный API.
+- [x] Typed scene-activity.start/choose/finish/cancel: exact payload из R10.1. Для finish/cancel status определяется command route, не отдельным доверенным player полем. Metadata sender берётся из gateway, не payload.
+- [x] Новый state/config default регистрируется в существующем registerSettings пути. UI не вызывает game.settings.set. Не вкладывать внешнюю world queue внутрь executor ещё раз; одна короткая repository mutation заново читает state/права и применяет reducer.
+- [x] Auth: start/finish/cancel GM; choose GM либо OWNER именно своего invited Actor. UUID канонизировать существующим group member resolver; знание session ID не разрешает выбор за другого. Ушедший из группы участник больше не мутирует session.
+- [x] В одной записи сохранять transition + receipt. При write error делать readback по operationId; подтверждённая запись возвращает результат, неизвестная — исходную ошибку без автоматического повторного start.
+- [x] No GM — объяснимая ошибка до write; смена active GM проверяется guard перед каждой mutation. Two-GM race в одной группе не создаёт две open sessions.
+- [x] Broadcast содержит invalidation session/group/revision, без произвольного вызываемого кода. Клиент перечитывает snapshot; повтор/перестановка notifications не применяет старую revision поверх новой.
+- [x] Ready/reconnect получает только доступные open sessions. Completed/cancelled не открываются повторно. Смена Foundry Scene не отменяет session, не вызывает activate/view другой карты.
+- [x] Snapshot — публичные намерения, имена допустимых участников и read-only choices. Hidden setting не считать хранилищем секретов: не сохранять в нём скрытые Item/умения/GM notes. View projection для GM включает всех, для игрока — доступный контекст и собственные controls.
+- [x] Service tests используют repository stub с сохранением state между новым экземпляром service. Verify one write per transition, duplicate/noop zero writes, readback-after-error, unauthorized zero writes, два быстрых выбора разных Actor с stale/retry.
+- [x] Отдельный integration spy запрещает actor.update, updateEmbeddedDocuments, shortRest, rollHitDie и любые world-time/calendar adapters: все счётчики вызовов равны нулю при start/choose/finish/cancel/reconnect.
 
 **Проверка:** node --test tests/scene-activity-rules.test.mjs tests/scene-activity-service.test.mjs tests/scene-activity-socket.test.mjs tests/world-setting-mutation-repository.test.mjs tests/group-command-dispatch.test.mjs tests/ui-refresh-coordinator.test.mjs.
 
@@ -87,14 +87,14 @@ assert.equal(choice.result.changed, true);
 
 **Файлы:** новые scripts/ui/scene-activity-app.js, templates/scene-activity-app.hbs, tests/scene-activity-app.test.mjs; изменить styles/main.css и scripts/main.js для единственного app registry.
 
-- [ ] Один ApplicationV2/session; registry Map<sessionId,app> принадлежит composition. Reopen возвращает существующую instance; closed stale instance не удаляет replacement registry entry.
-- [ ] GM setup выбирает группу, занятого персонажа и остальных участников; «Открыть сцену» сохраняет именно этот контекст до await. Повтор клик использует один operationId и disable на время запроса.
-- [ ] Заголовок «У вас есть 10 минут». Подзаголовок «Пока [персонаж] занят, выберите, чем займётся ваш герой». Карточки: «Осмотреться», «Помочь», «Подготовиться», «Отдохнуть», «Своё действие».
-- [ ] Полноэкранность — CSS внутри viewport Foundry, 100dvw/100dvh с учётом реальных UI bounds, scroll для длинного содержимого. Не использовать browser requestFullscreen и не менять active Foundry Scene.
-- [ ] «Вернуться к карте» сворачивает только локальное окно, сохраняет выбор и session. Компактный индикатор возвращает ту же app. GM finish/cancel — отдельные actions, закрытие X не завершает сцену.
-- [ ] Если инициатор также владеет другим приглашённым Actor, UI выбирает явный Actor context. Сам занятый Actor видит своё основное действие и не получает автоматическое второе.
-- [ ] Игрок может менять свою заявку до завершения. На stale state сохранить ввод локально, перечитать snapshot и показать конфликт; не перезаписывать выбор без свежего подтверждённого действия.
-- [ ] GM видит участников/их выбранные занятия и «ещё не выбрано». Никаких кнопок «восстановить», «бросить HD», пустых cooldown badges и счетчика реальных секунд.
+- [x] Один ApplicationV2/session; registry Map<sessionId,app> принадлежит composition. Reopen возвращает существующую instance; closed stale instance не удаляет replacement registry entry.
+- [x] GM setup выбирает группу, занятого персонажа и остальных участников; «Открыть сцену» сохраняет именно этот контекст до await. Повтор клик использует один operationId и disable на время запроса.
+- [x] Заголовок «У вас есть 10 минут». Подзаголовок «Пока [персонаж] занят, выберите, чем займётся ваш герой». Карточки: «Осмотреться», «Помочь», «Подготовиться», «Отдохнуть», «Своё действие».
+- [x] Полноэкранность — CSS внутри viewport Foundry, 100dvw/100dvh с учётом реальных UI bounds, scroll для длинного содержимого. Не использовать browser requestFullscreen и не менять active Foundry Scene.
+- [x] «Вернуться к карте» сворачивает только локальное окно, сохраняет выбор и session. Компактный индикатор возвращает ту же app. GM finish/cancel — отдельные actions, закрытие X не завершает сцену.
+- [x] Если инициатор также владеет другим приглашённым Actor, UI выбирает явный Actor context. Сам занятый Actor видит своё основное действие и не получает автоматическое второе.
+- [x] Игрок может менять свою заявку до завершения. На stale state сохранить ввод локально, перечитать snapshot и показать конфликт; не перезаписывать выбор без свежего подтверждённого действия.
+- [x] GM видит участников/их выбранные занятия и «ещё не выбрано». Никаких кнопок «восстановить», «бросить HD», пустых cooldown badges и счетчика реальных секунд.
 - [ ] Экранирование HBS/textContent для имён и free text; keyboard focus, aria-label, responsive layout и cleanup AbortController/observers. При update другой участник не отбирает focus у пишущего.
 - [ ] Tests: один overlay на повтор notifications, collapsed/reopen, out-of-order revision, finish while typing, replacement close, escape text, long list и отсутствие resource controls.
 
@@ -102,19 +102,19 @@ assert.equal(choice.result.changed, true);
 
 **Файлы:** scripts/hooks.js, tests/bg3-hotbar-compat.test.mjs, tests/main-composition-root.test.mjs и README/паспорт 2/6/19.
 
-- [ ] В существующем buildToolsRecord()/registerSceneControlsHook добавить GM-only «Открыть сцену», использующую openSceneActivityApp. Сохранить array/record compatibility scene tools, не второй hook на те же controls.
-- [ ] Player индикатор открытой scene показывать через существующую UI integration точку и app registry; права из snapshot, не скрытая CSS-кнопка GM.
+- [x] В существующем buildToolsRecord()/registerSceneControlsHook добавить GM-only «Открыть сцену», использующую openSceneActivityApp. Сохранить array/record compatibility scene tools, не второй hook на те же controls.
+- [x] Player индикатор открытой scene показывать через существующую UI integration точку и app registry; права из snapshot, не скрытая CSS-кнопка GM.
 - [ ] Live GM+два игрока: разные группы, два выбора одновременно, своё действие с длинным текстом, reopen, offline/reconnect, смена GM и карты, повтор start/finish/cancel.
 - [ ] Viewports1280×720/1920×1080, масштаб браузера и keyboard. Ноль новых console errors, HP/HD/uses/calendar до/после идентичны.
-- [ ] Документировать public APIs, state ownership, revision/receipt, минимизацию и то, что десять минут — игровая заявка без продвижения времени.
+- [x] Документировать public APIs, state ownership, revision/receipt, минимизацию и то, что десять минут — игровая заявка без продвижения времени.
 
 ## Выпуск этапа
 
-- [ ] Выполнить полный профиль focused-тестов этого плана; записать фактические passed/failed.
+- [x] Выполнить полный профиль focused-тестов этого плана; записать фактические passed/failed.
 - [ ] Пройти перечисленные live-сценарии в выделенном тестовом Foundry-мире. Сохранить viewport, версии, GM/player и console result. Если live недоступен, оставить этот пункт открытым.
-- [ ] Обновить профильные методы паспорта и README при изменении public contract.
-- [ ] Поднять актуальную patch version в module.json; создать/переименовать versioned forwarder с единственным import "./main.js"; обновить esmodules. Проверить отсутствие старых runtime-entrypoint ссылок.
-- [ ] Выполнить один полный цикл команд из README этого комплекта, проверить содержательный diff, stat и diff --check.
+- [x] Обновить профильные методы паспорта и README при изменении public contract.
+- [x] Поднять актуальную patch version в module.json; создать/переименовать versioned forwarder с единственным import "./main.js"; обновить esmodules. Проверить отсутствие старых runtime-entrypoint ссылок.
+- [x] Выполнить один полный цикл команд из README этого комплекта, проверить содержательный diff, stat и diff --check.
 - [ ] Stage только перечисленных файлов текущего этапа и обязательных manifest/docs; осмысленный commit; git push -u origin lich_branch. Проверить чистую рабочую копию и HEAD...origin/lich_branch = 0/0. Не включать чужие изменения.
 
 **Предлагаемые commits:** feat: persist shared scene activity selections; feat: show the ten-minute activity window.
@@ -127,3 +127,18 @@ assert.equal(choice.result.changed, true);
 Focused159/0: scene-activity rules/service/socket, world-setting-mutation-repository, actual group-command-dispatch, ui-refresh-coordinator, module-manifest/main-composition-root. Native testovyj3/CODEX13.351/dnd5e5.2.5: модуль загружен, hidden setting config=false и v1 default, API без writes прочёл4 managed группы (5/4/5/3 персонажа). Новые сессии в мире не создавались, действующий GM route ещё не проверен. Полноэкранное окно, launcher, ready/invalidation/reconnect controller и live multiuser matrix остаются R10.3–R10.4; соответствующие чекбоксы не закрыты.
 
 Полный прогон1.4.271: `node --test tests/*.test.mjs` — **3978 passed / 0 failed**; `node --check`792 JS/MJS, JSON parse46 —0ошибок. `git diff --check` чисто. Backend готов к подключению UI; live multiuser/полноэкранность не объявлены завершёнными.
+
+## R10.3–R10.4 — окно и локальный lifecycle (1.4.272)
+
+Добавлены один ApplicationV2/session, GM setup/launcher, выбор пяти занятий, текст до500 символов, roster, локальное сворачивание/возврат, ready/settings/reconnect invalidation. Контроллер отбрасывает старые snapshots и последовательно применяет асинхронные render/close: terminal во время закрытия setup не оживляет старую сцену. Черновик и original request сохраняются при transport error; stale требует нового явного submit. Изменение чужой заявки не заменяет DOM ввода. Действия не расходуют ресурсы и не продвигают время.
+
+Native UI в testovyj3, Foundry13.351/dnd5e5.2.5, CODEX GM: настоящая setup-форма прочла группу «Покатушки» и4 персонажей. Для активного окна использована локальная тестовая проекция с настоящими ApplicationV2/controller и pure reducers, без записи world setting и без подмены active GM. Подтверждены500 символов, literal HTML-подобный текст/имя без HTML-узлов, peer revision2 с сохранением фокуса/курсора120, сохранение через кнопку до revision3, collapse/reopen той же instance и terminal cleanup (registry/overlay/indicator0). World setting до/после идентичен.
+
+1280×720: кнопка сохранения bottom695, текст доступен со scroll; Foundry сам предупреждает о минимуме1024×768. 1920×1080: один DOM overlay ровно во viewport, horizontal overflow отсутствует, кнопка bottom1055. Снимок большого emulated viewport дал артефакт capture и повторный CDP screenshot timeout; полноценная визуальная приёмка этого размера, browser scale и keyboard остаётся открытой. Raw CDP keyboard не поддерживается этим браузерным инструментом; этот шаг не засчитан. Эмуляция размера сброшена, временная проекция закрыта.
+
+Это не проверка native GM/player persistence, двух клиентов, reconnect/GM-switch или всей live матрицы: соответствующие пункты остаются открыты. Пользователю отправлен запрос обновить действующую GM-сессию для новых commands.
+После обновления Gamemaster пройден настоящий typed socket маршрут CODEX→active Gamemaster: registerPartyGroup, start/exact retry, два choose с одной revision (один конфликт и явный fresh submit), finish/exact retry, новая scene и cancel/exact retry. В persisted state ровно2 terminal sessions (completed revision4, cancelled revision2),6 receipts и0 active sessions; повторные requests не добавили переходов. Открытая session revision3 с2 choices восстановлена после browser reload автоматически одной app после завершения initialize. Native bootstrap выявил необходимость поддержать вызов внутри ready hook до game.ready; добавлен duringReady:true и focused regression. Начальная загрузка существующего initialize занимает десятки секунд; до её завершения окно ещё не открывается.
+
+До/после start/choose/finish/cancel сравнивались полные toObject трёх QA Actor, worldTime и прежние group states: изменений нет. Это два GM-клиента, не player-auth/multi-player доказательство. QA группа tmEFi3kHho74M01o «[QA R10] Проверка сцены» и Actor egcIVdTZYNPfJG66/rVsa8f6b6DW6HAo7/iW51E48x6SHpra4S оставлены с default ownership0 для следующих изолированных проверок; текущая активная игровая группа не менялась. В дальнейшем удалить только эти QA документы/registry entry после оставшейся multiuser матрицы; не откатывать целиком world settings.
+
+Проверки финального кода272: `node --test tests/*.test.mjs` — **3990 passed / 0 failed**. `node --check`796 JS/MJS —0 ошибок; JSON parse46 —0 ошибок; `git diff --check` чисто. Focused профиль до последнего ready regression192/0, после него изменённые owners group-command-dispatch/main-composition-root65/0 и полный прогон3990/0. Предыдущий полный3990 не повторять без новых code changes. Live player/reconnect/GM-switch, keyboard/scale/long-list и общая приёмка остаются открытыми.

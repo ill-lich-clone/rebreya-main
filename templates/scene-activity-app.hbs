@@ -1,0 +1,43 @@
+<div>
+<section class="rm-scene-activity">
+  <header class="rm-scene-activity__intro">
+    <p class="rm-scene-activity__eyebrow">{{groupName}}</p>
+    <h1>У вас есть 10 минут</h1>
+    {{#if setup}}<p>Выберите занятого персонажа и тех, кто сможет заняться своими делами.</p>
+    {{else}}<p>Пока {{busyName}} занят, выберите, чем займётся ваш герой.</p>{{/if}}
+  </header>
+  <div class="rm-scene-activity__body">
+    {{#if setup}}
+      <section class="rm-scene-activity__panel">
+        <h2>Открыть сцену</h2>
+        <label>Группа<select data-field="group" data-mutation>{{#each groups}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{name}}</option>{{/each}}</select></label>
+        <label>Кто занят<select data-field="initiator" data-mutation>{{#each initiators}}<option value="{{uuid}}" {{#if selected}}selected{{/if}}>{{name}}</option>{{/each}}</select></label>
+        <fieldset><legend>Участники</legend>{{#each participants}}<label class="rm-scene-activity__participant"><input type="checkbox" data-field="participant" data-mutation value="{{uuid}}" {{#if checked}}checked{{/if}}>{{name}}</label>{{/each}}</fieldset>
+      </section>
+      <aside class="rm-scene-activity__panel"><h2>Время для своих дел</h2><p>Участники увидят общее окно и смогут выбрать занятие. Вы увидите все заявки.</p><p>Сцена завершится, когда вы нажмёте «Завершить». Десять минут — игровое время; таймера здесь нет.</p><p>Выбор занятия сам по себе не меняет ресурсы персонажа.</p></aside>
+    {{else}}
+      <section class="rm-scene-activity__panel">
+        {{#if canChoose}}
+          <h2>Чем займётесь?</h2>
+          {{#if multipleActors}}<label>Персонаж<select data-field="actor" data-mutation>{{#each actorOptions}}<option value="{{uuid}}" {{#if selected}}selected{{/if}}>{{name}}</option>{{/each}}</select></label>{{else}}{{#each actorOptions}}<p class="rm-scene-activity__actor">{{name}}</p>{{/each}}{{/if}}
+          <fieldset class="rm-scene-activity__actions"><legend>Выберите занятие</legend>
+            {{#each actions}}<label class="rm-scene-activity__action"><input type="radio" name="sceneAction-{{../session.sessionId}}" data-field="action" data-mutation value="{{id}}" {{#if checked}}checked{{/if}}><i class="fa-solid {{icon}}" aria-hidden="true"></i><span>{{label}}</span></label>{{/each}}
+          </fieldset>
+          <label>Описание занятия<textarea data-field="text" data-mutation maxlength="500" rows="4" placeholder="Добавьте детали, если нужно">{{draft.text}}</textarea></label>
+          <p class="rm-scene-activity__hint"><span data-role="char-count">До 500 символов</span> · «Отдохнуть» — заявка мастеру.</p>
+        {{else}}<h2>Основное действие</h2><p>{{busyName}} уже занят. Дополнительное занятие для него не выбирается.</p>{{/if}}
+      </section>
+      <aside class="rm-scene-activity__panel"><h2>Заявки участников</h2><ul class="rm-scene-activity__roster">
+        {{#each roster}}<li data-participant="{{uuid}}"><strong>{{name}}</strong><span data-role="choice">{{action}}</span><p data-role="detail">{{text}}</p></li>{{/each}}
+      </ul></aside>
+    {{/if}}
+  </div>
+  <footer class="rm-scene-activity__footer">
+    <p data-role="status" role="status" aria-live="polite">{{status}}</p>
+    <div><button type="button" data-scene-action="collapse">Вернуться к карте</button>
+      {{#if setup}}<button type="button" data-scene-action="start" data-mutation class="rm-scene-activity__primary">Открыть сцену</button>{{else}}{{#if canChoose}}<button type="button" data-scene-action="choose" data-mutation class="rm-scene-activity__primary">Сохранить заявку</button>{{/if}}{{/if}}
+      {{#unless setup}}{{#if canManage}}<button type="button" data-scene-action="cancel" data-mutation>Отменить сцену</button><button type="button" data-scene-action="finish" data-mutation class="rm-scene-activity__primary">Завершить</button>{{/if}}{{/unless}}
+    </div>
+  </footer>
+</section>
+</div>

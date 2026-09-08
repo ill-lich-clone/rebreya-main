@@ -63,8 +63,8 @@ test("module manifest loads an unpinned canonical entrypoint for page-refresh up
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const [entrypoint] = manifest.esmodules;
 
-  assert.equal(manifest.version, "1.4.271");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.271.js"]);
+  assert.equal(manifest.version, "1.4.272");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.272.js"]);
   assert.doesNotMatch(entrypoint, /[?#]/u);
 
   const entrypointSource = await readFile(new URL(entrypoint, manifestUrl), "utf8");
@@ -76,7 +76,7 @@ test("canonical entrypoint cache-busts the player-list inventory token launcher"
 
   assert.match(
     entrypointSource,
-    /hooks\.js\?v=1\.4\.172-panel-owner-runtime/u
+    /hooks\.js\?v=1\.4\.272/u
   );
   assert.match(
     entrypointSource,
@@ -319,7 +319,7 @@ test("module keeps recent published entrypoint URLs as canonical compatibility f
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
 
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.271.js"]);
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.272.js"]);
 
   for (const fileName of ["main-1.4.98.js", "main-1.4.99.js", "main-1.4.100.js"]) {
     const forwarderSource = await readFile(new URL(`../scripts/${fileName}`, import.meta.url), "utf8");
@@ -493,7 +493,7 @@ test("legacy settings relay fails closed when a world-setting socket is unavaila
 test("module stylesheet cache bust loads the storage deposit interaction styles", async () => {
   const entrypointSource = await readCanonicalEntrypointSource();
 
-  assert.match(entrypointSource, /const MODULE_STYLE_VERSION = "1\.4\.269";/u);
+  assert.match(entrypointSource, /const MODULE_STYLE_VERSION = "1\.4\.272";/u);
   assert.match(entrypointSource, /const stylesheetHref = `\$\{MODULE_STYLE_PATH\}\?v=\$\{encodeURIComponent\(MODULE_STYLE_VERSION\)\}`;/u);
   assert.doesNotMatch(entrypointSource, /module\?\.version\s*\?\?/u);
 });

@@ -3098,6 +3098,17 @@ test("storage templates prepare upgrades and filled containers without Chat or c
   }finally{Math.random=oldRandom;fixture.restore();}
 });
 
+test("scene activity ready bootstrap restores projections before Foundry sets game.ready",async()=>{
+  const fixture=installFixture();
+  try{
+    const api=new RebreyaMainModule();let refreshed=0;
+    api.sceneActivityControllerPromise=Promise.resolve({refresh:async()=>{refreshed++;}});
+    game.ready=false;
+    await api.refreshSceneActivityApps();assert.equal(refreshed,0);
+    await api.refreshSceneActivityApps({duringReady:true});assert.equal(refreshed,1);
+  }finally{fixture.restore();}
+});
+
 test("scene activity gateway authenticates participants, persists choices and never touches actor resources",async()=>{
   const fixture=installFixture({includeGroupB:true});let forbidden=0;
   try{

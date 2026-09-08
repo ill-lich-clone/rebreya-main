@@ -620,6 +620,7 @@ function buildToolsRecord() {
   const calendarToolName = `${MODULE_ID}-calendar`;
   const cosmologyToolName = `${MODULE_ID}-cosmology`;
   const lootgenToolName = `${MODULE_ID}-lootgen`;
+  const sceneActivityToolName = `${MODULE_ID}-scene-activity`;
   const showEconomyButton = isEconomyButtonVisible();
 
   const tools = {
@@ -689,6 +690,11 @@ function buildToolsRecord() {
         () => game.rebreyaMain?.openCosmologyApp?.(),
         "Cosmology control click failed."
       )
+    },
+    [sceneActivityToolName]: {
+      name:sceneActivityToolName,order:45,title:"Открыть сцену",icon:"fa-solid fa-hourglass-half",button:true,
+      visible:game.user?.isGM===true,
+      onChange:createSafeAction(()=>game.rebreyaMain?.openSceneActivityApp?.(),"Scene activity control click failed.")
     },
     [lootgenToolName]: {
       name: lootgenToolName,
@@ -825,5 +831,12 @@ export function registerSceneControlsHook() {
 
   Hooks.on("canvasReady", () => {
     rerenderSceneControls();
+    refreshSceneActivities();
+  });
+  const refreshSceneActivities=()=>game.rebreyaMain?.refreshSceneActivityApps?.()?.catch(error=>console.warn(`${MODULE_ID} | Scene activity refresh failed.`,error));
+  Hooks.on("updateUser",refreshSceneActivities);
+  Hooks.on("deleteActor",refreshSceneActivities);
+  Hooks.on("updateActor",(_actor,changes)=>{
+    if(Object.keys(changes??{}).some(key=>key==="ownership"||key.startsWith("ownership.")||key==="system.members")||changes?.system?.members)refreshSceneActivities();
   });
 }

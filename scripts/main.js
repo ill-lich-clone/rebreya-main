@@ -329,7 +329,7 @@ import {
   refreshPlayerInventoryQuickButton,
   registerSceneControlsHook,
   unregisterExternalPanelTool
-} from "./hooks.js?v=1.4.172-panel-owner-runtime";
+} from "./hooks.js?v=1.4.272";
 import {
   extendDnd5eItemTypes,
   registerDnd5eSheetExtensions,
@@ -407,7 +407,7 @@ const LEGACY_WORLD_MUTATION_SOCKET_TYPES = new Set([
   SOCKET_EVENT_LOOTGEN_CLAIM_COINS
 ]);
 const MODULE_STYLE_PATH = `modules/${MODULE_ID}/styles/main.css`;
-const MODULE_STYLE_VERSION = "1.4.269";
+const MODULE_STYLE_VERSION = "1.4.272";
 const SECONDS_PER_HOUR = 3600;
 const SECONDS_PER_DAY = 86400;
 const TRAVEL_DAY_HOURS = 8;
@@ -1404,6 +1404,8 @@ export class RebreyaMainModule {
     });
     this.sceneActivityService=new SceneActivityService({repository:this.worldSettingMutationRepository,
       resolveContext:request=>this.#resolveSceneActivityContext(request),refresh:change=>this.refreshSceneActivityApps?.(change)});
+    this.sceneActivityApps=new Map();
+    this.sceneActivityControllerPromise=null;
     this.purchaseBasketJournalRepository = new PurchaseBasketJournalRepository({
       worldSettingMutationRepository: this.worldSettingMutationRepository
     });
@@ -2844,6 +2846,29 @@ export class RebreyaMainModule {
       groupMemberActorUuids:members.map(uuid),ownedActorUuids:members.filter(actor=>actorIsOwnedByUser(actor,sender)).map(uuid),
       actorNames:Object.fromEntries(members.map(actor=>[uuid(actor),actor.name??uuid(actor)])),
       now:Date.now(),createSessionId:()=>createSocketRequestId("scene")};
+  }
+
+  listSceneActivityGroups(){
+    return this.groupContextService.getManagedGroupActors().filter(group=>this.#canSenderManageGroup(game.user,group.id))
+      .map(group=>({id:group.id,name:group.name??"Группа"}));
+  }
+  async #getSceneActivityController(){
+    if(!this.sceneActivityControllerPromise)this.sceneActivityControllerPromise=(async()=>{
+      const [{SceneActivityController},{SceneActivityApp,renderSceneActivityIndicator}]=await Promise.all([
+        import("./ui/scene-activity-controller.js?v=1.4.272"),import("./ui/scene-activity-app.js?v=1.4.272")]);
+      return new SceneActivityController({api:this,registry:this.sceneActivityApps,
+        createApp:(snapshot,callbacks)=>new SceneActivityApp(this,snapshot,callbacks),onChange:renderSceneActivityIndicator});
+    })().catch(error=>{this.sceneActivityControllerPromise=null;throw error;});
+    return this.sceneActivityControllerPromise;
+  }
+  async refreshSceneActivityApps({duringReady=false}={}){
+    // Foundry sets game.ready after dispatching its ready hook.
+    if(!game.ready&&!duringReady)return null;
+    return (await this.#getSceneActivityController()).refresh();
+  }
+  async openSceneActivityApp(options={}){
+    const groupActorId=options.groupActorId || this.groupContextService.resolveForCurrentUser()?.groupActor?.id;
+    return (await this.#getSceneActivityController()).open({...options,groupActorId});
   }
 
   #requestSceneActivity(action,payload) {
@@ -7901,6 +7926,8 @@ Hooks.once("ready", async () => {
 
   try {
     await moduleApi.initialize();
+    await moduleApi.refreshSceneActivityApps({duringReady:true}).catch(error=>console.warn(`${MODULE_ID} | Scene initial refresh failed.`,error));
+    game.socket?.on?.("connect",()=>moduleApi.refreshSceneActivityApps().catch(error=>console.warn(`${MODULE_ID} | Scene reconnect refresh failed.`,error)));
     await publishModuleVersionNotice({ moduleEntry: module, user: game.user });
   }
   catch (error) {
