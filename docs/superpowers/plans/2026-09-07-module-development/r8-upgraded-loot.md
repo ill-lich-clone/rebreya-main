@@ -170,3 +170,12 @@ Gate перед новым Item ingress сравнивает fresh catalog с с
 Открыты публикация той же записи, безопасная выдача персонажу, UI опций/preview/прямая выдача и полный multiplayer lifecycle. R8 не завершён.
 
 Проверки пятой части: `node --test tests/*.test.mjs` — **3856 passed / 0 failed**; синтаксис **773 JS/MJS и 46 JSON, 0 ошибок**; `git diff --check` чисто. Два initial failures были устаревшими ожидаемыми версиями в module-manifest, исправлены перед повторным полным прогоном. Native testovyj3/CODEX/Foundry13.351/dnd5e5.2.5: fresh catalog допускает 2 composed rows total6400; read-only изменённый снимок цены даёт lootgen-result-stale. World writes отсутствовали; это не проверка реальной выдачи.
+
+
+### Шестая часть R8 — 1.4.261
+
+Character route использует trusted Chat references, OWNER/GM и существующие LootClaimService/InventoryService. Полный graph/IDs persist before credit, partial recovery без reread каталога, source claimed только после receipt. Default storage contract сохранён. UI v2 self click не создаёт локальный root. Domain IDs подготовки/выдачи отделены от request IDs: повтор после ошибки транспорта продолжает receipt.
+
+Focused: node --test tests/group-command-dispatch.test.mjs tests/lootgen-chat.test.mjs tests/inventory-mutation-recovery.test.mjs tests/disarm-storage.test.mjs — 156 passed / 0 failed. Новая native выдача через active GM пока не проверена. Открыты публикация, v2 drag, окно генерации/preview/прямая выдача и полный lifecycle; R8 не завершён.
+
+Проверки шестой части: `node --test tests/*.test.mjs` — **3863 passed / 0 failed**; `node --check` — **773 JS/MJS**, JSON parse — **46 файлов**, ошибок **0**; `git diff --check` чисто. Initial full failure был устаревшим cache-key assertion в main-composition-root; исправлен, полный прогон повторён. Реальный multiplayer generate→publish→claim ещё открыт.

@@ -187,6 +187,12 @@ async function claimLootgenRowToSelf(message, lootId, rowId) {
     throw new Error("Не удалось определить персонажа для получения добычи.");
   }
 
+  if (getLootgenState(message).resultVersion === 2) {
+    const api=globalThis.game?.rebreyaMain;
+    if (!actor.uuid || typeof api?.claimLootgenChatRowToCharacter !== "function") throw new Error("Обновите модуль для выдачи подготовленного лута.");
+    return api.claimLootgenChatRowToCharacter(lootId,rowId,actor.uuid);
+  }
+
   await actor.createEmbeddedDocuments("Item", [itemData], {
     [MODULE_ID]: {
       skipLootgenChatAutoClaim: true

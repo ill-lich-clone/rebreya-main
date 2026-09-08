@@ -5261,3 +5261,72 @@ test("manual dismantle of an installed host rejects before any document write",a
     assert.equal(group.items.contents.length,1);assert.equal(group.createEmbeddedDocumentsCalls,0);
   }finally{fixture.restore();}
 });
+
+test("character grants reject prepared loot graphs without the trusted adapter",async()=>{
+  const hero=createActor({id:"prepared-denied-hero"});
+  const fixture=installFixture({actors:[hero]});
+  try {
+    await assert.rejects(fixture.service.addLootgenRowToCharacterOnce({quantity:1,itemData:await preparedLootgenIngressItem()},hero,"deny-prepared-character"),{code:"invalid-prepared-lootgen-item"});
+    assert.equal(hero.items.contents.length,0);
+  }finally{fixture.restore();}
+});
+
+test("prepared character grant persists exact graph IDs and resumes without rebuilding or checking a changed catalog",async()=>{
+  const hero=createActor({id:"prepared-hero"}),other=createActor({id:"prepared-other"});
+  const fixture=installFixture({actors:[hero,other]});
+  let creates=0,catalogReads=0,changed=false;
+  try {
+    const row={quantity:1,itemData:await preparedLootgenIngressItem()};
+    const options={allowPreparedLootgenGraph:true,beforePrepare:async()=>{catalogReads++;if(changed)throw new Error("stale catalog");}};
+    const create=hero.createEmbeddedDocuments.bind(hero);
+    hero.createEmbeddedDocuments=async(type,documents,opts)=>{
+      creates++;
+      const record=await fixture.service.mutationJournal.find("prepared-character");
+      assert.equal(record.targetReceipt.graphItemIds.length,2);
+      assert.ok(documents.every(data=>record.targetReceipt.graphItemIds.includes(data._id)));
+      if(creates===1){await create(type,documents.slice(0,1),opts);throw new Error("partial write");}
+      assert.equal(documents.length,1);return create(type,documents,opts);
+    };
+    await assert.rejects(fixture.service.addLootgenRowToCharacterOnce(row,hero,"prepared-character",options),{code:"graph-manual-review"});
+    assert.equal(hero.items.contents.length,1);changed=true;
+    await assert.rejects(fixture.service.addLootgenRowToCharacterOnce(row,other,"prepared-character",options),/different.*target|conflict/u);
+    const altered=clone(row);altered.itemData.name="Different source";
+    await assert.rejects(fixture.service.addLootgenRowToCharacterOnce(altered,hero,"prepared-character",options),/conflict/u);
+    const result=await fixture.service.addLootgenRowToCharacterOnce(row,hero,"prepared-character",options);
+    assert.equal(catalogReads,1);assert.equal(creates,2);assert.equal(hero.items.contents.length,2);
+    const child=hero.items.contents.find(item=>item.type==="loot");
+    assert.equal(child.flags[MODULE_ID].installedUpgrade.hostActorId,hero.id);
+    assert.equal(child.system.container,result.itemId);
+    hero.items.contents.splice(0);
+    assert.deepEqual(await fixture.service.addLootgenRowToCharacterOnce(row,hero,"prepared-character",options),result);
+    assert.equal(hero.items.contents.length,0);assert.equal(catalogReads,1);
+  }finally{fixture.restore();}
+});
+
+test("prepared character gate rejects before any journal or target write",async()=>{
+  const hero=createActor({id:"prepared-stale-hero"});
+  const fixture=installFixture({actors:[hero]});
+  try {
+    await assert.rejects(fixture.service.addLootgenRowToCharacterOnce({quantity:1,itemData:await preparedLootgenIngressItem()},hero,"stale-character",{
+      allowPreparedLootgenGraph:true,beforePrepare:async()=>{throw new Error("stale catalog");}
+    }),/stale catalog/u);
+    assert.equal(hero.items.contents.length,0);
+    assert.equal(await fixture.service.mutationJournal.find("stale-character"),null);
+  }finally{fixture.restore();}
+});
+
+test("separate prepared character grants keep distinct hosts and upgrade links",async()=>{
+  const hero=createActor({id:"separate-prepared"});
+  const fixture=installFixture({actors:[hero]});
+  try {
+    const row={quantity:1,itemData:await preparedLootgenIngressItem()},options={allowPreparedLootgenGraph:true};
+    const a=await fixture.service.addLootgenRowToCharacterOnce(row,hero,"separate-a",options);
+    const b=await fixture.service.addLootgenRowToCharacterOnce(row,hero,"separate-b",options);
+    assert.notEqual(a.itemId,b.itemId);assert.equal(hero.items.contents.length,4);
+    for(const result of [a,b]){
+      const host=hero.items.get(result.itemId),child=hero.items.get(host.flags[MODULE_ID].itemUpgrades.installed[0].itemId);
+      assert.equal(host.system.quantity,1);assert.equal(child.system.container,host.id);
+      assert.equal(child.flags[MODULE_ID].installedUpgrade.hostItemId,host.id);
+    }
+  }finally{fixture.restore();}
+});

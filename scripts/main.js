@@ -80,7 +80,7 @@ import {
   SOCKET_EVENT_INVENTORY_SOURCE_DEPLETION_RESULT,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_REQUEST,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_RESULT
-} from "./data/inventory-service.js?v=1.4.257";
+} from "./data/inventory-service.js?v=1.4.261";
 import {
   InventoryIngressRuleCompilerCache,
   normalizeInventoryIngressRule
@@ -379,7 +379,7 @@ import {
   handleSettingsUpdateSocketResponse,
   registerSettings
 } from "./settings.js";
-import { buildLootgenChatContent, buildLootgenStatusContent, registerLootgenChatHooks } from "./ui/lootgen-chat.js?v=1.4.259";
+import { buildLootgenChatContent, buildLootgenStatusContent, registerLootgenChatHooks } from "./ui/lootgen-chat.js?v=1.4.261";
 import { bringAppToFront, notifyUser, registerHandlebarsHelpers, rerenderApp } from "./ui.js";
 import { promptDurabilityOutcome } from "./ui/durability-outcome-dialog.js";
 
@@ -1705,6 +1705,9 @@ export class RebreyaMainModule {
         `loot-coins:${claimId}`
       ),
       grantBatch: async ({ claimId, lootId, rows, coins, includeCoins, ingressPlan, message }) => {
+        if (ingressPlan?.destination === "character") {
+          return this.#grantLootgenCharacterRow({claimId,lootId,rows,includeCoins,ingressPlan,message});
+        }
         if (ingressPlan == null) {
           if (rows.length > 0) {
             throw new Error("Lootgen inventory rows require a serialized ingress batch plan.");
@@ -2092,10 +2095,25 @@ export class RebreyaMainModule {
   }
 
   #registerTypedSocketCommands() {
+    this.privilegedMutationGateway.registerCommand("lootgen.claim-character", {
+      validate: payload => hasExactKeys(payload,["actorUuid","claimId","lootId","rowId"])
+        && [payload.lootId,payload.rowId,payload.actorUuid,payload.claimId].every(value=>typeof value==="string" && value.trim()===value && value.length>0 && value.length<=256 && !/[\u0000-\u001f\u007f]/u.test(value))
+        && isValidActorUuid(payload.actorUuid),
+      authorize: async (payload,{sender}) => Boolean(await this.#resolveLootgenCharacterDestination(payload,sender)),
+      execute: async (payload,context) => {
+        const destination=await this.#resolveLootgenCharacterDestination(payload,context.sender);
+        context.assertActiveGm();
+        if (!destination) throw new Error("Недоступен персонаж или подготовленная добыча.");
+        return this.lootClaimService.claimBatch({messageId:destination.message.id,lootId:payload.lootId,
+          claimId:payload.claimId,rowIds:[payload.rowId],includeCoins:false,
+          ingressPlan:{destination:"character",actorUuid:payload.actorUuid,requesterId:context.sender.id}});
+      }
+    });
     this.privilegedMutationGateway.registerCommand(LOOTGEN_PREPARE_RESULT_COMMAND, {
-      validate: isValidPrepareLootgenPayload,
+      validate: payload => hasExactKeys(payload,["form","operationId"]) && isValidPrepareLootgenPayload({form:payload.form})
+        && isTrimmedNonEmptyString(payload.operationId) && payload.operationId.length<=256 && !/[\u0000-\u001f\u007f]/u.test(payload.operationId),
       authorize: (_payload, { sender }) => sender?.isGM === true,
-      execute: ({ form }, context) => this.lootgenGeneratedResultService.prepare({form,operationId:context.operationId}, {
+      execute: ({ form, operationId }, context) => this.lootgenGeneratedResultService.prepare({form,operationId}, {
         requesterId: context.sender.id, authorId: game.user.id, assertAuthority: context.assertActiveGm
       })
     });
@@ -3359,7 +3377,7 @@ export class RebreyaMainModule {
     });
   }
 
-  #findLootgenChatMessage(lootId) {
+  #findLootgenChatMessage(lootId, {allowDraft=false}={}) {
     const safeLootId = String(lootId ?? "").trim();
     if (!safeLootId) {
       return null;
@@ -3369,7 +3387,7 @@ export class RebreyaMainModule {
       const envelope = this.#readLootgenMessage(message, {cloneState:false});
       const state = envelope?.state;
       return envelope?.trusted === true && String(state?.lootId ?? "") === safeLootId
-        && (state.resultVersion !== 2 || (state.generationReady === true && state.published === true));
+        && (state.resultVersion !== 2 || (state.generationReady === true && (state.published === true || allowDraft)));
     }) ?? null;
   }
 
@@ -3449,7 +3467,37 @@ export class RebreyaMainModule {
   }
 
   prepareLootgenGeneratedResult(form, {operationId=createSocketRequestId("lootgen-prepare")}={}) {
-    return this.privilegedMutationGateway.mutate(LOOTGEN_PREPARE_RESULT_COMMAND, {form:normalizeLootgenForm(form)}, {operationId});
+    return this.privilegedMutationGateway.mutate(LOOTGEN_PREPARE_RESULT_COMMAND, {form:normalizeLootgenForm(form),operationId});
+  }
+
+  async #resolveLootgenCharacterDestination({lootId,actorUuid},sender) {
+    if (!sender) return null;
+    const actor=await resolveActorByUuid(actorUuid);
+    if (actor?.type!=="character" || !(sender.isGM || actorIsOwnedByUser(actor,sender))) return null;
+    const message=this.#findLootgenChatMessage(lootId,{allowDraft:sender.isGM===true});
+    return message?.getFlag(MODULE_ID,"lootgenChat")?.resultVersion===2 ? {actor,message} : null;
+  }
+
+  async #grantLootgenCharacterRow({claimId,lootId,rows,includeCoins,ingressPlan,message}) {
+    if (rows.length!==1 || includeCoins) throw new Error("Выдача персонажу принимает одну строку предмета.");
+    const sender=game.users.get(ingressPlan.requesterId);
+    const destination=await this.#resolveLootgenCharacterDestination({lootId,actorUuid:ingressPlan.actorUuid},sender);
+    if (!isActiveGmClient(game) || !destination || destination.message.id!==message.id) throw new Error("Недоступен персонаж или подготовленная добыча.");
+    const row=message.getFlag(MODULE_ID,"lootgenChat")?.rows?.find(entry=>entry.rowId===rows[0].rowId);
+    if (!row || row.claimed) throw new Error("Строка добычи больше недоступна.");
+    const result=await this.inventoryService.addLootgenRowToCharacterOnce({quantity:row.quantity,itemData:row.itemData},destination.actor,`lootgen-character:${claimId}`,{
+      allowPreparedLootgenGraph:true,
+      beforePrepare:async()=>{
+        await assertLootgenCatalogCurrent(message.getFlag(MODULE_ID,"lootgenChat"),this.lootgenSourceCatalog);
+        const live=await this.#resolveLootgenCharacterDestination({lootId,actorUuid:ingressPlan.actorUuid},game.users.get(ingressPlan.requesterId));
+        if (!isActiveGmClient(game) || !live || live.actor!==destination.actor || live.message.id!==message.id) throw new Error("Права на выдачу добычи изменились.");
+      }
+    });
+    return {acceptedRowIds:[row.rowId],coinsGranted:false,receipt:result};
+  }
+
+  claimLootgenChatRowToCharacter(lootId,rowId,actorUuid,{operationId=`lootgen-self:${game.user?.id}:${lootId}:${rowId}:${actorUuid}`}={}) {
+    return this.privilegedMutationGateway.mutate("lootgen.claim-character",{lootId,rowId,actorUuid,claimId:operationId});
   }
 
   async createLootgenChatMessage(payload = {}, options = {}) {

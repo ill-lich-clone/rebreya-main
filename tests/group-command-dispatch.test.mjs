@@ -2833,11 +2833,11 @@ test("lootgen.prepare-result is GM-only and forwards the stable request ID witho
     moduleApi.lootgenGeneratedResultService.prepare=async(request,context)=>{calls.push({request,context});context.assertAuthority();return {lootId:"loot",messageId:"message"};};
     const {normalizeLootgenForm}=await import("../scripts/data/lootgen-generator.js");
     const form=normalizeLootgenForm({enableUpgrades:true});
-    const gmRequest=commandRequest("lootgen.prepare-result",fixture.users.gmB.id,{form},"prepare-gm");
+    const gmRequest=commandRequest("lootgen.prepare-result",fixture.users.gmB.id,{form,operationId:"prepare-gm"},"prepare-gm");
     await moduleApi.handleSocketMessage(gmRequest);await flushCommands();
     assert.equal(resultFor(fixture,"prepare-gm").ok,true);assert.equal(calls[0].request.operationId,"prepare-gm");
     assert.equal(calls[0].context.requesterId,fixture.users.gmB.id);assert.equal(calls[0].context.authorId,fixture.users.gmA.id);
-    for(const [sender,payload,requestId] of [[fixture.users.playerA.id,{form},"prepare-player"],[fixture.users.gmB.id,{form,itemData:{}},"prepare-forged"]]){
+    for(const [sender,payload,requestId] of [[fixture.users.playerA.id,{form,operationId:"prepare-player"},"prepare-player"],[fixture.users.gmB.id,{form,operationId:"prepare-forged",itemData:{}},"prepare-forged"]]){
       await moduleApi.handleSocketMessage(commandRequest("lootgen.prepare-result",sender,payload,requestId));await flushCommands();
       assert.equal(resultFor(fixture,requestId).ok,false);
     }
@@ -2850,16 +2850,19 @@ test("prepared loot uses the canonical publisher with GM whispers and stays outs
   try {
     foundry.utils.escapeHTML=value=>String(value);
     const messages=new Map();Object.defineProperty(messages,"contents",{get:()=>[...messages.values()]});game.messages=messages;
-    const created=[];
+    const created=[];let failedCreate=false,builds=0;
     globalThis.ChatMessage={getSpeaker:()=>({}),create:async(data,options)=>{
+      if(!failedCreate){failedCreate=true;throw new Error("private Chat write failed");}
       created.push({data:clone(data),options});
       const message={id:data._id,author:game.users.get(data.user),flags:clone(data.flags),content:data.content,
         getFlag(scope,key){return this.flags[scope]?.[key];},async update(patch){this.flags[MODULE_ID].lootgenChat=clone(patch["flags."+MODULE_ID+".lootgenChat"]);this.content=patch.content;return this;}};
       messages.set(message.id,message);return message;
     }};
     const moduleApi=new RebreyaMainModule();
-    moduleApi.lootgenGeneratedResultService.buildState=async()=>({rows:[{rowId:"row",name:"Sword",quantity:1,totalValue:120,upgrades:[]}],coins:{totalCopper:0}});
+    moduleApi.lootgenGeneratedResultService.buildState=async()=>{builds++;return {rows:[{rowId:"row",name:"Sword",quantity:1,totalValue:120,upgrades:[]}],coins:{totalCopper:0}};};
+    await assert.rejects(moduleApi.prepareLootgenGeneratedResult({enableUpgrades:true},{operationId:"prepare-publisher"}),/private Chat write failed/u);
     const result=await moduleApi.prepareLootgenGeneratedResult({enableUpgrades:true},{operationId:"prepare-publisher"});
+    assert.equal(builds,1);
     assert.equal(created.length,1);assert.equal(created[0].options.keepId,true);
     assert.deepEqual(created[0].data.whisper.sort(),[fixture.users.gmA.id,fixture.users.gmB.id].sort());
     assert.equal(result.state.generationReady,true);assert.equal(result.state.published,false);
@@ -2899,4 +2902,58 @@ test("trusted loot grant checks catalog before preparation and preserves recover
     await moduleApi.lootClaimService.grantBatch(request);
     assert.equal(credits,2);assert.equal(reads,2);
   } finally {fixture.restore();}
+});
+
+test("lootgen character command requires an owned destination and exact source references",async()=>{
+  const fixture=installFixture({includeGroupB:true});
+  try {
+    fixture.memberA.uuid=`Actor.${fixture.memberA.id}`;fixture.memberB.uuid=`Actor.${fixture.memberB.id}`;
+    const state={lootId:"trusted-character-loot",createdBy:fixture.users.gmA.id,resultVersion:2,generationReady:true,published:true,rows:[]};
+    game.messages.contents.push({id:"character-message",author:fixture.users.gmA,getFlag:()=>state});
+    const moduleApi=new RebreyaMainModule(),calls=[];
+    moduleApi.lootClaimService.claimBatch=async request=>{calls.push(clone(request));return {changed:true};};
+    const payload={lootId:state.lootId,rowId:"row",actorUuid:fixture.memberA.uuid,claimId:"character-claim"};
+    for(const [id,sender,body,allowed] of [
+      ["self-valid",fixture.users.playerA.id,payload,true],
+      ["self-foreign",fixture.users.playerB.id,payload,false],
+      ["self-forged",fixture.users.playerA.id,{...payload,itemData:{}},false],
+      ["self-array-uuid",fixture.users.playerA.id,{...payload,actorUuid:[payload.actorUuid]},false],
+      ["self-gm",fixture.users.gmB.id,{...payload,actorUuid:fixture.memberB.uuid},true]
+    ]){
+      await moduleApi.handleSocketMessage(commandRequest("lootgen.claim-character",sender,body,id));await flushCommands();
+      assert.equal(resultFor(fixture,id)?.ok,allowed,JSON.stringify(resultFor(fixture,id)));
+    }
+    assert.equal(calls.length,2);assert.deepEqual(calls[0].rowIds,["row"]);assert.equal(calls[0].includeCoins,false);
+    assert.deepEqual(calls[0].ingressPlan,{destination:"character",actorUuid:fixture.memberA.uuid,requesterId:fixture.users.playerA.id});
+    state.published=false;
+    await moduleApi.handleSocketMessage(commandRequest("lootgen.claim-character",fixture.users.playerA.id,payload,"self-draft-player"));await flushCommands();
+    assert.equal(resultFor(fixture,"self-draft-player")?.ok,false);
+  }finally{fixture.restore();}
+});
+
+test("character claim source is committed only after the canonical grant succeeds and retry preserves its ID",async()=>{
+  const fixture=installFixture();
+  try {
+    foundry.utils.escapeHTML=value=>String(value);
+    fixture.memberA.uuid=`Actor.${fixture.memberA.id}`;
+    let state={lootId:"character-source",createdBy:fixture.users.gmA.id,resultVersion:2,generationReady:true,published:false,
+      rows:[{rowId:"row",quantity:1,claimed:false,itemData:{name:"Sword",type:"weapon",system:{quantity:1},flags:{}}}],coins:{}};
+    const message={id:"character-message",author:fixture.users.gmA,getFlag:()=>clone(state),update:async patch=>{state=clone(patch[`flags.${MODULE_ID}.lootgenChat`]);}};
+    game.messages.contents.push(message);
+    game.messages.get=id=>game.messages.contents.find(entry=>entry.id===id);
+    const moduleApi=new RebreyaMainModule(),ids=[];
+    moduleApi.inventoryService.addLootgenRowToCharacterOnce=async(row,actor,id,options)=>{
+      assert.equal(state.rows[0].claimed,false);assert.equal(actor,fixture.memberA);
+      assert.deepEqual(row,{quantity:1,itemData:state.rows[0].itemData});assert.equal(options.allowPreparedLootgenGraph,true);
+      ids.push(id);if(ids.length===1)throw new Error("graph write failed");return {actorId:actor.id,itemId:"host"};
+    };
+    const payload={lootId:state.lootId,rowId:"row",actorUuid:fixture.memberA.uuid};
+    await assert.rejects(moduleApi.claimLootgenChatRowToCharacter(payload.lootId,payload.rowId,payload.actorUuid,{operationId:"same-character-claim"}),/graph write failed/u);
+    assert.equal(state.rows[0].claimed,false);assert.equal(state.claims[0].phase,"prepared");
+    const result=await moduleApi.claimLootgenChatRowToCharacter(payload.lootId,payload.rowId,payload.actorUuid,{operationId:"same-character-claim"});
+    assert.equal(result.changed,true);assert.equal(state.rows[0].claimed,true);
+    assert.deepEqual(ids,["lootgen-character:same-character-claim","lootgen-character:same-character-claim"]);
+    await moduleApi.claimLootgenChatRowToCharacter(payload.lootId,payload.rowId,payload.actorUuid,{operationId:"same-character-claim"});
+    assert.equal(ids.length,2);
+  }finally{fixture.restore();}
 });

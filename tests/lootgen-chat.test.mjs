@@ -367,6 +367,22 @@ test("lootgen chat self button creates the row item on the user's character and 
   }
 });
 
+test("prepared loot self button sends only trusted row and actor references without local Item creation",async()=>{
+  const restoreFoundry=installLootgenChatFoundryStubs(),previousHooks=globalThis.Hooks,previousGame=globalThis.game;
+  const listeners=[],calls=[];
+  const character={id:"hero",uuid:"Actor.hero",isOwner:true,createEmbeddedDocuments:()=>{throw new Error("client must not create prepared loot");}};
+  const state={resultVersion:2,lootId:"prepared",rows:[{rowId:"row",itemData:{name:"Sword",type:"weapon",system:{quantity:1}}}]};
+  globalThis.Hooks={on:(hookName,listener)=>listeners.push({hookName,listener})};
+  globalThis.game={user:{id:"player",character},rebreyaMain:{claimLootgenChatRowToCharacter:async(...args)=>{calls.push(args);return {changed:true};}}};
+  try {
+    const {registerLootgenChatHooks}=await import(`../scripts/ui/lootgen-chat.js?prepared-self=${Date.now()}`);registerLootgenChatHooks({});
+    const {card,selfButton}=createBoundLootgenChatCard({state});
+    listeners.find(entry=>entry.hookName==="renderChatMessage").listener({getFlag:()=>state},card);
+    await selfButton.listeners.click[0]({currentTarget:selfButton,preventDefault(){},stopPropagation(){}});
+    assert.deepEqual(calls,[["prepared","row","Actor.hero"]]);
+  }finally{globalThis.Hooks=previousHooks;globalThis.game=previousGame;restoreFoundry();}
+});
+
 test("lootgen chat renders and binds a take all button for the party inventory", async () => {
   const restoreFoundry = installLootgenChatFoundryStubs();
   const previousHooks = globalThis.Hooks;

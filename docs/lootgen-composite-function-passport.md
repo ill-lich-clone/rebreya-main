@@ -1,6 +1,6 @@
 # Составной лут — R8
 
-Версия 1.4.260: общий каталог/price reader, prepared graph ingress и GM-only durable подготовка результата в закрытом ChatMessage. Проверка каталога перед новым Item ingress подключена. Публикация готового результата и UI выбора улучшений ещё не подключены. Установка отдельных усовершенствований остаётся у R4/R7; подготовка graph не вызывает install API и ничего не записывает.
+Версия 1.4.261: общий каталог/price reader, prepared graph ingress и GM-only durable подготовка результата в закрытом ChatMessage. Проверка каталога перед новым Item ingress подключена. Публикация готового результата и UI выбора улучшений ещё не подключены. Установка отдельных усовершенствований остаётся у R4/R7; подготовка graph не вызывает install API и ничего не записывает.
 
 ## Descriptor
 
@@ -94,7 +94,7 @@ scripts/application/lootgen-generated-result-service.js:
 
 Composition в scripts/main.js:
 
-- Один service использует существующий InventoryService.mutationJournal и worldMutationCoordinator. GM-only typed route передаёт context operationId/requester и реального active-GM author/guard. Public prepareLootgenGeneratedResult(form,{operationId?}) нормализует форму и использует этот route; возвращает {messageId,lootId,state}.
+- Один service использует существующий InventoryService.mutationJournal и worldMutationCoordinator. GM-only typed route принимает exact {form,operationId}; внутренний form validator по-прежнему проверяет {form}. Передаёт payload operationId, authenticated requester и реального active-GM author/guard. Public API создаёт новый транспортный request ID для каждой попытки, сохраняя domain operationId, поэтому error cache транспорта не мешает persisted recovery. Public prepareLootgenGeneratedResult(form,{operationId?}) нормализует форму и использует этот route; возвращает {messageId,lootId,state}.
 - #readLootgenMessage(messageOrId,{cloneState=true}) сохраняет прежнюю GM author verification и выдаёт detached envelope. Predicate поиска использует cloneState:false: он не копирует большие ItemData каждого сообщения, не изменяя raw state. #findLootgenChatMessage дополнительно исключает v2 drafts, пока generationReady/published не true. Это не даёт незавершённому draft попасть в прежний claim flow.
 - #createLootgenChatDocument(state,{messageId,whisper}) — один canonical ChatMessage.create для прежнего createLootgenChatMessage и нового prepared flow. Подготовка использует непустой список GM whispers, поддерживает Foundry collections/Map.values, сохраняет deterministic ID через keepId. Пустой список получателей отклоняется до создания, не превращается в публичную запись.
 - #activateLootgenGeneratedMessage(messageId) ставит readiness только после durable receipt, подтверждает update-then-throw readback. Публикации нет. buildLootgenChatContent для unpublished v2 показывает escaped неинтерактивный preview с именами/количеством/value/улучшениями/монетами; никаких claim/drag controls. Legacy content сохраняется.
@@ -113,3 +113,16 @@ Canonical Chat grantBatch в main вызывает gate из resolveRows({recove
 LootClaimService.claimBatch перед новым claim проверяет пересечение доступных rowIds/includeCoins с nonterminal claims. Пересечение даёт lootgen-claim-in-progress до Chat/target writes; тот же claimId продолжает исходную операцию, независимые строки разрешены. После committed skip/failed rows снова доступны по прежнему контракту partial result.
 
 Focused: lootgen-generated-state (legacy/current/price/availability/missing/malformed/read failure), loot-claim-service (prepared/granted reservations, independent item versus pending coins), group-command-dispatch (canonical grant adapter gate/recovery), inventory-mutation-recovery (partial graph with changed catalog guard, IDs and terminal replay).
+
+
+## Выдача персонажу — 1.4.261
+
+InventoryService.addLootgenRowToCharacterOnce(row,actor,mutationId,{allowPreparedLootgenGraph=false,beforePrepare=null}={}) сохраняет storage default и принимает внутреннее разрешение trusted v2 Chat adapter. Prepared composition без этого разрешения отвергается. Callback beforePrepare вызывается только до нового durable grant; ItemData клонируется из trusted state, graph marker сохраняется в journal, legacy lootgenChat Item marker удаляется. Private #executeInventoryGrantOnce дополнен beforePrepare/preparedLootgenFingerprint; fingerprint включает exact source data/quantity и Actor UUID. Kind, actorId/UUID, folder и fingerprint проверяются до terminal replay; новый получатель или source с прежним ID не допускаются. Persisted targetReceipt.graphItemIds проверяются перед canonical materializer; recoverMissing включается только для valid prepared graph. Storage graph default не меняется.
+
+RebreyaMainModule.claimLootgenChatRowToCharacter(lootId,rowId,actorUuid,{operationId?}) отправляет exact typed lootgen.claim-character {actorUuid,claimId,lootId,rowId}, без ItemData/price. ClaimId — stable domain operation; каждый вызов получает новый transport request ID. Default domain ID включает requester/lootId/rowId/Actor UUID. Private #resolveLootgenCharacterDestination проверяет живого character Actor по canonical UUID resolver, OWNER либо GM и trusted ready v2 Chat; unpublished разрешён только GM. #findLootgenChatMessage(lootId,{allowDraft=false}) сохраняет прежний default и открывает ready draft только явному GM adapter.
+
+Private #grantLootgenCharacterRow вызывается прежним LootClaimService.grantBatch для internal plan {destination:character,actorUuid,requesterId}; разрешает одну строку без coins, повторно проверяет источник/получателя/active GM и вызывает существующий InventoryService с mutationId lootgen-character:<claimId>. Catalog/ownership/authority beforePrepare не выполняются вместо persisted recovery. Source claimed пишется только после полного grant; prepared source claim резервирует строку при сбое. Public exact validation и destination в claim fingerprint блокируют смену получателя.
+
+UI claimLootgenRowToSelf для v2 передаёт только references через API; локально Item не создаёт. Legacy self path сохраняется. Подготовленный draft всё ещё без кнопок/drag; публикация, v2 drag route и окно генерации остаются открытыми.
+
+Focused: group-command-dispatch (OWNER/GM/exact/private access, grant-before-claimed, retry after failure, prepare retry through gateway without reroll), inventory-mutation-recovery (partial graph, changed catalog, target/source conflict, terminal replay, distinct hosts), lootgen-chat (references-only self click), disarm-storage (default storage regression).

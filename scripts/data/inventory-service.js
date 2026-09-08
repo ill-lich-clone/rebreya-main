@@ -1,4 +1,4 @@
-import { ItemInstanceWorkflow } from "../application/item-instance-workflow.js?v=1.4.249-item-instances";
+import { ItemInstanceWorkflow, itemInstanceFingerprint } from "../application/item-instance-workflow.js?v=1.4.249-item-instances";
 import { RUNTIME_ITEM_GRAPH_FLAG, buildRuntimeGraphDocuments, materializeRuntimeItemGraph } from "./runtime-item-graph.js?v=1.4.257";
 import { readLootgenPreparedComposition } from "./lootgen-prepared-item.js?v=1.4.257";
 import { ItemInstanceDocuments } from "../infrastructure/foundry/item-instance-documents.js?v=1.4.249-item-instances";
@@ -6707,7 +6707,7 @@ export class InventoryService {
     );
   }
 
-  addLootgenRowToCharacterOnce(row, actor, mutationId) {
+  addLootgenRowToCharacterOnce(row, actor, mutationId, {allowPreparedLootgenGraph=false,beforePrepare=null}={}) {
     const frozenRow = foundry.utils.deepClone(row ?? {});
     return this.mutationCoordinator.run(
       "inventory",
@@ -6718,11 +6718,25 @@ export class InventoryService {
         if (!isActorDocument(actor) || actor.type !== "character") {
           throw new Error("Лут из хранилища можно выдать только персонажу.");
         }
+        if (beforePrepare !== null && typeof beforePrepare !== "function") throw new TypeError("beforePrepare must be a function");
+        const composition = readLootgenPreparedComposition(frozenRow.itemData);
+        if (composition && allowPreparedLootgenGraph !== true) {
+          throw Object.assign(new Error("Подготовленный лут требует доверенного маршрута выдачи."),{code:"invalid-prepared-lootgen-item"});
+        }
         return this.#executeInventoryGrantOnce({
           actor,
           quantity: frozenRow.quantity,
           mutationId,
-          buildItemData: () => this.buildLootgenItemData(frozenRow, { allowPersistedItemData: true })
+          beforePrepare,
+          preparedLootgenFingerprint: allowPreparedLootgenGraph === true
+            ? itemInstanceFingerprint({actorUuid:actor.uuid ?? actor.id,quantity:frozenRow.quantity,itemData:frozenRow.itemData}) : null,
+          buildItemData: async () => {
+            const itemData = await this.buildLootgenItemData(composition
+              ? {...frozenRow,runtimeGraph:frozenRow.itemData.flags[MODULE_ID][RUNTIME_ITEM_GRAPH_FLAG]}
+              : frozenRow, {allowPersistedItemData:true});
+            if (allowPreparedLootgenGraph === true && itemData.flags?.[MODULE_ID]) delete itemData.flags[MODULE_ID].lootgenChat;
+            return itemData;
+          }
         });
       }
     );
@@ -6742,6 +6756,8 @@ export class InventoryService {
     mutationId,
     groupActorId = "",
     folderId = null,
+    beforePrepare = null,
+    preparedLootgenFingerprint = null,
     buildItemData
   }) {
     const operationId = createInventoryMutationId("inventory-grant", mutationId);
@@ -6759,6 +6775,12 @@ export class InventoryService {
       this.#assertCanManagePartyInventory(actor);
     }
     if (!actor) throw new Error("Не удалось получить инвентарь для выдачи лута.");
+    if (record && (record.kind !== "grant" || record.actorId !== actor.id || (record.actorUuid && record.actorUuid !== (actor.uuid ?? actor.id)))) {
+      throw new Error("Inventory mutation ID was reused with a different actor target.");
+    }
+    if (record && (record.preparedLootgenFingerprint ?? null) !== preparedLootgenFingerprint) {
+      throw new Error("Prepared lootgen grant conflicts with the saved source or destination.");
+    }
     if (record && (
       cleanId(record.groupActorId) !== normalizedGroupActorId
       || normalizeInventoryFolderTarget(record.folderId) !== normalizedFolderId
@@ -6766,8 +6788,11 @@ export class InventoryService {
       throw new Error("Inventory mutation ID was reused with a different folder target.");
     }
     if (!record) {
+      if (beforePrepare) await beforePrepare();
       const safeQuantity = Math.max(0.01, roundNumber(toNumber(quantity, 1), 2));
       const itemData = await buildItemData(safeQuantity);
+      const composition = preparedLootgenFingerprint ? readLootgenPreparedComposition(itemData) : null;
+      if (composition && safeQuantity !== 1) throw new Error("Prepared lootgen graph quantity must be one.");
       const candidate = this.#findInventoryMergeCandidate(actor, itemData);
       if (!candidate) {
         foundry.utils.setProperty(itemData, `flags.${MODULE_ID}.${INVENTORY_MUTATION_FLAG}`, {
@@ -6781,10 +6806,13 @@ export class InventoryService {
         kind: "grant",
         phase: "prepared",
         actorId: actor.id,
+        actorUuid: actor.uuid ?? actor.id,
+        ...(preparedLootgenFingerprint ? {preparedLootgenFingerprint} : {}),
         groupActorId: normalizedGroupActorId,
         folderId: normalizedFolderId,
         itemData,
         targetReceipt: {
+          ...(composition ? {graphItemIds:buildRuntimeGraphDocuments(itemData.flags[MODULE_ID][RUNTIME_ITEM_GRAPH_FLAG],operationId,itemData,{actorId:actor.id}).documents.map(data=>data._id)} : {}),
           itemId: candidate?.id ?? "",
           created: !candidate,
           beforeQuantity,
@@ -6800,7 +6828,14 @@ export class InventoryService {
         ? this.#findMutationItem(actor, operationId)
         : actor.items.get(record.targetReceipt.itemId);
       const runtimeGraph = record.itemData?.flags?.[MODULE_ID]?.[RUNTIME_ITEM_GRAPH_FLAG];
-      if (runtimeGraph) item = await materializeRuntimeItemGraph(actor, runtimeGraph, operationId, record.itemData);
+      if (runtimeGraph) {
+        const recoverMissing = Boolean(record.preparedLootgenFingerprint && readLootgenPreparedComposition(record.itemData));
+        if (recoverMissing) {
+          const expectedIds = buildRuntimeGraphDocuments(runtimeGraph,operationId,record.itemData,{actorId:actor.id}).documents.map(data=>data._id);
+          if (JSON.stringify(record.targetReceipt.graphItemIds)!==JSON.stringify(expectedIds)) throw this.#inventoryReconciliationError("Prepared graph document IDs changed.");
+        }
+        item = await materializeRuntimeItemGraph(actor, runtimeGraph, operationId, record.itemData, {recoverMissing});
+      }
       if (record.targetReceipt.created) {
         if (!item) {
           try {
