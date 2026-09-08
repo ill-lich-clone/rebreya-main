@@ -270,6 +270,7 @@ function renderLootgenChatRow(row) {
       <div class="rm-chat-loot__row-main">
         <strong>${escapeHtml(row.name || "Предмет")}</strong>
         <span class="rm-chat-loot__meta">${escapeHtml(metaParts.filter(Boolean).join(" • "))}</span>
+        ${(row.upgrades??[]).map(upgrade=>`<span class="rm-chat-loot__meta">${escapeHtml(upgrade.name)} · ${escapeHtml(upgrade.decision==="simple-implemented"?"Автоматизировано":upgrade.decision==="existing-curse"?"Проклятье":"Усовершенствование недоступно")}</span>`).join("")}
         ${isBroken ? `<span class="rm-chat-loot__condition rm-chat-loot__condition--broken">Сломано</span>` : ""}
       </div>
       <div class="rm-chat-loot__row-actions">
@@ -436,6 +437,13 @@ function bindLootgenChatMessage(message, html) {
     card.querySelectorAll("[data-lootgen-chat-drag='true']").forEach((row) => {
       row.addEventListener("dragstart", (event) => {
         const rowId = event.currentTarget.dataset.lootgenChatRowId;
+        const state=getLootgenState(message);
+        if (state.resultVersion===2) {
+          const source=findLootgenRow(message,rowId);
+          if (!state.published || !state.generationReady || !source || source.claimed) {event.preventDefault();return;}
+          setDragData(event,{type:"RebreyaLootgen",version:2,lootId:state.lootId,rowId});
+          return;
+        }
         const itemData = cloneDragData(findLootgenRow(message, rowId)?.itemData);
         if (!itemData) {
           return;
@@ -609,6 +617,16 @@ function bindLootgenChatMessage(message, html) {
 }
 
 export function registerLootgenChatHooks(moduleApi) {
+  Hooks.on("dropActorSheetData",(actor,_sheet,data)=>{
+    if(data?.type!=="RebreyaLootgen")return true;
+    void Promise.resolve().then(()=>{
+      if (Object.keys(data).sort().join(",")!=="lootId,rowId,type,version" || data.version!==2
+        || ![data.lootId,data.rowId].every(value=>typeof value==="string" && value.trim()===value && value.length>0 && value.length<=256)
+        || actor?.type!=="character" || !actor.uuid || typeof moduleApi.claimLootgenChatRowToCharacter!=="function") throw new Error("Некорректный перенос подготовленной добычи.");
+      return moduleApi.claimLootgenChatRowToCharacter(data.lootId,data.rowId,actor.uuid);
+    }).catch(error=>globalThis.ui?.notifications?.error(error.message||"Не удалось перенести добычу."));
+    return false;
+  });
   Hooks.on("renderChatMessage", (message, html) => {
     bindLootgenChatMessage(message, html);
   });

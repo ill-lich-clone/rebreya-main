@@ -1,6 +1,6 @@
 # Составной лут — R8
 
-Версия 1.4.261: общий каталог/price reader, prepared graph ingress и GM-only durable подготовка результата в закрытом ChatMessage. Проверка каталога перед новым Item ingress подключена. Публикация готового результата и UI выбора улучшений ещё не подключены. Установка отдельных усовершенствований остаётся у R4/R7; подготовка graph не вызывает install API и ничего не записывает.
+Версия 1.4.262: общий каталог/price reader, prepared graph ingress и GM-only durable подготовка результата в закрытом ChatMessage. Проверка каталога перед новым Item ingress подключена. Публикация того же результата и reference-only drag подключены; UI выбора улучшений ещё не подключён. Установка отдельных усовершенствований остаётся у R4/R7; подготовка graph не вызывает install API и ничего не записывает.
 
 ## Descriptor
 
@@ -123,6 +123,17 @@ RebreyaMainModule.claimLootgenChatRowToCharacter(lootId,rowId,actorUuid,{operati
 
 Private #grantLootgenCharacterRow вызывается прежним LootClaimService.grantBatch для internal plan {destination:character,actorUuid,requesterId}; разрешает одну строку без coins, повторно проверяет источник/получателя/active GM и вызывает существующий InventoryService с mutationId lootgen-character:<claimId>. Catalog/ownership/authority beforePrepare не выполняются вместо persisted recovery. Source claimed пишется только после полного grant; prepared source claim резервирует строку при сбое. Public exact validation и destination в claim fingerprint блокируют смену получателя.
 
-UI claimLootgenRowToSelf для v2 передаёт только references через API; локально Item не создаёт. Legacy self path сохраняется. Подготовленный draft всё ещё без кнопок/drag; публикация, v2 drag route и окно генерации остаются открытыми.
+UI claimLootgenRowToSelf для v2 передаёт только references через API; локально Item не создаёт. Legacy self path сохраняется. Подготовленный draft без кнопок/drag; после публикации той же записи доступны проверяемые выдача и v2 drag route. Окно генерации остаётся открытым.
 
 Focused: group-command-dispatch (OWNER/GM/exact/private access, grant-before-claimed, retry after failure, prepare retry through gateway without reroll), inventory-mutation-recovery (partial graph, changed catalog, target/source conflict, terminal replay, distinct hosts), lootgen-chat (references-only self click), disarm-storage (default storage regression).
+
+
+## Публикация и перенос из Chat — 1.4.262
+
+RebreyaMainModule.publishLootgenGeneratedResult(lootId) отправляет GM-only typed lootgen.publish-result с exact {lootId}. Private #publishLootgenGeneratedMessage(lootId,assertAuthority) использует ту же loot-claim:<messageId> queue, повторно проверяет trusted ready v2 state, раскрывает whisper:[]/blind:false и перерисовывает тот же document. Readback после ошибки проверяет и published flag, и фактическую видимость; частично применённое обновление повторяется, уже опубликованный результат возвращается без записи. Domain claim state/claimed rows сохраняются, генерация не вызывается.
+
+#buildLootgenInventoryIngressRows теперь единственный row adapter и для preview, и для fresh grantBatch; v2 удаляет legacy lootgenChat Item marker из detached output. claimLootgenChatRow отвергает v2 до source mutation: source acknowledged только LootClaimService.
+
+renderLootgenChatRow показывает экранированные названия upgrades и статус simple-implemented/existing-curse. bindLootgenChatMessage для ready published v2 формирует {type:RebreyaLootgen,version:2,lootId,rowId}, без ItemData/uuid; отсутствующие/claimed rows не перетаскиваются. registerLootgenChatHooks владеет одним дополнительным dropActorSheetData adapter: custom type всегда останавливает native drop, exact payload и character destination передаются в claimLootgenChatRowToCharacter. Неизвестные обычные типы остаются прежним hooks; invalid custom payload подавляется с уведомлением, без создания Item.
+
+Focused: group-command-dispatch (publish before/after/partial fault, same document, GM access, legacy v2 rejection, stripped marker), lootgen-chat (safe drag, malformed custom payload, claimed source, escaped upgrade status), loot-claim-service и inventory-mutation-recovery regressions.

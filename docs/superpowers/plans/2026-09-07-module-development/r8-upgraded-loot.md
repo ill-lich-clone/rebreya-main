@@ -102,7 +102,7 @@ assert.equal(child.system.container, graph.rootItemId);
 **Файлы:** scripts/main.js, scripts/ui/lootgen-app.js, scripts/ui/lootgen-chat.js, scripts/application/loot-claim-service.js, templates/lootgen-app.hbs и фактический chat template через rg; tests/lootgen-chat.test.mjs, tests/loot-claim-service.test.mjs, tests/lootgen-app-context.test.mjs, tests/group-command-dispatch.test.mjs.
 
 - [x] Для нового composed режима ввести GM-only public prepareLootgenGeneratedResult(form) и typed lootgen.prepare-result с exact normalized form/operationId. Active GM генерирует один immutable result v2; request не содержит ItemData, arbitrary effects, price или готовый player graph.
-- [ ] Хранить подготовленный result в существующем trusted GM-authored Lootgen ChatMessage state через его canonical publisher. Подготовка для прямой выдачи создаёт запись, видимую только GM; публикация игрокам раскрывает ту же запись, не генерирует вторую. Обычный legacy plain preview сохраняет старое поведение.
+- [x] Хранить подготовленный result в существующем trusted GM-authored Lootgen ChatMessage state через его canonical publisher. Подготовка для прямой выдачи создаёт запись, видимую только GM; публикация игрокам раскрывает ту же запись, не генерирует вторую. Обычный legacy plain preview сохраняет старое поведение.
 - [x] prepare receipt связывает operationId, lootId, form fingerprint и message. Повтор запроса возвращает тот же result. Если запись уже создана, а ответ потерялся, находить её по receipt до нового random.
 - [ ] UI «Забрать»/прямая выдача для composed rows использует существующий trusted claim route по lootId/rowIds. Клиент передаёт destination/ingress choices и operation ID; список upgrades active GM читает из записи. Не расширять generic direct ingress правом принять player composition.
 - [ ] Сохранить прежний смысл sourceOrigin для plain/manual/model callers. Там, где отображение требует новый resultVersion, читать v1 без перерасчёта; v2 snapshot сохраняет принятый value и catalog/rules fingerprint.
@@ -179,3 +179,12 @@ Character route использует trusted Chat references, OWNER/GM и сущ
 Focused: node --test tests/group-command-dispatch.test.mjs tests/lootgen-chat.test.mjs tests/inventory-mutation-recovery.test.mjs tests/disarm-storage.test.mjs — 156 passed / 0 failed. Новая native выдача через active GM пока не проверена. Открыты публикация, v2 drag, окно генерации/preview/прямая выдача и полный lifecycle; R8 не завершён.
 
 Проверки шестой части: `node --test tests/*.test.mjs` — **3863 passed / 0 failed**; `node --check` — **773 JS/MJS**, JSON parse — **46 файлов**, ошибок **0**; `git diff --check` чисто. Initial full failure был устаревшим cache-key assertion в main-composition-root; исправлен, полный прогон повторён. Реальный multiplayer generate→publish→claim ещё открыт.
+
+
+### Седьмая часть R8 — 1.4.262
+
+GM-only publish раскрывает тот же ChatMessage, проверяет readback видимости после сбоя и сохраняет claimed state. V2 custom drag передаёт только references, подавляет native root-only drop, выдаёт весь graph через actor route. Имена upgrades/status экранированы. Legacy row acknowledgment больше не может пометить v2 source; v2 Item grant удаляет auto-claim marker. Focused: node --test tests/group-command-dispatch.test.mjs tests/lootgen-chat.test.mjs tests/loot-claim-service.test.mjs tests/inventory-mutation-recovery.test.mjs — 164 passed / 0 failed.
+
+Открыты UI настроек/preview/direct grant и полный native multiplayer lifecycle. R8 не завершён.
+
+Проверки седьмой части: `node --test tests/*.test.mjs` — **3868 passed / 0 failed**; синтаксис **773 JS/MJS и 46 JSON, 0 ошибок**; `git diff --check` чисто. Native testovyj3/CODEX/Foundry13.351/dnd5e5.2.5, viewport1292×920: реальный каталог → две строки total6400 → actual Chat HTML отрисован в временном DialogV2, проверены читабельность названий/status/value и кнопки; окно закрыто. ChatMessage/Items в мире не создавались. Actual publication/drag-through-authority остаются частью открытой multiplayer-приёмки.

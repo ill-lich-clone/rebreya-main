@@ -2881,12 +2881,13 @@ test("trusted loot grant checks catalog before preparation and preserves recover
     const snapshot=()=>({model:{gear:[{id:"sword",value:price}]},gearIndex:[],magicDocuments:[],manifest:[],catalogReader:{
       resolveValueComponent:()=>({unitValue:price,priceKnown:true}),describeUpgradeHost:()=>null}});
     const state={resultVersion:2,form:{enableUpgrades:true},catalogFingerprint:readLootgenCatalogFingerprint([descriptor],snapshot()),
-      rows:[{rowId:"row",quantity:1,claimed:false,descriptor,itemData:{name:"Sword",system:{quantity:1},flags:{}}}]};
+      rows:[{rowId:"row",quantity:1,claimed:false,descriptor,itemData:{name:"Sword",system:{quantity:1},flags:{[MODULE_ID]:{lootgenChat:{lootId:"loot",rowId:"row"}}}}}]};
     moduleApi.lootgenSourceCatalog={load:async()=>{reads++;return snapshot();}};
     moduleApi.inventoryService.commitInventoryIngressBatch=async(_request,adapters)=>{
       const rows=await adapters.resolveRows({recovering});
       assert.equal(adapters.allowPreparedLootgenGraph,true);
-      assert.deepEqual(rows[0].itemData,state.rows[0].itemData);
+      const expected=clone(state.rows[0].itemData);delete expected.flags[MODULE_ID].lootgenChat;
+      assert.deepEqual(rows[0].itemData,expected);
       credits++;
       return {actorId:fixture.groupA.id,rows:[{sourceKey:"row",changed:true}]};
     };
@@ -2955,5 +2956,37 @@ test("character claim source is committed only after the canonical grant succeed
     assert.deepEqual(ids,["lootgen-character:same-character-claim","lootgen-character:same-character-claim"]);
     await moduleApi.claimLootgenChatRowToCharacter(payload.lootId,payload.rowId,payload.actorUuid,{operationId:"same-character-claim"});
     assert.equal(ids.length,2);
+  }finally{fixture.restore();}
+});
+
+for(const failure of ["before","after","partial"]) test(`publishing prepared loot reveals the same document and recovers a ${failure} update failure`,async()=>{
+  const fixture=installFixture();
+  try {
+    foundry.utils.escapeHTML=value=>String(value);
+    let state={resultVersion:2,lootId:"publish-loot",createdBy:fixture.users.gmA.id,generationReady:true,published:false,
+      rows:[{rowId:"row",name:"Sword",quantity:1,claimed:true,totalValue:120}],coins:{totalCopper:0},claims:[{id:"previous",phase:"committed"}]};
+    let writes=0;
+    const message={id:"publish-message",author:fixture.users.gmA,whisper:[fixture.users.gmA.id],getFlag:()=>clone(state),async update(patch){
+      writes++;
+      if(writes===1 && failure==="before")throw new Error("publish failed");
+      state=clone(patch[`flags.${MODULE_ID}.lootgenChat`]);
+      if(!(writes===1 && failure==="partial"))this.whisper=clone(patch.whisper);
+      if(writes===1)throw new Error("publish failed");
+    }};
+    game.messages.contents.push(message);game.messages.get=id=>game.messages.contents.find(entry=>entry.id===id);
+    const moduleApi=new RebreyaMainModule();
+    moduleApi.lootgenGeneratedResultService.prepare=()=>{throw new Error("publication must not regenerate");};
+    if(failure==="after")await moduleApi.publishLootgenGeneratedResult(state.lootId);
+    else await assert.rejects(moduleApi.publishLootgenGeneratedResult(state.lootId),/publish failed/u);
+    const result=await moduleApi.publishLootgenGeneratedResult(state.lootId);
+    assert.equal(result.messageId,message.id);assert.equal(result.state.published,true);
+    assert.deepEqual(message.whisper,[]);assert.equal(game.messages.contents.length,1);
+    assert.equal(state.rows[0].claimed,true);assert.equal(state.claims[0].id,"previous");
+    assert.equal(writes,failure==="after"?1:2);
+    const denied=commandRequest("lootgen.publish-result",fixture.users.playerA.id,{lootId:state.lootId},"publish-player");
+    await moduleApi.handleSocketMessage(denied);await flushCommands();assert.equal(resultFor(fixture,"publish-player")?.ok,false);
+    state.rows[0].claimed=false;
+    await assert.rejects(moduleApi.claimLootgenChatRow(state.lootId,"row",{quiet:true}),/подготовленн|проверяем/u);
+    assert.equal(state.rows[0].claimed,false);
   }finally{fixture.restore();}
 });

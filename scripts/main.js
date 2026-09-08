@@ -379,7 +379,7 @@ import {
   handleSettingsUpdateSocketResponse,
   registerSettings
 } from "./settings.js";
-import { buildLootgenChatContent, buildLootgenStatusContent, registerLootgenChatHooks } from "./ui/lootgen-chat.js?v=1.4.261";
+import { buildLootgenChatContent, buildLootgenStatusContent, registerLootgenChatHooks } from "./ui/lootgen-chat.js?v=1.4.262";
 import { bringAppToFront, notifyUser, registerHandlebarsHelpers, rerenderApp } from "./ui.js";
 import { promptDurabilityOutcome } from "./ui/durability-outcome-dialog.js";
 
@@ -1724,21 +1724,7 @@ export class RebreyaMainModule {
         const groupActorId = String(ingressPlan?.groupActorId ?? "").trim();
         const buildRows = () => {
           const liveState = foundry.utils.deepClone(message.getFlag(MODULE_ID, "lootgenChat") ?? {});
-          const liveById = new Map((liveState.rows ?? []).map((row) => [String(row.rowId ?? "").trim(), row]));
-          return rows.map((row) => {
-            const sourceKey = String(row.rowId ?? "").trim();
-            const liveRow = liveById.get(sourceKey);
-            if (!liveRow || liveRow.claimed === true) {
-              throw new Error(`Lootgen row '${sourceKey}' is no longer available.`);
-            }
-            return {
-              sourceKey,
-              quantity: Number(liveRow.quantity ?? liveRow.itemData?.system?.quantity ?? 0),
-              itemData: foundry.utils.deepClone(liveRow.itemData ?? {}),
-              legacyFolderId: null,
-              container: null
-            };
-          });
+          return this.#buildLootgenInventoryIngressRows(liveState,rows.map(row=>String(row.rowId??"").trim()));
         };
         const ingressResult = await this.inventoryService.commitInventoryIngressBatch({
           groupActorId,
@@ -2095,6 +2081,11 @@ export class RebreyaMainModule {
   }
 
   #registerTypedSocketCommands() {
+    this.privilegedMutationGateway.registerCommand("lootgen.publish-result", {
+      validate: payload => hasExactKeys(payload,["lootId"]) && isTrimmedNonEmptyString(payload.lootId) && payload.lootId.length<=256,
+      authorize: (_payload,{sender}) => sender?.isGM===true,
+      execute: ({lootId},context) => this.#publishLootgenGeneratedMessage(lootId,context.assertActiveGm)
+    });
     this.privilegedMutationGateway.registerCommand("lootgen.claim-character", {
       validate: payload => hasExactKeys(payload,["actorUuid","claimId","lootId","rowId"])
         && [payload.lootId,payload.rowId,payload.actorUuid,payload.claimId].every(value=>typeof value==="string" && value.trim()===value && value.length>0 && value.length<=256 && !/[\u0000-\u001f\u007f]/u.test(value))
@@ -3470,6 +3461,33 @@ export class RebreyaMainModule {
     return this.privilegedMutationGateway.mutate(LOOTGEN_PREPARE_RESULT_COMMAND, {form:normalizeLootgenForm(form),operationId});
   }
 
+  publishLootgenGeneratedResult(lootId) {
+    return this.privilegedMutationGateway.mutate("lootgen.publish-result",{lootId});
+  }
+
+  async #publishLootgenGeneratedMessage(lootId,assertAuthority) {
+    const message=this.#findLootgenChatMessage(lootId,{allowDraft:true});
+    if (!message) throw new Error("Подготовленная добыча не найдена.");
+    return this.worldMutationCoordinator.run(`loot-claim:${message.id}`,async()=>{
+      const read=()=>{
+        const entry=this.#readLootgenMessage(message.id);
+        if (!entry?.trusted || entry.state.resultVersion!==2 || entry.state.generationReady!==true || entry.state.lootId!==lootId) throw new Error("Подготовленная добыча не готова к публикации.");
+        return entry;
+      };
+      let entry=read();
+      const published=()=>entry.state.published===true && Array.from(message.whisper??[]).length===0 && message.blind!==true;
+      if (!published()) {
+        const state={...entry.state,published:true};
+        assertAuthority();
+        try { await message.update({whisper:[],blind:false,content:buildLootgenChatContent(state),[`flags.${MODULE_ID}.lootgenChat`]:state}); }
+        catch(error){entry=read();if(!published())throw error;}
+        entry=read();
+        if(!published())throw new Error("Не удалось подтвердить публикацию добычи.");
+      }
+      return {messageId:message.id,lootId,state:entry.state};
+    });
+  }
+
   async #resolveLootgenCharacterDestination({lootId,actorUuid},sender) {
     if (!sender) return null;
     const actor=await resolveActorByUuid(actorUuid);
@@ -3575,10 +3593,12 @@ export class RebreyaMainModule {
       }
       const quantity = Number(row.quantity ?? row.itemData?.system?.quantity ?? 0);
       if (!(quantity > 0)) throw new Error(`Строка добычи '${sourceKey}' имеет некорректное количество.`);
+      const itemData=foundry.utils.deepClone(row.itemData??{});
+      if(state.resultVersion===2 && itemData.flags?.[MODULE_ID])delete itemData.flags[MODULE_ID].lootgenChat;
       return {
         sourceKey,
         quantity,
-        itemData: foundry.utils.deepClone(row.itemData ?? {}),
+        itemData,
         legacyFolderId: null,
         container: null
       };
@@ -3883,6 +3903,7 @@ export class RebreyaMainModule {
 
     let claimedRow = null;
     const result = await this.#updateLootgenChatState(safeLootId, (state) => {
+      if (state.resultVersion===2) throw new Error("Подготовленная добыча выдаётся только через проверяемый маршрут инвентаря.");
       const row = state.rows.find((entry) => String(entry.rowId ?? "") === safeRowId) ?? null;
       if (!row || row.claimed) {
         return false;
