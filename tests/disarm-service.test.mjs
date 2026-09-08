@@ -63,3 +63,38 @@ test("failed transfer stays visible and resumes the same drop without another sa
   assert.equal(pending.phase,"drop-prepared");assert.match(pending.error,/offline/);
   const done=await f.service.resume("op",f.context);assert.equal(done.phase,"completed");assert.equal(f.calls.attack,1);assert.equal(f.calls.save,1);
 });
+
+for(const boundary of ["completed-checkpoint","terminal-receipt"]){
+  for(const timing of ["before","after"]){
+    test(`terminal recovery after ${boundary} ${timing} does not block the next disarm`,async()=>{
+      const f=fixture();await f.service.start(f.intent,f.context);
+      const method=boundary==="completed-checkpoint"?"checkpoint":"finish",original=f.journal[method].bind(f.journal);let failed=false;
+      f.journal[method]=async(...args)=>{
+        const matches=method==="finish"||args[2]==="completed";
+        if(matches&&!failed){failed=true;if(timing==="before")throw Error("terminal write fault");await original(...args);throw Error("terminal acknowledgement lost");}
+        return original(...args);
+      };
+      await f.service.chooseSave({operationId:"op",saveAbility:"str"},{...f.context,sender:f.defender});
+      const recovered=await f.service.resume("op",f.context);
+      assert.equal(recovered.phase,"completed");assert.equal(recovered.error,null);
+      assert.equal((await f.journal.find("disarm:op")).terminal,true);
+      assert.equal(f.calls.attack,1);assert.equal(f.calls.save,1);assert.equal(f.calls.drop,1);
+      const next=await f.service.start({...f.intent,operationId:"next"},f.context);
+      assert.equal(next.phase,"awaiting-save");
+    });
+  }
+}
+
+for(const phase of ["cancelled","conflict","manual-review"]){
+  test(`recovery seals ${phase} without erasing its explanation or repeating game actions`,async()=>{
+    const f=fixture();await f.service.start(f.intent,f.context);
+    const reason=phase==="cancelled"?null:"Требуется проверка исходного предмета";
+    // Simulate a restart between durable final phase and journal.finish.
+    await f.journal.checkpoint("disarm:op","awaiting-save",phase,{error:reason});
+    const calls={...f.calls};const result=await f.service.resume("op",{...f.context,sender:f.gm});
+    assert.equal(result.phase,phase);assert.equal(result.error,reason);
+    assert.equal((await f.journal.find("disarm:op")).terminal,true);
+    assert.equal(f.calls.attack,calls.attack);assert.equal(f.calls.save,calls.save);assert.equal(f.calls.drop,calls.drop);
+    assert.equal((await f.journal.listPending()).length,0);
+  });
+}

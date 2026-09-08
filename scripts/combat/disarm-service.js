@@ -144,7 +144,10 @@ export class DisarmService {
       if (!record) throw new DisarmError("operation-not-found");
       this.#authorize(record, context, null);
       if (!record.terminal) {
-        if (["attack-rolling", "save-rolling", "direction-rolling"].includes(record.phase)) record = await this.#finish(record, "manual-review", { error: "Прерванный бросок требует сверки; повторный бросок не выполнен." }, context);
+        // A final phase can be durable even when its terminal marker lost its
+        // acknowledgement. Seal it without touching dice, items or storage again.
+        if (["completed", "cancelled", "conflict", "manual-review"].includes(record.phase)) record = await this.#finish(record, record.phase, record.phase === "completed" ? { error: null } : {}, context);
+        else if (["attack-rolling", "save-rolling", "direction-rolling"].includes(record.phase)) record = await this.#finish(record, "manual-review", { error: "Прерванный бросок требует сверки; повторный бросок не выполнен." }, context);
         else if (record.phase === "attack-rolled") record = await this.#phase(record, "awaiting-save", {}, context);
         else if (record.phase === "prepared") record = await this.#attack(record, context);
         else if (["save-resolved", "drop-prepared", "drop-committed"].includes(record.phase)) record = await this.#continueSave(record, context);

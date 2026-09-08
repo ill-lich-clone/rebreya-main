@@ -1,6 +1,6 @@
 # Обезоруживание и физический снимок предмета — R6
 
-Владелец операции: `scripts/combat/disarm-service.js`. Размещение: managed Macro «Обезоруживание» в существующей папке «Ребрея». dnd5e 5.2.5 / Foundry 13; runtime 1.4.252. Автоматического общего счётчика атак нет: UI явно показывает расход одной доступной атаки.
+Владелец операции: `scripts/combat/disarm-service.js`. Размещение: managed Macro «Обезоруживание» в существующей папке «Ребрея». dnd5e 5.2.5 / Foundry 13; runtime 1.4.273. Автоматического общего счётчика атак нет: UI явно показывает расход одной доступной атаки.
 
 ## Правила и броски
 
@@ -19,7 +19,7 @@
 
 - `DISARM_ACTIONS`, `isValidDisarmPayload(action,payload)`, `authorizeDisarmSender(action,{sender,game})` — `scripts/infrastructure/foundry/disarm-command-contract.js`. Exact commands `disarm.preview/start/resolve-save/set-baseline/resume/cancel`; bounded canonical world/synthetic UUID. Player не передаёт total, formula, ItemData, senderId или capability. Реальный authenticated User обязателен, set-baseline — GM-only; source/target ownership дополнительно проверяется сервисом на живых Actor.
 - `DisarmService({journal,coordinator,documents,rollAdapter,storageCommands,publish,gameProvider})` использует **существующий** InventoryService.mutationJournal, короткую очередь disarm-operations, без ожидания человека внутри queue. `start(intent,context)` ищет receipt до source lookup, сверяет sender fingerprint, не допускает конкурирующее pending intent для того же атакующего/предмета, готовит и сохраняет бросок. `chooseSave(intent,context)` допускает назначенного defender OWNER либо GM, проверяет свежий хват и живые права; повтор выбора не делает новый save.
-- `resume(operationId,context)` продолжает только доказанно подготовленные фазы. Незавершённый attack-rolling/save-rolling/direction-rolling переводится в manual-review без reroll. `cancel` разрешён до roll или при ожидании save/baseline; существующий бросок остаётся видимым. `setBaseline(intent,context)` записывает GM/reason и запускает ранее не выполненный attack. `projection(record)` исключает физические ItemData из socket response.
+- `resume(operationId,context)` продолжает только доказанно подготовленные фазы. Если completed/cancelled/conflict/manual-review уже записана, но terminal marker ещё отсутствует, повторно завершает только журнал через authority guards; не бросает кости и не вызывает storage. Для completed снимает временную ошибку записи, для остальных сохраняет исходное объяснение. Незавершённый attack-rolling/save-rolling/direction-rolling переводится в manual-review без reroll. `cancel` разрешён до roll или при ожидании save/baseline; существующий бросок остаётся видимым. `setBaseline(intent,context)` записывает GM/reason и запускает ранее не выполненный attack. `projection(record)` исключает физические ItemData из socket response.
 - Private `#id/#sender/#authorize` проверяют идентичность и роли; `#write/#phase/#finish` оборачивают journal writes authority guards; `#attack` сохраняет roll до публикации; `#completeSave/#continueSave` завершают успешный save либо продолжают recoverable drop, сохраняя видимую ошибку без повторных костей. `#present` публикует карточку; ошибка отображения не повторяет world mutation.
 
 ## Storage owner и сохранение физической вещи
