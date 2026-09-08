@@ -130,7 +130,7 @@ Live: install UI unavailable/compatible/capacity; read старых installed It
 - [x] Обновить профильные методы паспорта и README при изменении public contract.
 - [x] Поднять актуальную patch version в module.json; создать/переименовать versioned forwarder с единственным import "./main.js"; обновить esmodules. Проверить отсутствие старых runtime-entrypoint ссылок.
 - [x] Выполнить один полный цикл команд из README этого комплекта, проверить содержательный diff, stat и diff --check.
-- [ ] Stage только перечисленных файлов текущего этапа и обязательных manifest/docs; осмысленный commit; git push -u origin lich_branch. Проверить чистую рабочую копию и HEAD...origin/lich_branch = 0/0. Не включать чужие изменения.
+- [x] Stage только перечисленных файлов текущего этапа и обязательных manifest/docs; осмысленный commit; git push -u origin lich_branch. Проверить чистую рабочую копию и HEAD...origin/lich_branch = 0/0. Не включать чужие изменения.
 
 
 ## Отчёт реализации 2026-09-08 — 1.4.250
@@ -143,3 +143,5 @@ Live: install UI unavailable/compatible/capacity; read старых installed It
 - Live: testovyj3, https://vtt.rebreya.com/game, CODEX/GM, active GM Gamemaster, Foundry 13.351 / dnd5e 5.2.5, viewport 1292×920. После reload загружены R4 service и sheet integration; серверная metadata остаётся 1.4.238, runtime исходники — 1.4.250. Native install проклятья из Q2 дал 1+1. Недоступный профиль, занятый слот и capacity bypass отклонены без изменения Actor snapshot. Штатный режим редактирования включён через mode slider; кнопка capacity выставила 3. Снижение до 2 при занятом slot3 отвергнуто. Custom installed profile прочитан без изменений; status section одна и не обрезана на screenshot. Штатная кнопка снятия сохранила Item и custom profile, очистила контейнер/host link. Browser value fixture показал base1000+upgrades500=1500. Новых console errors нет. QA Actor hm4G6OtnqcrStZaP и все его Items удалены, окна закрыты.
 - Ограничения: отдельная player-сессия не проверялась; автоматизация 37 новых эффектов не включена; nested containers пока отклоняются; existing install/remove не превращены в durable transaction. Нет массовой миграции или перерасчёта world Items. R3 native socket retest сохранён в его отчёте.
 - Git перед работой: lich_branch, чисто, fetch выполнен, HEAD 0c71cf7f, HEAD...origin/main=342/0, HEAD...origin/lich_branch=0/0. Commit/push — заключительная операция после финального diff review; её hash сообщается в ответе.
+
+Выпуск завершён: implementation commit `4ef89141` отправлен в origin/lich_branch. После push рабочая копия чистая, HEAD...origin/lich_branch=0/0. После полного прогона изменены только пользовательские пояснения JSON и расположение существующего BOM/import в lootgen: focused R4+manifest повторно 128/0, lootgen 10/0, JSON parse и node --check успешны.

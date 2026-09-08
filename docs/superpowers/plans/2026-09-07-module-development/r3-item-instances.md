@@ -146,7 +146,7 @@ Live GM/player: split/whole/cancel, same-group permissions, two clients, delete 
 - [x] Обновить профильные методы паспорта и README при изменении public contract.
 - [x] Поднять актуальную patch version в module.json; создать/переименовать versioned forwarder с единственным import "./main.js"; обновить esmodules. Проверить отсутствие старых runtime-entrypoint ссылок.
 - [x] Выполнить один полный цикл команд из README этого комплекта, проверить содержательный diff, stat и diff --check.
-- [ ] Stage только перечисленных файлов текущего этапа и обязательных manifest/docs; осмысленный commit; git push -u origin lich_branch. Проверить чистую рабочую копию и HEAD...origin/lich_branch = 0/0. Не включать чужие изменения.
+- [x] Stage только перечисленных файлов текущего этапа и обязательных manifest/docs; осмысленный commit; git push -u origin lich_branch. Проверить чистую рабочую копию и HEAD...origin/lich_branch = 0/0. Не включать чужие изменения.
 
 
 ## Реализация 1.4.249 и фактическая проверка
