@@ -17,6 +17,8 @@ function cleanCatalogItem(source, id) {
     for(const key of parts)target=target[key]??={};
     if(last.startsWith("-="))delete target[last.slice(2)];else target[last]=structuredClone(value);
   }
+  // dnd5e loot has no equipped field; its schema would discard this synthetic value.
+  if (data.type === "loot") delete data.system.equipped;
   return data;
 }
 

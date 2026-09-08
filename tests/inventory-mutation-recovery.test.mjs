@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { buildCompositeItemGraph } from "../scripts/data/composite-item-graph.js";
+import { buildLootgenPreparedItem } from "../scripts/data/lootgen-prepared-item.js";
 
 import { MODULE_ID, REBREYA_GROUP_FLAGS, SETTINGS_KEYS } from "../scripts/constants.js";
 import {
@@ -1690,12 +1692,12 @@ function createActor({
       applyPatch(this, patch);
       return this;
     },
-    async createEmbeddedDocuments(_documentName, documents) {
+    async createEmbeddedDocuments(_documentName, documents, options = {}) {
       this.createEmbeddedDocumentsCalls += 1;
       const created = documents.map((document, index) => {
         const { _id, id: _ignoredId, name, type, img, flags, system, ...extraData } = clone(document);
         return createItem({
-          id: `created-${this.items.contents.length + index + 1}`,
+          id: options.keepId && _id ? _id : `created-${this.items.contents.length + index + 1}`,
           name,
           type,
           img,
@@ -5180,4 +5182,74 @@ test("craft output recovers from write-then-throw creation with frozen source an
 test.after(() => {
   globalThis.Actor = previousActor;
   globalThis.Item = previousItem;
+});
+
+async function preparedLootgenIngressItem() {
+  const descriptor = {version:2,instanceKey:"host",sourceType:"gear",sourceId:"sword",quantity:1,isBroken:false,container:null,
+    upgrades:[{instanceKey:"upgrade",sourceId:"zacharovanie-ostroty",slotIndex:1,choices:{}}]};
+  let nextId=0;
+  const graph=await buildCompositeItemGraph(descriptor, {
+    createDocumentId:()=>String(++nextId).padStart(16,"0"),
+    manifest:[{productId:"zacharovanie-ostroty",decision:"simple-implemented",profile:{compatibility:["weapon"]}}],
+    buildBase:async()=>inventoryIngressItemData("sword"),
+    buildUpgrade:async()=>({name:"Sharp",type:"loot",system:{quantity:1},flags:{}})
+  });
+  return buildLootgenPreparedItem(descriptor,{graph,unitValue:1200});
+}
+
+test("prepared lootgen ingress requires its trusted source adapter", async()=>{
+  const group=createActor({id:"composed-denied",type:"group",managed:true});
+  const fixture=createInventoryIngressFixture({group});
+  try {
+    const rows=[{sourceKey:"row",quantity:1,itemData:await preparedLootgenIngressItem(),container:null,legacyFolderId:null}];
+    const serializedPlan=await serializeIngressPlan(fixture.planner,{groupActorId:group.id,rows});
+    const request={groupActorId:group.id,batchMutationId:"denied-graph",sourceOrigin:"lootgen",serializedPlan};
+    await assert.rejects(fixture.service.commitInventoryIngressBatch(request,{resolveRows:async()=>clone(rows),debitRow:async()=>{}}),error=>error.code==="invalid-runtime-graph");
+    assert.equal(group.items.contents.length,0);
+  } finally {fixture.restore();}
+});
+
+test("prepared lootgen ingress records graph IDs before writes and recovers only missing children",async()=>{
+  const group=createActor({id:"composed-recovery",type:"group",managed:true});
+  group.items.has=id=>Boolean(group.items.get(id));
+  const fixture=createInventoryIngressFixture({group});
+  let debitCalls=0,createCalls=0;
+  try {
+    const rows=[{sourceKey:"row",quantity:1,itemData:await preparedLootgenIngressItem(),container:null,legacyFolderId:null}];
+    const serializedPlan=await serializeIngressPlan(fixture.planner,{groupActorId:group.id,rows});
+    const request={groupActorId:group.id,batchMutationId:"prepared-recovery",sourceOrigin:"lootgen",serializedPlan};
+    const originalCreate=group.createEmbeddedDocuments.bind(group);
+    group.createEmbeddedDocuments=async(type,documents,options)=>{
+      createCalls++;
+      const record=await fixture.service.mutationJournal.find("inventory-ingress:prepared-recovery");
+      assert.equal(record.rows[0].targetReceipts[0].graphItemIds.length,2);
+      assert.ok(documents.every(data=>record.rows[0].targetReceipts[0].graphItemIds.includes(data._id)));
+      if(createCalls===1){await originalCreate(type,documents.slice(0,1),options);throw new Error("partial graph write");}
+      assert.equal(documents.length,1);
+      return originalCreate(type,documents,options);
+    };
+    const callbacks={resolveRows:async()=>clone(rows),debitRow:async()=>{debitCalls++;},allowPreparedLootgenGraph:true};
+    await assert.rejects(fixture.service.commitInventoryIngressBatch(request,callbacks),error=>error.code==="graph-manual-review");
+    assert.equal(group.items.contents.length,1);assert.equal(debitCalls,0);
+    const result=await fixture.service.commitInventoryIngressBatch(request,callbacks);
+    assert.equal(group.items.contents.length,2);assert.equal(debitCalls,1);
+    const host=group.items.contents.find(item=>item.type==="weapon"),child=group.items.contents.find(item=>item.type==="loot");
+    assert.equal(child.system.container,host.id);
+    assert.equal(child.flags[MODULE_ID].installedUpgrade.hostActorId,group.id);
+    assert.equal(host.flags[MODULE_ID].lootgenComposition,undefined);
+    assert.equal(host.flags[MODULE_ID].runtimeItemGraph,undefined);
+    group.items.contents.splice(0);
+    assert.deepEqual(await fixture.service.commitInventoryIngressBatch(request,callbacks),result);
+    assert.equal(group.items.contents.length,0);assert.equal(createCalls,2);assert.equal(debitCalls,1);
+  } finally {fixture.restore();}
+});
+
+test("manual dismantle of an installed host rejects before any document write",async()=>{
+  const host=createItem({id:"host",type:"weapon",flags:{[MODULE_ID]:{itemUpgrades:{installed:[{itemId:"child",slotIndex:1}]}}}});
+  const group=createActor({id:"dismantle-composed",type:"group",managed:true,items:[host]});
+  const fixture=createInventoryIngressFixture({group});
+  try {
+    await assert.rejects(fixture.service.executeDismantleMutation({inventoryActorId:group.id,itemId:host.id,quantity:1,mutationId:"no-shell-dismantle"}),/Сначала снимите усовершенствования/u);
+    assert.equal(group.items.contents.length,1);assert.equal(group.createEmbeddedDocumentsCalls,0);
+  }finally{fixture.restore();}
 });

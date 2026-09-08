@@ -1,6 +1,7 @@
-import { captureInventoryIngressIdentity } from "../data/inventory-ingress-descriptor.js";
+import { captureInventoryIngressIdentity } from "../data/inventory-ingress-descriptor.js?v=1.4.257";
 
 export const INVENTORY_INGRESS_PLAN_VERSION = 1;
+const versionForRows = rows => rows.some(row => row.identity?.compositionKey) ? 2 : INVENTORY_INGRESS_PLAN_VERSION;
 
 function deepFreeze(value) {
   if (!value || typeof value !== "object" || Object.isFrozen(value)) return value;
@@ -48,10 +49,13 @@ function validWireAction(action) {
     && (action.folderId === null || wireId(action.folderId));
 }
 
-function validWireIdentity(identity, quantity) {
+function validWireIdentity(identity, quantity, version) {
+  const composed = Object.hasOwn(identity ?? {}, "compositionKey");
   return hasExactKeys(identity, [
-    "documentType", "durabilityState", "quantity", "sourceId", "sourceType"
+    "documentType", "durabilityState", "quantity", "sourceId", "sourceType", ...(composed ? ["compositionKey"] : [])
   ])
+    && (!composed || (version === 2 && quantity === 1 && typeof identity.compositionKey === "string"
+      && identity.compositionKey.length > 0 && identity.compositionKey.length <= 8192))
     && [identity.documentType, identity.durabilityState, identity.sourceId, identity.sourceType]
       .every((value) => typeof value === "string" && cleanId(value) === value)
     && Number.isFinite(identity.quantity)
@@ -63,7 +67,7 @@ export function isValidSerializedInventoryIngressPlan(plan) {
   if (!hasExactKeys(plan, [
     "groupActorId", "requestedFolderId", "rootOverrideSourceKeys", "rows", "rulesRevision", "version"
   ])
-    || plan.version !== INVENTORY_INGRESS_PLAN_VERSION
+    || ![INVENTORY_INGRESS_PLAN_VERSION, 2].includes(plan.version)
     || !wireId(plan.groupActorId)
     || !Number.isSafeInteger(plan.rulesRevision)
     || plan.rulesRevision < 0
@@ -82,13 +86,14 @@ export function isValidSerializedInventoryIngressPlan(plan) {
       || row.quantity <= 0
       || !(row.matchedRuleId === null || wireId(row.matchedRuleId))
       || !validWireAction(row.action)
-      || !validWireIdentity(row.identity, row.quantity)) {
+      || !validWireIdentity(row.identity, row.quantity, plan.version)) {
       return false;
     }
     sourceKeys.add(row.sourceKey);
     if (row.action.type === "skip" || row.action.type === "dismantle") actionableKeys.add(row.sourceKey);
   }
   const overrides = new Set();
+  if (plan.version !== versionForRows(plan.rows)) return false;
   for (const sourceKey of plan.rootOverrideSourceKeys) {
     if (!wireId(sourceKey) || overrides.has(sourceKey) || !actionableKeys.has(sourceKey)) return false;
     overrides.add(sourceKey);
@@ -218,7 +223,7 @@ export class InventoryIngressPlanner {
       });
     }));
     return deepFreeze({
-      version: INVENTORY_INGRESS_PLAN_VERSION,
+      version: versionForRows(previewRows),
       groupActorId: safeGroupActorId,
       rulesRevision: ruleState.revision,
       requestedFolderId,
@@ -248,7 +253,7 @@ export class InventoryIngressPlanner {
   serialize(preview, { rootOverrideSourceKeys = [] } = {}) {
     const overrides = canonicalOverrideKeys(preview, rootOverrideSourceKeys);
     return deepFreeze({
-      version: INVENTORY_INGRESS_PLAN_VERSION,
+      version: versionForRows(preview.rows),
       groupActorId: preview.groupActorId,
       rulesRevision: preview.rulesRevision,
       requestedFolderId: preview.requestedFolderId,

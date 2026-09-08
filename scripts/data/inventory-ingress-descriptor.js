@@ -1,5 +1,6 @@
 import { MODULE_ID } from "../constants.js";
 import { isDurabilityEligible } from "./durability-rules.js";
+import { readLootgenPreparedComposition } from "./lootgen-prepared-item.js?v=1.4.257";
 
 const COPPER_MULTIPLIERS = Object.freeze({ pp: 1000, gp: 100, ep: 50, sp: 10, cp: 1 });
 const DURABILITY_STATES = new Set(["intact", "damaged", "broken", "destroyed"]);
@@ -143,7 +144,16 @@ function resolveMaterialProfile(itemData, model) {
   return material ? { material, materialId: sourceMaterialId } : null;
 }
 
+export function getInventoryDismantleBlockReason(itemData) {
+  const flags = moduleFlags(itemData);
+  if (flags.runtimeItemGraph || flags.itemUpgrades?.installed?.length || flags.installedUpgrade?.hostItemId) {
+    return "Сначала снимите усовершенствования с предмета: разбор составного предмета целиком пока недоступен.";
+  }
+  return "";
+}
+
 export function resolveInventoryDismantleMinimumQuantity(itemData, { model } = {}) {
+  if (getInventoryDismantleBlockReason(itemData)) return null;
   const availableQuantity = Math.max(0, Math.floor(finiteNumber(itemData?.system?.quantity) ?? 1));
   const unitWeight = unitWeightPounds(itemData);
   if (availableQuantity <= 0 || unitWeight <= 0 || !resolveMaterialProfile(itemData, model)) return null;
@@ -164,6 +174,7 @@ export function canResolveInventoryDismantle(itemData, { model } = {}) {
 }
 
 export function resolveInventoryDismantleOutputs(itemData, quantity, { model } = {}) {
+  if (getInventoryDismantleBlockReason(itemData)) return deepFreeze([]);
   const safeQuantity = finiteNumber(quantity);
   const unitWeight = unitWeightPounds(itemData);
   const profile = resolveMaterialProfile(itemData, model);
@@ -186,6 +197,7 @@ export function buildInventoryIngressDescriptor(itemData, {
 } = {}) {
   const identity = resolveManagedIdentity(itemData);
   const flags = moduleFlags(itemData);
+  const composition = readLootgenPreparedComposition(itemData);
   const source = resolveModelSource(identity, model);
   const rarity = readRarity(itemData?.system?.rarity ?? flags.rarity ?? source?.rarity);
   const rank = finiteNumber(flags.rank ?? source?.rank);
@@ -209,21 +221,24 @@ export function buildInventoryIngressDescriptor(itemData, {
     rarity,
     rank,
     durabilityState: durabilityStateOf(itemData),
-    unitValue: unitValueCopper(itemData),
+    unitValue: composition?.unitValue ?? unitValueCopper(itemData),
     unitWeight: unitWeightPounds(itemData),
     predominantMaterialId: cleanString(materialProfile?.materialId),
-    dismantlable: dismantlable === true
+    dismantlable: !composition && dismantlable === true,
+    ...(composition ? { compositionKey: composition.compositionKey } : {})
   });
 }
 
 export function captureInventoryIngressIdentity(descriptor, quantity) {
   const safeQuantity = finiteNumber(quantity);
   if (!(safeQuantity > 0)) throw new TypeError("Inventory ingress quantity must be a positive finite number.");
+  if (descriptor?.compositionKey && safeQuantity !== 1) throw new TypeError("Composed inventory ingress quantity must equal one.");
   return deepFreeze({
     sourceType: cleanString(descriptor?.sourceType),
     sourceId: cleanString(descriptor?.sourceId),
     documentType: cleanString(descriptor?.documentType),
     durabilityState: cleanString(descriptor?.durabilityState),
-    quantity: safeQuantity
+    quantity: safeQuantity,
+    ...(descriptor?.compositionKey ? { compositionKey: descriptor.compositionKey } : {})
   });
 }

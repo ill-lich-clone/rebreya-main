@@ -34,3 +34,32 @@ test("graph creation acknowledges throw-after-write; partial creation never blin
   items.delete([...items.keys()].find(id=>id!==root.id));
   await assert.rejects(materializeRuntimeItemGraph(actor,graph,"one",f.root.toObject()),e=>e.code==="graph-manual-review");
 });
+
+test("prepared loot graph recovery fills only missing documents and rewrites destination actor identity",async()=>{
+  const f=fixture(),graph=captureRuntimeItemGraph(f.actor,f.root),items=new Map(),batches=[];
+  let first=true;
+  const actor={id:"destination",items,async createEmbeddedDocuments(_type,data){batches.push(data.map(d=>d._id));for(const d of data){items.set(d._id,doc(d));if(first){first=false;throw new Error("partial batch");}}}};
+  await assert.rejects(materializeRuntimeItemGraph(actor,graph,"recover",f.root.toObject(),{recoverMissing:true}),e=>e.code==="graph-manual-review");
+  const root=await materializeRuntimeItemGraph(actor,graph,"recover",f.root.toObject(),{recoverMissing:true});
+  assert.equal(batches[1].length,1);assert.equal(items.size,2);
+  const child=[...items.values()].find(i=>i.id!==root.id);
+  assert.equal(child.toObject().flags['rebreya-main'].installedUpgrade.hostActorId,"destination");
+  await materializeRuntimeItemGraph(actor,graph,"recover",f.root.toObject(),{recoverMissing:true});assert.equal(batches.length,2);
+});
+
+test("partial prepared graph with a foreign system edit is not completed or overwritten",async()=>{
+  const f=fixture(),graph=captureRuntimeItemGraph(f.actor,f.root),items=new Map();let writes=0;
+  const actor={items,async createEmbeddedDocuments(_type,data){writes++;const changed=structuredClone(data[0]);changed.system.quantity=5;items.set(changed._id,doc(changed));throw new Error("partial");}};
+  await assert.rejects(materializeRuntimeItemGraph(actor,graph,"conflict",f.root.toObject(),{recoverMissing:true}));
+  await assert.rejects(materializeRuntimeItemGraph(actor,graph,"conflict",f.root.toObject(),{recoverMissing:true}),e=>e.code==="graph-manual-review");
+  assert.equal(writes,1);assert.equal([...items.values()][0].system.quantity,5);
+});
+
+test("prepared graph rejects edits to persisted effects before filling missing children",async()=>{
+  const f=fixture(),graph=captureRuntimeItemGraph(f.actor,f.root),items=new Map();let writes=0;
+  const root={...f.root.toObject(),effects:[]};
+  const actor={items,async createEmbeddedDocuments(_type,data){writes++;const changed=structuredClone(data[0]);changed.effects=[{name:"Unrelated edit"}];items.set(changed._id,doc(changed));throw new Error("partial");}};
+  await assert.rejects(materializeRuntimeItemGraph(actor,graph,"effects-conflict",root,{recoverMissing:true}));
+  await assert.rejects(materializeRuntimeItemGraph(actor,graph,"effects-conflict",root,{recoverMissing:true}),e=>e.code==="graph-manual-review");
+  assert.equal(writes,1);
+});

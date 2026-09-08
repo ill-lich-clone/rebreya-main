@@ -90,12 +90,12 @@ const child = graph.documents.find(d => d._id === graph.links[0].upgradeItemId);
 assert.equal(child.system.container, graph.rootItemId);
 ```
 
-- [ ] Интегрировать граф как одну ingress row/единицу результата. Сначала journal prepared с полным набором IDs и детерминированным fingerprint; затем один createEmbeddedDocuments batch с keepId. Partial batch возможен: receipt проверяет весь ожидаемый graph, не только существование root.
+- [x] Интегрировать граф как одну ingress row/единицу результата. Сначала journal prepared с полным набором IDs и детерминированным fingerprint; затем один createEmbeddedDocuments batch с keepId. Partial batch возможен: receipt проверяет весь ожидаемый graph, не только существование root.
 - [ ] Retry восстанавливает только недостающие documents/links с теми же IDs, либо сообщает manual-review при несовместимой чужой правке. Удалённый после committed grant Item не создаётся заново. Compensation удаляет только собственные подтверждённые новые документы и не затрагивает unrelated edits.
-- [ ] Не вызывать публичный installItemUpgrade() для каждого child после выдачи: он имеет свой split/refresh и породит второй workflow. Graph builder формирует те же canonical links, обычный upgrade sync R7/curse owner включается после единого успешного ingress.
-- [ ] buildInventoryIngressDescriptor получает полную unitValue составного host и compositionKey. captureInventoryIngressIdentity включает compositionKey в v2 identity; plain legacy identity сохраняется. Новый serialized plan version с exact parser для v1/v2, без silently accepted extra fields.
+- [x] Не вызывать публичный installItemUpgrade() для каждого child после выдачи: он имеет свой split/refresh и породит второй workflow. Graph builder формирует те же canonical links, обычный upgrade sync R7/curse owner включается после единого успешного ingress.
+- [x] buildInventoryIngressDescriptor получает полную unitValue составного host и compositionKey. captureInventoryIngressIdentity включает compositionKey в v2 identity; plain legacy identity сохраняется. Новый serialized plan version с exact parser для v1/v2, без silently accepted extra fields.
 - [ ] Preview и authoritative parity сравнивают composition/choices, не только sourceId/quantity. Filter folder/skip применяется ко всему host; slot children не проходят второй независимый matcher. Если dismantle не поддерживает составной host целиком, пометить его недоступным для dismantle с видимой причиной; не уничтожать children при разборе одной оболочки.
-- [ ] CompositionKey вычисляется канонически из структуры/choices и instanceKey; порядок полей объекта choices не должен менять fingerprint. Client hash сам по себе не является доказательством доверия.
+- [x] CompositionKey вычисляется канонически из структуры/choices и instanceKey; порядок полей объекта choices не должен менять fingerprint. Client hash сам по себе не является доказательством доверия.
 
 ## Задача R8.4 — trusted result, Chat и выдача
 
@@ -131,6 +131,17 @@ assert.equal(child.system.container, graph.rootItemId);
 
 Проверены exact1500/short1499, два одинаковых base с отдельными composition, capacity1, disabled/zero chance, type/rank/availability filters, unknown price, unsafe budget, duplicate identities и legacy result/random parity. Graph tests проверяют новые IDs и forward/reverse links без записей. Последний focused до документации: `node --test tests/lootgen*.test.mjs tests/composite-item-graph.test.mjs tests/module-manifest.test.mjs` — **111 passed / 0 failed**.
 
-**Ещё не сделано:** trusted GM generation/Chat state, catalog reader на реальных источниках, UI опций и preview, graph ingress/journal recovery, claim/source receipts, native приёмка. R8 не завершён; генерация составных строк пока не включается из пользовательского UI.
+**Ещё не сделано:** trusted GM generation/Chat state, catalog reader на реальных источниках, UI опций и preview, claim/source receipts, полная native приёмка. R8 не завершён; генерация составных строк пока не включается из пользовательского UI.
 
 Проверка первой части: `node --test tests/*.test.mjs` — **3810 passed / 0 failed**; синтаксис **762 JS/MJS и 46 JSON, 0 ошибок**; `git diff --check` чисто. Новое включённое поведение проверено pure/focused-тестами, без заявления native UI/claim готовности.
+
+
+### Вторая часть R8 — 1.4.257
+
+Подключены prepared ItemData/full value, exact v2 ingress parity, внутреннее разрешение только trusted Chat adapter, journal с полным набором target IDs до записи и восстановление отсутствующих children. Generic direct payload не расширен. Terminal retry не воскрешает удалённый Item; foreign system/effects edits блокируют recovery. Разбор установленного host/child отклоняется до записи с причиной. После выдачи временная composition price удаляется, native root хранит только базовую цену.
+
+Native testovyj3, CODEX, Foundry13.351/dnd5e5.2.5: создание root+child, partial root→child, сохранение ID при повторе, hostActorId и rejection после изменения quantity подтверждены. Найденное schema-различие исправлено: loot не получает system.equipped. QA документы удалены. Это проверка native materializer, ещё не пользовательского generate→publish→claim.
+
+Открыты trusted source catalog reader, prepare-result/Chat receipt/catalog drift, UI и полный multiplayer lifecycle. R8 не завершён.
+
+Проверки второй части: `node --test tests/*.test.mjs` — **3820 passed / 0 failed**; `node --check` — **764 JS/MJS**, JSON parse — **46 файлов**, ошибок **0**; `git diff --check` чисто. Первые 7 failures исправлены: staging rename для architecture snapshot, совместимость коллекции Item через get вместо has, обновление трёх cache-contract tests. После исправлений полный прогон повторён успешно.

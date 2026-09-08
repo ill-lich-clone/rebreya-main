@@ -1,5 +1,6 @@
 import { ItemInstanceWorkflow } from "../application/item-instance-workflow.js?v=1.4.249-item-instances";
-import { RUNTIME_ITEM_GRAPH_FLAG, materializeRuntimeItemGraph } from "./runtime-item-graph.js?v=1.4.252";
+import { RUNTIME_ITEM_GRAPH_FLAG, buildRuntimeGraphDocuments, materializeRuntimeItemGraph } from "./runtime-item-graph.js?v=1.4.257";
+import { readLootgenPreparedComposition } from "./lootgen-prepared-item.js?v=1.4.257";
 import { ItemInstanceDocuments } from "../infrastructure/foundry/item-instance-documents.js?v=1.4.249-item-instances";
 import {
   DOWNTIME_ITEM_TYPE,
@@ -25,9 +26,10 @@ import { finiteNumber as toNumber } from "../shared/foundry-values.js";
 import { buildActorInventoryWeightSnapshot, buildInventoryStorageProfile } from "./inventory-weight.js?v=1.4.237";
 import { buildDurabilitySignature, isDurabilityEligible } from "./durability-rules.js";
 import {
+  getInventoryDismantleBlockReason,
   resolveInventoryDismantleMinimumQuantity,
   resolveInventoryDismantleOutputs
-} from "./inventory-ingress-descriptor.js?v=1.4.179-dismantle-minimum-quantity";
+} from "./inventory-ingress-descriptor.js?v=1.4.257";
 import {
   InventoryIngressRuleError,
   findInventoryIngressRuleConflicts,
@@ -3585,6 +3587,8 @@ export class InventoryService {
       const item = this.#getInventoryItem(inventoryActor, itemId);
       const model = await this.moduleApi.getModel();
       const itemData = item.toObject();
+      const blockReason = getInventoryDismantleBlockReason(itemData);
+      if (blockReason) throw new Error(blockReason);
       const currentQuantity = getRawQuantity(itemData);
       const breakQuantity = Math.max(1, Math.min(currentQuantity, requestedQuantity));
       const minimumQuantity = resolveInventoryDismantleMinimumQuantity(itemData, { model });
@@ -3900,9 +3904,14 @@ export class InventoryService {
           outputIndex
         });
       }
+      const runtimeGraph = itemData.flags?.[MODULE_ID]?.[RUNTIME_ITEM_GRAPH_FLAG];
+      const graphItemIds = runtimeGraph
+        ? buildRuntimeGraphDocuments(runtimeGraph, `${operationId}:${row.sourceKey}:${outputIndex}`, itemData, { actorId: actor.id }).documents.map(data => data._id)
+        : null;
       return {
         outputIndex,
         itemData,
+        ...(graphItemIds ? { graphItemIds } : {}),
         itemId: candidate?.id ?? "",
         created: !candidate,
         beforeQuantity,
@@ -3917,7 +3926,14 @@ export class InventoryService {
   async #applyInventoryIngressTargetReceipt(actor, record, row, receipt, grantContainer = null) {
     const runtimeGraph = receipt.itemData?.flags?.[MODULE_ID]?.[RUNTIME_ITEM_GRAPH_FLAG];
     if (runtimeGraph) {
-      const root = await materializeRuntimeItemGraph(actor, runtimeGraph, `${record.id}:${row.sourceKey}:${receipt.outputIndex}`, receipt.itemData);
+      const graphOperationId = `${record.id}:${row.sourceKey}:${receipt.outputIndex}`;
+      if (receipt.graphItemIds) {
+        const expectedIds = buildRuntimeGraphDocuments(runtimeGraph, graphOperationId, receipt.itemData, { actorId: actor.id }).documents.map(data => data._id);
+        if (JSON.stringify(receipt.graphItemIds) !== JSON.stringify(expectedIds)) throw this.#inventoryReconciliationError("Prepared graph document IDs changed.");
+      }
+      const recoverMissing = record.sourceOrigin === "lootgen" && record.allowPreparedLootgenGraph === true
+        && Boolean(readLootgenPreparedComposition(receipt.itemData));
+      const root = await materializeRuntimeItemGraph(actor, runtimeGraph, graphOperationId, receipt.itemData, { recoverMissing });
       return root.id;
     }
     if (receipt.container) {
@@ -3974,10 +3990,20 @@ export class InventoryService {
     return item.id;
   }
 
+  #assertInventoryIngressGraphSource(rows, sourceOrigin, allowPreparedLootgenGraph) {
+    for (const row of rows) {
+      if (!row.itemData?.flags?.[MODULE_ID]?.[RUNTIME_ITEM_GRAPH_FLAG]) continue;
+      if (sourceOrigin === "storage") continue;
+      if (sourceOrigin === "lootgen" && allowPreparedLootgenGraph === true && readLootgenPreparedComposition(row.itemData)) continue;
+      throw new InventoryIngressRuleError("invalid-runtime-graph", "Составной предмет принимается только от доверенного источника хранилища или лута.");
+    }
+  }
+
   async commitInventoryIngressBatch(request, {
     resolveRows,
     debitRow,
-    grantContainer = null
+    grantContainer = null,
+    allowPreparedLootgenGraph = false
   } = {}) {
     const exactKeys = ["groupActorId", "batchMutationId", "sourceOrigin", "serializedPlan"];
     if (!request || typeof request !== "object" || Array.isArray(request)
@@ -4015,7 +4041,7 @@ export class InventoryService {
       );
     }
     if (existing) {
-      return this.#commitLegacyInventoryIngressBatch(request, { resolveRows, debitRow, grantContainer });
+      return this.#commitLegacyInventoryIngressBatch(request, { resolveRows, debitRow, grantContainer, allowPreparedLootgenGraph });
     }
 
     this.#claimSimpleMutationFingerprint(operationId, fingerprint);
@@ -4029,7 +4055,7 @@ export class InventoryService {
       }
       const cachedDecision = await cachedExecution.promise;
       if (cachedDecision.mode === "legacy") {
-        return this.#commitLegacyInventoryIngressBatch(request, { resolveRows, debitRow, grantContainer });
+        return this.#commitLegacyInventoryIngressBatch(request, { resolveRows, debitRow, grantContainer, allowPreparedLootgenGraph });
       }
       return cachedDecision.value;
     }
@@ -4056,9 +4082,7 @@ export class InventoryService {
           recovering: false,
           serializedPlan: foundry.utils.deepClone(serializedPlan)
         });
-        if (sourceOrigin !== "storage" && sourceRows.some(row => row.itemData?.flags?.[MODULE_ID]?.[RUNTIME_ITEM_GRAPH_FLAG])) {
-          throw new InventoryIngressRuleError("invalid-runtime-graph", "Снимок составного предмета принимается только из хранилища.");
-        }
+        this.#assertInventoryIngressGraphSource(sourceRows, sourceOrigin, allowPreparedLootgenGraph);
         const authoritativePreview = await planner.preview({
           groupActorId,
           requestedFolderId: serializedPlan?.requestedFolderId ?? null,
@@ -4127,7 +4151,7 @@ export class InventoryService {
     }
     if (decision.mode === "legacy") {
       this.simpleIngressExecutions.delete(operationId);
-      return this.#commitLegacyInventoryIngressBatch(request, { resolveRows, debitRow, grantContainer });
+      return this.#commitLegacyInventoryIngressBatch(request, { resolveRows, debitRow, grantContainer, allowPreparedLootgenGraph });
     }
     return decision.value;
   }
@@ -4399,7 +4423,8 @@ export class InventoryService {
   async #commitLegacyInventoryIngressBatch(request, {
     resolveRows,
     debitRow,
-    grantContainer = null
+    grantContainer = null,
+    allowPreparedLootgenGraph = false
   } = {}) {
     const exactKeys = ["groupActorId", "batchMutationId", "sourceOrigin", "serializedPlan"];
     if (!request || typeof request !== "object" || Array.isArray(request)
@@ -4441,9 +4466,7 @@ export class InventoryService {
         recovering: Boolean(record),
         serializedPlan: foundry.utils.deepClone(serializedPlan)
       });
-      if (sourceOrigin !== "storage" && sourceRows.some(row => row.itemData?.flags?.[MODULE_ID]?.[RUNTIME_ITEM_GRAPH_FLAG])) {
-        throw new InventoryIngressRuleError("invalid-runtime-graph", "Снимок составного предмета принимается только из хранилища.");
-      }
+      this.#assertInventoryIngressGraphSource(sourceRows, sourceOrigin, allowPreparedLootgenGraph);
       const authoritativePreview = await planner.preview({
         groupActorId,
         requestedFolderId: serializedPlan?.requestedFolderId ?? null,
@@ -4480,6 +4503,7 @@ export class InventoryService {
           phase: "prepared",
           groupActorId,
           sourceOrigin,
+          allowPreparedLootgenGraph: sourceOrigin === "lootgen" && allowPreparedLootgenGraph === true,
           fingerprint,
           rulesRevision: authoritativePreview.rulesRevision,
           requestedFolderId: authoritativePreview.requestedFolderId,

@@ -12,6 +12,7 @@ test("one detached graph uses fresh ids and exact bidirectional installed links"
   assert.equal(graph.rootItemId,host._id);assert.equal(host.system.quantity,1);assert.equal(host.system.container,null);assert.equal(host.system.equipped,false);
   assert.equal(host.ownership,undefined);assert.equal(host.flags['rebreya-main'].inventoryMutation,undefined);
   assert.deepEqual(host.flags['rebreya-main'].itemUpgrades.installed,[{itemId:child._id,slotIndex:1}]);
+  assert.equal(child.system.equipped,undefined);
   assert.equal(child.system.container,host._id);assert.equal(child.flags['rebreya-main'].installedUpgrade.hostItemId,host._id);
   assert.deepEqual(child.flags['rebreya-main'].upgradeChoices,{});
   assert.equal(child.flags['rebreya-main'].gearId,'zacharovanie-ostroty');

@@ -285,3 +285,13 @@ test("capture identity rejects invalid quantities and freezes its detached resul
   assert.throws(() => captureInventoryIngressIdentity(descriptor, 0), /quantity/iu);
   assert.throws(() => captureInventoryIngressIdentity(descriptor, Number.NaN), /quantity/iu);
 });
+
+test("installed hosts and children are unavailable for shell-only dismantling",()=>{
+  const model=createModel();
+  for(const flags of [{itemUpgrades:{installed:[{itemId:"child",slotIndex:1}]}},{installedUpgrade:{hostItemId:"host",slotIndex:1}}]){
+    const item=createSwordData();Object.assign(item.flags[MODULE_ID],flags);
+    assert.equal(canResolveInventoryDismantle(item,{model}),false);
+    assert.equal(buildInventoryIngressDescriptor(item,{model}).dismantlable,false);
+    assert.deepEqual(resolveInventoryDismantleOutputs(item,1,{model}),[]);
+  }
+});

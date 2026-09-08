@@ -76,7 +76,7 @@ import {
   SOCKET_EVENT_INVENTORY_SOURCE_DEPLETION_RESULT,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_REQUEST,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_RESULT
-} from "./data/inventory-service.js?v=1.4.252-disarm";
+} from "./data/inventory-service.js?v=1.4.257";
 import {
   InventoryIngressRuleCompilerCache,
   normalizeInventoryIngressRule
@@ -84,11 +84,11 @@ import {
 import {
   buildInventoryIngressDescriptor,
   resolveInventoryDismantleOutputs
-} from "./data/inventory-ingress-descriptor.js?v=1.4.179-dismantle-minimum-quantity";
+} from "./data/inventory-ingress-descriptor.js?v=1.4.257";
 import {
   InventoryIngressPlanner,
   isValidSerializedInventoryIngressPlan
-} from "./application/inventory-ingress-planner.js";
+} from "./application/inventory-ingress-planner.js?v=1.4.257";
 import { DurabilityService } from "./data/durability-service.js?v=1.4.154-corpse-storage-broken-name";
 import { MapObjectTokenService } from "./data/map-object-token-service.js?v=1.4.97-map-object-token";
 import { HeroDollService, HERO_DOLL_ASSIGN_COMMAND, HERO_DOLL_NORMALIZE_COMMAND, HERO_DOLL_CLEAR_COMMAND, isValidHeroDollAssignPayload } from "./data/hero-doll-service.js?v=1.4.252-disarm";
@@ -268,7 +268,7 @@ import {
   isValidStorageRestorePortablePayload,
   isValidStorageTokenCharacterPayload,
   storageCharacterTokenUuidForClaim
-} from "./data/storage-command-service.js?v=1.4.252-disarm";
+} from "./data/storage-command-service.js?v=1.4.257";
 import { registerCombatHooks } from "./combat/hooks.js?v=1.4.253-simple-upgrades";
 import { CombatAttackService } from "./combat/attack-service.js?v=1.4.254-simple-upgrades";
 import { ImplantAutomationService } from "./combat/implant-automation-service.js";
@@ -1723,7 +1723,8 @@ export class RebreyaMainModule {
           serializedPlan: ingressPlan
         }, {
           resolveRows: async () => buildRows(),
-          debitRow: async () => {}
+          debitRow: async () => {},
+          allowPreparedLootgenGraph: true
         });
         const acceptedRowIds = ingressResult.rows
           .filter((row) => row.changed)

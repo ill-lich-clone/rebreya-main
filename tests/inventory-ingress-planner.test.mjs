@@ -72,6 +72,17 @@ function createHarness({ decisions, confirmation = { rootOverrideSourceKeys: [] 
   return { calls, planner };
 }
 
+test("composition identities use exact v2 wire plans and detect a changed child composition",async()=>{
+  const {planner}=createHarness();
+  const descriptor={sourceType:'gear',sourceId:'sword',documentType:'weapon',durabilityState:'intact',compositionKey:'{"composition":"one"}'};
+  const preview=await planner.preview({groupActorId:'group-a',rows:[row('r',descriptor)]});
+  const serialized=planner.serialize(preview);assert.equal(serialized.version,2);assert.equal(isValidSerializedInventoryIngressPlan(serialized),true);
+  assert.equal(isValidSerializedInventoryIngressPlan({...serialized,version:1}),false);
+  const changed=await planner.preview({groupActorId:'group-a',rows:[row('r',{...descriptor,compositionKey:'{"composition":"two"}'})]});
+  assert.throws(()=>planner.assertParity(serialized,changed));
+  const extra=structuredClone(serialized);extra.rows[0].identity.effects=[];assert.equal(isValidSerializedInventoryIngressPlan(extra),false);
+});
+
 test("preview reads and evaluates once, builds one descriptor per row and resolves only matched dismantle", async () => {
   const { calls, planner } = createHarness({
     decisions: [

@@ -16,7 +16,7 @@ import {
   STORAGE_ACCESS_DISTANCE_ERROR_CODE,
   STORAGE_ACCESS_DISTANCE_ERROR_MESSAGE
 } from "./storage-access.js?v=1.4.197-door-trigger-target";
-import { isValidSerializedInventoryIngressPlan } from "../application/inventory-ingress-planner.js";
+import { isValidSerializedInventoryIngressPlan } from "../application/inventory-ingress-planner.js?v=1.4.257";
 import { STORAGE_TRIGGER_EVENTS } from "./storage-trigger-service.js?v=1.4.197-door-trigger-target";
 import {
   TriggerTargetCoordinator,

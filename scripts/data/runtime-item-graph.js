@@ -5,6 +5,12 @@ const MODULE_ID = "rebreya-main";
 export const RUNTIME_ITEM_GRAPH_FLAG = "runtimeItemGraph";
 const conflict = () => { const error = new Error("Состав предмета изменился или перенесён частично; нужна сверка экземпляров."); error.code = "graph-manual-review"; throw error; };
 const clone = value => structuredClone(value);
+const matchesPreparedValue = (actual, expected) => {
+  if (Array.isArray(expected)) return Array.isArray(actual) && actual.length === expected.length && expected.every((value,i) => matchesPreparedValue(actual[i],value));
+  if (expected && typeof expected === "object") return actual && typeof actual === "object"
+    && Object.entries(expected).every(([key,value]) => matchesPreparedValue(actual[key],value));
+  return actual === expected;
+};
 
 /** Detached transport snapshot of live Documents, not a catalogue rebuild or another world repository. */
 export function captureRuntimeItemGraph(actor, root) {
@@ -22,7 +28,7 @@ export function captureRuntimeItemGraph(actor, root) {
   return { version: 1, rootId: root.id, nodes };
 }
 
-export function buildRuntimeGraphDocuments(graph, operationId, rootData) {
+export function buildRuntimeGraphDocuments(graph, operationId, rootData, { actorId = null } = {}) {
   if (graph?.version !== 1 || !Array.isArray(graph.nodes) || !graph.nodes.length || graph.nodes.length > 200
     || graph.nodes[0]?._id !== graph.rootId || typeof operationId !== "string" || !operationId) conflict();
   const ids = new Map(graph.nodes.map(node => [node._id, createStableGearDocumentId(`${operationId}:${node._id}`)]));
@@ -33,7 +39,7 @@ export function buildRuntimeGraphDocuments(graph, operationId, rootData) {
     for (const key of ["_id", "_stats", "folder", "sort", "ownership"]) delete data[key];
     data._id = ids.get(sourceId); data.system ??= {}; data.flags ??= {}; data.flags[MODULE_ID] ??= {};
     const flags = data.flags[MODULE_ID];
-    for (const key of [RUNTIME_ITEM_GRAPH_FLAG, "runtimeGraphOrigin", "itemInstanceOrigin", "itemInstanceDebit", "inventoryTransfer", "disarmDebit"]) delete flags[key];
+    for (const key of [RUNTIME_ITEM_GRAPH_FLAG, "lootgenComposition", "runtimeGraphOrigin", "itemInstanceOrigin", "itemInstanceDebit", "inventoryTransfer", "disarmDebit"]) delete flags[key];
     flags.runtimeGraphOrigin = { id: operationId, sourceItemId: sourceId };
     if (sourceId !== graph.rootId) delete flags.inventoryMutation;
     if (data.system.container) data.system.container = ids.get(data.system.container) ?? null;
@@ -53,28 +59,36 @@ export function buildRuntimeGraphDocuments(graph, operationId, rootData) {
     if (flags.installedUpgrade?.hostItemId) {
       if (!ids.has(flags.installedUpgrade.hostItemId)) conflict();
       flags.installedUpgrade.hostItemId = ids.get(flags.installedUpgrade.hostItemId);
+      if (actorId !== null) flags.installedUpgrade.hostActorId = actorId;
     }
     return data;
   });
   return { rootItemId: ids.get(graph.rootId), documents };
 }
 
-export async function materializeRuntimeItemGraph(actor, graph, operationId, rootData) {
-  const plan = buildRuntimeGraphDocuments(graph, operationId, rootData);
+export async function materializeRuntimeItemGraph(actor, graph, operationId, rootData, { recoverMissing = false } = {}) {
+  const plan = buildRuntimeGraphDocuments(graph, operationId, rootData, { actorId: actor.id ?? "" });
   const existing = plan.documents.map(data => actor.items.get(data._id));
-  const verify = () => {
+  const verify = (requireAll = true) => {
     for (const data of plan.documents) {
       const item = actor.items.get(data._id), actual = item?.toObject?.();
+      if (!item && !requireAll) continue;
       if (!actual || itemInstanceFingerprint(actual.flags?.[MODULE_ID]?.runtimeGraphOrigin) !== itemInstanceFingerprint(data.flags[MODULE_ID].runtimeGraphOrigin)) conflict();
       if (actual.type !== data.type || actual.system?.quantity !== data.system?.quantity
         || (actual.system?.container ?? null) !== (data.system?.container ?? null)
         || itemInstanceFingerprint(actual.flags?.[MODULE_ID]?.itemUpgrades ?? null) !== itemInstanceFingerprint(data.flags[MODULE_ID].itemUpgrades ?? null)
         || itemInstanceFingerprint(actual.flags?.[MODULE_ID]?.installedUpgrade ?? null) !== itemInstanceFingerprint(data.flags[MODULE_ID].installedUpgrade ?? null)) conflict();
+      if (recoverMissing && !matchesPreparedValue(actual, data)) conflict();
     }
     return actor.items.get(plan.rootItemId);
   };
-  if (existing.some(Boolean)) return verify();
-  try { await actor.createEmbeddedDocuments("Item", plan.documents, { keepId: true, renderSheet: false }); }
+  if (existing.every(Boolean)) return verify();
+  if (existing.some(Boolean)) {
+    if (!recoverMissing) return verify();
+    verify(false);
+  }
+  const missing = plan.documents.filter(data => !actor.items.get(data._id));
+  try { await actor.createEmbeddedDocuments("Item", missing, { keepId: true, renderSheet: false }); }
   catch (error) { if (!plan.documents.some(data => actor.items.get(data._id))) throw error; }
   return verify();
 }
