@@ -76,23 +76,29 @@
   },
   {
     "productId": "dushevnoe-zacharovanie",
-    "decision": "simple-candidate",
+    "decision": "simple-implemented",
     "effectKind": "actor-bonus",
     "reason": "+1 к Убеждению и Выступлению.",
     "owner": [
-      "scripts/combat/implant-automation-service.js",
+      "scripts/automation/item-upgrade-projections.js",
       "scripts/automation/item-upgrade-automation-service.js"
     ],
     "tests": [
       {
+        "path": "tests/item-upgrade-projections.test.mjs",
+        "status": "existing"
+      },
+      {
         "path": "tests/item-upgrade-automation-service.test.mjs",
-        "status": "planned-R7"
+        "status": "existing"
       }
     ],
     "capabilities": [
-      "dnd5e-native",
-      "R7-full-effect-verification-required"
-    ]
+      "dnd5e-native"
+    ],
+    "activation": "equipped",
+    "worksWhenBroken": false,
+    "stacking": "Independent installed Items add numeric bonuses; properties are idempotent; weight clamps at zero."
   },
   {
     "productId": "dyavolskoe-zhelezo",
@@ -286,23 +292,29 @@
   },
   {
     "productId": "khitinovoe-pokrytie",
-    "decision": "simple-candidate",
+    "decision": "simple-implemented",
     "effectKind": "armor-property",
     "reason": "Убрать собственную помеху доспеха на Скрытность.",
     "owner": [
-      "scripts/data/magic-items-compendium.js",
+      "scripts/automation/item-upgrade-projections.js",
       "scripts/automation/item-upgrade-automation-service.js"
     ],
     "tests": [
       {
+        "path": "tests/item-upgrade-projections.test.mjs",
+        "status": "existing"
+      },
+      {
         "path": "tests/item-upgrade-automation-service.test.mjs",
-        "status": "planned-R7"
+        "status": "existing"
       }
     ],
     "capabilities": [
-      "dnd5e-native",
-      "R7-full-effect-verification-required"
-    ]
+      "dnd5e-native"
+    ],
+    "activation": "equipped",
+    "worksWhenBroken": false,
+    "stacking": "Independent installed Items add numeric bonuses; properties are idempotent; weight clamps at zero."
   },
   {
     "productId": "khrebet-beskonechnoy-ploti",
@@ -354,23 +366,29 @@
   },
   {
     "productId": "koren-drakonego-dereva",
-    "decision": "simple-candidate",
+    "decision": "simple-implemented",
     "effectKind": "actor-bonus",
     "reason": "+5 к максимуму HP.",
     "owner": [
-      "scripts/combat/implant-automation-service.js",
+      "scripts/automation/item-upgrade-projections.js",
       "scripts/automation/item-upgrade-automation-service.js"
     ],
     "tests": [
       {
+        "path": "tests/item-upgrade-projections.test.mjs",
+        "status": "existing"
+      },
+      {
         "path": "tests/item-upgrade-automation-service.test.mjs",
-        "status": "planned-R7"
+        "status": "existing"
       }
     ],
     "capabilities": [
-      "dnd5e-native",
-      "R7-full-effect-verification-required"
-    ]
+      "dnd5e-native"
+    ],
+    "activation": "equipped",
+    "worksWhenBroken": false,
+    "stacking": "Independent installed Items add numeric bonuses; properties are idempotent; weight clamps at zero."
   },
   {
     "productId": "korichnevaya-stal",
@@ -471,23 +489,29 @@
   },
   {
     "productId": "lunnyy-metall",
-    "decision": "simple-candidate",
+    "decision": "simple-implemented",
     "effectKind": "armor-property",
     "reason": "Исходный stealth flag доспеха определяет remove disadvantage либо advantage; derived не становится новой базой.",
     "owner": [
-      "scripts/data/magic-items-compendium.js",
+      "scripts/automation/item-upgrade-projections.js",
       "scripts/automation/item-upgrade-automation-service.js"
     ],
     "tests": [
       {
+        "path": "tests/item-upgrade-projections.test.mjs",
+        "status": "existing"
+      },
+      {
         "path": "tests/item-upgrade-automation-service.test.mjs",
-        "status": "planned-R7"
+        "status": "existing"
       }
     ],
     "capabilities": [
-      "dnd5e-native",
-      "R7-full-effect-verification-required"
-    ]
+      "dnd5e-native"
+    ],
+    "activation": "equipped",
+    "worksWhenBroken": false,
+    "stacking": "Independent installed Items add numeric bonuses; properties are idempotent; weight clamps at zero."
   },
   {
     "productId": "maloe-zacharovanie-ostroty",
@@ -513,43 +537,55 @@
   },
   {
     "productId": "maloe-zacharovanie-stoykosti",
-    "decision": "simple-candidate",
+    "decision": "simple-implemented",
     "effectKind": "actor-bonus",
     "reason": "+1 к спасброскам.",
     "owner": [
-      "scripts/combat/implant-automation-service.js",
+      "scripts/automation/item-upgrade-projections.js",
       "scripts/automation/item-upgrade-automation-service.js"
     ],
     "tests": [
       {
+        "path": "tests/item-upgrade-projections.test.mjs",
+        "status": "existing"
+      },
+      {
         "path": "tests/item-upgrade-automation-service.test.mjs",
-        "status": "planned-R7"
+        "status": "existing"
       }
     ],
     "capabilities": [
-      "dnd5e-native",
-      "R7-full-effect-verification-required"
-    ]
+      "dnd5e-native"
+    ],
+    "activation": "equipped",
+    "worksWhenBroken": false,
+    "stacking": "Independent installed Items add numeric bonuses; properties are idempotent; weight clamps at zero."
   },
   {
     "productId": "maloe-zacharovanie-zashchity",
-    "decision": "simple-candidate",
+    "decision": "simple-implemented",
     "effectKind": "actor-bonus",
     "reason": "+1 AC.",
     "owner": [
-      "scripts/combat/implant-automation-service.js",
+      "scripts/automation/item-upgrade-projections.js",
       "scripts/automation/item-upgrade-automation-service.js"
     ],
     "tests": [
       {
+        "path": "tests/item-upgrade-projections.test.mjs",
+        "status": "existing"
+      },
+      {
         "path": "tests/item-upgrade-automation-service.test.mjs",
-        "status": "planned-R7"
+        "status": "existing"
       }
     ],
     "capabilities": [
-      "dnd5e-native",
-      "R7-full-effect-verification-required"
-    ]
+      "dnd5e-native"
+    ],
+    "activation": "equipped",
+    "worksWhenBroken": false,
+    "stacking": "Independent installed Items add numeric bonuses; properties are idempotent; weight clamps at zero."
   },
   {
     "productId": "mana-uskoritel",
@@ -571,23 +607,29 @@
   },
   {
     "productId": "mifrilovaya-peredelka-dospekha",
-    "decision": "simple-candidate",
+    "decision": "simple-implemented",
     "effectKind": "armor-property",
     "reason": "Убрать stealth disadvantage и Strength requirement данного доспеха.",
     "owner": [
-      "scripts/data/magic-items-compendium.js",
+      "scripts/automation/item-upgrade-projections.js",
       "scripts/automation/item-upgrade-automation-service.js"
     ],
     "tests": [
       {
+        "path": "tests/item-upgrade-projections.test.mjs",
+        "status": "existing"
+      },
+      {
         "path": "tests/item-upgrade-automation-service.test.mjs",
-        "status": "planned-R7"
+        "status": "existing"
       }
     ],
     "capabilities": [
-      "dnd5e-native",
-      "R7-full-effect-verification-required"
-    ]
+      "dnd5e-native"
+    ],
+    "activation": "equipped",
+    "worksWhenBroken": false,
+    "stacking": "Independent installed Items add numeric bonuses; properties are idempotent; weight clamps at zero."
   },
   {
     "productId": "nochnaya-stal",
@@ -657,23 +699,29 @@
   },
   {
     "productId": "oskolok-cherepa-chudovishcha",
-    "decision": "simple-candidate",
+    "decision": "simple-implemented",
     "effectKind": "actor-bonus",
     "reason": "+1 Запугивание.",
     "owner": [
-      "scripts/combat/implant-automation-service.js",
+      "scripts/automation/item-upgrade-projections.js",
       "scripts/automation/item-upgrade-automation-service.js"
     ],
     "tests": [
       {
+        "path": "tests/item-upgrade-projections.test.mjs",
+        "status": "existing"
+      },
+      {
         "path": "tests/item-upgrade-automation-service.test.mjs",
-        "status": "planned-R7"
+        "status": "existing"
       }
     ],
     "capabilities": [
-      "dnd5e-native",
-      "R7-full-effect-verification-required"
-    ]
+      "dnd5e-native"
+    ],
+    "activation": "equipped",
+    "worksWhenBroken": false,
+    "stacking": "Independent installed Items add numeric bonuses; properties are idempotent; weight clamps at zero."
   },
   {
     "productId": "oskolok-kosti-chudovishcha",
@@ -773,23 +821,29 @@
   },
   {
     "productId": "poroshok-drokhuby",
-    "decision": "simple-candidate",
+    "decision": "simple-implemented",
     "effectKind": "actor-bonus",
     "reason": "+10 ft walk.",
     "owner": [
-      "scripts/combat/implant-automation-service.js",
+      "scripts/automation/item-upgrade-projections.js",
       "scripts/automation/item-upgrade-automation-service.js"
     ],
     "tests": [
       {
+        "path": "tests/item-upgrade-projections.test.mjs",
+        "status": "existing"
+      },
+      {
         "path": "tests/item-upgrade-automation-service.test.mjs",
-        "status": "planned-R7"
+        "status": "existing"
       }
     ],
     "capabilities": [
-      "dnd5e-native",
-      "R7-full-effect-verification-required"
-    ]
+      "dnd5e-native"
+    ],
+    "activation": "equipped",
+    "worksWhenBroken": false,
+    "stacking": "Independent installed Items add numeric bonuses; properties are idempotent; weight clamps at zero."
   },
   {
     "productId": "prakh-modronov",
@@ -849,23 +903,29 @@
   },
   {
     "productId": "sherst-griffona",
-    "decision": "simple-candidate",
+    "decision": "simple-implemented",
     "effectKind": "actor-bonus",
     "reason": "+5 ft walk.",
     "owner": [
-      "scripts/combat/implant-automation-service.js",
+      "scripts/automation/item-upgrade-projections.js",
       "scripts/automation/item-upgrade-automation-service.js"
     ],
     "tests": [
       {
+        "path": "tests/item-upgrade-projections.test.mjs",
+        "status": "existing"
+      },
+      {
         "path": "tests/item-upgrade-automation-service.test.mjs",
-        "status": "planned-R7"
+        "status": "existing"
       }
     ],
     "capabilities": [
-      "dnd5e-native",
-      "R7-full-effect-verification-required"
-    ]
+      "dnd5e-native"
+    ],
+    "activation": "equipped",
+    "worksWhenBroken": false,
+    "stacking": "Independent installed Items add numeric bonuses; properties are idempotent; weight clamps at zero."
   },
   {
     "productId": "shkura-chudovishcha",
@@ -973,23 +1033,29 @@
   },
   {
     "productId": "zacharovanie-lyogkosti",
-    "decision": "simple-candidate",
+    "decision": "simple-implemented",
     "effectKind": "item-weight",
     "reason": "Вес −10 lb, минимум 0; единицы конвертируются, source сохраняется.",
     "owner": [
-      "scripts/data/gear-compendium.js",
+      "scripts/automation/item-upgrade-projections.js",
       "scripts/automation/item-upgrade-automation-service.js"
     ],
     "tests": [
       {
+        "path": "tests/item-upgrade-projections.test.mjs",
+        "status": "existing"
+      },
+      {
         "path": "tests/item-upgrade-automation-service.test.mjs",
-        "status": "planned-R7"
+        "status": "existing"
       }
     ],
     "capabilities": [
-      "dnd5e-native",
-      "R7-full-effect-verification-required"
-    ]
+      "dnd5e-native"
+    ],
+    "activation": "carried",
+    "worksWhenBroken": false,
+    "stacking": "Independent installed Items add numeric bonuses; properties are idempotent; weight clamps at zero."
   },
   {
     "productId": "zacharovanie-nekromantii",
@@ -1068,23 +1134,29 @@
   },
   {
     "productId": "zacharovanie-zashchity",
-    "decision": "simple-candidate",
+    "decision": "simple-implemented",
     "effectKind": "actor-bonus",
     "reason": "+1 AC и saves.",
     "owner": [
-      "scripts/combat/implant-automation-service.js",
+      "scripts/automation/item-upgrade-projections.js",
       "scripts/automation/item-upgrade-automation-service.js"
     ],
     "tests": [
       {
+        "path": "tests/item-upgrade-projections.test.mjs",
+        "status": "existing"
+      },
+      {
         "path": "tests/item-upgrade-automation-service.test.mjs",
-        "status": "planned-R7"
+        "status": "existing"
       }
     ],
     "capabilities": [
-      "dnd5e-native",
-      "R7-full-effect-verification-required"
-    ]
+      "dnd5e-native"
+    ],
+    "activation": "equipped",
+    "worksWhenBroken": false,
+    "stacking": "Independent installed Items add numeric bonuses; properties are idempotent; weight clamps at zero."
   },
   {
     "productId": "zakalyonnaya-cheshuya",

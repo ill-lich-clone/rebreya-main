@@ -57,9 +57,10 @@ export function registerCombatHooks(moduleApi) {
   const hasSizeService = Boolean(moduleApi?.sizeAutomationService);
   const hasCurseEaterService = Boolean(moduleApi?.curseEaterAutomationService);
   const curseUpgrades = moduleApi?.curseUpgradeAutomationService;
+  const simpleUpgrades = moduleApi?.itemUpgradeAutomationService;
   const hasGrappleService = Boolean(moduleApi?.grappleAutomationService);
   const hasMagicItemsCompendium = Boolean(moduleApi?.magicItemsCompendium);
-  if (!hasStatusService && !hasAttackService && !hasRaceService && !hasFighterService && !hasSorcererService && !hasElementalAdeptService && !hasPaladinService && !hasPaladinDogmaService && !hasRogueService && !hasAttackRollBoostService && !hasPerformerService && !hasBardicInspirationCompatService && !hasEnvironmentService && !hasSpellService && !hasReactionCapabilityIndex && !hasRuneKnightService && !hasSizeService && !hasCurseEaterService && !hasGrappleService && !hasMagicItemsCompendium && !curseUpgrades) {
+  if (!hasStatusService && !hasAttackService && !hasRaceService && !hasFighterService && !hasSorcererService && !hasElementalAdeptService && !hasPaladinService && !hasPaladinDogmaService && !hasRogueService && !hasAttackRollBoostService && !hasPerformerService && !hasBardicInspirationCompatService && !hasEnvironmentService && !hasSpellService && !hasReactionCapabilityIndex && !hasRuneKnightService && !hasSizeService && !hasCurseEaterService && !hasGrappleService && !hasMagicItemsCompendium && !curseUpgrades && !simpleUpgrades) {
     return;
   }
 
@@ -67,6 +68,16 @@ export function registerCombatHooks(moduleApi) {
     return;
   }
   game[HOOKS_REGISTERED_KEY] = true;
+
+  if (simpleUpgrades) {
+    const run = promise => Promise.resolve(promise).catch(error => console.error(`${MODULE_ID} | Simple item upgrade sync failed.`, error));
+    for (const event of ["createItem", "deleteItem", "createActiveEffect", "deleteActiveEffect"]) {
+      Hooks.on(event, (document, options) => run(simpleUpgrades.handleChanged(document, options)));
+    }
+    for (const event of ["updateActor", "updateItem", "updateActiveEffect"]) {
+      Hooks.on(event, (document, _changed, options) => run(simpleUpgrades.handleChanged(document, options)));
+    }
+  }
 
   if (curseUpgrades) {
     const report = error => console.error(`${MODULE_ID} | Curse upgrade automation failed.`, error);

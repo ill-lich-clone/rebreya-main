@@ -133,3 +133,17 @@ export function buildUpgradeContributionKey({
 - [ ] Stage только перечисленных файлов текущего этапа и обязательных manifest/docs; осмысленный commit; git push -u origin lich_branch. Проверить чистую рабочую копию и HEAD...origin/lich_branch = 0/0. Не включать чужие изменения.
 
 **Предлагаемые commits:** feat: project passive item upgrade bonuses; feat: apply supported item upgrade roll modifiers.
+
+## Пассивная партия — 2026-09-08, 1.4.253
+
+Реализованы 12 полных профилей: Душевное зачарование, Осколок черепа чудовища, Корень драконьего дерева, Малое зачарование стойкости, Малое зачарование защиты, Зачарование защиты, Порошок дрохубы, Шерсть гриффона, Хитиновое покрытие, Мифриловая переделка доспеха, Лунный металл и Зачарование лёгкости. Контракты/поля/ограничения — [паспорт простой автоматизации](../../../simple-item-upgrades-function-passport.md).
+
+Исходные «42 кандидата» относятся к ранней плановой матрице. R4 уже исключил 5 по результатам проверки полного правила, поэтому перед R7 оставалось 37. После этой партии manifest содержит 12 simple-implemented, 25 simple-candidate, 11 existing-curse и 43 unavailable. Следующая партия этого же этапа — attack/damage/absorption и choices; весь R7 ещё не завершён.
+
+Pure projection и native lifecycle тестируют все 12 профилей, обе ветви лунного металла, inactive/broken, отдельные Items с одинаковым именем, idempotent sync, foreign/curse effects, authority loss и повторный prepareData. Найденное в live накопление −10 lb исправлено через source-aware before/after restoration только собственного derived вклада. Native HP path различает character с рассчитанным максимумом и NPC/explicit max; на NPC bonuses.overall не работает.
+
+Live: testovyj3, Foundry 13.351, dnd5e 5.2.5, CODEX (не active GM), viewport 1292×920. Через реальный ItemUpgradeService установлены мифрил/лёгкость/защита на временный доспех: weight25→15, повтор prepareData→15; source edit40→derived30; мифрил снимает stealthDisadvantage и strength15→0. После remove: weight40/source40, strength15, stealthDisadvantage восстановлен. Native AE schema отдельно проверена временным QA effect: AC16→17, walk30→35, +1 saves/per/prf/itm, NPC maxHP20→25, stealth roll.mode0→1; удаление effect вернуло значения. QA Actor, Items и временные effects удалены.
+
+**Открытая приёмка:** активный Gamemaster ещё не обновлён. Поэтому автоматическая запись managed AE через его lifecycle, отдельный player, перенос между Actor и полный replay после GM reload остаются открытыми. Проверка native полей временным QA effect не подменяет проверку этого маршрута. Runtime не подделывает authority и не выполняет GM-only writes на CODEX.
+
+Проверки партии: `node --test tests/*.test.mjs` — **3771 passed / 0 failed**; синтаксис **746 JS/MJS и 46 JSON, 0 ошибок**; `git diff --check` без ошибок. До окончательных HP/coverage additions профильный набор давал 88/0; новые focused projection/service/coverage проверки и полный запуск подтверждают окончательный состав. Версия module.json/forwarder/esmodules — 1.4.253.

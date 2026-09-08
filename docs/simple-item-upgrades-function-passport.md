@@ -1,0 +1,30 @@
+# Простые усовершенствования — R7
+
+Пассивная партия 1.4.253: 12 профилей. Остальные 25 кандидатов ещё не подключены. Источник правил — `data/upgrades.json`, допуск — `data/upgrade-automation-manifest.json`; установка/снятие остаются у ItemUpgradeService. Проклятья не изменены.
+
+## Чистая проекция
+
+`scripts/automation/item-upgrade-projections.js`:
+
+- `SIMPLE_UPGRADE_PROFILES` — фиксированные полные контракты 12 профилей; не интерпретатор текста или произвольных путей из Item flags.
+- `buildUpgradeContributionKey({actorUuid,hostItemId,upgradeItemId,effectKey,projectionVersion=1})` — JSON tuple, отдельный ключ физического installed Item.
+- `buildSimpleUpgradeContributions({actor,hosts,manifest=null,capabilities=null})` → `{contributions,unavailable}`. Actor содержит uuid/type и source hp.max; hosts содержат detached source, canonical descriptor и проверенные links. Учитывает implemented status, profile activation, broken policy, полный набор capabilities. Actor scopes: AC, saves, skills, HP max, walk; host scopes: вес, stealthDisadvantage и requirement strength. Лунный металл проверяет original property, а не уже очищенные данные. Неизвестные weight units/value дают unavailable. Вклады разных физических Items суммируются; свойства идемпотентны, вес ограничен нулём.
+- HP: для character с source max=null применяется `system.attributes.hp.bonuses.overall`; для NPC и explicit character max — `system.attributes.hp.max`. Native dnd5e 5.2.5 игнорирует bonuses.overall при заданном максимуме и на NPC.
+- `projectSimpleUpgradeItem(system,contributions)` меняет только текущие derived system: `weight.value` (lb/kg), `properties` Set, `strength`. Исходный Item не перезаписывается.
+
+## Native lifecycle
+
+`ItemUpgradeAutomationService(moduleApi,options={})` в `scripts/automation/item-upgrade-automation-service.js` — единственный владелец simple contributions, с существующим WorldMutationCoordinator.
+
+- `readHosts(actor,hostItem=null)` читает только hosts с installed links; validates exact reverse host/slot/container, quantity1, unique source links, compatibility/capacity через R4 и полный stored/catalog profile signature. Несовпадающий исторический профиль не исполняется и не удаляется. `profileSignature(profile)` теперь экспортируется существующим ItemUpgradeService для общего сравнения.
+- `project(actor,hostItem=null)` готовит ограниченные source fields; не сериализует весь Actor при подготовке каждого Item. Actor bonuses доступны отдельно; host profiles требуют установленного native адаптера.
+- `requestSync(actorOrUuid,reason="changed")` объединяет requests одного Actor через очередь `simple-upgrades:<uuid>` и dirty rerun; не теряет изменение, пришедшее во время записи. `syncActor(actorOrUuid)` заново разрешает Actor и меняет только ActiveEffects с `flags.rebreya-main.simpleItemUpgrade.managed=true`. Keys содержат идентичности Actor/host/child/effect. Неизменные эффекты не записывает; foreign/curse effects сохраняет. Перед каждым batch write проверяет active GM.
+- `handleChanged(document,options={})` маршрутизирует Actor/Item/AE; собственные записи с rebreyaSimpleUpgradeSync не запускают цикл. Existing `registerCombatHooks` подключает одну группу create/delete/update listeners; новый сервис учтён в guard регистрации.
+- `registerItemDataPatch()` дополняет native Item.applyActiveEffects один раз на runtime prototype. `restoreItemProjection(item)` перед следующим native проходом снимает только предыдущие собственные изменения, если модель, source signature и текущий результат совпадают. `applyItemProjection(item)` после native сохраняет before/after в WeakMap и применяет свежие вклады. Это позволяет повторять prepareData, менять исходный вес и снимать upgrade без накопления или возврата устаревшего source.
+- `initialize()` только для dnd5e загружает manifest, подключает derived adapter, подготавливает world Actors и запрашивает active-GM sync. Composition создаёт один экземпляр рядом с ItemUpgradeService, отдельная обработка ошибки initialization.
+
+## Проверки и ограничения
+
+`tests/item-upgrade-projections.test.mjs`: все 12 полных контрактов, обе ветви лунного металла, inactive/broken, уникальные ключи, lb/kg/clamp и dynamic HP path. `tests/item-upgrade-automation-service.test.mjs`: sync/replay/remove, foreign/curse effects, authority loss, два одинаковых Items, повтор native preparation и source edit. `tests/item-upgrade-simple-coverage.test.mjs`: implemented manifest точно совпадает с projection IDs; owner/test paths существуют.
+
+Native основания: установленный dnd5e 5.2.5, EquipmentData (`system.strength`, `properties` Set), AttributesFields.prepareArmorClass/prepareHitPoints, CharacterData/NPCData, AdvantageModeField ADD. Existing native Item header редактирует `source.weight`, а показывает `system.weight`. Профильная приёмка и ещё открытые live-проверки записываются в плане R7.

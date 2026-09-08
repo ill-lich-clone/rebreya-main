@@ -41,7 +41,7 @@ let manifestPromise;
 /** Static source catalogs are read-only; failed loads can be retried on the next request. */
 export function loadUpgradeAutomationManifest() {
   manifestPromise ??= Promise.all(["upgrades", "gear", "upgrade-automation-manifest"].map(async name => {
-    const response = await fetch(`modules/rebreya-main/data/${name}.json?v=1.4.250`, { cache: "no-store" });
+    const response = await fetch(`modules/rebreya-main/data/${name}.json?v=1.4.253`, { cache: "no-store" });
     if (!response.ok) throw new Error(`upgrade-manifest: load ${name}: ${response.status}`);
     return response.json();
   })).then(([upgrades, gear, decisions]) => buildUpgradeAutomationManifest(upgrades, gear, decisions))

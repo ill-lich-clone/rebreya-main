@@ -1,5 +1,5 @@
 import { MODULE_ID } from "../constants.js";
-import { loadUpgradeAutomationManifest, getUpgradeAvailability } from "./upgrade-automation-manifest.js?v=1.4.250";
+import { loadUpgradeAutomationManifest, getUpgradeAvailability } from "./upgrade-automation-manifest.js?v=1.4.253";
 import { resolveUpgradeProfile, validateUpgradeInstallation, validateUpgradeCapacity, UpgradeRuleError } from "./item-upgrade-rules.js?v=1.4.250";
 import { getItemHeldHands, isItemEquipped } from "../integrations/held-items.js";
 
@@ -248,7 +248,7 @@ function resolveActorItem(actor, itemOrId) {
     ?? null;
 }
 
-function profileSignature(profile) {
+export function profileSignature(profile) {
   return JSON.stringify(profile, (_key, value) => value && typeof value === "object" && !Array.isArray(value)
     ? Object.fromEntries(Object.keys(value).sort().map(key => [key, value[key]])) : value);
 }

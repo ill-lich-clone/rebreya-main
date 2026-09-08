@@ -95,7 +95,8 @@ import { HeroDollService, HERO_DOLL_ASSIGN_COMMAND, HERO_DOLL_NORMALIZE_COMMAND,
 import { ImplantService } from "./data/implant-service.js";
 import { CraftingService } from "./data/crafting-service.js?v=1.4.96-craft-calendar";
 import { CraftDowntimeService } from "./data/craft-downtime-service.js?v=1.4.96-craft-calendar";
-import { ItemUpgradeService } from "./data/item-upgrade-service.js?v=1.4.250";
+import { ItemUpgradeService } from "./data/item-upgrade-service.js?v=1.4.253";
+import { ItemUpgradeAutomationService } from "./automation/item-upgrade-automation-service.js?v=1.4.253";
 import { ReputationService } from "./application/reputation-service.js?v=1.4.251";
 import { DisarmService } from "./combat/disarm-service.js?v=1.4.252";
 import { DisarmRollAdapter } from "./integrations/disarm-roll-adapter.js?v=1.4.252";
@@ -268,7 +269,7 @@ import {
   isValidStorageTokenCharacterPayload,
   storageCharacterTokenUuidForClaim
 } from "./data/storage-command-service.js?v=1.4.252-disarm";
-import { registerCombatHooks } from "./combat/hooks.js?v=1.4.231-curse-upgrades";
+import { registerCombatHooks } from "./combat/hooks.js?v=1.4.253-simple-upgrades";
 import { CombatAttackService } from "./combat/attack-service.js?v=1.4.231-curse-upgrades";
 import { ImplantAutomationService } from "./combat/implant-automation-service.js";
 import { SizeAutomationService } from "./combat/size-automation-service.js?v=1.4.110-character-size-authority";
@@ -1753,6 +1754,7 @@ export class RebreyaMainModule {
       downtimeService: this.downtimeService
     });
     this.itemUpgradeService = new ItemUpgradeService(this);
+    this.itemUpgradeAutomationService = new ItemUpgradeAutomationService(this);
     this.calendarService = new CalendarService({
       groupContextService: this.groupContextService,
       commandBus: this.socketCommandBus
@@ -2941,6 +2943,13 @@ export class RebreyaMainModule {
     }
     catch (error) {
       console.warn(`${MODULE_ID} | Failed to initialize Curse Eater automation.`, error);
+    }
+
+    try {
+      await this.itemUpgradeAutomationService.initialize();
+    }
+    catch (error) {
+      console.warn(`${MODULE_ID} | Failed to initialize simple item upgrades.`, error);
     }
 
     try {
