@@ -1,6 +1,6 @@
 # Составной лут — R8
 
-Версия 1.4.257: pure descriptor, ограниченный выбор улучшенного варианта, detached graph builder и durable ingress подготовленного состава. UI выбора и authoritative generated state ещё не подключены. Установка отдельных усовершенствований остаётся у R4/R7; подготовка graph не вызывает install API и ничего не записывает.
+Версия 1.4.258: общий source catalog/price reader, ограниченный выбор улучшенного варианта, detached graph builder и durable ingress подготовленного состава. UI выбора улучшений и authoritative generated state ещё не подключены. Установка отдельных усовершенствований остаётся у R4/R7; подготовка graph не вызывает install API и ничего не записывает.
 
 ## Descriptor
 
@@ -56,3 +56,23 @@ buildRuntimeGraphDocuments(graph,operationId,rootData,{actorId=null}) перен
 materializeRuntimeItemGraph(actor,graph,operationId,rootData,{recoverMissing=false}) сохраняет прежнее поведение runtime transport по умолчанию. Только prepared loot разрешает recoverMissing: сверяет весь предоставленный снимок каждого уже существующего Item (private matchesPreparedValue допускает дополнительные defaults объекта, но сравнивает exact массивы и заданные значения, включая effects), затем создаёт только недостающие IDs. Чужая правка требует graph-manual-review без overwrite/повторного random. Write-then-throw подтверждается readback. Compensation здесь не удаляет partial graph автоматически; неоднозначность остаётся для сверки.
 
 Tests: inventory-mutation-recovery (trusted adapter, journal-before-write, partial child, terminal deletion, dismantle), runtime-item-graph (foreign system/effects edits, default storage behavior), disarm-service regressions. Native QA testovyj3/CODEX: Foundry13.351+dnd5e5.2.5; actual embedded Items, partial root→child, exact retry, changed quantity rejection и правильный hostActorId подтверждены, все QA Actors удалены. Полная проверка GM Chat claim/публикации относится к следующей части R8.
+
+
+## Общий каталог источников — 1.4.258
+
+scripts/data/lootgen-source-catalog.js теперь владеет подбором кандидатов, ранее находившимся в LootgenApp:
+
+- buildLootgenMundaneCandidate(gearItem,{rank,value,typeLabel,breakable=false}) сохраняет stable sourceId, package multipleAppearance и прежнюю plain stack policy; UI re-export сохраняет контракт импорта.
+- buildLootgenGearTypeOptions(model,selectedState={}) исключает upgrade-категории и добавляет материалы как equipment filter.
+- buildLootgenMundanePool({model,form,breakableGearIds=new Set()}) сохраняет rank/type/bargaining filters, цены resolveLootgenItemValue, package formula и breakable marker. buildLootgenMagicPool({form,documents=[]}) сохраняет stable magicItemId, rank/type/consumable metadata и прежний приоритет value → legacy priceGold → native price. Оба pure helpers сортируют rank/value без random. Private toNumber/toInteger/parsePriceToGold/normalizeBargainingTag/isBargainingBlocked перенесены из UI.
+- readLootgenGearIndex() читает только world gear index и нужные flags/system.type/quantity для durability и upgrade compatibility/capacity. readLootgenMagicDocuments() читает managed magic pack, отсутствие pack даёт []. Ни create/sync, ни UI.
+- LootgenSourceCatalog({getModel,getGearIndex=readLootgenGearIndex,getMagicDocuments=readLootgenMagicDocuments,getManifest=loadUpgradeAutomationManifest}) создаётся ровно один раз в main. load(form) параллельно читает нужные источники, нормализует форму и возвращает model/indices, pools, manifest/catalogReader только при enableUpgrades. Gear index также нужен для magic-only upgrades. generate(form,options={}) передаёт trusted pools/manifest/reader единственному generateLootgenResult; options не могут подменить эти зависимости.
+- LootgenApp.#generateLoot() теперь вызывает общий service.generate; #getMagicDocuments/#buildGearTypeOptions — delegates. Старые #toValue/#getBreakableGearSourceIds/#buildMundanePool/#buildMagicPool удалены. generateFromForm сохраняет API. RebreyaMainModule.generateStorageLoot больше не создаёт Application: использует тот же сервис для plain rows. До подключения R9 composed storage form отклоняется до записи, чтобы не потерять upgrades. openLootgenApp использует текущий cache key1.4.258 независимо от старой server manifest metadata.
+
+Чистые type helpers normalizeLootgenTypeFilterKey/buildLootgenTypeFilterOptions/isLootgenTypeAllowed/resolveMagicLootgenTypeLabel и private cleanTypeLabel/parseMagicSignature перенесены без изменения поведения в scripts/data/lootgen-type-filters.js. Прежний UI path — только re-export; data больше не зависит от UI.
+
+scripts/data/lootgen-catalog-reader.js: createLootgenCatalogReader({model={},gearIndex=[],magicDocuments=[],manifest=[]}) строит detached read-only maps stable IDs. Private index/values/flags/detached/id отвечают за снимки; duplicate identity отклоняется. resolveValueComponent(component) возвращает safe unitValue/priceKnown, canonical manifest upgradeProfile и пустой includedUpgradeSourceIds (каталог не объявляет bundled upgrades). Private modelPrice/magicPrice/present/validNumber/validValue различают неизвестную и явно нулевую цену; unsafe/negative values запрещены. Сохраняется прежний legacy priceGold приоритет, native denomination учитывает pp/gp/ep/sp/cp. Сломанное состояние не вводит новой скидки. Upgrade без managed source document имеет priceKnown:false.
+
+describeUpgradeHost(component) использует buildUpgradeHostDescriptor на managed gear index либо native magic ItemData: категории/qualifier/capacity не угадываются по названию. Возвращает detached quantity1/unworn/unheld/unattuned descriptor. Host с уже сохранёнными installed links исключается из подбора новых вариантов до явного контракта bundled-price, чтобы не потерять прежний состав. Reader не пишет и не генерирует IDs.
+
+Focused: lootgen-source-catalog, lootgen-catalog-reader, lootgen-type-filters, lootgen-app-context и generator regressions. Native testovyj3/CODEX: index745/manifest91/pool629; три отдельных kavaleriyskaya-pika с maloe-zacharovanie-ostroty, 100+3125=3225 за экземпляр и9675 всего; distinct upgrade instance keys. Обычное окно отрисовало сгенерированные строки/цены после extraction, viewport1292×920. Созданных Actor/Item/Chat нет; QA окно закрыто. Это не приёмка prepare-result/Chat claim.

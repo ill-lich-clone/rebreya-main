@@ -145,3 +145,11 @@ Native testovyj3, CODEX, Foundry13.351/dnd5e5.2.5: создание root+child, 
 Открыты trusted source catalog reader, prepare-result/Chat receipt/catalog drift, UI и полный multiplayer lifecycle. R8 не завершён.
 
 Проверки второй части: `node --test tests/*.test.mjs` — **3820 passed / 0 failed**; `node --check` — **764 JS/MJS**, JSON parse — **46 файлов**, ошибок **0**; `git diff --check` чисто. Первые 7 failures исправлены: staging rename для architecture snapshot, совместимость коллекции Item через get вместо has, обновление трёх cache-contract tests. После исправлений полный прогон повторён успешно.
+
+### Третья часть R8 — 1.4.258
+
+Общий source catalog вынесен из окна; server storage plain generation больше не создаёт Application. Подключён detached reader stable IDs, canonical compatibility/capacity и safe full prices; unknown/zero различаются, missing upgrade template не выбирается. Type filters получили data owner без смены поведения. Native состав: три пики по100 + зачарование3125 =9675 всего; отдельные instance IDs. Обычное окно генерации проверено визуально, QA окно закрыто.
+
+Открыты durable prepare-result/Chat receipt/catalog drift, UI улучшений и сквозная выдача. Подготовленные snapshots ещё не публикуются новым маршрутом; R8 не завершён.
+
+Проверки третьей части: `node --test tests/*.test.mjs` — **3830 passed / 0 failed**; `node --check` — **769 JS/MJS**, JSON parse — **46 файлов**, ошибок **0**. `git diff --check` чисто. Native source/price/обычный UI проверены; prepare-result и authoritative claims остаются открытыми.

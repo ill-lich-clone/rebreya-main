@@ -187,3 +187,10 @@ test("lootgen take-all delegates one batch instead of looping over row grants", 
   assert.doesNotMatch(body, /addLootgenRowToInventory\(/u);
   assert.doesNotMatch(body, /\bfor\s*\(/u);
 });
+
+test("lootgen window delegates selection to the shared source catalog",async()=>{
+  let seen;
+  const app=new LootgenApp({lootgenSourceCatalog:{generate:async(form,options)=>{seen={form,options};return {rows:[],coins:{totalCopper:0},spentValue:0,budgetValue:form.budgetValue,totalItems:0,generatedAt:"test",hasResult:false};}}});
+  const result=await app.generateFromForm({budgetValue:777,includeGear:false,includeMagicItems:true});
+  assert.equal(seen.form.budgetValue,777);assert.equal(seen.form.includeGear,false);assert.equal(seen.form.includeMagicItems,true);assert.equal(result.budgetValue,777);
+});

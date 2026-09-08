@@ -1,5 +1,6 @@
 import { storageCoinRowDenomination } from "./data/storage-service.js";
 // @rebreya-role canonical-composition-root
+import { LootgenSourceCatalog } from "./data/lootgen-source-catalog.js?v=1.4.258";
 import { MODULE_ID, MODULE_TITLE, SETTINGS_KEYS } from "./constants.js";
 import { escapeFoundryHtml } from "./shared/foundry-values.js";
 import { MaterialsCompendiumService } from "./data/materials-compendium.js";
@@ -1429,6 +1430,7 @@ export class RebreyaMainModule {
       gameProvider: () => globalThis.game,
       normalizeState: normalizeTraderState
     });
+    this.lootgenSourceCatalog = new LootgenSourceCatalog({getModel:()=>this.getModel()});
     this.lootgenTemplateCatalog = new LootgenTemplateCatalog({
       get: () => globalThis.game?.settings?.get(MODULE_ID, SETTINGS_KEYS.LOOTGEN_TEMPLATES),
       set: (value) => globalThis.game?.settings?.set(MODULE_ID, SETTINGS_KEYS.LOOTGEN_TEMPLATES, value),
@@ -6607,10 +6609,8 @@ export class RebreyaMainModule {
     if (!isActiveGmClient(globalThis.game)) {
       throw new Error("Содержимое хранилища может генерировать только активный мастер.");
     }
-    const moduleVersion = game.modules.get(MODULE_ID)?.version ?? "1.4.96";
-    const { LootgenApp } = await import(`./ui/lootgen-app.js?v=${encodeURIComponent(moduleVersion)}`);
-    const generator = new LootgenApp(this, { appKey: `storage-generator-${createSocketRequestId("loot")}` });
-    const generated = await generator.generateFromForm(form);
+    if (form.enableUpgrades) throw new Error("Генерация улучшенных предметов внутри хранилищ пока недоступна.");
+    const generated = await this.lootgenSourceCatalog.generate(form, {batchId:createSocketRequestId("loot"),generatedAt:new Date().toISOString()});
     const rows = [];
     for (const [index, row] of (generated.rows ?? []).entries()) {
       rows.push({
@@ -6639,7 +6639,7 @@ export class RebreyaMainModule {
         throw new Error("Лутген доступен только мастеру.");
       }
 
-      const moduleVersion = game.modules.get(MODULE_ID)?.version ?? "1.4.96";
+      const moduleVersion = "1.4.258";
       const { LootgenApp } = await import(`./ui/lootgen-app.js?v=${encodeURIComponent(moduleVersion)}`);
       let app = null;
 
