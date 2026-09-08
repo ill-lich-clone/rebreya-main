@@ -103,7 +103,7 @@ import { ImplantService } from "./data/implant-service.js";
 import { CraftingService } from "./data/crafting-service.js?v=1.4.96-craft-calendar";
 import { CraftDowntimeService } from "./data/craft-downtime-service.js?v=1.4.96-craft-calendar";
 import { ItemUpgradeService } from "./data/item-upgrade-service.js?v=1.4.255";
-import { ItemUpgradeAutomationService } from "./automation/item-upgrade-automation-service.js?v=1.4.255";
+import { ItemUpgradeAutomationService } from "./automation/item-upgrade-automation-service.js?v=1.4.279";
 import { ReputationService } from "./application/reputation-service.js?v=1.4.251";
 import { DisarmService } from "./combat/disarm-service.js?v=1.4.276";
 import { DisarmRollAdapter } from "./integrations/disarm-roll-adapter.js?v=1.4.252";

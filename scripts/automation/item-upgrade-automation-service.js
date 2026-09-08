@@ -3,7 +3,7 @@ import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 import { buildUpgradeHostDescriptor, profileSignature } from "../data/item-upgrade-service.js?v=1.4.255";
 import { loadUpgradeAutomationManifest } from "../data/upgrade-automation-manifest.js?v=1.4.255";
 import { validateUpgradeInstallation } from "../data/item-upgrade-rules.js?v=1.4.250";
-import { buildSimpleUpgradeContributions, projectSimpleUpgradeItem } from "./item-upgrade-projections.js?v=1.4.255";
+import { buildSimpleUpgradeContributions, projectSimpleUpgradeItem } from "./item-upgrade-projections.js?v=1.4.279";
 import { SimpleUpgradeRollAdapter } from "../integrations/item-upgrade-roll-adapter.js?v=1.4.255";
 
 const FLAG = "simpleItemUpgrade", PATCH = Symbol.for("rebreya-main.simple-upgrade-item-effects");

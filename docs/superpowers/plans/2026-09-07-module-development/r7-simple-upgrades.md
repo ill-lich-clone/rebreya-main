@@ -74,7 +74,7 @@
 
 **Файлы:** новые scripts/automation/item-upgrade-projections.js, scripts/automation/item-upgrade-automation-service.js, tests/item-upgrade-projections.test.mjs, tests/item-upgrade-automation-service.test.mjs; существующие scripts/data/item-upgrade-service.js, scripts/main.js и канонические lifecycle hooks.
 
-- [ ] Чистый API buildSimpleUpgradeContributions({actor,hosts,manifest,capabilities}) → {contributions,unavailable}. Hosts содержат original data и валидные installed links. Contribution: {key,hostItemId,upgradeItemId,effectKey,scope,operation,value,condition}; scope actor/host/roll, operation — ограниченный enum adapter, не произвольный eval/path клиента.
+- [x] Чистый API buildSimpleUpgradeContributions({actor,hosts,manifest,capabilities}) → {contributions,unavailable}. Hosts содержат original data и валидные installed links. Contribution: {key,hostItemId,upgradeItemId,effectKey,scope,operation,value,condition}; scope actor/host/roll, operation — ограниченный enum adapter, не произвольный eval/path клиента.
 - [x] Ключ buildUpgradeContributionKey({actorUuid,hostItemId,upgradeItemId,effectKey,projectionVersion}) собирать без коллизий:
 
 ```js
@@ -185,3 +185,9 @@ Focused: `node --test tests/item-upgrade*.test.mjs tests/curse-upgrade*.test.mjs
 Реально открыто: два спорных правила поглощения (35 implemented, 2 candidate, 11 existing-curse, 43 unavailable), полная связка каталожной матрицы с исполняемыми сценариями и остаток live GM/player/synthetic-token/transfer workflow. Два candidate не допускаются к автоматизации до решения правил. Активный Gamemaster по-прежнему возвращает Unknown socket command: disarm.reassign-responder; текущий запрос с отсутствующим QA operationId не менял игровой мир.
 
 Точные несоответствия контракта оставлены открытыми: effectKey сейчас входит в сериализованный key, но не возвращается отдельным полем Contribution; targetData читает доступную native модель цели, отдельная authority-проверка раскрытия target fields в этом адаптере не доказана. Это не отмечено как выполненное.
+
+### Контракт Contribution — 1.4.279
+
+Добавлен отдельный effectKey, совпадающий с существующим компонентом JSON tuple key. Полные keys и managed AE identities не меняются: повторный sync не должен заменять эффекты. Дополнена существующая проверка идентичности, новые test cases не добавлялись. Проверка authority данных цели остаётся открытой: адаптер читает native Actor.system, без собственного socket-запроса; менять условия игрокам без проверки реального маршрута нельзя.
+
+Проверки 1.4.279: профильные projection/lifecycle 18 passed / 0 failed; node --test tests/*.test.mjs — 4021 passed / 0 failed; node --check — 796 JS/MJS, JSON parse — 46 файлов, ошибок 0; git diff --check чисто. Новые test cases не добавлены.

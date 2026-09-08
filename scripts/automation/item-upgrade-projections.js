@@ -66,8 +66,9 @@ export function buildSimpleUpgradeContributions({ actor: actorData, hosts, manif
       if (effect.type === "choice") prepared.type = choices.damageType;
       if (effect.path === "system.attributes.hp.bonuses.overall"
         && (actorData.type !== "character" || actorData.source?.system?.attributes?.hp?.max != null)) prepared.path = "system.attributes.hp.max";
-      contributions.push({ ...prepared, sourceId: upgrade.sourceId, hostItemId: item.id, upgradeItemId: upgrade.id,
-        key: buildUpgradeContributionKey({ actorUuid: actorData.uuid, hostItemId: item.id, upgradeItemId: upgrade.id, effectKey: String(index) }) });
+      const effectKey = String(index);
+      contributions.push({ ...prepared, sourceId: upgrade.sourceId, hostItemId: item.id, upgradeItemId: upgrade.id, effectKey,
+        key: buildUpgradeContributionKey({ actorUuid: actorData.uuid, hostItemId: item.id, upgradeItemId: upgrade.id, effectKey }) });
     }
   }
   return { contributions, unavailable };

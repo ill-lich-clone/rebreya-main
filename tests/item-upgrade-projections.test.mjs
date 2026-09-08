@@ -29,6 +29,10 @@ test("identity separates identical hosts and keys cannot collide at separators",
   const a = host("maloe-zacharovanie-zashchity"), b = host("maloe-zacharovanie-zashchity", { id: "host2", upgrades: [{ id: "upgrade2", sourceId: "maloe-zacharovanie-zashchity", valid: true }] });
   const result = project([a,b]);
   assert.equal(new Set(result.contributions.map(c => c.key)).size, 2);
+  for (const contribution of result.contributions) {
+    assert.equal(contribution.effectKey, "0");
+    assert.equal(JSON.parse(contribution.key)[3], contribution.effectKey);
+  }
   assert.notEqual(buildUpgradeContributionKey({ actorUuid: "a:b", hostItemId: "c" }), buildUpgradeContributionKey({ actorUuid: "a", hostItemId: "b:c" }));
   a.upgrades[0].valid = false;
   assert.equal(project([a]).contributions.length, 0);
