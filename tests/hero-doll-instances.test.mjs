@@ -95,13 +95,16 @@ test("replacing a slot releases the previous instance and failure restores it",a
 });
 
 
-test("whole group item delegates to existing transfer owner and survives deleted-source replay",async t=>{
-  const fx=makeInstanceDocumentsFixture({quantity:1});t.after(()=>fx.restore());
+test("whole upgraded group item delegates to existing transfer owner and survives deleted-source replay",async t=>{
+  const fx=makeInstanceDocumentsFixture({quantity:1,itemFlags:{itemUpgrades:{installed:[{itemId:"up",slotIndex:0}]}}});t.after(()=>fx.restore());
   fx.group.flags["rebreya-main"].managedPartyGroup=true;
+  await fx.group.createEmbeddedDocuments("Item",[{_id:"up",name:"Upgrade",type:"loot",system:{quantity:1,container:fx.source.id},flags:{"rebreya-main":{installedUpgrade:{hostItemId:fx.source.id,slotIndex:0}}}}]);
   const service=new HeroDollService(fx.api);
   const payload={actorUuid:fx.hero.uuid,sourceItemUuid:fx.source.uuid,slotId:"neck",operationId:"whole-1"};
   const result=await service.executeAssignItemToSlot(payload,{sender:game.user});
   assert.equal(fx.group.items.contents.length,0);assert.equal(fx.hero.items.get(result.itemId).system.quantity,1);
   assert.equal((await service.executeAssignItemToSlot(payload,{sender:game.user})).itemId,result.itemId);
-  assert.equal(fx.total(),1);
+  assert.equal(fx.hero.items.get(result.itemId).system.equipped,true);
+  assert.equal(fx.hero.items.get(result.itemId).flags["rebreya-main"].itemUpgrades.installed[0].itemId,fx.hero.items.contents.find(i=>i.name==="Upgrade").id);
+  assert.equal(fx.total(),2);
 });

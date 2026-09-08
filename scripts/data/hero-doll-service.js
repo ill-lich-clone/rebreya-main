@@ -4,6 +4,8 @@ import { getHeroDollBackSlots, getHeroDollSlots, inferHeroDollSlotsFromName, nor
 import { ItemInstanceWorkflow } from "../application/item-instance-workflow.js?v=1.4.249-item-instances";
 import { ItemInstanceDocuments } from "../infrastructure/foundry/item-instance-documents.js?v=1.4.249-item-instances";
 import { ItemInstanceError } from "./item-instance-rules.js";
+import { isInventoryGraphItem } from "../application/inventory-graph-transfer.js?v=1.4.280";
+import { captureRuntimeItemGraph, buildRuntimeGraphDocuments } from "./runtime-item-graph.js?v=1.4.267-native-schema";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 import { buildHeldItemHandUpdate, buildHeldItemWornUpdate, getActorHandSlots, getOccupiedHandSlots, itemRequiresTwoHandsForUse } from "../integrations/held-items.js";
 
@@ -395,7 +397,10 @@ export class HeroDollService {
       const item = targetActor.items.get(id);
       return step(id, item.toObject(), buildHeldItemWornUpdate(false,item));
     });
-    placement.push(step(itemId,sourceItem.toObject(), hands.length
+    const beforeAssignment = plan.kind === "move" && isInventoryGraphItem(sourceItem.parent, sourceItem)
+      ? buildRuntimeGraphDocuments(captureRuntimeItemGraph(sourceItem.parent, sourceItem), "hero-placement-preview", sourceItem.toObject(), { actorId: targetActor.id }).documents[0]
+      : sourceItem.toObject();
+    placement.push(step(itemId,beforeAssignment, hands.length
       ? buildHeldItemHandUpdate(hands,sourceItem) : buildHeldItemWornUpdate(true,sourceItem)));
     placement.push({ actor:"target", before:{[flag]:targetActor.getFlag(MODULE_ID,"heroDoll") ?? null}, after:{[flag]:state} });
     return placement;
@@ -444,7 +449,7 @@ export class HeroDollService {
           return [{actor:"target",itemId:source.sourceItem.id,before,after},
             {actor:"target",before:{[flag]:source.targetActor.getFlag(MODULE_ID,"heroDoll") ?? null},after:{[flag]:state}}];
         }
-        if (source.plan.kind === "move" && (source.hasContents || source.hasInstalledUpgrades || source.hasIndependentState || source.isEquipped || source.isHeld)) {
+        if (source.plan.kind === "move" && (source.isEquipped || source.isHeld)) {
           throw new ItemInstanceError("complex-transfer", "Сначала перенесите предмет с индивидуальным состоянием штатным действием склада, затем экипируйте его.");
         }
         return this.#prepareAssignment(source);

@@ -195,3 +195,7 @@ Native последовательность legacy container → извлечь 
 
 Временные Actor n28UP6jiedNv6C0d и Actor проверки исправления, исходный/fixed QA Token удалены (остаток0). Receipt только воспроизведённого QA сбоя явно завершён cancelled/qaCleanup после удаления fixtures. Новая реализация проверена через native owner, но повтор настоящего typed GM pickup277 ещё требует загрузки новых handlers в Gamemaster; полный Chat/multiuser release gate остаётся открытым. Статические чекбоксы ниже не заменяют эту границу доказательства.
 `node --test tests/*.test.mjs`: **4015 passed / 0 failed**; синтаксис796 JS/MJS и JSON46 —0 ошибок. `git diff --check` чисто.
+
+## Выдача дерева из группы персонажу — 1.4.280
+
+Закрыт обнаруженный разрыв существующего inventory.take: ранее копировался только root, теперь composed singleton переносит native дерево вместе с upgrades/contents/currency. Детали, профильные и native evidence — в R3, раздел «Полное дерево group→hero — 1.4.280». Полная цепочка Chat/player/active GM остаётся отдельным открытым пунктом.

@@ -51,7 +51,7 @@ test("complex stack cannot be cloned",()=>{
 - [x] Запустить node --test tests/item-instance-rules.test.mjs, подтвердить red.
 - [x] Реализовать finite q>0<=Q и кратность source.step через scaled integer units. Обычные вещи step1; дробные материалы получают existing precision от InventoryService. Не Math.floor любых данных.
 - [x] sameActor && sameFolder && !forHeroSlot → noop. q=Q sameActor → membership/placement с прежним ID; q<Q simple→split; crossActor q=Q→move. forHeroSlot требует q1, допустимый slot проверяется owner до worker. Совпавший null folderId у разных Actor не означает no-op; отдельный regression обязателен.
-- [ ] Для q<Q запретить hasContents/hasInstalledUpgrades/hasIndependentState/isEquipped/isHeld. Whole complex transfers делегировать существующему graph/storage owner, а не clone worker.
+- [x] Для q<Q запретить hasContents/hasInstalledUpgrades/hasIndependentState/isEquipped/isHeld. Whole complex transfers делегировать существующему graph/storage owner, а не clone worker.
 - [x] Дополнить boundary tests:0,NaN,Infinity,Q+1, fractional1.25 с step0.01, illegal1.25 со step1, same folder, source0.
 
 ## Задача R3.2 — Journal и Document driver
@@ -172,3 +172,13 @@ Live: `https://vtt.rebreya.com/game`, world `testovyj3`, Foundry **13.351**, dnd
 ### Повторная native проверка после входа CODEX — 2026-09-08
 
 На commit `0c71cf7f` реальные typed requests CODEX → active GM Gamemaster прошли: частичный перенос 10 → 7+3, exact retry без дубликатов, whole перенос 7 с сохранением ID; assign амулета 2 → 1+1, clear без слияния, normalize кольца 3 → 1+2, смена ring1 → ring2 с прежним ID; group → hero выдаёт один экземпляр и удаляет источник. Блокировка unknown-command снята обновлением GM-сессии. Серверная metadata по-прежнему 1.4.238, исполняемый код 1.4.249; Foundry 13.351, dnd5e 5.2.5, testovyj3, CODEX/GM → Gamemaster/GM, viewport 1292×920. Все временные Actor/Item/folder удалены; terminal journal audit оставлен. Два отклонённых QA setup запроса: group member требовал Actor ID вместо UUID; незарегистрированная временная group не прошла folder authorization. Повторены с корректными fixtures. Отдельная player-сессия и полная live fault matrix ещё не пройдены; ограничения complex transfer остаются. R3 commit/push завершены, origin/lich_branch синхронна.
+
+## Полное дерево group→hero — 1.4.280
+
+Снято прежнее ограничение для whole сложного singleton: штатный InventoryService.take переносит все native descendants/upgrades через существующий graph materializer, сохраняет runtime flags/количество/валюту и remaps links. HeroDoll делегирует ему перенос и затем экипирует root; prepared placement учитывает нормализацию hand flags транспортом. Частичный complex stack по-прежнему запрещён, equipped/held source сначала освобождается.
+
+Один новый regression покрывает вложенную сумку, содержимое quantity3, upgrade links/hostActorId, валюту3gp, прерывание после удаления child, запрет конкурирующего child take и terminal replay после удаления target. Существующий whole hero test проверяет теперь upgraded item. Focused:36/0. Native Foundry13.351/dnd5e5.2.5: временные group/character, четыре Items, source0/target4,3gp,qty3, все links/flags сохранены, terminal replay не создаёт удалённый root. Использован application helper с memory journal и ограниченным QA GM context; это не подтверждение нового active-GM typed route. Все временные Actors удалены. Первое QA создание ещё дописывалось native hooks: guard корректно остановил перенос по source drift; после ожидания стабильного source весь цикл прошёл.
+
+Обычный повтор кнопки получения также проверен: public take без mutationId находит pending graph и продолжает прежнюю выдачу тому же персонажу. Изменение адресата/количества не разрешено.
+
+Проверки 1.4.280: focused36/0; финальный node --test tests/*.test.mjs —4022 passed /0 failed; node --check —797 JS/MJS, JSON parse —46 файлов, ошибок0. После доработки public retry изменённые JS/MJS дополнительно проверены node --check. Первое падение полной проверки касалось устаревшего cache assertion 1.4.268; ожидание обновлено до1.4.280. git diff --check чисто. Native QA Actors с префиксом [QA R3/R9] осталось0.

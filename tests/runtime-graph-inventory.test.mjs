@@ -5,6 +5,37 @@ import { captureRuntimeItemGraph } from "../scripts/data/runtime-item-graph.js";
 import { InventoryIngressPlanner } from "../scripts/application/inventory-ingress-planner.js";
 import { InventoryIngressRuleCompilerCache } from "../scripts/data/inventory-ingress-rules.js";
 import { buildInventoryIngressDescriptor } from "../scripts/data/inventory-ingress-descriptor.js";
+
+test("party take moves a nested upgraded tree once and resumes an interrupted source deletion",async()=>{
+  const f=makeInstanceDocumentsFixture({quantity:1,itemFlags:{itemUpgrades:{installed:[{itemId:"up",slotIndex:0}]}}});
+  try {
+    f.group.flags["rebreya-main"].managedPartyGroup=true;
+    f.group.system={members:[{actor:f.hero}]};
+    await f.group.createEmbeddedDocuments("Item",[
+      {_id:"up",name:"Upgrade",type:"loot",system:{quantity:1,container:f.source.id},flags:{"rebreya-main":{installedUpgrade:{hostItemId:f.source.id,hostActorId:f.group.id,slotIndex:0}}}},
+      {_id:"bag",name:"Bag",type:"container",system:{quantity:1,container:f.source.id,currency:{gp:3}},flags:{}},
+      {_id:"child",name:"Contents",type:"loot",system:{quantity:3,container:"bag"},flags:{custom:{note:"keep"}}}
+    ]);
+    const request={inventoryActorId:f.group.id,targetActorId:f.hero.id,itemId:f.source.id,quantity:1,mutationId:"take-tree"};
+    await assert.rejects(f.api.inventoryService.executeTakeMutation({...request,quantity:0.5,mutationId:"partial-tree"}),e=>e.code==="graph-manual-review");
+    assert.equal(f.hero.items.contents.length,0);
+    f.failAt("delete","after");
+    await assert.rejects(f.api.inventoryService.executeTakeMutation(request),/fault delete after/);
+    assert.equal(f.hero.items.contents.length,4);
+    await assert.rejects(f.api.inventoryService.executeTakeMutation({...request,itemId:"bag",mutationId:"competing-child"}),e=>e.code==="graph-manual-review");
+    f.api.inventoryService.getInventoryActor=async()=>f.group;
+    const result=await f.api.inventoryService.takeInventoryItemToCharacter(f.source.id,{actorId:f.hero.id,quantity:1});
+    assert.equal(f.group.items.contents.length,0);assert.equal(f.hero.items.contents.length,4);
+    const root=f.hero.items.get(result.createdItemId),upgrade=f.hero.items.contents.find(i=>i.name==="Upgrade"),bag=f.hero.items.contents.find(i=>i.name==="Bag"),child=f.hero.items.contents.find(i=>i.name==="Contents");
+    assert.equal(root.flags["rebreya-main"].itemUpgrades.installed[0].itemId,upgrade.id);
+    assert.equal(upgrade.flags["rebreya-main"].installedUpgrade.hostActorId,f.hero.id);
+    assert.equal(bag.system.container,root.id);assert.equal(bag.system.currency.gp,3);
+    assert.equal(child.system.container,bag.id);assert.equal(child.system.quantity,3);assert.equal(child.flags.custom.note,"keep");
+    await root.delete();
+    assert.deepEqual(await f.api.inventoryService.executeTakeMutation(request),result);
+    assert.equal(f.hero.items.get(root.id),undefined);
+  } finally { f.restore(); }
+});
 test("storage pickup restores all graph documents once through InventoryService",async()=>{
   const f=makeInstanceDocumentsFixture({quantity:1,itemFlags:{itemUpgrades:{installed:[{itemId:"up",slotIndex:0}]}}});
   try {

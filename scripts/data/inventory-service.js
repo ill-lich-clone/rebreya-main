@@ -1,5 +1,6 @@
 import { ItemInstanceWorkflow, itemInstanceFingerprint } from "../application/item-instance-workflow.js?v=1.4.249-item-instances";
 import { RUNTIME_ITEM_GRAPH_FLAG, buildRuntimeGraphDocuments, materializeRuntimeItemGraph } from "./runtime-item-graph.js?v=1.4.267-native-schema";
+import { INVENTORY_GRAPH_TRANSFER_KIND, isInventoryGraphItem, transferInventoryGraph } from "../application/inventory-graph-transfer.js?v=1.4.280";
 import { readLootgenPreparedComposition } from "./lootgen-prepared-item.js?v=1.4.268";
 import { ItemInstanceDocuments } from "../infrastructure/foundry/item-instance-documents.js?v=1.4.249-item-instances";
 import {
@@ -2859,7 +2860,7 @@ export class InventoryService {
     }
   }
 
-  #takeInventoryItemFromActor(inventoryActor, itemId, targetActor, quantity = 1, options = {}) {
+  async #takeInventoryItemFromActor(inventoryActor, itemId, targetActor, quantity = 1, options = {}) {
     const operationId = createInventoryMutationId("inventory-take", options.mutationId);
     const fingerprint = this.#simpleMutationFingerprint("take", {
       sourceActorId: cleanId(inventoryActor?.id),
@@ -2868,6 +2869,11 @@ export class InventoryService {
       quantity: Math.max(0.01, roundNumber(toNumber(quantity, 1), 2))
     });
     this.#claimSimpleMutationFingerprint(operationId, fingerprint);
+    const record = await this.mutationJournal.find(operationId);
+    if (record?.kind === INVENTORY_GRAPH_TRANSFER_KIND || isInventoryGraphItem(inventoryActor, inventoryActor.items.get(itemId))) {
+      return this.mutationCoordinator.run("inventory", () => this.#executeTakeInventoryItem(inventoryActor, itemId, targetActor, quantity,
+        { ...options, mutationId: operationId, fingerprint }));
+    }
     return this.mutationCoordinator.runIdempotent(
       "inventory",
       `inventory-simple:take:${operationId}:${fingerprint}`,
@@ -2888,6 +2894,10 @@ export class InventoryService {
     }
     const operationId = createInventoryMutationId("inventory-take", mutationId);
     const existing = await this.mutationJournal.find(operationId);
+    if (existing?.kind === INVENTORY_GRAPH_TRANSFER_KIND) {
+      return transferInventoryGraph({ source: inventoryActor, target: targetActor, itemId, quantity, operationId, fingerprint,
+        journal: this.mutationJournal, assertAuthority: () => this.#assertSourceDepletionAuthority(), record: existing });
+    }
     if (existing?.kind !== "inventory-simple-v1") {
       if (existing) {
         return this.#executeLegacyTakeInventoryItem(
@@ -2927,6 +2937,14 @@ export class InventoryService {
       );
     }
     const item = this.#getInventoryItem(inventoryActor, itemId);
+    const pendingGraphs = await this.mutationJournal.listPending();
+    if (pendingGraphs.some(record => record.kind === INVENTORY_GRAPH_TRANSFER_KIND && record.sourceActorId === inventoryActor.id
+      && record.graph.nodes.some(node => node._id === itemId))) throw this.#simpleTransferError("graph-manual-review", "Сначала завершите перенос дерева этого предмета.");
+    if (item.flags?.[MODULE_ID]?.installedUpgrade?.hostItemId) throw this.#simpleTransferError("installed-upgrade", "Сначала снимите усовершенствование с предмета.");
+    if (isInventoryGraphItem(inventoryActor, item)) {
+      return transferInventoryGraph({ source: inventoryActor, target: targetActor, itemId, quantity, operationId, fingerprint,
+        journal: this.mutationJournal, assertAuthority: () => this.#assertSourceDepletionAuthority() });
+    }
     const itemData = sanitizeEmbeddedItemData(item.toObject());
     const beforeQuantity = getRawQuantity(itemData);
     if (beforeQuantity <= 0) {
@@ -6425,7 +6443,15 @@ export class InventoryService {
     }
 
     const targetActor = this.#resolveRecipientCharacter(actorId, actor);
-    const operationId = createInventoryMutationId("inventory-take", mutationId);
+    let operationId = createInventoryMutationId("inventory-take", mutationId);
+    if (!mutationId) {
+      const pending = (await this.mutationJournal.listPending()).find(record => record.kind === INVENTORY_GRAPH_TRANSFER_KIND
+        && record.sourceActorId === actor.id && record.graph.rootId === itemId);
+      if (pending) {
+        if (pending.targetActorId !== targetActor.id || Number(quantity) !== 1) throw this.#simpleTransferError("graph-manual-review", "Незавершённое дерево нужно передать прежнему получателю целиком.");
+        operationId = pending.id;
+      }
+    }
     if (!game.user?.isGM && typeof this.moduleApi.socketCommandBus?.request === "function") {
       return this.moduleApi.socketCommandBus.request(INVENTORY_TAKE_COMMAND, {
         inventoryActorId: actor.id,
