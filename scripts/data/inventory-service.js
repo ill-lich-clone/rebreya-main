@@ -1,5 +1,5 @@
 import { ItemInstanceWorkflow, itemInstanceFingerprint } from "../application/item-instance-workflow.js?v=1.4.249-item-instances";
-import { RUNTIME_ITEM_GRAPH_FLAG, buildRuntimeGraphDocuments, materializeRuntimeItemGraph } from "./runtime-item-graph.js?v=1.4.257";
+import { RUNTIME_ITEM_GRAPH_FLAG, buildRuntimeGraphDocuments, materializeRuntimeItemGraph } from "./runtime-item-graph.js?v=1.4.267-native-schema";
 import { readLootgenPreparedComposition } from "./lootgen-prepared-item.js?v=1.4.257";
 import { ItemInstanceDocuments } from "../infrastructure/foundry/item-instance-documents.js?v=1.4.249-item-instances";
 import {

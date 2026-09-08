@@ -2,6 +2,17 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { captureRuntimeItemGraph, buildRuntimeGraphDocuments, materializeRuntimeItemGraph } from "../scripts/data/runtime-item-graph.js";
 const doc=data=>({id:data._id,system:data.system,toObject:()=>structuredClone(data)});
+
+test("runtime plan omits dnd5e-generated blank identifiers and unsupported loot attunement fields",()=>{
+  const graph={version:1,rootId:"host",nodes:[{_id:"host",type:"container",system:{quantity:1,identifier:"",attuned:false}},
+    {_id:"child",type:"loot",system:{quantity:1,container:"host",identifier:"kept",attuned:false,equipped:false}}]};
+  const plan=buildRuntimeGraphDocuments(graph,"native-schema");
+  assert.equal(Object.hasOwn(plan.documents[0].system,"identifier"),false);
+  assert.equal(plan.documents[0].system.attuned,false);
+  assert.equal(plan.documents[1].system.identifier,"kept");
+  assert.equal(Object.hasOwn(plan.documents[1].system,"attuned"),false);
+  assert.equal(Object.hasOwn(plan.documents[1].system,"equipped"),false);
+});
 function fixture(){
   const root=doc({_id:"host",name:"Клинок",type:"weapon",system:{quantity:1,equipped:true},flags:{"rebreya-main":{heldHands:["left"],durability:{hp:{value:2,max:5}},itemUpgrades:{installed:[{itemId:"upgrade",slotIndex:0}]}}}});
   const upgrade=doc({_id:"upgrade",name:"Огонь",type:"loot",system:{quantity:1},flags:{"rebreya-main":{installedUpgrade:{hostItemId:"host",slotIndex:0}},custom:{x:2}}});

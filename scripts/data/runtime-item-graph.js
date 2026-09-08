@@ -28,7 +28,7 @@ export function captureRuntimeItemGraph(actor, root) {
   return { version: 1, rootId: root.id, nodes };
 }
 
-export function buildRuntimeGraphDocuments(graph, operationId, rootData, { actorId = null } = {}) {
+export function buildRuntimeGraphDocuments(graph, operationId, rootData, { actorId = null, parentContainerId = null } = {}) {
   if (graph?.version !== 1 || !Array.isArray(graph.nodes) || !graph.nodes.length || graph.nodes.length > 200
     || graph.nodes[0]?._id !== graph.rootId || typeof operationId !== "string" || !operationId) conflict();
   const ids = new Map(graph.nodes.map(node => [node._id, createStableGearDocumentId(`${operationId}:${node._id}`)]));
@@ -38,13 +38,19 @@ export function buildRuntimeGraphDocuments(graph, operationId, rootData, { actor
     const sourceId = node._id;
     for (const key of ["_id", "_stats", "folder", "sort", "ownership"]) delete data[key];
     data._id = ids.get(sourceId); data.system ??= {}; data.flags ??= {}; data.flags[MODULE_ID] ??= {};
+    // dnd5e assigns a blank identifier during creation and discards fields absent from loot's schema.
+    if (data.system.identifier === "") delete data.system.identifier;
+    if (data.type === "loot") {
+      delete data.system.attuned;
+      delete data.system.equipped;
+    }
     const flags = data.flags[MODULE_ID];
     for (const key of [RUNTIME_ITEM_GRAPH_FLAG, "lootgenComposition", "runtimeGraphOrigin", "itemInstanceOrigin", "itemInstanceDebit", "inventoryTransfer", "disarmDebit"]) delete flags[key];
     flags.runtimeGraphOrigin = { id: operationId, sourceItemId: sourceId };
     if (sourceId !== graph.rootId) delete flags.inventoryMutation;
     if (data.system.container) data.system.container = ids.get(data.system.container) ?? null;
     if (sourceId === graph.rootId) {
-      data.system.quantity = 1; data.system.container = null;
+      data.system.quantity = 1; data.system.container = parentContainerId;
       // Keep the canonical held-item adapter responsible for versatile damage restoration.
       for (const [path, value] of Object.entries(buildHeldItemWornUpdate(false, data))) {
         const parts = path.split("."); const last = parts.pop(); let target = data;
@@ -52,6 +58,7 @@ export function buildRuntimeGraphDocuments(graph, operationId, rootData, { actor
         if (last.startsWith("-=")) delete target[last.slice(2)]; else target[last] = clone(value);
       }
       flags.heldHands = [];
+      if (data.type === "loot") delete data.system.equipped;
     }
     for (const entry of flags.itemUpgrades?.installed ?? []) {
       if (!ids.has(entry.itemId)) conflict(); entry.itemId = ids.get(entry.itemId);
@@ -66,8 +73,8 @@ export function buildRuntimeGraphDocuments(graph, operationId, rootData, { actor
   return { rootItemId: ids.get(graph.rootId), documents };
 }
 
-export async function materializeRuntimeItemGraph(actor, graph, operationId, rootData, { recoverMissing = false } = {}) {
-  const plan = buildRuntimeGraphDocuments(graph, operationId, rootData, { actorId: actor.id ?? "" });
+export async function materializeRuntimeItemGraph(actor, graph, operationId, rootData, { recoverMissing = false, parentContainerId = null } = {}) {
+  const plan = buildRuntimeGraphDocuments(graph, operationId, rootData, { actorId: actor.id ?? "", parentContainerId });
   const existing = plan.documents.map(data => actor.items.get(data._id));
   const verify = (requireAll = true) => {
     for (const data of plan.documents) {

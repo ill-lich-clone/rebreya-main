@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { DurableMutationJournal } from "../scripts/application/durable-mutation-journal.js";
 
 import { MODULE_ID } from "../scripts/constants.js";
 import { buildStorageContainerRow } from "../scripts/data/storage-container-snapshot.js";
@@ -112,6 +113,187 @@ function bagSnapshot() {
     presentation: { actorId: "storage-actor" }
   };
 }
+
+function durableOptions() {
+  let state = {version:1,records:[]};
+  const journal = new DurableMutationJournal({readState:()=>clone(state),writeState:next=>{state=clone(next);}});
+  return {journal};
+}
+
+test("durable container grant records the complete plan before writes and resumes a partial batch after restart", async () => {
+  const actor=createActor(), options=durableOptions(), snapshot=bagSnapshot();
+  const create=actor.createEmbeddedDocuments.bind(actor);let calls=0;
+  actor.createEmbeddedDocuments=async(type,documents,opts)=>{
+    calls++;
+    const pending=await options.journal.listPending();
+    assert.equal(pending.length,1);assert.equal(pending[0].expectedItemIds.length,4);
+    if(calls===1){await create(type,documents.slice(0,2),opts);throw new Error("partial write");}
+    assert.equal(documents.length,2);return create(type,documents,opts);
+  };
+  await assert.rejects(new StorageContainerItemService(options).materializeToActorOnce(actor,snapshot,"durable-partial"));
+  assert.equal(actor.items.contents.length,2);
+  const root=await new StorageContainerItemService(options).materializeToActorOnce(actor,snapshot,"durable-partial");
+  assert.equal(actor.items.contents.length,4);assert.equal(root.type,"container");
+  assert.equal((await options.journal.listPending()).length,0);
+  await root.update({name:"Renamed after grant"});
+  assert.equal((await new StorageContainerItemService(options).materializeToActorOnce(actor,snapshot,"durable-partial")).name,"Renamed after grant");
+  assert.equal(calls,2);
+});
+
+test("durable container receipt binds destination and snapshot and never resurrects a deleted terminal root",async()=>{
+  const actor=createActor(),options=durableOptions(),snapshot=bagSnapshot(),service=new StorageContainerItemService(options);
+  const root=await service.materializeToActorOnce(actor,snapshot,"durable-terminal");
+  await assert.rejects(service.materializeToActorOnce(actor,{...snapshot,name:"different"},"durable-terminal"),e=>e.code==="storage-container-manual-review");
+  await assert.rejects(service.materializeToActorOnce(actor,snapshot,"durable-terminal",{parentContainerId:"other"}),e=>e.code==="storage-container-manual-review");
+  await actor.deleteEmbeddedDocuments("Item",[root.id]);
+  await assert.rejects(new StorageContainerItemService(options).materializeToActorOnce(actor,snapshot,"durable-terminal"),e=>e.code==="storage-container-manual-review");
+  assert.equal(actor.items.contents.length,3);
+});
+
+test("enabling durable storage never duplicates a pre-existing legacy mutation root",async()=>{
+  const actor=createActor(),snapshot=bagSnapshot();
+  await new StorageContainerItemService().materializeToActorOnce(actor,snapshot,"legacy-grant");
+  await assert.rejects(new StorageContainerItemService(durableOptions()).materializeToActorOnce(actor,snapshot,"legacy-grant"),e=>e.code==="storage-container-manual-review");
+  assert.equal(actor.items.contents.length,4);
+});
+
+test("partial container conflicts preserve changed children and durable receipt",async()=>{
+  const actor=createActor(),options=durableOptions(),snapshot=bagSnapshot(),create=actor.createEmbeddedDocuments.bind(actor);
+  actor.createEmbeddedDocuments=async(type,documents,opts)=>{await create(type,documents.slice(0,2),opts);throw new Error("partial");};
+  await assert.rejects(new StorageContainerItemService(options).materializeToActorOnce(actor,snapshot,"durable-conflict"));
+  await actor.items.contents[1].update({"system.quantity":99});
+  actor.createEmbeddedDocuments=()=>{throw new Error("must not write");};
+  await assert.rejects(new StorageContainerItemService(options).materializeToActorOnce(actor,snapshot,"durable-conflict"),e=>e.code==="graph-manual-review");
+  assert.equal(actor.items.contents.length,2);assert.equal(actor.items.contents[1].system.quantity,99);
+  assert.equal((await options.journal.listPending()).length,1);
+});
+
+test("pending container source cannot be granted under another ID and observed partial Items cannot be resurrected",async()=>{
+  const actor=createActor(),options=durableOptions(),snapshot=bagSnapshot(),create=actor.createEmbeddedDocuments.bind(actor);
+  actor.createEmbeddedDocuments=async(type,documents,opts)=>{await create(type,documents.slice(0,2),opts);throw new Error("partial");};
+  await assert.rejects(new StorageContainerItemService(options).materializeToActorOnce(actor,snapshot,"reserved-first"));
+  actor.createEmbeddedDocuments=()=>{throw new Error("no further writes");};
+  await assert.rejects(new StorageContainerItemService(options).materializeToActorOnce(actor,snapshot,"reserved-second"),e=>e.code==="storage-container-manual-review");
+  await actor.deleteEmbeddedDocuments("Item",[actor.items.contents[1].id]);
+  await assert.rejects(new StorageContainerItemService(options).materializeToActorOnce(actor,snapshot,"reserved-first"),e=>e.code==="storage-container-manual-review");
+  assert.equal(actor.items.contents.length,1);
+});
+
+test("durable container grant keeps an external destination parent and handles lost complete-write acknowledgement",async()=>{
+  const actor=createActor(),options=durableOptions(),create=actor.createEmbeddedDocuments.bind(actor);
+  await create("Item",[{_id:"parent",name:"Parent",type:"container",system:{quantity:1}}]);
+  actor.createEmbeddedDocuments=async(type,documents,opts)=>{await create(type,documents,opts);throw new Error("lost acknowledgement");};
+  const root=await new StorageContainerItemService(options).materializeToActorOnce(actor,bagSnapshot(),"durable-parent",{parentContainerId:"parent"});
+  assert.equal(root.system.container,"parent");assert.equal(actor.items.contents.length,5);
+  assert.equal((await options.journal.listPending()).length,0);
+});
+
+const composition=(id,sourceId,upgrades=[])=>({version:2,instanceKey:id,sourceType:"gear",sourceId,isBroken:false,upgrades});
+function catalogTreeOptions() {
+  let sequence=0;
+  return {...durableOptions(),createDocumentId:()=>String(++sequence).padStart(16,"0"),
+    getManifest:async()=>[{productId:"zacharovanie-ostroty",profile:{compatibility:["weapon"]},decision:"simple-implemented"}],
+    buildItemData:async row=>({name:`Catalog ${row.sourceId}`,type:row.sourceId==="sword"?"weapon":"container",
+      system:{quantity:1,price:{value:12,denomination:"gp"},capacity:{weight:{value:300,units:"lb"}},weight:{value:25,units:"lb"}},
+      flags:{[MODULE_ID]:{gearId:row.sourceId}}})};
+}
+function catalogTreeSnapshot() {
+  const snapshot=bagSnapshot();snapshot.state.lootgenComposition=composition("shell","chest");
+  snapshot.state.manualCoins={gp:3};
+  snapshot.state.manualRows[0]={rowId:"sword-row",name:"Sword",quantity:1,
+    composition:composition("sword-instance","sword",[{instanceKey:"sharp-instance",sourceId:"zacharovanie-ostroty",slotIndex:1,choices:{}}])};
+  return snapshot;
+}
+
+test("canonical container planner preserves catalog shell and child upgrades in one bounded graph",async()=>{
+  const options=catalogTreeOptions(),snapshot=catalogTreeSnapshot(),service=new StorageContainerItemService(options);
+  const graph=await service.prepareItemGraph(snapshot,{actorId:"hero"});
+  assert.equal(graph.nodes.length,5);assert.equal(new Set(graph.nodes.map(d=>d._id)).size,5);
+  const root=graph.nodes[0],sword=graph.nodes.find(d=>d.name==="Catalog sword"),upgrade=graph.nodes.find(d=>d.flags?.[MODULE_ID]?.installedUpgrade);
+  assert.equal(root.type,"container");assert.equal(root.system.price.value,12);assert.equal(root.system.capacity.weight.value,300);
+  assert.equal(root.system.currency.gp,3);assert.equal(root.flags[MODULE_ID].gearId,"chest");
+  assert.equal(sword.system.container,root._id);assert.equal(upgrade.system.container,sword._id);
+  assert.equal(sword.flags[MODULE_ID].itemUpgrades.installed[0].itemId,upgrade._id);
+  assert.equal(upgrade.flags[MODULE_ID].installedUpgrade.hostActorId,"hero");
+  assert.equal(sword.flags[MODULE_ID].storageContainerMember.composition.sourceId,"sword");
+  assert.equal(snapshot.state.manualRows[0].itemData,undefined);
+  const actor=createActor();const granted=await service.materializeToActorOnce(actor,snapshot,"catalog-tree");
+  assert.equal(actor.items.contents.length,5);assert.equal(granted.system.price.value,12);
+  const liveSword=actor.items.contents.find(d=>d.name==="Catalog sword"),liveUpgrade=actor.items.contents.find(d=>d.flags?.[MODULE_ID]?.installedUpgrade);
+  assert.equal(liveUpgrade.system.container,liveSword.id);assert.equal(liveUpgrade.flags[MODULE_ID].installedUpgrade.hostItemId,liveSword.id);
+});
+
+test("container planner rejects duplicate composition identities, cycles and the 200-document limit before writes",async()=>{
+  const service=new StorageContainerItemService(catalogTreeOptions());
+  const duplicate=catalogTreeSnapshot();duplicate.state.manualRows.push(clone(duplicate.state.manualRows[0]));
+  await assert.rejects(service.prepareItemGraph(duplicate));
+  const cycle=bagSnapshot();cycle.state.manualRows.push({rowKind:"container",rowId:"cycle",container:cycle});
+  await assert.rejects(service.prepareItemGraph(cycle));
+  const large=bagSnapshot();large.state.manualRows=Array.from({length:200},(_,i)=>({rowId:`r${i}`,quantity:1,itemData:{name:"plain",type:"loot",system:{quantity:1}}}));
+  await assert.rejects(service.prepareItemGraph(large),e=>e.code==="storage-container-manual-review");
+});
+
+test("capture and restore retain live upgraded items and catalog shell without restoring extracted contents",async()=>{
+  const actor=createActor(),options=catalogTreeOptions(),service=new StorageContainerItemService(options);
+  const root=await service.materializeToActorOnce(actor,catalogTreeSnapshot(),"capture-catalog");
+  const sword=actor.items.contents.find(d=>d.name==="Catalog sword"),upgrade=actor.items.contents.find(d=>d.flags?.[MODULE_ID]?.installedUpgrade);
+  await sword.update({name:"Renamed sword","system.customField":"keep",effects:[{name:"Custom live effect"}]});
+  await root.update({"system.currency":{pp:0,gp:2,ep:1,sp:0,cp:0}});
+  const pouch=actor.items.contents.find(d=>d.name==="Кошель");
+  await pouch.update({"system.container":null});
+  const snapshot=await service.captureFromItem(root);
+  assert.equal(snapshot.state.manualRows.length,1);
+  assert.equal(snapshot.state.manualRows[0].composition.sourceId,"sword");
+  assert.equal(snapshot.state.manualRows[0].composition.upgrades.length,1);
+  assert.deepEqual(snapshot.state.manualCoins,{pp:0,gp:2,sp:5,cp:0});
+  const destination=createActor();destination.id="other";destination.uuid="Actor.other";
+  options.buildItemData=()=>{throw new Error("captured live data must not be rebuilt from catalog");};
+  const restored=await new StorageContainerItemService(options).materializeToActorOnce(destination,snapshot,"restore-catalog");
+  assert.equal(destination.items.contents.length,3);assert.equal(restored.system.price.value,12);
+  const restoredSword=destination.items.contents.find(d=>d.name==="Renamed sword"),restoredUpgrade=destination.items.contents.find(d=>d.flags?.[MODULE_ID]?.installedUpgrade);
+  assert.equal(restoredSword.system.customField,"keep");assert.equal(restoredSword.effects[0].name,"Custom live effect");
+  assert.equal(restoredUpgrade.system.container,restoredSword.id);
+  assert.equal(restoredUpgrade.flags[MODULE_ID].installedUpgrade.hostActorId,"other");
+  assert.notEqual(restoredUpgrade.id,upgrade.id);
+});
+
+test("capture folds shell upgrades into shell data and removes detached upgrades from composition",async()=>{
+  const actor=createActor(),options=catalogTreeOptions(),service=new StorageContainerItemService(options);
+  const root=await service.materializeToActorOnce(actor,catalogTreeSnapshot(),"capture-detach");
+  const sword=actor.items.contents.find(d=>d.name==="Catalog sword"),upgrade=actor.items.contents.find(d=>d.flags?.[MODULE_ID]?.installedUpgrade);
+  await sword.update({"flags.rebreya-main.itemUpgrades.installed":[]});
+  await upgrade.update({"system.container":null,"flags.rebreya-main.installedUpgrade":null});
+  let snapshot=await service.captureFromItem(root);
+  assert.deepEqual(snapshot.state.manualRows.find(r=>r.composition?.sourceId==="sword").composition.upgrades,[]);
+  await root.update({"flags.rebreya-main.itemUpgrades":{category:"armor",capacity:1,installed:[{itemId:upgrade.id,slotIndex:1}]}});
+  await upgrade.update({"system.container":root.id,"flags.rebreya-main.installedUpgrade":{hostActorId:actor.id,hostItemId:root.id,slotIndex:1,category:"armor"}});
+  snapshot=await service.captureFromItem(root);
+  assert.equal(snapshot.state.manualRows.length,2);
+  assert.equal(snapshot.presentation.itemData.flags[MODULE_ID].runtimeItemGraph.nodes.length,2);
+  assert.equal(snapshot.state.lootgenComposition.upgrades.length,1);
+});
+
+test("capture rejects broken installed links before removing any physical item",async()=>{
+  const actor=createActor(),service=new StorageContainerItemService(catalogTreeOptions());
+  const root=await service.materializeToActorOnce(actor,catalogTreeSnapshot(),"capture-conflict");
+  const upgrade=actor.items.contents.find(d=>d.flags?.[MODULE_ID]?.installedUpgrade);
+  await upgrade.update({"system.container":null});
+  await assert.rejects(service.removeItemTree(root),e=>e.code==="storage-container-manual-review");
+  assert.equal(actor.items.contents.length,5);
+});
+
+test("capture refuses lossy stacked hosts and unrepresented ordinary-host descendants before deletion",async()=>{
+  const actor=createActor(),service=new StorageContainerItemService(catalogTreeOptions());
+  const root=await service.materializeToActorOnce(actor,catalogTreeSnapshot(),"invalid-live-host");
+  const sword=actor.items.contents.find(d=>d.name==="Catalog sword");
+  await sword.update({"system.quantity":2});
+  await assert.rejects(service.removeItemTree(root),e=>e.code==="storage-container-manual-review");
+  assert.equal(actor.items.contents.length,5);
+  await sword.update({"system.quantity":1});
+  await actor.createEmbeddedDocuments("Item",[{_id:"unexpected-child",name:"Extra",type:"loot",system:{quantity:1,container:sword.id}}]);
+  await assert.rejects(service.removeItemTree(root),e=>e.code==="storage-container-manual-review");
+  assert.equal(actor.items.contents.length,6);
+});
 
 test("portable storage materializes as native dnd5e container hierarchy and captures live quantities", async () => {
   const actor = createActor();

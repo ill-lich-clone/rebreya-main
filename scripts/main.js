@@ -80,7 +80,7 @@ import {
   SOCKET_EVENT_INVENTORY_SOURCE_DEPLETION_RESULT,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_REQUEST,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_RESULT
-} from "./data/inventory-service.js?v=1.4.266";
+} from "./data/inventory-service.js?v=1.4.267";
 import {
   InventoryIngressRuleCompilerCache,
   normalizeInventoryIngressRule
@@ -227,7 +227,7 @@ import {
 import { BuiltinStorageActorService } from "./data/builtin-storage-actor-service.js?v=1.4.216-storage-token-vision";
 import { StorageGroundPileService } from "./data/storage-ground-pile-service.js?v=1.4.227-coin-sprites";
 import { deriveGroundPilePlacement } from "./data/storage-pile-presentation.js?v=1.4.227-coin-sprites";
-import { StorageContainerItemService } from "./data/storage-container-item-service.js?v=1.4.215-container-rotation";
+import { StorageContainerItemService } from "./data/storage-container-item-service.js?v=1.4.267";
 import { isStorageJournalRow } from "./data/storage-container-snapshot.js";
 import { StorageTriggerService } from "./data/storage-trigger-service.js?v=1.4.197-door-trigger-target";
 import { DoorTriggerTargetRepository, readDoorTriggerTarget } from "./data/door-trigger-target.js?v=1.4.199-door-overlay-anchor";
@@ -1611,7 +1611,12 @@ export class RebreyaMainModule {
       gameProvider: () => globalThis.game,
       isActiveGm: isActiveGmClient
     });
-    this.storageContainerItemService = new StorageContainerItemService();
+    this.storageContainerItemService = new StorageContainerItemService({
+      journal: this.inventoryService.mutationJournal,
+      coordinator: this.worldMutationCoordinator,
+      buildItemData: row => this.inventoryService.buildLootgenItemData(row),
+      getManifest: () => this.lootgenSourceCatalog.getManifest()
+    });
     this.storageJournalReader = new StorageJournalReader({
       fromUuid: (uuid) => globalThis.fromUuid?.(uuid),
       enrichHtml: (content, options) => (
