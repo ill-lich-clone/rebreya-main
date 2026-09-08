@@ -26,14 +26,14 @@
 
 **Файлы:** новые scripts/data/scene-activity-rules.js, tests/scene-activity-rules.test.mjs.
 
-- [ ] Ввести normalizeSceneActivityState(raw), startSceneActivity(state,intent,context), chooseSceneActivity(state,intent,context), finishSceneActivity(state,intent,context), projectSceneActivityForUser(state,context). Все чистые: не читают game/Date.now/DOM и не пишут settings.
-- [ ] Envelope hidden world setting: {version:1,activeByGroup,groupRevisions,history,recentOperations}. activeByGroup хранит максимум одну open session на группу; history последних64 завершённых sessions, recentOperations последних256 receipts. groupRevisions сохраняется при удалении истории и не даёт старому start оживить закрытую сцену.
-- [ ] Session: {sessionId,revision,status,groupActorId,initiatingActorUuid,participantActorUuids,durationMinutes,openedAt,selectionByActor}. Status open/completed/cancelled. durationMinutes=10 в R10; openedAt — injected server timestamp для истории, не начало countdown.
-- [ ] start intent: {operationId,groupActorId,expectedGroupRevision,initiatingActorUuid,participantActorUuids,durationMinutes}. GM-only. Session ID выдаёт authority один раз; group revision увеличивается при start/terminal transition. expectedGroupRevision — дополнительная защита от старого start после вытеснения receipt.
-- [ ] choose intent: {operationId,sessionId,actorUuid,actionId,text,expectedRevision}. actionId inspect/help/prepare/rest/custom; text bounded0..500, custom требует непустой trimmed текст. Plain text, без HTML. Остальные действия допускают пояснение.
-- [ ] finish intent: {operationId,sessionId,expectedRevision,status}, status только completed/cancelled. GM-only. Каждая новая selection увеличивает session revision; retry своего operationId возвращает старый outcome до проверки новой revision.
-- [ ] context: {senderId,isGM,ownedActorUuids,groupMemberActorUuids,now,createSessionId}. UUID arrays построены authority из живых документов; не приходят от клиента.
-- [ ] Сначала тесты transitions. Конкретный self-contained start/choose case:
+- [x] Ввести normalizeSceneActivityState(raw), startSceneActivity(state,intent,context), chooseSceneActivity(state,intent,context), finishSceneActivity(state,intent,context), projectSceneActivityForUser(state,context). Все чистые: не читают game/Date.now/DOM и не пишут settings.
+- [x] Envelope hidden world setting: {version:1,activeByGroup,groupRevisions,history,recentOperations}. activeByGroup хранит максимум одну open session на группу; history последних64 завершённых sessions, recentOperations последних256 receipts. groupRevisions сохраняется при удалении истории и не даёт старому start оживить закрытую сцену.
+- [x] Session: {sessionId,revision,status,groupActorId,initiatingActorUuid,participantActorUuids,durationMinutes,openedAt,selectionByActor}. Status open/completed/cancelled. durationMinutes=10 в R10; openedAt — injected server timestamp для истории, не начало countdown.
+- [x] start intent: {operationId,groupActorId,expectedGroupRevision,initiatingActorUuid,participantActorUuids,durationMinutes}. GM-only. Session ID выдаёт authority один раз; group revision увеличивается при start/terminal transition. expectedGroupRevision — дополнительная защита от старого start после вытеснения receipt.
+- [x] choose intent: {operationId,sessionId,actorUuid,actionId,text,expectedRevision}. actionId inspect/help/prepare/rest/custom; text bounded0..500, custom требует непустой trimmed текст. Plain text, без HTML. Остальные действия допускают пояснение.
+- [x] finish intent: {operationId,sessionId,expectedRevision,status}, status только completed/cancelled. GM-only. Каждая новая selection увеличивает session revision; retry своего operationId возвращает старый outcome до проверки новой revision.
+- [x] context: {senderId,isGM,ownedActorUuids,groupMemberActorUuids,now,createSessionId}. UUID arrays построены authority из живых документов; не приходят от клиента.
+- [x] Сначала тесты transitions. Конкретный self-contained start/choose case:
 
 ```js
 let state = normalizeSceneActivityState(null);
@@ -60,9 +60,9 @@ assert.equal(choice.result.changed, true);
 
 Каждый reducer возвращает {state,result}; result содержит sessionId/revision/changed/replayed. Replay возвращает changed=false/replayed=true и не переписывает state.
 
-- [ ] Проверить duplicate participants, инициатора вне группы, включение инициатора вторым участником, чужой Actor, закрытую session, unknown action, stale revision, invalid/oversize text, две группы и duplicate operation с другим fingerprint.
-- [ ] groupRevisions не удалять с history. После eviction receipt старый start с прежней revision отклоняется, не создаёт новую session. Не держать бесконечную историю.
-- [ ] Выбор «Отдохнуть» — только selection. Unit tests не импортируют rest adapters; reducers возвращают изменения только sceneActivity state.
+- [x] Проверить duplicate participants, инициатора вне группы, включение инициатора вторым участником, чужой Actor, закрытую session, unknown action, stale revision, invalid/oversize text, две группы и duplicate operation с другим fingerprint.
+- [x] groupRevisions не удалять с history. После eviction receipt старый start с прежней revision отклоняется, не создаёт новую session. Не держать бесконечную историю.
+- [x] Выбор «Отдохнуть» — только selection. Unit tests не импортируют rest adapters; reducers возвращают изменения только sceneActivity state.
 
 ## Задача R10.2 — repository, команды и восстановление подключения
 
@@ -118,3 +118,12 @@ assert.equal(choice.result.changed, true);
 - [ ] Stage только перечисленных файлов текущего этапа и обязательных manifest/docs; осмысленный commit; git push -u origin lich_branch. Проверить чистую рабочую копию и HEAD...origin/lich_branch = 0/0. Не включать чужие изменения.
 
 **Предлагаемые commits:** feat: persist shared scene activity selections; feat: show the ten-minute activity window.
+
+
+## R10.1–R10.2 — правила и backend (1.4.271)
+
+Добавлены pure state/reducers/projection, bounded history64/receipts256, group revisions, actor ownership и exact retries. SceneActivityService использует единственный WorldSettingMutationRepository с одной записью transition+receipt и точным readback при lost acknowledgement. Existing gateway зарегистрировал start/choose/finish/cancel; public API и hidden setting подключены. Default duration10, actions inspect/help/prepare/rest/custom, text<=500, до64 приглашённых Actor; user resource/time boundary сохранён.
+
+Focused159/0: scene-activity rules/service/socket, world-setting-mutation-repository, actual group-command-dispatch, ui-refresh-coordinator, module-manifest/main-composition-root. Native testovyj3/CODEX13.351/dnd5e5.2.5: модуль загружен, hidden setting config=false и v1 default, API без writes прочёл4 managed группы (5/4/5/3 персонажа). Новые сессии в мире не создавались, действующий GM route ещё не проверен. Полноэкранное окно, launcher, ready/invalidation/reconnect controller и live multiuser matrix остаются R10.3–R10.4; соответствующие чекбоксы не закрыты.
+
+Полный прогон1.4.271: `node --test tests/*.test.mjs` — **3978 passed / 0 failed**; `node --check`792 JS/MJS, JSON parse46 —0ошибок. `git diff --check` чисто. Backend готов к подключению UI; live multiuser/полноэкранность не объявлены завершёнными.

@@ -3097,3 +3097,27 @@ test("storage templates prepare upgrades and filled containers without Chat or c
     assert.deepEqual(replay.rows,opened.rows);assert.equal(generations,1);assert.deepEqual(readStorageState(token).generatedRows,opened.rows);
   }finally{Math.random=oldRandom;fixture.restore();}
 });
+
+test("scene activity gateway authenticates participants, persists choices and never touches actor resources",async()=>{
+  const fixture=installFixture({includeGroupB:true});let forbidden=0;
+  try{
+    const fail=()=>{forbidden++;throw new Error("scene must not change resources");};
+    const busy=createCharacter("busy","gm-a");fixture.actors.push(busy);fixture.groupA.system.members.push({actor:busy});
+    for(const actor of [busy,fixture.memberA,fixture.memberB])Object.assign(actor,{uuid:"Actor."+actor.id,name:actor.id,update:fail,updateEmbeddedDocuments:fail,shortRest:fail,rollHitDie:fail});
+    game.time={advance:fail};const calendar=clone(fixture.store[SETTINGS_KEYS.GROUP_STATE]);
+    const api=new RebreyaMainModule();
+    const start={operationId:"scene-start",groupActorId:"group-a",expectedGroupRevision:0,initiatingActorUuid:busy.uuid,participantActorUuids:[fixture.memberA.uuid],durationMinutes:10};
+    await api.handleSocketMessage(commandRequest("scene-activity.start",fixture.users.gmB.id,start,"scene-start"));await flushCommands();
+    const response=resultFor(fixture,"scene-start");assert.equal(response?.ok,true,JSON.stringify(response));
+    const sessionId=fixture.store.sceneActivityState.activeByGroup['group-a'].sessionId;
+    const choice={operationId:"scene-choice",sessionId,actorUuid:fixture.memberA.uuid,actionId:"rest",text:"",expectedRevision:1};
+    await api.handleSocketMessage(commandRequest("scene-activity.choose",fixture.users.playerB.id,choice,"foreign-choice"));await flushCommands();
+    assert.equal(resultFor(fixture,"foreign-choice")?.ok,false);
+    for(const requestId of ["own-choice","repeat-choice"]){await api.handleSocketMessage(commandRequest("scene-activity.choose",fixture.users.playerA.id,choice,requestId));await flushCommands();assert.equal(resultFor(fixture,requestId)?.ok,true,JSON.stringify(resultFor(fixture,requestId)));}
+    assert.equal(fixture.store.sceneActivityState.activeByGroup['group-a'].revision,2);
+    const next=new RebreyaMainModule(),view=await next.getSceneActivitySnapshot({groupActorId:"group-a"});assert.equal(view.session.selectionByActor[fixture.memberA.uuid].actionId,"rest");
+    await next.finishSceneActivity({operationId:"scene-finish",sessionId,expectedRevision:2});
+    assert.equal((await next.getSceneActivitySnapshot({groupActorId:"group-a"})).session,null);
+    assert.equal(fixture.writes.filter(write=>write.key==="sceneActivityState").length,3);assert.equal(forbidden,0);assert.deepEqual(fixture.store[SETTINGS_KEYS.GROUP_STATE],calendar);
+  }finally{fixture.restore();}
+});

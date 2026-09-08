@@ -157,6 +157,7 @@ export const REBREYA_TOOLS = [
 ];
 
 export const SETTINGS_KEYS = {
+  SCENE_ACTIVITY_STATE: "sceneActivityState",
   SHOW_BUTTON: "showEconomyButton",
   DEBUG_MODE: "debugMode",
   DATA_SOURCE_MODE: "dataSourceMode",

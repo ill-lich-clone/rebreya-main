@@ -1,4 +1,4 @@
-﻿import { DATA_SOURCE_MODES, DEFAULT_DISPLAY_PRECISION, MODULE_ID, SETTINGS_KEYS } from "./constants.js";
+﻿import { DATA_SOURCE_MODES, DEFAULT_DISPLAY_PRECISION, MODULE_ID, SETTINGS_KEYS } from "./constants.js?v=1.4.271";
 import { refreshEconomyLauncher } from "./hooks.js";
 export {
   SOCKET_EVENT_SET_SETTING,
@@ -47,6 +47,11 @@ function refreshCanvasTokenEffects() {
 }
 
 export function registerSettings() {
+  game.settings.register(MODULE_ID,SETTINGS_KEYS.SCENE_ACTIVITY_STATE,{
+    scope:"world",config:false,type:Object,
+    default:{version:1,activeByGroup:{},groupRevisions:{},history:[],recentOperations:[]},
+    onChange:()=>game.rebreyaMain?.refreshSceneActivityApps?.()
+  });
   game.settings.register(MODULE_ID, SETTINGS_KEYS.SHOW_BUTTON, {
     name: "REBREYA_MAIN.Settings.ShowButton.Name",
     hint: "REBREYA_MAIN.Settings.ShowButton.Hint",

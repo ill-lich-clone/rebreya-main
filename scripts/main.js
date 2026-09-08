@@ -1,3 +1,6 @@
+import { SceneActivityService } from "./application/scene-activity-service.js?v=1.4.271";
+import { SceneActivityError } from "./data/scene-activity-rules.js?v=1.4.271";
+import { SCENE_ACTIVITY_COMMANDS, isValidSceneActivityPayload, authorizeSceneActivity, sceneActivityTransportId } from "./infrastructure/foundry/scene-activity-command-contract.js?v=1.4.271";
 import { LootgenGeneratedResultService, LOOTGEN_PREPARE_RESULT_COMMAND, isValidPrepareLootgenPayload } from "./application/lootgen-generated-result-service.js?v=1.4.268";
 import { buildLootgenGeneratedState, assertLootgenCatalogCurrent } from "./application/lootgen-generated-state.js?v=1.4.269";
 import { normalizeLootgenForm } from "./data/lootgen-generator.js?v=1.4.266";
@@ -378,7 +381,7 @@ import {
   SOCKET_EVENT_SET_SETTING_RESULT,
   handleSettingsUpdateSocketResponse,
   registerSettings
-} from "./settings.js";
+} from "./settings.js?v=1.4.271";
 import { buildLootgenChatContent, buildLootgenStatusContent, registerLootgenChatHooks } from "./ui/lootgen-chat.js?v=1.4.269";
 import { bringAppToFront, notifyUser, registerHandlebarsHelpers, rerenderApp } from "./ui.js";
 import { promptDurabilityOutcome } from "./ui/durability-outcome-dialog.js";
@@ -1399,6 +1402,8 @@ export class RebreyaMainModule {
       mutationGateway: this.privilegedMutationGateway,
       gameProvider: () => globalThis.game
     });
+    this.sceneActivityService=new SceneActivityService({repository:this.worldSettingMutationRepository,
+      resolveContext:request=>this.#resolveSceneActivityContext(request),refresh:change=>this.refreshSceneActivityApps?.(change)});
     this.purchaseBasketJournalRepository = new PurchaseBasketJournalRepository({
       worldSettingMutationRepository: this.worldSettingMutationRepository
     });
@@ -2129,6 +2134,11 @@ export class RebreyaMainModule {
         return this.disarmService[action](payload.operationId, guarded);
       }
     });
+    for(const [action,command]of Object.entries(SCENE_ACTIVITY_COMMANDS))this.privilegedMutationGateway.registerCommand(command,{
+      validate:payload=>isValidSceneActivityPayload(action,payload),
+      authorize:(payload,context)=>authorizeSceneActivity(action,payload,context),
+      execute:(payload,{sender})=>this.sceneActivityService[action](payload,sender)
+    });
     this.privilegedMutationGateway.registerCommand(REPUTATION_UPDATE_COMMAND, {
       validate: isValidReputationPayload,
       authorize: authorizeReputationUpdate,
@@ -2824,6 +2834,29 @@ export class RebreyaMainModule {
     }
 
     return this.socketCommandBus.request(COMBAT_STATUS_SET_COMMAND, payload);
+  }
+
+  #resolveSceneActivityContext({groupActorId,sender}) {
+    if(!sender?.id || game.users?.get?.(sender.id)!==sender || !this.#canSenderManageGroup(sender,groupActorId))throw new SceneActivityError("unauthorized");
+    const group=game.actors.get(groupActorId),members=getGroupMemberActors(group).filter(actor=>actor.type==="character");
+    const uuid=actor=>actor.uuid || `Actor.${actor.id}`;
+    return {senderId:sender.id,isGM:sender.isGM===true,groupName:group.name??"Группа",
+      groupMemberActorUuids:members.map(uuid),ownedActorUuids:members.filter(actor=>actorIsOwnedByUser(actor,sender)).map(uuid),
+      actorNames:Object.fromEntries(members.map(actor=>[uuid(actor),actor.name??uuid(actor)])),
+      now:Date.now(),createSessionId:()=>createSocketRequestId("scene")};
+  }
+
+  #requestSceneActivity(action,payload) {
+    if(!isValidSceneActivityPayload(action,payload))return Promise.reject(new SceneActivityError("invalid-request"));
+    return this.privilegedMutationGateway.mutate(SCENE_ACTIVITY_COMMANDS[action],payload,{operationId:sceneActivityTransportId(action,payload,game.user?.id)});
+  }
+  startSceneActivity(payload){return this.#requestSceneActivity("start",payload);}
+  chooseSceneActivity(payload){return this.#requestSceneActivity("choose",payload);}
+  finishSceneActivity(payload){return this.#requestSceneActivity("finish",payload);}
+  cancelSceneActivity(payload){return this.#requestSceneActivity("cancel",payload);}
+  getSceneActivitySnapshot({groupActorId}={}){
+    const selected=groupActorId || this.groupContextService.resolveForCurrentUser()?.groupActor?.id;
+    return this.sceneActivityService.getSnapshot({groupActorId:selected,viewer:game.user});
   }
 
   #canSenderManageGroup(sender, groupActorId) {

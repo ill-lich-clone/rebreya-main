@@ -45,6 +45,8 @@ Definition of Done: код, тесты, `README.md` при изменении п
 
 ### 2. Active GM, typed sockets и надёжные мутации
 
+- **R10 scene activity:** state/reducers, SceneActivityService, exact commands, settings/public API — [профильный паспорт](scene-activity-function-passport.md).
+
 - **Зачем:** сериализовать world-state, исключить двойное исполнение и безопасно выполнять player-инициированные операции на GM.
 - **Владельцы:** application route и operation identity — `scripts/application/privileged-mutation-gateway.js`; active-GM election и typed transport — `scripts/infrastructure/foundry/active-gm.js` и `socket-command-bus.js`; очереди/replay — `scripts/application/world-mutation-coordinator.js`; durable multi-step recovery — `durable-mutation-journal.js`.
 - **Gateway API:** `new PrivilegedMutationGateway({ commandBus, coordinator, gameProvider, getActiveGm, isActiveGmClient, operationIdFactory, maxTimeoutRetries = 1 })`; `registerCommand(command, { validate, authorize, execute })`; `mutate(command, payload, { operationId = "" } = {})`; `commit(queueKey, operation)`. `registerCommand` требует все три callback и запрещает пустые/повторные команды; `execute` получает frozen `{ command, operationId, requestId, sender, source, assertActiveGm }`. Если elected active GM отсутствует, `mutate` сразу отклоняется с `active-gm-unavailable` и не создаёт socket request/timer.
