@@ -275,7 +275,7 @@ import {
   isValidStorageRestorePortablePayload,
   isValidStorageTokenCharacterPayload,
   storageCharacterTokenUuidForClaim
-} from "./data/storage-command-service.js?v=1.4.270";
+} from "./data/storage-command-service.js?v=1.4.274";
 import { registerCombatHooks } from "./combat/hooks.js?v=1.4.253-simple-upgrades";
 import { CombatAttackService } from "./combat/attack-service.js?v=1.4.254-simple-upgrades";
 import { ImplantAutomationService } from "./combat/implant-automation-service.js";

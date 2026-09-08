@@ -2431,6 +2431,100 @@ test("command claims a row from a nested container path and keeps the parent row
   assert.equal(harness.itemGrants.length, 1);
 });
 
+function nestedTransferFixture(containerItemService,options={}) {
+  const harness=createHarness({...options,containerItemService});
+  const bag=buildStorageContainerRow({containerId:"race-bag",storageKind:"bag",name:"Сумка",state:{state:"opened",
+    manualRows:[{rowId:"child",name:"Ключ",quantity:2,itemData:{name:"Ключ",type:"loot",system:{quantity:2}}}],generatedRows:[]}}, {rowId:"bag"});
+  const access={tokenUuid:harness.storageToken.uuid,characterTokenUuid:harness.characterToken.uuid,destination:"self",target:null};
+  return {...harness,bag,parent:{...access,path:[],rowId:"bag",quantity:1,mutationId:"parent-transfer"},
+    child:{...access,path:["bag"],rowId:"child",quantity:1,mutationId:"child-transfer"}};
+}
+
+test("a child extracted before the queued parent transfer is absent from the granted container snapshot",async()=>{
+  const captured=[];const h=nestedTransferFixture({async materializeToActorOnce(_actor,snapshot){captured.push(clone(snapshot));return {id:"bag-target"};}});
+  await h.storageService.configure(h.storageToken,{state:"opened",manualRows:[h.bag]});
+  let release,entered;const arrived=new Promise(resolve=>{entered=resolve;});
+  const grant=h.service.inventoryService.addLootgenRowToCharacterOnce.bind(h.service.inventoryService);
+  h.service.inventoryService.addLootgenRowToCharacterOnce=async(...args)=>{entered();await new Promise(resolve=>{release=resolve;});return grant(...args);};
+  const child=h.service.claimRow(h.child,{sender:h.player});await arrived;
+  const parent=h.service.claimRow(h.parent,{sender:h.player});await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(captured.length,0);release();await Promise.all([child,parent]);
+  assert.equal(captured[0].state.manualRows[0].quantity,1);assert.equal(h.itemGrants[0].row.quantity,1);
+});
+
+test("failed parent source debit reserves descendants across command service restart",async()=>{
+  const grants=new Map();const h=nestedTransferFixture({async materializeToActorOnce(_actor,snapshot,id){if(!grants.has(id))grants.set(id,clone(snapshot));return {id:"bag-target"};}});
+  await h.storageService.configure(h.storageToken,{state:"opened",manualRows:[h.bag]});
+  const claim=h.storageService.claim.bind(h.storageService);let fail=true;
+  h.storageService.claim=async(...args)=>{if(args[1].rowId==="bag"&&fail){fail=false;throw Error("parent debit offline");}return claim(...args);};
+  await assert.rejects(h.service.claimRow(h.parent,{sender:h.player}),/parent debit offline/);
+  assert.equal(grants.size,1);
+  const restarted=h.createCommandService();
+  await assert.rejects(restarted.claimRow(h.child,{sender:h.player}),/не завершён/);
+  await assert.rejects(restarted.claimCoins({...h.parent,mutationId:"coins-during-parent"},{sender:h.player}),/не завершён/);
+  await assert.rejects(restarted.claimAll({...h.parent,mutationId:"all-during-parent"},{sender:h.player}),/не завершён/);
+  await assert.rejects(restarted.moveStorageTokenToCharacter({tokenUuid:h.storageToken.uuid,characterTokenUuid:h.characterToken.uuid,actorUuid:h.targetHero.uuid,mutationId:"move-parent-token"},{sender:h.player}),/не завершён/);
+  await assert.rejects(restarted.deposit({tokenUuid:h.storageToken.uuid,characterTokenUuid:h.characterToken.uuid,path:["bag"],source:{kind:"item",itemUuid:"Actor.hero.Item.source"},quantity:1,mutationId:"deposit-during-parent"},{sender:h.player}),/не завершён/);
+  assert.equal(h.itemGrants.length,0);
+  await restarted.claimRow({...h.parent,mutationId:"fresh-parent-click"},{sender:h.player});assert.equal(grants.size,1);
+  assert.equal([...grants.values()][0].state.manualRows[0].quantity,2);
+});
+
+for(const fault of ["source-acknowledgement","completion-marker"]){
+  test(`container source recovery after ${fault} never grants a deleted target again`,async()=>{
+    let grants=0;const h=nestedTransferFixture({async materializeToActorOnce(){grants++;return {id:"removed-after-grant"};}});
+    await h.storageService.configure(h.storageToken,{state:"opened",manualRows:[h.bag]});
+    const method=fault==="source-acknowledgement"?"claim":"completeBulkClaimMutation",original=h.storageService[method].bind(h.storageService);let failed=false;
+    h.storageService[method]=async(...args)=>{if(!failed){failed=true;if(fault==="source-acknowledgement")await original(...args);throw Error(fault);}return original(...args);};
+    await assert.rejects(h.service.claimRow(h.parent,{sender:h.player}),new RegExp(fault));
+    assert.equal(grants,1);
+    h.service.containerItemService.materializeToActorOnce=async()=>{throw Error("deleted target must never be recreated");};
+    const result=await h.createCommandService().claimRow(h.parent,{sender:h.player});assert.equal(result.changed,true);
+    assert.equal(readStorageState(h.storageToken).bulkClaimMutations.find(entry=>entry.mutationKey.startsWith("container-transfer:")).status,"complete");
+    assert.equal(grants,1);
+  });
+}
+
+test("a queued child cannot be extracted after its parent has already moved",async()=>{
+  let release,entered;const arrived=new Promise(resolve=>{entered=resolve;});
+  const h=nestedTransferFixture({async materializeToActorOnce(){entered();await new Promise(resolve=>{release=resolve;});return {id:"bag-target"};}});
+  await h.storageService.configure(h.storageToken,{state:"opened",manualRows:[h.bag]});
+  const parent=h.service.claimRow(h.parent,{sender:h.player});await arrived;
+  const child=h.service.claimRow(h.child,{sender:h.player});const childResult=Promise.allSettled([child]);
+  await new Promise(resolve=>setImmediate(resolve));assert.equal(h.itemGrants.length,0);release();await parent;
+  const [result]=await childResult;
+  assert.ok(result.status==="rejected"||result.value.changed===false);assert.equal(h.itemGrants.length,0);
+});
+
+test("reserved party container retries keep the original ingress batch and block child extraction",async()=>{
+  const batches=new Set();const h=nestedTransferFixture(null,{ingressCommit:async(request,adapters)=>{
+    batches.add(request.batchMutationId);const [row]=await adapters.resolveRows();
+    await adapters.debitRow(row,{sourceKey:row.sourceKey});
+    return {actorId:request.groupActorId,batchMutationId:request.batchMutationId,changed:true,rows:[{sourceKey:row.sourceKey,changed:true}],inventoryTransferMode:"simple"};
+  }});
+  await h.storageService.configure(h.storageToken,{state:"opened",manualRows:[h.bag]});
+  const request={...h.parent,destination:"party",target:{groupActorId:h.groupActor.id,folderId:null},ingressPlan:storageIngressPlan({rowIds:["bag"]})};
+  const claim=h.storageService.claim.bind(h.storageService);let fail=true;
+  h.storageService.claim=async(...args)=>{if(fail){fail=false;throw Error("party debit offline");}return claim(...args);};
+  await assert.rejects(h.service.claimRow(request,{sender:h.player}),/party debit offline/);
+  const restarted=h.createCommandService();await assert.rejects(restarted.claimRow(h.child,{sender:h.player}),/не завершён/);
+  await restarted.claimRow({...request,mutationId:"party-retry"},{sender:h.player});
+  assert.equal(batches.size,1);assert.equal(h.itemGrants.length,0);
+  assert.equal(readStorageState(h.storageToken).bulkClaimMutations.find(entry=>entry.mutationKey.startsWith("container-transfer:")).status,"complete");
+});
+
+test("bulk container grant also reserves descendants until its source debit recovers",async()=>{
+  const grants=new Set();const h=nestedTransferFixture({async materializeToActorOnce(_actor,_snapshot,id){grants.add(id);return {id:"bulk-bag"};}});
+  await h.storageService.configure(h.storageToken,{state:"opened",manualRows:[h.bag]});
+  const claim=h.storageService.claim.bind(h.storageService);let fail=true;
+  h.storageService.claim=async(...args)=>{if(args[1].rowId==="bag"&&fail){fail=false;throw Error("bulk debit offline");}return claim(...args);};
+  const request={tokenUuid:h.storageToken.uuid,characterTokenUuid:h.characterToken.uuid,path:[],destination:"self",target:null,mutationId:"bulk-parent"};
+  await assert.rejects(h.service.claimAll(request,{sender:h.player}),/bulk debit offline/);
+  const restarted=h.createCommandService();await assert.rejects(restarted.claimRow(h.child,{sender:h.player}),/не завершён/);
+  await restarted.claimAll(request,{sender:h.player});assert.equal(grants.size,1);assert.equal(h.itemGrants.length,0);
+  assert.equal(readStorageState(h.storageToken).bulkClaimMutations.find(entry=>entry.mutationKey.startsWith("container-transfer:")).status,"complete");
+});
+
 test("claiming a container materializes a native dnd5e tree instead of a flat loot row", async () => {
   const materialized = [];
   const containerItemService = {

@@ -83,6 +83,23 @@ function storageQueueKey(tokenUuid) {
   return `${clean(tokenUuid)}:storage`;
 }
 
+// A container grant freezes its source tree until the source debit is confirmed.
+// Persist the reservation on the root so descendants and whole-token moves see it.
+function storageContainerTransferBinding(token, mutationKey = "", request = "") {
+  const bindings = readStorageState(token).bulkClaimMutations.filter(entry => entry.mutationKey.startsWith("container-transfer:"));
+  const pending = bindings.find(entry => entry.status === "pending");
+  const exact = bindings.find(entry => entry.mutationKey === `container-transfer:${mutationKey}`);
+  const binding = exact ?? pending;
+  if (!binding) return null;
+  let reservation;
+  try { reservation = JSON.parse(binding.fingerprint); } catch { throw new Error("Перенос контейнера не завершён: повреждена запись операции."); }
+  if (!request || reservation.request !== request || typeof reservation.grantId !== "string"
+    || binding.mutationKey !== `container-transfer:${reservation.grantId}` || (pending && pending !== binding)) {
+    if (pending || exact) throw Object.assign(new Error("Перенос контейнера не завершён или параметры изменились. Повторите исходный перенос."), { code: "STORAGE_MUTATION_CONFLICT" });
+  }
+  return binding;
+}
+
 function canonicalRequestValue(value) {
   if (Array.isArray(value)) return value.map(canonicalRequestValue);
   if (value && typeof value === "object") {
@@ -1256,13 +1273,23 @@ export class StorageCommandService {
       }
       const state = readStorageStateAtPath(access.storageToken, path);
       if (state.state === "unopened") throw new Error("Сначала откройте хранилище.");
+      const containerIntent = mutationRequestFingerprint({ ...payload, mutationId: "" }, sender);
+      const containerBinding = storageContainerTransferBinding(access.storageToken, mutationKey, containerIntent);
+      const containerReservation = containerBinding ? JSON.parse(containerBinding.fingerprint) : null;
       const coinDenomination = storageCoinRowDenomination(rowId);
       const coinIntent = coinDenomination ? mutationRequestFingerprint({ ...payload, mutationId: "" }, sender) : "";
       const coinBinding = coinDenomination ? state.bulkClaimMutations.find(entry => entry.mutationKey === `coin-transfer:${mutationKey}`)
         ?? pendingStorageCoinTransfer(state) : null;
       const coinReservation = coinBinding ? JSON.parse(coinBinding.fingerprint) : null;
       if (coinReservation && coinReservation.request !== coinIntent) throw new Error("Перенос монет не завершён или mutationId использован с другими параметрами. Повторите исходный перенос.");
-      const grantId = coinReservation?.grantId ?? (coinBinding ? coinBinding.mutationKey.slice("coin-transfer:".length) : mutationKey);
+      const grantId = containerReservation?.grantId ?? coinReservation?.grantId ?? (coinBinding ? coinBinding.mutationKey.slice("coin-transfer:".length) : mutationKey);
+      const priorContainerClaim = containerBinding && destination !== "party" && state.rowClaimMutations.find(entry => entry.mutationId === grantId);
+      if (priorContainerClaim) {
+        if (priorContainerClaim.rowId !== rowId || priorContainerClaim.quantity !== 1) throw new Error("Container mutationId conflict.");
+        await this.storageService.completeBulkClaimMutation(access.storageToken, containerBinding.mutationKey, containerBinding.fingerprint);
+        const refresh = await this.#refreshSource(access.storageToken, readStorageState(access.storageToken));
+        return { changed: true, quantity: 1, state, sourceDeleted: refresh.deleted === true };
+      }
       if (coinBinding && grantId !== mutationKey) {
         await this.storageService.bindBulkClaimMutation(access.storageToken, `coin-transfer:${mutationKey}`, coinBinding.fingerprint, { path });
         await this.storageService.completeBulkClaimMutation(access.storageToken, `coin-transfer:${mutationKey}`, coinBinding.fingerprint, { path });
@@ -1313,6 +1340,12 @@ export class StorageCommandService {
       transferRow.itemData.system ??= {};
       transferRow.itemData.system.quantity = quantity;
       const preparedTransferRow = coinDenomination ? transferRow : await this.#prepareGroundRow(transferRow);
+      const containerTransfer = isStorageContainerRow(preparedTransferRow);
+      const containerFingerprint = containerBinding?.fingerprint ?? JSON.stringify({ request: containerIntent, grantId });
+      if (containerTransfer) {
+        if (quantity !== 1) throw new Error("Контейнер можно переносить только целиком.");
+        await this.storageService.bindBulkClaimMutation(access.storageToken, `container-transfer:${grantId}`, containerFingerprint);
+      }
       let result = null;
       let filterResult = null;
       if (coinDenomination) {
@@ -1349,7 +1382,7 @@ export class StorageCommandService {
           target: partyTarget,
           storageToken: access.storageToken,
           path,
-          mutationKey,
+          mutationKey: grantId,
           ingressPlan: payload.ingressPlan,
           rows: [ingressRow]
         });
@@ -1408,8 +1441,9 @@ export class StorageCommandService {
         });
       }
       if (destination !== "party" && !coinDenomination) {
-        result = await this.storageService.claim(access.storageToken, { kind: "row", rowId, quantity, path });
+        result = await this.storageService.claim(access.storageToken, { kind: "row", rowId, quantity, path, ...(containerTransfer ? { mutationId: grantId } : {}) });
       }
+      if (containerTransfer) await this.storageService.completeBulkClaimMutation(access.storageToken, `container-transfer:${grantId}`, containerFingerprint);
       if (result.changed === true) {
         await this.#executeCommittedClaimTriggers(payload, sender, access, state, {
           kind: "row",
@@ -1462,6 +1496,7 @@ export class StorageCommandService {
         throw new Error("Для получения монет себе выберите персонажа.");
       }
       const state = readStorageStateAtPath(access.storageToken, path);
+      storageContainerTransferBinding(access.storageToken);
       assertStorageCoinTransferAvailable(state);
       if (state.state === "unopened") throw new Error("Сначала откройте хранилище.");
       const keys = ["pp", "gp", "sp", "cp"];
@@ -1546,6 +1581,8 @@ export class StorageCommandService {
         ({ actor: partyActor, target: partyTarget } = await this.#resolvePartyTarget(target));
       }
       const stateBeforeBinding = readStorageStateAtPath(access.storageToken, path);
+      const containerBinding = storageContainerTransferBinding(access.storageToken, mutationKey, fingerprint);
+      const containerFingerprint = containerBinding?.fingerprint ?? JSON.stringify({ request: fingerprint, grantId: mutationKey });
       assertStorageCoinTransferAvailable(stateBeforeBinding);
       if (stateBeforeBinding.state === "unopened") throw new Error("Сначала откройте хранилище.");
       await this.storageService.bindBulkClaimMutation(access.storageToken, mutationKey, fingerprint, { path });
@@ -1579,6 +1616,8 @@ export class StorageCommandService {
         const preparedTransferRow = await this.#prepareGroundRow(transferRow);
         preparedRows.push({ rowId, quantity, transferRow, preparedTransferRow });
       }
+      const containerTransfer = Boolean(containerBinding) || preparedRows.some(({ preparedTransferRow }) => isStorageContainerRow(preparedTransferRow));
+      if (containerTransfer) await this.storageService.bindBulkClaimMutation(access.storageToken, `container-transfer:${mutationKey}`, containerFingerprint);
 
       if (destination === "party" && preparedRows.length > 0) {
         const ingressRows = preparedRows.map(({ rowId, quantity, preparedTransferRow }) => (
@@ -1685,6 +1724,7 @@ export class StorageCommandService {
 
       const changed = claimedRowIds.length > 0 || coinsChanged;
       await this.storageService.completeBulkClaimMutation(access.storageToken, mutationKey, fingerprint, { path });
+      if (containerTransfer) await this.storageService.completeBulkClaimMutation(access.storageToken, `container-transfer:${mutationKey}`, containerFingerprint);
       if (changed) {
         const committedState = readStorageStateAtPath(access.storageToken, path);
         await this.#executeCommittedClaimTriggers(payload, sender, access, stateBeforeBinding, {
@@ -1771,6 +1811,7 @@ export class StorageCommandService {
 
     return this.#runMutation(queueKeys, mutationKey, async () => {
       const access = await this.#resolveAccess(payload, sender);
+      storageContainerTransferBinding(access.storageToken);
       const source = await this.resolveDepositSource(sourceRef, {
         fromUuid: this.resolveDocument,
         resolveToken: this.resolveToken,
@@ -1790,10 +1831,11 @@ export class StorageCommandService {
         throw new Error("У вас нет прав владельца на перемещение этого предмета.");
       }
       if (["storage-row", "storage-token"].includes(source.kind)) {
-        await this.#resolveAccess({
+        const sourceAccess = await this.#resolveAccess({
           tokenUuid: clean(sourceRef.tokenUuid),
           characterTokenUuid: clean(payload.characterTokenUuid)
         }, sender);
+        storageContainerTransferBinding(sourceAccess.storageToken);
       }
 
       const beforeTarget = readStorageStateAtPath(access.storageToken, path);
@@ -1866,6 +1908,7 @@ export class StorageCommandService {
         characterTokenUuid: clean(payload.characterTokenUuid)
       }, sender);
       const actor = await this.#resolveCharacterTarget({ actorUuid }, sender);
+      storageContainerTransferBinding(access.storageToken);
       const source = await this.resolveDepositSource({ kind: "storage-token", tokenUuid }, {
         fromUuid: this.resolveDocument,
         resolveToken: this.resolveToken,
