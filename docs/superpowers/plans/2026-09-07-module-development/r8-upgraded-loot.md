@@ -223,6 +223,4 @@ Focused: node --test tests/lootgen*.test.mjs tests/group-command-dispatch.test.m
 
 Закрыта указанная выше разница: availability, type/rank, host compatibility/capacity и choices проверяются до случайного выбора. Несовместимые profiles не расходуют лимит попыток; подходящий profile после 3000 несовместимых выбирается с учётом полной стоимости. Сохранена повторная проверка занятых слотов и общий лимит для вариантов с неизвестной ценой. Добавлен один regression, обновлены две существующие проверки.
 
-Проверки 1.4.278: профильные 40/0; обязательный 
-ode --test tests/*.test.mjs — 4021 passed / 0 failed; 
-ode --check — 796 JS/MJS, JSON parse — 46 файлов, ошибок 0. git diff --check чисто.
+Проверки 1.4.278: профильные 40/0; обязательный node --test tests/*.test.mjs — 4021 passed / 0 failed; node --check — 796 JS/MJS, JSON parse — 46 файлов, ошибок 0. После исправления форматирования этой записи git diff --check чисто.
