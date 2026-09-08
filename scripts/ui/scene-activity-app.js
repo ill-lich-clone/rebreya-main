@@ -95,6 +95,16 @@ export class SceneActivityApp extends HandlebarsApplicationMixin(ApplicationV2){
   async _onRender(context,options){
     await super._onRender(context,options);this.listeners?.abort();this.listeners=new AbortController();const root=this.element;if(!root?.addEventListener)return;
     const signal=this.listeners.signal;
+    root.addEventListener("keydown",event=>{
+      if(event.key!=="Tab")return;
+      // Foundry binds Tab to canvas token cycling, including focused buttons.
+      event.stopPropagation();
+      const controls=[...root.querySelectorAll('button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]')]
+        .filter(node=>node.tabIndex>=0&&node.getClientRects().length);
+      const first=controls[0],last=controls.at(-1),focused=root.ownerDocument.activeElement;
+      const next=event.shiftKey&&focused===first?last:!event.shiftKey&&focused===last?first:null;
+      if(next){event.preventDefault();next.focus();}
+    },{signal});
     root.addEventListener("input",event=>{
       if(event.target.dataset.field!=="text")return;this.setDraft(this.selectedActorUuid,{...this.#draft(),text:event.target.value});
       const count=root.querySelector('[data-role="char-count"]');if(count)count.textContent=`${event.target.value.length}/500`;

@@ -27,7 +27,7 @@
           <p class="rm-scene-activity__hint"><span data-role="char-count">До 500 символов</span> · «Отдохнуть» — заявка мастеру.</p>
         {{else}}<h2>Основное действие</h2><p>{{busyName}} уже занят. Дополнительное занятие для него не выбирается.</p>{{/if}}
       </section>
-      <aside class="rm-scene-activity__panel"><h2>Заявки участников</h2><ul class="rm-scene-activity__roster">
+      <aside class="rm-scene-activity__panel"><h2>Заявки участников</h2><ul class="rm-scene-activity__roster" tabindex="0" aria-label="Заявки участников">
         {{#each roster}}<li data-participant="{{uuid}}"><strong>{{name}}</strong><span data-role="choice">{{action}}</span><p data-role="detail">{{text}}</p></li>{{/each}}
       </ul></aside>
     {{/if}}

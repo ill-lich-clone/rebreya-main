@@ -407,7 +407,7 @@ const LEGACY_WORLD_MUTATION_SOCKET_TYPES = new Set([
   SOCKET_EVENT_LOOTGEN_CLAIM_COINS
 ]);
 const MODULE_STYLE_PATH = `modules/${MODULE_ID}/styles/main.css`;
-const MODULE_STYLE_VERSION = "1.4.272";
+const MODULE_STYLE_VERSION = "1.4.275";
 const SECONDS_PER_HOUR = 3600;
 const SECONDS_PER_DAY = 86400;
 const TRAVEL_DAY_HOURS = 8;
@@ -2855,7 +2855,7 @@ export class RebreyaMainModule {
   async #getSceneActivityController(){
     if(!this.sceneActivityControllerPromise)this.sceneActivityControllerPromise=(async()=>{
       const [{SceneActivityController},{SceneActivityApp,renderSceneActivityIndicator}]=await Promise.all([
-        import("./ui/scene-activity-controller.js?v=1.4.272"),import("./ui/scene-activity-app.js?v=1.4.272")]);
+        import("./ui/scene-activity-controller.js?v=1.4.272"),import("./ui/scene-activity-app.js?v=1.4.275")]);
       return new SceneActivityController({api:this,registry:this.sceneActivityApps,
         createApp:(snapshot,callbacks)=>new SceneActivityApp(this,snapshot,callbacks),onChange:renderSceneActivityIndicator});
     })().catch(error=>{this.sceneActivityControllerPromise=null;throw error;});

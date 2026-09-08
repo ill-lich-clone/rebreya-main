@@ -35,3 +35,17 @@ test("terminal disposal during rendering cannot leave a late ghost overlay",asyn
   app.render=async()=>{await new Promise(resolve=>{release=resolve;});app.rendered=true;return app;};
   const opening=app.reopen();await app.dispose();release();await opening;assert.equal(app.rendered,false);
 });
+
+test("Tab stays in the scene window and never reaches Foundry token cycling",async()=>{
+  const handlers=new Map(),doc={activeElement:null};
+  const controls=Array.from({length:3},()=>({tabIndex:0,getClientRects:()=>[{}],focus(){doc.activeElement=this;}}));
+  const root={ownerDocument:doc,addEventListener:(name,handler)=>handlers.set(name,handler),querySelector:()=>null,
+    querySelectorAll:selector=>selector.includes('button')?controls:[]};
+  const app=new SceneActivityApp({},view());app.element=root;await app._onRender({},{});
+  assert.equal(typeof handlers.get('keydown'),'function');
+  for(const [index,shift,expected,prevented]of [[2,false,0,1],[0,true,2,1],[1,false,1,0]]){
+    doc.activeElement=controls[index];let stopped=0,defaultPrevented=0;
+    handlers.get('keydown')({key:'Tab',shiftKey:shift,stopPropagation(){stopped++;},preventDefault(){defaultPrevented++;}});
+    assert.equal(stopped,1);assert.equal(defaultPrevented,prevented);assert.equal(doc.activeElement,controls[expected]);
+  }
+});

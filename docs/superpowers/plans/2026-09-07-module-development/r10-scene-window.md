@@ -95,8 +95,8 @@ assert.equal(choice.result.changed, true);
 - [x] Если инициатор также владеет другим приглашённым Actor, UI выбирает явный Actor context. Сам занятый Actor видит своё основное действие и не получает автоматическое второе.
 - [x] Игрок может менять свою заявку до завершения. На stale state сохранить ввод локально, перечитать snapshot и показать конфликт; не перезаписывать выбор без свежего подтверждённого действия.
 - [x] GM видит участников/их выбранные занятия и «ещё не выбрано». Никаких кнопок «восстановить», «бросить HD», пустых cooldown badges и счетчика реальных секунд.
-- [ ] Экранирование HBS/textContent для имён и free text; keyboard focus, aria-label, responsive layout и cleanup AbortController/observers. При update другой участник не отбирает focus у пишущего.
-- [ ] Tests: один overlay на повтор notifications, collapsed/reopen, out-of-order revision, finish while typing, replacement close, escape text, long list и отсутствие resource controls.
+- [x] Экранирование HBS/textContent для имён и free text; keyboard focus, aria-label, responsive layout и cleanup AbortController/observers. При update другой участник не отбирает focus у пишущего.
+- [x] Tests: один overlay на повтор notifications, collapsed/reopen, out-of-order revision, finish while typing, replacement close, escape text, long list и отсутствие resource controls.
 
 ## Задача R10.4 — кнопка мастера, приёмка и документация
 
@@ -142,3 +142,12 @@ Native UI в testovyj3, Foundry13.351/dnd5e5.2.5, CODEX GM: настоящая s
 До/после start/choose/finish/cancel сравнивались полные toObject трёх QA Actor, worldTime и прежние group states: изменений нет. Это два GM-клиента, не player-auth/multi-player доказательство. QA группа tmEFi3kHho74M01o «[QA R10] Проверка сцены» и Actor egcIVdTZYNPfJG66/rVsa8f6b6DW6HAo7/iW51E48x6SHpra4S оставлены с default ownership0 для следующих изолированных проверок; текущая активная игровая группа не менялась. В дальнейшем удалить только эти QA документы/registry entry после оставшейся multiuser матрицы; не откатывать целиком world settings.
 
 Проверки финального кода272: `node --test tests/*.test.mjs` — **3990 passed / 0 failed**. `node --check`796 JS/MJS —0 ошибок; JSON parse46 —0 ошибок; `git diff --check` чисто. Focused профиль до последнего ready regression192/0, после него изменённые owners group-command-dispatch/main-composition-root65/0 и полный прогон3990/0. Предыдущий полный3990 не повторять без новых code changes. Live player/reconnect/GM-switch, keyboard/scale/long-list и общая приёмка остаются открытыми.
+
+## R10 — клавиатура и длинная группа (1.4.275)
+
+В native Foundry13.351/dnd5e5.2.5 под CODEX воспроизведён конфликт: глобальный Foundry keybinding отменял Tab на кнопках сцены. _onRender теперь останавливает всплытие Tab и замыкает границы окна; внутри сохраняется нативный порядок. Roster получил tabindex и focus-visible. Новый regression сначала упал, после исправления app/controller **11 passed / 0 failed**.
+
+Проверена локальная проекция настоящего ApplicationV2 с64 участниками и длинными именами/заявками: Tab/Shift+Tab на кнопках и границе, Enter для сохранения через локальный stub, сворачивания и возврата, End до конца roster (scrollTop=max10173). Draft сохранён, после возврата один видимый overlay. Это UI-проверка, не доказательство native player authority или сохранения заявки через GM socket.
+
+Нативные снимки через browser viewport capability1280×720 и1920×1080 без прежнего CDP capture artifact: footer bottom695/1055, горизонтального overflow нет. В console один core error о минимальной высоте Foundry768 при тесте720; новых ошибок модуля нет. Browser zoom клавишей Control+= не изменился (DPR1/scale1), поэтому проверка реального масштаба остаётся открытой. Временная app и CSS удалены, overlay/indicator0, world sceneActivityState до/после идентичен, viewport override сброшен. После предыдущего terminal reload также подтверждены controller ready, registry/overlay/active session0. Остальная multiuser/GM-switch матрица остаётся открытой.
+`node --test tests/*.test.mjs`: **4005 passed / 0 failed**; синтаксис796 JS/MJS и JSON46 —0 ошибок; `git diff --check` чисто.
