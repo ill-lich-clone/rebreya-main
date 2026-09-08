@@ -46,3 +46,45 @@ test("one result rejects repeated instance identities across individually valid 
   const o=options(3000);o.form.itemCount=2;let i=0;o.createInstanceKey=()=>['host','upgrade1','upgrade2'][i++%3];
   assert.throws(()=>generateLootgenResult(o),/Повторный идентификатор/u);
 });
+
+test("composed generation counts upgrade documents inside the maximum forty host rows",()=>{
+  const o=options(1000000);o.form.itemCount=1000;o.form.maxUpgradesPerItem=3;
+  o.manifest=[...manifest,{productId:"test-third",decision:"simple-implemented",profile:{compatibility:["weapon"],type:"Материал",rank:1}}];
+  o.catalogReader={resolveValueComponent:({sourceId})=>({priceKnown:true,unitValue:sourceId==="test-third"?100:prices[sourceId]}),
+    describeUpgradeHost:()=>({quantity:1,capacity:3,compatibilityTags:["weapon"]})};
+  const result=generateLootgenResult(o);
+  assert.equal(result.rows.length,40);assert.equal(result.rows.reduce((n,row)=>n+1+row.descriptor.upgrades.length,0),160);
+  assert.equal(result.spentValue,64000);
+});
+
+test("incompatible upgrade candidates exhaust the shared attempt allowance without a runaway search",()=>{
+  const o=options(1000000);o.form.itemCount=40;let randomCalls=0;o.random=()=>{randomCalls++;return 0;};
+  o.manifest=Array.from({length:3000},(_,i)=>({productId:`incompatible-${i}`,decision:"simple-implemented",profile:{compatibility:["armor"],type:"Материал",rank:1}}));
+  const result=generateLootgenResult(o);
+  assert.ok(randomCalls<=2000);assert.equal(result.rows.length,1);assert.equal(result.rows[0].descriptor,undefined);
+  assert.equal(result.spentValue,1000);
+});
+
+test("zero priced variants stay bounded and invalid authoritative prices never enter loot",()=>{
+  const o=options(100);o.form.itemCount=4;o.catalogReader={...catalogReader,resolveValueComponent:()=>({priceKnown:true,unitValue:0})};
+  const result=generateLootgenResult(o);assert.equal(result.rows.length,4);assert.equal(result.spentValue,0);
+  for(const unitValue of [-1,Number.MAX_SAFE_INTEGER+1,NaN])
+    assert.throws(()=>generateLootgenResult({...options(),catalogReader:{...catalogReader,resolveValueComponent:()=>({priceKnown:true,unitValue})}}),/доступных|цен/u);
+  assert.equal(generateLootgenResult(options(-1)).spentValue,0);
+});
+
+test("broken composed hosts price both the shell and installed children with the same broken state",()=>{
+  const o=options();o.form.brokenEquipmentChance=100;o.mundanePool[0].breakable=true;const reads=[];
+  o.catalogReader={...catalogReader,resolveValueComponent:descriptor=>{reads.push(descriptor);return catalogReader.resolveValueComponent(descriptor);}};
+  const result=generateLootgenResult(o),row=result.rows[0];
+  assert.equal(row.isBroken,true);assert.equal(row.descriptor.isBroken,true);assert.equal(result.spentValue,1500);
+  for(const sourceId of Object.keys(prices))assert.ok(reads.some(d=>d.sourceId===sourceId&&d.isBroken===true));
+});
+
+test("zero and full coin reserves share the composed budget exactly once",()=>{
+  for(const percent of [0,100]){
+    const o=options(1500);o.form.includeCoins=true;o.form.coinBudgetPercent=percent;const result=generateLootgenResult(o);
+    assert.equal(result.spentValue+result.coins.totalCopper,1500);
+    assert.equal(result.spentValue,percent===0?1500:0);assert.equal(result.rows.length,percent===0?1:0);
+  }
+});
