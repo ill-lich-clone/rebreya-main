@@ -3,7 +3,7 @@ import { loadUpgradeAutomationManifest } from "./upgrade-automation-manifest.js?
 import { MODULE_ID, GEAR_COMPENDIUM_NAME, MAGIC_ITEMS_COMPENDIUM_NAME } from "../constants.js";
 import { resolveLootgenItemValue } from "./item-value.js?v=1.4.264";
 import { collectBreakableManagedGearIds } from "./lootgen-durability.js?v=1.4.154-corpse-storage-broken-name";
-import { generateLootgenResult, isLootgenUpgrade, normalizeLootgenForm } from "./lootgen-generator.js?v=1.4.266";
+import { generateLootgenResult, isLootgenUpgrade, normalizeLootgenForm } from "./lootgen-generator.js?v=1.4.278";
 import { buildLootgenTypeFilterOptions, isLootgenTypeAllowed, resolveMagicLootgenTypeLabel } from "./lootgen-type-filters.js?v=1.4.258";
 const MATERIAL_LOOTGEN_TYPE_LABEL="Материал";
 function toNumber(value, fallback = 0) {

@@ -57,12 +57,20 @@ test("composed generation counts upgrade documents inside the maximum forty host
   assert.equal(result.spentValue,64000);
 });
 
-test("incompatible upgrade candidates exhaust the shared attempt allowance without a runaway search",()=>{
+test("incompatible upgrade candidates are excluded before variant randomness and attempt limits",()=>{
   const o=options(1000000);o.form.itemCount=40;let randomCalls=0;o.random=()=>{randomCalls++;return 0;};
   o.manifest=Array.from({length:3000},(_,i)=>({productId:`incompatible-${i}`,decision:"simple-implemented",profile:{compatibility:["armor"],type:"Материал",rank:1}}));
   const result=generateLootgenResult(o);
-  assert.ok(randomCalls<=2000);assert.equal(result.rows.length,1);assert.equal(result.rows[0].descriptor,undefined);
+  assert.equal(randomCalls,1);assert.equal(result.rows.length,1);assert.equal(result.rows[0].descriptor,undefined);
   assert.equal(result.spentValue,1000);
+});
+
+test("a compatible profile after a large incompatible pool is still selected within budget",()=>{
+  const o=options(1200);let randomCalls=0;o.random=()=>{randomCalls++;return 0;};
+  o.manifest=[...Array.from({length:3000},(_,i)=>({productId:`armor-${i}`,decision:"simple-implemented",profile:{compatibility:["armor"],type:"Материал",rank:1}})),manifest[0]];
+  const result=generateLootgenResult(o);
+  assert.equal(result.spentValue,1200);assert.equal(result.rows[0].descriptor.upgrades[0].sourceId,"zacharovanie-ostroty");
+  assert.equal(randomCalls,2);
 });
 
 test("zero priced variants stay bounded and invalid authoritative prices never enter loot",()=>{

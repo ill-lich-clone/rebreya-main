@@ -55,7 +55,7 @@ assert.throws(() => normalizeLootgenItemDescriptor({ ...a, effects: ["arbitrary"
 **Файлы:** scripts/data/lootgen-generator.js, scripts/data/item-upgrade-rules.js, scripts/data/item-value.js; новый tests/lootgen-composite-items.test.mjs.
 
 - [x] Вынести локальный pure helper chooseLootgenUpgradeVariant({host,remainingValue,form,catalogReader,manifest,random,createInstanceKey}) → {descriptor,value,diagnostics}. generateLootgenResult остаётся единственным публичным random/budget owner.
-- [ ] Сначала сформировать конечный список available совместимых profiles по R4. Проверить host capacity/slot, type/rank, всю availability и обязательные choices. standalone upgrades по-прежнему исключены isLootgenUpgrade().
+- [x] Сначала сформировать конечный список available совместимых profiles по R4. Проверить host capacity/slot, type/rank, всю availability и обязательные choices. standalone upgrades по-прежнему исключены isLootgenUpgrade().
 - [x] Если профиль допускает finite choices, выбирать только из его whitelist и сохранить результат в descriptor. Отсутствие допустимого/согласованного choice исключает variant с причиной, а не создаёт невалидную установку.
 - [x] При выпадении upgrade chance собрать variant, оценить полную стоимость через evaluateItemValue, затем принять его только при totalValue<=remainingValue. При нехватке бюджета попробовать доступный ограниченный набор; после исчерпания оставить обычный host, если он сам помещается.
 - [x] Ограничить число попыток отдельно от успешного itemCount: max 2000 попыток на generation, плюс общий document cap 200 с учётом upgrade children. Нулевые цены не создают бесконечный цикл; unknown price не участвует.
@@ -218,3 +218,11 @@ Focused: node --test tests/lootgen*.test.mjs tests/group-command-dispatch.test.m
 Полный fault matrix и native generate→Chat→claim→equip→transfer, игроки/смена GM остаются открытыми. После reload CODEX новый reassign-responder передан через реальный маршрут, но действующий GM ответил Unknown socket command: вкладка Gamemaster ещё не обновлена. Публикация тестовой Chat-карточки также всё ещё ожидает ранее запрошенного ответа. Эта проверка использовала отсутствующий operationId, игровых мутаций не было.
 Оставшаяся разница с R8.2: chooseLootgenUpgradeVariant сначала фильтрует availability/type/rank, а совместимость проверяет уже внутри ограниченного перебора. Невалидная установка исключается, но несовместимые profiles расходуют attemptBudget и при большом каталоге могут вытеснить допустимый вариант. Пункт предварительного совместимого пула оставлен открытым; следующий focused regression должен поместить совместимый profile после большого несовместимого пула и требовать его выбора в пределах общего лимита.
 `node --test tests/*.test.mjs`: **4020 passed / 0 failed**; синтаксис796 JS/MJS и JSON46 —0 ошибок; оба JS-примера плана исполнены (2/0), `git diff --check` чисто.
+
+### R8.2: предварительный совместимый пул — 1.4.278
+
+Закрыта указанная выше разница: availability, type/rank, host compatibility/capacity и choices проверяются до случайного выбора. Несовместимые profiles не расходуют лимит попыток; подходящий profile после 3000 несовместимых выбирается с учётом полной стоимости. Сохранена повторная проверка занятых слотов и общий лимит для вариантов с неизвестной ценой. Добавлен один regression, обновлены две существующие проверки.
+
+Проверки 1.4.278: профильные 40/0; обязательный 
+ode --test tests/*.test.mjs — 4021 passed / 0 failed; 
+ode --check — 796 JS/MJS, JSON parse — 46 файлов, ошибок 0. git diff --check чисто.

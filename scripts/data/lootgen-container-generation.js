@@ -2,7 +2,7 @@ import { addItemValue, evaluateItemValue } from "./item-value.js?v=1.4.264";
 import { normalizeLootgenComposition } from "./lootgen-item-descriptor.js?v=1.4.264";
 import { buildStorageContainerSnapshot, buildStorageContainerRow } from "./storage-container-snapshot.js?v=1.4.264";
 import { canFitLootgenContents, debitLootgenBudget, readLootgenPhysicalFootprint } from "./lootgen-container-rules.js?v=1.4.266";
-import { chooseLootgenUpgradeVariant } from "./lootgen-upgrade-variants.js?v=1.4.256";
+import { chooseLootgenUpgradeVariant } from "./lootgen-upgrade-variants.js?v=1.4.278";
 import { rollLootgenBrokenState } from "./lootgen-durability.js?v=1.4.154-corpse-storage-broken-name";
 import { rollLootgenMultipleAppearance } from "./lootgen-multiple-appearance.js?v=1.4.128-lootgen-multiplicity";
 

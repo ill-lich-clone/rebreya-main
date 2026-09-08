@@ -1,4 +1,4 @@
-import { generateLootgenResult } from "../data/lootgen-generator.js?v=1.4.266";
+import { generateLootgenResult } from "../data/lootgen-generator.js?v=1.4.278";
 import { normalizeLootgenItemDescriptor, projectLootgenDescriptorTree } from "../data/lootgen-item-descriptor.js?v=1.4.268";
 import { buildCompositeItemGraph } from "../data/composite-item-graph.js?v=1.4.268";
 import { buildLootgenPreparedItem } from "../data/lootgen-prepared-item.js?v=1.4.268";

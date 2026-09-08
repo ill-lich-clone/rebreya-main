@@ -85,7 +85,7 @@ test("the same cap includes installed children and upgrade attempts cannot resta
   const options=fixture({budgetValue:1000000,itemCount:40,generationDepth:3});
   const result=run(options),nodes=walk(result.rows);
   assert.ok(nodes.reduce((sum,d)=>sum+1+d.upgrades.length,0)<=200);
-  options.manifest=Array.from({length:2001},(_,i)=>({productId:`incompatible-${i}`,decision:"simple-implemented",profile:{type:"Зачарование",rank:1,compatibility:["armor"]}}));
+  options.manifest=Array.from({length:2001},(_,i)=>({productId:`unknown-price-${i}`,decision:"simple-implemented",profile:{type:"Зачарование",rank:1,compatibility:["weapon"]}}));
   assert.ok(run(options).diagnostics.some(d=>d.reason==="attempt-limit"));
 });
 
