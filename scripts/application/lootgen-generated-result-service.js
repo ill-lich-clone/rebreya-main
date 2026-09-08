@@ -1,4 +1,4 @@
-import { normalizeLootgenForm } from "../data/lootgen-generator.js?v=1.4.256";
+import { normalizeLootgenForm } from "../data/lootgen-generator.js?v=1.4.266";
 import { createStableGearDocumentId } from "../data/gear-document-ids.js";
 import { itemInstanceFingerprint } from "./item-instance-workflow.js";
 import { WorldMutationCoordinator } from "./world-mutation-coordinator.js";
@@ -11,6 +11,15 @@ function fail(code) {
     : "Запрос подготовки лута не совпадает с сохранённой операцией.");
   error.code = code;
   throw error;
+}
+
+function preparationFingerprint(form,requesterId){
+  const snapshot=structuredClone(form);
+  // New disabled defaults must not invalidate an already persisted R8 operation.
+  if(snapshot.enableFilledContainers===false && snapshot.filledContainerChance===0 && snapshot.generationDepth===1){
+    for(const key of ["enableFilledContainers","filledContainerChance","generationDepth"])delete snapshot[key];
+  }
+  return itemInstanceFingerprint({form:snapshot,requesterId});
 }
 
 export function isValidPrepareLootgenPayload(payload) {
@@ -36,7 +45,7 @@ export class LootgenGeneratedResultService {
     if (!isValidPrepareLootgenPayload({form}) || typeof operationId !== "string" || !operationId.trim()
       || operationId.trim() !== operationId || /[\u0000-\u001f\u007f]/u.test(operationId)
       || operationId.length > 256 || !requesterId || !authorId) fail("lootgen-prepare-conflict");
-    const fingerprint = itemInstanceFingerprint({form,requesterId});
+    const fingerprint = preparationFingerprint(form,requesterId);
     const id = `lootgen-prepare:${operationId}`;
     const messageId = createStableGearDocumentId(`lootgen-message:${operationId}`);
     const lootId = createStableGearDocumentId(`lootgen-result:${operationId}`);

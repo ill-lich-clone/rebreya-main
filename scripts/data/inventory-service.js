@@ -5890,6 +5890,7 @@ export class InventoryService {
   }
 
   async buildLootgenItemData(row = {}, { allowPersistedItemData = false } = {}) {
+    if(row.descriptor?.container!=null)throw new Error("Выдача контейнера требует подготовки полного дерева предметов.");
     const safeQuantity = Math.max(0.01, roundNumber(toNumber(row.quantity, 1), 2));
     if (allowPersistedItemData && row.itemData && typeof row.itemData === "object") {
       const persistedItemData = sanitizeEmbeddedItemData(row.itemData);

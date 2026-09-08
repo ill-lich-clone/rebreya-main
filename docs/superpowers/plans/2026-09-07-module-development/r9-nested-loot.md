@@ -52,11 +52,11 @@ assert.equal(value.totalValue + 3000, 10000);
 
 **Файлы:** scripts/data/lootgen-generator.js, scripts/data/lootgen-template-catalog.js; новые scripts/data/lootgen-container-rules.js, tests/lootgen-container-budget.test.mjs, tests/lootgen-container-rules.test.mjs.
 
-- [ ] Форма: enableFilledContainers=false у старых templates, filledContainerChance integer0..100, generationDepth default1/max3. itemCount продолжает ограничивать top-level rows, не скрытые children.
+- [x] Форма: enableFilledContainers=false у старых templates, filledContainerChance integer0..100, generationDepth default1/max3. itemCount продолжает ограничивать top-level rows, не скрытые children.
 - [x] Pure resolveLootgenContainerProfile(catalogRow) → {eligible,reason,capacity,weightlessContents}. capacity имеет проверенные тип/единицу/предел из existing dnd5e/storage adapter. Неизвестная жёсткая вместимость → ineligible, не Infinity.
 - [x] Pure canFitLootgenContents({profile,currentContents,candidate}) → {fits,reason}. Учитывать unit conversion, upgrades weight, уже занятый объём/вес и nested container policy. WeightlessContents меняет carried weight по существующему правилу, но не отменяет жёсткую вместимость оболочки.
-- [ ] Один shared generation ledger: {itemBudgetRemaining,coinBudgetRemaining,documentsRemaining,attemptsRemaining}. Coin reserve считается ровно один раз до generation, как раньше. Child получает ограниченный sub-budget, но использует общий document/attempt cap.
-- [ ] Алгоритм одной container candidate:
+- [x] Один shared generation ledger: {itemBudgetRemaining,coinBudgetRemaining,documentsRemaining,attemptsRemaining}. Coin reserve считается ровно один раз до generation, как раньше. Child получает ограниченный sub-budget, но использует общий document/attempt cap.
+- [x] Алгоритм одной container candidate:
   1. проверить известную цену/профиль и цену shell+upgrades через R4;
   2. зарезервировать их из item budget;
   3. выбрать child allowance <= оставшемуся item budget и доступную долю уже существующего coin reserve;
@@ -64,7 +64,7 @@ assert.equal(value.totalValue + 3000, 10000);
   5. вернуть неиспользованные item/coin allowance родителю;
   6. построить canonical snapshot и проверить итог evaluateItemValue;
   7. принять candidate целиком либо вернуть все её reservations.
-- [ ] Не давать child исходный B и не вычислять новый процент coin reserve. При включённых монетах остаток в конце распределяется existing denomination logic; часть внутри уже вычтена из общей currency pool.
+- [x] Не давать child исходный B и не вычислять новый процент coin reserve. При включённых монетах остаток в конце распределяется existing denomination logic; часть внутри уже вычтена из общей currency pool.
 - [x] Конкретный checked budget helper:
 
 ```js
@@ -79,9 +79,9 @@ export function debitLootgenBudget(remaining, amount) {
 
 Разместить helper в lootgen-container-rules.js; проверять multiplication/sum до вызова через R4 safe arithmetic.
 
-- [ ] В result добавить totalValue, currencyValue и unusedValue. spentValue = стоимость всех shells/upgrades/предметов без валюты; currencyValue = внутренняя + внешняя валюта; totalValue = spentValue + currencyValue. Row.totalValue контейнера включает его содержимое и внутренние монеты, поэтому spentValue нельзя получить простым суммированием таких rows: ledger отдельно вычитает вложенную валюту. В примере B10000 spentValue6000, currencyValue4000, totalValue10000. Проверить также B = сумма top-level tree values + top-level currencyValue + unusedValue; unused>=0.
-- [ ] Table tests: B0; ровно shell; shell дороже B; example10000=1000+2000+3000+1000+3000; reserve0/100; монеты выключены; unknown/zero price; глубина1/3; 200 documents с upgrades; exhausted attempts; не помещается вес; weightless contents; две одинаковые оболочки с разными instanceKey.
-- [ ] Fixed random+ID factory воспроизводит полное дерево. Выключенный filled mode поверх выключенных upgrades сохраняет старые random calls/result. Любая невозможная ветка завершается diagnostic/обычной допустимой строкой, без бесконечного поиска.
+- [x] В result добавить totalValue, currencyValue и unusedValue. spentValue = стоимость всех shells/upgrades/предметов без валюты; currencyValue = внутренняя + внешняя валюта; totalValue = spentValue + currencyValue. Row.totalValue контейнера включает его содержимое и внутренние монеты, поэтому spentValue нельзя получить простым суммированием таких rows: ledger отдельно вычитает вложенную валюту. В примере B10000 spentValue6000, currencyValue4000, totalValue10000. Проверить также B = сумма top-level tree values + top-level currencyValue + unusedValue; unused>=0.
+- [x] Table tests: B0; ровно shell; shell дороже B; example10000=1000+2000+3000+1000+3000; reserve0/100; монеты выключены; unknown/zero price; глубина1/3; 200 documents с upgrades; exhausted attempts; не помещается вес; weightless contents; две одинаковые оболочки с разными instanceKey.
+- [x] Fixed random+ID factory воспроизводит полное дерево. Выключенный filled mode поверх выключенных upgrades сохраняет старые random calls/result. Любая невозможная ветка завершается diagnostic/обычной допустимой строкой, без бесконечного поиска.
 
 ## Задача R9.3 — материализация и перенос дерева с upgrade links
 
@@ -134,3 +134,13 @@ Pure profile/fit/debit и physical catalog reader реализованы. В ind
 Native testovyj3/CODEX: 13 gear containers,7 имеют объявленные пределы,6 дают unknown-capacity. Сундук:300 lb/12 ft3; ровно300/12 помещается,301 lb отклоняется, неизвестный volume отклоняется. Источники прочитаны без world writes.
 
 Проверки вместимости: focused `node --test tests/lootgen*.test.mjs tests/item-value.test.mjs tests/storage-container*.test.mjs tests/storage-service.test.mjs tests/storage-socket.test.mjs tests/inventory-mutation-recovery.test.mjs` — **396 passed / 0 failed**. `node --test tests/*.test.mjs` — **3896 passed / 0 failed**; синтаксис **778 JS/MJS и 46 JSON**, ошибок **0**; `git diff --check` чисто. Полная генерация/выдача контейнеров по-прежнему не включена; после решения вопроса объёма нужны общий ledger, representation boundary, canonical materializer/capture и native lifecycle.
+
+## Генерация в общем ledger — 1.4.266
+
+Pure filling подключён к generateLootgenResult. Формы/templates сохраняют три новых поля с disabled defaults. Shared ledger/attempts/documents, nested upgraded children и coins, capacity rollback, depth1..3, unique roots, complete value invariant проверены. Политика объёма: вопрос был направлен пользователю; после отсутствия ответа явно принято предложенное допущение — weight/count обязательны, известный объём проверяется, неизвестный даёт diagnostic; volume-only при неизвестном содержимом исключён. Это рабочее допущение, а не полученное подтверждение.
+
+Native testovyj3/CODEX, модули266, Foundry13.351/dnd5e5.2.5: реальный каталог сундука/молота/усовершенствований →18 child rows с18 upgrades; root tree5003 + external coins4997 =10000, spent4003/currency5997/unused0. Вес монеты0.02 lb прочитан из системы. Diagnostic volume-unverified ожидаем: физический объём предметов не задан. World writes0. Actual Item graph/claim ещё не делались.
+
+R8 default form fingerprint совместим с уже сохранёнными ready/pending операциями, без reroll. До подключения R9.3 raw container descriptor не может уйти в root-only Inventory builder; storage template generation тоже отвергает filled mode. Не включено в UI и выдачу. Следующий этап — расширить canonical StorageContainerItemService planner/receipt и descriptor/materialization boundary, затем Chat/UI и native lifecycle.
+
+Проверки генератора: focused `node --test tests/lootgen*.test.mjs tests/item-value.test.mjs tests/storage-container*.test.mjs tests/storage-service.test.mjs tests/storage-socket.test.mjs tests/inventory-mutation-recovery.test.mjs tests/group-command-dispatch.test.mjs` — **470 passed / 0 failed**. `node --test tests/*.test.mjs` — **3914 passed / 0 failed**; `node --check` **780 JS/MJS**, JSON parse **46**, ошибок **0**; `git diff --check` чисто. Старые cache assertions обновлены вслед за inventory entrypoint до полного прогона. R9.3/R9.4 остаются открыты.

@@ -3051,3 +3051,11 @@ test("prepared coins-only ingress credits once and commits the trusted source wi
     assert.equal(credits,1);assert.equal(commits,1);assert.equal(state.coinsClaimed,true);
   }finally{fixture.restore();}
 });
+test("storage generation rejects filled templates before the container materializer is connected",async()=>{
+  const fixture=installFixture();
+  try{
+    const moduleApi=new RebreyaMainModule();
+    moduleApi.lootgenSourceCatalog.generate=()=>{throw new Error("must not generate a root-only storage row");};
+    await assert.rejects(moduleApi.generateStorageLoot({enableFilledContainers:true}),/пока недоступна/u);
+  }finally{fixture.restore();}
+});

@@ -1,9 +1,9 @@
-import { createLootgenCatalogReader } from "./lootgen-catalog-reader.js?v=1.4.265";
+import { createLootgenCatalogReader } from "./lootgen-catalog-reader.js?v=1.4.266";
 import { loadUpgradeAutomationManifest } from "./upgrade-automation-manifest.js?v=1.4.255";
 import { MODULE_ID, GEAR_COMPENDIUM_NAME, MAGIC_ITEMS_COMPENDIUM_NAME } from "../constants.js";
 import { resolveLootgenItemValue } from "./item-value.js?v=1.4.264";
 import { collectBreakableManagedGearIds } from "./lootgen-durability.js?v=1.4.154-corpse-storage-broken-name";
-import { generateLootgenResult, isLootgenUpgrade, normalizeLootgenForm } from "./lootgen-generator.js?v=1.4.256";
+import { generateLootgenResult, isLootgenUpgrade, normalizeLootgenForm } from "./lootgen-generator.js?v=1.4.266";
 import { buildLootgenTypeFilterOptions, isLootgenTypeAllowed, resolveMagicLootgenTypeLabel } from "./lootgen-type-filters.js?v=1.4.258";
 const MATERIAL_LOOTGEN_TYPE_LABEL="Материал";
 function toNumber(value, fallback = 0) {
@@ -217,23 +217,24 @@ export function buildLootgenMagicPool({form,documents=[]}) {
 
 /** Read-only shared source owner; no Application, writes, random selection or compendium synchronization in load. */
 export class LootgenSourceCatalog {
-  constructor({getModel,getGearIndex=readLootgenGearIndex,getMagicDocuments=readLootgenMagicDocuments,getManifest=loadUpgradeAutomationManifest}={}) {
-    this.getManifest=getManifest;
+  constructor({getModel,getGearIndex=readLootgenGearIndex,getMagicDocuments=readLootgenMagicDocuments,getManifest=loadUpgradeAutomationManifest,getCoinWeight=readLootgenCoinWeight}={}) {
+    this.getManifest=getManifest;this.getCoinWeight=getCoinWeight;
     this.getModel=getModel;this.getGearIndex=getGearIndex;this.getMagicDocuments=getMagicDocuments;
   }
   async load(rawForm) {
     const form=normalizeLootgenForm(rawForm);
     const [model,gearIndex,magicDocuments,manifest]=await Promise.all([
-      this.getModel(),(form.includeGear||form.enableUpgrades)?this.getGearIndex():[],form.includeMagicItems?this.getMagicDocuments():[],form.enableUpgrades?this.getManifest():[]
+      this.getModel(),(form.includeGear||form.enableUpgrades||form.enableFilledContainers)?this.getGearIndex():[],form.includeMagicItems?this.getMagicDocuments():[],form.enableUpgrades?this.getManifest():[]
     ]);
     return {form,model,gearIndex,magicDocuments,manifest,
-      catalogReader:form.enableUpgrades?createLootgenCatalogReader({model,gearIndex,magicDocuments,manifest}):null,
+      coinWeightPerCoinLb:form.enableFilledContainers?this.getCoinWeight():0.02,
+      catalogReader:(form.enableUpgrades||form.enableFilledContainers)?createLootgenCatalogReader({model,gearIndex,magicDocuments,manifest}):null,
       mundanePool:buildLootgenMundanePool({model,form,breakableGearIds:collectBreakableManagedGearIds(gearIndex)}),
       magicPool:form.includeMagicItems?buildLootgenMagicPool({form,documents:magicDocuments}):[]};
   }
   async generate(form, options={}) {
     const snapshot=await this.load(form);
-    return generateLootgenResult({...options,form:snapshot.form,mundanePool:snapshot.mundanePool,magicPool:snapshot.magicPool,manifest:snapshot.manifest,catalogReader:snapshot.catalogReader});
+    return generateLootgenResult({...options,form:snapshot.form,mundanePool:snapshot.mundanePool,magicPool:snapshot.magicPool,manifest:snapshot.manifest,catalogReader:snapshot.catalogReader,coinWeightPerCoinLb:snapshot.coinWeightPerCoinLb});
   }
 }
 
@@ -272,4 +273,17 @@ export async function readLootgenGearIndex() {
 export async function readLootgenMagicDocuments() {
   const pack=globalThis.game?.packs?.get(`world.${MAGIC_ITEMS_COMPENDIUM_NAME}`);
   return pack?pack.getDocuments():[];
+}
+
+/** Match native dnd5e currency weight without reading or changing any Actor. */
+export function readLootgenCoinWeight(){
+  const settings=globalThis.game?.settings;
+  if(!settings?.get)return 0.02;
+  if(settings.get("dnd5e","currencyWeight")===false)return 0;
+  const metric=settings.get("dnd5e","metricWeightUnits")===true;
+  const config=globalThis.CONFIG?.DND5E;
+  const perWeight=config?.encumbrance?.currencyPerWeight?.[metric?"metric":"imperial"]??(metric?100:50);
+  const factor=metric?(config?.weightUnits?.kg?.conversion??2.5)/(config?.weightUnits?.lb?.conversion??1):1;
+  if(!Number.isFinite(perWeight) || perWeight<=0 || !Number.isFinite(factor) || factor<=0)throw new Error("Неизвестен вес монет системы.");
+  return factor/perWeight;
 }

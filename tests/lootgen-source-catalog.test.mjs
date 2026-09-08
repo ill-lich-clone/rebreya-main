@@ -51,3 +51,20 @@ test("gear index requests native weight, volume and capacity for bounded contain
     for(const field of ["system.weight","system.volume","system.capacity","system.properties"])assert.ok(fields.includes(field),field);
   }finally{if(previous===undefined)delete globalThis.game;else globalThis.game=previous;}
 });
+test("filled mode loads physical sources and the system coin weight without enabling upgrades",async()=>{
+  const catalog=new LootgenSourceCatalog({getModel:async()=>({gear:[]}),getGearIndex:async()=>[],getMagicDocuments:async()=>[],
+    getManifest:()=>{throw new Error("upgrades disabled");},getCoinWeight:()=>0});
+  const snapshot=await catalog.load({enableFilledContainers:true,enableUpgrades:false,includeMagicItems:false});
+  assert.ok(snapshot.catalogReader);assert.equal(snapshot.coinWeightPerCoinLb,0);assert.deepEqual(snapshot.manifest,[]);
+});
+
+test("coin weight follows dnd5e currency and metric settings",async()=>{
+  const {readLootgenCoinWeight}=await import("../scripts/data/lootgen-source-catalog.js");
+  const previousGame=globalThis.game,previousConfig=globalThis.CONFIG;
+  try{
+    let enabled=true,metric=false;
+    globalThis.game={settings:{get:(_scope,key)=>key==="currencyWeight"?enabled:metric}};
+    globalThis.CONFIG={DND5E:{encumbrance:{currencyPerWeight:{imperial:50,metric:100}},weightUnits:{lb:{conversion:1},kg:{conversion:2.5}}}};
+    assert.equal(readLootgenCoinWeight(),0.02);metric=true;assert.equal(readLootgenCoinWeight(),0.025);enabled=false;assert.equal(readLootgenCoinWeight(),0);
+  }finally{if(previousGame===undefined)delete globalThis.game;else globalThis.game=previousGame;if(previousConfig===undefined)delete globalThis.CONFIG;else globalThis.CONFIG=previousConfig;}
+});

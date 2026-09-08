@@ -1,4 +1,4 @@
-import { generateLootgenResult } from "../data/lootgen-generator.js?v=1.4.256";
+import { generateLootgenResult } from "../data/lootgen-generator.js?v=1.4.266";
 import { normalizeLootgenItemDescriptor } from "../data/lootgen-item-descriptor.js?v=1.4.256";
 import { buildCompositeItemGraph } from "../data/composite-item-graph.js?v=1.4.259";
 import { buildLootgenPreparedItem } from "../data/lootgen-prepared-item.js?v=1.4.257";
@@ -62,7 +62,7 @@ export async function buildLootgenGeneratedState(form,{operationId,lootId,author
     allocated.add(id);return id;
   };
   const generated=generateLootgenResult({form:snapshot.form,mundanePool:snapshot.mundanePool,magicPool:snapshot.magicPool,
-    manifest:snapshot.manifest,catalogReader:snapshot.catalogReader,random,createInstanceKey:allocate,batchId:operationId,generatedAt:now()});
+    manifest:snapshot.manifest,catalogReader:snapshot.catalogReader,coinWeightPerCoinLb:snapshot.coinWeightPerCoinLb,random,createInstanceKey:allocate,batchId:operationId,generatedAt:now()});
   const rows=[];
   for(const [rowIndex,row] of generated.rows.entries()) {
     const descriptor=normalizeLootgenItemDescriptor(row.descriptor??{version:2,instanceKey:allocate(),sourceType:row.sourceType,

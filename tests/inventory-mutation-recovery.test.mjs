@@ -27,6 +27,11 @@ function clone(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));
 }
 
+test("an unmaterialized generated container cannot silently become a root-only loot grant",async()=>{
+  await assert.rejects(InventoryService.prototype.buildLootgenItemData.call({},
+    {sourceType:"gear",sourceId:"chest",quantity:1,descriptor:{container:{version:1}}}),/полного дерева/u);
+});
+
 function deepFreeze(value) {
   if (!value || typeof value !== "object" || Object.isFrozen(value)) {
     return value;

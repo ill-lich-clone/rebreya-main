@@ -61,3 +61,12 @@ test("budget debit accepts safe exact values and never borrows another budget",(
   assert.equal(debitLootgenBudget(Number.MAX_SAFE_INTEGER,Number.MAX_SAFE_INTEGER),0);
   for(const [remaining,amount] of [[0,1],[1,-1],[NaN,0],[1.1,1],[1,Infinity],[Number.MAX_SAFE_INTEGER+1,0]])assert.throws(()=>debitLootgenBudget(remaining,amount),RangeError);
 });
+
+test("known-only volume policy keeps weight/count limits and rejects volume-only unknown contents",()=>{
+  const profile=resolveLootgenContainerProfile(container({weight:weight(10),volume:{value:1,units:"ft3"}}));
+  assert.equal(canFitLootgenContents({profile,candidate:item(2),allowUnknownVolume:true}).fits,true);
+  assert.equal(canFitLootgenContents({profile,candidate:item(11),allowUnknownVolume:true}).reason,"weight-capacity");
+  const volumeOnly=resolveLootgenContainerProfile(container({volume:{value:1,units:"ft3"}}));
+  assert.equal(canFitLootgenContents({profile:volumeOnly,candidate:item(1),allowUnknownVolume:true}).fits,false);
+  assert.equal(canFitLootgenContents({profile,candidate:{...item(1),volume:{value:2,units:"ft3"}},allowUnknownVolume:true}).fits,false);
+});

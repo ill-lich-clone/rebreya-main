@@ -1,3 +1,4 @@
+import { generateLootgenContainerResult } from "./lootgen-container-generation.js?v=1.4.266";
 import { rollLootgenBrokenState } from "./lootgen-durability.js?v=1.4.154-corpse-storage-broken-name";
 import { rollLootgenMultipleAppearance } from "./lootgen-multiple-appearance.js?v=1.4.128-lootgen-multiplicity";
 import { chooseLootgenUpgradeVariant } from "./lootgen-upgrade-variants.js?v=1.4.256";
@@ -62,6 +63,9 @@ export function normalizeLootgenForm(raw = {}) {
     includeGear: source.includeGear !== false,
     includeMagicItems: source.includeMagicItems === true,
     includeCoins: source.includeCoins !== false,
+    enableFilledContainers: source.enableFilledContainers === true,
+    filledContainerChance: clampInteger(source.filledContainerChance,0,100,0),
+    generationDepth: clampInteger(source.generationDepth,1,3,1),
     enableUpgrades: source.enableUpgrades === true,
     upgradeChance: clampInteger(source.upgradeChance, 0, 100, 0),
     maxUpgradesPerItem: clampInteger(source.maxUpgradesPerItem, 1, 3, 1),
@@ -239,12 +243,16 @@ export function generateLootgenResult({
   random = Math.random,
   enableUpgrades = false, upgradeChance = 0, maxUpgradesPerItem = 1, upgradeTypes = [], upgradeRanks = [],
   manifest = [], catalogReader = null,
+  enableFilledContainers=false,filledContainerChance=0,generationDepth=1,coinWeightPerCoinLb=0.02,
   createInstanceKey = () => globalThis.crypto.randomUUID()
 } = {}) {
   if (typeof random !== "function") {
     throw new TypeError("random must be a function");
   }
 
+  const explicitBudget=rawForm?rawForm.budgetValue:budgetValue;
+  if((rawForm?.enableFilledContainers===true || (!rawForm && enableFilledContainers)) && explicitBudget!=null
+    && (!Number.isSafeInteger(Number(explicitBudget)) || Number(explicitBudget)<0))throw new Error("Небезопасный бюджет лута.");
   const form = normalizeLootgenForm(rawForm ?? {
     rankMin,
     rankMax,
@@ -255,18 +263,22 @@ export function generateLootgenResult({
     includeMagicItems,
     magicPercent,
     includeCoins,
-    brokenEquipmentChance, enableUpgrades, upgradeChance, maxUpgradesPerItem, upgradeTypes, upgradeRanks
+    brokenEquipmentChance, enableUpgrades, upgradeChance, maxUpgradesPerItem, upgradeTypes, upgradeRanks, enableFilledContainers,filledContainerChance,generationDepth
   });
-  if (form.enableUpgrades && !Number.isSafeInteger(form.budgetValue)) throw new Error("Небезопасный бюджет лута.");
-  const priced = rows => !form.enableUpgrades ? rows : rows.flatMap(row => {
+  if ((form.enableUpgrades || form.enableFilledContainers) && !Number.isSafeInteger(form.budgetValue)) throw new Error("Небезопасный бюджет лута.");
+  const priceDiagnostics=[];
+  const priced = rows => !(form.enableUpgrades || form.enableFilledContainers) ? rows : rows.flatMap(row => {
     try {
       const price = catalogReader?.resolveValueComponent?.(row);
-      return price?.priceKnown === true && Number.isSafeInteger(price.unitValue) && price.unitValue >= 0 ? [{...row,value:price.unitValue}] : [];
-    } catch { return []; }
+      if(price?.priceKnown === true && Number.isSafeInteger(price.unitValue) && price.unitValue >= 0)return [{...row,value:price.unitValue}];
+    } catch {}
+    if(form.enableFilledContainers && priceDiagnostics.length<200)priceDiagnostics.push({reason:"unknown-price",sourceId:row.sourceId});
+    return [];
   });
   const safeMundanePool = priced((Array.isArray(mundanePool) ? mundanePool : [])
     .filter(row => !lootgenCoinDenomination(row) && !isLootgenUpgrade(row)));
   const safeMagicPool = priced((Array.isArray(magicPool) ? magicPool : []).filter(row => !isLootgenUpgrade(row)));
+  if(form.enableFilledContainers)return generateLootgenContainerResult({form,mundanePool:safeMundanePool,magicPool:safeMagicPool,catalogReader,manifest,random,createInstanceKey,batchId:String(batchId??" ").trim(),generatedAt,coinWeightPerCoinLb,priceDiagnostics,pick:weightedRandomPick,makeCoins:randomCoinsFromValue});
   if (!safeMundanePool.length && !safeMagicPool.length
     && !(form.includeCoins && Array.isArray(mundanePool) && mundanePool.some(lootgenCoinDenomination))) {
     throw new Error("Для выбранных параметров нет доступных предметов.");

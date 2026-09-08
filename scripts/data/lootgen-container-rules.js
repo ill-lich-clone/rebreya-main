@@ -37,12 +37,12 @@ export function resolveLootgenContainerProfile(catalogRow){
 function addMeasurement(a,b){const total=a+b;if(!numeric(total))fail("measurement-overflow");return total;}
 
 /** A footprint is a one-level physical projection, never a persisted second container tree. */
-function readFootprint(item,{needWeight,needVolume}){
+export function readLootgenPhysicalFootprint(item,{needWeight=true,needVolume=false,allowUnknownVolume=false}={}){
   if(!object(item) || !Number.isSafeInteger(item.quantity) || item.quantity<1)fail("invalid-quantity");
   if(item.isContainer===true && item.quantity!==1)fail("invalid-quantity");
   const upgrades=item.upgrades??[];
   if(!Array.isArray(upgrades) || upgrades.length>3 || (upgrades.length && item.quantity!==1))fail("invalid-upgrades");
-  let weightLb=0,volumeFt3=0;
+  let weightLb=0,volumeFt3=0,volumeKnown=true;
   if(needWeight){
     weightLb=measure(item.weight,WEIGHT_UNITS,"weight");
     for(const upgrade of upgrades)weightLb=addMeasurement(weightLb,measure(upgrade?.weight,WEIGHT_UNITS,"weight"));
@@ -53,15 +53,17 @@ function readFootprint(item,{needWeight,needVolume}){
     weightLb*=item.quantity;if(!numeric(weightLb))fail("measurement-overflow");
   }
   if(needVolume){
-    volumeFt3=measure(item.volume,VOLUME_UNITS,"volume");
-    for(const upgrade of upgrades)volumeFt3=addMeasurement(volumeFt3,measure(upgrade?.volume,VOLUME_UNITS,"volume"));
+    const readVolume=value=>{try{return measure(value,VOLUME_UNITS,"volume");}catch(error){if(!allowUnknownVolume || error.reason!=="unknown-volume")throw error;volumeKnown=false;return 0;}};
+    volumeFt3=readVolume(item.volume);
+    for(const upgrade of upgrades)volumeFt3=addMeasurement(volumeFt3,readVolume(upgrade?.volume));
     volumeFt3*=item.quantity;if(!numeric(volumeFt3))fail("measurement-overflow");
   }
-  return {count:item.quantity,weightLb,volumeFt3};
+  if(item.currency===true && (item.quantity!==1 || item.isContainer || upgrades.length))fail("invalid-currency-footprint");
+  return {count:item.currency===true?0:item.quantity,weightLb,volumeFt3,volumeKnown};
 }
 
 /** Check all declared limits, including those of a weightless container. No source mutation. */
-export function canFitLootgenContents({profile,currentContents=[],candidate}={}){
+export function canFitLootgenContents({profile,currentContents=[],candidate,allowUnknownVolume=false}={}){
   try{
     if(profile?.eligible!==true || !object(profile.capacity))fail(profile?.reason??"unknown-capacity");
     if(!Array.isArray(currentContents))fail("invalid-contents");
@@ -70,7 +72,8 @@ export function canFitLootgenContents({profile,currentContents=[],candidate}={})
     for(const key of ["count","weightLb","volumeFt3"])if(capacity[key]!==null && !numeric(capacity[key]))fail("invalid-capacity");
     if(capacity.count!==null && !Number.isSafeInteger(capacity.count))fail("invalid-capacity");
     for(const entry of [...currentContents,candidate]){
-      const footprint=readFootprint(entry,{needWeight:capacity.weightLb!==null,needVolume:capacity.volumeFt3!==null});
+      const footprint=readLootgenPhysicalFootprint(entry,{needWeight:capacity.weightLb!==null,needVolume:capacity.volumeFt3!==null,
+        allowUnknownVolume:allowUnknownVolume && (capacity.weightLb!==null || capacity.count!==null)});
       for(const key of Object.keys(used))used[key]=addMeasurement(used[key],footprint[key]);
     }
     for(const [key,reason] of [["count","count-capacity"],["weightLb","weight-capacity"],["volumeFt3","volume-capacity"]]){

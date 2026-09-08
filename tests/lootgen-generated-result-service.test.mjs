@@ -3,9 +3,22 @@ import assert from "node:assert/strict";
 import { DurableMutationJournal } from "../scripts/application/durable-mutation-journal.js";
 import { LootgenGeneratedResultService, isValidPrepareLootgenPayload } from "../scripts/application/lootgen-generated-result-service.js";
 import { normalizeLootgenForm } from "../scripts/data/lootgen-generator.js";
+import { itemInstanceFingerprint } from "../scripts/application/item-instance-workflow.js";
+import { createStableGearDocumentId } from "../scripts/data/gear-document-ids.js";
 
 const request={operationId:"prepare-one",form:normalizeLootgenForm({enableUpgrades:true})};
 const context={requesterId:"requester",authorId:"gm"};
+
+for(const pending of [false,true])test(`R9 defaults preserve a legacy R8 preparation fingerprint (${pending?"pending":"ready"})`,async()=>{
+  const f=fixture(),form=structuredClone(request.form);for(const key of ["enableFilledContainers","filledContainerChance","generationDepth"])delete form[key];
+  const fingerprint=itemInstanceFingerprint({form,requesterId:context.requesterId});
+  const messageId=createStableGearDocumentId(`lootgen-message:${request.operationId}`),lootId=createStableGearDocumentId(`lootgen-result:${request.operationId}`);
+  const state={form,resultVersion:2,prepareOperationId:request.operationId,prepareFingerprint:fingerprint,lootId,generationReady:!pending,rows:[],coins:{totalCopper:0}};
+  if(pending)await f.journal.start({id:`lootgen-prepare:${request.operationId}`,kind:"lootgen-generated-result",fingerprint,messageId,lootId,phase:"prepared",preparedState:state});
+  else f.messages.set(messageId,{id:messageId,trusted:true,state});
+  const result=await f.service.prepare(request,context);assert.equal(result.lootId,lootId);assert.equal(result.state.generationReady,true);assert.equal(f.calls.generate,0);
+  await assert.rejects(f.service.prepare({...request,form:{...request.form,filledContainerChance:50}},context),error=>error.code==="lootgen-prepare-conflict");
+});
 function fixture({failCreate=false,loseCreateAck=false,failActivate=false,loseJournalAck=false}={}) {
   let state={version:1,records:[]};const messages=new Map(),calls={generate:0,create:0,activate:0};
   const journal=new DurableMutationJournal({readState:async()=>structuredClone(state),writeState:async(value)=>{state=structuredClone(value);if(loseJournalAck){loseJournalAck=false;throw new Error("journal ack lost");}}});

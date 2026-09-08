@@ -1,9 +1,9 @@
-import { LootgenGeneratedResultService, LOOTGEN_PREPARE_RESULT_COMMAND, isValidPrepareLootgenPayload } from "./application/lootgen-generated-result-service.js?v=1.4.259";
-import { buildLootgenGeneratedState, assertLootgenCatalogCurrent } from "./application/lootgen-generated-state.js?v=1.4.264";
-import { normalizeLootgenForm } from "./data/lootgen-generator.js?v=1.4.256";
+import { LootgenGeneratedResultService, LOOTGEN_PREPARE_RESULT_COMMAND, isValidPrepareLootgenPayload } from "./application/lootgen-generated-result-service.js?v=1.4.266";
+import { buildLootgenGeneratedState, assertLootgenCatalogCurrent } from "./application/lootgen-generated-state.js?v=1.4.266";
+import { normalizeLootgenForm } from "./data/lootgen-generator.js?v=1.4.266";
 import { storageCoinRowDenomination } from "./data/storage-service.js";
 // @rebreya-role canonical-composition-root
-import { LootgenSourceCatalog } from "./data/lootgen-source-catalog.js?v=1.4.265";
+import { LootgenSourceCatalog } from "./data/lootgen-source-catalog.js?v=1.4.266";
 import { MODULE_ID, MODULE_TITLE, SETTINGS_KEYS } from "./constants.js";
 import { escapeFoundryHtml } from "./shared/foundry-values.js";
 import { MaterialsCompendiumService } from "./data/materials-compendium.js";
@@ -80,7 +80,7 @@ import {
   SOCKET_EVENT_INVENTORY_SOURCE_DEPLETION_RESULT,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_REQUEST,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_RESULT
-} from "./data/inventory-service.js?v=1.4.261";
+} from "./data/inventory-service.js?v=1.4.266";
 import {
   InventoryIngressRuleCompilerCache,
   normalizeInventoryIngressRule
@@ -6763,7 +6763,7 @@ export class RebreyaMainModule {
     if (!isActiveGmClient(globalThis.game)) {
       throw new Error("Содержимое хранилища может генерировать только активный мастер.");
     }
-    if (form.enableUpgrades) throw new Error("Генерация улучшенных предметов внутри хранилищ пока недоступна.");
+    if (form.enableUpgrades || form.enableFilledContainers) throw new Error("Генерация улучшенных предметов и заполненных контейнеров внутри хранилищ пока недоступна.");
     const generated = await this.lootgenSourceCatalog.generate(form, {batchId:createSocketRequestId("loot"),generatedAt:new Date().toISOString()});
     const rows = [];
     for (const [index, row] of (generated.rows ?? []).entries()) {
