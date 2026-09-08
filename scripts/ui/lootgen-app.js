@@ -14,7 +14,7 @@ import {
   isLootgenTypeAllowed,
   resolveMagicLootgenTypeLabel
 } from "./lootgen-type-filters.js";
-import { generateLootgenResult, isLootgenUpgrade, normalizeLootgenForm } from "../data/lootgen-generator.js?v=1.4.230-no-upgrades";
+import { generateLootgenResult, isLootgenUpgrade, normalizeLootgenForm } from "../data/lootgen-generator.js?v=1.4.256-composed";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 

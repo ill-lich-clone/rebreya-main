@@ -279,6 +279,8 @@ Definition of Done: код, тесты, `README.md` при изменении п
 
 ### 13. Lootgen, шаблоны и выдача из ChatMessage
 
+- **R8 composition:** [паспорт составного лута](lootgen-composite-function-passport.md) — strict v2 descriptor, bounded chooseLootgenUpgradeVariant, обновлённые generateLootgenResult/normalizeLootgenForm/aggregateRows и detached buildCompositeItemGraph. В 1.4.256 готовы pure contracts; authoritative generated state/UI/graph ingress ещё не подключены.
+
 - **Исключение усовершенствований:** pure isLootgenUpgrade(row) в scripts/data/lootgen-generator.js распознаёт непустой upgrade.type либо точную категорию equipmentType/typeLabel (Усовершенствование, Зачарование, Проклятье, Проклятие), без поиска по имени. generateLootgenResult() исключает такие строки из обоих пулов до выбора. LootgenApp.#buildGearTypeOptions() и #buildMundanePool() используют тот же predicate: старые шаблоны не возвращают исключённые категории. Материалы-ресурсы и готовые магические предметы сохраняются. Проверки: tests/lootgen-generator.test.mjs, tests/lootgen-app-context.test.mjs.
 
 - **Номиналы Lootgen:** private `lootgenCoinDenomination(row)` распознаёт только четыре canonical `sourceType:"gear"` coin IDs. `generateLootgenResult()` исключает их из лотереи обычных предметов до отсчёта itemCount; монеты формируются отдельно из резерва и остатка бюджета и не занимают предметные строки. Если исходный пул содержит только монеты и includeCoins:true, весь бюджет становится валютой. Названия обычных предметов не используются для распознавания. Проверки: `lootgen-generator.test.mjs`.

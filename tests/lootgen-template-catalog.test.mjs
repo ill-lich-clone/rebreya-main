@@ -48,6 +48,11 @@ test("catalog saves a named normalized Lootgen template", async () => {
     includeGear: true,
     includeMagicItems: false,
     includeCoins: true,
+    enableUpgrades: false,
+    upgradeChance: 0,
+    maxUpgradesPerItem: 1,
+    upgradeTypes: [],
+    upgradeRanks: [],
     gearTypeFilters: {},
     magicTypeFilters: {}
   });

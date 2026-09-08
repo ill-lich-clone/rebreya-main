@@ -199,7 +199,7 @@ import {
 import { StorageTriggerPromptBroker } from "./infrastructure/foundry/storage-trigger-prompt-broker.js";
 import { UiRefreshCoordinator } from "./infrastructure/ui/ui-refresh-coordinator.js";
 import { GlobalEventsService } from "./data/global-events-service.js";
-import { LootgenTemplateCatalog } from "./data/lootgen-template-catalog.js?v=1.4.129-lootgen-row-cap";
+import { LootgenTemplateCatalog } from "./data/lootgen-template-catalog.js?v=1.4.256-composed";
 import {
   StorageService,
   isStorageActor,

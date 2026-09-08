@@ -124,3 +124,13 @@ assert.equal(child.system.container, graph.rootItemId);
 - [ ] Stage только перечисленных файлов текущего этапа и обязательных manifest/docs; осмысленный commit; git push -u origin lich_branch. Проверить чистую рабочую копию и HEAD...origin/lich_branch = 0/0. Не включать чужие изменения.
 
 **Предлагаемые commits:** feat: generate budgeted upgraded loot variants; feat: claim composed loot through trusted item graphs.
+
+## Первая часть — 1.4.256
+
+Реализованы strict/legacy descriptor, composition aggregation, finite upgrade variant с полной ценой и общим пределом2000 попыток, отдельные IDs одинаковых hosts, safe budget/price, новые defaults формы и detached graph builder. Дополнительные зависимости builder: trusted manifest для повторной проверки всего состава и actorId на стадии подготовки выдачи. Reader получает describeUpgradeHost(hostRow); выбор типа поглощения использует готовый R7 validator. Контракты — [паспорт составного лута](../../../lootgen-composite-function-passport.md).
+
+Проверены exact1500/short1499, два одинаковых base с отдельными composition, capacity1, disabled/zero chance, type/rank/availability filters, unknown price, unsafe budget, duplicate identities и legacy result/random parity. Graph tests проверяют новые IDs и forward/reverse links без записей. Последний focused до документации: `node --test tests/lootgen*.test.mjs tests/composite-item-graph.test.mjs tests/module-manifest.test.mjs` — **111 passed / 0 failed**.
+
+**Ещё не сделано:** trusted GM generation/Chat state, catalog reader на реальных источниках, UI опций и preview, graph ingress/journal recovery, claim/source receipts, native приёмка. R8 не завершён; генерация составных строк пока не включается из пользовательского UI.
+
+Проверка первой части: `node --test tests/*.test.mjs` — **3810 passed / 0 failed**; синтаксис **762 JS/MJS и 46 JSON, 0 ошибок**; `git diff --check` чисто. Новое включённое поведение проверено pure/focused-тестами, без заявления native UI/claim готовности.

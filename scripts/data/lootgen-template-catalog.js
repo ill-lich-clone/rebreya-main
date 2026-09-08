@@ -1,4 +1,4 @@
-import { normalizeLootgenForm } from "./lootgen-generator.js?v=1.4.225-physical-coins";
+import { normalizeLootgenForm } from "./lootgen-generator.js?v=1.4.256-composed";
 
 const CATALOG_VERSION = 2;
 

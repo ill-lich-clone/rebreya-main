@@ -74,6 +74,11 @@ test("lootgen generator normalizes a reusable form snapshot", () => {
     includeGear: false,
     includeMagicItems: true,
     includeCoins: true,
+    enableUpgrades: false,
+    upgradeChance: 0,
+    maxUpgradesPerItem: 1,
+    upgradeTypes: [],
+    upgradeRanks: [],
     gearTypeFilters: { weapon: true, invalid: false },
     magicTypeFilters: { wand: false }
   });
