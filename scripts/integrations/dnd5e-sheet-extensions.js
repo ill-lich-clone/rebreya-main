@@ -13,6 +13,7 @@ import {
 } from "../constants.js";
 import { registerCraftsmanGadgetItemType } from "./craftsman-gadget-item-type.js";
 import { bringAppToFront } from "../ui.js";
+import { bindAnchoredTooltips } from "../ui/anchored-overlay.js?v=1.4.247-anchored-overlays";
 import { createStableGearDocumentId } from "../data/gear-document-ids.js";
 import { buildRebreyaArtisanToolConfig } from "../data/rebreya-tool-proficiencies.js";
 import { isJournalRecordItem } from "../data/journal-record-item.js?v=1.4.217-journal-record-items";
@@ -3698,6 +3699,16 @@ function bindHeroDollDelegatedListeners(root, app, moduleApi, listenerOptions = 
   }, listenerOptions);
 }
 
+export function bindHeroDollTooltips(root, panel, listenerOptions = {}) {
+  const slots = panel.querySelectorAll("[data-hero-doll-slot='true']");
+  // Foundry may sanitize an HTML-like name out of the template's ARIA attribute.
+  for (const slot of slots) slot.setAttribute("aria-label", slot.dataset.rmTooltip ?? "");
+  return bindAnchoredTooltips(root, slots, {
+    signal: listenerOptions.signal,
+    getText: target => [target.dataset.rmTooltip, target.dataset.tooltipMeta].filter(Boolean).join("\n")
+  });
+}
+
 function bindHeroDollPanel(root, app, moduleApi) {
   const panel = root.querySelector(`[data-application-part='${HERO_DOLL_TAB_ID}'] .rm-hero-doll-tab`)
     ?? root.querySelector(`.rm-hero-doll-tab[data-tab='${HERO_DOLL_TAB_ID}']`);
@@ -3730,6 +3741,7 @@ function bindHeroDollPanel(root, app, moduleApi) {
   heroDollRootAbortControllers.set(root, rootAbortController);
   const rootListenerOptions = { signal: rootAbortController.signal };
   bindHeroDollDelegatedListeners(root, app, moduleApi, rootListenerOptions);
+  bindHeroDollTooltips(root, panel, rootListenerOptions);
 }
 
 async function handleCharacterDowntimeSubmit(panel, app, moduleApi) {

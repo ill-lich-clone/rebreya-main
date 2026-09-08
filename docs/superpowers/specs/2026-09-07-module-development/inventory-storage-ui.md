@@ -57,7 +57,7 @@ Focused: tests/inventory-app-context.test.mjs; tests/inventory-folder-tree.test.
 
 Наблюдаемый результат: содержимое и все действия дополнительного окна доступны даже у нижней строки высокого хранилища.
 
-Предлагается небольшой presentation-only helper scripts/ui/anchored-overlay.js (новый): измеряет anchor.getBoundingClientRect(), сначала ставит окно снизу, при нехватке места переворачивает вверх, затем ограничивает позицию viewport с отступом 8 CSS px. Высота не превышает доступный viewport; прокрутка находится внутри popover. Он не знает Item/Actor/state.
+Реализован в R1 (1.4.247) presentation-only helper scripts/ui/anchored-overlay.js: измеряет anchor.getBoundingClientRect(), сначала ставит окно снизу, при нехватке места переворачивает вверх, затем ограничивает позицию viewport с отступом 8 CSS px. Высота не превышает доступный viewport; прокрутка находится внутри popover. Он не знает Item/Actor/state.
 
 StorageApp остаётся владельцем выбранной строки и действий. Один portal на приложение, слой выше текущего окна; DOM anchor после rerender ищется по stable row ID. Scroll любого предка, resize, перемещение/изменение размеров ApplicationV2 обновляют положение. Закрытие приложения/удаление anchor удаляют portal, observers, listeners. Escape закрывает popover и возвращает фокус. Tooltip не открывает второе конкурирующее меню.
 

@@ -318,7 +318,7 @@ import {
   extendDnd5eItemTypes,
   registerDnd5eSheetExtensions,
   registerRebreyaWeaponBaseItemsFromGearPack
-} from "./integrations/dnd5e-sheet-extensions.js?v=1.4.221-journal-readonly-dialog";
+} from "./integrations/dnd5e-sheet-extensions.js?v=1.4.247-hero-overlays";
 import { registerHeldShieldArmorClassPatch } from "./integrations/held-shield-ac.js?v=1.4.96";
 import { registerTravelMapHooks } from "./integrations/travel-map-hooks.js?v=1.4.141-auraeffects-inactive-scene";
 import {

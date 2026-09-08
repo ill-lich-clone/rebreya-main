@@ -63,8 +63,8 @@ test("module manifest loads an unpinned canonical entrypoint for page-refresh up
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const [entrypoint] = manifest.esmodules;
 
-  assert.equal(manifest.version, "1.4.246");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.246.js"]);
+  assert.equal(manifest.version, "1.4.247");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.247.js"]);
   assert.doesNotMatch(entrypoint, /[?#]/u);
 
   const entrypointSource = await readFile(new URL(entrypoint, manifestUrl), "utf8");
@@ -138,7 +138,7 @@ test("production registers the hidden GiantTribe advancement before race compend
   );
   assert.match(
     entrypointSource,
-    /dnd5e-sheet-extensions\.js\?v=1\.4\.221-journal-readonly-dialog/u
+    /dnd5e-sheet-extensions\.js\?v=1\.4\.247-hero-overlays/u
   );
   assert.match(
     entrypointSource,
@@ -227,7 +227,7 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
 
   assert.match(
     canonicalSource,
-    /integrations\/dnd5e-sheet-extensions\.js\?v=1\.4\.221-journal-readonly-dialog/u
+    /integrations\/dnd5e-sheet-extensions\.js\?v=1\.4\.247-hero-overlays/u
   );
 
   for (const importPath of [
@@ -319,7 +319,7 @@ test("module keeps recent published entrypoint URLs as canonical compatibility f
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
 
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.246.js"]);
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.247.js"]);
 
   for (const fileName of ["main-1.4.98.js", "main-1.4.99.js", "main-1.4.100.js"]) {
     const forwarderSource = await readFile(new URL(`../scripts/${fileName}`, import.meta.url), "utf8");
@@ -628,7 +628,7 @@ test("held item integrations preserve their released cache bust", async () => {
 
   assert.match(
     entrypointSource,
-    /dnd5e-sheet-extensions\.js\?v=1\.4\.221-journal-readonly-dialog/u,
+    /dnd5e-sheet-extensions\.js\?v=1\.4\.247-hero-overlays/u,
   );
   assert.match(
     entrypointSource,

@@ -15,6 +15,7 @@
       <div class="rm-hero-doll-grid">
         {{#each heroDoll.slots}}
           <div class="rm-hero-doll-slot rm-hero-doll-slot--{{ area }}">
+            <span class="rm-hero-doll-slot__label">{{ label }}</span>
             <button
               type="button"
               class="rm-hero-doll-slot__surface unbutton always-interactive {{#if occupied}}is-occupied{{/if}}"
@@ -22,22 +23,15 @@
               data-action="{{#if occupied}}open-slot-item{{else}}slot-drop{{/if}}"
               data-slot-id="{{ id }}"
               {{#if occupied}}data-item-id="{{ itemId }}"{{/if}}
-              title="{{ title }}"
+              aria-label="{{ title }}"
+              data-rm-tooltip="{{ title }}"
+              data-tooltip-meta="{{ itemMeta }}"
             >
-              <span class="rm-hero-doll-slot__label">{{ label }}</span>
-
               {{#if occupied}}
-                <span class="rm-hero-doll-slot__content">
-                  <img class="rm-hero-doll-slot__image" src="{{ itemImg }}" alt="{{ itemName }}">
-                  <span class="rm-hero-doll-slot__copy">
-                    <strong>{{ itemName }}</strong>
-                    {{#if itemMeta}}<small>{{ itemMeta }}</small>{{/if}}
-                  </span>
-                </span>
+                <img class="rm-hero-doll-slot__image" src="{{ itemImg }}" alt="">
               {{else}}
                 <span class="rm-hero-doll-slot__empty">
-                  <i class="fa-solid fa-plus"></i>
-                  <small>пусто</small>
+                  <i class="fa-solid fa-plus" aria-hidden="true"></i>
                 </span>
               {{/if}}
             </button>

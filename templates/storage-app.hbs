@@ -88,7 +88,7 @@
         <article class="rm-storage-item" {{#if canDrag}}draggable="true" data-storage-row-drag{{/if}} data-storage-row data-row-id="{{rowId}}">
           <button
             type="button"
-            class="rm-storage-item__icon rm-tooltip-anchor"
+            class="rm-storage-item__icon rm-storage-tooltip-anchor"
             data-action="{{primaryAction}}"
             data-rm-tooltip="{{name}}"
             data-row-id="{{rowId}}"
@@ -113,9 +113,9 @@
     <div
       class="rm-storage-popover-layer"
       data-storage-popover-layer
-      style="--rm-storage-popover-anchor-column: {{activePopover.anchorColumn}}; --rm-storage-popover-anchor-row: {{activePopover.anchorRow}};"
+      hidden
     >
-      <div class="rm-storage-item__popover rm-storage-item__popover--{{activePopover.popoverAlignment}}" data-storage-popover data-anchor-row-id="{{activePopover.anchorRowId}}">
+      <div class="rm-storage-item__popover" data-storage-popover data-anchor-row-id="{{activePopover.anchorRowId}}">
         <button type="button" class="rm-storage-item__popover-close" data-action="storage-close-popover" aria-label="Закрыть">
           <i class="fa-solid fa-xmark" aria-hidden="true"></i>
         </button>

@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { MODULE_ID } from "../scripts/constants.js";
+import { createOverlayDom } from "./helpers/overlay-dom.mjs";
 
 class FakeApplicationV2 {
   constructor(options = {}) {
@@ -959,17 +960,15 @@ test("item cells keep click actions separate from article dragging and use no na
   const css = await readFile(new URL("../styles/main.css", import.meta.url), "utf8");
 
   assert.match(template, /<article[^>]*draggable="true"[^>]*data-storage-row-drag/u);
-  assert.match(template, /class="rm-storage-item__icon rm-tooltip-anchor"[^>]*data-action="\{\{primaryAction\}\}"/u);
-  assert.match(template, /class="rm-storage-item__icon rm-tooltip-anchor"[^>]*data-rm-tooltip="\{\{name\}\}"/u);
+  assert.match(template, /class="rm-storage-item__icon rm-storage-tooltip-anchor"[^>]*data-action="\{\{primaryAction\}\}"/u);
+  assert.match(template, /class="rm-storage-item__icon rm-storage-tooltip-anchor"[^>]*data-rm-tooltip="\{\{name\}\}"/u);
   assert.match(template, /data-storage-popover/u);
   assert.doesNotMatch(template, /class="[^"]*rm-storage-item__icon[^"]*"[^>]*title=/u);
   assert.match(template, /aria-label="[^"]*\{\{name\}\}"/u);
-  assert.match(css, /\.rm-storage-item__icon\.rm-tooltip-anchor\s*\{[^}]*overflow:\s*visible/isu);
-  assert.match(css, /\.rm-storage-item__icon\.rm-tooltip-anchor\s*>\s*img\s*\{[^}]*border-radius:\s*inherit/isu);
-  assert.match(
-    css,
-    /\.rm-storage-item__icon\.rm-tooltip-anchor\[aria-expanded="true"\]\[data-rm-tooltip\]::before,[\s\S]*?::after\s*\{[^}]*opacity:\s*0[^}]*visibility:\s*hidden/isu
-  );
+  assert.match(css, /\.rm-storage-item__icon\.rm-storage-tooltip-anchor\s*\{[^}]*overflow:\s*visible/isu);
+  assert.match(css, /\.rm-storage-item__icon\.rm-storage-tooltip-anchor\s*>\s*img\s*\{[^}]*border-radius:\s*inherit/isu);
+  assert.doesNotMatch(template, /class="[^"]*\brm-tooltip-anchor\b/u);
+  assert.match(css, /\.rm-anchored-tooltip\s*\{[^}]*white-space:\s*pre-wrap/isu);
 });
 
 test("container cells open the nested storage directly while ordinary items open their popover", async () => {
@@ -1210,7 +1209,48 @@ test("PKM opens the same item popover and suppresses the native menu", async () 
   assert.equal(stopped, 1);
 });
 
-test("storage popover placement is derived from the selected grid cell", async () => {
+test("storage portal retains canonical actions and resolves the replacement row after rerender", async () => {
+  const dom = createOverlayDom(FakeElement);
+  const { owner: root, anchor, content } = dom.fixture();
+  const { app, quantityCalls, brokenCalls, claimCalls } = createApp();
+  let currentAnchor = anchor;
+  let currentContent = content;
+  currentAnchor.dataset.rowId = 'row-1';
+  root.querySelector = selector => selector === '[data-storage-popover]' ? currentContent : null;
+  root.querySelectorAll = () => [currentAnchor];
+  app.element = root;
+  app.activeRowId = 'row-1';
+  await app._prepareContext();
+  await app._onRender({}, {});
+  assert.ok(app.rowPopover?.element?.contains(content));
+  const input = { dataset: {rowId:'row-1'}, value:'4', checked:true, matches:s=>s==='[data-storage-quantity]' };
+  await content.emit('change',{target:input});
+  assert.equal(quantityCalls.length,1);
+  input.matches=s=>s==='[data-storage-broken]';
+  await content.emit('change',{target:input});
+  assert.equal(brokenCalls.length,1);
+  const control = { dataset:{action:'storage-claim-self',rowId:'row-1'}, closest(){return this;} };
+  const oldWait=foundry.applications.api.DialogV2.wait;
+  foundry.applications.api.DialogV2.wait=async()=>1;
+  try { await content.emit('click',{target:control,preventDefault(){}}); }
+  finally { foundry.applications.api.DialogV2.wait=oldWait; }
+  assert.equal(claimCalls.length,1);
+  currentAnchor.remove(); currentAnchor=new dom.Element(); currentAnchor.dataset.rowId='row-1'; root.append(currentAnchor);
+  currentContent=new dom.Element(); currentContent.rect=content.rect;
+  app.activeRowId='row-1'; await app._onRender({},{});
+  assert.equal(dom.document.body.children.filter(e=>e.dataset.rmAnchoredOverlay).length,1);
+  assert.ok(app.rowPopover.element.contains(currentContent));
+  await content.emit('change',{target:input}); assert.equal(brokenCalls.length,1,'old handlers aborted');
+  let closeRenders=0; app.render=async()=>{closeRenders++;};
+  app.rowPopover.close({restoreFocus:true});
+  assert.equal(closeRenders,0,'closing preserves the focused row DOM');
+  assert.equal(dom.document.activeElement,currentAnchor);
+  assert.equal(currentAnchor.getAttribute('aria-expanded'),'false');
+  await app._onClose({}); assert.equal(dom.document.body.children.length,1);
+  assert.equal(app.snapshot.rows.length,1,'closing does not remove rows');
+});
+
+test("storage popover keeps a stable row anchor without grid-index geometry", async () => {
   const rows = Array.from({ length: 8 }, (_value, index) => ({
     rowId: `row-${index + 1}`,
     name: `Предмет ${index + 1}`,
@@ -1228,18 +1268,12 @@ test("storage popover placement is derived from the selected grid cell", async (
   });
 
   for (const [rowId, expected] of [
-    ["row-1", { anchorColumn: 0, anchorRow: 0, popoverAlignment: "left" }],
-    ["row-6", { anchorColumn: 1, anchorRow: 1, popoverAlignment: "center" }],
-    ["row-8", { anchorColumn: 3, anchorRow: 1, popoverAlignment: "right" }],
-    ["__coins", { anchorColumn: 0, anchorRow: 2, popoverAlignment: "left" }]
+    ["row-1", "row-1"], ["row-6", "row-6"], ["row-8", "row-8"], ["__coins", "__coins:gp"]
   ]) {
     app.activeRowId = rowId;
     const context = await app._prepareContext();
-    assert.deepEqual({
-      anchorColumn: context.activePopover.anchorColumn,
-      anchorRow: context.activePopover.anchorRow,
-      popoverAlignment: context.activePopover.popoverAlignment
-    }, expected);
+    assert.equal(context.activePopover.anchorRowId, expected);
+    assert.equal(context.activePopover.anchorRow, undefined);
   }
 });
 
@@ -1247,14 +1281,13 @@ test("storage item popovers stay interactive above their grid", async () => {
   const css = await readFile(new URL("../styles/main.css", import.meta.url), "utf8");
   const template = await readFile(new URL("../templates/storage-app.hbs", import.meta.url), "utf8");
   assert.match(css, /\.rm-storage-item__popover\s*\{[^}]*pointer-events:\s*auto/isu);
-  assert.match(css, /\.rm-storage-popover-layer\s*\{[^}]*position:\s*absolute[^}]*pointer-events:\s*none/isu);
+  assert.match(css, /\.rm-anchored-overlay\s*\{[^}]*position:\s*fixed/isu);
   assert.match(css, /\.rm-storage-grid\s*\{[^}]*position:\s*relative/isu);
-  assert.match(css, /top:\s*calc\(\(var\(--rm-storage-popover-anchor-row\)\s*\*\s*80px\)\s*\+\s*81px\)/isu);
-  assert.match(css, /\.rebreya-storage-app\s+\.window-content\s*\{[^}]*overflow:\s*visible/isu);
+  assert.doesNotMatch(css, /--rm-storage-popover-anchor-row/u);
+  assert.match(css, /\.rebreya-storage-app\s+\.window-content\s*\{[^}]*overflow:\s*auto/isu);
   assert.doesNotMatch(css, /\.rm-storage-grid:has\(/u);
   assert.match(template, /\{\{#each coinRows\}\}[\s\S]*?\{\{\/each\}\}\s*\{\{#if activePopover\}\}\s*<div\s+class="rm-storage-popover-layer"/u);
-  assert.match(template, /--rm-storage-popover-anchor-column:\s*\{\{activePopover\.anchorColumn\}\}/u);
-  assert.match(template, /rm-storage-item__popover--\{\{activePopover\.popoverAlignment\}\}/u);
+  assert.match(template, /data-storage-popover-layer\s+hidden/u);
 });
 
 test("minimized storage hides all overflowing window content", async () => {

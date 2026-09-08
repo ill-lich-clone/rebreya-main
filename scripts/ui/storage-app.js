@@ -1,6 +1,7 @@
 import { buildStorageCoinRow } from "../data/storage-service.js";
 import { MODULE_ID } from "../constants.js";
 import { getAppElement } from "../ui.js";
+import { AnchoredOverlay, bindAnchoredTooltips } from "./anchored-overlay.js?v=1.4.247-anchored-overlays";
 import { placeTokenOverlay, storageTokenViewportBounds } from "./storage-token-overlay.js";
 import { openStorageJournalViewer } from "./storage-journal-viewer.js?v=1.4.221-journal-readonly-dialog";
 import { formatDurabilityItemName } from "../data/durability-item-presentation.js?v=1.4.154-broken-item-name";
@@ -163,6 +164,7 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.snapshot = null;
     this.snapshotRequest = 0;
     this.activeRowId = "";
+    this.rowPopover = null;
     this.claimAllPending = false;
     this.renderListenersAbortController = null;
     this.liveHookSubscriptions = [];
@@ -273,25 +275,13 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
     if (this.activeRowId && !validPopoverIds.has(this.activeRowId)) this.activeRowId = "";
     const selectedRow = rows.find((row) => row.rowId === this.activeRowId) ?? null;
     const selectedCoin = coinRows.find(row => row.rowId === this.activeRowId);
-    const selectedIndex = selectedCoin
-      ? rows.length + coinRows.indexOf(selectedCoin)
-      : rows.findIndex((row) => row.rowId === this.activeRowId);
-    const selectedColumn = selectedIndex >= 0 ? selectedIndex % gridColumns : 0;
-    const popoverPlacement = selectedIndex >= 0 ? {
-      anchorColumn: selectedColumn,
-      anchorRow: Math.floor(selectedIndex / gridColumns),
-      popoverAlignment: selectedColumn === 0
-        ? "left"
-        : selectedColumn === gridColumns - 1 ? "right" : "center"
-    } : {};
     const activePopover = selectedCoin
       ? {
           isCoins: true,
           ...selectedCoin,
-          anchorRowId: selectedCoin.rowId,
-          ...popoverPlacement
+          anchorRowId: selectedCoin.rowId
         }
-      : selectedRow ? { ...selectedRow, anchorRowId: selectedRow.rowId, ...popoverPlacement } : null;
+      : selectedRow ? { ...selectedRow, anchorRowId: selectedRow.rowId } : null;
     const breadcrumbs = [
       { index: 0, name: this.rootName || "Сундук" },
       ...this.path.map((rowId, index) => ({
@@ -366,11 +356,7 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
     }, listenerOptions);
     globalThis.document?.addEventListener?.("click", (event) => {
       if (!this.activeRowId || root.contains?.(event.target) || event.composedPath?.().includes(root)) return;
-      this.activeRowId = "";
-      void this.#renderCurrent();
-    }, listenerOptions);
-    globalThis.document?.addEventListener?.("keydown", (event) => {
-      if (event.key !== "Escape" || !this.activeRowId) return;
+      if (this.rowPopover?.element?.contains(event.target) || event.composedPath?.().includes(this.rowPopover?.element)) return;
       this.activeRowId = "";
       void this.#renderCurrent();
     }, listenerOptions);
@@ -381,11 +367,42 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const viewportWidth = Math.max(320, Number(globalThis.innerWidth) || 1920);
     const width = this.configure ? 430 : Math.min(viewportWidth - 32, Math.max(286, (columns * 80) + 46));
     this.setPosition?.({ width });
+    this.#syncRowPopover(root, listenerOptions);
+    bindAnchoredTooltips(root, root.querySelectorAll?.(".rm-storage-item__icon[data-rm-tooltip]") ?? [], {
+      signal: listenerOptions.signal,
+      getText: target => this.activeRowId ? "" : target.dataset.rmTooltip
+    });
     root.querySelector?.(".window-header")?.addEventListener?.("pointerdown", () => this.#detachAnchor(), listenerOptions);
     if (this.anchorRequested && !this.anchorDetached) {
       const schedule = globalThis.requestAnimationFrame ?? ((callback) => globalThis.setTimeout?.(callback, 0));
       schedule?.(() => this.repositionToToken());
     }
+  }
+
+  #syncRowPopover(root, listenerOptions) {
+    const content = root.querySelector?.("[data-storage-popover]");
+    if (!content || !this.activeRowId) {
+      this.rowPopover?.close();
+      return;
+    }
+    if (this.rowPopover?.ownerElement !== root) {
+      this.rowPopover?.destroy();
+      this.rowPopover = new AnchoredOverlay({
+        ownerElement: root,
+        resolveAnchor: () => Array.from(root.querySelectorAll(".rm-storage-item__icon[data-row-id]"))
+          .find(element => element.dataset.rowId === this.activeRowId),
+        onClose: () => {
+          if (!this.activeRowId) return;
+          this.activeRowId = "";
+          for (const button of root.querySelectorAll(".rm-storage-item__icon[aria-expanded]")) {
+            button.setAttribute("aria-expanded", "false");
+          }
+        }
+      });
+    }
+    content.addEventListener("click", event => this.#onClick(event), listenerOptions);
+    content.addEventListener("change", event => this.#onStorageChange(event), listenerOptions);
+    this.rowPopover.show(content);
   }
 
   async #onStorageChange(event) {
@@ -473,6 +490,9 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
   async _onClose(options) {
     this.snapshotRequest += 1;
+    this.activeRowId = "";
+    this.rowPopover?.destroy();
+    this.rowPopover = null;
     this.renderListenersAbortController?.abort();
     this.renderListenersAbortController = null;
     const Hooks = globalThis.Hooks;
@@ -601,6 +621,10 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
     event.preventDefault?.();
     try {
       if (action === "storage-close-popover") {
+        if (this.rowPopover?.element) {
+          this.rowPopover.close({ restoreFocus: true });
+          return;
+        }
         this.activeRowId = "";
         await this.#renderCurrent();
         return;
