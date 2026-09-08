@@ -101,6 +101,32 @@
               </label>
             </div>
 
+              <section class="rm-lootgen-type-filter">
+                <label class="rm-lootgen-check">
+                  <input type="checkbox" {{#if form.enableUpgrades}}checked{{/if}} data-field="enableUpgrades">
+                  <span>Предметы с усовершенствованиями</span>
+                </label>
+                <p class="rm-muted">Полная стоимость входит в общий бюджет. Выбираются только доступные усовершенствования.</p>
+                <div class="rm-field">
+                  <label>Шанс усовершенствования, %</label>
+                  <input type="number" min="0" max="100" value="{{form.upgradeChance}}" data-field="upgradeChance">
+                </div>
+                <div class="rm-field">
+                  <label>Максимум на предмет</label>
+                  <input type="number" min="1" max="3" value="{{form.maxUpgradesPerItem}}" data-field="maxUpgradesPerItem">
+                </div>
+                <p class="rm-muted">Типы и ранги: если ничего не выбрано, используются все доступные.</p>
+                <div class="rm-lootgen-type-filter__options">
+                  {{#each form.upgradeTypeOptions}}
+                    <label class="rm-lootgen-check rm-lootgen-check--compact"><input type="checkbox" value="{{value}}" {{#if checked}}checked{{/if}} data-upgrade-filter="upgradeTypes"><span>{{value}}</span></label>
+                  {{/each}}
+                </div>
+                <div class="rm-lootgen-type-filter__options">
+                  {{#each form.upgradeRankOptions}}
+                    <label class="rm-lootgen-check rm-lootgen-check--compact"><input type="checkbox" value="{{value}}" {{#if checked}}checked{{/if}} data-upgrade-filter="upgradeRanks"><span>Ранг {{value}}</span></label>
+                  {{/each}}
+                </div>
+              </section>
             <div class="rm-lootgen-type-filters">
               {{#if form.hasGearTypeOptions}}
                 <section class="rm-lootgen-type-filter">
@@ -223,7 +249,7 @@
         {{#if generated.hasRows}}
           <div class="rm-lootgen-result-list">
             {{#each generated.rows}}
-              <article class="rm-lootgen-result-row">
+              <article class="rm-lootgen-result-row {{#if claimed}}is-claimed{{/if}}">
                 <div class="rm-lootgen-result-row__main">
                   <strong>
                     <button
@@ -239,6 +265,9 @@
                   <p class="rm-muted">
                     {{typeLabel}} • ранг {{rank}} • {{rmNum value precision=0}} value • x{{rmNum quantity precision=0}}
                   </p>
+                  {{#each upgradeSummaries}}<p class="rm-muted">{{this}}</p>{{/each}}
+                  {{#if descriptor}}<p class="rm-muted">Полная стоимость: {{rmNum totalValue precision=0}} value</p>{{/if}}
+                  {{#if claimed}}<span class="rm-lootgen-condition">Забрано</span>{{/if}}
                   {{#if isBroken}}
                     <span class="rm-lootgen-condition rm-lootgen-condition--broken">
                       <i class="fa-solid fa-link-slash"></i>
@@ -249,7 +278,7 @@
                 <div class="rm-lootgen-result-row__side">
                   <span>{{rmNum totalValue precision=0}} value</span>
                   {{#if ../canManage}}
-                    <button type="button" class="rm-icon-button" data-action="lootgen-take-row" data-row-index="{{rowIndex}}" title="Добавить строку в склад">
+                    <button type="button" class="rm-icon-button" data-action="lootgen-take-row" data-row-index="{{rowIndex}}" {{#if claimed}}disabled{{/if}} title="Добавить строку в склад">
                       <i class="fa-solid fa-inbox"></i>
                     </button>
                   {{/if}}

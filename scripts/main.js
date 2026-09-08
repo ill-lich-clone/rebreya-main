@@ -379,7 +379,7 @@ import {
   handleSettingsUpdateSocketResponse,
   registerSettings
 } from "./settings.js";
-import { buildLootgenChatContent, buildLootgenStatusContent, registerLootgenChatHooks } from "./ui/lootgen-chat.js?v=1.4.262";
+import { buildLootgenChatContent, buildLootgenStatusContent, registerLootgenChatHooks } from "./ui/lootgen-chat.js?v=1.4.263";
 import { bringAppToFront, notifyUser, registerHandlebarsHelpers, rerenderApp } from "./ui.js";
 import { promptDurabilityOutcome } from "./ui/durability-outcome-dialog.js";
 
@@ -896,7 +896,7 @@ function isValidLootgenInventoryIngressPayload(payload) {
     return false;
   }
   const rowIds = payload.rowIds;
-  return rowIds.length > 0
+  return (rowIds.length > 0 || payload.includeCoins)
     && rowIds.every(isValidInventoryFolderIdentifier)
     && new Set(rowIds).size === rowIds.length
     && JSON.stringify(payload.ingressPlan.rows.map((row) => row.sourceKey)) === JSON.stringify(rowIds);
@@ -1733,7 +1733,7 @@ export class RebreyaMainModule {
           serializedPlan: ingressPlan
         }, {
           resolveRows: async ({recovering=false}={}) => {
-            if (!recovering) await assertLootgenCatalogCurrent(message.getFlag(MODULE_ID,"lootgenChat"),this.lootgenSourceCatalog);
+            if (!recovering && rows.length>0) await assertLootgenCatalogCurrent(message.getFlag(MODULE_ID,"lootgenChat"),this.lootgenSourceCatalog);
             return buildRows();
           },
           debitRow: async () => {},
@@ -2451,10 +2451,10 @@ export class RebreyaMainModule {
       validate: isValidLootgenInventoryIngressPayload,
       authorize: (payload, { sender }) => (
         this.#canSenderManageGroup(sender, payload.groupActorId)
-        && Boolean(this.#findLootgenChatMessage(payload.lootId))
+        && Boolean(this.#findLootgenChatMessage(payload.lootId,{allowDraft:sender.isGM===true}))
       ),
-      execute: (payload) => this.runInventoryMutation(
-        () => this.#executeLootgenInventoryIngress(payload),
+      execute: (payload,{sender}) => this.runInventoryMutation(
+        () => this.#executeLootgenInventoryIngress(payload,{allowDraft:sender.isGM===true}),
         {
           actorIdsFromResult: () => [payload.groupActorId],
           awaitRefresh: (result, error) => (
@@ -3465,6 +3465,18 @@ export class RebreyaMainModule {
     return this.privilegedMutationGateway.mutate("lootgen.publish-result",{lootId});
   }
 
+  getLootgenGeneratedResult(lootId) {
+    const message=this.#findLootgenChatMessage(lootId,{allowDraft:game.user?.isGM===true});
+    const entry=message?this.#readLootgenMessage(message):null;
+    if(entry?.state?.resultVersion!==2)throw new Error("Подготовленная добыча удалена или недоступна.");
+    return {lootId:entry.state.lootId,messageId:entry.id,state:entry.state};
+  }
+
+  openLootgenGeneratedResult(lootId) {
+    this.getLootgenGeneratedResult(lootId);
+    return this.openLootgenApp({newWindow:true,sharedResult:{resultVersion:2,lootId}});
+  }
+
   async #publishLootgenGeneratedMessage(lootId,assertAuthority) {
     const message=this.#findLootgenChatMessage(lootId,{allowDraft:true});
     if (!message) throw new Error("Подготовленная добыча не найдена.");
@@ -3606,7 +3618,7 @@ export class RebreyaMainModule {
   }
 
   async #prepareLootgenInventoryIngress(lootId, rowIds, { batch }) {
-    const message = this.#findLootgenChatMessage(lootId);
+    const message = this.#findLootgenChatMessage(lootId,{allowDraft:game.user?.isGM===true});
     if (!message) throw new Error("Сообщение с лутом не найдено.");
     const state = foundry.utils.deepClone(message.getFlag(MODULE_ID, "lootgenChat") ?? {});
     const context = this.groupContextService.resolveForCurrentUser();
@@ -3627,8 +3639,8 @@ export class RebreyaMainModule {
     };
   }
 
-  async #executeLootgenInventoryIngress(payload) {
-    const message = this.#findLootgenChatMessage(payload.lootId);
+  async #executeLootgenInventoryIngress(payload,{allowDraft=false}={}) {
+    const message = this.#findLootgenChatMessage(payload.lootId,{allowDraft});
     if (!message) throw new Error("Сообщение с лутом не найдено.");
     return this.lootClaimService.claimBatch({
       messageId: message.id,
@@ -3806,7 +3818,7 @@ export class RebreyaMainModule {
       command: INVENTORY_INGRESS_LOOTGEN_COMMAND,
       payload,
       validate: isValidLootgenInventoryIngressPayload,
-      execute: (exactPayload) => this.#executeLootgenInventoryIngress(exactPayload)
+      execute: (exactPayload) => this.#executeLootgenInventoryIngress(exactPayload,{allowDraft:game.user?.isGM===true})
     });
     for (const rowId of result?.claimedRowIds ?? []) {
       this.#notifyLootgenChatClaim(payload.lootId, rowId, "row");
@@ -3824,6 +3836,21 @@ export class RebreyaMainModule {
     });
   }
 
+  #readPreparedLootgenClaimRequest(lootId,claimId,{rowIds=null,coinsOnly=false}={}) {
+    const message=this.#findLootgenChatMessage(lootId,{allowDraft:game.user?.isGM===true});
+    const state=message?.getFlag(MODULE_ID,"lootgenChat");
+    if(state?.resultVersion!==2)return null;
+    const claim=state.claims?.find(entry=>entry.id===claimId);
+    if(!claim)return null;
+    const saved=JSON.parse(claim.fingerprint);
+    if(claim.kind!=="batch" || saved.lootId!==lootId || (rowIds && JSON.stringify(saved.rowIds)!==JSON.stringify(rowIds))
+      || (coinsOnly && saved.rowIds.length))throw new Error("Запрос не совпадает с сохранённой выдачей добычи.");
+    const request={batchMutationId:claimId,groupActorId:saved.ingressPlan?.groupActorId,lootId,
+      rowIds:saved.rowIds,includeCoins:saved.includeCoins,ingressPlan:saved.ingressPlan};
+    if(!isValidLootgenInventoryIngressPayload(request))throw new Error("Сохранённая выдача требует сверки.");
+    return foundry.utils.deepClone(request);
+  }
+
   async claimLootgenChatRowToInventory(lootId, rowId, {
     quiet = false,
     claimId = ""
@@ -3834,6 +3861,9 @@ export class RebreyaMainModule {
     if (!safeLootId || !safeRowId) {
       return false;
     }
+
+    const replay=this.#readPreparedLootgenClaimRequest(safeLootId,safeClaimId,{rowIds:[safeRowId]});
+    if(replay)return (await this.#dispatchLootgenInventoryIngress(replay)).changed;
 
     const prepared = await this.#prepareLootgenInventoryIngress(safeLootId, [safeRowId], { batch: false });
     if (!prepared) return false;
@@ -3851,7 +3881,8 @@ export class RebreyaMainModule {
 
   async claimLootgenChatAllToInventory(lootId, {
     quiet = false,
-    claimId = ""
+    claimId = "",
+    coinsOnly = false
   } = {}) {
     const safeLootId = String(lootId ?? "").trim();
     if (!safeLootId) {
@@ -3859,15 +3890,18 @@ export class RebreyaMainModule {
     }
 
     const batchClaimId = String(claimId ?? "").trim() || createSocketRequestId("loot-all-claim");
-    const message = this.#findLootgenChatMessage(safeLootId);
+    const replay=this.#readPreparedLootgenClaimRequest(safeLootId,batchClaimId,{coinsOnly});
+    if(replay)return (await this.#dispatchLootgenInventoryIngress(replay)).changed;
+    const message = this.#findLootgenChatMessage(safeLootId,{allowDraft:game.user?.isGM===true});
     const state = foundry.utils.deepClone(message?.getFlag(MODULE_ID, "lootgenChat") ?? {});
-    const rowIds = (state.rows ?? [])
+    const rowIds = (coinsOnly ? [] : state.rows ?? [])
       .filter((row) => row?.claimed !== true)
       .map((row) => String(row.rowId ?? "").trim())
       .filter(Boolean);
-    if (rowIds.length === 0) {
+    if (rowIds.length === 0 && state.resultVersion!==2) {
       return this.claimLootgenChatCoins(safeLootId, { quiet, claimId: `${batchClaimId}:coins` });
     }
+    if(rowIds.length===0 && state.coinsClaimed===true)return false;
     const prepared = await this.#prepareLootgenInventoryIngress(safeLootId, rowIds, { batch: true });
     if (!prepared) return false;
     const result = await this.#dispatchLootgenInventoryIngress({
@@ -6759,7 +6793,7 @@ export class RebreyaMainModule {
         throw new Error("Лутген доступен только мастеру.");
       }
 
-      const moduleVersion = "1.4.258";
+      const moduleVersion = "1.4.263";
       const { LootgenApp } = await import(`./ui/lootgen-app.js?v=${encodeURIComponent(moduleVersion)}`);
       let app = null;
 
@@ -6783,12 +6817,12 @@ export class RebreyaMainModule {
         else {
           this.lootgenCounter += 1;
           const appKey = `lootgen-${this.lootgenCounter}`;
-          app = new LootgenApp(this, { appKey });
+          app = new LootgenApp(this, { appKey, sharedResult });
           this.lootgenApps.set(appKey, app);
         }
       }
 
-      if (viewer && sharedResult && typeof app?.setSharedResult === "function") {
+      if (sharedResult && typeof app?.setSharedResult === "function") {
         app.setSharedResult(sharedResult);
       }
 

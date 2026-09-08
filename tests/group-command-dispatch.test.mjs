@@ -2866,7 +2866,7 @@ test("prepared loot uses the canonical publisher with GM whispers and stays outs
     assert.equal(created.length,1);assert.equal(created[0].options.keepId,true);
     assert.deepEqual(created[0].data.whisper.sort(),[fixture.users.gmA.id,fixture.users.gmB.id].sort());
     assert.equal(result.state.generationReady,true);assert.equal(result.state.published,false);
-    assert.doesNotMatch(messages.get(result.messageId).content,/data-lootgen-chat-action/u);
+    assert.doesNotMatch(messages.get(result.messageId).content,/data-lootgen-chat-action="claim-|draggable="true"/u);
     await assert.rejects(moduleApi.claimLootgenChatRow(result.lootId,"row",{quiet:true}),/не найдено/u);
   } finally {if(previousChat===undefined)delete globalThis.ChatMessage;else globalThis.ChatMessage=previousChat;fixture.restore();}
 });
@@ -2988,5 +2988,66 @@ for(const failure of ["before","after","partial"]) test(`publishing prepared loo
     state.rows[0].claimed=false;
     await assert.rejects(moduleApi.claimLootgenChatRow(state.lootId,"row",{quiet:true}),/подготовленн|проверяем/u);
     assert.equal(state.rows[0].claimed,false);
+  }finally{fixture.restore();}
+});
+
+test("only a GM can read or directly claim an unpublished prepared result, including coins-only batches",async()=>{
+  const fixture=installFixture();
+  try {
+    const state={resultVersion:2,lootId:"private-direct",generationReady:true,published:false,createdBy:fixture.users.gmA.id,rows:[],coins:{gp:1,totalCopper:100}};
+    const message={id:"private-direct-message",author:fixture.users.gmA,getFlag:()=>state};game.messages.contents.push(message);
+    const moduleApi=new RebreyaMainModule(),calls=[];
+    moduleApi.lootClaimService.claimBatch=async request=>{calls.push(request);return {changed:true,claimedRowIds:[],claimedCoins:true};};
+    moduleApi.refreshInventoryViews=async()=>{};
+    const payload={lootId:state.lootId,groupActorId:fixture.groupA.id,batchMutationId:"private-coins",rowIds:[],includeCoins:true,ingressPlan:buildLootgenIngressPlan(fixture.groupA.id,[])};
+    const snapshot=moduleApi.getLootgenGeneratedResult(state.lootId);snapshot.state.coins.gp=999;assert.equal(state.coins.gp,1);
+    for(const [requestId,sender,expected] of [["private-gm",fixture.users.gmB.id,true],["private-player",fixture.users.playerA.id,false]]){
+      await moduleApi.handleSocketMessage(commandRequest("inventory.ingress.lootgen",sender,payload,requestId));await flushCommands();
+      assert.equal(resultFor(fixture,requestId)?.ok,expected,JSON.stringify(resultFor(fixture,requestId)));
+    }
+    assert.equal(calls.length,1);assert.equal(calls[0].messageId,message.id);assert.equal(calls[0].includeCoins,true);
+    game.user=fixture.users.playerA;
+    assert.throws(()=>moduleApi.getLootgenGeneratedResult(state.lootId),/недоступна/u);
+  }finally{fixture.restore();}
+});
+
+test("prepared party claim retry reads its saved plan before claimed rows or the current group",async()=>{
+  const fixture=installFixture({currentUserId:"player-a"});
+  try {
+    const ingressPlan=buildLootgenIngressPlan(fixture.groupA.id,["row"]);
+    const saved={lootId:"replay-ui",rowIds:["row"],includeCoins:false,ingressPlan};
+    const state={...saved,resultVersion:2,generationReady:true,published:true,createdBy:fixture.users.gmA.id,
+      rows:[{rowId:"row",claimed:true}],claims:[{id:"same-claim",kind:"batch",phase:"committed",fingerprint:JSON.stringify(saved)}]};
+    game.messages.contents.push({id:"replay-message",author:fixture.users.gmA,getFlag:()=>state});
+    const moduleApi=new RebreyaMainModule(),requests=[];
+    moduleApi.groupContextService.resolveForCurrentUser=()=>{throw new Error("must not resolve a new destination");};
+    moduleApi.inventoryIngressPlanner.preview=()=>{throw new Error("must not preview claimed source");};
+    moduleApi.refreshInventoryViews=async()=>{};
+    moduleApi.socketCommandBus.request=async(command,payload)=>{requests.push({command,payload});return {changed:true,claimedRowIds:["row"]};};
+    assert.equal(await moduleApi.claimLootgenChatRowToInventory(state.lootId,"row",{claimId:"same-claim",quiet:true}),true);
+    assert.deepEqual(requests[0].payload,{...saved,groupActorId:fixture.groupA.id,batchMutationId:"same-claim"});
+    await assert.rejects(moduleApi.claimLootgenChatRowToInventory(state.lootId,"other-row",{claimId:"same-claim",quiet:true}),/не совпадает/u);
+    assert.equal(requests.length,1);
+  }finally{fixture.restore();}
+});
+
+test("prepared coins-only ingress credits once and commits the trusted source without reading the item catalog",async()=>{
+  const fixture=installFixture();
+  try {
+    foundry.utils.escapeHTML=value=>String(value);
+    let state={resultVersion:2,lootId:"coins-private",generationReady:true,published:false,createdBy:fixture.users.gmA.id,rows:[],coins:{gp:1,totalCopper:100},coinsClaimed:false};
+    const message={id:"coins-message",author:fixture.users.gmA,getFlag:()=>clone(state),update:async patch=>{state=clone(patch[`flags.${MODULE_ID}.lootgenChat`]);}};
+    game.messages.contents.push(message);game.messages.get=id=>game.messages.contents.find(entry=>entry.id===id);
+    const moduleApi=new RebreyaMainModule();let credits=0,commits=0;
+    moduleApi.refreshInventoryViews=async()=>{};
+    moduleApi.lootgenSourceCatalog.load=()=>{throw new Error("coins do not depend on the item catalog");};
+    moduleApi.inventoryService.commitInventoryIngressBatch=async(request,adapters)=>{commits++;assert.deepEqual(await adapters.resolveRows({recovering:false}),[]);return {actorId:fixture.groupA.id,rows:[]};};
+    moduleApi.inventoryService.addCurrencyToInventoryOnce=async(coins,id,{groupActorId})=>{credits++;assert.equal(coins.gp,1);assert.equal(groupActorId,fixture.groupA.id);assert.equal(id,"loot-coins:stable-coins");};
+    const payload={lootId:state.lootId,groupActorId:fixture.groupA.id,batchMutationId:"stable-coins",rowIds:[],includeCoins:true,ingressPlan:buildLootgenIngressPlan(fixture.groupA.id,[])};
+    for(const requestId of ["coins-first","coins-retry"]){
+      await moduleApi.handleSocketMessage(commandRequest("inventory.ingress.lootgen",fixture.users.gmB.id,payload,requestId));await flushCommands();
+      assert.equal(resultFor(fixture,requestId)?.ok,true,JSON.stringify(resultFor(fixture,requestId)));
+    }
+    assert.equal(credits,1);assert.equal(commits,1);assert.equal(state.coinsClaimed,true);
   }finally{fixture.restore();}
 });

@@ -104,11 +104,11 @@ assert.equal(child.system.container, graph.rootItemId);
 - [x] Для нового composed режима ввести GM-only public prepareLootgenGeneratedResult(form) и typed lootgen.prepare-result с exact normalized form/operationId. Active GM генерирует один immutable result v2; request не содержит ItemData, arbitrary effects, price или готовый player graph.
 - [x] Хранить подготовленный result в существующем trusted GM-authored Lootgen ChatMessage state через его canonical publisher. Подготовка для прямой выдачи создаёт запись, видимую только GM; публикация игрокам раскрывает ту же запись, не генерирует вторую. Обычный legacy plain preview сохраняет старое поведение.
 - [x] prepare receipt связывает operationId, lootId, form fingerprint и message. Повтор запроса возвращает тот же result. Если запись уже создана, а ответ потерялся, находить её по receipt до нового random.
-- [ ] UI «Забрать»/прямая выдача для composed rows использует существующий trusted claim route по lootId/rowIds. Клиент передаёт destination/ingress choices и operation ID; список upgrades active GM читает из записи. Не расширять generic direct ingress правом принять player composition.
-- [ ] Сохранить прежний смысл sourceOrigin для plain/manual/model callers. Там, где отображение требует новый resultVersion, читать v1 без перерасчёта; v2 snapshot сохраняет принятый value и catalog/rules fingerprint.
+- [x] UI «Забрать»/прямая выдача для composed rows использует существующий trusted claim route по lootId/rowIds. Клиент передаёт destination/ingress choices и operation ID; список upgrades active GM читает из записи. Не расширять generic direct ingress правом принять player composition.
+- [x] Сохранить прежний смысл sourceOrigin для plain/manual/model callers. Там, где отображение требует новый resultVersion, читать v1 без перерасчёта; v2 snapshot сохраняет принятый value и catalog/rules fingerprint.
 - [x] До первой выдачи при несовместимом изменении каталога/availability показать stale result и предложить новую генерацию. После prepared graph/grant receipt recovery использует сохранённые trusted данные; catalog drift не запускает новую выдачу и не переписывает уже полученные вещи.
 - [ ] LootClaimService.claimBatch и acceptedRowIds сохраняют частичный успешный outcome между top-level rows. Внутри одного составного host root+children — неделимая выдача; source claimed только после подтверждения всего graph.
-- [ ] UI показывает upgrades, totalValue и automation status; имена/choices экранированы. Tooltip/preview не меняет descriptor и не запускает random.
+- [x] UI показывает upgrades, totalValue и automation status; имена/choices экранированы. Tooltip/preview не меняет descriptor и не запускает random.
 - [ ] Fault tests после prepared result, Chat write, host/child create, link check, target receipt и source claimed write; повторный claim, другой destination с тем же ID, hostile source refs и частичный успех batch.
 - [ ] Live: generate → повторно открыть → опубликовать → забрать в группу/персонажу → equip → передать. Два одинаковых base с разными upgrades остаются разными, их эффекты включает один канонический owner.
 
@@ -188,3 +188,12 @@ GM-only publish раскрывает тот же ChatMessage, проверяет
 Открыты UI настроек/preview/direct grant и полный native multiplayer lifecycle. R8 не завершён.
 
 Проверки седьмой части: `node --test tests/*.test.mjs` — **3868 passed / 0 failed**; синтаксис **773 JS/MJS и 46 JSON, 0 ошибок**; `git diff --check` чисто. Native testovyj3/CODEX/Foundry13.351/dnd5e5.2.5, viewport1292×920: реальный каталог → две строки total6400 → actual Chat HTML отрисован в временном DialogV2, проверены читабельность названий/status/value и кнопки; окно закрыто. ChatMessage/Items в мире не создавались. Actual publication/drag-through-authority остаются частью открытой multiplayer-приёмки.
+
+
+### Восьмая часть R8 — 1.4.263
+
+Окно выбирает upgrades/chance/max/types/ranks, готовит v2 через active GM и сохраняет operation ID после ошибки. Reopen/undo читает trusted source; две композиции одинаковой основы не объединяются. Direct row/all/coins использует тот же источник; draft доступен только GM. Pending/terminal replay берёт прежний plan до свежего preview и текущего выбора группы. Composition preview показывает сохранённые choices/status/value. Clear не раскрывает private payload и не удаляет source.
+
+Focused: node --test tests/lootgen*.test.mjs tests/group-command-dispatch.test.mjs tests/loot-claim-service.test.mjs tests/inventory-mutation-recovery.test.mjs — 262 passed / 0 failed. Полная native приёмка и аудит оставшихся R8 критериев ещё открыты.
+
+Проверки восьмой части: `node --test tests/*.test.mjs` — **3876 passed / 0 failed**; синтаксис **773 JS/MJS и 46 JSON, 0 ошибок**; `git diff --check` чисто. Native testovyj3/CODEX/Foundry13.351/dnd5e5.2.5, viewport1292×920: исправлен обнаруженный server template loader reject query-параметра у .hbs; окно успешно открыто, переключатель и13 фильтров работают, расширенные настройки доступны прокруткой. Detached реальный каталог/graph builder → два Молота всадника с Зачарованием лёгкости по102 value: состав/status/total204 отрисованы раздельно в настоящем LootgenApp. Для этой UI-проверки использован локальный read-only источник, mutation API отключены; Chat/Items/world state не создавались. Окно закрыто. Это не подтверждает сквозной active-GM lifecycle, который остаётся открытым.

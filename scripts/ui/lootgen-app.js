@@ -1,6 +1,6 @@
 ﻿import { MODULE_ID } from "../constants.js";
 import { resolveLootgenItemValue as resolveLegacyItemValue } from "../data/item-value.js?v=1.4.250";
-import { buildLootgenStatusContent } from "./lootgen-chat.js";
+import { buildLootgenStatusContent, formatLootgenUpgradeSummary, openLootgenRowPreview } from "./lootgen-chat.js?v=1.4.263";
 import {
   buildLootgenRowIdentity,
   normalizeBrokenEquipmentChance,
@@ -269,6 +269,10 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.magicTypeFilters = {};
     this.magicPercent = 25;
     this.brokenEquipmentChance = 0;
+    Object.assign(this,{enableUpgrades:false,upgradeChance:0,maxUpgradesPerItem:1,upgradeTypes:[],upgradeRanks:[]});
+    this.pendingPreparation=null;
+    this.generationInFlight=null;
+    this.pendingPreparedClaims=new Map();
     this.selectedTemplateId = "";
     this.generated = this.#createEmptyGenerated();
     this.chatLootId = "";
@@ -284,6 +288,7 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     if (options.sharedResult) {
       this.generated = this.#normalizeSharedResult(options.sharedResult);
+      this.chatLootId=this.generated.lootId??"";
     }
   }
 
@@ -306,6 +311,7 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   #normalizeSharedResult(payload = {}) {
+    if (payload.resultVersion===2) return this.#projectPreparedResult(this.moduleApi.getLootgenGeneratedResult(payload.lootId));
     const rows = aggregateRows(normalizeGeneratedRows(payload.rows ?? []));
     const coins = {
       ...normalizeCoins(payload.coins ?? {}),
@@ -326,7 +332,18 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
     };
   }
 
-  #cloneGeneratedResult() {
+  #projectPreparedResult(result) {
+    if(result?.state?.resultVersion!==2 || result.state.generationReady!==true)throw new Error("Подготовленная добыча недоступна.");
+    const state=foundry.utils.deepClone(result.state);
+    return {...state,messageId:result.messageId,hasResult:state.rows.length>0 || Number(state.coins?.totalCopper)>0,
+      coins:state.coinsClaimed?normalizeCoins({}):normalizeCoins(state.coins),
+      rows:state.rows.map(row=>({...row,chatLootId:state.lootId,chatRowId:row.rowId,
+        upgradeSummaries:(row.upgrades??[]).map(formatLootgenUpgradeSummary)}))};
+  }
+
+  #cloneGeneratedResult({referenceOnly=false}={}) {
+    if(this.generated.resultVersion===2)return foundry.utils.deepClone(referenceOnly
+      ? {resultVersion:2,lootId:this.generated.lootId,hasResult:this.generated.hasResult} : this.generated);
     return foundry.utils.deepClone({
       rows: this.generated.rows ?? [],
       coins: normalizeCoins(this.generated.coins ?? {}),
@@ -353,7 +370,9 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
       gearTypeFilters: this.gearTypeFilters,
       magicTypeFilters: this.magicTypeFilters,
       magicPercent: this.magicPercent,
-      brokenEquipmentChance: this.brokenEquipmentChance
+      brokenEquipmentChance: this.brokenEquipmentChance,
+      enableUpgrades:this.enableUpgrades,upgradeChance:this.upgradeChance,maxUpgradesPerItem:this.maxUpgradesPerItem,
+      upgradeTypes:this.upgradeTypes,upgradeRanks:this.upgradeRanks
     });
   }
 
@@ -372,6 +391,7 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.magicTypeFilters = { ...form.magicTypeFilters };
     this.magicPercent = form.magicPercent;
     this.brokenEquipmentChance = form.brokenEquipmentChance;
+    for(const key of ["enableUpgrades","upgradeChance","maxUpgradesPerItem","upgradeTypes","upgradeRanks"])this[key]=foundry.utils.deepClone(form[key]);
     return form;
   }
 
@@ -433,7 +453,7 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
   restoreGeneratedResult(payload = {}) {
     this.generated = this.#normalizeSharedResult(payload);
-    this.chatLootId = "";
+    this.chatLootId = this.generated.lootId??"";
     this.render({ force: true }).catch((error) => {
       console.error(`${MODULE_ID} | Failed to restore lootgen result.`, error);
     });
@@ -468,6 +488,7 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
   setSharedResult(payload = {}) {
     this.generated = this.#normalizeSharedResult(payload);
+    this.chatLootId=this.generated.lootId??"";
     this.render({ force: true }).catch((error) => {
       console.error(`${MODULE_ID} | Failed to refresh shared lootgen result.`, error);
     });
@@ -489,14 +510,32 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   async #generateLoot() {
-    this.generated = await this.moduleApi.lootgenSourceCatalog.generate(this.#getFormSnapshot(), {
+    const form=this.#getFormSnapshot(),key=JSON.stringify(form);
+    if(this.generationInFlight){
+      if(this.generationInFlight.key!==key)throw new Error("Дождитесь завершения текущей генерации.");
+      return this.generationInFlight.promise;
+    }
+    const promise=(async()=>{
+      if(form.enableUpgrades){
+        if(this.pendingPreparation?.key!==key)this.pendingPreparation={key,operationId:randomID()};
+        const result=await this.moduleApi.prepareLootgenGeneratedResult(form,{operationId:this.pendingPreparation.operationId});
+        this.generated=this.#projectPreparedResult(result);
+        this.chatLootId=result.lootId;
+        this.pendingPreparation=null;
+        return;
+      }
+      this.generated = await this.moduleApi.lootgenSourceCatalog.generate(form, {
       batchId: randomID(),
       generatedAt: new Intl.DateTimeFormat("ru-RU", {dateStyle:"short",timeStyle:"medium"}).format(new Date())
     });
     this.chatLootId = "";
+    })();
+    this.generationInFlight={key,promise};
+    try{return await promise;}finally{this.generationInFlight=null;}
   }
 
   #buildSharedPayload() {
+    if(this.generated.resultVersion===2)return {resultVersion:2,lootId:this.generated.lootId};
     return foundry.utils.deepClone({
       rows: this.generated.rows,
       coins: normalizeCoins(this.generated.coins ?? {}),
@@ -514,6 +553,7 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
       throw new Error("Строка лутгена не найдена.");
     }
 
+    if(this.generated.resultVersion===2)return openLootgenRowPreview({getFlag:()=>this.moduleApi.getLootgenGeneratedResult(this.generated.lootId).state},row.rowId);
     await this.moduleApi.openTradeEntry(row.sourceType, row.sourceId, row.name);
   }
 
@@ -523,6 +563,8 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
       throw new Error("Строка лутгена не найдена.");
     }
 
+    if(this.generated.resultVersion===2)return this.#claimPreparedResult(`row:${row.rowId}`,claimId=>this.moduleApi.claimLootgenChatRowToInventory(this.generated.lootId,row.rowId,{claimId,quiet:true}));
+
     if (typeof this.moduleApi.addLootgenRowToInventory === "function") {
       await this.moduleApi.addLootgenRowToInventory(row);
       return;
@@ -531,6 +573,7 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   async #addCoinsToInventory() {
+    if(this.generated.resultVersion===2)return this.#claimPreparedResult("coins",claimId=>this.moduleApi.claimLootgenChatAllToInventory(this.generated.lootId,{claimId,quiet:true,coinsOnly:true}));
     const coins = normalizeCoins(this.generated.coins ?? {});
     if (coins.totalCopper <= 0) {
       return false;
@@ -545,6 +588,7 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   async #takeAllToInventory() {
+    if(this.generated.resultVersion===2)return this.#claimPreparedResult("all",claimId=>this.moduleApi.claimLootgenChatAllToInventory(this.generated.lootId,{claimId,quiet:true}));
     if (typeof this.moduleApi.addLootgenRowsToInventory !== "function") {
       throw new Error("Текущая версия склада не поддерживает безопасную пакетную выдачу Lootgen.");
     }
@@ -557,6 +601,11 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
   async #sendResultToChat() {
     if (!this.generated.hasResult) {
       throw new Error("Сначала сгенерируйте добычу.");
+    }
+
+    if(this.generated.resultVersion===2){
+      const result=await this.moduleApi.publishLootgenGeneratedResult(this.generated.lootId);
+      this.generated=this.#projectPreparedResult(result);return result;
     }
 
     const result = await this.moduleApi.createLootgenChatMessage(this.#buildSharedPayload(), {
@@ -579,10 +628,26 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.generated.hasResult = rows.length > 0 || Number(this.generated.coins?.totalCopper ?? 0) > 0;
   }
 
+  async #claimPreparedResult(action,execute) {
+    const lootId=this.generated.lootId,key=`${lootId}:${action}`;
+    const claimId=this.pendingPreparedClaims.get(key)??randomID();this.pendingPreparedClaims.set(key,claimId);
+    try{
+      const result=await execute(claimId);
+      this.pendingPreparedClaims.delete(key);return result;
+    }finally{
+      try{
+        const current=this.#normalizeSharedResult({resultVersion:2,lootId});
+        if(this.generated.lootId===lootId)this.generated=current;
+        if(current.claims?.some(claim=>claim.id===claimId && claim.phase==="committed"))this.pendingPreparedClaims.delete(key);
+      }catch(error){console.error(`${MODULE_ID} | Failed to refresh prepared loot after claim.`,error);}
+    }
+  }
+
   handleLootgenChatClaim(lootId, rowId, claimType) {
     if (!this.chatLootId || String(lootId ?? "") !== this.chatLootId) {
       return false;
     }
+    if(this.generated.resultVersion===2){this.setSharedResult({resultVersion:2,lootId});return true;}
 
     if (claimType === "coins") {
       this.generated.coins = randomCoinsFromValue(0);
@@ -608,6 +673,7 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   async _prepareContext() {
+    if(this.generated.resultVersion===2)this.generated=this.#normalizeSharedResult(this.generated);
     const isGM = game.user?.isGM === true;
     const canManage = isGM && !this.viewer;
     let model = {};
@@ -646,7 +712,7 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const hasGearSource = this.includeGear && gearTypeOptions.some((option) => option.checked);
     const hasMagicSource = this.includeMagicItems && magicTypeOptions.some((option) => option.checked);
     const hasItemSources = hasGearSource || hasMagicSource;
-    const generateDisabled = !hasItemSources;
+    const generateDisabled = !hasItemSources || Boolean(this.generationInFlight);
     return {
       isGM,
       viewer: this.viewer,
@@ -670,9 +736,13 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
         hasMagicTypeOptions: magicTypeOptions.length > 0,
         magicPercent: this.magicPercent,
         brokenEquipmentChance: this.brokenEquipmentChance,
+        enableUpgrades:this.enableUpgrades,upgradeChance:this.upgradeChance,maxUpgradesPerItem:this.maxUpgradesPerItem,
+        upgradeTypes:this.upgradeTypes,upgradeRanks:this.upgradeRanks,
+        upgradeTypeOptions:["Материал","Зачарование","Проклятье"].map(value=>({value,checked:this.upgradeTypes.includes(value)})),
+        upgradeRankOptions:Array.from({length:10},(_,index)=>({value:index+1,checked:this.upgradeRanks.includes(index+1)})),
         hasItemSources,
         generateDisabled,
-        generateDisabledReason: generateDisabled
+        generateDisabledReason: this.generationInFlight?"Подготовка добычи…":generateDisabled
           ? "Выберите хотя бы один источник предметов: снаряжение или магические предметы."
           : ""
       },
@@ -744,7 +814,7 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
             return;
           }
 
-          if (fieldName === "magicPercent" || fieldName === "brokenEquipmentChance" || fieldName === "coinBudgetPercent") {
+          if (fieldName === "magicPercent" || fieldName === "brokenEquipmentChance" || fieldName === "coinBudgetPercent" || fieldName === "upgradeChance") {
             this[fieldName] = fieldName === "brokenEquipmentChance"
               ? normalizeBrokenEquipmentChance(input.value)
               : Math.min(100, Math.max(0, toInteger(input.value, this[fieldName])));
@@ -757,16 +827,24 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
             input.value = String(this[fieldName]);
             return;
           }
+          if(fieldName==="maxUpgradesPerItem"){this[fieldName]=Math.min(3,Math.max(1,toInteger(input.value,1)));input.value=String(this[fieldName]);return;}
 
           this[fieldName] = Math.max(0, toInteger(input.value, this[fieldName]));
           input.value = String(this[fieldName]);
         }, listenerOptions);
       });
 
-      element.querySelector("[data-action='lootgen-generate']")?.addEventListener("click", async () => {
+      element.querySelectorAll("[data-upgrade-filter]").forEach(input=>input.addEventListener("change",()=>{
+        const key=input.dataset.upgradeFilter,value=key==="upgradeRanks"?Number(input.value):input.value;
+        if(!["upgradeTypes","upgradeRanks"].includes(key))return;
+        this[key]=input.checked?[...new Set([...this[key],value])]:this[key].filter(entry=>entry!==value);
+      },listenerOptions));
+
+      element.querySelector("[data-action='lootgen-generate']")?.addEventListener("click", async (event) => {
+        const button=event.currentTarget;button.disabled=true;
         try {
           await this.#generateLoot();
-          if (game.user?.isGM && typeof this.moduleApi.shareLootgenResult === "function") {
+          if (this.generated.resultVersion!==2 && game.user?.isGM && typeof this.moduleApi.shareLootgenResult === "function") {
             await this.moduleApi.shareLootgenResult(this.#buildSharedPayload());
           }
           await this.render({ force: true });
@@ -777,10 +855,12 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
           await this.render({ force: true });
           await this.#postStatusToChat("error", message);
         }
+        finally{button.disabled=false;}
       }, listenerOptions);
 
       element.querySelector("[data-action='lootgen-clear']")?.addEventListener("click", async () => {
-        const previousResult = this.#cloneGeneratedResult();
+        if(this.generationInFlight){ui.notifications?.info("Дождитесь завершения генерации.");return;}
+        const previousResult = this.#cloneGeneratedResult({referenceOnly:true});
         this.generated = this.#createEmptyGenerated();
         this.chatLootId = "";
         await this.render({ force: true });
@@ -861,9 +941,9 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
         button.addEventListener("click", async (event) => {
           try {
             const rowIndex = toInteger(event.currentTarget.dataset.rowIndex, -1);
-            await this.#addRowToInventory(rowIndex);
+            const changed=await this.#addRowToInventory(rowIndex);
             await this.render({ force: true });
-            await this.#postStatusToChat("success", "Строка добычи добавлена в партийный склад.");
+            if(changed!==false)await this.#postStatusToChat("success", "Строка добычи добавлена в партийный склад.");
           }
           catch (error) {
             console.error(`${MODULE_ID} | Failed to add loot row to inventory.`, error);
@@ -876,9 +956,9 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
       element.querySelector("[data-action='lootgen-take-all']")?.addEventListener("click", async () => {
         try {
-          await this.#takeAllToInventory();
+          const changed=await this.#takeAllToInventory();
           await this.render({ force: true });
-          await this.#postStatusToChat("success", "Добыча полностью перенесена в партийный склад.");
+          if(changed!==false)await this.#postStatusToChat("success", this.generated.resultVersion===2?"Добыча обработана правилами партийного склада.":"Добыча полностью перенесена в партийный склад.");
         }
         catch (error) {
           console.error(`${MODULE_ID} | Failed to transfer generated loot.`, error);

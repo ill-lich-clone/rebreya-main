@@ -785,12 +785,25 @@ test("lootgen trusts only GM-authored chat state and journals direct grants", as
   assert.doesNotMatch(appSource, /updatePartyCurrency\(\{/u);
 });
 
-test("unpublished prepared loot is an escaped noninteractive GM preview",async()=>{
+test("unpublished prepared loot is an escaped GM preview with only a reopen action",async()=>{
   const restore=installLootgenChatFoundryStubs();
   try {
     const {buildLootgenChatContent}=await import("../scripts/ui/lootgen-chat.js?prepared-preview");
     const content=buildLootgenChatContent({resultVersion:2,generationReady:true,published:false,lootId:"draft",rows:[{name:"<Sword>",quantity:1,totalValue:120,upgrades:[{name:"<Sharp>"}]}]});
     assert.match(content,/&lt;Sword&gt;/u);assert.match(content,/&lt;Sharp&gt;/u);
-    assert.doesNotMatch(content,/data-lootgen-chat-action|draggable="true"/u);
+    assert.doesNotMatch(content,/data-lootgen-chat-action="claim-|draggable="true"/u);
+    assert.match(content,/data-lootgen-chat-action="open-prepared"/u);
+  }finally{restore();}
+});
+
+test("composed preview shows saved choices and total value without creating an Item or rerolling",async()=>{
+  const restore=installLootgenChatFoundryStubs();
+  let shown;
+  try{
+    foundry.applications={api:{DialogV2:{wait:async options=>{shown=options;return true;}}}};
+    const {openLootgenRowPreview}=await import("../scripts/ui/lootgen-chat.js?composition-preview");
+    await openLootgenRowPreview({getFlag:()=>({resultVersion:2,generationReady:true,lootId:"loot",rows:[{rowId:"row",name:"Sword",quantity:1,totalValue:120,upgrades:[{name:"<Sharp>",decision:"simple-implemented",choices:{damageType:"radiant"}}]}]})},"row");
+    assert.match(shown.content,/120/u);assert.match(shown.content,/&lt;Sharp&gt;/u);assert.match(shown.content,/Тип урона: radiant/u);
+    assert.doesNotMatch(shown.content,/data-lootgen-chat-action/u);assert.equal(shown.window.title,"Состав предмета");
   }finally{restore();}
 });
