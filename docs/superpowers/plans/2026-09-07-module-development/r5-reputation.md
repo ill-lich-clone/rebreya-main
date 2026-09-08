@@ -98,7 +98,7 @@ Live: selectedActor1/2, concurrent edit, close/cancel, reload, narrow window, GM
 - [x] Обновить профильные методы паспорта и README при изменении public contract.
 - [x] Поднять актуальную patch version в module.json; создать/переименовать versioned forwarder с единственным import "./main.js"; обновить esmodules. Проверить отсутствие старых runtime-entrypoint ссылок.
 - [x] Выполнить один полный цикл команд из README этого комплекта, проверить содержательный diff, stat и diff --check.
-- [ ] Stage только перечисленных файлов текущего этапа и обязательных manifest/docs; осмысленный commit; git push -u origin lich_branch. Проверить чистую рабочую копию и HEAD...origin/lich_branch = 0/0. Не включать чужие изменения.
+- [x] Stage только перечисленных файлов текущего этапа и обязательных manifest/docs; осмысленный commit; git push -u origin lich_branch. Проверить чистую рабочую копию и HEAD...origin/lich_branch = 0/0. Не включать чужие изменения.
 
 ## Фактический результат — 2026-09-08
 
@@ -128,4 +128,4 @@ Live: selectedActor1/2, concurrent edit, close/cancel, reload, narrow window, GM
 
 ### Git
 
-До stage: lich_branch, HEAD b6fb0d53; после fetch HEAD...origin/main = 344/0, HEAD...origin/lich_branch = 0/0. Все изменения относятся к R5. Commit/push фиксируются после успешного выполнения.
+До stage: lich_branch, HEAD b6fb0d53; после fetch HEAD...origin/main = 344/0, HEAD...origin/lich_branch = 0/0. Все изменения относятся к R5. Реализация: commit `12dfc30f` (`feat: add actor reputation on inventory group page`), push в origin/lich_branch выполнен. После push рабочая копия чистая, HEAD...origin/lich_branch = 0/0. Эта запись — отдельное документирование результата, runtime не менялся.
