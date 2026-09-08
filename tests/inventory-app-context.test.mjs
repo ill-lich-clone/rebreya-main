@@ -971,6 +971,8 @@ test("InventoryApp folder actions trim names, preserve IDs and target root or se
   const calls = [];
   const confirmations = [];
   const promptConfigs = [];
+  const colorCalls = [];
+  const colorAnswers = [null, {confirmed:true,color:null}, {confirmed:true,color:"#aabbcc"}, {confirmed:true,color:"url(x)"}];
   const promptValues = ["  Корень  ", "  Вложенная  ", "  Новое имя  ", "  Папка popout  ", "   ", "x".repeat(81)];
   globalThis.ui = { notifications: {
     info: (message) => notifications.push(["info", message]),
@@ -981,6 +983,7 @@ test("InventoryApp folder actions trim names, preserve IDs and target root or se
     value: { randomUUID: () => `folder-${calls.filter((call) => call[0] === "create").length + 1}` }
   });
   globalThis.foundry.applications.api.DialogV2.wait = async (config) => {
+    if (config.window.title === "Цвет папки") return colorAnswers.shift();
     promptConfigs.push(config);
     return answerFolderDialog(config, { name: promptValues.shift() });
   };
@@ -994,6 +997,7 @@ test("InventoryApp folder actions trim names, preserve IDs and target root or se
     calls.push(["create", payload]);
     return payload;
   };
+  moduleApi.setInventoryFolderColor = async payload => colorCalls.push(payload);
   moduleApi.renameInventoryFolder = async (payload) => {
     calls.push(["rename", payload]);
     return payload;
@@ -1038,6 +1042,8 @@ test("InventoryApp folder actions trim names, preserve IDs and target root or se
     await dispatchClick(createButton);
     await clickMenuAction("Создать вложенную папку");
     await clickMenuAction("Переименовать");
+    for(let i=0;i<4;i++) await clickMenuAction("Цвет папки");
+    assert.deepEqual(colorCalls,[{groupActorId:"group-a",folderId:"alpha",color:null},{groupActorId:"group-a",folderId:"alpha",color:"#AABBCC"}]);
     await clickMenuAction("Открыть отдельно");
     await clickMenuAction("Удалить");
     folderRow.dataset.canCreateChild = "false";
@@ -1046,6 +1052,7 @@ test("InventoryApp folder actions trim names, preserve IDs and target root or se
     assert.deepEqual(depthFiveActions.map((action) => collectText(action)), [
       "Создать вложенную папку",
       "Переименовать",
+      "Цвет папки",
       "Открыть отдельно",
       "Удалить"
     ]);
@@ -1070,7 +1077,7 @@ test("InventoryApp folder actions trim names, preserve IDs and target root or se
     assert.equal(confirmations.length, 1);
     assert.match(confirmations[0].content, /на один уровень выше/iu);
     assert.match(confirmations[0].content, /не (?:будут )?удал/iu);
-    assert.equal(notifications.filter(([type]) => type === "error").length, 2);
+    assert.equal(notifications.filter(([type]) => type === "error").length, 3);
   }
   finally {
     if (cryptoDescriptor) Object.defineProperty(globalThis, "crypto", cryptoDescriptor);
@@ -7560,4 +7567,23 @@ test("InventoryApp no longer binds independent legacy day controls", async () =>
     dom.restore();
     restoreFoundry();
   }
+});
+
+test("folder color dialog distinguishes cancellation, reset and valid color", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const {promptInventoryFolderColor}=await import("../scripts/ui/inventory-app.js");
+  const previous=globalThis.foundry.applications.api.DialogV2.wait;
+  try {
+    for (const result of [null,undefined,"cancel",{confirmed:false}]) {
+      globalThis.foundry.applications.api.DialogV2.wait=async()=>result;
+      assert.deepEqual(await promptInventoryFolderColor(),{confirmed:false});
+    }
+    for (const [action,value,expected] of [["reset","bad",null],["confirm","#aabbcc","#AABBCC"]]) {
+      globalThis.foundry.applications.api.DialogV2.wait=async config=>
+        config.buttons.find(b=>b.action===action).callback(null,{form:{elements:{folderColor:{value}}}});
+      assert.deepEqual(await promptInventoryFolderColor(),{confirmed:true,color:expected});
+    }
+    globalThis.foundry.applications.api.DialogV2.wait=async()=>({confirmed:true,color:"url(x)"});
+    await assert.rejects(promptInventoryFolderColor(),/цвет/);
+  } finally {globalThis.foundry.applications.api.DialogV2.wait=previous;restoreFoundry();}
 });

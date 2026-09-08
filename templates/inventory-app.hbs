@@ -304,6 +304,7 @@
                   class="rm-inventory-tree-row rm-inventory-tree-row--folder rm-inventory-folder-row {{#if isCollapsed}}is-collapsed{{/if}}"
                   data-folder-id="{{folderId}}"
                   data-folder-name="{{name}}"
+                  data-folder-color="{{color}}"
                   data-depth="{{depth}}"
                   data-can-create-child="{{canCreateChild}}"
                   {{#if ../canOrganizeInventory}}data-folder-drag="true" data-folder-drop-id="{{folderId}}" draggable="true"{{/if}}
@@ -315,7 +316,7 @@
                     <button type="button" class="rm-icon-button rm-inventory-folder-row__toggle" data-action="toggle-inventory-folder" data-folder-id="{{folderId}}" title="{{#if expanded}}Свернуть папку{{else}}Раскрыть папку{{/if}}" aria-label="{{#if expanded}}Свернуть папку{{else}}Раскрыть папку{{/if}}">
                       <i class="fa-solid {{#if expanded}}fa-chevron-down{{else}}fa-chevron-right{{/if}}" aria-hidden="true"></i>
                     </button>
-                    <i class="fa-solid fa-folder rm-inventory-folder-row__icon" aria-hidden="true"></i>
+                    <i class="fa-solid fa-folder rm-inventory-folder-row__icon" {{#if color}}style="--rm-folder-color: {{color}}"{{/if}} aria-hidden="true"></i>
                     <strong class="rm-inventory-folder-row__name">{{name}}</strong>
                     <span class="rm-inventory-folder-row__count">{{rmNum recursiveItemCount precision=0}} поз.</span>
                   </div>

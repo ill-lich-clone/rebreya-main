@@ -43,6 +43,23 @@ export function resolveInventoryDropFolderId({ target, state, itemIds = [], root
   return folderId;
 }
 
+export function normalizeInventoryFolderColor(value, { strict = false } = {}) {
+  if (value == null) return null;
+  if (typeof value === "string" && /^#[0-9a-f]{6}$/iu.test(value)) return value.toUpperCase();
+  if (strict) throw new InventoryFolderStateError("invalid-color", "Некорректный цвет папки.");
+  return null;
+}
+
+export function setInventoryFolderColor(rawState, { folderId, color }) {
+  const state = normalizeReducerState(rawState);
+  const id = requireFolderId(folderId);
+  const normalizedColor = normalizeInventoryFolderColor(color, { strict: true });
+  const folder = state.folders.find(entry => entry.id === id);
+  if (!folder) throw new InventoryFolderStateError("folder-not-found", "Folder was not found.");
+  folder.color = normalizedColor;
+  return state;
+}
+
 function isObject(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
@@ -196,7 +213,8 @@ export function normalizeInventoryFolderState(rawState, { itemIds = [] } = {}) {
     const folder = {
       id,
       name,
-      parentId: cleanNullableId(rawFolder.parentId)
+      parentId: cleanNullableId(rawFolder.parentId),
+      color: normalizeInventoryFolderColor(rawFolder.color)
     };
     folders.push(folder);
     foldersById.set(id, folder);
@@ -311,7 +329,8 @@ export function createInventoryFolder(rawState, { folderId, name, parentId = nul
     folders: [...state.folders.map((folder) => ({ ...folder })), {
       id,
       name: normalizedName,
-      parentId: normalizedParentId
+      parentId: normalizedParentId,
+      color: null
     }],
     itemFolderIds: { ...state.itemFolderIds }
   };
@@ -440,6 +459,7 @@ export function buildInventoryFolderTree({ state, items = [], compareItems } = {
       id: folder.id,
       folderId: folder.id,
       name: folder.name,
+      color: folder.color,
       parentId: folder.parentId,
       folders: [],
       items: [],
@@ -602,6 +622,7 @@ export function projectInventoryFolderRows({
         kind: "folder",
         folderId: folder.folderId,
         name: folder.name,
+        color: folder.color,
         parentId: folder.parentId,
         depth: folderDepth,
         recursiveItemCount: folder.recursiveItemCount,

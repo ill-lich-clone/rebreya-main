@@ -5,6 +5,7 @@ import { MODULE_ID, REBREYA_GROUP_FLAGS, SETTINGS_KEYS } from "../scripts/consta
 import {
   INVENTORY_FOLDER_CREATE_COMMAND,
   INVENTORY_FOLDER_RENAME_COMMAND,
+  INVENTORY_FOLDER_COLOR_COMMAND,
   INVENTORY_FOLDER_MOVE_COMMAND,
   INVENTORY_FOLDER_DELETE_COMMAND,
   INVENTORY_INGRESS_RULE_CREATE_COMMAND,
@@ -206,6 +207,7 @@ const FILTER_RULE = {
 };
 
 const COMMAND_CASES = [
+  {command: INVENTORY_FOLDER_COLOR_COMMAND, method:"setInventoryFolderColor", payload:{groupActorId:"group-a",folderId:"a",color:"#AA7733"}, wrongValue:p=>({...p,color:"url(x)"})},
   {
     command: INVENTORY_FOLDER_CREATE_COMMAND,
     method: "createInventoryFolder",
@@ -271,7 +273,7 @@ const COMMAND_CASES = [
   }
 ];
 
-test("eight inventory organization commands dispatch exact payloads and refresh only the returned Actor", async () => {
+test("inventory organization commands dispatch exact payloads and refresh only the returned Actor", async () => {
   const fixture = installFixture();
   try {
     const moduleApi = new RebreyaMainModule();
@@ -706,4 +708,39 @@ test("personal expansion state merges queued views and writes only the current U
   finally {
     fixture.restore();
   }
+});
+
+test("color mutations authorize senders and preserve a concurrent rename and membership", async () => {
+  const fixture=installFixture({groupAFolders:[{id:"a",name:"A",parentId:null}],groupAItems:[{id:"rope"}]});
+  try {
+    const api=new RebreyaMainModule(); api.refreshInventoryViews=async()=>{};
+    fixture.groupA.flags[MODULE_ID].inventoryFolders.itemFolderIds={rope:"a"};
+    const payload={groupActorId:"group-a",folderId:"a",color:"#aa7733"};
+    for (const [sender,id] of [[fixture.users.playerB.id,"foreign"],["missing","unknown"]]) {
+      await api.handleSocketMessage(commandRequest(INVENTORY_FOLDER_COLOR_COMMAND,sender,payload,id));
+    }
+    await api.handleSocketMessage(commandRequest(INVENTORY_FOLDER_COLOR_COMMAND,fixture.users.playerA.id,payload,"forged"),fixture.users.playerB.id);
+    await flushCommands();
+    assert.equal(fixture.groupA.setFlagCalls.length,0);
+    assert.equal(resultFor(fixture,"foreign").error.code,"unauthorized");
+    assert.equal(resultFor(fixture,"unknown").error.code,"unknown-sender");
+    assert.equal(resultFor(fixture,"forged").error.code,"sender-mismatch");
+    let release,enter; const entered=new Promise(r=>enter=r);
+    const blocked=api.worldMutationCoordinator.run("inventory-organization:group-a",async()=>{enter();await new Promise(r=>release=r)});
+    await entered;
+    const rename=api.renameInventoryFolder({groupActorId:"group-a",folderId:"a",name:"Новое"});
+    const color=api.setInventoryFolderColor(payload);
+    release();await blocked;await Promise.all([rename,color]);
+    const state=fixture.groupA.flags[MODULE_ID].inventoryFolders;
+    assert.equal(state.folders[0].name,"Новое");assert.equal(state.folders[0].color,"#AA7733");
+    assert.deepEqual(state.itemFolderIds,{rope:"a"});
+    const count=fixture.groupA.setFlagCalls.length;
+    await api.setInventoryFolderColor(payload);
+    assert.equal(fixture.groupA.setFlagCalls.length,count);
+    await api.handleSocketMessage(commandRequest(INVENTORY_FOLDER_COLOR_COMMAND,fixture.users.playerA.id,{...payload,color:null},"member-reset"));
+    await flushCommands();
+    assert.equal(resultFor(fixture,"member-reset").ok,true);
+    assert.equal(fixture.groupA.flags[MODULE_ID].inventoryFolders.folders[0].color,null);
+    assert.equal(fixture.groupB.setFlagCalls.length,0);
+  } finally {fixture.restore();}
 });

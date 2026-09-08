@@ -51,8 +51,9 @@ import {
   moveInventoryItemToFolder as moveInventoryItemToFolderState,
   normalizeExpandedFolderIds,
   normalizeInventoryFolderState,
+  setInventoryFolderColor as setInventoryFolderColorState,
   renameInventoryFolder as renameInventoryFolderState
-} from "./inventory-folder-tree.js";
+} from "./inventory-folder-tree.js?v=1.4.248-folder-colors";
 import { resolveGearItemIcon } from "./gear-icon-resolver.js?v=1.4.243";
 
 const SOCKET_CHANNEL = `module.${MODULE_ID}`;
@@ -69,6 +70,7 @@ export const INVENTORY_IMPORT_COMMAND = "inventory.import";
 export const INVENTORY_CURRENCY_UPDATE_COMMAND = "inventory.currency.update";
 export const INVENTORY_CURRENCY_CONVERT_COMMAND = "inventory.currency.convert";
 export const INVENTORY_FOLDER_CREATE_COMMAND = "inventory.folder.create";
+export const INVENTORY_FOLDER_COLOR_COMMAND = "inventory.folder.set-color";
 export const INVENTORY_FOLDER_RENAME_COMMAND = "inventory.folder.rename";
 export const INVENTORY_FOLDER_MOVE_COMMAND = "inventory.folder.move";
 export const INVENTORY_FOLDER_DELETE_COMMAND = "inventory.folder.delete";
@@ -4972,6 +4974,13 @@ export class InventoryService {
   createInventoryFolder({ groupActorId, folderId, name, parentId = null }) {
     return this.#mutateInventoryFolderState(groupActorId, ({ state }) => ({
       state: createInventoryFolderState(state, { folderId, name, parentId }),
+      folderId
+    }));
+  }
+
+  setInventoryFolderColor({ groupActorId, folderId, color }) {
+    return this.#mutateInventoryFolderState(groupActorId, ({ state }) => ({
+      state: setInventoryFolderColorState(state, { folderId, color }),
       folderId
     }));
   }

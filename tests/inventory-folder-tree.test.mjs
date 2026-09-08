@@ -34,8 +34,8 @@ function makeState(folders, itemFolderIds = {}) {
 test("drop destination follows the exact item membership and distinguishes popout background from root", async () => {
   const { resolveInventoryDropFolderId: resolve } = await import("../scripts/data/inventory-folder-tree.js");
   const state = makeState([
-    { id: "bag", name: "Сумка", parentId: null },
-    { id: "deep", name: "Сумка", parentId: "bag" }
+    { id: "bag", name: "Сумка", parentId: null, color: null },
+    { id: "deep", name: "Сумка", parentId: "bag", color: null }
   ], { inside: "deep" });
   const before = structuredClone(state);
   const base = { state, itemIds: ["inside", "root"], rootFolderId: "bag" };
@@ -52,7 +52,7 @@ test("drop destination follows the exact item membership and distinguishes popou
 
 test("drop destination rejects stale items, missing folders and malformed targets instead of falling back to root", async () => {
   const { resolveInventoryDropFolderId: resolve } = await import("../scripts/data/inventory-folder-tree.js");
-  const state = makeState([{ id: "bag", name: "Сумка", parentId: null }], { orphan: "deleted" });
+  const state = makeState([{ id: "bag", name: "Сумка", parentId: null, color: null }], { orphan: "deleted" });
   const base = { state, itemIds: ["orphan"], rootFolderId: null };
   for (const target of [
     { kind: "item", id: "missing" }, { kind: "item", id: "orphan" },
@@ -77,13 +77,13 @@ test("normalizeInventoryFolderState repairs corrupt parents, cycles, depth and m
   const normalized = normalizeInventoryFolderState({
     version: 99,
     folders: [
-      { id: "a", name: " A ", parentId: "b" },
-      { id: "b", name: "B", parentId: "a" },
-      { id: "a", name: "duplicate", parentId: null },
-      { id: "self", name: "Self", parentId: "self" },
-      { id: "missing", name: "Missing", parentId: "absent" },
+      { id: "a", name: " A ", parentId: "b", color: null },
+      { id: "b", name: "B", parentId: "a", color: null },
+      { id: "a", name: "duplicate", parentId: null, color: null },
+      { id: "self", name: "Self", parentId: "self", color: null },
+      { id: "missing", name: "Missing", parentId: "absent", color: null },
       { id: "", name: "invalid", parentId: null },
-      { id: "blank", name: "   ", parentId: null }
+      { id: "blank", name: "   ", parentId: null, color: null }
     ],
     itemFolderIds: {
       live: "a",
@@ -95,10 +95,10 @@ test("normalizeInventoryFolderState repairs corrupt parents, cycles, depth and m
   assert.deepEqual(normalized, {
     version: 1,
     folders: [
-      { id: "a", name: "A", parentId: null },
-      { id: "b", name: "B", parentId: null },
-      { id: "self", name: "Self", parentId: null },
-      { id: "missing", name: "Missing", parentId: null }
+      { id: "a", name: "A", parentId: null, color: null },
+      { id: "b", name: "B", parentId: null, color: null },
+      { id: "self", name: "Self", parentId: null, color: null },
+      { id: "missing", name: "Missing", parentId: null, color: null }
     ],
     itemFolderIds: { live: "a" }
   });
@@ -111,13 +111,13 @@ test("normalizeInventoryFolderState handles empty input, duplicate names and fir
 
   assert.deepEqual(normalizeInventoryFolderState({
     folders: [
-      { id: " one ", name: " Same ", parentId: "" },
-      { id: "two", name: "Same", parentId: null },
-      { id: "one", name: "Ignored", parentId: "two" }
+      { id: " one ", name: " Same ", parentId: "", color: null },
+      { id: "two", name: "Same", parentId: null, color: null },
+      { id: "one", name: "Ignored", parentId: "two", color: null }
     ]
   }), makeState([
-    { id: "one", name: "Same", parentId: null },
-    { id: "two", name: "Same", parentId: null }
+    { id: "one", name: "Same", parentId: null, color: null },
+    { id: "two", name: "Same", parentId: null, color: null }
   ]));
 });
 
@@ -125,7 +125,8 @@ test("normalizeInventoryFolderState promotes the first sixth-level node and keep
   const folders = Array.from({ length: 7 }, (_, index) => ({
     id: `f${index + 1}`,
     name: `F${index + 1}`,
-    parentId: index === 0 ? null : `f${index}`
+    parentId: index === 0 ? null : `f${index}`,
+    color: null
   }));
 
   assert.deepEqual(normalizeInventoryFolderState({ folders }).folders, [
@@ -150,8 +151,8 @@ test("createInventoryFolder trims names, permits duplicate names and is idempote
   const replay = createInventoryFolder(state, { folderId: "a", name: "Same", parentId: null });
 
   assert.deepEqual(state.folders, [
-    { id: "a", name: "Same", parentId: null },
-    { id: "b", name: "Same", parentId: null }
+    { id: "a", name: "Same", parentId: null, color: null },
+    { id: "b", name: "Same", parentId: null, color: null }
   ]);
   assert.deepEqual(replay, state);
   assert.notStrictEqual(replay, state);
@@ -182,12 +183,12 @@ test("create and move validate depth of the deepest descendant", () => {
   );
 
   const movable = makeState([
-    { id: "target", name: "Target", parentId: null },
-    { id: "target-child", name: "Target child", parentId: "target" },
-    { id: "target-deep", name: "Target deep", parentId: "target-child" },
-    { id: "branch", name: "Branch", parentId: null },
-    { id: "branch-child", name: "Branch child", parentId: "branch" },
-    { id: "branch-leaf", name: "Branch leaf", parentId: "branch-child" }
+    { id: "target", name: "Target", parentId: null, color: null },
+    { id: "target-child", name: "Target child", parentId: "target", color: null },
+    { id: "target-deep", name: "Target deep", parentId: "target-child", color: null },
+    { id: "branch", name: "Branch", parentId: null, color: null },
+    { id: "branch-child", name: "Branch child", parentId: "branch", color: null },
+    { id: "branch-leaf", name: "Branch leaf", parentId: "branch-child", color: null }
   ]);
   assertFolderError(
     () => moveInventoryFolder(movable, { folderId: "branch", parentId: "target-deep" }),
@@ -197,16 +198,16 @@ test("create and move validate depth of the deepest descendant", () => {
 
 test("rename and move preserve identity, descendants and memberships", () => {
   const state = makeState([
-    { id: "a", name: "A", parentId: null },
-    { id: "b", name: "B", parentId: "a" },
-    { id: "c", name: "C", parentId: null }
+    { id: "a", name: "A", parentId: null, color: null },
+    { id: "b", name: "B", parentId: "a", color: null },
+    { id: "c", name: "C", parentId: null, color: null }
   ], { item: "b" });
 
   const renamed = renameInventoryFolder(state, { folderId: "a", name: " Renamed " });
   assert.deepEqual(renamed, makeState([
-    { id: "a", name: "Renamed", parentId: null },
-    { id: "b", name: "B", parentId: "a" },
-    { id: "c", name: "C", parentId: null }
+    { id: "a", name: "Renamed", parentId: null, color: null },
+    { id: "b", name: "B", parentId: "a", color: null },
+    { id: "c", name: "C", parentId: null, color: null }
   ], { item: "b" }));
 
   const moved = moveInventoryFolder(renamed, { folderId: "b", parentId: "c" });
@@ -222,10 +223,10 @@ test("deleteInventoryFolder promotes direct contents without flattening deeper d
   const state = {
     version: 1,
     folders: [
-      { id: "parent", name: "Parent", parentId: null },
-      { id: "deleted", name: "Deleted", parentId: "parent" },
-      { id: "child", name: "Child", parentId: "deleted" },
-      { id: "grandchild", name: "Grandchild", parentId: "child" }
+      { id: "parent", name: "Parent", parentId: null, color: null },
+      { id: "deleted", name: "Deleted", parentId: "parent", color: null },
+      { id: "child", name: "Child", parentId: "deleted", color: null },
+      { id: "grandchild", name: "Grandchild", parentId: "child", color: null }
     ],
     itemFolderIds: { itemA: "deleted", itemB: "grandchild" }
   };
@@ -233,23 +234,23 @@ test("deleteInventoryFolder promotes direct contents without flattening deeper d
   assert.deepEqual(deleteInventoryFolder(state, { folderId: "deleted" }), {
     version: 1,
     folders: [
-      { id: "parent", name: "Parent", parentId: null },
-      { id: "child", name: "Child", parentId: "parent" },
-      { id: "grandchild", name: "Grandchild", parentId: "child" }
+      { id: "parent", name: "Parent", parentId: null, color: null },
+      { id: "child", name: "Child", parentId: "parent", color: null },
+      { id: "grandchild", name: "Grandchild", parentId: "child", color: null }
     ],
     itemFolderIds: { itemA: "parent", itemB: "grandchild" }
   });
 
   const rootDeleted = deleteInventoryFolder(makeState([
-    { id: "root", name: "Root", parentId: null },
-    { id: "child", name: "Child", parentId: "root" }
+    { id: "root", name: "Root", parentId: null, color: null },
+    { id: "child", name: "Child", parentId: "root", color: null }
   ], { item: "root" }), { folderId: "root" });
-  assert.deepEqual(rootDeleted, makeState([{ id: "child", name: "Child", parentId: null }]));
+  assert.deepEqual(rootDeleted, makeState([{ id: "child", name: "Child", parentId: null, color: null }]));
   assert.deepEqual(deleteInventoryFolder(state, { folderId: "absent" }), state);
 });
 
 test("moveInventoryItemToFolder changes only membership and root removes the key", () => {
-  const state = makeState([{ id: "folder", name: "Folder", parentId: null }], { other: "folder" });
+  const state = makeState([{ id: "folder", name: "Folder", parentId: null, color: null }], { other: "folder" });
   const assigned = moveInventoryItemToFolder(state, { itemId: "stack", folderId: "folder" });
   assert.deepEqual(assigned.itemFolderIds, { other: "folder", stack: "folder" });
   assert.deepEqual(moveInventoryItemToFolder(assigned, { itemId: "stack", folderId: null }).itemFolderIds, {
@@ -263,12 +264,12 @@ test("moveInventoryItemToFolder changes only membership and root removes the key
 
 function buildProjectionFixture() {
   const state = makeState([
-    { id: "b", name: "Броня", parentId: null },
-    { id: "a", name: "Арсенал", parentId: null },
-    { id: "melee", name: "Ближний бой", parentId: "a" },
-    { id: "empty", name: "Пустая", parentId: "a" },
-    { id: "same-1", name: "Одинаково", parentId: null },
-    { id: "same-2", name: "Одинаково", parentId: null }
+    { id: "b", name: "Броня", parentId: null, color: null },
+    { id: "a", name: "Арсенал", parentId: null, color: null },
+    { id: "melee", name: "Ближний бой", parentId: "a", color: null },
+    { id: "empty", name: "Пустая", parentId: "a", color: null },
+    { id: "same-1", name: "Одинаково", parentId: null, color: null },
+    { id: "same-2", name: "Одинаково", parentId: null, color: null }
   ], {
     sword: "melee",
     armor: "b"
@@ -384,4 +385,26 @@ test("popout child creation uses absolute tree depth instead of relative row dep
   assert.equal(projection.rows[0].folderId, "f5");
   assert.equal(projection.rows[0].depth, 1);
   assert.equal(projection.rows[0].canCreateChild, false);
+});
+
+test("folder colors normalize safely and survive tree operations without inherited color", async () => {
+  const {setInventoryFolderColor,normalizeInventoryFolderColor}=await import("../scripts/data/inventory-folder-tree.js");
+  const raw=makeState([{id:"bag",name:"Сумка",parentId:null},{id:"child",name:"Дочь",parentId:"bag"}],{rope:"bag"});
+  const before=structuredClone(raw);
+  const colored=setInventoryFolderColor(raw,{folderId:"bag",color:"#aa7733"});
+  assert.equal(colored.folders[0].color,"#AA7733");
+  assert.equal(colored.folders[1].color,null);
+  assert.deepEqual(colored.itemFolderIds,{rope:"bag"}); assert.deepEqual(raw,before);
+  const renamed=renameInventoryFolder(colored,{folderId:"bag",name:"Новое"});
+  const moved=moveInventoryFolder(renamed,{folderId:"child",parentId:null});
+  assert.equal(moved.folders[0].color,"#AA7733");
+  assert.equal(deleteInventoryFolder(moved,{folderId:"child"}).folders[0].color,"#AA7733");
+  assert.equal(setInventoryFolderColor(moved,{folderId:"bag",color:null}).folders[0].color,null);
+  for(const value of ["red","url(x)","#123",{},42,"#123456;"]) {
+    assert.equal(normalizeInventoryFolderColor(value),null);
+    assertFolderError(()=>setInventoryFolderColor(raw,{folderId:"bag",color:value}),"invalid-color");
+  }
+  assertFolderError(()=>setInventoryFolderColor(raw,{folderId:"missing",color:null}),"folder-not-found");
+  const tree=buildInventoryFolderTree({state:colored,items:[]});
+  assert.equal(tree.foldersById.get("bag").color,"#AA7733");
 });

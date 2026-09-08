@@ -59,6 +59,7 @@ import {
   INVENTORY_FOLDER_CREATE_COMMAND,
   INVENTORY_FOLDER_DELETE_COMMAND,
   INVENTORY_FOLDER_MOVE_COMMAND,
+  INVENTORY_FOLDER_COLOR_COMMAND,
   INVENTORY_FOLDER_RENAME_COMMAND,
   INVENTORY_INGRESS_RULE_CREATE_COMMAND,
   INVENTORY_INGRESS_RULE_DELETE_COMMAND,
@@ -75,7 +76,7 @@ import {
   SOCKET_EVENT_INVENTORY_SOURCE_DEPLETION_RESULT,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_REQUEST,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_RESULT
-} from "./data/inventory-service.js?v=1.4.245-inventory-add";
+} from "./data/inventory-service.js?v=1.4.248-folder-colors";
 import {
   InventoryIngressRuleCompilerCache,
   normalizeInventoryIngressRule
@@ -967,6 +968,13 @@ function isValidInventoryFolderCreatePayload(payload) {
     && isValidInventoryFolderIdentifier(payload.folderId)
     && isValidInventoryFolderName(payload.name)
     && isValidNullableInventoryFolderIdentifier(payload.parentId);
+}
+
+function isValidInventoryFolderColorPayload(payload) {
+  return hasExactKeys(payload, ["color", "folderId", "groupActorId"])
+    && isValidInventoryFolderIdentifier(payload.groupActorId)
+    && isValidInventoryFolderIdentifier(payload.folderId)
+    && (payload.color === null || (typeof payload.color === "string" && /^#[0-9a-f]{6}$/iu.test(payload.color)));
 }
 
 function isValidInventoryFolderRenamePayload(payload) {
@@ -2324,6 +2332,11 @@ export class RebreyaMainModule {
       INVENTORY_FOLDER_CREATE_COMMAND,
       isValidInventoryFolderCreatePayload,
       "createInventoryFolder"
+    );
+    registerInventoryOrganizationMutation(
+      INVENTORY_FOLDER_COLOR_COMMAND,
+      isValidInventoryFolderColorPayload,
+      "setInventoryFolderColor"
     );
     registerInventoryOrganizationMutation(
       INVENTORY_FOLDER_RENAME_COMMAND,
@@ -5724,6 +5737,15 @@ export class RebreyaMainModule {
       payload,
       isValidInventoryFolderCreatePayload,
       "createInventoryFolder"
+    );
+  }
+
+  setInventoryFolderColor(payload) {
+    return this.#runInventoryOrganizationMutation(
+      INVENTORY_FOLDER_COLOR_COMMAND,
+      payload,
+      isValidInventoryFolderColorPayload,
+      "setInventoryFolderColor"
     );
   }
 

@@ -7,9 +7,10 @@ import {
   InventoryFolderStateError,
   MAX_INVENTORY_FOLDER_NAME_LENGTH,
   normalizeExpandedFolderIds,
+  normalizeInventoryFolderColor,
   projectInventoryFolderRows,
   resolveInventoryDropFolderId
-} from "../data/inventory-folder-tree.js?v=1.4.246-folder-drop";
+} from "../data/inventory-folder-tree.js?v=1.4.248-folder-colors";
 import { buildPartyInventoryItemDragData } from "../integrations/inventory-sync.js?v=1.4.226-inventory-transfer";
 import {
   INVENTORY_INGRESS_RULE_FIELD_DEFINITIONS,
@@ -2893,6 +2894,43 @@ export function normalizeInventoryFolderDialogResult(result) {
   return name;
 }
 
+export async function promptInventoryFolderColor(initialColor = null) {
+  const dialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
+  if (typeof dialogV2?.wait !== "function") throw new Error("Диалог цвета папки недоступен.");
+  const color = normalizeInventoryFolderColor(initialColor) ?? "#E0B25E";
+  const palette = ["#E0B25E", "#D96B6B", "#79B878", "#6AA9DC", "#AA87D7", "#D98BB4", "#E9E9E9", "#777777"];
+  const result = await dialogV2.wait({
+    window: { title: "Цвет папки" },
+    content: `<form class="rm-inventory-folder-color-dialog">
+      <div class="rm-inventory-folder-palette" aria-label="Палитра">
+        ${palette.map(value => `<button type="button" data-folder-color-swatch="${value}" style="--rm-folder-swatch:${value}" aria-label="${value}" title="${value}"></button>`).join("")}
+      </div>
+      <label>Цвет HEX <input name="folderColor" value="${color}" pattern="#[0-9a-fA-F]{6}" maxlength="7" required autocomplete="off" aria-label="Цвет HEX"></label>
+      <p>Цвет меняет иконку папки. Сброс возвращает цвет темы.</p>
+    </form>`,
+    render: (_event, dialog) => {
+      const root = getAppElement(dialog);
+      const input = root?.querySelector("[name='folderColor']");
+      for (const button of root?.querySelectorAll("[data-action='cancel'], [data-action='reset']") ?? []) {
+        button.formNoValidate = true;
+      }
+      for (const button of root?.querySelectorAll("[data-folder-color-swatch]") ?? []) {
+        button.addEventListener("click", () => { input.value = button.dataset.folderColorSwatch; input.focus(); });
+      }
+    },
+    buttons: [
+      { action: "confirm", label: "Сохранить", default: true, callback: (_event, button) => ({
+        confirmed: true, color: normalizeInventoryFolderColor(button?.form?.elements?.folderColor?.value, { strict: true })
+      }) },
+      { action: "reset", label: "Сбросить", callback: () => ({ confirmed: true, color: null }) },
+      { action: "cancel", label: "Отмена", callback: () => ({ confirmed: false }) }
+    ],
+    rejectClose: false
+  });
+  if (result?.confirmed !== true) return { confirmed: false };
+  return { confirmed: true, color: normalizeInventoryFolderColor(result.color, { strict: true }) };
+}
+
 async function promptInventoryFolderName({ title, initialName = "", confirmLabel = "Сохранить" } = {}) {
   const dialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
   if (typeof dialogV2?.wait !== "function") {
@@ -3914,6 +3952,22 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     );
   }
 
+  async #setInventoryFolderColor(folderId, initialColor) {
+    const groupActorId = this.inventoryActorId;
+    let result;
+    try {
+      result = await promptInventoryFolderColor(initialColor);
+      if (!result.confirmed) return null;
+    } catch (error) {
+      ui.notifications?.error(error.message || "Не удалось выбрать цвет папки.");
+      return null;
+    }
+    return this.#runInventoryFolderMutation(
+      () => this.moduleApi.setInventoryFolderColor({ groupActorId, folderId, color: result.color }),
+      { successMessage: "Цвет папки сохранён.", errorMessage: "Не удалось изменить цвет папки." }
+    );
+  }
+
   async #renameInventoryFolder(folderId, initialName) {
     let name;
     try {
@@ -3985,6 +4039,11 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         label: "Переименовать",
         icon: "fa-solid fa-pen",
         callback: () => this.#renameInventoryFolder(folderId, folderName)
+      },
+      {
+        label: "Цвет папки",
+        icon: "fa-solid fa-palette",
+        callback: () => this.#setInventoryFolderColor(folderId, row.dataset.folderColor)
       },
       {
         label: "Открыть отдельно",

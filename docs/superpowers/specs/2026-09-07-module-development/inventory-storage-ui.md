@@ -71,11 +71,11 @@ Live: 1280×720 и 1920×1080, масштаб 100%/125%, длинный русс
 
 Наблюдаемый результат: мастер/уполномоченный участник задаёт цвет папки; все окна группы видят его после reload.
 
-Добавить optional color:null|#RRGGBB в существующую запись folder; null означает тему по умолчанию. Нормализация старых v1 данных добавляет только проекцию null, не массовый write. При совместимом добавлении поля версия схемы остаётся v1. Невалидный persisted цвет проецируется как null, не исполняется как CSS.
+Реализовано в R2, 1.4.248: optional color:null|#RRGGBB в существующую запись folder; null означает тему по умолчанию. Нормализация старых v1 данных добавляет только проекцию null, не массовый write. При совместимом добавлении поля версия схемы остаётся v1. Невалидный persisted цвет проецируется как null, не исполняется как CSS.
 
 Новое действие «Цвет папки» в прежнем menu: палитра + hex + «Сбросить». Окрашиваются иконка/узкий акцент, текст сохраняет читаемость. Дочерние папки не наследуют цвет неявно. Переименование/перенос/popout/search не сбрасывают цвет.
 
-Проектируемый additive API setInventoryFolderColor({groupActorId,folderId,color}), exact typed command inventory.folder.set-color с прежней group-management матрицей. Pure reducer рядом с create/rename/move. Сервис fresh-read изменяет только color выбранной папки, сохраняя конкурирующие membership/rules.
+Реализованный additive API setInventoryFolderColor({groupActorId,folderId,color}), exact typed command inventory.folder.set-color с прежней group-management матрицей. Pure reducer рядом с create/rename/move. Сервис fresh-read изменяет только color выбранной папки, сохраняя конкурирующие membership/rules.
 
 Focused: inventory-folder-tree, inventory-folder-socket, inventory-app-context. Проверить старые flags, default/reset, invalid color/CSS injection, две группы, player denial, concurrent rename и recolor.
 

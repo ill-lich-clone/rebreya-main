@@ -659,7 +659,7 @@ test("getInventorySnapshot projects normalized Actor folder state without writin
 
     assert.equal(resolveForGroupCalls, 1);
     assert.deepEqual(snapshot.folders, [
-      { id: "weapons", name: "Оружие", parentId: null }
+      { id: "weapons", name: "Оружие", parentId: null, color: null }
     ]);
     assert.equal(snapshot.folderStateVersion, 1);
     assert.equal(snapshot.allItems.find((row) => row.itemId === "sword").folderId, "weapons");
@@ -742,8 +742,8 @@ test("folder mutations normalize current Actor state and write exactly once only
     assert.deepEqual(groupActor.setFlagCalls[0].value, {
       version: 1,
       folders: [
-        { id: "orphan", name: "Orphan", parentId: null },
-        { id: "weapons", name: "Weapons", parentId: null }
+        { id: "orphan", name: "Orphan", parentId: null, color: null },
+        { id: "weapons", name: "Weapons", parentId: null, color: null }
       ],
       itemFolderIds: {}
     });
