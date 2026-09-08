@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildLootgenGeneratedState, readLootgenCatalogFingerprint } from "../scripts/application/lootgen-generated-state.js";
+import { buildLootgenGeneratedState, readLootgenCatalogFingerprint, assertLootgenCatalogCurrent } from "../scripts/application/lootgen-generated-state.js";
 import { LootgenSourceCatalog } from "../scripts/data/lootgen-source-catalog.js";
 import { readLootgenPreparedComposition } from "../scripts/data/lootgen-prepared-item.js";
 const profile={type:"Зачарование",rank:1,compatibility:["weapon"]};
@@ -44,4 +44,29 @@ test("catalog signature changes with the authoritative source price",async()=>{
   const second=await buildLootgenGeneratedState(form,{operationId:"op",lootId:"loot",authorId:"gm"},b);
   assert.equal(first.spentValue,120);assert.equal(second.spentValue,110);
   assert.notEqual(first.catalogFingerprint,second.catalogFingerprint);
+});
+
+test("catalog gate accepts the saved composition and ignores legacy state",async()=>{
+  const f=fixture(), state={...await buildLootgenGeneratedState(form,{operationId:"op",lootId:"loot",authorId:"gm"},f),form,resultVersion:2};
+  await assertLootgenCatalogCurrent(state,f.catalog);
+  await assertLootgenCatalogCurrent({rows:[]},{load:()=>{throw new Error("legacy must not read catalog");}});
+});
+
+test("catalog gate rejects price, availability, missing source and malformed saved descriptors",async()=>{
+  for(const change of ["price","availability","missing","descriptor","signature"]){
+    const f=fixture(),state={...await buildLootgenGeneratedState(form,{operationId:"op",lootId:"loot",authorId:"gm"},f),form,resultVersion:2};
+    const read=f.catalog.getModel;
+    if(change==="price")f.catalog.getModel=async()=>{const model=await read();model.gear[0].value=200;return model;};
+    if(change==="availability")f.catalog.getManifest=async()=>[{productId:"zacharovanie-ostroty",decision:"unavailable",profile}];
+    if(change==="missing")f.catalog.getGearIndex=async()=>[];
+    if(change==="descriptor")delete state.rows[0].descriptor;
+    if(change==="signature")delete state.catalogFingerprint;
+    await assert.rejects(assertLootgenCatalogCurrent(state,f.catalog),{code:"lootgen-result-stale"},change);
+    assert.equal(state.rows[0].claimed,false);
+  }
+});
+
+test("catalog transport failure remains retryable without relabelling it as catalog drift",async()=>{
+  const f=fixture(),state={...await buildLootgenGeneratedState(form,{operationId:"op",lootId:"loot",authorId:"gm"},f),form,resultVersion:2};
+  await assert.rejects(assertLootgenCatalogCurrent(state,{load:async()=>{throw new Error("catalog read offline");}}),/catalog read offline/u);
 });

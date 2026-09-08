@@ -1,5 +1,5 @@
 import { LootgenGeneratedResultService, LOOTGEN_PREPARE_RESULT_COMMAND, isValidPrepareLootgenPayload } from "./application/lootgen-generated-result-service.js?v=1.4.259";
-import { buildLootgenGeneratedState } from "./application/lootgen-generated-state.js?v=1.4.259";
+import { buildLootgenGeneratedState, assertLootgenCatalogCurrent } from "./application/lootgen-generated-state.js?v=1.4.260";
 import { normalizeLootgenForm } from "./data/lootgen-generator.js?v=1.4.256";
 import { storageCoinRowDenomination } from "./data/storage-service.js";
 // @rebreya-role canonical-composition-root
@@ -178,7 +178,7 @@ import {
   isValidDowntimeWeeksRevokePayload
 } from "./application/downtime-mutation-commands.js";
 import { WorldMutationCoordinator } from "./application/world-mutation-coordinator.js";
-import { LootClaimService } from "./application/loot-claim-service.js";
+import { LootClaimService } from "./application/loot-claim-service.js?v=1.4.260";
 import {
   buildPublicCitySnapshot,
   buildPublicEconomySnapshot
@@ -1743,7 +1743,10 @@ export class RebreyaMainModule {
           sourceOrigin: "lootgen",
           serializedPlan: ingressPlan
         }, {
-          resolveRows: async () => buildRows(),
+          resolveRows: async ({recovering=false}={}) => {
+            if (!recovering) await assertLootgenCatalogCurrent(message.getFlag(MODULE_ID,"lootgenChat"),this.lootgenSourceCatalog);
+            return buildRows();
+          },
           debitRow: async () => {},
           allowPreparedLootgenGraph: true
         });

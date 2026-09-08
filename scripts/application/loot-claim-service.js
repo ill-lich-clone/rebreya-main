@@ -161,6 +161,14 @@ export class LootClaimService {
         if (availableRowIds.length === 0 && !includeCoins) {
           return { changed: false, claimedRowIds: [], claimedCoins: false, receipt: null };
         }
+        const pending = state.claims.find(entry => entry.phase !== "committed"
+          && (availableRowIds.some(rowId => entry.rowIds?.includes(rowId))
+            || (includeCoins && entry.includeCoins === true)));
+        if (pending) {
+          const error = new Error("Эта добыча уже участвует в незавершённой выдаче. Повторите исходную операцию, чтобы завершить её.");
+          error.code = "lootgen-claim-in-progress";
+          throw error;
+        }
         claim = {
           id: claimId,
           kind: "batch",

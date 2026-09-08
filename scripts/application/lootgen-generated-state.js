@@ -10,6 +10,23 @@ const MODULE_ID="rebreya-main";
 const values=rows=>Array.isArray(rows)?rows:Array.from(rows?.values?.()??[]);
 const flags=row=>row?.flags?.[MODULE_ID]??{};
 
+/** Validate current inputs only before the inventory owner has persisted a grant receipt. */
+export async function assertLootgenCatalogCurrent(state,catalog) {
+  if (state?.resultVersion !== 2) return;
+  const stale = () => Object.assign(new Error("Каталог усовершенствований или предметов изменился. Сгенерируйте добычу заново перед выдачей."), {code:"lootgen-result-stale"});
+  let descriptors;
+  try {
+    if (!state.form?.enableUpgrades || typeof state.catalogFingerprint !== "string" || !state.catalogFingerprint
+      || !Array.isArray(state.rows)) throw stale();
+    descriptors = state.rows.map(row=>normalizeLootgenItemDescriptor(row.descriptor));
+  } catch (error) { throw stale(); }
+  // A transport/read failure must remain retryable; it does not prove catalog drift.
+  const snapshot = await catalog.load(state.form);
+  try {
+    if (readLootgenCatalogFingerprint(descriptors,snapshot) !== state.catalogFingerprint) throw stale();
+  } catch (error) { throw stale(); }
+}
+
 /** Signature of referenced catalog/rule inputs; it never regenerates items or uses instance IDs. */
 export function readLootgenCatalogFingerprint(descriptors,snapshot) {
   const components=new Map();

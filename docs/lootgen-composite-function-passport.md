@@ -1,6 +1,6 @@
 # Составной лут — R8
 
-Версия 1.4.259: общий каталог/price reader, prepared graph ingress и GM-only durable подготовка результата в закрытом ChatMessage. Публикация готового результата, catalog gate перед claim и UI выбора улучшений ещё не подключены. Установка отдельных усовершенствований остаётся у R4/R7; подготовка graph не вызывает install API и ничего не записывает.
+Версия 1.4.260: общий каталог/price reader, prepared graph ingress и GM-only durable подготовка результата в закрытом ChatMessage. Проверка каталога перед новым Item ingress подключена. Публикация готового результата и UI выбора улучшений ещё не подключены. Установка отдельных усовершенствований остаётся у R4/R7; подготовка graph не вызывает install API и ничего не записывает.
 
 ## Descriptor
 
@@ -102,3 +102,14 @@ Composition в scripts/main.js:
 Focused: lootgen-generated-result-service (retry, concurrency, authority, lost ack, wrong author, deleted result), lootgen-generated-state (full graph/value, profile/price/source stats signatures), group-command-dispatch (actual gateway GM/player/exact payload, canonical private publisher), lootgen-chat (draft escaping/no actions), composite-item-graph/lootgen-catalog-reader (custom profile rejection).
 
 Native read-only QA testovyj3/CODEX: реальные buildLootgenItemData и каталог дали Алебарду3205 + Молот всадника3195, по2 graph nodes, total6400; legacy claim marker отсутствует. Повторное чтение каталога дало тот же fingerprint; modifiedTime доступен у всех745 gear entries. Сохранённый профиль реального шаблона совпадает с manifest. ChatMessage в живом мире не создавались; GM socket/publisher native и полная публикация/claim остаются открытыми.
+
+
+## Проверка каталога и резервирование строк — 1.4.260
+
+assertLootgenCatalogCurrent(state,catalog) в scripts/application/lootgen-generated-state.js пропускает legacy state; v2 требует сохранённую форму, fingerprint и strict DTO каждой строки. Fresh catalog.load и readLootgenCatalogFingerprint сравниваются без генерации/записей. Несовпадение цены, availability, profile или источника и повреждённый descriptor дают lootgen-result-stale с предложением новой генерации. Ошибка загрузки каталога сохраняется как retryable read failure, а не выдается за изменение правил.
+
+Canonical Chat grantBatch в main вызывает gate из resolveRows({recovering=false}) перед новым inventory receipt. Recovery с существующим receipt пропускает повторную проверку каталога и использует сохранённые trusted ItemData; terminal inventory retry вообще не читает source. Каталог проверяется для всего сохранённого результата перед каждым новым пакетом Item; отдельные монеты не зависят от каталога. InventoryService остаётся владельцем определения recovering и target IDs.
+
+LootClaimService.claimBatch перед новым claim проверяет пересечение доступных rowIds/includeCoins с nonterminal claims. Пересечение даёт lootgen-claim-in-progress до Chat/target writes; тот же claimId продолжает исходную операцию, независимые строки разрешены. После committed skip/failed rows снова доступны по прежнему контракту partial result.
+
+Focused: lootgen-generated-state (legacy/current/price/availability/missing/malformed/read failure), loot-claim-service (prepared/granted reservations, independent item versus pending coins), group-command-dispatch (canonical grant adapter gate/recovery), inventory-mutation-recovery (partial graph with changed catalog guard, IDs and terminal replay).

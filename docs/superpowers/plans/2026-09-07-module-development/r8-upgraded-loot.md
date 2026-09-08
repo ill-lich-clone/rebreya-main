@@ -106,7 +106,7 @@ assert.equal(child.system.container, graph.rootItemId);
 - [x] prepare receipt связывает operationId, lootId, form fingerprint и message. Повтор запроса возвращает тот же result. Если запись уже создана, а ответ потерялся, находить её по receipt до нового random.
 - [ ] UI «Забрать»/прямая выдача для composed rows использует существующий trusted claim route по lootId/rowIds. Клиент передаёт destination/ingress choices и operation ID; список upgrades active GM читает из записи. Не расширять generic direct ingress правом принять player composition.
 - [ ] Сохранить прежний смысл sourceOrigin для plain/manual/model callers. Там, где отображение требует новый resultVersion, читать v1 без перерасчёта; v2 snapshot сохраняет принятый value и catalog/rules fingerprint.
-- [ ] До первой выдачи при несовместимом изменении каталога/availability показать stale result и предложить новую генерацию. После prepared graph/grant receipt recovery использует сохранённые trusted данные; catalog drift не запускает новую выдачу и не переписывает уже полученные вещи.
+- [x] До первой выдачи при несовместимом изменении каталога/availability показать stale result и предложить новую генерацию. После prepared graph/grant receipt recovery использует сохранённые trusted данные; catalog drift не запускает новую выдачу и не переписывает уже полученные вещи.
 - [ ] LootClaimService.claimBatch и acceptedRowIds сохраняют частичный успешный outcome между top-level rows. Внутри одного составного host root+children — неделимая выдача; source claimed только после подтверждения всего graph.
 - [ ] UI показывает upgrades, totalValue и automation status; имена/choices экранированы. Tooltip/preview не меняет descriptor и не запускает random.
 - [ ] Fault tests после prepared result, Chat write, host/child create, link check, target receipt и source claimed write; повторный claim, другой destination с тем же ID, hostile source refs и частичный успех batch.
@@ -161,3 +161,12 @@ Native testovyj3, CODEX, Foundry13.351/dnd5e5.2.5: создание root+child, 
 Native без world writes: реальные шаблоны → два полных graph по2 nodes, total6400; fresh catalog fingerprint совпал, все745 gear entries имеют modifiedTime. Actual GM socket/private Chat write ещё не проверены. Следующее обязательное продолжение: публикация той же записи, catalog drift gate перед первым claim, безопасная выдача персонажу, UI composed mode/preview/прямая выдача и end-to-end QA. R8 не завершён.
 
 Проверки четвёртой части: `node --test tests/*.test.mjs` — **3849 passed / 0 failed**; `node --check` — **773 JS/MJS**, JSON parse — **46 файлов**, ошибок **0**; `git diff --check` чисто. Native detached preparation с финальным profile guard: 2 composed rows, total6400, fresh fingerprint совпал. Публикация и выдача этим прогоном не подтверждаются.
+
+
+### Пятая часть R8 — 1.4.260
+
+Gate перед новым Item ingress сравнивает fresh catalog с сохранённым v2 result без reroll. Receipt recovery пропускает изменившийся каталог; terminal replay не перечитывает source. Новый claim не может забрать строки/монеты, зарезервированные незавершённым claim, но независимые строки доступны. Focused: node --test tests/lootgen-generated-state.test.mjs tests/loot-claim-service.test.mjs tests/group-command-dispatch.test.mjs tests/inventory-mutation-recovery.test.mjs — 143 passed / 0 failed.
+
+Открыты публикация той же записи, безопасная выдача персонажу, UI опций/preview/прямая выдача и полный multiplayer lifecycle. R8 не завершён.
+
+Проверки пятой части: `node --test tests/*.test.mjs` — **3856 passed / 0 failed**; синтаксис **773 JS/MJS и 46 JSON, 0 ошибок**; `git diff --check` чисто. Два initial failures были устаревшими ожидаемыми версиями в module-manifest, исправлены перед повторным полным прогоном. Native testovyj3/CODEX/Foundry13.351/dnd5e5.2.5: fresh catalog допускает 2 composed rows total6400; read-only изменённый снимок цены даёт lootgen-result-stale. World writes отсутствовали; это не проверка реальной выдачи.

@@ -5228,9 +5228,16 @@ test("prepared lootgen ingress records graph IDs before writes and recovers only
       assert.equal(documents.length,1);
       return originalCreate(type,documents,options);
     };
-    const callbacks={resolveRows:async()=>clone(rows),debitRow:async()=>{debitCalls++;},allowPreparedLootgenGraph:true};
+    let catalogChanged=false;
+    const reads=[];
+    const callbacks={resolveRows:async({recovering})=>{
+      reads.push(recovering);
+      if(!recovering && catalogChanged)throw new Error("catalog drift must not affect prepared recovery");
+      return clone(rows);
+    },debitRow:async()=>{debitCalls++;},allowPreparedLootgenGraph:true};
     await assert.rejects(fixture.service.commitInventoryIngressBatch(request,callbacks),error=>error.code==="graph-manual-review");
     assert.equal(group.items.contents.length,1);assert.equal(debitCalls,0);
+    catalogChanged=true;
     const result=await fixture.service.commitInventoryIngressBatch(request,callbacks);
     assert.equal(group.items.contents.length,2);assert.equal(debitCalls,1);
     const host=group.items.contents.find(item=>item.type==="weapon"),child=group.items.contents.find(item=>item.type==="loot");
@@ -5241,6 +5248,7 @@ test("prepared lootgen ingress records graph IDs before writes and recovers only
     group.items.contents.splice(0);
     assert.deepEqual(await fixture.service.commitInventoryIngressBatch(request,callbacks),result);
     assert.equal(group.items.contents.length,0);assert.equal(createCalls,2);assert.equal(debitCalls,1);
+    assert.deepEqual(reads,[false,false,true]);
   } finally {fixture.restore();}
 });
 

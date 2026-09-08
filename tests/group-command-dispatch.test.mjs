@@ -2867,3 +2867,36 @@ test("prepared loot uses the canonical publisher with GM whispers and stays outs
     await assert.rejects(moduleApi.claimLootgenChatRow(result.lootId,"row",{quiet:true}),/не найдено/u);
   } finally {if(previousChat===undefined)delete globalThis.ChatMessage;else globalThis.ChatMessage=previousChat;fixture.restore();}
 });
+
+test("trusted loot grant checks catalog before preparation and preserves recovery after catalog changes",async()=>{
+  const fixture=installFixture();
+  try {
+    const {readLootgenCatalogFingerprint}=await import("../scripts/application/lootgen-generated-state.js");
+    const moduleApi=new RebreyaMainModule();
+    let price=100,reads=0,recovering=false,credits=0;
+    const descriptor={version:2,instanceKey:"instance",sourceType:"gear",sourceId:"sword",quantity:1,isBroken:false,upgrades:[],container:null};
+    const snapshot=()=>({model:{gear:[{id:"sword",value:price}]},gearIndex:[],magicDocuments:[],manifest:[],catalogReader:{
+      resolveValueComponent:()=>({unitValue:price,priceKnown:true}),describeUpgradeHost:()=>null}});
+    const state={resultVersion:2,form:{enableUpgrades:true},catalogFingerprint:readLootgenCatalogFingerprint([descriptor],snapshot()),
+      rows:[{rowId:"row",quantity:1,claimed:false,descriptor,itemData:{name:"Sword",system:{quantity:1},flags:{}}}]};
+    moduleApi.lootgenSourceCatalog={load:async()=>{reads++;return snapshot();}};
+    moduleApi.inventoryService.commitInventoryIngressBatch=async(_request,adapters)=>{
+      const rows=await adapters.resolveRows({recovering});
+      assert.equal(adapters.allowPreparedLootgenGraph,true);
+      assert.deepEqual(rows[0].itemData,state.rows[0].itemData);
+      credits++;
+      return {actorId:fixture.groupA.id,rows:[{sourceKey:"row",changed:true}]};
+    };
+    const request={claimId:"claim",lootId:"loot",rows:state.rows,coins:{},includeCoins:false,
+      ingressPlan:{groupActorId:fixture.groupA.id},message:{getFlag:()=>clone(state)}};
+    price=200;
+    await assert.rejects(moduleApi.lootClaimService.grantBatch(request),{code:"lootgen-result-stale"});
+    assert.equal(credits,0);assert.equal(reads,1);
+    price=100;
+    await moduleApi.lootClaimService.grantBatch(request);
+    assert.equal(credits,1);assert.equal(reads,2);
+    price=200;recovering=true;
+    await moduleApi.lootClaimService.grantBatch(request);
+    assert.equal(credits,2);assert.equal(reads,2);
+  } finally {fixture.restore();}
+});

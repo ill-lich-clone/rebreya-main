@@ -130,6 +130,33 @@ test("a new claim id cannot grant an already claimed row again", async () => {
   assert.equal(fixture.effects.rows, 1);
 });
 
+for (const phase of ["prepared", "granted"]) test(`a different claim cannot take a row reserved by a ${phase} claim`, async () => {
+  let failed=false;
+  const fixture=createFixture({failWrite({nextState}){
+    const next=nextState.claims[0]?.phase;
+    if(!failed && next===(phase==="prepared"?"granted":"committed")){failed=true;return "before";}
+  }});
+  const request={lootId:"loot-1",rowId:"row-1",claimId:"first"};
+  await assert.rejects(fixture.service.claimRow(request),/message update failed/u);
+  assert.equal(fixture.state.claims[0].phase,phase);
+  await assert.rejects(fixture.service.claimRow({...request,claimId:"second"}),{code:"lootgen-claim-in-progress"});
+  assert.equal(fixture.effects.rows,1);
+  assert.equal(fixture.state.claims.length,1);
+  assert.equal(await fixture.service.claimRow(request),true);
+});
+
+test("a pending coin claim reserves coins without preventing an independent item claim",async()=>{
+  let failed=false;
+  const fixture=createFixture({failWrite({nextState}){
+    if(!failed && nextState.claims.some(c=>c.id==="coins-first" && c.phase==="granted")){failed=true;return "before";}
+  }});
+  await assert.rejects(fixture.service.claimCoins({lootId:"loot-1",claimId:"coins-first"}),/message update failed/u);
+  await assert.rejects(fixture.service.claimCoins({lootId:"loot-1",claimId:"coins-second"}),{code:"lootgen-claim-in-progress"});
+  assert.equal(await fixture.service.claimRow({lootId:"loot-1",rowId:"row-1",claimId:"item"}),true);
+  assert.equal(await fixture.service.claimCoins({lootId:"loot-1",claimId:"coins-first"}),true);
+  assert.equal(fixture.effects.coins,1);
+});
+
 test("loot batch reads once, grants once, and commits only accepted filtered rows plus coins", async () => {
   let state = {
     lootId: "loot-batch",
