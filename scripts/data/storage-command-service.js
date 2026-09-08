@@ -1,4 +1,5 @@
 import { buildStorageCoinRow, storageCoinRowDenomination, pendingStorageCoinTransfer, assertStorageCoinTransferAvailable } from "./storage-service.js";
+import { runDisarmDrop } from "../application/disarm-drop-workflow.js?v=1.4.252";
 import {
   isStorageActor,
   readStorageCoinDenomination,
@@ -424,6 +425,9 @@ export class StorageCommandService {
     measureDistance,
     measurePointDistance = () => Number.POSITIVE_INFINITY,
     groundPileService = null,
+    disarmCapability = null,
+    prepareDisarmPlacement = null,
+    validateDisarmDestination = null,
     containerItemService = null,
     durabilityService = null,
     triggerService = null,
@@ -453,6 +457,7 @@ export class StorageCommandService {
     this.measureDistance = measureDistance;
     this.measurePointDistance = measurePointDistance;
     this.groundPileService = groundPileService;
+    Object.assign(this, { disarmCapability, prepareDisarmPlacement, validateDisarmDestination });
     this.containerItemService = containerItemService;
     this.durabilityService = durabilityService;
     const executionService = triggerService && typeof triggerService.execute === "function"
@@ -568,10 +573,16 @@ export class StorageCommandService {
   }
 
   #inventoryIngressRow(row, rowId, quantity, legacyFolderId) {
+    const itemData = clone(row?.itemData ?? {});
+    if (itemData.flags?.[MODULE_ID]) delete itemData.flags[MODULE_ID].runtimeItemGraph;
+    if (row.runtimeGraph) {
+      itemData.flags ??= {}; itemData.flags[MODULE_ID] ??= {};
+      itemData.flags[MODULE_ID].runtimeItemGraph = clone(row.runtimeGraph);
+    }
     return {
       sourceKey: clean(rowId),
       quantity,
-      itemData: clone(row?.itemData ?? {}),
+      itemData,
       legacyFolderId: legacyFolderId === null ? null : clean(legacyFolderId),
       container: isStorageContainerRow(row) ? clone(row.container) : null
     };
@@ -2016,6 +2027,12 @@ export class StorageCommandService {
         throw error;
       }
     });
+  }
+
+  async dropDisarmedItem({ operationId }, context = {}) {
+    if (!this.disarmCapability || context.capability !== this.disarmCapability || typeof context.assertAuthority !== "function"
+      || typeof operationId !== "string" || !operationId.trim() || operationId.length > 128) throw new Error("Unauthorized internal disarm drop.");
+    return this.inventoryService.mutationCoordinator.run("inventory", () => runDisarmDrop(this, operationId, context));
   }
 
   async dropCoinsToScene(payload = {}, { sender } = {}) {

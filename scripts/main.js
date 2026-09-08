@@ -76,7 +76,7 @@ import {
   SOCKET_EVENT_INVENTORY_SOURCE_DEPLETION_RESULT,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_REQUEST,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_RESULT
-} from "./data/inventory-service.js?v=1.4.249-item-instances";
+} from "./data/inventory-service.js?v=1.4.252-disarm";
 import {
   InventoryIngressRuleCompilerCache,
   normalizeInventoryIngressRule
@@ -91,12 +91,17 @@ import {
 } from "./application/inventory-ingress-planner.js";
 import { DurabilityService } from "./data/durability-service.js?v=1.4.154-corpse-storage-broken-name";
 import { MapObjectTokenService } from "./data/map-object-token-service.js?v=1.4.97-map-object-token";
-import { HeroDollService, HERO_DOLL_ASSIGN_COMMAND, HERO_DOLL_NORMALIZE_COMMAND, HERO_DOLL_CLEAR_COMMAND, isValidHeroDollAssignPayload } from "./data/hero-doll-service.js?v=1.4.249-item-instances";
+import { HeroDollService, HERO_DOLL_ASSIGN_COMMAND, HERO_DOLL_NORMALIZE_COMMAND, HERO_DOLL_CLEAR_COMMAND, isValidHeroDollAssignPayload } from "./data/hero-doll-service.js?v=1.4.252-disarm";
 import { ImplantService } from "./data/implant-service.js";
 import { CraftingService } from "./data/crafting-service.js?v=1.4.96-craft-calendar";
 import { CraftDowntimeService } from "./data/craft-downtime-service.js?v=1.4.96-craft-calendar";
 import { ItemUpgradeService } from "./data/item-upgrade-service.js?v=1.4.250";
 import { ReputationService } from "./application/reputation-service.js?v=1.4.251";
+import { DisarmService } from "./combat/disarm-service.js?v=1.4.252";
+import { DisarmRollAdapter } from "./integrations/disarm-roll-adapter.js?v=1.4.252";
+import { DisarmDocuments } from "./infrastructure/foundry/disarm-documents.js?v=1.4.252";
+import { DISARM_ACTIONS, isValidDisarmPayload, authorizeDisarmSender } from "./infrastructure/foundry/disarm-command-contract.js?v=1.4.252";
+import { resolveDisarmSelection, promptDisarm, promptDisarmBaseline, buildDisarmChatContent, bindDisarmChat } from "./ui/disarm-dialog.js?v=1.4.252";
 import { REPUTATION_UPDATE_COMMAND, isValidReputationPayload, authorizeReputationUpdate } from "./infrastructure/foundry/reputation-command-contract.js?v=1.4.251";
 import { GROUP_CALENDAR_PATCH_COMMAND, CalendarService } from "./data/calendar-service.js";
 import { CalendarTransitionCoordinator } from "./data/calendar-transition-coordinator.js?v=1.4.96-craft-calendar";
@@ -262,7 +267,7 @@ import {
   isValidStorageRestorePortablePayload,
   isValidStorageTokenCharacterPayload,
   storageCharacterTokenUuidForClaim
-} from "./data/storage-command-service.js?v=1.4.226-inventory-transfer";
+} from "./data/storage-command-service.js?v=1.4.252-disarm";
 import { registerCombatHooks } from "./combat/hooks.js?v=1.4.231-curse-upgrades";
 import { CombatAttackService } from "./combat/attack-service.js?v=1.4.231-curse-upgrades";
 import { ImplantAutomationService } from "./combat/implant-automation-service.js";
@@ -303,7 +308,7 @@ import {
 import { BardicInspirationCompatService } from "./combat/bardic-inspiration-compat-service.js";
 import { RaceAutomationService, SOCKET_EVENT_RACE_AUTOMATION } from "./combat/race-automation-service.js?v=1.4.147-race-damage";
 import { GrappleAutomationService, GRAPPLE_LINK_FLAG } from "./combat/grapple-automation-service.js";
-import { GrappleMacroService } from "./combat/grapple-macro-service.js";
+import { GrappleMacroService } from "./combat/grapple-macro-service.js?v=1.4.252";
 import { GrapplePlacementPreview } from "./combat/grapple-placement-preview.js";
 import { getActorHandReservations } from "./integrations/held-items.js";
 import { CraftsmanGadgetService } from "./combat/craftsman-gadget-service.js";
@@ -1602,6 +1607,8 @@ export class RebreyaMainModule {
     });
     this.promptDurabilityOutcome = promptDurabilityOutcome;
     this.durabilityOutcomeTasks = new Map();
+    const disarmCapability = Object.freeze({});
+    this.disarmDocuments = new DisarmDocuments();
     this.storageCommandService = new StorageCommandService({
       storageService: this.storageService,
       inventoryService: this.inventoryService,
@@ -1609,6 +1616,13 @@ export class RebreyaMainModule {
       measureDistance: measureStorageTokenDistance,
       measurePointDistance: measureStoragePointDistance,
       groundPileService: this.storageGroundPileService,
+      disarmCapability,
+      prepareDisarmPlacement: (actor, item) => this.heroDollService.prepareDisarmPlacement(actor, item),
+      validateDisarmDestination: async (record) => {
+        await this.disarmDocuments.revalidate(record);
+        const points = await this.disarmDocuments.dropPoints(record);
+        if (!points.some(point => point.x === record.destination.x && point.y === record.destination.y)) throw new Error("Место падения больше недоступно без пересечения стены.");
+      },
       containerItemService: this.storageContainerItemService,
       durabilityService: this.durabilityService,
       triggerTargetCoordinator: this.triggerTargetCoordinator,
@@ -1616,6 +1630,12 @@ export class RebreyaMainModule {
       resolveDocument: (uuid) => globalThis.fromUuid?.(uuid),
       isVisibleTo: (storageToken) => isStorageTokenVisible(storageToken),
       createChatMessage: (data) => globalThis.ChatMessage?.create?.(data)
+    });
+    this.disarmService = new DisarmService({
+      journal: this.inventoryService.mutationJournal, coordinator: this.worldMutationCoordinator,
+      documents: this.disarmDocuments, rollAdapter: new DisarmRollAdapter(),
+      storageCommands: { dropDisarmedItem: (intent, context) => this.storageCommandService.dropDisarmedItem(intent, { ...context, capability: disarmCapability }) },
+      publish: record => this.publishDisarmOperation(record)
     });
     this.transportInstanceService = new TransportInstanceService(this, {
       gameProvider: () => globalThis.game,
@@ -1877,6 +1897,67 @@ export class RebreyaMainModule {
     });
   }
 
+  async requestDisarmAction(action, payload) {
+    if (!DISARM_ACTIONS.includes(action)) throw new Error("Неизвестное действие обезоруживания.");
+    let result;
+    try { result = await this.privilegedMutationGateway.mutate(`disarm.${action}`, payload); }
+    catch (error) {
+      // Only confirmed preflight rejection frees the local intent. A lost acknowledgement must keep its ID.
+      const rejectedStart = action === "start" && ["unsupported-system", "unauthorized", "invalid-tokens", "target-not-visible",
+        "invalid-held-item", "invalid-weapon-grip", "out-of-range", "target-too-large", "operation-pending"].includes(error.code);
+      if ((rejectedStart || (action === "resume" && error.code === "operation-not-found"))
+        && this.pendingDisarmIntent?.operationId === payload.operationId) this.pendingDisarmIntent = null;
+      throw error;
+    }
+    if (["completed", "cancelled", "conflict", "manual-review"].includes(result?.phase)) {
+      if (this.pendingDisarmIntent?.operationId === result.operationId) this.pendingDisarmIntent = null;
+    }
+    return result;
+  }
+
+  async disarm(options = {}) {
+    if (this.disarmDialogTask) return this.disarmDialogTask;
+    this.disarmDialogTask = (async () => {
+      if (this.pendingDisarmIntent) return this.openDisarmOperation(this.pendingDisarmIntent.operationId);
+      const tokens = resolveDisarmSelection(options);
+      const preview = await this.requestDisarmAction("preview", tokens);
+      const selected = await promptDisarm(preview);
+      if (!selected) return null;
+      const intent = { ...tokens, ...selected, operationId: createSocketRequestId("disarm") };
+      this.pendingDisarmIntent = intent;
+      return this.requestDisarmAction("start", intent);
+    })();
+    try { return await this.disarmDialogTask; }
+    catch (error) { globalThis.ui?.notifications?.error?.(error.message); throw error; }
+    finally { this.disarmDialogTask = null; }
+  }
+
+  async openDisarmOperation(operationId) {
+    const result = await this.requestDisarmAction("resume", { operationId });
+    if (result.phase === "awaiting-baseline" && game.user.isGM) {
+      const decision = await promptDisarmBaseline(operationId);
+      if (decision) return this.requestDisarmAction("set-baseline", decision);
+    }
+    return result;
+  }
+
+  async publishDisarmOperation(record) {
+    if (!isActiveGmClient(globalThis.game)) return;
+    const content = buildDisarmChatContent(record);
+    const existing = game.messages.contents.find(message => message.author?.isGM
+      && message.getFlag(MODULE_ID, "disarmOperationId") === record.intent.operationId);
+    const changed = !existing || existing.content !== content;
+    const rolls = [record.attackRoll, record.saveRoll, record.directionRoll].filter(Boolean).map(roll => Roll.fromData(roll.json));
+    if (!isActiveGmClient(globalThis.game)) return;
+    if (existing) {
+      if (changed) await existing.update({ content, rolls });
+    } else await ChatMessage.create({ content, rolls, speaker: { alias: record.sourceName }, flags: { [MODULE_ID]: { disarmOperationId: record.intent.operationId } } });
+    if (record.phase === "completed" && record.dropped && changed) {
+      const actor = await fromUuid(record.targetActorUuid);
+      if (actor) await this.refreshInventoryViews({ actorIds: [actor.id] });
+    }
+  }
+
   async toggleGrapple() {
     try {
       const controlled = globalThis.canvas?.tokens?.controlled ?? [];
@@ -1984,6 +2065,18 @@ export class RebreyaMainModule {
   }
 
   #registerTypedSocketCommands() {
+    for (const action of DISARM_ACTIONS) this.privilegedMutationGateway.registerCommand(`disarm.${action}`, {
+      validate: payload => isValidDisarmPayload(action, payload),
+      authorize: (_payload, context) => authorizeDisarmSender(action, context),
+      execute: (payload, context) => {
+        const guarded = { sender: context.sender, assertAuthority: context.assertActiveGm };
+        if (action === "preview") return this.disarmDocuments.preview(payload, context.sender);
+        if (action === "start") return this.disarmService.start(payload, guarded);
+        if (action === "resolve-save") return this.disarmService.chooseSave(payload, guarded);
+        if (action === "set-baseline") return this.disarmService.setBaseline(payload, guarded);
+        return this.disarmService[action](payload.operationId, guarded);
+      }
+    });
     this.privilegedMutationGateway.registerCommand(REPUTATION_UPDATE_COMMAND, {
       validate: isValidReputationPayload,
       authorize: authorizeReputationUpdate,
@@ -2740,6 +2833,10 @@ export class RebreyaMainModule {
 
   async initialize() {
     this.registerReputationRefreshHooks();
+    if (!this.disarmChatHookRegistered) {
+      this.disarmChatHookRegistered = true;
+      Hooks.on("renderChatMessageHTML", (message, html) => bindDisarmChat(message, html, this));
+    }
     if (globalThis.game?.user?.isGM === true) {
       try {
         await this.lootgenTemplateCatalog.migrate();

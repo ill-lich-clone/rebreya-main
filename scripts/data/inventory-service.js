@@ -1,4 +1,5 @@
 import { ItemInstanceWorkflow } from "../application/item-instance-workflow.js?v=1.4.249-item-instances";
+import { RUNTIME_ITEM_GRAPH_FLAG, materializeRuntimeItemGraph } from "./runtime-item-graph.js?v=1.4.252";
 import { ItemInstanceDocuments } from "../infrastructure/foundry/item-instance-documents.js?v=1.4.249-item-instances";
 import {
   DOWNTIME_ITEM_TYPE,
@@ -3775,6 +3776,7 @@ export class InventoryService {
     folderId = null,
     scoped = false
   } = {}) {
+    if (itemData?.flags?.[MODULE_ID]?.[RUNTIME_ITEM_GRAPH_FLAG]) return null;
     const normalizedFolderId = normalizeInventoryFolderTarget(folderId);
     return actor?.items?.contents?.find((candidate) => {
       if (!itemsCanMergeInInventory(candidate, itemData)) return false;
@@ -3830,6 +3832,9 @@ export class InventoryService {
 
   async #prepareInventoryIngressTargetReceipts(actor, folderState, record, row, model) {
     const operationId = record.id;
+    if (row.itemData?.flags?.[MODULE_ID]?.[RUNTIME_ITEM_GRAPH_FLAG] && row.effectiveType === "dismantle") {
+      throw new InventoryIngressRuleError("dismantle-unavailable", "Составной предмет нельзя разобрать при подборе. Выберите перенос целиком.");
+    }
     if (row.container && row.effectiveType === "dismantle" && row.dismantlePreview.length === 0) {
       throw new InventoryIngressRuleError(
         "dismantle-unavailable",
@@ -3910,6 +3915,11 @@ export class InventoryService {
   }
 
   async #applyInventoryIngressTargetReceipt(actor, record, row, receipt, grantContainer = null) {
+    const runtimeGraph = receipt.itemData?.flags?.[MODULE_ID]?.[RUNTIME_ITEM_GRAPH_FLAG];
+    if (runtimeGraph) {
+      const root = await materializeRuntimeItemGraph(actor, runtimeGraph, `${record.id}:${row.sourceKey}:${receipt.outputIndex}`, receipt.itemData);
+      return root.id;
+    }
     if (receipt.container) {
       if (typeof grantContainer !== "function") {
         throw new InventoryIngressRuleError(
@@ -4046,6 +4056,9 @@ export class InventoryService {
           recovering: false,
           serializedPlan: foundry.utils.deepClone(serializedPlan)
         });
+        if (sourceOrigin !== "storage" && sourceRows.some(row => row.itemData?.flags?.[MODULE_ID]?.[RUNTIME_ITEM_GRAPH_FLAG])) {
+          throw new InventoryIngressRuleError("invalid-runtime-graph", "Снимок составного предмета принимается только из хранилища.");
+        }
         const authoritativePreview = await planner.preview({
           groupActorId,
           requestedFolderId: serializedPlan?.requestedFolderId ?? null,
@@ -4058,7 +4071,7 @@ export class InventoryService {
         const simpleEligible = authoritativePreview.rows.every((previewRow) => {
           const sourceRow = sourceByKey.get(previewRow.sourceKey);
           const effectiveType = overrideKeys.has(previewRow.sourceKey) ? "root" : previewRow.action.type;
-          return !sourceRow?.container && effectiveType !== "dismantle";
+          return !sourceRow?.container && !sourceRow?.itemData?.flags?.[MODULE_ID]?.[RUNTIME_ITEM_GRAPH_FLAG] && effectiveType !== "dismantle";
         });
         if (!simpleEligible) return { mode: "legacy" };
 
@@ -4428,6 +4441,9 @@ export class InventoryService {
         recovering: Boolean(record),
         serializedPlan: foundry.utils.deepClone(serializedPlan)
       });
+      if (sourceOrigin !== "storage" && sourceRows.some(row => row.itemData?.flags?.[MODULE_ID]?.[RUNTIME_ITEM_GRAPH_FLAG])) {
+        throw new InventoryIngressRuleError("invalid-runtime-graph", "Снимок составного предмета принимается только из хранилища.");
+      }
       const authoritativePreview = await planner.preview({
         groupActorId,
         requestedFolderId: serializedPlan?.requestedFolderId ?? null,
@@ -5853,6 +5869,8 @@ export class InventoryService {
     const safeQuantity = Math.max(0.01, roundNumber(toNumber(row.quantity, 1), 2));
     if (allowPersistedItemData && row.itemData && typeof row.itemData === "object") {
       const persistedItemData = sanitizeEmbeddedItemData(row.itemData);
+      if (persistedItemData.flags?.[MODULE_ID]) delete persistedItemData.flags[MODULE_ID][RUNTIME_ITEM_GRAPH_FLAG];
+      if (row.runtimeGraph) foundry.utils.setProperty(persistedItemData, `flags.${MODULE_ID}.${RUNTIME_ITEM_GRAPH_FLAG}`, foundry.utils.deepClone(row.runtimeGraph));
       foundry.utils.setProperty(persistedItemData, "system.quantity", safeQuantity);
       persistedItemData.name = formatDurabilityItemName(
         persistedItemData.name,
@@ -6757,6 +6775,8 @@ export class InventoryService {
       let item = record.targetReceipt.created
         ? this.#findMutationItem(actor, operationId)
         : actor.items.get(record.targetReceipt.itemId);
+      const runtimeGraph = record.itemData?.flags?.[MODULE_ID]?.[RUNTIME_ITEM_GRAPH_FLAG];
+      if (runtimeGraph) item = await materializeRuntimeItemGraph(actor, runtimeGraph, operationId, record.itemData);
       if (record.targetReceipt.created) {
         if (!item) {
           try {

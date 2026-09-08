@@ -13815,3 +13815,11 @@ summary:focus-visible {
 .rebreya-inventory-app .rm-reputation__history { margin-top: .9rem; }
 .rebreya-inventory-app .rm-reputation__history li { margin-block: .6rem; overflow-wrap: anywhere; }
 .rebreya-inventory-app .rm-reputation__history li span { display: block; font-size: .85em; opacity: .85; }
+
+.rm-disarm-form { display: grid; gap: .75rem; min-width: 0; }
+.rm-disarm-form label { display: grid; gap: .35rem; }
+.rm-disarm-form select, .rm-disarm-form input { width: 100%; min-width: 0; }
+.rm-disarm-chat { padding: .6rem; overflow-wrap: anywhere; }
+.rm-disarm-chat h3 { margin-block: 0 .6rem; }
+.rm-disarm-actions { display: flex; gap: .5rem; margin-block: .5rem; }
+.rm-disarm-actions[hidden], .rm-disarm-chat button[hidden] { display: none; }

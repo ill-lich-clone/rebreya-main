@@ -298,6 +298,13 @@ export class HeroDollService {
     return true;
   }
 
+  prepareDisarmPlacement(actor, item) {
+    const slots = actor.getFlag(MODULE_ID, "heroDoll")?.slots ?? {};
+    return Object.entries(slots).filter(([, value]) => value?.itemId === item.id).map(([slot, value]) => ({
+      path: `flags.${MODULE_ID}.heroDoll.slots.${slot}`, before: foundry.utils.deepClone(value), after: null
+    }));
+  }
+
   normalizeLegacyStack(actor, slotId) {
     const itemId = this.#normalizeState(actor).slots[slotId]?.itemId;
     if (!itemId) throw new ItemInstanceError("item-not-found", "В слоте нет предмета.");

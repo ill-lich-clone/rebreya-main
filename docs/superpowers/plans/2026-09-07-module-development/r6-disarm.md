@@ -26,13 +26,13 @@
 
 **Файлы:** создать scripts/combat/disarm-rules.js, scripts/integrations/disarm-roll-adapter.js, tests/disarm-rules.test.mjs, tests/disarm-roll-adapter.test.mjs; существующие scripts/combat/attack-service.js и scripts/integrations/held-items.js читать/расширять только в точке общего адаптера.
 
-- [ ] Перед реализацией закрыть Q2 спецификации: постоянные class/feat modifiers, baseline временно изменённых ability scores, дистанция weapon mode, fallback hex/gridless/стен. Предложение уже записано в спецификации; сначала проверить ответы пользователя, затем фиксировать решение там. Неразрешённый modifier не заменять молча нулём. Само написание этого плана не означает согласование спорного правила.
-- [ ] Ввести чистые функции:
+- [x] Q2 уточнён пользователем 2026-09-08: только характеристика и владение, без бонусов черт; случайная допустимая точка с исключением стен до броска; после падения убрать предмет из рук. Неясный baseline требует GM. Обычная дистанция выбранного оружия остаётся рабочим допущением.
+- [x] Ввести чистые функции:
   - evaluateDisarmRules({attackerSize,targetSize,heldHands,saveAbility,attackAdvantage,attackDisadvantage,saveAdvantage,saveDisadvantage}) → {allowed,reason,attackMode,saveMode}; size — canonical tiny/sm/med/lg/huge/grg, mode — normal/advantage/disadvantage.
   - resolveDisarmOutcome({attackTotal,saveTotal}) → {dc,success,dropped}; success означает успешное обезоруживание.
   - calculateDisarmDropCell({tokenBounds,gridSize,direction}) → {x,y}; direction — integer 1..8, x/y — центр внешней клетки квадратной сетки. Bounds в canvas coordinates; не CSS pixels.
   - buildDisarmAttackFormula({abilityModifier,proficiencyContribution}) → строка формулы; вход только из проверенного baseline adapter.
-- [ ] Сначала тесты размера +1/+2, фактических двух рук, выбора str/dex, отмены advantage/disadvantage и равенства Сл. Конкретное ядро:
+- [x] Сначала тесты размера +1/+2, фактических двух рук, выбора str/dex, отмены advantage/disadvantage и равенства Сл. Конкретное ядро:
 
 ```js
 assert.deepEqual(resolveDisarmOutcome({ attackTotal: 17, saveTotal: 17 }),
@@ -54,11 +54,11 @@ assert.deepEqual(calculateDisarmDropCell({
 }), { x: 150, y: 50 });
 ```
 
-- [ ] Отсутствующие булевы modifier flags нормализовать false. Неизвестный size, нечисловой total, направление вне 1..8 и некорректная сетка — typed error, не бросок с угаданными данными.
-- [ ] Карта к8: С, СВ, В, ЮВ, Ю, ЮЗ, З, СЗ. Для большого footprint использовать внешнюю клетку соответствующего края; при чётной ширине выбрать одну из двух центральных клеток детерминированно и показать её GM. Не возвращать точку внутри крупного токена.
-- [ ] Adapter экспортирует buildDisarmRollPlan({actor,weapon,mode,context}) → {formula,ability,proficiencyContribution,excludedModifiers,unresolvedModifiers}. Контекст содержит только проверенные текущие условия и согласованный baseline; чтение уже derived attack bonus не подходит.
+- [x] Отсутствующие булевы modifier flags нормализовать false. Неизвестный size, нечисловой total, направление вне 1..8 и некорректная сетка — typed error, не бросок с угаданными данными.
+- [x] Карта к8: С, СВ, В, ЮВ, Ю, ЮЗ, З, СЗ. Для большого footprint использовать внешнюю клетку соответствующего края; при чётной ширине выбрать одну из двух центральных клеток детерминированно и показать её GM. Не возвращать точку внутри крупного токена.
+- [x] Adapter экспортирует buildDisarmRollPlan({actor,weapon,mode,context}) → {formula,ability,proficiencyContribution,excludedModifiers,unresolvedModifiers}. Контекст содержит только проверенные текущие условия и согласованный baseline; чтение уже derived attack bonus не подходит.
 - [ ] Отдельные fixtures: finesse, непрофильное оружие, половинная/двойная proficiency, magical +N, Bless, временная прибавка ability, постоянный feat override. Нельзя пропускать временный бонус через buffed ability modifier. Сложный provenance переводит операцию на видимое GM-решение до roll.
-- [ ] Атака задаёт только DC. Nat1/20 сохраняются для отображения, не дают автоуспех/автопровал. Save использует разрешённые обычные модификаторы спасброска; запрет временных бонусов относится к броску атаки из правила.
+- [x] Атака задаёт только DC. Nat1/20 сохраняются для отображения, не дают автоуспех/автопровал. Save использует разрешённые обычные модификаторы спасброска; запрет временных бонусов относится к броску атаки из правила.
 
 **Проверка:** node --test tests/disarm-rules.test.mjs tests/disarm-roll-adapter.test.mjs tests/held-items.test.mjs tests/combat-attack-service.test.mjs.
 
@@ -67,19 +67,19 @@ assert.deepEqual(calculateDisarmDropCell({
 **Файлы:** создать scripts/combat/disarm-service.js, scripts/infrastructure/foundry/disarm-command-contract.js, tests/disarm-service.test.mjs, tests/disarm-socket.test.mjs; изменить scripts/main.js; journal/repository подключать существующими владельцами.
 
 - [ ] Сервис DisarmService({journal,coordinator,resolveDocuments,rollAdapter,storageCommands,refresh}) с методами start(intent,context), chooseSave(intent,context), resume(operationId,context), cancel(operationId,context). Context несёт authenticated sender и assertAuthority. UI только public disarm({sourceTokenUuid?,targetTokenUuid?}) и presentation.
-- [ ] Команды exact:
+- [x] Команды exact:
   - disarm.start: {operationId,sourceTokenUuid,targetTokenUuid,weaponItemUuid,targetItemUuid,weaponMode};
   - disarm.resolve-save: {operationId,saveAbility}, только str/dex от назначенного OWNER цели или GM.
   - Если нужен manual baseline/total: отдельная GM-only command с reason и сохранённым решением, а не необязательное player поле total.
 - [ ] Gateway валидирует типы/длины/лишние поля; authority повторно разрешает документы и проверяет source ownership, одну сцену, допустимую дистанцию/видимость, weapon mode, размер и текущие held hands. Список target items — разрешённая публичная проекция удерживаемого; скрытое содержимое инвентаря не отправлять игроку.
 - [ ] Для v1 computation обоих бросков исполняет active GM через roll adapter после выбора человека. Игрок выбирает save ability, но не передаёт total или формулу. Result публикуется от имени соответствующего Actor. Это сохраняет выбор защитника и закрывает произвольный player total.
 - [ ] Зафиксировать responderUserId при начале ожидания: один online OWNER; при отсутствии — GM. Смена responder только явным GM решением с записью причины. Несколько владельцев не получают право на несколько бросков.
-- [ ] Phases: prepared → attack-rolling → attack-rolled → awaiting-save → save-rolling → save-resolved → drop-prepared → drop-committed → completed; cancelled/conflict/manual-review терминальны.
-- [ ] В journal хранить fingerprint, sender/responder, token/item identities, roll plan и serialized rolls, выбранный save, d8 и destination. Roll оценивается без отправки chat; результат сохраняется до публикации карточки. Если процесс оборвался между фактическим roll и его receipt, не бросать автоматически повторно: ambiguous phase → manual-review.
-- [ ] Replay искать до fresh source lookup, поскольку успешная операция могла уже удалить source Item. Совпадающий ID возвращает сохранённый результат; другой fingerprint с тем же ID отклоняется.
-- [ ] Не держать coordinator lock, пока человек выбирает оружие, save или точку. Каждая phase — короткая queued mutation. Guard active GM проверяется перед каждой privileged записью.
-- [ ] Карточка chat получает operationId; повторная доставка обновляет/находит единственную карточку. Roll JSON и trusted operation определяют результат, не произвольные message flags клиента.
-- [ ] Отмена до первого roll ничего не расходует; после roll — видимый cancellation/conflict, без отката выпавшей кости и без скрытого возврата атаки. Истечение ожидания не выбирает save и не создаёт результат.
+- [x] Phases: prepared → attack-rolling → attack-rolled → awaiting-save → save-rolling → save-resolved → drop-prepared → drop-committed → completed; cancelled/conflict/manual-review терминальны.
+- [x] В journal хранить fingerprint, sender/responder, token/item identities, roll plan и serialized rolls, выбранный save, d8 и destination. Roll оценивается без отправки chat; результат сохраняется до публикации карточки. Если процесс оборвался между фактическим roll и его receipt, не бросать автоматически повторно: ambiguous phase → manual-review.
+- [x] Replay искать до fresh source lookup, поскольку успешная операция могла уже удалить source Item. Совпадающий ID возвращает сохранённый результат; другой fingerprint с тем же ID отклоняется.
+- [x] Не держать coordinator lock, пока человек выбирает оружие, save или точку. Каждая phase — короткая queued mutation. Guard active GM проверяется перед каждой privileged записью.
+- [x] Карточка chat получает operationId; повторная доставка обновляет/находит единственную карточку. Roll JSON и trusted operation определяют результат, не произвольные message flags клиента.
+- [x] Отмена до первого roll ничего не расходует; после roll — видимый cancellation/conflict, без отката выпавшей кости и без скрытого возврата атаки. Истечение ожидания не выбирает save и не создаёт результат.
 - [ ] Tests: hostile extra fields, чужая цель/источник, sender без Actor ownership, spoofed GM, два active GM, повтор выбора, disconnect, no GM, смена held item после roll, конфликт с новым operationId.
 
 **Проверка:** node --test tests/disarm-service.test.mjs tests/disarm-socket.test.mjs tests/group-command-dispatch.test.mjs tests/durable-mutation-journal.test.mjs.
@@ -88,33 +88,49 @@ assert.deepEqual(calculateDisarmDropCell({
 
 **Файлы:** scripts/data/storage-command-service.js, scripts/data/storage-container-item-service.js, scripts/data/hero-doll-service.js, scripts/integrations/held-items.js; расширить tests/disarm-service.test.mjs, tests/storage-socket.test.mjs, tests/storage-container-item-service.test.mjs и профиль recovery существующего storage owner.
 
-- [ ] Выделить внутри StorageCommandService метод dropDisarmedItem(intent,context), доступный только internal вызову DisarmService. Intent содержит operationId, trusted source/item identity, quantity=1, destination и уже разрешённую authority capability; capability создаётся внутри composition/service, не принимается из typed payload.
-- [ ] Повторно проверить провал save и соответствие item/рук сохранённой атаке. Обычный dropItemToScene сохраняет прежнюю ACL; игрок не получает общий способ перемещать чужие вещи.
+- [x] Выделить внутри StorageCommandService метод dropDisarmedItem(intent,context), доступный только internal вызову DisarmService. Intent содержит operationId, trusted source/item identity, quantity=1, destination и уже разрешённую authority capability; capability создаётся внутри composition/service, не принимается из typed payload.
+- [x] Повторно проверить провал save и соответствие item/рук сохранённой атаке. Обычный dropItemToScene сохраняет прежнюю ACL; игрок не получает общий способ перемещать чужие вещи.
 - [ ] Создать подготовленный snapshot одной физической вещи. Использовать R3 для plain stack и существующий storage graph/snapshot для host с upgrades или контейнера. Содержимое, durability и пользовательские flags не восстанавливать из каталога.
-- [ ] До source debit сохранить destination/IDs и transfer receipt. Ground pile создаётся/находится по operation ID. Снятие held/equipped и HeroDoll slot проходит через их владельцев в той же recoverable операции; прямое редактирование flags из карточки запрещено.
-- [ ] Успешный save вызывает ноль storage writes. При провале с заблокированной точкой показать GM к8 и выбор соседней законной точки; source не списывается до её подтверждения. Hex/gridless используют согласованный Q2 fallback.
+- [x] До source debit сохранить destination/IDs и transfer receipt. Ground pile создаётся/находится по operation ID. Снятие held/equipped и HeroDoll slot проходит через их владельцев в той же recoverable операции; прямое редактирование flags из карточки запрещено.
+- [x] Успешный save вызывает ноль storage writes. По уточнению пользователя стены и границы исключаются до случайного выбора. Восемь вариантов — к8, иначе кость по числу вариантов. Hex использует соседние offsets, gridless — восемь направлений. Без допустимых точек списания нет.
 - [ ] Fault injection после destination create, source debit, release hands, doll state, journal commit и потерянного acknowledgement. Во всех recoverable случаях один экземпляр, один ground receipt; неоднозначный конфликт не чинить вторым drop.
 - [ ] Проверить upgraded weapon, quantity>1, full container, synthetic token Actor, удаление уже выданной ground вещи до retry. Завершённый replay никогда не создаёт её заново.
-- [ ] После commit один scoped refresh источника/куклы/storage; failure refresh не превращается в повтор world mutation.
+- [x] После commit один scoped refresh источника/куклы/storage; failure refresh не превращается в повтор world mutation.
 
 ## Задача R6.4 — macro, диалоги и интеграционная приёмка
 
 **Файлы:** scripts/combat/grapple-macro-service.js; новый scripts/ui/disarm-dialog.js, tests/disarm-dialog.test.mjs; templates/disarm-dialog.hbs при необходимости template; styles/main.css; tests/grapple-macro-service.test.mjs; composition в scripts/main.js, hooks только при реальной необходимости в scripts/combat/hooks.js.
 
-- [ ] Добавить buildDisarmMacroData(folderId) и stable sourceId в существующий GrappleMacroService.syncManagedDocuments(). Не переименовывать владельца и не создавать второго folder lifecycle.
-- [ ] Скрипт macro вызывает только game.rebreyaMain.disarm(); sync на active GM создаёт третий managed macro один раз в exact папке Macro/Ребрея. Одноимённый пользовательский macro не трогать.
+- [x] Добавить buildDisarmMacroData(folderId) и stable sourceId в существующий GrappleMacroService.syncManagedDocuments(). Не переименовывать владельца и не создавать второго folder lifecycle.
+- [x] Скрипт macro вызывает только game.rebreyaMain.disarm(); sync на active GM создаёт третий managed macro один раз в exact папке Macro/Ребрея. Одноимённый пользовательский macro не трогать.
 - [ ] Диалоги показывают источник/цель, предмет, формулу, excluded/unresolved modifiers, помеху, «Расход: 1 атака». Save dialog показывает str/dex и преимущество только у str при меньшем атакующем. Текст/имена экранировать.
 - [ ] Tests на zero/multiple tokens/targets, cancel каждого шага, focus/keyboard, повтор клика и снятие listeners при close. Срок жизни UI не является сроком жизни journal operation.
 - [ ] Live GM+player: выполнить все size/hand/save ветки, отключить владельца, проверить pickup выбитой вещи, reload и повтор macro. Обычная атака, захват и перемещение схваченного сохраняют поведение.
-- [ ] Обновить паспорт 2/8/16/19 и публичный disarm API в README. Зафиксировать, как учитывается одна атака; не заявлять автоматический attack budget, которого нет.
+- [x] Обновить паспорт 2/8/16/19 и публичный disarm API в README. Зафиксировать, как учитывается одна атака; не заявлять автоматический attack budget, которого нет.
 
 ## Выпуск этапа
 
-- [ ] Выполнить полный профиль focused-тестов этого плана; записать фактические passed/failed.
+- [x] Выполнить полный профиль focused-тестов этого плана; записать фактические passed/failed.
 - [ ] Пройти перечисленные live-сценарии в выделенном тестовом Foundry-мире. Сохранить viewport, версии, GM/player и console result. Если live недоступен, оставить этот пункт открытым.
-- [ ] Обновить профильные методы паспорта и README при изменении public contract.
-- [ ] Поднять актуальную patch version в module.json; создать/переименовать versioned forwarder с единственным import "./main.js"; обновить esmodules. Проверить отсутствие старых runtime-entrypoint ссылок.
+- [x] Обновить профильные методы паспорта и README при изменении public contract.
+- [x] Поднять актуальную patch version в module.json; создать/переименовать versioned forwarder с единственным import "./main.js"; обновить esmodules. Проверить отсутствие старых runtime-entrypoint ссылок.
 - [ ] Выполнить один полный цикл команд из README этого комплекта, проверить содержательный diff, stat и diff --check.
 - [ ] Stage только перечисленных файлов текущего этапа и обязательных manifest/docs; осмысленный commit; git push -u origin lich_branch. Проверить чистую рабочую копию и HEAD...origin/lich_branch = 0/0. Не включать чужие изменения.
 
 **Предлагаемый commit:** feat: add authoritative disarm workflow and managed macro.
+
+## Реализация и проверка — 2026-09-08, 1.4.252
+
+Реализованы pure rules, dnd5e adapter, DisarmDocuments, durable DisarmService, exact typed commands, internal StorageCommandService drop и managed macro/диалоги. Текущие методы и data flow: [паспорт R6](../../../disarm-function-passport.md).
+
+Физический перенос использует R3 split rules и bounded transport snapshot реальных Item Documents (`storageRow.runtimeGraph`). Это не генерируемый loot descriptor и не второй world repository. Снимок содержит native container children и installed upgrades; при подборе весь граф получает новые согласованные IDs. Корневой предмет освобождает руки/equipped и ячейки куклы, включая остаток plain stack. Усовершенствованный предмет или наполненный контейнер нельзя частично выделить из неоднозначного стака. На земле контейнер представлен одной подбираемой вещью; его native содержимое восстанавливается при подборе целиком.
+
+Автотесты: профиль R6 с ingress/recovery/storage/HeroDoll/macro/composition — **251 passed / 0 failed**. Дополнительно manifest/storage-registration — **43 passed / 0 failed** после обновления ожидаемых cache keys. Полный первый запуск: 3753 passed / 2 failed — обе ошибки были устаревшими ожидаемыми import URL в тестах. Проверка синтаксиса: **740 JS/MJS, 46 JSON, 0 ошибок**.
+
+Повторный полный запуск после исправления тестовых cache keys: `node --test tests/*.test.mjs` — **3755 passed / 0 failed**. `git diff --check` — без ошибок; main runtime references соответствуют 1.4.252.
+
+Live QA: testovyj3, Foundry 13.351 / dnd5e 5.2.5, CODEX (GM), viewport 1292×920. Проверено: выбор удерживаемого оружия; baseline `1d20 + 3 + 2`; две руки → помеха; native STR save с преимуществом; восемь точек без стен → только направления 1/5/6/7/8 после тестовой восточной стены. Исправлен выявленный в браузере конфликт HTMLFormControlsCollection.item; проверены переход «Далее» к видимой формуле и «Нет» → null без запуска операции. Удалены оба QA Actor, оба Token и временная Wall.
+
+**Приёмка остаётся открыта:** Gamemaster до обновления сессии отвечает `Unknown socket command: disarm.preview`; сквозное start/save/drop через native GM socket и отдельная player-сессия ещё не пройдены. Тестовая сеть реального gateway проверяет direct active GM, второй GM, player, запрет player baseline/лишней формулы и отсутствие GM. Node tests проверяют оба save outcomes, retry, stale intent, interrupted roll, no legal point, stack, контейнер с upgraded child, party/character pickup, faults вокруг source debit/куклы. Live-матрицу размеров/рук, synthetic Actor и обычного боя нельзя считать пройденной по этим тестам.
+
+Открытые чекбоксы выше остаются для перечисленной полной приёмки и более широкой fault/UI-матрицы; они не означают отсутствия уже описанного runtime.

@@ -5,6 +5,7 @@ export const GRAPPLE_FOLDER_NAME = "Ребрея";
 export const GRAPPLE_FOLDER_SOURCE_ID = "grapple-macro-folder";
 export const GRAPPLE_MACRO_SOURCE_ID = "grapple-macro";
 export const MOVE_GRAPPLED_MACRO_SOURCE_ID = "move-grappled-macro";
+export const DISARM_MACRO_SOURCE_ID = "disarm-macro";
 
 const MANAGED_FLAG = "managed";
 const SOURCE_ID_FLAG = "sourceId";
@@ -85,6 +86,11 @@ export function buildMoveGrappledMacroData(folderId, options = {}) {
   });
 }
 
+export function buildDisarmMacroData(folderId, options = {}) {
+  return macroData({ name: "Обезоруживание", command: "await game.rebreyaMain?.disarm?.();",
+    sourceId: DISARM_MACRO_SOURCE_ID, folderId, observerOwnershipLevel: options.observerOwnershipLevel });
+}
+
 function buildManagedFolderData() {
   return {
     name: GRAPPLE_FOLDER_NAME,
@@ -156,6 +162,9 @@ export class GrappleMacroService {
         observerOwnershipLevel: this.#observerOwnershipLevel
       })),
       await this.#syncMacro(game, MOVE_GRAPPLED_MACRO_SOURCE_ID, buildMoveGrappledMacroData(folderId, {
+        observerOwnershipLevel: this.#observerOwnershipLevel
+      })),
+      await this.#syncMacro(game, DISARM_MACRO_SOURCE_ID, buildDisarmMacroData(folderId, {
         observerOwnershipLevel: this.#observerOwnershipLevel
       }))
     ];

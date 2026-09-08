@@ -362,6 +362,8 @@ Public API: `getReputation(actorOrUuid)` возвращает доступную
 
 ### Бой и космология
 
+Макрос **«Обезоруживание»** в папке «Ребрея» вызывает `game.rebreyaMain.disarm({sourceTokenUuid?,targetTokenUuid?})`. Без аргументов выберите один свой токен и одну цель. Выберите оружие и удерживаемый предмет; расход — одна доступная атака (общий счётчик атак автоматически не списывается). Сл задаёт бросок характеристики и владения без качества, временных добавок и бонусов черт. Назначенный владелец цели либо мастер выбирает Силу/Ловкость в карточке чата. При провале вещь попадает в случайную соседнюю точку без пересечения стены и снимается с руки/куклы; физическое состояние сохраняется при подборе. Повтор операции: `openDisarmOperation(operationId)`. [Контракты и recovery](docs/disarm-function-passport.md).
+
 - `getCombatStatusDefinitions`, `normalizeCombatStatusId`, `getCombatStatus`, `setCombatStatus`, `clearCombatStatus`, `setCombatStatusValue`, `applyDecayingDamage`, `syncBloodiedStatuses`.
 - `getReactionState`, `canUseReaction`, `refreshReaction`, `consumeReaction`.
 - `rollWeaponAttack`, `rollFirearmAttack`, `clearFirearmJam`, `maintainFirearm`, `resolveProvokedAttack`, `resolveParry`, `resolveInterception`.

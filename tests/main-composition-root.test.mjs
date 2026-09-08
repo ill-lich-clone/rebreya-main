@@ -10,7 +10,7 @@ import { TransportCompendiumService } from "../scripts/data/transport-compendium
 import { BuiltinStorageActorService } from "../scripts/data/builtin-storage-actor-service.js?v=1.4.216-storage-token-vision";
 import { StorageOpenSoundService } from "../scripts/data/storage-open-sound-service.js?v=1.4.145-coin-icons-storage-sound";
 import { GrappleAutomationService } from "../scripts/combat/grapple-automation-service.js";
-import { GrappleMacroService } from "../scripts/combat/grapple-macro-service.js";
+import { GrappleMacroService } from "../scripts/combat/grapple-macro-service.js?v=1.4.252";
 import { GrapplePlacementPreview } from "../scripts/combat/grapple-placement-preview.js";
 import {
   COMMAND_REQUEST_TYPE,
@@ -151,6 +151,19 @@ test("ready composes spell automation on one registry alongside legacy hook regi
     assert.ok(moduleApi.grapplePlacementPreview instanceof GrapplePlacementPreview);
     assert.equal(typeof moduleApi.toggleGrapple, "function");
     assert.equal(typeof moduleApi.moveGrappled, "function");
+    const mutateBeforeDisarmCheck = moduleApi.privilegedMutationGateway.mutate;
+    moduleApi.pendingDisarmIntent = { operationId: "rejected-start" };
+    moduleApi.privilegedMutationGateway.mutate = async () => { throw Object.assign(new Error("outside range"), { code: "out-of-range" }); };
+    await assert.rejects(moduleApi.requestDisarmAction("start", moduleApi.pendingDisarmIntent));
+    assert.equal(moduleApi.pendingDisarmIntent, null);
+    moduleApi.pendingDisarmIntent = { operationId: "uncertain-start" };
+    moduleApi.privilegedMutationGateway.mutate = async () => { throw Object.assign(new Error("timeout"), { code: "request-timeout" }); };
+    await assert.rejects(moduleApi.requestDisarmAction("start", moduleApi.pendingDisarmIntent));
+    assert.equal(moduleApi.pendingDisarmIntent.operationId, "uncertain-start");
+    moduleApi.privilegedMutationGateway.mutate = async () => { throw Object.assign(new Error("missing"), { code: "operation-not-found" }); };
+    await assert.rejects(moduleApi.openDisarmOperation("uncertain-start"));
+    assert.equal(moduleApi.pendingDisarmIntent, null);
+    moduleApi.privilegedMutationGateway.mutate = mutateBeforeDisarmCheck;
     for (const hook of ["preUpdateToken", "deleteActiveEffect", "deleteToken", "canvasReady"]) {
       assert.ok((Hooks.listeners.get(hook)?.length ?? 0) >= 1, hook);
     }
@@ -358,7 +371,7 @@ test("composition root owns one inventory ingress graph and one batch dispatch h
 
   assert.match(
     source,
-    /\.\/data\/inventory-service\.js\?v=1\.4\.249-item-instances/u,
+    /\.\/data\/inventory-service\.js\?v=1\.4\.252-disarm/u,
     "inventory-service cache key must change with the inventory add projection"
   );
   assert.equal(source.match(/new InventoryIngressRuleCompilerCache\(/gu)?.length, 1);
