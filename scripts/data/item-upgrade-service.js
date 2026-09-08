@@ -1,5 +1,6 @@
 import { MODULE_ID } from "../constants.js";
-import { loadUpgradeAutomationManifest, getUpgradeAvailability } from "./upgrade-automation-manifest.js?v=1.4.254";
+import { getUpgradeChoiceOptions, validateUpgradeChoices } from "./item-upgrade-choices.js?v=1.4.255";
+import { loadUpgradeAutomationManifest, getUpgradeAvailability } from "./upgrade-automation-manifest.js?v=1.4.255";
 import { resolveUpgradeProfile, validateUpgradeInstallation, validateUpgradeCapacity, UpgradeRuleError } from "./item-upgrade-rules.js?v=1.4.250";
 import { getItemHeldHands, isItemEquipped } from "../integrations/held-items.js";
 
@@ -270,7 +271,10 @@ export class ItemUpgradeService {
     const availability = getUpgradeAvailability(sourceId, manifest);
     if (legacyOverride) Object.assign(availability, { available: false, decision: "unavailable-no-rule",
       label: "Усовершенствования нет в реализации", reason: "Сохранён пользовательский профиль; его полная автоматизация не подтверждена." });
-    return { sourceId, profile, availability, legacyOverride };
+    const choices = readModuleFlag(item, "upgradeChoices"), choiceOptions = getUpgradeChoiceOptions(sourceId);
+    let requiresChoice = false;
+    try { validateUpgradeChoices(sourceId, choices); } catch { requiresChoice = true; }
+    return { sourceId, profile, availability, legacyOverride, choices, choiceOptions, requiresChoice };
   }
 
   installUpgrade(hostItem, upgradeItem, options = {}) {
@@ -311,6 +315,7 @@ export class ItemUpgradeService {
     if (previousHost && previousHost !== getItemId(hostItem)) throw new UpgradeRuleError("slot-conflict");
     const { slotIndex } = validateUpgradeInstallation(buildUpgradeHostDescriptor(hostItem), installed,
       { ...projection, slotIndex: options.slotIndex });
+    const choices = validateUpgradeChoices(projection.sourceId, options.choices ?? projection.choices);
 
     let installedItem = upgradeItem;
     const installedFlag = buildInstalledUpgradeFlag(hostItem, slotIndex);
@@ -321,6 +326,7 @@ export class ItemUpgradeService {
       setProperty(itemData, "system.quantity", 1);
       setProperty(itemData, "system.container", getItemId(hostItem));
       setProperty(itemData, `flags.${MODULE_ID}.${INSTALLED_UPGRADE_FLAG}`, installedFlag);
+      setProperty(itemData, `flags.${MODULE_ID}.upgradeChoices`, choices);
       const [created] = await actor.createEmbeddedDocuments("Item", [itemData], { renderSheet: false });
       if (!created) {
         throw new Error("Не удалось создать установленное усовершенствование.");
@@ -331,7 +337,8 @@ export class ItemUpgradeService {
     else {
       await upgradeItem.update({
         "system.container": getItemId(hostItem),
-        [`flags.${MODULE_ID}.${INSTALLED_UPGRADE_FLAG}`]: installedFlag
+        [`flags.${MODULE_ID}.${INSTALLED_UPGRADE_FLAG}`]: installedFlag,
+        [`flags.${MODULE_ID}.upgradeChoices`]: choices
       });
     }
 

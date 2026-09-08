@@ -7,7 +7,7 @@ import {
   isUpgradeableHostItem,
   isUpgradeItem,
   UPGRADE_HOLD_DURATION_MS
-} from "../data/item-upgrade-service.js?v=1.4.250";
+} from "../data/item-upgrade-service.js?v=1.4.255";
 
 const DRAG_DATA_TYPES = ["text/plain", "text", "application/json"];
 const HOLD_STATES = new WeakMap();
@@ -17,6 +17,22 @@ const INVENTORY_ROW_HAS_UPGRADES_CLASS = "has-rebreya-installed-upgrades";
 const INVENTORY_ROW_INSTALLING_CLASS = "is-rebreya-upgrade-installing";
 const UPGRADE_INSTALL_ANIMATION_MS = 700;
 let filterHookRegistered = false;
+
+/** Ask only for a missing catalog choice, before the service may split or install anything. */
+export async function installItemUpgradeWithChoices(hostItem, upgradeItem, moduleApi) {
+  const projection = await moduleApi.itemUpgradeService?.getUpgradeProjection?.(upgradeItem);
+  if (!projection?.requiresChoice || !projection.availability.available) return moduleApi.installItemUpgrade(hostItem, upgradeItem);
+  const options = projection.choiceOptions ?? [];
+  if (!options.length) throw new Error("Нет поддержанного типа поглощения для этого усовершенствования.");
+  const choice = await foundry.applications.api.DialogV2.wait({
+    window: { title: "Тип поглощения" },
+    content: `<p>${escapeHtml(upgradeItem.name)}</p><label>Тип урона <select name="damageType">${options.map(type => `<option value="${escapeHtml(type)}">${escapeHtml(game.i18n.localize(CONFIG.DND5E.damageTypes[type]?.label ?? type))}</option>`).join("")}</select></label>`,
+    buttons: [{ action: "install", label: "Установить", default: true, callback: (_event, button) => button.form.elements.namedItem("damageType").value },
+      { action: "cancel", label: "Отмена", callback: () => false }], close: () => false, rejectClose: false
+  });
+  if (!choice) return null;
+  return moduleApi.installItemUpgrade(hostItem, upgradeItem, { choices: { damageType: choice } });
+}
 
 function cleanText(value) {
   return String(value ?? "").trim();
@@ -579,7 +595,8 @@ export function bindItemUpgradeInventoryRows(root, { actor, app, moduleApi, rere
 
       try {
         const upgradeItem = await resolveDropItem(dropData, actor);
-        const installed = await moduleApi.installItemUpgrade(hostItem, upgradeItem);
+        const installed = await installItemUpgradeWithChoices(hostItem, upgradeItem, moduleApi);
+        if (!installed) return;
         ui.notifications?.info?.(`Установлено: ${installed?.name ?? upgradeItem?.name ?? "усовершенствование"}.`);
         row.classList?.add?.(INVENTORY_ROW_HAS_UPGRADES_CLASS);
         playInventoryInstallAnimation(row, () => rerenderActorSheetAfterUpgrade(app, moduleApi, rerenderActorSheet));
@@ -646,7 +663,8 @@ export function bindItemUpgradeSheet(root, app, moduleApi) {
     event.stopPropagation?.();
     try {
       const upgradeItem = await resolveDropItem(dropData);
-      const installed = await moduleApi.installItemUpgrade(hostItem, upgradeItem);
+      const installed = await installItemUpgradeWithChoices(hostItem, upgradeItem, moduleApi);
+      if (!installed) return;
       ui.notifications?.info?.(`Установлено: ${installed?.name ?? upgradeItem?.name ?? "усовершенствование"}.`);
       await rerenderItemSheet(app, moduleApi);
     }
@@ -701,6 +719,7 @@ export function createUpgradeAvailabilityHtml(item, projection) {
     <strong>${escapeHtml(item.name ?? "Усовершенствование")}</strong>
     <span>${escapeHtml(availability.label)}</span>
     <small>${escapeHtml(availability.reason)}</small>
+    ${projection.requiresChoice ? "<small>Требуется выбор типа поглощения.</small>" : projection.choices?.damageType ? `<small>Поглощение: ${escapeHtml(globalThis.game?.i18n?.localize?.(globalThis.CONFIG?.DND5E?.damageTypes?.[projection.choices.damageType]?.label ?? projection.choices.damageType) ?? projection.choices.damageType)}</small>` : ""}
     ${projection.legacyOverride ? "<small>Сохранённый пользовательский профиль оставлен без изменений.</small>" : ""}
   </div>`;
 }

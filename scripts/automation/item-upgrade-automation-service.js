@@ -1,10 +1,10 @@
 import { MODULE_ID } from "../constants.js";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
-import { buildUpgradeHostDescriptor, profileSignature } from "../data/item-upgrade-service.js?v=1.4.254";
-import { loadUpgradeAutomationManifest } from "../data/upgrade-automation-manifest.js?v=1.4.254";
+import { buildUpgradeHostDescriptor, profileSignature } from "../data/item-upgrade-service.js?v=1.4.255";
+import { loadUpgradeAutomationManifest } from "../data/upgrade-automation-manifest.js?v=1.4.255";
 import { validateUpgradeInstallation } from "../data/item-upgrade-rules.js?v=1.4.250";
-import { buildSimpleUpgradeContributions, projectSimpleUpgradeItem } from "./item-upgrade-projections.js?v=1.4.254";
-import { SimpleUpgradeRollAdapter } from "../integrations/item-upgrade-roll-adapter.js?v=1.4.254";
+import { buildSimpleUpgradeContributions, projectSimpleUpgradeItem } from "./item-upgrade-projections.js?v=1.4.255";
+import { SimpleUpgradeRollAdapter } from "../integrations/item-upgrade-roll-adapter.js?v=1.4.255";
 
 const FLAG = "simpleItemUpgrade", PATCH = Symbol.for("rebreya-main.simple-upgrade-item-effects");
 const values = collection => Array.from(collection?.contents ?? collection?.values?.() ?? collection ?? []);
@@ -35,7 +35,7 @@ export class ItemUpgradeAutomationService {
           validateUpgradeInstallation(descriptor, links.filter(other => other !== link), { profile: entry?.profile, availability: entry?.decision, slotIndex: link.slotIndex });
           compatible = true;
         } catch { /* An invalid historical link contributes nothing; its documents remain intact. */ }
-        return { id: link.itemId, sourceId, valid: Boolean(upgrade && entry && compatible && upgrade.system?.quantity === 1
+        return { id: link.itemId, sourceId, choices: getFlag(upgrade, "upgradeChoices"), valid: Boolean(upgrade && entry && compatible && upgrade.system?.quantity === 1
           && links.filter(other => other.itemId === link.itemId).length === 1 && reverse?.hostItemId === item.id
           && reverse.slotIndex === link.slotIndex && upgrade.system?.container === item.id
           && (!stored || profileSignature(stored) === profileSignature(entry.profile))) };
@@ -45,7 +45,7 @@ export class ItemUpgradeAutomationService {
   project(actor, hostItem = null) {
     return this.options.project?.(actor) ?? buildSimpleUpgradeContributions({ actor: { uuid: actor.uuid, type: actor.type,
       source: { system: { attributes: { hp: { max: actor._source?.system?.attributes?.hp?.max ?? null } } } } }, hosts: this.readHosts(actor, hostItem), manifest: this.manifest,
-      capabilities: new Set(this.hostAdapterReady ? ["actor", "host", "roll"] : ["actor", "roll"]) });
+      capabilities: new Set(this.hostAdapterReady ? ["actor", "host", "roll", "damage"] : ["actor", "roll", "damage"]) });
   }
   requestSync(actorOrUuid, reason = "changed") {
     const uuid = typeof actorOrUuid === "string" ? actorOrUuid : actorOrUuid?.uuid;

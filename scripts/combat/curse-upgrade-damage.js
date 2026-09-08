@@ -11,6 +11,31 @@ const resolveSourceItem = options => {
   return sourceUuid ? globalThis.fromUuidSync?.(sourceUuid) : null;
 };
 
+/** One flat adjustment per type/eligibility group, preserving separate native damage properties. */
+export function calculateFlatDamageRatios(entries, rules) {
+  const amounts = entries.map(entry => Math.max(0, finite(entry.value)));
+  const grouped = new Map();
+  for (const rule of rules) {
+    const key = JSON.stringify([rule.type, Boolean(rule.nonmagical)]);
+    const group = grouped.get(key) ?? { ...rule, delta: 0 };
+    group.delta += rule.delta; grouped.set(key, group);
+  }
+  // Restricted absorption is spent only on eligible components, then whole-type absorption.
+  for (const rule of [...grouped.values()].sort((a,b) => Number(Boolean(b.nonmagical)) - Number(Boolean(a.nonmagical)))) {
+    const indices = entries.flatMap((entry, i) => {
+      const properties = entry.properties;
+      const knownNonmagical = (properties instanceof Set || Array.isArray(properties)) && !new Set(properties).has("mgc");
+      return entry.type === rule.type && !entry.ignoreModification && amounts[i] > 0
+        && (!rule.nonmagical || knownNonmagical) ? [i] : [];
+    });
+    const total = indices.reduce((sum,i) => sum + amounts[i], 0);
+    if (!total || !rule.delta) continue;
+    const changed = rule.delta < 0 ? Math.max(Math.min(1,total), total + rule.delta) : total + rule.delta;
+    for (const i of indices) amounts[i] *= changed / total;
+  }
+  return entries.map((entry,i) => entry.value > 0 ? amounts[i] / entry.value : 1);
+}
+
 export class CurseUpgradeDamageAdapter {
   constructor(service, { getSaveDROrder = () => globalThis.MidiQOL?.configSettings?.()?.saveDROrder ?? "SaveDRDr",
     resolveDamageSource = options => ({
@@ -74,24 +99,24 @@ export class CurseUpgradeDamageAdapter {
     return this.applyPacket(actor, damages, options, true);
   }
 
+  flatModifiers(actor) {
+    const count = this.service.sources(actor, "fire").length;
+    const simple = this.service.moduleApi?.itemUpgradeAutomationService?.project(actor).contributions ?? [];
+    return [ ...(count ? [{ type: "fire", delta: -2 * count }, { type: "cold", delta: 2 * count }] : []),
+      ...simple.filter(c => c.scope === "damage" && c.operation === "flat-damage") ];
+  }
+
   applyPacket(actor, damages, options = {}, midi = false) {
     if (!Array.isArray(damages) || options.midi?.noCalc || options.ignore === true
       || this.processedPackets.has(damages)) return true;
     // Workflow damage is split into default/bonus/other by MIDI. Finalize that complete
     // effect in preTargetDamageApplication instead of spending the flat bonus per slice.
     if (midi && options.midi?.applyDamage && !options.rebreyaCurseFinalize) return true;
-    const sources = this.service.sources(actor, "fire");
-    if (!sources.length) return true;
+    const rules = this.flatModifiers(actor);
+    if (!rules.length) return true;
     this.processedPackets.add(damages);
-    for (const [type, delta] of [["fire", -2 * sources.length], ["cold", 2 * sources.length]]) {
-      if (ignored(options, "modification", type)) continue;
-      const entries = damages.filter(d => d.type === type && finite(d.value) > 0);
-      if (!entries.length) continue;
-      const packetRatio = options.rebreyaCursePacketRatios?.[type];
-      if (Number.isFinite(packetRatio)) {
-        for (const entry of entries) entry.value *= packetRatio;
-        continue;
-      }
+    const entries = damages.map(entry => {
+      const type = entry.type;
       // Native multiplier is still pending. In MIDI DRSaveDr mode the save is pending too.
       // Divide the flat modifier by those pending factors so native damage keeps its own
       // immunities, resistance, vulnerability, rounding and threshold handling unchanged.
@@ -103,14 +128,11 @@ export class CurseUpgradeDamageAdapter {
         if (saved) pending *= superSaver ? 0 : finite(mo.saveMultiplier, 1);
         else if (superSaver) pending *= finite(globalThis.MidiQOL?.configSettings?.()?.defaultSaveMultiplier, 0.5);
       }
-      if (pending <= 0) continue;
-      const total = entries.reduce((sum, entry) => sum + finite(entry.value), 0);
-      const prepared = total * pending;
-      const changed = delta < 0 ? Math.max(Math.min(1, prepared), prepared + delta) : prepared + delta;
-      // Proportional allocation preserves properties of separate same-type components.
-      const ratio = changed / prepared;
-      for (const entry of entries) entry.value *= ratio;
-    }
+      return { ...entry, value: pending > 0 ? finite(entry.value) * pending : 0,
+        ignoreModification: ignored(options, "modification", type) };
+    });
+    const ratios = options.rebreyaCursePacketRatios ?? calculateFlatDamageRatios(entries, rules);
+    for (const [i,entry] of damages.entries()) if (Number.isFinite(ratios[i])) entry.value *= ratios[i];
     return true;
   }
 
@@ -121,12 +143,12 @@ export class CurseUpgradeDamageAdapter {
   preTargetDamageApplication(token, { workflow, damageItem } = {}) {
     const actor = token?.actor ?? token?.document?.actor;
     if (!actor || !damageItem || this.finalizedDamageItems.has(damageItem)) return true;
-    const hasFire = this.service.sources(actor, "fire").length > 0;
+    const rules = this.flatModifiers(actor), hasFlat = rules.length > 0;
     const hasShield = this.service.sources(actor, "shield").length > 0
       && isCurseRangedWeaponAttack(workflow?.activity, workflow?.item);
-    if (!hasFire && !hasShield) return true;
+    if (!hasFlat && !hasShield) return true;
     this.finalizedDamageItems.add(damageItem);
-    if (hasFire && typeof actor.calculateDamage === "function") {
+    if (hasFlat && typeof actor.calculateDamage === "function") {
       const details = damageItem.damageDetails ?? {};
       const categories = damageItem.damageSelector === "otherDamage" ? ["otherDamage"]
         : ["defaultDamage", "bonusDamage", ...(globalThis.MidiQOL?.configSettings?.()?.singleConcentrationRoll ? ["otherDamage"] : [])];
@@ -135,28 +157,26 @@ export class CurseUpgradeDamageAdapter {
       if (!groups.length && Array.isArray(damageItem.rawDamageDetail)) {
         groups = [{ raw: damageItem.rawDamageDetail, options: damageItem.calcDamageOptions ?? {} }];
       }
-      const totals = { fire: 0, cold: 0 };
+      const entries = [];
       for (const { raw, options } of groups) {
         for (const entry of raw) {
-          if (!(entry.type in totals) || entry.value <= 0 || ignored(options, "modification", entry.type)) continue;
           const mo = options.midi ?? {};
           let factor = finite(options.multiplier, 1);
           if (mo.uncannyDodge && !ignored(options, "uncannyDodge", entry.type)) factor *= 0.5;
           const superSaver = mo.superSaver && !ignored(options, "superSaver", entry.type);
           if (mo.saved && !ignored(options, "saved", entry.type)) factor *= superSaver ? 0 : finite(mo.saveMultiplier, 1);
           else if (superSaver) factor *= finite(globalThis.MidiQOL?.configSettings?.()?.defaultSaveMultiplier, 0.5);
-          totals[entry.type] += entry.value * factor;
+          entries.push({ ...entry, value: finite(entry.value) * Math.max(0,factor),
+            ignoreModification: options.midi?.noCalc || ignored(options, "modification", entry.type) });
         }
       }
-      const count = this.service.sources(actor, "fire").length;
-      const ratios = {
-        fire: totals.fire > 0 ? Math.max(Math.min(1, totals.fire), totals.fire - 2 * count) / totals.fire : 1,
-        cold: totals.cold > 0 ? (totals.cold + 2 * count) / totals.cold : 1
-      };
+      const ratios = calculateFlatDamageRatios(entries, rules);
       const next = [];
+      let offset = 0;
       for (const { raw, options } of groups) {
         const result = actor.calculateDamage(raw, { ...options, midi: { ...options.midi },
-          rebreyaCurseFinalize: true, rebreyaCursePacketRatios: ratios });
+          rebreyaCurseFinalize: true, rebreyaCursePacketRatios: ratios.slice(offset, offset + raw.length) });
+        offset += raw.length;
         if (!Array.isArray(result)) return true;
         next.push(...result);
       }

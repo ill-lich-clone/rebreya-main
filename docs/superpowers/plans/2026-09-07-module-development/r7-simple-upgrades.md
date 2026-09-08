@@ -159,3 +159,19 @@ Live, тот же testovyj3 / Foundry13.351 / dnd5e5.2.5 / CODEX: реальны
 Focused: `node --test tests/item-upgrade*.test.mjs tests/upgrade-automation-manifest.test.mjs tests/module-manifest.test.mjs tests/combat-attack-service.test.mjs` — **153 passed / 0 failed**. Полный MIDI workflow с targeted conditions, отдельный player и managed AE lifecycle после обновления активного GM ещё требуют приёмки; direct native damage/attack не подменяют её.
 
 Полная проверка: `node --test tests/*.test.mjs` — **3785 passed / 0 failed**; `node --check` для **751 JS/MJS**, parse **46 JSON**, **0 ошибок**; `git diff --check` чисто.
+
+## Поглощение и choices — 2026-09-08, 1.4.255
+
+Добавлены 8 полных профилей: Чешуя монстра, Фрагмент панциря чудовища, Хребет чудовища, Осколок кости чудовища, Панцирь чудовища, Шкура чудовища, Зачарование поглощения, Закалённая чешуя. Manifest: **35 implemented / 2 candidate / 11 existing-curse / 43 unavailable**. Два кандидата не объявлены готовыми: Эссенция света ожидает ответа о сложении radiant3+undead3, Великое зачарование защиты — о расходе общего поглощения на смешанное попадание. Вопрос отправлен пользователю; независимые этапы продолжаются.
+
+Общий CurseUpgradeDamageAdapter расширен simple flat modifiers, без второго damage engine. Сохраняются save→absorption→resistance и минимум1. Отдельные свойства same-type компонентов и unknown magic учитываются. MIDI flat modifier расходуется один раз на combined default/bonus/other; ignored modifications, нулевой урон, повторный hook и чужие curse bonuses покрыты focused regression.
+
+Finite choices в `item-upgrade-choices.js` используются install и projection, предназначены для R8 generation. Validated choice сохраняется на установленной единице до завершения split/install, исходный остаток стопки не меняет выбор. Existing drop UI показывает DialogV2 до первой мутации; cancel/close no-op. Исторический child без выбора даёт видимый статус и не получает случайный эффект.
+
+Live: testovyj3, Foundry13.351/dnd5e5.2.5/MIDI13.0.61, CODEX, viewport1292×920. Диалог виден полностью; пять русских названий типов чешуи; Cancel оставил quantity2/items4/links0. Install отделил1 и сохранил `{damageType:fire}`. Native Actor.calculateDamage: fire10→8; normal+magical slashing6+6 с двумя разными absorption→10; nonmagical bludgeoning6→7. При multiplier0.5: fire→3, суммарный slashing→4, bludgeoning→4. Через настоящий native/MIDI calculateDamage в existing preTargetDamageApplication, DRSaveDr: raw fire8+4 после save0.5 и absorption2→4 HP preview, фактические HP20 неизменны. После Actor.reset все4 contributions на трёх children сохранены; после remove fire10→10. QA Actor и Items удалены.
+
+Focused: `node --test tests/item-upgrade*.test.mjs tests/curse-upgrade*.test.mjs tests/module-manifest.test.mjs` — **160 passed / 0 failed**. Проверка native/MIDI расчёта без полного attack workflow не закрывает отдельного player, synthetic tokens и общий GM lifecycle; эти пункты приёмки остаются открытыми.
+
+При финальном ревью добавлен regression для MIDI noCalc: такой slice не участвует в расходе плоского поглощения рассчитанного slice. До исправления получалось9.5+10 вместо9+10; после — корректно. Focused absorption/curse damage — **24 passed / 0 failed**; полный прогон повторён после этой правки.
+
+Окончательная проверка партии: `node --test tests/*.test.mjs` — **3800 passed / 0 failed**. Синтаксис **755 JS/MJS и 46 JSON, 0 ошибок**; два файла, изменённые после первого полного syntax pass, повторно проверены `node --check`; `git diff --check` чисто. Module/forwarder/esmodules — 1.4.255.

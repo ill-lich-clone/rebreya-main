@@ -134,6 +134,26 @@ function makeService(Service) {
     profile: { compatibility: ["any"] }, decision: "simple-implemented", reason: "Approved test fixture" }] });
 }
 
+test("required choice is validated before splitting and persists only on the installed unit", async () => {
+  const restore = installFoundryStubs();
+  try {
+    const { ItemUpgradeService } = await import("../scripts/data/item-upgrade-service.js");
+    const actor = new FakeActor(), id = "cheshuya-monstra";
+    const host = actor.addItem({ _id: "host", type: "weapon", system: { quantity: 1 } });
+    const upgrade = makeUpgrade(actor,{gearId:id,quantity:3});
+    const service = new ItemUpgradeService(null,{getManifest:async()=>[{productId:id,gearId:id,profile:{compatibility:["any"]},decision:"simple-implemented",reason:"fixture"}]});
+    await assert.rejects(service.installItemUpgrade(host,upgrade),e=>e.code==="invalid-choice");
+    assert.equal(actor.created.length+upgrade.updates.length+host.updates.length,0);
+    const installed = await service.installItemUpgrade(host,upgrade,{choices:{damageType:"fire"}});
+    assert.deepEqual(installed.flags[MODULE_ID].upgradeChoices,{damageType:"fire"});
+    assert.equal(upgrade.flags[MODULE_ID].upgradeChoices,undefined);
+    assert.equal(upgrade.system.quantity,2);
+    await service.removeItemUpgrade(host,installed);
+    await service.installItemUpgrade(host,installed);
+    assert.deepEqual(installed.flags[MODULE_ID].upgradeChoices,{damageType:"fire"});
+  } finally { restore(); }
+});
+
 test("availability text escapes names and reasons without replacing the Item", async () => {
   const { createUpgradeAvailabilityHtml } = await import("../scripts/integrations/item-upgrade-sheet.js");
   const item = { name: "<b>Legacy</b>" };

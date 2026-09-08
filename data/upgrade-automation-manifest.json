@@ -55,24 +55,39 @@
   },
   {
     "productId": "cheshuya-monstra",
-    "decision": "simple-candidate",
+    "decision": "simple-implemented",
     "effectKind": "flat-damage-modifier",
     "reason": "Фиксированное поглощение 2; один сохранённый выбор типа урона.",
     "owner": [
+      "scripts/automation/item-upgrade-projections.js",
       "scripts/combat/curse-upgrade-damage.js"
     ],
     "tests": [
       {
-        "path": "tests/item-upgrade-automation-service.test.mjs",
-        "status": "planned-R7"
+        "path": "tests/item-upgrade-absorption.test.mjs",
+        "status": "existing"
+      },
+      {
+        "path": "tests/curse-upgrade-damage.test.mjs",
+        "status": "existing"
+      },
+      {
+        "path": "tests/item-upgrade-choices.test.mjs",
+        "status": "existing"
+      },
+      {
+        "path": "tests/item-upgrade-service.test.mjs",
+        "status": "existing"
       }
     ],
     "capabilities": [
       "dnd5e-native",
-      "R7-full-effect-verification-required",
       "midi-qol-optional",
       "host-and-packet-scope"
-    ]
+    ],
+    "activation": "equipped",
+    "worksWhenBroken": false,
+    "stacking": "Сумма плоских вкладов на тип и допустимые компоненты после save до resistance; минимум 1, повтор hook не расходует вклад снова."
   },
   {
     "productId": "dushevnoe-zacharovanie",
@@ -223,24 +238,31 @@
   },
   {
     "productId": "fragment-pantsirya-chudovishcha",
-    "decision": "simple-candidate",
+    "decision": "simple-implemented",
     "effectKind": "flat-damage-modifier",
     "reason": "Поглощение рубящего 1.",
     "owner": [
+      "scripts/automation/item-upgrade-projections.js",
       "scripts/combat/curse-upgrade-damage.js"
     ],
     "tests": [
       {
-        "path": "tests/item-upgrade-automation-service.test.mjs",
-        "status": "planned-R7"
+        "path": "tests/item-upgrade-absorption.test.mjs",
+        "status": "existing"
+      },
+      {
+        "path": "tests/curse-upgrade-damage.test.mjs",
+        "status": "existing"
       }
     ],
     "capabilities": [
       "dnd5e-native",
-      "R7-full-effect-verification-required",
       "midi-qol-optional",
       "host-and-packet-scope"
-    ]
+    ],
+    "activation": "equipped",
+    "worksWhenBroken": false,
+    "stacking": "Сумма плоских вкладов на тип и допустимые компоненты после save до resistance; минимум 1, повтор hook не расходует вклад снова."
   },
   {
     "productId": "gear-3",
@@ -357,24 +379,31 @@
   },
   {
     "productId": "khrebet-chudovishcha",
-    "decision": "simple-candidate",
+    "decision": "simple-implemented",
     "effectKind": "flat-damage-modifier",
     "reason": "Поглощение/слабость 1 по damage type и nonmagical predicate.",
     "owner": [
+      "scripts/automation/item-upgrade-projections.js",
       "scripts/combat/curse-upgrade-damage.js"
     ],
     "tests": [
       {
-        "path": "tests/item-upgrade-automation-service.test.mjs",
-        "status": "planned-R7"
+        "path": "tests/item-upgrade-absorption.test.mjs",
+        "status": "existing"
+      },
+      {
+        "path": "tests/curse-upgrade-damage.test.mjs",
+        "status": "existing"
       }
     ],
     "capabilities": [
       "dnd5e-native",
-      "R7-full-effect-verification-required",
       "midi-qol-optional",
       "host-and-packet-scope"
-    ]
+    ],
+    "activation": "equipped",
+    "worksWhenBroken": false,
+    "stacking": "Сумма плоских вкладов на тип и допустимые компоненты после save до resistance; минимум 1, повтор hook не расходует вклад снова."
   },
   {
     "productId": "kleshni-drednouta",
@@ -835,24 +864,31 @@
   },
   {
     "productId": "oskolok-kosti-chudovishcha",
-    "decision": "simple-candidate",
+    "decision": "simple-implemented",
     "effectKind": "flat-damage-modifier",
     "reason": "Поглощение/слабость 1 по damage type и nonmagical predicate.",
     "owner": [
+      "scripts/automation/item-upgrade-projections.js",
       "scripts/combat/curse-upgrade-damage.js"
     ],
     "tests": [
       {
-        "path": "tests/item-upgrade-automation-service.test.mjs",
-        "status": "planned-R7"
+        "path": "tests/item-upgrade-absorption.test.mjs",
+        "status": "existing"
+      },
+      {
+        "path": "tests/curse-upgrade-damage.test.mjs",
+        "status": "existing"
       }
     ],
     "capabilities": [
       "dnd5e-native",
-      "R7-full-effect-verification-required",
       "midi-qol-optional",
       "host-and-packet-scope"
-    ]
+    ],
+    "activation": "equipped",
+    "worksWhenBroken": false,
+    "stacking": "Сумма плоских вкладов на тип и допустимые компоненты после save до resistance; минимум 1, повтор hook не расходует вклад снова."
   },
   {
     "productId": "oskolok-teni",
@@ -874,24 +910,31 @@
   },
   {
     "productId": "pantsir-chudovishcha",
-    "decision": "simple-candidate",
+    "decision": "simple-implemented",
     "effectKind": "flat-damage-modifier",
     "reason": "Поглощение рубящего и колющего 1.",
     "owner": [
+      "scripts/automation/item-upgrade-projections.js",
       "scripts/combat/curse-upgrade-damage.js"
     ],
     "tests": [
       {
-        "path": "tests/item-upgrade-automation-service.test.mjs",
-        "status": "planned-R7"
+        "path": "tests/item-upgrade-absorption.test.mjs",
+        "status": "existing"
+      },
+      {
+        "path": "tests/curse-upgrade-damage.test.mjs",
+        "status": "existing"
       }
     ],
     "capabilities": [
       "dnd5e-native",
-      "R7-full-effect-verification-required",
       "midi-qol-optional",
       "host-and-packet-scope"
-    ]
+    ],
+    "activation": "equipped",
+    "worksWhenBroken": false,
+    "stacking": "Сумма плоских вкладов на тип и допустимые компоненты после save до resistance; минимум 1, повтор hook не расходует вклад снова."
   },
   {
     "productId": "pantsir-kristal-nogo-leviafana",
@@ -1039,24 +1082,31 @@
   },
   {
     "productId": "shkura-chudovishcha",
-    "decision": "simple-candidate",
+    "decision": "simple-implemented",
     "effectKind": "flat-damage-modifier",
     "reason": "Поглощение дробящего 1.",
     "owner": [
+      "scripts/automation/item-upgrade-projections.js",
       "scripts/combat/curse-upgrade-damage.js"
     ],
     "tests": [
       {
-        "path": "tests/item-upgrade-automation-service.test.mjs",
-        "status": "planned-R7"
+        "path": "tests/item-upgrade-absorption.test.mjs",
+        "status": "existing"
+      },
+      {
+        "path": "tests/curse-upgrade-damage.test.mjs",
+        "status": "existing"
       }
     ],
     "capabilities": [
       "dnd5e-native",
-      "R7-full-effect-verification-required",
       "midi-qol-optional",
       "host-and-packet-scope"
-    ]
+    ],
+    "activation": "equipped",
+    "worksWhenBroken": false,
+    "stacking": "Сумма плоских вкладов на тип и допустимые компоненты после save до resistance; минимум 1, повтор hook не расходует вклад снова."
   },
   {
     "productId": "shyopot-t-my",
@@ -1252,24 +1302,39 @@
   },
   {
     "productId": "zacharovanie-pogloshcheniya",
-    "decision": "simple-candidate",
+    "decision": "simple-implemented",
     "effectKind": "flat-damage-modifier",
     "reason": "Поглощение 1, один сохранённый выбор типа.",
     "owner": [
+      "scripts/automation/item-upgrade-projections.js",
       "scripts/combat/curse-upgrade-damage.js"
     ],
     "tests": [
       {
-        "path": "tests/item-upgrade-automation-service.test.mjs",
-        "status": "planned-R7"
+        "path": "tests/item-upgrade-absorption.test.mjs",
+        "status": "existing"
+      },
+      {
+        "path": "tests/curse-upgrade-damage.test.mjs",
+        "status": "existing"
+      },
+      {
+        "path": "tests/item-upgrade-choices.test.mjs",
+        "status": "existing"
+      },
+      {
+        "path": "tests/item-upgrade-service.test.mjs",
+        "status": "existing"
       }
     ],
     "capabilities": [
       "dnd5e-native",
-      "R7-full-effect-verification-required",
       "midi-qol-optional",
       "host-and-packet-scope"
-    ]
+    ],
+    "activation": "equipped",
+    "worksWhenBroken": false,
+    "stacking": "Сумма плоских вкладов на тип и допустимые компоненты после save до resistance; минимум 1, повтор hook не расходует вклад снова."
   },
   {
     "productId": "zacharovanie-pryzhkov",
@@ -1309,24 +1374,31 @@
   },
   {
     "productId": "zakalyonnaya-cheshuya",
-    "decision": "simple-candidate",
+    "decision": "simple-implemented",
     "effectKind": "flat-damage-modifier",
     "reason": "Поглощение колющего 1.",
     "owner": [
+      "scripts/automation/item-upgrade-projections.js",
       "scripts/combat/curse-upgrade-damage.js"
     ],
     "tests": [
       {
-        "path": "tests/item-upgrade-automation-service.test.mjs",
-        "status": "planned-R7"
+        "path": "tests/item-upgrade-absorption.test.mjs",
+        "status": "existing"
+      },
+      {
+        "path": "tests/curse-upgrade-damage.test.mjs",
+        "status": "existing"
       }
     ],
     "capabilities": [
       "dnd5e-native",
-      "R7-full-effect-verification-required",
       "midi-qol-optional",
       "host-and-packet-scope"
-    ]
+    ],
+    "activation": "equipped",
+    "worksWhenBroken": false,
+    "stacking": "Сумма плоских вкладов на тип и допустимые компоненты после save до resistance; минимум 1, повтор hook не расходует вклад снова."
   },
   {
     "productId": "zhalo-chudovishcha",

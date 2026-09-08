@@ -1,12 +1,22 @@
 import { evaluateUpgradeActivation } from "../data/item-upgrade-rules.js?v=1.4.250";
 import { SIMPLE_UPGRADE_ROLL_PROFILES } from "./item-upgrade-roll-modifiers.js?v=1.4.254";
+import { validateUpgradeChoices } from "../data/item-upgrade-choices.js?v=1.4.255";
 
 const actor = (path, value) => ({ scope: "actor", operation: "add", path, value });
 const host = (operation, value) => ({ scope: "host", operation, value });
 const ac = actor("system.attributes.ac.bonus", 1), saves = actor("system.bonuses.abilities.save", 1);
+const absorption = (type, delta = -1, nonmagical = false) => ({ scope: "damage", operation: "flat-damage", type, delta, nonmagical });
 export const SIMPLE_UPGRADE_PROFILES = Object.freeze({
   ...SIMPLE_UPGRADE_ROLL_PROFILES,
   "svyashchennaya-stal": [host("radiant-double-base", true)],
+  "fragment-pantsirya-chudovishcha": [absorption("slashing")],
+  "pantsir-chudovishcha": [absorption("slashing"), absorption("piercing")],
+  "shkura-chudovishcha": [absorption("bludgeoning")],
+  "zakalyonnaya-cheshuya": [absorption("piercing")],
+  "khrebet-chudovishcha": [absorption("slashing", -1, true), absorption("bludgeoning", 1, true)],
+  "oskolok-kosti-chudovishcha": [absorption("bludgeoning", -1, true), absorption("piercing", 1, true)],
+  "cheshuya-monstra": [absorption("choice", -2)],
+  "zacharovanie-pogloshcheniya": [absorption("choice")],
   "dushevnoe-zacharovanie": [actor("system.skills.per.bonuses.check", 1), actor("system.skills.prf.bonuses.check", 1)],
   "oskolok-cherepa-chudovishcha": [actor("system.skills.itm.bonuses.check", 1)],
   "koren-drakonego-dereva": [actor("system.attributes.hp.bonuses.overall", 5)],
@@ -47,9 +57,13 @@ export function buildSimpleUpgradeContributions({ actor: actorData, hosts, manif
         unavailable.push({ hostItemId: item.id, upgradeItemId: upgrade.id, reason: "Святая сталь требует выделенных базовых костей оружия без custom-формулы." }); continue;
       }
     }
+    let choices;
+    try { choices = validateUpgradeChoices(upgrade.sourceId, upgrade.choices); }
+    catch (error) { unavailable.push({ hostItemId: item.id, upgradeItemId: upgrade.id, reason: error.message }); continue; }
     for (const [index, effect] of effects.entries()) {
       if (effect.condition === "original-no-stealth-disadvantage" && new Set(item.source.system?.properties ?? []).has("stealthDisadvantage")) continue;
       const prepared = { ...effect };
+      if (effect.type === "choice") prepared.type = choices.damageType;
       if (effect.path === "system.attributes.hp.bonuses.overall"
         && (actorData.type !== "character" || actorData.source?.system?.attributes?.hp?.max != null)) prepared.path = "system.attributes.hp.max";
       contributions.push({ ...prepared, sourceId: upgrade.sourceId, hostItemId: item.id, upgradeItemId: upgrade.id,

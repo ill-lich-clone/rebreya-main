@@ -1,12 +1,12 @@
 # Простые усовершенствования — R7
 
-Версия 1.4.254: 27 профилей (12 пассивных и 15 оружейных). Остальные 10 кандидатов поглощения ещё не подключены. Источник правил — `data/upgrades.json`, допуск — `data/upgrade-automation-manifest.json`; установка/снятие остаются у ItemUpgradeService. Проклятья не изменены.
+Версия 1.4.255: 35 профилей (12 пассивных, 15 оружейных и 8 поглощения/слабости). Эссенция света и Великое зачарование защиты ожидают уточнения пересечения правил поглощения. Источник правил — `data/upgrades.json`, допуск — `data/upgrade-automation-manifest.json`; установка/снятие остаются у ItemUpgradeService. Проклятья используют прежние правила через общий packet adapter.
 
 ## Чистая проекция
 
 `scripts/automation/item-upgrade-projections.js`:
 
-- `SIMPLE_UPGRADE_PROFILES` — фиксированные полные контракты 27 профилей, включая `SIMPLE_UPGRADE_ROLL_PROFILES`; не интерпретатор текста или произвольных путей из Item flags.
+- `SIMPLE_UPGRADE_PROFILES` — фиксированные полные контракты 35 профилей, включая `SIMPLE_UPGRADE_ROLL_PROFILES`; не интерпретатор текста или произвольных путей из Item flags. Локальный `absorption(type,delta=-1,nonmagical=false)` объявляет scope damage и operation flat-damage.
 - `buildUpgradeContributionKey({actorUuid,hostItemId,upgradeItemId,effectKey,projectionVersion=1})` — JSON tuple, отдельный ключ физического installed Item.
 - `buildSimpleUpgradeContributions({actor,hosts,manifest=null,capabilities=null})` → `{contributions,unavailable}`. Actor содержит uuid/type и source hp.max; hosts содержат detached source, canonical descriptor и проверенные links. Учитывает implemented status, profile activation, broken policy, полный набор capabilities. Actor scopes: AC, saves, skills, HP max, walk; host scopes: вес, stealthDisadvantage и requirement strength. Лунный металл проверяет original property, а не уже очищенные данные. Неизвестные weight units/value дают unavailable. Вклады разных физических Items суммируются; свойства идемпотентны, вес ограничен нулём.
 - HP: для character с source max=null применяется `system.attributes.hp.bonuses.overall`; для NPC и explicit character max — `system.attributes.hp.max`. Native dnd5e 5.2.5 игнорирует bonuses.overall при заданном максимуме и на NPC.
@@ -31,6 +31,16 @@
 - `preRollAttack(config={})` добавляет бонус и advantage в native roll config. WeakSet защищает повтор hook; native cancellation сохраняет disadvantage. `preRollDamage(config={},message={})` добавляет numeric bonus только base=true пакету, типизированные dice отдельными rolls со стабильным ключом и теми же critical options. Дополнительные пакеты, другая активность/оружие и повтор hook вклада не получают; крит обрабатывает dnd5e один раз.
 - `CombatAttackService.applyDnd5eAttackRollConfig` / `applyDnd5eDamageRollConfig` вызывают adapter перед остальными мутациями конфигурации и передают false при неодинаковых целях. `rollWeaponAttack` учитывает тот же чистый attack bonus и advantage с native смыслом отмены помехи. Новых hooks, роллов, world settings или damage engine нет.
 - `damageSnapshot(system)` в simple service сохраняет только base/versatile number и types. Existing restore/apply WeakMap теперь восстанавливает собственные изменения этих полей при совпадении модели, source и результата; изменение исходного оружия и снятие материала не возвращают старый snapshot поверх source.
+
+## Поглощение и сохранённый выбор
+
+`readHosts` также передаёт `flags.rebreya-main.upgradeChoices` физического child. `buildSimpleUpgradeContributions` валидирует choices канонической функцией, подставляет выбранный тип в flat-damage, а missing/invalid historical choices оставляет без вклада с диагностикой. Damage capability обслуживает существующий `CurseUpgradeDamageAdapter`; отдельного владельца урона нет.
+
+`CurseUpgradeDamageAdapter.flatModifiers(actor)` собирает прежние fire/cold curse deltas и simple damage scope. `calculateFlatDamageRatios(entries,rules)` в том же файле группирует сумму delta по типу/ограничению nonmagical; расходует каждый плоский вклад один раз на положительные допустимые компоненты. Сначала restricted, затем whole-type группа; минимум поглощения 1, weakness не создаёт урон из нуля. Немагический компонент требует явного Set/Array properties без mgc; unknown properties пропускаются. IgnoreModification сохраняется. Возвращает ratio на каждый исходный компонент; не меняет вход и не бросает кости.
+
+`applyPacket` готовит суммы после pending multiplier/save, затем применяет ratios к исходным descriptions, оставляя resistance/immunity/rounding штатной системе. MIDI `preTargetDamageApplication` строит общий массив default/bonus/other после save/uncannyDodge, рассчитывает один набор ratios и передаёт соответствующий slice каждому native calculateDamage через `rebreyaCursePacketRatios`. Array alignment сохраняет magical/nonmagical свойства. Existing WeakSets не допускают повторного расхода. Методы и regression curse owner — также в паспорте проклятий.
+
+Выбор для Чешуи монстра и Зачарования поглощения: [канонический контракт](item-upgrades-function-passport.md). `tests/item-upgrade-absorption.test.mjs` покрывает все 8 полных правил, choices, inactive, same-type components, known/unknown magic, save/DR, ignored, minimum и MIDI slices; `tests/curse-upgrade-damage.test.mjs` сохраняет прежние curse сценарии.
 
 Профильные тесты: `tests/item-upgrade-roll-modifiers.test.mjs` покрывает все 14 контрактов и predicates; `tests/item-upgrade-roll-adapter.test.mjs` — primary/extra/critical, повтор hooks, mixed targets, exact originating attack. `tests/item-upgrade-projections.test.mjs` дополнительно проверяет священную сталь; `tests/item-upgrade-automation-service.test.mjs` — обязательный reset native Actor при ready.
 
