@@ -3490,6 +3490,16 @@ function bindHeroDollClickDelegation(panel, app, moduleApi, listenerOptions = un
         break;
       }
 
+      case "normalize-slot-stack": {
+        try {
+          await moduleApi.heroDollService.normalizeLegacyStack(actor, actionTarget.dataset.slotId);
+          await rerenderActorSheet(app, moduleApi);
+        } catch (error) {
+          ui.notifications?.error(error.message || "Не удалось разделить экипированную стопку.");
+        }
+        break;
+      }
+
       case "clear-slot": {
         try {
           await moduleApi.heroDollService.clearSlot(actor, actionTarget.dataset.slotId);
@@ -3649,6 +3659,16 @@ function bindHeroDollDelegatedListeners(root, app, moduleApi, listenerOptions = 
         catch (error) {
           console.error(`${MODULE_ID} | Failed to open hero doll item.`, error);
           ui.notifications?.error(error.message || "Не удалось открыть предмет из вкладки куклы героя.");
+        }
+        break;
+      }
+
+      case "normalize-slot-stack": {
+        try {
+          await moduleApi.heroDollService.normalizeLegacyStack(actor, actionTarget.dataset.slotId);
+          await rerenderActorSheet(app, moduleApi);
+        } catch (error) {
+          ui.notifications?.error(error.message || "Не удалось разделить экипированную стопку.");
         }
         break;
       }

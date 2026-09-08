@@ -1,3 +1,5 @@
+import { ItemInstanceWorkflow } from "../application/item-instance-workflow.js?v=1.4.249-item-instances";
+import { ItemInstanceDocuments } from "../infrastructure/foundry/item-instance-documents.js?v=1.4.249-item-instances";
 import {
   DOWNTIME_ITEM_TYPE,
   ENERGY_BASE_DAYS,
@@ -16,7 +18,7 @@ import {
   normalizeGroupTransportState,
   resolveGroupMemberActor
 } from "./group-context-service.js";
-import { DurableMutationJournal } from "../application/durable-mutation-journal.js";
+import { DurableMutationJournal } from "../application/durable-mutation-journal.js?v=1.4.249-item-instances";
 import { WorldMutationCoordinator } from "../application/world-mutation-coordinator.js";
 import { finiteNumber as toNumber } from "../shared/foundry-values.js";
 import { buildActorInventoryWeightSnapshot, buildInventoryStorageProfile } from "./inventory-weight.js?v=1.4.237";
@@ -5038,8 +5040,34 @@ export class InventoryService {
     });
   }
 
-  moveInventoryItemToFolder({ groupActorId, itemId, folderId = null }) {
-    return this.#assignInventoryItemFolder({ groupActorId, itemId, folderId });
+  async moveInventoryItemToFolder({ groupActorId, itemId, folderId = null, quantity, operationId, expectedSourceQuantity }, { sender = globalThis.game?.user } = {}) {
+    if (quantity === undefined) return this.#assignInventoryItemFolder({ groupActorId, itemId, folderId });
+    const actorUuid = `Actor.${groupActorId}`;
+    const documents = new ItemInstanceDocuments({
+      resolveActor: uuid => this.getInventoryActor({ create: false, groupActorId: uuid.slice(6) })
+    });
+    const workflow = new ItemInstanceWorkflow({ journal: this.mutationJournal, coordinator: this.mutationCoordinator, documents });
+    const result = await workflow.run({ operationId, sourceActorUuid: actorUuid, sourceItemId: itemId,
+      destinationActorUuid: actorUuid, quantity, targetFolderId: folderId, heroSlotId: null,
+      expectedSourceQuantity: expectedSourceQuantity ?? null }, {
+      sender,
+      assertAuthority: () => this.#assertSourceDepletionAuthority(),
+      authorize: ({ sourceActor }) => {
+        const context = this.moduleApi.groupContextService.resolveForGroup(sourceActor.id);
+        const owner = actor => actor?.testUserPermission?.(sender, "OWNER") || actor?.ownership?.[sender?.id] >= 3;
+        if (!sender?.isGM && !owner(sourceActor) && !(context.members ?? []).some(owner)) {
+          throw new Error("Недостаточно прав для организации инвентаря группы.");
+        }
+        const folders = this.#readInventoryFolderState(sourceActor);
+        if (folderId !== null && !folders.folders.some(folder => folder.id === folderId)) throw new Error("Папка назначения больше не существует.");
+      },
+      preparePlacement: ({ sourceActor, itemId: targetId }) => {
+        const path = `flags.${MODULE_ID}.inventoryFolders.itemFolderIds.${targetId}`;
+        const before = sourceActor.getFlag(MODULE_ID, "inventoryFolders")?.itemFolderIds?.[targetId] ?? null;
+        return [{ actor: "source", before: { [path]: before }, after: { [path]: folderId } }];
+      }
+    });
+    return { ...result, actorId: groupActorId, folderId };
   }
 
   assignInventoryGrantFolder({ groupActorId, itemId, folderId = null }) {

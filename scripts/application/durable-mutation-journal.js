@@ -106,6 +106,13 @@ export class DurableMutationJournal {
     });
   }
 
+  listPending() {
+    return this.#coordinator.run("durable-mutation-journal", async () => {
+      const state = await this.#readNormalizedState();
+      return clone(state.records.filter(record => record.terminal !== true));
+    });
+  }
+
   start(record) {
     if (!isPlainObject(record)) {
       return Promise.reject(new TypeError("record must be a plain object"));

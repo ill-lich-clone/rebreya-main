@@ -10128,6 +10128,15 @@ summary:focus-visible {
   font-size: 11px;
 }
 
+.rm-hero-doll-slot__normalize {
+  position: absolute;
+  top: 83px;
+  left: 4px;
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
+}
+
 .rm-hero-doll-slot__clear {
   position: absolute;
   top: 31px;

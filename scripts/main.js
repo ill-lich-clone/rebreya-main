@@ -76,7 +76,7 @@ import {
   SOCKET_EVENT_INVENTORY_SOURCE_DEPLETION_RESULT,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_REQUEST,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_RESULT
-} from "./data/inventory-service.js?v=1.4.248-folder-colors";
+} from "./data/inventory-service.js?v=1.4.249-item-instances";
 import {
   InventoryIngressRuleCompilerCache,
   normalizeInventoryIngressRule
@@ -91,7 +91,7 @@ import {
 } from "./application/inventory-ingress-planner.js";
 import { DurabilityService } from "./data/durability-service.js?v=1.4.154-corpse-storage-broken-name";
 import { MapObjectTokenService } from "./data/map-object-token-service.js?v=1.4.97-map-object-token";
-import { HeroDollService } from "./data/hero-doll-service.js";
+import { HeroDollService, HERO_DOLL_ASSIGN_COMMAND, HERO_DOLL_NORMALIZE_COMMAND, HERO_DOLL_CLEAR_COMMAND, isValidHeroDollAssignPayload } from "./data/hero-doll-service.js?v=1.4.249-item-instances";
 import { ImplantService } from "./data/implant-service.js";
 import { CraftingService } from "./data/crafting-service.js?v=1.4.96-craft-calendar";
 import { CraftDowntimeService } from "./data/craft-downtime-service.js?v=1.4.96-craft-calendar";
@@ -319,7 +319,7 @@ import {
   extendDnd5eItemTypes,
   registerDnd5eSheetExtensions,
   registerRebreyaWeaponBaseItemsFromGearPack
-} from "./integrations/dnd5e-sheet-extensions.js?v=1.4.247-hero-overlays";
+} from "./integrations/dnd5e-sheet-extensions.js?v=1.4.249-item-instances";
 import { registerHeldShieldArmorClassPatch } from "./integrations/held-shield-ac.js?v=1.4.96";
 import { registerTravelMapHooks } from "./integrations/travel-map-hooks.js?v=1.4.141-auraeffects-inactive-scene";
 import {
@@ -998,10 +998,17 @@ function isValidInventoryFolderDeletePayload(payload) {
 }
 
 function isValidInventoryItemFolderMovePayload(payload) {
-  return hasExactKeys(payload, ["folderId", "groupActorId", "itemId"])
+  const extended = Object.hasOwn(payload ?? {}, "quantity");
+  const keys = extended
+    ? ["folderId", "groupActorId", "itemId", "operationId", "quantity", ...(Object.hasOwn(payload, "expectedSourceQuantity") ? ["expectedSourceQuantity"] : [])].sort()
+    : ["folderId", "groupActorId", "itemId"];
+  const validQuantity = value => Number.isFinite(value) && value > 0 && value <= 1e9 && Math.abs(value * 1e5 - Math.round(value * 1e5)) < 1e-6;
+  return hasExactKeys(payload, keys)
     && isValidInventoryFolderIdentifier(payload.groupActorId)
     && isValidInventoryFolderIdentifier(payload.itemId)
-    && isValidNullableInventoryFolderIdentifier(payload.folderId);
+    && isValidNullableInventoryFolderIdentifier(payload.folderId)
+    && (!extended || (validQuantity(payload.quantity) && isValidInventoryFolderIdentifier(payload.operationId)
+      && (!Object.hasOwn(payload, "expectedSourceQuantity") || validQuantity(payload.expectedSourceQuantity))));
 }
 
 function isCanonicalInventoryIngressRule(value) {
@@ -1952,11 +1959,30 @@ export class RebreyaMainModule {
     });
   }
 
+  assignHeroDollItem(payload) {
+    return this.privilegedMutationGateway.mutate(HERO_DOLL_ASSIGN_COMMAND, payload, { operationId: payload.operationId });
+  }
+
+  normalizeHeroDollStack(payload) {
+    return this.privilegedMutationGateway.mutate(HERO_DOLL_NORMALIZE_COMMAND, payload, { operationId: payload.operationId });
+  }
+
+  clearHeroDollSlot(payload) {
+    return this.privilegedMutationGateway.mutate(HERO_DOLL_CLEAR_COMMAND, payload, { operationId: payload.operationId });
+  }
+
   registerSummonProvider(provider) {
     return this.summonLifecycleRuntime.registerProvider(provider);
   }
 
   #registerTypedSocketCommands() {
+    for (const [command, mode] of [[HERO_DOLL_ASSIGN_COMMAND,"assign"],[HERO_DOLL_NORMALIZE_COMMAND,"normalize"],[HERO_DOLL_CLEAR_COMMAND,"clear"]]) {
+      this.privilegedMutationGateway.registerCommand(command, {
+        validate: isValidHeroDollAssignPayload,
+        authorize: (_payload, { sender }) => Boolean(sender?.id),
+        execute: (payload, context) => this.heroDollService.executeAssignItemToSlot(payload, context, mode)
+      });
+    }
     registerCurseUpgradeSocketCommands(this);
     registerCraftsmanGadgetSocketCommand(this);
     registerSpellInstanceSocketCommand(this);
@@ -2315,15 +2341,17 @@ export class RebreyaMainModule {
       this.socketCommandBus.register(command, {
         validate,
         authorize: authorizeGroup,
-        execute: async (payload) => {
+        execute: async (payload, { sender }) => {
           try {
             return await this.runInventoryMutation(
-              () => this.inventoryService[methodName](payload),
+              () => this.inventoryService[methodName](payload, { sender }),
               { actorIdsFromResult: (result) => [result?.actorId] }
             );
           }
           catch (error) {
-            throw new Error(error?.message || "Inventory organization mutation failed.", { cause: error });
+            const wrapped = new Error(error?.message || "Inventory organization mutation failed.", { cause: error });
+            if (["instance-compensated", "manual-review", "pending-instance-operation"].includes(error?.code)) wrapped.code = error.code;
+            throw wrapped;
           }
         }
       });

@@ -36,6 +36,11 @@
               {{/if}}
             </button>
 
+            {{#if legacyStack}}
+              <button type="button" class="rm-hero-doll-slot__normalize rm-icon-button always-interactive" data-action="normalize-slot-stack" data-slot-id="{{ id }}" title="Выделить одну экипированную единицу">
+                <i class="fa-solid fa-layer-group"></i>
+              </button>
+            {{/if}}
             {{#if occupied}}
               <button
                 type="button"

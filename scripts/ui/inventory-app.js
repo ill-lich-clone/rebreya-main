@@ -1,3 +1,4 @@
+import { planItemInstanceMutation } from "../data/item-instance-rules.js";
 ﻿import { MODULE_ID } from "../constants.js";
 import { REBREYA_TOOLS } from "../constants.js";
 import { GROUP_CONTEXT_ERRORS } from "../data/group-context-service.js";
@@ -2894,6 +2895,27 @@ export function normalizeInventoryFolderDialogResult(result) {
   return name;
 }
 
+export async function promptInventoryPartialTransfer({ quantity, step = 1, folders = [], folderId = null, chooseFolder = false }) {
+  const escape = value => foundry.utils.escapeHTML(String(value));
+  const result = await foundry.applications.api.DialogV2.wait({
+    window: { title: "Перенести часть стопки" },
+    content: `<form><label>Количество <input name="quantity" type="number" min="${step}" max="${quantity}" step="${step}" value="${step}" required></label>
+      ${chooseFolder ? `<label>Папка назначения <select name="folderId"><option value="">Корень инвентаря</option>${folders.map(folder => `<option value="${escape(folder.id)}">${escape(folder.name)}</option>`).join("")}</select></label>` : ""}</form>`,
+    render: (_event, dialog) => { const button = getAppElement(dialog)?.querySelector("[data-action='cancel']"); if (button) button.formNoValidate = true; },
+    buttons: [
+      { action: "confirm", label: "Перенести", default: true, callback: (_event, button) => ({
+        confirmed: true, quantity: Number(button.form.elements.quantity.value),
+        folderId: chooseFolder ? button.form.elements.folderId.value || null : folderId
+      }) },
+      { action: "cancel", label: "Отмена", callback: () => ({ confirmed: false }) }
+    ], rejectClose: false
+  });
+  if (result?.confirmed !== true) return null;
+  planItemInstanceMutation({ source: { quantity, step }, quantity: result.quantity, sameActor: true, sameFolder: false, forHeroSlot: false });
+  if (result.folderId !== null && !folders.some(folder => folder.id === result.folderId)) throw new Error("Папка назначения недоступна.");
+  return { quantity: result.quantity, folderId: result.folderId };
+}
+
 export async function promptInventoryFolderColor(initialColor = null) {
   const dialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
   if (typeof dialogV2?.wait !== "function") throw new Error("Диалог цвета папки недоступен.");
@@ -4132,6 +4154,37 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       : null;
   }
 
+  async #submitPartialTransfer(payload) {
+    this.pendingItemInstanceTransfer = payload;
+    return this.#runInventoryFolderMutation(async () => {
+      try {
+        const result = await this.moduleApi.moveInventoryItemToFolder(payload);
+        this.pendingItemInstanceTransfer = null;
+        return result;
+      } catch (error) {
+        if (!["request-timeout", "ambiguous-outcome", "manual-review", "pending-instance-operation"].includes(error?.code)) this.pendingItemInstanceTransfer = null;
+        throw error;
+      }
+    }, { successMessage: "Предметы перемещены.", errorMessage: "Не удалось перенести часть стопки." });
+  }
+
+  async #transferInventoryPart(itemId, folderId = null, { chooseFolder = false, snapshot = null, groupActorId = this.inventoryActorId } = {}) {
+    if (this.pendingItemInstanceTransfer) {
+      ui.notifications?.warn?.("Сначала повторите незавершённый перенос через меню предмета.");
+      return null;
+    }
+    snapshot ??= await this.moduleApi.getInventorySnapshot({ createActor: false, groupActorId });
+    if (cleanText(snapshot.actor?.id) !== groupActorId) throw new Error("Группа инвентаря изменилась.");
+    const item = (snapshot.allItems ?? snapshot.items ?? []).find(entry => (entry.itemId ?? entry.id) === itemId);
+    if (!item) throw new Error("Предмет больше не существует.");
+    const result = await promptInventoryPartialTransfer({
+      quantity: item.quantity, step: item.sourceType === "material" ? 0.00001 : 1,
+      folders: snapshot.folders ?? [], folderId, chooseFolder
+    });
+    if (!result) return null;
+    return this.#submitPartialTransfer({ groupActorId, itemId, ...result, expectedSourceQuantity: item.quantity, operationId: crypto.randomUUID() });
+  }
+
   async #applyInventoryDrop(action, folderId, groupActorId = this.inventoryActorId) {
     if (action.kind === "folder") {
       return this.moduleApi.moveInventoryFolder({
@@ -4165,6 +4218,14 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     };
 
     const actions = [];
+    if (this.pendingItemInstanceTransfer?.groupActorId === this.inventoryActorId) {
+      actions.push({ label: "Повторить незавершённый перенос", icon: "fa-solid fa-rotate-right",
+        callback: () => this.#submitPartialTransfer(this.pendingItemInstanceTransfer) });
+    }
+    if (this.canOrganizeInventory && Number(row.dataset.quantity) > (row.dataset.sourceType === "material" ? 0.00001 : 1)) {
+      actions.push({ label: "Перенести часть…", icon: "fa-solid fa-arrow-right-arrow-left",
+        callback: () => this.#transferInventoryPart(row.dataset.itemId, null, { chooseFolder: true }) });
+    }
     if (actionButtons.takeSelf) {
       actions.push({
         label: "Забрать себе",
@@ -7811,6 +7872,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
       dropzone.addEventListener("drop", async (event) => {
         const accepted = readAcceptedDrop(event);
+        const partialTransfer = event.shiftKey === true;
         const groupActorId = this.inventoryActorId;
         const rootFolderId = this.rootFolderId;
         activeInventoryTreeDragSession = null;
@@ -7843,6 +7905,10 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
           if (!action) {
             ui.notifications?.warn?.("Перенос больше недоступен. Проверьте предмет, папку и права доступа.");
             await this.refreshInventorySnapshot();
+            return;
+          }
+          if (partialTransfer && action.kind === "item") {
+            await this.#transferInventoryPart(action.internal.itemId, target.folderId, { snapshot, groupActorId });
             return;
           }
           const result = await this.#applyInventoryDrop(action, target.folderId, groupActorId);

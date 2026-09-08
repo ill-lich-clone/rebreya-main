@@ -7587,3 +7587,18 @@ test("folder color dialog distinguishes cancellation, reset and valid color", as
     await assert.rejects(promptInventoryFolderColor(),/цвет/);
   } finally {globalThis.foundry.applications.api.DialogV2.wait=previous;restoreFoundry();}
 });
+
+
+test("partial transfer dialog cancels without intent and validates fractional material quantities",async()=>{
+  const restore=installFoundryApplicationStub();
+  try {
+    const {promptInventoryPartialTransfer}=await import("../scripts/ui/inventory-app.js");
+    for(const response of [null,false,"cancel",{confirmed:false}]) {
+      foundry.applications.api.DialogV2.wait=async()=>response;
+      assert.equal(await promptInventoryPartialTransfer({quantity:10}),null);
+    }
+    foundry.applications.api.DialogV2.wait=async config=>config.buttons.find(button=>button.action==="confirm").callback(null,{form:{elements:{quantity:{value:"0.01234"},folderId:{value:"bag"}}}});
+    assert.deepEqual(await promptInventoryPartialTransfer({quantity:0.1,step:0.00001,folders:[{id:"bag",name:"Bag"}],chooseFolder:true}),{quantity:0.01234,folderId:"bag"});
+    await assert.rejects(promptInventoryPartialTransfer({quantity:10,folders:[{id:"bag",name:"Bag"}],chooseFolder:true}));
+  } finally {restore();}
+});
