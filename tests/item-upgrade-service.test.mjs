@@ -129,6 +129,60 @@ function makeUpgrade(actor, data = {}) {
   });
 }
 
+function makeService(Service) {
+  return new Service(null, { getManifest: async () => [{ productId: "mithril-upgrade", gearId: "mithril-upgrade",
+    profile: { compatibility: ["any"] }, decision: "simple-implemented", reason: "Approved test fixture" }] });
+}
+
+test("availability text escapes names and reasons without replacing the Item", async () => {
+  const { createUpgradeAvailabilityHtml } = await import("../scripts/integrations/item-upgrade-sheet.js");
+  const item = { name: "<b>Legacy</b>" };
+  const html = createUpgradeAvailabilityHtml(item, { legacyOverride: true, availability: {
+    decision: "unavailable-complex", label: "Усовершенствования нет в реализации", reason: "<script>bad</script>" } });
+  assert.match(html, /Усовершенствования нет в реализации/u);
+  assert.match(html, /&lt;script&gt;/u);
+  assert.doesNotMatch(html, /<script>|<b>Legacy/u);
+  assert.equal(item.name, "<b>Legacy</b>");
+});
+
+test("installation rejects unavailable, stacked host and capacity bypass before any write", async () => {
+  const restore = installFoundryStubs();
+  try {
+    const { ItemUpgradeService } = await import("../scripts/data/item-upgrade-service.js");
+    const actor = new FakeActor();
+    const host = actor.addItem({ _id: "host", type: "weapon", system: { quantity: 1 } });
+    const upgrade = makeUpgrade(actor);
+    const blocked = new ItemUpgradeService(null, { getManifest: async () => [] });
+    await assert.rejects(blocked.installUpgrade(host, upgrade), e => e.code === "unavailable");
+    host.system.quantity = 2;
+    await assert.rejects(makeService(ItemUpgradeService).installUpgrade(host, upgrade), e => e.code === "invalid-quantity");
+    host.system.quantity = 1;
+    await assert.rejects(makeService(ItemUpgradeService).installUpgrade(host, upgrade, { capacity: 3, slotIndex: 3 }), e => e.code === "capacity");
+    upgrade.system.quantity = 0;
+    await assert.rejects(makeService(ItemUpgradeService).installUpgrade(host, upgrade), e => e.code === "invalid-quantity");
+    assert.equal(host.updates.length + upgrade.updates.length + actor.created.length, 0);
+  } finally { restore(); }
+});
+
+test("legacy projection preserves explicit profile and unavailable installed child can be removed", async () => {
+  const restore = installFoundryStubs();
+  try {
+    const { ItemUpgradeService } = await import("../scripts/data/item-upgrade-service.js");
+    const actor = new FakeActor();
+    const host = actor.addItem({ _id: "host", type: "weapon", system: { quantity: 1 }, flags: { [MODULE_ID]: { itemUpgrades: { capacity: 3, installed: [{ itemId: "legacy", slotIndex: 3 }] } } } });
+    const upgrade = makeUpgrade(actor, { _id: "legacy", flags: { [MODULE_ID]: { upgrade: { type: "Custom", compatibility: ["armor"] } } } });
+    const service = makeService(ItemUpgradeService);
+    const projection = await service.getUpgradeProjection(upgrade);
+    assert.equal(projection.legacyOverride, true);
+    assert.deepEqual(projection.profile.compatibility, ["armor"]);
+    assert.equal(host.updates.length + upgrade.updates.length, 0);
+    await assert.rejects(service.setUpgradeCapacity(host, 2), e => e.code === "capacity");
+    await service.removeUpgrade(host, upgrade);
+    assert.deepEqual(host.flags[MODULE_ID].itemUpgrades.installed, []);
+    assert.deepEqual(upgrade.flags[MODULE_ID].upgrade, { type: "Custom", compatibility: ["armor"] });
+  } finally { restore(); }
+});
+
 test("installing an upgrade stores it inside the host item and links the host slot", async () => {
   const restore = installFoundryStubs();
   try {
@@ -143,7 +197,7 @@ test("installing an upgrade stores it inside the host item and links the host sl
     });
     const upgrade = makeUpgrade(actor, { _id: "storm-stone" });
 
-    const service = new ItemUpgradeService();
+    const service = makeService(ItemUpgradeService);
     const installed = await service.installUpgrade(host, upgrade);
 
     assert.equal(installed, upgrade);
@@ -173,7 +227,7 @@ test("installing one upgrade from a stack creates a contained copy and leaves th
     });
     const upgradeStack = makeUpgrade(actor, { _id: "mithril-stack", quantity: 4 });
 
-    const service = new ItemUpgradeService();
+    const service = makeService(ItemUpgradeService);
     const installed = await service.installUpgrade(host, upgradeStack);
 
     assert.notEqual(installed, upgradeStack);
@@ -204,7 +258,7 @@ test("removing an installed upgrade clears its container and returns it to inven
     });
     const upgrade = makeUpgrade(actor, { _id: "storm-stone" });
 
-    const service = new ItemUpgradeService();
+    const service = makeService(ItemUpgradeService);
     await service.installUpgrade(host, upgrade);
     const removed = await service.removeUpgrade(host, upgrade.id);
 
@@ -237,7 +291,7 @@ test("upgrade capacity can be raised to three slots and blocks the fourth upgrad
       makeUpgrade(actor, { _id: "upgrade-d" })
     ];
 
-    const service = new ItemUpgradeService();
+    const service = makeService(ItemUpgradeService);
     await service.setUpgradeCapacity(host, 3);
     await service.installUpgrade(host, upgrades[0]);
     await service.installUpgrade(host, upgrades[1]);
@@ -254,7 +308,7 @@ test("upgrade capacity can be raised to three slots and blocks the fourth upgrad
     );
     await assert.rejects(
       () => service.setUpgradeCapacity(host, 2),
-      /меньше уже установленных/u
+      error => error.code === "capacity"
     );
   }
   finally {
@@ -279,7 +333,7 @@ test("installed actor upgrade ids include items contained by upgraded hosts", as
     });
     const upgrade = makeUpgrade(actor, { _id: "storm-stone" });
 
-    const service = new ItemUpgradeService();
+    const service = makeService(ItemUpgradeService);
     await service.installUpgrade(host, upgrade);
 
     assert.deepEqual([...getInstalledActorUpgradeItemIds(actor)], ["storm-stone"]);
@@ -318,7 +372,7 @@ test("dnd5e item filter hook hides installed upgrades before inventory rows rend
     const filter = listeners.find((entry) => entry.hookName === "dnd5e.filterItem")?.listener;
     assert.equal(typeof filter, "function");
 
-    const service = new ItemUpgradeService();
+    const service = makeService(ItemUpgradeService);
     await service.installUpgrade(host, upgrade);
 
     assert.equal(filter({}, upgrade, new Set()), false);
@@ -393,7 +447,7 @@ test("actor sheet inventory rows mark upgraded host items with compact slot usag
       }
     });
 
-    const service = new ItemUpgradeService();
+    const service = makeService(ItemUpgradeService);
     await service.setUpgradeCapacity(host, 3);
     await service.installUpgrade(host, upgrade);
     assert.equal(hideInstalledUpgradeInventoryRows(root, actor), true);
@@ -748,7 +802,7 @@ test("clicking an installed upgrade in the host panel opens its item sheet", asy
         renderCalls.push(options);
       }
     };
-    await new ItemUpgradeService().installUpgrade(host, upgrade);
+    await makeService(ItemUpgradeService).installUpgrade(host, upgrade);
     const panelHtml = createItemUpgradePanelHtml(host);
     assert.match(
       panelHtml,

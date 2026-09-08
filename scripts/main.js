@@ -95,7 +95,7 @@ import { HeroDollService, HERO_DOLL_ASSIGN_COMMAND, HERO_DOLL_NORMALIZE_COMMAND,
 import { ImplantService } from "./data/implant-service.js";
 import { CraftingService } from "./data/crafting-service.js?v=1.4.96-craft-calendar";
 import { CraftDowntimeService } from "./data/craft-downtime-service.js?v=1.4.96-craft-calendar";
-import { ItemUpgradeService } from "./data/item-upgrade-service.js?v=1.4.96-item-upgrades";
+import { ItemUpgradeService } from "./data/item-upgrade-service.js?v=1.4.250";
 import { GROUP_CALENDAR_PATCH_COMMAND, CalendarService } from "./data/calendar-service.js";
 import { CalendarTransitionCoordinator } from "./data/calendar-transition-coordinator.js?v=1.4.96-craft-calendar";
 import { PrivilegedMutationGateway } from "./application/privileged-mutation-gateway.js";
@@ -319,7 +319,7 @@ import {
   extendDnd5eItemTypes,
   registerDnd5eSheetExtensions,
   registerRebreyaWeaponBaseItemsFromGearPack
-} from "./integrations/dnd5e-sheet-extensions.js?v=1.4.249-item-instances";
+} from "./integrations/dnd5e-sheet-extensions.js?v=1.4.250-upgrade-rules";
 import { registerHeldShieldArmorClassPatch } from "./integrations/held-shield-ac.js?v=1.4.96";
 import { registerTravelMapHooks } from "./integrations/travel-map-hooks.js?v=1.4.141-auraeffects-inactive-scene";
 import {

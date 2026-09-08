@@ -63,8 +63,8 @@ test("module manifest loads an unpinned canonical entrypoint for page-refresh up
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const [entrypoint] = manifest.esmodules;
 
-  assert.equal(manifest.version, "1.4.249");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.249.js"]);
+  assert.equal(manifest.version, "1.4.250");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.250.js"]);
   assert.doesNotMatch(entrypoint, /[?#]/u);
 
   const entrypointSource = await readFile(new URL(entrypoint, manifestUrl), "utf8");
@@ -138,7 +138,7 @@ test("production registers the hidden GiantTribe advancement before race compend
   );
   assert.match(
     entrypointSource,
-    /dnd5e-sheet-extensions\.js\?v=1\.4\.249-item-instances/u
+    /dnd5e-sheet-extensions\.js\?v=1\.4\.250-upgrade-rules/u
   );
   assert.match(
     entrypointSource,
@@ -227,7 +227,7 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
 
   assert.match(
     canonicalSource,
-    /integrations\/dnd5e-sheet-extensions\.js\?v=1\.4\.249-item-instances/u
+    /integrations\/dnd5e-sheet-extensions\.js\?v=1\.4\.250-upgrade-rules/u
   );
 
   for (const importPath of [
@@ -319,7 +319,7 @@ test("module keeps recent published entrypoint URLs as canonical compatibility f
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
 
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.249.js"]);
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.250.js"]);
 
   for (const fileName of ["main-1.4.98.js", "main-1.4.99.js", "main-1.4.100.js"]) {
     const forwarderSource = await readFile(new URL(`../scripts/${fileName}`, import.meta.url), "utf8");
@@ -628,7 +628,7 @@ test("held item integrations preserve their released cache bust", async () => {
 
   assert.match(
     entrypointSource,
-    /dnd5e-sheet-extensions\.js\?v=1\.4\.249-item-instances/u,
+    /dnd5e-sheet-extensions\.js\?v=1\.4\.250-upgrade-rules/u,
   );
   assert.match(
     entrypointSource,
@@ -664,11 +664,11 @@ test("automatic owned magic item sync cache-busts its live service graph", async
 test("item upgrade service and sheet integration preserve their released cache bust", async () => {
   const entrypointSource = await readCanonicalEntrypointSource();
   const sheetSource = await readFile(new URL("../scripts/integrations/dnd5e-sheet-extensions.js", import.meta.url), "utf8");
-  const escapedVersion = RELEASED_CACHE_VERSION;
+  const escapedVersion = "1\\.4\\.250";
 
   assert.match(
     entrypointSource,
-    new RegExp(`item-upgrade-service\\.js\\?v=${escapedVersion}-item-upgrades`, "u"),
+    new RegExp(`item-upgrade-service\\.js\\?v=${escapedVersion}`, "u"),
   );
   assert.match(entrypointSource, /this\.itemUpgradeService = new ItemUpgradeService\(this\)/u);
   assert.match(entrypointSource, /installItemUpgrade\(hostItem, upgradeItem, options = \{\}\)/u);
@@ -676,7 +676,7 @@ test("item upgrade service and sheet integration preserve their released cache b
   assert.match(entrypointSource, /setItemUpgradeCapacity\(hostItem, capacity\)/u);
   assert.match(
     sheetSource,
-    new RegExp(`item-upgrade-sheet\\.js\\?v=${escapedVersion}-item-upgrade-readable`, "u"),
+    new RegExp(`item-upgrade-sheet\\.js\\?v=${escapedVersion}`, "u"),
   );
   assert.match(sheetSource, /item-mods-tab\.hbs/u);
   assert.match(sheetSource, /bindItemUpgradeSheet\(root, app, moduleApi/u);

@@ -13793,3 +13793,7 @@ summary:focus-visible {
     grid-template-columns: 1fr;
   }
 }
+
+/* R4: read-only availability, including historical installations. */
+.rm-item-upgrades__availability { display: grid; gap: 0.25rem; padding: 0.6rem; margin-block: 0.4rem; border-inline-start: 3px solid var(--color-border-light-primary, #8a7862); overflow-wrap: anywhere; }
+.rm-item-upgrades__availability small { opacity: 0.8; line-height: 1.4; }

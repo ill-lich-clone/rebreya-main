@@ -1,0 +1,1405 @@
+[
+  {
+    "productId": "absolyutnaya-pustota",
+    "decision": "unavailable-no-rule",
+    "effectKind": "none",
+    "reason": "Отсутствует текст эффекта.",
+    "owner": [],
+    "tests": [],
+    "capabilities": []
+  },
+  {
+    "productId": "adamantinovaya-otdelka-dospekha",
+    "decision": "unavailable-complex",
+    "effectKind": "none",
+    "reason": "Изменение critical workflow с исключением по материалу чужого оружия.",
+    "owner": [],
+    "tests": [],
+    "capabilities": []
+  },
+  {
+    "productId": "adamantinovoe-pokrytie",
+    "decision": "unavailable-complex",
+    "effectKind": "none",
+    "reason": "Принудительная смена результата попадания на critical по типу объекта.",
+    "owner": [],
+    "tests": [],
+    "capabilities": []
+  },
+  {
+    "productId": "astralnoe-zhalo",
+    "decision": "unavailable-complex",
+    "effectKind": "none",
+    "reason": "Межплановая доступность целей.",
+    "owner": [],
+    "tests": [],
+    "capabilities": []
+  },
+  {
+    "productId": "biven-chudovishcha",
+    "decision": "unavailable-complex",
+    "effectKind": "none",
+    "reason": "Отдельные два применения в ход.",
+    "owner": [],
+    "tests": [],
+    "capabilities": []
+  },
+  {
+    "productId": "cherep-orkusa",
+    "decision": "unavailable-complex",
+    "effectKind": "none",
+    "reason": "Заклинание, recharge и инверсия эффекта по типу существ; тип Материал не делает его простым.",
+    "owner": [],
+    "tests": [],
+    "capabilities": []
+  },
+  {
+    "productId": "cheshuya-monstra",
+    "decision": "simple-candidate",
+    "effectKind": "flat-damage-modifier",
+    "reason": "Фиксированное поглощение 2; один сохранённый выбор типа урона.",
+    "owner": [
+      "scripts/combat/curse-upgrade-damage.js"
+    ],
+    "tests": [
+      {
+        "path": "tests/item-upgrade-automation-service.test.mjs",
+        "status": "planned-R7"
+      }
+    ],
+    "capabilities": [
+      "dnd5e-native",
+      "R7-full-effect-verification-required",
+      "midi-qol-optional",
+      "host-and-packet-scope"
+    ]
+  },
+  {
+    "productId": "dushevnoe-zacharovanie",
+    "decision": "simple-candidate",
+    "effectKind": "actor-bonus",
+    "reason": "+1 к Убеждению и Выступлению.",
+    "owner": [
+      "scripts/combat/implant-automation-service.js",
+      "scripts/automation/item-upgrade-automation-service.js"
+    ],
+    "tests": [
+      {
+        "path": "tests/item-upgrade-automation-service.test.mjs",
+        "status": "planned-R7"
+      }
+    ],
+    "capabilities": [
+      "dnd5e-native",
+      "R7-full-effect-verification-required"
+    ]
+  },
+  {
+    "productId": "dyavolskoe-zhelezo",
+    "decision": "simple-candidate",
+    "effectKind": "host-attack-modifier",
+    "reason": "+2 урона против небожителей; predicate текущей цели.",
+    "owner": [
+      "scripts/combat/attack-service.js",
+      "scripts/combat/curse-upgrade-attacks.js"
+    ],
+    "tests": [
+      {
+        "path": "tests/item-upgrade-automation-service.test.mjs",
+        "status": "planned-R7"
+      }
+    ],
+    "capabilities": [
+      "dnd5e-native",
+      "R7-full-effect-verification-required",
+      "midi-qol-optional",
+      "host-and-packet-scope"
+    ]
+  },
+  {
+    "productId": "ektoplazma-2",
+    "decision": "unavailable-complex",
+    "effectKind": "none",
+    "reason": "Триггер заклинания и временный эффект до конца хода.",
+    "owner": [],
+    "tests": [],
+    "capabilities": []
+  },
+  {
+    "productId": "elfiyskaya-stal",
+    "decision": "simple-candidate",
+    "effectKind": "host-attack-modifier",
+    "reason": "+2 урона против нежити.",
+    "owner": [
+      "scripts/combat/attack-service.js",
+      "scripts/combat/curse-upgrade-attacks.js"
+    ],
+    "tests": [
+      {
+        "path": "tests/item-upgrade-automation-service.test.mjs",
+        "status": "planned-R7"
+      }
+    ],
+    "capabilities": [
+      "dnd5e-native",
+      "R7-full-effect-verification-required",
+      "midi-qol-optional",
+      "host-and-packet-scope"
+    ]
+  },
+  {
+    "productId": "essentsiya-koshmarov",
+    "decision": "unavailable-complex",
+    "effectKind": "none",
+    "reason": "Critical-trigger, уровни Испуга и объединение с другим источником.",
+    "owner": [],
+    "tests": [],
+    "capabilities": []
+  },
+  {
+    "productId": "essentsiya-sveta-2",
+    "decision": "simple-candidate",
+    "effectKind": "flat-damage-modifier",
+    "reason": "Поглощение 3 излучения и 3 от нежити; только если existing damage adapter даёт источник.",
+    "owner": [
+      "scripts/combat/curse-upgrade-damage.js"
+    ],
+    "tests": [
+      {
+        "path": "tests/item-upgrade-automation-service.test.mjs",
+        "status": "planned-R7"
+      }
+    ],
+    "capabilities": [
+      "dnd5e-native",
+      "R7-full-effect-verification-required",
+      "midi-qol-optional",
+      "host-and-packet-scope"
+    ]
+  },
+  {
+    "productId": "essentsiya-teni",
+    "decision": "unavailable-complex",
+    "effectKind": "none",
+    "reason": "Повествовательная аура; нет формализованного бонуса.",
+    "owner": [],
+    "tests": [],
+    "capabilities": []
+  },
+  {
+    "productId": "feyskoe-plecho",
+    "decision": "unavailable-complex",
+    "effectKind": "none",
+    "reason": "Выбор режима до атаки, изменение range/damage die.",
+    "owner": [],
+    "tests": [],
+    "capabilities": []
+  },
+  {
+    "productId": "fragment-pantsirya-chudovishcha",
+    "decision": "simple-candidate",
+    "effectKind": "flat-damage-modifier",
+    "reason": "Поглощение рубящего 1.",
+    "owner": [
+      "scripts/combat/curse-upgrade-damage.js"
+    ],
+    "tests": [
+      {
+        "path": "tests/item-upgrade-automation-service.test.mjs",
+        "status": "planned-R7"
+      }
+    ],
+    "capabilities": [
+      "dnd5e-native",
+      "R7-full-effect-verification-required",
+      "midi-qol-optional",
+      "host-and-packet-scope"
+    ]
+  },
+  {
+    "productId": "gear-3",
+    "decision": "unavailable-complex",
+    "effectKind": "none",
+    "reason": "История урона прошлого раунда и регенерация.",
+    "owner": [],
+    "tests": [],
+    "capabilities": []
+  },
+  {
+    "productId": "gear-4",
+    "decision": "unavailable-complex",
+    "effectKind": "none",
+    "reason": "Пул dice, почасовое восстановление, конус и save.",
+    "owner": [],
+    "tests": [],
+    "capabilities": []
+  },
+  {
+    "productId": "gigantskiy-kogot",
+    "decision": "unavailable-complex",
+    "effectKind": "none",
+    "reason": "В правиле не указана величина свойства «Смертельное». Без неё эффект нельзя применить корректно.",
+    "owner": [],
+    "tests": [],
+    "capabilities": [],
+    "auditReason": "В effect не задана величина свойства «Смертельное»; существующий attack owner требует числовой параметр."
+  },
+  {
+    "productId": "golova-eridany",
+    "decision": "unavailable-complex",
+    "effectKind": "none",
+    "reason": "Принудительное перемещение и damage от каждой дистанции; не делать только сопротивление.",
+    "owner": [],
+    "tests": [],
+    "capabilities": []
+  },
+  {
+    "productId": "grozovoy-kamen",
+    "decision": "unavailable-complex",
+    "effectKind": "none",
+    "reason": "Выбор дополнительной цели и вторичный damage workflow.",
+    "owner": [],
+    "tests": [],
+    "capabilities": []
+  },
+  {
+    "productId": "iskazhayushchaya-stal",
+    "decision": "simple-candidate",
+    "effectKind": "host-attack-modifier",
+    "reason": "+2 урона против элементалей.",
+    "owner": [
+      "scripts/combat/attack-service.js",
+      "scripts/combat/curse-upgrade-attacks.js"
+    ],
+    "tests": [
+      {
+        "path": "tests/item-upgrade-automation-service.test.mjs",
+        "status": "planned-R7"
+      }
+    ],
+    "capabilities": [
+      "dnd5e-native",
+      "R7-full-effect-verification-required",
+      "midi-qol-optional",
+      "host-and-packet-scope"
+    ]
+  },
+  {
+    "productId": "khitinovoe-pokrytie",
+    "decision": "simple-candidate",
+    "effectKind": "armor-property",
+    "reason": "Убрать собственную помеху доспеха на Скрытность.",
+    "owner": [
+      "scripts/data/magic-items-compendium.js",
+      "scripts/automation/item-upgrade-automation-service.js"
+    ],
+    "tests": [
+      {
+        "path": "tests/item-upgrade-automation-service.test.mjs",
+        "status": "planned-R7"
+      }
+    ],
+    "capabilities": [
+      "dnd5e-native",
+      "R7-full-effect-verification-required"
+    ]
+  },
+  {
+    "productId": "khrebet-beskonechnoy-ploti",
+    "decision": "unavailable-no-rule",
+    "effectKind": "none",
+    "reason": "Отсутствует текст эффекта.",
+    "owner": [],
+    "tests": [],
+    "capabilities": []
+  },
+  {
+    "productId": "khrebet-chudovishcha",
+    "decision": "simple-candidate",
+    "effectKind": "flat-damage-modifier",
+    "reason": "Поглощение/слабость 1 по damage type и nonmagical predicate.",
+    "owner": [
+      "scripts/combat/curse-upgrade-damage.js"
+    ],
+    "tests": [
+      {
+        "path": "tests/item-upgrade-automation-service.test.mjs",
+        "status": "planned-R7"
+      }
+    ],
+    "capabilities": [
+      "dnd5e-native",
+      "R7-full-effect-verification-required",
+      "midi-qol-optional",
+      "host-and-packet-scope"
+    ]
+  },
+  {
+    "productId": "kleshni-drednouta",
+    "decision": "unavailable-complex",
+    "effectKind": "none",
+    "reason": "Происхождение с другого плана не имеет подтверждённого обязательного data predicate.",
+    "owner": [],
+    "tests": [],
+    "capabilities": []
+  },
+  {
+    "productId": "kogot-chudovishcha-2",
+    "decision": "unavailable-complex",
+    "effectKind": "none",
+    "reason": "Шкала шага dice и исключения кастета/перчатки не закреплены общим проверенным контрактом.",
+    "owner": [],
+    "tests": [],
+    "capabilities": []
+  },
+  {
+    "productId": "koren-drakonego-dereva",
+    "decision": "simple-candidate",
+    "effectKind": "actor-bonus",
+    "reason": "+5 к максимуму HP.",
+    "owner": [
+      "scripts/combat/implant-automation-service.js",
+      "scripts/automation/item-upgrade-automation-service.js"
+    ],
+    "tests": [
+      {
+        "path": "tests/item-upgrade-automation-service.test.mjs",
+        "status": "planned-R7"
+      }
+    ],
+    "capabilities": [
+      "dnd5e-native",
+      "R7-full-effect-verification-required"
+    ]
+  },
+  {
+    "productId": "korichnevaya-stal",
+    "decision": "simple-candidate",
+    "effectKind": "host-attack-modifier",
+    "reason": "+2 к атаке против гуманоидов.",
+    "owner": [
+      "scripts/combat/attack-service.js",
+      "scripts/combat/curse-upgrade-attacks.js"
+    ],
+    "tests": [
+      {
+        "path": "tests/item-upgrade-automation-service.test.mjs",
+        "status": "planned-R7"
+      }
+    ],
+    "capabilities": [
+      "dnd5e-native",
+      "R7-full-effect-verification-required",
+      "midi-qol-optional",
+      "host-and-packet-scope"
+    ]
+  },
+  {
+    "productId": "kosti-mantikory",
+    "decision": "simple-candidate",
+    "effectKind": "host-attack-modifier",
+    "reason": "+1d4 яда против гуманоидов.",
+    "owner": [
+      "scripts/combat/attack-service.js",
+      "scripts/combat/curse-upgrade-attacks.js"
+    ],
+    "tests": [
+      {
+        "path": "tests/item-upgrade-automation-service.test.mjs",
+        "status": "planned-R7"
+      }
+    ],
+    "capabilities": [
+      "dnd5e-native",
+      "R7-full-effect-verification-required",
+      "midi-qol-optional",
+      "host-and-packet-scope"
+    ]
+  },
+  {
+    "productId": "kristally-zabytykh-titanov",
+    "decision": "simple-candidate",
+    "effectKind": "host-attack-modifier",
+    "reason": "+2 урона против великанов/исчадий.",
+    "owner": [
+      "scripts/combat/attack-service.js",
+      "scripts/combat/curse-upgrade-attacks.js"
+    ],
+    "tests": [
+      {
+        "path": "tests/item-upgrade-automation-service.test.mjs",
+        "status": "planned-R7"
+      }
+    ],
+    "capabilities": [
+      "dnd5e-native",
+      "R7-full-effect-verification-required",
+      "midi-qol-optional",
+      "host-and-packet-scope"
+    ]
+  },
+  {
+    "productId": "ledyanaya-maz",
+    "decision": "simple-candidate",
+    "effectKind": "host-attack-modifier",
+    "reason": "+1d6 холода своим оружием.",
+    "owner": [
+      "scripts/combat/attack-service.js",
+      "scripts/combat/curse-upgrade-attacks.js"
+    ],
+    "tests": [
+      {
+        "path": "tests/item-upgrade-automation-service.test.mjs",
+        "status": "planned-R7"
+      }
+    ],
+    "capabilities": [
+      "dnd5e-native",
+      "R7-full-effect-verification-required",
+      "midi-qol-optional",
+      "host-and-packet-scope"
+    ]
+  },
+  {
+    "productId": "ledyanoy-klyk-2",
+    "decision": "unavailable-complex",
+    "effectKind": "none",
+    "reason": "On-hit slow с истечением по следующему ходу источника.",
+    "owner": [],
+    "tests": [],
+    "capabilities": []
+  },
+  {
+    "productId": "lunnyy-metall",
+    "decision": "simple-candidate",
+    "effectKind": "armor-property",
+    "reason": "Исходный stealth flag доспеха определяет remove disadvantage либо advantage; derived не становится новой базой.",
+    "owner": [
+      "scripts/data/magic-items-compendium.js",
+      "scripts/automation/item-upgrade-automation-service.js"
+    ],
+    "tests": [
+      {
+        "path": "tests/item-upgrade-automation-service.test.mjs",
+        "status": "planned-R7"
+      }
+    ],
+    "capabilities": [
+      "dnd5e-native",
+      "R7-full-effect-verification-required"
+    ]
+  },
+  {
+    "productId": "maloe-zacharovanie-ostroty",
+    "decision": "simple-candidate",
+    "effectKind": "host-attack-modifier",
+    "reason": "+1 к урону своего оружия.",
+    "owner": [
+      "scripts/combat/attack-service.js",
+      "scripts/combat/curse-upgrade-attacks.js"
+    ],
+    "tests": [
+      {
+        "path": "tests/item-upgrade-automation-service.test.mjs",
+        "status": "planned-R7"
+      }
+    ],
+    "capabilities": [
+      "dnd5e-native",
+      "R7-full-effect-verification-required",
+      "midi-qol-optional",
+      "host-and-packet-scope"
+    ]
+  },
+  {
+    "productId": "maloe-zacharovanie-stoykosti",
+    "decision": "simple-candidate",
+    "effectKind": "actor-bonus",
+    "reason": "+1 к спасброскам.",
+    "owner": [
+      "scripts/combat/implant-automation-service.js",
+      "scripts/automation/item-upgrade-automation-service.js"
+    ],
+    "tests": [
+      {
+        "path": "tests/item-upgrade-automation-service.test.mjs",
+        "status": "planned-R7"
+      }
+    ],
+    "capabilities": [
+      "dnd5e-native",
+      "R7-full-effect-verification-required"
+    ]
+  },
+  {
+    "productId": "maloe-zacharovanie-zashchity",
+    "decision": "simple-candidate",
+    "effectKind": "actor-bonus",
+    "reason": "+1 AC.",
+    "owner": [
+      "scripts/combat/implant-automation-service.js",
+      "scripts/automation/item-upgrade-automation-service.js"
+    ],
+    "tests": [
+      {
+        "path": "tests/item-upgrade-automation-service.test.mjs",
+        "status": "planned-R7"
+      }
+    ],
+    "capabilities": [
+      "dnd5e-native",
+      "R7-full-effect-verification-required"
+    ]
+  },
+  {
+    "productId": "mana-uskoritel",
+    "decision": "unavailable-complex",
+    "effectKind": "none",
+    "reason": "Отдельное поведение Размаха при смене цели.",
+    "owner": [],
+    "tests": [],
+    "capabilities": []
+  },
+  {
+    "productId": "mednaya-provolka",
+    "decision": "unavailable-complex",
+    "effectKind": "none",
+    "reason": "Подмена reach/source для melee spell attack.",
+    "owner": [],
+    "tests": [],
+    "capabilities": []
+  },
+  {
+    "productId": "mifrilovaya-peredelka-dospekha",
+    "decision": "simple-candidate",
+    "effectKind": "armor-property",
+    "reason": "Убрать stealth disadvantage и Strength requirement данного доспеха.",
+    "owner": [
+      "scripts/data/magic-items-compendium.js",
+      "scripts/automation/item-upgrade-automation-service.js"
+    ],
+    "tests": [
+      {
+        "path": "tests/item-upgrade-automation-service.test.mjs",
+        "status": "planned-R7"
+      }
+    ],
+    "capabilities": [
+      "dnd5e-native",
+      "R7-full-effect-verification-required"
+    ]
+  },
+  {
+    "productId": "nochnaya-stal",
+    "decision": "simple-candidate",
+    "effectKind": "host-attack-modifier",
+    "reason": "Advantage при passive Perception цели <12; только известная текущая цель.",
+    "owner": [
+      "scripts/combat/attack-service.js",
+      "scripts/combat/curse-upgrade-attacks.js"
+    ],
+    "tests": [
+      {
+        "path": "tests/item-upgrade-automation-service.test.mjs",
+        "status": "planned-R7"
+      }
+    ],
+    "capabilities": [
+      "dnd5e-native",
+      "R7-full-effect-verification-required",
+      "midi-qol-optional",
+      "host-and-packet-scope"
+    ]
+  },
+  {
+    "productId": "ognennaya-maz",
+    "decision": "simple-candidate",
+    "effectKind": "host-attack-modifier",
+    "reason": "+1d6 огня своим оружием.",
+    "owner": [
+      "scripts/combat/attack-service.js",
+      "scripts/combat/curse-upgrade-attacks.js"
+    ],
+    "tests": [
+      {
+        "path": "tests/item-upgrade-automation-service.test.mjs",
+        "status": "planned-R7"
+      }
+    ],
+    "capabilities": [
+      "dnd5e-native",
+      "R7-full-effect-verification-required",
+      "midi-qol-optional",
+      "host-and-packet-scope"
+    ]
+  },
+  {
+    "productId": "oskolki-meteoritnykh-zvyozd",
+    "decision": "simple-candidate",
+    "effectKind": "host-attack-modifier",
+    "reason": "+2 damage при уже определённом advantage этой атаки.",
+    "owner": [
+      "scripts/combat/attack-service.js",
+      "scripts/combat/curse-upgrade-attacks.js"
+    ],
+    "tests": [
+      {
+        "path": "tests/item-upgrade-automation-service.test.mjs",
+        "status": "planned-R7"
+      }
+    ],
+    "capabilities": [
+      "dnd5e-native",
+      "R7-full-effect-verification-required",
+      "midi-qol-optional",
+      "host-and-packet-scope"
+    ]
+  },
+  {
+    "productId": "oskolok-cherepa-chudovishcha",
+    "decision": "simple-candidate",
+    "effectKind": "actor-bonus",
+    "reason": "+1 Запугивание.",
+    "owner": [
+      "scripts/combat/implant-automation-service.js",
+      "scripts/automation/item-upgrade-automation-service.js"
+    ],
+    "tests": [
+      {
+        "path": "tests/item-upgrade-automation-service.test.mjs",
+        "status": "planned-R7"
+      }
+    ],
+    "capabilities": [
+      "dnd5e-native",
+      "R7-full-effect-verification-required"
+    ]
+  },
+  {
+    "productId": "oskolok-kosti-chudovishcha",
+    "decision": "simple-candidate",
+    "effectKind": "flat-damage-modifier",
+    "reason": "Поглощение/слабость 1 по damage type и nonmagical predicate.",
+    "owner": [
+      "scripts/combat/curse-upgrade-damage.js"
+    ],
+    "tests": [
+      {
+        "path": "tests/item-upgrade-automation-service.test.mjs",
+        "status": "planned-R7"
+      }
+    ],
+    "capabilities": [
+      "dnd5e-native",
+      "R7-full-effect-verification-required",
+      "midi-qol-optional",
+      "host-and-packet-scope"
+    ]
+  },
+  {
+    "productId": "oskolok-teni",
+    "decision": "unavailable-complex",
+    "effectKind": "none",
+    "reason": "Добавление заклинания; исключено из текущего простого объёма.",
+    "owner": [],
+    "tests": [],
+    "capabilities": []
+  },
+  {
+    "productId": "osvyashchyonnyy-adamantiy",
+    "decision": "unavailable-complex",
+    "effectKind": "none",
+    "reason": "Заклинание и использование за long rest.",
+    "owner": [],
+    "tests": [],
+    "capabilities": []
+  },
+  {
+    "productId": "pantsir-chudovishcha",
+    "decision": "simple-candidate",
+    "effectKind": "flat-damage-modifier",
+    "reason": "Поглощение рубящего и колющего 1.",
+    "owner": [
+      "scripts/combat/curse-upgrade-damage.js"
+    ],
+    "tests": [
+      {
+        "path": "tests/item-upgrade-automation-service.test.mjs",
+        "status": "planned-R7"
+      }
+    ],
+    "capabilities": [
+      "dnd5e-native",
+      "R7-full-effect-verification-required",
+      "midi-qol-optional",
+      "host-and-packet-scope"
+    ]
+  },
+  {
+    "productId": "pantsir-kristal-nogo-leviafana",
+    "decision": "unavailable-complex",
+    "effectKind": "none",
+    "reason": "AoE pull, cooldown, bonus action и реакция; не делать только сопротивление.",
+    "owner": [],
+    "tests": [],
+    "capabilities": []
+  },
+  {
+    "productId": "pantsirnaya-plastina-drednouta-dospekh",
+    "decision": "unavailable-complex",
+    "effectKind": "none",
+    "reason": "Порог pre-mitigation damage и бесплатный Перекат; не делать только сопротивление.",
+    "owner": [],
+    "tests": [],
+    "capabilities": []
+  },
+  {
+    "productId": "pantsirnaya-plastina-drednouta-oruzhie",
+    "decision": "unavailable-complex",
+    "effectKind": "none",
+    "reason": "Особое преобразование выпавших dice force damage; отдельная обработка результата.",
+    "owner": [],
+    "tests": [],
+    "capabilities": []
+  },
+  {
+    "productId": "pauchya-tetiva",
+    "decision": "unavailable-complex",
+    "effectKind": "none",
+    "reason": "Range exception вместе с МУ на дальнем пределе; не реализовывать половину правила.",
+    "owner": [],
+    "tests": [],
+    "capabilities": []
+  },
+  {
+    "productId": "poroshok-drokhuby",
+    "decision": "simple-candidate",
+    "effectKind": "actor-bonus",
+    "reason": "+10 ft walk.",
+    "owner": [
+      "scripts/combat/implant-automation-service.js",
+      "scripts/automation/item-upgrade-automation-service.js"
+    ],
+    "tests": [
+      {
+        "path": "tests/item-upgrade-automation-service.test.mjs",
+        "status": "planned-R7"
+      }
+    ],
+    "capabilities": [
+      "dnd5e-native",
+      "R7-full-effect-verification-required"
+    ]
+  },
+  {
+    "productId": "prakh-modronov",
+    "decision": "unavailable-complex",
+    "effectKind": "none",
+    "reason": "Аура по мировоззрению всех соседей.",
+    "owner": [],
+    "tests": [],
+    "capabilities": []
+  },
+  {
+    "productId": "raduzhnyy-metall",
+    "decision": "unavailable-complex",
+    "effectKind": "none",
+    "reason": "Декоративный эффект света, числовой механики нет.",
+    "owner": [],
+    "tests": [],
+    "capabilities": []
+  },
+  {
+    "productId": "rog-chudovishcha",
+    "decision": "unavailable-complex",
+    "effectKind": "none",
+    "reason": "Наскок и его dice stacking требуют отдельного подтверждённого правила.",
+    "owner": [],
+    "tests": [],
+    "capabilities": []
+  },
+  {
+    "productId": "serdtsevina-drevnya",
+    "decision": "unavailable-complex",
+    "effectKind": "none",
+    "reason": "Прибавка к каждому восстановлению здоровья пока не поддерживается.",
+    "owner": [],
+    "tests": [],
+    "capabilities": [],
+    "auditReason": "Нет существующего modifier owner для общей прибавки к каждому восстановлению HP; потребуется отдельный healing workflow."
+  },
+  {
+    "productId": "serebrenie-oruzhiya",
+    "decision": "unavailable-complex",
+    "effectKind": "none",
+    "reason": "Условная магичность против нежити и исчадий пока не поддерживается. Одного серебрения недостаточно для полного эффекта.",
+    "owner": [],
+    "tests": [],
+    "capabilities": [],
+    "auditReason": "Серебрение само по себе не покрывает условную магичность против нежити и исчадий; существующий property owner не исполняет всё правило."
+  },
+  {
+    "productId": "shchupaltse-chudovishcha-2",
+    "decision": "unavailable-complex",
+    "effectKind": "none",
+    "reason": "Изменение захвата, hands reservation и size limit.",
+    "owner": [],
+    "tests": [],
+    "capabilities": []
+  },
+  {
+    "productId": "sherst-griffona",
+    "decision": "simple-candidate",
+    "effectKind": "actor-bonus",
+    "reason": "+5 ft walk.",
+    "owner": [
+      "scripts/combat/implant-automation-service.js",
+      "scripts/automation/item-upgrade-automation-service.js"
+    ],
+    "tests": [
+      {
+        "path": "tests/item-upgrade-automation-service.test.mjs",
+        "status": "planned-R7"
+      }
+    ],
+    "capabilities": [
+      "dnd5e-native",
+      "R7-full-effect-verification-required"
+    ]
+  },
+  {
+    "productId": "shkura-chudovishcha",
+    "decision": "simple-candidate",
+    "effectKind": "flat-damage-modifier",
+    "reason": "Поглощение дробящего 1.",
+    "owner": [
+      "scripts/combat/curse-upgrade-damage.js"
+    ],
+    "tests": [
+      {
+        "path": "tests/item-upgrade-automation-service.test.mjs",
+        "status": "planned-R7"
+      }
+    ],
+    "capabilities": [
+      "dnd5e-native",
+      "R7-full-effect-verification-required",
+      "midi-qol-optional",
+      "host-and-packet-scope"
+    ]
+  },
+  {
+    "productId": "shyopot-t-my",
+    "decision": "unavailable-complex",
+    "effectKind": "none",
+    "reason": "Запрет divination targeting и магических сенсоров.",
+    "owner": [],
+    "tests": [],
+    "capabilities": []
+  },
+  {
+    "productId": "sukhozhilie-chudovishcha",
+    "decision": "simple-candidate",
+    "effectKind": "host-attack-modifier",
+    "reason": "+1 к damage своего оружия.",
+    "owner": [
+      "scripts/combat/attack-service.js",
+      "scripts/combat/curse-upgrade-attacks.js"
+    ],
+    "tests": [
+      {
+        "path": "tests/item-upgrade-automation-service.test.mjs",
+        "status": "planned-R7"
+      }
+    ],
+    "capabilities": [
+      "dnd5e-native",
+      "R7-full-effect-verification-required",
+      "midi-qol-optional",
+      "host-and-packet-scope"
+    ]
+  },
+  {
+    "productId": "svyashchennaya-stal",
+    "decision": "simple-candidate",
+    "effectKind": "host-attack-modifier",
+    "reason": "Radiant и ×2 базовые dice своего оружия; pure source projection без удвоения уже derived dice.",
+    "owner": [
+      "scripts/combat/attack-service.js",
+      "scripts/combat/curse-upgrade-attacks.js"
+    ],
+    "tests": [
+      {
+        "path": "tests/item-upgrade-automation-service.test.mjs",
+        "status": "planned-R7"
+      }
+    ],
+    "capabilities": [
+      "dnd5e-native",
+      "R7-full-effect-verification-required",
+      "midi-qol-optional",
+      "host-and-packet-scope"
+    ]
+  },
+  {
+    "productId": "velikoe-zacharovanie-ostroty",
+    "decision": "unavailable-complex",
+    "effectKind": "none",
+    "reason": "Игнорирование сопротивления по типу damage; не оставлять только +1 attack/damage.",
+    "owner": [],
+    "tests": [],
+    "capabilities": []
+  },
+  {
+    "productId": "velikoe-zacharovanie-zashchity",
+    "decision": "simple-candidate",
+    "effectKind": "flat-damage-modifier",
+    "reason": "+1 AC, saves и flat поглощению через существующие modifier paths.",
+    "owner": [
+      "scripts/combat/curse-upgrade-damage.js"
+    ],
+    "tests": [
+      {
+        "path": "tests/item-upgrade-automation-service.test.mjs",
+        "status": "planned-R7"
+      }
+    ],
+    "capabilities": [
+      "dnd5e-native",
+      "R7-full-effect-verification-required",
+      "midi-qol-optional",
+      "host-and-packet-scope"
+    ]
+  },
+  {
+    "productId": "zacharovanie-lyogkosti",
+    "decision": "simple-candidate",
+    "effectKind": "item-weight",
+    "reason": "Вес −10 lb, минимум 0; единицы конвертируются, source сохраняется.",
+    "owner": [
+      "scripts/data/gear-compendium.js",
+      "scripts/automation/item-upgrade-automation-service.js"
+    ],
+    "tests": [
+      {
+        "path": "tests/item-upgrade-automation-service.test.mjs",
+        "status": "planned-R7"
+      }
+    ],
+    "capabilities": [
+      "dnd5e-native",
+      "R7-full-effect-verification-required"
+    ]
+  },
+  {
+    "productId": "zacharovanie-nekromantii",
+    "decision": "simple-candidate",
+    "effectKind": "host-attack-modifier",
+    "reason": "+1d3 necrotic своим оружием.",
+    "owner": [
+      "scripts/combat/attack-service.js",
+      "scripts/combat/curse-upgrade-attacks.js"
+    ],
+    "tests": [
+      {
+        "path": "tests/item-upgrade-automation-service.test.mjs",
+        "status": "planned-R7"
+      }
+    ],
+    "capabilities": [
+      "dnd5e-native",
+      "R7-full-effect-verification-required",
+      "midi-qol-optional",
+      "host-and-packet-scope"
+    ]
+  },
+  {
+    "productId": "zacharovanie-ostroty",
+    "decision": "simple-candidate",
+    "effectKind": "host-attack-modifier",
+    "reason": "+1 attack и damage своего оружия.",
+    "owner": [
+      "scripts/combat/attack-service.js",
+      "scripts/combat/curse-upgrade-attacks.js"
+    ],
+    "tests": [
+      {
+        "path": "tests/item-upgrade-automation-service.test.mjs",
+        "status": "planned-R7"
+      }
+    ],
+    "capabilities": [
+      "dnd5e-native",
+      "R7-full-effect-verification-required",
+      "midi-qol-optional",
+      "host-and-packet-scope"
+    ]
+  },
+  {
+    "productId": "zacharovanie-pogloshcheniya",
+    "decision": "simple-candidate",
+    "effectKind": "flat-damage-modifier",
+    "reason": "Поглощение 1, один сохранённый выбор типа.",
+    "owner": [
+      "scripts/combat/curse-upgrade-damage.js"
+    ],
+    "tests": [
+      {
+        "path": "tests/item-upgrade-automation-service.test.mjs",
+        "status": "planned-R7"
+      }
+    ],
+    "capabilities": [
+      "dnd5e-native",
+      "R7-full-effect-verification-required",
+      "midi-qol-optional",
+      "host-and-packet-scope"
+    ]
+  },
+  {
+    "productId": "zacharovanie-pryzhkov",
+    "decision": "unavailable-complex",
+    "effectKind": "none",
+    "reason": "Прибавка к длине и высоте прыжка пока не поддерживается.",
+    "owner": [],
+    "tests": [],
+    "capabilities": [],
+    "auditReason": "Существующий implant profile поддерживает множитель прыжка, но не прибавку длины и высоты; отдельный engine не входит в простую партию."
+  },
+  {
+    "productId": "zacharovanie-zashchity",
+    "decision": "simple-candidate",
+    "effectKind": "actor-bonus",
+    "reason": "+1 AC и saves.",
+    "owner": [
+      "scripts/combat/implant-automation-service.js",
+      "scripts/automation/item-upgrade-automation-service.js"
+    ],
+    "tests": [
+      {
+        "path": "tests/item-upgrade-automation-service.test.mjs",
+        "status": "planned-R7"
+      }
+    ],
+    "capabilities": [
+      "dnd5e-native",
+      "R7-full-effect-verification-required"
+    ]
+  },
+  {
+    "productId": "zakalyonnaya-cheshuya",
+    "decision": "simple-candidate",
+    "effectKind": "flat-damage-modifier",
+    "reason": "Поглощение колющего 1.",
+    "owner": [
+      "scripts/combat/curse-upgrade-damage.js"
+    ],
+    "tests": [
+      {
+        "path": "tests/item-upgrade-automation-service.test.mjs",
+        "status": "planned-R7"
+      }
+    ],
+    "capabilities": [
+      "dnd5e-native",
+      "R7-full-effect-verification-required",
+      "midi-qol-optional",
+      "host-and-packet-scope"
+    ]
+  },
+  {
+    "productId": "zhalo-chudovishcha",
+    "decision": "unavailable-complex",
+    "effectKind": "none",
+    "reason": "Автоматическое применение свойства «Отравляющее» пока не поддерживается.",
+    "owner": [],
+    "tests": [],
+    "capabilities": [],
+    "auditReason": "Нет исполняемого owner свойства «Отравляющее»; одно добавление названия свойства не реализует эффект."
+  },
+  {
+    "productId": "zhelchnyy-pokrov",
+    "decision": "unavailable-complex",
+    "effectKind": "none",
+    "reason": "Мутация прочности чужого доспеха и ограничение повторов.",
+    "owner": [],
+    "tests": [],
+    "capabilities": []
+  },
+  {
+    "productId": "zhivaya-voda-2",
+    "decision": "unavailable-complex",
+    "effectKind": "none",
+    "reason": "Изменение лимита HD и связанного rest/resource workflow.",
+    "owner": [],
+    "tests": [],
+    "capabilities": []
+  },
+  {
+    "productId": "zhivoy-koren",
+    "decision": "unavailable-complex",
+    "effectKind": "none",
+    "reason": "Следующая атака цели и разные штрафы по адресату.",
+    "owner": [],
+    "tests": [],
+    "capabilities": []
+  },
+  {
+    "productId": "zhivoy-koren-dospekh",
+    "decision": "unavailable-complex",
+    "effectKind": "none",
+    "reason": "Следующая атака по источнику и разные бонусы атакующих.",
+    "owner": [],
+    "tests": [],
+    "capabilities": []
+  },
+  {
+    "productId": "очаровательная-тетева",
+    "decision": "unavailable-complex",
+    "effectKind": "none",
+    "reason": "История нанесённого урона за последний час.",
+    "owner": [],
+    "tests": [],
+    "capabilities": []
+  },
+  {
+    "productId": "шипастая-отделка-доспеха",
+    "decision": "unavailable-complex",
+    "effectKind": "none",
+    "reason": "Отдельный ответный урон после каждой атаки с защитой от повторов.",
+    "owner": [],
+    "tests": [],
+    "capabilities": []
+  },
+  {
+    "productId": "proklyat-e-molnienosnoy-reaktsii",
+    "decision": "existing-curse",
+    "effectKind": "curse",
+    "reason": "Проклятье поддерживается существующей автоматизацией.",
+    "owner": [
+      "scripts/combat/curse-upgrade-automation-service.js"
+    ],
+    "tests": [
+      {
+        "path": "tests/curse-upgrade-automation-service.test.mjs",
+        "status": "existing"
+      }
+    ],
+    "capabilities": [
+      "dnd5e-native",
+      "midi-qol-optional",
+      "existing-curse-owner"
+    ],
+    "auditReason": "Сохранить реализацию, regression only."
+  },
+  {
+    "productId": "proklyat-e-presleduyushchego-uspekha",
+    "decision": "existing-curse",
+    "effectKind": "curse",
+    "reason": "Проклятье поддерживается существующей автоматизацией.",
+    "owner": [
+      "scripts/combat/curse-upgrade-automation-service.js"
+    ],
+    "tests": [
+      {
+        "path": "tests/curse-upgrade-automation-service.test.mjs",
+        "status": "existing"
+      }
+    ],
+    "capabilities": [
+      "dnd5e-native",
+      "midi-qol-optional",
+      "existing-curse-owner"
+    ],
+    "auditReason": "Сохранить реализацию, regression only."
+  },
+  {
+    "productId": "proklyat-e-zhizni-i-smerti",
+    "decision": "existing-curse",
+    "effectKind": "curse",
+    "reason": "Проклятье поддерживается существующей автоматизацией.",
+    "owner": [
+      "scripts/combat/curse-upgrade-automation-service.js"
+    ],
+    "tests": [
+      {
+        "path": "tests/curse-upgrade-automation-service.test.mjs",
+        "status": "existing"
+      }
+    ],
+    "capabilities": [
+      "dnd5e-native",
+      "midi-qol-optional",
+      "existing-curse-owner"
+    ],
+    "auditReason": "Сохранить реализацию, regression only."
+  },
+  {
+    "productId": "proklyat-e-tyazhesti-zhizni",
+    "decision": "existing-curse",
+    "effectKind": "curse",
+    "reason": "Проклятье поддерживается существующей автоматизацией.",
+    "owner": [
+      "scripts/combat/curse-upgrade-automation-service.js"
+    ],
+    "tests": [
+      {
+        "path": "tests/curse-upgrade-automation-service.test.mjs",
+        "status": "existing"
+      }
+    ],
+    "capabilities": [
+      "dnd5e-native",
+      "midi-qol-optional",
+      "existing-curse-owner"
+    ],
+    "auditReason": "Сохранить реализацию, regression only."
+  },
+  {
+    "productId": "proklyat-e-krovopuskaniya",
+    "decision": "existing-curse",
+    "effectKind": "curse",
+    "reason": "Проклятье поддерживается существующей автоматизацией.",
+    "owner": [
+      "scripts/combat/curse-upgrade-automation-service.js"
+    ],
+    "tests": [
+      {
+        "path": "tests/curse-upgrade-automation-service.test.mjs",
+        "status": "existing"
+      }
+    ],
+    "capabilities": [
+      "dnd5e-native",
+      "midi-qol-optional",
+      "existing-curse-owner"
+    ],
+    "auditReason": "Сохранить реализацию, regression only."
+  },
+  {
+    "productId": "proklyat-e-skorbyashchego-proshlogo",
+    "decision": "existing-curse",
+    "effectKind": "curse",
+    "reason": "Проклятье поддерживается существующей автоматизацией.",
+    "owner": [
+      "scripts/combat/curse-upgrade-automation-service.js"
+    ],
+    "tests": [
+      {
+        "path": "tests/curse-upgrade-automation-service.test.mjs",
+        "status": "existing"
+      }
+    ],
+    "capabilities": [
+      "dnd5e-native",
+      "midi-qol-optional",
+      "existing-curse-owner"
+    ],
+    "auditReason": "Сохранить реализацию, regression only."
+  },
+  {
+    "productId": "proklyat-e-prityagivanie-snaryadov",
+    "decision": "existing-curse",
+    "effectKind": "curse",
+    "reason": "Проклятье поддерживается существующей автоматизацией.",
+    "owner": [
+      "scripts/combat/curse-upgrade-automation-service.js"
+    ],
+    "tests": [
+      {
+        "path": "tests/curse-upgrade-automation-service.test.mjs",
+        "status": "existing"
+      }
+    ],
+    "capabilities": [
+      "dnd5e-native",
+      "midi-qol-optional",
+      "existing-curse-owner"
+    ],
+    "auditReason": "Сохранить реализацию, regression only."
+  },
+  {
+    "productId": "proklyat-e-ognennoy-dushi",
+    "decision": "existing-curse",
+    "effectKind": "curse",
+    "reason": "Проклятье поддерживается существующей автоматизацией.",
+    "owner": [
+      "scripts/combat/curse-upgrade-automation-service.js"
+    ],
+    "tests": [
+      {
+        "path": "tests/curse-upgrade-automation-service.test.mjs",
+        "status": "existing"
+      }
+    ],
+    "capabilities": [
+      "dnd5e-native",
+      "midi-qol-optional",
+      "existing-curse-owner"
+    ],
+    "auditReason": "Сохранить реализацию, regression only."
+  },
+  {
+    "productId": "proklyat-e-voli-k-zhizni",
+    "decision": "existing-curse",
+    "effectKind": "curse",
+    "reason": "Проклятье поддерживается существующей автоматизацией.",
+    "owner": [
+      "scripts/combat/curse-upgrade-automation-service.js"
+    ],
+    "tests": [
+      {
+        "path": "tests/curse-upgrade-automation-service.test.mjs",
+        "status": "existing"
+      }
+    ],
+    "capabilities": [
+      "dnd5e-native",
+      "midi-qol-optional",
+      "existing-curse-owner"
+    ],
+    "auditReason": "Сохранить реализацию, regression only."
+  },
+  {
+    "productId": "proklyat-e-tsepey",
+    "decision": "existing-curse",
+    "effectKind": "curse",
+    "reason": "Проклятье поддерживается существующей автоматизацией.",
+    "owner": [
+      "scripts/combat/curse-upgrade-automation-service.js"
+    ],
+    "tests": [
+      {
+        "path": "tests/curse-upgrade-automation-service.test.mjs",
+        "status": "existing"
+      }
+    ],
+    "capabilities": [
+      "dnd5e-native",
+      "midi-qol-optional",
+      "existing-curse-owner"
+    ],
+    "auditReason": "Сохранить реализацию, regression only."
+  },
+  {
+    "productId": "proklyat-e-obsidiana",
+    "decision": "existing-curse",
+    "effectKind": "curse",
+    "reason": "Проклятье поддерживается существующей автоматизацией.",
+    "owner": [
+      "scripts/combat/curse-upgrade-automation-service.js"
+    ],
+    "tests": [
+      {
+        "path": "tests/curse-upgrade-automation-service.test.mjs",
+        "status": "existing"
+      }
+    ],
+    "capabilities": [
+      "dnd5e-native",
+      "midi-qol-optional",
+      "existing-curse-owner"
+    ],
+    "auditReason": "Сохранить реализацию, regression only."
+  }
+]

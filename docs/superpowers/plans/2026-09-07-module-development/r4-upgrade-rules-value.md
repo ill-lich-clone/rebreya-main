@@ -26,8 +26,8 @@
 **Interface:** buildUpgradeAutomationManifest(upgrades,gear,decisions) → rows; getUpgradeAvailability(productId,manifest) → decision; unknown ID → unavailable-no-rule.
 decisions JSON содержит stable productId, decision, effectKind, reason и явные owner/tests/capabilities mappings; gearId/ruleSource присоединяются по каноническому catalog mapping. Runtime не извлекает правила из prose. В R4 mapping может отмечать будущие tests как planned; implemented в R7 требует фактически выполненных сценариев.
 
-- [ ] Перенести91 решений из матрицы:11 existing-curse,42 simple-candidate,38 unavailable. Добавить source provenance на data/upgrades.json/productId; не использовать перевод имени как key.
-- [ ] Тест покрытия:
+- [x] Перенести91 решений из матрицы:11 existing-curse,42 simple-candidate,38 unavailable. Добавить source provenance на data/upgrades.json/productId; не использовать перевод имени как key.
+- [x] Тест покрытия:
 ```js
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -44,10 +44,10 @@ test("every source upgrade has exactly one decision",async()=>{
 });
 ```
 Если gear.json обёрнут object, передать именно existing model gear array через importer adapter; не менять schema ради test. Проверить его shape до записи fixture.
-- [ ] Запустить node --test tests/upgrade-automation-manifest.test.mjs — red; затем реализовать deterministic join по existing import productId→gearId mapping. Не name match.
-- [ ] Duplicate product/gear mapping, decision без каталога, отсутствующее решение → explicit errors; не молча удалить строку. Стабильно сортировать productId.
-- [ ] Проверить42 candidates по доступным owner paths и полному effect: кандидат, требующий нового engine, переводится unavailable с конкретной причиной. Пока не реализован, simple-candidate не выдаётся как working.
-- [ ] В return row добавить owner/test paths для existing curses и будущий effectKind для простой партии; blank source effects остаются unavailable-no-rule.
+- [x] Запустить node --test tests/upgrade-automation-manifest.test.mjs — red; затем реализовать deterministic join по existing import productId→gearId mapping. Не name match.
+- [x] Duplicate product/gear mapping, decision без каталога, отсутствующее решение → explicit errors; не молча удалить строку. Стабильно сортировать productId.
+- [x] Проверить42 candidates по доступным owner paths и полному effect: кандидат, требующий нового engine, переводится unavailable с конкретной причиной. Пока не реализован, simple-candidate не выдаётся как working.
+- [x] В return row добавить owner/test paths для existing curses и будущий effectKind для простой партии; blank source effects остаются unavailable-no-rule.
 
 ## Задача R4.2 — Pure установка и активация
 
@@ -58,7 +58,7 @@ test("every source upgrade has exactly one decision",async()=>{
 Neutral host={id,compatibilityTags,capacity,quantity,isEquipped,isHeld,isAttuned,isBroken}; installed=[{sourceId,slotIndex}]; candidate={sourceId,slotIndex,profile,availability}. profile.compatibility содержит canonical tags и activation policy, не русские labels.
 validate возвращает {allowed:true,slotIndex} либо бросает UpgradeRuleError с кодом unavailable/incompatible/capacity/slot-conflict/invalid-quantity.
 
-- [ ] Написать tests для несовместимости, занятого слота и приоритета stored profile:
+- [x] Написать tests для несовместимости, занятого слота и приоритета stored profile:
 ```js
 const stored={type:"Материал",compatibility:["weapon"],effect:"Авторское правило"};
 assert.deepEqual(resolveUpgradeProfile(stored,{type:"Зачарование"}),stored);
@@ -68,12 +68,12 @@ assert.throws(()=>validateUpgradeInstallation(
  {sourceId:"u",slotIndex:1,profile:{compatibility:["weapon"]},availability:"simple-implemented"}
 ),error=>error.code==="incompatible");
 ```
-- [ ] Запустить node --test tests/item-upgrade-rules.test.mjs; red до нового module.
-- [ ] Реализовать intersection tags, capacity/slot bounds и availability existing-curse|simple-implemented. Legacy user override помечать в projection, не удалять старую установку при read. Не передавать unchecked options.capacity как обход ограничения.
-- [ ] Активация: explicit policy carried/equipped/held/attuned, broken rule если определён; неизвестная policy → unsupported, не unconditional active.
-- [ ] Existing install/remove/capacity вызывают правила до первой mutation. Пока retain old public signatures и installed links; source Item catalog не модифицировать.
-- [ ] Sheet показывает «Усовершенствования нет в реализации» для unavailable и причину; не заменять сам Item текстом и не удалять historical user flags.
-- [ ] Existing ItemUpgradeService partial stack installation должен пройти old tests; сложный host stack не принимается без instance boundary R3.
+- [x] Запустить node --test tests/item-upgrade-rules.test.mjs; red до нового module.
+- [x] Реализовать intersection tags, capacity/slot bounds и availability existing-curse|simple-implemented. Legacy user override помечать в projection, не удалять старую установку при read. Не передавать unchecked options.capacity как обход ограничения.
+- [x] Активация: explicit policy carried/equipped/held/attuned, broken rule если определён; неизвестная policy → unsupported, не unconditional active.
+- [x] Existing install/remove/capacity вызывают правила до первой mutation. Пока retain old public signatures и installed links; source Item catalog не модифицировать.
+- [x] Sheet показывает «Усовершенствования нет в реализации» для unavailable и причину; не заменять сам Item текстом и не удалять historical user flags.
+- [x] Existing ItemUpgradeService partial stack installation должен пройти old tests; сложный host stack не принимается без instance boundary R3.
 
 ## Задача R4.3 — Value без двойного учёта
 
@@ -81,7 +81,7 @@ assert.throws(()=>validateUpgradeInstallation(
 **Modify:** scripts/ui/lootgen-app.js только для совместимого делегирования resolveLootgenItemValue.
 **Interfaces:** evaluateItemValue(descriptor,catalogReader) из README; catalogReader={resolveValueComponent,readContainerValueNodes}. readContainerValueNodes=null до R9; non-null container до R9 → unsupported-container. ItemValueError(code,details) для unknown-price/overflow/invalid-descriptor.
 
-- [ ] Написать исходный тест:
+- [x] Написать исходный тест:
 ```js
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -99,8 +99,8 @@ test("host includes both installed upgrades exactly once",()=>{
  assert.equal(result.contentsValue,0); assert.equal(result.totalValue,1500);
 });
 ```
-- [ ] Red: node --test tests/item-value.test.mjs.
-- [ ] Реализовать checked sum/product:
+- [x] Red: node --test tests/item-value.test.mjs.
+- [x] Реализовать checked sum/product:
 ```js
 export function addItemValue(a,b) {
   if (!Number.isSafeInteger(a)||a<0||!Number.isSafeInteger(b)||b<0
@@ -109,10 +109,10 @@ export function addItemValue(a,b) {
 }
 ```
 ItemValueError extends Error, constructor(code,details={}) сохраняет code/details. Quantity integer positive; composed quantity1; duplicate instanceKey и slotIndex отклоняются.
-- [ ] base = unitValue*quantity; upgradeValue — checked sum только не включённых в base components. includedUpgradeSourceIds трактовать как multiset: каждое включение пропускает ровно одну matching установку, не все одноимённые.
-- [ ] Unknown component price бросает unknown-price; генератор позже исключает такой вариант. Explicit0 разрешён только с priceKnown:true. В legacy resolveLootgenItemValue сохранить прежнее fallback поведение raw0/priceGold, не менять старые templates.
-- [ ] Tests: safe max overflow, negative/NaN, explicit0, unknown, normal quantity3, duplicate instance, included component once, corrupted profile, source objects immutable; container rejected до R9.
-- [ ] Вынести legacy money conversion к pure owner, UI export оставить compatibility delegate, existing lootgen-app-context тесты не менять ожидаемые старые цены.
+- [x] base = unitValue*quantity; upgradeValue — checked sum только не включённых в base components. includedUpgradeSourceIds трактовать как multiset: каждое включение пропускает ровно одну matching установку, не все одноимённые.
+- [x] Unknown component price бросает unknown-price; генератор позже исключает такой вариант. Explicit0 разрешён только с priceKnown:true. В legacy resolveLootgenItemValue сохранить прежнее fallback поведение raw0/priceGold, не менять старые templates.
+- [x] Tests: safe max overflow, negative/NaN, explicit0, unknown, normal quantity3, duplicate instance, included component once, corrupted profile, source objects immutable; container rejected до R9.
+- [x] Вынести legacy money conversion к pure owner, UI export оставить compatibility delegate, existing lootgen-app-context тесты не менять ожидаемые старые цены.
 
 ## Проверки этапа
 
@@ -125,9 +125,21 @@ Live: install UI unavailable/compatible/capacity; read старых installed It
 
 ## Выпуск этапа
 
-- [ ] Выполнить полный профиль focused-тестов этого плана; записать фактические passed/failed.
-- [ ] Пройти перечисленные live-сценарии в выделенном тестовом Foundry-мире. Сохранить viewport, версии, GM/player и console result. Если live недоступен, оставить этот пункт открытым.
-- [ ] Обновить профильные методы паспорта и README при изменении public contract.
-- [ ] Поднять актуальную patch version в module.json; создать/переименовать versioned forwarder с единственным import "./main.js"; обновить esmodules. Проверить отсутствие старых runtime-entrypoint ссылок.
-- [ ] Выполнить один полный цикл команд из README этого комплекта, проверить содержательный diff, stat и diff --check.
+- [x] Выполнить полный профиль focused-тестов этого плана; записать фактические passed/failed.
+- [x] Пройти перечисленные live-сценарии в выделенном тестовом Foundry-мире. Сохранить viewport, версии, GM/player и console result. Если live недоступен, оставить этот пункт открытым.
+- [x] Обновить профильные методы паспорта и README при изменении public contract.
+- [x] Поднять актуальную patch version в module.json; создать/переименовать versioned forwarder с единственным import "./main.js"; обновить esmodules. Проверить отсутствие старых runtime-entrypoint ссылок.
+- [x] Выполнить один полный цикл команд из README этого комплекта, проверить содержательный diff, stat и diff --check.
 - [ ] Stage только перечисленных файлов текущего этапа и обязательных manifest/docs; осмысленный commit; git push -u origin lich_branch. Проверить чистую рабочую копию и HEAD...origin/lich_branch = 0/0. Не включать чужие изменения.
+
+
+## Отчёт реализации 2026-09-08 — 1.4.250
+
+- Manifest учитывает все 91 stable productId, strict gearId join без имён. После проверки полного текста и доступных владельцев: 11 existing-curse, 37 simple-candidate, 43 unavailable. Пять кандидатов исключены целиком: гигантский коготь (не задан числовой параметр), сердцевина древня (общий healing bonus), серебрение оружия (условная магичность), зачарование прыжков (additive jump), жало чудовища (нет исполняемого poisonous property). Reason читается пользователем; auditReason сохраняет техническое основание. JSON и матрица синхронны. Оставшиеся 37 не доступны до R7; их planned tests не заявлены как выполненные.
+- Pure rules проверяют singleton host, tags, capacity, slot bounds/conflicts, availability и explicit activation policy. Уточнение importer semantics: weapon qualifiers — AND с базовым weapon; outerwear/shield — альтернативы. `options.capacity` больше не повышает лимит при установке; снижение вместимости учитывает максимальную занятую позицию. Установленный child другого host не переносится обходным install.
+- Existing ItemUpgradeService сохраняет public signatures и отделение одной единицы upgrade stack. Read-only projection хранит explicit custom profile; неподтверждённый override блокирует новую установку, но исторический child можно снять. Новый текст в native карточках не заменяет Item и не удаляет flags.
+- Value evaluator считает safe integer copper, количество и каждое усовершенствование по разу. Included IDs — multiset. Unknown price, malformed descriptors, overflow и non-null container отклоняются. Старый lootgen money helper делегирует pure owner с прежним fallback для нуля. Новая генерация/новый ценовой UI относятся к R8, containers — R9.
+- TDD: исходные три новых модуля дали 3 failing imports; новые service regressions сначала 2 failed. После реализации focused R4+manifest: 128 passed, 0 failed. Полный прогон: 3698 passed, 0 failed, 0 skipped. Syntax: 713 JS/MJS, 0 ошибок; JSON: 46, 0 ошибок. В промежуточной проверке исправлены ожидания cache версии и сохранён LF для существующего source-based lootgen test; старые ожидаемые цены не менялись.
+- Live: testovyj3, https://vtt.rebreya.com/game, CODEX/GM, active GM Gamemaster, Foundry 13.351 / dnd5e 5.2.5, viewport 1292×920. После reload загружены R4 service и sheet integration; серверная metadata остаётся 1.4.238, runtime исходники — 1.4.250. Native install проклятья из Q2 дал 1+1. Недоступный профиль, занятый слот и capacity bypass отклонены без изменения Actor snapshot. Штатный режим редактирования включён через mode slider; кнопка capacity выставила 3. Снижение до 2 при занятом slot3 отвергнуто. Custom installed profile прочитан без изменений; status section одна и не обрезана на screenshot. Штатная кнопка снятия сохранила Item и custom profile, очистила контейнер/host link. Browser value fixture показал base1000+upgrades500=1500. Новых console errors нет. QA Actor hm4G6OtnqcrStZaP и все его Items удалены, окна закрыты.
+- Ограничения: отдельная player-сессия не проверялась; автоматизация 37 новых эффектов не включена; nested containers пока отклоняются; existing install/remove не превращены в durable transaction. Нет массовой миграции или перерасчёта world Items. R3 native socket retest сохранён в его отчёте.
+- Git перед работой: lich_branch, чисто, fetch выполнен, HEAD 0c71cf7f, HEAD...origin/main=342/0, HEAD...origin/lich_branch=0/0. Commit/push — заключительная операция после финального diff review; её hash сообщается в ответе.

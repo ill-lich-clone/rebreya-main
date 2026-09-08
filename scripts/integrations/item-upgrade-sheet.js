@@ -7,7 +7,7 @@ import {
   isUpgradeableHostItem,
   isUpgradeItem,
   UPGRADE_HOLD_DURATION_MS
-} from "../data/item-upgrade-service.js?v=1.4.96-item-upgrades";
+} from "../data/item-upgrade-service.js?v=1.4.250";
 
 const DRAG_DATA_TYPES = ["text/plain", "text", "application/json"];
 const HOLD_STATES = new WeakMap();
@@ -596,6 +596,9 @@ export function bindItemUpgradeInventoryRows(root, { actor, app, moduleApi, rere
 
 export function bindItemUpgradeSheet(root, app, moduleApi) {
   const hostItem = getSheetItem(app);
+  if (root instanceof HTMLElement && hostItem && moduleApi?.itemUpgradeService?.getUpgradeProjection) {
+    void renderItemUpgradeAvailability(root, hostItem, moduleApi.itemUpgradeService);
+  }
   const actor = getItemActor(hostItem);
   if (!(root instanceof HTMLElement) || !actor || !isUpgradeableHostItem(hostItem)) {
     return false;
@@ -688,4 +691,40 @@ export function bindItemUpgradeSheet(root, app, moduleApi) {
   }, { capture: true });
 
   return true;
+}
+
+const AVAILABILITY_RENDERS = new WeakMap();
+
+export function createUpgradeAvailabilityHtml(item, projection) {
+  const availability = projection.availability;
+  return `<div class="rm-item-upgrades__availability" data-upgrade-availability="${escapeHtml(availability.decision)}">
+    <strong>${escapeHtml(item.name ?? "Усовершенствование")}</strong>
+    <span>${escapeHtml(availability.label)}</span>
+    <small>${escapeHtml(availability.reason)}</small>
+    ${projection.legacyOverride ? "<small>Сохранённый пользовательский профиль оставлен без изменений.</small>" : ""}
+  </div>`;
+}
+
+/** Read-only status for a source Item and all historical installed children. */
+export async function renderItemUpgradeAvailability(root, item, service) {
+  const token = {};
+  AVAILABILITY_RENDERS.set(root, token);
+  const items = isUpgradeItem(item) ? [item] : getInstalledUpgradeItems(item);
+  root.querySelector?.("[data-rebreya-upgrade-availability]")?.remove?.();
+  if (!items.length) return;
+  let html;
+  try {
+    const projections = await Promise.all(items.map(upgrade => service.getUpgradeProjection(upgrade)));
+    html = items.map((upgrade, i) => createUpgradeAvailabilityHtml(upgrade, projections[i])).join("");
+  } catch (error) {
+    html = `<p>Не удалось проверить доступность усовершенствований: ${escapeHtml(error.message)}</p>`;
+  }
+  if (AVAILABILITY_RENDERS.get(root) !== token || root.isConnected === false) return;
+  const container = root.querySelector?.("[data-rebreya-item-upgrades='true']") ?? getPanelContainer(root)
+    ?? (isUpgradeItem(item) ? root.querySelector?.("[data-tab='details'], [data-tab='description'], .window-content") : null);
+  if (!container?.append) return;
+  const status = document.createElement("section");
+  status.dataset.rebreyaUpgradeAvailability = "true";
+  status.innerHTML = html;
+  container.append(status);
 }

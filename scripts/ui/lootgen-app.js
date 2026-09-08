@@ -1,4 +1,5 @@
 ﻿import { MAGIC_ITEMS_COMPENDIUM_NAME, MODULE_ID } from "../constants.js";
+import { resolveLootgenItemValue as resolveLegacyItemValue } from "../data/item-value.js?v=1.4.250";
 import { buildLootgenStatusContent } from "./lootgen-chat.js";
 import { GEAR_COMPENDIUM_NAME } from "../constants.js";
 import {
@@ -260,13 +261,7 @@ export async function confirmLootgenTemplateRemoval(
 }
 
 export function resolveLootgenItemValue(rawValue, fallbackGold = 0) {
-  const explicit = Math.max(0, toInteger(rawValue, 0));
-  if (explicit > 0) {
-    return explicit;
-  }
-
-  const fallbackValue = toInteger(Math.round(Math.max(0, toNumber(fallbackGold, 0)) * 100), 0);
-  return Math.max(0, fallbackValue);
+  return resolveLegacyItemValue(rawValue, fallbackGold);
 }
 
 export function buildLootgenMundaneCandidate(gearItem, {

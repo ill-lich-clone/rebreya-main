@@ -167,3 +167,8 @@ Live: `https://vtt.rebreya.com/game`, world `testovyj3`, Foundry **13.351**, dnd
 
 
 Финальная проверка перед commit: `node --test tests/*.test.mjs` — **3683 passed, 0 failed, 0 skipped**. `node --check` — **706** JS/MJS файлов, **0** ошибок; `ConvertFrom-Json` — **45** JSON, **0** ошибок. `git diff --check` и `git diff --cached --check` чистые. Первый полный прогон выявил 8 устаревших version/import/compatibility-forwarder assertions; старый forwarder 1.4.248 сохранён, ожидания актуализированы и повторный полный прогон прошёл. Рабочая ветка lich_branch; fetch перед commit: HEAD...origin/main=341/0, HEAD...origin/lich_branch=0/0, входящих main commits нет.
+
+
+### Повторная native проверка после входа CODEX — 2026-09-08
+
+На commit `0c71cf7f` реальные typed requests CODEX → active GM Gamemaster прошли: частичный перенос 10 → 7+3, exact retry без дубликатов, whole перенос 7 с сохранением ID; assign амулета 2 → 1+1, clear без слияния, normalize кольца 3 → 1+2, смена ring1 → ring2 с прежним ID; group → hero выдаёт один экземпляр и удаляет источник. Блокировка unknown-command снята обновлением GM-сессии. Серверная metadata по-прежнему 1.4.238, исполняемый код 1.4.249; Foundry 13.351, dnd5e 5.2.5, testovyj3, CODEX/GM → Gamemaster/GM, viewport 1292×920. Все временные Actor/Item/folder удалены; terminal journal audit оставлен. Два отклонённых QA setup запроса: group member требовал Actor ID вместо UUID; незарегистрированная временная group не прошла folder authorization. Повторены с корректными fixtures. Отдельная player-сессия и полная live fault matrix ещё не пройдены; ограничения complex transfer остаются. R3 commit/push завершены, origin/lich_branch синхронна.
