@@ -6,6 +6,43 @@ import { InventoryIngressPlanner } from "../scripts/application/inventory-ingres
 import { InventoryIngressRuleCompilerCache } from "../scripts/data/inventory-ingress-rules.js";
 import { buildInventoryIngressDescriptor } from "../scripts/data/inventory-ingress-descriptor.js";
 
+test("character import moves an upgraded container into a folder and resumes source deletion", async () => {
+  const f = makeInstanceDocumentsFixture({ quantity: 1 });
+  try {
+    f.group.flags["rebreya-main"].managedPartyGroup = true;
+    f.api.inventoryService.getInventoryActor = async () => f.group;
+    await f.hero.createEmbeddedDocuments("Item", [
+      { _id: "bag", name: "Bag", type: "container", system: { quantity: 1, currency: { gp: 7 } }, flags: { "rebreya-main": { itemUpgrades: { installed: [{ itemId: "up", slotIndex: 0 }] } } } },
+      { _id: "up", name: "Upgrade", type: "loot", system: { quantity: 1 }, flags: { "rebreya-main": { installedUpgrade: { hostItemId: "bag", hostActorId: f.hero.id, slotIndex: 0 } } } },
+      { _id: "inside", name: "Contents", type: "loot", system: { quantity: 3, container: "bag" }, flags: { custom: { note: "keep" } } }
+    ]);
+    const model = { gear: [], gearById: new Map(), materials: [], materialById: new Map(), materialByGoodId: new Map() };
+    f.api.inventoryIngressPlanner = new InventoryIngressPlanner({
+      readRules: groupActorId => f.api.inventoryService.getInventoryIngressRuleState({ groupActorId }),
+      buildDescriptor: data => buildInventoryIngressDescriptor(data, { model }), resolveDismantleOutputs: () => [],
+      compilerCache: new InventoryIngressRuleCompilerCache(), confirm: async () => ({ rootOverrideSourceKeys: [] })
+    });
+    const bag = f.hero.items.get("bag"), child = f.hero.items.get("inside"), remove = child.delete.bind(child);
+    child.delete = async () => { await remove(); f.failAt("delete", "before"); };
+    const options = { groupActorId: f.group.id, folderId: "bag" };
+    await assert.rejects(f.api.inventoryService.importDroppedItem({ uuid: bag.uuid, mutationId: "import-tree" }, options), /fault delete before/);
+    assert.equal(f.group.items.contents.length, 4);
+    assert.equal(f.hero.items.get("inside"), undefined);
+    await f.api.inventoryService.importDroppedItem({ uuid: bag.uuid }, options);
+    assert.equal(f.hero.items.contents.length, 0);
+    assert.equal(f.group.items.contents.length, 4);
+    const root = f.group.items.contents.find(i => i.name === "Bag"), upgrade = f.group.items.contents.find(i => i.name === "Upgrade"), inside = f.group.items.contents.find(i => i.name === "Contents");
+    assert.equal(root.system.currency.gp, 7);
+    assert.equal(root.flags["rebreya-main"].itemUpgrades.installed[0].itemId, upgrade.id);
+    assert.equal(upgrade.flags["rebreya-main"].installedUpgrade.hostItemId, root.id);
+    assert.equal(upgrade.flags["rebreya-main"].installedUpgrade.hostActorId, f.group.id);
+    assert.equal(inside.system.container, root.id);
+    assert.equal(inside.system.quantity, 3);
+    assert.equal(inside.flags.custom.note, "keep");
+    assert.equal(f.group.flags["rebreya-main"].inventoryFolders.itemFolderIds[root.id], "bag");
+  } finally { f.restore(); }
+});
+
 test("party take moves a nested upgraded tree once and resumes an interrupted source deletion",async()=>{
   const f=makeInstanceDocumentsFixture({quantity:1,itemFlags:{itemUpgrades:{installed:[{itemId:"up",slotIndex:0}]}}});
   try {

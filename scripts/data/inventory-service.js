@@ -1,5 +1,5 @@
 import { ItemInstanceWorkflow, itemInstanceFingerprint } from "../application/item-instance-workflow.js?v=1.4.249-item-instances";
-import { RUNTIME_ITEM_GRAPH_FLAG, buildRuntimeGraphDocuments, materializeRuntimeItemGraph } from "./runtime-item-graph.js?v=1.4.267-native-schema";
+import { RUNTIME_ITEM_GRAPH_FLAG, captureRuntimeItemGraph, buildRuntimeGraphDocuments, materializeRuntimeItemGraph } from "./runtime-item-graph.js?v=1.4.267-native-schema";
 import { INVENTORY_GRAPH_TRANSFER_KIND, isInventoryGraphItem, transferInventoryGraph } from "../application/inventory-graph-transfer.js?v=1.4.280";
 import { readLootgenPreparedComposition } from "./lootgen-prepared-item.js?v=1.4.268";
 import { ItemInstanceDocuments } from "../infrastructure/foundry/item-instance-documents.js?v=1.4.249-item-instances";
@@ -3839,6 +3839,7 @@ export class InventoryService {
       sourceKey: previewRow.sourceKey,
       sourceIdentity: foundry.utils.deepClone(previewRow.identity),
       itemData: foundry.utils.deepClone(sourceRow.itemData),
+      ...(this.#nativeImportRows.has(sourceRow) ? { nativeImportSource: foundry.utils.deepClone(this.#nativeImportRows.get(sourceRow)) } : {}),
       container: foundry.utils.deepClone(sourceRow.container),
       quantity: previewRow.quantity,
       matchedRuleId: previewRow.matchedRuleId,
@@ -3949,8 +3950,9 @@ export class InventoryService {
         const expectedIds = buildRuntimeGraphDocuments(runtimeGraph, graphOperationId, receipt.itemData, { actorId: actor.id }).documents.map(data => data._id);
         if (JSON.stringify(receipt.graphItemIds) !== JSON.stringify(expectedIds)) throw this.#inventoryReconciliationError("Prepared graph document IDs changed.");
       }
-      const recoverMissing = record.sourceOrigin === "lootgen" && record.allowPreparedLootgenGraph === true
-        && Boolean(readLootgenPreparedComposition(receipt.itemData));
+      const recoverMissing = (record.sourceOrigin === "lootgen" && record.allowPreparedLootgenGraph === true
+        && Boolean(readLootgenPreparedComposition(receipt.itemData)))
+        || (record.sourceOrigin === "import" && Boolean(row.nativeImportSource));
       const root = await materializeRuntimeItemGraph(actor, runtimeGraph, graphOperationId, receipt.itemData, { recoverMissing });
       return root.id;
     }
@@ -4008,10 +4010,13 @@ export class InventoryService {
     return item.id;
   }
 
+  #nativeImportRows = new WeakMap();
+
   #assertInventoryIngressGraphSource(rows, sourceOrigin, allowPreparedLootgenGraph) {
     for (const row of rows) {
       if (!row.itemData?.flags?.[MODULE_ID]?.[RUNTIME_ITEM_GRAPH_FLAG]) continue;
       if (sourceOrigin === "storage") continue;
+      if (sourceOrigin === "import" && this.#nativeImportRows.has(row)) continue;
       if (sourceOrigin === "lootgen" && allowPreparedLootgenGraph === true && readLootgenPreparedComposition(row.itemData)) continue;
       throw new InventoryIngressRuleError("invalid-runtime-graph", "Составной предмет принимается только от доверенного источника хранилища или лута.");
     }
@@ -7987,10 +7992,11 @@ export class InventoryService {
       });
     }
 
-    const operationId = createInventoryMutationId("inventory-import", dropData?.mutationId);
+    const operationId = await this.#resolveNativeImportMutationId(itemDocument, actor, normalizedFolderId, dropData?.mutationId);
     const prepared = await this.#prepareImportedItemIngress(actor, itemDocument, {
       folderId: normalizedFolderId,
-      serializedPlan: ingressPlan
+      serializedPlan: ingressPlan,
+      operationId
     });
     if (prepared.cancelled) return prepared.result;
     if (!game.user?.isGM && typeof this.moduleApi.socketCommandBus?.request === "function") {
@@ -8031,11 +8037,50 @@ export class InventoryService {
     });
   }
 
+  async #resolveNativeImportMutationId(itemDocument, actor, folderId, mutationId) {
+    const pending = (await this.mutationJournal.listPending()).find(record => record.sourceOrigin === "import"
+      && record.rows?.some(row => row.nativeImportSource?.itemUuid === itemDocument.uuid));
+    if (pending) {
+      const id = pending.id.slice("inventory-ingress:".length);
+      if (pending.groupActorId !== actor.id || pending.requestedFolderId !== folderId || (mutationId && mutationId !== id)) {
+        throw this.#simpleTransferError("graph-manual-review", "Сначала завершите прежний перенос предмета в ту же папку и группу.");
+      }
+      return id;
+    }
+    return createInventoryMutationId("inventory-import", mutationId);
+  }
+
   async #prepareImportedItemIngress(actor, itemDocument, {
     folderId = null,
-    serializedPlan = null
+    serializedPlan = null,
+    operationId = ""
   } = {}) {
-    const itemData = sanitizeEmbeddedItemData(itemDocument.toObject());
+    const sourceActor = isActorDocument(itemDocument.parent) ? itemDocument.parent : null;
+    const existing = operationId ? await this.mutationJournal.find(`inventory-ingress:${operationId}`) : null;
+    const saved = existing?.rows?.find(row => row.nativeImportSource);
+    if (saved && (existing.groupActorId !== actor.id || saved.nativeImportSource.itemUuid !== itemDocument.uuid
+      || saved.nativeImportSource.actorUuid !== sourceActor?.uuid || existing.requestedFolderId !== normalizeInventoryFolderTarget(folderId))) {
+      throw this.#simpleTransferError("graph-manual-review", "Источник или назначение переноса изменились.");
+    }
+    const itemData = saved ? foundry.utils.deepClone(saved.itemData) : sanitizeEmbeddedItemData(itemDocument.toObject());
+    let nativeImportSource = saved?.nativeImportSource ?? null;
+    if (sourceActor && !saved) {
+      if (itemDocument.flags?.[MODULE_ID]?.installedUpgrade?.hostItemId) throw new Error("Сначала снимите усовершенствование с предмета.");
+      if (isInventoryGraphItem(sourceActor, itemDocument)) {
+        if (Number(itemDocument.system.quantity) !== 1) throw new Error("Предмет с содержимым или усовершенствованиями переносится по одному экземпляру.");
+        if (itemDocument.system.equipped || itemDocument.flags?.[MODULE_ID]?.heldHands?.length) throw new Error("Сначала освободите руки и снимите переносимый предмет.");
+        const graph = captureRuntimeItemGraph(sourceActor, itemDocument);
+        foundry.utils.setProperty(itemData, `flags.${MODULE_ID}.${RUNTIME_ITEM_GRAPH_FLAG}`, graph);
+        nativeImportSource = { actorUuid: sourceActor.uuid, itemUuid: itemDocument.uuid };
+      }
+    }
+    if (sourceActor) {
+      const sourceIds = new Set(itemData.flags?.[MODULE_ID]?.[RUNTIME_ITEM_GRAPH_FLAG]?.nodes?.map(node => node._id) ?? [itemDocument.id]);
+      const conflict = (await this.mutationJournal.listPending()).some(record => record.id !== `inventory-ingress:${operationId}`
+        && record.rows?.some(row => row.nativeImportSource?.actorUuid === sourceActor.uuid
+          && row.itemData?.flags?.[MODULE_ID]?.[RUNTIME_ITEM_GRAPH_FLAG]?.nodes?.some(node => sourceIds.has(node._id))));
+      if (conflict) throw this.#simpleTransferError("graph-manual-review", "Предмет участвует в незавершённом переносе.");
+    }
     const quantity = Math.max(0, getRawQuantity(itemData));
     if (quantity <= 0) throw new Error("У предмета нет количества для переноса.");
     const row = {
@@ -8045,6 +8090,10 @@ export class InventoryService {
       legacyFolderId: normalizeInventoryFolderTarget(folderId),
       container: null
     };
+    if (nativeImportSource) {
+      this.#nativeImportRows.set(row, foundry.utils.deepClone(nativeImportSource));
+      if (saved && !serializedPlan) serializedPlan = JSON.parse(existing.fingerprint).serializedPlan;
+    }
     if (serializedPlan) {
       return { row, serializedPlan: foundry.utils.deepClone(serializedPlan), cancelled: false };
     }
@@ -8689,10 +8738,11 @@ export class InventoryService {
     folderId = null,
     serializedPlan = null
   } = {}) {
-    const operationId = createInventoryMutationId("inventory-import", mutationId);
+    const operationId = await this.#resolveNativeImportMutationId(itemDocument, actor, normalizeInventoryFolderTarget(folderId), mutationId);
     const prepared = await this.#prepareImportedItemIngress(actor, itemDocument, {
       folderId,
-      serializedPlan
+      serializedPlan,
+      operationId
     });
     if (prepared.cancelled) return prepared.result;
     const sourceActor = isActorDocument(itemDocument.parent) ? itemDocument.parent : null;
@@ -8705,12 +8755,16 @@ export class InventoryService {
       resolveRows: async () => {
         const livePrepared = await this.#prepareImportedItemIngress(actor, itemDocument, {
           folderId,
-          serializedPlan: prepared.serializedPlan
+          serializedPlan: prepared.serializedPlan,
+          operationId
         });
         return [livePrepared.row];
       },
-      debitRow: async () => {
+      debitRow: async (row, context) => {
         if (!sourceActor) return;
+        if (this.#nativeImportRows.has(row)) {
+          return this.#debitNativeImportGraph(sourceActor, actor, row, context);
+        }
         const sourceStillExists = () => sourceActor.items?.get?.(itemDocument.id)
           ?? sourceActor.items?.contents?.find?.((candidate) => candidate.id === itemDocument.id)
           ?? null;
@@ -8722,6 +8776,52 @@ export class InventoryService {
         }
       }
     });
+  }
+
+  async #debitNativeImportGraph(sourceActor, targetActor, row, { batchMutationId, targetReceipts }) {
+    const operationId = `inventory-ingress:${batchMutationId}`;
+    let record = await this.mutationJournal.find(operationId);
+    const saved = record?.rows?.find(entry => entry.sourceKey === row.sourceKey);
+    if (!saved?.nativeImportSource || saved.nativeImportSource.actorUuid !== sourceActor.uuid) {
+      throw this.#simpleTransferError("graph-manual-review", "Не найден исходный состав переносимого предмета.");
+    }
+    const graph = saved.itemData.flags[MODULE_ID][RUNTIME_ITEM_GRAPH_FLAG];
+    const expected = new Map(graph.nodes.map(data => [data._id, data]));
+    const snapshotKey = data => { const copy = foundry.utils.deepClone(data); delete copy._stats; return itemInstanceFingerprint(copy); };
+    const verifySource = allowMissing => {
+      for (const [id, data] of expected) {
+        const item = sourceActor.items.get(id);
+        if (!item && allowMissing) continue;
+        if (!item || snapshotKey(item.toObject()) !== snapshotKey(data)) throw this.#simpleTransferError("graph-manual-review", "Исходный состав предмета изменился во время переноса.");
+      }
+      for (const item of sourceActor.items.contents ?? sourceActor.items.values()) {
+        if (!expected.has(item.id) && (expected.has(item.system?.container) || expected.has(item.flags?.[MODULE_ID]?.installedUpgrade?.hostItemId))) {
+          throw this.#simpleTransferError("graph-manual-review", "В переносимый предмет добавлено новое содержимое.");
+        }
+      }
+    };
+    verifySource(saved.sourceDebitStarted === true);
+    for (const receipt of targetReceipts) {
+      if (!receipt.graphItemIds?.length || receipt.graphItemIds.some(id => !targetActor.items.get(id))) {
+        throw this.#simpleTransferError("graph-manual-review", "Полученный предмет или содержимое отсутствуют; повторная выдача запрещена.");
+      }
+      await this.#awaitSourceDepletionAuthority(() => materializeRuntimeItemGraph(targetActor, graph,
+        `${operationId}:${row.sourceKey}:${receipt.outputIndex}`, receipt.itemData, { recoverMissing: true }));
+    }
+    if (!saved.sourceDebitStarted) {
+      record = await this.#awaitSourceDepletionAuthority(() => this.mutationJournal.checkpoint(operationId, "prepared", "prepared", {
+        rows: record.rows.map(entry => entry.sourceKey === row.sourceKey ? { ...entry, sourceDebitStarted: true } : entry)
+      }));
+    }
+    for (const id of [...expected.keys()].reverse()) {
+      verifySource(true);
+      const item = sourceActor.items.get(id);
+      if (!item) continue;
+      try { await this.#awaitSourceDepletionAuthority(() => item.delete()); }
+      catch (error) { if (sourceActor.items.get(id)) throw error; }
+    }
+    this.#assertSourceDepletionAuthority();
+    if ([...expected.keys()].some(id => sourceActor.items.get(id))) throw this.#simpleTransferError("graph-manual-review", "Не подтверждено удаление исходного содержимого.");
   }
 
 }
