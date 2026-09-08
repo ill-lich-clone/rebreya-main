@@ -1,6 +1,7 @@
-﻿import { MODULE_ID } from "../constants.js";
+import { getLootgenContainerSummary } from "./lootgen-container-preview.js?v=1.4.269";
+import { MODULE_ID } from "../constants.js";
 import { resolveLootgenItemValue as resolveLegacyItemValue } from "../data/item-value.js?v=1.4.250";
-import { buildLootgenStatusContent, formatLootgenUpgradeSummary, openLootgenRowPreview } from "./lootgen-chat.js?v=1.4.263";
+import { buildLootgenStatusContent, formatLootgenUpgradeSummary, openLootgenRowPreview } from "./lootgen-chat.js?v=1.4.269";
 import {
   buildLootgenRowIdentity,
   normalizeBrokenEquipmentChance,
@@ -11,8 +12,8 @@ import {
   buildLootgenTypeFilterOptions,
   resolveMagicLootgenTypeLabel
 } from "./lootgen-type-filters.js?v=1.4.258";
-import { buildLootgenGearTypeOptions, readLootgenMagicDocuments } from "../data/lootgen-source-catalog.js?v=1.4.258";
-import { normalizeLootgenForm } from "../data/lootgen-generator.js?v=1.4.256-composed";
+import { buildLootgenGearTypeOptions, readLootgenMagicDocuments } from "../data/lootgen-source-catalog.js?v=1.4.266";
+import { normalizeLootgenForm } from "../data/lootgen-generator.js?v=1.4.266";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
@@ -269,7 +270,7 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.magicTypeFilters = {};
     this.magicPercent = 25;
     this.brokenEquipmentChance = 0;
-    Object.assign(this,{enableUpgrades:false,upgradeChance:0,maxUpgradesPerItem:1,upgradeTypes:[],upgradeRanks:[]});
+    Object.assign(this,{enableUpgrades:false,upgradeChance:0,maxUpgradesPerItem:1,upgradeTypes:[],upgradeRanks:[],enableFilledContainers:false,filledContainerChance:0,generationDepth:1});
     this.pendingPreparation=null;
     this.generationInFlight=null;
     this.pendingPreparedClaims=new Map();
@@ -336,9 +337,10 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
     if(result?.state?.resultVersion!==2 || result.state.generationReady!==true)throw new Error("Подготовленная добыча недоступна.");
     const state=foundry.utils.deepClone(result.state);
     return {...state,messageId:result.messageId,hasResult:state.rows.length>0 || Number(state.coins?.totalCopper)>0,
+      internalCurrencyValue:Math.max(0,toNumber(state.currencyValue,0)-toNumber(state.coins?.totalCopper,0)),
       coins:state.coinsClaimed?normalizeCoins({}):normalizeCoins(state.coins),
       rows:state.rows.map(row=>({...row,chatLootId:state.lootId,chatRowId:row.rowId,
-        upgradeSummaries:(row.upgrades??[]).map(formatLootgenUpgradeSummary)}))};
+        containerSummary:getLootgenContainerSummary(row),upgradeSummaries:(row.upgrades??[]).map(formatLootgenUpgradeSummary)}))};
   }
 
   #cloneGeneratedResult({referenceOnly=false}={}) {
@@ -372,6 +374,7 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
       magicPercent: this.magicPercent,
       brokenEquipmentChance: this.brokenEquipmentChance,
       enableUpgrades:this.enableUpgrades,upgradeChance:this.upgradeChance,maxUpgradesPerItem:this.maxUpgradesPerItem,
+      enableFilledContainers:this.enableFilledContainers,filledContainerChance:this.filledContainerChance,generationDepth:this.generationDepth,
       upgradeTypes:this.upgradeTypes,upgradeRanks:this.upgradeRanks
     });
   }
@@ -391,7 +394,7 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.magicTypeFilters = { ...form.magicTypeFilters };
     this.magicPercent = form.magicPercent;
     this.brokenEquipmentChance = form.brokenEquipmentChance;
-    for(const key of ["enableUpgrades","upgradeChance","maxUpgradesPerItem","upgradeTypes","upgradeRanks"])this[key]=foundry.utils.deepClone(form[key]);
+    for(const key of ["enableUpgrades","upgradeChance","maxUpgradesPerItem","upgradeTypes","upgradeRanks","enableFilledContainers","filledContainerChance","generationDepth"])this[key]=foundry.utils.deepClone(form[key]);
     return form;
   }
 
@@ -516,7 +519,7 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
       return this.generationInFlight.promise;
     }
     const promise=(async()=>{
-      if(form.enableUpgrades){
+      if(form.enableUpgrades || form.enableFilledContainers){
         if(this.pendingPreparation?.key!==key)this.pendingPreparation={key,operationId:randomID()};
         const result=await this.moduleApi.prepareLootgenGeneratedResult(form,{operationId:this.pendingPreparation.operationId});
         this.generated=this.#projectPreparedResult(result);
@@ -737,6 +740,7 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
         magicPercent: this.magicPercent,
         brokenEquipmentChance: this.brokenEquipmentChance,
         enableUpgrades:this.enableUpgrades,upgradeChance:this.upgradeChance,maxUpgradesPerItem:this.maxUpgradesPerItem,
+        enableFilledContainers:this.enableFilledContainers,filledContainerChance:this.filledContainerChance,generationDepth:this.generationDepth,
         upgradeTypes:this.upgradeTypes,upgradeRanks:this.upgradeRanks,
         upgradeTypeOptions:["Материал","Зачарование","Проклятье"].map(value=>({value,checked:this.upgradeTypes.includes(value)})),
         upgradeRankOptions:Array.from({length:10},(_,index)=>({value:index+1,checked:this.upgradeRanks.includes(index+1)})),
@@ -751,6 +755,7 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
         hasRows: (this.generated.rows ?? []).length > 0,
         hasCoins: Number(this.generated.coins?.totalCopper ?? 0) > 0,
         coinsLabel: formatCoinsLabel(this.generated.coins ?? {}),
+        internalCurrencyValue: toNumber(this.generated.internalCurrencyValue,0),
         spentGold: roundNumber(toNumber(this.generated.spentValue, 0) / 100, 2)
       }
     };
@@ -814,7 +819,7 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
             return;
           }
 
-          if (fieldName === "magicPercent" || fieldName === "brokenEquipmentChance" || fieldName === "coinBudgetPercent" || fieldName === "upgradeChance") {
+          if (fieldName === "magicPercent" || fieldName === "brokenEquipmentChance" || fieldName === "coinBudgetPercent" || fieldName === "upgradeChance" || fieldName === "filledContainerChance") {
             this[fieldName] = fieldName === "brokenEquipmentChance"
               ? normalizeBrokenEquipmentChance(input.value)
               : Math.min(100, Math.max(0, toInteger(input.value, this[fieldName])));
@@ -827,7 +832,7 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
             input.value = String(this[fieldName]);
             return;
           }
-          if(fieldName==="maxUpgradesPerItem"){this[fieldName]=Math.min(3,Math.max(1,toInteger(input.value,1)));input.value=String(this[fieldName]);return;}
+          if(fieldName==="maxUpgradesPerItem" || fieldName==="generationDepth"){this[fieldName]=Math.min(3,Math.max(1,toInteger(input.value,1)));input.value=String(this[fieldName]);return;}
 
           this[fieldName] = Math.max(0, toInteger(input.value, this[fieldName]));
           input.value = String(this[fieldName]);

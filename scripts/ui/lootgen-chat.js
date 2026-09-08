@@ -1,3 +1,4 @@
+import { getLootgenContainerSummary, renderLootgenContainerPreview } from "./lootgen-container-preview.js?v=1.4.269";
 import { MODULE_ID } from "../constants.js";
 
 const COIN_MULTIPLIERS = {
@@ -145,6 +146,12 @@ export async function openLootgenRowPreview(message, rowId,{baseOnly=false}={}) 
   if (!row) {
     throw new Error("Предмет добычи не найден.");
   }
+  if(!baseOnly && getLootgenState(message).resultVersion===2 && row.descriptor?.container){
+    return foundry.applications.api.DialogV2.wait({window:{title:"Содержимое контейнера"},classes:["rebreya-lootgen-preview"],position:{width:720},
+      content:renderLootgenContainerPreview(row),
+      buttons:[{action:"base",label:"Открыть оболочку",callback:()=>openLootgenRowPreview(message,rowId,{baseOnly:true})},
+        {action:"close",label:"Закрыть",callback:()=>true}],rejectClose:false});
+  }
   if(!baseOnly && getLootgenState(message).resultVersion===2 && row.upgrades?.length){
     return foundry.applications.api.DialogV2.wait({window:{title:"Состав предмета"},
       content:buildLootgenChatContent({...getLootgenState(message),rows:[row],coins:{totalCopper:0},published:false},{showOpenWindow:false}),
@@ -219,6 +226,7 @@ async function claimLootgenRowToSelf(message, lootId, rowId) {
 }
 
 function renderRow(row) {
+  const containerSummary=getLootgenContainerSummary(row);
   const claimed = Boolean(row.claimed);
   const durabilityState = String(row?.itemData?.flags?.[MODULE_ID]?.durability?.state ?? "").trim();
   const isBroken = row.isBroken === true || durabilityState === "broken";
@@ -244,6 +252,7 @@ function renderRow(row) {
       <div class="rm-chat-loot__row-main">
         <strong>${escapeHtml(row.name || "Предмет")}</strong>
         <span>${escapeHtml(metaParts.filter(Boolean).join(" • "))}</span>
+        ${containerSummary ? `<span class="rm-chat-loot__meta">${escapeHtml(containerSummary)}</span>` : ""}
         ${isBroken ? `<span class="rm-chat-loot__condition rm-chat-loot__condition--broken">Сломано</span>` : ""}
       </div>
       <button
@@ -260,6 +269,7 @@ function renderRow(row) {
 }
 
 function renderLootgenChatRow(row) {
+  const containerSummary=getLootgenContainerSummary(row);
   const claimed = Boolean(row.claimed);
   const durabilityState = String(row?.itemData?.flags?.[MODULE_ID]?.durability?.state ?? "").trim();
   const isBroken = row.isBroken === true || durabilityState === "broken";
@@ -286,6 +296,7 @@ function renderLootgenChatRow(row) {
         <strong>${escapeHtml(row.name || "Предмет")}</strong>
         <span class="rm-chat-loot__meta">${escapeHtml(metaParts.filter(Boolean).join(" • "))}</span>
         ${(row.upgrades??[]).map(upgrade=>`<span class="rm-chat-loot__meta">${escapeHtml(formatLootgenUpgradeSummary(upgrade))}</span>`).join("")}
+        ${containerSummary ? `<span class="rm-chat-loot__meta">${escapeHtml(containerSummary)}</span>` : ""}
         ${isBroken ? `<span class="rm-chat-loot__condition rm-chat-loot__condition--broken">Сломано</span>` : ""}
       </div>
       <div class="rm-chat-loot__row-actions">
@@ -334,6 +345,7 @@ export function buildLootgenChatContent(state = {},{showOpenWindow=true}={}) {
       <p>${state.generationReady === true ? "Результат сохранён." : "Подготовка результата…"}</p>
       <ul>${rows.map(row=>`<li>${escapeHtml(row.name)} ×${escapeHtml(row.quantity)} — ${escapeHtml(formatNumber(row.totalValue))} value
         ${row.claimed?" · Забрано":""}
+        ${row.descriptor?.container ? `<small> · ${escapeHtml(getLootgenContainerSummary(row))}</small>` : ""}
         ${row.upgrades?.length ? `<small> · ${row.upgrades.map(upgrade=>escapeHtml(formatLootgenUpgradeSummary(upgrade))).join(", ")}</small>` : ""}</li>`).join("")}</ul>
       <p>Монеты: ${escapeHtml(formatCoinsLabel(state.coins))}</p>
       ${showOpenWindow?`<button type="button" data-lootgen-chat-action="open-prepared" data-lootgen-chat-id="${escapeHtml(state.lootId)}" ${state.generationReady===true?"":"disabled"}>Открыть в лутгене</button>`:""}</section>`;

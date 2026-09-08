@@ -127,6 +127,20 @@
                   {{/each}}
                 </div>
               </section>
+            <section class="rm-lootgen-type-filter">
+              <label class="rm-lootgen-check">
+                <input type="checkbox" {{#if form.enableFilledContainers}}checked{{/if}} data-field="enableFilledContainers">
+                <span>Заполненные контейнеры</span>
+              </label>
+              <p class="rm-muted">Оболочка, содержимое, усовершенствования и монеты входят в общий бюджет и учитывают вместимость.</p>
+              <label class="rm-field"><span>Шанс заполнения, %</span>
+                <input type="number" min="0" max="100" value="{{form.filledContainerChance}}" data-field="filledContainerChance">
+              </label>
+              <label class="rm-field"><span>Глубина вложения</span>
+                <input type="number" min="1" max="3" value="{{form.generationDepth}}" data-field="generationDepth">
+              </label>
+              <p class="rm-muted">1 — вещи в контейнере; 2–3 — допускаются контейнеры внутри.</p>
+            </section>
             <div class="rm-lootgen-type-filters">
               {{#if form.hasGearTypeOptions}}
                 <section class="rm-lootgen-type-filter">
@@ -237,11 +251,15 @@
             <strong>{{rmNum generated.totalItems precision=0}}</strong>
           </div>
           <div class="rm-compact-pill">
-            <span>Потрачено</span>
+            <span>Предметы без монет</span>
             <strong>{{rmNum generated.spentValue precision=0}} value</strong>
           </div>
+          {{#if generated.internalCurrencyValue}}<div class="rm-compact-pill">
+            <span>Монеты в контейнерах</span>
+            <strong>{{rmNum generated.internalCurrencyValue precision=0}} value</strong>
+          </div>{{/if}}
           <div class="rm-compact-pill">
-            <span>Монеты</span>
+            <span>Монеты снаружи</span>
             <strong>{{generated.coinsLabel}}</strong>
           </div>
         </section>
@@ -257,7 +275,7 @@
                       class="rm-link-button rm-link-button--accent"
                       data-action="lootgen-open-entry"
                       data-row-index="{{rowIndex}}"
-                      title="Открыть предмет"
+                      title="{{#if containerSummary}}Посмотреть содержимое{{else}}Открыть предмет{{/if}}"
                     >
                       {{name}}
                     </button>
@@ -265,6 +283,7 @@
                   <p class="rm-muted">
                     {{typeLabel}} • ранг {{rank}} • {{rmNum value precision=0}} value • x{{rmNum quantity precision=0}}
                   </p>
+                  {{#if containerSummary}}<p class="rm-muted">{{containerSummary}}</p>{{/if}}
                   {{#each upgradeSummaries}}<p class="rm-muted">{{this}}</p>{{/each}}
                   {{#if descriptor}}<p class="rm-muted">Полная стоимость: {{rmNum totalValue precision=0}} value</p>{{/if}}
                   {{#if claimed}}<span class="rm-lootgen-condition">Забрано</span>{{/if}}

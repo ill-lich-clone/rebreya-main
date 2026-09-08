@@ -201,10 +201,21 @@ test("lootgen window delegates selection to the shared source catalog",async()=>
 test("upgrade form choices round trip through the window and template",async()=>{
   let saved;
   const app=new LootgenApp({getModel:async()=>({gear:[]}),saveLootgenTemplate:async payload=>{saved=payload;return payload;}});
-  const fields={enableUpgrades:true,upgradeChance:75,maxUpgradesPerItem:3,upgradeTypes:["Материал"],upgradeRanks:[2,4]};
+  const fields={enableUpgrades:true,upgradeChance:75,maxUpgradesPerItem:3,upgradeTypes:["Материал"],upgradeRanks:[2,4],enableFilledContainers:true,filledContainerChance:65,generationDepth:3};
   app.applyLootgenTemplate({form:fields});await app.saveTemplateFromName("Upgraded");
   const context=await app._prepareContext();
   for(const [key,value] of Object.entries(fields)){assert.deepEqual(saved.form[key],value);assert.deepEqual(context.form[key],value);}
+});
+
+test("filled-only window generation uses a stable GM preparation request",async()=>{
+  const calls=[],state={resultVersion:2,generationReady:true,published:false,lootId:"filled",rows:[],coins:{totalCopper:0}};
+  const app=new LootgenApp({prepareLootgenGeneratedResult:async(form,options)=>{calls.push({form,options});if(calls.length===1)throw new Error("retry");return {lootId:"filled",messageId:"message",state};},
+    lootgenSourceCatalog:{generate:()=>{throw new Error("filled tree must use preparation");}}});
+  const form={enableFilledContainers:true,filledContainerChance:100,generationDepth:2,enableUpgrades:false};
+  await assert.rejects(app.generateFromForm(form),/retry/u);
+  await app.generateFromForm(form);
+  assert.equal(calls.length,2);assert.equal(calls[0].options.operationId,calls[1].options.operationId);
+  for(const [key,value]of Object.entries(form))assert.equal(calls[1].form[key],value);
 });
 
 test("upgraded generation retries the same preparation and preserves separate trusted compositions on reopen",async()=>{
@@ -262,4 +273,11 @@ test("prepared window actions publish the same result, preserve claim IDs after 
 
 test("lootgen template path uses a server-loadable extension without URL parameters",()=>{
   assert.equal(LootgenApp.PARTS.main.template,"modules/rebreya-main/templates/lootgen-app.hbs");
+});
+
+test("claimed external coins do not become internal container coins when a window reopens",async()=>{
+  const state={resultVersion:2,generationReady:true,lootId:"coins",rows:[],coinsClaimed:true,coins:{gp:3,totalCopper:300},currencyValue:500};
+  const app=new LootgenApp({getLootgenGeneratedResult:()=>({messageId:"message",state})},{sharedResult:{resultVersion:2,lootId:"coins"}});
+  const context=await app._prepareContext();
+  assert.equal(context.generated.internalCurrencyValue,200);assert.equal(context.generated.coins.totalCopper,0);
 });

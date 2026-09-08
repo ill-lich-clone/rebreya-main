@@ -91,6 +91,11 @@ test("generated filled loot is persisted as a validated complete graph with one 
     assert.equal(state.rows.length,1);assert.equal(state.rows[0].itemData.flags['rebreya-main'].lootgenChat,undefined);
     assert.equal(state.spentValue+state.currencyValue+state.unusedValue,500);
     assert.equal(state.rows[0].totalValue+state.coins.totalCopper+state.unusedValue,500);
+    const root=state.rows[0].compositionValues.find(entry=>entry.instanceKey===state.rows[0].descriptor.instanceKey);
+    assert.equal(root.baseValue,30);assert.equal(root.upgradeValue,0);
+    assert.equal(root.baseValue+root.upgradeValue+root.contentsValue+root.currencyValue,root.totalValue);
+    assert.equal(root.totalValue,state.rows[0].totalValue);
+    assert.ok(state.rows[0].compositionValues.length>1);
   }
 });
 

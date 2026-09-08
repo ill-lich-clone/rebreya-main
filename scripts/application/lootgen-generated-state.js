@@ -91,7 +91,11 @@ export async function buildLootgenGeneratedState(form,{operationId,lootId,author
       const source=snapshot.model.gear.find(row=>row.id===upgrade.sourceId);
       return {...structuredClone(upgrade),name:String(source?.name??upgrade.sourceId),decision:entry.decision};
     });
-    rows.push({...structuredClone(row),rowId,rowIndex,descriptor,itemData,upgrades,itemId:"",itemUuid:"",
+    const compositionValues=descriptor.container===null?undefined:projectLootgenDescriptorTree(descriptor).map(entry=>{
+      const value=evaluateItemValue(entry.descriptor,snapshot.catalogReader);
+      return {instanceKey:entry.descriptor.instanceKey,...value,contentsValue:value.contentsValue-entry.currencyValue,currencyValue:entry.currencyValue};
+    });
+    rows.push({...structuredClone(row),rowId,rowIndex,descriptor,itemData,upgrades,...(compositionValues?{compositionValues}:{}),itemId:"",itemUuid:"",
       name:itemData.name??row.name,img:itemData.img??row.img??"",claimed:false});
   }
   return {lootId,createdBy:authorId,appKey:"",rows,coins:structuredClone(generated.coins),coinsClaimed:generated.coins.totalCopper<=0,

@@ -807,3 +807,25 @@ test("composed preview shows saved choices and total value without creating an I
     assert.doesNotMatch(shown.content,/data-lootgen-chat-action/u);assert.equal(shown.window.title,"Состав предмета");
   }finally{restore();}
 });
+
+test("filled container chat has one claimable root and a read-only saved tree preview",async()=>{
+  const restore=installLootgenChatFoundryStubs();let shown;
+  try{
+    foundry.applications={api:{DialogV2:{wait:async options=>{shown=options;return true;}}}};
+    const {makePreparedContainerGraph}=await import("./helpers/lootgen-prepared-container-fixture.mjs");
+    const {buildLootgenPreparedItem}=await import("../scripts/data/lootgen-prepared-item.js");
+    const {descriptor,graph}=await makePreparedContainerGraph();
+    const row={rowId:"root-row",name:"Chest",quantity:1,totalValue:7000,descriptor,itemData:buildLootgenPreparedItem(descriptor,{graph,unitValue:7000})};
+    const state={resultVersion:2,published:true,generationReady:true,lootId:"loot",rows:[row],coins:{totalCopper:0}};
+    const {openLootgenRowPreview,buildLootgenChatContent}=await import("../scripts/ui/lootgen-chat.js?container-preview");
+    const html=buildLootgenChatContent(state);
+    assert.match(html,/Внутри: 1 предмет/u);
+    assert.equal((html.match(/data-lootgen-chat-action="claim-row-self"/gu)??[]).length,1);
+    assert.doesNotMatch(html,/data-lootgen-chat-row-id="child"/u);
+    await openLootgenRowPreview({getFlag:()=>state},"root-row");
+    assert.equal(shown.window.title,"Содержимое контейнера");assert.deepEqual(shown.classes,["rebreya-lootgen-preview"]);
+    assert.match(shown.content,/child/u);assert.match(shown.content,/zacharovanie-ostroty/u);
+    assert.doesNotMatch(shown.content,/data-lootgen-chat-action|draggable|<button/u);
+    assert.deepEqual(shown.buttons.map(button=>button.action),["base","close"]);
+  }finally{restore();}
+});

@@ -101,7 +101,7 @@ export function debitLootgenBudget(remaining, amount) {
 
 **Файлы:** scripts/ui/lootgen-app.js, scripts/ui/lootgen-chat.js, templates/lootgen-app.hbs, профильный chat template/styles; scripts/application/loot-claim-service.js, scripts/main.js; tests/lootgen-chat.test.mjs, tests/loot-claim-service.test.mjs, tests/lootgen-app-context.test.mjs.
 
-- [ ] Показывать container одной top-level забираемой строкой. Preview раскрывает дерево и breakdown shell/upgrades/contents/internal coins; отображение не создаёт новые rows и не запускает random.
+- [x] Показывать container одной top-level забираемой строкой. Preview раскрывает дерево и breakdown shell/upgrades/contents/internal coins; отображение не создаёт новые rows и не запускает random.
 - [x] Chat claim принимает только top-level row ID. Нельзя отправить child ID из preview либо parent+child одновременно; rejected request не делает частичную выдачу обходным путём.
 - [ ] После materialization частичный доступ идёт через существующий Storage UI. Там сохраняются прежние правила доступа/папок/переноса; не добавлять второй mini-inventory внутри Chat.
 - [ ] Два разных сундука не aggregate даже с одинаковыми source/contents. Reload и смена GM перечитывают trusted persisted result. Удалённый/забранный target не регенерируется при повторном открытии.
@@ -160,3 +160,12 @@ Canonical StorageContainerItemService получил единый detached plann
 Native testovyj3/CODEX13.351/dnd5e5.2.5: настоящее дерево38 Item, state263874 bytes, value5003 до/после native grant/capture, полный ledger10000; QA Actor удалён. Chat publish/active-GM socket этим тестом не выполнялись. Открыто: controls enableFilledContainers/chance/depth, preview tree и breakdown, storage template path, полный пользовательский lifecycle/две сессии.
 
 Проверки 1.4.268: focused lootgen/storage/inventory/contracts — 580 passed / 0 failed; после strict top-level claim focused loot-claim-service/group-command-dispatch/inventory-mutation-recovery —154/0. Итоговый node --test tests/*.test.mjs —3940 passed / 0 failed. node --check —784 JS/MJS; JSON parse —46; ошибок0. git diff --check чисто. Live evidence указан выше; UI и multiplayer checks остаются открыты.
+
+
+## R9.4 — настройки и просмотр дерева (1.4.269)
+
+В окне доступны enableFilledContainers/chance/depth; эти поля сохраняются в шаблоне, filled-only использует ту же устойчивую подготовку GM. Saved compositionValues содержит плоскую разбивку цены каждого узла. Контейнер остаётся одной забираемой строкой; DialogV2 раскрывает tree, улучшения, основу/contents/internal coins/итого без дочерних действий. Старые сохранённые строки без breakdown показывают состав без переоценки. Монеты снаружи и внутри различаются и не дублируются после claim внешних монет.
+
+Native testovyj3, CODEX, Foundry13.351/dnd5e5.2.5, viewport1292×920: detached actual catalog result, 26 hosts (25 внутри), 23 upgrades, root5995 + external4005 =10000; предметы4011 + внутренние1984 + внешние4005=10000. UI использовал read-only projection API с контрактом persisted v2; настоящие Chat/socket/claim в этом тесте не выполнялись. Preview открывался кнопкой строки: начало дерева сверху, scroll только content, footer виден; chance135→100/depth9→3. QA окна закрыты, временный stylesheet удалён; world Documents не создавались. Полный multiuser lifecycle и storage-template path остаются открытыми.
+
+Проверки1.4.269: focused50/0; module-manifest33/0; `node --test tests/*.test.mjs` — **3946 passed / 0 failed**. Первый полный прогон3942/4 выявил только устаревшие version/cache assertions, после обновления ожиданий повторный полный прогон чист. `node --check`786 JS/MJS и JSON parse46 —0ошибок; изменённый после прогона manifest test отдельно проверен `node --check`. `git diff --check` чисто.

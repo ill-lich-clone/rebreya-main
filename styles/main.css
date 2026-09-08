@@ -13823,3 +13823,24 @@ summary:focus-visible {
 .rm-disarm-chat h3 { margin-block: 0 .6rem; }
 .rm-disarm-actions { display: flex; gap: .5rem; margin-block: .5rem; }
 .rm-disarm-actions[hidden], .rm-disarm-chat button[hidden] { display: none; }
+.rebreya-lootgen-preview {
+  max-width: calc(100vw - 32px);
+  max-height: calc(100dvh - 32px);
+}
+.rebreya-lootgen-preview .window-content { min-height: 0; overflow: hidden; }
+.rebreya-lootgen-preview .dialog-form { min-height: 0; overflow: hidden; }
+.rebreya-lootgen-preview .dialog-content { min-height: 0; overflow: auto; }
+.rm-lootgen-shell .rm-compact-pill > span { overflow-wrap: anywhere; }
+.rm-lootgen-tree { color: var(--color-text-primary, #ddd); }
+.rm-lootgen-tree__intro { font-weight: 600; }
+.rm-lootgen-tree__roots, .rm-lootgen-tree__children { margin: 0; padding: 0; list-style: none; }
+.rm-lootgen-tree__children { margin: 8px 0 0 12px; padding-left: 12px; border-left: 2px solid #b99b6355; }
+.rm-lootgen-tree__node { margin: 8px 0; }
+.rm-lootgen-tree__node > details { padding: 10px; border: 1px solid #b99b6355; border-radius: 8px; }
+.rm-lootgen-tree__node summary { cursor: pointer; overflow-wrap: anywhere; }
+.rm-lootgen-tree__node summary strong { display: inline-block; margin-left: 12px; color: #b99b63; }
+.rm-lootgen-tree__prices { display: grid; grid-template-columns: repeat(auto-fit, minmax(125px, 1fr)); gap: 8px; margin: 12px 0 0; }
+.rm-lootgen-tree__prices > div { padding: 6px; background: #8881; border-radius: 4px; }
+.rm-lootgen-tree__prices dt { font-size: 11px; opacity: .8; }
+.rm-lootgen-tree__prices dd { margin: 4px 0 0; font-weight: 600; }
+.rm-lootgen-tree__upgrades { padding-left: 20px; margin: 10px 0 0; }
