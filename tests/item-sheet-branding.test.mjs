@@ -232,6 +232,30 @@ test("item sheets with an owning actor do not render character sheet branding", 
   }
 });
 
+test("character art menu is owner-only, idempotent and excluded from owned item sheets", async () => {
+  const stubs = installStubs();
+  try {
+    const { registerDnd5eSheetExtensions } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?sheet-art-menu=${Date.now()}`);
+    registerDnd5eSheetExtensions({});
+    const actor = new stubs.Actor();
+    actor.type = "character"; actor.isOwner = true;
+    const menu = stubs.hooks.get("getHeaderControlsApplicationV2");
+    const controls = [{ action: "configure" }];
+    menu({ actor, document: actor }, controls);
+    menu({ actor, document: actor }, controls);
+    assert.deepEqual(controls.map(control => control.action), ["configure", "rebreyaSheetArt"]);
+    actor.isOwner = false;
+    const observerControls = [];
+    menu({ actor, document: actor }, observerControls);
+    assert.equal(observerControls.length, 0);
+    actor.isOwner = true;
+    const item = new stubs.Item(); item.actor = actor;
+    const itemControls = [];
+    menu({ actor, document: item, item }, itemControls);
+    assert.equal(itemControls.length, 0);
+  } finally { stubs.restore(); }
+});
+
 test("upgradeable item sheets expose upgrades in a separate Mods tab", async () => {
   const stubs = installStubs();
   try {

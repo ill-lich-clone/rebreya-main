@@ -13,6 +13,7 @@ import {
 } from "../constants.js";
 import { registerCraftsmanGadgetItemType } from "./craftsman-gadget-item-type.js";
 import { bringAppToFront } from "../ui.js";
+import { bindCharacterSheetArt, unbindCharacterSheetArt, openCharacterSheetArtEditor } from "../ui/character-sheet-art.js?v=1.4.283-mask-resize";
 import { bindAnchoredTooltips } from "../ui/anchored-overlay.js?v=1.4.247-anchored-overlays";
 import { createStableGearDocumentId } from "../data/gear-document-ids.js";
 import { buildRebreyaArtisanToolConfig } from "../data/rebreya-tool-proficiencies.js";
@@ -7266,9 +7267,24 @@ export function extendDnd5eItemTypes() {
   };
 }
 
+let sheetArtControlsRegistered = false;
+
 export function registerDnd5eSheetExtensions(moduleApi) {
   if (!isDnd5eWorld() || !CONFIG.DND5E) {
     return;
+  }
+
+  if (!sheetArtControlsRegistered) {
+    sheetArtControlsRegistered = true;
+    Hooks.on("getHeaderControlsApplicationV2", (app, controls) => {
+      const actor = getActorFromSheetApp(app);
+      if (!isActorSheetRenderApp(app) || actor?.type !== "character" || !actor.isOwner) return;
+      if (controls.some(control => control.action === "rebreyaSheetArt")) return;
+      controls.push({ action: "rebreyaSheetArt", label: "Оформление чарника", icon: "fa-solid fa-paintbrush",
+        onClick: () => openCharacterSheetArtEditor(actor, app).catch(error => ui.notifications?.error(error.message)) });
+    });
+    Hooks.on("closeApplicationV2", app => unbindCharacterSheetArt(app.element));
+    Hooks.on("closeActorSheet", app => unbindCharacterSheetArt(app.element?.[0] ?? app.element));
   }
 
   const multiSubclassRegistered = registerCraftsmanMultiSubclassIntegration();
@@ -7341,6 +7357,7 @@ export function registerDnd5eSheetExtensions(moduleApi) {
         console.error(`${MODULE_ID} | Failed to enhance the native Craftsman class card.`, error);
       }
       bindCharacterSheetBranding(root);
+      bindCharacterSheetArt(root, actor);
       bindHeroDollPanel(root, app, moduleApi);
       bindCharacterDowntimePanel(root, app, moduleApi);
       try {
@@ -7464,6 +7481,7 @@ export function registerDnd5eSheetExtensions(moduleApi) {
         console.error(`${MODULE_ID} | Failed to enhance the native Craftsman class card on ApplicationV2 render.`, error);
       }
       bindCharacterSheetBranding(root);
+      bindCharacterSheetArt(root, actor);
       bindHeroDollPanel(root, app, moduleApi);
       bindCharacterDowntimePanel(root, app, moduleApi);
       try {
