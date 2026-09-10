@@ -33,9 +33,9 @@ export function sheetArtGeometry(art, width, height) {
     y: (height - imageHeight) / 2 + art.y * height, width: imageWidth, height: imageHeight };
 }
 
-export function sheetArtBounds(width, height) {
-  return { x: -width * 0.1, y: -height * 0.1,
-    width: width + width / 10 - Math.min(64, width * 0.2), height: height * 1.2 };
+export function sheetArtPreview(width, height, { zoom = 1, panX = 0, panY = 0 } = {}) {
+  const w = width * 1.5 / zoom, h = height * 1.5 / zoom;
+  return { x: (width - w) / 2 + panX, y: (height - h) / 2 + panY, width: w, height: h };
 }
 
 export async function saveSheetArt(actor, value) {

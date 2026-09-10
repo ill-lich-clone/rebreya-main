@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { normalizeSheetArt, sheetArtGeometry, sheetArtBounds, saveSheetArt } from "../scripts/data/character-sheet-art.js";
+import { normalizeSheetArt, sheetArtGeometry, sheetArtPreview, saveSheetArt } from "../scripts/data/character-sheet-art.js";
 import { createSheetArtSvg } from "../scripts/ui/character-sheet-art.js";
 
 test("invalid artwork cannot inject URLs or unbounded mask geometry", () => {
@@ -22,14 +22,10 @@ test("image is centered with preserved aspect, mask coordinates follow resizing"
   assert.deepEqual(sheetArtGeometry(art, 1000, 1000), { x: 0, y: 25, width: 1200, height: 750 });
 });
 
-test("art bounds leave the right controls empty and limit the total height to 120 percent", () => {
-  assert.deepEqual(sheetArtBounds(800, 700), { x: -80, y: -70, width: 816, height: 840 });
-  const bounds = sheetArtBounds(400, 1000);
-  assert.equal(bounds.x + bounds.width, 336);
-  assert.equal(bounds.height, 1200);
-  assert.ok(bounds.width <= 480);
+test("preview zoom and pan map to sheet coordinates without changing artwork", () => {
+  assert.deepEqual(sheetArtPreview(800, 600, { zoom: 2, panX: 100, panY: -50 }),
+    { x: 200, y: 25, width: 600, height: 450 });
 });
-
 test("saving requires current ownership and writes only the module art flag", async () => {
   const writes = [];
   const actor = { type: "character", isOwner: false, setFlag: async (...args) => writes.push(args) };
@@ -51,7 +47,7 @@ test("normalization detaches saved strokes from the editable draft and bounds pa
   assert.equal(normalizeSheetArt({ strokes: Array(201).fill(input.strokes[0]) }).strokes.length, 200);
 });
 
-test("rendered image uses both the painted mask and the hard right/exterior clip", () => {
+test("rendered image exposes exterior freely and paints only the interior", () => {
   const original = globalThis.document;
   // Only the SVG DOM boundary is substituted; geometry and renderer are production code.
   globalThis.document = { createElementNS(_ns, tag) {
@@ -67,17 +63,15 @@ test("rendered image uses both the painted mask and the hard right/exterior clip
     const svg = createSheetArtSvg(art, 800, 700);
     const defs = svg.children.find(node => node.tag === "defs");
     const clip = defs.children.find(node => node.tag === "clipPath");
-    assert.deepEqual(clip.children[0].attributes, { x: "-80", y: "-70", width: "816", height: "840" });
+    assert.equal(clip, undefined);
     const mask = defs.children.find(node => node.tag === "mask");
     assert.equal(mask.children[0].attributes.fill, "white");
     assert.equal(mask.children[0].attributes.transform, "translate(0 175) scale(800 700)");
     assert.equal(mask.children[0].attributes.cy, "0.15");
     assert.equal(mask.children[1].attributes.stroke, "black");
-    assert.equal(mask.children.at(-1).tag, "rect");
-    const group = svg.children.find(node => node.tag === "g");
-    assert.equal(group.attributes["clip-path"], `url(#${clip.attributes.id})`);
-    assert.equal(group.children.length, 1);
-    assert.equal(group.children[0].attributes.mask, `url(#${mask.attributes.id})`);
-    assert.equal(group.children[0].attributes.href, "assets/dragon.png");
+    assert.equal(mask.children.at(-1).attributes["fill-rule"], "evenodd");
+    const image = svg.children.find(node => node.tag === "image");
+    assert.equal(image.attributes.mask, `url(#${mask.attributes.id})`);
+    assert.equal(image.attributes.href, "assets/dragon.png");
   } finally { globalThis.document = original; }
 });
