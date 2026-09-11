@@ -1,4 +1,4 @@
-import { normalizeSheetArt, sheetArtGeometry, sheetArtPreview, saveSheetArt, SHEET_ART_FLAG } from "../data/character-sheet-art.js?v=1.4.284";
+import { normalizeSheetArt, sheetArtGeometry, sheetArtPreview, saveSheetArt, SHEET_ART_FLAG } from "../data/character-sheet-art.js?v=1.4.285";
 
 const NS = "http://www.w3.org/2000/svg";
 let nextMaskId = 0;

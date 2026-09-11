@@ -19,7 +19,18 @@ test("image is centered with preserved aspect, mask coordinates follow resizing"
   const art = normalizeSheetArt({ src: "assets/dragon.png", scale: 1.2, x: 0.1, y: -0.1, aspect: 2, frameAspect: 1.25 });
   assert.deepEqual(sheetArtGeometry(art, 1000, 800), { x: 0, y: 20, width: 1200, height: 600 });
   assert.deepEqual(sheetArtGeometry(art, 500, 400), { x: 0, y: 10, width: 600, height: 300 });
-  assert.deepEqual(sheetArtGeometry(art, 1000, 1000), { x: 0, y: 25, width: 1200, height: 750 });
+  assert.deepEqual(sheetArtGeometry(art, 1000, 1000), { x: -150, y: 25, width: 1500, height: 750 });
+});
+
+test("horizontal sheet resizing does not rescale or distort artwork", () => {
+  const art = normalizeSheetArt({ src: "assets/dragon.png", scale: 1.2, aspect: 2, frameAspect: 1.25 });
+  const narrow = sheetArtGeometry(art, 800, 800);
+  const wide = sheetArtGeometry(art, 1400, 800);
+
+  assert.deepEqual({ width: narrow.width, height: narrow.height }, { width: 1200, height: 600 });
+  assert.deepEqual({ width: wide.width, height: wide.height }, { width: 1200, height: 600 });
+  assert.equal(narrow.width / narrow.height, 2);
+  assert.equal(wide.width / wide.height, 2);
 });
 
 test("preview zoom and pan map to sheet coordinates without changing artwork", () => {
@@ -66,7 +77,7 @@ test("rendered image exposes exterior freely and paints only the interior", () =
     assert.equal(clip, undefined);
     const mask = defs.children.find(node => node.tag === "mask");
     assert.equal(mask.children[0].attributes.fill, "white");
-    assert.equal(mask.children[0].attributes.transform, "translate(0 175) scale(800 700)");
+    assert.equal(mask.children[0].attributes.transform, "translate(50 175) scale(700 700)");
     assert.equal(mask.children[0].attributes.cy, "0.15");
     assert.equal(mask.children[1].attributes.stroke, "black");
     assert.equal(mask.children.at(-1).attributes["fill-rule"], "evenodd");
