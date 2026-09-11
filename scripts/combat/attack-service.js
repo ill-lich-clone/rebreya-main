@@ -3596,8 +3596,6 @@ export class CombatAttackService {
 
       const isFirearm = isFirearmItem(item);
       const repeatingShot = !isFirearm && hasActiveRepeatingShot(item);
-      const actor = activity.actor ?? item.actor ?? null;
-      const firearmMessageOptions = isFirearm ? { ...config, messageConfig: message } : config;
       if (!isFirearm && !repeatingShot) {
         this.#clearInvalidNativeAmmunitionSelection(activity, config, dialog);
       }
@@ -3619,22 +3617,7 @@ export class CombatAttackService {
           if (this.#getFirearmAmmoShotBlock(item)) {
             return true;
           }
-
-          const ammo = this.#consumeLoadedFirearmAmmo(
-            actor,
-            item,
-            this.#resolveFirearmShotAmmoCost(item),
-            firearmMessageOptions
-          );
-          if (!ammo.success) {
-            return false;
-          }
         }
-      }
-
-      const misfire = this.#rollFirearmMisfire(actor, item, firearmMessageOptions);
-      if (misfire.jammed) {
-        return false;
       }
 
       const automation = this.#getLichAutomationState(item);
@@ -3674,14 +3657,31 @@ export class CombatAttackService {
 
     try {
       const item = activity.item;
-      const automation = this.#getLichAutomationState(item);
-      const rku = Math.max(0, Math.floor(toNumber(automation.rku, 0)));
-      if (rku <= 0) {
+      const firstRoll = Array.isArray(rolls) ? (rolls[0] ?? null) : (rolls ?? null);
+      if (!firstRoll) {
         return true;
       }
 
-      const firstRoll = Array.isArray(rolls) ? (rolls[0] ?? null) : (rolls ?? null);
-      if (!firstRoll) {
+      if (isFirearmItem(item)) {
+        const actor = activity.actor ?? item.actor ?? null;
+        const firearmMessageOptions = {
+          message: firstRoll.parent ?? null,
+          messageConfig: {}
+        };
+        const ammo = this.#consumeLoadedFirearmAmmo(
+          actor,
+          item,
+          this.#resolveFirearmShotAmmoCost(item),
+          firearmMessageOptions
+        );
+        if (ammo.success) {
+          this.#rollFirearmMisfire(actor, item, firearmMessageOptions);
+        }
+      }
+
+      const automation = this.#getLichAutomationState(item);
+      const rku = Math.max(0, Math.floor(toNumber(automation.rku, 0)));
+      if (rku <= 0) {
         return true;
       }
 

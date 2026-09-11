@@ -2151,10 +2151,27 @@ test("firearm item repair removes stale jam maintenance activities from item she
   });
 });
 
-test("firearm misfire rolls an extra d20 and jams the weapon before the attack", () => {
+test("firearm pre-roll configuration leaves ammunition and misfire state untouched when the attack aborts", () => {
   TestRoll.queuedTotals = [2];
   TestRoll.messages = [];
-  const weapon = makeFirearmItem({ name: "Пистолет" });
+  const weapon = makeFirearmItem({
+    name: "Пистолет",
+    properties: {
+      lchFirearmAmmunition: true,
+      lchFirearmReload: true,
+      lchFirearmMisfire: true
+    },
+    values: {
+      ammunition: "Пистолетные",
+      reload: "Смена магазина 1",
+      misfire: 3
+    },
+    ammoState: {
+      current: 1,
+      capacity: 1,
+      ammunition: "Пистолетные"
+    }
+  });
   const activity = {
     id: "attack-1",
     type: "attack",
@@ -2169,10 +2186,51 @@ test("firearm misfire rolls an extra d20 and jams the weapon before the attack",
 
   const result = service.applyDnd5eAttackRollConfig({ subject: activity }, {}, {});
 
-  assert.equal(result, false);
+  assert.equal(result, true);
+  assert.equal(weapon.getFlag(MODULE_ID, "firearmAmmoState").current, 1);
+  assert.equal(weapon.getFlag(MODULE_ID, "firearmJammed"), undefined);
+  assert.equal(weapon.name, "Пистолет");
+  assert.equal(TestRoll.queuedTotals.length, 1);
+  assert.equal(TestRoll.messages.length, 0);
+});
+
+test("completed firearm attack spends ammunition and resolves its misfire after the attack roll", () => {
+  TestRoll.queuedTotals = [2];
+  TestRoll.messages = [];
+  const weapon = makeFirearmItem({
+    name: "Пистолет",
+    properties: {
+      lchFirearmAmmunition: true,
+      lchFirearmReload: true,
+      lchFirearmMisfire: true
+    },
+    values: {
+      ammunition: "Пистолетные",
+      reload: "Смена магазина 1",
+      misfire: 3
+    },
+    ammoState: {
+      current: 1,
+      capacity: 1,
+      ammunition: "Пистолетные"
+    }
+  });
+  const actor = makeActor([weapon]);
+  const activity = {
+    id: "attack-1",
+    type: "attack",
+    actor,
+    item: weapon
+  };
+  const service = new CombatAttackService({});
+
+  const result = service.applyDnd5ePostAttackRoll([{ total: 17 }], { subject: activity });
+
+  assert.equal(result, true);
+  assert.equal(weapon.getFlag(MODULE_ID, "firearmAmmoState").current, 0);
   assert.equal(weapon.getFlag(MODULE_ID, "firearmJammed").value, true);
   assert.equal(weapon.getFlag(MODULE_ID, "firearmJammed").rollTotal, 2);
-  assert.equal(weapon.name, "Пистолет (клин)");
+  assert.equal(weapon.name, "Пистолет (0/1) (клин)");
   assert.equal(TestRoll.messages.length, 1);
   assert.match(TestRoll.messages[0].messageData.flavor, /Осечка/u);
 });
@@ -2180,21 +2238,18 @@ test("firearm misfire rolls an extra d20 and jams the weapon before the attack",
 test("firearm jams persist the base threshold, jam state and name through one Item write", () => {
   TestRoll.queuedTotals = [2];
   const weapon = makeFirearmItem({ name: "Пистолет" });
+  const actor = makeActor([weapon]);
   const activity = {
     id: "attack-1",
     type: "attack",
-    actor: {
-      id: "actor-a",
-      name: "Стрелок",
-      uuid: "Actor.actor-a"
-    },
+    actor,
     item: weapon
   };
   const service = new CombatAttackService({});
 
-  const result = service.applyDnd5eAttackRollConfig({ subject: activity }, {}, {});
+  const result = service.applyDnd5ePostAttackRoll([{ total: 17 }], { subject: activity });
 
-  assert.equal(result, false);
+  assert.equal(result, true);
   assert.equal(weapon.setFlagCalls.length + weapon.updateCalls.length, 1);
   assert.equal(weapon.updateCalls[0].name, "Пистолет (клин)");
   assert.equal(weapon.updateCalls[0][`flags.${MODULE_ID}.firearmBaseMisfire`], 3);
@@ -2500,25 +2555,14 @@ test("firearm attack roll notes ammo and misfire in the originating attack card"
       }
     }
   };
-  const messageConfig = {
-    data: {
-      flags: {
-        dnd5e: {
-          originatingMessage: "card-a"
-        }
-      }
-    }
-  };
   const service = new CombatAttackService({});
 
-  const result = service.applyDnd5eAttackRollConfig({ subject: activity }, {}, messageConfig);
+  const result = service.applyDnd5ePostAttackRoll([{ total: 17, parent: cardMessage }], { subject: activity });
 
   assert.equal(result, true);
   assert.equal(weapon.getFlag(MODULE_ID, "firearmAmmoState").current, 0);
   assert.equal(globalThis.ChatMessage.messages.length, 0);
   assert.equal(TestRoll.messages.length, 0);
-  assert.match(messageConfig.data.flavor, /Musket \(0\/1\)/u);
-  assert.match(messageConfig.data.flavor, /d20 = 13/u);
   assert.match(cardMessage.content, /data-rebreya-firearm-chat-notes/u);
   assert.match(cardMessage.content, /Musket \(0\/1\)/u);
   assert.match(cardMessage.content, /d20 = 13/u);
