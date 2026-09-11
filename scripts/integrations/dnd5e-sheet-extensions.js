@@ -13,7 +13,7 @@ import {
 } from "../constants.js";
 import { registerCraftsmanGadgetItemType } from "./craftsman-gadget-item-type.js";
 import { bringAppToFront } from "../ui.js";
-import { bindCharacterSheetArt, unbindCharacterSheetArt, openCharacterSheetArtEditor } from "../ui/character-sheet-art.js?v=1.4.285-mask-resize";
+import { bindCharacterSheetArt, unbindCharacterSheetArt, openCharacterSheetArtEditor } from "../ui/character-sheet-art.js?v=1.4.286-mask-resize";
 import { bindAnchoredTooltips } from "../ui/anchored-overlay.js?v=1.4.247-anchored-overlays";
 import { createStableGearDocumentId } from "../data/gear-document-ids.js";
 import { buildRebreyaArtisanToolConfig } from "../data/rebreya-tool-proficiencies.js";

@@ -27,9 +27,10 @@ export function normalizeSheetArt(value = {}) {
 }
 
 export function sheetArtGeometry(art, width, height) {
-  const imageWidth = height * art.frameAspect * art.scale;
+  const frameWidth = height * art.frameAspect;
+  const imageWidth = frameWidth * art.scale;
   const imageHeight = imageWidth / art.aspect;
-  return { x: (width - imageWidth) / 2 + art.x * width,
+  return { x: (frameWidth - imageWidth) / 2 + art.x * frameWidth,
     y: (height - imageHeight) / 2 + art.y * height, width: imageWidth, height: imageHeight };
 }
 
