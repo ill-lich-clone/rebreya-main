@@ -495,6 +495,15 @@ export function registerCombatHooks(moduleApi) {
   }
 
   if (hasAttackService) {
+    Hooks.on("updateItem", (item, changed, options = {}) => {
+      if (options?.[MODULE_ID]?.firearmPropertySync === true) {
+        return;
+      }
+      moduleApi.combatAttackService.synchronizeFirearmPropertyState(item, changed).catch((error) => {
+        console.error(`${MODULE_ID} | Failed to synchronize firearm properties.`, error);
+      });
+    });
+
     const repairFirearmActor = (app) => {
       const actor = app?.actor ?? app?.document ?? null;
       moduleApi.combatAttackService.repairFirearmActivities(actor).catch((error) => {

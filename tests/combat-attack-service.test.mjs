@@ -15,6 +15,12 @@ globalThis.foundry ??= {
       }
       cursor[keys[0]] = value;
       return true;
+    },
+    unsetProperty: (object, path) => {
+      const keys = String(path ?? "").split(".").filter(Boolean);
+      let cursor = object;
+      while (keys.length > 1) cursor = cursor?.[keys.shift()];
+      return Boolean(cursor && delete cursor[keys[0]]);
     }
   }
 };
@@ -224,16 +230,19 @@ function makeFirearmItem({
       return this;
     }
 
-    async update(updates = {}) {
+    async update(updates = {}, options = {}) {
       updateCalls.push(updates);
       for (const [path, value] of Object.entries(updates)) {
         if (path === "name") {
           this.name = value;
         }
         else {
-          foundry.utils.setProperty(this, path, value);
+          const deletionMatch = path.match(/^(.*)\.-=([^.]+)$/u);
+          if (deletionMatch) foundry.utils.unsetProperty(this, `${deletionMatch[1]}.${deletionMatch[2]}`);
+          else foundry.utils.setProperty(this, path, value);
         }
       }
+      this.updateOptions = options;
       return this;
     }
   }();
@@ -1967,12 +1976,10 @@ test("firearm actor repair removes jam maintenance activities from weapons witho
     properties: {
       lchFirearmAmmunition: true,
       lchFirearmReload: true,
-      lchFirearmAutomatic: true,
-      lchFirearmMisfire: true
+      lchFirearmAutomatic: true
     },
     values: {
       automaticDamage: "4d8",
-      misfire: 2,
       ammunition: "Винтовочный",
       reload: "Смена магазина 24"
     }
@@ -2149,6 +2156,162 @@ test("firearm item repair removes stale jam maintenance activities from item she
   assert.deepEqual(weapon.updateCalls.at(-1), {
     "system.activities": {}
   });
+});
+
+test("removing Misfire clears its values, runtime state, suffix, and maintenance activities", async () => {
+  const weapon = makeFirearmItem({
+    name: "Аркебуза (1/1) (клин)",
+    properties: { lchFirearmReload: true },
+    values: { ammunition: "Мушкетные", reload: "Перезарядка 1", misfire: 4 },
+    ammoState: { current: 1, capacity: 1, ammunition: "Мушкетные" },
+    jammed: { value: true }
+  });
+  weapon.flags[MODULE_ID].firearmBaseMisfire = 4;
+  weapon.flags[MODULE_ID].firearmMisfire = 7;
+  weapon.system.activities = {
+    shot: { _id: "shot", type: "attack", name: "Выстрел" },
+    lchClearBreech01: {
+      _id: "lchClearBreech01",
+      flags: { [MODULE_ID]: { automation: "firearm-clear-jam" } }
+    },
+    lchMaintainGun01: {
+      _id: "lchMaintainGun01",
+      flags: { [MODULE_ID]: { automation: "firearm-maintain" } }
+    }
+  };
+
+  const result = await new CombatAttackService({}).synchronizeFirearmPropertyState(
+    weapon,
+    { "system.properties.lchFirearmMisfire": false }
+  );
+
+  assert.equal(result.updated, true);
+  assert.equal(weapon.name, "Аркебуза (1/1)");
+  assert.equal(weapon.getFlag(MODULE_ID, "firearmBaseMisfire"), undefined);
+  assert.equal(weapon.getFlag(MODULE_ID, "firearmMisfire"), undefined);
+  assert.equal(weapon.getFlag(MODULE_ID, "firearmJammed"), undefined);
+  assert.equal(weapon.getFlag(MODULE_ID, "lichWeaponPropertyValues").misfire, undefined);
+  assert.deepEqual(Object.keys(weapon.system.activities), ["shot"]);
+  assert.equal(weapon.updateCalls.length, 1);
+  assert.deepEqual(weapon.updateOptions, {
+    render: false,
+    [MODULE_ID]: { firearmPropertySync: true }
+  });
+});
+
+test("restoring Misfire rebuilds canonical flags and maintenance activities", async () => {
+  const weapon = makeFirearmItem({ name: "Аркебуза", properties: { lchFirearmMisfire: true }, values: {} });
+  weapon.flags[MODULE_ID].gearId = "arkebuza";
+  weapon.system.activities = { shot: { _id: "shot", type: "attack", name: "Выстрел" } };
+  const service = new CombatAttackService({
+    repository: {
+      model: {
+        gearById: new Map([["arkebuza", {
+          weapon: {
+            properties: ["lchFirearmMisfire"],
+            lichWeaponPropertyValues: { misfire: 4 }
+          }
+        }]])
+      }
+    }
+  });
+
+  await service.synchronizeFirearmPropertyState(
+    weapon,
+    { "system.properties.lchFirearmMisfire": true }
+  );
+
+  assert.equal(weapon.getFlag(MODULE_ID, "firearmBaseMisfire"), 4);
+  assert.equal(weapon.getFlag(MODULE_ID, "firearmMisfire"), 4);
+  assert.equal(weapon.getFlag(MODULE_ID, "firearmJammed"), undefined);
+  assert.equal(weapon.getFlag(MODULE_ID, "lichWeaponPropertyValues").misfire, 4);
+  assert.equal(weapon.system.activities.lchClearBreech01.flags[MODULE_ID].automation, "firearm-clear-jam");
+  assert.equal(weapon.system.activities.lchMaintainGun01.flags[MODULE_ID].automation, "firearm-maintain");
+});
+
+test("a managed firearm does not misfire after its current Misfire property is removed", () => {
+  TestRoll.queuedTotals = [1];
+  const weapon = makeFirearmItem({ name: "Аркебуза", properties: {}, values: {} });
+  weapon.flags[MODULE_ID].gearId = "arkebuza";
+  const actor = makeActor([weapon]);
+  const service = new CombatAttackService({
+    repository: {
+      model: {
+        gearById: new Map([["arkebuza", {
+          weapon: {
+            properties: ["lchFirearmMisfire"],
+            lichWeaponPropertyValues: { misfire: 4 }
+          }
+        }]])
+      }
+    }
+  });
+
+  service.applyDnd5ePostAttackRoll([{ total: 15 }], {
+    subject: { id: "shot", type: "attack", actor, item: weapon }
+  });
+
+  assert.equal(weapon.getFlag(MODULE_ID, "firearmJammed"), undefined);
+  assert.deepEqual(TestRoll.queuedTotals, [1]);
+});
+
+test("removing Reload clears its value, magazine state, suffix, and reload activity", async () => {
+  const weapon = makeFirearmItem({
+    name: "Аркебуза (0/1)",
+    properties: { lchFirearmMisfire: true },
+    values: { ammunition: "Мушкетные", reload: "Перезарядка 1", misfire: 4 },
+    ammoState: { current: 0, capacity: 1, ammunition: "Мушкетные" }
+  });
+  weapon.system.activities = {
+    shot: { _id: "shot", type: "attack", name: "Выстрел" },
+    lchReloadGun0001: {
+      _id: "lchReloadGun0001",
+      flags: { [MODULE_ID]: { automation: "firearm-reload" } }
+    }
+  };
+
+  await new CombatAttackService({}).synchronizeFirearmPropertyState(
+    weapon,
+    { "system.properties.lchFirearmReload": false }
+  );
+
+  assert.equal(weapon.name, "Аркебуза");
+  assert.equal(weapon.getFlag(MODULE_ID, "firearmAmmoState"), undefined);
+  assert.equal(weapon.getFlag(MODULE_ID, "lichWeaponPropertyValues").reload, undefined);
+  assert.deepEqual(Object.keys(weapon.system.activities), ["shot"]);
+});
+
+test("restoring Reload rebuilds an empty canonical magazine and reload activity", async () => {
+  const weapon = makeFirearmItem({ name: "Аркебуза", properties: { lchFirearmReload: true }, values: {} });
+  weapon.flags[MODULE_ID].gearId = "arkebuza";
+  weapon.system.activities = { shot: { _id: "shot", type: "attack", name: "Выстрел" } };
+  const service = new CombatAttackService({
+    repository: {
+      model: {
+        gearById: new Map([["arkebuza", {
+          weapon: {
+            properties: ["lchFirearmAmmunition", "lchFirearmReload"],
+            lichWeaponPropertyValues: { ammunition: "Мушкетные", reload: "Перезарядка 1" }
+          }
+        }]])
+      }
+    }
+  });
+
+  await service.synchronizeFirearmPropertyState(
+    weapon,
+    { "system.properties.lchFirearmReload": true }
+  );
+
+  assert.deepEqual(weapon.getFlag(MODULE_ID, "firearmAmmoState"), {
+    current: 0,
+    capacity: 1,
+    ammunition: "Мушкетные"
+  });
+  assert.equal(weapon.getFlag(MODULE_ID, "lichWeaponPropertyValues").reload, "Перезарядка 1");
+  assert.equal(weapon.name, "Аркебуза (0/1)");
+  assert.equal(weapon.system.activities.lchReloadGun0001.flags[MODULE_ID].automation, "firearm-reload");
+  assert.equal(weapon.updateCalls.length, 1);
 });
 
 test("firearm pre-roll configuration leaves ammunition and misfire state untouched when the attack aborts", () => {

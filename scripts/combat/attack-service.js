@@ -23,6 +23,7 @@ const FIREARM_CURRENT_MISFIRE_FLAG = "firearmMisfire";
 const FIREARM_BASE_MISFIRE_FLAG = "firearmBaseMisfire";
 const FIREARM_MISFIRE_PROPERTY = "lchFirearmMisfire";
 const FIREARM_RUST_PROPERTY = "lchFirearmRust";
+const FIREARM_RELOAD_PROPERTY = "lchFirearmReload";
 const FIREARM_MISFIRE_DIE_FORMULA = "1d20";
 const FIREARM_AMMO_STATE_FLAG = "firearmAmmoState";
 const FIREARM_CHAT_NOTES_FLAG = "firearmChatNotes";
@@ -32,6 +33,7 @@ const IMPLANT_RELOAD_RESERVOIR_CAPACITY = 20;
 const FIREARM_JAM_NAME_SUFFIX = " (клин)";
 const FIREARM_CLEAR_JAM_ACTIVITY_ID = "lchClearBreech01";
 const FIREARM_MAINTAIN_ACTIVITY_ID = "lchMaintainGun01";
+const FIREARM_RELOAD_ACTIVITY_ID = "lchReloadGun0001";
 const FIREARM_CLEAR_JAM_AUTOMATION = "firearm-clear-jam";
 const FIREARM_MAINTAIN_AUTOMATION = "firearm-maintain";
 const FIREARM_RELOAD_AUTOMATION = "firearm-reload";
@@ -1894,7 +1896,7 @@ export class CombatAttackService {
       return false;
     }
 
-    if (this.#resolveCanonicalFirearmMisfireThreshold(item) === 0) {
+    if (!this.#hasFirearmMisfireMechanic(item)) {
       return false;
     }
 
@@ -1950,35 +1952,178 @@ export class CombatAttackService {
     return 0;
   }
 
-  #hasConfiguredFirearmMisfire(item, options = {}) {
-    const canonicalThreshold = this.#resolveCanonicalFirearmMisfireThreshold(item);
-    if (canonicalThreshold === 0) {
-      return false;
-    }
-    if (Number.isFinite(canonicalThreshold)) {
-      return true;
-    }
+  #getCanonicalFirearmPropertyValues(item) {
+    const gearItem = this.#resolveCanonicalGearItem(item);
+    const values = gearItem?.weapon?.lichWeaponPropertyValues;
+    return isPlainObject(values) ? values : {};
+  }
 
+  #hasConfiguredFirearmMisfire(item, options = {}) {
     if (!this.#hasItemProperty(item, FIREARM_MISFIRE_PROPERTY)) {
       return false;
     }
 
     const values = this.#getLichWeaponPropertyValues(item, options);
     const configured = toNumber(values.misfire ?? values.firearmMisfire, NaN);
-    return Number.isFinite(configured) && configured > 0;
+    if (Number.isFinite(configured)) {
+      return configured > 0;
+    }
+
+    const canonicalThreshold = this.#resolveCanonicalFirearmMisfireThreshold(item);
+    return Number.isFinite(canonicalThreshold) && canonicalThreshold > 0;
   }
 
   #hasFirearmMisfireMechanic(item) {
-    const canonicalThreshold = this.#resolveCanonicalFirearmMisfireThreshold(item);
-    if (canonicalThreshold === 0) {
-      return false;
-    }
-    if (Number.isFinite(canonicalThreshold)) {
-      return true;
-    }
-
     return this.#hasConfiguredFirearmMisfire(item)
       || this.#hasItemProperty(item, FIREARM_RUST_PROPERTY);
+  }
+
+  #isFirearmReloadActivity(activityId, activity) {
+    const safeActivityId = cleanText(activityId ?? activity?._id ?? activity?.id);
+    return safeActivityId === FIREARM_RELOAD_ACTIVITY_ID
+      || cleanText(foundry.utils.getProperty(activity, `flags.${MODULE_ID}.automation`)) === FIREARM_RELOAD_AUTOMATION;
+  }
+
+  #buildFirearmUtilityActivity({ activityId, name, activationType, chatFlavor, automation, sort }) {
+    return {
+      _id: activityId,
+      type: "utility",
+      name,
+      sort,
+      activation: { type: activationType, value: 1, condition: "", override: false },
+      consumption: { scaling: { allowed: false, max: "" }, spellSlot: false, targets: [] },
+      description: { chatFlavor },
+      duration: { value: "", units: "inst", special: "", concentration: false, override: false },
+      effects: [],
+      flags: { [MODULE_ID]: { managed: true, automation } },
+      range: { value: null, units: "self", special: "", override: false },
+      target: {
+        template: { count: "", contiguous: false, type: "", size: "", width: "", height: "", units: "" },
+        affects: { count: "", type: "self", choice: false, special: "" },
+        prompt: false,
+        override: false
+      },
+      uses: { spent: 0, max: "", recovery: [] }
+    };
+  }
+
+  async synchronizeFirearmPropertyState(item, changed = {}) {
+    if (!isFirearmItem(item)) {
+      return { updated: false };
+    }
+
+    const hasChangedPath = (path) => {
+      if (Object.hasOwn(changed, path)) return true;
+      const parts = path.split(".");
+      let cursor = changed;
+      for (const part of parts) {
+        if (!cursor || typeof cursor !== "object" || !Object.hasOwn(cursor, part)) return false;
+        cursor = cursor[part];
+      }
+      return true;
+    };
+    const nestedPropertiesChange = changed?.system?.properties;
+    const propertyCollectionChanged = Object.hasOwn(changed, "system.properties")
+      || Array.isArray(nestedPropertiesChange)
+      || nestedPropertiesChange instanceof Set;
+    const misfireChanged = propertyCollectionChanged
+      || hasChangedPath(`system.properties.${FIREARM_MISFIRE_PROPERTY}`);
+    const reloadChanged = propertyCollectionChanged
+      || hasChangedPath(`system.properties.${FIREARM_RELOAD_PROPERTY}`);
+    if (!misfireChanged && !reloadChanged) {
+      return { updated: false };
+    }
+
+    const values = { ...this.#getLichWeaponPropertyValues(item) };
+    const canonicalValues = this.#getCanonicalFirearmPropertyValues(item);
+    const nextActivities = Object.fromEntries(collectionEntries(foundry.utils.getProperty(item, "system.activities"))
+      .map(([activityId, activity]) => [cleanText(activityId ?? activity?._id ?? activity?.id), sourceData(activity)])
+      .filter(([activityId]) => Boolean(activityId)));
+    const update = {};
+    let nextName = cleanText(item.name);
+
+    if (misfireChanged) {
+      const enabled = this.#hasItemProperty(item, FIREARM_MISFIRE_PROPERTY)
+        || this.#hasItemProperty(item, FIREARM_RUST_PROPERTY);
+      for (const [activityId, activity] of Object.entries(nextActivities)) {
+        if (this.#isFirearmMisfireMaintenanceActivity(activityId, activity)) delete nextActivities[activityId];
+      }
+      nextName = stripFirearmJamSuffix(nextName);
+      update[`flags.${MODULE_ID}.-=${FIREARM_JAMMED_FLAG}`] = null;
+      if (enabled) {
+        const canonicalThreshold = toNumber(canonicalValues.misfire ?? canonicalValues.firearmMisfire, NaN);
+        const localThreshold = toNumber(values.misfire ?? values.firearmMisfire, NaN);
+        const threshold = this.#hasItemProperty(item, FIREARM_RUST_PROPERTY)
+          && !this.#hasItemProperty(item, FIREARM_MISFIRE_PROPERTY)
+          ? 1
+          : clampInteger(Number.isFinite(canonicalThreshold) && canonicalThreshold > 0
+            ? canonicalThreshold
+            : (Number.isFinite(localThreshold) && localThreshold > 0 ? localThreshold : 1), 1, 20);
+        delete values.firearmMisfire;
+        values.misfire = threshold;
+        update[`flags.${MODULE_ID}.${FIREARM_BASE_MISFIRE_FLAG}`] = threshold;
+        update[`flags.${MODULE_ID}.${FIREARM_CURRENT_MISFIRE_FLAG}`] = threshold;
+        nextActivities[FIREARM_CLEAR_JAM_ACTIVITY_ID] = this.#buildFirearmUtilityActivity({
+          activityId: FIREARM_CLEAR_JAM_ACTIVITY_ID,
+          name: "Очистить затвор",
+          activationType: "action",
+          chatFlavor: "Очистить затворную раму: снять клин и увеличить текущий показатель осечки на 1, максимум до 10.",
+          automation: FIREARM_CLEAR_JAM_AUTOMATION,
+          sort: 100
+        });
+        nextActivities[FIREARM_MAINTAIN_ACTIVITY_ID] = this.#buildFirearmUtilityActivity({
+          activityId: FIREARM_MAINTAIN_ACTIVITY_ID,
+          name: "Привести оружие в порядок",
+          activationType: "minute",
+          chatFlavor: "Проверка Ловкости или Интеллекта (инструменты жестянщика) против Сл 10 + текущий показатель осечки. При успехе осечка возвращается к базовому значению.",
+          automation: FIREARM_MAINTAIN_AUTOMATION,
+          sort: 200
+        });
+      }
+      else {
+        delete values.misfire;
+        delete values.firearmMisfire;
+        update[`flags.${MODULE_ID}.-=${FIREARM_BASE_MISFIRE_FLAG}`] = null;
+        update[`flags.${MODULE_ID}.-=${FIREARM_CURRENT_MISFIRE_FLAG}`] = null;
+      }
+    }
+
+    if (reloadChanged) {
+      const enabled = this.#hasItemProperty(item, FIREARM_RELOAD_PROPERTY);
+      for (const [activityId, activity] of Object.entries(nextActivities)) {
+        if (this.#isFirearmReloadActivity(activityId, activity)) delete nextActivities[activityId];
+      }
+      nextName = stripFirearmAmmoSuffix(nextName);
+      if (enabled) {
+        const canonicalReload = cleanText(canonicalValues.reload);
+        const capacity = this.#parseFirstPositiveInteger(canonicalReload)
+          || this.#parseFirstPositiveInteger(values.reload)
+          || 1;
+        const reload = canonicalReload || `Перезарядка ${capacity}`;
+        const ammunition = cleanText(canonicalValues.ammunition ?? values.ammunition);
+        values.reload = reload;
+        update[`flags.${MODULE_ID}.${FIREARM_AMMO_STATE_FLAG}`] = { current: 0, capacity, ammunition };
+        nextName = withFirearmAmmoSuffix(nextName, 0, capacity);
+        nextActivities[FIREARM_RELOAD_ACTIVITY_ID] = this.#buildFirearmUtilityActivity({
+          activityId: FIREARM_RELOAD_ACTIVITY_ID,
+          name: "Перезарядить",
+          activationType: "action",
+          chatFlavor: `Перезарядить оружие: заполнить боезапас до ${capacity}, списав подходящие боеприпасы из инвентаря.`,
+          automation: FIREARM_RELOAD_AUTOMATION,
+          sort: 50
+        });
+      }
+      else {
+        delete values.reload;
+        update[`flags.${MODULE_ID}.-=${FIREARM_AMMO_STATE_FLAG}`] = null;
+      }
+    }
+
+    update.name = nextName;
+    update[`flags.${MODULE_ID}.lichWeaponPropertyValues`] = values;
+    update["system.activities"] = nextActivities;
+    await item.update?.(update, { render: false, [MODULE_ID]: { firearmPropertySync: true } });
+    return { updated: true };
   }
 
   #isFirearmMisfireMaintenanceActivity(activityId, activity) {
@@ -2283,17 +2428,23 @@ export class CombatAttackService {
       return clampInteger(explicit, 0, 20);
     }
 
-    const canonicalThreshold = this.#resolveCanonicalFirearmMisfireThreshold(item);
-    if (canonicalThreshold === 0) {
+    const hasMisfire = this.#hasItemProperty(item, FIREARM_MISFIRE_PROPERTY);
+    const hasRust = this.#hasItemProperty(item, FIREARM_RUST_PROPERTY);
+    if (!hasMisfire && !hasRust) {
       return 0;
     }
+    if (!hasMisfire && hasRust) {
+      return 1;
+    }
+
+    const canonicalThreshold = this.#resolveCanonicalFirearmMisfireThreshold(item);
 
     const directFlag = toNumber(readDocumentFlag(item, MODULE_ID, FIREARM_CURRENT_MISFIRE_FLAG), NaN);
     if (Number.isFinite(directFlag)) {
       return clampInteger(directFlag, 0, 20);
     }
 
-    if (Number.isFinite(canonicalThreshold)) {
+    if (Number.isFinite(canonicalThreshold) && canonicalThreshold > 0) {
       return clampInteger(canonicalThreshold, 1, 20);
     }
 
@@ -2301,10 +2452,6 @@ export class CombatAttackService {
     const fromValues = toNumber(values.misfire ?? values.firearmMisfire, NaN);
     if (this.#hasItemProperty(item, FIREARM_MISFIRE_PROPERTY)) {
       return Number.isFinite(fromValues) ? clampInteger(fromValues, 1, 20) : 0;
-    }
-
-    if (this.#hasItemProperty(item, FIREARM_RUST_PROPERTY)) {
-      return 1;
     }
 
     return 0;
@@ -2455,16 +2602,22 @@ export class CombatAttackService {
   }
 
   #resolveFirearmBaseMisfireThreshold(item, fallback = 1) {
+    const hasMisfire = this.#hasItemProperty(item, FIREARM_MISFIRE_PROPERTY);
+    const hasRust = this.#hasItemProperty(item, FIREARM_RUST_PROPERTY);
+    if (!hasMisfire && !hasRust) {
+      return 0;
+    }
+    if (!hasMisfire && hasRust) {
+      return 1;
+    }
+
     const baseFlag = toNumber(readDocumentFlag(item, MODULE_ID, FIREARM_BASE_MISFIRE_FLAG), NaN);
     if (Number.isFinite(baseFlag)) {
       return clampInteger(baseFlag, 1, 10);
     }
 
     const canonicalThreshold = this.#resolveCanonicalFirearmMisfireThreshold(item);
-    if (canonicalThreshold === 0) {
-      return 0;
-    }
-    if (Number.isFinite(canonicalThreshold)) {
+    if (Number.isFinite(canonicalThreshold) && canonicalThreshold > 0) {
       return clampInteger(canonicalThreshold, 1, 10);
     }
 
@@ -2472,10 +2625,6 @@ export class CombatAttackService {
     const configured = toNumber(values.misfire ?? values.firearmMisfire, NaN);
     if (this.#hasItemProperty(item, FIREARM_MISFIRE_PROPERTY) && Number.isFinite(configured)) {
       return clampInteger(configured, 1, 10);
-    }
-
-    if (this.#hasItemProperty(item, FIREARM_RUST_PROPERTY)) {
-      return 1;
     }
 
     return clampInteger(fallback, 1, 10);
