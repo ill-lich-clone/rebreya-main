@@ -427,10 +427,7 @@ export async function handleAcceptedPartyInventoryItem(item, _options = {}, user
       actorIdsFromResult: (outcome, error) => [
         outcome?.actorId ?? error?.sourceActorId,
         outcome?.targetActorId ?? error?.targetActorId
-      ],
-      awaitRefresh: (outcome, error) => (
-        (outcome?.inventoryTransferMode ?? error?.inventoryTransferMode) !== "simple"
-      )
+      ]
     })
     : await operation();
   if (result?.handled) {

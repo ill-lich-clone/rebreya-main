@@ -2362,9 +2362,9 @@ export class RebreyaMainModule {
       validate: isValidGroupInventoryMergeLegacyPayload,
       authorize: (_payload, { sender }) => sender?.isGM === true,
       scheduling: EXCLUSIVE_MUTATION_SCHEDULING,
-      execute: (payload) => this.runInventoryMutation(
+      execute: (payload, context) => this.runInventoryMutation(
         () => this.inventoryService.mergeLegacyInventoryIntoGroup(payload.groupActorId),
-        { actorIdsFromResult: () => [payload.groupActorId] }
+        { actorIdsFromResult: () => [payload.groupActorId], traceContext: context }
       )
     });
     const resolveAuthorizedDowntimeGroup = (groupId) => {
@@ -2562,16 +2562,14 @@ export class RebreyaMainModule {
         groupKey(payload.inventoryActorId),
         actorKey(payload.targetActorId)
       ]),
-      execute: (payload) => this.runInventoryMutation(
+      execute: (payload, context) => this.runInventoryMutation(
         () => this.inventoryService.executeTakeMutation(payload),
         {
           actorIdsFromResult: (result, error) => [
             result?.sourceActorId ?? error?.sourceActorId,
             result?.actorId ?? error?.targetActorId
           ],
-          awaitRefresh: (result, error) => (
-            (result?.inventoryTransferMode ?? error?.inventoryTransferMode) !== "simple"
-          )
+          traceContext: context
         }
       )
     });
@@ -2606,13 +2604,11 @@ export class RebreyaMainModule {
         groupKey(payload.groupActorId),
         lootKey(payload.lootId)
       ]),
-      execute: (payload,{sender}) => this.runInventoryMutation(
-        () => this.#executeLootgenInventoryIngress(payload,{allowDraft:sender.isGM===true}),
+      execute: (payload, context) => this.runInventoryMutation(
+        () => this.#executeLootgenInventoryIngress(payload,{allowDraft:context.sender.isGM===true}),
         {
           actorIdsFromResult: () => [payload.groupActorId],
-          awaitRefresh: (result, error) => (
-            (result?.inventoryTransferMode ?? error?.inventoryTransferMode) !== "simple"
-          )
+          traceContext: context
         }
       )
     });
@@ -2623,13 +2619,11 @@ export class RebreyaMainModule {
         groupKey(payload.groupActorId),
         aggregateKey("inventory-ingress", payload.sourceOrigin)
       ]),
-      execute: (payload) => this.runInventoryMutation(
+      execute: (payload, context) => this.runInventoryMutation(
         () => this.#executeDirectInventoryIngress(payload),
         {
           actorIdsFromResult: () => [payload.groupActorId],
-          awaitRefresh: (result, error) => (
-            (result?.inventoryTransferMode ?? error?.inventoryTransferMode) !== "simple"
-          )
+          traceContext: context
         }
       )
     });
@@ -2735,9 +2729,9 @@ export class RebreyaMainModule {
         groupKey(payload.groupActorId),
         documentKey(payload.sourceUuid)
       ]),
-      execute: (payload, { sender }) => this.runInventoryMutation(
-        () => this.storageCommandService.recordJournalDrop(payload, { sender }),
-        { actorIdsFromResult: (result) => [result?.actorId] }
+      execute: (payload, context) => this.runInventoryMutation(
+        () => this.storageCommandService.recordJournalDrop(payload, { sender: context.sender }),
+        { actorIdsFromResult: (result) => [result?.actorId], traceContext: context }
       )
     });
     this.socketCommandBus.register(STORAGE_JOURNAL_READ_RECORD_COMMAND, {
@@ -2752,17 +2746,15 @@ export class RebreyaMainModule {
         && (payload.destination !== "party"
           || this.#canSenderManageGroup(sender, payload.target.groupActorId)),
       scheduling: keyedMutationScheduling(storageDestinationKeys),
-      execute: (payload, { sender }) => payload.destination === "party"
+      execute: (payload, context) => payload.destination === "party"
         ? this.runInventoryMutation(
-          () => this.storageCommandService.claimRow(payload, { sender }),
+          () => this.storageCommandService.claimRow(payload, { sender: context.sender }),
           {
             actorIdsFromResult: () => [payload.target.groupActorId],
-            awaitRefresh: (result, error) => (
-              (result?.inventoryTransferMode ?? error?.inventoryTransferMode) !== "simple"
-            )
+            traceContext: context
           }
         )
-        : this.storageCommandService.claimRow(payload, { sender })
+        : this.storageCommandService.claimRow(payload, { sender: context.sender })
     });
     this.socketCommandBus.register(STORAGE_CLAIM_COINS_COMMAND, {
       validate: isValidStorageClaimCoinsPayload,
@@ -2776,17 +2768,15 @@ export class RebreyaMainModule {
         && (payload.destination !== "party"
           || this.#canSenderManageGroup(sender, payload.target.groupActorId)),
       scheduling: keyedMutationScheduling(storageDestinationKeys),
-      execute: (payload, { sender }) => payload.destination === "party"
+      execute: (payload, context) => payload.destination === "party"
         ? this.runInventoryMutation(
-          () => this.storageCommandService.claimAll(payload, { sender }),
+          () => this.storageCommandService.claimAll(payload, { sender: context.sender }),
           {
             actorIdsFromResult: () => [payload.target.groupActorId],
-            awaitRefresh: (result, error) => (
-              (result?.inventoryTransferMode ?? error?.inventoryTransferMode) !== "simple"
-            )
+            traceContext: context
           }
         )
-        : this.storageCommandService.claimAll(payload, { sender })
+        : this.storageCommandService.claimAll(payload, { sender: context.sender })
     });
     this.socketCommandBus.register(STORAGE_DEPOSIT_COMMAND, {
       validate: isValidStorageDepositPayload,
@@ -3368,7 +3358,7 @@ export class RebreyaMainModule {
       }
 
       if (message.ok) {
-        await this.refreshInventoryViews();
+        this.#deferInventoryRefresh();
         ui.notifications?.info("Предмет перенесён в партийный склад.");
       }
       else {
@@ -3383,7 +3373,7 @@ export class RebreyaMainModule {
       }
 
       if (message.ok) {
-        await this.refreshInventoryViews({ actorIds: [message.actorId, message.targetActorId] });
+        this.#deferInventoryRefresh([message.actorId, message.targetActorId]);
       }
       else {
         ui.notifications?.error(message.error || "Мастер не смог удалить исходный предмет склада.");
@@ -3397,7 +3387,7 @@ export class RebreyaMainModule {
       }
 
       if (message.ok) {
-        await this.refreshInventoryViews({ actorIds: [message.actorId] });
+        this.#deferInventoryRefresh([message.actorId]);
         const action = String(message.action ?? "");
         const labels = {
           take: "Предмет забран из партийного склада.",
@@ -3449,12 +3439,7 @@ export class RebreyaMainModule {
           const result = await this.runInventoryMutation(
             () => this.inventoryService.handleImportDroppedItemSocketRequest(message.payload ?? {}, {
               senderId: forUserId
-            }),
-            {
-              awaitRefresh: (outcome, error) => (
-                (outcome?.inventoryTransferMode ?? error?.inventoryTransferMode) !== "simple"
-              )
-            }
+            })
           );
           if (!result) {
             return;
@@ -3495,10 +3480,7 @@ export class RebreyaMainModule {
               actorIdsFromResult: (result, error) => [
                 result?.actorId ?? error?.sourceActorId,
                 result?.targetActorId ?? error?.targetActorId
-              ],
-              awaitRefresh: (outcome, error) => (
-                (outcome?.inventoryTransferMode ?? error?.inventoryTransferMode) !== "simple"
-              )
+              ]
             }
           );
           if (!result) {
@@ -4047,10 +4029,7 @@ export class RebreyaMainModule {
       return this.runInventoryMutation(
         () => execute(exactPayload),
         {
-          actorIdsFromResult: () => [groupActorId],
-          awaitRefresh: (result, error) => (
-            (result?.inventoryTransferMode ?? error?.inventoryTransferMode) !== "simple"
-          )
+          actorIdsFromResult: () => [groupActorId]
         }
       );
     }
@@ -4062,26 +4041,7 @@ export class RebreyaMainModule {
     catch (error) {
       requestError = error;
     }
-    const transferMode = result?.inventoryTransferMode ?? requestError?.inventoryTransferMode;
-    if (requestError && transferMode !== "simple") throw requestError;
-    let refreshTask;
-    try {
-      refreshTask = Promise.resolve(this.refreshInventoryViews({ actorIds: [groupActorId] }));
-    }
-    catch (error) {
-      refreshTask = Promise.reject(error);
-    }
-    if (transferMode === "simple") {
-      Promise.resolve(refreshTask).catch((error) => {
-        console.error(`${MODULE_ID} | Deferred inventory refresh failed.`, error);
-        globalThis.ui?.notifications?.warn?.(
-          "Инвентарь изменён, но интерфейс не удалось обновить автоматически."
-        );
-      });
-    }
-    else {
-      await refreshTask;
-    }
+    this.#deferInventoryRefresh([groupActorId]);
     if (requestError) throw requestError;
     return result;
   }
@@ -6300,7 +6260,7 @@ export class RebreyaMainModule {
     const exactPayload = cloneSocketPayload(payload);
     if (!isActiveGmClient(globalThis.game)) {
       const result = await this.socketCommandBus.request(command, exactPayload);
-      await this.refreshInventoryViews({ actorIds: [exactPayload.groupActorId] });
+      this.#deferInventoryRefresh([exactPayload.groupActorId]);
       return result;
     }
     return this.runInventoryMutation(
@@ -6421,10 +6381,7 @@ export class RebreyaMainModule {
         actorIdsFromResult: (result, error) => [
           result?.sourceActorId ?? error?.sourceActorId,
           result?.actorId ?? error?.targetActorId
-        ],
-        awaitRefresh: (result, error) => (
-          (result?.inventoryTransferMode ?? error?.inventoryTransferMode) !== "simple"
-        )
+        ]
       }
     );
   }
@@ -6482,12 +6439,7 @@ export class RebreyaMainModule {
         : this.socketCommandBus.request(STORAGE_JOURNAL_RECORD_DROP_COMMAND, payload);
     }
     return this.runInventoryMutation(
-      () => this.inventoryService.importDroppedItem(dropData, target),
-      {
-        awaitRefresh: (result, error) => (
-          (result?.inventoryTransferMode ?? error?.inventoryTransferMode) !== "simple"
-        )
-      }
+      () => this.inventoryService.importDroppedItem(dropData, target)
     );
   }
 
@@ -7280,7 +7232,28 @@ export class RebreyaMainModule {
     return completion;
   }
 
-  async runInventoryMutation(operation, { actorIdsFromResult, awaitRefresh = true } = {}) {
+  #deferInventoryRefresh(actorIds = []) {
+    let refreshTask;
+    try {
+      refreshTask = Promise.resolve(this.refreshInventoryViews({ actorIds }));
+    }
+    catch (refreshError) {
+      refreshTask = Promise.reject(refreshError);
+    }
+    refreshTask.catch((refreshError) => {
+      console.error(`${MODULE_ID} | Deferred inventory refresh failed.`, refreshError);
+      globalThis.ui?.notifications?.warn?.(
+        "Инвентарь изменён, но интерфейс не удалось обновить автоматически."
+      );
+    });
+    return refreshTask;
+  }
+
+  async runInventoryMutation(operation, {
+    actorIdsFromResult,
+    awaitRefresh = false,
+    traceContext = null
+  } = {}) {
     if (typeof operation !== "function") {
       throw new TypeError("Inventory mutation operation must be a function.");
     }
@@ -7315,9 +7288,6 @@ export class RebreyaMainModule {
       operationError ??= error;
     }
     this.inventoryRefreshHoldCount = Math.max(0, this.inventoryRefreshHoldCount - 1);
-    const shouldAwaitRefresh = typeof awaitRefresh === "function"
-      ? awaitRefresh(result, operationError) !== false
-      : awaitRefresh !== false;
     let refreshTask;
     try {
       refreshTask = Promise.resolve(this.refreshInventoryViews({ actorIds }));
@@ -7325,7 +7295,18 @@ export class RebreyaMainModule {
     catch (refreshError) {
       refreshTask = Promise.reject(refreshError);
     }
-    if (shouldAwaitRefresh) {
+    try {
+      this.socketCommandTrace?.({
+        phase: "refresh-scheduled",
+        command: String(traceContext?.command ?? ""),
+        requestId: String(traceContext?.requestId ?? traceContext?.operationId ?? ""),
+        senderId: String(traceContext?.sender?.id ?? traceContext?.senderId ?? "")
+      });
+    }
+    catch {
+      // Diagnostics must never change mutation behavior.
+    }
+    if (awaitRefresh === true) {
       try {
         await refreshTask;
       }

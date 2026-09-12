@@ -470,11 +470,12 @@ test("multi-document inventory hooks wait for the mutation boundary and render o
   }
 });
 
-test("runInventoryMutation can return before a scoped refresh settles", async () => {
+test("runInventoryMutation returns the authoritative result before the default scoped refresh settles", async () => {
   const fixture = installUiFixture();
   let rejectRefresh;
   let refreshCalls = 0;
   let mutationResolved = false;
+  let holdCountAtResolution = null;
   const warnings = [];
   const previousConsoleError = console.error;
   try {
@@ -489,11 +490,11 @@ test("runInventoryMutation can return before a scoped refresh settles", async ()
     const mutation = fixture.moduleApi.runInventoryMutation(
       async () => ({ actorId: "hero-a", sourceActorId: "group-a", changed: true }),
       {
-        awaitRefresh: false,
         actorIdsFromResult: (result) => [result.sourceActorId, result.actorId]
       }
     ).then((result) => {
       mutationResolved = true;
+      holdCountAtResolution = fixture.moduleApi.inventoryRefreshHoldCount;
       return result;
     });
     await Promise.resolve();
@@ -501,6 +502,7 @@ test("runInventoryMutation can return before a scoped refresh settles", async ()
     await Promise.resolve();
 
     assert.equal(mutationResolved, true);
+    assert.equal(holdCountAtResolution, 0);
     assert.equal(refreshCalls, 1);
     assert.deepEqual(await mutation, { actorId: "hero-a", sourceActorId: "group-a", changed: true });
 
@@ -511,6 +513,37 @@ test("runInventoryMutation can return before a scoped refresh settles", async ()
   }
   finally {
     console.error = previousConsoleError;
+    fixture.restore();
+  }
+});
+
+test("runInventoryMutation waits for refresh only when an explicit caller requests it", async () => {
+  const fixture = installUiFixture();
+  let resolveRefresh;
+  let mutationResolved = false;
+  try {
+    fixture.moduleApi.refreshInventoryViews = () => new Promise((resolve) => {
+      resolveRefresh = resolve;
+    });
+
+    const mutation = fixture.moduleApi.runInventoryMutation(
+      async () => ({ actorId: "hero-a", changed: true }),
+      { awaitRefresh: true }
+    ).then((result) => {
+      mutationResolved = true;
+      return result;
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    assert.equal(fixture.moduleApi.inventoryRefreshHoldCount, 0);
+    assert.equal(mutationResolved, false);
+
+    resolveRefresh();
+    assert.deepEqual(await mutation, { actorId: "hero-a", changed: true });
+  }
+  finally {
     fixture.restore();
   }
 });
@@ -560,6 +593,7 @@ test("take inventory refresh uses the Actor resolved by the service result", asy
     });
 
     await fixture.moduleApi.takeInventoryItemToCharacter("item-a");
+    await new Promise((resolve) => setTimeout(resolve, 100));
 
     assert.deepEqual(fixture.calls.map((call) => call.name).sort(), ["inventory", "resolved"]);
   }
@@ -585,6 +619,7 @@ test("inventory take socket result routes refresh to the affected Actor sheet", 
       actorId: "resolved-actor",
       ok: true
     });
+    await new Promise((resolve) => setTimeout(resolve, 100));
 
     assert.deepEqual(fixture.calls.map((call) => call.name).sort(), ["inventory", "resolved"]);
   }
@@ -623,6 +658,7 @@ for (const route of ["accepted-item", "socket-request", "socket-result"]) {
           actorId: "source-group", targetActorId: "hero"
         });
       }
+      await new Promise((resolve) => setTimeout(resolve, 100));
       assert.deepEqual(fixture.calls.map(call => call.name).sort(), ["recipient", "source-inventory"]);
     }
     finally { fixture.restore(); }
