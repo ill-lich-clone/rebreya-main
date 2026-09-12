@@ -2,6 +2,13 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { WorldMutationCoordinator } from "../scripts/application/world-mutation-coordinator.js";
+import {
+  EXCLUSIVE_MUTATION_SCHEDULING,
+  QUERY_SCHEDULING,
+  aggregateKey,
+  keyedMutationScheduling,
+  normalizeAggregateKeys
+} from "../scripts/application/socket-command-scheduling.js";
 import { getActiveGm, isActiveGmClient } from "../scripts/infrastructure/foundry/active-gm.js";
 import {
   COMMAND_REQUEST_TYPE,
@@ -183,6 +190,142 @@ test("WorldMutationCoordinator bounds completed results to 256 in insertion orde
     "rerun"
   );
   assert.equal(calls, 258);
+});
+
+test("socket command scheduling normalizes immutable policies and aggregate keys", () => {
+  const resolver = (payload) => [aggregateKey("actor", payload.actorId)];
+  const policy = keyedMutationScheduling(resolver);
+
+  assert.deepEqual(normalizeAggregateKeys([" actor:b ", "actor:a", "actor:b", ""]), [
+    "actor:a",
+    "actor:b"
+  ]);
+  assert.equal(policy.mode, "keyed-mutation");
+  assert.strictEqual(policy.keys, resolver);
+  assert.equal(Object.isFrozen(policy), true);
+  assert.equal(Object.isFrozen(QUERY_SCHEDULING), true);
+  assert.equal(Object.isFrozen(EXCLUSIVE_MUTATION_SCHEDULING), true);
+  assert.throws(() => normalizeAggregateKeys([]), /no aggregate keys/i);
+  assert.throws(() => aggregateKey("actor", " "), /kind and identity/i);
+});
+
+test("WorldMutationCoordinator runs disjoint scoped mutations concurrently", async () => {
+  const coordinator = new WorldMutationCoordinator();
+  const firstGate = createDeferred();
+  const secondGate = createDeferred();
+  const entered = [];
+
+  const first = coordinator.runScoped({ keys: ["actor:a"] }, async () => {
+    entered.push("a");
+    await firstGate.promise;
+    return "A";
+  });
+  const second = coordinator.runScoped({ keys: ["actor:b"] }, async () => {
+    entered.push("b");
+    await secondGate.promise;
+    return "B";
+  });
+
+  await flushTasks();
+  assert.deepEqual(entered, ["a", "b"]);
+  firstGate.resolve();
+  secondGate.resolve();
+  assert.deepEqual(await Promise.all([first, second]), ["A", "B"]);
+});
+
+test("WorldMutationCoordinator serializes overlapping scoped mutations in arrival order", async () => {
+  const coordinator = new WorldMutationCoordinator();
+  const firstGate = createDeferred();
+  const secondGate = createDeferred();
+  const entered = [];
+
+  const first = coordinator.runScoped({ keys: ["actor:a", "actor:b"] }, async () => {
+    entered.push("first");
+    await firstGate.promise;
+  });
+  const second = coordinator.runScoped({ keys: ["actor:b"] }, async () => {
+    entered.push("second");
+    await secondGate.promise;
+  });
+
+  await flushTasks();
+  assert.deepEqual(entered, ["first"]);
+  firstGate.resolve();
+  await first;
+  await flushTasks();
+  assert.deepEqual(entered, ["first", "second"]);
+  secondGate.resolve();
+  await second;
+});
+
+test("WorldMutationCoordinator gives an exclusive mutation a fair barrier", async () => {
+  const coordinator = new WorldMutationCoordinator();
+  const firstGate = createDeferred();
+  const exclusiveGate = createDeferred();
+  const entered = [];
+
+  const first = coordinator.runScoped({ keys: ["actor:a"] }, async () => {
+    entered.push("first");
+    await firstGate.promise;
+  });
+  const exclusive = coordinator.runScoped({ exclusive: true }, async () => {
+    entered.push("exclusive");
+    await exclusiveGate.promise;
+  });
+  const later = coordinator.runScoped({ keys: ["actor:b"] }, async () => {
+    entered.push("later");
+  });
+
+  await flushTasks();
+  assert.deepEqual(entered, ["first"]);
+  firstGate.resolve();
+  await first;
+  await flushTasks();
+  assert.deepEqual(entered, ["first", "exclusive"]);
+  exclusiveGate.resolve();
+  await exclusive;
+  await later;
+  assert.deepEqual(entered, ["first", "exclusive", "later"]);
+});
+
+test("WorldMutationCoordinator releases scoped keys after rejection", async () => {
+  const coordinator = new WorldMutationCoordinator();
+  const originalError = new Error("scoped failure");
+
+  await assert.rejects(
+    coordinator.runScoped({ keys: ["actor:a"] }, async () => {
+      throw originalError;
+    }),
+    (error) => error === originalError
+  );
+  assert.equal(
+    await coordinator.runScoped({ keys: ["actor:a"] }, async () => "recovered"),
+    "recovered"
+  );
+});
+
+test("WorldMutationCoordinator reuses scoped in-flight and completed results", async () => {
+  const coordinator = new WorldMutationCoordinator();
+  const gate = createDeferred();
+  let calls = 0;
+  const first = coordinator.runIdempotentScoped({ keys: ["actor:a"], requestId: "scoped-a" }, async () => {
+    calls += 1;
+    await gate.promise;
+    return "saved";
+  });
+  const duplicate = coordinator.runIdempotentScoped({ keys: ["actor:b"], requestId: "scoped-a" }, async () => {
+    calls += 1;
+    return "duplicate";
+  });
+
+  assert.strictEqual(duplicate, first);
+  gate.resolve();
+  assert.equal(await first, "saved");
+  assert.equal(await coordinator.runIdempotentScoped({
+    keys: ["actor:c"],
+    requestId: "scoped-a"
+  }, async () => "rerun"), "saved");
+  assert.equal(calls, 1);
 });
 
 test("getActiveGm prefers a valid Foundry activeGM and otherwise elects by string id", () => {
