@@ -1,4 +1,5 @@
 export const MAX_COMPLETED_MUTATION_RESULTS = 256;
+const NOOP_TRACE = () => {};
 
 /**
  * Serializes world mutations by key and reuses bounded request results.
@@ -10,12 +11,17 @@ export class WorldMutationCoordinator {
   #completedLimit;
   #inFlight = new Map();
   #queues = new Map();
+  #trace;
 
-  constructor({ completedLimit = MAX_COMPLETED_MUTATION_RESULTS } = {}) {
+  constructor({
+    completedLimit = MAX_COMPLETED_MUTATION_RESULTS,
+    trace = NOOP_TRACE
+  } = {}) {
     if (!Number.isInteger(completedLimit) || completedLimit < 1) {
       throw new TypeError("completedLimit must be a positive integer");
     }
     this.#completedLimit = completedLimit;
+    this.#trace = typeof trace === "function" ? trace : NOOP_TRACE;
   }
 
   run(key, operation) {

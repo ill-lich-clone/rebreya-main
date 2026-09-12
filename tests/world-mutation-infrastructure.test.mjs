@@ -520,6 +520,44 @@ test("SocketCommandBus executes a duplicate typed request once and re-emits its 
   });
 });
 
+test("SocketCommandBus emits privacy-safe lifecycle trace events around authoritative execution", async () => {
+  const emitted = [];
+  const traced = [];
+  const gm = { id: "gm-a", isGM: true, active: true };
+  const player = { id: "player-a", isGM: false, active: true };
+  const game = createGame({ users: [gm, player], currentUserId: gm.id, activeGmId: gm.id, emitted });
+  let timestamp = 100;
+  const bus = new SocketCommandBus({
+    gameProvider: () => game,
+    trace: (event) => traced.push(event),
+    now: () => timestamp++
+  });
+  bus.register("group.calendar.setDate", {
+    validate: (payload) => Number.isInteger(payload?.day),
+    authorize: (_payload, context) => context.sender.id === player.id,
+    execute: async (payload) => ({ savedDay: payload.day })
+  });
+
+  bus.handleMessage({
+    type: COMMAND_REQUEST_TYPE,
+    command: "group.calendar.setDate",
+    requestId: "trace-a",
+    senderId: player.id,
+    payload: { day: 4, privateName: "must-not-be-traced" }
+  }, { transportSenderId: player.id });
+  await flushTasks();
+
+  assert.deepEqual(
+    traced.map((event) => event.phase),
+    ["received", "queue-start", "authorized", "execute-end", "completed"]
+  );
+  assert.equal(traced.every((event) => event.command === "group.calendar.setDate"), true);
+  assert.equal(traced.every((event) => event.requestId === "trace-a"), true);
+  assert.equal(traced.every((event) => event.senderId === player.id), true);
+  assert.equal(traced.some((event) => "payload" in event || "privateName" in event), false);
+  assert.equal(traced.at(-1).outcome, "ok");
+});
+
 test("SocketCommandBus rejects an envelope sender that differs from the transport sender", async () => {
   const emitted = [];
   const gm = { id: "gm-a", isGM: true, active: true };

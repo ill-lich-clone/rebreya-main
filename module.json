@@ -7,13 +7,13 @@
       "name": "ill_lich"
     }
   ],
-  "version": "1.4.288",
+  "version": "1.4.289",
   "compatibility": {
     "minimum": "13",
     "verified": "13"
   },
   "esmodules": [
-    "scripts/main-1.4.288.js"
+    "scripts/main-1.4.289.js"
   ],
   "socket": true,
   "styles": [

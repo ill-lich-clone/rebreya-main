@@ -1,6 +1,7 @@
 import { WorldMutationCoordinator } from "../../application/world-mutation-coordinator.js";
 import { MODULE_ID } from "../../constants.js";
 import { isActiveGmClient } from "./active-gm.js";
+import { NOOP_SOCKET_COMMAND_TRACE } from "./socket-command-trace.js";
 
 export const SOCKET_CHANNEL = `module.${MODULE_ID}`;
 export const COMMAND_REQUEST_TYPE = "rebreya.command";
@@ -138,10 +139,12 @@ export class SocketCommandBus {
   #idFactory;
   #maxEnvelopeBytes;
   #mutationKey;
+  #now;
   #pending = new Map();
   #requestTimeoutMs;
   #setTimeout;
   #socketChannel;
+  #trace;
 
   constructor({
     gameProvider = () => globalThis.game,
@@ -152,7 +155,9 @@ export class SocketCommandBus {
     maxEnvelopeBytes = MAX_SOCKET_ENVELOPE_BYTES,
     requestTimeoutMs = REQUEST_TIMEOUT_MS,
     mutationKey = DEFAULT_MUTATION_KEY,
-    socketChannel = SOCKET_CHANNEL
+    socketChannel = SOCKET_CHANNEL,
+    trace = NOOP_SOCKET_COMMAND_TRACE,
+    now = () => globalThis.performance?.now?.() ?? Date.now()
   } = {}) {
     this.#gameProvider = gameProvider;
     this.#coordinator = coordinator;
@@ -163,6 +168,8 @@ export class SocketCommandBus {
     this.#requestTimeoutMs = requestTimeoutMs;
     this.#mutationKey = mutationKey;
     this.#socketChannel = socketChannel;
+    this.#trace = typeof trace === "function" ? trace : NOOP_SOCKET_COMMAND_TRACE;
+    this.#now = typeof now === "function" ? now : (() => Date.now());
   }
 
   register(command, { validate, authorize, execute } = {}) {
@@ -344,11 +351,21 @@ export class SocketCommandBus {
       command: message.command,
       requestId: message.requestId
     };
+    const trace = (phase, details = {}) => this.#recordTrace({
+      phase,
+      command: message.command,
+      requestId: message.requestId,
+      senderId: message.senderId,
+      at: this.#now(),
+      ...details
+    });
+    trace("received");
     const idempotencyId = `${message.senderId}\u0000${message.command}\u0000${message.requestId}`;
     const outcome = await this.#coordinator.runIdempotent(
       this.#mutationKey,
       idempotencyId,
       async () => {
+        trace("queue-start");
         try {
           if (!await definition.validate(message.payload, context)) {
             return errorOutcome("invalid-payload", "Socket command payload is invalid");
@@ -365,6 +382,7 @@ export class SocketCommandBus {
           if (!await definition.authorize(message.payload, context)) {
             return errorOutcome("unauthorized", "Socket command is not authorized");
           }
+          trace("authorized");
         }
         catch (error) {
           return {
@@ -374,9 +392,12 @@ export class SocketCommandBus {
         }
 
         try {
-          return { ok: true, data: await definition.execute(message.payload, context) };
+          const data = await definition.execute(message.payload, context);
+          trace("execute-end");
+          return { ok: true, data };
         }
         catch (error) {
+          trace("execute-end");
           return {
             ok: false,
             error: normalizeError(error, "command-failed", "Socket command failed")
@@ -384,7 +405,21 @@ export class SocketCommandBus {
         }
       }
     );
+    trace("completed", {
+      outcome: outcome.ok ? "ok" : "failed",
+      mode: "exclusive-mutation",
+      keys: [this.#mutationKey]
+    });
     this.#emitOutcome(correlation, outcome, game);
+  }
+
+  #recordTrace(event) {
+    try {
+      this.#trace(event);
+    }
+    catch {
+      // Diagnostics must never change command behavior.
+    }
   }
 
   #handleResult(message) {

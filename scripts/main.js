@@ -193,6 +193,7 @@ import { PurchaseBasketJournalRepository } from "./infrastructure/foundry/purcha
 import { PurchaseBasketFoundryOperations } from "./infrastructure/foundry/purchase-basket-operations.js";
 import { getActiveGm, isActiveGmClient } from "./infrastructure/foundry/active-gm.js";
 import { SocketCommandBus } from "./infrastructure/foundry/socket-command-bus.js";
+import { createSocketCommandTraceSink } from "./infrastructure/foundry/socket-command-trace.js";
 import {
   GRAPPLE_DRAG_COMMAND,
   GRAPPLE_PLACE_COMMAND,
@@ -1385,10 +1386,14 @@ function filterVisibleGlobalEvents(events = []) {
 
 export class RebreyaMainModule {
   constructor() {
-    this.worldMutationCoordinator = new WorldMutationCoordinator();
+    this.socketCommandTrace = createSocketCommandTraceSink();
+    this.worldMutationCoordinator = new WorldMutationCoordinator({
+      trace: this.socketCommandTrace
+    });
     this.socketCommandBus = new SocketCommandBus({
       coordinator: this.worldMutationCoordinator,
-      gameProvider: () => globalThis.game
+      gameProvider: () => globalThis.game,
+      trace: this.socketCommandTrace
     });
     this.privilegedMutationGateway = new PrivilegedMutationGateway({
       commandBus: this.socketCommandBus,
