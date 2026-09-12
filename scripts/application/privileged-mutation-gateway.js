@@ -1,3 +1,8 @@
+import {
+  normalizeSocketScheduling,
+  resolveSocketScheduling
+} from "./socket-command-scheduling.js";
+
 export const PRIVILEGED_WORLD_QUEUE_KEY = "world";
 
 const INVALID_PAYLOAD_MESSAGE = "Privileged mutation payload is invalid";
@@ -34,8 +39,9 @@ function errorDetails(error, fallbackCode, fallbackMessage) {
   };
 }
 
-function isSocketRequestTimeout(error) {
-  return error?.name === "SocketCommandError" && error?.code === "request-timeout";
+function isSocketAmbiguousTimeout(error) {
+  return error?.name === "SocketCommandError"
+    && (error?.code === "request-timeout" || error?.code === "operation-timeout");
 }
 
 function markSafePreWriteAuthorityFailure(error) {
@@ -77,8 +83,13 @@ export class PrivilegedMutationGateway {
     if (typeof commandBus?.register !== "function" || typeof commandBus?.request !== "function") {
       throw new TypeError("commandBus must provide register and request methods");
     }
-    if (typeof coordinator?.run !== "function" || typeof coordinator?.runIdempotent !== "function") {
-      throw new TypeError("coordinator must provide run and runIdempotent methods");
+    if (
+      typeof coordinator?.run !== "function"
+      || typeof coordinator?.runIdempotent !== "function"
+      || typeof coordinator?.runScoped !== "function"
+      || typeof coordinator?.runIdempotentScoped !== "function"
+    ) {
+      throw new TypeError("coordinator must provide legacy and scoped mutation methods");
     }
     for (const [name, dependency] of Object.entries({
       gameProvider,
@@ -103,7 +114,7 @@ export class PrivilegedMutationGateway {
     this.#operationIdFactory = operationIdFactory;
   }
 
-  registerCommand(command, { validate, authorize, execute } = {}) {
+  registerCommand(command, { validate, authorize, execute, scheduling } = {}) {
     const normalizedCommand = cleanString(command);
     if (!normalizedCommand) {
       throw new TypeError("command must be a non-empty string");
@@ -117,18 +128,29 @@ export class PrivilegedMutationGateway {
       }
     }
 
-    const definition = Object.freeze({ validate, authorize, execute });
+    const normalizedScheduling = normalizeSocketScheduling(scheduling, {
+      allowImplicitExclusive: true,
+      command: normalizedCommand
+    });
+    const definition = Object.freeze({
+      validate,
+      authorize,
+      execute,
+      scheduling: normalizedScheduling
+    });
     this.#definitions.set(normalizedCommand, definition);
     this.#commandBus.register(normalizedCommand, {
       validate,
       authorize,
+      scheduling: normalizedScheduling,
       execute: (payload, context) => this.#executeRegistered(
         normalizedCommand,
         payload,
         {
           operationId: context.requestId,
           sender: context.sender,
-          source: "typed-command"
+          source: "typed-command",
+          alreadyScheduled: context.alreadyScheduled === true
         }
       )
     });
@@ -159,13 +181,20 @@ export class PrivilegedMutationGateway {
       );
     }
 
-    await this.#validate(definition, clonedPayload, Object.freeze({
+    const validationContext = Object.freeze({
       command: normalizedCommand,
       game,
       operationId: normalizedOperationId,
       requestId: normalizedOperationId,
       sender
-    }), normalizedCommand, normalizedOperationId);
+    });
+    await this.#validate(
+      definition,
+      clonedPayload,
+      validationContext,
+      normalizedCommand,
+      normalizedOperationId
+    );
 
     if (!this.#isActiveGmClient(game)) {
       const initialActiveGmId = cleanString(this.#getActiveGm(game)?.id);
@@ -184,17 +213,32 @@ export class PrivilegedMutationGateway {
       );
     }
 
-    const idempotencyKey = `${sender.id}\u0000${normalizedCommand}\u0000${normalizedOperationId}`;
-    return this.#coordinator.runIdempotent(
-      PRIVILEGED_WORLD_QUEUE_KEY,
-      idempotencyKey,
-      () => this.#executeRegistered(normalizedCommand, clonedPayload, {
+    let scheduling;
+    try {
+      scheduling = resolveSocketScheduling(definition.scheduling, clonedPayload, validationContext);
+    }
+    catch (error) {
+      throw new PrivilegedMutationError(
+        "invalid-scheduling",
+        cleanString(error?.message) || "Privileged mutation scheduling is invalid",
+        { command: normalizedCommand, operationId: normalizedOperationId }
+      );
+    }
+    const executeDirect = () => this.#executeRegistered(normalizedCommand, clonedPayload, {
         operationId: normalizedOperationId,
         sender,
         source: "direct-active-gm",
-        validateAndAuthorize: true
-      })
-    );
+        validateAndAuthorize: true,
+        alreadyScheduled: scheduling.mode !== "query"
+      });
+    if (scheduling.mode === "query") return executeDirect();
+
+    const idempotencyKey = `${sender.id}\u0000${normalizedCommand}\u0000${normalizedOperationId}`;
+    return this.#coordinator.runIdempotentScoped({
+      keys: scheduling.keys,
+      exclusive: scheduling.exclusive,
+      requestId: idempotencyKey
+    }, executeDirect);
   }
 
   commit(queueKey, operation) {
@@ -254,7 +298,7 @@ export class PrivilegedMutationGateway {
         if (error?.code === "ambiguous-outcome") {
           throw this.#ambiguousOutcome(command, operationId);
         }
-        if (!isSocketRequestTimeout(error)) {
+        if (!isSocketAmbiguousTimeout(error)) {
           throw error;
         }
         const currentActiveGmId = cleanString(this.#getActiveGm(this.#gameProvider())?.id);
@@ -272,7 +316,8 @@ export class PrivilegedMutationGateway {
     operationId,
     sender,
     source,
-    validateAndAuthorize = false
+    validateAndAuthorize = false,
+    alreadyScheduled = false
   }) {
     const definition = this.#definitions.get(command);
     const assertActiveGm = this.#createActiveGmGuard();
@@ -282,6 +327,7 @@ export class PrivilegedMutationGateway {
       requestId: operationId,
       sender,
       source,
+      alreadyScheduled,
       assertActiveGm
     });
 

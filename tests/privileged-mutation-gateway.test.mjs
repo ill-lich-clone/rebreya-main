@@ -5,6 +5,7 @@ import {
   PrivilegedMutationGateway
 } from "../scripts/application/privileged-mutation-gateway.js";
 import { WorldMutationCoordinator } from "../scripts/application/world-mutation-coordinator.js";
+import { keyedMutationScheduling } from "../scripts/application/socket-command-scheduling.js";
 import { getActiveGm, isActiveGmClient } from "../scripts/infrastructure/foundry/active-gm.js";
 import { SocketCommandBus } from "../scripts/infrastructure/foundry/socket-command-bus.js";
 import { WorldSettingMutationRepository } from "../scripts/infrastructure/foundry/world-setting-mutation-repository.js";
@@ -216,6 +217,36 @@ test("active GM executes directly with a stable operation context and cloned pay
   assert.equal(executionContext.source, "direct-active-gm");
   assert.equal(typeof executionContext.assertActiveGm, "function");
   assert.equal(Object.isFrozen(executionContext), true);
+});
+
+test("active GM gateway runs direct mutations on disjoint scheduling keys concurrently", async () => {
+  const gm = { id: "gm-a", isGM: true, active: true };
+  const game = createGame({ users: [gm], currentUserId: gm.id, activeGmId: gm.id });
+  const { gateway } = createGateway({ game });
+  const firstGate = createDeferred();
+  const secondGate = createDeferred();
+  const entered = [];
+  gateway.registerCommand("actor.patch", {
+    validate: (payload) => typeof payload?.actorId === "string",
+    authorize: () => true,
+    scheduling: keyedMutationScheduling((payload) => [`actor:${payload.actorId}`]),
+    execute: async (payload) => {
+      entered.push(payload.actorId);
+      if (payload.actorId === "a") await firstGate.promise;
+      if (payload.actorId === "b") await secondGate.promise;
+      return payload.actorId;
+    }
+  });
+
+  const first = gateway.mutate("actor.patch", { actorId: "a" }, { operationId: "actor-a" });
+  await flushTasks();
+  const second = gateway.mutate("actor.patch", { actorId: "b" }, { operationId: "actor-b" });
+  await flushTasks();
+
+  assert.deepEqual(entered, ["a", "b"]);
+  firstGate.resolve();
+  secondGate.resolve();
+  assert.deepEqual(await Promise.all([first, second]), ["a", "b"]);
 });
 
 test("inactive GM routes through the typed command and performs no local execution", async () => {
