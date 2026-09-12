@@ -115,6 +115,12 @@ import { GROUP_CALENDAR_PATCH_COMMAND, CalendarService } from "./data/calendar-s
 import { CalendarTransitionCoordinator } from "./data/calendar-transition-coordinator.js?v=1.4.96-craft-calendar";
 import { PrivilegedMutationGateway } from "./application/privileged-mutation-gateway.js";
 import {
+  EXCLUSIVE_MUTATION_SCHEDULING,
+  QUERY_SCHEDULING,
+  aggregateKey,
+  keyedMutationScheduling
+} from "./application/socket-command-scheduling.js";
+import {
   GLOBAL_EVENTS_CREATE_COMMAND,
   GLOBAL_EVENTS_DELETE_COMMAND,
   GLOBAL_EVENTS_DUPLICATE_COMMAND,
@@ -393,6 +399,31 @@ const SOCKET_EVENT_LOOTGEN_CLAIM_ROW = "lootgen-claim-row";
 const SOCKET_EVENT_LOOTGEN_CLAIM_COINS = "lootgen-claim-coins";
 const INVENTORY_INGRESS_LOOTGEN_COMMAND = "inventory.ingress.lootgen";
 const INVENTORY_INGRESS_DIRECT_COMMAND = "inventory.ingress.direct";
+const actorKey = (id) => aggregateKey("actor", id);
+const documentKey = (uuid) => aggregateKey("document", uuid);
+const groupKey = (id) => aggregateKey("group", id);
+const storageKey = (uuid) => aggregateKey("storage", uuid);
+const lootKey = (id) => aggregateKey("loot", id);
+const sceneKey = (id) => aggregateKey("scene", id);
+
+function storageDestinationKeys(payload) {
+  const keys = [storageKey(payload.tokenUuid)];
+  if (payload.target?.groupActorId) keys.push(groupKey(payload.target.groupActorId));
+  if (payload.target?.actorUuid) keys.push(actorKey(payload.target.actorUuid));
+  if (payload.groupActorId) keys.push(groupKey(payload.groupActorId));
+  if (payload.actorUuid) keys.push(actorKey(payload.actorUuid));
+  if (payload.characterTokenUuid) keys.push(documentKey(payload.characterTokenUuid));
+  return keys;
+}
+
+function storageDepositKeys(payload) {
+  const keys = storageDestinationKeys(payload);
+  const source = payload.source ?? {};
+  if (source.tokenUuid) keys.push(storageKey(source.tokenUuid));
+  if (source.sourceUuid) keys.push(documentKey(source.sourceUuid));
+  if (source.itemUuid) keys.push(documentKey(source.itemUuid));
+  return keys;
+}
 const SOCKET_EVENT_DOWNTIME_UPDATED = "downtime-updated";
 const SOCKET_EVENT_TRAVEL_MAP_SYNC_REQUEST = "travel-map-sync-request";
 const GROUP_CALENDAR_TRANSITION_COMMAND = "group.calendar.transition";
@@ -2284,6 +2315,7 @@ export class RebreyaMainModule {
     this.privilegedMutationGateway.registerCommand(GROUP_INVENTORY_MERGE_LEGACY_COMMAND, {
       validate: isValidGroupInventoryMergeLegacyPayload,
       authorize: (_payload, { sender }) => sender?.isGM === true,
+      scheduling: EXCLUSIVE_MUTATION_SCHEDULING,
       execute: (payload) => this.runInventoryMutation(
         () => this.inventoryService.mergeLegacyInventoryIntoGroup(payload.groupActorId),
         { actorIdsFromResult: () => [payload.groupActorId] }
@@ -2449,6 +2481,10 @@ export class RebreyaMainModule {
     this.socketCommandBus.register(INVENTORY_TAKE_COMMAND, {
       validate: isValidInventoryTakePayload,
       authorize: (payload, { sender }) => this.#canSenderTakeInventoryItem(sender, payload),
+      scheduling: keyedMutationScheduling((payload) => [
+        groupKey(payload.inventoryActorId),
+        actorKey(payload.targetActorId)
+      ]),
       execute: (payload) => this.runInventoryMutation(
         () => this.inventoryService.executeTakeMutation(payload),
         {
@@ -2465,16 +2501,22 @@ export class RebreyaMainModule {
     this.socketCommandBus.register(INVENTORY_SALE_COMMAND, {
       validate: isValidInventorySalePayload,
       authorize: (payload, { sender }) => this.#canSenderManageGroup(sender, payload.inventoryActorId),
+      scheduling: keyedMutationScheduling((payload) => [groupKey(payload.inventoryActorId)]),
       execute: (payload) => this.inventoryService.executeSaleMutation(payload)
     });
     this.socketCommandBus.register(INVENTORY_DISMANTLE_COMMAND, {
       validate: isValidInventoryDismantlePayload,
       authorize: (payload, { sender }) => this.#canSenderManageGroup(sender, payload.inventoryActorId),
+      scheduling: keyedMutationScheduling((payload) => [groupKey(payload.inventoryActorId)]),
       execute: (payload) => this.inventoryService.executeDismantleMutation(payload)
     });
     this.socketCommandBus.register(INVENTORY_IMPORT_COMMAND, {
       validate: isValidInventoryImportPayload,
       authorize: (payload, { sender }) => this.#canSenderImportInventoryItem(sender, payload),
+      scheduling: keyedMutationScheduling((payload) => [
+        groupKey(payload.inventoryActorId),
+        documentKey(payload.itemUuid)
+      ]),
       execute: (payload) => this.inventoryService.executeImportMutation(payload)
     });
     this.socketCommandBus.register(INVENTORY_INGRESS_LOOTGEN_COMMAND, {
@@ -2483,6 +2525,10 @@ export class RebreyaMainModule {
         this.#canSenderManageGroup(sender, payload.groupActorId)
         && Boolean(this.#findLootgenChatMessage(payload.lootId,{allowDraft:sender.isGM===true}))
       ),
+      scheduling: keyedMutationScheduling((payload) => [
+        groupKey(payload.groupActorId),
+        lootKey(payload.lootId)
+      ]),
       execute: (payload,{sender}) => this.runInventoryMutation(
         () => this.#executeLootgenInventoryIngress(payload,{allowDraft:sender.isGM===true}),
         {
@@ -2496,6 +2542,10 @@ export class RebreyaMainModule {
     this.socketCommandBus.register(INVENTORY_INGRESS_DIRECT_COMMAND, {
       validate: isValidDirectInventoryIngressPayload,
       authorize: (payload, { sender }) => this.#canSenderManageGroup(sender, payload.groupActorId),
+      scheduling: keyedMutationScheduling((payload) => [
+        groupKey(payload.groupActorId),
+        aggregateKey("inventory-ingress", payload.sourceOrigin)
+      ]),
       execute: (payload) => this.runInventoryMutation(
         () => this.#executeDirectInventoryIngress(payload),
         {
@@ -2509,17 +2559,20 @@ export class RebreyaMainModule {
     this.socketCommandBus.register(INVENTORY_CURRENCY_UPDATE_COMMAND, {
       validate: isValidInventoryCurrencyUpdatePayload,
       authorize: (payload, { sender }) => this.#canSenderManageGroup(sender, payload.inventoryActorId),
+      scheduling: keyedMutationScheduling((payload) => [groupKey(payload.inventoryActorId)]),
       execute: (payload) => this.inventoryService.executeCurrencyUpdateMutation(payload)
     });
     this.socketCommandBus.register(INVENTORY_CURRENCY_CONVERT_COMMAND, {
       validate: isValidInventoryCurrencyConvertPayload,
       authorize: (payload, { sender }) => this.#canSenderManageGroup(sender, payload.inventoryActorId),
+      scheduling: keyedMutationScheduling((payload) => [groupKey(payload.inventoryActorId)]),
       execute: (payload) => this.inventoryService.executeCurrencyConvertMutation(payload)
     });
     const registerInventoryOrganizationMutation = (command, validate, methodName) => {
       this.socketCommandBus.register(command, {
         validate,
         authorize: authorizeGroup,
+        scheduling: keyedMutationScheduling((payload) => [groupKey(payload.groupActorId)]),
         execute: async (payload, { sender }) => {
           try {
             return await this.runInventoryMutation(
@@ -2583,21 +2636,28 @@ export class RebreyaMainModule {
     this.socketCommandBus.register(STORAGE_OPEN_COMMAND, {
       validate: isValidStorageOpenPayload,
       authorize: (_payload, { sender }) => Boolean(sender),
+      scheduling: QUERY_SCHEDULING,
       execute: (payload, { sender }) => this.storageCommandService.open(payload, { sender })
     });
     this.socketCommandBus.register(STORAGE_JOURNAL_READ_COMMAND, {
       validate: isValidStorageJournalReadPayload,
       authorize: (_payload, { sender }) => Boolean(sender),
+      scheduling: QUERY_SCHEDULING,
       execute: (payload, { sender }) => this.storageCommandService.readJournal(payload, { sender })
     });
     this.socketCommandBus.register(STORAGE_JOURNAL_RECORD_COMMAND, {
       validate: isValidStorageJournalRecordPayload,
       authorize: (_payload, { sender }) => Boolean(sender),
+      scheduling: keyedMutationScheduling(storageDestinationKeys),
       execute: (payload, { sender }) => this.storageCommandService.recordJournal(payload, { sender })
     });
     this.socketCommandBus.register(STORAGE_JOURNAL_RECORD_DROP_COMMAND, {
       validate: isValidJournalRecordDropPayload,
       authorize: (_payload, { sender }) => sender?.isGM === true,
+      scheduling: keyedMutationScheduling((payload) => [
+        groupKey(payload.groupActorId),
+        documentKey(payload.sourceUuid)
+      ]),
       execute: (payload, { sender }) => this.runInventoryMutation(
         () => this.storageCommandService.recordJournalDrop(payload, { sender }),
         { actorIdsFromResult: (result) => [result?.actorId] }
@@ -2606,6 +2666,7 @@ export class RebreyaMainModule {
     this.socketCommandBus.register(STORAGE_JOURNAL_READ_RECORD_COMMAND, {
       validate: isValidJournalRecordReadPayload,
       authorize: (_payload, { sender }) => Boolean(sender),
+      scheduling: QUERY_SCHEDULING,
       execute: (payload, { sender }) => this.storageCommandService.readJournalRecord(payload, { sender })
     });
     this.socketCommandBus.register(STORAGE_CLAIM_ROW_COMMAND, {
@@ -2613,6 +2674,7 @@ export class RebreyaMainModule {
       authorize: (payload, { sender }) => Boolean(sender)
         && (payload.destination !== "party"
           || this.#canSenderManageGroup(sender, payload.target.groupActorId)),
+      scheduling: keyedMutationScheduling(storageDestinationKeys),
       execute: (payload, { sender }) => payload.destination === "party"
         ? this.runInventoryMutation(
           () => this.storageCommandService.claimRow(payload, { sender }),
@@ -2628,6 +2690,7 @@ export class RebreyaMainModule {
     this.socketCommandBus.register(STORAGE_CLAIM_COINS_COMMAND, {
       validate: isValidStorageClaimCoinsPayload,
       authorize: (_payload, { sender }) => Boolean(sender),
+      scheduling: keyedMutationScheduling(storageDestinationKeys),
       execute: (payload, { sender }) => this.storageCommandService.claimCoins(payload, { sender })
     });
     this.socketCommandBus.register(STORAGE_CLAIM_ALL_COMMAND, {
@@ -2635,6 +2698,7 @@ export class RebreyaMainModule {
       authorize: (payload, { sender }) => Boolean(sender)
         && (payload.destination !== "party"
           || this.#canSenderManageGroup(sender, payload.target.groupActorId)),
+      scheduling: keyedMutationScheduling(storageDestinationKeys),
       execute: (payload, { sender }) => payload.destination === "party"
         ? this.runInventoryMutation(
           () => this.storageCommandService.claimAll(payload, { sender }),
@@ -2650,46 +2714,67 @@ export class RebreyaMainModule {
     this.socketCommandBus.register(STORAGE_DEPOSIT_COMMAND, {
       validate: isValidStorageDepositPayload,
       authorize: (_payload, { sender }) => Boolean(sender),
+      scheduling: keyedMutationScheduling(storageDepositKeys),
       execute: (payload, { sender }) => this.storageCommandService.deposit(payload, { sender })
     });
     this.socketCommandBus.register(STORAGE_COIN_DROP_COMMAND, {
       validate: isValidStorageCoinDropPayload,
       authorize: (_payload, { sender }) => Boolean(sender),
+      scheduling: keyedMutationScheduling((payload) => [
+        documentKey(payload.itemUuid),
+        sceneKey(payload.sceneId)
+      ]),
       execute: (payload, { sender }) => this.storageCommandService.dropCoinsToScene(payload, { sender })
     });
     this.socketCommandBus.register(STORAGE_JOURNAL_DROP_COMMAND, {
       validate: isValidStorageJournalDropPayload,
       authorize: (_payload, { sender }) => sender?.isGM === true,
+      scheduling: keyedMutationScheduling((payload) => [
+        documentKey(payload.sourceUuid),
+        sceneKey(payload.sceneId)
+      ]),
       execute: (payload, { sender }) => this.storageCommandService.dropJournalToScene(payload, { sender })
     });
     this.socketCommandBus.register(STORAGE_DROP_ITEM_COMMAND, {
       validate: isValidStorageDropItemPayload,
       authorize: (_payload, { sender }) => Boolean(sender),
+      scheduling: keyedMutationScheduling((payload) => [
+        documentKey(payload.itemUuid),
+        sceneKey(payload.sceneId)
+      ]),
       execute: (payload, { sender }) => this.storageCommandService.dropItemToScene(payload, { sender })
     });
     this.socketCommandBus.register(STORAGE_RESTORE_PORTABLE_COMMAND, {
       validate: isValidStorageRestorePortablePayload,
       authorize: (_payload, { sender }) => Boolean(sender),
+      scheduling: keyedMutationScheduling((payload) => [
+        documentKey(payload.itemUuid),
+        sceneKey(payload.sceneId)
+      ]),
       execute: (payload, { sender }) => this.storageCommandService.restorePortableItem(payload, { sender })
     });
     this.socketCommandBus.register(STORAGE_TOKEN_CHARACTER_COMMAND, {
       validate: isValidStorageTokenCharacterPayload,
       authorize: (_payload, { sender }) => Boolean(sender),
+      scheduling: keyedMutationScheduling(storageDestinationKeys),
       execute: (payload, { sender }) => this.storageCommandService.moveStorageTokenToCharacter(payload, { sender })
     });
     this.socketCommandBus.register(STORAGE_TRIGGER_READ_COMMAND, {
       validate: isValidStorageTriggerReadPayload,
       authorize: (_payload, { sender }) => sender?.isGM === true,
+      scheduling: QUERY_SCHEDULING,
       execute: (payload, { sender }) => this.storageCommandService.readTriggers(payload, { sender })
     });
     this.socketCommandBus.register(STORAGE_TRIGGER_SAVE_COMMAND, {
       validate: isValidStorageTriggerSavePayload,
       authorize: (_payload, { sender }) => sender?.isGM === true,
+      scheduling: keyedMutationScheduling((payload) => [storageKey(payload.tokenUuid)]),
       execute: (payload, { sender }) => this.storageCommandService.saveTriggers(payload, { sender })
     });
     this.socketCommandBus.register(STORAGE_TRIGGER_RESET_COMMAND, {
       validate: isValidStorageTriggerResetPayload,
       authorize: (_payload, { sender }) => sender?.isGM === true,
+      scheduling: keyedMutationScheduling((payload) => [storageKey(payload.tokenUuid)]),
       execute: (payload, { sender }) => this.storageCommandService.resetTriggers(payload, { sender })
     });
     this.socketCommandBus.register(DOOR_OPEN_COMMAND, {
@@ -2700,6 +2785,7 @@ export class RebreyaMainModule {
     this.socketCommandBus.register(DOOR_TRIGGER_READ_COMMAND, {
       validate: isValidDoorTriggerReadPayload,
       authorize: (_payload, { sender }) => sender?.isGM === true,
+      scheduling: QUERY_SCHEDULING,
       execute: (payload, { sender }) => this.doorTriggerCommandService.readTriggers(payload, { sender })
     });
     this.socketCommandBus.register(DOOR_TRIGGER_SAVE_COMMAND, {

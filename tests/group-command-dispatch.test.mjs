@@ -5,8 +5,13 @@ import { MODULE_ID, REBREYA_GROUP_FLAGS, SETTINGS_KEYS } from "../scripts/consta
 import {
   COMMAND_REQUEST_TYPE,
   COMMAND_RESULT_TYPE,
-  SOCKET_CHANNEL
+  SOCKET_CHANNEL,
+  SocketCommandBus
 } from "../scripts/infrastructure/foundry/socket-command-bus.js";
+import {
+  QUERY_SCHEDULING,
+  resolveSocketScheduling
+} from "../scripts/application/socket-command-scheduling.js";
 import { normalizeTravelState } from "../scripts/data/travel-service.js";
 import { normalizeGroupTransportState } from "../scripts/data/group-context-service.js";
 import { requestSettingsUpdate } from "../scripts/legacy/settings-socket-relay.js";
@@ -314,11 +319,134 @@ async function flushCommands() {
   await new Promise((resolve) => setImmediate(resolve));
 }
 
+function createDeferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, reject, resolve };
+}
+
 function resultFor(fixture, requestId) {
   return fixture.emitted
     .map((entry) => entry.message)
     .find((message) => message.type === COMMAND_RESULT_TYPE && message.requestId === requestId);
 }
+
+function captureSocketSchedulingDefinitions() {
+  const definitions = new Map();
+  const originalRegister = SocketCommandBus.prototype.register;
+  SocketCommandBus.prototype.register = function registerWithSchedulingCapture(command, definition) {
+    definitions.set(command, definition);
+    return originalRegister.call(this, command, definition);
+  };
+  try {
+    new RebreyaMainModule();
+  }
+  finally {
+    SocketCommandBus.prototype.register = originalRegister;
+  }
+  return definitions;
+}
+
+test("inventory and storage socket commands declare scoped scheduling policies", () => {
+  const fixture = installFixture();
+  try {
+    const definitions = captureSocketSchedulingDefinitions();
+    for (const command of [
+      "storage.open",
+      "storage.journal.read",
+      "storage.journal.read-record",
+      "storage.triggers.read",
+      "door.triggers.read"
+    ]) {
+      assert.equal(definitions.get(command)?.scheduling, QUERY_SCHEDULING, `${command} must declare query scheduling`);
+    }
+
+    const resolve = (command, payload) => resolveSocketScheduling(
+      definitions.get(command)?.scheduling,
+      payload,
+      {}
+    );
+    assert.deepEqual(resolve("inventory.take", {
+      inventoryActorId: "group-a",
+      targetActorId: "character-a"
+    }).keys, ["actor:character-a", "group:group-a"]);
+    assert.deepEqual(resolve("inventory.import", {
+      inventoryActorId: "group-a",
+      itemUuid: "Compendium.rebreya.items.Item.sword"
+    }).keys, ["document:Compendium.rebreya.items.Item.sword", "group:group-a"]);
+    assert.deepEqual(resolve("inventory.ingress.direct", {
+      groupActorId: "group-a",
+      sourceOrigin: "manual-entry"
+    }).keys, ["group:group-a", "inventory-ingress:manual-entry"]);
+    assert.deepEqual(resolve("storage.claim-row", {
+      destination: "party",
+      target: { groupActorId: "group-a" },
+      tokenUuid: "Scene.scene.Token.chest"
+    }).keys, ["group:group-a", "storage:Scene.scene.Token.chest"]);
+    assert.deepEqual(resolve("storage.triggers.save", {
+      tokenUuid: "Scene.scene.Token.chest"
+    }).keys, ["storage:Scene.scene.Token.chest"]);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("a slow inventory actor does not block storage reads or another inventory actor", async () => {
+  const fixture = installFixture({ includeGroupB: true });
+  try {
+    const moduleApi = new RebreyaMainModule();
+    const firstGate = createDeferred();
+    const entered = [];
+    let storageReads = 0;
+    moduleApi.inventoryService.executeSaleMutation = async (payload) => {
+      entered.push(payload.inventoryActorId);
+      if (payload.inventoryActorId === fixture.groupA.id) await firstGate.promise;
+      return { actorId: payload.inventoryActorId, changed: true };
+    };
+    moduleApi.storageCommandService.readJournalRecord = async () => {
+      storageReads += 1;
+      return { ok: true };
+    };
+
+    await moduleApi.handleSocketMessage(commandRequest("inventory.sale", fixture.users.gmB.id, {
+      inventoryActorId: fixture.groupA.id,
+      itemId: "item-a",
+      mutationId: "sale-a",
+      quantity: 1
+    }, "sale-a"));
+    await flushCommands();
+    assert.deepEqual(entered, [fixture.groupA.id]);
+
+    await Promise.all([
+      moduleApi.handleSocketMessage(commandRequest("storage.journal.read-record", fixture.users.gmB.id, {
+        itemUuid: "Actor.character-a.Item.note"
+      }, "read-while-sale")),
+      moduleApi.handleSocketMessage(commandRequest("inventory.sale", fixture.users.gmB.id, {
+        inventoryActorId: fixture.groupB.id,
+        itemId: "item-b",
+        mutationId: "sale-b",
+        quantity: 1
+      }, "sale-b"))
+    ]);
+    await flushCommands();
+
+    assert.equal(storageReads, 1);
+    assert.deepEqual(entered, [fixture.groupA.id, fixture.groupB.id]);
+    firstGate.resolve();
+    await flushCommands();
+    assert.equal(resultFor(fixture, "sale-a")?.ok, true);
+    assert.equal(resultFor(fixture, "sale-b")?.ok, true);
+    assert.equal(resultFor(fixture, "read-while-sale")?.ok, true);
+  }
+  finally {
+    fixture.restore();
+  }
+});
 
 test("group registry mutation commands expose exact group Actor payloads", () => {
   assert.equal(
@@ -388,7 +516,7 @@ test("inactive GM routes group registry writers through typed commands and playe
         senderId: fixture.users.gmA.id,
         ok: true,
         data
-      });
+      }, fixture.users.gmA.id);
       assert.deepEqual(await pending, data);
     };
 
@@ -842,7 +970,7 @@ test("an inactive GM routes economy writes through the typed command without a l
       senderId: fixture.users.gmA.id,
       ok: true,
       data: null
-    });
+    }, fixture.users.gmA.id);
 
     assert.equal(await pending, null);
     assert.equal(fixture.writes.length, 0);
@@ -2391,7 +2519,7 @@ test("player setCombatStatus routes environment status changes for unowned actor
         },
         effectId: "effect-1"
       }
-    });
+    }, fixture.users.gmA.id);
 
     assert.equal((await pending).statusId, "rebreya-surrounded");
     assert.equal(refreshCount, 1);
@@ -2438,7 +2566,7 @@ test("player routes owned synthetic actor environment statuses through the activ
       senderId: fixture.users.gmA.id,
       ok: true,
       data: { active: true, statusId: "rebreya-surrounded" }
-    });
+    }, fixture.users.gmA.id);
     await pending;
   }
   finally {
@@ -2672,7 +2800,7 @@ test("inactive downtime callers await a typed result while legacy raw requests d
       senderId: fixture.users.gmA.id,
       ok: true,
       data: { id: "remote", actorId: fixture.memberA.id }
-    });
+    }, fixture.users.gmA.id);
     assert.deepEqual(await pending, { id: "remote", actorId: fixture.memberA.id });
     assert.equal(refreshes, 1);
 
@@ -2800,7 +2928,7 @@ test("an inactive GM routes setMechanusEnabled through the typed command result"
       senderId: fixture.users.gmA.id,
       ok: true,
       data: { version: 1, mechanusEnabled: true, retained: "yes" }
-    });
+    }, fixture.users.gmA.id);
 
     assert.deepEqual(await pending, { version: 1, mechanusEnabled: true, retained: "yes" });
     assert.equal(fixture.writes.length, 0);
