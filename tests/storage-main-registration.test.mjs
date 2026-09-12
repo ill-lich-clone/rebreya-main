@@ -96,7 +96,7 @@ test("main registers the storage deposit socket API and current cache keys", asy
   assert.match(main, /async dropStorageJournalToScene\(/u);
   assert.match(main, /STORAGE_JOURNAL_RECORD_DROP_COMMAND\s*=\s*"storage\.journal\.record-drop"/u);
   assert.match(main, /register\(STORAGE_JOURNAL_RECORD_DROP_COMMAND,\s*\{/u);
-  assert.match(main, /this\.storageCommandService\.recordJournalDrop\(payload,\s*\{ sender \}\)/u);
+  assert.match(main, /this\.storageCommandService\.recordJournalDrop\(payload,\s*\{ sender:\s*context\.sender \}\)/u);
   assert.doesNotMatch(main, /BuiltinCoinTemplateService|builtinCoinTemplateService|restoreBuiltinCoinTemplates/u);
   assert.match(main, /this\.storageJournalReader = new StorageJournalReader\(\{/u);
   assert.match(main, /this\.storageTriggerDnd5eAdapter = new StorageTriggerDnd5eAdapter\(\{/u);
@@ -528,7 +528,7 @@ test("real public coin API uses active-GM direct execution and player socket rou
       senderId: gm.id,
       ok: true,
       data: { routed: true }
-    });
+    }, { transportSenderId: gm.id });
     assert.deepEqual(await pending, { routed: true });
   }
   finally {
@@ -600,7 +600,7 @@ test("real public Journal scene API uses active-GM direct execution and player s
       senderId: gm.id,
       ok: true,
       data: { routed: true }
-    });
+    }, { transportSenderId: gm.id });
     assert.deepEqual(await pending, { routed: true });
   }
   finally {
@@ -686,7 +686,7 @@ test("public Journal record APIs use active-GM execution and exact player socket
       senderId: gm.id,
       ok: true,
       data: { created: false }
-    });
+    }, { transportSenderId: gm.id });
     assert.deepEqual(await pendingRecord, { created: false });
 
     const pendingRead = moduleApi.readJournalRecord("Actor.hero.Item.record");
@@ -701,7 +701,7 @@ test("public Journal record APIs use active-GM execution and exact player socket
       senderId: gm.id,
       ok: true,
       data: { name: "Запись", pages: [] }
-    });
+    }, { transportSenderId: gm.id });
     assert.deepEqual(await pendingRead, { name: "Запись", pages: [] });
     assert.equal(directCalls.length, 2);
   }

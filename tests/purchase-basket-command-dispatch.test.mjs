@@ -166,7 +166,7 @@ test("public purchase basket API executes locally only on the active GM", async 
           senderId: "gm-a",
           ok: true,
           data: { status: "committed", transactionId: payload.transactionId }
-        });
+        }, "gm-a");
         assert.equal((await pending).status, "committed");
       }
     }

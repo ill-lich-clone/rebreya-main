@@ -268,7 +268,7 @@ test("inactive GM routes trader audit through the typed command and raw audit me
       senderId: fixture.users.gmA.id,
       ok: true,
       data: { id: "audit-authoritative" }
-    });
+    }, fixture.users.gmA.id);
     assert.deepEqual(await pending, { id: "audit-authoritative" });
     assert.equal(fixture.writes.length, 0);
     assert.equal(refreshCalls, 1);
