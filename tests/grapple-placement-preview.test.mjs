@@ -9,7 +9,11 @@ function token({ x = 0, y = 0, width = 1, height = 1, texture = "target.webp" } 
   return { x, y, width, height, texture: { src: texture } };
 }
 
-function previewEnvironment({ result = { cancelled: false, x: 250, y: 150 }, throws = null } = {}) {
+function previewEnvironment({
+  result = { cancelled: false, x: 250, y: 150 },
+  throws = null,
+  checkCollision = () => false
+} = {}) {
   const calls = [];
   const overlays = [];
   const Crosshairs = {
@@ -39,7 +43,7 @@ function previewEnvironment({ result = { cancelled: false, x: 250, y: 150 }, thr
     overlayFactory,
     gridProvider: () => grid,
     sceneRectProvider: () => ({ x: 0, y: 0, width: 1000, height: 1000 }),
-    checkCollision: () => false,
+    checkCollision,
     wait: async () => {}
   });
   return { preview, calls, overlays };
@@ -176,4 +180,23 @@ test("preview reports unavailable CPR with a stable error code", async () => {
     () => preview.choose({ sourceToken: token(), targetToken: token(), reachFeet: 5 }),
     (error) => error?.code === "crosshairs-unavailable"
   );
+});
+
+test("teleport preview can ignore path collision while retaining placement validation", async () => {
+  let collisionChecks = 0;
+  const env = previewEnvironment({
+    result: { cancelled: false, x: 250, y: 150 },
+    checkCollision: () => {
+      collisionChecks += 1;
+      return true;
+    }
+  });
+
+  assert.deepEqual(await env.preview.choose({
+    sourceToken: token({ x: 0, y: 100 }),
+    targetToken: token({ x: 0, y: 100 }),
+    reachFeet: 30,
+    checkCollision: false
+  }), { cancelled: false, x: 200, y: 100 });
+  assert.equal(collisionChecks, 0);
 });

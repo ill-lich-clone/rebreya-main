@@ -11,7 +11,7 @@ import { BuiltinStorageActorService } from "../scripts/data/builtin-storage-acto
 import { StorageOpenSoundService } from "../scripts/data/storage-open-sound-service.js?v=1.4.145-coin-icons-storage-sound";
 import { GrappleAutomationService } from "../scripts/combat/grapple-automation-service.js";
 import { GrappleMacroService } from "../scripts/combat/grapple-macro-service.js?v=1.4.252";
-import { GrapplePlacementPreview } from "../scripts/combat/grapple-placement-preview.js";
+import { GrapplePlacementPreview } from "../scripts/combat/grapple-placement-preview.js?v=1.4.290-rogue-mantle";
 import {
   COMMAND_REQUEST_TYPE,
   COMMAND_RESULT_TYPE

@@ -12,7 +12,7 @@ import { escapeFoundryHtml } from "./shared/foundry-values.js";
 import { MaterialsCompendiumService } from "./data/materials-compendium.js";
 import { GearCompendiumService } from "./data/gear-compendium.js?v=1.4.145-coin-icons-storage-sound";
 import { repairWorldAmmunitionCompatibility } from "./data/ammunition-compatibility.js?v=1.4.147-native-ammunition";
-import { MagicItemsCompendiumService } from "./data/magic-items-compendium.js?v=1.4.192-unsupported-item-activity-repair";
+import { MagicItemsCompendiumService } from "./data/magic-items-compendium.js?v=1.4.290-rogue-mantle";
 import { FeatsCompendiumService } from "./data/feats-compendium.js";
 import { BackgroundsCompendiumService } from "./data/backgrounds-compendium.js";
 import { StatesCompendiumService } from "./data/states-compendium.js";
@@ -324,7 +324,7 @@ import { BardicInspirationCompatService } from "./combat/bardic-inspiration-comp
 import { RaceAutomationService, SOCKET_EVENT_RACE_AUTOMATION } from "./combat/race-automation-service.js?v=1.4.147-race-damage";
 import { GrappleAutomationService, GRAPPLE_LINK_FLAG } from "./combat/grapple-automation-service.js";
 import { GrappleMacroService } from "./combat/grapple-macro-service.js?v=1.4.252";
-import { GrapplePlacementPreview } from "./combat/grapple-placement-preview.js";
+import { GrapplePlacementPreview } from "./combat/grapple-placement-preview.js?v=1.4.290-rogue-mantle";
 import { getActorHandReservations } from "./integrations/held-items.js";
 import { CraftsmanGadgetService } from "./combat/craftsman-gadget-service.js";
 import { CraftsmanGadgetZoneService } from "./combat/craftsman-gadget-zone-service.js";
@@ -1508,7 +1508,10 @@ export class RebreyaMainModule {
     });
     this.materialsCompendium = new MaterialsCompendiumService();
     this.gearCompendium = new GearCompendiumService();
-    this.magicItemsCompendium = new MagicItemsCompendiumService();
+    this.grapplePlacementPreview = new GrapplePlacementPreview();
+    this.magicItemsCompendium = new MagicItemsCompendiumService({
+      placementPreview: this.grapplePlacementPreview
+    });
     this.featsCompendium = new FeatsCompendiumService();
     this.backgroundsCompendium = new BackgroundsCompendiumService();
     this.statesCompendium = new StatesCompendiumService();
@@ -1741,7 +1744,6 @@ export class RebreyaMainModule {
       macroProvider: () => globalThis.Macro,
       isActiveGmClient
     });
-    this.grapplePlacementPreview = new GrapplePlacementPreview();
     this.grappleAutomationService = new GrappleAutomationService({
       coordinator: this.worldMutationCoordinator,
       commandBus: this.socketCommandBus,

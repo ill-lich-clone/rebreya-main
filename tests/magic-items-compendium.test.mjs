@@ -1609,6 +1609,89 @@ test("magic items expose approved native utility and poison save activities", ()
   assert.deepEqual(poisonSave.consumption.targets, []);
 });
 
+test("rogue mantle exposes shadow-step as a native teleport activity", () => {
+  const source = MAGIC_ITEMS.find((item) => item.id === "мантия-плута");
+  const [item] = magicItemsCompendium.normalizeMagicItems([source]);
+  const created = magicItemsCompendium.createMagicItemData(item, new Map());
+  const activity = Object.values(created.system.activities ?? {})
+    .find((entry) => entry.name === "Движение в тенях");
+
+  assert.equal(activity.activation.type, "bonus");
+  assert.deepEqual(activity.flags["rebreya-main"].magicItemRuntime, {
+    action: "teleport-token",
+    rangeFeet: 30
+  });
+  assert.match(activity.description.chatFlavor, /выбранную точку/iu);
+  assert.doesNotMatch(activity.description.chatFlavor, /свободн/iu);
+});
+
+test("active CPR Antagonize resolves to its compendium UUID", async () => {
+  const pack = {
+    collection: "chris-premades.CPRSpells",
+    getIndex: async () => [{
+      _id: "bJRgW6qhbNU3KgoR",
+      name: "Враждебность / Antagonize",
+      system: { identifier: "antagonize" },
+      flags: {
+        "chris-premades": { info: { identifier: "antagonize", name: "Antagonize" } },
+        babele: { originalName: "Antagonize" }
+      }
+    }]
+  };
+  const game = {
+    modules: new Map([["chris-premades", { active: true }]]),
+    packs: new Map([["chris-premades.CPRSpells", pack]])
+  };
+
+  assert.equal(
+    await magicItemsCompendium.resolveOptionalCprSpellUuid(game, "Antagonize"),
+    "Compendium.chris-premades.CPRSpells.Item.bJRgW6qhbNU3KgoR"
+  );
+});
+
+test("inactive CPR does not read its spell pack", async () => {
+  let indexReads = 0;
+  const game = {
+    modules: new Map([["chris-premades", { active: false }]]),
+    packs: new Map([["chris-premades.CPRSpells", {
+      async getIndex() {
+        indexReads += 1;
+        return [{ _id: "bJRgW6qhbNU3KgoR", name: "Antagonize" }];
+      }
+    }]])
+  };
+
+  assert.equal(await magicItemsCompendium.resolveOptionalCprSpellUuid(game, "Antagonize"), "");
+  assert.equal(indexReads, 0);
+});
+
+test("rogue mantle omits Antagonize when CPR is unavailable", async () => {
+  const source = MAGIC_ITEMS.find((item) => item.id === "мантия-плута");
+  const [item] = magicItemsCompendium.normalizeMagicItems([source]);
+  const withoutCpr = magicItemsCompendium.createMagicItemData(item, new Map());
+  const withCpr = magicItemsCompendium.createMagicItemData(item, new Map(), null, {
+    cprAntagonizeUuid: "Compendium.chris-premades.CPRSpells.Item.cpr-antagonize"
+  });
+  const withoutNames = Object.values(withoutCpr.system.activities ?? {}).map((entry) => entry.name);
+  const antagonist = Object.values(withCpr.system.activities ?? {})
+    .find((entry) => entry.name === "Antagonize");
+
+  assert.equal(withoutNames.includes("Antagonize"), false);
+  assert.equal(antagonist.spell.uuid, "Compendium.chris-premades.CPRSpells.Item.cpr-antagonize");
+  assert.deepEqual(antagonist.spell.challenge, { attack: null, save: 15, override: true });
+  assert.deepEqual(antagonist.consumption.targets, [{ type: "activityUses", value: "1" }]);
+  assert.equal(antagonist.uses.max, "1");
+  assert.deepEqual(antagonist.uses.recovery, [{
+    period: "dawn",
+    type: "recoverAll",
+    formula: ""
+  }]);
+  assert.notEqual(
+    withoutCpr.flags["rebreya-main"].signature,
+    withCpr.flags["rebreya-main"].signature
+  );
+});
+
 test("second-pass passive automation keeps only unconditional bonuses across rarities", () => {
   const sourceById = new Map(MAGIC_ITEMS.map((item) => [item.id, item]));
   const expectedById = new Map([

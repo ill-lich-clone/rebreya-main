@@ -131,6 +131,82 @@ test("unattuned wound-closure medallion does not alter Hit Die healing", () => {
   assert.equal(context.updates.actor["system.attributes.hp.value"], 18);
 });
 
+test("mantle teleport activity uses CPR placement and moves the owner's token", async () => {
+  const tokenUpdates = [];
+  const placementCalls = [];
+  const token = {
+    id: "rogue-token",
+    uuid: "Scene.scene.Token.rogue-token",
+    x: 100,
+    y: 200,
+    width: 1,
+    height: 1,
+    update: async (update, options) => tokenUpdates.push(structuredClone({ update, options }))
+  };
+  const actor = { getActiveTokens: () => [{ document: token }] };
+  const item = { name: "Мантия плута", actor };
+  const service = new MagicItemsCompendiumService({
+    placementPreview: {
+      async choose(options) {
+        placementCalls.push(options);
+        return { cancelled: false, x: 500, y: 600 };
+      }
+    }
+  });
+
+  await service.applyDnd5ePostUseActivity({
+    item,
+    flags: { "rebreya-main": { magicItemRuntime: {
+      action: "teleport-token",
+      rangeFeet: 30
+    } } }
+  });
+
+  assert.equal(placementCalls.length, 1);
+  assert.equal(placementCalls[0].sourceToken, token);
+  assert.equal(placementCalls[0].targetToken, token);
+  assert.equal(placementCalls[0].reachFeet, 30);
+  assert.equal(placementCalls[0].checkCollision, false);
+  assert.deepEqual(tokenUpdates, [{
+    update: { x: 500, y: 600 },
+    options: {
+      animate: false,
+      movement: {
+        "rogue-token": {
+          constrainOptions: { ignoreWalls: true, ignoreCost: true, ignoreTokens: true },
+          showRuler: false
+        }
+      }
+    }
+  }]);
+});
+
+test("mantle teleport is inert when CPR Crosshairs is unavailable", async () => {
+  let tokenUpdates = 0;
+  const token = {
+    id: "rogue-token",
+    update: async () => { tokenUpdates += 1; }
+  };
+  const service = new MagicItemsCompendiumService({
+    placementPreview: {
+      async choose() {
+        const error = new Error("CPR Crosshairs is unavailable");
+        error.code = "crosshairs-unavailable";
+        throw error;
+      }
+    }
+  });
+
+  assert.equal(await service.applyDnd5ePostUseActivity({
+    item: { actor: { getActiveTokens: () => [{ document: token }] } },
+    flags: { "rebreya-main": { magicItemRuntime: {
+      action: "teleport-token",
+      rangeFeet: 30
+    } } }
+  }), true);
+  assert.equal(tokenUpdates, 0);
+});
+
 test("ability-ring long-rest choice projects the selected capped ability effect", async () => {
   const packSource = {
     _id: "ring-pack",

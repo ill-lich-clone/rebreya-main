@@ -584,6 +584,48 @@ const CHARGED_MAGIC_ITEM_SPELLS = {
     ]
   }
 };
+
+const CPR_MODULE_ID = "chris-premades";
+const CPR_SPELLS_PACK_ID = `${CPR_MODULE_ID}.CPRSpells`;
+
+export async function resolveOptionalCprSpellUuid(game, spellName) {
+  try {
+    if (game?.modules?.get?.(CPR_MODULE_ID)?.active !== true) return "";
+    const pack = game?.packs?.get?.(CPR_SPELLS_PACK_ID);
+    if (!pack || typeof pack.getIndex !== "function") return "";
+    const expectedName = String(spellName ?? "").trim().toLocaleLowerCase("en");
+    if (!expectedName) return "";
+    const expectedIdentifier = expectedName.replace(/[^a-z0-9]+/gu, "-").replace(/^-+|-+$/gu, "");
+    const index = await pack.getIndex({
+      fields: [
+        "name",
+        "system.identifier",
+        `flags.${CPR_MODULE_ID}.info.identifier`,
+        `flags.${CPR_MODULE_ID}.info.name`,
+        "flags.babele.originalName"
+      ]
+    });
+    const match = Array.from(index ?? []).find((entry) => {
+      const identifiers = [
+        entry?.system?.identifier,
+        entry?.flags?.[CPR_MODULE_ID]?.info?.identifier
+      ].map((value) => String(value ?? "").trim().toLocaleLowerCase("en"));
+      const names = [
+        entry?.name,
+        entry?.flags?.[CPR_MODULE_ID]?.info?.name,
+        entry?.flags?.babele?.originalName
+      ].map((value) => String(value ?? "").trim().toLocaleLowerCase("en"));
+      return identifiers.includes(expectedIdentifier) || names.includes(expectedName);
+    });
+    const documentId = String(match?._id ?? match?.id ?? "").trim();
+    if (!documentId) return "";
+    return String(match?.uuid ?? "").trim()
+      || `Compendium.${CPR_SPELLS_PACK_ID}.Item.${documentId}`;
+  }
+  catch {
+    return "";
+  }
+}
 const MAGIC_ITEM_UTILITY_DEFINITIONS = {
   "амулет-пьяницы": {
     activities: [{
@@ -1452,7 +1494,8 @@ const MAGIC_ITEM_UTILITY_DEFINITIONS = {
   "мантия-плута": {
     activities: [{
       key: "shadow-step", name: "Движение в тенях", activation: "bonus", cost: null,
-      chatFlavor: "Телепортируйтесь на 30 футов между тускло освещёнными или тёмными пространствами; Token и преимущество первой рукопашной атаки применяются вручную."
+      runtime: { action: "teleport-token", rangeFeet: 30 },
+      chatFlavor: "Телепортируйтесь в выбранную точку в пределах 30 футов; преимущество первой рукопашной атаки применяется вручную."
     }]
   },
   "волшебная-палочка-секретов": {
@@ -2462,7 +2505,7 @@ for (const [itemId, note] of [
   ["корона-несущего-гнев", "Fear со Сл 15 раз в рассвет автоматизирован; трата Кости Хитов для дополнительного психического урона и отсутствие концентрации у минутного заклинания остаются ручными."],
   ["мантия-звезд", "Бонус +1 к спасброскам, шесть невосстанавливаемых в системе звёзд, Magic Missile 5-го уровня и астральные действия автоматизированы; восстановление 1к6 звёзд на закате и фактический планарный переход остаются ручными."],
   ["мантия-мистраля", "Сопротивление холоду, Sleet Storm со Сл 14 и спасбросок ветра с уроном 1к6 автоматизированы; prone, ограничение раз за ход и особые преимущества владельца внутри метели остаются ручными."],
-  ["мантия-плута", "Добавочные 60 футов тёмного зрения и бонусное теневое перемещение автоматизированы; условия освещения, Token-телепортация, преимущество атаки и отсутствующий в official packs Antagonize остаются ручными."],
+  ["мантия-плута", "Добавочные 60 футов тёмного зрения и бонусная телепортация на 30 футов без проверки освещения автоматизированы; Antagonize раз в рассвет добавляется из активного CPR, а преимущество первой рукопашной атаки остаётся ручным."],
   ["морозный-клинок", "Сопротивление огню автоматизировано; дополнительный урон 1к6 холодом только этим оружием, температурный свет и тушение немагического огня раз в час остаются ручными."],
   ["перчатки-воровства", "Безусловный бонус +5 к Ловкости рук автоматизирован; отдельный бонус +5 только к проверкам Ловкости для вскрытия замков остаётся ручным."],
   ["плащ-летучей-мыши", "Преимущество Скрытности и Polymorph раз в рассвет автоматизированы; условия тусклого света, занятые руки, скорость полёта 40 футов и ограничение формы летучей мышью остаются ручными."],
@@ -2768,7 +2811,7 @@ function buildPoisonDaggerSaveActivity(item) {
   }];
 }
 
-function buildMagicItemActivities(item) {
+function buildMagicItemActivities(item, { cprAntagonizeUuid = "" } = {}) {
   const itemId = String(item?.id ?? "").trim();
   const instrumentSpells = resolveNativeInstrumentSpellDefinition(item);
   const chargedDefinition = CHARGED_MAGIC_ITEM_SPELLS[itemId] ?? null;
@@ -2833,6 +2876,33 @@ function buildMagicItemActivities(item) {
     entries.push(definition.type === "attack"
       ? buildAttackActivity(item, definition)
       : buildUtilityActivity(item, definition));
+  }
+  if (itemId === "мантия-плута" && String(cprAntagonizeUuid).trim()) {
+    const activityId = stableHashId(
+      `magic-item:${item.id}:external-spell:antagonize`,
+      "magic-item-activity"
+    );
+    entries.push([activityId, {
+      _id: activityId,
+      type: "cast",
+      name: "Antagonize",
+      activation: { type: "action", value: 1, condition: "" },
+      consumption: {
+        scaling: { allowed: false, max: "" },
+        spellSlot: false,
+        targets: [{ type: "activityUses", value: "1" }]
+      },
+      uses: buildDawnUses({ max: 1 }),
+      spell: {
+        ability: "",
+        challenge: { attack: null, save: 15, override: true },
+        level: 3,
+        properties: ["vocal", "somatic", "material"],
+        spellbook: true,
+        uuid: String(cprAntagonizeUuid).trim()
+      },
+      flags: { [MODULE_ID]: { magicItemAutomation: true } }
+    }]);
   }
   if (itemId === "кинжал-яда") {
     entries.push(buildPoisonDaggerSaveActivity(item));
@@ -3481,11 +3551,11 @@ function buildFolderPath(classification) {
   return normalizeFolderPath(classification.folderPath);
 }
 
-function buildMagicSignature(item) {
+function buildMagicSignature(item, activityOptions = {}) {
   const classification = classifyMagicItem(item);
   const itemSlot = resolveItemSlotGroup(item, classification);
   const heroDollSlots = mapSlotGroupToHeroDollSlots(itemSlot, classification.heroDollSlots);
-  const magicItemActivities = buildMagicItemActivities(item);
+  const magicItemActivities = buildMagicItemActivities(item, activityOptions);
   const nativeInstrumentSpellActivities = resolveNativeInstrumentSpellDefinition(item)
     ? magicItemActivities
     : null;
@@ -3629,7 +3699,7 @@ export function buildSystemData(item, classification, descriptionHtml) {
   return baseData;
 }
 
-export function createMagicItemData(item, folderIdByPath, iconLookup = null) {
+export function createMagicItemData(item, folderIdByPath, iconLookup = null, activityOptions = {}) {
   const classification = classifyMagicItem(item);
   const itemSlot = resolveItemSlotGroup(item, classification);
   const heroDollSlots = mapSlotGroupToHeroDollSlots(itemSlot, classification.heroDollSlots);
@@ -3638,7 +3708,7 @@ export function createMagicItemData(item, folderIdByPath, iconLookup = null) {
   const descriptionHtml = buildDescriptionHtml(item, classification);
   const magicItemAutomation = resolveMagicItemAutomationDefinition(item);
   const systemData = buildSystemData(item, classification, descriptionHtml);
-  const magicItemActivities = buildMagicItemActivities(item);
+  const magicItemActivities = buildMagicItemActivities(item, activityOptions);
 
   const nativeMagicBonus = NATIVE_MAGIC_ITEM_BONUSES.get(String(item?.id ?? "").trim());
   if (nativeMagicBonus) {
@@ -3691,7 +3761,7 @@ export function createMagicItemData(item, folderIdByPath, iconLookup = null) {
         managed: true,
         sourceType: "magicItem",
         magicItemId: item.id,
-        signature: buildMagicSignature(item),
+        signature: buildMagicSignature(item, activityOptions),
         rarity: item.rarity,
         itemType: item.itemType,
         itemSubtype: item.itemSubtype,
@@ -3852,7 +3922,8 @@ export class MagicItemsCompendiumService {
     diffObject = null,
     isActiveGm = isActiveGmClient,
     promptSpellSlot = null,
-    promptAbilityChoice = null
+    promptAbilityChoice = null,
+    placementPreview = null
   } = {}) {
     this.gameProvider = gameProvider;
     this.consoleProvider = consoleProvider;
@@ -3860,6 +3931,7 @@ export class MagicItemsCompendiumService {
     this.isActiveGm = isActiveGm;
     this.promptSpellSlot = promptSpellSlot;
     this.promptAbilityChoice = promptAbilityChoice;
+    this.placementPreview = placementPreview;
   }
 
   registerLongRestSteps(pipeline) {
@@ -3919,6 +3991,9 @@ export class MagicItemsCompendiumService {
     }
     if (runtime.action === "token-light-on" || runtime.action === "token-light-off") {
       return this.#applyTokenLight(activity?.item, runtime);
+    }
+    if (runtime.action === "teleport-token") {
+      return this.#applyTokenTeleport(activity?.item, runtime);
     }
     return true;
   }
@@ -4091,12 +4166,49 @@ export class MagicItemsCompendiumService {
     return true;
   }
 
+  async #applyTokenTeleport(item, runtime) {
+    if (typeof this.placementPreview?.choose !== "function") return true;
+    const actor = item?.actor ?? item?.parent ?? null;
+    const token = collectionValues(actor?.getActiveTokens?.(true, true) ?? actor?.getActiveTokens?.())
+      .map((candidate) => candidate?.document ?? candidate)
+      .find((candidate) => typeof candidate?.update === "function");
+    if (!token) return true;
+    let placement;
+    try {
+      placement = await this.placementPreview.choose({
+        sourceToken: token,
+        targetToken: token,
+        reachFeet: Math.max(0, toNumber(runtime.rangeFeet, 30)),
+        checkCollision: false
+      });
+    }
+    catch (error) {
+      if (error?.code === "crosshairs-unavailable") return true;
+      throw error;
+    }
+    if (placement?.cancelled !== false) return true;
+    const tokenId = String(token?.id ?? token?._id ?? "").trim();
+    await token.update({ x: placement.x, y: placement.y }, {
+      animate: false,
+      movement: tokenId ? {
+        [tokenId]: {
+          constrainOptions: { ignoreWalls: true, ignoreCost: true, ignoreTokens: true },
+          showRuler: false
+        }
+      } : {}
+    });
+    return true;
+  }
+
   async sync(items = MAGIC_ITEMS) {
     if (!game.user?.isGM || !isDnd5eWorld()) {
       return null;
     }
 
     const normalizedItems = normalizeMagicItems(items);
+    const activityOptions = {
+      cprAntagonizeUuid: await resolveOptionalCprSpellUuid(game, "Antagonize")
+    };
     const pack = await ensurePack();
     const documents = await getPackDocuments(pack);
     const iconLookup = await buildNamedIconLookup(MAGIC_ICON_SEARCH_PATHS, { forceRefresh: true });
@@ -4110,7 +4222,7 @@ export class MagicItemsCompendiumService {
         ? document.getFlag(MODULE_ID, "magicItemId")
         : "",
       signatureOfEntry: (item) => JSON.stringify([
-        buildMagicSignature(item),
+        buildMagicSignature(item, activityOptions),
         resolveNamedIcon(item.name, iconLookup, DEFAULT_MAGIC_ITEM_ICON)
       ]),
       signatureOfDocument: (document) => JSON.stringify([
@@ -4128,9 +4240,9 @@ export class MagicItemsCompendiumService {
           console.warn(`${MODULE_ID} | Failed to prepare compendium folders for magic pack.`, error);
         }
       },
-      createData: (item) => createMagicItemData(item, folderIdByPath, iconLookup),
+      createData: (item) => createMagicItemData(item, folderIdByPath, iconLookup, activityOptions),
       updateData: (_document, item) => {
-        const data = createMagicItemData(item, folderIdByPath, iconLookup);
+        const data = createMagicItemData(item, folderIdByPath, iconLookup, activityOptions);
         delete data._id;
         return data;
       }

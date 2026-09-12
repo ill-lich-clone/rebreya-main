@@ -115,7 +115,7 @@ export class GrapplePlacementPreview {
     this.#wait = wait;
   }
 
-  async choose({ sourceToken, targetToken, reachFeet } = {}) {
+  async choose({ sourceToken, targetToken, reachFeet, checkCollision = true } = {}) {
     const Crosshairs = this.#crosshairsProvider();
     if (typeof Crosshairs?.showCrosshairs !== "function") {
       throw codedError("crosshairs-unavailable", "CPR Crosshairs is unavailable");
@@ -136,7 +136,7 @@ export class GrapplePlacementPreview {
         grid,
         reachFeet,
         sceneRect: this.#sceneRectProvider(),
-        checkCollision: this.#checkCollision
+        checkCollision: checkCollision === false ? null : this.#checkCollision
       });
       const track = async (crosshair) => {
         do {
