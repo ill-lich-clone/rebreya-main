@@ -11,8 +11,10 @@ import {
 } from "../scripts/application/socket-command-scheduling.js";
 import { getActiveGm, isActiveGmClient } from "../scripts/infrastructure/foundry/active-gm.js";
 import {
+  COMMAND_ACCEPTED_TYPE,
   COMMAND_REQUEST_TYPE,
   COMMAND_RESULT_TYPE,
+  COMPLETION_TIMEOUT_MS,
   MAX_SOCKET_ENVELOPE_BYTES,
   REQUEST_TIMEOUT_MS,
   SOCKET_CHANNEL,
@@ -402,7 +404,7 @@ test("SocketCommandBus correlates results by requestId, command, and forUserId",
     senderId: "gm-a",
     ok: true,
     data: { ignored: "command" }
-  }), true);
+  }, { transportSenderId: gm.id }), true);
   assert.equal(bus.handleMessage({
     type: COMMAND_RESULT_TYPE,
     command: "group.calendar.setDate",
@@ -411,7 +413,7 @@ test("SocketCommandBus correlates results by requestId, command, and forUserId",
     senderId: "gm-a",
     ok: true,
     data: { ignored: "user" }
-  }), true);
+  }, { transportSenderId: gm.id }), true);
   await flushTasks();
   assert.equal(settled, false);
 
@@ -423,7 +425,7 @@ test("SocketCommandBus correlates results by requestId, command, and forUserId",
     senderId: "gm-a",
     ok: true,
     data: { saved: true }
-  }), true);
+  }, { transportSenderId: gm.id }), true);
   assert.deepEqual(await pending, { saved: true });
   assert.deepEqual(timers.cleared, [1]);
 });
@@ -461,7 +463,7 @@ test("SocketCommandBus uses an explicit request id without calling its id factor
     senderId: gm.id,
     ok: true,
     data: "saved"
-  }), true);
+  }, { transportSenderId: gm.id }), true);
   assert.equal(await pending, "saved");
 });
 
@@ -520,7 +522,7 @@ test("SocketCommandBus ignores malformed correlated errors until a valid failure
     { code: "", message: "failure" },
     { code: "denied", message: " " }
   ]) {
-    assert.equal(bus.handleMessage({ ...correlation, error }), true);
+    assert.equal(bus.handleMessage({ ...correlation, error }, { transportSenderId: gm.id }), true);
   }
   await flushTasks();
   assert.equal(settledError, undefined);
@@ -530,7 +532,7 @@ test("SocketCommandBus ignores malformed correlated errors until a valid failure
   assert.equal(bus.handleMessage({
     ...correlation,
     error: { code: "denied", message: "Request denied" }
-  }), true);
+  }, { transportSenderId: gm.id }), true);
   await observed;
   assert.equal(settledError?.code, "denied");
   assert.equal(settledError?.message, "Request denied");
@@ -567,7 +569,7 @@ test("SocketCommandBus preserves safe structured command failure details", async
         unprocessedSourceKeys: ["row-3"]
       }
     }
-  }), true);
+  }, { transportSenderId: gm.id }), true);
 
   await assert.rejects(
     pending,
@@ -594,6 +596,135 @@ test("SocketCommandBus times requests out after exactly 10000 ms", async () => {
   assert.equal(timers.pending.get(1).milliseconds, REQUEST_TIMEOUT_MS);
   timers.pending.get(1).callback();
   await assert.rejects(pending, (error) => error?.code === "request-timeout");
+});
+
+test("SocketCommandBus switches from acceptance timeout to completion timeout", async () => {
+  const emitted = [];
+  const timers = createFakeTimers();
+  const player = { id: "player-a", isGM: false, active: true };
+  const gm = { id: "gm-a", isGM: true, active: true };
+  const game = createGame({ users: [player, gm], currentUserId: player.id, activeGmId: gm.id, emitted });
+  const bus = new SocketCommandBus({
+    gameProvider: () => game,
+    idFactory: () => "accepted-timeout",
+    setTimeoutFn: timers.setTimeoutFn,
+    clearTimeoutFn: timers.clearTimeoutFn
+  });
+
+  const pending = bus.request("group.calendar.setDate", { day: 4 });
+  assert.equal(timers.pending.get(1).milliseconds, REQUEST_TIMEOUT_MS);
+  assert.equal(bus.handleMessage({
+    type: COMMAND_ACCEPTED_TYPE,
+    command: "group.calendar.setDate",
+    requestId: "accepted-timeout",
+    forUserId: player.id,
+    senderId: gm.id
+  }, { transportSenderId: gm.id }), true);
+
+  assert.deepEqual(timers.cleared, [1]);
+  assert.equal(timers.pending.get(2).milliseconds, COMPLETION_TIMEOUT_MS);
+  timers.pending.get(2).callback();
+  await assert.rejects(pending, (error) => error?.code === "operation-timeout");
+});
+
+test("SocketCommandBus accepts a result as implicit acknowledgement only from the expected active GM", async () => {
+  const emitted = [];
+  const timers = createFakeTimers();
+  const player = { id: "player-a", isGM: false, active: true };
+  const gm = { id: "gm-a", isGM: true, active: true };
+  const attacker = { id: "player-b", isGM: false, active: true };
+  const game = createGame({ users: [player, gm, attacker], currentUserId: player.id, activeGmId: gm.id, emitted });
+  const bus = new SocketCommandBus({
+    gameProvider: () => game,
+    idFactory: () => "implicit-accepted",
+    setTimeoutFn: timers.setTimeoutFn,
+    clearTimeoutFn: timers.clearTimeoutFn
+  });
+  const pending = bus.request("group.calendar.setDate", { day: 4 });
+  const result = {
+    type: COMMAND_RESULT_TYPE,
+    command: "group.calendar.setDate",
+    requestId: "implicit-accepted",
+    forUserId: player.id,
+    senderId: gm.id,
+    ok: true,
+    data: { savedDay: 4 }
+  };
+
+  assert.equal(bus.handleMessage(result, { transportSenderId: attacker.id }), true);
+  assert.equal(timers.pending.size, 1);
+  assert.equal(bus.handleMessage({ ...result, senderId: attacker.id }, { transportSenderId: attacker.id }), true);
+  assert.equal(timers.pending.size, 1);
+  assert.equal(bus.handleMessage(result, { transportSenderId: gm.id }), true);
+  assert.deepEqual(await pending, { savedDay: 4 });
+});
+
+test("SocketCommandBus emits accepted before a keyed mutation leaves its queue", async () => {
+  const emitted = [];
+  const coordinator = new WorldMutationCoordinator();
+  const blockerGate = createDeferred();
+  const gm = { id: "gm-a", isGM: true, active: true };
+  const player = { id: "player-a", isGM: false, active: true };
+  const game = createGame({ users: [gm, player], currentUserId: gm.id, activeGmId: gm.id, emitted });
+  const blocker = coordinator.runScoped({ keys: ["actor:a"] }, () => blockerGate.promise);
+  const bus = new SocketCommandBus({ gameProvider: () => game, coordinator });
+  bus.register("inventory.item.take", {
+    validate: (payload) => typeof payload?.actorId === "string",
+    authorize: () => true,
+    scheduling: keyedMutationScheduling((payload) => [`actor:${payload.actorId}`]),
+    execute: async () => ({ saved: true })
+  });
+  await flushTasks();
+
+  bus.handleMessage({
+    type: COMMAND_REQUEST_TYPE,
+    command: "inventory.item.take",
+    requestId: "queued-a",
+    senderId: player.id,
+    payload: { actorId: "a" }
+  }, { transportSenderId: player.id });
+  await flushTasks();
+
+  assert.equal(emitted.length, 1);
+  assert.equal(emitted[0].message.type, COMMAND_ACCEPTED_TYPE);
+  blockerGate.resolve();
+  await blocker;
+  await flushTasks();
+  assert.equal(emitted.at(-1).message.type, COMMAND_RESULT_TYPE);
+});
+
+test("SocketCommandBus executes queries while an exclusive mutation is blocked", async () => {
+  const emitted = [];
+  const coordinator = new WorldMutationCoordinator();
+  const blockerGate = createDeferred();
+  const gm = { id: "gm-a", isGM: true, active: true };
+  const player = { id: "player-a", isGM: false, active: true };
+  const game = createGame({ users: [gm, player], currentUserId: gm.id, activeGmId: gm.id, emitted });
+  const blocker = coordinator.runScoped({ exclusive: true }, () => blockerGate.promise);
+  const bus = new SocketCommandBus({ gameProvider: () => game, coordinator });
+  bus.register("storage.journal.read", {
+    validate: () => true,
+    authorize: () => true,
+    scheduling: QUERY_SCHEDULING,
+    execute: async () => ({ rows: ["visible"] })
+  });
+  await flushTasks();
+
+  bus.handleMessage({
+    type: COMMAND_REQUEST_TYPE,
+    command: "storage.journal.read",
+    requestId: "query-a",
+    senderId: player.id,
+    payload: {}
+  }, { transportSenderId: player.id });
+  await flushTasks();
+
+  assert.deepEqual(emitted.map((entry) => entry.message.type), [
+    COMMAND_ACCEPTED_TYPE,
+    COMMAND_RESULT_TYPE
+  ]);
+  blockerGate.resolve();
+  await blocker;
 });
 
 test("SocketCommandBus rejects a duplicate outbound pending key without replacing the first request", async () => {
@@ -647,9 +778,20 @@ test("SocketCommandBus executes a duplicate typed request once and re-emits its 
   assert.equal(bus.handleMessage(request), true);
   await flushTasks();
   assert.equal(executions, 1);
-  assert.equal(emitted.length, 2);
-  assert.deepEqual(emitted[0], emitted[1]);
+  assert.equal(emitted.length, 4);
+  assert.deepEqual(emitted[0], emitted[2]);
+  assert.deepEqual(emitted[1], emitted[3]);
   assert.deepEqual(emitted[0], {
+    channel: SOCKET_CHANNEL,
+    message: {
+      type: COMMAND_ACCEPTED_TYPE,
+      command: request.command,
+      requestId: request.requestId,
+      forUserId: player.id,
+      senderId: gm.id
+    }
+  });
+  assert.deepEqual(emitted[1], {
     channel: SOCKET_CHANNEL,
     message: {
       type: COMMAND_RESULT_TYPE,
@@ -692,7 +834,16 @@ test("SocketCommandBus emits privacy-safe lifecycle trace events around authorit
 
   assert.deepEqual(
     traced.map((event) => event.phase),
-    ["received", "queue-start", "authorized", "execute-end", "completed"]
+    [
+      "received",
+      "validated",
+      "accepted",
+      "queue-start",
+      "authorized",
+      "execute-end",
+      "response",
+      "completed"
+    ]
   );
   assert.equal(traced.every((event) => event.command === "group.calendar.setDate"), true);
   assert.equal(traced.every((event) => event.requestId === "trace-a"), true);
@@ -858,7 +1009,7 @@ test("SocketCommandBus accepts exactly 65536 serialized bytes and rejects larger
     senderId: gm.id,
     ok: true,
     data: "accepted"
-  }), true);
+  }, { transportSenderId: gm.id }), true);
   assert.equal(await exactRequest, "accepted");
 
   await assert.rejects(

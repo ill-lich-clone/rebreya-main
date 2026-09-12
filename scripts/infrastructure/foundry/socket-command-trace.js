@@ -59,18 +59,23 @@ export function createSocketCommandTraceSink({
       return;
     }
 
+    if (phase === "validated") span.validatedAt = at;
+    if (phase === "accepted") span.acceptedAt = at;
     if (phase === "queue-start") span.queueStartedAt = at;
     if (phase === "authorized") span.authorizedAt = at;
     if (phase === "execute-end") span.executeEndedAt = at;
+    if (phase === "response") span.responseAt = at;
     if (phase === "journal-write") span.journalWrites += positiveCount(event.count);
     if (phase === "document-write") span.documentWrites += positiveCount(event.count);
     if (phase === "refresh-scheduled") span.refreshScheduledAt = at;
     if (phase !== "completed") return;
 
     spans.delete(correlation.key);
-    const queueStartedAt = span.queueStartedAt ?? span.receivedAt;
+    const queueBaseAt = span.acceptedAt ?? span.receivedAt;
+    const queueStartedAt = span.queueStartedAt ?? queueBaseAt;
     const executionStartedAt = span.authorizedAt ?? queueStartedAt;
     const executeEndedAt = span.executeEndedAt ?? at;
+    const responseAt = span.responseAt ?? at;
     const record = Object.freeze({
       command: span.command,
       requestId: span.requestId,
@@ -79,12 +84,25 @@ export function createSocketCommandTraceSink({
       mode: String(event?.mode ?? "unknown"),
       keys: Object.freeze((event?.keys ?? []).map((key) => String(key))),
       receivedAt: span.receivedAt,
+      validatedAt: span.validatedAt,
+      acceptedAt: span.acceptedAt,
       queueStartedAt,
       authorizedAt: span.authorizedAt,
       executeEndedAt,
+      responseAt,
       completedAt: at,
-      queueMs: Math.max(0, queueStartedAt - span.receivedAt),
+      validationMs: span.validatedAt == null
+        ? undefined
+        : Math.max(0, span.validatedAt - span.receivedAt),
+      acceptanceMs: span.acceptedAt == null
+        ? undefined
+        : Math.max(0, span.acceptedAt - span.receivedAt),
+      queueMs: Math.max(0, queueStartedAt - queueBaseAt),
+      authorizationMs: span.authorizedAt == null
+        ? undefined
+        : Math.max(0, span.authorizedAt - queueStartedAt),
       executionMs: Math.max(0, executeEndedAt - executionStartedAt),
+      responseMs: Math.max(0, responseAt - executeEndedAt),
       totalMs: Math.max(0, at - span.receivedAt),
       journalWrites: span.journalWrites,
       documentWrites: span.documentWrites,

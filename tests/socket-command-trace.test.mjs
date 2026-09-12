@@ -55,10 +55,15 @@ test("socket command trace counts writes and does not warn for a fast success", 
   });
 
   trace(traceEvent("received", { at: 100 }));
+  trace(traceEvent("validated", { at: 105 }));
+  trace(traceEvent("accepted", { at: 108 }));
   trace(traceEvent("queue-start", { at: 110 }));
+  trace(traceEvent("authorized", { at: 115 }));
   trace(traceEvent("journal-write", { at: 120, count: 2 }));
   trace(traceEvent("document-write", { at: 130 }));
   trace(traceEvent("refresh-scheduled", { at: 140 }));
+  trace(traceEvent("execute-end", { at: 180 }));
+  trace(traceEvent("response", { at: 190 }));
   trace(traceEvent("completed", { at: 200, outcome: "ok", mode: "query" }));
 
   assert.equal(records.length, 1);
@@ -66,6 +71,12 @@ test("socket command trace counts writes and does not warn for a fast success", 
   assert.equal(records[0].journalWrites, 2);
   assert.equal(records[0].documentWrites, 1);
   assert.equal(records[0].refreshScheduledAt, 140);
+  assert.equal(records[0].validationMs, 5);
+  assert.equal(records[0].acceptanceMs, 8);
+  assert.equal(records[0].queueMs, 2);
+  assert.equal(records[0].authorizationMs, 5);
+  assert.equal(records[0].executionMs, 65);
+  assert.equal(records[0].responseMs, 10);
 });
 
 test("socket command trace warns for failed commands even when they are fast", () => {

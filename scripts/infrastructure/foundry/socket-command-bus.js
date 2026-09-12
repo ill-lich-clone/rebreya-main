@@ -1,15 +1,21 @@
 import { WorldMutationCoordinator } from "../../application/world-mutation-coordinator.js";
+import {
+  EXCLUSIVE_MUTATION_SCHEDULING,
+  normalizeSocketScheduling,
+  resolveSocketScheduling
+} from "../../application/socket-command-scheduling.js";
 import { MODULE_ID } from "../../constants.js";
-import { isActiveGmClient } from "./active-gm.js";
+import { getActiveGm, isActiveGmClient } from "./active-gm.js";
 import { NOOP_SOCKET_COMMAND_TRACE } from "./socket-command-trace.js";
 
 export const SOCKET_CHANNEL = `module.${MODULE_ID}`;
 export const COMMAND_REQUEST_TYPE = "rebreya.command";
+export const COMMAND_ACCEPTED_TYPE = "rebreya.command.accepted";
 export const COMMAND_RESULT_TYPE = "rebreya.command.result";
 export const MAX_SOCKET_ENVELOPE_BYTES = 65536;
 export const REQUEST_TIMEOUT_MS = 10000;
+export const COMPLETION_TIMEOUT_MS = 60000;
 
-const DEFAULT_MUTATION_KEY = "world";
 const textEncoder = new TextEncoder();
 
 export class SocketCommandError extends Error {
@@ -133,14 +139,15 @@ function errorOutcome(code, message) {
 
 export class SocketCommandBus {
   #clearTimeout;
+  #completionTimeoutMs;
   #coordinator;
   #gameProvider;
   #handlers = new Map();
   #idFactory;
   #maxEnvelopeBytes;
-  #mutationKey;
   #now;
   #pending = new Map();
+  #requireExplicitScheduling;
   #requestTimeoutMs;
   #setTimeout;
   #socketChannel;
@@ -154,7 +161,8 @@ export class SocketCommandBus {
     idFactory = defaultIdFactory,
     maxEnvelopeBytes = MAX_SOCKET_ENVELOPE_BYTES,
     requestTimeoutMs = REQUEST_TIMEOUT_MS,
-    mutationKey = DEFAULT_MUTATION_KEY,
+    completionTimeoutMs = COMPLETION_TIMEOUT_MS,
+    requireExplicitScheduling = false,
     socketChannel = SOCKET_CHANNEL,
     trace = NOOP_SOCKET_COMMAND_TRACE,
     now = () => globalThis.performance?.now?.() ?? Date.now()
@@ -166,13 +174,14 @@ export class SocketCommandBus {
     this.#idFactory = idFactory;
     this.#maxEnvelopeBytes = maxEnvelopeBytes;
     this.#requestTimeoutMs = requestTimeoutMs;
-    this.#mutationKey = mutationKey;
+    this.#completionTimeoutMs = completionTimeoutMs;
+    this.#requireExplicitScheduling = requireExplicitScheduling === true;
     this.#socketChannel = socketChannel;
     this.#trace = typeof trace === "function" ? trace : NOOP_SOCKET_COMMAND_TRACE;
     this.#now = typeof now === "function" ? now : (() => Date.now());
   }
 
-  register(command, { validate, authorize, execute } = {}) {
+  register(command, { validate, authorize, execute, scheduling } = {}) {
     if (!nonEmptyString(command)) {
       throw new TypeError("command must be a non-empty string");
     }
@@ -186,11 +195,16 @@ export class SocketCommandBus {
       throw new TypeError("authorize must be a function");
     }
 
-    this.#handlers.set(command, {
+    const normalizedScheduling = normalizeSocketScheduling(scheduling, {
+      allowImplicitExclusive: !this.#requireExplicitScheduling,
+      command
+    });
+    this.#handlers.set(command, Object.freeze({
       validate: validate ?? (() => true),
       authorize: authorize ?? (() => true),
-      execute
-    });
+      execute,
+      scheduling: normalizedScheduling
+    }));
     return this;
   }
 
@@ -238,6 +252,13 @@ export class SocketCommandBus {
         "Foundry socket is unavailable"
       ));
     }
+    const expectedActiveGmId = String(getActiveGm(game)?.id ?? "").trim();
+    if (!expectedActiveGmId) {
+      return Promise.reject(new SocketCommandError(
+        "active-gm-unavailable",
+        "No active GM is available for the socket command"
+      ));
+    }
 
     const pendingKey = this.#pendingKey(normalizedRequestId, command, senderId);
     if (this.#pending.has(pendingKey)) {
@@ -247,17 +268,22 @@ export class SocketCommandBus {
       ));
     }
     return new Promise((resolve, reject) => {
-      const entry = { resolve, reject, timeoutId: undefined };
-      entry.timeoutId = this.#setTimeout(() => {
-        if (this.#pending.get(pendingKey) === entry) {
-          this.#pending.delete(pendingKey);
-          reject(new SocketCommandError(
-            "request-timeout",
-            `Socket command timed out after ${this.#requestTimeoutMs} ms`
-          ));
-        }
-      }, this.#requestTimeoutMs);
+      const entry = {
+        command,
+        expectedActiveGmId,
+        forUserId: senderId,
+        phase: "acceptance",
+        reject,
+        requestId: normalizedRequestId,
+        resolve,
+        timeoutId: undefined
+      };
       this.#pending.set(pendingKey, entry);
+      this.#armPendingTimeout(pendingKey, entry, {
+        code: "request-timeout",
+        message: `Socket command timed out after ${this.#requestTimeoutMs} ms before acceptance`,
+        milliseconds: this.#requestTimeoutMs
+      });
 
       try {
         game.socket.emit(this.#socketChannel, envelope);
@@ -271,15 +297,20 @@ export class SocketCommandBus {
   }
 
   handleMessage(message, { transportSenderId = "" } = {}) {
+    const normalizedTransportSenderId = String(transportSenderId ?? "").trim();
+    if (message?.type === COMMAND_ACCEPTED_TYPE) {
+      this.#handleAccepted(message, normalizedTransportSenderId);
+      return true;
+    }
     if (message?.type === COMMAND_RESULT_TYPE) {
-      this.#handleResult(message);
+      this.#handleResult(message, normalizedTransportSenderId);
       return true;
     }
     if (message?.type !== COMMAND_REQUEST_TYPE) {
       return false;
     }
 
-    this.#handleRequest(message, String(transportSenderId ?? "").trim()).catch(() => undefined);
+    this.#handleRequest(message, normalizedTransportSenderId).catch(() => undefined);
     return true;
   }
 
@@ -360,57 +391,117 @@ export class SocketCommandBus {
       ...details
     });
     trace("received");
-    const idempotencyId = `${message.senderId}\u0000${message.command}\u0000${message.requestId}`;
-    const outcome = await this.#coordinator.runIdempotent(
-      this.#mutationKey,
-      idempotencyId,
-      async () => {
-        trace("queue-start");
-        try {
-          if (!await definition.validate(message.payload, context)) {
-            return errorOutcome("invalid-payload", "Socket command payload is invalid");
-          }
-        }
-        catch (error) {
-          return {
-            ok: false,
-            error: normalizeError(error, "invalid-payload", "Socket command payload is invalid")
-          };
-        }
+    let validated = false;
+    try {
+      validated = await definition.validate(message.payload, context) === true;
+    }
+    catch (error) {
+      const outcome = {
+        ok: false,
+        error: normalizeError(error, "invalid-payload", "Socket command payload is invalid")
+      };
+      this.#emitOutcome(correlation, outcome, game);
+      trace("response");
+      trace("completed", { outcome: "failed", mode: "unresolved", keys: [] });
+      return;
+    }
+    if (!validated) {
+      const outcome = errorOutcome("invalid-payload", "Socket command payload is invalid");
+      this.#emitOutcome(correlation, outcome, game);
+      trace("response");
+      trace("completed", { outcome: "failed", mode: "unresolved", keys: [] });
+      return;
+    }
+    trace("validated");
 
-        try {
-          if (!await definition.authorize(message.payload, context)) {
-            return errorOutcome("unauthorized", "Socket command is not authorized");
-          }
-          trace("authorized");
-        }
-        catch (error) {
-          return {
-            ok: false,
-            error: normalizeError(error, "unauthorized", "Socket command is not authorized")
-          };
-        }
+    let scheduling;
+    try {
+      scheduling = resolveSocketScheduling(definition.scheduling, message.payload, context);
+    }
+    catch (error) {
+      const outcome = {
+        ok: false,
+        error: normalizeError(error, "invalid-scheduling", "Socket command scheduling is invalid")
+      };
+      this.#emitOutcome(correlation, outcome, game);
+      trace("response");
+      trace("completed", { outcome: "failed", mode: "unresolved", keys: [] });
+      return;
+    }
 
-        try {
-          const data = await definition.execute(message.payload, context);
-          trace("execute-end");
-          return { ok: true, data };
-        }
-        catch (error) {
-          trace("execute-end");
-          return {
-            ok: false,
-            error: normalizeError(error, "command-failed", "Socket command failed")
-          };
-        }
+    const executeAuthorized = async () => {
+      trace("queue-start", { mode: scheduling.mode, keys: scheduling.keys });
+      const currentGame = this.#gameProvider();
+      if (!isActiveGmClient(currentGame)) {
+        return errorOutcome("active-gm-changed", "Active GM changed before socket command execution");
       }
-    );
+      const currentSender = findUser(currentGame, message.senderId);
+      if (!currentSender) {
+        return errorOutcome("unknown-sender", "Socket command sender is not a current Foundry user");
+      }
+      const executionContext = Object.freeze({
+        ...context,
+        game: currentGame,
+        sender: currentSender,
+        alreadyScheduled: scheduling.mode !== "query"
+      });
+
+      try {
+        if (!await definition.authorize(message.payload, executionContext)) {
+          return errorOutcome("unauthorized", "Socket command is not authorized");
+        }
+        trace("authorized", { mode: scheduling.mode, keys: scheduling.keys });
+      }
+      catch (error) {
+        return {
+          ok: false,
+          error: normalizeError(error, "unauthorized", "Socket command is not authorized")
+        };
+      }
+
+      try {
+        const data = await definition.execute(message.payload, executionContext);
+        trace("execute-end", { mode: scheduling.mode, keys: scheduling.keys });
+        return { ok: true, data };
+      }
+      catch (error) {
+        trace("execute-end", { mode: scheduling.mode, keys: scheduling.keys });
+        return {
+          ok: false,
+          error: normalizeError(error, "command-failed", "Socket command failed")
+        };
+      }
+    };
+
+    let outcomePromise;
+    if (scheduling.mode === "query") {
+      if (this.#emitAccepted(correlation, game)) trace("accepted", {
+        mode: scheduling.mode,
+        keys: scheduling.keys
+      });
+      outcomePromise = Promise.resolve().then(executeAuthorized);
+    }
+    else {
+      const idempotencyId = `${message.senderId}\u0000${message.command}\u0000${message.requestId}`;
+      outcomePromise = this.#coordinator.runIdempotentScoped({
+        keys: scheduling.keys,
+        exclusive: scheduling.exclusive,
+        requestId: idempotencyId
+      }, executeAuthorized);
+      if (this.#emitAccepted(correlation, game)) trace("accepted", {
+        mode: scheduling.mode,
+        keys: scheduling.keys
+      });
+    }
+
+    const outcome = await outcomePromise;
+    this.#emitOutcome(correlation, outcome, game);
+    trace("response", { mode: scheduling.mode, keys: scheduling.keys });
     trace("completed", {
       outcome: outcome.ok ? "ok" : "failed",
-      mode: "exclusive-mutation",
-      keys: [this.#mutationKey]
+      mode: scheduling.mode,
+      keys: scheduling.keys
     });
-    this.#emitOutcome(correlation, outcome, game);
   }
 
   #recordTrace(event) {
@@ -422,31 +513,51 @@ export class SocketCommandBus {
     }
   }
 
-  #handleResult(message) {
-    const size = serializedSize(message);
-    if (size == null || size > this.#maxEnvelopeBytes) {
-      return;
-    }
-    if (
-      !nonEmptyString(message?.command)
-      || !nonEmptyString(message?.requestId)
-      || !nonEmptyString(message?.forUserId)
-      || typeof message?.ok !== "boolean"
-      || (message.ok === false && !isValidResultError(message.error))
-    ) {
-      return;
-    }
+  #emitAccepted(correlation, game) {
+    if (typeof game?.socket?.emit !== "function") return false;
+    const accepted = {
+      type: COMMAND_ACCEPTED_TYPE,
+      command: correlation.command,
+      requestId: correlation.requestId,
+      forUserId: correlation.senderId,
+      senderId: String(game?.user?.id ?? "")
+    };
+    const size = serializedSize(accepted);
+    if (size == null || size > this.#maxEnvelopeBytes) return false;
+    game.socket.emit(this.#socketChannel, accepted);
+    return true;
+  }
 
-    const currentUserId = String(this.#gameProvider()?.user?.id ?? "");
-    if (message.forUserId !== currentUserId) {
-      return;
-    }
-    const pendingKey = this.#pendingKey(message.requestId, message.command, message.forUserId);
-    const pending = this.#pending.get(pendingKey);
-    if (!pending) {
-      return;
-    }
+  #armPendingTimeout(pendingKey, entry, { code, message, milliseconds }) {
+    entry.timeoutId = this.#setTimeout(() => {
+      if (this.#pending.get(pendingKey) !== entry) return;
+      this.#pending.delete(pendingKey);
+      entry.reject(new SocketCommandError(code, message));
+    }, milliseconds);
+  }
 
+  #handleAccepted(message, transportSenderId) {
+    const correlated = this.#correlatedPending(message, transportSenderId, {
+      requireOutcome: false
+    });
+    if (!correlated || correlated.pending.phase !== "acceptance") return;
+
+    this.#clearTimeout(correlated.pending.timeoutId);
+    correlated.pending.phase = "completion";
+    this.#armPendingTimeout(correlated.pendingKey, correlated.pending, {
+      code: "operation-timeout",
+      message: `Socket command did not complete after ${this.#completionTimeoutMs} ms`,
+      milliseconds: this.#completionTimeoutMs
+    });
+  }
+
+  #handleResult(message, transportSenderId) {
+    const correlated = this.#correlatedPending(message, transportSenderId, {
+      requireOutcome: true
+    });
+    if (!correlated) return;
+
+    const { pendingKey, pending } = correlated;
     this.#pending.delete(pendingKey);
     this.#clearTimeout(pending.timeoutId);
     if (message.ok) {
@@ -460,6 +571,34 @@ export class SocketCommandBus {
       "Socket command failed"
     );
     pending.reject(new SocketCommandError(error.code, error.message, error.details ?? null));
+  }
+
+  #correlatedPending(message, transportSenderId, { requireOutcome }) {
+    const size = serializedSize(message);
+    if (size == null || size > this.#maxEnvelopeBytes) {
+      return null;
+    }
+    if (
+      !nonEmptyString(message?.command)
+      || !nonEmptyString(message?.requestId)
+      || !nonEmptyString(message?.forUserId)
+      || !nonEmptyString(message?.senderId)
+      || !nonEmptyString(transportSenderId)
+      || message.senderId !== transportSenderId
+      || (requireOutcome && typeof message?.ok !== "boolean")
+      || (requireOutcome && message.ok === false && !isValidResultError(message.error))
+    ) {
+      return null;
+    }
+
+    const currentUserId = String(this.#gameProvider()?.user?.id ?? "");
+    if (message.forUserId !== currentUserId) {
+      return null;
+    }
+    const pendingKey = this.#pendingKey(message.requestId, message.command, message.forUserId);
+    const pending = this.#pending.get(pendingKey);
+    if (!pending || pending.expectedActiveGmId !== message.senderId) return null;
+    return { pendingKey, pending };
   }
 
   #emitOutcome(correlation, outcome, game) {
