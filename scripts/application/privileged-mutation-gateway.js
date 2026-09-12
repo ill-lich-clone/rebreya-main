@@ -70,6 +70,7 @@ export class PrivilegedMutationGateway {
   #isActiveGmClient;
   #maxTimeoutRetries;
   #operationIdFactory;
+  #requireExplicitScheduling;
 
   constructor({
     commandBus,
@@ -78,7 +79,8 @@ export class PrivilegedMutationGateway {
     getActiveGm,
     isActiveGmClient,
     operationIdFactory,
-    maxTimeoutRetries = 1
+    maxTimeoutRetries = 1,
+    requireExplicitScheduling = false
   }) {
     if (typeof commandBus?.register !== "function" || typeof commandBus?.request !== "function") {
       throw new TypeError("commandBus must provide register and request methods");
@@ -112,6 +114,7 @@ export class PrivilegedMutationGateway {
     this.#isActiveGmClient = isActiveGmClient;
     this.#maxTimeoutRetries = maxTimeoutRetries;
     this.#operationIdFactory = operationIdFactory;
+    this.#requireExplicitScheduling = requireExplicitScheduling === true;
   }
 
   registerCommand(command, { validate, authorize, execute, scheduling } = {}) {
@@ -129,7 +132,7 @@ export class PrivilegedMutationGateway {
     }
 
     const normalizedScheduling = normalizeSocketScheduling(scheduling, {
-      allowImplicitExclusive: true,
+      allowImplicitExclusive: !this.#requireExplicitScheduling,
       command: normalizedCommand
     });
     const definition = Object.freeze({

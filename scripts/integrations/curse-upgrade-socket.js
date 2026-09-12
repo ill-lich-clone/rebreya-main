@@ -1,4 +1,5 @@
 import { isDamageOnlySaveActivity } from "../combat/curse-upgrade-saves.js";
+import { aggregateKey, keyedMutationScheduling } from "../application/socket-command-scheduling.js";
 
 const text = value => typeof value === "string" && value.length > 0 && value.length < 512;
 const exact = (payload, keys) => payload && typeof payload === "object" && !Array.isArray(payload)
@@ -45,17 +46,21 @@ export async function authorizeCurseSaveRequest(payload, { sender } = {}) {
 export function registerCurseUpgradeSocketCommands(moduleApi) {
   const bus = moduleApi.socketCommandBus; const service = moduleApi.curseUpgradeAutomationService;
   bus.register("curse-upgrade.save", { validate: isValidCurseSaveRequest, authorize: authorizeCurseSaveRequest,
+    scheduling: keyedMutationScheduling(p => [aggregateKey("actor", p.actorUuid)]),
     execute: (payload, context) => service.executeSaveRequest(payload, context) });
   const validateAttack = p => exact(p, ["actorUuid", "hostId", "eventId"]) && text(p.actorUuid) && text(p.hostId) && text(p.eventId);
   const authorizeActor = async (p, { sender }) => owns(await resolve(p.actorUuid), sender);
   bus.register("curse-upgrade.sync", { validate: p => exact(p, ["actorUuid"]) && text(p.actorUuid), authorize: authorizeActor,
+    scheduling: keyedMutationScheduling(p => [aggregateKey("actor", p.actorUuid)]),
     execute: async p => service.syncActor(await resolve(p.actorUuid)) });
   bus.register("curse-upgrade.attack", { validate: validateAttack, authorize: authorizeActor,
+    scheduling: keyedMutationScheduling(p => [aggregateKey("actor", p.actorUuid)]),
     execute: async p => { const actor = await resolve(p.actorUuid); const host = actor?.items?.get(p.hostId); if (!host) throw new Error("Оружие не найдено."); return service.attackOccurred(actor, host, p.eventId); } });
   bus.register("curse-upgrade.blood", {
     validate: p => exact(p, ["actorUuid", "hostId", "sourceId", "eventId", "turn", "amount"])
       && [p.actorUuid, p.hostId, p.sourceId, p.eventId, p.turn].every(text) && Number.isFinite(p.amount) && p.amount > 0 && p.amount <= 1000,
     authorize: authorizeActor,
+    scheduling: keyedMutationScheduling(p => [aggregateKey("actor", p.actorUuid)]),
     execute: async p => {
       const actor = await resolve(p.actorUuid);
       const source = service.sources(actor, "blood").find(s => s.host.id === p.hostId && s.upgrade.id === p.sourceId);

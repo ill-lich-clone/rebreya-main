@@ -35,7 +35,8 @@ function createGateway({
   coordinator = new WorldMutationCoordinator(),
   operationId = "operation-a",
   commandBusOptions = {},
-  maxTimeoutRetries = 1
+  maxTimeoutRetries = 1,
+  requireExplicitScheduling = false
 }) {
   const commandBus = new SocketCommandBus({
     coordinator,
@@ -49,10 +50,23 @@ function createGateway({
     getActiveGm,
     isActiveGmClient,
     operationIdFactory: () => operationId,
-    maxTimeoutRetries
+    maxTimeoutRetries,
+    requireExplicitScheduling
   });
   return { commandBus, coordinator, gateway };
 }
+
+test("strict privileged gateway rejects a missing scheduling policy with the command name", () => {
+  const gm = { id: "gm-a", isGM: true, active: true };
+  const game = createGame({ users: [gm], currentUserId: gm.id, activeGmId: gm.id });
+  const { gateway } = createGateway({ game, requireExplicitScheduling: true });
+
+  assert.throws(() => gateway.registerCommand("strict.missing-policy", {
+    validate: () => true,
+    authorize: () => true,
+    execute: () => null
+  }), /strict\.missing-policy.*scheduling/iu);
+});
 
 function createSocketNetwork({ users, activeGmId }) {
   const clients = new Map();

@@ -405,6 +405,25 @@ const groupKey = (id) => aggregateKey("group", id);
 const storageKey = (uuid) => aggregateKey("storage", uuid);
 const lootKey = (id) => aggregateKey("loot", id);
 const sceneKey = (id) => aggregateKey("scene", id);
+const settingKey = (id) => aggregateKey("setting", id);
+const traderKey = (cityId, traderId) => aggregateKey("trader", `${cityId}:${traderId}`);
+
+function disarmSchedulingKeys(payload) {
+  if (payload.operationId) return [aggregateKey("disarm", payload.operationId)];
+  return [documentKey(payload.sourceTokenUuid), documentKey(payload.targetTokenUuid)];
+}
+
+function sceneActivitySchedulingKeys(payload) {
+  if (payload.groupActorId) return [groupKey(payload.groupActorId)];
+  return [aggregateKey("scene-activity", payload.sessionId)];
+}
+
+function downtimeSchedulingKeys(payload) {
+  const keys = [groupKey(payload.groupId)];
+  if (payload.actorId) keys.push(actorKey(payload.actorId));
+  for (const actorId of payload.actorIds ?? []) keys.push(actorKey(actorId));
+  return keys;
+}
 
 function storageDestinationKeys(payload) {
   const keys = [storageKey(payload.tokenUuid)];
@@ -1424,6 +1443,7 @@ export class RebreyaMainModule {
     this.socketCommandBus = new SocketCommandBus({
       coordinator: this.worldMutationCoordinator,
       gameProvider: () => globalThis.game,
+      requireExplicitScheduling: true,
       trace: this.socketCommandTrace
     });
     this.privilegedMutationGateway = new PrivilegedMutationGateway({
@@ -1432,7 +1452,8 @@ export class RebreyaMainModule {
       gameProvider: () => globalThis.game,
       getActiveGm,
       isActiveGmClient,
-      operationIdFactory: () => createSocketRequestId("privileged-mutation")
+      operationIdFactory: () => createSocketRequestId("privileged-mutation"),
+      requireExplicitScheduling: true
     });
     this.worldSettingMutationRepository = new WorldSettingMutationRepository({
       mutationGateway: this.privilegedMutationGateway,
@@ -2136,6 +2157,7 @@ export class RebreyaMainModule {
     this.privilegedMutationGateway.registerCommand("lootgen.publish-result", {
       validate: payload => hasExactKeys(payload,["lootId"]) && isTrimmedNonEmptyString(payload.lootId) && payload.lootId.length<=256,
       authorize: (_payload,{sender}) => sender?.isGM===true,
+      scheduling: keyedMutationScheduling((payload) => [lootKey(payload.lootId)]),
       execute: ({lootId},context) => this.#publishLootgenGeneratedMessage(lootId,context.assertActiveGm)
     });
     this.privilegedMutationGateway.registerCommand("lootgen.claim-character", {
@@ -2143,6 +2165,7 @@ export class RebreyaMainModule {
         && [payload.lootId,payload.rowId,payload.actorUuid,payload.claimId].every(value=>typeof value==="string" && value.trim()===value && value.length>0 && value.length<=256 && !/[\u0000-\u001f\u007f]/u.test(value))
         && isValidActorUuid(payload.actorUuid),
       authorize: async (payload,{sender}) => Boolean(await this.#resolveLootgenCharacterDestination(payload,sender)),
+      scheduling: keyedMutationScheduling((payload) => [lootKey(payload.lootId), actorKey(payload.actorUuid)]),
       execute: async (payload,context) => {
         const destination=await this.#resolveLootgenCharacterDestination(payload,context.sender);
         context.assertActiveGm();
@@ -2156,6 +2179,7 @@ export class RebreyaMainModule {
       validate: payload => hasExactKeys(payload,["form","operationId"]) && isValidPrepareLootgenPayload({form:payload.form})
         && isTrimmedNonEmptyString(payload.operationId) && payload.operationId.length<=256 && !/[\u0000-\u001f\u007f]/u.test(payload.operationId),
       authorize: (_payload, { sender }) => sender?.isGM === true,
+      scheduling: keyedMutationScheduling((payload) => [aggregateKey("loot-prepare", payload.operationId)]),
       execute: async ({ form, operationId }, context) => {
         const result=await this.lootgenGeneratedResultService.prepare({form,operationId}, {
           requesterId: context.sender.id, authorId: game.user.id, assertAuthority: context.assertActiveGm
@@ -2166,6 +2190,7 @@ export class RebreyaMainModule {
     for (const action of DISARM_ACTIONS) this.privilegedMutationGateway.registerCommand(`disarm.${action}`, {
       validate: payload => isValidDisarmPayload(action, payload),
       authorize: (_payload, context) => authorizeDisarmSender(action, context),
+      scheduling: keyedMutationScheduling(disarmSchedulingKeys),
       execute: (payload, context) => {
         const guarded = { sender: context.sender, assertAuthority: context.assertActiveGm };
         if (action === "preview") return this.disarmDocuments.preview(payload, context.sender);
@@ -2179,17 +2204,20 @@ export class RebreyaMainModule {
     for(const [action,command]of Object.entries(SCENE_ACTIVITY_COMMANDS))this.privilegedMutationGateway.registerCommand(command,{
       validate:payload=>isValidSceneActivityPayload(action,payload),
       authorize:(payload,context)=>authorizeSceneActivity(action,payload,context),
+      scheduling:keyedMutationScheduling(sceneActivitySchedulingKeys),
       execute:(payload,{sender})=>this.sceneActivityService[action](payload,sender)
     });
     this.privilegedMutationGateway.registerCommand(REPUTATION_UPDATE_COMMAND, {
       validate: isValidReputationPayload,
       authorize: authorizeReputationUpdate,
+      scheduling: keyedMutationScheduling((payload) => [actorKey(payload.actorUuid)]),
       execute: (payload, context) => this.reputationService.update(payload, context)
     });
     for (const [command, mode] of [[HERO_DOLL_ASSIGN_COMMAND,"assign"],[HERO_DOLL_NORMALIZE_COMMAND,"normalize"],[HERO_DOLL_CLEAR_COMMAND,"clear"]]) {
       this.privilegedMutationGateway.registerCommand(command, {
         validate: isValidHeroDollAssignPayload,
         authorize: (_payload, { sender }) => Boolean(sender?.id),
+        scheduling: keyedMutationScheduling((payload) => [actorKey(payload.actorUuid), documentKey(payload.sourceItemUuid)]),
         execute: (payload, context) => this.heroDollService.executeAssignItemToSlot(payload, context, mode)
       });
     }
@@ -2203,6 +2231,7 @@ export class RebreyaMainModule {
     this.privilegedMutationGateway.registerCommand(GLOBAL_EVENTS_CREATE_COMMAND, {
       validate: isValidGlobalEventsCreatePayload,
       authorize: authorizeGlobalEvents,
+      scheduling: keyedMutationScheduling(() => [settingKey(SETTINGS_KEYS.GLOBAL_EVENTS_STATE)]),
       execute: (payload) => this.#executeGlobalEventsMutation(
         () => this.globalEventsService.createGlobalEvent(payload.data)
       )
@@ -2210,6 +2239,7 @@ export class RebreyaMainModule {
     this.privilegedMutationGateway.registerCommand(GLOBAL_EVENTS_UPDATE_COMMAND, {
       validate: isValidGlobalEventsUpdatePayload,
       authorize: authorizeGlobalEvents,
+      scheduling: keyedMutationScheduling(() => [settingKey(SETTINGS_KEYS.GLOBAL_EVENTS_STATE)]),
       execute: (payload) => this.#executeGlobalEventsMutation(
         () => this.globalEventsService.updateGlobalEvent(payload.eventId, payload.patch)
       )
@@ -2217,6 +2247,7 @@ export class RebreyaMainModule {
     this.privilegedMutationGateway.registerCommand(GLOBAL_EVENTS_DELETE_COMMAND, {
       validate: isValidGlobalEventsDeletePayload,
       authorize: authorizeGlobalEvents,
+      scheduling: keyedMutationScheduling(() => [settingKey(SETTINGS_KEYS.GLOBAL_EVENTS_STATE)]),
       execute: (payload) => this.#executeGlobalEventsMutation(
         () => this.globalEventsService.deleteGlobalEvent(payload.eventId)
       )
@@ -2224,6 +2255,7 @@ export class RebreyaMainModule {
     this.privilegedMutationGateway.registerCommand(GLOBAL_EVENTS_DUPLICATE_COMMAND, {
       validate: isValidGlobalEventsDuplicatePayload,
       authorize: authorizeGlobalEvents,
+      scheduling: keyedMutationScheduling(() => [settingKey(SETTINGS_KEYS.GLOBAL_EVENTS_STATE)]),
       execute: (payload) => this.#executeGlobalEventsMutation(
         () => this.globalEventsService.duplicateGlobalEvent(payload.eventId)
       )
@@ -2231,6 +2263,7 @@ export class RebreyaMainModule {
     this.privilegedMutationGateway.registerCommand(GLOBAL_EVENTS_IMPORT_DEFAULTS_COMMAND, {
       validate: isValidGlobalEventsImportDefaultsPayload,
       authorize: authorizeGlobalEvents,
+      scheduling: keyedMutationScheduling(() => [settingKey(SETTINGS_KEYS.GLOBAL_EVENTS_STATE)]),
       execute: () => this.#executeGlobalEventsMutation(
         () => this.globalEventsService.importDefaultGlobalEventTemplates()
       )
@@ -2239,16 +2272,19 @@ export class RebreyaMainModule {
     this.privilegedMutationGateway.registerCommand(ECONOMY_CITY_PRESENTATION_UPDATE_COMMAND, {
       validate: isValidEconomyCityPresentationUpdatePayload,
       authorize: authorizeEconomy,
+      scheduling: keyedMutationScheduling(() => [settingKey(SETTINGS_KEYS.CITY_PRESENTATION_OVERRIDES)]),
       execute: (payload) => this.repository.updateCityPresentation(payload.cityId, payload.patch)
     });
     this.privilegedMutationGateway.registerCommand(ECONOMY_CONNECTION_SET_ACTIVE_COMMAND, {
       validate: isValidEconomyConnectionSetActivePayload,
       authorize: authorizeEconomy,
+      scheduling: keyedMutationScheduling(() => [settingKey(SETTINGS_KEYS.CONNECTION_STATES)]),
       execute: (payload) => this.repository.setConnectionActive(payload.connectionId, payload.isActive)
     });
     this.privilegedMutationGateway.registerCommand(ECONOMY_REFERENCE_UPDATE_DESCRIPTION_COMMAND, {
       validate: isValidEconomyReferenceUpdateDescriptionPayload,
       authorize: authorizeEconomy,
+      scheduling: keyedMutationScheduling(() => [settingKey(SETTINGS_KEYS.REFERENCE_NOTES)]),
       execute: (payload) => this.repository.setReferenceNote(
         `${payload.entryType}::${payload.entryId}`,
         payload.description
@@ -2257,16 +2293,19 @@ export class RebreyaMainModule {
     this.privilegedMutationGateway.registerCommand(ECONOMY_TRADE_ROUTE_UPDATE_METADATA_COMMAND, {
       validate: isValidEconomyTradeRouteUpdateMetadataPayload,
       authorize: authorizeEconomy,
+      scheduling: keyedMutationScheduling(() => [settingKey(SETTINGS_KEYS.TRADE_ROUTE_OVERRIDES)]),
       execute: (payload) => this.repository.setTradeRouteOverride(payload.connectionId, payload.patch)
     });
     this.privilegedMutationGateway.registerCommand(ECONOMY_STATE_POLICY_UPDATE_COMMAND, {
       validate: isValidEconomyStatePolicyUpdatePayload,
       authorize: authorizeEconomy,
+      scheduling: keyedMutationScheduling(() => [settingKey(SETTINGS_KEYS.STATE_POLICIES)]),
       execute: (payload) => this.repository.setStatePolicy(payload.stateId, payload.patch)
     });
     this.privilegedMutationGateway.registerCommand(ECONOMY_WORLD_DATA_RESET_COMMAND, {
       validate: isValidEconomyWorldDataResetPayload,
       authorize: authorizeEconomy,
+      scheduling: EXCLUSIVE_MUTATION_SCHEDULING,
       execute: async () => {
         await this.traderService.resetState();
         return this.repository.resetWorldData();
@@ -2283,6 +2322,10 @@ export class RebreyaMainModule {
         resolveTraderActor(payload.operation.actorId),
         sender
       ),
+      scheduling: keyedMutationScheduling((payload) => [
+        settingKey(SETTINGS_KEYS.TRADER_STATE),
+        actorKey(payload.operation.actorId)
+      ]),
       execute: (payload, { sender }) => this.traderService.recordTradeAudit(payload.operation, {
         senderId: sender.id
       })
@@ -2290,6 +2333,7 @@ export class RebreyaMainModule {
     this.privilegedMutationGateway.registerCommand(TRADER_METADATA_UPDATE_COMMAND, {
       validate: isValidTraderMetadataUpdatePayload,
       authorize: (_payload, { sender }) => sender?.isGM === true,
+      scheduling: keyedMutationScheduling((payload) => [traderKey(payload.cityId, payload.traderKey)]),
       execute: (payload) => this.traderService.updateTraderMetadata(
         payload.cityId,
         payload.traderKey,
@@ -2299,6 +2343,7 @@ export class RebreyaMainModule {
     this.privilegedMutationGateway.registerCommand(GROUP_REGISTRY_REGISTER_COMMAND, {
       validate: isValidGroupRegistryRegisterPayload,
       authorize: (_payload, { sender }) => sender?.isGM === true,
+      scheduling: keyedMutationScheduling((payload) => [groupKey(payload.groupActorId)]),
       execute: (payload, { assertActiveGm }) => this.groupContextService.registerGroup(
         payload.groupActorId,
         { guard: assertActiveGm }
@@ -2307,6 +2352,7 @@ export class RebreyaMainModule {
     this.privilegedMutationGateway.registerCommand(GROUP_REGISTRY_ACTIVATE_COMMAND, {
       validate: isValidGroupRegistryActivatePayload,
       authorize: (_payload, { sender }) => sender?.isGM === true,
+      scheduling: keyedMutationScheduling((payload) => [groupKey(payload.groupActorId)]),
       execute: (payload, { assertActiveGm }) => this.groupContextService.setActiveGroup(
         payload.groupActorId,
         { guard: assertActiveGm }
@@ -2355,42 +2401,50 @@ export class RebreyaMainModule {
     };
     this.privilegedMutationGateway.registerCommand(DOWNTIME_WEEKS_GRANT_COMMAND, {
       validate: isValidDowntimeWeeksGrantPayload, authorize: authorizeDowntimeAdmin,
+      scheduling: keyedMutationScheduling(downtimeSchedulingKeys),
       execute: async (payload) => finishDowntimeMutation(await this.downtimeService.grantWeeks(payload))
     });
     this.privilegedMutationGateway.registerCommand(DOWNTIME_WEEKS_REVOKE_COMMAND, {
       validate: isValidDowntimeWeeksRevokePayload, authorize: authorizeDowntimeAdmin,
+      scheduling: keyedMutationScheduling(downtimeSchedulingKeys),
       execute: async (payload) => finishDowntimeMutation(await this.downtimeService.revokeWeeks(payload))
     });
     this.privilegedMutationGateway.registerCommand(DOWNTIME_HISTORY_CLEAR_COMMAND, {
       validate: isValidDowntimeHistoryClearPayload, authorize: authorizeDowntimeAdmin,
+      scheduling: keyedMutationScheduling(downtimeSchedulingKeys),
       execute: async (payload) => finishDowntimeMutation(await this.downtimeService.clearHistory(payload))
     });
     this.privilegedMutationGateway.registerCommand(DOWNTIME_REQUEST_CREATE_COMMAND, {
       validate: isValidDowntimeRequestCreatePayload, authorize: authorizeDowntimeOwner,
+      scheduling: keyedMutationScheduling(downtimeSchedulingKeys),
       execute: async (payload, { sender }) => finishDowntimeMutation(await this.downtimeService.createRequest({
         ...await this.#prepareDowntimeCraftPayload(payload), submittedByUserId: sender.id
       }))
     });
     this.privilegedMutationGateway.registerCommand(DOWNTIME_REQUEST_UPDATE_COMMAND, {
       validate: isValidDowntimeRequestUpdatePayload, authorize: authorizeDowntimeOwner,
+      scheduling: keyedMutationScheduling(downtimeSchedulingKeys),
       execute: async (payload) => finishDowntimeMutation(await this.downtimeService.updateRequest(
         await this.#prepareDowntimeCraftPayload(payload)
       ))
     });
     this.privilegedMutationGateway.registerCommand(DOWNTIME_REQUEST_SET_STATUS_COMMAND, {
       validate: isValidDowntimeRequestSetStatusPayload, authorize: authorizeDowntimeAdmin,
+      scheduling: keyedMutationScheduling(downtimeSchedulingKeys),
       execute: async (payload) => finishDowntimeMutation(await this.downtimeService.setRequestStatus(
         payload.requestId, payload.status, { groupId: payload.groupId, result: payload.result }
       ))
     });
     this.privilegedMutationGateway.registerCommand(DOWNTIME_REQUEST_SET_CHECKS_COMMAND, {
       validate: isValidDowntimeRequestSetChecksPayload, authorize: authorizeDowntimeAdmin,
+      scheduling: keyedMutationScheduling(downtimeSchedulingKeys),
       execute: async (payload) => finishDowntimeMutation(await this.downtimeService.setRequestChecks(
         payload.requestId, payload.checks, { groupId: payload.groupId }
       ))
     });
     this.privilegedMutationGateway.registerCommand(DOWNTIME_REQUEST_RECORD_CHECK_COMMAND, {
       validate: isValidDowntimeRequestRecordCheckPayload, authorize: authorizeDowntimeOwner,
+      scheduling: keyedMutationScheduling(downtimeSchedulingKeys),
       execute: async (payload, { sender }) => finishDowntimeMutation(await this.downtimeService.recordCheckResult(
         payload.requestId, payload.checkId, payload.result,
         { groupId: payload.groupId, actorId: payload.actorId, recordedByUserId: sender.id }
@@ -2398,12 +2452,14 @@ export class RebreyaMainModule {
     });
     this.privilegedMutationGateway.registerCommand(DOWNTIME_PROJECT_CONTINUE_COMMAND, {
       validate: isValidDowntimeProjectContinuePayload, authorize: authorizeDowntimeOwner,
+      scheduling: keyedMutationScheduling(downtimeSchedulingKeys),
       execute: async (payload, { sender }) => finishDowntimeMutation(await this.downtimeService.continueProject(
         payload.requestId, { groupId: payload.groupId, actorId: payload.actorId, checkId: payload.checkId, result: payload.result, recordedByUserId: sender.id }
       ))
     });
     this.privilegedMutationGateway.registerCommand(DOWNTIME_PROJECT_CLOSE_COMMAND, {
       validate: isValidDowntimeProjectClosePayload, authorize: authorizeDowntimeOwner,
+      scheduling: keyedMutationScheduling(downtimeSchedulingKeys),
       execute: async (payload, { sender }) => finishDowntimeMutation(await this.downtimeService.closeProject(
         payload.requestId, { groupId: payload.groupId, actorId: payload.actorId, projectClosedByUserId: sender.id }
       ))
@@ -2411,11 +2467,13 @@ export class RebreyaMainModule {
     this.socketCommandBus.register(GROUP_CALENDAR_PATCH_COMMAND, {
       validate: isValidCalendarPatchPayload,
       authorize: authorizeGroup,
+      scheduling: keyedMutationScheduling((payload) => [groupKey(payload.groupActorId)]),
       execute: (payload) => this.calendarService.patchGroupCalendar(payload.groupActorId, payload.patch)
     });
     this.socketCommandBus.register(GROUP_CALENDAR_TRANSITION_COMMAND, {
       validate: isValidCalendarTransitionPayload,
       authorize: authorizeGroup,
+      scheduling: keyedMutationScheduling((payload) => [groupKey(payload.groupActorId)]),
       execute: (payload) => this.calendarTransitionCoordinator.moveToGroup(
         payload.groupActorId,
         payload.options
@@ -2424,6 +2482,7 @@ export class RebreyaMainModule {
     this.socketCommandBus.register(GROUP_TRAVEL_REPLACE_STATE_COMMAND, {
       validate: isValidTravelReplacePayload,
       authorize: authorizeGroup,
+      scheduling: keyedMutationScheduling((payload) => [groupKey(payload.groupActorId)]),
       execute: (payload) => this.travelService.replaceGroupTravelState(
         payload.groupActorId,
         normalizeTravelState(payload.travelState)
@@ -2432,6 +2491,7 @@ export class RebreyaMainModule {
     this.socketCommandBus.register(GROUP_TRANSPORT_REPLACE_STATE_COMMAND, {
       validate: isValidTransportReplacePayload,
       authorize: authorizeGroup,
+      scheduling: keyedMutationScheduling((payload) => [groupKey(payload.groupActorId)]),
       execute: (payload) => this.inventoryService.replaceGroupTransportState(
         payload.groupActorId,
         normalizeGroupTransportState(payload.transportState)
@@ -2440,21 +2500,31 @@ export class RebreyaMainModule {
     this.socketCommandBus.register(COSMOLOGY_SET_MECHANUS_COMMAND, {
       validate: isValidMechanusPayload,
       authorize: (_payload, { sender }) => sender?.isGM === true,
+      scheduling: keyedMutationScheduling(() => [settingKey(SETTINGS_KEYS.COSMOLOGY_STATE)]),
       execute: (payload) => this.#commitMechanusEnabled(payload.enabled)
     });
     this.socketCommandBus.register(COMBAT_STATUS_SET_COMMAND, {
       validate: isValidCombatStatusSetPayload,
       authorize: (payload, { sender }) => this.#canSenderSetCombatStatus(sender, payload),
+      scheduling: keyedMutationScheduling((payload) => [actorKey(payload.actorId ?? payload.actorUuid)]),
       execute: (payload) => this.#executeCombatStatusSetCommand(payload)
     });
     this.socketCommandBus.register(GRAPPLE_TOGGLE_COMMAND, {
       validate: isValidGrappleTogglePayload,
       authorize: (payload, { sender }) => this.#canSenderUseGrappleSource(sender, payload),
+      scheduling: keyedMutationScheduling((payload) => [
+        documentKey(payload.sourceTokenUuid),
+        documentKey(payload.targetTokenUuid)
+      ]),
       execute: (payload) => this.grappleAutomationService.toggle(payload)
     });
     this.socketCommandBus.register(GRAPPLE_PLACE_COMMAND, {
       validate: isValidGrapplePlacePayload,
       authorize: (payload, { sender }) => this.#canSenderUseGrappleSource(sender, payload),
+      scheduling: keyedMutationScheduling((payload) => [
+        documentKey(payload.sourceTokenUuid),
+        documentKey(payload.targetTokenUuid)
+      ]),
       execute: (payload) => this.grappleAutomationService.place(payload)
     });
     this.socketCommandBus.register(GRAPPLE_DRAG_COMMAND, {
@@ -2463,11 +2533,13 @@ export class RebreyaMainModule {
         payload.requesterUserId === cleanSocketId(sender?.id)
         && this.#canSenderUseGrappleSource(sender, payload)
       ),
+      scheduling: keyedMutationScheduling((payload) => [documentKey(payload.sourceTokenUuid)]),
       execute: (payload) => this.grappleAutomationService.drag(payload)
     });
     this.socketCommandBus.register(GRAPPLE_RELEASE_AND_MOVE_COMMAND, {
       validate: isValidGrappleReleaseAndMovePayload,
       authorize: (payload, { sender }) => this.#canSenderReleaseGrappledTarget(sender, payload),
+      scheduling: keyedMutationScheduling((payload) => [documentKey(payload.targetTokenUuid)]),
       execute: (payload) => this.grappleAutomationService.releaseAndMove(payload)
     });
     this.socketCommandBus.register(PERFORMER_APPLY_RESULT_COMMAND, {
@@ -2476,6 +2548,11 @@ export class RebreyaMainModule {
         resolveActorById(payload.sourceActorId),
         sender
       ),
+      scheduling: keyedMutationScheduling((payload) => [
+        actorKey(payload.sourceActorId),
+        actorKey(payload.targetActorId),
+        ...(payload.targetTokenUuid ? [documentKey(payload.targetTokenUuid)] : [])
+      ]),
       execute: (payload) => this.performerAutomationService.commitActivePerformance(payload)
     });
     this.socketCommandBus.register(INVENTORY_TAKE_COMMAND, {
@@ -2780,6 +2857,10 @@ export class RebreyaMainModule {
     this.socketCommandBus.register(DOOR_OPEN_COMMAND, {
       validate: isValidDoorOpenPayload,
       authorize: (_payload, { sender }) => Boolean(sender),
+      scheduling: keyedMutationScheduling((payload) => [
+        documentKey(payload.wallUuid),
+        documentKey(payload.characterTokenUuid)
+      ]),
       execute: (payload, { sender }) => this.doorTriggerCommandService.open(payload, { sender })
     });
     this.socketCommandBus.register(DOOR_TRIGGER_READ_COMMAND, {
@@ -2791,16 +2872,19 @@ export class RebreyaMainModule {
     this.socketCommandBus.register(DOOR_TRIGGER_SAVE_COMMAND, {
       validate: isValidDoorTriggerSavePayload,
       authorize: (_payload, { sender }) => sender?.isGM === true,
+      scheduling: keyedMutationScheduling((payload) => [documentKey(payload.wallUuid)]),
       execute: (payload, { sender }) => this.doorTriggerCommandService.saveTriggers(payload, { sender })
     });
     this.socketCommandBus.register(DOOR_TRIGGER_RESET_COMMAND, {
       validate: isValidDoorTriggerResetPayload,
       authorize: (_payload, { sender }) => sender?.isGM === true,
+      scheduling: keyedMutationScheduling((payload) => [documentKey(payload.wallUuid)]),
       execute: (payload, { sender }) => this.doorTriggerCommandService.resetTriggers(payload, { sender })
     });
     this.socketCommandBus.register(DURABILITY_TARGET_DAMAGE_COMMAND, {
       validate: isValidDurabilityTargetDamagePayload,
       authorize: (_payload, { sender }) => sender?.isGM === true,
+      scheduling: keyedMutationScheduling((payload) => [documentKey(payload.targetUuid)]),
       execute: (payload) => this.#damageDurabilityTargetOnActiveGm(payload.targetUuid, payload)
     });
     const authorizeTradeActor = (payload, { sender }) => traderActorIsOwnedByUser(
@@ -2811,6 +2895,10 @@ export class RebreyaMainModule {
     this.socketCommandBus.register(PURCHASE_BASKET_COMMIT_COMMAND, {
       validate: isValidPurchaseBasketPayload,
       authorize: authorizeTradeActor,
+      scheduling: keyedMutationScheduling((payload) => [
+        actorKey(payload.actorId),
+        ...payload.rows.map((row) => documentKey(row.sourceUuid))
+      ]),
       execute: (payload, { sender }) => this.purchaseBasketService.commit(payload, {
         requestedByUserId: sender.id
       })
@@ -2818,6 +2906,10 @@ export class RebreyaMainModule {
     this.socketCommandBus.register(TRADER_PURCHASE_COMMAND, {
       validate: isValidTraderPurchasePayload,
       authorize: authorizeTradeActor,
+      scheduling: keyedMutationScheduling((payload) => [
+        traderKey(payload.cityId, payload.traderKey),
+        actorKey(payload.actorId)
+      ]),
       execute: async (payload, { sender }) => {
         await this.traderService.ensureTraderState(payload.cityId, payload.traderKey);
         return this.tradeTransactionService.purchase({
@@ -2834,6 +2926,11 @@ export class RebreyaMainModule {
     this.socketCommandBus.register(TRADER_SELL_COMMAND, {
       validate: isValidTraderSalePayload,
       authorize: authorizeTradeActor,
+      scheduling: keyedMutationScheduling((payload) => [
+        traderKey(payload.cityId, payload.traderKey),
+        actorKey(payload.actorId),
+        documentKey(payload.itemUuid)
+      ]),
       execute: async (payload, { sender }) => {
         await this.traderService.ensureTraderState(payload.cityId, payload.traderKey);
         return this.tradeTransactionService.sale({

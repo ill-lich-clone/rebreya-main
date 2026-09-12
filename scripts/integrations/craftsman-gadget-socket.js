@@ -1,4 +1,5 @@
 import { CRAFTSMAN_GADGET_IDS } from "../data/craftsman-gadget-definitions.js";
+import { aggregateKey, keyedMutationScheduling } from "../application/socket-command-scheduling.js";
 
 export const CRAFTSMAN_GADGET_MUTATION_COMMAND = "craftsman.gadget.mutate";
 
@@ -68,6 +69,7 @@ export function registerCraftsmanGadgetSocketCommand(moduleApi, options = {}) {
       await resolveActor(payload.actorUuid, options),
       sender
     ),
+    scheduling: keyedMutationScheduling((payload) => [aggregateKey("actor", payload.actorUuid)]),
     execute: (payload) => service.executeAuthoritativeMutation(payload)
   });
   return true;

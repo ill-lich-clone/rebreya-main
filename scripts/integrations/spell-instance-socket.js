@@ -1,3 +1,5 @@
+import { aggregateKey, keyedMutationScheduling } from "../application/socket-command-scheduling.js";
+
 export const SPELL_INSTANCE_MUTATION_COMMAND = "spell-instance-mutation";
 
 const ACTIONS = new Set(["claim-operation", "create", "replace-state", "delete"]);
@@ -159,6 +161,7 @@ export function registerSpellInstanceSocketCommand(moduleApi, options = {}) {
       await resolveActor(payload.actorUuid, options),
       sender
     ),
+    scheduling: keyedMutationScheduling((payload) => [aggregateKey("actor", payload.actorUuid)]),
     execute: async (payload, { sender } = {}) => {
       const actor = await resolveActor(payload.actorUuid, options);
       if (!senderOwnsActor(actor, sender)) {

@@ -8,6 +8,7 @@ import {
   normalizeTransportFuelSelector
 } from "./transport-fuel-item.js";
 import { normalizeTransportFuelConsumption } from "./transport-fuel-consumption.js";
+import { aggregateKey, keyedMutationScheduling } from "../application/socket-command-scheduling.js";
 
 export const TRANSPORT_IMPORT_COMMAND = "group.transport.importActor";
 export const TRANSPORT_SELECT_FUEL_COMMAND = "group.transport.selectFuel";
@@ -177,21 +178,38 @@ export function registerTransportInstanceCommands(commandBus, service) {
   commandBus.register(TRANSPORT_IMPORT_COMMAND, {
     validate: validateTransportImportPayload,
     authorize: (payload, { sender } = {}) => service.canManageGroup(payload.groupActorId, sender),
+    scheduling: keyedMutationScheduling((payload) => [
+      aggregateKey("group", payload.groupActorId),
+      aggregateKey("document", payload.sourceActorUuid)
+    ]),
     execute: (payload, { sender } = {}) => service.importIntoGroup(payload, { sender })
   });
   commandBus.register(TRANSPORT_UPDATE_STATE_COMMAND, {
     validate: validateTransportStatePayload,
     authorize: (payload, { sender } = {}) => service.canManageGroup(payload.groupActorId, sender),
+    scheduling: keyedMutationScheduling((payload) => [
+      aggregateKey("group", payload.groupActorId),
+      aggregateKey("actor", payload.actorId)
+    ]),
     execute: (payload, { sender } = {}) => service.updateInstanceState(payload, { sender })
   });
   commandBus.register(TRANSPORT_SELECT_FUEL_COMMAND, {
     validate: validateTransportFuelSelectionPayload,
     authorize: (payload, { sender } = {}) => service.canManageGroup(payload.groupActorId, sender),
+    scheduling: keyedMutationScheduling((payload) => [
+      aggregateKey("group", payload.groupActorId),
+      aggregateKey("actor", payload.actorId),
+      aggregateKey("document", payload.itemUuid)
+    ]),
     execute: (payload, { sender } = {}) => service.selectFuel(payload, { sender })
   });
   commandBus.register(TRANSPORT_UPDATE_FUEL_CONSUMPTION_COMMAND, {
     validate: validateTransportFuelConsumptionUpdatePayload,
     authorize: (payload, { sender } = {}) => service.canManageGroup(payload.groupActorId, sender),
+    scheduling: keyedMutationScheduling((payload) => [
+      aggregateKey("group", payload.groupActorId),
+      aggregateKey("actor", payload.actorId)
+    ]),
     execute: (payload, { sender } = {}) => service.updateFuelConsumption(payload, { sender })
   });
 }

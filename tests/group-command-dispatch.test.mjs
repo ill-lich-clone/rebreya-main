@@ -12,6 +12,7 @@ import {
   QUERY_SCHEDULING,
   resolveSocketScheduling
 } from "../scripts/application/socket-command-scheduling.js";
+import { PrivilegedMutationGateway } from "../scripts/application/privileged-mutation-gateway.js";
 import { normalizeTravelState } from "../scripts/data/travel-service.js";
 import { normalizeGroupTransportState } from "../scripts/data/group-context-service.js";
 import { requestSettingsUpdate } from "../scripts/legacy/settings-socket-relay.js";
@@ -336,25 +337,32 @@ function resultFor(fixture, requestId) {
 }
 
 function captureSocketSchedulingDefinitions() {
-  const definitions = new Map();
+  const busDefinitions = new Map();
+  const gatewayDefinitions = new Map();
   const originalRegister = SocketCommandBus.prototype.register;
+  const originalGatewayRegister = PrivilegedMutationGateway.prototype.registerCommand;
   SocketCommandBus.prototype.register = function registerWithSchedulingCapture(command, definition) {
-    definitions.set(command, definition);
+    busDefinitions.set(command, definition);
     return originalRegister.call(this, command, definition);
+  };
+  PrivilegedMutationGateway.prototype.registerCommand = function registerGatewayWithSchedulingCapture(command, definition) {
+    gatewayDefinitions.set(command, definition);
+    return originalGatewayRegister.call(this, command, definition);
   };
   try {
     new RebreyaMainModule();
   }
   finally {
     SocketCommandBus.prototype.register = originalRegister;
+    PrivilegedMutationGateway.prototype.registerCommand = originalGatewayRegister;
   }
-  return definitions;
+  return { busDefinitions, gatewayDefinitions };
 }
 
 test("inventory and storage socket commands declare scoped scheduling policies", () => {
   const fixture = installFixture();
   try {
-    const definitions = captureSocketSchedulingDefinitions();
+    const { busDefinitions: definitions } = captureSocketSchedulingDefinitions();
     for (const command of [
       "storage.open",
       "storage.journal.read",
@@ -390,6 +398,55 @@ test("inventory and storage socket commands declare scoped scheduling policies",
     assert.deepEqual(resolve("storage.triggers.save", {
       tokenUuid: "Scene.scene.Token.chest"
     }).keys, ["storage:Scene.scene.Token.chest"]);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("composition explicitly classifies every typed socket command", () => {
+  const fixture = installFixture();
+  try {
+    const { busDefinitions, gatewayDefinitions } = captureSocketSchedulingDefinitions();
+    const gatewayCommands = new Set(gatewayDefinitions.keys());
+    const missingGateway = [...gatewayDefinitions]
+      .filter(([, definition]) => definition?.scheduling == null)
+      .map(([command]) => command)
+      .sort();
+    const missingDirectBus = [...busDefinitions]
+      .filter(([command, definition]) => !gatewayCommands.has(command) && definition?.scheduling == null)
+      .map(([command]) => command)
+      .sort();
+
+    assert.deepEqual(missingGateway, []);
+    assert.deepEqual(missingDirectBus, []);
+    assert.ok(busDefinitions.size > 0);
+
+    const resolve = (command, payload) => resolveSocketScheduling(
+      busDefinitions.get(command)?.scheduling,
+      payload,
+      {}
+    );
+    assert.deepEqual(resolve("group.calendar.patch", { groupActorId: "group-a" }).keys, ["group:group-a"]);
+    assert.deepEqual(resolve("downtime.request.create", {
+      groupId: "group-a",
+      actorId: "character-a"
+    }).keys, ["actor:character-a", "group:group-a"]);
+    assert.deepEqual(resolve("trader.sell", {
+      actorId: "character-a",
+      cityId: "city-a",
+      traderKey: "smith",
+      itemUuid: "Actor.character-a.Item.sword"
+    }).keys, [
+      "actor:character-a",
+      "document:Actor.character-a.Item.sword",
+      "trader:city-a:smith"
+    ]);
+    assert.deepEqual(resolve("summon-lifecycle-mutation", {
+      actorUuid: "Actor.character-a",
+      sceneUuid: "Scene.scene-a"
+    }).keys, ["actor:Actor.character-a", "scene:Scene.scene-a"]);
+    assert.equal(resolve("economy.world-data.reset", {}).mode, "exclusive-mutation");
   }
   finally {
     fixture.restore();
