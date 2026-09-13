@@ -1,5 +1,5 @@
 import { normalizeLootgenItemDescriptor } from "./lootgen-item-descriptor.js?v=1.4.268";
-import { buildUpgradeHostDescriptor, profileSignature, getItemUpgradeCategory, ITEM_UPGRADES_HOST_FLAG, INSTALLED_UPGRADE_FLAG } from "./item-upgrade-service.js?v=1.4.255";
+import { buildUpgradeHostDescriptor, profileSignature, getItemUpgradeCategory, ITEM_UPGRADES_HOST_FLAG, INSTALLED_UPGRADE_FLAG } from "./item-upgrade-service.js?v=1.4.292";
 import { validateUpgradeInstallation } from "./item-upgrade-rules.js?v=1.4.250";
 import { buildHeldItemWornUpdate } from "../integrations/held-items.js";
 

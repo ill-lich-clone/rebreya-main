@@ -22,6 +22,12 @@ test("catalog reader resolves full value and native compatibility from stable ID
   assert.equal(evaluateItemValue({version:2,instanceKey:"h",sourceType:"gear",sourceId:"sword",quantity:1,isBroken:false,container:null,upgrades:[{instanceKey:"u",sourceId:"sharp",slotIndex:1,choices:{}}]},reader).totalValue,120);
   assert.equal(reader.resolveValueComponent({sourceType:"gear",sourceId:"sharp"}).upgradeProfile.type,"Зачарование");
 });
+
+test("catalog reader does not expose ordinary loot as a host even for universal upgrades",()=>{
+  const painting={_id:"painting",type:"loot",system:{type:{value:"gear"},quantity:1},flags:{"rebreya-main":{managed:true,gearId:"painting",equipmentType:"Снаряжение"}}};
+  const reader=createLootgenCatalogReader({model:{gear:[{id:"painting",value:100}]},gearIndex:[painting],manifest:[{productId:"lightness",decision:"simple-implemented",profile:{compatibility:["any"],type:"Зачарование",rank:1}}]});
+  assert.equal(reader.describeUpgradeHost({sourceType:"gear",sourceId:"painting"}),null);
+});
 test("unknown and unsafe prices cannot silently become free upgrades",()=>{
   const reader=createLootgenCatalogReader({model:{gear:[{id:"unknown"},{id:"zero",value:0},{id:"unsafe",value:Number.MAX_SAFE_INTEGER+1}],materials:[]},gearIndex:[gear("unknown"),gear("zero"),gear("unsafe")]});
   assert.equal(reader.resolveValueComponent({sourceType:"gear",sourceId:"unknown"}).priceKnown,false);

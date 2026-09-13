@@ -2,6 +2,7 @@ import { MODULE_ID } from "../constants.js";
 import { getUpgradeChoiceOptions, validateUpgradeChoices } from "./item-upgrade-choices.js?v=1.4.255";
 import { loadUpgradeAutomationManifest, getUpgradeAvailability } from "./upgrade-automation-manifest.js?v=1.4.255";
 import { resolveUpgradeProfile, validateUpgradeInstallation, validateUpgradeCapacity, UpgradeRuleError } from "./item-upgrade-rules.js?v=1.4.250";
+import { isRebreyaWearableClothingGearId } from "./item-classification.js?v=1.4.292";
 import { getItemHeldHands, isItemEquipped } from "../integrations/held-items.js";
 
 export const ITEM_UPGRADES_HOST_FLAG = "itemUpgrades";
@@ -11,6 +12,8 @@ export const UPGRADE_HOLD_DURATION_MS = 3000;
 const UPGRADE_EQUIPMENT_TYPE = "Усовершенствование";
 const DEFAULT_UPGRADE_CAPACITY = 1;
 const MAX_UPGRADE_CAPACITY = 3;
+const WONDROUS_DND5E_TYPES = new Set(["wondrous", "staff", "rod", "wand"]);
+const WONDROUS_SOURCE_TYPES = new Set(["чудесный предмет", "посох", "жезл", "волшебная палочка"]);
 
 function getProperty(source, path) {
   return globalThis.foundry?.utils?.getProperty?.(source, path)
@@ -150,6 +153,8 @@ export function getItemUpgradeCategory(hostItem) {
   const type = cleanText(hostItem?.type).toLowerCase();
   const typeValue = cleanText(getProperty(hostItem, "system.type.value")).toLowerCase();
   const equipmentType = cleanText(readModuleFlag(hostItem, "equipmentType")).toLowerCase();
+  const itemType = cleanText(readModuleFlag(hostItem, "itemType")).toLocaleLowerCase("ru-RU").replaceAll("ё", "е");
+  const gearId = cleanText(readModuleFlag(hostItem, "gearId"));
 
   if (type === "weapon") {
     return "weapon";
@@ -163,7 +168,16 @@ export function getItemUpgradeCategory(hostItem) {
     return "outerwear";
   }
 
-  if (["equipment", "loot", "consumable"].includes(type)) {
+  if (
+    type === "loot"
+    && typeValue === "gear"
+    && equipmentType === "снаряжение"
+    && isRebreyaWearableClothingGearId(gearId)
+  ) {
+    return "outerwear";
+  }
+
+  if (WONDROUS_DND5E_TYPES.has(typeValue) || WONDROUS_SOURCE_TYPES.has(itemType)) {
     return "wondrous";
   }
 

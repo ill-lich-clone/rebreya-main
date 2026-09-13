@@ -36,6 +36,28 @@ test("identical item contributions remain separate and loss of authority prevent
   await f.service.requestSync(f.actor.uuid, "nonGM"); assert.equal(f.effects.size, 2);
 });
 
+test("historical upgrades on forbidden hosts do not contribute automation", () => {
+  const host = {
+    id: "painting",
+    type: "loot",
+    system: { type: { value: "gear" }, quantity: 1 },
+    flags: { "rebreya-main": { equipmentType: "Снаряжение", itemUpgrades: { capacity: 1, installed: [{ itemId: "upgrade", slotIndex: 1 }] } } },
+    toObject() { return structuredClone({ id: this.id, type: this.type, system: this.system, flags: this.flags }); }
+  };
+  const upgrade = {
+    id: "upgrade",
+    system: { quantity: 1, container: "painting" },
+    flags: { "rebreya-main": { gearId: "universal", installedUpgrade: { hostItemId: "painting", slotIndex: 1 } } }
+  };
+  const items = new Map([[host.id, host], [upgrade.id, upgrade]]);
+  items.contents = [...items.values()];
+  const actor = { items };
+  const service = new ItemUpgradeAutomationService({});
+  service.manifest = [{ productId: "universal", decision: "simple-implemented", profile: { compatibility: ["any"] } }];
+
+  assert.equal(service.readHosts(actor)[0].upgrades[0].valid, false);
+});
+
 test("native preparation repeats without accumulating weight and honors a source edit equal to the old result", () => {
   const previous = globalThis.CONFIG;
   class Item {

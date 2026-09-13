@@ -589,6 +589,21 @@ test("ordinary weapons from the weapon sheet use registered dnd5e base weapon id
   }
 });
 
+test("wearable clothing is projected as native clothing while paintings remain ordinary loot", () => {
+  const gear = JSON.parse(readFileSync(join(TESTS_DIR, "..", "data", "gear.json"), "utf8").replace(/^\uFEFF/u, ""));
+  const byId = new Map(gear.map((item) => [item.id, item]));
+
+  for (const gearId of ["odezhda-obychnaya", "ryasa", "mantiya-kantslera", "korolevskoe-svadebnoe-plate"]) {
+    const created = createDnd5eItemData(byId.get(gearId), new Map());
+    assert.equal(created.type, "equipment", `${gearId} is wearable equipment`);
+    assert.equal(created.system.type.value, "clothing", `${gearId} uses the native clothing subtype`);
+  }
+
+  const painting = createDnd5eItemData(byId.get("bolshaya-kartina-v-pozolochennoy-rame"), new Map());
+  assert.equal(painting.type, "loot");
+  assert.equal(painting.system.type.value, "gear");
+});
+
 test("ordinary ammunition weapons emit an exact native ammunition type", () => {
   const gear = JSON.parse(readFileSync(join(TESTS_DIR, "..", "data", "gear.json"), "utf8").replace(/^\uFEFF/u, ""));
   const byId = new Map(gear.map((item) => [item.id, item]));

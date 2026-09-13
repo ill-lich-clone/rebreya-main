@@ -1,5 +1,5 @@
 import { UpgradeRuleError } from "./item-upgrade-rules.js?v=1.4.250";
-import { buildUpgradeHostDescriptor, profileSignature } from "./item-upgrade-service.js?v=1.4.255";
+import { buildUpgradeHostDescriptor, getItemUpgradeCategory, profileSignature } from "./item-upgrade-service.js?v=1.4.292";
 import { resolveLootgenItemValue } from "./item-value.js?v=1.4.264";
 import { readContainerValueNodes } from "./lootgen-container-value-adapter.js?v=1.4.264";
 import { resolveLootgenContainerProfile } from "./lootgen-container-rules.js?v=1.4.266";
@@ -80,7 +80,7 @@ export function createLootgenCatalogReader({model={},gearIndex=[],magicDocuments
     },
     describeUpgradeHost(component) {
       const source=component?.sourceType==="gear"?gearDocuments.get(id(component.sourceId)):component?.sourceType==="magicItem"?magic.get(id(component.sourceId)):null;
-      if(!source || flags(source).itemUpgrades?.installed?.length || flags(source).upgrade || flags(source).itemUpgradeTemplate===true)return null;
+      if(!source || !getItemUpgradeCategory(source) || flags(source).itemUpgrades?.installed?.length || flags(source).upgrade || flags(source).itemUpgradeTemplate===true)return null;
       const host=buildUpgradeHostDescriptor(source);
       return {...host,quantity:1,isEquipped:false,isAttuned:false,isHeld:false,isBroken:component.isBroken===true};
     }

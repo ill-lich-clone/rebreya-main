@@ -63,8 +63,8 @@ test("module manifest loads an unpinned canonical entrypoint for page-refresh up
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const [entrypoint] = manifest.esmodules;
 
-  assert.equal(manifest.version, "1.4.291");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.291.js"]);
+  assert.equal(manifest.version, "1.4.292");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.292.js"]);
   assert.doesNotMatch(entrypoint, /[?#]/u);
 
   const entrypointSource = await readFile(new URL(entrypoint, manifestUrl), "utf8");
@@ -138,7 +138,7 @@ test("production registers the hidden GiantTribe advancement before race compend
   );
   assert.match(
     entrypointSource,
-    /dnd5e-sheet-extensions\.js\?v=1\.4\.286-sheet-art/u
+    /dnd5e-sheet-extensions\.js\?v=1\.4\.292/u
   );
   assert.match(
     entrypointSource,
@@ -227,7 +227,7 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
 
   assert.match(
     canonicalSource,
-    /integrations\/dnd5e-sheet-extensions\.js\?v=1\.4\.286-sheet-art/u
+    /integrations\/dnd5e-sheet-extensions\.js\?v=1\.4\.292/u
   );
 
   for (const importPath of [
@@ -245,13 +245,13 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
     "data/storage-trigger-service.js?v=1.4.197-door-trigger-target",
     "integrations/storage-token-hooks.js?v=1.4.197-door-trigger-target",
     "integrations/inventory-sync.js?v=1.4.226-inventory-transfer",
-    "data/gear-compendium.js?v=1.4.145-coin-icons-storage-sound",
+    "data/gear-compendium.js?v=1.4.292",
     "data/storage-open-sound-service.js?v=1.4.145-coin-icons-storage-sound",
     "data/storage-service.js?v=1.4.270",
     "data/storage-access.js?v=1.4.197-door-trigger-target",
     "data/builtin-storage-actor-service.js?v=1.4.216-storage-token-vision",
     "data/storage-ground-pile-service.js?v=1.4.227-coin-sprites",
-    "data/storage-container-item-service.js?v=1.4.277",
+    "data/storage-container-item-service.js?v=1.4.292",
     "data/storage-deposit-source.js?v=1.4.277",
     "data/storage-command-service.js?v=1.4.277",
     "integrations/storage-transfer-drop.js?v=1.4.213-furniture-orientation",
@@ -319,7 +319,7 @@ test("module keeps recent published entrypoint URLs as canonical compatibility f
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
 
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.291.js"]);
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.292.js"]);
 
   for (const fileName of ["main-1.4.98.js", "main-1.4.99.js", "main-1.4.100.js"]) {
     const forwarderSource = await readFile(new URL(`../scripts/${fileName}`, import.meta.url), "utf8");
@@ -510,12 +510,12 @@ test("module entrypoint preserves the released magic weapon template cache bust"
   assert.match(entrypointSource, /registerMagicWeaponTemplateHook\(moduleApi\)/u);
 });
 
-test("gear compendium import uses the current spreadsheet coin cache bust", async () => {
+test("gear compendium import uses the current clothing projection cache bust", async () => {
   const entrypointSource = await readCanonicalEntrypointSource();
 
   assert.match(
     entrypointSource,
-    /gear-compendium\.js\?v=1\.4\.145-coin-icons-storage-sound/u,
+    /gear-compendium\.js\?v=1\.4\.292/u,
   );
 });
 
@@ -628,7 +628,7 @@ test("held item integrations preserve their released cache bust", async () => {
 
   assert.match(
     entrypointSource,
-    /dnd5e-sheet-extensions\.js\?v=1\.4\.286-sheet-art/u,
+    /dnd5e-sheet-extensions\.js\?v=1\.4\.292/u,
   );
   assert.match(
     entrypointSource,
@@ -668,11 +668,11 @@ test("automatic owned magic item sync cache-busts its live service graph", async
 test("item upgrade service and sheet integration preserve their released cache bust", async () => {
   const entrypointSource = await readCanonicalEntrypointSource();
   const sheetSource = await readFile(new URL("../scripts/integrations/dnd5e-sheet-extensions.js", import.meta.url), "utf8");
-  const escapedVersion = "1\\.4\\.255";
+  const escapedVersion = "1\\.4\\.292";
 
   assert.match(
     entrypointSource,
-    /item-upgrade-service\.js\?v=1\.4\.255/u,
+    /item-upgrade-service\.js\?v=1\.4\.292/u,
   );
   assert.match(entrypointSource, /this\.itemUpgradeService = new ItemUpgradeService\(this\)/u);
   assert.match(entrypointSource, /installItemUpgrade\(hostItem, upgradeItem, options = \{\}\)/u);

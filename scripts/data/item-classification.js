@@ -5,6 +5,31 @@ import { inferRebreyaAmmunitionSubtype } from "./ammunition-types.js";
 const BACK_SLOTS = ["back1", "back2", "back3", "back4", "back5"];
 const HAND_SLOTS = ["leftHand", "rightHand"];
 const RING_SLOTS = ["ring1", "ring2"];
+const REBREYA_WEARABLE_CLOTHING_GEAR_IDS = new Set([
+  "balnyy-kostyum-s-serebryanoy-otdelkoy",
+  "korolevskoe-svadebnoe-plate",
+  "koronatsionnyy-plashch-namestnika",
+  "kozhanyy-plashch-mastera",
+  "mantiya-kantslera",
+  "mantiya-rektora-akademii",
+  "mantiya-uchyonogo-soveta",
+  "mekhanizirovannaya-odezhda",
+  "naslednaya-mantiya-doma",
+  "odezhda-dorozhnaya",
+  "odezhda-kostyum",
+  "odezhda-obychnaya",
+  "odezhda-otlichnaya",
+  "opernyy-kostyum-s-ruchnoy-rospisyu",
+  "paradnyy-mundir-s-zolotym-shityom",
+  "paradnyy-plashch-pobeditelya",
+  "posolskaya-mantiya",
+  "ritualnoe-oblachenie-arkhiereya",
+  "ryasa",
+  "shyolkovyy-vecherniy-kostyum",
+  "sudeyskoe-tseremonialnoe-oblachenie",
+  "teatralnyy-kostyum-primadonny",
+  "tseremonialnoe-plate-dvoryanki"
+]);
 
 const HERO_DOLL_SLOTS = [
   { id: "head", label: "Голова" },
@@ -450,6 +475,11 @@ function isBackItem(name) {
   return /рюкзак|ранец|колчан|ножн|футляр|чехол|спинн|плащ|пальто|мантия|накид|щит/u.test(text);
 }
 
+function isWearableClothing(name) {
+  const text = normalizeText(name);
+  return /одежд|костюм|плать|ряс|манти|плащ|накид|пальто|шал|пелерин|рубах|жилет|куртк|мундир|облачен/u.test(text);
+}
+
 function inferSlotsFromName(name, fallback = []) {
   const text = normalizeText(name);
 
@@ -717,6 +747,10 @@ export function resolveRebreyaOrdinaryWeaponGearId(name) {
   return REBREYA_ORDINARY_WEAPON_PROFILE_BY_NAME.get(normalizeNameKey(name))?.gearId ?? "";
 }
 
+export function isRebreyaWearableClothingGearId(gearId) {
+  return REBREYA_WEARABLE_CLOTHING_GEAR_IDS.has(String(gearId ?? "").trim());
+}
+
 export function normalizeHeroDollSlots(value, fallback = []) {
   return buildHeroDollSlots(value, fallback);
 }
@@ -850,6 +884,22 @@ export function classifyGearEntry(item = {}) {
   }
 
   if ((normalizedEquipmentType === normalizeText("Снаряжение")) || !normalizedEquipmentType) {
+    if (
+      normalizedEquipmentType === normalizeText("Снаряжение")
+      && (isRebreyaWearableClothingGearId(item.id) || isWearableClothing(item.name))
+    ) {
+      return {
+        documentType: "equipment",
+        systemTypeValue: "clothing",
+        systemTypeSubtype: "",
+        baseItem: "",
+        folderPath: "Снаряжение/Одежда",
+        heroDollSlots: buildHeroDollSlots(explicitSlots, inferSlotsFromName(item.name, ["chest"])),
+        firearmClass: "",
+        sourceCategory: equipmentType || "Снаряжение"
+      };
+    }
+
     const ammoProfile = buildConsumableAmmoProfile(item.name);
     if (ammoProfile) {
       return {

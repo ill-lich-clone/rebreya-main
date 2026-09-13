@@ -2,15 +2,15 @@ import { SceneActivityService } from "./application/scene-activity-service.js?v=
 import { SceneActivityError } from "./data/scene-activity-rules.js?v=1.4.271";
 import { SCENE_ACTIVITY_COMMANDS, isValidSceneActivityPayload, authorizeSceneActivity, sceneActivityTransportId } from "./infrastructure/foundry/scene-activity-command-contract.js?v=1.4.271";
 import { LootgenGeneratedResultService, LOOTGEN_PREPARE_RESULT_COMMAND, isValidPrepareLootgenPayload } from "./application/lootgen-generated-result-service.js?v=1.4.268";
-import { buildLootgenGeneratedState, assertLootgenCatalogCurrent } from "./application/lootgen-generated-state.js?v=1.4.278";
+import { buildLootgenGeneratedState, assertLootgenCatalogCurrent } from "./application/lootgen-generated-state.js?v=1.4.292";
 import { normalizeLootgenForm } from "./data/lootgen-generator.js?v=1.4.266";
 import { storageCoinRowDenomination } from "./data/storage-service.js";
 // @rebreya-role canonical-composition-root
-import { LootgenSourceCatalog } from "./data/lootgen-source-catalog.js?v=1.4.278";
+import { LootgenSourceCatalog } from "./data/lootgen-source-catalog.js?v=1.4.292";
 import { MODULE_ID, MODULE_TITLE, SETTINGS_KEYS } from "./constants.js";
 import { escapeFoundryHtml } from "./shared/foundry-values.js";
 import { MaterialsCompendiumService } from "./data/materials-compendium.js";
-import { GearCompendiumService } from "./data/gear-compendium.js?v=1.4.145-coin-icons-storage-sound";
+import { GearCompendiumService } from "./data/gear-compendium.js?v=1.4.292";
 import { repairWorldAmmunitionCompatibility } from "./data/ammunition-compatibility.js?v=1.4.147-native-ammunition";
 import { MagicItemsCompendiumService } from "./data/magic-items-compendium.js?v=1.4.291-stale-automation-cleanup";
 import { FeatsCompendiumService } from "./data/feats-compendium.js";
@@ -102,8 +102,8 @@ import { HeroDollService, HERO_DOLL_ASSIGN_COMMAND, HERO_DOLL_NORMALIZE_COMMAND,
 import { ImplantService } from "./data/implant-service.js";
 import { CraftingService } from "./data/crafting-service.js?v=1.4.96-craft-calendar";
 import { CraftDowntimeService } from "./data/craft-downtime-service.js?v=1.4.96-craft-calendar";
-import { ItemUpgradeService } from "./data/item-upgrade-service.js?v=1.4.255";
-import { ItemUpgradeAutomationService } from "./automation/item-upgrade-automation-service.js?v=1.4.279";
+import { ItemUpgradeService } from "./data/item-upgrade-service.js?v=1.4.292";
+import { ItemUpgradeAutomationService } from "./automation/item-upgrade-automation-service.js?v=1.4.292";
 import { ReputationService } from "./application/reputation-service.js?v=1.4.251";
 import { DisarmService } from "./combat/disarm-service.js?v=1.4.276";
 import { DisarmRollAdapter } from "./integrations/disarm-roll-adapter.js?v=1.4.252";
@@ -237,7 +237,7 @@ import {
 import { BuiltinStorageActorService } from "./data/builtin-storage-actor-service.js?v=1.4.216-storage-token-vision";
 import { StorageGroundPileService } from "./data/storage-ground-pile-service.js?v=1.4.227-coin-sprites";
 import { deriveGroundPilePlacement } from "./data/storage-pile-presentation.js?v=1.4.227-coin-sprites";
-import { StorageContainerItemService } from "./data/storage-container-item-service.js?v=1.4.277";
+import { StorageContainerItemService } from "./data/storage-container-item-service.js?v=1.4.292";
 import { isStorageJournalRow, buildStorageContainerRow } from "./data/storage-container-snapshot.js";
 import { StorageTriggerService } from "./data/storage-trigger-service.js?v=1.4.197-door-trigger-target";
 import { DoorTriggerTargetRepository, readDoorTriggerTarget } from "./data/door-trigger-target.js?v=1.4.199-door-overlay-anchor";
@@ -341,7 +341,7 @@ import {
   extendDnd5eItemTypes,
   registerDnd5eSheetExtensions,
   registerRebreyaWeaponBaseItemsFromGearPack
-} from "./integrations/dnd5e-sheet-extensions.js?v=1.4.286-sheet-art";
+} from "./integrations/dnd5e-sheet-extensions.js?v=1.4.292";
 import { registerHeldShieldArmorClassPatch } from "./integrations/held-shield-ac.js?v=1.4.96";
 import { registerTravelMapHooks } from "./integrations/travel-map-hooks.js?v=1.4.141-auraeffects-inactive-scene";
 import {

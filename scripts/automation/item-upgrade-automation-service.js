@@ -1,6 +1,6 @@
 import { MODULE_ID } from "../constants.js";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
-import { buildUpgradeHostDescriptor, profileSignature } from "../data/item-upgrade-service.js?v=1.4.255";
+import { buildUpgradeHostDescriptor, getItemUpgradeCategory, profileSignature } from "../data/item-upgrade-service.js?v=1.4.292";
 import { loadUpgradeAutomationManifest } from "../data/upgrade-automation-manifest.js?v=1.4.255";
 import { validateUpgradeInstallation } from "../data/item-upgrade-rules.js?v=1.4.250";
 import { buildSimpleUpgradeContributions, projectSimpleUpgradeItem } from "./item-upgrade-projections.js?v=1.4.279";
@@ -26,12 +26,13 @@ export class ItemUpgradeAutomationService {
   readHosts(actor, hostItem = null) {
     return (hostItem ? [hostItem] : values(actor.items)).filter(item => getFlag(item, "itemUpgrades")?.installed?.length).map(item => {
       const descriptor = buildUpgradeHostDescriptor(item), links = getFlag(item, "itemUpgrades").installed;
+      const eligibleHost = Boolean(getItemUpgradeCategory(item));
       return { id: item.id, descriptor, source: item.toObject(), upgrades: links.map(link => {
         const upgrade = actor.items.get(link.itemId), sourceId = getFlag(upgrade, "gearId");
         const entry = this.manifest.find(row => row.productId === sourceId), reverse = getFlag(upgrade, "installedUpgrade");
         const stored = getFlag(upgrade, "upgrade");
         let compatible = false;
-        try {
+        if (eligibleHost) try {
           validateUpgradeInstallation(descriptor, links.filter(other => other !== link), { profile: entry?.profile, availability: entry?.decision, slotIndex: link.slotIndex });
           compatible = true;
         } catch { /* An invalid historical link contributes nothing; its documents remain intact. */ }

@@ -1,6 +1,6 @@
 import { readLootgenPreparedComposition } from "./lootgen-prepared-item.js?v=1.4.268";
 import { normalizeLootgenComposition } from "./lootgen-composition.js?v=1.4.268";
-import { buildCompositeItemGraph } from "./composite-item-graph.js?v=1.4.268";
+import { buildCompositeItemGraph } from "./composite-item-graph.js?v=1.4.292";
 import { buildRuntimeGraphDocuments, materializeRuntimeItemGraph } from "./runtime-item-graph.js?v=1.4.267-native-schema";
 import { itemInstanceFingerprint } from "../application/item-instance-workflow.js";
 import { WorldMutationCoordinator } from "../application/world-mutation-coordinator.js";

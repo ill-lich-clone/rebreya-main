@@ -134,6 +134,68 @@ function makeService(Service) {
     profile: { compatibility: ["any"] }, decision: "simple-implemented", reason: "Approved test fixture" }] });
 }
 
+test("upgrade hosts are limited to weapons, outerwear and explicit wondrous item types", async () => {
+  const { buildUpgradeHostDescriptor, getItemUpgradeCategory } = await import("../scripts/data/item-upgrade-service.js");
+  const item = (id, type, typeValue, moduleFlags = {}) => ({
+    id,
+    type,
+    system: { type: { value: typeValue }, quantity: 1 },
+    flags: { [MODULE_ID]: moduleFlags }
+  });
+
+  for (const [host, category, tags] of [
+    [item("sword", "weapon", "martialM", { equipmentType: "Оружие" }), "weapon", ["weapon", "melee"]],
+    [item("armor", "equipment", "heavy", { equipmentType: "Доспех" }), "outerwear", ["outerwear", "armor"]],
+    [item("shield", "equipment", "shield", { equipmentType: "Доспех" }), "outerwear", ["outerwear", "shield"]],
+    [item("robes", "equipment", "clothing", { equipmentType: "Снаряжение" }), "outerwear", ["outerwear"]],
+    [item("wondrous", "equipment", "wondrous"), "wondrous", ["wondrous-item"]],
+    [item("staff", "equipment", "staff"), "wondrous", ["wondrous-item"]],
+    [item("rod", "equipment", "rod"), "wondrous", ["wondrous-item"]],
+    [item("wand", "equipment", "wand"), "wondrous", ["wondrous-item"]],
+    [item("wondrous-consumable", "consumable", "potion", { itemType: "Чудесный предмет" }), "wondrous", ["wondrous-item"]],
+    [item("wondrous-container", "container", "backpack", { itemType: "Чудесный предмет" }), "wondrous", ["wondrous-item"]],
+    [item("legacy-clothing", "loot", "gear", { equipmentType: "Снаряжение", gearId: "odezhda-obychnaya" }), "outerwear", ["outerwear"]],
+    [item("painting", "loot", "gear", { equipmentType: "Снаряжение" }), "", []],
+    [item("catalog-painting", "loot", "gear", { equipmentType: "Снаряжение", gearId: "bolshaya-kartina-v-pozolochennoy-rame" }), "", []],
+    [item("treasure", "loot", "treasure", { equipmentType: "Сокровища" }), "", []],
+    [item("ammunition", "consumable", "ammo", { equipmentType: "Боеприпас" }), "", []],
+    [item("potion", "consumable", "potion", { equipmentType: "Зелье" }), "", []],
+    [item("ring", "equipment", "ring"), "", []]
+  ]) {
+    assert.equal(getItemUpgradeCategory(host), category, host.id);
+    assert.deepEqual(buildUpgradeHostDescriptor(host).compatibilityTags, tags, host.id);
+  }
+});
+
+test("legacy forbidden hosts keep a removal panel without becoming upgrade targets", async () => {
+  const restore = installFoundryStubs();
+  try {
+    const { createItemUpgradePanelHtml, isItemUpgradeHostItem } = await import(`../scripts/integrations/item-upgrade-sheet.js?legacy-cleanup=${Date.now()}`);
+    const actor = new FakeActor();
+    const painting = actor.addItem({
+      _id: "painting",
+      name: "Картина",
+      type: "loot",
+      system: { type: { value: "gear" }, quantity: 1 },
+      flags: { [MODULE_ID]: { equipmentType: "Снаряжение", itemUpgrades: { capacity: 1, installed: [{ itemId: "legacy", slotIndex: 1 }] } } }
+    });
+    makeUpgrade(actor, { _id: "legacy", name: "Старое усовершенствование", system: { quantity: 1, container: "painting" } });
+
+    assert.equal(isItemUpgradeHostItem(painting), false);
+    const html = createItemUpgradePanelHtml(painting);
+    assert.match(html, /rebreya-item-upgrade-remove/u);
+    assert.doesNotMatch(html, /rebreya-item-upgrade-capacity/u);
+
+    const { ItemUpgradeService } = await import(`../scripts/data/item-upgrade-service.js?legacy-cleanup=${Date.now()}`);
+    const service = makeService(ItemUpgradeService);
+    await service.removeItemUpgrade(painting, "legacy");
+    assert.deepEqual(painting.flags[MODULE_ID].itemUpgrades.installed, []);
+  }
+  finally {
+    restore();
+  }
+});
+
 test("required choice is validated before splitting and persists only on the installed unit", async () => {
   const restore = installFoundryStubs();
   try {

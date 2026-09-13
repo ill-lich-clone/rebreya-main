@@ -7,7 +7,7 @@ import {
   isUpgradeableHostItem,
   isUpgradeItem,
   UPGRADE_HOLD_DURATION_MS
-} from "../data/item-upgrade-service.js?v=1.4.255";
+} from "../data/item-upgrade-service.js?v=1.4.292";
 
 const DRAG_DATA_TYPES = ["text/plain", "text", "application/json"];
 const HOLD_STATES = new WeakMap();
@@ -58,6 +58,11 @@ function getSheetItem(app) {
 
 function getItemActor(item) {
   return item?.actor ?? item?.parent ?? null;
+}
+
+function isItemUpgradePanelHost(item) {
+  return isUpgradeableHostItem(item)
+    || Boolean(getItemId(item) && getItemActor(item) && !isUpgradeItem(item) && getItemUpgradeHostState(item).installed.length);
 }
 
 function collectionValues(collection) {
@@ -257,6 +262,7 @@ function getPanelContainer(root) {
 
 function createPanelHtml(hostItem) {
   const state = getItemUpgradeHostState(hostItem);
+  const canUpgrade = isUpgradeableHostItem(hostItem);
   const installedBySlot = new Map();
   for (const upgrade of getInstalledUpgradeItems(hostItem)) {
     const entry = state.installed.find((candidate) => candidate.itemId === getItemId(upgrade));
@@ -265,7 +271,7 @@ function createPanelHtml(hostItem) {
     }
   }
 
-  const capacityButtons = [1, 2, 3].map((capacity) => `
+  const capacityButtons = canUpgrade ? [1, 2, 3].map((capacity) => `
     <button type="button"
       class="rm-item-upgrades__capacity-button${capacity === state.capacity ? " is-active" : ""}"
       data-action="rebreya-item-upgrade-capacity"
@@ -274,7 +280,7 @@ function createPanelHtml(hostItem) {
       aria-label="Слотов усовершенствований: ${capacity}">
       ${capacity}
     </button>
-  `).join("");
+  `).join("") : "";
 
   const slots = Array.from({ length: state.capacity }, (_entry, index) => {
     const slotIndex = index + 1;
@@ -333,7 +339,7 @@ function createPanelHtml(hostItem) {
 }
 
 export function createItemUpgradePanelHtml(hostItem) {
-  return isUpgradeableHostItem(hostItem) ? createPanelHtml(hostItem) : "";
+  return isItemUpgradePanelHost(hostItem) ? createPanelHtml(hostItem) : "";
 }
 
 export function isItemUpgradeHostItem(item) {
@@ -470,7 +476,7 @@ function playInventoryInstallAnimation(row, callback) {
 }
 
 export function renderItemUpgradePanel(root, hostItem) {
-  if (!(root instanceof HTMLElement) || !isUpgradeableHostItem(hostItem)) {
+  if (!(root instanceof HTMLElement) || !isItemUpgradePanelHost(hostItem)) {
     return null;
   }
 
@@ -617,7 +623,7 @@ export function bindItemUpgradeSheet(root, app, moduleApi) {
     void renderItemUpgradeAvailability(root, hostItem, moduleApi.itemUpgradeService);
   }
   const actor = getItemActor(hostItem);
-  if (!(root instanceof HTMLElement) || !actor || !isUpgradeableHostItem(hostItem)) {
+  if (!(root instanceof HTMLElement) || !actor || !isItemUpgradePanelHost(hostItem)) {
     return false;
   }
 
@@ -627,7 +633,7 @@ export function bindItemUpgradeSheet(root, app, moduleApi) {
     return false;
   }
 
-  panel.addEventListener("dragover", (event) => {
+  if (isUpgradeableHostItem(hostItem)) panel.addEventListener("dragover", (event) => {
     const dropData = getItemUpgradeDropData(event);
     if (!isPotentialUpgradeDrop(dropData, event)) {
       return;
@@ -641,14 +647,14 @@ export function bindItemUpgradeSheet(root, app, moduleApi) {
     startItemUpgradeHold(panel, getDragKey(dropData));
   }, { capture: true });
 
-  panel.addEventListener("dragleave", (event) => {
+  if (isUpgradeableHostItem(hostItem)) panel.addEventListener("dragleave", (event) => {
     if (event.relatedTarget && panel.contains(event.relatedTarget)) {
       return;
     }
     cancelHold(panel);
   }, { capture: true });
 
-  panel.addEventListener("drop", async (event) => {
+  if (isUpgradeableHostItem(hostItem)) panel.addEventListener("drop", async (event) => {
     const state = HOLD_STATES.get(panel);
     const dropData = getItemUpgradeDropData(event);
     if (!state || !state.ready) {
@@ -677,7 +683,7 @@ export function bindItemUpgradeSheet(root, app, moduleApi) {
     }
   }, { capture: true });
 
-  panel.addEventListener("dragend", () => {
+  if (isUpgradeableHostItem(hostItem)) panel.addEventListener("dragend", () => {
     cancelHold(panel);
   }, { capture: true });
 
