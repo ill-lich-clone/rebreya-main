@@ -242,3 +242,34 @@ test("active-GM compendium guard skips the second GM client", async () => {
   assert.equal((await syncManagedDocumentsOnActiveGm({ user: gm1, users }, syncOptions)).created, 1);
   assert.equal(fixture.operations.length, 1);
 });
+
+test("managed compendium sync repairs same-signature document drift through scoped update hooks", async () => {
+  const document = {
+    id: "magic-item",
+    sourceId: "magic-item",
+    signature: "v2",
+    managed: true,
+    async update() {
+      throw new Error("default update must be replaced by the scoped hook");
+    }
+  };
+  const fixture = createFixture([]);
+  const hookCalls = [];
+
+  const result = await syncManagedDocuments({
+    ...options(fixture, [{ sourceId: "magic-item", signature: "v2" }], [document]),
+    documentMatchesEntry(current, entry) {
+      hookCalls.push(["matches", current.id, entry.sourceId]);
+      return false;
+    },
+    async applyUpdate(current, data, entry) {
+      hookCalls.push(["apply", current.id, data.signature, entry.sourceId]);
+    }
+  });
+
+  assert.deepEqual(hookCalls, [
+    ["matches", "magic-item", "magic-item"],
+    ["apply", "magic-item", "v2", "magic-item"]
+  ]);
+  assert.deepEqual(result, { unchanged: 0, created: 0, updated: 1, deleted: 0 });
+});

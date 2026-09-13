@@ -12,7 +12,7 @@ import {
   buildMagicItemAutomationProjection,
   buildMagicItemIdentityIndex,
   resolveEmbeddedMagicItemIdentity
-} from "./magic-item-embedded-sync.js?v=1.4.192-unsupported-item-activity-repair";
+} from "./magic-item-embedded-sync.js?v=1.4.291-stale-automation-cleanup";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 import {
   buildSlug,
@@ -35,7 +35,7 @@ const EFFECT_MODE_CUSTOM = 0;
 const EFFECT_MODE_ADD = 2;
 const EFFECT_MODE_UPGRADE = 4;
 const DEFAULT_MAGIC_ITEM_ICON = "systems/dnd5e/icons/svg/items/loot.svg";
-const MAGIC_TEMPLATE_VERSION = 8;
+const MAGIC_TEMPLATE_VERSION = 9;
 const MAGIC_ITEM_AUTOMATION_VERSION = 4;
 const NATIVE_INSTRUMENT_SPELL_ACTIVITY_VERSION = 1;
 const spell24 = (name, id, level, options = {}) => ({
@@ -1776,20 +1776,6 @@ const PASSIVE_MAGIC_ITEM_CHANGE_DEFINITIONS = new Map([
       { key: "system.bonuses.msak.attack", mode: EFFECT_MODE_ADD, value: "+1", priority: 20 },
       { key: "system.bonuses.rsak.attack", mode: EFFECT_MODE_ADD, value: "+1", priority: 20 },
       { key: "system.bonuses.spell.dc", mode: EFFECT_MODE_ADD, value: "+1", priority: 20 }
-    ]
-  }],
-  ["обруч-заклинателя-2", {
-    suffix: "spellcaster-circlet-arcana",
-    label: "Знание магии",
-    changes: [
-      { key: "system.skills.arc.bonuses.check", mode: EFFECT_MODE_ADD, value: "+2", priority: 20 }
-    ]
-  }],
-  ["пояс-атлета-1", {
-    suffix: "athlete-belt-athletics",
-    label: "Атлетизм",
-    changes: [
-      { key: "system.skills.ath.bonuses.check", mode: EFFECT_MODE_ADD, value: "+1", priority: 20 }
     ]
   }],
   ["камень-удачи", {
@@ -3897,6 +3883,38 @@ function activityRuntime(activity) {
     ?? null;
 }
 
+function buildPackAutomationMerge(document, item, iconLookup, activityOptions) {
+  const freshData = createMagicItemData(item, new Map(), iconLookup, activityOptions);
+  const projection = buildMagicItemAutomationProjection(freshData);
+  return buildEmbeddedMagicItemPatch(document, projection, {
+    status: "resolved",
+    magicItemId: item.id,
+    reason: "managed-pack",
+    identityPatch: {}
+  });
+}
+
+async function applyPackAutomationUpdate(document, data, item, iconLookup, activityOptions) {
+  const merge = buildPackAutomationMerge(document, item, iconLookup, activityOptions);
+  if (merge.status === "unresolved") {
+    throw new Error(`Managed magic item '${item.id}' has an unresolved automation merge: ${merge.reason}`);
+  }
+  if (merge.status === "updated") {
+    if (merge.effectIdsToDelete.length > 0) {
+      await document.deleteEmbeddedDocuments("ActiveEffect", merge.effectIdsToDelete);
+    }
+    data.effects = merge.update.effects;
+    if (data.system && merge.update.system?.activities) {
+      data.system.activities = merge.update.system.activities;
+      if (merge.update.system.uses) data.system.uses = merge.update.system.uses;
+      for (const activityId of merge.activityIdsToDelete) {
+        data[`system.activities.-=${activityId}`] = null;
+      }
+    }
+  }
+  await document.update(data);
+}
+
 function sourceLight(tokenDocument) {
   const light = tokenDocument?.toObject?.()?.light
     ?? tokenDocument?._source?.light
@@ -4229,6 +4247,9 @@ export class MagicItemsCompendiumService {
         document.getFlag(MODULE_ID, "signature"),
         String(document.img ?? "").trim() || DEFAULT_MAGIC_ITEM_ICON
       ]),
+      documentMatchesEntry: (document, item) => (
+        buildPackAutomationMerge(document, item, iconLookup, activityOptions).status === "unchanged"
+      ),
       prepareFolders: async () => {
         try {
           folderIdByPath = await ensureCompendiumFolders(
@@ -4245,7 +4266,10 @@ export class MagicItemsCompendiumService {
         const data = createMagicItemData(item, folderIdByPath, iconLookup, activityOptions);
         delete data._id;
         return data;
-      }
+      },
+      applyUpdate: (document, data, item) => (
+        applyPackAutomationUpdate(document, data, item, iconLookup, activityOptions)
+      )
     });
     return game.packs.get(PACK_ID) ?? pack;
   }
@@ -4363,12 +4387,20 @@ export class MagicItemsCompendiumService {
         const diffObject = this.diffObject ?? globalThis.foundry?.utils?.diffObject;
         if (typeof diffObject === "function" && typeof item?.toObject === "function") {
           const documentDiff = diffObject(item.toObject(), merge.update);
-          if (documentDiff && typeof documentDiff === "object" && Object.keys(documentDiff).length === 0) {
+          const hasExplicitCleanup = merge.effectIdsToDelete.length > 0 || merge.activityIdsToDelete.length > 0;
+          if (!hasExplicitCleanup
+            && documentDiff
+            && typeof documentDiff === "object"
+            && Object.keys(documentDiff).length === 0) {
             report.unchanged.push({ ...row, reason: "already-current" });
             continue;
           }
         }
-        updates.push(merge.update);
+        updates.push({
+          item,
+          update: merge.update,
+          effectIdsToDelete: merge.effectIdsToDelete
+        });
         plannedRows.push({ ...row, reason: report.dryRun ? "dry-run-update" : "updated" });
       }
 
@@ -4381,8 +4413,12 @@ export class MagicItemsCompendiumService {
       }
       for (let index = 0; index < updates.length; index += 1) {
         const plannedRow = plannedRows[index];
+        const plan = updates[index];
         try {
-          await actor.updateEmbeddedDocuments("Item", [updates[index]]);
+          if (plan.effectIdsToDelete.length > 0) {
+            await plan.item.deleteEmbeddedDocuments("ActiveEffect", plan.effectIdsToDelete);
+          }
+          await actor.updateEmbeddedDocuments("Item", [plan.update]);
           report.updated.push(plannedRow);
         }
         catch (error) {

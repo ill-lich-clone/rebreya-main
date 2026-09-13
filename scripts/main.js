@@ -12,7 +12,7 @@ import { escapeFoundryHtml } from "./shared/foundry-values.js";
 import { MaterialsCompendiumService } from "./data/materials-compendium.js";
 import { GearCompendiumService } from "./data/gear-compendium.js?v=1.4.145-coin-icons-storage-sound";
 import { repairWorldAmmunitionCompatibility } from "./data/ammunition-compatibility.js?v=1.4.147-native-ammunition";
-import { MagicItemsCompendiumService } from "./data/magic-items-compendium.js?v=1.4.290-rogue-mantle";
+import { MagicItemsCompendiumService } from "./data/magic-items-compendium.js?v=1.4.291-stale-automation-cleanup";
 import { FeatsCompendiumService } from "./data/feats-compendium.js";
 import { BackgroundsCompendiumService } from "./data/backgrounds-compendium.js";
 import { StatesCompendiumService } from "./data/states-compendium.js";

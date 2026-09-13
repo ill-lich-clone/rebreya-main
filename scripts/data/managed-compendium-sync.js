@@ -37,7 +37,9 @@ export async function syncManagedDocuments({
   documentIdOfEntry = null,
   createData,
   updateData,
-  prepareFolders = null
+  prepareFolders = null,
+  documentMatchesEntry = null,
+  applyUpdate = null
 } = {}) {
   if (!pack || !cleanId(pack.collection)) {
     throw new TypeError("pack with a collection id is required");
@@ -54,6 +56,8 @@ export async function syncManagedDocuments({
   }
   if (prepareFolders != null) requireFunction(prepareFolders, "prepareFolders");
   if (documentIdOfEntry != null) requireFunction(documentIdOfEntry, "documentIdOfEntry");
+  if (documentMatchesEntry != null) requireFunction(documentMatchesEntry, "documentMatchesEntry");
+  if (applyUpdate != null) requireFunction(applyUpdate, "applyUpdate");
   const sourceEntries = Array.isArray(entries) ? entries : [];
   const currentDocuments = Array.isArray(documents) ? documents : [];
   const entriesById = new Map();
@@ -94,7 +98,10 @@ export async function syncManagedDocuments({
       obsolete.push(document);
       continue;
     }
-    if (String(signatureOfDocument(document) ?? "") === String(signatureOfEntry(entry) ?? "")) {
+    const signaturesMatch = String(signatureOfDocument(document) ?? "") === String(signatureOfEntry(entry) ?? "");
+    const documentMatches = signaturesMatch
+      && (documentMatchesEntry ? await documentMatchesEntry(document, entry) : true);
+    if (documentMatches) {
       unchanged += 1;
     }
     else {
@@ -122,7 +129,13 @@ export async function syncManagedDocuments({
       throw new TypeError(`Managed compendium document ${documentId(document)} cannot be updated`);
     }
     const data = await updateData(document, entry);
-    await document.update(prepareDocumentUpdateData(document, data));
+    const preparedData = prepareDocumentUpdateData(document, data);
+    if (applyUpdate) {
+      await applyUpdate(document, preparedData, entry);
+    }
+    else {
+      await document.update(preparedData);
+    }
   }
 
   const obsoleteIds = obsolete.map(documentId).filter(Boolean);

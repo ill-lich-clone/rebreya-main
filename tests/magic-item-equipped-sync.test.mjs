@@ -1075,3 +1075,105 @@ test("owned sync plans detached rows, isolates writes, continues after item erro
   assert.equal(repeated.unchanged.some((row) => row.itemId === "inactive-owned"), true);
   assert.equal(successfulActor.writes.length, 2);
 });
+
+test("owned sync explicitly deletes stale managed ids while preserving unmanaged data and spent uses", async () => {
+  const currentEffect = managedEffect({ id: "current-effect" });
+  const staleEffect = managedEffect({ id: "stale-effect" });
+  const customEffect = managedEffect({ id: "custom-effect", managed: false });
+  customEffect.changes[0].key = "system.skills.arc.bonuses.check";
+  const currentActivity = managedActivity({ id: "current-activity", spent: 0 });
+  const staleActivity = managedActivity({ id: "stale-activity", spent: 0 });
+  const customActivity = {
+    _id: "custom-activity",
+    type: "utility",
+    name: "Custom action",
+    consumption: { targets: [] },
+    flags: {}
+  };
+  const packSource = {
+    _id: "pack-item",
+    name: "Камень удачи",
+    uuid: "Compendium.world.rebreya-magic-items.Item.pack-item",
+    type: "equipment",
+    effects: [currentEffect],
+    system: {
+      activities: { "current-activity": currentActivity },
+      uses: { spent: 0, max: "3", recovery: [] }
+    },
+    flags: moduleFlags({
+      managed: true,
+      sourceType: "magicItem",
+      magicItemId: "камень-удачи",
+      signature: "current-signature",
+      magicItemAutomation: { version: 4, kind: "passive-and-activities" }
+    })
+  };
+  const packDocument = { ...packSource, toObject: () => structuredClone(packSource) };
+  const pack = { getDocuments: async () => [packDocument] };
+  const events = [];
+  const ownedItem = {
+    _id: "owned-item",
+    id: "owned-item",
+    name: "Камень удачи",
+    type: "equipment",
+    effects: [structuredClone(currentEffect), staleEffect, customEffect],
+    system: {
+      equipped: true,
+      attuned: true,
+      activities: {
+        "current-activity": managedActivity({ id: "current-activity", spent: 2 }),
+        "stale-activity": staleActivity,
+        "custom-activity": customActivity
+      },
+      uses: { spent: 2, max: "3", recovery: [] }
+    },
+    flags: moduleFlags({ magicItemId: "камень-удачи" }),
+    toObject() {
+      return structuredClone({
+        _id: this._id,
+        name: this.name,
+        type: this.type,
+        effects: this.effects,
+        system: this.system,
+        flags: this.flags
+      });
+    },
+    async deleteEmbeddedDocuments(type, ids) {
+      events.push(["delete-effects", type, [...ids]]);
+      this.effects = this.effects.filter((effect) => !ids.includes(effect._id));
+    }
+  };
+  const actor = {
+    id: "actor",
+    name: "Герой",
+    type: "character",
+    items: { contents: [ownedItem] },
+    async updateEmbeddedDocuments(type, updates) {
+      events.push(["update-item", type, structuredClone(updates)]);
+    }
+  };
+  const gameFixture = {
+    system: { id: "dnd5e" },
+    actors: { contents: [actor] },
+    packs: new Map([["world.rebreya-magic-items", pack]])
+  };
+  const service = new MagicItemsCompendiumService({
+    gameProvider: () => gameFixture,
+    consoleProvider: () => ({ table() {} }),
+    isActiveGm: () => true
+  });
+  service.sync = async () => pack;
+
+  const report = await service.syncOwnedMagicItems();
+
+  assert.equal(report.updated.length, 1);
+  assert.deepEqual(events[0], ["delete-effects", "ActiveEffect", ["stale-effect"]]);
+  assert.equal(events[1][0], "update-item");
+  const update = events[1][2][0];
+  assert.equal(update["system.activities.-=stale-activity"], null);
+  assert.equal(Object.hasOwn(update, "system.activities.-=custom-activity"), false);
+  assert.equal(update.system.uses.spent, 2);
+  assert.equal(update.system.activities["current-activity"].uses.spent, 2);
+  assert.equal(update.system.activities["custom-activity"].name, "Custom action");
+  assert.equal(update.effects.some(({ _id }) => _id === "custom-effect"), true);
+});

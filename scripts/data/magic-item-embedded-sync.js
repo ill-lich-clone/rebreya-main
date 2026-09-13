@@ -442,6 +442,23 @@ function activitySources(value) {
     .map(([id, activity]) => [id, documentSource(activity)]));
 }
 
+function embeddedId(document) {
+  return cleanText(document?._id ?? document?.id);
+}
+
+function buildEmbeddedRemovalPlan(existingEffects, mergedEffects, existingActivities, mergedActivities) {
+  const retainedEffectIds = new Set(mergedEffects.map(embeddedId).filter(Boolean));
+  const retainedActivityIds = new Set(Object.keys(mergedActivities));
+  return {
+    effectIdsToDelete: existingEffects
+      .filter(isManagedAutomation)
+      .map(embeddedId)
+      .filter((id) => id && !retainedEffectIds.has(id)),
+    activityIdsToDelete: Object.keys(existingActivities)
+      .filter((id) => id && !retainedActivityIds.has(id))
+  };
+}
+
 export function buildMagicItemAutomationProjection(packItem) {
   const source = typeof packItem?.toObject === "function"
     ? packItem.toObject()
@@ -534,6 +551,12 @@ export function buildEmbeddedMagicItemPatch(item, projection, resolution) {
   if (!activities) {
     return { status: "unresolved", reason: "automation-conflict" };
   }
+  const removalPlan = buildEmbeddedRemovalPlan(
+    existingEffects,
+    effects,
+    existingActivities,
+    activities
+  );
 
   const system = supportsActivities ? { activities } : {};
   if (supportsActivities && projection?.uses) {
@@ -576,7 +599,12 @@ export function buildEmbeddedMagicItemPatch(item, projection, resolution) {
       _id: cleanText(itemSource?._id ?? item?._id ?? item?.id),
       effects,
       system,
-      flags
-    }
+      flags,
+      ...Object.fromEntries(removalPlan.activityIdsToDelete.map((id) => [
+        `system.activities.-=${id}`,
+        null
+      ]))
+    },
+    ...removalPlan
   };
 }

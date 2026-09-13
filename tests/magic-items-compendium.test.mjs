@@ -2037,3 +2037,108 @@ test("every partial manifest row replaces the generic note with a concrete manua
     assert.match(row.reason, /ручн|не автомат|не проец|не выраж|требует ручной/iu, row.id);
   }
 });
+
+test("magic item pack sync removes stale managed embedded ids and preserves unmanaged automation", async () => {
+  const previousGame = globalThis.game;
+  const previousFilePicker = globalThis.FilePicker;
+  const previousFolder = globalThis.Folder;
+  const sourceItem = MAGIC_ITEMS.find(({ id }) => id === "лира-кли");
+  const [normalizedItem] = magicItemsCompendium.normalizeMagicItems([sourceItem]);
+  const fresh = magicItemsCompendium.createMagicItemData(normalizedItem, new Map());
+  const currentSource = structuredClone(fresh);
+  currentSource._id = "devout-amulet";
+  const freshActivity = Object.values(currentSource.system.activities)[0];
+  const staleEffect = {
+    _id: "stale-managed-effect",
+    name: "Устаревший managed-эффект",
+    changes: [{ key: "system.bonuses.abilities.save", mode: 2, value: "+1", priority: 20 }],
+    flags: { "rebreya-main": { magicItemAutomation: true } }
+  };
+  const customEffect = {
+    _id: "custom-effect",
+    name: "Ручной эффект",
+    changes: [{ key: "system.skills.rel.bonuses.check", mode: 2, value: "+3", priority: 20 }],
+    flags: {}
+  };
+  const staleActivity = structuredClone(freshActivity);
+  staleActivity._id = "stale-managed-activity";
+  const customActivity = {
+    _id: "custom-activity",
+    type: "utility",
+    name: "Ручная активность",
+    consumption: { targets: [] },
+    flags: {}
+  };
+  currentSource.effects.push(staleEffect, customEffect);
+  currentSource.system.activities[staleActivity._id] = staleActivity;
+  currentSource.system.activities[customActivity._id] = customActivity;
+
+  const deletedEffects = [];
+  const updates = [];
+  const document = {
+    ...structuredClone(currentSource),
+    toObject: () => structuredClone(currentSource),
+    getFlag: (scope, key) => currentSource.flags?.[scope]?.[key],
+    async deleteEmbeddedDocuments(type, ids) {
+      deletedEffects.push([type, [...ids]]);
+    },
+    async update(patch) {
+      updates.push(structuredClone(patch));
+    }
+  };
+  const pack = {
+    collection: "world.rebreya-magic-items",
+    documentName: "Item",
+    metadata: { system: "dnd5e" },
+    folder: { id: "rebreya-sidebar" },
+    folders: { contents: [] },
+    documentClass: {
+      async createDocuments() {
+        throw new Error("same-signature drift must update in place");
+      },
+      async deleteDocuments() {
+        throw new Error("managed Item document must not be deleted");
+      }
+    },
+    async getDocuments() {
+      return [document];
+    },
+    async setFolder() {}
+  };
+  const gm = { id: "gm", isGM: true, active: true };
+
+  try {
+    globalThis.game = {
+      user: gm,
+      users: { contents: [gm], activeGM: gm },
+      system: { id: "dnd5e" },
+      packs: new Map([["world.rebreya-magic-items", pack]]),
+      folders: [{
+        id: "rebreya-sidebar",
+        name: "Ребрея",
+        type: "Compendium",
+        pack: null,
+        folder: null,
+        sort: 0
+      }]
+    };
+    globalThis.FilePicker = { browse: async () => ({ files: [], dirs: [] }) };
+    globalThis.Folder = {
+      create: async ({ name, folder }) => ({ id: `${folder ?? "root"}-${name}`, name, folder })
+    };
+
+    const service = new magicItemsCompendium.MagicItemsCompendiumService();
+    await service.sync([sourceItem]);
+  }
+  finally {
+    globalThis.game = previousGame;
+    globalThis.FilePicker = previousFilePicker;
+    globalThis.Folder = previousFolder;
+  }
+
+  assert.deepEqual(deletedEffects, [["ActiveEffect", ["stale-managed-effect"]]]);
+  assert.equal(updates.length, 1);
+  assert.equal(updates[0]["system.activities.-=stale-managed-activity"], null);
+  assert.equal(Object.hasOwn(updates[0], "system.activities.-=custom-activity"), false);
+  assert.equal(updates[0].effects.some(({ _id }) => _id === "custom-effect"), true);
+});
