@@ -120,6 +120,29 @@ test("template Item projection and storage snapshot are detached from the source
   assert.equal(snapshot.name, "Bandit cache");
 });
 
+test("template Item projection reads serialized system data from a hydrated Foundry Item", () => {
+  class HydratedTemplateSystem {
+    constructor() {
+      this.schemaVersion = 1;
+      this.form = { itemCount: 5 };
+    }
+  }
+
+  const item = templateItem({ name: "Hydrated cache", form: { itemCount: 5 } });
+  item.system = new HydratedTemplateSystem();
+  item.toObject = () => ({
+    name: item.name,
+    type: item.type,
+    system: { schemaVersion: 1, form: { itemCount: 5 } }
+  });
+
+  const projection = projectLootgenTemplateItem(item);
+
+  assert.equal(projection.name, "Hydrated cache");
+  assert.equal(projection.schemaVersion, 1);
+  assert.equal(projection.form.itemCount, 5);
+});
+
 test("template Item service creates, edits, resolves legacy IDs, and deletes detached Items", async () => {
   const harness = serviceHarness();
   const created = await harness.service.save({ name: "  New cache  ", form: { itemCount: "4" } });

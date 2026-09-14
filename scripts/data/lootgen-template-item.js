@@ -89,7 +89,8 @@ export function projectLootgenTemplateItem(item) {
   if (!name || !id || !uuid) {
     throw new Error("Шаблон Lootgen не имеет допустимого имени или UUID.");
   }
-  const system = normalizeLootgenTemplateItemSystem(item.system);
+  const serializedItem = typeof item?.toObject === "function" ? item.toObject() : null;
+  const system = normalizeLootgenTemplateItemSystem(serializedItem?.system ?? item.system);
   return {
     id,
     uuid,
