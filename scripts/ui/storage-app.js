@@ -212,9 +212,19 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.options.window.title = windowTitle;
     const canManage = globalThis.game?.user?.isGM === true;
     const configurationEnabled = canManage && this.configure;
-    const templates = configurationEnabled && typeof this.moduleApi.listLootgenTemplates === "function"
-      ? this.moduleApi.listLootgenTemplates()
-      : [];
+    const template = configurationEnabled ? clone(this.snapshot?.template ?? null) : null;
+    let templateAvailable = false;
+    if (template?.sourceUuid && (typeof this.moduleApi.resolveLootgenTemplate === "function"
+      || typeof this.moduleApi.getLootgenTemplate === "function")) {
+      try {
+        templateAvailable = Boolean(typeof this.moduleApi.resolveLootgenTemplate === "function"
+          ? await this.moduleApi.resolveLootgenTemplate(template.sourceUuid)
+          : await this.moduleApi.getLootgenTemplate(template.sourceUuid));
+      }
+      catch (_error) {
+        templateAvailable = false;
+      }
+    }
     const coins = normalizeCoins(this.snapshot?.coins);
     const hasTextureSet = TEXTURE_MODES.every(({ mode }) => clean(this.snapshot?.textures?.[mode]));
     const snapshotRows = this.snapshot?.rows ?? [];
@@ -315,8 +325,12 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
         enabled: configurationEnabled,
         baseName: clean(this.snapshot?.baseName) || clean(this.snapshot?.name) || "Хранилище",
         canAddManualItems: configurationEnabled,
-        templateOptions: configurationEnabled ? clone(templates) : [],
-        selectedTemplateName: clean(this.snapshot?.template?.name),
+        template,
+        templateAvailable,
+        templateUnavailable: Boolean(template?.sourceUuid) && !templateAvailable,
+        hasManualContentWithoutMix: (Array.isArray(this.snapshot?.manualRows) && this.snapshot.manualRows.length > 0
+          || COIN_KEYS.some((key) => Number(this.snapshot?.manualCoins?.[key] ?? 0) > 0))
+          && this.snapshot?.mixGeneratedLoot !== true,
         mixGeneratedLoot: this.snapshot?.mixGeneratedLoot === true,
         triggerActiveCount: Math.max(0, Math.trunc(Number(this.snapshot?.triggerActiveCount) || 0)),
         manualRows: configurationEnabled ? clone(this.snapshot?.manualRows ?? []) : [],
@@ -694,9 +708,20 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const form = control.closest("form");
         await this.moduleApi.configureStorageToken(this.tokenUuid, {
           baseName: clean(form?.elements?.baseName?.value),
-          templateId: clean(form?.elements?.templateId?.value),
           mixGeneratedLoot: form?.elements?.mixGeneratedLoot?.checked === true
         }, this.#pathRequest());
+      }
+      else if (action === "storage-clear-template") {
+        await this.moduleApi.clearStorageLootgenTemplate(this.tokenUuid, {
+          ...this.#pathRequest(),
+          operationId: mutationId("storage-template-clear")
+        });
+      }
+      else if (action === "storage-open-template") {
+        const sourceUuid = clean(this.snapshot?.template?.sourceUuid);
+        if (!sourceUuid) throw new Error("Исходный Item шаблона недоступен.");
+        await this.moduleApi.openLootgenApp({ newWindow: true, templateUuid: sourceUuid });
+        return;
       }
       else if (action === "storage-remove-manual-item") {
         await this.moduleApi.removeManualStorageItem(this.tokenUuid, rowId, this.#pathRequest());
@@ -772,7 +797,9 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
   #acceptsDropTarget(event) {
     if (isEditableDropTarget(event?.target)) return false;
-    return this.configure !== true || Boolean(event?.target?.closest?.("[data-storage-dropzone]"));
+    return this.configure !== true
+      || Boolean(event?.target?.closest?.("[data-storage-dropzone]"))
+      || Boolean(event?.target?.closest?.("[data-storage-template-drop]"));
   }
 
   #acceptsDrop(event, data) {
@@ -784,6 +811,18 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
     if (!this.#acceptsDrop(event, data)) return;
     event.preventDefault();
     try {
+      if (this.configure && event?.target?.closest?.("[data-storage-template-drop]")) {
+        const itemUuid = clean(data?.uuid ?? data?.itemUuid);
+        if (!["Item", "ItemUUID"].includes(clean(data?.type)) || !itemUuid) {
+          throw new Error("Перетащите Item шаблона Lootgen.");
+        }
+        await this.moduleApi.assignStorageLootgenTemplate(this.tokenUuid, itemUuid, {
+          ...this.#pathRequest(),
+          operationId: mutationId("storage-template-assign")
+        });
+        await this.#refresh();
+        return;
+      }
       const inspected = await this.moduleApi.inspectStorageDepositSource(data);
       const quantity = await promptStorageTransferQuantity(inspected.available);
       if (quantity === null) return;

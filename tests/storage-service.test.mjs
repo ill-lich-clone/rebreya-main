@@ -14,6 +14,7 @@ import {
 } from "../scripts/data/storage-service.js";
 import { buildStorageContainerRow } from "../scripts/data/storage-container-snapshot.js";
 import { createEmptyStorageTriggerState } from "../scripts/data/storage-trigger-service.js";
+import { normalizeLootgenForm } from "../scripts/data/lootgen-generator.js";
 
 test("opening a chest folds unclaimed coin Items into currency exactly once", async () => {
   const token = createStorageToken("coin-chest");
@@ -1148,6 +1149,45 @@ test("storage state keeps at most one hundred completed bulk claim bindings", ()
   assert.equal(state.bulkClaimMutations.length, 100);
   assert.equal(state.bulkClaimMutations[0].mutationKey, "complete-25");
   assert.equal(state.bulkClaimMutations.at(-1).mutationKey, "complete-124");
+});
+
+test("storage preserves legacy template snapshots and version two provenance while generating only from form", async () => {
+  const generatedForms = [];
+  const service = new StorageService({
+    generate: async (form) => {
+      generatedForms.push(structuredClone(form));
+      return { rows: [], coins: {} };
+    }
+  });
+  const legacyToken = createStorageToken("legacy-template", "Legacy");
+  const legacy = { name: "Legacy", form: { itemCount: 3 } };
+  await service.configure(legacyToken, { template: legacy });
+  assert.deepEqual(readStorageState(legacyToken).template, {
+    name: "Legacy",
+    form: normalizeLootgenForm({ itemCount: 3 })
+  });
+  await service.open(legacyToken);
+
+  const currentToken = createStorageToken("current-template", "Current");
+  const current = {
+    version: 2,
+    name: "Current",
+    img: "icons/current.webp",
+    form: { itemCount: 5 },
+    sourceUuid: "Item.template",
+    assignedAt: 777
+  };
+  await service.configure(currentToken, { template: current });
+  assert.deepEqual(readStorageState(currentToken).template, {
+    ...current,
+    form: normalizeLootgenForm(current.form)
+  });
+  await service.open(currentToken);
+
+  assert.deepEqual(generatedForms, [
+    normalizeLootgenForm(legacy.form),
+    normalizeLootgenForm(current.form)
+  ]);
 });
 
 test("completing a bulk claim retains its receipt while evicting the oldest terminal binding", async () => {

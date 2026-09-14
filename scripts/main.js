@@ -213,7 +213,11 @@ import {
 import { StorageTriggerPromptBroker } from "./infrastructure/foundry/storage-trigger-prompt-broker.js";
 import { UiRefreshCoordinator } from "./infrastructure/ui/ui-refresh-coordinator.js";
 import { GlobalEventsService } from "./data/global-events-service.js";
-import { LootgenTemplateCatalog } from "./data/lootgen-template-catalog.js?v=1.4.270";
+import { LootgenTemplateItemService } from "./data/lootgen-template-item.js";
+import {
+  registerLootgenTemplateItemSheet,
+  registerLootgenTemplateItemType
+} from "./integrations/lootgen-template-item-type.js";
 import {
   StorageService,
   isStorageActor,
@@ -275,6 +279,7 @@ import {
   isValidStorageJournalDropPayload,
   isValidStorageJournalReadPayload,
   isValidStorageJournalRecordPayload,
+  isValidStorageConfigurePayload,
   isValidStorageOpenPayload,
   isValidStorageTriggerReadPayload,
   isValidStorageTriggerResetPayload,
@@ -458,7 +463,7 @@ const LEGACY_WORLD_MUTATION_SOCKET_TYPES = new Set([
   SOCKET_EVENT_LOOTGEN_CLAIM_COINS
 ]);
 const MODULE_STYLE_PATH = `modules/${MODULE_ID}/styles/main.css`;
-const MODULE_STYLE_VERSION = "1.4.286";
+const MODULE_STYLE_VERSION = "1.4.294";
 const SECONDS_PER_HOUR = 3600;
 const SECONDS_PER_DAY = 86400;
 const TRAVEL_DAY_HOURS = 8;
@@ -467,6 +472,7 @@ const COMBAT_STATUS_SET_COMMAND = "combat.status.set";
 const TRADER_PURCHASE_COMMAND = "trader.purchase";
 const TRADER_SELL_COMMAND = "trader.sell";
 export const STORAGE_OPEN_COMMAND = "storage.open";
+export const STORAGE_CONFIGURE_COMMAND = "storage.configure";
 export const STORAGE_JOURNAL_READ_COMMAND = "storage.journal.read";
 export const STORAGE_JOURNAL_RECORD_COMMAND = "storage.journal.record";
 export const STORAGE_JOURNAL_RECORD_DROP_COMMAND = "storage.journal.record-drop";
@@ -1498,10 +1504,16 @@ export class RebreyaMainModule {
       normalizeState: normalizeTraderState
     });
     this.lootgenSourceCatalog = new LootgenSourceCatalog({getModel:()=>this.getModel()});
-    this.lootgenTemplateCatalog = new LootgenTemplateCatalog({
-      get: () => globalThis.game?.settings?.get(MODULE_ID, SETTINGS_KEYS.LOOTGEN_TEMPLATES),
-      set: (value) => globalThis.game?.settings?.set(MODULE_ID, SETTINGS_KEYS.LOOTGEN_TEMPLATES, value),
-      randomId: () => globalThis.randomID?.()
+    this.lootgenTemplateItems = new LootgenTemplateItemService({
+      isGm: () => globalThis.game?.user?.isGM === true,
+      isActiveGm: () => isActiveGmClient(globalThis.game),
+      listItems: () => Array.from(globalThis.game?.items?.contents ?? globalThis.game?.items ?? []),
+      listFolders: () => Array.from(globalThis.game?.folders?.contents ?? globalThis.game?.folders ?? []),
+      resolveUuid: (uuid) => globalThis.fromUuid?.(uuid),
+      createItem: (data) => globalThis.Item?.create?.(data),
+      createFolder: (data) => globalThis.Folder?.create?.(data),
+      getLegacySetting: () => globalThis.game?.settings?.get(MODULE_ID, SETTINGS_KEYS.LOOTGEN_TEMPLATES),
+      setLegacySetting: (value) => globalThis.game?.settings?.set(MODULE_ID, SETTINGS_KEYS.LOOTGEN_TEMPLATES, value)
     });
     this.repository = new EconomyRepository({
       worldSettingMutationRepository: this.worldSettingMutationRepository
@@ -1720,6 +1732,7 @@ export class RebreyaMainModule {
       },
       containerItemService: this.storageContainerItemService,
       durabilityService: this.durabilityService,
+      lootgenTemplateItems: this.lootgenTemplateItems,
       triggerTargetCoordinator: this.triggerTargetCoordinator,
       journalReader: this.storageJournalReader,
       resolveDocument: (uuid) => globalThis.fromUuid?.(uuid),
@@ -2712,6 +2725,12 @@ export class RebreyaMainModule {
       scheduling: QUERY_SCHEDULING,
       execute: (payload, { sender }) => this.storageCommandService.open(payload, { sender })
     });
+    this.socketCommandBus.register(STORAGE_CONFIGURE_COMMAND, {
+      validate: isValidStorageConfigurePayload,
+      authorize: (_payload, { sender }) => sender?.isGM === true,
+      scheduling: keyedMutationScheduling((payload) => [storageKey(payload.tokenUuid)]),
+      execute: (payload, { sender }) => this.storageCommandService.configure(payload, { sender })
+    });
     this.socketCommandBus.register(STORAGE_JOURNAL_READ_COMMAND, {
       validate: isValidStorageJournalReadPayload,
       authorize: (_payload, { sender }) => Boolean(sender),
@@ -3133,7 +3152,7 @@ export class RebreyaMainModule {
     }
     if (globalThis.game?.user?.isGM === true) {
       try {
-        await this.lootgenTemplateCatalog.migrate();
+        await this.lootgenTemplateItems.migrateLegacyTemplates();
       }
       catch (error) {
         console.warn(`${MODULE_ID} | Failed to migrate Lootgen templates.`, error);
@@ -5563,25 +5582,52 @@ export class RebreyaMainModule {
     if (!globalThis.game?.user?.isGM) {
       throw new Error("Настраивать хранилища может только мастер.");
     }
-    const token = await this.#resolveStorageToken(tokenUuid, { allowMaterializedCorpse: true });
     const path = cleanStoragePath(request.path);
-    const patch = {};
-    if (Object.prototype.hasOwnProperty.call(config, "baseName")) {
-      patch.baseName = cleanSocketId(config.baseName) || cleanSocketId(token.name) || "Хранилище";
+    const token = await this.#resolveStorageToken(tokenUuid, { allowMaterializedCorpse: true });
+    if (Object.prototype.hasOwnProperty.call(config, "mixGeneratedLoot")
+      && typeof config.mixGeneratedLoot !== "boolean") {
+      throw new Error("Настройка смешивания случайного лута должна быть логическим значением.");
     }
-    if (Object.prototype.hasOwnProperty.call(config, "templateId")) {
-      const templateId = cleanSocketId(config.templateId);
-      const template = templateId ? this.lootgenTemplateCatalog.get(templateId) : null;
-      if (templateId && !template) throw new Error("Шаблон Lootgen не найден.");
-      patch.template = template ? { name: template.name, form: template.form } : null;
+    const payload = {
+      tokenUuid: cleanSocketId(tokenUuid),
+      operationId: cleanSocketId(request.operationId) || createSocketRequestId("storage-configure"),
+      ...(Object.prototype.hasOwnProperty.call(config, "baseName") ? { baseName: cleanSocketId(config.baseName) } : {}),
+      ...(Object.prototype.hasOwnProperty.call(config, "mixGeneratedLoot") ? { mixGeneratedLoot: config.mixGeneratedLoot } : {}),
+      ...(path.length ? { path } : {})
+    };
+    if (!isActiveGmClient(globalThis.game)) {
+      return this.socketCommandBus.request(STORAGE_CONFIGURE_COMMAND, payload);
     }
-    if (Object.prototype.hasOwnProperty.call(config, "mixGeneratedLoot")) {
-      if (typeof config.mixGeneratedLoot !== "boolean") {
-        throw new Error("Настройка смешивания случайного лута должна быть логическим значением.");
-      }
-      patch.mixGeneratedLoot = config.mixGeneratedLoot;
-    }
-    return this.storageService.configure(token, patch, { path });
+    await this.storageCommandService.configure(payload, { sender: globalThis.game?.user });
+    return foundry.utils.deepClone(readStorageStateAtPath(token, path));
+  }
+
+  async assignStorageLootgenTemplate(tokenUuid, itemUuid, request = {}) {
+    if (!globalThis.game?.user?.isGM) throw new Error("Назначать шаблоны Lootgen может только мастер.");
+    const path = cleanStoragePath(request.path);
+    const payload = {
+      tokenUuid: cleanSocketId(tokenUuid),
+      itemUuid: cleanSocketId(itemUuid),
+      operationId: cleanSocketId(request.operationId) || createSocketRequestId("storage-template-assign"),
+      ...(path.length ? { path } : {})
+    };
+    return isActiveGmClient(globalThis.game)
+      ? this.storageCommandService.configure(payload, { sender: globalThis.game?.user })
+      : this.socketCommandBus.request(STORAGE_CONFIGURE_COMMAND, payload);
+  }
+
+  async clearStorageLootgenTemplate(tokenUuid, request = {}) {
+    if (!globalThis.game?.user?.isGM) throw new Error("Очищать шаблоны Lootgen может только мастер.");
+    const path = cleanStoragePath(request.path);
+    const payload = {
+      tokenUuid: cleanSocketId(tokenUuid),
+      clearTemplate: true,
+      operationId: cleanSocketId(request.operationId) || createSocketRequestId("storage-template-clear"),
+      ...(path.length ? { path } : {})
+    };
+    return isActiveGmClient(globalThis.game)
+      ? this.storageCommandService.configure(payload, { sender: globalThis.game?.user })
+      : this.socketCommandBus.request(STORAGE_CONFIGURE_COMMAND, payload);
   }
 
   async markStorageActor(actorUuid) {
@@ -6962,28 +7008,35 @@ export class RebreyaMainModule {
     if (!game.user?.isGM) {
       throw new Error("Шаблоны Lootgen доступны только мастеру.");
     }
-    return this.lootgenTemplateCatalog.list();
+    return this.lootgenTemplateItems.list();
   }
 
   getLootgenTemplate(templateId) {
     if (!game.user?.isGM) {
       throw new Error("Шаблоны Lootgen доступны только мастеру.");
     }
-    return this.lootgenTemplateCatalog.get(templateId);
+    return this.lootgenTemplateItems.get(templateId);
+  }
+
+  async resolveLootgenTemplate(templateUuid) {
+    if (!game.user?.isGM) {
+      throw new Error("Шаблоны Lootgen доступны только мастеру.");
+    }
+    return this.lootgenTemplateItems.getResolved(templateUuid);
   }
 
   async saveLootgenTemplate(payload = {}) {
     if (!game.user?.isGM) {
       throw new Error("Сохранять шаблоны Lootgen может только мастер.");
     }
-    return this.lootgenTemplateCatalog.save(payload);
+    return this.lootgenTemplateItems.save(payload);
   }
 
   async removeLootgenTemplate(templateId) {
     if (!game.user?.isGM) {
       throw new Error("Удалять шаблоны Lootgen может только мастер.");
     }
-    return this.lootgenTemplateCatalog.remove(templateId);
+    return this.lootgenTemplateItems.remove(templateId);
   }
 
   async generateStorageLoot(form = {}) {
@@ -7033,7 +7086,7 @@ export class RebreyaMainModule {
     return this.lootgenApps.delete(appKey);
   }
 
-  async openLootgenApp({ newWindow = true, viewer = false, sharedResult = null } = {}) {
+  async openLootgenApp({ newWindow = true, viewer = false, sharedResult = null, templateUuid = "", readOnly = false } = {}) {
     try {
       if (!viewer && !game.user?.isGM) {
         throw new Error("Лутген доступен только мастеру.");
@@ -7043,7 +7096,7 @@ export class RebreyaMainModule {
       const { LootgenApp } = await import(`./ui/lootgen-app.js?v=${encodeURIComponent(moduleVersion)}`);
       let app = null;
 
-      if (!viewer && !newWindow) {
+      if (!viewer && !newWindow && !templateUuid) {
         app = Array.from(this.lootgenApps.values()).find((candidate) => candidate?.rendered && !candidate.viewer) ?? null;
       }
 
@@ -7063,7 +7116,7 @@ export class RebreyaMainModule {
         else {
           this.lootgenCounter += 1;
           const appKey = `lootgen-${this.lootgenCounter}`;
-          app = new LootgenApp(this, { appKey, sharedResult });
+          app = new LootgenApp(this, { appKey, sharedResult, templateUuid, readOnly });
           this.lootgenApps.set(appKey, app);
         }
       }
@@ -7812,6 +7865,14 @@ export class RebreyaMainModule {
 }
 
 Hooks.once("init", () => {
+  try {
+    registerLootgenTemplateItemType();
+    registerLootgenTemplateItemSheet();
+  }
+  catch (error) {
+    console.error(`${MODULE_ID} | Failed to register Lootgen template Item subtype.`, error);
+  }
+
   try {
     publishPanelToolApi(game.modules.get(MODULE_ID));
   }

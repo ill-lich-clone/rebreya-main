@@ -11,6 +11,8 @@
   "TYPES.Item.gadgetPl": "Гаджеты",
   "TYPES.Item.rebreya-main.gadget": "Гаджет",
   "TYPES.Item.rebreya-main.gadgetPl": "Гаджеты",
+  "TYPES.Item.rebreya-main.lootgen-template": "Шаблон лут-генератора",
+  "TYPES.Item.rebreya-main.lootgen-templatePl": "Шаблоны лут-генератора",
   "REBREYA_MAIN.Advancement.ResearchChoice.Title": "Выбор исследования",
   "REBREYA_MAIN.Advancement.ResearchChoice.Hint": "Выберите направление исследования ремесленника.",
   "REBREYA_MAIN.Advancement.SpecialtyChoice.Title": "Выбор специальности",

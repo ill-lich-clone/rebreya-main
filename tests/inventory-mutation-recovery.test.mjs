@@ -2344,6 +2344,38 @@ test("external Item import uses its matched folder while same-group moves bypass
   }
 });
 
+test("Lootgen template Items are rejected by ordinary inventory ingress", async () => {
+  const template = createItem({
+    id: "lootgen-template",
+    name: "Template",
+    type: "rebreya-main.lootgen-template",
+    system: { schemaVersion: 1, form: {}, quantity: 1 }
+  });
+  const hero = createActor({ id: "template-owner", items: [template] });
+  const group = createActor({
+    id: "template-target",
+    type: "group",
+    managed: true,
+    members: [{ actor: hero }]
+  });
+  const fixture = createInventoryIngressFixture({
+    group,
+    actors: [group, hero],
+    uuidDocuments: new Map([[template.uuid, template]])
+  });
+  try {
+    await assert.rejects(
+      fixture.service.importDroppedItem({ uuid: template.uuid, mutationId: "template-import" }),
+      /шаблон.*Lootgen|конфигурац/iu
+    );
+    assert.equal(group.items.contents.length, 0);
+    assert.equal(hero.items.contents.includes(template), true);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
 test("filtered dismantle creates only canonical root material output", async () => {
   const iron = { id: "iron", name: "Iron", type: "Metal", priceGold: 1, weight: 1 };
   const model = {

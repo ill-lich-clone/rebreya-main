@@ -124,6 +124,10 @@ test("ready composes spell automation on one registry alongside legacy hook regi
     }]);
 
     const moduleApi = module.api;
+    assert.equal(moduleApi.storageCommandService.lootgenTemplateItems, moduleApi.lootgenTemplateItems);
+    assert.equal(typeof moduleApi.resolveLootgenTemplate, "function");
+    assert.equal(typeof moduleApi.assignStorageLootgenTemplate, "function");
+    assert.equal(typeof moduleApi.clearStorageLootgenTemplate, "function");
     const equippedSyncResult = { dryRun: true, updated: [] };
     const ownedSyncOptions = [];
     moduleApi.magicItemsCompendium = {

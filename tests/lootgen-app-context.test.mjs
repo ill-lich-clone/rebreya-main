@@ -182,6 +182,23 @@ test("lootgen applies a selected template and remembers its selection", async ()
   assert.equal(app.selectedTemplateId, template.id);
 });
 
+test("Lootgen template editing loads and saves the exact Item UUID", async () => {
+  const saved = [];
+  const template = { id: "edit", uuid: "Item.edit", name: "Edited", img: "edit.webp", form: { itemCount: 6 } };
+  const app = new LootgenApp({
+    getModel: async () => ({ gear: [], materials: [] }),
+    getLootgenTemplate: (id) => id === template.uuid ? structuredClone(template) : null,
+    listLootgenTemplates: () => [structuredClone(template)],
+    saveLootgenTemplate: async (payload) => { saved.push(payload); return { ...template, ...payload }; }
+  }, { appKey: "edit-item", templateUuid: template.uuid });
+
+  const context = await app._prepareContext();
+  assert.equal(context.form.itemCount, 6);
+  assert.equal(context.editingTemplateUuid, template.uuid);
+  await app.saveTemplateFromName("Edited again");
+  assert.equal(saved[0].itemUuid, template.uuid);
+});
+
 test("lootgen take-all delegates one batch instead of looping over row grants", () => {
   const source = readFileSync(new URL("../scripts/ui/lootgen-app.js", import.meta.url), "utf8");
   const body = source.match(/async #takeAllToInventory\(\) \{(?<body>[\s\S]*?)\n  \}\n\n  async #sendResultToChat/u)?.groups?.body ?? "";

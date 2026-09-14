@@ -272,6 +272,9 @@ async function resolveItemSource(sourceRef, { fromUuid, createRowId, containerIt
   if (typeof fromUuid !== "function") throw new TypeError("Для предмета требуется разрешение UUID.");
   const item = await fromUuid(sourceRef.itemUuid);
   if (!isItemDocument(item)) throw new Error("Перетаскиваемый предмет не найден.");
+  if (item.type === `${MODULE_ID}.lootgen-template`) {
+    throw new Error("Шаблон Lootgen является конфигурацией и не может храниться как обычный предмет.");
+  }
 
   const available = itemQuantity(item);
   const embedded = isEmbeddedActorItem(item);

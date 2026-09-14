@@ -13301,6 +13301,34 @@ summary:focus-visible {
   color: var(--color-text-dark-secondary);
 }
 
+.rm-storage-template-drop {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  gap: 0.5rem;
+  align-items: center;
+  min-height: 3.1rem;
+  padding: 0.55rem 0.65rem;
+  border: 1px dashed rgb(218 174 76 / 0.42);
+  border-radius: 7px;
+  color: var(--color-text-dark-secondary);
+  background: rgb(218 174 76 / 0.05);
+}
+
+.rm-storage-template-drop img {
+  width: 2.1rem;
+  height: 2.1rem;
+  border: 0;
+  object-fit: cover;
+}
+
+.rm-storage-template-drop > span:first-of-type {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-text-light-highlight);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .rm-storage-grid {
   --rm-storage-columns: 3;
   position: relative;

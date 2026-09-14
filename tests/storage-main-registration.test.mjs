@@ -78,6 +78,12 @@ test("main registers the storage deposit socket API and current cache keys", asy
   assert.match(main, /isValidStorageDepositPayload/u);
   assert.match(main, /StorageJournalReader/u);
   assert.match(main, /STORAGE_DEPOSIT_COMMAND\s*=\s*"storage\.deposit"/u);
+  assert.match(main, /STORAGE_CONFIGURE_COMMAND\s*=\s*"storage\.configure"/u);
+  assert.match(main, /register\(STORAGE_CONFIGURE_COMMAND,\s*\{/u);
+  assert.match(main, /isValidStorageConfigurePayload/u);
+  assert.match(main, /this\.storageCommandService\.configure\(payload,\s*\{ sender \}\)/u);
+  assert.match(main, /async assignStorageLootgenTemplate\(/u);
+  assert.match(main, /async clearStorageLootgenTemplate\(/u);
   assert.match(main, /register\(STORAGE_DEPOSIT_COMMAND,\s*\{/u);
   assert.match(main, /this\.storageCommandService\.deposit\(payload,\s*\{ sender \}\)/u);
   assert.match(main, /async inspectStorageDepositSource\(/u);
@@ -717,6 +723,7 @@ test("composed storage command service receives the module durability service in
     const { RebreyaMainModule } = await import(`../scripts/main.js?storage-durability=${Date.now()}`);
     const moduleApi = new RebreyaMainModule();
     assert.equal(moduleApi.storageCommandService.durabilityService, moduleApi.durabilityService);
+    assert.equal(moduleApi.storageCommandService.lootgenTemplateItems, moduleApi.lootgenTemplateItems);
     assert.equal(moduleApi.storageCommandService.triggerTargetCoordinator, moduleApi.triggerTargetCoordinator);
   }
   finally {

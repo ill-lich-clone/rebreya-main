@@ -8,6 +8,7 @@ import {
   ENERGY_BASE_DAYS,
   ENERGY_MIN_DAYS,
   GEAR_COMPENDIUM_NAME,
+  LOOTGEN_TEMPLATE_ITEM_TYPE,
   MAGIC_ITEMS_COMPENDIUM_NAME,
   MATERIALS_COMPENDIUM_NAME,
   MODULE_ID,
@@ -522,6 +523,12 @@ function isItemDocument(document) {
 
   return document.documentName === "Item"
     || Boolean(document.id && document.system && document.parent);
+}
+
+function assertPhysicalInventoryItem(itemDocument) {
+  if (itemDocument?.type === LOOTGEN_TEMPLATE_ITEM_TYPE) {
+    throw new Error("Шаблон Lootgen является конфигурацией и не может быть помещён в инвентарь.");
+  }
 }
 
 async function resolveUuid(uuid) {
@@ -7978,6 +7985,7 @@ export class InventoryService {
     if (!isItemDocument(itemDocument)) {
       throw new Error("Перетащите предмет из листа персонажа или компендиума.");
     }
+    assertPhysicalInventoryItem(itemDocument);
 
     const sourceActor = isActorDocument(itemDocument.parent) ? itemDocument.parent : null;
     if (sourceActor && sourceActor.isOwner === false) {
@@ -8167,6 +8175,7 @@ export class InventoryService {
     if (!isManagedPartyGroup(inventoryActor) || !(itemDocument instanceof Item)) {
       throw new Error("Некорректные документы импорта предмета.");
     }
+    assertPhysicalInventoryItem(itemDocument);
     const importResult = await this.#importItemDocument(inventoryActor, itemDocument, {
       mutationId: cleanId(payload.mutationId),
       groupActorId,
@@ -8191,6 +8200,7 @@ export class InventoryService {
     if (!sender || !(itemDocument instanceof Item) || !isActorDocument(targetActor)) {
       throw new Error("Некорректный запрос на перенос предмета.");
     }
+    assertPhysicalInventoryItem(itemDocument);
 
     if (!isManagedPartyGroup(targetActor)) {
       throw new Error("Цель переноса не является партийным складом.");
@@ -8738,6 +8748,7 @@ export class InventoryService {
     folderId = null,
     serializedPlan = null
   } = {}) {
+    assertPhysicalInventoryItem(itemDocument);
     const operationId = await this.#resolveNativeImportMutationId(itemDocument, actor, normalizeInventoryFolderTarget(folderId), mutationId);
     const prepared = await this.#prepareImportedItemIngress(actor, itemDocument, {
       folderId,

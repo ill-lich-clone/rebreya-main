@@ -223,10 +223,22 @@ function normalizeTemplate(template) {
     return null;
   }
   const name = String(template.name ?? "").trim();
-  return {
-    name,
-    form: normalizeLootgenForm(template.form)
-  };
+  if (!name || !template.form || typeof template.form !== "object" || Array.isArray(template.form)) return null;
+  const form = normalizeLootgenForm(template.form);
+  if (template.version === 2) {
+    const sourceUuid = String(template.sourceUuid ?? "").trim();
+    const assignedAt = Number(template.assignedAt);
+    if (!sourceUuid || !Number.isSafeInteger(assignedAt) || assignedAt < 0) return null;
+    return {
+      version: 2,
+      name,
+      img: String(template.img ?? "").trim(),
+      form,
+      sourceUuid,
+      assignedAt
+    };
+  }
+  return { name, form };
 }
 
 function visibleRows(state) {
@@ -583,6 +595,9 @@ export class StorageService {
     token = this.#scopedToken(token, path);
     const current = readStorageState(token);
     const source = config && typeof config === "object" ? config : {};
+    if (source.template !== undefined && source.template !== null && !normalizeTemplate(source.template)) {
+      throw new Error("Некорректный снимок шаблона Lootgen.");
+    }
     return this.#write(token, {
       ...current,
       ...source,

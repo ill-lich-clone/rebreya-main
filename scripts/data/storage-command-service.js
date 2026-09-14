@@ -195,6 +195,24 @@ export function isValidStorageOpenPayload(payload) {
     && isTrimmedString(payload.mutationId, { required: true, max: 160 });
 }
 
+export function isValidStorageConfigurePayload(payload) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return false;
+  const keys = Object.keys(payload).filter((key) => key !== "path").sort();
+  const templateShape = [
+    ["itemUuid", "operationId", "tokenUuid"],
+    ["clearTemplate", "operationId", "tokenUuid"]
+  ].some((expected) => keys.length === expected.length && keys.every((key, index) => key === expected[index]));
+  const baseKeys = keys.filter((key) => !["operationId", "tokenUuid"].includes(key));
+  const baseShape = baseKeys.every((key) => ["baseName", "mixGeneratedLoot"].includes(key))
+    && keys.includes("operationId") && keys.includes("tokenUuid");
+  if ((!templateShape && !baseShape) || !clean(payload.tokenUuid) || !clean(payload.operationId)) return false;
+  if (payload.path !== undefined && !isValidStoragePath(payload.path)) return false;
+  if (payload.itemUuid !== undefined) return Boolean(clean(payload.itemUuid));
+  if (payload.clearTemplate !== undefined) return payload.clearTemplate === true;
+  return (payload.baseName === undefined || typeof payload.baseName === "string")
+    && (payload.mixGeneratedLoot === undefined || typeof payload.mixGeneratedLoot === "boolean");
+}
+
 function isValidStorageTriggerDefinitions(value) {
   if (!hasExactKeys(value, ["chainsByEvent"])
     || !hasExactKeys(value.chainsByEvent, [...STORAGE_TRIGGER_EVENTS].sort())) {
@@ -447,6 +465,7 @@ export class StorageCommandService {
     validateDisarmDestination = null,
     containerItemService = null,
     durabilityService = null,
+    lootgenTemplateItems = null,
     triggerService = null,
     triggerTargetCoordinator = null,
     journalReader,
@@ -468,6 +487,9 @@ export class StorageCommandService {
     if (durabilityService != null && typeof durabilityService.getOrBuildDurability !== "function") {
       throw new TypeError("StorageCommandService durabilityService requires getOrBuildDurability().");
     }
+    if (lootgenTemplateItems != null && typeof lootgenTemplateItems.buildSnapshot !== "function") {
+      throw new TypeError("StorageCommandService lootgenTemplateItems requires buildSnapshot().");
+    }
     this.storageService = storageService;
     this.inventoryService = inventoryService;
     this.resolveToken = resolveToken;
@@ -477,6 +499,7 @@ export class StorageCommandService {
     Object.assign(this, { disarmCapability, prepareDisarmPlacement, validateDisarmDestination });
     this.containerItemService = containerItemService;
     this.durabilityService = durabilityService;
+    this.lootgenTemplateItems = lootgenTemplateItems;
     const executionService = triggerService && typeof triggerService.execute === "function"
       ? triggerService
       : { async execute() { return { allowed: true, completedChainIds: [] }; } };
@@ -1023,6 +1046,51 @@ export class StorageCommandService {
       fingerprint,
       authorize: () => this.#resolveTriggerAdmin(payload, sender)
     });
+  }
+
+  async configure(payload = {}, { sender } = {}) {
+    if (sender?.isGM !== true) throw new Error("Настраивать хранилища может только мастер.");
+    const tokenUuid = clean(payload.tokenUuid);
+    const operationId = clean(payload.operationId);
+    const mutationKey = `storage:configure:${operationId}`;
+    const fingerprint = mutationRequestFingerprint(payload, sender);
+    const authorize = () => this.#resolveTriggerAdmin(payload, sender);
+    return this.#runMutation([storageQueueKey(tokenUuid)], mutationKey, async () => {
+      const { storageToken, path } = await authorize();
+      const current = readStorageStateAtPath(storageToken, path);
+      if (!isStorageActor(storageToken.actor)
+        && current?.corpseMaterialization?.status !== "complete") {
+        throw new Error("Токен не отмечен как хранилище Rebreya.");
+      }
+      const patch = {};
+      if (Object.prototype.hasOwnProperty.call(payload, "itemUuid")) {
+        if (!this.lootgenTemplateItems) throw new Error("Сервис шаблонов Lootgen недоступен.");
+        patch.template = await this.lootgenTemplateItems.buildSnapshot(clean(payload.itemUuid));
+      }
+      else if (payload.clearTemplate === true) {
+        patch.template = null;
+      }
+      else {
+        if (Object.prototype.hasOwnProperty.call(payload, "baseName")) {
+          patch.baseName = clean(payload.baseName) || clean(storageToken?.name) || "Хранилище";
+        }
+        if (Object.prototype.hasOwnProperty.call(payload, "mixGeneratedLoot")) {
+          patch.mixGeneratedLoot = payload.mixGeneratedLoot;
+        }
+      }
+      const state = await this.storageService.configure(storageToken, patch, { path });
+      return {
+        changed: true,
+        tokenUuid,
+        path: clone(path),
+        state: clean(state?.state),
+        template: state?.template ? {
+          name: clean(state.template.name),
+          img: clean(state.template.img),
+          sourceUuid: clean(state.template.sourceUuid)
+        } : null
+      };
+    }, { fingerprint, authorize });
   }
 
   async open(payload = {}, { sender } = {}) {

@@ -16,6 +16,7 @@ import {
   isValidStorageJournalReadPayload,
   isValidStorageJournalRecordPayload,
   isValidStorageOpenPayload,
+  isValidStorageConfigurePayload,
   isValidStorageTriggerReadPayload,
   isValidStorageTriggerResetPayload,
   isValidStorageTriggerSavePayload,
@@ -212,7 +213,8 @@ function createHarness({
   playerName = "Игрок",
   createChatMessage = null,
   logger = null,
-  triggerService = null
+  triggerService = null,
+  lootgenTemplateItems = null
 } = {}) {
   const player = { id: "player", name: playerName, isGM: false };
   const gm = { id: "gm", isGM: true, active: true };
@@ -493,6 +495,7 @@ function createHarness({
     logger: logger ?? {
       warn(...args) { warnings.push(args); }
     },
+    lootgenTemplateItems,
     resolveDepositSource: async (...args) => {
       if (logResolve) executionOrder.push("resolve");
       depositResolveCalls.push(clone(args[0]));
@@ -2450,6 +2453,118 @@ test("a child extracted before the queued parent transfer is absent from the gra
   const parent=h.service.claimRow(h.parent,{sender:h.player});await new Promise(resolve=>setImmediate(resolve));
   assert.equal(captured.length,0);release();await Promise.all([child,parent]);
   assert.equal(captured[0].state.manualRows[0].quantity,1);assert.equal(h.itemGrants[0].row.quantity,1);
+});
+
+test("storage template configuration validates exact operation-bound payloads", () => {
+  const assign = {
+    tokenUuid: "Scene.scene.Token.chest",
+    itemUuid: "Item.template",
+    operationId: "assign-1"
+  };
+  assert.equal(isValidStorageConfigurePayload(assign), true);
+  assert.equal(isValidStorageConfigurePayload({ ...assign, path: ["bag"] }), true);
+  assert.equal(isValidStorageConfigurePayload({ tokenUuid: assign.tokenUuid, clearTemplate: true, operationId: "clear-1" }), true);
+  assert.equal(isValidStorageConfigurePayload({ ...assign, operationId: "" }), false);
+  assert.equal(isValidStorageConfigurePayload({ ...assign, extra: true }), false);
+  assert.equal(isValidStorageConfigurePayload({ ...assign, path: [" "] }), false);
+});
+
+test("active GM assigns authoritative detached snapshots and rejects unauthorized or conflicting retries", async () => {
+  let revision = 1;
+  const h = createHarness({
+    lootgenTemplateItems: {
+      async buildSnapshot(itemUuid) {
+        if (itemUuid !== "Item.template") throw new Error("not a template");
+        return {
+          version: 2,
+          name: `Template ${revision}`,
+          img: "template.webp",
+          form: { itemCount: revision },
+          sourceUuid: itemUuid,
+          assignedAt: revision
+        };
+      }
+    }
+  });
+  const payload = { tokenUuid: h.storageToken.uuid, itemUuid: "Item.template", operationId: "assign-1" };
+  await assert.rejects(h.service.configure(payload, { sender: h.player }), /мастер/iu);
+  assert.equal(readStorageState(h.storageToken).template, null);
+
+  await h.service.configure(payload, { sender: h.gm });
+  const first = structuredClone(readStorageState(h.storageToken).template);
+  revision = 2;
+  await h.service.configure({ ...payload, operationId: "assign-2" }, { sender: h.gm });
+  assert.equal(first.form.itemCount, 1);
+  assert.equal(readStorageState(h.storageToken).template.form.itemCount, 2);
+  const beforeInvalid = structuredClone(readStorageState(h.storageToken));
+  await assert.rejects(
+    h.service.configure({ ...payload, itemUuid: "Item.other", operationId: "assign-invalid" }, { sender: h.gm }),
+    /not a template/iu
+  );
+  assert.deepEqual(readStorageState(h.storageToken), beforeInvalid);
+  await assert.rejects(
+    h.service.configure({ ...payload, itemUuid: "Item.other" }, { sender: h.gm }),
+    /mutationId|operationId|параметр/iu
+  );
+  await h.service.configure({ tokenUuid: h.storageToken.uuid, clearTemplate: true, operationId: "clear-1" }, { sender: h.gm });
+  assert.equal(readStorageState(h.storageToken).template, null);
+});
+
+test("template assignment and first-open serialize on the same root storage queue", async () => {
+  let releaseSnapshot;
+  const snapshotGate = new Promise((resolve) => { releaseSnapshot = resolve; });
+  const generatedForms = [];
+  const h = createHarness({
+    lootgenTemplateItems: {
+      async buildSnapshot() {
+        await snapshotGate;
+        return {
+          version: 2,
+          name: "Queued",
+          img: "queued.webp",
+          form: { itemCount: 8 },
+          sourceUuid: "Item.queued",
+          assignedAt: 1
+        };
+      }
+    }
+  });
+  h.storageService.generate = async (form) => {
+    generatedForms.push(structuredClone(form));
+    return { rows: [], coins: {} };
+  };
+  const assign = h.service.configure({
+    tokenUuid: h.storageToken.uuid,
+    itemUuid: "Item.queued",
+    operationId: "queued-assign"
+  }, { sender: h.gm });
+  await new Promise((resolve) => setImmediate(resolve));
+  const open = h.service.open({
+    tokenUuid: h.storageToken.uuid,
+    characterTokenUuid: h.characterToken.uuid,
+    mutationId: "queued-open"
+  }, { sender: h.player });
+  releaseSnapshot();
+  await Promise.all([assign, open]);
+  assert.equal(generatedForms.length, 1);
+  assert.equal(generatedForms[0].itemCount, 8);
+});
+
+test("assigning a template to opened storage preserves contents and requires explicit reset", async () => {
+  const h = createHarness({
+    lootgenTemplateItems: {
+      async buildSnapshot() {
+        return { version: 2, name: "Later", img: "", form: { itemCount: 6 }, sourceUuid: "Item.later", assignedAt: 1 };
+      }
+    }
+  });
+  await h.storageService.open(h.storageToken);
+  const before = readStorageState(h.storageToken);
+  await h.service.configure({ tokenUuid: h.storageToken.uuid, itemUuid: "Item.later", operationId: "later" }, { sender: h.gm });
+  const after = readStorageState(h.storageToken);
+  assert.equal(after.state, before.state);
+  assert.deepEqual(after.generatedRows, before.generatedRows);
+  assert.equal(after.template.form.itemCount, 6);
 });
 
 test("failed parent source debit reserves descendants across command service restart",async()=>{

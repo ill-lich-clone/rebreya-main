@@ -260,6 +260,22 @@ test("world and compendium item deposits copy without mutating their source", as
   }
 });
 
+test("Lootgen template Items cannot enter ordinary storage rows", async () => {
+  const item = {
+    id: "template",
+    uuid: "Item.template",
+    documentName: "Item",
+    parent: null,
+    name: "Template",
+    type: "rebreya-main.lootgen-template",
+    system: { schemaVersion: 1, form: {} }
+  };
+  await assert.rejects(
+    resolveStorageDepositSource({ kind: "item", itemUuid: item.uuid }, { fromUuid: async () => item }),
+    /шаблон.*Lootgen|конфигурац/iu
+  );
+});
+
 test("managed gear-compendium coin Items resolve from their stable flag as unbounded copy sources", async () => {
   const item = {
     uuid: "Compendium.world.rebreya-gear.Item.gold-template",

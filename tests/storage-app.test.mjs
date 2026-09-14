@@ -159,6 +159,60 @@ test("a click inside a replaced grid does not immediately close its popover", as
   finally { globalThis.document = previousDocument; }
 });
 
+test("storage configuration projects an immutable template source and manual-loot warning", async () => {
+  const { app } = createApp({ getStorageSnapshot: async () => ({
+    tokenUuid: "Scene.scene.Token.chest",
+    baseName: "Chest",
+    name: "Chest",
+    state: "opened",
+    rows: [],
+    coins: {},
+    manualRows: [{ rowId: "manual", name: "Rope", quantity: 1 }],
+    mixGeneratedLoot: false,
+    template: {
+      version: 2,
+      name: "Bandit cache",
+      img: "bandit.webp",
+      form: {},
+      sourceUuid: "Item.bandit",
+      assignedAt: 1
+    }
+  }) });
+  const context = await app._prepareContext();
+  assert.equal(context.configuration.template.name, "Bandit cache");
+  assert.equal(context.configuration.template.sourceUuid, "Item.bandit");
+  assert.equal(context.configuration.hasManualContentWithoutMix, true);
+  const template = await readFile(new URL("../templates/storage-app.hbs", import.meta.url), "utf8");
+  assert.match(template, /data-storage-template-drop/u);
+  assert.doesNotMatch(template, /name="templateId"/u);
+});
+
+test("dropping an Item on the template field assigns its UUID without using deposit ingress", async () => {
+  const previousTextEditor = globalThis.TextEditor;
+  globalThis.TextEditor = { getDragEventData: () => ({ type: "Item", uuid: "Item.bandit" }) };
+  const { app, depositCalls } = createApp();
+  const assignments = [];
+  app.moduleApi.assignStorageLootgenTemplate = async (...args) => assignments.push(args);
+  const listeners = new Map();
+  app.element = new class extends FakeElement {
+    addEventListener(name, callback) { listeners.set(name, callback); }
+  }();
+  app.render = async () => {};
+  try {
+    const context = await app._prepareContext();
+    await app._onRender(context, {});
+    const field = { closest: (selector) => selector === "[data-storage-template-drop]" ? field : null };
+    await listeners.get("drop")({ target: field, preventDefault() {}, dataTransfer: { types: ["text/plain"] } });
+    assert.equal(assignments.length, 1);
+    assert.equal(assignments[0][0], "Scene.scene.Token.chest");
+    assert.equal(assignments[0][1], "Item.bandit");
+    assert.equal(depositCalls.length, 0);
+  }
+  finally {
+    globalThis.TextEditor = previousTextEditor;
+  }
+});
+
 function createApp({
   canManage = true,
   configure = true,
@@ -743,7 +797,7 @@ test("storage configuration exposes template and manual item controls to GMs", a
   const context = await createApp().app._prepareContext();
   assert.equal(context.canManage, true);
   assert.equal(context.configuration.enabled, true);
-  assert.equal(context.configuration.templateOptions[0].name, "Простой сундук");
+  assert.equal(context.configuration.template.name, "Простой сундук");
   assert.equal(context.configuration.canAddManualItems, true);
   assert.equal(context.configuration.baseName, "Chest");
   assert.equal(context.configuration.mixGeneratedLoot, true);
@@ -777,7 +831,6 @@ test("storage configuration saves the mixed-loot checkbox with the existing fiel
   const form = {
     elements: {
       baseName: { value: "Сундук мастера" },
-      templateId: { value: "simple" },
       mixGeneratedLoot: { checked: true }
     }
   };
@@ -794,7 +847,7 @@ test("storage configuration saves the mixed-loot checkbox with the existing fiel
 
   assert.deepEqual(configCalls[0], [
     app.tokenUuid,
-    { baseName: "Сундук мастера", templateId: "simple", mixGeneratedLoot: true },
+    { baseName: "Сундук мастера", mixGeneratedLoot: true },
     {}
   ]);
   const template = await readFile(new URL("../templates/storage-app.hbs", import.meta.url), "utf8");
@@ -837,7 +890,7 @@ test("storage configuration is hidden from players", async () => {
   const context = await createApp({ canManage: false, configure: true }).app._prepareContext();
   assert.equal(context.canManage, false);
   assert.equal(context.configuration.enabled, false);
-  assert.deepEqual(context.configuration.templateOptions, []);
+  assert.equal(context.configuration.template, null);
   assert.equal(context.configuration.canSetTexture, false);
   assert.equal(context.rows[0].canEdit, false);
 });

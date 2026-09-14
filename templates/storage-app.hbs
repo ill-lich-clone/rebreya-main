@@ -15,16 +15,24 @@
       </div>
       <div class="rm-field">
         <label>Шаблон Lootgen</label>
-        <select name="templateId" data-action="storage-select-template">
-          <option value="">Без шаблона</option>
-          {{#each configuration.templateOptions}}
-            <option value="{{id}}">{{name}}</option>
-          {{/each}}
-        </select>
+        <div class="rm-storage-template-drop" data-storage-template-drop>
+          {{#if configuration.template}}
+            {{#if configuration.template.img}}<img src="{{configuration.template.img}}" alt="">{{/if}}
+            <span>{{configuration.template.name}}</span>
+            {{#if configuration.templateAvailable}}
+              <button type="button" class="rm-icon-button" data-action="storage-open-template" aria-label="Открыть шаблон"><i class="fa-solid fa-pen"></i></button>
+            {{else if configuration.templateUnavailable}}
+              <span class="rm-muted">Источник недоступен</span>
+            {{/if}}
+            <button type="button" class="rm-icon-button" data-action="storage-clear-template" aria-label="Очистить шаблон"><i class="fa-solid fa-xmark"></i></button>
+          {{else}}
+            <i class="fa-solid fa-hand-pointer"></i><span>Перетащите Item шаблона Lootgen</span>
+          {{/if}}
+        </div>
       </div>
-      {{#if configuration.selectedTemplateName}}
-        <p class="rm-muted">Сохранённый снимок: {{configuration.selectedTemplateName}}</p>
-      {{/if}}
+      {{#if configuration.template}}<p class="rm-muted">Сохранён независимый снимок. Изменения Item применятся только после повторного назначения.</p>{{/if}}
+      {{#if configuration.hasManualContentWithoutMix}}<p class="rm-muted">Ручное содержимое отключает случайную генерацию, пока не включено подмешивание.</p>{{/if}}
+      {{#if configuration.canReset}}<p class="rm-muted">Новый шаблон будет использован после явного сброса содержимого и следующего первого открытия.</p>{{/if}}
       <section class="rm-storage-trigger-summary">
         <div><strong>Триггеры</strong><span>{{configuration.triggerActiveCount}} активных цепочек</span></div>
         <button type="button" class="rm-button rm-button--secondary" data-action="storage-open-trigger-editor"><i class="fa-solid fa-bolt"></i><span>Открыть редактор</span></button>

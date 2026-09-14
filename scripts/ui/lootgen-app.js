@@ -275,6 +275,9 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.generationInFlight=null;
     this.pendingPreparedClaims=new Map();
     this.selectedTemplateId = "";
+    this.editingTemplateUuid = String(options.templateUuid ?? "").trim();
+    this.readOnly = options.readOnly === true;
+    this.editingTemplateLoaded = false;
     this.generated = this.#createEmptyGenerated();
     this.chatLootId = "";
     this.renderListenersAbortController = null;
@@ -400,7 +403,9 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
   async applyTemplateById(templateId, { render = true } = {}) {
     const id = String(templateId ?? "").trim();
-    const template = await this.moduleApi.getLootgenTemplate?.(id);
+    const template = typeof this.moduleApi.resolveLootgenTemplate === "function"
+      ? await this.moduleApi.resolveLootgenTemplate(id)
+      : await this.moduleApi.getLootgenTemplate?.(id);
     if (!template) throw new Error("Выберите шаблон Lootgen.");
     this.applyLootgenTemplate(template);
     this.selectedTemplateId = id;
@@ -426,6 +431,7 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
       throw new Error("Текущая версия модуля не поддерживает шаблоны Lootgen.");
     }
     return this.moduleApi.saveLootgenTemplate({
+      ...(this.editingTemplateUuid ? { itemUuid: this.editingTemplateUuid } : {}),
       name,
       form: this.#getFormSnapshot()
     });
@@ -438,7 +444,7 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
       || typeof this.moduleApi.removeLootgenTemplate !== "function") {
       throw new Error("Текущая версия модуля не поддерживает удаление шаблонов Lootgen.");
     }
-    const template = this.moduleApi.getLootgenTemplate(templateId);
+    const template = await this.moduleApi.getLootgenTemplate(templateId);
     if (!template) {
       throw new Error("Выберите шаблон Lootgen.");
     }
@@ -676,9 +682,18 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   async _prepareContext() {
+    if (this.editingTemplateUuid && !this.editingTemplateLoaded) {
+      const template = typeof this.moduleApi.resolveLootgenTemplate === "function"
+        ? await this.moduleApi.resolveLootgenTemplate(this.editingTemplateUuid)
+        : await this.moduleApi.getLootgenTemplate?.(this.editingTemplateUuid);
+      if (!template) throw new Error("Шаблон Lootgen не найден.");
+      this.applyLootgenTemplate(template);
+      this.selectedTemplateId = template.uuid ?? template.id;
+      this.editingTemplateLoaded = true;
+    }
     if(this.generated.resultVersion===2)this.generated=this.#normalizeSharedResult(this.generated);
     const isGM = game.user?.isGM === true;
-    const canManage = isGM && !this.viewer;
+    const canManage = isGM && !this.viewer && !this.readOnly;
     let model = {};
     let magicDocuments = [];
     let lootgenTemplates = [];
@@ -720,6 +735,8 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
       isGM,
       viewer: this.viewer,
       canManage,
+      editingTemplateUuid: this.editingTemplateUuid,
+      readOnly: this.readOnly,
       appKey: this.appKey,
       form: {
         rankMin: this.rankMin,

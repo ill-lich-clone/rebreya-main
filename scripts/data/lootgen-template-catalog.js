@@ -53,41 +53,18 @@ function normalizeCatalog(value) {
   return { version: CATALOG_VERSION, templates };
 }
 
-function createDefaultId() {
-  if (typeof globalThis.randomID === "function") {
-    return globalThis.randomID();
-  }
-  return globalThis.crypto?.randomUUID?.() ?? "lootgen-template-" + Date.now();
-}
-
 export class LootgenTemplateCatalog {
   constructor({
-    get,
-    set,
-    now = Date.now,
-    randomId = createDefaultId
+    get
   } = {}) {
-    if (typeof get !== "function" || typeof set !== "function") {
-      throw new TypeError("LootgenTemplateCatalog requires get and set functions.");
+    if (typeof get !== "function") {
+      throw new TypeError("LootgenTemplateCatalog requires a get function.");
     }
     this.getSetting = get;
-    this.setSetting = set;
-    this.now = now;
-    this.randomId = randomId;
   }
 
   #read() {
     return normalizeCatalog(this.getSetting());
-  }
-
-  async migrate() {
-    const current = this.getSetting();
-    const normalized = normalizeCatalog(current);
-    if (JSON.stringify(current) === JSON.stringify(normalized)) {
-      return false;
-    }
-    await this.setSetting(normalized);
-    return true;
   }
 
   list() {
@@ -99,46 +76,4 @@ export class LootgenTemplateCatalog {
     return clone(this.#read().templates.find((template) => template.id === safeId) ?? null);
   }
 
-  async save({ id = "", name, form } = {}) {
-    const safeName = normalizeName(name);
-    if (!safeName) {
-      throw new Error("Укажите название шаблона.");
-    }
-
-    const current = this.#read();
-    const safeId = String(id ?? "").trim() || String(this.randomId?.() ?? "").trim();
-    if (!safeId) {
-      throw new Error("Не удалось создать идентификатор шаблона.");
-    }
-
-    const duplicate = current.templates.find((template) => (
-      template.id !== safeId && nameKey(template.name) === nameKey(safeName)
-    ));
-    if (duplicate) {
-      throw new Error("Шаблон с таким названием уже существует.");
-    }
-
-    const updatedAt = normalizeTimestamp(this.now?.());
-    const template = {
-      id: safeId,
-      name: safeName,
-      form: normalizeLootgenForm(form),
-      updatedAt
-    };
-    const templates = current.templates.filter((entry) => entry.id !== safeId);
-    templates.push(template);
-    await this.setSetting({ version: CATALOG_VERSION, templates });
-    return clone(template);
-  }
-
-  async remove(id) {
-    const safeId = String(id ?? "").trim();
-    const current = this.#read();
-    const templates = current.templates.filter((template) => template.id !== safeId);
-    if (templates.length === current.templates.length) {
-      return false;
-    }
-    await this.setSetting({ version: CATALOG_VERSION, templates });
-    return true;
-  }
 }
