@@ -48,7 +48,7 @@ function templateItem({
   };
 }
 
-function serviceHarness({ legacy, failCreateFor = "" } = {}) {
+function serviceHarness({ legacy, failCreateFor = "", supportsItemType = () => true } = {}) {
   const items = [];
   const folders = [];
   let setting = legacy ?? { version: 2, templates: [] };
@@ -56,6 +56,7 @@ function serviceHarness({ legacy, failCreateFor = "" } = {}) {
   const dependencies = {
     isGm: () => true,
     isActiveGm: () => true,
+    supportsItemType,
     listItems: () => items.filter((item) => !item.deleted),
     listFolders: () => folders,
     resolveUuid: async (uuid) => items.find((item) => !item.deleted && item.uuid === uuid) ?? null,
@@ -126,6 +127,9 @@ test("template Item service creates, edits, resolves legacy IDs, and deletes det
   assert.equal(created.form.itemCount, 4);
   assert.equal(harness.items[0].folder, "folder-a");
   assert.equal(harness.folders.length, 1);
+  assert.deepEqual(harness.folders[0].flags, {
+    "rebreya-main": { lootgenTemplateFolder: { version: 1 } }
+  });
 
   const updated = await harness.service.save({ itemUuid: created.uuid, name: "Edited cache", form: { itemCount: 7 } });
   assert.equal(updated.id, created.id);
@@ -138,6 +142,49 @@ test("template Item service creates, edits, resolves legacy IDs, and deletes det
   assert.equal(harness.service.get("legacy-a").uuid, created.uuid);
   assert.equal(await harness.service.remove(created.uuid), true);
   assert.equal(harness.service.list().length, 0);
+});
+
+test("template Item service does not reuse an unrelated same-name Item folder", async () => {
+  const harness = serviceHarness();
+  harness.folders.push({
+    id: "user-folder",
+    name: "Шаблоны Lootgen",
+    type: "Item",
+    flags: {}
+  });
+
+  const created = await harness.service.save({ name: "Module cache", form: { itemCount: 2 } });
+
+  assert.equal(created.name, "Module cache");
+  assert.equal(harness.folders.length, 2);
+  assert.equal(harness.items[0].folder, "folder-a");
+  assert.deepEqual(harness.folders[1].flags, {
+    "rebreya-main": { lootgenTemplateFolder: { version: 1 } }
+  });
+});
+
+test("template Item writes stop before folder, Item, or setting mutation when the subtype is unavailable", async () => {
+  const initialSetting = {
+    version: 2,
+    templates: [{ id: "legacy-a", name: "Legacy cache", form: { itemCount: 1 } }]
+  };
+  const harness = serviceHarness({
+    legacy: initialSetting,
+    supportsItemType: () => false
+  });
+
+  await assert.rejects(
+    harness.service.save({ name: "New cache", form: { itemCount: 2 } }),
+    /полностью перезапустите Foundry VTT/iu
+  );
+  await assert.rejects(
+    harness.service.migrateLegacyTemplates(),
+    /полностью перезапустите Foundry VTT/iu
+  );
+
+  assert.equal(harness.folders.length, 0);
+  assert.equal(harness.items.length, 0);
+  assert.deepEqual(harness.setting(), initialSetting);
 });
 
 test("template Item service resolves a compendium Item to a detached projection and snapshot", async () => {

@@ -3,6 +3,7 @@ import { normalizeLootgenForm } from "./lootgen-generator.js?v=1.4.266";
 
 export const LOOTGEN_TEMPLATE_ITEM_SCHEMA_VERSION = 1;
 export const LOOTGEN_TEMPLATE_MIGRATION_VERSION = 1;
+export const LOOTGEN_TEMPLATE_FOLDER_SCHEMA_VERSION = 1;
 export const LOOTGEN_TEMPLATE_FOLDER_NAME = "Шаблоны Lootgen";
 export const LOOTGEN_TEMPLATE_DEFAULT_IMG = "icons/svg/item-bag.svg";
 
@@ -30,6 +31,12 @@ function isPlainObject(value) {
 function legacyTemplateId(item) {
   return clean(item?.flags?.[MODULE_ID]?.lootgenTemplate?.legacyTemplateId
     ?? item?.getFlag?.(MODULE_ID, "lootgenTemplate")?.legacyTemplateId);
+}
+
+function isLootgenTemplateFolder(folder) {
+  const marker = folder?.flags?.[MODULE_ID]?.lootgenTemplateFolder
+    ?? folder?.getFlag?.(MODULE_ID, "lootgenTemplateFolder");
+  return folder?.type === "Item" && marker?.version === LOOTGEN_TEMPLATE_FOLDER_SCHEMA_VERSION;
 }
 
 function itemIdentity(item) {
@@ -110,6 +117,7 @@ export class LootgenTemplateItemService {
   constructor({
     isGm = () => globalThis.game?.user?.isGM === true,
     isActiveGm = isGm,
+    supportsItemType = () => Array.from(globalThis.Item?.TYPES ?? []).includes(LOOTGEN_TEMPLATE_ITEM_TYPE),
     listItems = () => Array.from(globalThis.game?.items ?? []),
     listFolders = () => Array.from(globalThis.game?.folders ?? []),
     resolveUuid = (uuid) => globalThis.fromUuid?.(uuid),
@@ -123,6 +131,7 @@ export class LootgenTemplateItemService {
     Object.assign(this, {
       isGm,
       isActiveGm,
+      supportsItemType,
       listItems,
       listFolders,
       resolveUuid,
@@ -139,6 +148,15 @@ export class LootgenTemplateItemService {
     if (this.isGm?.() !== true) {
       throw new Error(`${action} шаблоны Lootgen может только мастер.`);
     }
+  }
+
+  #assertItemTypeAvailable() {
+    if (this.supportsItemType?.() === true) return;
+    const error = new Error(
+      `Тип Item ${LOOTGEN_TEMPLATE_ITEM_TYPE} не зарегистрирован; полностью перезапустите Foundry VTT и снова откройте мир.`
+    );
+    error.code = "lootgen-template-item-type-unavailable";
+    throw error;
   }
 
   #items() {
@@ -185,17 +203,25 @@ export class LootgenTemplateItemService {
   }
 
   async #ensureFolder() {
-    const existing = Array.from(this.listFolders?.() ?? []).find((folder) => (
-      folder?.type === "Item" && clean(folder?.name) === LOOTGEN_TEMPLATE_FOLDER_NAME
-    ));
+    const existing = Array.from(this.listFolders?.() ?? []).find((folder) => isLootgenTemplateFolder(folder));
     if (existing) return existing;
-    const created = await this.createFolder?.({ name: LOOTGEN_TEMPLATE_FOLDER_NAME, type: "Item" });
+    const created = await this.createFolder?.({
+      name: LOOTGEN_TEMPLATE_FOLDER_NAME,
+      type: "Item",
+      folder: null,
+      flags: {
+        [MODULE_ID]: {
+          lootgenTemplateFolder: { version: LOOTGEN_TEMPLATE_FOLDER_SCHEMA_VERSION }
+        }
+      }
+    });
     if (!created?.id) throw new Error("Не удалось создать папку шаблонов Lootgen.");
     return created;
   }
 
   async save({ itemUuid = "", id = "", name, img, form } = {}) {
     this.#assertGm("Сохранять");
+    this.#assertItemTypeAvailable();
     const safeName = normalizeName(name);
     if (!safeName) throw new Error("Укажите название шаблона.");
     if (!isPlainObject(form)) throw new Error("Некорректная форма шаблона Lootgen.");
@@ -247,6 +273,7 @@ export class LootgenTemplateItemService {
     const legacy = clone(this.getLegacySetting?.()) ?? {};
     const previous = normalizeMigrationState(legacy.itemMigration);
     if (previous.completed) return { changed: false, ...previous };
+    this.#assertItemTypeAvailable();
 
     const migrated = new Set(previous.migratedLegacyIds);
     const errors = [];

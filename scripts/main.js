@@ -463,7 +463,7 @@ const LEGACY_WORLD_MUTATION_SOCKET_TYPES = new Set([
   SOCKET_EVENT_LOOTGEN_CLAIM_COINS
 ]);
 const MODULE_STYLE_PATH = `modules/${MODULE_ID}/styles/main.css`;
-const MODULE_STYLE_VERSION = "1.4.294";
+const MODULE_STYLE_VERSION = "1.4.295";
 const SECONDS_PER_HOUR = 3600;
 const SECONDS_PER_DAY = 86400;
 const TRAVEL_DAY_HOURS = 8;
@@ -1507,6 +1507,7 @@ export class RebreyaMainModule {
     this.lootgenTemplateItems = new LootgenTemplateItemService({
       isGm: () => globalThis.game?.user?.isGM === true,
       isActiveGm: () => isActiveGmClient(globalThis.game),
+      supportsItemType: () => Array.from(globalThis.Item?.TYPES ?? []).includes(`${MODULE_ID}.lootgen-template`),
       listItems: () => Array.from(globalThis.game?.items?.contents ?? globalThis.game?.items ?? []),
       listFolders: () => Array.from(globalThis.game?.folders?.contents ?? globalThis.game?.folders ?? []),
       resolveUuid: (uuid) => globalThis.fromUuid?.(uuid),
@@ -7092,8 +7093,7 @@ export class RebreyaMainModule {
         throw new Error("Лутген доступен только мастеру.");
       }
 
-      const moduleVersion = "1.4.269";
-      const { LootgenApp } = await import(`./ui/lootgen-app.js?v=${encodeURIComponent(moduleVersion)}`);
+      const { LootgenApp } = await import(`./ui/lootgen-app.js?v=${encodeURIComponent(MODULE_STYLE_VERSION)}`);
       let app = null;
 
       if (!viewer && !newWindow && !templateUuid) {
