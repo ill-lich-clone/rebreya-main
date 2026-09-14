@@ -389,6 +389,10 @@ import { getCraftsmanSubclasses } from "./integrations/craftsman-subclass-tracks
 import { patchTransformCleanupUpdateActorHook } from "./integrations/transform-cleanup-compat.js";
 import { openRebreyaQuestLog } from "./integrations/rebreya-quest-log.js";
 import {
+  pruneMissingRegisteredGroups,
+  registerGroupRegistryLifecycleHooks
+} from "./integrations/group-registry-lifecycle.js";
+import {
   SOCKET_EVENT_SET_SETTING,
   SOCKET_EVENT_SET_SETTING_RESULT,
   handleSettingsUpdateSocketResponse,
@@ -463,7 +467,7 @@ const LEGACY_WORLD_MUTATION_SOCKET_TYPES = new Set([
   SOCKET_EVENT_LOOTGEN_CLAIM_COINS
 ]);
 const MODULE_STYLE_PATH = `modules/${MODULE_ID}/styles/main.css`;
-const MODULE_STYLE_VERSION = "1.4.296";
+const MODULE_STYLE_VERSION = "1.4.297";
 const SECONDS_PER_HOUR = 3600;
 const SECONDS_PER_DAY = 86400;
 const TRAVEL_DAY_HOURS = 8;
@@ -8158,6 +8162,23 @@ Hooks.once("ready", async () => {
   }
   catch (error) {
     console.error(`${MODULE_ID} | Failed to register magic weapon template hook.`, error);
+  }
+
+  try {
+    registerGroupRegistryLifecycleHooks({
+      hooks: Hooks,
+      groupContextService: moduleApi.groupContextService,
+      isActiveGmClient,
+      afterPrune: async () => {
+        if (moduleApi.groupsApp) {
+          await moduleApi.groupsApp.render({ force: true });
+        }
+      }
+    });
+    await pruneMissingRegisteredGroups(moduleApi.groupContextService, { isActiveGmClient });
+  }
+  catch (error) {
+    console.warn(`${MODULE_ID} | Failed to reconcile registered Group Actors.`, error);
   }
 
   try {

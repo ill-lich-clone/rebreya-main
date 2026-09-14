@@ -468,6 +468,39 @@ export class GroupContextService {
     return this.resolveForGroup(groupActor.id);
   }
 
+  async pruneMissingGroups() {
+    const currentRegistry = this.getRegistry();
+    const hasMissingGroups = Object.keys(currentRegistry.groupsById)
+      .some((groupActorId) => getActorById(groupActorId)?.type !== "group");
+    const hasInvalidActiveGroup = Boolean(currentRegistry.activeGroupActorId)
+      && !currentRegistry.groupsById[currentRegistry.activeGroupActorId];
+
+    if (!hasMissingGroups && !hasInvalidActiveGroup) {
+      return {
+        removedGroupActorIds: [],
+        activeGroupActorId: currentRegistry.activeGroupActorId
+      };
+    }
+
+    return this.#groupStateRepository.mutateRegistry((registry) => {
+      const removedGroupActorIds = Object.keys(registry.groupsById)
+        .filter((groupActorId) => getActorById(groupActorId)?.type !== "group");
+
+      for (const groupActorId of removedGroupActorIds) {
+        delete registry.groupsById[groupActorId];
+      }
+
+      if (registry.activeGroupActorId && !registry.groupsById[registry.activeGroupActorId]) {
+        registry.activeGroupActorId = "";
+      }
+
+      return {
+        removedGroupActorIds,
+        activeGroupActorId: registry.activeGroupActorId
+      };
+    });
+  }
+
   resolveForGroup(groupActorId) {
     const groupActor = this.#requireGroupActor(groupActorId);
     const registry = this.getRegistry();

@@ -794,6 +794,32 @@ test("GroupContextService does not expose stale whole-registry replacement", () 
   assert.equal(typeof service.setRegistry, "undefined");
 });
 
+test("GroupContextService prunes registered groups whose world Group Actor no longer exists", async () => {
+  const existingGroup = createGroup("group-existing");
+  const fixture = installGameFixture({
+    actors: [existingGroup],
+    registry: {
+      activeGroupActorId: "group-missing",
+      groupsById: {
+        "group-existing": buildDefaultGroupState("group-existing", { now: 100 }),
+        "group-missing": buildDefaultGroupState("group-missing", { now: 200 })
+      }
+    }
+  });
+
+  try {
+    const result = await createActiveGroupContextService().pruneMissingGroups();
+    const registry = fixture.settingsStore[SETTINGS_KEYS.GROUP_STATE];
+
+    assert.deepEqual(result.removedGroupActorIds, ["group-missing"]);
+    assert.deepEqual(Object.keys(registry.groupsById), ["group-existing"]);
+    assert.equal(registry.activeGroupActorId, "");
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
 test("GroupContextService registerGroup return shape includes group context fields", async () => {
   const group = createGroup("group-a", [{ actor: createCharacter("character-a") }], { managed: false });
   const fixture = installGameFixture({ actors: [group], registry: {} });
