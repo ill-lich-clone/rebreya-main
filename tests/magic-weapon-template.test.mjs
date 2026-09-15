@@ -1051,6 +1051,34 @@ test("handleCreatedMagicToolItem adapts universal tool templates for the current
   assert.equal(toolItem.updates[0].data.flags["rebreya-main"].magicToolGearId, "thieves-tools");
 });
 
+test("handleActorRenderMagicWeapons does not reopen the universal tool prompt on sheet renders", async () => {
+  const toolItem = new FakeItem({
+    name: "Универсальный инструмент +1",
+    type: "equipment",
+    flags: {
+      "rebreya-main": {
+        sourceType: "magicItem",
+        magicItemId: "universalnyy-instrument-1",
+      },
+    },
+  });
+  const actor = new FakeActor({ items: [toolItem] });
+  const moduleApi = { getModel: async () => ({ gear: [makeThievesTools()] }) };
+  let promptCalls = 0;
+
+  for (let render = 0; render < 2; render += 1) {
+    assert.equal(await handleActorRenderMagicWeapons(actor, moduleApi, {
+      toolPrompt: async () => {
+        promptCalls += 1;
+        return null;
+      },
+    }), false);
+  }
+
+  assert.equal(promptCalls, 0);
+  assert.equal(toolItem.updates.length, 0);
+});
+
 test("handleActorRenderMagicWeapons applies a fallback prompt for unresolved generic magic weapons on owned sheets", async () => {
   const item = new FakeItem();
   const actor = new FakeActor({
