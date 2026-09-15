@@ -362,7 +362,7 @@ import { registerInventorySyncHooks } from "./integrations/inventory-sync.js?v=1
 import { runMapObjectTokenMacro } from "./integrations/map-object-token-macro.js?v=1.4.97-map-object-token";
 import { refreshSmallTimeDateDisplay, registerSmallTimeIntegration, syncSmallTimeToCalendarTime } from "./integrations/smalltime-compat.js";
 import { registerRationFoodConversionHook } from "./integrations/ration-food-conversion.js";
-import { registerMagicWeaponTemplateHook } from "./integrations/magic-weapon-template.js?v=1.4.298";
+import { registerMagicWeaponTemplateHook } from "./integrations/magic-weapon-template.js?v=1.4.299";
 import { registerStorageTokenHooks } from "./integrations/storage-token-hooks.js?v=1.4.197-door-trigger-target";
 import { registerDoorTriggerHooks } from "./integrations/door-trigger-hooks.js?v=1.4.199-door-overlay-anchor";
 import { registerCraftsmanGadgetHooks } from "./integrations/craftsman-gadget-hooks.js";
@@ -467,7 +467,7 @@ const LEGACY_WORLD_MUTATION_SOCKET_TYPES = new Set([
   SOCKET_EVENT_LOOTGEN_CLAIM_COINS
 ]);
 const MODULE_STYLE_PATH = `modules/${MODULE_ID}/styles/main.css`;
-const MODULE_STYLE_VERSION = "1.4.298";
+const MODULE_STYLE_VERSION = "1.4.299";
 const SECONDS_PER_HOUR = 3600;
 const SECONDS_PER_DAY = 86400;
 const TRAVEL_DAY_HOURS = 8;

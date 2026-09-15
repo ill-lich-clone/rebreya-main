@@ -9881,6 +9881,12 @@ summary:focus-visible {
 
 @container (max-width: 1320px) {
   .rm-hero-doll-tab__layout {
+    grid-template-columns: minmax(240px, 280px) minmax(0, 1fr);
+  }
+}
+
+@container (max-width: 600px) {
+  .rm-hero-doll-tab__layout {
     grid-template-columns: 1fr;
   }
 }
@@ -10044,9 +10050,12 @@ summary:focus-visible {
 
 @container rm-hero-doll-board (max-width: 467px) {
   .rm-hero-doll-grid {
-    grid-template-columns: repeat(auto-fit, 80px);
+    grid-template-columns: repeat(2, 80px);
     grid-template-rows: none;
     min-height: 0;
+  }
+  .rm-hero-doll-grid::before {
+    display: none;
   }
   .rm-hero-doll-slot {
     grid-column: auto;
@@ -10235,7 +10244,6 @@ summary:focus-visible {
   .rm-trader-toolbar,
   .rm-inventory-toolbar,
   .rm-party-toolbar,
-  .rm-hero-doll-tab__layout,
   .rm-party-member-card__controls,
   .rm-party-row__controls,
   .rm-lootgen-fields,
@@ -10334,10 +10342,6 @@ summary:focus-visible {
 
   .rm-compact-pill--focus {
     grid-column: span 2;
-  }
-
-  .rm-hero-doll-grid {
-    min-height: 480px;
   }
 
   .rm-party-toolbar__actions {
