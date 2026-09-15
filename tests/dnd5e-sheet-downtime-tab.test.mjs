@@ -388,6 +388,51 @@ test("registerDnd5eSheetExtensions registers hero doll and downtime without repl
   }
 });
 
+test("hero doll portrait fold returns the previous sidebar state after tab changes and rerenders without saving a dnd5e flag", async () => {
+  const stubs = installSheetExtensionStubs();
+  try {
+    const { registerDnd5eSheetExtensions, syncHeroDollSidebarOnRender } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?portrait-fold=${Date.now()}`);
+    const saved = new Map([["heroDoll", true], ["features", true]]);
+    const writes = [];
+    globalThis.game.user = { setFlag(...args) { writes.push(args); } };
+    stubs.CharacterActorSheet.prototype._toggleSidebar = function (collapsed) {
+      if (collapsed) this.element.classList.add("sidebar-collapsed");
+      else this.element.classList.remove("sidebar-collapsed");
+    };
+    stubs.CharacterActorSheet.prototype.changeTab = function (tab, group) {
+      if (group !== "primary") return;
+      this.tabGroups.primary = tab;
+      if (saved.has(tab)) this._toggleSidebar(saved.get(tab));
+    };
+    registerDnd5eSheetExtensions({ heroDollService: {}, characterDowntimeService: {}, implantService: {} });
+    const actor = createActor(stubs.Actor, { id: "portrait-actor" });
+    const sheet = new stubs.CharacterActorSheet(actor);
+    sheet.element = new stubs.HTMLElement();
+    sheet.tabGroups.primary = "inventory";
+
+    sheet.changeTab("heroDoll", "primary");
+    assert.equal(sheet.element.classList.contains("sidebar-collapsed"), false);
+    sheet._toggleSidebar(true); // dnd5e reapplies the hero-tab flag while rendering.
+    syncHeroDollSidebarOnRender(sheet);
+    assert.equal(sheet.element.classList.contains("sidebar-collapsed"), false);
+    sheet.changeTab("inventory", "primary");
+    assert.equal(sheet.element.classList.contains("sidebar-collapsed"), false);
+
+    sheet._toggleSidebar(true);
+    sheet.changeTab("heroDoll", "primary");
+    sheet.changeTab("inventory", "primary");
+    assert.equal(sheet.element.classList.contains("sidebar-collapsed"), true);
+    sheet._toggleSidebar(false);
+    sheet.changeTab("heroDoll", "primary");
+    sheet.changeTab("features", "primary");
+    assert.equal(sheet.element.classList.contains("sidebar-collapsed"), true);
+    assert.deepEqual(writes, []);
+  }
+  finally {
+    stubs.restore();
+  }
+});
+
 test("registerDnd5eSheetExtensions adds Rebreya branding to character sheet headers", async () => {
   const stubs = installSheetExtensionStubs();
   try {

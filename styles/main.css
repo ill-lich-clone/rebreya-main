@@ -337,6 +337,19 @@
   pointer-events: none;
 }
 
+.dnd5e2.sheet.actor.character:not(.sidebar-collapsed):has(.rm-hero-doll-tab.active) .main-content {
+  grid-template-columns: 0 1fr;
+  padding-left: 0;
+}
+
+.dnd5e2.sheet.actor.character:not(.sidebar-collapsed):has(.rm-hero-doll-tab.active) .main-content > .sidebar {
+  margin-left: calc(var(--dnd5e-sheet-sidebar-width) * -1);
+}
+
+.dnd5e2.sheet.actor.character:has(.rm-hero-doll-tab.active) .sidebar-collapser {
+  visibility: hidden;
+}
+
 .dnd5e2.sheet.actor.character .sheet-header {
   background: transparent;
 }
@@ -9881,11 +9894,11 @@ summary:focus-visible {
 
 @container (max-width: 1320px) {
   .rm-hero-doll-tab__layout {
-    grid-template-columns: minmax(240px, 280px) minmax(0, 1fr);
+    grid-template-columns: minmax(496px, 520px) minmax(0, 1fr);
   }
 }
 
-@container (max-width: 600px) {
+@container (max-width: 780px) {
   .rm-hero-doll-tab__layout {
     grid-template-columns: 1fr;
   }
@@ -9903,6 +9916,7 @@ summary:focus-visible {
 
 .rm-hero-doll-board {
   min-width: 0;
+  overflow-x: auto;
   container-type: inline-size;
   container-name: rm-hero-doll-board;
 }
@@ -9927,6 +9941,17 @@ summary:focus-visible {
 .rm-hero-doll-board__header h2 {
   font-size: 20px;
   line-height: 1.1;
+}
+
+@container (max-width: 1320px) {
+  .rm-hero-doll-stock__header h3 {
+    font-size: 20px;
+    line-height: 1.1;
+  }
+
+  .rm-hero-doll-stock__header {
+    flex-wrap: wrap;
+  }
 }
 
 .rm-hero-doll-board__header p,
@@ -9977,6 +10002,7 @@ summary:focus-visible {
   justify-content: center;
   gap: 8px;
   min-height: 520px;
+  min-width: 468px;
   padding: 18px;
   border: 1px solid var(--rm-border-subtle);
   border-radius: 16px;
@@ -10046,21 +10072,6 @@ summary:focus-visible {
 .rm-hero-doll-slot__surface:focus-visible {
   outline: 2px solid var(--rm-accent);
   outline-offset: 2px;
-}
-
-@container rm-hero-doll-board (max-width: 467px) {
-  .rm-hero-doll-grid {
-    grid-template-columns: repeat(2, 80px);
-    grid-template-rows: none;
-    min-height: 0;
-  }
-  .rm-hero-doll-grid::before {
-    display: none;
-  }
-  .rm-hero-doll-slot {
-    grid-column: auto;
-    grid-row: auto;
-  }
 }
 
 .rm-hero-doll-slot__surface:hover {

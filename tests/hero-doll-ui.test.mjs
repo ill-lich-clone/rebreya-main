@@ -15,17 +15,24 @@ test('hero slot template keeps names outside fixed squares and has accessible cu
   for(const prop of ['inline-size','block-size','min-inline-size','min-block-size']) assert.ok(surface.includes(`${prop}: 80px`),prop);
 });
 
-test('compact hero doll keeps two slot columns beside inventory without the decorative figure', async () => {
+test('compact hero doll preserves anatomical placements and reserves the narrow column for inventory', async () => {
   const css=await readFile(new URL('../styles/main.css',import.meta.url),'utf8');
   const compact=css.match(/@container \(max-width: 1320px\)\s*\{\s*\.rm-hero-doll-tab__layout\s*\{([^}]+)\}/u)?.[1]??'';
-  assert.match(compact,/grid-template-columns:\s*minmax\(240px,\s*280px\)\s+minmax\(0,\s*1fr\)/u);
-  const board=css.match(/@container rm-hero-doll-board \(max-width: 467px\)\s*\{\s*\.rm-hero-doll-grid\s*\{([^}]+)\}/u)?.[1]??'';
-  assert.match(board,/grid-template-columns:\s*repeat\(2,\s*80px\)/u);
-  assert.match(css,/@container rm-hero-doll-board \(max-width: 467px\)[\s\S]*?\.rm-hero-doll-grid::before\s*\{\s*display:\s*none/u);
-  assert.match(css,/@container \(max-width: 600px\)\s*\{\s*\.rm-hero-doll-tab__layout\s*\{\s*grid-template-columns:\s*1fr/u);
+  assert.match(compact,/grid-template-columns:\s*minmax\(496px,\s*520px\)\s+minmax\(0,\s*1fr\)/u);
+  assert.match(css,/@container \(max-width: 780px\)\s*\{\s*\.rm-hero-doll-tab__layout\s*\{\s*grid-template-columns:\s*1fr/u);
+  assert.match(css,/\.rm-hero-doll-grid\s*\{[^}]*grid-template-columns:\s*repeat\(5,\s*80px\)/u);
+  assert.match(css,/\.rm-hero-doll-slot--head\s*\{\s*grid-column:\s*3;\s*grid-row:\s*1/u);
+  assert.doesNotMatch(css,/@container rm-hero-doll-board \(max-width: 467px\)[\s\S]*?\.rm-hero-doll-slot\s*\{\s*grid-column:\s*auto/u);
+  assert.doesNotMatch(css,/@container rm-hero-doll-board \(max-width: 467px\)[\s\S]*?\.rm-hero-doll-grid::before\s*\{\s*display:\s*none/u);
   const globalNarrow=css.match(/@media \(max-width: 1200px\)\s*\{([\s\S]*?)@media \(max-width: 760px\)/u)?.[1]??'';
   assert.doesNotMatch(globalNarrow,/\.rm-hero-doll-tab__layout\s*,/u);
   assert.doesNotMatch(globalNarrow,/\.rm-hero-doll-grid\s*\{\s*min-height:\s*480px/u);
+});
+
+test('hero doll temporarily folds the native portrait without changing its collapsed preference', async () => {
+  const css=await readFile(new URL('../styles/main.css',import.meta.url),'utf8');
+  assert.match(css,/\.dnd5e2\.sheet\.actor\.character:not\(\.sidebar-collapsed\):has\(\.rm-hero-doll-tab\.active\) \.main-content\s*\{[^}]*grid-template-columns:\s*0\s+1fr/u);
+  assert.match(css,/\.dnd5e2\.sheet\.actor\.character:not\(\.sidebar-collapsed\):has\(\.rm-hero-doll-tab\.active\) \.main-content\s*>\s*\.sidebar\s*\{[^}]*margin-left:\s*calc\(var\(--dnd5e-sheet-sidebar-width\)\s*\*\s*-1\)/u);
 });
 
 test('hero tooltip preserves distinct IDs and treats long HTML-like names as text; rebind aborts old handlers', async () => {

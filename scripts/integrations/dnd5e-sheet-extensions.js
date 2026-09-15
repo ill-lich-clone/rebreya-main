@@ -78,6 +78,7 @@ const ITEM_MODS_TAB_LABEL = "Моды";
 const ITEM_MODS_TEMPLATE = `modules/${MODULE_ID}/templates/item-mods-tab.hbs`;
 const CHARACTER_SHEET_HEADER_IMAGE = `url("/modules/${MODULE_ID}/assets/ui/rebreya-character-header.webp")`;
 const HERO_DOLL_PATCH_FLAG = "__rebreyaHeroDollPatched";
+const HERO_DOLL_SIDEBAR_PATCH_FLAG = "__rebreyaHeroDollSidebarPatched";
 const ITEM_MODS_PATCH_FLAG = "__rebreyaItemModsPatched";
 const HERO_DOLL_MOVE_DROP_PATCH_FLAG = "__rebreyaHeroDollMoveDropPatched";
 const HERO_DOLL_PAYLOAD_PATCH_FLAG = "__rebreyaHeroDollPayloadPatched";
@@ -753,6 +754,7 @@ function normalizeLichWeaponValue(field, value) {
 let activeHeroDollDragData = null;
 const heroDollPanelAbortControllers = new WeakMap();
 const heroDollRootAbortControllers = new WeakMap();
+const heroDollSidebarBeforeTab = new WeakMap();
 const handledCharacterDowntimeClickEvents = new WeakSet();
 const recentCharacterDowntimeSubmitButtons = new WeakMap();
 const recentCharacterDowntimeRollButtons = new WeakMap();
@@ -2529,6 +2531,46 @@ function patchHeroDollPartContext(CharacterActorSheet, moduleApi) {
     writable: false,
     value: true
   });
+}
+
+function patchHeroDollSidebarChangeTab(CharacterActorSheet) {
+  const prototype = CharacterActorSheet?.prototype;
+  if (!prototype || prototype[HERO_DOLL_SIDEBAR_PATCH_FLAG]
+    || typeof prototype.changeTab !== "function"
+    || typeof prototype._toggleSidebar !== "function") return;
+
+  const originalChangeTab = prototype.changeTab;
+  prototype.changeTab = function (tab, group, options) {
+    const enteringHeroDoll = group === "primary"
+      && tab === HERO_DOLL_TAB_ID
+      && this.tabGroups?.primary !== HERO_DOLL_TAB_ID;
+    const previousCollapsed = enteringHeroDoll && this.element?.classList
+      ? this.element.classList.contains("sidebar-collapsed")
+      : undefined;
+    const result = originalChangeTab.call(this, tab, group, options);
+    if (enteringHeroDoll && previousCollapsed !== undefined) {
+      heroDollSidebarBeforeTab.set(this, previousCollapsed);
+      this._toggleSidebar(previousCollapsed);
+    }
+    if (group === "primary" && tab !== HERO_DOLL_TAB_ID) {
+      heroDollSidebarBeforeTab.delete(this);
+    }
+    return result;
+  };
+  Object.defineProperty(prototype, HERO_DOLL_SIDEBAR_PATCH_FLAG, {
+    configurable: false,
+    enumerable: false,
+    writable: false,
+    value: true
+  });
+}
+
+export function syncHeroDollSidebarOnRender(app) {
+  if (app?.tabGroups?.primary !== HERO_DOLL_TAB_ID
+    || !app.element?.classList
+    || typeof app._toggleSidebar !== "function") return;
+  // The folded portrait is visual-only; never persist the hero tab's temporary state.
+  app._toggleSidebar(heroDollSidebarBeforeTab.get(app) ?? false);
 }
 
 function patchActorMoveDropBehavior() {
@@ -7289,6 +7331,7 @@ export function registerDnd5eSheetExtensions(moduleApi) {
     ensureHeroDollTabDefinition(CharacterActorSheet);
     registerCraftsmanClassCardIntegration(CharacterActorSheet);
     patchHeroDollPartContext(CharacterActorSheet, moduleApi);
+    patchHeroDollSidebarChangeTab(CharacterActorSheet);
   }
   registerCraftsmanTidyContent();
   const ItemSheet5e = game.dnd5e?.applications?.item?.ItemSheet5e
@@ -7341,6 +7384,7 @@ export function registerDnd5eSheetExtensions(moduleApi) {
         console.error(`${MODULE_ID} | Failed to enhance the native Craftsman class card.`, error);
       }
       bindCharacterSheetBranding(root);
+      syncHeroDollSidebarOnRender(app);
       bindHeroDollPanel(root, app, moduleApi);
       bindCharacterDowntimePanel(root, app, moduleApi);
       try {
@@ -7464,6 +7508,7 @@ export function registerDnd5eSheetExtensions(moduleApi) {
         console.error(`${MODULE_ID} | Failed to enhance the native Craftsman class card on ApplicationV2 render.`, error);
       }
       bindCharacterSheetBranding(root);
+      syncHeroDollSidebarOnRender(app);
       bindHeroDollPanel(root, app, moduleApi);
       bindCharacterDowntimePanel(root, app, moduleApi);
       try {
