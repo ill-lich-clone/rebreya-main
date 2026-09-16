@@ -208,11 +208,34 @@ test("divergent legacy special-ammunition sheet blocks the workbook snapshot", (
 test("production registry covers the approved spreadsheet and canonical special ammunition", () => {
   assert.equal(EQUIPMENT_SPREADSHEET_ID, "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk");
   assert.equal(SHEET_REGISTRY.baseGear.sheetTitle, "Общий компендиум снаряжения V0.1");
-  assert.equal(SHEET_REGISTRY.baseGear.range, "A1:N830");
+  assert.equal(SHEET_REGISTRY.baseGear.range, "A1:N839");
   assert.equal(SHEET_REGISTRY.materials.sheetTitle, "Энциклопедия материалов");
   assert.equal(SHEET_REGISTRY.magicItems.sheetTitle, "Магические предметы V0");
   assert.equal(SHEET_REGISTRY.ammunition.sheetTitle, "Боеприпасы V0.1");
   assert.equal(SHEET_REGISTRY.specialAmmunition.sheetTitle, "Особые боеприпасы");
+});
+
+test("production workbook snapshot retains late furniture and the slowdown synthesizer", () => {
+  const declaration = SHEET_REGISTRY.baseGear;
+  const headers = [
+    "", "Название", "Тип снаряжения", "Подтип (магазин)", "Цена", "Ранг", "Вес",
+    "Объем", "Вместимость", "Описание", "Преобладающий материал (источник)",
+    "Связанный инструмент", "Value", "Множественное появление"
+  ];
+  const values = Array.from({ length: 839 }, () => []);
+  values[0] = headers;
+  values[830] = ["", "Кровать", "Снаряжение"];
+  values[838] = ["", "Синтезатор замедления", "Имплант"];
+  const snapshot = buildRawWorkbookSnapshot({
+    spreadsheetId: EQUIPMENT_SPREADSHEET_ID,
+    metadata: { sheets: [{ properties: { sheetId: 1591513452, title: declaration.sheetTitle, index: 9 } }] },
+    valueRanges: [{ range: `'${declaration.sheetTitle}'!A1:N839`, values }],
+    registry: { baseGear: declaration }
+  });
+
+  assert.deepEqual(snapshot.sheets.baseGear.rows.map((row) => [row.rowNumber, row.sourceIdentity]), [
+    [831, "Кровать"], [839, "Синтезатор замедления"]
+  ]);
 });
 
 test("production magic-item registry tolerates the source-only charges column before Value", () => {

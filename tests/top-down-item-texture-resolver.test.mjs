@@ -174,13 +174,18 @@ test("generated runtime catalog covers every accepted manifest entry", async () 
     with: { type: "json" }
   })).default;
 
-  assert.equal(TOP_DOWN_ITEM_TEXTURES.size, 1015);
-  for (const entry of manifest.entries) {
+  const accepted = manifest.entries.filter((entry) => entry.status === "accepted"
+    && entry.technicalQa === "passed" && entry.visualQa === "passed");
+  assert.equal(TOP_DOWN_ITEM_TEXTURES.size, accepted.length);
+  for (const entry of accepted) {
     assert.equal(
       TOP_DOWN_ITEM_TEXTURES.get(`${entry.sourceType}:${entry.sourceId}`),
       `modules/rebreya-main/${entry.assetPath}`,
       `${entry.sourceType}:${entry.sourceId}`
     );
+  }
+  for (const entry of manifest.entries.filter((entry) => !accepted.includes(entry))) {
+    assert.equal(TOP_DOWN_ITEM_TEXTURES.has(`${entry.sourceType}:${entry.sourceId}`), false);
   }
 });
 

@@ -207,7 +207,7 @@
     "shopSubtype": "Книжная и писчая лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|афиша печатная",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A512",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A583",
     "value": "2",
     "volume": "",
     "weight": null
@@ -232,7 +232,7 @@
     "shopSubtype": "Ювелирно-часовая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "сокровища|аквамарин",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A713",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A745",
     "value": "625",
     "volume": "",
     "weight": null
@@ -257,7 +257,7 @@
     "shopSubtype": "Художественный салон",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|акварельный пейзаж",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A281",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A289",
     "value": "4",
     "volume": "",
     "weight": 0.1
@@ -336,7 +336,7 @@
     "shopSubtype": "Ювелирно-часовая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "сокровища|александрит",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A714",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A746",
     "value": "625",
     "volume": "",
     "weight": null
@@ -386,7 +386,7 @@
     "shopSubtype": "Ювелирно-часовая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "сокровища|алмаз",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A753",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A785",
     "value": "625",
     "volume": "",
     "weight": null
@@ -411,7 +411,7 @@
     "shopSubtype": "Ювелирно-часовая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "сокровища|аметист",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A708",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A740",
     "value": "125",
     "volume": "",
     "weight": null
@@ -436,7 +436,7 @@
     "shopSubtype": "Ювелирно-часовая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|амулет (священный символ)",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A75",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A83",
     "value": "20",
     "volume": "",
     "weight": 1
@@ -845,7 +845,7 @@
     "shopSubtype": "Ювелирно-часовая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|астрономические напольные часы",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A362",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A370",
     "value": "2000",
     "volume": "",
     "weight": 35
@@ -870,7 +870,7 @@
     "shopSubtype": "Книжная и писчая лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|атлас",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A529",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A600",
     "value": "32",
     "volume": "",
     "weight": 8
@@ -1010,7 +1010,7 @@
     "shopSubtype": "Ювелирно-часовая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "сокровища|азурит",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A698",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A730",
     "value": "13",
     "volume": "",
     "weight": null
@@ -1108,7 +1108,7 @@
     "shopSubtype": "Портняжная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|бальный костюм с серебряной отделкой",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A338",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A346",
     "value": "2240",
     "volume": "",
     "weight": 5
@@ -1209,7 +1209,7 @@
     "shopSubtype": "Автомобильная мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|бензин (1 галлон)",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A693",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A725",
     "value": "3",
     "volume": "",
     "weight": 6.2
@@ -1234,7 +1234,7 @@
     "shopSubtype": "Стекольная и оптическая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|бинокль",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A762",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A794",
     "value": "500",
     "volume": "",
     "weight": 2
@@ -1259,7 +1259,7 @@
     "shopSubtype": "Ювелирно-часовая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "сокровища|бирюза",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A699",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A731",
     "value": "13",
     "volume": "",
     "weight": null
@@ -1316,16 +1316,16 @@
   },
   {
     "capacity": "40 галлонов (150 лит.), 4 кубических фута",
-    "description": "крупная деревянная ёмкость для хранения и транспортировки жидкостей или сыпучих материалов.",
-    "equipmentType": "Снаряжение",
-    "heroDollSlots": "",
-    "id": "bochka",
-    "foundryType": "container",
-    "foundrySubtype": "barrel",
     "containerCapacity": {
       "volume": 4,
       "volumeUnits": "ft3"
     },
+    "description": "крупная деревянная ёмкость для хранения и транспортировки жидкостей или сыпучих материалов.",
+    "equipmentType": "Снаряжение",
+    "foundrySubtype": "barrel",
+    "foundryType": "container",
+    "heroDollSlots": "",
+    "id": "bochka",
     "itemSlot": "",
     "linkedTool": "Деревянщика",
     "multipleAppearance": "1",
@@ -1641,7 +1641,7 @@
     "shopSubtype": "Ювелирно-часовая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "сокровища|большой алмаз",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A754",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A786",
     "value": "1250",
     "volume": "",
     "weight": null
@@ -1666,7 +1666,7 @@
     "shopSubtype": "Художественная галерея",
     "source": "equipment-google-sheet",
     "sourceIdentity": "сокровища|большой золотой браслет",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A733",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A765",
     "value": "313",
     "volume": "",
     "weight": null
@@ -1691,7 +1691,7 @@
     "shopSubtype": "Художественный салон",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|большая картина в позолоченной раме",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A360",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A368",
     "value": "1440",
     "volume": "",
     "weight": 12
@@ -1755,7 +1755,7 @@
     "shopSubtype": "Художественный салон",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|бронзовая статуэтка",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A298",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A306",
     "value": "40",
     "volume": "",
     "weight": 6
@@ -1780,7 +1780,7 @@
     "shopSubtype": "Художественный салон",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|бронзовый бюст",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A301",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A309",
     "value": "160",
     "volume": "",
     "weight": 30
@@ -1805,7 +1805,7 @@
     "shopSubtype": "Ювелирно-часовая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|брошь с эмалью",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A319",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A327",
     "value": "16",
     "volume": "",
     "weight": null
@@ -1830,7 +1830,7 @@
     "shopSubtype": "Книжная и писчая лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|брошюра",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A513",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A584",
     "value": "2",
     "volume": "",
     "weight": 0.25
@@ -1901,7 +1901,7 @@
     "shopSubtype": "Ювелирно-часовая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|булавка для галстука золотая",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A321",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A329",
     "value": "28",
     "volume": "",
     "weight": null
@@ -1935,10 +1935,10 @@
     "capacity": "4 пинты (2 лит.)",
     "description": "Кожаная ёмкость для переноски воды или других жидкостей. Запаса воды в бурдюке достаточно для 1/2 дня. Указан вес полного бурдюка, пустой весит 2 фнт",
     "equipmentType": "Снаряжение",
+    "foundrySubtype": "flask",
+    "foundryType": "container",
     "heroDollSlots": "",
     "id": "burdyuk",
-    "foundryType": "container",
-    "foundrySubtype": "flask",
     "itemSlot": "",
     "linkedTool": "Кожедела",
     "multipleAppearance": "1",
@@ -1962,10 +1962,10 @@
     "capacity": "1,5 пинты (0,75 лит.)",
     "description": "хрупкая стеклянная тара для хранения жидкостей.",
     "equipmentType": "Снаряжение",
+    "foundrySubtype": "bottle",
+    "foundryType": "container",
     "heroDollSlots": "",
     "id": "butylka-steklyannaya",
-    "foundryType": "container",
-    "foundrySubtype": "bottle",
     "itemSlot": "",
     "linkedTool": "Исследователя",
     "multipleAppearance": "1к4",
@@ -2030,7 +2030,7 @@
     "shopSubtype": "Книжная и писчая лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|чернила (бутылочка 30 грамм)",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A96",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A104",
     "value": "50",
     "volume": "",
     "weight": null
@@ -2140,7 +2140,7 @@
     "shopSubtype": "Художественная галерея",
     "source": "equipment-google-sheet",
     "sourceIdentity": "сокровища|черная бархатная маска, вышитая серебряной нитью",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A729",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A761",
     "value": "32",
     "volume": "",
     "weight": null
@@ -2165,7 +2165,7 @@
     "shopSubtype": "Ювелирно-часовая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "сокровища|черный сапфир",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A725",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A757",
     "value": "6250",
     "volume": "",
     "weight": null
@@ -2190,7 +2190,7 @@
     "shopSubtype": "Ювелирно-часовая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "сокровища|черный жемчуг",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A717",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A749",
     "value": "625",
     "volume": "",
     "weight": null
@@ -2215,7 +2215,7 @@
     "shopSubtype": "Художественный салон",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|декоративный ковер",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A293",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A301",
     "value": "20",
     "volume": "",
     "weight": 10
@@ -2290,7 +2290,7 @@
     "shopSubtype": "Художественный салон",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|деревянный посох (фокусировка друидов)",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A90",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A98",
     "value": "20",
     "volume": "",
     "weight": 4
@@ -2375,7 +2375,7 @@
     "shopSubtype": "Автомобильная мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|дизель (1 галлон)",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A695",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A727",
     "value": "2",
     "volume": "",
     "weight": 7.1
@@ -3390,35 +3390,10 @@
     "shopSubtype": "Ювелирно-часовая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|эмблема (священный символ)",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A77",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A85",
     "value": "20",
     "volume": "",
     "weight": null
-  },
-  {
-    "capacity": "",
-    "description": "полный многотомный справочный труд, рассчитанный на библиотеку, университет, гильдию или богатый частный кабинет.",
-    "equipmentType": "Снаряжение",
-    "heroDollSlots": "",
-    "id": "entsiklopediya-10-tomov",
-    "itemSlot": "",
-    "linkedTool": "Исследователя",
-    "multipleAppearance": "1",
-    "name": "Энциклопедия (10 томов)",
-    "predominantMaterialId": "bumaga",
-    "predominantMaterialName": "Бумага",
-    "priceDenomination": "gp",
-    "priceGoldEquivalent": 150,
-    "priceText": "150 зм",
-    "priceValue": 150,
-    "rank": 3,
-    "shopSubtype": "Книжная и писчая лавка",
-    "source": "equipment-google-sheet",
-    "sourceIdentity": "снаряжение|энциклопедия (10 томов)",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A532",
-    "value": "188",
-    "volume": "",
-    "weight": 80
   },
   {
     "capacity": "",
@@ -3637,7 +3612,7 @@
     "shopSubtype": "Походная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|факел",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A86",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A94",
     "value": "20",
     "volume": "",
     "weight": 1
@@ -3662,7 +3637,7 @@
     "shopSubtype": "Художественный салон",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|фарфоровая статуэтка",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A296",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A304",
     "value": "20",
     "volume": "",
     "weight": 1
@@ -3687,7 +3662,7 @@
     "shopSubtype": "Художественный салон",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|фарфоровая ваза",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A295",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A303",
     "value": "32",
     "volume": "",
     "weight": 2
@@ -3721,10 +3696,10 @@
     "capacity": "4 унции (100 грамм)",
     "description": "Небольшая ёмкость для хранения жидкостей.",
     "equipmentType": "Снаряжение",
+    "foundrySubtype": "vial",
+    "foundryType": "container",
     "heroDollSlots": "",
     "id": "flakon",
-    "foundryType": "container",
-    "foundrySubtype": "vial",
     "itemSlot": "",
     "linkedTool": "Исследователя",
     "multipleAppearance": "1к6",
@@ -3739,7 +3714,7 @@
     "shopSubtype": "Стекольная и оптическая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|флакон",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A87",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A95",
     "value": "5",
     "volume": "",
     "weight": null
@@ -3748,10 +3723,10 @@
     "capacity": "1 пинта (0,5 лит.)",
     "description": "Сосуд для переноски и употребления жидкостей.",
     "equipmentType": "Снаряжение",
+    "foundrySubtype": "tankard",
+    "foundryType": "container",
     "heroDollSlots": "",
     "id": "flyaga-ili-bol-shaya-kruzhka",
-    "foundryType": "container",
-    "foundrySubtype": "tankard",
     "itemSlot": "",
     "linkedTool": "Кузнеца",
     "multipleAppearance": "1",
@@ -3766,7 +3741,7 @@
     "shopSubtype": "Походная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|фляга или большая кружка",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A88",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A96",
     "value": "2",
     "volume": "",
     "weight": 1
@@ -3791,7 +3766,7 @@
     "shopSubtype": "Скобяная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|фонарь, направленный",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A94",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A102",
     "value": "80",
     "volume": "",
     "weight": 2
@@ -3816,7 +3791,7 @@
     "shopSubtype": "Скобяная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|фонарь, закрытый",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A93",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A101",
     "value": "50",
     "volume": "",
     "weight": 2
@@ -4087,7 +4062,7 @@
     "shopSubtype": "Книжная и писчая лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|газета (1 выпуск)",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A510",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A581",
     "value": "3",
     "volume": "",
     "weight": null
@@ -4209,7 +4184,7 @@
     "shopSubtype": "Ювелирно-часовая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "сокровища|гелиотроп",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A703",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A735",
     "value": "63",
     "volume": "",
     "weight": null
@@ -4234,7 +4209,7 @@
     "shopSubtype": "Ювелирно-часовая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "сокровища|гематит",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A700",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A732",
     "value": "13",
     "volume": "",
     "weight": null
@@ -4259,7 +4234,7 @@
     "shopSubtype": "Художественный салон",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|генеалогический гобелен",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A361",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A369",
     "value": "1280",
     "volume": "",
     "weight": 14
@@ -4284,7 +4259,7 @@
     "shopSubtype": "Ювелирно-часовая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "сокровища|гиацинт",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A723",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A755",
     "value": "6250",
     "volume": "",
     "weight": null
@@ -4342,7 +4317,7 @@
     "shopSubtype": "Ювелирно-часовая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "сокровища|гиганский алмаз",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A756",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A788",
     "value": "31250",
     "volume": "",
     "weight": null
@@ -4392,7 +4367,7 @@
     "shopSubtype": "Художественная галерея",
     "source": "equipment-google-sheet",
     "sourceIdentity": "сокровища|глазная повязка с ложным глазом из голубого сапфира и лунного камня",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A745",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A777",
     "value": "3125",
     "volume": "",
     "weight": null
@@ -4507,7 +4482,7 @@
     "shopSubtype": "Художественный салон",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|гобелен большой",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A291",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A299",
     "value": "64",
     "volume": "",
     "weight": 20
@@ -4532,7 +4507,7 @@
     "shopSubtype": "Художественный салон",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|гобелен малый",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A290",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A298",
     "value": "16",
     "volume": "",
     "weight": 6
@@ -4557,7 +4532,7 @@
     "shopSubtype": "Художественный салон",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|гобелен триумфа",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A368",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A376",
     "value": "5200",
     "volume": "",
     "weight": 22
@@ -4607,7 +4582,7 @@
     "shopSubtype": "Ювелирно-часовая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "сокровища|голубой кварц",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A701",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A733",
     "value": "13",
     "volume": "",
     "weight": null
@@ -4632,7 +4607,7 @@
     "shopSubtype": "Ювелирно-часовая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "сокровища|голубой сапфир",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A718",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A750",
     "value": "1250",
     "volume": "",
     "weight": null
@@ -4657,7 +4632,7 @@
     "shopSubtype": "Художественный салон",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|городской памятный барельеф",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A377",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A385",
     "value": "24000",
     "volume": "",
     "weight": 1200
@@ -4666,10 +4641,10 @@
     "capacity": "1 галлон (3,75 лит.)",
     "description": "металлическая посуда для приготовления пищи на огне.",
     "equipmentType": "Снаряжение",
+    "foundrySubtype": "pot",
+    "foundryType": "container",
     "heroDollSlots": "",
     "id": "gorshok-zheleznyy",
-    "foundryType": "container",
-    "foundrySubtype": "pot",
     "itemSlot": "",
     "linkedTool": "Жестянщика",
     "multipleAppearance": "1",
@@ -4709,7 +4684,7 @@
     "shopSubtype": "Ювелирно-часовая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "сокровища|гранат",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A709",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A741",
     "value": "125",
     "volume": "",
     "weight": null
@@ -4781,7 +4756,7 @@
     "shopSubtype": "Художественный салон",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|гравюра",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A280",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A288",
     "value": "2",
     "volume": "",
     "weight": 0.1
@@ -4894,7 +4869,7 @@
     "shopSubtype": "Художественный салон",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|икона на деревянной доске",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A288",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A296",
     "value": "24",
     "volume": "",
     "weight": 3
@@ -4919,7 +4894,7 @@
     "shopSubtype": "Книжная и писчая лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|иллюстрированная печатная книга",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A525",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A596",
     "value": "19",
     "volume": "",
     "weight": 4
@@ -5029,7 +5004,7 @@
     "shopSubtype": "Алхимико-аптекарская лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "инструменты|инструменты алхимические 0-й ранг",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A265",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A273",
     "value": "150",
     "volume": "",
     "weight": 8
@@ -5054,7 +5029,7 @@
     "shopSubtype": "Столярная и бондарная",
     "source": "equipment-google-sheet",
     "sourceIdentity": "инструменты|инструменты деревянщика 0-й ранг",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A276",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A284",
     "value": "100",
     "volume": "",
     "weight": 1
@@ -5079,7 +5054,7 @@
     "shopSubtype": "Портняжная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "инструменты|инструменты гримера 0-й ранг",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A269",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A277",
     "value": "100",
     "volume": "",
     "weight": 3
@@ -5104,7 +5079,7 @@
     "shopSubtype": "Походная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "инструменты|инструменты исследователя 0-й ранг",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A271",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A279",
     "value": "100",
     "volume": "",
     "weight": 6
@@ -5129,7 +5104,7 @@
     "shopSubtype": "Книжная и писчая лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "инструменты|инструменты каллиграфа 0-й ранг",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A267",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A275",
     "value": "100",
     "volume": "",
     "weight": 5
@@ -5154,7 +5129,7 @@
     "shopSubtype": "Скобяная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "инструменты|инструменты камнелома 0-й ранг",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A273",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A281",
     "value": "100",
     "volume": "",
     "weight": 8
@@ -5179,7 +5154,7 @@
     "shopSubtype": "Художественный салон",
     "source": "equipment-google-sheet",
     "sourceIdentity": "инструменты|инструменты художественные 0-й ранг",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A270",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A278",
     "value": "100",
     "volume": "",
     "weight": 5
@@ -5204,7 +5179,7 @@
     "shopSubtype": "Кожевенная мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "инструменты|инструменты кожедела 0-й ранг",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A274",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A282",
     "value": "100",
     "volume": "",
     "weight": 5
@@ -5229,7 +5204,7 @@
     "shopSubtype": "Скобяная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "инструменты|инструменты кузнеца 0-й ранг",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A266",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A274",
     "value": "200",
     "volume": "",
     "weight": 8
@@ -5254,7 +5229,7 @@
     "shopSubtype": "Столярная и бондарная",
     "source": "equipment-google-sheet",
     "sourceIdentity": "инструменты|инструменты пивовара 0-й ранг",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A275",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A283",
     "value": "100",
     "volume": "",
     "weight": 9
@@ -5279,7 +5254,7 @@
     "shopSubtype": "Книжная и писчая лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "инструменты|инструменты поддельщика 0-й ранг",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A268",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A276",
     "value": "100",
     "volume": "",
     "weight": 5
@@ -5304,7 +5279,7 @@
     "shopSubtype": "Скобяная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "инструменты|инструменты повара 0-й ранг",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A277",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A285",
     "value": "100",
     "volume": "",
     "weight": 8
@@ -5329,7 +5304,7 @@
     "shopSubtype": "Скобяная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "инструменты|инструменты воровские 0-й ранг",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A264",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A272",
     "value": "100",
     "volume": "",
     "weight": 1
@@ -5354,7 +5329,7 @@
     "shopSubtype": "Ювелирно-часовая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "инструменты|инструменты ювелира 0-й ранг",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A278",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A286",
     "value": "100",
     "volume": "",
     "weight": 2
@@ -5379,7 +5354,7 @@
     "shopSubtype": "Скобяная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "инструменты|инструменты жестянщика 0-й ранг",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A272",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A280",
     "value": "200",
     "volume": "",
     "weight": 10
@@ -5454,7 +5429,7 @@
     "shopSubtype": "Ювелирно-часовая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "сокровища|изумруд",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A721",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A753",
     "value": "1250",
     "volume": "",
     "weight": null
@@ -5504,7 +5479,7 @@
     "shopSubtype": "Художественный салон",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|каменная статуэтка",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A297",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A305",
     "value": "12",
     "volume": "",
     "weight": 5
@@ -5529,7 +5504,7 @@
     "shopSubtype": "Художественный салон",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|каменный бюст в парадной нише",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A359",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A367",
     "value": "960",
     "volume": "",
     "weight": 60
@@ -5554,7 +5529,7 @@
     "shopSubtype": "Художественный салон",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|каменный фонтанный ансамбль",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A371",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A379",
     "value": "9600",
     "volume": "",
     "weight": 600
@@ -5579,7 +5554,7 @@
     "shopSubtype": "Автомобильная мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|каменный уголь (10 фнт)",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A692",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A724",
     "value": "7",
     "volume": "",
     "weight": 10
@@ -5604,7 +5579,7 @@
     "shopSubtype": "Ювелирно-часовая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|камея",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A318",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A326",
     "value": "24",
     "volume": "",
     "weight": null
@@ -5711,7 +5686,7 @@
     "shopSubtype": "Ювелирно-часовая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|карманные часы латунные",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A314",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A322",
     "value": "20",
     "volume": "",
     "weight": 0.5
@@ -5736,7 +5711,7 @@
     "shopSubtype": "Ювелирно-часовая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|карманные часы мастера",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A317",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A325",
     "value": "800",
     "volume": "",
     "weight": 0.5
@@ -5761,7 +5736,7 @@
     "shopSubtype": "Ювелирно-часовая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|карманные часы серебряные",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A315",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A323",
     "value": "64",
     "volume": "",
     "weight": 0.5
@@ -5786,7 +5761,7 @@
     "shopSubtype": "Ювелирно-часовая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|карманные часы золотые",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A316",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A324",
     "value": "200",
     "volume": "",
     "weight": 0.5
@@ -5811,7 +5786,7 @@
     "shopSubtype": "Книжная и писчая лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|карманный справочник",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A520",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A591",
     "value": "2",
     "volume": "",
     "weight": 0.5
@@ -5836,7 +5811,7 @@
     "shopSubtype": "Книжная и писчая лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|карта города, печатная",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A519",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A590",
     "value": "2",
     "volume": "",
     "weight": 0.5
@@ -5861,7 +5836,7 @@
     "shopSubtype": "Книжная и писчая лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|карта региона, печатная",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A524",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A595",
     "value": "7",
     "volume": "",
     "weight": 1
@@ -5925,7 +5900,7 @@
     "shopSubtype": "Художественный салон",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|картина в простой раме",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A282",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A290",
     "value": "12",
     "volume": "",
     "weight": 4
@@ -5950,7 +5925,7 @@
     "shopSubtype": "Художественный салон",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|картина в резной раме",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A283",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A291",
     "value": "24",
     "volume": "",
     "weight": 5
@@ -6115,7 +6090,7 @@
     "shopSubtype": "Художественный салон",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|керамическая ваза расписная",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A294",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A302",
     "value": "8",
     "volume": "",
     "weight": 3
@@ -6140,7 +6115,7 @@
     "shopSubtype": "Автомобильная мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|керосин (1 галлон)",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A694",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A726",
     "value": "2",
     "volume": "",
     "weight": 6.8
@@ -6265,7 +6240,7 @@
     "shopSubtype": "Ювелирно-часовая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "сокровища|хризолит",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A716",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A748",
     "value": "625",
     "volume": "",
     "weight": null
@@ -6290,7 +6265,7 @@
     "shopSubtype": "Ювелирно-часовая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "сокровища|хризопраз",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A706",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A738",
     "value": "63",
     "volume": "",
     "weight": null
@@ -6315,7 +6290,7 @@
     "shopSubtype": "Скобяная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|кинетические ботинки",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A761",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A793",
     "value": "100",
     "volume": "",
     "weight": 1
@@ -6566,7 +6541,7 @@
     "shopSubtype": "Книжная и писчая лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|книга заклинаний",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A29",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A37",
     "value": "50",
     "volume": "",
     "weight": 3
@@ -6760,7 +6735,7 @@
     "shopSubtype": "Ювелирно-часовая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|кольцо-печатка",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A32",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A40",
     "value": "10",
     "volume": "",
     "weight": null
@@ -6785,7 +6760,7 @@
     "shopSubtype": "Кожевенная мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|колчан",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A31",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A39",
     "value": "15",
     "volume": "",
     "weight": 1
@@ -6887,7 +6862,7 @@
     "attachment": {
       "compatibility": [],
       "kind": "weaponAttachment",
-      "propertiesText": "В свой ход вы можете прицелиться. Вы можете прицелиться только если передвинулись не более, чем на 10 фт. После прицеливания ваша скорость становиться равна 0. До конца текущего хода вы получаете возможность игнорировать укрытия на половину для атак из этого оружия",
+      "propertiesText": "В свой ход вы можете прицелиться. Вы можете прицелиться только если передвинулись не более, чем на 10 фт. После прицеливания ваша скорость становится равна 0. До конца текущего хода вы получаете возможность игнорировать укрытия на половину для атак из этого оружия",
       "slots": {
         "mode": "oneOf",
         "values": [
@@ -6939,7 +6914,7 @@
     "shopSubtype": "Скобяная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|колокольчик",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A30",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A38",
     "value": "2",
     "volume": "",
     "weight": null
@@ -7014,7 +6989,7 @@
     "shopSubtype": "Походная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|комплект для лазания",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A33",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A41",
     "value": "75",
     "volume": "",
     "weight": 12
@@ -7039,7 +7014,7 @@
     "shopSubtype": "Походная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|комплект для рыбалки",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A34",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A42",
     "value": "75",
     "volume": "",
     "weight": 4
@@ -7064,7 +7039,7 @@
     "shopSubtype": "Книжная и писчая лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|комплект технических чертежей",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A527",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A598",
     "value": "19",
     "volume": "",
     "weight": 1
@@ -7089,7 +7064,7 @@
     "shopSubtype": "Алхимико-аптекарская лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|комплект целителя",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A35",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A43",
     "value": "50",
     "volume": "",
     "weight": 3
@@ -7162,7 +7137,7 @@
     "shopSubtype": "Скобяная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|компрессор",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A758",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A790",
     "value": "625",
     "volume": "",
     "weight": 70
@@ -7212,7 +7187,7 @@
     "shopSubtype": "Ювелирно-часовая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|консольные часы с боем",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A365",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A373",
     "value": "2800",
     "volume": "",
     "weight": 18
@@ -7237,7 +7212,7 @@
     "shopSubtype": "Кожевенная мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|контейнер для арбалетных болтов",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A36",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A44",
     "value": "10",
     "volume": "",
     "weight": 1
@@ -7312,7 +7287,7 @@
     "shopSubtype": "Книжная и писчая лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|контейнер для карт и свитков",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A37",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A45",
     "value": "5",
     "volume": "",
     "weight": 1
@@ -7430,7 +7405,7 @@
     "shopSubtype": "Столярная и бондарная",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|коробка, деревянная",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A830",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A838",
     "value": "2",
     "volume": "",
     "weight": 3
@@ -7455,7 +7430,7 @@
     "shopSubtype": "Походная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|коробок спичек",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A766",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A798",
     "value": "7",
     "volume": "",
     "weight": null
@@ -7480,7 +7455,7 @@
     "shopSubtype": "Портняжная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|королевское свадебное платье",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A351",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A359",
     "value": "14400",
     "volume": "",
     "weight": 8
@@ -7505,7 +7480,7 @@
     "shopSubtype": "Ювелирно-часовая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|коронационный наряд монарха",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A355",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A363",
     "value": "36000",
     "volume": "",
     "weight": 12
@@ -7530,7 +7505,7 @@
     "shopSubtype": "Ювелирно-часовая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|коронационный плащ наместника",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A344",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A352",
     "value": "4800",
     "volume": "",
     "weight": 9
@@ -7627,18 +7602,18 @@
   },
   {
     "capacity": "2 кубических фута/40 фунтов (20 кг.)",
-    "description": "Плетёная тара для переноски предметов и припасов.",
-    "equipmentType": "Снаряжение",
-    "heroDollSlots": "",
-    "id": "korzina",
-    "foundryType": "container",
-    "foundrySubtype": "basket",
     "containerCapacity": {
+      "units": "lb",
       "volume": 2,
       "volumeUnits": "ft3",
-      "weight": 40,
-      "units": "lb"
+      "weight": 40
     },
+    "description": "Плетёная тара для переноски предметов и припасов.",
+    "equipmentType": "Снаряжение",
+    "foundrySubtype": "basket",
+    "foundryType": "container",
+    "heroDollSlots": "",
+    "id": "korzina",
     "itemSlot": "",
     "linkedTool": "Деревянщика",
     "multipleAppearance": "1",
@@ -7653,7 +7628,7 @@
     "shopSubtype": "Столярная и бондарная",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|корзина",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A38",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A46",
     "value": "2",
     "volume": "",
     "weight": 2
@@ -7710,18 +7685,18 @@
   },
   {
     "capacity": "0,2 кубических фута/6 фунтов (3 кг.)",
-    "description": "Небольшой мешочек для хранения монет и мелких ценностей.",
-    "equipmentType": "Снаряжение",
-    "heroDollSlots": "",
-    "id": "koshel",
-    "foundryType": "container",
-    "foundrySubtype": "pouch",
     "containerCapacity": {
+      "units": "lb",
       "volume": 0.2,
       "volumeUnits": "ft3",
-      "weight": 6,
-      "units": "lb"
+      "weight": 6
     },
+    "description": "Холщовая или кожаная сумочка, способная вместить до ⅕ кубического фута или 6 фунтов снаряжения. Также в ней могут поместиться 20 снарядов для пращи или до 50 игл для духовой трубки.",
+    "equipmentType": "Снаряжение",
+    "foundrySubtype": "pouch",
+    "foundryType": "container",
+    "heroDollSlots": "",
+    "id": "koshel",
     "itemSlot": "",
     "linkedTool": "Кожедела",
     "multipleAppearance": "1",
@@ -7736,7 +7711,7 @@
     "shopSubtype": "Кожевенная мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|кошель",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A39",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A47",
     "value": "5",
     "volume": "",
     "weight": 1
@@ -7948,7 +7923,7 @@
     "shopSubtype": "Портняжная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|кожаный плащ мастера",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A335",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A343",
     "value": "800",
     "volume": "",
     "weight": 7
@@ -8056,7 +8031,7 @@
     "shopSubtype": "Художественный салон",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|кристалл (фокусировка)",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A48",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A56",
     "value": "40",
     "volume": "",
     "weight": 1
@@ -8106,7 +8081,7 @@
     "shopSubtype": "Ювелирно-часовая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "сокровища|крохотный алмаз",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A751",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A783",
     "value": "125",
     "volume": "",
     "weight": null
@@ -8131,7 +8106,7 @@
     "shopSubtype": "Столярная и бондарная",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|кровать",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A824",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A832",
     "value": "15",
     "volume": "",
     "weight": 80
@@ -8156,7 +8131,7 @@
     "shopSubtype": "Скобяная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|крюк-кошка",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A40",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A48",
     "value": "15",
     "volume": "",
     "weight": 4
@@ -8181,7 +8156,7 @@
     "shopSubtype": "Художественный салон",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|кукла фарфоровая",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A309",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A317",
     "value": "10",
     "volume": "",
     "weight": 2
@@ -8190,10 +8165,10 @@
     "capacity": "1 галлон (3,75 лит.)",
     "description": "Ёмкость для хранения и переливания жидкостей.",
     "equipmentType": "Снаряжение",
+    "foundrySubtype": "jug",
+    "foundryType": "container",
     "heroDollSlots": "",
     "id": "kuvshin-ili-grafin",
-    "foundryType": "container",
-    "foundrySubtype": "jug",
     "itemSlot": "",
     "linkedTool": "Исследователя",
     "multipleAppearance": "1",
@@ -8208,7 +8183,7 @@
     "shopSubtype": "Стекольная и оптическая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|кувшин или графин",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A41",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A49",
     "value": "10",
     "volume": "",
     "weight": 4
@@ -8233,7 +8208,7 @@
     "shopSubtype": "Скобяная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|лампа",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A42",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A50",
     "value": "25",
     "volume": "",
     "weight": 1
@@ -8258,7 +8233,7 @@
     "shopSubtype": "Художественная галерея",
     "source": "equipment-google-sheet",
     "sourceIdentity": "сокровища|латунная кружка, инкрустированная нефритом",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A735",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A767",
     "value": "313",
     "volume": "",
     "weight": null
@@ -8516,7 +8491,7 @@
     "shopSubtype": "Столярная и бондарная",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|лестница (10 футов)",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A43",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A51",
     "value": "10",
     "volume": "",
     "weight": 25
@@ -8541,7 +8516,7 @@
     "shopSubtype": "Книжная и писчая лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|листовки печатные (10)",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A509",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A580",
     "value": "7",
     "volume": "",
     "weight": null
@@ -8630,7 +8605,7 @@
     "shopSubtype": "Скобяная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|ломик",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A44",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A52",
     "value": "25",
     "volume": "",
     "weight": 5
@@ -8655,7 +8630,7 @@
     "shopSubtype": "Скобяная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|лопата",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A45",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A53",
     "value": "15",
     "volume": "",
     "weight": 5
@@ -8725,7 +8700,7 @@
     "shopSubtype": "Ювелирно-часовая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "сокровища|лунный камень",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A704",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A736",
     "value": "63",
     "volume": "",
     "weight": null
@@ -8908,7 +8883,7 @@
     "shopSubtype": "Художественный салон",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|малая бронзовая статуя",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A303",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A311",
     "value": "400",
     "volume": "",
     "weight": 90
@@ -8933,7 +8908,7 @@
     "shopSubtype": "Художественный салон",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|малая мраморная статуя",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A302",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A310",
     "value": "280",
     "volume": "",
     "weight": 80
@@ -9005,7 +8980,7 @@
     "shopSubtype": "Ювелирно-часовая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "сокровища|маленький алмаз",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A752",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A784",
     "value": "375",
     "volume": "",
     "weight": null
@@ -9030,7 +9005,7 @@
     "shopSubtype": "Художественная галерея",
     "source": "equipment-google-sheet",
     "sourceIdentity": "сокровища|маленький золотой браслет",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A728",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A760",
     "value": "32",
     "volume": "",
     "weight": null
@@ -9155,7 +9130,7 @@
     "shopSubtype": "Портняжная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|мантия канцлера",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A349",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A357",
     "value": "9600",
     "volume": "",
     "weight": 8
@@ -9180,7 +9155,7 @@
     "shopSubtype": "Портняжная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|мантия ректора академии",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A347",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A355",
     "value": "5200",
     "volume": "",
     "weight": 6
@@ -9205,7 +9180,7 @@
     "shopSubtype": "Портняжная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|мантия ученого совета",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A336",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A344",
     "value": "1280",
     "volume": "",
     "weight": 5
@@ -9230,7 +9205,7 @@
     "shopSubtype": "Художественный салон",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|марионетка расписная",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A308",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A316",
     "value": "7",
     "volume": "",
     "weight": 2
@@ -9255,7 +9230,7 @@
     "shopSubtype": "Художественный салон",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|маска карнавальная лакированная",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A307",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A315",
     "value": "8",
     "volume": "",
     "weight": 1
@@ -9280,7 +9255,7 @@
     "shopSubtype": "Алхимико-аптекарская лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|масло (фляга)",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A51",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A59",
     "value": "10",
     "volume": "",
     "weight": 1
@@ -9305,7 +9280,7 @@
     "shopSubtype": "Автомобильная мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|мазут (1 галлон)",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A696",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A728",
     "value": "7",
     "volume": "",
     "weight": 8.4
@@ -9376,7 +9351,7 @@
     "shopSubtype": "Ювелирно-часовая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "сокровища|медная монета",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A776",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A808",
     "value": "2",
     "volume": "",
     "weight": 0.02
@@ -9426,7 +9401,7 @@
     "shopSubtype": "Скобяная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|механические крылья",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A769",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A801",
     "value": "250",
     "volume": "",
     "weight": 70
@@ -9476,7 +9451,7 @@
     "shopSubtype": "Портняжная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|механизированная одежда",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A764",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A796",
     "value": "38",
     "volume": "",
     "weight": 7
@@ -9501,7 +9476,7 @@
     "shopSubtype": "Походная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|механизированный рюкзак",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A763",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A795",
     "value": "25",
     "volume": "",
     "weight": 5
@@ -9551,7 +9526,7 @@
     "shopSubtype": "Книжная и писчая лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|мел (1 кусочек)",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A52",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A60",
     "value": "2",
     "volume": "",
     "weight": null
@@ -9576,25 +9551,25 @@
     "shopSubtype": "Художественный салон",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|мешочек с компонентами",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A55",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A63",
     "value": "200",
     "volume": "",
     "weight": 2
   },
   {
     "capacity": "1 кубический фут/30 фунтов (15 кг.)",
-    "description": "Простейшая тканевая тара для переноски и хранения предметов.",
-    "equipmentType": "Снаряжение",
-    "heroDollSlots": "",
-    "id": "meshok",
-    "foundryType": "container",
-    "foundrySubtype": "sack",
     "containerCapacity": {
+      "units": "lb",
       "volume": 1,
       "volumeUnits": "ft3",
-      "weight": 30,
-      "units": "lb"
+      "weight": 30
     },
+    "description": "Простейшая тканевая тара для переноски и хранения предметов.",
+    "equipmentType": "Снаряжение",
+    "foundrySubtype": "sack",
+    "foundryType": "container",
+    "heroDollSlots": "",
+    "id": "meshok",
     "itemSlot": "",
     "linkedTool": "Гримёра",
     "multipleAppearance": "1",
@@ -9609,7 +9584,7 @@
     "shopSubtype": "Походная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|мешок",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A54",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A62",
     "value": "5",
     "volume": "",
     "weight": 0.5
@@ -9659,7 +9634,7 @@
     "shopSubtype": "Автомобильная мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|металлическая канистра",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A697",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A729",
     "value": "7",
     "volume": "",
     "weight": 4
@@ -9776,7 +9751,7 @@
     "shopSubtype": "Скобяная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|металлические шарики (1 000 шт. в сумке)",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A53",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A61",
     "value": "15",
     "volume": "",
     "weight": 2
@@ -9953,7 +9928,7 @@
     "shopSubtype": "Художественный салон",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|миниатюрный портрет в медальоне",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A289",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A297",
     "value": "12",
     "volume": "",
     "weight": 0.5
@@ -10371,7 +10346,7 @@
     "shopSubtype": "Скобяная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|молот, кузнечный",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A56",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A64",
     "value": "20",
     "volume": "",
     "weight": 10
@@ -10443,7 +10418,7 @@
     "shopSubtype": "Скобяная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|молоток",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A57",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A65",
     "value": "5",
     "volume": "",
     "weight": 3
@@ -10493,7 +10468,7 @@
     "shopSubtype": "Художественный салон",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|монументальная статуя святого-покровителя",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A381",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A389",
     "value": "80000",
     "volume": "",
     "weight": 3000
@@ -10518,7 +10493,7 @@
     "shopSubtype": "Художественный салон",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|монументальное полотно о победе",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A373",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A381",
     "value": "11200",
     "volume": "",
     "weight": 20
@@ -10590,7 +10565,7 @@
     "shopSubtype": "Художественный салон",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|мозаичная икона",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A363",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A371",
     "value": "1760",
     "volume": "",
     "weight": 20
@@ -10615,7 +10590,7 @@
     "shopSubtype": "Художественный салон",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|мозаичный тронный экран",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A379",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A387",
     "value": "40000",
     "volume": "",
     "weight": 400
@@ -10665,7 +10640,7 @@
     "shopSubtype": "Художественный салон",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|мраморный бюст",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A300",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A308",
     "value": "96",
     "volume": "",
     "weight": 25
@@ -10856,7 +10831,7 @@
     "shopSubtype": "Ювелирно-часовая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|музыкальная шкатулка",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A310",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A318",
     "value": "28",
     "volume": "",
     "weight": 3
@@ -10881,7 +10856,7 @@
     "shopSubtype": "Ювелирно-часовая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|музыкальная шкатулка с фигурками",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A311",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A319",
     "value": "96",
     "volume": "",
     "weight": 5
@@ -10898,18 +10873,18 @@
     "name": "Мыло",
     "predominantMaterialId": "maslo",
     "predominantMaterialName": "Масло",
-    "priceDenomination": "gp",
-    "priceGoldEquivalent": null,
-    "priceText": "",
-    "priceValue": null,
-    "rank": null,
+    "priceDenomination": "cp",
+    "priceGoldEquivalent": 0.02,
+    "priceText": "2 мм",
+    "priceValue": 2,
+    "rank": 0,
     "shopSubtype": "Алхимико-аптекарская лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|мыло",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A58",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A66",
     "value": "15",
     "volume": "",
-    "weight": null
+    "weight": 0
   },
   {
     "capacity": "",
@@ -10931,7 +10906,7 @@
     "shopSubtype": "Книжная и писчая лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|набор типографских литер",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A531",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A602",
     "value": "63",
     "volume": "",
     "weight": 40
@@ -10991,7 +10966,7 @@
     "shopSubtype": "Художественный салон",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|набросок углем",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A279",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A287",
     "value": "4",
     "volume": "",
     "weight": 0.1
@@ -11077,7 +11052,7 @@
     "shopSubtype": "Ювелирно-часовая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|наручные часы",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A767",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A799",
     "value": "7",
     "volume": "",
     "weight": null
@@ -11102,7 +11077,7 @@
     "shopSubtype": "Портняжная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|наследная мантия дома",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A353",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A361",
     "value": "17600",
     "volume": "",
     "weight": 9
@@ -11127,7 +11102,7 @@
     "shopSubtype": "Ювелирно-часовая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|настенные часы",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A312",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A320",
     "value": "48",
     "volume": "",
     "weight": 8
@@ -11152,7 +11127,7 @@
     "shopSubtype": "Книжная и писчая лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|настенный календарь",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A518",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A589",
     "value": "3",
     "volume": "",
     "weight": 0.5
@@ -11177,7 +11152,7 @@
     "shopSubtype": "Ювелирно-часовая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|настольные часы",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A313",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A321",
     "value": "36",
     "volume": "",
     "weight": 4
@@ -11202,7 +11177,7 @@
     "shopSubtype": "Художественный салон",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|настольный глобус декоративный",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A329",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A337",
     "value": "28",
     "volume": "",
     "weight": 4
@@ -11277,7 +11252,7 @@
     "shopSubtype": "Художественная галерея",
     "source": "equipment-google-sheet",
     "sourceIdentity": "сокровища|небольшая золотая статуэтка с рубинами",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A748",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A780",
     "value": "9375",
     "volume": "",
     "weight": null
@@ -11302,7 +11277,7 @@
     "shopSubtype": "Художественная галерея",
     "source": "equipment-google-sheet",
     "sourceIdentity": "сокровища|небольшой золотой идол",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A738",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A770",
     "value": "938",
     "volume": "",
     "weight": null
@@ -11327,7 +11302,7 @@
     "shopSubtype": "Ювелирно-часовая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "сокровища|нефрит",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A711",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A743",
     "value": "125",
     "volume": "",
     "weight": null
@@ -11352,7 +11327,7 @@
     "shopSubtype": "Художественная галерея",
     "source": "equipment-google-sheet",
     "sourceIdentity": "сокровища|нефритовая игральная доска с золотыми фигурками",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A750",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A782",
     "value": "9375",
     "volume": "",
     "weight": null
@@ -11688,7 +11663,7 @@
     "shopSubtype": "Ювелирно-часовая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "сокровища|обсидиан",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A702",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A734",
     "value": "13",
     "volume": "",
     "weight": null
@@ -11713,7 +11688,7 @@
     "shopSubtype": "Художественная галерея",
     "source": "equipment-google-sheet",
     "sourceIdentity": "сокровища|обсидиановая статуэтка с золотой инкрустацией",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A740",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A772",
     "value": "938",
     "volume": "",
     "weight": null
@@ -11738,7 +11713,7 @@
     "shopSubtype": "Портняжная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|одеяло",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A63",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A71",
     "value": "25",
     "volume": "",
     "weight": 3
@@ -11763,7 +11738,7 @@
     "shopSubtype": "Портняжная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|одежда, дорожная",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A59",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A67",
     "value": "20",
     "volume": "",
     "weight": 4
@@ -11788,7 +11763,7 @@
     "shopSubtype": "Портняжная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|одежда, костюм",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A60",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A68",
     "value": "25",
     "volume": "",
     "weight": 4
@@ -11813,7 +11788,7 @@
     "shopSubtype": "Портняжная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|одежда, обычная",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A61",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A69",
     "value": "15",
     "volume": "",
     "weight": 3
@@ -11838,7 +11813,7 @@
     "shopSubtype": "Портняжная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|одежда, отличная",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A62",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A70",
     "value": "50",
     "volume": "",
     "weight": 6
@@ -11944,7 +11919,7 @@
     "shopSubtype": "Ювелирно-часовая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "сокровища|огромный алмаз",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A755",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A787",
     "value": "6250",
     "volume": "",
     "weight": null
@@ -11969,7 +11944,7 @@
     "shopSubtype": "Скобяная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|охотничий капкан",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A64",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A72",
     "value": "15",
     "volume": "",
     "weight": 25
@@ -11994,7 +11969,7 @@
     "shopSubtype": "Ювелирно-часовая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "сокровища|оникс",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A705",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A737",
     "value": "63",
     "volume": "",
     "weight": null
@@ -12019,7 +11994,7 @@
     "shopSubtype": "Ювелирно-часовая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "сокровища|опал",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A722",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A754",
     "value": "1250",
     "volume": "",
     "weight": null
@@ -12044,7 +12019,7 @@
     "shopSubtype": "Портняжная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|оперный костюм с ручной росписью",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A345",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A353",
     "value": "4400",
     "volume": "",
     "weight": 4
@@ -12053,7 +12028,7 @@
     "attachment": {
       "compatibility": [],
       "kind": "weaponAttachment",
-      "propertiesText": "В свой ход, если вы не использовали перемещение, вы можете прицелиться. До конца текущего хода, ваши атаки из этого оружия игноирируют укрытие на половину и дальность ваших атак становиться в два раза больше",
+      "propertiesText": "В свой ход, если вы не использовали перемещение, вы можете прицелиться. До конца текущего хода, ваши атаки из этого оружия игноирируют укрытие на половину и дальность ваших атак становится в два раза больше",
       "slots": {
         "mode": "oneOf",
         "values": [
@@ -12379,7 +12354,7 @@
     "shopSubtype": "Ювелирно-часовая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|ожерелье из речного жемчуга",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A322",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A330",
     "value": "120",
     "volume": "",
     "weight": null
@@ -12397,10 +12372,10 @@
     "predominantMaterialId": "stal",
     "predominantMaterialName": "Сталь",
     "priceDenomination": "gp",
-    "priceGoldEquivalent": 30,
-    "priceText": "30 зм",
-    "priceValue": 30,
-    "rank": 1,
+    "priceGoldEquivalent": 120,
+    "priceText": "120 зм",
+    "priceValue": 120,
+    "rank": 3,
     "shopSubtype": "Оружейная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "оружие|палаш",
@@ -12451,7 +12426,7 @@
     "shopSubtype": "Походная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|палатка, двухместная",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A65",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A73",
     "value": "50",
     "volume": "",
     "weight": 20
@@ -12688,7 +12663,7 @@
     "shopSubtype": "Портняжная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|парадный комплект имперского офицера",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A346",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A354",
     "value": "6000",
     "volume": "",
     "weight": 7
@@ -12713,7 +12688,7 @@
     "shopSubtype": "Портняжная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|парадный мундир с золотым шитьем",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A334",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A342",
     "value": "1440",
     "volume": "",
     "weight": 6
@@ -12738,7 +12713,7 @@
     "shopSubtype": "Портняжная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|парадный плащ победителя",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A352",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A360",
     "value": "11200",
     "volume": "",
     "weight": 7
@@ -12763,7 +12738,7 @@
     "shopSubtype": "Художественный салон",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|парадный портрет",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A285",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A293",
     "value": "60",
     "volume": "",
     "weight": 6
@@ -12788,7 +12763,7 @@
     "shopSubtype": "Портняжная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|парадный сюртук промышленника",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A337",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A345",
     "value": "1760",
     "volume": "",
     "weight": 6
@@ -12813,7 +12788,7 @@
     "shopSubtype": "Походная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|парашют",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A768",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A800",
     "value": "125",
     "volume": "",
     "weight": 40
@@ -12838,7 +12813,7 @@
     "shopSubtype": "Скобяная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|паровой кузнечный молот",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A770",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A802",
     "value": "500",
     "volume": "",
     "weight": 30
@@ -12863,7 +12838,7 @@
     "shopSubtype": "Скобяная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|паровой ранец",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A774",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A806",
     "value": "6250",
     "volume": "",
     "weight": 80
@@ -12938,7 +12913,7 @@
     "shopSubtype": "Книжная и писчая лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|печатная книга",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A521",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A592",
     "value": "3",
     "volume": "",
     "weight": 2
@@ -13064,7 +13039,7 @@
     "shopSubtype": "Книжная и писчая лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|пергамент (один лист)",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A66",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A74",
     "value": "15",
     "volume": "",
     "weight": null
@@ -13089,7 +13064,7 @@
     "shopSubtype": "Стекольная и оптическая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|песочные часы",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A67",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A75",
     "value": "50",
     "volume": "",
     "weight": 1
@@ -13193,7 +13168,7 @@
     "shopSubtype": "Книжная и писчая лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|писчее перо",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A68",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A76",
     "value": "2",
     "volume": "",
     "weight": null
@@ -13218,7 +13193,7 @@
     "shopSubtype": "Книжная и писчая лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|пишущая машинка",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A530",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A601",
     "value": "94",
     "volume": "",
     "weight": 15
@@ -13243,7 +13218,7 @@
     "shopSubtype": "Книжная и писчая лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|письменный прибор инкрустированный",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A325",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A333",
     "value": "32",
     "volume": "",
     "weight": 3
@@ -13394,7 +13369,7 @@
     "shopSubtype": "Ювелирно-часовая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|платиновая корона дома",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A380",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A388",
     "value": "60000",
     "volume": "",
     "weight": 2
@@ -13419,7 +13394,7 @@
     "shopSubtype": "Ювелирно-часовая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "сокровища|платиновая монета",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A779",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A811",
     "value": "13",
     "volume": "",
     "weight": 0.02
@@ -13444,7 +13419,7 @@
     "shopSubtype": "Ювелирно-часовая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|платиновые карманные часы двора",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A374",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A382",
     "value": "14400",
     "volume": "",
     "weight": 0.5
@@ -13469,7 +13444,7 @@
     "shopSubtype": "Художественная галерея",
     "source": "equipment-google-sheet",
     "sourceIdentity": "сокровища|платиновый браслет с сапфиром",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A743",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A775",
     "value": "3125",
     "volume": "",
     "weight": null
@@ -13494,7 +13469,7 @@
     "shopSubtype": "Скобяная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|пневматический гарпун",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A759",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A791",
     "value": "500",
     "volume": "",
     "weight": 15
@@ -13519,7 +13494,7 @@
     "shopSubtype": "Скобяная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|подъемный блок",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A773",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A805",
     "value": "38",
     "volume": "",
     "weight": 20
@@ -13544,7 +13519,7 @@
     "shopSubtype": "Книжная и писчая лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|подшивка газет (30 выпусков)",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A522",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A593",
     "value": "4",
     "volume": "",
     "weight": 5
@@ -13590,7 +13565,7 @@
     "attachment": {
       "compatibility": [],
       "kind": "weaponAttachment",
-      "propertiesText": "Если вы используете этот обвес, то можете использовать огнестрел под водой. Но в таком случае дальность стрельбы становиться в два раза меньше",
+      "propertiesText": "Если вы используете этот обвес, то можете использовать огнестрел под водой. Но в таком случае дальность стрельбы становится в два раза меньше",
       "slots": {
         "mode": "oneOf",
         "values": [
@@ -13686,7 +13661,7 @@
     "shopSubtype": "Стекольная и оптическая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|подзорная труба",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A69",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A77",
     "value": "800",
     "volume": "",
     "weight": 1
@@ -13711,7 +13686,7 @@
     "shopSubtype": "Художественный салон",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|полноразмерная мраморная статуя",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A305",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A313",
     "value": "960",
     "volume": "",
     "weight": 400
@@ -13736,7 +13711,7 @@
     "shopSubtype": "Портняжная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|полный гардероб посла",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A354",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A362",
     "value": "22400",
     "volume": "",
     "weight": 18
@@ -13906,7 +13881,7 @@
     "shopSubtype": "Скобяная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|портативная дрель",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A772",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A804",
     "value": "2500",
     "volume": "",
     "weight": 7
@@ -13931,7 +13906,7 @@
     "shopSubtype": "Художественный салон",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|портрет в овальной раме",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A284",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A292",
     "value": "20",
     "volume": "",
     "weight": 4
@@ -13956,7 +13931,7 @@
     "shopSubtype": "Художественный салон",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|посох (фокусировка)",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A49",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A57",
     "value": "20",
     "volume": "",
     "weight": 4
@@ -13981,7 +13956,7 @@
     "shopSubtype": "Портняжная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|посольская мантия",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A341",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A349",
     "value": "2800",
     "volume": "",
     "weight": 6
@@ -14076,7 +14051,7 @@
     "shopSubtype": "Художественная галерея",
     "source": "equipment-google-sheet",
     "sourceIdentity": "сокровища|прекрасная золотая цепь с огненным опалом",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A741",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A773",
     "value": "3125",
     "volume": "",
     "weight": null
@@ -14134,7 +14109,7 @@
     "shopSubtype": "Столярная и бондарная",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|прилавок",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A828",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A836",
     "value": "15",
     "volume": "",
     "weight": 80
@@ -14830,7 +14805,7 @@
     "shopSubtype": "Книжная и писчая лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|расписание перевозок",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A511",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A582",
     "value": "2",
     "volume": "",
     "weight": null
@@ -14888,7 +14863,7 @@
     "shopSubtype": "Продуктовая лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|рационы (1 день)",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A70",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A78",
     "value": "15",
     "volume": "",
     "weight": 2
@@ -14971,10 +14946,10 @@
     "priceText": "60 000 зм",
     "priceValue": 60000,
     "rank": 9,
-    "shopSubtype": "Ювелирно-часовая мастерская",
+    "shopSubtype": "Портняжная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|регалии престолонаследника",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A357",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A365",
     "value": "48000",
     "volume": "",
     "weight": 14
@@ -15024,7 +14999,7 @@
     "shopSubtype": "Художественный салон",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|рельефная настенная панель",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A328",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A336",
     "value": "72",
     "volume": "",
     "weight": 15
@@ -15049,7 +15024,7 @@
     "shopSubtype": "Ювелирно-часовая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|реликварий (священный символ)",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A76",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A84",
     "value": "20",
     "volume": "",
     "weight": 2
@@ -15074,7 +15049,7 @@
     "shopSubtype": "Художественный салон",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|реликварный ковчег работы мастера",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A369",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A377",
     "value": "5600",
     "volume": "",
     "weight": 20
@@ -15156,7 +15131,7 @@
     "shopSubtype": "Художественная галерея",
     "source": "equipment-google-sheet",
     "sourceIdentity": "сокровища|резная арфа из экзотической древесины с инкрустацией",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A737",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A769",
     "value": "938",
     "volume": "",
     "weight": null
@@ -15181,7 +15156,7 @@
     "shopSubtype": "Художественный салон",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|резная деревянная маска",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A306",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A314",
     "value": "4",
     "volume": "",
     "weight": 1
@@ -15206,7 +15181,7 @@
     "shopSubtype": "Художественная галерея",
     "source": "equipment-google-sheet",
     "sourceIdentity": "сокровища|резная статуэтка из кости",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A727",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A759",
     "value": "32",
     "volume": "",
     "weight": null
@@ -15231,7 +15206,7 @@
     "shopSubtype": "Художественная галерея",
     "source": "equipment-google-sheet",
     "sourceIdentity": "сокровища|резная статуэтка слоновой кости",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A732",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A764",
     "value": "313",
     "volume": "",
     "weight": null
@@ -15256,7 +15231,7 @@
     "shopSubtype": "Ювелирно-часовая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|резная табакерка",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A330",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A338",
     "value": "15",
     "volume": "",
     "weight": 0.5
@@ -15281,7 +15256,7 @@
     "shopSubtype": "Портняжная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|ритуальное облачение архиерея",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A342",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A350",
     "value": "3600",
     "volume": "",
     "weight": 8
@@ -15331,7 +15306,7 @@
     "shopSubtype": "Ювелирно-часовая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "сокровища|рубин",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A724",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A756",
     "value": "6250",
     "volume": "",
     "weight": null
@@ -15475,7 +15450,7 @@
     "shopSubtype": "Книжная и писчая лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|ручной печатный пресс",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A533",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A604",
     "value": "625",
     "volume": "",
     "weight": 350
@@ -15572,25 +15547,25 @@
     "shopSubtype": "Портняжная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|ряса",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A72",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A80",
     "value": "10",
     "volume": "",
     "weight": 4
   },
   {
     "capacity": "1 кубический фут/30 фунтов (15 кг.)",
-    "description": "Носимая сумка для удобной переноски снаряжения.",
-    "equipmentType": "Снаряжение",
-    "heroDollSlots": "",
-    "id": "ryukzak",
-    "foundryType": "container",
-    "foundrySubtype": "backpack",
     "containerCapacity": {
+      "units": "lb",
       "volume": 1,
       "volumeUnits": "ft3",
-      "weight": 30,
-      "units": "lb"
+      "weight": 30
     },
+    "description": "Носимая сумка для удобной переноски снаряжения.",
+    "equipmentType": "Снаряжение",
+    "foundrySubtype": "backpack",
+    "foundryType": "container",
+    "heroDollSlots": "",
+    "id": "ryukzak",
     "itemSlot": "",
     "linkedTool": "Кожедела",
     "multipleAppearance": "1",
@@ -15605,7 +15580,7 @@
     "shopSubtype": "Походная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|рюкзак",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A71",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A79",
     "value": "20",
     "volume": "",
     "weight": 5
@@ -15677,7 +15652,7 @@
     "shopSubtype": "Художественный салон",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|садовая статуя",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A304",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A312",
     "value": "200",
     "volume": "",
     "weight": 120
@@ -15813,7 +15788,7 @@
     "shopSubtype": "Книжная и писчая лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|сборник законов и постановлений",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A528",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A599",
     "value": "19",
     "volume": "",
     "weight": 5
@@ -15887,7 +15862,7 @@
     "shopSubtype": "Художественный салон",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|семейный диптих",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A286",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A294",
     "value": "48",
     "volume": "",
     "weight": 5
@@ -16037,7 +16012,7 @@
     "shopSubtype": "Художественная галерея",
     "source": "equipment-google-sheet",
     "sourceIdentity": "сокровища|серебряная чаша, декорированная лунным камнем",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A736",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A768",
     "value": "938",
     "volume": "",
     "weight": null
@@ -16062,7 +16037,7 @@
     "shopSubtype": "Ювелирно-часовая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|серебряная диадема церемониальная",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A370",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A378",
     "value": "6400",
     "volume": "",
     "weight": 1
@@ -16087,7 +16062,7 @@
     "shopSubtype": "Художественный салон",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|серебряная статуэтка",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A299",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A307",
     "value": "120",
     "volume": "",
     "weight": 4
@@ -16112,7 +16087,7 @@
     "shopSubtype": "Ювелирно-часовая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "сокровища|серебрянная монета",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A777",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A809",
     "value": "2",
     "volume": "",
     "weight": 0.02
@@ -16175,7 +16150,7 @@
     "shopSubtype": "Художественный салон",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|серебряный бюст в натуральную величину",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A358",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A366",
     "value": "1200",
     "volume": "",
     "weight": 40
@@ -16200,7 +16175,7 @@
     "shopSubtype": "Ювелирно-часовая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|серебряный кубок чеканный",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A323",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A331",
     "value": "40",
     "volume": "",
     "weight": 1
@@ -16225,7 +16200,7 @@
     "shopSubtype": "Художественная галерея",
     "source": "equipment-google-sheet",
     "sourceIdentity": "сокровища|серебряный кувшин",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A726",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A758",
     "value": "32",
     "volume": "",
     "weight": null
@@ -16339,7 +16314,7 @@
     "shopSubtype": "Художественный салон",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|сфера (фокусировка)",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A50",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A58",
     "value": "50",
     "volume": "",
     "weight": 3
@@ -16518,7 +16493,7 @@
     "shopSubtype": "Столярная и бондарная",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|шест (10 футов)",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A97",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A105",
     "value": "20",
     "volume": "",
     "weight": 7
@@ -16543,7 +16518,7 @@
     "shopSubtype": "Скобяная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|шипы, железные (10)",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A98",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A106",
     "value": "10",
     "volume": "",
     "weight": 5
@@ -16568,7 +16543,7 @@
     "shopSubtype": "Столярная и бондарная",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|шкаф",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A825",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A833",
     "value": "15",
     "volume": "",
     "weight": 70
@@ -16593,7 +16568,7 @@
     "shopSubtype": "Ювелирно-часовая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|шкатулка для украшений резная",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A326",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A334",
     "value": "12",
     "volume": "",
     "weight": 2
@@ -16676,7 +16651,7 @@
     "shopSubtype": "Скобяная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|шлямбур",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A99",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A107",
     "value": "10",
     "volume": "",
     "weight": 0.25
@@ -16738,7 +16713,7 @@
     "shopSubtype": "Художественная галерея",
     "source": "equipment-google-sheet",
     "sourceIdentity": "сокровища|шелковая мантия с золотой вышивкой",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A734",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A766",
     "value": "313",
     "volume": "",
     "weight": null
@@ -16763,7 +16738,7 @@
     "shopSubtype": "Портняжная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|шелковый вечерний костюм",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A332",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A340",
     "value": "960",
     "volume": "",
     "weight": 5
@@ -16813,7 +16788,7 @@
     "shopSubtype": "Скобяная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|сигнальный свисток",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A78",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A86",
     "value": "15",
     "volume": "",
     "weight": null
@@ -16996,7 +16971,7 @@
     "shopSubtype": "Столярная и бондарная",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|скамья",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A823",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A831",
     "value": "5",
     "volume": "",
     "weight": 25
@@ -17097,7 +17072,7 @@
     "shopSubtype": "Алхимико-аптекарская лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|слепящая шашка",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A760",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A792",
     "value": "25",
     "volume": "",
     "weight": 1
@@ -17169,7 +17144,7 @@
     "attachment": {
       "compatibility": [],
       "kind": "weaponAttachment",
-      "propertiesText": "Вы получаете бонус +2 к броскам, если вы атакуете пока Лежите ничком. Кроме этого ваше оружие получает свойство Лежачий огонь. Может быть установленно только на длинноствольное оружие.",
+      "propertiesText": "Вы получаете бонус +2 к броскам атаки, если вы атакуете пока Лежите ничком. Кроме этого ваше оружие получает свойство Лежачий огонь. Может быть установленно только на длинноствольное оружие.",
       "slots": {
         "mode": "all",
         "values": [
@@ -17222,7 +17197,7 @@
     "shopSubtype": "Походная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|спальник",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A79",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A87",
     "value": "10",
     "volume": "",
     "weight": 7
@@ -17380,7 +17355,7 @@
     "shopSubtype": "Художественная галерея",
     "source": "equipment-google-sheet",
     "sourceIdentity": "сокровища|старинный шедевр живописи",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A742",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A774",
     "value": "3125",
     "volume": "",
     "weight": null
@@ -17405,7 +17380,7 @@
     "shopSubtype": "Художественный салон",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|стеклянная люстра для дворцового зала",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A375",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A383",
     "value": "17600",
     "volume": "",
     "weight": 80
@@ -17455,7 +17430,7 @@
     "shopSubtype": "Столярная и бондарная",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|стеллаж",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A826",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A834",
     "value": "10",
     "volume": "",
     "weight": 50
@@ -17480,7 +17455,7 @@
     "shopSubtype": "Столярная и бондарная",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|стол, большой",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A820",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A828",
     "value": "10",
     "volume": "",
     "weight": 70
@@ -17505,7 +17480,7 @@
     "shopSubtype": "Столярная и бондарная",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|стол, письменный",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A821",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A829",
     "value": "15",
     "volume": "",
     "weight": 45
@@ -17530,7 +17505,7 @@
     "shopSubtype": "Столярная и бондарная",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|стол, простой",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A819",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A827",
     "value": "5",
     "volume": "",
     "weight": 30
@@ -17555,7 +17530,7 @@
     "shopSubtype": "Скобяная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|столовый набор",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A80",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A88",
     "value": "15",
     "volume": "",
     "weight": 1
@@ -17618,7 +17593,7 @@
     "shopSubtype": "Портняжная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|сценический гардероб звезды оперы",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A350",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A358",
     "value": "12000",
     "volume": "",
     "weight": 10
@@ -17643,7 +17618,7 @@
     "shopSubtype": "Столярная и бондарная",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|стул",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A822",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A830",
     "value": "2",
     "volume": "",
     "weight": 10
@@ -17703,7 +17678,7 @@
     "shopSubtype": "Портняжная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|судейское церемониальное облачение",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A343",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A351",
     "value": "4000",
     "volume": "",
     "weight": 7
@@ -17735,18 +17710,18 @@
   },
   {
     "capacity": "12 кубических футов/300 фунтов (150 кг.)",
-    "description": "Жёсткий контейнер для хранения и перевозки предметов.",
-    "equipmentType": "Снаряжение",
-    "heroDollSlots": "",
-    "id": "sunduk",
-    "foundryType": "container",
-    "foundrySubtype": "chest",
     "containerCapacity": {
+      "units": "lb",
       "volume": 12,
       "volumeUnits": "ft3",
-      "weight": 300,
-      "units": "lb"
+      "weight": 300
     },
+    "description": "Жёсткий контейнер для хранения и перевозки предметов.",
+    "equipmentType": "Снаряжение",
+    "foundrySubtype": "chest",
+    "foundryType": "container",
+    "heroDollSlots": "",
+    "id": "sunduk",
     "itemSlot": "",
     "linkedTool": "Деревянщика",
     "multipleAppearance": "1",
@@ -17761,7 +17736,7 @@
     "shopSubtype": "Столярная и бондарная",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|сундук",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A81",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A89",
     "value": "10",
     "volume": "",
     "weight": 25
@@ -17786,7 +17761,7 @@
     "shopSubtype": "Скобяная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|свеча",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A73",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A81",
     "value": "5",
     "volume": "",
     "weight": null
@@ -17913,7 +17888,7 @@
     "shopSubtype": "Алхимико-аптекарская лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|святая вода (фляга)",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A74",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A82",
     "value": "80",
     "volume": "",
     "weight": 1
@@ -18061,7 +18036,7 @@
     "shopSubtype": "Скобяная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|таран, портативный",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A82",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A90",
     "value": "10",
     "volume": "",
     "weight": 35
@@ -18086,7 +18061,7 @@
     "shopSubtype": "Портняжная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|театральный костюм примадонны",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A340",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A348",
     "value": "2560",
     "volume": "",
     "weight": 4
@@ -18111,7 +18086,7 @@
     "shopSubtype": "Книжная и писчая лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|техническое руководство",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A526",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A597",
     "value": "13",
     "volume": "",
     "weight": 3
@@ -18255,7 +18230,7 @@
     "shopSubtype": "Книжная и писчая лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|типовые бланки (20)",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A516",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A587",
     "value": "7",
     "volume": "",
     "weight": 0.5
@@ -18280,7 +18255,7 @@
     "shopSubtype": "Художественный салон",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|тисовая палочка (фокусировка друидов)",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A91",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A99",
     "value": "20",
     "volume": "",
     "weight": 1
@@ -18305,7 +18280,7 @@
     "shopSubtype": "Скобяная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|точильный камень",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A83",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A91",
     "value": "15",
     "volume": "",
     "weight": 1
@@ -18330,7 +18305,7 @@
     "shopSubtype": "Ювелирно-часовая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "сокровища|топаз",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A715",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A747",
     "value": "625",
     "volume": "",
     "weight": null
@@ -18393,7 +18368,7 @@
     "shopSubtype": "Скобяная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|топор",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A263",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A271",
     "value": "50",
     "volume": "",
     "weight": 5
@@ -18418,7 +18393,7 @@
     "shopSubtype": "Художественный салон",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|тотем (фокусировка друидов)",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A92",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A100",
     "value": "20",
     "volume": "",
     "weight": null
@@ -18443,7 +18418,7 @@
     "shopSubtype": "Книжная и писчая лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|товарный каталог",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A514",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A585",
     "value": "3",
     "volume": "",
     "weight": 0.5
@@ -18468,7 +18443,7 @@
     "shopSubtype": "Портняжная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|траурный комплект высшего света",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A339",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A347",
     "value": "1920",
     "volume": "",
     "weight": 6
@@ -18541,7 +18516,7 @@
     "shopSubtype": "Художественный салон",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|триптих алтарный",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A287",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A295",
     "value": "160",
     "volume": "",
     "weight": 12
@@ -18566,7 +18541,7 @@
     "shopSubtype": "Художественный салон",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|триптих о династии",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A367",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A375",
     "value": "4000",
     "volume": "",
     "weight": 16
@@ -18591,7 +18566,7 @@
     "shopSubtype": "Походная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|трутница",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A84",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A92",
     "value": "5",
     "volume": "",
     "weight": 1
@@ -18663,7 +18638,7 @@
     "shopSubtype": "Скобяная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|цепь (10 футов)",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A95",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A103",
     "value": "20",
     "volume": "",
     "weight": 10
@@ -18779,7 +18754,7 @@
     "shopSubtype": "Художественная галерея",
     "source": "equipment-google-sheet",
     "sourceIdentity": "сокровища|церемониальный кинжал из электрума с черной жемчужиной",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A739",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A771",
     "value": "938",
     "volume": "",
     "weight": null
@@ -18804,7 +18779,7 @@
     "shopSubtype": "Портняжная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|церемониальное платье дворянки",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A333",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A341",
     "value": "1120",
     "volume": "",
     "weight": 5
@@ -18829,7 +18804,7 @@
     "shopSubtype": "Портняжная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|церемониальный комплект первосвященника",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A356",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A364",
     "value": "56000",
     "volume": "",
     "weight": 14
@@ -18854,7 +18829,7 @@
     "shopSubtype": "Портняжная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|церемониальный свадебный наряд аристократа",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A348",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A356",
     "value": "6400",
     "volume": "",
     "weight": 6
@@ -18879,7 +18854,7 @@
     "shopSubtype": "Художественный салон",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|цикл дворцовых витражей",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A378",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A386",
     "value": "32000",
     "volume": "",
     "weight": 300
@@ -18904,7 +18879,7 @@
     "shopSubtype": "Ювелирно-часовая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "сокровища|цитрин",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A707",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A739",
     "value": "63",
     "volume": "",
     "weight": null
@@ -19119,7 +19094,7 @@
     "shopSubtype": "Книжная и писчая лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|учебник",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A523",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A594",
     "value": "7",
     "volume": "",
     "weight": 3
@@ -19192,7 +19167,7 @@
     "shopSubtype": "Художественная галерея",
     "source": "equipment-google-sheet",
     "sourceIdentity": "сокровища|украшенная драгоценностями золотая корона",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A746",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A778",
     "value": "9375",
     "volume": "",
     "weight": null
@@ -19217,7 +19192,7 @@
     "shopSubtype": "Художественная галерея",
     "source": "equipment-google-sheet",
     "sourceIdentity": "сокровища|украшенное драгоценностями платиновое кольцо",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A747",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A779",
     "value": "9375",
     "volume": "",
     "weight": null
@@ -19696,23 +19671,23 @@
     "shopSubtype": "Стекольная и оптическая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|увеличительное стекло",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A85",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A93",
     "value": "250",
     "volume": "",
     "weight": null
   },
   {
     "capacity": "3 галлона (11 лит.), 0,5 кубических футов",
-    "description": "простая ёмкость для переноски воды, песка или других материалов.",
-    "equipmentType": "Снаряжение",
-    "heroDollSlots": "",
-    "id": "vedro",
-    "foundryType": "container",
-    "foundrySubtype": "bucket",
     "containerCapacity": {
       "volume": 0.5,
       "volumeUnits": "ft3"
     },
+    "description": "простая ёмкость для переноски воды, песка или других материалов.",
+    "equipmentType": "Снаряжение",
+    "foundrySubtype": "bucket",
+    "foundryType": "container",
+    "heroDollSlots": "",
+    "id": "vedro",
     "itemSlot": "",
     "linkedTool": "Жестянщика",
     "multipleAppearance": "1",
@@ -19874,7 +19849,7 @@
     "shopSubtype": "Столярная и бондарная",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|верстак",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A827",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A835",
     "value": "20",
     "volume": "",
     "weight": 100
@@ -19974,7 +19949,7 @@
     "shopSubtype": "Художественный салон",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|веточка омелы (фокусировка друидов)",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A89",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A97",
     "value": "20",
     "volume": "",
     "weight": null
@@ -20096,7 +20071,7 @@
     "shopSubtype": "Художественный салон",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|витражная панель большая",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A364",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A372",
     "value": "2400",
     "volume": "",
     "weight": 25
@@ -20121,7 +20096,7 @@
     "shopSubtype": "Художественный салон",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|витражная панель малая",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A331",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A339",
     "value": "44",
     "volume": "",
     "weight": 6
@@ -20146,7 +20121,7 @@
     "shopSubtype": "Книжная и писчая лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|визитные карточки (20)",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A517",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A588",
     "value": "3",
     "volume": "",
     "weight": null
@@ -20196,7 +20171,7 @@
     "shopSubtype": "Художественный салон",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|волшебная палочка (фокусировка)",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A46",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A54",
     "value": "40",
     "volume": "",
     "weight": 1
@@ -20271,7 +20246,7 @@
     "shopSubtype": "Художественный салон",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|вышитое панно",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A292",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A300",
     "value": "12",
     "volume": "",
     "weight": 3
@@ -20346,7 +20321,7 @@
     "shopSubtype": "Ювелирно-часовая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "сокровища|янтарь",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A712",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A744",
     "value": "125",
     "volume": "",
     "weight": null
@@ -20371,7 +20346,7 @@
     "shopSubtype": "Столярная и бондарная",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|ящик, деревянный",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A829",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A837",
     "value": "5",
     "volume": "",
     "weight": 15
@@ -20621,7 +20596,7 @@
     "shopSubtype": "Ювелирно-часовая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|запонки серебряные",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A320",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A328",
     "value": "20",
     "volume": "",
     "weight": null
@@ -20684,7 +20659,7 @@
     "shopSubtype": "Скобяная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|заряд пара",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A757",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A789",
     "value": "25",
     "volume": "",
     "weight": 7
@@ -20709,14 +20684,14 @@
     "shopSubtype": "Скобяная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|заряженные перчатки",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A771",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A803",
     "value": "125",
     "volume": "",
     "weight": 2
   },
   {
     "capacity": "1 заряд пара",
-    "description": "Маска для защиты от газов.",
+    "description": "Маска для защиты от газов. Когда вы совершаете спасбросок против яда, то можете использовать заряд пара из маски, чтобы получить бонус +2 к спасброску. Аналогично, вы можете использовать маску для защиты от вдыхаемых газов вплоть до 3-го ранга. Заряд пара расходуется в течении одного часа.",
     "equipmentType": "Снаряжение",
     "heroDollSlots": "",
     "id": "zashchitnaya-maska",
@@ -20734,7 +20709,7 @@
     "shopSubtype": "Походная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|защитная маска",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A775",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A807",
     "value": "125",
     "volume": "",
     "weight": 3
@@ -20796,7 +20771,7 @@
     "shopSubtype": "Походная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|зажигалка",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A765",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A797",
     "value": "2",
     "volume": "",
     "weight": null
@@ -20871,7 +20846,7 @@
     "shopSubtype": "Стекольная и оптическая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|зеркало в серебряной раме",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A327",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A335",
     "value": "32",
     "volume": "",
     "weight": 3
@@ -20971,7 +20946,7 @@
     "shopSubtype": "Ювелирно-часовая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "сокровища|жемчуг",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A710",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A742",
     "value": "125",
     "volume": "",
     "weight": null
@@ -20996,7 +20971,7 @@
     "shopSubtype": "Художественный салон",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|жезл (фокусировка)",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A47",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A55",
     "value": "40",
     "volume": "",
     "weight": 2
@@ -21121,7 +21096,7 @@
     "shopSubtype": "Книжная и писчая лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|журнал или альманах",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A515",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A586",
     "value": "7",
     "volume": "",
     "weight": 1
@@ -21146,7 +21121,7 @@
     "shopSubtype": "Ювелирно-часовая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "сокровища|желтый сапфир",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A719",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A751",
     "value": "1250",
     "volume": "",
     "weight": null
@@ -21171,7 +21146,7 @@
     "shopSubtype": "Ювелирно-часовая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "сокровища|золотая монета",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A778",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A810",
     "value": "2",
     "volume": "",
     "weight": 0.02
@@ -21196,7 +21171,7 @@
     "shopSubtype": "Художественная галерея",
     "source": "equipment-google-sheet",
     "sourceIdentity": "сокровища|золотая музыкальная шкатулка",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A744",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A776",
     "value": "3125",
     "volume": "",
     "weight": null
@@ -21221,7 +21196,7 @@
     "shopSubtype": "Художественный салон",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|золотая статуэтка покровителя дома",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A366",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A374",
     "value": "3600",
     "volume": "",
     "weight": 8
@@ -21246,7 +21221,7 @@
     "shopSubtype": "Художественная галерея",
     "source": "equipment-google-sheet",
     "sourceIdentity": "сокровища|золотое кольцо с гелиотропами",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A731",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A763",
     "value": "313",
     "volume": "",
     "weight": null
@@ -21271,7 +21246,7 @@
     "shopSubtype": "Художественный салон",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|золотой бюст правителя",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A376",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A384",
     "value": "36000",
     "volume": "",
     "weight": 55
@@ -21296,7 +21271,7 @@
     "shopSubtype": "Ювелирно-часовая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|золотой кубок чеканный",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A324",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A332",
     "value": "200",
     "volume": "",
     "weight": 1
@@ -21321,7 +21296,7 @@
     "shopSubtype": "Ювелирно-часовая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|золотой кубок династии",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A372",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A380",
     "value": "12000",
     "volume": "",
     "weight": 4
@@ -21346,7 +21321,7 @@
     "shopSubtype": "Художественная галерея",
     "source": "equipment-google-sheet",
     "sourceIdentity": "сокровища|золотой кубок с изумрудами",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A749",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A781",
     "value": "9375",
     "volume": "",
     "weight": null
@@ -21371,7 +21346,7 @@
     "shopSubtype": "Художественная галерея",
     "source": "equipment-google-sheet",
     "sourceIdentity": "сокровища|золотой медальон с портретом возлюбленной внутри",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A730",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A762",
     "value": "32",
     "volume": "",
     "weight": null
@@ -21396,7 +21371,7 @@
     "shopSubtype": "Ювелирно-часовая мастерская",
     "source": "equipment-google-sheet",
     "sourceIdentity": "сокровища|звездчатый рубин",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A720",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A752",
     "value": "1250",
     "volume": "",
     "weight": null
@@ -22380,7 +22355,7 @@
     "shopSubtype": "Скобяная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|гербовый ключ",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A792",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A824",
     "value": "2500",
     "volume": "",
     "weight": null
@@ -22443,7 +22418,7 @@
     "shopSubtype": "Скобяная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|железный ключ",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A787",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A819",
     "value": "5",
     "volume": "",
     "weight": null
@@ -22468,10 +22443,210 @@
     "shopSubtype": "Скобяная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|золотой ключ",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A790",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A822",
     "value": "500",
     "volume": "",
     "weight": null
+  },
+  {
+    "capacity": "",
+    "description": "Специализированный справочник или учебник для базового обучения и решения ограниченной практической задачи.",
+    "equipmentType": "Снаряжение",
+    "heroDollSlots": "",
+    "id": "книга-2-ранг",
+    "itemSlot": "",
+    "linkedTool": "Каллиграфа",
+    "multipleAppearance": "1",
+    "name": "Книга (2 ранг)",
+    "predominantMaterialId": "bumaga",
+    "predominantMaterialName": "Бумага",
+    "priceDenomination": "gp",
+    "priceGoldEquivalent": 100,
+    "priceText": "100 зм",
+    "priceValue": 100,
+    "rank": 2,
+    "shopSubtype": "Книжная и писчая лавка",
+    "source": "equipment-google-sheet",
+    "sourceIdentity": "снаряжение|книга (2 ранг)",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A29",
+    "value": "60",
+    "volume": "",
+    "weight": 5
+  },
+  {
+    "capacity": "",
+    "description": "Подробное руководство для разработки прототипа, организации снабжения или освоения профессионального приёма.",
+    "equipmentType": "Снаряжение",
+    "heroDollSlots": "",
+    "id": "книга-3-ранг",
+    "itemSlot": "",
+    "linkedTool": "Каллиграфа",
+    "multipleAppearance": "1",
+    "name": "Книга (3 ранг)",
+    "predominantMaterialId": "bumaga",
+    "predominantMaterialName": "Бумага",
+    "priceDenomination": "gp",
+    "priceGoldEquivalent": 500,
+    "priceText": "500 зм",
+    "priceValue": 500,
+    "rank": 3,
+    "shopSubtype": "Книжная и писчая лавка",
+    "source": "equipment-google-sheet",
+    "sourceIdentity": "снаряжение|книга (3 ранг)",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A30",
+    "value": "300",
+    "volume": "",
+    "weight": 5
+  },
+  {
+    "capacity": "",
+    "description": "Редкий труд с материалами для изобретения, углублённого обучения или подготовки постоянного улучшения персонажа.",
+    "equipmentType": "Снаряжение",
+    "heroDollSlots": "",
+    "id": "книга-4-ранг",
+    "itemSlot": "",
+    "linkedTool": "Каллиграфа",
+    "multipleAppearance": "1",
+    "name": "Книга (4 ранг)",
+    "predominantMaterialId": "bumaga",
+    "predominantMaterialName": "Бумага",
+    "priceDenomination": "gp",
+    "priceGoldEquivalent": 1500,
+    "priceText": "1500 зм",
+    "priceValue": 1500,
+    "rank": 4,
+    "shopSubtype": "Книжная и писчая лавка",
+    "source": "equipment-google-sheet",
+    "sourceIdentity": "снаряжение|книга (4 ранг)",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A31",
+    "value": "900",
+    "volume": "",
+    "weight": 5
+  },
+  {
+    "capacity": "",
+    "description": "Ценное исследование для значимого усовершенствования, внедрения технологии или преобразования района и организации.",
+    "equipmentType": "Снаряжение",
+    "heroDollSlots": "",
+    "id": "книга-5-ранг",
+    "itemSlot": "",
+    "linkedTool": "Каллиграфа",
+    "multipleAppearance": "1",
+    "name": "Книга (5 ранг)",
+    "predominantMaterialId": "bumaga",
+    "predominantMaterialName": "Бумага",
+    "priceDenomination": "gp",
+    "priceGoldEquivalent": 3000,
+    "priceText": "3000 зм",
+    "priceValue": 3000,
+    "rank": 5,
+    "shopSubtype": "Книжная и писчая лавка",
+    "source": "equipment-google-sheet",
+    "sourceIdentity": "снаряжение|книга (5 ранг)",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A32",
+    "value": "1800",
+    "volume": "",
+    "weight": 5
+  },
+  {
+    "capacity": "",
+    "description": "Закрытый труд с разработками для городской обороны, нового типа технологии или перестройки ключевой практики персонажа.",
+    "equipmentType": "Снаряжение",
+    "heroDollSlots": "",
+    "id": "книга-6-ранг",
+    "itemSlot": "",
+    "linkedTool": "Каллиграфа",
+    "multipleAppearance": "1",
+    "name": "Книга (6 ранг)",
+    "predominantMaterialId": "bumaga",
+    "predominantMaterialName": "Бумага",
+    "priceDenomination": "gp",
+    "priceGoldEquivalent": 6000,
+    "priceText": "6000 зм",
+    "priceValue": 6000,
+    "rank": 6,
+    "shopSubtype": "Книжная и писчая лавка",
+    "source": "equipment-google-sheet",
+    "sourceIdentity": "снаряжение|книга (6 ранг)",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A33",
+    "value": "3600",
+    "volume": "",
+    "weight": 5
+  },
+  {
+    "capacity": "",
+    "description": "Авторский труд с основами новой школы, редкого персонального изделия или крупного межгосударственного проекта.",
+    "equipmentType": "Снаряжение",
+    "heroDollSlots": "",
+    "id": "книга-7-ранг",
+    "itemSlot": "",
+    "linkedTool": "Каллиграфа",
+    "multipleAppearance": "1",
+    "name": "Книга (7 ранг)",
+    "predominantMaterialId": "bumaga",
+    "predominantMaterialName": "Бумага",
+    "priceDenomination": "gp",
+    "priceGoldEquivalent": 15000,
+    "priceText": "15000 зм",
+    "priceValue": 15000,
+    "rank": 7,
+    "shopSubtype": "Книжная и писчая лавка",
+    "source": "equipment-google-sheet",
+    "sourceIdentity": "снаряжение|книга (7 ранг)",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A34",
+    "value": "9000",
+    "volume": "",
+    "weight": 5
+  },
+  {
+    "capacity": "",
+    "description": "Уникальное руководство для системы персональных улучшений, редкой формулы, высококлассной мастерской или региональной сети.",
+    "equipmentType": "Снаряжение",
+    "heroDollSlots": "",
+    "id": "книга-8-ранг",
+    "itemSlot": "",
+    "linkedTool": "Каллиграфа",
+    "multipleAppearance": "1",
+    "name": "Книга (8 ранг)",
+    "predominantMaterialId": "bumaga",
+    "predominantMaterialName": "Бумага",
+    "priceDenomination": "gp",
+    "priceGoldEquivalent": 30000,
+    "priceText": "30000 зм",
+    "priceValue": 30000,
+    "rank": 8,
+    "shopSubtype": "Книжная и писчая лавка",
+    "source": "equipment-google-sheet",
+    "sourceIdentity": "снаряжение|книга (8 ранг)",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A35",
+    "value": "18000",
+    "volume": "",
+    "weight": 5
+  },
+  {
+    "capacity": "",
+    "description": "Исключительное исследование для стратегической технологии, преобразования региона или изменения принципа работы ключевого умения.",
+    "equipmentType": "Снаряжение",
+    "heroDollSlots": "",
+    "id": "книга-9-ранг",
+    "itemSlot": "",
+    "linkedTool": "Каллиграфа",
+    "multipleAppearance": "1",
+    "name": "Книга (9 ранг)",
+    "predominantMaterialId": "bumaga",
+    "predominantMaterialName": "Бумага",
+    "priceDenomination": "gp",
+    "priceGoldEquivalent": 60000,
+    "priceText": "60000 зм",
+    "priceValue": 60000,
+    "rank": 9,
+    "shopSubtype": "Книжная и писчая лавка",
+    "source": "equipment-google-sheet",
+    "sourceIdentity": "снаряжение|книга (9 ранг)",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A36",
+    "value": "36000",
+    "volume": "",
+    "weight": 5
   },
   {
     "capacity": "",
@@ -22493,7 +22668,7 @@
     "shopSubtype": "Скобяная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|медный ключ",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A786",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A818",
     "value": "1",
     "volume": "",
     "weight": null
@@ -22518,7 +22693,7 @@
     "shopSubtype": "Скобяная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|монументальный ключ",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A794",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A826",
     "value": "10000",
     "volume": "",
     "weight": null
@@ -22593,7 +22768,7 @@
     "shopSubtype": "Скобяная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|платиновый ключ",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A791",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A823",
     "value": "1250",
     "volume": "",
     "weight": null
@@ -22618,8 +22793,33 @@
     "shopSubtype": "Скобяная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|серебряный ключ",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A789",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A821",
     "value": "125",
+    "volume": "",
+    "weight": null
+  },
+  {
+    "capacity": "",
+    "description": "Существо может Действием использовать мощь синтезатора. Существа по выбору в пределах 10 футов от вас должны совершить спасбросок Мудрости Сл класса. Использовав это свойство единожды вам необходимо завершить продолжительный отдых, прежде, чем вы сможете использовать его повторно",
+    "equipmentType": "Имплант",
+    "heroDollSlots": "",
+    "id": "синтезатор-замедления",
+    "itemSlot": "",
+    "linkedTool": "",
+    "multipleAppearance": "1",
+    "name": "Синтезатор замедления",
+    "predominantMaterialId": null,
+    "predominantMaterialName": "",
+    "priceDenomination": "gp",
+    "priceGoldEquivalent": 2000,
+    "priceText": "2000 зм",
+    "priceValue": 2000,
+    "rank": 5,
+    "shopSubtype": "Клиника аугментаций",
+    "source": "equipment-google-sheet",
+    "sourceIdentity": "имплант|синтезатор замедления",
+    "sourceRef": "Импланты V0.1!A94",
+    "value": "2200",
     "volume": "",
     "weight": null
   },
@@ -22643,7 +22843,7 @@
     "shopSubtype": "Скобяная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|стальной ключ",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A788",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A820",
     "value": "25",
     "volume": "",
     "weight": null
@@ -22668,7 +22868,7 @@
     "shopSubtype": "Скобяная лавка",
     "source": "equipment-google-sheet",
     "sourceIdentity": "снаряжение|церемониальный ключ",
-    "sourceRef": "Общий компендиум снаряжения V0.1!A793",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A825",
     "value": "5000",
     "volume": "",
     "weight": null
@@ -22697,6 +22897,31 @@
     "value": "313",
     "volume": "",
     "weight": null
+  },
+  {
+    "capacity": "",
+    "description": "полный многотомный справочный труд, рассчитанный на библиотеку, университет, гильдию или богатый частный кабинет.",
+    "equipmentType": "Снаряжение",
+    "heroDollSlots": "",
+    "id": "энциклопедия-20-томов",
+    "itemSlot": "",
+    "linkedTool": "Исследователя",
+    "multipleAppearance": "1",
+    "name": "Энциклопедия (20 томов)",
+    "predominantMaterialId": "bumaga",
+    "predominantMaterialName": "Бумага",
+    "priceDenomination": "gp",
+    "priceGoldEquivalent": 150,
+    "priceText": "150 зм",
+    "priceValue": 150,
+    "rank": 3,
+    "shopSubtype": "Книжная и писчая лавка",
+    "source": "equipment-google-sheet",
+    "sourceIdentity": "снаряжение|энциклопедия (20 томов)",
+    "sourceRef": "Общий компендиум снаряжения V0.1!A603",
+    "value": "188",
+    "volume": "",
+    "weight": 80
   },
   {
     "ammunition": {

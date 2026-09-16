@@ -21,11 +21,11 @@ test("canonical manifest entries cover every gear and material ID once", () => {
 
   assert.equal(TOP_DOWN_MANIFEST_SCHEMA_VERSION, 3);
   assert.equal(TOP_DOWN_ATLAS_CAPACITY, 25);
-  assert.equal(entries.length, 1015);
-  assert.equal(new Set(keys).size, 1015);
-  assert.equal(entries.filter((entry) => entry.sourceType === "gear").length, 745);
-  assert.equal(entries.filter((entry) => entry.sourceType === "material").length, 270);
-  assert.equal(new Set(entries.map((entry) => entry.atlasId)).size, 41);
+  assert.equal(entries.length, 1029);
+  assert.equal(new Set(keys).size, 1029);
+  assert.equal(entries.filter((entry) => entry.sourceType === "gear").length, 754);
+  assert.equal(entries.filter((entry) => entry.sourceType === "material").length, 275);
+  assert.equal(new Set(entries.map((entry) => entry.atlasId)).size, 42);
   assert.ok(entries.every((entry) => entry.cellIndex >= 0 && entry.cellIndex < 25));
   assert.ok(entries.every((entry) => entry.tokenScale === 1));
 
@@ -270,7 +270,7 @@ test("checked-in manifest matches the canonical catalogs", async () => {
   ));
 
   assert.equal(validateTopDownManifest({ manifest, gear, materials }), true);
-  assert.equal(manifest.entries.length, 1015);
+  assert.equal(manifest.entries.length, 1029);
   assert.ok(manifest.entries.every((entry) => [1, 1.5].includes(entry.tokenScale)));
   const byKey = new Map(manifest.entries.map((entry) => [topDownEntryKey(entry), entry]));
   assert.equal(byKey.get("gear:revol-ver").tokenScale, 1);

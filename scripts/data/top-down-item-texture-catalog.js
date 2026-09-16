@@ -124,7 +124,6 @@ export const TOP_DOWN_ITEM_TEXTURE_ENTRIES = Object.freeze([
   ["gear:ektoplazma-2", "modules/rebreya-main/assets/top-down/items/gear/ektoplazma-2.webp"],
   ["gear:elfiyskaya-stal", "modules/rebreya-main/assets/top-down/items/gear/elfiyskaya-stal.webp"],
   ["gear:emblema-svyashchennyy-simvol", "modules/rebreya-main/assets/top-down/items/gear/emblema-svyashchennyy-simvol.webp"],
-  ["gear:entsiklopediya-10-tomov", "modules/rebreya-main/assets/top-down/items/gear/entsiklopediya-10-tomov.webp"],
   ["gear:essentsiya-khaosa", "modules/rebreya-main/assets/top-down/items/gear/essentsiya-khaosa.webp"],
   ["gear:essentsiya-koshmarov", "modules/rebreya-main/assets/top-down/items/gear/essentsiya-koshmarov.webp"],
   ["gear:essentsiya-sveta", "modules/rebreya-main/assets/top-down/items/gear/essentsiya-sveta.webp"],
