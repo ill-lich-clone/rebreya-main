@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readdir } from "node:fs/promises";
 
 import { MAGIC_ITEMS } from "../magicItem.js";
 
@@ -364,10 +365,10 @@ test("catalog gap report locks current coverage totals by rarity", () => {
     })),
     [
       { rarity: "Обычный", total: 102, full: 34, partial: 16, manual: 52, candidates: 21 },
-      { rarity: "Необычный", total: 168, full: 67, partial: 50, manual: 51, candidates: 33 },
-      { rarity: "Редкий", total: 190, full: 63, partial: 61, manual: 66, candidates: 51 },
-      { rarity: "Очень редкий", total: 122, full: 34, partial: 41, manual: 47, candidates: 33 },
-      { rarity: "Легендарный", total: 82, full: 23, partial: 28, manual: 31, candidates: 27 },
+      { rarity: "Необычный", total: 168, full: 70, partial: 50, manual: 48, candidates: 33 },
+      { rarity: "Редкий", total: 190, full: 66, partial: 61, manual: 63, candidates: 51 },
+      { rarity: "Очень редкий", total: 122, full: 37, partial: 41, manual: 44, candidates: 33 },
+      { rarity: "Легендарный", total: 82, full: 26, partial: 28, manual: 28, candidates: 27 },
       { rarity: "Артефакт", total: 1, full: 0, partial: 0, manual: 1, candidates: 1 },
       { rarity: "Без редкости", total: 1, full: 0, partial: 0, manual: 1, candidates: 0 }
     ]
@@ -717,6 +718,42 @@ test("magic item compendium renders paragraphs and canonical markdown tables", (
   assert.match(html, /<p>Второй абзац\.<\/p>/u);
 });
 
+test("new ability belts resolve their named artwork into managed pack documents", async () => {
+  const names = [
+    "Пояс дракона-вирма", "Пояс ловкости молодой феи", "Пояс ловкости взрослой феи",
+    "Пояс ловкости древней феи", "Пояс ловкости матрарха фей",
+    "Пояс мудрости молодого дракона", "Пояс мудрости взрослого дракона",
+    "Пояс мудрости древнего дракона", "Пояс харизмы беса",
+    "Пояс харизмы чёрного абишая", "Пояс харизмы исчадия преисподней",
+    "Пояс харизмы тиамат"
+  ];
+  const root = "modules/rebreya-main/templates/icons/Magic Items";
+  const files = await readdir(new URL("../templates/icons/Magic Items/", import.meta.url));
+  const previousPicker = globalThis.FilePicker;
+  globalThis.FilePicker = class FilePicker {
+    static async browse(_source, path) {
+      assert.equal(path, root);
+      return { files: files.map((name) => `${root}/${name}`), dirs: [] };
+    }
+  };
+  try {
+    const { buildNamedIconLookup } = await import("../scripts/data/compendium-utils.js");
+    const lookup = await buildNamedIconLookup([root], { forceRefresh: true });
+    const sources = MAGIC_ITEMS.filter((item) => names.includes(item.name));
+    assert.equal(sources.length, names.length);
+    for (const source of sources) {
+      const [item] = magicItemsCompendium.normalizeMagicItems([source]);
+      const created = magicItemsCompendium.createMagicItemData(item, new Map(), lookup);
+      const expected = `${root}/${encodeURIComponent(source.name)}.webp`;
+      assert.equal(created.img, expected, source.name);
+      assert.equal(created.flags["rebreya-main"].magicItemId, source.id, source.name);
+    }
+  }
+  finally {
+    globalThis.FilePicker = previousPicker;
+  }
+});
+
 test("magic item compendium projects the approved passive automation matrix", () => {
   const sourceById = new Map(MAGIC_ITEMS.map((item) => [item.id, item]));
   const expectedChangesById = new Map([
@@ -733,6 +770,19 @@ test("magic item compendium projects the approved passive automation matrix", ()
     ["пояс-силы-холмового-великана", [
       ["system.abilities.str.value", 2, "+3"],
       ["system.abilities.str.max", 4, "21"]
+    ]],
+    ["пояс-дракона-вирма", [["system.abilities.wis.value", 2, "+7"], ["system.abilities.wis.max", 4, "25"]]],
+    ["пояс-ловкости-взрослой-феи", [["system.abilities.dex.value", 2, "+4"], ["system.abilities.dex.max", 4, "20"]]],
+    ["пояс-ловкости-древней-феи", [["system.abilities.dex.value", 2, "+6"], ["system.abilities.dex.max", 4, "20"]]],
+    ["пояс-ловкости-матрарха-фей", [["system.abilities.dex.value", 2, "+7"], ["system.abilities.dex.max", 4, "25"]]],
+    ["пояс-ловкости-молодой-феи", [["system.abilities.dex.value", 2, "+2"], ["system.abilities.dex.max", 4, "20"]]],
+    ["пояс-мудрости-взрослого-дракона", [["system.abilities.wis.value", 2, "+4"], ["system.abilities.wis.max", 4, "20"]]],
+    ["пояс-мудрости-древнего-дракона", [["system.abilities.wis.value", 2, "+6"], ["system.abilities.wis.max", 4, "20"]]],
+    ["пояс-мудрости-молодого-дракона", [["system.abilities.wis.value", 2, "+2"], ["system.abilities.wis.max", 4, "20"]]],
+    ["пояс-харизмы-беса", [["system.abilities.cha.value", 2, "+2"], ["system.abilities.cha.max", 4, "20"]]],
+    ["пояс-харизмы-исчадия-преисподней", [["system.abilities.cha.value", 2, "+6"], ["system.abilities.cha.max", 4, "20"]]],
+    ["пояс-харизмы-тиамат", [["system.abilities.cha.value", 2, "+7"], ["system.abilities.cha.max", 4, "25"]]],
+    ["пояс-харизмы-черного-абишая", [["system.abilities.cha.value", 2, "+4"], ["system.abilities.cha.max", 4, "20"]
     ]]
   ]);
   const normalized = magicItemsCompendium.normalizeMagicItems(

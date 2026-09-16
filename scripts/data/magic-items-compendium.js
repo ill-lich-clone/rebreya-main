@@ -21,7 +21,7 @@ import {
   mapSlotGroupToHeroDollSlots,
   normalizeHeroDollSlotGroup
 } from "./item-classification.js";
-import { MAGIC_ITEMS } from "../../magicItem.js";
+import { MAGIC_ITEMS } from "../../magicItem.js?v=1.4.302";
 import {
   escapeFoundryHtml as escapeHtml,
   finiteNumber as toNumber
@@ -1802,6 +1802,29 @@ const PASSIVE_MAGIC_ITEM_CHANGE_DEFINITIONS = new Map([
     ]
   }]
 ]);
+for (const [id, ability, bonus, maximum] of [
+  ["пояс-дракона-вирма", "wis", 7, 25],
+  ["пояс-ловкости-взрослой-феи", "dex", 4, 20],
+  ["пояс-ловкости-древней-феи", "dex", 6, 20],
+  ["пояс-ловкости-матрарха-фей", "dex", 7, 25],
+  ["пояс-ловкости-молодой-феи", "dex", 2, 20],
+  ["пояс-мудрости-взрослого-дракона", "wis", 4, 20],
+  ["пояс-мудрости-древнего-дракона", "wis", 6, 20],
+  ["пояс-мудрости-молодого-дракона", "wis", 2, 20],
+  ["пояс-харизмы-беса", "cha", 2, 20],
+  ["пояс-харизмы-исчадия-преисподней", "cha", 6, 20],
+  ["пояс-харизмы-тиамат", "cha", 7, 25],
+  ["пояс-харизмы-черного-абишая", "cha", 4, 20]
+]) {
+  PASSIVE_MAGIC_ITEM_CHANGE_DEFINITIONS.set(id, {
+    suffix: `ability-belt-${ability}`,
+    label: "Повышение характеристики",
+    changes: [
+      { key: `system.abilities.${ability}.value`, mode: EFFECT_MODE_ADD, value: `+${bonus}`, priority: 20 },
+      { key: `system.abilities.${ability}.max`, mode: EFFECT_MODE_UPGRADE, value: String(maximum), priority: 20 }
+    ]
+  });
+}
 const SKILL_BONUS_MAGIC_ITEM_FAMILIES = new Map([
   ["амулет-натуралиста", ["nat", "Природа"]],
   ["брошь-дипломата", ["per", "Убеждение"]],

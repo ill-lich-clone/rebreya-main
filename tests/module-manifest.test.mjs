@@ -69,8 +69,8 @@ test("module manifest loads an unpinned canonical entrypoint for page-refresh up
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const [entrypoint] = manifest.esmodules;
 
-  assert.equal(manifest.version, "1.4.301");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.301.js"]);
+  assert.equal(manifest.version, "1.4.302");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.302.js"]);
   assert.doesNotMatch(entrypoint, /[?#]/u);
 
   const entrypointSource = await readFile(new URL(entrypoint, manifestUrl), "utf8");
@@ -158,7 +158,7 @@ test("production registers the hidden GiantTribe advancement before race compend
   );
   assert.match(
     entrypointSource,
-    /dnd5e-sheet-extensions\.js\?v=1\.4\.301/u
+    /dnd5e-sheet-extensions\.js\?v=1\.4\.302/u
   );
   assert.match(
     entrypointSource,
@@ -247,7 +247,7 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
 
   assert.match(
     canonicalSource,
-    /integrations\/dnd5e-sheet-extensions\.js\?v=1\.4\.301/u
+    /integrations\/dnd5e-sheet-extensions\.js\?v=1\.4\.302/u
   );
 
   for (const importPath of [
@@ -339,7 +339,7 @@ test("module keeps recent published entrypoint URLs as canonical compatibility f
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
 
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.301.js"]);
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.302.js"]);
 
   for (const fileName of ["main-1.4.98.js", "main-1.4.99.js", "main-1.4.100.js"]) {
     const forwarderSource = await readFile(new URL(`../scripts/${fileName}`, import.meta.url), "utf8");
@@ -513,7 +513,7 @@ test("legacy settings relay fails closed when a world-setting socket is unavaila
 test("module stylesheet cache bust loads the storage deposit interaction styles", async () => {
   const entrypointSource = await readCanonicalEntrypointSource();
 
-  assert.match(entrypointSource, /const MODULE_STYLE_VERSION = "1\.4\.301";/u);
+  assert.match(entrypointSource, /const MODULE_STYLE_VERSION = "1\.4\.302";/u);
   assert.match(entrypointSource, /const stylesheetHref = `\$\{MODULE_STYLE_PATH\}\?v=\$\{encodeURIComponent\(MODULE_STYLE_VERSION\)\}`;/u);
   assert.doesNotMatch(entrypointSource, /module\?\.version\s*\?\?/u);
 });
@@ -649,7 +649,7 @@ test("held item integrations preserve their released cache bust", async () => {
 
   assert.match(
     entrypointSource,
-    /dnd5e-sheet-extensions\.js\?v=1\.4\.301/u,
+    /dnd5e-sheet-extensions\.js\?v=1\.4\.302/u,
   );
   assert.match(
     entrypointSource,
@@ -674,7 +674,7 @@ test("automatic owned magic item sync cache-busts its live service graph", async
 
   assert.match(
     entrypointSource,
-    /magic-items-compendium\.js\?v=1\.4\.291-stale-automation-cleanup/u
+    /magic-items-compendium\.js\?v=1\.4\.302-ability-belts/u
   );
   assert.match(
     entrypointSource,
@@ -684,6 +684,7 @@ test("automatic owned magic item sync cache-busts its live service graph", async
     compendiumSource,
     /magic-item-embedded-sync\.js\?v=1\.4\.291-stale-automation-cleanup/u
   );
+  assert.match(compendiumSource, /magicItem\.js\?v=1\.4\.302/u);
 });
 
 test("item upgrade service and sheet integration preserve their released cache bust", async () => {
