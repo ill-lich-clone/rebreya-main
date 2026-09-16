@@ -23,9 +23,26 @@ globalThis.foundry ??= {
 const { normalizeFeatItems, renderFeatDescription } = await import("../scripts/data/feats-compendium.js");
 
 function loadBundleItems() {
-  const bundleUrl = new URL("../cherty-v08-foundry-2014-import-pack/cherty-v08-foundry-2014-bundle.json", import.meta.url);
+  const bundleUrl = new URL("../cherty-v09-foundry-2014-import-pack/cherty-v09-foundry-2014-bundle.json", import.meta.url);
   return JSON.parse(readFileSync(bundleUrl, "utf8")).items;
 }
+
+test("feat bundle mirrors the approved Google Docs V0.9 revision", () => {
+  const bundleUrl = new URL("../cherty-v09-foundry-2014-import-pack/cherty-v09-foundry-2014-bundle.json", import.meta.url);
+  const bundle = JSON.parse(readFileSync(bundleUrl, "utf8"));
+  const sourceItems = bundle.items.filter((item) => !item.flags?.["rebreya-main"]?.choiceOption);
+  const byName = new Map(sourceItems.map((item) => [item.name, item]));
+
+  assert.equal(bundle.sourceDocumentId, "1B7HYYioMoemwD3wXQtx9Vy8WrVYkQJ48KRFm7Mbi13w");
+  assert.equal(bundle.sourceRevisionId, "ANLCKQnRgsRW2pW1Iayvvv8G-Mf4uOLLBIVHn9vuyXObl7gwNqxazysSbQg_0ApBj05DBfwkt5n2nLq4sguUMQ");
+  assert.equal(bundle.sourceFile, "Черты V0.9");
+  assert.equal(sourceItems.length, 411);
+  assert.equal(byName.get("Агрессивный провокатор")?.system.identifier, "agressivnyy-provokator");
+  assert.equal(byName.get("Посвящение в жречество")?.flags.teyvankal.subsection, "*Черты жреца");
+  assert.equal(byName.get("Дикая медицина")?.flags.teyvankal.section, "Культурные черты");
+  assert.equal(byName.has("Начинающий жрец"), false);
+  assert.equal(byName.has("Божественный боец"), false);
+});
 
 test("feat descriptions preserve trusted HTML tables and make cell newlines readable", () => {
   const html = renderFeatDescription("<p>До.</p><table><tbody><tr><td>Первая строка\nВторая строка</td></tr></tbody></table>");

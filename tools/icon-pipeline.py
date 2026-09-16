@@ -30,7 +30,7 @@ DEFAULT_QUALITY = "medium"
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 ICONS_DIR = ROOT_DIR / "templates" / "icons"
-FEATS_SOURCE = ROOT_DIR / "cherty-v08-foundry-2014-import-pack" / "cherty-v08-foundry-2014-items.json"
+FEATS_SOURCE = ROOT_DIR / "cherty-v09-foundry-2014-import-pack" / "cherty-v09-foundry-2014-items.json"
 RACES_SOURCE = ROOT_DIR / "data" / "races-teyvankal-v01.json"
 
 FEATS_OUTPUT_SUBDIR = "Feats"

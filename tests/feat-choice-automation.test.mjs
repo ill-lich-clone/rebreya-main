@@ -11,7 +11,7 @@ import {
 } from "../scripts/automation/feat-choice-service.js";
 
 function loadBundle() {
-  const bundleUrl = new URL("../cherty-v08-foundry-2014-import-pack/cherty-v08-foundry-2014-bundle.json", import.meta.url);
+  const bundleUrl = new URL("../cherty-v09-foundry-2014-import-pack/cherty-v09-foundry-2014-bundle.json", import.meta.url);
   return JSON.parse(readFileSync(bundleUrl, "utf8"));
 }
 

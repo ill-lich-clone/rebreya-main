@@ -1,5 +1,5 @@
-// Импорт черт V0.8 в Foundry D&D5e
-// Стиль: один раз запускаешь макрос, выбираешь JSON-файл cherty-v08-foundry-2014-bundle.json или cherty-v08-foundry-2014-items.json
+// Импорт черт V0.9 в Foundry D&D5e
+// Стиль: один раз запускаешь макрос, выбираешь JSON-файл cherty-v09-foundry-2014-bundle.json или cherty-v09-foundry-2014-items.json
 // Он создаёт папки по разделам и импортирует черты как Item[type=feat]
 
 const input = document.createElement('input')
@@ -20,7 +20,7 @@ input.addEventListener('change', async () => {
         return
     }
 
-    const rootName = 'Черты V0.8'
+    const rootName = 'Черты V0.9'
     let root = game.folders.find(f => f.type === 'Item' && f.name === rootName)
     if (!root) {
         root = await Folder.create({ name: rootName, type: 'Item' })

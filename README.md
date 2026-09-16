@@ -406,7 +406,7 @@ Group Actor хранит организацию инвентаря в разде
 - экономика: `goods.json`, `regions.json`, `cities.json`, `reference.json`, `materials.json`, `gear.json`; 300 панорам городов — tracked-файлы `assets/cities/`, а `cities.json` хранит только module-owned runtime-пути `modules/rebreya-main/assets/cities/<имя города>.webp`;
 - контент: races/backgrounds/states/spells/downtime и class rework JSON;
 - путешествия: `travel-network.json`;
-- magic items: корневой `magicItem.js`; feats: корневой `feat.js` плюс `feats-world-overrides.json`.
+- magic items: корневой `magicItem.js`; feats: `cherty-v09-foundry-2014-import-pack/cherty-v09-foundry-2014-bundle.json` плюс `feats-world-overrides.json`.
 
 Единый импорт снаряжения и магических предметов запускается из корня репозитория:
 

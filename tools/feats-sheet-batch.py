@@ -12,7 +12,7 @@ from PIL import Image
 
 
 ROOT = Path(__file__).resolve().parents[1]
-FEATS_JSON = ROOT / "cherty-v08-foundry-2014-import-pack" / "cherty-v08-foundry-2014-items.json"
+FEATS_JSON = ROOT / "cherty-v09-foundry-2014-import-pack" / "cherty-v09-foundry-2014-items.json"
 FEATS_DIR = ROOT / "templates" / "icons" / "Feats"
 SHEETS_DIR = ROOT / "tmp" / "imagegen" / "sheets"
 CODEX_IMAGES = Path.home() / ".codex" / "generated_images"

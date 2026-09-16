@@ -4,7 +4,7 @@ import path from "node:path"
 import { fileURLToPath } from "node:url"
 
 const MODULE_ID = "rebreya-main"
-const VERSION = "0.8-dnd5e-5.2.5"
+const VERSION = "0.9-dnd5e-5.2.5"
 const AUTOMATION_FLAG = { [MODULE_ID]: { automation: true } }
 const MODE_ADD = 2
 const MODE_UPGRADE = 4
@@ -13,9 +13,9 @@ const MODE_OVERRIDE = 5
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const ROOT_DIR = path.resolve(__dirname, "..")
-const PACK_DIR = path.join(ROOT_DIR, "cherty-v08-foundry-2014-import-pack")
-const ITEMS_PATH = path.join(PACK_DIR, "cherty-v08-foundry-2014-items.json")
-const BUNDLE_PATH = path.join(PACK_DIR, "cherty-v08-foundry-2014-bundle.json")
+const PACK_DIR = path.join(ROOT_DIR, "cherty-v09-foundry-2014-import-pack")
+const ITEMS_PATH = path.join(PACK_DIR, "cherty-v09-foundry-2014-items.json")
+const BUNDLE_PATH = path.join(PACK_DIR, "cherty-v09-foundry-2014-bundle.json")
 const REPORT_PATH = path.join(ROOT_DIR, "docs", "feat-automation-report.md")
 
 const SKILLS = {
@@ -3489,7 +3489,7 @@ function writeReport(report) {
         .map((item) => `- ${item.name} (${item.section}) — ${item.notes}`)
 
     const lines = [
-        "# Автоматизация черт V0.8 для dnd5e 5.2.5",
+        "# Автоматизация черт V0.9 для dnd5e 5.2.5",
         "",
         `Версия флага: ${VERSION}`,
         "",
