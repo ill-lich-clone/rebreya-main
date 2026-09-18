@@ -2464,6 +2464,7 @@ test("storage template configuration validates exact operation-bound payloads", 
   assert.equal(isValidStorageConfigurePayload(assign), true);
   assert.equal(isValidStorageConfigurePayload({ ...assign, path: ["bag"] }), true);
   assert.equal(isValidStorageConfigurePayload({ tokenUuid: assign.tokenUuid, clearTemplate: true, operationId: "clear-1" }), true);
+  assert.equal(isValidStorageConfigurePayload({ tokenUuid: assign.tokenUuid, resetContents: true, operationId: "reset-1" }), true);
   assert.equal(isValidStorageConfigurePayload({ ...assign, operationId: "" }), false);
   assert.equal(isValidStorageConfigurePayload({ ...assign, extra: true }), false);
   assert.equal(isValidStorageConfigurePayload({ ...assign, path: [" "] }), false);
@@ -2565,6 +2566,49 @@ test("assigning a template to opened storage preserves contents and requires exp
   assert.equal(after.state, before.state);
   assert.deepEqual(after.generatedRows, before.generatedRows);
   assert.equal(after.template.form.itemCount, 6);
+});
+
+test("authoritative storage reset preserves the assigned template for the next first-open", async () => {
+  const generatedForms = [];
+  const h = createHarness();
+  h.storageService.generate = async (form) => {
+    generatedForms.push(structuredClone(form));
+    return { rows: [], coins: {} };
+  };
+  const template = {
+    version: 2,
+    name: "Reset-safe",
+    img: "template.webp",
+    form: { itemCount: 6, budgetValue: 900 },
+    sourceUuid: "Item.reset-safe",
+    assignedAt: 1
+  };
+  await h.storageService.configure(h.storageToken, {
+    state: "opened",
+    generatedRows: [{ rowId: "old-base-row", name: "Old", quantity: 1 }],
+    template
+  });
+
+  await h.service.configure({
+    tokenUuid: h.storageToken.uuid,
+    resetContents: true,
+    operationId: "reset-after-template"
+  }, { sender: h.gm });
+
+  const reset = readStorageState(h.storageToken);
+  assert.equal(reset.state, "unopened");
+  assert.deepEqual(reset.generatedRows, []);
+  assert.equal(reset.template.sourceUuid, "Item.reset-safe");
+
+  await h.service.open({
+    tokenUuid: h.storageToken.uuid,
+    characterTokenUuid: h.characterToken.uuid,
+    mutationId: "open-after-template-reset"
+  }, { sender: h.player });
+
+  assert.equal(generatedForms.length, 1);
+  assert.equal(generatedForms[0].itemCount, 6);
+  assert.equal(generatedForms[0].budgetValue, 900);
 });
 
 test("failed parent source debit reserves descendants across command service restart",async()=>{

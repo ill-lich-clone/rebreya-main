@@ -10,7 +10,10 @@ import { resolveStorageDepositSource } from "./storage-deposit-source.js?v=1.4.2
 import { isStorageContainerRow, isStorageJournalRow } from "./storage-container-snapshot.js";
 import { MODULE_ID } from "../constants.js";
 import { escapeFoundryHtml } from "../shared/foundry-values.js";
-import { isCorpseStorageTarget } from "./storage-corpse-target.js?v=1.4.195-storage-corpse-target";
+import {
+  isCorpseStorageTarget,
+  isMaterializedCorpseStorageState
+} from "./storage-corpse-target.js?v=1.4.195-storage-corpse-target";
 import {
   MAX_STORAGE_DISTANCE_FEET,
   STORAGE_ACCESS_DISTANCE_ERROR_CODE,
@@ -200,7 +203,8 @@ export function isValidStorageConfigurePayload(payload) {
   const keys = Object.keys(payload).filter((key) => key !== "path").sort();
   const templateShape = [
     ["itemUuid", "operationId", "tokenUuid"],
-    ["clearTemplate", "operationId", "tokenUuid"]
+    ["clearTemplate", "operationId", "tokenUuid"],
+    ["operationId", "resetContents", "tokenUuid"]
   ].some((expected) => keys.length === expected.length && keys.every((key, index) => key === expected[index]));
   const baseKeys = keys.filter((key) => !["operationId", "tokenUuid"].includes(key));
   const baseShape = baseKeys.every((key) => ["baseName", "mixGeneratedLoot"].includes(key))
@@ -209,6 +213,7 @@ export function isValidStorageConfigurePayload(payload) {
   if (payload.path !== undefined && !isValidStoragePath(payload.path)) return false;
   if (payload.itemUuid !== undefined) return Boolean(clean(payload.itemUuid));
   if (payload.clearTemplate !== undefined) return payload.clearTemplate === true;
+  if (payload.resetContents !== undefined) return payload.resetContents === true;
   return (payload.baseName === undefined || typeof payload.baseName === "string")
     && (payload.mixGeneratedLoot === undefined || typeof payload.mixGeneratedLoot === "boolean");
 }
@@ -1069,6 +1074,17 @@ export class StorageCommandService {
       }
       else if (payload.clearTemplate === true) {
         patch.template = null;
+      }
+      else if (payload.resetContents === true) {
+        const corpse = !path.length && isMaterializedCorpseStorageState(current);
+        Object.assign(patch, {
+          generatedRows: [],
+          generatedCoins: {},
+          claimedRowIds: [],
+          coinsClaimed: false,
+          state: corpse ? "empty" : "unopened",
+          displayMode: corpse ? "empty" : "unopened"
+        });
       }
       else {
         if (Object.prototype.hasOwnProperty.call(payload, "baseName")) {

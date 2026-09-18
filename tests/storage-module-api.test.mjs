@@ -608,3 +608,71 @@ test("module composition materializes a corpse before allowing marker-guarded GM
     restores.reverse().forEach((restore) => restore());
   }
 });
+
+test("inactive GM routes storage reset through the authoritative configure command", async () => {
+  class FakeApplicationV2 {}
+  const currentGm = { active: true, id: "gm-b", isGM: true };
+  const activeGm = { active: true, id: "gm-a", isGM: true };
+  const restores = [
+    replaceGlobal("Hooks", createHooks()),
+    replaceGlobal("Actor", class Actor {}),
+    replaceGlobal("Item", class Item {}),
+    replaceGlobal("Macro", class Macro {}),
+    replaceGlobal("HTMLElement", class HTMLElement {}),
+    replaceGlobal("CONFIG", {}),
+    replaceGlobal("foundry", {
+      applications: {
+        api: {
+          ApplicationV2: FakeApplicationV2,
+          HandlebarsApplicationMixin: (Base) => Base
+        }
+      },
+      utils: { deepClone: (value) => structuredClone(value) }
+    }),
+    replaceGlobal("ui", { notifications: { error() {}, info() {}, warn() {} } }),
+    replaceGlobal("game", {
+      modules: new Map([[MODULE_ID, { version: "1.4.303" }]]),
+      socket: { emit() {}, on() {} },
+      system: { id: "dnd5e" },
+      user: currentGm,
+      users: { activeGM: activeGm, contents: [activeGm, currentGm] },
+      messages: { contents: [] },
+      settings: { get: () => false }
+    })
+  ];
+
+  try {
+    const { RebreyaMainModule, STORAGE_CONFIGURE_COMMAND } = await import(`../scripts/main.js?storage-reset-routing=${Date.now()}`);
+    const calls = [];
+    const context = {
+      socketCommandBus: {
+        async request(command, payload) {
+          calls.push([command, structuredClone(payload)]);
+          return { changed: true };
+        }
+      },
+      storageCommandService: {
+        async configure() {
+          throw new Error("inactive GM must not reset storage locally");
+        }
+      }
+    };
+
+    const result = await RebreyaMainModule.prototype.resetStorageToken.call(
+      context,
+      "Scene.scene.Token.chest",
+      { path: ["bag"], operationId: "reset-template-storage" }
+    );
+
+    assert.deepEqual(result, { changed: true });
+    assert.deepEqual(calls, [[STORAGE_CONFIGURE_COMMAND, {
+      tokenUuid: "Scene.scene.Token.chest",
+      resetContents: true,
+      operationId: "reset-template-storage",
+      path: ["bag"]
+    }]]);
+  }
+  finally {
+    restores.reverse().forEach((restore) => restore());
+  }
+});
