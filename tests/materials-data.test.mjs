@@ -9,7 +9,7 @@ const SPREADSHEET_ID = "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk";
 const SHEET_NAME = "Энциклопедия материалов";
 const WORKBOOK_FINGERPRINT = "804f8a558d15af42615f95aeec6ec9a24663c411a6842a7b0e11f286dc545070";
 const SOURCE_ROW_COUNT = 270;
-const CURRENT_ROW_COUNT = 275;
+const CURRENT_ROW_COUNT = 296;
 const ORIGINAL_MATERIAL_COUNT = 45;
 
 const materialBytes = readFileSync(MATERIALS_URL);
@@ -38,26 +38,31 @@ test("materials fixture is a raw positional snapshot of sheet rows 3-272", () =>
   assert.equal(fixture.sourceRows.find(({ row }) => row === 191).cells[6].endsWith(" "), true);
 });
 
-test("materials data is valid UTF-8 and retains historical rows plus five new source rows", () => {
+test("materials data is valid UTF-8, retains historical entries, and imports fishing materials", () => {
   assert.ok(Array.isArray(materials));
   assert.equal(materials.length, CURRENT_ROW_COUNT);
   assert.doesNotMatch(materialText, /\uFFFD/u);
 
-  const bySourceRow = new Map(materials.map((material) => [material.source?.row, material]));
+  const byName = new Map(materials.map((material) => [material.name, material]));
   for (const sourceRow of fixture.sourceRows) {
-    const actual = bySourceRow.get(sourceRow.row);
-    assert.ok(actual, `source row ${sourceRow.row} is present`);
-    assert.equal(actual.name, normalizeIdentifier(sourceRow.cells[0]), `source row ${sourceRow.row} keeps identity`);
+    const expectedName = normalizeIdentifier(sourceRow.cells[0]);
+    const actual = byName.get(expectedName);
+    assert.ok(actual, `historical material ${expectedName} is present`);
     assert.equal(actual.source?.sheetName, SHEET_NAME);
     assert.equal(actual.source?.spreadsheetId, SPREADSHEET_ID);
   }
-  assert.deepEqual([273, 274, 275, 276, 277].map((row) => bySourceRow.get(row)?.name), [
-    "Киноварная руда", "Звёздный иридий", "Руда нулевого меридиана",
-    "Угольная нефть (1 баррель)", "Синтезатор замедления"
-  ]);
+
+  const fish = materials.filter((material) => material.subtype === "Рыба" && material.id !== "ryba");
+  assert.equal(fish.length, 20);
+  assert.deepEqual(
+    [...new Set(fish.map((material) => material.rank))].sort((left, right) => left - right),
+    [1, 2, 3, 4, 5, 6, 7, 8, 9],
+  );
+  assert.ok(fish.every((material) => /Подходящая наживка:/u.test(material.description)));
+  assert.match(byName.get("Рыба").description, /Подходит как наживка типа «Рыбная»/u);
 });
 
-test("materials data adds 230 records and preserves all 45 historical ids", () => {
+test("materials data adds 251 records and preserves all 45 historical ids", () => {
   const byName = new Map(materials.map((material) => [material.name, material]));
   const originalEntries = Object.entries(fixture.originalMaterialIds);
   const additions = materials.filter((material) => !Object.hasOwn(fixture.originalMaterialIds, material.name));

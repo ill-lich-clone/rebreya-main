@@ -721,7 +721,7 @@ test("magic item compendium renders paragraphs and canonical markdown tables", (
 test("new ability belts resolve their named artwork into managed pack documents", async () => {
   const names = [
     "Пояс дракона-вирма", "Пояс ловкости молодой феи", "Пояс ловкости взрослой феи",
-    "Пояс ловкости древней феи", "Пояс ловкости матрарха фей",
+    "Пояс ловкости древней феи", "Пояс ловкости матриарха фей",
     "Пояс мудрости молодого дракона", "Пояс мудрости взрослого дракона",
     "Пояс мудрости древнего дракона", "Пояс харизмы беса",
     "Пояс харизмы чёрного абишая", "Пояс харизмы исчадия преисподней",
@@ -774,7 +774,7 @@ test("magic item compendium projects the approved passive automation matrix", ()
     ["пояс-дракона-вирма", [["system.abilities.wis.value", 2, "+7"], ["system.abilities.wis.max", 4, "25"]]],
     ["пояс-ловкости-взрослой-феи", [["system.abilities.dex.value", 2, "+4"], ["system.abilities.dex.max", 4, "20"]]],
     ["пояс-ловкости-древней-феи", [["system.abilities.dex.value", 2, "+6"], ["system.abilities.dex.max", 4, "20"]]],
-    ["пояс-ловкости-матрарха-фей", [["system.abilities.dex.value", 2, "+7"], ["system.abilities.dex.max", 4, "25"]]],
+    ["пояс-ловкости-матриарха-фей", [["system.abilities.dex.value", 2, "+7"], ["system.abilities.dex.max", 4, "25"]]],
     ["пояс-ловкости-молодой-феи", [["system.abilities.dex.value", 2, "+2"], ["system.abilities.dex.max", 4, "20"]]],
     ["пояс-мудрости-взрослого-дракона", [["system.abilities.wis.value", 2, "+4"], ["system.abilities.wis.max", 4, "20"]]],
     ["пояс-мудрости-древнего-дракона", [["system.abilities.wis.value", 2, "+6"], ["system.abilities.wis.max", 4, "20"]]],
