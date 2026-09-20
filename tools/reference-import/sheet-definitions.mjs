@@ -21,3 +21,16 @@ export const NARRATIVE_SHEET_DEFINITION = Object.freeze({
     "Ранг"
   ])
 });
+
+export const GLOSSARY_SHEET_DEFINITION = Object.freeze({
+  registryOrder: 1,
+  sheetTitle: "Глоссарий 0.1",
+  range: "A1:B1000",
+  layout: "raw",
+  headerRow: 4,
+  headerRows: Object.freeze([4]),
+  dataStartRow: 5,
+  requiredHeaders: Object.freeze(["Термин", "Описание"]),
+  optionalHeaders: Object.freeze([]),
+  headers: Object.freeze(["Термин", "Описание"])
+});
