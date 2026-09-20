@@ -5,9 +5,14 @@ import { canFitLootgenContents, debitLootgenBudget, readLootgenPhysicalFootprint
 import { chooseLootgenUpgradeVariant } from "./lootgen-upgrade-variants.js?v=1.4.278";
 import { rollLootgenBrokenState } from "./lootgen-durability.js?v=1.4.154-corpse-storage-broken-name";
 import { rollLootgenMultipleAppearance } from "./lootgen-multiple-appearance.js?v=1.4.128-lootgen-multiplicity";
+import { pickLootgenNarrativeFields, selectLootgenNarrativeVariant } from "./lootgen-narrative-catalog.js?v=1.4.314";
 
 const key=row=>`${row.sourceType}:${row.sourceId}`;
 const composition=descriptor=>{const {quantity,container,...metadata}=descriptor;return normalizeLootgenComposition(metadata);};
+const withNarrativeVariant=(candidate,random)=>{
+  const variant=selectLootgenNarrativeVariant(candidate,random);
+  return variant?{...candidate,narrativeVariantId:variant.variantId,narrativeGearId:variant.gearId,narrativeTitle:variant.title,narrativeDescription:variant.description,stackable:false}:{...candidate};
+};
 
 /** Internal policy of generateLootgenResult: one ledger for every accepted root and descendant. */
 export function generateLootgenContainerResult({form,mundanePool,magicPool,catalogReader,manifest,random,createInstanceKey,batchId,generatedAt,
@@ -34,7 +39,8 @@ export function generateLootgenContainerResult({form,mundanePool,magicPool,catal
     const mundane=mundanePool.filter(affordable),magic=magicPool.filter(affordable);
     const wantsMagic=form.includeMagicItems && magic.length && (!mundane.length || random()<form.magicPercent/100);
     const pool=form.includeMagicItems && form.magicPercent===100?magic:wantsMagic?magic:mundane.length?mundane:magic;
-    const selected=pick(pool,()=>1,random);if(!selected)return null;
+    const baseSelected=pick(pool,()=>1,random);if(!baseSelected)return null;
+    const selected=withNarrativeVariant(baseSelected,random);
     const physical=catalogReader.readPhysicalItem(selected),isContainer=physical?.type==="container";
     const host={...selected,isBroken:rollLootgenBrokenState({sourceType:selected.sourceType,chance:form.brokenEquipmentChance,isEligible:selected.breakable===true,random})};
     const variant=chooseLootgenUpgradeVariant({host,remainingValue:allowance,form,catalogReader,manifest,random,createInstanceKey:allocate,attemptBudget});
@@ -66,7 +72,7 @@ export function generateLootgenContainerResult({form,mundanePool,magicPool,catal
         if(profile.capacity.volumeFt3!==null && !readLootgenPhysicalFootprint(child.footprint,{needWeight:false,needVolume:true,allowUnknownVolume:true}).volumeKnown)note("volume-unverified",selected.sourceId);
         const d=child.row.descriptor,rowId=allocate();
         children.push(d.container?buildStorageContainerRow(d.container,{rowId}):{rowKind:"item",rowId,name:child.row.name,sourceType:d.sourceType,sourceId:d.sourceId,
-          quantity:d.quantity,composition:composition(d)});
+          quantity:d.quantity,...pickLootgenNarrativeFields(child.row),composition:composition(d)});
         contents.push(child.footprint);
       }
       let internalCoins=makeCoins(0,random);

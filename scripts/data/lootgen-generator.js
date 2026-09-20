@@ -1,4 +1,5 @@
 import { generateLootgenContainerResult } from "./lootgen-container-generation.js?v=1.4.278";
+import { pickLootgenNarrativeFields, selectLootgenNarrativeVariant } from "./lootgen-narrative-catalog.js?v=1.4.314";
 import { rollLootgenBrokenState } from "./lootgen-durability.js?v=1.4.154-corpse-storage-broken-name";
 import { rollLootgenMultipleAppearance } from "./lootgen-multiple-appearance.js?v=1.4.128-lootgen-multiplicity";
 import { chooseLootgenUpgradeVariant } from "./lootgen-upgrade-variants.js?v=1.4.278";
@@ -103,6 +104,19 @@ function candidateIdentity(candidate) {
   return `${String(candidate?.sourceType ?? "")}:${String(candidate?.sourceId ?? "")}`;
 }
 
+function withNarrativeVariant(candidate, random) {
+  const variant = selectLootgenNarrativeVariant(candidate, random);
+  if (!variant) return { ...candidate };
+  return {
+    ...candidate,
+    narrativeVariantId: variant.variantId,
+    narrativeGearId: variant.gearId,
+    narrativeTitle: variant.title,
+    narrativeDescription: variant.description,
+    stackable: false
+  };
+}
+
 function candidateWeight(candidate, currentQuantity, optimalQuantity) {
   if (candidate?.sourceType === "magicItem") {
     return currentQuantity === 0 ? 1 : 0;
@@ -185,7 +199,10 @@ function randomCoinsFromValue(totalValue, random) {
 function aggregateRows(rows) {
   const map = new Map();
   for (const row of rows) {
-    const key = row.descriptor ? getLootgenAggregationKey(row.descriptor) : `${row.sourceType}:${row.sourceId}:${row.isBroken ? "broken" : "intact"}`;
+    const narrativeIdentity = String(row.narrativeVariantId ?? "");
+    const key = row.descriptor
+      ? `${getLootgenAggregationKey(row.descriptor)}:${narrativeIdentity}`
+      : `${row.sourceType}:${row.sourceId}:${narrativeIdentity}:${row.isBroken ? "broken" : "intact"}`;
     const isStackable = row.stackable === undefined
       ? ["material", "gear"].includes(String(row.sourceType ?? ""))
       : Boolean(row.stackable);
@@ -198,6 +215,7 @@ function aggregateRows(rows) {
       typeLabel: row.typeLabel,
       stackable: isStackable,
       isBroken: Boolean(row.isBroken),
+      ...pickLootgenNarrativeFields(row),
       quantity: 0,
       totalValue: 0
     };
@@ -342,10 +360,11 @@ export function generateLootgenResult({
     }
 
     const pickedKey = candidateIdentity(picked);
-    const unitValue = Math.max(0, toInteger(picked.value, 0));
-    let quantity = picked.sourceType === "magicItem" || picked.stackable === false
+    const narrativePick = withNarrativeVariant(picked, random);
+    const unitValue = Math.max(0, toInteger(narrativePick.value, 0));
+    let quantity = narrativePick.sourceType === "magicItem" || narrativePick.stackable === false
       ? 1
-      : rollLootgenMultipleAppearance(picked.multipleAppearance ?? "1", random);
+      : rollLootgenMultipleAppearance(narrativePick.multipleAppearance ?? "1", random);
     if (unitValue > 0) {
       quantity = Math.min(quantity, Math.floor(remainingValue / unitValue));
     }
@@ -356,12 +375,12 @@ export function generateLootgenResult({
     }
 
     const selected = {
-      ...picked,
+      ...narrativePick,
       value: unitValue,
       isBroken: rollLootgenBrokenState({
-        sourceType: picked.sourceType,
+        sourceType: narrativePick.sourceType,
         chance: form.brokenEquipmentChance,
-        isEligible: picked.breakable === true,
+        isEligible: narrativePick.breakable === true,
         random
       })
     };

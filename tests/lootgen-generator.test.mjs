@@ -6,6 +6,9 @@ import {
   normalizeLootgenForm
 } from "../scripts/data/lootgen-generator.js";
 
+const variantA={variantId:"book-a",gearId:"book",sourceName:"Книга",title:"A",description:"Первый",rank:0};
+const variantB={variantId:"book-b",gearId:"book",sourceName:"Книга",title:"B",description:"Последний",rank:0};
+
 test("upgrades, enchantments and curses never enter random loot in either pool", () => {
   const excluded = [
     { equipmentType: "Усовершенствование" },
@@ -30,6 +33,49 @@ test("canonical coin candidates become currency rather than ordinary loot Items"
   assert.equal(result.rows.length, 0);
   assert.equal(result.coins.cp, 47);
   assert.equal(result.spentValue + result.coins.totalCopper, 47);
+});
+
+test("generator selects base gear before drawing its narrative variant", () => {
+  const draws = [0.75, 0.99];
+  const result = generateLootgenResult({
+    mundanePool: [
+      { sourceType: "gear", sourceId: "book", name: "Книга", value: 1, stackable: true, narrativeVariants: [variantA, variantB] },
+      { sourceType: "gear", sourceId: "rope", name: "Верёвка", value: 1, stackable: true }
+    ],
+    itemCount: 1,
+    budgetValue: 1,
+    includeCoins: false,
+    random: () => draws.shift()
+  });
+
+  assert.equal(result.rows[0].sourceId, "rope");
+  assert.equal(result.rows[0].narrativeVariantId, undefined);
+  assert.equal(draws.length, 1, "no narrative draw is consumed for ordinary gear");
+});
+
+test("narrative selection keeps one non-stackable row", () => {
+  const result = generateLootgenResult({
+    mundanePool: [{
+      sourceType: "gear",
+      sourceId: "book",
+      name: "Книга",
+      value: 10,
+      stackable: true,
+      narrativeVariants: [variantA, variantB]
+    }],
+    itemCount: 1,
+    budgetValue: 20,
+    includeCoins: false,
+    random: () => 0.999999
+  });
+
+  assert.equal(result.rows.length, 1);
+  assert.equal(result.rows[0].narrativeVariantId, variantB.variantId);
+  assert.equal(result.rows[0].narrativeTitle, variantB.title);
+  assert.equal(result.rows[0].narrativeDescription, variantB.description);
+  assert.equal(result.rows[0].quantity, 1);
+  assert.equal(result.rows[0].stackable, false);
+  assert.equal(result.spentValue, 10);
 });
 
 test("coins never consume the requested ordinary item row limit", () => {

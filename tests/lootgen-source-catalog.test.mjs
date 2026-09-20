@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { buildLootgenMundanePool, buildLootgenMagicPool, LootgenSourceCatalog } from "../scripts/data/lootgen-source-catalog.js";
 
 const form={rankMin:0,rankMax:4,includeGear:true,includeMagicItems:true,gearTypeFilters:{},magicTypeFilters:{}};
+const emptyNarrativeCatalog={byGearId:new Map()};
 test("catalog pools preserve packages, type/rank/bargaining filters and exclude loose upgrades",()=>{
   const model={gear:[{id:"paper",name:"Paper",rank:0,value:2,multipleAppearance:"2к12",equipmentType:"Снаряжение"},
     {id:"sword",rank:1,value:100,equipmentType:"Оружие"},{id:"blocked",rank:1,value:3,bargaining:"Запрещено"},
@@ -26,7 +27,7 @@ test("magic pool preserves source identity and legacy price precedence",()=>{
 test("source catalog reads requested sources once and generates without a UI instance",async()=>{
   const calls=[];
   const catalog=new LootgenSourceCatalog({getModel:async()=>{calls.push("model");return {gear:[{id:"paper",rank:0,value:2}],materials:[]};},
-    getGearIndex:async()=>{calls.push("gear");return [];},getMagicDocuments:async()=>{calls.push("magic");return [];}});
+    getGearIndex:async()=>{calls.push("gear");return [];},getMagicDocuments:async()=>{calls.push("magic");return [];},getNarrativeCatalog:async()=>emptyNarrativeCatalog});
   const snapshot=await catalog.load({...form,includeMagicItems:false});
   assert.deepEqual(calls.sort(),["gear","model"]);assert.equal(snapshot.mundanePool.length,1);assert.deepEqual(snapshot.magicPool,[]);
   const result=await catalog.generate({...form,includeMagicItems:false,itemCount:1,optimalItemQuantity:1,budgetValue:2,includeCoins:false},{random:()=>0,batchId:"fixed",generatedAt:"fixed"});
@@ -37,6 +38,7 @@ test("enabled generation combines real catalog prices and compatibility before s
   const source=id=>({_id:id,type:id==="sword"?"weapon":"loot",system:{type:{value:"martialM"}},flags:{"rebreya-main":{managed:true,gearId:id}}});
   const catalog=new LootgenSourceCatalog({getModel:async()=>({gear:[{id:"sword",rank:1,value:100,equipmentType:"Оружие"},{id:"zacharovanie-ostroty",rank:1,value:20,equipmentType:"Усовершенствование"}]}),
     getGearIndex:async()=>[source("sword"),source("zacharovanie-ostroty")],getMagicDocuments:async()=>[],
+    getNarrativeCatalog:async()=>emptyNarrativeCatalog,
     getManifest:async()=>[{productId:"zacharovanie-ostroty",decision:"simple-implemented",profile:{type:"Зачарование",rank:1,compatibility:["weapon"]}}]});
   let id=0;const generated=await catalog.generate({...form,includeCoins:false,enableUpgrades:true,upgradeChance:100,itemCount:1,optimalItemQuantity:1,budgetValue:120},{random:()=>0,createInstanceKey:()=>String(++id)});
   assert.equal(generated.rows.length,1);assert.equal(generated.rows[0].descriptor.upgrades[0].sourceId,"zacharovanie-ostroty");
@@ -53,9 +55,27 @@ test("gear index requests native weight, volume and capacity for bounded contain
 });
 test("filled mode loads physical sources and the system coin weight without enabling upgrades",async()=>{
   const catalog=new LootgenSourceCatalog({getModel:async()=>({gear:[]}),getGearIndex:async()=>[],getMagicDocuments:async()=>[],
-    getManifest:()=>{throw new Error("upgrades disabled");},getCoinWeight:()=>0});
+    getManifest:()=>{throw new Error("upgrades disabled");},getCoinWeight:()=>0,getNarrativeCatalog:async()=>emptyNarrativeCatalog});
   const snapshot=await catalog.load({enableFilledContainers:true,enableUpgrades:false,includeMagicItems:false});
   assert.ok(snapshot.catalogReader);assert.equal(snapshot.coinWeightPerCoinLb,0);assert.deepEqual(snapshot.manifest,[]);
+});
+
+test("source catalog attaches narrative variants to one base gear candidate",async()=>{
+  const variants=[{variantId:"paper-a",gearId:"paper",sourceName:"Paper",title:"A",description:"One",rank:0}];
+  let calls=0;
+  const catalog=new LootgenSourceCatalog({
+    getModel:async()=>({gear:[{id:"paper",name:"Paper",rank:0,value:2}],materials:[]}),
+    getGearIndex:async()=>[],
+    getMagicDocuments:async()=>[],
+    getNarrativeCatalog:async()=>{calls+=1;return {byGearId:new Map([["paper",variants]])};}
+  });
+
+  const snapshot=await catalog.load({...form,includeMagicItems:false});
+
+  assert.equal(calls,1);
+  assert.equal(snapshot.mundanePool.length,1);
+  assert.deepEqual(snapshot.mundanePool[0].narrativeVariants,variants);
+  assert.notEqual(snapshot.mundanePool[0].narrativeVariants,variants);
 });
 
 test("coin weight follows dnd5e currency and metric settings",async()=>{

@@ -109,3 +109,19 @@ test("two identical top-level shells remain separate physical instances",()=>{
   assert.equal(result.rows[0].sourceId,result.rows[1].sourceId);
   assert.notEqual(result.rows[0].descriptor.instanceKey,result.rows[1].descriptor.instanceKey);
 });
+
+test("filled container preserves independent narrative variants on root and child rows",()=>{
+  const options=fixture({includeCoins:false});
+  options.form.enableUpgrades=false;
+  options.mundanePool[0].narrativeVariants=[{variantId:"chest-a",gearId:"chest",sourceName:"Сундук",title:"Root",description:"Root text",rank:0}];
+  options.mundanePool[1].narrativeVariants=[{variantId:"blade-a",gearId:"blade",sourceName:"Клинок",title:"Child",description:"Child text",rank:0}];
+
+  const result=run(options);
+  const child=result.rows[0].descriptor.container.state.manualRows.find(row=>row.sourceId==="blade");
+
+  assert.equal(result.rows[0].narrativeVariantId,"chest-a");
+  assert.equal(result.rows[0].narrativeTitle,"Root");
+  assert.equal(child.narrativeVariantId,"blade-a");
+  assert.equal(child.narrativeTitle,"Child");
+  assert.notEqual(result.rows[0].narrativeVariantId,child.narrativeVariantId);
+});

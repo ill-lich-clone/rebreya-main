@@ -5,6 +5,7 @@ import { resolveLootgenItemValue } from "./item-value.js?v=1.4.264";
 import { collectBreakableManagedGearIds } from "./lootgen-durability.js?v=1.4.154-corpse-storage-broken-name";
 import { generateLootgenResult, isLootgenUpgrade, normalizeLootgenForm } from "./lootgen-generator.js?v=1.4.278";
 import { buildLootgenTypeFilterOptions, isLootgenTypeAllowed, resolveMagicLootgenTypeLabel } from "./lootgen-type-filters.js?v=1.4.258";
+import { loadLootgenNarrativeCatalog } from "./lootgen-narrative-catalog.js?v=1.4.314";
 const MATERIAL_LOOTGEN_TYPE_LABEL="Материал";
 function toNumber(value, fallback = 0) {
   const numericValue = Number(value ?? fallback);
@@ -52,7 +53,8 @@ export function buildLootgenMundaneCandidate(gearItem, {
   rank,
   value,
   typeLabel,
-  breakable = false
+  breakable = false,
+  narrativeVariants = []
 } = {}) {
   return {
     sourceType: "gear",
@@ -63,7 +65,8 @@ export function buildLootgenMundaneCandidate(gearItem, {
     multipleAppearance: String(gearItem?.multipleAppearance ?? "1"),
     typeLabel: String(typeLabel ?? gearItem?.equipmentType ?? "Снаряжение"),
     stackable: true,
-    breakable: Boolean(breakable)
+    breakable: Boolean(breakable),
+    narrativeVariants: structuredClone(narrativeVariants)
   };
 }
 
@@ -77,7 +80,7 @@ export function buildLootgenGearTypeOptions(model, selectedState={}) {
     );
   }
 
-export function buildLootgenMundanePool({model,form,breakableGearIds=new Set()}) {
+export function buildLootgenMundanePool({model,form,breakableGearIds=new Set(),narrativeByGearId=new Map()}) {
     form=normalizeLootgenForm(form);
     const minRank = Math.max(0, Math.min(form.rankMin, form.rankMax));
     const maxRank = Math.max(minRank, Math.max(form.rankMin, form.rankMax));
@@ -108,7 +111,8 @@ export function buildLootgenMundanePool({model,form,breakableGearIds=new Set()})
           rank,
           value,
           typeLabel,
-          breakable: breakableGearIds.has(String(gearItem.id))
+          breakable: breakableGearIds.has(String(gearItem.id)),
+          narrativeVariants: narrativeByGearId.get(String(gearItem.id)) ?? []
         }));
       }
 
@@ -217,19 +221,19 @@ export function buildLootgenMagicPool({form,documents=[]}) {
 
 /** Read-only shared source owner; no Application, writes, random selection or compendium synchronization in load. */
 export class LootgenSourceCatalog {
-  constructor({getModel,getGearIndex=readLootgenGearIndex,getMagicDocuments=readLootgenMagicDocuments,getManifest=loadUpgradeAutomationManifest,getCoinWeight=readLootgenCoinWeight}={}) {
+  constructor({getModel,getGearIndex=readLootgenGearIndex,getMagicDocuments=readLootgenMagicDocuments,getManifest=loadUpgradeAutomationManifest,getCoinWeight=readLootgenCoinWeight,getNarrativeCatalog=loadLootgenNarrativeCatalog}={}) {
     this.getManifest=getManifest;this.getCoinWeight=getCoinWeight;
-    this.getModel=getModel;this.getGearIndex=getGearIndex;this.getMagicDocuments=getMagicDocuments;
+    this.getModel=getModel;this.getGearIndex=getGearIndex;this.getMagicDocuments=getMagicDocuments;this.getNarrativeCatalog=getNarrativeCatalog;
   }
   async load(rawForm) {
     const form=normalizeLootgenForm(rawForm);
-    const [model,gearIndex,magicDocuments,manifest]=await Promise.all([
-      this.getModel(),(form.includeGear||form.enableUpgrades||form.enableFilledContainers)?this.getGearIndex():[],form.includeMagicItems?this.getMagicDocuments():[],form.enableUpgrades?this.getManifest():[]
+    const [model,gearIndex,magicDocuments,manifest,narrativeCatalog]=await Promise.all([
+      this.getModel(),(form.includeGear||form.enableUpgrades||form.enableFilledContainers)?this.getGearIndex():[],form.includeMagicItems?this.getMagicDocuments():[],form.enableUpgrades?this.getManifest():[],form.includeGear?this.getNarrativeCatalog():{byGearId:new Map()}
     ]);
     return {form,model,gearIndex,magicDocuments,manifest,
       coinWeightPerCoinLb:form.enableFilledContainers?this.getCoinWeight():0.02,
       catalogReader:(form.enableUpgrades||form.enableFilledContainers)?createLootgenCatalogReader({model,gearIndex,magicDocuments,manifest}):null,
-      mundanePool:buildLootgenMundanePool({model,form,breakableGearIds:collectBreakableManagedGearIds(gearIndex)}),
+      mundanePool:buildLootgenMundanePool({model,form,breakableGearIds:collectBreakableManagedGearIds(gearIndex),narrativeByGearId:narrativeCatalog.byGearId}),
       magicPool:form.includeMagicItems?buildLootgenMagicPool({form,documents:magicDocuments}):[]};
   }
   async generate(form, options={}) {
