@@ -1,5 +1,5 @@
 import { LOOTGEN_TEMPLATE_ITEM_TYPE, MODULE_ID } from "../constants.js";
-import { normalizeLootgenForm } from "./lootgen-generator.js?v=1.4.266";
+import { normalizeLootgenForm } from "./lootgen-generator.js?v=1.4.314";
 
 export const LOOTGEN_TEMPLATE_ITEM_SCHEMA_VERSION = 1;
 export const LOOTGEN_TEMPLATE_MIGRATION_VERSION = 1;
