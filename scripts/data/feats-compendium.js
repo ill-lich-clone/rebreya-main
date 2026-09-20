@@ -4,7 +4,7 @@ import {
   FEATS_COMPENDIUM_NAME,
   GLOSSARY_COMPENDIUM_NAME,
   MODULE_ID
-} from "../constants.js";
+} from "../constants.js?v=1.4.315";
 import { bringAppToFront } from "../ui.js";
 import {
   buildNamedIconLookup,
@@ -17,8 +17,10 @@ import {
 import { syncManagedDocumentsOnActiveGm } from "./managed-compendium-sync.js";
 import { buildSlug } from "./item-classification.js";
 import { renderDescriptionMarkdown } from "./markdown-description.js";
-import { buildCompendiumItemReferenceIndex } from "./compendium-item-reference-index.js";
-import { linkFeatDescriptionHtml } from "./feat-reference-linker.js";
+import { getActionReferenceDefinitions } from "./actions-compendium.js?v=1.4.315";
+import { loadGlossaryReferenceDefinitions } from "./glossary-compendium.js?v=1.4.315";
+import { buildCompendiumItemReferenceIndex } from "./compendium-item-reference-index.js?v=1.4.315";
+import { linkFeatDescriptionHtml } from "./feat-reference-linker.js?v=1.4.315";
 
 const PACK_ID = `world.${FEATS_COMPENDIUM_NAME}`;
 const DND5E_SYSTEM_ID = "dnd5e";
@@ -597,21 +599,49 @@ async function getOptionalPackDocuments(packId) {
 }
 
 function linkFeatDescriptions(feats, referenceIndex) {
-  return feats.map((feat) => {
+  const linked = [];
+  const ambiguous = [];
+  const unresolved = [];
+  const linkedFeats = feats.map((feat) => {
     const next = foundry.utils.deepClone(feat);
     const documentId = referenceIndex.documentIdByFeatId.get(feat.featId);
     next.documentId = documentId;
     const selfUuid = `Compendium.world.${FEATS_COMPENDIUM_NAME}.Item.${documentId}`;
-    next.system.description.value = linkFeatDescriptionHtml(
-      next.system.description.value,
-      { matcher: referenceIndex.matcher, selfUuid }
-    ).html;
-    next.system.description.chat = linkFeatDescriptionHtml(
-      next.system.description.chat,
-      { matcher: referenceIndex.matcher, selfUuid }
-    ).html;
+    for (const field of ["value", "chat"]) {
+      const fieldPath = `system.description.${field}`;
+      const result = linkFeatDescriptionHtml(next.system.description[field], {
+        matcher: referenceIndex.matcher,
+        selfUuid
+      });
+      next.system.description[field] = result.html;
+      linked.push(...result.linked.map((reference) => Object.freeze({
+        featId: feat.featId,
+        field: fieldPath,
+        reference: reference.text,
+        uuid: reference.uuid
+      })));
+      ambiguous.push(...result.ambiguous.map((reference) => Object.freeze({
+        featId: feat.featId,
+        field: fieldPath,
+        reference
+      })));
+      unresolved.push(...result.unresolved.map((reference) => Object.freeze({
+        featId: feat.featId,
+        field: fieldPath,
+        reference
+      })));
+    }
     return next;
   });
+
+  return {
+    feats: linkedFeats,
+    report: Object.freeze({
+      linked: Object.freeze(linked),
+      ambiguous: Object.freeze(ambiguous),
+      unresolved: Object.freeze(unresolved)
+    })
+  };
 }
 
 async function findFeatDocument(pack, featId, fallbackName = "") {
@@ -646,7 +676,20 @@ async function findFeatDocument(pack, featId, fallbackName = "") {
 }
 
 export class FeatsCompendiumService {
+  constructor({
+    getActionReferences = getActionReferenceDefinitions,
+    loadGlossaryReferences = loadGlossaryReferenceDefinitions
+  } = {}) {
+    this.getActionReferences = getActionReferences;
+    this.loadGlossaryReferences = loadGlossaryReferences;
+  }
+
   async sync(items = null) {
+    this.lastSyncReport = Object.freeze({
+      linked: Object.freeze([]),
+      ambiguous: Object.freeze([]),
+      unresolved: Object.freeze([])
+    });
     if (!game.user?.isGM || !isDnd5eWorld()) {
       return null;
     }
@@ -656,17 +699,25 @@ export class FeatsCompendiumService {
     const pack = await ensurePack();
     await deduplicateCompendiumFolders(pack);
     const documents = await getPackDocuments(pack);
-    const [actionDocuments, glossaryDocuments] = await Promise.all([
+    const [actionDocuments, glossaryDocuments, expectedGlossary] = await Promise.all([
       getOptionalPackDocuments(`world.${ACTIONS_COMPENDIUM_NAME}`),
-      getOptionalPackDocuments(`world.${GLOSSARY_COMPENDIUM_NAME}`)
+      getOptionalPackDocuments(`world.${GLOSSARY_COMPENDIUM_NAME}`),
+      this.loadGlossaryReferences()
     ]);
     const referenceIndex = buildCompendiumItemReferenceIndex({
       actions: actionDocuments,
       glossary: glossaryDocuments,
       feats: documents,
-      desiredFeats: feats
+      desiredFeats: feats,
+      expectedActions: this.getActionReferences(),
+      expectedGlossary
     });
-    const linkedFeats = linkFeatDescriptions(feats, referenceIndex);
+    const linkedResult = linkFeatDescriptions(feats, referenceIndex);
+    const linkedFeats = linkedResult.feats;
+    this.lastSyncReport = linkedResult.report;
+    if (this.lastSyncReport.ambiguous.length || this.lastSyncReport.unresolved.length) {
+      console.warn(`${MODULE_ID} | Feat reference sync left unresolved or ambiguous mentions.`, this.lastSyncReport);
+    }
     const iconLookup = await buildNamedIconLookup(FEAT_ICON_SEARCH_PATHS, { forceRefresh: true });
     let folderIdByPath = new Map();
     await syncManagedDocumentsOnActiveGm(game, {

@@ -19,6 +19,15 @@ import {
 import { SPELL_INSTANCE_MUTATION_COMMAND } from "../scripts/integrations/spell-instance-socket.js";
 import { SUMMON_LIFECYCLE_MUTATION_COMMAND } from "../scripts/integrations/summon-lifecycle-socket.js";
 
+test("managed compendia sync actions and glossary before feats", async () => {
+  const source = await readFile(new URL("../scripts/main.js", import.meta.url), "utf8");
+  const actions = source.indexOf("await this.actionsCompendium.sync()");
+  const glossary = source.indexOf("await this.glossaryCompendium.sync()");
+  const feats = source.indexOf("await this.featsCompendium.sync()");
+
+  assert.ok(actions >= 0 && actions < glossary && glossary < feats);
+});
+
 function createHooks() {
   const onceCallbacks = new Map();
   const listeners = new Map();
@@ -375,7 +384,7 @@ test("composition root owns one inventory ingress graph and one batch dispatch h
 
   assert.match(
     source,
-    /\.\/data\/inventory-service\.js\?v=1\.4\.282/u,
+    /\.\/data\/inventory-service\.js\?v=1\.4\.314/u,
     "inventory-service cache key must change with the inventory add projection"
   );
   assert.equal(source.match(/new InventoryIngressRuleCompilerCache\(/gu)?.length, 1);

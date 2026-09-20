@@ -61,6 +61,7 @@ test("data reload automatically syncs owned magic item copies through the manage
       "craftsmanConstructCompendium",
       "classesCompendium",
       "actionsCompendium",
+      "glossaryCompendium",
       "downtimeCompendium"
     ]) {
       moduleApi[property] = { async sync() {} };

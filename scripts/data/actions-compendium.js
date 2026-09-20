@@ -55,6 +55,12 @@ function cleanString(value, fallback = "") {
   return text || fallback;
 }
 
+export function buildActionReferenceAliases(name) {
+  const canonicalName = cleanString(name);
+  const withoutMarker = canonicalName.replace(/\s*⚡\s*$/u, "").trim();
+  return withoutMarker && withoutMarker !== canonicalName ? [withoutMarker] : [];
+}
+
 function stableHashId(seed, scope = "id") {
   const source = `${scope}:${seed}`;
   let hashA = 0x811c9dc5;
@@ -83,6 +89,15 @@ function buildAsciiIdentifier(value, fallbackSeed = "action") {
   }
 
   return `rb_${stableHashId(String(fallbackSeed ?? value ?? "action"), "identifier")}`;
+}
+
+export function getActionReferenceDefinitions() {
+  return Object.freeze(ACTION_DEFINITIONS.map((entry) => Object.freeze({
+    sourceId: buildAsciiIdentifier(`glossary-${entry.key}`, entry.name),
+    canonicalName: entry.name,
+    aliases: Object.freeze(buildActionReferenceAliases(entry.name)),
+    kind: "action"
+  })));
 }
 
 function escapeHtml(value) {
@@ -199,6 +214,7 @@ function extractActionEntries(glossaryText) {
       actionId,
       key: entry.key,
       name: entry.name,
+      aliases: buildActionReferenceAliases(entry.name),
       section: entry.section,
       description: body
     };
@@ -215,6 +231,7 @@ function buildActionSignature(entry) {
     actionId: entry.actionId,
     key: entry.key,
     name: entry.name,
+    aliases: entry.aliases,
     section: entry.section,
     description: entry.description
   });
@@ -270,6 +287,7 @@ function createActionItemData(entry, folderIdByPath, iconLookup = null) {
         managed: true,
         sourceType: "glossaryAction",
         actionId: entry.actionId,
+        aliases: entry.aliases,
         section: entry.section,
         signature: buildActionSignature(entry)
       }

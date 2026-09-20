@@ -51,7 +51,7 @@ import {
   getHeldItemEquipPresentation,
   isHeldItemEligible
 } from "./held-items.js?v=1.4.96-npc-held-natural";
-import { getDnd5eSheetStatusPresentation } from "./dnd5e-sheet-status-references.js";
+import { getDnd5eSheetStatusPresentation } from "./dnd5e-sheet-status-references.js?v=1.4.315";
 import { registerCraftsmanSubclassAdvancements } from "./craftsman-subclass-advancements.js";
 import { registerCraftsmanMultiSubclassIntegration } from "./craftsman-multi-subclass.js";
 import { registerGiantTribeAdvancement } from "./giant-tribe-advancement.js?v=1.4.110-giant-tribe-cache-fixes-2";

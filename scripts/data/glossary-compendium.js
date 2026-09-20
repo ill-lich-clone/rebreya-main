@@ -2,7 +2,7 @@ import {
   GLOSSARY_COMPENDIUM_LABEL,
   GLOSSARY_COMPENDIUM_NAME,
   MODULE_ID
-} from "../constants.js";
+} from "../constants.js?v=1.4.315";
 import {
   ensureCompendiumFolders,
   ensurePackSidebarFolder
@@ -12,7 +12,7 @@ import { syncManagedDocumentsOnActiveGm } from "./managed-compendium-sync.js";
 import {
   STATUS_REFERENCE_DATA,
   renderStatusReferenceDescription
-} from "./status-reference-data.js";
+} from "./status-reference-data.js?v=1.4.315";
 
 const PACK_ID = `world.${GLOSSARY_COMPENDIUM_NAME}`;
 const CATALOG_PATH = `modules/${MODULE_ID}/data/glossary-terms.json`;
@@ -216,14 +216,36 @@ function buildStatusLabels() {
   const labels = new Map();
   for (const status of globalThis.CONFIG?.statusEffects ?? []) {
     const statusId = cleanString(status?.id ?? status?._id);
+    const canonicalStatusId = cleanString(status?.flags?.[MODULE_ID]?.statusId);
     const label = localizedStatusLabel(status);
     if (statusId && label) {
       labels.set(statusId, label);
+    }
+    if (canonicalStatusId && label) {
+      labels.set(canonicalStatusId, label);
     }
   }
   labels.set("prone", "Сбитый с ног");
   labels.set("bloodied", "Окровавленный");
   return labels;
+}
+
+export async function loadGlossaryReferenceDefinitions({
+  loadCatalog = loadGlossaryTermCatalog,
+  statuses = STATUS_REFERENCE_DATA,
+  statusLabels = buildStatusLabels()
+} = {}) {
+  const catalog = validateCatalog(await loadCatalog());
+  return Object.freeze(normalizeGlossaryEntries({
+    terms: catalog.terms,
+    statuses,
+    statusLabels
+  }).map((entry) => Object.freeze({
+    sourceId: entry.glossaryTermId,
+    canonicalName: entry.name,
+    aliases: Object.freeze([...entry.aliases]),
+    kind: "term"
+  })));
 }
 
 function buildItemData(entry, folderIdByPath) {

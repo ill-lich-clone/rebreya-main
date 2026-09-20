@@ -3,8 +3,8 @@ import {
   FEATS_COMPENDIUM_NAME,
   GLOSSARY_COMPENDIUM_NAME,
   MODULE_ID
-} from "../constants.js";
-import { buildFeatReferenceMatcher } from "./feat-reference-linker.js";
+} from "../constants.js?v=1.4.315";
+import { buildFeatReferenceMatcher } from "./feat-reference-linker.js?v=1.4.315";
 import { createStableGearDocumentId } from "./gear-document-ids.js";
 
 const FOUNDRY_DOCUMENT_ID_PATTERN = /^[A-Za-z0-9]{16}$/u;
@@ -92,23 +92,52 @@ function desiredFeatAliases(feat) {
   );
 }
 
+function unresolvedExpectedTargets(expected, resolvedTargets, kind) {
+  const resolvedSourceIds = new Set(resolvedTargets.map((target) => target.sourceId));
+  const seen = new Set();
+  const unresolved = [];
+  for (const reference of Array.isArray(expected) ? expected : []) {
+    const sourceId = cleanString(reference?.sourceId);
+    const canonicalName = cleanString(reference?.canonicalName ?? reference?.name);
+    if (!sourceId || !canonicalName || resolvedSourceIds.has(sourceId) || seen.has(sourceId)) {
+      continue;
+    }
+    seen.add(sourceId);
+    unresolved.push({
+      uuid: "",
+      canonicalName,
+      aliases: aliasesOf(reference?.aliases),
+      kind,
+      sourceId,
+      unresolved: true
+    });
+  }
+  return unresolved;
+}
+
 export function buildCompendiumItemReferenceIndex({
   actions = [],
   glossary = [],
   feats = [],
-  desiredFeats = []
+  desiredFeats = [],
+  expectedActions = [],
+  expectedGlossary = []
 } = {}) {
+  const actionTargets = collectDocumentTargets(actions, {
+    packName: ACTIONS_COMPENDIUM_NAME,
+    kind: "action",
+    sourceFlag: "actionId"
+  });
+  const glossaryTargets = collectDocumentTargets(glossary, {
+    packName: GLOSSARY_COMPENDIUM_NAME,
+    kind: "term",
+    sourceFlag: "glossaryTermId"
+  });
   const targets = [
-    ...collectDocumentTargets(actions, {
-      packName: ACTIONS_COMPENDIUM_NAME,
-      kind: "action",
-      sourceFlag: "actionId"
-    }),
-    ...collectDocumentTargets(glossary, {
-      packName: GLOSSARY_COMPENDIUM_NAME,
-      kind: "term",
-      sourceFlag: "glossaryTermId"
-    })
+    ...actionTargets,
+    ...glossaryTargets,
+    ...unresolvedExpectedTargets(expectedActions, actionTargets, "action"),
+    ...unresolvedExpectedTargets(expectedGlossary, glossaryTargets, "term")
   ];
   const existingIdByFeatId = existingFeatIds(feats);
   const documentIdByFeatId = new Map();

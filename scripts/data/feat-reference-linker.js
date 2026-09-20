@@ -39,6 +39,7 @@ function freezeTarget(target, label) {
       : []),
     kind: cleanString(target?.kind),
     sourceId: cleanString(target?.sourceId),
+    unresolved: target?.unresolved === true,
     label
   });
 }
@@ -47,7 +48,8 @@ export function buildFeatReferenceMatcher(targets = []) {
   const aliases = new Map();
   for (const target of Array.isArray(targets) ? targets : []) {
     const uuid = cleanString(target?.uuid);
-    if (!uuid || /[\]}]/u.test(uuid)) {
+    const unresolved = target?.unresolved === true;
+    if ((!uuid && !unresolved) || /[\]}]/u.test(uuid)) {
       throw new TypeError("Feat reference target requires a safe UUID");
     }
 
@@ -58,8 +60,12 @@ export function buildFeatReferenceMatcher(targets = []) {
         continue;
       }
       const bucket = aliases.get(key) ?? [];
-      if (!bucket.some((candidate) => candidate.uuid === uuid)) {
-        bucket.push(freezeTarget({ ...target, uuid }, displayLabel));
+      if (!bucket.some((candidate) => (
+        candidate.uuid === uuid
+        && candidate.sourceId === cleanString(target?.sourceId)
+        && candidate.unresolved === unresolved
+      ))) {
+        bucket.push(freezeTarget({ ...target, uuid, unresolved }, displayLabel));
       }
       aliases.set(key, bucket);
     }
@@ -105,6 +111,10 @@ function findTagEnd(html, start) {
   return -1;
 }
 
+function rawTextElementName(tag) {
+  return /^<\s*(script|style|textarea|title)(?:\s|>)/iu.exec(tag)?.[1]?.toLocaleLowerCase("en") ?? "";
+}
+
 function scanHtml(html) {
   const segments = [];
   let textStart = 0;
@@ -130,15 +140,43 @@ function scanHtml(html) {
       continue;
     }
 
+    if (html.startsWith("<!--", index)) {
+      const commentEnd = html.indexOf("-->", index + 4);
+      if (commentEnd < 0) {
+        return null;
+      }
+      flushText(index);
+      segments.push({ type: "protected", value: html.slice(index, commentEnd + 3) });
+      index = commentEnd + 3;
+      textStart = index;
+      continue;
+    }
+
     if (html[index] === "<") {
       const tagEnd = findTagEnd(html, index);
       if (tagEnd < 0) {
         return null;
       }
       flushText(index);
-      segments.push({ type: "tag", value: html.slice(index, tagEnd + 1) });
+      const tag = html.slice(index, tagEnd + 1);
+      segments.push({ type: "tag", value: tag });
       index = tagEnd + 1;
       textStart = index;
+      const rawElement = rawTextElementName(tag);
+      if (rawElement && !/\/\s*>$/u.test(tag)) {
+        const closingPattern = new RegExp(`<\\/\\s*${rawElement}\\s*>`, "giu");
+        closingPattern.lastIndex = index;
+        const closingMatch = closingPattern.exec(html);
+        if (!closingMatch) {
+          return null;
+        }
+        if (closingMatch.index > index) {
+          segments.push({ type: "protected", value: html.slice(index, closingMatch.index) });
+        }
+        segments.push({ type: "tag", value: closingMatch[0] });
+        index = closingPattern.lastIndex;
+        textStart = index;
+      }
       continue;
     }
 
@@ -162,7 +200,9 @@ function linkTextSegment(text, {
   selfUuid,
   linked,
   ambiguous,
-  ambiguousKeys
+  ambiguousKeys,
+  unresolved,
+  unresolvedKeys
 }) {
   if (!matcher.pattern || !text) {
     return text;
@@ -172,7 +212,14 @@ function linkTextSegment(text, {
   return text.replace(pattern, (match, prefix, displayText) => {
     const key = normalizeReferenceText(displayText);
     const bucket = matcher.aliases.get(key) ?? [];
-    const distinctUuids = new Set(bucket.map((target) => target.uuid));
+    const distinctUuids = new Set(bucket.map((target) => target.uuid).filter(Boolean));
+    if (distinctUuids.size === 0 && bucket.some((target) => target.unresolved === true)) {
+      if (!unresolvedKeys.has(key)) {
+        unresolvedKeys.add(key);
+        unresolved.push(displayText);
+      }
+      return match;
+    }
     if (distinctUuids.size !== 1) {
       if (distinctUuids.size > 1 && !ambiguousKeys.has(key)) {
         ambiguousKeys.add(key);
@@ -181,7 +228,8 @@ function linkTextSegment(text, {
       return match;
     }
 
-    const target = bucket[0];
+    const [resolvedUuid] = distinctUuids;
+    const target = bucket.find((candidate) => candidate.uuid === resolvedUuid);
     if (!target || target.uuid === selfUuid) {
       return match;
     }
@@ -206,13 +254,16 @@ export function linkFeatDescriptionHtml(html, {
     return {
       html: source,
       linked: [],
-      ambiguous: []
+      ambiguous: [],
+      unresolved: []
     };
   }
 
   const linked = [];
   const ambiguous = [];
   const ambiguousKeys = new Set();
+  const unresolved = [];
+  const unresolvedKeys = new Set();
   const output = [];
   let anchorDepth = 0;
 
@@ -234,7 +285,9 @@ export function linkFeatDescriptionHtml(html, {
         selfUuid: cleanString(selfUuid),
         linked,
         ambiguous,
-        ambiguousKeys
+        ambiguousKeys,
+        unresolved,
+        unresolvedKeys
       }));
     }
     else {
@@ -245,6 +298,7 @@ export function linkFeatDescriptionHtml(html, {
   return {
     html: output.join(""),
     linked,
-    ambiguous
+    ambiguous,
+    unresolved
   };
 }

@@ -1,5 +1,5 @@
 import { MODULE_ID } from "../constants.js";
-import { createPerformerActivePerformanceActivity } from "../data/feats-compendium.js";
+import { createPerformerActivePerformanceActivity } from "../data/feats-compendium.js?v=1.4.315";
 import {
   cleanText,
   collectionValues,

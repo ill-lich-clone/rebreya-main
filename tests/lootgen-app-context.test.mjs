@@ -57,7 +57,8 @@ test("lootgen mundane candidates carry authored package formulas", () => {
     multipleAppearance: "2к12",
     typeLabel: "Снаряжение",
     stackable: true,
-    breakable: false
+    breakable: false,
+    narrativeVariants: []
   });
 });
 

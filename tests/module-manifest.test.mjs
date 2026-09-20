@@ -69,8 +69,8 @@ test("module manifest loads an unpinned canonical entrypoint for page-refresh up
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const [entrypoint] = manifest.esmodules;
 
-  assert.equal(manifest.version, "1.4.314");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.314.js"]);
+  assert.equal(manifest.version, "1.4.315");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.315.js"]);
   assert.doesNotMatch(entrypoint, /[?#]/u);
 
   const entrypointSource = await readFile(new URL(entrypoint, manifestUrl), "utf8");
@@ -89,6 +89,48 @@ test("Lootgen window import uses the current release cache version", async () =>
     `const MODULE_STYLE_VERSION = "${manifest.version.replaceAll(".", "\\.")}";`,
     "u"
   ));
+});
+
+test("glossary and feat-link owners use the current release cache key", async () => {
+  const manifest = JSON.parse(await readFile(new URL("../module.json", import.meta.url), "utf8"));
+  const version = manifest.version.replaceAll(".", "\\.");
+  const [
+    mainSource,
+    featsSource,
+    indexSource,
+    glossarySource,
+    sheetSource,
+    statusPresentationSource,
+    performerSource
+  ] = await Promise.all([
+    readFile(new URL("../scripts/main.js", import.meta.url), "utf8"),
+    readFile(new URL("../scripts/data/feats-compendium.js", import.meta.url), "utf8"),
+    readFile(new URL("../scripts/data/compendium-item-reference-index.js", import.meta.url), "utf8"),
+    readFile(new URL("../scripts/data/glossary-compendium.js", import.meta.url), "utf8"),
+    readFile(new URL("../scripts/integrations/dnd5e-sheet-extensions.js", import.meta.url), "utf8"),
+    readFile(new URL("../scripts/integrations/dnd5e-sheet-status-references.js", import.meta.url), "utf8"),
+    readFile(new URL("../scripts/combat/performer-automation-service.js", import.meta.url), "utf8")
+  ]);
+
+  for (const [source, owner] of [
+    [mainSource, "feats-compendium"],
+    [mainSource, "glossary-compendium"],
+    [mainSource, "actions-compendium"],
+    [featsSource, "compendium-item-reference-index"],
+    [featsSource, "feat-reference-linker"],
+    [featsSource, "actions-compendium"],
+    [featsSource, "glossary-compendium"],
+    [featsSource, "constants"],
+    [indexSource, "feat-reference-linker"],
+    [indexSource, "constants"],
+    [glossarySource, "status-reference-data"],
+    [glossarySource, "constants"],
+    [sheetSource, "dnd5e-sheet-status-references"],
+    [statusPresentationSource, "status-reference-data"],
+    [performerSource, "feats-compendium"]
+  ]) {
+    assert.match(source, new RegExp(`${owner}\\.js\\?v=${version}`, "u"), owner);
+  }
 });
 
 test("canonical entrypoint cache-busts the player-list inventory token launcher", async () => {
@@ -339,7 +381,7 @@ test("module keeps recent published entrypoint URLs as canonical compatibility f
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
 
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.314.js"]);
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.315.js"]);
 
   for (const fileName of ["main-1.4.98.js", "main-1.4.99.js", "main-1.4.100.js"]) {
     const forwarderSource = await readFile(new URL(`../scripts/${fileName}`, import.meta.url), "utf8");
@@ -513,7 +555,7 @@ test("legacy settings relay fails closed when a world-setting socket is unavaila
 test("module stylesheet cache bust loads the storage deposit interaction styles", async () => {
   const entrypointSource = await readCanonicalEntrypointSource();
 
-  assert.match(entrypointSource, /const MODULE_STYLE_VERSION = "1\.4\.314";/u);
+  assert.match(entrypointSource, /const MODULE_STYLE_VERSION = "1\.4\.315";/u);
   assert.match(entrypointSource, /const stylesheetHref = `\$\{MODULE_STYLE_PATH\}\?v=\$\{encodeURIComponent\(MODULE_STYLE_VERSION\)\}`;/u);
   assert.doesNotMatch(entrypointSource, /module\?\.version\s*\?\?/u);
 });

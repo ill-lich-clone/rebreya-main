@@ -13,7 +13,8 @@ import { MaterialsCompendiumService } from "./data/materials-compendium.js";
 import { GearCompendiumService } from "./data/gear-compendium.js?v=1.4.292";
 import { repairWorldAmmunitionCompatibility } from "./data/ammunition-compatibility.js?v=1.4.147-native-ammunition";
 import { MagicItemsCompendiumService } from "./data/magic-items-compendium.js?v=1.4.302-ability-belts";
-import { FeatsCompendiumService } from "./data/feats-compendium.js";
+import { FeatsCompendiumService } from "./data/feats-compendium.js?v=1.4.315";
+import { GlossaryCompendiumService } from "./data/glossary-compendium.js?v=1.4.315";
 import { BackgroundsCompendiumService } from "./data/backgrounds-compendium.js";
 import { StatesCompendiumService } from "./data/states-compendium.js";
 import { RacesCompendiumService } from "./data/races-compendium.js?v=1.4.110-giant-tribe-cache-fixes-2&implants=1";
@@ -30,7 +31,7 @@ import {
 } from "./data/transport-instance-service.js";
 import { TransportFuelService } from "./data/transport-fuel-service.js";
 import { SpellsCompendiumService } from "./data/spells-compendium.js?v=1.4.109-counterspell-sanitize";
-import { ActionsCompendiumService } from "./data/actions-compendium.js";
+import { ActionsCompendiumService } from "./data/actions-compendium.js?v=1.4.315";
 import { DowntimeCompendiumService } from "./data/downtime-compendium.js";
 import { FeatChoiceAutomationService, registerFeatChoiceAutomationHooks } from "./automation/feat-choice-service.js";
 import { EconomyRepository } from "./data/repository.js?v=1.4.128-lootgen-multiplicity";
@@ -362,7 +363,7 @@ import { registerInventorySyncHooks } from "./integrations/inventory-sync.js?v=1
 import { runMapObjectTokenMacro } from "./integrations/map-object-token-macro.js?v=1.4.97-map-object-token";
 import { refreshSmallTimeDateDisplay, registerSmallTimeIntegration, syncSmallTimeToCalendarTime } from "./integrations/smalltime-compat.js";
 import { registerRationFoodConversionHook } from "./integrations/ration-food-conversion.js";
-import { registerMagicWeaponTemplateHook } from "./integrations/magic-weapon-template.js?v=1.4.314";
+import { registerMagicWeaponTemplateHook } from "./integrations/magic-weapon-template.js?v=1.4.315";
 import { registerStorageTokenHooks } from "./integrations/storage-token-hooks.js?v=1.4.197-door-trigger-target";
 import { registerDoorTriggerHooks } from "./integrations/door-trigger-hooks.js?v=1.4.199-door-overlay-anchor";
 import { registerCraftsmanGadgetHooks } from "./integrations/craftsman-gadget-hooks.js";
@@ -467,7 +468,7 @@ const LEGACY_WORLD_MUTATION_SOCKET_TYPES = new Set([
   SOCKET_EVENT_LOOTGEN_CLAIM_COINS
 ]);
 const MODULE_STYLE_PATH = `modules/${MODULE_ID}/styles/main.css`;
-const MODULE_STYLE_VERSION = "1.4.314";
+const MODULE_STYLE_VERSION = "1.4.315";
 const SECONDS_PER_HOUR = 3600;
 const SECONDS_PER_DAY = 86400;
 const TRAVEL_DAY_HOURS = 8;
@@ -1547,6 +1548,7 @@ export class RebreyaMainModule {
     });
     this.classesCompendium = new ClassesCompendiumService();
     this.actionsCompendium = new ActionsCompendiumService();
+    this.glossaryCompendium = new GlossaryCompendiumService();
     this.downtimeCompendium = new DowntimeCompendiumService();
     this.traderService = new TraderService(this, {
       stateRepository: this.traderStateRepository
@@ -4339,6 +4341,22 @@ export class RebreyaMainModule {
     }
 
     try {
+      await this.actionsCompendium.sync();
+    }
+    catch (error) {
+      console.error(`${MODULE_ID} | Failed to sync actions compendium.`, error);
+      ui.notifications?.warn("Не удалось синхронизировать компендиум действий.");
+    }
+
+    try {
+      await this.glossaryCompendium.sync();
+    }
+    catch (error) {
+      console.error(`${MODULE_ID} | Failed to sync glossary compendium.`, error);
+      ui.notifications?.warn("Не удалось синхронизировать компендиум терминов Rebreya.");
+    }
+
+    try {
       await this.featsCompendium.sync();
     }
     catch (error) {
@@ -4395,14 +4413,6 @@ export class RebreyaMainModule {
     catch (error) {
       console.error(`${MODULE_ID} | Failed to sync classes or Craftsman construct compendium.`, error);
       ui.notifications?.warn("Не удалось синхронизировать компендиумы классов, архетипов или Конструкта.");
-    }
-
-    try {
-      await this.actionsCompendium.sync();
-    }
-    catch (error) {
-      console.error(`${MODULE_ID} | Failed to sync actions compendium.`, error);
-      ui.notifications?.warn("Не удалось синхронизировать компендиум действий.");
     }
 
     try {

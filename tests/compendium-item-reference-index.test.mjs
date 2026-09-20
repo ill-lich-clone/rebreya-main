@@ -63,7 +63,8 @@ test("reference index accepts managed source identities and keeps cross-pack ali
     actions: [fakeDocument({
       id: "ActionDocument01",
       actionId: "aim",
-      name: "Прицеливание"
+      name: "Провоцированные атаки ⚡",
+      aliases: ["Провоцированные атаки"]
     })],
     glossary: [
       fakeDocument({
@@ -89,7 +90,7 @@ test("reference index accepts managed source identities and keeps cross-pack ali
     desiredFeats: []
   });
   const linked = linkFeatDescriptionHtml(
-    "<p>Прицеливание, Прицел, Общее имя и Игнорировать.</p>",
+    "<p>Провоцированные атаки, Прицел, Общее имя и Игнорировать.</p>",
     { matcher: index.matcher }
   );
 
@@ -97,4 +98,26 @@ test("reference index accepts managed source identities and keeps cross-pack ali
   assert.match(linked.html, /Compendium\.world\.rebreya-glossary\.Item\.GlossaryTerm0001/u);
   assert.doesNotMatch(linked.html, /UnmanagedTerm001/u);
   assert.deepEqual(linked.ambiguous, ["Общее имя"]);
+});
+
+test("reference index reports known action aliases whose managed target is missing", () => {
+  const index = buildCompendiumItemReferenceIndex({
+    actions: [],
+    glossary: [],
+    feats: [],
+    desiredFeats: [],
+    expectedActions: [{
+      sourceId: "glossary-opportunity-attack",
+      canonicalName: "Провоцированные атаки ⚡",
+      aliases: ["Провоцированные атаки"],
+      kind: "action"
+    }]
+  });
+
+  const result = linkFeatDescriptionHtml("<p>Провоцированные атаки.</p>", {
+    matcher: index.matcher
+  });
+
+  assert.deepEqual(result.unresolved, ["Провоцированные атаки"]);
+  assert.equal(result.html, "<p>Провоцированные атаки.</p>");
 });

@@ -196,7 +196,37 @@ test("feat sync links actual preallocated UUIDs once and preserves self referenc
   const glossaryPack = {
     collection: "world.rebreya-glossary",
     async getDocuments() {
-      return [glossaryDocument];
+      return [
+        glossaryDocument,
+        {
+          id: "GlossaryAmbig001",
+          name: "Первый общий термин",
+          flags: {
+            "rebreya-main": {
+              managed: true,
+              glossaryTermId: "term:ambiguous-one",
+              aliases: ["Общий термин"]
+            }
+          },
+          getFlag(scope, key) {
+            return this.flags?.[scope]?.[key];
+          }
+        },
+        {
+          id: "GlossaryAmbig002",
+          name: "Второй общий термин",
+          flags: {
+            "rebreya-main": {
+              managed: true,
+              glossaryTermId: "term:ambiguous-two",
+              aliases: ["общий термин"]
+            }
+          },
+          getFlag(scope, key) {
+            return this.flags?.[scope]?.[key];
+          }
+        }
+      ];
     }
   };
   const actionsPack = {
@@ -251,7 +281,7 @@ test("feat sync links actual preallocated UUIDs once and preserves self referenc
       system: {
         identifier: "first-feat",
         description: {
-          value: "Первая черта делает цель окровавленного и использует Вторая черта.",
+          value: "Первая черта делает цель окровавленного, использует Вторая черта, оставляет Общий термин неоднозначным и разрешает Провоцированные атаки.",
           chat: ""
         }
       },
@@ -274,7 +304,9 @@ test("feat sync links actual preallocated UUIDs once and preserves self referenc
   ];
 
   try {
-    const service = new FeatsCompendiumService();
+    const service = new FeatsCompendiumService({
+      loadGlossaryReferences: async () => []
+    });
     await service.sync(rawFeats);
     const first = documents.find((document) => document.name === "Первая черта");
     const second = documents.find((document) => document.name === "Вторая черта");
@@ -288,7 +320,18 @@ test("feat sync links actual preallocated UUIDs once and preserves self referenc
     );
     assert.match(firstHtml, /@UUID\[Compendium\.world\.rebreya-glossary\.Item\.BloodiedGlossary\]\{окровавленного\}/u);
     assert.doesNotMatch(firstHtml, /@UUID\[[^\]]+\]\{Первая черта\}/u);
+    assert.doesNotMatch(firstHtml, /@UUID\[[^\]]+\]\{Общий термин\}/u);
     assert.equal((firstHtml.match(/@UUID\[/gu) ?? []).length, 2);
+    assert.deepEqual(service.lastSyncReport.ambiguous, [{
+      featId: "first-feat",
+      field: "system.description.value",
+      reference: "Общий термин"
+    }]);
+    assert.deepEqual(service.lastSyncReport.unresolved, [{
+      featId: "first-feat",
+      field: "system.description.value",
+      reference: "Провоцированные атаки"
+    }]);
 
     await service.sync(rawFeats);
     assert.equal(createBatches.length, 1);

@@ -5,6 +5,7 @@ import { createStableGearDocumentId } from "../scripts/data/gear-document-ids.js
 import { STATUS_REFERENCE_DATA } from "../scripts/data/status-reference-data.js";
 import {
   GlossaryCompendiumService,
+  loadGlossaryReferenceDefinitions,
   normalizeGlossaryEntries
 } from "../scripts/data/glossary-compendium.js";
 
@@ -41,6 +42,31 @@ test("glossary normalization rejects colliding canonical names and aliases", () 
     statuses: {},
     statusLabels: new Map()
   }), /duplicate glossary lookup.*размах/iu);
+});
+
+test("glossary reference definitions expose stable term identities without requiring pack documents", async () => {
+  const references = await loadGlossaryReferenceDefinitions({
+    loadCatalog: async () => ({
+      schemaVersion: 1,
+      source: { sheetTitle: "Глоссарий 0.1" },
+      terms: [{
+        termId: "heavy",
+        name: "Тяжёлое",
+        description: "Свойство оружия.",
+        section: "Свойства оружия",
+        aliases: ["Тяжелое"]
+      }]
+    }),
+    statuses: {},
+    statusLabels: new Map()
+  });
+
+  assert.deepEqual(references, [{
+    sourceId: "term:heavy",
+    canonicalName: "Тяжёлое",
+    aliases: ["Тяжелое"],
+    kind: "term"
+  }]);
 });
 
 test("glossary sync creates observer feat cards once and updates stale managed data in place", async () => {
@@ -91,7 +117,14 @@ test("glossary sync creates observer feat cards once and updates stale managed d
   const gm = { id: "gm", isGM: true, active: true };
   globalThis.CONST = { DOCUMENT_OWNERSHIP_LEVELS: { OBSERVER: 2 } };
   globalThis.CONFIG = {
-    statusEffects: [{ id: "prone", name: "Сбитый с ног" }]
+    statusEffects: [
+      { id: "prone", name: "Сбитый с ног" },
+      {
+        id: "rbOpenPos",
+        name: "Открытая позиция",
+        flags: { [MODULE_ID]: { statusId: "rebreya-open-position" } }
+      }
+    ]
   };
   globalThis.game = {
     user: gm,
@@ -136,13 +169,16 @@ test("glossary sync creates observer feat cards once and updates stale managed d
           aliases: []
         }]
       }),
-      statuses: { prone: STATUS_REFERENCE_DATA.prone }
+      statuses: {
+        prone: STATUS_REFERENCE_DATA.prone,
+        "rebreya-open-position": STATUS_REFERENCE_DATA["rebreya-open-position"]
+      }
     });
 
     await service.sync();
     assert.equal(packMetadata[0].ownership.PLAYER, "OBSERVER");
     assert.deepEqual(new Set(folders.map((folder) => folder.name)), new Set(["Состояния", "Свойства оружия"]));
-    assert.equal(documents.length, 2);
+    assert.equal(documents.length, 3);
     assert.equal(createBatches.length, 1);
     for (const document of documents) {
       assert.equal(document.type, "feat");
@@ -154,6 +190,7 @@ test("glossary sync creates observer feat cards once and updates stale managed d
     }
 
     const prone = documents.find((document) => document.name === "Сбитый с ног");
+    assert.ok(documents.some((document) => document.name === "Открытая позиция"));
     const originalId = prone.id;
     prone.system.activities = { stale: { type: "utility" } };
     let updateCount = 0;
@@ -164,7 +201,7 @@ test("glossary sync creates observer feat cards once and updates stale managed d
 
     await service.sync();
     assert.equal(createBatches.length, 1);
-    assert.equal(documents.length, 2);
+    assert.equal(documents.length, 3);
     assert.equal(updateCount, 1);
     assert.equal(prone.id, originalId);
   }

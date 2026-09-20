@@ -147,8 +147,49 @@ test("malformed html passes through without partial linking", () => {
 
   assert.deepEqual(
     linkFeatDescriptionHtml(html, { matcher }),
-    { html, linked: [], ambiguous: [] }
+    { html, linked: [], ambiguous: [], unresolved: [] }
   );
+});
+
+test("linker leaves known missing targets plain and reports them as unresolved", () => {
+  const matcher = buildFeatReferenceMatcher([{
+    uuid: "",
+    canonicalName: "Провоцированные атаки ⚡",
+    aliases: ["Провоцированные атаки"],
+    kind: "action",
+    sourceId: "glossary-opportunity-attack",
+    unresolved: true
+  }]);
+
+  const result = linkFeatDescriptionHtml("<p>Провоцированные атаки.</p>", { matcher });
+
+  assert.equal(result.html, "<p>Провоцированные атаки.</p>");
+  assert.deepEqual(result.unresolved, ["Провоцированные атаки"]);
+});
+
+test("a resolved target wins over an unresolved alias regardless of input order", () => {
+  const matcher = buildFeatReferenceMatcher([
+    {
+      uuid: "",
+      canonicalName: "Общий термин",
+      aliases: [],
+      kind: "term",
+      sourceId: "missing",
+      unresolved: true
+    },
+    {
+      uuid: "Compendium.world.rebreya-glossary.Item.ResolvedTerm0001",
+      canonicalName: "Общий термин",
+      aliases: [],
+      kind: "term",
+      sourceId: "resolved"
+    }
+  ]);
+
+  const result = linkFeatDescriptionHtml("<p>Общий термин.</p>", { matcher });
+
+  assert.match(result.html, /@UUID\[Compendium\.world\.rebreya-glossary\.Item\.ResolvedTerm0001\]/u);
+  assert.deepEqual(result.unresolved, []);
 });
 
 test("linker is idempotent and links visible text inside table cells", () => {
@@ -168,4 +209,28 @@ test("linker is idempotent and links visible text inside table cells", () => {
   assert.match(first.html, /<td>@UUID\[Compendium\.world\.rebreya-glossary\.Item\.term000000000001\]\{Термин\}<\/td>/u);
   assert.equal(second.html, first.html);
   assert.deepEqual(second.linked, []);
+});
+
+test("linker preserves comments and raw-text element contents", () => {
+  const matcher = buildFeatReferenceMatcher([{
+    uuid: "Compendium.world.rebreya-feats.Item.TargetFeat000001",
+    canonicalName: "Целевая черта",
+    aliases: [],
+    kind: "feat",
+    sourceId: "target"
+  }]);
+  const html = [
+    "<!-- Целевая черта -->",
+    "<script>const label = 'Целевая черта';</script>",
+    "<style>.Целевая черта { color: red; }</style>",
+    "<textarea>Целевая черта</textarea>",
+    "<p>Целевая черта</p>"
+  ].join("");
+
+  const result = linkFeatDescriptionHtml(html, { matcher });
+
+  assert.equal((result.html.match(/@UUID\[/gu) ?? []).length, 1);
+  assert.match(result.html, /^<!-- Целевая черта --><script>const label = 'Целевая черта';<\/script>/u);
+  assert.match(result.html, /<style>\.Целевая черта \{ color: red; \}<\/style><textarea>Целевая черта<\/textarea>/u);
+  assert.match(result.html, /<p>@UUID\[[^\]]+\]\{Целевая черта\}<\/p>$/u);
 });
