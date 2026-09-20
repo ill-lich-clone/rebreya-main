@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -985,6 +985,45 @@ test("gear custom icons override stock fallbacks by item name", () => {
     createDnd5eItemData(byId.get("mushket"), new Map(), iconLookup).img,
     "modules/rebreya-main/templates/icons/weapons/%D0%9C%D1%83%D1%88%D0%BA%D0%B5%D1%82.webp"
   );
+});
+
+test("fishing gear resolves to its dedicated module-owned icons", async () => {
+  const gear = JSON.parse(readFileSync(join(TESTS_DIR, "..", "data", "gear.json"), "utf8").replace(/^\uFEFF/u, ""));
+  const byId = new Map(gear.map((item) => [item.id, item]));
+  const iconDirectory = join(TESTS_DIR, "..", "templates", "icons", "Goods");
+  const iconFiles = readdirSync(iconDirectory, { withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .map((entry) => `modules/rebreya-main/templates/icons/Goods/${entry.name}`);
+  const originalFilePicker = globalThis.FilePicker;
+  globalThis.FilePicker = function MockFilePicker() {
+  };
+  globalThis.FilePicker.browse = async (_source, path) => ({
+    files: path === "modules/rebreya-main/templates/icons/Goods" ? iconFiles : [],
+    dirs: []
+  });
+
+  const expectedIcons = new Map([
+    ["обычная-наживка", "Обычная наживка.webp"],
+    ["прецизионная-удочка", "Прецизионная удочка.webp"],
+    ["простая-удочка", "Простая удочка.webp"],
+    ["профессиональная-удочка", "Профессиональная удочка.webp"],
+    ["удочка-мастера", "Удочка мастера.webp"],
+    ["усиленная-удочка", "Усиленная удочка.webp"]
+  ]);
+
+  try {
+    const iconLookup = await buildNamedIconLookup(["modules/rebreya-main/templates/icons/Goods"], { forceRefresh: true });
+    for (const [id, filename] of expectedIcons) {
+      assert.equal(
+        createDnd5eItemData(byId.get(id), new Map(), iconLookup).img,
+        `modules/rebreya-main/templates/icons/Goods/${encodeURIComponent(filename)}`,
+        `${id} should use its dedicated fishing icon`
+      );
+    }
+  }
+  finally {
+    globalThis.FilePicker = originalFilePicker;
+  }
 });
 
 test("four gear coin templates use distinct module-owned denomination icons", () => {
