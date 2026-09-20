@@ -2219,8 +2219,18 @@ test("character sheet status references use Rebreya text and compact Russian lab
     });
     unconsciousRow.classList.add("condition", "content-link");
 
+    const proneTitle = new stubs.HTMLElement();
+    proneTitle.classList.add("title");
+    proneTitle.textContent = "Сбитый с ног";
+    const proneRow = new stubs.HTMLElement({
+      dataset: { conditionId: "prone", action: "toggleCondition" },
+      selectors: { ".name-stacked .title": proneTitle }
+    });
+    proneRow.classList.add("condition", "content-link");
+
     const conditionsList = new stubs.HTMLElement();
     conditionsList.append(unconsciousRow);
+    conditionsList.append(proneRow);
     const root = new stubs.HTMLElement({
       selectors: {
         ".effects-element .conditions-list": conditionsList
@@ -2263,6 +2273,8 @@ test("character sheet status references use Rebreya text and compact Russian lab
     assert.match(unconsciousRow.dataset.tooltip, /Недееспособный/u);
     assert.equal(unconsciousRow.dataset.tooltipClass, "dnd5e2 dnd5e-tooltip item-tooltip themed theme-light");
     assert.equal(unconsciousTitle.getAttribute("lang"), "ru");
+    assert.match(proneRow.dataset.tooltip, /только ползая/u);
+    assert.match(proneRow.dataset.tooltip, /провоцирует атаки/u);
 
     const provokedRow = conditionsList.children.find((node) => node.dataset.rebreyaCombatStatusId === "rebreya-provoked");
     const provokedTitle = findTreeNode(
