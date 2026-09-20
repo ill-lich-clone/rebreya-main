@@ -16,7 +16,7 @@ function declaration(registryOrder, definition) {
 export const SHEET_REGISTRY = Object.freeze({
   baseGear: declaration(0, {
     sheetTitle: "Общий компендиум снаряжения V0.1",
-    range: "A1:N839",
+    range: "A1:N1200",
     headerRows: [1],
     dataStartRow: 3,
     requiredHeaders: ["Название", "Тип снаряжения", "Цена", "Ранг", "Вес", "Описание"],
