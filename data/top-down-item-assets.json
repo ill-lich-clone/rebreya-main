@@ -8325,12 +8325,12 @@
       "atlasId": "primary-041",
       "cellIndex": 15,
       "assetPath": "assets/top-down/items/gear/obychnaya-nazhivka.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "3f8cfd4e054bed4d9f88433f6f2d9933c25239e7bd14725add31f7acb2c73fd0",
+      "assetHash": "71aacf7b81499a65fad3ae7bab1e9831f6061461b7800a2067cb7e8fff94b67f",
+      "matteMethod": "chroma"
     },
     {
       "sourceType": "gear",
@@ -9985,12 +9985,12 @@
       "atlasId": "primary-041",
       "cellIndex": 16,
       "assetPath": "assets/top-down/items/gear/pretsizionnaya-udochka.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "3f8cfd4e054bed4d9f88433f6f2d9933c25239e7bd14725add31f7acb2c73fd0",
+      "assetHash": "198e82b2e072604a42acf97ceedb94fca1576fa9eccc676c47c77405c07b9a04",
+      "matteMethod": "chroma"
     },
     {
       "sourceType": "gear",
@@ -10048,12 +10048,12 @@
       "atlasId": "primary-041",
       "cellIndex": 17,
       "assetPath": "assets/top-down/items/gear/professional-naya-udochka.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "3f8cfd4e054bed4d9f88433f6f2d9933c25239e7bd14725add31f7acb2c73fd0",
+      "assetHash": "0e50a63dd350a685bc7ae26822e2930e04bab5886c04e82f94923dc06c022a7f",
+      "matteMethod": "chroma"
     },
     {
       "sourceType": "gear",
@@ -10308,12 +10308,12 @@
       "atlasId": "primary-041",
       "cellIndex": 18,
       "assetPath": "assets/top-down/items/gear/prostaya-udochka.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "3f8cfd4e054bed4d9f88433f6f2d9933c25239e7bd14725add31f7acb2c73fd0",
+      "assetHash": "96b4d3cda3ecb6c63bba4932ffdfe066cf203f1dc014d3d15ded4d5313c61fd4",
+      "matteMethod": "chroma"
     },
     {
       "sourceType": "gear",
@@ -13489,12 +13489,12 @@
       "atlasId": "primary-041",
       "cellIndex": 19,
       "assetPath": "assets/top-down/items/gear/udochka-mastera.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "3f8cfd4e054bed4d9f88433f6f2d9933c25239e7bd14725add31f7acb2c73fd0",
+      "assetHash": "e5270e71e25fc5d2082b3cae0d28a38077e8f5e83c21ef99b7ec71d4f608c82a",
+      "matteMethod": "chroma"
     },
     {
       "sourceType": "gear",
@@ -13749,12 +13749,12 @@
       "atlasId": "primary-041",
       "cellIndex": 20,
       "assetPath": "assets/top-down/items/gear/usilennaya-udochka.webp",
-      "status": "planned",
-      "technicalQa": "pending",
-      "visualQa": "pending",
-      "generationHash": "",
-      "assetHash": "",
-      "matteMethod": ""
+      "status": "accepted",
+      "technicalQa": "passed",
+      "visualQa": "passed",
+      "generationHash": "3f8cfd4e054bed4d9f88433f6f2d9933c25239e7bd14725add31f7acb2c73fd0",
+      "assetHash": "4b046dfad74a1792f6134cc311527294caa12a352f49d8715a3fef099fac9d26",
+      "matteMethod": "chroma"
     },
     {
       "sourceType": "gear",

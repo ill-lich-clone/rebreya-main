@@ -4,7 +4,7 @@ import {
   TOP_DOWN_ITEM_FOOTPRINTS,
   TOP_DOWN_ITEM_TOKEN_SCALES,
   TOP_DOWN_ITEM_TEXTURES
-} from "./top-down-item-texture-catalog.js?v=1.4.211-furniture-footprints";
+} from "./top-down-item-texture-catalog.js?v=1.4.312-fishing-rods";
 
 function clean(value) {
   return String(value ?? "").trim();

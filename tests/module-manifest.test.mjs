@@ -69,8 +69,8 @@ test("module manifest loads an unpinned canonical entrypoint for page-refresh up
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const [entrypoint] = manifest.esmodules;
 
-  assert.equal(manifest.version, "1.4.311");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.311.js"]);
+  assert.equal(manifest.version, "1.4.312");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.312.js"]);
   assert.doesNotMatch(entrypoint, /[?#]/u);
 
   const entrypointSource = await readFile(new URL(entrypoint, manifestUrl), "utf8");
@@ -270,12 +270,12 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
     "data/storage-service.js?v=1.4.270",
     "data/storage-access.js?v=1.4.197-door-trigger-target",
     "data/builtin-storage-actor-service.js?v=1.4.216-storage-token-vision",
-    "data/storage-ground-pile-service.js?v=1.4.227-coin-sprites",
-    "data/storage-container-item-service.js?v=1.4.292",
-    "data/storage-deposit-source.js?v=1.4.277",
-    "data/storage-command-service.js?v=1.4.277",
+    "data/storage-ground-pile-service.js?v=1.4.312-fishing-rods",
+    "data/storage-container-item-service.js?v=1.4.312-fishing-rods",
+    "data/storage-deposit-source.js?v=1.4.312-fishing-rods",
+    "data/storage-command-service.js?v=1.4.312-fishing-rods",
     "integrations/storage-transfer-drop.js?v=1.4.213-furniture-orientation",
-    "integrations/storage-token-drop.js?v=1.4.132-storage-owned-character-resolution"
+    "integrations/storage-token-drop.js?v=1.4.312-fishing-rods"
   ]) {
     assert.equal(canonicalSource.includes(importPath), true, importPath);
   }
@@ -303,12 +303,12 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
     assert.equal(source.includes(importPath), true, importPath);
   }
   assert.equal(
-    groundPileServiceSource.includes("storage-pile-presentation.js?v=1.4.227-coin-sprites"),
+    groundPileServiceSource.includes("storage-pile-presentation.js?v=1.4.312-fishing-rods"),
     true,
     "ground-pile presentation changes need their own browser module cache key"
   );
   assert.equal(
-    canonicalSource.includes("storage-ground-pile-service.js?v=1.4.227-coin-sprites"),
+    canonicalSource.includes("storage-ground-pile-service.js?v=1.4.312-fishing-rods"),
     true,
     "ground-pile token layout changes need their own browser module cache key"
   );
@@ -339,7 +339,7 @@ test("module keeps recent published entrypoint URLs as canonical compatibility f
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
 
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.311.js"]);
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.312.js"]);
 
   for (const fileName of ["main-1.4.98.js", "main-1.4.99.js", "main-1.4.100.js"]) {
     const forwarderSource = await readFile(new URL(`../scripts/${fileName}`, import.meta.url), "utf8");
@@ -513,7 +513,7 @@ test("legacy settings relay fails closed when a world-setting socket is unavaila
 test("module stylesheet cache bust loads the storage deposit interaction styles", async () => {
   const entrypointSource = await readCanonicalEntrypointSource();
 
-  assert.match(entrypointSource, /const MODULE_STYLE_VERSION = "1\.4\.311";/u);
+  assert.match(entrypointSource, /const MODULE_STYLE_VERSION = "1\.4\.312";/u);
   assert.match(entrypointSource, /const stylesheetHref = `\$\{MODULE_STYLE_PATH\}\?v=\$\{encodeURIComponent\(MODULE_STYLE_VERSION\)\}`;/u);
   assert.doesNotMatch(entrypointSource, /module\?\.version\s*\?\?/u);
 });

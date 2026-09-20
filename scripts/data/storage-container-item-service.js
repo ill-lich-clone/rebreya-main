@@ -14,7 +14,7 @@ import {
   isStorageJournalRow,
   readPortableStorageContainerSnapshot
 } from "./storage-container-snapshot.js?v=1.4.277";
-import { resolveTopDownItemPresentation } from "./top-down-item-texture-resolver.js?v=1.4.211-furniture-footprints";
+import { resolveTopDownItemPresentation } from "./top-down-item-texture-resolver.js?v=1.4.312-fishing-rods";
 import {
   buildGroundPileTokenLayout,
   deterministicStorageTokenRotation

@@ -10,7 +10,7 @@ import { isStorageJournalRow } from "./storage-container-snapshot.js";
 import {
   deriveGroundPilePresentation,
   isGroundPileToken
-} from "./storage-pile-presentation.js?v=1.4.227-coin-sprites";
+} from "./storage-pile-presentation.js?v=1.4.312-fishing-rods";
 import {
   buildGroundPileTokenLayout,
   deterministicStorageTokenRotation,
