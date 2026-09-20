@@ -77,7 +77,7 @@ const definitions = {
   },
   prone: {
     canonicalName: "Сбитый с ног",
-    aliases: ["Лежащий ничком", "сбитого с ног", "сбитым с ног"],
+    aliases: ["Лежащий ничком", "Сбиты с ног", "сбитого с ног", "сбитым с ног"],
     subtitle: "Базовое состояние",
     source: { file: "Глоссарий.txt", label: "PHB+" },
     bullets: [

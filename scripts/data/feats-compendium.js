@@ -4,7 +4,7 @@ import {
   FEATS_COMPENDIUM_NAME,
   GLOSSARY_COMPENDIUM_NAME,
   MODULE_ID
-} from "../constants.js?v=1.4.315";
+} from "../constants.js?v=1.4.316";
 import { bringAppToFront } from "../ui.js";
 import {
   buildNamedIconLookup,
@@ -17,10 +17,10 @@ import {
 import { syncManagedDocumentsOnActiveGm } from "./managed-compendium-sync.js";
 import { buildSlug } from "./item-classification.js";
 import { renderDescriptionMarkdown } from "./markdown-description.js";
-import { getActionReferenceDefinitions } from "./actions-compendium.js?v=1.4.315";
-import { loadGlossaryReferenceDefinitions } from "./glossary-compendium.js?v=1.4.315";
-import { buildCompendiumItemReferenceIndex } from "./compendium-item-reference-index.js?v=1.4.315";
-import { linkFeatDescriptionHtml } from "./feat-reference-linker.js?v=1.4.315";
+import { getActionReferenceDefinitions } from "./actions-compendium.js?v=1.4.316";
+import { loadGlossaryReferenceDefinitions } from "./glossary-compendium.js?v=1.4.316";
+import { buildCompendiumItemReferenceIndex } from "./compendium-item-reference-index.js?v=1.4.316";
+import { linkFeatDescriptionHtml } from "./feat-reference-linker.js?v=1.4.316";
 
 const PACK_ID = `world.${FEATS_COMPENDIUM_NAME}`;
 const DND5E_SYSTEM_ID = "dnd5e";

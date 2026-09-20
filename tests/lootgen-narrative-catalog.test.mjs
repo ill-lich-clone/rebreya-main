@@ -1,14 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import {
+import * as narrativeCatalogModule from "../scripts/data/lootgen-narrative-catalog.js";
+
+const {
   applyLootgenNarrativeVariant,
   hasLootgenNarrative,
   loadLootgenNarrativeCatalog,
   normalizeLootgenNarrativeCatalog,
   pickLootgenNarrativeFields,
   selectLootgenNarrativeVariant
-} from "../scripts/data/lootgen-narrative-catalog.js";
+} = narrativeCatalogModule;
 
 const variant = Object.freeze({
   variantId: "book-scorched",
@@ -144,4 +146,69 @@ test("runtime loader fetches validates and caches the local catalog", async (t) 
   assert.equal(first, second);
   assert.equal(first.byVariantId.get("book-scorched").gearId, "book");
   assert.equal(calls, 1);
+});
+
+test("arbitrary created gear instances receive one narrative variant", () => {
+  const buildPatch = narrativeCatalogModule.buildNarrativeItemCreationPatch;
+  assert.equal(typeof buildPatch, "function");
+  if (typeof buildPatch !== "function") return;
+  const catalog = normalizeLootgenNarrativeCatalog({
+    schemaVersion: 1,
+    variants: [variant, { ...variant, variantId: "book-clean", title: "Чистая" }]
+  });
+
+  const patch = buildPatch({
+    name: "Книга",
+    type: "loot",
+    system: { description: { value: "base", chat: "keep" }, quantity: 8 },
+    flags: { "rebreya-main": { gearId: "book", existing: true } }
+  }, catalog, { random: () => 0.999999 });
+
+  assert.equal(patch.system.quantity, 1);
+  assert.match(patch.system.description.value, /Чистая/u);
+  assert.equal(patch.flags["rebreya-main"].narrativeVariantId, "book-clean");
+  assert.equal(patch.flags["rebreya-main"].nonStackable, true);
+  assert.equal(patch.flags["rebreya-main"].existing, true);
+});
+
+test("generic gear identity is eligible while unknown items remain unchanged", () => {
+  const buildPatch = narrativeCatalogModule.buildNarrativeItemCreationPatch;
+  assert.equal(typeof buildPatch, "function");
+  if (typeof buildPatch !== "function") return;
+  const catalog = normalizeLootgenNarrativeCatalog({ schemaVersion: 1, variants: [variant] });
+
+  const patch = buildPatch({
+    name: "Книга",
+    system: { description: { value: "base" }, quantity: 2 },
+    flags: { "rebreya-main": { sourceType: "gear", sourceId: "book" } }
+  }, catalog, { random: () => 0 });
+
+  assert.equal(patch.flags["rebreya-main"].narrativeVariantId, "book-scorched");
+  assert.equal(buildPatch({ name: "Другое", flags: {} }, catalog, { random: () => 0 }), null);
+});
+
+test("an existing narrative identity is preserved and normalized without another draw", () => {
+  const buildPatch = narrativeCatalogModule.buildNarrativeItemCreationPatch;
+  assert.equal(typeof buildPatch, "function");
+  if (typeof buildPatch !== "function") return;
+  let draws = 0;
+
+  const patch = buildPatch({
+    name: "Книга",
+    system: { description: { value: "Сохранённый текст" }, quantity: 4 },
+    flags: { "rebreya-main": {
+      gearId: "book",
+      narrativeVariantId: "persisted-book",
+      narrativeGearId: "book",
+      narrativeDescription: "Сохранённый текст"
+    } }
+  }, normalizeLootgenNarrativeCatalog({ schemaVersion: 1, variants: [variant] }), {
+    random: () => { draws += 1; return 0; }
+  });
+
+  assert.equal(draws, 0);
+  assert.equal(patch.system.quantity, 1);
+  assert.equal(patch.system.description.value, "Сохранённый текст");
+  assert.equal(patch.flags["rebreya-main"].narrativeVariantId, "persisted-book");
+  assert.equal(patch.flags["rebreya-main"].nonStackable, true);
 });

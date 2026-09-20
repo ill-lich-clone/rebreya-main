@@ -13,9 +13,9 @@ import {
   createPortableStorageContainerItemData,
   isStorageJournalRow,
   readPortableStorageContainerSnapshot
-} from "./storage-container-snapshot.js?v=1.4.314";
+} from "./storage-container-snapshot.js?v=1.4.316";
 import { resolveTopDownItemPresentation } from "./top-down-item-texture-resolver.js?v=1.4.312-fishing-rods";
-import { pickLootgenNarrativeFields } from "./lootgen-narrative-catalog.js?v=1.4.314";
+import { pickLootgenNarrativeFields } from "./lootgen-narrative-catalog.js?v=1.4.316";
 import {
   buildGroundPileTokenLayout,
   deterministicStorageTokenRotation

@@ -78,6 +78,25 @@ test("ready composes spell automation on one registry alongside legacy hook regi
       }
     }),
     replaceGlobal("CONFIG", {}),
+    replaceGlobal("fetch", async (url) => {
+      assert.equal(url, "modules/rebreya-main/data/lootgen-narrative-variants.json");
+      return {
+        ok: true,
+        async json() {
+          return {
+            schemaVersion: 1,
+            variants: [{
+              variantId: "book-composition",
+              gearId: "book",
+              sourceName: "Книга",
+              title: "Композиция",
+              description: "Проверка ready-hook.",
+              rank: 1
+            }]
+          };
+        }
+      };
+    }),
     replaceGlobal("fromUuid", async () => {
       actorLookups += 1;
       return null;
@@ -125,6 +144,23 @@ test("ready composes spell automation on one registry alongside legacy hook regi
     RebreyaMainModule.prototype.initialize = async () => {};
 
     await Hooks.onceCallbacks.get("ready")();
+
+    const createdBook = {
+      pack: null,
+      toObject: () => ({
+        name: "Книга",
+        system: { description: { value: "base" }, quantity: 4 },
+        flags: { "rebreya-main": { gearId: "book" } }
+      }),
+      updateSource(patch) {
+        this.patch = patch;
+      }
+    };
+    for (const callback of Hooks.listeners.get("preCreateItem") ?? []) {
+      callback(createdBook, {}, {}, "gm");
+    }
+    assert.equal(createdBook.patch.flags["rebreya-main"].narrativeVariantId, "book-composition");
+    assert.equal(createdBook.patch.system.quantity, 1);
 
     assert.deepEqual(createdChatMessages, [{
       user: "gm",
@@ -384,7 +420,7 @@ test("composition root owns one inventory ingress graph and one batch dispatch h
 
   assert.match(
     source,
-    /\.\/data\/inventory-service\.js\?v=1\.4\.314/u,
+    /\.\/data\/inventory-service\.js\?v=1\.4\.316/u,
     "inventory-service cache key must change with the inventory add projection"
   );
   assert.equal(source.match(/new InventoryIngressRuleCompilerCache\(/gu)?.length, 1);

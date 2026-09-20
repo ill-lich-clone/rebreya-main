@@ -12,8 +12,8 @@ import {
   buildLootgenTypeFilterOptions,
   resolveMagicLootgenTypeLabel
 } from "./lootgen-type-filters.js?v=1.4.258";
-import { buildLootgenGearTypeOptions, readLootgenMagicDocuments } from "../data/lootgen-source-catalog.js?v=1.4.314";
-import { normalizeLootgenForm } from "../data/lootgen-generator.js?v=1.4.314";
+import { buildLootgenGearTypeOptions, readLootgenMagicDocuments } from "../data/lootgen-source-catalog.js?v=1.4.316";
+import { normalizeLootgenForm } from "../data/lootgen-generator.js?v=1.4.316";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
@@ -229,7 +229,7 @@ export function resolveLootgenItemValue(rawValue, fallbackGold = 0) {
   return resolveLegacyItemValue(rawValue, fallbackGold);
 }
 
-export { buildLootgenMundaneCandidate } from "../data/lootgen-source-catalog.js?v=1.4.314";
+export { buildLootgenMundaneCandidate } from "../data/lootgen-source-catalog.js?v=1.4.316";
 
 export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
   static DEFAULT_OPTIONS = {

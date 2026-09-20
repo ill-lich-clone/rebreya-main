@@ -1,5 +1,5 @@
 import { MODULE_ID } from "../constants.js";
-import { isStorageJournalRow } from "./storage-container-snapshot.js?v=1.4.314";
+import { isStorageJournalRow } from "./storage-container-snapshot.js?v=1.4.316";
 import { formatDurabilityItemName } from "./durability-item-presentation.js?v=1.4.200-storage-broken-presentation";
 import { resolveTopDownItemPresentation } from "./top-down-item-texture-resolver.js?v=1.4.312-fishing-rods";
 

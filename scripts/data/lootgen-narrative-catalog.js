@@ -122,6 +122,43 @@ export function hasLootgenNarrative(itemOrData) {
   return Boolean(clean(fromDocument ?? fromData));
 }
 
+function narrativeCreationGearId(itemData = {}) {
+  const flags = itemData?.flags?.[MODULE_ID] ?? {};
+  const directGearId = clean(flags.gearId);
+  if (directGearId) return directGearId;
+  return clean(flags.sourceType) === "gear" ? clean(flags.sourceId) : "";
+}
+
+function narrativeCreationPatch(itemData = {}) {
+  return {
+    system: {
+      description: cloneFoundryValue(itemData?.system?.description ?? {}),
+      quantity: 1
+    },
+    flags: {
+      [MODULE_ID]: cloneFoundryValue(itemData?.flags?.[MODULE_ID] ?? {})
+    }
+  };
+}
+
+export function buildNarrativeItemCreationPatch(itemData, catalog, { random = Math.random } = {}) {
+  const source = cloneFoundryValue(itemData ?? {});
+  const moduleFlags = source?.flags?.[MODULE_ID] ?? {};
+  if (clean(moduleFlags.narrativeVariantId)) {
+    source.system ??= {};
+    source.system.quantity = 1;
+    source.flags ??= {};
+    source.flags[MODULE_ID] = { ...moduleFlags, nonStackable: true };
+    return narrativeCreationPatch(source);
+  }
+
+  const gearId = narrativeCreationGearId(source);
+  const narrativeVariants = gearId ? catalog?.byGearId?.get?.(gearId) : null;
+  if (!Array.isArray(narrativeVariants) || narrativeVariants.length === 0) return null;
+  const variant = selectLootgenNarrativeVariant({ narrativeVariants }, random);
+  return narrativeCreationPatch(applyLootgenNarrativeVariant(source, variant));
+}
+
 export async function loadLootgenNarrativeCatalog() {
   catalogPromise ??= (async () => {
     const response = await fetch(CATALOG_PATH);

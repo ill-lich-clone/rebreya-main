@@ -1,7 +1,7 @@
 import {
   getStatusReferenceDefinition,
   renderStatusReferenceDescription
-} from "../data/status-reference-data.js?v=1.4.315";
+} from "../data/status-reference-data.js?v=1.4.316";
 
 function escapeHtml(value) {
   return String(value ?? "")

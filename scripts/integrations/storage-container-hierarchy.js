@@ -1,4 +1,4 @@
-import { isPortableStorageContainerItem } from "../data/storage-container-snapshot.js?v=1.4.314";
+import { isPortableStorageContainerItem } from "../data/storage-container-snapshot.js?v=1.4.316";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 
 const registeredHookObjects = new WeakSet();

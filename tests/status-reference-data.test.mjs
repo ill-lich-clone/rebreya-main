@@ -11,6 +11,7 @@ test("shared status definitions include prone and keep sheet presentation text",
   const prone = getStatusReferenceDefinition("prone");
   assert.equal(prone.canonicalName, "Сбитый с ног");
   assert.ok(prone.aliases.includes("Лежащий ничком"));
+  assert.ok(prone.aliases.includes("Сбиты с ног"));
   assert.match(renderStatusReferenceDescription(prone), /только ползая/u);
   assert.match(renderStatusReferenceDescription(prone), /<ul>/u);
 });
