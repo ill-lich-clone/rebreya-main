@@ -195,7 +195,7 @@ function catalogTreeOptions() {
     getManifest:async()=>[{productId:"zacharovanie-ostroty",profile:{compatibility:["weapon"]},decision:"simple-implemented"}],
     buildItemData:async row=>({name:`Catalog ${row.sourceId}`,type:row.sourceId==="sword"?"weapon":"container",
       system:{quantity:1,price:{value:12,denomination:"gp"},capacity:{weight:{value:300,units:"lb"}},weight:{value:25,units:"lb"}},
-      flags:{[MODULE_ID]:{gearId:row.sourceId}}})};
+      flags:{[MODULE_ID]:{gearId:row.sourceId,...Object.fromEntries(["narrativeVariantId","narrativeGearId","narrativeTitle","narrativeDescription"].filter(key=>row[key]!==undefined).map(key=>[key,row[key]]))}}})};
 }
 function catalogTreeSnapshot() {
   const snapshot=bagSnapshot();snapshot.state.lootgenComposition=composition("shell","chest");
@@ -255,6 +255,31 @@ test("capture and restore retain live upgraded items and catalog shell without r
   assert.equal(restoredUpgrade.system.container,restoredSword.id);
   assert.equal(restoredUpgrade.flags[MODULE_ID].installedUpgrade.hostActorId,"other");
   assert.notEqual(restoredUpgrade.id,upgrade.id);
+});
+
+test("capture and reprepare preserve root and child narrative identities",async()=>{
+  const options=catalogTreeOptions(),snapshot=catalogTreeSnapshot();
+  snapshot.presentation={itemData:{name:"Narrative chest",type:"container",system:{quantity:1,capacity:{weight:{value:300,units:"lb"}}},flags:{[MODULE_ID]:{
+    narrativeVariantId:"chest-a",narrativeGearId:"chest",narrativeTitle:"Root",narrativeDescription:"Root text"
+  }}}};
+  Object.assign(snapshot.state.manualRows[0],{
+    narrativeVariantId:"book-b",narrativeGearId:"sword",narrativeTitle:"Child",narrativeDescription:"Child text"
+  });
+  const service=new StorageContainerItemService(options),actor=createActor();
+  const root=await service.materializeToActorOnce(actor,snapshot,"narrative-capture");
+  const liveChild=actor.items.contents.find(item=>item.name==="Catalog sword");
+  assert.equal(root.flags[MODULE_ID].narrativeVariantId,"chest-a");
+  assert.equal(liveChild.flags[MODULE_ID].narrativeVariantId,"book-b");
+
+  const captured=await service.captureFromItem(root);
+  assert.equal(captured.presentation.itemData.flags[MODULE_ID].narrativeVariantId,"chest-a");
+  assert.equal(captured.state.manualRows[0].narrativeVariantId,"book-b");
+
+  const destination=createActor();destination.id="narrative-other";destination.uuid="Actor.narrative-other";
+  const restored=await new StorageContainerItemService(options).materializeToActorOnce(destination,captured,"narrative-restore");
+  const restoredChild=destination.items.contents.find(item=>item.name==="Catalog sword");
+  assert.equal(restored.flags[MODULE_ID].narrativeVariantId,"chest-a");
+  assert.equal(restoredChild.flags[MODULE_ID].narrativeVariantId,"book-b");
 });
 
 test("capture folds shell upgrades into shell data and removes detached upgrades from composition",async()=>{

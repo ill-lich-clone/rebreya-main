@@ -1,6 +1,7 @@
 import { MODULE_ID } from "../constants.js";
 import { normalizeStorageTriggerState } from "./storage-trigger-service.js";
 import { normalizeLootgenComposition } from "./lootgen-composition.js?v=1.4.268";
+import { pickLootgenNarrativeFields } from "./lootgen-narrative-catalog.js?v=1.4.314";
 
 export const STORAGE_CONTAINER_FLAG = "storageContainer";
 export const STORAGE_CONTAINER_SNAPSHOT_VERSION = 1;
@@ -47,6 +48,10 @@ function visibleContainerRow(snapshot, rowId) {
 
 function normalizeItemRow(row, createId) {
   const normalized = clone(row) ?? {};
+  Object.assign(normalized,{
+    ...pickLootgenNarrativeFields(normalized.itemData?.flags?.[MODULE_ID]),
+    ...pickLootgenNarrativeFields(normalized)
+  });
   if(normalized.composition!==undefined){
     normalized.composition=normalizeLootgenComposition(normalized.composition);
     if(!Number.isSafeInteger(normalized.quantity) || normalized.quantity<1

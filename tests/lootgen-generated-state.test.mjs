@@ -5,11 +5,12 @@ import { LootgenSourceCatalog } from "../scripts/data/lootgen-source-catalog.js"
 import { readLootgenPreparedComposition } from "../scripts/data/lootgen-prepared-item.js";
 import { StorageContainerItemService } from "../scripts/data/storage-container-item-service.js";
 const profile={type:"Зачарование",rank:1,compatibility:["weapon"]};
-function fixture(){
+const narrative=(variantId,gearId,title)=>({variantId,gearId,sourceName:gearId,title,description:`${title} description`,rank:1});
+function fixture({narrativeByGearId=new Map()}={}){
   const source=id=>({_id:id,type:id==="sword"?"weapon":"loot",system:{type:{value:"martialM"}},flags:{"rebreya-main":{managed:true,gearId:id}}});
-  const catalog=new LootgenSourceCatalog({getModel:async()=>({gear:[{id:"sword",name:"Sword",rank:1,value:100,equipmentType:"Оружие"},{id:"zacharovanie-ostroty",name:"Sharp",rank:1,value:20,equipmentType:"Усовершенствование"}]}),getGearIndex:async()=>[source("sword"),source("zacharovanie-ostroty")],getMagicDocuments:async()=>[],getManifest:async()=>[{productId:"zacharovanie-ostroty",decision:"simple-implemented",profile}]});
+  const catalog=new LootgenSourceCatalog({getModel:async()=>({gear:[{id:"sword",name:"Sword",rank:1,value:100,equipmentType:"Оружие"},{id:"zacharovanie-ostroty",name:"Sharp",rank:1,value:20,equipmentType:"Усовершенствование"}]}),getGearIndex:async()=>[source("sword"),source("zacharovanie-ostroty")],getMagicDocuments:async()=>[],getManifest:async()=>[{productId:"zacharovanie-ostroty",decision:"simple-implemented",profile}],getNarrativeCatalog:async()=>({byGearId:narrativeByGearId})});
   let id=0;return {catalog,createDocumentId:()=>String(++id).padStart(16,"0"),random:()=>0,
-    buildItemData:async(row)=>({name:row.sourceId,type:row.sourceId==="sword"?"weapon":"loot",system:{quantity:row.quantity,price:{value:row.sourceId==="sword"?1:0.2,denomination:"gp"}},flags:{"rebreya-main":{sourceType:row.sourceType,sourceId:row.sourceId}}})};
+    buildItemData:async(row)=>({name:row.sourceId,type:row.sourceId==="sword"?"weapon":"loot",system:{quantity:row.quantity,price:{value:row.sourceId==="sword"?1:0.2,denomination:"gp"}},flags:{"rebreya-main":{sourceType:row.sourceType,sourceId:row.sourceId,...Object.fromEntries(["narrativeVariantId","narrativeGearId","narrativeTitle","narrativeDescription"].filter(key=>row[key]!==undefined).map(key=>[key,row[key]]))}}})};
 }
 const form={rankMin:1,rankMax:1,includeGear:true,includeMagicItems:false,includeCoins:false,enableUpgrades:true,upgradeChance:100,itemCount:1,optimalItemQuantity:1,budgetValue:120};
 test("generated state contains one fully prepared graph, complete value and automation summary",async()=>{
@@ -21,6 +22,15 @@ test("generated state contains one fully prepared graph, complete value and auto
   assert.equal(row.itemData.flags["rebreya-main"].runtimeItemGraph.nodes.length,2);
   assert.equal(row.itemData.flags["rebreya-main"].lootgenChat,undefined);
   assert.equal(row.claimed,false);assert.equal(typeof state.catalogFingerprint,"string");
+});
+
+test("prepared plain and upgraded roots receive the selected narrative row",async()=>{
+  const narrativeByGearId=new Map([["sword",[narrative("sword-a","sword","A")]]]);
+  for(const upgradeChance of [0,100]){
+    const state=await buildLootgenGeneratedState({...form,upgradeChance},{operationId:`narrative-${upgradeChance}`,lootId:"loot",authorId:"gm"},fixture({narrativeByGearId}));
+    assert.equal(state.rows[0].narrativeVariantId,"sword-a");
+    assert.equal(state.rows[0].itemData.flags["rebreya-main"].narrativeVariantId,"sword-a");
+  }
 });
 test("catalog signature changes with the profile",async()=>{
   const a=fixture(),b=fixture();b.catalog.getManifest=async()=>[{productId:"zacharovanie-ostroty",decision:"simple-implemented",profile:{...profile,activation:"carried"}}];
@@ -72,13 +82,13 @@ test("catalog transport failure remains retryable without relabelling it as cata
   await assert.rejects(assertLootgenCatalogCurrent(state,{load:async()=>{throw new Error("catalog read offline");}}),/catalog read offline/u);
 });
 
-function filledFixture() {
-  const options=fixture(),readModel=options.catalog.getModel,readIndex=options.catalog.getGearIndex;
+function filledFixture({narrativeByGearId=new Map()}={}) {
+  const options=fixture({narrativeByGearId}),readModel=options.catalog.getModel,readIndex=options.catalog.getGearIndex;
   options.catalog.getModel=async()=>{const model=await readModel();model.gear.push({id:"chest",name:"Chest",rank:1,value:30,equipmentType:"Хранилище"});return model;};
   options.catalog.getGearIndex=async()=>[...(await readIndex()).map(row=>({...row,system:{...row.system,weight:{value:1,units:"lb"}}})),
     {_id:"chest",type:"container",system:{quantity:1,weight:{value:2,units:"lb"},capacity:{weight:{value:100,units:"lb"}}},flags:{"rebreya-main":{managed:true,gearId:"chest"}}}];
   const build=options.buildItemData;
-  options.buildItemData=async row=>row.sourceId==="chest"?{name:"Chest",type:"container",system:{quantity:1,price:{value:.3,denomination:"gp"},capacity:{weight:{value:100,units:"lb"}}},flags:{}}:build(row);
+  options.buildItemData=async row=>row.sourceId==="chest"?{name:"Chest",type:"container",system:{quantity:1,price:{value:.3,denomination:"gp"},capacity:{weight:{value:100,units:"lb"}}},flags:{"rebreya-main":Object.fromEntries(["narrativeVariantId","narrativeGearId","narrativeTitle","narrativeDescription"].filter(key=>row[key]!==undefined).map(key=>[key,row[key]]))}}:build(row);
   const service=new StorageContainerItemService();options.prepareContainerGraph=(snapshot,adapters)=>service.prepareItemGraph(snapshot,adapters);
   return options;
 }
@@ -97,6 +107,19 @@ test("generated filled loot is persisted as a validated complete graph with one 
     assert.equal(root.totalValue,state.rows[0].totalValue);
     assert.ok(state.rows[0].compositionValues.length>1);
   }
+});
+
+test("prepared filled graph keeps different root and nested narrative variants",async()=>{
+  const narrativeByGearId=new Map([
+    ["chest",[narrative("chest-a","chest","Root")]],
+    ["sword",[narrative("sword-b","sword","Child")]]
+  ]);
+  const state=await buildLootgenGeneratedState({...filledForm,enableUpgrades:false},{operationId:"filled-narrative",lootId:"loot",authorId:"gm"},filledFixture({narrativeByGearId}));
+  const nodes=state.rows[0].itemData.flags["rebreya-main"].runtimeItemGraph.nodes;
+  const child=nodes.find(node=>node.flags?.["rebreya-main"]?.narrativeVariantId==="sword-b");
+  assert.equal(state.rows[0].narrativeVariantId,"chest-a");
+  assert.equal(state.rows[0].itemData.flags["rebreya-main"].narrativeVariantId,"chest-a");
+  assert.equal(child.flags["rebreya-main"].narrativeVariantId,"sword-b");
 });
 
 test("filled catalog gate tracks child prices, physical capacities and coin weight",async()=>{

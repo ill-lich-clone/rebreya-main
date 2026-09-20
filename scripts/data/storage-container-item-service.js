@@ -15,6 +15,7 @@ import {
   readPortableStorageContainerSnapshot
 } from "./storage-container-snapshot.js?v=1.4.277";
 import { resolveTopDownItemPresentation } from "./top-down-item-texture-resolver.js?v=1.4.312-fishing-rods";
+import { pickLootgenNarrativeFields } from "./lootgen-narrative-catalog.js?v=1.4.314";
 import {
   buildGroundPileTokenLayout,
   deterministicStorageTokenRotation
@@ -335,7 +336,7 @@ export class StorageContainerItemService {
       if (typeof id !== "string" || !/^[a-zA-Z0-9]{16}$/u.test(id) || documentIds.has(id) || documentIds.size >= 200) treeConflict("document-identity-or-limit");
       documentIds.add(id); return id;
     };
-    const appendHost = async (composition, quantity, fallback, parentId, member) => {
+    const appendHost = async (composition, quantity, fallback, parentId, member, narrativeFields = {}) => {
       let nodes;
       if (composition) {
         for (const entry of [composition, ...composition.upgrades]) {
@@ -357,7 +358,7 @@ export class StorageContainerItemService {
         manifest ??= await getManifest();
         const graph = await buildCompositeItemGraph({...composition, quantity, container:null}, {
           actorId, manifest, createDocumentId:allocate,
-          buildBase:(sourceType,sourceId)=>buildItemData({sourceType,sourceId,quantity,isBroken:composition.isBroken}),
+          buildBase:(sourceType,sourceId)=>buildItemData({sourceType,sourceId,quantity,isBroken:composition.isBroken,...pickLootgenNarrativeFields(narrativeFields)}),
           buildUpgrade:sourceId=>buildItemData({sourceType:"gear",sourceId,quantity:1,isBroken:false})
         });
         nodes = graph.documents;
@@ -370,23 +371,24 @@ export class StorageContainerItemService {
       root.flags[MODULE_ID][STORAGE_CONTAINER_MEMBER_FLAG] = {...member, ...(composition ? {composition:clone(composition)} : {})};
       documents.push(...nodes); return root;
     };
-    const visit = async (current, parentId, rowId = "") => {
+    const visit = async (current, parentId, rowId = "", narrativeFields = {}) => {
       const portable = createPortableStorageContainerItemData(current, containerOptions(current,parentId));
       const shell = current.presentation?.itemData ?? portable;
       const root = await appendHost(current.state.lootgenComposition,1,shell,parentId,
-        {rootContainerId:normalized.containerId,containerId:current.containerId,rowId});
+        {rootContainerId:normalized.containerId,containerId:current.containerId,rowId},
+        {...pickLootgenNarrativeFields(narrativeFields),...pickLootgenNarrativeFields(shell?.flags?.[MODULE_ID])});
       if (root.type !== "container") treeConflict("catalog-shell-type");
       Object.assign(root.flags[MODULE_ID],portable.flags[MODULE_ID]);
       root.system.currency = visibleCoins(current.state);
       const claimed = new Set(current.state.claimedRowIds ?? []);
       for (const row of [...(current.state.manualRows ?? []), ...(current.state.generatedRows ?? [])]) {
         if (claimed.has(row.rowId) || isStorageJournalRow(row)) continue;
-        if (row.rowKind === "container" && row.container) { await visit(row.container,root._id,row.rowId); continue; }
+        if (row.rowKind === "container" && row.container) { await visit(row.container,root._id,row.rowId,row); continue; }
         const fallback = plainItemData(row.itemData ?? row);
         fallback.name = clean(row.name ?? fallback.name) || "Предмет";
         fallback.img = clean(row.img ?? fallback.img);
         await appendHost(row.composition,row.quantity,fallback,root._id,
-          {rootContainerId:normalized.containerId,containerId:current.containerId,rowId:row.rowId});
+          {rootContainerId:normalized.containerId,containerId:current.containerId,rowId:row.rowId},row);
       }
       return root;
     };
@@ -528,6 +530,7 @@ export class StorageContainerItemService {
           sourceId: captured.composition?.sourceId ?? clean(child?.uuid),
           sourceType: captured.composition?.sourceType ?? clean(child?.type),
           ...(captured.composition ? {composition:captured.composition} : {}),
+          ...pickLootgenNarrativeFields(data.flags?.[MODULE_ID]),
           name: clean(child?.name ?? data.name) || "Предмет",
           img: clean(child?.img ?? data.img),
           quantity,

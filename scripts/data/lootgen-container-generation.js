@@ -71,7 +71,7 @@ export function generateLootgenContainerResult({form,mundanePool,magicPool,catal
         if(!fit.fits){restore(checkpoint);rejected.add(key(child.row));note(fit.reason,child.row.sourceId);continue;}
         if(profile.capacity.volumeFt3!==null && !readLootgenPhysicalFootprint(child.footprint,{needWeight:false,needVolume:true,allowUnknownVolume:true}).volumeKnown)note("volume-unverified",selected.sourceId);
         const d=child.row.descriptor,rowId=allocate();
-        children.push(d.container?buildStorageContainerRow(d.container,{rowId}):{rowKind:"item",rowId,name:child.row.name,sourceType:d.sourceType,sourceId:d.sourceId,
+        children.push(d.container?{...buildStorageContainerRow(d.container,{rowId}),...pickLootgenNarrativeFields(child.row)}:{rowKind:"item",rowId,name:child.row.name,sourceType:d.sourceType,sourceId:d.sourceId,
           quantity:d.quantity,...pickLootgenNarrativeFields(child.row),composition:composition(d)});
         contents.push(child.footprint);
       }

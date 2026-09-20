@@ -83,6 +83,25 @@ test("container rows are unique quantity-one rows and ordinary rows remain stack
   assert.deepEqual([...collectStorageContainerIds(root)].sort(), ["bag-1", "chest-1"]);
 });
 
+test("item row normalization preserves narrative fields beside composition", () => {
+  const root=buildStorageContainerSnapshot(snapshot("root","Сундук",[{
+    rowId:"book-row",
+    sourceType:"gear",
+    sourceId:"book",
+    quantity:1,
+    narrativeVariantId:"book-b",
+    narrativeGearId:"book",
+    narrativeTitle:"Следы",
+    narrativeDescription:"Текст",
+    itemData:{name:"Книга",type:"loot",system:{quantity:1}}
+  }]));
+
+  assert.equal(root.state.manualRows[0].narrativeVariantId,"book-b");
+  assert.equal(root.state.manualRows[0].narrativeGearId,"book");
+  assert.equal(root.state.manualRows[0].narrativeTitle,"Следы");
+  assert.equal(root.state.manualRows[0].narrativeDescription,"Текст");
+});
+
 test("journal reference rows stay canonical across root, nested, portable, and rekeyed snapshots", () => {
   const journal = {
     rowKind: "journal",

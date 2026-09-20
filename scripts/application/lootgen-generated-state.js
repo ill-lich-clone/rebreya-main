@@ -4,6 +4,7 @@ import { buildCompositeItemGraph } from "../data/composite-item-graph.js?v=1.4.2
 import { buildLootgenPreparedItem } from "../data/lootgen-prepared-item.js?v=1.4.268";
 import { evaluateItemValue } from "../data/item-value.js?v=1.4.264";
 import { createStableGearDocumentId } from "../data/gear-document-ids.js";
+import { pickLootgenNarrativeFields } from "../data/lootgen-narrative-catalog.js?v=1.4.314";
 import { itemInstanceFingerprint } from "./item-instance-workflow.js";
 
 const MODULE_ID="rebreya-main";
@@ -73,11 +74,13 @@ export async function buildLootgenGeneratedState(form,{operationId,lootId,author
     let itemData;
     if(descriptor.container!==null) {
       if(typeof prepareContainerGraph!=="function")throw new Error("Canonical container planner is unavailable.");
+      descriptor.container.presentation??={};
+      descriptor.container.presentation.itemData=structuredClone(await buildItemData({...row,quantity:1}));
       const runtime=await prepareContainerGraph(descriptor.container,{createDocumentId:allocate,buildItemData,getManifest:async()=>snapshot.manifest});
       itemData=buildLootgenPreparedItem(descriptor,{graph:{rootItemId:runtime.rootId,documents:runtime.nodes},unitValue:price.totalValue});
     } else if(descriptor.upgrades.length) {
       const graph=await buildCompositeItemGraph(descriptor,{manifest:snapshot.manifest,createDocumentId:allocate,
-        buildBase:(sourceType,sourceId)=>buildItemData({sourceType,sourceId,quantity:1,isBroken:descriptor.isBroken}),
+        buildBase:(sourceType,sourceId)=>buildItemData({sourceType,sourceId,quantity:1,isBroken:descriptor.isBroken,...pickLootgenNarrativeFields(row)}),
         buildUpgrade:sourceId=>buildItemData({sourceType:"gear",sourceId,quantity:1,isBroken:false})});
       itemData=buildLootgenPreparedItem(descriptor,{graph,unitValue:price.totalValue});
     } else itemData=structuredClone(await buildItemData(row));
