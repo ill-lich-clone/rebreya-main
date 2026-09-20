@@ -39,6 +39,7 @@ import {
   normalizeInventoryIngressRuleState
 } from "./inventory-ingress-rules.js";
 import { applyLootgenRowDurability } from "./lootgen-durability.js?v=1.4.154-corpse-storage-broken-name";
+import { applyLootgenNarrativeVariant, hasLootgenNarrative } from "./lootgen-narrative-catalog.js?v=1.4.314";
 import { formatDurabilityItemName } from "./durability-item-presentation.js?v=1.4.154-broken-item-name";
 import { isJournalRecordItem } from "./journal-record-item.js?v=1.4.217-journal-record-items";
 import {
@@ -600,6 +601,7 @@ function inventoryStackIdentity(item) {
 }
 
 function itemsCanMergeInInventory(sourceItem, acceptedItem) {
+  if (hasLootgenNarrative(sourceItem) || hasLootgenNarrative(acceptedItem)) return false;
   const sourceIdentity = inventoryStackIdentity(sourceItem);
   const acceptedIdentity = inventoryStackIdentity(acceptedItem);
   const sameStack = sourceIdentity || acceptedIdentity
@@ -5925,7 +5927,10 @@ export class InventoryService {
       if(!prepared || itemInstanceFingerprint(prepared.descriptor)!==itemInstanceFingerprint(row.descriptor)
         || itemInstanceFingerprint(row.runtimeGraph)!==itemInstanceFingerprint(row.itemData.flags[MODULE_ID][RUNTIME_ITEM_GRAPH_FLAG]))throw new Error("Выдача контейнера требует подготовки полного дерева предметов.");
     }
-    const safeQuantity = Math.max(0.01, roundNumber(toNumber(row.quantity, 1), 2));
+    const narrativeRow = cleanId(row.narrativeVariantId) !== "";
+    const safeQuantity = narrativeRow || hasLootgenNarrative(row.itemData)
+      ? 1
+      : Math.max(0.01, roundNumber(toNumber(row.quantity, 1), 2));
     if (allowPersistedItemData && row.itemData && typeof row.itemData === "object") {
       const persistedItemData = sanitizeEmbeddedItemData(row.itemData);
       if (persistedItemData.flags?.[MODULE_ID]) delete persistedItemData.flags[MODULE_ID][RUNTIME_ITEM_GRAPH_FLAG];
@@ -5964,6 +5969,19 @@ export class InventoryService {
     }
     else {
       itemData = await this.buildModelItemData(row.sourceType, row.sourceId, safeQuantity);
+    }
+    if (narrativeRow) {
+      const gearId = cleanId(row.narrativeGearId);
+      const sourceId = cleanId(row.sourceId);
+      if (!gearId || gearId !== sourceId || typeof row.narrativeTitle !== "string" || typeof row.narrativeDescription !== "string") {
+        throw new Error("Invalid lootgen narrative row");
+      }
+      itemData = applyLootgenNarrativeVariant(itemData, {
+        variantId: cleanId(row.narrativeVariantId),
+        gearId,
+        title: row.narrativeTitle,
+        description: row.narrativeDescription
+      });
     }
     if (row.isBroken !== true || normalizeInventorySourceType(row.sourceType) !== "gear") {
       return itemData;
@@ -6832,8 +6850,10 @@ export class InventoryService {
     }
     if (!record) {
       if (beforePrepare) await beforePrepare();
-      const safeQuantity = Math.max(0.01, roundNumber(toNumber(quantity, 1), 2));
-      const itemData = await buildItemData(safeQuantity);
+      const requestedQuantity = Math.max(0.01, roundNumber(toNumber(quantity, 1), 2));
+      const itemData = await buildItemData(requestedQuantity);
+      const safeQuantity = hasLootgenNarrative(itemData) ? 1 : requestedQuantity;
+      if (hasLootgenNarrative(itemData)) foundry.utils.setProperty(itemData, "system.quantity", 1);
       const composition = preparedLootgenFingerprint ? readLootgenPreparedComposition(itemData) : null;
       if (composition && safeQuantity !== 1) throw new Error("Prepared lootgen graph quantity must be one.");
       const candidate = this.#findInventoryMergeCandidate(actor, itemData);

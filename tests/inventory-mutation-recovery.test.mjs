@@ -149,6 +149,31 @@ test("production Lootgen, persisted Storage and external Item adapters preserve 
       sourceId: gear.id,
       quantity: 2
     });
+    const narrativeData = await fixture.service.buildLootgenItemData({
+      sourceType: "gear",
+      sourceId: gear.id,
+      quantity: 7,
+      narrativeVariantId: "sword-a",
+      narrativeGearId: gear.id,
+      narrativeTitle: "Следы <времени>",
+      narrativeDescription: "Первая строка\nВторая & строка"
+    });
+    assert.equal(narrativeData.system.quantity, 1);
+    assert.equal(narrativeData.system.description.value, "<h3>Следы &lt;времени&gt;</h3><p>Первая строка<br>Вторая &amp; строка</p>");
+    assert.equal(narrativeData.flags[MODULE_ID].narrativeVariantId, "sword-a");
+    const persistedNarrative = clone(narrativeData);
+    persistedNarrative.system.description.value = "<p>Сохранённый текст</p>";
+    const restoredNarrative = await fixture.service.buildLootgenItemData({
+      quantity: 9,
+      itemData: persistedNarrative,
+      narrativeVariantId: "changed",
+      narrativeGearId: gear.id,
+      narrativeTitle: "Другой",
+      narrativeDescription: "Другой текст"
+    }, { allowPersistedItemData: true });
+    assert.equal(restoredNarrative.system.quantity, 1);
+    assert.equal(restoredNarrative.system.description.value, "<p>Сохранённый текст</p>");
+    assert.equal(restoredNarrative.flags[MODULE_ID].narrativeVariantId, "sword-a");
     const storageData = await fixture.service.buildLootgenItemData({
       quantity: 2,
       itemData: clone(lootgenData)
@@ -5221,14 +5246,21 @@ test.after(() => {
   globalThis.Item = previousItem;
 });
 
-async function preparedLootgenIngressItem() {
+async function preparedLootgenIngressItem({narrative=false}={}) {
   const descriptor = {version:2,instanceKey:"host",sourceType:"gear",sourceId:"sword",quantity:1,isBroken:false,container:null,
     upgrades:[{instanceKey:"upgrade",sourceId:"zacharovanie-ostroty",slotIndex:1,choices:{}}]};
   let nextId=0;
   const graph=await buildCompositeItemGraph(descriptor, {
     createDocumentId:()=>String(++nextId).padStart(16,"0"),
     manifest:[{productId:"zacharovanie-ostroty",decision:"simple-implemented",profile:{compatibility:["weapon"]}}],
-    buildBase:async()=>inventoryIngressItemData("sword"),
+    buildBase:async()=>{
+      const data=inventoryIngressItemData("sword");
+      if(narrative){
+        data.system.description={value:"<p>Подготовленный текст</p>"};
+        Object.assign(data.flags[MODULE_ID],{narrativeVariantId:"sword-prepared",narrativeGearId:"sword",narrativeTitle:"",narrativeDescription:"Подготовленный текст",nonStackable:true});
+      }
+      return data;
+    },
     buildUpgrade:async()=>({name:"Sharp",type:"loot",system:{quantity:1},flags:{}})
   });
   return buildLootgenPreparedItem(descriptor,{graph,unitValue:1200});
@@ -5329,12 +5361,45 @@ test("character grants reject prepared loot graphs without the trusted adapter",
   }finally{fixture.restore();}
 });
 
+test("narrative character grants use persisted itemData, quantity one, and never merge",async()=>{
+  const narrativeItem={name:"Книга",type:"loot",system:{quantity:5,description:{value:"<p>Сохранённый текст</p>"}},flags:{[MODULE_ID]:{
+    sourceType:"gear",sourceId:"book",gearId:"book",narrativeVariantId:"book-a",narrativeGearId:"book",
+    narrativeTitle:"Следы",narrativeDescription:"Сохранённый текст",nonStackable:true
+  }}};
+  const existing=createItem({id:"existing-narrative",name:"Книга",type:"loot",quantity:1,system:{...clone(narrativeItem.system),quantity:1},flags:narrativeItem.flags});
+  const hero=createActor({id:"narrative-hero",items:[existing]});
+  const fixture=installFixture({actors:[hero]});
+  try {
+    const result=await fixture.service.addLootgenRowToCharacterOnce({quantity:8,itemData:narrativeItem},hero,"narrative-character");
+    const created=hero.items.get(result.itemId);
+    assert.equal(hero.items.contents.length,2);
+    assert.equal(existing.system.quantity,1);
+    assert.equal(created.system.quantity,1);
+    assert.equal(created.system.description.value,"<p>Сохранённый текст</p>");
+    assert.equal(created.flags[MODULE_ID].narrativeVariantId,"book-a");
+    assert.deepEqual(await fixture.service.addLootgenRowToCharacterOnce({quantity:8,itemData:{...clone(narrativeItem),system:{...clone(narrativeItem.system),description:{value:"<p>Новый каталог</p>"}}}},hero,"narrative-character"),result);
+    assert.equal(created.system.description.value,"<p>Сохранённый текст</p>");
+    assert.equal(hero.items.contents.length,2);
+  }finally{fixture.restore();}
+});
+
+test("ordinary persisted character grants still merge",async()=>{
+  const flags={[MODULE_ID]:{sourceType:"gear",sourceId:"book",gearId:"book"}};
+  const existing=createItem({id:"existing-book",name:"Книга",type:"loot",quantity:1,flags});
+  const hero=createActor({id:"ordinary-hero",items:[existing]}),fixture=installFixture({actors:[hero]});
+  try {
+    await fixture.service.addLootgenRowToCharacterOnce({quantity:2,itemData:{name:"Книга",type:"loot",system:{quantity:2},flags}},hero,"ordinary-character");
+    assert.equal(hero.items.contents.length,1);
+    assert.equal(existing.system.quantity,3);
+  }finally{fixture.restore();}
+});
+
 test("prepared character grant persists exact graph IDs and resumes without rebuilding or checking a changed catalog",async()=>{
   const hero=createActor({id:"prepared-hero"}),other=createActor({id:"prepared-other"});
   const fixture=installFixture({actors:[hero,other]});
   let creates=0,catalogReads=0,changed=false;
   try {
-    const row={quantity:1,itemData:await preparedLootgenIngressItem()};
+    const row={quantity:1,itemData:await preparedLootgenIngressItem({narrative:true})};
     const options={allowPreparedLootgenGraph:true,beforePrepare:async()=>{catalogReads++;if(changed)throw new Error("stale catalog");}};
     const create=hero.createEmbeddedDocuments.bind(hero);
     hero.createEmbeddedDocuments=async(type,documents,opts)=>{
@@ -5353,6 +5418,9 @@ test("prepared character grant persists exact graph IDs and resumes without rebu
     const result=await fixture.service.addLootgenRowToCharacterOnce(row,hero,"prepared-character",options);
     assert.equal(catalogReads,1);assert.equal(creates,2);assert.equal(hero.items.contents.length,2);
     const child=hero.items.contents.find(item=>item.type==="loot");
+    const host=hero.items.get(result.itemId);
+    assert.equal(host.flags[MODULE_ID].narrativeVariantId,"sword-prepared");
+    assert.equal(host.system.description.value,"<p>Подготовленный текст</p>");
     assert.equal(child.flags[MODULE_ID].installedUpgrade.hostActorId,hero.id);
     assert.equal(child.system.container,result.itemId);
     hero.items.contents.splice(0);
