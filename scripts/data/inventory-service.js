@@ -63,6 +63,11 @@ import {
   setInventoryFolderColor as setInventoryFolderColorState,
   renameInventoryFolder as renameInventoryFolderState
 } from "./inventory-folder-tree.js?v=1.4.248-folder-colors";
+import {
+  appendInventoryAcquisitionEntry,
+  readInventoryAcquisitionHistory,
+  writeInventoryAcquisitionHistory
+} from "./inventory-acquisition-history.js";
 import { resolveGearItemIcon } from "./gear-icon-resolver.js?v=1.4.243";
 
 const SOCKET_CHANNEL = `module.${MODULE_ID}`;
@@ -255,6 +260,14 @@ function normalizeInventoryMutationJournal(value) {
 
 function inventoryQuantitiesMatch(left, right) {
   return Math.abs(toNumber(left, 0) - toNumber(right, 0)) <= 1e-9;
+}
+
+function inventoryAcquisitionHistoriesMatch(left, right) {
+  return JSON.stringify(readInventoryAcquisitionHistory({
+    flags: { [MODULE_ID]: { inventoryAcquisitionHistory: left } }
+  })) === JSON.stringify(readInventoryAcquisitionHistory({
+    flags: { [MODULE_ID]: { inventoryAcquisitionHistory: right } }
+  }));
 }
 
 function roundCraftQuantity(value) {
@@ -3432,6 +3445,8 @@ export class InventoryService {
 
   async #applyDismantleTargetReceipt(actor, operationId, record) {
     const receipt = record.targetReceipt;
+    const hasAcquisitionHistory = receipt.beforeAcquisitionHistory?.version === 1
+      && receipt.afterAcquisitionHistory?.version === 1;
     const hasRecordedRouting = Object.hasOwn(record, "destinationFolderId");
     const destinationFolderId = cleanId(record.destinationFolderId);
     let folderState = null;
@@ -3463,20 +3478,47 @@ export class InventoryService {
         && cleanId(folderState.itemFolderIds[item.id]) !== destinationFolderId) {
         throw this.#inventoryReconciliationError("Inventory dismantle material moved to another folder.");
       }
-      const currentQuantity = getRawQuantity(item.toObject());
-      if (!inventoryQuantitiesMatch(currentQuantity, receipt.afterQuantity)) {
-        if (!inventoryQuantitiesMatch(currentQuantity, receipt.beforeQuantity)) {
+      const currentData = item.toObject();
+      const currentQuantity = getRawQuantity(currentData);
+      const currentHistory = readInventoryAcquisitionHistory(currentData);
+      const quantityIsBefore = inventoryQuantitiesMatch(currentQuantity, receipt.beforeQuantity);
+      const quantityIsAfter = inventoryQuantitiesMatch(currentQuantity, receipt.afterQuantity);
+      const historyIsBefore = !hasAcquisitionHistory || inventoryAcquisitionHistoriesMatch(
+        currentHistory,
+        receipt.beforeAcquisitionHistory
+      );
+      const historyIsAfter = !hasAcquisitionHistory || inventoryAcquisitionHistoriesMatch(
+        currentHistory,
+        receipt.afterAcquisitionHistory
+      );
+      if (!(quantityIsAfter && historyIsAfter)) {
+        if (!(quantityIsBefore && historyIsBefore)) {
           throw this.#inventoryReconciliationError("Inventory dismantle material quantity changed.");
         }
+        const patch = { "system.quantity": receipt.afterQuantity };
+        if (hasAcquisitionHistory) {
+          patch[`flags.${MODULE_ID}.inventoryAcquisitionHistory`] = receipt.afterAcquisitionHistory;
+        }
         try {
-          await item.update({ "system.quantity": receipt.afterQuantity });
+          await item.update(patch);
         }
         catch (error) {
-          if (!inventoryQuantitiesMatch(getRawQuantity(item.toObject()), receipt.afterQuantity)) throw error;
+          const observed = item.toObject();
+          if (!inventoryQuantitiesMatch(getRawQuantity(observed), receipt.afterQuantity)
+            || (hasAcquisitionHistory && !inventoryAcquisitionHistoriesMatch(
+              readInventoryAcquisitionHistory(observed),
+              receipt.afterAcquisitionHistory
+            ))) throw error;
         }
       }
     }
-    if (!item || !inventoryQuantitiesMatch(getRawQuantity(item.toObject()), receipt.afterQuantity)) {
+    const observedTarget = item?.toObject?.() ?? {};
+    if (!item
+      || !inventoryQuantitiesMatch(getRawQuantity(observedTarget), receipt.afterQuantity)
+      || (hasAcquisitionHistory && !inventoryAcquisitionHistoriesMatch(
+        readInventoryAcquisitionHistory(observedTarget),
+        receipt.afterAcquisitionHistory
+      ))) {
       throw this.#inventoryReconciliationError("Inventory dismantle material credit was not observed.");
     }
     if (hasRecordedRouting) {
@@ -3574,6 +3616,8 @@ export class InventoryService {
 
   async #compensateDismantleTargetReceipt(actor, operationId, record) {
     const receipt = record.targetReceipt;
+    const hasAcquisitionHistory = receipt.beforeAcquisitionHistory?.version === 1
+      && receipt.afterAcquisitionHistory?.version === 1;
     let item = receipt.created
       ? this.#findMutationItem(actor, operationId)
       : actor.items.get(receipt.itemId);
@@ -3581,9 +3625,15 @@ export class InventoryService {
       if (receipt.created) return;
       throw this.#inventoryReconciliationError("Inventory dismantle material target disappeared before compensation.");
     }
-    const currentQuantity = getRawQuantity(item.toObject());
+    const currentData = item.toObject();
+    const currentQuantity = getRawQuantity(currentData);
+    const currentHistory = readInventoryAcquisitionHistory(currentData);
     if (receipt.created) {
-      if (!inventoryQuantitiesMatch(currentQuantity, receipt.afterQuantity)) {
+      if (!inventoryQuantitiesMatch(currentQuantity, receipt.afterQuantity)
+        || (hasAcquisitionHistory && !inventoryAcquisitionHistoriesMatch(
+          currentHistory,
+          receipt.afterAcquisitionHistory
+        ))) {
         throw this.#inventoryReconciliationError("Created dismantle material changed before compensation.");
       }
       try {
@@ -3598,17 +3648,41 @@ export class InventoryService {
       }
       return;
     }
-    if (inventoryQuantitiesMatch(currentQuantity, receipt.beforeQuantity)) return;
-    if (!inventoryQuantitiesMatch(currentQuantity, receipt.afterQuantity)) {
+    const quantityIsBefore = inventoryQuantitiesMatch(currentQuantity, receipt.beforeQuantity);
+    const quantityIsAfter = inventoryQuantitiesMatch(currentQuantity, receipt.afterQuantity);
+    const historyIsBefore = !hasAcquisitionHistory || inventoryAcquisitionHistoriesMatch(
+      currentHistory,
+      receipt.beforeAcquisitionHistory
+    );
+    const historyIsAfter = !hasAcquisitionHistory || inventoryAcquisitionHistoriesMatch(
+      currentHistory,
+      receipt.afterAcquisitionHistory
+    );
+    if (quantityIsBefore && historyIsBefore) return;
+    if (!(quantityIsAfter && historyIsAfter)) {
       throw this.#inventoryReconciliationError("Merged dismantle material changed before compensation.");
     }
+    const patch = { "system.quantity": receipt.beforeQuantity };
+    if (hasAcquisitionHistory) {
+      patch[`flags.${MODULE_ID}.inventoryAcquisitionHistory`] = receipt.beforeAcquisitionHistory;
+    }
     try {
-      await item.update({ "system.quantity": receipt.beforeQuantity });
+      await item.update(patch);
     }
     catch (error) {
-      if (!inventoryQuantitiesMatch(getRawQuantity(item.toObject()), receipt.beforeQuantity)) throw error;
+      const observed = item.toObject();
+      if (!inventoryQuantitiesMatch(getRawQuantity(observed), receipt.beforeQuantity)
+        || (hasAcquisitionHistory && !inventoryAcquisitionHistoriesMatch(
+          readInventoryAcquisitionHistory(observed),
+          receipt.beforeAcquisitionHistory
+        ))) throw error;
     }
-    if (!inventoryQuantitiesMatch(getRawQuantity(item.toObject()), receipt.beforeQuantity)) {
+    const observed = item.toObject();
+    if (!inventoryQuantitiesMatch(getRawQuantity(observed), receipt.beforeQuantity)
+      || (hasAcquisitionHistory && !inventoryAcquisitionHistoriesMatch(
+        readInventoryAcquisitionHistory(observed),
+        receipt.beforeAcquisitionHistory
+      ))) {
       throw this.#inventoryReconciliationError("Merged dismantle material was not restored by compensation.");
     }
   }
@@ -3785,7 +3859,7 @@ export class InventoryService {
       if (!output || !material) {
         throw new Error("Для этого предмета не найден подходящий материал.");
       }
-      const materialItemData = this.#buildMaterialItemData(material, output.quantity);
+      let materialItemData = this.#buildMaterialItemData(material, output.quantity);
       const routing = await this.#prepareDismantleRouting(
         inventoryActor,
         item,
@@ -3838,6 +3912,12 @@ export class InventoryService {
         scoped: true
       });
       const targetBeforeQuantity = target ? getRawQuantity(target.toObject()) : 0;
+      const beforeAcquisitionHistory = readInventoryAcquisitionHistory(target?.toObject?.() ?? {});
+      const afterAcquisitionHistory = appendInventoryAcquisitionEntry(
+        beforeAcquisitionHistory,
+        this.#buildDismantleAcquisitionEntry(itemData, item.id, item.name, output.quantity)
+      );
+      materialItemData = writeInventoryAcquisitionHistory(materialItemData, afterAcquisitionHistory);
       if (!target) {
         foundry.utils.setProperty(materialItemData, `flags.${MODULE_ID}.${INVENTORY_MUTATION_FLAG}`, {
           id: operationId,
@@ -3872,8 +3952,8 @@ export class InventoryService {
           afterQuantity: roundNumber(targetBeforeQuantity + output.quantity, 2),
           delta: output.quantity,
           folderId: routing.destinationFolderId,
-          beforeAcquisitionHistory: null,
-          afterAcquisitionHistory: null
+          beforeAcquisitionHistory,
+          afterAcquisitionHistory
         }
       });
     }
@@ -4050,7 +4130,57 @@ export class InventoryService {
     }
   }
 
-  #inventoryIngressDerivedRow(previewRow, sourceRow, overrideToRoot) {
+  #buildInventoryAcquisitionEntry({ sourceOrigin, sourceRow, quantity, context = {} }) {
+    const methodByOrigin = {
+      lootgen: "lootgen",
+      storage: "storage",
+      import: "transfer",
+      "public-model": "manual",
+      "manual-entry": "manual"
+    };
+    const method = methodByOrigin[sourceOrigin] ?? "other";
+    const manual = method === "manual";
+    const worldTime = Number(globalThis.game?.time?.worldTime);
+    return {
+      recordedAt: Date.now(),
+      worldTime: Number.isFinite(worldTime) ? worldTime : null,
+      quantity,
+      method,
+      sceneId: cleanId(context.sceneId),
+      sceneName: cleanId(context.sceneName),
+      sourceType: manual ? "user" : cleanId(context.sourceType || sourceOrigin),
+      sourceId: manual
+        ? cleanId(context.userId)
+        : cleanId(context.sourceId || sourceRow?.sourceKey),
+      sourceName: manual
+        ? "Ручное добавление"
+        : cleanId(context.sourceName || sourceRow?.itemData?.name || sourceOrigin),
+      detail: manual ? cleanId(context.userName) : cleanId(context.detail)
+    };
+  }
+
+  #buildDismantleAcquisitionEntry(sourceItemData, sourceItemId, sourceItemName, quantity) {
+    const inherited = readInventoryAcquisitionHistory(sourceItemData).entries[0] ?? null;
+    const detail = [inherited?.sceneName, inherited?.sourceName]
+      .map(cleanId)
+      .filter(Boolean)
+      .join(" — ");
+    const worldTime = Number(globalThis.game?.time?.worldTime);
+    return {
+      recordedAt: Date.now(),
+      worldTime: Number.isFinite(worldTime) ? worldTime : null,
+      quantity,
+      method: "dismantle",
+      sceneId: cleanId(inherited?.sceneId),
+      sceneName: cleanId(inherited?.sceneName),
+      sourceType: "item",
+      sourceId: cleanId(sourceItemId),
+      sourceName: `Разбор — ${cleanId(sourceItemName)}`,
+      detail
+    };
+  }
+
+  #inventoryIngressDerivedRow(previewRow, sourceRow, overrideToRoot, sourceOrigin, acquisitionContext) {
     const action = previewRow.action;
     const effectiveType = overrideToRoot ? "root" : action.type;
     const derivedFolderId = effectiveType === "folder" || effectiveType === "legacy"
@@ -4063,6 +4193,12 @@ export class InventoryService {
       ...(this.#nativeImportRows.has(sourceRow) ? { nativeImportSource: foundry.utils.deepClone(this.#nativeImportRows.get(sourceRow)) } : {}),
       container: foundry.utils.deepClone(sourceRow.container),
       quantity: previewRow.quantity,
+      acquisition: this.#buildInventoryAcquisitionEntry({
+        sourceOrigin,
+        sourceRow,
+        quantity: previewRow.quantity,
+        context: acquisitionContext
+      }),
       matchedRuleId: previewRow.matchedRuleId,
       overrideToRoot,
       action: foundry.utils.deepClone(action),
@@ -4097,7 +4233,13 @@ export class InventoryService {
             itemData: this.#buildMaterialItemData(material, output.quantity),
             quantity: output.quantity,
             folderId: null,
-            scoped: true
+            scoped: true,
+            acquisition: this.#buildDismantleAcquisitionEntry(
+              row.itemData,
+              row.itemData?._id ?? row.itemData?.id ?? row.sourceKey,
+              row.itemData?.name,
+              output.quantity
+            )
           };
         })
       : row.container
@@ -4105,17 +4247,24 @@ export class InventoryService {
           container: foundry.utils.deepClone(row.container),
           quantity: 1,
           folderId: row.derivedFolderId,
-          scoped: row.effectiveType !== "legacy"
+          scoped: row.effectiveType !== "legacy",
+          acquisition: foundry.utils.deepClone(row.acquisition)
         }]
         : [{
           itemData: foundry.utils.deepClone(row.itemData),
           quantity: row.quantity,
           folderId: row.derivedFolderId,
-          scoped: row.effectiveType !== "legacy"
+          scoped: row.effectiveType !== "legacy",
+          acquisition: foundry.utils.deepClone(row.acquisition)
         }];
 
     return targetRows.map((target, outputIndex) => {
       if (target.container) {
+        const beforeAcquisitionHistory = readInventoryAcquisitionHistory({});
+        const afterAcquisitionHistory = appendInventoryAcquisitionEntry(
+          beforeAcquisitionHistory,
+          { ...target.acquisition, quantity: 1 }
+        );
         return {
           outputIndex,
           container: foundry.utils.deepClone(target.container),
@@ -4124,11 +4273,13 @@ export class InventoryService {
           beforeQuantity: 0,
           afterQuantity: 1,
           delta: 1,
+          beforeAcquisitionHistory,
+          afterAcquisitionHistory,
           folderId: target.folderId,
           scoped: target.scoped
         };
       }
-      const itemData = sanitizeEmbeddedItemData(target.itemData);
+      let itemData = sanitizeEmbeddedItemData(target.itemData);
       foundry.utils.setProperty(itemData, "system.quantity", target.quantity);
       const candidate = this.#findInventoryMergeCandidate(actor, itemData, {
         folderState,
@@ -4136,6 +4287,12 @@ export class InventoryService {
         scoped: target.scoped
       });
       const beforeQuantity = candidate ? getRawQuantity(candidate.toObject()) : 0;
+      const beforeAcquisitionHistory = readInventoryAcquisitionHistory(candidate?.toObject?.() ?? {});
+      const afterAcquisitionHistory = appendInventoryAcquisitionEntry(
+        beforeAcquisitionHistory,
+        { ...target.acquisition, quantity: target.quantity }
+      );
+      itemData = writeInventoryAcquisitionHistory(itemData, afterAcquisitionHistory);
       if (!candidate) {
         foundry.utils.setProperty(itemData, `flags.${MODULE_ID}.${INVENTORY_MUTATION_FLAG}`, {
           id: operationId,
@@ -4157,6 +4314,8 @@ export class InventoryService {
         beforeQuantity,
         afterQuantity: roundNumber(beforeQuantity + target.quantity, 2),
         delta: target.quantity,
+        beforeAcquisitionHistory,
+        afterAcquisitionHistory,
         folderId: target.folderId,
         scoped: target.scoped
       };
@@ -4193,11 +4352,31 @@ export class InventoryService {
       });
       const itemId = cleanId(root?.id);
       if (!itemId) throw this.#inventoryReconciliationError("Portable container root was not observed.");
+      const rootHistory = readInventoryAcquisitionHistory(root?.toObject?.() ?? {});
+      if (!inventoryAcquisitionHistoriesMatch(rootHistory, receipt.afterAcquisitionHistory)) {
+        if (!inventoryAcquisitionHistoriesMatch(rootHistory, receipt.beforeAcquisitionHistory)
+          || typeof root?.update !== "function") {
+          throw this.#inventoryReconciliationError("Portable container acquisition history changed.");
+        }
+        try {
+          await root.update({
+            [`flags.${MODULE_ID}.inventoryAcquisitionHistory`]: receipt.afterAcquisitionHistory
+          });
+        }
+        catch (error) {
+          if (!inventoryAcquisitionHistoriesMatch(
+            readInventoryAcquisitionHistory(root?.toObject?.() ?? {}),
+            receipt.afterAcquisitionHistory
+          )) throw error;
+        }
+      }
       return itemId;
     }
     let item = receipt.created
       ? this.#findInventoryIngressMutationItem(actor, record.id, row.sourceKey, receipt.outputIndex)
       : actor.items.get(receipt.itemId);
+    const hasAcquisitionHistory = receipt.beforeAcquisitionHistory?.version === 1
+      && receipt.afterAcquisitionHistory?.version === 1;
     if (receipt.created) {
       if (!item) {
         try {
@@ -4208,22 +4387,48 @@ export class InventoryService {
           if (!item) throw error;
         }
       }
-      if (!inventoryQuantitiesMatch(getRawQuantity(item.toObject()), receipt.afterQuantity)) {
+      const itemData = item?.toObject?.() ?? {};
+      if (!inventoryQuantitiesMatch(getRawQuantity(itemData), receipt.afterQuantity)
+        || (hasAcquisitionHistory && !inventoryAcquisitionHistoriesMatch(
+          readInventoryAcquisitionHistory(itemData),
+          receipt.afterAcquisitionHistory
+        ))) {
         throw this.#inventoryReconciliationError("Inventory ingress created target quantity changed.");
       }
     }
     else {
       if (!item) throw this.#inventoryReconciliationError("Inventory ingress merge target disappeared.");
-      const currentQuantity = getRawQuantity(item.toObject());
-      if (!inventoryQuantitiesMatch(currentQuantity, receipt.afterQuantity)) {
-        if (!inventoryQuantitiesMatch(currentQuantity, receipt.beforeQuantity)) {
+      const currentData = item.toObject();
+      const currentQuantity = getRawQuantity(currentData);
+      const quantityIsBefore = inventoryQuantitiesMatch(currentQuantity, receipt.beforeQuantity);
+      const quantityIsAfter = inventoryQuantitiesMatch(currentQuantity, receipt.afterQuantity);
+      const currentHistory = readInventoryAcquisitionHistory(currentData);
+      const historyIsBefore = !hasAcquisitionHistory || inventoryAcquisitionHistoriesMatch(
+        currentHistory,
+        receipt.beforeAcquisitionHistory
+      );
+      const historyIsAfter = !hasAcquisitionHistory || inventoryAcquisitionHistoriesMatch(
+        currentHistory,
+        receipt.afterAcquisitionHistory
+      );
+      if (!(quantityIsAfter && historyIsAfter)) {
+        if (!(quantityIsBefore && historyIsBefore)) {
           throw this.#inventoryReconciliationError("Inventory ingress merge target quantity changed.");
         }
+        const patch = { "system.quantity": receipt.afterQuantity };
+        if (hasAcquisitionHistory) {
+          patch[`flags.${MODULE_ID}.inventoryAcquisitionHistory`] = receipt.afterAcquisitionHistory;
+        }
         try {
-          await item.update({ "system.quantity": receipt.afterQuantity });
+          await item.update(patch);
         }
         catch (error) {
-          if (!inventoryQuantitiesMatch(getRawQuantity(item.toObject()), receipt.afterQuantity)) throw error;
+          const observed = item.toObject();
+          if (!inventoryQuantitiesMatch(getRawQuantity(observed), receipt.afterQuantity)
+            || (hasAcquisitionHistory && !inventoryAcquisitionHistoriesMatch(
+              readInventoryAcquisitionHistory(observed),
+              receipt.afterAcquisitionHistory
+            ))) throw error;
         }
       }
     }
@@ -4247,7 +4452,8 @@ export class InventoryService {
     resolveRows,
     debitRow,
     grantContainer = null,
-    allowPreparedLootgenGraph = false
+    allowPreparedLootgenGraph = false,
+    acquisitionContext = {}
   } = {}) {
     const exactKeys = ["groupActorId", "batchMutationId", "sourceOrigin", "serializedPlan"];
     if (!request || typeof request !== "object" || Array.isArray(request)
@@ -4285,7 +4491,9 @@ export class InventoryService {
       );
     }
     if (existing) {
-      return this.#commitLegacyInventoryIngressBatch(request, { resolveRows, debitRow, grantContainer, allowPreparedLootgenGraph });
+      return this.#commitLegacyInventoryIngressBatch(request, {
+        resolveRows, debitRow, grantContainer, allowPreparedLootgenGraph, acquisitionContext
+      });
     }
 
     this.#claimSimpleMutationFingerprint(operationId, fingerprint);
@@ -4299,7 +4507,9 @@ export class InventoryService {
       }
       const cachedDecision = await cachedExecution.promise;
       if (cachedDecision.mode === "legacy") {
-        return this.#commitLegacyInventoryIngressBatch(request, { resolveRows, debitRow, grantContainer, allowPreparedLootgenGraph });
+        return this.#commitLegacyInventoryIngressBatch(request, {
+          resolveRows, debitRow, grantContainer, allowPreparedLootgenGraph, acquisitionContext
+        });
       }
       return cachedDecision.value;
     }
@@ -4349,7 +4559,8 @@ export class InventoryService {
             debitRow,
             fingerprint,
             sourceRows,
-            authoritativePreview
+            authoritativePreview,
+            acquisitionContext
           })
         };
       }
@@ -4395,16 +4606,25 @@ export class InventoryService {
     }
     if (decision.mode === "legacy") {
       this.simpleIngressExecutions.delete(operationId);
-      return this.#commitLegacyInventoryIngressBatch(request, { resolveRows, debitRow, grantContainer, allowPreparedLootgenGraph });
+      return this.#commitLegacyInventoryIngressBatch(request, {
+        resolveRows, debitRow, grantContainer, allowPreparedLootgenGraph, acquisitionContext
+      });
     }
     return decision.value;
   }
 
   async #rollbackSimpleInventoryIngressTarget(actor, record, row, receipt) {
+    const hasAcquisitionHistory = receipt.beforeAcquisitionHistory?.version === 1
+      && receipt.afterAcquisitionHistory?.version === 1;
     if (receipt.created) {
       let item = this.#findInventoryIngressMutationItem(actor, record.id, row.sourceKey, receipt.outputIndex);
       if (!item) return;
-      if (!inventoryQuantitiesMatch(getRawQuantity(item.toObject()), receipt.afterQuantity)) {
+      const itemData = item.toObject();
+      if (!inventoryQuantitiesMatch(getRawQuantity(itemData), receipt.afterQuantity)
+        || (hasAcquisitionHistory && !inventoryAcquisitionHistoriesMatch(
+          readInventoryAcquisitionHistory(itemData),
+          receipt.afterAcquisitionHistory
+        ))) {
         throw this.#inventoryReconciliationError("Inventory ingress created target changed before rollback.");
       }
       try {
@@ -4424,18 +4644,44 @@ export class InventoryService {
     if (!item) {
       throw this.#inventoryReconciliationError("Inventory ingress merge target disappeared before rollback.");
     }
-    const currentQuantity = getRawQuantity(item.toObject());
-    if (inventoryQuantitiesMatch(currentQuantity, receipt.beforeQuantity)) return;
-    if (!inventoryQuantitiesMatch(currentQuantity, receipt.afterQuantity)) {
+    const currentData = item.toObject();
+    const currentQuantity = getRawQuantity(currentData);
+    const currentHistory = readInventoryAcquisitionHistory(currentData);
+    const quantityIsBefore = inventoryQuantitiesMatch(currentQuantity, receipt.beforeQuantity);
+    const quantityIsAfter = inventoryQuantitiesMatch(currentQuantity, receipt.afterQuantity);
+    const historyIsBefore = !hasAcquisitionHistory || inventoryAcquisitionHistoriesMatch(
+      currentHistory,
+      receipt.beforeAcquisitionHistory
+    );
+    const historyIsAfter = !hasAcquisitionHistory || inventoryAcquisitionHistoriesMatch(
+      currentHistory,
+      receipt.afterAcquisitionHistory
+    );
+    if (quantityIsBefore && historyIsBefore) return;
+    if (!(quantityIsAfter && historyIsAfter)) {
       throw this.#inventoryReconciliationError("Inventory ingress merge target changed before rollback.");
     }
+    const patch = { "system.quantity": receipt.beforeQuantity };
+    if (hasAcquisitionHistory) {
+      patch[`flags.${MODULE_ID}.inventoryAcquisitionHistory`] = receipt.beforeAcquisitionHistory;
+    }
     try {
-      await item.update({ "system.quantity": receipt.beforeQuantity });
+      await item.update(patch);
     }
     catch (error) {
-      if (!inventoryQuantitiesMatch(getRawQuantity(item.toObject()), receipt.beforeQuantity)) throw error;
+      const observed = item.toObject();
+      if (!inventoryQuantitiesMatch(getRawQuantity(observed), receipt.beforeQuantity)
+        || (hasAcquisitionHistory && !inventoryAcquisitionHistoriesMatch(
+          readInventoryAcquisitionHistory(observed),
+          receipt.beforeAcquisitionHistory
+        ))) throw error;
     }
-    if (!inventoryQuantitiesMatch(getRawQuantity(item.toObject()), receipt.beforeQuantity)) {
+    const observed = item.toObject();
+    if (!inventoryQuantitiesMatch(getRawQuantity(observed), receipt.beforeQuantity)
+      || (hasAcquisitionHistory && !inventoryAcquisitionHistoriesMatch(
+        readInventoryAcquisitionHistory(observed),
+        receipt.beforeAcquisitionHistory
+      ))) {
       throw this.#inventoryReconciliationError("Inventory ingress merge target was not restored.");
     }
   }
@@ -4468,7 +4714,8 @@ export class InventoryService {
     debitRow,
     fingerprint,
     sourceRows,
-    authoritativePreview
+    authoritativePreview,
+    acquisitionContext
   }) {
     const groupActorId = cleanId(request.groupActorId);
     const batchMutationId = cleanId(request.batchMutationId);
@@ -4495,7 +4742,9 @@ export class InventoryService {
       const rows = authoritativePreview.rows.map((previewRow) => this.#inventoryIngressDerivedRow(
         previewRow,
         sourceByKey.get(previewRow.sourceKey),
-        overrideKeys.has(previewRow.sourceKey)
+        overrideKeys.has(previewRow.sourceKey),
+        sourceOrigin,
+        acquisitionContext
       ));
       if (rows.some((row) => row.container || row.effectiveType === "dismantle")) {
         throw new InventoryIngressRuleError(
@@ -4668,7 +4917,8 @@ export class InventoryService {
     resolveRows,
     debitRow,
     grantContainer = null,
-    allowPreparedLootgenGraph = false
+    allowPreparedLootgenGraph = false,
+    acquisitionContext = {}
   } = {}) {
     const exactKeys = ["groupActorId", "batchMutationId", "sourceOrigin", "serializedPlan"];
     if (!request || typeof request !== "object" || Array.isArray(request)
@@ -4735,7 +4985,9 @@ export class InventoryService {
         const rows = authoritativePreview.rows.map((previewRow) => this.#inventoryIngressDerivedRow(
           previewRow,
           sourceByKey.get(previewRow.sourceKey),
-          overrideKeys.has(previewRow.sourceKey)
+          overrideKeys.has(previewRow.sourceKey),
+          sourceOrigin,
+          acquisitionContext
         ));
         const missingFolder = rows.find((row) => row.derivedFolderId !== null && !folderIds.has(row.derivedFolderId));
         if (missingFolder) {
@@ -5125,6 +5377,7 @@ export class InventoryService {
       sourceTypeLabel,
       sourceId,
       sourceName: item.name,
+      acquisitionHistory: readInventoryAcquisitionHistory(itemData),
       canOpenEntry: sourceType === "material" || sourceType === "gear" || sourceType === "magicItem",
       isJournalRecord: isJournalRecordItem(item),
       itemTypeLabel,
@@ -6895,7 +7148,13 @@ export class InventoryService {
       serializedPlan
     }, {
       resolveRows: async () => [foundry.utils.deepClone(row)],
-      debitRow: async () => {}
+      debitRow: async () => {},
+      acquisitionContext: new Set(["public-model", "manual-entry"]).has(sourceOrigin)
+        ? {
+            userId: cleanId(globalThis.game?.user?.id),
+            userName: cleanId(globalThis.game?.user?.name ?? globalThis.game?.user?.id)
+          }
+        : { sourceType: "lootgen", sourceName: "Lootgen" }
     });
   }
 
@@ -8999,6 +9258,8 @@ export class InventoryService {
     });
     if (prepared.cancelled) return prepared.result;
     const sourceActor = isActorDocument(itemDocument.parent) ? itemDocument.parent : null;
+    const sourceToken = sourceActor?.isToken === true ? sourceActor.token ?? null : null;
+    const sourceScene = sourceToken?.parent ?? sourceToken?.scene ?? null;
     return this.commitInventoryIngressBatch({
       groupActorId: cleanId(groupActorId || actor?.id),
       batchMutationId: operationId,
@@ -9027,6 +9288,13 @@ export class InventoryService {
         catch (error) {
           if (sourceStillExists()) throw error;
         }
+      },
+      acquisitionContext: {
+        sceneId: cleanId(sourceScene?.id),
+        sceneName: cleanId(sourceScene?.name),
+        sourceType: sourceToken ? "token" : "actor",
+        sourceId: cleanId(sourceToken?.id ?? sourceActor?.id),
+        sourceName: cleanId(sourceToken?.name ?? sourceActor?.name)
       }
     });
   }

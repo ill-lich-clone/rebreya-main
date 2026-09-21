@@ -11,6 +11,7 @@ import {
 } from "../scripts/data/inventory-ingress-descriptor.js";
 import { InventoryIngressPlanner } from "../scripts/application/inventory-ingress-planner.js";
 import { InventoryIngressRuleCompilerCache } from "../scripts/data/inventory-ingress-rules.js";
+import { readInventoryAcquisitionHistory } from "../scripts/data/inventory-acquisition-history.js";
 
 const previousActor = globalThis.Actor;
 const previousItem = globalThis.Item;
@@ -1990,9 +1991,9 @@ function dismantleModel(material) {
   };
 }
 
-function dismantleSource({ id, materialId, quantity = 1 } = {}) {
+function dismantleSource({ id, materialId, quantity = 1, failUpdate = false } = {}) {
   return createItem({
-    id, name: "Iron sword", type: "weapon", quantity,
+    id, name: "Iron sword", type: "weapon", quantity, failUpdate,
     system: {
       quantity,
       price: { value: 10, denomination: "gp" },
@@ -2291,6 +2292,298 @@ async function serializeIngressPlan(planner, {
   });
   return planner.serialize(preview, { rootOverrideSourceKeys });
 }
+
+test("acquisition provenance records canonical ingress origins once and exposes normalized snapshot history", async () => {
+  const cases = [
+    {
+      origin: "lootgen",
+      expectedMethod: "lootgen",
+      context: { sceneId: "scene-loot", sceneName: "Пещера", sourceType: "lootgen", sourceId: "loot-1", sourceName: "<Гоблин>" }
+    },
+    {
+      origin: "storage",
+      expectedMethod: "storage",
+      context: { sceneId: "scene-store", sceneName: "Склад", sourceType: "token", sourceId: "token-1", sourceName: "Сундук" }
+    },
+    {
+      origin: "import",
+      expectedMethod: "transfer",
+      context: { sceneId: "scene-import", sceneName: "Лагерь", sourceType: "actor", sourceId: "hero-1", sourceName: "Следопыт" }
+    },
+    {
+      origin: "manual-entry",
+      expectedMethod: "manual",
+      context: { userId: "player-1", userName: "Игрок <Один>" }
+    },
+    {
+      origin: "public-model",
+      expectedMethod: "manual",
+      context: { userId: "gm-1", userName: "Мастер" }
+    }
+  ];
+
+  for (const entry of cases) {
+    const itemData = inventoryIngressItemData(`history-${entry.origin}`, { name: `History ${entry.origin}` });
+    const group = createActor({ id: `history-${entry.origin}-group`, type: "group", managed: true });
+    const fixture = createInventoryIngressFixture({ group });
+    const rows = [{ sourceKey: `history-${entry.origin}-row`, quantity: 2, itemData, legacyFolderId: null, container: null }];
+    try {
+      const serializedPlan = await serializeIngressPlan(fixture.planner, { groupActorId: group.id, rows });
+      const request = {
+        groupActorId: group.id,
+        batchMutationId: `history-${entry.origin}-batch`,
+        sourceOrigin: entry.origin,
+        serializedPlan
+      };
+      const adapters = {
+        resolveRows: async () => clone(rows),
+        debitRow: async () => {},
+        acquisitionContext: clone(entry.context)
+      };
+      await fixture.service.commitInventoryIngressBatch(request, adapters);
+      await fixture.service.commitInventoryIngressBatch(request, adapters);
+
+      const target = group.items.contents[0];
+      const history = readInventoryAcquisitionHistory(target.toObject());
+      assert.equal(history.entries.length, 1, entry.origin);
+      assert.equal(history.entries[0].method, entry.expectedMethod, entry.origin);
+      assert.equal(history.entries[0].quantity, 2, entry.origin);
+      if (entry.expectedMethod === "manual") {
+        assert.equal(history.entries[0].sourceName, "Ручное добавление", entry.origin);
+        assert.equal(history.entries[0].detail, entry.context.userName, entry.origin);
+      }
+      else {
+        assert.equal(history.entries[0].sourceName, entry.context.sourceName, entry.origin);
+        assert.equal(history.entries[0].sceneId, entry.context.sceneId, entry.origin);
+      }
+
+      const snapshot = await fixture.service.getInventorySnapshot({ groupActorId: group.id });
+      assert.deepEqual(snapshot.items[0].acquisitionHistory, history, entry.origin);
+    }
+    finally { fixture.restore(); }
+  }
+});
+
+test("acquisition history is unchanged by a same-group folder move", async () => {
+  const item = createItem({
+    id: "history-move-item",
+    name: "History move",
+    flags: { [MODULE_ID]: { inventoryAcquisitionHistory: {
+      version: 1,
+      entries: [{
+        recordedAt: 10,
+        worldTime: null,
+        quantity: 1,
+        method: "storage",
+        sceneId: "",
+        sceneName: "",
+        sourceType: "token",
+        sourceId: "chest",
+        sourceName: "Chest",
+        detail: ""
+      }]
+    } } }
+  });
+  const group = createActor({ id: "history-move-group", type: "group", managed: true, items: [item] });
+  setInventoryFolderState(group, {
+    folders: [
+      { id: "before", name: "Before", parentId: null, color: null },
+      { id: "after", name: "After", parentId: null, color: null }
+    ],
+    itemFolderIds: { [item.id]: "before" }
+  });
+  const fixture = installFixture({ group, actors: [group] });
+  const before = readInventoryAcquisitionHistory(item.toObject());
+  try {
+    await fixture.service.moveInventoryItemToFolder({
+      groupActorId: group.id,
+      itemId: item.id,
+      folderId: "after"
+    });
+    assert.deepEqual(readInventoryAcquisitionHistory(item.toObject()), before);
+  }
+  finally { fixture.restore(); }
+});
+
+test("acquisition history merge keeps newest ten and source-debit rollback restores exact prior history", async () => {
+  const itemData = inventoryIngressItemData("history-stack", { name: "History stack" });
+  const priorHistory = {
+    version: 1,
+    entries: Array.from({ length: 10 }, (_, index) => ({
+      recordedAt: 100 - index,
+      worldTime: null,
+      quantity: 1,
+      method: "other",
+      sceneId: "",
+      sceneName: "",
+      sourceType: "seed",
+      sourceId: `seed-${index}`,
+      sourceName: `Seed ${index}`,
+      detail: ""
+    }))
+  };
+  const target = createItem({
+    id: "history-stack-target",
+    ...itemData,
+    quantity: 3,
+    flags: {
+      ...clone(itemData.flags),
+      [MODULE_ID]: {
+        ...clone(itemData.flags?.[MODULE_ID]),
+        inventoryAcquisitionHistory: clone(priorHistory)
+      }
+    }
+  });
+  const group = createActor({ id: "history-merge-group", type: "group", managed: true, items: [target] });
+  const fixture = createInventoryIngressFixture({ group });
+  const rows = [{ sourceKey: "history-merge-row", quantity: 2, itemData, legacyFolderId: null, container: null }];
+  try {
+    const serializedPlan = await serializeIngressPlan(fixture.planner, { groupActorId: group.id, rows });
+    await fixture.service.commitInventoryIngressBatch({
+      groupActorId: group.id,
+      batchMutationId: "history-merge-batch",
+      sourceOrigin: "storage",
+      serializedPlan
+    }, {
+      resolveRows: async () => clone(rows),
+      debitRow: async () => {},
+      acquisitionContext: { sourceType: "token", sourceId: "chest-1", sourceName: "<Гоблин>" }
+    });
+    const mergedHistory = readInventoryAcquisitionHistory(target.toObject());
+    assert.equal(mergedHistory.entries.length, 10);
+    assert.equal(mergedHistory.entries[0].sourceName, "<Гоблин>");
+    assert.equal(mergedHistory.entries.some((entry) => entry.sourceId === "seed-9"), false);
+    assert.equal(target.system.quantity, 5);
+  }
+  finally { fixture.restore(); }
+
+  const rollbackTarget = createItem({
+    id: "history-rollback-target",
+    ...itemData,
+    quantity: 3,
+    flags: {
+      ...clone(itemData.flags),
+      [MODULE_ID]: {
+        ...clone(itemData.flags?.[MODULE_ID]),
+        inventoryAcquisitionHistory: clone(priorHistory)
+      }
+    }
+  });
+  const rollbackGroup = createActor({ id: "history-rollback-group", type: "group", managed: true, items: [rollbackTarget] });
+  const rollbackFixture = createInventoryIngressFixture({ group: rollbackGroup });
+  try {
+    const serializedPlan = await serializeIngressPlan(rollbackFixture.planner, { groupActorId: rollbackGroup.id, rows });
+    await assert.rejects(
+      rollbackFixture.service.commitInventoryIngressBatch({
+        groupActorId: rollbackGroup.id,
+        batchMutationId: "history-rollback-batch",
+        sourceOrigin: "storage",
+        serializedPlan
+      }, {
+        resolveRows: async () => clone(rows),
+        debitRow: async () => { throw new Error("history source debit failed"); },
+        acquisitionContext: { sourceType: "token", sourceId: "chest-2", sourceName: "Chest" }
+      }),
+      (error) => error?.code === "inventory-ingress-partial"
+    );
+    assert.equal(rollbackTarget.system.quantity, 3);
+    assert.deepEqual(readInventoryAcquisitionHistory(rollbackTarget.toObject()), priorHistory);
+  }
+  finally { rollbackFixture.restore(); }
+});
+
+test("dismantle provenance inherits the newest source and compensation restores exact material history", async () => {
+  const iron = { id: "iron", name: "Iron", type: "Metal", priceGold: 1, weight: 1 };
+  const model = dismantleModel(iron);
+  const source = dismantleSource({ id: "history-dismantle-source", materialId: iron.id, quantity: 2 });
+  source.flags[MODULE_ID].inventoryAcquisitionHistory = {
+    version: 1,
+    entries: [{
+      recordedAt: 10,
+      worldTime: null,
+      quantity: 1,
+      method: "lootgen",
+      sceneId: "scene-cave",
+      sceneName: "Пещера",
+      sourceType: "lootgen",
+      sourceId: "loot-goblin",
+      sourceName: "<Гоблин>",
+      detail: "arbitrary description must not be copied"
+    }]
+  };
+  const priorMaterialHistory = {
+    version: 1,
+    entries: [{
+      recordedAt: 5,
+      worldTime: null,
+      quantity: 1,
+      method: "other",
+      sceneId: "",
+      sceneName: "",
+      sourceType: "seed",
+      sourceId: "old",
+      sourceName: "Old material",
+      detail: ""
+    }]
+  };
+  const material = materialStack({ id: "history-material", material: iron, quantity: 4 });
+  material.flags[MODULE_ID].inventoryAcquisitionHistory = clone(priorMaterialHistory);
+  const group = createActor({ id: "history-dismantle-group", type: "group", managed: true, items: [source, material] });
+  setDefaultDismantleFolder(group, source, material);
+  const fixture = installFixture({ group, actors: [group], moduleApi: { getModel: async () => model } });
+  try {
+    await fixture.service.executeDismantleMutation({
+      inventoryActorId: group.id,
+      itemId: source.id,
+      quantity: 1,
+      mutationId: "history-dismantle-success"
+    });
+    const history = readInventoryAcquisitionHistory(material.toObject());
+    assert.equal(history.entries[0].method, "dismantle");
+    assert.equal(history.entries[0].sourceType, "item");
+    assert.equal(history.entries[0].sourceId, source.id);
+    assert.equal(history.entries[0].sourceName, `Разбор — ${source.name}`);
+    assert.match(history.entries[0].detail, /Пещера/u);
+    assert.match(history.entries[0].detail, /<Гоблин>/u);
+    assert.doesNotMatch(history.entries[0].detail, /arbitrary description/u);
+  }
+  finally { fixture.restore(); }
+
+  const failingSource = dismantleSource({
+    id: "history-dismantle-failing",
+    materialId: iron.id,
+    quantity: 2,
+    failUpdate: true
+  });
+  const rollbackMaterial = materialStack({ id: "history-material-rollback", material: iron, quantity: 4 });
+  rollbackMaterial.flags[MODULE_ID].inventoryAcquisitionHistory = clone(priorMaterialHistory);
+  const rollbackGroup = createActor({
+    id: "history-dismantle-rollback-group",
+    type: "group",
+    managed: true,
+    items: [failingSource, rollbackMaterial]
+  });
+  setDefaultDismantleFolder(rollbackGroup, failingSource, rollbackMaterial);
+  const rollbackFixture = installFixture({
+    group: rollbackGroup,
+    actors: [rollbackGroup],
+    moduleApi: { getModel: async () => model }
+  });
+  try {
+    await assert.rejects(
+      rollbackFixture.service.executeDismantleMutation({
+        inventoryActorId: rollbackGroup.id,
+        itemId: failingSource.id,
+        quantity: 1,
+        mutationId: "history-dismantle-rollback"
+      }),
+      /source update failed/u
+    );
+    assert.equal(rollbackMaterial.system.quantity, 4);
+    assert.deepEqual(readInventoryAcquisitionHistory(rollbackMaterial.toObject()), priorMaterialHistory);
+  }
+  finally { rollbackFixture.restore(); }
+});
 
 test("filtered folder ingress merges only in its target folder", async () => {
   const rootUpdates = [];

@@ -696,6 +696,13 @@ export class StorageCommandService {
         }
         sourceClaims.set(row.sourceKey, claim);
       },
+      acquisitionContext: {
+        sceneId: sceneId(storageToken),
+        sceneName: clean(tokenDocument(storageToken)?.parent?.name ?? tokenDocument(storageToken)?.scene?.name),
+        sourceType: "token",
+        sourceId: clean(tokenDocument(storageToken)?.id ?? tokenDocument(storageToken)?.uuid),
+        sourceName: clean(storageToken?.name ?? storageToken?.actor?.name)
+      },
       grantContainer: async ({ container, mutationId }) => {
         if (!this.containerItemService?.materializeToActorOnce) {
           throw new Error("Сервис переносимых контейнеров Rebreya недоступен.");

@@ -2107,6 +2107,10 @@ test("active GM rebuilds a strict manual descriptor before authoritative ingress
   moduleApi.inventoryService.commitInventoryIngressBatch = async (request, adapters) => {
     commits += 1;
     assert.equal(request.sourceOrigin, "manual-entry");
+    assert.deepEqual(adapters.acquisitionContext, {
+      userId: fixture.users.playerA.id,
+      userName: fixture.users.playerA.id
+    });
     const rows = await adapters.resolveRows();
     assert.equal(rows[0].itemData.name, manualEntry.name);
     return { actorId: fixture.groupA.id, changed: true, rows: [] };
@@ -2304,6 +2308,13 @@ test("Lootgen composition grant delegates Item rows once and handles coins outsi
     calls.commit += 1;
     assert.deepEqual((await adapters.resolveRows()).map((row) => row.sourceKey), rowIds);
     assert.equal(request.sourceOrigin, "lootgen");
+    assert.deepEqual(adapters.acquisitionContext, {
+      sceneId: "",
+      sceneName: "",
+      sourceType: "lootgen",
+      sourceId: liveState.lootId,
+      sourceName: "Lootgen"
+    });
     return {
       actorId: fixture.groupA.id,
       rows: [

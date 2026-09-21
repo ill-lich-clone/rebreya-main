@@ -1830,7 +1830,19 @@ export class RebreyaMainModule {
             return buildRows();
           },
           debitRow: async () => {},
-          allowPreparedLootgenGraph: true
+          allowPreparedLootgenGraph: true,
+          acquisitionContext: (() => {
+            const sceneId = String(message?.speaker?.scene ?? "").trim();
+            const sceneName = String(globalThis.game?.scenes?.get?.(sceneId)?.name ?? "").trim();
+            const state = message.getFlag(MODULE_ID, "lootgenChat") ?? {};
+            return {
+              sceneId,
+              sceneName,
+              sourceType: "lootgen",
+              sourceId: String(state.lootId ?? lootId ?? "").trim(),
+              sourceName: String(state.sourceName ?? "").trim() || "Lootgen"
+            };
+          })()
         });
         const acceptedRowIds = ingressResult.rows
           .filter((row) => row.changed)
@@ -2643,7 +2655,7 @@ export class RebreyaMainModule {
         aggregateKey("inventory-ingress", payload.sourceOrigin)
       ]),
       execute: (payload, context) => this.runInventoryMutation(
-        () => this.#executeDirectInventoryIngress(payload),
+        () => this.#executeDirectInventoryIngress(payload, { sender: context.sender }),
         {
           actorIdsFromResult: () => [payload.groupActorId],
           traceContext: context
@@ -4004,7 +4016,7 @@ export class RebreyaMainModule {
     return choices === null ? null : this.inventoryIngressPlanner.serialize(preview, choices);
   }
 
-  async #executeDirectInventoryIngress(payload) {
+  async #executeDirectInventoryIngress(payload, { sender = globalThis.game?.user } = {}) {
     let ingressResult = {
       actorId: payload.groupActorId,
       batchMutationId: payload.batchMutationId,
@@ -4024,7 +4036,13 @@ export class RebreyaMainModule {
           payload.sources,
           requestedFolderId
         ),
-        debitRow: async () => {}
+        debitRow: async () => {},
+        acquisitionContext: new Set(["public-model", "manual-entry"]).has(payload.sourceOrigin)
+          ? {
+              userId: String(sender?.id ?? "").trim(),
+              userName: String(sender?.name ?? sender?.id ?? "").trim()
+            }
+          : { sourceType: "lootgen", sourceName: "Lootgen" }
       });
     }
     const coins = this.#normalizeDirectInventoryIngressCoins(payload.coins);
@@ -4094,7 +4112,7 @@ export class RebreyaMainModule {
       command: INVENTORY_INGRESS_DIRECT_COMMAND,
       payload,
       validate: isValidDirectInventoryIngressPayload,
-      execute: (exactPayload) => this.#executeDirectInventoryIngress(exactPayload)
+      execute: (exactPayload) => this.#executeDirectInventoryIngress(exactPayload, { sender: game.user })
     });
   }
 
