@@ -14,7 +14,7 @@ import {
   ensurePackSidebarFolder,
   normalizeFolderPath,
   resolveNamedIcon
-} from "./compendium-utils.js";
+} from "./compendium-utils.js?v=1.4.323";
 import { syncManagedDocumentsOnActiveGm } from "./managed-compendium-sync.js";
 import { buildSlug } from "./item-classification.js";
 
@@ -632,7 +632,7 @@ export class StatesCompendiumService {
 
     const states = await loadStatesData();
     const featLookupByName = await buildFeatLookup();
-    const iconLookup = await buildNamedIconLookup(STATE_ICON_SEARCH_PATHS, { forceRefresh: true });
+    const iconLookup = await buildNamedIconLookup(STATE_ICON_SEARCH_PATHS);
     const entries = prepareStateEntries(states, featLookupByName, iconLookup);
     const pack = await ensurePack();
     const documents = await getPackDocuments(pack);

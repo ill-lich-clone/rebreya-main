@@ -12,7 +12,7 @@ import {
   ensurePackSidebarFolder,
   normalizeFolderPath,
   resolveNamedIcon
-} from "./compendium-utils.js";
+} from "./compendium-utils.js?v=1.4.323";
 import { buildSlug } from "./item-classification.js";
 import { syncFlaggedManagedDocuments } from "./managed-compendium-sync.js";
 
@@ -2186,7 +2186,7 @@ export class RacesCompendiumService {
       return null;
     }
 
-    const iconLookup = await buildNamedIconLookup(RACE_ICON_SEARCH_PATHS, { forceRefresh: true });
+    const iconLookup = await buildNamedIconLookup(RACE_ICON_SEARCH_PATHS);
     const races = await loadRacesData();
     const featureDefinitions = buildFeatureDefinitions(races);
     const { pack: featuresPack, featureUuidById } = await syncRaceFeaturePack(featureDefinitions, {

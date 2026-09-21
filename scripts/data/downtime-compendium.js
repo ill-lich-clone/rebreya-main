@@ -11,7 +11,7 @@ import {
   ensurePackSidebarFolder,
   normalizeFolderPath,
   resolveNamedIcon
-} from "./compendium-utils.js";
+} from "./compendium-utils.js?v=1.4.323";
 import { syncManagedDocumentsOnActiveGm } from "./managed-compendium-sync.js";
 import { cloneFoundryValue as clone } from "../shared/foundry-values.js";
 
@@ -391,7 +391,7 @@ export class DowntimeCompendiumService {
       return null;
     }
 
-    const iconLookup = await buildNamedIconLookup(DOWNTIME_ICON_SEARCH_PATHS, { forceRefresh: true });
+    const iconLookup = await buildNamedIconLookup(DOWNTIME_ICON_SEARCH_PATHS);
     const activities = (await loadDowntimeData()).map((activity) => ({
       ...activity,
       img: resolveNamedIcon(activity.name, iconLookup, activity.img || DEFAULT_DOWNTIME_ICON)

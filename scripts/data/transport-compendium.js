@@ -9,8 +9,8 @@ import {
   buildTransportActorData,
   normalizeTransportEntry,
   resolveTransportDefaultArtwork
-} from "./transport-actor-builder.js";
-import { buildNamedIconLookup } from "./compendium-utils.js";
+} from "./transport-actor-builder.js?v=1.4.323";
+import { buildNamedIconLookup } from "./compendium-utils.js?v=1.4.323";
 import { syncFlaggedManagedDocuments } from "./managed-compendium-sync.js";
 
 const EXPECTED_CATALOG_SIZE = 62;
@@ -172,7 +172,7 @@ export class TransportCompendiumService {
     if (!Array.isArray(rows) || rows.length !== EXPECTED_CATALOG_SIZE) {
       throw new Error(`Transport catalog must contain exactly ${EXPECTED_CATALOG_SIZE} rows`);
     }
-    const iconLookup = await buildNamedIconLookup(TRANSPORT_ICON_SEARCH_PATHS, { forceRefresh: true });
+    const iconLookup = await buildNamedIconLookup(TRANSPORT_ICON_SEARCH_PATHS);
     const prepared = rows.map((entry, index) => ({
       normalized: normalizeTransportEntry(entry, index),
       actorData: buildTransportActorData(entry, iconLookup)

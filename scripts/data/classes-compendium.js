@@ -17,7 +17,7 @@ import {
   ensurePackSidebarFolder,
   normalizeFolderPath,
   resolveNamedIcon
-} from "./compendium-utils.js";
+} from "./compendium-utils.js?v=1.4.323";
 import {
   fighterSecondWindUsesMax,
   getFighterIronWillAutomation,
@@ -30,7 +30,7 @@ import {
   buildCraftsmanGadgetFeatureDefinitions,
   normalizeCraftsmanGadgets
 } from "./craftsman-gadget-definitions.js";
-import { resolveCraftsmanGadgetIcon } from "./gear-icon-resolver.js";
+import { resolveCraftsmanGadgetIcon } from "./gear-icon-resolver.js?v=1.4.323";
 import {
   CRAFTSMAN_CONSTRUCT_FEATURE_ID,
   buildCraftsmanConstructSummonAutomation
@@ -5903,7 +5903,7 @@ export class ClassesCompendiumService {
       return null;
     }
 
-    const iconLookup = await buildNamedIconLookup(CLASS_ICON_SEARCH_PATHS, { forceRefresh: true });
+    const iconLookup = await buildNamedIconLookup(CLASS_ICON_SEARCH_PATHS);
     const normalizedData = await loadData();
     const featureDefinitions = normalizedData.flatMap((classData) => buildFeatureDefinitions(classData));
     const featLookup = await buildFeatLookup();

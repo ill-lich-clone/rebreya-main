@@ -5,13 +5,13 @@ import {
   ensureCompendiumFolders,
   ensurePackSidebarFolder,
   normalizeFolderPath
-} from "./compendium-utils.js";
+} from "./compendium-utils.js?v=1.4.323";
 import {
   buildGearIconLookup,
   DEFAULT_GEAR_ICON,
   resolveGearItemIcon,
   resolveGearNamedIcon
-} from "./gear-icon-resolver.js?v=1.4.322";
+} from "./gear-icon-resolver.js?v=1.4.323";
 import {
   classifyGearEntry,
   inferHeroDollSlotGroupFromSlots,
@@ -1399,7 +1399,7 @@ export class GearCompendiumService {
     const pack = await ensureGearPack();
     await deduplicateCompendiumFolders(pack, ["Обвес", "Обвесы", "Огнестрельное оружие", "Примитивное", "Продвинутое"]);
     const documents = await getPackDocuments(pack);
-    const iconLookup = await buildGearIconLookup({ forceRefresh: true });
+    const iconLookup = await buildGearIconLookup();
     let folderIdByPath = new Map();
     try {
       folderIdByPath = await ensureCompendiumFolders(

@@ -10,7 +10,7 @@ import {
   ensurePackSidebarFolder,
   normalizeFolderPath,
   resolveNamedIcon
-} from "./compendium-utils.js";
+} from "./compendium-utils.js?v=1.4.323";
 import { syncManagedDocumentsOnActiveGm } from "./managed-compendium-sync.js";
 
 const PACK_ID = `world.${ACTIONS_COMPENDIUM_NAME}`;
@@ -438,7 +438,7 @@ export class ActionsCompendiumService {
     const pack = await ensurePack();
     await deduplicateCompendiumFolders(pack, [ACTION_ROOT_FOLDER, "Действия", "Реакции"]);
     const documents = await getPackDocuments(pack);
-    const iconLookup = await buildNamedIconLookup(ACTION_ICON_SEARCH_PATHS, { forceRefresh: true });
+    const iconLookup = await buildNamedIconLookup(ACTION_ICON_SEARCH_PATHS);
 
     if (!entries.length) {
       await ensureManagedIdentifiers(pack, documents);

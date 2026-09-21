@@ -5,7 +5,7 @@ import {
   ensurePackSidebarFolder,
   normalizeFolderPath,
   resolveNamedIcon
-} from "./compendium-utils.js";
+} from "./compendium-utils.js?v=1.4.323";
 import { syncManagedDocumentsOnActiveGm } from "./managed-compendium-sync.js";
 import {
   buildEmbeddedMagicItemPatch,
@@ -4252,7 +4252,7 @@ export class MagicItemsCompendiumService {
     };
     const pack = await ensurePack();
     const documents = await getPackDocuments(pack);
-    const iconLookup = await buildNamedIconLookup(MAGIC_ICON_SEARCH_PATHS, { forceRefresh: true });
+    const iconLookup = await buildNamedIconLookup(MAGIC_ICON_SEARCH_PATHS);
     let folderIdByPath = new Map();
     await syncManagedDocumentsOnActiveGm(game, {
       pack,

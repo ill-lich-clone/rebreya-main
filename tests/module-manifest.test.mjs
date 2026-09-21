@@ -69,26 +69,22 @@ test("module manifest loads an unpinned canonical entrypoint for page-refresh up
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const [entrypoint] = manifest.esmodules;
 
-  assert.equal(manifest.version, "1.4.322");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.322.js"]);
+  assert.equal(manifest.version, "1.4.323");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.323.js"]);
   assert.doesNotMatch(entrypoint, /[?#]/u);
 
   const entrypointSource = await readFile(new URL(entrypoint, manifestUrl), "utf8");
   assert.equal(entrypointSource, 'import "./main.js";\n');
 });
 
-test("Lootgen window import uses the current release cache version", async () => {
-  const manifest = JSON.parse(await readFile(new URL("../module.json", import.meta.url), "utf8"));
+test("Lootgen window import reuses the released stylesheet cache version", async () => {
   const entrypointSource = await readCanonicalEntrypointSource();
 
   assert.match(entrypointSource, new RegExp(
     `lootgen-app\\.js\\?v=\\$\\{encodeURIComponent\\(MODULE_STYLE_VERSION\\)\\}`,
     "u"
   ));
-  assert.match(entrypointSource, new RegExp(
-    `const MODULE_STYLE_VERSION = "${manifest.version.replaceAll(".", "\\.")}";`,
-    "u"
-  ));
+  assert.match(entrypointSource, /const MODULE_STYLE_VERSION = "1\.4\.322";/u);
 });
 
 test("glossary and feat-link owners preserve their released cache key", async () => {
@@ -111,10 +107,10 @@ test("glossary and feat-link owners preserve their released cache key", async ()
     readFile(new URL("../scripts/combat/performer-automation-service.js", import.meta.url), "utf8")
   ]);
 
-  for (const [source, owner] of [
-    [mainSource, "feats-compendium"],
-    [mainSource, "glossary-compendium"],
-    [mainSource, "actions-compendium"],
+  for (const [source, owner, ownerVersion = version] of [
+    [mainSource, "feats-compendium", "1\\.4\\.323"],
+    [mainSource, "glossary-compendium", "1\\.4\\.323"],
+    [mainSource, "actions-compendium", "1\\.4\\.323"],
     [featsSource, "compendium-item-reference-index"],
     [featsSource, "feat-reference-linker"],
     [featsSource, "actions-compendium"],
@@ -128,7 +124,7 @@ test("glossary and feat-link owners preserve their released cache key", async ()
     [statusPresentationSource, "status-reference-data"],
     [performerSource, "feats-compendium"]
   ]) {
-    assert.match(source, new RegExp(`${owner}\\.js\\?v=${version}`, "u"), owner);
+    assert.match(source, new RegExp(`${owner}\\.js\\?v=${ownerVersion}`, "u"), owner);
   }
 });
 
@@ -203,7 +199,7 @@ test("production registers the hidden GiantTribe advancement before race compend
   );
   assert.match(
     entrypointSource,
-    /data\/races-compendium\.js\?v=1\.4\.110-giant-tribe-cache-fixes-2/u
+    /data\/races-compendium\.js\?v=1\.4\.323/u
   );
   assert.match(
     advancementSource,
@@ -293,9 +289,9 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
   assert.match(sheetSource, /\.\/universal-belt\.js\?v=1\.4\.317-potion-trackers/u);
 
   for (const importPath of [
-    "data/trader-service.js?v=1.4.109-lazy-trader-restock",
+    "data/trader-service.js?v=1.4.323",
     "data/downtime-service.js?v=1.4.96-craft-calendar",
-    "data/inventory-service.js?v=1.4.322",
+    "data/inventory-service.js?v=1.4.323",
     "data/inventory-ingress-descriptor.js?v=1.4.268",
     "data/durability-service.js?v=1.4.154-corpse-storage-broken-name",
     "data/corpse-storage-materializer.js?v=1.4.195-storage-administration",
@@ -306,8 +302,8 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
     "integrations/durability-hooks.js?v=1.4.153-corpse-creature",
     "data/storage-trigger-service.js?v=1.4.197-door-trigger-target",
     "integrations/storage-token-hooks.js?v=1.4.197-door-trigger-target",
-    "integrations/inventory-sync.js?v=1.4.322",
-    "data/gear-compendium.js?v=1.4.322",
+    "integrations/inventory-sync.js?v=1.4.323",
+    "data/gear-compendium.js?v=1.4.323",
     "data/storage-open-sound-service.js?v=1.4.145-coin-icons-storage-sound",
     "data/storage-service.js?v=1.4.270",
     "data/storage-access.js?v=1.4.197-door-trigger-target",
@@ -321,6 +317,7 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
   ]) {
     assert.equal(canonicalSource.includes(importPath), true, importPath);
   }
+  assert.match(traderServiceSource, /gear-icon-resolver\.js\?v=1\.4\.323/u);
   assert.equal(
     durabilityServiceSource.includes("durability-rules.js?v=1.4.144-spreadsheet-coins-ground-repair"),
     true,
@@ -381,7 +378,7 @@ test("module keeps recent published entrypoint URLs as canonical compatibility f
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
 
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.322.js"]);
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.323.js"]);
 
   for (const fileName of ["main-1.4.98.js", "main-1.4.99.js", "main-1.4.100.js"]) {
     const forwarderSource = await readFile(new URL(`../scripts/${fileName}`, import.meta.url), "utf8");
@@ -560,14 +557,18 @@ test("module stylesheet cache bust loads the storage deposit interaction styles"
   assert.doesNotMatch(entrypointSource, /module\?\.version\s*\?\?/u);
 });
 
-test("module entrypoint preserves the released magic weapon template cache bust", async () => {
-  const entrypointSource = await readCanonicalEntrypointSource();
+test("module entrypoint cache-busts the shared magic weapon icon graph", async () => {
+  const [entrypointSource, templateSource] = await Promise.all([
+    readCanonicalEntrypointSource(),
+    readFile(new URL("../scripts/integrations/magic-weapon-template.js", import.meta.url), "utf8")
+  ]);
 
   assert.match(entrypointSource, /registerMagicWeaponTemplateHook/u);
   assert.match(
     entrypointSource,
-    /magic-weapon-template\.js\?v=1\.4\.317/u,
+    /magic-weapon-template\.js\?v=1\.4\.323/u,
   );
+  assert.match(templateSource, /data\/gear-compendium\.js\?v=1\.4\.323/u);
   assert.match(entrypointSource, /registerMagicWeaponTemplateHook\(moduleApi\)/u);
 });
 
@@ -576,7 +577,7 @@ test("gear compendium import uses the current clothing projection cache bust", a
 
   assert.match(
     entrypointSource,
-    /gear-compendium\.js\?v=1\.4\.322/u,
+    /gear-compendium\.js\?v=1\.4\.323/u,
   );
 });
 
@@ -714,7 +715,7 @@ test("automatic owned magic item sync cache-busts its live service graph", async
 
   assert.match(
     entrypointSource,
-    /magic-items-compendium\.js\?v=1\.4\.302-ability-belts/u
+    /magic-items-compendium\.js\?v=1\.4\.323/u
   );
   assert.match(
     entrypointSource,

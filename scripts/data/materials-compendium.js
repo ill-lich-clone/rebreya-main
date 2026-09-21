@@ -1,7 +1,7 @@
 ﻿import { MATERIALS_COMPENDIUM_LABEL, MATERIALS_COMPENDIUM_NAME, MODULE_ID } from "../constants.js";
 import { bringAppToFront } from "../ui.js";
 import { escapeFoundryHtml as escapeHtml } from "../shared/foundry-values.js";
-import { buildNamedIconLookup, ensurePackSidebarFolder, resolveNamedIcon } from "./compendium-utils.js";
+import { buildNamedIconLookup, ensurePackSidebarFolder, resolveNamedIcon } from "./compendium-utils.js?v=1.4.323";
 import { syncManagedDocumentsOnActiveGm } from "./managed-compendium-sync.js";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 
@@ -359,7 +359,7 @@ export class MaterialsCompendiumService {
     const safeMaterials = Array.isArray(materials) ? materials : [];
     const pack = await ensureMaterialsPack();
     const documents = await getPackDocuments(pack);
-    const iconLookup = await buildNamedIconLookup(MATERIAL_ICON_SEARCH_PATHS, { forceRefresh: true });
+    const iconLookup = await buildNamedIconLookup(MATERIAL_ICON_SEARCH_PATHS);
     await syncManagedDocumentsOnActiveGm(game, {
       pack,
       entries: safeMaterials,

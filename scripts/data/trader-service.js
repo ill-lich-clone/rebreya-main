@@ -9,7 +9,7 @@ import {
   getMaterialPriceModifier,
   getTraderPlanByKey
 } from "../engine/trader-engine.js?v=1.4.109-lazy-trader-restock";
-import { buildGearIconLookup, resolveGearItemIcon } from "./gear-icon-resolver.js";
+import { buildGearIconLookup, resolveGearItemIcon } from "./gear-icon-resolver.js?v=1.4.323";
 import { classifyGearEntry } from "./item-classification.js";
 import { formatPercent, formatSignedPercent } from "../ui.js";
 import {

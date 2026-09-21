@@ -9,18 +9,19 @@ import { storageCoinRowDenomination } from "./data/storage-service.js";
 import { LootgenSourceCatalog } from "./data/lootgen-source-catalog.js?v=1.4.317";
 import { MODULE_ID, MODULE_TITLE, SETTINGS_KEYS } from "./constants.js";
 import { escapeFoundryHtml } from "./shared/foundry-values.js";
-import { MaterialsCompendiumService } from "./data/materials-compendium.js";
-import { GearCompendiumService } from "./data/gear-compendium.js?v=1.4.322";
+import { clearNamedIconCache } from "./data/compendium-utils.js?v=1.4.323";
+import { MaterialsCompendiumService } from "./data/materials-compendium.js?v=1.4.323";
+import { GearCompendiumService } from "./data/gear-compendium.js?v=1.4.323";
 import { repairWorldAmmunitionCompatibility } from "./data/ammunition-compatibility.js?v=1.4.147-native-ammunition";
-import { MagicItemsCompendiumService } from "./data/magic-items-compendium.js?v=1.4.302-ability-belts";
-import { FeatsCompendiumService } from "./data/feats-compendium.js?v=1.4.317";
-import { GlossaryCompendiumService } from "./data/glossary-compendium.js?v=1.4.317";
-import { BackgroundsCompendiumService } from "./data/backgrounds-compendium.js";
-import { StatesCompendiumService } from "./data/states-compendium.js";
-import { RacesCompendiumService } from "./data/races-compendium.js?v=1.4.110-giant-tribe-cache-fixes-2&implants=1";
-import { ClassesCompendiumService } from "./data/classes-compendium.js";
+import { MagicItemsCompendiumService } from "./data/magic-items-compendium.js?v=1.4.323";
+import { FeatsCompendiumService } from "./data/feats-compendium.js?v=1.4.323";
+import { GlossaryCompendiumService } from "./data/glossary-compendium.js?v=1.4.323";
+import { BackgroundsCompendiumService } from "./data/backgrounds-compendium.js?v=1.4.323";
+import { StatesCompendiumService } from "./data/states-compendium.js?v=1.4.323";
+import { RacesCompendiumService } from "./data/races-compendium.js?v=1.4.323";
+import { ClassesCompendiumService } from "./data/classes-compendium.js?v=1.4.323";
 import { CraftsmanConstructCompendiumService } from "./data/craftsman-construct-compendium.js";
-import { TransportCompendiumService } from "./data/transport-compendium.js";
+import { TransportCompendiumService } from "./data/transport-compendium.js?v=1.4.323";
 import {
   TRANSPORT_IMPORT_COMMAND,
   TRANSPORT_SELECT_FUEL_COMMAND,
@@ -30,12 +31,12 @@ import {
   registerTransportInstanceCommands
 } from "./data/transport-instance-service.js";
 import { TransportFuelService } from "./data/transport-fuel-service.js";
-import { SpellsCompendiumService } from "./data/spells-compendium.js?v=1.4.109-counterspell-sanitize";
-import { ActionsCompendiumService } from "./data/actions-compendium.js?v=1.4.317";
-import { DowntimeCompendiumService } from "./data/downtime-compendium.js";
+import { SpellsCompendiumService } from "./data/spells-compendium.js?v=1.4.323";
+import { ActionsCompendiumService } from "./data/actions-compendium.js?v=1.4.323";
+import { DowntimeCompendiumService } from "./data/downtime-compendium.js?v=1.4.323";
 import { FeatChoiceAutomationService, registerFeatChoiceAutomationHooks } from "./automation/feat-choice-service.js";
 import { EconomyRepository } from "./data/repository.js?v=1.4.322";
-import { TraderService, normalizeTraderState } from "./data/trader-service.js?v=1.4.109-lazy-trader-restock";
+import { TraderService, normalizeTraderState } from "./data/trader-service.js?v=1.4.323";
 import { TradeTransactionService } from "./features/trading/trade-transaction-service.js";
 import { PurchaseBasketService } from "./features/trading/purchase-basket-service.js";
 import {
@@ -85,7 +86,7 @@ import {
   SOCKET_EVENT_INVENTORY_SOURCE_DEPLETION_RESULT,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_REQUEST,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_RESULT
-} from "./data/inventory-service.js?v=1.4.322";
+} from "./data/inventory-service.js?v=1.4.323";
 import {
   InventoryIngressRuleCompilerCache,
   normalizeInventoryIngressRule
@@ -360,11 +361,11 @@ import {
 import { patchEffectMacroCombatHooks } from "./integrations/effectmacro-compat.js";
 import { patchSmAirshipRenderSettingsHook } from "./integrations/sm-airship-compat.js";
 import { patchDnd5eTooltipRaceGuard } from "./integrations/dnd5e-tooltip-compat.js?v=1.4.215-tooltip-race";
-import { registerInventorySyncHooks } from "./integrations/inventory-sync.js?v=1.4.322";
+import { registerInventorySyncHooks } from "./integrations/inventory-sync.js?v=1.4.323";
 import { runMapObjectTokenMacro } from "./integrations/map-object-token-macro.js?v=1.4.97-map-object-token";
 import { refreshSmallTimeDateDisplay, registerSmallTimeIntegration, syncSmallTimeToCalendarTime } from "./integrations/smalltime-compat.js";
 import { registerRationFoodConversionHook } from "./integrations/ration-food-conversion.js";
-import { registerMagicWeaponTemplateHook } from "./integrations/magic-weapon-template.js?v=1.4.317";
+import { registerMagicWeaponTemplateHook } from "./integrations/magic-weapon-template.js?v=1.4.323";
 import { registerStorageTokenHooks } from "./integrations/storage-token-hooks.js?v=1.4.197-door-trigger-target";
 import { registerDoorTriggerHooks } from "./integrations/door-trigger-hooks.js?v=1.4.199-door-overlay-anchor";
 import { registerCraftsmanGadgetHooks } from "./integrations/craftsman-gadget-hooks.js";
@@ -1598,7 +1599,7 @@ export class RebreyaMainModule {
       confirm: async (preview) => {
         const moduleVersion = game.modules.get(MODULE_ID)?.version ?? "0";
         const { promptInventoryIngressConfirmation } = await import(
-          "./ui/inventory-app.js?v=1.4.322"
+          "./ui/inventory-app.js?v=1.4.323"
         );
         return promptInventoryIngressConfirmation(preview);
       }
@@ -4348,6 +4349,7 @@ export class RebreyaMainModule {
   }
 
   async #syncManagedCompendia(model) {
+    clearNamedIconCache();
     this.traderService.invalidatePackCache();
 
     try {
@@ -7706,7 +7708,7 @@ export class RebreyaMainModule {
 
   async openInventoryApp(options = {}) {
     try {
-      const { InventoryApp } = await import("./ui/inventory-app.js?v=1.4.322");
+      const { InventoryApp } = await import("./ui/inventory-app.js?v=1.4.323");
 
       if (!this.inventoryApp) {
         this.inventoryApp = new InventoryApp(this);
@@ -7753,7 +7755,7 @@ export class RebreyaMainModule {
     }
 
     const moduleVersion = game.modules?.get?.(MODULE_ID)?.version ?? "1.4.67";
-    const { InventoryApp } = await import("./ui/inventory-app.js?v=1.4.322");
+    const { InventoryApp } = await import("./ui/inventory-app.js?v=1.4.323");
     const app = new InventoryApp(this, {
       groupActorId: normalizedGroupActorId,
       rootFolderId: normalizedFolderId,

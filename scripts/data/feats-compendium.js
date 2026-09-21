@@ -13,7 +13,7 @@ import {
   ensurePackSidebarFolder,
   normalizeFolderPath,
   resolveNamedIcon
-} from "./compendium-utils.js";
+} from "./compendium-utils.js?v=1.4.323";
 import { syncManagedDocumentsOnActiveGm } from "./managed-compendium-sync.js";
 import { buildSlug } from "./item-classification.js";
 import { renderDescriptionMarkdown } from "./markdown-description.js";
@@ -718,7 +718,7 @@ export class FeatsCompendiumService {
     if (this.lastSyncReport.ambiguous.length || this.lastSyncReport.unresolved.length) {
       console.warn(`${MODULE_ID} | Feat reference sync left unresolved or ambiguous mentions.`, this.lastSyncReport);
     }
-    const iconLookup = await buildNamedIconLookup(FEAT_ICON_SEARCH_PATHS, { forceRefresh: true });
+    const iconLookup = await buildNamedIconLookup(FEAT_ICON_SEARCH_PATHS);
     let folderIdByPath = new Map();
     await syncManagedDocumentsOnActiveGm(game, {
       pack,
