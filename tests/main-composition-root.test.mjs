@@ -32,7 +32,10 @@ test("release 1.4.318 synchronizes the inventory browser module cache graph", as
   assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.318.js"]);
   assert.doesNotMatch(manifestSource, /main-1\.4\.317\.js/u);
   assert.match(mainSource, /data\/inventory-service\.js\?v=1\.4\.318/u);
+  assert.match(mainSource, /data\/storage-command-service\.js\?v=1\.4\.318/u);
+  assert.match(mainSource, /integrations\/inventory-sync\.js\?v=1\.4\.318/u);
   assert.match(syncSource, /data\/inventory-service\.js\?v=1\.4\.318/u);
+  assert.match(appSource, /integrations\/inventory-sync\.js\?v=1\.4\.318/u);
   assert.equal(mainSource.match(/ui\/inventory-app\.js\?v=1\.4\.318/gu)?.length ?? 0, 3);
   for (const source of [serviceSource, appSource]) {
     assert.match(source, /inventory-folder-tree\.js\?v=1\.4\.318/u);

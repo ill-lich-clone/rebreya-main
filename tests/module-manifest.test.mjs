@@ -306,7 +306,7 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
     "integrations/durability-hooks.js?v=1.4.153-corpse-creature",
     "data/storage-trigger-service.js?v=1.4.197-door-trigger-target",
     "integrations/storage-token-hooks.js?v=1.4.197-door-trigger-target",
-    "integrations/inventory-sync.js?v=1.4.226-inventory-transfer",
+    "integrations/inventory-sync.js?v=1.4.318",
     "data/gear-compendium.js?v=1.4.292",
     "data/storage-open-sound-service.js?v=1.4.145-coin-icons-storage-sound",
     "data/storage-service.js?v=1.4.270",
@@ -315,7 +315,7 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
     "data/storage-ground-pile-service.js?v=1.4.312-fishing-rods",
     "data/storage-container-item-service.js?v=1.4.317",
     "data/storage-deposit-source.js?v=1.4.312-fishing-rods",
-    "data/storage-command-service.js?v=1.4.312-fishing-rods",
+    "data/storage-command-service.js?v=1.4.318",
     "integrations/storage-transfer-drop.js?v=1.4.213-furniture-orientation",
     "integrations/storage-token-drop.js?v=1.4.312-fishing-rods"
   ]) {
