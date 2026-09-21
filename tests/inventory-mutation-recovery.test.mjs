@@ -252,6 +252,213 @@ test("manual dismantle uses stable material metadata and never a presentation-na
   }
 });
 
+test("dismantle rejects an Item at inventory root before target credit", async () => {
+  const iron = { id: "iron", name: "Iron", type: "Metal", priceGold: 1, weight: 1 };
+  const model = dismantleModel(iron);
+  const source = dismantleSource({ id: "root-dismantle-source", materialId: iron.id });
+  const group = createActor({ id: "root-dismantle-group", type: "group", managed: true, items: [source] });
+  const fixture = installFixture({
+    group,
+    actors: [group],
+    moduleApi: {
+      getModel: async () => model,
+      inventoryIngressPlanner: { async preview() { throw new Error("planner must not run for a root Item"); } }
+    }
+  });
+  try {
+    await assert.rejects(
+      fixture.service.executeDismantleMutation({
+        inventoryActorId: group.id, itemId: source.id, quantity: 1, mutationId: "root-folder-required"
+      }),
+      (error) => error?.code === "folder-required"
+    );
+    assert.equal(group.createEmbeddedDocumentsCalls, 0);
+    assert.equal(source.system.quantity, 1);
+    assert.equal(fixture.settingsStore[SETTINGS_KEYS.INVENTORY_MUTATION_JOURNAL]?.records, undefined);
+  }
+  finally { fixture.restore(); }
+});
+
+test("dismantle routes material by folder rule, skip rule, then source-folder fallback", async () => {
+  const scenarios = [
+    { name: "folder", action: { type: "folder", folderId: "destination" }, expectedFolderId: "destination", matchedRuleId: "route-material" },
+    { name: "skip", action: { type: "skip" }, expectedFolderId: null, matchedRuleId: "skip-material" },
+    { name: "fallback", action: { type: "legacy", folderId: "source" }, expectedFolderId: "source", matchedRuleId: null }
+  ];
+  for (const scenario of scenarios) {
+    const iron = { id: "iron", name: "Iron", type: "Metal", priceGold: 1, weight: 1 };
+    const model = dismantleModel(iron);
+    const source = dismantleSource({ id: `route-${scenario.name}-source`, materialId: iron.id });
+    const group = createActor({ id: `route-${scenario.name}-group`, type: "group", managed: true, items: [source] });
+    setInventoryFolderState(group, {
+      folders: [
+        { id: "source", name: "Source", parentId: null, color: null },
+        { id: "destination", name: "Destination", parentId: null, color: null }
+      ],
+      itemFolderIds: { [source.id]: "source" }
+    });
+    let previewCalls = 0;
+    const fixture = installFixture({
+      group,
+      actors: [group],
+      moduleApi: {
+        getModel: async () => model,
+        inventoryIngressPlanner: dismantlePlanner(() => {
+          previewCalls += 1;
+          return { action: scenario.action, matchedRuleId: scenario.matchedRuleId, rulesRevision: 7 };
+        })
+      }
+    });
+    try {
+      const mutationId = `route-${scenario.name}`;
+      const result = await fixture.service.executeDismantleMutation({
+        inventoryActorId: group.id, itemId: source.id, quantity: 1, mutationId
+      });
+      const record = fixture.settingsStore[SETTINGS_KEYS.INVENTORY_MUTATION_JOURNAL].records
+        .find((entry) => entry.id === mutationId);
+      assert.equal(previewCalls, 1, scenario.name);
+      assert.equal(record.sourceFolderId, "source", scenario.name);
+      assert.equal(record.rulesRevision, 7, scenario.name);
+      assert.equal(record.matchedRuleId, scenario.matchedRuleId, scenario.name);
+      assert.equal(record.destinationFolderId, scenario.expectedFolderId, scenario.name);
+      if (scenario.name === "skip") {
+        assert.equal(result.skipped, true);
+        assert.equal(source.system.quantity, 1);
+        assert.equal(group.createEmbeddedDocumentsCalls, 0);
+      }
+      else {
+        const materialItem = group.items.contents.find((item) => item.id !== source.id);
+        assert.ok(materialItem, scenario.name);
+        assert.equal(group.flags[MODULE_ID].inventoryFolders.itemFolderIds[materialItem.id], scenario.expectedFolderId, scenario.name);
+      }
+    }
+    finally { fixture.restore(); }
+  }
+});
+
+test("dismantle rejects recursive material routing and merges only in destination folder", async () => {
+  const iron = { id: "iron", name: "Iron", type: "Metal", priceGold: 1, weight: 1 };
+  const model = dismantleModel(iron);
+  const recursiveSource = dismantleSource({ id: "recursive-source", materialId: iron.id });
+  const recursiveGroup = createActor({ id: "recursive-group", type: "group", managed: true, items: [recursiveSource] });
+  setInventoryFolderState(recursiveGroup, {
+    folders: [{ id: "source", name: "Source", parentId: null, color: null }],
+    itemFolderIds: { [recursiveSource.id]: "source" }
+  });
+  const recursiveFixture = installFixture({
+    group: recursiveGroup,
+    actors: [recursiveGroup],
+    moduleApi: {
+      getModel: async () => model,
+      inventoryIngressPlanner: dismantlePlanner(() => ({
+        action: { type: "dismantle" }, matchedRuleId: "recursive", rulesRevision: 2
+      }))
+    }
+  });
+  try {
+    await assert.rejects(
+      recursiveFixture.service.executeDismantleMutation({
+        inventoryActorId: recursiveGroup.id, itemId: recursiveSource.id, quantity: 1, mutationId: "recursive-route"
+      }),
+      /routing|route|разбор|reconciliation/iu
+    );
+    assert.equal(recursiveGroup.createEmbeddedDocumentsCalls, 0);
+    assert.equal(recursiveSource.system.quantity, 1);
+  }
+  finally { recursiveFixture.restore(); }
+
+  const source = dismantleSource({ id: "scoped-source", materialId: iron.id });
+  const sourceStack = materialStack({ id: "source-stack", material: iron, quantity: 4 });
+  const destinationStack = materialStack({ id: "destination-stack", material: iron, quantity: 6 });
+  const group = createActor({ id: "scoped-merge-group", type: "group", managed: true, items: [source, sourceStack, destinationStack] });
+  setInventoryFolderState(group, {
+    folders: [
+      { id: "source", name: "Source", parentId: null, color: null },
+      { id: "destination", name: "Destination", parentId: null, color: null }
+    ],
+    itemFolderIds: { [source.id]: "source", [sourceStack.id]: "source", [destinationStack.id]: "destination" }
+  });
+  const fixture = installFixture({
+    group,
+    actors: [group],
+    moduleApi: {
+      getModel: async () => model,
+      inventoryIngressPlanner: dismantlePlanner(() => ({
+        action: { type: "folder", folderId: "destination" }, matchedRuleId: "to-destination", rulesRevision: 3
+      }))
+    }
+  });
+  try {
+    await fixture.service.executeDismantleMutation({
+      inventoryActorId: group.id, itemId: source.id, quantity: 1, mutationId: "scoped-route"
+    });
+    assert.equal(sourceStack.system.quantity, 4);
+    assert.equal(destinationStack.system.quantity, 8);
+    assert.equal(group.createEmbeddedDocumentsCalls, 0);
+  }
+  finally { fixture.restore(); }
+});
+
+test("dismantle retry keeps its prepared route and fails closed when that destination disappears", async () => {
+  const iron = { id: "iron", name: "Iron", type: "Metal", priceGold: 1, weight: 1 };
+  const model = dismantleModel(iron);
+  for (const destinationExists of [true, false]) {
+    const suffix = destinationExists ? "recorded" : "deleted";
+    const source = dismantleSource({ id: `${suffix}-source`, materialId: iron.id });
+    const group = createActor({ id: `${suffix}-group`, type: "group", managed: true, items: [source] });
+    setInventoryFolderState(group, {
+      folders: [
+        { id: "source", name: "Source", parentId: null, color: null },
+        { id: "destination", name: "Destination", parentId: null, color: null }
+      ],
+      itemFolderIds: { [source.id]: "source" }
+    });
+    const mutationId = `${suffix}-prepared-route`;
+    let previewCalls = 0;
+    const fixture = installFixture({
+      group,
+      actors: [group],
+      moduleApi: {
+        getModel: async () => model,
+        inventoryIngressPlanner: dismantlePlanner(() => {
+          previewCalls += 1;
+          return previewCalls === 1
+            ? { action: { type: "folder", folderId: "destination" }, matchedRuleId: "initial-route", rulesRevision: 4 }
+            : { action: { type: "dismantle" }, matchedRuleId: "changed-route", rulesRevision: 5 };
+        })
+      }
+    });
+    try {
+      const payload = { inventoryActorId: group.id, itemId: source.id, quantity: 1, mutationId };
+      seedPreparedDismantleRecord(fixture, {
+        mutationId, group, source, material: iron, destinationFolderId: "destination"
+      });
+      const prepared = fixture.settingsStore[SETTINGS_KEYS.INVENTORY_MUTATION_JOURNAL].records
+        .find((entry) => entry.id === mutationId);
+      assert.equal(prepared.destinationFolderId, "destination");
+      if (!destinationExists) {
+        setInventoryFolderState(group, {
+          folders: [{ id: "source", name: "Source", parentId: null, color: null }],
+          itemFolderIds: { [source.id]: "source" }
+        });
+        await assert.rejects(
+          fixture.service.executeDismantleMutation(payload),
+          (error) => error?.code === "reconciliation-required"
+        );
+        assert.equal(group.createEmbeddedDocumentsCalls, 0);
+        assert.equal(source.system.quantity, 1);
+      }
+      else {
+        await fixture.service.executeDismantleMutation(payload);
+        const materialItem = group.items.contents.find((item) => item.id !== source.id);
+        assert.equal(group.flags[MODULE_ID].inventoryFolders.itemFolderIds[materialItem.id], "destination");
+      }
+      assert.equal(previewCalls, 0);
+    }
+    finally { fixture.restore(); }
+  }
+});
+
 test("manual dismantle publishes and enforces the minimum whole-output quantity", async () => {
   const iron = { id: "iron", name: "Iron", type: "Metal", priceGold: 1, weight: 1 };
   const model = {
@@ -346,6 +553,7 @@ test("manual dismantle compensates credited material when source depletion fails
     managed: true,
     items: [source]
   });
+  setDefaultDismantleFolder(group, source);
   const fixture = installFixture({
     group,
     actors: [group],
@@ -473,6 +681,7 @@ test("active GM dismantle executor commits one material credit across mutation r
     managed: true,
     items: [source]
   });
+  setDefaultDismantleFolder(group, source);
   const fixture = installFixture({
     group,
     actors: [group],
@@ -540,6 +749,7 @@ test("manual dismantle recovers a material creation whose acknowledgment was los
     items: [source],
     throwAfterCreateOnce: true
   });
+  setDefaultDismantleFolder(group, source);
   const fixture = installFixture({
     group,
     actors: [group],
@@ -724,6 +934,7 @@ test("manual dismantle repairs legacy fractional credits before applying a new i
     managed: true,
     items: [source, corruptedSilver]
   });
+  setDefaultDismantleFolder(group, source, corruptedSilver);
   const fixture = installFixture({
     group,
     actors: [group],
@@ -871,6 +1082,7 @@ test("manual dismantle accepts a missing legacy merge target already removed wit
     managed: true,
     items: [source]
   });
+  setDefaultDismantleFolder(group, source);
   const fixture = installFixture({
     group,
     actors: [group],
@@ -1759,6 +1971,115 @@ function createActor({
   return actor;
 }
 
+function setInventoryFolderState(actor, { folders, itemFolderIds }) {
+  actor.flags[MODULE_ID] ??= {};
+  actor.flags[MODULE_ID].inventoryFolders = { version: 1, folders: clone(folders), itemFolderIds: clone(itemFolderIds) };
+}
+
+function setDefaultDismantleFolder(actor, ...items) {
+  setInventoryFolderState(actor, {
+    folders: [{ id: "dismantle-folder", name: "Dismantle", parentId: null, color: null }],
+    itemFolderIds: Object.fromEntries(items.map((item) => [item.id, "dismantle-folder"]))
+  });
+}
+
+function dismantleModel(material) {
+  return {
+    gear: [], gearById: new Map(), materials: [material],
+    materialById: new Map([[material.id, material]]), materialByGoodId: new Map()
+  };
+}
+
+function dismantleSource({ id, materialId, quantity = 1 } = {}) {
+  return createItem({
+    id, name: "Iron sword", type: "weapon", quantity,
+    system: {
+      quantity,
+      price: { value: 10, denomination: "gp" },
+      weight: { value: 4, units: "lb" }
+    },
+    flags: { [MODULE_ID]: {
+      sourceType: "gear", sourceId: `${id}-gear`, gearId: `${id}-gear`, predominantMaterialId: materialId
+    } }
+  });
+}
+
+function materialStack({ id, material, quantity }) {
+  return createItem({
+    id, name: material.name, type: "loot", quantity,
+    flags: { [MODULE_ID]: {
+      sourceType: "material", sourceId: material.id, materialId: material.id, predominantMaterialId: material.id
+    } }
+  });
+}
+
+function dismantlePlanner(resolveRoute) {
+  return {
+    async preview(request) {
+      const route = resolveRoute(request);
+      return {
+        version: 1,
+        groupActorId: request.groupActorId,
+        rulesRevision: route.rulesRevision,
+        requestedFolderId: request.requestedFolderId,
+        batch: true,
+        rows: [{ sourceKey: request.rows[0].sourceKey, matchedRuleId: route.matchedRuleId, action: clone(route.action) }]
+      };
+    }
+  };
+}
+
+function seedPreparedDismantleRecord(fixture, { mutationId, group, source, material, destinationFolderId }) {
+  fixture.settingsStore[SETTINGS_KEYS.INVENTORY_MUTATION_JOURNAL] = {
+    version: 1,
+    records: [{
+      id: mutationId,
+      kind: "dismantle",
+      phase: "prepared",
+      terminal: false,
+      request: { actorId: group.id, itemId: source.id, quantity: 1 },
+      actorId: group.id,
+      itemName: source.name,
+      materialName: material.name,
+      materialWeight: 2,
+      sourceFolderId: "source",
+      rulesRevision: 4,
+      matchedRuleId: "initial-route",
+      routingOutcome: "folder",
+      destinationFolderId,
+      materialItemData: {
+        name: material.name,
+        type: "loot",
+        img: "icons/commodities/materials/slime-thick-blue.webp",
+        system: {
+          description: { value: "", chat: "" },
+          unidentified: { description: "" },
+          quantity: 2,
+          price: { value: 1, denomination: "gp" },
+          weight: { value: 1, units: "lb" },
+          type: { value: "trade", subtype: material.type }
+        },
+        flags: { [MODULE_ID]: {
+          sourceType: "material",
+          sourceId: material.id,
+          inventoryMutation: { id: mutationId, kind: "dismantle" }
+        } }
+      },
+      sourceReceipt: { itemId: source.id, beforeQuantity: 1, afterQuantity: 0, delta: 1 },
+      targetReceipt: {
+        itemId: "",
+        created: true,
+        beforeQuantity: 0,
+        afterQuantity: 2,
+        delta: 2,
+        folderId: destinationFolderId,
+        beforeAcquisitionHistory: null,
+        afterAcquisitionHistory: null
+      }
+    }]
+  };
+}
+
 function installFixture({
   group,
   actors,
@@ -1847,6 +2168,11 @@ function installFixture({
         };
       }
     },
+    inventoryIngressPlanner: dismantlePlanner((request) => ({
+      action: { type: "legacy", folderId: request.requestedFolderId },
+      matchedRuleId: null,
+      rulesRevision: 0
+    })),
     ...moduleApiOverrides
   };
 

@@ -3432,6 +3432,17 @@ export class InventoryService {
 
   async #applyDismantleTargetReceipt(actor, operationId, record) {
     const receipt = record.targetReceipt;
+    const hasRecordedRouting = Object.hasOwn(record, "destinationFolderId");
+    const destinationFolderId = cleanId(record.destinationFolderId);
+    let folderState = null;
+    if (hasRecordedRouting) {
+      folderState = this.#readInventoryFolderState(actor);
+      if (!destinationFolderId
+        || !folderState.folders.some((folder) => folder.id === destinationFolderId)
+        || cleanId(receipt?.folderId) !== destinationFolderId) {
+        throw this.#inventoryReconciliationError("Inventory dismantle destination folder disappeared.");
+      }
+    }
     let item = receipt.created
       ? this.#findMutationItem(actor, operationId)
       : actor.items.get(receipt.itemId);
@@ -3448,6 +3459,10 @@ export class InventoryService {
     }
     else {
       if (!item) throw this.#inventoryReconciliationError("Inventory dismantle material target disappeared.");
+      if (hasRecordedRouting
+        && cleanId(folderState.itemFolderIds[item.id]) !== destinationFolderId) {
+        throw this.#inventoryReconciliationError("Inventory dismantle material moved to another folder.");
+      }
       const currentQuantity = getRawQuantity(item.toObject());
       if (!inventoryQuantitiesMatch(currentQuantity, receipt.afterQuantity)) {
         if (!inventoryQuantitiesMatch(currentQuantity, receipt.beforeQuantity)) {
@@ -3464,7 +3479,97 @@ export class InventoryService {
     if (!item || !inventoryQuantitiesMatch(getRawQuantity(item.toObject()), receipt.afterQuantity)) {
       throw this.#inventoryReconciliationError("Inventory dismantle material credit was not observed.");
     }
+    if (hasRecordedRouting) {
+      folderState = this.#readInventoryFolderState(actor);
+      if (!folderState.folders.some((folder) => folder.id === destinationFolderId)) {
+        throw this.#inventoryReconciliationError("Inventory dismantle destination folder disappeared.");
+      }
+      const currentFolderId = cleanId(folderState.itemFolderIds[item.id]);
+      if (currentFolderId && currentFolderId !== destinationFolderId) {
+        throw this.#inventoryReconciliationError("Inventory dismantle material moved to another folder.");
+      }
+      if (!currentFolderId) {
+        const nextFolderState = moveInventoryItemToFolderState(folderState, {
+          itemId: item.id,
+          folderId: destinationFolderId
+        });
+        try {
+          await this.#writeInventoryFolderState(actor, nextFolderState);
+        }
+        catch (error) {
+          if (JSON.stringify(this.#readInventoryFolderState(actor)) !== JSON.stringify(nextFolderState)) throw error;
+        }
+      }
+    }
     return item;
+  }
+
+  async #prepareDismantleRouting(inventoryActor, sourceItem, materialItemData, outputQuantity) {
+    const folderState = this.#readInventoryFolderState(inventoryActor);
+    const sourceFolderId = cleanId(folderState.itemFolderIds[cleanId(sourceItem?.id)]);
+    if (!sourceFolderId || !folderState.folders.some((folder) => folder.id === sourceFolderId)) {
+      throw new InventoryFolderStateError(
+        "folder-required",
+        "Чтобы разобрать предмет, сначала поместите его в папку."
+      );
+    }
+
+    const planner = this.moduleApi.inventoryIngressPlanner;
+    if (!planner || typeof planner.preview !== "function") {
+      throw this.#inventoryReconciliationError("Inventory dismantle routing planner is unavailable.");
+    }
+    const sourceKey = `dismantle:${cleanId(sourceItem.id)}`;
+    const preview = await planner.preview({
+      groupActorId: cleanId(inventoryActor.id),
+      requestedFolderId: sourceFolderId,
+      rows: [{
+        sourceKey,
+        quantity: outputQuantity,
+        itemData: foundry.utils.deepClone(materialItemData),
+        legacyFolderId: sourceFolderId,
+        container: null
+      }],
+      batch: true
+    });
+    const rulesRevision = Number(preview?.rulesRevision);
+    const row = Array.isArray(preview?.rows) && preview.rows.length === 1
+      ? preview.rows[0]
+      : null;
+    const actionType = cleanId(row?.action?.type);
+    if (cleanId(preview?.groupActorId) !== cleanId(inventoryActor.id)
+      || cleanId(row?.sourceKey) !== sourceKey
+      || !Number.isSafeInteger(rulesRevision)
+      || rulesRevision < 0) {
+      throw this.#inventoryReconciliationError("Inventory dismantle routing preview is invalid.");
+    }
+
+    let outcome = "";
+    let destinationFolderId = null;
+    if (actionType === "folder") {
+      destinationFolderId = cleanId(row.action.folderId);
+      outcome = "folder";
+    }
+    else if (actionType === "skip") {
+      outcome = "skip";
+    }
+    else if (actionType === "legacy") {
+      destinationFolderId = sourceFolderId;
+      outcome = "fallback";
+    }
+    else {
+      throw this.#inventoryReconciliationError("Inventory dismantle routing produced a forbidden action.");
+    }
+    if (destinationFolderId
+      && !folderState.folders.some((folder) => folder.id === destinationFolderId)) {
+      throw this.#inventoryReconciliationError("Inventory dismantle routing target folder was not found.");
+    }
+    return {
+      sourceFolderId,
+      rulesRevision,
+      matchedRuleId: cleanId(row.matchedRuleId) || null,
+      outcome,
+      destinationFolderId
+    };
   }
 
   async #compensateDismantleTargetReceipt(actor, operationId, record) {
@@ -3681,7 +3786,57 @@ export class InventoryService {
         throw new Error("Для этого предмета не найден подходящий материал.");
       }
       const materialItemData = this.#buildMaterialItemData(material, output.quantity);
-      const target = this.#findInventoryMergeCandidate(inventoryActor, materialItemData);
+      const routing = await this.#prepareDismantleRouting(
+        inventoryActor,
+        item,
+        materialItemData,
+        output.quantity
+      );
+      if (routing.outcome === "skip") {
+        record = await this.mutationJournal.start({
+          id: operationId,
+          kind: "dismantle",
+          phase: "committed",
+          request,
+          actorId: inventoryActor.id,
+          itemName: item.name,
+          materialName: material.name,
+          materialWeight: 0,
+          sourceFolderId: routing.sourceFolderId,
+          rulesRevision: routing.rulesRevision,
+          matchedRuleId: routing.matchedRuleId,
+          routingOutcome: routing.outcome,
+          destinationFolderId: null,
+          materialItemData,
+          sourceReceipt: {
+            itemId: item.id,
+            beforeQuantity: currentQuantity,
+            afterQuantity: currentQuantity,
+            delta: 0
+          },
+          targetReceipt: null
+        });
+        const skippedResult = {
+          itemName: record.itemName,
+          breakQuantity: 0,
+          materialName: record.materialName,
+          materialWeight: 0,
+          skipped: true,
+          code: "ingress-skip"
+        };
+        await this.mutationJournal.finish(operationId, { ok: true, value: skippedResult });
+        return foundry.utils.deepClone(skippedResult);
+      }
+      const folderState = this.#readInventoryFolderState(inventoryActor);
+      if (cleanId(folderState.itemFolderIds[item.id]) !== routing.sourceFolderId
+        || !folderState.folders.some((folder) => folder.id === routing.destinationFolderId)) {
+        throw this.#inventoryReconciliationError("Inventory dismantle folder state changed during preparation.");
+      }
+      const target = this.#findInventoryMergeCandidate(inventoryActor, materialItemData, {
+        folderState,
+        folderId: routing.destinationFolderId,
+        scoped: true
+      });
       const targetBeforeQuantity = target ? getRawQuantity(target.toObject()) : 0;
       if (!target) {
         foundry.utils.setProperty(materialItemData, `flags.${MODULE_ID}.${INVENTORY_MUTATION_FLAG}`, {
@@ -3698,6 +3853,11 @@ export class InventoryService {
         itemName: item.name,
         materialName: material.name,
         materialWeight: output.quantity,
+        sourceFolderId: routing.sourceFolderId,
+        rulesRevision: routing.rulesRevision,
+        matchedRuleId: routing.matchedRuleId,
+        routingOutcome: routing.outcome,
+        destinationFolderId: routing.destinationFolderId,
         materialItemData,
         sourceReceipt: {
           itemId: item.id,
@@ -3710,7 +3870,10 @@ export class InventoryService {
           created: !target,
           beforeQuantity: targetBeforeQuantity,
           afterQuantity: roundNumber(targetBeforeQuantity + output.quantity, 2),
-          delta: output.quantity
+          delta: output.quantity,
+          folderId: routing.destinationFolderId,
+          beforeAcquisitionHistory: null,
+          afterAcquisitionHistory: null
         }
       });
     }
