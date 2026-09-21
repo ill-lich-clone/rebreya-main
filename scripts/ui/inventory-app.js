@@ -4130,22 +4130,31 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       .find((entry) => cleanText(entry?.itemId ?? entry?.id) === cleanText(itemId));
     const history = normalizeInventoryAcquisitionHistory(item?.acquisitionHistory);
     const methodLabels = {
-      lootgen: "Lootgen",
-      storage: "Хранилище",
-      transfer: "Перенос",
-      manual: "Вручную",
-      dismantle: "Разбор",
-      other: "Другое"
+      lootgen: "Получено через Lootgen",
+      storage: "Получено из хранилища",
+      transfer: "Получено переносом",
+      manual: "Добавлено вручную",
+      dismantle: "Получено при разборе",
+      other: "Получено"
     };
+    const recordedDateFormatter = new Intl.DateTimeFormat("ru-RU", {
+      day: "numeric",
+      month: "long",
+      year: "numeric"
+    });
     const content = history.entries.length
       ? `<ol class="rm-inventory-acquisition-history">${history.entries.map((entry) => {
           const source = entry.sourceName || entry.detail || entry.sceneName || "Источник не записан";
           const scene = entry.sceneName ? `<span>Сцена: ${escapeHtml(entry.sceneName)}</span>` : "";
-          const sourceType = entry.sourceType ? `<span>Тип: ${escapeHtml(entry.sourceType)}</span>` : "";
           const detail = entry.detail && entry.detail !== source ? `<span>${escapeHtml(entry.detail)}</span>` : "";
-          const recordedAt = new Date(entry.recordedAt).toLocaleString("ru-RU");
-          const worldTime = entry.worldTime === null ? "" : ` · мир: ${escapeHtml(entry.worldTime)}`;
-          return `<li><strong>${escapeHtml(source)}</strong><span>${escapeHtml(methodLabels[entry.method] ?? methodLabels.other)} · ${escapeHtml(entry.quantity)} шт.</span>${scene}${sourceType}${detail}<time>${escapeHtml(recordedAt)}${worldTime}</time></li>`;
+          const recordedDate = new Date(entry.recordedAt);
+          const recordedAt = Number.isFinite(recordedDate.getTime())
+            ? Object.fromEntries(recordedDateFormatter.formatToParts(recordedDate).map((part) => [part.type, part.value]))
+            : null;
+          const recordedAtLabel = recordedAt
+            ? `${recordedAt.day} ${recordedAt.month} ${recordedAt.year}`
+            : "Дата не записана";
+          return `<li><strong>${escapeHtml(source)}</strong><span>${escapeHtml(methodLabels[entry.method] ?? methodLabels.other)} · ${escapeHtml(entry.quantity)} шт.</span>${scene}${detail}<time>${escapeHtml(recordedAtLabel)}</time></li>`;
         }).join("")}</ol>`
       : "<p>Источник не записан</p>";
     return foundry.applications.api.DialogV2.wait({

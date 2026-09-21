@@ -1307,6 +1307,50 @@ test("InventoryApp source buttons show normalized newest-first escaped acquisiti
   }
 });
 
+test("InventoryApp acquisition history presents storage provenance in human-readable Russian", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const dom = installMinimalDom();
+  const dialogs = [];
+  globalThis.foundry.applications.api.DialogV2.wait = async (config) => { dialogs.push(config); return null; };
+  const snapshot = createFolderInventorySnapshot();
+  snapshot.allItems[0].acquisitionHistory = {
+    version: 1,
+    entries: [{
+      recordedAt: new Date(2026, 8, 21, 12, 0, 0).getTime(),
+      worldTime: 3241188,
+      quantity: 1,
+      method: "storage",
+      sceneName: "AAA",
+      sourceType: "token",
+      sourceName: "Бочка"
+    }]
+  };
+  snapshot.items = snapshot.allItems;
+  const moduleApi = createModuleApi({ inventorySnapshot: snapshot, getGroupContext: () => null });
+  const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?source-human-dialog=${Date.now()}`);
+  const app = new InventoryApp(moduleApi);
+  const sourceButton = createFakeControl({ dataset: { itemId: "root-item" } });
+  const root = createFakeElement();
+  root.querySelector = () => null;
+  root.querySelectorAll = (selector) => selector === "[data-action='show-item-acquisition-history']" ? [sourceButton] : [];
+  app.element = root;
+  try {
+    await app._prepareContext();
+    await app._onRender({}, {});
+    await dispatchClick(sourceButton);
+    assert.equal(dialogs.length, 1);
+    assert.match(dialogs[0].content, /Бочка/u);
+    assert.match(dialogs[0].content, /Получено из хранилища · 1 шт\./u);
+    assert.match(dialogs[0].content, /Сцена: AAA/u);
+    assert.match(dialogs[0].content, /21 сентября 2026/u);
+    assert.doesNotMatch(dialogs[0].content, /Тип:|>token<|мир:|3241188|21\.09\.2026|08:28/u);
+  }
+  finally {
+    dom.restore();
+    restoreFoundry();
+  }
+});
+
 test("InventoryApp pinned drops revalidate a fresh folder and never fall back to root when the pin is stale", async () => {
   const restoreFoundry = installFoundryApplicationStub();
   const dom = installMinimalDom();
