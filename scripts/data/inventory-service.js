@@ -60,6 +60,7 @@ import {
   normalizeExpandedFolderIds,
   normalizePinnedFolderIds,
   normalizeInventoryFolderState,
+  selectInventoryFolderItemIds,
   setInventoryFolderColor as setInventoryFolderColorState,
   renameInventoryFolder as renameInventoryFolderState
 } from "./inventory-folder-tree.js?v=1.4.248-folder-colors";
@@ -88,6 +89,7 @@ export const INVENTORY_FOLDER_COLOR_COMMAND = "inventory.folder.set-color";
 export const INVENTORY_FOLDER_RENAME_COMMAND = "inventory.folder.rename";
 export const INVENTORY_FOLDER_MOVE_COMMAND = "inventory.folder.move";
 export const INVENTORY_FOLDER_DELETE_COMMAND = "inventory.folder.delete";
+export const INVENTORY_FOLDER_BATCH_COMMAND = "inventory.folder.batch";
 export const INVENTORY_ITEM_FOLDER_MOVE_COMMAND = "inventory.item.folder.move";
 export const INVENTORY_INGRESS_RULE_CREATE_COMMAND = "inventory.ingress-rule.create";
 export const INVENTORY_INGRESS_RULE_UPDATE_COMMAND = "inventory.ingress-rule.update";
@@ -8641,6 +8643,165 @@ export class InventoryService {
       payload.quantity,
       { mutationId: cleanId(payload.mutationId) }
     );
+  }
+
+  #inventoryFolderBatchChildMutationId(operationId, action, itemId) {
+    const identity = JSON.stringify([cleanId(operationId), cleanId(action), cleanId(itemId)]);
+    const hash = (seed) => {
+      let value = seed >>> 0;
+      for (let index = 0; index < identity.length; index += 1) {
+        value ^= identity.charCodeAt(index);
+        value = Math.imul(value, 0x01000193) >>> 0;
+      }
+      return value.toString(36);
+    };
+    return `inventory-folder-batch:${action}:${hash(0x811c9dc5)}-${hash(0x9e3779b9)}`;
+  }
+
+  async executeInventoryFolderBatch(payload = {}) {
+    const groupActorId = cleanId(payload.groupActorId);
+    const folderId = cleanId(payload.folderId);
+    const action = cleanId(payload.action);
+    const includeDescendants = payload.includeDescendants === true;
+    const operationId = cleanId(payload.operationId);
+    const actor = await this.getInventoryActor({ create: false, groupActorId });
+    if (!isManagedPartyGroup(actor)) {
+      throw new Error("Некорректный партийный склад для пакетного действия.");
+    }
+    this.#assertCanManagePartyInventory(actor);
+    if (!folderId || !new Set(["sell", "dismantle"]).has(action) || !operationId) {
+      throw new TypeError("Inventory folder batch payload is invalid.");
+    }
+
+    const compareItems = (left, right) => (
+      String(left?.name ?? "").localeCompare(String(right?.name ?? ""), "ru", {
+        sensitivity: "base",
+        numeric: true
+      }) || cleanId(left?.id).localeCompare(cleanId(right?.id))
+    );
+    const initialFolderState = this.#readInventoryFolderState(actor);
+    const selectedItemIds = selectInventoryFolderItemIds({
+      state: initialFolderState,
+      items: actor.items?.contents ?? [],
+      folderId,
+      includeDescendants,
+      compareItems
+    });
+    const report = {
+      action,
+      folderId,
+      includeDescendants,
+      processed: [],
+      skipped: [],
+      failed: [],
+      stopped: false,
+      totals: { gainedCopper: 0, materials: [] }
+    };
+    let model = null;
+    const materialTotals = new Map();
+    const skip = (itemId, itemName, code, message) => {
+      report.skipped.push({ itemId, itemName, code, message });
+    };
+
+    for (const itemId of selectedItemIds) {
+      const item = actor.items?.get?.(itemId)
+        ?? actor.items?.contents?.find?.((candidate) => cleanId(candidate?.id) === itemId)
+        ?? null;
+      if (!item) {
+        skip(itemId, "", "item-missing", "Предмет больше не существует.");
+        continue;
+      }
+      const itemName = cleanId(item.name);
+      let stillInScope = false;
+      try {
+        stillInScope = selectInventoryFolderItemIds({
+          state: this.#readInventoryFolderState(actor),
+          items: actor.items?.contents ?? [],
+          folderId,
+          includeDescendants,
+          compareItems
+        }).includes(itemId);
+      }
+      catch (error) {
+        if (error?.code !== "folder-not-found") throw error;
+      }
+      if (!stillInScope) {
+        skip(itemId, itemName, "item-moved", "Предмет больше не находится в выбранной области папки.");
+        continue;
+      }
+
+      const itemData = item.toObject();
+      const quantity = getRawQuantity(itemData);
+      if (action === "sell") {
+        const quote = resolveInventorySaleQuote(itemData, quantity);
+        if (!quote.eligible) {
+          skip(itemId, itemName, quote.code, quote.message);
+          continue;
+        }
+      }
+      else {
+        model ??= await this.moduleApi.getModel();
+        const blockReason = getInventoryDismantleBlockReason(itemData);
+        const minimumQuantity = resolveInventoryDismantleMinimumQuantity(itemData, { model });
+        if (blockReason || minimumQuantity === null || quantity < minimumQuantity) {
+          skip(itemId, itemName, "not-dismantlable", blockReason || "Предмет нельзя разобрать на материал.");
+          continue;
+        }
+      }
+
+      const mutationId = this.#inventoryFolderBatchChildMutationId(operationId, action, itemId);
+      try {
+        const result = action === "sell"
+          ? await this.executeSaleMutation({
+              inventoryActorId: groupActorId,
+              itemId,
+              quantity,
+              mutationId
+            })
+          : await this.executeDismantleMutation({
+              inventoryActorId: groupActorId,
+              itemId,
+              quantity,
+              mutationId
+            });
+        report.processed.push({ itemId, itemName, ...foundry.utils.deepClone(result) });
+        if (action === "sell") {
+          report.totals.gainedCopper += Math.max(0, Math.round(toNumber(result?.gainedCopper, 0)));
+        }
+        else if (result?.skipped === true) {
+          report.processed.pop();
+          skip(itemId, itemName, cleanId(result.code) || "not-dismantlable", "Материал был пропущен входящим фильтром.");
+        }
+        else {
+          const materialName = cleanId(result?.materialName);
+          const materialQuantity = Math.max(0, toNumber(result?.materialWeight, 0));
+          if (materialName && materialQuantity > 0) {
+            materialTotals.set(materialName, roundNumber((materialTotals.get(materialName) ?? 0) + materialQuantity, 2));
+          }
+        }
+      }
+      catch (error) {
+        const code = cleanId(error?.code) || "item-failed";
+        if (new Set(["unauthorized", "unknown-sender", "sender-mismatch"]).has(code)) throw error;
+        if (code === "folder-required") {
+          skip(itemId, itemName, code, cleanId(error?.message));
+          continue;
+        }
+        report.failed.push({
+          itemId,
+          itemName,
+          code,
+          message: cleanId(error?.message) || "Не удалось обработать предмет."
+        });
+        if (code === "reconciliation-required" || code === "mutation-conflict" || /invariant/iu.test(error?.message ?? "")) {
+          report.stopped = true;
+          break;
+        }
+      }
+    }
+
+    report.totals.materials = [...materialTotals].map(([name, quantity]) => ({ name, quantity }));
+    return foundry.utils.deepClone(report);
   }
 
   async executeSaleMutation(payload = {}) {

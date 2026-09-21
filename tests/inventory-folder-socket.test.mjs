@@ -8,6 +8,7 @@ import {
   INVENTORY_FOLDER_COLOR_COMMAND,
   INVENTORY_FOLDER_MOVE_COMMAND,
   INVENTORY_FOLDER_DELETE_COMMAND,
+  INVENTORY_FOLDER_BATCH_COMMAND,
   INVENTORY_INGRESS_RULE_CREATE_COMMAND,
   INVENTORY_INGRESS_RULE_DELETE_COMMAND,
   INVENTORY_INGRESS_RULE_UPDATE_COMMAND,
@@ -716,6 +717,109 @@ test("folder UI state migrates v1 expansion and keeps pins personal", async () =
   finally {
     fixture.restore();
   }
+});
+
+test("inventory.folder.batch accepts only the exact authorized group payload", async () => {
+  const fixture = installFixture();
+  const moduleApi = new RebreyaMainModule();
+  const executions = [];
+  moduleApi.inventoryService.executeInventoryFolderBatch = async (payload) => {
+    executions.push(clone(payload));
+    return {
+      action: payload.action,
+      folderId: payload.folderId,
+      includeDescendants: payload.includeDescendants,
+      processed: [], skipped: [], failed: [], stopped: false,
+      totals: { gainedCopper: 0, materials: [] }
+    };
+  };
+  const payload = {
+    groupActorId: fixture.groupA.id,
+    folderId: "folder-a",
+    action: "sell",
+    includeDescendants: false,
+    operationId: "folder-batch-1"
+  };
+  try {
+    for (const [requestId, senderId, nextPayload] of [
+      ["folder-batch-gm", fixture.users.gm.id, payload],
+      ["folder-batch-member", fixture.users.playerA.id, { ...payload, action: "dismantle", operationId: "folder-batch-2" }],
+      ["folder-batch-foreign", fixture.users.playerB.id, payload],
+      ["folder-batch-unknown", "missing-user", payload],
+      ["folder-batch-extra", fixture.users.playerA.id, { ...payload, extra: true }],
+      ["folder-batch-blank", fixture.users.playerA.id, { ...payload, folderId: "" }],
+      ["folder-batch-action", fixture.users.playerA.id, { ...payload, action: "delete" }],
+      ["folder-batch-recursion", fixture.users.playerA.id, { ...payload, includeDescendants: 1 }],
+      ["folder-batch-long", fixture.users.playerA.id, { ...payload, operationId: "x".repeat(161) }]
+    ]) {
+      await moduleApi.handleSocketMessage(commandRequest(
+        INVENTORY_FOLDER_BATCH_COMMAND,
+        senderId,
+        nextPayload,
+        requestId
+      ));
+    }
+    await moduleApi.handleSocketMessage(
+      commandRequest(INVENTORY_FOLDER_BATCH_COMMAND, fixture.users.playerA.id, payload, "folder-batch-forged"),
+      fixture.users.playerB.id
+    );
+    await flushCommands();
+
+    assert.deepEqual(executions, [payload, { ...payload, action: "dismantle", operationId: "folder-batch-2" }]);
+    assert.equal(resultFor(fixture, "folder-batch-gm")?.ok, true);
+    assert.equal(resultFor(fixture, "folder-batch-member")?.ok, true);
+    assert.equal(resultFor(fixture, "folder-batch-foreign")?.error?.code, "unauthorized");
+    assert.equal(resultFor(fixture, "folder-batch-unknown")?.error?.code, "unknown-sender");
+    assert.equal(resultFor(fixture, "folder-batch-forged")?.error?.code, "sender-mismatch");
+    for (const id of ["extra", "blank", "action", "recursion", "long"]) {
+      assert.equal(resultFor(fixture, `folder-batch-${id}`)?.error?.code, "invalid-payload");
+    }
+  }
+  finally { fixture.restore(); }
+});
+
+test("folder batch public API uses one socket request for a player and direct execution for the active GM", async () => {
+  const payload = {
+    groupActorId: "group-a",
+    folderId: "folder-a",
+    action: "sell",
+    includeDescendants: true,
+    operationId: "folder-batch-public"
+  };
+  const playerFixture = installFixture({ currentUserId: "player-a" });
+  try {
+    const moduleApi = new RebreyaMainModule();
+    const requests = [];
+    let localExecutions = 0;
+    moduleApi.inventoryService.executeInventoryFolderBatch = async () => { localExecutions += 1; };
+    moduleApi.socketCommandBus.request = async (command, exactPayload) => {
+      requests.push({ command, payload: clone(exactPayload) });
+      return { action: exactPayload.action, folderId: exactPayload.folderId };
+    };
+    moduleApi.refreshInventoryViews = async () => {};
+    await moduleApi.runInventoryFolderBatch(payload);
+    assert.deepEqual(requests, [{ command: INVENTORY_FOLDER_BATCH_COMMAND, payload }]);
+    assert.equal(localExecutions, 0);
+  }
+  finally { playerFixture.restore(); }
+
+  const gmFixture = installFixture();
+  try {
+    const moduleApi = new RebreyaMainModule();
+    let socketRequests = 0;
+    let localExecutions = 0;
+    moduleApi.socketCommandBus.request = async () => { socketRequests += 1; };
+    moduleApi.inventoryService.executeInventoryFolderBatch = async (exactPayload) => {
+      localExecutions += 1;
+      assert.deepEqual(exactPayload, payload);
+      return { action: exactPayload.action, folderId: exactPayload.folderId };
+    };
+    moduleApi.refreshInventoryViews = async () => {};
+    await moduleApi.runInventoryFolderBatch(payload);
+    assert.equal(socketRequests, 0);
+    assert.equal(localExecutions, 1);
+  }
+  finally { gmFixture.restore(); }
 });
 
 test("folder UI state filters stale pins independently per group and user", async () => {

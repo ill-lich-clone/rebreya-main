@@ -64,6 +64,7 @@ import {
   INVENTORY_CURRENCY_CONVERT_COMMAND,
   INVENTORY_CURRENCY_UPDATE_COMMAND,
   INVENTORY_DISMANTLE_COMMAND,
+  INVENTORY_FOLDER_BATCH_COMMAND,
   INVENTORY_FOLDER_CREATE_COMMAND,
   INVENTORY_FOLDER_DELETE_COMMAND,
   INVENTORY_FOLDER_MOVE_COMMAND,
@@ -1046,6 +1047,15 @@ function isValidInventoryFolderCreatePayload(payload) {
     && isValidInventoryFolderIdentifier(payload.folderId)
     && isValidInventoryFolderName(payload.name)
     && isValidNullableInventoryFolderIdentifier(payload.parentId);
+}
+
+function isValidInventoryFolderBatchPayload(payload) {
+  return hasExactKeys(payload, ["action", "folderId", "groupActorId", "includeDescendants", "operationId"])
+    && isValidInventoryFolderIdentifier(payload.groupActorId)
+    && isValidInventoryFolderIdentifier(payload.folderId)
+    && new Set(["sell", "dismantle"]).has(payload.action)
+    && typeof payload.includeDescendants === "boolean"
+    && isValidInventoryFolderIdentifier(payload.operationId);
 }
 
 function isValidInventoryFolderColorPayload(payload) {
@@ -2619,6 +2629,12 @@ export class RebreyaMainModule {
       authorize: (payload, { sender }) => this.#canSenderManageGroup(sender, payload.inventoryActorId),
       scheduling: keyedMutationScheduling((payload) => [groupKey(payload.inventoryActorId)]),
       execute: (payload) => this.inventoryService.executeDismantleMutation(payload)
+    });
+    this.socketCommandBus.register(INVENTORY_FOLDER_BATCH_COMMAND, {
+      validate: isValidInventoryFolderBatchPayload,
+      authorize: (payload, { sender }) => this.#canSenderManageGroup(sender, payload.groupActorId),
+      scheduling: keyedMutationScheduling((payload) => [groupKey(payload.groupActorId)]),
+      execute: (payload) => this.inventoryService.executeInventoryFolderBatch(payload)
     });
     this.socketCommandBus.register(INVENTORY_IMPORT_COMMAND, {
       validate: isValidInventoryImportPayload,
@@ -6405,6 +6421,18 @@ export class RebreyaMainModule {
       isValidInventoryItemFolderMovePayload,
       "moveInventoryItemToFolder"
     );
+  }
+
+  async runInventoryFolderBatch(payload) {
+    if (!isValidInventoryFolderBatchPayload(payload)) {
+      throw new TypeError("Inventory folder batch payload is invalid.");
+    }
+    const exactPayload = cloneSocketPayload(payload);
+    const result = isActiveGmClient(globalThis.game)
+      ? await this.inventoryService.executeInventoryFolderBatch(exactPayload)
+      : await this.socketCommandBus.request(INVENTORY_FOLDER_BATCH_COMMAND, exactPayload);
+    this.#deferInventoryRefresh([exactPayload.groupActorId]);
+    return result;
   }
 
   getInventoryIngressRuleState(payload) {

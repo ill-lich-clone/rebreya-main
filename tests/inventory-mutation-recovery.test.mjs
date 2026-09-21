@@ -460,6 +460,168 @@ test("dismantle retry keeps its prepared route and fails closed when that destin
   }
 });
 
+test("folder batch processes captured Items strictly sequentially with deterministic child mutation IDs", async () => {
+  const items = ["a", "b", "c"].map((id) => batchPricedItem(id));
+  const group = createActor({ id: "sequential-folder-batch-group", type: "group", managed: true, items });
+  setInventoryFolderState(group, {
+    folders: [{ id: "batch", name: "Batch", parentId: null, color: null }],
+    itemFolderIds: Object.fromEntries(items.map((item) => [item.id, "batch"]))
+  });
+  const fixture = installFixture({ group, actors: [group] });
+  const events = [];
+  const effects = new Set();
+  const requests = [];
+  fixture.service.executeSaleMutation = async (request) => {
+    events.push(`start:${request.itemId}`);
+    await new Promise((resolve) => setImmediate(resolve));
+    effects.add(request.mutationId);
+    requests.push(clone(request));
+    events.push(`finish:${request.itemId}`);
+    return { itemName: request.itemId, quantity: request.quantity, gainedCopper: 50 };
+  };
+  const payload = {
+    groupActorId: group.id,
+    folderId: "batch",
+    action: "sell",
+    includeDescendants: false,
+    operationId: "sequential-folder-batch"
+  };
+  try {
+    const first = await fixture.service.executeInventoryFolderBatch(payload);
+    const firstIds = requests.map((request) => request.mutationId);
+    const retry = await fixture.service.executeInventoryFolderBatch(payload);
+    const retryIds = requests.slice(3).map((request) => request.mutationId);
+    assert.deepEqual(events.slice(0, 6), [
+      "start:a", "finish:a", "start:b", "finish:b", "start:c", "finish:c"
+    ]);
+    assert.equal(first.processed.length, 3);
+    assert.equal(first.totals.gainedCopper, 150);
+    assert.deepEqual(retryIds, firstIds);
+    assert.equal(new Set(firstIds).size, 3);
+    assert.ok(firstIds.every((id) => id.length <= 160));
+    assert.equal(effects.size, 3);
+    assert.deepEqual(retry.totals, first.totals);
+  }
+  finally { fixture.restore(); }
+});
+
+test("folder batch captures direct or recursive scope and skips Items that disappear or move before their turn", async () => {
+  const a = batchPricedItem("a");
+  const b = batchPricedItem("b");
+  const c = batchPricedItem("c");
+  const group = createActor({ id: "scope-folder-batch-group", type: "group", managed: true, items: [a, b, c] });
+  setInventoryFolderState(group, {
+    folders: [
+      { id: "batch", name: "Batch", parentId: null, color: null },
+      { id: "child", name: "Child", parentId: "batch", color: null },
+      { id: "other", name: "Other", parentId: null, color: null }
+    ],
+    itemFolderIds: { a: "batch", b: "batch", c: "child" }
+  });
+  const fixture = installFixture({ group, actors: [group] });
+  const calls = [];
+  fixture.service.executeSaleMutation = async (request) => {
+    calls.push(request.itemId);
+    return { itemName: request.itemId, quantity: request.quantity, gainedCopper: 50 };
+  };
+  try {
+    const direct = await fixture.service.executeInventoryFolderBatch({
+      groupActorId: group.id, folderId: "batch", action: "sell",
+      includeDescendants: false, operationId: "direct-scope"
+    });
+    assert.deepEqual(direct.processed.map((row) => row.itemId), ["a", "b"]);
+
+    calls.length = 0;
+    fixture.service.executeSaleMutation = async (request) => {
+      calls.push(request.itemId);
+      if (request.itemId === "a") {
+        group.items.contents.splice(group.items.contents.indexOf(b), 1);
+        group.flags[MODULE_ID].inventoryFolders.itemFolderIds.c = "other";
+      }
+      return { itemName: request.itemId, quantity: request.quantity, gainedCopper: 50 };
+    };
+    const recursive = await fixture.service.executeInventoryFolderBatch({
+      groupActorId: group.id, folderId: "batch", action: "sell",
+      includeDescendants: true, operationId: "recursive-scope"
+    });
+    assert.deepEqual(calls, ["a"]);
+    assert.deepEqual(recursive.skipped.map((row) => row.code), ["item-missing", "item-moved"]);
+  }
+  finally { fixture.restore(); }
+});
+
+test("folder batch continues ordinary failures, stops reconciliation failures, and reports stable sale skips", async () => {
+  const magical = batchPricedItem("magical", { flags: { [MODULE_ID]: { magical: true } } });
+  const noPrice = batchPricedItem("no-price", { priceValue: 0 });
+  const ordinaryFailure = batchPricedItem("ordinary-failure");
+  const reconciliation = batchPricedItem("reconciliation");
+  const afterStop = batchPricedItem("zz-after-stop");
+  const items = [magical, noPrice, ordinaryFailure, reconciliation, afterStop];
+  const group = createActor({ id: "outcome-folder-batch-group", type: "group", managed: true, items });
+  setInventoryFolderState(group, {
+    folders: [{ id: "batch", name: "Batch", parentId: null, color: null }],
+    itemFolderIds: Object.fromEntries(items.map((item) => [item.id, "batch"]))
+  });
+  const fixture = installFixture({ group, actors: [group] });
+  const calls = [];
+  fixture.service.executeSaleMutation = async (request) => {
+    calls.push(request.itemId);
+    if (request.itemId === ordinaryFailure.id) throw new Error("ordinary sale failure");
+    if (request.itemId === reconciliation.id) {
+      const error = new Error("reconciliation stop");
+      error.code = "reconciliation-required";
+      throw error;
+    }
+    return { itemName: request.itemId, quantity: request.quantity, gainedCopper: 50 };
+  };
+  try {
+    const report = await fixture.service.executeInventoryFolderBatch({
+      groupActorId: group.id, folderId: "batch", action: "sell",
+      includeDescendants: false, operationId: "outcome-folder-batch"
+    });
+    assert.deepEqual(report.skipped.map((row) => row.code), ["magical-item", "no-price"]);
+    assert.deepEqual(report.failed.map((row) => row.itemId), [ordinaryFailure.id, reconciliation.id]);
+    assert.deepEqual(calls, [ordinaryFailure.id, reconciliation.id]);
+    assert.equal(report.stopped, true);
+    assert.equal(report.processed.length, 0);
+    assert.deepEqual(report.totals, { gainedCopper: 0, materials: [] });
+  }
+  finally { fixture.restore(); }
+});
+
+test("folder batch skips non-dismantlable Items and performs no child writes for an empty folder", async () => {
+  const item = batchPricedItem("ordinary-item");
+  const group = createActor({ id: "dismantle-folder-batch-group", type: "group", managed: true, items: [item] });
+  setInventoryFolderState(group, {
+    folders: [
+      { id: "batch", name: "Batch", parentId: null, color: null },
+      { id: "empty", name: "Empty", parentId: null, color: null }
+    ],
+    itemFolderIds: { [item.id]: "batch" }
+  });
+  const fixture = installFixture({ group, actors: [group], moduleApi: { getModel: async () => dismantleModel({ id: "iron" }) } });
+  let childCalls = 0;
+  fixture.service.executeDismantleMutation = async () => { childCalls += 1; };
+  try {
+    const dismantle = await fixture.service.executeInventoryFolderBatch({
+      groupActorId: group.id, folderId: "batch", action: "dismantle",
+      includeDescendants: false, operationId: "dismantle-folder-batch"
+    });
+    const empty = await fixture.service.executeInventoryFolderBatch({
+      groupActorId: group.id, folderId: "empty", action: "sell",
+      includeDescendants: false, operationId: "empty-folder-batch"
+    });
+    assert.equal(dismantle.skipped[0].code, "not-dismantlable");
+    assert.equal(childCalls, 0);
+    assert.deepEqual(empty, {
+      action: "sell", folderId: "empty", includeDescendants: false,
+      processed: [], skipped: [], failed: [], stopped: false,
+      totals: { gainedCopper: 0, materials: [] }
+    });
+  }
+  finally { fixture.restore(); }
+});
+
 test("manual dismantle publishes and enforces the minimum whole-output quantity", async () => {
   const iron = { id: "iron", name: "Iron", type: "Metal", priceGold: 1, weight: 1 };
   const model = {
@@ -2011,6 +2173,22 @@ function materialStack({ id, material, quantity }) {
     flags: { [MODULE_ID]: {
       sourceType: "material", sourceId: material.id, materialId: material.id, predominantMaterialId: material.id
     } }
+  });
+}
+
+function batchPricedItem(id, { priceValue = 1, flags = {} } = {}) {
+  return createItem({
+    id,
+    name: id,
+    type: "loot",
+    quantity: 1,
+    system: {
+      quantity: 1,
+      price: { value: priceValue, denomination: "gp" },
+      weight: { value: 1, units: "lb" },
+      type: { value: "loot", subtype: "" }
+    },
+    flags
   });
 }
 

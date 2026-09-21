@@ -26,6 +26,14 @@ test("composition root exposes one personal inventory pin method without a socke
   assert.doesNotMatch(source, /inventory\.folder\.pin|INVENTORY_FOLDER_PIN_COMMAND/u);
 });
 
+test("composition root exposes one typed inventory folder batch API", async () => {
+  const source = await readFile(new URL("../scripts/main.js", import.meta.url), "utf8");
+  assert.equal(source.match(/\n  async runInventoryFolderBatch\(/gu)?.length ?? 0, 1);
+  assert.equal(source.match(/register\(INVENTORY_FOLDER_BATCH_COMMAND/gu)?.length ?? 0, 1);
+  assert.match(source, /keyedMutationScheduling\(\(payload\) => \[groupKey\(payload\.groupActorId\)\]\)/u);
+  assert.match(source, /socketCommandBus\.request\(INVENTORY_FOLDER_BATCH_COMMAND, exactPayload\)/u);
+});
+
 test("managed compendia sync actions and glossary before feats", async () => {
   const source = await readFile(new URL("../scripts/main.js", import.meta.url), "utf8");
   const actions = source.indexOf("await this.actionsCompendium.sync()");
