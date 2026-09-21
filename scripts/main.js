@@ -85,7 +85,7 @@ import {
   SOCKET_EVENT_INVENTORY_SOURCE_DEPLETION_RESULT,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_REQUEST,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_RESULT
-} from "./data/inventory-service.js?v=1.4.317";
+} from "./data/inventory-service.js?v=1.4.318";
 import {
   InventoryIngressRuleCompilerCache,
   normalizeInventoryIngressRule
@@ -470,7 +470,7 @@ const LEGACY_WORLD_MUTATION_SOCKET_TYPES = new Set([
   SOCKET_EVENT_LOOTGEN_CLAIM_COINS
 ]);
 const MODULE_STYLE_PATH = `modules/${MODULE_ID}/styles/main.css`;
-const MODULE_STYLE_VERSION = "1.4.317";
+const MODULE_STYLE_VERSION = "1.4.318";
 const SECONDS_PER_HOUR = 3600;
 const SECONDS_PER_DAY = 86400;
 const TRAVEL_DAY_HOURS = 8;
@@ -1598,7 +1598,7 @@ export class RebreyaMainModule {
       confirm: async (preview) => {
         const moduleVersion = game.modules.get(MODULE_ID)?.version ?? "0";
         const { promptInventoryIngressConfirmation } = await import(
-          "./ui/inventory-app.js?v=1.4.251-reputation"
+          "./ui/inventory-app.js?v=1.4.318"
         );
         return promptInventoryIngressConfirmation(preview);
       }
@@ -7706,7 +7706,7 @@ export class RebreyaMainModule {
 
   async openInventoryApp(options = {}) {
     try {
-      const { InventoryApp } = await import("./ui/inventory-app.js?v=1.4.251-reputation");
+      const { InventoryApp } = await import("./ui/inventory-app.js?v=1.4.318");
 
       if (!this.inventoryApp) {
         this.inventoryApp = new InventoryApp(this);
@@ -7753,7 +7753,7 @@ export class RebreyaMainModule {
     }
 
     const moduleVersion = game.modules?.get?.(MODULE_ID)?.version ?? "1.4.67";
-    const { InventoryApp } = await import("./ui/inventory-app.js?v=1.4.251-reputation");
+    const { InventoryApp } = await import("./ui/inventory-app.js?v=1.4.318");
     const app = new InventoryApp(this, {
       groupActorId: normalizedGroupActorId,
       rootFolderId: normalizedFolderId,

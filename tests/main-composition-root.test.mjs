@@ -19,6 +19,27 @@ import {
 import { SPELL_INSTANCE_MUTATION_COMMAND } from "../scripts/integrations/spell-instance-socket.js";
 import { SUMMON_LIFECYCLE_MUTATION_COMMAND } from "../scripts/integrations/summon-lifecycle-socket.js";
 
+test("release 1.4.318 synchronizes the inventory browser module cache graph", async () => {
+  const [manifestSource, mainSource, serviceSource, syncSource, appSource] = await Promise.all([
+    readFile(new URL("../module.json", import.meta.url), "utf8"),
+    readFile(new URL("../scripts/main.js", import.meta.url), "utf8"),
+    readFile(new URL("../scripts/data/inventory-service.js", import.meta.url), "utf8"),
+    readFile(new URL("../scripts/integrations/inventory-sync.js", import.meta.url), "utf8"),
+    readFile(new URL("../scripts/ui/inventory-app.js", import.meta.url), "utf8")
+  ]);
+  const manifest = JSON.parse(manifestSource);
+  assert.equal(manifest.version, "1.4.318");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.318.js"]);
+  assert.doesNotMatch(manifestSource, /main-1\.4\.317\.js/u);
+  assert.match(mainSource, /data\/inventory-service\.js\?v=1\.4\.318/u);
+  assert.match(syncSource, /data\/inventory-service\.js\?v=1\.4\.318/u);
+  assert.equal(mainSource.match(/ui\/inventory-app\.js\?v=1\.4\.318/gu)?.length ?? 0, 3);
+  for (const source of [serviceSource, appSource]) {
+    assert.match(source, /inventory-folder-tree\.js\?v=1\.4\.318/u);
+    assert.match(source, /inventory-acquisition-history\.js\?v=1\.4\.318/u);
+  }
+});
+
 test("composition root exposes one personal inventory pin method without a socket command", async () => {
   const source = await readFile(new URL("../scripts/main.js", import.meta.url), "utf8");
   assert.equal(source.match(/\n  setInventoryFolderPinned\(/gu)?.length ?? 0, 1);
@@ -435,8 +456,8 @@ test("composition root owns one inventory ingress graph and one batch dispatch h
 
   assert.match(
     source,
-    /\.\/data\/inventory-service\.js\?v=1\.4\.317/u,
-    "inventory-service cache key must change with the inventory add projection"
+    /\.\/data\/inventory-service\.js\?v=1\.4\.318/u,
+    "inventory-service cache key must change with the inventory folder workflow"
   );
   assert.equal(source.match(/new InventoryIngressRuleCompilerCache\(/gu)?.length, 1);
   assert.equal(source.match(/new InventoryIngressPlanner\(/gu)?.length, 1);

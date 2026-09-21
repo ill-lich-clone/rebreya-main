@@ -63,12 +63,12 @@ import {
   selectInventoryFolderItemIds,
   setInventoryFolderColor as setInventoryFolderColorState,
   renameInventoryFolder as renameInventoryFolderState
-} from "./inventory-folder-tree.js?v=1.4.248-folder-colors";
+} from "./inventory-folder-tree.js?v=1.4.318";
 import {
   appendInventoryAcquisitionEntry,
   readInventoryAcquisitionHistory,
   writeInventoryAcquisitionHistory
-} from "./inventory-acquisition-history.js";
+} from "./inventory-acquisition-history.js?v=1.4.318";
 import { resolveGearItemIcon } from "./gear-icon-resolver.js?v=1.4.243";
 
 const SOCKET_CHANNEL = `module.${MODULE_ID}`;

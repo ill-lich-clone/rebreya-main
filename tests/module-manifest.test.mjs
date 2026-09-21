@@ -69,8 +69,8 @@ test("module manifest loads an unpinned canonical entrypoint for page-refresh up
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const [entrypoint] = manifest.esmodules;
 
-  assert.equal(manifest.version, "1.4.317");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.317.js"]);
+  assert.equal(manifest.version, "1.4.318");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.318.js"]);
   assert.doesNotMatch(entrypoint, /[?#]/u);
 
   const entrypointSource = await readFile(new URL(entrypoint, manifestUrl), "utf8");
@@ -91,9 +91,8 @@ test("Lootgen window import uses the current release cache version", async () =>
   ));
 });
 
-test("glossary and feat-link owners use the current release cache key", async () => {
-  const manifest = JSON.parse(await readFile(new URL("../module.json", import.meta.url), "utf8"));
-  const version = manifest.version.replaceAll(".", "\\.");
+test("glossary and feat-link owners preserve their released cache key", async () => {
+  const version = "1\\.4\\.317";
   const [
     mainSource,
     featsSource,
@@ -296,7 +295,7 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
   for (const importPath of [
     "data/trader-service.js?v=1.4.109-lazy-trader-restock",
     "data/downtime-service.js?v=1.4.96-craft-calendar",
-    "data/inventory-service.js?v=1.4.317",
+    "data/inventory-service.js?v=1.4.318",
     "data/inventory-ingress-descriptor.js?v=1.4.268",
     "data/durability-service.js?v=1.4.154-corpse-storage-broken-name",
     "data/corpse-storage-materializer.js?v=1.4.195-storage-administration",
@@ -382,7 +381,7 @@ test("module keeps recent published entrypoint URLs as canonical compatibility f
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
 
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.317.js"]);
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.318.js"]);
 
   for (const fileName of ["main-1.4.98.js", "main-1.4.99.js", "main-1.4.100.js"]) {
     const forwarderSource = await readFile(new URL(`../scripts/${fileName}`, import.meta.url), "utf8");
@@ -556,20 +555,18 @@ test("legacy settings relay fails closed when a world-setting socket is unavaila
 test("module stylesheet cache bust loads the storage deposit interaction styles", async () => {
   const entrypointSource = await readCanonicalEntrypointSource();
 
-  assert.match(entrypointSource, /const MODULE_STYLE_VERSION = "1\.4\.317";/u);
+  assert.match(entrypointSource, /const MODULE_STYLE_VERSION = "1\.4\.318";/u);
   assert.match(entrypointSource, /const stylesheetHref = `\$\{MODULE_STYLE_PATH\}\?v=\$\{encodeURIComponent\(MODULE_STYLE_VERSION\)\}`;/u);
   assert.doesNotMatch(entrypointSource, /module\?\.version\s*\?\?/u);
 });
 
 test("module entrypoint preserves the released magic weapon template cache bust", async () => {
   const entrypointSource = await readCanonicalEntrypointSource();
-  const manifest = JSON.parse(await readFile(new URL("../module.json", import.meta.url), "utf8"));
-  const escapedVersion = manifest.version.replaceAll(".", "\\.");
 
   assert.match(entrypointSource, /registerMagicWeaponTemplateHook/u);
   assert.match(
     entrypointSource,
-    new RegExp(`magic-weapon-template\\.js\\?v=${escapedVersion}`, "u"),
+    /magic-weapon-template\.js\?v=1\.4\.317/u,
   );
   assert.match(entrypointSource, /registerMagicWeaponTemplateHook\(moduleApi\)/u);
 });
