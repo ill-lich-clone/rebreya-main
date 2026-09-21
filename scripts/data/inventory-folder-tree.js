@@ -302,6 +302,10 @@ export function normalizeExpandedFolderIds(rawIds, { folderIds = [] } = {}) {
   return normalized;
 }
 
+export function normalizePinnedFolderIds(rawIds, { folderIds = [] } = {}) {
+  return normalizeExpandedFolderIds(rawIds, { folderIds });
+}
+
 export function createInventoryFolder(rawState, { folderId, name, parentId = null }) {
   const state = normalizeReducerState(rawState);
   const id = requireFolderId(folderId);
@@ -496,6 +500,27 @@ export function buildInventoryFolderTree({ state, items = [], compareItems } = {
   sortAndCount(root);
 
   return { root, foldersById, itemsById, state: normalizedState };
+}
+
+export function selectInventoryFolderItemIds({
+  state,
+  items = [],
+  folderId,
+  includeDescendants = false,
+  compareItems
+} = {}) {
+  const tree = buildInventoryFolderTree({ state, items, compareItems });
+  const start = tree.foldersById.get(cleanId(folderId));
+  if (!start) throw new InventoryFolderStateError("folder-not-found", "Folder was not found.");
+  const selected = [];
+  const visit = (node) => {
+    selected.push(...node.items.map(itemIdOf));
+    if (includeDescendants) {
+      for (const child of node.folders) visit(child);
+    }
+  };
+  visit(start);
+  return selected;
 }
 
 export function buildInventoryFolderSearchIndex(tree, { itemText } = {}) {

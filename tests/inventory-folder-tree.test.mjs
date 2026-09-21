@@ -14,9 +14,11 @@ import {
   moveInventoryFolder,
   moveInventoryItemToFolder,
   normalizeExpandedFolderIds,
+  normalizePinnedFolderIds,
   normalizeInventoryFolderState,
   projectInventoryFolderRows,
-  renameInventoryFolder
+  renameInventoryFolder,
+  selectInventoryFolderItemIds
 } from "../scripts/data/inventory-folder-tree.js";
 
 function assertFolderError(operation, code) {
@@ -142,6 +144,37 @@ test("normalizeExpandedFolderIds removes duplicates and missing IDs", () => {
     ["a", "b"]
   );
   assert.deepEqual(normalizeExpandedFolderIds("a", { folderIds: ["a"] }), []);
+});
+
+test("folder batch selection is deterministic and direct by default", () => {
+  const state = normalizeInventoryFolderState({
+    version: 1,
+    folders: [
+      { id: "root-a", name: "A", parentId: null },
+      { id: "child-b", name: "B", parentId: "root-a" }
+    ],
+    itemFolderIds: { direct: "root-a", nested: "child-b", outside: "other" }
+  }, { itemIds: ["direct", "nested", "outside"] });
+  const items = [{ itemId: "nested", name: "B" }, { itemId: "direct", name: "A" }];
+
+  assert.deepEqual(selectInventoryFolderItemIds({ state, items, folderId: "root-a" }), ["direct"]);
+  assert.deepEqual(selectInventoryFolderItemIds({
+    state,
+    items,
+    folderId: "root-a",
+    includeDescendants: true
+  }), ["direct", "nested"]);
+});
+
+test("folder batch selection rejects a missing folder and pinned normalization is immutable", () => {
+  const raw = ["valid", "stale", "valid"];
+  assert.deepEqual(normalizePinnedFolderIds(raw, { folderIds: ["valid"] }), ["valid"]);
+  assert.deepEqual(raw, ["valid", "stale", "valid"]);
+  assertFolderError(() => selectInventoryFolderItemIds({
+    state: { version: 1, folders: [], itemFolderIds: {} },
+    items: [],
+    folderId: "missing"
+  }), "folder-not-found");
 });
 
 test("createInventoryFolder trims names, permits duplicate names and is idempotent", () => {
