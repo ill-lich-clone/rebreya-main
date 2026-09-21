@@ -645,7 +645,7 @@ test("non-active item-to-root command refreshes the requester cache after the GM
   }
 });
 
-test("personal expansion state merges queued views and writes only the current User flag", async () => {
+test("folder UI state migrates v1 expansion and keeps pins personal", async () => {
   const fixture = installFixture({
     groupAFolders: [
       { id: "a", name: "A", parentId: null },
@@ -664,7 +664,7 @@ test("personal expansion state merges queued views and writes only the current U
     const moduleApi = new RebreyaMainModule();
     assert.deepEqual(
       moduleApi.getInventoryFolderUiState(fixture.groupA.id, ["a", "b"]),
-      { version: 1, groupActorId: fixture.groupA.id, expandedFolderIds: ["a"] }
+      { version: 2, groupActorId: fixture.groupA.id, expandedFolderIds: ["a"], pinnedFolderIds: [] }
     );
     fixture.users.gm.flags[MODULE_ID].inventoryFolderUi.groups[fixture.groupA.id]
       .expandedFolderIds = ["stale"];
@@ -687,20 +687,97 @@ test("personal expansion state merges queued views and writes only the current U
     await blocked;
 
     assert.deepEqual(await pending, {
-      version: 1,
+      version: 2,
       groupActorId: fixture.groupA.id,
-      expandedFolderIds: ["a", "b"]
+      expandedFolderIds: ["a", "b"],
+      pinnedFolderIds: []
+    });
+    assert.deepEqual(await moduleApi.setInventoryFolderPinned(fixture.groupA.id, "b", true), {
+      version: 2,
+      groupActorId: fixture.groupA.id,
+      expandedFolderIds: ["a", "b"],
+      pinnedFolderIds: ["b"]
     });
     assert.deepEqual(await moduleApi.setInventoryFolderExpanded(fixture.groupA.id, "a", false), {
-      version: 1,
+      version: 2,
       groupActorId: fixture.groupA.id,
-      expandedFolderIds: ["b"]
+      expandedFolderIds: ["b"],
+      pinnedFolderIds: ["b"]
     });
     assert.deepEqual(
       fixture.users.gm.getFlag(MODULE_ID, "inventoryFolderUi").groups[fixture.groupA.id],
-      { expandedFolderIds: ["b"] }
+      { expandedFolderIds: ["b"], pinnedFolderIds: ["b"] }
     );
-    assert.equal(fixture.users.gm.setFlagCalls.length, 2);
+    assert.equal(fixture.users.gm.setFlagCalls.length, 3);
+    assert.equal(fixture.groupA.setFlagCalls.length, 0);
+    assert.equal(fixture.settingsWrites.length, 0);
+    assert.equal(fixture.emitted.length, 0);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("folder UI state filters stale pins independently per group and user", async () => {
+  const fixture = installFixture({
+    groupAFolders: [
+      { id: "a", name: "A", parentId: null },
+      { id: "b", name: "B", parentId: null }
+    ]
+  });
+  fixture.groupB.flags[MODULE_ID].inventoryFolders.folders = [
+    { id: "x", name: "X", parentId: null, color: null }
+  ];
+  fixture.users.gm.flags[MODULE_ID] = {
+    inventoryFolderUi: {
+      version: 2,
+      groups: {
+        [fixture.groupA.id]: { expandedFolderIds: ["a"], pinnedFolderIds: ["a", "stale"] },
+        [fixture.groupB.id]: { expandedFolderIds: [], pinnedFolderIds: ["x"] }
+      }
+    }
+  };
+  fixture.users.playerA.flags[MODULE_ID] = {
+    inventoryFolderUi: {
+      version: 2,
+      groups: {
+        [fixture.groupA.id]: { expandedFolderIds: ["b"], pinnedFolderIds: ["b"] },
+        [fixture.groupB.id]: { expandedFolderIds: [], pinnedFolderIds: ["stale"] }
+      }
+    }
+  };
+  try {
+    const moduleApi = new RebreyaMainModule();
+    assert.deepEqual(moduleApi.getInventoryFolderUiState(fixture.groupA.id, ["a", "b"]), {
+      version: 2,
+      groupActorId: fixture.groupA.id,
+      expandedFolderIds: ["a"],
+      pinnedFolderIds: ["a"]
+    });
+
+    game.user = fixture.users.playerA;
+    assert.deepEqual(moduleApi.getInventoryFolderUiState(fixture.groupA.id, ["a", "b"]), {
+      version: 2,
+      groupActorId: fixture.groupA.id,
+      expandedFolderIds: ["b"],
+      pinnedFolderIds: ["b"]
+    });
+    assert.deepEqual(await moduleApi.setInventoryFolderPinned(fixture.groupA.id, "a", true), {
+      version: 2,
+      groupActorId: fixture.groupA.id,
+      expandedFolderIds: ["b"],
+      pinnedFolderIds: ["b", "a"]
+    });
+    assert.deepEqual(
+      fixture.users.playerA.getFlag(MODULE_ID, "inventoryFolderUi").groups[fixture.groupB.id],
+      { expandedFolderIds: [], pinnedFolderIds: ["stale"] }
+    );
+    await assert.rejects(
+      moduleApi.setInventoryFolderPinned(fixture.groupA.id, "missing", true),
+      (error) => error?.code === "folder-not-found"
+    );
+    assert.equal(fixture.users.gm.setFlagCalls.length, 0);
+    assert.equal(fixture.users.playerA.setFlagCalls.length, 1);
     assert.equal(fixture.groupA.setFlagCalls.length, 0);
     assert.equal(fixture.settingsWrites.length, 0);
     assert.equal(fixture.emitted.length, 0);

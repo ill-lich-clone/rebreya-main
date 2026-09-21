@@ -6428,6 +6428,10 @@ export class RebreyaMainModule {
     return this.inventoryService.setInventoryFolderExpanded(groupActorId, folderId, expanded);
   }
 
+  setInventoryFolderPinned(groupActorId, folderId, pinned) {
+    return this.inventoryService.setInventoryFolderPinned(groupActorId, folderId, pinned);
+  }
+
   async updateInventoryItemQuantity(itemId, nextQuantity) {
     return this.runInventoryMutation(
       () => this.inventoryService.updateItemQuantity(itemId, nextQuantity)

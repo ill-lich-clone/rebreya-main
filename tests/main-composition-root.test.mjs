@@ -19,6 +19,13 @@ import {
 import { SPELL_INSTANCE_MUTATION_COMMAND } from "../scripts/integrations/spell-instance-socket.js";
 import { SUMMON_LIFECYCLE_MUTATION_COMMAND } from "../scripts/integrations/summon-lifecycle-socket.js";
 
+test("composition root exposes one personal inventory pin method without a socket command", async () => {
+  const source = await readFile(new URL("../scripts/main.js", import.meta.url), "utf8");
+  assert.equal(source.match(/\n  setInventoryFolderPinned\(/gu)?.length ?? 0, 1);
+  assert.match(source, /return this\.inventoryService\.setInventoryFolderPinned\(groupActorId, folderId, pinned\);/u);
+  assert.doesNotMatch(source, /inventory\.folder\.pin|INVENTORY_FOLDER_PIN_COMMAND/u);
+});
+
 test("managed compendia sync actions and glossary before feats", async () => {
   const source = await readFile(new URL("../scripts/main.js", import.meta.url), "utf8");
   const actions = source.indexOf("await this.actionsCompendium.sync()");
