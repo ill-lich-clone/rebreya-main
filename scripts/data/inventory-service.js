@@ -1563,6 +1563,58 @@ function isMagicalInventoryItem(itemData) {
     || Boolean(dnd5eFlags.magical || dnd5eFlags.isMagical || dnd5eFlags.isMagic || dnd5eFlags.magic);
 }
 
+export function resolveInventorySaleQuote(itemData, quantity = 1) {
+  const currentQuantity = getRawQuantity(itemData);
+  const sellQuantity = currentQuantity > 0
+    ? Math.max(0.01, Math.min(currentQuantity, roundNumber(toNumber(quantity, 1), 2)))
+    : 0;
+  const unitCopper = priceToCopper(foundry.utils.getProperty(itemData, "system.price") ?? {});
+  if (isMagicalInventoryItem(itemData)) {
+    return {
+      eligible: false,
+      code: "magical-item",
+      message: "Магические предметы нельзя продать через партийный склад.",
+      quantity: sellQuantity,
+      unitCopper,
+      multiplier: 0,
+      gainedCopper: 0
+    };
+  }
+  const multiplier = foundry.utils.getProperty(itemData, "system.type.value") === "treasure" ? 1 : 0.5;
+  if (currentQuantity <= 0) {
+    return {
+      eligible: false,
+      code: "invalid-quantity",
+      message: "Inventory item quantity must be greater than zero to sell it.",
+      quantity: 0,
+      unitCopper,
+      multiplier,
+      gainedCopper: 0
+    };
+  }
+  const gainedCopper = Math.floor(unitCopper * sellQuantity * multiplier);
+  if (unitCopper <= 0 || gainedCopper <= 0) {
+    return {
+      eligible: false,
+      code: "no-price",
+      message: "У предмета нет цены для продажи.",
+      quantity: sellQuantity,
+      unitCopper,
+      multiplier,
+      gainedCopper: 0
+    };
+  }
+  return {
+    eligible: true,
+    code: "sellable",
+    message: "",
+    quantity: sellQuantity,
+    unitCopper,
+    multiplier,
+    gainedCopper
+  };
+}
+
 function normalizeToolId(value) {
   const text = normalizeText(value);
   if (!text) {
@@ -3266,19 +3318,15 @@ export class InventoryService {
     if (!record) {
       const item = this.#getInventoryItem(inventoryActor, itemId);
       const itemData = item.toObject();
-      if (isMagicalInventoryItem(itemData)) {
-        throw new Error("Магические предметы нельзя продать через партийный склад.");
+      const quote = resolveInventorySaleQuote(itemData, quantity);
+      if (!quote.eligible) {
+        const error = new Error(quote.message);
+        error.code = quote.code;
+        throw error;
       }
       const currentQuantity = getRawQuantity(itemData);
-      if (currentQuantity <= 0) {
-        throw new Error("Inventory item quantity must be greater than zero to sell it.");
-      }
-      const sellQuantity = Math.max(0.01, Math.min(currentQuantity, roundNumber(toNumber(quantity, 1), 2)));
-      const unitCopper = priceToCopper(foundry.utils.getProperty(itemData, "system.price") ?? {});
-      const gainedCopper = Math.floor((unitCopper * sellQuantity) / 2);
-      if (gainedCopper <= 0) {
-        throw new Error("У предмета нет цены для продажи.");
-      }
+      const sellQuantity = quote.quantity;
+      const gainedCopper = quote.gainedCopper;
       const beforeCopper = actorCurrencyToCopper(inventoryActor);
       record = await this.mutationJournal.start({
         id: operationId,

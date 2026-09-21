@@ -20,7 +20,8 @@ globalThis.Item = class TestItemDocument {};
 const {
   captureInventoryTransferIdentity,
   InventoryService,
-  itemsCanRepresentSameTransfer
+  itemsCanRepresentSameTransfer,
+  resolveInventorySaleQuote
 } = await import(`../scripts/data/inventory-service.js?mutation-recovery=${Date.now()}`);
 
 function clone(value) {
@@ -3723,6 +3724,43 @@ test("sale reverses credited currency when source depletion fails", async () => 
     }), /source update failed/u);
     assert.deepEqual(group.system.currency, { pp: 0, gp: 0, ep: 0, sp: 0, cp: 0 });
     assert.equal(source.system.quantity, 2);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("sale quote distinguishes treasure, ordinary, magical, and valueless Items", () => {
+  const group = createActor({ id: "group", type: "group", managed: true });
+  const fixture = installFixture({ group, actors: [group] });
+  const priced = {
+    name: "Находка",
+    type: "loot",
+    system: { quantity: 2, price: { value: 1, denomination: "gp" }, type: { value: "treasure" } },
+    flags: {}
+  };
+  try {
+    assert.deepEqual(resolveInventorySaleQuote(priced, 2), {
+      eligible: true,
+      code: "sellable",
+      message: "",
+      quantity: 2,
+      unitCopper: 100,
+      multiplier: 1,
+      gainedCopper: 200
+    });
+    assert.equal(resolveInventorySaleQuote({
+      ...priced,
+      system: { ...priced.system, type: { value: "loot" } }
+    }, 2).gainedCopper, 100);
+    assert.equal(resolveInventorySaleQuote({
+      ...priced,
+      flags: { [MODULE_ID]: { magical: true } }
+    }, 1).code, "magical-item");
+    assert.equal(resolveInventorySaleQuote({
+      ...priced,
+      system: { ...priced.system, price: { value: 0, denomination: "gp" } }
+    }, 1).code, "no-price");
   }
   finally {
     fixture.restore();
