@@ -19,7 +19,7 @@ import {
 import { SPELL_INSTANCE_MUTATION_COMMAND } from "../scripts/integrations/spell-instance-socket.js";
 import { SUMMON_LIFECYCLE_MUTATION_COMMAND } from "../scripts/integrations/summon-lifecycle-socket.js";
 
-test("release 1.4.319 refreshes the acquisition presentation cache graph", async () => {
+test("release 1.4.320 refreshes the root dismantle cache graph", async () => {
   const [manifestSource, mainSource, serviceSource, syncSource, appSource] = await Promise.all([
     readFile(new URL("../module.json", import.meta.url), "utf8"),
     readFile(new URL("../scripts/main.js", import.meta.url), "utf8"),
@@ -28,15 +28,15 @@ test("release 1.4.319 refreshes the acquisition presentation cache graph", async
     readFile(new URL("../scripts/ui/inventory-app.js", import.meta.url), "utf8")
   ]);
   const manifest = JSON.parse(manifestSource);
-  assert.equal(manifest.version, "1.4.319");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.319.js"]);
-  assert.doesNotMatch(manifestSource, /main-1\.4\.318\.js/u);
-  assert.match(mainSource, /data\/inventory-service\.js\?v=1\.4\.318/u);
+  assert.equal(manifest.version, "1.4.320");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.320.js"]);
+  assert.doesNotMatch(manifestSource, /main-1\.4\.319\.js/u);
+  assert.match(mainSource, /data\/inventory-service\.js\?v=1\.4\.320/u);
   assert.match(mainSource, /data\/storage-command-service\.js\?v=1\.4\.318/u);
-  assert.match(mainSource, /integrations\/inventory-sync\.js\?v=1\.4\.318/u);
-  assert.match(syncSource, /data\/inventory-service\.js\?v=1\.4\.318/u);
-  assert.match(appSource, /integrations\/inventory-sync\.js\?v=1\.4\.318/u);
-  assert.equal(mainSource.match(/ui\/inventory-app\.js\?v=1\.4\.319/gu)?.length ?? 0, 3);
+  assert.match(mainSource, /integrations\/inventory-sync\.js\?v=1\.4\.320/u);
+  assert.match(syncSource, /data\/inventory-service\.js\?v=1\.4\.320/u);
+  assert.match(appSource, /integrations\/inventory-sync\.js\?v=1\.4\.320/u);
+  assert.equal(mainSource.match(/ui\/inventory-app\.js\?v=1\.4\.320/gu)?.length ?? 0, 3);
   for (const source of [serviceSource, appSource]) {
     assert.match(source, /inventory-folder-tree\.js\?v=1\.4\.318/u);
     assert.match(source, /inventory-acquisition-history\.js\?v=1\.4\.318/u);
@@ -459,7 +459,7 @@ test("composition root owns one inventory ingress graph and one batch dispatch h
 
   assert.match(
     source,
-    /\.\/data\/inventory-service\.js\?v=1\.4\.318/u,
+    /\.\/data\/inventory-service\.js\?v=1\.4\.320/u,
     "inventory-service cache key must change with the inventory folder workflow"
   );
   assert.equal(source.match(/new InventoryIngressRuleCompilerCache\(/gu)?.length, 1);

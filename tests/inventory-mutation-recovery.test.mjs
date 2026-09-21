@@ -253,29 +253,41 @@ test("manual dismantle uses stable material metadata and never a presentation-na
   }
 });
 
-test("dismantle rejects an Item at inventory root before target credit", async () => {
+test("dismantle applies ingress filters to a root Item and keeps fallback material at root", async () => {
   const iron = { id: "iron", name: "Iron", type: "Metal", priceGold: 1, weight: 1 };
   const model = dismantleModel(iron);
   const source = dismantleSource({ id: "root-dismantle-source", materialId: iron.id });
   const group = createActor({ id: "root-dismantle-group", type: "group", managed: true, items: [source] });
+  const previewRequests = [];
   const fixture = installFixture({
     group,
     actors: [group],
     moduleApi: {
       getModel: async () => model,
-      inventoryIngressPlanner: { async preview() { throw new Error("planner must not run for a root Item"); } }
+      inventoryIngressPlanner: dismantlePlanner((request) => {
+        previewRequests.push(clone(request));
+        return { action: { type: "legacy" }, matchedRuleId: null, rulesRevision: 8 };
+      })
     }
   });
   try {
-    await assert.rejects(
-      fixture.service.executeDismantleMutation({
-        inventoryActorId: group.id, itemId: source.id, quantity: 1, mutationId: "root-folder-required"
-      }),
-      (error) => error?.code === "folder-required"
-    );
-    assert.equal(group.createEmbeddedDocumentsCalls, 0);
-    assert.equal(source.system.quantity, 1);
-    assert.equal(fixture.settingsStore[SETTINGS_KEYS.INVENTORY_MUTATION_JOURNAL]?.records, undefined);
+    const result = await fixture.service.executeDismantleMutation({
+      inventoryActorId: group.id, itemId: source.id, quantity: 1, mutationId: "root-dismantle"
+    });
+    const materialItem = group.items.contents.find((item) => item.id !== source.id);
+    const record = fixture.settingsStore[SETTINGS_KEYS.INVENTORY_MUTATION_JOURNAL].records
+      .find((entry) => entry.id === "root-dismantle");
+    assert.equal(previewRequests.length, 1);
+    assert.equal(previewRequests[0].requestedFolderId, null);
+    assert.equal(previewRequests[0].rows[0].legacyFolderId, null);
+    assert.equal(result.breakQuantity, 1);
+    assert.equal(group.createEmbeddedDocumentsCalls, 1);
+    assert.ok(materialItem);
+    assert.equal(group.items.contents.includes(source), false);
+    assert.equal(group.flags[MODULE_ID]?.inventoryFolders?.itemFolderIds?.[materialItem.id], undefined);
+    assert.equal(record.sourceFolderId, null);
+    assert.equal(record.destinationFolderId, null);
+    assert.equal(record.routingOutcome, "fallback");
   }
   finally { fixture.restore(); }
 });
@@ -4424,7 +4436,7 @@ test("take routes an owned synthetic token through its exact world group member"
   }
 });
 
-test("player group member routes manual dismantle through the active GM typed command", async () => {
+test("player group member routes root Item dismantle through the active GM typed command", async () => {
   const source = createItem({ id: "dismantle-source", name: "Iron sword", type: "weapon", quantity: 1 });
   const player = { id: "player", isGM: false, active: true };
   const gm = { id: "gm", isGM: true, active: true };

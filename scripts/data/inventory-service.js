@@ -3450,13 +3450,12 @@ export class InventoryService {
     const hasAcquisitionHistory = receipt.beforeAcquisitionHistory?.version === 1
       && receipt.afterAcquisitionHistory?.version === 1;
     const hasRecordedRouting = Object.hasOwn(record, "destinationFolderId");
-    const destinationFolderId = cleanId(record.destinationFolderId);
+    const destinationFolderId = normalizeInventoryFolderTarget(record.destinationFolderId);
     let folderState = null;
     if (hasRecordedRouting) {
       folderState = this.#readInventoryFolderState(actor);
-      if (!destinationFolderId
-        || !folderState.folders.some((folder) => folder.id === destinationFolderId)
-        || cleanId(receipt?.folderId) !== destinationFolderId) {
+      if ((destinationFolderId && !folderState.folders.some((folder) => folder.id === destinationFolderId))
+        || normalizeInventoryFolderTarget(receipt?.folderId) !== destinationFolderId) {
         throw this.#inventoryReconciliationError("Inventory dismantle destination folder disappeared.");
       }
     }
@@ -3477,7 +3476,7 @@ export class InventoryService {
     else {
       if (!item) throw this.#inventoryReconciliationError("Inventory dismantle material target disappeared.");
       if (hasRecordedRouting
-        && cleanId(folderState.itemFolderIds[item.id]) !== destinationFolderId) {
+        && normalizeInventoryFolderTarget(folderState.itemFolderIds[item.id]) !== destinationFolderId) {
         throw this.#inventoryReconciliationError("Inventory dismantle material moved to another folder.");
       }
       const currentData = item.toObject();
@@ -3525,14 +3524,14 @@ export class InventoryService {
     }
     if (hasRecordedRouting) {
       folderState = this.#readInventoryFolderState(actor);
-      if (!folderState.folders.some((folder) => folder.id === destinationFolderId)) {
+      if (destinationFolderId && !folderState.folders.some((folder) => folder.id === destinationFolderId)) {
         throw this.#inventoryReconciliationError("Inventory dismantle destination folder disappeared.");
       }
-      const currentFolderId = cleanId(folderState.itemFolderIds[item.id]);
+      const currentFolderId = normalizeInventoryFolderTarget(folderState.itemFolderIds[item.id]);
       if (currentFolderId && currentFolderId !== destinationFolderId) {
         throw this.#inventoryReconciliationError("Inventory dismantle material moved to another folder.");
       }
-      if (!currentFolderId) {
+      if (destinationFolderId && !currentFolderId) {
         const nextFolderState = moveInventoryItemToFolderState(folderState, {
           itemId: item.id,
           folderId: destinationFolderId
@@ -3550,13 +3549,7 @@ export class InventoryService {
 
   async #prepareDismantleRouting(inventoryActor, sourceItem, materialItemData, outputQuantity) {
     const folderState = this.#readInventoryFolderState(inventoryActor);
-    const sourceFolderId = cleanId(folderState.itemFolderIds[cleanId(sourceItem?.id)]);
-    if (!sourceFolderId || !folderState.folders.some((folder) => folder.id === sourceFolderId)) {
-      throw new InventoryFolderStateError(
-        "folder-required",
-        "Чтобы разобрать предмет, сначала поместите его в папку."
-      );
-    }
+    const sourceFolderId = normalizeInventoryFolderTarget(folderState.itemFolderIds[cleanId(sourceItem?.id)]);
 
     const planner = this.moduleApi.inventoryIngressPlanner;
     if (!planner || typeof planner.preview !== "function") {
@@ -3904,8 +3897,9 @@ export class InventoryService {
         return foundry.utils.deepClone(skippedResult);
       }
       const folderState = this.#readInventoryFolderState(inventoryActor);
-      if (cleanId(folderState.itemFolderIds[item.id]) !== routing.sourceFolderId
-        || !folderState.folders.some((folder) => folder.id === routing.destinationFolderId)) {
+      if (normalizeInventoryFolderTarget(folderState.itemFolderIds[item.id]) !== routing.sourceFolderId
+        || (routing.destinationFolderId
+          && !folderState.folders.some((folder) => folder.id === routing.destinationFolderId))) {
         throw this.#inventoryReconciliationError("Inventory dismantle folder state changed during preparation.");
       }
       const target = this.#findInventoryMergeCandidate(inventoryActor, materialItemData, {

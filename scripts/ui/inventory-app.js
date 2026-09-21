@@ -15,7 +15,7 @@ import {
   resolveInventoryDropFolderId
 } from "../data/inventory-folder-tree.js?v=1.4.318";
 import { normalizeInventoryAcquisitionHistory } from "../data/inventory-acquisition-history.js?v=1.4.318";
-import { buildPartyInventoryItemDragData } from "../integrations/inventory-sync.js?v=1.4.318";
+import { buildPartyInventoryItemDragData } from "../integrations/inventory-sync.js?v=1.4.320";
 import {
   INVENTORY_INGRESS_RULE_FIELD_DEFINITIONS,
   normalizeInventoryIngressRule,
@@ -4789,7 +4789,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       isItem: row.kind === "item",
       isCollapsed: row.kind === "folder" && !row.expanded,
       isPinned: row.kind === "folder" && this.pinnedFolderIds.has(row.folderId),
-      canDismantle: row.kind === "item" ? row.canDismantle === true && row.folderId !== null : row.canDismantle
+      canDismantle: row.kind === "item" ? row.canDismantle === true : row.canDismantle
     }));
     const inventory = inventoryRows.filter((row) => row.kind === "item");
     const inventoryRootFolder = projection.rootFolder

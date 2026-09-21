@@ -1100,7 +1100,7 @@ test("InventoryApp folder actions trim names, preserve IDs and target root or se
   }
 });
 
-test("InventoryApp projects personal pinned folders only in the main Item mode and gates root dismantle", async () => {
+test("InventoryApp lets a player dismantle eligible Items from inventory root and folders", async () => {
   const restoreFoundry = installFoundryApplicationStub();
   try {
     const snapshot = createFolderInventorySnapshot();
@@ -1128,7 +1128,7 @@ test("InventoryApp projects personal pinned folders only in the main Item mode a
       { folderId: "beta", name: "Бета", color: null, recursiveItemCount: 1 }
     ]);
     assert.equal(mainContext.inventoryRows.find((row) => row.folderId === "alpha")?.isPinned, true);
-    assert.equal(mainContext.inventoryRows.find((row) => row.itemId === "root-item")?.canDismantle, false);
+    assert.equal(mainContext.inventoryRows.find((row) => row.itemId === "root-item")?.canDismantle, true);
     assert.equal(mainContext.inventoryRows.find((row) => row.itemId === "alpha-item")?.canDismantle, true);
 
     const popout = new InventoryApp(moduleApi, { groupActorId: "group-a", rootFolderId: "alpha" });
