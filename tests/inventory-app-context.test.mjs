@@ -932,7 +932,16 @@ test("InventoryApp template renders accessible folder rows and fixed-depth item 
   assert.doesNotMatch(itemMeta, /\{\{rmNum quantity\}\}/u);
   assert.doesNotMatch(itemMeta, /\{\{priceLabel\}\}/u);
   assert.doesNotMatch(itemMeta, /\{\{rmNum totalWeight\}\}/u);
-  assert.match(itemBranch, /<span>Цена за 1 шт\.<\/span>/u);
+  assert.match(itemBranch, /data-action="show-item-acquisition-history"[\s\S]*?<span>1 шт\.<\/span>/u);
+  assert.doesNotMatch(itemBranch, /Цена за 1 шт\./u);
+  const toolbarEnd = template.indexOf("</section>", template.indexOf('class="rm-compact-toolbar"'));
+  const pinnedIndex = template.indexOf('class="rm-inventory-pinned-folders"');
+  const treeIndex = template.indexOf('class="rm-compact-item-list rm-inventory-tree"');
+  assert.ok(toolbarEnd < pinnedIndex && pinnedIndex < treeIndex);
+  assert.match(template, /data-folder-drop-id="\{\{folderId\}\}"[^>]*aria-label=/u);
+  assert.match(css, /\.rm-inventory-pinned-folders\s*\{[^}]*position:\s*sticky;[^}]*z-index:/su);
+  assert.match(css, /\.rm-inventory-pinned-folder:focus-visible/u);
+  assert.match(css, /\.rm-inventory-pinned-folder\.is-drop-target-ready/u);
   assert.match(css, /\.rm-compact-item__image\s*\{[^}]*object-fit:\s*contain;/u);
   assert.match(css, /\.rebreya-inventory-app \.window-content\s*\{[^}]*display:\s*block;[^}]*overflow:\s*visible;/u);
   assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book\s*\{[^}]*display:\s*contents;/u);
@@ -1054,6 +1063,9 @@ test("InventoryApp folder actions trim names, preserve IDs and target root or se
       "Переименовать",
       "Цвет папки",
       "Открыть отдельно",
+      "Продать всё",
+      "Разобрать всё",
+      "Закрепить",
       "Удалить"
     ]);
     assert.equal(depthFiveActions[0].disabled, true);
@@ -1083,6 +1095,275 @@ test("InventoryApp folder actions trim names, preserve IDs and target root or se
     if (cryptoDescriptor) Object.defineProperty(globalThis, "crypto", cryptoDescriptor);
     else delete globalThis.crypto;
     globalThis.ui = previousUi;
+    dom.restore();
+    restoreFoundry();
+  }
+});
+
+test("InventoryApp projects personal pinned folders only in the main Item mode and gates root dismantle", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  try {
+    const snapshot = createFolderInventorySnapshot();
+    snapshot.folders = snapshot.folders.map((folder) => folder.id === "alpha"
+      ? { ...folder, color: "#AABBCC" }
+      : folder);
+    snapshot.allItems = snapshot.allItems.map((item) => ({ ...item, canDismantle: true, dismantleMinQuantity: 1 }));
+    snapshot.items = snapshot.allItems;
+    const moduleApi = createModuleApi({
+      inventorySnapshot: snapshot,
+      inventoryFolderUiState: {
+        version: 2,
+        groupActorId: "group-a",
+        expandedFolderIds: ["alpha"],
+        pinnedFolderIds: ["alpha", "beta", "missing"]
+      },
+      getGroupContext: () => null
+    });
+    const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?pinned-context=${Date.now()}`);
+
+    const main = new InventoryApp(moduleApi);
+    const mainContext = await main._prepareContext();
+    assert.deepEqual(mainContext.pinnedInventoryFolders, [
+      { folderId: "alpha", name: "Альфа", color: "#AABBCC", recursiveItemCount: 2 },
+      { folderId: "beta", name: "Бета", color: null, recursiveItemCount: 1 }
+    ]);
+    assert.equal(mainContext.inventoryRows.find((row) => row.folderId === "alpha")?.isPinned, true);
+    assert.equal(mainContext.inventoryRows.find((row) => row.itemId === "root-item")?.canDismantle, false);
+    assert.equal(mainContext.inventoryRows.find((row) => row.itemId === "alpha-item")?.canDismantle, true);
+
+    const popout = new InventoryApp(moduleApi, { groupActorId: "group-a", rootFolderId: "alpha" });
+    const popoutContext = await popout._prepareContext();
+    assert.equal(Object.hasOwn(popoutContext, "pinnedInventoryFolders"), false);
+
+    const filters = new InventoryApp(moduleApi);
+    filters.inventoryMode = "filters";
+    const filterContext = await filters._prepareContext();
+    assert.equal(Object.hasOwn(filterContext, "pinnedInventoryFolders"), false);
+  }
+  finally {
+    restoreFoundry();
+  }
+});
+
+test("InventoryApp folder batch dialogs cancel safely, submit once, report outcomes, and pin locally", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const dom = installMinimalDom();
+  const previousUi = globalThis.ui;
+  const cryptoDescriptor = Object.getOwnPropertyDescriptor(globalThis, "crypto");
+  const apiCalls = [];
+  const dialogConfigs = [];
+  const reports = [
+    {
+      action: "sell", folderId: "alpha", includeDescendants: false,
+      processed: [{ itemId: "alpha-item", itemName: "Припасы" }],
+      skipped: [{ itemId: "magic", itemName: "Артефакт", code: "magical-item" }],
+      failed: [], stopped: false,
+      totals: { gainedCopper: 150, materials: [] }
+    },
+    {
+      action: "dismantle", folderId: "alpha", includeDescendants: true,
+      processed: [{ itemId: "deep-item", itemName: "Реликвия" }],
+      skipped: [], failed: [{ itemId: "bad", itemName: "Сломано", code: "item-failed" }], stopped: true,
+      totals: { gainedCopper: 0, materials: [{ name: "Железо", quantity: 2 }] }
+    }
+  ];
+  let batchAnswer = "close";
+  let refreshes = 0;
+  globalThis.ui = { notifications: { info() {}, warn() {}, error() {} } };
+  Object.defineProperty(globalThis, "crypto", {
+    configurable: true,
+    value: { randomUUID: () => `batch-${apiCalls.filter(([kind]) => kind === "batch").length + 1}` }
+  });
+  globalThis.foundry.applications.api.DialogV2.wait = async (config) => {
+    dialogConfigs.push(config);
+    if (config.window.title.startsWith("Продать") || config.window.title.startsWith("Разобрать")) {
+      if (["close", "escape"].includes(batchAnswer)) return null;
+      if (batchAnswer === "cancel") {
+        return config.buttons.find((button) => button.action === "cancel").callback();
+      }
+      const confirm = config.buttons.find((button) => button.action === "confirm");
+      return confirm.callback(null, { form: { elements: {
+        includeDescendants: { checked: batchAnswer === "recursive" }
+      } } });
+    }
+    return null;
+  };
+  const moduleApi = createModuleApi({ inventorySnapshot: createFolderInventorySnapshot(), getGroupContext: () => null });
+  moduleApi.runInventoryFolderBatch = async (payload) => {
+    apiCalls.push(["batch", payload]);
+    return reports.shift();
+  };
+  moduleApi.setInventoryFolderPinned = async (...args) => {
+    apiCalls.push(["pin", ...args]);
+    return { pinnedFolderIds: args[2] ? [args[1]] : [] };
+  };
+  const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?folder-batch-ui=${Date.now()}`);
+  const app = new InventoryApp(moduleApi);
+  const folderRow = createFakeElement({ dataset: {
+    folderId: "alpha", folderName: "Альфа", folderColor: "#AABBCC", folderPinned: "false", canCreateChild: "true"
+  } });
+  const menuButton = createFakeControl({ closest: () => folderRow });
+  const root = createFakeElement();
+  root.querySelector = () => null;
+  root.querySelectorAll = (selector) => selector === "[data-action='open-inventory-folder-menu']" ? [menuButton] : [];
+  app.element = root;
+  app.refreshInventorySnapshot = async () => { refreshes += 1; };
+  const clickMenuAction = async (label) => {
+    await dispatchClick(menuButton);
+    const action = dom.appendedMenu.children.find((child) => collectText(child).includes(label));
+    assert.ok(action, label);
+    await dispatchClick(action);
+  };
+  try {
+    await app._prepareContext();
+    await app._onRender({}, {});
+    for (const cancelled of ["close", "escape", "cancel"]) {
+      batchAnswer = cancelled;
+      await clickMenuAction("Продать всё");
+      assert.deepEqual(apiCalls, [], cancelled);
+    }
+    batchAnswer = "direct";
+    await clickMenuAction("Продать всё");
+    batchAnswer = "recursive";
+    await clickMenuAction("Разобрать всё");
+    await clickMenuAction("Закрепить");
+    folderRow.dataset.folderPinned = "true";
+    await clickMenuAction("Открепить");
+
+    const batchCalls = apiCalls.filter(([kind]) => kind === "batch");
+    assert.deepEqual(batchCalls, [
+      ["batch", { groupActorId: "group-a", folderId: "alpha", action: "sell", includeDescendants: false, operationId: "batch-1" }],
+      ["batch", { groupActorId: "group-a", folderId: "alpha", action: "dismantle", includeDescendants: true, operationId: "batch-2" }]
+    ]);
+    assert.deepEqual(apiCalls.filter(([kind]) => kind === "pin"), [
+      ["pin", "group-a", "alpha", true],
+      ["pin", "group-a", "alpha", false]
+    ]);
+    assert.equal(refreshes, 2);
+    const confirmations = dialogConfigs.filter((config) => /^(Продать|Разобрать)/u.test(config.window.title));
+    assert.match(confirmations[0].content, /Альфа/u);
+    assert.match(confirmations[0].content, /includeDescendants/u);
+    assert.match(confirmations[0].content, /type="checkbox"[^>]*>/u);
+    assert.doesNotMatch(confirmations[0].content, /checked/u);
+    const reportHtml = dialogConfigs.filter((config) => config.window.title === "Результат пакетного действия")
+      .map((config) => config.content).join("\n");
+    for (const text of ["Обработано", "Пропущено", "Ошибки", "150", "Железо", "Остановлено"]) {
+      assert.match(reportHtml, new RegExp(text, "u"));
+    }
+  }
+  finally {
+    if (cryptoDescriptor) Object.defineProperty(globalThis, "crypto", cryptoDescriptor);
+    else delete globalThis.crypto;
+    globalThis.ui = previousUi;
+    dom.restore();
+    restoreFoundry();
+  }
+});
+
+test("InventoryApp source buttons show normalized newest-first escaped acquisition history and empty fallback", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const dom = installMinimalDom();
+  const dialogs = [];
+  globalThis.foundry.applications.api.DialogV2.wait = async (config) => { dialogs.push(config); return null; };
+  const snapshot = createFolderInventorySnapshot();
+  snapshot.allItems[0].acquisitionHistory = {
+    version: 1,
+    entries: [
+      { recordedAt: 1, worldTime: null, quantity: 1, method: "manual", sourceName: "Старый источник" },
+      ...Array.from({ length: 10 }, (_, index) => ({
+        recordedAt: index + 2,
+        worldTime: null,
+        quantity: 1,
+        method: "lootgen",
+        sourceName: index === 9 ? "<Гоблин>" : `Источник ${index}`
+      }))
+    ]
+  };
+  snapshot.allItems[1].acquisitionHistory = { version: 1, entries: [] };
+  snapshot.items = snapshot.allItems;
+  const moduleApi = createModuleApi({ inventorySnapshot: snapshot, getGroupContext: () => null });
+  const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?source-dialog=${Date.now()}`);
+  const app = new InventoryApp(moduleApi);
+  const sourceButtons = ["root-item", "alpha-item"].map((itemId) => createFakeControl({ dataset: { itemId } }));
+  const root = createFakeElement();
+  root.querySelector = () => null;
+  root.querySelectorAll = (selector) => selector === "[data-action='show-item-acquisition-history']" ? sourceButtons : [];
+  app.element = root;
+  try {
+    await app._prepareContext();
+    await app._onRender({}, {});
+    await dispatchClick(sourceButtons[0]);
+    await dispatchClick(sourceButtons[1]);
+    assert.equal(dialogs.length, 2);
+    assert.match(dialogs[0].content, /&lt;Гоблин&gt;/u);
+    assert.doesNotMatch(dialogs[0].content, /<Гоблин>/u);
+    assert.ok(dialogs[0].content.indexOf("&lt;Гоблин&gt;") < dialogs[0].content.indexOf("Источник 0"));
+    assert.equal((dialogs[0].content.match(/<li\b/gu) ?? []).length, 10);
+    assert.match(dialogs[1].content, /Источник не записан/u);
+  }
+  finally {
+    dom.restore();
+    restoreFoundry();
+  }
+});
+
+test("InventoryApp pinned drops revalidate a fresh folder and never fall back to root when the pin is stale", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const dom = installMinimalDom();
+  const previousTextEditor = globalThis.TextEditor;
+  const previousUi = globalThis.ui;
+  const warnings = [];
+  globalThis.TextEditor = { getDragEventData: (event) => event.dragData };
+  globalThis.ui = { notifications: { info() {}, warn: (message) => warnings.push(message), error() {} } };
+  const { InventoryApp, extendInventoryItemDragData } = await import(`../scripts/ui/inventory-app.js?pinned-drop=${Date.now()}`);
+  const initial = createFolderInventorySnapshot();
+  let liveSnapshot = structuredClone(initial);
+  const moves = [];
+  const reads = [];
+  let refreshes = 0;
+  const moduleApi = createModuleApi({ inventorySnapshot: initial, getGroupContext: () => null });
+  moduleApi.getInventorySnapshot = async (options) => { reads.push(options); return liveSnapshot; };
+  moduleApi.moveInventoryItemToFolder = async (payload) => moves.push(payload);
+  let pin;
+  pin = createFakeElement({
+    dataset: { folderDropId: "alpha" },
+    closest: (selector) => selector === "[data-folder-drop-id]" ? pin : null
+  });
+  const dropzone = createFakeElement();
+  dropzone.contains = (node) => node === pin;
+  const root = createFakeElement();
+  root.querySelector = (selector) => selector === "[data-action='inventory-dropzone']" ? dropzone : null;
+  root.querySelectorAll = () => [];
+  const app = new InventoryApp(moduleApi);
+  app.element = root;
+  app.refreshInventorySnapshot = async () => { refreshes += 1; };
+  const dragData = extendInventoryItemDragData({ type: "Item", uuid: "Actor.group-a.Item.root-item", flags: {} }, {
+    groupActorId: "group-a", itemId: "root-item"
+  });
+  const drop = async () => dropzone.listeners.drop[0]({ target: pin, dragData, preventDefault() {} });
+  try {
+    await app._prepareContext();
+    await app._onRender({}, {});
+    reads.length = 0;
+    await drop();
+    assert.deepEqual(moves, [{ groupActorId: "group-a", itemId: "root-item", folderId: "alpha" }]);
+
+    liveSnapshot = structuredClone(initial);
+    liveSnapshot.folders = liveSnapshot.folders.filter((folder) => folder.id !== "alpha");
+    moves.length = 0;
+    await drop();
+    assert.deepEqual(reads, [
+      { createActor: false, groupActorId: "group-a" },
+      { createActor: false, groupActorId: "group-a" }
+    ]);
+    assert.deepEqual(moves, []);
+    assert.equal(moves.some((payload) => payload.folderId === null), false);
+    assert.equal(warnings.length, 1);
+    assert.equal(refreshes, 1);
+  }
+  finally {
+    globalThis.ui = previousUi;
+    globalThis.TextEditor = previousTextEditor;
     dom.restore();
     restoreFoundry();
   }

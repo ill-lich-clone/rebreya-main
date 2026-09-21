@@ -5995,6 +5995,58 @@ summary:focus-visible {
   background: rgb(var(--rm-color-gold-rgb) / 0.14);
 }
 
+.rm-inventory-pinned-folders {
+  position: sticky;
+  top: 52px;
+  z-index: 4;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 10px;
+  padding: 7px;
+  border: 1px solid var(--rm-border-default);
+  border-radius: var(--rm-ui-section-radius);
+  background: rgb(var(--rm-color-dark-rgb));
+}
+
+.rm-inventory-pinned-folder {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 220px;
+  min-height: 30px;
+  padding: 4px 8px;
+  border: 1px solid var(--rm-border-subtle);
+  border-radius: var(--rm-ui-button-radius);
+  background: var(--rm-surface-subtle);
+  color: var(--rm-text);
+}
+
+.rm-inventory-pinned-folder i {
+  color: var(--rm-folder-color, var(--rm-accent));
+}
+
+.rm-inventory-pinned-folder span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rm-inventory-pinned-folder small {
+  color: var(--rm-text-secondary);
+}
+
+.rm-inventory-pinned-folder:focus-visible {
+  outline: 2px solid var(--rm-accent);
+  outline-offset: 2px;
+}
+
+.rm-inventory-pinned-folder.is-drop-target-ready {
+  border-color: var(--rm-accent);
+  background: rgb(var(--rm-color-gold-rgb) / 0.16);
+  box-shadow: inset 0 0 0 1px rgb(var(--rm-color-gold-rgb) / 0.3);
+}
+
 .rm-party-toolbar--compact {
   grid-template-columns: minmax(0, 1fr) auto;
   border: 1px dashed var(--rm-border-default);
@@ -6374,9 +6426,31 @@ summary:focus-visible {
 .rm-compact-item__metrics {
   margin: 0;
   display: grid;
-  grid-template-columns: repeat(3, minmax(72px, auto));
+  grid-template-columns: auto repeat(3, minmax(72px, auto));
   gap: 8px;
   text-align: right;
+}
+
+.rm-inventory-item-source {
+  align-self: center;
+  width: 28px;
+  height: 28px;
+  min-height: 28px;
+}
+
+.rm-inventory-folder-batch-report.is-stopped {
+  border-left: 3px solid var(--rm-danger);
+  padding-left: 10px;
+}
+
+.rm-inventory-acquisition-history {
+  display: grid;
+  gap: 8px;
+}
+
+.rm-inventory-acquisition-history li {
+  display: grid;
+  gap: 2px;
 }
 
 .rm-compact-item__metrics p,

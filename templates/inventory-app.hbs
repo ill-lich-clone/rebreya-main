@@ -228,6 +228,26 @@
           </div>
         </section>
 
+        {{#if pinnedInventoryFolders}}
+          <nav class="rm-inventory-pinned-folders" aria-label="Закреплённые папки">
+            {{#each pinnedInventoryFolders}}
+              <button
+                type="button"
+                class="rm-inventory-pinned-folder"
+                data-action="open-pinned-inventory-folder"
+                data-folder-id="{{folderId}}"
+                data-folder-drop-id="{{folderId}}"
+                aria-label="Открыть папку {{name}} — {{rmNum recursiveItemCount precision=0}} поз."
+                title="{{name}}"
+              >
+                <i class="fa-solid fa-folder" {{#if color}}style="--rm-folder-color: {{color}}"{{/if}} aria-hidden="true"></i>
+                <span>{{name}}</span>
+                <small>{{rmNum recursiveItemCount precision=0}}</small>
+              </button>
+            {{/each}}
+          </nav>
+        {{/if}}
+
         {{#if inventoryFiltersActive}}
           <section class="rm-inventory-filter-editor" aria-label="Фильтры входящего лута">
             {{#if canOrganizeInventory}}
@@ -305,6 +325,7 @@
                   data-folder-id="{{folderId}}"
                   data-folder-name="{{name}}"
                   data-folder-color="{{color}}"
+                  data-folder-pinned="{{isPinned}}"
                   data-depth="{{depth}}"
                   data-can-create-child="{{canCreateChild}}"
                   {{#if ../canOrganizeInventory}}data-folder-drag="true" data-folder-drop-id="{{folderId}}" draggable="true"{{/if}}
@@ -366,6 +387,9 @@
 
                   <div class="rm-compact-item__side">
                     <div class="rm-compact-item__metrics">
+                      <button type="button" class="rm-icon-button rm-inventory-item-source" data-action="show-item-acquisition-history" data-item-id="{{itemId}}" title="Источники предмета" aria-label="Источники предмета {{name}}">
+                        <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+                      </button>
                       <p>
                         <span>Кол-во</span>
                         <strong>{{rmNum quantity}}</strong>
@@ -375,7 +399,7 @@
                         <strong>{{rmNum totalWeight}} фнт.</strong>
                       </p>
                       <p>
-                        <span>Цена за 1 шт.</span>
+                        <span>1 шт.</span>
                         <strong>{{#if priceLabel}}{{priceLabel}}{{else}}-{{/if}}</strong>
                       </p>
                     </div>
