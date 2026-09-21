@@ -69,8 +69,8 @@ test("module manifest loads an unpinned canonical entrypoint for page-refresh up
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const [entrypoint] = manifest.esmodules;
 
-  assert.equal(manifest.version, "1.4.321");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.321.js"]);
+  assert.equal(manifest.version, "1.4.322");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.322.js"]);
   assert.doesNotMatch(entrypoint, /[?#]/u);
 
   const entrypointSource = await readFile(new URL(entrypoint, manifestUrl), "utf8");
@@ -295,7 +295,7 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
   for (const importPath of [
     "data/trader-service.js?v=1.4.109-lazy-trader-restock",
     "data/downtime-service.js?v=1.4.96-craft-calendar",
-    "data/inventory-service.js?v=1.4.321",
+    "data/inventory-service.js?v=1.4.322",
     "data/inventory-ingress-descriptor.js?v=1.4.268",
     "data/durability-service.js?v=1.4.154-corpse-storage-broken-name",
     "data/corpse-storage-materializer.js?v=1.4.195-storage-administration",
@@ -306,18 +306,18 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
     "integrations/durability-hooks.js?v=1.4.153-corpse-creature",
     "data/storage-trigger-service.js?v=1.4.197-door-trigger-target",
     "integrations/storage-token-hooks.js?v=1.4.197-door-trigger-target",
-    "integrations/inventory-sync.js?v=1.4.321",
-    "data/gear-compendium.js?v=1.4.292",
+    "integrations/inventory-sync.js?v=1.4.322",
+    "data/gear-compendium.js?v=1.4.322",
     "data/storage-open-sound-service.js?v=1.4.145-coin-icons-storage-sound",
     "data/storage-service.js?v=1.4.270",
     "data/storage-access.js?v=1.4.197-door-trigger-target",
     "data/builtin-storage-actor-service.js?v=1.4.216-storage-token-vision",
-    "data/storage-ground-pile-service.js?v=1.4.312-fishing-rods",
-    "data/storage-container-item-service.js?v=1.4.317",
-    "data/storage-deposit-source.js?v=1.4.312-fishing-rods",
-    "data/storage-command-service.js?v=1.4.318",
+    "data/storage-ground-pile-service.js?v=1.4.322",
+    "data/storage-container-item-service.js?v=1.4.322",
+    "data/storage-deposit-source.js?v=1.4.322",
+    "data/storage-command-service.js?v=1.4.322",
     "integrations/storage-transfer-drop.js?v=1.4.213-furniture-orientation",
-    "integrations/storage-token-drop.js?v=1.4.312-fishing-rods"
+    "integrations/storage-token-drop.js?v=1.4.322"
   ]) {
     assert.equal(canonicalSource.includes(importPath), true, importPath);
   }
@@ -345,12 +345,12 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
     assert.equal(source.includes(importPath), true, importPath);
   }
   assert.equal(
-    groundPileServiceSource.includes("storage-pile-presentation.js?v=1.4.312-fishing-rods"),
+    groundPileServiceSource.includes("storage-pile-presentation.js?v=1.4.322"),
     true,
     "ground-pile presentation changes need their own browser module cache key"
   );
   assert.equal(
-    canonicalSource.includes("storage-ground-pile-service.js?v=1.4.312-fishing-rods"),
+    canonicalSource.includes("storage-ground-pile-service.js?v=1.4.322"),
     true,
     "ground-pile token layout changes need their own browser module cache key"
   );
@@ -381,7 +381,7 @@ test("module keeps recent published entrypoint URLs as canonical compatibility f
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
 
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.321.js"]);
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.322.js"]);
 
   for (const fileName of ["main-1.4.98.js", "main-1.4.99.js", "main-1.4.100.js"]) {
     const forwarderSource = await readFile(new URL(`../scripts/${fileName}`, import.meta.url), "utf8");
@@ -555,7 +555,7 @@ test("legacy settings relay fails closed when a world-setting socket is unavaila
 test("module stylesheet cache bust loads the storage deposit interaction styles", async () => {
   const entrypointSource = await readCanonicalEntrypointSource();
 
-  assert.match(entrypointSource, /const MODULE_STYLE_VERSION = "1\.4\.321";/u);
+  assert.match(entrypointSource, /const MODULE_STYLE_VERSION = "1\.4\.322";/u);
   assert.match(entrypointSource, /const stylesheetHref = `\$\{MODULE_STYLE_PATH\}\?v=\$\{encodeURIComponent\(MODULE_STYLE_VERSION\)\}`;/u);
   assert.doesNotMatch(entrypointSource, /module\?\.version\s*\?\?/u);
 });
@@ -576,7 +576,7 @@ test("gear compendium import uses the current clothing projection cache bust", a
 
   assert.match(
     entrypointSource,
-    /gear-compendium\.js\?v=1\.4\.292/u,
+    /gear-compendium\.js\?v=1\.4\.322/u,
   );
 });
 

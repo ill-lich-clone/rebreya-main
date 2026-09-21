@@ -4,10 +4,10 @@ import { readFile } from "node:fs/promises";
 import { buildUpgradeAutomationManifest, getUpgradeAvailability } from "../scripts/data/upgrade-automation-manifest.js";
 const read = async name => JSON.parse(await readFile(new URL(`../data/${name}.json`, import.meta.url)));
 const [upgrades, gear, decisions] = await Promise.all([read("upgrades"), read("gear"), read("upgrade-automation-manifest")]);
-test("all 91 stable IDs have one explicit, source-backed decision", () => {
+test("all 124 stable IDs have one explicit, source-backed decision", () => {
   const rows = buildUpgradeAutomationManifest(upgrades, gear, decisions);
-  assert.equal(rows.length, 91);
-  assert.equal(new Set(rows.map(r => r.productId)).size, 91);
+  assert.equal(rows.length, 124);
+  assert.equal(new Set(rows.map(r => r.productId)).size, 124);
   assert.equal(rows.filter(r => r.decision === "existing-curse").length, 11);
   assert.ok(rows.every(r => r.gearId === r.productId && r.reason && r.ruleSource.productId === r.productId));
   assert.deepEqual(rows.map(r => r.productId), rows.map(r => r.productId).sort());

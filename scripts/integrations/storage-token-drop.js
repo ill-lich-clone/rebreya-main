@@ -1,6 +1,6 @@
 import { MODULE_ID } from "../constants.js";
 import { preflightStorageAccess } from "../data/storage-access.js";
-import { parseStorageDepositDragData } from "../data/storage-deposit-source.js?v=1.4.312-fishing-rods";
+import { parseStorageDepositDragData } from "../data/storage-deposit-source.js?v=1.4.322";
 import { isStorageActor } from "../data/storage-service.js";
 import { promptStorageTransferQuantity } from "../ui/storage-transfer-ui.js";
 import {

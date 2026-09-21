@@ -296,6 +296,10 @@ function stripTrailingParenthetical(value) {
   return cleanString(value).replace(/\s*\([^()]*\)\s*$/u, "").trim();
 }
 
+function stripTrailingRank(value) {
+  return cleanString(value).replace(/\s+\d+-й\s+ранг\s*$/iu, "").trim();
+}
+
 function getGearIconNameCandidates(item) {
   const name = cleanString(item?.name);
   if (!name) {
@@ -313,6 +317,12 @@ function getGearIconNameCandidates(item) {
   const shortenedName = stripTrailingParenthetical(name);
   if (shortenedName && shortenedName !== name) {
     candidates.push(shortenedName);
+  }
+
+  const ranklessName = stripTrailingRank(shortenedName || name);
+  if (ranklessName && ranklessName !== name) {
+    if (equipmentType) candidates.push(`${ranklessName} (${equipmentType})`);
+    candidates.push(ranklessName);
   }
 
   return Array.from(new Set(candidates));

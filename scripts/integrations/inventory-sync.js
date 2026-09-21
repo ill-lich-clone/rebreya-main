@@ -3,7 +3,7 @@ import {
   captureInventoryTransferIdentity,
   inventoryTransferIdentityMatches,
   SOCKET_EVENT_INVENTORY_SOURCE_DEPLETION_RESULT
-} from "../data/inventory-service.js?v=1.4.321";
+} from "../data/inventory-service.js?v=1.4.322";
 
 const PARTY_INVENTORY_TRANSFER_FLAG = "partyInventoryTransfer";
 const DEFAULT_REFRESH_DEBOUNCE_MS = 0;

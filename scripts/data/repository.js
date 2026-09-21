@@ -1,6 +1,6 @@
 ﻿import { MODULE_ID, SETTINGS_KEYS } from "../constants.js";
 import { buildDetailedCitySnapshot, buildEconomyModel, buildReachableImportRoutesForCity } from "../engine/economy-engine.js";
-import { loadEconomyDataset } from "./importer.js?v=1.4.128-lootgen-multiplicity";
+import { loadEconomyDataset } from "./importer.js?v=1.4.322";
 
 import {
   mergeCityPresentation,

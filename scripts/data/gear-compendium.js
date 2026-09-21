@@ -11,7 +11,7 @@ import {
   DEFAULT_GEAR_ICON,
   resolveGearItemIcon,
   resolveGearNamedIcon
-} from "./gear-icon-resolver.js?v=1.4.145-coin-icons-storage-sound";
+} from "./gear-icon-resolver.js?v=1.4.322";
 import {
   classifyGearEntry,
   inferHeroDollSlotGroupFromSlots,

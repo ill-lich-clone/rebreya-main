@@ -426,9 +426,11 @@
         "id": "iskusstvennyy-glaz",
         "aliases": []
       },
-      "имплант|коготь чудовища": {
+      "имплант|коготь чудовища 2-й ранг": {
         "id": "kogot-chudovishcha",
-        "aliases": []
+        "aliases": [
+          "имплант|коготь чудовища"
+        ]
       },
       "имплант|кожа кракена": {
         "id": "kozha-krakena",
@@ -590,6 +592,12 @@
         "id": "pyl-prizraka",
         "aliases": []
       },
+      "имплант|подавляющий глаз": {
+        "id": "подавляющий-глаз",
+        "aliases": [
+          "имплант|подавляющий глаз (м)"
+        ]
+      },
       "имплант|разрисованный корпус": {
         "id": "razrisovannyy-korpus",
         "aliases": []
@@ -689,6 +697,12 @@
       "имплант|утяжеленный корпус": {
         "id": "utyazhelyonnyy-korpus",
         "aliases": []
+      },
+      "имплант|хоботок чазма": {
+        "id": "хоботок-чазма",
+        "aliases": [
+          "имплант|хоботок чазма (м)"
+        ]
       },
       "имплант|хранилище невероятной проницательности": {
         "id": "khranilishche-neveroyatnoy-pronitsatelnosti",
@@ -2896,9 +2910,11 @@
         "id": "implant-iskustvennyy-glaz",
         "aliases": []
       },
-      "Коготь чудовища": {
+      "Коготь чудовища 2-й ранг": {
         "id": "implant-kogot-chudovishcha",
-        "aliases": []
+        "aliases": [
+          "Коготь чудовища"
+        ]
       },
       "Кожа кракена": {
         "id": "implant-kozha-krakena",
@@ -3099,6 +3115,12 @@
       "Симбиотический мозг (М)": {
         "id": "implant-simbioticheskiy-mozg-m",
         "aliases": []
+      },
+      "Синтезатор замедления (м)": {
+        "id": "implant-синтезатор-замедления",
+        "aliases": [
+          "Синтезатор замедления"
+        ]
       },
       "Синтезатор яда": {
         "id": "implant-sintezator-yada",

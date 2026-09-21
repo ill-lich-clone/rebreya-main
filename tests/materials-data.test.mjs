@@ -9,7 +9,7 @@ const SPREADSHEET_ID = "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk";
 const SHEET_NAME = "Энциклопедия материалов";
 const WORKBOOK_FINGERPRINT = "804f8a558d15af42615f95aeec6ec9a24663c411a6842a7b0e11f286dc545070";
 const SOURCE_ROW_COUNT = 270;
-const CURRENT_ROW_COUNT = 296;
+const CURRENT_ROW_COUNT = 612;
 const ORIGINAL_MATERIAL_COUNT = 45;
 
 const materialBytes = readFileSync(MATERIALS_URL);
@@ -62,7 +62,7 @@ test("materials data is valid UTF-8, retains historical entries, and imports fis
   assert.match(byName.get("Рыба").description, /Подходит как наживка типа «Рыбная»/u);
 });
 
-test("materials data adds 251 records and preserves all 45 historical ids", () => {
+test("materials data preserves all 45 historical ids while importing current rows", () => {
   const byName = new Map(materials.map((material) => [material.name, material]));
   const originalEntries = Object.entries(fixture.originalMaterialIds);
   const additions = materials.filter((material) => !Object.hasOwn(fixture.originalMaterialIds, material.name));
@@ -84,7 +84,7 @@ test("materials ids and names are non-empty and unique", () => {
   assert.equal(new Set(names).size, CURRENT_ROW_COUNT);
 });
 
-test("catalog includes all base raw rows, alchemy reagents, and nullable/decorated numbers", () => {
+test("catalog includes all base raw rows, alchemy reagents, and decorated numbers", () => {
   const byName = new Map(materials.map((material) => [material.name, material]));
   const toolLabels = [
     "Воровские",
@@ -110,12 +110,48 @@ test("catalog includes all base raw rows, alchemy reagents, and nullable/decorat
   assert.ok(byName.has("Алхимические реагенты"));
 
   const trollBones = byName.get("Кости тролля");
-  assert.equal(trollBones.priceGold, null);
-  assert.equal(trollBones.weight, null);
-  assert.equal(trollBones.rank, null);
+  assert.equal(trollBones.priceGold, 250);
+  assert.equal(trollBones.weight, 5);
+  assert.equal(trollBones.rank, 3);
 
   const thievesRaw = byName.get("Базовое сырье для Инструменты Воровские");
   assert.equal(thievesRaw.priceGold, 1, "decorated '1 зм' parses to 1");
   assert.equal(thievesRaw.weight, 0.1, "decorated '0,1 фнт' parses to 0.1");
   assert.equal(thievesRaw.rank, 0);
+});
+
+test("latest material rows retain all thirteen source columns", () => {
+  const byName = new Map(materials.map((material) => [material.name, material]));
+  assert.deepEqual(byName.get("Кость чудовища 2-й ранг"), {
+    id: "material-кость-чудовища-2-й-ранг",
+    name: "Кость чудовища 2-й ранг",
+    type: "Существо",
+    subtype: "Общее",
+    priceGold: 100,
+    weight: 5,
+    rank: 2,
+    description: "Очищенная прочная кость из скелета чудовища.",
+    linkedGoodId: null,
+    linkedGoodName: null,
+    applications: {
+      upgrade: "Осколок кости чудовища",
+      implant: "Недоступно",
+      crafting: "Кость шарлатана",
+      alchemy: "Недоступно",
+      knowledge: "Недоступно"
+    },
+    alchemyAspects: "—",
+    source: {
+      spreadsheetId: SPREADSHEET_ID,
+      sheetName: SHEET_NAME,
+      row: 299
+    },
+    isSynthetic: false
+  });
+
+  const last = byName.get("Ядовитый реагент 4-й ранг");
+  assert.equal(last?.source?.row, 614);
+  assert.equal(last?.applications?.crafting, "Ожерелье адаптации");
+  assert.equal(last?.applications?.alchemy, "Зелье сопротивление");
+  assert.equal(last?.alchemyAspects, "—");
 });

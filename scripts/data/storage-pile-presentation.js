@@ -1,7 +1,7 @@
 import { MODULE_ID } from "../constants.js";
 import { isStorageJournalRow } from "./storage-container-snapshot.js?v=1.4.317";
 import { formatDurabilityItemName } from "./durability-item-presentation.js?v=1.4.200-storage-broken-presentation";
-import { resolveTopDownItemPresentation } from "./top-down-item-texture-resolver.js?v=1.4.312-fishing-rods";
+import { resolveTopDownItemPresentation } from "./top-down-item-texture-resolver.js?v=1.4.322";
 
 const ASSET_ROOT = `modules/${MODULE_ID}/assets/storage/piles`;
 const COIN_ASSET_ROOT = `modules/${MODULE_ID}/assets/top-down/items/coins`;

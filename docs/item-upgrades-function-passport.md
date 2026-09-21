@@ -7,9 +7,9 @@
 Владелец `scripts/data/upgrade-automation-manifest.js`, решения `data/upgrade-automation-manifest.json`.
 
 - `buildUpgradeAutomationManifest(upgrades, gear, decisions)` → detached rows, сортировка по productId. Private `indexRows(rows, field)` проверяет уникальность; `fail(code,id)` бросает explicit catalog error. Join только `productId === gear.id`; нет name fallback. Отсутствующие/лишние решения, дубликаты и неизвестные статусы отклоняются. Row содержит профиль, gearId, тип, reason, effectKind, owner/test/capability mappings и `ruleSource {file,productId,sourceSheet,sourceSheetRow}`. Для доступного статуса обязательны owner и existing test evidence.
-- `getUpgradeAvailability(productId, manifest=[])` → `{decision,available,label,reason}`. Доступны только existing-curse/simple-implemented; неизвестный ID → unavailable-no-rule. Все 91 строки сохранены: 11 проклятий, 35 реализованных простых, 2 кандидата, 43 недоступных. Planned-R7 tests не являются свидетельством реализации.
+- `getUpgradeAvailability(productId, manifest=[])` → `{decision,available,label,reason}`. Доступны только existing-curse/simple-implemented; неизвестный ID → unavailable-no-rule. Все 124 строки имеют явное решение: 11 проклятий, 35 реализованных простых, 2 кандидата, 41 сложное недоступное и 35 без проверенного правила. Новые строки полного синка добавляются fail-closed как unavailable-no-rule до отдельного аудита автоматизации. Planned-R7 tests не являются свидетельством реализации.
 - `loadUpgradeAutomationManifest()` → cached Promise rows; параллельно читает три static JSON с version query и `cache:no-store`, не пишет документы/settings. Ошибка сбрасывает promise для следующей попытки. Runtime не извлекает эффекты из русской прозы.
-- Focused: `tests/upgrade-automation-manifest.test.mjs`; матрица решений в `docs/superpowers/specs/2026-09-07-module-development/upgrade-scope.md` синхронна JSON.
+- Focused: `tests/upgrade-automation-manifest.test.mjs`; историческая матрица в `docs/superpowers/specs/2026-09-07-module-development/upgrade-scope.md` описывает исходные 91 решение, а текущим полным источником для 124 строк служит JSON manifest.
 
 ## Pure правила
 

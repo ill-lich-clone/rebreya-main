@@ -13,7 +13,7 @@ import {
   isStorageJournalRow,
   rekeyStorageContainerSnapshot
 } from "./storage-container-snapshot.js?v=1.4.317";
-import { buildStorageContainerSnapshotFromToken } from "./storage-container-item-service.js?v=1.4.317";
+import { buildStorageContainerSnapshotFromToken } from "./storage-container-item-service.js?v=1.4.322";
 import { parseStorageDragData } from "../ui/storage-transfer-ui.js";
 
 function clone(value) {

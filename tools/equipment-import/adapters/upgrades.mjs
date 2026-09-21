@@ -2,13 +2,21 @@ import { parseCurrency, parseInteger, parseRequiredText } from "../parsers.mjs";
 import { ImportDiagnosticError, createImportDiagnostic, throwIfDiagnostics } from "../validation.mjs";
 
 const COMPATIBILITY = new Map([
-  ["Чудестный предмет", ["wondrous-item"]], ["Оружие", ["weapon"]],
+  ["Чудестный предмет", ["wondrous-item"]], ["Чудесный предмет", ["wondrous-item"]],
+  ["Чудесный предмет (носимый)", ["wondrous-item", "worn"]],
+  ["Чудесный предмет (закрывающаяся ёмкость)", ["wondrous-item", "closable-container"]],
+  ["Чудесный предмет (магическая фокусировка)", ["wondrous-item", "spellcasting-focus"]],
+  ["Оружие", ["weapon"]],
   ["Верхняя одежда (Щит)", ["outerwear", "shield"]], ["Верхняя одежда", ["outerwear"]],
+  ["Верхняя одежда (щит)", ["outerwear", "shield"]],
   ["Доспех", ["armor"]], ["Любой", ["any"]],
+  ["Любой (металлический)", ["any", "metallic"]],
   ["Оружие (кастет или металлическая перчатка)", ["weapon", "brass-knuckles-or-metal-gauntlet"]],
   ["Оружие (не металлическое)", ["weapon", "nonmetal"]],
   ["Оружие (Дальнобойное)", ["weapon", "ranged"]], ["Оружие (дальнобойное)", ["weapon", "ranged"]],
-  ["Оружие (рукопашное)", ["weapon", "melee"]]
+  ["Оружие (рукопашное)", ["weapon", "melee"]],
+  ["Оружие (со свойством «Смена хвата»)", ["weapon", "grip-change"]],
+  ["Оружие (луки и арбалеты)", ["weapon", "bow-or-crossbow"]]
 ]);
 const TYPES = new Set(["Материал", "Зачарование", "Проклятье"]);
 const DASH = /^(?:-|–|—)$/u;
@@ -37,6 +45,14 @@ function fail(code, value, ctx, message) {
   throw new ImportDiagnosticError(message, [createImportDiagnostic({ code, value, message, ...ctx })]);
 }
 
+function parseGoldColumnPrice(raw, ctx) {
+  const value = text(raw);
+  const normalized = /^[+-]?(?:\d{1,3}(?: \d{3})+|\d+)(?:[.,]\d+)?$/u.test(value)
+    ? `${value} зм`
+    : value;
+  return parseCurrency(normalized, ctx);
+}
+
 export function adaptUpgradeCatalog({ snapshot, referenceIndex, overrides, materials = [], diagnostics = [] }) {
   const materialIndex = materialIdsByName(materials);
   const entries = [];
@@ -57,7 +73,7 @@ export function adaptUpgradeCatalog({ snapshot, referenceIndex, overrides, mater
       }));
       continue;
     }
-    const price = parseCurrency(text(cells["Цена (зм)"]), context(snapshot, row, "Цена (зм)"));
+    const price = parseGoldColumnPrice(cells["Цена (зм)"], context(snapshot, row, "Цена (зм)"));
     if (price?.kind !== "fixed") fail("invalid-upgrade-price", cells["Цена (зм)"], context(snapshot, row, "Цена (зм)"), "Upgrade price must be fixed currency");
     const sourceMaterialName = text(cells.Источник);
     const hasMaterial = sourceMaterialName && !DASH.test(sourceMaterialName);

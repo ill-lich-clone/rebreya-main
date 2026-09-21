@@ -1694,5 +1694,236 @@
       "existing-curse-owner"
     ],
     "auditReason": "Сохранить реализацию, regression only."
+  },
+  {
+    "productId": "антимагическая-защита",
+    "decision": "unavailable-no-rule",
+    "effectKind": "none",
+    "reason": "Новое улучшение синхронизировано; правило автоматизации ещё не проверено.",
+    "owner": [], "tests": [], "capabilities": []
+  },
+  {
+    "productId": "водоотталкивающая-пропитка",
+    "decision": "unavailable-no-rule",
+    "effectKind": "none",
+    "reason": "Новое улучшение синхронизировано; правило автоматизации ещё не проверено.",
+    "owner": [], "tests": [], "capabilities": []
+  },
+  {
+    "productId": "временной-привод",
+    "decision": "unavailable-no-rule",
+    "effectKind": "none",
+    "reason": "Новое улучшение синхронизировано; правило автоматизации ещё не проверено.",
+    "owner": [], "tests": [], "capabilities": []
+  },
+  {
+    "productId": "едкая-обработка",
+    "decision": "unavailable-no-rule",
+    "effectKind": "none",
+    "reason": "Новое улучшение синхронизировано; правило автоматизации ещё не проверено.",
+    "owner": [], "tests": [], "capabilities": []
+  },
+  {
+    "productId": "железное-усиление",
+    "decision": "unavailable-no-rule",
+    "effectKind": "none",
+    "reason": "Новое улучшение синхронизировано; правило автоматизации ещё не проверено.",
+    "owner": [], "tests": [], "capabilities": []
+  },
+  {
+    "productId": "жесткая-вкладка",
+    "decision": "unavailable-no-rule",
+    "effectKind": "none",
+    "reason": "Новое улучшение синхронизировано; правило автоматизации ещё не проверено.",
+    "owner": [], "tests": [], "capabilities": []
+  },
+  {
+    "productId": "зеркальная-накладка",
+    "decision": "unavailable-no-rule",
+    "effectKind": "none",
+    "reason": "Новое улучшение синхронизировано; правило автоматизации ещё не проверено.",
+    "owner": [], "tests": [], "capabilities": []
+  },
+  {
+    "productId": "золотая-инкрустация",
+    "decision": "unavailable-no-rule",
+    "effectKind": "none",
+    "reason": "Новое улучшение синхронизировано; правило автоматизации ещё не проверено.",
+    "owner": [], "tests": [], "capabilities": []
+  },
+  {
+    "productId": "зубчатая-кромка",
+    "decision": "unavailable-no-rule",
+    "effectKind": "none",
+    "reason": "Новое улучшение синхронизировано; правило автоматизации ещё не проверено.",
+    "owner": [], "tests": [], "capabilities": []
+  },
+  {
+    "productId": "известковая-побелка",
+    "decision": "unavailable-no-rule",
+    "effectKind": "none",
+    "reason": "Новое улучшение синхронизировано; правило автоматизации ещё не проверено.",
+    "owner": [], "tests": [], "capabilities": []
+  },
+  {
+    "productId": "инертная-защита",
+    "decision": "unavailable-no-rule",
+    "effectKind": "none",
+    "reason": "Новое улучшение синхронизировано; правило автоматизации ещё не проверено.",
+    "owner": [], "tests": [], "capabilities": []
+  },
+  {
+    "productId": "керамическая-рукоять",
+    "decision": "unavailable-no-rule",
+    "effectKind": "none",
+    "reason": "Новое улучшение синхронизировано; правило автоматизации ещё не проверено.",
+    "owner": [], "tests": [], "capabilities": []
+  },
+  {
+    "productId": "кислотная-инкрустация",
+    "decision": "unavailable-no-rule",
+    "effectKind": "none",
+    "reason": "Новое улучшение синхронизировано; правило автоматизации ещё не проверено.",
+    "owner": [], "tests": [], "capabilities": []
+  },
+  {
+    "productId": "кожаная-обмотка",
+    "decision": "unavailable-no-rule",
+    "effectKind": "none",
+    "reason": "Новое улучшение синхронизировано; правило автоматизации ещё не проверено.",
+    "owner": [], "tests": [], "capabilities": []
+  },
+  {
+    "productId": "костяная-накладка",
+    "decision": "unavailable-no-rule",
+    "effectKind": "none",
+    "reason": "Новое улучшение синхронизировано; правило автоматизации ещё не проверено.",
+    "owner": [], "tests": [], "capabilities": []
+  },
+  {
+    "productId": "лужение",
+    "decision": "unavailable-no-rule",
+    "effectKind": "none",
+    "reason": "Новое улучшение синхронизировано; правило автоматизации ещё не проверено.",
+    "owner": [], "tests": [], "capabilities": []
+  },
+  {
+    "productId": "льняная-тетива",
+    "decision": "unavailable-no-rule",
+    "effectKind": "none",
+    "reason": "Новое улучшение синхронизировано; правило автоматизации ещё не проверено.",
+    "owner": [], "tests": [], "capabilities": []
+  },
+  {
+    "productId": "маскировочная-окраска",
+    "decision": "unavailable-no-rule",
+    "effectKind": "none",
+    "reason": "Новое улучшение синхронизировано; правило автоматизации ещё не проверено.",
+    "owner": [], "tests": [], "capabilities": []
+  },
+  {
+    "productId": "мягкая-подкладка",
+    "decision": "unavailable-no-rule",
+    "effectKind": "none",
+    "reason": "Новое улучшение синхронизировано; правило автоматизации ещё не проверено.",
+    "owner": [], "tests": [], "capabilities": []
+  },
+  {
+    "productId": "платиновая-оправа",
+    "decision": "unavailable-no-rule",
+    "effectKind": "none",
+    "reason": "Новое улучшение синхронизировано; правило автоматизации ещё не проверено.",
+    "owner": [], "tests": [], "capabilities": []
+  },
+  {
+    "productId": "пропитка-спорами",
+    "decision": "unavailable-no-rule",
+    "effectKind": "none",
+    "reason": "Новое улучшение синхронизировано; правило автоматизации ещё не проверено.",
+    "owner": [], "tests": [], "capabilities": []
+  },
+  {
+    "productId": "рунная-чешуя",
+    "decision": "unavailable-no-rule",
+    "effectKind": "none",
+    "reason": "Новое улучшение синхронизировано; правило автоматизации ещё не проверено.",
+    "owner": [], "tests": [], "capabilities": []
+  },
+  {
+    "productId": "свинцовая-подкладка",
+    "decision": "unavailable-no-rule",
+    "effectKind": "none",
+    "reason": "Новое улучшение синхронизировано; правило автоматизации ещё не проверено.",
+    "owner": [], "tests": [], "capabilities": []
+  },
+  {
+    "productId": "сланцевая-облицовка",
+    "decision": "unavailable-no-rule",
+    "effectKind": "none",
+    "reason": "Новое улучшение синхронизировано; правило автоматизации ещё не проверено.",
+    "owner": [], "tests": [], "capabilities": []
+  },
+  {
+    "productId": "стальная-закалка",
+    "decision": "unavailable-no-rule",
+    "effectKind": "none",
+    "reason": "Новое улучшение синхронизировано; правило автоматизации ещё не проверено.",
+    "owner": [], "tests": [], "capabilities": []
+  },
+  {
+    "productId": "сухожильная-оплетка",
+    "decision": "unavailable-no-rule",
+    "effectKind": "none",
+    "reason": "Новое улучшение синхронизировано; правило автоматизации ещё не проверено.",
+    "owner": [], "tests": [], "capabilities": []
+  },
+  {
+    "productId": "тролльи-пластины",
+    "decision": "unavailable-no-rule",
+    "effectKind": "none",
+    "reason": "Новое улучшение синхронизировано; правило автоматизации ещё не проверено.",
+    "owner": [], "tests": [], "capabilities": []
+  },
+  {
+    "productId": "фазовая-оболочка",
+    "decision": "unavailable-no-rule",
+    "effectKind": "none",
+    "reason": "Новое улучшение синхронизировано; правило автоматизации ещё не проверено.",
+    "owner": [], "tests": [], "capabilities": []
+  },
+  {
+    "productId": "цепкая-пропитка",
+    "decision": "unavailable-no-rule",
+    "effectKind": "none",
+    "reason": "Новое улучшение синхронизировано; правило автоматизации ещё не проверено.",
+    "owner": [], "tests": [], "capabilities": []
+  },
+  {
+    "productId": "чешуя-левиафана",
+    "decision": "unavailable-no-rule",
+    "effectKind": "none",
+    "reason": "Новое улучшение синхронизировано; правило автоматизации ещё не проверено.",
+    "owner": [], "tests": [], "capabilities": []
+  },
+  {
+    "productId": "шелковая-подкладка",
+    "decision": "unavailable-no-rule",
+    "effectKind": "none",
+    "reason": "Новое улучшение синхронизировано; правило автоматизации ещё не проверено.",
+    "owner": [], "tests": [], "capabilities": []
+  },
+  {
+    "productId": "шерстяная-подкладка",
+    "decision": "unavailable-no-rule",
+    "effectKind": "none",
+    "reason": "Новое улучшение синхронизировано; правило автоматизации ещё не проверено.",
+    "owner": [], "tests": [], "capabilities": []
+  },
+  {
+    "productId": "якорь-реальности",
+    "decision": "unavailable-no-rule",
+    "effectKind": "none",
+    "reason": "Новое улучшение синхронизировано; правило автоматизации ещё не проверено.",
+    "owner": [], "tests": [], "capabilities": []
   }
 ]

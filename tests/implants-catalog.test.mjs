@@ -29,8 +29,8 @@ function loadImplants() {
 
 test("implant catalog preserves all named spreadsheet rows and exact armor metadata", () => {
   const implants = loadImplants();
-  assert.equal(implants.length, 93);
-  assert.ok(implants.some((entry) => entry.name === "Синтезатор замедления"));
+  assert.equal(implants.length, 108);
+  assert.ok(implants.some((entry) => entry.name === "Синтезатор замедления (м)"));
   assert.ok(implants.some((entry) => entry.name === "Язык вурдалака"));
   assert.ok(implants.some((entry) => entry.name === "Парик суккуба"));
   assert.ok(implants.some((entry) => entry.name === "Облегчённый корпус авто"));
@@ -114,6 +114,10 @@ test("builtin importer merges implant rules into existing implant gear without d
   assert.equal(new Set(implantNames).size, implantNames.length);
   assert.equal(merged.length, gear.length);
   assert.equal(SUPPORTED_MECHANICAL_IMPLANT_IDS.size, 36);
+
+  const slowingSynthesizer = mergedImplants.find((entry) => entry.sourceRef === "Импланты V0.1!A94");
+  assert.equal(slowingSynthesizer?.id, "синтезатор-замедления");
+  assert.equal(slowingSynthesizer?.implant?.sourceSheetRow, 94);
   for (const id of SUPPORTED_MECHANICAL_IMPLANT_IDS) {
     const entry = mergedImplants.find((implant) => implant.id === id);
     assert.ok(entry, id);

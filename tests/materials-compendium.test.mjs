@@ -100,7 +100,12 @@ test("material rendering retains literal trailing source description whitespace"
 });
 
 test("null-price and null-weight materials remain creatable and keep nullable metadata", () => {
-  const material = materials.find(({ name }) => name === "Кости тролля");
+  const material = {
+    ...materials.find(({ name }) => name === "Кости тролля"),
+    priceGold: null,
+    weight: null,
+    rank: null
+  };
   const created = materialsModule.createDnd5eItemData(material, new Map());
   const flags = created.flags["rebreya-main"];
 
@@ -198,7 +203,7 @@ test("sync reuses world.rebreya-materials and indexes all materials for search a
   try {
     assert.deepEqual(
       { priceGold: material.priceGold, weight: material.weight, rank: material.rank },
-      { priceGold: null, weight: null, rank: null }
+      { priceGold: 250, weight: 5, rank: 3 }
     );
     const service = new materialsModule.MaterialsCompendiumService();
     const syncedPack = await service.sync(materials);

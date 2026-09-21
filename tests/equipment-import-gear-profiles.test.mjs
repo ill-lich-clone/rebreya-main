@@ -376,6 +376,55 @@ test("upgrade adapter preserves stable product/material identities and typed com
   }]);
 });
 
+test("upgrade adapter treats bare numbers in the gold-denominated price column as gp", () => {
+  const snapshot = structuredClone(upgradeSnapshot);
+  snapshot.rows[0].cells["Цена (зм)"] = "50";
+
+  const [result] = adaptUpgradeCatalog({
+    snapshot,
+    referenceIndex: {
+      gearBySourceRef: new Map([["Усовершенствования V0.21!A6", { canonicalName: "Серебрение" }]]),
+      resolveStableGearId: () => "serebrenie"
+    },
+    overrides: {},
+    materials: [],
+    diagnostics: []
+  });
+
+  assert.equal(result.upgrade.priceGold, 50);
+});
+
+test("upgrade adapter preserves every live specialized compatibility as fail-closed typed tags", () => {
+  const cases = [
+    ["Чудесный предмет", ["wondrous-item"]],
+    ["Чудесный предмет (носимый)", ["wondrous-item", "worn"]],
+    ["Верхняя одежда (щит)", ["outerwear", "shield"]],
+    ["Любой (металлический)", ["any", "metallic"]],
+    ["Чудесный предмет (закрывающаяся ёмкость)", ["wondrous-item", "closable-container"]],
+    ["Чудесный предмет (магическая фокусировка)", ["wondrous-item", "spellcasting-focus"]],
+    ["Оружие (со свойством «Смена хвата»)", ["weapon", "grip-change"]],
+    ["Оружие (луки и арбалеты)", ["weapon", "bow-or-crossbow"]]
+  ];
+  const referenceIndex = {
+    gearBySourceRef: new Map([["Усовершенствования V0.21!A6", { canonicalName: "Серебрение" }]]),
+    resolveStableGearId: () => "serebrenie"
+  };
+
+  for (const [appliesTo, compatibility] of cases) {
+    const snapshot = structuredClone(upgradeSnapshot);
+    snapshot.rows[0].cells["Применимо к"] = appliesTo;
+    const [result] = adaptUpgradeCatalog({
+      snapshot,
+      referenceIndex,
+      overrides: {},
+      materials: [],
+      diagnostics: []
+    });
+    assert.equal(result.upgrade.appliesTo, appliesTo);
+    assert.deepEqual(result.upgrade.compatibility, compatibility);
+  }
+});
+
 test("upgrade adapter keeps a non-catalog source name without inventing a material id", () => {
   const snapshot = structuredClone(upgradeSnapshot);
   snapshot.rows[0].cells.Источник = "Оркус";

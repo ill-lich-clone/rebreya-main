@@ -14,7 +14,7 @@ import {
   isStorageJournalRow,
   readPortableStorageContainerSnapshot
 } from "./storage-container-snapshot.js?v=1.4.317";
-import { resolveTopDownItemPresentation } from "./top-down-item-texture-resolver.js?v=1.4.312-fishing-rods";
+import { resolveTopDownItemPresentation } from "./top-down-item-texture-resolver.js?v=1.4.322";
 import { pickLootgenNarrativeFields } from "./lootgen-narrative-catalog.js?v=1.4.317";
 import {
   buildGroundPileTokenLayout,

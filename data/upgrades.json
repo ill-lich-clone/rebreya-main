@@ -12,7 +12,7 @@
       "priceGold": 40000,
       "rank": 9,
       "sourceMaterialId": "material-84",
-      "sourceMaterialName": "Абсолютная пустота",
+      "sourceMaterialName": "Абсолютная Пустота",
       "sourceSheet": "Усовершенствования V0.21",
       "sourceSheetRow": 86,
       "sourceWeight": null,
@@ -353,8 +353,8 @@
       "effect": "Синтезатор яда обладает запасом яда в виде 12к8. Когда вы используете дыхание ядом, то расходуете кости из запаса, но не более чем 6к8 за раз. Одна кость восстанавливается в течении часа.\nВы можете Бонусным действием либо вместо одной из атак выплеснуть ядовитую струю 10-футовым конусом. Все цели в области поражения должны совершить спасбросок Телосложения Сл вашего класса. Провал: цель получает урон ядом в количестве равном потрачены костям. Успех: половина урона",
       "priceGold": 10000,
       "rank": 6,
-      "sourceMaterialId": null,
-      "sourceMaterialName": "Железный голем",
+      "sourceMaterialId": "material-126",
+      "sourceMaterialName": "Синтезатор яда",
       "sourceSheet": "Усовершенствования V0.21",
       "sourceSheetRow": 37,
       "sourceWeight": null,
@@ -513,8 +513,8 @@
       "effect": "Когда вы совершаете атаку по существу родом из плана, отличного от материального плана, то существо получает дополнительно 2к12 урона чистой силой при попадании",
       "priceGold": 10000,
       "rank": 9,
-      "sourceMaterialId": null,
-      "sourceMaterialName": "Астральный дредноут",
+      "sourceMaterialId": "material-123",
+      "sourceMaterialName": "Клешни дредноута",
       "sourceSheet": "Усовершенствования V0.21",
       "sourceSheetRow": 36,
       "sourceWeight": null,
@@ -972,7 +972,7 @@
       "compatibility": [
         "outerwear"
       ],
-      "effect": "Вы получаете сопротивление Холодом. Действием вы можете сомкнуть чешуйки, чтобы высвободить их Силу вокруг. Все существа в пределах 30 футов от вас притягиваются на 25 футов к вам, в смежное пространство.  Вы можете использовать это Действие раз в минуту. Если вы Окровавлены, то вы можете совершить его Бонусным действием\nВы получаете владение реакций Хлопок ⚡. Триггер: Вы получаете урон. Эффект: Все существа по вашему выбору в пределах 10-футовой эманации отбрасываются на 30 футов от вас.",
+      "effect": "Вы получаете сопротивление Холодом. Действием вы можете сомкнуть чешуйки, чтобы высвободить их Силу вокруг. Все существа в пределах 30 футов от вас притягиваются на 25 футов к вам, в смежное пространство.  Вы можете использовать это Действие раз в минуту. Если вы Окровавлены, то вы можете совершить его Бонусным действием\nВы получаете владение реакцией Хлопок ⚡. Триггер: Вы получаете урон. Эффект: Все существа по вашему выбору в пределах 10-футовой эманации отбрасываются на 30 футов от вас.",
       "priceGold": 20000,
       "rank": 8,
       "sourceMaterialId": null,
@@ -995,8 +995,8 @@
       "effect": "Вы получаете сопротивление Чистой силе. Если вы получаете более 20 урона Чистой силой из одного источника до применения любых модификаторов, то можете совершить Перекат (не требует каких либо действий)",
       "priceGold": 25000,
       "rank": 9,
-      "sourceMaterialId": null,
-      "sourceMaterialName": "Астральный дредноут",
+      "sourceMaterialId": "material-121",
+      "sourceMaterialName": "Панцирная пластина Дредноута",
       "sourceSheet": "Усовершенствования V0.21",
       "sourceSheetRow": 35,
       "sourceWeight": null,
@@ -1015,8 +1015,8 @@
       "effect": "Если у вас выпало «1–5» или на урона Чистой силой при атаке, то вы можете считать «1–5» на кости урона как «6».",
       "priceGold": 25000,
       "rank": 9,
-      "sourceMaterialId": null,
-      "sourceMaterialName": "Астральный дредноут",
+      "sourceMaterialId": "material-121",
+      "sourceMaterialName": "Панцирная пластина Дредноута",
       "sourceSheet": "Усовершенствования V0.21",
       "sourceSheetRow": 34,
       "sourceWeight": null,
@@ -1788,6 +1788,394 @@
     }
   },
   {
+    "canonicalName": "Антимагическая защита",
+    "name": "Антимагическая защита",
+    "productId": "антимагическая-защита",
+    "upgrade": {
+      "appliesTo": "Верхняя одежда",
+      "compatibility": [
+        "outerwear"
+      ],
+      "effect": "Вы получаете Поглощение урона от заклинаний 5.",
+      "priceGold": 20000,
+      "rank": 9,
+      "sourceMaterialId": "material-122",
+      "sourceMaterialName": "Глаз Антимагии",
+      "sourceSheet": "Усовершенствования V0.21",
+      "sourceSheetRow": 106,
+      "sourceWeight": null,
+      "type": "Материал"
+    }
+  },
+  {
+    "canonicalName": "Водоотталкивающая пропитка",
+    "name": "Водоотталкивающая пропитка",
+    "productId": "водоотталкивающая-пропитка",
+    "upgrade": {
+      "appliesTo": "Верхняя одежда",
+      "compatibility": [
+        "outerwear"
+      ],
+      "effect": "Одежда и снаряжение под ней не промокают от дождя и брызг. При погружении в воду пропитка не защищает.",
+      "priceGold": 25,
+      "rank": 1,
+      "sourceMaterialId": "material-8",
+      "sourceMaterialName": "Жир чудовища",
+      "sourceSheet": "Усовершенствования V0.21",
+      "sourceSheetRow": 98,
+      "sourceWeight": null,
+      "type": "Материал"
+    }
+  },
+  {
+    "canonicalName": "Временной привод",
+    "name": "Временной привод",
+    "productId": "временной-привод",
+    "upgrade": {
+      "appliesTo": "Чудесный предмет",
+      "compatibility": [
+        "wondrous-item"
+      ],
+      "effect": "Активацию свойства этого предмета, требующую Действия, вы можете совершить Бдействием. Использовав этот эффект вы сможете сделать это повторно только после завершения продолжительного отдыха",
+      "priceGold": 20000,
+      "rank": 8,
+      "sourceMaterialId": "material-76",
+      "sourceMaterialName": "Поток временной жилы",
+      "sourceSheet": "Усовершенствования V0.21",
+      "sourceSheetRow": 102,
+      "sourceWeight": null,
+      "type": "Материал"
+    }
+  },
+  {
+    "canonicalName": "Едкая обработка",
+    "name": "Едкая обработка",
+    "productId": "едкая-обработка",
+    "upgrade": {
+      "appliesTo": "Оружие (рукопашное)",
+      "compatibility": [
+        "weapon",
+        "melee"
+      ],
+      "effect": "При попадании по немагической верёвке, сети или растительной преграде оружие наносит дополнительно 1к4 урона кислотой.",
+      "priceGold": 25,
+      "rank": 1,
+      "sourceMaterialId": "material-9",
+      "sourceMaterialName": "Слюна чудовища",
+      "sourceSheet": "Усовершенствования V0.21",
+      "sourceSheetRow": 100,
+      "sourceWeight": null,
+      "type": "Материал"
+    }
+  },
+  {
+    "canonicalName": "Железное усиление",
+    "name": "Железное усиление",
+    "productId": "железное-усиление",
+    "upgrade": {
+      "appliesTo": "Верхняя одежда (щит)",
+      "compatibility": [
+        "outerwear",
+        "shield"
+      ],
+      "effect": "Вы получаете владение реакцией Упереться щитом ⚡. Триггер: к вам применят Толчок или перемещают другим образом. Эффект: уменьшите расстояние перемещения на 5 футов (минимум 5 футов).",
+      "priceGold": 25,
+      "rank": 1,
+      "sourceMaterialId": "zhelezo",
+      "sourceMaterialName": "Железо",
+      "sourceSheet": "Усовершенствования V0.21",
+      "sourceSheetRow": 108,
+      "sourceWeight": null,
+      "type": "Материал"
+    }
+  },
+  {
+    "canonicalName": "Жёсткая вкладка",
+    "name": "Жёсткая вкладка",
+    "productId": "жесткая-вкладка",
+    "upgrade": {
+      "appliesTo": "Верхняя одежда",
+      "compatibility": [
+        "outerwear"
+      ],
+      "effect": "Вы получаете Поглощение немагического колющего урона 1 и Слабость к немагическому дробящему урону 1.",
+      "priceGold": 50,
+      "rank": 1,
+      "sourceMaterialId": "material-чешуя-чудовища-1-й-ранг",
+      "sourceMaterialName": "Чешуя чудовища 1-й ранг",
+      "sourceSheet": "Усовершенствования V0.21",
+      "sourceSheetRow": 93,
+      "sourceWeight": null,
+      "type": "Материал"
+    }
+  },
+  {
+    "canonicalName": "Зеркальная накладка",
+    "name": "Зеркальная накладка",
+    "productId": "зеркальная-накладка",
+    "upgrade": {
+      "appliesTo": "Верхняя одежда",
+      "compatibility": [
+        "outerwear"
+      ],
+      "effect": "Вы получаете владение реакцией Отразить заклинание ⚡. Триггер: атака заклинанием попадает по вам, и вы видите заклинателя. Эффект: Заклинание отменяется и вы отражаете эту атаку в заклинателя. Совершите бросок атаки с исходным бонусом; при попадании примените эффект отражённой атаки. После использования этой реакции вы не можете использовать её снова, пока не завершите продолжительный отдых.",
+      "priceGold": 12000,
+      "rank": 8,
+      "sourceMaterialId": "material-зеркальный-карп-долгожитель",
+      "sourceMaterialName": "Зеркальный карп-долгожитель",
+      "sourceSheet": "Усовершенствования V0.21",
+      "sourceSheetRow": 124,
+      "sourceWeight": null,
+      "type": "Материал"
+    }
+  },
+  {
+    "canonicalName": "Золотая инкрустация",
+    "name": "Золотая инкрустация",
+    "productId": "золотая-инкрустация",
+    "upgrade": {
+      "appliesTo": "Чудесный предмет (магическая фокусировка)",
+      "compatibility": [
+        "wondrous-item",
+        "spellcasting-focus"
+      ],
+      "effect": "Держа эту фокусировку, один раз в свой ход после попадания атакой заклинанием вы можете перебросить одну кость урона, используя новый результат",
+      "priceGold": 500,
+      "rank": 3,
+      "sourceMaterialId": "zoloto",
+      "sourceMaterialName": "Золото",
+      "sourceSheet": "Усовершенствования V0.21",
+      "sourceSheetRow": 112,
+      "sourceWeight": null,
+      "type": "Материал"
+    }
+  },
+  {
+    "canonicalName": "Зубчатая кромка",
+    "name": "Зубчатая кромка",
+    "productId": "зубчатая-кромка",
+    "upgrade": {
+      "appliesTo": "Оружие",
+      "compatibility": [
+        "weapon"
+      ],
+      "effect": "Когда вы попадаете этим оружием по Схваченному существу, то цель получает дополнительно 2 урона",
+      "priceGold": 100,
+      "rank": 1,
+      "sourceMaterialId": "material-6",
+      "sourceMaterialName": "Осколок клыка чудовища",
+      "sourceSheet": "Усовершенствования V0.21",
+      "sourceSheetRow": 95,
+      "sourceWeight": null,
+      "type": "Материал"
+    }
+  },
+  {
+    "canonicalName": "Известковая побелка",
+    "name": "Известковая побелка",
+    "productId": "известковая-побелка",
+    "upgrade": {
+      "appliesTo": "Оружие (рукопашное)",
+      "compatibility": [
+        "weapon",
+        "melee"
+      ],
+      "effect": "Попадание этим оружием оставляет на цели белые следы. На 1 час вы получаете бонус +2 к проверкам Мудрости (Выживание) для её выслеживания; смывание следов прекращает эффект.",
+      "priceGold": 10,
+      "rank": 1,
+      "sourceMaterialId": "izvest",
+      "sourceMaterialName": "Известь",
+      "sourceSheet": "Усовершенствования V0.21",
+      "sourceSheetRow": 116,
+      "sourceWeight": null,
+      "type": "Материал"
+    }
+  },
+  {
+    "canonicalName": "Инертная защита",
+    "name": "Инертная защита",
+    "productId": "инертная-защита",
+    "upgrade": {
+      "appliesTo": "Верхняя одежда",
+      "compatibility": [
+        "outerwear"
+      ],
+      "effect": "В начале своего хода вы можете прекратить одно действующее на вас заклинание 5-го уровня или ниже. Использовав этот эффект вы сможете сделать это повторно только после завершения продолжительного отдыха",
+      "priceGold": 25000,
+      "rank": 9,
+      "sourceMaterialId": "material-82",
+      "sourceMaterialName": "Инертная сущность",
+      "sourceSheet": "Усовершенствования V0.21",
+      "sourceSheetRow": 103,
+      "sourceWeight": null,
+      "type": "Материал"
+    }
+  },
+  {
+    "canonicalName": "Керамическая рукоять",
+    "name": "Керамическая рукоять",
+    "productId": "керамическая-рукоять",
+    "upgrade": {
+      "appliesTo": "Оружие (рукопашное)",
+      "compatibility": [
+        "weapon",
+        "melee"
+      ],
+      "effect": "Вы получаете Поглощение урона электричеством 1",
+      "priceGold": 5,
+      "rank": 0,
+      "sourceMaterialId": "glina",
+      "sourceMaterialName": "Глина",
+      "sourceSheet": "Усовершенствования V0.21",
+      "sourceSheetRow": 115,
+      "sourceWeight": null,
+      "type": "Материал"
+    }
+  },
+  {
+    "canonicalName": "Кислотная инкрустация",
+    "name": "Кислотная инкрустация",
+    "productId": "кислотная-инкрустация",
+    "upgrade": {
+      "appliesTo": "Верхняя одежда",
+      "compatibility": [
+        "outerwear"
+      ],
+      "effect": "Вы получаете Поглощение урона кислотой 3",
+      "priceGold": 4000,
+      "rank": 6,
+      "sourceMaterialId": "material-кристалл-хвоста-левиафана",
+      "sourceMaterialName": "Кристалл хвоста левиафана",
+      "sourceSheet": "Усовершенствования V0.21",
+      "sourceSheetRow": 97,
+      "sourceWeight": null,
+      "type": "Материал"
+    }
+  },
+  {
+    "canonicalName": "Кожаная обмотка",
+    "name": "Кожаная обмотка",
+    "productId": "кожаная-обмотка",
+    "upgrade": {
+      "appliesTo": "Оружие (со свойством «Смена хвата»)",
+      "compatibility": [
+        "weapon",
+        "grip-change"
+      ],
+      "effect": "Вы можете менять хват этого оружия дважды за ход без траты действий вместо одного раза.",
+      "priceGold": 25,
+      "rank": 1,
+      "sourceMaterialId": "kozha",
+      "sourceMaterialName": "Кожа",
+      "sourceSheet": "Усовершенствования V0.21",
+      "sourceSheetRow": 117,
+      "sourceWeight": null,
+      "type": "Материал"
+    }
+  },
+  {
+    "canonicalName": "Костяная накладка",
+    "name": "Костяная накладка",
+    "productId": "костяная-накладка",
+    "upgrade": {
+      "appliesTo": "Оружие",
+      "compatibility": [
+        "weapon"
+      ],
+      "effect": "При критическом попадании вы дополнительно наносите 1 урона того же типа.",
+      "priceGold": 5,
+      "rank": 0,
+      "sourceMaterialId": "kost",
+      "sourceMaterialName": "Кость",
+      "sourceSheet": "Усовершенствования V0.21",
+      "sourceSheetRow": 118,
+      "sourceWeight": null,
+      "type": "Материал"
+    }
+  },
+  {
+    "canonicalName": "Лужение",
+    "name": "Лужение",
+    "productId": "лужение",
+    "upgrade": {
+      "appliesTo": "Любой (металлический)",
+      "compatibility": [
+        "any",
+        "metallic"
+      ],
+      "effect": "Предмет не ржавеет и не получает Поломку от обычной коррозии.",
+      "priceGold": 10,
+      "rank": 1,
+      "sourceMaterialId": "olovo",
+      "sourceMaterialName": "Олово",
+      "sourceSheet": "Усовершенствования V0.21",
+      "sourceSheetRow": 110,
+      "sourceWeight": null,
+      "type": "Материал"
+    }
+  },
+  {
+    "canonicalName": "Льняная тетива",
+    "name": "Льняная тетива",
+    "productId": "льняная-тетива",
+    "upgrade": {
+      "appliesTo": "Оружие (луки и арбалеты)",
+      "compatibility": [
+        "weapon",
+        "bow-or-crossbow"
+      ],
+      "effect": "Нормальная дистанция оружия увеличивается на 10 футов. Максимальная дистанция оружия остаётся такой же.",
+      "priceGold": 25,
+      "rank": 1,
+      "sourceMaterialId": "lyon",
+      "sourceMaterialName": "Лён",
+      "sourceSheet": "Усовершенствования V0.21",
+      "sourceSheetRow": 121,
+      "sourceWeight": null,
+      "type": "Материал"
+    }
+  },
+  {
+    "canonicalName": "Маскировочная окраска",
+    "name": "Маскировочная окраска",
+    "productId": "маскировочная-окраска",
+    "upgrade": {
+      "appliesTo": "Верхняя одежда",
+      "compatibility": [
+        "outerwear"
+      ],
+      "effect": "При нанесении выберите один тип местности. Пока вы неподвижны в такой местности, получаете бонус +1 к проверкам Ловкости (Скрытность).",
+      "priceGold": 50,
+      "rank": 2,
+      "sourceMaterialId": "krasiteli",
+      "sourceMaterialName": "Красители",
+      "sourceSheet": "Усовершенствования V0.21",
+      "sourceSheetRow": 122,
+      "sourceWeight": null,
+      "type": "Материал"
+    }
+  },
+  {
+    "canonicalName": "Мягкая подкладка",
+    "name": "Мягкая подкладка",
+    "productId": "мягкая-подкладка",
+    "upgrade": {
+      "appliesTo": "Верхняя одежда",
+      "compatibility": [
+        "outerwear"
+      ],
+      "effect": "Вы получаете Поглощение урона от падения 6",
+      "priceGold": 25,
+      "rank": 1,
+      "sourceMaterialId": "material-шкура-чудовища-1-й-ранг",
+      "sourceMaterialName": "Шкура чудовища 1-й ранг",
+      "sourceSheet": "Усовершенствования V0.21",
+      "sourceSheetRow": 94,
+      "sourceWeight": null,
+      "type": "Материал"
+    }
+  },
+  {
     "canonicalName": "Очаровательная тетива",
     "name": "Очаровательная тетива",
     "productId": "очаровательная-тетева",
@@ -1809,6 +2197,270 @@
     }
   },
   {
+    "canonicalName": "Платиновая оправа",
+    "name": "Платиновая оправа",
+    "productId": "платиновая-оправа",
+    "upgrade": {
+      "appliesTo": "Чудесный предмет",
+      "compatibility": [
+        "wondrous-item"
+      ],
+      "effect": "Вы получаете владение реакцией Удержать концентрацию ⚡. Триггер: Вы проваливаете спасбросок на поддержание концентрации. Эффект: Вы можете добавить бонус +3 к результату спасброска. После использования этой реакции вы не можете использовать её снова, пока не завершите короткий отдых.",
+      "priceGold": 1500,
+      "rank": 4,
+      "sourceMaterialId": "platina",
+      "sourceMaterialName": "Платина",
+      "sourceSheet": "Усовершенствования V0.21",
+      "sourceSheetRow": 113,
+      "sourceWeight": null,
+      "type": "Материал"
+    }
+  },
+  {
+    "canonicalName": "Пропитка спорами",
+    "name": "Пропитка спорами",
+    "productId": "пропитка-спорами",
+    "upgrade": {
+      "appliesTo": "Верхняя одежда",
+      "compatibility": [
+        "outerwear"
+      ],
+      "effect": "Вы получаете владение реакцией Выпустить споры ⚡. Триггер: существо в пределах 5 футов берёт вас в Захват или применяет к вам Толчок. Эффект: вы выпускаете споры. Цель получает помеху на следующую атаку до конца своего следующего хода.",
+      "priceGold": 25,
+      "rank": 1,
+      "sourceMaterialId": "material-14",
+      "sourceMaterialName": "Споры грибка",
+      "sourceSheet": "Усовершенствования V0.21",
+      "sourceSheetRow": 101,
+      "sourceWeight": null,
+      "type": "Материал"
+    }
+  },
+  {
+    "canonicalName": "Рунная чешуя",
+    "name": "Рунная чешуя",
+    "productId": "рунная-чешуя",
+    "upgrade": {
+      "appliesTo": "Верхняя одежда",
+      "compatibility": [
+        "outerwear"
+      ],
+      "effect": "Один раз в ход после успешного спасброска против заклинания, нанесшего вам урон, вы получаете временные хиты, равные половине вашего уровня",
+      "priceGold": 4000,
+      "rank": 7,
+      "sourceMaterialId": "material-рунный-таймень",
+      "sourceMaterialName": "Рунный таймень",
+      "sourceSheet": "Усовершенствования V0.21",
+      "sourceSheetRow": 123,
+      "sourceWeight": null,
+      "type": "Материал"
+    }
+  },
+  {
+    "canonicalName": "Свинцовая подкладка",
+    "name": "Свинцовая подкладка",
+    "productId": "свинцовая-подкладка",
+    "upgrade": {
+      "appliesTo": "Чудесный предмет (закрывающаяся ёмкость)",
+      "compatibility": [
+        "wondrous-item",
+        "closable-container"
+      ],
+      "effect": "Содержимое закрытой ёмкости не обнаруживается заклинанием «Обнаружение магии». Подкладка увеличивает вес ёмкости на 25 фунтов.",
+      "priceGold": 25,
+      "rank": 1,
+      "sourceMaterialId": "svinets",
+      "sourceMaterialName": "Свинец",
+      "sourceSheet": "Усовершенствования V0.21",
+      "sourceSheetRow": 111,
+      "sourceWeight": null,
+      "type": "Материал"
+    }
+  },
+  {
+    "canonicalName": "Сланцевая облицовка",
+    "name": "Сланцевая облицовка",
+    "productId": "сланцевая-облицовка",
+    "upgrade": {
+      "appliesTo": "Верхняя одежда (щит)",
+      "compatibility": [
+        "outerwear",
+        "shield"
+      ],
+      "effect": "Пока вы держите щит и используете действие Уклонение, то вы получаете Поглощение урона огнём 2.",
+      "priceGold": 5,
+      "rank": 0,
+      "sourceMaterialId": "slanets",
+      "sourceMaterialName": "Сланец",
+      "sourceSheet": "Усовершенствования V0.21",
+      "sourceSheetRow": 114,
+      "sourceWeight": null,
+      "type": "Материал"
+    }
+  },
+  {
+    "canonicalName": "Стальная закалка",
+    "name": "Стальная закалка",
+    "productId": "стальная-закалка",
+    "upgrade": {
+      "appliesTo": "Оружие (рукопашное)",
+      "compatibility": [
+        "weapon",
+        "melee"
+      ],
+      "effect": "Вы получаебе бонус +2 к броскам урона по предметам",
+      "priceGold": 25,
+      "rank": 1,
+      "sourceMaterialId": "stal",
+      "sourceMaterialName": "Сталь",
+      "sourceSheet": "Усовершенствования V0.21",
+      "sourceSheetRow": 109,
+      "sourceWeight": null,
+      "type": "Материал"
+    }
+  },
+  {
+    "canonicalName": "Сухожильная оплётка",
+    "name": "Сухожильная оплётка",
+    "productId": "сухожильная-оплетка",
+    "upgrade": {
+      "appliesTo": "Оружие",
+      "compatibility": [
+        "weapon"
+      ],
+      "effect": "Вы получаете бонус +2 к проверкам и спасброскам, совершаемым, против проверок обезоруживаний",
+      "priceGold": 25,
+      "rank": 1,
+      "sourceMaterialId": "material-сухожилие-чудовища-1-й-ранг",
+      "sourceMaterialName": "Сухожилие чудовища 1-й ранг",
+      "sourceSheet": "Усовершенствования V0.21",
+      "sourceSheetRow": 96,
+      "sourceWeight": null,
+      "type": "Материал"
+    }
+  },
+  {
+    "canonicalName": "Тролльи пластины",
+    "name": "Тролльи пластины",
+    "productId": "тролльи-пластины",
+    "upgrade": {
+      "appliesTo": "Верхняя одежда",
+      "compatibility": [
+        "outerwear"
+      ],
+      "effect": "В конце короткого отдыха предмет теряет одну дополнительную степень Поломки",
+      "priceGold": 250,
+      "rank": 3,
+      "sourceMaterialId": "material-186",
+      "sourceMaterialName": "Кости тролля",
+      "sourceSheet": "Усовершенствования V0.21",
+      "sourceSheetRow": 107,
+      "sourceWeight": null,
+      "type": "Материал"
+    }
+  },
+  {
+    "canonicalName": "Фазовая оболочка",
+    "name": "Фазовая оболочка",
+    "productId": "фазовая-оболочка",
+    "upgrade": {
+      "appliesTo": "Верхняя одежда",
+      "compatibility": [
+        "outerwear"
+      ],
+      "effect": "Бонусным действием на 1 минуту получите возможность проходить сквозь существ и предметы как через труднопроходимую местность. Завершив ход внутри предмета, вы выталкиваетесь в ближайшее свободное место и получаете 1к10 урона чистой силой. Использовав этот эффект вы сможете сделать это повторно только после завершения продолжительного отдыха",
+      "priceGold": 35000,
+      "rank": 9,
+      "sourceMaterialId": "material-83",
+      "sourceMaterialName": "Сфера нематериального присутствия",
+      "sourceSheet": "Усовершенствования V0.21",
+      "sourceSheetRow": 104,
+      "sourceWeight": null,
+      "type": "Материал"
+    }
+  },
+  {
+    "canonicalName": "Цепкая пропитка",
+    "name": "Цепкая пропитка",
+    "productId": "цепкая-пропитка",
+    "upgrade": {
+      "appliesTo": "Оружие (рукопашное)",
+      "compatibility": [
+        "weapon",
+        "melee"
+      ],
+      "effect": "Вы получаете бонус +2 к атаке, если совершаете обезоруживание этим оружием",
+      "priceGold": 250,
+      "rank": 3,
+      "sourceMaterialId": "material-36",
+      "sourceMaterialName": "Липкая слизь чудовища",
+      "sourceSheet": "Усовершенствования V0.21",
+      "sourceSheetRow": 99,
+      "sourceWeight": null,
+      "type": "Материал"
+    }
+  },
+  {
+    "canonicalName": "Чешуя левиафана",
+    "name": "Чешуя левиафана",
+    "productId": "чешуя-левиафана",
+    "upgrade": {
+      "appliesTo": "Верхняя одежда",
+      "compatibility": [
+        "outerwear"
+      ],
+      "effect": "Вы получаете владение реакцией Смягчить удар ⚡. Триггер: Вы получаете урон дробящий, колющий или рубящий урон. Эффект: для этой атаки вы получаете поглощение дробящего, колющего и рубящего урона 20",
+      "priceGold": 20000,
+      "rank": 9,
+      "sourceMaterialId": "material-левиафаний-змей",
+      "sourceMaterialName": "Левиафаний змей",
+      "sourceSheet": "Усовершенствования V0.21",
+      "sourceSheetRow": 125,
+      "sourceWeight": null,
+      "type": "Материал"
+    }
+  },
+  {
+    "canonicalName": "Шёлковая подкладка",
+    "name": "Шёлковая подкладка",
+    "productId": "шелковая-подкладка",
+    "upgrade": {
+      "appliesTo": "Верхняя одежда",
+      "compatibility": [
+        "outerwear"
+      ],
+      "effect": "Вы получаете бонус +2 к проверкам Ловкости (Акробатика) для освобождения из Захвата.",
+      "priceGold": 100,
+      "rank": 1,
+      "sourceMaterialId": "shyolk",
+      "sourceMaterialName": "Шёлк",
+      "sourceSheet": "Усовершенствования V0.21",
+      "sourceSheetRow": 119,
+      "sourceWeight": null,
+      "type": "Материал"
+    }
+  },
+  {
+    "canonicalName": "Шерстяная подкладка",
+    "name": "Шерстяная подкладка",
+    "productId": "шерстяная-подкладка",
+    "upgrade": {
+      "appliesTo": "Верхняя одежда",
+      "compatibility": [
+        "outerwear"
+      ],
+      "effect": "Вы совершаете с преимуществом спасброски против экстремального холода",
+      "priceGold": 10,
+      "rank": 1,
+      "sourceMaterialId": "sherst",
+      "sourceMaterialName": "Шерсть",
+      "sourceSheet": "Усовершенствования V0.21",
+      "sourceSheetRow": 120,
+      "sourceWeight": null,
+      "type": "Материал"
+    }
+  },
+  {
     "canonicalName": "Шипастая отделка доспеха",
     "name": "Шипастая отделка доспеха",
     "productId": "шипастая-отделка-доспеха",
@@ -1824,6 +2476,27 @@
       "sourceMaterialName": "Шипастые шипы",
       "sourceSheet": "Усовершенствования V0.21",
       "sourceSheetRow": 92,
+      "sourceWeight": null,
+      "type": "Материал"
+    }
+  },
+  {
+    "canonicalName": "Якорь реальности",
+    "name": "Якорь реальности",
+    "productId": "якорь-реальности",
+    "upgrade": {
+      "appliesTo": "Чудесный предмет (носимый)",
+      "compatibility": [
+        "wondrous-item",
+        "worn"
+      ],
+      "effect": "Пока вы носите предмет, вас нельзя против вашей воли телепортировать, переместить на другой план или магически изменить вашу форму.",
+      "priceGold": 50000,
+      "rank": 9,
+      "sourceMaterialId": "material-87",
+      "sourceMaterialName": "Метафизическая пыль",
+      "sourceSheet": "Усовершенствования V0.21",
+      "sourceSheetRow": 105,
       "sourceWeight": null,
       "type": "Материал"
     }
