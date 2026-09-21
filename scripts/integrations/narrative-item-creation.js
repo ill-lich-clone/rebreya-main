@@ -2,7 +2,7 @@ import { MODULE_ID } from "../constants.js";
 import {
   buildNarrativeItemCreationPatch,
   loadLootgenNarrativeCatalog
-} from "../data/lootgen-narrative-catalog.js?v=1.4.316";
+} from "../data/lootgen-narrative-catalog.js?v=1.4.317";
 
 const registeredHookObjects = new WeakSet();
 

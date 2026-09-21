@@ -39,7 +39,7 @@ import {
   normalizeInventoryIngressRuleState
 } from "./inventory-ingress-rules.js";
 import { applyLootgenRowDurability } from "./lootgen-durability.js?v=1.4.154-corpse-storage-broken-name";
-import { applyLootgenNarrativeVariant, hasLootgenNarrative } from "./lootgen-narrative-catalog.js?v=1.4.316";
+import { applyLootgenNarrativeVariant, hasLootgenNarrative } from "./lootgen-narrative-catalog.js?v=1.4.317";
 import { formatDurabilityItemName } from "./durability-item-presentation.js?v=1.4.154-broken-item-name";
 import { isJournalRecordItem } from "./journal-record-item.js?v=1.4.217-journal-record-items";
 import {

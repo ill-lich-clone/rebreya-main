@@ -76,6 +76,68 @@ test("universal belt slot count defaults to one and clamps actor flag values", a
   }
 });
 
+test("potion trackers default to 0/9 and preserve two-digit manual values", async () => {
+  const restore = installFoundryStubs();
+  try {
+    const {
+      getPotionTrackerState
+    } = await import(`../scripts/integrations/universal-belt.js?potion-state=${Date.now()}`);
+    const actor = makeActor({
+      flags: {
+        "rebreya-main": {
+          potionTrackers: {
+            healing: { value: 11, max: 13 },
+            utility: { value: 4, max: 9 }
+          }
+        }
+      }
+    });
+
+    assert.deepEqual(getPotionTrackerState(makeActor(), "healing"), { value: 0, max: 9 });
+    assert.deepEqual(getPotionTrackerState(actor, "healing"), { value: 11, max: 13 });
+    assert.deepEqual(getPotionTrackerState(actor, "utility"), { value: 4, max: 9 });
+  }
+  finally {
+    restore();
+  }
+});
+
+test("potion tracker dialog saves normalized manual value and maximum on the actor", async () => {
+  const restore = installFoundryStubs();
+  try {
+    const {
+      editPotionTracker,
+      getPotionTrackerState
+    } = await import(`../scripts/integrations/universal-belt.js?potion-dialog=${Date.now()}`);
+    const actor = new FakeActor();
+    let shown = null;
+    const DialogV2 = {
+      async wait(options) {
+        shown = options;
+        const save = options.buttons.find((button) => button.action === "save");
+        return save.callback(null, {
+          form: {
+            elements: {
+              namedItem(name) {
+                return { value: name === "value" ? "11" : "13" };
+              }
+            }
+          }
+        });
+      }
+    };
+
+    assert.deepEqual(await editPotionTracker(actor, "healing", { DialogV2 }), { value: 11, max: 13 });
+    assert.equal(shown.window.title, "Лечебные зелья");
+    assert.match(shown.content, /value="0"/u);
+    assert.match(shown.content, /value="9"/u);
+    assert.deepEqual(getPotionTrackerState(actor, "healing"), { value: 11, max: 13 });
+  }
+  finally {
+    restore();
+  }
+});
+
 test("universal belt accepts physical quantity items and rejects non-physical documents", async () => {
   const restore = installFoundryStubs();
   try {
@@ -412,6 +474,12 @@ class FakeElement {
     this.attributes = {};
     this.innerHTML = "";
     this.hidden = false;
+    this.style = {
+      values: {},
+      setProperty: (name, value) => {
+        this.style.values[name] = String(value);
+      }
+    };
   }
 
   append(...children) {
@@ -440,6 +508,17 @@ class FakeElement {
     return this.attributes[name];
   }
 
+  closest(selector) {
+    let current = this;
+    while (current) {
+      if (selector === "[data-rebreya-universal-belt-slot='true']" && current.dataset.rebreyaUniversalBeltSlot === "true") return current;
+      if (selector === "[data-potion-tracker]" && current.dataset.potionTracker) return current;
+      if (selector.includes(`[data-action='${current.dataset.action}']`)) return current;
+      current = current.parentElement;
+    }
+    return null;
+  }
+
   addEventListener(type, listener) {
     this.listeners[type] ??= [];
     this.listeners[type].push(listener);
@@ -455,6 +534,7 @@ class FakeElement {
       for (const child of node.children) {
         if (selector === "ul.containers" && child.tagName === "UL" && child.classList.contains("containers")) result.push(child);
         if (selector === ".rm-universal-belt-slot" && child.classList.contains("rm-universal-belt-slot")) result.push(child);
+        if (selector === ".rm-potion-tracker" && child.classList.contains("rm-potion-tracker")) result.push(child);
         if (selector === "[data-item-id]" && child.dataset.itemId) result.push(child);
         visit(child);
       }
@@ -490,7 +570,102 @@ test("renderUniversalBeltSlots prepends three circular belt slots before native 
     assert.equal(slotNodes.length, 3);
     assert.equal(containers.children.at(0).dataset.beltSlot, "1");
     assert.equal(containers.children.at(1).dataset.locked, "true");
-    assert.equal(containers.children.at(3).dataset.itemId, "backpack");
+    assert.equal(containers.children.at(5).dataset.itemId, "backpack");
+  }
+  finally {
+    globalThis.document = previousDocument;
+    restore();
+  }
+});
+
+test("renderUniversalBeltSlots adds red and blue potion bottles with readable fill counters", async () => {
+  const restore = installFoundryStubs();
+  const previousDocument = globalThis.document;
+  try {
+    const {
+      renderUniversalBeltSlots
+    } = await import(`../scripts/integrations/universal-belt.js?potion-dom=${Date.now()}`);
+    globalThis.document = { createElement: (tag) => new FakeElement(tag) };
+    const root = new FakeElement("section");
+    const containers = new FakeElement("ul");
+    containers.classList.add("containers");
+    root.append(containers);
+    const actor = new FakeActor({
+      flags: {
+        "rebreya-main": {
+          potionTrackers: {
+            healing: { value: 4, max: 9 },
+            utility: { value: 11, max: 13 }
+          }
+        }
+      }
+    });
+
+    assert.equal(renderUniversalBeltSlots(root, actor), true);
+
+    const trackers = containers.children.filter((child) => child.classList.contains("rm-potion-tracker"));
+    assert.equal(trackers.length, 2);
+    assert.equal(trackers[0].dataset.potionTracker, "healing");
+    assert.equal(trackers[0].dataset.value, "4");
+    assert.equal(trackers[0].dataset.max, "9");
+    assert.equal(trackers[0].dataset.fillPercent, "44.44");
+    assert.equal(trackers[0].children[0].children[0].textContent, "4/9");
+    assert.equal(trackers[1].dataset.potionTracker, "utility");
+    assert.equal(trackers[1].dataset.fillPercent, "84.62");
+    assert.equal(trackers[1].children[0].children[0].textContent, "11/13");
+  }
+  finally {
+    globalThis.document = previousDocument;
+    restore();
+  }
+});
+
+test("clicking a potion bottle saves the manual rank and rerenders the actor sheet", async () => {
+  const restore = installFoundryStubs();
+  const previousDocument = globalThis.document;
+  try {
+    const {
+      bindUniversalBeltSheet,
+      getPotionTrackerState
+    } = await import(`../scripts/integrations/universal-belt.js?potion-click=${Date.now()}`);
+    globalThis.document = { createElement: (tag) => new FakeElement(tag) };
+    globalThis.foundry.applications = { api: { DialogV2: {
+      async wait(options) {
+        const save = options.buttons.find((button) => button.action === "save");
+        return save.callback(null, {
+          form: {
+            elements: {
+              namedItem(name) {
+                return { value: name === "value" ? "7" : "12" };
+              }
+            }
+          }
+        });
+      }
+    } } };
+    const root = new FakeElement("section");
+    const containers = new FakeElement("ul");
+    containers.classList.add("containers");
+    root.append(containers);
+    const actor = new FakeActor();
+    const app = { id: "actor-sheet" };
+    let rerenderCount = 0;
+
+    assert.equal(bindUniversalBeltSheet(root, {
+      actor,
+      app,
+      moduleApi: {},
+      rerenderActorSheet: async () => { rerenderCount += 1; }
+    }), true);
+    const tracker = containers.children.find((child) => child.dataset.potionTracker === "healing");
+    await root.listeners.click[0]({
+      target: tracker.children[0],
+      preventDefault() {},
+      stopPropagation() {}
+    });
+
+    assert.deepEqual(getPotionTrackerState(actor, "healing"), { value: 7, max: 12 });
+    assert.equal(rerenderCount, 1);
   }
   finally {
     globalThis.document = previousDocument;
@@ -583,4 +758,8 @@ test("universal belt styles are scoped to dnd5e inventory container strip", asyn
   assert.match(css, /\.rm-universal-belt-slot\s*\{[\s\S]*border-radius:\s*50%/u);
   assert.match(css, /\.rm-universal-belt-slot\[data-locked="true"\]/u);
   assert.match(css, /\.rm-universal-belt-hidden-item\s*\{[\s\S]*display:\s*none/u);
+  assert.match(css, /\.rm-potion-tracker--healing[\s\S]*--rm-potion-color:\s*#[0-9a-f]+/iu);
+  assert.match(css, /\.rm-potion-tracker--utility[\s\S]*--rm-potion-color:\s*#[0-9a-f]+/iu);
+  assert.match(css, /\.rm-potion-tracker__liquid[\s\S]*var\(--rm-potion-fill\)/u);
+  assert.match(css, /\.rm-potion-tracker__counter[\s\S]*font-size/u);
 });

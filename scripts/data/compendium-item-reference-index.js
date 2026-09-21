@@ -3,8 +3,8 @@ import {
   FEATS_COMPENDIUM_NAME,
   GLOSSARY_COMPENDIUM_NAME,
   MODULE_ID
-} from "../constants.js?v=1.4.316";
-import { buildFeatReferenceMatcher } from "./feat-reference-linker.js?v=1.4.316";
+} from "../constants.js?v=1.4.317";
+import { buildFeatReferenceMatcher } from "./feat-reference-linker.js?v=1.4.317";
 import { createStableGearDocumentId } from "./gear-document-ids.js";
 
 const FOUNDRY_DOCUMENT_ID_PATTERN = /^[A-Za-z0-9]{16}$/u;

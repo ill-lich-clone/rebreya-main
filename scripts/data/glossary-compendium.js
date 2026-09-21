@@ -2,7 +2,7 @@ import {
   GLOSSARY_COMPENDIUM_LABEL,
   GLOSSARY_COMPENDIUM_NAME,
   MODULE_ID
-} from "../constants.js?v=1.4.316";
+} from "../constants.js?v=1.4.317";
 import {
   ensureCompendiumFolders,
   ensurePackSidebarFolder
@@ -12,7 +12,7 @@ import { syncManagedDocumentsOnActiveGm } from "./managed-compendium-sync.js";
 import {
   STATUS_REFERENCE_DATA,
   renderStatusReferenceDescription
-} from "./status-reference-data.js?v=1.4.316";
+} from "./status-reference-data.js?v=1.4.317";
 
 const PACK_ID = `world.${GLOSSARY_COMPENDIUM_NAME}`;
 const CATALOG_PATH = `modules/${MODULE_ID}/data/glossary-terms.json`;

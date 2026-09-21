@@ -5,6 +5,13 @@ export const UNIVERSAL_BELT_ITEM_SLOT_FLAG = "universalBelt.slot";
 export const UNIVERSAL_BELT_SLOT_COUNT = 3;
 export const UNIVERSAL_BELT_DEFAULT_UNLOCKED_SLOTS = 1;
 export const UNIVERSAL_BELT_SLOT_PRICE_GP = 500;
+export const POTION_TRACKERS_FLAG = "potionTrackers";
+export const POTION_TRACKER_DEFAULT_MAX = 9;
+
+const POTION_TRACKER_DEFINITIONS = Object.freeze({
+  healing: Object.freeze({ label: "Лечебные зелья" }),
+  utility: Object.freeze({ label: "Обычные зелья" })
+});
 
 function toNumber(value, fallback = 0) {
   const numericValue = Number(value ?? fallback);
@@ -17,6 +24,73 @@ function toWholeCoins(value) {
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, Math.floor(toNumber(value, min))));
+}
+
+function normalizePotionTrackerKind(kind) {
+  const normalized = String(kind ?? "").trim();
+  if (!Object.hasOwn(POTION_TRACKER_DEFINITIONS, normalized)) {
+    throw new TypeError(`Неизвестный счётчик зелий: ${normalized || "пусто"}.`);
+  }
+  return normalized;
+}
+
+function normalizePotionTrackerState(state = {}) {
+  return {
+    value: Math.max(0, Math.floor(toNumber(state?.value, 0))),
+    max: Math.max(1, Math.floor(toNumber(state?.max, POTION_TRACKER_DEFAULT_MAX)))
+  };
+}
+
+export function getPotionTrackerState(actor, kind) {
+  const safeKind = normalizePotionTrackerKind(kind);
+  const trackers = actor?.getFlag?.(MODULE_ID, POTION_TRACKERS_FLAG)
+    ?? foundry.utils.getProperty(actor, `flags.${MODULE_ID}.${POTION_TRACKERS_FLAG}`)
+    ?? {};
+  return normalizePotionTrackerState(trackers[safeKind]);
+}
+
+export async function editPotionTracker(actor, kind, {
+  DialogV2 = globalThis.foundry?.applications?.api?.DialogV2 ?? globalThis.DialogV2
+} = {}) {
+  if (!actor?.isOwner) throw new Error("Недостаточно прав для изменения счётчика зелий.");
+  if (typeof DialogV2?.wait !== "function") throw new TypeError("DialogV2.wait is required");
+
+  const safeKind = normalizePotionTrackerKind(kind);
+  const definition = POTION_TRACKER_DEFINITIONS[safeKind];
+  const current = getPotionTrackerState(actor, safeKind);
+  const result = await DialogV2.wait({
+    window: { title: definition.label },
+    classes: ["rm-potion-tracker-dialog"],
+    content: `
+      <div class="rm-potion-tracker-dialog__fields">
+        <label>Текущий ранг<input name="value" type="number" min="0" step="1" value="${current.value}"></label>
+        <label>Максимум<input name="max" type="number" min="1" step="1" value="${current.max}"></label>
+      </div>`,
+    buttons: [{
+      action: "save",
+      label: "Сохранить",
+      default: true,
+      callback: (_event, button) => ({
+        value: button?.form?.elements?.namedItem?.("value")?.value,
+        max: button?.form?.elements?.namedItem?.("max")?.value
+      })
+    }, {
+      action: "cancel",
+      label: "Отмена",
+      callback: () => null
+    }]
+  });
+  if (result == null) return null;
+
+  const next = normalizePotionTrackerState(result);
+  const trackers = actor.getFlag?.(MODULE_ID, POTION_TRACKERS_FLAG)
+    ?? foundry.utils.getProperty(actor, `flags.${MODULE_ID}.${POTION_TRACKERS_FLAG}`)
+    ?? {};
+  await actor.setFlag(MODULE_ID, POTION_TRACKERS_FLAG, {
+    ...trackers,
+    [safeKind]: next
+  });
+  return next;
 }
 
 export function getUniversalBeltUnlockedSlotCount(actor) {
@@ -268,6 +342,49 @@ function createSlotElement(slot, actor) {
   return li;
 }
 
+function createPotionTrackerElement(kind, actor) {
+  const safeKind = normalizePotionTrackerKind(kind);
+  const definition = POTION_TRACKER_DEFINITIONS[safeKind];
+  const state = getPotionTrackerState(actor, safeKind);
+  const fillPercent = Math.min(100, (state.value / state.max) * 100);
+  const formattedFillPercent = fillPercent.toFixed(2);
+  const title = `${definition.label}: ${state.value}/${state.max}`;
+
+  const li = document.createElement("li");
+  li.classList.add("container", "rm-potion-tracker", `rm-potion-tracker--${safeKind}`);
+  li.dataset.potionTracker = safeKind;
+  li.dataset.value = String(state.value);
+  li.dataset.max = String(state.max);
+  li.dataset.fillPercent = formattedFillPercent;
+  li.style.setProperty("--rm-potion-fill", `${formattedFillPercent}%`);
+  li.setAttribute("aria-label", title);
+  li.setAttribute("title", title);
+
+  const button = document.createElement("button");
+  button.type = "button";
+  button.classList.add("rm-potion-tracker__button");
+  button.dataset.action = "rebreya-potion-tracker-edit";
+
+  const counter = document.createElement("span");
+  counter.classList.add("rm-potion-tracker__counter");
+  counter.textContent = `${state.value}/${state.max}`;
+
+  const bottle = document.createElement("span");
+  bottle.classList.add("rm-potion-tracker__bottle");
+  bottle.setAttribute("aria-hidden", "true");
+  const neck = document.createElement("span");
+  neck.classList.add("rm-potion-tracker__neck");
+  const body = document.createElement("span");
+  body.classList.add("rm-potion-tracker__body");
+  const liquid = document.createElement("span");
+  liquid.classList.add("rm-potion-tracker__liquid");
+  body.append(liquid);
+  bottle.append(neck, body);
+  button.append(counter, bottle);
+  li.append(button);
+  return li;
+}
+
 export function hideBeltedInventoryRows(root, actor) {
   const beltedIds = new Set([...getUniversalBeltItemsBySlot(actor).values()].map((item) => item.id));
   if (!beltedIds.size) return;
@@ -290,7 +407,14 @@ export function renderUniversalBeltSlots(root, actor) {
   for (const existing of Array.from(containers.querySelectorAll(".rm-universal-belt-slot") ?? [])) {
     existing.remove();
   }
-  containers.prepend(...[1, 2, 3].map((slot) => createSlotElement(slot, actor)));
+  for (const existing of Array.from(containers.querySelectorAll(".rm-potion-tracker") ?? [])) {
+    existing.remove();
+  }
+  containers.prepend(
+    ...[1, 2, 3].map((slot) => createSlotElement(slot, actor)),
+    createPotionTrackerElement("healing", actor),
+    createPotionTrackerElement("utility", actor)
+  );
   hideBeltedInventoryRows(root, actor);
   return true;
 }
@@ -360,13 +484,18 @@ export function bindUniversalBeltSheet(root, { actor, app, moduleApi, rerenderAc
   }, { capture: true });
 
   root.addEventListener("click", async (event) => {
-    const action = event.target?.closest?.("[data-action='rebreya-universal-belt-use'], [data-action='rebreya-universal-belt-purchase']");
+    const action = event.target?.closest?.("[data-action='rebreya-universal-belt-use'], [data-action='rebreya-universal-belt-purchase'], [data-action='rebreya-potion-tracker-edit']");
     const slot = action?.closest?.("[data-rebreya-universal-belt-slot='true']");
-    if (!action || !slot) return;
+    const potionTracker = action?.closest?.("[data-potion-tracker]");
+    if (!action || (!slot && !potionTracker)) return;
     event.preventDefault?.();
     event.stopPropagation?.();
     try {
-      if (action.dataset.action === "rebreya-universal-belt-purchase") {
+      if (action.dataset.action === "rebreya-potion-tracker-edit") {
+        const updated = await editPotionTracker(actor, potionTracker.dataset.potionTracker);
+        if (!updated) return;
+      }
+      else if (action.dataset.action === "rebreya-universal-belt-purchase") {
         if (!(await confirmBeltPurchase(slot.dataset.beltSlot))) return;
         await purchaseUniversalBeltSlot(actor);
       }

@@ -812,7 +812,9 @@ test("registerDnd5eSheetExtensions renders universal belt slots in the inventory
     assert.equal(beltSlots.length, 3);
     assert.equal(containers.children[0].dataset.beltSlot, "1");
     assert.equal(containers.children[1].dataset.locked, "true");
-    assert.equal(containers.children[3].dataset.itemId, "backpack");
+    assert.equal(containers.children[3].dataset.potionTracker, "healing");
+    assert.equal(containers.children[4].dataset.potionTracker, "utility");
+    assert.equal(containers.children[5].dataset.itemId, "backpack");
   }
   finally {
     stubs.restore();

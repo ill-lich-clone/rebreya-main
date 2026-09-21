@@ -1,11 +1,11 @@
 import { addItemValue, evaluateItemValue } from "./item-value.js?v=1.4.264";
 import { normalizeLootgenComposition } from "./lootgen-item-descriptor.js?v=1.4.264";
-import { buildStorageContainerSnapshot, buildStorageContainerRow } from "./storage-container-snapshot.js?v=1.4.316";
+import { buildStorageContainerSnapshot, buildStorageContainerRow } from "./storage-container-snapshot.js?v=1.4.317";
 import { canFitLootgenContents, debitLootgenBudget, readLootgenPhysicalFootprint } from "./lootgen-container-rules.js?v=1.4.266";
 import { chooseLootgenUpgradeVariant } from "./lootgen-upgrade-variants.js?v=1.4.278";
 import { rollLootgenBrokenState } from "./lootgen-durability.js?v=1.4.154-corpse-storage-broken-name";
 import { rollLootgenMultipleAppearance } from "./lootgen-multiple-appearance.js?v=1.4.128-lootgen-multiplicity";
-import { pickLootgenNarrativeFields, selectLootgenNarrativeVariant } from "./lootgen-narrative-catalog.js?v=1.4.316";
+import { pickLootgenNarrativeFields, selectLootgenNarrativeVariant } from "./lootgen-narrative-catalog.js?v=1.4.317";
 
 const key=row=>`${row.sourceType}:${row.sourceId}`;
 const composition=descriptor=>{const {quantity,container,...metadata}=descriptor;return normalizeLootgenComposition(metadata);};

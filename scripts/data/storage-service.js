@@ -1,5 +1,5 @@
 import { MODULE_ID } from "../constants.js";
-import { normalizeLootgenForm } from "./lootgen-generator.js?v=1.4.316";
+import { normalizeLootgenForm } from "./lootgen-generator.js?v=1.4.317";
 import {
   markDurabilityBroken,
   markDurabilityIntact
@@ -15,7 +15,7 @@ import {
   isStorageJournalRow,
   resolveStorageContainerPath,
   updateStorageContainerPath
-} from "./storage-container-snapshot.js?v=1.4.316";
+} from "./storage-container-snapshot.js?v=1.4.317";
 import {
   normalizeStorageTriggerState,
   validateStorageTriggerDefinitions

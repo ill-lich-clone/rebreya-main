@@ -1,5 +1,5 @@
 import { normalizeLootgenFlatItemDescriptor } from "./lootgen-composition.js?v=1.4.268";
-import { buildStorageContainerSnapshot } from "./storage-container-snapshot.js?v=1.4.316";
+import { buildStorageContainerSnapshot } from "./storage-container-snapshot.js?v=1.4.317";
 import { readContainerValueNodes } from "./lootgen-container-value-adapter.js?v=1.4.268";
 export { normalizeLootgenComposition } from "./lootgen-composition.js?v=1.4.268";
 
