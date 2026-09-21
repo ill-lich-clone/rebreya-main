@@ -292,6 +292,63 @@ test("dismantle applies ingress filters to a root Item and keeps fallback materi
   finally { fixture.restore(); }
 });
 
+test("new dismantle material uses its exact compendium icon without rewriting an existing stack", async () => {
+  const steel = { id: "steel", name: "Сталь", type: "Минерал", priceGold: 0.2, weight: 1 };
+  const model = dismantleModel(steel);
+  const source = dismantleSource({ id: "icon-dismantle-source", materialId: steel.id });
+  const existing = materialStack({ id: "legacy-steel-stack", material: steel, quantity: 8 });
+  existing.img = "icons/commodities/materials/slime-thick-blue.webp";
+  const group = createActor({
+    id: "icon-dismantle-group",
+    type: "group",
+    managed: true,
+    items: [source, existing]
+  });
+  setInventoryFolderState(group, {
+    folders: [
+      { id: "source", name: "Source", parentId: null, color: null },
+      { id: "legacy", name: "Legacy", parentId: null, color: null }
+    ],
+    itemFolderIds: { [source.id]: "source", [existing.id]: "legacy" }
+  });
+  const materialDocument = {
+    id: "steel-document",
+    img: "modules/rebreya-main/templates/icons/Materials/Сталь.webp"
+  };
+  const fixture = installFixture({
+    group,
+    actors: [group],
+    packs: new Map([["world.rebreya-materials", {
+      async getIndex() {
+        return [{
+          _id: materialDocument.id,
+          name: steel.name,
+          flags: { [MODULE_ID]: { materialId: steel.id } }
+        }];
+      },
+      async getDocument(documentId) {
+        return documentId === materialDocument.id ? materialDocument : null;
+      }
+    }]]),
+    moduleApi: { getModel: async () => model }
+  });
+
+  try {
+    await fixture.service.executeDismantleMutation({
+      inventoryActorId: group.id,
+      itemId: source.id,
+      quantity: 1,
+      mutationId: "icon-dismantle"
+    });
+
+    const created = group.items.contents.find((item) => item.id !== existing.id);
+    assert.ok(created);
+    assert.equal(created.img, materialDocument.img);
+    assert.equal(existing.img, "icons/commodities/materials/slime-thick-blue.webp");
+  }
+  finally { fixture.restore(); }
+});
+
 test("dismantle routes material by folder rule, skip rule, then source-folder fallback", async () => {
   const scenarios = [
     { name: "folder", action: { type: "folder", folderId: "destination" }, expectedFolderId: "destination", matchedRuleId: "route-material" },
@@ -2467,6 +2524,173 @@ function inventoryIngressItemData(sourceId, { name = sourceId, type = "weapon", 
     }
   };
 }
+
+test("new catalog-backed ingress Items use exact compendium icons for every supported source type", async () => {
+  const definitions = [
+    {
+      sourceType: "material",
+      sourceId: "steel",
+      name: "Сталь",
+      flagName: "materialId",
+      packName: "rebreya-materials",
+      img: "modules/rebreya-main/templates/icons/Materials/Сталь.webp"
+    },
+    {
+      sourceType: "gear",
+      sourceId: "rope",
+      name: "Верёвка",
+      flagName: "gearId",
+      packName: "rebreya-gear",
+      img: "modules/rebreya-main/templates/icons/Gear/Верёвка.webp"
+    },
+    {
+      sourceType: "magicItem",
+      sourceId: "glass-key",
+      name: "Стеклянный ключ",
+      flagName: "magicItemId",
+      packName: "rebreya-magic-items",
+      img: "modules/rebreya-main/templates/icons/Magic/Стеклянный ключ.webp"
+    }
+  ];
+  const material = { id: "steel", name: "Сталь", type: "Минерал", priceGold: 0.2, weight: 1 };
+  const gear = { id: "rope", name: "Верёвка", equipmentType: "Снаряжение", priceGoldEquivalent: 1, weight: 10 };
+  const model = {
+    materials: [material],
+    materialById: new Map([[material.id, material]]),
+    materialByGoodId: new Map(),
+    gear: [gear],
+    gearById: new Map([[gear.id, gear]])
+  };
+  const group = createActor({ id: "catalog-icon-ingress-group", type: "group", managed: true });
+  const packs = new Map(definitions.map((definition) => [`world.${definition.packName}`, {
+    async getIndex() {
+      return [{
+        _id: `${definition.sourceId}-document`,
+        name: definition.name,
+        flags: { [MODULE_ID]: { [definition.flagName]: definition.sourceId } }
+      }];
+    },
+    async getDocument(documentId) {
+      return documentId === `${definition.sourceId}-document`
+        ? { id: documentId, img: definition.img }
+        : null;
+    }
+  }]));
+  const fixture = createInventoryIngressFixture({ group, model, packs });
+  const rows = definitions.map((definition) => ({
+    sourceKey: `${definition.sourceType}:${definition.sourceId}`,
+    quantity: 1,
+    legacyFolderId: null,
+    container: null,
+    itemData: {
+      name: definition.name,
+      type: "loot",
+      img: "icons/svg/item-bag.svg",
+      system: {
+        quantity: 1,
+        price: { value: 1, denomination: "gp" },
+        weight: { value: 1, units: "lb" }
+      },
+      flags: {
+        [MODULE_ID]: {
+          sourceType: definition.sourceType,
+          sourceId: definition.sourceId,
+          [definition.flagName]: definition.sourceId
+        }
+      }
+    }
+  }));
+
+  try {
+    const serializedPlan = await serializeIngressPlan(fixture.planner, {
+      groupActorId: group.id,
+      rows
+    });
+    await fixture.service.commitInventoryIngressBatch({
+      groupActorId: group.id,
+      batchMutationId: "catalog-icon-ingress",
+      sourceOrigin: "storage",
+      serializedPlan
+    }, {
+      resolveRows: async () => clone(rows),
+      debitRow: async () => {},
+      acquisitionContext: { sourceType: "token", sourceId: "icon-source", sourceName: "Источник" }
+    });
+
+    assert.deepEqual(
+      group.items.contents.map((item) => [item.name, item.img]),
+      definitions.map((definition) => [definition.name, definition.img])
+    );
+  }
+  finally { fixture.restore(); }
+});
+
+test("catalog icon resolution never substitutes a same-name document with another stable ID", async () => {
+  const steel = { id: "steel", name: "Сталь", type: "Минерал", priceGold: 0.2, weight: 1 };
+  const model = {
+    materials: [steel],
+    materialById: new Map([[steel.id, steel]]),
+    materialByGoodId: new Map(),
+    gear: [],
+    gearById: new Map()
+  };
+  const group = createActor({ id: "exact-icon-ingress-group", type: "group", managed: true });
+  const fixture = createInventoryIngressFixture({
+    group,
+    model,
+    packs: new Map([["world.rebreya-materials", {
+      async getIndex() {
+        return [{
+          _id: "other-steel-document",
+          name: steel.name,
+          flags: { [MODULE_ID]: { materialId: "other-steel" } }
+        }];
+      },
+      async getDocument(documentId) {
+        return documentId === "other-steel-document"
+          ? { id: documentId, img: "icons/wrong-same-name.webp" }
+          : null;
+      }
+    }]])
+  });
+  const rows = [{
+    sourceKey: "material:steel",
+    quantity: 1,
+    legacyFolderId: null,
+    container: null,
+    itemData: {
+      name: steel.name,
+      type: "loot",
+      img: "icons/material-fallback.webp",
+      system: {
+        quantity: 1,
+        price: { value: 0.2, denomination: "gp" },
+        weight: { value: 1, units: "lb" }
+      },
+      flags: { [MODULE_ID]: { sourceType: "material", sourceId: steel.id, materialId: steel.id } }
+    }
+  }];
+
+  try {
+    const serializedPlan = await serializeIngressPlan(fixture.planner, {
+      groupActorId: group.id,
+      rows
+    });
+    await fixture.service.commitInventoryIngressBatch({
+      groupActorId: group.id,
+      batchMutationId: "exact-icon-ingress",
+      sourceOrigin: "storage",
+      serializedPlan
+    }, {
+      resolveRows: async () => clone(rows),
+      debitRow: async () => {},
+      acquisitionContext: { sourceType: "token", sourceId: "exact-icon-source", sourceName: "Источник" }
+    });
+
+    assert.equal(group.items.contents[0].img, "icons/material-fallback.webp");
+  }
+  finally { fixture.restore(); }
+});
 
 async function serializeIngressPlan(planner, {
   groupActorId,

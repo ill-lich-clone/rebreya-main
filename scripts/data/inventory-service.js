@@ -3854,7 +3854,9 @@ export class InventoryService {
       if (!output || !material) {
         throw new Error("Для этого предмета не найден подходящий материал.");
       }
-      let materialItemData = this.#buildMaterialItemData(material, output.quantity);
+      let materialItemData = await this.#applyCatalogItemIcon(
+        this.#buildMaterialItemData(material, output.quantity)
+      );
       const routing = await this.#prepareDismantleRouting(
         inventoryActor,
         item,
@@ -4253,6 +4255,12 @@ export class InventoryService {
           scoped: row.effectiveType !== "legacy",
           acquisition: foundry.utils.deepClone(row.acquisition)
         }];
+
+    for (const target of targetRows) {
+      if (target.itemData) {
+        target.itemData = await this.#applyCatalogItemIcon(target.itemData);
+      }
+    }
 
     return targetRows.map((target, outputIndex) => {
       if (target.container) {
@@ -5143,7 +5151,7 @@ export class InventoryService {
       throw new Error("Не удалось определить актёра партийного инвентаря.");
     }
 
-    const source = sanitizeEmbeddedItemData(itemData);
+    const source = await this.#applyCatalogItemIcon(sanitizeEmbeddedItemData(itemData));
     const targetQuantity = quantity === null
       ? Math.max(0, getRawQuantity(source))
       : Math.max(0, roundNumber(toNumber(quantity, 0), 2));
@@ -6284,15 +6292,7 @@ export class InventoryService {
         throw new Error("Материал не найден в данных модуля.");
       }
 
-      const itemData = this.#buildMaterialItemData(material, safeQuantity);
-      itemData.img = await this.#resolveManagedCompendiumIcon(
-        MATERIALS_COMPENDIUM_NAME,
-        ["materialId"],
-        material.id,
-        material.name,
-        itemData.img
-      );
-      return itemData;
+      return this.#applyCatalogItemIcon(this.#buildMaterialItemData(material, safeQuantity));
     }
 
     if (normalizedSourceType === "gear") {
@@ -6301,15 +6301,7 @@ export class InventoryService {
         throw new Error("Предмет снаряжения не найден в данных модуля.");
       }
 
-      const itemData = this.#buildGearItemData(gearItem, safeQuantity);
-      itemData.img = await this.#resolveManagedCompendiumIcon(
-        GEAR_COMPENDIUM_NAME,
-        ["gearId", "sourceId"],
-        gearItem.id,
-        gearItem.name,
-        itemData.img
-      );
-      return itemData;
+      return this.#applyCatalogItemIcon(this.#buildGearItemData(gearItem, safeQuantity));
     }
 
     if (normalizedSourceType === "magicItem") {
@@ -6335,7 +6327,7 @@ export class InventoryService {
     throw new Error("Неизвестный тип предмета для добавления в склад.");
   }
 
-  async #resolveManagedCompendiumIcon(packName, flagNames, sourceId, fallbackName, fallbackIcon) {
+  async #resolveManagedCompendiumIcon(packName, flagNames, sourceId, fallbackIcon) {
     const fallback = String(fallbackIcon ?? "icons/svg/item-bag.svg").trim() || "icons/svg/item-bag.svg";
     const pack = game.packs.get(`world.${packName}`) ?? null;
     if (!pack) {
@@ -6343,23 +6335,21 @@ export class InventoryService {
     }
 
     const safeSourceId = String(sourceId ?? "").trim();
-    const safeFallbackName = normalizeText(fallbackName);
     const safeFlagNames = Array.isArray(flagNames) ? flagNames.filter(Boolean) : [];
     const fields = safeFlagNames.map((flagName) => `flags.${MODULE_ID}.${flagName}`);
 
     try {
       const index = await pack.getIndex({ fields });
-      const indexEntry = index.find((entry) => {
-        if (safeSourceId) {
+      const indexEntry = safeSourceId
+        ? index.find((entry) => {
           for (const flagName of safeFlagNames) {
             if (String(foundry.utils.getProperty(entry, `flags.${MODULE_ID}.${flagName}`) ?? "").trim() === safeSourceId) {
               return true;
             }
           }
-        }
-
-        return safeFallbackName && normalizeText(entry.name) === safeFallbackName;
-      }) ?? null;
+          return false;
+        }) ?? null
+        : null;
 
       const document = indexEntry
         ? await pack.getDocument(indexEntry._id ?? indexEntry.id)
@@ -6367,9 +6357,44 @@ export class InventoryService {
       return String(document?.img ?? "").trim() || fallback;
     }
     catch (error) {
-      console.warn(`${MODULE_ID} | Failed to resolve compendium icon for '${fallbackName}'.`, error);
+      console.warn(`${MODULE_ID} | Failed to resolve compendium icon for '${safeSourceId}'.`, error);
       return fallback;
     }
+  }
+
+  async #applyCatalogItemIcon(itemData) {
+    const source = itemData && typeof itemData === "object" ? itemData : {};
+    const flags = source.flags?.[MODULE_ID] ?? {};
+    const sourceType = normalizeInventorySourceType(flags.sourceType);
+    const definitions = {
+      material: {
+        packName: MATERIALS_COMPENDIUM_NAME,
+        flagNames: ["materialId"],
+        sourceId: cleanId(flags.materialId ?? flags.sourceId)
+      },
+      gear: {
+        packName: GEAR_COMPENDIUM_NAME,
+        flagNames: ["gearId", "sourceId"],
+        sourceId: cleanId(flags.gearId ?? flags.sourceId)
+      },
+      magicItem: {
+        packName: MAGIC_ITEMS_COMPENDIUM_NAME,
+        flagNames: ["magicItemId"],
+        sourceId: cleanId(flags.magicItemId ?? flags.magicId ?? flags.sourceId)
+      }
+    };
+    const definition = definitions[sourceType] ?? null;
+    if (!definition?.sourceId) {
+      return source;
+    }
+
+    source.img = await this.#resolveManagedCompendiumIcon(
+      definition.packName,
+      definition.flagNames,
+      definition.sourceId,
+      source.img
+    );
+    return source;
   }
 
   async buildLootgenChatItemData(row, lootMeta = {}) {
