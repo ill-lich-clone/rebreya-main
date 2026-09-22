@@ -604,6 +604,31 @@ test("wearable clothing is projected as native clothing while paintings remain o
   assert.equal(painting.system.type.value, "gear");
 });
 
+test("fishing gear is projected as native equipment instead of loot", () => {
+  const gear = JSON.parse(readFileSync(join(TESTS_DIR, "..", "data", "gear.json"), "utf8").replace(/^\uFEFF/u, ""));
+  const byId = new Map(gear.map((item) => [item.id, item]));
+  const fishingGearIds = [
+    "komplekt-dlya-rybalki",
+    "прецизионная-удочка",
+    "простая-удочка",
+    "профессиональная-удочка",
+    "удочка-мастера",
+    "усиленная-удочка"
+  ];
+
+  for (const gearId of fishingGearIds) {
+    const source = byId.get(gearId);
+    assert.ok(source, `${gearId} exists in canonical gear data`);
+    assert.equal(source.equipmentType, "Снаряжение", `${gearId} keeps the source equipment category`);
+    assert.equal(source.foundryType, "equipment", `${gearId} uses the native equipment document type`);
+    assert.equal(source.foundrySubtype, "wondrous", `${gearId} uses the native wondrous subtype`);
+
+    const created = createDnd5eItemData(source, new Map());
+    assert.equal(created.type, "equipment", `${gearId} is not projected as loot`);
+    assert.equal(created.system.type.value, "wondrous", `${gearId} uses the equipment subtype`);
+  }
+});
+
 test("ordinary ammunition weapons emit an exact native ammunition type", () => {
   const gear = JSON.parse(readFileSync(join(TESTS_DIR, "..", "data", "gear.json"), "utf8").replace(/^\uFEFF/u, ""));
   const byId = new Map(gear.map((item) => [item.id, item]));

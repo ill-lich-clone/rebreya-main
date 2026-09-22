@@ -2851,6 +2851,26 @@
       "усовершенствование|эссенция тени": {
         "id": "essentsiya-teni",
         "aliases": []
+      },
+      "снаряжение|прецизионная удочка": {
+        "id": "прецизионная-удочка",
+        "aliases": []
+      },
+      "снаряжение|простая удочка": {
+        "id": "простая-удочка",
+        "aliases": []
+      },
+      "снаряжение|профессиональная удочка": {
+        "id": "профессиональная-удочка",
+        "aliases": []
+      },
+      "снаряжение|удочка мастера": {
+        "id": "удочка-мастера",
+        "aliases": []
+      },
+      "снаряжение|усиленная удочка": {
+        "id": "усиленная-удочка",
+        "aliases": []
       }
     },
     "implants": {
@@ -7124,6 +7144,10 @@
         "foundrySubtype": "basket",
         "foundryType": "container"
       },
+      "komplekt-dlya-rybalki": {
+        "foundrySubtype": "wondrous",
+        "foundryType": "equipment"
+      },
       "koshel": {
         "containerCapacity": {
           "volume": 0.2,
@@ -7175,6 +7199,26 @@
         },
         "foundrySubtype": "bucket",
         "foundryType": "container"
+      },
+      "прецизионная-удочка": {
+        "foundrySubtype": "wondrous",
+        "foundryType": "equipment"
+      },
+      "простая-удочка": {
+        "foundrySubtype": "wondrous",
+        "foundryType": "equipment"
+      },
+      "профессиональная-удочка": {
+        "foundrySubtype": "wondrous",
+        "foundryType": "equipment"
+      },
+      "удочка-мастера": {
+        "foundrySubtype": "wondrous",
+        "foundryType": "equipment"
+      },
+      "усиленная-удочка": {
+        "foundrySubtype": "wondrous",
+        "foundryType": "equipment"
       }
     },
     "implants": {

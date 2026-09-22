@@ -10,7 +10,7 @@ import {
   ensurePackSidebarFolder,
   normalizeFolderPath,
   resolveNamedIcon
-} from "./compendium-utils.js?v=1.4.323";
+} from "./compendium-utils.js?v=1.4.324";
 import { syncManagedDocumentsOnActiveGm } from "./managed-compendium-sync.js";
 
 const PACK_ID = `world.${ACTIONS_COMPENDIUM_NAME}`;

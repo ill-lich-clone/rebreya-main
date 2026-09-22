@@ -12,7 +12,7 @@ import {
   ensurePackSidebarFolder,
   normalizeFolderPath,
   resolveNamedIcon
-} from "./compendium-utils.js?v=1.4.323";
+} from "./compendium-utils.js?v=1.4.324";
 import { buildSlug } from "./item-classification.js";
 import { syncFlaggedManagedDocuments } from "./managed-compendium-sync.js";
 

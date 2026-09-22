@@ -69,7 +69,7 @@ import {
   readInventoryAcquisitionHistory,
   writeInventoryAcquisitionHistory
 } from "./inventory-acquisition-history.js?v=1.4.318";
-import { resolveGearItemIcon } from "./gear-icon-resolver.js?v=1.4.323";
+import { resolveGearItemIcon } from "./gear-icon-resolver.js?v=1.4.324";
 
 const SOCKET_CHANNEL = `module.${MODULE_ID}`;
 export const SOCKET_EVENT_INVENTORY_IMPORT_REQUEST = "inventory-import-request";

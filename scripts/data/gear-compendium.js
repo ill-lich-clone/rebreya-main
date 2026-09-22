@@ -1,17 +1,17 @@
-﻿import { GEAR_COMPENDIUM_LABEL, GEAR_COMPENDIUM_NAME, MODULE_ID } from "../constants.js";
+import { GEAR_COMPENDIUM_LABEL, GEAR_COMPENDIUM_NAME, MODULE_ID } from "../constants.js";
 import { bringAppToFront } from "../ui.js";
 import {
   deduplicateCompendiumFolders,
   ensureCompendiumFolders,
   ensurePackSidebarFolder,
   normalizeFolderPath
-} from "./compendium-utils.js?v=1.4.323";
+} from "./compendium-utils.js?v=1.4.324";
 import {
   buildGearIconLookup,
   DEFAULT_GEAR_ICON,
   resolveGearItemIcon,
   resolveGearNamedIcon
-} from "./gear-icon-resolver.js?v=1.4.323";
+} from "./gear-icon-resolver.js?v=1.4.324";
 import {
   classifyGearEntry,
   inferHeroDollSlotGroupFromSlots,

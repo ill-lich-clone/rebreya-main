@@ -6,7 +6,7 @@ import {
 import {
   ensureCompendiumFolders,
   ensurePackSidebarFolder
-} from "./compendium-utils.js?v=1.4.323";
+} from "./compendium-utils.js?v=1.4.324";
 import { createStableGearDocumentId } from "./gear-document-ids.js";
 import { syncManagedDocumentsOnActiveGm } from "./managed-compendium-sync.js";
 import {

@@ -1,4 +1,4 @@
-﻿import { planItemInstanceMutation } from "../data/item-instance-rules.js";
+import { planItemInstanceMutation } from "../data/item-instance-rules.js";
 import { ReputationPanel } from "./reputation-panel.js?v=1.4.251";
 import { MODULE_ID } from "../constants.js";
 import { REBREYA_TOOLS } from "../constants.js";
@@ -15,7 +15,7 @@ import {
   resolveInventoryDropFolderId
 } from "../data/inventory-folder-tree.js?v=1.4.318";
 import { normalizeInventoryAcquisitionHistory } from "../data/inventory-acquisition-history.js?v=1.4.318";
-import { buildPartyInventoryItemDragData } from "../integrations/inventory-sync.js?v=1.4.323";
+import { buildPartyInventoryItemDragData } from "../integrations/inventory-sync.js?v=1.4.324";
 import {
   INVENTORY_INGRESS_RULE_FIELD_DEFINITIONS,
   normalizeInventoryIngressRule,
