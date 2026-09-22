@@ -6,7 +6,7 @@ import { SpellAutomationRegistry } from "../scripts/combat/spell-automation-regi
 import { SpellInstanceRuntime } from "../scripts/combat/spell-instance-runtime.js";
 import { SummonLifecycleRuntime } from "../scripts/combat/summon-lifecycle-runtime.js";
 import { PrivilegedMutationGateway } from "../scripts/application/privileged-mutation-gateway.js";
-import { TransportCompendiumService } from "../scripts/data/transport-compendium.js?v=1.4.325";
+import { TransportCompendiumService } from "../scripts/data/transport-compendium.js?v=1.4.326";
 import { BuiltinStorageActorService } from "../scripts/data/builtin-storage-actor-service.js?v=1.4.216-storage-token-vision";
 import { StorageOpenSoundService } from "../scripts/data/storage-open-sound-service.js?v=1.4.145-coin-icons-storage-sound";
 import { GrappleAutomationService } from "../scripts/combat/grapple-automation-service.js";
@@ -19,7 +19,7 @@ import {
 import { SPELL_INSTANCE_MUTATION_COMMAND } from "../scripts/integrations/spell-instance-socket.js";
 import { SUMMON_LIFECYCLE_MUTATION_COMMAND } from "../scripts/integrations/summon-lifecycle-socket.js";
 
-test("release 1.4.325 reuses the catalog icon cache graph", async () => {
+test("release 1.4.326 reuses the catalog icon cache graph", async () => {
   const iconServiceNames = [
     "materials-compendium",
     "gear-compendium",
@@ -49,29 +49,29 @@ test("release 1.4.325 reuses the catalog icon cache graph", async () => {
     ...sharedCacheImporters.map((name) => readFile(new URL(`../scripts/data/${name}.js`, import.meta.url), "utf8"))
   ]);
   const manifest = JSON.parse(manifestSource);
-  assert.equal(manifest.version, "1.4.325");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.325.js"]);
+  assert.equal(manifest.version, "1.4.326");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.326.js"]);
   assert.doesNotMatch(manifestSource, /main-1\.4\.319\.js/u);
-  assert.match(mainSource, /data\/inventory-service\.js\?v=1\.4\.325/u);
+  assert.match(mainSource, /data\/inventory-service\.js\?v=1\.4\.326/u);
   assert.match(mainSource, /data\/storage-command-service\.js\?v=1\.4\.322/u);
-  assert.match(mainSource, /integrations\/inventory-sync\.js\?v=1\.4\.325/u);
-  assert.match(syncSource, /data\/inventory-service\.js\?v=1\.4\.325/u);
-  assert.match(appSource, /integrations\/inventory-sync\.js\?v=1\.4\.325/u);
-  assert.match(serviceSource, /gear-icon-resolver\.js\?v=1\.4\.325/u);
-  assert.equal(mainSource.match(/ui\/inventory-app\.js\?v=1\.4\.325/gu)?.length ?? 0, 3);
+  assert.match(mainSource, /integrations\/inventory-sync\.js\?v=1\.4\.326/u);
+  assert.match(syncSource, /data\/inventory-service\.js\?v=1\.4\.326/u);
+  assert.match(appSource, /integrations\/inventory-sync\.js\?v=1\.4\.326/u);
+  assert.match(serviceSource, /gear-icon-resolver\.js\?v=1\.4\.326/u);
+  assert.equal(mainSource.match(/ui\/inventory-app\.js\?v=1\.4\.326/gu)?.length ?? 0, 3);
   for (const source of [serviceSource, appSource]) {
     assert.match(source, /inventory-folder-tree\.js\?v=1\.4\.318/u);
     assert.match(source, /inventory-acquisition-history\.js\?v=1\.4\.318/u);
   }
   for (const name of iconServiceNames) {
-    assert.match(mainSource, new RegExp(`data/${name}\\.js\\?v=1\\.4\\.325`, "u"));
+    assert.match(mainSource, new RegExp(`data/${name}\\.js\\?v=1\\.4\\.326`, "u"));
   }
-  assert.match(mainSource, /data\/compendium-utils\.js\?v=1\.4\.325/u);
-  assert.match(mainSource, /data\/trader-service\.js\?v=1\.4\.325/u);
+  assert.match(mainSource, /data\/compendium-utils\.js\?v=1\.4\.326/u);
+  assert.match(mainSource, /data\/trader-service\.js\?v=1\.4\.326/u);
   assert.equal(mainSource.match(/clearNamedIconCache\(\);/gu)?.length ?? 0, 1);
   assert.ok(mainSource.indexOf("clearNamedIconCache();") < mainSource.indexOf("await this.materialsCompendium.sync("));
   for (const source of cacheImporterSources) {
-    assert.match(source, /compendium-utils\.js\?v=1\.4\.325/u);
+    assert.match(source, /compendium-utils\.js\?v=1\.4\.326/u);
   }
   for (const source of cacheImporterSources.slice(0, iconServiceNames.length)) {
     assert.doesNotMatch(source, /forceRefresh\s*:\s*true/u);
@@ -424,7 +424,7 @@ test("ready composes spell automation on one registry alongside legacy hook regi
 test("composition root synchronizes the managed transport Actor compendium", async () => {
   const source = await readFile(new URL("../scripts/main.js", import.meta.url), "utf8");
 
-  assert.match(source, /import\s+\{\s*TransportCompendiumService\s*\}\s+from\s+"\.\/data\/transport-compendium\.js\?v=1\.4\.325";/u);
+  assert.match(source, /import\s+\{\s*TransportCompendiumService\s*\}\s+from\s+"\.\/data\/transport-compendium\.js\?v=1\.4\.326";/u);
   assert.match(source, /this\.transportCompendium\s*=\s*new TransportCompendiumService/u);
   assert.match(source, /await this\.transportCompendium\.sync\(\);/u);
   assert.match(source, /registerTransportGroupDropHooks\(moduleApi,\s*\{\s*Hooks\s*\}\);/u);
@@ -494,7 +494,7 @@ test("composition root owns one inventory ingress graph and one batch dispatch h
 
   assert.match(
     source,
-    /\.\/data\/inventory-service\.js\?v=1\.4\.325/u,
+    /\.\/data\/inventory-service\.js\?v=1\.4\.326/u,
     "inventory-service cache key must change with the catalog icon workflow"
   );
   assert.equal(source.match(/new InventoryIngressRuleCompilerCache\(/gu)?.length, 1);

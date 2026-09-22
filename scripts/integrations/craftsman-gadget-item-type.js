@@ -46,3 +46,18 @@ export function scheduleCraftsmanGadgetItemTypeRegistration({ schedule = globalT
   schedule(() => registerCraftsmanGadgetItemType());
   return true;
 }
+
+export function registerCraftsmanGadgetItemTypeBootstrap({
+  hooks = globalThis.Hooks,
+  schedule = globalThis.queueMicrotask
+} = {}) {
+  if (typeof hooks?.once !== "function") {
+    return false;
+  }
+
+  hooks.once("init", () => {
+    registerCraftsmanGadgetItemType();
+    scheduleCraftsmanGadgetItemTypeRegistration({ schedule });
+  });
+  return true;
+}

@@ -11,7 +11,7 @@ import {
   ensurePackSidebarFolder,
   normalizeFolderPath,
   resolveNamedIcon
-} from "./compendium-utils.js?v=1.4.325";
+} from "./compendium-utils.js?v=1.4.326";
 import { syncManagedDocumentsOnActiveGm } from "./managed-compendium-sync.js";
 import { cloneFoundryValue as clone } from "../shared/foundry-values.js";
 

@@ -5,7 +5,7 @@ import {
 } from "../constants.js";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 import { buildCounterspellActivity } from "./counterspell-activity.js";
-import { ensurePackSidebarFolder } from "./compendium-utils.js?v=1.4.325";
+import { ensurePackSidebarFolder } from "./compendium-utils.js?v=1.4.326";
 import { syncFlaggedManagedDocuments } from "./managed-compendium-sync.js";
 import {
   MELFS_MINUTE_METEORS_ID,

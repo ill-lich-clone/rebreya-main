@@ -101,3 +101,47 @@ test("deferred gadget registration survives dnd5e replacing Item data models dur
     globalThis.CONFIG = previousConfig;
   }
 });
+
+test("startup bootstrap owns gadget registration before the composition root", async () => {
+  const previousConfig = globalThis.CONFIG;
+  class FinalConsumableData {}
+  globalThis.CONFIG = {
+    Item: {
+      dataModels: {},
+      typeLabels: {},
+      typeIcons: {}
+    }
+  };
+
+  try {
+    const { registerCraftsmanGadgetItemTypeBootstrap } = await import(
+      `../scripts/integrations/craftsman-gadget-item-type.js?bootstrap=${Date.now()}`
+    );
+    const initCallbacks = [];
+    const scheduled = [];
+    const hooks = {
+      once: (event, callback) => {
+        assert.equal(event, "init");
+        initCallbacks.push(callback);
+      }
+    };
+
+    assert.equal(typeof registerCraftsmanGadgetItemTypeBootstrap, "function");
+    assert.equal(registerCraftsmanGadgetItemTypeBootstrap({
+      hooks,
+      schedule: (callback) => scheduled.push(callback)
+    }), true);
+    assert.equal(initCallbacks.length, 1);
+
+    initCallbacks[0]();
+    globalThis.CONFIG.Item.dataModels = { consumable: FinalConsumableData };
+    scheduled.forEach((callback) => callback());
+
+    const Model = globalThis.CONFIG.Item.dataModels["rebreya-main.gadget"];
+    assert.equal(scheduled.length, 1);
+    assert.equal(Object.getPrototypeOf(Model), FinalConsumableData);
+  }
+  finally {
+    globalThis.CONFIG = previousConfig;
+  }
+});
