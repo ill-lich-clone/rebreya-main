@@ -37,3 +37,12 @@ export function registerCraftsmanGadgetItemType() {
   ItemConfig.typeIcons[CRAFTSMAN_GADGET_ITEM_TYPE] = "fa-solid fa-gears";
   return true;
 }
+
+export function scheduleCraftsmanGadgetItemTypeRegistration({ schedule = globalThis.queueMicrotask } = {}) {
+  if (typeof schedule !== "function") {
+    return false;
+  }
+
+  schedule(() => registerCraftsmanGadgetItemType());
+  return true;
+}

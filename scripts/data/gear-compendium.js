@@ -5,13 +5,13 @@ import {
   ensureCompendiumFolders,
   ensurePackSidebarFolder,
   normalizeFolderPath
-} from "./compendium-utils.js?v=1.4.324";
+} from "./compendium-utils.js?v=1.4.325";
 import {
   buildGearIconLookup,
   DEFAULT_GEAR_ICON,
   resolveGearItemIcon,
   resolveGearNamedIcon
-} from "./gear-icon-resolver.js?v=1.4.324";
+} from "./gear-icon-resolver.js?v=1.4.325";
 import {
   classifyGearEntry,
   inferHeroDollSlotGroupFromSlots,

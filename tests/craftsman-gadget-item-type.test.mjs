@@ -66,3 +66,38 @@ test("does not register the gadget Item type without the native consumable DataM
     globalThis.CONFIG = previousConfig;
   }
 });
+
+test("deferred gadget registration survives dnd5e replacing Item data models during init", async () => {
+  const previousConfig = globalThis.CONFIG;
+  class InitialConsumableData {}
+  class FinalConsumableData {}
+  globalThis.CONFIG = {
+    Item: {
+      dataModels: { consumable: InitialConsumableData },
+      typeLabels: {},
+      typeIcons: {}
+    }
+  };
+
+  try {
+    const {
+      getCraftsmanGadgetItemDataModel,
+      scheduleCraftsmanGadgetItemTypeRegistration
+    } = await import(`../scripts/integrations/craftsman-gadget-item-type.js?deferred=${Date.now()}`);
+    const scheduled = [];
+
+    scheduleCraftsmanGadgetItemTypeRegistration({
+      schedule: (callback) => scheduled.push(callback)
+    });
+    globalThis.CONFIG.Item.dataModels = { consumable: FinalConsumableData };
+    scheduled.forEach((callback) => callback());
+
+    const Model = getCraftsmanGadgetItemDataModel();
+    assert.equal(scheduled.length, 1);
+    assert.equal(Object.getPrototypeOf(Model), FinalConsumableData);
+    assert.equal(globalThis.CONFIG.Item.dataModels["rebreya-main.gadget"], Model);
+  }
+  finally {
+    globalThis.CONFIG = previousConfig;
+  }
+});
