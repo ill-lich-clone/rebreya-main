@@ -11,7 +11,7 @@ import {
   TEYVANKAL_STATE_LANGUAGE_GROUP_ID,
   TEYVANKAL_STATE_LANGUAGES
 } from "../constants.js";
-import { registerCraftsmanGadgetItemType } from "./craftsman-gadget-item-type.js?v=1.4.326";
+import { registerCraftsmanGadgetItemType } from "./craftsman-gadget-item-type.js?v=1.4.327";
 import { bringAppToFront } from "../ui.js";
 import { bindAnchoredTooltips } from "../ui/anchored-overlay.js?v=1.4.247-anchored-overlays";
 import { createStableGearDocumentId } from "../data/gear-document-ids.js";

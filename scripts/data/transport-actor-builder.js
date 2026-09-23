@@ -1,5 +1,5 @@
 import { MODULE_ID } from "../constants.js";
-import { resolveNamedIcon } from "./compendium-utils.js?v=1.4.326";
+import { resolveNamedIcon } from "./compendium-utils.js?v=1.4.327";
 
 const DASH = "—";
 const POUNDS_PER_TON = 2000;

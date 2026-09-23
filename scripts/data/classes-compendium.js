@@ -17,7 +17,7 @@ import {
   ensurePackSidebarFolder,
   normalizeFolderPath,
   resolveNamedIcon
-} from "./compendium-utils.js?v=1.4.326";
+} from "./compendium-utils.js?v=1.4.327";
 import {
   fighterSecondWindUsesMax,
   getFighterIronWillAutomation,
@@ -30,7 +30,7 @@ import {
   buildCraftsmanGadgetFeatureDefinitions,
   normalizeCraftsmanGadgets
 } from "./craftsman-gadget-definitions.js";
-import { resolveCraftsmanGadgetIcon } from "./gear-icon-resolver.js?v=1.4.326";
+import { resolveCraftsmanGadgetIcon } from "./gear-icon-resolver.js?v=1.4.327";
 import {
   CRAFTSMAN_CONSTRUCT_FEATURE_ID,
   buildCraftsmanConstructSummonAutomation

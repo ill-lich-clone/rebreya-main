@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 
 import {
@@ -271,6 +273,12 @@ test("checked-in manifest matches the canonical catalogs", async () => {
 
   assert.equal(validateTopDownManifest({ manifest, gear, materials }), true);
   assert.equal(manifest.entries.length, 1420);
+  assert.ok(manifest.entries.every((entry) => (
+    entry.status === "accepted"
+    && entry.technicalQa === "passed"
+    && entry.visualQa === "passed"
+    && existsSync(fileURLToPath(new URL(entry.assetPath, moduleRoot)))
+  )), "all canonical items need an accepted top-down asset");
   assert.ok(manifest.entries.every((entry) => [1, 1.5].includes(entry.tokenScale)));
   const byKey = new Map(manifest.entries.map((entry) => [topDownEntryKey(entry), entry]));
   assert.equal(byKey.get("gear:revol-ver").tokenScale, 1);

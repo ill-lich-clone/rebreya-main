@@ -9,8 +9,8 @@ import {
   buildTransportActorData,
   normalizeTransportEntry,
   resolveTransportDefaultArtwork
-} from "./transport-actor-builder.js?v=1.4.326";
-import { buildNamedIconLookup } from "./compendium-utils.js?v=1.4.326";
+} from "./transport-actor-builder.js?v=1.4.327";
+import { buildNamedIconLookup } from "./compendium-utils.js?v=1.4.327";
 import { syncFlaggedManagedDocuments } from "./managed-compendium-sync.js";
 
 const EXPECTED_CATALOG_SIZE = 62;
