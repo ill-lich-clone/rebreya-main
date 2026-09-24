@@ -37,7 +37,7 @@ import {
 } from "./craftsman-construct-definitions.js";
 import { buildSlug } from "./item-classification.js";
 import { renderDescriptionMarkdown } from "./markdown-description.js";
-import { syncFlaggedManagedDocuments } from "./managed-compendium-sync.js";
+import { getManagedIconProjection, syncFlaggedManagedDocuments } from "./managed-compendium-sync.js?v=1.4.329";
 import {
   getRuneKnightFeatureAutomation,
   getRuneKnightRuneAutomation
@@ -3751,6 +3751,8 @@ async function syncManagedDocumentIcons(pack, documents, resolveIcon) {
     if (!document?.getFlag?.(MODULE_ID, "managed")) {
       continue;
     }
+
+    if (getManagedIconProjection(pack.collection, document.id)) continue;
 
     const nextIcon = cleanString(resolveIcon(document));
     if (!nextIcon || nextIcon === cleanString(document.img)) {

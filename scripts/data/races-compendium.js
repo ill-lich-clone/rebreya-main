@@ -14,7 +14,7 @@ import {
   resolveNamedIcon
 } from "./compendium-utils.js?v=1.4.327";
 import { buildSlug } from "./item-classification.js";
-import { syncFlaggedManagedDocuments } from "./managed-compendium-sync.js";
+import { getManagedIconProjection, syncFlaggedManagedDocuments } from "./managed-compendium-sync.js?v=1.4.329";
 
 const DND5E_SYSTEM_ID = "dnd5e";
 const SOURCE_LABEL = "Расы Тейванкаля V0.1";
@@ -1514,6 +1514,8 @@ async function syncManagedDocumentIcons(pack, documents, resolveIcon) {
     if (!document?.getFlag?.(MODULE_ID, "managed")) {
       continue;
     }
+
+    if (getManagedIconProjection(pack.collection, document.id)) continue;
 
     const nextIcon = cleanString(resolveIcon(document));
     if (!nextIcon || nextIcon === cleanString(document.img)) {

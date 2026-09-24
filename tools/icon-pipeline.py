@@ -15,12 +15,17 @@ Usage examples:
 from __future__ import annotations
 
 import argparse
+import csv
+import hashlib
 import json
 import re
+import shutil
 from collections import OrderedDict, defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List, Sequence, Tuple
+
+from PIL import Image
 
 
 SUPPORTED_ICON_EXTENSIONS = {".webp", ".png", ".jpg", ".jpeg", ".svg", ".avif"}
@@ -40,6 +45,139 @@ QUOTE_PATTERN = re.compile(r"['\"\u2019\u2018\u02BC\u02B9\u2032\u201C\u201D\u00A
 NON_ALNUM_PATTERN = re.compile(r"[^\w\d\u0400-\u04FF]+", re.UNICODE)
 WHITESPACE_PATTERN = re.compile(r"\s+", re.UNICODE)
 INVALID_FILENAME_CHARS_PATTERN = re.compile(r'[<>:"/\\|?*\x00-\x1F]')
+
+BADGE_ID_BY_PACK = {
+    f"world.rebreya-{name}": name for name in (
+        "actions", "backgrounds", "class-features", "classes", "downtime",
+        "feats", "gear", "glossary", "magic-items", "materials",
+        "race-features", "races", "spells", "states", "subclasses", "transport"
+    )
+}
+BADGE_ID_BY_PACK["world.rebreya-craftsman-constructs"] = "constructs"
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def prepare_badge_assets(
+    review_manifest: Path,
+    pack_index: Path,
+    markers_dir: Path,
+    output_root: Path,
+    data_root: Path,
+) -> dict:
+    """Validate exact persisted identities and bundle review art plus editable badge defaults."""
+    with Path(review_manifest).open(encoding="utf-8-sig", newline="") as source:
+        reviewed = list(csv.DictReader(source))
+    packs = json.loads(Path(pack_index).read_text(encoding="utf-8"))["packs"]
+    indexed = {}
+    for pack in packs:
+        pack_id = pack["packId"]
+        if pack_id not in BADGE_ID_BY_PACK:
+            raise ValueError(f"Unknown badge pack: {pack_id}")
+        for document in pack["documents"]:
+            key = (pack_id, document["documentId"])
+            if key in indexed:
+                raise ValueError(f"Duplicate badge target: {key}")
+            indexed[key] = document
+
+    review_by_key = {}
+    for row in reviewed:
+        key = (row["packId"], row["persistedDocumentId"])
+        if key in review_by_key:
+            raise ValueError(f"Duplicate badge target: {key}")
+        if key not in indexed:
+            raise ValueError(f"Reviewed artwork has no persisted document: {key}")
+        source = Path(row["squareArtworkFile"])
+        if not source.is_file():
+            raise ValueError(f"Missing reviewed artwork: {source}")
+        with Image.open(source) as image:
+            if image.width != image.height or image.width < 32:
+                raise ValueError(f"Invalid reviewed artwork dimensions: {source}: {image.size}")
+        review_by_key[key] = source
+
+    for pack_id, document_id in indexed:
+        if pack_id != "world.rebreya-gear" and (pack_id, document_id) not in review_by_key:
+            raise ValueError(f"Missing reviewed artwork: {pack_id}/{document_id}")
+
+    output_root = Path(output_root)
+    marker_records = {}
+    for badge_id in sorted({BADGE_ID_BY_PACK[pack_id] for pack_id, _ in indexed}):
+        source = Path(markers_dir) / f"{badge_id}.png"
+        if not source.is_file():
+            raise ValueError(f"Missing badge marker: {source}")
+        with Image.open(source) as image:
+            if image.size != (256, 256) or image.mode != "RGBA":
+                raise ValueError(f"Invalid badge marker: {source}: {image.size}/{image.mode}")
+        target = output_root / "assets" / "icon-badges" / source.name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, target)
+        marker_records[badge_id] = {
+            "path": f"modules/rebreya-main/assets/icon-badges/{source.name}",
+            "sha256": _sha256_file(target),
+        }
+
+    targets = []
+    for (pack_id, document_id), document in sorted(indexed.items()):
+        badge_id = BADGE_ID_BY_PACK[pack_id]
+        baseline_img = document["img"]
+        reviewed_source = review_by_key.get((pack_id, document_id))
+        if reviewed_source is None:
+            source_path = baseline_img
+            if source_path.startswith("modules/rebreya-main/"):
+                from urllib.parse import unquote
+                local_path = Path(data_root) / unquote(source_path)
+                if not local_path.is_file():
+                    raise ValueError(f"Missing ordinary gear artwork: {local_path}")
+                source_hash = _sha256_file(local_path)
+            elif source_path.startswith("icons/"):
+                source_hash = hashlib.sha256(source_path.encode("utf-8")).hexdigest()
+            else:
+                local_path = Path(data_root) / source_path
+                if not local_path.is_file():
+                    raise ValueError(f"Missing ordinary gear artwork: {local_path}")
+                source_hash = _sha256_file(local_path)
+        else:
+            pack_slug = pack_id.removeprefix("world.")
+            relative = Path("templates") / "icon-bases" / pack_slug / f"{document_id}.webp"
+            output = output_root / relative
+            output.parent.mkdir(parents=True, exist_ok=True)
+            with Image.open(reviewed_source) as image:
+                image.convert("RGB").save(output, "WEBP", quality=90, method=6)
+            source_path = f"modules/rebreya-main/{relative.as_posix()}"
+            source_hash = _sha256_file(output)
+        targets.append({
+            "packId": pack_id,
+            "documentId": document_id,
+            "baselineImg": baseline_img,
+            "sourcePath": source_path,
+            "sourceHash": source_hash,
+            "badgeId": badge_id,
+        })
+
+    result = {"schemaVersion": 1, "markers": marker_records, "targets": targets}
+    manifest_path = output_root / "data" / "icon-badge-targets.json"
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return result
+
+
+def command_prepare_badge_assets(args: argparse.Namespace) -> int:
+    result = prepare_badge_assets(
+        Path(args.review_manifest), Path(args.pack_index), Path(args.markers),
+        Path(args.output_root), Path(args.data_root)
+    )
+    print(json.dumps({
+        "packs": len({row["packId"] for row in result["targets"]}),
+        "targets": len(result["targets"]),
+        "reviewedArtworks": sum("/templates/icon-bases/" in row["sourcePath"] for row in result["targets"]),
+    }))
+    return 0
 
 
 @dataclass(frozen=True)
@@ -503,6 +641,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional explicit path to image_gen.py. If omitted, prints $CODEX_HOME variant."
     )
     jobs.set_defaults(func=command_jobs)
+
+    badge_assets = subparsers.add_parser("prepare-badge-assets", help="Bundle exact reviewed base art and badge target manifest.")
+    badge_assets.add_argument("--review-manifest", required=True)
+    badge_assets.add_argument("--pack-index", required=True)
+    badge_assets.add_argument("--markers", required=True)
+    badge_assets.add_argument("--output-root", default=str(ROOT_DIR))
+    badge_assets.add_argument("--data-root", default=str(ROOT_DIR.parents[1]))
+    badge_assets.set_defaults(func=command_prepare_badge_assets)
 
     return parser
 

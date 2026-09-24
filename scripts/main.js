@@ -11,18 +11,24 @@ import { LootgenSourceCatalog } from "./data/lootgen-source-catalog.js?v=1.4.317
 import { MODULE_ID, MODULE_TITLE, SETTINGS_KEYS } from "./constants.js";
 import { escapeFoundryHtml } from "./shared/foundry-values.js";
 import { clearNamedIconCache } from "./data/compendium-utils.js?v=1.4.327";
-import { MaterialsCompendiumService } from "./data/materials-compendium.js?v=1.4.327";
-import { GearCompendiumService } from "./data/gear-compendium.js?v=1.4.327";
+import {
+  BADGE_BUILD_SETTING,
+  buildManagedIconProjection,
+  prepareCompendiumBadgeImages
+} from "./data/icon-badge-build.js?v=1.4.329";
+import { setManagedIconProjection } from "./data/managed-compendium-sync.js?v=1.4.329";
+import { MaterialsCompendiumService } from "./data/materials-compendium.js?v=1.4.329";
+import { GearCompendiumService } from "./data/gear-compendium.js?v=1.4.329";
 import { repairWorldAmmunitionCompatibility } from "./data/ammunition-compatibility.js?v=1.4.147-native-ammunition";
-import { MagicItemsCompendiumService } from "./data/magic-items-compendium.js?v=1.4.327";
-import { FeatsCompendiumService } from "./data/feats-compendium.js?v=1.4.327";
-import { GlossaryCompendiumService } from "./data/glossary-compendium.js?v=1.4.327";
-import { BackgroundsCompendiumService } from "./data/backgrounds-compendium.js?v=1.4.327";
-import { StatesCompendiumService } from "./data/states-compendium.js?v=1.4.327";
-import { RacesCompendiumService } from "./data/races-compendium.js?v=1.4.327";
-import { ClassesCompendiumService } from "./data/classes-compendium.js?v=1.4.327";
-import { CraftsmanConstructCompendiumService } from "./data/craftsman-construct-compendium.js";
-import { TransportCompendiumService } from "./data/transport-compendium.js?v=1.4.327";
+import { MagicItemsCompendiumService } from "./data/magic-items-compendium.js?v=1.4.329";
+import { FeatsCompendiumService } from "./data/feats-compendium.js?v=1.4.329";
+import { GlossaryCompendiumService } from "./data/glossary-compendium.js?v=1.4.329";
+import { BackgroundsCompendiumService } from "./data/backgrounds-compendium.js?v=1.4.329";
+import { StatesCompendiumService } from "./data/states-compendium.js?v=1.4.329";
+import { RacesCompendiumService } from "./data/races-compendium.js?v=1.4.329";
+import { ClassesCompendiumService } from "./data/classes-compendium.js?v=1.4.329";
+import { CraftsmanConstructCompendiumService } from "./data/craftsman-construct-compendium.js?v=1.4.329";
+import { TransportCompendiumService } from "./data/transport-compendium.js?v=1.4.329";
 import {
   TRANSPORT_IMPORT_COMMAND,
   TRANSPORT_SELECT_FUEL_COMMAND,
@@ -32,9 +38,9 @@ import {
   registerTransportInstanceCommands
 } from "./data/transport-instance-service.js";
 import { TransportFuelService } from "./data/transport-fuel-service.js";
-import { SpellsCompendiumService } from "./data/spells-compendium.js?v=1.4.327";
-import { ActionsCompendiumService } from "./data/actions-compendium.js?v=1.4.327";
-import { DowntimeCompendiumService } from "./data/downtime-compendium.js?v=1.4.327";
+import { SpellsCompendiumService } from "./data/spells-compendium.js?v=1.4.329";
+import { ActionsCompendiumService } from "./data/actions-compendium.js?v=1.4.329";
+import { DowntimeCompendiumService } from "./data/downtime-compendium.js?v=1.4.329";
 import { FeatChoiceAutomationService, registerFeatChoiceAutomationHooks } from "./automation/feat-choice-service.js";
 import { EconomyRepository } from "./data/repository.js?v=1.4.322";
 import { TraderService, normalizeTraderState } from "./data/trader-service.js?v=1.4.327";
@@ -561,6 +567,15 @@ function registerDurabilitySettings() {
       version: 1,
       records: []
     }
+  });
+}
+
+function registerIconBadgeSettings() {
+  game.settings.register(MODULE_ID, BADGE_BUILD_SETTING, {
+    scope: "world",
+    config: false,
+    type: Object,
+    default: { markers: {}, packs: {} }
   });
 }
 
@@ -4350,6 +4365,27 @@ export class RebreyaMainModule {
   }
 
   async #syncManagedCompendia(model) {
+    if (isActiveGmClient(globalThis.game)) {
+      try {
+        const response = await fetch(`modules/${MODULE_ID}/data/icon-badge-targets.json`, { cache: "no-store" });
+        if (!response.ok) throw new Error(`Icon badge target manifest returned HTTP ${response.status}`);
+        const manifest = await response.json();
+        const result = await prepareCompendiumBadgeImages({
+          game: globalThis.game,
+          manifest,
+          isActiveGm: () => isActiveGmClient(globalThis.game)
+        });
+        setManagedIconProjection(buildManagedIconProjection(manifest, result.images));
+        if (result.failures.length) {
+          console.warn(`${MODULE_ID} | Icon badge build failed for ${result.failures.length} compendiums.`, result.failures);
+          ui.notifications?.warn(`Не удалось собрать маркеры для ${result.failures.length} компендиумов Rebreya.`);
+        }
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to prepare compendium icon badges.`, error);
+        ui.notifications?.warn("Не удалось подготовить маркеры компендиумов Rebreya.");
+      }
+    }
     clearNamedIconCache();
     this.traderService.invalidatePackCache();
 
@@ -7960,6 +7996,7 @@ Hooks.once("init", () => {
   try {
     registerSettings();
     registerDurabilitySettings();
+    registerIconBadgeSettings();
   }
   catch (error) {
     console.error(`${MODULE_ID} | Failed to register settings.`, error);

@@ -1,5 +1,34 @@
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 
+let managedIconProjection = new Map();
+
+export function setManagedIconProjection(projection) {
+  if (projection != null && !(projection instanceof Map)) throw new TypeError("Managed icon projection must be a Map");
+  managedIconProjection = projection ?? new Map();
+}
+
+export function getManagedIconProjection(packId, id) {
+  return managedIconProjection.get(`${packId}\0${id}`) ?? null;
+}
+
+function documentWithBaselineImg(document, baselineImg) {
+  return new Proxy(document, {
+    get(target, property) {
+      if (property === "img") return baselineImg;
+      if (property === "toObject" && typeof target.toObject === "function") {
+        return (...args) => ({ ...target.toObject(...args), img: baselineImg });
+      }
+      const value = Reflect.get(target, property, target);
+      return typeof value === "function" ? value.bind(target) : value;
+    }
+  });
+}
+
+function projectIconData(data, projection) {
+  if (projection && data && typeof data === "object") data.img = projection.path;
+  return data;
+}
+
 function cleanId(value) {
   return typeof value === "string" ? value.trim() : String(value ?? "").trim();
 }
@@ -98,10 +127,14 @@ export async function syncManagedDocuments({
       obsolete.push(document);
       continue;
     }
-    const signaturesMatch = String(signatureOfDocument(document) ?? "") === String(signatureOfEntry(entry) ?? "");
+    const projection = getManagedIconProjection(pack.collection, expectedDocumentId || documentId(document));
+    const comparedDocument = projection
+      ? documentWithBaselineImg(document, projection.baselineImg)
+      : document;
+    const signaturesMatch = String(signatureOfDocument(comparedDocument) ?? "") === String(signatureOfEntry(entry) ?? "");
     const documentMatches = signaturesMatch
-      && (documentMatchesEntry ? await documentMatchesEntry(document, entry) : true);
-    if (documentMatches) {
+      && (documentMatchesEntry ? await documentMatchesEntry(comparedDocument, entry) : true);
+    if (documentMatches && (!projection || cleanId(document.img) === projection.path)) {
       unchanged += 1;
     }
     else {
@@ -120,7 +153,11 @@ export async function syncManagedDocuments({
       throw new TypeError("pack.documentClass.createDocuments is required for creates");
     }
     const data = [];
-    for (const entry of creates) data.push(await createData(entry));
+    for (const entry of creates) {
+      const created = await createData(entry);
+      const id = cleanId(documentIdOfEntry?.(entry) ?? created?._id ?? created?.id);
+      data.push(projectIconData(created, getManagedIconProjection(pack.collection, id)));
+    }
     await documentClass.createDocuments(data, { pack: pack.collection, keepId: true });
   }
 
@@ -128,7 +165,8 @@ export async function syncManagedDocuments({
     if (typeof document?.update !== "function") {
       throw new TypeError(`Managed compendium document ${documentId(document)} cannot be updated`);
     }
-    const data = await updateData(document, entry);
+    const projection = getManagedIconProjection(pack.collection, documentId(document));
+    const data = projectIconData(await updateData(document, entry), projection);
     const preparedData = prepareDocumentUpdateData(document, data);
     if (applyUpdate) {
       await applyUpdate(document, preparedData, entry);

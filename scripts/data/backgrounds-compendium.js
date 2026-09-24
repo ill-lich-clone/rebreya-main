@@ -12,7 +12,7 @@ import {
   normalizeFolderPath,
   resolveNamedIcon
 } from "./compendium-utils.js?v=1.4.327";
-import { syncManagedDocumentsOnActiveGm } from "./managed-compendium-sync.js";
+import { syncManagedDocumentsOnActiveGm } from "./managed-compendium-sync.js?v=1.4.329";
 import { buildSlug } from "./item-classification.js";
 
 const PACK_ID = `world.${BACKGROUNDS_COMPENDIUM_NAME}`;

@@ -19,7 +19,7 @@ import {
   normalizeHeroDollSlotGroup
 } from "./item-classification.js?v=1.4.292";
 import { createStableGearDocumentId } from "./gear-document-ids.js";
-import { syncManagedDocuments } from "./managed-compendium-sync.js";
+import { getManagedIconProjection, syncManagedDocuments } from "./managed-compendium-sync.js?v=1.4.329";
 import {
   inferWeaponAmmunitionSubtype,
   isSelfAmmunitionWeapon
@@ -1288,6 +1288,8 @@ async function syncManagedDocumentIcons(pack, documents, iconLookup) {
     if (!document?.getFlag?.(MODULE_ID, "managed")) {
       continue;
     }
+
+    if (getManagedIconProjection(pack.collection, document.id)) continue;
 
     const currentIcon = String(document.img ?? "").trim() || DEFAULT_GEAR_ICON;
     const nextIcon = resolveGearNamedIcon({

@@ -11,7 +11,7 @@ import {
   normalizeFolderPath,
   resolveNamedIcon
 } from "./compendium-utils.js?v=1.4.327";
-import { syncManagedDocumentsOnActiveGm } from "./managed-compendium-sync.js";
+import { getManagedIconProjection, syncManagedDocumentsOnActiveGm } from "./managed-compendium-sync.js?v=1.4.329";
 
 const PACK_ID = `world.${ACTIONS_COMPENDIUM_NAME}`;
 const DND5E_SYSTEM_ID = "dnd5e";
@@ -380,6 +380,8 @@ async function syncManagedDocumentIcons(pack, documents, iconLookup) {
     if (!document?.getFlag?.(MODULE_ID, "managed")) {
       continue;
     }
+
+    if (getManagedIconProjection(pack.collection, document.id)) continue;
 
     const currentIcon = cleanString(document.img, DEFAULT_ACTION_ICON);
     const nextIcon = resolveNamedIcon(document.name, iconLookup, currentIcon);

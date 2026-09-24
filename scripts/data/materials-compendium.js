@@ -2,7 +2,7 @@ import { MATERIALS_COMPENDIUM_LABEL, MATERIALS_COMPENDIUM_NAME, MODULE_ID } from
 import { bringAppToFront } from "../ui.js";
 import { escapeFoundryHtml as escapeHtml } from "../shared/foundry-values.js";
 import { buildNamedIconLookup, ensurePackSidebarFolder, resolveNamedIcon } from "./compendium-utils.js?v=1.4.327";
-import { syncManagedDocumentsOnActiveGm } from "./managed-compendium-sync.js";
+import { syncManagedDocumentsOnActiveGm } from "./managed-compendium-sync.js?v=1.4.329";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 
 const PACK_ID = `world.${MATERIALS_COMPENDIUM_NAME}`;
