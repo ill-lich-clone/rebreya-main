@@ -6,7 +6,7 @@ import { SpellAutomationRegistry } from "../scripts/combat/spell-automation-regi
 import { SpellInstanceRuntime } from "../scripts/combat/spell-instance-runtime.js";
 import { SummonLifecycleRuntime } from "../scripts/combat/summon-lifecycle-runtime.js";
 import { PrivilegedMutationGateway } from "../scripts/application/privileged-mutation-gateway.js";
-import { TransportCompendiumService } from "../scripts/data/transport-compendium.js?v=1.4.329";
+import { TransportCompendiumService } from "../scripts/data/transport-compendium.js?v=1.4.330";
 import { BuiltinStorageActorService } from "../scripts/data/builtin-storage-actor-service.js?v=1.4.216-storage-token-vision";
 import { StorageOpenSoundService } from "../scripts/data/storage-open-sound-service.js?v=1.4.145-coin-icons-storage-sound";
 import { GrappleAutomationService } from "../scripts/combat/grapple-automation-service.js";
@@ -49,8 +49,8 @@ test("current release reuses the catalog icon cache graph", async () => {
     ...sharedCacheImporters.map((name) => readFile(new URL(`../scripts/data/${name}.js`, import.meta.url), "utf8"))
   ]);
   const manifest = JSON.parse(manifestSource);
-  assert.equal(manifest.version, "1.4.329");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.329.js"]);
+  assert.equal(manifest.version, "1.4.330");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.330.js"]);
   assert.doesNotMatch(manifestSource, /main-1\.4\.319\.js/u);
   assert.match(mainSource, /data\/inventory-service\.js\?v=1\.4\.327/u);
   assert.match(mainSource, /data\/storage-command-service\.js\?v=1\.4\.322/u);
@@ -64,7 +64,7 @@ test("current release reuses the catalog icon cache graph", async () => {
     assert.match(source, /inventory-acquisition-history\.js\?v=1\.4\.318/u);
   }
   for (const name of iconServiceNames) {
-    assert.match(mainSource, new RegExp(`data/${name}\\.js\\?v=1\\.4\\.329`, "u"));
+    assert.match(mainSource, new RegExp(`data/${name}\\.js\\?v=1\\.4\\.330`, "u"));
   }
   assert.match(mainSource, /data\/compendium-utils\.js\?v=1\.4\.327/u);
   assert.match(mainSource, /data\/trader-service\.js\?v=1\.4\.327/u);
@@ -424,7 +424,7 @@ test("ready composes spell automation on one registry alongside legacy hook regi
 test("composition root synchronizes the managed transport Actor compendium", async () => {
   const source = await readFile(new URL("../scripts/main.js", import.meta.url), "utf8");
 
-  assert.match(source, /import\s+\{\s*TransportCompendiumService\s*\}\s+from\s+"\.\/data\/transport-compendium\.js\?v=1\.4\.329";/u);
+  assert.match(source, /import\s+\{\s*TransportCompendiumService\s*\}\s+from\s+"\.\/data\/transport-compendium\.js\?v=1\.4\.330";/u);
   assert.match(source, /this\.transportCompendium\s*=\s*new TransportCompendiumService/u);
   assert.match(source, /await this\.transportCompendium\.sync\(\);/u);
   assert.match(source, /registerTransportGroupDropHooks\(moduleApi,\s*\{\s*Hooks\s*\}\);/u);

@@ -14,7 +14,7 @@ import {
   resolveNamedIcon
 } from "./compendium-utils.js?v=1.4.327";
 import { buildSlug } from "./item-classification.js";
-import { getManagedIconProjection, syncFlaggedManagedDocuments } from "./managed-compendium-sync.js?v=1.4.329";
+import { getManagedIconProjection, syncFlaggedManagedDocuments } from "./managed-compendium-sync.js?v=1.4.330";
 
 const DND5E_SYSTEM_ID = "dnd5e";
 const SOURCE_LABEL = "Расы Тейванкаля V0.1";

@@ -6,7 +6,7 @@ import {
   CRAFTSMAN_CONSTRUCTS_COMPENDIUM_NAME,
   MODULE_ID
 } from "../constants.js";
-import { syncFlaggedManagedDocuments } from "./managed-compendium-sync.js?v=1.4.329";
+import { syncFlaggedManagedDocuments } from "./managed-compendium-sync.js?v=1.4.330";
 
 const PACK_ID = `world.${CRAFTSMAN_CONSTRUCTS_COMPENDIUM_NAME}`;
 const SOURCE_ID = "craftsman-construct-template";

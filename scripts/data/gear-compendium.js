@@ -19,7 +19,7 @@ import {
   normalizeHeroDollSlotGroup
 } from "./item-classification.js?v=1.4.292";
 import { createStableGearDocumentId } from "./gear-document-ids.js";
-import { getManagedIconProjection, syncManagedDocuments } from "./managed-compendium-sync.js?v=1.4.329";
+import { getManagedIconProjection, syncManagedDocuments } from "./managed-compendium-sync.js?v=1.4.330";
 import {
   inferWeaponAmmunitionSubtype,
   isSelfAmmunitionWeapon

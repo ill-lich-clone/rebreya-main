@@ -81,8 +81,8 @@ test("module manifest loads an unpinned canonical entrypoint for page-refresh up
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const [entrypoint] = manifest.esmodules;
 
-  assert.equal(manifest.version, "1.4.329");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.329.js"]);
+  assert.equal(manifest.version, "1.4.330");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.330.js"]);
   assert.doesNotMatch(entrypoint, /[?#]/u);
 
   const entrypointSource = await readFile(new URL(entrypoint, manifestUrl), "utf8");
@@ -120,9 +120,9 @@ test("glossary and feat-link owners preserve their released cache key", async ()
   ]);
 
   for (const [source, owner, ownerVersion = version] of [
-    [mainSource, "feats-compendium", "1\\.4\\.329"],
-    [mainSource, "glossary-compendium", "1\\.4\\.329"],
-    [mainSource, "actions-compendium", "1\\.4\\.329"],
+    [mainSource, "feats-compendium", "1\\.4\\.330"],
+    [mainSource, "glossary-compendium", "1\\.4\\.330"],
+    [mainSource, "actions-compendium", "1\\.4\\.330"],
     [featsSource, "compendium-item-reference-index"],
     [featsSource, "feat-reference-linker"],
     [featsSource, "actions-compendium"],
@@ -211,7 +211,7 @@ test("production registers the hidden GiantTribe advancement before race compend
   );
   assert.match(
     entrypointSource,
-    /data\/races-compendium\.js\?v=1\.4\.329/u
+    /data\/races-compendium\.js\?v=1\.4\.330/u
   );
   assert.match(
     advancementSource,
@@ -315,7 +315,7 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
     "data/storage-trigger-service.js?v=1.4.197-door-trigger-target",
     "integrations/storage-token-hooks.js?v=1.4.197-door-trigger-target",
     "integrations/inventory-sync.js?v=1.4.327",
-    "data/gear-compendium.js?v=1.4.329",
+    "data/gear-compendium.js?v=1.4.330",
     "data/storage-open-sound-service.js?v=1.4.145-coin-icons-storage-sound",
     "data/storage-service.js?v=1.4.270",
     "data/storage-access.js?v=1.4.197-door-trigger-target",
@@ -390,7 +390,7 @@ test("module keeps recent published entrypoint URLs as canonical compatibility f
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
 
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.329.js"]);
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.330.js"]);
 
   for (const fileName of ["main-1.4.98.js", "main-1.4.99.js", "main-1.4.100.js"]) {
     const forwarderSource = await readFile(new URL(`../scripts/${fileName}`, import.meta.url), "utf8");
@@ -589,7 +589,7 @@ test("gear compendium import uses the current clothing projection cache bust", a
 
   assert.match(
     entrypointSource,
-    /gear-compendium\.js\?v=1\.4\.329/u,
+    /gear-compendium\.js\?v=1\.4\.330/u,
   );
 });
 
@@ -727,7 +727,7 @@ test("automatic owned magic item sync cache-busts its live service graph", async
 
   assert.match(
     entrypointSource,
-    /magic-items-compendium\.js\?v=1\.4\.329/u
+    /magic-items-compendium\.js\?v=1\.4\.330/u
   );
   assert.match(
     entrypointSource,

@@ -15,20 +15,20 @@ import {
   BADGE_BUILD_SETTING,
   buildManagedIconProjection,
   prepareCompendiumBadgeImages
-} from "./data/icon-badge-build.js?v=1.4.329";
-import { setManagedIconProjection } from "./data/managed-compendium-sync.js?v=1.4.329";
-import { MaterialsCompendiumService } from "./data/materials-compendium.js?v=1.4.329";
-import { GearCompendiumService } from "./data/gear-compendium.js?v=1.4.329";
+} from "./data/icon-badge-build.js?v=1.4.330";
+import { setManagedIconProjection } from "./data/managed-compendium-sync.js?v=1.4.330";
+import { MaterialsCompendiumService } from "./data/materials-compendium.js?v=1.4.330";
+import { GearCompendiumService } from "./data/gear-compendium.js?v=1.4.330";
 import { repairWorldAmmunitionCompatibility } from "./data/ammunition-compatibility.js?v=1.4.147-native-ammunition";
-import { MagicItemsCompendiumService } from "./data/magic-items-compendium.js?v=1.4.329";
-import { FeatsCompendiumService } from "./data/feats-compendium.js?v=1.4.329";
-import { GlossaryCompendiumService } from "./data/glossary-compendium.js?v=1.4.329";
-import { BackgroundsCompendiumService } from "./data/backgrounds-compendium.js?v=1.4.329";
-import { StatesCompendiumService } from "./data/states-compendium.js?v=1.4.329";
-import { RacesCompendiumService } from "./data/races-compendium.js?v=1.4.329";
-import { ClassesCompendiumService } from "./data/classes-compendium.js?v=1.4.329";
-import { CraftsmanConstructCompendiumService } from "./data/craftsman-construct-compendium.js?v=1.4.329";
-import { TransportCompendiumService } from "./data/transport-compendium.js?v=1.4.329";
+import { MagicItemsCompendiumService } from "./data/magic-items-compendium.js?v=1.4.330";
+import { FeatsCompendiumService } from "./data/feats-compendium.js?v=1.4.330";
+import { GlossaryCompendiumService } from "./data/glossary-compendium.js?v=1.4.330";
+import { BackgroundsCompendiumService } from "./data/backgrounds-compendium.js?v=1.4.330";
+import { StatesCompendiumService } from "./data/states-compendium.js?v=1.4.330";
+import { RacesCompendiumService } from "./data/races-compendium.js?v=1.4.330";
+import { ClassesCompendiumService } from "./data/classes-compendium.js?v=1.4.330";
+import { CraftsmanConstructCompendiumService } from "./data/craftsman-construct-compendium.js?v=1.4.330";
+import { TransportCompendiumService } from "./data/transport-compendium.js?v=1.4.330";
 import {
   TRANSPORT_IMPORT_COMMAND,
   TRANSPORT_SELECT_FUEL_COMMAND,
@@ -38,9 +38,9 @@ import {
   registerTransportInstanceCommands
 } from "./data/transport-instance-service.js";
 import { TransportFuelService } from "./data/transport-fuel-service.js";
-import { SpellsCompendiumService } from "./data/spells-compendium.js?v=1.4.329";
-import { ActionsCompendiumService } from "./data/actions-compendium.js?v=1.4.329";
-import { DowntimeCompendiumService } from "./data/downtime-compendium.js?v=1.4.329";
+import { SpellsCompendiumService } from "./data/spells-compendium.js?v=1.4.330";
+import { ActionsCompendiumService } from "./data/actions-compendium.js?v=1.4.330";
+import { DowntimeCompendiumService } from "./data/downtime-compendium.js?v=1.4.330";
 import { FeatChoiceAutomationService, registerFeatChoiceAutomationHooks } from "./automation/feat-choice-service.js";
 import { EconomyRepository } from "./data/repository.js?v=1.4.322";
 import { TraderService, normalizeTraderState } from "./data/trader-service.js?v=1.4.327";

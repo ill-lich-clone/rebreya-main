@@ -33,7 +33,7 @@
                                 "resolvedBy":  "strict"
                             },
                             {
-                                "targetName":  "Тир\u0027Алмар",
+                                "targetName":  "Тир’Алмар",
                                 "targetCityId":  "tir-almar",
                                 "connectionType":  "Земля",
                                 "distance":  167,
@@ -41,7 +41,7 @@
                                 "resolvedBy":  "strict"
                             },
                             {
-                                "targetName":  "Вайлис\u0027Тар",
+                                "targetName":  "Вайлис’Тар",
                                 "targetCityId":  "vaylis-tar",
                                 "connectionType":  "Земля",
                                 "distance":  135,
@@ -178,7 +178,7 @@
                                 "resolvedBy":  "strict"
                             },
                             {
-                                "targetName":  "Лиара\u0027Кен",
+                                "targetName":  "Лиара’Кен",
                                 "targetCityId":  "liara-ken",
                                 "connectionType":  "Земля",
                                 "distance":  180,
@@ -315,12 +315,12 @@
                                 "resolvedBy":  "strict"
                             },
                             {
-                                "targetName":  "Джиио",
+                                "targetName":  "Джио",
                                 "targetCityId":  "dzhio",
                                 "connectionType":  "Земля",
                                 "distance":  397,
                                 "broken":  false,
-                                "resolvedBy":  "fuzzy"
+                                "resolvedBy":  "strict"
                             },
                             {
                                 "targetName":  "Фендарис",
@@ -452,15 +452,15 @@
         "consumptionModifier":  null,
         "connections":  [
                             {
-                                "targetName":  "Джиио",
+                                "targetName":  "Джио",
                                 "targetCityId":  "dzhio",
                                 "connectionType":  "Земля",
                                 "distance":  253,
                                 "broken":  false,
-                                "resolvedBy":  "fuzzy"
+                                "resolvedBy":  "strict"
                             },
                             {
-                                "targetName":  "Кар\u0027Джулан",
+                                "targetName":  "Кар’Джулан",
                                 "targetCityId":  "kar-dzhulan",
                                 "connectionType":  "Земля",
                                 "distance":  142,
@@ -758,7 +758,7 @@
                                 "resolvedBy":  "strict"
                             },
                             {
-                                "targetName":  "Кар\u0027Джулан",
+                                "targetName":  "Кар’Джулан",
                                 "targetCityId":  "kar-dzhulan",
                                 "connectionType":  "Земля",
                                 "distance":  207,
@@ -1024,12 +1024,12 @@
         "consumptionModifier":  null,
         "connections":  [
                             {
-                                "targetName":  "Пульвери",
+                                "targetName":  "Пульвели",
                                 "targetCityId":  "pulveli",
                                 "connectionType":  "Земля",
                                 "distance":  137,
                                 "broken":  false,
-                                "resolvedBy":  "fuzzy"
+                                "resolvedBy":  "strict"
                             },
                             {
                                 "targetName":  "Центральный собор",
@@ -1048,7 +1048,7 @@
                                 "resolvedBy":  "strict"
                             },
                             {
-                                "targetName":  "Вэск\u0027Ранор",
+                                "targetName":  "Вэск’Ранор",
                                 "targetCityId":  "vesk-ranor",
                                 "connectionType":  "Море",
                                 "distance":  176,
@@ -1354,7 +1354,7 @@
         "consumptionModifier":  null,
         "connections":  [
                             {
-                                "targetName":  "Вайлис\u0027Тар",
+                                "targetName":  "Вайлис’Тар",
                                 "targetCityId":  "vaylis-tar",
                                 "connectionType":  "Земля",
                                 "distance":  305,
@@ -1370,12 +1370,12 @@
                                 "resolvedBy":  "strict"
                             },
                             {
-                                "targetName":  "Кар\u0027Джулай",
+                                "targetName":  "Кар’Джулан",
                                 "targetCityId":  "kar-dzhulan",
                                 "connectionType":  "Земля",
                                 "distance":  270,
                                 "broken":  false,
-                                "resolvedBy":  "fuzzy"
+                                "resolvedBy":  "strict"
                             }
                         ],
         "production":  {
@@ -1499,7 +1499,7 @@
         "consumptionModifier":  null,
         "connections":  [
                             {
-                                "targetName":  "Вайлис\u0027Тар",
+                                "targetName":  "Вайлис’Тар",
                                 "targetCityId":  "vaylis-tar",
                                 "connectionType":  "Земля",
                                 "distance":  120,
@@ -1636,7 +1636,7 @@
                                 "resolvedBy":  "strict"
                             },
                             {
-                                "targetName":  "Лиара\u0027Кен",
+                                "targetName":  "Лиара’Кен",
                                 "targetCityId":  "liara-ken",
                                 "connectionType":  "Земля",
                                 "distance":  135,
@@ -1660,7 +1660,7 @@
                                 "resolvedBy":  "strict"
                             },
                             {
-                                "targetName":  "Вэск\u0027Ранор",
+                                "targetName":  "Вэск’Ранор",
                                 "targetCityId":  "vesk-ranor",
                                 "connectionType":  "Земля",
                                 "distance":  993,
@@ -1958,12 +1958,12 @@
         "consumptionModifier":  null,
         "connections":  [
                             {
-                                "targetName":  "Пульвери",
+                                "targetName":  "Пульвели",
                                 "targetCityId":  "pulveli",
                                 "connectionType":  "Земля",
                                 "distance":  56,
                                 "broken":  false,
-                                "resolvedBy":  "fuzzy"
+                                "resolvedBy":  "strict"
                             },
                             {
                                 "targetName":  "Саэлин\u0027Вар",
@@ -2151,7 +2151,7 @@
                                 "resolvedBy":  "strict"
                             },
                             {
-                                "targetName":  "Крепость Теней",
+                                "targetName":  "Крепость теней",
                                 "targetCityId":  "krepost-teney",
                                 "connectionType":  "Земля",
                                 "distance":  304,
@@ -4689,20 +4689,20 @@
                                 "resolvedBy":  "strict"
                             },
                             {
-                                "targetName":  "Торгенфьерлл",
+                                "targetName":  "Торгенфьелл",
                                 "targetCityId":  "torgenfell",
                                 "connectionType":  "Море",
                                 "distance":  525,
                                 "broken":  false,
-                                "resolvedBy":  "fuzzy"
+                                "resolvedBy":  "strict"
                             },
                             {
-                                "targetName":  "Торгенфьерлл",
+                                "targetName":  "Торгенфьелл",
                                 "targetCityId":  "torgenfell",
                                 "connectionType":  "Земля",
                                 "distance":  533,
                                 "broken":  false,
-                                "resolvedBy":  "fuzzy"
+                                "resolvedBy":  "strict"
                             }
                         ],
         "production":  {
@@ -13339,14 +13339,6 @@
                                 "resolvedBy":  "strict"
                             },
                             {
-                                "targetName":  "Переща бродячих теней",
-                                "targetCityId":  null,
-                                "connectionType":  "Земля",
-                                "distance":  198,
-                                "broken":  true,
-                                "brokenReason":  "missing-target"
-                            },
-                            {
                                 "targetName":  "Рыбный рынок Асура",
                                 "targetCityId":  "rybnyy-rynok-asura",
                                 "connectionType":  "Земля",
@@ -13363,12 +13355,12 @@
                                 "resolvedBy":  "strict"
                             },
                             {
-                                "targetName":  "Дюны свистещяго ветра",
+                                "targetName":  "Дюны свистящего ветра",
                                 "targetCityId":  "dyuny-svistyashchego-vetra",
                                 "connectionType":  "Земля",
                                 "distance":  1520,
                                 "broken":  false,
-                                "resolvedBy":  "fuzzy"
+                                "resolvedBy":  "strict"
                             },
                             {
                                 "targetName":  "Лагуна синих жемчужин",
@@ -13669,12 +13661,12 @@
         "consumptionModifier":  null,
         "connections":  [
                             {
-                                "targetName":  "Пешеры бродячих теней",
+                                "targetName":  "Пещеры бродячих теней",
                                 "targetCityId":  "peshchery-brodyachikh-teney",
                                 "connectionType":  "Земля",
                                 "distance":  316,
                                 "broken":  false,
-                                "resolvedBy":  "fuzzy"
+                                "resolvedBy":  "strict"
                             },
                             {
                                 "targetName":  "Сордигон",
@@ -13999,12 +13991,12 @@
         "consumptionModifier":  null,
         "connections":  [
                             {
-                                "targetName":  "Зарджиилан",
+                                "targetName":  "Зарджилан",
                                 "targetCityId":  "zardzhilan",
                                 "connectionType":  "Земля",
                                 "distance":  203,
                                 "broken":  false,
-                                "resolvedBy":  "fuzzy"
+                                "resolvedBy":  "strict"
                             },
                             {
                                 "targetName":  "Сордигон",
@@ -14901,12 +14893,12 @@
         "consumptionModifier":  null,
         "connections":  [
                             {
-                                "targetName":  "Лазураная вершина",
+                                "targetName":  "Лазурная вершина",
                                 "targetCityId":  "lazurnaya-vershina",
                                 "connectionType":  "ЖД",
                                 "distance":  417,
                                 "broken":  false,
-                                "resolvedBy":  "fuzzy"
+                                "resolvedBy":  "strict"
                             },
                             {
                                 "targetName":  "Хорнсворд",
@@ -15183,12 +15175,12 @@
         "consumptionModifier":  null,
         "connections":  [
                             {
-                                "targetName":  "Гэфлэй",
+                                "targetName":  "Гэфлей",
                                 "targetCityId":  "gefley",
                                 "connectionType":  "Земля",
                                 "distance":  580,
                                 "broken":  false,
-                                "resolvedBy":  "fuzzy"
+                                "resolvedBy":  "strict"
                             },
                             {
                                 "targetName":  "Хорнсворд",
@@ -16230,7 +16222,7 @@
         "consumptionModifier":  null,
         "connections":  [
                             {
-                                "targetName":  "ФЭртон",
+                                "targetName":  "Фэртон",
                                 "targetCityId":  "ferton",
                                 "connectionType":  "ЖД",
                                 "distance":  269,
@@ -16527,14 +16519,6 @@
                       },
         "consumptionModifier":  null,
         "connections":  [
-                            {
-                                "targetName":  "Столица красных река",
-                                "targetCityId":  null,
-                                "connectionType":  "Река",
-                                "distance":  1526,
-                                "broken":  true,
-                                "brokenReason":  "missing-target"
-                            },
                             {
                                 "targetName":  "Грикрон",
                                 "targetCityId":  "grikron",
@@ -18775,7 +18759,7 @@
                                 "resolvedBy":  "strict"
                             },
                             {
-                                "targetName":  "Тир\u0027Алмар",
+                                "targetName":  "Тир’Алмар",
                                 "targetCityId":  "tir-almar",
                                 "connectionType":  "Песок",
                                 "distance":  182,
@@ -19355,12 +19339,12 @@
                                 "resolvedBy":  "strict"
                             },
                             {
-                                "targetName":  "Южная жемчужина",
+                                "targetName":  "Южная женмужина",
                                 "targetCityId":  "yuzhnaya-zhenmuzhina",
                                 "connectionType":  "Песок",
                                 "distance":  673,
                                 "broken":  false,
-                                "resolvedBy":  "fuzzy"
+                                "resolvedBy":  "strict"
                             }
                         ],
         "production":  {
@@ -21595,12 +21579,12 @@
                                 "resolvedBy":  "strict"
                             },
                             {
-                                "targetName":  "Валлет-Сюрмир",
+                                "targetName":  "Валетт-Сюрмир",
                                 "targetCityId":  "valett-syurmir",
                                 "connectionType":  "Воздух",
                                 "distance":  93,
                                 "broken":  false,
-                                "resolvedBy":  "fuzzy"
+                                "resolvedBy":  "strict"
                             }
                         ],
         "production":  {
@@ -21724,12 +21708,12 @@
         "consumptionModifier":  null,
         "connections":  [
                             {
-                                "targetName":  "Сент-Ревуар",
+                                "targetName":  "Сент-Равуар",
                                 "targetCityId":  "sent-ravuar",
                                 "connectionType":  "Воздух",
                                 "distance":  93,
                                 "broken":  false,
-                                "resolvedBy":  "fuzzy"
+                                "resolvedBy":  "strict"
                             },
                             {
                                 "targetName":  "Карморант",
@@ -21861,12 +21845,12 @@
         "consumptionModifier":  null,
         "connections":  [
                             {
-                                "targetName":  "Валлет-Сюрмир",
+                                "targetName":  "Валетт-Сюрмир",
                                 "targetCityId":  "valett-syurmir",
                                 "connectionType":  "Земля",
                                 "distance":  100,
                                 "broken":  false,
-                                "resolvedBy":  "fuzzy"
+                                "resolvedBy":  "strict"
                             },
                             {
                                 "targetName":  "Дювалье",
@@ -22312,12 +22296,12 @@
                                 "resolvedBy":  "strict"
                             },
                             {
-                                "targetName":  "Фонселье",
+                                "targetName":  "Фронселье",
                                 "targetCityId":  "fronsele",
                                 "connectionType":  "Воздух",
                                 "distance":  82,
                                 "broken":  false,
-                                "resolvedBy":  "fuzzy"
+                                "resolvedBy":  "strict"
                             }
                         ],
         "production":  {
@@ -23456,12 +23440,12 @@
                                 "resolvedBy":  "strict"
                             },
                             {
-                                "targetName":  "Оазис золотой Лилии",
+                                "targetName":  "Осазис золотой Лилии",
                                 "targetCityId":  "osazis-zolotoy-lilii",
                                 "connectionType":  "Песок",
                                 "distance":  779,
                                 "broken":  false,
-                                "resolvedBy":  "fuzzy"
+                                "resolvedBy":  "strict"
                             },
                             {
                                 "targetName":  "Форт Рока",
@@ -23601,12 +23585,12 @@
         "consumptionModifier":  null,
         "connections":  [
                             {
-                                "targetName":  "Вальхард",
+                                "targetName":  "Валхард",
                                 "targetCityId":  "valkhard",
                                 "connectionType":  "Песок",
                                 "distance":  209,
                                 "broken":  false,
-                                "resolvedBy":  "fuzzy"
+                                "resolvedBy":  "strict"
                             },
                             {
                                 "targetName":  "Хейко",
@@ -25187,12 +25171,12 @@
         "consumptionModifier":  null,
         "connections":  [
                             {
-                                "targetName":  "Марфолд",
+                                "targetName":  "Марфорд",
                                 "targetCityId":  "marford",
                                 "connectionType":  "Земля",
                                 "distance":  243,
                                 "broken":  false,
-                                "resolvedBy":  "fuzzy"
+                                "resolvedBy":  "strict"
                             },
                             {
                                 "targetName":  "Крепость теневых стражей",
@@ -25670,20 +25654,20 @@
                                 "resolvedBy":  "strict"
                             },
                             {
-                                "targetName":  "Виртшталь",
+                                "targetName":  "Виртшаль",
                                 "targetCityId":  "virtshal",
                                 "connectionType":  "Земля",
                                 "distance":  351,
                                 "broken":  false,
-                                "resolvedBy":  "fuzzy"
+                                "resolvedBy":  "strict"
                             },
                             {
-                                "targetName":  "Виртшталь",
+                                "targetName":  "Виртшаль",
                                 "targetCityId":  "virtshal",
                                 "connectionType":  "Море",
                                 "distance":  351,
                                 "broken":  false,
-                                "resolvedBy":  "fuzzy"
+                                "resolvedBy":  "strict"
                             },
                             {
                                 "targetName":  "Норвейн",
@@ -25697,7 +25681,7 @@
                                 "targetName":  "Орланис",
                                 "targetCityId":  "orlanis",
                                 "connectionType":  "Море",
-                                "distance":  714,
+                                "distance":  774,
                                 "broken":  false,
                                 "resolvedBy":  "strict"
                             }
@@ -26999,12 +26983,12 @@
                                 "resolvedBy":  "strict"
                             },
                             {
-                                "targetName":  "Келдвэл",
+                                "targetName":  "Келдвэлл",
                                 "targetCityId":  "keldvell",
                                 "connectionType":  "Река",
                                 "distance":  1512,
                                 "broken":  false,
-                                "resolvedBy":  "fuzzy"
+                                "resolvedBy":  "strict"
                             }
                         ],
         "production":  {
@@ -27297,7 +27281,7 @@
                                 "resolvedBy":  "strict"
                             },
                             {
-                                "targetName":  "Паровой город дварфов",
+                                "targetName":  "Паровой город Дварфов",
                                 "targetCityId":  "parovoy-gorod-dvarfov",
                                 "connectionType":  "ЖД",
                                 "distance":  422,
@@ -27442,7 +27426,7 @@
                                 "resolvedBy":  "strict"
                             },
                             {
-                                "targetName":  "Паровой город дварфов",
+                                "targetName":  "Паровой город Дварфов",
                                 "targetCityId":  "parovoy-gorod-dvarfov",
                                 "connectionType":  "ЖД",
                                 "distance":  230,
@@ -28175,12 +28159,12 @@
                                 "resolvedBy":  "strict"
                             },
                             {
-                                "targetName":  "Бранхольд",
+                                "targetName":  "Браннхольд",
                                 "targetCityId":  "brannkhold",
                                 "connectionType":  "Земля",
                                 "distance":  361,
                                 "broken":  false,
-                                "resolvedBy":  "fuzzy"
+                                "resolvedBy":  "strict"
                             },
                             {
                                 "targetName":  "Айзенбург",
@@ -28320,7 +28304,7 @@
                                 "resolvedBy":  "strict"
                             },
                             {
-                                "targetName":  "Паровой город дварфов",
+                                "targetName":  "Паровой город Дварфов",
                                 "targetCityId":  "parovoy-gorod-dvarfov",
                                 "connectionType":  "ЖД",
                                 "distance":  382,
@@ -28940,12 +28924,12 @@
                                 "resolvedBy":  "strict"
                             },
                             {
-                                "targetName":  "Бранхольд",
+                                "targetName":  "Браннхольд",
                                 "targetCityId":  "brannkhold",
                                 "connectionType":  "ЖД",
                                 "distance":  318,
                                 "broken":  false,
-                                "resolvedBy":  "fuzzy"
+                                "resolvedBy":  "strict"
                             },
                             {
                                 "targetName":  "Поля разрывной травы",
@@ -29085,12 +29069,12 @@
         "consumptionModifier":  null,
         "connections":  [
                             {
-                                "targetName":  "Марфолд",
+                                "targetName":  "Марфорд",
                                 "targetCityId":  "marford",
                                 "connectionType":  "Земля",
                                 "distance":  286,
                                 "broken":  false,
-                                "resolvedBy":  "fuzzy"
+                                "resolvedBy":  "strict"
                             },
                             {
                                 "targetName":  "Гарронд",
@@ -30003,12 +29987,12 @@
         "consumptionModifier":  null,
         "connections":  [
                             {
-                                "targetName":  "Хольсберг",
+                                "targetName":  "Хольмсберг",
                                 "targetCityId":  "kholmsberg",
                                 "connectionType":  "ЖД",
                                 "distance":  210,
                                 "broken":  false,
-                                "resolvedBy":  "fuzzy"
+                                "resolvedBy":  "strict"
                             },
                             {
                                 "targetName":  "Вальденбрюг",
@@ -30325,12 +30309,12 @@
                                 "resolvedBy":  "strict"
                             },
                             {
-                                "targetName":  "Озёрс",
+                                "targetName":  "Озёрск",
                                 "targetCityId":  "ozyorsk",
                                 "connectionType":  "Море",
                                 "distance":  773,
                                 "broken":  false,
-                                "resolvedBy":  "fuzzy"
+                                "resolvedBy":  "strict"
                             },
                             {
                                 "targetName":  "Вальденбрюг",
@@ -30486,12 +30470,12 @@
                                 "resolvedBy":  "strict"
                             },
                             {
-                                "targetName":  "Грантсхольм",
+                                "targetName":  "Грантсхолм",
                                 "targetCityId":  "grantskholm",
                                 "connectionType":  "Море",
                                 "distance":  207,
                                 "broken":  false,
-                                "resolvedBy":  "fuzzy"
+                                "resolvedBy":  "strict"
                             }
                         ],
         "production":  {
@@ -33546,12 +33530,12 @@
         "consumptionModifier":  null,
         "connections":  [
                             {
-                                "targetName":  "Шталт",
+                                "targetName":  "Штальт",
                                 "targetCityId":  "shtalt",
                                 "connectionType":  "ЖД",
                                 "distance":  116,
                                 "broken":  false,
-                                "resolvedBy":  "fuzzy"
+                                "resolvedBy":  "strict"
                             },
                             {
                                 "targetName":  "Храмовые чертоги",
@@ -34617,7 +34601,7 @@
                                 "resolvedBy":  "strict"
                             },
                             {
-                                "targetName":  "Элмир\u0027Лаан",
+                                "targetName":  "Элмир’Лаан",
                                 "targetCityId":  "elmir-laan",
                                 "connectionType":  "Земля",
                                 "distance":  253,
@@ -35028,7 +35012,7 @@
         "consumptionModifier":  null,
         "connections":  [
                             {
-                                "targetName":  "Тир\u0027Алмар",
+                                "targetName":  "Тир’Алмар",
                                 "targetCityId":  "tir-almar",
                                 "connectionType":  "Земля",
                                 "distance":  244,
@@ -36421,12 +36405,12 @@
                                 "resolvedBy":  "strict"
                             },
                             {
-                                "targetName":  "Южная жемчужина",
+                                "targetName":  "Южная женмужина",
                                 "targetCityId":  "yuzhnaya-zhenmuzhina",
                                 "connectionType":  "Песок",
                                 "distance":  261,
                                 "broken":  false,
-                                "resolvedBy":  "fuzzy"
+                                "resolvedBy":  "strict"
                             },
                             {
                                 "targetName":  "Врагх",
@@ -36574,12 +36558,12 @@
                                 "resolvedBy":  "strict"
                             },
                             {
-                                "targetName":  "Оазис золотой лилии",
+                                "targetName":  "Осазис золотой Лилии",
                                 "targetCityId":  "osazis-zolotoy-lilii",
                                 "connectionType":  "Песок",
                                 "distance":  526,
                                 "broken":  false,
-                                "resolvedBy":  "fuzzy"
+                                "resolvedBy":  "strict"
                             },
                             {
                                 "targetName":  "Валхард",
@@ -37033,12 +37017,12 @@
                                 "resolvedBy":  "strict"
                             },
                             {
-                                "targetName":  "Южная жемчужина",
+                                "targetName":  "Южная женмужина",
                                 "targetCityId":  "yuzhnaya-zhenmuzhina",
                                 "connectionType":  "Песок",
                                 "distance":  371,
                                 "broken":  false,
-                                "resolvedBy":  "fuzzy"
+                                "resolvedBy":  "strict"
                             }
                         ],
         "production":  {
@@ -37162,12 +37146,12 @@
         "consumptionModifier":  null,
         "connections":  [
                             {
-                                "targetName":  "Оазис золотой лилии",
+                                "targetName":  "Осазис золотой Лилии",
                                 "targetCityId":  "osazis-zolotoy-lilii",
                                 "connectionType":  "Песок",
                                 "distance":  338,
                                 "broken":  false,
-                                "resolvedBy":  "fuzzy"
+                                "resolvedBy":  "strict"
                             },
                             {
                                 "targetName":  "Сан",
@@ -37347,12 +37331,12 @@
                                 "resolvedBy":  "strict"
                             },
                             {
-                                "targetName":  "Оазис золотой лилии",
+                                "targetName":  "Осазис золотой Лилии",
                                 "targetCityId":  "osazis-zolotoy-lilii",
                                 "connectionType":  "Песок",
                                 "distance":  291,
                                 "broken":  false,
-                                "resolvedBy":  "fuzzy"
+                                "resolvedBy":  "strict"
                             }
                         ],
         "production":  {
@@ -38828,12 +38812,12 @@
                                 "resolvedBy":  "strict"
                             },
                             {
-                                "targetName":  "Монвилвер",
+                                "targetName":  "Монвильер",
                                 "targetCityId":  "monviler",
                                 "connectionType":  "Воздух",
                                 "distance":  83,
                                 "broken":  false,
-                                "resolvedBy":  "fuzzy"
+                                "resolvedBy":  "strict"
                             }
                         ],
         "production":  {
@@ -39964,12 +39948,12 @@
         "consumptionModifier":  null,
         "connections":  [
                             {
-                                "targetName":  "Карисвик",
+                                "targetName":  "Карнсвик",
                                 "targetCityId":  "karnsvik",
                                 "connectionType":  "Земля",
                                 "distance":  122,
                                 "broken":  false,
-                                "resolvedBy":  "fuzzy"
+                                "resolvedBy":  "strict"
                             },
                             {
                                 "targetName":  "Йольмеран",
@@ -39988,12 +39972,12 @@
                                 "resolvedBy":  "strict"
                             },
                             {
-                                "targetName":  "Гэфлэй",
+                                "targetName":  "Гэфлей",
                                 "targetCityId":  "gefley",
                                 "connectionType":  "Земля",
                                 "distance":  494,
                                 "broken":  false,
-                                "resolvedBy":  "fuzzy"
+                                "resolvedBy":  "strict"
                             }
                         ],
         "production":  {
@@ -40120,7 +40104,7 @@
                                 "targetName":  "Фласо",
                                 "targetCityId":  "flaso",
                                 "connectionType":  "ЖД",
-                                "distance":  118,
+                                "distance":  116,
                                 "broken":  false,
                                 "resolvedBy":  "strict"
                             },
@@ -40592,12 +40576,12 @@
                                 "resolvedBy":  "strict"
                             },
                             {
-                                "targetName":  "Гэфлэй",
+                                "targetName":  "Гэфлей",
                                 "targetCityId":  "gefley",
                                 "connectionType":  "Земля",
                                 "distance":  381,
                                 "broken":  false,
-                                "resolvedBy":  "fuzzy"
+                                "resolvedBy":  "strict"
                             },
                             {
                                 "targetName":  "Бальдревик",
@@ -43242,12 +43226,12 @@
                                 "resolvedBy":  "strict"
                             },
                             {
-                                "targetName":  "Селин",
+                                "targetName":  "Селинг",
                                 "targetCityId":  "seling",
                                 "connectionType":  "Земля",
                                 "distance":  2871,
                                 "broken":  false,
-                                "resolvedBy":  "fuzzy"
+                                "resolvedBy":  "strict"
                             },
                             {
                                 "targetName":  "Селинг",
@@ -43894,12 +43878,12 @@
                                 "resolvedBy":  "strict"
                             },
                             {
-                                "targetName":  "Йорсвий",
+                                "targetName":  "Йорсвик",
                                 "targetCityId":  "yorsvik",
                                 "connectionType":  "Море",
                                 "distance":  259,
                                 "broken":  false,
-                                "resolvedBy":  "fuzzy"
+                                "resolvedBy":  "strict"
                             },
                             {
                                 "targetName":  "Тапл",
@@ -44345,12 +44329,12 @@
                                 "resolvedBy":  "strict"
                             },
                             {
-                                "targetName":  "Гэфлэй",
+                                "targetName":  "Гэфлей",
                                 "targetCityId":  "gefley",
                                 "connectionType":  "Земля",
                                 "distance":  419,
                                 "broken":  false,
-                                "resolvedBy":  "fuzzy"
+                                "resolvedBy":  "strict"
                             },
                             {
                                 "targetName":  "Лаон",
@@ -44482,20 +44466,20 @@
         "consumptionModifier":  null,
         "connections":  [
                             {
-                                "targetName":  "Гэфлэй",
+                                "targetName":  "Гэфлей",
                                 "targetCityId":  "gefley",
                                 "connectionType":  "Земля",
                                 "distance":  253,
                                 "broken":  false,
-                                "resolvedBy":  "fuzzy"
+                                "resolvedBy":  "strict"
                             },
                             {
-                                "targetName":  "Фельстрем",
+                                "targetName":  "Фелльстрем",
                                 "targetCityId":  "fellstrem",
                                 "connectionType":  "Земля",
                                 "distance":  182,
                                 "broken":  false,
-                                "resolvedBy":  "fuzzy"
+                                "resolvedBy":  "strict"
                             },
                             {
                                 "targetName":  "Арти",

@@ -8,7 +8,7 @@ import {
   ensurePackSidebarFolder
 } from "./compendium-utils.js?v=1.4.327";
 import { createStableGearDocumentId } from "./gear-document-ids.js";
-import { syncManagedDocumentsOnActiveGm } from "./managed-compendium-sync.js?v=1.4.329";
+import { syncManagedDocumentsOnActiveGm } from "./managed-compendium-sync.js?v=1.4.330";
 import {
   STATUS_REFERENCE_DATA,
   renderStatusReferenceDescription

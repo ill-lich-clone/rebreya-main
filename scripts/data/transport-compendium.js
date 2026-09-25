@@ -11,7 +11,7 @@ import {
   resolveTransportDefaultArtwork
 } from "./transport-actor-builder.js?v=1.4.327";
 import { buildNamedIconLookup } from "./compendium-utils.js?v=1.4.327";
-import { syncFlaggedManagedDocuments } from "./managed-compendium-sync.js?v=1.4.329";
+import { syncFlaggedManagedDocuments } from "./managed-compendium-sync.js?v=1.4.330";
 
 const EXPECTED_CATALOG_SIZE = 62;
 const TRANSPORT_ICON_SEARCH_PATHS = [

@@ -11,7 +11,7 @@ import {
   normalizeFolderPath,
   resolveNamedIcon
 } from "./compendium-utils.js?v=1.4.327";
-import { getManagedIconProjection, syncManagedDocumentsOnActiveGm } from "./managed-compendium-sync.js?v=1.4.329";
+import { getManagedIconProjection, syncManagedDocumentsOnActiveGm } from "./managed-compendium-sync.js?v=1.4.330";
 
 const PACK_ID = `world.${ACTIONS_COMPENDIUM_NAME}`;
 const DND5E_SYSTEM_ID = "dnd5e";

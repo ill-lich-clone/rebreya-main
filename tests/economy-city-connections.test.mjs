@@ -6,13 +6,15 @@ async function loadCities() {
   return JSON.parse(await readFile(new URL("../data/cities.json", import.meta.url), "utf8"));
 }
 
-test("economy city connections have distances and same-type reverse links", async () => {
+test("economy city connections resolve by ID and have identical reverse routes", async () => {
   const cities = await loadCities();
   const cityById = new Map(cities.map((city) => [city.id, city]));
   const missingDistance = [];
   const missingTarget = [];
   const missingReverse = [];
   const selfConnections = [];
+  const brokenConnections = [];
+  const noncanonicalTargets = [];
 
   for (const city of cities) {
     for (const connection of city.connections ?? []) {
@@ -21,6 +23,7 @@ test("economy city connections have distances and same-type reverse links", asyn
       }
 
       if (connection.broken || !connection.targetCityId) {
+        brokenConnections.push(`${city.name} -> ${connection.targetName}`);
         continue;
       }
 
@@ -28,6 +31,9 @@ test("economy city connections have distances and same-type reverse links", asyn
       if (!target) {
         missingTarget.push(`${city.name} -> ${connection.targetCityId}`);
         continue;
+      }
+      if (connection.targetName !== target.name) {
+        noncanonicalTargets.push(`${city.name} -> ${connection.targetName} (expected ${target.name})`);
       }
 
       const distance = Number(connection.distance);
@@ -39,6 +45,7 @@ test("economy city connections have distances and same-type reverse links", asyn
         !reverse.broken
         && reverse.targetCityId === city.id
         && reverse.connectionType === connection.connectionType
+        && reverse.distance === connection.distance
       ));
       if (!hasReverse) {
         missingReverse.push(`${city.name} -> ${target.name} (${connection.connectionType})`);
@@ -50,6 +57,8 @@ test("economy city connections have distances and same-type reverse links", asyn
   assert.deepEqual(missingTarget, []);
   assert.deepEqual(missingDistance, []);
   assert.deepEqual(missingReverse, []);
+  assert.deepEqual(brokenConnections, []);
+  assert.deepEqual(noncanonicalTargets, []);
 });
 
 test("Orlanis to Freh is not imported as a land bridge", async () => {
