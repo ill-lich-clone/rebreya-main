@@ -243,7 +243,7 @@ Versioned entrypoint обязан оставаться минимальным ca
 |---|---|---|
 | dnd5e sheets | `dnd5e-sheet-extensions.js` | Hero Doll, downtime, combat statuses, item mods, held items, universal belt, activity availability, heroic d20 controls, state card |
 | Held items/AC | `held-items.js`, `held-shield-ac.js` | занятые руки, versatile presentation, AC только от удерживаемого щита |
-| Universal Belt | `universal-belt.js` | 3 слота, 1 открыт по умолчанию, цена открытия 500 gp; ручные красный/голубой счётчики ранга лечебных и обычных зелий |
+| Universal Belt | `universal-belt.js` | 3 слота, 1 открыт по умолчанию, цена открытия 500 gp; ручные красный/голубой счётчики ранга зелий и янтарный счётчик реагентов с максимумом 9 |
 | Item upgrades | `item-upgrade-sheet.js`, `item-upgrade-service.js` | установка/снятие mods и capacity через owned Items |
 | Inventory sync | `inventory-sync.js` | после Item/Actor mutations обновляет только связанные inventory views |
 | SmallTime | `smalltime-compat.js` | отображение календаря Rebreya и подтверждение расхода запасов при сдвиге world time |

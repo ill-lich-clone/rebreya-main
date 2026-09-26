@@ -34,7 +34,7 @@ import {
 import {
   bindUniversalBeltSheet,
   registerUniversalBeltItemContextHook
-} from "./universal-belt.js?v=1.4.317-potion-trackers";
+} from "./universal-belt.js?v=1.4.335-reagent-tracker";
 import {
   bindItemUpgradeInventoryRows,
   bindItemUpgradeSheet,

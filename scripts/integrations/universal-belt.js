@@ -9,8 +9,21 @@ export const POTION_TRACKERS_FLAG = "potionTrackers";
 export const POTION_TRACKER_DEFAULT_MAX = 9;
 
 const POTION_TRACKER_DEFINITIONS = Object.freeze({
-  healing: Object.freeze({ label: "Лечебные зелья" }),
-  utility: Object.freeze({ label: "Обычные зелья" })
+  healing: Object.freeze({
+    label: "Лечебные зелья",
+    valueLabel: "Текущий ранг",
+    icon: `modules/${MODULE_ID}/assets/ui/trackers/healing-potion.webp`
+  }),
+  utility: Object.freeze({
+    label: "Обычные зелья",
+    valueLabel: "Текущий ранг",
+    icon: `modules/${MODULE_ID}/assets/ui/trackers/utility-potion.webp`
+  }),
+  reagents: Object.freeze({
+    label: "Уровень реагентов",
+    valueLabel: "Текущий уровень",
+    icon: `modules/${MODULE_ID}/assets/ui/trackers/reagent-flask.webp`
+  })
 });
 
 function toNumber(value, fallback = 0) {
@@ -63,7 +76,7 @@ export async function editPotionTracker(actor, kind, {
     classes: ["rm-potion-tracker-dialog"],
     content: `
       <div class="rm-potion-tracker-dialog__fields">
-        <label>Текущий ранг<input name="value" type="number" min="0" step="1" value="${current.value}"></label>
+        <label>${definition.valueLabel}<input name="value" type="number" min="0" step="1" value="${current.value}"></label>
         <label>Максимум<input name="max" type="number" min="1" step="1" value="${current.max}"></label>
       </div>`,
     buttons: [{
@@ -356,7 +369,7 @@ function createPotionTrackerElement(kind, actor) {
   li.dataset.value = String(state.value);
   li.dataset.max = String(state.max);
   li.dataset.fillPercent = formattedFillPercent;
-  li.style.setProperty("--rm-potion-fill", `${formattedFillPercent}%`);
+  if (state.value > state.max) li.classList.add("is-over-limit");
   li.setAttribute("aria-label", title);
   li.setAttribute("title", title);
 
@@ -369,18 +382,13 @@ function createPotionTrackerElement(kind, actor) {
   counter.classList.add("rm-potion-tracker__counter");
   counter.textContent = `${state.value}/${state.max}`;
 
-  const bottle = document.createElement("span");
-  bottle.classList.add("rm-potion-tracker__bottle");
-  bottle.setAttribute("aria-hidden", "true");
-  const neck = document.createElement("span");
-  neck.classList.add("rm-potion-tracker__neck");
-  const body = document.createElement("span");
-  body.classList.add("rm-potion-tracker__body");
-  const liquid = document.createElement("span");
-  liquid.classList.add("rm-potion-tracker__liquid");
-  body.append(liquid);
-  bottle.append(neck, body);
-  button.append(counter, bottle);
+  const icon = document.createElement("img");
+  icon.classList.add("rm-potion-tracker__art");
+  icon.setAttribute("src", definition.icon);
+  icon.setAttribute("alt", "");
+  icon.draggable = false;
+  icon.setAttribute("aria-hidden", "true");
+  button.append(counter, icon);
   li.append(button);
   return li;
 }
@@ -413,7 +421,8 @@ export function renderUniversalBeltSlots(root, actor) {
   containers.prepend(
     ...[1, 2, 3].map((slot) => createSlotElement(slot, actor)),
     createPotionTrackerElement("healing", actor),
-    createPotionTrackerElement("utility", actor)
+    createPotionTrackerElement("utility", actor),
+    createPotionTrackerElement("reagents", actor)
   );
   hideBeltedInventoryRows(root, actor);
   return true;

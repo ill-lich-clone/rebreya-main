@@ -442,7 +442,6 @@
 }
 
 .dnd5e2.sheet.actor .tab[data-tab="inventory"] .containers .rm-potion-tracker {
-  --rm-potion-color: #4aa8e8;
   position: relative;
   flex: 0 0 46px;
   width: 46px;
@@ -453,14 +452,6 @@
   background: transparent;
   list-style: none;
   overflow: visible;
-}
-
-.dnd5e2.sheet.actor .tab[data-tab="inventory"] .containers .rm-potion-tracker--healing {
-  --rm-potion-color: #df4a4a;
-}
-
-.dnd5e2.sheet.actor .tab[data-tab="inventory"] .containers .rm-potion-tracker--utility {
-  --rm-potion-color: #4aa8e8;
 }
 
 .dnd5e2.sheet.actor .tab[data-tab="inventory"] .containers .rm-potion-tracker__button {
@@ -475,76 +466,46 @@
   cursor: pointer;
 }
 
-.dnd5e2.sheet.actor .tab[data-tab="inventory"] .containers .rm-potion-tracker__bottle {
+.dnd5e2.sheet.actor .tab[data-tab="inventory"] .containers .rm-potion-tracker__art {
   position: absolute;
-  inset: 1px 7px 0;
-  display: block;
-  filter: drop-shadow(0 2px 2px rgb(0 0 0 / 0.55));
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  object-fit: contain;
+  filter: drop-shadow(0 2px 2px rgb(0 0 0 / 0.72));
+  pointer-events: none;
+  transition: filter 160ms ease, transform 160ms ease;
 }
 
-.dnd5e2.sheet.actor .tab[data-tab="inventory"] .containers .rm-potion-tracker__neck {
-  position: absolute;
-  z-index: 2;
-  top: 0;
-  left: 50%;
-  width: 12px;
-  height: 10px;
-  border: 2px solid rgb(214 224 235 / 0.92);
-  border-bottom: 0;
-  border-radius: 3px 3px 1px 1px;
-  background: rgb(27 32 39 / 0.82);
-  transform: translateX(-50%);
-}
-
-.dnd5e2.sheet.actor .tab[data-tab="inventory"] .containers .rm-potion-tracker__body {
-  position: absolute;
-  z-index: 1;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  height: 34px;
-  overflow: hidden;
-  border: 2px solid rgb(214 224 235 / 0.92);
-  border-radius: 48% 48% 40% 40% / 34% 34% 50% 50%;
-  background: rgb(24 29 36 / 0.78);
-  box-shadow: inset 3px 2px 4px rgb(255 255 255 / 0.13);
-}
-
-.dnd5e2.sheet.actor .tab[data-tab="inventory"] .containers .rm-potion-tracker__liquid {
-  position: absolute;
-  right: 1px;
-  bottom: 1px;
-  left: 1px;
-  height: var(--rm-potion-fill);
-  max-height: calc(100% - 2px);
-  border-radius: 0 0 45% 45%;
-  background:
-    radial-gradient(circle at 35% 28%, rgb(255 255 255 / 0.42) 0 2px, transparent 3px),
-    linear-gradient(180deg, color-mix(in srgb, var(--rm-potion-color) 72%, white), var(--rm-potion-color));
-  box-shadow: inset 0 2px 3px rgb(255 255 255 / 0.28);
-  transition: height 160ms ease;
+.dnd5e2.sheet.actor .tab[data-tab="inventory"] .containers .rm-potion-tracker--reagents.is-over-limit .rm-potion-tracker__art {
+  filter: drop-shadow(0 0 6px #ef3f3f) drop-shadow(0 0 2px #fff);
 }
 
 .dnd5e2.sheet.actor .tab[data-tab="inventory"] .containers .rm-potion-tracker__counter {
   position: absolute;
   z-index: 4;
-  right: 2px;
-  bottom: 12px;
-  left: 2px;
-  overflow: hidden;
+  bottom: 3px;
+  left: 50%;
+  min-width: 24px;
+  padding: 1px 3px;
+  border: 1px solid rgb(255 255 255 / 0.22);
+  border-radius: 6px;
+  background: rgb(5 8 12 / 0.78);
   font-size: 9px;
   font-weight: 800;
   line-height: 1;
   text-align: center;
   white-space: nowrap;
   text-shadow: 0 1px 2px #000, 0 0 3px #000;
+  transform: translateX(-50%);
   pointer-events: none;
 }
 
-.dnd5e2.sheet.actor .tab[data-tab="inventory"] .containers .rm-potion-tracker__button:hover .rm-potion-tracker__body,
-.dnd5e2.sheet.actor .tab[data-tab="inventory"] .containers .rm-potion-tracker__button:focus-visible .rm-potion-tracker__body {
-  border-color: #fff;
-  box-shadow: inset 3px 2px 4px rgb(255 255 255 / 0.2), 0 0 7px var(--rm-potion-color);
+.dnd5e2.sheet.actor .tab[data-tab="inventory"] .containers .rm-potion-tracker__button:hover .rm-potion-tracker__art,
+.dnd5e2.sheet.actor .tab[data-tab="inventory"] .containers .rm-potion-tracker__button:focus-visible .rm-potion-tracker__art {
+  filter: drop-shadow(0 0 6px rgb(255 255 255 / 0.72));
+  transform: scale(1.06);
 }
 
 .rm-potion-tracker-dialog__fields {
