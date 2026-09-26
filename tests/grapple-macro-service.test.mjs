@@ -4,10 +4,12 @@ import test from "node:test";
 import {
   buildGrappleMacroData,
   buildMoveGrappledMacroData,
+  buildTwistedMacroData,
   GRAPPLE_FOLDER_SOURCE_ID,
   GRAPPLE_MACRO_SOURCE_ID,
   GrappleMacroService,
-  MOVE_GRAPPLED_MACRO_SOURCE_ID
+  MOVE_GRAPPLED_MACRO_SOURCE_ID,
+  TWISTED_MACRO_SOURCE_ID
 } from "../scripts/combat/grapple-macro-service.js";
 
 function collection(contents = []) {
@@ -80,6 +82,15 @@ test("grapple macro builders expose only stable module API calls", () => {
     ownership: { default: 1 },
     flags: { "rebreya-main": { managed: true, sourceId: MOVE_GRAPPLED_MACRO_SOURCE_ID } }
   });
+  assert.deepEqual(buildTwistedMacroData("folder-1", { observerOwnershipLevel: 1 }), {
+    name: "Скрученный",
+    type: "script",
+    scope: "global",
+    command: "await game.rebreyaMain?.applyTwisted?.();",
+    folder: "folder-1",
+    ownership: { default: 1 },
+    flags: { "rebreya-main": { managed: true, sourceId: TWISTED_MACRO_SOURCE_ID } }
+  });
 });
 
 test("inactive client skips world document synchronization", async () => {
@@ -110,10 +121,10 @@ test("service reuses the oldest exact user Macro folder and preserves unmanaged 
   assert.equal(result.skipped, false);
   assert.equal(result.folder.id, "old-folder");
   assert.equal(env.folderCreates.length, 0);
-  assert.equal(env.macroCreates.length, 3);
+  assert.equal(env.macroCreates.length, 4);
   assert.strictEqual(env.game.macros.contents[0], userCollision);
   assert.equal(userCollision.command, undefined);
-  assert.deepEqual(result.macros.map((macro) => macro.folder), ["old-folder", "old-folder", "old-folder"]);
+  assert.deepEqual(result.macros.map((macro) => macro.folder), ["old-folder", "old-folder", "old-folder", "old-folder"]);
 });
 
 test("service creates a managed folder, repairs managed macros, and becomes write-free", async () => {
@@ -135,16 +146,16 @@ test("service creates a managed folder, repairs managed macros, and becomes writ
 
   const first = await env.service.syncManagedDocuments();
   assert.equal(first.folder.name, "Ребрея");
-  assert.equal(first.macros.length, 3);
+  assert.equal(first.macros.length, 4);
   assert.equal(folderUpdates.length, 1);
   assert.equal(macroUpdates.length, 1);
-  assert.equal(env.macroCreates.length, 2);
+  assert.equal(env.macroCreates.length, 3);
   assert.equal(grapple.folder, "managed-folder");
 
   await env.service.syncManagedDocuments();
   assert.equal(folderUpdates.length, 1);
   assert.equal(macroUpdates.length, 1);
-  assert.equal(env.macroCreates.length, 2);
+  assert.equal(env.macroCreates.length, 3);
 });
 
 test("service creates the managed folder when no exact reusable folder exists", async () => {
@@ -156,5 +167,5 @@ test("service creates the managed folder when no exact reusable folder exists", 
 
   assert.equal(env.folderCreates.length, 1);
   assert.equal(result.folder.getFlag("rebreya-main", "sourceId"), GRAPPLE_FOLDER_SOURCE_ID);
-  assert.equal(env.macroCreates.length, 3);
+  assert.equal(env.macroCreates.length, 4);
 });

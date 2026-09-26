@@ -81,8 +81,8 @@ test("module manifest loads an unpinned canonical entrypoint for page-refresh up
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const [entrypoint] = manifest.esmodules;
 
-  assert.equal(manifest.version, "1.4.333");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.333.js"]);
+  assert.equal(manifest.version, "1.4.334");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.334.js"]);
   assert.doesNotMatch(entrypoint, /[?#]/u);
 
   const entrypointSource = await readFile(new URL(entrypoint, manifestUrl), "utf8");
@@ -390,7 +390,7 @@ test("module keeps recent published entrypoint URLs as canonical compatibility f
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
 
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.333.js"]);
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.334.js"]);
 
   for (const fileName of ["main-1.4.98.js", "main-1.4.99.js", "main-1.4.100.js"]) {
     const forwarderSource = await readFile(new URL(`../scripts/${fileName}`, import.meta.url), "utf8");
@@ -468,12 +468,12 @@ test("the 1.4.125 entrypoint forwards to the native-container copy graph", async
   );
 });
 
-test("module entrypoint cache-busts stale ActiveEffect deletion handling", async () => {
+test("module entrypoint cache-busts the current combat status service", async () => {
   const entrypointSource = await readCanonicalEntrypointSource();
 
   assert.match(
     entrypointSource,
-    /combat\/status-service\.js\?v=1\.4\.100-hp-dead-overlay/u
+    /combat\/status-service\.js\?v=1\.4\.334-twisted-macro/u
   );
 });
 
@@ -616,7 +616,7 @@ test("combat automation imports preserve their released cache busts", async () =
   );
   assert.match(
     entrypointSource,
-    /status-service\.js\?v=1\.4\.100-hp-dead-overlay/u,
+    /status-service\.js\?v=1\.4\.334-twisted-macro/u,
   );
   assert.match(
     entrypointSource,

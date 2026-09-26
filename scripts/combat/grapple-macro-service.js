@@ -6,6 +6,7 @@ export const GRAPPLE_FOLDER_SOURCE_ID = "grapple-macro-folder";
 export const GRAPPLE_MACRO_SOURCE_ID = "grapple-macro";
 export const MOVE_GRAPPLED_MACRO_SOURCE_ID = "move-grappled-macro";
 export const DISARM_MACRO_SOURCE_ID = "disarm-macro";
+export const TWISTED_MACRO_SOURCE_ID = "twisted-macro";
 
 const MANAGED_FLAG = "managed";
 const SOURCE_ID_FLAG = "sourceId";
@@ -91,6 +92,11 @@ export function buildDisarmMacroData(folderId, options = {}) {
     sourceId: DISARM_MACRO_SOURCE_ID, folderId, observerOwnershipLevel: options.observerOwnershipLevel });
 }
 
+export function buildTwistedMacroData(folderId, options = {}) {
+  return macroData({ name: "Скрученный", command: "await game.rebreyaMain?.applyTwisted?.();",
+    sourceId: TWISTED_MACRO_SOURCE_ID, folderId, observerOwnershipLevel: options.observerOwnershipLevel });
+}
+
 function buildManagedFolderData() {
   return {
     name: GRAPPLE_FOLDER_NAME,
@@ -165,6 +171,9 @@ export class GrappleMacroService {
         observerOwnershipLevel: this.#observerOwnershipLevel
       })),
       await this.#syncMacro(game, DISARM_MACRO_SOURCE_ID, buildDisarmMacroData(folderId, {
+        observerOwnershipLevel: this.#observerOwnershipLevel
+      })),
+      await this.#syncMacro(game, TWISTED_MACRO_SOURCE_ID, buildTwistedMacroData(folderId, {
         observerOwnershipLevel: this.#observerOwnershipLevel
       }))
     ];

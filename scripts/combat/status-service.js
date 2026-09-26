@@ -1065,6 +1065,32 @@ export class CombatStatusService {
     return getRebreyaStatusDefinition(statusId);
   }
 
+  async applyTwistedFromSelection({ targetToken, sourceToken, value = undefined, linkId = "" } = {}) {
+    const actor = targetToken?.actor ?? targetToken?.document?.actor ?? null;
+    if (!(actor instanceof Actor)) {
+      throw new Error("Для состояния «Скрученный» выберите ровно один контролируемый токен.");
+    }
+
+    const currentStatus = this.getStatus(actor, TWISTED_STATUS_ID);
+    const nextValue = value === undefined
+      ? await this.#promptStatusValue(getRebreyaStatusDefinition(TWISTED_STATUS_ID), currentStatus?.value ?? 1)
+      : normalizeStatusValue(value, 1);
+    if (nextValue === undefined) {
+      return false;
+    }
+
+    const safeLinkId = String(linkId ?? "").trim()
+      || String(currentStatus?.meta?.twistedLink?.linkId ?? "").trim()
+      || globalThis.foundry?.utils?.randomID?.()
+      || globalThis.crypto?.randomUUID?.();
+    const meta = buildTwistedStatusMeta({ sourceToken, targetToken, linkId: safeLinkId });
+    const options = { active: true, value: nextValue, meta };
+    if (typeof this.moduleApi?.setCombatStatus === "function") {
+      return this.moduleApi.setCombatStatus(actor, TWISTED_STATUS_ID, options);
+    }
+    return this.setStatus(actor, TWISTED_STATUS_ID, options);
+  }
+
   #buildManagedEffectLockKey(effect) {
     return getEffectDocumentId(effect);
   }

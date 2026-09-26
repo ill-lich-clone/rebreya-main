@@ -322,7 +322,7 @@ import { SpellInterceptionRuntime } from "./combat/spell-interception-runtime.js
 import { SpellAreaRuntime } from "./combat/spell-area-runtime.js";
 import { SpellAutomationHookBridge } from "./combat/spell-automation-hook-bridge.js";
 import { registerRadialStatusEffects } from "./combat/radial-status-effects.js";
-import { CombatStatusService, registerCombatStatusConfig } from "./combat/status-service.js?v=1.4.100-hp-dead-overlay";
+import { CombatStatusService, registerCombatStatusConfig } from "./combat/status-service.js?v=1.4.334-twisted-macro";
 import { AttackRollBoostService } from "./combat/attack-roll-boost-service.js?v=1.4.96";
 import { EnvironmentAutomationService } from "./combat/environment-automation-service.js?v=1.4.96-environment-stable-statuses";
 import { registerMechanusRollHooks } from "./cosmology/mechanus-rolls.js?v=1.4.140-mechanus-dnd5e-activity-repair";
@@ -342,7 +342,7 @@ import {
 import { BardicInspirationCompatService } from "./combat/bardic-inspiration-compat-service.js";
 import { RaceAutomationService, SOCKET_EVENT_RACE_AUTOMATION } from "./combat/race-automation-service.js?v=1.4.147-race-damage";
 import { GrappleAutomationService, GRAPPLE_LINK_FLAG, getTwistedLinkForToken } from "./combat/grapple-automation-service.js";
-import { GrappleMacroService } from "./combat/grapple-macro-service.js?v=1.4.252";
+import { GrappleMacroService } from "./combat/grapple-macro-service.js?v=1.4.334-twisted-macro";
 import { GrapplePlacementPreview } from "./combat/grapple-placement-preview.js?v=1.4.290-rogue-mantle";
 import { getActorHandReservations } from "./integrations/held-items.js";
 import { CraftsmanGadgetService } from "./combat/craftsman-gadget-service.js";
@@ -2176,6 +2176,28 @@ export class RebreyaMainModule {
     catch (error) {
       this.#notifyGrappleError(error);
       return null;
+    }
+  }
+
+  async applyTwisted() {
+    try {
+      const controlled = globalThis.canvas?.tokens?.controlled ?? [];
+      const sources = Array.from(globalThis.game?.user?.targets ?? []);
+      if (controlled.length !== 1) {
+        throw new Error("Для состояния «Скрученный» выберите ровно один контролируемый токен.");
+      }
+      if (sources.length !== 1) {
+        throw new Error("Для состояния «Скрученный» выберите ровно один токен-источник через T.");
+      }
+      return await this.combatStatusService.applyTwistedFromSelection({
+        targetToken: controlled[0]?.document ?? controlled[0],
+        sourceToken: sources[0]?.document ?? sources[0]
+      });
+    }
+    catch (error) {
+      const message = cleanSocketId(error?.message) || "Ошибка состояния «Скрученный».";
+      globalThis.ui?.notifications?.warn?.(message);
+      return false;
     }
   }
 

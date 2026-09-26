@@ -10,7 +10,7 @@ import { TransportCompendiumService } from "../scripts/data/transport-compendium
 import { BuiltinStorageActorService } from "../scripts/data/builtin-storage-actor-service.js?v=1.4.216-storage-token-vision";
 import { StorageOpenSoundService } from "../scripts/data/storage-open-sound-service.js?v=1.4.145-coin-icons-storage-sound";
 import { GrappleAutomationService } from "../scripts/combat/grapple-automation-service.js";
-import { GrappleMacroService } from "../scripts/combat/grapple-macro-service.js?v=1.4.252";
+import { GrappleMacroService } from "../scripts/combat/grapple-macro-service.js?v=1.4.334-twisted-macro";
 import { GrapplePlacementPreview } from "../scripts/combat/grapple-placement-preview.js?v=1.4.290-rogue-mantle";
 import {
   COMMAND_REQUEST_TYPE,
@@ -49,8 +49,8 @@ test("current release reuses the catalog icon cache graph", async () => {
     ...sharedCacheImporters.map((name) => readFile(new URL(`../scripts/data/${name}.js`, import.meta.url), "utf8"))
   ]);
   const manifest = JSON.parse(manifestSource);
-  assert.equal(manifest.version, "1.4.333");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.333.js"]);
+  assert.equal(manifest.version, "1.4.334");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.334.js"]);
   assert.doesNotMatch(manifestSource, /main-1\.4\.319\.js/u);
   assert.match(mainSource, /data\/inventory-service\.js\?v=1\.4\.327/u);
   assert.match(mainSource, /data\/storage-command-service\.js\?v=1\.4\.322/u);
@@ -274,6 +274,7 @@ test("ready composes spell automation on one registry alongside legacy hook regi
     assert.ok(moduleApi.grapplePlacementPreview instanceof GrapplePlacementPreview);
     assert.equal(typeof moduleApi.toggleGrapple, "function");
     assert.equal(typeof moduleApi.moveGrappled, "function");
+    assert.equal(typeof moduleApi.applyTwisted, "function");
     const mutateBeforeDisarmCheck = moduleApi.privilegedMutationGateway.mutate;
     moduleApi.pendingDisarmIntent = { operationId: "rejected-start" };
     moduleApi.privilegedMutationGateway.mutate = async () => { throw Object.assign(new Error("outside range"), { code: "out-of-range" }); };
