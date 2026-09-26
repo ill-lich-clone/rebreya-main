@@ -157,6 +157,23 @@ function sceneGrid(scene) {
   };
 }
 
+function defaultSnapTokenPosition({ position, scene }) {
+  const canvasGrid = globalThis.canvas?.grid;
+  if (typeof canvasGrid?.getSnappedPoint === "function") {
+    const snapped = canvasGrid.getSnappedPoint(position, {
+      mode: globalThis.CONST?.GRID_SNAPPING_MODES?.VERTEX ?? 0x2,
+      resolution: 1
+    });
+    return { x: finite(snapped?.x, "x"), y: finite(snapped?.y, "y") };
+  }
+  const size = finite(sceneGrid(scene).size, "grid.size");
+  if (size <= 0) throw codedError("invalid-grid");
+  return {
+    x: Math.round(position.x / size) * size,
+    y: Math.round(position.y / size) * size
+  };
+}
+
 function defaultSceneRect(scene) {
   const dimensions = scene?.dimensions ?? globalThis.canvas?.dimensions;
   return {
@@ -195,8 +212,10 @@ export class GrappleAutomationService {
   #placementPreview;
   #randomId;
   #sceneRectProvider;
+  #snapTokenPosition;
   #effectManagerProvider;
   #sequenceProvider;
+  #twistedAuraRefresh = Promise.resolve(false);
 
   constructor({
     coordinator,
@@ -211,6 +230,7 @@ export class GrappleAutomationService {
     checkCollision = ({ targetToken, targetPoint }) => (
       (targetToken?.object ?? targetToken)?.checkCollision?.(targetPoint, { type: "move", mode: "any" }) === true
     ),
+    snapTokenPosition = defaultSnapTokenPosition,
     effectManagerProvider = () => globalThis.Sequencer?.EffectManager,
     sequenceProvider = () => globalThis.Sequence
   } = {}) {
@@ -225,6 +245,7 @@ export class GrappleAutomationService {
     this.#gameProvider = gameProvider;
     this.#sceneRectProvider = sceneRectProvider;
     this.#checkCollision = checkCollision;
+    this.#snapTokenPosition = snapTokenPosition;
     this.#effectManagerProvider = effectManagerProvider;
     this.#sequenceProvider = sequenceProvider;
   }
@@ -345,7 +366,8 @@ export class GrappleAutomationService {
           grid: sceneGrid(scene)
         });
         if (position.pulledFeet <= 1e-9) continue;
-        const validation = this.#validateTranslation(target, position);
+        const snappedPosition = this.#snapTokenPosition({ position, token: target, scene });
+        const validation = this.#validateTranslation(target, snappedPosition);
         if (!validation.valid) throw codedError(validation.reason);
         updates.push({ _id: tokenId(target), x: validation.x, y: validation.y });
         rollbackUpdates.push({ _id: tokenId(target), x: Number(target.x), y: Number(target.y) });
@@ -427,35 +449,53 @@ export class GrappleAutomationService {
     return { removed };
   }
 
-  async refreshTwistedAura(combat = null) {
+  refreshTwistedAura(combat = null, scene = null) {
+    const refresh = () => this.#refreshTwistedAuraNow(combat, scene);
+    const pending = this.#twistedAuraRefresh.then(refresh, refresh);
+    this.#twistedAuraRefresh = pending.catch(() => false);
+    return pending;
+  }
+
+  async #refreshTwistedAuraNow(combat, scene) {
     const effectManager = this.#effectManagerProvider?.();
-    const effectName = `${MODULE_ID}.twisted-turn-aura`;
-    if (typeof effectManager?.endEffects === "function") await effectManager.endEffects({ name: effectName });
     const game = this.#gameProvider();
-    if (game?.modules?.get?.("sequencer")?.active !== true || !combat?.combatant) return false;
-    const target = combat.combatant.token?.document ?? combat.combatant.token ?? null;
-    const link = getTwistedLinkForToken(target);
-    if (!link) return false;
-    const source = await this.#fromUuid(link.sourceTokenUuid);
+    const combatTarget = combat?.combatant?.token?.document ?? combat?.combatant?.token ?? null;
+    const activeScene = scene ?? combatTarget?.parent ?? game?.scenes?.active ?? globalThis.canvas?.scene ?? null;
+    const sceneId = clean(activeScene?.id);
+    if (typeof effectManager?.endEffects === "function") {
+      await effectManager.endEffects({ name: `${MODULE_ID}.twisted-turn-aura`, ...(sceneId ? { sceneId } : {}) });
+      await effectManager.endEffects({ name: `${MODULE_ID}.twisted-aura.*`, ...(sceneId ? { sceneId } : {}) });
+    }
+    if (game?.modules?.get?.("sequencer")?.active !== true || !activeScene) return false;
+    const links = combat
+      ? [getTwistedLinkForToken(combatTarget)].filter(Boolean)
+      : values(activeScene.tokens).map((token) => getTwistedLinkForToken(token)).filter(Boolean);
+    if (!links.length) return false;
     const Sequence = this.#sequenceProvider?.();
-    const grid = sceneGrid(source?.parent);
-    if (!source || typeof Sequence !== "function" || !(grid.distance > 0)) return false;
-    await new Sequence()
-      .effect()
-      .atLocation(source.object ?? source)
-      .shape("circle", {
-        radius: link.radiusFeet / grid.distance,
-        gridUnits: true,
-        fillColor: 0xc8bd74,
-        fillAlpha: 0.22,
-        lineColor: 0xe2d690,
-        lineSize: 2
-      })
-      .name(effectName)
-      .persist()
-      .belowTokens()
-      .play();
-    return true;
+    if (typeof Sequence !== "function") return false;
+    let played = 0;
+    for (const link of links) {
+      const source = await this.#fromUuid(link.sourceTokenUuid);
+      const grid = sceneGrid(source?.parent);
+      if (!source || clean(source?.parent?.id) !== sceneId || !(grid.distance > 0)) continue;
+      await new Sequence()
+        .effect()
+        .attachTo(source.object ?? source)
+        .shape("circle", {
+          radius: link.radiusFeet / grid.distance,
+          gridUnits: true,
+          fillColor: 0xc8bd74,
+          fillAlpha: 0.22,
+          lineColor: 0xe2d690,
+          lineSize: 2
+        })
+        .name(`${MODULE_ID}.twisted-aura.${clean(link.linkId)}`)
+        .persist()
+        .belowTokens()
+        .play();
+      played += 1;
+    }
+    return played > 0;
   }
 
   releaseAndMove({ targetTokenUuid, linkId, x, y, operationId } = {}) {

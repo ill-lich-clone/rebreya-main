@@ -117,6 +117,9 @@ export function registerGrappleHooks(moduleApi, {
   const schedule = (operation) => {
     Promise.resolve().then(operation).catch(report);
   };
+  const refreshTwistedAura = (scene, combat = gameProvider()?.combat ?? null) => (
+    moduleApi.refreshTwistedAura?.(combat, scene)
+  );
   const operationId = (prefix) => {
     const suffix = clean(randomId());
     if (!suffix) throw new Error("Не удалось создать идентификатор операции захвата");
@@ -223,21 +226,32 @@ export function registerGrappleHooks(moduleApi, {
   Hooks.on("deleteActiveEffect", (effect, options = {}) => {
     if (options?.[MODULE_ID]?.[GRAPPLE_BYPASS_OPTION] === true) return;
     if (!isActiveGmClient(gameProvider())) return;
-    schedule(() => moduleApi.handleManagedEffectDeleted(effect));
+    const scene = gameProvider()?.scenes?.active ?? globalThis.canvas?.scene;
+    schedule(async () => {
+      await moduleApi.handleManagedEffectDeleted(effect);
+      await refreshTwistedAura(scene);
+    });
   });
 
   for (const event of ["createActiveEffect", "updateActiveEffect", "updateActor"]) {
     Hooks.on(event, () => {
       if (!isActiveGmClient(gameProvider())) return;
       const scene = gameProvider()?.scenes?.active ?? globalThis.canvas?.scene;
-      if (scene) schedule(() => moduleApi.reconcileTwistedLinks(scene));
+      if (scene) schedule(async () => {
+        await moduleApi.reconcileTwistedLinks(scene);
+        await refreshTwistedAura(scene);
+      });
     });
   }
 
   Hooks.on("deleteToken", (token, options = {}) => {
     if (options?.[MODULE_ID]?.[GRAPPLE_BYPASS_OPTION] === true) return;
     if (!isActiveGmClient(gameProvider())) return;
-    schedule(() => moduleApi.handleTokenDeleted(token));
+    const scene = token?.parent ?? gameProvider()?.scenes?.active ?? globalThis.canvas?.scene;
+    schedule(async () => {
+      await moduleApi.handleTokenDeleted(token);
+      await refreshTwistedAura(scene);
+    });
   });
 
   Hooks.on("canvasReady", (canvasOrScene) => {
@@ -246,6 +260,7 @@ export function registerGrappleHooks(moduleApi, {
     if (scene) schedule(async () => {
       await moduleApi.reconcileScene(scene);
       await moduleApi.reconcileTwistedLinks(scene);
+      await refreshTwistedAura(scene);
     });
   });
 
@@ -255,17 +270,26 @@ export function registerGrappleHooks(moduleApi, {
     if (scene) schedule(async () => {
       await moduleApi.reconcileScene(scene);
       await moduleApi.reconcileTwistedLinks(scene);
+      await refreshTwistedAura(scene);
     });
+  });
+
+  Hooks.on("createCombat", (combat) => {
+    if (!isActiveGmClient(gameProvider())) return;
+    const scene = combat?.scene ?? gameProvider()?.scenes?.active ?? globalThis.canvas?.scene;
+    schedule(() => refreshTwistedAura(scene, combat));
   });
 
   Hooks.on("combatTurn", (combat) => {
     if (!isActiveGmClient(gameProvider())) return;
-    schedule(() => moduleApi.refreshTwistedAura(combat));
+    const scene = combat?.scene ?? gameProvider()?.scenes?.active ?? globalThis.canvas?.scene;
+    schedule(() => refreshTwistedAura(scene, combat));
   });
 
   Hooks.on("deleteCombat", () => {
     if (!isActiveGmClient(gameProvider())) return;
-    schedule(() => moduleApi.refreshTwistedAura(null));
+    const scene = gameProvider()?.scenes?.active ?? globalThis.canvas?.scene;
+    schedule(() => refreshTwistedAura(scene, null));
   });
 
   return { pendingTargetDialogs };

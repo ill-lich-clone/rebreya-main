@@ -74,10 +74,11 @@ function environment({
   dragError = null,
   TokenClass = undefined,
   twistedTargetLink = null,
-  twistedSourceLinks = []
+  twistedSourceLinks = [],
+  game = { user: { id: "player-a" }, combat: null, scenes: { active: null } }
 } = {}) {
   const Hooks = hooksRegistry();
-  const calls = { drag: [], releaseMove: [], twistedPull: [], twistedReleaseMove: [], twistedScenes: [], effects: [], tokens: [], scenes: [], dialogs: [], errors: [] };
+  const calls = { drag: [], releaseMove: [], twistedPull: [], twistedReleaseMove: [], twistedScenes: [], auras: [], effects: [], tokens: [], scenes: [], dialogs: [], errors: [] };
   const moduleApi = {
     getTwistedLink: () => twistedTargetLink,
     getTwistedLinksForSource: () => twistedSourceLinks,
@@ -91,7 +92,8 @@ function environment({
     async handleManagedEffectDeleted(effect) { calls.effects.push(effect); },
     async handleTokenDeleted(token) { calls.tokens.push(token); },
     async reconcileScene(scene) { calls.scenes.push(scene); },
-    async reconcileTwistedLinks(scene) { calls.twistedScenes.push(scene); }
+    async reconcileTwistedLinks(scene) { calls.twistedScenes.push(scene); },
+    async refreshTwistedAura(combat, scene) { calls.auras.push({ combat, scene }); }
   };
   registerGrappleHooks(moduleApi, {
     Hooks,
@@ -101,7 +103,7 @@ function environment({
     }),
     randomId: () => `operation-${calls.drag.length + calls.releaseMove.length + 1}`,
     isActiveGmClient: () => true,
-    gameProvider: () => ({ user: { id: "player-a" } }),
+    gameProvider: () => game,
     notifyError: (message) => calls.errors.push(message),
     TokenClass
   });
@@ -338,4 +340,19 @@ test("effect/token cleanup and active-GM scene reconciliation route through the 
   assert.deepEqual(env.calls.effects, [effect]);
   assert.deepEqual(env.calls.tokens, [token]);
   assert.deepEqual(env.calls.scenes, [scene]);
+});
+
+test("twisted aura refreshes outside combat when status or canvas state changes", async () => {
+  const scene = { id: "scene" };
+  const game = { user: { id: "player-a" }, combat: null, scenes: { active: scene } };
+  const env = environment({ game });
+
+  env.Hooks.call("createActiveEffect", { id: "twisted" });
+  env.Hooks.call("canvasReady", { scene });
+  await flush();
+
+  assert.deepEqual(env.calls.auras, [
+    { combat: null, scene },
+    { combat: null, scene }
+  ]);
 });

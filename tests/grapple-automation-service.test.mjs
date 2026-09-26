@@ -197,7 +197,8 @@ function environment({
   collision = false,
   emulateDaeDependentConditions = false,
   emulateDnd5eTokenBlocking = false,
-  useDefaultStatusEffectFactory = false
+  useDefaultStatusEffectFactory = false,
+  serviceOverrides = {}
 } = {}) {
   const scene = makeScene({ emulateDnd5eTokenBlocking });
   const sourceActor = makeActor("source", { hands: sourceHands });
@@ -218,7 +219,8 @@ function environment({
     isActiveGmClient: () => true,
     gameProvider: () => ({ user: { id: "gm", isGM: true } }),
     sceneRectProvider: () => ({ x: 0, y: 0, width: 2000, height: 2000 }),
-    checkCollision: () => collisionState.value
+    checkCollision: () => collisionState.value,
+    ...serviceOverrides
   };
   if (!useDefaultStatusEffectFactory) {
     serviceOptions.grappledStatusEffectDataFactory = async () => ({
@@ -697,6 +699,35 @@ test("twisted source movement pulls its target only enough to preserve the confi
   ]);
 });
 
+test("twisted source movement snaps the pulled target through the Foundry grid adapter", async () => {
+  const snapCalls = [];
+  const env = environment({
+    serviceOverrides: {
+      snapTokenPosition({ position, token, scene }) {
+        snapCalls.push({ position: structuredClone(position), token, scene });
+        return { x: 200, y: 100 };
+      }
+    }
+  });
+  await addTwistedLink(env);
+
+  const result = await env.service.pullTwisted({
+    sourceTokenUuid: env.source.uuid,
+    x: 400,
+    y: 150,
+    operationId: "twisted-pull-grid"
+  });
+
+  assert.equal(snapCalls.length, 1);
+  assert.equal(snapCalls[0].token, env.target);
+  assert.equal(snapCalls[0].scene, env.scene);
+  assert.notEqual(snapCalls[0].position.y % env.scene.grid.size, 0);
+  assert.deepEqual(result.updates.map(({ _id, x, y }) => ({ _id, x, y })), [
+    { _id: "source", x: 400, y: 150 },
+    { _id: "target", x: 200, y: 100 }
+  ]);
+});
+
 test("twisted source movement is rejected atomically when a wall blocks the required pull", async () => {
   const env = environment({ collision: true });
   await addTwistedLink(env);
@@ -711,4 +742,54 @@ test("twisted source movement is rejected atomically when a wall blocks the requ
   assert.equal(env.source.x, 0);
   assert.equal(env.target.x, 100);
   assert.equal(env.scene.batches.length, 0);
+});
+
+test("twisted auras remain visible for every link outside combat and follow their sources", async () => {
+  const ended = [];
+  const effects = [];
+  class FakeSequence {
+    effect() { this.current = {}; effects.push(this.current); return this; }
+    attachTo(source) { this.current.source = source; return this; }
+    shape(kind, options) { this.current.shape = { kind, options }; return this; }
+    name(name) { this.current.name = name; return this; }
+    persist() { this.current.persist = true; return this; }
+    belowTokens() { this.current.belowTokens = true; return this; }
+    async play() { this.current.played = true; return this; }
+  }
+  const game = {
+    user: { id: "gm", isGM: true },
+    combat: null,
+    modules: new Map([["sequencer", { active: true }]])
+  };
+  const env = environment({
+    serviceOverrides: {
+      gameProvider: () => game,
+      effectManagerProvider: () => ({ async endEffects(filter) { ended.push(filter); } }),
+      sequenceProvider: () => FakeSequence
+    }
+  });
+  await addTwistedLink(env);
+  const secondLink = {
+    linkId: "twisted-2",
+    kind: "twisted",
+    sourceTokenUuid: env.source.uuid,
+    targetTokenUuid: env.target2.uuid
+  };
+  await env.targetActor2.createEmbeddedDocuments("ActiveEffect", [{
+    name: "Скрученный 5",
+    statuses: ["rebreya-twisted"],
+    flags: { [MODULE_ID]: { statusValue: 5, statusMeta: { twistedLink: secondLink } } }
+  }]);
+
+  assert.equal(await env.service.refreshTwistedAura(null, env.scene), true);
+  assert.deepEqual(ended, [
+    { name: "rebreya-main.twisted-turn-aura", sceneId: "scene" },
+    { name: "rebreya-main.twisted-aura.*", sceneId: "scene" }
+  ]);
+  assert.equal(effects.length, 2);
+  assert.ok(effects.every((effect) => effect.source === env.source));
+  assert.deepEqual(effects.map((effect) => effect.name).sort(), [
+    "rebreya-main.twisted-aura.twisted-1",
+    "rebreya-main.twisted-aura.twisted-2"
+  ]);
 });
