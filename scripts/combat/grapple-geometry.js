@@ -31,6 +31,49 @@ export function tokenFootprint(token, position = null) {
   };
 }
 
+function tokenCenter(token, position, grid) {
+  const footprint = tokenFootprint(token, position);
+  return {
+    x: footprint.x + ((footprint.width * grid.size) / 2),
+    y: footprint.y + ((footprint.height * grid.size) / 2)
+  };
+}
+
+export function twistedDistanceFeet(sourceToken, targetToken, sourcePosition, targetPosition, grid) {
+  const normalized = normalizedGrid(grid);
+  const source = tokenCenter(sourceToken, sourcePosition, normalized);
+  const target = tokenCenter(targetToken, targetPosition, normalized);
+  return (Math.hypot(source.x - target.x, source.y - target.y) / normalized.size) * normalized.distance;
+}
+
+export function computeTwistedPullPosition({
+  sourceToken,
+  sourcePosition,
+  targetToken,
+  radiusFeet,
+  grid
+} = {}) {
+  const normalized = normalizedGrid(grid);
+  const radius = Math.max(0, finite(radiusFeet, "radiusFeet"));
+  const source = tokenCenter(sourceToken, sourcePosition, normalized);
+  const target = tokenCenter(targetToken, null, normalized);
+  const dx = source.x - target.x;
+  const dy = source.y - target.y;
+  const distancePixels = Math.hypot(dx, dy);
+  const radiusPixels = (radius / normalized.distance) * normalized.size;
+  const excessPixels = Math.max(0, distancePixels - radiusPixels);
+  const current = tokenFootprint(targetToken);
+  if (excessPixels <= 1e-9 || distancePixels <= 1e-9) {
+    return { x: current.x, y: current.y, pulledFeet: 0 };
+  }
+  const scale = excessPixels / distancePixels;
+  return {
+    x: current.x + (dx * scale),
+    y: current.y + (dy * scale),
+    pulledFeet: (excessPixels / normalized.size) * normalized.distance
+  };
+}
+
 export function grappleReachOriginRect(sourceToken, grid) {
   const normalized = normalizedGrid(grid);
   const source = tokenFootprint(sourceToken);

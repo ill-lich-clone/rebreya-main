@@ -5,11 +5,13 @@ import {
   getFreeHandSlots
 } from "../integrations/held-items.js";
 import { getNaturalReachFeet } from "./natural-reach.js";
-import { tokenFootprint, validateGrapplePlacement } from "./grapple-geometry.js";
+import { computeTwistedPullPosition, tokenFootprint, twistedDistanceFeet, validateGrapplePlacement } from "./grapple-geometry.js";
 
 export const GRAPPLE_LINK_FLAG = "grappleLink";
 export const GRAPPLE_BYPASS_OPTION = "grappleBypass";
 export const MAX_GRAPPLE_OPERATION_FINGERPRINTS = 256;
+export const TWISTED_STATUS_ID = "rebreya-twisted";
+export const TWISTED_LINK_META_KEY = "twistedLink";
 
 const GRAPPLE_EFFECT_NAME = "Схваченный";
 const GRAPPLED_STATUS_ID = "grappled";
@@ -99,6 +101,33 @@ function effectHasStatus(effect, statusId) {
   return Array.isArray(statuses) && statuses.includes(statusId);
 }
 
+function twistedEffectLink(effect) {
+  if (!effectHasStatus(effect, TWISTED_STATUS_ID)) return null;
+  const link = scopedFlag(effect, MODULE_ID, "statusMeta")?.[TWISTED_LINK_META_KEY];
+  return link?.kind === "twisted" ? link : null;
+}
+
+export function getTwistedLinkForToken(token) {
+  const uuid = tokenUuid(token?.document ?? token);
+  for (const effect of values((token?.actor ?? token?.document?.actor)?.effects)) {
+    const link = twistedEffectLink(effect);
+    if (link && clean(link.targetTokenUuid) === uuid) {
+      return {
+        ...clone(link),
+        radiusFeet: Math.max(0, Number(scopedFlag(effect, MODULE_ID, "statusValue") ?? 0)),
+        effect
+      };
+    }
+  }
+  return null;
+}
+
+export function getTwistedLinksForSource(scene, sourceTokenUuid) {
+  return values(scene?.tokens)
+    .map((token) => getTwistedLinkForToken(token))
+    .filter((link) => clean(link?.sourceTokenUuid) === clean(sourceTokenUuid));
+}
+
 async function defaultGrappledStatusEffectDataFactory() {
   const ActiveEffectClass = globalThis.getDocumentClass?.("ActiveEffect")
     ?? globalThis.CONFIG?.ActiveEffect?.documentClass
@@ -142,6 +171,18 @@ function sameScene(left, right) {
   return left?.parent === right?.parent || clean(left?.parent?.id) === clean(right?.parent?.id);
 }
 
+const INCAPACITATING_STATUS_IDS = new Set([
+  "dead", "incapacitated", "unconscious", "stunned", "paralyzed", "petrified"
+]);
+
+function actorIsIncapacitated(actor) {
+  const statusIds = new Set(values(actor?.statuses).map(clean));
+  for (const effect of values(actor?.effects)) {
+    for (const statusId of values(effect?.statuses)) statusIds.add(clean(statusId));
+  }
+  return [...INCAPACITATING_STATUS_IDS].some((statusId) => statusIds.has(statusId));
+}
+
 export class GrappleAutomationService {
   #checkCollision;
   #commandBus;
@@ -154,6 +195,8 @@ export class GrappleAutomationService {
   #placementPreview;
   #randomId;
   #sceneRectProvider;
+  #effectManagerProvider;
+  #sequenceProvider;
 
   constructor({
     coordinator,
@@ -167,7 +210,9 @@ export class GrappleAutomationService {
     sceneRectProvider = defaultSceneRect,
     checkCollision = ({ targetToken, targetPoint }) => (
       (targetToken?.object ?? targetToken)?.checkCollision?.(targetPoint, { type: "move", mode: "any" }) === true
-    )
+    ),
+    effectManagerProvider = () => globalThis.Sequencer?.EffectManager,
+    sequenceProvider = () => globalThis.Sequence
   } = {}) {
     if (typeof coordinator?.runIdempotent !== "function") throw new TypeError("coordinator.runIdempotent is required");
     this.#coordinator = coordinator;
@@ -180,6 +225,8 @@ export class GrappleAutomationService {
     this.#gameProvider = gameProvider;
     this.#sceneRectProvider = sceneRectProvider;
     this.#checkCollision = checkCollision;
+    this.#effectManagerProvider = effectManagerProvider;
+    this.#sequenceProvider = sequenceProvider;
   }
 
   toggle({ sourceTokenUuid, targetTokenUuid, operationId } = {}) {
@@ -271,6 +318,146 @@ export class GrappleAutomationService {
     });
   }
 
+  pullTwisted({ sourceTokenUuid, x, y, operationId } = {}) {
+    const payload = {
+      sourceTokenUuid: this.#required(sourceTokenUuid, "sourceTokenUuid"),
+      x: finite(x, "x"),
+      y: finite(y, "y"),
+      operationId: this.#required(operationId, "operationId")
+    };
+    return this.#runOperation("twisted-pull", `twisted-source:${payload.sourceTokenUuid}`, payload.operationId, payload, async () => {
+      const source = await this.#resolveToken(payload.sourceTokenUuid);
+      const scene = source.parent;
+      if (typeof scene?.updateEmbeddedDocuments !== "function") throw codedError("invalid-scene");
+      const sourcePosition = { x: payload.x, y: payload.y };
+      const sourceValidation = this.#validateTranslation(source, sourcePosition);
+      if (!sourceValidation.valid) throw codedError(sourceValidation.reason);
+      const updates = [{ _id: tokenId(source), x: payload.x, y: payload.y }];
+      const rollbackUpdates = [{ _id: tokenId(source), x: Number(source.x), y: Number(source.y) }];
+      for (const link of getTwistedLinksForSource(scene, payload.sourceTokenUuid)) {
+        const target = await this.#resolveToken(link.targetTokenUuid);
+        if (!sameScene(source, target)) throw codedError("stale-link");
+        const position = computeTwistedPullPosition({
+          sourceToken: source,
+          sourcePosition,
+          targetToken: target,
+          radiusFeet: link.radiusFeet,
+          grid: sceneGrid(scene)
+        });
+        if (position.pulledFeet <= 1e-9) continue;
+        const validation = this.#validateTranslation(target, position);
+        if (!validation.valid) throw codedError(validation.reason);
+        updates.push({ _id: tokenId(target), x: validation.x, y: validation.y });
+        rollbackUpdates.push({ _id: tokenId(target), x: Number(target.x), y: Number(target.y) });
+      }
+      const movementTokenIds = updates.map((update) => update._id);
+      try {
+        await scene.updateEmbeddedDocuments("Token", updates, bypassOptions({ ignoreTokenCollisionsFor: movementTokenIds }));
+      }
+      catch (error) {
+        await this.#rollback(error, [() => scene.updateEmbeddedDocuments("Token", rollbackUpdates,
+          bypassOptions({ ignoreTokenCollisionsFor: movementTokenIds }))]);
+      }
+      return { moved: true, updates: clone(updates) };
+    });
+  }
+
+  requestTwistedPullFromTokenUpdate(payload) {
+    if (this.#isActiveGmClient(this.#gameProvider())) return this.pullTwisted(payload);
+    return this.#request("combat.twisted.pull", payload);
+  }
+
+  getTwistedLink(token) {
+    return getTwistedLinkForToken(token);
+  }
+
+  getTwistedLinksForSource(token) {
+    return getTwistedLinksForSource(token?.parent, tokenUuid(token));
+  }
+
+  async twistedReleaseAndMove({ targetTokenUuid, linkId, x, y, operationId } = {}) {
+    const payload = {
+      targetTokenUuid: this.#required(targetTokenUuid, "targetTokenUuid"),
+      linkId: this.#required(linkId, "linkId"),
+      x: finite(x, "x"), y: finite(y, "y"),
+      operationId: this.#required(operationId, "operationId")
+    };
+    return this.#runOperation("twisted-release-and-move", `twisted-link:${payload.linkId}`,
+      payload.operationId, payload, async () => {
+        const target = await this.#resolveToken(payload.targetTokenUuid);
+        const link = getTwistedLinkForToken(target);
+        if (clean(link?.linkId) !== payload.linkId) throw codedError("stale-link");
+        const source = effectSource(link.effect);
+        await link.effect.delete(bypassOptions());
+        try {
+          await target.update({ x: payload.x, y: payload.y }, bypassOptions({ ignoreTokenCollisionsFor: [tokenId(target)] }));
+        }
+        catch (error) {
+          await this.#rollback(error, [() => target.actor.createEmbeddedDocuments("ActiveEffect", [source])]);
+        }
+        return { released: true, moved: true, x: payload.x, y: payload.y };
+      });
+  }
+
+  requestTwistedReleaseAndMove(payload) {
+    if (this.#isActiveGmClient(this.#gameProvider())) return this.twistedReleaseAndMove(payload);
+    return this.#request("combat.twisted.release-and-move", payload);
+  }
+
+  isTwistedTargetOutsideRadius(token, position) {
+    const link = getTwistedLinkForToken(token);
+    if (!link) return false;
+    const source = values(token?.parent?.tokens).find((candidate) => tokenUuid(candidate) === clean(link.sourceTokenUuid));
+    if (!source) return true;
+    return twistedDistanceFeet(source, token, null, position, sceneGrid(token.parent)) > link.radiusFeet + 1e-9;
+  }
+
+  async reconcileTwistedLinks(scene) {
+    let removed = 0;
+    const tokens = values(scene?.tokens);
+    const byUuid = new Map(tokens.map((token) => [tokenUuid(token), token]));
+    for (const target of tokens) {
+      const link = getTwistedLinkForToken(target);
+      if (!link) continue;
+      const source = byUuid.get(clean(link.sourceTokenUuid));
+      if (source && !actorIsIncapacitated(source.actor)) continue;
+      await link.effect.delete(bypassOptions());
+      removed += 1;
+    }
+    return { removed };
+  }
+
+  async refreshTwistedAura(combat = null) {
+    const effectManager = this.#effectManagerProvider?.();
+    const effectName = `${MODULE_ID}.twisted-turn-aura`;
+    if (typeof effectManager?.endEffects === "function") await effectManager.endEffects({ name: effectName });
+    const game = this.#gameProvider();
+    if (game?.modules?.get?.("sequencer")?.active !== true || !combat?.combatant) return false;
+    const target = combat.combatant.token?.document ?? combat.combatant.token ?? null;
+    const link = getTwistedLinkForToken(target);
+    if (!link) return false;
+    const source = await this.#fromUuid(link.sourceTokenUuid);
+    const Sequence = this.#sequenceProvider?.();
+    const grid = sceneGrid(source?.parent);
+    if (!source || typeof Sequence !== "function" || !(grid.distance > 0)) return false;
+    await new Sequence()
+      .effect()
+      .atLocation(source.object ?? source)
+      .shape("circle", {
+        radius: link.radiusFeet / grid.distance,
+        gridUnits: true,
+        fillColor: 0xc8bd74,
+        fillAlpha: 0.22,
+        lineColor: 0xe2d690,
+        lineSize: 2
+      })
+      .name(effectName)
+      .persist()
+      .belowTokens()
+      .play();
+    return true;
+  }
+
   releaseAndMove({ targetTokenUuid, linkId, x, y, operationId } = {}) {
     const payload = {
       targetTokenUuid: this.#required(targetTokenUuid, "targetTokenUuid"),
@@ -335,18 +522,26 @@ export class GrappleAutomationService {
   async handleTokenDeleted(token) {
     const deletedUuid = tokenUuid(token);
     if (!deletedUuid) return { removed: 0 };
+    let twistedRemoved = 0;
+    for (const candidate of values(token?.parent?.tokens)) {
+      const twisted = getTwistedLinkForToken(candidate);
+      if (!twisted) continue;
+      if (clean(twisted.sourceTokenUuid) !== deletedUuid && clean(twisted.targetTokenUuid) !== deletedUuid) continue;
+      await twisted.effect.delete(bypassOptions());
+      twistedRemoved += 1;
+    }
     const targetLink = flag(token, GRAPPLE_LINK_FLAG);
     if (targetLink) {
       const source = await this.#fromUuid(targetLink.sourceTokenUuid);
       await this.#removeLinkFragments({ source, target: token, link: targetLink, targetDeleted: true });
-      return { removed: 1 };
+      return { removed: 1 + twistedRemoved };
     }
     const reservations = getActorHandReservations(token.actor).filter((row) => row.sourceTokenUuid === deletedUuid);
     for (const link of reservations) {
       const target = await this.#fromUuid(link.targetTokenUuid);
       await this.#removeLinkFragments({ source: token, target, link });
     }
-    return { removed: reservations.length };
+    return { removed: reservations.length + twistedRemoved };
   }
 
   async reconcileScene(scene) {

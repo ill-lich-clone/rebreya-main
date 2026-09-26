@@ -16,6 +16,23 @@ import {
   buildNauseatedChanges,
   registerCombatStatusConfig
 } from "../scripts/combat/status-service.js";
+import * as statusModule from "../scripts/combat/status-service.js";
+
+test("twisted HUD metadata binds the affected token to the single targeted source token", () => {
+  assert.equal(typeof statusModule.buildTwistedStatusMeta, "function");
+  assert.deepEqual(statusModule.buildTwistedStatusMeta({
+    sourceToken: { uuid: "Scene.scene.Token.life" },
+    targetToken: { uuid: "Scene.scene.Token.death" },
+    linkId: "twisted-link-1"
+  }), {
+    twistedLink: {
+      linkId: "twisted-link-1",
+      kind: "twisted",
+      sourceTokenUuid: "Scene.scene.Token.life",
+      targetTokenUuid: "Scene.scene.Token.death"
+    }
+  });
+});
 
 test("actor HP updates synchronize the dead overlay in both directions", async () => {
   const previousActor = globalThis.Actor;

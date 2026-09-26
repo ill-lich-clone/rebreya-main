@@ -68,18 +68,30 @@ async function flush() {
   await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
-function environment({ dialogChoice = "cancel", showMoveDialog = null, dragError = null, TokenClass = undefined } = {}) {
+function environment({
+  dialogChoice = "cancel",
+  showMoveDialog = null,
+  dragError = null,
+  TokenClass = undefined,
+  twistedTargetLink = null,
+  twistedSourceLinks = []
+} = {}) {
   const Hooks = hooksRegistry();
-  const calls = { drag: [], releaseMove: [], effects: [], tokens: [], scenes: [], dialogs: [], errors: [] };
+  const calls = { drag: [], releaseMove: [], twistedPull: [], twistedReleaseMove: [], twistedScenes: [], effects: [], tokens: [], scenes: [], dialogs: [], errors: [] };
   const moduleApi = {
+    getTwistedLink: () => twistedTargetLink,
+    getTwistedLinksForSource: () => twistedSourceLinks,
     async requestDragFromTokenUpdate(payload) {
       calls.drag.push(payload);
       if (dragError) throw dragError;
     },
     async requestReleaseAndMove(payload) { calls.releaseMove.push(payload); },
+    async requestTwistedPullFromTokenUpdate(payload) { calls.twistedPull.push(payload); },
+    async requestTwistedReleaseAndMove(payload) { calls.twistedReleaseMove.push(payload); },
     async handleManagedEffectDeleted(effect) { calls.effects.push(effect); },
     async handleTokenDeleted(token) { calls.tokens.push(token); },
-    async reconcileScene(scene) { calls.scenes.push(scene); }
+    async reconcileScene(scene) { calls.scenes.push(scene); },
+    async reconcileTwistedLinks(scene) { calls.twistedScenes.push(scene); }
   };
   registerGrappleHooks(moduleApi, {
     Hooks,
@@ -263,6 +275,54 @@ test("ordinary token movement is left byte-for-byte unchanged", () => {
   const changed = { x: 500, alpha: 0.25 };
   assert.deepEqual(env.Hooks.call("preUpdateToken", token, changed, {}, "player-a"), [undefined]);
   assert.deepEqual(changed, { x: 500, alpha: 0.25 });
+});
+
+test("twisted target can move inside its radius without a dialog", async () => {
+  const token = targetToken();
+  token.flags = {};
+  const env = environment({ twistedTargetLink: {
+    linkId: "twisted-1", sourceTokenUuid: "Scene.scene.Token.source",
+    targetTokenUuid: token.uuid, radiusFeet: 10
+  } });
+  env.moduleApi.isTwistedTargetOutsideRadius = () => false;
+  const changed = { x: 150 };
+  assert.deepEqual(env.Hooks.call("preUpdateToken", token, changed, {}, "player-a"), [undefined]);
+  await flush();
+  assert.deepEqual(changed, { x: 150 });
+  assert.equal(env.calls.dialogs.length, 0);
+});
+
+test("twisted target movement outside its radius offers release or movement cancellation", async () => {
+  const token = targetToken();
+  token.flags = {};
+  const env = environment({
+    dialogChoice: "release-twisted",
+    twistedTargetLink: {
+      linkId: "twisted-1", sourceTokenUuid: "Scene.scene.Token.source",
+      targetTokenUuid: token.uuid, radiusFeet: 10
+    }
+  });
+  env.moduleApi.isTwistedTargetOutsideRadius = () => true;
+  const changed = { x: 500, y: 600 };
+  env.Hooks.call("preUpdateToken", token, changed, {}, "player-a");
+  assert.deepEqual(changed, {});
+  await flush();
+  assert.deepEqual(env.calls.dialogs[0].buttons.map((button) => button.label), [
+    "Отменить скручивание", "Отменить перемещение"
+  ]);
+  assert.equal(env.calls.twistedReleaseMove.length, 1);
+});
+
+test("twisted source movement is replaced with one authoritative minimum pull", async () => {
+  const token = sourceToken();
+  token.actor.flags[MODULE_ID].handReservations = [];
+  const env = environment({ twistedSourceLinks: [{ linkId: "twisted-1" }] });
+  const changed = { x: 500, y: 600 };
+  env.Hooks.call("preUpdateToken", token, changed, {}, "player-a");
+  assert.deepEqual(changed, {});
+  await flush();
+  assert.equal(env.calls.twistedPull.length, 1);
+  assert.deepEqual([env.calls.twistedPull[0].x, env.calls.twistedPull[0].y], [500, 600]);
 });
 
 test("effect/token cleanup and active-GM scene reconciliation route through the service", async () => {

@@ -215,10 +215,14 @@ import {
   GRAPPLE_PLACE_COMMAND,
   GRAPPLE_RELEASE_AND_MOVE_COMMAND,
   GRAPPLE_TOGGLE_COMMAND,
+  TWISTED_PULL_COMMAND,
+  TWISTED_RELEASE_AND_MOVE_COMMAND,
   isValidGrappleDragPayload,
   isValidGrapplePlacePayload,
   isValidGrappleReleaseAndMovePayload,
-  isValidGrappleTogglePayload
+  isValidGrappleTogglePayload,
+  isValidTwistedPullPayload,
+  isValidTwistedReleaseAndMovePayload
 } from "./infrastructure/foundry/grapple-command-contract.js";
 import { StorageTriggerPromptBroker } from "./infrastructure/foundry/storage-trigger-prompt-broker.js";
 import { UiRefreshCoordinator } from "./infrastructure/ui/ui-refresh-coordinator.js";
@@ -337,7 +341,7 @@ import {
 } from "./combat/performer-automation-service.js?v=1.4.96";
 import { BardicInspirationCompatService } from "./combat/bardic-inspiration-compat-service.js";
 import { RaceAutomationService, SOCKET_EVENT_RACE_AUTOMATION } from "./combat/race-automation-service.js?v=1.4.147-race-damage";
-import { GrappleAutomationService, GRAPPLE_LINK_FLAG } from "./combat/grapple-automation-service.js";
+import { GrappleAutomationService, GRAPPLE_LINK_FLAG, getTwistedLinkForToken } from "./combat/grapple-automation-service.js";
 import { GrappleMacroService } from "./combat/grapple-macro-service.js?v=1.4.252";
 import { GrapplePlacementPreview } from "./combat/grapple-placement-preview.js?v=1.4.290-rogue-mantle";
 import { getActorHandReservations } from "./integrations/held-items.js";
@@ -2604,6 +2608,21 @@ export class RebreyaMainModule {
       scheduling: keyedMutationScheduling((payload) => [documentKey(payload.targetTokenUuid)]),
       execute: (payload) => this.grappleAutomationService.releaseAndMove(payload)
     });
+    this.socketCommandBus.register(TWISTED_PULL_COMMAND, {
+      validate: isValidTwistedPullPayload,
+      authorize: (payload, { sender }) => (
+        payload.requesterUserId === cleanSocketId(sender?.id)
+        && this.#canSenderUseGrappleSource(sender, payload)
+      ),
+      scheduling: keyedMutationScheduling((payload) => [documentKey(payload.sourceTokenUuid)]),
+      execute: (payload) => this.grappleAutomationService.pullTwisted(payload)
+    });
+    this.socketCommandBus.register(TWISTED_RELEASE_AND_MOVE_COMMAND, {
+      validate: isValidTwistedReleaseAndMovePayload,
+      authorize: (payload, { sender }) => this.#canSenderReleaseTwistedTarget(sender, payload),
+      scheduling: keyedMutationScheduling((payload) => [documentKey(payload.targetTokenUuid)]),
+      execute: (payload) => this.grappleAutomationService.twistedReleaseAndMove(payload)
+    });
     this.socketCommandBus.register(PERFORMER_APPLY_RESULT_COMMAND, {
       validate: isValidPerformerApplyResultPayload,
       authorize: (payload, { sender }) => traderActorIsOwnedByUser(
@@ -3049,6 +3068,14 @@ export class RebreyaMainModule {
     const target = await this.#resolveActiveGrappleToken(payload?.targetTokenUuid);
     const link = target?.getFlag?.(MODULE_ID, GRAPPLE_LINK_FLAG)
       ?? target?.flags?.[MODULE_ID]?.[GRAPPLE_LINK_FLAG];
+    return cleanSocketId(link?.linkId) === cleanSocketId(payload?.linkId)
+      && documentIsOwnedByUser(target, sender);
+  }
+
+  async #canSenderReleaseTwistedTarget(sender, payload) {
+    if (payload?.requesterUserId !== cleanSocketId(sender?.id)) return false;
+    const target = await this.#resolveActiveGrappleToken(payload?.targetTokenUuid);
+    const link = getTwistedLinkForToken(target);
     return cleanSocketId(link?.linkId) === cleanSocketId(payload?.linkId)
       && documentIsOwnedByUser(target, sender);
   }

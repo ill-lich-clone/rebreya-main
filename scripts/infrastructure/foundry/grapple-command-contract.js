@@ -2,6 +2,8 @@ export const GRAPPLE_TOGGLE_COMMAND = "combat.grapple.toggle";
 export const GRAPPLE_PLACE_COMMAND = "combat.grapple.place";
 export const GRAPPLE_DRAG_COMMAND = "combat.grapple.drag";
 export const GRAPPLE_RELEASE_AND_MOVE_COMMAND = "combat.grapple.release-and-move";
+export const TWISTED_PULL_COMMAND = "combat.twisted.pull";
+export const TWISTED_RELEASE_AND_MOVE_COMMAND = "combat.twisted.release-and-move";
 
 const MAX_TOKEN_UUID_LENGTH = 512;
 const MAX_IDENTIFIER_LENGTH = 128;
@@ -65,3 +67,6 @@ export function isValidGrappleReleaseAndMovePayload(payload) {
     && boundedTrimmedString(payload.operationId)
     && boundedTrimmedString(payload.requesterUserId);
 }
+
+export const isValidTwistedPullPayload = isValidGrappleDragPayload;
+export const isValidTwistedReleaseAndMovePayload = isValidGrappleReleaseAndMovePayload;

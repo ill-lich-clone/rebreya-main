@@ -130,7 +130,12 @@ export function registerGrappleHooks(moduleApi, {
     const requesterUserId = clean(userId);
     const targetLink = documentFlag(token, GRAPPLE_LINK_FLAG);
     const sourceTokenUuid = clean(token?.uuid);
-    if (!targetLink?.linkId && !isGrappleSource(token)) return undefined;
+    const twistedTargetLink = moduleApi.getTwistedLink?.(token) ?? null;
+    const twistedSourceLinks = moduleApi.getTwistedLinksForSource?.(token) ?? [];
+    const twistedTargetOutside = twistedTargetLink
+      && moduleApi.isTwistedTargetOutsideRadius?.(token, position) === true;
+    if (!targetLink?.linkId && !isGrappleSource(token) && !twistedTargetOutside && !twistedSourceLinks.length) return undefined;
+    if (twistedTargetLink && !twistedTargetOutside && !targetLink?.linkId && !isGrappleSource(token)) return undefined;
     removeMovementChanges(changed);
 
     if (targetLink?.linkId) {
@@ -171,6 +176,40 @@ export function registerGrappleHooks(moduleApi, {
       return shouldCancelOriginalUpdate(changed);
     }
 
+    if (twistedTargetOutside) {
+      const linkId = clean(twistedTargetLink.linkId);
+      const pendingKey = `twisted:${linkId}`;
+      if (!pendingTargetDialogs.has(pendingKey)) {
+        const pending = (async () => {
+          const choice = await showMoveDialog({
+            title: "Существо было скручено",
+            content: "<p>Скрученное существо не может покинуть область действия. Что сделать?</p>",
+            buttons: [
+              { action: "release-twisted", label: "Отменить скручивание", icon: "fa-solid fa-link-slash", default: true },
+              { action: "cancel", label: "Отменить перемещение", icon: "fa-solid fa-xmark" }
+            ]
+          });
+          if (choice !== "release-twisted") return;
+          await moduleApi.requestTwistedReleaseAndMove({
+            targetTokenUuid: clean(token?.uuid), linkId,
+            x: position.x, y: position.y,
+            operationId: operationId("twisted-release-move"), requesterUserId
+          });
+        })().finally(() => pendingTargetDialogs.delete(pendingKey));
+        pendingTargetDialogs.set(pendingKey, pending);
+        pending.catch(report);
+      }
+      return shouldCancelOriginalUpdate(changed);
+    }
+
+    if (twistedSourceLinks.length) {
+      schedule(() => moduleApi.requestTwistedPullFromTokenUpdate({
+        sourceTokenUuid, x: position.x, y: position.y,
+        operationId: operationId("twisted-pull"), requesterUserId
+      }));
+      return shouldCancelOriginalUpdate(changed);
+    }
+
     schedule(() => moduleApi.requestDragFromTokenUpdate({
       sourceTokenUuid,
       x: position.x,
@@ -187,6 +226,14 @@ export function registerGrappleHooks(moduleApi, {
     schedule(() => moduleApi.handleManagedEffectDeleted(effect));
   });
 
+  for (const event of ["createActiveEffect", "updateActiveEffect", "updateActor"]) {
+    Hooks.on(event, () => {
+      if (!isActiveGmClient(gameProvider())) return;
+      const scene = gameProvider()?.scenes?.active ?? globalThis.canvas?.scene;
+      if (scene) schedule(() => moduleApi.reconcileTwistedLinks(scene));
+    });
+  }
+
   Hooks.on("deleteToken", (token, options = {}) => {
     if (options?.[MODULE_ID]?.[GRAPPLE_BYPASS_OPTION] === true) return;
     if (!isActiveGmClient(gameProvider())) return;
@@ -196,13 +243,29 @@ export function registerGrappleHooks(moduleApi, {
   Hooks.on("canvasReady", (canvasOrScene) => {
     if (!isActiveGmClient(gameProvider())) return;
     const scene = canvasOrScene?.scene ?? canvasOrScene;
-    if (scene) schedule(() => moduleApi.reconcileScene(scene));
+    if (scene) schedule(async () => {
+      await moduleApi.reconcileScene(scene);
+      await moduleApi.reconcileTwistedLinks(scene);
+    });
   });
 
   Hooks.on("ready", () => {
     if (!isActiveGmClient(gameProvider())) return;
     const scene = gameProvider()?.scenes?.active ?? globalThis.canvas?.scene;
-    if (scene) schedule(() => moduleApi.reconcileScene(scene));
+    if (scene) schedule(async () => {
+      await moduleApi.reconcileScene(scene);
+      await moduleApi.reconcileTwistedLinks(scene);
+    });
+  });
+
+  Hooks.on("combatTurn", (combat) => {
+    if (!isActiveGmClient(gameProvider())) return;
+    schedule(() => moduleApi.refreshTwistedAura(combat));
+  });
+
+  Hooks.on("deleteCombat", () => {
+    if (!isActiveGmClient(gameProvider())) return;
+    schedule(() => moduleApi.refreshTwistedAura(null));
   });
 
   return { pendingTargetDialogs };

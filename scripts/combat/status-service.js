@@ -23,6 +23,28 @@ const NAUSEATED_STATUS_ID = "rebreya-nauseated";
 const STATUS_COUNTER_MODULE_ID = "statuscounter";
 const DAE_SPECIAL_DURATION_TURN_START_SOURCE = "turnStartSource";
 const DAE_SPECIAL_DURATION_TURN_END_SOURCE = "turnEndSource";
+const TWISTED_STATUS_ID = "rebreya-twisted";
+
+function documentUuid(document) {
+  return String(document?.document?.uuid ?? document?.uuid ?? "").trim();
+}
+
+export function buildTwistedStatusMeta({ sourceToken, targetToken, linkId } = {}) {
+  const sourceTokenUuid = documentUuid(sourceToken);
+  const targetTokenUuid = documentUuid(targetToken);
+  const safeLinkId = String(linkId ?? "").trim();
+  if (!sourceTokenUuid || !targetTokenUuid || !safeLinkId || sourceTokenUuid === targetTokenUuid) {
+    throw new Error("Для состояния «Скрученный» нужны разные источник и цель.");
+  }
+  return {
+    twistedLink: {
+      linkId: safeLinkId,
+      kind: "twisted",
+      sourceTokenUuid,
+      targetTokenUuid
+    }
+  };
+}
 const DISCREET_MOVEMENT_KEYS = Object.freeze(["walk", "burrow", "climb", "fly", "swim"]);
 const FRIGHTENED_ATTACK_BONUS_KEYS = Object.freeze([
   "system.bonuses.abilities.check",
@@ -1147,6 +1169,26 @@ export class CombatStatusService {
     return null;
   }
 
+  #resolveHudToken(app) {
+    return app?.object?.document ?? app?.object ?? canvas?.hud?.token?.object?.document ?? null;
+  }
+
+  #twistedHudMeta(app, currentStatus) {
+    const targets = Array.from(globalThis.game?.user?.targets ?? []);
+    if (targets.length !== 1) {
+      throw new Error("Для состояния «Скрученный» выберите ровно один токен-источник через T.");
+    }
+    const existingLinkId = String(currentStatus?.meta?.twistedLink?.linkId ?? "").trim();
+    const linkId = existingLinkId
+      || globalThis.foundry?.utils?.randomID?.()
+      || globalThis.crypto?.randomUUID?.();
+    return buildTwistedStatusMeta({
+      sourceToken: targets[0],
+      targetToken: this.#resolveHudToken(app),
+      linkId
+    });
+  }
+
   #resolveHudDurationSourceActor(actor) {
     const targets = Array.from(globalThis.game?.user?.targets ?? []);
     if (targets.length === 1) {
@@ -1447,9 +1489,21 @@ export class CombatStatusService {
       return;
     }
 
+    let meta;
+    if (statusId === TWISTED_STATUS_ID) {
+      try {
+        meta = this.#twistedHudMeta(app, currentStatus);
+      }
+      catch (error) {
+        globalThis.ui?.notifications?.warn?.(error.message);
+        return;
+      }
+    }
+
     await this.setStatus(actor, statusId, {
       active: true,
-      value: nextValue
+      value: nextValue,
+      ...(meta ? { meta } : {})
     });
   }
 

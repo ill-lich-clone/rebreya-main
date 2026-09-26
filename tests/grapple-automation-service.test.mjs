@@ -663,3 +663,52 @@ test("reconciliation releases a legacy grapple whose target is already outside n
   assert.equal(linkOf(env.target), undefined);
   assert.equal(env.targetActor.effects.contents.length, 0);
 });
+
+async function addTwistedLink(env, { radiusFeet = 10 } = {}) {
+  const link = {
+    linkId: "twisted-1",
+    kind: "twisted",
+    sourceTokenUuid: env.source.uuid,
+    targetTokenUuid: env.target.uuid
+  };
+  await env.targetActor.createEmbeddedDocuments("ActiveEffect", [{
+    name: `Скрученный ${radiusFeet}`,
+    statuses: ["rebreya-twisted"],
+    flags: { [MODULE_ID]: { statusValue: radiusFeet, statusMeta: { twistedLink: link } } }
+  }]);
+  return link;
+}
+
+test("twisted source movement pulls its target only enough to preserve the configured radius", async () => {
+  const env = environment();
+  await addTwistedLink(env);
+  assert.equal(typeof env.service.pullTwisted, "function");
+
+  const result = await env.service.pullTwisted({
+    sourceTokenUuid: env.source.uuid,
+    x: 400,
+    y: 0,
+    operationId: "twisted-pull-1"
+  });
+
+  assert.deepEqual(result.updates.map(({ _id, x, y }) => ({ _id, x, y })), [
+    { _id: "source", x: 400, y: 0 },
+    { _id: "target", x: 200, y: 0 }
+  ]);
+});
+
+test("twisted source movement is rejected atomically when a wall blocks the required pull", async () => {
+  const env = environment({ collision: true });
+  await addTwistedLink(env);
+  assert.equal(typeof env.service.pullTwisted, "function");
+
+  await assert.rejects(env.service.pullTwisted({
+    sourceTokenUuid: env.source.uuid,
+    x: 400,
+    y: 0,
+    operationId: "twisted-pull-wall"
+  }), (error) => error?.code === "wall-collision");
+  assert.equal(env.source.x, 0);
+  assert.equal(env.target.x, 100);
+  assert.equal(env.scene.batches.length, 0);
+});
