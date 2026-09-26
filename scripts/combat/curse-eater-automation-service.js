@@ -12,7 +12,7 @@ export const CURSE_EATER_RARITY = Object.freeze({
 
 const CURSE_EATER_TIER_REQUIREMENTS = Object.freeze([
   CURSE_EATER_RARITY.uncommon,
-  CURSE_EATER_RARITY.rare,
+  CURSE_EATER_RARITY.uncommon,
   CURSE_EATER_RARITY.rare,
   CURSE_EATER_RARITY.rare,
   CURSE_EATER_RARITY.veryRare,

@@ -212,6 +212,16 @@ test("tier matching saves stronger items for later requirements", () => {
   assert.deepEqual(progress.usedItemIds, ["rare", "artifact"]);
 });
 
+test("two uncommon cursed items reach the second tier from the current feat text", () => {
+  const progress = calculateCurseEaterProgress([
+    { itemId: "first-uncommon", rarity: 1 },
+    { itemId: "second-uncommon", rarity: 1 }
+  ]);
+
+  assert.equal(progress.tier, 2);
+  assert.deepEqual(progress.usedItemIds, ["first-uncommon", "second-uncommon"]);
+});
+
 test("common plus legendary reaches only the first tier", () => {
   const progress = calculateCurseEaterProgress([
     { itemId: "common", rarity: 0 },
