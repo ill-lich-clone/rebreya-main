@@ -100,6 +100,7 @@ export function registerGrappleHooks(moduleApi, {
   randomId = defaultRandomId,
   isActiveGmClient = defaultIsActiveGmClient,
   gameProvider = () => globalThis.game,
+  canvasProvider = () => globalThis.canvas,
   notifyError = defaultNotifyError,
   TokenClass = globalThis.CONFIG?.Token?.objectClass
     ?? globalThis.foundry?.canvas?.placeables?.Token
@@ -120,6 +121,7 @@ export function registerGrappleHooks(moduleApi, {
   const refreshTwistedAura = (scene, combat = gameProvider()?.combat ?? null) => (
     moduleApi.refreshTwistedAura?.(combat, scene)
   );
+  const currentScene = () => canvasProvider()?.scene ?? gameProvider()?.scenes?.active ?? null;
   const operationId = (prefix) => {
     const suffix = clean(randomId());
     if (!suffix) throw new Error("Не удалось создать идентификатор операции захвата");
@@ -226,7 +228,7 @@ export function registerGrappleHooks(moduleApi, {
   Hooks.on("deleteActiveEffect", (effect, options = {}) => {
     if (options?.[MODULE_ID]?.[GRAPPLE_BYPASS_OPTION] === true) return;
     if (!isActiveGmClient(gameProvider())) return;
-    const scene = gameProvider()?.scenes?.active ?? globalThis.canvas?.scene;
+    const scene = currentScene();
     schedule(async () => {
       await moduleApi.handleManagedEffectDeleted(effect);
       await refreshTwistedAura(scene);
@@ -236,7 +238,7 @@ export function registerGrappleHooks(moduleApi, {
   for (const event of ["createActiveEffect", "updateActiveEffect", "updateActor"]) {
     Hooks.on(event, () => {
       if (!isActiveGmClient(gameProvider())) return;
-      const scene = gameProvider()?.scenes?.active ?? globalThis.canvas?.scene;
+      const scene = currentScene();
       if (scene) schedule(async () => {
         await moduleApi.reconcileTwistedLinks(scene);
         await refreshTwistedAura(scene);
@@ -247,11 +249,18 @@ export function registerGrappleHooks(moduleApi, {
   Hooks.on("deleteToken", (token, options = {}) => {
     if (options?.[MODULE_ID]?.[GRAPPLE_BYPASS_OPTION] === true) return;
     if (!isActiveGmClient(gameProvider())) return;
-    const scene = token?.parent ?? gameProvider()?.scenes?.active ?? globalThis.canvas?.scene;
+    const scene = token?.parent ?? currentScene();
     schedule(async () => {
       await moduleApi.handleTokenDeleted(token);
       await refreshTwistedAura(scene);
     });
+  });
+
+  Hooks.on("updateToken", (token, changed) => {
+    if (!hasPositionChange(changed) || !isActiveGmClient(gameProvider())) return;
+    if (!(moduleApi.getTwistedLinksForSource?.(token)?.length > 0)) return;
+    const scene = token?.parent ?? currentScene();
+    schedule(() => refreshTwistedAura(scene));
   });
 
   Hooks.on("canvasReady", (canvasOrScene) => {
@@ -266,7 +275,7 @@ export function registerGrappleHooks(moduleApi, {
 
   Hooks.on("ready", () => {
     if (!isActiveGmClient(gameProvider())) return;
-    const scene = gameProvider()?.scenes?.active ?? globalThis.canvas?.scene;
+    const scene = currentScene();
     if (scene) schedule(async () => {
       await moduleApi.reconcileScene(scene);
       await moduleApi.reconcileTwistedLinks(scene);
@@ -276,19 +285,19 @@ export function registerGrappleHooks(moduleApi, {
 
   Hooks.on("createCombat", (combat) => {
     if (!isActiveGmClient(gameProvider())) return;
-    const scene = combat?.scene ?? gameProvider()?.scenes?.active ?? globalThis.canvas?.scene;
+    const scene = combat?.scene ?? currentScene();
     schedule(() => refreshTwistedAura(scene, combat));
   });
 
   Hooks.on("combatTurn", (combat) => {
     if (!isActiveGmClient(gameProvider())) return;
-    const scene = combat?.scene ?? gameProvider()?.scenes?.active ?? globalThis.canvas?.scene;
+    const scene = combat?.scene ?? currentScene();
     schedule(() => refreshTwistedAura(scene, combat));
   });
 
   Hooks.on("deleteCombat", () => {
     if (!isActiveGmClient(gameProvider())) return;
-    const scene = gameProvider()?.scenes?.active ?? globalThis.canvas?.scene;
+    const scene = currentScene();
     schedule(() => refreshTwistedAura(scene, null));
   });
 

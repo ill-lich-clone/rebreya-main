@@ -460,7 +460,7 @@ export class GrappleAutomationService {
     const effectManager = this.#effectManagerProvider?.();
     const game = this.#gameProvider();
     const combatTarget = combat?.combatant?.token?.document ?? combat?.combatant?.token ?? null;
-    const activeScene = scene ?? combatTarget?.parent ?? game?.scenes?.active ?? globalThis.canvas?.scene ?? null;
+    const activeScene = scene ?? combatTarget?.parent ?? globalThis.canvas?.scene ?? game?.scenes?.active ?? null;
     const sceneId = clean(activeScene?.id);
     if (typeof effectManager?.endEffects === "function") {
       await effectManager.endEffects({ name: `${MODULE_ID}.twisted-turn-aura`, ...(sceneId ? { sceneId } : {}) });
@@ -480,7 +480,7 @@ export class GrappleAutomationService {
       if (!source || clean(source?.parent?.id) !== sceneId || !(grid.distance > 0)) continue;
       await new Sequence()
         .effect()
-        .attachTo(source.object ?? source)
+        .atLocation(source.object ?? source)
         .shape("circle", {
           radius: link.radiusFeet / grid.distance,
           gridUnits: true,

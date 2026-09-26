@@ -714,7 +714,7 @@ test("twisted source movement snaps the pulled target through the Foundry grid a
   const result = await env.service.pullTwisted({
     sourceTokenUuid: env.source.uuid,
     x: 400,
-    y: 150,
+    y: 250,
     operationId: "twisted-pull-grid"
   });
 
@@ -723,7 +723,7 @@ test("twisted source movement snaps the pulled target through the Foundry grid a
   assert.equal(snapCalls[0].scene, env.scene);
   assert.notEqual(snapCalls[0].position.y % env.scene.grid.size, 0);
   assert.deepEqual(result.updates.map(({ _id, x, y }) => ({ _id, x, y })), [
-    { _id: "source", x: 400, y: 150 },
+    { _id: "source", x: 400, y: 250 },
     { _id: "target", x: 200, y: 100 }
   ]);
 });
@@ -749,7 +749,7 @@ test("twisted auras remain visible for every link outside combat and follow thei
   const effects = [];
   class FakeSequence {
     effect() { this.current = {}; effects.push(this.current); return this; }
-    attachTo(source) { this.current.source = source; return this; }
+    atLocation(source) { this.current.source = source; return this; }
     shape(kind, options) { this.current.shape = { kind, options }; return this; }
     name(name) { this.current.name = name; return this; }
     persist() { this.current.persist = true; return this; }

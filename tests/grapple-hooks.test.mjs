@@ -75,7 +75,8 @@ function environment({
   TokenClass = undefined,
   twistedTargetLink = null,
   twistedSourceLinks = [],
-  game = { user: { id: "player-a" }, combat: null, scenes: { active: null } }
+  game = { user: { id: "player-a" }, combat: null, scenes: { active: null } },
+  canvas = { scene: null }
 } = {}) {
   const Hooks = hooksRegistry();
   const calls = { drag: [], releaseMove: [], twistedPull: [], twistedReleaseMove: [], twistedScenes: [], auras: [], effects: [], tokens: [], scenes: [], dialogs: [], errors: [] };
@@ -104,6 +105,7 @@ function environment({
     randomId: () => `operation-${calls.drag.length + calls.releaseMove.length + 1}`,
     isActiveGmClient: () => true,
     gameProvider: () => game,
+    canvasProvider: () => canvas,
     notifyError: (message) => calls.errors.push(message),
     TokenClass
   });
@@ -345,14 +347,29 @@ test("effect/token cleanup and active-GM scene reconciliation route through the 
 test("twisted aura refreshes outside combat when status or canvas state changes", async () => {
   const scene = { id: "scene" };
   const game = { user: { id: "player-a" }, combat: null, scenes: { active: scene } };
-  const env = environment({ game });
+  const env = environment({ game, twistedSourceLinks: [{ linkId: "twisted-1" }] });
 
   env.Hooks.call("createActiveEffect", { id: "twisted" });
   env.Hooks.call("canvasReady", { scene });
+  env.Hooks.call("updateToken", { id: "source", parent: scene }, { x: 100 }, {}, "player-a");
   await flush();
 
   assert.deepEqual(env.calls.auras, [
     { combat: null, scene },
+    { combat: null, scene },
     { combat: null, scene }
   ]);
+});
+
+test("twisted aura uses the GM viewed canvas scene before the globally active scene", async () => {
+  const activeScene = { id: "active-scene" };
+  const viewedScene = { id: "viewed-scene" };
+  const game = { user: { id: "gm" }, combat: null, scenes: { active: activeScene } };
+  const env = environment({ game, canvas: { scene: viewedScene } });
+
+  env.Hooks.call("createActiveEffect", { id: "twisted" });
+  await flush();
+
+  assert.deepEqual(env.calls.twistedScenes, [viewedScene]);
+  assert.deepEqual(env.calls.auras, [{ combat: null, scene: viewedScene }]);
 });

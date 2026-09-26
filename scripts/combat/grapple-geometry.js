@@ -43,7 +43,8 @@ export function twistedDistanceFeet(sourceToken, targetToken, sourcePosition, ta
   const normalized = normalizedGrid(grid);
   const source = tokenCenter(sourceToken, sourcePosition, normalized);
   const target = tokenCenter(targetToken, targetPosition, normalized);
-  return (Math.hypot(source.x - target.x, source.y - target.y) / normalized.size) * normalized.distance;
+  const distancePixels = Math.max(Math.abs(source.x - target.x), Math.abs(source.y - target.y));
+  return (distancePixels / normalized.size) * normalized.distance;
 }
 
 export function computeTwistedPullPosition({
@@ -59,18 +60,18 @@ export function computeTwistedPullPosition({
   const target = tokenCenter(targetToken, null, normalized);
   const dx = source.x - target.x;
   const dy = source.y - target.y;
-  const distancePixels = Math.hypot(dx, dy);
   const radiusPixels = (radius / normalized.distance) * normalized.size;
-  const excessPixels = Math.max(0, distancePixels - radiusPixels);
+  const pullX = Math.sign(dx) * Math.max(0, Math.abs(dx) - radiusPixels);
+  const pullY = Math.sign(dy) * Math.max(0, Math.abs(dy) - radiusPixels);
+  const pulledPixels = Math.max(Math.abs(pullX), Math.abs(pullY));
   const current = tokenFootprint(targetToken);
-  if (excessPixels <= 1e-9 || distancePixels <= 1e-9) {
+  if (pulledPixels <= 1e-9) {
     return { x: current.x, y: current.y, pulledFeet: 0 };
   }
-  const scale = excessPixels / distancePixels;
   return {
-    x: current.x + (dx * scale),
-    y: current.y + (dy * scale),
-    pulledFeet: (excessPixels / normalized.size) * normalized.distance
+    x: current.x + pullX,
+    y: current.y + pullY,
+    pulledFeet: (pulledPixels / normalized.size) * normalized.distance
   };
 }
 
