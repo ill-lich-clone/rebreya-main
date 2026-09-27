@@ -15,7 +15,6 @@
       <div class="rm-hero-doll-grid">
         {{#each heroDoll.slots}}
           <div class="rm-hero-doll-slot rm-hero-doll-slot--{{ area }}">
-            <span class="rm-hero-doll-slot__label">{{ label }}</span>
             <button
               type="button"
               class="rm-hero-doll-slot__surface unbutton always-interactive {{#if occupied}}is-occupied{{/if}}"
@@ -30,9 +29,7 @@
               {{#if occupied}}
                 <img class="rm-hero-doll-slot__image" src="{{ itemImg }}" alt="">
               {{else}}
-                <span class="rm-hero-doll-slot__empty">
-                  <i class="fa-solid fa-plus" aria-hidden="true"></i>
-                </span>
+                <span class="rm-hero-doll-slot__empty">{{ label }}</span>
               {{/if}}
             </button>
 

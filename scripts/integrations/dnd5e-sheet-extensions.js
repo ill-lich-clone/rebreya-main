@@ -30,7 +30,7 @@ import {
   mapSlotGroupToHeroDollSlots,
   normalizeHeroDollSlotGroup,
   normalizeHeroDollSlots
-} from "../data/item-classification.js?v=1.4.337-hero-doll-slots";
+} from "../data/item-classification.js?v=1.4.338-hero-doll-menu";
 import {
   bindUniversalBeltSheet,
   registerUniversalBeltItemContextHook
@@ -3428,6 +3428,25 @@ function clearHeroDollDragHighlight(panel) {
   });
 }
 
+export function buildHeroDollSlotMenuItems(snapshot, slotId) {
+  const normalizedSlotId = String(slotId ?? "").trim();
+  if (!normalizedSlotId || !Array.isArray(snapshot?.inventoryItems)) {
+    return [];
+  }
+
+  return snapshot.inventoryItems
+    .filter((item) => (
+      String(item?.itemUuid ?? "").trim()
+      && normalizeHeroDollSlots(item?.allowedSlots, []).includes(normalizedSlotId)
+    ))
+    .map((item) => ({
+      id: String(item.id ?? "").trim(),
+      itemUuid: String(item.itemUuid).trim(),
+      label: String(item.name ?? "").trim(),
+      image: String(item.img ?? "").trim()
+    }));
+}
+
 function getHeroDollPanelFromEvent(root, event) {
   const candidate = event?.target?.closest?.(`.rm-hero-doll-tab[data-tab='${HERO_DOLL_TAB_ID}']`);
   if (!(candidate instanceof HTMLElement) || !root.contains(candidate)) {
@@ -3444,6 +3463,40 @@ function bindHeroDollSlotListeners(panel, app, moduleApi, listenerOptions = unde
   }
 
   panel.querySelectorAll("[data-hero-doll-slot='true']").forEach((slot) => {
+    slot.addEventListener("contextmenu", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+
+      const snapshot = moduleApi.heroDollService.getActorSnapshot(actor);
+      const slotId = String(slot.dataset.slotId ?? "").trim();
+      const slotSnapshot = snapshot.slots?.find?.((entry) => entry.id === slotId) ?? null;
+      const menuItems = buildHeroDollSlotMenuItems(snapshot, slotId);
+      const actions = menuItems.length
+        ? menuItems.map((item) => ({
+          id: `hero-doll-slot-${item.id}`,
+          label: item.label,
+          image: item.image,
+          errorMessage: "Не удалось поместить предмет в слот куклы героя.",
+          callback: async () => {
+            await moduleApi.heroDollService.assignItemToSlot(actor, slotId, { uuid: item.itemUuid });
+            await rerenderActorSheet(app, moduleApi);
+          }
+        }))
+        : [{
+          id: "hero-doll-slot-empty",
+          label: "Нет подходящих предметов",
+          icon: "fa-solid fa-ban",
+          disabled: true
+        }];
+
+      openHeldItemContextMenu({
+        x: Number(event.clientX ?? 0),
+        y: Number(event.clientY ?? 0),
+        title: slotSnapshot?.label ?? "Выбрать предмет",
+        actions
+      });
+    }, listenerOptions);
+
     slot.addEventListener("dragover", (event) => {
       event.preventDefault();
       event.stopPropagation();
@@ -6926,6 +6979,13 @@ function openHeldItemContextMenu({ x = 0, y = 0, title = "", actions = [] } = {}
       iconNode.className = action.icon;
       button.append(iconNode);
     }
+    else if (action.image) {
+      const imageNode = document.createElement("img");
+      imageNode.classList.add("rm-context-menu__image");
+      imageNode.src = action.image;
+      imageNode.alt = "";
+      button.append(imageNode);
+    }
 
     const labelNode = document.createElement("span");
     labelNode.textContent = action.label ?? "";
@@ -6943,7 +7003,7 @@ function openHeldItemContextMenu({ x = 0, y = 0, title = "", actions = [] } = {}
       }
       catch (error) {
         console.error(`${MODULE_ID} | Failed to run held item context action.`, error);
-        ui.notifications?.error?.(error.message || "Не удалось изменить состояние предмета.");
+        ui.notifications?.error?.(action.errorMessage || error.message || "Не удалось изменить состояние предмета.");
       }
     });
 

@@ -50,7 +50,8 @@ const HERO_DOLL_SLOTS = [
   { id: "back4", label: "Спина 4" },
   { id: "back5", label: "Спина 5" },
   { id: "back6", label: "Спина 6" },
-  { id: "back7", label: "Спина 7" }
+  { id: "back7", label: "Спина 7" },
+  { id: "clothing", label: "Одежда" }
 ];
 
 const HERO_DOLL_SLOT_GROUPS = [
@@ -228,7 +229,8 @@ const SLOT_ALIAS_MAP = new Map([
   ["back6", ["back6"]],
   ["спина 6", ["back6"]],
   ["back7", ["back7"]],
-  ["спина 7", ["back7"]]
+  ["спина 7", ["back7"]],
+  ["clothing", ["clothing"]]
 ]);
 
 const SLOT_GROUP_ALIAS_MAP = new Map([

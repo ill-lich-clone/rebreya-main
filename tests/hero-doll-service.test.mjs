@@ -2,8 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   getHeroDollBackSlots,
+  getHeroDollSlotGroups,
   getHeroDollSlots,
-  mapSlotGroupToHeroDollSlots
+  mapSlotGroupToHeroDollSlots,
+  normalizeHeroDollSlots
 } from "../scripts/data/item-classification.js";
 
 test("hero doll exposes three ring slots and seven back slots", () => {
@@ -14,6 +16,18 @@ test("hero doll exposes three ring slots and seven back slots", () => {
   assert.equal(slotIds.includes("ring3"), true);
   assert.equal(slotIds.includes("back6"), true);
   assert.equal(slotIds.includes("back7"), true);
+});
+
+test("hero doll exposes an explicit clothing slot without assigning an automatic item group", () => {
+  const slots = getHeroDollSlots();
+
+  assert.deepEqual(slots.find((slot) => slot.id === "clothing"), {
+    id: "clothing",
+    label: "Одежда",
+    area: "clothing"
+  });
+  assert.deepEqual(normalizeHeroDollSlots("clothing", []), ["clothing"]);
+  assert.equal(getHeroDollSlotGroups().some((group) => group.id === "clothing"), false);
 });
 
 function installFoundryStubs() {

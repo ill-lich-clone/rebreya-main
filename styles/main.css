@@ -961,6 +961,15 @@
   transition: border-color 0.15s ease, background 0.15s ease;
 }
 
+.rm-context-menu__image {
+  width: 26px;
+  height: 26px;
+  flex: 0 0 26px;
+  border: 1px solid var(--rm-border-default);
+  border-radius: 6px;
+  object-fit: cover;
+}
+
 .rm-context-menu__item:hover {
   border-color: var(--rm-border-strong);
   background: rgb(var(--rm-color-gold-rgb) / 0.12);
@@ -10040,14 +10049,14 @@ summary:focus-visible {
 
 .rm-hero-doll-tab__layout {
   display: grid;
-  grid-template-columns: minmax(420px, 520px) minmax(0, 1fr);
+  grid-template-columns: minmax(400px, 460px) minmax(0, 1fr);
   gap: 14px;
   align-items: start;
 }
 
 @container (max-width: 1320px) {
   .rm-hero-doll-tab__layout {
-    grid-template-columns: minmax(496px, 520px) minmax(0, 1fr);
+    grid-template-columns: minmax(400px, 460px) minmax(0, 1fr);
   }
 }
 
@@ -10150,13 +10159,12 @@ summary:focus-visible {
 .rm-hero-doll-grid {
   position: relative;
   display: grid;
-  grid-template-columns: repeat(5, 80px);
-  grid-template-rows: repeat(8, auto);
+  grid-template-columns: repeat(5, 68px);
+  grid-template-rows: repeat(8, 68px);
   justify-content: center;
-  gap: 8px;
-  min-height: 520px;
-  min-width: 468px;
-  padding: 18px;
+  gap: 6px;
+  min-width: 388px;
+  padding: 12px;
   border: 1px solid var(--rm-border-subtle);
   border-radius: 16px;
   background:
@@ -10168,7 +10176,7 @@ summary:focus-visible {
 .rm-hero-doll-grid::before {
   content: "";
   position: absolute;
-  inset: 28px 86px 56px;
+  inset: 22px 72px 44px;
   border-radius: 999px 999px 24px 24px;
   opacity: 0.12;
   background:
@@ -10202,15 +10210,16 @@ summary:focus-visible {
 .rm-hero-doll-slot--back5 { grid-column: 5; grid-row: 7; }
 .rm-hero-doll-slot--back6 { grid-column: 2; grid-row: 8; }
 .rm-hero-doll-slot--back7 { grid-column: 4; grid-row: 8; }
+.rm-hero-doll-slot--clothing { grid-column: 3; grid-row: 8; }
 
 .rm-hero-doll-tab .rm-hero-doll-slot__surface {
-  inline-size: 80px;
-  block-size: 80px;
-  min-inline-size: 80px;
-  min-block-size: 80px;
-  max-inline-size: 80px;
-  max-block-size: 80px;
-  flex: 0 0 80px;
+  inline-size: 68px;
+  block-size: 68px;
+  min-inline-size: 68px;
+  min-block-size: 68px;
+  max-inline-size: 68px;
+  max-block-size: 68px;
+  flex: 0 0 68px;
   box-sizing: border-box;
   overflow: hidden;
   display: grid;
@@ -10258,16 +10267,6 @@ summary:focus-visible {
   border-color: var(--rm-negative);
 }
 
-.rm-hero-doll-slot__label {
-  display: block;
-  inline-size: 80px;
-  margin-bottom: 4px;
-  min-height: 25px;
-  color: var(--rm-muted);
-  font-size: 11px;
-  line-height: 1.15;
-}
-
 .rm-hero-doll-slot__image {
   inline-size: 100%;
   block-size: 100%;
@@ -10299,14 +10298,18 @@ summary:focus-visible {
 .rm-hero-doll-slot__empty {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
+  max-width: 100%;
   color: var(--rm-muted);
   font-size: 11px;
+  line-height: 1.15;
+  text-align: center;
 }
 
 .rm-hero-doll-slot__normalize {
   position: absolute;
-  top: 83px;
+  bottom: 3px;
   left: 4px;
   width: 24px;
   height: 24px;
@@ -10315,8 +10318,8 @@ summary:focus-visible {
 
 .rm-hero-doll-slot__clear {
   position: absolute;
-  top: 31px;
-  left: 54px;
+  top: 3px;
+  right: 3px;
   width: 24px;
   height: 24px;
   border-radius: 8px;

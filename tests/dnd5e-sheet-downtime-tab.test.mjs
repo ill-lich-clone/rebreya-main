@@ -919,6 +919,100 @@ test("registerDnd5eSheetExtensions adds right-click hand choices to equipped ite
   }
 });
 
+test("hero doll slot right click assigns a compatible inventory item and rerenders the sheet", async () => {
+  const stubs = installSheetExtensionStubs();
+  try {
+    const { registerDnd5eSheetExtensions } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?hero-doll-slot-menu=${Date.now()}`);
+    const actor = createActor(stubs.Actor, { id: "actor-a", name: "Asha" });
+    actor.items = {
+      contents: [],
+      get: () => null
+    };
+    const slot = new stubs.HTMLElement({
+      dataset: {
+        slotId: "neck"
+      }
+    });
+    const panel = new stubs.HTMLElement({
+      selectorAll: {
+        "[data-hero-doll-slot='true']": [slot],
+        "[data-hero-doll-item-drag='true']": []
+      }
+    });
+    panel.dataset.tab = "heroDoll";
+    panel.append(slot);
+    const panelSelector = "[data-application-part='heroDoll'] .rm-hero-doll-tab";
+    const root = new stubs.HTMLElement({
+      selectors: {
+        [panelSelector]: panel
+      }
+    });
+    root.append(panel);
+    stubs.document.body = new stubs.HTMLElement();
+    globalThis.window.innerWidth = 800;
+    globalThis.window.innerHeight = 600;
+    const assignments = [];
+    let renderCount = 0;
+    const app = {
+      actor,
+      async render() {
+        renderCount += 1;
+      }
+    };
+    const moduleApi = {
+      heroDollService: {
+        getActorSnapshot() {
+          return {
+            inventoryItems: [
+              { id: "scarf", itemUuid: "Actor.actor-a.Item.scarf", name: "Шарф", img: "scarf.webp", allowedSlots: ["neck"] },
+              { id: "sword", itemUuid: "Actor.actor-a.Item.sword", name: "Меч", img: "sword.webp", allowedSlots: ["leftHand"] }
+            ]
+          };
+        },
+        async assignItemToSlot(...args) {
+          assignments.push(args);
+        }
+      },
+      characterDowntimeService: {
+        getActorContext() {
+          return {};
+        }
+      },
+      async refreshOpenApps() {}
+    };
+
+    registerDnd5eSheetExtensions(moduleApi);
+    stubs.hooks.get("renderCharacterActorSheet")(app, root);
+
+    assert.equal(slot.listeners.contextmenu.length, 1);
+    await slot.listeners.contextmenu[0]({
+      clientX: 24,
+      clientY: 32,
+      preventDefault() {},
+      stopPropagation() {}
+    });
+
+    const menu = stubs.document.body.children.find((child) => child.classList.contains("rm-context-menu"));
+    assert.ok(menu);
+    const scarfButton = menu.children.find((child) => (
+      child.children?.some((node) => node.textContent === "Шарф")
+    ));
+    assert.ok(scarfButton);
+    assert.equal(menu.children.some((child) => child.children?.some((node) => node.textContent === "Меч")), false);
+
+    await scarfButton.listeners.click[0]({
+      preventDefault() {},
+      stopPropagation() {}
+    });
+
+    assert.deepEqual(assignments, [[actor, "neck", { uuid: "Actor.actor-a.Item.scarf" }]]);
+    assert.equal(renderCount, 1);
+  }
+  finally {
+    stubs.restore();
+  }
+});
+
 test("actor sheet render delegates Sorcerer virtual-slot cooldown badges", async () => {
   const stubs = installSheetExtensionStubs();
   try {
