@@ -22,13 +22,19 @@ test("hero equips one real unit and replay does not create another",async t=>{
   assert.equal(fx.hero.getFlag("rebreya-main","heroDoll").slots.neck.itemId,result.itemId);
   assert.equal((await fx.run()).itemId,result.itemId);assert.equal(fx.total(),2);
 });
-test("hero moves an equipped singleton between slots preserving ID and removes old slot",async t=>{
+test("hero moves an equipped singleton into the third ring slot preserving ID and removes old slot",async t=>{
   const fx=setup({quantity:1,itemFlags:{heroDollSlots:["ring1","ring2"]}});t.after(()=>fx.restore());
   const first=await fx.run({...fx.payload,slotId:"ring1"});
-  const second=await fx.run({...fx.payload,slotId:"ring2",operationId:"equip-2"});
+  const second=await fx.run({...fx.payload,slotId:"ring3",operationId:"equip-2"});
   assert.equal(first.itemId,second.itemId);assert.equal(first.itemId,fx.source.id);
-  assert.deepEqual(fx.hero.getFlag("rebreya-main","heroDoll").slots,{ring2:{itemId:fx.source.id}});
+  assert.deepEqual(fx.hero.getFlag("rebreya-main","heroDoll").slots,{ring3:{itemId:fx.source.id}});
   assert.equal(fx.calls.filter(([phase])=>phase==="create").length,0);
+});
+
+test("legacy five-slot back metadata accepts the two added back slots",async t=>{
+  const fx=setup({quantity:1,itemFlags:{heroDollSlots:["back1","back2","back3","back4","back5"]}});t.after(()=>fx.restore());
+  await fx.run({...fx.payload,slotId:"back7"});
+  assert.deepEqual(fx.hero.getFlag("rebreya-main","heroDoll").slots,{back7:{itemId:fx.source.id}});
 });
 test("invalid slot, ownership and complex stack fail before writes",async t=>{
   const fx=setup();t.after(()=>fx.restore());
@@ -62,14 +68,25 @@ test("legacy normalization keeps equipped original ID and unequipped remainder; 
   assert.deepEqual(fx.hero.getFlag("rebreya-main","heroDoll").slots,{});
 });
 
-test("two-hand item uses one document and clearing either slot releases both hands",async t=>{
+test("two-hand item occupies only the selected doll hand without reserving character hands",async t=>{
   const fx=setup({quantity:1,itemFlags:{heroDollSlots:["leftHand","rightHand"],handRequirement:2}});t.after(()=>fx.restore());
   fx.source.data.type="weapon";const payload={...fx.payload,slotId:"leftHand"};
   await fx.run(payload);
-  assert.deepEqual(fx.source.getFlag("rebreya-main","heldHands"),["left","right"]);
-  assert.deepEqual(fx.hero.getFlag("rebreya-main","heroDoll").slots,{leftHand:{itemId:fx.source.id},rightHand:{itemId:fx.source.id}});
+  assert.equal(fx.source.getFlag("rebreya-main","heldHands"),undefined);
+  assert.deepEqual(fx.hero.getFlag("rebreya-main","heroDoll").slots,{leftHand:{itemId:fx.source.id}});
   await fx.service.executeAssignItemToSlot({...payload,operationId:"clear-2"},{sender:game.user},"clear");
   assert.equal(fx.source.getFlag("rebreya-main","heldHands"),undefined);assert.equal(fx.total(),1);
+});
+
+test("doll hand assignment and clearing preserve an existing character hand grip",async t=>{
+  const fx=setup({quantity:1,itemFlags:{heroDollSlots:["leftHand","rightHand"],heldHands:["right"]},itemSystem:{equipped:true}});t.after(()=>fx.restore());
+  fx.source.data.type="weapon";const payload={...fx.payload,slotId:"leftHand"};
+  await fx.run(payload);
+  assert.deepEqual(fx.source.getFlag("rebreya-main","heldHands"),["right"]);
+  assert.deepEqual(fx.hero.getFlag("rebreya-main","heroDoll").slots,{leftHand:{itemId:fx.source.id}});
+  await fx.service.executeAssignItemToSlot({...payload,operationId:"clear-held"},{sender:game.user},"clear");
+  assert.deepEqual(fx.source.getFlag("rebreya-main","heldHands"),["right"]);
+  assert.equal(fx.source.system.equipped,true);
 });
 
 test("group stack validates slot before transfer and creates only one hero unit",async t=>{

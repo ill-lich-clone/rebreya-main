@@ -1,5 +1,5 @@
 ﻿import { MODULE_ID, REBREYA_GROUP_FLAGS } from "../constants.js";
-import { getHeroDollBackSlots, getHeroDollSlots, inferHeroDollSlotsFromName, normalizeHeroDollSlots } from "./item-classification.js";
+import { getHeroDollBackSlots, getHeroDollSlots, inferHeroDollSlotsFromName, normalizeHeroDollSlots } from "./item-classification.js?v=1.4.337-hero-doll-slots";
 
 import { ItemInstanceWorkflow } from "../application/item-instance-workflow.js?v=1.4.249-item-instances";
 import { ItemInstanceDocuments } from "../infrastructure/foundry/item-instance-documents.js?v=1.4.249-item-instances";
@@ -7,7 +7,7 @@ import { ItemInstanceError } from "./item-instance-rules.js";
 import { isInventoryGraphItem } from "../application/inventory-graph-transfer.js?v=1.4.280";
 import { captureRuntimeItemGraph, buildRuntimeGraphDocuments } from "./runtime-item-graph.js?v=1.4.267-native-schema";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
-import { buildHeldItemHandUpdate, buildHeldItemWornUpdate, getActorHandSlots, getOccupiedHandSlots, itemRequiresTwoHandsForUse } from "../integrations/held-items.js";
+import { buildHeldItemWornUpdate, getItemHeldHands } from "../integrations/held-items.js";
 
 export const HERO_DOLL_ASSIGN_COMMAND = "hero-doll.assign";
 export const HERO_DOLL_NORMALIZE_COMMAND = "hero-doll.normalize-stack";
@@ -34,6 +34,12 @@ const HERO_DOLL_INVENTORY_TYPES = new Set([
 function toNumber(value, fallback = 0) {
   const numericValue = Number(value ?? fallback);
   return Number.isFinite(numericValue) ? numericValue : fallback;
+}
+
+function buildHeroDollEquippedUpdate(item, equipped) {
+  return {
+    "system.equipped": equipped === true || getItemHeldHands(item).length > 0
+  };
 }
 
 function roundNumber(value, precision = 2) {
@@ -126,7 +132,13 @@ export class HeroDollService {
       ?? foundry.utils.getProperty(item, "system.heroDollSlots")
     );
     if (explicit.length) {
-      return explicit;
+      const compatible = new Set(explicit);
+      if (compatible.has("ring1") && compatible.has("ring2")) compatible.add("ring3");
+      const backSlots = getHeroDollBackSlots();
+      if (backSlots.slice(0, 5).every((slotId) => compatible.has(slotId))) {
+        for (const slotId of backSlots.slice(5)) compatible.add(slotId);
+      }
+      return [...compatible];
     }
 
     const itemTypeValue = String(foundry.utils.getProperty(item, "system.type.value") ?? "").trim().toLowerCase();
@@ -142,7 +154,7 @@ export class HeroDollService {
       }
 
       if (itemTypeValue === "ring") {
-        return ["ring1", "ring2"];
+        return normalizeHeroDollSlots("ring");
       }
     }
 
@@ -357,32 +369,12 @@ export class HeroDollService {
     if (!this.#getItemAllowedSlots(sourceItem).includes(intent.heroSlotId)) {
       throw new ItemInstanceError("invalid-slot", "Этот предмет нельзя поместить в выбранный слот куклы героя.");
     }
-    this.#assignmentHands(targetActor, sourceItem, intent.heroSlotId);
-  }
-
-  #assignmentHands(actor, item, slotId) {
-    const hand = { leftHand: "left", rightHand: "right" }[slotId];
-    if (!hand) return [];
-    const hands = itemRequiresTwoHandsForUse(item) ? ["left", "right"] : [hand];
-    const capacity = getActorHandSlots(actor);
-    const occupied = getOccupiedHandSlots(actor, { exceptItem: item.parent.uuid === actor.uuid ? item : null });
-    const state = this.#normalizeState(actor);
-    for (const selected of hands) {
-      const occupant = occupied.get(selected);
-      const oldSlot = selected === "left" ? "leftHand" : "rightHand";
-      if (!capacity.includes(selected) || occupant?.isHandReservation
-        || (occupant && state.slots[oldSlot]?.itemId !== occupant.id)) {
-        throw new ItemInstanceError("hands-unavailable", "Нужная рука занята. Сначала освободите её.");
-      }
-    }
-    return hands;
   }
 
   #prepareAssignment({ sourceItem, targetActor, intent, plan, itemId }) {
     const flag = `flags.${MODULE_ID}.heroDoll`;
     const state = this.#normalizeState(targetActor);
-    const hands = this.#assignmentHands(targetActor, sourceItem, intent.heroSlotId);
-    const slots = hands.length === 2 ? ["leftHand", "rightHand"] : [intent.heroSlotId];
+    const slots = [intent.heroSlotId];
     const replaced = new Set(slots.map(slot => state.slots[slot]?.itemId).filter(id => id && id !== itemId));
     for (const [slot, entry] of Object.entries(state.slots)) {
       if (entry.itemId === itemId || replaced.has(entry.itemId)) delete state.slots[slot];
@@ -395,13 +387,12 @@ export class HeroDollService {
     };
     const placement = [...replaced].map(id => {
       const item = targetActor.items.get(id);
-      return step(id, item.toObject(), buildHeldItemWornUpdate(false,item));
+      return step(id, item.toObject(), buildHeroDollEquippedUpdate(item, false));
     });
     const beforeAssignment = plan.kind === "move" && isInventoryGraphItem(sourceItem.parent, sourceItem)
       ? buildRuntimeGraphDocuments(captureRuntimeItemGraph(sourceItem.parent, sourceItem), "hero-placement-preview", sourceItem.toObject(), { actorId: targetActor.id }).documents[0]
       : sourceItem.toObject();
-    placement.push(step(itemId,beforeAssignment, hands.length
-      ? buildHeldItemHandUpdate(hands,sourceItem) : buildHeldItemWornUpdate(true,sourceItem)));
+    placement.push(step(itemId, beforeAssignment, buildHeroDollEquippedUpdate(sourceItem, true)));
     placement.push({ actor:"target", before:{[flag]:targetActor.getFlag(MODULE_ID,"heroDoll") ?? null}, after:{[flag]:state} });
     return placement;
   }
@@ -443,7 +434,7 @@ export class HeroDollService {
           const flag = `flags.${MODULE_ID}.heroDoll`;
           const state = this.#normalizeState(source.targetActor);
           for (const [slot,entry] of Object.entries(state.slots)) if (entry.itemId === source.sourceItem.id) delete state.slots[slot];
-          const patch = buildHeldItemWornUpdate(false,source.sourceItem);
+          const patch = buildHeroDollEquippedUpdate(source.sourceItem, false);
           const after = Object.fromEntries(Object.entries(patch).map(([path,value])=>[path.replace(".-=","."),value]));
           const before = Object.fromEntries(Object.keys(after).map(path=>[path,foundry.utils.getProperty(source.data,path) ?? null]));
           return [{actor:"target",itemId:source.sourceItem.id,before,after},

@@ -30,7 +30,7 @@ import {
   mapSlotGroupToHeroDollSlots,
   normalizeHeroDollSlotGroup,
   normalizeHeroDollSlots
-} from "../data/item-classification.js";
+} from "../data/item-classification.js?v=1.4.337-hero-doll-slots";
 import {
   bindUniversalBeltSheet,
   registerUniversalBeltItemContextHook

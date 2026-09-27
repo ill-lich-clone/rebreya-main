@@ -2,9 +2,9 @@
 
 import { inferRebreyaAmmunitionSubtype } from "./ammunition-types.js";
 
-const BACK_SLOTS = ["back1", "back2", "back3", "back4", "back5"];
+const BACK_SLOTS = ["back1", "back2", "back3", "back4", "back5", "back6", "back7"];
 const HAND_SLOTS = ["leftHand", "rightHand"];
-const RING_SLOTS = ["ring1", "ring2"];
+const RING_SLOTS = ["ring1", "ring2", "ring3"];
 const REBREYA_WEARABLE_CLOTHING_GEAR_IDS = new Set([
   "balnyy-kostyum-s-serebryanoy-otdelkoy",
   "korolevskoe-svadebnoe-plate",
@@ -43,11 +43,14 @@ const HERO_DOLL_SLOTS = [
   { id: "rightHand", label: "Рука" },
   { id: "ring1", label: "Кольцо 1" },
   { id: "ring2", label: "Кольцо 2" },
+  { id: "ring3", label: "Кольцо 3" },
   { id: "back1", label: "Спина 1" },
   { id: "back2", label: "Спина 2" },
   { id: "back3", label: "Спина 3" },
   { id: "back4", label: "Спина 4" },
-  { id: "back5", label: "Спина 5" }
+  { id: "back5", label: "Спина 5" },
+  { id: "back6", label: "Спина 6" },
+  { id: "back7", label: "Спина 7" }
 ];
 
 const HERO_DOLL_SLOT_GROUPS = [
@@ -208,6 +211,8 @@ const SLOT_ALIAS_MAP = new Map([
   ["кольцо 1", ["ring1"]],
   ["ring2", ["ring2"]],
   ["кольцо 2", ["ring2"]],
+  ["ring3", ["ring3"]],
+  ["кольцо 3", ["ring3"]],
   ["back", BACK_SLOTS],
   ["спина", BACK_SLOTS],
   ["back1", ["back1"]],
@@ -219,7 +224,11 @@ const SLOT_ALIAS_MAP = new Map([
   ["back4", ["back4"]],
   ["спина 4", ["back4"]],
   ["back5", ["back5"]],
-  ["спина 5", ["back5"]]
+  ["спина 5", ["back5"]],
+  ["back6", ["back6"]],
+  ["спина 6", ["back6"]],
+  ["back7", ["back7"]],
+  ["спина 7", ["back7"]]
 ]);
 
 const SLOT_GROUP_ALIAS_MAP = new Map([
@@ -253,6 +262,8 @@ const SLOT_GROUP_ALIAS_MAP = new Map([
   ["кольцо 1", "ring"],
   ["ring2", "ring"],
   ["кольцо 2", "ring"],
+  ["ring3", "ring"],
+  ["кольцо 3", "ring"],
   ["back", "back"],
   ["спина", "back"],
   ["back1", "back"],
@@ -265,6 +276,10 @@ const SLOT_GROUP_ALIAS_MAP = new Map([
   ["спина 4", "back"],
   ["back5", "back"],
   ["спина 5", "back"],
+  ["back6", "back"],
+  ["спина 6", "back"],
+  ["back7", "back"],
+  ["спина 7", "back"],
   ["—", ""],
   ["none", ""],
   ["нет", ""]
@@ -448,7 +463,7 @@ export function inferHeroDollSlotGroupFromSlots(slotIds, fallback = "") {
     return "bracers";
   }
 
-  if (set.has("ring1") || set.has("ring2")) {
+  if (set.has("ring1") || set.has("ring2") || set.has("ring3")) {
     return "ring";
   }
 

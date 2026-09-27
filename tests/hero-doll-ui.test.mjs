@@ -21,7 +21,11 @@ test('compact hero doll preserves anatomical placements and reserves the narrow 
   assert.match(compact,/grid-template-columns:\s*minmax\(496px,\s*520px\)\s+minmax\(0,\s*1fr\)/u);
   assert.match(css,/@container \(max-width: 780px\)\s*\{\s*\.rm-hero-doll-tab__layout\s*\{\s*grid-template-columns:\s*1fr/u);
   assert.match(css,/\.rm-hero-doll-grid\s*\{[^}]*grid-template-columns:\s*repeat\(5,\s*80px\)/u);
+  assert.match(css,/\.rm-hero-doll-grid\s*\{[^}]*grid-template-rows:\s*repeat\(8,\s*auto\)/u);
   assert.match(css,/\.rm-hero-doll-slot--head\s*\{\s*grid-column:\s*3;\s*grid-row:\s*1/u);
+  assert.match(css,/\.rm-hero-doll-slot--ring3\s*\{\s*grid-column:\s*1;\s*grid-row:\s*4/u);
+  assert.match(css,/\.rm-hero-doll-slot--back6\s*\{\s*grid-column:\s*2;\s*grid-row:\s*8/u);
+  assert.match(css,/\.rm-hero-doll-slot--back7\s*\{\s*grid-column:\s*4;\s*grid-row:\s*8/u);
   assert.doesNotMatch(css,/@container rm-hero-doll-board \(max-width: 467px\)[\s\S]*?\.rm-hero-doll-slot\s*\{\s*grid-column:\s*auto/u);
   assert.doesNotMatch(css,/@container rm-hero-doll-board \(max-width: 467px\)[\s\S]*?\.rm-hero-doll-grid::before\s*\{\s*display:\s*none/u);
   const globalNarrow=css.match(/@media \(max-width: 1200px\)\s*\{([\s\S]*?)@media \(max-width: 760px\)/u)?.[1]??'';

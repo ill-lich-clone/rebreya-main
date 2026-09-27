@@ -10151,7 +10151,7 @@ summary:focus-visible {
   position: relative;
   display: grid;
   grid-template-columns: repeat(5, 80px);
-  grid-template-rows: repeat(7, auto);
+  grid-template-rows: repeat(8, auto);
   justify-content: center;
   gap: 8px;
   min-height: 520px;
@@ -10194,11 +10194,14 @@ summary:focus-visible {
 .rm-hero-doll-slot--rightHand { grid-column: 5; grid-row: 5; }
 .rm-hero-doll-slot--ring1 { grid-column: 1; grid-row: 3; }
 .rm-hero-doll-slot--ring2 { grid-column: 4; grid-row: 4; }
+.rm-hero-doll-slot--ring3 { grid-column: 1; grid-row: 4; }
 .rm-hero-doll-slot--back1 { grid-column: 1; grid-row: 7; }
 .rm-hero-doll-slot--back2 { grid-column: 2; grid-row: 7; }
 .rm-hero-doll-slot--back3 { grid-column: 3; grid-row: 7; }
 .rm-hero-doll-slot--back4 { grid-column: 4; grid-row: 7; }
 .rm-hero-doll-slot--back5 { grid-column: 5; grid-row: 7; }
+.rm-hero-doll-slot--back6 { grid-column: 2; grid-row: 8; }
+.rm-hero-doll-slot--back7 { grid-column: 4; grid-row: 8; }
 
 .rm-hero-doll-tab .rm-hero-doll-slot__surface {
   inline-size: 80px;
