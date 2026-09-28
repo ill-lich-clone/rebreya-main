@@ -15,6 +15,12 @@ globalThis.foundry ??= {
       }
       cursor[keys[0]] = value;
       return true;
+    },
+    unsetProperty: (object, path) => {
+      const keys = String(path ?? "").split(".").filter(Boolean);
+      let cursor = object;
+      while (keys.length > 1) cursor = cursor?.[keys.shift()];
+      return Boolean(cursor && delete cursor[keys[0]]);
     }
   }
 };
@@ -118,6 +124,7 @@ function makeActor(items, {
         }
       };
       this.updateCalls = [];
+      this.embeddedDocumentUpdateCalls = [];
     }
 
     getFlag(scope, key) {
@@ -136,6 +143,23 @@ function makeActor(items, {
         foundry.utils.setProperty(this, path, value);
       }
       return this;
+    }
+
+    async updateEmbeddedDocuments(documentName, patches = [], options = {}) {
+      this.embeddedDocumentUpdateCalls.push({
+        documentName,
+        patches: foundry.utils.deepClone(patches),
+        options: foundry.utils.deepClone(options)
+      });
+      const updated = [];
+      for (const patch of patches) {
+        const item = this.items.get(patch?._id);
+        if (!item) continue;
+        const { _id, ...update } = patch;
+        await item.update(update, options);
+        updated.push(item);
+      }
+      return updated;
     }
   }();
 
@@ -159,6 +183,7 @@ function makeFirearmItem({
   ammoState = null,
   jammed = null
 } = {}) {
+  const setFlagCalls = [];
   const updateCalls = [];
   const item = new class extends Item {
     constructor() {
@@ -194,6 +219,7 @@ function makeFirearmItem({
     }
 
     async setFlag(scope, key, value) {
+      setFlagCalls.push({ scope, key, value });
       this.flags[scope] ??= {};
       this.flags[scope][key] = value;
       return this;
@@ -204,19 +230,23 @@ function makeFirearmItem({
       return this;
     }
 
-    async update(updates = {}) {
+    async update(updates = {}, options = {}) {
       updateCalls.push(updates);
       for (const [path, value] of Object.entries(updates)) {
         if (path === "name") {
           this.name = value;
         }
         else {
-          foundry.utils.setProperty(this, path, value);
+          const deletionMatch = path.match(/^(.*)\.-=([^.]+)$/u);
+          if (deletionMatch) foundry.utils.unsetProperty(this, `${deletionMatch[1]}.${deletionMatch[2]}`);
+          else foundry.utils.setProperty(this, path, value);
         }
       }
+      this.updateOptions = options;
       return this;
     }
   }();
+  item.setFlagCalls = setFlagCalls;
   item.updateCalls = updateCalls;
   return item;
 }
@@ -1226,6 +1256,96 @@ test("held versatile damage roll config uses the item-provided base damage as-is
   assert.deepEqual(config.rolls[0].parts, ["1d8", "@mod"]);
 });
 
+function makeDuelistGloves({ equipped = true } = {}) {
+  return new class extends Item {
+    constructor() {
+      super();
+      this.id = "duelist-gloves";
+      this.name = "Перчатки двуручного боя";
+      this.type = "equipment";
+      this.system = { equipped };
+      this.flags = { [MODULE_ID]: { magicItemId: "перчатки-двуручного-боя" } };
+    }
+
+    getFlag(scope, key) {
+      return this.flags?.[scope]?.[key];
+    }
+  }();
+}
+
+function makeDamageConfig(actor, item, parts = ["1d8", "@mod"]) {
+  return {
+    subject: {
+      id: "attack-activity",
+      type: "attack",
+      actor,
+      item,
+      attack: { type: { value: "melee" } },
+      range: {}
+    },
+    rolls: [
+      { base: true, parts: [...parts], data: {} },
+      { base: false, parts: ["1d6"], data: {} }
+    ]
+  };
+}
+
+test("duelist gloves add one flat damage part only for two distinct held melee weapons in live hands", () => {
+  const left = makeWeaponItem({ id: "left-sword", heldHands: ["left"] });
+  const right = makeWeaponItem({ id: "right-sword", heldHands: ["right"] });
+  const gloves = makeDuelistGloves();
+  const actor = makeActor([left, right, gloves]);
+  const config = makeDamageConfig(actor, left, ["1d8", "@mod", "1d4"]);
+  const service = new CombatAttackService({});
+
+  assert.equal(service.applyDnd5eDamageRollConfig(config, {}, {}), true);
+  assert.deepEqual(config.rolls[0].parts, ["1d8", "@mod", "1d4", "+2"]);
+  assert.deepEqual(config.rolls[1].parts, ["1d6"]);
+  assert.equal(service.applyDnd5eDamageRollConfig(config, {}, {}), true);
+  assert.deepEqual(config.rolls[0].parts, ["1d8", "@mod", "1d4", "+2"]);
+});
+
+test("duelist gloves reject missing equipment, invalid weapon pairs, unheld attacks, and reserved hands", () => {
+  const service = new CombatAttackService({});
+  const evaluate = ({
+    glovesEquipped = true,
+    includeGloves = true,
+    leftHands = ["left"],
+    rightHands = ["right"],
+    leftType = "simpleM",
+    rightType = "simpleM",
+    reserveRight = false
+  } = {}) => {
+    const left = makeWeaponItem({ id: "left-weapon", heldHands: leftHands });
+    const right = makeWeaponItem({ id: "right-weapon", heldHands: rightHands });
+    left.system.type.value = leftType;
+    right.system.type.value = rightType;
+    const items = [left, right];
+    if (includeGloves) items.push(makeDuelistGloves({ equipped: glovesEquipped }));
+    const actor = makeActor(items);
+    if (reserveRight) {
+      actor.flags[MODULE_ID].handReservations = [{
+        linkId: "grapple-1",
+        kind: "grapple",
+        handSlot: "right",
+        sourceTokenUuid: "Scene.scene.Token.source",
+        targetTokenUuid: "Scene.scene.Token.target"
+      }];
+    }
+    const config = makeDamageConfig(actor, left);
+    service.applyDnd5eDamageRollConfig(config, {}, {});
+    return config.rolls[0].parts;
+  };
+
+  assert.deepEqual(evaluate({ includeGloves: false }), ["1d8", "@mod"]);
+  assert.deepEqual(evaluate({ glovesEquipped: false }), ["1d8", "@mod"]);
+  assert.deepEqual(evaluate({ leftHands: ["left", "right"], rightHands: [] }), ["1d8", "@mod"]);
+  assert.deepEqual(evaluate({ leftHands: [], rightHands: ["right"] }), ["1d8", "@mod"]);
+  assert.deepEqual(evaluate({ rightType: "simpleR" }), ["1d8", "@mod"]);
+  assert.deepEqual(evaluate({ leftType: "natural" }), ["1d8", "@mod"]);
+  assert.deepEqual(evaluate({ reserveRight: true }), ["1d8", "@mod"]);
+});
+
 test("standalone held versatile sheet attacks do not roll separate damage", async () => {
   const weapon = makeWeaponItem({
     heldHands: ["left", "right"],
@@ -1652,6 +1772,40 @@ test("empty firearm magazines should stop native activity use before an attack r
   assert.equal(TestRoll.queuedTotals.length, 1);
 });
 
+test("blocked empty firearm use does not rewrite unchanged ammo state", () => {
+  const weapon = makeFirearmItem({
+    name: "Револьвер (0/6)",
+    properties: {
+      lchFirearmAmmunition: true,
+      lchFirearmReload: true
+    },
+    values: {
+      ammunition: "Пистолетные",
+      reload: "Смена магазина 6"
+    },
+    ammoState: {
+      current: 0,
+      capacity: 6,
+      ammunition: "Пистолетные"
+    }
+  });
+  const actor = makeActor([weapon]);
+  const activity = {
+    type: "attack",
+    actor,
+    item: weapon,
+    attack: { type: { value: "firearm" } },
+    consumption: { targets: [] },
+    range: {}
+  };
+  const service = new CombatAttackService({});
+
+  const result = service.applyDnd5ePreUseActivity(activity, {}, {}, {});
+
+  assert.equal(result, false);
+  assert.equal(weapon.setFlagCalls.length + weapon.updateCalls.length, 0);
+});
+
 test("empty firearm magazines are reported unavailable for activity sheet badges", () => {
   TestRoll.queuedTotals = [15];
   const weapon = makeFirearmItem({
@@ -1822,12 +1976,10 @@ test("firearm actor repair removes jam maintenance activities from weapons witho
     properties: {
       lchFirearmAmmunition: true,
       lchFirearmReload: true,
-      lchFirearmAutomatic: true,
-      lchFirearmMisfire: true
+      lchFirearmAutomatic: true
     },
     values: {
       automaticDamage: "4d8",
-      misfire: 2,
       ammunition: "Винтовочный",
       reload: "Смена магазина 24"
     }
@@ -2006,10 +2158,183 @@ test("firearm item repair removes stale jam maintenance activities from item she
   });
 });
 
-test("firearm misfire rolls an extra d20 and jams the weapon before the attack", () => {
+test("removing Misfire clears its values, runtime state, suffix, and maintenance activities", async () => {
+  const weapon = makeFirearmItem({
+    name: "Аркебуза (1/1) (клин)",
+    properties: { lchFirearmReload: true },
+    values: { ammunition: "Мушкетные", reload: "Перезарядка 1", misfire: 4 },
+    ammoState: { current: 1, capacity: 1, ammunition: "Мушкетные" },
+    jammed: { value: true }
+  });
+  weapon.flags[MODULE_ID].firearmBaseMisfire = 4;
+  weapon.flags[MODULE_ID].firearmMisfire = 7;
+  weapon.system.activities = {
+    shot: { _id: "shot", type: "attack", name: "Выстрел" },
+    lchClearBreech01: {
+      _id: "lchClearBreech01",
+      flags: { [MODULE_ID]: { automation: "firearm-clear-jam" } }
+    },
+    lchMaintainGun01: {
+      _id: "lchMaintainGun01",
+      flags: { [MODULE_ID]: { automation: "firearm-maintain" } }
+    }
+  };
+
+  const result = await new CombatAttackService({}).synchronizeFirearmPropertyState(
+    weapon,
+    { "system.properties.lchFirearmMisfire": false }
+  );
+
+  assert.equal(result.updated, true);
+  assert.equal(weapon.name, "Аркебуза (1/1)");
+  assert.equal(weapon.getFlag(MODULE_ID, "firearmBaseMisfire"), undefined);
+  assert.equal(weapon.getFlag(MODULE_ID, "firearmMisfire"), undefined);
+  assert.equal(weapon.getFlag(MODULE_ID, "firearmJammed"), undefined);
+  assert.equal(weapon.getFlag(MODULE_ID, "lichWeaponPropertyValues").misfire, undefined);
+  assert.deepEqual(Object.keys(weapon.system.activities), ["shot"]);
+  assert.equal(weapon.updateCalls.length, 1);
+  assert.deepEqual(weapon.updateOptions, {
+    render: false,
+    [MODULE_ID]: { firearmPropertySync: true }
+  });
+});
+
+test("restoring Misfire rebuilds canonical flags and maintenance activities", async () => {
+  const weapon = makeFirearmItem({ name: "Аркебуза", properties: { lchFirearmMisfire: true }, values: {} });
+  weapon.flags[MODULE_ID].gearId = "arkebuza";
+  weapon.system.activities = { shot: { _id: "shot", type: "attack", name: "Выстрел" } };
+  const service = new CombatAttackService({
+    repository: {
+      model: {
+        gearById: new Map([["arkebuza", {
+          weapon: {
+            properties: ["lchFirearmMisfire"],
+            lichWeaponPropertyValues: { misfire: 4 }
+          }
+        }]])
+      }
+    }
+  });
+
+  await service.synchronizeFirearmPropertyState(
+    weapon,
+    { "system.properties.lchFirearmMisfire": true }
+  );
+
+  assert.equal(weapon.getFlag(MODULE_ID, "firearmBaseMisfire"), 4);
+  assert.equal(weapon.getFlag(MODULE_ID, "firearmMisfire"), 4);
+  assert.equal(weapon.getFlag(MODULE_ID, "firearmJammed"), undefined);
+  assert.equal(weapon.getFlag(MODULE_ID, "lichWeaponPropertyValues").misfire, 4);
+  assert.equal(weapon.system.activities.lchClearBreech01.flags[MODULE_ID].automation, "firearm-clear-jam");
+  assert.equal(weapon.system.activities.lchMaintainGun01.flags[MODULE_ID].automation, "firearm-maintain");
+});
+
+test("a managed firearm does not misfire after its current Misfire property is removed", () => {
+  TestRoll.queuedTotals = [1];
+  const weapon = makeFirearmItem({ name: "Аркебуза", properties: {}, values: {} });
+  weapon.flags[MODULE_ID].gearId = "arkebuza";
+  const actor = makeActor([weapon]);
+  const service = new CombatAttackService({
+    repository: {
+      model: {
+        gearById: new Map([["arkebuza", {
+          weapon: {
+            properties: ["lchFirearmMisfire"],
+            lichWeaponPropertyValues: { misfire: 4 }
+          }
+        }]])
+      }
+    }
+  });
+
+  service.applyDnd5ePostAttackRoll([{ total: 15 }], {
+    subject: { id: "shot", type: "attack", actor, item: weapon }
+  });
+
+  assert.equal(weapon.getFlag(MODULE_ID, "firearmJammed"), undefined);
+  assert.deepEqual(TestRoll.queuedTotals, [1]);
+});
+
+test("removing Reload clears its value, magazine state, suffix, and reload activity", async () => {
+  const weapon = makeFirearmItem({
+    name: "Аркебуза (0/1)",
+    properties: { lchFirearmMisfire: true },
+    values: { ammunition: "Мушкетные", reload: "Перезарядка 1", misfire: 4 },
+    ammoState: { current: 0, capacity: 1, ammunition: "Мушкетные" }
+  });
+  weapon.system.activities = {
+    shot: { _id: "shot", type: "attack", name: "Выстрел" },
+    lchReloadGun0001: {
+      _id: "lchReloadGun0001",
+      flags: { [MODULE_ID]: { automation: "firearm-reload" } }
+    }
+  };
+
+  await new CombatAttackService({}).synchronizeFirearmPropertyState(
+    weapon,
+    { "system.properties.lchFirearmReload": false }
+  );
+
+  assert.equal(weapon.name, "Аркебуза");
+  assert.equal(weapon.getFlag(MODULE_ID, "firearmAmmoState"), undefined);
+  assert.equal(weapon.getFlag(MODULE_ID, "lichWeaponPropertyValues").reload, undefined);
+  assert.deepEqual(Object.keys(weapon.system.activities), ["shot"]);
+});
+
+test("restoring Reload rebuilds an empty canonical magazine and reload activity", async () => {
+  const weapon = makeFirearmItem({ name: "Аркебуза", properties: { lchFirearmReload: true }, values: {} });
+  weapon.flags[MODULE_ID].gearId = "arkebuza";
+  weapon.system.activities = { shot: { _id: "shot", type: "attack", name: "Выстрел" } };
+  const service = new CombatAttackService({
+    repository: {
+      model: {
+        gearById: new Map([["arkebuza", {
+          weapon: {
+            properties: ["lchFirearmAmmunition", "lchFirearmReload"],
+            lichWeaponPropertyValues: { ammunition: "Мушкетные", reload: "Перезарядка 1" }
+          }
+        }]])
+      }
+    }
+  });
+
+  await service.synchronizeFirearmPropertyState(
+    weapon,
+    { "system.properties.lchFirearmReload": true }
+  );
+
+  assert.deepEqual(weapon.getFlag(MODULE_ID, "firearmAmmoState"), {
+    current: 0,
+    capacity: 1,
+    ammunition: "Мушкетные"
+  });
+  assert.equal(weapon.getFlag(MODULE_ID, "lichWeaponPropertyValues").reload, "Перезарядка 1");
+  assert.equal(weapon.name, "Аркебуза (0/1)");
+  assert.equal(weapon.system.activities.lchReloadGun0001.flags[MODULE_ID].automation, "firearm-reload");
+  assert.equal(weapon.updateCalls.length, 1);
+});
+
+test("firearm pre-roll configuration leaves ammunition and misfire state untouched when the attack aborts", () => {
   TestRoll.queuedTotals = [2];
   TestRoll.messages = [];
-  const weapon = makeFirearmItem({ name: "Пистолет" });
+  const weapon = makeFirearmItem({
+    name: "Пистолет",
+    properties: {
+      lchFirearmAmmunition: true,
+      lchFirearmReload: true,
+      lchFirearmMisfire: true
+    },
+    values: {
+      ammunition: "Пистолетные",
+      reload: "Смена магазина 1",
+      misfire: 3
+    },
+    ammoState: {
+      current: 1,
+      capacity: 1,
+      ammunition: "Пистолетные"
+    }
+  });
   const activity = {
     id: "attack-1",
     type: "attack",
@@ -2024,12 +2349,85 @@ test("firearm misfire rolls an extra d20 and jams the weapon before the attack",
 
   const result = service.applyDnd5eAttackRollConfig({ subject: activity }, {}, {});
 
-  assert.equal(result, false);
+  assert.equal(result, true);
+  assert.equal(weapon.getFlag(MODULE_ID, "firearmAmmoState").current, 1);
+  assert.equal(weapon.getFlag(MODULE_ID, "firearmJammed"), undefined);
+  assert.equal(weapon.name, "Пистолет");
+  assert.equal(TestRoll.queuedTotals.length, 1);
+  assert.equal(TestRoll.messages.length, 0);
+});
+
+test("completed firearm attack spends ammunition and resolves its misfire after the attack roll", () => {
+  TestRoll.queuedTotals = [2];
+  TestRoll.messages = [];
+  const weapon = makeFirearmItem({
+    name: "Пистолет",
+    properties: {
+      lchFirearmAmmunition: true,
+      lchFirearmReload: true,
+      lchFirearmMisfire: true
+    },
+    values: {
+      ammunition: "Пистолетные",
+      reload: "Смена магазина 1",
+      misfire: 3
+    },
+    ammoState: {
+      current: 1,
+      capacity: 1,
+      ammunition: "Пистолетные"
+    }
+  });
+  const actor = makeActor([weapon]);
+  const activity = {
+    id: "attack-1",
+    type: "attack",
+    actor,
+    item: weapon
+  };
+  const service = new CombatAttackService({});
+
+  const result = service.applyDnd5ePostAttackRoll([{ total: 17 }], { subject: activity });
+
+  assert.equal(result, true);
+  assert.equal(weapon.getFlag(MODULE_ID, "firearmAmmoState").current, 0);
   assert.equal(weapon.getFlag(MODULE_ID, "firearmJammed").value, true);
   assert.equal(weapon.getFlag(MODULE_ID, "firearmJammed").rollTotal, 2);
-  assert.equal(weapon.name, "Пистолет (клин)");
+  assert.equal(weapon.name, "Пистолет (0/1) (клин)");
   assert.equal(TestRoll.messages.length, 1);
   assert.match(TestRoll.messages[0].messageData.flavor, /Осечка/u);
+});
+
+test("firearm jams persist the base threshold, jam state and name through one Item write", () => {
+  TestRoll.queuedTotals = [2];
+  const weapon = makeFirearmItem({ name: "Пистолет" });
+  const actor = makeActor([weapon]);
+  const activity = {
+    id: "attack-1",
+    type: "attack",
+    actor,
+    item: weapon
+  };
+  const service = new CombatAttackService({});
+
+  const result = service.applyDnd5ePostAttackRoll([{ total: 17 }], { subject: activity });
+
+  assert.equal(result, true);
+  assert.equal(weapon.setFlagCalls.length + weapon.updateCalls.length, 1);
+  assert.equal(weapon.updateCalls[0].name, "Пистолет (клин)");
+  assert.equal(weapon.updateCalls[0][`flags.${MODULE_ID}.firearmBaseMisfire`], 3);
+  assert.deepEqual(
+    {
+      value: weapon.updateCalls[0][`flags.${MODULE_ID}.firearmJammed`].value,
+      threshold: weapon.updateCalls[0][`flags.${MODULE_ID}.firearmJammed`].threshold,
+      rollTotal: weapon.updateCalls[0][`flags.${MODULE_ID}.firearmJammed`].rollTotal
+    },
+    {
+      value: true,
+      threshold: 3,
+      rollTotal: 2
+    }
+  );
 });
 
 test("arquebus attacks disable dnd5e ammunition selection so only reloading spends bullets", () => {
@@ -2320,25 +2718,14 @@ test("firearm attack roll notes ammo and misfire in the originating attack card"
       }
     }
   };
-  const messageConfig = {
-    data: {
-      flags: {
-        dnd5e: {
-          originatingMessage: "card-a"
-        }
-      }
-    }
-  };
   const service = new CombatAttackService({});
 
-  const result = service.applyDnd5eAttackRollConfig({ subject: activity }, {}, messageConfig);
+  const result = service.applyDnd5ePostAttackRoll([{ total: 17, parent: cardMessage }], { subject: activity });
 
   assert.equal(result, true);
   assert.equal(weapon.getFlag(MODULE_ID, "firearmAmmoState").current, 0);
   assert.equal(globalThis.ChatMessage.messages.length, 0);
   assert.equal(TestRoll.messages.length, 0);
-  assert.match(messageConfig.data.flavor, /Musket \(0\/1\)/u);
-  assert.match(messageConfig.data.flavor, /d20 = 13/u);
   assert.match(cardMessage.content, /data-rebreya-firearm-chat-notes/u);
   assert.match(cardMessage.content, /Musket \(0\/1\)/u);
   assert.match(cardMessage.content, /d20 = 13/u);
@@ -2521,6 +2908,45 @@ test("firearm attacks spend loaded ammunition and mark an empty magazine in the 
   assert.equal(TestRoll.queuedTotals.length, 0);
 });
 
+test("firearm shots persist ammo state and displayed count through one Item write", async () => {
+  TestRoll.queuedTotals = [15];
+  const weapon = makeFirearmItem({
+    name: "Карабин",
+    properties: {
+      lchFirearmAmmunition: true,
+      lchFirearmReload: true
+    },
+    values: {
+      ammunition: "Винтовочные",
+      reload: "Смена магазина 2"
+    },
+    ammoState: {
+      current: 2,
+      capacity: 2,
+      ammunition: "Винтовочные"
+    }
+  });
+  const actor = makeActor([weapon]);
+  const service = new CombatAttackService({});
+
+  await service.rollFirearmAttack(actor, weapon, { createMessage: false });
+
+  assert.equal(weapon.setFlagCalls.length + weapon.updateCalls.length, 1);
+  assert.equal(weapon.updateCalls[0].name, "Карабин (1/2)");
+  assert.deepEqual(
+    {
+      current: weapon.updateCalls[0][`flags.${MODULE_ID}.firearmAmmoState`].current,
+      capacity: weapon.updateCalls[0][`flags.${MODULE_ID}.firearmAmmoState`].capacity,
+      ammunition: weapon.updateCalls[0][`flags.${MODULE_ID}.firearmAmmoState`].ammunition
+    },
+    {
+      current: 1,
+      capacity: 2,
+      ammunition: "Винтовочные"
+    }
+  );
+});
+
 test("firearm attacks use dexterity at exactly ten pounds and strength above ten pounds", async () => {
   TestRoll.queuedTotals = [15, 15];
   TestRoll.messages = [];
@@ -2651,6 +3077,83 @@ test("reloading a firearm consumes matching actor ammunition and fills the magaz
     "Автоматическая винтовка (24/24): перезарядка."
   );
   assert.doesNotMatch(globalThis.ChatMessage.messages.at(-1)?.content ?? "", /боезапас|загружено/iu);
+});
+
+test("firearm reload batches ammunition stacks and weapon state into one embedded Item update", async () => {
+  const weapon = makeFirearmItem({
+    name: "Карабин",
+    properties: {
+      lchFirearmAmmunition: true,
+      lchFirearmReload: true
+    },
+    values: {
+      ammunition: "Винтовочные",
+      reload: "Смена магазина 4"
+    },
+    ammoState: {
+      current: 0,
+      capacity: 4,
+      ammunition: "Винтовочные"
+    }
+  });
+  const firstAmmo = makeAmmoItem({
+    id: "rifle-ammo-a",
+    name: "Винтовочный патрон A",
+    quantity: 2
+  });
+  const secondAmmo = makeAmmoItem({
+    id: "rifle-ammo-b",
+    name: "Винтовочный патрон B",
+    quantity: 3
+  });
+  const actor = makeActor([weapon, firstAmmo, secondAmmo]);
+  const service = new CombatAttackService({});
+
+  const result = await service.reloadFirearm(actor, weapon, { createMessage: false });
+
+  assert.equal(result.success, true);
+  assert.equal(result.loaded, 4);
+  assert.equal(firstAmmo.system.quantity, 0);
+  assert.equal(secondAmmo.system.quantity, 1);
+  assert.equal(weapon.getFlag(MODULE_ID, "firearmAmmoState").current, 4);
+  assert.equal(weapon.name, "Карабин (4/4)");
+  assert.equal(actor.embeddedDocumentUpdateCalls.length, 1);
+  assert.deepEqual(
+    actor.embeddedDocumentUpdateCalls[0].patches.map((patch) => patch._id),
+    ["rifle-ammo-a", "rifle-ammo-b", "pistol"]
+  );
+});
+
+test("firearm reload matches native Rebreya ammunition family instead of a name guess", async () => {
+  const weapon = makeFirearmItem({
+    name: "Мушкет",
+    typeValue: "firearmPrimitive",
+    properties: { lchFirearmAmmunition: true, lchFirearmReload: true },
+    values: { ammunition: "Мушкетные", reload: "Перезарядка 1" },
+    ammoState: { current: 0, capacity: 1, ammunition: "Мушкетные" }
+  });
+  weapon.system.ammunition = { type: "rebreyaMusket" };
+  const wrongFamily = makeAmmoItem({
+    id: "wrong-family",
+    name: "Мушкетный патрон",
+    quantity: 5,
+    subtype: "rebreyaRifle"
+  });
+  const musketAmmo = makeAmmoItem({
+    id: "musket-family",
+    name: "Пороховой заряд",
+    quantity: 5,
+    subtype: "rebreyaMusket"
+  });
+  const actor = makeActor([weapon, wrongFamily, musketAmmo]);
+  const service = new CombatAttackService({});
+
+  const result = await service.reloadFirearm(actor, weapon, { createMessage: false });
+
+  assert.equal(result.success, true);
+  assert.equal(result.loaded, 1);
+  assert.equal(wrongFamily.system.quantity, 5);
+  assert.equal(musketAmmo.system.quantity, 4);
 });
 
 test("reloading a firearm resolves selected ammunition item identifiers", async () => {

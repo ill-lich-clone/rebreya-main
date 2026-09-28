@@ -305,6 +305,45 @@ test("firearm item sheet repair hook does not rerender item sheets", async () =>
   }
 });
 
+test("firearm property update hook synchronizes Misfire and Reload without recursing", async () => {
+  const previousHooks = globalThis.Hooks;
+  const previousGame = globalThis.game;
+  const listeners = [];
+  const synchronized = [];
+  globalThis.Hooks = {
+    on(hookName, listener) {
+      listeners.push({ hookName, listener });
+      return listeners.length;
+    }
+  };
+  globalThis.game = {};
+
+  try {
+    registerCombatHooks({
+      combatAttackService: {
+        async repairFirearmActivities() {},
+        async synchronizeFirearmPropertyState(item, changed) {
+          synchronized.push({ item, changed });
+        }
+      }
+    });
+    const updateItem = listeners.find((entry) => entry.hookName === "updateItem")?.listener;
+    assert.equal(typeof updateItem, "function");
+    const item = { id: "arquebus" };
+    const changed = { "system.properties.lchFirearmReload": true };
+
+    updateItem(item, changed, {});
+    updateItem(item, changed, { "rebreya-main": { firearmPropertySync: true } });
+    await Promise.resolve();
+
+    assert.deepEqual(synchronized, [{ item, changed }]);
+  }
+  finally {
+    globalThis.Hooks = previousHooks;
+    globalThis.game = previousGame;
+  }
+});
+
 test("reaction capability index receives targeted document invalidation hooks", () => {
   const previousHooks = globalThis.Hooks;
   const previousGame = globalThis.game;

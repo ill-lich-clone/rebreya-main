@@ -4,7 +4,8 @@ import { readFile } from "node:fs/promises";
 
 const cases = [
   ["trader-app-v2.js", "this.#playSequencerEntrance"],
-  ["lootgen-app.js", "element.querySelectorAll"]
+  ["lootgen-app.js", "element.querySelectorAll"],
+  ["city-app.js", "element.querySelectorAll"]
 ];
 
 for (const [fileName, firstInteractiveWork] of cases) {
@@ -52,4 +53,16 @@ test("city trader buttons use the canonical Trader V2 route only", async () => {
   assert.doesNotMatch(source, /openTraderV2/u);
   assert.doesNotMatch(source, /open-trader-new/u);
   assert.doesNotMatch(template, /open-trader-new/u);
+});
+
+test("inventory socket paths never opt into awaited or transfer-mode-dependent refresh", async () => {
+  const [mainSource, inventorySyncSource] = await Promise.all([
+    readFile(new URL("../scripts/main.js", import.meta.url), "utf8"),
+    readFile(new URL("../scripts/integrations/inventory-sync.js", import.meta.url), "utf8")
+  ]);
+
+  for (const source of [mainSource, inventorySyncSource]) {
+    assert.doesNotMatch(source, /awaitRefresh:\s*true/u);
+    assert.doesNotMatch(source, /awaitRefresh:\s*\([^)]*\)\s*=>/u);
+  }
 });

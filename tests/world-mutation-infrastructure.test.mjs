@@ -2,10 +2,19 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { WorldMutationCoordinator } from "../scripts/application/world-mutation-coordinator.js";
+import {
+  EXCLUSIVE_MUTATION_SCHEDULING,
+  QUERY_SCHEDULING,
+  aggregateKey,
+  keyedMutationScheduling,
+  normalizeAggregateKeys
+} from "../scripts/application/socket-command-scheduling.js";
 import { getActiveGm, isActiveGmClient } from "../scripts/infrastructure/foundry/active-gm.js";
 import {
+  COMMAND_ACCEPTED_TYPE,
   COMMAND_REQUEST_TYPE,
   COMMAND_RESULT_TYPE,
+  COMPLETION_TIMEOUT_MS,
   MAX_SOCKET_ENVELOPE_BYTES,
   REQUEST_TIMEOUT_MS,
   SOCKET_CHANNEL,
@@ -185,6 +194,142 @@ test("WorldMutationCoordinator bounds completed results to 256 in insertion orde
   assert.equal(calls, 258);
 });
 
+test("socket command scheduling normalizes immutable policies and aggregate keys", () => {
+  const resolver = (payload) => [aggregateKey("actor", payload.actorId)];
+  const policy = keyedMutationScheduling(resolver);
+
+  assert.deepEqual(normalizeAggregateKeys([" actor:b ", "actor:a", "actor:b", ""]), [
+    "actor:a",
+    "actor:b"
+  ]);
+  assert.equal(policy.mode, "keyed-mutation");
+  assert.strictEqual(policy.keys, resolver);
+  assert.equal(Object.isFrozen(policy), true);
+  assert.equal(Object.isFrozen(QUERY_SCHEDULING), true);
+  assert.equal(Object.isFrozen(EXCLUSIVE_MUTATION_SCHEDULING), true);
+  assert.throws(() => normalizeAggregateKeys([]), /no aggregate keys/i);
+  assert.throws(() => aggregateKey("actor", " "), /kind and identity/i);
+});
+
+test("WorldMutationCoordinator runs disjoint scoped mutations concurrently", async () => {
+  const coordinator = new WorldMutationCoordinator();
+  const firstGate = createDeferred();
+  const secondGate = createDeferred();
+  const entered = [];
+
+  const first = coordinator.runScoped({ keys: ["actor:a"] }, async () => {
+    entered.push("a");
+    await firstGate.promise;
+    return "A";
+  });
+  const second = coordinator.runScoped({ keys: ["actor:b"] }, async () => {
+    entered.push("b");
+    await secondGate.promise;
+    return "B";
+  });
+
+  await flushTasks();
+  assert.deepEqual(entered, ["a", "b"]);
+  firstGate.resolve();
+  secondGate.resolve();
+  assert.deepEqual(await Promise.all([first, second]), ["A", "B"]);
+});
+
+test("WorldMutationCoordinator serializes overlapping scoped mutations in arrival order", async () => {
+  const coordinator = new WorldMutationCoordinator();
+  const firstGate = createDeferred();
+  const secondGate = createDeferred();
+  const entered = [];
+
+  const first = coordinator.runScoped({ keys: ["actor:a", "actor:b"] }, async () => {
+    entered.push("first");
+    await firstGate.promise;
+  });
+  const second = coordinator.runScoped({ keys: ["actor:b"] }, async () => {
+    entered.push("second");
+    await secondGate.promise;
+  });
+
+  await flushTasks();
+  assert.deepEqual(entered, ["first"]);
+  firstGate.resolve();
+  await first;
+  await flushTasks();
+  assert.deepEqual(entered, ["first", "second"]);
+  secondGate.resolve();
+  await second;
+});
+
+test("WorldMutationCoordinator gives an exclusive mutation a fair barrier", async () => {
+  const coordinator = new WorldMutationCoordinator();
+  const firstGate = createDeferred();
+  const exclusiveGate = createDeferred();
+  const entered = [];
+
+  const first = coordinator.runScoped({ keys: ["actor:a"] }, async () => {
+    entered.push("first");
+    await firstGate.promise;
+  });
+  const exclusive = coordinator.runScoped({ exclusive: true }, async () => {
+    entered.push("exclusive");
+    await exclusiveGate.promise;
+  });
+  const later = coordinator.runScoped({ keys: ["actor:b"] }, async () => {
+    entered.push("later");
+  });
+
+  await flushTasks();
+  assert.deepEqual(entered, ["first"]);
+  firstGate.resolve();
+  await first;
+  await flushTasks();
+  assert.deepEqual(entered, ["first", "exclusive"]);
+  exclusiveGate.resolve();
+  await exclusive;
+  await later;
+  assert.deepEqual(entered, ["first", "exclusive", "later"]);
+});
+
+test("WorldMutationCoordinator releases scoped keys after rejection", async () => {
+  const coordinator = new WorldMutationCoordinator();
+  const originalError = new Error("scoped failure");
+
+  await assert.rejects(
+    coordinator.runScoped({ keys: ["actor:a"] }, async () => {
+      throw originalError;
+    }),
+    (error) => error === originalError
+  );
+  assert.equal(
+    await coordinator.runScoped({ keys: ["actor:a"] }, async () => "recovered"),
+    "recovered"
+  );
+});
+
+test("WorldMutationCoordinator reuses scoped in-flight and completed results", async () => {
+  const coordinator = new WorldMutationCoordinator();
+  const gate = createDeferred();
+  let calls = 0;
+  const first = coordinator.runIdempotentScoped({ keys: ["actor:a"], requestId: "scoped-a" }, async () => {
+    calls += 1;
+    await gate.promise;
+    return "saved";
+  });
+  const duplicate = coordinator.runIdempotentScoped({ keys: ["actor:b"], requestId: "scoped-a" }, async () => {
+    calls += 1;
+    return "duplicate";
+  });
+
+  assert.strictEqual(duplicate, first);
+  gate.resolve();
+  assert.equal(await first, "saved");
+  assert.equal(await coordinator.runIdempotentScoped({
+    keys: ["actor:c"],
+    requestId: "scoped-a"
+  }, async () => "rerun"), "saved");
+  assert.equal(calls, 1);
+});
+
 test("getActiveGm prefers a valid Foundry activeGM and otherwise elects by string id", () => {
   const gmZ = { id: "z-gm", isGM: true, active: true };
   const gmA = { id: "a-gm", isGM: true, active: true };
@@ -259,7 +404,7 @@ test("SocketCommandBus correlates results by requestId, command, and forUserId",
     senderId: "gm-a",
     ok: true,
     data: { ignored: "command" }
-  }), true);
+  }, { transportSenderId: gm.id }), true);
   assert.equal(bus.handleMessage({
     type: COMMAND_RESULT_TYPE,
     command: "group.calendar.setDate",
@@ -268,7 +413,7 @@ test("SocketCommandBus correlates results by requestId, command, and forUserId",
     senderId: "gm-a",
     ok: true,
     data: { ignored: "user" }
-  }), true);
+  }, { transportSenderId: gm.id }), true);
   await flushTasks();
   assert.equal(settled, false);
 
@@ -280,9 +425,68 @@ test("SocketCommandBus correlates results by requestId, command, and forUserId",
     senderId: "gm-a",
     ok: true,
     data: { saved: true }
-  }), true);
+  }, { transportSenderId: gm.id }), true);
   assert.deepEqual(await pending, { saved: true });
   assert.deepEqual(timers.cleared, [1]);
+});
+
+test("SocketCommandBus uses an explicit request id without calling its id factory", async () => {
+  const emitted = [];
+  const timers = createFakeTimers();
+  const player = { id: "player-a", isGM: false, active: true };
+  const gm = { id: "gm-a", isGM: true, active: true };
+  const game = createGame({ users: [player, gm], currentUserId: player.id, activeGmId: gm.id, emitted });
+  let factoryCalls = 0;
+  const bus = new SocketCommandBus({
+    gameProvider: () => game,
+    idFactory: () => {
+      factoryCalls += 1;
+      return "factory-request";
+    },
+    setTimeoutFn: timers.setTimeoutFn,
+    clearTimeoutFn: timers.clearTimeoutFn
+  });
+
+  const pending = bus.request(
+    "group.calendar.setDate",
+    { day: 6 },
+    { requestId: "  explicit-request  " }
+  );
+
+  assert.equal(factoryCalls, 0);
+  assert.equal(emitted[0]?.message?.requestId, "explicit-request");
+  assert.equal(bus.handleMessage({
+    type: COMMAND_RESULT_TYPE,
+    command: "group.calendar.setDate",
+    requestId: "explicit-request",
+    forUserId: player.id,
+    senderId: gm.id,
+    ok: true,
+    data: "saved"
+  }, { transportSenderId: gm.id }), true);
+  assert.equal(await pending, "saved");
+});
+
+test("SocketCommandBus rejects a non-string explicit request id", async () => {
+  const emitted = [];
+  const player = { id: "player-a", isGM: false, active: true };
+  const gm = { id: "gm-a", isGM: true, active: true };
+  const game = createGame({ users: [player, gm], currentUserId: player.id, activeGmId: gm.id, emitted });
+  let factoryCalls = 0;
+  const bus = new SocketCommandBus({
+    gameProvider: () => game,
+    idFactory: () => {
+      factoryCalls += 1;
+      return "factory-request";
+    }
+  });
+
+  await assert.rejects(
+    bus.request("group.calendar.setDate", { day: 6 }, { requestId: 42 }),
+    (error) => error?.code === "invalid-request"
+  );
+  assert.equal(factoryCalls, 0);
+  assert.deepEqual(emitted, []);
 });
 
 test("SocketCommandBus ignores malformed correlated errors until a valid failure arrives", async () => {
@@ -318,7 +522,7 @@ test("SocketCommandBus ignores malformed correlated errors until a valid failure
     { code: "", message: "failure" },
     { code: "denied", message: " " }
   ]) {
-    assert.equal(bus.handleMessage({ ...correlation, error }), true);
+    assert.equal(bus.handleMessage({ ...correlation, error }, { transportSenderId: gm.id }), true);
   }
   await flushTasks();
   assert.equal(settledError, undefined);
@@ -328,11 +532,51 @@ test("SocketCommandBus ignores malformed correlated errors until a valid failure
   assert.equal(bus.handleMessage({
     ...correlation,
     error: { code: "denied", message: "Request denied" }
-  }), true);
+  }, { transportSenderId: gm.id }), true);
   await observed;
   assert.equal(settledError?.code, "denied");
   assert.equal(settledError?.message, "Request denied");
   assert.deepEqual(timers.cleared, [1]);
+});
+
+test("SocketCommandBus preserves safe structured command failure details", async () => {
+  const emitted = [];
+  const timers = createFakeTimers();
+  const player = { id: "player-a", isGM: false, active: true };
+  const gm = { id: "gm-a", isGM: true, active: true };
+  const game = createGame({ users: [player, gm], currentUserId: player.id, activeGmId: gm.id, emitted });
+  const bus = new SocketCommandBus({
+    gameProvider: () => game,
+    idFactory: () => "partial-result",
+    setTimeoutFn: timers.setTimeoutFn,
+    clearTimeoutFn: timers.clearTimeoutFn
+  });
+  const pending = bus.request("storage.claim.all", {});
+
+  assert.equal(bus.handleMessage({
+    type: COMMAND_RESULT_TYPE,
+    command: "storage.claim.all",
+    requestId: "partial-result",
+    forUserId: player.id,
+    senderId: gm.id,
+    ok: false,
+    error: {
+      code: "inventory-ingress-partial",
+      message: "Inventory ingress stopped after a row failure.",
+      details: {
+        completedSourceKeys: ["row-1"],
+        failedSourceKey: "row-2",
+        unprocessedSourceKeys: ["row-3"]
+      }
+    }
+  }, { transportSenderId: gm.id }), true);
+
+  await assert.rejects(
+    pending,
+    (error) => error?.code === "inventory-ingress-partial"
+      && error?.failedSourceKey === "row-2"
+      && JSON.stringify(error?.completedSourceKeys) === JSON.stringify(["row-1"])
+  );
 });
 
 test("SocketCommandBus times requests out after exactly 10000 ms", async () => {
@@ -352,6 +596,135 @@ test("SocketCommandBus times requests out after exactly 10000 ms", async () => {
   assert.equal(timers.pending.get(1).milliseconds, REQUEST_TIMEOUT_MS);
   timers.pending.get(1).callback();
   await assert.rejects(pending, (error) => error?.code === "request-timeout");
+});
+
+test("SocketCommandBus switches from acceptance timeout to completion timeout", async () => {
+  const emitted = [];
+  const timers = createFakeTimers();
+  const player = { id: "player-a", isGM: false, active: true };
+  const gm = { id: "gm-a", isGM: true, active: true };
+  const game = createGame({ users: [player, gm], currentUserId: player.id, activeGmId: gm.id, emitted });
+  const bus = new SocketCommandBus({
+    gameProvider: () => game,
+    idFactory: () => "accepted-timeout",
+    setTimeoutFn: timers.setTimeoutFn,
+    clearTimeoutFn: timers.clearTimeoutFn
+  });
+
+  const pending = bus.request("group.calendar.setDate", { day: 4 });
+  assert.equal(timers.pending.get(1).milliseconds, REQUEST_TIMEOUT_MS);
+  assert.equal(bus.handleMessage({
+    type: COMMAND_ACCEPTED_TYPE,
+    command: "group.calendar.setDate",
+    requestId: "accepted-timeout",
+    forUserId: player.id,
+    senderId: gm.id
+  }, { transportSenderId: gm.id }), true);
+
+  assert.deepEqual(timers.cleared, [1]);
+  assert.equal(timers.pending.get(2).milliseconds, COMPLETION_TIMEOUT_MS);
+  timers.pending.get(2).callback();
+  await assert.rejects(pending, (error) => error?.code === "operation-timeout");
+});
+
+test("SocketCommandBus accepts a result as implicit acknowledgement only from the expected active GM", async () => {
+  const emitted = [];
+  const timers = createFakeTimers();
+  const player = { id: "player-a", isGM: false, active: true };
+  const gm = { id: "gm-a", isGM: true, active: true };
+  const attacker = { id: "player-b", isGM: false, active: true };
+  const game = createGame({ users: [player, gm, attacker], currentUserId: player.id, activeGmId: gm.id, emitted });
+  const bus = new SocketCommandBus({
+    gameProvider: () => game,
+    idFactory: () => "implicit-accepted",
+    setTimeoutFn: timers.setTimeoutFn,
+    clearTimeoutFn: timers.clearTimeoutFn
+  });
+  const pending = bus.request("group.calendar.setDate", { day: 4 });
+  const result = {
+    type: COMMAND_RESULT_TYPE,
+    command: "group.calendar.setDate",
+    requestId: "implicit-accepted",
+    forUserId: player.id,
+    senderId: gm.id,
+    ok: true,
+    data: { savedDay: 4 }
+  };
+
+  assert.equal(bus.handleMessage(result, { transportSenderId: attacker.id }), true);
+  assert.equal(timers.pending.size, 1);
+  assert.equal(bus.handleMessage({ ...result, senderId: attacker.id }, { transportSenderId: attacker.id }), true);
+  assert.equal(timers.pending.size, 1);
+  assert.equal(bus.handleMessage(result, { transportSenderId: gm.id }), true);
+  assert.deepEqual(await pending, { savedDay: 4 });
+});
+
+test("SocketCommandBus emits accepted before a keyed mutation leaves its queue", async () => {
+  const emitted = [];
+  const coordinator = new WorldMutationCoordinator();
+  const blockerGate = createDeferred();
+  const gm = { id: "gm-a", isGM: true, active: true };
+  const player = { id: "player-a", isGM: false, active: true };
+  const game = createGame({ users: [gm, player], currentUserId: gm.id, activeGmId: gm.id, emitted });
+  const blocker = coordinator.runScoped({ keys: ["actor:a"] }, () => blockerGate.promise);
+  const bus = new SocketCommandBus({ gameProvider: () => game, coordinator });
+  bus.register("inventory.item.take", {
+    validate: (payload) => typeof payload?.actorId === "string",
+    authorize: () => true,
+    scheduling: keyedMutationScheduling((payload) => [`actor:${payload.actorId}`]),
+    execute: async () => ({ saved: true })
+  });
+  await flushTasks();
+
+  bus.handleMessage({
+    type: COMMAND_REQUEST_TYPE,
+    command: "inventory.item.take",
+    requestId: "queued-a",
+    senderId: player.id,
+    payload: { actorId: "a" }
+  }, { transportSenderId: player.id });
+  await flushTasks();
+
+  assert.equal(emitted.length, 1);
+  assert.equal(emitted[0].message.type, COMMAND_ACCEPTED_TYPE);
+  blockerGate.resolve();
+  await blocker;
+  await flushTasks();
+  assert.equal(emitted.at(-1).message.type, COMMAND_RESULT_TYPE);
+});
+
+test("SocketCommandBus executes queries while an exclusive mutation is blocked", async () => {
+  const emitted = [];
+  const coordinator = new WorldMutationCoordinator();
+  const blockerGate = createDeferred();
+  const gm = { id: "gm-a", isGM: true, active: true };
+  const player = { id: "player-a", isGM: false, active: true };
+  const game = createGame({ users: [gm, player], currentUserId: gm.id, activeGmId: gm.id, emitted });
+  const blocker = coordinator.runScoped({ exclusive: true }, () => blockerGate.promise);
+  const bus = new SocketCommandBus({ gameProvider: () => game, coordinator });
+  bus.register("storage.journal.read", {
+    validate: () => true,
+    authorize: () => true,
+    scheduling: QUERY_SCHEDULING,
+    execute: async () => ({ rows: ["visible"] })
+  });
+  await flushTasks();
+
+  bus.handleMessage({
+    type: COMMAND_REQUEST_TYPE,
+    command: "storage.journal.read",
+    requestId: "query-a",
+    senderId: player.id,
+    payload: {}
+  }, { transportSenderId: player.id });
+  await flushTasks();
+
+  assert.deepEqual(emitted.map((entry) => entry.message.type), [
+    COMMAND_ACCEPTED_TYPE,
+    COMMAND_RESULT_TYPE
+  ]);
+  blockerGate.resolve();
+  await blocker;
 });
 
 test("SocketCommandBus rejects a duplicate outbound pending key without replacing the first request", async () => {
@@ -405,9 +778,20 @@ test("SocketCommandBus executes a duplicate typed request once and re-emits its 
   assert.equal(bus.handleMessage(request), true);
   await flushTasks();
   assert.equal(executions, 1);
-  assert.equal(emitted.length, 2);
-  assert.deepEqual(emitted[0], emitted[1]);
+  assert.equal(emitted.length, 4);
+  assert.deepEqual(emitted[0], emitted[2]);
+  assert.deepEqual(emitted[1], emitted[3]);
   assert.deepEqual(emitted[0], {
+    channel: SOCKET_CHANNEL,
+    message: {
+      type: COMMAND_ACCEPTED_TYPE,
+      command: request.command,
+      requestId: request.requestId,
+      forUserId: player.id,
+      senderId: gm.id
+    }
+  });
+  assert.deepEqual(emitted[1], {
     channel: SOCKET_CHANNEL,
     message: {
       type: COMMAND_RESULT_TYPE,
@@ -419,6 +803,53 @@ test("SocketCommandBus executes a duplicate typed request once and re-emits its 
       data: { savedDay: 8 }
     }
   });
+});
+
+test("SocketCommandBus emits privacy-safe lifecycle trace events around authoritative execution", async () => {
+  const emitted = [];
+  const traced = [];
+  const gm = { id: "gm-a", isGM: true, active: true };
+  const player = { id: "player-a", isGM: false, active: true };
+  const game = createGame({ users: [gm, player], currentUserId: gm.id, activeGmId: gm.id, emitted });
+  let timestamp = 100;
+  const bus = new SocketCommandBus({
+    gameProvider: () => game,
+    trace: (event) => traced.push(event),
+    now: () => timestamp++
+  });
+  bus.register("group.calendar.setDate", {
+    validate: (payload) => Number.isInteger(payload?.day),
+    authorize: (_payload, context) => context.sender.id === player.id,
+    execute: async (payload) => ({ savedDay: payload.day })
+  });
+
+  bus.handleMessage({
+    type: COMMAND_REQUEST_TYPE,
+    command: "group.calendar.setDate",
+    requestId: "trace-a",
+    senderId: player.id,
+    payload: { day: 4, privateName: "must-not-be-traced" }
+  }, { transportSenderId: player.id });
+  await flushTasks();
+
+  assert.deepEqual(
+    traced.map((event) => event.phase),
+    [
+      "received",
+      "validated",
+      "accepted",
+      "queue-start",
+      "authorized",
+      "execute-end",
+      "response",
+      "completed"
+    ]
+  );
+  assert.equal(traced.every((event) => event.command === "group.calendar.setDate"), true);
+  assert.equal(traced.every((event) => event.requestId === "trace-a"), true);
+  assert.equal(traced.every((event) => event.senderId === player.id), true);
+  assert.equal(traced.some((event) => "payload" in event || "privateName" in event), false);
+  assert.equal(traced.at(-1).outcome, "ok");
 });
 
 test("SocketCommandBus rejects an envelope sender that differs from the transport sender", async () => {
@@ -578,7 +1009,7 @@ test("SocketCommandBus accepts exactly 65536 serialized bytes and rejects larger
     senderId: gm.id,
     ok: true,
     data: "accepted"
-  }), true);
+  }, { transportSenderId: gm.id }), true);
   assert.equal(await exactRequest, "accepted");
 
   await assert.rejects(

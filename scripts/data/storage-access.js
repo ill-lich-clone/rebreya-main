@@ -1,4 +1,6 @@
-export const MAX_STORAGE_DISTANCE_FEET = 5;
+export const MAX_STORAGE_DISTANCE_FEET = 10;
+export const STORAGE_ACCESS_DISTANCE_ERROR_CODE = "storage-access-distance";
+export const STORAGE_ACCESS_DISTANCE_ERROR_MESSAGE = "Хранилище можно открыть только в пределах 10 футов.";
 
 export function storageTokenDocument(token) {
   return token?.document ?? token ?? null;
@@ -25,24 +27,31 @@ export function storageTokenCenter(token, { canvas = globalThis.canvas } = {}) {
   };
 }
 
-function storageTokenFootprintCenters(token, { canvas = globalThis.canvas } = {}) {
+export function storageTokenFootprintCenters(token, { canvas = globalThis.canvas } = {}) {
   const document = storageTokenDocument(token);
   const gridSize = Number(document?.parent?.grid?.size ?? canvas?.grid?.size ?? canvas?.dimensions?.size ?? 100);
   const width = Number(document?.width ?? 1);
   const height = Number(document?.height ?? 1);
   if (!Number.isFinite(gridSize) || gridSize <= 0
-    || !Number.isSafeInteger(width) || width < 1
-    || !Number.isSafeInteger(height) || height < 1) {
+    || !Number.isFinite(width) || width <= 0
+    || !Number.isFinite(height) || height <= 0) {
     return [storageTokenCenter(token, { canvas })];
   }
   const left = Number(document?.x ?? 0);
   const top = Number(document?.y ?? 0);
+  if (!Number.isFinite(left) || !Number.isFinite(top)) {
+    return [storageTokenCenter(token, { canvas })];
+  }
+  const firstColumn = Math.floor(left / gridSize);
+  const lastColumn = Math.ceil((left + width * gridSize) / gridSize - 1e-9) - 1;
+  const firstRow = Math.floor(top / gridSize);
+  const lastRow = Math.ceil((top + height * gridSize) / gridSize - 1e-9) - 1;
   const centers = [];
-  for (let column = 0; column < width; column += 1) {
-    for (let row = 0; row < height; row += 1) {
+  for (let column = firstColumn; column <= lastColumn; column += 1) {
+    for (let row = firstRow; row <= lastRow; row += 1) {
       centers.push({
-        x: left + (column + 0.5) * gridSize,
-        y: top + (row + 0.5) * gridSize
+        x: (column + 0.5) * gridSize,
+        y: (row + 0.5) * gridSize
       });
     }
   }
@@ -71,13 +80,20 @@ function measureSquareGridSteps(from, to, sceneGrid) {
   return Math.max(columnSteps, rowSteps) * gridDistance;
 }
 
+export function measureStorageGridDistance(from, to, {
+  sceneGrid = globalThis.canvas?.scene?.grid,
+  canvas = globalThis.canvas
+} = {}) {
+  return measureSquareGridSteps(from, to, sceneGrid) ?? measureGridDistance(from, to, canvas);
+}
+
 export function measureStorageTokenDistance(characterToken, storageToken, { canvas = globalThis.canvas } = {}) {
   const sceneGrid = storageTokenDocument(characterToken)?.parent?.grid
     ?? storageTokenDocument(storageToken)?.parent?.grid
     ?? canvas?.scene?.grid;
   const distances = storageTokenFootprintCenters(characterToken, { canvas }).flatMap((from) => (
     storageTokenFootprintCenters(storageToken, { canvas }).map((to) => (
-      measureSquareGridSteps(from, to, sceneGrid) ?? measureGridDistance(from, to, canvas)
+      measureStorageGridDistance(from, to, { sceneGrid, canvas })
     ))
   ));
   return Math.min(...distances.filter(Number.isFinite), Number.POSITIVE_INFINITY);
@@ -88,15 +104,13 @@ export function measureStoragePointDistance(characterToken, point, { canvas = gl
   if (!Number.isFinite(to.x) || !Number.isFinite(to.y)) return Number.POSITIVE_INFINITY;
   const sceneGrid = storageTokenDocument(characterToken)?.parent?.grid ?? canvas?.scene?.grid;
   const distances = storageTokenFootprintCenters(characterToken, { canvas })
-    .map((from) => measureSquareGridSteps(from, to, sceneGrid) ?? measureGridDistance(from, to, canvas));
+    .map((from) => measureStorageGridDistance(from, to, { sceneGrid, canvas }));
   return Math.min(...distances.filter(Number.isFinite), Number.POSITIVE_INFINITY);
 }
 
-export function isStorageTokenVisible(storageToken, { canvas = globalThis.canvas } = {}) {
+export function isStorageTokenVisible(storageToken) {
   const document = storageTokenDocument(storageToken);
-  if (document?.hidden === true) return false;
-  const object = storageTokenObject(storageToken, canvas);
-  return object ? object.visible !== false : true;
+  return document?.hidden !== true;
 }
 
 export function preflightStorageAccess(storageToken, {

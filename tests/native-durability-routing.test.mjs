@@ -162,9 +162,10 @@ test("active GM validates and executes routed native destruction decisions", asy
       mutationId: "native-mutation-1",
       targetUuid: token.uuid
     }]]);
-    assert.equal(emitted.length, 1);
-    assert.equal(emitted[0][1].ok, true);
-    assert.deepEqual(emitted[0][1].data, { outcome: "damaged" });
+    assert.equal(emitted.length, 2);
+    assert.equal(emitted[0][1].type, "rebreya.command.accepted");
+    assert.equal(emitted[1][1].ok, true);
+    assert.deepEqual(emitted[1][1].data, { outcome: "damaged" });
   }
   finally {
     globalThis.Hooks = previousHooks;

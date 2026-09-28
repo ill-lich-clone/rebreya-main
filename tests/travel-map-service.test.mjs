@@ -114,3 +114,56 @@ test("TravelMapService creates a group token when it is missing", async () => {
   assert.equal(creates[0][1][0].height, 0.33);
   assert.equal(creates[0][1][0].flags[MODULE_ID].travelGroupActorId, "group-a");
 });
+
+test("TravelMapService defers token movement until the world map scene is rendered", async () => {
+  let updateCount = 0;
+  const scene = {
+    id: "world-map",
+    name: "World Map",
+    grid: {
+      size: 100
+    },
+    tokens: [
+      {
+        id: "token-a",
+        actorId: "group-a",
+        object: null
+      }
+    ],
+    async updateEmbeddedDocuments() {
+      updateCount += 1;
+      return [];
+    }
+  };
+  const service = new TravelMapService({
+    gameProvider: () => ({
+      scenes: {
+        getName(name) {
+          return name === "World Map" ? scene : null;
+        }
+      }
+    }),
+    canvasProvider: () => ({
+      scene: {
+        id: "active-scene"
+      }
+    })
+  });
+
+  const result = await service.syncGroupToken({
+    groupActor: {
+      id: "group-a",
+      name: "Travel Group"
+    },
+    position: {
+      available: true,
+      sceneName: "World Map",
+      sceneX: 120,
+      sceneY: 240
+    }
+  });
+
+  assert.equal(result.synced, false);
+  assert.equal(result.deferred, true);
+  assert.equal(updateCount, 0);
+});

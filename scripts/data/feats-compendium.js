@@ -1,4 +1,10 @@
-import { FEATS_COMPENDIUM_LABEL, FEATS_COMPENDIUM_NAME, MODULE_ID } from "../constants.js";
+import {
+  ACTIONS_COMPENDIUM_NAME,
+  FEATS_COMPENDIUM_LABEL,
+  FEATS_COMPENDIUM_NAME,
+  GLOSSARY_COMPENDIUM_NAME,
+  MODULE_ID
+} from "../constants.js?v=1.4.317";
 import { bringAppToFront } from "../ui.js";
 import {
   buildNamedIconLookup,
@@ -7,21 +13,26 @@ import {
   ensurePackSidebarFolder,
   normalizeFolderPath,
   resolveNamedIcon
-} from "./compendium-utils.js";
-import { syncManagedDocumentsOnActiveGm } from "./managed-compendium-sync.js";
+} from "./compendium-utils.js?v=1.4.327";
+import { syncManagedDocumentsOnActiveGm } from "./managed-compendium-sync.js?v=1.4.330";
 import { buildSlug } from "./item-classification.js";
+import { renderDescriptionMarkdown } from "./markdown-description.js";
+import { getActionReferenceDefinitions } from "./actions-compendium.js?v=1.4.317";
+import { loadGlossaryReferenceDefinitions } from "./glossary-compendium.js?v=1.4.317";
+import { buildCompendiumItemReferenceIndex } from "./compendium-item-reference-index.js?v=1.4.317";
+import { linkFeatDescriptionHtml } from "./feat-reference-linker.js?v=1.4.317";
 
 const PACK_ID = `world.${FEATS_COMPENDIUM_NAME}`;
 const DND5E_SYSTEM_ID = "dnd5e";
 const COMPENDIUM_SIDEBAR_FOLDER = ["Ребрея"];
 const DEFAULT_FEAT_ICON = "icons/svg/book.svg";
-const FEAT_TEMPLATE_VERSION = 1;
-const FEAT_ROOT_FOLDER = "Черты V0.8";
+const FEAT_TEMPLATE_VERSION = 4;
+const FEAT_ROOT_FOLDER = "Черты V0.9";
 const MODULE_ICONS_BASE_PATH = `modules/${MODULE_ID}/templates/icons`;
 const FEAT_ICON_SEARCH_PATHS = [`${MODULE_ICONS_BASE_PATH}/Feats`, MODULE_ICONS_BASE_PATH];
 const FEATS_WORLD_OVERRIDE_PATH = `modules/${MODULE_ID}/data/feats-world-overrides.json`;
-const FEATS_BUNDLE_PATH = `modules/${MODULE_ID}/cherty-v08-foundry-2014-import-pack/cherty-v08-foundry-2014-bundle.json`;
-const FEATS_ITEMS_PATH = `modules/${MODULE_ID}/cherty-v08-foundry-2014-import-pack/cherty-v08-foundry-2014-items.json`;
+const FEATS_BUNDLE_PATH = `modules/${MODULE_ID}/cherty-v09-foundry-2014-import-pack/cherty-v09-foundry-2014-bundle.json`;
+const FEATS_ITEMS_PATH = `modules/${MODULE_ID}/cherty-v09-foundry-2014-import-pack/cherty-v09-foundry-2014-items.json`;
 const DEFAULT_FEAT_SUBTYPE = "general";
 const PERFORMER_FEAT_ID = "ispolnitel";
 const CURSE_EATER_FEAT_ID = "pozhiratel-proklyatiy";
@@ -70,16 +81,37 @@ function isDnd5eWorld() {
   return game.system?.id === DND5E_SYSTEM_ID;
 }
 
+function hasTrustedDescriptionHtml(value) {
+  return /<\/?(?:p|table|thead|tbody|tr|td|th|ul|ol|li|h[1-6]|div|section|strong|em|br|blockquote)\b[^>]*>/iu.test(String(value ?? ""));
+}
+
+function normalizeHtmlTableCellNewlines(value) {
+  return String(value ?? "").replace(
+    /(<(td|th)\b[^>]*>)([\s\S]*?)(<\/\2>)/giu,
+    (_match, openingTag, _tagName, content, closingTag) => (
+      `${openingTag}${content.replace(/\r\n?|\n/gu, "<br>")}${closingTag}`
+    )
+  );
+}
+
+export function renderFeatDescription(value) {
+  const description = cleanString(value);
+  if (!description) return "";
+  return hasTrustedDescriptionHtml(description)
+    ? normalizeHtmlTableCellNewlines(description)
+    : renderDescriptionMarkdown(description, { preserveSingleNewlines: true });
+}
+
 function normalizeDescription(rawDescription) {
   if (isPlainObject(rawDescription)) {
     return {
-      value: cleanString(rawDescription.value),
-      chat: cleanString(rawDescription.chat)
+      value: renderFeatDescription(rawDescription.value),
+      chat: renderFeatDescription(rawDescription.chat)
     };
   }
 
   return {
-    value: cleanString(rawDescription),
+    value: renderFeatDescription(rawDescription),
     chat: ""
   };
 }
@@ -561,6 +593,57 @@ async function getPackDocuments(pack) {
   return Array.isArray(documents) ? documents : [];
 }
 
+async function getOptionalPackDocuments(packId) {
+  const pack = game.packs.get(packId);
+  return pack ? getPackDocuments(pack) : [];
+}
+
+function linkFeatDescriptions(feats, referenceIndex) {
+  const linked = [];
+  const ambiguous = [];
+  const unresolved = [];
+  const linkedFeats = feats.map((feat) => {
+    const next = foundry.utils.deepClone(feat);
+    const documentId = referenceIndex.documentIdByFeatId.get(feat.featId);
+    next.documentId = documentId;
+    const selfUuid = `Compendium.world.${FEATS_COMPENDIUM_NAME}.Item.${documentId}`;
+    for (const field of ["value", "chat"]) {
+      const fieldPath = `system.description.${field}`;
+      const result = linkFeatDescriptionHtml(next.system.description[field], {
+        matcher: referenceIndex.matcher,
+        selfUuid
+      });
+      next.system.description[field] = result.html;
+      linked.push(...result.linked.map((reference) => Object.freeze({
+        featId: feat.featId,
+        field: fieldPath,
+        reference: reference.text,
+        uuid: reference.uuid
+      })));
+      ambiguous.push(...result.ambiguous.map((reference) => Object.freeze({
+        featId: feat.featId,
+        field: fieldPath,
+        reference
+      })));
+      unresolved.push(...result.unresolved.map((reference) => Object.freeze({
+        featId: feat.featId,
+        field: fieldPath,
+        reference
+      })));
+    }
+    return next;
+  });
+
+  return {
+    feats: linkedFeats,
+    report: Object.freeze({
+      linked: Object.freeze(linked),
+      ambiguous: Object.freeze(ambiguous),
+      unresolved: Object.freeze(unresolved)
+    })
+  };
+}
+
 async function findFeatDocument(pack, featId, fallbackName = "") {
   const normalizedFeatId = cleanString(featId);
   const normalizedFallbackName = normalizeMatchText(fallbackName);
@@ -593,7 +676,20 @@ async function findFeatDocument(pack, featId, fallbackName = "") {
 }
 
 export class FeatsCompendiumService {
+  constructor({
+    getActionReferences = getActionReferenceDefinitions,
+    loadGlossaryReferences = loadGlossaryReferenceDefinitions
+  } = {}) {
+    this.getActionReferences = getActionReferences;
+    this.loadGlossaryReferences = loadGlossaryReferences;
+  }
+
   async sync(items = null) {
+    this.lastSyncReport = Object.freeze({
+      linked: Object.freeze([]),
+      ambiguous: Object.freeze([]),
+      unresolved: Object.freeze([])
+    });
     if (!game.user?.isGM || !isDnd5eWorld()) {
       return null;
     }
@@ -603,11 +699,30 @@ export class FeatsCompendiumService {
     const pack = await ensurePack();
     await deduplicateCompendiumFolders(pack);
     const documents = await getPackDocuments(pack);
-    const iconLookup = await buildNamedIconLookup(FEAT_ICON_SEARCH_PATHS, { forceRefresh: true });
+    const [actionDocuments, glossaryDocuments, expectedGlossary] = await Promise.all([
+      getOptionalPackDocuments(`world.${ACTIONS_COMPENDIUM_NAME}`),
+      getOptionalPackDocuments(`world.${GLOSSARY_COMPENDIUM_NAME}`),
+      this.loadGlossaryReferences()
+    ]);
+    const referenceIndex = buildCompendiumItemReferenceIndex({
+      actions: actionDocuments,
+      glossary: glossaryDocuments,
+      feats: documents,
+      desiredFeats: feats,
+      expectedActions: this.getActionReferences(),
+      expectedGlossary
+    });
+    const linkedResult = linkFeatDescriptions(feats, referenceIndex);
+    const linkedFeats = linkedResult.feats;
+    this.lastSyncReport = linkedResult.report;
+    if (this.lastSyncReport.ambiguous.length || this.lastSyncReport.unresolved.length) {
+      console.warn(`${MODULE_ID} | Feat reference sync left unresolved or ambiguous mentions.`, this.lastSyncReport);
+    }
+    const iconLookup = await buildNamedIconLookup(FEAT_ICON_SEARCH_PATHS);
     let folderIdByPath = new Map();
     await syncManagedDocumentsOnActiveGm(game, {
       pack,
-      entries: feats,
+      entries: linkedFeats,
       documents,
       sourceIdOfEntry: (feat) => feat.featId,
       sourceIdOfDocument: (document) => document.getFlag(MODULE_ID, "managed")
@@ -621,11 +736,12 @@ export class FeatsCompendiumService {
         document.getFlag(MODULE_ID, "signature"),
         cleanString(document.img, DEFAULT_FEAT_ICON)
       ]),
+      documentIdOfEntry: (feat) => feat.documentId,
       prepareFolders: async () => {
         try {
           folderIdByPath = await ensureCompendiumFolders(
             pack,
-            feats.map((feat) => buildFeatFolderPath(feat))
+            linkedFeats.map((feat) => buildFeatFolderPath(feat))
           );
         }
         catch (error) {

@@ -1,4 +1,7 @@
 import { MODULE_ID } from "../constants.js";
+import { isMaterializedCorpseStorageState } from "./storage-corpse-target.js?v=1.4.195-storage-corpse-target";
+
+export { isMaterializedCorpseStorageState };
 
 function objectFlags(value) {
   if (!value || typeof value !== "object") return null;
@@ -34,6 +37,7 @@ export function storageObjectKind(target) {
   }
   for (const candidate of candidates(target)) {
     const storage = objectFlags(candidate)?.storage;
+    if (isMaterializedCorpseStorageState(storage)) continue;
     if (storage?.enabled === true || Number(storage?.version) >= 1) {
       return "chest";
     }

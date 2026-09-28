@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
+import { WorldMutationCoordinator } from "../scripts/application/world-mutation-coordinator.js";
 import { MODULE_ID, REBREYA_GROUP_FLAGS, SETTINGS_KEYS } from "../scripts/constants.js";
 import { CalendarService } from "../scripts/data/calendar-service.js";
 import { GroupContextService } from "../scripts/data/group-context-service.js";
@@ -51,7 +52,16 @@ function withCalendarHarness(state, callback) {
     }
   };
 
-  const groupContextService = new GroupContextService();
+  const mutationCoordinator = new WorldMutationCoordinator();
+  const groupContextService = new GroupContextService({
+    mutationGateway: {
+      commit(queueKey, operation) {
+        return mutationCoordinator.run(queueKey, () => operation(Object.freeze({
+          assertActiveGm() {}
+        })));
+      }
+    }
+  });
   const calendarService = new CalendarService({ groupContextService });
 
   return Promise.resolve()

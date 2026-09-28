@@ -4,6 +4,28 @@ import { readdir, readFile } from "node:fs/promises";
 
 const RELEASED_CACHE_VERSION = "1\\.4\\.96";
 
+test("alchemy compendium release advances the cache version", async () => {
+  const manifest = JSON.parse(await readFile(new URL("../module.json", import.meta.url), "utf8"));
+  assert.equal(manifest.version, "1.4.347");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.347.js"]);
+  assert.equal(
+    (await readFile(new URL("../scripts/main-1.4.347.js", import.meta.url), "utf8")).trim(),
+    'import "./main.js";'
+  );
+});
+
+test("cached server manifests retain loadable entrypoints across patch releases", async () => {
+  const manifest = JSON.parse(await readFile(new URL("../module.json", import.meta.url), "utf8"));
+  const [major, minor, patch] = manifest.version.split(".").map(Number);
+  assert.equal(major, 1);
+  assert.equal(minor, 4);
+  for (let version = 322; version <= patch; version++) {
+    const path = `../scripts/main-1.4.${version}.js`;
+    const source = await readFile(new URL(path, import.meta.url), "utf8");
+    assert.equal(source.trim(), 'import "./main.js";', path);
+  }
+});
+
 async function readCanonicalEntrypointSource() {
   return readFile(new URL("../scripts/main.js", import.meta.url), "utf8");
 }
@@ -58,24 +80,74 @@ test("module manifest declares the physical Craftsman gadget Item type", async (
   });
 });
 
-test("module manifest loads the stable canonical entrypoint", async () => {
+test("module manifest exposes the Lootgen template Item subtype", async () => {
+  const manifest = JSON.parse(await readFile(new URL("../module.json", import.meta.url), "utf8"));
+  assert.deepEqual(manifest.documentTypes.Item["lootgen-template"], {});
+  assert.equal(manifest.esmodules[0], `scripts/main-${manifest.version}.js`);
+});
+
+test("module manifest loads an unpinned canonical entrypoint for page-refresh updates", async () => {
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const [entrypoint] = manifest.esmodules;
 
-  assert.equal(manifest.version, "1.4.134");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.134.js"]);
+  assert.equal(manifest.version, "1.4.347");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.347.js"]);
   assert.doesNotMatch(entrypoint, /[?#]/u);
 
   const entrypointSource = await readFile(new URL(entrypoint, manifestUrl), "utf8");
-  assert.equal(
-    entrypointSource,
-    [
-      "// @rebreya-role versioned-entrypoint-cache-forwarder",
-      'export * from "./main.js?v=1.4.134-actor-delta-status-socket";',
-      ""
-    ].join("\n")
-  );
+  assert.equal(entrypointSource, 'import "./main.js";\n');
+});
+
+test("Lootgen window import reuses the released stylesheet cache version", async () => {
+  const entrypointSource = await readCanonicalEntrypointSource();
+
+  assert.match(entrypointSource, new RegExp(
+    `lootgen-app\\.js\\?v=\\$\\{encodeURIComponent\\(MODULE_STYLE_VERSION\\)\\}`,
+    "u"
+  ));
+  assert.match(entrypointSource, /const MODULE_STYLE_VERSION = "1\.4\.322";/u);
+});
+
+test("glossary and feat-link owners preserve their released cache key", async () => {
+  const version = "1\\.4\\.317";
+  const [
+    mainSource,
+    featsSource,
+    indexSource,
+    glossarySource,
+    sheetSource,
+    statusPresentationSource,
+    performerSource
+  ] = await Promise.all([
+    readFile(new URL("../scripts/main.js", import.meta.url), "utf8"),
+    readFile(new URL("../scripts/data/feats-compendium.js", import.meta.url), "utf8"),
+    readFile(new URL("../scripts/data/compendium-item-reference-index.js", import.meta.url), "utf8"),
+    readFile(new URL("../scripts/data/glossary-compendium.js", import.meta.url), "utf8"),
+    readFile(new URL("../scripts/integrations/dnd5e-sheet-extensions.js", import.meta.url), "utf8"),
+    readFile(new URL("../scripts/integrations/dnd5e-sheet-status-references.js", import.meta.url), "utf8"),
+    readFile(new URL("../scripts/combat/performer-automation-service.js", import.meta.url), "utf8")
+  ]);
+
+  for (const [source, owner, ownerVersion = version] of [
+    [mainSource, "feats-compendium", "1\\.4\\.330"],
+    [mainSource, "glossary-compendium", "1\\.4\\.330"],
+    [mainSource, "actions-compendium", "1\\.4\\.330"],
+    [featsSource, "compendium-item-reference-index"],
+    [featsSource, "feat-reference-linker"],
+    [featsSource, "actions-compendium"],
+    [featsSource, "glossary-compendium"],
+    [featsSource, "constants"],
+    [indexSource, "feat-reference-linker"],
+    [indexSource, "constants"],
+    [glossarySource, "status-reference-data"],
+    [glossarySource, "constants"],
+    [sheetSource, "dnd5e-sheet-status-references"],
+    [statusPresentationSource, "status-reference-data"],
+    [performerSource, "feats-compendium"]
+  ]) {
+    assert.match(source, new RegExp(`${owner}\\.js\\?v=${ownerVersion}`, "u"), owner);
+  }
 });
 
 test("canonical entrypoint cache-busts the player-list inventory token launcher", async () => {
@@ -83,11 +155,15 @@ test("canonical entrypoint cache-busts the player-list inventory token launcher"
 
   assert.match(
     entrypointSource,
-    /hooks\.js\?v=1\.4\.111-party-inventory-token-launcher/u
+    /hooks\.js\?v=1\.4\.272/u
   );
   assert.match(
     entrypointSource,
     /game\.rebreyaMain = moduleApi;[\s\S]*?refreshPlayerInventoryQuickButton\(moduleApi\);/u
+  );
+  assert.match(
+    entrypointSource,
+    /Hooks\.once\("init"[\s\S]*?publishPanelToolApi\(game\.modules\.get\(MODULE_ID\)\);/u
   );
 });
 
@@ -141,11 +217,11 @@ test("production registers the hidden GiantTribe advancement before race compend
   );
   assert.match(
     entrypointSource,
-    /dnd5e-sheet-extensions\.js\?v=1\.4\.110-giant-tribe-cache-fixes-2/u
+    /dnd5e-sheet-extensions\.js\?v=1\.4\.338-hero-doll-menu/u
   );
   assert.match(
     entrypointSource,
-    /data\/races-compendium\.js\?v=1\.4\.110-giant-tribe-cache-fixes-2/u
+    /data\/races-compendium\.js\?v=1\.4\.330/u
   );
   assert.match(
     advancementSource,
@@ -208,37 +284,112 @@ test("production has no legacy Craftsman compendium retirement path", async () =
 test("current entrypoint cache-busts the changed craft durability and transfer graph", async () => {
   const canonicalSource = await readCanonicalEntrypointSource();
   const traderServiceSource = await readFile(new URL("../scripts/data/trader-service.js", import.meta.url), "utf8");
+  const durabilityServiceSource = await readFile(new URL("../scripts/data/durability-service.js", import.meta.url), "utf8");
+  const durabilityHooksSource = await readFile(new URL("../scripts/integrations/durability-hooks.js", import.meta.url), "utf8");
+  const nativeObjectDurabilitySource = await readFile(
+    new URL("../scripts/data/native-object-durability-service.js", import.meta.url),
+    "utf8"
+  );
+  const inventoryServiceSource = await readFile(new URL("../scripts/data/inventory-service.js", import.meta.url), "utf8");
+  const lootgenAppSource = await readFile(new URL("../scripts/ui/lootgen-app.js", import.meta.url), "utf8");
+  const lootgenGeneratorSource = await readFile(new URL("../scripts/data/lootgen-generator.js", import.meta.url), "utf8");
+  const groundPileServiceSource = await readFile(
+    new URL("../scripts/data/storage-ground-pile-service.js", import.meta.url),
+    "utf8"
+  );
+  const storageServiceSource = await readFile(new URL("../scripts/data/storage-service.js", import.meta.url), "utf8");
+  const storageCommandSource = await readFile(new URL("../scripts/data/storage-command-service.js", import.meta.url), "utf8");
+  const storageAppSource = await readFile(new URL("../scripts/ui/storage-app.js", import.meta.url), "utf8");
+  const sheetSource = await readFile(new URL("../scripts/integrations/dnd5e-sheet-extensions.js", import.meta.url), "utf8");
+  const materializerSource = await readFile(new URL("../scripts/data/corpse-storage-materializer.js", import.meta.url), "utf8");
+  const storageTokenHooksSource = await readFile(new URL("../scripts/integrations/storage-token-hooks.js", import.meta.url), "utf8");
 
   assert.match(
     canonicalSource,
-    /integrations\/dnd5e-sheet-extensions\.js\?v=1\.4\.110-giant-tribe-cache-fixes-2/u
+    /integrations\/dnd5e-sheet-extensions\.js\?v=1\.4\.338-hero-doll-menu/u
   );
+  assert.match(sheetSource, /\.\/universal-belt\.js\?v=1\.4\.335-reagent-tracker/u);
 
   for (const importPath of [
-    "data/trader-service.js?v=1.4.109-lazy-trader-restock",
+    "data/trader-service.js?v=1.4.327",
     "data/downtime-service.js?v=1.4.96-craft-calendar",
-    "data/inventory-service.js?v=1.4.111-member-transport-filter",
-    "data/durability-service.js?v=1.4.96-durability",
+    "data/inventory-service.js?v=1.4.327",
+    "data/inventory-ingress-descriptor.js?v=1.4.268",
+    "data/durability-service.js?v=1.4.154-corpse-storage-broken-name",
+    "data/corpse-storage-materializer.js?v=1.4.195-storage-administration",
+    "data/native-object-durability-service.js?v=1.4.153-corpse-creature",
     "data/crafting-service.js?v=1.4.96-craft-calendar",
     "data/craft-downtime-service.js?v=1.4.96-craft-calendar",
     "data/calendar-transition-coordinator.js?v=1.4.96-craft-calendar",
-    "integrations/durability-hooks.js?v=1.4.116-native-durability",
-    "integrations/inventory-sync.js?v=1.4.96-durable-transfer",
-    "data/storage-container-item-service.js?v=1.4.130-storage-player-fixes",
-    "data/storage-deposit-source.js?v=1.4.126-native-container-copies",
-    "integrations/storage-token-drop.js?v=1.4.132-storage-owned-character-resolution"
+    "integrations/durability-hooks.js?v=1.4.153-corpse-creature",
+    "data/storage-trigger-service.js?v=1.4.197-door-trigger-target",
+    "integrations/storage-token-hooks.js?v=1.4.197-door-trigger-target",
+    "integrations/inventory-sync.js?v=1.4.327",
+    "data/gear-compendium.js?v=1.4.330",
+    "data/storage-open-sound-service.js?v=1.4.145-coin-icons-storage-sound",
+    "data/storage-service.js?v=1.4.270",
+    "data/storage-access.js?v=1.4.197-door-trigger-target",
+    "data/builtin-storage-actor-service.js?v=1.4.216-storage-token-vision",
+    "data/storage-ground-pile-service.js?v=1.4.322",
+    "data/storage-container-item-service.js?v=1.4.322",
+    "data/storage-deposit-source.js?v=1.4.322",
+    "data/storage-command-service.js?v=1.4.322",
+    "integrations/storage-transfer-drop.js?v=1.4.213-furniture-orientation",
+    "integrations/storage-token-drop.js?v=1.4.322"
   ]) {
     assert.equal(canonicalSource.includes(importPath), true, importPath);
+  }
+  assert.match(traderServiceSource, /gear-icon-resolver\.js\?v=1\.4\.327/u);
+  assert.equal(
+    durabilityServiceSource.includes("durability-rules.js?v=1.4.144-spreadsheet-coins-ground-repair"),
+    true,
+    "durability rule changes need their own browser module cache key"
+  );
+  assert.equal(
+    durabilityHooksSource.includes("data/storage-object-kind.js?v=1.4.153-corpse-creature"),
+    true,
+    "corpse object classification changes need their own browser module cache key"
+  );
+  assert.equal(
+    nativeObjectDurabilitySource.includes("storage-object-kind.js?v=1.4.153-corpse-creature"),
+    true,
+    "native object resolution must share the corpse-safe classifier"
+  );
+  for (const [source, importPath] of [
+    [inventoryServiceSource, "lootgen-durability.js?v=1.4.154-corpse-storage-broken-name"],
+    [lootgenAppSource, "data/lootgen-durability.js?v=1.4.154-corpse-storage-broken-name"],
+    [lootgenAppSource, "data/lootgen-generator.js?v=1.4.317"],
+    [lootgenGeneratorSource, "lootgen-durability.js?v=1.4.154-corpse-storage-broken-name"]
+  ]) {
+    assert.equal(source.includes(importPath), true, importPath);
+  }
+  assert.equal(
+    groundPileServiceSource.includes("storage-pile-presentation.js?v=1.4.322"),
+    true,
+    "ground-pile presentation changes need their own browser module cache key"
+  );
+  assert.equal(
+    canonicalSource.includes("storage-ground-pile-service.js?v=1.4.322"),
+    true,
+    "ground-pile token layout changes need their own browser module cache key"
+  );
+  const corpseTargetCacheKey = "storage-corpse-target.js?v=1.4.195-storage-corpse-target";
+  for (const source of [canonicalSource, storageServiceSource, storageCommandSource, materializerSource, storageTokenHooksSource]) {
+    assert.equal(source.includes(corpseTargetCacheKey), true, "corpse target owners must share one browser module URL");
   }
 
   assert.match(
     canonicalSource,
-    /import\(`\.\/ui\/lootgen-app\.js\?v=\$\{encodeURIComponent\(moduleVersion\)\}`\)/u
+    /import\(`\.\/ui\/lootgen-app\.js\?v=\$\{encodeURIComponent\(MODULE_STYLE_VERSION\)\}`\)/u
   );
   assert.match(
     canonicalSource,
-    /storage-app\.js\?v=\$\{encodeURIComponent\(`\$\{moduleVersion\}-storage-window-drops`\)\}/u
+    /storage-app\.js\?v=\$\{encodeURIComponent\(`\$\{moduleVersion\}-journal-record-drop`\)\}/u
   );
+  assert.match(storageCommandSource, /journal-record-item\.js\?v=1\.4\.217-journal-record-items/u);
+  assert.match(storageAppSource, /storage-journal-viewer\.js\?v=1\.4\.221-journal-readonly-dialog/u);
+  assert.match(sheetSource, /journal-record-item\.js\?v=1\.4\.217-journal-record-items/u);
+  assert.match(sheetSource, /storage-journal-viewer\.js\?v=1\.4\.221-journal-readonly-dialog/u);
   assert.match(
     traderServiceSource,
     /engine\/trader-engine\.js\?v=1\.4\.109-lazy-trader-restock/u
@@ -249,7 +400,7 @@ test("module keeps recent published entrypoint URLs as canonical compatibility f
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
 
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.134.js"]);
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.347.js"]);
 
   for (const fileName of ["main-1.4.98.js", "main-1.4.99.js", "main-1.4.100.js"]) {
     const forwarderSource = await readFile(new URL(`../scripts/${fileName}`, import.meta.url), "utf8");
@@ -264,6 +415,14 @@ test("module keeps recent published entrypoint URLs as canonical compatibility f
       fileName
     );
     assert.doesNotMatch(forwarderSource, /\?v=/u, `${fileName} must not instantiate a second composition root`);
+  }
+});
+
+test("module keeps immediately previous entrypoints unpinned for page-refresh updates", async () => {
+  for (const fileName of ["main-1.4.194.js", "main-1.4.195.js"]) {
+    const forwarderSource = await readFile(new URL(`../scripts/${fileName}`, import.meta.url), "utf8");
+
+    assert.equal(forwarderSource, 'import "./main.js";\n', fileName);
   }
 });
 
@@ -319,12 +478,12 @@ test("the 1.4.125 entrypoint forwards to the native-container copy graph", async
   );
 });
 
-test("module entrypoint cache-busts stale ActiveEffect deletion handling", async () => {
+test("module entrypoint cache-busts the current combat status service", async () => {
   const entrypointSource = await readCanonicalEntrypointSource();
 
   assert.match(
     entrypointSource,
-    /combat\/status-service\.js\?v=1\.4\.100-hp-dead-overlay/u
+    /combat\/status-service\.js\?v=1\.4\.334-twisted-macro/u
   );
 });
 
@@ -341,7 +500,7 @@ test("durability service and its persisted mutation journal are wired into the l
 
   assert.equal(constantsModule.DURABILITY_UPDATED_HOOK, "rebreya-main.durabilityUpdated");
   assert.equal(constantsModule.SETTINGS_KEYS.DURABILITY_MUTATION_JOURNAL, "durabilityMutationJournal");
-  assert.match(canonicalSource, /import \{ DurabilityService \} from "\.\/data\/durability-service\.js\?v=1\.4\.96-durability";/u);
+  assert.match(canonicalSource, /import \{ DurabilityService \} from "\.\/data\/durability-service\.js\?v=1\.4\.154-corpse-storage-broken-name";/u);
   assert.match(canonicalSource, /this\.inventoryService = new InventoryService\(this\);\s+this\.durabilityService = new DurabilityService\(this\);/u);
   assert.match(canonicalSource, /game\.settings\.register\(MODULE_ID, SETTINGS_KEYS\.DURABILITY_MUTATION_JOURNAL,/u);
   for (const method of ["initializeItem", "damageItem", "breakItem", "destroyItem", "getDurability", "isBroken"]) {
@@ -415,29 +574,32 @@ test("legacy settings relay fails closed when a world-setting socket is unavaila
 test("module stylesheet cache bust loads the storage deposit interaction styles", async () => {
   const entrypointSource = await readCanonicalEntrypointSource();
 
-  assert.match(entrypointSource, /const MODULE_STYLE_VERSION = "1\.4\.120-storage-character-drop";/u);
+  assert.match(entrypointSource, /const MODULE_STYLE_VERSION = "1\.4\.322";/u);
   assert.match(entrypointSource, /const stylesheetHref = `\$\{MODULE_STYLE_PATH\}\?v=\$\{encodeURIComponent\(MODULE_STYLE_VERSION\)\}`;/u);
   assert.doesNotMatch(entrypointSource, /module\?\.version\s*\?\?/u);
 });
 
-test("module entrypoint preserves the released magic weapon template cache bust", async () => {
-  const entrypointSource = await readCanonicalEntrypointSource();
-  const escapedVersion = RELEASED_CACHE_VERSION;
+test("module entrypoint cache-busts the shared magic weapon icon graph", async () => {
+  const [entrypointSource, templateSource] = await Promise.all([
+    readCanonicalEntrypointSource(),
+    readFile(new URL("../scripts/integrations/magic-weapon-template.js", import.meta.url), "utf8")
+  ]);
 
   assert.match(entrypointSource, /registerMagicWeaponTemplateHook/u);
   assert.match(
     entrypointSource,
-    new RegExp(`magic-weapon-template\\.js\\?v=${escapedVersion}`, "u"),
+    /magic-weapon-template\.js\?v=1\.4\.327/u,
   );
+  assert.match(templateSource, /data\/gear-compendium\.js\?v=1\.4\.327/u);
   assert.match(entrypointSource, /registerMagicWeaponTemplateHook\(moduleApi\)/u);
 });
 
-test("gear compendium import preserves the released firearm activity cache bust", async () => {
+test("gear compendium import uses the current clothing projection cache bust", async () => {
   const entrypointSource = await readCanonicalEntrypointSource();
 
   assert.match(
     entrypointSource,
-    /gear-compendium\.js\?v=1\.4\.111-ammunition-template-version-20&implants=1/u,
+    /gear-compendium\.js\?v=1\.4\.330/u,
   );
 });
 
@@ -448,11 +610,11 @@ test("combat automation imports preserve their released cache busts", async () =
 
   assert.match(
     entrypointSource,
-    /combat\/hooks\.js\?v=1\.4\.134-actor-delta-status-socket/u,
+    /combat\/hooks\.js\?v=1\.4\.253-simple-upgrades/u,
   );
   assert.match(
     entrypointSource,
-    /attack-service\.js\?v=1\.4\.111-native-ammunition-compatibility/u,
+    /attack-service\.js\?v=1\.4\.254-simple-upgrades/u,
   );
   assert.match(
     entrypointSource,
@@ -460,11 +622,11 @@ test("combat automation imports preserve their released cache busts", async () =
   );
   assert.match(
     entrypointSource,
-    new RegExp(`mechanus-rolls\\.js\\?v=${escapedVersion}-mechanus-d20-advantage-mode`, "u"),
+    /mechanus-rolls\.js\?v=1\.4\.140-mechanus-dnd5e-activity-repair/u,
   );
   assert.match(
     entrypointSource,
-    /status-service\.js\?v=1\.4\.100-hp-dead-overlay/u,
+    /status-service\.js\?v=1\.4\.334-twisted-macro/u,
   );
   assert.match(
     entrypointSource,
@@ -507,7 +669,7 @@ test("paladin dogma automation is constructed and routed through the current com
   );
   assert.match(
     entrypointSource,
-    /combat\/hooks\.js\?v=1\.4\.134-actor-delta-status-socket/u
+    /combat\/hooks\.js\?v=1\.4\.253-simple-upgrades/u
   );
   assert.match(
     entrypointSource,
@@ -533,7 +695,7 @@ test("owned race and Giant Tribe configuration is wired to create and sheet repa
     readFile(new URL("../scripts/combat/hooks.js", import.meta.url), "utf8")
   ]);
 
-  assert.match(entrypointSource, /race-automation-service\.js\?v=1\.4\.110-giant-tribe-cache-fixes-2/u);
+  assert.match(entrypointSource, /race-automation-service\.js\?v=1\.4\.147-race-damage/u);
   assert.match(
     hooksSource,
     /moduleApi\.raceAutomationService\.handleCreatedItem\(item, options, userId\)/u
@@ -550,11 +712,11 @@ test("held item integrations preserve their released cache bust", async () => {
 
   assert.match(
     entrypointSource,
-    /dnd5e-sheet-extensions\.js\?v=1\.4\.110-giant-tribe-cache-fixes-2/u,
+    /dnd5e-sheet-extensions\.js\?v=1\.4\.338-hero-doll-menu/u,
   );
   assert.match(
     entrypointSource,
-    /attack-service\.js\?v=1\.4\.111-native-ammunition-compatibility/u,
+    /attack-service\.js\?v=1\.4\.254-simple-upgrades/u,
   );
   assert.match(
     sheetSource,
@@ -562,18 +724,40 @@ test("held item integrations preserve their released cache bust", async () => {
   );
   assert.match(
     attackSource,
-    new RegExp(`held-items\\.js\\?v=${escapedVersion}-npc-held-natural`, "u"),
+    /held-items\.js\?v=1\.4\.181-dual-wield-gloves/u,
   );
+});
+
+test("automatic owned magic item sync cache-busts its live service graph", async () => {
+  const entrypointSource = await readCanonicalEntrypointSource();
+  const compendiumSource = await readFile(
+    new URL("../scripts/data/magic-items-compendium.js", import.meta.url),
+    "utf8"
+  );
+
+  assert.match(
+    entrypointSource,
+    /magic-items-compendium\.js\?v=1\.4\.330/u
+  );
+  assert.match(
+    entrypointSource,
+    /grapple-placement-preview\.js\?v=1\.4\.290-rogue-mantle/u
+  );
+  assert.match(
+    compendiumSource,
+    /magic-item-embedded-sync\.js\?v=1\.4\.291-stale-automation-cleanup/u
+  );
+  assert.match(compendiumSource, /magicItem\.js\?v=1\.4\.302/u);
 });
 
 test("item upgrade service and sheet integration preserve their released cache bust", async () => {
   const entrypointSource = await readCanonicalEntrypointSource();
   const sheetSource = await readFile(new URL("../scripts/integrations/dnd5e-sheet-extensions.js", import.meta.url), "utf8");
-  const escapedVersion = RELEASED_CACHE_VERSION;
+  const escapedVersion = "1\\.4\\.292";
 
   assert.match(
     entrypointSource,
-    new RegExp(`item-upgrade-service\\.js\\?v=${escapedVersion}-item-upgrades`, "u"),
+    /item-upgrade-service\.js\?v=1\.4\.292/u,
   );
   assert.match(entrypointSource, /this\.itemUpgradeService = new ItemUpgradeService\(this\)/u);
   assert.match(entrypointSource, /installItemUpgrade\(hostItem, upgradeItem, options = \{\}\)/u);
@@ -581,7 +765,7 @@ test("item upgrade service and sheet integration preserve their released cache b
   assert.match(entrypointSource, /setItemUpgradeCapacity\(hostItem, capacity\)/u);
   assert.match(
     sheetSource,
-    new RegExp(`item-upgrade-sheet\\.js\\?v=${escapedVersion}-item-upgrade-readable`, "u"),
+    new RegExp(`item-upgrade-sheet\\.js\\?v=${escapedVersion}`, "u"),
   );
   assert.match(sheetSource, /item-mods-tab\.hbs/u);
   assert.match(sheetSource, /bindItemUpgradeSheet\(root, app, moduleApi/u);

@@ -153,6 +153,50 @@ test("installed extra limbs add secondary hand slots that can use only light wea
   );
 });
 
+test("explicit zero hands stays zero while missing hand data keeps the default", async () => {
+  const {
+    getActorHandCapacity,
+    getActorHandSlots
+  } = await import(`../scripts/integrations/held-items.js?zero-hands=${Date.now()}`);
+  const actorWithNoHands = makeActor([]);
+  actorWithNoHands.flags = { "rebreya-main": { hands: 0 } };
+  actorWithNoHands.getFlag = function getFlag(scope, key) {
+    return getPath(this.flags?.[scope], key);
+  };
+
+  assert.equal(getActorHandCapacity(actorWithNoHands), 0);
+  assert.deepEqual(getActorHandSlots(actorWithNoHands), []);
+  assert.equal(getActorHandCapacity(makeActor([])), 2);
+});
+
+test("grapple hand reservations remove only their exact slots from free hands", async () => {
+  const {
+    buildActorHandReservationsUpdate,
+    getActorHandReservations,
+    getFreeHandSlots,
+    HAND_RESERVATIONS_FLAG
+  } = await import(`../scripts/integrations/held-items.js?hand-reservations=${Date.now()}`);
+  const reservation = {
+    linkId: "link-1",
+    kind: "grapple",
+    handSlot: "left",
+    sourceTokenUuid: "Scene.scene.Token.source",
+    targetTokenUuid: "Scene.scene.Token.target"
+  };
+  const actor = makeActor([]);
+  actor.flags = { "rebreya-main": { handReservations: [reservation] } };
+  actor.getFlag = function getFlag(scope, key) {
+    return getPath(this.flags?.[scope], key);
+  };
+
+  assert.equal(HAND_RESERVATIONS_FLAG, "handReservations");
+  assert.deepEqual(getActorHandReservations(actor), [reservation]);
+  assert.deepEqual(getFreeHandSlots(actor), ["right"]);
+  assert.deepEqual(buildActorHandReservationsUpdate([reservation]), {
+    "flags.rebreya-main.handReservations": [reservation]
+  });
+});
+
 test("hand update patches equip items into a specific hand and can clear hand state", async () => {
   const {
     buildHeldItemHandUpdate,
@@ -628,4 +672,56 @@ test("natural weapons do not require held hands or expose hand choices", async (
     heldHands: [],
     freeHands: []
   });
+});
+
+test("distinct held-item predicate requires different live unreserved hand slots and includes the current item", async () => {
+  const { hasDistinctHeldItemsInDifferentHands } = await import(
+    `../scripts/integrations/held-items.js?distinct-held=${Date.now()}`
+  );
+  const left = makeItem({
+    id: "left-sword",
+    equipped: true,
+    flags: { "rebreya-main": { heldHands: ["left"] } }
+  });
+  const right = makeItem({
+    id: "right-dagger",
+    equipped: true,
+    flags: { "rebreya-main": { heldHands: ["right"] } }
+  });
+  const third = makeItem({
+    id: "third-weapon",
+    equipped: true,
+    flags: { "rebreya-main": { heldHands: ["hand3"] } }
+  });
+  const actor = makeActor([left, right, third]);
+  actor.flags = { "rebreya-main": { hands: 3 } };
+  actor.getFlag = (scope, key) => actor.flags?.[scope]?.[key];
+  const equipped = (item) => item.system.equipped === true;
+
+  assert.equal(hasDistinctHeldItemsInDifferentHands(actor, left, { predicate: equipped }), true);
+  assert.equal(hasDistinctHeldItemsInDifferentHands(actor, third, { predicate: equipped }), true);
+
+  right.system.equipped = false;
+  assert.equal(hasDistinctHeldItemsInDifferentHands(actor, left, { predicate: equipped }), true);
+  third.system.equipped = false;
+  assert.equal(hasDistinctHeldItemsInDifferentHands(actor, left, { predicate: equipped }), false);
+
+  right.system.equipped = true;
+  left.flags["rebreya-main"].heldHands = ["left", "right"];
+  right.flags["rebreya-main"].heldHands = [];
+  assert.equal(hasDistinctHeldItemsInDifferentHands(actor, left, { predicate: equipped }), false);
+
+  left.flags["rebreya-main"].heldHands = ["left"];
+  right.flags["rebreya-main"].heldHands = ["right"];
+  actor.flags["rebreya-main"].handReservations = [{
+    linkId: "grapple-1",
+    kind: "grapple",
+    handSlot: "right",
+    sourceTokenUuid: "Scene.scene.Token.source",
+    targetTokenUuid: "Scene.scene.Token.target"
+  }];
+  assert.equal(hasDistinctHeldItemsInDifferentHands(actor, left, { predicate: equipped }), false);
+
+  actor.flags["rebreya-main"].handReservations = [];
+  assert.equal(hasDistinctHeldItemsInDifferentHands(actor, makeItem({ id: "not-held" }), { predicate: equipped }), false);
 });

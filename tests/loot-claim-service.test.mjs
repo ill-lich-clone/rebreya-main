@@ -2,10 +2,22 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { LootClaimService } from "../scripts/application/loot-claim-service.js";
+import { makeValuedContainer } from "./helpers/lootgen-container-fixture.mjs";
 
 function clone(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));
 }
+
+test("prepared Chat accepts only top-level rows and rejects parent-plus-preview-child before any write or grant",async()=>{
+  const {descriptor}=makeValuedContainer();let writes=0,grants=0;
+  const state={lootId:"nested",resultVersion:2,rows:[{rowId:"root",descriptor,claimed:false}],coins:{gp:2,totalCopper:200},coinsClaimed:false,claims:[]};
+  const service=new LootClaimService({getMessage:()=>({id:"message"}),readState:()=>clone(state),
+    writeState:()=>{writes++;},grantRow:()=>{grants++;},grantCoins:()=>{grants++;},grantBatch:()=>{grants++;}});
+  for(const rowIds of [["child-row"],["root","child-row"]]){
+    await assert.rejects(service.claimBatch({lootId:"nested",claimId:rowIds.join("-"),rowIds,includeCoins:true}),{code:"invalid-lootgen-row"});
+  }
+  assert.equal(writes,0);assert.equal(grants,0);assert.equal(state.rows[0].claimed,false);
+});
 
 function createFixture({ failWrite } = {}) {
   let state = {
@@ -128,4 +140,312 @@ test("a new claim id cannot grant an already claimed row again", async () => {
     claimId: "claim-row-second"
   }), false);
   assert.equal(fixture.effects.rows, 1);
+});
+
+for (const phase of ["prepared", "granted"]) test(`a different claim cannot take a row reserved by a ${phase} claim`, async () => {
+  let failed=false;
+  const fixture=createFixture({failWrite({nextState}){
+    const next=nextState.claims[0]?.phase;
+    if(!failed && next===(phase==="prepared"?"granted":"committed")){failed=true;return "before";}
+  }});
+  const request={lootId:"loot-1",rowId:"row-1",claimId:"first"};
+  await assert.rejects(fixture.service.claimRow(request),/message update failed/u);
+  assert.equal(fixture.state.claims[0].phase,phase);
+  await assert.rejects(fixture.service.claimRow({...request,claimId:"second"}),{code:"lootgen-claim-in-progress"});
+  assert.equal(fixture.effects.rows,1);
+  assert.equal(fixture.state.claims.length,1);
+  assert.equal(await fixture.service.claimRow(request),true);
+});
+
+test("a pending coin claim reserves coins without preventing an independent item claim",async()=>{
+  let failed=false;
+  const fixture=createFixture({failWrite({nextState}){
+    if(!failed && nextState.claims.some(c=>c.id==="coins-first" && c.phase==="granted")){failed=true;return "before";}
+  }});
+  await assert.rejects(fixture.service.claimCoins({lootId:"loot-1",claimId:"coins-first"}),/message update failed/u);
+  await assert.rejects(fixture.service.claimCoins({lootId:"loot-1",claimId:"coins-second"}),{code:"lootgen-claim-in-progress"});
+  assert.equal(await fixture.service.claimRow({lootId:"loot-1",rowId:"row-1",claimId:"item"}),true);
+  assert.equal(await fixture.service.claimCoins({lootId:"loot-1",claimId:"coins-first"}),true);
+  assert.equal(fixture.effects.coins,1);
+});
+
+test("loot batch reads once, grants once, and commits only accepted filtered rows plus coins", async () => {
+  let state = {
+    lootId: "loot-batch",
+    rows: [
+      { rowId: "folder", name: "Sword", claimed: false },
+      { rowId: "skip", name: "Journal", claimed: false },
+      { rowId: "dismantle", name: "Axe", claimed: false }
+    ],
+    coins: { gp: 2, totalCopper: 200 },
+    coinsClaimed: false,
+    claims: []
+  };
+  const calls = { read: 0, write: 0, grantBatch: 0 };
+  const service = new LootClaimService({
+    getMessage: async () => ({ id: "message-batch" }),
+    readState: async () => {
+      calls.read += 1;
+      return clone(state);
+    },
+    writeState: async (_message, nextState) => {
+      calls.write += 1;
+      state = clone(nextState);
+    },
+    grantRow: async () => { throw new Error("per-row grant must not run"); },
+    grantCoins: async () => { throw new Error("separate coin grant must not run"); },
+    grantBatch: async ({ rows, coins, ingressPlan }) => {
+      calls.grantBatch += 1;
+      assert.deepEqual(rows.map((row) => row.rowId), ["folder", "skip", "dismantle"]);
+      assert.equal(coins.gp, 2);
+      assert.deepEqual(ingressPlan, { version: 1 });
+      return {
+        acceptedRowIds: ["folder", "dismantle"],
+        coinsGranted: true,
+        receipt: { batchMutationId: "batch-1" }
+      };
+    }
+  });
+
+  const result = await service.claimBatch({
+    messageId: "message-batch",
+    lootId: "loot-batch",
+    claimId: "batch-1",
+    rowIds: ["folder", "skip", "dismantle"],
+    includeCoins: true,
+    ingressPlan: { version: 1 }
+  });
+
+  assert.deepEqual(result, {
+    changed: true,
+    claimedRowIds: ["folder", "dismantle"],
+    claimedCoins: true,
+    receipt: { batchMutationId: "batch-1" }
+  });
+  assert.deepEqual(calls, { read: 1, write: 3, grantBatch: 1 });
+  assert.deepEqual(state.rows.map((row) => row.claimed), [true, false, true]);
+  assert.equal(state.coinsClaimed, true);
+});
+
+test("loot batch retry reuses its receipt and conflicting request fingerprint is rejected", async () => {
+  let state = {
+    lootId: "loot-retry",
+    rows: [{ rowId: "row-1", claimed: false }],
+    coins: {},
+    coinsClaimed: true,
+    claims: []
+  };
+  let failGrantedWrite = true;
+  let grantCalls = 0;
+  const service = new LootClaimService({
+    getMessage: async () => ({ id: "message-retry" }),
+    readState: async () => clone(state),
+    writeState: async (_message, nextState) => {
+      const claim = nextState.claims.find((entry) => entry.id === "batch-retry");
+      if (failGrantedWrite && claim?.phase === "granted") {
+        failGrantedWrite = false;
+        throw new Error("batch receipt write failed");
+      }
+      state = clone(nextState);
+    },
+    grantRow: async () => {},
+    grantCoins: async () => {},
+    grantBatch: async () => {
+      grantCalls += 1;
+      return {
+        acceptedRowIds: ["row-1"],
+        coinsGranted: false,
+        receipt: { stable: true }
+      };
+    }
+  });
+  const request = {
+    messageId: "message-retry",
+    lootId: "loot-retry",
+    claimId: "batch-retry",
+    rowIds: ["row-1"],
+    includeCoins: false,
+    ingressPlan: { version: 1 }
+  };
+
+  await assert.rejects(service.claimBatch(request), /batch receipt write failed/u);
+  const result = await service.claimBatch(request);
+  const terminal = await service.claimBatch(request);
+
+  assert.deepEqual(terminal, result);
+  assert.equal(grantCalls, 2);
+  assert.equal(state.rows[0].claimed, true);
+  await assert.rejects(
+    service.claimBatch({ ...request, rowIds: [] }),
+    /conflicts/u
+  );
+});
+
+test("loot batch commits accepted rows before returning an inventory partial failure", async () => {
+  let state = {
+    lootId: "loot-partial",
+    rows: [
+      { rowId: "accepted", claimed: false },
+      { rowId: "failed", claimed: false },
+      { rowId: "later", claimed: false }
+    ],
+    coins: { gp: 5, totalCopper: 500 },
+    coinsClaimed: false,
+    claims: []
+  };
+  let grantCalls = 0;
+  const service = new LootClaimService({
+    getMessage: async () => ({ id: "message-partial" }),
+    readState: async () => clone(state),
+    writeState: async (_message, nextState) => { state = clone(nextState); },
+    grantRow: async () => {},
+    grantCoins: async () => {},
+    grantBatch: async () => {
+      grantCalls += 1;
+      const error = new Error("inventory row failed");
+      error.code = "inventory-ingress-partial";
+      error.actorId = "group-a";
+      error.batchMutationId = "partial-claim";
+      error.completedSourceKeys = ["accepted"];
+      error.changed = true;
+      error.failedSourceKey = "failed";
+      error.unprocessedSourceKeys = ["later"];
+      error.rows = [{ sourceKey: "accepted", changed: true }];
+      throw error;
+    }
+  });
+  const request = {
+    messageId: "message-partial",
+    lootId: "loot-partial",
+    claimId: "partial-claim",
+    rowIds: ["accepted", "failed", "later"],
+    includeCoins: true,
+    ingressPlan: { version: 1 }
+  };
+
+  await assert.rejects(
+    service.claimBatch(request),
+    (error) => error?.code === "inventory-ingress-partial"
+      && JSON.stringify(error?.completedSourceKeys) === JSON.stringify(["accepted"])
+      && error?.changed === true
+      && JSON.stringify(error?.rows) === JSON.stringify([{ sourceKey: "accepted", changed: true }])
+  );
+  assert.equal(grantCalls, 1);
+  assert.deepEqual(state.rows.map((row) => row.claimed), [true, false, false]);
+  assert.equal(state.coinsClaimed, false);
+  assert.equal(state.claims[0].phase, "committed");
+
+  await assert.rejects(
+    service.claimBatch(request),
+    (error) => error?.code === "inventory-ingress-partial"
+      && error?.failedSourceKey === "failed"
+  );
+  assert.equal(grantCalls, 1);
+});
+
+test("loot batch records a terminal partial claim when the first inventory row fails", async () => {
+  let state = {
+    lootId: "loot-first-failure",
+    rows: [
+      { rowId: "failed", claimed: false },
+      { rowId: "later", claimed: false }
+    ],
+    coins: {},
+    coinsClaimed: true,
+    claims: []
+  };
+  let grantCalls = 0;
+  const service = new LootClaimService({
+    getMessage: async () => ({ id: "message-first-failure" }),
+    readState: async () => clone(state),
+    writeState: async (_message, nextState) => { state = clone(nextState); },
+    grantRow: async () => {},
+    grantCoins: async () => {},
+    grantBatch: async () => {
+      grantCalls += 1;
+      const error = new Error("first inventory row failed");
+      error.code = "inventory-ingress-partial";
+      error.actorId = "group-a";
+      error.batchMutationId = "first-failure-claim";
+      error.completedSourceKeys = [];
+      error.failedSourceKey = "failed";
+      error.unprocessedSourceKeys = ["later"];
+      throw error;
+    }
+  });
+  const request = {
+    messageId: "message-first-failure",
+    lootId: "loot-first-failure",
+    claimId: "first-failure-claim",
+    rowIds: ["failed", "later"],
+    includeCoins: false,
+    ingressPlan: { version: 1 }
+  };
+
+  await assert.rejects(
+    service.claimBatch(request),
+    (error) => error?.code === "inventory-ingress-partial"
+      && error?.failedSourceKey === "failed"
+      && error?.completedSourceKeys?.length === 0
+  );
+  assert.equal(state.claims[0].phase, "committed");
+  assert.deepEqual(state.rows.map((row) => row.claimed), [false, false]);
+
+  await assert.rejects(
+    service.claimBatch(request),
+    (error) => error?.code === "inventory-ingress-partial"
+      && error?.failedSourceKey === "failed"
+  );
+  assert.equal(grantCalls, 1);
+});
+
+test("loot batch commits completed rows when a final folder write needs manual review", async () => {
+  let state = {
+    lootId: "loot-folder-failure",
+    rows: [{ rowId: "accepted", claimed: false }],
+    coins: {},
+    coinsClaimed: true,
+    claims: []
+  };
+  let grantCalls = 0;
+  const service = new LootClaimService({
+    getMessage: async () => ({ id: "message-folder-failure" }),
+    readState: async () => clone(state),
+    writeState: async (_message, nextState) => { state = clone(nextState); },
+    grantRow: async () => {},
+    grantCoins: async () => {},
+    grantBatch: async () => {
+      grantCalls += 1;
+      const error = new Error("folder state requires manual review");
+      error.code = "transfer-manual-review";
+      error.actorId = "group-a";
+      error.batchMutationId = "folder-failure-claim";
+      error.completedSourceKeys = ["accepted"];
+      error.failedSourceKey = "";
+      error.unprocessedSourceKeys = [];
+      error.changed = true;
+      error.rows = [{ sourceKey: "accepted", changed: true }];
+      throw error;
+    }
+  });
+  const request = {
+    messageId: "message-folder-failure",
+    lootId: "loot-folder-failure",
+    claimId: "folder-failure-claim",
+    rowIds: ["accepted"],
+    includeCoins: false,
+    ingressPlan: { version: 1 }
+  };
+
+  await assert.rejects(
+    service.claimBatch(request),
+    (error) => error?.code === "transfer-manual-review"
+      && error?.completedSourceKeys?.[0] === "accepted"
+      && error?.failedSourceKey === ""
+  );
+  assert.equal(state.claims[0].phase, "committed");
+  assert.equal(state.rows[0].claimed, true);
+
+  await assert.rejects(service.claimBatch(request), { code: "transfer-manual-review" });
+  assert.equal(grantCalls, 1);
 });

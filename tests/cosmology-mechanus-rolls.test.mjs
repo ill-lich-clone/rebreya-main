@@ -6,15 +6,32 @@ const {
   computeMechanusAverageFormulaTotal,
   getMechanusDieAverage,
   patchMechanusRollClass,
+  registerMechanusRollHooks,
   resetMechanusRollClassPatch
 } = await import("../scripts/cosmology/mechanus-rolls.js");
 
 test("Mechanus averages non-d20 and non-d100 dice at the whole roll level", () => {
+  assert.equal(getMechanusDieAverage(0, 6), 0);
   assert.equal(getMechanusDieAverage(1, 4), 2.5);
+  assert.equal(computeMechanusAverageFormulaTotal("0d6"), 0);
   assert.equal(computeMechanusAverageFormulaTotal("1d4"), 2);
   assert.equal(computeMechanusAverageFormulaTotal("2d4"), 5);
   assert.equal(computeMechanusAverageFormulaTotal("1d4 + 1d4"), 5);
   assert.equal(computeMechanusAverageFormulaTotal("8d6"), 28);
+});
+
+test("Mechanus preserves an explicit zero-dice damage term", () => {
+  const damageRoll = {
+    formula: "0d6",
+    total: 0,
+    _total: 0,
+    terms: [{ number: 0, faces: 6, total: 0, results: [] }]
+  };
+
+  assert.equal(applyMechanusAveragesToRoll(damageRoll), true);
+  assert.equal(damageRoll.total, 0);
+  assert.equal(damageRoll.terms[0].number, 0);
+  assert.deepEqual(damageRoll.terms[0].results, []);
 });
 
 test("Mechanus formula averaging respects non-d20 keep modifiers", () => {
@@ -141,11 +158,11 @@ test("Mechanus converts d20 advantage and disadvantage into flat bonuses", () =>
       faces: 20,
       modifiers: ["kh"],
       total: 18,
-      results: [{ result: 10, active: false }, { result: 18, active: true }]
+      results: [{ result: 1, active: false }, { result: 20, active: true }]
     }]
   };
   assert.equal(applyMechanusAveragesToRoll(advantageRoll), true);
-  assert.equal(advantageRoll.total, 12);
+  assert.equal(advantageRoll.total, 3);
   assert.equal(advantageRoll.terms[0].number, 1);
   assert.deepEqual(advantageRoll.terms[0].results.map((result) => result.active), [true, false]);
 
@@ -178,6 +195,480 @@ test("Mechanus converts d20 advantage and disadvantage into flat bonuses", () =>
   };
   assert.equal(applyMechanusAveragesToRoll(disadvantageRoll), true);
   assert.equal(disadvantageRoll.total, 13);
+});
+
+test("Mechanus d20 advantage survives a dnd5e and MIDI-style total recomputation", () => {
+  const previousFoundry = globalThis.foundry;
+
+  class TestOperatorTerm {
+    constructor({ operator }) {
+      this.operator = operator;
+    }
+
+    get formula() {
+      return ` ${this.operator} `;
+    }
+
+    get total() {
+      return ` ${this.operator} `;
+    }
+  }
+
+  class TestNumericTerm {
+    constructor({ number, options = {} }) {
+      this.number = Number(number);
+      this.options = options;
+    }
+
+    get formula() {
+      return String(this.number);
+    }
+
+    get total() {
+      return this.number;
+    }
+  }
+
+  class TestD20Term {
+    constructor() {
+      this.number = 2;
+      this._number = 2;
+      this.faces = 20;
+      this.modifiers = ["kh"];
+      this.options = { advantageMode: 1 };
+      this.results = [{ result: 14, active: false }, { result: 18, active: true }];
+      Object.preventExtensions(this);
+    }
+
+    get formula() {
+      return `${this.number}d${this.faces}${this.modifiers.join("")}`;
+    }
+
+    get total() {
+      return this.results.reduce((total, result) => result.active ? total + result.result : total, 0);
+    }
+  }
+
+  globalThis.foundry = {
+    ...(previousFoundry ?? {}),
+    dice: {
+      ...(previousFoundry?.dice ?? {}),
+      terms: {
+        ...(previousFoundry?.dice?.terms ?? {}),
+        NumericTerm: TestNumericTerm,
+        OperatorTerm: TestOperatorTerm
+      }
+    }
+  };
+
+  try {
+    const d20 = new TestD20Term();
+    const roll = {
+      _formula: "2d20kh + 4",
+      _total: 22,
+      options: { advantageMode: 1 },
+      terms: [d20, new TestOperatorTerm({ operator: "+" }), new TestNumericTerm({ number: 4 })],
+      get formula() {
+        return this.terms.map((term) => term.formula).join("");
+      },
+      get total() {
+        return this._total;
+      },
+      _evaluateTotal() {
+        return Function(`"use strict"; return (${this.terms.map((term) => term.total).join("")});`)();
+      }
+    };
+
+    assert.equal(applyMechanusAveragesToRoll(roll), true);
+    assert.deepEqual(d20.results.map((result) => result.active), [true, false]);
+    assert.equal(d20.results[0].result, 14);
+
+    assert.equal(roll.total, 20);
+    assert.equal(roll._evaluateTotal(), 20);
+    assert.equal(roll._formula, "1d20 + 2 + 4");
+  }
+  finally {
+    if (previousFoundry === undefined) {
+      delete globalThis.foundry;
+    }
+    else {
+      globalThis.foundry = previousFoundry;
+    }
+  }
+});
+
+test("Mechanus repairs the exact malformed d20 roll persisted by MIDI", () => {
+  class TestOperatorTerm {
+    constructor({ operator }) {
+      this.operator = operator;
+      this.options = {};
+      this._evaluated = true;
+    }
+
+    get formula() {
+      return ` ${this.operator} `;
+    }
+
+    get total() {
+      return ` ${this.operator} `;
+    }
+  }
+
+  class TestNumericTerm {
+    constructor({ number, options = {}, evaluated = false }) {
+      this.number = Number(number);
+      this.options = options;
+      this._evaluated = evaluated;
+    }
+
+    evaluate() {
+      this._evaluated = true;
+      return this;
+    }
+
+    get formula() {
+      return String(this.number);
+    }
+
+    get total() {
+      return this.number;
+    }
+  }
+
+  class TestD20Term {
+    constructor() {
+      this.number = 1;
+      this._number = 1;
+      this.faces = 20;
+      this.modifiers = [];
+      this.options = { advantageMode: 1, rebreyaMechanusAdvantageBonus: 2 };
+      this.results = [
+        { result: 6, value: 6, active: true, discarded: false },
+        { result: 15, active: false, discarded: true }
+      ];
+      this._evaluated = true;
+    }
+
+    get formula() {
+      return `${this.number}d${this.faces}${this.modifiers.join("")}`;
+    }
+
+    get total() {
+      return this.results.reduce((total, result) => result.active ? total + result.result : total, 0);
+    }
+  }
+
+  const d20 = new TestD20Term();
+  const bonus = new TestNumericTerm({
+    number: 2,
+    options: { rebreyaMechanusAdvantageBonus: 2 }
+  });
+  const roll = {
+    _formula: "2d20kh + 4",
+    _total: 19,
+    options: { advantageMode: 1 },
+    terms: [
+      d20,
+      new TestOperatorTerm({ operator: "+" }),
+      bonus,
+      new TestOperatorTerm({ operator: "+" }),
+      new TestNumericTerm({ number: 4, evaluated: true })
+    ],
+    get formula() {
+      return this.terms.map((term) => term.formula).join("");
+    },
+    get total() {
+      return this._total;
+    },
+    resetFormula() {
+      this._formula = this.formula;
+      return this._formula;
+    },
+    _evaluateTotal() {
+      return Function(`"use strict"; return (${this.terms.map((term) => term.total).join("")});`)();
+    }
+  };
+
+  assert.equal(applyMechanusAveragesToRoll(roll), true);
+  assert.equal(bonus._evaluated, true);
+  assert.equal(roll._formula, "1d20 + 2 + 4");
+  assert.equal(roll.total, 12);
+});
+
+test("Mechanus repairs MIDI rolls at the preCreateChatMessage boundary", () => {
+  const previousRoll = globalThis.Roll;
+  const previousHooks = globalThis.Hooks;
+  const previousLibWrapper = globalThis.libWrapper;
+  const callbacks = new Map();
+
+  class TestRoll {
+    async evaluate() {
+      return this;
+    }
+  }
+
+  const d20 = {
+    number: 1,
+    _number: 1,
+    faces: 20,
+    modifiers: [],
+    options: { advantageMode: 1, rebreyaMechanusAdvantageBonus: 2 },
+    results: [
+      { result: 6, value: 6, active: true, discarded: false },
+      { result: 15, active: false, discarded: true }
+    ],
+    _evaluated: true,
+    get formula() {
+      return "1d20";
+    },
+    get total() {
+      return 6;
+    },
+    toJSON() {
+      return { class: "D20Die", evaluated: true, number: 1, faces: 20, modifiers: [], results: this.results };
+    }
+  };
+  const operator = (value) => ({
+    operator: value,
+    options: {},
+    _evaluated: true,
+    get formula() {
+      return ` ${value} `;
+    },
+    get total() {
+      return ` ${value} `;
+    },
+    toJSON() {
+      return { class: "OperatorTerm", evaluated: true, operator: value };
+    }
+  });
+  const numeric = (number, options = {}, evaluated = true) => ({
+    number,
+    options,
+    _evaluated: evaluated,
+    evaluate() {
+      this._evaluated = true;
+      return this;
+    },
+    get formula() {
+      return String(number);
+    },
+    get total() {
+      return number;
+    },
+    toJSON() {
+      return { class: "NumericTerm", options, evaluated: this._evaluated, number };
+    }
+  });
+  const roll = {
+    _formula: "2d20kh + 4",
+    _total: 19,
+    terms: [d20, operator("+"), numeric(2, { rebreyaMechanusAdvantageBonus: 2 }, false), operator("+"), numeric(4)],
+    get formula() {
+      return this.terms.map((term) => term.formula).join("");
+    },
+    get total() {
+      return this._total;
+    },
+    resetFormula() {
+      return this._formula = this.formula;
+    },
+    _evaluateTotal() {
+      return Function(`"use strict"; return (${this.terms.map((term) => term.total).join("")});`)();
+    },
+    toJSON() {
+      return {
+        class: "D20Roll",
+        formula: this._formula,
+        terms: this.terms.map((term) => term.toJSON()),
+        total: this._total,
+        evaluated: true
+      };
+    }
+  };
+  const document = {
+    rolls: [roll],
+    content: "19",
+    updateSource(update) {
+      this.update = update;
+    }
+  };
+
+  globalThis.Roll = TestRoll;
+  globalThis.libWrapper = undefined;
+  globalThis.Hooks = {
+    on(name, callback) {
+      callbacks.set(name, callback);
+      return 17;
+    },
+    off() {}
+  };
+
+  try {
+    assert.equal(registerMechanusRollHooks({ isMechanusEnabled: () => true }), true);
+    const preCreate = callbacks.get("preCreateChatMessage");
+    assert.equal(typeof preCreate, "function");
+    preCreate(document);
+
+    assert.equal(document.update.content, "12");
+    assert.equal(document.update.rolls[0].formula, "1d20 + 2 + 4");
+    assert.equal(document.update.rolls[0].total, 12);
+    assert.equal(document.update.rolls[0].terms[2].evaluated, true);
+  }
+  finally {
+    resetMechanusRollClassPatch(TestRoll);
+    globalThis.Roll = previousRoll;
+    globalThis.Hooks = previousHooks;
+    globalThis.libWrapper = previousLibWrapper;
+  }
+});
+
+test("Mechanus repairs rolls at final dnd5e activity boundaries before MIDI renders them", () => {
+  const previousRoll = globalThis.Roll;
+  const previousHooks = globalThis.Hooks;
+  const previousLibWrapper = globalThis.libWrapper;
+  const callbacks = new Map();
+
+  class TestRoll {
+    async evaluate() {
+      return this;
+    }
+  }
+
+  const operator = (value) => ({
+    operator: value,
+    options: {},
+    _evaluated: true,
+    get formula() {
+      return ` ${value} `;
+    },
+    get total() {
+      return ` ${value} `;
+    }
+  });
+  const numeric = (number, options = {}) => ({
+    number,
+    options,
+    _evaluated: true,
+    get formula() {
+      return String(number);
+    },
+    get total() {
+      return number;
+    }
+  });
+  const attackD20 = {
+    number: 1,
+    _number: 1,
+    faces: 20,
+    modifiers: [],
+    options: { advantageMode: 1, rebreyaMechanusAdvantageBonus: 2 },
+    results: [
+      { result: 1, value: 1, active: true, discarded: false },
+      { result: 12, value: 12, active: false, discarded: true }
+    ],
+    _evaluated: true,
+    get formula() {
+      return "1d20";
+    },
+    get total() {
+      return this.results.reduce((total, result) => result.active ? total + result.result : total, 0);
+    }
+  };
+  const attackRoll = {
+    _formula: "2d20kh + 4 + 3",
+    _total: 19,
+    options: { advantageMode: 1 },
+    terms: [
+      attackD20,
+      operator("+"),
+      numeric(2, { rebreyaMechanusAdvantageBonus: 2 }),
+      operator("+"),
+      numeric(4),
+      operator("+"),
+      numeric(3)
+    ],
+    get formula() {
+      return this.terms.map((term) => term.formula).join("");
+    },
+    get total() {
+      return this._total;
+    },
+    resetFormula() {
+      return this._formula = this.formula;
+    },
+    _evaluateTotal() {
+      return Function(`"use strict"; return (${this.terms.map((term) => term.total).join("")});`)();
+    }
+  };
+  const damageDie = {
+    number: 1,
+    faces: 6,
+    modifiers: [],
+    options: {},
+    results: [{ result: 6, value: 6, active: true, discarded: false }],
+    get formula() {
+      return "1d6";
+    },
+    get total() {
+      return this.results.reduce((total, result) => result.active ? total + result.result : total, 0);
+    }
+  };
+  const damageRoll = {
+    _formula: "1d6 + 4",
+    _total: 10,
+    terms: [damageDie, operator("+"), numeric(4)],
+    get formula() {
+      return this._formula;
+    },
+    get total() {
+      return this._total;
+    },
+    resetFormula() {
+      return this._formula;
+    },
+    _evaluateTotal() {
+      return Function(`"use strict"; return (${this.terms.map((term) => term.total).join("")});`)();
+    }
+  };
+
+  globalThis.Roll = TestRoll;
+  globalThis.libWrapper = undefined;
+  globalThis.Hooks = {
+    on(name, callback) {
+      callbacks.set(name, callback);
+      return name;
+    },
+    off() {}
+  };
+
+  try {
+    assert.equal(applyMechanusAveragesToRoll(damageRoll), true);
+    assert.equal(damageRoll.total, 7);
+    damageRoll._total = 10;
+    delete damageRoll[Symbol.for("rebreya-main.mechanusAverageApplied")];
+
+    assert.equal(registerMechanusRollHooks({ isMechanusEnabled: () => true }), true);
+    const rollAttack = callbacks.get("dnd5e.rollAttack");
+    const rollDamage = callbacks.get("dnd5e.rollDamage");
+    const rollFormula = callbacks.get("dnd5e.rollFormula");
+    assert.equal(typeof rollAttack, "function");
+    assert.equal(typeof rollDamage, "function");
+    assert.equal(typeof rollFormula, "function");
+
+    rollAttack([attackRoll]);
+    rollDamage([damageRoll]);
+
+    assert.equal(attackRoll._formula, "1d20 + 2 + 4 + 3");
+    assert.equal(attackRoll.total, 10);
+    assert.equal(damageRoll.total, 7);
+  }
+  finally {
+    resetMechanusRollClassPatch(TestRoll);
+    globalThis.Roll = previousRoll;
+    globalThis.Hooks = previousHooks;
+    globalThis.libWrapper = previousLibWrapper;
+  }
 });
 
 test("Mechanus reads dnd5e d20 advantage mode when keep modifiers are absent", () => {

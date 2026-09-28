@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { createStableGearDocumentId } from "../scripts/data/gear-document-ids.js";
 
 globalThis.foundry ??= {
   utils: {
@@ -20,12 +21,51 @@ globalThis.foundry ??= {
   }
 };
 
-const { normalizeFeatItems } = await import("../scripts/data/feats-compendium.js");
+const {
+  FeatsCompendiumService,
+  normalizeFeatItems,
+  renderFeatDescription
+} = await import("../scripts/data/feats-compendium.js");
 
 function loadBundleItems() {
-  const bundleUrl = new URL("../cherty-v08-foundry-2014-import-pack/cherty-v08-foundry-2014-bundle.json", import.meta.url);
+  const bundleUrl = new URL("../cherty-v09-foundry-2014-import-pack/cherty-v09-foundry-2014-bundle.json", import.meta.url);
   return JSON.parse(readFileSync(bundleUrl, "utf8")).items;
 }
+
+test("feat bundle mirrors the approved Google Docs V0.9 revision", () => {
+  const bundleUrl = new URL("../cherty-v09-foundry-2014-import-pack/cherty-v09-foundry-2014-bundle.json", import.meta.url);
+  const bundle = JSON.parse(readFileSync(bundleUrl, "utf8"));
+  const sourceItems = bundle.items.filter((item) => !item.flags?.["rebreya-main"]?.choiceOption);
+  const byName = new Map(sourceItems.map((item) => [item.name, item]));
+
+  assert.equal(bundle.sourceDocumentId, "1B7HYYioMoemwD3wXQtx9Vy8WrVYkQJ48KRFm7Mbi13w");
+  assert.equal(bundle.sourceRevisionId, "ANLCKQnRgsRW2pW1Iayvvv8G-Mf4uOLLBIVHn9vuyXObl7gwNqxazysSbQg_0ApBj05DBfwkt5n2nLq4sguUMQ");
+  assert.equal(bundle.sourceFile, "Черты V0.9");
+  assert.equal(sourceItems.length, 411);
+  assert.equal(byName.get("Агрессивный провокатор")?.system.identifier, "agressivnyy-provokator");
+  assert.equal(byName.get("Посвящение в жречество")?.flags.teyvankal.subsection, "*Черты жреца");
+  assert.equal(byName.get("Дикая медицина")?.flags.teyvankal.section, "Культурные черты");
+  assert.equal(byName.has("Начинающий жрец"), false);
+  assert.equal(byName.has("Божественный боец"), false);
+});
+
+test("feat descriptions preserve trusted HTML tables and make cell newlines readable", () => {
+  const html = renderFeatDescription("<p>До.</p><table><tbody><tr><td>Первая строка\nВторая строка</td></tr></tbody></table>");
+  assert.equal(html, "<p>До.</p><table><tbody><tr><td>Первая строка<br>Вторая строка</td></tr></tbody></table>");
+
+  const markdown = renderFeatDescription("Первый абзац.\n\n| к4 | Эффект |\n| --- | --- |\n| 1 | Текст |");
+  assert.match(markdown, /<p>Первый абзац\.<\/p><table>/u);
+
+  assert.equal(
+    renderFeatDescription("Первое свойство.\nВторое свойство."),
+    "<p>Первое свойство.<br>Второе свойство.</p>"
+  );
+
+  const feat = normalizeFeatItems(loadBundleItems()).find((item) => item.name === "Создание особых боеприпасов");
+  assert.ok(feat);
+  assert.match(feat.system.description.value, /<table[\s\S]*<br>[\s\S]*<\/table>/u);
+  assert.doesNotMatch(feat.system.description.value, /<(?:td|th)\b[^>]*>[^<]*\n/iu);
+});
 
 test("Elemental Adept remains one repeatable runtime-managed feat without choice documents", () => {
   const bundleItems = loadBundleItems();
@@ -94,4 +134,215 @@ test("Curse Eater compendium entry delegates all tier mechanics to its runtime s
     curseEater.flags["rebreya-main"].automation.notes,
     /Ступени 1–7.+ступень 8 вручную/u
   );
+});
+
+test("feat sync links actual preallocated UUIDs once and preserves self references as text", async () => {
+  const previous = {
+    game: globalThis.game,
+    foundry: globalThis.foundry,
+    Folder: globalThis.Folder,
+    FilePicker: globalThis.FilePicker,
+    CONST: globalThis.CONST
+  };
+  const documents = [];
+  const folders = [];
+  const createBatches = [];
+  let updateCount = 0;
+  const featPack = {
+    collection: "world.rebreya-feats",
+    documentName: "Item",
+    metadata: { system: "dnd5e" },
+    folders: { contents: folders },
+    async getDocuments() {
+      return documents;
+    }
+  };
+  featPack.documentClass = {
+    async createDocuments(data, options) {
+      assert.deepEqual(options, { pack: featPack.collection, keepId: true });
+      createBatches.push(data);
+      for (const source of data) {
+        documents.push({
+          ...structuredClone(source),
+          id: source._id,
+          getFlag(scope, key) {
+            return this.flags?.[scope]?.[key];
+          },
+          async update(update) {
+            updateCount += 1;
+            Object.assign(this, structuredClone(update));
+          }
+        });
+      }
+    },
+    async deleteDocuments() {
+      assert.fail("feat sync should not delete documents in this fixture");
+    }
+  };
+  const glossaryDocument = {
+    id: "BloodiedGlossary",
+    name: "Окровавленный",
+    flags: {
+      "rebreya-main": {
+        managed: true,
+        glossaryTermId: "status:bloodied",
+        aliases: ["окровавленного"]
+      }
+    },
+    getFlag(scope, key) {
+      return this.flags?.[scope]?.[key];
+    }
+  };
+  const glossaryPack = {
+    collection: "world.rebreya-glossary",
+    async getDocuments() {
+      return [
+        glossaryDocument,
+        {
+          id: "GlossaryAmbig001",
+          name: "Первый общий термин",
+          flags: {
+            "rebreya-main": {
+              managed: true,
+              glossaryTermId: "term:ambiguous-one",
+              aliases: ["Общий термин"]
+            }
+          },
+          getFlag(scope, key) {
+            return this.flags?.[scope]?.[key];
+          }
+        },
+        {
+          id: "GlossaryAmbig002",
+          name: "Второй общий термин",
+          flags: {
+            "rebreya-main": {
+              managed: true,
+              glossaryTermId: "term:ambiguous-two",
+              aliases: ["общий термин"]
+            }
+          },
+          getFlag(scope, key) {
+            return this.flags?.[scope]?.[key];
+          }
+        }
+      ];
+    }
+  };
+  const actionsPack = {
+    collection: "world.rebreya-actions",
+    async getDocuments() {
+      return [];
+    }
+  };
+  const gm = { id: "gm", isGM: true, active: true };
+  globalThis.game = {
+    user: gm,
+    users: { activeGM: gm, contents: [gm] },
+    system: { id: "dnd5e" },
+    packs: new Map([
+      [featPack.collection, featPack],
+      [glossaryPack.collection, glossaryPack],
+      [actionsPack.collection, actionsPack]
+    ])
+  };
+  globalThis.CONST = { DOCUMENT_OWNERSHIP_LEVELS: { OBSERVER: 2 } };
+  globalThis.FilePicker = {
+    async browse() {
+      return { files: [], dirs: [] };
+    }
+  };
+  globalThis.Folder = {
+    async create(data, options) {
+      assert.equal(options.pack, featPack.collection);
+      const folder = { ...data, id: `feat-folder-${folders.length + 1}` };
+      folders.push(folder);
+      return folder;
+    },
+    async deleteDocuments() {}
+  };
+  globalThis.foundry = {
+    ...previous.foundry,
+    utils: previous.foundry.utils,
+    documents: {
+      collections: {
+        CompendiumCollection: {
+          async createCompendium() {
+            assert.fail("existing feat pack must be reused");
+          }
+        }
+      }
+    }
+  };
+  const rawFeats = [
+    {
+      name: "Первая черта",
+      type: "feat",
+      system: {
+        identifier: "first-feat",
+        description: {
+          value: "Первая черта делает цель окровавленного, использует Вторая черта, оставляет Общий термин неоднозначным и разрешает Провоцированные атаки.",
+          chat: ""
+        }
+      },
+      effects: [],
+      flags: { teyvankal: { section: "Общие черты" } }
+    },
+    {
+      name: "Вторая черта",
+      type: "feat",
+      system: {
+        identifier: "second-feat",
+        description: {
+          value: "Связана с Первой чертой.",
+          chat: ""
+        }
+      },
+      effects: [],
+      flags: { teyvankal: { section: "Общие черты" } }
+    }
+  ];
+
+  try {
+    const service = new FeatsCompendiumService({
+      loadGlossaryReferences: async () => []
+    });
+    await service.sync(rawFeats);
+    const first = documents.find((document) => document.name === "Первая черта");
+    const second = documents.find((document) => document.name === "Вторая черта");
+    const secondExpectedId = createStableGearDocumentId("feat:second-feat");
+    const firstHtml = first.system.description.value;
+
+    assert.equal(second.id, secondExpectedId);
+    assert.match(
+      firstHtml,
+      new RegExp(`@UUID\\[Compendium\\.world\\.rebreya-feats\\.Item\\.${secondExpectedId}\\]\\{Вторая черта\\}`, "u")
+    );
+    assert.match(firstHtml, /@UUID\[Compendium\.world\.rebreya-glossary\.Item\.BloodiedGlossary\]\{окровавленного\}/u);
+    assert.doesNotMatch(firstHtml, /@UUID\[[^\]]+\]\{Первая черта\}/u);
+    assert.doesNotMatch(firstHtml, /@UUID\[[^\]]+\]\{Общий термин\}/u);
+    assert.equal((firstHtml.match(/@UUID\[/gu) ?? []).length, 2);
+    assert.deepEqual(service.lastSyncReport.ambiguous, [{
+      featId: "first-feat",
+      field: "system.description.value",
+      reference: "Общий термин"
+    }]);
+    assert.deepEqual(service.lastSyncReport.unresolved, [{
+      featId: "first-feat",
+      field: "system.description.value",
+      reference: "Провоцированные атаки"
+    }]);
+
+    await service.sync(rawFeats);
+    assert.equal(createBatches.length, 1);
+    assert.equal(updateCount, 0);
+    assert.equal(first.system.description.value, firstHtml);
+  }
+  finally {
+    globalThis.game = previous.game;
+    globalThis.foundry = previous.foundry;
+    globalThis.Folder = previous.Folder;
+    globalThis.FilePicker = previous.FilePicker;
+    globalThis.CONST = previous.CONST;
+  }
 });

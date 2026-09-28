@@ -37,3 +37,27 @@ export function registerCraftsmanGadgetItemType() {
   ItemConfig.typeIcons[CRAFTSMAN_GADGET_ITEM_TYPE] = "fa-solid fa-gears";
   return true;
 }
+
+export function scheduleCraftsmanGadgetItemTypeRegistration({ schedule = globalThis.queueMicrotask } = {}) {
+  if (typeof schedule !== "function") {
+    return false;
+  }
+
+  schedule(() => registerCraftsmanGadgetItemType());
+  return true;
+}
+
+export function registerCraftsmanGadgetItemTypeBootstrap({
+  hooks = globalThis.Hooks,
+  schedule = globalThis.queueMicrotask
+} = {}) {
+  if (typeof hooks?.once !== "function") {
+    return false;
+  }
+
+  hooks.once("init", () => {
+    registerCraftsmanGadgetItemType();
+    scheduleCraftsmanGadgetItemTypeRegistration({ schedule });
+  });
+  return true;
+}

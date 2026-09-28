@@ -239,7 +239,11 @@ export class CalendarTransitionCoordinator {
     if (!calendarService?.previewTransition || !calendarService?.setDate) {
       throw new Error("Calendar transition coordinator requires CalendarService.");
     }
-    if (!groupContextService?.resolveForCurrentUser || !groupContextService?.mutateGroupState) {
+    if (
+      !groupContextService?.resolveForCurrentUser
+      || !groupContextService?.resolveForGroup
+      || !groupContextService?.mutateGroupState
+    ) {
       throw new Error("Calendar transition coordinator requires queued group state mutations.");
     }
     if (!coordinator?.run) {
@@ -259,7 +263,17 @@ export class CalendarTransitionCoordinator {
   }
 
   preview(options = {}) {
-    const basePreview = this.calendarService.previewTransition(options.toIsoDate);
+    const context = this.groupContextService.resolveForCurrentUser();
+    if (!context?.groupId) {
+      throw new Error("Calendar transitions require an active Rebreya group.");
+    }
+    return this.#preview(context.groupId, options);
+  }
+
+  #preview(groupId, options = {}) {
+    const basePreview = this.calendarService.previewTransition(options.toIsoDate, {
+      groupActorId: groupId
+    });
     const targetTimeOfDaySeconds = resolveTargetTimeOfDaySeconds(
       basePreview.from?.timeOfDaySeconds,
       options
@@ -272,10 +286,10 @@ export class CalendarTransitionCoordinator {
       }
     };
     const normalizedOptions = normalizeMoveOptions({ ...options, targetTimeOfDaySeconds });
-    const resumableEntry = this.#findResumableEntry(calendarPreview, normalizedOptions);
+    const resumableEntry = this.#findResumableEntry(groupId, calendarPreview, normalizedOptions);
     return resumableEntry
-      ? this.#previewFromEntry(resumableEntry)
-      : this.#enrichPreview(calendarPreview, normalizedOptions);
+      ? this.#previewFromEntry(resumableEntry, groupId)
+      : this.#enrichPreview(groupId, calendarPreview, normalizedOptions);
   }
 
   async moveTo(options = {}) {
@@ -287,6 +301,22 @@ export class CalendarTransitionCoordinator {
     if (!context?.groupId) {
       throw new Error("Calendar transitions require an active Rebreya group.");
     }
+    return this.moveToGroup(context.groupId, options);
+  }
+
+  async moveToGroup(groupActorId, options = {}) {
+    if (!isActiveGmClient(globalThis.game)) {
+      throw new Error("Calendar transitions must execute on the active GM client.");
+    }
+
+    const requestedGroupId = cleanText(groupActorId);
+    if (!requestedGroupId) {
+      throw new Error("Calendar transitions require a captured Rebreya group.");
+    }
+    const context = this.groupContextService.resolveForGroup(requestedGroupId);
+    if (cleanText(context?.groupId) !== requestedGroupId) {
+      throw new Error("Calendar transitions require a captured Rebreya group.");
+    }
     const executionUserId = cleanText(globalThis.game?.user?.id);
 
     return this.coordinator.run(`${TRANSITION_QUEUE_PREFIX}:${context.groupId}`, async () => {
@@ -297,7 +327,7 @@ export class CalendarTransitionCoordinator {
 
   async #moveTo(groupId, options, executionUserId) {
     this.#assertExecutionContext(groupId, executionUserId);
-    const requestedPreview = this.preview(options);
+    const requestedPreview = this.#preview(groupId, options);
     const normalizedOptions = normalizeMoveOptions({
       ...options,
       targetTimeOfDaySeconds: requestedPreview.to?.timeOfDaySeconds
@@ -315,7 +345,7 @@ export class CalendarTransitionCoordinator {
       return this.#buildCompletedReplay(claim.entry, normalizedOptions);
     }
     const preview = claim.resumed
-      ? this.#previewFromEntry(claim.entry)
+      ? this.#previewFromEntry(claim.entry, groupId)
       : requestedPreview;
     const transitionId = claim.entry.transitionId;
     let calendar;
@@ -465,8 +495,8 @@ export class CalendarTransitionCoordinator {
     };
   }
 
-  #enrichPreview(calendarPreview, options = {}) {
-    const downtimeSnapshot = this.downtimeService?.getSnapshot?.() ?? {};
+  #enrichPreview(groupId, calendarPreview, options = {}) {
+    const downtimeSnapshot = this.downtimeService?.getSnapshot?.({}, { groupId }) ?? {};
     const calendarByIsoDate = asObject(downtimeSnapshot.calendarByIsoDate);
     const affectedDowntime = calendarPreview.crossedDates
       .map((isoDate) => calendarByIsoDate[isoDate])
@@ -483,7 +513,7 @@ export class CalendarTransitionCoordinator {
 
     return {
       ...calendarPreview,
-      groupId: cleanText(downtimeSnapshot.groupId),
+      groupId: cleanText(groupId),
       processDowntime: options.processDowntime !== false,
       processSupplies: options.processSupplies === true,
       reason: cleanText(options.reason) || "calendar",
@@ -503,8 +533,8 @@ export class CalendarTransitionCoordinator {
     };
   }
 
-  #previewFromEntry(entry) {
-    return this.#enrichPreview({
+  #previewFromEntry(entry, groupId = entry?.groupId) {
+    return this.#enrichPreview(groupId, {
       from: clone(entry.from),
       to: clone(entry.to),
       fromIsoDate: entry.fromIsoDate,
@@ -522,10 +552,10 @@ export class CalendarTransitionCoordinator {
     }, entry);
   }
 
-  #findResumableEntry(preview, options) {
+  #findResumableEntry(groupId, preview, options) {
     let context;
     try {
-      context = this.groupContextService.resolveForCurrentUser();
+      context = this.groupContextService.resolveForGroup(groupId);
     }
     catch (_error) {
       return null;
@@ -610,7 +640,7 @@ export class CalendarTransitionCoordinator {
     executionUserId = ""
   ) {
     this.#assertExecutionContext(groupId, executionUserId);
-    const currentCalendar = this.calendarService.getSnapshot();
+    const currentCalendar = this.calendarService.getSnapshot({ groupActorId: groupId });
     const claim = await this.#mutateEntry(groupId, transitionId, (entry) => {
       const stage = asObject(entry.stages.calendar);
       if (
@@ -632,7 +662,11 @@ export class CalendarTransitionCoordinator {
       return currentCalendar;
     }
 
-    const calendar = await this.calendarService.setDate(...isoDateParts(toIsoDate), calendarOptions);
+    const calendar = await this.calendarService.setDate(
+      ...isoDateParts(toIsoDate),
+      calendarOptions,
+      { groupActorId: groupId }
+    );
     this.#assertExecutionContext(groupId, executionUserId);
     await this.#mutateEntry(groupId, transitionId, (entry) => {
       entry.stages.calendar = {
@@ -939,7 +973,7 @@ export class CalendarTransitionCoordinator {
   }
 
   #buildCompletedReplay(entry, options) {
-    const preview = this.#previewFromEntry(entry);
+    const preview = this.#previewFromEntry(entry, entry.groupId);
     const downtime = Object.entries(asObject(entry.downtimeByIsoDate))
       .map(([isoDate, result]) => ({ isoDate, ...clone(asObject(result)) }));
     const stage = (name) => asObject(entry.stages?.[name]);
@@ -947,7 +981,7 @@ export class CalendarTransitionCoordinator {
       ...preview,
       transitionId: entry.transitionId,
       status: "completed",
-      calendar: this.calendarService.getSnapshot(),
+      calendar: this.calendarService.getSnapshot({ groupActorId: entry.groupId }),
       downtime,
       eventActivation: clone(stage("globalEvents").result) ?? { changed: false },
       traderReset: clone(stage("traderMonthlyReset").result)
@@ -1005,16 +1039,16 @@ export class CalendarTransitionCoordinator {
 
     let currentGroupId = "";
     try {
-      currentGroupId = cleanText(this.groupContextService.resolveForCurrentUser()?.groupId);
+      currentGroupId = cleanText(this.groupContextService.resolveForGroup(groupId)?.groupId);
     }
     catch (cause) {
-      const error = new Error("Calendar transition aborted because the active Rebreya group changed.");
+      const error = new Error("Calendar transition aborted because its captured Rebreya group is unavailable.");
       error.cause = cause;
       throw error;
     }
 
     if (currentGroupId !== cleanText(groupId)) {
-      throw new Error("Calendar transition aborted because the active Rebreya group changed.");
+      throw new Error("Calendar transition aborted because its captured Rebreya group is unavailable.");
     }
   }
 }

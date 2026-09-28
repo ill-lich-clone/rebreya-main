@@ -760,11 +760,36 @@ function cloneDamagePart(part = {}) {
   const cloned = deepClone(part);
   if (!Array.isArray(cloned) && cloned && typeof cloned === "object") {
     const types = damagePartTypes(part).map(normalizedDamageType).filter(Boolean);
-    if (types.length) {
-      cloned.types = types;
-    }
+    cloned.types = new Set(types);
   }
   return cloned;
+}
+
+function serializeDamagePart(part = {}) {
+  const serialized = deepClone(part);
+  if (!Array.isArray(serialized) && serialized && typeof serialized === "object") {
+    const types = damagePartTypes(part).map(normalizedDamageType).filter(Boolean);
+    if (Object.hasOwn(part, "types") || types.length) {
+      serialized.types = types;
+    }
+  }
+  return serialized;
+}
+
+function setSpellDamageParts(activity, parts = []) {
+  const runtimeParts = parts.map(cloneDamagePart);
+  const sourceParts = runtimeParts.map(serializeDamagePart);
+  updateSource(activity, {
+    "damage.parts": sourceParts,
+    "system.damage.parts": sourceParts
+  });
+  if (Array.isArray(activity?.damage?.parts)) {
+    activity.damage.parts = runtimeParts;
+  }
+  updateSource(activity?.item, {
+    "system.damage.parts": sourceParts
+  });
+  return runtimeParts;
 }
 
 function damagePartType(part = {}) {
@@ -819,13 +844,13 @@ function firstAllowedSpellDamageType(activity, allowedTypes) {
 
 function spellDamagePartWithType(part, damageType) {
   const type = normalizedDamageType(damageType);
-  const adjusted = deepClone(part);
+  const adjusted = cloneDamagePart(part);
   if (Array.isArray(adjusted)) {
     adjusted[1] = type;
     return adjusted;
   }
 
-  adjusted.types = [type];
+  adjusted.types = new Set(type ? [type] : []);
   if (Object.hasOwn(adjusted, "type")) adjusted.type = type;
   if (Object.hasOwn(adjusted, "damageType")) adjusted.damageType = type;
   if (adjusted.custom && typeof adjusted.custom === "object" && Object.hasOwn(adjusted.custom, "type")) {
@@ -836,14 +861,7 @@ function spellDamagePartWithType(part, damageType) {
 
 function replaceSpellDamageTypes(activity, damageType) {
   const parts = spellDamageParts(activity).map((part) => spellDamagePartWithType(part, damageType));
-  updateSource(activity, {
-    "damage.parts": parts,
-    "system.damage.parts": parts
-  });
-  updateSource(activity?.item, {
-    "system.damage.parts": parts
-  });
-  return parts;
+  return setSpellDamageParts(activity, parts);
 }
 
 function draconicAncestorDamageType(actor) {
@@ -978,7 +996,7 @@ function metamagicDamagePart({ id, formula, damageType }) {
   return {
     _id: cleanText(id, "rebreya-metamagic-damage"),
     formula: safeFormula,
-    types: safeDamageType ? [safeDamageType] : [],
+    types: new Set(safeDamageType ? [safeDamageType] : []),
     custom: {
       enabled: true,
       formula: safeFormula
@@ -987,19 +1005,13 @@ function metamagicDamagePart({ id, formula, damageType }) {
 }
 
 function appendSpellDamagePart(activity, part) {
-  const safePart = deepClone(part);
+  const safePart = cloneDamagePart(part);
   const nextParts = [
     ...spellDamageParts(activity).filter((entry) => cleanText(entry?._id ?? entry?.id) !== cleanText(safePart._id)),
     safePart
   ];
-  updateSource(activity, {
-    "damage.parts": nextParts,
-    "system.damage.parts": nextParts
-  });
-  updateSource(activity?.item, {
-    "system.damage.parts": nextParts
-  });
-  return safePart;
+  return setSpellDamageParts(activity, nextParts)
+    .find((entry) => cleanText(entry?._id ?? entry?.id) === cleanText(safePart._id));
 }
 
 function spellHasAttack(activity) {

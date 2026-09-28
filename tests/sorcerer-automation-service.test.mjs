@@ -1813,7 +1813,7 @@ test("RED: a reaction Shield cast is ready at the start of its owner's next turn
   ), true);
 });
 
-test("combatRound advances a first-in-initiative Sorcerer cooldown", async () => {
+test("a non-owner End Turn client leaves the cooldown mutation to the active GM after combatTurnChange", async () => {
   const previousHooks = globalThis.Hooks;
   const previousGame = globalThis.game;
   const handlers = new Map();
@@ -1826,14 +1826,40 @@ test("combatRound advances a first-in-initiative Sorcerer cooldown", async () =>
   globalThis.Hooks = {
     on: (name, callback) => handlers.set(name, [...(handlers.get(name) ?? []), callback])
   };
-  globalThis.game = { user: { id: "user", isGM: true }, messages: new Map() };
+  const player = { id: "player", active: true, isGM: false };
+  const activeGm = { id: "gm", active: true, isGM: true };
+  globalThis.game = {
+    user: player,
+    users: { activeGM: activeGm, contents: [player, activeGm] },
+    messages: new Map()
+  };
+  const setFlag = actor.setFlag.bind(actor);
+  const writes = [];
+  actor.setFlag = async (...args) => {
+    if (globalThis.game.user.id !== activeGm.id) {
+      throw new Error("non-owner cannot persist another Actor's cooldown");
+    }
+    writes.push(args);
+    return setFlag(...args);
+  };
 
   try {
     const { registerCombatHooks } = await import("../scripts/combat/hooks.js");
     registerCombatHooks({ sorcererAutomationService: service });
-    const combat = { turns: [{ actor }], combatant: { actor } };
-    handlers.get("combatRound")?.[0](combat, { round: 2, turn: 0 }, { direction: 1 });
-    await new Promise((resolve) => setImmediate(resolve));
+    const handler = handlers.get("combatTurnChange")?.[0];
+    assert.equal(typeof handler, "function");
+    const combat = { turns: [{ actor }], combatant: { actor }, round: 1, turn: 0 };
+    handler(combat, { round: 1, turn: 0 }, { round: 1, turn: 0 });
+    await waitForDeferredActivityUse();
+    assert.equal(writes.length, 0);
+    assert.deepEqual(actor.getFlag(MODULE_ID, "sorcererAutomation.virtualSlotCooldowns"), {
+      "fireball:3": { remaining: 3 }
+    });
+
+    globalThis.game.user = activeGm;
+    handler(combat, { round: 1, turn: 0 }, { round: 1, turn: 1 });
+    await waitForDeferredActivityUse();
+    assert.equal(writes.length, 1);
     assert.deepEqual(actor.getFlag(MODULE_ID, "sorcererAutomation.virtualSlotCooldowns"), {
       "fireball:3": { remaining: 2 }
     });
@@ -1844,22 +1870,87 @@ test("combatRound advances a first-in-initiative Sorcerer cooldown", async () =>
   }
 });
 
-test("rewinding combat does not decrement a Sorcerer cooldown", async () => {
+test("a first-in-initiative Sorcerer ticks once at a new round without combatTurn or combatRound cooldown handlers", async () => {
+  const previousHooks = globalThis.Hooks;
+  const previousGame = globalThis.game;
+  const handlers = new Map();
   const actor = levelActor(5, { includePoints: true });
   const service = new SorcererAutomationService({});
   await service.syncSorceryPoints(actor);
   await service.applyDnd5ePreUseActivity(
     makeSorcererSpell(actor, { id: "fireball", baseLevel: 3 }), {}, {}, {}
   );
+  const activeGm = { id: "gm", active: true, isGM: true };
+  globalThis.Hooks = {
+    on: (name, callback) => handlers.set(name, [...(handlers.get(name) ?? []), callback])
+  };
+  globalThis.game = {
+    user: activeGm,
+    users: { activeGM: activeGm, contents: [activeGm] },
+    messages: new Map()
+  };
 
-  await service.handleCombatTurnChange(
-    { turns: [{ actor }], combatant: { actor } },
-    { round: 1, turn: 0 },
-    { direction: -1 }
+  try {
+    const { registerCombatHooks } = await import("../scripts/combat/hooks.js");
+    registerCombatHooks({ sorcererAutomationService: service });
+    assert.equal(handlers.has("combatRound"), false);
+    const combat = { turns: [{ actor }], combatant: { actor }, round: 2, turn: 0 };
+    handlers.get("combatTurn")?.[0](combat, { round: 2, turn: 0 }, { direction: 1 });
+    const handler = handlers.get("combatTurnChange")?.[0];
+    assert.equal(typeof handler, "function");
+    handler(combat, { round: 1, turn: 0 }, { round: 2, turn: 0 });
+    await waitForDeferredActivityUse();
+    assert.deepEqual(actor.getFlag(MODULE_ID, "sorcererAutomation.virtualSlotCooldowns"), {
+      "fireball:3": { remaining: 2 }
+    });
+  }
+  finally {
+    globalThis.Hooks = previousHooks;
+    globalThis.game = previousGame;
+  }
+});
+
+test("a rewind and a combat with no active GM do not decrement a Sorcerer cooldown", async () => {
+  const previousHooks = globalThis.Hooks;
+  const previousGame = globalThis.game;
+  const handlers = new Map();
+  const actor = levelActor(5, { includePoints: true });
+  const service = new SorcererAutomationService({});
+  await service.syncSorceryPoints(actor);
+  await service.applyDnd5ePreUseActivity(
+    makeSorcererSpell(actor, { id: "fireball", baseLevel: 3 }), {}, {}, {}
   );
-  assert.deepEqual(actor.getFlag(MODULE_ID, "sorcererAutomation.virtualSlotCooldowns"), {
-    "fireball:3": { remaining: 3 }
-  });
+  const activeGm = { id: "gm", active: true, isGM: true };
+  const player = { id: "player", active: true, isGM: false };
+  globalThis.Hooks = {
+    on: (name, callback) => handlers.set(name, [...(handlers.get(name) ?? []), callback])
+  };
+  globalThis.game = {
+    user: activeGm,
+    users: { activeGM: activeGm, contents: [activeGm, player] },
+    messages: new Map()
+  };
+
+  try {
+    const { registerCombatHooks } = await import("../scripts/combat/hooks.js");
+    registerCombatHooks({ sorcererAutomationService: service });
+    const handler = handlers.get("combatTurnChange")?.[0];
+    assert.equal(typeof handler, "function");
+    const combat = { turns: [{ actor }], combatant: { actor }, round: 1, turn: 0 };
+    handler(combat, { round: 2, turn: 0 }, { round: 1, turn: 0 });
+    await waitForDeferredActivityUse();
+    globalThis.game.user = player;
+    globalThis.game.users.activeGM = null;
+    handler(combat, { round: 1, turn: 0 }, { round: 1, turn: 1 });
+    await waitForDeferredActivityUse();
+    assert.deepEqual(actor.getFlag(MODULE_ID, "sorcererAutomation.virtualSlotCooldowns"), {
+      "fireball:3": { remaining: 3 }
+    });
+  }
+  finally {
+    globalThis.Hooks = previousHooks;
+    globalThis.game = previousGame;
+  }
 });
 
 test("RED: a cooldown card stores stable metadata and keeps exactly one footer block", async () => {
@@ -1901,6 +1992,41 @@ test("RED: a cooldown card stores stable metadata and keeps exactly one footer b
     assert.equal((message.content.match(/data-rebreya-sorcerer-cooldown/gu) ?? []).length, 1);
   }
   finally {
+    globalThis.game = previousGame;
+  }
+});
+
+test("a rejected cooldown chat-card update does not roll back the saved Actor cooldown", async () => {
+  const previousGame = globalThis.game;
+  const previousConsoleError = console.error;
+  const actor = levelActor(5, { includePoints: true });
+  const service = new SorcererAutomationService({});
+  await service.syncSorceryPoints(actor);
+  const activity = makeSorcererSpell(actor, { id: "fireball", baseLevel: 3 });
+  const messageConfig = {};
+
+  assert.equal(await service.applyDnd5ePreUseActivity(activity, {}, {}, messageConfig), true);
+  const message = makeCooldownCardMessage({
+    content: '<div class="chat-card"></div>',
+    flags: messageConfig.data?.flags
+  });
+  globalThis.game = { ...previousGame, messages: new Map([[message.id, message]]) };
+
+  try {
+    await service.handleDnd5ePostCreateUsageMessage(activity, message);
+    message.update = async () => {
+      throw new Error("chat card write failed");
+    };
+    console.error = () => undefined;
+
+    await service.handleCombatTurnChange({ combatant: { actor } }, { turn: 0 });
+
+    assert.deepEqual(actor.getFlag(MODULE_ID, "sorcererAutomation.virtualSlotCooldowns"), {
+      "fireball:3": { remaining: 2 }
+    });
+  }
+  finally {
+    console.error = previousConsoleError;
     globalThis.game = previousGame;
   }
 });
@@ -2902,10 +3028,15 @@ test("RED: hooks use the installed dnd5e save, damage, and attack hook contracts
   const previousHooks = globalThis.Hooks;
   const previousGame = globalThis.game;
   const handlers = new Map();
+  const activeGm = { id: "user", active: true, isGM: true };
   globalThis.Hooks = {
     on: (name, callback) => handlers.set(name, callback)
   };
-  globalThis.game = { user: { id: "user", isGM: true }, combat: { round: 1 } };
+  globalThis.game = {
+    user: activeGm,
+    users: { activeGM: activeGm, contents: [activeGm] },
+    combat: { round: 1 }
+  };
   try {
     const { registerCombatHooks } = await import("../scripts/combat/hooks.js");
     const service = new SorcererAutomationService({});
@@ -2915,7 +3046,11 @@ test("RED: hooks use the installed dnd5e save, damage, and attack hook contracts
     assert.equal(typeof handlers.get("dnd5e.preRollSavingThrow"), "function");
     assert.equal(typeof handlers.get("dnd5e.preRollDamage"), "function");
     assert.equal(typeof handlers.get("dnd5e.rollAttack"), "function");
-    handlers.get("combatTurn")({ combatant: { actor: levelActor(1) } }, { turn: 0 }, {});
+    handlers.get("combatTurnChange")(
+      { combatant: { actor: levelActor(1) } },
+      { round: 1, turn: 0 },
+      { round: 1, turn: 1 }
+    );
     await waitForDeferredActivityUse();
     assert.equal(combatTurnCalls, 1);
   }
@@ -3203,7 +3338,7 @@ test("Draconic Dragon Spell adds one d6 damage per selected Sorcery Point", asyn
   const service = new SorcererAutomationService({});
   await service.syncSorceryPoints(actor);
   const activity = makeDnd5eActivityClone(makeSorcererSpell(actor, {
-    system: { damage: { parts: [{ _id: "base-fire", formula: "1d6", types: ["fire"] }] } }
+    system: { damage: { parts: [{ _id: "base-fire", formula: "1d6", types: new Set(["fire"]) }] } }
   }));
 
   assert.equal(await service.applyDnd5ePreUseActivity(activity, {
@@ -3216,9 +3351,12 @@ test("Draconic Dragon Spell adds one d6 damage per selected Sorcery Point", asyn
 
   const added = activity.damage.parts.find((part) => part._id === "rebreya-draconic-dragon-spell");
   assert.equal(added.formula, "2d6");
-  assert.deepEqual(added.types, ["fire"]);
-  assert.deepEqual(activity.system.damage.parts.at(-1), added);
-  assert.deepEqual(activity.item.system.damage.parts.at(-1), added);
+  assert.ok(added.types instanceof Set);
+  assert.ok(added.types.has("fire"));
+  assert.ok(activity.damage.parts.find((part) => part._id === "base-fire").types instanceof Set);
+  assert.ok(activity.damage.parts.find((part) => part._id === "base-fire").types.has("fire"));
+  assert.deepEqual(activity.system.damage.parts.at(-1).types, ["fire"]);
+  assert.deepEqual(activity.item.system.damage.parts.at(-1).types, ["fire"]);
   assert.equal(pointsItem(actor).system.uses.spent, 4);
 });
 
@@ -3247,7 +3385,8 @@ test("Draconic Dragon Spell accepts dnd5e damage parts whose types are Sets", as
 
   const added = activity.damage.parts.find((part) => part._id === "rebreya-draconic-dragon-spell");
   assert.equal(added.formula, "3d6");
-  assert.deepEqual(added.types, ["fire"]);
+  assert.ok(added.types instanceof Set);
+  assert.ok(added.types.has("fire"));
   assert.equal(pointsItem(actor).system.uses.spent, 5);
 });
 
@@ -3415,7 +3554,7 @@ test("RED: Draconic Dragon Spell damage hook follows attack roll messages back t
   }
 });
 
-test("Draconic Ancestral Spell changes this cast's spell damage to the ancestor type", async () => {
+test("Draconic Ancestral Spell changes runtime damage parts to the ancestor type", async () => {
   const actor = metamagicActor();
   addDraconicAncestor(actor, "Огонь");
   addMetamagic(actor, "draconic-ancestral-spell", 1, "base", {
@@ -3427,7 +3566,7 @@ test("Draconic Ancestral Spell changes this cast's spell damage to the ancestor 
     system: {
       damage: {
         parts: [
-          { _id: "cold-part", formula: "1d8", types: ["cold"] },
+          { _id: "cold-part", formula: "1d8", types: new Set(["cold"]) },
           ["1d6", "acid"]
         ]
       }
@@ -3439,13 +3578,15 @@ test("Draconic Ancestral Spell changes this cast's spell damage to the ancestor 
     sorcererMetamagic: { ids: ["draconic-ancestral-spell"] }
   }, {}, {}), true);
 
-  assert.deepEqual(activity.damage.parts.map((part) => Array.isArray(part) ? part[1] : part.types[0]), ["fire", "fire"]);
+  assert.ok(activity.damage.parts[0].types instanceof Set);
+  assert.ok(activity.damage.parts[0].types.has("fire"));
+  assert.equal(activity.damage.parts[1][1], "fire");
   assert.deepEqual(activity.system.damage.parts.map((part) => Array.isArray(part) ? part[1] : part.types[0]), ["fire", "fire"]);
   assert.deepEqual(activity.item.system.damage.parts.map((part) => Array.isArray(part) ? part[1] : part.types[0]), ["fire", "fire"]);
   assert.equal(pointsItem(actor).system.uses.spent, 3);
 });
 
-test("Elemental Affinity adds Charisma modifier once to matching draconic spell damage", async () => {
+test("Elemental Affinity adds Charisma modifier once to matching native runtime damage", async () => {
   const actor = metamagicActor();
   actor.system.abilities.cha.mod = 4;
   addDraconicAncestor(actor, "Огонь");
@@ -3454,7 +3595,7 @@ test("Elemental Affinity adds Charisma modifier once to matching draconic spell 
   await service.syncSorceryPoints(actor);
   const messageConfig = {};
   const activity = makeDnd5eActivityClone(makeSorcererSpell(actor, {
-    system: { damage: { parts: [{ _id: "base-fire", formula: "2d6", types: ["fire"] }] } }
+    system: { damage: { parts: [{ _id: "base-fire", formula: "2d6", types: new Set(["fire"]) }] } }
   }));
 
   assert.equal(await service.applyDnd5ePreUseActivity(activity, {
@@ -3463,9 +3604,47 @@ test("Elemental Affinity adds Charisma modifier once to matching draconic spell 
 
   const added = activity.damage.parts.find((part) => part._id === "rebreya-draconic-elemental-affinity");
   assert.equal(added.formula, "4");
-  assert.deepEqual(added.types, ["fire"]);
+  assert.ok(added.types instanceof Set);
+  assert.ok(added.types.has("fire"));
   assert.equal(messageConfig.data.flags[MODULE_ID].damageBonus.source, "draconic-elemental-affinity");
   assert.equal(pointsItem(actor).system.uses.spent, 2);
+});
+
+test("Draconic Dragon Spell and Elemental Affinity add their runtime damage bonuses once", async () => {
+  const actor = metamagicActor();
+  actor.system.abilities.cha.mod = 4;
+  addDraconicAncestor(actor, "Огонь");
+  addSubclassFeature(actor, "Родство со стихией", "draconic-elemental-affinity");
+  addMetamagic(actor, "draconic-dragon-spell", 3, "base", {
+    costMode: "variable",
+    minCost: 1,
+    maxCost: 3,
+    metamagicAutomation: "draconic-dragon-spell"
+  });
+  const service = new SorcererAutomationService({});
+  await service.syncSorceryPoints(actor);
+  const activity = makeDnd5eActivityClone(makeSorcererSpell(actor, {
+    system: { damage: { parts: [{ _id: "base-fire", formula: "2d6", types: new Set(["fire"]) }] } }
+  }));
+
+  assert.equal(await service.applyDnd5ePreUseActivity(activity, {
+    sorcererVirtualSpellLevel: 1,
+    sorcererMetamagic: {
+      ids: ["draconic-dragon-spell"],
+      costs: { "draconic-dragon-spell": 2 }
+    }
+  }, {}, {}), true);
+
+  const dragonSpell = activity.damage.parts.find((part) => part._id === "rebreya-draconic-dragon-spell");
+  const affinity = activity.damage.parts.find((part) => part._id === "rebreya-draconic-elemental-affinity");
+  assert.equal(dragonSpell.formula, "2d6");
+  assert.ok(dragonSpell.types instanceof Set);
+  assert.ok(dragonSpell.types.has("fire"));
+  assert.equal(affinity.formula, "4");
+  assert.ok(affinity.types instanceof Set);
+  assert.ok(affinity.types.has("fire"));
+  assert.equal(activity.damage.parts.filter((part) => part._id === dragonSpell._id).length, 1);
+  assert.equal(activity.damage.parts.filter((part) => part._id === affinity._id).length, 1);
 });
 
 test("Elemental Affinity ignores spells that do not match the draconic damage type", async () => {

@@ -22,26 +22,22 @@
               data-action="{{#if occupied}}open-slot-item{{else}}slot-drop{{/if}}"
               data-slot-id="{{ id }}"
               {{#if occupied}}data-item-id="{{ itemId }}"{{/if}}
-              title="{{ title }}"
+              aria-label="{{ title }}"
+              data-rm-tooltip="{{ title }}"
+              data-tooltip-meta="{{ itemMeta }}"
             >
-              <span class="rm-hero-doll-slot__label">{{ label }}</span>
-
               {{#if occupied}}
-                <span class="rm-hero-doll-slot__content">
-                  <img class="rm-hero-doll-slot__image" src="{{ itemImg }}" alt="{{ itemName }}">
-                  <span class="rm-hero-doll-slot__copy">
-                    <strong>{{ itemName }}</strong>
-                    {{#if itemMeta}}<small>{{ itemMeta }}</small>{{/if}}
-                  </span>
-                </span>
+                <img class="rm-hero-doll-slot__image" src="{{ itemImg }}" alt="">
               {{else}}
-                <span class="rm-hero-doll-slot__empty">
-                  <i class="fa-solid fa-plus"></i>
-                  <small>пусто</small>
-                </span>
+                <span class="rm-hero-doll-slot__empty">{{ label }}</span>
               {{/if}}
             </button>
 
+            {{#if legacyStack}}
+              <button type="button" class="rm-hero-doll-slot__normalize rm-icon-button always-interactive" data-action="normalize-slot-stack" data-slot-id="{{ id }}" title="Выделить одну экипированную единицу">
+                <i class="fa-solid fa-layer-group"></i>
+              </button>
+            {{/if}}
             {{#if occupied}}
               <button
                 type="button"

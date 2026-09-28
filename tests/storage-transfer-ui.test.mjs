@@ -1,9 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import * as storageTransferUi from "../scripts/ui/storage-transfer-ui.js";
 
 import {
   buildStorageDragData,
   parseStorageDragData,
+  promptStorageGroundPileRotation,
   promptStorageTransferQuantity,
   storageGridColumns
 } from "../scripts/ui/storage-transfer-ui.js";
@@ -54,6 +56,76 @@ test("quantity prompt bypasses one item, supports cancellation, and validates bo
 
   await assert.rejects(
     promptStorageTransferQuantity(5, { prompt: async () => 6 }),
+    /Количество/u
+  );
+});
+
+test("ground furniture orientation prompts only for rectangular cardinal placement", async () => {
+  const bed = {
+    name: "Кровать",
+    img: "modules/rebreya-main/assets/top-down/items/gear/krovat.webp",
+    width: 1,
+    height: 2,
+    rotationMode: "cardinal"
+  };
+  const seen = [];
+  assert.equal(await promptStorageGroundPileRotation(bed, {
+    prompt: async (placement) => {
+      seen.push(placement);
+      return 90;
+    }
+  }), 90);
+  assert.deepEqual(seen, [bed]);
+  assert.equal(await promptStorageGroundPileRotation(bed, { prompt: async () => null }), null);
+
+  let bypassPrompts = 0;
+  assert.equal(await promptStorageGroundPileRotation({
+    ...bed,
+    name: "Стул",
+    width: 1,
+    height: 1
+  }, { prompt: async () => { bypassPrompts += 1; return 90; } }), null);
+  assert.equal(await promptStorageGroundPileRotation(null, {
+    prompt: async () => { bypassPrompts += 1; return 90; }
+  }), null);
+  assert.equal(bypassPrompts, 0);
+});
+
+test("ground furniture orientation rejects non-cardinal prompt results", async () => {
+  await assert.rejects(
+    promptStorageGroundPileRotation({
+      name: "Кровать",
+      img: "bed.webp",
+      width: 1,
+      height: 2,
+      rotationMode: "cardinal"
+    }, { prompt: async () => 45 }),
+    /0, 90, 180 или 270/u
+  );
+});
+
+test("coin quantity prompt is unbounded for templates and bounded for embedded stacks", async () => {
+  assert.equal(typeof storageTransferUi.promptStorageCoinQuantity, "function");
+  const { promptStorageCoinQuantity } = storageTransferUi;
+  const seen = [];
+  assert.equal(await promptStorageCoinQuantity(null, {
+    prompt: async (options) => {
+      seen.push(options);
+      return Number.MAX_SAFE_INTEGER;
+    }
+  }), Number.MAX_SAFE_INTEGER);
+  assert.deepEqual(seen, [{ max: null, value: 1 }]);
+
+  assert.equal(await promptStorageCoinQuantity(null, { prompt: async () => null }), null);
+  for (const invalid of [0, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+    await assert.rejects(
+      promptStorageCoinQuantity(null, { prompt: async () => invalid }),
+      /Количество/u
+    );
+  }
+  assert.equal(await promptStorageCoinQuantity(5, { prompt: async () => 5 }), 5);
+  await assert.rejects(
+    promptStorageCoinQuantity(5, { prompt: async () => 6 }),
     /Количество/u
   );
 });

@@ -94,3 +94,103 @@ test("openInventoryApp keeps the original failure when Foundry notifications are
     fixture.restore();
   }
 });
+
+test("module version notice prefers the freshly served manifest over cached Foundry metadata", async () => {
+  const fixture = installMainModuleFixture();
+  const created = [];
+  const requests = [];
+
+  try {
+    const main = await import(`../scripts/main.js?notification-version=${Date.now()}`);
+    assert.equal(typeof main.publishModuleVersionNotice, "function");
+
+    const published = await main.publishModuleVersionNotice({
+      moduleEntry: { version: "9.8.6" },
+      user: { id: "player-17" },
+      fetchManifest: async (...args) => {
+        requests.push(args);
+        return new Response(JSON.stringify({ version: "9.8.<7>" }), {
+          headers: { "content-type": "application/json" },
+          status: 200
+        });
+      },
+      createChatMessage: async (data) => {
+        created.push(data);
+        return { id: "notice-1" };
+      }
+    });
+
+    assert.equal(published, true);
+    assert.deepEqual(created, [{
+      user: "player-17",
+      whisper: ["player-17"],
+      content: "<p>Rebreya Main v9.8.&lt;7&gt; загружен.</p>"
+    }]);
+    assert.equal(requests.length, 1);
+    assert.match(requests[0][0], /^modules\/rebreya-main\/module\.json\?reload=\d+$/u);
+    assert.deepEqual(requests[0][1], { cache: "no-store" });
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("module version notice falls back to cached Foundry metadata when manifest refresh fails", async () => {
+  const fixture = installMainModuleFixture();
+  const created = [];
+
+  try {
+    const main = await import(`../scripts/main.js?notification-version-fallback=${Date.now()}`);
+
+    const published = await main.publishModuleVersionNotice({
+      moduleEntry: { version: "9.8.6" },
+      user: { id: "player-17" },
+      fetchManifest: async () => {
+        throw new Error("manifest unavailable");
+      },
+      createChatMessage: async (data) => {
+        created.push(data);
+        return { id: "notice-fallback" };
+      }
+    });
+
+    assert.equal(published, true);
+    assert.deepEqual(created, [{
+      user: "player-17",
+      whisper: ["player-17"],
+      content: "<p>Rebreya Main v9.8.6 загружен.</p>"
+    }]);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("module version notice failure stays presentation-only", async () => {
+  const fixture = installMainModuleFixture();
+  const warnings = [];
+
+  try {
+    const main = await import(`../scripts/main.js?notification-version-error=${Date.now()}`);
+    assert.equal(typeof main.publishModuleVersionNotice, "function");
+
+    const published = await main.publishModuleVersionNotice({
+      moduleEntry: { version: "9.8.7" },
+      user: { id: "player-17" },
+      createChatMessage: async () => {
+        throw new Error("chat unavailable");
+      },
+      logger: {
+        warn(...args) {
+          warnings.push(args);
+        }
+      }
+    });
+
+    assert.equal(published, false);
+    assert.match(String(warnings[0]?.[0] ?? ""), /Failed to publish module version notice/u);
+  }
+  finally {
+    fixture.restore();
+  }
+});

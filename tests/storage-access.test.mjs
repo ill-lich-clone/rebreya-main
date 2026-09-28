@@ -2,13 +2,14 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  isStorageTokenVisible,
   measureStoragePointDistance,
   measureStorageTokenDistance,
   preflightStorageAccess
 } from "../scripts/data/storage-access.js";
 
-function createToken({ id, uuid, actor, scene, x = 0, y = 0, visible = true }) {
-  const document = { id, uuid, actor, parent: scene, x, y, width: 1, height: 1 };
+function createToken({ id, uuid, actor, scene, x = 0, y = 0, visible = true, hidden = false }) {
+  const document = { id, uuid, actor, parent: scene, x, y, width: 1, height: 1, hidden };
   return {
     id,
     uuid,
@@ -19,7 +20,36 @@ function createToken({ id, uuid, actor, scene, x = 0, y = 0, visible = true }) {
   };
 }
 
-test("player preflight reports distance without authorizing the storage action", () => {
+test("authoritative storage visibility ignores transient Token.object.visible from the active GM canvas", () => {
+  const storage = createToken({
+    id: "chest",
+    uuid: "Scene.scene.Token.chest",
+    scene: { id: "scene" },
+    actor: { type: "npc" },
+    visible: false
+  });
+  const canvas = {
+    tokens: {
+      get: () => ({ visible: false })
+    }
+  };
+
+  assert.equal(isStorageTokenVisible(storage, { canvas }), true);
+});
+
+test("authoritative storage visibility rejects a hidden TokenDocument", () => {
+  const storage = createToken({
+    id: "chest",
+    uuid: "Scene.scene.Token.chest",
+    scene: { id: "scene" },
+    actor: { type: "npc" },
+    hidden: true
+  });
+
+  assert.equal(isStorageTokenVisible(storage), false);
+});
+
+test("player preflight allows storage interaction at exactly ten feet", () => {
   const player = { id: "player", isGM: false };
   const scene = { id: "scene" };
   const hero = createToken({
@@ -40,6 +70,37 @@ test("player preflight reports distance without authorizing the storage action",
   });
   const canvas = {
     grid: { measurePath: () => ({ distance: 10 }) },
+    tokens: { controlled: [hero], placeables: [hero, storage], get: () => null }
+  };
+
+  assert.deepEqual(preflightStorageAccess(storage, { game: { user: player }, canvas }), {
+    allowed: true,
+    reason: "ok",
+    characterTokenUuid: "Scene.scene.Token.hero"
+  });
+});
+
+test("player preflight rejects storage interaction beyond ten feet", () => {
+  const player = { id: "player", isGM: false };
+  const scene = { id: "scene" };
+  const hero = createToken({
+    id: "hero",
+    uuid: "Scene.scene.Token.hero",
+    scene,
+    actor: {
+      type: "character",
+      testUserPermission: (user, permission) => user === player && permission === "OWNER"
+    }
+  });
+  const storage = createToken({
+    id: "chest",
+    uuid: "Scene.scene.Token.chest",
+    scene,
+    actor: { type: "npc" },
+    x: 500
+  });
+  const canvas = {
+    grid: { measurePath: () => ({ distance: 11 }) },
     tokens: { controlled: [hero], placeables: [hero, storage], get: () => null }
   };
 
@@ -162,6 +223,41 @@ test("distance uses the nearest occupied grid spaces for large tokens", () => {
 
   assert.equal(measureStorageTokenDistance(hero, chest, { canvas }), 5);
   assert.equal(measureStoragePointDistance(hero, { x: 250, y: 50 }, { canvas }), 5);
+});
+
+test("fractional off-grid token footprints use their nearest occupied grid spaces", () => {
+  const scene = { id: "scene", grid: { type: 1, size: 100, distance: 5 } };
+  const hero = createToken({
+    id: "hero",
+    uuid: "Scene.scene.Token.hero",
+    actor: { type: "character" },
+    scene,
+    x: 10,
+    y: 10
+  });
+  hero.document.width = 1.5;
+  hero.center = { x: 85, y: 60 };
+  const barrel = createToken({
+    id: "barrel",
+    uuid: "Scene.scene.Token.barrel",
+    actor: { type: "npc" },
+    scene,
+    x: 200,
+    y: 110
+  });
+  const canvas = {
+    scene,
+    grid: {
+      size: 100,
+      measurePath: ([from, to]) => ({
+        distance: Math.hypot(to.x - from.x, to.y - from.y) / 100 * 5
+      })
+    },
+    tokens: { get: () => null }
+  };
+
+  assert.equal(measureStorageTokenDistance(hero, barrel, { canvas }), 5);
+  assert.equal(measureStoragePointDistance(hero, { x: 250, y: 150 }, { canvas }), 5);
 });
 
 test("every point inside an adjacent square is within five feet for a ground drop", () => {

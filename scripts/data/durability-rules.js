@@ -1,6 +1,7 @@
 const MODULE_ID = "rebreya-main";
 const DURABLE_ITEM_TYPES = new Set(["weapon", "equipment", "tool", "container", "consumable", "loot"]);
 const NON_DURABLE_STACK_SOURCE_TYPES = new Set(["material", "good", "resource", "supply"]);
+const STORAGE_COIN_DENOMINATIONS = new Set(["pp", "gp", "sp", "cp"]);
 const MAGIC_PROPERTY_KEYS = new Set([
   "mgc",
   "magic",
@@ -237,6 +238,8 @@ function isNonDurableStack(flags) {
     || Boolean(flags.linkedGoodId)
     || flags.managedPartySupply === true
     || Boolean(flags.resourceKey)
+    || (flags.storageCoinTemplate?.version === 1
+      && STORAGE_COIN_DENOMINATIONS.has(normalizeToken(flags.storageCoinTemplate?.denomination)))
     || NON_DURABLE_STACK_SOURCE_TYPES.has(normalizeToken(flags.sourceType));
 }
 
@@ -412,6 +415,19 @@ export function markDurabilityBroken(flag) {
   nextFlag.breakStage = 1;
   nextFlag.hp = { value: 0, max: maxHp };
   return { outcome: "broken", nextFlag, appliedDamage: 0 };
+}
+
+export function markDurabilityIntact(flag) {
+  const maxHp = Number(flag?.hp?.max);
+  if (!flag || flag.eligible === false || normalizeToken(flag.state) === "destroyed"
+    || !Number.isFinite(maxHp) || maxHp <= 0) {
+    return ignoredTransition(flag);
+  }
+  const nextFlag = cloneDurabilityFlag(flag);
+  nextFlag.state = "intact";
+  nextFlag.breakStage = 0;
+  nextFlag.hp = { value: maxHp, max: maxHp };
+  return { outcome: "intact", nextFlag, appliedDamage: 0 };
 }
 
 export function markDurabilityDestroyed(flag) {

@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import { MODULE_ID } from "../scripts/constants.js";
 import {
   applyDurabilityDamage,
   buildDurabilitySignature,
@@ -9,6 +10,7 @@ import {
   isDurabilityEligible,
   markDurabilityBroken,
   markDurabilityDestroyed,
+  markDurabilityIntact,
   resolveDurabilityProfile
 } from "../scripts/data/durability-rules.js";
 
@@ -314,6 +316,63 @@ test("Rebreya material and goods stack markers are excluded while functional loo
   }), true);
 });
 
+test("managed Coin templates are excluded while ordinary loot remains durable", () => {
+  for (const denomination of ["pp", "gp", "sp", "cp"]) {
+    assert.equal(isDurabilityEligible({
+      type: "loot",
+      system: { properties: [], rarity: "" },
+      flags: { [MODULE_ID]: {
+        sourceType: "coinTemplate",
+        storageCoinTemplate: { version: 1, denomination }
+      }}
+    }), false, denomination);
+  }
+
+  for (const denomination of ["electrum", "", " ", null]) {
+    assert.equal(isDurabilityEligible({
+      type: "loot",
+      system: { properties: [], rarity: "" },
+      flags: { [MODULE_ID]: {
+        sourceType: "coinTemplate",
+        storageCoinTemplate: { version: 1, denomination }
+      }}
+    }), true, String(denomination));
+  }
+
+  assert.equal(isDurabilityEligible({
+    type: "loot",
+    system: { properties: [], rarity: "" },
+    flags: { [MODULE_ID]: {} }
+  }), true);
+});
+
+test("stable built-in Coin identity excludes durability even when mutable sourceType says gear", () => {
+  assert.equal(isDurabilityEligible({
+    type: "loot",
+    system: { properties: [], rarity: "" },
+    flags: {
+      [MODULE_ID]: {
+        sourceType: "gear",
+        sourceId: "mutable-catalog-id",
+        storageCoinTemplate: { version: 1, denomination: "gp" }
+      }
+    }
+  }), false);
+
+  for (const version of [undefined, 0, 2, "1"]) {
+    assert.equal(isDurabilityEligible({
+      type: "loot",
+      system: { properties: [], rarity: "" },
+      flags: {
+        [MODULE_ID]: {
+          sourceType: "gear",
+          storageCoinTemplate: { version, denomination: "gp" }
+        }
+      }
+    }), true, `unsupported coin flag version ${String(version)} must remain ordinary durable loot`);
+  }
+});
+
 test("actual party supply flags never initialize durability", () => {
   for (const flags of [
     { managedPartySupply: true, resourceKey: "food" },
@@ -439,6 +498,21 @@ test("explicit break and destroy transitions keep zero HP without a second pool"
   assert.equal(destroyed.nextFlag.state, "destroyed");
   assert.equal(destroyed.nextFlag.breakStage, 2);
   assert.deepEqual(destroyed.nextFlag.hp, { value: 0, max: 15 });
+});
+
+test("explicit repair restores full HP while preserving durability metadata", () => {
+  const intact = buildInitialDurability(resolveFromMaterialName("Сталь"));
+  const broken = markDurabilityBroken(intact).nextFlag;
+  broken.initializedFrom = { sourceType: "gear", sourceId: "shield" };
+
+  const repaired = markDurabilityIntact(broken);
+
+  assert.equal(repaired.outcome, "intact");
+  assert.equal(repaired.nextFlag.state, "intact");
+  assert.equal(repaired.nextFlag.breakStage, 0);
+  assert.deepEqual(repaired.nextFlag.hp, { value: 15, max: 15 });
+  assert.deepEqual(repaired.nextFlag.initializedFrom, broken.initializedFrom);
+  assert.equal(broken.state, "broken");
 });
 
 test("damage transitions never mutate their input flag", () => {

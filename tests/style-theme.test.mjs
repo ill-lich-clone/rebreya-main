@@ -4,6 +4,14 @@ import test from "node:test";
 
 const stylesheetUrl = new URL("../styles/main.css", import.meta.url);
 
+function between(source, startMarker, endMarker) {
+  const start = source.indexOf(startMarker);
+  const end = source.indexOf(endMarker, start + startMarker.length);
+  assert.notEqual(start, -1, startMarker);
+  assert.notEqual(end, -1, endMarker);
+  return source.slice(start, end);
+}
+
 function withoutStandaloneTraderRules(css) {
   const characters = [...css];
   let cursor = 0;
@@ -35,6 +43,19 @@ function withoutStandaloneTraderRules(css) {
 
   return characters.join("");
 }
+
+test("public economy markup excludes private price mechanics", async () => {
+  const economyTemplate = await readFile(new URL("../templates/economy-app.hbs", import.meta.url), "utf8");
+  const publicTemplateBranch = between(
+    economyTemplate,
+    "<!-- public-economy:start -->",
+    "<!-- public-economy:end -->"
+  );
+
+  for (const forbidden of ["priceModifierPercent", "selfSufficiencyRate", "routePriceModifierPercent"]) {
+    assert.equal(publicTemplateBranch.includes(forbidden), false, forbidden);
+  }
+});
 
 test("Rebreya windows use the inherited graphite and brass redesign", async () => {
   const css = await readFile(stylesheetUrl, "utf8");
@@ -230,4 +251,38 @@ test("Lootgen exposes broken equipment as a visible condition without renaming e
   assert.match(css, /\.rm-lootgen-condition--broken\s*\{[^}]*color:\s*var\(--rm-warning\);/su);
   assert.match(css, /\.rm-chat-loot__row-main \.rm-chat-loot__condition--broken\s*\{[^}]*color:\s*var\(--rm-warning\) !important;/su);
   assert.doesNotMatch(template, /\{\{name\}\}\s*\(сломано\)/iu);
+});
+
+test("public city styles stay scoped to the canonical City app", async () => {
+  const css = await readFile(stylesheetUrl, "utf8");
+
+  for (const selector of [
+    "rm-public-city-shell",
+    "rm-public-city-hero",
+    "rm-public-city-tabs",
+    "rm-public-city-market",
+    "rm-public-city-traders"
+  ]) {
+    assert.match(css, new RegExp(`\\.rebreya-city-app \\.${selector}`, "u"), selector);
+  }
+  const publicSelectorLines = css.split(/\r?\n/u).filter((line) => line.includes(".rm-public-city-"));
+  assert.ok(publicSelectorLines.length > 0);
+  assert.equal(publicSelectorLines.every((line) => line.trim().startsWith(".rebreya-city-app ")), true);
+});
+
+test("public economy styles stay scoped to the canonical Economy app", async () => {
+  const css = await readFile(stylesheetUrl, "utf8");
+
+  for (const selector of [
+    "rm-public-economy-shell",
+    "rm-public-economy-filters",
+    "rm-public-economy-cities",
+    "rm-public-economy-city",
+    "rm-public-economy-materials"
+  ]) {
+    assert.match(css, new RegExp(`\\.rebreya-economy-app \\.${selector}`, "u"), selector);
+  }
+  const publicSelectorLines = css.split(/\r?\n/u).filter((line) => line.includes(".rm-public-economy-"));
+  assert.ok(publicSelectorLines.length > 0);
+  assert.equal(publicSelectorLines.every((line) => line.trim().startsWith(".rebreya-economy-app ")), true);
 });

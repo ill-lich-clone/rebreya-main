@@ -129,6 +129,142 @@ function makeUpgrade(actor, data = {}) {
   });
 }
 
+function makeService(Service) {
+  return new Service(null, { getManifest: async () => [{ productId: "mithril-upgrade", gearId: "mithril-upgrade",
+    profile: { compatibility: ["any"] }, decision: "simple-implemented", reason: "Approved test fixture" }] });
+}
+
+test("upgrade hosts are limited to weapons, outerwear and explicit wondrous item types", async () => {
+  const { buildUpgradeHostDescriptor, getItemUpgradeCategory } = await import("../scripts/data/item-upgrade-service.js");
+  const item = (id, type, typeValue, moduleFlags = {}) => ({
+    id,
+    type,
+    system: { type: { value: typeValue }, quantity: 1 },
+    flags: { [MODULE_ID]: moduleFlags }
+  });
+
+  for (const [host, category, tags] of [
+    [item("sword", "weapon", "martialM", { equipmentType: "Оружие" }), "weapon", ["weapon", "melee"]],
+    [item("armor", "equipment", "heavy", { equipmentType: "Доспех" }), "outerwear", ["outerwear", "armor"]],
+    [item("shield", "equipment", "shield", { equipmentType: "Доспех" }), "outerwear", ["outerwear", "shield"]],
+    [item("robes", "equipment", "clothing", { equipmentType: "Снаряжение" }), "outerwear", ["outerwear"]],
+    [item("wondrous", "equipment", "wondrous"), "wondrous", ["wondrous-item"]],
+    [item("staff", "equipment", "staff"), "wondrous", ["wondrous-item"]],
+    [item("rod", "equipment", "rod"), "wondrous", ["wondrous-item"]],
+    [item("wand", "equipment", "wand"), "wondrous", ["wondrous-item"]],
+    [item("wondrous-consumable", "consumable", "potion", { itemType: "Чудесный предмет" }), "wondrous", ["wondrous-item"]],
+    [item("wondrous-container", "container", "backpack", { itemType: "Чудесный предмет" }), "wondrous", ["wondrous-item"]],
+    [item("legacy-clothing", "loot", "gear", { equipmentType: "Снаряжение", gearId: "odezhda-obychnaya" }), "outerwear", ["outerwear"]],
+    [item("painting", "loot", "gear", { equipmentType: "Снаряжение" }), "", []],
+    [item("catalog-painting", "loot", "gear", { equipmentType: "Снаряжение", gearId: "bolshaya-kartina-v-pozolochennoy-rame" }), "", []],
+    [item("treasure", "loot", "treasure", { equipmentType: "Сокровища" }), "", []],
+    [item("ammunition", "consumable", "ammo", { equipmentType: "Боеприпас" }), "", []],
+    [item("potion", "consumable", "potion", { equipmentType: "Зелье" }), "", []],
+    [item("ring", "equipment", "ring"), "", []]
+  ]) {
+    assert.equal(getItemUpgradeCategory(host), category, host.id);
+    assert.deepEqual(buildUpgradeHostDescriptor(host).compatibilityTags, tags, host.id);
+  }
+});
+
+test("legacy forbidden hosts keep a removal panel without becoming upgrade targets", async () => {
+  const restore = installFoundryStubs();
+  try {
+    const { createItemUpgradePanelHtml, isItemUpgradeHostItem } = await import(`../scripts/integrations/item-upgrade-sheet.js?legacy-cleanup=${Date.now()}`);
+    const actor = new FakeActor();
+    const painting = actor.addItem({
+      _id: "painting",
+      name: "Картина",
+      type: "loot",
+      system: { type: { value: "gear" }, quantity: 1 },
+      flags: { [MODULE_ID]: { equipmentType: "Снаряжение", itemUpgrades: { capacity: 1, installed: [{ itemId: "legacy", slotIndex: 1 }] } } }
+    });
+    makeUpgrade(actor, { _id: "legacy", name: "Старое усовершенствование", system: { quantity: 1, container: "painting" } });
+
+    assert.equal(isItemUpgradeHostItem(painting), false);
+    const html = createItemUpgradePanelHtml(painting);
+    assert.match(html, /rebreya-item-upgrade-remove/u);
+    assert.doesNotMatch(html, /rebreya-item-upgrade-capacity/u);
+
+    const { ItemUpgradeService } = await import(`../scripts/data/item-upgrade-service.js?legacy-cleanup=${Date.now()}`);
+    const service = makeService(ItemUpgradeService);
+    await service.removeItemUpgrade(painting, "legacy");
+    assert.deepEqual(painting.flags[MODULE_ID].itemUpgrades.installed, []);
+  }
+  finally {
+    restore();
+  }
+});
+
+test("required choice is validated before splitting and persists only on the installed unit", async () => {
+  const restore = installFoundryStubs();
+  try {
+    const { ItemUpgradeService } = await import("../scripts/data/item-upgrade-service.js");
+    const actor = new FakeActor(), id = "cheshuya-monstra";
+    const host = actor.addItem({ _id: "host", type: "weapon", system: { quantity: 1 } });
+    const upgrade = makeUpgrade(actor,{gearId:id,quantity:3});
+    const service = new ItemUpgradeService(null,{getManifest:async()=>[{productId:id,gearId:id,profile:{compatibility:["any"]},decision:"simple-implemented",reason:"fixture"}]});
+    await assert.rejects(service.installItemUpgrade(host,upgrade),e=>e.code==="invalid-choice");
+    assert.equal(actor.created.length+upgrade.updates.length+host.updates.length,0);
+    const installed = await service.installItemUpgrade(host,upgrade,{choices:{damageType:"fire"}});
+    assert.deepEqual(installed.flags[MODULE_ID].upgradeChoices,{damageType:"fire"});
+    assert.equal(upgrade.flags[MODULE_ID].upgradeChoices,undefined);
+    assert.equal(upgrade.system.quantity,2);
+    await service.removeItemUpgrade(host,installed);
+    await service.installItemUpgrade(host,installed);
+    assert.deepEqual(installed.flags[MODULE_ID].upgradeChoices,{damageType:"fire"});
+  } finally { restore(); }
+});
+
+test("availability text escapes names and reasons without replacing the Item", async () => {
+  const { createUpgradeAvailabilityHtml } = await import("../scripts/integrations/item-upgrade-sheet.js");
+  const item = { name: "<b>Legacy</b>" };
+  const html = createUpgradeAvailabilityHtml(item, { legacyOverride: true, availability: {
+    decision: "unavailable-complex", label: "Усовершенствования нет в реализации", reason: "<script>bad</script>" } });
+  assert.match(html, /Усовершенствования нет в реализации/u);
+  assert.match(html, /&lt;script&gt;/u);
+  assert.doesNotMatch(html, /<script>|<b>Legacy/u);
+  assert.equal(item.name, "<b>Legacy</b>");
+});
+
+test("installation rejects unavailable, stacked host and capacity bypass before any write", async () => {
+  const restore = installFoundryStubs();
+  try {
+    const { ItemUpgradeService } = await import("../scripts/data/item-upgrade-service.js");
+    const actor = new FakeActor();
+    const host = actor.addItem({ _id: "host", type: "weapon", system: { quantity: 1 } });
+    const upgrade = makeUpgrade(actor);
+    const blocked = new ItemUpgradeService(null, { getManifest: async () => [] });
+    await assert.rejects(blocked.installUpgrade(host, upgrade), e => e.code === "unavailable");
+    host.system.quantity = 2;
+    await assert.rejects(makeService(ItemUpgradeService).installUpgrade(host, upgrade), e => e.code === "invalid-quantity");
+    host.system.quantity = 1;
+    await assert.rejects(makeService(ItemUpgradeService).installUpgrade(host, upgrade, { capacity: 3, slotIndex: 3 }), e => e.code === "capacity");
+    upgrade.system.quantity = 0;
+    await assert.rejects(makeService(ItemUpgradeService).installUpgrade(host, upgrade), e => e.code === "invalid-quantity");
+    assert.equal(host.updates.length + upgrade.updates.length + actor.created.length, 0);
+  } finally { restore(); }
+});
+
+test("legacy projection preserves explicit profile and unavailable installed child can be removed", async () => {
+  const restore = installFoundryStubs();
+  try {
+    const { ItemUpgradeService } = await import("../scripts/data/item-upgrade-service.js");
+    const actor = new FakeActor();
+    const host = actor.addItem({ _id: "host", type: "weapon", system: { quantity: 1 }, flags: { [MODULE_ID]: { itemUpgrades: { capacity: 3, installed: [{ itemId: "legacy", slotIndex: 3 }] } } } });
+    const upgrade = makeUpgrade(actor, { _id: "legacy", flags: { [MODULE_ID]: { upgrade: { type: "Custom", compatibility: ["armor"] } } } });
+    const service = makeService(ItemUpgradeService);
+    const projection = await service.getUpgradeProjection(upgrade);
+    assert.equal(projection.legacyOverride, true);
+    assert.deepEqual(projection.profile.compatibility, ["armor"]);
+    assert.equal(host.updates.length + upgrade.updates.length, 0);
+    await assert.rejects(service.setUpgradeCapacity(host, 2), e => e.code === "capacity");
+    await service.removeUpgrade(host, upgrade);
+    assert.deepEqual(host.flags[MODULE_ID].itemUpgrades.installed, []);
+    assert.deepEqual(upgrade.flags[MODULE_ID].upgrade, { type: "Custom", compatibility: ["armor"] });
+  } finally { restore(); }
+});
+
 test("installing an upgrade stores it inside the host item and links the host slot", async () => {
   const restore = installFoundryStubs();
   try {
@@ -143,7 +279,7 @@ test("installing an upgrade stores it inside the host item and links the host sl
     });
     const upgrade = makeUpgrade(actor, { _id: "storm-stone" });
 
-    const service = new ItemUpgradeService();
+    const service = makeService(ItemUpgradeService);
     const installed = await service.installUpgrade(host, upgrade);
 
     assert.equal(installed, upgrade);
@@ -173,7 +309,7 @@ test("installing one upgrade from a stack creates a contained copy and leaves th
     });
     const upgradeStack = makeUpgrade(actor, { _id: "mithril-stack", quantity: 4 });
 
-    const service = new ItemUpgradeService();
+    const service = makeService(ItemUpgradeService);
     const installed = await service.installUpgrade(host, upgradeStack);
 
     assert.notEqual(installed, upgradeStack);
@@ -204,7 +340,7 @@ test("removing an installed upgrade clears its container and returns it to inven
     });
     const upgrade = makeUpgrade(actor, { _id: "storm-stone" });
 
-    const service = new ItemUpgradeService();
+    const service = makeService(ItemUpgradeService);
     await service.installUpgrade(host, upgrade);
     const removed = await service.removeUpgrade(host, upgrade.id);
 
@@ -237,7 +373,7 @@ test("upgrade capacity can be raised to three slots and blocks the fourth upgrad
       makeUpgrade(actor, { _id: "upgrade-d" })
     ];
 
-    const service = new ItemUpgradeService();
+    const service = makeService(ItemUpgradeService);
     await service.setUpgradeCapacity(host, 3);
     await service.installUpgrade(host, upgrades[0]);
     await service.installUpgrade(host, upgrades[1]);
@@ -254,7 +390,7 @@ test("upgrade capacity can be raised to three slots and blocks the fourth upgrad
     );
     await assert.rejects(
       () => service.setUpgradeCapacity(host, 2),
-      /меньше уже установленных/u
+      error => error.code === "capacity"
     );
   }
   finally {
@@ -279,7 +415,7 @@ test("installed actor upgrade ids include items contained by upgraded hosts", as
     });
     const upgrade = makeUpgrade(actor, { _id: "storm-stone" });
 
-    const service = new ItemUpgradeService();
+    const service = makeService(ItemUpgradeService);
     await service.installUpgrade(host, upgrade);
 
     assert.deepEqual([...getInstalledActorUpgradeItemIds(actor)], ["storm-stone"]);
@@ -318,7 +454,7 @@ test("dnd5e item filter hook hides installed upgrades before inventory rows rend
     const filter = listeners.find((entry) => entry.hookName === "dnd5e.filterItem")?.listener;
     assert.equal(typeof filter, "function");
 
-    const service = new ItemUpgradeService();
+    const service = makeService(ItemUpgradeService);
     await service.installUpgrade(host, upgrade);
 
     assert.equal(filter({}, upgrade, new Set()), false);
@@ -393,7 +529,7 @@ test("actor sheet inventory rows mark upgraded host items with compact slot usag
       }
     });
 
-    const service = new ItemUpgradeService();
+    const service = makeService(ItemUpgradeService);
     await service.setUpgradeCapacity(host, 3);
     await service.installUpgrade(host, upgrade);
     assert.equal(hideInstalledUpgradeInventoryRows(root, actor), true);
@@ -748,7 +884,7 @@ test("clicking an installed upgrade in the host panel opens its item sheet", asy
         renderCalls.push(options);
       }
     };
-    await new ItemUpgradeService().installUpgrade(host, upgrade);
+    await makeService(ItemUpgradeService).installUpgrade(host, upgrade);
     const panelHtml = createItemUpgradePanelHtml(host);
     assert.match(
       panelHtml,

@@ -7,7 +7,7 @@ import {
   isUpgradeableHostItem,
   isUpgradeItem,
   UPGRADE_HOLD_DURATION_MS
-} from "../data/item-upgrade-service.js?v=1.4.96-item-upgrades";
+} from "../data/item-upgrade-service.js?v=1.4.292";
 
 const DRAG_DATA_TYPES = ["text/plain", "text", "application/json"];
 const HOLD_STATES = new WeakMap();
@@ -17,6 +17,22 @@ const INVENTORY_ROW_HAS_UPGRADES_CLASS = "has-rebreya-installed-upgrades";
 const INVENTORY_ROW_INSTALLING_CLASS = "is-rebreya-upgrade-installing";
 const UPGRADE_INSTALL_ANIMATION_MS = 700;
 let filterHookRegistered = false;
+
+/** Ask only for a missing catalog choice, before the service may split or install anything. */
+export async function installItemUpgradeWithChoices(hostItem, upgradeItem, moduleApi) {
+  const projection = await moduleApi.itemUpgradeService?.getUpgradeProjection?.(upgradeItem);
+  if (!projection?.requiresChoice || !projection.availability.available) return moduleApi.installItemUpgrade(hostItem, upgradeItem);
+  const options = projection.choiceOptions ?? [];
+  if (!options.length) throw new Error("Нет поддержанного типа поглощения для этого усовершенствования.");
+  const choice = await foundry.applications.api.DialogV2.wait({
+    window: { title: "Тип поглощения" },
+    content: `<p>${escapeHtml(upgradeItem.name)}</p><label>Тип урона <select name="damageType">${options.map(type => `<option value="${escapeHtml(type)}">${escapeHtml(game.i18n.localize(CONFIG.DND5E.damageTypes[type]?.label ?? type))}</option>`).join("")}</select></label>`,
+    buttons: [{ action: "install", label: "Установить", default: true, callback: (_event, button) => button.form.elements.namedItem("damageType").value },
+      { action: "cancel", label: "Отмена", callback: () => false }], close: () => false, rejectClose: false
+  });
+  if (!choice) return null;
+  return moduleApi.installItemUpgrade(hostItem, upgradeItem, { choices: { damageType: choice } });
+}
 
 function cleanText(value) {
   return String(value ?? "").trim();
@@ -42,6 +58,11 @@ function getSheetItem(app) {
 
 function getItemActor(item) {
   return item?.actor ?? item?.parent ?? null;
+}
+
+function isItemUpgradePanelHost(item) {
+  return isUpgradeableHostItem(item)
+    || Boolean(getItemId(item) && getItemActor(item) && !isUpgradeItem(item) && getItemUpgradeHostState(item).installed.length);
 }
 
 function collectionValues(collection) {
@@ -241,6 +262,7 @@ function getPanelContainer(root) {
 
 function createPanelHtml(hostItem) {
   const state = getItemUpgradeHostState(hostItem);
+  const canUpgrade = isUpgradeableHostItem(hostItem);
   const installedBySlot = new Map();
   for (const upgrade of getInstalledUpgradeItems(hostItem)) {
     const entry = state.installed.find((candidate) => candidate.itemId === getItemId(upgrade));
@@ -249,7 +271,7 @@ function createPanelHtml(hostItem) {
     }
   }
 
-  const capacityButtons = [1, 2, 3].map((capacity) => `
+  const capacityButtons = canUpgrade ? [1, 2, 3].map((capacity) => `
     <button type="button"
       class="rm-item-upgrades__capacity-button${capacity === state.capacity ? " is-active" : ""}"
       data-action="rebreya-item-upgrade-capacity"
@@ -258,7 +280,7 @@ function createPanelHtml(hostItem) {
       aria-label="Слотов усовершенствований: ${capacity}">
       ${capacity}
     </button>
-  `).join("");
+  `).join("") : "";
 
   const slots = Array.from({ length: state.capacity }, (_entry, index) => {
     const slotIndex = index + 1;
@@ -317,7 +339,7 @@ function createPanelHtml(hostItem) {
 }
 
 export function createItemUpgradePanelHtml(hostItem) {
-  return isUpgradeableHostItem(hostItem) ? createPanelHtml(hostItem) : "";
+  return isItemUpgradePanelHost(hostItem) ? createPanelHtml(hostItem) : "";
 }
 
 export function isItemUpgradeHostItem(item) {
@@ -454,7 +476,7 @@ function playInventoryInstallAnimation(row, callback) {
 }
 
 export function renderItemUpgradePanel(root, hostItem) {
-  if (!(root instanceof HTMLElement) || !isUpgradeableHostItem(hostItem)) {
+  if (!(root instanceof HTMLElement) || !isItemUpgradePanelHost(hostItem)) {
     return null;
   }
 
@@ -579,7 +601,8 @@ export function bindItemUpgradeInventoryRows(root, { actor, app, moduleApi, rere
 
       try {
         const upgradeItem = await resolveDropItem(dropData, actor);
-        const installed = await moduleApi.installItemUpgrade(hostItem, upgradeItem);
+        const installed = await installItemUpgradeWithChoices(hostItem, upgradeItem, moduleApi);
+        if (!installed) return;
         ui.notifications?.info?.(`Установлено: ${installed?.name ?? upgradeItem?.name ?? "усовершенствование"}.`);
         row.classList?.add?.(INVENTORY_ROW_HAS_UPGRADES_CLASS);
         playInventoryInstallAnimation(row, () => rerenderActorSheetAfterUpgrade(app, moduleApi, rerenderActorSheet));
@@ -596,8 +619,11 @@ export function bindItemUpgradeInventoryRows(root, { actor, app, moduleApi, rere
 
 export function bindItemUpgradeSheet(root, app, moduleApi) {
   const hostItem = getSheetItem(app);
+  if (root instanceof HTMLElement && hostItem && moduleApi?.itemUpgradeService?.getUpgradeProjection) {
+    void renderItemUpgradeAvailability(root, hostItem, moduleApi.itemUpgradeService);
+  }
   const actor = getItemActor(hostItem);
-  if (!(root instanceof HTMLElement) || !actor || !isUpgradeableHostItem(hostItem)) {
+  if (!(root instanceof HTMLElement) || !actor || !isItemUpgradePanelHost(hostItem)) {
     return false;
   }
 
@@ -607,7 +633,7 @@ export function bindItemUpgradeSheet(root, app, moduleApi) {
     return false;
   }
 
-  panel.addEventListener("dragover", (event) => {
+  if (isUpgradeableHostItem(hostItem)) panel.addEventListener("dragover", (event) => {
     const dropData = getItemUpgradeDropData(event);
     if (!isPotentialUpgradeDrop(dropData, event)) {
       return;
@@ -621,14 +647,14 @@ export function bindItemUpgradeSheet(root, app, moduleApi) {
     startItemUpgradeHold(panel, getDragKey(dropData));
   }, { capture: true });
 
-  panel.addEventListener("dragleave", (event) => {
+  if (isUpgradeableHostItem(hostItem)) panel.addEventListener("dragleave", (event) => {
     if (event.relatedTarget && panel.contains(event.relatedTarget)) {
       return;
     }
     cancelHold(panel);
   }, { capture: true });
 
-  panel.addEventListener("drop", async (event) => {
+  if (isUpgradeableHostItem(hostItem)) panel.addEventListener("drop", async (event) => {
     const state = HOLD_STATES.get(panel);
     const dropData = getItemUpgradeDropData(event);
     if (!state || !state.ready) {
@@ -643,7 +669,8 @@ export function bindItemUpgradeSheet(root, app, moduleApi) {
     event.stopPropagation?.();
     try {
       const upgradeItem = await resolveDropItem(dropData);
-      const installed = await moduleApi.installItemUpgrade(hostItem, upgradeItem);
+      const installed = await installItemUpgradeWithChoices(hostItem, upgradeItem, moduleApi);
+      if (!installed) return;
       ui.notifications?.info?.(`Установлено: ${installed?.name ?? upgradeItem?.name ?? "усовершенствование"}.`);
       await rerenderItemSheet(app, moduleApi);
     }
@@ -656,7 +683,7 @@ export function bindItemUpgradeSheet(root, app, moduleApi) {
     }
   }, { capture: true });
 
-  panel.addEventListener("dragend", () => {
+  if (isUpgradeableHostItem(hostItem)) panel.addEventListener("dragend", () => {
     cancelHold(panel);
   }, { capture: true });
 
@@ -688,4 +715,41 @@ export function bindItemUpgradeSheet(root, app, moduleApi) {
   }, { capture: true });
 
   return true;
+}
+
+const AVAILABILITY_RENDERS = new WeakMap();
+
+export function createUpgradeAvailabilityHtml(item, projection) {
+  const availability = projection.availability;
+  return `<div class="rm-item-upgrades__availability" data-upgrade-availability="${escapeHtml(availability.decision)}">
+    <strong>${escapeHtml(item.name ?? "Усовершенствование")}</strong>
+    <span>${escapeHtml(availability.label)}</span>
+    <small>${escapeHtml(availability.reason)}</small>
+    ${projection.requiresChoice ? "<small>Требуется выбор типа поглощения.</small>" : projection.choices?.damageType ? `<small>Поглощение: ${escapeHtml(globalThis.game?.i18n?.localize?.(globalThis.CONFIG?.DND5E?.damageTypes?.[projection.choices.damageType]?.label ?? projection.choices.damageType) ?? projection.choices.damageType)}</small>` : ""}
+    ${projection.legacyOverride ? "<small>Сохранённый пользовательский профиль оставлен без изменений.</small>" : ""}
+  </div>`;
+}
+
+/** Read-only status for a source Item and all historical installed children. */
+export async function renderItemUpgradeAvailability(root, item, service) {
+  const token = {};
+  AVAILABILITY_RENDERS.set(root, token);
+  const items = isUpgradeItem(item) ? [item] : getInstalledUpgradeItems(item);
+  root.querySelector?.("[data-rebreya-upgrade-availability]")?.remove?.();
+  if (!items.length) return;
+  let html;
+  try {
+    const projections = await Promise.all(items.map(upgrade => service.getUpgradeProjection(upgrade)));
+    html = items.map((upgrade, i) => createUpgradeAvailabilityHtml(upgrade, projections[i])).join("");
+  } catch (error) {
+    html = `<p>Не удалось проверить доступность усовершенствований: ${escapeHtml(error.message)}</p>`;
+  }
+  if (AVAILABILITY_RENDERS.get(root) !== token || root.isConnected === false) return;
+  const container = root.querySelector?.("[data-rebreya-item-upgrades='true']") ?? getPanelContainer(root)
+    ?? (isUpgradeItem(item) ? root.querySelector?.("[data-tab='details'], [data-tab='description'], .window-content") : null);
+  if (!container?.append) return;
+  const status = document.createElement("section");
+  status.dataset.rebreyaUpgradeAvailability = "true";
+  status.innerHTML = html;
+  container.append(status);
 }

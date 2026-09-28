@@ -367,6 +367,57 @@ test("lootgen chat self button creates the row item on the user's character and 
   }
 });
 
+test("prepared loot self button sends only trusted row and actor references without local Item creation",async()=>{
+  const restoreFoundry=installLootgenChatFoundryStubs(),previousHooks=globalThis.Hooks,previousGame=globalThis.game;
+  const listeners=[],calls=[];
+  const character={id:"hero",uuid:"Actor.hero",isOwner:true,createEmbeddedDocuments:()=>{throw new Error("client must not create prepared loot");}};
+  const state={resultVersion:2,lootId:"prepared",rows:[{rowId:"row",itemData:{name:"Sword",type:"weapon",system:{quantity:1}}}]};
+  globalThis.Hooks={on:(hookName,listener)=>listeners.push({hookName,listener})};
+  globalThis.game={user:{id:"player",character},rebreyaMain:{claimLootgenChatRowToCharacter:async(...args)=>{calls.push(args);return {changed:true};}}};
+  try {
+    const {registerLootgenChatHooks}=await import(`../scripts/ui/lootgen-chat.js?prepared-self=${Date.now()}`);registerLootgenChatHooks({});
+    const {card,selfButton}=createBoundLootgenChatCard({state});
+    listeners.find(entry=>entry.hookName==="renderChatMessage").listener({getFlag:()=>state},card);
+    await selfButton.listeners.click[0]({currentTarget:selfButton,preventDefault(){},stopPropagation(){}});
+    assert.deepEqual(calls,[["prepared","row","Actor.hero"]]);
+  }finally{globalThis.Hooks=previousHooks;globalThis.game=previousGame;restoreFoundry();}
+});
+
+test("prepared chat drag carries references and its sheet hook blocks native Item creation",async()=>{
+  const restoreFoundry=installLootgenChatFoundryStubs(),previousHooks=globalThis.Hooks,previousGame=globalThis.game;
+  const listeners=[],calls=[];let payload;
+  const state={resultVersion:2,published:true,generationReady:true,lootId:"prepared",rows:[{rowId:"row",itemData:{name:"Sword",type:"weapon",system:{quantity:1}}}]};
+  globalThis.Hooks={on:(hookName,listener)=>listeners.push({hookName,listener})};
+  globalThis.game={user:{id:"player"}};
+  try {
+    const {registerLootgenChatHooks}=await import(`../scripts/ui/lootgen-chat.js?prepared-drag=${Date.now()}`);
+    registerLootgenChatHooks({claimLootgenChatRowToCharacter:async(...args)=>{calls.push(args);}});
+    const {card,row}=createBoundLootgenChatCard({state});
+    listeners.find(entry=>entry.hookName==="renderChatMessage").listener({getFlag:()=>state},card);
+    row.listeners.dragstart[0]({currentTarget:row,dataTransfer:{setData:(_type,value)=>{payload=JSON.parse(value);}},preventDefault(){}});
+    assert.deepEqual(payload,{type:"RebreyaLootgen",version:2,lootId:"prepared",rowId:"row"});
+    const hook=listeners.find(entry=>entry.hookName==="dropActorSheetData").listener;
+    assert.equal(hook({type:"character",uuid:"Actor.hero"},null,payload),false);
+    await new Promise(resolve=>setImmediate(resolve));
+    assert.deepEqual(calls,[["prepared","row","Actor.hero"]]);
+    assert.equal(hook({},null,{type:"Item",uuid:"Item.ordinary"}),true);
+    assert.equal(hook({type:"character",uuid:"Actor.hero"},null,{...payload,data:{name:"forged"}}),false);
+    await new Promise(resolve=>setImmediate(resolve));assert.equal(calls.length,1);
+    state.rows[0].claimed=true;let prevented=false;payload=null;
+    row.listeners.dragstart[0]({currentTarget:row,dataTransfer:{setData:()=>{throw new Error("claimed row cannot be dragged");}},preventDefault(){prevented=true;}});
+    assert.equal(prevented,true);
+  }finally{globalThis.Hooks=previousHooks;globalThis.game=previousGame;restoreFoundry();}
+});
+
+test("published prepared chat shows escaped upgrade names and automation status",async()=>{
+  const restore=installLootgenChatFoundryStubs();
+  try {
+    const {buildLootgenChatContent}=await import("../scripts/ui/lootgen-chat.js");
+    const content=buildLootgenChatContent({resultVersion:2,published:true,generationReady:true,rows:[{name:"Sword",upgrades:[{name:"<script>sharp</script>",decision:"simple-implemented"}]}]});
+    assert.match(content,/&lt;script&gt;sharp&lt;\/script&gt;/u);assert.match(content,/Автоматизировано/u);assert.doesNotMatch(content,/<script>/u);
+  }finally{restore();}
+});
+
 test("lootgen chat renders and binds a take all button for the party inventory", async () => {
   const restoreFoundry = installLootgenChatFoundryStubs();
   const previousHooks = globalThis.Hooks;
@@ -704,13 +755,13 @@ test("only the active GM handles economic lootgen socket claims", async () => {
   const source = await readFile(new URL("../scripts/main.js", import.meta.url), "utf8");
   for (const eventName of [
     "SOCKET_EVENT_LOOTGEN_CLAIM_ROW",
-    "SOCKET_EVENT_LOOTGEN_CLAIM_ROW_TO_INVENTORY",
-    "SOCKET_EVENT_LOOTGEN_CLAIM_ALL_TO_INVENTORY",
     "SOCKET_EVENT_LOOTGEN_CLAIM_COINS"
   ]) {
     assert.match(source, new RegExp(`message\\.type === ${eventName} && isActiveGmClient\\(game\\)`, "u"));
     assert.doesNotMatch(source, new RegExp(`message\\.type === ${eventName} && game\\.user\\?\\.isGM`, "u"));
   }
+  assert.doesNotMatch(source, /SOCKET_EVENT_LOOTGEN_CLAIM_(ROW_TO_INVENTORY|ALL_TO_INVENTORY)/u);
+  assert.match(source, /INVENTORY_INGRESS_LOOTGEN_COMMAND = "inventory\.ingress\.lootgen"/u);
 });
 
 test("lootgen trusts only GM-authored chat state and journals direct grants", async () => {
@@ -723,9 +774,58 @@ test("lootgen trusts only GM-authored chat state and journals direct grants", as
   assert.match(mainSource, /const createdBy = String\(state\?\.createdBy/u);
   assert.match(mainSource, /messageUserId === createdBy/u);
   assert.match(mainSource, /author\?\.isGM === true/u);
-  assert.match(mainSource, /addLootgenRowToInventoryOnce\(row, mutationId\)/u);
-  assert.match(mainSource, /addCurrencyToInventoryOnce\(coins, stableMutationId\)/u);
+  assert.match(mainSource, /commitInventoryIngressBatch\(\{/u);
+  assert.match(mainSource, /sourceOrigin: "lootgen"/u);
+  assert.doesNotMatch(mainSource, /addLootgenChatRowToInventoryOnce\(/u);
+  assert.match(mainSource, /INVENTORY_INGRESS_DIRECT_COMMAND = "inventory\.ingress\.direct"/u);
+  assert.match(mainSource, /return this\.addLootgenRowsToInventory\(\[\], \{/u);
+  assert.match(appSource, /addLootgenRowsToInventory\(this\.generated\.rows/u);
   assert.match(generatorSource, /directGrantId: `lootgen:\$\{safeBatchId\}:row:\$\{index\}`/u);
   assert.match(generatorSource, /directCoinGrantId: `lootgen:\$\{safeBatchId\}:coins`/u);
   assert.doesNotMatch(appSource, /updatePartyCurrency\(\{/u);
+});
+
+test("unpublished prepared loot is an escaped GM preview with only a reopen action",async()=>{
+  const restore=installLootgenChatFoundryStubs();
+  try {
+    const {buildLootgenChatContent}=await import("../scripts/ui/lootgen-chat.js?prepared-preview");
+    const content=buildLootgenChatContent({resultVersion:2,generationReady:true,published:false,lootId:"draft",rows:[{name:"<Sword>",quantity:1,totalValue:120,upgrades:[{name:"<Sharp>"}]}]});
+    assert.match(content,/&lt;Sword&gt;/u);assert.match(content,/&lt;Sharp&gt;/u);
+    assert.doesNotMatch(content,/data-lootgen-chat-action="claim-|draggable="true"/u);
+    assert.match(content,/data-lootgen-chat-action="open-prepared"/u);
+  }finally{restore();}
+});
+
+test("composed preview shows saved choices and total value without creating an Item or rerolling",async()=>{
+  const restore=installLootgenChatFoundryStubs();
+  let shown;
+  try{
+    foundry.applications={api:{DialogV2:{wait:async options=>{shown=options;return true;}}}};
+    const {openLootgenRowPreview}=await import("../scripts/ui/lootgen-chat.js?composition-preview");
+    await openLootgenRowPreview({getFlag:()=>({resultVersion:2,generationReady:true,lootId:"loot",rows:[{rowId:"row",name:"Sword",quantity:1,totalValue:120,upgrades:[{name:"<Sharp>",decision:"simple-implemented",choices:{damageType:"radiant"}}]}]})},"row");
+    assert.match(shown.content,/120/u);assert.match(shown.content,/&lt;Sharp&gt;/u);assert.match(shown.content,/Тип урона: radiant/u);
+    assert.doesNotMatch(shown.content,/data-lootgen-chat-action/u);assert.equal(shown.window.title,"Состав предмета");
+  }finally{restore();}
+});
+
+test("filled container chat has one claimable root and a read-only saved tree preview",async()=>{
+  const restore=installLootgenChatFoundryStubs();let shown;
+  try{
+    foundry.applications={api:{DialogV2:{wait:async options=>{shown=options;return true;}}}};
+    const {makePreparedContainerGraph}=await import("./helpers/lootgen-prepared-container-fixture.mjs");
+    const {buildLootgenPreparedItem}=await import("../scripts/data/lootgen-prepared-item.js");
+    const {descriptor,graph}=await makePreparedContainerGraph();
+    const row={rowId:"root-row",name:"Chest",quantity:1,totalValue:7000,descriptor,itemData:buildLootgenPreparedItem(descriptor,{graph,unitValue:7000})};
+    const state={resultVersion:2,published:true,generationReady:true,lootId:"loot",rows:[row],coins:{totalCopper:0}};
+    const {openLootgenRowPreview,buildLootgenChatContent}=await import("../scripts/ui/lootgen-chat.js?container-preview");
+    const html=buildLootgenChatContent(state);
+    assert.match(html,/Внутри: 1 предмет/u);
+    assert.equal((html.match(/data-lootgen-chat-action="claim-row-self"/gu)??[]).length,1);
+    assert.doesNotMatch(html,/data-lootgen-chat-row-id="child"/u);
+    await openLootgenRowPreview({getFlag:()=>state},"root-row");
+    assert.equal(shown.window.title,"Содержимое контейнера");assert.deepEqual(shown.classes,["rebreya-lootgen-preview"]);
+    assert.match(shown.content,/child/u);assert.match(shown.content,/zacharovanie-ostroty/u);
+    assert.doesNotMatch(shown.content,/data-lootgen-chat-action|draggable|<button/u);
+    assert.deepEqual(shown.buttons.map(button=>button.action),["base","close"]);
+  }finally{restore();}
 });

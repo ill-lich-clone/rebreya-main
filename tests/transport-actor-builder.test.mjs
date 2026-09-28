@@ -19,7 +19,10 @@ test("transport catalog contains 62 stable unique entries", () => {
   assert.equal(new Set(catalog.map((row) => row.sourceId)).size, 62);
   assert.equal(new Set(catalog.map((row) => row.documentId)).size, 62);
   assert.ok(catalog.every((row) => /^lchtransport\d{4}$/u.test(row.documentId)));
-  assert.deepEqual(catalog.map((row) => row.sourceRow), Array.from({ length: 62 }, (_, index) => index + 3));
+  assert.deepEqual(
+    catalog.map((row) => row.sourceRow).toSorted((left, right) => left - right),
+    Array.from({ length: 62 }, (_, index) => index + 3)
+  );
 });
 
 test("transport normalizer keeps source text and does not invent dashed stats", () => {
@@ -80,7 +83,12 @@ test("two-mode combat speed retains both values", () => {
 });
 
 test("vehicle builder writes native and Rebreya fields", () => {
-  const source = catalog.find((row) => row.name === "Гражданский автомобиль");
+  const source = {
+    ...catalog.find((row) => row.name === "Гражданский автомобиль"),
+    consumption: "Бензин, 1/16 галлона/милю",
+    fuelTank: "16 галлонов",
+    range: "256 миль"
+  };
   const actor = buildTransportActorData(source);
 
   assert.equal(actor._id, source.documentId);
@@ -100,12 +108,29 @@ test("vehicle builder writes native and Rebreya fields", () => {
   assert.equal(actor.system.crew.max, 1);
   assert.equal(actor.system.passengers.max, 4);
   assert.equal(actor.flags["rebreya-main"].transport.sourceId, source.sourceId);
-  assert.equal(actor.flags["rebreya-main"].transport.version, 3);
-  assert.match(actor.flags["rebreya-main"].signature, /^transport-v3:/u);
+  assert.equal(actor.flags["rebreya-main"].transport.version, 4);
+  assert.match(actor.flags["rebreya-main"].signature, /^transport-v4:/u);
   assert.equal(actor.flags["rebreya-main"].transport.instance, false);
   assert.equal(actor.flags["rebreya-main"].transport.defaultGroupRole, "transport");
   assert.equal(actor.flags["rebreya-main"].transport.sourceType, "Механический транспорт");
-  assert.equal(actor.flags["rebreya-main"].transport.consumption.raw, "Жидкий уголь 1/16 галлона");
+  assert.deepEqual(actor.flags["rebreya-main"].transport.consumption, {
+    kind: "fuel", resource: "Бензин", amount: 0.0625, unit: "gal", cadence: "mile",
+    raw: "Бензин, 1/16 галлона/милю"
+  });
+  assert.deepEqual(actor.flags["rebreya-main"].transport.fuelTank, {
+    value: 16, unit: "gal", raw: "16 галлонов"
+  });
+  assert.deepEqual(actor.flags["rebreya-main"].transport.range, {
+    value: 256, unit: "mi", raw: "256 миль"
+  });
   assert.equal(actor.flags["rebreya-main"].transport.raw.cargoCapacity, source.cargoCapacity);
   assert.equal(actor.prototypeToken.actorLink, true);
+});
+
+test("transport actor builder prefers a module-owned icon matched by vehicle name", () => {
+  const source = catalog.find((row) => row.name === "Линкор");
+  const iconPath = "modules/rebreya-main/templates/icons/Transport/%D0%9B%D0%B8%D0%BD%D0%BA%D0%BE%D1%80.webp";
+  const actor = buildTransportActorData(source, new Map([["линкор", iconPath]]));
+
+  assert.equal(actor.img, iconPath);
 });

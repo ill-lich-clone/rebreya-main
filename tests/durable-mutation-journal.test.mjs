@@ -148,3 +148,107 @@ test("DurableMutationJournal checkpoints merge patches without allowing identity
     terminal: false
   });
 });
+
+test("DurableMutationJournal records a terminal outcome with one write", async () => {
+  const store = createStore();
+  const journal = store.journal();
+
+  const record = await journal.recordTerminal({
+    id: "inventory-simple:take-1",
+    kind: "inventory-simple-v1",
+    phase: "committed",
+    fingerprint: "take\u0000group-a\u0000item-a\u0000actor-a\u00001"
+  }, {
+    ok: true,
+    value: { itemId: "created-a", quantity: 1 }
+  });
+
+  assert.equal(store.writes, 1);
+  assert.deepEqual(record, {
+    id: "inventory-simple:take-1",
+    kind: "inventory-simple-v1",
+    phase: "committed",
+    fingerprint: "take\u0000group-a\u0000item-a\u0000actor-a\u00001",
+    terminal: true,
+    result: {
+      ok: true,
+      value: { itemId: "created-a", quantity: 1 }
+    }
+  });
+});
+
+test("DurableMutationJournal replays the same terminal fingerprint without another write", async () => {
+  const store = createStore();
+  const journal = store.journal();
+  const input = {
+    id: "inventory-simple:take-2",
+    kind: "inventory-simple-v1",
+    phase: "committed",
+    fingerprint: "take-2-fingerprint"
+  };
+
+  const first = await journal.recordTerminal(input, { ok: true, value: { itemId: "created-a" } });
+  const replay = await journal.recordTerminal(input, { ok: true, value: { itemId: "different" } });
+
+  assert.equal(store.writes, 1);
+  assert.deepEqual(replay, first);
+});
+
+test("DurableMutationJournal rejects terminal fingerprint and nonterminal conflicts without writing", async () => {
+  const terminalStore = createStore();
+  const terminalJournal = terminalStore.journal();
+  await terminalJournal.recordTerminal({
+    id: "inventory-simple:take-3",
+    phase: "committed",
+    fingerprint: "fingerprint-a"
+  }, { ok: true });
+
+  await assert.rejects(
+    terminalJournal.recordTerminal({
+      id: "inventory-simple:take-3",
+      phase: "committed",
+      fingerprint: "fingerprint-b"
+    }, { ok: true }),
+    (error) => error?.code === "record-conflict"
+      && error?.mutationId === "inventory-simple:take-3"
+  );
+  assert.equal(terminalStore.writes, 1);
+
+  const nonterminalStore = createStore();
+  const nonterminalJournal = nonterminalStore.journal();
+  await nonterminalJournal.start({
+    id: "inventory-simple:legacy-take",
+    phase: "prepared",
+    fingerprint: "legacy-fingerprint"
+  });
+  await assert.rejects(
+    nonterminalJournal.recordTerminal({
+      id: "inventory-simple:legacy-take",
+      phase: "committed",
+      fingerprint: "legacy-fingerprint"
+    }, { ok: true }),
+    (error) => error?.code === "record-conflict"
+      && error?.currentPhase === "prepared"
+  );
+  assert.equal(nonterminalStore.writes, 1);
+});
+
+test("DurableMutationJournal confirms recordTerminal after a write-then-throw", async () => {
+  const store = createStore({
+    write(nextState, { persist }) {
+      persist(nextState);
+      throw new Error("terminal acknowledgment lost");
+    }
+  });
+  const journal = store.journal();
+
+  const record = await journal.recordTerminal({
+    id: "inventory-simple:take-4",
+    phase: "committed",
+    fingerprint: "take-4-fingerprint"
+  }, { ok: false, code: "transfer-failed-compensated" });
+
+  assert.equal(store.writes, 1);
+  assert.equal(record.terminal, true);
+  assert.equal(record.result.code, "transfer-failed-compensated");
+});

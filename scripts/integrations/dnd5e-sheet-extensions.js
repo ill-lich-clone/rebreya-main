@@ -11,10 +11,18 @@ import {
   TEYVANKAL_STATE_LANGUAGE_GROUP_ID,
   TEYVANKAL_STATE_LANGUAGES
 } from "../constants.js";
-import { registerCraftsmanGadgetItemType } from "./craftsman-gadget-item-type.js";
+import { registerCraftsmanGadgetItemType } from "./craftsman-gadget-item-type.js?v=1.4.327";
 import { bringAppToFront } from "../ui.js";
+import { bindAnchoredTooltips } from "../ui/anchored-overlay.js?v=1.4.247-anchored-overlays";
 import { createStableGearDocumentId } from "../data/gear-document-ids.js";
 import { buildRebreyaArtisanToolConfig } from "../data/rebreya-tool-proficiencies.js";
+import { isJournalRecordItem } from "../data/journal-record-item.js?v=1.4.217-journal-record-items";
+import { REBREYA_AMMUNITION_SUBTYPES } from "../data/ammunition-types.js";
+import { openStorageJournalViewer } from "../ui/storage-journal-viewer.js?v=1.4.221-journal-readonly-dialog";
+import {
+  WEAPON_PROPERTY_GLOSSARY,
+  getWeaponPropertyGlossaryEntry
+} from "../data/weapon-property-glossary.js";
 import {
   getRebreyaWeaponBaseItemDefinitions,
   getHeroDollSlotGroups,
@@ -22,11 +30,11 @@ import {
   mapSlotGroupToHeroDollSlots,
   normalizeHeroDollSlotGroup,
   normalizeHeroDollSlots
-} from "../data/item-classification.js";
+} from "../data/item-classification.js?v=1.4.338-hero-doll-menu";
 import {
   bindUniversalBeltSheet,
   registerUniversalBeltItemContextHook
-} from "./universal-belt.js";
+} from "./universal-belt.js?v=1.4.335-reagent-tracker";
 import {
   bindItemUpgradeInventoryRows,
   bindItemUpgradeSheet,
@@ -34,7 +42,7 @@ import {
   hideInstalledUpgradeInventoryRows,
   isItemUpgradeHostItem,
   registerItemUpgradeFilterHook
-} from "./item-upgrade-sheet.js?v=1.4.96-item-upgrade-readable";
+} from "./item-upgrade-sheet.js?v=1.4.292";
 import {
   buildHeldItemEquipMenuActions,
   buildHeldItemReleaseHandUpdate,
@@ -43,7 +51,7 @@ import {
   getHeldItemEquipPresentation,
   isHeldItemEligible
 } from "./held-items.js?v=1.4.96-npc-held-natural";
-import { getDnd5eSheetStatusPresentation } from "./dnd5e-sheet-status-references.js";
+import { getDnd5eSheetStatusPresentation } from "./dnd5e-sheet-status-references.js?v=1.4.317";
 import { registerCraftsmanSubclassAdvancements } from "./craftsman-subclass-advancements.js";
 import { registerCraftsmanMultiSubclassIntegration } from "./craftsman-multi-subclass.js";
 import { registerGiantTribeAdvancement } from "./giant-tribe-advancement.js?v=1.4.110-giant-tribe-cache-fixes-2";
@@ -70,6 +78,7 @@ const ITEM_MODS_TAB_LABEL = "Моды";
 const ITEM_MODS_TEMPLATE = `modules/${MODULE_ID}/templates/item-mods-tab.hbs`;
 const CHARACTER_SHEET_HEADER_IMAGE = `url("/modules/${MODULE_ID}/assets/ui/rebreya-character-header.webp")`;
 const HERO_DOLL_PATCH_FLAG = "__rebreyaHeroDollPatched";
+const HERO_DOLL_SIDEBAR_PATCH_FLAG = "__rebreyaHeroDollSidebarPatched";
 const ITEM_MODS_PATCH_FLAG = "__rebreyaItemModsPatched";
 const HERO_DOLL_MOVE_DROP_PATCH_FLAG = "__rebreyaHeroDollMoveDropPatched";
 const HERO_DOLL_PAYLOAD_PATCH_FLAG = "__rebreyaHeroDollPayloadPatched";
@@ -745,6 +754,7 @@ function normalizeLichWeaponValue(field, value) {
 let activeHeroDollDragData = null;
 const heroDollPanelAbortControllers = new WeakMap();
 const heroDollRootAbortControllers = new WeakMap();
+const heroDollSidebarBeforeTab = new WeakMap();
 const handledCharacterDowntimeClickEvents = new WeakSet();
 const recentCharacterDowntimeSubmitButtons = new WeakMap();
 const recentCharacterDowntimeRollButtons = new WeakMap();
@@ -2523,6 +2533,46 @@ function patchHeroDollPartContext(CharacterActorSheet, moduleApi) {
   });
 }
 
+function patchHeroDollSidebarChangeTab(CharacterActorSheet) {
+  const prototype = CharacterActorSheet?.prototype;
+  if (!prototype || prototype[HERO_DOLL_SIDEBAR_PATCH_FLAG]
+    || typeof prototype.changeTab !== "function"
+    || typeof prototype._toggleSidebar !== "function") return;
+
+  const originalChangeTab = prototype.changeTab;
+  prototype.changeTab = function (tab, group, options) {
+    const enteringHeroDoll = group === "primary"
+      && tab === HERO_DOLL_TAB_ID
+      && this.tabGroups?.primary !== HERO_DOLL_TAB_ID;
+    const previousCollapsed = enteringHeroDoll && this.element?.classList
+      ? this.element.classList.contains("sidebar-collapsed")
+      : undefined;
+    const result = originalChangeTab.call(this, tab, group, options);
+    if (enteringHeroDoll && previousCollapsed !== undefined) {
+      heroDollSidebarBeforeTab.set(this, previousCollapsed);
+      this._toggleSidebar(previousCollapsed);
+    }
+    if (group === "primary" && tab !== HERO_DOLL_TAB_ID) {
+      heroDollSidebarBeforeTab.delete(this);
+    }
+    return result;
+  };
+  Object.defineProperty(prototype, HERO_DOLL_SIDEBAR_PATCH_FLAG, {
+    configurable: false,
+    enumerable: false,
+    writable: false,
+    value: true
+  });
+}
+
+export function syncHeroDollSidebarOnRender(app) {
+  if (app?.tabGroups?.primary !== HERO_DOLL_TAB_ID
+    || !app.element?.classList
+    || typeof app._toggleSidebar !== "function") return;
+  // The folded portrait is visual-only; never persist the hero tab's temporary state.
+  app._toggleSidebar(heroDollSidebarBeforeTab.get(app) ?? false);
+}
+
 function patchActorMoveDropBehavior() {
   const BaseActorSheet = game.dnd5e?.applications?.actor?.BaseActorSheet ?? null;
   if (!BaseActorSheet?.prototype || BaseActorSheet.prototype[HERO_DOLL_MOVE_DROP_PATCH_FLAG]) {
@@ -3378,6 +3428,25 @@ function clearHeroDollDragHighlight(panel) {
   });
 }
 
+export function buildHeroDollSlotMenuItems(snapshot, slotId) {
+  const normalizedSlotId = String(slotId ?? "").trim();
+  if (!normalizedSlotId || !Array.isArray(snapshot?.inventoryItems)) {
+    return [];
+  }
+
+  return snapshot.inventoryItems
+    .filter((item) => (
+      String(item?.itemUuid ?? "").trim()
+      && normalizeHeroDollSlots(item?.allowedSlots, []).includes(normalizedSlotId)
+    ))
+    .map((item) => ({
+      id: String(item.id ?? "").trim(),
+      itemUuid: String(item.itemUuid).trim(),
+      label: String(item.name ?? "").trim(),
+      image: String(item.img ?? "").trim()
+    }));
+}
+
 function getHeroDollPanelFromEvent(root, event) {
   const candidate = event?.target?.closest?.(`.rm-hero-doll-tab[data-tab='${HERO_DOLL_TAB_ID}']`);
   if (!(candidate instanceof HTMLElement) || !root.contains(candidate)) {
@@ -3394,6 +3463,40 @@ function bindHeroDollSlotListeners(panel, app, moduleApi, listenerOptions = unde
   }
 
   panel.querySelectorAll("[data-hero-doll-slot='true']").forEach((slot) => {
+    slot.addEventListener("contextmenu", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+
+      const snapshot = moduleApi.heroDollService.getActorSnapshot(actor);
+      const slotId = String(slot.dataset.slotId ?? "").trim();
+      const slotSnapshot = snapshot.slots?.find?.((entry) => entry.id === slotId) ?? null;
+      const menuItems = buildHeroDollSlotMenuItems(snapshot, slotId);
+      const actions = menuItems.length
+        ? menuItems.map((item) => ({
+          id: `hero-doll-slot-${item.id}`,
+          label: item.label,
+          image: item.image,
+          errorMessage: "Не удалось поместить предмет в слот куклы героя.",
+          callback: async () => {
+            await moduleApi.heroDollService.assignItemToSlot(actor, slotId, { uuid: item.itemUuid });
+            await rerenderActorSheet(app, moduleApi);
+          }
+        }))
+        : [{
+          id: "hero-doll-slot-empty",
+          label: "Нет подходящих предметов",
+          icon: "fa-solid fa-ban",
+          disabled: true
+        }];
+
+      openHeldItemContextMenu({
+        x: Number(event.clientX ?? 0),
+        y: Number(event.clientY ?? 0),
+        title: slotSnapshot?.label ?? "Выбрать предмет",
+        actions
+      });
+    }, listenerOptions);
+
     slot.addEventListener("dragover", (event) => {
       event.preventDefault();
       event.stopPropagation();
@@ -3478,6 +3581,16 @@ function bindHeroDollClickDelegation(panel, app, moduleApi, listenerOptions = un
         catch (error) {
           console.error(`${MODULE_ID} | Failed to open hero doll item.`, error);
           ui.notifications?.error(error.message || "Не удалось открыть предмет из вкладки куклы героя.");
+        }
+        break;
+      }
+
+      case "normalize-slot-stack": {
+        try {
+          await moduleApi.heroDollService.normalizeLegacyStack(actor, actionTarget.dataset.slotId);
+          await rerenderActorSheet(app, moduleApi);
+        } catch (error) {
+          ui.notifications?.error(error.message || "Не удалось разделить экипированную стопку.");
         }
         break;
       }
@@ -3645,6 +3758,16 @@ function bindHeroDollDelegatedListeners(root, app, moduleApi, listenerOptions = 
         break;
       }
 
+      case "normalize-slot-stack": {
+        try {
+          await moduleApi.heroDollService.normalizeLegacyStack(actor, actionTarget.dataset.slotId);
+          await rerenderActorSheet(app, moduleApi);
+        } catch (error) {
+          ui.notifications?.error(error.message || "Не удалось разделить экипированную стопку.");
+        }
+        break;
+      }
+
       case "clear-slot": {
         try {
           await moduleApi.heroDollService.clearSlot(actor, actionTarget.dataset.slotId);
@@ -3691,6 +3814,16 @@ function bindHeroDollDelegatedListeners(root, app, moduleApi, listenerOptions = 
   }, listenerOptions);
 }
 
+export function bindHeroDollTooltips(root, panel, listenerOptions = {}) {
+  const slots = panel.querySelectorAll("[data-hero-doll-slot='true']");
+  // Foundry may sanitize an HTML-like name out of the template's ARIA attribute.
+  for (const slot of slots) slot.setAttribute("aria-label", slot.dataset.rmTooltip ?? "");
+  return bindAnchoredTooltips(root, slots, {
+    signal: listenerOptions.signal,
+    getText: target => [target.dataset.rmTooltip, target.dataset.tooltipMeta].filter(Boolean).join("\n")
+  });
+}
+
 function bindHeroDollPanel(root, app, moduleApi) {
   const panel = root.querySelector(`[data-application-part='${HERO_DOLL_TAB_ID}'] .rm-hero-doll-tab`)
     ?? root.querySelector(`.rm-hero-doll-tab[data-tab='${HERO_DOLL_TAB_ID}']`);
@@ -3723,6 +3856,7 @@ function bindHeroDollPanel(root, app, moduleApi) {
   heroDollRootAbortControllers.set(root, rootAbortController);
   const rootListenerOptions = { signal: rootAbortController.signal };
   bindHeroDollDelegatedListeners(root, app, moduleApi, rootListenerOptions);
+  bindHeroDollTooltips(root, panel, rootListenerOptions);
 }
 
 async function handleCharacterDowntimeSubmit(panel, app, moduleApi) {
@@ -5524,6 +5658,108 @@ function getSheetPropertyRow(control) {
     ?? control;
 }
 
+let activeWeaponPropertyTooltip = null;
+
+function closeWeaponPropertyTooltip() {
+  const state = activeWeaponPropertyTooltip;
+  if (!state) {
+    return;
+  }
+
+  activeWeaponPropertyTooltip = null;
+  state.element?.remove?.();
+  document.removeEventListener?.("pointerdown", state.onPointerDown, true);
+  document.removeEventListener?.("keydown", state.onKeyDown, true);
+}
+
+function positionWeaponPropertyTooltip(element, event) {
+  const margin = 12;
+  const initialX = Number(event?.clientX) || margin;
+  const initialY = Number(event?.clientY) || margin;
+  const viewportWidth = Number(window.innerWidth) || 1920;
+  const viewportHeight = Number(window.innerHeight) || 1080;
+  const bounds = element.getBoundingClientRect?.() ?? { width: 380, height: 240 };
+  const left = Math.max(margin, Math.min(initialX + 12, viewportWidth - Number(bounds.width || 380) - margin));
+  const top = Math.max(margin, Math.min(initialY + 12, viewportHeight - Number(bounds.height || 240) - margin));
+  element.style.setProperty("left", `${left}px`);
+  element.style.setProperty("top", `${top}px`);
+}
+
+function openWeaponPropertyTooltip(propertyKey, event) {
+  const entry = getWeaponPropertyGlossaryEntry(propertyKey);
+  if (!entry) {
+    return;
+  }
+
+  event?.preventDefault?.();
+  event?.stopPropagation?.();
+  closeWeaponPropertyTooltip();
+
+  const tooltip = document.createElement("aside");
+  tooltip.classList.add("rm-weapon-property-tooltip");
+  tooltip.dataset.rebreyaWeaponPropertyTooltip = "true";
+  tooltip.setAttribute("role", "dialog");
+  tooltip.setAttribute("aria-label", `Описание свойства: ${entry.title}`);
+
+  const header = document.createElement("header");
+  header.classList.add("rm-weapon-property-tooltip__header");
+  const title = document.createElement("strong");
+  title.textContent = entry.title;
+  const closeButton = document.createElement("button");
+  closeButton.type = "button";
+  closeButton.classList.add("rm-weapon-property-tooltip__close");
+  closeButton.setAttribute("aria-label", "Закрыть описание свойства");
+  closeButton.textContent = "×";
+  header.append(title, closeButton);
+
+  const description = document.createElement("p");
+  description.classList.add("rm-weapon-property-tooltip__description");
+  description.textContent = entry.description;
+  tooltip.append(header, description);
+
+  const host = document.body ?? document.documentElement;
+  host?.append?.(tooltip);
+  positionWeaponPropertyTooltip(tooltip, event);
+
+  const onPointerDown = (pointerEvent) => {
+    if (!tooltip.contains(pointerEvent.target)) {
+      closeWeaponPropertyTooltip();
+    }
+  };
+  const onKeyDown = (keyEvent) => {
+    if (keyEvent.key === "Escape") {
+      closeWeaponPropertyTooltip();
+    }
+  };
+  activeWeaponPropertyTooltip = { element: tooltip, onPointerDown, onKeyDown };
+  closeButton.addEventListener("click", closeWeaponPropertyTooltip);
+  document.addEventListener?.("pointerdown", onPointerDown, true);
+  document.addEventListener?.("keydown", onKeyDown, true);
+}
+
+function bindWeaponPropertyGlossaryRow(row, propertyKey) {
+  if (!row || row.dataset?.rebreyaWeaponPropertyGlossaryBound === "true") {
+    return;
+  }
+  if (!getWeaponPropertyGlossaryEntry(propertyKey)) {
+    return;
+  }
+
+  row.dataset.rebreyaWeaponPropertyGlossaryBound = "true";
+  row.dataset.rebreyaWeaponPropertyKey = propertyKey;
+  row.classList?.add?.("rm-weapon-property-glossary-target");
+  row.setAttribute?.("title", "ПКМ: описание свойства");
+  row.addEventListener?.("contextmenu", (event) => openWeaponPropertyTooltip(propertyKey, event));
+}
+
+function bindWeaponPropertyGlossary(root) {
+  for (const propertyKey of Object.keys(WEAPON_PROPERTY_GLOSSARY)) {
+    for (const control of findSheetPropertyControls(root, propertyKey)) {
+      bindWeaponPropertyGlossaryRow(getSheetPropertyRow(control), propertyKey);
+    }
+  }
+}
+
 function findSheetPropertyFieldset(control, row) {
   return control?.closest?.("fieldset")
     ?? row?.closest?.("fieldset")
@@ -6099,6 +6335,7 @@ function upsertFirearmWeaponPropertiesField(root, app) {
     });
 
     row.append(input, text);
+    bindWeaponPropertyGlossaryRow(row, definition.key);
     grid.append(row);
   }
   fieldset.append(grid);
@@ -6118,6 +6355,7 @@ function bindItemSheetEnhancements(root, app, moduleApi = null) {
     return;
   }
 
+  closeWeaponPropertyTooltip();
   ensureEquipmentTypeOptions(root, item);
   upsertToolBaseItemOptions(root, app);
   upsertItemRankBadge(root, item);
@@ -6125,6 +6363,7 @@ function bindItemSheetEnhancements(root, app, moduleApi = null) {
   upsertItemSlotField(root, app);
   upsertFirearmWeaponPropertiesField(root, app);
   upsertWeaponAttackTraitsField(root, app);
+  bindWeaponPropertyGlossary(root);
   bindItemUpgradeSheet(root, app, moduleApi);
 }
 
@@ -6145,6 +6384,41 @@ function resolveActorItem(actor, itemId) {
       ? actor.items
       : [];
   return items.find((item) => cleanText(item?.id ?? item?._id) === id) ?? null;
+}
+
+export function bindJournalRecordInventoryLinks(root, {
+  actor,
+  moduleApi,
+  openViewer = openStorageJournalViewer
+} = {}) {
+  if (!root?.querySelectorAll || !actor || typeof moduleApi?.readJournalRecord !== "function") {
+    return;
+  }
+
+  for (const row of root.querySelectorAll("[data-item-id]")) {
+    const item = resolveActorItem(actor, row?.dataset?.itemId);
+    if (!isJournalRecordItem(item)) {
+      continue;
+    }
+    const title = row.querySelector?.(".item-name .name .title");
+    if (!title || title.dataset.rebreyaJournalRecordBound === "true") {
+      continue;
+    }
+    title.dataset.rebreyaJournalRecordBound = "true";
+    title.addEventListener("click", async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      try {
+        const snapshot = await moduleApi.readJournalRecord(item.uuid);
+        await openViewer(snapshot);
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to open journal record item.`, error);
+        globalThis.ui?.notifications?.error?.(error?.message || "Не удалось открыть запись журнала.");
+      }
+    });
+  }
 }
 
 function resolveItemActivity(item, activityId) {
@@ -6705,6 +6979,13 @@ function openHeldItemContextMenu({ x = 0, y = 0, title = "", actions = [] } = {}
       iconNode.className = action.icon;
       button.append(iconNode);
     }
+    else if (action.image) {
+      const imageNode = document.createElement("img");
+      imageNode.classList.add("rm-context-menu__image");
+      imageNode.src = action.image;
+      imageNode.alt = "";
+      button.append(imageNode);
+    }
 
     const labelNode = document.createElement("span");
     labelNode.textContent = action.label ?? "";
@@ -6722,7 +7003,7 @@ function openHeldItemContextMenu({ x = 0, y = 0, title = "", actions = [] } = {}
       }
       catch (error) {
         console.error(`${MODULE_ID} | Failed to run held item context action.`, error);
-        ui.notifications?.error?.(error.message || "Не удалось изменить состояние предмета.");
+        ui.notifications?.error?.(action.errorMessage || error.message || "Не удалось изменить состояние предмета.");
       }
     });
 
@@ -6981,6 +7262,13 @@ export function extendDnd5eItemTypes() {
   });
   registerRebreyaArtisanToolProficiencies();
 
+  CONFIG.DND5E.consumableTypes ??= {};
+  CONFIG.DND5E.consumableTypes.ammo ??= {};
+  CONFIG.DND5E.consumableTypes.ammo.subtypes = {
+    ...(CONFIG.DND5E.consumableTypes.ammo.subtypes ?? {}),
+    ...REBREYA_AMMUNITION_SUBTYPES
+  };
+
   registerNativeStateItemType();
   registerDowntimeItemType();
   registerCraftsmanGadgetItemType();
@@ -7103,6 +7391,7 @@ export function registerDnd5eSheetExtensions(moduleApi) {
     ensureHeroDollTabDefinition(CharacterActorSheet);
     registerCraftsmanClassCardIntegration(CharacterActorSheet);
     patchHeroDollPartContext(CharacterActorSheet, moduleApi);
+    patchHeroDollSidebarChangeTab(CharacterActorSheet);
   }
   registerCraftsmanTidyContent();
   const ItemSheet5e = game.dnd5e?.applications?.item?.ItemSheet5e
@@ -7155,6 +7444,7 @@ export function registerDnd5eSheetExtensions(moduleApi) {
         console.error(`${MODULE_ID} | Failed to enhance the native Craftsman class card.`, error);
       }
       bindCharacterSheetBranding(root);
+      syncHeroDollSidebarOnRender(app);
       bindHeroDollPanel(root, app, moduleApi);
       bindCharacterDowntimePanel(root, app, moduleApi);
       try {
@@ -7174,6 +7464,12 @@ export function registerDnd5eSheetExtensions(moduleApi) {
       }
       catch (error) {
         console.error(`${MODULE_ID} | Failed to bind actor sheet item upgrade drops.`, error);
+      }
+      try {
+        bindJournalRecordInventoryLinks(root, { actor, moduleApi });
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to bind journal record inventory links.`, error);
       }
       try {
         bindNativeStateCard(root, app);
@@ -7272,6 +7568,7 @@ export function registerDnd5eSheetExtensions(moduleApi) {
         console.error(`${MODULE_ID} | Failed to enhance the native Craftsman class card on ApplicationV2 render.`, error);
       }
       bindCharacterSheetBranding(root);
+      syncHeroDollSidebarOnRender(app);
       bindHeroDollPanel(root, app, moduleApi);
       bindCharacterDowntimePanel(root, app, moduleApi);
       try {
@@ -7291,6 +7588,12 @@ export function registerDnd5eSheetExtensions(moduleApi) {
       }
       catch (error) {
         console.error(`${MODULE_ID} | Failed to bind actor sheet item upgrade drops on ApplicationV2 render.`, error);
+      }
+      try {
+        bindJournalRecordInventoryLinks(root, { actor, moduleApi });
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to bind journal record inventory links on ApplicationV2 render.`, error);
       }
       try {
         bindNativeStateCard(root, app);

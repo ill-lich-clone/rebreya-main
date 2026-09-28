@@ -12,8 +12,26 @@ import {
 
 const SOCKET_CHANNEL = "module.rebreya-main";
 
-function flushAsyncHooks() {
-  return new Promise((resolve) => setImmediate(resolve));
+test("container mechanics updates refresh the exact owning actor scope", async () => {
+  const listeners = {};
+  const calls = [];
+  registerInventorySyncHooks({ refreshInventoryViews: async scope => calls.push(scope.actorIds) }, {
+    Hooks: { on(name, callback) { listeners[name] = callback; } }, debounceMs: 0, force: true
+  });
+  for (const type of ["character", "group"]) {
+    const item = { id: "bag", type: "container", parent: { id: type, type } };
+    for (const field of ["container", "capacity.weight.value", "capacity.weight.units", "properties", "quantity", "weight.value"]) {
+      listeners.updateItem(item, { [`system.${field}`]: 1 }, {}, "remote");
+      await flushAsyncHooks();
+      assert.deepEqual(calls.at(-1), [type]);
+    }
+  }
+  assert.equal(calls.length, 12);
+});
+
+async function flushAsyncHooks() {
+  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
 function createTransferItem({
@@ -278,6 +296,42 @@ test("inventory sync hooks refresh inventory views for item and actor changes", 
   await flushAsyncHooks();
 
   assert.deepEqual(calls, ["initialize:sword", "refresh", "refresh"]);
+});
+
+test("inventory sync hooks coalesce affected Actor ids through the existing hook set", async () => {
+  const calls = [];
+  const hooks = {
+    listeners: {},
+    on(hookName, listener) {
+      this.listeners[hookName] ??= [];
+      this.listeners[hookName].push(listener);
+    }
+  };
+  const moduleApi = {
+    async refreshInventoryViews(options) {
+      calls.push(options);
+    }
+  };
+
+  registerInventorySyncHooks(moduleApi, {
+    Hooks: hooks,
+    debounceMs: 0,
+    force: true
+  });
+
+  assert.deepEqual(Object.keys(hooks.listeners).sort(), [
+    "createItem",
+    "deleteItem",
+    "updateActor",
+    "updateItem"
+  ]);
+  hooks.listeners.updateActor[0]({ id: "group-a", type: "group" }, {
+    flags: { "rebreya-main": { inventoryFolders: { version: 1 } } }
+  }, {}, "gm");
+  hooks.listeners.updateItem[0]({ id: "item-b", parent: { id: "group-b", type: "group" } }, {}, {}, "gm");
+  await flushAsyncHooks();
+
+  assert.deepEqual(calls, [{ actorIds: ["group-a", "group-b"] }]);
 });
 
 test("createItem defers legacy durability until delayed GM source depletion is observable", async () => {
@@ -567,6 +621,100 @@ test("failed updateItem depletion restores the merge receipt without deleting th
   }
 });
 
+test("active GM native drag rolls back the accepted target when source debit is confirmed unchanged", async () => {
+  const previousGame = globalThis.game;
+  const previousFromUuid = globalThis.fromUuid;
+  const gm = { id: "gm-local-rollback", isGM: true, active: true };
+  globalThis.game = { user: gm, users: { activeGM: gm } };
+  const sourceItemUuid = "Actor.group.Item.local-failed-source";
+  const sourceItem = createTransferItem({
+    id: "local-failed-source",
+    uuid: sourceItemUuid,
+    sourceId: "local-failed-source",
+    parentType: "group"
+  });
+  globalThis.fromUuid = async (uuid) => uuid === sourceItemUuid ? sourceItem : null;
+  buildPartyInventoryItemDragData(sourceItemUuid, sourceItem);
+  const calls = [];
+  const acceptedItem = createTransferItem({
+    id: "local-failed-target",
+    uuid: "Actor.hero.Item.local-failed-target",
+    sourceId: "local-failed-source",
+    calls
+  });
+  const error = Object.assign(new Error("source debit failed"), {
+    code: "source-debit-failed",
+    inventoryTransferMode: "simple"
+  });
+  const moduleApi = {
+    inventoryService: {
+      async handleAcceptedPartyInventoryItem() {
+        calls.push(["transfer"]);
+        throw error;
+      }
+    }
+  };
+
+  try {
+    await assert.rejects(
+      handleAcceptedPartyInventoryItem(acceptedItem, {}, gm.id, moduleApi),
+      (caught) => caught === error
+    );
+    assert.deepEqual(calls, [["transfer"], ["delete", acceptedItem.uuid]]);
+  }
+  finally {
+    globalThis.game = previousGame;
+    globalThis.fromUuid = previousFromUuid;
+  }
+});
+
+test("active GM native drag reports manual review when its accepted target drifts before rollback", async () => {
+  const previousGame = globalThis.game;
+  const previousFromUuid = globalThis.fromUuid;
+  const gm = { id: "gm-local-drift", isGM: true, active: true };
+  globalThis.game = { user: gm, users: { activeGM: gm } };
+  const source = createTransferItem({
+    id: "local-drift-source",
+    uuid: "Actor.group.Item.local-drift-source",
+    sourceId: "local-drift-source",
+    parentType: "group"
+  });
+  globalThis.fromUuid = async (uuid) => uuid === source.uuid ? source : null;
+  buildPartyInventoryItemDragData(source.uuid, source);
+  const calls = [];
+  const target = createTransferItem({
+    id: "local-drift-target",
+    uuid: "Actor.hero.Item.local-drift-target",
+    sourceId: "local-drift-source",
+    calls
+  });
+  const moduleApi = {
+    inventoryService: {
+      async handleAcceptedPartyInventoryItem() {
+        target.system.quantity = 2;
+        const error = new Error("source debit failed");
+        error.code = "source-debit-failed";
+        error.inventoryTransferMode = "simple";
+        throw error;
+      }
+    }
+  };
+
+  try {
+    await assert.rejects(
+      handleAcceptedPartyInventoryItem(target, {}, gm.id, moduleApi),
+      (error) => error?.code === "transfer-manual-review"
+        && error?.inventoryTransferMode === "simple"
+    );
+    assert.equal(target.system.quantity, 2);
+    assert.deepEqual(calls, []);
+  }
+  finally {
+    globalThis.game = previousGame;
+    globalThis.fromUuid = previousFromUuid;
+  }
+});
+
 test("an observed source delete settles once before its delayed response", async () => {
   const previousGame = globalThis.game;
   const previousFromUuid = globalThis.fromUuid;
@@ -810,5 +958,47 @@ test("createItem initializes an ordinary embedded item only on the current clien
   }
   finally {
     globalThis.game = previousGame;
+  }
+});
+
+test("a GM rejection received while the mutation waits for UI refresh still rolls back the accepted copy", async () => {
+  const previousGame = globalThis.game;
+  const previousFromUuid = globalThis.fromUuid;
+  const calls = [];
+  let socketListener;
+  const source = createTransferItem({ id: "source", sourceId: "torch", uuid: "Actor.group.Item.source", parentType: "group" });
+  const target = createTransferItem({ id: "copy", sourceId: "torch", uuid: "Actor.hero.Item.copy", calls });
+  globalThis.game = {
+    user: { id: "player-early-rejection" },
+    users: { activeGM: { id: "gm", isGM: true, active: true } },
+    socket: { on(_channel, listener) { socketListener = listener; } }
+  };
+  globalThis.fromUuid = async uuid => uuid === source.uuid ? source : target;
+  const moduleApi = {
+    inventoryService: {
+      async handleAcceptedPartyInventoryItem(_item, transfer) {
+        return { ...transfer, handled: true, requested: true };
+      }
+    },
+    async runInventoryMutation(operation) {
+      const result = await operation();
+      socketListener({
+        type: SOCKET_EVENT_INVENTORY_SOURCE_DEPLETION_RESULT, forUserId: game.user.id,
+        transferId: result.transferId, sourceItemUuid: source.uuid, targetItemUuid: target.uuid,
+        ok: false, error: "rejected"
+      });
+      await flushAsyncHooks();
+      return result;
+    }
+  };
+  try {
+    registerInventorySyncHooks(moduleApi, { Hooks: { on() {} }, force: true });
+    buildPartyInventoryItemDragData(source.uuid, source);
+    await handleAcceptedPartyInventoryItem(target, {}, game.user.id, moduleApi);
+    assert.deepEqual(calls, [["delete", target.uuid]]);
+  }
+  finally {
+    globalThis.game = previousGame;
+    globalThis.fromUuid = previousFromUuid;
   }
 });

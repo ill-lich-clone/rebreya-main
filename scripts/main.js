@@ -1,16 +1,35 @@
+import "./integrations/craftsman-gadget-bootstrap.js?v=1.4.327";
+import { SceneActivityService } from "./application/scene-activity-service.js?v=1.4.271";
+import { SceneActivityError } from "./data/scene-activity-rules.js?v=1.4.271";
+import { SCENE_ACTIVITY_COMMANDS, isValidSceneActivityPayload, authorizeSceneActivity, sceneActivityTransportId } from "./infrastructure/foundry/scene-activity-command-contract.js?v=1.4.271";
+import { LootgenGeneratedResultService, LOOTGEN_PREPARE_RESULT_COMMAND, isValidPrepareLootgenPayload } from "./application/lootgen-generated-result-service.js?v=1.4.268";
+import { buildLootgenGeneratedState, assertLootgenCatalogCurrent } from "./application/lootgen-generated-state.js?v=1.4.317";
+import { normalizeLootgenForm } from "./data/lootgen-generator.js?v=1.4.317";
+import { storageCoinRowDenomination } from "./data/storage-service.js";
 // @rebreya-role canonical-composition-root
-import { MODULE_ID, SETTINGS_KEYS } from "./constants.js";
-import { MaterialsCompendiumService } from "./data/materials-compendium.js";
-import { GearCompendiumService } from "./data/gear-compendium.js?v=1.4.111-ammunition-template-version-20&implants=1";
-import { repairWorldAmmunitionCompatibility } from "./data/ammunition-compatibility.js?v=1.4.111-native-ammunition-compatibility";
-import { MagicItemsCompendiumService } from "./data/magic-items-compendium.js";
-import { FeatsCompendiumService } from "./data/feats-compendium.js";
-import { BackgroundsCompendiumService } from "./data/backgrounds-compendium.js";
-import { StatesCompendiumService } from "./data/states-compendium.js";
-import { RacesCompendiumService } from "./data/races-compendium.js?v=1.4.110-giant-tribe-cache-fixes-2&implants=1";
-import { ClassesCompendiumService } from "./data/classes-compendium.js";
-import { CraftsmanConstructCompendiumService } from "./data/craftsman-construct-compendium.js";
-import { TransportCompendiumService } from "./data/transport-compendium.js";
+import { LootgenSourceCatalog } from "./data/lootgen-source-catalog.js?v=1.4.317";
+import { MODULE_ID, MODULE_TITLE, SETTINGS_KEYS } from "./constants.js";
+import { escapeFoundryHtml } from "./shared/foundry-values.js";
+import { clearNamedIconCache } from "./data/compendium-utils.js?v=1.4.327";
+import {
+  BADGE_BUILD_SETTING,
+  buildManagedIconProjection,
+  prepareCompendiumBadgeImages
+} from "./data/icon-badge-build.js?v=1.4.330";
+import { setManagedIconProjection } from "./data/managed-compendium-sync.js?v=1.4.330";
+import { MaterialsCompendiumService } from "./data/materials-compendium.js?v=1.4.330";
+import { GearCompendiumService } from "./data/gear-compendium.js?v=1.4.330";
+import { AlchemyCompendiumService } from "./data/alchemy-compendium.js?v=1.4.347";
+import { repairWorldAmmunitionCompatibility } from "./data/ammunition-compatibility.js?v=1.4.147-native-ammunition";
+import { MagicItemsCompendiumService } from "./data/magic-items-compendium.js?v=1.4.330";
+import { FeatsCompendiumService } from "./data/feats-compendium.js?v=1.4.330";
+import { GlossaryCompendiumService } from "./data/glossary-compendium.js?v=1.4.330";
+import { BackgroundsCompendiumService } from "./data/backgrounds-compendium.js?v=1.4.330";
+import { StatesCompendiumService } from "./data/states-compendium.js?v=1.4.330";
+import { RacesCompendiumService } from "./data/races-compendium.js?v=1.4.330";
+import { ClassesCompendiumService } from "./data/classes-compendium.js?v=1.4.330";
+import { CraftsmanConstructCompendiumService } from "./data/craftsman-construct-compendium.js?v=1.4.330";
+import { TransportCompendiumService } from "./data/transport-compendium.js?v=1.4.330";
 import {
   TRANSPORT_IMPORT_COMMAND,
   TRANSPORT_SELECT_FUEL_COMMAND,
@@ -20,13 +39,14 @@ import {
   registerTransportInstanceCommands
 } from "./data/transport-instance-service.js";
 import { TransportFuelService } from "./data/transport-fuel-service.js";
-import { SpellsCompendiumService } from "./data/spells-compendium.js?v=1.4.109-counterspell-sanitize";
-import { ActionsCompendiumService } from "./data/actions-compendium.js";
-import { DowntimeCompendiumService } from "./data/downtime-compendium.js";
+import { SpellsCompendiumService } from "./data/spells-compendium.js?v=1.4.330";
+import { ActionsCompendiumService } from "./data/actions-compendium.js?v=1.4.330";
+import { DowntimeCompendiumService } from "./data/downtime-compendium.js?v=1.4.330";
 import { FeatChoiceAutomationService, registerFeatChoiceAutomationHooks } from "./automation/feat-choice-service.js";
-import { EconomyRepository } from "./data/repository.js?v=1.4.128-lootgen-multiplicity";
-import { TraderService, normalizeTraderState } from "./data/trader-service.js?v=1.4.109-lazy-trader-restock";
+import { EconomyRepository } from "./data/repository.js?v=1.4.347";
+import { TraderService, normalizeTraderState } from "./data/trader-service.js?v=1.4.327";
 import { TradeTransactionService } from "./features/trading/trade-transaction-service.js";
+import { PurchaseBasketService } from "./features/trading/purchase-basket-service.js";
 import {
   createTradeTransactionId,
   isValidTradeTransactionId
@@ -38,9 +58,9 @@ import {
   isManagedPartyGroup,
   normalizeGroupRegistry,
   normalizeGroupState,
-  normalizeGroupTransportState
+  normalizeGroupTransportState,
+  resolveGroupMemberActor
 } from "./data/group-context-service.js";
-import { RebreyaQuestLogService } from "./data/quest-log-service.js";
 import { DowntimeService } from "./data/downtime-service.js?v=1.4.96-craft-calendar";
 import { CharacterDowntimeService } from "./data/character-downtime-service.js";
 import {
@@ -48,11 +68,22 @@ import {
   TravelService,
   normalizeTravelState
 } from "./data/travel-service.js";
-import { TravelMapService } from "./data/travel-map-service.js";
+import { TravelMapService } from "./data/travel-map-service.js?v=1.4.141-auraeffects-inactive-scene";
 import {
   INVENTORY_CURRENCY_CONVERT_COMMAND,
   INVENTORY_CURRENCY_UPDATE_COMMAND,
+  INVENTORY_DISMANTLE_COMMAND,
+  INVENTORY_FOLDER_BATCH_COMMAND,
+  INVENTORY_FOLDER_CREATE_COMMAND,
+  INVENTORY_FOLDER_DELETE_COMMAND,
+  INVENTORY_FOLDER_MOVE_COMMAND,
+  INVENTORY_FOLDER_COLOR_COMMAND,
+  INVENTORY_FOLDER_RENAME_COMMAND,
+  INVENTORY_INGRESS_RULE_CREATE_COMMAND,
+  INVENTORY_INGRESS_RULE_DELETE_COMMAND,
+  INVENTORY_INGRESS_RULE_UPDATE_COMMAND,
   INVENTORY_IMPORT_COMMAND,
+  INVENTORY_ITEM_FOLDER_MOVE_COMMAND,
   INVENTORY_SALE_COMMAND,
   INVENTORY_TAKE_COMMAND,
   GROUP_TRANSPORT_REPLACE_STATE_COMMAND,
@@ -63,58 +94,217 @@ import {
   SOCKET_EVENT_INVENTORY_SOURCE_DEPLETION_RESULT,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_REQUEST,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_RESULT
-} from "./data/inventory-service.js?v=1.4.111-member-transport-filter";
-import { DurabilityService } from "./data/durability-service.js?v=1.4.96-durability";
+} from "./data/inventory-service.js?v=1.4.327";
+import {
+  InventoryIngressRuleCompilerCache,
+  normalizeInventoryIngressRule
+} from "./data/inventory-ingress-rules.js";
+import {
+  buildInventoryIngressDescriptor,
+  resolveInventoryDismantleOutputs
+} from "./data/inventory-ingress-descriptor.js?v=1.4.268";
+import {
+  InventoryIngressPlanner,
+  isValidSerializedInventoryIngressPlan
+} from "./application/inventory-ingress-planner.js?v=1.4.257";
+import { DurabilityService } from "./data/durability-service.js?v=1.4.154-corpse-storage-broken-name";
 import { MapObjectTokenService } from "./data/map-object-token-service.js?v=1.4.97-map-object-token";
-import { HeroDollService } from "./data/hero-doll-service.js";
+import { HeroDollService, HERO_DOLL_ASSIGN_COMMAND, HERO_DOLL_NORMALIZE_COMMAND, HERO_DOLL_CLEAR_COMMAND, isValidHeroDollAssignPayload } from "./data/hero-doll-service.js?v=1.4.338-hero-doll-menu";
 import { ImplantService } from "./data/implant-service.js";
 import { CraftingService } from "./data/crafting-service.js?v=1.4.96-craft-calendar";
 import { CraftDowntimeService } from "./data/craft-downtime-service.js?v=1.4.96-craft-calendar";
-import { ItemUpgradeService } from "./data/item-upgrade-service.js?v=1.4.96-item-upgrades";
+import { ItemUpgradeService } from "./data/item-upgrade-service.js?v=1.4.292";
+import { ItemUpgradeAutomationService } from "./automation/item-upgrade-automation-service.js?v=1.4.292";
+import { ReputationService } from "./application/reputation-service.js?v=1.4.251";
+import { DisarmService } from "./combat/disarm-service.js?v=1.4.276";
+import { DisarmRollAdapter } from "./integrations/disarm-roll-adapter.js?v=1.4.252";
+import { DisarmDocuments } from "./infrastructure/foundry/disarm-documents.js?v=1.4.252";
+import { DISARM_ACTIONS, isValidDisarmPayload, authorizeDisarmSender } from "./infrastructure/foundry/disarm-command-contract.js?v=1.4.276";
+import { resolveDisarmSelection, promptDisarm, promptDisarmBaseline, buildDisarmChatContent, bindDisarmChat } from "./ui/disarm-dialog.js?v=1.4.281";
+import { REPUTATION_UPDATE_COMMAND, isValidReputationPayload, authorizeReputationUpdate } from "./infrastructure/foundry/reputation-command-contract.js?v=1.4.251";
 import { GROUP_CALENDAR_PATCH_COMMAND, CalendarService } from "./data/calendar-service.js";
 import { CalendarTransitionCoordinator } from "./data/calendar-transition-coordinator.js?v=1.4.96-craft-calendar";
+import { PrivilegedMutationGateway } from "./application/privileged-mutation-gateway.js";
+import {
+  EXCLUSIVE_MUTATION_SCHEDULING,
+  QUERY_SCHEDULING,
+  aggregateKey,
+  keyedMutationScheduling
+} from "./application/socket-command-scheduling.js";
+import {
+  GLOBAL_EVENTS_CREATE_COMMAND,
+  GLOBAL_EVENTS_DELETE_COMMAND,
+  GLOBAL_EVENTS_DUPLICATE_COMMAND,
+  GLOBAL_EVENTS_IMPORT_DEFAULTS_COMMAND,
+  GLOBAL_EVENTS_UPDATE_COMMAND,
+  isValidGlobalEventsCreatePayload,
+  isValidGlobalEventsDeletePayload,
+  isValidGlobalEventsDuplicatePayload,
+  isValidGlobalEventsImportDefaultsPayload,
+  isValidGlobalEventsUpdatePayload
+} from "./application/global-events-mutation-commands.js";
+import {
+  ECONOMY_CITY_PRESENTATION_UPDATE_COMMAND,
+  ECONOMY_CONNECTION_SET_ACTIVE_COMMAND,
+  ECONOMY_REFERENCE_UPDATE_DESCRIPTION_COMMAND,
+  ECONOMY_STATE_POLICY_UPDATE_COMMAND,
+  ECONOMY_TRADE_ROUTE_UPDATE_METADATA_COMMAND,
+  ECONOMY_WORLD_DATA_RESET_COMMAND,
+  isValidEconomyCityPresentationUpdatePayload,
+  isValidEconomyConnectionSetActivePayload,
+  isValidEconomyReferenceUpdateDescriptionPayload,
+  isValidEconomyStatePolicyUpdatePayload,
+  isValidEconomyTradeRouteUpdateMetadataPayload,
+  isValidEconomyWorldDataResetPayload
+} from "./application/economy-mutation-commands.js";
+import {
+  TRADER_AUDIT_RECORD_COMMAND,
+  TRADER_METADATA_UPDATE_COMMAND,
+  isValidTraderAuditRecordPayload,
+  isValidTraderMetadataUpdatePayload
+} from "./application/trader-public-mutation-commands.js";
+import {
+  PURCHASE_BASKET_COMMIT_COMMAND,
+  isValidPurchaseBasketPayload
+} from "./application/purchase-basket-command.js";
+import {
+  GROUP_INVENTORY_MERGE_LEGACY_COMMAND,
+  GROUP_REGISTRY_ACTIVATE_COMMAND,
+  GROUP_REGISTRY_REGISTER_COMMAND,
+  isValidGroupInventoryMergeLegacyPayload,
+  isValidGroupRegistryActivatePayload,
+  isValidGroupRegistryRegisterPayload
+} from "./application/group-registry-mutation-commands.js";
+import {
+  DOWNTIME_HISTORY_CLEAR_COMMAND,
+  DOWNTIME_PROJECT_CLOSE_COMMAND,
+  DOWNTIME_PROJECT_CONTINUE_COMMAND,
+  DOWNTIME_REQUEST_CREATE_COMMAND,
+  DOWNTIME_REQUEST_RECORD_CHECK_COMMAND,
+  DOWNTIME_REQUEST_SET_CHECKS_COMMAND,
+  DOWNTIME_REQUEST_SET_STATUS_COMMAND,
+  DOWNTIME_REQUEST_UPDATE_COMMAND,
+  DOWNTIME_WEEKS_GRANT_COMMAND,
+  DOWNTIME_WEEKS_REVOKE_COMMAND,
+  isValidDowntimeHistoryClearPayload,
+  isValidDowntimeProjectClosePayload,
+  isValidDowntimeProjectContinuePayload,
+  isValidDowntimeRequestCreatePayload,
+  isValidDowntimeRequestRecordCheckPayload,
+  isValidDowntimeRequestSetChecksPayload,
+  isValidDowntimeRequestSetStatusPayload,
+  isValidDowntimeRequestUpdatePayload,
+  isValidDowntimeWeeksGrantPayload,
+  isValidDowntimeWeeksRevokePayload
+} from "./application/downtime-mutation-commands.js";
 import { WorldMutationCoordinator } from "./application/world-mutation-coordinator.js";
-import { LootClaimService } from "./application/loot-claim-service.js";
+import { LootClaimService } from "./application/loot-claim-service.js?v=1.4.268";
+import {
+  buildPublicCitySnapshot,
+  buildPublicEconomySnapshot
+} from "./application/public-economy-read-model.js";
 import { GroupStateRepository } from "./infrastructure/foundry/group-state-repository.js";
 import { TraderStateRepository } from "./infrastructure/foundry/trader-state-repository.js";
+import { WorldSettingMutationRepository } from "./infrastructure/foundry/world-setting-mutation-repository.js";
+import { PurchaseBasketJournalRepository } from "./infrastructure/foundry/purchase-basket-journal-repository.js";
+import { PurchaseBasketFoundryOperations } from "./infrastructure/foundry/purchase-basket-operations.js";
 import { getActiveGm, isActiveGmClient } from "./infrastructure/foundry/active-gm.js";
 import { SocketCommandBus } from "./infrastructure/foundry/socket-command-bus.js";
+import { createSocketCommandTraceSink } from "./infrastructure/foundry/socket-command-trace.js";
+import {
+  GRAPPLE_DRAG_COMMAND,
+  GRAPPLE_PLACE_COMMAND,
+  GRAPPLE_RELEASE_AND_MOVE_COMMAND,
+  GRAPPLE_TOGGLE_COMMAND,
+  TWISTED_PULL_COMMAND,
+  TWISTED_RELEASE_AND_MOVE_COMMAND,
+  isValidGrappleDragPayload,
+  isValidGrapplePlacePayload,
+  isValidGrappleReleaseAndMovePayload,
+  isValidGrappleTogglePayload,
+  isValidTwistedPullPayload,
+  isValidTwistedReleaseAndMovePayload
+} from "./infrastructure/foundry/grapple-command-contract.js";
+import { StorageTriggerPromptBroker } from "./infrastructure/foundry/storage-trigger-prompt-broker.js";
 import { UiRefreshCoordinator } from "./infrastructure/ui/ui-refresh-coordinator.js";
 import { GlobalEventsService } from "./data/global-events-service.js";
-import { LootgenTemplateCatalog } from "./data/lootgen-template-catalog.js?v=1.4.129-lootgen-row-cap";
+import { LootgenTemplateItemService } from "./data/lootgen-template-item.js";
+import {
+  registerLootgenTemplateItemSheet,
+  registerLootgenTemplateItemType
+} from "./integrations/lootgen-template-item-type.js";
 import {
   StorageService,
   isStorageActor,
   readStorageState,
   readStorageStateAtPath
-} from "./data/storage-service.js?v=1.4.119-storage-canvas-drops";
-import { StorageOpenSoundService } from "./data/storage-open-sound-service.js";
+} from "./data/storage-service.js?v=1.4.270";
+import {
+  CorpseStorageMaterializer
+} from "./data/corpse-storage-materializer.js?v=1.4.195-storage-administration";
+import {
+  isCorpseStorageTarget,
+  isDeadNpcStorageTarget,
+  isMaterializedCorpseStorageState
+} from "./data/storage-corpse-target.js?v=1.4.195-storage-corpse-target";
+import { StorageOpenSoundService } from "./data/storage-open-sound-service.js?v=1.4.145-coin-icons-storage-sound";
 import {
   isStorageTokenVisible,
   measureStoragePointDistance,
   measureStorageTokenDistance
-} from "./data/storage-access.js?v=1.4.133-ground-item-polish";
-import { BuiltinStorageActorService } from "./data/builtin-storage-actor-service.js";
-import { StorageGroundPileService } from "./data/storage-ground-pile-service.js?v=1.4.133-ground-item-polish";
-import { StorageContainerItemService } from "./data/storage-container-item-service.js?v=1.4.130-storage-player-fixes";
+} from "./data/storage-access.js?v=1.4.197-door-trigger-target";
+import { BuiltinStorageActorService } from "./data/builtin-storage-actor-service.js?v=1.4.216-storage-token-vision";
+import { StorageGroundPileService } from "./data/storage-ground-pile-service.js?v=1.4.322";
+import { deriveGroundPilePlacement } from "./data/storage-pile-presentation.js?v=1.4.322";
+import { StorageContainerItemService } from "./data/storage-container-item-service.js?v=1.4.322";
+import { isStorageJournalRow, buildStorageContainerRow } from "./data/storage-container-snapshot.js?v=1.4.317";
+import { StorageTriggerService } from "./data/storage-trigger-service.js?v=1.4.197-door-trigger-target";
+import { DoorTriggerTargetRepository, readDoorTriggerTarget } from "./data/door-trigger-target.js?v=1.4.199-door-overlay-anchor";
+import { measureDoorDistanceFeet, preflightDoorAccess } from "./data/door-access.js?v=1.4.197-door-trigger-target";
+import { TriggerTargetCoordinator } from "./application/trigger-target-coordinator.js?v=1.4.197-door-trigger-target";
+import { StorageTriggerTargetAdapter } from "./data/storage-trigger-target-adapter.js?v=1.4.197-door-trigger-target";
+import { DoorTriggerTargetAdapter } from "./data/door-trigger-target-adapter.js?v=1.4.199-door-overlay-anchor";
+import {
+  DoorTriggerCommandService,
+  isValidDoorOpenPayload,
+  isValidDoorTriggerReadPayload,
+  isValidDoorTriggerResetPayload,
+  isValidDoorTriggerSavePayload
+} from "./application/door-trigger-command-service.js?v=1.4.197-door-trigger-target";
+import { StorageTriggerDnd5eAdapter } from "./data/storage-trigger-dnd5e-adapter.js";
+import {
+  StorageJournalReader,
+  createStorageJournalHtmlParser
+} from "./data/storage-journal-reader.js";
 import {
   parseStorageDepositDragData,
   resolveStorageDepositSource
-} from "./data/storage-deposit-source.js?v=1.4.126-native-container-copies";
-import { NativeObjectDurabilityService } from "./data/native-object-durability-service.js";
+} from "./data/storage-deposit-source.js?v=1.4.322";
+import { NativeObjectDurabilityService } from "./data/native-object-durability-service.js?v=1.4.153-corpse-creature";
 import {
   StorageCommandService,
+  isValidStorageClaimAllPayload,
   isValidStorageClaimCoinsPayload,
   isValidStorageClaimRowPayload,
+  isValidStorageCoinDropPayload,
   isValidStorageDepositPayload,
   isValidStorageDropItemPayload,
+  isValidJournalRecordDropPayload,
+  isValidJournalRecordReadPayload,
+  isValidStorageJournalDropPayload,
+  isValidStorageJournalReadPayload,
+  isValidStorageJournalRecordPayload,
+  isValidStorageConfigurePayload,
   isValidStorageOpenPayload,
+  isValidStorageTriggerReadPayload,
+  isValidStorageTriggerResetPayload,
+  isValidStorageTriggerSavePayload,
   isValidStorageRestorePortablePayload,
   isValidStorageTokenCharacterPayload,
   storageCharacterTokenUuidForClaim
-} from "./data/storage-command-service.js?v=1.4.130-storage-player-fixes";
-import { registerCombatHooks } from "./combat/hooks.js?v=1.4.134-actor-delta-status-socket";
-import { CombatAttackService } from "./combat/attack-service.js?v=1.4.111-native-ammunition-compatibility";
+} from "./data/storage-command-service.js?v=1.4.322";
+import { registerCombatHooks } from "./combat/hooks.js?v=1.4.253-simple-upgrades";
+import { CombatAttackService } from "./combat/attack-service.js?v=1.4.254-simple-upgrades";
 import { ImplantAutomationService } from "./combat/implant-automation-service.js";
 import { SizeAutomationService } from "./combat/size-automation-service.js?v=1.4.110-character-size-authority";
 import { ReactionCapabilityIndex } from "./combat/reaction-capability-index.js";
@@ -122,6 +312,8 @@ import { ReactionQueueService } from "./combat/reaction-queue-service.js";
 import { LongRestPipelineService } from "./rest/long-rest-pipeline-service.js";
 import { RuneKnightAutomationService } from "./combat/rune-knight-automation-service.js";
 import { CurseEaterAutomationService } from "./combat/curse-eater-automation-service.js";
+import { CurseUpgradeAutomationService } from "./combat/curse-upgrade-automation-service.js?v=1.4.255-absorption";
+import { registerCurseUpgradeSocketCommands } from "./integrations/curse-upgrade-socket.js";
 import { SpellAutomationService } from "./combat/spell-automation-service.js?v=1.4.109-counterspell-sanitize";
 import { SpellAutomationRegistry } from "./combat/spell-automation-registry.js";
 import { SpellInstanceRuntime } from "./combat/spell-instance-runtime.js";
@@ -131,10 +323,10 @@ import { SpellInterceptionRuntime } from "./combat/spell-interception-runtime.js
 import { SpellAreaRuntime } from "./combat/spell-area-runtime.js";
 import { SpellAutomationHookBridge } from "./combat/spell-automation-hook-bridge.js";
 import { registerRadialStatusEffects } from "./combat/radial-status-effects.js";
-import { CombatStatusService, registerCombatStatusConfig } from "./combat/status-service.js?v=1.4.100-hp-dead-overlay";
+import { CombatStatusService, registerCombatStatusConfig } from "./combat/status-service.js?v=1.4.334-twisted-macro";
 import { AttackRollBoostService } from "./combat/attack-roll-boost-service.js?v=1.4.96";
 import { EnvironmentAutomationService } from "./combat/environment-automation-service.js?v=1.4.96-environment-stable-statuses";
-import { registerMechanusRollHooks } from "./cosmology/mechanus-rolls.js?v=1.4.96-mechanus-d20-advantage-mode";
+import { registerMechanusRollHooks } from "./cosmology/mechanus-rolls.js?v=1.4.140-mechanus-dnd5e-activity-repair";
 import { FighterAutomationService } from "./combat/fighter-automation-service.js?v=1.4.96";
 import { SorcererAutomationService } from "./combat/sorcerer-automation-service.js?v=1.4.96-sorcerer-cooldown-card&cooldown-context=4";
 import { ElementalAdeptAutomationService } from "./combat/elemental-adept-automation-service.js";
@@ -149,35 +341,45 @@ import {
   PerformerAutomationService
 } from "./combat/performer-automation-service.js?v=1.4.96";
 import { BardicInspirationCompatService } from "./combat/bardic-inspiration-compat-service.js";
-import { RaceAutomationService, SOCKET_EVENT_RACE_AUTOMATION } from "./combat/race-automation-service.js?v=1.4.110-giant-tribe-cache-fixes-2";
+import { RaceAutomationService, SOCKET_EVENT_RACE_AUTOMATION } from "./combat/race-automation-service.js?v=1.4.147-race-damage";
+import { GrappleAutomationService, GRAPPLE_LINK_FLAG, getTwistedLinkForToken } from "./combat/grapple-automation-service.js";
+import { GrappleMacroService } from "./combat/grapple-macro-service.js?v=1.4.334-twisted-macro";
+import { GrapplePlacementPreview } from "./combat/grapple-placement-preview.js?v=1.4.290-rogue-mantle";
+import { getActorHandReservations } from "./integrations/held-items.js";
 import { CraftsmanGadgetService } from "./combat/craftsman-gadget-service.js";
 import { CraftsmanGadgetZoneService } from "./combat/craftsman-gadget-zone-service.js";
 import { CraftsmanVehicleService } from "./combat/craftsman-vehicle-service.js";
 import { CraftsmanConstructorService } from "./combat/craftsman-constructor-service.js";
 import {
+  publishPanelToolApi,
+  registerExternalPanelTool,
   refreshPlayerInventoryQuickButton,
-  registerSceneControlsHook
-} from "./hooks.js?v=1.4.111-party-inventory-token-launcher";
+  registerSceneControlsHook,
+  unregisterExternalPanelTool
+} from "./hooks.js?v=1.4.272";
 import {
   extendDnd5eItemTypes,
   registerDnd5eSheetExtensions,
   registerRebreyaWeaponBaseItemsFromGearPack
-} from "./integrations/dnd5e-sheet-extensions.js?v=1.4.110-giant-tribe-cache-fixes-2&implants=1&sorcerer-cooldown-context=4";
+} from "./integrations/dnd5e-sheet-extensions.js?v=1.4.338-hero-doll-menu";
 import { registerHeldShieldArmorClassPatch } from "./integrations/held-shield-ac.js?v=1.4.96";
+import { registerTravelMapHooks } from "./integrations/travel-map-hooks.js?v=1.4.141-auraeffects-inactive-scene";
 import {
   patchDurabilityItemEffectSuppression,
   reconcileBrokenEquippedArmor,
   reconcileNativeObjectDurability,
   registerDurabilityHooks
-} from "./integrations/durability-hooks.js?v=1.4.116-native-durability";
+} from "./integrations/durability-hooks.js?v=1.4.153-corpse-creature";
 import { patchEffectMacroCombatHooks } from "./integrations/effectmacro-compat.js";
 import { patchSmAirshipRenderSettingsHook } from "./integrations/sm-airship-compat.js";
-import { registerInventorySyncHooks } from "./integrations/inventory-sync.js?v=1.4.96-durable-transfer";
+import { patchDnd5eTooltipRaceGuard } from "./integrations/dnd5e-tooltip-compat.js?v=1.4.215-tooltip-race";
+import { registerInventorySyncHooks } from "./integrations/inventory-sync.js?v=1.4.327";
 import { runMapObjectTokenMacro } from "./integrations/map-object-token-macro.js?v=1.4.97-map-object-token";
 import { refreshSmallTimeDateDisplay, registerSmallTimeIntegration, syncSmallTimeToCalendarTime } from "./integrations/smalltime-compat.js";
 import { registerRationFoodConversionHook } from "./integrations/ration-food-conversion.js";
-import { registerMagicWeaponTemplateHook } from "./integrations/magic-weapon-template.js?v=1.4.96";
-import { registerStorageTokenHooks } from "./integrations/storage-token-hooks.js?v=1.4.133-ground-item-polish";
+import { registerMagicWeaponTemplateHook } from "./integrations/magic-weapon-template.js?v=1.4.327";
+import { registerStorageTokenHooks } from "./integrations/storage-token-hooks.js?v=1.4.197-door-trigger-target";
+import { registerDoorTriggerHooks } from "./integrations/door-trigger-hooks.js?v=1.4.199-door-overlay-anchor";
 import { registerCraftsmanGadgetHooks } from "./integrations/craftsman-gadget-hooks.js";
 import { registerSpellAutomationHooks } from "./integrations/spell-automation-hooks.js";
 import { registerLongRestHooks } from "./integrations/long-rest-hooks.js";
@@ -190,24 +392,29 @@ import { registerCraftsmanGadgetSocketCommand } from "./integrations/craftsman-g
 import { registerSpellInstanceSocketCommand } from "./integrations/spell-instance-socket.js";
 import { registerSummonLifecycleSocketCommand } from "./integrations/summon-lifecycle-socket.js";
 import { registerTransportGroupDropHooks } from "./integrations/transport-group-drop.js";
-import { registerStorageTransferDropHooks } from "./integrations/storage-transfer-drop.js?v=1.4.131-storage-character-drop";
-import { registerStorageTokenDropHooks } from "./integrations/storage-token-drop.js?v=1.4.132-storage-owned-character-resolution";
+import { registerStorageTransferDropHooks } from "./integrations/storage-transfer-drop.js?v=1.4.213-furniture-orientation";
+import { registerStorageTokenDropHooks } from "./integrations/storage-token-drop.js?v=1.4.322";
 import { registerStorageContainerHierarchyHooks } from "./integrations/storage-container-hierarchy.js?v=1.4.122-storage-container-cycle-repair";
+import { registerNarrativeItemCreationHooks } from "./integrations/narrative-item-creation.js?v=1.4.317";
 import { registerTransportVehicleSheetHooks } from "./integrations/transport-vehicle-sheet.js";
 import {
   parseStorageDragData,
   promptStorageTransferQuantity
-} from "./ui/storage-transfer-ui.js";
+} from "./ui/storage-transfer-ui.js?v=1.4.213-furniture-orientation";
 import { getCraftsmanSubclasses } from "./integrations/craftsman-subclass-tracks.js";
 import { patchTransformCleanupUpdateActorHook } from "./integrations/transform-cleanup-compat.js";
-import { registerForienQuestLogIntegration, refreshForienQuestLogApps } from "./integrations/forien-quest-log.js?v=1.4.96";
+import { openRebreyaQuestLog } from "./integrations/rebreya-quest-log.js";
+import {
+  pruneMissingRegisteredGroups,
+  registerGroupRegistryLifecycleHooks
+} from "./integrations/group-registry-lifecycle.js";
 import {
   SOCKET_EVENT_SET_SETTING,
   SOCKET_EVENT_SET_SETTING_RESULT,
   handleSettingsUpdateSocketResponse,
   registerSettings
-} from "./settings.js";
-import { buildLootgenChatContent, buildLootgenStatusContent, registerLootgenChatHooks } from "./ui/lootgen-chat.js?v=1.4.96-durability";
+} from "./settings.js?v=1.4.271";
+import { buildLootgenChatContent, buildLootgenStatusContent, registerLootgenChatHooks } from "./ui/lootgen-chat.js?v=1.4.269";
 import { bringAppToFront, notifyUser, registerHandlebarsHelpers, rerenderApp } from "./ui.js";
 import { promptDurabilityOutcome } from "./ui/durability-outcome-dialog.js";
 
@@ -215,43 +422,68 @@ const SOCKET_CHANNEL = `module.${MODULE_ID}`;
 const SOCKET_EVENT_LOOTGEN_SHOW = "lootgen-show-result";
 const SOCKET_EVENT_LOOTGEN_CLAIM_ROW = "lootgen-claim-row";
 const SOCKET_EVENT_LOOTGEN_CLAIM_COINS = "lootgen-claim-coins";
-const SOCKET_EVENT_LOOTGEN_CLAIM_ROW_TO_INVENTORY = "lootgen-claim-row-to-inventory";
-const SOCKET_EVENT_LOOTGEN_CLAIM_ALL_TO_INVENTORY = "lootgen-claim-all-to-inventory";
-const SOCKET_EVENT_TRADER_AUDIT = "trader-audit";
-const SOCKET_EVENT_DOWNTIME_CREATE_REQUEST = "downtime-create-request";
-const SOCKET_EVENT_DOWNTIME_CREATE_RESULT = "downtime-create-result";
-const SOCKET_EVENT_DOWNTIME_UPDATE_REQUEST = "downtime-update-request";
-const SOCKET_EVENT_DOWNTIME_UPDATE_RESULT = "downtime-update-result";
-const SOCKET_EVENT_DOWNTIME_CHECK_RESULT_REQUEST = "downtime-check-result-request";
-const SOCKET_EVENT_DOWNTIME_CHECK_RESULT_RESULT = "downtime-check-result-result";
-const SOCKET_EVENT_DOWNTIME_PROJECT_CONTINUE_REQUEST = "downtime-project-continue-request";
-const SOCKET_EVENT_DOWNTIME_PROJECT_CONTINUE_RESULT = "downtime-project-continue-result";
-const SOCKET_EVENT_DOWNTIME_PROJECT_CLOSE_REQUEST = "downtime-project-close-request";
-const SOCKET_EVENT_DOWNTIME_PROJECT_CLOSE_RESULT = "downtime-project-close-result";
+const INVENTORY_INGRESS_LOOTGEN_COMMAND = "inventory.ingress.lootgen";
+const INVENTORY_INGRESS_DIRECT_COMMAND = "inventory.ingress.direct";
+const actorKey = (id) => aggregateKey("actor", id);
+const documentKey = (uuid) => aggregateKey("document", uuid);
+const groupKey = (id) => aggregateKey("group", id);
+const storageKey = (uuid) => aggregateKey("storage", uuid);
+const lootKey = (id) => aggregateKey("loot", id);
+const sceneKey = (id) => aggregateKey("scene", id);
+const settingKey = (id) => aggregateKey("setting", id);
+const traderKey = (cityId, traderId) => aggregateKey("trader", `${cityId}:${traderId}`);
+
+function disarmSchedulingKeys(payload) {
+  if (payload.operationId) return [aggregateKey("disarm", payload.operationId)];
+  return [documentKey(payload.sourceTokenUuid), documentKey(payload.targetTokenUuid)];
+}
+
+function sceneActivitySchedulingKeys(payload) {
+  if (payload.groupActorId) return [groupKey(payload.groupActorId)];
+  return [aggregateKey("scene-activity", payload.sessionId)];
+}
+
+function downtimeSchedulingKeys(payload) {
+  const keys = [groupKey(payload.groupId)];
+  if (payload.actorId) keys.push(actorKey(payload.actorId));
+  for (const actorId of payload.actorIds ?? []) keys.push(actorKey(actorId));
+  return keys;
+}
+
+function storageDestinationKeys(payload) {
+  const keys = [storageKey(payload.tokenUuid)];
+  if (payload.target?.groupActorId) keys.push(groupKey(payload.target.groupActorId));
+  if (payload.target?.actorUuid) keys.push(actorKey(payload.target.actorUuid));
+  if (payload.groupActorId) keys.push(groupKey(payload.groupActorId));
+  if (payload.actorUuid) keys.push(actorKey(payload.actorUuid));
+  if (payload.characterTokenUuid) keys.push(documentKey(payload.characterTokenUuid));
+  return keys;
+}
+
+function storageDepositKeys(payload) {
+  const keys = storageDestinationKeys(payload);
+  const source = payload.source ?? {};
+  if (source.tokenUuid) keys.push(storageKey(source.tokenUuid));
+  if (source.sourceUuid) keys.push(documentKey(source.sourceUuid));
+  if (source.itemUuid) keys.push(documentKey(source.itemUuid));
+  return keys;
+}
 const SOCKET_EVENT_DOWNTIME_UPDATED = "downtime-updated";
 const SOCKET_EVENT_TRAVEL_MAP_SYNC_REQUEST = "travel-map-sync-request";
 const GROUP_CALENDAR_TRANSITION_COMMAND = "group.calendar.transition";
 const INVENTORY_REFRESH_SETTLE_MS = 80;
 const LEGACY_WORLD_MUTATION_SOCKET_TYPES = new Set([
-  SOCKET_EVENT_DOWNTIME_CREATE_REQUEST,
-  SOCKET_EVENT_DOWNTIME_UPDATE_REQUEST,
-  SOCKET_EVENT_DOWNTIME_CHECK_RESULT_REQUEST,
-  SOCKET_EVENT_DOWNTIME_PROJECT_CONTINUE_REQUEST,
-  SOCKET_EVENT_DOWNTIME_PROJECT_CLOSE_REQUEST,
   SOCKET_EVENT_TRAVEL_MAP_SYNC_REQUEST,
   SOCKET_EVENT_RACE_AUTOMATION,
   SOCKET_EVENT_CHARACTER_CLASS_AUTOMATION,
   SOCKET_EVENT_INVENTORY_IMPORT_REQUEST,
   SOCKET_EVENT_INVENTORY_SOURCE_DEPLETION_REQUEST,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_REQUEST,
-  SOCKET_EVENT_TRADER_AUDIT,
   SOCKET_EVENT_LOOTGEN_CLAIM_ROW,
-  SOCKET_EVENT_LOOTGEN_CLAIM_ROW_TO_INVENTORY,
-  SOCKET_EVENT_LOOTGEN_CLAIM_ALL_TO_INVENTORY,
   SOCKET_EVENT_LOOTGEN_CLAIM_COINS
 ]);
 const MODULE_STYLE_PATH = `modules/${MODULE_ID}/styles/main.css`;
-const MODULE_STYLE_VERSION = "1.4.120-storage-character-drop";
+const MODULE_STYLE_VERSION = "1.4.322";
 const SECONDS_PER_HOUR = 3600;
 const SECONDS_PER_DAY = 86400;
 const TRAVEL_DAY_HOURS = 8;
@@ -260,12 +492,27 @@ const COMBAT_STATUS_SET_COMMAND = "combat.status.set";
 const TRADER_PURCHASE_COMMAND = "trader.purchase";
 const TRADER_SELL_COMMAND = "trader.sell";
 export const STORAGE_OPEN_COMMAND = "storage.open";
+export const STORAGE_CONFIGURE_COMMAND = "storage.configure";
+export const STORAGE_JOURNAL_READ_COMMAND = "storage.journal.read";
+export const STORAGE_JOURNAL_RECORD_COMMAND = "storage.journal.record";
+export const STORAGE_JOURNAL_RECORD_DROP_COMMAND = "storage.journal.record-drop";
+export const STORAGE_JOURNAL_READ_RECORD_COMMAND = "storage.journal.read-record";
 export const STORAGE_CLAIM_ROW_COMMAND = "storage.claim-row";
 export const STORAGE_CLAIM_COINS_COMMAND = "storage.claim-coins";
+export const STORAGE_CLAIM_ALL_COMMAND = "storage.claim-all";
 export const STORAGE_DEPOSIT_COMMAND = "storage.deposit";
+export const STORAGE_COIN_DROP_COMMAND = "storage.coin.drop";
+export const STORAGE_JOURNAL_DROP_COMMAND = "storage.journal.drop-to-scene";
 export const STORAGE_DROP_ITEM_COMMAND = "storage.drop-item-to-scene";
 export const STORAGE_RESTORE_PORTABLE_COMMAND = "storage.restore-portable";
 export const STORAGE_TOKEN_CHARACTER_COMMAND = "storage.token-to-character";
+export const STORAGE_TRIGGER_READ_COMMAND = "storage.triggers.read";
+export const STORAGE_TRIGGER_SAVE_COMMAND = "storage.triggers.save";
+export const STORAGE_TRIGGER_RESET_COMMAND = "storage.triggers.reset";
+export const DOOR_OPEN_COMMAND = "door.open";
+export const DOOR_TRIGGER_READ_COMMAND = "door.triggers.read";
+export const DOOR_TRIGGER_SAVE_COMMAND = "door.triggers.save";
+export const DOOR_TRIGGER_RESET_COMMAND = "door.triggers.reset";
 export const DURABILITY_TARGET_DAMAGE_COMMAND = "durability.target.damage";
 const ENVIRONMENT_COMBAT_STATUS_IDS = new Set(["rebreya-surrounded", "rebreya-open-position"]);
 const ENVIRONMENT_STATUS_SOURCE = "rebreya-environment";
@@ -273,6 +520,48 @@ const ENVIRONMENT_STATUS_VERSION = "surrounded-ac-1";
 const COUNTERSPELL_AUTOMATION_ENABLED = true;
 let socketModuleApi = null;
 const queuedSocketMessages = [];
+
+export async function publishModuleVersionNotice({
+  moduleEntry = globalThis.game?.modules?.get?.(MODULE_ID),
+  user = globalThis.game?.user,
+  fetchManifest = globalThis.fetch?.bind?.(globalThis),
+  createChatMessage = globalThis.ChatMessage?.create?.bind(globalThis.ChatMessage),
+  logger = console
+} = {}) {
+  const userId = String(user?.id ?? "").trim();
+  let version = String(moduleEntry?.version ?? "").trim();
+
+  if (typeof fetchManifest === "function") {
+    try {
+      const response = await fetchManifest(
+        `modules/${MODULE_ID}/module.json?reload=${Date.now()}`,
+        { cache: "no-store" }
+      );
+      if (response?.ok) {
+        const manifest = await response.json();
+        version = String(manifest?.version ?? "").trim() || version;
+      }
+    }
+    catch {
+      // A stale Foundry package registry is still preferable to losing the notice entirely.
+    }
+  }
+
+  if (!userId || !version || typeof createChatMessage !== "function") return false;
+
+  try {
+    await createChatMessage({
+      user: userId,
+      whisper: [userId],
+      content: `<p>${MODULE_TITLE} v${escapeFoundryHtml(version)} загружен.</p>`
+    });
+    return true;
+  }
+  catch (error) {
+    logger?.warn?.(`${MODULE_ID} | Failed to publish module version notice.`, error);
+    return false;
+  }
+}
 
 function registerDurabilitySettings() {
   game.settings.register(MODULE_ID, SETTINGS_KEYS.DURABILITY_MUTATION_JOURNAL, {
@@ -283,6 +572,15 @@ function registerDurabilitySettings() {
       version: 1,
       records: []
     }
+  });
+}
+
+function registerIconBadgeSettings() {
+  game.settings.register(MODULE_ID, BADGE_BUILD_SETTING, {
+    scope: "world",
+    config: false,
+    type: Object,
+    default: { markers: {}, packs: {} }
   });
 }
 
@@ -362,47 +660,6 @@ const CALENDAR_TRANSITION_OPTION_KEYS = new Set([
   ...Object.keys(CALENDAR_TRANSITION_INTEGER_OPTION_LIMITS),
   ...CALENDAR_TRANSITION_STRING_OPTION_KEYS
 ]);
-
-function getGameUsers() {
-  const users = globalThis.game?.users;
-  if (!users) {
-    return [];
-  }
-
-  if (Array.isArray(users.contents)) {
-    return users.contents;
-  }
-
-  return Array.from(users).map((entry) => Array.isArray(entry) ? entry[1] : entry).filter(Boolean);
-}
-
-function getUserById(userId) {
-  const id = cleanSocketId(userId);
-  if (!id) {
-    return null;
-  }
-
-  return globalThis.game?.users?.get?.(id)
-    ?? getGameUsers().find((user) => user?.id === id)
-    ?? null;
-}
-
-function isActorOwnedByUser(actor, user) {
-  if (!actor || !user || actor.type !== "character") {
-    return false;
-  }
-
-  if (user.isGM) {
-    return true;
-  }
-
-  if (typeof actor.testUserPermission === "function") {
-    return actor.testUserPermission(user, "OWNER") === true;
-  }
-
-  const ownership = actor.ownership ?? actor._source?.ownership ?? {};
-  return Number(ownership[user.id] ?? 0) >= 3 || Number(ownership.default ?? 0) >= 3;
-}
 
 function getApplicationInstances(value) {
   if (!value) {
@@ -695,10 +952,202 @@ function isValidInventorySalePayload(payload) {
     && payload.quantity > 0;
 }
 
+function isValidInventoryDismantlePayload(payload) {
+  return hasExactKeys(payload, ["inventoryActorId", "itemId", "mutationId", "quantity"])
+    && [payload.inventoryActorId, payload.itemId].every(isTrimmedNonEmptyString)
+    && isValidInventoryMutationId(payload.mutationId)
+    && Number.isSafeInteger(payload.quantity)
+    && payload.quantity > 0;
+}
+
 function isValidInventoryImportPayload(payload) {
-  return hasExactKeys(payload, ["inventoryActorId", "itemUuid", "mutationId"])
+  return hasExactKeys(payload, ["folderId", "ingressPlan", "inventoryActorId", "itemUuid", "mutationId"])
     && [payload.inventoryActorId, payload.itemUuid].every(isTrimmedNonEmptyString)
-    && isValidInventoryMutationId(payload.mutationId);
+    && isValidInventoryMutationId(payload.mutationId)
+    && (payload.folderId === null
+      || (isTrimmedNonEmptyString(payload.folderId) && payload.folderId.length <= 160))
+    && isValidSerializedInventoryIngressPlan(payload.ingressPlan)
+    && payload.ingressPlan.groupActorId === payload.inventoryActorId
+    && payload.ingressPlan.requestedFolderId === payload.folderId;
+}
+
+function isValidLootgenInventoryIngressPayload(payload) {
+  if (!hasExactKeys(payload, [
+    "batchMutationId", "groupActorId", "includeCoins", "ingressPlan", "lootId", "rowIds"
+  ])
+    || !isValidInventoryMutationId(payload.batchMutationId)
+    || !isValidInventoryFolderIdentifier(payload.groupActorId)
+    || !isValidInventoryMutationId(payload.lootId)
+    || typeof payload.includeCoins !== "boolean"
+    || !Array.isArray(payload.rowIds)
+    || !isValidSerializedInventoryIngressPlan(payload.ingressPlan)
+    || payload.ingressPlan.groupActorId !== payload.groupActorId) {
+    return false;
+  }
+  const rowIds = payload.rowIds;
+  return (rowIds.length > 0 || payload.includeCoins)
+    && rowIds.every(isValidInventoryFolderIdentifier)
+    && new Set(rowIds).size === rowIds.length
+    && JSON.stringify(payload.ingressPlan.rows.map((row) => row.sourceKey)) === JSON.stringify(rowIds);
+}
+
+function isValidDirectInventoryIngressPayload(payload) {
+  if (!hasExactKeys(payload, [
+    "batchMutationId", "coins", "groupActorId", "ingressPlan", "sourceOrigin", "sources"
+  ])
+    || !isValidInventoryMutationId(payload.batchMutationId)
+    || !isValidInventoryFolderIdentifier(payload.groupActorId)
+    || !new Set(["lootgen", "public-model", "manual-entry"]).has(payload.sourceOrigin)
+    || !Array.isArray(payload.sources)
+    || !payload.coins || typeof payload.coins !== "object" || Array.isArray(payload.coins)
+    || !hasExactKeys(payload.coins, ["cp", "gp", "pp", "sp"])
+    || !Object.values(payload.coins).every((value) => Number.isSafeInteger(value) && value >= 0)) {
+    return false;
+  }
+  const sources = payload.sources;
+  const manualKeys = [
+    "isBroken", "manualEntry", "quantity", "sourceDocumentId", "sourceId", "sourceKey", "sourceType"
+  ];
+  const modelKeys = ["isBroken", "quantity", "sourceDocumentId", "sourceId", "sourceKey", "sourceType"];
+  const isManualEntry = (value) => value && typeof value === "object" && !Array.isArray(value)
+    && hasExactKeys(value, [
+      "itemType", "manualEntryId", "material", "name", "unitPriceDenomination", "unitPriceValue", "unitWeight"
+    ])
+    && isValidInventoryMutationId(value.manualEntryId)
+    && isTrimmedNonEmptyString(value.name)
+    && value.name.length <= 160
+    && typeof value.itemType === "string" && value.itemType === value.itemType.trim() && value.itemType.length <= 160
+    && typeof value.material === "string" && value.material === value.material.trim() && value.material.length <= 160
+    && Number.isFinite(value.unitWeight) && value.unitWeight >= 0
+    && Number.isFinite(value.unitPriceValue) && value.unitPriceValue >= 0
+    && new Set(["pp", "gp", "sp", "cp"]).has(value.unitPriceDenomination);
+  if (!sources.every((source) => (
+    hasExactKeys(source, payload.sourceOrigin === "manual-entry" ? manualKeys : modelKeys)
+      && isValidInventoryFolderIdentifier(source.sourceKey)
+      && isTrimmedNonEmptyString(source.sourceType)
+      && isTrimmedNonEmptyString(source.sourceId)
+      && typeof source.sourceDocumentId === "string"
+      && source.sourceDocumentId === source.sourceDocumentId.trim()
+      && typeof source.isBroken === "boolean"
+      && Number.isFinite(source.quantity)
+      && source.quantity > 0
+      && (payload.sourceOrigin !== "manual-entry" || (
+        source.sourceType === "manual"
+        && source.sourceDocumentId === ""
+        && source.isBroken === false
+        && Number.isSafeInteger(source.quantity)
+        && isManualEntry(source.manualEntry)
+        && source.sourceId === source.manualEntry.manualEntryId
+      ))
+  )) || new Set(sources.map((source) => source.sourceKey)).size !== sources.length) {
+    return false;
+  }
+  if (sources.length === 0) {
+    return payload.ingressPlan === null && Object.values(payload.coins).some((value) => value > 0);
+  }
+  return isValidSerializedInventoryIngressPlan(payload.ingressPlan)
+    && payload.ingressPlan.groupActorId === payload.groupActorId
+    && JSON.stringify(payload.ingressPlan.rows.map((row) => row.sourceKey))
+      === JSON.stringify(sources.map((source) => source.sourceKey));
+}
+
+function isValidInventoryFolderIdentifier(value) {
+  return isTrimmedNonEmptyString(value) && value.length <= 160;
+}
+
+function isValidNullableInventoryFolderIdentifier(value) {
+  return value === null || isValidInventoryFolderIdentifier(value);
+}
+
+function isValidInventoryFolderName(value) {
+  return isTrimmedNonEmptyString(value) && value.length <= 80;
+}
+
+function isValidInventoryFolderCreatePayload(payload) {
+  return hasExactKeys(payload, ["folderId", "groupActorId", "name", "parentId"])
+    && isValidInventoryFolderIdentifier(payload.groupActorId)
+    && isValidInventoryFolderIdentifier(payload.folderId)
+    && isValidInventoryFolderName(payload.name)
+    && isValidNullableInventoryFolderIdentifier(payload.parentId);
+}
+
+function isValidInventoryFolderBatchPayload(payload) {
+  return hasExactKeys(payload, ["action", "folderId", "groupActorId", "includeDescendants", "operationId"])
+    && isValidInventoryFolderIdentifier(payload.groupActorId)
+    && isValidInventoryFolderIdentifier(payload.folderId)
+    && new Set(["sell", "dismantle"]).has(payload.action)
+    && typeof payload.includeDescendants === "boolean"
+    && isValidInventoryFolderIdentifier(payload.operationId);
+}
+
+function isValidInventoryFolderColorPayload(payload) {
+  return hasExactKeys(payload, ["color", "folderId", "groupActorId"])
+    && isValidInventoryFolderIdentifier(payload.groupActorId)
+    && isValidInventoryFolderIdentifier(payload.folderId)
+    && (payload.color === null || (typeof payload.color === "string" && /^#[0-9a-f]{6}$/iu.test(payload.color)));
+}
+
+function isValidInventoryFolderRenamePayload(payload) {
+  return hasExactKeys(payload, ["folderId", "groupActorId", "name"])
+    && isValidInventoryFolderIdentifier(payload.groupActorId)
+    && isValidInventoryFolderIdentifier(payload.folderId)
+    && isValidInventoryFolderName(payload.name);
+}
+
+function isValidInventoryFolderMovePayload(payload) {
+  return hasExactKeys(payload, ["folderId", "groupActorId", "parentId"])
+    && isValidInventoryFolderIdentifier(payload.groupActorId)
+    && isValidInventoryFolderIdentifier(payload.folderId)
+    && isValidNullableInventoryFolderIdentifier(payload.parentId);
+}
+
+function isValidInventoryFolderDeletePayload(payload) {
+  return hasExactKeys(payload, ["folderId", "groupActorId"])
+    && isValidInventoryFolderIdentifier(payload.groupActorId)
+    && isValidInventoryFolderIdentifier(payload.folderId);
+}
+
+function isValidInventoryItemFolderMovePayload(payload) {
+  const extended = Object.hasOwn(payload ?? {}, "quantity");
+  const keys = extended
+    ? ["folderId", "groupActorId", "itemId", "operationId", "quantity", ...(Object.hasOwn(payload, "expectedSourceQuantity") ? ["expectedSourceQuantity"] : [])].sort()
+    : ["folderId", "groupActorId", "itemId"];
+  const validQuantity = value => Number.isFinite(value) && value > 0 && value <= 1e9 && Math.abs(value * 1e5 - Math.round(value * 1e5)) < 1e-6;
+  return hasExactKeys(payload, keys)
+    && isValidInventoryFolderIdentifier(payload.groupActorId)
+    && isValidInventoryFolderIdentifier(payload.itemId)
+    && isValidNullableInventoryFolderIdentifier(payload.folderId)
+    && (!extended || (validQuantity(payload.quantity) && isValidInventoryFolderIdentifier(payload.operationId)
+      && (!Object.hasOwn(payload, "expectedSourceQuantity") || validQuantity(payload.expectedSourceQuantity))));
+}
+
+function isCanonicalInventoryIngressRule(value) {
+  try {
+    return JSON.stringify(normalizeInventoryIngressRule(value)) === JSON.stringify(value);
+  }
+  catch (_error) {
+    return false;
+  }
+}
+
+function isValidInventoryIngressRuleRevision(value) {
+  return Number.isSafeInteger(value) && value >= 0;
+}
+
+function isValidInventoryIngressRuleWritePayload(payload) {
+  return hasExactKeys(payload, ["expectedRevision", "groupActorId", "operationId", "rule"])
+    && isValidInventoryFolderIdentifier(payload.groupActorId)
+    && isValidInventoryMutationId(payload.operationId)
+    && isValidInventoryIngressRuleRevision(payload.expectedRevision)
+    && isCanonicalInventoryIngressRule(payload.rule);
+}
+
+function isValidInventoryIngressRuleDeletePayload(payload) {
+  return hasExactKeys(payload, ["expectedRevision", "groupActorId", "operationId", "ruleId"])
+    && isValidInventoryFolderIdentifier(payload.groupActorId)
+    && isValidInventoryMutationId(payload.operationId)
+    && isValidInventoryIngressRuleRevision(payload.expectedRevision)
+    && isValidInventoryFolderIdentifier(payload.ruleId);
 }
 
 function isValidCurrencyInteger(value) {
@@ -1001,6 +1450,20 @@ function actorIsOwnedByUser(actor, user) {
   return Number(ownership[user.id] ?? 0) >= 3 || Number(ownership.default ?? 0) >= 3;
 }
 
+function documentIsOwnedByUser(document, user) {
+  if (!document || !user) return false;
+  if (user.isGM === true) return true;
+  if (typeof document.testUserPermission === "function") {
+    return document.testUserPermission(user, "OWNER");
+  }
+  const actor = document.actor ?? document;
+  if (typeof actor?.testUserPermission === "function") {
+    return actor.testUserPermission(user, "OWNER");
+  }
+  const ownership = actor?.ownership ?? actor?._source?.ownership ?? {};
+  return Number(ownership[user.id] ?? 0) >= 3 || Number(ownership.default ?? 0) >= 3;
+}
+
 function filterVisibleGlobalEvents(events = []) {
   const rows = Array.isArray(events) ? events : [];
   if (game.user?.isGM) {
@@ -1017,37 +1480,90 @@ function filterVisibleGlobalEvents(events = []) {
 
 export class RebreyaMainModule {
   constructor() {
-    this.worldMutationCoordinator = new WorldMutationCoordinator();
+    this.socketCommandTrace = createSocketCommandTraceSink();
+    this.worldMutationCoordinator = new WorldMutationCoordinator({
+      trace: this.socketCommandTrace
+    });
+    this.socketCommandBus = new SocketCommandBus({
+      coordinator: this.worldMutationCoordinator,
+      gameProvider: () => globalThis.game,
+      requireExplicitScheduling: true,
+      trace: this.socketCommandTrace
+    });
+    this.privilegedMutationGateway = new PrivilegedMutationGateway({
+      commandBus: this.socketCommandBus,
+      coordinator: this.worldMutationCoordinator,
+      gameProvider: () => globalThis.game,
+      getActiveGm,
+      isActiveGmClient,
+      operationIdFactory: () => createSocketRequestId("privileged-mutation"),
+      requireExplicitScheduling: true
+    });
+    this.worldSettingMutationRepository = new WorldSettingMutationRepository({
+      mutationGateway: this.privilegedMutationGateway,
+      gameProvider: () => globalThis.game
+    });
+    this.sceneActivityService=new SceneActivityService({repository:this.worldSettingMutationRepository,
+      resolveContext:request=>this.#resolveSceneActivityContext(request),refresh:change=>this.refreshSceneActivityApps?.(change)});
+    this.sceneActivityApps=new Map();
+    this.sceneActivityControllerPromise=null;
+    this.purchaseBasketJournalRepository = new PurchaseBasketJournalRepository({
+      worldSettingMutationRepository: this.worldSettingMutationRepository
+    });
+    this.purchaseBasketOperations = new PurchaseBasketFoundryOperations({
+      gameProvider: () => globalThis.game,
+      fromUuid: (uuid) => globalThis.fromUuid?.(uuid) ?? globalThis.foundry?.utils?.fromUuid?.(uuid)
+    });
+    this.purchaseBasketService = new PurchaseBasketService({
+      journal: this.purchaseBasketJournalRepository,
+      operations: this.purchaseBasketOperations
+    });
     this.uiRefreshCoordinator = new UiRefreshCoordinator();
+    this.reputationService = new ReputationService({
+      resolveActor: async (uuid) => /^Actor\.[A-Za-z0-9]{16}$/u.test(uuid ?? "") ? globalThis.game?.actors?.get?.(uuid.slice(6)) : null,
+      coordinator: this.worldMutationCoordinator,
+      mutationGateway: this.privilegedMutationGateway,
+      refresh: (actorUuid) => this.refreshReputationViews(actorUuid)
+    });
     this.inventoryRefreshActorIds = new Set();
     this.inventoryRefreshHoldCount = 0;
     this.inventoryRefreshTimer = null;
     this.inventoryRefreshWaiters = [];
     this.groupStateRepository = new GroupStateRepository({
-      coordinator: this.worldMutationCoordinator,
+      mutationGateway: this.privilegedMutationGateway,
       gameProvider: () => globalThis.game,
       normalizeRegistry: normalizeGroupRegistry,
       normalizeGroupState,
       buildDefaultGroupState
     });
-    this.socketCommandBus = new SocketCommandBus({
-      coordinator: this.worldMutationCoordinator,
-      gameProvider: () => globalThis.game
-    });
     this.traderStateRepository = new TraderStateRepository({
-      coordinator: this.worldMutationCoordinator,
+      mutationGateway: this.privilegedMutationGateway,
       gameProvider: () => globalThis.game,
       normalizeState: normalizeTraderState
     });
-    this.lootgenTemplateCatalog = new LootgenTemplateCatalog({
-      get: () => globalThis.game?.settings?.get(MODULE_ID, SETTINGS_KEYS.LOOTGEN_TEMPLATES),
-      set: (value) => globalThis.game?.settings?.set(MODULE_ID, SETTINGS_KEYS.LOOTGEN_TEMPLATES, value),
-      randomId: () => globalThis.randomID?.()
+    this.lootgenSourceCatalog = new LootgenSourceCatalog({getModel:()=>this.getModel()});
+    this.lootgenTemplateItems = new LootgenTemplateItemService({
+      isGm: () => globalThis.game?.user?.isGM === true,
+      isActiveGm: () => isActiveGmClient(globalThis.game),
+      supportsItemType: () => Array.from(globalThis.Item?.TYPES ?? []).includes(`${MODULE_ID}.lootgen-template`),
+      listItems: () => Array.from(globalThis.game?.items?.contents ?? globalThis.game?.items ?? []),
+      listFolders: () => Array.from(globalThis.game?.folders?.contents ?? globalThis.game?.folders ?? []),
+      resolveUuid: (uuid) => globalThis.fromUuid?.(uuid),
+      createItem: (data) => globalThis.Item?.create?.(data),
+      createFolder: (data) => globalThis.Folder?.create?.(data),
+      getLegacySetting: () => globalThis.game?.settings?.get(MODULE_ID, SETTINGS_KEYS.LOOTGEN_TEMPLATES),
+      setLegacySetting: (value) => globalThis.game?.settings?.set(MODULE_ID, SETTINGS_KEYS.LOOTGEN_TEMPLATES, value)
     });
-    this.repository = new EconomyRepository();
+    this.repository = new EconomyRepository({
+      worldSettingMutationRepository: this.worldSettingMutationRepository
+    });
     this.materialsCompendium = new MaterialsCompendiumService();
     this.gearCompendium = new GearCompendiumService();
-    this.magicItemsCompendium = new MagicItemsCompendiumService();
+    this.alchemyCompendium = new AlchemyCompendiumService();
+    this.grapplePlacementPreview = new GrapplePlacementPreview();
+    this.magicItemsCompendium = new MagicItemsCompendiumService({
+      placementPreview: this.grapplePlacementPreview
+    });
     this.featsCompendium = new FeatsCompendiumService();
     this.backgroundsCompendium = new BackgroundsCompendiumService();
     this.statesCompendium = new StatesCompendiumService();
@@ -1066,6 +1582,7 @@ export class RebreyaMainModule {
     });
     this.classesCompendium = new ClassesCompendiumService();
     this.actionsCompendium = new ActionsCompendiumService();
+    this.glossaryCompendium = new GlossaryCompendiumService();
     this.downtimeCompendium = new DowntimeCompendiumService();
     this.traderService = new TraderService(this, {
       stateRepository: this.traderStateRepository
@@ -1076,10 +1593,8 @@ export class RebreyaMainModule {
     });
     this.traderService.setTransactionService(this.tradeTransactionService);
     this.groupContextService = new GroupContextService({
-      coordinator: this.worldMutationCoordinator,
       groupStateRepository: this.groupStateRepository
     });
-    this.questLogService = new RebreyaQuestLogService({ groupContextService: this.groupContextService });
     this.downtimeService = new DowntimeService(this);
     this.characterDowntimeService = new CharacterDowntimeService(this);
     this.transportFuelService = new TransportFuelService({
@@ -1091,15 +1606,121 @@ export class RebreyaMainModule {
       fuelService: this.transportFuelService
     });
     this.travelMapService = new TravelMapService();
+    this.inventoryIngressRuleCompilerCache = new InventoryIngressRuleCompilerCache();
+    this.inventoryIngressPlanner = new InventoryIngressPlanner({
+      readRules: (groupActorId) => this.inventoryService.getInventoryIngressRuleState({ groupActorId }),
+      buildDescriptor: async (itemData) => buildInventoryIngressDescriptor(itemData, {
+        model: await this.getModel()
+      }),
+      resolveDismantleOutputs: async (itemData, quantity) => resolveInventoryDismantleOutputs(
+        itemData,
+        quantity,
+        { model: await this.getModel() }
+      ),
+      compilerCache: this.inventoryIngressRuleCompilerCache,
+      confirm: async (preview) => {
+        const moduleVersion = game.modules.get(MODULE_ID)?.version ?? "0";
+        const { promptInventoryIngressConfirmation } = await import(
+          "./ui/inventory-app.js?v=1.4.327"
+        );
+        return promptInventoryIngressConfirmation(preview);
+      }
+    });
     this.inventoryService = new InventoryService(this);
     this.durabilityService = new DurabilityService(this);
+    this.lootgenGeneratedResultService = new LootgenGeneratedResultService({
+      journal: this.inventoryService.mutationJournal,
+      coordinator: this.worldMutationCoordinator,
+      buildState: (form, context) => buildLootgenGeneratedState(form, context, {
+        catalog: this.lootgenSourceCatalog,
+        buildItemData: row => this.inventoryService.buildLootgenItemData(row),
+        prepareContainerGraph: (snapshot,adapters) => this.storageContainerItemService.prepareItemGraph(snapshot,adapters),
+        createDocumentId: () => foundry.utils.randomID()
+      }),
+      findMessage: messageId => this.#readLootgenMessage(messageId),
+      createMessage: (state, { messageId }) => {
+        const whisper = Array.from(game.users?.contents ?? game.users?.values?.() ?? []).filter(user=>user.isGM).map(user=>user.id);
+        if (!whisper.length) throw new Error("Не найден мастер для сохранения закрытого результата лута.");
+        return this.#createLootgenChatDocument({...state,published:false}, {messageId,whisper});
+      },
+      activateMessage: messageId => this.#activateLootgenGeneratedMessage(messageId)
+    });
+    this.corpseStorageMaterializer = new CorpseStorageMaterializer({
+      inventoryService: this.inventoryService,
+      durabilityService: this.durabilityService
+    });
     this.storageOpenSoundService = new StorageOpenSoundService({
       gameProvider: () => globalThis.game,
       isActiveGm: isActiveGmClient
     });
     this.storageService = new StorageService({
       generate: (form, context) => this.generateStorageLoot(form, context),
+      getOrBuildDurability: (item, options) => this.durabilityService.getOrBuildDurability(item, options),
+      materializeFirstOpen: ({ token }) => isDeadNpcStorageTarget(token)
+        ? this.corpseStorageMaterializer.materialize(token)
+        : null,
       onGeneratedOpen: ({ token }) => this.storageOpenSoundService.playForToken(token)
+    });
+    this.storageTriggerDnd5eAdapter = new StorageTriggerDnd5eAdapter({
+      fromUuid: (uuid) => globalThis.fromUuid?.(uuid)
+    });
+    this.storageTriggerPromptBroker = new StorageTriggerPromptBroker({
+      gameProvider: () => globalThis.game,
+      showDialog: async (prompt) => {
+        const DialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
+        if (typeof DialogV2?.confirm !== "function") throw new Error("Foundry DialogV2 недоступен.");
+        const escape = globalThis.foundry?.utils?.escapeHTML ?? ((value) => String(value ?? ""));
+        return DialogV2.confirm({
+          window: { title: cleanSocketId(prompt?.title) || "Хранилище" },
+          content: `<p>${escape(cleanSocketId(prompt?.message))}</p>`,
+          yes: { label: cleanSocketId(prompt?.confirmLabel) || "Продолжить" },
+          no: { label: cleanSocketId(prompt?.cancelLabel) || "Отмена" }
+        });
+      }
+    });
+    this.storageTriggerService = new StorageTriggerService({
+      hasItem: (...args) => this.storageTriggerDnd5eAdapter.hasItem(...args),
+      rollCheck: (...args) => this.storageTriggerDnd5eAdapter.rollCheck(...args),
+      consumeItem: (...args) => this.storageTriggerDnd5eAdapter.consumeItem(...args),
+      applyDamage: (...args) => this.storageTriggerDnd5eAdapter.applyDamage(...args),
+      showDialog: (context, config) => this.storageTriggerPromptBroker.request(context, config),
+      createChatMessage: async (_context, config) => {
+        const escape = globalThis.foundry?.utils?.escapeHTML ?? ((value) => String(value ?? ""));
+        return globalThis.ChatMessage?.create?.({ content: `<p>${escape(cleanSocketId(config?.message))}</p>` });
+      },
+      notify: async (_context, config) => {
+        const level = ["info", "warn", "error"].includes(cleanSocketId(config?.level))
+          ? cleanSocketId(config.level)
+          : "info";
+        return globalThis.ui?.notifications?.[level]?.(cleanSocketId(config?.message));
+      },
+      executeMacro: async (macroContext, config) => {
+        const macro = await globalThis.fromUuid?.(cleanSocketId(config?.macroUuid));
+        if (macro?.documentName !== "Macro" || typeof macro.execute !== "function") {
+          throw new Error("Макрос триггера не найден.");
+        }
+        return macro.execute(macroContext);
+      },
+      persistRuntime: (context, mutate) => this.storageService.updateTriggerRuntime(
+        context.storageToken,
+        mutate,
+        { path: cleanStoragePath(context.path) }
+      ),
+      logger: console
+    });
+    this.doorTriggerRepository = new DoorTriggerTargetRepository();
+    this.triggerTargetCoordinator = new TriggerTargetCoordinator({
+      triggerService: this.storageTriggerService,
+      adapters: {
+        storage: new StorageTriggerTargetAdapter({ storageService: this.storageService }),
+        door: new DoorTriggerTargetAdapter({ repository: this.doorTriggerRepository })
+      }
+    });
+    this.doorTriggerCommandService = new DoorTriggerCommandService({
+      coordinator: this.triggerTargetCoordinator,
+      resolveDocument: (uuid) => globalThis.fromUuid?.(uuid),
+      measureDistance: measureDoorDistanceFeet,
+      logger: console
     });
     this.builtinStorageActorService = new BuiltinStorageActorService({
       gameProvider: () => globalThis.game,
@@ -1111,7 +1732,19 @@ export class RebreyaMainModule {
       gameProvider: () => globalThis.game,
       isActiveGm: isActiveGmClient
     });
-    this.storageContainerItemService = new StorageContainerItemService();
+    this.storageContainerItemService = new StorageContainerItemService({
+      journal: this.inventoryService.mutationJournal,
+      coordinator: this.worldMutationCoordinator,
+      buildItemData: row => this.inventoryService.buildLootgenItemData(row),
+      getManifest: () => this.lootgenSourceCatalog.getManifest()
+    });
+    this.storageJournalReader = new StorageJournalReader({
+      fromUuid: (uuid) => globalThis.fromUuid?.(uuid),
+      enrichHtml: (content, options) => (
+        globalThis.CONFIG?.ux?.TextEditor?.implementation?.enrichHTML?.(content, options)
+      ),
+      parseHtml: createStorageJournalHtmlParser(() => globalThis.document)
+    });
     this.nativeObjectDurabilityService = new NativeObjectDurabilityService({
       durabilityService: this.durabilityService,
       storageService: this.storageService,
@@ -1122,6 +1755,8 @@ export class RebreyaMainModule {
     });
     this.promptDurabilityOutcome = promptDurabilityOutcome;
     this.durabilityOutcomeTasks = new Map();
+    const disarmCapability = Object.freeze({});
+    this.disarmDocuments = new DisarmDocuments();
     this.storageCommandService = new StorageCommandService({
       storageService: this.storageService,
       inventoryService: this.inventoryService,
@@ -1129,8 +1764,27 @@ export class RebreyaMainModule {
       measureDistance: measureStorageTokenDistance,
       measurePointDistance: measureStoragePointDistance,
       groundPileService: this.storageGroundPileService,
+      disarmCapability,
+      prepareDisarmPlacement: (actor, item) => this.heroDollService.prepareDisarmPlacement(actor, item),
+      validateDisarmDestination: async (record) => {
+        await this.disarmDocuments.revalidate(record);
+        const points = await this.disarmDocuments.dropPoints(record);
+        if (!points.some(point => point.x === record.destination.x && point.y === record.destination.y)) throw new Error("Место падения больше недоступно без пересечения стены.");
+      },
       containerItemService: this.storageContainerItemService,
-      isVisibleTo: (storageToken) => isStorageTokenVisible(storageToken)
+      durabilityService: this.durabilityService,
+      lootgenTemplateItems: this.lootgenTemplateItems,
+      triggerTargetCoordinator: this.triggerTargetCoordinator,
+      journalReader: this.storageJournalReader,
+      resolveDocument: (uuid) => globalThis.fromUuid?.(uuid),
+      isVisibleTo: (storageToken) => isStorageTokenVisible(storageToken),
+      createChatMessage: (data) => globalThis.ChatMessage?.create?.(data)
+    });
+    this.disarmService = new DisarmService({
+      journal: this.inventoryService.mutationJournal, coordinator: this.worldMutationCoordinator,
+      documents: this.disarmDocuments, rollAdapter: new DisarmRollAdapter(),
+      storageCommands: { dropDisarmedItem: (intent, context) => this.storageCommandService.dropDisarmedItem(intent, { ...context, capability: disarmCapability }) },
+      publish: record => this.publishDisarmOperation(record)
     });
     this.transportInstanceService = new TransportInstanceService(this, {
       gameProvider: () => globalThis.game,
@@ -1144,6 +1798,21 @@ export class RebreyaMainModule {
       macroProvider: () => globalThis.Macro,
       isActiveGmClient
     });
+    this.grappleAutomationService = new GrappleAutomationService({
+      coordinator: this.worldMutationCoordinator,
+      commandBus: this.socketCommandBus,
+      placementPreview: this.grapplePlacementPreview,
+      fromUuid: (uuid) => globalThis.fromUuid?.(uuid),
+      randomId: () => globalThis.foundry?.utils?.randomID?.() ?? createSocketRequestId("grapple-link"),
+      isActiveGmClient,
+      gameProvider: () => globalThis.game
+    });
+    this.grappleMacroService = new GrappleMacroService({
+      gameProvider: () => globalThis.game,
+      folderProvider: () => globalThis.Folder,
+      macroProvider: () => globalThis.Macro,
+      isActiveGmClient
+    });
     this.lootClaimService = new LootClaimService({
       getMessage: ({ messageId, lootId }) => (
         (messageId ? globalThis.game?.messages?.get?.(messageId) : null)
@@ -1154,14 +1823,79 @@ export class RebreyaMainModule {
         content: buildLootgenChatContent(state),
         [`flags.${MODULE_ID}.lootgenChat`]: state
       }),
-      grantRow: ({ claimId, row }) => this.inventoryService.addLootgenChatRowToInventoryOnce(
-        row,
-        `loot-row:${claimId}`
-      ),
+      grantRow: async () => {
+        throw new Error("Lootgen inventory rows require a serialized ingress batch plan.");
+      },
       grantCoins: ({ claimId, coins }) => this.inventoryService.addCurrencyToInventoryOnce(
         coins,
         `loot-coins:${claimId}`
       ),
+      grantBatch: async ({ claimId, lootId, rows, coins, includeCoins, ingressPlan, message }) => {
+        if (ingressPlan?.destination === "character") {
+          return this.#grantLootgenCharacterRow({claimId,lootId,rows,includeCoins,ingressPlan,message});
+        }
+        if (ingressPlan == null) {
+          if (rows.length > 0) {
+            throw new Error("Lootgen inventory rows require a serialized ingress batch plan.");
+          }
+          if (includeCoins) {
+            await this.inventoryService.addCurrencyToInventoryOnce(coins, `loot-coins:${claimId}`);
+          }
+          return {
+            acceptedRowIds: [],
+            coinsGranted: includeCoins,
+            receipt: { batchMutationId: claimId }
+          };
+        }
+        const groupActorId = String(ingressPlan?.groupActorId ?? "").trim();
+        const buildRows = () => {
+          const liveState = foundry.utils.deepClone(message.getFlag(MODULE_ID, "lootgenChat") ?? {});
+          return this.#buildLootgenInventoryIngressRows(liveState,rows.map(row=>String(row.rowId??"").trim()));
+        };
+        const ingressResult = await this.inventoryService.commitInventoryIngressBatch({
+          groupActorId,
+          batchMutationId: claimId,
+          sourceOrigin: "lootgen",
+          serializedPlan: ingressPlan
+        }, {
+          resolveRows: async ({recovering=false}={}) => {
+            if (!recovering && rows.length>0) await assertLootgenCatalogCurrent(message.getFlag(MODULE_ID,"lootgenChat"),this.lootgenSourceCatalog);
+            return buildRows();
+          },
+          debitRow: async () => {},
+          allowPreparedLootgenGraph: true,
+          acquisitionContext: (() => {
+            const sceneId = String(message?.speaker?.scene ?? "").trim();
+            const sceneName = String(globalThis.game?.scenes?.get?.(sceneId)?.name ?? "").trim();
+            const state = message.getFlag(MODULE_ID, "lootgenChat") ?? {};
+            return {
+              sceneId,
+              sceneName,
+              sourceType: "lootgen",
+              sourceId: String(state.lootId ?? lootId ?? "").trim(),
+              sourceName: String(state.sourceName ?? "").trim() || "Lootgen"
+            };
+          })()
+        });
+        const acceptedRowIds = ingressResult.rows
+          .filter((row) => row.changed)
+          .map((row) => row.sourceKey);
+        let coinsGranted = false;
+        if (includeCoins && Number(coins?.totalCopper ?? 0) > 0) {
+          await this.inventoryService.addCurrencyToInventoryOnce(
+            coins,
+            `loot-coins:${claimId}`,
+            { groupActorId }
+          );
+          coinsGranted = true;
+        }
+        return {
+          acceptedRowIds,
+          coinsGranted,
+          receipt: { actorId: ingressResult.actorId, batchMutationId: claimId },
+          inventoryTransferMode: ingressResult.inventoryTransferMode
+        };
+      },
       coordinator: this.worldMutationCoordinator
     });
     this.heroDollService = new HeroDollService(this);
@@ -1172,6 +1906,7 @@ export class RebreyaMainModule {
       downtimeService: this.downtimeService
     });
     this.itemUpgradeService = new ItemUpgradeService(this);
+    this.itemUpgradeAutomationService = new ItemUpgradeAutomationService(this);
     this.calendarService = new CalendarService({
       groupContextService: this.groupContextService,
       commandBus: this.socketCommandBus
@@ -1206,7 +1941,10 @@ export class RebreyaMainModule {
       notifyError: (message) => globalThis.ui?.notifications?.error?.(message)
     });
     this.runeKnightAutomationService = new RuneKnightAutomationService(this);
-    this.curseEaterAutomationService = new CurseEaterAutomationService();
+    this.curseEaterAutomationService = new CurseEaterAutomationService({
+      getUpgradeCatalog: async () => (await this.getModel()).gearById
+    });
+    this.curseUpgradeAutomationService = new CurseUpgradeAutomationService(this);
     this.combatStatusService = new CombatStatusService(this);
     this.implantAutomationService = new ImplantAutomationService(this);
     this.combatAttackService = new CombatAttackService(this);
@@ -1269,6 +2007,7 @@ export class RebreyaMainModule {
       isActiveGmClient: () => isActiveGmClient(globalThis.game)
     });
     for (const service of [
+      this.curseUpgradeAutomationService,
       this.runeKnightAutomationService,
       this.performerAutomationService,
       this.fighterAutomationService,
@@ -1277,7 +2016,8 @@ export class RebreyaMainModule {
       this.paladinAutomationService,
       this.craftsmanGadgetService,
       this.craftsmanConstructorService,
-      this.implantService
+      this.implantService,
+      this.magicItemsCompendium
     ]) {
       service.registerLongRestSteps?.(this.longRestPipelineService);
     }
@@ -1288,12 +2028,15 @@ export class RebreyaMainModule {
     this.statesApp = null;
     this.globalEventsApp = null;
     this.inventoryApp = null;
+    this.inventoryFolderApps = new Map();
     this.groupsApp = null;
     this.cosmologyApp = null;
     this.lootgenApps = new Map();
     this.lootgenCounter = 0;
     this.latestLootgenResult = null;
     this.storageApps = new Map();
+    this.storageTriggerEditors = new Map();
+    this.doorTriggerEditors = new Map();
     this.cityApps = new Map();
     this.traderV2Apps = new Map();
     this.tradeRouteApps = new Map();
@@ -1308,6 +2051,174 @@ export class RebreyaMainModule {
     });
   }
 
+  async requestDisarmAction(action, payload) {
+    if (!DISARM_ACTIONS.includes(action)) throw new Error("Неизвестное действие обезоруживания.");
+    let result;
+    try { result = await this.privilegedMutationGateway.mutate(`disarm.${action}`, payload); }
+    catch (error) {
+      // Only confirmed preflight rejection frees the local intent. A lost acknowledgement must keep its ID.
+      const rejectedStart = action === "start" && ["unsupported-system", "unauthorized", "invalid-tokens", "target-not-visible",
+        "invalid-held-item", "invalid-weapon-grip", "out-of-range", "target-too-large", "operation-pending"].includes(error.code);
+      if ((rejectedStart || (action === "resume" && error.code === "operation-not-found"))
+        && this.pendingDisarmIntent?.operationId === payload.operationId) this.pendingDisarmIntent = null;
+      throw error;
+    }
+    if (["completed", "cancelled", "conflict", "manual-review"].includes(result?.phase)) {
+      if (this.pendingDisarmIntent?.operationId === result.operationId) this.pendingDisarmIntent = null;
+    }
+    return result;
+  }
+
+  async disarm(options = {}) {
+    if (this.disarmDialogTask) return this.disarmDialogTask;
+    this.disarmDialogTask = (async () => {
+      if (this.pendingDisarmIntent) return this.openDisarmOperation(this.pendingDisarmIntent.operationId);
+      const tokens = resolveDisarmSelection(options);
+      const preview = await this.requestDisarmAction("preview", tokens);
+      const selected = await promptDisarm(preview);
+      if (!selected) return null;
+      const intent = { ...tokens, ...selected, operationId: createSocketRequestId("disarm") };
+      this.pendingDisarmIntent = intent;
+      return this.requestDisarmAction("start", intent);
+    })();
+    try { return await this.disarmDialogTask; }
+    catch (error) { globalThis.ui?.notifications?.error?.(error.message); throw error; }
+    finally { this.disarmDialogTask = null; }
+  }
+
+  async openDisarmOperation(operationId) {
+    const result = await this.requestDisarmAction("resume", { operationId });
+    if (result.phase === "awaiting-baseline" && game.user.isGM) {
+      const decision = await promptDisarmBaseline(operationId);
+      if (decision) return this.requestDisarmAction("set-baseline", decision);
+    }
+    return result;
+  }
+
+  async publishDisarmOperation(record) {
+    if (!isActiveGmClient(globalThis.game)) return;
+    const content = buildDisarmChatContent(record);
+    const sourceTokenParts = record.intent.sourceTokenUuid.split(".");
+    const speaker = { alias: record.sourceName, actor: record.sourceActorUuid.split(".").at(-1),
+      scene: sourceTokenParts[1], token: sourceTokenParts.at(-1) };
+    const existing = game.messages.contents.find(message => message.author?.isGM
+      && message.getFlag(MODULE_ID, "disarmOperationId") === record.intent.operationId);
+    const changed = !existing || existing.content !== content || Object.entries(speaker).some(([key,value]) => existing.speaker?.[key] !== value);
+    const rolls = [record.attackRoll, record.saveRoll, record.directionRoll].filter(Boolean).map(roll => Roll.fromData(roll.json));
+    if (!isActiveGmClient(globalThis.game)) return;
+    if (existing) {
+      if (changed) await existing.update({ content, rolls, speaker });
+    } else await ChatMessage.create({ content, rolls, speaker, flags: { [MODULE_ID]: { disarmOperationId: record.intent.operationId } } });
+    if (record.phase === "completed" && record.dropped && changed) {
+      const actor = await fromUuid(record.targetActorUuid);
+      if (actor) await this.refreshInventoryViews({ actorIds: [actor.id] });
+    }
+  }
+
+  async toggleGrapple() {
+    try {
+      const controlled = globalThis.canvas?.tokens?.controlled ?? [];
+      const targets = Array.from(globalThis.game?.user?.targets ?? []);
+      if (controlled.length !== 1 || targets.length !== 1) {
+        throw Object.assign(new Error("Выберите одного захватчика и одну цель."), { code: "invalid-selection" });
+      }
+      const sourceTokenUuid = cleanSocketId(controlled[0]?.document?.uuid ?? controlled[0]?.uuid);
+      const targetTokenUuid = cleanSocketId(targets[0]?.document?.uuid ?? targets[0]?.uuid);
+      const operationId = createSocketRequestId("grapple-toggle");
+      const payload = { sourceTokenUuid, targetTokenUuid, operationId };
+      return await (isActiveGmClient(globalThis.game)
+        ? this.grappleAutomationService.toggle(payload)
+        : this.socketCommandBus.request(GRAPPLE_TOGGLE_COMMAND, payload, { requestId: operationId }));
+    }
+    catch (error) {
+      this.#notifyGrappleError(error);
+      return null;
+    }
+  }
+
+  async moveGrappled() {
+    try {
+      const controlled = globalThis.canvas?.tokens?.controlled ?? [];
+      if (controlled.length !== 1) {
+        throw Object.assign(new Error("Выберите одного захватчика."), { code: "invalid-selection" });
+      }
+      const sourceToken = controlled[0]?.document ?? controlled[0];
+      const sourceTokenUuid = cleanSocketId(sourceToken?.uuid);
+      const reservations = getActorHandReservations(sourceToken?.actor)
+        .filter((row) => row.kind === "grapple" && row.sourceTokenUuid === sourceTokenUuid);
+      const selectedTargets = Array.from(globalThis.game?.user?.targets ?? [])
+        .map((token) => token?.document ?? token);
+      const selected = selectedTargets.length === 1
+        ? reservations.find((row) => row.targetTokenUuid === cleanSocketId(selectedTargets[0]?.uuid))
+        : null;
+      const reservation = selected
+        ?? (selectedTargets.length === 0 && reservations.length === 1 ? reservations[0] : null);
+      if (!reservation) {
+        throw Object.assign(new Error("Выберите одну удерживаемую цель."), { code: "invalid-selection" });
+      }
+      const targetToken = await globalThis.fromUuid?.(reservation.targetTokenUuid);
+      if (!targetToken) throw Object.assign(new Error("Схваченное существо не найдено."), { code: "stale-token" });
+      const preview = await this.grappleAutomationService.choosePlacement({
+        sourceTokenUuid,
+        targetTokenUuid: reservation.targetTokenUuid
+      });
+      if (preview.cancelled) return { cancelled: true };
+      const operationId = createSocketRequestId("grapple-place");
+      const payload = {
+        sourceTokenUuid,
+        targetTokenUuid: cleanSocketId(targetToken.uuid),
+        x: preview.x,
+        y: preview.y,
+        operationId
+      };
+      return await (isActiveGmClient(globalThis.game)
+        ? this.grappleAutomationService.place(payload)
+        : this.socketCommandBus.request(GRAPPLE_PLACE_COMMAND, payload, { requestId: operationId }));
+    }
+    catch (error) {
+      this.#notifyGrappleError(error);
+      return null;
+    }
+  }
+
+  async applyTwisted() {
+    try {
+      const controlled = globalThis.canvas?.tokens?.controlled ?? [];
+      const sources = Array.from(globalThis.game?.user?.targets ?? []);
+      if (controlled.length !== 1) {
+        throw new Error("Для состояния «Скрученный» выберите ровно один контролируемый токен.");
+      }
+      if (sources.length !== 1) {
+        throw new Error("Для состояния «Скрученный» выберите ровно один токен-источник через T.");
+      }
+      return await this.combatStatusService.applyTwistedFromSelection({
+        targetToken: controlled[0]?.document ?? controlled[0],
+        sourceToken: sources[0]?.document ?? sources[0]
+      });
+    }
+    catch (error) {
+      const message = cleanSocketId(error?.message) || "Ошибка состояния «Скрученный».";
+      globalThis.ui?.notifications?.warn?.(message);
+      return false;
+    }
+  }
+
+  #notifyGrappleError(error) {
+    const messages = {
+      "no-free-hand": "Захват невозможен: нет свободной руки.",
+      "invalid-target": "Нельзя схватить самого себя.",
+      "target-grappled-by-another-source": "Существо уже схвачено другим захватчиком.",
+      "crosshairs-unavailable": "Визуальный маркер CPR недоступен.",
+      "outside-reach": "Эта позиция находится вне природной досягаемости.",
+      "outside-scene": "Существо нельзя поставить за границей сцены.",
+      "wall-collision": "Существо нельзя переместить сквозь стену.",
+      "stale-link": "Связь захвата устарела. Повторите захват.",
+      "stale-token": "Один из токенов захвата больше недоступен."
+    };
+    const fallback = cleanSocketId(error?.message) || "Ошибка автоматики захвата.";
+    globalThis.ui?.notifications?.warn?.(messages[error?.code] ?? fallback);
+  }
+
   getSpellAutomationDiagnostics() {
     return Object.freeze({
       recipes: this.spellAutomationRegistry.listKeys(),
@@ -1316,29 +2227,352 @@ export class RebreyaMainModule {
     });
   }
 
+  assignHeroDollItem(payload) {
+    return this.privilegedMutationGateway.mutate(HERO_DOLL_ASSIGN_COMMAND, payload, { operationId: payload.operationId });
+  }
+
+  normalizeHeroDollStack(payload) {
+    return this.privilegedMutationGateway.mutate(HERO_DOLL_NORMALIZE_COMMAND, payload, { operationId: payload.operationId });
+  }
+
+  clearHeroDollSlot(payload) {
+    return this.privilegedMutationGateway.mutate(HERO_DOLL_CLEAR_COMMAND, payload, { operationId: payload.operationId });
+  }
+
   registerSummonProvider(provider) {
     return this.summonLifecycleRuntime.registerProvider(provider);
   }
 
   #registerTypedSocketCommands() {
+    this.privilegedMutationGateway.registerCommand("lootgen.publish-result", {
+      validate: payload => hasExactKeys(payload,["lootId"]) && isTrimmedNonEmptyString(payload.lootId) && payload.lootId.length<=256,
+      authorize: (_payload,{sender}) => sender?.isGM===true,
+      scheduling: keyedMutationScheduling((payload) => [lootKey(payload.lootId)]),
+      execute: ({lootId},context) => this.#publishLootgenGeneratedMessage(lootId,context.assertActiveGm)
+    });
+    this.privilegedMutationGateway.registerCommand("lootgen.claim-character", {
+      validate: payload => hasExactKeys(payload,["actorUuid","claimId","lootId","rowId"])
+        && [payload.lootId,payload.rowId,payload.actorUuid,payload.claimId].every(value=>typeof value==="string" && value.trim()===value && value.length>0 && value.length<=256 && !/[\u0000-\u001f\u007f]/u.test(value))
+        && isValidActorUuid(payload.actorUuid),
+      authorize: async (payload,{sender}) => Boolean(await this.#resolveLootgenCharacterDestination(payload,sender)),
+      scheduling: keyedMutationScheduling((payload) => [lootKey(payload.lootId), actorKey(payload.actorUuid)]),
+      execute: async (payload,context) => {
+        const destination=await this.#resolveLootgenCharacterDestination(payload,context.sender);
+        context.assertActiveGm();
+        if (!destination) throw new Error("Недоступен персонаж или подготовленная добыча.");
+        return this.lootClaimService.claimBatch({messageId:destination.message.id,lootId:payload.lootId,
+          claimId:payload.claimId,rowIds:[payload.rowId],includeCoins:false,
+          ingressPlan:{destination:"character",actorUuid:payload.actorUuid,requesterId:context.sender.id}});
+      }
+    });
+    this.privilegedMutationGateway.registerCommand(LOOTGEN_PREPARE_RESULT_COMMAND, {
+      validate: payload => hasExactKeys(payload,["form","operationId"]) && isValidPrepareLootgenPayload({form:payload.form})
+        && isTrimmedNonEmptyString(payload.operationId) && payload.operationId.length<=256 && !/[\u0000-\u001f\u007f]/u.test(payload.operationId),
+      authorize: (_payload, { sender }) => sender?.isGM === true,
+      scheduling: keyedMutationScheduling((payload) => [aggregateKey("loot-prepare", payload.operationId)]),
+      execute: async ({ form, operationId }, context) => {
+        const result=await this.lootgenGeneratedResultService.prepare({form,operationId}, {
+          requesterId: context.sender.id, authorId: game.user.id, assertAuthority: context.assertActiveGm
+        });
+        return {lootId:result.lootId,messageId:result.messageId};
+      }
+    });
+    for (const action of DISARM_ACTIONS) this.privilegedMutationGateway.registerCommand(`disarm.${action}`, {
+      validate: payload => isValidDisarmPayload(action, payload),
+      authorize: (_payload, context) => authorizeDisarmSender(action, context),
+      scheduling: keyedMutationScheduling(disarmSchedulingKeys),
+      execute: (payload, context) => {
+        const guarded = { sender: context.sender, assertAuthority: context.assertActiveGm };
+        if (action === "preview") return this.disarmDocuments.preview(payload, context.sender);
+        if (action === "start") return this.disarmService.start(payload, guarded);
+        if (action === "resolve-save") return this.disarmService.chooseSave(payload, guarded);
+        if (action === "set-baseline") return this.disarmService.setBaseline(payload, guarded);
+        if (action === "reassign-responder") return this.disarmService.reassignResponder(payload, guarded);
+        return this.disarmService[action](payload.operationId, guarded);
+      }
+    });
+    for(const [action,command]of Object.entries(SCENE_ACTIVITY_COMMANDS))this.privilegedMutationGateway.registerCommand(command,{
+      validate:payload=>isValidSceneActivityPayload(action,payload),
+      authorize:(payload,context)=>authorizeSceneActivity(action,payload,context),
+      scheduling:keyedMutationScheduling(sceneActivitySchedulingKeys),
+      execute:(payload,{sender})=>this.sceneActivityService[action](payload,sender)
+    });
+    this.privilegedMutationGateway.registerCommand(REPUTATION_UPDATE_COMMAND, {
+      validate: isValidReputationPayload,
+      authorize: authorizeReputationUpdate,
+      scheduling: keyedMutationScheduling((payload) => [actorKey(payload.actorUuid)]),
+      execute: (payload, context) => this.reputationService.update(payload, context)
+    });
+    for (const [command, mode] of [[HERO_DOLL_ASSIGN_COMMAND,"assign"],[HERO_DOLL_NORMALIZE_COMMAND,"normalize"],[HERO_DOLL_CLEAR_COMMAND,"clear"]]) {
+      this.privilegedMutationGateway.registerCommand(command, {
+        validate: isValidHeroDollAssignPayload,
+        authorize: (_payload, { sender }) => Boolean(sender?.id),
+        scheduling: keyedMutationScheduling((payload) => [actorKey(payload.actorUuid), documentKey(payload.sourceItemUuid)]),
+        execute: (payload, context) => this.heroDollService.executeAssignItemToSlot(payload, context, mode)
+      });
+    }
+    registerCurseUpgradeSocketCommands(this);
     registerCraftsmanGadgetSocketCommand(this);
     registerSpellInstanceSocketCommand(this);
     registerSummonLifecycleSocketCommand(this);
     registerTransportInstanceCommands(this.socketCommandBus, this.transportInstanceService);
     const authorizeGroup = (payload, { sender }) => this.#canSenderManageGroup(sender, payload.groupActorId);
+    const authorizeGlobalEvents = (_payload, { sender }) => sender?.isGM === true;
+    this.privilegedMutationGateway.registerCommand(GLOBAL_EVENTS_CREATE_COMMAND, {
+      validate: isValidGlobalEventsCreatePayload,
+      authorize: authorizeGlobalEvents,
+      scheduling: keyedMutationScheduling(() => [settingKey(SETTINGS_KEYS.GLOBAL_EVENTS_STATE)]),
+      execute: (payload) => this.#executeGlobalEventsMutation(
+        () => this.globalEventsService.createGlobalEvent(payload.data)
+      )
+    });
+    this.privilegedMutationGateway.registerCommand(GLOBAL_EVENTS_UPDATE_COMMAND, {
+      validate: isValidGlobalEventsUpdatePayload,
+      authorize: authorizeGlobalEvents,
+      scheduling: keyedMutationScheduling(() => [settingKey(SETTINGS_KEYS.GLOBAL_EVENTS_STATE)]),
+      execute: (payload) => this.#executeGlobalEventsMutation(
+        () => this.globalEventsService.updateGlobalEvent(payload.eventId, payload.patch)
+      )
+    });
+    this.privilegedMutationGateway.registerCommand(GLOBAL_EVENTS_DELETE_COMMAND, {
+      validate: isValidGlobalEventsDeletePayload,
+      authorize: authorizeGlobalEvents,
+      scheduling: keyedMutationScheduling(() => [settingKey(SETTINGS_KEYS.GLOBAL_EVENTS_STATE)]),
+      execute: (payload) => this.#executeGlobalEventsMutation(
+        () => this.globalEventsService.deleteGlobalEvent(payload.eventId)
+      )
+    });
+    this.privilegedMutationGateway.registerCommand(GLOBAL_EVENTS_DUPLICATE_COMMAND, {
+      validate: isValidGlobalEventsDuplicatePayload,
+      authorize: authorizeGlobalEvents,
+      scheduling: keyedMutationScheduling(() => [settingKey(SETTINGS_KEYS.GLOBAL_EVENTS_STATE)]),
+      execute: (payload) => this.#executeGlobalEventsMutation(
+        () => this.globalEventsService.duplicateGlobalEvent(payload.eventId)
+      )
+    });
+    this.privilegedMutationGateway.registerCommand(GLOBAL_EVENTS_IMPORT_DEFAULTS_COMMAND, {
+      validate: isValidGlobalEventsImportDefaultsPayload,
+      authorize: authorizeGlobalEvents,
+      scheduling: keyedMutationScheduling(() => [settingKey(SETTINGS_KEYS.GLOBAL_EVENTS_STATE)]),
+      execute: () => this.#executeGlobalEventsMutation(
+        () => this.globalEventsService.importDefaultGlobalEventTemplates()
+      )
+    });
+    const authorizeEconomy = (_payload, { sender }) => sender?.isGM === true;
+    this.privilegedMutationGateway.registerCommand(ECONOMY_CITY_PRESENTATION_UPDATE_COMMAND, {
+      validate: isValidEconomyCityPresentationUpdatePayload,
+      authorize: authorizeEconomy,
+      scheduling: keyedMutationScheduling(() => [settingKey(SETTINGS_KEYS.CITY_PRESENTATION_OVERRIDES)]),
+      execute: (payload) => this.repository.updateCityPresentation(payload.cityId, payload.patch)
+    });
+    this.privilegedMutationGateway.registerCommand(ECONOMY_CONNECTION_SET_ACTIVE_COMMAND, {
+      validate: isValidEconomyConnectionSetActivePayload,
+      authorize: authorizeEconomy,
+      scheduling: keyedMutationScheduling(() => [settingKey(SETTINGS_KEYS.CONNECTION_STATES)]),
+      execute: (payload) => this.repository.setConnectionActive(payload.connectionId, payload.isActive)
+    });
+    this.privilegedMutationGateway.registerCommand(ECONOMY_REFERENCE_UPDATE_DESCRIPTION_COMMAND, {
+      validate: isValidEconomyReferenceUpdateDescriptionPayload,
+      authorize: authorizeEconomy,
+      scheduling: keyedMutationScheduling(() => [settingKey(SETTINGS_KEYS.REFERENCE_NOTES)]),
+      execute: (payload) => this.repository.setReferenceNote(
+        `${payload.entryType}::${payload.entryId}`,
+        payload.description
+      )
+    });
+    this.privilegedMutationGateway.registerCommand(ECONOMY_TRADE_ROUTE_UPDATE_METADATA_COMMAND, {
+      validate: isValidEconomyTradeRouteUpdateMetadataPayload,
+      authorize: authorizeEconomy,
+      scheduling: keyedMutationScheduling(() => [settingKey(SETTINGS_KEYS.TRADE_ROUTE_OVERRIDES)]),
+      execute: (payload) => this.repository.setTradeRouteOverride(payload.connectionId, payload.patch)
+    });
+    this.privilegedMutationGateway.registerCommand(ECONOMY_STATE_POLICY_UPDATE_COMMAND, {
+      validate: isValidEconomyStatePolicyUpdatePayload,
+      authorize: authorizeEconomy,
+      scheduling: keyedMutationScheduling(() => [settingKey(SETTINGS_KEYS.STATE_POLICIES)]),
+      execute: (payload) => this.repository.setStatePolicy(payload.stateId, payload.patch)
+    });
+    this.privilegedMutationGateway.registerCommand(ECONOMY_WORLD_DATA_RESET_COMMAND, {
+      validate: isValidEconomyWorldDataResetPayload,
+      authorize: authorizeEconomy,
+      scheduling: EXCLUSIVE_MUTATION_SCHEDULING,
+      execute: async () => {
+        await this.traderService.resetState();
+        return this.repository.resetWorldData();
+      }
+    });
+    const resolveTraderActor = (actorId) => (
+      globalThis.game?.actors?.get?.(actorId)
+      ?? globalThis.game?.actors?.contents?.find?.((actor) => String(actor?.id) === String(actorId))
+      ?? null
+    );
+    this.privilegedMutationGateway.registerCommand(TRADER_AUDIT_RECORD_COMMAND, {
+      validate: isValidTraderAuditRecordPayload,
+      authorize: (payload, { sender }) => traderActorIsOwnedByUser(
+        resolveTraderActor(payload.operation.actorId),
+        sender
+      ),
+      scheduling: keyedMutationScheduling((payload) => [
+        settingKey(SETTINGS_KEYS.TRADER_STATE),
+        actorKey(payload.operation.actorId)
+      ]),
+      execute: (payload, { sender }) => this.traderService.recordTradeAudit(payload.operation, {
+        senderId: sender.id
+      })
+    });
+    this.privilegedMutationGateway.registerCommand(TRADER_METADATA_UPDATE_COMMAND, {
+      validate: isValidTraderMetadataUpdatePayload,
+      authorize: (_payload, { sender }) => sender?.isGM === true,
+      scheduling: keyedMutationScheduling((payload) => [traderKey(payload.cityId, payload.traderKey)]),
+      execute: (payload) => this.traderService.updateTraderMetadata(
+        payload.cityId,
+        payload.traderKey,
+        payload.patch
+      )
+    });
+    this.privilegedMutationGateway.registerCommand(GROUP_REGISTRY_REGISTER_COMMAND, {
+      validate: isValidGroupRegistryRegisterPayload,
+      authorize: (_payload, { sender }) => sender?.isGM === true,
+      scheduling: keyedMutationScheduling((payload) => [groupKey(payload.groupActorId)]),
+      execute: (payload, { assertActiveGm }) => this.groupContextService.registerGroup(
+        payload.groupActorId,
+        { guard: assertActiveGm }
+      )
+    });
+    this.privilegedMutationGateway.registerCommand(GROUP_REGISTRY_ACTIVATE_COMMAND, {
+      validate: isValidGroupRegistryActivatePayload,
+      authorize: (_payload, { sender }) => sender?.isGM === true,
+      scheduling: keyedMutationScheduling((payload) => [groupKey(payload.groupActorId)]),
+      execute: (payload, { assertActiveGm }) => this.groupContextService.setActiveGroup(
+        payload.groupActorId,
+        { guard: assertActiveGm }
+      )
+    });
+    this.privilegedMutationGateway.registerCommand(GROUP_INVENTORY_MERGE_LEGACY_COMMAND, {
+      validate: isValidGroupInventoryMergeLegacyPayload,
+      authorize: (_payload, { sender }) => sender?.isGM === true,
+      scheduling: EXCLUSIVE_MUTATION_SCHEDULING,
+      execute: (payload, context) => this.runInventoryMutation(
+        () => this.inventoryService.mergeLegacyInventoryIntoGroup(payload.groupActorId),
+        { actorIdsFromResult: () => [payload.groupActorId], traceContext: context }
+      )
+    });
+    const resolveAuthorizedDowntimeGroup = (groupId) => {
+      try {
+        const registry = this.groupContextService.getRegistry();
+        const safeGroupId = cleanSocketId(groupId);
+        const isManagedGroup = this.groupContextService
+          .getManagedGroupActors()
+          .some((groupActor) => groupActor?.id === safeGroupId);
+        if (!safeGroupId || !isManagedGroup || !registry?.groupsById?.[safeGroupId]) return null;
+        return this.groupContextService.resolveForGroup(safeGroupId);
+      }
+      catch {
+        return null;
+      }
+    };
+    const authorizeDowntimeOwner = (payload, { sender }) => {
+      try {
+        const context = resolveAuthorizedDowntimeGroup(payload.groupId);
+        const actor = (context.members ?? []).find((member) => member?.id === payload.actorId) ?? null;
+        return Boolean(actor) && (sender?.isGM === true || traderActorIsOwnedByUser(actor, sender));
+      }
+      catch {
+        return false;
+      }
+    };
+    const finishDowntimeMutation = (result) => {
+      this.#emitDowntimeUpdated({ actorIds: result.actorIds ?? [result.actorId], requestId: result.id });
+      return result;
+    };
+    const authorizeDowntimeAdmin = (payload, { sender }) => {
+      if (sender?.isGM !== true) return false;
+      return Boolean(resolveAuthorizedDowntimeGroup(payload.groupId));
+    };
+    this.privilegedMutationGateway.registerCommand(DOWNTIME_WEEKS_GRANT_COMMAND, {
+      validate: isValidDowntimeWeeksGrantPayload, authorize: authorizeDowntimeAdmin,
+      scheduling: keyedMutationScheduling(downtimeSchedulingKeys),
+      execute: async (payload) => finishDowntimeMutation(await this.downtimeService.grantWeeks(payload))
+    });
+    this.privilegedMutationGateway.registerCommand(DOWNTIME_WEEKS_REVOKE_COMMAND, {
+      validate: isValidDowntimeWeeksRevokePayload, authorize: authorizeDowntimeAdmin,
+      scheduling: keyedMutationScheduling(downtimeSchedulingKeys),
+      execute: async (payload) => finishDowntimeMutation(await this.downtimeService.revokeWeeks(payload))
+    });
+    this.privilegedMutationGateway.registerCommand(DOWNTIME_HISTORY_CLEAR_COMMAND, {
+      validate: isValidDowntimeHistoryClearPayload, authorize: authorizeDowntimeAdmin,
+      scheduling: keyedMutationScheduling(downtimeSchedulingKeys),
+      execute: async (payload) => finishDowntimeMutation(await this.downtimeService.clearHistory(payload))
+    });
+    this.privilegedMutationGateway.registerCommand(DOWNTIME_REQUEST_CREATE_COMMAND, {
+      validate: isValidDowntimeRequestCreatePayload, authorize: authorizeDowntimeOwner,
+      scheduling: keyedMutationScheduling(downtimeSchedulingKeys),
+      execute: async (payload, { sender }) => finishDowntimeMutation(await this.downtimeService.createRequest({
+        ...await this.#prepareDowntimeCraftPayload(payload), submittedByUserId: sender.id
+      }))
+    });
+    this.privilegedMutationGateway.registerCommand(DOWNTIME_REQUEST_UPDATE_COMMAND, {
+      validate: isValidDowntimeRequestUpdatePayload, authorize: authorizeDowntimeOwner,
+      scheduling: keyedMutationScheduling(downtimeSchedulingKeys),
+      execute: async (payload) => finishDowntimeMutation(await this.downtimeService.updateRequest(
+        await this.#prepareDowntimeCraftPayload(payload)
+      ))
+    });
+    this.privilegedMutationGateway.registerCommand(DOWNTIME_REQUEST_SET_STATUS_COMMAND, {
+      validate: isValidDowntimeRequestSetStatusPayload, authorize: authorizeDowntimeAdmin,
+      scheduling: keyedMutationScheduling(downtimeSchedulingKeys),
+      execute: async (payload) => finishDowntimeMutation(await this.downtimeService.setRequestStatus(
+        payload.requestId, payload.status, { groupId: payload.groupId, result: payload.result }
+      ))
+    });
+    this.privilegedMutationGateway.registerCommand(DOWNTIME_REQUEST_SET_CHECKS_COMMAND, {
+      validate: isValidDowntimeRequestSetChecksPayload, authorize: authorizeDowntimeAdmin,
+      scheduling: keyedMutationScheduling(downtimeSchedulingKeys),
+      execute: async (payload) => finishDowntimeMutation(await this.downtimeService.setRequestChecks(
+        payload.requestId, payload.checks, { groupId: payload.groupId }
+      ))
+    });
+    this.privilegedMutationGateway.registerCommand(DOWNTIME_REQUEST_RECORD_CHECK_COMMAND, {
+      validate: isValidDowntimeRequestRecordCheckPayload, authorize: authorizeDowntimeOwner,
+      scheduling: keyedMutationScheduling(downtimeSchedulingKeys),
+      execute: async (payload, { sender }) => finishDowntimeMutation(await this.downtimeService.recordCheckResult(
+        payload.requestId, payload.checkId, payload.result,
+        { groupId: payload.groupId, actorId: payload.actorId, recordedByUserId: sender.id }
+      ))
+    });
+    this.privilegedMutationGateway.registerCommand(DOWNTIME_PROJECT_CONTINUE_COMMAND, {
+      validate: isValidDowntimeProjectContinuePayload, authorize: authorizeDowntimeOwner,
+      scheduling: keyedMutationScheduling(downtimeSchedulingKeys),
+      execute: async (payload, { sender }) => finishDowntimeMutation(await this.downtimeService.continueProject(
+        payload.requestId, { groupId: payload.groupId, actorId: payload.actorId, checkId: payload.checkId, result: payload.result, recordedByUserId: sender.id }
+      ))
+    });
+    this.privilegedMutationGateway.registerCommand(DOWNTIME_PROJECT_CLOSE_COMMAND, {
+      validate: isValidDowntimeProjectClosePayload, authorize: authorizeDowntimeOwner,
+      scheduling: keyedMutationScheduling(downtimeSchedulingKeys),
+      execute: async (payload, { sender }) => finishDowntimeMutation(await this.downtimeService.closeProject(
+        payload.requestId, { groupId: payload.groupId, actorId: payload.actorId, projectClosedByUserId: sender.id }
+      ))
+    });
     this.socketCommandBus.register(GROUP_CALENDAR_PATCH_COMMAND, {
       validate: isValidCalendarPatchPayload,
       authorize: authorizeGroup,
+      scheduling: keyedMutationScheduling((payload) => [groupKey(payload.groupActorId)]),
       execute: (payload) => this.calendarService.patchGroupCalendar(payload.groupActorId, payload.patch)
     });
     this.socketCommandBus.register(GROUP_CALENDAR_TRANSITION_COMMAND, {
       validate: isValidCalendarTransitionPayload,
       authorize: authorizeGroup,
-      execute: (payload) => this.calendarTransitionCoordinator.moveTo(payload.options)
+      scheduling: keyedMutationScheduling((payload) => [groupKey(payload.groupActorId)]),
+      execute: (payload) => this.calendarTransitionCoordinator.moveToGroup(
+        payload.groupActorId,
+        payload.options
+      )
     });
     this.socketCommandBus.register(GROUP_TRAVEL_REPLACE_STATE_COMMAND, {
       validate: isValidTravelReplacePayload,
       authorize: authorizeGroup,
+      scheduling: keyedMutationScheduling((payload) => [groupKey(payload.groupActorId)]),
       execute: (payload) => this.travelService.replaceGroupTravelState(
         payload.groupActorId,
         normalizeTravelState(payload.travelState)
@@ -1347,6 +2581,7 @@ export class RebreyaMainModule {
     this.socketCommandBus.register(GROUP_TRANSPORT_REPLACE_STATE_COMMAND, {
       validate: isValidTransportReplacePayload,
       authorize: authorizeGroup,
+      scheduling: keyedMutationScheduling((payload) => [groupKey(payload.groupActorId)]),
       execute: (payload) => this.inventoryService.replaceGroupTransportState(
         payload.groupActorId,
         normalizeGroupTransportState(payload.transportState)
@@ -1355,12 +2590,62 @@ export class RebreyaMainModule {
     this.socketCommandBus.register(COSMOLOGY_SET_MECHANUS_COMMAND, {
       validate: isValidMechanusPayload,
       authorize: (_payload, { sender }) => sender?.isGM === true,
+      scheduling: keyedMutationScheduling(() => [settingKey(SETTINGS_KEYS.COSMOLOGY_STATE)]),
       execute: (payload) => this.#commitMechanusEnabled(payload.enabled)
     });
     this.socketCommandBus.register(COMBAT_STATUS_SET_COMMAND, {
       validate: isValidCombatStatusSetPayload,
       authorize: (payload, { sender }) => this.#canSenderSetCombatStatus(sender, payload),
+      scheduling: keyedMutationScheduling((payload) => [actorKey(payload.actorId ?? payload.actorUuid)]),
       execute: (payload) => this.#executeCombatStatusSetCommand(payload)
+    });
+    this.socketCommandBus.register(GRAPPLE_TOGGLE_COMMAND, {
+      validate: isValidGrappleTogglePayload,
+      authorize: (payload, { sender }) => this.#canSenderUseGrappleSource(sender, payload),
+      scheduling: keyedMutationScheduling((payload) => [
+        documentKey(payload.sourceTokenUuid),
+        documentKey(payload.targetTokenUuid)
+      ]),
+      execute: (payload) => this.grappleAutomationService.toggle(payload)
+    });
+    this.socketCommandBus.register(GRAPPLE_PLACE_COMMAND, {
+      validate: isValidGrapplePlacePayload,
+      authorize: (payload, { sender }) => this.#canSenderUseGrappleSource(sender, payload),
+      scheduling: keyedMutationScheduling((payload) => [
+        documentKey(payload.sourceTokenUuid),
+        documentKey(payload.targetTokenUuid)
+      ]),
+      execute: (payload) => this.grappleAutomationService.place(payload)
+    });
+    this.socketCommandBus.register(GRAPPLE_DRAG_COMMAND, {
+      validate: isValidGrappleDragPayload,
+      authorize: (payload, { sender }) => (
+        payload.requesterUserId === cleanSocketId(sender?.id)
+        && this.#canSenderUseGrappleSource(sender, payload)
+      ),
+      scheduling: keyedMutationScheduling((payload) => [documentKey(payload.sourceTokenUuid)]),
+      execute: (payload) => this.grappleAutomationService.drag(payload)
+    });
+    this.socketCommandBus.register(GRAPPLE_RELEASE_AND_MOVE_COMMAND, {
+      validate: isValidGrappleReleaseAndMovePayload,
+      authorize: (payload, { sender }) => this.#canSenderReleaseGrappledTarget(sender, payload),
+      scheduling: keyedMutationScheduling((payload) => [documentKey(payload.targetTokenUuid)]),
+      execute: (payload) => this.grappleAutomationService.releaseAndMove(payload)
+    });
+    this.socketCommandBus.register(TWISTED_PULL_COMMAND, {
+      validate: isValidTwistedPullPayload,
+      authorize: (payload, { sender }) => (
+        payload.requesterUserId === cleanSocketId(sender?.id)
+        && this.#canSenderUseGrappleSource(sender, payload)
+      ),
+      scheduling: keyedMutationScheduling((payload) => [documentKey(payload.sourceTokenUuid)]),
+      execute: (payload) => this.grappleAutomationService.pullTwisted(payload)
+    });
+    this.socketCommandBus.register(TWISTED_RELEASE_AND_MOVE_COMMAND, {
+      validate: isValidTwistedReleaseAndMovePayload,
+      authorize: (payload, { sender }) => this.#canSenderReleaseTwistedTarget(sender, payload),
+      scheduling: keyedMutationScheduling((payload) => [documentKey(payload.targetTokenUuid)]),
+      execute: (payload) => this.grappleAutomationService.twistedReleaseAndMove(payload)
     });
     this.socketCommandBus.register(PERFORMER_APPLY_RESULT_COMMAND, {
       validate: isValidPerformerApplyResultPayload,
@@ -1368,71 +2653,345 @@ export class RebreyaMainModule {
         resolveActorById(payload.sourceActorId),
         sender
       ),
+      scheduling: keyedMutationScheduling((payload) => [
+        actorKey(payload.sourceActorId),
+        actorKey(payload.targetActorId),
+        ...(payload.targetTokenUuid ? [documentKey(payload.targetTokenUuid)] : [])
+      ]),
       execute: (payload) => this.performerAutomationService.commitActivePerformance(payload)
     });
     this.socketCommandBus.register(INVENTORY_TAKE_COMMAND, {
       validate: isValidInventoryTakePayload,
       authorize: (payload, { sender }) => this.#canSenderTakeInventoryItem(sender, payload),
-      execute: (payload) => this.inventoryService.executeTakeMutation(payload)
+      scheduling: keyedMutationScheduling((payload) => [
+        groupKey(payload.inventoryActorId),
+        actorKey(payload.targetActorId)
+      ]),
+      execute: (payload, context) => this.runInventoryMutation(
+        () => this.inventoryService.executeTakeMutation(payload),
+        {
+          actorIdsFromResult: (result, error) => [
+            result?.sourceActorId ?? error?.sourceActorId,
+            result?.actorId ?? error?.targetActorId
+          ],
+          traceContext: context
+        }
+      )
     });
     this.socketCommandBus.register(INVENTORY_SALE_COMMAND, {
       validate: isValidInventorySalePayload,
       authorize: (payload, { sender }) => this.#canSenderManageGroup(sender, payload.inventoryActorId),
+      scheduling: keyedMutationScheduling((payload) => [groupKey(payload.inventoryActorId)]),
       execute: (payload) => this.inventoryService.executeSaleMutation(payload)
+    });
+    this.socketCommandBus.register(INVENTORY_DISMANTLE_COMMAND, {
+      validate: isValidInventoryDismantlePayload,
+      authorize: (payload, { sender }) => this.#canSenderManageGroup(sender, payload.inventoryActorId),
+      scheduling: keyedMutationScheduling((payload) => [groupKey(payload.inventoryActorId)]),
+      execute: (payload) => this.inventoryService.executeDismantleMutation(payload)
+    });
+    this.socketCommandBus.register(INVENTORY_FOLDER_BATCH_COMMAND, {
+      validate: isValidInventoryFolderBatchPayload,
+      authorize: (payload, { sender }) => this.#canSenderManageGroup(sender, payload.groupActorId),
+      scheduling: keyedMutationScheduling((payload) => [groupKey(payload.groupActorId)]),
+      execute: (payload) => this.inventoryService.executeInventoryFolderBatch(payload)
     });
     this.socketCommandBus.register(INVENTORY_IMPORT_COMMAND, {
       validate: isValidInventoryImportPayload,
       authorize: (payload, { sender }) => this.#canSenderImportInventoryItem(sender, payload),
+      scheduling: keyedMutationScheduling((payload) => [
+        groupKey(payload.inventoryActorId),
+        documentKey(payload.itemUuid)
+      ]),
       execute: (payload) => this.inventoryService.executeImportMutation(payload)
+    });
+    this.socketCommandBus.register(INVENTORY_INGRESS_LOOTGEN_COMMAND, {
+      validate: isValidLootgenInventoryIngressPayload,
+      authorize: (payload, { sender }) => (
+        this.#canSenderManageGroup(sender, payload.groupActorId)
+        && Boolean(this.#findLootgenChatMessage(payload.lootId,{allowDraft:sender.isGM===true}))
+      ),
+      scheduling: keyedMutationScheduling((payload) => [
+        groupKey(payload.groupActorId),
+        lootKey(payload.lootId)
+      ]),
+      execute: (payload, context) => this.runInventoryMutation(
+        () => this.#executeLootgenInventoryIngress(payload,{allowDraft:context.sender.isGM===true}),
+        {
+          actorIdsFromResult: () => [payload.groupActorId],
+          traceContext: context
+        }
+      )
+    });
+    this.socketCommandBus.register(INVENTORY_INGRESS_DIRECT_COMMAND, {
+      validate: isValidDirectInventoryIngressPayload,
+      authorize: (payload, { sender }) => this.#canSenderManageGroup(sender, payload.groupActorId),
+      scheduling: keyedMutationScheduling((payload) => [
+        groupKey(payload.groupActorId),
+        aggregateKey("inventory-ingress", payload.sourceOrigin)
+      ]),
+      execute: (payload, context) => this.runInventoryMutation(
+        () => this.#executeDirectInventoryIngress(payload, { sender: context.sender }),
+        {
+          actorIdsFromResult: () => [payload.groupActorId],
+          traceContext: context
+        }
+      )
     });
     this.socketCommandBus.register(INVENTORY_CURRENCY_UPDATE_COMMAND, {
       validate: isValidInventoryCurrencyUpdatePayload,
       authorize: (payload, { sender }) => this.#canSenderManageGroup(sender, payload.inventoryActorId),
+      scheduling: keyedMutationScheduling((payload) => [groupKey(payload.inventoryActorId)]),
       execute: (payload) => this.inventoryService.executeCurrencyUpdateMutation(payload)
     });
     this.socketCommandBus.register(INVENTORY_CURRENCY_CONVERT_COMMAND, {
       validate: isValidInventoryCurrencyConvertPayload,
       authorize: (payload, { sender }) => this.#canSenderManageGroup(sender, payload.inventoryActorId),
+      scheduling: keyedMutationScheduling((payload) => [groupKey(payload.inventoryActorId)]),
       execute: (payload) => this.inventoryService.executeCurrencyConvertMutation(payload)
     });
+    const registerInventoryOrganizationMutation = (command, validate, methodName) => {
+      this.socketCommandBus.register(command, {
+        validate,
+        authorize: authorizeGroup,
+        scheduling: keyedMutationScheduling((payload) => [groupKey(payload.groupActorId)]),
+        execute: async (payload, { sender }) => {
+          try {
+            return await this.runInventoryMutation(
+              () => this.inventoryService[methodName](payload, { sender }),
+              { actorIdsFromResult: (result) => [result?.actorId] }
+            );
+          }
+          catch (error) {
+            const wrapped = new Error(error?.message || "Inventory organization mutation failed.", { cause: error });
+            if (["instance-compensated", "manual-review", "pending-instance-operation"].includes(error?.code)) wrapped.code = error.code;
+            throw wrapped;
+          }
+        }
+      });
+    };
+    registerInventoryOrganizationMutation(
+      INVENTORY_FOLDER_CREATE_COMMAND,
+      isValidInventoryFolderCreatePayload,
+      "createInventoryFolder"
+    );
+    registerInventoryOrganizationMutation(
+      INVENTORY_FOLDER_COLOR_COMMAND,
+      isValidInventoryFolderColorPayload,
+      "setInventoryFolderColor"
+    );
+    registerInventoryOrganizationMutation(
+      INVENTORY_FOLDER_RENAME_COMMAND,
+      isValidInventoryFolderRenamePayload,
+      "renameInventoryFolder"
+    );
+    registerInventoryOrganizationMutation(
+      INVENTORY_FOLDER_MOVE_COMMAND,
+      isValidInventoryFolderMovePayload,
+      "moveInventoryFolder"
+    );
+    registerInventoryOrganizationMutation(
+      INVENTORY_FOLDER_DELETE_COMMAND,
+      isValidInventoryFolderDeletePayload,
+      "deleteInventoryFolder"
+    );
+    registerInventoryOrganizationMutation(
+      INVENTORY_ITEM_FOLDER_MOVE_COMMAND,
+      isValidInventoryItemFolderMovePayload,
+      "moveInventoryItemToFolder"
+    );
+    registerInventoryOrganizationMutation(
+      INVENTORY_INGRESS_RULE_CREATE_COMMAND,
+      isValidInventoryIngressRuleWritePayload,
+      "createInventoryIngressRule"
+    );
+    registerInventoryOrganizationMutation(
+      INVENTORY_INGRESS_RULE_UPDATE_COMMAND,
+      isValidInventoryIngressRuleWritePayload,
+      "updateInventoryIngressRule"
+    );
+    registerInventoryOrganizationMutation(
+      INVENTORY_INGRESS_RULE_DELETE_COMMAND,
+      isValidInventoryIngressRuleDeletePayload,
+      "deleteInventoryIngressRule"
+    );
     this.socketCommandBus.register(STORAGE_OPEN_COMMAND, {
       validate: isValidStorageOpenPayload,
       authorize: (_payload, { sender }) => Boolean(sender),
+      scheduling: QUERY_SCHEDULING,
       execute: (payload, { sender }) => this.storageCommandService.open(payload, { sender })
+    });
+    this.socketCommandBus.register(STORAGE_CONFIGURE_COMMAND, {
+      validate: isValidStorageConfigurePayload,
+      authorize: (_payload, { sender }) => sender?.isGM === true,
+      scheduling: keyedMutationScheduling((payload) => [storageKey(payload.tokenUuid)]),
+      execute: (payload, { sender }) => this.storageCommandService.configure(payload, { sender })
+    });
+    this.socketCommandBus.register(STORAGE_JOURNAL_READ_COMMAND, {
+      validate: isValidStorageJournalReadPayload,
+      authorize: (_payload, { sender }) => Boolean(sender),
+      scheduling: QUERY_SCHEDULING,
+      execute: (payload, { sender }) => this.storageCommandService.readJournal(payload, { sender })
+    });
+    this.socketCommandBus.register(STORAGE_JOURNAL_RECORD_COMMAND, {
+      validate: isValidStorageJournalRecordPayload,
+      authorize: (_payload, { sender }) => Boolean(sender),
+      scheduling: keyedMutationScheduling(storageDestinationKeys),
+      execute: (payload, { sender }) => this.storageCommandService.recordJournal(payload, { sender })
+    });
+    this.socketCommandBus.register(STORAGE_JOURNAL_RECORD_DROP_COMMAND, {
+      validate: isValidJournalRecordDropPayload,
+      authorize: (_payload, { sender }) => sender?.isGM === true,
+      scheduling: keyedMutationScheduling((payload) => [
+        groupKey(payload.groupActorId),
+        documentKey(payload.sourceUuid)
+      ]),
+      execute: (payload, context) => this.runInventoryMutation(
+        () => this.storageCommandService.recordJournalDrop(payload, { sender: context.sender }),
+        { actorIdsFromResult: (result) => [result?.actorId], traceContext: context }
+      )
+    });
+    this.socketCommandBus.register(STORAGE_JOURNAL_READ_RECORD_COMMAND, {
+      validate: isValidJournalRecordReadPayload,
+      authorize: (_payload, { sender }) => Boolean(sender),
+      scheduling: QUERY_SCHEDULING,
+      execute: (payload, { sender }) => this.storageCommandService.readJournalRecord(payload, { sender })
     });
     this.socketCommandBus.register(STORAGE_CLAIM_ROW_COMMAND, {
       validate: isValidStorageClaimRowPayload,
-      authorize: (_payload, { sender }) => Boolean(sender),
-      execute: (payload, { sender }) => this.storageCommandService.claimRow(payload, { sender })
+      authorize: (payload, { sender }) => Boolean(sender)
+        && (payload.destination !== "party"
+          || this.#canSenderManageGroup(sender, payload.target.groupActorId)),
+      scheduling: keyedMutationScheduling(storageDestinationKeys),
+      execute: (payload, context) => payload.destination === "party"
+        ? this.runInventoryMutation(
+          () => this.storageCommandService.claimRow(payload, { sender: context.sender }),
+          {
+            actorIdsFromResult: () => [payload.target.groupActorId],
+            traceContext: context
+          }
+        )
+        : this.storageCommandService.claimRow(payload, { sender: context.sender })
     });
     this.socketCommandBus.register(STORAGE_CLAIM_COINS_COMMAND, {
       validate: isValidStorageClaimCoinsPayload,
       authorize: (_payload, { sender }) => Boolean(sender),
+      scheduling: keyedMutationScheduling(storageDestinationKeys),
       execute: (payload, { sender }) => this.storageCommandService.claimCoins(payload, { sender })
+    });
+    this.socketCommandBus.register(STORAGE_CLAIM_ALL_COMMAND, {
+      validate: isValidStorageClaimAllPayload,
+      authorize: (payload, { sender }) => Boolean(sender)
+        && (payload.destination !== "party"
+          || this.#canSenderManageGroup(sender, payload.target.groupActorId)),
+      scheduling: keyedMutationScheduling(storageDestinationKeys),
+      execute: (payload, context) => payload.destination === "party"
+        ? this.runInventoryMutation(
+          () => this.storageCommandService.claimAll(payload, { sender: context.sender }),
+          {
+            actorIdsFromResult: () => [payload.target.groupActorId],
+            traceContext: context
+          }
+        )
+        : this.storageCommandService.claimAll(payload, { sender: context.sender })
     });
     this.socketCommandBus.register(STORAGE_DEPOSIT_COMMAND, {
       validate: isValidStorageDepositPayload,
       authorize: (_payload, { sender }) => Boolean(sender),
+      scheduling: keyedMutationScheduling(storageDepositKeys),
       execute: (payload, { sender }) => this.storageCommandService.deposit(payload, { sender })
+    });
+    this.socketCommandBus.register(STORAGE_COIN_DROP_COMMAND, {
+      validate: isValidStorageCoinDropPayload,
+      authorize: (_payload, { sender }) => Boolean(sender),
+      scheduling: keyedMutationScheduling((payload) => [
+        documentKey(payload.itemUuid),
+        sceneKey(payload.sceneId)
+      ]),
+      execute: (payload, { sender }) => this.storageCommandService.dropCoinsToScene(payload, { sender })
+    });
+    this.socketCommandBus.register(STORAGE_JOURNAL_DROP_COMMAND, {
+      validate: isValidStorageJournalDropPayload,
+      authorize: (_payload, { sender }) => sender?.isGM === true,
+      scheduling: keyedMutationScheduling((payload) => [
+        documentKey(payload.sourceUuid),
+        sceneKey(payload.sceneId)
+      ]),
+      execute: (payload, { sender }) => this.storageCommandService.dropJournalToScene(payload, { sender })
     });
     this.socketCommandBus.register(STORAGE_DROP_ITEM_COMMAND, {
       validate: isValidStorageDropItemPayload,
       authorize: (_payload, { sender }) => Boolean(sender),
+      scheduling: keyedMutationScheduling((payload) => [
+        documentKey(payload.itemUuid),
+        sceneKey(payload.sceneId)
+      ]),
       execute: (payload, { sender }) => this.storageCommandService.dropItemToScene(payload, { sender })
     });
     this.socketCommandBus.register(STORAGE_RESTORE_PORTABLE_COMMAND, {
       validate: isValidStorageRestorePortablePayload,
       authorize: (_payload, { sender }) => Boolean(sender),
+      scheduling: keyedMutationScheduling((payload) => [
+        documentKey(payload.itemUuid),
+        sceneKey(payload.sceneId)
+      ]),
       execute: (payload, { sender }) => this.storageCommandService.restorePortableItem(payload, { sender })
     });
     this.socketCommandBus.register(STORAGE_TOKEN_CHARACTER_COMMAND, {
       validate: isValidStorageTokenCharacterPayload,
       authorize: (_payload, { sender }) => Boolean(sender),
+      scheduling: keyedMutationScheduling(storageDestinationKeys),
       execute: (payload, { sender }) => this.storageCommandService.moveStorageTokenToCharacter(payload, { sender })
+    });
+    this.socketCommandBus.register(STORAGE_TRIGGER_READ_COMMAND, {
+      validate: isValidStorageTriggerReadPayload,
+      authorize: (_payload, { sender }) => sender?.isGM === true,
+      scheduling: QUERY_SCHEDULING,
+      execute: (payload, { sender }) => this.storageCommandService.readTriggers(payload, { sender })
+    });
+    this.socketCommandBus.register(STORAGE_TRIGGER_SAVE_COMMAND, {
+      validate: isValidStorageTriggerSavePayload,
+      authorize: (_payload, { sender }) => sender?.isGM === true,
+      scheduling: keyedMutationScheduling((payload) => [storageKey(payload.tokenUuid)]),
+      execute: (payload, { sender }) => this.storageCommandService.saveTriggers(payload, { sender })
+    });
+    this.socketCommandBus.register(STORAGE_TRIGGER_RESET_COMMAND, {
+      validate: isValidStorageTriggerResetPayload,
+      authorize: (_payload, { sender }) => sender?.isGM === true,
+      scheduling: keyedMutationScheduling((payload) => [storageKey(payload.tokenUuid)]),
+      execute: (payload, { sender }) => this.storageCommandService.resetTriggers(payload, { sender })
+    });
+    this.socketCommandBus.register(DOOR_OPEN_COMMAND, {
+      validate: isValidDoorOpenPayload,
+      authorize: (_payload, { sender }) => Boolean(sender),
+      scheduling: keyedMutationScheduling((payload) => [
+        documentKey(payload.wallUuid),
+        documentKey(payload.characterTokenUuid)
+      ]),
+      execute: (payload, { sender }) => this.doorTriggerCommandService.open(payload, { sender })
+    });
+    this.socketCommandBus.register(DOOR_TRIGGER_READ_COMMAND, {
+      validate: isValidDoorTriggerReadPayload,
+      authorize: (_payload, { sender }) => sender?.isGM === true,
+      scheduling: QUERY_SCHEDULING,
+      execute: (payload, { sender }) => this.doorTriggerCommandService.readTriggers(payload, { sender })
+    });
+    this.socketCommandBus.register(DOOR_TRIGGER_SAVE_COMMAND, {
+      validate: isValidDoorTriggerSavePayload,
+      authorize: (_payload, { sender }) => sender?.isGM === true,
+      scheduling: keyedMutationScheduling((payload) => [documentKey(payload.wallUuid)]),
+      execute: (payload, { sender }) => this.doorTriggerCommandService.saveTriggers(payload, { sender })
+    });
+    this.socketCommandBus.register(DOOR_TRIGGER_RESET_COMMAND, {
+      validate: isValidDoorTriggerResetPayload,
+      authorize: (_payload, { sender }) => sender?.isGM === true,
+      scheduling: keyedMutationScheduling((payload) => [documentKey(payload.wallUuid)]),
+      execute: (payload, { sender }) => this.doorTriggerCommandService.resetTriggers(payload, { sender })
     });
     this.socketCommandBus.register(DURABILITY_TARGET_DAMAGE_COMMAND, {
       validate: isValidDurabilityTargetDamagePayload,
       authorize: (_payload, { sender }) => sender?.isGM === true,
+      scheduling: keyedMutationScheduling((payload) => [documentKey(payload.targetUuid)]),
       execute: (payload) => this.#damageDurabilityTargetOnActiveGm(payload.targetUuid, payload)
     });
     const authorizeTradeActor = (payload, { sender }) => traderActorIsOwnedByUser(
@@ -1440,9 +2999,24 @@ export class RebreyaMainModule {
         ?? globalThis.game?.actors?.contents?.find?.((actor) => String(actor?.id) === payload.actorId),
       sender
     );
+    this.socketCommandBus.register(PURCHASE_BASKET_COMMIT_COMMAND, {
+      validate: isValidPurchaseBasketPayload,
+      authorize: authorizeTradeActor,
+      scheduling: keyedMutationScheduling((payload) => [
+        actorKey(payload.actorId),
+        ...payload.rows.map((row) => documentKey(row.sourceUuid))
+      ]),
+      execute: (payload, { sender }) => this.purchaseBasketService.commit(payload, {
+        requestedByUserId: sender.id
+      })
+    });
     this.socketCommandBus.register(TRADER_PURCHASE_COMMAND, {
       validate: isValidTraderPurchasePayload,
       authorize: authorizeTradeActor,
+      scheduling: keyedMutationScheduling((payload) => [
+        traderKey(payload.cityId, payload.traderKey),
+        actorKey(payload.actorId)
+      ]),
       execute: async (payload, { sender }) => {
         await this.traderService.ensureTraderState(payload.cityId, payload.traderKey);
         return this.tradeTransactionService.purchase({
@@ -1459,6 +3033,11 @@ export class RebreyaMainModule {
     this.socketCommandBus.register(TRADER_SELL_COMMAND, {
       validate: isValidTraderSalePayload,
       authorize: authorizeTradeActor,
+      scheduling: keyedMutationScheduling((payload) => [
+        traderKey(payload.cityId, payload.traderKey),
+        actorKey(payload.actorId),
+        documentKey(payload.itemUuid)
+      ]),
       execute: async (payload, { sender }) => {
         await this.traderService.ensureTraderState(payload.cityId, payload.traderKey);
         return this.tradeTransactionService.sale({
@@ -1493,6 +3072,36 @@ export class RebreyaMainModule {
 
     const sourceActor = await resolveActorByUuid(payload.options.meta?.sourceActorUuid);
     return actorIsOwnedByUser(sourceActor, sender);
+  }
+
+  async #resolveActiveGrappleToken(uuid) {
+    const token = await globalThis.fromUuid?.(cleanSocketId(uuid));
+    if (token?.documentName !== "Token") return null;
+    const activeScene = globalThis.canvas?.scene ?? globalThis.game?.scenes?.active ?? null;
+    if (activeScene && cleanSocketId(token.parent?.id) !== cleanSocketId(activeScene.id)) return null;
+    return token;
+  }
+
+  async #canSenderUseGrappleSource(sender, payload) {
+    const source = await this.#resolveActiveGrappleToken(payload?.sourceTokenUuid);
+    return documentIsOwnedByUser(source, sender);
+  }
+
+  async #canSenderReleaseGrappledTarget(sender, payload) {
+    if (payload?.requesterUserId !== cleanSocketId(sender?.id)) return false;
+    const target = await this.#resolveActiveGrappleToken(payload?.targetTokenUuid);
+    const link = target?.getFlag?.(MODULE_ID, GRAPPLE_LINK_FLAG)
+      ?? target?.flags?.[MODULE_ID]?.[GRAPPLE_LINK_FLAG];
+    return cleanSocketId(link?.linkId) === cleanSocketId(payload?.linkId)
+      && documentIsOwnedByUser(target, sender);
+  }
+
+  async #canSenderReleaseTwistedTarget(sender, payload) {
+    if (payload?.requesterUserId !== cleanSocketId(sender?.id)) return false;
+    const target = await this.#resolveActiveGrappleToken(payload?.targetTokenUuid);
+    const link = getTwistedLinkForToken(target);
+    return cleanSocketId(link?.linkId) === cleanSocketId(payload?.linkId)
+      && documentIsOwnedByUser(target, sender);
   }
 
   async #executeCombatStatusSetCommand(payload) {
@@ -1536,6 +3145,52 @@ export class RebreyaMainModule {
     return this.socketCommandBus.request(COMBAT_STATUS_SET_COMMAND, payload);
   }
 
+  #resolveSceneActivityContext({groupActorId,sender}) {
+    if(!sender?.id || game.users?.get?.(sender.id)!==sender || !this.#canSenderManageGroup(sender,groupActorId))throw new SceneActivityError("unauthorized");
+    const group=game.actors.get(groupActorId),members=getGroupMemberActors(group).filter(actor=>actor.type==="character");
+    const uuid=actor=>actor.uuid || `Actor.${actor.id}`;
+    return {senderId:sender.id,isGM:sender.isGM===true,groupName:group.name??"Группа",
+      groupMemberActorUuids:members.map(uuid),ownedActorUuids:members.filter(actor=>actorIsOwnedByUser(actor,sender)).map(uuid),
+      actorNames:Object.fromEntries(members.map(actor=>[uuid(actor),actor.name??uuid(actor)])),
+      now:Date.now(),createSessionId:()=>createSocketRequestId("scene")};
+  }
+
+  listSceneActivityGroups(){
+    return this.groupContextService.getManagedGroupActors().filter(group=>this.#canSenderManageGroup(game.user,group.id))
+      .map(group=>({id:group.id,name:group.name??"Группа"}));
+  }
+  async #getSceneActivityController(){
+    if(!this.sceneActivityControllerPromise)this.sceneActivityControllerPromise=(async()=>{
+      const [{SceneActivityController},{SceneActivityApp,renderSceneActivityIndicator}]=await Promise.all([
+        import("./ui/scene-activity-controller.js?v=1.4.272"),import("./ui/scene-activity-app.js?v=1.4.275")]);
+      return new SceneActivityController({api:this,registry:this.sceneActivityApps,
+        createApp:(snapshot,callbacks)=>new SceneActivityApp(this,snapshot,callbacks),onChange:renderSceneActivityIndicator});
+    })().catch(error=>{this.sceneActivityControllerPromise=null;throw error;});
+    return this.sceneActivityControllerPromise;
+  }
+  async refreshSceneActivityApps({duringReady=false}={}){
+    // Foundry sets game.ready after dispatching its ready hook.
+    if(!game.ready&&!duringReady)return null;
+    return (await this.#getSceneActivityController()).refresh();
+  }
+  async openSceneActivityApp(options={}){
+    const groupActorId=options.groupActorId || this.groupContextService.resolveForCurrentUser()?.groupActor?.id;
+    return (await this.#getSceneActivityController()).open({...options,groupActorId});
+  }
+
+  #requestSceneActivity(action,payload) {
+    if(!isValidSceneActivityPayload(action,payload))return Promise.reject(new SceneActivityError("invalid-request"));
+    return this.privilegedMutationGateway.mutate(SCENE_ACTIVITY_COMMANDS[action],payload,{operationId:sceneActivityTransportId(action,payload,game.user?.id)});
+  }
+  startSceneActivity(payload){return this.#requestSceneActivity("start",payload);}
+  chooseSceneActivity(payload){return this.#requestSceneActivity("choose",payload);}
+  finishSceneActivity(payload){return this.#requestSceneActivity("finish",payload);}
+  cancelSceneActivity(payload){return this.#requestSceneActivity("cancel",payload);}
+  getSceneActivitySnapshot({groupActorId}={}){
+    const selected=groupActorId || this.groupContextService.resolveForCurrentUser()?.groupActor?.id;
+    return this.sceneActivityService.getSnapshot({groupActorId:selected,viewer:game.user});
+  }
+
   #canSenderManageGroup(sender, groupActorId) {
     const normalizedGroupActorId = String(groupActorId ?? "").trim();
     const groupActor = globalThis.game?.actors?.get?.(normalizedGroupActorId)
@@ -1551,6 +3206,9 @@ export class RebreyaMainModule {
     if (sender?.isGM) {
       return true;
     }
+    if (documentIsOwnedByUser(groupActor, sender)) {
+      return true;
+    }
     return getGroupMemberActors(groupActor).some((actor) => actorIsOwnedByUser(actor, sender));
   }
 
@@ -1561,7 +3219,7 @@ export class RebreyaMainModule {
     const groupActor = resolveActorById(payload.inventoryActorId);
     const targetActor = resolveActorById(payload.targetActorId);
     return actorIsOwnedByUser(targetActor, sender)
-      && getGroupMemberActors(groupActor).some((actor) => actor?.id === targetActor?.id);
+      && Boolean(resolveGroupMemberActor(groupActor, targetActor));
   }
 
   async #canSenderImportInventoryItem(sender, payload) {
@@ -1577,7 +3235,7 @@ export class RebreyaMainModule {
       return isCompendiumItemDocument(item);
     }
     return traderActorIsOwnedByUser(sourceActor, sender)
-      && getGroupMemberActors(groupActor).some((actor) => actor?.id === sourceActor?.id);
+      && Boolean(resolveGroupMemberActor(groupActor, sourceActor));
   }
 
   async restoreBuiltinStorageActors() {
@@ -1591,9 +3249,14 @@ export class RebreyaMainModule {
   }
 
   async initialize() {
+    this.registerReputationRefreshHooks();
+    if (!this.disarmChatHookRegistered) {
+      this.disarmChatHookRegistered = true;
+      Hooks.on("renderChatMessageHTML", (message, html) => bindDisarmChat(message, html, this));
+    }
     if (globalThis.game?.user?.isGM === true) {
       try {
-        await this.lootgenTemplateCatalog.migrate();
+        await this.lootgenTemplateItems.migrateLegacyTemplates();
       }
       catch (error) {
         console.warn(`${MODULE_ID} | Failed to migrate Lootgen templates.`, error);
@@ -1638,7 +3301,29 @@ export class RebreyaMainModule {
     catch (error) {
       console.warn(`${MODULE_ID} | Failed to sync managed map object documents.`, error);
     }
+    try {
+      await this.grappleMacroService.syncManagedDocuments();
+    }
+    catch (error) {
+      console.warn(`${MODULE_ID} | Failed to sync managed grapple macros.`, error);
+    }
+    if (isActiveGmClient(globalThis.game) && globalThis.canvas?.scene) {
+      try {
+        await this.grappleAutomationService.reconcileScene(globalThis.canvas.scene);
+      }
+      catch (error) {
+        console.warn(`${MODULE_ID} | Failed to reconcile grapple links during initialization.`, error);
+      }
+    }
     await this.restoreBuiltinStorageActors();
+    if (isActiveGmClient(globalThis.game)) {
+      try {
+        await this.storageGroundPileService.repairLegacyCoinRows();
+      }
+      catch (error) {
+        console.warn(`${MODULE_ID} | Failed to repair legacy ground coin rows.`, error);
+      }
+    }
     try {
       await this.storageOpenSoundService.cleanupStale(globalThis.canvas?.scene);
     }
@@ -1668,9 +3353,18 @@ export class RebreyaMainModule {
 
     try {
       await this.curseEaterAutomationService.initialize();
+      await this.curseUpgradeAutomationService.initialize();
+      this.curseUpgradeAutomationService.registerNativeSaveWrapper();
     }
     catch (error) {
       console.warn(`${MODULE_ID} | Failed to initialize Curse Eater automation.`, error);
+    }
+
+    try {
+      await this.itemUpgradeAutomationService.initialize();
+    }
+    catch (error) {
+      console.warn(`${MODULE_ID} | Failed to initialize simple item upgrades.`, error);
     }
 
     try {
@@ -1751,6 +3445,10 @@ export class RebreyaMainModule {
       return;
     }
 
+    if (await this.storageTriggerPromptBroker.handleMessage(message, senderId)) {
+      return;
+    }
+
     if (await this.reactionQueueService.handleSocketMessage(message, senderId)) {
       return;
     }
@@ -1779,38 +3477,13 @@ export class RebreyaMainModule {
       return;
     }
 
-    if (message.type === SOCKET_EVENT_DOWNTIME_CREATE_RESULT) {
-      await this.#handleDowntimeCreateSocketResult(message);
-      return;
-    }
-
-    if (message.type === SOCKET_EVENT_DOWNTIME_UPDATE_RESULT) {
-      await this.#handleDowntimeUpdateSocketResult(message);
-      return;
-    }
-
-    if (message.type === SOCKET_EVENT_DOWNTIME_CHECK_RESULT_RESULT) {
-      await this.#handleDowntimeCheckResultSocketResult(message);
-      return;
-    }
-
-    if (message.type === SOCKET_EVENT_DOWNTIME_PROJECT_CONTINUE_RESULT) {
-      await this.#handleDowntimeProjectContinueSocketResult(message);
-      return;
-    }
-
-    if (message.type === SOCKET_EVENT_DOWNTIME_PROJECT_CLOSE_RESULT) {
-      await this.#handleDowntimeProjectCloseSocketResult(message);
-      return;
-    }
-
     if (message.type === SOCKET_EVENT_INVENTORY_IMPORT_RESULT) {
       if (message.forUserId !== game.user?.id) {
         return;
       }
 
       if (message.ok) {
-        await this.refreshInventoryViews();
+        this.#deferInventoryRefresh();
         ui.notifications?.info("Предмет перенесён в партийный склад.");
       }
       else {
@@ -1825,7 +3498,7 @@ export class RebreyaMainModule {
       }
 
       if (message.ok) {
-        await this.refreshInventoryViews();
+        this.#deferInventoryRefresh([message.actorId, message.targetActorId]);
       }
       else {
         ui.notifications?.error(message.error || "Мастер не смог удалить исходный предмет склада.");
@@ -1839,7 +3512,7 @@ export class RebreyaMainModule {
       }
 
       if (message.ok) {
-        await this.refreshInventoryViews({ actorIds: [message.actorId] });
+        this.#deferInventoryRefresh([message.actorId]);
         const action = String(message.action ?? "");
         const labels = {
           take: "Предмет забран из партийного склада.",
@@ -1860,41 +3533,6 @@ export class RebreyaMainModule {
 
     if (message.type === SOCKET_EVENT_DOWNTIME_UPDATED) {
       await this.#handleDowntimeUpdatedSocketMessage(message);
-      return;
-    }
-
-    if (message.type === SOCKET_EVENT_DOWNTIME_CREATE_REQUEST) {
-      if (game.user?.isGM) {
-        await this.#handleDowntimeCreateSocketRequest(message);
-      }
-      return;
-    }
-
-    if (message.type === SOCKET_EVENT_DOWNTIME_UPDATE_REQUEST) {
-      if (game.user?.isGM) {
-        await this.#handleDowntimeUpdateSocketRequest(message);
-      }
-      return;
-    }
-
-    if (message.type === SOCKET_EVENT_DOWNTIME_CHECK_RESULT_REQUEST) {
-      if (game.user?.isGM) {
-        await this.#handleDowntimeCheckResultSocketRequest(message);
-      }
-      return;
-    }
-
-    if (message.type === SOCKET_EVENT_DOWNTIME_PROJECT_CONTINUE_REQUEST) {
-      if (game.user?.isGM) {
-        await this.#handleDowntimeProjectContinueSocketRequest(message);
-      }
-      return;
-    }
-
-    if (message.type === SOCKET_EVENT_DOWNTIME_PROJECT_CLOSE_REQUEST) {
-      if (game.user?.isGM) {
-        await this.#handleDowntimeProjectCloseSocketRequest(message);
-      }
       return;
     }
 
@@ -1962,7 +3600,13 @@ export class RebreyaMainModule {
           const result = await this.runInventoryMutation(
             () => this.inventoryService.handlePartyInventorySourceDepletionSocketRequest(message.payload ?? {}, {
               senderId: forUserId
-            })
+            }),
+            {
+              actorIdsFromResult: (result, error) => [
+                result?.actorId ?? error?.sourceActorId,
+                result?.targetActorId ?? error?.targetActorId
+              ]
+            }
           );
           if (!result) {
             return;
@@ -1975,6 +3619,8 @@ export class RebreyaMainModule {
             transferId,
             sourceItemUuid,
             targetItemUuid,
+            actorId: result.actorId,
+            targetActorId: result.targetActorId,
             ok: true
           });
         }
@@ -1987,7 +3633,11 @@ export class RebreyaMainModule {
             sourceItemUuid,
             targetItemUuid,
             ok: false,
-            error: error?.message ?? String(error)
+            error: error?.message ?? String(error),
+            ...(error?.code ? { code: error.code } : {}),
+            ...(error?.inventoryTransferMode
+              ? { inventoryTransferMode: error.inventoryTransferMode }
+              : {})
           });
         }
       }
@@ -2031,16 +3681,6 @@ export class RebreyaMainModule {
       return;
     }
 
-    if (message.type === SOCKET_EVENT_TRADER_AUDIT) {
-      if (game.user?.isGM) {
-        await this.traderService.recordTradeAudit(message.payload ?? {}, {
-          senderId: message.senderId ?? ""
-        });
-        await this.refreshOpenApps();
-      }
-      return;
-    }
-
     if (message.type === SOCKET_EVENT_SET_SETTING) {
       if (isActiveGmClient(game)) {
         const requestId = String(message.requestId ?? "").trim();
@@ -2074,24 +3714,6 @@ export class RebreyaMainModule {
       return;
     }
 
-    if (message.type === SOCKET_EVENT_LOOTGEN_CLAIM_ROW_TO_INVENTORY && isActiveGmClient(game)) {
-      await this.claimLootgenChatRowToInventory(message.payload?.lootId, message.payload?.rowId, {
-        quiet: true,
-        fromSocket: true,
-        claimId: message.payload?.claimId
-      });
-      return;
-    }
-
-    if (message.type === SOCKET_EVENT_LOOTGEN_CLAIM_ALL_TO_INVENTORY && isActiveGmClient(game)) {
-      await this.claimLootgenChatAllToInventory(message.payload?.lootId, {
-        quiet: true,
-        fromSocket: true,
-        claimId: message.payload?.claimId
-      });
-      return;
-    }
-
     if (message.type === SOCKET_EVENT_LOOTGEN_CLAIM_COINS && isActiveGmClient(game)) {
       await this.claimLootgenChatCoins(message.payload?.lootId, {
         quiet: true,
@@ -2112,28 +3734,17 @@ export class RebreyaMainModule {
     });
   }
 
-  #findLootgenChatMessage(lootId) {
+  #findLootgenChatMessage(lootId, {allowDraft=false}={}) {
     const safeLootId = String(lootId ?? "").trim();
     if (!safeLootId) {
       return null;
     }
 
     return game.messages.contents.find((message) => {
-      const state = message.getFlag(MODULE_ID, "lootgenChat") ?? null;
-      const createdBy = String(state?.createdBy ?? "").trim();
-      const messageUserId = String(
-        message?.author?.id
-        ?? message?.user?.id
-        ?? message?.user
-        ?? ""
-      ).trim();
-      const author = game.users?.get?.(createdBy)
-        ?? Array.from(game.users?.contents ?? []).find((user) => user?.id === createdBy)
-        ?? null;
-      return String(state?.lootId ?? "") === safeLootId
-        && Boolean(createdBy)
-        && messageUserId === createdBy
-        && author?.isGM === true;
+      const envelope = this.#readLootgenMessage(message, {cloneState:false});
+      const state = envelope?.state;
+      return envelope?.trusted === true && String(state?.lootId ?? "") === safeLootId
+        && (state.resultVersion !== 2 || (state.generationReady === true && (state.published === true || allowDraft)));
     }) ?? null;
   }
 
@@ -2172,6 +3783,131 @@ export class RebreyaMainModule {
     for (const app of this.lootgenApps.values()) {
       app?.handleLootgenChatClaim?.(lootId, rowId, claimType);
     }
+  }
+
+  #readLootgenMessage(messageOrId, {cloneState=true}={}) {
+    const message = typeof messageOrId === "string"
+      ? game.messages?.get?.(messageOrId) ?? game.messages?.contents?.find(entry=>entry.id===messageOrId)
+      : messageOrId;
+    if (!message) return null;
+    const rawState = message.getFlag(MODULE_ID,"lootgenChat") ?? {};
+    const state = cloneState ? foundry.utils.deepClone(rawState) : rawState;
+    const createdBy = String(state?.createdBy ?? "").trim();
+    const messageUserId = String(message.author?.id ?? message.user?.id ?? message.user ?? "").trim();
+    const author = game.users?.get?.(createdBy) ?? game.users?.contents?.find(user=>user.id===createdBy);
+    return {id:message.id,state,trusted:Boolean(createdBy) && messageUserId === createdBy && author?.isGM === true};
+  }
+
+  async #createLootgenChatDocument(state, {messageId=null,whisper=null}={}) {
+    if (!game.user?.isGM) throw new Error("Отправлять лут в чат может только ГМ.");
+    return ChatMessage.create({
+      ...(messageId ? {_id:messageId} : {}),
+      ...(whisper ? {whisper} : {}),
+      user: state.createdBy,
+      speaker: ChatMessage.getSpeaker(),
+      content: buildLootgenChatContent(state),
+      flags: {[MODULE_ID]:{lootgenChat:state}}
+    }, {keepId:Boolean(messageId)});
+  }
+
+  async #activateLootgenGeneratedMessage(messageId) {
+    const envelope = this.#readLootgenMessage(messageId);
+    if (!envelope?.trusted || envelope.state.resultVersion!==2) throw new Error("Подготовленный результат лута недоступен.");
+    if (envelope.state.generationReady===true) return;
+    const state = {...envelope.state,generationReady:true};
+    const message = game.messages.get(messageId);
+    try {
+      await message.update({content:buildLootgenChatContent(state),[`flags.${MODULE_ID}.lootgenChat`]:state});
+    } catch (error) {
+      if (this.#readLootgenMessage(messageId)?.state.generationReady!==true) throw error;
+    }
+  }
+
+  async prepareLootgenGeneratedResult(form, {operationId=createSocketRequestId("lootgen-prepare")}={}) {
+    const reference=await this.privilegedMutationGateway.mutate(LOOTGEN_PREPARE_RESULT_COMMAND, {form:normalizeLootgenForm(form),operationId});
+    return this.#hydrateLootgenGeneratedResult(reference);
+  }
+
+  async publishLootgenGeneratedResult(lootId) {
+    const reference=await this.privilegedMutationGateway.mutate("lootgen.publish-result",{lootId});
+    return this.#hydrateLootgenGeneratedResult(reference,{published:true});
+  }
+
+  async #hydrateLootgenGeneratedResult(reference,{published=false}={}) {
+    // Chat replication can trail the compact socket acknowledgement; never reroll while waiting.
+    for(let attempt=0;attempt<50;attempt++){
+      let result;
+      try {result=this.getLootgenGeneratedResult(reference.lootId);} catch {}
+      if(result?.messageId===reference.messageId && result.state.generationReady===true
+        && (!published || result.state.published===true))return result;
+      await new Promise(resolve=>setTimeout(resolve,50));
+    }
+    throw Object.assign(new Error("Результат сохранён, но ещё не получен этим клиентом. Повторите действие с той же операцией."),{code:"lootgen-result-replication-pending"});
+  }
+
+  getLootgenGeneratedResult(lootId) {
+    const message=this.#findLootgenChatMessage(lootId,{allowDraft:game.user?.isGM===true});
+    const entry=message?this.#readLootgenMessage(message):null;
+    if(entry?.state?.resultVersion!==2)throw new Error("Подготовленная добыча удалена или недоступна.");
+    return {lootId:entry.state.lootId,messageId:entry.id,state:entry.state};
+  }
+
+  openLootgenGeneratedResult(lootId) {
+    this.getLootgenGeneratedResult(lootId);
+    return this.openLootgenApp({newWindow:true,sharedResult:{resultVersion:2,lootId}});
+  }
+
+  async #publishLootgenGeneratedMessage(lootId,assertAuthority) {
+    const message=this.#findLootgenChatMessage(lootId,{allowDraft:true});
+    if (!message) throw new Error("Подготовленная добыча не найдена.");
+    return this.worldMutationCoordinator.run(`loot-claim:${message.id}`,async()=>{
+      const read=()=>{
+        const entry=this.#readLootgenMessage(message.id);
+        if (!entry?.trusted || entry.state.resultVersion!==2 || entry.state.generationReady!==true || entry.state.lootId!==lootId) throw new Error("Подготовленная добыча не готова к публикации.");
+        return entry;
+      };
+      let entry=read();
+      const published=()=>entry.state.published===true && Array.from(message.whisper??[]).length===0 && message.blind!==true;
+      if (!published()) {
+        const state={...entry.state,published:true};
+        assertAuthority();
+        try { await message.update({whisper:[],blind:false,content:buildLootgenChatContent(state),[`flags.${MODULE_ID}.lootgenChat`]:state}); }
+        catch(error){entry=read();if(!published())throw error;}
+        entry=read();
+        if(!published())throw new Error("Не удалось подтвердить публикацию добычи.");
+      }
+      return {messageId:message.id,lootId};
+    });
+  }
+
+  async #resolveLootgenCharacterDestination({lootId,actorUuid},sender) {
+    if (!sender) return null;
+    const actor=await resolveActorByUuid(actorUuid);
+    if (actor?.type!=="character" || !(sender.isGM || actorIsOwnedByUser(actor,sender))) return null;
+    const message=this.#findLootgenChatMessage(lootId,{allowDraft:sender.isGM===true});
+    return message?.getFlag(MODULE_ID,"lootgenChat")?.resultVersion===2 ? {actor,message} : null;
+  }
+
+  async #grantLootgenCharacterRow({claimId,lootId,rows,includeCoins,ingressPlan,message}) {
+    if (rows.length!==1 || includeCoins) throw new Error("Выдача персонажу принимает одну строку предмета.");
+    const sender=game.users.get(ingressPlan.requesterId);
+    const destination=await this.#resolveLootgenCharacterDestination({lootId,actorUuid:ingressPlan.actorUuid},sender);
+    if (!isActiveGmClient(game) || !destination || destination.message.id!==message.id) throw new Error("Недоступен персонаж или подготовленная добыча.");
+    const row=message.getFlag(MODULE_ID,"lootgenChat")?.rows?.find(entry=>entry.rowId===rows[0].rowId);
+    if (!row || row.claimed) throw new Error("Строка добычи больше недоступна.");
+    const result=await this.inventoryService.addLootgenRowToCharacterOnce({quantity:row.quantity,itemData:row.itemData},destination.actor,`lootgen-character:${claimId}`,{
+      allowPreparedLootgenGraph:true,
+      beforePrepare:async()=>{
+        await assertLootgenCatalogCurrent(message.getFlag(MODULE_ID,"lootgenChat"),this.lootgenSourceCatalog);
+        const live=await this.#resolveLootgenCharacterDestination({lootId,actorUuid:ingressPlan.actorUuid},game.users.get(ingressPlan.requesterId));
+        if (!isActiveGmClient(game) || !live || live.actor!==destination.actor || live.message.id!==message.id) throw new Error("Права на выдачу добычи изменились.");
+      }
+    });
+    return {acceptedRowIds:[row.rowId],coinsGranted:false,receipt:result};
+  }
+
+  claimLootgenChatRowToCharacter(lootId,rowId,actorUuid,{operationId=`lootgen-self:${game.user?.id}:${lootId}:${rowId}:${actorUuid}`}={}) {
+    return this.privilegedMutationGateway.mutate("lootgen.claim-character",{lootId,rowId,actorUuid,claimId:operationId});
   }
 
   async createLootgenChatMessage(payload = {}, options = {}) {
@@ -2231,16 +3967,7 @@ export class RebreyaMainModule {
       totalItems: payload.totalItems ?? chatRows.reduce((sum, row) => sum + Number(row.quantity ?? 0), 0)
     };
 
-    const message = await ChatMessage.create({
-      user: game.user?.id,
-      speaker: ChatMessage.getSpeaker(),
-      content: buildLootgenChatContent(state),
-      flags: {
-        [MODULE_ID]: {
-          lootgenChat: state
-        }
-      }
-    });
+    const message = await this.#createLootgenChatDocument(state);
 
     return {
       lootId,
@@ -2249,9 +3976,247 @@ export class RebreyaMainModule {
     };
   }
 
+  #buildLootgenInventoryIngressRows(state, rowIds) {
+    const rowById = new Map((state?.rows ?? []).map((row) => [String(row?.rowId ?? "").trim(), row]));
+    return rowIds.map((sourceKey) => {
+      const row = rowById.get(sourceKey);
+      if (!row || row.claimed === true) {
+        throw new Error(`Строка добычи '${sourceKey}' больше недоступна.`);
+      }
+      const quantity = Number(row.quantity ?? row.itemData?.system?.quantity ?? 0);
+      if (!(quantity > 0)) throw new Error(`Строка добычи '${sourceKey}' имеет некорректное количество.`);
+      const itemData=foundry.utils.deepClone(row.itemData??{});
+      if(state.resultVersion===2 && itemData.flags?.[MODULE_ID])delete itemData.flags[MODULE_ID].lootgenChat;
+      return {
+        sourceKey,
+        quantity,
+        itemData,
+        legacyFolderId: null,
+        container: null
+      };
+    });
+  }
+
+  async #prepareLootgenInventoryIngress(lootId, rowIds, { batch }) {
+    const message = this.#findLootgenChatMessage(lootId,{allowDraft:game.user?.isGM===true});
+    if (!message) throw new Error("Сообщение с лутом не найдено.");
+    const state = foundry.utils.deepClone(message.getFlag(MODULE_ID, "lootgenChat") ?? {});
+    const context = this.groupContextService.resolveForCurrentUser();
+    const groupActorId = String(context?.groupActor?.id ?? context?.groupId ?? "").trim();
+    if (!groupActorId) throw new Error("Не удалось определить партийный инвентарь.");
+    const rows = this.#buildLootgenInventoryIngressRows(state, rowIds);
+    const preview = await this.inventoryIngressPlanner.preview({
+      groupActorId,
+      requestedFolderId: null,
+      rows,
+      batch
+    });
+    const choices = await this.inventoryIngressPlanner.collectChoices(preview);
+    if (choices === null) return null;
+    return {
+      groupActorId,
+      ingressPlan: this.inventoryIngressPlanner.serialize(preview, choices)
+    };
+  }
+
+  async #executeLootgenInventoryIngress(payload,{allowDraft=false}={}) {
+    const message = this.#findLootgenChatMessage(payload.lootId,{allowDraft});
+    if (!message) throw new Error("Сообщение с лутом не найдено.");
+    return this.lootClaimService.claimBatch({
+      messageId: message.id,
+      lootId: payload.lootId,
+      claimId: payload.batchMutationId,
+      rowIds: payload.rowIds,
+      includeCoins: payload.includeCoins,
+      ingressPlan: payload.ingressPlan
+    });
+  }
+
+  #normalizeDirectInventoryIngressCoins(coins = {}) {
+    return Object.fromEntries(["pp", "gp", "sp", "cp"].map((key) => [
+      key,
+      Math.max(0, Math.trunc(Number(coins?.[key] ?? 0)) || 0)
+    ]));
+  }
+
+  #normalizeDirectInventoryIngressSources(sources) {
+    return (Array.isArray(sources) ? sources : []).map((source) => {
+      const normalized = {
+        sourceKey: String(source?.sourceKey ?? source?.directGrantId ?? "").trim(),
+        sourceType: String(source?.sourceType ?? "").trim(),
+        sourceId: String(source?.sourceId ?? "").trim(),
+        sourceDocumentId: String(source?.sourceDocumentId ?? "").trim(),
+        isBroken: source?.isBroken === true,
+        quantity: Math.max(0.01, Math.round((Number(source?.quantity ?? 1) || 1) * 100) / 100)
+      };
+      if (source?.manualEntry && typeof source.manualEntry === "object" && !Array.isArray(source.manualEntry)) {
+        normalized.manualEntry = {
+          manualEntryId: String(source.manualEntry.manualEntryId ?? "").trim(),
+          name: String(source.manualEntry.name ?? "").trim(),
+          unitWeight: Number(source.manualEntry.unitWeight),
+          unitPriceValue: Number(source.manualEntry.unitPriceValue),
+          unitPriceDenomination: String(source.manualEntry.unitPriceDenomination ?? "").trim().toLowerCase(),
+          itemType: String(source.manualEntry.itemType ?? "").trim(),
+          material: String(source.manualEntry.material ?? "").trim()
+        };
+      }
+      return normalized;
+    });
+  }
+
+  async #buildDirectInventoryIngressRows(sourceOrigin, sources, requestedFolderId) {
+    return Promise.all(sources.map(async (source) => ({
+      sourceKey: source.sourceKey,
+      quantity: source.quantity,
+      itemData: sourceOrigin === "lootgen"
+        ? await this.inventoryService.buildLootgenItemData(source)
+        : sourceOrigin === "manual-entry"
+          ? this.inventoryService.buildManualInventoryItemData(source.manualEntry, source.quantity)
+          : await this.inventoryService.buildModelItemData(
+            source.sourceType,
+            source.sourceId,
+            source.quantity
+          ),
+      legacyFolderId: requestedFolderId,
+      container: null
+    })));
+  }
+
+  async #prepareDirectInventoryIngress({
+    groupActorId,
+    sourceOrigin,
+    sources,
+    requestedFolderId = null
+  }) {
+    if (sources.length === 0) return null;
+    const rows = await this.#buildDirectInventoryIngressRows(sourceOrigin, sources, requestedFolderId);
+    const preview = await this.inventoryIngressPlanner.preview({
+      groupActorId,
+      requestedFolderId,
+      rows,
+      batch: rows.length > 1
+    });
+    const choices = await this.inventoryIngressPlanner.collectChoices(preview);
+    return choices === null ? null : this.inventoryIngressPlanner.serialize(preview, choices);
+  }
+
+  async #executeDirectInventoryIngress(payload, { sender = globalThis.game?.user } = {}) {
+    let ingressResult = {
+      actorId: payload.groupActorId,
+      batchMutationId: payload.batchMutationId,
+      changed: false,
+      rows: []
+    };
+    if (payload.sources.length > 0) {
+      const requestedFolderId = payload.ingressPlan.requestedFolderId ?? null;
+      ingressResult = await this.inventoryService.commitInventoryIngressBatch({
+        groupActorId: payload.groupActorId,
+        batchMutationId: payload.batchMutationId,
+        sourceOrigin: payload.sourceOrigin,
+        serializedPlan: payload.ingressPlan
+      }, {
+        resolveRows: () => this.#buildDirectInventoryIngressRows(
+          payload.sourceOrigin,
+          payload.sources,
+          requestedFolderId
+        ),
+        debitRow: async () => {},
+        acquisitionContext: new Set(["public-model", "manual-entry"]).has(payload.sourceOrigin)
+          ? {
+              userId: String(sender?.id ?? "").trim(),
+              userName: String(sender?.name ?? sender?.id ?? "").trim()
+            }
+          : { sourceType: "lootgen", sourceName: "Lootgen" }
+      });
+    }
+    const coins = this.#normalizeDirectInventoryIngressCoins(payload.coins);
+    const coinsGranted = Object.values(coins).some((value) => value > 0);
+    if (coinsGranted) {
+      await this.inventoryService.addCurrencyToInventoryOnce(
+        coins,
+        `${payload.batchMutationId}:coins`,
+        { groupActorId: payload.groupActorId }
+      );
+    }
+    return {
+      ...ingressResult,
+      changed: ingressResult.changed || coinsGranted,
+      coinsGranted
+    };
+  }
+
+  async #dispatchInventoryIngress({ command, payload, validate, execute }) {
+    if (typeof validate !== "function" || !validate(payload)) {
+      throw new TypeError("Inventory ingress command payload is invalid.");
+    }
+    const exactPayload = cloneSocketPayload(payload);
+    const groupActorId = cleanSocketId(
+      exactPayload.groupActorId ?? exactPayload.target?.groupActorId
+    );
+    if (!groupActorId) {
+      throw new TypeError("Inventory ingress command requires a group Actor target.");
+    }
+    if (isActiveGmClient(globalThis.game)) {
+      return this.runInventoryMutation(
+        () => execute(exactPayload),
+        {
+          actorIdsFromResult: () => [groupActorId]
+        }
+      );
+    }
+    let result;
+    let requestError = null;
+    try {
+      result = await this.socketCommandBus.request(command, exactPayload);
+    }
+    catch (error) {
+      requestError = error;
+    }
+    this.#deferInventoryRefresh([groupActorId]);
+    if (requestError) throw requestError;
+    return result;
+  }
+
+  async #dispatchLootgenInventoryIngress(payload) {
+    const result = await this.#dispatchInventoryIngress({
+      command: INVENTORY_INGRESS_LOOTGEN_COMMAND,
+      payload,
+      validate: isValidLootgenInventoryIngressPayload,
+      execute: (exactPayload) => this.#executeLootgenInventoryIngress(exactPayload,{allowDraft:game.user?.isGM===true})
+    });
+    for (const rowId of result?.claimedRowIds ?? []) {
+      this.#notifyLootgenChatClaim(payload.lootId, rowId, "row");
+    }
+    if (result?.claimedCoins) this.#notifyLootgenChatClaim(payload.lootId, "", "coins");
+    return result;
+  }
+
+  async #dispatchDirectInventoryIngress(payload) {
+    return this.#dispatchInventoryIngress({
+      command: INVENTORY_INGRESS_DIRECT_COMMAND,
+      payload,
+      validate: isValidDirectInventoryIngressPayload,
+      execute: (exactPayload) => this.#executeDirectInventoryIngress(exactPayload, { sender: game.user })
+    });
+  }
+
+  #readPreparedLootgenClaimRequest(lootId,claimId,{rowIds=null,coinsOnly=false}={}) {
+    const message=this.#findLootgenChatMessage(lootId,{allowDraft:game.user?.isGM===true});
+    const state=message?.getFlag(MODULE_ID,"lootgenChat");
+    if(state?.resultVersion!==2)return null;
+    const claim=state.claims?.find(entry=>entry.id===claimId);
+    if(!claim)return null;
+    const saved=JSON.parse(claim.fingerprint);
+    if(claim.kind!=="batch" || saved.lootId!==lootId || (rowIds && JSON.stringify(saved.rowIds)!==JSON.stringify(rowIds))
+      || (coinsOnly && saved.rowIds.length))throw new Error("Запрос не совпадает с сохранённой выдачей добычи.");
+    const request={batchMutationId:claimId,groupActorId:saved.ingressPlan?.groupActorId,lootId,
+      rowIds:saved.rowIds,includeCoins:saved.includeCoins,ingressPlan:saved.ingressPlan};
+    if(!isValidLootgenInventoryIngressPayload(request))throw new Error("Сохранённая выдача требует сверки.");
+    return foundry.utils.deepClone(request);
+  }
+
   async claimLootgenChatRowToInventory(lootId, rowId, {
     quiet = false,
-    fromSocket = false,
     claimId = ""
   } = {}) {
     const safeLootId = String(lootId ?? "").trim();
@@ -2261,46 +4226,27 @@ export class RebreyaMainModule {
       return false;
     }
 
-    if (!game.user?.isGM) {
-      if (!fromSocket) {
-        this.#emitLootgenClaimRequest(SOCKET_EVENT_LOOTGEN_CLAIM_ROW_TO_INVENTORY, {
-          lootId: safeLootId,
-          rowId: safeRowId,
-          claimId: safeClaimId
-        });
-      }
-      ui.notifications?.info("Запрос на добавление добычи в склад отправлен мастеру.");
-      return true;
-    }
-    if (!isActiveGmClient(game)) {
-      throw new Error("Только активный мастер может добавлять добычу в склад.");
-    }
+    const replay=this.#readPreparedLootgenClaimRequest(safeLootId,safeClaimId,{rowIds:[safeRowId]});
+    if(replay)return (await this.#dispatchLootgenInventoryIngress(replay)).changed;
 
-    const message = this.#findLootgenChatMessage(safeLootId);
-    if (!message) {
-      return false;
-    }
-    const state = foundry.utils.deepClone(message.getFlag(MODULE_ID, "lootgenChat") ?? {});
-    const row = (state.rows ?? []).find((entry) => String(entry.rowId ?? "") === safeRowId) ?? null;
-    const claimed = await this.lootClaimService.claimRow({
-      messageId: message.id,
+    const prepared = await this.#prepareLootgenInventoryIngress(safeLootId, [safeRowId], { batch: false });
+    if (!prepared) return false;
+    const result = await this.#dispatchLootgenInventoryIngress({
+      batchMutationId: safeClaimId,
+      groupActorId: prepared.groupActorId,
       lootId: safeLootId,
-      rowId: safeRowId,
-      claimId: safeClaimId
+      rowIds: [safeRowId],
+      includeCoins: false,
+      ingressPlan: prepared.ingressPlan
     });
-    if (claimed) {
-      this.#notifyLootgenChatClaim(safeLootId, safeRowId, "row");
-    }
-    if (claimed && !quiet) {
-      ui.notifications?.info(`Лут "${row?.name ?? "предмет"}" добавлен в партийный склад.`);
-    }
-    return claimed;
+    if (result.changed && !quiet) ui.notifications?.info("Добыча обработана правилами партийного склада.");
+    return result.changed;
   }
 
   async claimLootgenChatAllToInventory(lootId, {
     quiet = false,
-    fromSocket = false,
-    claimId = ""
+    claimId = "",
+    coinsOnly = false
   } = {}) {
     const safeLootId = String(lootId ?? "").trim();
     if (!safeLootId) {
@@ -2308,49 +4254,32 @@ export class RebreyaMainModule {
     }
 
     const batchClaimId = String(claimId ?? "").trim() || createSocketRequestId("loot-all-claim");
-    if (!game.user?.isGM) {
-      if (!fromSocket) {
-        this.#emitLootgenClaimRequest(SOCKET_EVENT_LOOTGEN_CLAIM_ALL_TO_INVENTORY, {
-          lootId: safeLootId,
-          claimId: batchClaimId
-        });
-      }
-      ui.notifications?.info("Запрос на добавление всей добычи в склад отправлен мастеру.");
-      return true;
-    }
-    if (!isActiveGmClient(game)) {
-      throw new Error("Только активный мастер может добавлять добычу в склад.");
-    }
-
-    const message = this.#findLootgenChatMessage(safeLootId);
+    const replay=this.#readPreparedLootgenClaimRequest(safeLootId,batchClaimId,{coinsOnly});
+    if(replay)return (await this.#dispatchLootgenInventoryIngress(replay)).changed;
+    const message = this.#findLootgenChatMessage(safeLootId,{allowDraft:game.user?.isGM===true});
     const state = foundry.utils.deepClone(message?.getFlag(MODULE_ID, "lootgenChat") ?? {});
-    const rows = Array.isArray(state.rows) ? state.rows : [];
-    let claimedRows = 0;
-    for (const row of rows) {
-      if (row?.claimed) {
-        continue;
-      }
-
-      const claimed = await this.claimLootgenChatRowToInventory(safeLootId, row.rowId, {
-        quiet: true,
-        fromSocket: true,
-        claimId: `${batchClaimId}:row:${row.rowId}`
-      });
-      if (claimed) {
-        claimedRows += 1;
-      }
+    const rowIds = (coinsOnly ? [] : state.rows ?? [])
+      .filter((row) => row?.claimed !== true)
+      .map((row) => String(row.rowId ?? "").trim())
+      .filter(Boolean);
+    if (rowIds.length === 0 && state.resultVersion!==2) {
+      return this.claimLootgenChatCoins(safeLootId, { quiet, claimId: `${batchClaimId}:coins` });
     }
-
-    const claimedCoins = await this.claimLootgenChatCoins(safeLootId, {
-      quiet: true,
-      fromSocket: true,
-      claimId: `${batchClaimId}:coins`
+    if(rowIds.length===0 && state.coinsClaimed===true)return false;
+    const prepared = await this.#prepareLootgenInventoryIngress(safeLootId, rowIds, { batch: true });
+    if (!prepared) return false;
+    const result = await this.#dispatchLootgenInventoryIngress({
+      batchMutationId: batchClaimId,
+      groupActorId: prepared.groupActorId,
+      lootId: safeLootId,
+      rowIds,
+      includeCoins: state.coinsClaimed !== true,
+      ingressPlan: prepared.ingressPlan
     });
-    const changed = claimedRows > 0 || claimedCoins;
-    if (changed && !quiet) {
+    if (result.changed && !quiet) {
       ui.notifications?.info("Вся доступная добыча добавлена в партийный склад.");
     }
-    return changed;
+    return result.changed;
   }
 
   async claimLootgenChatRow(lootId, rowId, { quiet = false, fromSocket = false } = {}) {
@@ -2372,6 +4301,7 @@ export class RebreyaMainModule {
 
     let claimedRow = null;
     const result = await this.#updateLootgenChatState(safeLootId, (state) => {
+      if (state.resultVersion===2) throw new Error("Подготовленная добыча выдаётся только через проверяемый маршрут инвентаря.");
       const row = state.rows.find((entry) => String(entry.rowId ?? "") === safeRowId) ?? null;
       if (!row || row.claimed) {
         return false;
@@ -2486,6 +4416,28 @@ export class RebreyaMainModule {
   }
 
   async #syncManagedCompendia(model) {
+    if (isActiveGmClient(globalThis.game)) {
+      try {
+        const response = await fetch(`modules/${MODULE_ID}/data/icon-badge-targets.json`, { cache: "no-store" });
+        if (!response.ok) throw new Error(`Icon badge target manifest returned HTTP ${response.status}`);
+        const manifest = await response.json();
+        const result = await prepareCompendiumBadgeImages({
+          game: globalThis.game,
+          manifest,
+          isActiveGm: () => isActiveGmClient(globalThis.game)
+        });
+        setManagedIconProjection(buildManagedIconProjection(manifest, result.images));
+        if (result.failures.length) {
+          console.warn(`${MODULE_ID} | Icon badge build failed for ${result.failures.length} compendiums.`, result.failures);
+          ui.notifications?.warn(`Не удалось собрать маркеры для ${result.failures.length} компендиумов Rebreya.`);
+        }
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to prepare compendium icon badges.`, error);
+        ui.notifications?.warn("Не удалось подготовить маркеры компендиумов Rebreya.");
+      }
+    }
+    clearNamedIconCache();
     this.traderService.invalidatePackCache();
 
     try {
@@ -2505,12 +4457,40 @@ export class RebreyaMainModule {
       ui.notifications?.warn(game.i18n.localize("REBREYA_MAIN.Notifications.GearCompendiumSyncFailed"));
     }
 
+    if (isActiveGmClient(globalThis.game)) {
+      try {
+        if (model.source?.alchemyProductsAvailable !== false) {
+          await this.alchemyCompendium.sync(model.alchemyProducts);
+        }
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to sync alchemy compendium.`, error);
+        ui.notifications?.warn("Не удалось синхронизировать компендиум алхимии Ребреи.");
+      }
+    }
+
     try {
-      await this.magicItemsCompendium.sync();
+      await this.magicItemsCompendium.syncOwnedMagicItems({ reportToConsole: false });
     }
     catch (error) {
       console.error(`${MODULE_ID} | Failed to sync magic items compendium.`, error);
       ui.notifications?.warn("Не удалось синхронизировать компендиум магических предметов.");
+    }
+
+    try {
+      await this.actionsCompendium.sync();
+    }
+    catch (error) {
+      console.error(`${MODULE_ID} | Failed to sync actions compendium.`, error);
+      ui.notifications?.warn("Не удалось синхронизировать компендиум действий.");
+    }
+
+    try {
+      await this.glossaryCompendium.sync();
+    }
+    catch (error) {
+      console.error(`${MODULE_ID} | Failed to sync glossary compendium.`, error);
+      ui.notifications?.warn("Не удалось синхронизировать компендиум терминов Rebreya.");
     }
 
     try {
@@ -2570,14 +4550,6 @@ export class RebreyaMainModule {
     catch (error) {
       console.error(`${MODULE_ID} | Failed to sync classes or Craftsman construct compendium.`, error);
       ui.notifications?.warn("Не удалось синхронизировать компендиумы классов, архетипов или Конструкта.");
-    }
-
-    try {
-      await this.actionsCompendium.sync();
-    }
-    catch (error) {
-      console.error(`${MODULE_ID} | Failed to sync actions compendium.`, error);
-      ui.notifications?.warn("Не удалось синхронизировать компендиум действий.");
     }
 
     try {
@@ -2890,53 +4862,95 @@ export class RebreyaMainModule {
     return effective;
   }
 
-  async createGlobalEvent(data = {}) {
-    const event = await this.globalEventsService.createGlobalEvent(data);
+  async #executeGlobalEventsMutation(operation) {
+    const result = await operation();
     if (this.globalEventsService.isAutoRecalculateEnabled()) {
       await this.repository.rebuildModel();
     }
-    await this.refreshOpenApps();
-    return event;
+    return result;
   }
 
-  async updateGlobalEvent(id, patch = {}) {
-    const event = await this.globalEventsService.updateGlobalEvent(id, patch);
-    if (this.globalEventsService.isAutoRecalculateEnabled()) {
-      await this.repository.rebuildModel();
-    }
-    await this.refreshOpenApps();
-    return event;
-  }
-
-  async deleteGlobalEvent(id) {
-    const result = await this.globalEventsService.deleteGlobalEvent(id);
-    if (this.globalEventsService.isAutoRecalculateEnabled()) {
-      await this.repository.rebuildModel();
-    }
+  async #dispatchGlobalEventsMutation(command, payload) {
+    const result = await this.privilegedMutationGateway.mutate(command, payload);
     await this.refreshOpenApps();
     return result;
   }
 
+  async createGlobalEvent(data = {}) {
+    return this.#dispatchGlobalEventsMutation(GLOBAL_EVENTS_CREATE_COMMAND, { data });
+  }
+
+  async updateGlobalEvent(id, patch = {}) {
+    return this.#dispatchGlobalEventsMutation(GLOBAL_EVENTS_UPDATE_COMMAND, {
+      eventId: String(id ?? "").trim(),
+      patch
+    });
+  }
+
+  async deleteGlobalEvent(id) {
+    return this.#dispatchGlobalEventsMutation(GLOBAL_EVENTS_DELETE_COMMAND, {
+      eventId: String(id ?? "").trim()
+    });
+  }
+
   async duplicateGlobalEvent(id) {
-    const duplicate = await this.globalEventsService.duplicateGlobalEvent(id);
-    if (this.globalEventsService.isAutoRecalculateEnabled()) {
-      await this.repository.rebuildModel();
-    }
-    await this.refreshOpenApps();
-    return duplicate;
+    return this.#dispatchGlobalEventsMutation(GLOBAL_EVENTS_DUPLICATE_COMMAND, {
+      eventId: String(id ?? "").trim()
+    });
   }
 
   async importDefaultGlobalEventTemplates() {
-    const imported = await this.globalEventsService.importDefaultGlobalEventTemplates();
-    if (this.globalEventsService.isAutoRecalculateEnabled()) {
-      await this.repository.rebuildModel();
-    }
-    await this.refreshOpenApps();
-    return imported;
+    return this.#dispatchGlobalEventsMutation(GLOBAL_EVENTS_IMPORT_DEFAULTS_COMMAND, {});
   }
 
   getCitySnapshot(cityId) {
     return this.repository.getCitySnapshot(cityId);
+  }
+
+  async getPublicCitySnapshot(cityId) {
+    const model = await this.getModel();
+    const city = this.getCitySnapshot(cityId);
+    if (!city) return null;
+    let traders = [];
+    let tradersError = "";
+    try {
+      traders = await this.getCityTraderSummaries(cityId);
+    }
+    catch (error) {
+      console.error(`${MODULE_ID} | Failed to load public traders for '${cityId}'.`, error);
+      tradersError = "Не удалось загрузить торговцев города.";
+    }
+    return buildPublicCitySnapshot({
+      model,
+      city,
+      presentation: this.repository.getCityPresentation(cityId),
+      traders,
+      tradersError
+    });
+  }
+
+  async getPublicEconomySnapshot() {
+    const model = await this.getModel();
+    return buildPublicEconomySnapshot(model, this.repository.getCityPresentations());
+  }
+
+  getCityPresentation(cityId) {
+    return this.repository.getCityPresentation(cityId);
+  }
+
+  async updateCityPresentation(cityId, patch = {}) {
+    const result = await this.privilegedMutationGateway.mutate(ECONOMY_CITY_PRESENTATION_UPDATE_COMMAND, { cityId, patch });
+    await this.refreshCityViews({ cityIds: [cityId] });
+    return result;
+  }
+
+  async resetCityPresentation(cityId, fields = ["description", "image"]) {
+    const allowed = new Set(["description", "image"]);
+    const patch = Object.fromEntries((fields ?? []).filter((field) => allowed.has(field)).map((field) => [field, null]));
+    if (!Object.keys(patch).length) return this.getCityPresentation(cityId);
+    const result = await this.privilegedMutationGateway.mutate(ECONOMY_CITY_PRESENTATION_UPDATE_COMMAND, { cityId, patch });
+    await this.refreshCityViews({ cityIds: [cityId] });
+    return result;
   }
 
   getTradeRouteSnapshot(connectionId) {
@@ -2973,32 +4987,31 @@ export class RebreyaMainModule {
   }
 
   async setConnectionActive(connectionId, isActive) {
-    await this.repository.setConnectionActive(connectionId, isActive);
+    await this.privilegedMutationGateway.mutate(ECONOMY_CONNECTION_SET_ACTIVE_COMMAND, { connectionId, isActive });
     await this.refreshOpenApps();
     return this.repository.model;
   }
 
   async updateReferenceDescription(entryType, entryId, description) {
-    await this.repository.setReferenceNote(`${entryType}::${entryId}`, description);
+    await this.privilegedMutationGateway.mutate(ECONOMY_REFERENCE_UPDATE_DESCRIPTION_COMMAND, { entryType, entryId, description });
     await this.refreshOpenApps();
     return this.getReferenceEntrySnapshot(entryType, entryId);
   }
 
   async updateTradeRouteMetadata(connectionId, patch) {
-    const route = await this.repository.setTradeRouteOverride(connectionId, patch);
+    const route = await this.privilegedMutationGateway.mutate(ECONOMY_TRADE_ROUTE_UPDATE_METADATA_COMMAND, { connectionId, patch });
     await this.refreshOpenApps();
     return route;
   }
 
   async updateStatePolicy(stateId, patch) {
-    const policy = await this.repository.setStatePolicy(stateId, patch);
+    const policy = await this.privilegedMutationGateway.mutate(ECONOMY_STATE_POLICY_UPDATE_COMMAND, { stateId, patch });
     await this.refreshOpenApps();
     return policy;
   }
 
   async resetWorldData({ notify = false } = {}) {
-    await this.traderService.resetState();
-    const model = await this.repository.resetWorldData();
+    const model = await this.privilegedMutationGateway.mutate(ECONOMY_WORLD_DATA_RESET_COMMAND, {});
     if (notify) {
       ui.notifications?.info(game.i18n.localize("REBREYA_MAIN.Notifications.DataRestored"));
     }
@@ -3009,6 +5022,28 @@ export class RebreyaMainModule {
 
   getMaterialByGoodId(goodId) {
     return this.repository.getMaterialByGoodId(goodId);
+  }
+
+  registerPanelTool(moduleId, definition) {
+    return registerExternalPanelTool(moduleId, definition);
+  }
+
+  unregisterPanelTool(moduleId, toolName) {
+    return unregisterExternalPanelTool(moduleId, toolName);
+  }
+
+  async purchaseItemBasket(payload) {
+    if (!isValidPurchaseBasketPayload(payload)) {
+      throw new Error("Invalid purchase basket request");
+    }
+    if (isActiveGmClient(globalThis.game)) {
+      return this.purchaseBasketService.commit(payload, {
+        requestedByUserId: String(globalThis.game?.user?.id ?? "")
+      });
+    }
+    return this.socketCommandBus.request(PURCHASE_BASKET_COMMIT_COMMAND, payload, {
+      requestId: payload.transactionId
+    });
   }
 
   isTraderIntegrationAvailable() {
@@ -3081,20 +5116,11 @@ export class RebreyaMainModule {
   }
 
   async recordTraderAudit(operation = {}) {
-    if (game.user?.isGM) {
-      const record = await this.traderService.recordTradeAudit(operation, {
-        senderId: operation.senderId ?? game.user?.id ?? ""
-      });
-      await this.refreshOpenApps();
-      return record;
-    }
-
-    game.socket?.emit?.(SOCKET_CHANNEL, {
-      type: SOCKET_EVENT_TRADER_AUDIT,
-      payload: foundry.utils.deepClone(operation),
-      senderId: game.user?.id ?? ""
+    const record = await this.privilegedMutationGateway.mutate(TRADER_AUDIT_RECORD_COMMAND, {
+      operation
     });
-    return null;
+    await this.refreshOpenApps();
+    return record;
   }
 
   getTradeAuditLog() {
@@ -3116,7 +5142,11 @@ export class RebreyaMainModule {
   }
 
   async updateTraderMetadata(cityId, traderKey, patch) {
-    const trader = await this.traderService.updateTraderMetadata(cityId, traderKey, patch);
+    const trader = await this.privilegedMutationGateway.mutate(TRADER_METADATA_UPDATE_COMMAND, {
+      cityId,
+      traderKey,
+      patch
+    });
     await this.refreshOpenApps();
     return trader;
   }
@@ -3146,6 +5176,7 @@ export class RebreyaMainModule {
     const payload = {
       tokenUuid: cleanSocketId(tokenUuid),
       characterTokenUuid: this.#controlledCharacterTokenUuid(request.characterTokenUuid),
+      mutationId: cleanSocketId(request.mutationId) || createSocketRequestId("storage-open"),
       ...(path.length ? { path } : {})
     };
     return isActiveGmClient(globalThis.game)
@@ -3153,10 +5184,240 @@ export class RebreyaMainModule {
       : this.socketCommandBus.request(STORAGE_OPEN_COMMAND, payload);
   }
 
+  getDoorTriggerPreflight(wallUuid) {
+    const safeWallUuid = cleanSocketId(wallUuid);
+    let wall = globalThis.fromUuidSync?.(safeWallUuid) ?? null;
+    if (!wall) {
+      const match = /^Scene\.([^.]+)\.Wall\.([^.]+)$/u.exec(safeWallUuid);
+      if (match && String(globalThis.canvas?.scene?.id ?? "") === match[1]) {
+        wall = globalThis.canvas?.scene?.walls?.get?.(match[2]) ?? null;
+      }
+    }
+    const target = readDoorTriggerTarget(wall);
+    return {
+      configured: target.configured === true,
+      enabled: target.enabled === true,
+      ...preflightDoorAccess(wall, { game: globalThis.game, canvas: globalThis.canvas })
+    };
+  }
+
+  async getDoorTriggers(wallUuid) {
+    if (globalThis.game?.user?.isGM !== true) throw new Error("Настраивать триггеры может только мастер.");
+    const payload = { wallUuid: cleanSocketId(wallUuid) };
+    return isActiveGmClient(globalThis.game)
+      ? this.doorTriggerCommandService.readTriggers(payload, { sender: globalThis.game?.user })
+      : this.socketCommandBus.request(DOOR_TRIGGER_READ_COMMAND, payload);
+  }
+
+  async saveDoorTriggers(wallUuid, enabled, definitions, expectedRevision, operationId = "") {
+    if (globalThis.game?.user?.isGM !== true) throw new Error("Настраивать триггеры может только мастер.");
+    const payload = {
+      wallUuid: cleanSocketId(wallUuid),
+      enabled: enabled === true,
+      definitions: globalThis.foundry?.utils?.deepClone?.(definitions) ?? JSON.parse(JSON.stringify(definitions)),
+      expectedRevision: Number(expectedRevision),
+      operationId: cleanSocketId(operationId) || createSocketRequestId("door-triggers-save")
+    };
+    return isActiveGmClient(globalThis.game)
+      ? this.doorTriggerCommandService.saveTriggers(payload, { sender: globalThis.game?.user })
+      : this.socketCommandBus.request(DOOR_TRIGGER_SAVE_COMMAND, payload);
+  }
+
+  async resetDoorTriggerExecutions(wallUuid, operationId = "") {
+    if (globalThis.game?.user?.isGM !== true) throw new Error("Настраивать триггеры может только мастер.");
+    const payload = {
+      wallUuid: cleanSocketId(wallUuid),
+      operationId: cleanSocketId(operationId) || createSocketRequestId("door-triggers-reset")
+    };
+    return isActiveGmClient(globalThis.game)
+      ? this.doorTriggerCommandService.resetTriggers(payload, { sender: globalThis.game?.user })
+      : this.socketCommandBus.request(DOOR_TRIGGER_RESET_COMMAND, payload);
+  }
+
+  async attemptDoorOpen(wallUuid, mutationId = "", request = {}) {
+    const payload = {
+      wallUuid: cleanSocketId(wallUuid),
+      characterTokenUuid: this.#controlledCharacterTokenUuid(request.characterTokenUuid),
+      mutationId: cleanSocketId(mutationId) || createSocketRequestId("door-open")
+    };
+    return isActiveGmClient(globalThis.game)
+      ? this.doorTriggerCommandService.open(payload, { sender: globalThis.game?.user })
+      : this.socketCommandBus.request(DOOR_OPEN_COMMAND, payload);
+  }
+
+  async getStorageTriggers(tokenUuid, request = {}) {
+    if (globalThis.game?.user?.isGM !== true) throw new Error("Настраивать триггеры может только мастер.");
+    const path = cleanStoragePath(request.path);
+    const payload = {
+      tokenUuid: cleanSocketId(tokenUuid),
+      ...(path.length ? { path } : {})
+    };
+    return isActiveGmClient(globalThis.game)
+      ? this.storageCommandService.readTriggers(payload, { sender: globalThis.game?.user })
+      : this.socketCommandBus.request(STORAGE_TRIGGER_READ_COMMAND, payload);
+  }
+
+  async saveStorageTriggers(tokenUuid, definitions, expectedRevision, operationId = "", request = {}) {
+    if (globalThis.game?.user?.isGM !== true) throw new Error("Настраивать триггеры может только мастер.");
+    const path = cleanStoragePath(request.path);
+    const payload = {
+      tokenUuid: cleanSocketId(tokenUuid),
+      definitions: foundry.utils.deepClone(definitions),
+      expectedRevision: Number(expectedRevision),
+      operationId: cleanSocketId(operationId) || createSocketRequestId("storage-triggers-save"),
+      ...(path.length ? { path } : {})
+    };
+    return isActiveGmClient(globalThis.game)
+      ? this.storageCommandService.saveTriggers(payload, { sender: globalThis.game?.user })
+      : this.socketCommandBus.request(STORAGE_TRIGGER_SAVE_COMMAND, payload);
+  }
+
+  async resetStorageTriggerExecutions(tokenUuid, operationId = "", request = {}) {
+    if (globalThis.game?.user?.isGM !== true) throw new Error("Настраивать триггеры может только мастер.");
+    const path = cleanStoragePath(request.path);
+    const payload = {
+      tokenUuid: cleanSocketId(tokenUuid),
+      operationId: cleanSocketId(operationId) || createSocketRequestId("storage-triggers-reset"),
+      ...(path.length ? { path } : {})
+    };
+    return isActiveGmClient(globalThis.game)
+      ? this.storageCommandService.resetTriggers(payload, { sender: globalThis.game?.user })
+      : this.socketCommandBus.request(STORAGE_TRIGGER_RESET_COMMAND, payload);
+  }
+
+  async readStorageJournal(tokenUuid, rowId, request = {}) {
+    const path = cleanStoragePath(request.path);
+    const payload = {
+      tokenUuid: cleanSocketId(tokenUuid),
+      characterTokenUuid: this.#controlledCharacterTokenUuid(request.characterTokenUuid),
+      rowId: cleanSocketId(rowId),
+      ...(path.length ? { path } : {})
+    };
+    return isActiveGmClient(globalThis.game)
+      ? this.storageCommandService.readJournal(payload, { sender: globalThis.game?.user })
+      : this.socketCommandBus.request(STORAGE_JOURNAL_READ_COMMAND, payload);
+  }
+
+  async recordStorageJournal(tokenUuid, rowId, mutationId = "", request = {}) {
+    const path = cleanStoragePath(request.path);
+    const groupContext = globalThis.game?.user?.isGM === true
+      ? this.groupContextService.resolveForCurrentUser()
+      : null;
+    const payload = {
+      tokenUuid: cleanSocketId(tokenUuid),
+      characterTokenUuid: this.#controlledCharacterTokenUuid(request.characterTokenUuid),
+      groupActorId: cleanSocketId(groupContext?.groupActor?.id ?? groupContext?.groupId),
+      rowId: cleanSocketId(rowId),
+      mutationId: cleanSocketId(mutationId) || createSocketRequestId("storage-journal-record"),
+      ...(path.length ? { path } : {})
+    };
+    return isActiveGmClient(globalThis.game)
+      ? this.storageCommandService.recordJournal(payload, { sender: globalThis.game?.user })
+      : this.socketCommandBus.request(STORAGE_JOURNAL_RECORD_COMMAND, payload);
+  }
+
+  async readJournalRecord(itemUuid) {
+    const payload = { itemUuid: cleanSocketId(itemUuid) };
+    return isActiveGmClient(globalThis.game)
+      ? this.storageCommandService.readJournalRecord(payload, { sender: globalThis.game?.user })
+      : this.socketCommandBus.request(STORAGE_JOURNAL_READ_RECORD_COMMAND, payload);
+  }
+
+  #buildStorageInventoryIngressRows(snapshot, {
+    rowIds = null,
+    quantity = null,
+    legacyFolderId = null
+  } = {}) {
+    const requested = rowIds === null ? null : new Set(rowIds.map(cleanSocketId));
+    const rows = (snapshot?.rows ?? [])
+      .filter((row) => !isStorageJournalRow(row))
+      .filter((row) => requested === null || requested.has(cleanSocketId(row?.rowId)))
+      .map((row) => {
+        const available = Math.max(1, Math.trunc(Number(
+          row?.quantity ?? row?.itemData?.system?.quantity ?? 1
+        )) || 1);
+        const selectedQuantity = quantity === null ? available : Number(quantity);
+        const itemData = foundry.utils.deepClone(row?.itemData ?? {});
+        itemData.system ??= {};
+        itemData.system.quantity = selectedQuantity;
+        return {
+          sourceKey: cleanSocketId(row?.rowId),
+          quantity: selectedQuantity,
+          itemData,
+          legacyFolderId,
+          container: row?.rowKind === "container" ? foundry.utils.deepClone(row.container ?? null) : null
+        };
+      });
+    if (requested && rows.length !== requested.size) {
+      throw new Error("Предмет хранилища уже недоступен.");
+    }
+    return rows;
+  }
+
+  async #prepareStorageInventoryIngress({ tokenUuid, path, target, rowIds = null, quantity = null }) {
+    const snapshot = await this.getStorageSnapshot(tokenUuid, { path });
+    const rows = this.#buildStorageInventoryIngressRows(snapshot, {
+      rowIds,
+      quantity,
+      legacyFolderId: target.folderId
+    });
+    const preview = await this.inventoryIngressPlanner.preview({
+      groupActorId: target.groupActorId,
+      requestedFolderId: target.folderId,
+      rows,
+      batch: rows.length > 1
+    });
+    const choices = await this.inventoryIngressPlanner.collectChoices(preview);
+    if (choices === null) return null;
+    return this.inventoryIngressPlanner.serialize(preview, choices);
+  }
+
   async claimStorageRow(tokenUuid, rowId, destination, mutationId, request = {}) {
     const safeTokenUuid = cleanSocketId(tokenUuid);
     const safeDestination = cleanSocketId(destination);
     const path = cleanStoragePath(request.path);
+    let target = null;
+    if (safeDestination === "character") {
+      target = { actorUuid: cleanSocketId(request.target?.actorUuid) };
+    }
+    else if (safeDestination === "scene") {
+      target = {
+        sceneId: cleanSocketId(request.target?.sceneId),
+        x: Number(request.target?.x),
+        y: Number(request.target?.y),
+        ...(request.target?.rotation !== undefined
+          ? { rotation: Number(request.target.rotation) }
+          : {})
+      };
+    }
+    else if (safeDestination === "party") {
+      const requestedGroupActorId = cleanSocketId(request.target?.groupActorId);
+      const groupActor = await this.inventoryService.getInventoryActor({
+        create: false,
+        groupActorId: requestedGroupActorId
+      });
+      if (!groupActor || groupActor.type !== "group") {
+        throw new Error("Не удалось разрешить групповой инвентарь для переноса.");
+      }
+      target = {
+        groupActorId: cleanSocketId(groupActor.id),
+        folderId: request.target?.folderId === null || request.target?.folderId === undefined
+          ? null
+          : cleanSocketId(request.target.folderId)
+      };
+    }
+    const quantity = request.quantity === undefined ? null : Number(request.quantity);
+    const coinRow = Boolean(storageCoinRowDenomination(rowId));
+    const ingressPlan = safeDestination === "party" && !coinRow
+      ? await this.#prepareStorageInventoryIngress({
+        tokenUuid: safeTokenUuid,
+        path,
+        target,
+        rowIds: [cleanSocketId(rowId)],
+        quantity
+      })
+      : null;
+    if (safeDestination === "party" && !coinRow && ingressPlan === null) return null;
     const payload = {
       tokenUuid: safeTokenUuid,
       characterTokenUuid: storageCharacterTokenUuidForClaim({
@@ -3167,19 +5428,22 @@ export class RebreyaMainModule {
       }),
       rowId: cleanSocketId(rowId),
       destination: safeDestination,
-      quantity: request.quantity === undefined ? null : Number(request.quantity),
-      target: safeDestination === "character"
-        ? { actorUuid: cleanSocketId(request.target?.actorUuid) }
-        : safeDestination === "scene"
-          ? {
-              sceneId: cleanSocketId(request.target?.sceneId),
-              x: Number(request.target?.x),
-              y: Number(request.target?.y)
-            }
-          : null,
+      quantity,
+      target,
+      ingressPlan,
       mutationId: cleanSocketId(mutationId),
       ...(path.length ? { path } : {})
     };
+    if (safeDestination === "party") {
+      return this.#dispatchInventoryIngress({
+        command: STORAGE_CLAIM_ROW_COMMAND,
+        payload,
+        validate: isValidStorageClaimRowPayload,
+        execute: (exactPayload) => this.storageCommandService.claimRow(exactPayload, {
+          sender: globalThis.game?.user
+        })
+      });
+    }
     return isActiveGmClient(globalThis.game)
       ? this.storageCommandService.claimRow(payload, { sender: globalThis.game?.user })
       : this.socketCommandBus.request(STORAGE_CLAIM_ROW_COMMAND, payload);
@@ -3199,11 +5463,70 @@ export class RebreyaMainModule {
       }),
       destination: safeDestination,
       mutationId: cleanSocketId(mutationId),
+      ...(request.denomination !== undefined ? { denomination: request.denomination } : {}),
       ...(path.length ? { path } : {})
     };
     return isActiveGmClient(globalThis.game)
       ? this.storageCommandService.claimCoins(payload, { sender: globalThis.game?.user })
       : this.socketCommandBus.request(STORAGE_CLAIM_COINS_COMMAND, payload);
+  }
+
+  async claimStorageAll(tokenUuid, destination, mutationId, request = {}) {
+    const safeTokenUuid = cleanSocketId(tokenUuid);
+    const safeDestination = cleanSocketId(destination);
+    const path = cleanStoragePath(request.path);
+    let target = null;
+    if (safeDestination === "party") {
+      const requestedGroupActorId = cleanSocketId(request.target?.groupActorId);
+      const groupActor = await this.inventoryService.getInventoryActor({
+        create: false,
+        groupActorId: requestedGroupActorId
+      });
+      if (!groupActor || groupActor.type !== "group") {
+        throw new Error("Не удалось разрешить групповой инвентарь для массового переноса.");
+      }
+      target = {
+        groupActorId: cleanSocketId(groupActor.id),
+        folderId: request.target?.folderId === null || request.target?.folderId === undefined
+          ? null
+          : cleanSocketId(request.target.folderId)
+      };
+    }
+    const ingressPlan = safeDestination === "party"
+      ? await this.#prepareStorageInventoryIngress({
+        tokenUuid: safeTokenUuid,
+        path,
+        target
+      })
+      : null;
+    if (safeDestination === "party" && ingressPlan === null) return null;
+    const payload = {
+      tokenUuid: safeTokenUuid,
+      characterTokenUuid: storageCharacterTokenUuidForClaim({
+        controlledCharacterTokenUuid: this.#controlledCharacterTokenUuid(request.characterTokenUuid),
+        storageTokenUuid: safeTokenUuid,
+        destination: safeDestination,
+        isGM: globalThis.game?.user?.isGM === true
+      }),
+      destination: safeDestination,
+      target,
+      ingressPlan,
+      mutationId: cleanSocketId(mutationId),
+      ...(path.length ? { path } : {})
+    };
+    if (safeDestination === "party") {
+      return this.#dispatchInventoryIngress({
+        command: STORAGE_CLAIM_ALL_COMMAND,
+        payload,
+        validate: isValidStorageClaimAllPayload,
+        execute: (exactPayload) => this.storageCommandService.claimAll(exactPayload, {
+          sender: globalThis.game?.user
+        })
+      });
+    }
+    return isActiveGmClient(globalThis.game)
+      ? this.storageCommandService.claimAll(payload, { sender: globalThis.game?.user })
+      : this.socketCommandBus.request(STORAGE_CLAIM_ALL_COMMAND, payload);
   }
 
   async inspectStorageDepositSource(dragData) {
@@ -3217,10 +5540,13 @@ export class RebreyaMainModule {
     });
     return {
       source,
+      kind: resolved.kind,
+      denomination: resolved.denomination,
       available: resolved.available,
       mode: resolved.mode,
-      name: cleanSocketId(resolved.row?.name),
-      img: cleanSocketId(resolved.row?.img)
+      name: cleanSocketId(resolved.row?.name ?? resolved.item?.name),
+      img: cleanSocketId(resolved.row?.img ?? resolved.item?.img),
+      placement: deriveGroundPilePlacement(resolved.row)
     };
   }
 
@@ -3238,6 +5564,12 @@ export class RebreyaMainModule {
             kind: "storage-token",
             tokenUuid: cleanSocketId(source.tokenUuid)
           }
+      : source?.kind === "journal"
+        ? {
+            kind: "journal",
+            sourceUuid: cleanSocketId(source.sourceUuid),
+            documentName: cleanSocketId(source.documentName)
+          }
       : {
           kind: "item",
           itemUuid: cleanSocketId(source?.itemUuid)
@@ -3249,6 +5581,7 @@ export class RebreyaMainModule {
       source: safeSource,
       quantity: Number(quantity),
       mutationId: cleanSocketId(mutationId),
+      ...(request.administrative === true ? { administrative: true } : {}),
       ...(path.length ? { path } : {})
     };
     return isActiveGmClient(globalThis.game)
@@ -3278,11 +5611,42 @@ export class RebreyaMainModule {
       x: Number(request.x),
       y: Number(request.y),
       quantity: Number(request.quantity),
+      ...(request.rotation !== undefined ? { rotation: Number(request.rotation) } : {}),
       mutationId: cleanSocketId(request.mutationId) || createSocketRequestId("storage-item-scene")
     };
     return isActiveGmClient(globalThis.game)
       ? this.storageCommandService.dropItemToScene(payload, { sender: globalThis.game?.user })
       : this.socketCommandBus.request(STORAGE_DROP_ITEM_COMMAND, payload);
+  }
+
+  async dropStorageJournalToScene(sourceUuid, request = {}) {
+    const payload = {
+      sourceUuid: cleanSocketId(sourceUuid),
+      documentName: cleanSocketId(request.documentName) || "JournalEntry",
+      sceneId: cleanSocketId(request.sceneId),
+      x: Number(request.x),
+      y: Number(request.y),
+      mutationId: cleanSocketId(request.mutationId) || createSocketRequestId("storage-journal-scene")
+    };
+    return isActiveGmClient(globalThis.game)
+      ? this.storageCommandService.dropJournalToScene(payload, { sender: globalThis.game?.user })
+      : this.socketCommandBus.request(STORAGE_JOURNAL_DROP_COMMAND, payload);
+  }
+
+  async dropStorageCoinsToScene(itemUuid, denomination, request = {}) {
+    const payload = {
+      itemUuid: cleanSocketId(itemUuid),
+      denomination: cleanSocketId(denomination),
+      characterTokenUuid: this.#controlledCharacterTokenUuid(request.characterTokenUuid),
+      sceneId: cleanSocketId(request.sceneId),
+      x: Number(request.x),
+      y: Number(request.y),
+      quantity: Number(request.quantity),
+      mutationId: cleanSocketId(request.mutationId) || createSocketRequestId("storage-coin-scene")
+    };
+    return isActiveGmClient(globalThis.game)
+      ? this.storageCommandService.dropCoinsToScene(payload, { sender: globalThis.game?.user })
+      : this.socketCommandBus.request(STORAGE_COIN_DROP_COMMAND, payload);
   }
 
   async moveStorageTokenToCharacter(tokenUuid, actorUuid, mutationId, request = {}) {
@@ -3297,24 +5661,33 @@ export class RebreyaMainModule {
       : this.socketCommandBus.request(STORAGE_TOKEN_CHARACTER_COMMAND, payload);
   }
 
-  async #resolveStorageToken(tokenUuid, { requireMarked = true } = {}) {
+  async #resolveStorageToken(tokenUuid, {
+    allowCorpse = false,
+    allowMaterializedCorpse = false
+  } = {}) {
     const document = await globalThis.fromUuid?.(cleanSocketId(tokenUuid));
     const token = document?.document ?? document;
     if (!token?.actor) throw new Error("Токен хранилища не найден.");
-    if (requireMarked && !isStorageActor(token.actor)) {
+    const materializedCorpse = allowMaterializedCorpse
+      && isMaterializedCorpseStorageState(readStorageState(token));
+    if (!isStorageActor(token.actor)
+      && !(allowCorpse && isCorpseStorageTarget(token))
+      && !materializedCorpse) {
       throw new Error("Токен не отмечен как хранилище Rebreya.");
     }
     return token;
   }
 
   async getStorageSnapshot(tokenUuid, request = {}) {
-    const token = await this.#resolveStorageToken(tokenUuid);
+    const token = await this.#resolveStorageToken(tokenUuid, { allowCorpse: true });
     const path = cleanStoragePath(request.path);
     const state = readStorageStateAtPath(token, path);
     const combinedRows = [...state.manualRows, ...state.generatedRows];
+    const canManage = globalThis.game?.user?.isGM === true;
     const rows = combinedRows
       .map((row, index) => {
         const next = { ...foundry.utils.deepClone(row), rowId: cleanSocketId(row.rowId ?? index) };
+        next.journalRead = next.rowKind === "journal" && state.readJournalRowIds.includes(next.rowId);
         if (next.rowKind === "container" && next.container) {
           next.container = {
             containerId: cleanSocketId(next.container.containerId),
@@ -3324,6 +5697,7 @@ export class RebreyaMainModule {
             state: cleanSocketId(next.container.state?.state)
           };
         }
+        if (!canManage && isStorageJournalRow(next)) delete next.sourceId;
         return next;
       })
       .filter((row) => !state.claimedRowIds.includes(row.rowId));
@@ -3333,7 +5707,6 @@ export class RebreyaMainModule {
         ? 0
         : Math.max(0, Math.trunc(Number(state.manualCoins?.[key] ?? 0) + Number(state.generatedCoins?.[key] ?? 0)))
     ]));
-    const canManage = globalThis.game?.user?.isGM === true;
     return {
       tokenUuid: cleanSocketId(token.uuid ?? tokenUuid),
       path,
@@ -3344,10 +5717,15 @@ export class RebreyaMainModule {
       ...(canManage ? {
         baseName: state.baseName,
         template: foundry.utils.deepClone(state.template),
+        mixGeneratedLoot: state.mixGeneratedLoot,
         manualRows: foundry.utils.deepClone(state.manualRows),
         manualCoins: foundry.utils.deepClone(state.manualCoins),
         textures: foundry.utils.deepClone(state.textures),
-        displayMode: state.displayMode
+        displayMode: state.displayMode,
+        triggerActiveCount: Object.values(state.triggers?.chainsByEvent ?? {})
+          .flat()
+          .filter((chain) => chain?.unsupported !== true && chain?.enabled === true)
+          .length
       } : {})
     };
   }
@@ -3356,27 +5734,52 @@ export class RebreyaMainModule {
     if (!globalThis.game?.user?.isGM) {
       throw new Error("Настраивать хранилища может только мастер.");
     }
-    const token = await this.#resolveStorageToken(tokenUuid, { requireMarked: false });
     const path = cleanStoragePath(request.path);
-    if (!isStorageActor(token.actor)) {
-      if (typeof token.actor.setFlag === "function") {
-        await token.actor.setFlag(MODULE_ID, "storage", { enabled: true });
-      }
-      else {
-        await token.actor.update({ [`flags.${MODULE_ID}.storage`]: { enabled: true } });
-      }
+    const token = await this.#resolveStorageToken(tokenUuid, { allowMaterializedCorpse: true });
+    if (Object.prototype.hasOwnProperty.call(config, "mixGeneratedLoot")
+      && typeof config.mixGeneratedLoot !== "boolean") {
+      throw new Error("Настройка смешивания случайного лута должна быть логическим значением.");
     }
-    const patch = {};
-    if (Object.prototype.hasOwnProperty.call(config, "baseName")) {
-      patch.baseName = cleanSocketId(config.baseName) || cleanSocketId(token.name) || "Хранилище";
+    const payload = {
+      tokenUuid: cleanSocketId(tokenUuid),
+      operationId: cleanSocketId(request.operationId) || createSocketRequestId("storage-configure"),
+      ...(Object.prototype.hasOwnProperty.call(config, "baseName") ? { baseName: cleanSocketId(config.baseName) } : {}),
+      ...(Object.prototype.hasOwnProperty.call(config, "mixGeneratedLoot") ? { mixGeneratedLoot: config.mixGeneratedLoot } : {}),
+      ...(path.length ? { path } : {})
+    };
+    if (!isActiveGmClient(globalThis.game)) {
+      return this.socketCommandBus.request(STORAGE_CONFIGURE_COMMAND, payload);
     }
-    if (Object.prototype.hasOwnProperty.call(config, "templateId")) {
-      const templateId = cleanSocketId(config.templateId);
-      const template = templateId ? this.lootgenTemplateCatalog.get(templateId) : null;
-      if (templateId && !template) throw new Error("Шаблон Lootgen не найден.");
-      patch.template = template ? { name: template.name, form: template.form } : null;
-    }
-    return this.storageService.configure(token, patch, { path });
+    await this.storageCommandService.configure(payload, { sender: globalThis.game?.user });
+    return foundry.utils.deepClone(readStorageStateAtPath(token, path));
+  }
+
+  async assignStorageLootgenTemplate(tokenUuid, itemUuid, request = {}) {
+    if (!globalThis.game?.user?.isGM) throw new Error("Назначать шаблоны Lootgen может только мастер.");
+    const path = cleanStoragePath(request.path);
+    const payload = {
+      tokenUuid: cleanSocketId(tokenUuid),
+      itemUuid: cleanSocketId(itemUuid),
+      operationId: cleanSocketId(request.operationId) || createSocketRequestId("storage-template-assign"),
+      ...(path.length ? { path } : {})
+    };
+    return isActiveGmClient(globalThis.game)
+      ? this.storageCommandService.configure(payload, { sender: globalThis.game?.user })
+      : this.socketCommandBus.request(STORAGE_CONFIGURE_COMMAND, payload);
+  }
+
+  async clearStorageLootgenTemplate(tokenUuid, request = {}) {
+    if (!globalThis.game?.user?.isGM) throw new Error("Очищать шаблоны Lootgen может только мастер.");
+    const path = cleanStoragePath(request.path);
+    const payload = {
+      tokenUuid: cleanSocketId(tokenUuid),
+      clearTemplate: true,
+      operationId: cleanSocketId(request.operationId) || createSocketRequestId("storage-template-clear"),
+      ...(path.length ? { path } : {})
+    };
+    return isActiveGmClient(globalThis.game)
+      ? this.storageCommandService.configure(payload, { sender: globalThis.game?.user })
+      : this.socketCommandBus.request(STORAGE_CONFIGURE_COMMAND, payload);
   }
 
   async markStorageActor(actorUuid) {
@@ -3391,6 +5794,7 @@ export class RebreyaMainModule {
     else {
       await actor.update({ [`flags.${MODULE_ID}.storage`]: { enabled: true } });
     }
+    await this.builtinStorageActorService.sync();
     globalThis.ui?.notifications?.info(`Актёр «${actor.name}» отмечен как хранилище.`);
     return actor;
   }
@@ -3398,7 +5802,7 @@ export class RebreyaMainModule {
   async addManualStorageItem(tokenUuid, itemUuid, request = {}) {
     if (!globalThis.game?.user?.isGM) throw new Error("Добавлять предметы может только мастер.");
     const [token, item] = await Promise.all([
-      this.#resolveStorageToken(tokenUuid),
+      this.#resolveStorageToken(tokenUuid, { allowMaterializedCorpse: true }),
       globalThis.fromUuid?.(cleanSocketId(itemUuid))
     ]);
     if (!item || item.documentName !== "Item" && !(globalThis.Item && item instanceof globalThis.Item)) {
@@ -3439,8 +5843,18 @@ export class RebreyaMainModule {
 
   async updateStorageRowQuantity(tokenUuid, rowId, quantity, request = {}) {
     if (!globalThis.game?.user?.isGM) throw new Error("Изменять предметы может только мастер.");
-    const token = await this.#resolveStorageToken(tokenUuid);
+    const token = await this.#resolveStorageToken(tokenUuid, { allowMaterializedCorpse: true });
     const next = await this.storageService.updateRowQuantity(token, cleanSocketId(rowId), quantity, {
+      path: cleanStoragePath(request.path)
+    });
+    await this.storageGroundPileService.refreshAfterStorageMutation(token, readStorageState(token));
+    return next;
+  }
+
+  async setStorageRowBroken(tokenUuid, rowId, broken, request = {}) {
+    if (!globalThis.game?.user?.isGM) throw new Error("Изменять состояние предмета может только мастер.");
+    const token = await this.#resolveStorageToken(tokenUuid, { allowMaterializedCorpse: true });
+    const next = await this.storageService.setRowBroken(token, cleanSocketId(rowId), broken, {
       path: cleanStoragePath(request.path)
     });
     await this.storageGroundPileService.refreshAfterStorageMutation(token, readStorageState(token));
@@ -3449,7 +5863,7 @@ export class RebreyaMainModule {
 
   async deleteStorageRow(tokenUuid, rowId, request = {}) {
     if (!globalThis.game?.user?.isGM) throw new Error("Удалять предметы может только мастер.");
-    const token = await this.#resolveStorageToken(tokenUuid);
+    const token = await this.#resolveStorageToken(tokenUuid, { allowMaterializedCorpse: true });
     const next = await this.storageService.deleteRow(token, cleanSocketId(rowId), {
       path: cleanStoragePath(request.path)
     });
@@ -3459,22 +5873,26 @@ export class RebreyaMainModule {
 
   async resetStorageToken(tokenUuid, request = {}) {
     if (!globalThis.game?.user?.isGM) throw new Error("Сбрасывать хранилища может только мастер.");
-    const token = await this.#resolveStorageToken(tokenUuid);
-    return this.storageService.configure(token, {
-      generatedRows: [],
-      generatedCoins: {},
-      claimedRowIds: [],
-      coinsClaimed: false,
-      state: "unopened",
-      displayMode: "unopened"
-    }, { path: cleanStoragePath(request.path) });
+    const path = cleanStoragePath(request.path);
+    const payload = {
+      tokenUuid: cleanSocketId(tokenUuid),
+      resetContents: true,
+      operationId: cleanSocketId(request.operationId) || createSocketRequestId("storage-reset"),
+      ...(path.length ? { path } : {})
+    };
+    if (!isActiveGmClient(globalThis.game)) {
+      return this.socketCommandBus.request(STORAGE_CONFIGURE_COMMAND, payload);
+    }
+    const token = await this.#resolveStorageToken(tokenUuid, { allowMaterializedCorpse: true });
+    await this.storageCommandService.configure(payload, { sender: globalThis.game?.user });
+    return foundry.utils.deepClone(readStorageStateAtPath(token, path));
   }
 
   async setStorageTextureMode(tokenUuid, mode, request = {}) {
     if (!globalThis.game?.user?.isGM) {
       throw new Error("Менять текстуру хранилища может только мастер.");
     }
-    const token = await this.#resolveStorageToken(tokenUuid);
+    const token = await this.#resolveStorageToken(tokenUuid, { allowMaterializedCorpse: true });
     return this.storageService.setTextureMode(token, mode, { path: cleanStoragePath(request.path) });
   }
 
@@ -3490,7 +5908,17 @@ export class RebreyaMainModule {
     const safeCharacterTokenUuid = cleanSocketId(characterTokenUuid);
     if (!safeTokenUuid) throw new Error("Не указан токен хранилища.");
     if (configure) {
-      await this.configureStorageToken(safeTokenUuid, {}, { path: safePath });
+      if (globalThis.game?.user?.isGM !== true) throw new Error("Настраивать хранилища может только мастер.");
+      const token = await this.#resolveStorageToken(safeTokenUuid, { allowCorpse: true });
+      if (!isStorageActor(token.actor)
+        && isDeadNpcStorageTarget(token)
+        && !isMaterializedCorpseStorageState(readStorageState(token))) {
+        await this.storageService.open(token, {
+          senderId: cleanSocketId(globalThis.game?.user?.id),
+          path: safePath,
+          administrative: true
+        });
+      }
     }
     else {
       await this.openStorage(safeTokenUuid, {
@@ -3500,7 +5928,7 @@ export class RebreyaMainModule {
     }
     const moduleVersion = game.modules.get(MODULE_ID)?.version ?? "1.4.96";
     const { StorageApp } = await import(
-      `./ui/storage-app.js?v=${encodeURIComponent(`${moduleVersion}-storage-window-drops`)}`
+      `./ui/storage-app.js?v=${encodeURIComponent(`${moduleVersion}-journal-record-drop`)}`
     );
     const key = `${safeTokenUuid}:${configure ? "configure" : "open"}`;
     let app = this.storageApps.get(key);
@@ -3516,6 +5944,52 @@ export class RebreyaMainModule {
     else {
       app.characterTokenUuid = safeCharacterTokenUuid;
       if (anchorToToken) app.requestTokenAnchor?.();
+    }
+    await app.render({ force: true });
+    bringAppToFront(app);
+    return app;
+  }
+
+  async openStorageTriggerEditor(tokenUuid, request = {}) {
+    if (globalThis.game?.user?.isGM !== true) throw new Error("Настраивать триггеры может только мастер.");
+    const safeTokenUuid = cleanSocketId(tokenUuid);
+    const path = cleanStoragePath(request.path);
+    if (!safeTokenUuid) throw new Error("Не указан токен хранилища.");
+    const snapshot = await this.getStorageSnapshot(safeTokenUuid, { path });
+    const moduleVersion = game.modules.get(MODULE_ID)?.version ?? "1.4.96";
+    const { StorageTriggerEditor } = await import(
+      `./ui/storage-trigger-editor.js?v=${encodeURIComponent(`${moduleVersion}-storage-triggers`)}`
+    );
+    const key = [safeTokenUuid, ...path].join(":");
+    let app = this.storageTriggerEditors.get(key);
+    if (!app) {
+      app = new StorageTriggerEditor(this, safeTokenUuid, { path, storageName: cleanSocketId(snapshot?.name) });
+      this.storageTriggerEditors.set(key, app);
+    }
+    await app.render({ force: true });
+    bringAppToFront(app);
+    return app;
+  }
+
+  async openDoorTriggerEditor(wallUuid) {
+    if (globalThis.game?.user?.isGM !== true) throw new Error("Настраивать триггеры может только мастер.");
+    const safeWallUuid = cleanSocketId(wallUuid);
+    if (!safeWallUuid) throw new Error("Не указана дверь.");
+    const wall = await globalThis.fromUuid?.(safeWallUuid);
+    const none = Number(globalThis.CONST?.WALL_DOOR_TYPES?.NONE ?? 0);
+    if (wall?.documentName !== "Wall" || Number(wall?.door) === none) throw new Error("Дверь недоступна.");
+    const moduleVersion = globalThis.game?.modules?.get?.(MODULE_ID)?.version ?? "1.4.197";
+    const { TriggerEditor } = await import(
+      `./ui/storage-trigger-editor.js?v=${encodeURIComponent(`${moduleVersion}-door-trigger-target`)}`
+    );
+    let app = this.doorTriggerEditors.get(safeWallUuid);
+    if (!app) {
+      app = new TriggerEditor(this, { kind: "door", uuid: safeWallUuid, path: [] }, {
+        targetName: cleanSocketId(wall?.name) || "Дверь",
+        availableEvents: ["beforeOpen", "afterOpen"],
+        canToggleEnabled: false
+      });
+      this.doorTriggerEditors.set(safeWallUuid, app);
     }
     await app.render({ force: true });
     bringAppToFront(app);
@@ -3596,6 +6070,11 @@ export class RebreyaMainModule {
     return this.travelService.getSnapshot();
   }
 
+  async syncTravelMapToken() {
+    const snapshot = await this.travelService.getSnapshot();
+    return this.#syncTravelMapForSnapshot(snapshot);
+  }
+
   getGroupRegistry() {
     return this.groupContextService.getRegistry();
   }
@@ -3612,43 +6091,35 @@ export class RebreyaMainModule {
   }
 
   async grantDowntimeWeeks(payload = {}) {
-    const result = await this.downtimeService.grantWeeks(payload);
-    this.#emitDowntimeUpdated({
-      actorIds: result.actorIds
+    const groupId = this.#captureDowntimeGroupId(payload.groupId);
+    const result = await this.privilegedMutationGateway.mutate(DOWNTIME_WEEKS_GRANT_COMMAND, {
+      groupId, actorIds: Array.isArray(payload.actorIds) ? payload.actorIds : [], weeks: Number(payload.weeks),
+      reason: typeof payload.reason === "string" ? payload.reason : "", fromIsoDate: typeof payload.fromIsoDate === "string" ? payload.fromIsoDate : ""
     });
     await this.refreshDowntimeViews({ actorIds: result.actorIds });
     return result;
   }
 
   async revokeDowntimeWeeks(payload = {}) {
-    const result = await this.downtimeService.revokeWeeks(payload);
-    this.#emitDowntimeUpdated({
-      actorIds: result.actorIds
+    const groupId = this.#captureDowntimeGroupId(payload.groupId);
+    const result = await this.privilegedMutationGateway.mutate(DOWNTIME_WEEKS_REVOKE_COMMAND, {
+      groupId, actorIds: Array.isArray(payload.actorIds) ? payload.actorIds : [], weeks: Number(payload.weeks), reason: typeof payload.reason === "string" ? payload.reason : ""
     });
     await this.refreshDowntimeViews({ actorIds: result.actorIds });
     return result;
   }
 
-  async clearDowntimeHistory() {
-    const result = await this.downtimeService.clearHistory();
-    this.#emitDowntimeUpdated({
-      actorIds: result.actorIds
+  async clearDowntimeHistory({ groupId = "" } = {}) {
+    const result = await this.privilegedMutationGateway.mutate(DOWNTIME_HISTORY_CLEAR_COMMAND, {
+      groupId: this.#captureDowntimeGroupId(groupId)
     });
     await this.refreshDowntimeViews({ actorIds: result.actorIds });
     return result;
   }
 
   async createDowntimeRequest(payload = {}, { refreshActorSheets = true } = {}) {
-    if (!game.user?.isGM) {
-      return this.#requestDowntimeCreateViaGm(payload);
-    }
-
-    const validatedPayload = await this.#prepareDowntimeCraftPayload(payload);
-    const result = await this.downtimeService.createRequest(validatedPayload);
-    this.#emitDowntimeUpdated({
-      actorIds: [result.actorId],
-      requestId: result.id
-    });
+    const groupId = this.#captureDowntimeGroupId(payload.groupId);
+    const result = await this.privilegedMutationGateway.mutate(DOWNTIME_REQUEST_CREATE_COMMAND, this.#buildDowntimeRequestPayload(payload, { groupId }));
     await this.refreshDowntimeViews({
       actorIds: refreshActorSheets ? [result.actorId] : []
     });
@@ -3656,16 +6127,8 @@ export class RebreyaMainModule {
   }
 
   async updateDowntimeRequest(payload = {}, { refreshActorSheets = true } = {}) {
-    if (!game.user?.isGM) {
-      return this.#requestDowntimeUpdateViaGm(payload);
-    }
-
-    const validatedPayload = await this.#prepareDowntimeCraftPayload(payload);
-    const result = await this.downtimeService.updateRequest(validatedPayload);
-    this.#emitDowntimeUpdated({
-      actorIds: [result.actorId],
-      requestId: result.id
-    });
+    const groupId = this.#captureDowntimeGroupId(payload.groupId);
+    const result = await this.privilegedMutationGateway.mutate(DOWNTIME_REQUEST_UPDATE_COMMAND, this.#buildDowntimeRequestPayload(payload, { groupId, includeRequestId: true }));
     await this.refreshDowntimeViews({
       actorIds: refreshActorSheets ? [result.actorId] : []
     });
@@ -3676,9 +6139,30 @@ export class RebreyaMainModule {
     return this.craftingService.previewRequest(payload);
   }
 
+  #captureDowntimeGroupId(groupId = "") {
+    return cleanSocketId(groupId)
+      || cleanSocketId(this.groupContextService.resolveForCurrentUser()?.groupId);
+  }
+
+  #buildDowntimeRequestPayload(payload = {}, { groupId, includeRequestId = false } = {}) {
+    const safePayload = cloneSocketPayload(payload);
+    const request = {
+      groupId,
+      actorId: cleanSocketId(safePayload.actorId),
+      actionId: cleanSocketId(safePayload.actionId),
+      title: typeof safePayload.title === "string" ? safePayload.title : "",
+      description: typeof safePayload.description === "string" ? safePayload.description : "",
+      weeks: Number(safePayload.weeks ?? 1),
+      craftProject: isPlainObject(safePayload.craftProject) ? safePayload.craftProject : null,
+      targetActionSelections: Array.isArray(safePayload.targetActionSelections) ? safePayload.targetActionSelections : []
+    };
+    if (includeRequestId) request.requestId = cleanSocketId(safePayload.requestId);
+    return request;
+  }
+
   async #prepareDowntimeCraftPayload(payload = {}) {
     const safePayload = cloneSocketPayload(payload);
-    const craftProject = safePayload.craftProject && typeof safePayload.craftProject === "object"
+    const craftProject = isPlainObject(safePayload.craftProject)
       ? safePayload.craftProject
       : null;
     if (!craftProject || Object.keys(craftProject).length === 0) {
@@ -3708,630 +6192,8 @@ export class RebreyaMainModule {
     };
   }
 
-  async #requestDowntimeCreateViaGm(payload = {}) {
-    if (typeof game.socket?.emit !== "function") {
-      throw new Error("Сокет Foundry недоступен для отправки заявки мастеру.");
-    }
-
-    const requestId = createSocketRequestId("downtime-create");
-    const safePayload = cloneSocketPayload(payload);
-    safePayload.actorId = cleanSocketId(safePayload.actorId);
-    safePayload.groupId = cleanSocketId(safePayload.groupId);
-
-    game.socket.emit(SOCKET_CHANNEL, {
-      type: SOCKET_EVENT_DOWNTIME_CREATE_REQUEST,
-      requestId,
-      senderId: game.user?.id ?? "",
-      payload: safePayload
-    });
-    return {
-      ...safePayload,
-      requestId,
-      queued: true
-    };
-  }
-
-  async #requestDowntimeUpdateViaGm(payload = {}) {
-    if (typeof game.socket?.emit !== "function") {
-      throw new Error("Сокет Foundry недоступен для обновления заявки мастеру.");
-    }
-
-    const requestId = createSocketRequestId("downtime-update");
-    const safePayload = cloneSocketPayload(payload);
-    safePayload.actorId = cleanSocketId(safePayload.actorId);
-    safePayload.groupId = cleanSocketId(safePayload.groupId);
-    safePayload.requestId = cleanSocketId(safePayload.requestId);
-
-    game.socket.emit(SOCKET_CHANNEL, {
-      type: SOCKET_EVENT_DOWNTIME_UPDATE_REQUEST,
-      requestId,
-      senderId: game.user?.id ?? "",
-      payload: safePayload
-    });
-    return {
-      ...safePayload,
-      socketRequestId: requestId,
-      queued: true
-    };
-  }
-
-  async #handleDowntimeCreateSocketResult(message = {}) {
-    const forUserId = cleanSocketId(message.forUserId);
-    if (forUserId && forUserId !== cleanSocketId(game.user?.id)) {
-      return;
-    }
-
-    if (message.ok === false) {
-      ui.notifications?.error(String(message.error ?? "").trim() || "Мастер отклонил создание заявки простоя.");
-      return;
-    }
-
-  }
-
-  async #handleDowntimeUpdateSocketResult(message = {}) {
-    const forUserId = cleanSocketId(message.forUserId);
-    if (forUserId && forUserId !== cleanSocketId(game.user?.id)) {
-      return;
-    }
-
-    if (message.ok === false) {
-      ui.notifications?.error(String(message.error ?? "").trim() || "Мастер отклонил обновление заявки простоя.");
-      return;
-    }
-
-  }
-
   async #handleDowntimeUpdatedSocketMessage(message = {}) {
     await this.refreshDowntimeViews({ actorIds: message.actorIds });
-  }
-
-  async #refreshDowntimeViewsSafely(options = {}) {
-    try {
-      await this.refreshDowntimeViews(options);
-    }
-    catch (error) {
-      console.error(`${MODULE_ID} | Failed to refresh downtime views after a committed socket mutation.`, error);
-    }
-  }
-
-  async #handleDowntimeCreateSocketRequest(message = {}) {
-    const requestId = cleanSocketId(message.requestId);
-    const forUserId = cleanSocketId(message.senderId);
-
-    try {
-      const result = await this.#createDowntimeRequestFromSocket(message.payload ?? {}, {
-        senderId: forUserId
-      });
-      globalThis.ui?.notifications?.info?.(`Rebreya: заявка на простой от ${result.actorName ?? result.actorId ?? "игрока"}.`);
-
-      if (requestId) {
-        game.socket?.emit?.(SOCKET_CHANNEL, {
-          type: SOCKET_EVENT_DOWNTIME_CREATE_RESULT,
-          requestId,
-          forUserId,
-          senderId: game.user?.id ?? "",
-          ok: true,
-          data: cloneSocketPayload(result)
-        });
-      }
-
-      this.#emitDowntimeUpdated({
-        actorIds: [result.actorId],
-        requestId: result.id
-      });
-      await this.#refreshDowntimeViewsSafely({ actorIds: [result.actorId] });
-    }
-    catch (error) {
-      if (requestId) {
-        game.socket?.emit?.(SOCKET_CHANNEL, {
-          type: SOCKET_EVENT_DOWNTIME_CREATE_RESULT,
-          requestId,
-          forUserId,
-          senderId: game.user?.id ?? "",
-          ok: false,
-          error: error?.message ?? String(error)
-        });
-        return;
-      }
-
-      throw error;
-    }
-  }
-
-  async #handleDowntimeUpdateSocketRequest(message = {}) {
-    const requestId = cleanSocketId(message.requestId);
-    const forUserId = cleanSocketId(message.senderId);
-
-    try {
-      const result = await this.#updateDowntimeRequestFromSocket(message.payload ?? {}, {
-        senderId: forUserId
-      });
-
-      if (requestId) {
-        game.socket?.emit?.(SOCKET_CHANNEL, {
-          type: SOCKET_EVENT_DOWNTIME_UPDATE_RESULT,
-          requestId,
-          forUserId,
-          senderId: game.user?.id ?? "",
-          ok: true,
-          data: cloneSocketPayload(result)
-        });
-      }
-
-      this.#emitDowntimeUpdated({
-        actorIds: [result.actorId],
-        requestId: result.id
-      });
-      await this.#refreshDowntimeViewsSafely({ actorIds: [result.actorId] });
-    }
-    catch (error) {
-      if (requestId) {
-        game.socket?.emit?.(SOCKET_CHANNEL, {
-          type: SOCKET_EVENT_DOWNTIME_UPDATE_RESULT,
-          requestId,
-          forUserId,
-          senderId: game.user?.id ?? "",
-          ok: false,
-          error: error?.message ?? String(error)
-        });
-        return;
-      }
-
-      throw error;
-    }
-  }
-
-  async #createDowntimeRequestFromSocket(payload = {}, { senderId = "" } = {}) {
-    const senderUser = getUserById(senderId);
-    if (!senderUser) {
-      throw new Error("Игрок для заявки простоя не найден.");
-    }
-
-    const groupId = cleanSocketId(payload.groupId);
-    if (!groupId) {
-      throw new Error("Группа заявки простоя не найдена.");
-    }
-
-    const context = this.groupContextService.resolveForGroup(groupId);
-    const actorId = cleanSocketId(payload.actorId);
-    const actor = Array.from(context.members ?? []).find((memberActor) => memberActor?.id === actorId) ?? null;
-    if (!actor) {
-      throw new Error("Персонаж заявки простоя не найден в группе.");
-    }
-
-    if (!isActorOwnedByUser(actor, senderUser)) {
-      throw new Error("Игрок может отправлять простой только за своего персонажа.");
-    }
-
-    const validatedPayload = await this.#prepareDowntimeCraftPayload({
-      ...cloneSocketPayload(payload),
-      groupId,
-      actorId,
-      submittedByUserId: senderUser.id
-    });
-    const result = await this.downtimeService.createRequest(validatedPayload);
-    return result;
-  }
-
-  async #updateDowntimeRequestFromSocket(payload = {}, { senderId = "" } = {}) {
-    const senderUser = getUserById(senderId);
-    if (!senderUser) {
-      throw new Error("Игрок для обновления заявки простоя не найден.");
-    }
-
-    const groupId = cleanSocketId(payload.groupId);
-    if (!groupId) {
-      throw new Error("Группа заявки простоя не найдена.");
-    }
-
-    const context = this.groupContextService.resolveForGroup(groupId);
-    const actorId = cleanSocketId(payload.actorId);
-    const actor = Array.from(context.members ?? []).find((memberActor) => memberActor?.id === actorId) ?? null;
-    if (!actor) {
-      throw new Error("Персонаж заявки простоя не найден в группе.");
-    }
-
-    if (!isActorOwnedByUser(actor, senderUser)) {
-      throw new Error("Игрок может обновлять простой только за своего персонажа.");
-    }
-
-    const validatedPayload = await this.#prepareDowntimeCraftPayload({
-      ...cloneSocketPayload(payload),
-      groupId,
-      actorId
-    });
-    return this.downtimeService.updateRequest(validatedPayload);
-  }
-
-  async #requestDowntimeCheckResultViaGm(requestId, checkId, result = {}, options = {}) {
-    if (typeof game.socket?.emit !== "function") {
-      throw new Error("Сокет Foundry недоступен для записи результата простоя.");
-    }
-
-    const socketRequestId = createSocketRequestId("downtime-check-result");
-    const payload = {
-      groupId: cleanSocketId(options.groupId),
-      actorId: cleanSocketId(options.actorId),
-      requestId: cleanSocketId(requestId),
-      checkId: cleanSocketId(checkId),
-      result: cloneSocketPayload(result)
-    };
-
-    game.socket.emit(SOCKET_CHANNEL, {
-      type: SOCKET_EVENT_DOWNTIME_CHECK_RESULT_REQUEST,
-      requestId: socketRequestId,
-      senderId: game.user?.id ?? "",
-      payload
-    });
-    return {
-      requestId: payload.requestId,
-      checkId: payload.checkId,
-      socketRequestId,
-      queued: true
-    };
-  }
-
-  async #handleDowntimeCheckResultSocketResult(message = {}) {
-    const forUserId = cleanSocketId(message.forUserId);
-    if (forUserId && forUserId !== cleanSocketId(game.user?.id)) {
-      return;
-    }
-
-    if (message.ok === false) {
-      ui.notifications?.error(String(message.error ?? "").trim() || "Мастер отклонил запись результата простоя.");
-      return;
-    }
-
-  }
-
-  async #handleDowntimeCheckResultSocketRequest(message = {}) {
-    const requestId = cleanSocketId(message.requestId);
-    const forUserId = cleanSocketId(message.senderId);
-
-    try {
-      const result = await this.#recordDowntimeCheckResultFromSocket(message.payload ?? {}, {
-        senderId: forUserId
-      });
-
-      if (requestId) {
-        game.socket?.emit?.(SOCKET_CHANNEL, {
-          type: SOCKET_EVENT_DOWNTIME_CHECK_RESULT_RESULT,
-          requestId,
-          forUserId,
-          senderId: game.user?.id ?? "",
-          ok: true,
-          data: cloneSocketPayload(result)
-        });
-      }
-
-      this.#emitDowntimeUpdated({
-        actorIds: [result.actorId],
-        requestId: result.id
-      });
-      await this.#refreshDowntimeViewsSafely({ actorIds: [result.actorId] });
-    }
-    catch (error) {
-      if (requestId) {
-        game.socket?.emit?.(SOCKET_CHANNEL, {
-          type: SOCKET_EVENT_DOWNTIME_CHECK_RESULT_RESULT,
-          requestId,
-          forUserId,
-          senderId: game.user?.id ?? "",
-          ok: false,
-          error: error?.message ?? String(error)
-        });
-        return;
-      }
-
-      throw error;
-    }
-  }
-
-  async #recordDowntimeCheckResultFromSocket(payload = {}, { senderId = "" } = {}) {
-    const senderUser = getUserById(senderId);
-    if (!senderUser) {
-      throw new Error("Игрок для результата простоя не найден.");
-    }
-
-    const groupId = cleanSocketId(payload.groupId);
-    if (!groupId) {
-      throw new Error("Группа результата простоя не найдена.");
-    }
-
-    const context = this.groupContextService.resolveForGroup(groupId);
-    const actorId = cleanSocketId(payload.actorId);
-    const actor = Array.from(context.members ?? []).find((memberActor) => memberActor?.id === actorId) ?? null;
-    if (!actor) {
-      throw new Error("Персонаж результата простоя не найден в группе.");
-    }
-
-    if (!isActorOwnedByUser(actor, senderUser)) {
-      throw new Error("Игрок может записывать результат простоя только за своего персонажа.");
-    }
-
-    return this.downtimeService.recordCheckResult(
-      cleanSocketId(payload.requestId),
-      cleanSocketId(payload.checkId),
-      {
-        ...cloneSocketPayload(payload.result ?? {}),
-        recordedByUserId: senderUser.id
-      },
-      {
-        groupId,
-        actorId
-      }
-    );
-  }
-
-  async continueDowntimeProject({ requestId = "", groupId = "", actorId = "", checkId = "", result = {} } = {}) {
-    if (!game.user?.isGM) {
-      return this.#requestDowntimeProjectContinueViaGm({ requestId, groupId, actorId, checkId, result });
-    }
-
-    const options = {
-      actorId: cleanSocketId(actorId),
-      checkId: cleanSocketId(checkId),
-      result: cloneSocketPayload(result)
-    };
-    const safeGroupId = cleanSocketId(groupId);
-    if (safeGroupId) {
-      options.groupId = safeGroupId;
-    }
-
-    const continuedRequest = await this.downtimeService.continueProject(cleanSocketId(requestId), options);
-    this.#emitDowntimeUpdated({
-      actorIds: [continuedRequest.actorId],
-      requestId: continuedRequest.id
-    });
-    await this.refreshDowntimeViews({ actorIds: [continuedRequest.actorId] });
-    return continuedRequest;
-  }
-
-  async #requestDowntimeProjectContinueViaGm({ requestId = "", groupId = "", actorId = "", checkId = "", result = {} } = {}) {
-    if (typeof game.socket?.emit !== "function") {
-      throw new Error("Сокет Foundry недоступен для продолжения проекта.");
-    }
-
-    const socketRequestId = createSocketRequestId("downtime-project-continue");
-    const payload = {
-      groupId: cleanSocketId(groupId),
-      actorId: cleanSocketId(actorId),
-      requestId: cleanSocketId(requestId),
-      checkId: cleanSocketId(checkId),
-      result: cloneSocketPayload(result)
-    };
-
-    game.socket.emit(SOCKET_CHANNEL, {
-      type: SOCKET_EVENT_DOWNTIME_PROJECT_CONTINUE_REQUEST,
-      requestId: socketRequestId,
-      senderId: game.user?.id ?? "",
-      payload
-    });
-    return {
-      ...payload,
-      socketRequestId,
-      queued: true
-    };
-  }
-
-  async #handleDowntimeProjectContinueSocketResult(message = {}) {
-    const forUserId = cleanSocketId(message.forUserId);
-    if (forUserId && forUserId !== cleanSocketId(game.user?.id)) {
-      return;
-    }
-
-    if (message.ok === false) {
-      ui.notifications?.error(String(message.error ?? "").trim() || "Мастер отклонил продолжение проекта.");
-      return;
-    }
-
-  }
-
-  async #handleDowntimeProjectContinueSocketRequest(message = {}) {
-    const requestId = cleanSocketId(message.requestId);
-    const forUserId = cleanSocketId(message.senderId);
-
-    try {
-      const result = await this.#continueDowntimeProjectFromSocket(message.payload ?? {}, {
-        senderId: forUserId
-      });
-
-      if (requestId) {
-        game.socket?.emit?.(SOCKET_CHANNEL, {
-          type: SOCKET_EVENT_DOWNTIME_PROJECT_CONTINUE_RESULT,
-          requestId,
-          forUserId,
-          senderId: game.user?.id ?? "",
-          ok: true,
-          data: cloneSocketPayload(result)
-        });
-      }
-
-      this.#emitDowntimeUpdated({
-        actorIds: [result.actorId],
-        requestId: result.id
-      });
-      await this.#refreshDowntimeViewsSafely({ actorIds: [result.actorId] });
-    }
-    catch (error) {
-      if (requestId) {
-        game.socket?.emit?.(SOCKET_CHANNEL, {
-          type: SOCKET_EVENT_DOWNTIME_PROJECT_CONTINUE_RESULT,
-          requestId,
-          forUserId,
-          senderId: game.user?.id ?? "",
-          ok: false,
-          error: error?.message ?? String(error)
-        });
-        return;
-      }
-
-      throw error;
-    }
-  }
-
-  async #continueDowntimeProjectFromSocket(payload = {}, { senderId = "" } = {}) {
-    const senderUser = getUserById(senderId);
-    if (!senderUser) {
-      throw new Error("Игрок для продолжения проекта не найден.");
-    }
-
-    const groupId = cleanSocketId(payload.groupId);
-    if (!groupId) {
-      throw new Error("Группа проекта не найдена.");
-    }
-
-    const context = this.groupContextService.resolveForGroup(groupId);
-    const actorId = cleanSocketId(payload.actorId);
-    const actor = Array.from(context.members ?? []).find((memberActor) => memberActor?.id === actorId) ?? null;
-    if (!actor) {
-      throw new Error("Персонаж проекта не найден в группе.");
-    }
-
-    if (!isActorOwnedByUser(actor, senderUser)) {
-      throw new Error("Игрок может продолжать проект только своего персонажа.");
-    }
-
-    return this.downtimeService.continueProject(cleanSocketId(payload.requestId), {
-      groupId,
-      actorId,
-      checkId: cleanSocketId(payload.checkId),
-      result: {
-        ...cloneSocketPayload(payload.result ?? {}),
-        recordedByUserId: senderUser.id
-      }
-    });
-  }
-
-  async closeDowntimeProject({ requestId = "", groupId = "", actorId = "" } = {}) {
-    if (!game.user?.isGM) {
-      return this.#requestDowntimeProjectCloseViaGm({ requestId, groupId, actorId });
-    }
-
-    const options = {
-      actorId: cleanSocketId(actorId)
-    };
-    const safeGroupId = cleanSocketId(groupId);
-    if (safeGroupId) {
-      options.groupId = safeGroupId;
-    }
-
-    const result = await this.downtimeService.closeProject(cleanSocketId(requestId), options);
-    this.#emitDowntimeUpdated({
-      actorIds: [result.actorId],
-      requestId: result.id
-    });
-    await this.refreshDowntimeViews({ actorIds: [result.actorId] });
-    return result;
-  }
-
-  async #requestDowntimeProjectCloseViaGm({ requestId = "", groupId = "", actorId = "" } = {}) {
-    if (typeof game.socket?.emit !== "function") {
-      throw new Error("Сокет Foundry недоступен для закрытия проекта.");
-    }
-
-    const socketRequestId = createSocketRequestId("downtime-project-close");
-    const payload = {
-      groupId: cleanSocketId(groupId),
-      actorId: cleanSocketId(actorId),
-      requestId: cleanSocketId(requestId)
-    };
-
-    game.socket.emit(SOCKET_CHANNEL, {
-      type: SOCKET_EVENT_DOWNTIME_PROJECT_CLOSE_REQUEST,
-      requestId: socketRequestId,
-      senderId: game.user?.id ?? "",
-      payload
-    });
-    return {
-      ...payload,
-      socketRequestId,
-      queued: true
-    };
-  }
-
-  async #handleDowntimeProjectCloseSocketResult(message = {}) {
-    const forUserId = cleanSocketId(message.forUserId);
-    if (forUserId && forUserId !== cleanSocketId(game.user?.id)) {
-      return;
-    }
-
-    if (message.ok === false) {
-      ui.notifications?.error(String(message.error ?? "").trim() || "Мастер отклонил закрытие проекта.");
-      return;
-    }
-
-  }
-
-  async #handleDowntimeProjectCloseSocketRequest(message = {}) {
-    const requestId = cleanSocketId(message.requestId);
-    const forUserId = cleanSocketId(message.senderId);
-
-    try {
-      const result = await this.#closeDowntimeProjectFromSocket(message.payload ?? {}, {
-        senderId: forUserId
-      });
-
-      if (requestId) {
-        game.socket?.emit?.(SOCKET_CHANNEL, {
-          type: SOCKET_EVENT_DOWNTIME_PROJECT_CLOSE_RESULT,
-          requestId,
-          forUserId,
-          senderId: game.user?.id ?? "",
-          ok: true,
-          data: cloneSocketPayload(result)
-        });
-      }
-
-      this.#emitDowntimeUpdated({
-        actorIds: [result.actorId],
-        requestId: result.id
-      });
-      await this.#refreshDowntimeViewsSafely({ actorIds: [result.actorId] });
-    }
-    catch (error) {
-      if (requestId) {
-        game.socket?.emit?.(SOCKET_CHANNEL, {
-          type: SOCKET_EVENT_DOWNTIME_PROJECT_CLOSE_RESULT,
-          requestId,
-          forUserId,
-          senderId: game.user?.id ?? "",
-          ok: false,
-          error: error?.message ?? String(error)
-        });
-        return;
-      }
-
-      throw error;
-    }
-  }
-
-  async #closeDowntimeProjectFromSocket(payload = {}, { senderId = "" } = {}) {
-    const senderUser = getUserById(senderId);
-    if (!senderUser) {
-      throw new Error("Игрок для закрытия проекта не найден.");
-    }
-
-    const groupId = cleanSocketId(payload.groupId);
-    if (!groupId) {
-      throw new Error("Группа проекта не найдена.");
-    }
-
-    const context = this.groupContextService.resolveForGroup(groupId);
-    const actorId = cleanSocketId(payload.actorId);
-    const actor = Array.from(context.members ?? []).find((memberActor) => memberActor?.id === actorId) ?? null;
-    if (!actor) {
-      throw new Error("Персонаж проекта не найден в группе.");
-    }
-
-    if (!isActorOwnedByUser(actor, senderUser)) {
-      throw new Error("Игрок может закрывать проект только своего персонажа.");
-    }
-
-    return this.downtimeService.closeProject(cleanSocketId(payload.requestId), {
-      groupId,
-      actorId
-    });
   }
 
   #normalizeDowntimeActorIds(actorIds = []) {
@@ -4363,37 +6225,43 @@ export class RebreyaMainModule {
   }
 
   async setDowntimeRequestStatus(requestId, status, options = {}) {
-    const result = await this.downtimeService.setRequestStatus(requestId, status, options);
-    this.#emitDowntimeUpdated({
-      actorIds: [result.actorId],
-      requestId: result.id
+    const result = await this.privilegedMutationGateway.mutate(DOWNTIME_REQUEST_SET_STATUS_COMMAND, {
+      groupId: this.#captureDowntimeGroupId(options.groupId), requestId: cleanSocketId(requestId), status: cleanSocketId(status), result: options.result ?? ""
     });
     await this.refreshDowntimeViews({ actorIds: [result.actorId] });
     return result;
   }
 
-  async setDowntimeRequestChecks(requestId, checks = []) {
-    const result = await this.downtimeService.setRequestChecks(requestId, checks);
-    this.#emitDowntimeUpdated({
-      actorIds: [result.actorId],
-      requestId: result.id
+  async setDowntimeRequestChecks(requestId, checks = [], options = {}) {
+    const result = await this.privilegedMutationGateway.mutate(DOWNTIME_REQUEST_SET_CHECKS_COMMAND, {
+      groupId: this.#captureDowntimeGroupId(options.groupId), requestId: cleanSocketId(requestId), checks: Array.isArray(checks) ? checks : []
     });
     await this.refreshDowntimeViews({ actorIds: [result.actorId] });
     return result;
   }
 
   async recordDowntimeCheckResult(requestId, checkId, result = {}, options = {}) {
-    if (!game.user?.isGM) {
-      return this.#requestDowntimeCheckResultViaGm(requestId, checkId, result, options);
-    }
-
-    const updatedRequest = await this.downtimeService.recordCheckResult(requestId, checkId, result, options);
-    this.#emitDowntimeUpdated({
-      actorIds: [updatedRequest.actorId],
-      requestId: updatedRequest.id
+    const updatedRequest = await this.privilegedMutationGateway.mutate(DOWNTIME_REQUEST_RECORD_CHECK_COMMAND, {
+      groupId: this.#captureDowntimeGroupId(options.groupId), actorId: cleanSocketId(options.actorId), requestId: cleanSocketId(requestId), checkId: cleanSocketId(checkId), result: cloneSocketPayload(result)
     });
     await this.refreshDowntimeViews({ actorIds: [updatedRequest.actorId] });
     return updatedRequest;
+  }
+
+  async continueDowntimeProject({ requestId = "", groupId = "", actorId = "", checkId = "", result = {} } = {}) {
+    const continuedRequest = await this.privilegedMutationGateway.mutate(DOWNTIME_PROJECT_CONTINUE_COMMAND, {
+      groupId: this.#captureDowntimeGroupId(groupId), actorId: cleanSocketId(actorId), requestId: cleanSocketId(requestId), checkId: cleanSocketId(checkId), result: cloneSocketPayload(result)
+    });
+    await this.refreshDowntimeViews({ actorIds: [continuedRequest.actorId] });
+    return continuedRequest;
+  }
+
+  async closeDowntimeProject({ requestId = "", groupId = "", actorId = "" } = {}) {
+    const result = await this.privilegedMutationGateway.mutate(DOWNTIME_PROJECT_CLOSE_COMMAND, {
+      groupId: this.#captureDowntimeGroupId(groupId), actorId: cleanSocketId(actorId), requestId: cleanSocketId(requestId)
+    });
+    await this.refreshDowntimeViews({ actorIds: [result.actorId] });
+    return result;
   }
 
   getDowntimeActionCatalog() {
@@ -4401,21 +6269,24 @@ export class RebreyaMainModule {
   }
 
   async registerPartyGroup(groupActorId) {
-    const result = await this.groupContextService.registerGroup(groupActorId);
+    const result = await this.privilegedMutationGateway.mutate(GROUP_REGISTRY_REGISTER_COMMAND, {
+      groupActorId
+    });
     await this.refreshOpenApps();
     return result;
   }
 
   async mergeLegacyInventoryIntoGroup(groupActorId) {
-    return this.runInventoryMutation(
-      () => this.inventoryService.mergeLegacyInventoryIntoGroup(groupActorId)
-    );
+    return this.privilegedMutationGateway.mutate(GROUP_INVENTORY_MERGE_LEGACY_COMMAND, {
+      groupActorId
+    });
   }
 
   async setActivePartyGroup(groupActorId) {
-    const result = await this.groupContextService.setActiveGroup(groupActorId);
+    const result = await this.privilegedMutationGateway.mutate(GROUP_REGISTRY_ACTIVATE_COMMAND, {
+      groupActorId
+    });
     await this.refreshOpenApps();
-    await refreshForienQuestLogApps();
     await syncSmallTimeToCalendarTime(this);
     return result;
   }
@@ -4494,7 +6365,6 @@ export class RebreyaMainModule {
       console.warn(`${MODULE_ID} | Failed to sync travel token after route update.`, error);
       ui.notifications?.warn?.(error.message || "Не удалось синхронизировать токен группы на карте мира.");
     });
-    await this.refreshOpenApps();
     return result;
   }
 
@@ -4569,7 +6439,6 @@ export class RebreyaMainModule {
 
   async clearTravelRoute() {
     const result = await this.travelService.clearRoute();
-    await this.refreshOpenApps();
     return result;
   }
 
@@ -4586,6 +6455,131 @@ export class RebreyaMainModule {
     );
   }
 
+  async #runInventoryOrganizationMutation(command, payload, validate, methodName) {
+    if (!validate(payload)) {
+      throw new TypeError("Inventory organization command payload is invalid.");
+    }
+    const exactPayload = cloneSocketPayload(payload);
+    if (!isActiveGmClient(globalThis.game)) {
+      const result = await this.socketCommandBus.request(command, exactPayload);
+      this.#deferInventoryRefresh([exactPayload.groupActorId]);
+      return result;
+    }
+    return this.runInventoryMutation(
+      () => this.inventoryService[methodName](exactPayload),
+      { actorIdsFromResult: (result) => [result?.actorId] }
+    );
+  }
+
+  createInventoryFolder(payload) {
+    return this.#runInventoryOrganizationMutation(
+      INVENTORY_FOLDER_CREATE_COMMAND,
+      payload,
+      isValidInventoryFolderCreatePayload,
+      "createInventoryFolder"
+    );
+  }
+
+  setInventoryFolderColor(payload) {
+    return this.#runInventoryOrganizationMutation(
+      INVENTORY_FOLDER_COLOR_COMMAND,
+      payload,
+      isValidInventoryFolderColorPayload,
+      "setInventoryFolderColor"
+    );
+  }
+
+  renameInventoryFolder(payload) {
+    return this.#runInventoryOrganizationMutation(
+      INVENTORY_FOLDER_RENAME_COMMAND,
+      payload,
+      isValidInventoryFolderRenamePayload,
+      "renameInventoryFolder"
+    );
+  }
+
+  moveInventoryFolder(payload) {
+    return this.#runInventoryOrganizationMutation(
+      INVENTORY_FOLDER_MOVE_COMMAND,
+      payload,
+      isValidInventoryFolderMovePayload,
+      "moveInventoryFolder"
+    );
+  }
+
+  deleteInventoryFolder(payload) {
+    return this.#runInventoryOrganizationMutation(
+      INVENTORY_FOLDER_DELETE_COMMAND,
+      payload,
+      isValidInventoryFolderDeletePayload,
+      "deleteInventoryFolder"
+    );
+  }
+
+  moveInventoryItemToFolder(payload) {
+    return this.#runInventoryOrganizationMutation(
+      INVENTORY_ITEM_FOLDER_MOVE_COMMAND,
+      payload,
+      isValidInventoryItemFolderMovePayload,
+      "moveInventoryItemToFolder"
+    );
+  }
+
+  async runInventoryFolderBatch(payload) {
+    if (!isValidInventoryFolderBatchPayload(payload)) {
+      throw new TypeError("Inventory folder batch payload is invalid.");
+    }
+    const exactPayload = cloneSocketPayload(payload);
+    const result = isActiveGmClient(globalThis.game)
+      ? await this.inventoryService.executeInventoryFolderBatch(exactPayload)
+      : await this.socketCommandBus.request(INVENTORY_FOLDER_BATCH_COMMAND, exactPayload);
+    this.#deferInventoryRefresh([exactPayload.groupActorId]);
+    return result;
+  }
+
+  getInventoryIngressRuleState(payload) {
+    return this.inventoryService.getInventoryIngressRuleState(payload);
+  }
+
+  createInventoryIngressRule(payload) {
+    return this.#runInventoryOrganizationMutation(
+      INVENTORY_INGRESS_RULE_CREATE_COMMAND,
+      payload,
+      isValidInventoryIngressRuleWritePayload,
+      "createInventoryIngressRule"
+    );
+  }
+
+  updateInventoryIngressRule(payload) {
+    return this.#runInventoryOrganizationMutation(
+      INVENTORY_INGRESS_RULE_UPDATE_COMMAND,
+      payload,
+      isValidInventoryIngressRuleWritePayload,
+      "updateInventoryIngressRule"
+    );
+  }
+
+  deleteInventoryIngressRule(payload) {
+    return this.#runInventoryOrganizationMutation(
+      INVENTORY_INGRESS_RULE_DELETE_COMMAND,
+      payload,
+      isValidInventoryIngressRuleDeletePayload,
+      "deleteInventoryIngressRule"
+    );
+  }
+
+  getInventoryFolderUiState(groupActorId, folderIds = []) {
+    return this.inventoryService.getInventoryFolderUiState(groupActorId, folderIds);
+  }
+
+  setInventoryFolderExpanded(groupActorId, folderId, expanded) {
+    return this.inventoryService.setInventoryFolderExpanded(groupActorId, folderId, expanded);
+  }
+
+  setInventoryFolderPinned(groupActorId, folderId, pinned) {
+    return this.inventoryService.setInventoryFolderPinned(groupActorId, folderId, pinned);
+  }
+
   async updateInventoryItemQuantity(itemId, nextQuantity) {
     return this.runInventoryMutation(
       () => this.inventoryService.updateItemQuantity(itemId, nextQuantity)
@@ -4600,7 +6594,13 @@ export class RebreyaMainModule {
 
   async takeInventoryItemToCharacter(itemId, options = {}) {
     return this.runInventoryMutation(
-      () => this.inventoryService.takeInventoryItemToCharacter(itemId, options)
+      () => this.inventoryService.takeInventoryItemToCharacter(itemId, options),
+      {
+        actorIdsFromResult: (result, error) => [
+          result?.sourceActorId ?? error?.sourceActorId,
+          result?.actorId ?? error?.targetActorId
+        ]
+      }
     );
   }
 
@@ -4622,21 +6622,42 @@ export class RebreyaMainModule {
     );
   }
 
-  async importInventoryDrop(dropData) {
+  async importInventoryDrop(dropData, { groupActorId = "", folderId = null } = {}) {
+    const target = {
+      groupActorId: cleanSocketId(groupActorId),
+      folderId: folderId === null ? null : cleanSocketId(folderId)
+    };
     const storageDrop = parseStorageDragData(dropData);
     if (storageDrop) {
       const quantity = await promptStorageTransferQuantity(storageDrop.quantity);
       if (quantity === null) return { cancelled: true };
-      return this.runInventoryMutation(() => this.claimStorageRow(
+      return this.claimStorageRow(
         storageDrop.tokenUuid,
         storageDrop.rowId,
         "party",
         createSocketRequestId("storage-party-drop"),
-        { quantity }
-      ));
+        { quantity, target }
+      );
+    }
+    const journalDrop = parseStorageDepositDragData(dropData);
+    if (journalDrop?.kind === "journal") {
+      const payload = {
+        sourceUuid: journalDrop.sourceUuid,
+        documentName: journalDrop.documentName,
+        groupActorId: target.groupActorId,
+        folderId: target.folderId,
+        mutationId: createSocketRequestId("storage-journal-record-drop")
+      };
+      if (!payload.groupActorId) throw new Error("Не удалось определить группу назначения.");
+      return isActiveGmClient(globalThis.game)
+        ? this.runInventoryMutation(
+            () => this.storageCommandService.recordJournalDrop(payload, { sender: globalThis.game?.user }),
+            { actorIdsFromResult: (result) => [result?.actorId] }
+          )
+        : this.socketCommandBus.request(STORAGE_JOURNAL_RECORD_DROP_COMMAND, payload);
     }
     return this.runInventoryMutation(
-      () => this.inventoryService.importDroppedItem(dropData)
+      () => this.inventoryService.importDroppedItem(dropData, target)
     );
   }
 
@@ -4662,10 +6683,83 @@ export class RebreyaMainModule {
     );
   }
 
-  async addModelItemToInventory(sourceType, sourceId, quantity = 1) {
-    return this.runInventoryMutation(
-      () => this.inventoryService.addModelItemToInventory(sourceType, sourceId, quantity)
-    );
+  async addModelItemToInventory(sourceType, sourceId, quantity = 1, options = {}) {
+    const explicitGroupActorId = String(options.groupActorId ?? "").trim();
+    const context = explicitGroupActorId ? null : this.groupContextService.resolveForCurrentUser();
+    const groupActorId = explicitGroupActorId
+      || String(context?.groupActor?.id ?? context?.groupId ?? "").trim();
+    const batchMutationId = String(options.batchMutationId ?? "").trim()
+      || createSocketRequestId("inventory-model");
+    const requestedFolderId = options.folderId === null || options.folderId === undefined
+      ? null
+      : String(options.folderId).trim();
+    const sources = this.#normalizeDirectInventoryIngressSources([{
+      sourceKey: "item",
+      sourceType,
+      sourceId,
+      quantity
+    }]);
+    const ingressPlan = await this.#prepareDirectInventoryIngress({
+      groupActorId,
+      sourceOrigin: "public-model",
+      sources,
+      requestedFolderId
+    });
+    if (ingressPlan === null) {
+      return { actorId: groupActorId, batchMutationId, cancelled: true, changed: false, rows: [] };
+    }
+    return this.#dispatchDirectInventoryIngress({
+      batchMutationId,
+      coins: this.#normalizeDirectInventoryIngressCoins(),
+      groupActorId,
+      ingressPlan,
+      sourceOrigin: "public-model",
+      sources
+    });
+  }
+
+  async getInventoryAddCatalog() {
+    return this.inventoryService.getInventoryAddCatalog();
+  }
+
+  async addManualInventoryItem(manualEntry, quantity = 1, options = {}) {
+    const explicitGroupActorId = String(options.groupActorId ?? "").trim();
+    const context = explicitGroupActorId ? null : this.groupContextService.resolveForCurrentUser();
+    const groupActorId = explicitGroupActorId
+      || String(context?.groupActor?.id ?? context?.groupId ?? "").trim();
+    const batchMutationId = String(options.batchMutationId ?? "").trim()
+      || createSocketRequestId("inventory-manual");
+    const requestedFolderId = options.folderId === null || options.folderId === undefined
+      ? null
+      : String(options.folderId).trim();
+    const manualEntryId = String(manualEntry?.manualEntryId ?? "").trim()
+      || createSocketRequestId("manual-entry");
+    const sources = this.#normalizeDirectInventoryIngressSources([{
+      sourceKey: "item",
+      sourceType: "manual",
+      sourceId: manualEntryId,
+      sourceDocumentId: "",
+      isBroken: false,
+      quantity,
+      manualEntry: { ...manualEntry, manualEntryId }
+    }]);
+    const ingressPlan = await this.#prepareDirectInventoryIngress({
+      groupActorId,
+      sourceOrigin: "manual-entry",
+      sources,
+      requestedFolderId
+    });
+    if (ingressPlan === null) {
+      return { actorId: groupActorId, batchMutationId, cancelled: true, changed: false, rows: [] };
+    }
+    return this.#dispatchDirectInventoryIngress({
+      batchMutationId,
+      coins: this.#normalizeDirectInventoryIngressCoins(),
+      groupActorId,
+      ingressPlan,
+      sourceOrigin: "manual-entry",
+      sources
+    });
   }
 
   async addLootgenRowToInventory(row = {}) {
@@ -4673,9 +6767,44 @@ export class RebreyaMainModule {
     if (!mutationId) {
       throw new Error("Для выдачи строки Lootgen нужен стабильный идентификатор.");
     }
-    return this.runInventoryMutation(
-      () => this.inventoryService.addLootgenRowToInventoryOnce(row, mutationId)
-    );
+    return this.addLootgenRowsToInventory([row], { batchMutationId: mutationId });
+  }
+
+  async addLootgenRowsToInventory(rows = [], {
+    coins = {},
+    batchMutationId = ""
+  } = {}) {
+    const context = this.groupContextService.resolveForCurrentUser();
+    const groupActorId = String(context?.groupActor?.id ?? context?.groupId ?? "").trim();
+    const sources = this.#normalizeDirectInventoryIngressSources(rows);
+    const stableBatchMutationId = String(batchMutationId ?? "").trim();
+    if (!stableBatchMutationId) {
+      throw new Error("Для пакетной выдачи Lootgen нужен стабильный идентификатор.");
+    }
+    const normalizedCoins = this.#normalizeDirectInventoryIngressCoins(coins);
+    const ingressPlan = await this.#prepareDirectInventoryIngress({
+      groupActorId,
+      sourceOrigin: "lootgen",
+      sources,
+      requestedFolderId: null
+    });
+    if (sources.length > 0 && ingressPlan === null) {
+      return {
+        actorId: groupActorId,
+        batchMutationId: stableBatchMutationId,
+        cancelled: true,
+        changed: false,
+        rows: []
+      };
+    }
+    return this.#dispatchDirectInventoryIngress({
+      batchMutationId: stableBatchMutationId,
+      coins: normalizedCoins,
+      groupActorId,
+      ingressPlan,
+      sourceOrigin: "lootgen",
+      sources
+    });
   }
 
   async addLootgenCoinsToInventory(coins = {}, mutationId = "") {
@@ -4683,12 +6812,10 @@ export class RebreyaMainModule {
     if (!stableMutationId) {
       throw new Error("Для выдачи монет Lootgen нужен стабильный идентификатор.");
     }
-    if (!isActiveGmClient(game)) {
-      throw new Error("Только активный мастер может добавлять монеты Lootgen.");
-    }
-    return this.runInventoryMutation(
-      () => this.inventoryService.addCurrencyToInventoryOnce(coins, stableMutationId)
-    );
+    return this.addLootgenRowsToInventory([], {
+      coins,
+      batchMutationId: stableMutationId
+    });
   }
 
   getRebreyaToolCatalog() {
@@ -4770,12 +6897,20 @@ export class RebreyaMainModule {
 
   async installItemUpgrade(hostItem, upgradeItem, options = {}) {
     const result = await this.itemUpgradeService.installItemUpgrade(hostItem, upgradeItem, options);
+    await this.curseUpgradeAutomationService.requestSync(hostItem.actor ?? hostItem.parent);
     await this.refreshOpenApps();
     return result;
   }
 
+  async resolveCurseUpgradeSave(actorOrUuid, { saved, death = false, eventId = globalThis.crypto.randomUUID() } = {}) {
+    const actor = typeof actorOrUuid === "string" ? await globalThis.fromUuid(actorOrUuid) : actorOrUuid;
+    if (!actor?.uuid || typeof saved !== "boolean") throw new Error("Укажите персонажа и результат спасброска.");
+    return this.curseUpgradeAutomationService.resolveSaveRequest({ actorUuid: actor.uuid, eventId, saved, death, damageOnly: false });
+  }
+
   async removeItemUpgrade(hostItem, upgradeItemOrId) {
     const result = await this.itemUpgradeService.removeItemUpgrade(hostItem, upgradeItemOrId);
+    await this.curseUpgradeAutomationService.requestSync(hostItem.actor ?? hostItem.parent);
     await this.refreshOpenApps();
     return result;
   }
@@ -5043,38 +7178,62 @@ export class RebreyaMainModule {
     if (!game.user?.isGM) {
       throw new Error("Шаблоны Lootgen доступны только мастеру.");
     }
-    return this.lootgenTemplateCatalog.list();
+    return this.lootgenTemplateItems.list();
   }
 
   getLootgenTemplate(templateId) {
     if (!game.user?.isGM) {
       throw new Error("Шаблоны Lootgen доступны только мастеру.");
     }
-    return this.lootgenTemplateCatalog.get(templateId);
+    return this.lootgenTemplateItems.get(templateId);
+  }
+
+  async resolveLootgenTemplate(templateUuid) {
+    if (!game.user?.isGM) {
+      throw new Error("Шаблоны Lootgen доступны только мастеру.");
+    }
+    return this.lootgenTemplateItems.getResolved(templateUuid);
   }
 
   async saveLootgenTemplate(payload = {}) {
     if (!game.user?.isGM) {
       throw new Error("Сохранять шаблоны Lootgen может только мастер.");
     }
-    return this.lootgenTemplateCatalog.save(payload);
+    return this.lootgenTemplateItems.save(payload);
   }
 
   async removeLootgenTemplate(templateId) {
     if (!game.user?.isGM) {
       throw new Error("Удалять шаблоны Lootgen может только мастер.");
     }
-    return this.lootgenTemplateCatalog.remove(templateId);
+    return this.lootgenTemplateItems.remove(templateId);
   }
 
   async generateStorageLoot(form = {}) {
     if (!isActiveGmClient(globalThis.game)) {
       throw new Error("Содержимое хранилища может генерировать только активный мастер.");
     }
-    const moduleVersion = game.modules.get(MODULE_ID)?.version ?? "1.4.96";
-    const { LootgenApp } = await import(`./ui/lootgen-app.js?v=${encodeURIComponent(moduleVersion)}`);
-    const generator = new LootgenApp(this, { appKey: `storage-generator-${createSocketRequestId("loot")}` });
-    const generated = await generator.generateFromForm(form);
+    if (form.enableUpgrades || form.enableFilledContainers) {
+      const operationId=createSocketRequestId("storage-loot");
+      const generated=await buildLootgenGeneratedState(form,{operationId,lootId:operationId,authorId:game.user.id},{
+        catalog:this.lootgenSourceCatalog,buildItemData:row=>this.inventoryService.buildLootgenItemData(row),
+        prepareContainerGraph:(snapshot,adapters)=>this.storageContainerItemService.prepareItemGraph(snapshot,adapters),
+        createDocumentId:()=>foundry.utils.randomID()
+      });
+      const rows=[];
+      for(const row of generated.rows){
+        if(row.descriptor.container){
+          const snapshot=await this.storageContainerItemService.capturePreparedContainer(row.itemData);
+          rows.push({...buildStorageContainerRow(snapshot,{rowId:row.rowId}),value:row.value,totalValue:row.totalValue,
+            itemData:foundry.utils.deepClone(snapshot.presentation.itemData)});
+        }else{
+          const {quantity,container,...composition}=row.descriptor;
+          rows.push({...row,rowKind:"item",composition,runtimeGraph:foundry.utils.deepClone(row.itemData.flags?.[MODULE_ID]?.runtimeItemGraph)});
+        }
+      }
+      return {rows,coins:foundry.utils.deepClone(generated.coins)};
+    }
+    const generated = await this.lootgenSourceCatalog.generate(form, {batchId:createSocketRequestId("loot"),generatedAt:new Date().toISOString()});
     const rows = [];
     for (const [index, row] of (generated.rows ?? []).entries()) {
       rows.push({
@@ -5097,17 +7256,16 @@ export class RebreyaMainModule {
     return this.lootgenApps.delete(appKey);
   }
 
-  async openLootgenApp({ newWindow = true, viewer = false, sharedResult = null } = {}) {
+  async openLootgenApp({ newWindow = true, viewer = false, sharedResult = null, templateUuid = "", readOnly = false } = {}) {
     try {
       if (!viewer && !game.user?.isGM) {
         throw new Error("Лутген доступен только мастеру.");
       }
 
-      const moduleVersion = game.modules.get(MODULE_ID)?.version ?? "1.4.96";
-      const { LootgenApp } = await import(`./ui/lootgen-app.js?v=${encodeURIComponent(moduleVersion)}`);
+      const { LootgenApp } = await import(`./ui/lootgen-app.js?v=${encodeURIComponent(MODULE_STYLE_VERSION)}`);
       let app = null;
 
-      if (!viewer && !newWindow) {
+      if (!viewer && !newWindow && !templateUuid) {
         app = Array.from(this.lootgenApps.values()).find((candidate) => candidate?.rendered && !candidate.viewer) ?? null;
       }
 
@@ -5127,12 +7285,12 @@ export class RebreyaMainModule {
         else {
           this.lootgenCounter += 1;
           const appKey = `lootgen-${this.lootgenCounter}`;
-          app = new LootgenApp(this, { appKey });
+          app = new LootgenApp(this, { appKey, sharedResult, templateUuid, readOnly });
           this.lootgenApps.set(appKey, app);
         }
       }
 
-      if (viewer && sharedResult && typeof app?.setSharedResult === "function") {
+      if (sharedResult && typeof app?.setSharedResult === "function") {
         app.setSharedResult(sharedResult);
       }
 
@@ -5195,13 +7353,21 @@ export class RebreyaMainModule {
   }
 
   #appRefreshTask(app, options = {}) {
-    if (!app?.rendered || isApplicationMinimized(app) || typeof app.render !== "function") {
+    const {
+      refreshInventorySnapshot = false,
+      ...renderOptions
+    } = options;
+    const canRefreshInventorySnapshot = refreshInventorySnapshot
+      && typeof app?.refreshInventorySnapshot === "function";
+    if (!app?.rendered || isApplicationMinimized(app) || (!canRefreshInventorySnapshot && typeof app.render !== "function")) {
       return null;
     }
 
     return {
       key: app,
-      run: () => rerenderApp(app, { ...options, focus: false })
+      run: () => canRefreshInventorySnapshot
+        ? app.refreshInventorySnapshot(renderOptions)
+        : rerenderApp(app, { ...renderOptions, focus: false })
     };
   }
 
@@ -5244,8 +7410,21 @@ export class RebreyaMainModule {
     const waiters = this.inventoryRefreshWaiters.splice(0);
     this.inventoryRefreshActorIds.clear();
 
+    const targetActorIds = new Set(actorIds);
+    const inventoryViews = [
+      this.inventoryApp,
+      ...this.inventoryFolderApps.values()
+    ].filter((app, index, apps) => app && apps.indexOf(app) === index);
     const tasks = [
-      this.#appRefreshTask(this.inventoryApp, { preserveScroll: true }),
+      ...inventoryViews
+        .filter((app) => {
+          const inventoryActorId = String(app.inventoryActorId ?? app.groupActorId ?? "").trim();
+          return targetActorIds.size === 0 || !inventoryActorId || targetActorIds.has(inventoryActorId);
+        })
+        .map((app) => this.#appRefreshTask(app, {
+          preserveScroll: true,
+          refreshInventorySnapshot: true
+        })),
       ...this.#actorSheetRefreshTasks(actorIds, { allWhenEmpty: false })
     ].filter(Boolean);
 
@@ -5277,7 +7456,28 @@ export class RebreyaMainModule {
     return completion;
   }
 
-  async runInventoryMutation(operation, { actorIdsFromResult } = {}) {
+  #deferInventoryRefresh(actorIds = []) {
+    let refreshTask;
+    try {
+      refreshTask = Promise.resolve(this.refreshInventoryViews({ actorIds }));
+    }
+    catch (refreshError) {
+      refreshTask = Promise.reject(refreshError);
+    }
+    refreshTask.catch((refreshError) => {
+      console.error(`${MODULE_ID} | Deferred inventory refresh failed.`, refreshError);
+      globalThis.ui?.notifications?.warn?.(
+        "Инвентарь изменён, но интерфейс не удалось обновить автоматически."
+      );
+    });
+    return refreshTask;
+  }
+
+  async runInventoryMutation(operation, {
+    actorIdsFromResult,
+    awaitRefresh = false,
+    traceContext = null
+  } = {}) {
     if (typeof operation !== "function") {
       throw new TypeError("Inventory mutation operation must be a function.");
     }
@@ -5296,23 +7496,57 @@ export class RebreyaMainModule {
       operationError = error;
     }
 
+    if (result?.auditPersisted === false && globalThis.game?.user?.isGM === true) {
+      globalThis.ui?.notifications?.warn?.(
+        "Перенос завершён, но итог аудита не сохранён. Не повторяйте операцию; проверьте журнал и предметы."
+      );
+    }
+
     let actorIds = [];
     try {
       actorIds = typeof actorIdsFromResult === "function"
-        ? actorIdsFromResult(result)
+        ? actorIdsFromResult(result, operationError)
         : [result?.actorId];
     }
     catch (error) {
       operationError ??= error;
     }
     this.inventoryRefreshHoldCount = Math.max(0, this.inventoryRefreshHoldCount - 1);
+    let refreshTask;
     try {
-      await this.refreshInventoryViews({ actorIds });
+      refreshTask = Promise.resolve(this.refreshInventoryViews({ actorIds }));
     }
     catch (refreshError) {
-      if (!operationError) {
-        throw refreshError;
+      refreshTask = Promise.reject(refreshError);
+    }
+    try {
+      this.socketCommandTrace?.({
+        phase: "refresh-scheduled",
+        command: String(traceContext?.command ?? ""),
+        requestId: String(traceContext?.requestId ?? traceContext?.operationId ?? ""),
+        senderId: String(traceContext?.sender?.id ?? traceContext?.senderId ?? "")
+      });
+    }
+    catch {
+      // Diagnostics must never change mutation behavior.
+    }
+    if (awaitRefresh === true) {
+      try {
+        await refreshTask;
       }
+      catch (refreshError) {
+        if (!operationError) {
+          throw refreshError;
+        }
+      }
+    }
+    else {
+      refreshTask.catch((refreshError) => {
+        console.error(`${MODULE_ID} | Deferred inventory refresh failed.`, refreshError);
+        globalThis.ui?.notifications?.warn?.(
+          "Инвентарь изменён, но интерфейс не удалось обновить автоматически."
+        );
+      });
     }
 
     if (operationError) {
@@ -5333,6 +7567,39 @@ export class RebreyaMainModule {
   async refreshCosmologyViews() {
     const task = this.#appRefreshTask(this.cosmologyApp);
     await this.uiRefreshCoordinator.request(task ? [task] : []);
+  }
+
+  registerReputationRefreshHooks() {
+    if (this.reputationRefreshHooksRegistered) return;
+    this.reputationRefreshHooksRegistered = true;
+    const refresh = (actor) => { void this.refreshReputationViews(actor.uuid).catch(error => console.warn(`${MODULE_ID} | Reputation refresh failed.`, error)); };
+    Hooks.on("updateActor", (actor, change) => {
+      if (Object.keys(change ?? {}).some(key => key === "flags" || key.startsWith(`flags.${MODULE_ID}.reputation`) || key === "name" || key === "ownership")) refresh(actor);
+    });
+    Hooks.on("deleteActor", refresh);
+  }
+
+  async refreshReputationViews(actorUuid) {
+    const panel = this.inventoryApp?.reputationPanel;
+    if (!panel || panel.selectedActorUuid !== actorUuid || panel.reputationPending) return;
+    await this.inventoryApp.refreshReputationPanel();
+  }
+
+  getReputation(actorOrUuid) {
+    return this.reputationService.read(typeof actorOrUuid === "string" ? actorOrUuid : actorOrUuid?.uuid);
+  }
+
+  updateReputation(request) {
+    return this.reputationService.requestUpdate(request);
+  }
+
+  async refreshCityViews({ cityIds = [] } = {}) {
+    const requested = new Set((cityIds ?? []).map((id) => String(id ?? "").trim()).filter(Boolean));
+    const apps = requested.size
+      ? [...requested].map((id) => this.cityApps.get(id)).filter(Boolean)
+      : [...this.cityApps.values()];
+    const tasks = apps.map((app) => this.#appRefreshTask(app)).filter(Boolean);
+    await this.uiRefreshCoordinator.request(tasks);
   }
 
   async refreshOpenApps() {
@@ -5379,9 +7646,20 @@ export class RebreyaMainModule {
     }
   }
 
+  async openQuestLogApp(options = {}) {
+    try {
+      return await openRebreyaQuestLog({ options });
+    }
+    catch (error) {
+      console.error(`${MODULE_ID} | Failed to open Rebreya quest log.`, error);
+      ui.notifications?.error(error.message || "Не удалось открыть журнал заданий Rebreya.");
+      throw error;
+    }
+  }
+
   async openCityApp(cityId) {
     try {
-      const { CityEconomyApp } = await import("./ui/city-app.js");
+      const { CityEconomyApp } = await import("./ui/city-app.js?v=1.4.136-public-city-background");
 
       let app = this.cityApps.get(cityId);
       if (!app) {
@@ -5530,8 +7808,7 @@ export class RebreyaMainModule {
 
   async openInventoryApp(options = {}) {
     try {
-      const moduleVersion = game.modules?.get?.(MODULE_ID)?.version ?? "1.4.67";
-      const { InventoryApp } = await import(`./ui/inventory-app.js?v=${encodeURIComponent(moduleVersion)}`);
+      const { InventoryApp } = await import("./ui/inventory-app.js?v=1.4.327");
 
       if (!this.inventoryApp) {
         this.inventoryApp = new InventoryApp(this);
@@ -5551,6 +7828,60 @@ export class RebreyaMainModule {
       notifyUser("error", "Не удалось открыть партийный инвентарь.");
       throw error;
     }
+  }
+
+  async openInventoryFolderPopout(groupActorId, folderId) {
+    const normalizedGroupActorId = String(groupActorId ?? "").trim();
+    const normalizedFolderId = String(folderId ?? "").trim();
+    if (!normalizedGroupActorId || !normalizedFolderId) {
+      throw new TypeError("Inventory folder popout requires groupActorId and folderId.");
+    }
+
+    const inventoryViewKey = `${normalizedGroupActorId}:${normalizedFolderId}`;
+    const existingApp = this.inventoryFolderApps.get(inventoryViewKey);
+    if (existingApp) {
+      await existingApp.render({ force: true });
+      bringAppToFront(existingApp);
+      return existingApp;
+    }
+
+    const snapshot = await this.getInventorySnapshot({
+      createActor: false,
+      groupActorId: normalizedGroupActorId
+    });
+    const folder = (snapshot?.folders ?? []).find((entry) => String(entry?.id ?? "").trim() === normalizedFolderId);
+    if (!folder) {
+      throw new Error("Папка инвентаря не найдена.");
+    }
+
+    const moduleVersion = game.modules?.get?.(MODULE_ID)?.version ?? "1.4.67";
+    const { InventoryApp } = await import("./ui/inventory-app.js?v=1.4.327");
+    const app = new InventoryApp(this, {
+      groupActorId: normalizedGroupActorId,
+      rootFolderId: normalizedFolderId,
+      inventoryViewKey,
+      window: { title: String(folder.name ?? "Папка инвентаря") }
+    });
+    this.inventoryFolderApps.set(inventoryViewKey, app);
+    try {
+      await app.render({ force: true });
+    }
+    catch (error) {
+      this.unregisterInventoryFolderPopout(inventoryViewKey, app);
+      throw error;
+    }
+    bringAppToFront(app);
+    return app;
+  }
+
+  unregisterInventoryFolderPopout(inventoryViewKey, app) {
+    const normalizedViewKey = String(inventoryViewKey ?? "").trim();
+    if (!normalizedViewKey || this.inventoryFolderApps.get(normalizedViewKey) !== app) {
+      return false;
+    }
+
+    this.inventoryFolderApps.delete(normalizedViewKey);
+    return true;
   }
 
   async openGroupsApp() {
@@ -5645,6 +7976,14 @@ export class RebreyaMainModule {
     return this.magicItemsCompendium.openMagicItem(magicItemId, fallbackName);
   }
 
+  async syncEquippedMagicItems(options = {}) {
+    return this.syncOwnedMagicItems(options);
+  }
+
+  async syncOwnedMagicItems(options = {}) {
+    return this.magicItemsCompendium.syncOwnedMagicItems(options);
+  }
+
   async syncFeatsFromWorldCompendium(options = {}) {
     const result = await this.featsCompendium.syncFromWorldCompendium(options);
     await this.refreshOpenApps();
@@ -5696,6 +8035,21 @@ export class RebreyaMainModule {
 
 Hooks.once("init", () => {
   try {
+    registerLootgenTemplateItemType();
+    registerLootgenTemplateItemSheet();
+  }
+  catch (error) {
+    console.error(`${MODULE_ID} | Failed to register Lootgen template Item subtype.`, error);
+  }
+
+  try {
+    publishPanelToolApi(game.modules.get(MODULE_ID));
+  }
+  catch (error) {
+    console.error(`${MODULE_ID} | Failed to publish panel tool API.`, error);
+  }
+
+  try {
     ensureModuleStylesheet();
   }
   catch (error) {
@@ -5705,6 +8059,7 @@ Hooks.once("init", () => {
   try {
     registerSettings();
     registerDurabilitySettings();
+    registerIconBadgeSettings();
   }
   catch (error) {
     console.error(`${MODULE_ID} | Failed to register settings.`, error);
@@ -5775,6 +8130,13 @@ if (Hooks.on instanceof Function) {
 
 Hooks.once("ready", async () => {
   try {
+    patchDnd5eTooltipRaceGuard();
+  }
+  catch (error) {
+    console.warn(`${MODULE_ID} | Failed to patch dnd5e tooltip race.`, error);
+  }
+
+  try {
     patchEffectMacroCombatHooks();
   }
   catch (error) {
@@ -5806,6 +8168,13 @@ Hooks.once("ready", async () => {
     module.api = moduleApi;
   }
   flushQueuedSocketMessages(moduleApi);
+
+  try {
+    await registerNarrativeItemCreationHooks({ Hooks });
+  }
+  catch (error) {
+    console.error(`${MODULE_ID} | Failed to register narrative Item creation hook.`, error);
+  }
 
   try {
     registerTransportGroupDropHooks(moduleApi, { Hooks });
@@ -5840,13 +8209,6 @@ Hooks.once("ready", async () => {
   }
   catch (error) {
     console.error(`${MODULE_ID} | Failed to register transport vehicle sheet hook.`, error);
-  }
-
-  try {
-    await registerForienQuestLogIntegration(moduleApi);
-  }
-  catch (error) {
-    console.warn(`${MODULE_ID} | Failed to register Forien Quest Log integration.`, error);
   }
 
   try {
@@ -5941,6 +8303,13 @@ Hooks.once("ready", async () => {
   }
 
   try {
+    registerDoorTriggerHooks(moduleApi, { hooks: Hooks });
+  }
+  catch (error) {
+    console.error(`${MODULE_ID} | Failed to register door trigger hooks.`, error);
+  }
+
+  try {
     registerRationFoodConversionHook(moduleApi);
   }
   catch (error) {
@@ -5955,6 +8324,13 @@ Hooks.once("ready", async () => {
   }
 
   try {
+    registerTravelMapHooks(moduleApi, { Hooks });
+  }
+  catch (error) {
+    console.error(`${MODULE_ID} | Failed to register travel map hooks.`, error);
+  }
+
+  try {
     registerMagicWeaponTemplateHook(moduleApi);
   }
   catch (error) {
@@ -5962,7 +8338,27 @@ Hooks.once("ready", async () => {
   }
 
   try {
+    registerGroupRegistryLifecycleHooks({
+      hooks: Hooks,
+      groupContextService: moduleApi.groupContextService,
+      isActiveGmClient,
+      afterPrune: async () => {
+        if (moduleApi.groupsApp) {
+          await moduleApi.groupsApp.render({ force: true });
+        }
+      }
+    });
+    await pruneMissingRegisteredGroups(moduleApi.groupContextService, { isActiveGmClient });
+  }
+  catch (error) {
+    console.warn(`${MODULE_ID} | Failed to reconcile registered Group Actors.`, error);
+  }
+
+  try {
     await moduleApi.initialize();
+    await moduleApi.refreshSceneActivityApps({duringReady:true}).catch(error=>console.warn(`${MODULE_ID} | Scene initial refresh failed.`,error));
+    game.socket?.on?.("connect",()=>moduleApi.refreshSceneActivityApps().catch(error=>console.warn(`${MODULE_ID} | Scene reconnect refresh failed.`,error)));
+    await publishModuleVersionNotice({ moduleEntry: module, user: game.user });
   }
   catch (error) {
     console.error(`${MODULE_ID} | Failed to initialize module.`, error);

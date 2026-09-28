@@ -6,6 +6,98 @@ import {
   normalizeLootgenForm
 } from "../scripts/data/lootgen-generator.js";
 
+const variantA={variantId:"book-a",gearId:"book",sourceName:"Книга",title:"A",description:"Первый",rank:0};
+const variantB={variantId:"book-b",gearId:"book",sourceName:"Книга",title:"B",description:"Последний",rank:0};
+
+test("upgrades, enchantments and curses never enter random loot in either pool", () => {
+  const excluded = [
+    { equipmentType: "Усовершенствование" },
+    { typeLabel: "Зачарование" },
+    { typeLabel: "Проклятье" },
+    { upgrade: { type: "Материал" } }
+  ].map((data, i) => ({ ...data, sourceId: `excluded-${i}`, name: `Excluded ${i}`, value: 1 }));
+  for (const pool of ["mundanePool", "magicPool"]) {
+    const result = generateLootgenResult({
+      [pool]: [...excluded, { sourceId: "ordinary", name: "Проклятый меч", value: 1 }],
+      budgetValue: 100, itemCount: 10, includeMagicItems: true, includeCoins: false, random: () => 0
+    });
+    assert.deepEqual(result.rows.map(row => row.sourceId), ["ordinary"]);
+  }
+});
+
+test("canonical coin candidates become currency rather than ordinary loot Items", () => {
+  const result = generateLootgenResult({
+    mundanePool: [{ sourceType: "gear", sourceId: "mednaya-moneta", value: 2, multipleAppearance: "1", stackable: true }],
+    budgetValue: 47, itemCount: 1, includeCoins: true, random: () => 0
+  });
+  assert.equal(result.rows.length, 0);
+  assert.equal(result.coins.cp, 47);
+  assert.equal(result.spentValue + result.coins.totalCopper, 47);
+});
+
+test("generator selects base gear before drawing its narrative variant", () => {
+  const draws = [0.75, 0.99];
+  const result = generateLootgenResult({
+    mundanePool: [
+      { sourceType: "gear", sourceId: "book", name: "Книга", value: 1, stackable: true, narrativeVariants: [variantA, variantB] },
+      { sourceType: "gear", sourceId: "rope", name: "Верёвка", value: 1, stackable: true }
+    ],
+    itemCount: 1,
+    budgetValue: 1,
+    includeCoins: false,
+    random: () => draws.shift()
+  });
+
+  assert.equal(result.rows[0].sourceId, "rope");
+  assert.equal(result.rows[0].narrativeVariantId, undefined);
+  assert.equal(draws.length, 1, "no narrative draw is consumed for ordinary gear");
+});
+
+test("narrative selection keeps one non-stackable row", () => {
+  const result = generateLootgenResult({
+    mundanePool: [{
+      sourceType: "gear",
+      sourceId: "book",
+      name: "Книга",
+      value: 10,
+      stackable: true,
+      narrativeVariants: [variantA, variantB]
+    }],
+    itemCount: 1,
+    budgetValue: 20,
+    includeCoins: false,
+    random: () => 0.999999
+  });
+
+  assert.equal(result.rows.length, 1);
+  assert.equal(result.rows[0].narrativeVariantId, variantB.variantId);
+  assert.equal(result.rows[0].narrativeTitle, variantB.title);
+  assert.equal(result.rows[0].narrativeDescription, variantB.description);
+  assert.equal(result.rows[0].quantity, 1);
+  assert.equal(result.rows[0].stackable, false);
+  assert.equal(result.spentValue, 10);
+});
+
+test("coins never consume the requested ordinary item row limit", () => {
+  const result = generateLootgenResult({
+    mundanePool: [
+      { sourceType: "gear", sourceId: "mednaya-moneta", name: "Coin", value: 1 },
+      ...Array.from({ length: 5 }, (_, i) => ({ sourceType: "gear", sourceId: `ordinary-${i}`, name: `Ordinary ${i}`, value: 10, stackable: false }))
+    ],
+    budgetValue: 100, itemCount: 5, includeCoins: true, random: () => 0
+  });
+  assert.equal(result.rows.length, 5);
+  assert.equal(result.coins.totalCopper, 50);
+  assert.equal(result.spentValue, 50);
+});
+
+test("disabled currency excludes canonical coin candidates without matching ordinary names", () => {
+  const coin = { sourceType: "gear", sourceId: "zolotaya-moneta", name: "Золотая монета", value: 200 };
+  assert.throws(() => generateLootgenResult({ mundanePool: [coin], budgetValue: 1000, includeCoins: false }), /нет доступных предметов/u);
+  const ordinary = generateLootgenResult({ mundanePool: [{ ...coin, sourceId: "coin-shaped-medallion" }], budgetValue: 200, includeCoins: false });
+  assert.equal(ordinary.rows[0].sourceId, "coin-shaped-medallion");
+});
+
 test("lootgen generator normalizes a reusable form snapshot", () => {
   assert.deepEqual(normalizeLootgenForm({
     rankMin: "4",
@@ -22,11 +114,20 @@ test("lootgen generator normalizes a reusable form snapshot", () => {
     itemCount: 3,
     optimalItemQuantity: 4,
     budgetValue: 0,
+    coinBudgetPercent: 0,
     magicPercent: 25,
     brokenEquipmentChance: 0,
     includeGear: false,
     includeMagicItems: true,
     includeCoins: true,
+    enableFilledContainers: false,
+    filledContainerChance: 0,
+    generationDepth: 1,
+    enableUpgrades: false,
+    upgradeChance: 0,
+    maxUpgradesPerItem: 1,
+    upgradeTypes: [],
+    upgradeRanks: [],
     gearTypeFilters: { weapon: true, invalid: false },
     magicTypeFilters: { wand: false }
   });
@@ -37,6 +138,33 @@ test("lootgen generator normalizes the soft quantity target", () => {
   assert.equal(normalizeLootgenForm({ optimalItemQuantity: "7" }).optimalItemQuantity, 7);
   assert.equal(normalizeLootgenForm({ optimalItemQuantity: 0 }).optimalItemQuantity, 1);
 });
+
+test("coin reserve is bounded and missing legacy values preserve the old budget", () => {
+  assert.equal(normalizeLootgenForm({}).coinBudgetPercent, 0);
+  assert.equal(normalizeLootgenForm({ coinBudgetPercent: "20" }).coinBudgetPercent, 20);
+  assert.equal(normalizeLootgenForm({ coinBudgetPercent: -1 }).coinBudgetPercent, 0);
+  assert.equal(normalizeLootgenForm({ coinBudgetPercent: 101 }).coinBudgetPercent, 100);
+  assert.equal(normalizeLootgenForm({ coinBudgetPercent: "invalid" }).coinBudgetPercent, 0);
+});
+
+for (const scenario of [
+  { percent: 20, includeCoins: true, spent: 800, coins: 201 },
+  { percent: 100, includeCoins: true, spent: 0, coins: 1001 },
+  { percent: 0, includeCoins: true, spent: 1000, coins: 1 },
+  { percent: 20, includeCoins: false, spent: 1000, coins: 0 }
+]) {
+  test(`lootgen reserves ${scenario.percent}% for coins when enabled=${scenario.includeCoins}`, () => {
+    const result = generateLootgenResult({
+      mundanePool: [{ sourceType: "gear", sourceId: "ration", name: "Рацион", value: 100, multipleAppearance: "1", stackable: true }],
+      budgetValue: 1001, itemCount: 1, coinBudgetPercent: scenario.percent,
+      includeCoins: scenario.includeCoins, random: () => 0.5
+    });
+    assert.equal(result.spentValue, scenario.spent);
+    assert.equal(result.coins.totalCopper, scenario.coins);
+    assert.equal(result.totalItems, scenario.spent / 100);
+    assert.ok(result.spentValue + result.coins.totalCopper <= 1001);
+  });
+}
 
 test("lootgen rolls an authored package formula once for a valueless source", () => {
   const result = generateLootgenResult({

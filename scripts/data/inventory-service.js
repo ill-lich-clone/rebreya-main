@@ -1,8 +1,14 @@
-﻿import {
+import { ItemInstanceWorkflow, itemInstanceFingerprint } from "../application/item-instance-workflow.js?v=1.4.249-item-instances";
+import { RUNTIME_ITEM_GRAPH_FLAG, captureRuntimeItemGraph, buildRuntimeGraphDocuments, materializeRuntimeItemGraph } from "./runtime-item-graph.js?v=1.4.267-native-schema";
+import { INVENTORY_GRAPH_TRANSFER_KIND, isInventoryGraphItem, transferInventoryGraph } from "../application/inventory-graph-transfer.js?v=1.4.280";
+import { readLootgenPreparedComposition } from "./lootgen-prepared-item.js?v=1.4.268";
+import { ItemInstanceDocuments } from "../infrastructure/foundry/item-instance-documents.js?v=1.4.249-item-instances";
+import {
   DOWNTIME_ITEM_TYPE,
   ENERGY_BASE_DAYS,
   ENERGY_MIN_DAYS,
   GEAR_COMPENDIUM_NAME,
+  LOOTGEN_TEMPLATE_ITEM_TYPE,
   MAGIC_ITEMS_COMPENDIUM_NAME,
   MATERIALS_COMPENDIUM_NAME,
   MODULE_ID,
@@ -13,13 +19,29 @@ import {
   GROUP_CONTEXT_ERRORS,
   getGroupMemberActors,
   isManagedPartyGroup,
-  normalizeGroupTransportState
+  normalizeGroupTransportState,
+  resolveGroupMemberActor
 } from "./group-context-service.js";
-import { DurableMutationJournal } from "../application/durable-mutation-journal.js";
+import { DurableMutationJournal } from "../application/durable-mutation-journal.js?v=1.4.249-item-instances";
 import { WorldMutationCoordinator } from "../application/world-mutation-coordinator.js";
 import { finiteNumber as toNumber } from "../shared/foundry-values.js";
+import { buildActorInventoryWeightSnapshot, buildInventoryStorageProfile } from "./inventory-weight.js?v=1.4.237";
 import { buildDurabilitySignature, isDurabilityEligible } from "./durability-rules.js";
-import { applyLootgenRowDurability } from "./lootgen-durability.js";
+import {
+  getInventoryDismantleBlockReason,
+  resolveInventoryDismantleMinimumQuantity,
+  resolveInventoryDismantleOutputs
+} from "./inventory-ingress-descriptor.js?v=1.4.268";
+import {
+  InventoryIngressRuleError,
+  findInventoryIngressRuleConflicts,
+  normalizeInventoryIngressRule,
+  normalizeInventoryIngressRuleState
+} from "./inventory-ingress-rules.js";
+import { applyLootgenRowDurability } from "./lootgen-durability.js?v=1.4.154-corpse-storage-broken-name";
+import { applyLootgenNarrativeVariant, hasLootgenNarrative } from "./lootgen-narrative-catalog.js?v=1.4.317";
+import { formatDurabilityItemName } from "./durability-item-presentation.js?v=1.4.154-broken-item-name";
+import { isJournalRecordItem } from "./journal-record-item.js?v=1.4.217-journal-record-items";
 import {
   buildTransportFuelInventorySnapshot,
   normalizeTransportFuelSelector
@@ -28,6 +50,26 @@ import {
   normalizeTransportFuelConsumption,
   resolveTransportFuelConsumption
 } from "./transport-fuel-consumption.js";
+import {
+  INVENTORY_FOLDER_STATE_VERSION,
+  InventoryFolderStateError,
+  createInventoryFolder as createInventoryFolderState,
+  deleteInventoryFolder as deleteInventoryFolderState,
+  moveInventoryFolder as moveInventoryFolderState,
+  moveInventoryItemToFolder as moveInventoryItemToFolderState,
+  normalizeExpandedFolderIds,
+  normalizePinnedFolderIds,
+  normalizeInventoryFolderState,
+  selectInventoryFolderItemIds,
+  setInventoryFolderColor as setInventoryFolderColorState,
+  renameInventoryFolder as renameInventoryFolderState
+} from "./inventory-folder-tree.js?v=1.4.318";
+import {
+  appendInventoryAcquisitionEntry,
+  readInventoryAcquisitionHistory,
+  writeInventoryAcquisitionHistory
+} from "./inventory-acquisition-history.js?v=1.4.318";
+import { resolveGearItemIcon } from "./gear-icon-resolver.js?v=1.4.327";
 
 const SOCKET_CHANNEL = `module.${MODULE_ID}`;
 export const SOCKET_EVENT_INVENTORY_IMPORT_REQUEST = "inventory-import-request";
@@ -38,10 +80,23 @@ export const SOCKET_EVENT_INVENTORY_ITEM_ACTION_REQUEST = "inventory-item-action
 export const SOCKET_EVENT_INVENTORY_ITEM_ACTION_RESULT = "inventory-item-action-result";
 export const INVENTORY_TAKE_COMMAND = "inventory.take";
 export const INVENTORY_SALE_COMMAND = "inventory.sale";
+export const INVENTORY_DISMANTLE_COMMAND = "inventory.dismantle";
 export const INVENTORY_IMPORT_COMMAND = "inventory.import";
 export const INVENTORY_CURRENCY_UPDATE_COMMAND = "inventory.currency.update";
 export const INVENTORY_CURRENCY_CONVERT_COMMAND = "inventory.currency.convert";
+export const INVENTORY_FOLDER_CREATE_COMMAND = "inventory.folder.create";
+export const INVENTORY_FOLDER_COLOR_COMMAND = "inventory.folder.set-color";
+export const INVENTORY_FOLDER_RENAME_COMMAND = "inventory.folder.rename";
+export const INVENTORY_FOLDER_MOVE_COMMAND = "inventory.folder.move";
+export const INVENTORY_FOLDER_DELETE_COMMAND = "inventory.folder.delete";
+export const INVENTORY_FOLDER_BATCH_COMMAND = "inventory.folder.batch";
+export const INVENTORY_ITEM_FOLDER_MOVE_COMMAND = "inventory.item.folder.move";
+export const INVENTORY_INGRESS_RULE_CREATE_COMMAND = "inventory.ingress-rule.create";
+export const INVENTORY_INGRESS_RULE_UPDATE_COMMAND = "inventory.ingress-rule.update";
+export const INVENTORY_INGRESS_RULE_DELETE_COMMAND = "inventory.ingress-rule.delete";
 export const GROUP_TRANSPORT_REPLACE_STATE_COMMAND = "group.transport.replaceState";
+const INVENTORY_FOLDER_UI_FLAG = "inventoryFolderUi";
+const INVENTORY_FOLDER_UI_STATE_VERSION = 2;
 const DEFAULT_PARTY_ACTOR_NAME = "Инвентарь группы Rebreya";
 const DEFAULT_PARTY_ACTOR_IMAGE = "icons/svg/item-bag.svg";
 const LOOTGEN_CHAT_ACTOR_NAME = "Лут Rebreya";
@@ -169,6 +224,15 @@ function cleanId(value) {
   return String(value ?? "").trim();
 }
 
+function normalizeInventoryFolderTarget(value) {
+  if (value === null || value === undefined) return null;
+  const folderId = cleanId(value);
+  if (!folderId) {
+    throw new Error("Inventory folder target must be a non-empty string or null.");
+  }
+  return folderId;
+}
+
 function createInventoryMutationId(prefix, requestedId = "") {
   const explicit = cleanId(requestedId);
   if (explicit) {
@@ -198,6 +262,14 @@ function normalizeInventoryMutationJournal(value) {
 
 function inventoryQuantitiesMatch(left, right) {
   return Math.abs(toNumber(left, 0) - toNumber(right, 0)) <= 1e-9;
+}
+
+function inventoryAcquisitionHistoriesMatch(left, right) {
+  return JSON.stringify(readInventoryAcquisitionHistory({
+    flags: { [MODULE_ID]: { inventoryAcquisitionHistory: left } }
+  })) === JSON.stringify(readInventoryAcquisitionHistory({
+    flags: { [MODULE_ID]: { inventoryAcquisitionHistory: right } }
+  }));
 }
 
 function roundCraftQuantity(value) {
@@ -470,6 +542,12 @@ function isItemDocument(document) {
     || Boolean(document.id && document.system && document.parent);
 }
 
+function assertPhysicalInventoryItem(itemDocument) {
+  if (itemDocument?.type === LOOTGEN_TEMPLATE_ITEM_TYPE) {
+    throw new Error("Шаблон Lootgen является конфигурацией и не может быть помещён в инвентарь.");
+  }
+}
+
 async function resolveUuid(uuid) {
   const safeUuid = cleanId(uuid);
   if (!safeUuid || typeof globalThis.fromUuid !== "function") {
@@ -522,6 +600,30 @@ export function itemsCanRepresentSameTransfer(sourceItem, acceptedItem) {
     : sourceData.type === acceptedData.type
       && normalizeText(sourceData.name) === normalizeText(acceptedData.name);
   return Boolean(sameSource)
+    && durabilityTransferSignature(sourceItem) === durabilityTransferSignature(acceptedItem);
+}
+
+function inventoryStackIdentity(item) {
+  const itemData = item?.toObject?.() ?? item;
+  const flags = itemData?.flags?.[MODULE_ID] ?? {};
+  const identities = [
+    ["gear", flags.gearId],
+    ["material", flags.materialId],
+    ["magicItem", flags.magicItemId],
+    ["good", flags.linkedGoodId]
+  ];
+  const identity = identities.find(([, value]) => cleanId(value));
+  return identity ? `${identity[0]}:${cleanId(identity[1])}` : "";
+}
+
+function itemsCanMergeInInventory(sourceItem, acceptedItem) {
+  if (hasLootgenNarrative(sourceItem) || hasLootgenNarrative(acceptedItem)) return false;
+  const sourceIdentity = inventoryStackIdentity(sourceItem);
+  const acceptedIdentity = inventoryStackIdentity(acceptedItem);
+  const sameStack = sourceIdentity || acceptedIdentity
+    ? Boolean(sourceIdentity && acceptedIdentity && sourceIdentity === acceptedIdentity)
+    : itemsCanRepresentSameTransfer(sourceItem, acceptedItem);
+  return sameStack
     && durabilityTransferSignature(sourceItem) === durabilityTransferSignature(acceptedItem);
 }
 
@@ -620,10 +722,20 @@ const LEGACY_CORE_ICON_REPLACEMENTS = new Map([
   ["icons/consumables/food/bowl-oatmeal-brown.webp", FOOD_SUPPLY_ICON],
   ["icons/consumables/water/waterskin-leather-blue.webp", WATER_SUPPLY_ICON]
 ]);
+const INVENTORY_ICON_PLACEHOLDERS = new Set([
+  "icons/svg/item-bag.svg",
+  "icons/svg/item-bag.svg",
+  "systems/dnd5e/icons/svg/items/loot.svg"
+]);
 
 function normalizeInventoryIconPath(value) {
   const path = String(value ?? "").trim();
   return LEGACY_CORE_ICON_REPLACEMENTS.get(path) ?? path;
+}
+
+function isUsableInventoryIcon(value) {
+  const path = normalizeInventoryIconPath(value);
+  return Boolean(path) && !INVENTORY_ICON_PLACEHOLDERS.has(path);
 }
 
 function normalizeInventorySourceType(value) {
@@ -650,6 +762,10 @@ function normalizeInventorySourceType(value) {
 
   if (["custom", "other", "прочее"].includes(compact)) {
     return "custom";
+  }
+
+  if (["manual", "manualentry", "textentry", "ручной", "текстоваязапись"].includes(compact)) {
+    return "manual";
   }
 
   return "";
@@ -1462,6 +1578,58 @@ function isMagicalInventoryItem(itemData) {
     || Boolean(dnd5eFlags.magical || dnd5eFlags.isMagical || dnd5eFlags.isMagic || dnd5eFlags.magic);
 }
 
+export function resolveInventorySaleQuote(itemData, quantity = 1) {
+  const currentQuantity = getRawQuantity(itemData);
+  const sellQuantity = currentQuantity > 0
+    ? Math.max(0.01, Math.min(currentQuantity, roundNumber(toNumber(quantity, 1), 2)))
+    : 0;
+  const unitCopper = priceToCopper(foundry.utils.getProperty(itemData, "system.price") ?? {});
+  if (isMagicalInventoryItem(itemData)) {
+    return {
+      eligible: false,
+      code: "magical-item",
+      message: "Магические предметы нельзя продать через партийный склад.",
+      quantity: sellQuantity,
+      unitCopper,
+      multiplier: 0,
+      gainedCopper: 0
+    };
+  }
+  const multiplier = foundry.utils.getProperty(itemData, "system.type.value") === "treasure" ? 1 : 0.5;
+  if (currentQuantity <= 0) {
+    return {
+      eligible: false,
+      code: "invalid-quantity",
+      message: "Inventory item quantity must be greater than zero to sell it.",
+      quantity: 0,
+      unitCopper,
+      multiplier,
+      gainedCopper: 0
+    };
+  }
+  const gainedCopper = Math.floor(unitCopper * sellQuantity * multiplier);
+  if (unitCopper <= 0 || gainedCopper <= 0) {
+    return {
+      eligible: false,
+      code: "no-price",
+      message: "У предмета нет цены для продажи.",
+      quantity: sellQuantity,
+      unitCopper,
+      multiplier,
+      gainedCopper: 0
+    };
+  }
+  return {
+    eligible: true,
+    code: "sellable",
+    message: "",
+    quantity: sellQuantity,
+    unitCopper,
+    multiplier,
+    gainedCopper
+  };
+}
+
 function normalizeToolId(value) {
   const text = normalizeText(value);
   if (!text) {
@@ -1746,6 +1914,8 @@ export class InventoryService {
       writeState: (state) => game.settings.set(MODULE_ID, SETTINGS_KEYS.INVENTORY_MUTATION_JOURNAL, state),
       normalizeState: normalizeInventoryMutationJournal
     });
+    this.simpleMutationFingerprints = new Map();
+    this.simpleIngressExecutions = new Map();
   }
 
   #normalizeMemberState(member, fallbackRole = "member") {
@@ -1982,7 +2152,7 @@ export class InventoryService {
     }
   }
 
-  #resolveRecipientCharacter(actorId = "") {
+  #resolveRecipientCharacter(actorId = "", groupActor = null) {
     const safeActorId = cleanId(actorId);
     const explicitActor = safeActorId ? game.actors?.get?.(safeActorId) ?? null : null;
     const controlledActors = (globalThis.canvas?.tokens?.controlled ?? [])
@@ -1998,11 +2168,16 @@ export class InventoryService {
       throw new Error("Не выбран персонаж для получения предмета. Назначьте персонажа пользователю или выберите токен персонажа.");
     }
 
+    const memberActor = resolveGroupMemberActor(groupActor, actor);
+    if (isManagedPartyGroup(groupActor) && !memberActor) {
+      throw new Error("Персонаж для получения предмета не входит в выбранную группу.");
+    }
+
     if (!game.user?.isGM && actor.isOwner === false) {
       throw new Error("У вас нет прав на персонажа, который получает предмет.");
     }
 
-    return actor;
+    return memberActor ?? actor;
   }
 
   #assertInventoryActionSocketAvailable(actor) {
@@ -2068,12 +2243,87 @@ export class InventoryService {
     if (record.result?.ok === false) {
       const error = new Error(record.result.error || "Inventory mutation was compensated.");
       error.code = record.result.code || "inventory-mutation-failed";
+      if (record.result.details && typeof record.result.details === "object") {
+        error.details = foundry.utils.deepClone(record.result.details);
+        Object.assign(error, foundry.utils.deepClone(record.result.details));
+      }
       throw error;
     }
     return {
       terminal: true,
       value: foundry.utils.deepClone(record.result?.value)
     };
+  }
+
+  #simpleMutationFingerprint(operationType, request) {
+    return JSON.stringify({ operationType, ...request });
+  }
+
+  #claimSimpleMutationFingerprint(operationId, fingerprint) {
+    const current = this.simpleMutationFingerprints.get(operationId);
+    if (current && current !== fingerprint) {
+      const error = new Error(`Inventory mutation '${operationId}' conflicts with another request.`);
+      error.code = "mutation-conflict";
+      throw error;
+    }
+    if (!current) {
+      this.simpleMutationFingerprints.set(operationId, fingerprint);
+      while (this.simpleMutationFingerprints.size > 256) {
+        this.simpleMutationFingerprints.delete(this.simpleMutationFingerprints.keys().next().value);
+      }
+    }
+  }
+
+  #assertSimpleMutationRecord(record, fingerprint) {
+    if (record?.kind === "inventory-simple-v1" && cleanId(record.fingerprint) === fingerprint) {
+      return;
+    }
+    const error = new Error(`Inventory mutation '${record?.id ?? ""}' conflicts with the simple transfer request.`);
+    error.code = "mutation-conflict";
+    throw error;
+  }
+
+  #simpleTransferError(code, message, details = {}) {
+    const error = new Error(message);
+    error.code = code;
+    error.details = foundry.utils.deepClone(details);
+    Object.assign(error, foundry.utils.deepClone(details));
+    return error;
+  }
+
+  async #recordSimpleTerminal(record, result) {
+    try {
+      this.#assertSourceDepletionAuthority();
+      await this.mutationJournal.recordTerminal(record, result);
+      this.#assertSourceDepletionAuthority();
+      return { auditPersisted: true, auditError: null };
+    }
+    catch (auditError) {
+      return { auditPersisted: false, auditError };
+    }
+  }
+
+  async #finishSimpleFailure(record, error, details = {}) {
+    const code = cleanId(error?.code) || "inventory-transfer-failed";
+    const message = cleanId(error?.message) || "Inventory transfer failed.";
+    const outcomeDetails = {
+      inventoryTransferMode: "simple",
+      ...foundry.utils.deepClone(details)
+    };
+    const audit = await this.#recordSimpleTerminal(record, {
+      ok: false,
+      code,
+      error: message,
+      details: outcomeDetails
+    });
+    const failure = this.#simpleTransferError(code, message, {
+      ...outcomeDetails,
+      ...(audit.auditPersisted ? {} : {
+        auditPersisted: false,
+        auditWarning: cleanId(audit.auditError?.message) || "Inventory audit outcome was not persisted."
+      })
+    });
+    throw failure;
   }
 
   #inventoryReconciliationError(message) {
@@ -2687,19 +2937,276 @@ export class InventoryService {
     }
   }
 
-  #takeInventoryItemFromActor(inventoryActor, itemId, targetActor, quantity = 1, options = {}) {
-    return this.mutationCoordinator.run(
+  async #takeInventoryItemFromActor(inventoryActor, itemId, targetActor, quantity = 1, options = {}) {
+    const operationId = createInventoryMutationId("inventory-take", options.mutationId);
+    const fingerprint = this.#simpleMutationFingerprint("take", {
+      sourceActorId: cleanId(inventoryActor?.id),
+      sourceItemId: cleanId(itemId),
+      targetActorId: cleanId(targetActor?.id),
+      quantity: Math.max(0.01, roundNumber(toNumber(quantity, 1), 2))
+    });
+    this.#claimSimpleMutationFingerprint(operationId, fingerprint);
+    const record = await this.mutationJournal.find(operationId);
+    if (record?.kind === INVENTORY_GRAPH_TRANSFER_KIND || isInventoryGraphItem(inventoryActor, inventoryActor.items.get(itemId))) {
+      return this.mutationCoordinator.run("inventory", () => this.#executeTakeInventoryItem(inventoryActor, itemId, targetActor, quantity,
+        { ...options, mutationId: operationId, fingerprint }));
+    }
+    return this.mutationCoordinator.runIdempotent(
       "inventory",
-      () => this.#executeTakeInventoryItem(inventoryActor, itemId, targetActor, quantity, options)
+      `inventory-simple:take:${operationId}:${fingerprint}`,
+      () => this.#executeTakeInventoryItem(inventoryActor, itemId, targetActor, quantity, {
+        ...options,
+        mutationId: operationId,
+        fingerprint
+      })
     );
   }
 
-  async #executeTakeInventoryItem(inventoryActor, itemId, targetActor, quantity = 1, { mutationId = "" } = {}) {
+  async #executeTakeInventoryItem(inventoryActor, itemId, targetActor, quantity = 1, {
+    mutationId = "",
+    fingerprint = ""
+  } = {}) {
     if (!isActorDocument(targetActor) || targetActor.type !== "character") {
       throw new Error("Предмет можно забрать только в лист персонажа.");
     }
     const operationId = createInventoryMutationId("inventory-take", mutationId);
-    let record = await this.mutationJournal.find(operationId);
+    const existing = await this.mutationJournal.find(operationId);
+    if (existing?.kind === INVENTORY_GRAPH_TRANSFER_KIND) {
+      return transferInventoryGraph({ source: inventoryActor, target: targetActor, itemId, quantity, operationId, fingerprint,
+        journal: this.mutationJournal, assertAuthority: () => this.#assertSourceDepletionAuthority(), record: existing });
+    }
+    if (existing?.kind !== "inventory-simple-v1") {
+      if (existing) {
+        return this.#executeLegacyTakeInventoryItem(
+          inventoryActor,
+          itemId,
+          targetActor,
+          quantity,
+          { mutationId: operationId },
+          existing
+        );
+      }
+    }
+    else {
+      this.#assertSimpleMutationRecord(existing, fingerprint);
+      const terminal = this.#readInventoryTerminal(existing);
+      if (terminal.terminal) return terminal.value;
+      throw this.#simpleTransferError(
+        "transfer-manual-review",
+        "Inventory transfer has an incomplete simple terminal record.",
+        { operationId, sourceActorId: inventoryActor.id, targetActorId: targetActor.id }
+      );
+    }
+
+    this.#assertSourceDepletionAuthority();
+    const orphanedTarget = this.#findMutationItem(targetActor, operationId);
+    if (orphanedTarget) {
+      throw this.#simpleTransferError(
+        "transfer-manual-review",
+        "Inventory target exists without a terminal transfer outcome; verify source and recipient manually.",
+        {
+          operationId,
+          sourceActorId: inventoryActor.id,
+          targetActorId: targetActor.id,
+          sourceItemId: cleanId(itemId),
+          targetItemId: orphanedTarget.id
+        }
+      );
+    }
+    const item = this.#getInventoryItem(inventoryActor, itemId);
+    const pendingGraphs = await this.mutationJournal.listPending();
+    if (pendingGraphs.some(record => record.kind === INVENTORY_GRAPH_TRANSFER_KIND && record.sourceActorId === inventoryActor.id
+      && record.graph.nodes.some(node => node._id === itemId))) throw this.#simpleTransferError("graph-manual-review", "Сначала завершите перенос дерева этого предмета.");
+    if (item.flags?.[MODULE_ID]?.installedUpgrade?.hostItemId) throw this.#simpleTransferError("installed-upgrade", "Сначала снимите усовершенствование с предмета.");
+    if (isInventoryGraphItem(inventoryActor, item)) {
+      return transferInventoryGraph({ source: inventoryActor, target: targetActor, itemId, quantity, operationId, fingerprint,
+        journal: this.mutationJournal, assertAuthority: () => this.#assertSourceDepletionAuthority() });
+    }
+    const itemData = sanitizeEmbeddedItemData(item.toObject());
+    const beforeQuantity = getRawQuantity(itemData);
+    if (beforeQuantity <= 0) {
+      throw new Error("Inventory item quantity must be greater than zero to take it.");
+    }
+    const takeQuantity = Math.max(0.01, Math.min(beforeQuantity, roundNumber(toNumber(quantity, 1), 2)));
+    const sourceReceipt = {
+      itemId: item.id,
+      beforeQuantity,
+      afterQuantity: roundNumber(beforeQuantity - takeQuantity, 2),
+      delta: takeQuantity
+    };
+    foundry.utils.setProperty(itemData, "system.quantity", takeQuantity);
+    foundry.utils.setProperty(itemData, `flags.${MODULE_ID}.${INVENTORY_MUTATION_FLAG}`, {
+      id: operationId,
+      kind: "take"
+    });
+    const terminalRecord = {
+      id: operationId,
+      kind: "inventory-simple-v1",
+      phase: "committed",
+      fingerprint,
+      operationType: "take",
+      sourceActorId: inventoryActor.id,
+      targetActorId: targetActor.id
+    };
+
+    let createdItem = this.#findMutationItem(targetActor, operationId);
+    if (createdItem) {
+      await this.#finishSimpleFailure(
+        terminalRecord,
+        this.#simpleTransferError(
+          "transfer-manual-review",
+          "Inventory target already exists without a terminal transfer outcome."
+        ),
+        {
+          operationId,
+          sourceActorId: inventoryActor.id,
+          targetActorId: targetActor.id,
+          sourceItemId: item.id,
+          targetItemId: createdItem.id,
+          expectedSourceQuantity: beforeQuantity,
+          expectedTargetQuantity: takeQuantity
+        }
+      );
+    }
+
+    try {
+      this.#assertSourceDepletionAuthority();
+      [createdItem] = await targetActor.createEmbeddedDocuments("Item", [itemData], {
+        renderSheet: false
+      });
+      this.#assertSourceDepletionAuthority();
+    }
+    catch (error) {
+      this.#assertSourceDepletionAuthority();
+      createdItem = this.#findMutationItem(targetActor, operationId);
+      if (!createdItem) {
+        await this.#finishSimpleFailure(terminalRecord, error, {
+          operationId,
+          sourceActorId: inventoryActor.id,
+          targetActorId: targetActor.id,
+          sourceItemId: item.id
+        });
+      }
+    }
+    if (!createdItem
+      || !inventoryQuantitiesMatch(getRawQuantity(createdItem.toObject()), takeQuantity)) {
+      await this.#finishSimpleFailure(
+        terminalRecord,
+        this.#simpleTransferError(
+          "transfer-manual-review",
+          "Created inventory target could not be verified."
+        ),
+        {
+          operationId,
+          sourceActorId: inventoryActor.id,
+          targetActorId: targetActor.id,
+          sourceItemId: item.id,
+          targetItemId: createdItem?.id ?? "",
+          expectedTargetQuantity: takeQuantity
+        }
+      );
+    }
+
+    try {
+      this.#assertSourceDepletionAuthority();
+      await this.#applySourceReceipt(inventoryActor, sourceReceipt);
+      this.#assertSourceDepletionAuthority();
+    }
+    catch (debitError) {
+      const sourceState = this.#sourceReceiptState(inventoryActor, sourceReceipt);
+      if (!sourceState.before) {
+        await this.#finishSimpleFailure(
+          terminalRecord,
+          this.#simpleTransferError(
+            "transfer-manual-review",
+            "Inventory transfer requires manual review after source quantity drift."
+          ),
+          {
+            operationId,
+            sourceActorId: inventoryActor.id,
+            targetActorId: targetActor.id,
+            sourceItemId: item.id,
+            targetItemId: createdItem.id,
+            sourceBeforeQuantity: beforeQuantity,
+            sourceAfterQuantity: sourceReceipt.afterQuantity,
+            targetExpectedQuantity: takeQuantity,
+            debitError: cleanId(debitError?.message)
+          }
+        );
+      }
+      try {
+        this.#assertSourceDepletionAuthority();
+        await this.#compensateCreatedMutationItem(targetActor, operationId, takeQuantity);
+        this.#assertSourceDepletionAuthority();
+      }
+      catch (rollbackError) {
+        await this.#finishSimpleFailure(
+          terminalRecord,
+          this.#simpleTransferError(
+            "transfer-manual-review",
+            "Inventory transfer requires manual review after source debit failure."
+          ),
+          {
+            operationId,
+            sourceActorId: inventoryActor.id,
+            targetActorId: targetActor.id,
+            sourceItemId: item.id,
+            targetItemId: createdItem.id,
+            sourceBeforeQuantity: beforeQuantity,
+            sourceAfterQuantity: sourceReceipt.afterQuantity,
+            targetExpectedQuantity: takeQuantity,
+            debitError: cleanId(debitError?.message),
+            rollbackError: cleanId(rollbackError?.message)
+          }
+        );
+      }
+      await this.#finishSimpleFailure(
+        terminalRecord,
+        this.#simpleTransferError(
+          "transfer-failed-compensated",
+          cleanId(debitError?.message) || "Inventory source debit failed and target credit was rolled back."
+        ),
+        {
+          operationId,
+          sourceActorId: inventoryActor.id,
+          targetActorId: targetActor.id,
+          sourceItemId: item.id,
+          sourceBeforeQuantity: beforeQuantity,
+          sourceAfterQuantity: sourceReceipt.afterQuantity,
+          targetItemId: createdItem.id
+        }
+      );
+    }
+
+    const result = {
+      itemName: item.name,
+      quantity: takeQuantity,
+      actorId: targetActor.id,
+      sourceActorId: inventoryActor.id,
+      createdItemId: createdItem.id,
+      inventoryTransferMode: "simple"
+    };
+    const audit = await this.#recordSimpleTerminal(terminalRecord, { ok: true, value: result });
+    if (!audit.auditPersisted) {
+      return {
+        ...foundry.utils.deepClone(result),
+        auditPersisted: false,
+        auditWarning: cleanId(audit.auditError?.message) || "Inventory audit outcome was not persisted."
+      };
+    }
+    return foundry.utils.deepClone(result);
+  }
+
+  async #executeLegacyTakeInventoryItem(
+    inventoryActor,
+    itemId,
+    targetActor,
+    quantity = 1,
+    { mutationId = "" } = {},
+    existingRecord = null
+  ) {
+    const operationId = createInventoryMutationId("inventory-take", mutationId);
+    let record = existingRecord;
     if (!record) {
       const item = this.#getInventoryItem(inventoryActor, itemId);
       const itemData = sanitizeEmbeddedItemData(item.toObject());
@@ -2826,19 +3333,15 @@ export class InventoryService {
     if (!record) {
       const item = this.#getInventoryItem(inventoryActor, itemId);
       const itemData = item.toObject();
-      if (isMagicalInventoryItem(itemData)) {
-        throw new Error("Магические предметы нельзя продать через партийный склад.");
+      const quote = resolveInventorySaleQuote(itemData, quantity);
+      if (!quote.eligible) {
+        const error = new Error(quote.message);
+        error.code = quote.code;
+        throw error;
       }
       const currentQuantity = getRawQuantity(itemData);
-      if (currentQuantity <= 0) {
-        throw new Error("Inventory item quantity must be greater than zero to sell it.");
-      }
-      const sellQuantity = Math.max(0.01, Math.min(currentQuantity, roundNumber(toNumber(quantity, 1), 2)));
-      const unitCopper = priceToCopper(foundry.utils.getProperty(itemData, "system.price") ?? {});
-      const gainedCopper = Math.floor((unitCopper * sellQuantity) / 2);
-      if (gainedCopper <= 0) {
-        throw new Error("У предмета нет цены для продажи.");
-      }
+      const sellQuantity = quote.quantity;
+      const gainedCopper = quote.gainedCopper;
       const beforeCopper = actorCurrencyToCopper(inventoryActor);
       record = await this.mutationJournal.start({
         id: operationId,
@@ -2942,6 +3445,574 @@ export class InventoryService {
     return foundry.utils.deepClone(result);
   }
 
+  async #applyDismantleTargetReceipt(actor, operationId, record) {
+    const receipt = record.targetReceipt;
+    const hasAcquisitionHistory = receipt.beforeAcquisitionHistory?.version === 1
+      && receipt.afterAcquisitionHistory?.version === 1;
+    const hasRecordedRouting = Object.hasOwn(record, "destinationFolderId");
+    const destinationFolderId = normalizeInventoryFolderTarget(record.destinationFolderId);
+    let folderState = null;
+    if (hasRecordedRouting) {
+      folderState = this.#readInventoryFolderState(actor);
+      if ((destinationFolderId && !folderState.folders.some((folder) => folder.id === destinationFolderId))
+        || normalizeInventoryFolderTarget(receipt?.folderId) !== destinationFolderId) {
+        throw this.#inventoryReconciliationError("Inventory dismantle destination folder disappeared.");
+      }
+    }
+    let item = receipt.created
+      ? this.#findMutationItem(actor, operationId)
+      : actor.items.get(receipt.itemId);
+    if (receipt.created) {
+      if (!item) {
+        try {
+          [item] = await actor.createEmbeddedDocuments("Item", [record.materialItemData]);
+        }
+        catch (error) {
+          item = this.#findMutationItem(actor, operationId);
+          if (!item) throw error;
+        }
+      }
+    }
+    else {
+      if (!item) throw this.#inventoryReconciliationError("Inventory dismantle material target disappeared.");
+      if (hasRecordedRouting
+        && normalizeInventoryFolderTarget(folderState.itemFolderIds[item.id]) !== destinationFolderId) {
+        throw this.#inventoryReconciliationError("Inventory dismantle material moved to another folder.");
+      }
+      const currentData = item.toObject();
+      const currentQuantity = getRawQuantity(currentData);
+      const currentHistory = readInventoryAcquisitionHistory(currentData);
+      const quantityIsBefore = inventoryQuantitiesMatch(currentQuantity, receipt.beforeQuantity);
+      const quantityIsAfter = inventoryQuantitiesMatch(currentQuantity, receipt.afterQuantity);
+      const historyIsBefore = !hasAcquisitionHistory || inventoryAcquisitionHistoriesMatch(
+        currentHistory,
+        receipt.beforeAcquisitionHistory
+      );
+      const historyIsAfter = !hasAcquisitionHistory || inventoryAcquisitionHistoriesMatch(
+        currentHistory,
+        receipt.afterAcquisitionHistory
+      );
+      if (!(quantityIsAfter && historyIsAfter)) {
+        if (!(quantityIsBefore && historyIsBefore)) {
+          throw this.#inventoryReconciliationError("Inventory dismantle material quantity changed.");
+        }
+        const patch = { "system.quantity": receipt.afterQuantity };
+        if (hasAcquisitionHistory) {
+          patch[`flags.${MODULE_ID}.inventoryAcquisitionHistory`] = receipt.afterAcquisitionHistory;
+        }
+        try {
+          await item.update(patch);
+        }
+        catch (error) {
+          const observed = item.toObject();
+          if (!inventoryQuantitiesMatch(getRawQuantity(observed), receipt.afterQuantity)
+            || (hasAcquisitionHistory && !inventoryAcquisitionHistoriesMatch(
+              readInventoryAcquisitionHistory(observed),
+              receipt.afterAcquisitionHistory
+            ))) throw error;
+        }
+      }
+    }
+    const observedTarget = item?.toObject?.() ?? {};
+    if (!item
+      || !inventoryQuantitiesMatch(getRawQuantity(observedTarget), receipt.afterQuantity)
+      || (hasAcquisitionHistory && !inventoryAcquisitionHistoriesMatch(
+        readInventoryAcquisitionHistory(observedTarget),
+        receipt.afterAcquisitionHistory
+      ))) {
+      throw this.#inventoryReconciliationError("Inventory dismantle material credit was not observed.");
+    }
+    if (hasRecordedRouting) {
+      folderState = this.#readInventoryFolderState(actor);
+      if (destinationFolderId && !folderState.folders.some((folder) => folder.id === destinationFolderId)) {
+        throw this.#inventoryReconciliationError("Inventory dismantle destination folder disappeared.");
+      }
+      const currentFolderId = normalizeInventoryFolderTarget(folderState.itemFolderIds[item.id]);
+      if (currentFolderId && currentFolderId !== destinationFolderId) {
+        throw this.#inventoryReconciliationError("Inventory dismantle material moved to another folder.");
+      }
+      if (destinationFolderId && !currentFolderId) {
+        const nextFolderState = moveInventoryItemToFolderState(folderState, {
+          itemId: item.id,
+          folderId: destinationFolderId
+        });
+        try {
+          await this.#writeInventoryFolderState(actor, nextFolderState);
+        }
+        catch (error) {
+          if (JSON.stringify(this.#readInventoryFolderState(actor)) !== JSON.stringify(nextFolderState)) throw error;
+        }
+      }
+    }
+    return item;
+  }
+
+  async #prepareDismantleRouting(inventoryActor, sourceItem, materialItemData, outputQuantity) {
+    const folderState = this.#readInventoryFolderState(inventoryActor);
+    const sourceFolderId = normalizeInventoryFolderTarget(folderState.itemFolderIds[cleanId(sourceItem?.id)]);
+
+    const planner = this.moduleApi.inventoryIngressPlanner;
+    if (!planner || typeof planner.preview !== "function") {
+      throw this.#inventoryReconciliationError("Inventory dismantle routing planner is unavailable.");
+    }
+    const sourceKey = `dismantle:${cleanId(sourceItem.id)}`;
+    const preview = await planner.preview({
+      groupActorId: cleanId(inventoryActor.id),
+      requestedFolderId: sourceFolderId,
+      rows: [{
+        sourceKey,
+        quantity: outputQuantity,
+        itemData: foundry.utils.deepClone(materialItemData),
+        legacyFolderId: sourceFolderId,
+        container: null
+      }],
+      batch: true
+    });
+    const rulesRevision = Number(preview?.rulesRevision);
+    const row = Array.isArray(preview?.rows) && preview.rows.length === 1
+      ? preview.rows[0]
+      : null;
+    const actionType = cleanId(row?.action?.type);
+    if (cleanId(preview?.groupActorId) !== cleanId(inventoryActor.id)
+      || cleanId(row?.sourceKey) !== sourceKey
+      || !Number.isSafeInteger(rulesRevision)
+      || rulesRevision < 0) {
+      throw this.#inventoryReconciliationError("Inventory dismantle routing preview is invalid.");
+    }
+
+    let outcome = "";
+    let destinationFolderId = null;
+    if (actionType === "folder") {
+      destinationFolderId = cleanId(row.action.folderId);
+      outcome = "folder";
+    }
+    else if (actionType === "skip") {
+      outcome = "skip";
+    }
+    else if (actionType === "legacy") {
+      destinationFolderId = sourceFolderId;
+      outcome = "fallback";
+    }
+    else {
+      throw this.#inventoryReconciliationError("Inventory dismantle routing produced a forbidden action.");
+    }
+    if (destinationFolderId
+      && !folderState.folders.some((folder) => folder.id === destinationFolderId)) {
+      throw this.#inventoryReconciliationError("Inventory dismantle routing target folder was not found.");
+    }
+    return {
+      sourceFolderId,
+      rulesRevision,
+      matchedRuleId: cleanId(row.matchedRuleId) || null,
+      outcome,
+      destinationFolderId
+    };
+  }
+
+  async #compensateDismantleTargetReceipt(actor, operationId, record) {
+    const receipt = record.targetReceipt;
+    const hasAcquisitionHistory = receipt.beforeAcquisitionHistory?.version === 1
+      && receipt.afterAcquisitionHistory?.version === 1;
+    let item = receipt.created
+      ? this.#findMutationItem(actor, operationId)
+      : actor.items.get(receipt.itemId);
+    if (!item) {
+      if (receipt.created) return;
+      throw this.#inventoryReconciliationError("Inventory dismantle material target disappeared before compensation.");
+    }
+    const currentData = item.toObject();
+    const currentQuantity = getRawQuantity(currentData);
+    const currentHistory = readInventoryAcquisitionHistory(currentData);
+    if (receipt.created) {
+      if (!inventoryQuantitiesMatch(currentQuantity, receipt.afterQuantity)
+        || (hasAcquisitionHistory && !inventoryAcquisitionHistoriesMatch(
+          currentHistory,
+          receipt.afterAcquisitionHistory
+        ))) {
+        throw this.#inventoryReconciliationError("Created dismantle material changed before compensation.");
+      }
+      try {
+        await item.delete();
+      }
+      catch (error) {
+        item = this.#findMutationItem(actor, operationId);
+        if (item) throw error;
+      }
+      if (this.#findMutationItem(actor, operationId)) {
+        throw this.#inventoryReconciliationError("Created dismantle material still exists after compensation.");
+      }
+      return;
+    }
+    const quantityIsBefore = inventoryQuantitiesMatch(currentQuantity, receipt.beforeQuantity);
+    const quantityIsAfter = inventoryQuantitiesMatch(currentQuantity, receipt.afterQuantity);
+    const historyIsBefore = !hasAcquisitionHistory || inventoryAcquisitionHistoriesMatch(
+      currentHistory,
+      receipt.beforeAcquisitionHistory
+    );
+    const historyIsAfter = !hasAcquisitionHistory || inventoryAcquisitionHistoriesMatch(
+      currentHistory,
+      receipt.afterAcquisitionHistory
+    );
+    if (quantityIsBefore && historyIsBefore) return;
+    if (!(quantityIsAfter && historyIsAfter)) {
+      throw this.#inventoryReconciliationError("Merged dismantle material changed before compensation.");
+    }
+    const patch = { "system.quantity": receipt.beforeQuantity };
+    if (hasAcquisitionHistory) {
+      patch[`flags.${MODULE_ID}.inventoryAcquisitionHistory`] = receipt.beforeAcquisitionHistory;
+    }
+    try {
+      await item.update(patch);
+    }
+    catch (error) {
+      const observed = item.toObject();
+      if (!inventoryQuantitiesMatch(getRawQuantity(observed), receipt.beforeQuantity)
+        || (hasAcquisitionHistory && !inventoryAcquisitionHistoriesMatch(
+          readInventoryAcquisitionHistory(observed),
+          receipt.beforeAcquisitionHistory
+        ))) throw error;
+    }
+    const observed = item.toObject();
+    if (!inventoryQuantitiesMatch(getRawQuantity(observed), receipt.beforeQuantity)
+      || (hasAcquisitionHistory && !inventoryAcquisitionHistoriesMatch(
+        readInventoryAcquisitionHistory(observed),
+        receipt.beforeAcquisitionHistory
+      ))) {
+      throw this.#inventoryReconciliationError("Merged dismantle material was not restored by compensation.");
+    }
+  }
+
+  async #repairLegacyFractionalDismantleMutations(actor) {
+    const actorId = cleanId(actor?.id);
+    const state = normalizeInventoryMutationJournal(
+      game.settings.get(MODULE_ID, SETTINGS_KEYS.INVENTORY_MUTATION_JOURNAL)
+    );
+    const fractionalRecords = state.records.filter((record) => {
+      const afterQuantity = Number(record?.targetReceipt?.afterQuantity);
+      return record?.kind === "dismantle"
+        && record?.phase === "prepared"
+        && cleanId(record?.actorId) === actorId
+        && Number.isFinite(afterQuantity)
+        && afterQuantity > 0
+        && !Number.isSafeInteger(afterQuantity);
+    });
+    const records = fractionalRecords
+      .filter((record) => record?.terminal !== true)
+      .reverse();
+    const missingMergeWasCreatedByLegacyCredit = (record) => {
+      const receipt = record?.targetReceipt ?? {};
+      const materialIdentity = inventoryStackIdentity(record?.materialItemData);
+      if (!materialIdentity) return false;
+      return fractionalRecords.some((candidate) => {
+        const candidateReceipt = candidate?.targetReceipt ?? {};
+        const candidateId = cleanId(candidate?.id);
+        return candidateReceipt.created === true
+          && candidateId
+          && (candidate?.terminal !== true
+            || candidate?.result?.code === "legacy-fractional-dismantle-repaired")
+          && cleanId(candidate?.request?.actorId) === actorId
+          && cleanId(candidate?.request?.itemId) === cleanId(record?.request?.itemId)
+          && Number(candidate?.request?.quantity) === Number(record?.request?.quantity)
+          && cleanId(candidate?.sourceReceipt?.itemId) === cleanId(record?.sourceReceipt?.itemId)
+          && inventoryQuantitiesMatch(
+            candidate?.sourceReceipt?.beforeQuantity,
+            record?.sourceReceipt?.beforeQuantity
+          )
+          && inventoryQuantitiesMatch(
+            candidate?.sourceReceipt?.afterQuantity,
+            record?.sourceReceipt?.afterQuantity
+          )
+          && inventoryQuantitiesMatch(candidate?.sourceReceipt?.delta, record?.sourceReceipt?.delta)
+          && inventoryStackIdentity(candidate?.materialItemData) === materialIdentity
+          && inventoryQuantitiesMatch(
+            Math.max(0, Math.round(Number(candidateReceipt.afterQuantity))),
+            receipt.beforeQuantity
+          )
+          && !this.#findMutationItem(actor, candidateId);
+      });
+    };
+
+    for (const record of records) {
+      const recordId = cleanId(record.id);
+      if (!recordId
+        || cleanId(record.request?.actorId) !== actorId
+        || cleanId(record.request?.itemId) !== cleanId(record.sourceReceipt?.itemId)) {
+        throw this.#inventoryReconciliationError("Legacy fractional dismantle record has an invalid request scope.");
+      }
+      const sourceState = this.#sourceReceiptState(actor, record.sourceReceipt);
+      if (!sourceState.before) {
+        throw this.#inventoryReconciliationError(
+          `Legacy fractional dismantle '${recordId}' source changed before repair.`
+        );
+      }
+
+      const receipt = record.targetReceipt;
+      const coercedAfterQuantity = Math.max(0, Math.round(Number(receipt.afterQuantity)));
+      let targetItem = receipt.created
+        ? this.#findMutationItem(actor, recordId)
+        : actor.items.get(cleanId(receipt.itemId));
+      if (receipt.created) {
+        if (targetItem) {
+          if (!inventoryQuantitiesMatch(getRawQuantity(targetItem.toObject()), coercedAfterQuantity)) {
+            throw this.#inventoryReconciliationError(
+              `Legacy fractional dismantle '${record.id}' created target changed before repair.`
+            );
+          }
+          try {
+            await targetItem.delete();
+          }
+          catch (error) {
+            targetItem = this.#findMutationItem(actor, recordId);
+            if (targetItem) throw error;
+          }
+          if (this.#findMutationItem(actor, recordId)) {
+            throw this.#inventoryReconciliationError(
+              `Legacy fractional dismantle '${record.id}' created target still exists after repair.`
+            );
+          }
+        }
+      }
+      else {
+        if (!targetItem) {
+          if (!missingMergeWasCreatedByLegacyCredit(record)) {
+            throw this.#inventoryReconciliationError(
+              `Legacy fractional dismantle '${record.id}' merge target disappeared before repair.`
+            );
+          }
+        }
+        else {
+          const currentQuantity = getRawQuantity(targetItem.toObject());
+          if (!inventoryQuantitiesMatch(currentQuantity, receipt.beforeQuantity)) {
+            if (!inventoryQuantitiesMatch(currentQuantity, coercedAfterQuantity)) {
+              throw this.#inventoryReconciliationError(
+                `Legacy fractional dismantle '${record.id}' merge target changed before repair.`
+              );
+            }
+            try {
+              await targetItem.update({ "system.quantity": receipt.beforeQuantity });
+            }
+            catch (error) {
+              if (!inventoryQuantitiesMatch(getRawQuantity(targetItem.toObject()), receipt.beforeQuantity)) throw error;
+            }
+            if (!inventoryQuantitiesMatch(getRawQuantity(targetItem.toObject()), receipt.beforeQuantity)) {
+              throw this.#inventoryReconciliationError(
+                `Legacy fractional dismantle '${record.id}' merge target was not restored.`
+              );
+            }
+          }
+        }
+      }
+
+      await this.mutationJournal.finish(recordId, {
+        ok: false,
+        code: "legacy-fractional-dismantle-repaired",
+        error: "Legacy fractional dismantle credit was compensated before retry."
+      });
+    }
+  }
+
+  #dismantleInventoryItemFromActor(inventoryActor, itemId, quantity = 1, options = {}) {
+    return this.mutationCoordinator.run(
+      "inventory",
+      async () => {
+        await this.#repairLegacyFractionalDismantleMutations(inventoryActor);
+        return this.#executeDismantleInventoryItem(inventoryActor, itemId, quantity, options);
+      }
+    );
+  }
+
+  async #executeDismantleInventoryItem(inventoryActor, itemId, quantity = 1, { mutationId = "" } = {}) {
+    const operationId = createInventoryMutationId("inventory-dismantle", mutationId);
+    const requestedQuantity = Math.max(1, Math.floor(toNumber(quantity, 1)));
+    const request = {
+      actorId: cleanId(inventoryActor?.id),
+      itemId: cleanId(itemId),
+      quantity: requestedQuantity
+    };
+    let record = await this.mutationJournal.find(operationId);
+    if (record && JSON.stringify(record.request ?? null) !== JSON.stringify(request)) {
+      throw new Error("Inventory dismantle mutation ID was reused with a different request.");
+    }
+    if (!record) {
+      const item = this.#getInventoryItem(inventoryActor, itemId);
+      const model = await this.moduleApi.getModel();
+      const itemData = item.toObject();
+      const blockReason = getInventoryDismantleBlockReason(itemData);
+      if (blockReason) throw new Error(blockReason);
+      const currentQuantity = getRawQuantity(itemData);
+      const breakQuantity = Math.max(1, Math.min(currentQuantity, requestedQuantity));
+      const minimumQuantity = resolveInventoryDismantleMinimumQuantity(itemData, { model });
+      if (minimumQuantity !== null && breakQuantity < minimumQuantity) {
+        throw new Error(
+          `Из выбранного количества не получается целой единицы материала. Нужно разобрать минимум ${minimumQuantity} шт.`
+        );
+      }
+      const [output] = resolveInventoryDismantleOutputs(itemData, breakQuantity, { model });
+      const material = output
+        ? model.materialById?.get(output.sourceId) ?? null
+        : null;
+      if (!output || !material) {
+        throw new Error("Для этого предмета не найден подходящий материал.");
+      }
+      let materialItemData = await this.#applyCatalogItemIcon(
+        this.#buildMaterialItemData(material, output.quantity)
+      );
+      const routing = await this.#prepareDismantleRouting(
+        inventoryActor,
+        item,
+        materialItemData,
+        output.quantity
+      );
+      if (routing.outcome === "skip") {
+        record = await this.mutationJournal.start({
+          id: operationId,
+          kind: "dismantle",
+          phase: "committed",
+          request,
+          actorId: inventoryActor.id,
+          itemName: item.name,
+          materialName: material.name,
+          materialWeight: 0,
+          sourceFolderId: routing.sourceFolderId,
+          rulesRevision: routing.rulesRevision,
+          matchedRuleId: routing.matchedRuleId,
+          routingOutcome: routing.outcome,
+          destinationFolderId: null,
+          materialItemData,
+          sourceReceipt: {
+            itemId: item.id,
+            beforeQuantity: currentQuantity,
+            afterQuantity: currentQuantity,
+            delta: 0
+          },
+          targetReceipt: null
+        });
+        const skippedResult = {
+          itemName: record.itemName,
+          breakQuantity: 0,
+          materialName: record.materialName,
+          materialWeight: 0,
+          skipped: true,
+          code: "ingress-skip"
+        };
+        await this.mutationJournal.finish(operationId, { ok: true, value: skippedResult });
+        return foundry.utils.deepClone(skippedResult);
+      }
+      const folderState = this.#readInventoryFolderState(inventoryActor);
+      if (normalizeInventoryFolderTarget(folderState.itemFolderIds[item.id]) !== routing.sourceFolderId
+        || (routing.destinationFolderId
+          && !folderState.folders.some((folder) => folder.id === routing.destinationFolderId))) {
+        throw this.#inventoryReconciliationError("Inventory dismantle folder state changed during preparation.");
+      }
+      const target = this.#findInventoryMergeCandidate(inventoryActor, materialItemData, {
+        folderState,
+        folderId: routing.destinationFolderId,
+        scoped: true
+      });
+      const targetBeforeQuantity = target ? getRawQuantity(target.toObject()) : 0;
+      const beforeAcquisitionHistory = readInventoryAcquisitionHistory(target?.toObject?.() ?? {});
+      const afterAcquisitionHistory = appendInventoryAcquisitionEntry(
+        beforeAcquisitionHistory,
+        this.#buildDismantleAcquisitionEntry(itemData, item.id, item.name, output.quantity)
+      );
+      materialItemData = writeInventoryAcquisitionHistory(materialItemData, afterAcquisitionHistory);
+      if (!target) {
+        foundry.utils.setProperty(materialItemData, `flags.${MODULE_ID}.${INVENTORY_MUTATION_FLAG}`, {
+          id: operationId,
+          kind: "dismantle"
+        });
+      }
+      record = await this.mutationJournal.start({
+        id: operationId,
+        kind: "dismantle",
+        phase: "prepared",
+        request,
+        actorId: inventoryActor.id,
+        itemName: item.name,
+        materialName: material.name,
+        materialWeight: output.quantity,
+        sourceFolderId: routing.sourceFolderId,
+        rulesRevision: routing.rulesRevision,
+        matchedRuleId: routing.matchedRuleId,
+        routingOutcome: routing.outcome,
+        destinationFolderId: routing.destinationFolderId,
+        materialItemData,
+        sourceReceipt: {
+          itemId: item.id,
+          beforeQuantity: currentQuantity,
+          afterQuantity: roundNumber(currentQuantity - breakQuantity, 2),
+          delta: breakQuantity
+        },
+        targetReceipt: {
+          itemId: target?.id ?? "",
+          created: !target,
+          beforeQuantity: targetBeforeQuantity,
+          afterQuantity: roundNumber(targetBeforeQuantity + output.quantity, 2),
+          delta: output.quantity,
+          folderId: routing.destinationFolderId,
+          beforeAcquisitionHistory,
+          afterAcquisitionHistory
+        }
+      });
+    }
+
+    const terminal = this.#readInventoryTerminal(record);
+    if (terminal.terminal) return terminal.value;
+    if (record.phase === "prepared") {
+      const targetItem = await this.#applyDismantleTargetReceipt(inventoryActor, operationId, record);
+      record = await this.mutationJournal.checkpoint(operationId, "prepared", "target-credited", {
+        targetItemId: targetItem.id
+      });
+    }
+    if (record.phase === "target-credited") {
+      await this.#applyDismantleTargetReceipt(inventoryActor, operationId, record);
+      try {
+        await this.#applySourceReceipt(inventoryActor, record.sourceReceipt);
+      }
+      catch (error) {
+        try {
+          await this.#compensateDismantleTargetReceipt(inventoryActor, operationId, record);
+          record = await this.mutationJournal.checkpoint(operationId, "target-credited", "compensated", {
+            failure: { code: error.code ?? "source-debit-failed", message: error.message }
+          });
+          await this.mutationJournal.finish(operationId, {
+            ok: false,
+            code: error.code ?? "source-debit-failed",
+            error: error.message
+          });
+        }
+        catch (compensationError) {
+          try {
+            await this.mutationJournal.checkpoint(operationId, "target-credited", "reconciliation-required", {
+              failure: { code: error.code ?? "source-debit-failed", message: error.message },
+              compensationFailure: {
+                code: compensationError.code ?? "target-compensation-failed",
+                message: compensationError.message
+              }
+            });
+          }
+          catch {
+            // Preserve the compound failure below.
+          }
+          throw new AggregateError([error, compensationError], "Inventory dismantle and compensation both failed.");
+        }
+        throw error;
+      }
+      record = await this.mutationJournal.checkpoint(operationId, "target-credited", "source-debited");
+    }
+    if (record.phase === "source-debited") {
+      record = await this.mutationJournal.checkpoint(operationId, "source-debited", "committed");
+    }
+    const result = {
+      itemName: record.itemName,
+      breakQuantity: record.sourceReceipt.delta,
+      materialName: record.materialName,
+      materialWeight: record.materialWeight
+    };
+    await this.mutationJournal.finish(operationId, { ok: true, value: result });
+    return foundry.utils.deepClone(result);
+  }
+
   async #writeState(mutator, { guard } = {}) {
     guard?.();
     if (!this.canManagePartyInventory()) {
@@ -2978,13 +4049,6 @@ export class InventoryService {
 
     const [created] = await actor.createEmbeddedDocuments("Item", [buildSupplyItemData(resourceKey, 0)]);
     return created ?? null;
-  }
-
-  #getInventoryWeight(actor) {
-    return roundNumber(actor.items.contents.reduce((sum, item) => {
-      const itemData = item.toObject();
-      return sum + (getRawQuantity(itemData) * getItemWeight(itemData));
-    }, 0), 2);
   }
 
   #isNativeGroupInventoryActor(actor) {
@@ -3028,8 +4092,1058 @@ export class InventoryService {
     }
   }
 
-  #findInventoryMergeCandidate(actor, itemData) {
-    return actor?.items?.contents?.find((candidate) => itemsCanRepresentSameTransfer(candidate, itemData)) ?? null;
+  #findInventoryMergeCandidate(actor, itemData, {
+    folderState = null,
+    folderId = null,
+    scoped = false
+  } = {}) {
+    if (itemData?.flags?.[MODULE_ID]?.[RUNTIME_ITEM_GRAPH_FLAG]) return null;
+    const normalizedFolderId = normalizeInventoryFolderTarget(folderId);
+    return actor?.items?.contents?.find((candidate) => {
+      if (!itemsCanMergeInInventory(candidate, itemData)) return false;
+      if (!scoped) return true;
+      const candidateFolderId = cleanId(folderState?.itemFolderIds?.[cleanId(candidate?.id)]) || null;
+      return candidateFolderId === normalizedFolderId;
+    }) ?? null;
+  }
+
+  #findInventoryIngressMutationItem(actor, mutationId, sourceKey, outputIndex = undefined) {
+    return actor?.items?.contents?.find((item) => {
+      const marker = item?.getFlag?.(MODULE_ID, INVENTORY_MUTATION_FLAG)
+        ?? item?.flags?.[MODULE_ID]?.[INVENTORY_MUTATION_FLAG]
+        ?? {};
+      return cleanId(marker.id) === mutationId
+        && marker.kind === "ingress"
+        && cleanId(marker.sourceKey) === sourceKey
+        && (outputIndex === undefined || Number(marker.outputIndex) === outputIndex);
+    }) ?? null;
+  }
+
+  #assertInventoryIngressBatchRecord(record, fingerprint) {
+    if (record?.kind !== "ingress-batch" || record?.fingerprint !== fingerprint) {
+      throw new InventoryIngressRuleError(
+        "mutation-conflict",
+        `Inventory ingress batch '${record?.id ?? ""}' has a different request.`
+      );
+    }
+  }
+
+  #buildInventoryAcquisitionEntry({ sourceOrigin, sourceRow, quantity, context = {} }) {
+    const methodByOrigin = {
+      lootgen: "lootgen",
+      storage: "storage",
+      import: "transfer",
+      "public-model": "manual",
+      "manual-entry": "manual"
+    };
+    const method = methodByOrigin[sourceOrigin] ?? "other";
+    const manual = method === "manual";
+    const worldTime = Number(globalThis.game?.time?.worldTime);
+    return {
+      recordedAt: Date.now(),
+      worldTime: Number.isFinite(worldTime) ? worldTime : null,
+      quantity,
+      method,
+      sceneId: cleanId(context.sceneId),
+      sceneName: cleanId(context.sceneName),
+      sourceType: manual ? "user" : cleanId(context.sourceType || sourceOrigin),
+      sourceId: manual
+        ? cleanId(context.userId)
+        : cleanId(context.sourceId || sourceRow?.sourceKey),
+      sourceName: manual
+        ? "Ручное добавление"
+        : cleanId(context.sourceName || sourceRow?.itemData?.name || sourceOrigin),
+      detail: manual ? cleanId(context.userName) : cleanId(context.detail)
+    };
+  }
+
+  #buildDismantleAcquisitionEntry(sourceItemData, sourceItemId, sourceItemName, quantity) {
+    const inherited = readInventoryAcquisitionHistory(sourceItemData).entries[0] ?? null;
+    const detail = [inherited?.sceneName, inherited?.sourceName]
+      .map(cleanId)
+      .filter(Boolean)
+      .join(" — ");
+    const worldTime = Number(globalThis.game?.time?.worldTime);
+    return {
+      recordedAt: Date.now(),
+      worldTime: Number.isFinite(worldTime) ? worldTime : null,
+      quantity,
+      method: "dismantle",
+      sceneId: cleanId(inherited?.sceneId),
+      sceneName: cleanId(inherited?.sceneName),
+      sourceType: "item",
+      sourceId: cleanId(sourceItemId),
+      sourceName: `Разбор — ${cleanId(sourceItemName)}`,
+      detail
+    };
+  }
+
+  #inventoryIngressDerivedRow(previewRow, sourceRow, overrideToRoot, sourceOrigin, acquisitionContext) {
+    const action = previewRow.action;
+    const effectiveType = overrideToRoot ? "root" : action.type;
+    const derivedFolderId = effectiveType === "folder" || effectiveType === "legacy"
+      ? normalizeInventoryFolderTarget(action.folderId)
+      : null;
+    return {
+      sourceKey: previewRow.sourceKey,
+      sourceIdentity: foundry.utils.deepClone(previewRow.identity),
+      itemData: foundry.utils.deepClone(sourceRow.itemData),
+      ...(this.#nativeImportRows.has(sourceRow) ? { nativeImportSource: foundry.utils.deepClone(this.#nativeImportRows.get(sourceRow)) } : {}),
+      container: foundry.utils.deepClone(sourceRow.container),
+      quantity: previewRow.quantity,
+      acquisition: this.#buildInventoryAcquisitionEntry({
+        sourceOrigin,
+        sourceRow,
+        quantity: previewRow.quantity,
+        context: acquisitionContext
+      }),
+      matchedRuleId: previewRow.matchedRuleId,
+      overrideToRoot,
+      action: foundry.utils.deepClone(action),
+      effectiveType,
+      derivedFolderId,
+      dismantlePreview: foundry.utils.deepClone(previewRow.dismantlePreview ?? []),
+      phase: effectiveType === "skip" ? "committed" : "prepared",
+      targetReceipts: []
+    };
+  }
+
+  async #prepareInventoryIngressTargetReceipts(actor, folderState, record, row, model) {
+    const operationId = record.id;
+    if (row.itemData?.flags?.[MODULE_ID]?.[RUNTIME_ITEM_GRAPH_FLAG] && row.effectiveType === "dismantle") {
+      throw new InventoryIngressRuleError("dismantle-unavailable", "Составной предмет нельзя разобрать при подборе. Выберите перенос целиком.");
+    }
+    if (row.container && row.effectiveType === "dismantle" && row.dismantlePreview.length === 0) {
+      throw new InventoryIngressRuleError(
+        "dismantle-unavailable",
+        `Portable container '${row.sourceKey}' cannot be dismantled.`
+      );
+    }
+    const targetRows = row.effectiveType === "dismantle"
+      ? row.dismantlePreview.map((output) => {
+          const material = model?.materialById?.get?.(cleanId(output.sourceId)) ?? null;
+          if (!material) {
+            throw this.#inventoryReconciliationError(
+              `Inventory ingress material '${cleanId(output.sourceId)}' is no longer available.`
+            );
+          }
+          return {
+            itemData: this.#buildMaterialItemData(material, output.quantity),
+            quantity: output.quantity,
+            folderId: null,
+            scoped: true,
+            acquisition: this.#buildDismantleAcquisitionEntry(
+              row.itemData,
+              row.itemData?._id ?? row.itemData?.id ?? row.sourceKey,
+              row.itemData?.name,
+              output.quantity
+            )
+          };
+        })
+      : row.container
+        ? [{
+          container: foundry.utils.deepClone(row.container),
+          quantity: 1,
+          folderId: row.derivedFolderId,
+          scoped: row.effectiveType !== "legacy",
+          acquisition: foundry.utils.deepClone(row.acquisition)
+        }]
+        : [{
+          itemData: foundry.utils.deepClone(row.itemData),
+          quantity: row.quantity,
+          folderId: row.derivedFolderId,
+          scoped: row.effectiveType !== "legacy",
+          acquisition: foundry.utils.deepClone(row.acquisition)
+        }];
+
+    for (const target of targetRows) {
+      if (target.itemData) {
+        target.itemData = await this.#applyCatalogItemIcon(target.itemData);
+      }
+    }
+
+    return targetRows.map((target, outputIndex) => {
+      if (target.container) {
+        const beforeAcquisitionHistory = readInventoryAcquisitionHistory({});
+        const afterAcquisitionHistory = appendInventoryAcquisitionEntry(
+          beforeAcquisitionHistory,
+          { ...target.acquisition, quantity: 1 }
+        );
+        return {
+          outputIndex,
+          container: foundry.utils.deepClone(target.container),
+          itemId: "",
+          created: true,
+          beforeQuantity: 0,
+          afterQuantity: 1,
+          delta: 1,
+          beforeAcquisitionHistory,
+          afterAcquisitionHistory,
+          folderId: target.folderId,
+          scoped: target.scoped
+        };
+      }
+      let itemData = sanitizeEmbeddedItemData(target.itemData);
+      foundry.utils.setProperty(itemData, "system.quantity", target.quantity);
+      const candidate = this.#findInventoryMergeCandidate(actor, itemData, {
+        folderState,
+        folderId: target.folderId,
+        scoped: target.scoped
+      });
+      const beforeQuantity = candidate ? getRawQuantity(candidate.toObject()) : 0;
+      const beforeAcquisitionHistory = readInventoryAcquisitionHistory(candidate?.toObject?.() ?? {});
+      const afterAcquisitionHistory = appendInventoryAcquisitionEntry(
+        beforeAcquisitionHistory,
+        { ...target.acquisition, quantity: target.quantity }
+      );
+      itemData = writeInventoryAcquisitionHistory(itemData, afterAcquisitionHistory);
+      if (!candidate) {
+        foundry.utils.setProperty(itemData, `flags.${MODULE_ID}.${INVENTORY_MUTATION_FLAG}`, {
+          id: operationId,
+          kind: "ingress",
+          sourceKey: row.sourceKey,
+          outputIndex
+        });
+      }
+      const runtimeGraph = itemData.flags?.[MODULE_ID]?.[RUNTIME_ITEM_GRAPH_FLAG];
+      const graphItemIds = runtimeGraph
+        ? buildRuntimeGraphDocuments(runtimeGraph, `${operationId}:${row.sourceKey}:${outputIndex}`, itemData, { actorId: actor.id }).documents.map(data => data._id)
+        : null;
+      return {
+        outputIndex,
+        itemData,
+        ...(graphItemIds ? { graphItemIds } : {}),
+        itemId: candidate?.id ?? "",
+        created: !candidate,
+        beforeQuantity,
+        afterQuantity: roundNumber(beforeQuantity + target.quantity, 2),
+        delta: target.quantity,
+        beforeAcquisitionHistory,
+        afterAcquisitionHistory,
+        folderId: target.folderId,
+        scoped: target.scoped
+      };
+    });
+  }
+
+  async #applyInventoryIngressTargetReceipt(actor, record, row, receipt, grantContainer = null) {
+    const runtimeGraph = receipt.itemData?.flags?.[MODULE_ID]?.[RUNTIME_ITEM_GRAPH_FLAG];
+    if (runtimeGraph) {
+      const graphOperationId = `${record.id}:${row.sourceKey}:${receipt.outputIndex}`;
+      if (receipt.graphItemIds) {
+        const expectedIds = buildRuntimeGraphDocuments(runtimeGraph, graphOperationId, receipt.itemData, { actorId: actor.id }).documents.map(data => data._id);
+        if (JSON.stringify(receipt.graphItemIds) !== JSON.stringify(expectedIds)) throw this.#inventoryReconciliationError("Prepared graph document IDs changed.");
+      }
+      const recoverMissing = (record.sourceOrigin === "lootgen" && record.allowPreparedLootgenGraph === true
+        && Boolean(readLootgenPreparedComposition(receipt.itemData)))
+        || (record.sourceOrigin === "import" && Boolean(row.nativeImportSource));
+      const root = await materializeRuntimeItemGraph(actor, runtimeGraph, graphOperationId, receipt.itemData, { recoverMissing });
+      return root.id;
+    }
+    if (receipt.container) {
+      if (typeof grantContainer !== "function") {
+        throw new InventoryIngressRuleError(
+          "container-grant-unavailable",
+          "Portable inventory ingress requires a container grant adapter."
+        );
+      }
+      const root = await grantContainer({
+        actor,
+        container: foundry.utils.deepClone(receipt.container),
+        sourceKey: row.sourceKey,
+        mutationId: `${record.id}:${row.sourceKey}`,
+        folderId: receipt.folderId
+      });
+      const itemId = cleanId(root?.id);
+      if (!itemId) throw this.#inventoryReconciliationError("Portable container root was not observed.");
+      const rootHistory = readInventoryAcquisitionHistory(root?.toObject?.() ?? {});
+      if (!inventoryAcquisitionHistoriesMatch(rootHistory, receipt.afterAcquisitionHistory)) {
+        if (!inventoryAcquisitionHistoriesMatch(rootHistory, receipt.beforeAcquisitionHistory)
+          || typeof root?.update !== "function") {
+          throw this.#inventoryReconciliationError("Portable container acquisition history changed.");
+        }
+        try {
+          await root.update({
+            [`flags.${MODULE_ID}.inventoryAcquisitionHistory`]: receipt.afterAcquisitionHistory
+          });
+        }
+        catch (error) {
+          if (!inventoryAcquisitionHistoriesMatch(
+            readInventoryAcquisitionHistory(root?.toObject?.() ?? {}),
+            receipt.afterAcquisitionHistory
+          )) throw error;
+        }
+      }
+      return itemId;
+    }
+    let item = receipt.created
+      ? this.#findInventoryIngressMutationItem(actor, record.id, row.sourceKey, receipt.outputIndex)
+      : actor.items.get(receipt.itemId);
+    const hasAcquisitionHistory = receipt.beforeAcquisitionHistory?.version === 1
+      && receipt.afterAcquisitionHistory?.version === 1;
+    if (receipt.created) {
+      if (!item) {
+        try {
+          [item] = await actor.createEmbeddedDocuments("Item", [receipt.itemData]);
+        }
+        catch (error) {
+          item = this.#findInventoryIngressMutationItem(actor, record.id, row.sourceKey, receipt.outputIndex);
+          if (!item) throw error;
+        }
+      }
+      const itemData = item?.toObject?.() ?? {};
+      if (!inventoryQuantitiesMatch(getRawQuantity(itemData), receipt.afterQuantity)
+        || (hasAcquisitionHistory && !inventoryAcquisitionHistoriesMatch(
+          readInventoryAcquisitionHistory(itemData),
+          receipt.afterAcquisitionHistory
+        ))) {
+        throw this.#inventoryReconciliationError("Inventory ingress created target quantity changed.");
+      }
+    }
+    else {
+      if (!item) throw this.#inventoryReconciliationError("Inventory ingress merge target disappeared.");
+      const currentData = item.toObject();
+      const currentQuantity = getRawQuantity(currentData);
+      const quantityIsBefore = inventoryQuantitiesMatch(currentQuantity, receipt.beforeQuantity);
+      const quantityIsAfter = inventoryQuantitiesMatch(currentQuantity, receipt.afterQuantity);
+      const currentHistory = readInventoryAcquisitionHistory(currentData);
+      const historyIsBefore = !hasAcquisitionHistory || inventoryAcquisitionHistoriesMatch(
+        currentHistory,
+        receipt.beforeAcquisitionHistory
+      );
+      const historyIsAfter = !hasAcquisitionHistory || inventoryAcquisitionHistoriesMatch(
+        currentHistory,
+        receipt.afterAcquisitionHistory
+      );
+      if (!(quantityIsAfter && historyIsAfter)) {
+        if (!(quantityIsBefore && historyIsBefore)) {
+          throw this.#inventoryReconciliationError("Inventory ingress merge target quantity changed.");
+        }
+        const patch = { "system.quantity": receipt.afterQuantity };
+        if (hasAcquisitionHistory) {
+          patch[`flags.${MODULE_ID}.inventoryAcquisitionHistory`] = receipt.afterAcquisitionHistory;
+        }
+        try {
+          await item.update(patch);
+        }
+        catch (error) {
+          const observed = item.toObject();
+          if (!inventoryQuantitiesMatch(getRawQuantity(observed), receipt.afterQuantity)
+            || (hasAcquisitionHistory && !inventoryAcquisitionHistoriesMatch(
+              readInventoryAcquisitionHistory(observed),
+              receipt.afterAcquisitionHistory
+            ))) throw error;
+        }
+      }
+    }
+    if (!item) throw this.#inventoryReconciliationError("Inventory ingress target was not observed.");
+    return item.id;
+  }
+
+  #nativeImportRows = new WeakMap();
+
+  #assertInventoryIngressGraphSource(rows, sourceOrigin, allowPreparedLootgenGraph) {
+    for (const row of rows) {
+      if (!row.itemData?.flags?.[MODULE_ID]?.[RUNTIME_ITEM_GRAPH_FLAG]) continue;
+      if (sourceOrigin === "storage") continue;
+      if (sourceOrigin === "import" && this.#nativeImportRows.has(row)) continue;
+      if (sourceOrigin === "lootgen" && allowPreparedLootgenGraph === true && readLootgenPreparedComposition(row.itemData)) continue;
+      throw new InventoryIngressRuleError("invalid-runtime-graph", "Составной предмет принимается только от доверенного источника хранилища или лута.");
+    }
+  }
+
+  async commitInventoryIngressBatch(request, {
+    resolveRows,
+    debitRow,
+    grantContainer = null,
+    allowPreparedLootgenGraph = false,
+    acquisitionContext = {}
+  } = {}) {
+    const exactKeys = ["groupActorId", "batchMutationId", "sourceOrigin", "serializedPlan"];
+    if (!request || typeof request !== "object" || Array.isArray(request)
+      || Object.keys(request).length !== exactKeys.length
+      || !exactKeys.every((key) => Object.hasOwn(request, key))) {
+      throw new InventoryIngressRuleError("invalid-batch", "Inventory ingress batch request has an invalid shape.");
+    }
+    const groupActorId = cleanId(request.groupActorId);
+    const batchMutationId = cleanId(request.batchMutationId);
+    const sourceOrigin = cleanId(request.sourceOrigin);
+    if (!groupActorId || !batchMutationId
+      || !new Set(["lootgen", "storage", "import", "public-model", "manual-entry"]).has(sourceOrigin)
+      || typeof resolveRows !== "function" || typeof debitRow !== "function") {
+      throw new InventoryIngressRuleError("invalid-batch", "Inventory ingress batch dependencies or identity are invalid.");
+    }
+    if (grantContainer !== null && typeof grantContainer !== "function") {
+      throw new InventoryIngressRuleError("invalid-batch", "Inventory ingress container grant must be a function.");
+    }
+    const planner = this.moduleApi.inventoryIngressPlanner;
+    if (!planner || typeof planner.preview !== "function" || typeof planner.assertParity !== "function") {
+      throw new InventoryIngressRuleError("planner-unavailable", "Inventory ingress planner is unavailable.");
+    }
+    const serializedPlan = foundry.utils.deepClone(request.serializedPlan);
+    const fingerprint = JSON.stringify({ groupActorId, batchMutationId, sourceOrigin, serializedPlan });
+    const operationId = `inventory-ingress:${batchMutationId}`;
+    const existing = await this.mutationJournal.find(operationId);
+    if (existing?.kind === "inventory-simple-v1") {
+      this.#assertSimpleMutationRecord(existing, fingerprint);
+      const terminal = this.#readInventoryTerminal(existing);
+      if (terminal.terminal) return terminal.value;
+      throw this.#simpleTransferError(
+        "transfer-manual-review",
+        "Inventory ingress has an incomplete simple terminal record.",
+        { operationId, groupActorId }
+      );
+    }
+    if (existing) {
+      return this.#commitLegacyInventoryIngressBatch(request, {
+        resolveRows, debitRow, grantContainer, allowPreparedLootgenGraph, acquisitionContext
+      });
+    }
+
+    this.#claimSimpleMutationFingerprint(operationId, fingerprint);
+    const cachedExecution = this.simpleIngressExecutions.get(operationId);
+    if (cachedExecution) {
+      if (cachedExecution.fingerprint !== fingerprint) {
+        throw this.#simpleTransferError(
+          "mutation-conflict",
+          `Inventory mutation '${operationId}' conflicts with another request.`
+        );
+      }
+      const cachedDecision = await cachedExecution.promise;
+      if (cachedDecision.mode === "legacy") {
+        return this.#commitLegacyInventoryIngressBatch(request, {
+          resolveRows, debitRow, grantContainer, allowPreparedLootgenGraph, acquisitionContext
+        });
+      }
+      return cachedDecision.value;
+    }
+    const execution = this.mutationCoordinator.run(
+      "inventory",
+      async () => {
+        const queuedExisting = await this.mutationJournal.find(operationId);
+        if (queuedExisting?.kind === "inventory-simple-v1") {
+          this.#assertSimpleMutationRecord(queuedExisting, fingerprint);
+          const terminal = this.#readInventoryTerminal(queuedExisting);
+          if (terminal.terminal) return { mode: "simple", value: terminal.value };
+          throw this.#simpleTransferError(
+            "transfer-manual-review",
+            "Inventory ingress has an incomplete simple terminal record.",
+            { operationId, groupActorId }
+          );
+        }
+        if (queuedExisting) return { mode: "legacy" };
+
+        const sourceRows = await resolveRows({
+          groupActorId,
+          batchMutationId,
+          sourceOrigin,
+          recovering: false,
+          serializedPlan: foundry.utils.deepClone(serializedPlan)
+        });
+        this.#assertInventoryIngressGraphSource(sourceRows, sourceOrigin, allowPreparedLootgenGraph);
+        const authoritativePreview = await planner.preview({
+          groupActorId,
+          requestedFolderId: serializedPlan?.requestedFolderId ?? null,
+          rows: sourceRows,
+          batch: Array.isArray(sourceRows) && sourceRows.length > 1
+        });
+        planner.assertParity(serializedPlan, authoritativePreview);
+        const sourceByKey = new Map(sourceRows.map((row) => [cleanId(row.sourceKey), row]));
+        const overrideKeys = new Set(serializedPlan.rootOverrideSourceKeys ?? []);
+        const simpleEligible = authoritativePreview.rows.every((previewRow) => {
+          const sourceRow = sourceByKey.get(previewRow.sourceKey);
+          const effectiveType = overrideKeys.has(previewRow.sourceKey) ? "root" : previewRow.action.type;
+          return !sourceRow?.container && !sourceRow?.itemData?.flags?.[MODULE_ID]?.[RUNTIME_ITEM_GRAPH_FLAG] && effectiveType !== "dismantle";
+        });
+        if (!simpleEligible) return { mode: "legacy" };
+
+        return {
+          mode: "simple",
+          value: await this.#commitSimpleInventoryIngressBatch(request, {
+            debitRow,
+            fingerprint,
+            sourceRows,
+            authoritativePreview,
+            acquisitionContext
+          })
+        };
+      }
+    );
+    const executionEntry = { fingerprint, promise: execution, settled: false };
+    this.simpleIngressExecutions.set(operationId, executionEntry);
+    const rememberSettlement = () => {
+      if (this.simpleIngressExecutions.get(operationId) !== executionEntry) return;
+      executionEntry.settled = true;
+      let settledCount = [...this.simpleIngressExecutions.values()]
+        .filter((entry) => entry.settled === true)
+        .length;
+      if (settledCount <= 256) return;
+      for (const [cachedOperationId, cachedEntry] of this.simpleIngressExecutions) {
+        if (cachedEntry.settled !== true) continue;
+        this.simpleIngressExecutions.delete(cachedOperationId);
+        settledCount -= 1;
+        if (settledCount <= 256) break;
+      }
+    };
+    const discardExecution = () => {
+      if (this.simpleIngressExecutions.get(operationId) === executionEntry) {
+        this.simpleIngressExecutions.delete(operationId);
+      }
+    };
+    execution.then(
+      (settledDecision) => settledDecision?.mode === "simple"
+        ? rememberSettlement()
+        : discardExecution(),
+      (error) => error?.inventoryTransferMode === "simple"
+        ? rememberSettlement()
+        : discardExecution()
+    );
+    let decision;
+    try {
+      decision = await execution;
+    }
+    catch (error) {
+      if (error?.inventoryTransferMode !== "simple") {
+        this.simpleIngressExecutions.delete(operationId);
+      }
+      throw error;
+    }
+    if (decision.mode === "legacy") {
+      this.simpleIngressExecutions.delete(operationId);
+      return this.#commitLegacyInventoryIngressBatch(request, {
+        resolveRows, debitRow, grantContainer, allowPreparedLootgenGraph, acquisitionContext
+      });
+    }
+    return decision.value;
+  }
+
+  async #rollbackSimpleInventoryIngressTarget(actor, record, row, receipt) {
+    const hasAcquisitionHistory = receipt.beforeAcquisitionHistory?.version === 1
+      && receipt.afterAcquisitionHistory?.version === 1;
+    if (receipt.created) {
+      let item = this.#findInventoryIngressMutationItem(actor, record.id, row.sourceKey, receipt.outputIndex);
+      if (!item) return;
+      const itemData = item.toObject();
+      if (!inventoryQuantitiesMatch(getRawQuantity(itemData), receipt.afterQuantity)
+        || (hasAcquisitionHistory && !inventoryAcquisitionHistoriesMatch(
+          readInventoryAcquisitionHistory(itemData),
+          receipt.afterAcquisitionHistory
+        ))) {
+        throw this.#inventoryReconciliationError("Inventory ingress created target changed before rollback.");
+      }
+      try {
+        await item.delete();
+      }
+      catch (error) {
+        item = this.#findInventoryIngressMutationItem(actor, record.id, row.sourceKey, receipt.outputIndex);
+        if (item) throw error;
+      }
+      if (this.#findInventoryIngressMutationItem(actor, record.id, row.sourceKey, receipt.outputIndex)) {
+        throw this.#inventoryReconciliationError("Inventory ingress created target still exists after rollback.");
+      }
+      return;
+    }
+
+    const item = actor.items.get(receipt.itemId);
+    if (!item) {
+      throw this.#inventoryReconciliationError("Inventory ingress merge target disappeared before rollback.");
+    }
+    const currentData = item.toObject();
+    const currentQuantity = getRawQuantity(currentData);
+    const currentHistory = readInventoryAcquisitionHistory(currentData);
+    const quantityIsBefore = inventoryQuantitiesMatch(currentQuantity, receipt.beforeQuantity);
+    const quantityIsAfter = inventoryQuantitiesMatch(currentQuantity, receipt.afterQuantity);
+    const historyIsBefore = !hasAcquisitionHistory || inventoryAcquisitionHistoriesMatch(
+      currentHistory,
+      receipt.beforeAcquisitionHistory
+    );
+    const historyIsAfter = !hasAcquisitionHistory || inventoryAcquisitionHistoriesMatch(
+      currentHistory,
+      receipt.afterAcquisitionHistory
+    );
+    if (quantityIsBefore && historyIsBefore) return;
+    if (!(quantityIsAfter && historyIsAfter)) {
+      throw this.#inventoryReconciliationError("Inventory ingress merge target changed before rollback.");
+    }
+    const patch = { "system.quantity": receipt.beforeQuantity };
+    if (hasAcquisitionHistory) {
+      patch[`flags.${MODULE_ID}.inventoryAcquisitionHistory`] = receipt.beforeAcquisitionHistory;
+    }
+    try {
+      await item.update(patch);
+    }
+    catch (error) {
+      const observed = item.toObject();
+      if (!inventoryQuantitiesMatch(getRawQuantity(observed), receipt.beforeQuantity)
+        || (hasAcquisitionHistory && !inventoryAcquisitionHistoriesMatch(
+          readInventoryAcquisitionHistory(observed),
+          receipt.beforeAcquisitionHistory
+        ))) throw error;
+    }
+    const observed = item.toObject();
+    if (!inventoryQuantitiesMatch(getRawQuantity(observed), receipt.beforeQuantity)
+      || (hasAcquisitionHistory && !inventoryAcquisitionHistoriesMatch(
+        readInventoryAcquisitionHistory(observed),
+        receipt.beforeAcquisitionHistory
+      ))) {
+      throw this.#inventoryReconciliationError("Inventory ingress merge target was not restored.");
+    }
+  }
+
+  #inventoryIngressResultRow(row) {
+    let filterOutcome = null;
+    if (row.matchedRuleId && row.overrideToRoot) {
+      filterOutcome = { type: "root" };
+    }
+    else if (row.matchedRuleId && row.effectiveType === "folder") {
+      filterOutcome = {
+        type: "folder",
+        folderId: row.derivedFolderId,
+        folderName: cleanId(row.derivedFolderName) || row.derivedFolderId
+      };
+    }
+    return {
+      sourceKey: row.sourceKey,
+      matchedRuleId: row.matchedRuleId,
+      action: foundry.utils.deepClone(row.action),
+      overrideToRoot: row.overrideToRoot,
+      derivedFolderId: row.derivedFolderId,
+      changed: row.effectiveType !== "skip",
+      targetItemIds: row.targetReceipts.map((receipt) => receipt.itemId),
+      filterOutcome
+    };
+  }
+
+  async #commitSimpleInventoryIngressBatch(request, {
+    debitRow,
+    fingerprint,
+    sourceRows,
+    authoritativePreview,
+    acquisitionContext
+  }) {
+    const groupActorId = cleanId(request.groupActorId);
+    const batchMutationId = cleanId(request.batchMutationId);
+    const sourceOrigin = cleanId(request.sourceOrigin);
+    const serializedPlan = foundry.utils.deepClone(request.serializedPlan);
+    const operationId = `inventory-ingress:${batchMutationId}`;
+    const planner = this.moduleApi.inventoryIngressPlanner;
+
+    return this.#runInventoryOrganizationMutation(groupActorId, async (actor) => {
+      this.#assertSourceDepletionAuthority();
+      const existing = await this.mutationJournal.find(operationId);
+      if (existing) {
+        this.#assertSimpleMutationRecord(existing, fingerprint);
+        const terminal = this.#readInventoryTerminal(existing);
+        if (terminal.terminal) return terminal.value;
+      }
+
+      planner.assertParity(serializedPlan, authoritativePreview);
+
+      const sourceByKey = new Map(sourceRows.map((row) => [cleanId(row.sourceKey), row]));
+      const overrideKeys = new Set(serializedPlan.rootOverrideSourceKeys ?? []);
+      let folderState = this.#readInventoryFolderState(actor);
+      const folderIds = new Set(folderState.folders.map((folder) => folder.id));
+      const rows = authoritativePreview.rows.map((previewRow) => this.#inventoryIngressDerivedRow(
+        previewRow,
+        sourceByKey.get(previewRow.sourceKey),
+        overrideKeys.has(previewRow.sourceKey),
+        sourceOrigin,
+        acquisitionContext
+      ));
+      if (rows.some((row) => row.container || row.effectiveType === "dismantle")) {
+        throw new InventoryIngressRuleError(
+          "plan-stale",
+          "Inventory ingress became ineligible for the simple transfer path."
+        );
+      }
+      const missingFolder = rows.find((row) => row.derivedFolderId !== null && !folderIds.has(row.derivedFolderId));
+      if (missingFolder) {
+        throw new InventoryFolderStateError("folder-not-found", "Inventory ingress target folder was not found.");
+      }
+      for (const row of rows) {
+        const folder = folderState.folders.find((entry) => entry.id === row.derivedFolderId);
+        row.derivedFolderName = cleanId(folder?.name);
+      }
+
+      const inMemoryRecord = { id: operationId, rows };
+      const completedSourceKeys = [];
+      const skippedSourceKeys = [];
+      const resultRows = [];
+      let failedSourceKey = "";
+      let failure = null;
+      let rollbackFailure = null;
+
+      for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
+        const row = rows[rowIndex];
+        if (row.effectiveType === "skip") {
+          skippedSourceKeys.push(row.sourceKey);
+          resultRows.push(this.#inventoryIngressResultRow(row));
+          continue;
+        }
+        if (this.#findInventoryIngressMutationItem(actor, inMemoryRecord.id, row.sourceKey)) {
+          failedSourceKey = row.sourceKey;
+          failure = this.#simpleTransferError(
+            "transfer-manual-review",
+            "Inventory ingress has target value without a terminal outcome; manual review is required."
+          );
+          rollbackFailure = failure;
+          break;
+        }
+        row.targetReceipts = await this.#prepareInventoryIngressTargetReceipts(
+          actor,
+          folderState,
+          inMemoryRecord,
+          row,
+          null
+        );
+        try {
+          for (const receipt of row.targetReceipts) {
+            this.#assertSourceDepletionAuthority();
+            receipt.itemId = await this.#applyInventoryIngressTargetReceipt(actor, inMemoryRecord, row, receipt, null);
+            this.#assertSourceDepletionAuthority();
+            if (receipt.created) {
+              folderState = moveInventoryItemToFolderState(folderState, {
+                itemId: receipt.itemId,
+                folderId: receipt.folderId
+              });
+            }
+          }
+          await debitRow(sourceByKey.get(row.sourceKey), {
+            groupActorId,
+            batchMutationId,
+            sourceOrigin,
+            sourceKey: row.sourceKey,
+            targetReceipts: foundry.utils.deepClone(row.targetReceipts)
+          });
+          this.#assertSourceDepletionAuthority();
+          completedSourceKeys.push(row.sourceKey);
+          resultRows.push(this.#inventoryIngressResultRow(row));
+        }
+        catch (error) {
+          failedSourceKey = row.sourceKey;
+          failure = error;
+          try {
+            for (const receipt of [...row.targetReceipts].reverse()) {
+              this.#assertSourceDepletionAuthority();
+              await this.#rollbackSimpleInventoryIngressTarget(actor, inMemoryRecord, row, receipt);
+              this.#assertSourceDepletionAuthority();
+              if (receipt.created) {
+                folderState = moveInventoryItemToFolderState(folderState, {
+                  itemId: receipt.itemId,
+                  folderId: null
+                });
+              }
+            }
+          }
+          catch (errorDuringRollback) {
+            rollbackFailure = errorDuringRollback;
+          }
+          break;
+        }
+      }
+
+      const folderStateBeforeWrite = this.#readInventoryFolderState(actor);
+      if (JSON.stringify(folderStateBeforeWrite) !== JSON.stringify(folderState)) {
+        try {
+          this.#assertSourceDepletionAuthority();
+          await this.#writeInventoryFolderState(actor, folderState);
+          this.#assertSourceDepletionAuthority();
+        }
+        catch (folderError) {
+          if (JSON.stringify(this.#readInventoryFolderState(actor)) !== JSON.stringify(folderState)) {
+            failure ??= folderError;
+            rollbackFailure ??= folderError;
+          }
+        }
+      }
+
+      const unprocessedSourceKeys = failedSourceKey
+        ? rows.slice(rows.findIndex((row) => row.sourceKey === failedSourceKey) + 1).map((row) => row.sourceKey)
+        : [];
+      const partialDetails = {
+        actorId: actor.id,
+        batchMutationId,
+        changed: completedSourceKeys.length > 0,
+        completedSourceKeys,
+        skippedSourceKeys,
+        failedSourceKey,
+        unprocessedSourceKeys,
+        rows: resultRows
+      };
+      const terminalRecord = {
+        id: operationId,
+        kind: "inventory-simple-v1",
+        phase: "committed",
+        fingerprint,
+        operationType: "ingress-batch",
+        groupActorId: actor.id
+      };
+
+      if (failure) {
+        const manualReview = Boolean(rollbackFailure);
+        const code = manualReview ? "transfer-manual-review" : "inventory-ingress-partial";
+        await this.#finishSimpleFailure(
+          terminalRecord,
+          this.#simpleTransferError(code, cleanId(failure.message) || "Inventory ingress stopped after a row failure."),
+          {
+            ...partialDetails,
+            code,
+            failure: cleanId(failure.message),
+            ...(rollbackFailure ? { rollbackFailure: cleanId(rollbackFailure.message) } : {})
+          }
+        );
+      }
+
+      const result = {
+        actorId: actor.id,
+        batchMutationId,
+        changed: completedSourceKeys.length > 0,
+        completedSourceKeys,
+        skippedSourceKeys,
+        failedSourceKey: "",
+        unprocessedSourceKeys: [],
+        rows: resultRows,
+        inventoryTransferMode: "simple"
+      };
+      const audit = await this.#recordSimpleTerminal(terminalRecord, { ok: true, value: result });
+      if (!audit.auditPersisted) {
+        return {
+          ...foundry.utils.deepClone(result),
+          auditPersisted: false,
+          auditWarning: cleanId(audit.auditError?.message) || "Inventory audit outcome was not persisted."
+        };
+      }
+      return foundry.utils.deepClone(result);
+    });
+  }
+
+  async #commitLegacyInventoryIngressBatch(request, {
+    resolveRows,
+    debitRow,
+    grantContainer = null,
+    allowPreparedLootgenGraph = false,
+    acquisitionContext = {}
+  } = {}) {
+    const exactKeys = ["groupActorId", "batchMutationId", "sourceOrigin", "serializedPlan"];
+    if (!request || typeof request !== "object" || Array.isArray(request)
+      || Object.keys(request).length !== exactKeys.length
+      || !exactKeys.every((key) => Object.hasOwn(request, key))) {
+      throw new InventoryIngressRuleError("invalid-batch", "Inventory ingress batch request has an invalid shape.");
+    }
+    const groupActorId = cleanId(request.groupActorId);
+    const batchMutationId = cleanId(request.batchMutationId);
+    const sourceOrigin = cleanId(request.sourceOrigin);
+    if (!groupActorId || !batchMutationId
+      || !new Set(["lootgen", "storage", "import", "public-model", "manual-entry"]).has(sourceOrigin)
+      || typeof resolveRows !== "function" || typeof debitRow !== "function") {
+      throw new InventoryIngressRuleError("invalid-batch", "Inventory ingress batch dependencies or identity are invalid.");
+    }
+    if (grantContainer !== null && typeof grantContainer !== "function") {
+      throw new InventoryIngressRuleError("invalid-batch", "Inventory ingress container grant must be a function.");
+    }
+    const planner = this.moduleApi.inventoryIngressPlanner;
+    if (!planner || typeof planner.preview !== "function" || typeof planner.assertParity !== "function") {
+      throw new InventoryIngressRuleError("planner-unavailable", "Inventory ingress planner is unavailable.");
+    }
+    const serializedPlan = foundry.utils.deepClone(request.serializedPlan);
+    const fingerprint = JSON.stringify({ groupActorId, batchMutationId, sourceOrigin, serializedPlan });
+    const operationId = `inventory-ingress:${batchMutationId}`;
+
+    return this.#runInventoryOrganizationMutation(groupActorId, async (actor) => {
+      let record = await this.mutationJournal.find(operationId);
+      if (record) {
+        this.#assertInventoryIngressBatchRecord(record, fingerprint);
+        const terminal = this.#readInventoryTerminal(record);
+        if (terminal.terminal) return terminal.value;
+      }
+
+      const sourceRows = await resolveRows({
+        groupActorId,
+        batchMutationId,
+        sourceOrigin,
+        recovering: Boolean(record),
+        serializedPlan: foundry.utils.deepClone(serializedPlan)
+      });
+      this.#assertInventoryIngressGraphSource(sourceRows, sourceOrigin, allowPreparedLootgenGraph);
+      const authoritativePreview = await planner.preview({
+        groupActorId,
+        requestedFolderId: serializedPlan?.requestedFolderId ?? null,
+        rows: sourceRows,
+        batch: Array.isArray(sourceRows) && sourceRows.length > 1
+      });
+      try {
+        planner.assertParity(serializedPlan, authoritativePreview);
+      }
+      catch (error) {
+        if (record) {
+          throw this.#inventoryReconciliationError("Inventory ingress plan changed during recovery.");
+        }
+        throw error;
+      }
+
+      let folderState = this.#readInventoryFolderState(actor);
+      const folderIds = new Set(folderState.folders.map((folder) => folder.id));
+      if (!record) {
+        const overrideKeys = new Set(serializedPlan.rootOverrideSourceKeys ?? []);
+        const sourceByKey = new Map(sourceRows.map((row) => [cleanId(row.sourceKey), row]));
+        const rows = authoritativePreview.rows.map((previewRow) => this.#inventoryIngressDerivedRow(
+          previewRow,
+          sourceByKey.get(previewRow.sourceKey),
+          overrideKeys.has(previewRow.sourceKey),
+          sourceOrigin,
+          acquisitionContext
+        ));
+        const missingFolder = rows.find((row) => row.derivedFolderId !== null && !folderIds.has(row.derivedFolderId));
+        if (missingFolder) {
+          throw new InventoryFolderStateError("folder-not-found", "Inventory ingress target folder was not found.");
+        }
+        record = await this.mutationJournal.start({
+          id: operationId,
+          kind: "ingress-batch",
+          phase: "prepared",
+          groupActorId,
+          sourceOrigin,
+          allowPreparedLootgenGraph: sourceOrigin === "lootgen" && allowPreparedLootgenGraph === true,
+          fingerprint,
+          rulesRevision: authoritativePreview.rulesRevision,
+          requestedFolderId: authoritativePreview.requestedFolderId,
+          rows
+        });
+      }
+      else {
+        const previewsByKey = new Map(authoritativePreview.rows.map((row) => [row.sourceKey, row]));
+        for (const row of record.rows) {
+          const previewRow = previewsByKey.get(row.sourceKey);
+          if (JSON.stringify(row.dismantlePreview ?? []) !== JSON.stringify(previewRow?.dismantlePreview ?? [])) {
+            throw this.#inventoryReconciliationError("Inventory ingress dismantle outputs changed during recovery.");
+          }
+          if (row.derivedFolderId !== null && !folderIds.has(row.derivedFolderId)) {
+            throw this.#inventoryReconciliationError("Inventory ingress target folder disappeared during recovery.");
+          }
+        }
+      }
+
+      const needsModel = record.rows.some((row) => row.effectiveType === "dismantle");
+      const model = needsModel ? await this.moduleApi.getModel() : null;
+      for (let rowIndex = 0; rowIndex < record.rows.length; rowIndex += 1) {
+        let row = record.rows[rowIndex];
+        if (row.phase === "committed" || row.phase === "source-debited" || row.phase === "folder-assigned") continue;
+        if (row.targetReceipts.length === 0) {
+          const targetReceipts = await this.#prepareInventoryIngressTargetReceipts(actor, folderState, record, row, model);
+          const rows = record.rows.map((entry, index) => index === rowIndex ? { ...entry, targetReceipts } : entry);
+          record = await this.mutationJournal.checkpoint(operationId, "prepared", "prepared", { rows });
+          row = record.rows[rowIndex];
+        }
+        const targetReceipts = [];
+        for (const receipt of row.targetReceipts) {
+          const itemId = await this.#applyInventoryIngressTargetReceipt(actor, record, row, receipt, grantContainer);
+          targetReceipts.push({ ...receipt, itemId });
+        }
+        const rows = record.rows.map((entry, index) => index === rowIndex
+          ? { ...entry, phase: "target-created", targetReceipts }
+          : entry);
+        record = await this.mutationJournal.checkpoint(operationId, "prepared", "prepared", { rows });
+        for (const receipt of targetReceipts) {
+          if (receipt.created) {
+            folderState = moveInventoryItemToFolderState(folderState, {
+              itemId: receipt.itemId,
+              folderId: receipt.folderId
+            });
+          }
+        }
+      }
+
+      let nextFolderState = folderState;
+      for (const row of record.rows) {
+        if (row.phase !== "target-created") continue;
+        for (const receipt of row.targetReceipts) {
+          if (receipt.created) {
+            nextFolderState = moveInventoryItemToFolderState(nextFolderState, {
+              itemId: receipt.itemId,
+              folderId: receipt.folderId
+            });
+          }
+        }
+      }
+      const liveFolderState = this.#readInventoryFolderState(actor);
+      if (JSON.stringify(liveFolderState) !== JSON.stringify(nextFolderState)) {
+        try {
+          await this.#writeInventoryFolderState(actor, nextFolderState);
+        }
+        catch (error) {
+          if (JSON.stringify(this.#readInventoryFolderState(actor)) !== JSON.stringify(nextFolderState)) throw error;
+        }
+      }
+      if (record.rows.some((row) => row.phase === "target-created")) {
+        const rows = record.rows.map((row) => row.phase === "target-created"
+          ? { ...row, phase: "folder-assigned" }
+          : row);
+        record = await this.mutationJournal.checkpoint(operationId, "prepared", "prepared", { rows });
+      }
+
+      const liveRowByKey = new Map(sourceRows.map((row) => [cleanId(row.sourceKey), row]));
+      for (let rowIndex = 0; rowIndex < record.rows.length; rowIndex += 1) {
+        const row = record.rows[rowIndex];
+        if (row.phase === "committed") continue;
+        if (row.phase === "folder-assigned") {
+          await debitRow(liveRowByKey.get(row.sourceKey), {
+            groupActorId,
+            batchMutationId,
+            sourceOrigin,
+            sourceKey: row.sourceKey,
+            targetReceipts: foundry.utils.deepClone(row.targetReceipts)
+          });
+          const debitedRows = record.rows.map((entry, index) => index === rowIndex
+            ? { ...entry, phase: "source-debited" }
+            : entry);
+          record = await this.mutationJournal.checkpoint(operationId, "prepared", "prepared", { rows: debitedRows });
+        }
+        if (record.rows[rowIndex].phase === "source-debited") {
+          const committedRows = record.rows.map((entry, index) => index === rowIndex
+            ? { ...entry, phase: "committed" }
+            : entry);
+          record = await this.mutationJournal.checkpoint(operationId, "prepared", "prepared", { rows: committedRows });
+        }
+      }
+
+      const result = {
+        actorId: actor.id,
+        batchMutationId,
+        changed: record.rows.some((row) => row.effectiveType !== "skip"),
+        rows: record.rows.map((row) => {
+          let filterOutcome = null;
+          if (row.matchedRuleId && row.overrideToRoot) {
+            filterOutcome = { type: "root" };
+          }
+          else if (row.matchedRuleId && row.effectiveType === "folder") {
+            const folder = folderState.folders.find((entry) => entry.id === row.derivedFolderId);
+            filterOutcome = {
+              type: "folder",
+              folderId: row.derivedFolderId,
+              folderName: cleanId(folder?.name) || row.derivedFolderId
+            };
+          }
+          else if (row.matchedRuleId && row.effectiveType === "dismantle") {
+            filterOutcome = {
+              type: "dismantle",
+              outputs: foundry.utils.deepClone(row.dismantlePreview)
+            };
+          }
+          return {
+            sourceKey: row.sourceKey,
+            matchedRuleId: row.matchedRuleId,
+            action: foundry.utils.deepClone(row.action),
+            overrideToRoot: row.overrideToRoot,
+            derivedFolderId: row.derivedFolderId,
+            changed: row.effectiveType !== "skip",
+            targetItemIds: row.targetReceipts.map((receipt) => receipt.itemId),
+            filterOutcome
+          };
+        })
+      };
+      await this.mutationJournal.finish(operationId, { ok: true, value: result });
+      return foundry.utils.deepClone(result);
+    });
   }
 
   async #upsertInventoryItem(actor, itemData, quantity = null) {
@@ -3037,7 +5151,7 @@ export class InventoryService {
       throw new Error("Не удалось определить актёра партийного инвентаря.");
     }
 
-    const source = sanitizeEmbeddedItemData(itemData);
+    const source = await this.#applyCatalogItemIcon(sanitizeEmbeddedItemData(itemData));
     const targetQuantity = quantity === null
       ? Math.max(0, getRawQuantity(source))
       : Math.max(0, roundNumber(toNumber(quantity, 0), 2));
@@ -3145,21 +5259,25 @@ export class InventoryService {
     const sourceFlags = foundry.utils.deepClone(item.flags?.[MODULE_ID] ?? {});
     const itemName = normalizeText(item.name);
     const normalizedSourceType = normalizeInventorySourceType(sourceFlags.sourceType);
+    const isManualSource = normalizedSourceType === "manual"
+      || Number(sourceFlags.manualEntry?.version) === 1;
     const isMagicFlag = normalizedSourceType === "magicItem"
       || Boolean(sourceFlags.magicItemId)
       || Boolean(sourceFlags.magicId)
       || normalizeInventorySourceType(sourceFlags.itemType) === "magicItem"
       || normalizeInventorySourceType(sourceFlags.magicItemType) === "magicItem"
       || Boolean(sourceFlags.magical);
+    const matchingMaterials = isManualSource ? [] : (model.materials ?? [])
+      .filter((material) => normalizeText(material.name) === itemName);
+    const matchingGear = isManualSource ? [] : (model.gear ?? [])
+      .filter((gearItem) => normalizeText(gearItem.name) === itemName);
     const matchedMaterial = model.materialById?.get(sourceFlags.materialId)
       ?? model.materialById?.get(sourceFlags.sourceId)
       ?? model.materialByGoodId?.get(sourceFlags.linkedGoodId)
-      ?? model.materials.find((material) => normalizeText(material.name) === itemName)
-      ?? null;
+      ?? (matchingMaterials.length === 1 ? matchingMaterials[0] : null);
     const matchedGear = model.gearById?.get(sourceFlags.gearId)
       ?? model.gearById?.get(sourceFlags.sourceId)
-      ?? model.gear.find((gearItem) => normalizeText(gearItem.name) === itemName)
-      ?? null;
+      ?? (matchingGear.length === 1 ? matchingGear[0] : null);
     const resourceKey = String(sourceFlags.resourceKey ?? "").trim().toLowerCase();
     let sourceType = normalizedSourceType;
     if (!sourceType) {
@@ -3245,12 +5363,15 @@ export class InventoryService {
     });
 
     const priceCopper = priceToCopper(foundry.utils.getProperty(itemData, "system.price") ?? {});
+    const dismantleMinQuantity = resolveInventoryDismantleMinimumQuantity(itemData, { model });
 
     return {
       itemId: item.id,
       itemUuid: item.uuid,
       name: item.name,
-      img: normalizeInventoryIconPath(item.img),
+      img: isUsableInventoryIcon(item.img)
+        ? normalizeInventoryIconPath(item.img)
+        : (matchedGear ? resolveGearItemIcon(matchedGear) : normalizeInventoryIconPath(item.img)),
       quantity,
       weightEach,
       totalWeight,
@@ -3260,17 +5381,36 @@ export class InventoryService {
       sourceTypeLabel,
       sourceId,
       sourceName: item.name,
+      acquisitionHistory: readInventoryAcquisitionHistory(itemData),
       canOpenEntry: sourceType === "material" || sourceType === "gear" || sourceType === "magicItem",
+      isJournalRecord: isJournalRecordItem(item),
       itemTypeLabel,
       materialLabel,
       transport,
       isFood,
       isWater,
+      canDismantle: dismantleMinQuantity !== null,
+      dismantleMinQuantity,
       canSell: !isMagicalInventoryItem(itemData) && priceCopper > 0
     };
   }
 
-  async getInventoryActor({ create = false } = {}) {
+  async getInventoryActor({ create = false, groupActorId = "" } = {}) {
+    const requestedGroupActorId = cleanId(groupActorId);
+    if (requestedGroupActorId) {
+      this.lastGroupContextError = "";
+      const context = this.moduleApi.groupContextService?.resolveForGroup?.(requestedGroupActorId);
+      const resolvedActor = context?.groupActor ?? null;
+      if (
+        !resolvedActor
+        || resolvedActor.type !== "group"
+        || cleanId(resolvedActor.id) !== requestedGroupActorId
+      ) {
+        throw new Error("Не удалось разрешить указанный групповой инвентарь.");
+      }
+      return resolvedActor;
+    }
+
     const groupActor = this.#getGroupInventoryActor();
     if (groupActor) {
       return groupActor;
@@ -3311,6 +5451,435 @@ export class InventoryService {
     });
 
     return actor;
+  }
+
+  #readInventoryFolderState(actor) {
+    return normalizeInventoryFolderState(
+      actor?.getFlag?.(MODULE_ID, "inventoryFolders"),
+      {
+        itemIds: Array.isArray(actor?.items?.contents)
+          ? actor.items.contents.map((item) => cleanId(item?.id)).filter(Boolean)
+          : []
+      }
+    );
+  }
+
+  #writeInventoryFolderState(actor, nextState) {
+    return actor.setFlag(MODULE_ID, "==inventoryFolders", nextState);
+  }
+
+  #readInventoryIngressRuleState(actor) {
+    return normalizeInventoryIngressRuleState(actor?.getFlag?.(MODULE_ID, "inventoryIngressRules"));
+  }
+
+  #writeInventoryIngressRuleState(actor, nextState) {
+    return actor.setFlag(MODULE_ID, "==inventoryIngressRules", nextState);
+  }
+
+  #runInventoryOrganizationMutation(groupActorId, operation) {
+    const actorId = cleanId(groupActorId);
+    if (!actorId) throw new Error("Не указан групповой инвентарь.");
+    return this.mutationCoordinator.run(
+      `inventory-organization:${actorId}`,
+      async () => {
+        const actor = await this.getInventoryActor({ create: false, groupActorId: actorId });
+        return operation(actor);
+      }
+    );
+  }
+
+  #mutateInventoryFolderState(groupActorId, operation) {
+    return this.#runInventoryOrganizationMutation(
+      groupActorId,
+      async (actor) => {
+        const rawState = actor?.getFlag?.(MODULE_ID, "inventoryFolders");
+        const currentState = this.#readInventoryFolderState(actor);
+        const operationResult = await operation({ actor, state: currentState });
+        const nextState = operationResult?.state ?? currentState;
+        const changed = JSON.stringify(rawState ?? null) !== JSON.stringify(nextState);
+        if (changed) {
+          await this.#writeInventoryFolderState(actor, nextState);
+        }
+        const resultFolderId = operationResult?.folderId == null
+          ? null
+          : cleanId(operationResult.folderId);
+        return {
+          actorId: actor.id,
+          folderId: resultFolderId,
+          changed,
+          deletedFolderId: cleanId(operationResult?.deletedFolderId),
+          ...(cleanId(operationResult?.itemId) ? { itemId: cleanId(operationResult.itemId) } : {})
+        };
+      }
+    );
+  }
+
+  createInventoryFolder({ groupActorId, folderId, name, parentId = null }) {
+    return this.#mutateInventoryFolderState(groupActorId, ({ state }) => ({
+      state: createInventoryFolderState(state, { folderId, name, parentId }),
+      folderId
+    }));
+  }
+
+  setInventoryFolderColor({ groupActorId, folderId, color }) {
+    return this.#mutateInventoryFolderState(groupActorId, ({ state }) => ({
+      state: setInventoryFolderColorState(state, { folderId, color }),
+      folderId
+    }));
+  }
+
+  renameInventoryFolder({ groupActorId, folderId, name }) {
+    return this.#mutateInventoryFolderState(groupActorId, ({ state }) => ({
+      state: renameInventoryFolderState(state, { folderId, name }),
+      folderId
+    }));
+  }
+
+  moveInventoryFolder({ groupActorId, folderId, parentId = null }) {
+    return this.#mutateInventoryFolderState(groupActorId, ({ state }) => ({
+      state: moveInventoryFolderState(state, { folderId, parentId }),
+      folderId
+    }));
+  }
+
+  deleteInventoryFolder({ groupActorId, folderId }) {
+    return this.#mutateInventoryFolderState(groupActorId, ({ actor, state }) => {
+      const normalizedFolderId = cleanId(folderId);
+      const dependentRules = this.#readInventoryIngressRuleState(actor).rules
+        .filter((rule) => rule.action.type === "folder" && rule.action.folderId === normalizedFolderId);
+      if (dependentRules.length > 0) {
+        const names = dependentRules.map((rule) => rule.name).join(", ");
+        throw new InventoryIngressRuleError(
+          "folder-in-use",
+          `Папка используется правилами входящего лута: ${names}.`,
+          { folderId: normalizedFolderId, ruleIds: dependentRules.map((rule) => rule.id) }
+        );
+      }
+      const existed = state.folders.some((folder) => folder.id === normalizedFolderId);
+      return {
+        state: deleteInventoryFolderState(state, { folderId: normalizedFolderId }),
+        folderId: normalizedFolderId,
+        deletedFolderId: existed ? normalizedFolderId : ""
+      };
+    });
+  }
+
+  #assignInventoryItemFolder({ groupActorId, itemId, folderId = null }) {
+    return this.#mutateInventoryFolderState(groupActorId, ({ actor, state }) => {
+      const normalizedItemId = cleanId(itemId);
+      const item = actor?.items?.get?.(normalizedItemId)
+        ?? actor?.items?.contents?.find?.((entry) => cleanId(entry?.id) === normalizedItemId)
+        ?? null;
+      if (!item) {
+        throw new InventoryFolderStateError("item-not-found", "Предмет не найден в партийном инвентаре.");
+      }
+      return {
+        state: moveInventoryItemToFolderState(state, { itemId: normalizedItemId, folderId }),
+        folderId,
+        itemId: normalizedItemId
+      };
+    });
+  }
+
+  async moveInventoryItemToFolder({ groupActorId, itemId, folderId = null, quantity, operationId, expectedSourceQuantity }, { sender = globalThis.game?.user } = {}) {
+    if (quantity === undefined) return this.#assignInventoryItemFolder({ groupActorId, itemId, folderId });
+    const actorUuid = `Actor.${groupActorId}`;
+    const documents = new ItemInstanceDocuments({
+      resolveActor: uuid => this.getInventoryActor({ create: false, groupActorId: uuid.slice(6) })
+    });
+    const workflow = new ItemInstanceWorkflow({ journal: this.mutationJournal, coordinator: this.mutationCoordinator, documents });
+    const result = await workflow.run({ operationId, sourceActorUuid: actorUuid, sourceItemId: itemId,
+      destinationActorUuid: actorUuid, quantity, targetFolderId: folderId, heroSlotId: null,
+      expectedSourceQuantity: expectedSourceQuantity ?? null }, {
+      sender,
+      assertAuthority: () => this.#assertSourceDepletionAuthority(),
+      authorize: ({ sourceActor }) => {
+        const context = this.moduleApi.groupContextService.resolveForGroup(sourceActor.id);
+        const owner = actor => actor?.testUserPermission?.(sender, "OWNER") || actor?.ownership?.[sender?.id] >= 3;
+        if (!sender?.isGM && !owner(sourceActor) && !(context.members ?? []).some(owner)) {
+          throw new Error("Недостаточно прав для организации инвентаря группы.");
+        }
+        const folders = this.#readInventoryFolderState(sourceActor);
+        if (folderId !== null && !folders.folders.some(folder => folder.id === folderId)) throw new Error("Папка назначения больше не существует.");
+      },
+      preparePlacement: ({ sourceActor, itemId: targetId }) => {
+        const path = `flags.${MODULE_ID}.inventoryFolders.itemFolderIds.${targetId}`;
+        const before = sourceActor.getFlag(MODULE_ID, "inventoryFolders")?.itemFolderIds?.[targetId] ?? null;
+        return [{ actor: "source", before: { [path]: before }, after: { [path]: folderId } }];
+      }
+    });
+    return { ...result, actorId: groupActorId, folderId };
+  }
+
+  assignInventoryGrantFolder({ groupActorId, itemId, folderId = null }) {
+    return this.#assignInventoryItemFolder({ groupActorId, itemId, folderId });
+  }
+
+  async getInventoryIngressRuleState({ groupActorId } = {}) {
+    const actor = await this.getInventoryActor({ create: false, groupActorId });
+    return this.#readInventoryIngressRuleState(actor);
+  }
+
+  #assertInventoryIngressRuleFolders(rules, folderState) {
+    const folderIds = new Set(folderState.folders.map((folder) => folder.id));
+    const missingRule = rules.find((rule) => (
+      rule.action.type === "folder" && !folderIds.has(rule.action.folderId)
+    ));
+    if (missingRule) {
+      throw new InventoryIngressRuleError(
+        "folder-not-found",
+        `Папка правила «${missingRule.name}» не найдена.`,
+        { ruleId: missingRule.id, folderId: missingRule.action.folderId }
+      );
+    }
+  }
+
+  #buildInventoryIngressRuleMutation(kind, currentState, request, folderState) {
+    if (!Number.isSafeInteger(request.expectedRevision) || request.expectedRevision < 0) {
+      throw new InventoryIngressRuleError("invalid-revision", "Ожидаемая ревизия правил некорректна.");
+    }
+    if (currentState.revision !== request.expectedRevision) {
+      throw new InventoryIngressRuleError(
+        "stale-revision",
+        `Правила входящего лута изменились (revision ${currentState.revision}).`,
+        { expectedRevision: request.expectedRevision, actualRevision: currentState.revision }
+      );
+    }
+    let rules = currentState.rules.map((rule) => foundry.utils.deepClone(rule));
+    let changed = false;
+    if (kind === "create") {
+      const rule = normalizeInventoryIngressRule(request.rule);
+      const existing = rules.find((entry) => entry.id === rule.id) ?? null;
+      if (existing) {
+        if (JSON.stringify(existing) !== JSON.stringify(rule)) {
+          throw new InventoryIngressRuleError("duplicate-rule-id", `Правило ${rule.id} уже существует.`, {
+            ruleId: rule.id
+          });
+        }
+      }
+      else {
+        rules.push(rule);
+        changed = true;
+      }
+    }
+    else if (kind === "update") {
+      const rule = normalizeInventoryIngressRule(request.rule);
+      const index = rules.findIndex((entry) => entry.id === rule.id);
+      if (index < 0) {
+        throw new InventoryIngressRuleError("rule-not-found", `Правило ${rule.id} не найдено.`, {
+          ruleId: rule.id
+        });
+      }
+      if (JSON.stringify(rules[index]) !== JSON.stringify(rule)) {
+        rules[index] = rule;
+        changed = true;
+      }
+    }
+    else {
+      const ruleId = cleanId(request.ruleId);
+      if (!ruleId) throw new InventoryIngressRuleError("invalid-rule-id", "Не указан ID правила.");
+      const nextRules = rules.filter((rule) => rule.id !== ruleId);
+      changed = nextRules.length !== rules.length;
+      rules = nextRules;
+    }
+    const nextState = normalizeInventoryIngressRuleState({
+      version: currentState.version,
+      revision: currentState.revision + (changed ? 1 : 0),
+      rules
+    });
+    this.#assertInventoryIngressRuleFolders(nextState.rules, folderState);
+    const conflicts = findInventoryIngressRuleConflicts(nextState.rules);
+    if (conflicts.length > 0) {
+      const nameById = new Map(nextState.rules.map((rule) => [rule.id, rule.name]));
+      const summary = conflicts.map((conflict) => (
+        `«${nameById.get(conflict.leftRuleId) ?? conflict.leftRuleId}» ↔ `
+        + `«${nameById.get(conflict.rightRuleId) ?? conflict.rightRuleId}»: `
+        + conflict.intersectingFields.join(", ")
+      )).join("; ");
+      throw new InventoryIngressRuleError("rule-conflict", `Правила входящего лута пересекаются: ${summary}.`, {
+        conflicts
+      });
+    }
+    return {
+      nextState,
+      outcome: {
+        actorId: cleanId(request.groupActorId),
+        operationId: cleanId(request.operationId),
+        changed,
+        state: nextState
+      }
+    };
+  }
+
+  #assertInventoryIngressRuleRecord(record, fingerprint) {
+    if (record?.kind !== "inventory-ingress-rule" || record?.fingerprint !== fingerprint) {
+      throw new InventoryIngressRuleError(
+        "mutation-conflict",
+        `Inventory ingress rule operation '${record?.id ?? ""}' has a different request.`
+      );
+    }
+  }
+
+  async #mutateInventoryIngressRule(kind, request) {
+    const groupActorId = cleanId(request?.groupActorId);
+    const operationId = cleanId(request?.operationId);
+    if (!groupActorId || !operationId) {
+      throw new InventoryIngressRuleError("invalid-operation", "Не указаны группа или operation ID.");
+    }
+    const canonicalRequest = kind === "delete"
+      ? { groupActorId, operationId, expectedRevision: request.expectedRevision, ruleId: cleanId(request.ruleId) }
+      : {
+          groupActorId,
+          operationId,
+          expectedRevision: request.expectedRevision,
+          rule: normalizeInventoryIngressRule(request.rule)
+        };
+    const fingerprint = JSON.stringify({ kind, ...canonicalRequest });
+    const recordId = `inventory-rule:${groupActorId}:${operationId}`;
+    return this.#runInventoryOrganizationMutation(groupActorId, async (actor) => {
+      let record = await this.mutationJournal.find(recordId);
+      if (record) {
+        this.#assertInventoryIngressRuleRecord(record, fingerprint);
+        if (record.terminal === true) {
+          if (record.result?.ok === false) throw new Error(record.result.error || "Rule mutation failed.");
+          return foundry.utils.deepClone(record.result?.value);
+        }
+      }
+      const liveState = this.#readInventoryIngressRuleState(actor);
+      if (!record) {
+        const { nextState, outcome } = this.#buildInventoryIngressRuleMutation(
+          kind,
+          liveState,
+          canonicalRequest,
+          this.#readInventoryFolderState(actor)
+        );
+        record = await this.mutationJournal.start({
+          id: recordId,
+          kind: "inventory-ingress-rule",
+          phase: "prepared",
+          fingerprint,
+          groupActorId,
+          beforeState: liveState,
+          afterState: nextState,
+          outcome
+        });
+        this.#assertInventoryIngressRuleRecord(record, fingerprint);
+      }
+      const liveMatchesBefore = JSON.stringify(liveState) === JSON.stringify(record.beforeState);
+      const liveMatchesAfter = JSON.stringify(liveState) === JSON.stringify(record.afterState);
+      if (!liveMatchesBefore && !liveMatchesAfter) {
+        throw new InventoryIngressRuleError(
+          "reconciliation-required",
+          "Состояние правил не совпадает с prepared mutation record."
+        );
+      }
+      if (record.phase === "prepared" && !liveMatchesAfter) {
+        try {
+          await this.#writeInventoryIngressRuleState(actor, record.afterState);
+        }
+        catch (error) {
+          const durableState = this.#readInventoryIngressRuleState(actor);
+          if (JSON.stringify(durableState) !== JSON.stringify(record.afterState)) throw error;
+        }
+      }
+      if (record.phase === "prepared") {
+        record = await this.mutationJournal.checkpoint(recordId, "prepared", "actor-written");
+      }
+      const result = foundry.utils.deepClone(record.outcome);
+      await this.mutationJournal.finish(recordId, { ok: true, value: result });
+      return result;
+    });
+  }
+
+  createInventoryIngressRule(request) {
+    return this.#mutateInventoryIngressRule("create", request);
+  }
+
+  updateInventoryIngressRule(request) {
+    return this.#mutateInventoryIngressRule("update", request);
+  }
+
+  deleteInventoryIngressRule(request) {
+    return this.#mutateInventoryIngressRule("delete", request);
+  }
+
+  #readInventoryFolderUiGroup(rawState, actorId, folderIds) {
+    const isV1 = rawState?.version === 1;
+    const isV2 = rawState?.version === INVENTORY_FOLDER_UI_STATE_VERSION;
+    const group = isV1 || isV2 ? rawState?.groups?.[actorId] : null;
+    return {
+      expandedFolderIds: normalizeExpandedFolderIds(group?.expandedFolderIds, { folderIds }),
+      pinnedFolderIds: normalizePinnedFolderIds(isV2 ? group?.pinnedFolderIds : [], { folderIds })
+    };
+  }
+
+  getInventoryFolderUiState(groupActorId, folderIds = []) {
+    const actorId = cleanId(groupActorId);
+    if (!actorId) {
+      throw new Error("Не указан групповой инвентарь для состояния папок.");
+    }
+    const rawState = game.user?.getFlag?.(MODULE_ID, INVENTORY_FOLDER_UI_FLAG);
+    const group = this.#readInventoryFolderUiGroup(rawState, actorId, folderIds);
+    return {
+      version: INVENTORY_FOLDER_UI_STATE_VERSION,
+      groupActorId: actorId,
+      ...group
+    };
+  }
+
+  #setInventoryFolderUiValue(groupActorId, folderId, enabled, field) {
+    const actorId = cleanId(groupActorId);
+    const normalizedFolderId = cleanId(folderId);
+    const user = game.user ?? null;
+    const userId = cleanId(user?.id);
+    if (!actorId || !normalizedFolderId || typeof enabled !== "boolean" || !userId) {
+      throw new Error("Некорректное личное состояние папки инвентаря.");
+    }
+    if (typeof user?.getFlag !== "function" || typeof user?.setFlag !== "function") {
+      throw new Error("Пользовательское хранилище состояния папок недоступно.");
+    }
+    return this.mutationCoordinator.run(
+      `inventory-folder-ui:${userId}`,
+      async () => {
+        const actor = await this.getInventoryActor({ create: false, groupActorId: actorId });
+        const folderIds = this.#readInventoryFolderState(actor).folders.map((folder) => folder.id);
+        if (enabled && !folderIds.includes(normalizedFolderId)) {
+          throw new InventoryFolderStateError("folder-not-found", "Папка инвентаря не найдена.");
+        }
+        const rawState = user.getFlag(MODULE_ID, INVENTORY_FOLDER_UI_FLAG);
+        const current = this.#readInventoryFolderUiGroup(rawState, actorId, folderIds);
+        const values = new Set(current[field]);
+        if (enabled) values.add(normalizedFolderId);
+        else values.delete(normalizedFolderId);
+        current[field] = field === "expandedFolderIds"
+          ? normalizeExpandedFolderIds(Array.from(values), { folderIds })
+          : normalizePinnedFolderIds(Array.from(values), { folderIds });
+        const groups = (rawState?.version === 1 || rawState?.version === INVENTORY_FOLDER_UI_STATE_VERSION)
+          && rawState.groups
+          && typeof rawState.groups === "object"
+          && !Array.isArray(rawState.groups)
+          ? foundry.utils.deepClone(rawState.groups)
+          : {};
+        groups[actorId] = current;
+        await user.setFlag(MODULE_ID, INVENTORY_FOLDER_UI_FLAG, {
+          version: INVENTORY_FOLDER_UI_STATE_VERSION,
+          groups
+        });
+        return {
+          version: INVENTORY_FOLDER_UI_STATE_VERSION,
+          groupActorId: actorId,
+          ...current
+        };
+      }
+    );
+  }
+
+  setInventoryFolderExpanded(groupActorId, folderId, expanded) {
+    return this.#setInventoryFolderUiValue(groupActorId, folderId, expanded, "expandedFolderIds");
+  }
+
+  setInventoryFolderPinned(groupActorId, folderId, pinned) {
+    return this.#setInventoryFolderUiValue(groupActorId, folderId, pinned, "pinnedFolderIds");
   }
 
   async mergeLegacyInventoryIntoGroup(groupActorId) {
@@ -3361,37 +5930,32 @@ export class InventoryService {
     }
 
     const persistPairProgress = async (mutator) => {
-      const nextRegistry = this.moduleApi.groupContextService.getRegistry();
-      const groupState = nextRegistry.groupsById?.[groupActor.id]
-        ? foundry.utils.deepClone(nextRegistry.groupsById[groupActor.id])
-        : foundry.utils.deepClone(context.groupState ?? {});
-      groupState.groupActorId = groupActor.id;
-      groupState.migration = groupState.migration && typeof groupState.migration === "object" ? groupState.migration : {};
-      groupState.migration.legacyInventoryMergePairs = groupState.migration.legacyInventoryMergePairs
-        && typeof groupState.migration.legacyInventoryMergePairs === "object"
-        ? groupState.migration.legacyInventoryMergePairs
-        : {};
-      const nextPairState = {
-        legacyInventoryActorId: legacyActor.id,
-        groupActorId: groupActor.id,
-        currencyAppliedAt: 0,
-        completedAt: 0,
-        itemsByKey: {},
-        ...(groupState.migration.legacyInventoryMergePairs[pairKey] ?? {})
-      };
-      nextPairState.itemsByKey = nextPairState.itemsByKey && typeof nextPairState.itemsByKey === "object"
-        ? nextPairState.itemsByKey
-        : {};
-      mutator(nextPairState);
-      groupState.migration.legacyInventoryMergePairs[pairKey] = nextPairState;
-      if (Number(nextPairState.completedAt) > 0) {
-        groupState.migration.legacyInventoryMergedAt = nextPairState.completedAt;
-        groupState.migration.legacyInventoryActorId = legacyActor.id;
-      }
-      nextRegistry.groupsById = nextRegistry.groupsById ?? {};
-      nextRegistry.groupsById[groupActor.id] = groupState;
-      await this.moduleApi.groupContextService.setRegistry(nextRegistry);
-      return nextPairState;
+      return this.moduleApi.groupContextService.mutateGroupState(groupActor.id, (groupState) => {
+        groupState.groupActorId = groupActor.id;
+        groupState.migration = groupState.migration && typeof groupState.migration === "object" ? groupState.migration : {};
+        groupState.migration.legacyInventoryMergePairs = groupState.migration.legacyInventoryMergePairs
+          && typeof groupState.migration.legacyInventoryMergePairs === "object"
+          ? groupState.migration.legacyInventoryMergePairs
+          : {};
+        const nextPairState = {
+          legacyInventoryActorId: legacyActor.id,
+          groupActorId: groupActor.id,
+          currencyAppliedAt: 0,
+          completedAt: 0,
+          itemsByKey: {},
+          ...(groupState.migration.legacyInventoryMergePairs[pairKey] ?? {})
+        };
+        nextPairState.itemsByKey = nextPairState.itemsByKey && typeof nextPairState.itemsByKey === "object"
+          ? nextPairState.itemsByKey
+          : {};
+        mutator(nextPairState);
+        groupState.migration.legacyInventoryMergePairs[pairKey] = nextPairState;
+        if (Number(nextPairState.completedAt) > 0) {
+          groupState.migration.legacyInventoryMergedAt = nextPairState.completedAt;
+          groupState.migration.legacyInventoryActorId = legacyActor.id;
+        }
+        return nextPairState;
+      });
     };
 
     const sourceCurrency = buildCurrencySnapshot(legacyActor);
@@ -3562,6 +6126,161 @@ export class InventoryService {
     });
   }
 
+  async getInventoryAddCatalog() {
+    const model = await this.moduleApi.getModel();
+    const indexFor = async (packName, fields) => {
+      const pack = game.packs.get(`world.${packName}`) ?? null;
+      if (!pack) return [];
+      try {
+        return Array.from(await pack.getIndex({ fields }));
+      }
+      catch (error) {
+        console.warn(`${MODULE_ID} | Failed to read inventory add catalog '${packName}'.`, error);
+        return [];
+      }
+    };
+    const [materialIndex, gearIndex, magicIndex] = await Promise.all([
+      indexFor(MATERIALS_COMPENDIUM_NAME, [`flags.${MODULE_ID}.materialId`]),
+      indexFor(GEAR_COMPENDIUM_NAME, [
+        `flags.${MODULE_ID}.gearId`,
+        `flags.${MODULE_ID}.sourceId`
+      ]),
+      indexFor(MAGIC_ITEMS_COMPENDIUM_NAME, [
+        `flags.${MODULE_ID}.magicItemId`,
+        `flags.${MODULE_ID}.magicItemType`,
+        `flags.${MODULE_ID}.predominantMaterialName`,
+        "system.price",
+        "system.type",
+        "system.weight"
+      ])
+    ]);
+    const indexedIcon = (index, flagNames, sourceId, fallbackName, fallbackIcon) => {
+      const matched = index.find((entry) => flagNames.some((flagName) => (
+        cleanId(foundry.utils.getProperty(entry, `flags.${MODULE_ID}.${flagName}`)) === cleanId(sourceId)
+      ))) ?? index.find((entry) => normalizeText(entry?.name) === normalizeText(fallbackName));
+      return normalizeInventoryIconPath(matched?.img) || fallbackIcon;
+    };
+    const modelRows = [
+      ...(model.materials ?? []).map((material) => ({
+        id: `material:${material.id}`,
+        sourceType: "material",
+        sourceId: material.id,
+        name: material.name,
+        img: indexedIcon(
+          materialIndex,
+          ["materialId"],
+          material.id,
+          material.name,
+          "icons/commodities/materials/slime-thick-blue.webp"
+        ),
+        itemTypeLabel: material.type || "Материал",
+        materialLabel: material.name,
+        unitWeight: Math.max(0, roundNumber(toNumber(material.weight, 0), 5)),
+        unitPriceValue: Math.max(0, roundNumber(toNumber(material.priceGold, 0), 5)),
+        unitPriceDenomination: "gp"
+      })),
+      ...(model.gear ?? []).map((gearItem) => ({
+        id: `gear:${gearItem.id}`,
+        sourceType: "gear",
+        sourceId: gearItem.id,
+        name: gearItem.name,
+        img: indexedIcon(
+          gearIndex,
+          ["gearId", "sourceId"],
+          gearItem.id,
+          gearItem.name,
+          resolveGearItemIcon(gearItem)
+        ),
+        itemTypeLabel: gearItem.equipmentType || "Снаряжение",
+        materialLabel: gearItem.predominantMaterialName || "",
+        unitWeight: Math.max(0, roundNumber(toNumber(gearItem.weight, 0), 5)),
+        unitPriceValue: Math.max(0, roundNumber(
+          toNumber(gearItem.priceGoldEquivalent, toNumber(gearItem.priceValue, 0)),
+          5
+        )),
+        unitPriceDenomination: "gp"
+      }))
+    ];
+    const magicRows = magicIndex.map((entry) => {
+      const sourceId = cleanId(foundry.utils.getProperty(entry, `flags.${MODULE_ID}.magicItemId`));
+      const price = foundry.utils.getProperty(entry, "system.price") ?? {};
+      return {
+        id: `magicItem:${sourceId}`,
+        sourceType: "magicItem",
+        sourceId,
+        name: cleanId(entry?.name),
+        img: normalizeInventoryIconPath(entry?.img) || "icons/svg/item-bag.svg",
+        itemTypeLabel: cleanId(foundry.utils.getProperty(entry, `flags.${MODULE_ID}.magicItemType`))
+          || cleanId(foundry.utils.getProperty(entry, "system.type.subtype"))
+          || "Магический предмет",
+        materialLabel: cleanId(foundry.utils.getProperty(entry, `flags.${MODULE_ID}.predominantMaterialName`)),
+        unitWeight: Math.max(0, roundNumber(getItemWeight(entry), 5)),
+        unitPriceValue: Math.max(0, roundNumber(toNumber(price?.value, 0), 5)),
+        unitPriceDenomination: new Set(["pp", "gp", "sp", "cp"]).has(cleanId(price?.denomination).toLowerCase())
+          ? cleanId(price.denomination).toLowerCase()
+          : "gp"
+      };
+    }).filter((entry) => entry.sourceId && entry.name);
+    return [...modelRows, ...magicRows]
+      .sort((left, right) => left.name.localeCompare(right.name, "ru", { sensitivity: "base", numeric: true }))
+      .map((entry) => foundry.utils.deepClone(entry));
+  }
+
+  buildManualInventoryItemData(manualEntry, quantity = 1) {
+    const exactKeys = [
+      "itemType", "manualEntryId", "material", "name", "unitPriceDenomination", "unitPriceValue", "unitWeight"
+    ];
+    if (!manualEntry || typeof manualEntry !== "object" || Array.isArray(manualEntry)
+      || Object.keys(manualEntry).length !== exactKeys.length
+      || !exactKeys.every((key) => Object.hasOwn(manualEntry, key))) {
+      throw new Error("Ручная запись предмета имеет неверный формат.");
+    }
+    const manualEntryId = cleanId(manualEntry.manualEntryId);
+    const name = cleanId(manualEntry.name);
+    const itemType = cleanId(manualEntry.itemType) || "Прочее";
+    const material = cleanId(manualEntry.material);
+    const safeQuantity = Number(quantity);
+    const unitWeight = Number(manualEntry.unitWeight);
+    const unitPriceValue = Number(manualEntry.unitPriceValue);
+    const unitPriceDenomination = cleanId(manualEntry.unitPriceDenomination).toLowerCase();
+    if (!manualEntryId || !name || !Number.isSafeInteger(safeQuantity) || safeQuantity <= 0
+      || !Number.isFinite(unitWeight) || unitWeight < 0
+      || !Number.isFinite(unitPriceValue) || unitPriceValue < 0
+      || !new Set(["pp", "gp", "sp", "cp"]).has(unitPriceDenomination)) {
+      throw new Error("Проверьте поля ручной записи предмета.");
+    }
+    return {
+      name,
+      type: "loot",
+      img: "icons/svg/item-bag.svg",
+      system: {
+        description: { value: "", chat: "" },
+        unidentified: { description: "" },
+        quantity: safeQuantity,
+        price: { value: roundNumber(unitPriceValue, 5), denomination: unitPriceDenomination },
+        weight: { value: roundNumber(unitWeight, 5), units: "lb" },
+        type: { value: "loot", subtype: itemType }
+      },
+      flags: {
+        [MODULE_ID]: {
+          sourceType: "manual",
+          sourceId: manualEntryId,
+          itemType,
+          predominantMaterialName: material,
+          manualEntry: {
+            version: 1,
+            manualEntryId,
+            unitWeight: roundNumber(unitWeight, 5),
+            unitPriceValue: roundNumber(unitPriceValue, 5),
+            unitPriceDenomination,
+            itemType,
+            material
+          }
+        }
+      }
+    };
+  }
+
   async buildModelItemData(sourceType, sourceId, quantity = 1) {
     const model = await this.moduleApi.getModel();
     const safeQuantity = Math.max(0.01, roundNumber(toNumber(quantity, 1), 2));
@@ -3573,15 +6292,7 @@ export class InventoryService {
         throw new Error("Материал не найден в данных модуля.");
       }
 
-      const itemData = this.#buildMaterialItemData(material, safeQuantity);
-      itemData.img = await this.#resolveManagedCompendiumIcon(
-        MATERIALS_COMPENDIUM_NAME,
-        ["materialId"],
-        material.id,
-        material.name,
-        itemData.img
-      );
-      return itemData;
+      return this.#applyCatalogItemIcon(this.#buildMaterialItemData(material, safeQuantity));
     }
 
     if (normalizedSourceType === "gear") {
@@ -3590,15 +6301,7 @@ export class InventoryService {
         throw new Error("Предмет снаряжения не найден в данных модуля.");
       }
 
-      const itemData = this.#buildGearItemData(gearItem, safeQuantity);
-      itemData.img = await this.#resolveManagedCompendiumIcon(
-        GEAR_COMPENDIUM_NAME,
-        ["gearId", "sourceId"],
-        gearItem.id,
-        gearItem.name,
-        itemData.img
-      );
-      return itemData;
+      return this.#applyCatalogItemIcon(this.#buildGearItemData(gearItem, safeQuantity));
     }
 
     if (normalizedSourceType === "magicItem") {
@@ -3624,7 +6327,7 @@ export class InventoryService {
     throw new Error("Неизвестный тип предмета для добавления в склад.");
   }
 
-  async #resolveManagedCompendiumIcon(packName, flagNames, sourceId, fallbackName, fallbackIcon) {
+  async #resolveManagedCompendiumIcon(packName, flagNames, sourceId, fallbackIcon) {
     const fallback = String(fallbackIcon ?? "icons/svg/item-bag.svg").trim() || "icons/svg/item-bag.svg";
     const pack = game.packs.get(`world.${packName}`) ?? null;
     if (!pack) {
@@ -3632,23 +6335,21 @@ export class InventoryService {
     }
 
     const safeSourceId = String(sourceId ?? "").trim();
-    const safeFallbackName = normalizeText(fallbackName);
     const safeFlagNames = Array.isArray(flagNames) ? flagNames.filter(Boolean) : [];
     const fields = safeFlagNames.map((flagName) => `flags.${MODULE_ID}.${flagName}`);
 
     try {
       const index = await pack.getIndex({ fields });
-      const indexEntry = index.find((entry) => {
-        if (safeSourceId) {
+      const indexEntry = safeSourceId
+        ? index.find((entry) => {
           for (const flagName of safeFlagNames) {
             if (String(foundry.utils.getProperty(entry, `flags.${MODULE_ID}.${flagName}`) ?? "").trim() === safeSourceId) {
               return true;
             }
           }
-        }
-
-        return safeFallbackName && normalizeText(entry.name) === safeFallbackName;
-      }) ?? null;
+          return false;
+        }) ?? null
+        : null;
 
       const document = indexEntry
         ? await pack.getDocument(indexEntry._id ?? indexEntry.id)
@@ -3656,9 +6357,44 @@ export class InventoryService {
       return String(document?.img ?? "").trim() || fallback;
     }
     catch (error) {
-      console.warn(`${MODULE_ID} | Failed to resolve compendium icon for '${fallbackName}'.`, error);
+      console.warn(`${MODULE_ID} | Failed to resolve compendium icon for '${safeSourceId}'.`, error);
       return fallback;
     }
+  }
+
+  async #applyCatalogItemIcon(itemData) {
+    const source = itemData && typeof itemData === "object" ? itemData : {};
+    const flags = source.flags?.[MODULE_ID] ?? {};
+    const sourceType = normalizeInventorySourceType(flags.sourceType);
+    const definitions = {
+      material: {
+        packName: MATERIALS_COMPENDIUM_NAME,
+        flagNames: ["materialId"],
+        sourceId: cleanId(flags.materialId ?? flags.sourceId)
+      },
+      gear: {
+        packName: GEAR_COMPENDIUM_NAME,
+        flagNames: ["gearId", "sourceId"],
+        sourceId: cleanId(flags.gearId ?? flags.sourceId)
+      },
+      magicItem: {
+        packName: MAGIC_ITEMS_COMPENDIUM_NAME,
+        flagNames: ["magicItemId"],
+        sourceId: cleanId(flags.magicItemId ?? flags.magicId ?? flags.sourceId)
+      }
+    };
+    const definition = definitions[sourceType] ?? null;
+    if (!definition?.sourceId) {
+      return source;
+    }
+
+    source.img = await this.#resolveManagedCompendiumIcon(
+      definition.packName,
+      definition.flagNames,
+      definition.sourceId,
+      source.img
+    );
+    return source;
   }
 
   async buildLootgenChatItemData(row, lootMeta = {}) {
@@ -3682,10 +6418,24 @@ export class InventoryService {
   }
 
   async buildLootgenItemData(row = {}, { allowPersistedItemData = false } = {}) {
-    const safeQuantity = Math.max(0.01, roundNumber(toNumber(row.quantity, 1), 2));
+    if(row.descriptor?.container!=null){
+      const prepared=allowPersistedItemData?readLootgenPreparedComposition(row.itemData):null;
+      if(!prepared || itemInstanceFingerprint(prepared.descriptor)!==itemInstanceFingerprint(row.descriptor)
+        || itemInstanceFingerprint(row.runtimeGraph)!==itemInstanceFingerprint(row.itemData.flags[MODULE_ID][RUNTIME_ITEM_GRAPH_FLAG]))throw new Error("Выдача контейнера требует подготовки полного дерева предметов.");
+    }
+    const narrativeRow = cleanId(row.narrativeVariantId) !== "";
+    const safeQuantity = narrativeRow || hasLootgenNarrative(row.itemData)
+      ? 1
+      : Math.max(0.01, roundNumber(toNumber(row.quantity, 1), 2));
     if (allowPersistedItemData && row.itemData && typeof row.itemData === "object") {
       const persistedItemData = sanitizeEmbeddedItemData(row.itemData);
+      if (persistedItemData.flags?.[MODULE_ID]) delete persistedItemData.flags[MODULE_ID][RUNTIME_ITEM_GRAPH_FLAG];
+      if (row.runtimeGraph) foundry.utils.setProperty(persistedItemData, `flags.${MODULE_ID}.${RUNTIME_ITEM_GRAPH_FLAG}`, foundry.utils.deepClone(row.runtimeGraph));
       foundry.utils.setProperty(persistedItemData, "system.quantity", safeQuantity);
+      persistedItemData.name = formatDurabilityItemName(
+        persistedItemData.name,
+        persistedItemData.flags?.[MODULE_ID]?.durability
+      );
       return persistedItemData;
     }
 
@@ -3715,6 +6465,19 @@ export class InventoryService {
     }
     else {
       itemData = await this.buildModelItemData(row.sourceType, row.sourceId, safeQuantity);
+    }
+    if (narrativeRow) {
+      const gearId = cleanId(row.narrativeGearId);
+      const sourceId = cleanId(row.sourceId);
+      if (!gearId || gearId !== sourceId || typeof row.narrativeTitle !== "string" || typeof row.narrativeDescription !== "string") {
+        throw new Error("Invalid lootgen narrative row");
+      }
+      itemData = applyLootgenNarrativeVariant(itemData, {
+        variantId: cleanId(row.narrativeVariantId),
+        gearId,
+        title: row.narrativeTitle,
+        description: row.narrativeDescription
+      });
     }
     if (row.isBroken !== true || normalizeInventorySourceType(row.sourceType) !== "gear") {
       return itemData;
@@ -3784,13 +6547,21 @@ export class InventoryService {
   async getPartySnapshot({ actor = null } = {}) {
     const state = this.#getState();
     const inventoryActor = actor ?? await this.getInventoryActor({ create: false });
-    const partyInventoryWeight = inventoryActor ? this.#getInventoryWeight(inventoryActor) : 0;
+    const partyWeightSnapshot = buildActorInventoryWeightSnapshot(inventoryActor);
+    const partyInventoryWeight = partyWeightSnapshot.weightLb;
     const model = inventoryActor ? await this.moduleApi.getModel() : null;
 
     const membershipManagedByNativeGroup = this.#isNativeGroupInventoryActor(inventoryActor);
+    const seenActorIds = new Set([inventoryActor?.id]);
     const partyMembers = this.#buildPartyMemberRows(state, inventoryActor)
+      .filter(({ actorId }) => {
+        if (seenActorIds.has(actorId)) return false;
+        seenActorIds.add(actorId);
+        return true;
+      })
       .map(({ actorId, actor: actorDocument, memberState }) => {
-        const inventoryWeight = actorDocument ? this.#getInventoryWeight(actorDocument) : 0;
+        const weightSnapshot = buildActorInventoryWeightSnapshot(actorDocument);
+        const inventoryWeight = weightSnapshot.weightLb;
         const effectiveStrength = memberState.strOverride ?? getActorStrength(actorDocument);
         const capacityMultiplier = memberState.capModOverride ?? state.defaultCapMod;
         const legacyCapacityLb = memberState.role === "transport"
@@ -3835,10 +6606,13 @@ export class InventoryService {
           role: memberState.role,
           roleLabel: getRoleLabel(memberState.role),
           inventoryWeight,
+          magicalContainers: weightSnapshot.magicalContainers,
+          storage: buildInventoryStorageProfile([weightSnapshot], capacityLb),
           strength: effectiveStrength,
           strengthSource: memberState.strOverride !== null ? "Ручная" : "Лист",
           capacityMultiplier,
           capacityLb,
+          currencyGp: roundNumber(actorCurrencyToCopper(actorDocument) / CURRENCY_MULTIPLIERS.gp, 2),
           capBonusLb: memberState.capBonusLb,
           foodPerDay: memberState.foodPerDay,
           waterGalPerDay: memberState.waterGalPerDay,
@@ -3911,6 +6685,9 @@ export class InventoryService {
       availableActors,
       membershipManagedByNativeGroup,
       totalCapacityLb,
+      storage: buildInventoryStorageProfile([partyWeightSnapshot, ...partyMembers.map((member) => ({
+        weightLb: member.inventoryWeight, magicalContainers: member.magicalContainers
+      }))], totalCapacityLb),
       totalFoodPerDay,
       totalWaterGalPerDay,
       totalEnergyCurrent,
@@ -4050,12 +6827,20 @@ export class InventoryService {
     };
   }
 
-  async getInventorySnapshot({ search = "", typeFilter = "all", createActor = true } = {}) {
-    const actor = await this.getInventoryActor({ create: createActor });
+  async getInventorySnapshot({
+    search = "",
+    typeFilter = "all",
+    createActor = true,
+    groupActorId = ""
+  } = {}) {
+    const actor = await this.getInventoryActor({ create: createActor, groupActorId });
     if (!actor) {
       return {
         actor: null,
         hasActor: false,
+        folders: [],
+        folderStateVersion: INVENTORY_FOLDER_STATE_VERSION,
+        inventoryIngressRules: normalizeInventoryIngressRuleState(null),
         items: [],
         allItems: [],
         emptyInventory: true,
@@ -4074,8 +6859,16 @@ export class InventoryService {
 
     const model = await this.moduleApi.getModel();
     const currency = buildCurrencySnapshot(actor);
+    const folderState = this.#readInventoryFolderState(actor);
+    const inventoryIngressRules = this.#readInventoryIngressRuleState(actor);
     const allItems = actor.items.contents
-      .map((item) => this.#buildInventoryEntry(model, item))
+      .map((item) => {
+        const entry = this.#buildInventoryEntry(model, item);
+        return {
+          ...entry,
+          folderId: folderState.itemFolderIds[entry.itemId] ?? null
+        };
+      })
       .sort((left, right) => left.name.localeCompare(right.name, "ru"));
     const normalizedSearch = normalizeText(search);
     const filteredItems = allItems.filter((entry) => {
@@ -4098,7 +6891,7 @@ export class InventoryService {
     const summary = {
       distinctCount: allItems.length,
       totalQuantity: roundNumber(allItems.reduce((sum, entry) => sum + entry.quantity, 0), 2),
-      totalWeight: roundNumber(allItems.reduce((sum, entry) => sum + entry.totalWeight, 0), 2),
+      totalWeight: buildActorInventoryWeightSnapshot(actor).weightLb,
       foodLb: roundNumber(allItems.reduce((sum, entry) => sum + (entry.isFood ? entry.quantity : 0), 0), 2),
       waterGal: roundNumber(allItems.reduce((sum, entry) => sum + (entry.isWater ? entry.quantity : 0), 0), 2),
       currencyLabel: currency.label,
@@ -4115,6 +6908,9 @@ export class InventoryService {
         canEdit: actor.isOwner
       },
       hasActor: true,
+      folders: folderState.folders,
+      folderStateVersion: folderState.version,
+      inventoryIngressRules,
       items: filteredItems,
       allItems,
       emptyInventory: filteredItems.length === 0,
@@ -4172,8 +6968,16 @@ export class InventoryService {
       throw new Error("Не удалось получить партийный инвентарь.");
     }
 
-    const targetActor = this.#resolveRecipientCharacter(actorId);
-    const operationId = createInventoryMutationId("inventory-take", mutationId);
+    const targetActor = this.#resolveRecipientCharacter(actorId, actor);
+    let operationId = createInventoryMutationId("inventory-take", mutationId);
+    if (!mutationId) {
+      const pending = (await this.mutationJournal.listPending()).find(record => record.kind === INVENTORY_GRAPH_TRANSFER_KIND
+        && record.sourceActorId === actor.id && record.graph.rootId === itemId);
+      if (pending) {
+        if (pending.targetActorId !== targetActor.id || Number(quantity) !== 1) throw this.#simpleTransferError("graph-manual-review", "Незавершённое дерево нужно передать прежнему получателю целиком.");
+        operationId = pending.id;
+      }
+    }
     if (!game.user?.isGM && typeof this.moduleApi.socketCommandBus?.request === "function") {
       return this.moduleApi.socketCommandBus.request(INVENTORY_TAKE_COMMAND, {
         inventoryActorId: actor.id,
@@ -4329,8 +7133,59 @@ export class InventoryService {
     return this.#convertCurrencyOnActor(inventoryActor, payload.mode);
   }
 
-  async addModelItemToInventory(sourceType, sourceId, quantity = 1) {
-    const actor = await this.getInventoryActor({ create: true });
+  async #commitDirectInventoryIngress({
+    actor,
+    itemData,
+    quantity,
+    folderId = null,
+    batchMutationId,
+    sourceOrigin
+  }) {
+    if (actor?.type !== "group") {
+      return this.#upsertInventoryItem(actor, itemData, quantity);
+    }
+    const row = {
+      sourceKey: "item",
+      quantity,
+      itemData: foundry.utils.deepClone(itemData),
+      legacyFolderId: normalizeInventoryFolderTarget(folderId),
+      container: null
+    };
+    const preview = await this.moduleApi.inventoryIngressPlanner.preview({
+      groupActorId: actor.id,
+      requestedFolderId: row.legacyFolderId,
+      rows: [row],
+      batch: false
+    });
+    const choices = await this.moduleApi.inventoryIngressPlanner.collectChoices(preview);
+    if (choices === null) {
+      return { actorId: actor.id, batchMutationId, cancelled: true, changed: false, rows: [] };
+    }
+    const serializedPlan = this.moduleApi.inventoryIngressPlanner.serialize(preview, choices);
+    return this.commitInventoryIngressBatch({
+      groupActorId: actor.id,
+      batchMutationId,
+      sourceOrigin,
+      serializedPlan
+    }, {
+      resolveRows: async () => [foundry.utils.deepClone(row)],
+      debitRow: async () => {},
+      acquisitionContext: new Set(["public-model", "manual-entry"]).has(sourceOrigin)
+        ? {
+            userId: cleanId(globalThis.game?.user?.id),
+            userName: cleanId(globalThis.game?.user?.name ?? globalThis.game?.user?.id)
+          }
+        : { sourceType: "lootgen", sourceName: "Lootgen" }
+    });
+  }
+
+  async addModelItemToInventory(sourceType, sourceId, quantity = 1, {
+    groupActorId = "",
+    folderId = null,
+    batchMutationId = ""
+  } = {}) {
+    const normalizedGroupActorId = cleanId(groupActorId);
+    const actor = await this.getInventoryActor({ create: true, groupActorId: normalizedGroupActorId });
     this.#assertCanManagePartyInventory(actor);
     if (!actor) {
       throw new Error("Не удалось получить партийный инвентарь.");
@@ -4338,7 +7193,14 @@ export class InventoryService {
 
     const safeQuantity = Math.max(0.01, roundNumber(toNumber(quantity, 1), 2));
     const itemData = await this.buildModelItemData(sourceType, sourceId, safeQuantity);
-    return this.#upsertInventoryItem(actor, itemData, safeQuantity);
+    return this.#commitDirectInventoryIngress({
+      actor,
+      itemData,
+      quantity: safeQuantity,
+      folderId,
+      batchMutationId: createInventoryMutationId("inventory-model", batchMutationId),
+      sourceOrigin: "public-model"
+    });
   }
 
   async addLootgenRowToInventory(row = {}) {
@@ -4350,7 +7212,13 @@ export class InventoryService {
 
     const safeQuantity = Math.max(0.01, roundNumber(toNumber(row.quantity, 1), 2));
     const itemData = await this.buildLootgenItemData(row);
-    return this.#upsertInventoryItem(actor, itemData, safeQuantity);
+    return this.#commitDirectInventoryIngress({
+      actor,
+      itemData,
+      quantity: safeQuantity,
+      batchMutationId: createInventoryMutationId("inventory-lootgen", row.directGrantId),
+      sourceOrigin: "lootgen"
+    });
   }
 
   addModelItemToInventoryOnce(sourceType, sourceId, quantity, mutationId) {
@@ -4360,15 +7228,28 @@ export class InventoryService {
     );
   }
 
-  addLootgenRowToInventoryOnce(row, mutationId) {
+  addLootgenRowToInventoryOnce(
+    row,
+    mutationId,
+    { allowPersistedItemData = false, groupActorId = "", folderId = null } = {}
+  ) {
     const frozenRow = foundry.utils.deepClone(row ?? {});
+    const frozenGroupActorId = cleanId(groupActorId);
+    const frozenFolderId = normalizeInventoryFolderTarget(folderId);
     return this.mutationCoordinator.run(
       "inventory",
-      () => this.#executeInventoryGrantOnce({
-        quantity: frozenRow.quantity,
-        mutationId,
-        buildItemData: () => this.buildLootgenItemData(frozenRow)
-      })
+      () => {
+        if (allowPersistedItemData && !isActiveGmClient()) {
+          throw new Error("Only the active GM can grant persisted storage items.");
+        }
+        return this.#executeInventoryGrantOnce({
+          quantity: frozenRow.quantity,
+          mutationId,
+          groupActorId: frozenGroupActorId,
+          folderId: frozenFolderId,
+          buildItemData: () => this.buildLootgenItemData(frozenRow, { allowPersistedItemData })
+        });
+      }
     );
   }
 
@@ -4389,7 +7270,7 @@ export class InventoryService {
     );
   }
 
-  addLootgenRowToCharacterOnce(row, actor, mutationId) {
+  addLootgenRowToCharacterOnce(row, actor, mutationId, {allowPreparedLootgenGraph=false,beforePrepare=null}={}) {
     const frozenRow = foundry.utils.deepClone(row ?? {});
     return this.mutationCoordinator.run(
       "inventory",
@@ -4400,11 +7281,25 @@ export class InventoryService {
         if (!isActorDocument(actor) || actor.type !== "character") {
           throw new Error("Лут из хранилища можно выдать только персонажу.");
         }
+        if (beforePrepare !== null && typeof beforePrepare !== "function") throw new TypeError("beforePrepare must be a function");
+        const composition = readLootgenPreparedComposition(frozenRow.itemData);
+        if (composition && allowPreparedLootgenGraph !== true) {
+          throw Object.assign(new Error("Подготовленный лут требует доверенного маршрута выдачи."),{code:"invalid-prepared-lootgen-item"});
+        }
         return this.#executeInventoryGrantOnce({
           actor,
           quantity: frozenRow.quantity,
           mutationId,
-          buildItemData: () => this.buildLootgenItemData(frozenRow, { allowPersistedItemData: true })
+          beforePrepare,
+          preparedLootgenFingerprint: allowPreparedLootgenGraph === true
+            ? itemInstanceFingerprint({actorUuid:actor.uuid ?? actor.id,quantity:frozenRow.quantity,itemData:frozenRow.itemData}) : null,
+          buildItemData: async () => {
+            const itemData = await this.buildLootgenItemData(composition
+              ? {...frozenRow,runtimeGraph:frozenRow.itemData.flags[MODULE_ID][RUNTIME_ITEM_GRAPH_FLAG]}
+              : frozenRow, {allowPersistedItemData:true});
+            if (allowPreparedLootgenGraph === true && itemData.flags?.[MODULE_ID]) delete itemData.flags[MODULE_ID].lootgenChat;
+            return itemData;
+          }
         });
       }
     );
@@ -4418,17 +7313,51 @@ export class InventoryService {
     });
   }
 
-  async #executeInventoryGrantOnce({ actor: requestedActor = null, quantity, mutationId, buildItemData }) {
+  async #executeInventoryGrantOnce({
+    actor: requestedActor = null,
+    quantity,
+    mutationId,
+    groupActorId = "",
+    folderId = null,
+    beforePrepare = null,
+    preparedLootgenFingerprint = null,
+    buildItemData
+  }) {
     const operationId = createInventoryMutationId("inventory-grant", mutationId);
     let record = await this.mutationJournal.find(operationId);
-    const actor = requestedActor ?? await this.getInventoryActor({ create: true });
+    const normalizedGroupActorId = cleanId(groupActorId);
+    const normalizedFolderId = normalizeInventoryFolderTarget(folderId);
+    if (normalizedFolderId !== null && !normalizedGroupActorId) {
+      throw new Error("Inventory folder target requires an explicit group Actor.");
+    }
+    const actor = requestedActor ?? await this.getInventoryActor({
+      create: true,
+      groupActorId: normalizedGroupActorId
+    });
     if (!requestedActor) {
       this.#assertCanManagePartyInventory(actor);
     }
     if (!actor) throw new Error("Не удалось получить инвентарь для выдачи лута.");
+    if (record && (record.kind !== "grant" || record.actorId !== actor.id || (record.actorUuid && record.actorUuid !== (actor.uuid ?? actor.id)))) {
+      throw new Error("Inventory mutation ID was reused with a different actor target.");
+    }
+    if (record && (record.preparedLootgenFingerprint ?? null) !== preparedLootgenFingerprint) {
+      throw new Error("Prepared lootgen grant conflicts with the saved source or destination.");
+    }
+    if (record && (
+      cleanId(record.groupActorId) !== normalizedGroupActorId
+      || normalizeInventoryFolderTarget(record.folderId) !== normalizedFolderId
+    )) {
+      throw new Error("Inventory mutation ID was reused with a different folder target.");
+    }
     if (!record) {
-      const safeQuantity = Math.max(0.01, roundNumber(toNumber(quantity, 1), 2));
-      const itemData = await buildItemData(safeQuantity);
+      if (beforePrepare) await beforePrepare();
+      const requestedQuantity = Math.max(0.01, roundNumber(toNumber(quantity, 1), 2));
+      const itemData = await buildItemData(requestedQuantity);
+      const safeQuantity = hasLootgenNarrative(itemData) ? 1 : requestedQuantity;
+      if (hasLootgenNarrative(itemData)) foundry.utils.setProperty(itemData, "system.quantity", 1);
+      const composition = preparedLootgenFingerprint ? readLootgenPreparedComposition(itemData) : null;
+      if (composition && safeQuantity !== 1) throw new Error("Prepared lootgen graph quantity must be one.");
       const candidate = this.#findInventoryMergeCandidate(actor, itemData);
       if (!candidate) {
         foundry.utils.setProperty(itemData, `flags.${MODULE_ID}.${INVENTORY_MUTATION_FLAG}`, {
@@ -4442,8 +7371,13 @@ export class InventoryService {
         kind: "grant",
         phase: "prepared",
         actorId: actor.id,
+        actorUuid: actor.uuid ?? actor.id,
+        ...(preparedLootgenFingerprint ? {preparedLootgenFingerprint} : {}),
+        groupActorId: normalizedGroupActorId,
+        folderId: normalizedFolderId,
         itemData,
         targetReceipt: {
+          ...(composition ? {graphItemIds:buildRuntimeGraphDocuments(itemData.flags[MODULE_ID][RUNTIME_ITEM_GRAPH_FLAG],operationId,itemData,{actorId:actor.id}).documents.map(data=>data._id)} : {}),
           itemId: candidate?.id ?? "",
           created: !candidate,
           beforeQuantity,
@@ -4458,6 +7392,15 @@ export class InventoryService {
       let item = record.targetReceipt.created
         ? this.#findMutationItem(actor, operationId)
         : actor.items.get(record.targetReceipt.itemId);
+      const runtimeGraph = record.itemData?.flags?.[MODULE_ID]?.[RUNTIME_ITEM_GRAPH_FLAG];
+      if (runtimeGraph) {
+        const recoverMissing = Boolean(record.preparedLootgenFingerprint && readLootgenPreparedComposition(record.itemData));
+        if (recoverMissing) {
+          const expectedIds = buildRuntimeGraphDocuments(runtimeGraph,operationId,record.itemData,{actorId:actor.id}).documents.map(data=>data._id);
+          if (JSON.stringify(record.targetReceipt.graphItemIds)!==JSON.stringify(expectedIds)) throw this.#inventoryReconciliationError("Prepared graph document IDs changed.");
+        }
+        item = await materializeRuntimeItemGraph(actor, runtimeGraph, operationId, record.itemData, {recoverMissing});
+      }
       if (record.targetReceipt.created) {
         if (!item) {
           try {
@@ -4490,7 +7433,17 @@ export class InventoryService {
       });
     }
     if (record.phase === "target-created") {
-      record = await this.mutationJournal.checkpoint(operationId, "target-created", "committed");
+      if (record.targetReceipt.created && record.folderId !== null) {
+        await this.assignInventoryGrantFolder({
+          groupActorId: record.groupActorId,
+          itemId: record.targetItemId,
+          folderId: record.folderId
+        });
+      }
+      record = await this.mutationJournal.checkpoint(operationId, "target-created", "folder-assigned");
+    }
+    if (record.phase === "folder-assigned") {
+      record = await this.mutationJournal.checkpoint(operationId, "folder-assigned", "committed");
     }
     const result = {
       actorId: actor.id,
@@ -4501,10 +7454,12 @@ export class InventoryService {
     return foundry.utils.deepClone(result);
   }
 
-  addCurrencyToInventoryOnce(coins = {}, mutationId = "") {
+  addCurrencyToInventoryOnce(coins = {}, mutationId = "", { groupActorId = "" } = {}) {
+    const frozenCoins = foundry.utils.deepClone(coins ?? {});
+    const requestedGroupActorId = cleanId(groupActorId);
     return this.mutationCoordinator.run(
       "inventory",
-      () => this.#executeAddCurrencyOnce(coins, mutationId)
+      () => this.#executeAddCurrencyOnce(frozenCoins, mutationId, { groupActorId: requestedGroupActorId })
     );
   }
 
@@ -4524,14 +7479,27 @@ export class InventoryService {
     );
   }
 
-  async #executeAddCurrencyOnce(coins, mutationId, { actor: requestedActor = null } = {}) {
+  async #executeAddCurrencyOnce(coins, mutationId, {
+    actor: requestedActor = null,
+    groupActorId = ""
+  } = {}) {
     const operationId = createInventoryMutationId("inventory-currency-grant", mutationId);
     let record = await this.mutationJournal.find(operationId);
-    const actor = requestedActor ?? await this.getInventoryActor({ create: true });
-    if (!requestedActor) {
+    const requestedGroupActorId = cleanId(groupActorId);
+    const actor = requestedActor ?? await this.getInventoryActor({
+      create: !requestedGroupActorId,
+      groupActorId: requestedGroupActorId
+    });
+    if (!requestedActor && !requestedGroupActorId) {
       this.#assertCanManagePartyInventory(actor);
     }
+    if (requestedGroupActorId && !isManagedPartyGroup(actor)) {
+      throw new Error("Указанный групповой инвентарь не управляется Rebreya.");
+    }
     if (!actor) throw new Error("Не удалось получить инвентарь для выдачи монет.");
+    if (record && cleanId(record.actorId) !== cleanId(actor.id)) {
+      throw this.#inventoryReconciliationError("Inventory currency grant target actor changed.");
+    }
     if (!record) {
       const before = buildCurrencySnapshot(actor);
       const after = {
@@ -4935,57 +7903,20 @@ export class InventoryService {
     return this.#resolveCraftOutputItems(actor, result);
   }
 
-  async breakItemToMaterial(itemId, quantity = 1) {
+  async breakItemToMaterial(itemId, quantity = 1, { mutationId = "" } = {}) {
     const actor = await this.getInventoryActor({ create: true });
-    this.#assertCanManagePartyInventory(actor);
-    const item = actor?.items.get(itemId) ?? null;
-    if (!item) {
-      throw new Error("Предмет не найден в партийном инвентаре.");
-    }
-
-    const model = await this.moduleApi.getModel();
-    const itemData = item.toObject();
-    const currentQuantity = getRawQuantity(itemData);
-    const breakQuantity = Math.max(1, Math.min(currentQuantity, Math.floor(toNumber(quantity, 1))));
-    const itemWeight = getItemWeight(itemData);
-    const totalWeight = itemWeight * breakQuantity;
-    const materialWeight = Math.floor(Math.max(0, totalWeight * 0.5) * 100) / 100;
-    if (materialWeight <= 0) {
-      throw new Error("Недостаточно веса предмета для разборки на материалы.");
-    }
-
-    const sourceFlags = foundry.utils.deepClone(item.flags?.[MODULE_ID] ?? {});
-    const material = model.materialById?.get(sourceFlags.materialId)
-      ?? model.materialById?.get(sourceFlags.predominantMaterialId)
-      ?? model.materialByGoodId?.get(sourceFlags.linkedGoodId)
-      ?? model.materials.find((entry) => normalizeText(entry.name) === normalizeText(sourceFlags.predominantMaterialName))
-      ?? model.materials.find((entry) => normalizeText(entry.name) === normalizeText(sourceFlags.materialLabel))
-      ?? model.materials.find((entry) => normalizeText(entry.name) === normalizeText(sourceFlags.sourceName))
-      ?? null;
-
-    if (!material) {
-      throw new Error("Для этого предмета не найден подходящий материал.");
-    }
-
-    const materialItemData = this.#buildMaterialItemData(material, materialWeight);
-    await this.#upsertInventoryItem(actor, materialItemData, materialWeight);
-
-    const nextQuantity = roundNumber(currentQuantity - breakQuantity, 2);
-    if (nextQuantity <= 0) {
-      await item.delete();
-    }
-    else {
-      await item.update({
-        "system.quantity": nextQuantity
+    const operationId = createInventoryMutationId("inventory-dismantle", mutationId);
+    const safeQuantity = Math.max(1, Math.floor(toNumber(quantity, 1)));
+    if (!game.user?.isGM && typeof this.moduleApi.socketCommandBus?.request === "function") {
+      return this.moduleApi.socketCommandBus.request(INVENTORY_DISMANTLE_COMMAND, {
+        inventoryActorId: actor.id,
+        itemId: cleanId(itemId),
+        mutationId: operationId,
+        quantity: safeQuantity
       });
     }
-
-    return {
-      itemName: item.name,
-      breakQuantity,
-      materialName: material.name,
-      materialWeight
-    };
+    this.#assertCanManagePartyInventory(actor);
+    return this.#dismantleInventoryItemFromActor(actor, itemId, safeQuantity, { mutationId: operationId });
   }
 
   async addPartyMember(actorId) {
@@ -5549,8 +8480,17 @@ export class InventoryService {
     };
   }
 
-  async importDroppedItem(dropData) {
-    const actor = await this.getInventoryActor({ create: true });
+  async importDroppedItem(dropData, {
+    groupActorId = "",
+    folderId = null,
+    ingressPlan = null
+  } = {}) {
+    const normalizedGroupActorId = cleanId(groupActorId);
+    const normalizedFolderId = normalizeInventoryFolderTarget(folderId);
+    const actor = await this.getInventoryActor({
+      create: true,
+      groupActorId: normalizedGroupActorId
+    });
     if (!actor) {
       throw new Error("Не удалось получить партийный инвентарь.");
     }
@@ -5567,6 +8507,7 @@ export class InventoryService {
     if (!isItemDocument(itemDocument)) {
       throw new Error("Перетащите предмет из листа персонажа или компендиума.");
     }
+    assertPhysicalInventoryItem(itemDocument);
 
     const sourceActor = isActorDocument(itemDocument.parent) ? itemDocument.parent : null;
     if (sourceActor && sourceActor.isOwner === false) {
@@ -5574,15 +8515,27 @@ export class InventoryService {
     }
 
     if (sourceActor?.id === actor.id) {
-      return itemDocument;
+      return this.moveInventoryItemToFolder({
+        groupActorId: actor.id,
+        itemId: itemDocument.id,
+        folderId: normalizedFolderId
+      });
     }
 
-    const operationId = createInventoryMutationId("inventory-import", dropData?.mutationId);
+    const operationId = await this.#resolveNativeImportMutationId(itemDocument, actor, normalizedFolderId, dropData?.mutationId);
+    const prepared = await this.#prepareImportedItemIngress(actor, itemDocument, {
+      folderId: normalizedFolderId,
+      serializedPlan: ingressPlan,
+      operationId
+    });
+    if (prepared.cancelled) return prepared.result;
     if (!game.user?.isGM && typeof this.moduleApi.socketCommandBus?.request === "function") {
       return this.moduleApi.socketCommandBus.request(INVENTORY_IMPORT_COMMAND, {
         inventoryActorId: actor.id,
         itemUuid: itemDocument.uuid,
-        mutationId: operationId
+        mutationId: operationId,
+        folderId: normalizedFolderId,
+        ingressPlan: prepared.serializedPlan
       });
     }
 
@@ -5607,8 +8560,93 @@ export class InventoryService {
     }
 
     return this.#importItemDocument(actor, itemDocument, {
-      mutationId: operationId
+      mutationId: operationId,
+      groupActorId: actor.id,
+      folderId: normalizedFolderId,
+      serializedPlan: prepared.serializedPlan
     });
+  }
+
+  async #resolveNativeImportMutationId(itemDocument, actor, folderId, mutationId) {
+    const pending = (await this.mutationJournal.listPending()).find(record => record.sourceOrigin === "import"
+      && record.rows?.some(row => row.nativeImportSource?.itemUuid === itemDocument.uuid));
+    if (pending) {
+      const id = pending.id.slice("inventory-ingress:".length);
+      if (pending.groupActorId !== actor.id || pending.requestedFolderId !== folderId || (mutationId && mutationId !== id)) {
+        throw this.#simpleTransferError("graph-manual-review", "Сначала завершите прежний перенос предмета в ту же папку и группу.");
+      }
+      return id;
+    }
+    return createInventoryMutationId("inventory-import", mutationId);
+  }
+
+  async #prepareImportedItemIngress(actor, itemDocument, {
+    folderId = null,
+    serializedPlan = null,
+    operationId = ""
+  } = {}) {
+    const sourceActor = isActorDocument(itemDocument.parent) ? itemDocument.parent : null;
+    const existing = operationId ? await this.mutationJournal.find(`inventory-ingress:${operationId}`) : null;
+    const saved = existing?.rows?.find(row => row.nativeImportSource);
+    if (saved && (existing.groupActorId !== actor.id || saved.nativeImportSource.itemUuid !== itemDocument.uuid
+      || saved.nativeImportSource.actorUuid !== sourceActor?.uuid || existing.requestedFolderId !== normalizeInventoryFolderTarget(folderId))) {
+      throw this.#simpleTransferError("graph-manual-review", "Источник или назначение переноса изменились.");
+    }
+    const itemData = saved ? foundry.utils.deepClone(saved.itemData) : sanitizeEmbeddedItemData(itemDocument.toObject());
+    let nativeImportSource = saved?.nativeImportSource ?? null;
+    if (sourceActor && !saved) {
+      if (itemDocument.flags?.[MODULE_ID]?.installedUpgrade?.hostItemId) throw new Error("Сначала снимите усовершенствование с предмета.");
+      if (isInventoryGraphItem(sourceActor, itemDocument)) {
+        if (Number(itemDocument.system.quantity) !== 1) throw new Error("Предмет с содержимым или усовершенствованиями переносится по одному экземпляру.");
+        if (itemDocument.system.equipped || itemDocument.flags?.[MODULE_ID]?.heldHands?.length) throw new Error("Сначала освободите руки и снимите переносимый предмет.");
+        const graph = captureRuntimeItemGraph(sourceActor, itemDocument);
+        foundry.utils.setProperty(itemData, `flags.${MODULE_ID}.${RUNTIME_ITEM_GRAPH_FLAG}`, graph);
+        nativeImportSource = { actorUuid: sourceActor.uuid, itemUuid: itemDocument.uuid };
+      }
+    }
+    if (sourceActor) {
+      const sourceIds = new Set(itemData.flags?.[MODULE_ID]?.[RUNTIME_ITEM_GRAPH_FLAG]?.nodes?.map(node => node._id) ?? [itemDocument.id]);
+      const conflict = (await this.mutationJournal.listPending()).some(record => record.id !== `inventory-ingress:${operationId}`
+        && record.rows?.some(row => row.nativeImportSource?.actorUuid === sourceActor.uuid
+          && row.itemData?.flags?.[MODULE_ID]?.[RUNTIME_ITEM_GRAPH_FLAG]?.nodes?.some(node => sourceIds.has(node._id))));
+      if (conflict) throw this.#simpleTransferError("graph-manual-review", "Предмет участвует в незавершённом переносе.");
+    }
+    const quantity = Math.max(0, getRawQuantity(itemData));
+    if (quantity <= 0) throw new Error("У предмета нет количества для переноса.");
+    const row = {
+      sourceKey: "item",
+      quantity,
+      itemData,
+      legacyFolderId: normalizeInventoryFolderTarget(folderId),
+      container: null
+    };
+    if (nativeImportSource) {
+      this.#nativeImportRows.set(row, foundry.utils.deepClone(nativeImportSource));
+      if (saved && !serializedPlan) serializedPlan = JSON.parse(existing.fingerprint).serializedPlan;
+    }
+    if (serializedPlan) {
+      return { row, serializedPlan: foundry.utils.deepClone(serializedPlan), cancelled: false };
+    }
+    const preview = await this.moduleApi.inventoryIngressPlanner.preview({
+      groupActorId: actor.id,
+      requestedFolderId: row.legacyFolderId,
+      rows: [row],
+      batch: false
+    });
+    const choices = await this.moduleApi.inventoryIngressPlanner.collectChoices(preview);
+    if (choices === null) {
+      return {
+        row,
+        serializedPlan: null,
+        cancelled: true,
+        result: { actorId: actor.id, cancelled: true, changed: false, rows: [] }
+      };
+    }
+    return {
+      row,
+      serializedPlan: this.moduleApi.inventoryIngressPlanner.serialize(preview, choices),
+      cancelled: false
+    };
   }
 
   async executeTakeMutation(payload = {}) {
@@ -5626,6 +8664,165 @@ export class InventoryService {
     );
   }
 
+  #inventoryFolderBatchChildMutationId(operationId, action, itemId) {
+    const identity = JSON.stringify([cleanId(operationId), cleanId(action), cleanId(itemId)]);
+    const hash = (seed) => {
+      let value = seed >>> 0;
+      for (let index = 0; index < identity.length; index += 1) {
+        value ^= identity.charCodeAt(index);
+        value = Math.imul(value, 0x01000193) >>> 0;
+      }
+      return value.toString(36);
+    };
+    return `inventory-folder-batch:${action}:${hash(0x811c9dc5)}-${hash(0x9e3779b9)}`;
+  }
+
+  async executeInventoryFolderBatch(payload = {}) {
+    const groupActorId = cleanId(payload.groupActorId);
+    const folderId = cleanId(payload.folderId);
+    const action = cleanId(payload.action);
+    const includeDescendants = payload.includeDescendants === true;
+    const operationId = cleanId(payload.operationId);
+    const actor = await this.getInventoryActor({ create: false, groupActorId });
+    if (!isManagedPartyGroup(actor)) {
+      throw new Error("Некорректный партийный склад для пакетного действия.");
+    }
+    this.#assertCanManagePartyInventory(actor);
+    if (!folderId || !new Set(["sell", "dismantle"]).has(action) || !operationId) {
+      throw new TypeError("Inventory folder batch payload is invalid.");
+    }
+
+    const compareItems = (left, right) => (
+      String(left?.name ?? "").localeCompare(String(right?.name ?? ""), "ru", {
+        sensitivity: "base",
+        numeric: true
+      }) || cleanId(left?.id).localeCompare(cleanId(right?.id))
+    );
+    const initialFolderState = this.#readInventoryFolderState(actor);
+    const selectedItemIds = selectInventoryFolderItemIds({
+      state: initialFolderState,
+      items: actor.items?.contents ?? [],
+      folderId,
+      includeDescendants,
+      compareItems
+    });
+    const report = {
+      action,
+      folderId,
+      includeDescendants,
+      processed: [],
+      skipped: [],
+      failed: [],
+      stopped: false,
+      totals: { gainedCopper: 0, materials: [] }
+    };
+    let model = null;
+    const materialTotals = new Map();
+    const skip = (itemId, itemName, code, message) => {
+      report.skipped.push({ itemId, itemName, code, message });
+    };
+
+    for (const itemId of selectedItemIds) {
+      const item = actor.items?.get?.(itemId)
+        ?? actor.items?.contents?.find?.((candidate) => cleanId(candidate?.id) === itemId)
+        ?? null;
+      if (!item) {
+        skip(itemId, "", "item-missing", "Предмет больше не существует.");
+        continue;
+      }
+      const itemName = cleanId(item.name);
+      let stillInScope = false;
+      try {
+        stillInScope = selectInventoryFolderItemIds({
+          state: this.#readInventoryFolderState(actor),
+          items: actor.items?.contents ?? [],
+          folderId,
+          includeDescendants,
+          compareItems
+        }).includes(itemId);
+      }
+      catch (error) {
+        if (error?.code !== "folder-not-found") throw error;
+      }
+      if (!stillInScope) {
+        skip(itemId, itemName, "item-moved", "Предмет больше не находится в выбранной области папки.");
+        continue;
+      }
+
+      const itemData = item.toObject();
+      const quantity = getRawQuantity(itemData);
+      if (action === "sell") {
+        const quote = resolveInventorySaleQuote(itemData, quantity);
+        if (!quote.eligible) {
+          skip(itemId, itemName, quote.code, quote.message);
+          continue;
+        }
+      }
+      else {
+        model ??= await this.moduleApi.getModel();
+        const blockReason = getInventoryDismantleBlockReason(itemData);
+        const minimumQuantity = resolveInventoryDismantleMinimumQuantity(itemData, { model });
+        if (blockReason || minimumQuantity === null || quantity < minimumQuantity) {
+          skip(itemId, itemName, "not-dismantlable", blockReason || "Предмет нельзя разобрать на материал.");
+          continue;
+        }
+      }
+
+      const mutationId = this.#inventoryFolderBatchChildMutationId(operationId, action, itemId);
+      try {
+        const result = action === "sell"
+          ? await this.executeSaleMutation({
+              inventoryActorId: groupActorId,
+              itemId,
+              quantity,
+              mutationId
+            })
+          : await this.executeDismantleMutation({
+              inventoryActorId: groupActorId,
+              itemId,
+              quantity,
+              mutationId
+            });
+        report.processed.push({ itemId, itemName, ...foundry.utils.deepClone(result) });
+        if (action === "sell") {
+          report.totals.gainedCopper += Math.max(0, Math.round(toNumber(result?.gainedCopper, 0)));
+        }
+        else if (result?.skipped === true) {
+          report.processed.pop();
+          skip(itemId, itemName, cleanId(result.code) || "not-dismantlable", "Материал был пропущен входящим фильтром.");
+        }
+        else {
+          const materialName = cleanId(result?.materialName);
+          const materialQuantity = Math.max(0, toNumber(result?.materialWeight, 0));
+          if (materialName && materialQuantity > 0) {
+            materialTotals.set(materialName, roundNumber((materialTotals.get(materialName) ?? 0) + materialQuantity, 2));
+          }
+        }
+      }
+      catch (error) {
+        const code = cleanId(error?.code) || "item-failed";
+        if (new Set(["unauthorized", "unknown-sender", "sender-mismatch"]).has(code)) throw error;
+        if (code === "folder-required") {
+          skip(itemId, itemName, code, cleanId(error?.message));
+          continue;
+        }
+        report.failed.push({
+          itemId,
+          itemName,
+          code,
+          message: cleanId(error?.message) || "Не удалось обработать предмет."
+        });
+        if (code === "reconciliation-required" || code === "mutation-conflict" || /invariant/iu.test(error?.message ?? "")) {
+          report.stopped = true;
+          break;
+        }
+      }
+    }
+
+    report.totals.materials = [...materialTotals].map(([name, quantity]) => ({ name, quantity }));
+    return foundry.utils.deepClone(report);
+  }
+
   async executeSaleMutation(payload = {}) {
     const inventoryActor = game.actors?.get?.(cleanId(payload.inventoryActorId)) ?? null;
     if (!isManagedPartyGroup(inventoryActor)) {
@@ -5639,16 +8836,35 @@ export class InventoryService {
     );
   }
 
-  async executeImportMutation(payload = {}) {
+  async executeDismantleMutation(payload = {}) {
     const inventoryActor = game.actors?.get?.(cleanId(payload.inventoryActorId)) ?? null;
+    if (!isManagedPartyGroup(inventoryActor)) {
+      throw new Error("Некорректный партийный склад для разбора предмета.");
+    }
+    return this.#dismantleInventoryItemFromActor(
+      inventoryActor,
+      cleanId(payload.itemId),
+      payload.quantity,
+      { mutationId: cleanId(payload.mutationId) }
+    );
+  }
+
+  async executeImportMutation(payload = {}) {
+    const groupActorId = cleanId(payload.inventoryActorId);
+    const inventoryActor = await this.getInventoryActor({ create: false, groupActorId });
     const itemDocument = await resolveUuid(payload.itemUuid);
     if (!isManagedPartyGroup(inventoryActor) || !(itemDocument instanceof Item)) {
       throw new Error("Некорректные документы импорта предмета.");
     }
-    await this.#importItemDocument(inventoryActor, itemDocument, {
-      mutationId: cleanId(payload.mutationId)
+    assertPhysicalInventoryItem(itemDocument);
+    const importResult = await this.#importItemDocument(inventoryActor, itemDocument, {
+      mutationId: cleanId(payload.mutationId),
+      groupActorId,
+      folderId: normalizeInventoryFolderTarget(payload.folderId),
+      serializedPlan: payload.ingressPlan
     });
     return {
+      ...foundry.utils.deepClone(importResult),
       actorId: inventoryActor.id,
       itemUuid: cleanId(payload.itemUuid)
     };
@@ -5665,6 +8881,7 @@ export class InventoryService {
     if (!sender || !(itemDocument instanceof Item) || !isActorDocument(targetActor)) {
       throw new Error("Некорректный запрос на перенос предмета.");
     }
+    assertPhysicalInventoryItem(itemDocument);
 
     if (!isManagedPartyGroup(targetActor)) {
       throw new Error("Цель переноса не является партийным складом.");
@@ -5685,7 +8902,10 @@ export class InventoryService {
     }
 
     return this.#importItemDocument(targetActor, itemDocument, {
-      mutationId: cleanId(payload.mutationId)
+      mutationId: cleanId(payload.mutationId),
+      groupActorId: targetActor.id,
+      folderId: normalizeInventoryFolderTarget(payload.folderId),
+      serializedPlan: payload.ingressPlan ?? null
     });
   }
 
@@ -5744,9 +8964,8 @@ export class InventoryService {
       };
     }
 
-    const inventoryActor = await this.getInventoryActor({ create: false });
     const sourceActor = isActorDocument(sourceItem.parent) ? sourceItem.parent : null;
-    if (!inventoryActor || !sourceActor || sourceActor.id !== inventoryActor.id) {
+    if (!isManagedPartyGroup(sourceActor)) {
       return {
         handled: false,
         reason: "sourceNotPartyInventory"
@@ -5779,7 +8998,7 @@ export class InventoryService {
       targetReceipt: normalizedTargetReceipt
     };
 
-    if (!this.canManagePartyInventory(inventoryActor)) {
+    if (!isExplicitActiveGmClient()) {
       if (!getActiveGm()?.id || getActiveGm()?.active === false || typeof game.socket?.emit !== "function") {
         throw new Error("Не удалось отправить запрос на удаление исходного предмета мастеру.");
       }
@@ -5792,10 +9011,13 @@ export class InventoryService {
       return {
         handled: true,
         requested: true,
+        actorId: sourceActor.id,
+        targetActorId: targetActor.id,
         transferId: safeTransferId,
         sourceItemUuid: sourceItem.uuid,
         targetItemUuid: itemDocument.uuid,
-        targetReceipt: normalizedTargetReceipt
+        targetReceipt: normalizedTargetReceipt,
+        inventoryTransferMode: "simple"
       };
     }
 
@@ -5941,9 +9163,123 @@ export class InventoryService {
 
   async #executePartyInventorySourceDepletion(request) {
     this.#assertSourceDepletionAuthority();
-    let record = await this.#awaitSourceDepletionAuthority(
+    const fingerprint = this.#simpleMutationFingerprint("party-source-depletion", request);
+    const existing = await this.#awaitSourceDepletionAuthority(
       () => this.mutationJournal.find(request.transferId)
     );
+    if (existing?.kind !== "inventory-simple-v1") {
+      if (existing) return this.#executeLegacyPartyInventorySourceDepletion(request, existing);
+    }
+    else {
+      this.#assertSimpleMutationRecord(existing, fingerprint);
+      const terminal = this.#readInventoryTerminal(existing);
+      if (terminal.terminal) return terminal.value;
+      throw this.#simpleTransferError(
+        "transfer-manual-review",
+        "Party inventory source depletion has an incomplete simple terminal record.",
+        { operationId: request.transferId }
+      );
+    }
+
+    const sourceItem = await resolveUuid(request.sourceItemUuid);
+    if (!isItemDocument(sourceItem)) {
+      throw this.#simpleTransferError(
+        "transfer-manual-review",
+        "Party inventory source is missing without a terminal transfer outcome.",
+        {
+          operationId: request.transferId,
+          sourceItemUuid: request.sourceItemUuid,
+          targetItemUuid: request.targetItemUuid
+        }
+      );
+    }
+    const sourceActor = isActorDocument(sourceItem.parent) ? sourceItem.parent : null;
+    if (!isManagedPartyGroup(sourceActor)) {
+      throw new Error("Исходный предмет не находится в партийном складе.");
+    }
+    const { targetActor, targetItem } = await this.#resolveSourceDepletionParticipants(request, sourceActor.id);
+    if (!itemsCanRepresentSameTransfer(sourceItem, targetItem)
+      || !inventoryTransferIdentityMatches(sourceItem, request.expectedIdentity)
+      || !inventoryTransferIdentityMatches(targetItem, request.expectedIdentity)
+      || !inventoryQuantitiesMatch(getRawQuantity(sourceItem.toObject()), request.expectedQuantity)
+      || !inventoryQuantitiesMatch(getRawQuantity(targetItem.toObject()), request.targetReceipt.afterQuantity)) {
+      throw this.#simpleTransferError(
+        "transfer-manual-review",
+        "Received item no longer matches the captured source transfer.",
+        {
+          operationId: request.transferId,
+          sourceActorId: sourceActor.id,
+          targetActorId: targetActor.id,
+          sourceItemUuid: request.sourceItemUuid,
+          targetItemUuid: request.targetItemUuid
+        }
+      );
+    }
+
+    const terminalRecord = {
+      id: request.transferId,
+      kind: "inventory-simple-v1",
+      phase: "committed",
+      fingerprint,
+      operationType: "party-source-depletion",
+      sourceActorId: sourceActor.id,
+      targetActorId: targetActor.id
+    };
+    try {
+      this.#assertSourceDepletionAuthority();
+      await this.#applySourceReceipt(sourceActor, {
+        itemId: sourceItem.id,
+        beforeQuantity: request.expectedQuantity,
+        afterQuantity: 0,
+        delta: request.expectedQuantity
+      });
+      this.#assertSourceDepletionAuthority();
+    }
+    catch (error) {
+      const sourceState = this.#sourceReceiptState(sourceActor, {
+        itemId: sourceItem.id,
+        beforeQuantity: request.expectedQuantity,
+        afterQuantity: 0
+      });
+      const code = sourceState.before ? "source-debit-failed" : "transfer-manual-review";
+      await this.#finishSimpleFailure(
+        terminalRecord,
+        this.#simpleTransferError(code, cleanId(error?.message) || "Party inventory source debit failed."),
+        {
+          operationId: request.transferId,
+          sourceActorId: sourceActor.id,
+          targetActorId: targetActor.id,
+          sourceItemUuid: request.sourceItemUuid,
+          targetItemUuid: request.targetItemUuid,
+          expectedSourceQuantity: request.expectedQuantity
+        }
+      );
+    }
+
+    const result = {
+      handled: true,
+      actorId: sourceActor.id,
+      targetActorId: targetActor.id,
+      transferId: request.transferId,
+      sourceItemUuid: request.sourceItemUuid,
+      targetItemUuid: request.targetItemUuid,
+      targetReceipt: request.targetReceipt,
+      inventoryTransferMode: "simple"
+    };
+    const audit = await this.#recordSimpleTerminal(terminalRecord, { ok: true, value: result });
+    if (!audit.auditPersisted) {
+      return {
+        ...foundry.utils.deepClone(result),
+        auditPersisted: false,
+        auditWarning: cleanId(audit.auditError?.message) || "Inventory audit outcome was not persisted."
+      };
+    }
+    return foundry.utils.deepClone(result);
+  }
+
+  async #executeLegacyPartyInventorySourceDepletion(request, existingRecord = null) {
+    this.#assertSourceDepletionAuthority();
+    let record = existingRecord;
     if (!record) {
       record = await this.#prepareSourceDepletionRecord(request);
     }
@@ -5988,6 +9324,8 @@ export class InventoryService {
 
     const result = {
       handled: true,
+      actorId: record.sourceActorId,
+      targetActorId: record.targetActorId,
       transferId: request.transferId,
       sourceItemUuid: request.sourceItemUuid,
       targetItemUuid: request.targetItemUuid,
@@ -6004,8 +9342,28 @@ export class InventoryService {
       return false;
     }
     const request = this.#normalizeSourceDepletionRequest(payload, senderId);
-    return this.mutationCoordinator.run(
+    const fingerprint = this.#simpleMutationFingerprint("party-source-depletion", request);
+    const existing = await this.mutationJournal.find(request.transferId);
+    if (existing?.kind !== "inventory-simple-v1") {
+      if (existing) {
+        return this.mutationCoordinator.run(
+          "inventory",
+          async () => this.#executeLegacyPartyInventorySourceDepletion(
+            request,
+            await this.mutationJournal.find(request.transferId)
+          )
+        );
+      }
+    }
+    else {
+      this.#assertSimpleMutationRecord(existing, fingerprint);
+      const terminal = this.#readInventoryTerminal(existing);
+      if (terminal.terminal) return terminal.value;
+    }
+    this.#claimSimpleMutationFingerprint(request.transferId, fingerprint);
+    return this.mutationCoordinator.runIdempotent(
       "inventory",
+      `inventory-simple:party-source-depletion:${request.transferId}:${fingerprint}`,
       () => this.#executePartyInventorySourceDepletion(request)
     );
   }
@@ -6065,168 +9423,108 @@ export class InventoryService {
     throw new Error("Неизвестное действие со складом.");
   }
 
-  #importItemDocument(actor, itemDocument, options = {}) {
-    return this.mutationCoordinator.run(
-      "inventory",
-      () => this.#executeImportItemDocument(actor, itemDocument, options)
-    );
-  }
-
-  async #executeImportItemDocument(actor, itemDocument, { mutationId = "" } = {}) {
-    const operationId = createInventoryMutationId("inventory-import", mutationId);
-    let record = await this.mutationJournal.find(operationId);
-    if (!record) {
-      const sourceItemData = itemDocument.toObject();
-      const importedItemData = sanitizeEmbeddedItemData(sourceItemData);
-      const importedQuantity = Math.max(0, getRawQuantity(importedItemData));
-      if (importedQuantity <= 0) {
-        throw new Error("У предмета нет количества для переноса.");
-      }
-      const mergeCandidate = this.#findInventoryMergeCandidate(actor, importedItemData);
-      if (!mergeCandidate) {
-        foundry.utils.setProperty(importedItemData, `flags.${MODULE_ID}.${INVENTORY_MUTATION_FLAG}`, {
-          id: operationId,
-          kind: "import"
+  async #importItemDocument(actor, itemDocument, {
+    mutationId = "",
+    groupActorId = "",
+    folderId = null,
+    serializedPlan = null
+  } = {}) {
+    assertPhysicalInventoryItem(itemDocument);
+    const operationId = await this.#resolveNativeImportMutationId(itemDocument, actor, normalizeInventoryFolderTarget(folderId), mutationId);
+    const prepared = await this.#prepareImportedItemIngress(actor, itemDocument, {
+      folderId,
+      serializedPlan,
+      operationId
+    });
+    if (prepared.cancelled) return prepared.result;
+    const sourceActor = isActorDocument(itemDocument.parent) ? itemDocument.parent : null;
+    const sourceToken = sourceActor?.isToken === true ? sourceActor.token ?? null : null;
+    const sourceScene = sourceToken?.parent ?? sourceToken?.scene ?? null;
+    return this.commitInventoryIngressBatch({
+      groupActorId: cleanId(groupActorId || actor?.id),
+      batchMutationId: operationId,
+      sourceOrigin: "import",
+      serializedPlan: prepared.serializedPlan
+    }, {
+      resolveRows: async () => {
+        const livePrepared = await this.#prepareImportedItemIngress(actor, itemDocument, {
+          folderId,
+          serializedPlan: prepared.serializedPlan,
+          operationId
         });
-      }
-      record = await this.mutationJournal.start({
-        id: operationId,
-        kind: "import",
-        phase: "prepared",
-        targetActorId: actor.id,
-        sourceItemUuid: itemDocument.uuid,
-        sourceActorId: isActorDocument(itemDocument.parent) ? itemDocument.parent.id : "",
-        importedItemData,
-        targetReceipt: {
-          itemId: mergeCandidate?.id ?? "",
-          created: !mergeCandidate,
-          beforeQuantity: mergeCandidate ? getRawQuantity(mergeCandidate.toObject()) : 0,
-          afterQuantity: mergeCandidate
-            ? roundNumber(getRawQuantity(mergeCandidate.toObject()) + importedQuantity, 2)
-            : importedQuantity,
-          delta: importedQuantity
+        return [livePrepared.row];
+      },
+      debitRow: async (row, context) => {
+        if (!sourceActor) return;
+        if (this.#nativeImportRows.has(row)) {
+          return this.#debitNativeImportGraph(sourceActor, actor, row, context);
         }
-      });
-    }
-
-    const terminal = this.#readInventoryTerminal(record);
-    if (terminal.terminal) {
-      return actor;
-    }
-    if (record.phase === "prepared") {
-      let targetItem = record.targetReceipt.created
-        ? this.#findMutationItem(actor, operationId)
-        : actor.items.get(record.targetReceipt.itemId);
-      if (record.targetReceipt.created) {
-        if (!targetItem) {
-          try {
-            [targetItem] = await actor.createEmbeddedDocuments("Item", [record.importedItemData]);
-          }
-          catch (error) {
-            targetItem = this.#findMutationItem(actor, operationId);
-            if (!targetItem) throw error;
-          }
-        }
-      }
-      else {
-        if (!targetItem) {
-          throw this.#inventoryReconciliationError("Inventory import merge target disappeared.");
-        }
-        const currentQuantity = getRawQuantity(targetItem.toObject());
-        if (!inventoryQuantitiesMatch(currentQuantity, record.targetReceipt.afterQuantity)) {
-          if (!inventoryQuantitiesMatch(currentQuantity, record.targetReceipt.beforeQuantity)) {
-            throw this.#inventoryReconciliationError("Inventory import merge target changed before update.");
-          }
-          try {
-            await targetItem.update({ "system.quantity": record.targetReceipt.afterQuantity });
-          }
-          catch (error) {
-            if (!inventoryQuantitiesMatch(getRawQuantity(targetItem.toObject()), record.targetReceipt.afterQuantity)) {
-              throw error;
-            }
-          }
-        }
-      }
-      if (!targetItem) {
-        throw this.#inventoryReconciliationError("Inventory import target could not be resolved.");
-      }
-      record = await this.mutationJournal.checkpoint(operationId, "prepared", "target-created", {
-        targetItemId: targetItem.id
-      });
-    }
-    if (record.phase === "target-created") {
-      const sourceActor = isActorDocument(itemDocument.parent) ? itemDocument.parent : null;
-      if (sourceActor) {
         const sourceStillExists = () => sourceActor.items?.get?.(itemDocument.id)
           ?? sourceActor.items?.contents?.find?.((candidate) => candidate.id === itemDocument.id)
           ?? null;
         try {
-          if (sourceStillExists()) {
-            await itemDocument.delete();
-          }
+          if (sourceStillExists()) await itemDocument.delete();
         }
         catch (error) {
-          if (!sourceStillExists()) {
-            // A lost acknowledgement still means the source debit committed.
-          }
-          else {
-            try {
-              const targetItem = record.targetReceipt.created
-                ? this.#findMutationItem(actor, operationId)
-                : actor.items.get(record.targetReceipt.itemId);
-              if (record.targetReceipt.created) {
-                await this.#compensateCreatedMutationItem(actor, operationId, record.targetReceipt.afterQuantity);
-              }
-              else if (targetItem) {
-                const currentQuantity = getRawQuantity(targetItem.toObject());
-                if (!inventoryQuantitiesMatch(currentQuantity, record.targetReceipt.afterQuantity)) {
-                  throw this.#inventoryReconciliationError("Inventory import merge target changed before compensation.");
-                }
-                try {
-                  await targetItem.update({ "system.quantity": record.targetReceipt.beforeQuantity });
-                }
-                catch (compensationError) {
-                  if (!inventoryQuantitiesMatch(getRawQuantity(targetItem.toObject()), record.targetReceipt.beforeQuantity)) {
-                    throw compensationError;
-                  }
-                }
-              }
-              record = await this.mutationJournal.checkpoint(operationId, "target-created", "compensated", {
-                failure: { code: error.code ?? "source-delete-failed", message: error.message }
-              });
-              await this.mutationJournal.finish(operationId, {
-                ok: false,
-                code: error.code ?? "source-delete-failed",
-                error: error.message
-              });
-            }
-            catch (compensationError) {
-              try {
-                await this.mutationJournal.checkpoint(operationId, "target-created", "reconciliation-required", {
-                  failure: { code: error.code ?? "source-delete-failed", message: error.message },
-                  compensationFailure: { code: compensationError.code ?? "target-compensation-failed", message: compensationError.message }
-                });
-              }
-              catch {
-                // Preserve the compound failure below.
-              }
-              throw new AggregateError([error, compensationError], "Inventory import and compensation both failed.");
-            }
-            throw error;
-          }
+          if (sourceStillExists()) throw error;
+        }
+      },
+      acquisitionContext: {
+        sceneId: cleanId(sourceScene?.id),
+        sceneName: cleanId(sourceScene?.name),
+        sourceType: sourceToken ? "token" : "actor",
+        sourceId: cleanId(sourceToken?.id ?? sourceActor?.id),
+        sourceName: cleanId(sourceToken?.name ?? sourceActor?.name)
+      }
+    });
+  }
+
+  async #debitNativeImportGraph(sourceActor, targetActor, row, { batchMutationId, targetReceipts }) {
+    const operationId = `inventory-ingress:${batchMutationId}`;
+    let record = await this.mutationJournal.find(operationId);
+    const saved = record?.rows?.find(entry => entry.sourceKey === row.sourceKey);
+    if (!saved?.nativeImportSource || saved.nativeImportSource.actorUuid !== sourceActor.uuid) {
+      throw this.#simpleTransferError("graph-manual-review", "Не найден исходный состав переносимого предмета.");
+    }
+    const graph = saved.itemData.flags[MODULE_ID][RUNTIME_ITEM_GRAPH_FLAG];
+    const expected = new Map(graph.nodes.map(data => [data._id, data]));
+    const snapshotKey = data => { const copy = foundry.utils.deepClone(data); delete copy._stats; return itemInstanceFingerprint(copy); };
+    const verifySource = allowMissing => {
+      for (const [id, data] of expected) {
+        const item = sourceActor.items.get(id);
+        if (!item && allowMissing) continue;
+        if (!item || snapshotKey(item.toObject()) !== snapshotKey(data)) throw this.#simpleTransferError("graph-manual-review", "Исходный состав предмета изменился во время переноса.");
+      }
+      for (const item of sourceActor.items.contents ?? sourceActor.items.values()) {
+        if (!expected.has(item.id) && (expected.has(item.system?.container) || expected.has(item.flags?.[MODULE_ID]?.installedUpgrade?.hostItemId))) {
+          throw this.#simpleTransferError("graph-manual-review", "В переносимый предмет добавлено новое содержимое.");
         }
       }
-      record = await this.mutationJournal.checkpoint(operationId, "target-created", "source-debited");
+    };
+    verifySource(saved.sourceDebitStarted === true);
+    for (const receipt of targetReceipts) {
+      if (!receipt.graphItemIds?.length || receipt.graphItemIds.some(id => !targetActor.items.get(id))) {
+        throw this.#simpleTransferError("graph-manual-review", "Полученный предмет или содержимое отсутствуют; повторная выдача запрещена.");
+      }
+      await this.#awaitSourceDepletionAuthority(() => materializeRuntimeItemGraph(targetActor, graph,
+        `${operationId}:${row.sourceKey}:${receipt.outputIndex}`, receipt.itemData, { recoverMissing: true }));
     }
-    if (record.phase === "source-debited") {
-      record = await this.mutationJournal.checkpoint(operationId, "source-debited", "committed");
+    if (!saved.sourceDebitStarted) {
+      record = await this.#awaitSourceDepletionAuthority(() => this.mutationJournal.checkpoint(operationId, "prepared", "prepared", {
+        rows: record.rows.map(entry => entry.sourceKey === row.sourceKey ? { ...entry, sourceDebitStarted: true } : entry)
+      }));
     }
-    await this.mutationJournal.finish(operationId, {
-      ok: true,
-      value: { actorId: actor.id, targetItemId: record.targetItemId ?? "" }
-    });
-    return actor;
+    for (const id of [...expected.keys()].reverse()) {
+      verifySource(true);
+      const item = sourceActor.items.get(id);
+      if (!item) continue;
+      try { await this.#awaitSourceDepletionAuthority(() => item.delete()); }
+      catch (error) { if (sourceActor.items.get(id)) throw error; }
+    }
+    this.#assertSourceDepletionAuthority();
+    if ([...expected.keys()].some(id => sourceActor.items.get(id))) throw this.#simpleTransferError("graph-manual-review", "Не подтверждено удаление исходного содержимого.");
   }
+
 }
 
 

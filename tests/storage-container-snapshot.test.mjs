@@ -10,6 +10,7 @@ import {
   createPortableStorageContainerItemData,
   isPortableStorageContainerItem,
   isStorageContainerRow,
+  isStorageJournalRow,
   readPortableStorageContainerSnapshot,
   rekeyStorageContainerSnapshot,
   resolveStorageContainerPath,
@@ -36,6 +37,27 @@ function snapshot(containerId, name, rows = []) {
   };
 }
 
+test("generated storage composition is exact metadata and preserves its catalog identity through portable flags",()=>{
+  const metadata={version:2,instanceKey:"shell",sourceType:"gear",sourceId:"catalog-chest",isBroken:false,upgrades:[]};
+  const input=snapshot("generated","Сундук");input.state.lootgenComposition=metadata;
+  const row=buildStorageContainerRow(input,{rowId:"generated-row"});
+  assert.deepEqual(row.composition,metadata);assert.equal(row.sourceId,"catalog-chest");
+  const portable=createPortableStorageContainerItemData(input);
+  assert.deepEqual(readPortableStorageContainerSnapshot(portable).state.lootgenComposition,metadata);
+  for(const extra of [{container:{}},{quantity:1},{value:100}]){
+    assert.throws(()=>buildStorageContainerSnapshot({...input,state:{...input.state,lootgenComposition:{...metadata,...extra}}}));
+  }
+});
+
+test("generated rows reject mismatched shell composition and invalid composed quantity instead of normalizing away data",()=>{
+  const metadata={version:2,instanceKey:"shell",sourceType:"gear",sourceId:"catalog-chest",isBroken:false,upgrades:[]};
+  const input=snapshot("generated","Сундук");input.state.lootgenComposition=metadata;
+  const row=buildStorageContainerRow(input,{rowId:"generated-row"});row.composition.sourceId="other";
+  assert.throws(()=>buildStorageContainerSnapshot(snapshot("outer","Внешний",[row])),/Conflicting/u);
+  const upgraded={...metadata,upgrades:[{instanceKey:"upgrade",sourceId:"upgrade",slotIndex:1,choices:{}}]};
+  assert.throws(()=>buildStorageContainerSnapshot(snapshot("outer","Внешний",[{rowId:"bad",quantity:2,composition:upgraded}])),/quantity/u);
+});
+
 test("container rows are unique quantity-one rows and ordinary rows remain stackable items", () => {
   const nested = snapshot("bag-1", "Сумка хранения");
   const row = buildStorageContainerRow(nested, { rowId: "row-bag" });
@@ -59,6 +81,131 @@ test("container rows are unique quantity-one rows and ordinary rows remain stack
   assert.equal(isStorageContainerRow(root.state.manualRows[1]), true);
   assert.equal(isStorageContainerRow(root.state.manualRows[0]), false);
   assert.deepEqual([...collectStorageContainerIds(root)].sort(), ["bag-1", "chest-1"]);
+});
+
+test("item row normalization preserves narrative fields beside composition", () => {
+  const root=buildStorageContainerSnapshot(snapshot("root","Сундук",[{
+    rowId:"book-row",
+    sourceType:"gear",
+    sourceId:"book",
+    quantity:1,
+    narrativeVariantId:"book-b",
+    narrativeGearId:"book",
+    narrativeTitle:"Следы",
+    narrativeDescription:"Текст",
+    itemData:{name:"Книга",type:"loot",system:{quantity:1}}
+  }]));
+
+  assert.equal(root.state.manualRows[0].narrativeVariantId,"book-b");
+  assert.equal(root.state.manualRows[0].narrativeGearId,"book");
+  assert.equal(root.state.manualRows[0].narrativeTitle,"Следы");
+  assert.equal(root.state.manualRows[0].narrativeDescription,"Текст");
+});
+
+test("journal reference rows stay canonical across root, nested, portable, and rekeyed snapshots", () => {
+  const journal = {
+    rowKind: "journal",
+    rowId: "journal-row",
+    sourceId: "JournalEntry.secret-notes",
+    sourceType: "journal",
+    sourceDocumentName: "JournalEntry",
+    name: "Полевые заметки",
+    img: "icons/book.webp",
+    quantity: 99,
+    itemData: { type: "loot" }
+  };
+  const root = buildStorageContainerSnapshot(snapshot("root", "Сундук", [
+    journal,
+    buildStorageContainerRow(snapshot("nested", "Сумка", [
+      { ...journal, rowId: "nested-journal-row" }
+    ]), { rowId: "nested-row" })
+  ]));
+  const expected = {
+    rowKind: "journal",
+    rowId: "journal-row",
+    stackKey: "",
+    sourceId: "JournalEntry.secret-notes",
+    sourceType: "journal",
+    sourceDocumentName: "JournalEntry",
+    name: "Полевые заметки",
+    img: "icons/book.webp",
+    quantity: 1
+  };
+
+  assert.deepEqual(root.state.manualRows[0], expected);
+  assert.equal(isStorageJournalRow(root.state.manualRows[0]), true);
+  assert.equal("itemData" in root.state.manualRows[0], false);
+  assert.deepEqual(root.state.manualRows[1].container.state.manualRows[0], {
+    ...expected,
+    rowId: "nested-journal-row"
+  });
+  assert.equal(readPortableStorageContainerSnapshot(
+    createPortableStorageContainerItemData(root)
+  ).state.manualRows[0].sourceId, "JournalEntry.secret-notes");
+  assert.equal(rekeyStorageContainerSnapshot(root).state.manualRows[0].sourceId, "JournalEntry.secret-notes");
+
+  const page = buildStorageContainerSnapshot(snapshot("page", "Шкатулка", [{
+    ...journal,
+    rowId: "page-row",
+    sourceId: "JournalEntry.notes.JournalEntryPage.page",
+    sourceDocumentName: "JournalEntryPage"
+  }]));
+  assert.equal(page.state.manualRows[0].sourceDocumentName, "JournalEntryPage");
+  assert.throws(
+    () => buildStorageContainerSnapshot(snapshot("invalid", "Сундук", [{
+      rowKind: "journal",
+      rowId: "missing-source"
+    }])),
+    TypeError
+  );
+});
+
+test("Journal read markers survive root, nested, portable, and rekeyed snapshot paths", () => {
+  const journal = {
+    rowKind: "journal",
+    rowId: "root-notes",
+    sourceId: "JournalEntry.root-notes",
+    sourceType: "journal",
+    name: "Корневая записка",
+    quantity: 1
+  };
+  const nested = snapshot("nested-read", "Сумка", [{ ...journal, rowId: "nested-notes" }]);
+  nested.state.readJournalRowIds = [" nested-notes ", "missing", "nested-notes"];
+  const input = snapshot("root-read", "Сундук", [
+    journal,
+    buildStorageContainerRow(nested, { rowId: "bag-row" })
+  ]);
+  input.state.readJournalRowIds = [" root-notes ", "missing", "root-notes"];
+
+  const root = buildStorageContainerSnapshot(input);
+  const portable = readPortableStorageContainerSnapshot(createPortableStorageContainerItemData(root));
+  let sequence = 0;
+  const rekeyed = rekeyStorageContainerSnapshot(root, {
+    createId: (prefix) => `${prefix}-copy-${sequence += 1}`
+  });
+
+  assert.deepEqual(root.state.readJournalRowIds, ["root-notes"]);
+  assert.deepEqual(resolveStorageContainerPath(root, ["bag-row"]).state.readJournalRowIds, ["nested-notes"]);
+  assert.deepEqual(portable.state.readJournalRowIds, ["root-notes"]);
+  assert.deepEqual(resolveStorageContainerPath(portable, ["bag-row"]).state.readJournalRowIds, ["nested-notes"]);
+  assert.deepEqual(rekeyed.state.readJournalRowIds, ["root-notes"]);
+  assert.deepEqual(resolveStorageContainerPath(rekeyed, ["bag-row"]).state.readJournalRowIds, ["nested-notes"]);
+});
+
+test("pending bulk claim bindings survive portable and rekeyed container snapshots", () => {
+  const input = snapshot("bulk-bound", "Сумка");
+  input.state.bulkClaimMutations = [{
+    mutationKey: "storage:root:all:self:bulk-bound",
+    fingerprint: "request-fingerprint",
+    status: "pending"
+  }];
+
+  const root = buildStorageContainerSnapshot(input);
+  const portable = readPortableStorageContainerSnapshot(createPortableStorageContainerItemData(root));
+  const rekeyed = rekeyStorageContainerSnapshot(root, { createId: () => "bulk-bound-copy" });
+
+  assert.deepEqual(portable.state.bulkClaimMutations, root.state.bulkClaimMutations);
+  assert.deepEqual(rekeyed.state.bulkClaimMutations, root.state.bulkClaimMutations);
 });
 
 test("container snapshots reject duplicate ancestors and nesting deeper than eight levels", () => {

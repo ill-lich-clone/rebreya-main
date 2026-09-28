@@ -480,3 +480,18 @@ test("downtime item data stores automation status and a stable Rebreya template 
   assert.match(itemData.flags[MODULE_ID].signature, /"downtimeId":"rest"/u);
   assert.match(itemData.system.description.value, /Отдых/u);
 });
+
+test("downtime item data prefers a module-owned icon matched by activity name", () => {
+  const rest = normalizeDowntimeActivity(
+    DOWNTIME_DATA.activities.find((activity) => activity.id === "rest")
+  );
+  const iconPath = "modules/rebreya-main/templates/icons/Downtime/%D0%9E%D1%82%D0%B4%D1%8B%D1%85.webp";
+  const itemData = createDowntimeItemData(
+    rest,
+    new Map(),
+    new Map([["отдых", iconPath]])
+  );
+
+  assert.equal(itemData.img, iconPath);
+  assert.ok(itemData.flags[MODULE_ID].signature.includes(iconPath));
+});

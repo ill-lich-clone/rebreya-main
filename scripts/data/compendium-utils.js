@@ -42,6 +42,10 @@ function getCompendiumSidebarFolders() {
 const SUPPORTED_ICON_EXTENSIONS = new Set(["webp", "png", "jpg", "jpeg", "svg", "avif"]);
 const namedIconCacheByRoot = new Map();
 
+export function clearNamedIconCache() {
+  namedIconCacheByRoot.clear();
+}
+
 function normalizeAssetPath(path) {
   return String(path ?? "").replace(/\\/gu, "/").replace(/\/{2,}/gu, "/").replace(/\/+$/gu, "");
 }

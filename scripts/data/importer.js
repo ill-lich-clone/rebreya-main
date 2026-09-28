@@ -1,5 +1,5 @@
 ﻿import { BUILTIN_DATA_PATH, DATA_SOURCE_MODES, MODULE_ID, SETTINGS_KEYS } from "../constants.js";
-import { normalizeEconomyDataset } from "./normalizer.js?v=1.4.128-lootgen-multiplicity";
+import { normalizeEconomyDataset } from "./normalizer.js?v=1.4.137-city-panorama-normalizer";
 
 const LEGACY_IMPLANT_ID_BY_SOURCE_NAME = Object.freeze({
   "Настроенные сервопривод": "nastroennye-servoprivody",
@@ -123,18 +123,27 @@ export function mergeGearWithImplants(gear = [], implants = []) {
   const merged = (Array.isArray(gear) ? gear : []).map((entry) => ({ ...entry }));
   const existingById = new Map();
   const existingByName = new Map();
+  const existingBySourceRef = new Map();
   for (const [index, entry] of merged.entries()) {
     if (!isGearImplant(entry)) continue;
     const id = String(entry?.id ?? "").trim();
     const name = normalizeImplantMatchText(entry?.name);
+    const sourceRef = String(entry?.sourceRef ?? "").trim();
     if (id) existingById.set(id, index);
     if (name) existingByName.set(name, index);
+    if (sourceRef) existingBySourceRef.set(sourceRef, index);
   }
 
   for (const source of Array.isArray(implants) ? implants : []) {
     const legacyId = LEGACY_IMPLANT_ID_BY_SOURCE_NAME[source?.name];
+    const sourceSheet = String(source?.implant?.sourceSheet ?? "").trim();
+    const sourceSheetRow = Number(source?.implant?.sourceSheetRow);
+    const sourceRef = sourceSheet && Number.isInteger(sourceSheetRow) && sourceSheetRow > 0
+      ? `${sourceSheet}!A${sourceSheetRow}`
+      : "";
     const existingIndex = (
-      (legacyId ? existingById.get(legacyId) : undefined)
+      (sourceRef ? existingBySourceRef.get(sourceRef) : undefined)
+      ?? (legacyId ? existingById.get(legacyId) : undefined)
       ?? existingByName.get(normalizeImplantMatchText(source?.name))
     );
     if (existingIndex === undefined) {
@@ -183,13 +192,14 @@ async function fetchJson(path, { optional = false } = {}) {
 
 async function loadFromBasePath(basePath) {
   const normalizedBasePath = trimTrailingSlash(basePath);
-  const [goods, regions, cities, reference, materials, gear, implants, upgrades] = await Promise.all([
+  const [goods, regions, cities, reference, materials, gear, alchemyProducts, implants, upgrades] = await Promise.all([
     fetchJson(`${normalizedBasePath}/goods.json`),
     fetchJson(`${normalizedBasePath}/regions.json`),
     fetchJson(`${normalizedBasePath}/cities.json`),
     fetchJson(`${normalizedBasePath}/reference.json`),
     fetchJson(`${normalizedBasePath}/materials.json`, { optional: true }),
     fetchJson(`${normalizedBasePath}/gear.json`, { optional: true }),
+    fetchJson(`${normalizedBasePath}/alchemy-products.json`, { optional: true }),
     fetchJson(`${normalizedBasePath}/implants.json`, { optional: true }),
     fetchJson(`${normalizedBasePath}/upgrades.json`, { optional: true })
   ]);
@@ -201,8 +211,10 @@ async function loadFromBasePath(basePath) {
     reference,
     materials: Array.isArray(materials) ? materials : [],
     gear: mergeGearCatalogExtensions(gear, { implants, upgrades }),
+    alchemyProducts: Array.isArray(alchemyProducts) ? alchemyProducts : [],
     source: {
-      basePath: normalizedBasePath
+      basePath: normalizedBasePath,
+      alchemyProductsAvailable: alchemyProducts !== null
     }
   });
 }

@@ -1,5 +1,5 @@
 import { MODULE_ID } from "../constants.js";
-import { buildNamedIconLookup, normalizeFolderPath, resolveNamedIcon } from "./compendium-utils.js";
+import { buildNamedIconLookup, normalizeFolderPath, resolveNamedIcon } from "./compendium-utils.js?v=1.4.327";
 import { classifyGearEntry } from "./item-classification.js";
 
 export const DEFAULT_GEAR_ICON = "systems/dnd5e/icons/svg/items/loot.svg";
@@ -10,6 +10,13 @@ const GEAR_ICON_SEARCH_PATHS = [
   `${CUSTOM_GEAR_ICONS_BASE_PATH}/weapons`,
   CUSTOM_GEAR_ICONS_BASE_PATH
 ];
+
+const GEAR_COIN_ICONS = Object.freeze({
+  "медная монета": `modules/${MODULE_ID}/assets/storage/coins/cp.png`,
+  "серебрянная монета": `modules/${MODULE_ID}/assets/storage/coins/sp.png`,
+  "золотая монета": `modules/${MODULE_ID}/assets/storage/coins/gp.png`,
+  "платиновая монета": `modules/${MODULE_ID}/assets/storage/coins/pp.png`
+});
 
 function cleanString(value, fallback = "") {
   const text = String(value ?? "").trim();
@@ -289,6 +296,10 @@ function stripTrailingParenthetical(value) {
   return cleanString(value).replace(/\s*\([^()]*\)\s*$/u, "").trim();
 }
 
+function stripTrailingRank(value) {
+  return cleanString(value).replace(/\s+\d+-й\s+ранг\s*$/iu, "").trim();
+}
+
 function getGearIconNameCandidates(item) {
   const name = cleanString(item?.name);
   if (!name) {
@@ -306,6 +317,12 @@ function getGearIconNameCandidates(item) {
   const shortenedName = stripTrailingParenthetical(name);
   if (shortenedName && shortenedName !== name) {
     candidates.push(shortenedName);
+  }
+
+  const ranklessName = stripTrailingRank(shortenedName || name);
+  if (ranklessName && ranklessName !== name) {
+    if (equipmentType) candidates.push(`${ranklessName} (${equipmentType})`);
+    candidates.push(ranklessName);
   }
 
   return Array.from(new Set(candidates));
@@ -494,6 +511,12 @@ export function resolveGearItemIcon(item, { classification = null, iconLookup = 
   const safeClassification = classification ?? classifyGearEntry(item ?? {});
   const folderPath = buildFolderPath(safeClassification).join(" / ").toLowerCase();
   const typeText = normalizeMatchText(item?.equipmentType);
+  const coinIcon = typeText === normalizeMatchText("Сокровища")
+    ? GEAR_COIN_ICONS[normalizeMatchText(item?.name)]
+    : "";
+  if (coinIcon) {
+    return coinIcon;
+  }
   const namedCustomIcon = resolveGearNamedIcon(item, iconLookup);
   if (namedCustomIcon) {
     return namedCustomIcon;

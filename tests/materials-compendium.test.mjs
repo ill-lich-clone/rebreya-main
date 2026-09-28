@@ -29,6 +29,50 @@ test("materials compendium exposes item data creation for focused verification",
   assert.equal(typeof materialsModule.createDnd5eItemData, "function");
 });
 
+test("party material icon sync replaces only legacy defaults and is idempotent", async () => {
+  const previousGame = globalThis.game;
+  const coal = materials.find(material => material.id === "ugol");
+  const bezoar = materials.find(material => material.id === "material-35");
+  const items = [coal, bezoar].map((material, index) => ({
+    id: `legacy-${index}`, name: `Переименованный ${material.name}`,
+    img: index === 0 ? "icons/commodities/metal/ingot-iron.webp" : "icons/commodities/leather/leather-bolt-brown.webp",
+    flags: { "rebreya-main": { managed: true, materialId: material.id, durability: { hp: { value: 4 } } } },
+    system: { quantity: 7 }
+  }));
+  items.push({ ...structuredClone(items[0]), id: "custom", img: "worlds/custom/coal.webp" });
+  items.push({ ...structuredClone(items[0]), id: "unmanaged", flags: { "rebreya-main": { materialId: coal.id } } });
+  const updates = [];
+  const actor = {
+    type: "group", flags: { "rebreya-main": { managedPartyGroup: true } }, items: { contents: items },
+    async updateEmbeddedDocuments(type, patches) {
+      assert.equal(type, "Item");
+      updates.push(...patches);
+      for (const patch of patches) Object.assign(items.find(item => item.id === patch._id), patch);
+    }
+  };
+  globalThis.game = {
+    user: { id: "gm", isGM: true, active: true }, system: { id: "dnd5e" }, actors: { contents: [actor] }
+  };
+  const lookup = new Map([["уголь", "modules/rebreya-main/templates/icons/Materials/Уголь.webp"],
+    ["чудовищный безоар", "modules/rebreya-main/templates/icons/Materials/Чудовищный безоар.webp"]]);
+  try {
+    const service = new materialsModule.MaterialsCompendiumService();
+    await service.syncPartyItemIcons([coal, bezoar], lookup);
+    await service.syncPartyItemIcons([coal, bezoar], lookup);
+    assert.deepEqual(updates, [
+      { _id: "legacy-0", img: lookup.get("уголь") },
+      { _id: "legacy-1", img: lookup.get("чудовищный безоар") }
+    ]);
+    assert.deepEqual(items.map(item => item.system.quantity), [7, 7, 7, 7]);
+    assert.equal(items[0].flags["rebreya-main"].durability.hp.value, 4);
+    items[0].img = "icons/commodities/metal/ingot-iron.webp";
+    game.users = { activeGM: { id: "other-gm", isGM: true, active: true } };
+    await service.syncPartyItemIcons([coal, bezoar], lookup);
+    assert.equal(updates.length, 2);
+  }
+  finally { globalThis.game = previousGame; }
+});
+
 test("material signature and rendered description include applications and alchemy aspects", () => {
   const material = materials.find(({ name }) => name === "Шерсть чудовища");
   const created = materialsModule.createDnd5eItemData(material, new Map());
@@ -45,7 +89,7 @@ test("material signature and rendered description include applications and alche
 });
 
 test("material rendering retains literal trailing source description whitespace", () => {
-  const material = materials.find(({ source }) => source?.row === 171);
+  const material = materials.find(({ name }) => name === "Кристаллы забытых Титанов");
   assert.equal(material.description.endsWith(" "), true);
 
   const created = materialsModule.createDnd5eItemData(material, new Map());
@@ -56,7 +100,12 @@ test("material rendering retains literal trailing source description whitespace"
 });
 
 test("null-price and null-weight materials remain creatable and keep nullable metadata", () => {
-  const material = materials.find(({ name }) => name === "Кости тролля");
+  const material = {
+    ...materials.find(({ name }) => name === "Кости тролля"),
+    priceGold: null,
+    weight: null,
+    rank: null
+  };
   const created = materialsModule.createDnd5eItemData(material, new Map());
   const flags = created.flags["rebreya-main"];
 
@@ -154,7 +203,7 @@ test("sync reuses world.rebreya-materials and indexes all materials for search a
   try {
     assert.deepEqual(
       { priceGold: material.priceGold, weight: material.weight, rank: material.rank },
-      { priceGold: null, weight: null, rank: null }
+      { priceGold: 250, weight: 5, rank: 3 }
     );
     const service = new materialsModule.MaterialsCompendiumService();
     const syncedPack = await service.sync(materials);
@@ -169,8 +218,8 @@ test("sync reuses world.rebreya-materials and indexes all materials for search a
     assert.equal(createCompendiumCount, 0);
     assert.equal(createDocumentsCount, 1);
     assert.equal(packs.size, 1);
-    assert.equal(documents.length, 247);
-    assert.equal(index.length, 247);
+    assert.equal(documents.length, materials.length);
+    assert.equal(index.length, materials.length);
     assert.ok(indexEntry, "nullable material is present in the index created by sync");
     const document = await pack.getDocument(indexEntry._id);
     assert.equal(await service.openMaterial(material), document);

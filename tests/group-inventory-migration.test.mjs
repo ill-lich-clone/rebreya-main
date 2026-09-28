@@ -1,8 +1,45 @@
 import test from "node:test";
+import { buildActorInventoryWeightSnapshot, buildInventoryStorageProfile } from "../scripts/data/inventory-weight.js";
+
+test("warehouse profile preserves physical load and accounts for nested, metric and unknown containers", () => {
+  const bag = (id, parent = null, capacity = { value: 500, units: "lb" }) => ({
+    id, type: "container", system: { container: parent, weight: { value: 15, units: "lb" },
+      properties: ["weightlessContents"], capacity: { weight: capacity } }
+  });
+  const load = (id, value, parent = null) => ({
+    id, type: "loot", system: { container: parent, quantity: 1, weight: { value, units: "lb" } }
+  });
+  const read = (items, base = 135) => buildInventoryStorageProfile([buildActorInventoryWeightSnapshot({ items })], base);
+  const cassidy = read([bag("bag"), load("inside", 27, "bag"), load("outside", 81.92)]);
+  assert.deepEqual(cassidy, { baseCapacityLb: 135, physicalWeightLb: 96.92,
+    containerCapacityLb: 500, containerUsedLb: 27, weightLb: 123.92,
+    capacityLb: 635, freeCapacityLb: 511.08, overloadLb: 0 });
+  const party = read([bag("bag"), load("inside", 27, "bag"), load("outside", 1853.3)], 1350);
+  assert.equal(party.weightLb, 1895.3);
+  assert.equal(party.capacityLb, 1850);
+  assert.equal(party.overloadLb, 45.3);
+  const nested = read([bag("outer"), bag("inner", "outer"), load("inside", 27, "inner")]);
+  assert.equal(nested.physicalWeightLb, 15);
+  assert.equal(nested.containerUsedLb, 42);
+  assert.equal(nested.containerCapacityLb, 1000);
+  assert.equal(nested.weightLb, 57);
+  const multiple = read([bag("outer"), bag("inner"), load("inside", 27, "inner")]);
+  assert.equal(multiple.weightLb, nested.weightLb);
+  assert.equal(multiple.freeCapacityLb, nested.freeCapacityLb);
+  assert.equal(read([bag("metric", null, { value: 200, units: "kg" })]).containerCapacityLb, 500);
+  for (const capacity of [undefined, { value: "" }, { value: -1 }, { value: "unknown" }]) {
+    const unknown = bag("bag");
+    unknown.system.capacity = { weight: capacity, volume: { value: 500, units: "cuft" } };
+    const snapshot = read([unknown, load("inside", 27, "bag")]);
+    assert.equal(snapshot.containerCapacityLb, 0);
+    assert.equal(snapshot.containerUsedLb, 27);
+  }
+});
 import assert from "node:assert/strict";
 
 import { DOWNTIME_ITEM_TYPE, MODULE_ID } from "../scripts/constants.js";
 import { GROUP_CONTEXT_ERRORS } from "../scripts/data/group-context-service.js";
+import { WorldMutationCoordinator } from "../scripts/application/world-mutation-coordinator.js";
 import {
   INVENTORY_CURRENCY_CONVERT_COMMAND,
   INVENTORY_CURRENCY_UPDATE_COMMAND,
@@ -12,6 +49,22 @@ import {
 
 function clone(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));
+}
+
+function mergeFoundryFlagValue(target, source) {
+  const merged = clone(target) ?? {};
+  for (const [key, value] of Object.entries(source ?? {})) {
+    if (key.startsWith("-=")) {
+      delete merged[key.slice(2)];
+    }
+    else if (value && typeof value === "object" && !Array.isArray(value)) {
+      merged[key] = mergeFoundryFlagValue(merged[key], value);
+    }
+    else {
+      merged[key] = clone(value);
+    }
+  }
+  return merged;
 }
 
 function installFoundryUtils() {
@@ -126,6 +179,7 @@ function createActor({
   abilities = {},
   members = []
 } = {}) {
+  const setFlagCalls = [];
   const actor = {
     id,
     uuid: `Actor.${id}`,
@@ -157,12 +211,15 @@ function createActor({
       get: (itemId) => actor.items.contents.find((item) => item.id === itemId) ?? null
     },
     flags: clone(flags),
+    setFlagCalls,
     getFlag(moduleId, key) {
       return this.flags?.[moduleId]?.[key];
     },
     async setFlag(moduleId, key, value) {
+      setFlagCalls.push({ moduleId, key, value: clone(value) });
       this.flags[moduleId] ??= {};
-      this.flags[moduleId][key] = value;
+      const targetKey = key.startsWith("==") ? key.slice(2) : key;
+      this.flags[moduleId][targetKey] = clone(value);
       return value;
     },
     async update(patch) {
@@ -268,6 +325,64 @@ function installInventoryFixture({
   };
 }
 
+function ingressRule({
+  id = "broken-weapons",
+  name = "Сломанное оружие",
+  conditions = [{ field: "durabilityState", operator: "is", value: "broken" }],
+  action = { type: "folder", folderId: "weapons" }
+} = {}) {
+  return { id, name, conditions, action };
+}
+
+function createNoMatchInventoryIngressPlanner() {
+  const serialize = (preview, { rootOverrideSourceKeys = [] } = {}) => ({
+    version: 1,
+    groupActorId: preview.groupActorId,
+    rulesRevision: preview.rulesRevision,
+    requestedFolderId: preview.requestedFolderId,
+    rows: preview.rows.map((row) => ({
+      sourceKey: row.sourceKey,
+      identity: clone(row.identity),
+      quantity: row.quantity,
+      matchedRuleId: null,
+      action: clone(row.action)
+    })),
+    rootOverrideSourceKeys: [...rootOverrideSourceKeys]
+  });
+  return {
+    async preview({ groupActorId, requestedFolderId, rows }) {
+      return {
+        version: 1,
+        groupActorId,
+        rulesRevision: 0,
+        requestedFolderId,
+        batch: rows.length > 1,
+        rows: rows.map((row) => ({
+          sourceKey: row.sourceKey,
+          displayName: row.itemData.name,
+          identity: {
+            sourceType: String(row.itemData.flags?.[MODULE_ID]?.sourceType ?? ""),
+            sourceId: String(row.itemData.flags?.[MODULE_ID]?.sourceId ?? ""),
+            documentType: String(row.itemData.type ?? ""),
+            durabilityState: "ineligible",
+            quantity: row.quantity
+          },
+          quantity: row.quantity,
+          matchedRuleId: null,
+          action: { type: "legacy", folderId: row.legacyFolderId },
+          dismantlePreview: []
+        }))
+      };
+    },
+    collectChoices: async () => ({ rootOverrideSourceKeys: [] }),
+    serialize,
+    assertParity(plan, preview) {
+      assert.deepEqual(plan, serialize(preview));
+      return true;
+    }
+  };
+}
+
 test("getInventoryActor returns resolved dnd5e group actor when group context exists", async () => {
   const groupActor = createActor({ id: "group-1", name: "Party", type: "group", isOwner: true });
   const fixture = installInventoryFixture({
@@ -329,6 +444,816 @@ test("getInventorySnapshot classifies Rebreya downtime items as downtime templat
     assert.equal(snapshot.items[0].sourceTypeLabel, "Простой");
     assert.equal(snapshot.items[0].itemTypeLabel, "Простой");
     assert.deepEqual(filtered.items.map((item) => item.itemId), ["downtime-research"]);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("manual inventory item data preserves unit economics and never falls back to a same-name catalog entry", async () => {
+  const fixture = installInventoryFixture();
+  const service = new InventoryService({
+    getModel: async () => ({
+      materials: [],
+      materialById: new Map(),
+      materialByGoodId: new Map(),
+      gear: [{ id: "catalog-kit", name: "Дорожный набор", equipmentType: "Каталожное", predominantMaterialName: "Сталь" }],
+      gearById: new Map([["catalog-kit", { id: "catalog-kit", name: "Дорожный набор", equipmentType: "Каталожное", predominantMaterialName: "Сталь" }]])
+    })
+  });
+
+  try {
+    const itemData = service.buildManualInventoryItemData({
+      manualEntryId: "manual-entry-1",
+      name: "Дорожный набор",
+      unitWeight: 2.5,
+      unitPriceValue: 4,
+      unitPriceDenomination: "gp",
+      itemType: "Прочее",
+      material: "Ткань"
+    }, 3);
+    assert.equal(itemData.system.quantity, 3);
+    assert.deepEqual(itemData.system.weight, { value: 2.5, units: "lb" });
+    assert.deepEqual(itemData.system.price, { value: 4, denomination: "gp" });
+    assert.equal(itemData.flags[MODULE_ID].sourceType, "manual");
+    assert.equal(itemData.flags[MODULE_ID].sourceId, "manual-entry-1");
+
+    const manualItem = createItem({
+      id: "manual-item",
+      name: itemData.name,
+      type: itemData.type,
+      flags: itemData.flags,
+      extra: { system: itemData.system }
+    });
+    const groupActor = createActor({ id: "group-1", name: "Party", type: "group", isOwner: true, items: [manualItem] });
+    game.actors.contents.push(groupActor);
+    service.moduleApi.groupContextService = { resolveForCurrentUser: () => ({ groupActor }) };
+    const snapshot = await service.getInventorySnapshot();
+    assert.equal(snapshot.items[0].sourceType, "manual");
+    assert.equal(snapshot.items[0].sourceId, "manual-entry-1");
+    assert.equal(snapshot.items[0].itemTypeLabel, "Прочее");
+    assert.equal(snapshot.items[0].materialLabel, "Ткань");
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("inventory add catalog projects canonical model and managed-pack icons without creating documents", async () => {
+  const fixture = installInventoryFixture();
+  let indexReads = 0;
+  const pack = (rows) => ({
+    async getIndex() {
+      indexReads += 1;
+      return rows;
+    }
+  });
+  game.packs = new Map([
+    ["world.rebreya-materials", pack([{
+      _id: "material-doc",
+      name: "Дуб",
+      img: "icons/material-oak.webp",
+      flags: { [MODULE_ID]: { materialId: "oak" } }
+    }])],
+    ["world.rebreya-gear", pack([{
+      _id: "gear-doc",
+      name: "Верёвка",
+      img: "icons/gear-rope.webp",
+      flags: { [MODULE_ID]: { gearId: "rope" } }
+    }])],
+    ["world.rebreya-magic-items", pack([{
+      _id: "magic-doc",
+      name: "Стеклянный ключ",
+      img: "icons/magic-key.webp",
+      system: {
+        weight: { value: 0.25, units: "lb" },
+        price: { value: 12, denomination: "gp" },
+        type: { subtype: "Ключ" }
+      },
+      flags: { [MODULE_ID]: { magicItemId: "glass-key", predominantMaterialName: "Стекло" } }
+    }])]
+  ]);
+  const service = new InventoryService({
+    getModel: async () => ({
+      materials: [{ id: "oak", name: "Дуб", type: "Дерево", weight: 1, priceGold: 0.2 }],
+      materialById: new Map(),
+      materialByGoodId: new Map(),
+      gear: [{ id: "rope", name: "Верёвка", equipmentType: "Снаряжение", weight: 10, priceGoldEquivalent: 1, predominantMaterialName: "Пенька" }],
+      gearById: new Map()
+    })
+  });
+
+  try {
+    const catalog = await service.getInventoryAddCatalog();
+    assert.equal(indexReads, 3);
+    const byId = new Map(catalog.map((entry) => [entry.sourceId, entry]));
+    assert.equal(byId.get("oak").img, "icons/material-oak.webp");
+    assert.equal(byId.get("rope").img, "icons/gear-rope.webp");
+    assert.equal(byId.get("glass-key").img, "icons/magic-key.webp");
+    assert.equal(byId.get("glass-key").unitWeight, 0.25);
+    assert.equal(byId.get("glass-key").unitPriceValue, 12);
+    assert.equal(byId.get("glass-key").materialLabel, "Стекло");
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("getInventorySnapshot marks only exact Journal record Items as readable links", async () => {
+  const journalRecord = createItem({
+    id: "journal-record",
+    name: "Полевые заметки",
+    flags: {
+      [MODULE_ID]: {
+        journalRecord: {
+          version: 1,
+          sourceUuid: "JournalEntry.notes",
+          documentName: "JournalEntry"
+        }
+      }
+    }
+  });
+  const ordinary = createItem({ id: "ordinary", name: "Верёвка" });
+  const malformed = createItem({
+    id: "malformed",
+    name: "Поддельная запись",
+    flags: { [MODULE_ID]: { journalRecord: { sourceUuid: "JournalEntry.notes" } } }
+  });
+  const groupActor = createActor({
+    id: "group-1",
+    name: "Party",
+    type: "group",
+    isOwner: true,
+    items: [journalRecord, ordinary, malformed]
+  });
+  const fixture = installInventoryFixture({ actors: [groupActor] });
+  const service = new InventoryService({
+    groupContextService: { resolveForCurrentUser: () => ({ groupActor }) },
+    getModel: async () => ({
+      materials: [], materialById: new Map(), materialByGoodId: new Map(),
+      gear: [], gearById: new Map()
+    })
+  });
+
+  try {
+    const snapshot = await service.getInventorySnapshot();
+    assert.equal(snapshot.items.find((item) => item.itemId === "journal-record")?.isJournalRecord, true);
+    assert.equal(snapshot.items.find((item) => item.itemId === "ordinary")?.isJournalRecord, false);
+    assert.equal(snapshot.items.find((item) => item.itemId === "malformed")?.isJournalRecord, false);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("getInventorySnapshot projects normalized Actor folder state without writing it", async () => {
+  const sword = createItem({ id: "sword", name: "Sword", type: "weapon", quantity: 2, weight: 3 });
+  const torch = createItem({ id: "torch", name: "Torch", quantity: 4, weight: 1 });
+  const groupActor = createActor({
+    id: "group-a",
+    name: "Party A",
+    type: "group",
+    isOwner: true,
+    items: [sword, torch],
+    flags: {
+      [MODULE_ID]: {
+        inventoryFolders: {
+          version: 99,
+          folders: [
+            { id: "weapons", name: " Оружие ", parentId: "missing" }
+          ],
+          itemFolderIds: {
+            sword: "weapons",
+            stale: "weapons",
+            torch: "missing"
+          }
+        }
+      }
+    }
+  });
+  let resolveForGroupCalls = 0;
+  const fixture = installInventoryFixture({ actors: [groupActor] });
+  const service = new InventoryService({
+    groupContextService: {
+      resolveForGroup: (groupActorId) => {
+        resolveForGroupCalls += 1;
+        assert.equal(groupActorId, "group-a");
+        return { groupActor };
+      },
+      resolveForCurrentUser: () => assert.fail("explicit group lookup must not use current group")
+    },
+    getModel: async () => ({
+      materials: [],
+      materialById: new Map(),
+      materialByGoodId: new Map(),
+      gear: [],
+      gearById: new Map()
+    })
+  });
+
+  try {
+    const snapshot = await service.getInventorySnapshot({
+      createActor: false,
+      groupActorId: "group-a"
+    });
+
+    assert.equal(resolveForGroupCalls, 1);
+    assert.deepEqual(snapshot.folders, [
+      { id: "weapons", name: "Оружие", parentId: null, color: null }
+    ]);
+    assert.equal(snapshot.folderStateVersion, 1);
+    assert.equal(snapshot.allItems.find((row) => row.itemId === "sword").folderId, "weapons");
+    assert.equal(snapshot.allItems.find((row) => row.itemId === "torch").folderId, null);
+    assert.equal(groupActor.setFlagCalls.length, 0);
+
+    const summaryBefore = clone(snapshot.summary);
+    groupActor.flags[MODULE_ID].inventoryFolders = undefined;
+    const rootSnapshot = await service.getInventorySnapshot({ createActor: false, groupActorId: "group-a" });
+    assert.deepEqual(rootSnapshot.folders, []);
+    assert.ok(rootSnapshot.allItems.every((row) => row.folderId === null));
+    assert.deepEqual(rootSnapshot.summary, summaryBefore);
+    assert.equal(groupActor.setFlagCalls.length, 0);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("folder mutations normalize current Actor state and write exactly once only when changed", async () => {
+  const sword = createItem({ id: "sword", name: "Sword", quantity: 7 });
+  let itemUpdateCalls = 0;
+  let itemDeleteCalls = 0;
+  sword.update = async () => {
+    itemUpdateCalls += 1;
+    return sword;
+  };
+  sword.delete = async () => {
+    itemDeleteCalls += 1;
+    return sword;
+  };
+  const groupActor = createActor({
+    id: "group-a",
+    name: "Party A",
+    type: "group",
+    isOwner: true,
+    items: [sword],
+    flags: {
+      [MODULE_ID]: {
+        inventoryFolders: {
+          version: 42,
+          folders: [{ id: "orphan", name: " Orphan ", parentId: "missing" }],
+          itemFolderIds: { stale: "orphan" }
+        }
+      }
+    }
+  });
+  let resolveCalls = 0;
+  const fixture = installInventoryFixture({ actors: [groupActor] });
+  let createEmbeddedCalls = 0;
+  const createEmbeddedDocuments = groupActor.createEmbeddedDocuments.bind(groupActor);
+  groupActor.createEmbeddedDocuments = async (...args) => {
+    createEmbeddedCalls += 1;
+    return createEmbeddedDocuments(...args);
+  };
+  const service = new InventoryService({
+    groupContextService: {
+      resolveForGroup: (groupActorId) => {
+        resolveCalls += 1;
+        assert.equal(groupActorId, "group-a");
+        return { groupActor };
+      }
+    },
+    worldMutationCoordinator: new WorldMutationCoordinator()
+  });
+
+  try {
+    const created = await service.createInventoryFolder({
+      groupActorId: "group-a",
+      folderId: "weapons",
+      name: " Weapons ",
+      parentId: null
+    });
+    assert.deepEqual(created, {
+      actorId: "group-a",
+      folderId: "weapons",
+      changed: true,
+      deletedFolderId: ""
+    });
+    assert.deepEqual(groupActor.setFlagCalls[0].value, {
+      version: 1,
+      folders: [
+        { id: "orphan", name: "Orphan", parentId: null, color: null },
+        { id: "weapons", name: "Weapons", parentId: null, color: null }
+      ],
+      itemFolderIds: {}
+    });
+
+    const replay = await service.createInventoryFolder({
+      groupActorId: "group-a",
+      folderId: "weapons",
+      name: "Weapons",
+      parentId: null
+    });
+    assert.equal(replay.changed, false);
+    assert.equal(groupActor.setFlagCalls.length, 1);
+
+    assert.equal((await service.renameInventoryFolder({
+      groupActorId: "group-a",
+      folderId: "weapons",
+      name: "Armory"
+    })).changed, true);
+    assert.equal((await service.moveInventoryFolder({
+      groupActorId: "group-a",
+      folderId: "orphan",
+      parentId: "weapons"
+    })).changed, true);
+    const flagWritesBeforeItemMove = groupActor.setFlagCalls.length;
+    const itemMove = await service.moveInventoryItemToFolder({
+      groupActorId: "group-a",
+      itemId: "sword",
+      folderId: "orphan"
+    });
+    assert.equal(itemMove.changed, true);
+    assert.equal(itemMove.itemId, "sword");
+    assert.equal(groupActor.setFlagCalls.length, flagWritesBeforeItemMove + 1);
+    assert.equal(itemUpdateCalls, 0);
+    assert.equal(itemDeleteCalls, 0);
+    assert.equal(createEmbeddedCalls, 0);
+    assert.equal(sword.system.quantity, 7);
+
+    const deleted = await service.deleteInventoryFolder({ groupActorId: "group-a", folderId: "orphan" });
+    assert.equal(deleted.changed, true);
+    assert.equal(deleted.deletedFolderId, "orphan");
+    assert.equal(groupActor.getFlag(MODULE_ID, "inventoryFolders").itemFolderIds.sword, "weapons");
+    assert.equal(groupActor.setFlagCalls.length, 5);
+    assert.equal(resolveCalls, 6);
+
+    const missingDelete = await service.deleteInventoryFolder({ groupActorId: "group-a", folderId: "missing" });
+    assert.equal(missingDelete.changed, false);
+    assert.equal(missingDelete.deletedFolderId, "");
+    assert.equal(groupActor.setFlagCalls.length, 5);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("group ingress rule CRUD persists revisioned Actor state and replays operation IDs exactly once", async () => {
+  const groupActor = createActor({
+    id: "group-rules",
+    type: "group",
+    isOwner: true,
+    flags: {
+      [MODULE_ID]: {
+        inventoryFolders: {
+          version: 1,
+          folders: [{ id: "weapons", name: "Оружие", parentId: null }],
+          itemFolderIds: {}
+        }
+      }
+    }
+  });
+  const fixture = installInventoryFixture({ actors: [groupActor] });
+  const service = new InventoryService({
+    groupContextService: { resolveForGroup: () => ({ groupActor }) },
+    worldMutationCoordinator: new WorldMutationCoordinator()
+  });
+  const createPayload = {
+    groupActorId: groupActor.id,
+    operationId: "create-broken-weapons",
+    expectedRevision: 0,
+    rule: ingressRule()
+  };
+
+  try {
+    assert.deepEqual(await service.getInventoryIngressRuleState({ groupActorId: groupActor.id }), {
+      version: 1,
+      revision: 0,
+      rules: []
+    });
+    const created = await service.createInventoryIngressRule(createPayload);
+    assert.equal(created.changed, true);
+    assert.equal(created.state.revision, 1);
+    assert.deepEqual(created.state.rules, [ingressRule()]);
+    assert.equal(groupActor.setFlagCalls.filter((call) => call.key === "==inventoryIngressRules").length, 1);
+
+    const replay = await service.createInventoryIngressRule(clone(createPayload));
+    assert.deepEqual(replay, created);
+    assert.equal(groupActor.setFlagCalls.filter((call) => call.key === "==inventoryIngressRules").length, 1);
+
+    const noOp = await service.updateInventoryIngressRule({
+      groupActorId: groupActor.id,
+      operationId: "update-no-op",
+      expectedRevision: 1,
+      rule: ingressRule()
+    });
+    assert.equal(noOp.changed, false);
+    assert.equal(noOp.state.revision, 1);
+    assert.equal(groupActor.setFlagCalls.filter((call) => call.key === "==inventoryIngressRules").length, 1);
+
+    const updated = await service.updateInventoryIngressRule({
+      groupActorId: groupActor.id,
+      operationId: "update-action",
+      expectedRevision: 1,
+      rule: ingressRule({ action: { type: "skip" } })
+    });
+    assert.equal(updated.changed, true);
+    assert.equal(updated.state.revision, 2);
+    assert.deepEqual(updated.state.rules[0].action, { type: "skip" });
+
+    await assert.rejects(
+      service.deleteInventoryIngressRule({
+        groupActorId: groupActor.id,
+        operationId: "stale-delete",
+        expectedRevision: 1,
+        ruleId: "broken-weapons"
+      }),
+      (error) => error?.code === "stale-revision"
+    );
+    const deleted = await service.deleteInventoryIngressRule({
+      groupActorId: groupActor.id,
+      operationId: "delete-rule",
+      expectedRevision: 2,
+      ruleId: "broken-weapons"
+    });
+    assert.equal(deleted.changed, true);
+    assert.equal(deleted.state.revision, 3);
+    assert.deepEqual(deleted.state.rules, []);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("rule mutation recovers an Actor write whose acknowledgement was lost", async () => {
+  const groupActor = createActor({ id: "group-rule-retry", type: "group", isOwner: true });
+  const originalSetFlag = groupActor.setFlag.bind(groupActor);
+  let loseAcknowledgement = true;
+  groupActor.setFlag = async (...args) => {
+    const result = await originalSetFlag(...args);
+    if (args[1] === "==inventoryIngressRules" && loseAcknowledgement) {
+      loseAcknowledgement = false;
+      throw new Error("rule flag acknowledgement lost");
+    }
+    return result;
+  };
+  const fixture = installInventoryFixture({ actors: [groupActor] });
+  const service = new InventoryService({
+    groupContextService: { resolveForGroup: () => ({ groupActor }) },
+    worldMutationCoordinator: new WorldMutationCoordinator()
+  });
+  const payload = {
+    groupActorId: groupActor.id,
+    operationId: "write-then-throw",
+    expectedRevision: 0,
+    rule: ingressRule({ action: { type: "skip" } })
+  };
+
+  try {
+    const result = await service.createInventoryIngressRule(payload);
+    assert.equal(result.state.revision, 1);
+    assert.deepEqual(await service.createInventoryIngressRule(payload), result);
+    assert.equal(groupActor.setFlagCalls.filter((call) => call.key === "==inventoryIngressRules").length, 1);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("rule save blocks conflicts and missing folders, while folder delete names dependent rules", async () => {
+  const groupActor = createActor({
+    id: "group-rule-conflicts",
+    type: "group",
+    isOwner: true,
+    flags: {
+      [MODULE_ID]: {
+        inventoryFolders: {
+          version: 1,
+          folders: [{ id: "weapons", name: "Оружие", parentId: null }],
+          itemFolderIds: {}
+        }
+      }
+    }
+  });
+  const fixture = installInventoryFixture({ actors: [groupActor] });
+  const service = new InventoryService({
+    groupContextService: { resolveForGroup: () => ({ groupActor }) },
+    worldMutationCoordinator: new WorldMutationCoordinator()
+  });
+
+  try {
+    await service.createInventoryIngressRule({
+      groupActorId: groupActor.id,
+      operationId: "first-rule",
+      expectedRevision: 0,
+      rule: ingressRule()
+    });
+    await assert.rejects(
+      service.createInventoryIngressRule({
+        groupActorId: groupActor.id,
+        operationId: "overlap-rule",
+        expectedRevision: 1,
+        rule: ingressRule({
+          id: "all-weapons",
+          name: "Всё оружие",
+          conditions: [{ field: "documentType", operator: "is", value: "weapon" }],
+          action: { type: "skip" }
+        })
+      }),
+      (error) => error?.code === "rule-conflict"
+        && /Сломанное оружие/u.test(error.message)
+        && /Всё оружие/u.test(error.message)
+        && /documentType/u.test(error.message)
+        && /durabilityState/u.test(error.message)
+    );
+    await assert.rejects(
+      service.updateInventoryIngressRule({
+        groupActorId: groupActor.id,
+        operationId: "missing-folder",
+        expectedRevision: 1,
+        rule: ingressRule({ action: { type: "folder", folderId: "missing" } })
+      }),
+      (error) => error?.code === "folder-not-found"
+    );
+    await assert.rejects(
+      service.deleteInventoryFolder({ groupActorId: groupActor.id, folderId: "weapons" }),
+      (error) => error?.code === "folder-in-use"
+        && /Сломанное оружие/u.test(error.message)
+    );
+    assert.equal(groupActor.setFlagCalls.filter((call) => call.key === "==inventoryFolders").length, 0);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("folder and rule mutations share one organization queue in both arrival orders", async () => {
+  async function runOrder(ruleFirst) {
+    const groupActor = createActor({
+      id: ruleFirst ? "group-rule-first" : "group-delete-first",
+      type: "group",
+      isOwner: true,
+      flags: {
+        [MODULE_ID]: {
+          inventoryFolders: {
+            version: 1,
+            folders: [{ id: "weapons", name: "Оружие", parentId: null }],
+            itemFolderIds: {}
+          }
+        }
+      }
+    });
+    const coordinator = new WorldMutationCoordinator();
+    const fixture = installInventoryFixture({ actors: [groupActor] });
+    const service = new InventoryService({
+      groupContextService: { resolveForGroup: () => ({ groupActor }) },
+      worldMutationCoordinator: coordinator
+    });
+    let release;
+    let entered;
+    const didEnter = new Promise((resolve) => { entered = resolve; });
+    const blocker = coordinator.run(`inventory-organization:${groupActor.id}`, async () => {
+      entered();
+      await new Promise((resolve) => { release = resolve; });
+    });
+    await didEnter;
+    const create = () => service.createInventoryIngressRule({
+      groupActorId: groupActor.id,
+      operationId: `${groupActor.id}-create`,
+      expectedRevision: 0,
+      rule: ingressRule()
+    });
+    const remove = () => service.deleteInventoryFolder({
+      groupActorId: groupActor.id,
+      folderId: "weapons"
+    });
+    const first = ruleFirst ? create() : remove();
+    const second = ruleFirst ? remove() : create();
+    release();
+    await blocker;
+    try {
+      if (ruleFirst) {
+        assert.equal((await first).changed, true);
+        await assert.rejects(second, (error) => error?.code === "folder-in-use");
+      }
+      else {
+        assert.equal((await first).deletedFolderId, "weapons");
+        await assert.rejects(second, (error) => error?.code === "folder-not-found");
+      }
+    }
+    finally {
+      fixture.restore();
+    }
+  }
+
+  await runOrder(true);
+  await runOrder(false);
+});
+
+test("moving an inventory Item to root deletes membership under Foundry flag merge semantics", async () => {
+  const sword = createItem({ id: "sword", name: "Sword", quantity: 7 });
+  const groupActor = createActor({
+    id: "group-a",
+    type: "group",
+    isOwner: true,
+    items: [sword],
+    flags: {
+      [MODULE_ID]: {
+        inventoryFolders: {
+          version: 1,
+          folders: [{ id: "weapons", name: "Weapons", parentId: null }],
+          itemFolderIds: { sword: "weapons" }
+        }
+      }
+    }
+  });
+  groupActor.setFlag = async function setFlag(moduleId, key, value) {
+    this.setFlagCalls.push({ moduleId, key, value: clone(value) });
+    this.flags[moduleId] ??= {};
+    const replace = key.startsWith("==");
+    const targetKey = replace ? key.slice(2) : key;
+    this.flags[moduleId][targetKey] = replace
+      ? clone(value)
+      : mergeFoundryFlagValue(this.flags[moduleId][targetKey], value);
+    return this.flags[moduleId][targetKey];
+  };
+  const fixture = installInventoryFixture({ actors: [groupActor] });
+  const service = new InventoryService({
+    groupContextService: { resolveForGroup: () => ({ groupActor }) },
+    worldMutationCoordinator: new WorldMutationCoordinator()
+  });
+
+  try {
+    const result = await service.moveInventoryItemToFolder({
+      groupActorId: "group-a",
+      itemId: "sword",
+      folderId: null
+    });
+
+    assert.equal(result.changed, true);
+    assert.deepEqual(groupActor.getFlag(MODULE_ID, "inventoryFolders").itemFolderIds, {});
+    assert.equal(groupActor.setFlagCalls.length, 1);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("assignInventoryGrantFolder uses the canonical mutation path and rejects a missing Item", async () => {
+  const sword = createItem({ id: "sword", name: "Sword" });
+  const groupActor = createActor({
+    id: "group-a",
+    type: "group",
+    isOwner: true,
+    items: [sword],
+    flags: {
+      [MODULE_ID]: {
+        inventoryFolders: {
+          version: 1,
+          folders: [{ id: "weapons", name: "Weapons", parentId: null }],
+          itemFolderIds: {}
+        }
+      }
+    }
+  });
+  const fixture = installInventoryFixture({ actors: [groupActor] });
+  const service = new InventoryService({
+    groupContextService: { resolveForGroup: () => ({ groupActor }) },
+    worldMutationCoordinator: new WorldMutationCoordinator()
+  });
+
+  try {
+    const result = await service.assignInventoryGrantFolder({
+      groupActorId: "group-a",
+      itemId: "sword",
+      folderId: "weapons"
+    });
+    assert.equal(result.itemId, "sword");
+    assert.equal(result.changed, true);
+    assert.equal(groupActor.setFlagCalls.length, 1);
+    const rootResult = await service.assignInventoryGrantFolder({
+      groupActorId: "group-a",
+      itemId: "sword",
+      folderId: null
+    });
+    assert.equal(rootResult.folderId, null);
+    assert.equal(rootResult.changed, true);
+    assert.equal(groupActor.setFlagCalls.length, 2);
+    await assert.rejects(
+      () => service.assignInventoryGrantFolder({
+        groupActorId: "group-a",
+        itemId: "missing",
+        folderId: "weapons"
+      }),
+      (error) => error?.code === "item-not-found"
+    );
+    assert.equal(groupActor.setFlagCalls.length, 2);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("folder mutations re-resolve after queue wait and reject a stale cycle", async () => {
+  const initialActor = createActor({ id: "group-a", type: "group", isOwner: true });
+  const currentActor = createActor({
+    id: "group-a",
+    type: "group",
+    isOwner: true,
+    flags: {
+      [MODULE_ID]: {
+        inventoryFolders: {
+          version: 1,
+          folders: [
+            { id: "branch", name: "Branch", parentId: null },
+            { id: "target", name: "Target", parentId: "branch" }
+          ],
+          itemFolderIds: {}
+        }
+      }
+    }
+  });
+  const coordinator = new WorldMutationCoordinator();
+  let releaseQueue;
+  const blocker = coordinator.run("inventory-organization:group-a", () => new Promise((resolve) => {
+    releaseQueue = resolve;
+  }));
+  await new Promise((resolve) => setImmediate(resolve));
+  let resolvedActor = initialActor;
+  const fixture = installInventoryFixture({ actors: [initialActor, currentActor] });
+  const service = new InventoryService({
+    groupContextService: { resolveForGroup: () => ({ groupActor: resolvedActor }) },
+    worldMutationCoordinator: coordinator
+  });
+
+  try {
+    const pendingMove = service.moveInventoryFolder({
+      groupActorId: "group-a",
+      folderId: "branch",
+      parentId: "target"
+    });
+    resolvedActor = currentActor;
+    releaseQueue();
+    await blocker;
+    await assert.rejects(pendingMove, (error) => error?.code === "folder-cycle");
+    assert.equal(initialActor.setFlagCalls.length, 0);
+    assert.equal(currentActor.setFlagCalls.length, 0);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("folder mutation coordinator serializes one Actor and allows another Actor to proceed", async () => {
+  const groupA = createActor({ id: "group-a", type: "group", isOwner: true });
+  const groupB = createActor({ id: "group-b", type: "group", isOwner: true });
+  let releaseA;
+  const originalSetFlagA = groupA.setFlag.bind(groupA);
+  groupA.setFlag = async (...args) => {
+    await new Promise((resolve) => {
+      releaseA = resolve;
+    });
+    return originalSetFlagA(...args);
+  };
+  const fixture = installInventoryFixture({ actors: [groupA, groupB] });
+  const service = new InventoryService({
+    groupContextService: {
+      resolveForGroup: (groupActorId) => ({ groupActor: groupActorId === "group-a" ? groupA : groupB })
+    },
+    worldMutationCoordinator: new WorldMutationCoordinator()
+  });
+
+  try {
+    const firstA = service.createInventoryFolder({
+      groupActorId: "group-a",
+      folderId: "a-one",
+      name: "A one",
+      parentId: null
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    const secondA = service.createInventoryFolder({
+      groupActorId: "group-a",
+      folderId: "a-two",
+      name: "A two",
+      parentId: null
+    });
+    const resultB = await service.createInventoryFolder({
+      groupActorId: "group-b",
+      folderId: "b-one",
+      name: "B one",
+      parentId: null
+    });
+
+    assert.equal(resultB.changed, true);
+    assert.equal(groupB.setFlagCalls.length, 1);
+    assert.equal(groupA.setFlagCalls.length, 0);
+    releaseA();
+    await firstA;
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(groupA.setFlagCalls.length, 1);
+    releaseA();
+    await secondA;
+    assert.equal(groupA.setFlagCalls.length, 2);
   }
   finally {
     fixture.restore();
@@ -949,10 +1874,18 @@ function createGroupContextService(groupActor, fixture, { onSetRegistry = null }
     getRegistry() {
       return fixture.groupState;
     },
-    async setRegistry(nextRegistry) {
+    async mutateGroupState(groupActorId, mutator) {
+      assert.equal(groupActorId, groupActor.id);
+      const nextGroupState = foundry.utils.deepClone(
+        fixture.groupState.groupsById?.[groupActor.id] ?? {}
+      );
+      const result = await mutator(nextGroupState);
+      const nextRegistry = foundry.utils.deepClone(fixture.groupState);
+      nextRegistry.groupsById ??= {};
+      nextRegistry.groupsById[groupActor.id] = nextGroupState;
       await onSetRegistry?.(nextRegistry);
       await game.settings.set(MODULE_ID, "groupState", nextRegistry);
-      return nextRegistry;
+      return result;
     }
   };
 }
@@ -1601,8 +2534,10 @@ test("takeInventoryItemToCharacter moves one party inventory item to a character
     isOwner: true
   });
   const fixture = installInventoryFixture({
-    actors: [groupActor, heroActor]
+    actors: [groupActor, heroActor],
+    user: { id: "gm", isGM: true, active: true }
   });
+  globalThis.game.users = { activeGM: globalThis.game.user };
   const service = new InventoryService({
     groupContextService: {
       resolveForCurrentUser: () => ({ groupActor })
@@ -1746,6 +2681,7 @@ test("getPartySnapshot counts carried character inventory weight against party c
     name: "Hero",
     type: "character",
     isOwner: true,
+    currency: { pp: 2, gp: 3, sp: 4, cp: 5 },
     abilities: { str: { value: 10 } },
     items: [memberItem]
   });
@@ -1788,13 +2724,141 @@ test("getPartySnapshot counts carried character inventory weight against party c
     assert.equal(snapshot.inventoryWeight, 22);
     assert.equal(snapshot.freeCapacityLb, 128);
     assert.equal(snapshot.members[0].inventoryWeight, 12);
+    assert.equal(snapshot.members[0].currencyGp, 23.45);
   }
   finally {
     fixture.restore();
   }
 });
 
-test("player inventory item drops into an unowned group actor are routed through the GM socket", async () => {
+test("getPartySnapshot uses container-aware carried weight and reports magical storage separately", async (t) => {
+  const physical = (id, weight, container = null, extraSystem = {}, type = "loot") => {
+    const item = createItem({ id, name: id, type, weight });
+    Object.assign(item.system, { container, ...extraSystem });
+    return item;
+  };
+  const bag = (id = "bag", container = null) => physical(id, 15, container, {
+    properties: new Set(["weightlessContents"]),
+    capacity: { weight: { value: 500, units: "lb" } }
+  }, "container");
+  const pack = (id = "pack", container = null) => physical(id, 5, container, {}, "container");
+  const scenarios = [
+    { name: "bag with 27 pounds inside", items: () => [bag(), physical("books", 27, "bag")], weight: 15, stored: 27 },
+    { name: "empty bag", items: () => [bag()], weight: 15, stored: 0 },
+    { name: "full bag", items: () => [bag(), physical("books", 500, "bag")], weight: 15, stored: 500 },
+    { name: "overfull bag", items: () => [bag(), physical("books", 550, "bag")], weight: 15, stored: 550 },
+    { name: "bag plus outside load", items: () => [bag(), physical("books", 27, "bag"), physical("rope", 10)], weight: 25, stored: 27 },
+    { name: "ordinary backpack includes its contents once", items: () => [pack(), physical("books", 27, "pack")], weight: 32 },
+    { name: "ordinary nested containers", items: () => [pack(), pack("inner", "pack"), physical("books", 27, "inner")], weight: 37 },
+    { name: "ordinary backpack inside magical bag", items: () => [bag(), pack("pack", "bag"), physical("books", 27, "pack")], weight: 15, stored: 32 },
+    { name: "magical bag inside ordinary backpack", items: () => [pack(), bag("bag", "pack"), physical("books", 27, "bag")], weight: 20, stored: 27 },
+    { name: "renamed container with array properties", items: () => {
+      const item = bag("Совсем другое имя");
+      item.system.properties = ["weightlessContents"];
+      return [item, physical("books", 27, item.id)];
+    }, weight: 15, stored: 27 },
+    { name: "dangling container does not hide an item", items: () => [physical("rope", 10, "missing")], weight: 10 },
+    { name: "cyclic containers do not hang or disappear", items: () => [pack("a", "b"), pack("b", "a"), physical("books", 27, "a")], weight: 37 },
+    { name: "native root weight and contents are not double counted", items: () => {
+      const item = bag();
+      item.system.totalWeightIn = (units) => {
+        assert.equal(units, "lb");
+        return 15;
+      };
+      item.system.contentsWeight = 27;
+      return [item, physical("books", 27, "bag")];
+    }, weight: 15, stored: 27 },
+    { name: "native unit conversion is respected", items: () => {
+      const item = physical("metric", 10);
+      item.system.weight.units = "kg";
+      item.system.totalWeightIn = (units) => {
+        assert.equal(units, "lb");
+        return 25;
+      };
+      return [item];
+    }, weight: 25 },
+    { name: "native ordinary container includes currency and children once", items: () => {
+      const item = pack();
+      item.system.totalWeightIn = () => 33;
+      return [item, physical("books", 27, "pack")];
+    }, weight: 33 },
+    { name: "legacy conversion uses dnd5e weight units", items: () => {
+      const item = physical("metric", 10);
+      item.system.weight.units = "kg";
+      return [item];
+    }, weight: 25 },
+    { name: "native zero effective weight must not fall back to raw weight", items: () => {
+      const item = physical("weightless", 10);
+      item.system.totalWeightIn = () => 0;
+      return [item];
+    }, weight: 0 },
+    { name: "removing contents updates carried weight and storage", items: () => [bag(), physical("books", 27, "bag")], weight: 15, stored: 27, extract: true },
+    { name: "moving a bag to group inventory does not duplicate its weight", items: () => [bag(), physical("books", 27, "bag")], weight: 15, stored: 27, transfer: true }
+  ];
+
+  for (const scenario of scenarios) {
+    await t.test(scenario.name, async () => {
+      const items = scenario.items();
+      const memberActor = createActor({ id: "member-1", type: "character", isOwner: true, items });
+      const groupActor = createActor({
+        id: "group-1", type: "group", isOwner: true,
+        flags: { [MODULE_ID]: { managedPartyGroup: true } },
+        members: [{ actor: memberActor }],
+        items: [physical("group-rope", 10)]
+      });
+      const fixture = installInventoryFixture({ actors: [groupActor, memberActor] });
+      const service = new InventoryService({
+        groupContextService: { resolveForCurrentUser: () => ({ groupActor, members: [memberActor], canManage: true }) },
+        async getModel() { return { materials: [], materialById: new Map(), materialByGoodId: new Map(), gear: [], gearById: new Map() }; }
+      });
+      const before = items.map((item) => item.toObject());
+      try {
+        const snapshot = await service.getPartySnapshot();
+        assert.equal(snapshot.members[0].inventoryWeight, scenario.weight);
+        assert.equal(snapshot.memberInventoryWeight, scenario.weight);
+        assert.equal(snapshot.inventoryWeight, scenario.weight + 10);
+        assert.equal(snapshot.members[0].capacityLb, 150, "storage is not a strength bonus");
+        assert.equal(snapshot.freeCapacityLb, 140 - scenario.weight);
+        const storage = snapshot.storage;
+        assert.equal(storage.weightLb, snapshot.inventoryWeight + (scenario.stored ?? 0));
+        assert.equal(storage.capacityLb, 150 + (scenario.stored !== undefined ? 500 : 0));
+        assert.equal(storage.freeCapacityLb, storage.capacityLb - storage.weightLb);
+        if (scenario.stored !== undefined) {
+          assert.equal(snapshot.members[0].magicalContainers.length, 1);
+          assert.equal(snapshot.members[0].magicalContainers[0].contentsWeightLb, scenario.stored);
+          assert.equal(snapshot.members[0].magicalContainers[0].capacityLb, 500);
+        }
+        else {
+          assert.deepEqual(snapshot.members[0].magicalContainers, []);
+        }
+        assert.deepEqual(items.map((item) => item.toObject()), before, "snapshot must not mutate Items");
+        if (scenario.extract) {
+          items.find((item) => item.id === "books").system.container = null;
+          const after = await service.getPartySnapshot();
+          assert.equal(after.members[0].inventoryWeight, 42);
+          assert.equal(after.members[0].magicalContainers[0].contentsWeightLb, 0);
+          assert.equal(after.inventoryWeight, 52);
+        }
+        if (scenario.transfer) {
+          const transferred = memberActor.items.contents.splice(0);
+          for (const item of transferred) item.parent = groupActor;
+          groupActor.items.contents.push(...transferred);
+          const after = await service.getPartySnapshot();
+          assert.equal(after.members[0].inventoryWeight, 0);
+          assert.deepEqual(after.members[0].magicalContainers, []);
+          assert.equal(after.partyInventoryWeight, 25);
+          assert.equal(after.inventoryWeight, snapshot.inventoryWeight);
+          assert.deepEqual(after.storage, snapshot.storage, "ownership transfer preserves party storage");
+          const inventorySnapshot = await service.getInventorySnapshot({ createActor: false });
+          assert.equal(inventorySnapshot.summary.totalWeight, 25);
+        }
+      }
+      finally { fixture.restore(); }
+    });
+  }
+});
+
+test("player inventory Item imports use the exact typed GM payload with a folder target", async () => {
   const previousItem = globalThis.Item;
   const previousFromUuid = globalThis.fromUuid;
   const memberActor = createActor({ id: "member-1", name: "Hero", type: "character", isOwner: true });
@@ -1811,43 +2875,69 @@ test("player inventory item drops into an unowned group actor are routed through
   sourceItem.uuid = "Actor.member-1.Item.source-item";
   sourceItem.parent = memberActor;
   memberActor.items.contents.push(sourceItem);
-  const emitted = [];
+  const requests = [];
   const fixture = installInventoryFixture({
     actors: [groupActor, memberActor],
     user: { id: "player-1", isGM: false }
   });
   globalThis.Item = Object;
   globalThis.fromUuid = async (uuid) => (uuid === sourceItem.uuid ? sourceItem : null);
-  globalThis.game.socket = {
-    emit(channel, message) {
-      emitted.push({ channel, message });
-    }
-  };
   const service = new InventoryService({
     groupContextService: {
       resolveForCurrentUser: () => ({
         groupActor,
         members: [memberActor],
         canManage: true
-      })
-    }
+      }),
+      resolveForGroup: (groupActorId) => groupActorId === groupActor.id
+        ? { groupActor, members: [memberActor], canManage: true }
+        : null
+    },
+    socketCommandBus: {
+      async request(command, payload) {
+        requests.push({ command, payload: clone(payload) });
+        return groupActor;
+      }
+    },
+    inventoryIngressPlanner: createNoMatchInventoryIngressPlanner()
   });
 
   try {
-    const result = await service.importDroppedItem({ uuid: sourceItem.uuid });
+    const result = await service.importDroppedItem(
+      { uuid: sourceItem.uuid, mutationId: "typed-folder-import" },
+      { groupActorId: groupActor.id, folderId: "folder-new" }
+    );
 
     assert.equal(result, groupActor);
     assert.deepEqual(groupActor.items.contents, []);
     assert.equal(memberActor.items.contents.includes(sourceItem), true);
-    assert.deepEqual(emitted, [{
-      channel: "module.rebreya-main",
-      message: {
-        type: "inventory-import-request",
-        payload: {
-          itemUuid: sourceItem.uuid,
-          targetActorUuid: groupActor.uuid
-        },
-        senderId: "player-1"
+    assert.deepEqual(requests, [{
+      command: "inventory.import",
+      payload: {
+        inventoryActorId: groupActor.id,
+        itemUuid: sourceItem.uuid,
+        mutationId: "typed-folder-import",
+        folderId: "folder-new",
+        ingressPlan: {
+          version: 1,
+          groupActorId: groupActor.id,
+          rulesRevision: 0,
+          requestedFolderId: "folder-new",
+          rows: [{
+            sourceKey: "item",
+            identity: {
+              sourceType: "",
+              sourceId: "",
+              documentType: "loot",
+              durabilityState: "ineligible",
+              quantity: 2
+            },
+            quantity: 2,
+            matchedRuleId: null,
+            action: { type: "legacy", folderId: "folder-new" }
+          }],
+          rootOverrideSourceKeys: []
+        }
       }
     }]);
   }
@@ -2012,7 +3102,12 @@ test("active GM executes party currency socket mutations on the managed group ac
   }
 });
 
-test("accepted party inventory item deletes the source item when the user manages the group inventory", async () => {
+for (const { activeGroupMatchesSource, targetIsMember } of [
+  { activeGroupMatchesSource: true, targetIsMember: true },
+  { activeGroupMatchesSource: false, targetIsMember: true },
+  { activeGroupMatchesSource: false, targetIsMember: false }
+]) {
+test(`accepted party inventory item validates its source group (current group matches: ${activeGroupMatchesSource}, recipient is member: ${targetIsMember})`, async () => {
   const previousItem = globalThis.Item;
   const previousFromUuid = globalThis.fromUuid;
   const sourceItem = createItem({ id: "source-item", name: "Torch", quantity: 2 });
@@ -2032,7 +3127,7 @@ test("accepted party inventory item deletes the source item when the user manage
     type: "group",
     isOwner: true,
     flags: { [MODULE_ID]: { managedPartyGroup: true } },
-    members: [{ actor: memberActor }],
+    members: targetIsMember ? [{ actor: memberActor }] : [],
     items: [sourceItem]
   });
   const fixture = installInventoryFixture({
@@ -2053,7 +3148,7 @@ test("accepted party inventory item deletes the source item when the user manage
   const service = new InventoryService({
     groupContextService: {
       resolveForCurrentUser: () => ({
-        groupActor,
+        groupActor: activeGroupMatchesSource ? groupActor : createActor({ id: "other-party", type: "group" }),
         members: [memberActor],
         canManage: true
       })
@@ -2062,7 +3157,7 @@ test("accepted party inventory item deletes the source item when the user manage
 
   try {
     const expectedIdentity = captureInventoryTransferIdentity(sourceItem);
-    const result = await service.handleAcceptedPartyInventoryItem(acceptedItem, {
+    const accept = () => service.handleAcceptedPartyInventoryItem(acceptedItem, {
       sourceItemUuid: sourceItem.uuid,
       transferId: "party-transfer:gm-direct",
       targetItemUuid: acceptedItem.uuid,
@@ -2077,8 +3172,16 @@ test("accepted party inventory item deletes the source item when the user manage
       }
     });
 
+    if (!targetIsMember) {
+      await assert.rejects(accept, /не входит в эту группу/u);
+      assert.equal(groupActor.items.contents.includes(sourceItem), true);
+      return;
+    }
+    const result = await accept();
     assert.equal(result.handled, true);
     assert.equal(result.requested, false);
+    assert.equal(result.actorId, groupActor.id);
+    assert.equal(result.targetActorId, memberActor.id);
     assert.equal(groupActor.items.contents.includes(sourceItem), false);
     assert.equal(memberActor.items.contents.includes(acceptedItem), true);
   }
@@ -2089,7 +3192,14 @@ test("accepted party inventory item deletes the source item when the user manage
   }
 });
 
-test("accepted party inventory item routes source deletion through the GM when the group is unowned", async () => {
+}
+
+for (const requester of [
+  { label: "unowned group", isOwner: false, isGM: false },
+  { label: "owned group", isOwner: true, isGM: false },
+  { label: "non-active GM", isOwner: true, isGM: true }
+]) {
+test(`accepted party inventory item routes source deletion through the active GM: ${requester.label}`, async () => {
   const previousItem = globalThis.Item;
   const previousFromUuid = globalThis.fromUuid;
   const sourceItem = createItem({ id: "source-item", name: "Torch", quantity: 2 });
@@ -2107,7 +3217,7 @@ test("accepted party inventory item routes source deletion through the GM when t
     id: "group-1",
     name: "Party",
     type: "group",
-    isOwner: false,
+    isOwner: requester.isOwner,
     flags: { [MODULE_ID]: { managedPartyGroup: true } },
     members: [{ actor: memberActor }],
     items: [sourceItem]
@@ -2115,7 +3225,7 @@ test("accepted party inventory item routes source deletion through the GM when t
   const emitted = [];
   const fixture = installInventoryFixture({
     actors: [groupActor, memberActor],
-    user: { id: "player-1", isGM: false }
+    user: { id: "player-1", isGM: requester.isGM }
   });
   globalThis.game.users = {
     activeGM: { id: "gm", isGM: true, active: true }
@@ -2160,6 +3270,8 @@ test("accepted party inventory item routes source deletion through the GM when t
 
     assert.equal(result.handled, true);
     assert.equal(result.requested, true);
+    assert.equal(result.actorId, groupActor.id);
+    assert.equal(result.targetActorId, memberActor.id);
     assert.equal(groupActor.items.contents.includes(sourceItem), true);
     assert.deepEqual(emitted, [{
       channel: "module.rebreya-main",
@@ -2184,6 +3296,8 @@ test("accepted party inventory item routes source deletion through the GM when t
     globalThis.fromUuid = previousFromUuid;
   }
 });
+
+}
 
 test("active GM applies a validated player inventory import socket request", async () => {
   const previousItem = globalThis.Item;
@@ -2229,7 +3343,8 @@ test("active GM applies a validated player inventory import socket request", asy
     },
     async getModel() {
       return {};
-    }
+    },
+    inventoryIngressPlanner: createNoMatchInventoryIngressPlanner()
   });
 
   try {
@@ -2240,7 +3355,7 @@ test("active GM applies a validated player inventory import socket request", asy
       senderId: "player"
     });
 
-    assert.equal(result, groupActor);
+    assert.equal(result.actorId, groupActor.id);
     assert.equal(groupActor.items.contents.length, 1);
     assert.equal(groupActor.items.contents[0].name, "Torch");
     assert.equal(groupActor.items.contents[0].system.quantity, 2);

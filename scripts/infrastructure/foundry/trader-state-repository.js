@@ -16,13 +16,28 @@ function clone(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));
 }
 
+function createCoordinatorCompatibilityGateway(coordinator) {
+  if (typeof coordinator?.run !== "function") return null;
+  return {
+    commit(queueKey, operation) {
+      return coordinator.run(queueKey, () => operation(Object.freeze({
+        assertActiveGm() {}
+      })));
+    }
+  };
+}
+
 export class TraderStateRepository {
-  #coordinator;
   #gameProvider;
+  #mutationGateway;
   #normalizeState;
 
-  constructor({ coordinator, gameProvider, normalizeState }) {
-    this.#coordinator = coordinator;
+  constructor({ mutationGateway, coordinator = null, gameProvider, normalizeState }) {
+    mutationGateway ??= createCoordinatorCompatibilityGateway(coordinator);
+    if (typeof mutationGateway?.commit !== "function") {
+      throw new TypeError("mutationGateway must provide commit");
+    }
+    this.#mutationGateway = mutationGateway;
     this.#gameProvider = gameProvider;
     this.#normalizeState = normalizeState;
   }
@@ -33,17 +48,19 @@ export class TraderStateRepository {
   }
 
   mutate(mutator) {
-    return this.#coordinator.run("traderState", async () => {
+    return this.#mutationGateway.commit("setting:traderState", async ({ assertActiveGm }) => {
       const settings = this.#requireSettings({ write: true });
       const state = this.#readFrom(settings);
       const result = await mutator(state);
       state.tradeLog = retainTradeLog(state.tradeLog);
       const committed = this.#normalizeState(clone(state));
+      assertActiveGm();
       await settings.set(
         MODULE_ID,
         SETTINGS_KEYS.TRADER_STATE,
         committed
       );
+      assertActiveGm();
       return result;
     });
   }

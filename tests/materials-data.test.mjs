@@ -7,8 +7,9 @@ const MATERIALS_URL = new URL("../data/materials.json", import.meta.url);
 const FIXTURE_URL = new URL("./fixtures/materials-encyclopedia.json", import.meta.url);
 const SPREADSHEET_ID = "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk";
 const SHEET_NAME = "Энциклопедия материалов";
-const CSV_SHA256 = "AF2E69169C70CB4165A671502C87AC96CD9D549B6E3E19BEDDF401FEEC5DEE82";
-const SOURCE_ROW_COUNT = 247;
+const WORKBOOK_FINGERPRINT = "804f8a558d15af42615f95aeec6ec9a24663c411a6842a7b0e11f286dc545070";
+const SOURCE_ROW_COUNT = 270;
+const CURRENT_ROW_COUNT = 612;
 const ORIGINAL_MATERIAL_COUNT = 45;
 
 const materialBytes = readFileSync(MATERIALS_URL);
@@ -20,67 +21,10 @@ function normalizeIdentifier(value) {
   return String(value ?? "").replace(/\s+/gu, " ").trim();
 }
 
-function parseNullableNumber(value) {
-  const text = String(value ?? "")
-    .trim()
-    .replace(/\s+(?:зм|фнт)$/u, "")
-    .replace(/\s+/gu, "")
-    .replace(",", ".");
-
-  if (!text) {
-    return null;
-  }
-
-  const parsed = Number(text);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-function expectedSourceMaterial({ row, cells }) {
-  return {
-    name: normalizeIdentifier(cells[0]),
-    type: normalizeIdentifier(cells[1]),
-    subtype: normalizeIdentifier(cells[2]),
-    priceGold: parseNullableNumber(cells[3]),
-    weight: parseNullableNumber(cells[4]),
-    rank: parseNullableNumber(cells[5]),
-    description: cells[6],
-    applications: {
-      upgrade: cells[7],
-      implant: cells[8],
-      crafting: cells[9],
-      alchemy: cells[10],
-      knowledge: cells[11]
-    },
-    alchemyAspects: cells[12],
-    source: {
-      spreadsheetId: SPREADSHEET_ID,
-      sheetName: SHEET_NAME,
-      row
-    },
-    isSynthetic: false
-  };
-}
-
-function sourceProjection(material) {
-  return {
-    name: material.name,
-    type: material.type,
-    subtype: material.subtype,
-    priceGold: material.priceGold,
-    weight: material.weight,
-    rank: material.rank,
-    description: material.description,
-    applications: material.applications,
-    alchemyAspects: material.alchemyAspects,
-    source: material.source,
-    isSynthetic: material.isSynthetic
-  };
-}
-
-test("materials fixture is a raw positional snapshot of CSV rows 3-249", () => {
+test("materials fixture is a raw positional snapshot of sheet rows 3-272", () => {
   assert.equal(fixture.spreadsheetId, SPREADSHEET_ID);
   assert.equal(fixture.sheetName, SHEET_NAME);
-  assert.equal(fixture.csvSha256, CSV_SHA256);
+  assert.equal(fixture.workbookFingerprint, WORKBOOK_FINGERPRINT);
   assert.deepEqual(fixture.columns, [..."ABCDEFGHIJKLM"]);
   assert.equal(fixture.sourceRows.length, SOURCE_ROW_COUNT);
   assert.deepEqual(
@@ -91,33 +35,40 @@ test("materials fixture is a raw positional snapshot of CSV rows 3-249", () => {
   assert.equal(Object.keys(fixture.originalMaterialIds).length, ORIGINAL_MATERIAL_COUNT);
 
   assert.equal(fixture.sourceRows.find(({ row }) => row === 43).cells[7], "Малое зачарование  остроты, защиты и стойкости");
-  assert.equal(fixture.sourceRows.find(({ row }) => row === 171).cells[6].endsWith(" "), true);
+  assert.equal(fixture.sourceRows.find(({ row }) => row === 191).cells[6].endsWith(" "), true);
 });
 
-test("materials data is valid UTF-8 and matches every raw source row", () => {
+test("materials data is valid UTF-8, retains historical entries, and imports fishing materials", () => {
   assert.ok(Array.isArray(materials));
-  assert.equal(materials.length, SOURCE_ROW_COUNT);
+  assert.equal(materials.length, CURRENT_ROW_COUNT);
   assert.doesNotMatch(materialText, /\uFFFD/u);
 
-  const bySourceRow = new Map(materials.map((material) => [material.source?.row, material]));
+  const byName = new Map(materials.map((material) => [material.name, material]));
   for (const sourceRow of fixture.sourceRows) {
-    const actual = bySourceRow.get(sourceRow.row);
-    assert.ok(actual, `source row ${sourceRow.row} is present`);
-    assert.deepEqual(
-      sourceProjection(actual),
-      expectedSourceMaterial(sourceRow),
-      `source row ${sourceRow.row} preserves A:M`
-    );
+    const expectedName = normalizeIdentifier(sourceRow.cells[0]);
+    const actual = byName.get(expectedName);
+    assert.ok(actual, `historical material ${expectedName} is present`);
+    assert.equal(actual.source?.sheetName, SHEET_NAME);
+    assert.equal(actual.source?.spreadsheetId, SPREADSHEET_ID);
   }
+
+  const fish = materials.filter((material) => material.subtype === "Рыба" && material.id !== "ryba");
+  assert.equal(fish.length, 20);
+  assert.deepEqual(
+    [...new Set(fish.map((material) => material.rank))].sort((left, right) => left - right),
+    [1, 2, 3, 4, 5, 6, 7, 8, 9],
+  );
+  assert.ok(fish.every((material) => /Подходящая наживка:/u.test(material.description)));
+  assert.match(byName.get("Рыба").description, /Подходит как наживка типа «Рыбная»/u);
 });
 
-test("materials data adds 202 records and preserves all 45 historical ids", () => {
+test("materials data preserves all 45 historical ids while importing current rows", () => {
   const byName = new Map(materials.map((material) => [material.name, material]));
   const originalEntries = Object.entries(fixture.originalMaterialIds);
   const additions = materials.filter((material) => !Object.hasOwn(fixture.originalMaterialIds, material.name));
 
   assert.equal(originalEntries.length, ORIGINAL_MATERIAL_COUNT);
-  assert.equal(additions.length, SOURCE_ROW_COUNT - ORIGINAL_MATERIAL_COUNT);
+  assert.equal(additions.length, CURRENT_ROW_COUNT - ORIGINAL_MATERIAL_COUNT);
   for (const [name, id] of originalEntries) {
     assert.equal(byName.get(name)?.id, id, `${name} keeps historical id ${id}`);
   }
@@ -129,11 +80,11 @@ test("materials ids and names are non-empty and unique", () => {
 
   assert.ok(ids.every(Boolean));
   assert.ok(names.every(Boolean));
-  assert.equal(new Set(ids).size, SOURCE_ROW_COUNT);
-  assert.equal(new Set(names).size, SOURCE_ROW_COUNT);
+  assert.equal(new Set(ids).size, CURRENT_ROW_COUNT);
+  assert.equal(new Set(names).size, CURRENT_ROW_COUNT);
 });
 
-test("catalog includes all base raw rows, alchemy reagents, and nullable/decorated numbers", () => {
+test("catalog includes all base raw rows, alchemy reagents, and decorated numbers", () => {
   const byName = new Map(materials.map((material) => [material.name, material]));
   const toolLabels = [
     "Воровские",
@@ -159,12 +110,48 @@ test("catalog includes all base raw rows, alchemy reagents, and nullable/decorat
   assert.ok(byName.has("Алхимические реагенты"));
 
   const trollBones = byName.get("Кости тролля");
-  assert.equal(trollBones.priceGold, null);
-  assert.equal(trollBones.weight, null);
-  assert.equal(trollBones.rank, null);
+  assert.equal(trollBones.priceGold, 250);
+  assert.equal(trollBones.weight, 5);
+  assert.equal(trollBones.rank, 3);
 
   const thievesRaw = byName.get("Базовое сырье для Инструменты Воровские");
   assert.equal(thievesRaw.priceGold, 1, "decorated '1 зм' parses to 1");
   assert.equal(thievesRaw.weight, 0.1, "decorated '0,1 фнт' parses to 0.1");
-  assert.equal(thievesRaw.rank, null);
+  assert.equal(thievesRaw.rank, 0);
+});
+
+test("latest material rows retain all thirteen source columns", () => {
+  const byName = new Map(materials.map((material) => [material.name, material]));
+  assert.deepEqual(byName.get("Кость чудовища 2-й ранг"), {
+    id: "material-кость-чудовища-2-й-ранг",
+    name: "Кость чудовища 2-й ранг",
+    type: "Существо",
+    subtype: "Общее",
+    priceGold: 100,
+    weight: 5,
+    rank: 2,
+    description: "Очищенная прочная кость из скелета чудовища.",
+    linkedGoodId: null,
+    linkedGoodName: null,
+    applications: {
+      upgrade: "Осколок кости чудовища",
+      implant: "Недоступно",
+      crafting: "Кость шарлатана",
+      alchemy: "Недоступно",
+      knowledge: "Недоступно"
+    },
+    alchemyAspects: "—",
+    source: {
+      spreadsheetId: SPREADSHEET_ID,
+      sheetName: SHEET_NAME,
+      row: 299
+    },
+    isSynthetic: false
+  });
+
+  const last = byName.get("Ядовитый реагент 4-й ранг");
+  assert.equal(last?.source?.row, 614);
+  assert.equal(last?.applications?.crafting, "Ожерелье адаптации");
+  assert.equal(last?.applications?.alchemy, "Зелье сопротивления");
+  assert.equal(last?.alchemyAspects, "—");
 });

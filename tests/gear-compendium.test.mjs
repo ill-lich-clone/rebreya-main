@@ -1,12 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
   createDnd5eItemData,
-  getPrimaryGearDocumentCreateOptions
+  getPrimaryGearDocumentCreateOptions,
+  removeLegacyWorldCoinTemplates
 } from "../scripts/data/gear-compendium.js";
 import { buildNamedIconLookup } from "../scripts/data/compendium-utils.js";
 import { createStableGearDocumentId } from "../scripts/data/gear-document-ids.js";
@@ -237,7 +238,7 @@ const EXPECTED_AMMUNITION = new Map([
   ["arbaletnye-bolty-20", { sourceName: "Арбалетные болты (20)", sheetQuantity: 20, subtype: "crossbowBolt", sourcePriceGoldEquivalent: 1, sourceWeight: 1.5, actorName: "Арбалетные болты", actorPriceGoldEquivalent: 0.05, actorWeight: 0.075 }],
   ["igly-dlya-trubki-50", { sourceName: "Иглы для трубки (50)", sheetQuantity: 50, subtype: "blowgunNeedle", sourcePriceGoldEquivalent: 1, sourceWeight: 1, actorName: "Иглы для трубки", actorPriceGoldEquivalent: 0.02, actorWeight: 0.02 }],
   ["snaryady-dlya-prashchi-20", { sourceName: "Снаряды для пращи (20)", sheetQuantity: 20, subtype: "slingBullet", sourcePriceGoldEquivalent: 0.04, sourceWeight: 1.5, actorName: "Снаряды для пращи", actorPriceGoldEquivalent: 0.002, actorWeight: 0.075 }],
-  ["strely-20", { sourceName: "Стрелы (20)", sheetQuantity: 20, subtype: "arrow", sourcePriceGoldEquivalent: 1, sourceWeight: 1, actorName: "Стрелы", actorPriceGoldEquivalent: 0.05, actorWeight: 0.05 }],
+  ["strely-20", { sourceName: "Стрела (20)", sheetQuantity: 20, subtype: "arrow", sourcePriceGoldEquivalent: 1, sourceWeight: 1, actorName: "Стрела", actorPriceGoldEquivalent: 0.05, actorWeight: 0.05 }],
   ["mushketnyy-patron-20", { sourceName: "Мушкетный патрон (20)", sheetQuantity: 20, subtype: "firearmBullet", sourcePriceGoldEquivalent: 20, sourceWeight: 1, actorName: "Мушкетный патрон", actorPriceGoldEquivalent: 1, actorWeight: 0.05 }],
   ["vintovochnyy-patron-10", { sourceName: "Винтовочный патрон (10)", sheetQuantity: 10, subtype: "firearmBullet", sourcePriceGoldEquivalent: 60, sourceWeight: 1, actorName: "Винтовочный патрон", actorPriceGoldEquivalent: 6, actorWeight: 0.1 }],
   ["kartechnyy-patron-20", { sourceName: "Картечный патрон (20)", sheetQuantity: 20, subtype: "firearmBullet", sourcePriceGoldEquivalent: 60, sourceWeight: 2, actorName: "Картечный патрон", actorPriceGoldEquivalent: 3, actorWeight: 0.1 }],
@@ -365,9 +366,9 @@ test("real gear weapon data maps spreadsheet damage and properties to system key
   }
 
   assert.ok(byId.get("kinzhal").weapon.properties.includes("lchDeadly"));
-  assert.equal(byId.get("kinzhal").weapon.attackTraits.deadly, 1);
+  assert.equal(byId.get("kinzhal").weapon.lichWeaponPropertyValues.deadly, 1);
   assert.ok(byId.get("ruchnoy-topor").weapon.properties.includes("lchRku"));
-  assert.equal(byId.get("ruchnoy-topor").weapon.attackTraits.rku, 1);
+  assert.equal(byId.get("ruchnoy-topor").weapon.lichWeaponPropertyValues.rku, 1);
   assert.ok(byId.get("set").weapon.properties.includes("spc"));
   assert.ok(byId.get("arbalet-legkiy").weapon.properties.includes("lod"));
   assert.ok(byId.get("arbalet-legkiy").weapon.properties.includes("lchAim"));
@@ -444,6 +445,9 @@ test("real firearm gear data maps firearm sheet damage, properties, and attack a
   assert.equal(semiAutomaticRifle.weapon.lichWeaponPropertyValues.semiAutomaticDamage, "2d12");
 
   const createdMusket = createDnd5eItemData(musket, new Map());
+  const createdRifle = createDnd5eItemData(byId.get("vintovka"), new Map());
+  const createdShotgun = createDnd5eItemData(byId.get("drobovik"), new Map());
+  const createdPistol = createDnd5eItemData(byId.get("pistolet"), new Map());
   const musketActivityIds = Object.keys(createdMusket.system.activities ?? {});
   const musketAttack = Object.values(createdMusket.system.activities ?? {})[0];
   assert.equal(createdMusket.system.damage.base.number, 2);
@@ -466,6 +470,10 @@ test("real firearm gear data maps firearm sheet damage, properties, and attack a
   assert.equal(musketAttack._id, musketActivityIds[0]);
   assert.equal(musketAttack.type, "attack");
   assert.equal(musketAttack.attack.type.value, "firearm");
+  assert.equal(createdMusket.system.ammunition.type, "rebreyaMusket");
+  assert.equal(createdRifle.system.ammunition.type, "rebreyaRifle");
+  assert.equal(createdShotgun.system.ammunition.type, "rebreyaShotgun");
+  assert.equal(createdPistol.system.ammunition.type, "rebreyaPistol");
   assert.equal(musketAttack.attack.type.classification, "weapon");
   assert.equal(musketAttack.attack.ability, "str");
 
@@ -535,6 +543,21 @@ test("real firearm gear data maps firearm sheet damage, properties, and attack a
   assert.equal(arquebusAttack.attack.ability, "str");
 });
 
+test("Rebreya firearm ammunition items use the same native family as their weapons", () => {
+  const gear = JSON.parse(readFileSync(join(TESTS_DIR, "..", "data", "gear.json"), "utf8").replace(/^\uFEFF/u, ""));
+  const byId = new Map(gear.map((item) => [item.id, item]));
+  const cases = [
+    ["mushketnyy-patron-20", "rebreyaMusket"],
+    ["vintovochnyy-patron-10", "rebreyaRifle"],
+    ["kartechnyy-patron-20", "rebreyaShotgun"],
+    ["pistoletnyy-patron-20", "rebreyaPistol"]
+  ];
+
+  for (const [gearId, subtype] of cases) {
+    assert.equal(createDnd5eItemData(byId.get(gearId), new Map()).system.type.subtype, subtype, gearId);
+  }
+});
+
 test("ordinary weapons from the weapon sheet use registered dnd5e base weapon ids", () => {
   const gear = JSON.parse(readFileSync(join(TESTS_DIR, "..", "data", "gear.json"), "utf8").replace(/^\uFEFF/u, ""));
   const byId = new Map(gear.map((item) => [item.id, item]));
@@ -563,6 +586,46 @@ test("ordinary weapons from the weapon sheet use registered dnd5e base weapon id
         `${expectedBaseItem} is exposed through CONFIG.DND5E.weaponIds as a full UUID`
       );
     }
+  }
+});
+
+test("wearable clothing is projected as native clothing while paintings remain ordinary loot", () => {
+  const gear = JSON.parse(readFileSync(join(TESTS_DIR, "..", "data", "gear.json"), "utf8").replace(/^\uFEFF/u, ""));
+  const byId = new Map(gear.map((item) => [item.id, item]));
+
+  for (const gearId of ["odezhda-obychnaya", "ryasa", "mantiya-kantslera", "korolevskoe-svadebnoe-plate"]) {
+    const created = createDnd5eItemData(byId.get(gearId), new Map());
+    assert.equal(created.type, "equipment", `${gearId} is wearable equipment`);
+    assert.equal(created.system.type.value, "clothing", `${gearId} uses the native clothing subtype`);
+  }
+
+  const painting = createDnd5eItemData(byId.get("bolshaya-kartina-v-pozolochennoy-rame"), new Map());
+  assert.equal(painting.type, "loot");
+  assert.equal(painting.system.type.value, "gear");
+});
+
+test("fishing gear is projected as native equipment instead of loot", () => {
+  const gear = JSON.parse(readFileSync(join(TESTS_DIR, "..", "data", "gear.json"), "utf8").replace(/^\uFEFF/u, ""));
+  const byId = new Map(gear.map((item) => [item.id, item]));
+  const fishingGearIds = [
+    "komplekt-dlya-rybalki",
+    "прецизионная-удочка",
+    "простая-удочка",
+    "профессиональная-удочка",
+    "удочка-мастера",
+    "усиленная-удочка"
+  ];
+
+  for (const gearId of fishingGearIds) {
+    const source = byId.get(gearId);
+    assert.ok(source, `${gearId} exists in canonical gear data`);
+    assert.equal(source.equipmentType, "Снаряжение", `${gearId} keeps the source equipment category`);
+    assert.equal(source.foundryType, "equipment", `${gearId} uses the native equipment document type`);
+    assert.equal(source.foundrySubtype, "wondrous", `${gearId} uses the native wondrous subtype`);
+
+    const created = createDnd5eItemData(source, new Map());
+    assert.equal(created.type, "equipment", `${gearId} is not projected as loot`);
+    assert.equal(created.system.type.value, "wondrous", `${gearId} uses the equipment subtype`);
   }
 });
 
@@ -689,6 +752,122 @@ test("real gear ammunition rows create dnd5e consumable ammo items", () => {
   assert.deepEqual(untypedAmmunition, []);
 });
 
+test("the spreadsheet gear catalog owns the four managed coin Items", () => {
+  const gear = JSON.parse(readFileSync(join(TESTS_DIR, "..", "data", "gear.json"), "utf8").replace(/^\uFEFF/u, ""));
+  const byId = new Map(gear.map((item) => [item.id, item]));
+  const expected = [
+    ["platinovaya-moneta", "pp", "Платиновая монета", 10],
+    ["zolotaya-moneta", "gp", "Золотая монета", 1],
+    ["serebryannaya-moneta", "sp", "Серебрянная монета", 0.1],
+    ["mednaya-moneta", "cp", "Медная монета", 0.01]
+  ];
+  const folderIds = new Map([["Сокровища", "treasure-folder"]]);
+
+  for (const [gearId, denomination, name, priceGoldEquivalent] of expected) {
+    const source = byId.get(gearId);
+    assert.ok(source, `${gearId} exists in canonical gear data`);
+    assert.equal(source.name, name);
+    assert.equal(source.equipmentType, "Сокровища");
+    assert.equal(source.priceGoldEquivalent, priceGoldEquivalent);
+
+    const created = createDnd5eItemData(source, folderIds);
+    assert.equal(created.name, name);
+    assert.equal(created.type, "loot");
+    assert.equal(created.folder, "treasure-folder");
+    assert.equal(created.system.quantity, 1);
+    assert.equal(created.system.type.value, "treasure");
+    assert.equal(created.flags["rebreya-main"].managed, true);
+    assert.equal(created.flags["rebreya-main"].sourceType, "gear");
+    assert.equal(created.flags["rebreya-main"].gearId, gearId);
+    assert.deepEqual(created.flags["rebreya-main"].storageCoinTemplate, {
+      version: 1,
+      denomination
+    });
+  }
+});
+
+test("gear sync cleanup removes only legacy managed world coin templates and their empty folder", async () => {
+  const coinFolder = { id: "legacy-coins", name: "МОНЕТЫ", type: "Item", folder: null };
+  const userFolder = { id: "user-coins", name: "МОНЕТЫ", type: "Item", folder: null };
+  const legacyCoin = {
+    id: "legacy-gp",
+    folder: coinFolder,
+    flags: {
+      "rebreya-main": {
+        sourceType: "coinTemplate",
+        storageCoinTemplate: { version: 1, denomination: "gp" }
+      }
+    }
+  };
+  const sameNameUserItem = {
+    id: "user-item",
+    name: "Золотая монета",
+    folder: userFolder,
+    flags: {}
+  };
+  const unsupportedFlagItem = {
+    id: "future-gp",
+    name: "Будущая золотая монета",
+    folder: userFolder,
+    flags: {
+      "rebreya-main": {
+        sourceType: "coinTemplate",
+        storageCoinTemplate: { version: 2, denomination: "gp" }
+      }
+    }
+  };
+  const itemDeletes = [];
+  const folderDeletes = [];
+
+  const result = await removeLegacyWorldCoinTemplates({
+    gameRef: {
+      user: { id: "gm", isGM: true, active: true },
+      users: [{ id: "gm", isGM: true, active: true }],
+      items: [legacyCoin, sameNameUserItem, unsupportedFlagItem],
+      folders: [coinFolder, userFolder]
+    },
+    ItemClass: { deleteDocuments: async (ids) => itemDeletes.push([...ids]) },
+    FolderClass: { deleteDocuments: async (ids) => folderDeletes.push([...ids]) }
+  });
+
+  assert.deepEqual(itemDeletes, [["legacy-gp"]]);
+  assert.deepEqual(folderDeletes, [["legacy-coins"]]);
+  assert.deepEqual(result, { deletedItemIds: ["legacy-gp"], deletedFolderIds: ["legacy-coins"] });
+});
+
+test("gear sync cleanup preserves a legacy folder that still contains an unmanaged Item", async () => {
+  const folder = { id: "legacy-coins", name: "МОНЕТЫ", type: "Item", folder: null };
+  const itemDeletes = [];
+  const folderDeletes = [];
+  await removeLegacyWorldCoinTemplates({
+    gameRef: {
+      user: { id: "gm", isGM: true, active: true },
+      users: [{ id: "gm", isGM: true, active: true }],
+      items: [{
+        id: "legacy-cp",
+        folder,
+        flags: {
+          "rebreya-main": {
+            sourceType: "coinTemplate",
+            storageCoinTemplate: { version: 1, denomination: "cp" }
+          }
+        }
+      }, {
+        id: "user-cp",
+        name: "Медная монета",
+        folder,
+        flags: {}
+      }],
+      folders: [folder]
+    },
+    ItemClass: { deleteDocuments: async (ids) => itemDeletes.push([...ids]) },
+    FolderClass: { deleteDocuments: async (ids) => folderDeletes.push([...ids]) }
+  });
+
+  assert.deepEqual(itemDeletes, [["legacy-cp"]]);
+  assert.deepEqual(folderDeletes, []);
+});
+
 test("Rebreya weapon ids can point at live gear documents instead of predicted ids", () => {
   const weaponIdsConfig = buildRebreyaWeaponIdsConfig(new Map([
     ["katana", "Compendium.world.rebreya-gear.Item.liveKatanaDoc"]
@@ -774,13 +953,13 @@ test("gear compendium delegates managed lifecycle to the shared diff synchronize
   assert.doesNotMatch(source, /async function createManagedDocuments/u);
 });
 
-test("gear signatures include stable document ids so old compendium documents rebuild", () => {
+test("gear description template changes invalidate old compendium signatures", () => {
   const gear = JSON.parse(readFileSync(join(TESTS_DIR, "..", "data", "gear.json"), "utf8").replace(/^\uFEFF/u, ""));
   const katana = gear.find((item) => item.id === "katana");
   const created = createDnd5eItemData(katana, new Map());
   const signature = JSON.parse(created.flags["rebreya-main"].signature);
 
-  assert.equal(signature.templateVersion, 20);
+  assert.ok(signature.templateVersion > 22);
   assert.equal(created._id, createStableGearDocumentId("katana"));
   assert.equal(signature.stableDocumentId, created._id);
 });
@@ -833,18 +1012,74 @@ test("gear custom icons override stock fallbacks by item name", () => {
   );
 });
 
+test("fishing gear resolves to its dedicated module-owned icons", async () => {
+  const gear = JSON.parse(readFileSync(join(TESTS_DIR, "..", "data", "gear.json"), "utf8").replace(/^\uFEFF/u, ""));
+  const byId = new Map(gear.map((item) => [item.id, item]));
+  const iconDirectory = join(TESTS_DIR, "..", "templates", "icons", "Goods");
+  const iconFiles = readdirSync(iconDirectory, { withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .map((entry) => `modules/rebreya-main/templates/icons/Goods/${entry.name}`);
+  const originalFilePicker = globalThis.FilePicker;
+  globalThis.FilePicker = function MockFilePicker() {
+  };
+  globalThis.FilePicker.browse = async (_source, path) => ({
+    files: path === "modules/rebreya-main/templates/icons/Goods" ? iconFiles : [],
+    dirs: []
+  });
+
+  const expectedIcons = new Map([
+    ["обычная-наживка", "Обычная наживка.webp"],
+    ["прецизионная-удочка", "Прецизионная удочка.webp"],
+    ["простая-удочка", "Простая удочка.webp"],
+    ["профессиональная-удочка", "Профессиональная удочка.webp"],
+    ["удочка-мастера", "Удочка мастера.webp"],
+    ["усиленная-удочка", "Усиленная удочка.webp"]
+  ]);
+
+  try {
+    const iconLookup = await buildNamedIconLookup(["modules/rebreya-main/templates/icons/Goods"], { forceRefresh: true });
+    for (const [id, filename] of expectedIcons) {
+      assert.equal(
+        createDnd5eItemData(byId.get(id), new Map(), iconLookup).img,
+        `modules/rebreya-main/templates/icons/Goods/${encodeURIComponent(filename)}`,
+        `${id} should use its dedicated fishing icon`
+      );
+    }
+  }
+  finally {
+    globalThis.FilePicker = originalFilePicker;
+  }
+});
+
+test("four gear coin templates use distinct module-owned denomination icons", () => {
+  const gear = JSON.parse(readFileSync(join(TESTS_DIR, "..", "data", "gear.json"), "utf8").replace(/^\uFEFF/u, ""));
+  const coinIcons = Object.fromEntries(gear
+    .filter((item) => item.equipmentType === "Сокровища" && /монета$/iu.test(item.name))
+    .map((item) => {
+      const created = createDnd5eItemData(item, new Map());
+      return [created.flags["rebreya-main"].storageCoinTemplate?.denomination, created.img];
+    }));
+
+  assert.deepEqual(coinIcons, {
+    cp: "modules/rebreya-main/assets/storage/coins/cp.png",
+    sp: "modules/rebreya-main/assets/storage/coins/sp.png",
+    gp: "modules/rebreya-main/assets/storage/coins/gp.png",
+    pp: "modules/rebreya-main/assets/storage/coins/pp.png"
+  });
+});
+
 test("gear custom icons can match shortened and type-qualified item names", () => {
   const gear = JSON.parse(readFileSync(join(TESTS_DIR, "..", "data", "gear.json"), "utf8").replace(/^\uFEFF/u, ""));
   const byId = new Map(gear.map((item) => [item.id, item]));
   const iconLookup = new Map([
-    ["алхимический огонь", "modules/rebreya-main/templates/icons/Goods/%D0%90%D0%BB%D1%85%D0%B8%D0%BC%D0%B8%D1%87%D0%B5%D1%81%D0%BA%D0%B8%D0%B9%20%D0%BE%D0%B3%D0%BE%D0%BD%D1%8C.webp"],
+    ["амулет", "modules/rebreya-main/templates/icons/Goods/%D0%90%D0%BC%D1%83%D0%BB%D0%B5%D1%82.webp"],
     ["коготь чудовища имплант", "modules/rebreya-main/templates/icons/Goods/%D0%9A%D0%BE%D0%B3%D0%BE%D1%82%D1%8C%20%D1%87%D1%83%D0%B4%D0%BE%D0%B2%D0%B8%D1%89%D0%B0%20(%D0%B8%D0%BC%D0%BF%D0%BB%D0%B0%D0%BD%D1%82).webp"],
     ["коготь чудовища усовершенствование", "modules/rebreya-main/templates/icons/Goods/%D0%9A%D0%BE%D0%B3%D0%BE%D1%82%D1%8C%20%D1%87%D1%83%D0%B4%D0%BE%D0%B2%D0%B8%D1%89%D0%B0%20(%D1%83%D1%81%D0%BE%D0%B2%D0%B5%D1%80%D1%88%D0%B5%D0%BD%D1%81%D1%82%D0%B2%D0%BE%D0%B2%D0%B0%D0%BD%D0%B8%D0%B5).webp"]
   ]);
 
   assert.equal(
-    createDnd5eItemData(byId.get("alkhimicheskiy-ogon-flyaga"), new Map(), iconLookup).img,
-    "modules/rebreya-main/templates/icons/Goods/%D0%90%D0%BB%D1%85%D0%B8%D0%BC%D0%B8%D1%87%D0%B5%D1%81%D0%BA%D0%B8%D0%B9%20%D0%BE%D0%B3%D0%BE%D0%BD%D1%8C.webp"
+    createDnd5eItemData(byId.get("amulet-svyashchennyy-simvol"), new Map(), iconLookup).img,
+    "modules/rebreya-main/templates/icons/Goods/%D0%90%D0%BC%D1%83%D0%BB%D0%B5%D1%82.webp"
   );
   assert.equal(
     createDnd5eItemData(byId.get("kogot-chudovishcha"), new Map(), iconLookup).img,
@@ -937,6 +1172,36 @@ test("creates container compendium data with dnd5e capacity and Rebreya contents
   assert.deepEqual(created.flags["rebreya-main"].containerContents, [
     { gearId: "svecha", quantity: 5 }
   ]);
+});
+
+test("catalog equipment containers use native dnd5e types and explicit solid capacity", () => {
+  const gear = JSON.parse(readFileSync(join(TESTS_DIR, "..", "data", "gear.json"), "utf8").replace(/^\uFEFF/u, ""));
+  const byId = new Map(gear.map((item) => [item.id, item]));
+  const expected = [
+    { id: "bochka", subtype: "barrel", volume: 4, weight: null },
+    { id: "burdyuk", subtype: "flask", volume: null, weight: null },
+    { id: "butylka-steklyannaya", subtype: "bottle", volume: null, weight: null },
+    { id: "vedro", subtype: "bucket", volume: 0.5, weight: null },
+    { id: "gorshok-zheleznyy", subtype: "pot", volume: null, weight: null },
+    { id: "korzina", subtype: "basket", volume: 2, weight: 40 },
+    { id: "koshel", subtype: "pouch", volume: 0.2, weight: 6 },
+    { id: "kuvshin-ili-grafin", subtype: "jug", volume: null, weight: null },
+    { id: "meshok", subtype: "sack", volume: 1, weight: 30 },
+    { id: "ryukzak", subtype: "backpack", volume: 1, weight: 30 },
+    { id: "sunduk", subtype: "chest", volume: 12, weight: 300 },
+    { id: "flakon", subtype: "vial", volume: null, weight: null },
+    { id: "flyaga-ili-bol-shaya-kruzhka", subtype: "tankard", volume: null, weight: null }
+  ];
+
+  for (const container of expected) {
+    const source = byId.get(container.id);
+    assert.ok(source, `missing catalog item ${container.id}`);
+    const created = createDnd5eItemData(source, new Map());
+    assert.equal(created.type, "container", container.id);
+    assert.equal(created.system.type.value, container.subtype, container.id);
+    assert.equal(created.system.capacity.volume.value, container.volume, container.id);
+    assert.equal(created.system.capacity.weight.value, container.weight, container.id);
+  }
 });
 
 test("creates contained compendium documents linked to their parent container", async () => {
@@ -1041,7 +1306,105 @@ test("renders an upgrade profile in the item description and managed flags", () 
   }, new Map());
 
   assert.deepEqual(created.flags["rebreya-main"].upgrade, upgrade);
-  assert.match(created.system.description.value, /Оружие/u);
-  assert.match(created.system.description.value, /Атаки считаются серебряными/u);
-  assert.match(created.system.description.value, /Серебро/u);
+  const descriptionHtml = created.system.description.value;
+  assert.ok(descriptionHtml.indexOf("Покрытие оружия серебром") < descriptionHtml.indexOf("Применяется к:"));
+  assert.ok(descriptionHtml.indexOf("Применяется к:") < descriptionHtml.indexOf("Эффект усовершенствования:"));
+  assert.ok(descriptionHtml.indexOf("Эффект усовершенствования:") < descriptionHtml.indexOf("Материал усовершенствования:"));
+  assert.match(descriptionHtml, /Оружие/u);
+  assert.match(descriptionHtml, /Атаки считаются серебряными/u);
+  assert.match(descriptionHtml, /Серебро/u);
+});
+
+test("gear descriptions omit native fields and show ordinary text before remaining metadata", () => {
+  const created = createDnd5eItemData({
+    id: "description-projection-sentinel",
+    name: "Испытательный клинок",
+    equipmentType: "Оружие",
+    description: "Обычное описание клинка.",
+    priceText: "15 зм",
+    rank: 2,
+    weight: 3,
+    volume: "2 фт³",
+    capacity: "5 фнт.",
+    predominantMaterialName: "Сталь",
+    linkedTool: "Инструменты кузнеца",
+    value: 45,
+    weapon: {
+      damageFormula: "1d8",
+      damageTypeLabel: "Рубящий",
+      hands: "Одноручное",
+      propertiesText: "Фехтовальное"
+    }
+  }, new Map());
+
+  const descriptionHtml = created.system.description.value;
+  assert.ok(descriptionHtml.indexOf("Обычное описание клинка") < descriptionHtml.indexOf("Преобладающий материал:"));
+  assert.ok(descriptionHtml.indexOf("Преобладающий материал:") < descriptionHtml.indexOf("Связанный инструмент:"));
+  assert.ok(descriptionHtml.indexOf("Связанный инструмент:") < descriptionHtml.indexOf("Value:"));
+  for (const label of [
+    "Тип снаряжения", "Слот", "Тип Foundry", "Подтип Foundry", "Базовый предмет", "Папка",
+    "Слоты куклы", "Цена", "Ранг", "Вес", "Объем", "Вместимость", "Урон", "Тип урона",
+    "Руки", "Свойства оружия"
+  ]) {
+    assert.doesNotMatch(descriptionHtml, new RegExp(`<strong>${label}:<\\/strong>`, "u"));
+  }
+});
+
+test("gear descriptions retain implant mechanics after the ordinary description", () => {
+  const created = createDnd5eItemData({
+    id: "implant-description-sentinel",
+    name: "Испытательный имплант",
+    equipmentType: "Имплант",
+    description: "Описание импланта.",
+    implant: {
+      pointsText: "2",
+      type: "Нейроимплант",
+      requirements: "Телосложение 13",
+      effect: "Даёт преимущество на проверки Восприятия."
+    }
+  }, new Map());
+
+  const descriptionHtml = created.system.description.value;
+  assert.ok(descriptionHtml.indexOf("Описание импланта") < descriptionHtml.indexOf("Очки модификации:"));
+  assert.ok(descriptionHtml.indexOf("Очки модификации:") < descriptionHtml.indexOf("Тип импланта:"));
+  assert.ok(descriptionHtml.indexOf("Тип импланта:") < descriptionHtml.indexOf("Требования импланта:"));
+  assert.ok(descriptionHtml.indexOf("Требования импланта:") < descriptionHtml.indexOf("Эффект импланта:"));
+});
+
+test("gear signature and debug metadata include sheet-owned ammunition explosive and attachment profiles", () => {
+  const profiles = {
+    ammunition: {
+      kind: "standard", quantity: 20, damageModifiers: [], damageType: "piercing",
+      compatibility: ["musket"], replaces: [], propertiesText: "", craftMisfire: null,
+      handCannonDamageDieStep: 0
+    },
+    explosive: {
+      damage: [{ formula: "1d4", type: "fire" }], saveDc: 13, saveAbility: "dex",
+      radius: 10, range: 60, uses: 1, deployment: "hand", delay: "Стандарт",
+      trigger: null, disarm: null, propertiesText: "Спасбросок Ловкости"
+    },
+    attachment: {
+      kind: "weaponAttachment", slots: { mode: "oneOf", values: ["top"] },
+      compatibility: [], propertiesText: "Игнорирует половину укрытия"
+    }
+  };
+  const source = {
+    id: "profile-signature-sentinel", name: "Профильный предмет", equipmentType: "Обвес",
+    description: "Проверка профилей.", ...profiles
+  };
+  const first = createDnd5eItemData(source, new Map());
+  const changed = createDnd5eItemData({
+    ...source,
+    ammunition: { ...profiles.ammunition, quantity: 10 }
+  }, new Map());
+
+  assert.notEqual(first.flags["rebreya-main"].signature, changed.flags["rebreya-main"].signature);
+  assert.deepEqual(first.flags["rebreya-main"].ammunition, profiles.ammunition);
+  assert.deepEqual(first.flags["rebreya-main"].explosive, profiles.explosive);
+  assert.deepEqual(first.flags["rebreya-main"].attachment, profiles.attachment);
+  const descriptionHtml = first.system.description.value;
+  assert.ok(descriptionHtml.indexOf("Проверка профилей") < descriptionHtml.indexOf("Количество боеприпасов:"));
+  assert.match(descriptionHtml, /Количество боеприпасов/u);
+  assert.match(descriptionHtml, /Радиус взрыва/u);
+  assert.match(descriptionHtml, /Слоты обвеса/u);
 });

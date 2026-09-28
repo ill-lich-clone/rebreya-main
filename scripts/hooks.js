@@ -1,6 +1,7 @@
 ﻿import { MODULE_ID, SETTINGS_KEYS } from "./constants.js";
 
 import { isNativeStorageObject } from "./data/storage-object-kind.js";
+import { PanelToolRegistry } from "./ui/panel-tool-registry.js";
 
 let bg3HotbarSuppressionHookRegistered = false;
 let bg3HotbarDeathSavesCompatRegistered = false;
@@ -15,8 +16,17 @@ const BG3_AUTO_POPULATE_CREATE_TOKEN_PATH = `/modules/${BG3_HOTBAR_MODULE_ID}/sc
 const BG3_DEATH_SAVES_PATCH_FLAG = Symbol.for(`${MODULE_ID}.bg3DeathSavesPatch`);
 const BG3_STORAGE_COMMON_ACTIONS_PATCH_FLAG = Symbol.for(`${MODULE_ID}.bg3StorageCommonActionsPatch`);
 const PLAYER_INVENTORY_BUTTON_SELECTOR = "[data-rebreya-player-inventory-button='true']";
+const PLAYER_INVENTORY_BUTTON_GAP = 6;
 const PLAYER_INVENTORY_BUTTON_LEFT = "calc(clamp(220px, 8.5vw, 280px) + 8px)";
 const PLAYER_INVENTORY_BUTTON_SIZE = 36;
+const PLAYER_INVENTORY_UTILITIES = Object.freeze([
+  { key: "quest-log", label: "Квест лог", icon: "fa-book-open", method: "openQuestLogApp", direction: -1 },
+  { key: "economy", label: "Экономика", icon: "fa-coins", method: "openEconomyApp", direction: 1 }
+]);
+const externalPanelToolRegistry = new PanelToolRegistry({
+  moduleProvider: (moduleId) => globalThis.game?.modules?.get?.(moduleId) ?? null,
+  refresh: () => rerenderSceneControls()
+});
 
 function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -312,16 +322,32 @@ export function positionPlayerInventoryQuickButton(button, playersElement, { vie
   }
 
   const centerY = rect.top + (rect.height * 0.58);
+  const minimumTop = PLAYER_INVENTORY_BUTTON_SIZE + PLAYER_INVENTORY_BUTTON_GAP + 8;
+  const maximumTop = viewportHeight
+    - PLAYER_INVENTORY_BUTTON_SIZE
+    - PLAYER_INVENTORY_BUTTON_GAP
+    - PLAYER_INVENTORY_BUTTON_SIZE
+    - 8;
   const top = Math.max(
-    8,
+    minimumTop,
     Math.min(
-      viewportHeight - PLAYER_INVENTORY_BUTTON_SIZE - 8,
+      maximumTop,
       centerY - (PLAYER_INVENTORY_BUTTON_SIZE / 2)
     )
   );
 
   button.style.left = PLAYER_INVENTORY_BUTTON_LEFT;
   button.style.top = formatViewportUnit(top, viewportHeight, "vh");
+  const buttonHost = ownerDocument?.body;
+  for (const utility of PLAYER_INVENTORY_UTILITIES) {
+    const utilityButton = buttonHost?.querySelector?.(`[data-rebreya-player-utility='${utility.key}']`);
+    if (!utilityButton?.style) continue;
+    const utilityTop = utility.direction < 0
+      ? top - PLAYER_INVENTORY_BUTTON_GAP - PLAYER_INVENTORY_BUTTON_SIZE
+      : top + PLAYER_INVENTORY_BUTTON_SIZE + PLAYER_INVENTORY_BUTTON_GAP;
+    utilityButton.style.left = PLAYER_INVENTORY_BUTTON_LEFT;
+    utilityButton.style.top = formatViewportUnit(utilityTop, viewportHeight, "vh");
+  }
   return true;
 }
 
@@ -367,6 +393,34 @@ function removeEmbeddedPlayerInventoryButton(playersElement, buttonHost) {
   }
 }
 
+function ensurePlayerInventoryUtilityButtons(buttonHost, ownerDocument, moduleApi) {
+  for (const utility of PLAYER_INVENTORY_UTILITIES) {
+    const selector = `[data-rebreya-player-utility='${utility.key}']`;
+    if (buttonHost.querySelector(selector)) continue;
+    const button = ownerDocument.createElement("button");
+    button.type = "button";
+    button.dataset.rebreyaPlayerUtility = utility.key;
+    button.classList?.add?.("rm-player-inventory-utility-button");
+    button.title = utility.label;
+    button.setAttribute?.("aria-label", utility.label);
+    const icon = ownerDocument.createElement("i");
+    icon.classList?.add?.("fa-solid", utility.icon);
+    icon.setAttribute?.("aria-hidden", "true");
+    button.append?.(icon);
+    button.addEventListener?.("click", async (event) => {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      try {
+        await (moduleApi ?? globalThis.game?.rebreyaMain)?.[utility.method]?.();
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to open ${utility.key} from player list launcher.`, error);
+      }
+    });
+    buttonHost.append?.(button);
+  }
+}
+
 export function ensurePlayerInventoryQuickButton(
   playersElement,
   moduleApi = globalThis.game?.rebreyaMain,
@@ -382,6 +436,7 @@ export function ensurePlayerInventoryQuickButton(
 
   const existingButton = buttonHost.querySelector(PLAYER_INVENTORY_BUTTON_SELECTOR);
   if (existingButton) {
+    ensurePlayerInventoryUtilityButtons(buttonHost, ownerDocument, moduleApi);
     updatePlayerInventoryQuickButtonImage(existingButton, moduleApi, ownerDocument);
     positionPlayerInventoryQuickButton(existingButton, playersElement, { viewport });
     return false;
@@ -413,6 +468,7 @@ export function ensurePlayerInventoryQuickButton(
   else {
     buttonHost.appendChild?.(button);
   }
+  ensurePlayerInventoryUtilityButtons(buttonHost, ownerDocument, moduleApi);
   positionPlayerInventoryQuickButton(button, playersElement, { viewport });
   return true;
 }
@@ -472,6 +528,34 @@ function rerenderSceneControls() {
   catch (_error) {
     controlsApp.render?.(true);
   }
+}
+
+export function registerExternalPanelTool(moduleId, definition) {
+  return externalPanelToolRegistry.register(moduleId, definition);
+}
+
+export function unregisterExternalPanelTool(moduleId, toolName) {
+  return externalPanelToolRegistry.unregister(moduleId, toolName);
+}
+
+export function publishPanelToolApi(moduleEntry, {
+  register = registerExternalPanelTool,
+  unregister = unregisterExternalPanelTool
+} = {}) {
+  if (!moduleEntry || typeof moduleEntry !== "object") {
+    return null;
+  }
+
+  const currentApi = moduleEntry.api && typeof moduleEntry.api === "object"
+    ? moduleEntry.api
+    : {};
+  const panelApi = {
+    ...currentApi,
+    registerPanelTool: (moduleId, definition) => register(moduleId, definition),
+    unregisterPanelTool: (moduleId, toolName) => unregister(moduleId, toolName)
+  };
+  moduleEntry.api = panelApi;
+  return panelApi;
 }
 
 function createSafeAction(callback, errorLabel) {
@@ -536,9 +620,10 @@ function buildToolsRecord() {
   const calendarToolName = `${MODULE_ID}-calendar`;
   const cosmologyToolName = `${MODULE_ID}-cosmology`;
   const lootgenToolName = `${MODULE_ID}-lootgen`;
+  const sceneActivityToolName = `${MODULE_ID}-scene-activity`;
   const showEconomyButton = isEconomyButtonVisible();
 
-  return {
+  const tools = {
     [PANEL_TOOL_NAME]: {
       name: PANEL_TOOL_NAME,
       order: 0,
@@ -552,7 +637,7 @@ function buildToolsRecord() {
       title: game.i18n.localize("REBREYA_MAIN.Controls.OpenEconomy"),
       icon: "fa-solid fa-coins",
       button: true,
-      visible: game.user?.isGM === true && showEconomyButton,
+      visible: showEconomyButton,
       onChange: createSafeAction(
         () => game.rebreyaMain?.openEconomyApp?.(),
         "Economy control click failed."
@@ -606,6 +691,11 @@ function buildToolsRecord() {
         "Cosmology control click failed."
       )
     },
+    [sceneActivityToolName]: {
+      name:sceneActivityToolName,order:45,title:"Открыть сцену",icon:"fa-solid fa-hourglass-half",button:true,
+      visible:game.user?.isGM===true,
+      onChange:createSafeAction(()=>game.rebreyaMain?.openSceneActivityApp?.(),"Scene activity control click failed.")
+    },
     [lootgenToolName]: {
       name: lootgenToolName,
       order: 40,
@@ -619,6 +709,31 @@ function buildToolsRecord() {
       )
     }
   };
+
+  for (const externalTool of externalPanelToolRegistry.list()) {
+    let visible = false;
+    try {
+      visible = externalTool.visible() === true;
+    }
+    catch (error) {
+      console.error(`${MODULE_ID} | ${externalTool.name} visibility check failed.`, error);
+    }
+
+    tools[externalTool.name] = {
+      name: externalTool.name,
+      order: externalTool.order,
+      title: externalTool.title,
+      icon: externalTool.icon,
+      button: true,
+      visible,
+      onChange: createSafeAction(
+        externalTool.onChange,
+        `${externalTool.name} control click failed.`
+      )
+    };
+  }
+
+  return tools;
 }
 
 function buildToolsArray() {
@@ -636,7 +751,7 @@ function buildControlRecord(controlsRecord) {
     name: controlName,
     order,
     title: game.i18n.localize("REBREYA_MAIN.Controls.GroupTitle"),
-    icon: "fa-solid fa-box-open",
+    icon: "rebreya-main-control-icon",
     visible: true,
     onChange: createRebreyaControlChange(),
     tools: buildToolsRecord(),
@@ -655,7 +770,7 @@ function buildControlArrayEntry(controlsArray) {
     name: controlName,
     order,
     title: game.i18n.localize("REBREYA_MAIN.Controls.GroupTitle"),
-    icon: "fa-solid fa-box-open",
+    icon: "rebreya-main-control-icon",
     visible: true,
     onChange: createRebreyaControlChange(),
     tools: buildToolsArray(),
@@ -716,5 +831,12 @@ export function registerSceneControlsHook() {
 
   Hooks.on("canvasReady", () => {
     rerenderSceneControls();
+    refreshSceneActivities();
+  });
+  const refreshSceneActivities=()=>game.rebreyaMain?.refreshSceneActivityApps?.()?.catch(error=>console.warn(`${MODULE_ID} | Scene activity refresh failed.`,error));
+  Hooks.on("updateUser",refreshSceneActivities);
+  Hooks.on("deleteActor",refreshSceneActivities);
+  Hooks.on("updateActor",(_actor,changes)=>{
+    if(Object.keys(changes??{}).some(key=>key==="ownership"||key.startsWith("ownership.")||key==="system.members")||changes?.system?.members)refreshSceneActivities();
   });
 }

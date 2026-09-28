@@ -1,10 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 class FakeApplicationV2 {
   constructor(options = {}) {
     this.options = options;
   }
+  async _onRender() {}
+  async render() {return this;}
 }
 
 globalThis.foundry = {
@@ -15,6 +18,7 @@ globalThis.foundry = {
     }
   },
   utils: {
+    escapeHTML: value=>String(value),
     deepClone: (value) => structuredClone(value),
     getProperty: () => undefined,
     hasProperty: () => false,
@@ -53,7 +57,8 @@ test("lootgen mundane candidates carry authored package formulas", () => {
     multipleAppearance: "2к12",
     typeLabel: "Снаряжение",
     stackable: true,
-    breakable: false
+    breakable: false,
+    narrativeVariants: []
   });
 });
 
@@ -75,6 +80,21 @@ test("lootgen asks for a template name through a Foundry dialog", async () => {
   });
 
   assert.equal(name, "Простой сундук");
+});
+
+test("lootgen hides upgrade categories even when an old template enables them", async () => {
+  const app = new LootgenApp({
+    getModel: async () => ({ gear: [
+      { equipmentType: "Усовершенствование" },
+      { equipmentType: "Зачарование" },
+      { equipmentType: "Проклятье" },
+      { equipmentType: "Оружие" }
+    ], materials: [{ id: "iron" }] }),
+    listLootgenTemplates: () => []
+  });
+  app.gearTypeFilters = { "усовершенствование": true };
+  const context = await app._prepareContext();
+  assert.deepEqual(context.form.gearTypeOptions.map(row => row.label).sort(), ["Материал", "Оружие"]);
 });
 
 test("lootgen context exposes saved templates to a GM", async () => {
@@ -113,6 +133,22 @@ test("lootgen carries the soft quantity target through context and saved templat
   assert.equal(savedPayload.form.optimalItemQuantity, 7);
 });
 
+test("lootgen exposes a coin reserve for new windows and preserves it in saved templates", async () => {
+  let savedPayload;
+  const app = new LootgenApp({
+    getModel: async () => ({ gear: [], materials: [] }),
+    listLootgenTemplates: () => [],
+    saveLootgenTemplate: async payload => { savedPayload = payload; return { id: "reserve", ...payload }; }
+  }, { appKey: "coin-reserve" });
+  assert.equal((await app._prepareContext({})).form.coinBudgetPercent, 20);
+  app.applyLootgenTemplate({ form: { coinBudgetPercent: 35 } });
+  await app.saveTemplateFromName("Резерв монет");
+  assert.equal((await app._prepareContext({})).form.coinBudgetPercent, 35);
+  assert.equal(savedPayload.form.coinBudgetPercent, 35);
+  app.applyLootgenTemplate({ form: {} });
+  assert.equal((await app._prepareContext({})).form.coinBudgetPercent, 0);
+});
+
 test("lootgen deletes a selected template only after confirmation", async () => {
   const removed = [];
   const template = { id: "codex-test", name: "Codex test", form: {} };
@@ -145,4 +181,121 @@ test("lootgen applies a selected template and remembers its selection", async ()
   assert.equal(app.itemCount, 4);
   assert.equal(app.budgetValue, 900);
   assert.equal(app.selectedTemplateId, template.id);
+});
+
+test("Lootgen template editing loads and saves the exact Item UUID", async () => {
+  const saved = [];
+  const template = { id: "edit", uuid: "Item.edit", name: "Edited", img: "edit.webp", form: { itemCount: 6 } };
+  const app = new LootgenApp({
+    getModel: async () => ({ gear: [], materials: [] }),
+    getLootgenTemplate: (id) => id === template.uuid ? structuredClone(template) : null,
+    listLootgenTemplates: () => [structuredClone(template)],
+    saveLootgenTemplate: async (payload) => { saved.push(payload); return { ...template, ...payload }; }
+  }, { appKey: "edit-item", templateUuid: template.uuid });
+
+  const context = await app._prepareContext();
+  assert.equal(context.form.itemCount, 6);
+  assert.equal(context.editingTemplateUuid, template.uuid);
+  await app.saveTemplateFromName("Edited again");
+  assert.equal(saved[0].itemUuid, template.uuid);
+});
+
+test("lootgen take-all delegates one batch instead of looping over row grants", () => {
+  const source = readFileSync(new URL("../scripts/ui/lootgen-app.js", import.meta.url), "utf8");
+  const body = source.match(/async #takeAllToInventory\(\) \{(?<body>[\s\S]*?)\n  \}\n\n  async #sendResultToChat/u)?.groups?.body ?? "";
+
+  assert.match(body, /addLootgenRowsToInventory\(/u);
+  assert.doesNotMatch(body, /addLootgenRowToInventory\(/u);
+  assert.doesNotMatch(body, /\bfor\s*\(/u);
+});
+
+test("lootgen window delegates selection to the shared source catalog",async()=>{
+  let seen;
+  const app=new LootgenApp({lootgenSourceCatalog:{generate:async(form,options)=>{seen={form,options};return {rows:[],coins:{totalCopper:0},spentValue:0,budgetValue:form.budgetValue,totalItems:0,generatedAt:"test",hasResult:false};}}});
+  const result=await app.generateFromForm({budgetValue:777,includeGear:false,includeMagicItems:true});
+  assert.equal(seen.form.budgetValue,777);assert.equal(seen.form.includeGear,false);assert.equal(seen.form.includeMagicItems,true);assert.equal(result.budgetValue,777);
+});
+
+test("upgrade form choices round trip through the window and template",async()=>{
+  let saved;
+  const app=new LootgenApp({getModel:async()=>({gear:[]}),saveLootgenTemplate:async payload=>{saved=payload;return payload;}});
+  const fields={enableUpgrades:true,upgradeChance:75,maxUpgradesPerItem:3,upgradeTypes:["Материал"],upgradeRanks:[2,4],enableFilledContainers:true,filledContainerChance:65,generationDepth:3};
+  app.applyLootgenTemplate({form:fields});await app.saveTemplateFromName("Upgraded");
+  const context=await app._prepareContext();
+  for(const [key,value] of Object.entries(fields)){assert.deepEqual(saved.form[key],value);assert.deepEqual(context.form[key],value);}
+});
+
+test("filled-only window generation uses a stable GM preparation request",async()=>{
+  const calls=[],state={resultVersion:2,generationReady:true,published:false,lootId:"filled",rows:[],coins:{totalCopper:0}};
+  const app=new LootgenApp({prepareLootgenGeneratedResult:async(form,options)=>{calls.push({form,options});if(calls.length===1)throw new Error("retry");return {lootId:"filled",messageId:"message",state};},
+    lootgenSourceCatalog:{generate:()=>{throw new Error("filled tree must use preparation");}}});
+  const form={enableFilledContainers:true,filledContainerChance:100,generationDepth:2,enableUpgrades:false};
+  await assert.rejects(app.generateFromForm(form),/retry/u);
+  await app.generateFromForm(form);
+  assert.equal(calls.length,2);assert.equal(calls[0].options.operationId,calls[1].options.operationId);
+  for(const [key,value]of Object.entries(form))assert.equal(calls[1].form[key],value);
+});
+
+test("upgraded generation retries the same preparation and preserves separate trusted compositions on reopen",async()=>{
+  const state={resultVersion:2,generationReady:true,published:false,lootId:"trusted",rows:[1,2].map(index=>({rowId:`row-${index}`,rowIndex:index-1,sourceType:"gear",sourceId:"sword",name:"Sword",quantity:1,totalValue:120,value:120,descriptor:{instanceKey:`host-${index}`},upgrades:[{name:"Sharp",decision:"simple-implemented"}]})),coins:{totalCopper:0},spentValue:240,budgetValue:300,totalItems:2};
+  const calls=[];
+  const api={prepareLootgenGeneratedResult:async(form,options)=>{calls.push({form,options});if(calls.length===1)throw new Error("request lost");return {lootId:"trusted",messageId:"message",state:structuredClone(state)};},
+    getLootgenGeneratedResult:()=>({lootId:"trusted",messageId:"message",state:structuredClone(state)}),
+    lootgenSourceCatalog:{generate:()=>{throw new Error("upgrades must be prepared by GM");}},getModel:async()=>({gear:[]})};
+  const app=new LootgenApp(api);
+  await assert.rejects(app.generateFromForm({enableUpgrades:true,upgradeChance:100}),/request lost/u);
+  const generated=await app.generateFromForm({enableUpgrades:true,upgradeChance:100});
+  assert.equal(calls[0].options.operationId,calls[1].options.operationId);
+  assert.equal(generated.rows.length,2);assert.equal(generated.resultVersion,2);assert.equal(app.chatLootId,"trusted");
+  const reopened=new LootgenApp(api,{sharedResult:{resultVersion:2,lootId:"trusted",rows:[{name:"forged"}]}});
+  assert.equal(reopened.generated.rows.length,2);assert.equal(reopened.generated.rows[0].name,"Sword");
+  state.rows[0].claimed=true;
+  reopened.restoreGeneratedResult({resultVersion:2,lootId:"trusted"});
+  assert.equal(reopened.generated.rows[0].claimed,true);assert.equal(reopened.chatLootId,"trusted");
+});
+
+test("prepared window actions publish the same result, preserve claim IDs after failure, and clear only its view",async()=>{
+  const previousElement=globalThis.HTMLElement,previousChat=globalThis.ChatMessage,previousConsole=console.error;
+  class Element {
+    constructor(dataset={}){this.dataset=dataset;this.listeners={};}
+    addEventListener(type,listener){this.listeners[type]=listener;}
+  }
+  globalThis.HTMLElement=Element;console.error=()=>{};
+  const statuses=[],calls=[];
+  globalThis.ChatMessage={getSpeaker:()=>({}),create:async data=>{statuses.push(data);}};
+  let state={resultVersion:2,lootId:"window-result",generationReady:true,published:false,rows:[{rowId:"row",rowIndex:0,name:"Sword",quantity:1,value:120,totalValue:120,claimed:false}],coins:{gp:1,totalCopper:100},spentValue:120,budgetValue:220,totalItems:1};
+  const result=()=>({messageId:"message",lootId:state.lootId,state:structuredClone(state)});
+  let fail=true;
+  try {
+    const api={getLootgenGeneratedResult:result,publishLootgenGeneratedResult:async lootId=>{calls.push(["publish",lootId]);state.published=true;return result();},
+      claimLootgenChatRowToInventory:async(lootId,rowId,options)=>{calls.push(["row",lootId,rowId,options]);if(fail){fail=false;throw new Error("target write failed");}state.rows[0].claimed=true;return true;},
+      claimLootgenChatAllToInventory:async(lootId,options)=>{calls.push(["all",lootId,options]);state.coinsClaimed=true;return true;}};
+    const app=new LootgenApp(api,{sharedResult:{resultVersion:2,lootId:state.lootId}});
+    const nodes=new Map(["lootgen-send-chat","lootgen-take-row","lootgen-take-all","lootgen-take-coins","lootgen-clear"].map(action=>[action,new Element({action,rowIndex:"0"})]));
+    const root=new Element();root.querySelector=selector=>nodes.get(selector.match(/data-action='([^']+)'/u)?.[1])??null;
+    root.querySelectorAll=selector=>{const node=root.querySelector(selector);return node?[node]:[];};app.element=root;
+    await app._onRender({},{});
+    const click=async action=>{const node=nodes.get(action);await node.listeners.click({currentTarget:node});};
+    await click("lootgen-send-chat");assert.equal(state.published,true);
+    await click("lootgen-take-row");await click("lootgen-take-row");
+    const rowCalls=calls.filter(call=>call[0]==="row");assert.equal(rowCalls.length,2);assert.equal(rowCalls[0][3].claimId,rowCalls[1][3].claimId);
+    assert.equal(app.generated.rows[0].claimed,true);
+    await click("lootgen-take-coins");assert.equal(calls.at(-1)[2].coinsOnly,true);
+    await click("lootgen-take-all");assert.equal(calls.at(-1)[0],"all");
+    await click("lootgen-clear");
+    const clear=statuses.at(-1).flags["rebreya-main"].lootgenStatus;
+    assert.deepEqual(clear.payload,{resultVersion:2,lootId:state.lootId,hasResult:true});
+    assert.equal(state.rows.length,1);assert.equal(app.generated.hasResult,false);
+  }finally{globalThis.HTMLElement=previousElement;globalThis.ChatMessage=previousChat;console.error=previousConsole;}
+});
+
+test("lootgen template path uses a server-loadable extension without URL parameters",()=>{
+  assert.equal(LootgenApp.PARTS.main.template,"modules/rebreya-main/templates/lootgen-app.hbs");
+});
+
+test("claimed external coins do not become internal container coins when a window reopens",async()=>{
+  const state={resultVersion:2,generationReady:true,lootId:"coins",rows:[],coinsClaimed:true,coins:{gp:3,totalCopper:300},currencyValue:500};
+  const app=new LootgenApp({getLootgenGeneratedResult:()=>({messageId:"message",state})},{sharedResult:{resultVersion:2,lootId:"coins"}});
+  const context=await app._prepareContext();
+  assert.equal(context.generated.internalCurrencyValue,200);assert.equal(context.generated.coins.totalCopper,0);
 });

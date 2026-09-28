@@ -1,4 +1,9 @@
 import { MODULE_ID } from "../constants.js";
+import { getUpgradeChoiceOptions, validateUpgradeChoices } from "./item-upgrade-choices.js?v=1.4.255";
+import { loadUpgradeAutomationManifest, getUpgradeAvailability } from "./upgrade-automation-manifest.js?v=1.4.255";
+import { resolveUpgradeProfile, validateUpgradeInstallation, validateUpgradeCapacity, UpgradeRuleError } from "./item-upgrade-rules.js?v=1.4.250";
+import { isRebreyaWearableClothingGearId } from "./item-classification.js?v=1.4.292";
+import { getItemHeldHands, isItemEquipped } from "../integrations/held-items.js";
 
 export const ITEM_UPGRADES_HOST_FLAG = "itemUpgrades";
 export const INSTALLED_UPGRADE_FLAG = "installedUpgrade";
@@ -7,6 +12,8 @@ export const UPGRADE_HOLD_DURATION_MS = 3000;
 const UPGRADE_EQUIPMENT_TYPE = "Усовершенствование";
 const DEFAULT_UPGRADE_CAPACITY = 1;
 const MAX_UPGRADE_CAPACITY = 3;
+const WONDROUS_DND5E_TYPES = new Set(["wondrous", "staff", "rod", "wand"]);
+const WONDROUS_SOURCE_TYPES = new Set(["чудесный предмет", "посох", "жезл", "волшебная палочка"]);
 
 function getProperty(source, path) {
   return globalThis.foundry?.utils?.getProperty?.(source, path)
@@ -146,6 +153,8 @@ export function getItemUpgradeCategory(hostItem) {
   const type = cleanText(hostItem?.type).toLowerCase();
   const typeValue = cleanText(getProperty(hostItem, "system.type.value")).toLowerCase();
   const equipmentType = cleanText(readModuleFlag(hostItem, "equipmentType")).toLowerCase();
+  const itemType = cleanText(readModuleFlag(hostItem, "itemType")).toLocaleLowerCase("ru-RU").replaceAll("ё", "е");
+  const gearId = cleanText(readModuleFlag(hostItem, "gearId"));
 
   if (type === "weapon") {
     return "weapon";
@@ -159,7 +168,16 @@ export function getItemUpgradeCategory(hostItem) {
     return "outerwear";
   }
 
-  if (["equipment", "loot", "consumable"].includes(type)) {
+  if (
+    type === "loot"
+    && typeValue === "gear"
+    && equipmentType === "снаряжение"
+    && isRebreyaWearableClothingGearId(gearId)
+  ) {
+    return "outerwear";
+  }
+
+  if (WONDROUS_DND5E_TYPES.has(typeValue) || WONDROUS_SOURCE_TYPES.has(itemType)) {
     return "wondrous";
   }
 
@@ -210,14 +228,23 @@ function buildHostStatePatch(hostItem, installedEntries, capacity = null) {
   };
 }
 
-function getNextFreeSlot(installed, capacity) {
-  const occupied = new Set(installed.map((entry) => entry.slotIndex));
-  for (let slotIndex = 1; slotIndex <= capacity; slotIndex += 1) {
-    if (!occupied.has(slotIndex)) {
-      return slotIndex;
-    }
+export function buildUpgradeHostDescriptor(item) {
+  const category = getItemUpgradeCategory(item);
+  const tags = new Set(category === "wondrous" ? ["wondrous-item"] : category ? [category] : []);
+  const type = getProperty(item, "system.type.value");
+  if (["light", "medium", "heavy"].includes(type)) tags.add("armor");
+  if (type === "shield") tags.add("shield");
+  if (item?.type === "weapon") {
+    if (["simpleM", "martialM"].includes(type)) tags.add("melee");
+    if (["simpleR", "martialR"].includes(type)) tags.add("ranged");
   }
-  return 0;
+  // Unrepresented material/shape qualifiers need explicit canonical metadata, never a name guess.
+  const explicit = readModuleFlag(item, "upgradeCompatibilityTags");
+  if (Array.isArray(explicit)) for (const tag of explicit) tags.add(tag);
+  return { id: getItemId(item), compatibilityTags: [...tags], capacity: getItemUpgradeHostState(item).capacity,
+    quantity: Number(getProperty(item, "system.quantity") ?? 1), isEquipped: isItemEquipped(item),
+    isAttuned: getProperty(item, "system.attuned") === true, isHeld: isItemEquipped(item) && getItemHeldHands(item).length > 0,
+    isBroken: ["broken", "destroyed"].includes(readModuleFlag(item, "durability")?.state) };
 }
 
 function resolveActorItem(actor, itemOrId) {
@@ -225,7 +252,7 @@ function resolveActorItem(actor, itemOrId) {
     return null;
   }
   if (itemOrId && typeof itemOrId === "object") {
-    return itemOrId;
+    return getItemActor(itemOrId) === actor ? actor.items?.get?.(getItemId(itemOrId)) ?? null : null;
   }
   const id = cleanText(itemOrId);
   if (!id) {
@@ -236,7 +263,34 @@ function resolveActorItem(actor, itemOrId) {
     ?? null;
 }
 
+export function profileSignature(profile) {
+  return JSON.stringify(profile, (_key, value) => value && typeof value === "object" && !Array.isArray(value)
+    ? Object.fromEntries(Object.keys(value).sort().map(key => [key, value[key]])) : value);
+}
+
 export class ItemUpgradeService {
+  constructor(moduleApi = null, { getManifest = loadUpgradeAutomationManifest } = {}) {
+    this.moduleApi = moduleApi;
+    this.getManifest = getManifest;
+  }
+
+  async getUpgradeProjection(item) {
+    const manifest = await this.getManifest();
+    const sourceId = cleanText(readModuleFlag(item, "gearId"));
+    const row = manifest.find(row => row.gearId === sourceId);
+    const stored = readModuleFlag(item, "upgrade");
+    const profile = resolveUpgradeProfile(stored, row?.profile);
+    const legacyOverride = Boolean(stored && typeof stored === "object" && !Array.isArray(stored)
+      && profileSignature(stored) !== profileSignature(row?.profile));
+    const availability = getUpgradeAvailability(sourceId, manifest);
+    if (legacyOverride) Object.assign(availability, { available: false, decision: "unavailable-no-rule",
+      label: "Усовершенствования нет в реализации", reason: "Сохранён пользовательский профиль; его полная автоматизация не подтверждена." });
+    const choices = readModuleFlag(item, "upgradeChoices"), choiceOptions = getUpgradeChoiceOptions(sourceId);
+    let requiresChoice = false;
+    try { validateUpgradeChoices(sourceId, choices); } catch { requiresChoice = true; }
+    return { sourceId, profile, availability, legacyOverride, choices, choiceOptions, requiresChoice };
+  }
+
   installUpgrade(hostItem, upgradeItem, options = {}) {
     return this.installItemUpgrade(hostItem, upgradeItem, options);
   }
@@ -264,13 +318,18 @@ export class ItemUpgradeService {
       throw new Error("Усовершенствование должно быть в инвентаре того же персонажа.");
     }
 
+    const projection = await this.getUpgradeProjection(upgradeItem);
     const hostState = getItemUpgradeHostState(hostItem);
     const installed = hostState.installed.filter((entry) => entry.itemId !== getItemId(upgradeItem));
-    const capacity = clampCapacity(options.capacity ?? hostState.capacity, DEFAULT_UPGRADE_CAPACITY);
-    const slotIndex = toPositiveInteger(options.slotIndex, getNextFreeSlot(installed, capacity));
-    if (!slotIndex || slotIndex > capacity || installed.some((entry) => entry.slotIndex === slotIndex)) {
-      throw new Error("На предмете нет свободного слота усовершенствования.");
-    }
+    const capacity = hostState.capacity;
+    const quantity = Number(getProperty(upgradeItem, "system.quantity") ?? 1);
+    if (!Number.isSafeInteger(quantity) || quantity < 1) throw new UpgradeRuleError("invalid-quantity");
+    if (options.capacity != null && options.capacity !== capacity) throw new UpgradeRuleError("capacity");
+    const previousHost = readModuleFlag(upgradeItem, INSTALLED_UPGRADE_FLAG)?.hostItemId;
+    if (previousHost && previousHost !== getItemId(hostItem)) throw new UpgradeRuleError("slot-conflict");
+    const { slotIndex } = validateUpgradeInstallation(buildUpgradeHostDescriptor(hostItem), installed,
+      { ...projection, slotIndex: options.slotIndex });
+    const choices = validateUpgradeChoices(projection.sourceId, options.choices ?? projection.choices);
 
     let installedItem = upgradeItem;
     const installedFlag = buildInstalledUpgradeFlag(hostItem, slotIndex);
@@ -281,6 +340,7 @@ export class ItemUpgradeService {
       setProperty(itemData, "system.quantity", 1);
       setProperty(itemData, "system.container", getItemId(hostItem));
       setProperty(itemData, `flags.${MODULE_ID}.${INSTALLED_UPGRADE_FLAG}`, installedFlag);
+      setProperty(itemData, `flags.${MODULE_ID}.upgradeChoices`, choices);
       const [created] = await actor.createEmbeddedDocuments("Item", [itemData], { renderSheet: false });
       if (!created) {
         throw new Error("Не удалось создать установленное усовершенствование.");
@@ -291,7 +351,8 @@ export class ItemUpgradeService {
     else {
       await upgradeItem.update({
         "system.container": getItemId(hostItem),
-        [`flags.${MODULE_ID}.${INSTALLED_UPGRADE_FLAG}`]: installedFlag
+        [`flags.${MODULE_ID}.${INSTALLED_UPGRADE_FLAG}`]: installedFlag,
+        [`flags.${MODULE_ID}.upgradeChoices`]: choices
       });
     }
 
@@ -328,6 +389,7 @@ export class ItemUpgradeService {
     }
 
     const nextInstalled = hostState.installed.filter((entry) => entry.itemId !== upgradeItemId);
+    validateUpgradeCapacity(buildUpgradeHostDescriptor(hostItem), nextInstalled, hostState.capacity);
     await hostItem.update({
       [`flags.${MODULE_ID}.${ITEM_UPGRADES_HOST_FLAG}`]: buildHostStatePatch(hostItem, nextInstalled, hostState.capacity)
     });
@@ -352,10 +414,7 @@ export class ItemUpgradeService {
     }
 
     const hostState = getItemUpgradeHostState(hostItem);
-    const nextCapacity = clampCapacity(capacity, DEFAULT_UPGRADE_CAPACITY);
-    if (nextCapacity < hostState.installed.length) {
-      throw new Error("Нельзя поставить слотов меньше уже установленных усовершенствований.");
-    }
+    const nextCapacity = validateUpgradeCapacity(buildUpgradeHostDescriptor(hostItem), hostState.installed, capacity);
 
     const nextState = buildHostStatePatch(hostItem, hostState.installed, nextCapacity);
     await hostItem.update({

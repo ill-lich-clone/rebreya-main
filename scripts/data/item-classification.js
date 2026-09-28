@@ -1,8 +1,35 @@
 ﻿import { getRebreyaArtisanToolByGearId } from "./rebreya-tool-proficiencies.js";
 
-const BACK_SLOTS = ["back1", "back2", "back3", "back4", "back5"];
+import { inferRebreyaAmmunitionSubtype } from "./ammunition-types.js";
+
+const BACK_SLOTS = ["back1", "back2", "back3", "back4", "back5", "back6", "back7"];
 const HAND_SLOTS = ["leftHand", "rightHand"];
-const RING_SLOTS = ["ring1", "ring2"];
+const RING_SLOTS = ["ring1", "ring2", "ring3"];
+const REBREYA_WEARABLE_CLOTHING_GEAR_IDS = new Set([
+  "balnyy-kostyum-s-serebryanoy-otdelkoy",
+  "korolevskoe-svadebnoe-plate",
+  "koronatsionnyy-plashch-namestnika",
+  "kozhanyy-plashch-mastera",
+  "mantiya-kantslera",
+  "mantiya-rektora-akademii",
+  "mantiya-uchyonogo-soveta",
+  "mekhanizirovannaya-odezhda",
+  "naslednaya-mantiya-doma",
+  "odezhda-dorozhnaya",
+  "odezhda-kostyum",
+  "odezhda-obychnaya",
+  "odezhda-otlichnaya",
+  "opernyy-kostyum-s-ruchnoy-rospisyu",
+  "paradnyy-mundir-s-zolotym-shityom",
+  "paradnyy-plashch-pobeditelya",
+  "posolskaya-mantiya",
+  "ritualnoe-oblachenie-arkhiereya",
+  "ryasa",
+  "shyolkovyy-vecherniy-kostyum",
+  "sudeyskoe-tseremonialnoe-oblachenie",
+  "teatralnyy-kostyum-primadonny",
+  "tseremonialnoe-plate-dvoryanki"
+]);
 
 const HERO_DOLL_SLOTS = [
   { id: "head", label: "Голова" },
@@ -16,11 +43,15 @@ const HERO_DOLL_SLOTS = [
   { id: "rightHand", label: "Рука" },
   { id: "ring1", label: "Кольцо 1" },
   { id: "ring2", label: "Кольцо 2" },
+  { id: "ring3", label: "Кольцо 3" },
   { id: "back1", label: "Спина 1" },
   { id: "back2", label: "Спина 2" },
   { id: "back3", label: "Спина 3" },
   { id: "back4", label: "Спина 4" },
-  { id: "back5", label: "Спина 5" }
+  { id: "back5", label: "Спина 5" },
+  { id: "back6", label: "Спина 6" },
+  { id: "back7", label: "Спина 7" },
+  { id: "clothing", label: "Одежда" }
 ];
 
 const HERO_DOLL_SLOT_GROUPS = [
@@ -181,6 +212,8 @@ const SLOT_ALIAS_MAP = new Map([
   ["кольцо 1", ["ring1"]],
   ["ring2", ["ring2"]],
   ["кольцо 2", ["ring2"]],
+  ["ring3", ["ring3"]],
+  ["кольцо 3", ["ring3"]],
   ["back", BACK_SLOTS],
   ["спина", BACK_SLOTS],
   ["back1", ["back1"]],
@@ -192,7 +225,12 @@ const SLOT_ALIAS_MAP = new Map([
   ["back4", ["back4"]],
   ["спина 4", ["back4"]],
   ["back5", ["back5"]],
-  ["спина 5", ["back5"]]
+  ["спина 5", ["back5"]],
+  ["back6", ["back6"]],
+  ["спина 6", ["back6"]],
+  ["back7", ["back7"]],
+  ["спина 7", ["back7"]],
+  ["clothing", ["clothing"]]
 ]);
 
 const SLOT_GROUP_ALIAS_MAP = new Map([
@@ -226,6 +264,8 @@ const SLOT_GROUP_ALIAS_MAP = new Map([
   ["кольцо 1", "ring"],
   ["ring2", "ring"],
   ["кольцо 2", "ring"],
+  ["ring3", "ring"],
+  ["кольцо 3", "ring"],
   ["back", "back"],
   ["спина", "back"],
   ["back1", "back"],
@@ -238,6 +278,10 @@ const SLOT_GROUP_ALIAS_MAP = new Map([
   ["спина 4", "back"],
   ["back5", "back"],
   ["спина 5", "back"],
+  ["back6", "back"],
+  ["спина 6", "back"],
+  ["back7", "back"],
+  ["спина 7", "back"],
   ["—", ""],
   ["none", ""],
   ["нет", ""]
@@ -421,7 +465,7 @@ export function inferHeroDollSlotGroupFromSlots(slotIds, fallback = "") {
     return "bracers";
   }
 
-  if (set.has("ring1") || set.has("ring2")) {
+  if (set.has("ring1") || set.has("ring2") || set.has("ring3")) {
     return "ring";
   }
 
@@ -446,6 +490,11 @@ function buildHeroDollSlots(rawValue, fallback = []) {
 function isBackItem(name) {
   const text = normalizeText(name);
   return /рюкзак|ранец|колчан|ножн|футляр|чехол|спинн|плащ|пальто|мантия|накид|щит/u.test(text);
+}
+
+function isWearableClothing(name) {
+  const text = normalizeText(name);
+  return /одежд|костюм|плать|ряс|манти|плащ|накид|пальто|шал|пелерин|рубах|жилет|куртк|мундир|облачен/u.test(text);
 }
 
 function inferSlotsFromName(name, fallback = []) {
@@ -634,8 +683,12 @@ function buildConsumableAmmoProfile(name) {
   return null;
 }
 
-function buildGenericAmmoProfile(name) {
-  return buildConsumableAmmoProfile(name) ?? {
+function buildGenericAmmoProfile(item) {
+  const rebreyaSubtype = inferRebreyaAmmunitionSubtype(item);
+  if (rebreyaSubtype) {
+    return { systemTypeValue: "ammo", systemTypeSubtype: rebreyaSubtype };
+  }
+  return buildConsumableAmmoProfile(item?.name) ?? {
     systemTypeValue: "ammo",
     systemTypeSubtype: "firearmBullet"
   };
@@ -705,6 +758,14 @@ export function getRebreyaWeaponBaseItemDefinitions() {
       name: profile.names[0],
       systemTypeValue: profile.systemTypeValue
     }));
+}
+
+export function resolveRebreyaOrdinaryWeaponGearId(name) {
+  return REBREYA_ORDINARY_WEAPON_PROFILE_BY_NAME.get(normalizeNameKey(name))?.gearId ?? "";
+}
+
+export function isRebreyaWearableClothingGearId(gearId) {
+  return REBREYA_WEARABLE_CLOTHING_GEAR_IDS.has(String(gearId ?? "").trim());
 }
 
 export function normalizeHeroDollSlots(value, fallback = []) {
@@ -812,8 +873,21 @@ export function classifyGearEntry(item = {}) {
     };
   }
 
+  if (normalizedEquipmentType === normalizeText("Сокровища")) {
+    return {
+      documentType: "loot",
+      systemTypeValue: "treasure",
+      systemTypeSubtype: "",
+      baseItem: "",
+      folderPath: "Сокровища",
+      heroDollSlots: [],
+      firearmClass: "",
+      sourceCategory: "Сокровища"
+    };
+  }
+
   if (normalizedEquipmentType === normalizeText("Боеприпас") || normalizedEquipmentType === normalizeText("Боеприпасы")) {
-    const ammoProfile = buildGenericAmmoProfile(item.name);
+    const ammoProfile = buildGenericAmmoProfile(item);
     return {
       documentType: "consumable",
       systemTypeValue: ammoProfile.systemTypeValue,
@@ -827,6 +901,22 @@ export function classifyGearEntry(item = {}) {
   }
 
   if ((normalizedEquipmentType === normalizeText("Снаряжение")) || !normalizedEquipmentType) {
+    if (
+      normalizedEquipmentType === normalizeText("Снаряжение")
+      && (isRebreyaWearableClothingGearId(item.id) || isWearableClothing(item.name))
+    ) {
+      return {
+        documentType: "equipment",
+        systemTypeValue: "clothing",
+        systemTypeSubtype: "",
+        baseItem: "",
+        folderPath: "Снаряжение/Одежда",
+        heroDollSlots: buildHeroDollSlots(explicitSlots, inferSlotsFromName(item.name, ["chest"])),
+        firearmClass: "",
+        sourceCategory: equipmentType || "Снаряжение"
+      };
+    }
+
     const ammoProfile = buildConsumableAmmoProfile(item.name);
     if (ammoProfile) {
       return {

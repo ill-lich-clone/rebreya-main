@@ -1,3 +1,5 @@
+import { escapeFoundryHtml } from "../shared/foundry-values.js";
+
 export const STORAGE_DRAG_TYPE = "RebreyaStorageClaim";
 
 function clean(value) {
@@ -58,22 +60,57 @@ export function storageGridColumns(itemCount) {
 
 async function defaultQuantityPrompt({ max, value }) {
   const DialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
+  const bounded = Number.isSafeInteger(max) && max >= 1;
+  const rangeLabel = bounded ? ` (1-${max})` : "";
+  const maximumAttribute = bounded ? ` max="${max}"` : "";
   if (typeof DialogV2?.prompt !== "function") {
-    const fallback = globalThis.prompt?.(`Сколько перенести? (1-${max})`, String(value));
+    const fallback = globalThis.prompt?.(`Сколько перенести?${rangeLabel}`, String(value));
     return fallback === null ? null : Number(fallback);
   }
   return DialogV2.prompt({
     window: { title: "Сколько перенести?" },
     content: `
       <form class="rm-storage-quantity-dialog">
-        <label>Количество (1-${max})</label>
-        <input type="number" name="quantity" min="1" max="${max}" step="1" value="${value}" autofocus>
+        <label>Количество${rangeLabel}</label>
+        <input type="number" name="quantity" min="1"${maximumAttribute} step="1" value="${value}" autofocus>
       </form>
     `,
     ok: {
       label: "Перенести",
       callback: (_event, button) => Number(button?.form?.elements?.quantity?.value)
     },
+    rejectClose: false
+  });
+}
+
+async function defaultGroundPileRotationPrompt({ name, img, width, height }) {
+  const DialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
+  if (typeof DialogV2?.wait !== "function") {
+    const fallback = globalThis.prompt?.("Ориентация: 0, 90, 180 или 270", "0");
+    return fallback === null ? null : Number(fallback);
+  }
+  const displayName = clean(name) || "Предмет";
+  const safeName = escapeFoundryHtml(displayName);
+  const safeImg = escapeFoundryHtml(clean(img));
+  const size = (rotation) => rotation === 90 || rotation === 270
+    ? `${height}×${width}`
+    : `${width}×${height}`;
+  return DialogV2.wait({
+    window: { title: `Ориентация: ${displayName}` },
+    position: { width: 460 },
+    content: `
+      <section class="rm-storage-orientation-dialog">
+        ${safeImg ? `<img class="rm-storage-orientation-dialog__preview" src="${safeImg}" alt="${safeName}">` : ""}
+        <p>Выберите направление предмета на сцене.</p>
+        <p class="rm-storage-orientation-dialog__size">Исходный размер: ${width}×${height}</p>
+      </section>
+    `,
+    buttons: [0, 90, 180, 270].map((rotation) => ({
+      action: `rotation-${rotation}`,
+      label: `${rotation}° — ${size(rotation)}`,
+      default: rotation === 0,
+      callback: () => rotation
+    })),
     rejectClose: false
   });
 }
@@ -87,6 +124,39 @@ export async function promptStorageTransferQuantity(maxQuantity, { prompt = defa
   const quantity = positiveInteger(value);
   if (!quantity || quantity > max) {
     throw new Error(`Количество должно быть целым числом от 1 до ${max}.`);
+  }
+  return quantity;
+}
+
+export async function promptStorageGroundPileRotation(placement, {
+  prompt = defaultGroundPileRotationPrompt
+} = {}) {
+  const width = Number(placement?.width);
+  const height = Number(placement?.height);
+  if (placement?.rotationMode !== "cardinal"
+    || !Number.isFinite(width)
+    || width <= 0
+    || !Number.isFinite(height)
+    || height <= 0
+    || width === height) return null;
+  const value = await prompt({ ...placement, width, height });
+  if (value === null || value === undefined || value === false || value === "") return null;
+  if (!Number.isInteger(value) || ![0, 90, 180, 270].includes(value)) {
+    throw new Error("Ориентация должна быть равна 0, 90, 180 или 270 градусам.");
+  }
+  return value;
+}
+
+export async function promptStorageCoinQuantity(maxQuantity = null, { prompt = defaultQuantityPrompt } = {}) {
+  const max = maxQuantity === null ? null : positiveInteger(maxQuantity);
+  if (maxQuantity !== null && !max) throw new Error("В источнике нет доступных монет.");
+  if (max === 1) return 1;
+  const value = await prompt({ max, value: 1 });
+  if (value === null || value === undefined || value === false || value === "") return null;
+  const quantity = positiveInteger(value);
+  if (!quantity || (max !== null && quantity > max)) {
+    const range = max === null ? "не меньше 1" : `от 1 до ${max}`;
+    throw new Error(`Количество должно быть целым числом ${range}.`);
   }
   return quantity;
 }

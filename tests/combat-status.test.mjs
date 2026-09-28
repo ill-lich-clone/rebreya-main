@@ -16,6 +16,78 @@ import {
   buildNauseatedChanges,
   registerCombatStatusConfig
 } from "../scripts/combat/status-service.js";
+import * as statusModule from "../scripts/combat/status-service.js";
+
+test("twisted HUD metadata binds the affected token to the single targeted source token", () => {
+  assert.equal(typeof statusModule.buildTwistedStatusMeta, "function");
+  assert.deepEqual(statusModule.buildTwistedStatusMeta({
+    sourceToken: { uuid: "Scene.scene.Token.life" },
+    targetToken: { uuid: "Scene.scene.Token.death" },
+    linkId: "twisted-link-1"
+  }), {
+    twistedLink: {
+      linkId: "twisted-link-1",
+      kind: "twisted",
+      sourceTokenUuid: "Scene.scene.Token.life",
+      targetTokenUuid: "Scene.scene.Token.death"
+    }
+  });
+});
+
+test("twisted macro selection applies the prompted status through the module mutation boundary", async () => {
+  const previousActor = globalThis.Actor;
+  const previousFoundry = globalThis.foundry;
+
+  class TestActor {}
+  globalThis.Actor = TestActor;
+  globalThis.foundry = {
+    utils: {
+      deepClone: structuredClone
+    }
+  };
+
+  try {
+    const targetActor = new TestActor();
+    targetActor.id = "target-actor";
+    targetActor.effects = { contents: [] };
+    const calls = [];
+    const service = new CombatStatusService({
+      async setCombatStatus(actor, statusId, options) {
+        calls.push({ actor, statusId, options: structuredClone(options) });
+        return "applied";
+      }
+    });
+
+    const result = await service.applyTwistedFromSelection({
+      targetToken: { uuid: "Scene.scene.Token.target", actor: targetActor },
+      sourceToken: { uuid: "Scene.scene.Token.source" },
+      value: 15,
+      linkId: "twisted-link-1"
+    });
+
+    assert.equal(result, "applied");
+    assert.deepEqual(calls, [{
+      actor: targetActor,
+      statusId: "rebreya-twisted",
+      options: {
+        active: true,
+        value: 15,
+        meta: {
+          twistedLink: {
+            linkId: "twisted-link-1",
+            kind: "twisted",
+            sourceTokenUuid: "Scene.scene.Token.source",
+            targetTokenUuid: "Scene.scene.Token.target"
+          }
+        }
+      }
+    }]);
+  }
+  finally {
+    globalThis.Actor = previousActor;
+    globalThis.foundry = previousFoundry;
+  }
+});
 
 test("actor HP updates synchronize the dead overlay in both directions", async () => {
   const previousActor = globalThis.Actor;

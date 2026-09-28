@@ -5,15 +5,121 @@ import { readFile } from "node:fs/promises";
 import { SpellAutomationRegistry } from "../scripts/combat/spell-automation-registry.js";
 import { SpellInstanceRuntime } from "../scripts/combat/spell-instance-runtime.js";
 import { SummonLifecycleRuntime } from "../scripts/combat/summon-lifecycle-runtime.js";
-import { TransportCompendiumService } from "../scripts/data/transport-compendium.js";
-import { BuiltinStorageActorService } from "../scripts/data/builtin-storage-actor-service.js";
-import { StorageOpenSoundService } from "../scripts/data/storage-open-sound-service.js";
+import { PrivilegedMutationGateway } from "../scripts/application/privileged-mutation-gateway.js";
+import { TransportCompendiumService } from "../scripts/data/transport-compendium.js?v=1.4.330";
+import { BuiltinStorageActorService } from "../scripts/data/builtin-storage-actor-service.js?v=1.4.216-storage-token-vision";
+import { StorageOpenSoundService } from "../scripts/data/storage-open-sound-service.js?v=1.4.145-coin-icons-storage-sound";
+import { GrappleAutomationService } from "../scripts/combat/grapple-automation-service.js";
+import { GrappleMacroService } from "../scripts/combat/grapple-macro-service.js?v=1.4.334-twisted-macro";
+import { GrapplePlacementPreview } from "../scripts/combat/grapple-placement-preview.js?v=1.4.290-rogue-mantle";
 import {
   COMMAND_REQUEST_TYPE,
   COMMAND_RESULT_TYPE
 } from "../scripts/infrastructure/foundry/socket-command-bus.js";
 import { SPELL_INSTANCE_MUTATION_COMMAND } from "../scripts/integrations/spell-instance-socket.js";
 import { SUMMON_LIFECYCLE_MUTATION_COMMAND } from "../scripts/integrations/summon-lifecycle-socket.js";
+
+test("current release reuses the catalog icon cache graph", async () => {
+  const iconServiceNames = [
+    "materials-compendium",
+    "gear-compendium",
+    "magic-items-compendium",
+    "feats-compendium",
+    "backgrounds-compendium",
+    "states-compendium",
+    "races-compendium",
+    "classes-compendium",
+    "transport-compendium",
+    "actions-compendium",
+    "downtime-compendium"
+  ];
+  const sharedCacheImporters = [
+    ...iconServiceNames,
+    "gear-icon-resolver",
+    "glossary-compendium",
+    "spells-compendium",
+    "transport-actor-builder"
+  ];
+  const [manifestSource, mainSource, serviceSource, syncSource, appSource, ...cacheImporterSources] = await Promise.all([
+    readFile(new URL("../module.json", import.meta.url), "utf8"),
+    readFile(new URL("../scripts/main.js", import.meta.url), "utf8"),
+    readFile(new URL("../scripts/data/inventory-service.js", import.meta.url), "utf8"),
+    readFile(new URL("../scripts/integrations/inventory-sync.js", import.meta.url), "utf8"),
+    readFile(new URL("../scripts/ui/inventory-app.js", import.meta.url), "utf8"),
+    ...sharedCacheImporters.map((name) => readFile(new URL(`../scripts/data/${name}.js`, import.meta.url), "utf8"))
+  ]);
+  const manifest = JSON.parse(manifestSource);
+  assert.equal(manifest.version, "1.4.347");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.347.js"]);
+  assert.doesNotMatch(manifestSource, /main-1\.4\.319\.js/u);
+  assert.match(mainSource, /data\/inventory-service\.js\?v=1\.4\.327/u);
+  assert.match(mainSource, /data\/storage-command-service\.js\?v=1\.4\.322/u);
+  assert.match(mainSource, /integrations\/inventory-sync\.js\?v=1\.4\.327/u);
+  assert.match(syncSource, /data\/inventory-service\.js\?v=1\.4\.327/u);
+  assert.match(appSource, /integrations\/inventory-sync\.js\?v=1\.4\.327/u);
+  assert.match(serviceSource, /gear-icon-resolver\.js\?v=1\.4\.327/u);
+  assert.equal(mainSource.match(/ui\/inventory-app\.js\?v=1\.4\.327/gu)?.length ?? 0, 3);
+  for (const source of [serviceSource, appSource]) {
+    assert.match(source, /inventory-folder-tree\.js\?v=1\.4\.318/u);
+    assert.match(source, /inventory-acquisition-history\.js\?v=1\.4\.318/u);
+  }
+  for (const name of iconServiceNames) {
+    assert.match(mainSource, new RegExp(`data/${name}\\.js\\?v=1\\.4\\.330`, "u"));
+  }
+  assert.match(mainSource, /data\/compendium-utils\.js\?v=1\.4\.327/u);
+  assert.match(mainSource, /data\/trader-service\.js\?v=1\.4\.327/u);
+  assert.equal(mainSource.match(/clearNamedIconCache\(\);/gu)?.length ?? 0, 1);
+  assert.ok(mainSource.indexOf("clearNamedIconCache();") < mainSource.indexOf("await this.materialsCompendium.sync("));
+  for (const source of cacheImporterSources) {
+    assert.match(source, /compendium-utils\.js\?v=1\.4\.327/u);
+  }
+  for (const source of cacheImporterSources.slice(0, iconServiceNames.length)) {
+    assert.doesNotMatch(source, /forceRefresh\s*:\s*true/u);
+  }
+});
+
+test("composition root exposes one personal inventory pin method without a socket command", async () => {
+  const source = await readFile(new URL("../scripts/main.js", import.meta.url), "utf8");
+  assert.equal(source.match(/\n  setInventoryFolderPinned\(/gu)?.length ?? 0, 1);
+  assert.match(source, /return this\.inventoryService\.setInventoryFolderPinned\(groupActorId, folderId, pinned\);/u);
+  assert.doesNotMatch(source, /inventory\.folder\.pin|INVENTORY_FOLDER_PIN_COMMAND/u);
+});
+
+test("composition root exposes one typed inventory folder batch API", async () => {
+  const source = await readFile(new URL("../scripts/main.js", import.meta.url), "utf8");
+  assert.equal(source.match(/\n  async runInventoryFolderBatch\(/gu)?.length ?? 0, 1);
+  assert.equal(source.match(/register\(INVENTORY_FOLDER_BATCH_COMMAND/gu)?.length ?? 0, 1);
+  assert.match(source, /keyedMutationScheduling\(\(payload\) => \[groupKey\(payload\.groupActorId\)\]\)/u);
+  assert.match(source, /socketCommandBus\.request\(INVENTORY_FOLDER_BATCH_COMMAND, exactPayload\)/u);
+});
+
+test("managed compendia sync actions and glossary before feats", async () => {
+  const source = await readFile(new URL("../scripts/main.js", import.meta.url), "utf8");
+  const actions = source.indexOf("await this.actionsCompendium.sync()");
+  const glossary = source.indexOf("await this.glossaryCompendium.sync()");
+  const feats = source.indexOf("await this.featsCompendium.sync()");
+
+  assert.ok(actions >= 0 && actions < glossary && glossary < feats);
+});
+
+test("composition root syncs one alchemy compendium on the active GM between gear and unrelated packs", async () => {
+  const source = await readFile(new URL("../scripts/main.js", import.meta.url), "utf8");
+  assert.equal(source.match(/import \{ AlchemyCompendiumService \} from "\.\/data\/alchemy-compendium\.js\?v=1\.4\.347";/gu)?.length ?? 0, 1);
+  assert.equal(source.match(/this\.alchemyCompendium = new AlchemyCompendiumService\(\);/gu)?.length ?? 0, 1);
+  assert.equal(source.match(/await this\.alchemyCompendium\.sync\(model\.alchemyProducts\);/gu)?.length ?? 0, 1);
+
+  const gear = source.indexOf("await this.gearCompendium.sync(model.gear)");
+  const activeGmGuard = source.indexOf("if (isActiveGmClient(globalThis.game))", gear);
+  const catalogGuard = source.indexOf("if (model.source?.alchemyProductsAvailable !== false)", activeGmGuard);
+  const alchemy = source.indexOf("await this.alchemyCompendium.sync(model.alchemyProducts)", gear);
+  const isolatedWarning = source.indexOf("Failed to sync alchemy compendium.", alchemy);
+  const magic = source.indexOf("await this.magicItemsCompendium.syncOwnedMagicItems", alchemy);
+  assert.ok(gear >= 0 && gear < activeGmGuard && activeGmGuard < catalogGuard && catalogGuard < alchemy && alchemy < isolatedWarning && isolatedWarning < magic);
+
+  const alchemyBlock = source.slice(activeGmGuard, magic);
+  assert.match(alchemyBlock, /try\s*\{[\s\S]*alchemyCompendium\.sync[\s\S]*\}\s*catch \(error\)/u);
+  assert.doesNotMatch(alchemyBlock, /register\(|Hooks\.|socket|api\.|Application|Dialog/u);
+});
 
 function createHooks() {
   const onceCallbacks = new Map();
@@ -47,8 +153,9 @@ function replaceGlobal(name, value) {
 
 test("ready composes spell automation on one registry alongside legacy hook registrations", async () => {
   const Hooks = createHooks();
-  const module = {};
+  const module = { version: "1.4.194" };
   const emittedSocketMessages = [];
+  const createdChatMessages = [];
   const activeGm = { active: true, id: "gm", isGM: true };
   let actorLookups = 0;
   let timerCalls = 0;
@@ -57,7 +164,32 @@ test("ready composes spell automation on one registry alongside legacy hook regi
     replaceGlobal("Actor", class Actor {}),
     replaceGlobal("Item", class Item {}),
     replaceGlobal("Macro", class Macro {}),
+    replaceGlobal("ChatMessage", {
+      async create(data) {
+        createdChatMessages.push(structuredClone(data));
+        return { id: "module-version-notice" };
+      }
+    }),
     replaceGlobal("CONFIG", {}),
+    replaceGlobal("fetch", async (url) => {
+      assert.equal(url, "modules/rebreya-main/data/lootgen-narrative-variants.json");
+      return {
+        ok: true,
+        async json() {
+          return {
+            schemaVersion: 1,
+            variants: [{
+              variantId: "book-composition",
+              gearId: "book",
+              sourceName: "Книга",
+              title: "Композиция",
+              description: "Проверка ready-hook.",
+              rank: 1
+            }]
+          };
+        }
+      };
+    }),
     replaceGlobal("fromUuid", async () => {
       actorLookups += 1;
       return null;
@@ -106,9 +238,78 @@ test("ready composes spell automation on one registry alongside legacy hook regi
 
     await Hooks.onceCallbacks.get("ready")();
 
+    const createdBook = {
+      pack: null,
+      toObject: () => ({
+        name: "Книга",
+        system: { description: { value: "base" }, quantity: 4 },
+        flags: { "rebreya-main": { gearId: "book" } }
+      }),
+      updateSource(patch) {
+        this.patch = patch;
+      }
+    };
+    for (const callback of Hooks.listeners.get("preCreateItem") ?? []) {
+      callback(createdBook, {}, {}, "gm");
+    }
+    assert.equal(createdBook.patch.flags["rebreya-main"].narrativeVariantId, "book-composition");
+    assert.equal(createdBook.patch.system.quantity, 1);
+
+    assert.deepEqual(createdChatMessages, [{
+      user: "gm",
+      whisper: ["gm"],
+      content: "<p>Rebreya Main v1.4.194 загружен.</p>"
+    }]);
+
     const moduleApi = module.api;
+    assert.equal(moduleApi.storageCommandService.lootgenTemplateItems, moduleApi.lootgenTemplateItems);
+    assert.equal(typeof moduleApi.resolveLootgenTemplate, "function");
+    assert.equal(typeof moduleApi.assignStorageLootgenTemplate, "function");
+    assert.equal(typeof moduleApi.clearStorageLootgenTemplate, "function");
+    const equippedSyncResult = { dryRun: true, updated: [] };
+    const ownedSyncOptions = [];
+    moduleApi.magicItemsCompendium = {
+      async syncOwnedMagicItems(options) {
+        ownedSyncOptions.push(options);
+        return equippedSyncResult;
+      }
+    };
+    assert.equal(
+      await moduleApi.syncOwnedMagicItems({ dryRun: true }),
+      equippedSyncResult
+    );
+    assert.equal(
+      await moduleApi.syncEquippedMagicItems({ dryRun: true }),
+      equippedSyncResult
+    );
+    assert.deepEqual(ownedSyncOptions, [{ dryRun: true }, { dryRun: true }]);
+    assert.ok(moduleApi.privilegedMutationGateway instanceof PrivilegedMutationGateway);
     assert.ok(moduleApi.builtinStorageActorService instanceof BuiltinStorageActorService);
+    assert.equal("builtinCoinTemplateService" in moduleApi, false);
+    assert.equal(typeof moduleApi.restoreBuiltinCoinTemplates, "undefined");
     assert.ok(moduleApi.storageOpenSoundService instanceof StorageOpenSoundService);
+    assert.ok(moduleApi.grappleAutomationService instanceof GrappleAutomationService);
+    assert.ok(moduleApi.grappleMacroService instanceof GrappleMacroService);
+    assert.ok(moduleApi.grapplePlacementPreview instanceof GrapplePlacementPreview);
+    assert.equal(typeof moduleApi.toggleGrapple, "function");
+    assert.equal(typeof moduleApi.moveGrappled, "function");
+    assert.equal(typeof moduleApi.applyTwisted, "function");
+    const mutateBeforeDisarmCheck = moduleApi.privilegedMutationGateway.mutate;
+    moduleApi.pendingDisarmIntent = { operationId: "rejected-start" };
+    moduleApi.privilegedMutationGateway.mutate = async () => { throw Object.assign(new Error("outside range"), { code: "out-of-range" }); };
+    await assert.rejects(moduleApi.requestDisarmAction("start", moduleApi.pendingDisarmIntent));
+    assert.equal(moduleApi.pendingDisarmIntent, null);
+    moduleApi.pendingDisarmIntent = { operationId: "uncertain-start" };
+    moduleApi.privilegedMutationGateway.mutate = async () => { throw Object.assign(new Error("timeout"), { code: "request-timeout" }); };
+    await assert.rejects(moduleApi.requestDisarmAction("start", moduleApi.pendingDisarmIntent));
+    assert.equal(moduleApi.pendingDisarmIntent.operationId, "uncertain-start");
+    moduleApi.privilegedMutationGateway.mutate = async () => { throw Object.assign(new Error("missing"), { code: "operation-not-found" }); };
+    await assert.rejects(moduleApi.openDisarmOperation("uncertain-start"));
+    assert.equal(moduleApi.pendingDisarmIntent, null);
+    moduleApi.privilegedMutationGateway.mutate = mutateBeforeDisarmCheck;
+    for (const hook of ["preUpdateToken", "deleteActiveEffect", "deleteToken", "canvasReady"]) {
+      assert.ok((Hooks.listeners.get(hook)?.length ?? 0) >= 1, hook);
+    }
     const restoredDocuments = {
       folder: { id: "storage-folder" },
       actors: [{ id: "copper" }]
@@ -243,9 +444,107 @@ test("ready composes spell automation on one registry alongside legacy hook regi
 test("composition root synchronizes the managed transport Actor compendium", async () => {
   const source = await readFile(new URL("../scripts/main.js", import.meta.url), "utf8");
 
-  assert.match(source, /import\s+\{\s*TransportCompendiumService\s*\}\s+from\s+"\.\/data\/transport-compendium\.js";/u);
+  assert.match(source, /import\s+\{\s*TransportCompendiumService\s*\}\s+from\s+"\.\/data\/transport-compendium\.js\?v=1\.4\.330";/u);
   assert.match(source, /this\.transportCompendium\s*=\s*new TransportCompendiumService/u);
   assert.match(source, /await this\.transportCompendium\.sync\(\);/u);
   assert.match(source, /registerTransportGroupDropHooks\(moduleApi,\s*\{\s*Hooks\s*\}\);/u);
   assert.match(source, /registerTransportVehicleSheetHooks\(moduleApi,\s*\{\s*Hooks\s*\}\);/u);
+});
+
+test("composition root owns grapple services, typed commands, public macros, and managed sync", async () => {
+  const source = await readFile(new URL("../scripts/main.js", import.meta.url), "utf8");
+  assert.equal(source.match(/new GrappleAutomationService\(/gu)?.length, 1);
+  assert.equal(source.match(/new GrappleMacroService\(/gu)?.length, 1);
+  assert.equal(source.match(/new GrapplePlacementPreview\(/gu)?.length, 1);
+  for (const command of [
+    "GRAPPLE_TOGGLE_COMMAND",
+    "GRAPPLE_PLACE_COMMAND",
+    "GRAPPLE_DRAG_COMMAND",
+    "GRAPPLE_RELEASE_AND_MOVE_COMMAND"
+  ]) {
+    assert.equal(source.match(new RegExp(`socketCommandBus\\.register\\(${command},`, "gu"))?.length, 1, command);
+  }
+  assert.match(source, /async toggleGrapple\(\)/u);
+  assert.match(source, /async moveGrappled\(\)/u);
+  assert.match(source, /await this\.grappleMacroService\.syncManagedDocuments\(\)/u);
+  assert.match(source, /await this\.grappleAutomationService\.reconcileScene\(globalThis\.canvas\.scene\)/u);
+});
+
+test("composition root exposes safe public city reads and GM-only presentation mutations", async () => {
+  const source = await readFile(new URL("../scripts/main.js", import.meta.url), "utf8");
+
+  assert.match(
+    source,
+    /import\s+\{\s*buildPublicCitySnapshot,\s*buildPublicEconomySnapshot\s*\}\s+from\s+"\.\/application\/public-economy-read-model\.js";/u
+  );
+  for (const methodName of [
+    "getPublicCitySnapshot",
+    "getPublicEconomySnapshot",
+    "getCityPresentation",
+    "updateCityPresentation",
+    "resetCityPresentation",
+    "refreshCityViews"
+  ]) {
+    assert.match(source, new RegExp(`(?:async\\s+)?${methodName}\\(`, "u"), methodName);
+  }
+  assert.equal(source.match(/this\.cityApps\s*=\s*new Map\(\)/gu)?.length, 1);
+  assert.doesNotMatch(source, /publicCityApps|playerCityApps|new PublicCityApp/u);
+  assert.match(source, /return this\.openTraderV2\(cityId, traderKey, options\)/u);
+
+  const publicCityStart = source.indexOf("  async getPublicCitySnapshot(cityId)");
+  const publicCityEnd = source.indexOf("\n  async getPublicEconomySnapshot()", publicCityStart);
+  assert.notEqual(publicCityStart, -1);
+  assert.notEqual(publicCityEnd, -1);
+  const publicCityMethod = source.slice(publicCityStart, publicCityEnd);
+  assert.match(publicCityMethod, /return buildPublicCitySnapshot\(/u);
+  assert.doesNotMatch(publicCityMethod, /return this\.getCitySnapshot\(cityId\)/u);
+
+  const updateStart = source.indexOf("  async updateCityPresentation(cityId, patch = {})");
+  const updateEnd = source.indexOf("\n  async resetCityPresentation", updateStart);
+  assert.notEqual(updateStart, -1);
+  assert.notEqual(updateEnd, -1);
+  const updateMethodSource = source.slice(updateStart, updateEnd);
+  assert.match(updateMethodSource, /privilegedMutationGateway\.mutate\(ECONOMY_CITY_PRESENTATION_UPDATE_COMMAND/u);
+  assert.doesNotMatch(updateMethodSource, /game\.user\?\.isGM/u);
+  assert.match(updateMethodSource, /refreshCityViews\(\{ cityIds: \[cityId\] \}\)/u);
+});
+
+test("composition root owns one inventory ingress graph and one batch dispatch helper", async () => {
+  const source = await readFile(new URL("../scripts/main.js", import.meta.url), "utf8");
+
+  assert.match(
+    source,
+    /\.\/data\/inventory-service\.js\?v=1\.4\.327/u,
+    "inventory-service cache key must change with the catalog icon workflow"
+  );
+  assert.equal(source.match(/new InventoryIngressRuleCompilerCache\(/gu)?.length, 1);
+  assert.equal(source.match(/new InventoryIngressPlanner\(/gu)?.length, 1);
+  for (const command of [
+    "INVENTORY_INGRESS_LOOTGEN_COMMAND"
+  ]) {
+    assert.equal(source.match(new RegExp(`register\\(${command},`, "gu"))?.length, 1, command);
+  }
+  for (const command of [
+    "INVENTORY_INGRESS_RULE_CREATE_COMMAND",
+    "INVENTORY_INGRESS_RULE_UPDATE_COMMAND",
+    "INVENTORY_INGRESS_RULE_DELETE_COMMAND"
+  ]) {
+    assert.equal(source.match(new RegExp(`registerInventoryOrganizationMutation\\(\\s*${command},`, "gu"))?.length, 1, command);
+  }
+  for (const method of [
+    "getInventoryIngressRuleState",
+    "createInventoryIngressRule",
+    "updateInventoryIngressRule",
+    "deleteInventoryIngressRule",
+    "claimLootgenChatAllToInventory",
+    "claimStorageAll",
+    "importInventoryDrop"
+  ]) {
+    assert.match(source, new RegExp(`(?:async\\s+)?${method}\\(`, "u"), method);
+  }
+  assert.match(source, /async #dispatchInventoryIngress\(/u);
+  assert.equal(source.match(/game\.rebreyaMain\s*=\s*moduleApi/gu)?.length, 1);
+  assert.equal(source.match(/module\.api\s*=\s*moduleApi/gu)?.length, 1);
+  assert.doesNotMatch(source, /InventoryIngressFilterApp|new\s+InventoryIngress.*Application/u);
+  assert.doesNotMatch(source, /Hooks\.on\(["']createItem["'][\s\S]{0,300}inventoryIngress/iu);
 });

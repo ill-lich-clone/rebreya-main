@@ -1,4 +1,6 @@
 import { MODULE_ID } from "../constants.js";
+import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
+import { registerGrappleHooks } from "./grapple-hooks.js";
 
 const HOOKS_REGISTERED_KEY = `${MODULE_ID}.combatHooksRegistered`;
 const CHARACTER_SHEET_RENDER_HOOKS = Object.freeze([
@@ -15,6 +17,24 @@ function completeSorcererReactionCheckWhenNoSpellService(usageConfig = {}) {
   usageConfig.flags ??= {};
   usageConfig.flags[MODULE_ID] ??= {};
   usageConfig.flags[MODULE_ID].reactionCheckComplete = true;
+}
+
+function combatTurnChangeDirection(previous = {}, current = {}) {
+  const previousRound = Number(previous?.round);
+  const currentRound = Number(current?.round);
+  if (!Number.isInteger(previousRound) || !Number.isInteger(currentRound)) {
+    return 0;
+  }
+  if (currentRound !== previousRound) {
+    return Math.sign(currentRound - previousRound);
+  }
+
+  const previousTurn = Number(previous?.turn);
+  const currentTurn = Number(current?.turn);
+  if (!Number.isInteger(previousTurn) || !Number.isInteger(currentTurn)) {
+    return 0;
+  }
+  return Math.sign(currentTurn - previousTurn);
 }
 
 export function registerCombatHooks(moduleApi) {
@@ -36,7 +56,11 @@ export function registerCombatHooks(moduleApi) {
   const hasRuneKnightService = Boolean(moduleApi?.runeKnightAutomationService);
   const hasSizeService = Boolean(moduleApi?.sizeAutomationService);
   const hasCurseEaterService = Boolean(moduleApi?.curseEaterAutomationService);
-  if (!hasStatusService && !hasAttackService && !hasRaceService && !hasFighterService && !hasSorcererService && !hasElementalAdeptService && !hasPaladinService && !hasPaladinDogmaService && !hasRogueService && !hasAttackRollBoostService && !hasPerformerService && !hasBardicInspirationCompatService && !hasEnvironmentService && !hasSpellService && !hasReactionCapabilityIndex && !hasRuneKnightService && !hasSizeService && !hasCurseEaterService) {
+  const curseUpgrades = moduleApi?.curseUpgradeAutomationService;
+  const simpleUpgrades = moduleApi?.itemUpgradeAutomationService;
+  const hasGrappleService = Boolean(moduleApi?.grappleAutomationService);
+  const hasMagicItemsCompendium = Boolean(moduleApi?.magicItemsCompendium);
+  if (!hasStatusService && !hasAttackService && !hasRaceService && !hasFighterService && !hasSorcererService && !hasElementalAdeptService && !hasPaladinService && !hasPaladinDogmaService && !hasRogueService && !hasAttackRollBoostService && !hasPerformerService && !hasBardicInspirationCompatService && !hasEnvironmentService && !hasSpellService && !hasReactionCapabilityIndex && !hasRuneKnightService && !hasSizeService && !hasCurseEaterService && !hasGrappleService && !hasMagicItemsCompendium && !curseUpgrades && !simpleUpgrades) {
     return;
   }
 
@@ -44,6 +68,72 @@ export function registerCombatHooks(moduleApi) {
     return;
   }
   game[HOOKS_REGISTERED_KEY] = true;
+
+  if (simpleUpgrades) {
+    const run = promise => Promise.resolve(promise).catch(error => console.error(`${MODULE_ID} | Simple item upgrade sync failed.`, error));
+    for (const event of ["createItem", "deleteItem", "createActiveEffect", "deleteActiveEffect"]) {
+      Hooks.on(event, (document, options) => run(simpleUpgrades.handleChanged(document, options)));
+    }
+    for (const event of ["updateActor", "updateItem", "updateActiveEffect"]) {
+      Hooks.on(event, (document, _changed, options) => run(simpleUpgrades.handleChanged(document, options)));
+    }
+  }
+
+  if (curseUpgrades) {
+    const report = error => console.error(`${MODULE_ID} | Curse upgrade automation failed.`, error);
+    const run = promise => Promise.resolve(promise).catch(report);
+    Hooks.on("preUpdateActor", (actor, changed, options) => curseUpgrades.preUpdateActor(actor, changed, options));
+    Hooks.on("updateActor", (actor, changed, options) => run(curseUpgrades.actorUpdated(actor, changed, options)));
+    for (const event of ["createItem", "deleteItem", "createActiveEffect", "deleteActiveEffect"]) {
+      Hooks.on(event, (document, options) => run(curseUpgrades.handleChanged(document, options)));
+    }
+    for (const event of ["updateItem", "updateActiveEffect"]) Hooks.on(event, (document, _changed, options) => run(curseUpgrades.handleChanged(document, options)));
+    Hooks.on("dnd5e.preUseActivity", activity => curseUpgrades.preUse(activity));
+    Hooks.on("dnd5e.preRollDeathSave", config => curseUpgrades.preDeathSave(config));
+    Hooks.on("dnd5e.rollInitiative", (actor, combatants) => run(curseUpgrades.initiative(actor, combatants)));
+    Hooks.on("updateCombatant", (combatant, changed) => { if (Object.hasOwn(changed, "initiative")) return run(curseUpgrades.initiative(combatant.actor, [combatant])); });
+    Hooks.on("combatTurnChange", (combat, previous, current) => run(curseUpgrades.combatChanged(combat, previous, current)));
+    Hooks.on("updateWorldTime", () => run(curseUpgrades.expireOutsideCombat()));
+    Hooks.on("dnd5e.preRollDamage", config => curseUpgrades.damage.preRollDamage(config));
+    Hooks.on("dnd5e.preApplyDamage", (actor, amount, updates, options) => curseUpgrades.preApplyDamage(actor, amount, updates, options));
+    Hooks.on("dnd5e.preCalculateDamage", (actor, damages, options) => curseUpgrades.damage.preCalculateDamage(actor, damages, options));
+    Hooks.on("midi-qol.dnd5ePreCalculateDamage", (actor, damages, options) => curseUpgrades.damage.midiPreCalculateDamage(actor, damages, options));
+    Hooks.on("dnd5e.calculateDamage", (actor, damages, options) => curseUpgrades.damage.calculateDamage(actor, damages, options));
+    Hooks.on("midi-qol.dnd5eCalculateDamage", (actor, damages, options) => curseUpgrades.damage.midiCalculateDamage(actor, damages, options));
+    Hooks.on("midi-qol.postCheckSaves", workflow => curseUpgrades.saves.applyMidiPostCheckSaves(workflow));
+    Hooks.on("dnd5e.preRollAttack", config => curseUpgrades.attacks.preRollAttack(config));
+    Hooks.on("midi-qol.preAttackRoll", workflow => curseUpgrades.attacks.midiPreAttackRoll(workflow));
+    Hooks.on("midi-qol.preTargetDamageApplication", (token, context) => curseUpgrades.damage.preTargetDamageApplication(token, context));
+    Hooks.on("midi-qol.RollComplete", async workflow => {
+      try { await curseUpgrades.bloodHit(workflow); }
+      finally { curseUpgrades.attacks.releaseWorkflow(workflow); }
+    });
+    Hooks.on("midi-qol.preAbort", workflow => curseUpgrades.attacks.releaseWorkflow(workflow));
+    Hooks.on("dnd5e.rollAttack", (rolls, data) => {
+      const activity = data?.subject; const actor = activity?.actor ?? activity?.item?.actor;
+      if (actor && activity.item?.type === "weapon" && rolls?.length) return run(curseUpgrades.attackOccurred(actor, activity.item, globalThis.crypto.randomUUID()));
+    });
+  }
+
+  if (hasMagicItemsCompendium) {
+    Hooks.on("dnd5e.rollHitDie", (rolls, context) => {
+      try {
+        return moduleApi.magicItemsCompendium.applyDnd5eRollHitDie(rolls, context);
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to apply magic-item Hit Die healing.`, error);
+        return true;
+      }
+    });
+    Hooks.on("dnd5e.postUseActivity", (activity, usageConfig, results) => {
+      moduleApi.magicItemsCompendium.applyDnd5ePostUseActivity(activity, usageConfig, results).catch((error) => {
+        console.error(`${MODULE_ID} | Failed to apply magic-item activity automation.`, error);
+      });
+      return true;
+    });
+  }
+
+  if (hasGrappleService) registerGrappleHooks(moduleApi.grappleAutomationService);
 
   if (hasCurseEaterService) {
     const service = moduleApi.curseEaterAutomationService;
@@ -350,12 +440,11 @@ export function registerCombatHooks(moduleApi) {
     Hooks.on("controlToken", applyCurrentEnvironment);
   }
 
-  const advanceSorcererCooldowns = (combat, updateData, updateOptions) => {
-    moduleApi.sorcererAutomationService.handleCombatTurnChange(
-      combat,
-      updateData,
-      updateOptions
-    ).catch((error) => {
+  const advanceSorcererCooldowns = (combat, previous, current) => {
+    if (!isActiveGmClient(globalThis.game) || combatTurnChangeDirection(previous, current) <= 0) {
+      return;
+    }
+    moduleApi.sorcererAutomationService.handleCombatTurnChange(combat, current ?? {}, { direction: 1 }).catch((error) => {
       console.error(`${MODULE_ID} | Failed to update Sorcerer virtual-slot cooldowns.`, error);
     });
   };
@@ -394,10 +483,6 @@ export function registerCombatHooks(moduleApi) {
       });
     }
 
-    if (hasSorcererService) {
-      advanceSorcererCooldowns(combat, updateData, updateOptions);
-    }
-
     if (hasPaladinService) {
       moduleApi.paladinAutomationService.handleCombatTurnChange(combat, updateData, updateOptions).catch((error) => {
         console.error(`${MODULE_ID} | Failed to handle paladin turn automation.`, error);
@@ -406,10 +491,19 @@ export function registerCombatHooks(moduleApi) {
   });
 
   if (hasSorcererService) {
-    Hooks.on("combatRound", advanceSorcererCooldowns);
+    Hooks.on("combatTurnChange", advanceSorcererCooldowns);
   }
 
   if (hasAttackService) {
+    Hooks.on("updateItem", (item, changed, options = {}) => {
+      if (options?.[MODULE_ID]?.firearmPropertySync === true) {
+        return;
+      }
+      moduleApi.combatAttackService.synchronizeFirearmPropertyState(item, changed).catch((error) => {
+        console.error(`${MODULE_ID} | Failed to synchronize firearm properties.`, error);
+      });
+    });
+
     const repairFirearmActor = (app) => {
       const actor = app?.actor ?? app?.document ?? null;
       moduleApi.combatAttackService.repairFirearmActivities(actor).catch((error) => {
@@ -649,6 +743,7 @@ export function registerCombatHooks(moduleApi) {
       }
       return true;
     });
+
   }
 
   if (hasSorcererService) {
@@ -1025,6 +1120,16 @@ export function registerCombatHooks(moduleApi) {
         console.error(`${MODULE_ID} | Failed to apply MIDI race automation.`, error);
       });
       return true;
+    });
+
+    Hooks.on("midi-qol.preDamageRoll", async (workflow, activity, config) => {
+      try {
+        return await moduleApi.raceAutomationService.applyMidiPreDamageRoll(workflow, activity, config);
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to prepare MIDI race damage.`, error);
+        return true;
+      }
     });
   }
 

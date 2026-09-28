@@ -1,7 +1,17 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { buildCompositeItemGraph } from "../scripts/data/composite-item-graph.js";
+import { buildLootgenPreparedItem } from "../scripts/data/lootgen-prepared-item.js";
 
 import { MODULE_ID, REBREYA_GROUP_FLAGS, SETTINGS_KEYS } from "../scripts/constants.js";
+import {
+  buildInventoryIngressDescriptor,
+  captureInventoryIngressIdentity,
+  resolveInventoryDismantleOutputs
+} from "../scripts/data/inventory-ingress-descriptor.js";
+import { InventoryIngressPlanner } from "../scripts/application/inventory-ingress-planner.js";
+import { InventoryIngressRuleCompilerCache } from "../scripts/data/inventory-ingress-rules.js";
+import { readInventoryAcquisitionHistory } from "../scripts/data/inventory-acquisition-history.js";
 
 const previousActor = globalThis.Actor;
 const previousItem = globalThis.Item;
@@ -11,12 +21,18 @@ globalThis.Item = class TestItemDocument {};
 const {
   captureInventoryTransferIdentity,
   InventoryService,
-  itemsCanRepresentSameTransfer
+  itemsCanRepresentSameTransfer,
+  resolveInventorySaleQuote
 } = await import(`../scripts/data/inventory-service.js?mutation-recovery=${Date.now()}`);
 
 function clone(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));
 }
+
+test("an unmaterialized generated container cannot silently become a root-only loot grant",async()=>{
+  await assert.rejects(InventoryService.prototype.buildLootgenItemData.call({},
+    {sourceType:"gear",sourceId:"chest",quantity:1,descriptor:{container:{version:1}}}),/полного дерева/u);
+});
 
 function deepFreeze(value) {
   if (!value || typeof value !== "object" || Object.isFrozen(value)) {
@@ -64,6 +80,1447 @@ test("inventory transfer identity keeps durability-homogeneous stacks separate",
   ), false);
   assert.equal(itemsCanRepresentSameTransfer(makeData(null), makeData(null)), true);
   assert.equal(itemsCanRepresentSameTransfer(makeData(durability), makeData(null)), false);
+});
+
+test("production Lootgen, persisted Storage and external Item adapters preserve ingress descriptor parity", async () => {
+  const iron = { id: "iron", name: "Железо", type: "Металл" };
+  const gear = {
+    id: "canonical-sword",
+    name: "Канонический меч",
+    equipmentType: "Оружие",
+    rank: 2,
+    predominantMaterialId: iron.id,
+    predominantMaterialName: iron.name
+  };
+  const model = {
+    gear: [gear],
+    gearById: new Map([[gear.id, gear]]),
+    materials: [iron],
+    materialById: new Map([[iron.id, iron]]),
+    materialByGoodId: new Map()
+  };
+  const sourceData = {
+    _id: "canonical-sword-document",
+    name: gear.name,
+    type: "weapon",
+    system: {
+      quantity: 1,
+      equipped: false,
+      price: { value: 15, denomination: "gp" },
+      weight: { value: 3, units: "lb" },
+      type: { value: "martialM", subtype: "sword" }
+    },
+    flags: {
+      [MODULE_ID]: {
+        managed: true,
+        sourceType: "gear",
+        gearId: gear.id,
+        equipmentType: gear.equipmentType,
+        rank: gear.rank,
+        predominantMaterialId: iron.id,
+        predominantMaterialName: iron.name
+      }
+    }
+  };
+  const sourceDocument = {
+    id: sourceData._id,
+    uuid: `Compendium.world.rebreya-gear.Item.${sourceData._id}`,
+    toObject: () => clone(sourceData)
+  };
+  const gearPack = {
+    collection: "world.rebreya-gear",
+    async getIndex() {
+      return [{ _id: sourceData._id, flags: clone(sourceData.flags) }];
+    },
+    async getDocument(documentId) {
+      return documentId === sourceData._id ? sourceDocument : null;
+    }
+  };
+  const group = createActor({ id: "descriptor-group", type: "group", managed: true });
+  const fixture = createInventoryIngressFixture({
+    group,
+    actors: [group],
+    model,
+    packs: new Map([["world.rebreya-gear", gearPack]]),
+    moduleApi: { getModel: async () => model }
+  });
+
+  try {
+    const lootgenData = await fixture.service.buildLootgenItemData({
+      sourceType: "gear",
+      sourceId: gear.id,
+      quantity: 2
+    });
+    const narrativeData = await fixture.service.buildLootgenItemData({
+      sourceType: "gear",
+      sourceId: gear.id,
+      quantity: 7,
+      narrativeVariantId: "sword-a",
+      narrativeGearId: gear.id,
+      narrativeTitle: "Следы <времени>",
+      narrativeDescription: "Первая строка\nВторая & строка"
+    });
+    assert.equal(narrativeData.system.quantity, 1);
+    assert.equal(narrativeData.system.description.value, "<h3>Следы &lt;времени&gt;</h3><p>Первая строка<br>Вторая &amp; строка</p>");
+    assert.equal(narrativeData.flags[MODULE_ID].narrativeVariantId, "sword-a");
+    const persistedNarrative = clone(narrativeData);
+    persistedNarrative.system.description.value = "<p>Сохранённый текст</p>";
+    const restoredNarrative = await fixture.service.buildLootgenItemData({
+      quantity: 9,
+      itemData: persistedNarrative,
+      narrativeVariantId: "changed",
+      narrativeGearId: gear.id,
+      narrativeTitle: "Другой",
+      narrativeDescription: "Другой текст"
+    }, { allowPersistedItemData: true });
+    assert.equal(restoredNarrative.system.quantity, 1);
+    assert.equal(restoredNarrative.system.description.value, "<p>Сохранённый текст</p>");
+    assert.equal(restoredNarrative.flags[MODULE_ID].narrativeVariantId, "sword-a");
+    const storageData = await fixture.service.buildLootgenItemData({
+      quantity: 2,
+      itemData: clone(lootgenData)
+    }, { allowPersistedItemData: true });
+    const externalItem = {
+      toObject: () => ({ ...clone(lootgenData), name: "Переименованный меч" })
+    };
+    const descriptors = [lootgenData, storageData, externalItem.toObject()]
+      .map((itemData) => buildInventoryIngressDescriptor(itemData, { model }));
+
+    assert.deepEqual(descriptors[0], descriptors[1]);
+    assert.deepEqual(descriptors[1], descriptors[2]);
+    assert.deepEqual(captureInventoryIngressIdentity(descriptors[2], 2), {
+      sourceType: "gear",
+      sourceId: gear.id,
+      documentType: "weapon",
+      durabilityState: "intact",
+      quantity: 2
+    });
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("manual dismantle uses stable material metadata and never a presentation-name fallback", async () => {
+  const iron = { id: "iron", name: "Железо", type: "Металл", priceGold: 1, weight: 1 };
+  const model = {
+    materials: [iron],
+    materialById: new Map([[iron.id, iron]]),
+    materialByGoodId: new Map(),
+    gear: [],
+    gearById: new Map()
+  };
+  const source = createItem({
+    id: "unmanaged-material-name",
+    name: "Меч",
+    type: "weapon",
+    quantity: 1,
+    system: {
+      quantity: 1,
+      weight: { value: 3, units: "lb" },
+      price: { value: 1, denomination: "gp" }
+    },
+    flags: {
+      [MODULE_ID]: {
+        sourceType: "gear",
+        sourceId: "unknown-gear",
+        predominantMaterialName: iron.name
+      }
+    }
+  });
+  const group = createActor({
+    id: "manual-dismantle-group",
+    type: "group",
+    managed: true,
+    items: [source]
+  });
+  const fixture = installFixture({
+    group,
+    actors: [group],
+    moduleApi: { getModel: async () => model }
+  });
+
+  try {
+    await assert.rejects(
+      fixture.service.breakItemToMaterial(source.id, 1),
+      /материал|разбор/iu
+    );
+    assert.equal(group.items.contents.length, 1);
+    assert.equal(group.items.contents[0], source);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("dismantle applies ingress filters to a root Item and keeps fallback material at root", async () => {
+  const iron = { id: "iron", name: "Iron", type: "Metal", priceGold: 1, weight: 1 };
+  const model = dismantleModel(iron);
+  const source = dismantleSource({ id: "root-dismantle-source", materialId: iron.id });
+  const group = createActor({ id: "root-dismantle-group", type: "group", managed: true, items: [source] });
+  const previewRequests = [];
+  const fixture = installFixture({
+    group,
+    actors: [group],
+    moduleApi: {
+      getModel: async () => model,
+      inventoryIngressPlanner: dismantlePlanner((request) => {
+        previewRequests.push(clone(request));
+        return { action: { type: "legacy" }, matchedRuleId: null, rulesRevision: 8 };
+      })
+    }
+  });
+  try {
+    const result = await fixture.service.executeDismantleMutation({
+      inventoryActorId: group.id, itemId: source.id, quantity: 1, mutationId: "root-dismantle"
+    });
+    const materialItem = group.items.contents.find((item) => item.id !== source.id);
+    const record = fixture.settingsStore[SETTINGS_KEYS.INVENTORY_MUTATION_JOURNAL].records
+      .find((entry) => entry.id === "root-dismantle");
+    assert.equal(previewRequests.length, 1);
+    assert.equal(previewRequests[0].requestedFolderId, null);
+    assert.equal(previewRequests[0].rows[0].legacyFolderId, null);
+    assert.equal(result.breakQuantity, 1);
+    assert.equal(group.createEmbeddedDocumentsCalls, 1);
+    assert.ok(materialItem);
+    assert.equal(group.items.contents.includes(source), false);
+    assert.equal(group.flags[MODULE_ID]?.inventoryFolders?.itemFolderIds?.[materialItem.id], undefined);
+    assert.equal(record.sourceFolderId, null);
+    assert.equal(record.destinationFolderId, null);
+    assert.equal(record.routingOutcome, "fallback");
+  }
+  finally { fixture.restore(); }
+});
+
+test("new dismantle material uses its exact compendium icon without rewriting an existing stack", async () => {
+  const steel = { id: "steel", name: "Сталь", type: "Минерал", priceGold: 0.2, weight: 1 };
+  const model = dismantleModel(steel);
+  const source = dismantleSource({ id: "icon-dismantle-source", materialId: steel.id });
+  const existing = materialStack({ id: "legacy-steel-stack", material: steel, quantity: 8 });
+  existing.img = "icons/commodities/materials/slime-thick-blue.webp";
+  const group = createActor({
+    id: "icon-dismantle-group",
+    type: "group",
+    managed: true,
+    items: [source, existing]
+  });
+  setInventoryFolderState(group, {
+    folders: [
+      { id: "source", name: "Source", parentId: null, color: null },
+      { id: "legacy", name: "Legacy", parentId: null, color: null }
+    ],
+    itemFolderIds: { [source.id]: "source", [existing.id]: "legacy" }
+  });
+  const materialDocument = {
+    id: "steel-document",
+    img: "modules/rebreya-main/templates/icons/Materials/Сталь.webp"
+  };
+  const fixture = installFixture({
+    group,
+    actors: [group],
+    packs: new Map([["world.rebreya-materials", {
+      async getIndex() {
+        return [{
+          _id: materialDocument.id,
+          name: steel.name,
+          flags: { [MODULE_ID]: { materialId: steel.id } }
+        }];
+      },
+      async getDocument(documentId) {
+        return documentId === materialDocument.id ? materialDocument : null;
+      }
+    }]]),
+    moduleApi: { getModel: async () => model }
+  });
+
+  try {
+    await fixture.service.executeDismantleMutation({
+      inventoryActorId: group.id,
+      itemId: source.id,
+      quantity: 1,
+      mutationId: "icon-dismantle"
+    });
+
+    const created = group.items.contents.find((item) => item.id !== existing.id);
+    assert.ok(created);
+    assert.equal(created.img, materialDocument.img);
+    assert.equal(existing.img, "icons/commodities/materials/slime-thick-blue.webp");
+  }
+  finally { fixture.restore(); }
+});
+
+test("dismantle routes material by folder rule, skip rule, then source-folder fallback", async () => {
+  const scenarios = [
+    { name: "folder", action: { type: "folder", folderId: "destination" }, expectedFolderId: "destination", matchedRuleId: "route-material" },
+    { name: "skip", action: { type: "skip" }, expectedFolderId: null, matchedRuleId: "skip-material" },
+    { name: "fallback", action: { type: "legacy", folderId: "source" }, expectedFolderId: "source", matchedRuleId: null }
+  ];
+  for (const scenario of scenarios) {
+    const iron = { id: "iron", name: "Iron", type: "Metal", priceGold: 1, weight: 1 };
+    const model = dismantleModel(iron);
+    const source = dismantleSource({ id: `route-${scenario.name}-source`, materialId: iron.id });
+    const group = createActor({ id: `route-${scenario.name}-group`, type: "group", managed: true, items: [source] });
+    setInventoryFolderState(group, {
+      folders: [
+        { id: "source", name: "Source", parentId: null, color: null },
+        { id: "destination", name: "Destination", parentId: null, color: null }
+      ],
+      itemFolderIds: { [source.id]: "source" }
+    });
+    let previewCalls = 0;
+    const fixture = installFixture({
+      group,
+      actors: [group],
+      moduleApi: {
+        getModel: async () => model,
+        inventoryIngressPlanner: dismantlePlanner(() => {
+          previewCalls += 1;
+          return { action: scenario.action, matchedRuleId: scenario.matchedRuleId, rulesRevision: 7 };
+        })
+      }
+    });
+    try {
+      const mutationId = `route-${scenario.name}`;
+      const result = await fixture.service.executeDismantleMutation({
+        inventoryActorId: group.id, itemId: source.id, quantity: 1, mutationId
+      });
+      const record = fixture.settingsStore[SETTINGS_KEYS.INVENTORY_MUTATION_JOURNAL].records
+        .find((entry) => entry.id === mutationId);
+      assert.equal(previewCalls, 1, scenario.name);
+      assert.equal(record.sourceFolderId, "source", scenario.name);
+      assert.equal(record.rulesRevision, 7, scenario.name);
+      assert.equal(record.matchedRuleId, scenario.matchedRuleId, scenario.name);
+      assert.equal(record.destinationFolderId, scenario.expectedFolderId, scenario.name);
+      if (scenario.name === "skip") {
+        assert.equal(result.skipped, true);
+        assert.equal(source.system.quantity, 1);
+        assert.equal(group.createEmbeddedDocumentsCalls, 0);
+      }
+      else {
+        const materialItem = group.items.contents.find((item) => item.id !== source.id);
+        assert.ok(materialItem, scenario.name);
+        assert.equal(group.flags[MODULE_ID].inventoryFolders.itemFolderIds[materialItem.id], scenario.expectedFolderId, scenario.name);
+      }
+    }
+    finally { fixture.restore(); }
+  }
+});
+
+test("dismantle rejects recursive material routing and merges only in destination folder", async () => {
+  const iron = { id: "iron", name: "Iron", type: "Metal", priceGold: 1, weight: 1 };
+  const model = dismantleModel(iron);
+  const recursiveSource = dismantleSource({ id: "recursive-source", materialId: iron.id });
+  const recursiveGroup = createActor({ id: "recursive-group", type: "group", managed: true, items: [recursiveSource] });
+  setInventoryFolderState(recursiveGroup, {
+    folders: [{ id: "source", name: "Source", parentId: null, color: null }],
+    itemFolderIds: { [recursiveSource.id]: "source" }
+  });
+  const recursiveFixture = installFixture({
+    group: recursiveGroup,
+    actors: [recursiveGroup],
+    moduleApi: {
+      getModel: async () => model,
+      inventoryIngressPlanner: dismantlePlanner(() => ({
+        action: { type: "dismantle" }, matchedRuleId: "recursive", rulesRevision: 2
+      }))
+    }
+  });
+  try {
+    await assert.rejects(
+      recursiveFixture.service.executeDismantleMutation({
+        inventoryActorId: recursiveGroup.id, itemId: recursiveSource.id, quantity: 1, mutationId: "recursive-route"
+      }),
+      /routing|route|разбор|reconciliation/iu
+    );
+    assert.equal(recursiveGroup.createEmbeddedDocumentsCalls, 0);
+    assert.equal(recursiveSource.system.quantity, 1);
+  }
+  finally { recursiveFixture.restore(); }
+
+  const source = dismantleSource({ id: "scoped-source", materialId: iron.id });
+  const sourceStack = materialStack({ id: "source-stack", material: iron, quantity: 4 });
+  const destinationStack = materialStack({ id: "destination-stack", material: iron, quantity: 6 });
+  const group = createActor({ id: "scoped-merge-group", type: "group", managed: true, items: [source, sourceStack, destinationStack] });
+  setInventoryFolderState(group, {
+    folders: [
+      { id: "source", name: "Source", parentId: null, color: null },
+      { id: "destination", name: "Destination", parentId: null, color: null }
+    ],
+    itemFolderIds: { [source.id]: "source", [sourceStack.id]: "source", [destinationStack.id]: "destination" }
+  });
+  const fixture = installFixture({
+    group,
+    actors: [group],
+    moduleApi: {
+      getModel: async () => model,
+      inventoryIngressPlanner: dismantlePlanner(() => ({
+        action: { type: "folder", folderId: "destination" }, matchedRuleId: "to-destination", rulesRevision: 3
+      }))
+    }
+  });
+  try {
+    await fixture.service.executeDismantleMutation({
+      inventoryActorId: group.id, itemId: source.id, quantity: 1, mutationId: "scoped-route"
+    });
+    assert.equal(sourceStack.system.quantity, 4);
+    assert.equal(destinationStack.system.quantity, 8);
+    assert.equal(group.createEmbeddedDocumentsCalls, 0);
+  }
+  finally { fixture.restore(); }
+});
+
+test("dismantle retry keeps its prepared route and fails closed when that destination disappears", async () => {
+  const iron = { id: "iron", name: "Iron", type: "Metal", priceGold: 1, weight: 1 };
+  const model = dismantleModel(iron);
+  for (const destinationExists of [true, false]) {
+    const suffix = destinationExists ? "recorded" : "deleted";
+    const source = dismantleSource({ id: `${suffix}-source`, materialId: iron.id });
+    const group = createActor({ id: `${suffix}-group`, type: "group", managed: true, items: [source] });
+    setInventoryFolderState(group, {
+      folders: [
+        { id: "source", name: "Source", parentId: null, color: null },
+        { id: "destination", name: "Destination", parentId: null, color: null }
+      ],
+      itemFolderIds: { [source.id]: "source" }
+    });
+    const mutationId = `${suffix}-prepared-route`;
+    let previewCalls = 0;
+    const fixture = installFixture({
+      group,
+      actors: [group],
+      moduleApi: {
+        getModel: async () => model,
+        inventoryIngressPlanner: dismantlePlanner(() => {
+          previewCalls += 1;
+          return previewCalls === 1
+            ? { action: { type: "folder", folderId: "destination" }, matchedRuleId: "initial-route", rulesRevision: 4 }
+            : { action: { type: "dismantle" }, matchedRuleId: "changed-route", rulesRevision: 5 };
+        })
+      }
+    });
+    try {
+      const payload = { inventoryActorId: group.id, itemId: source.id, quantity: 1, mutationId };
+      seedPreparedDismantleRecord(fixture, {
+        mutationId, group, source, material: iron, destinationFolderId: "destination"
+      });
+      const prepared = fixture.settingsStore[SETTINGS_KEYS.INVENTORY_MUTATION_JOURNAL].records
+        .find((entry) => entry.id === mutationId);
+      assert.equal(prepared.destinationFolderId, "destination");
+      if (!destinationExists) {
+        setInventoryFolderState(group, {
+          folders: [{ id: "source", name: "Source", parentId: null, color: null }],
+          itemFolderIds: { [source.id]: "source" }
+        });
+        await assert.rejects(
+          fixture.service.executeDismantleMutation(payload),
+          (error) => error?.code === "reconciliation-required"
+        );
+        assert.equal(group.createEmbeddedDocumentsCalls, 0);
+        assert.equal(source.system.quantity, 1);
+      }
+      else {
+        await fixture.service.executeDismantleMutation(payload);
+        const materialItem = group.items.contents.find((item) => item.id !== source.id);
+        assert.equal(group.flags[MODULE_ID].inventoryFolders.itemFolderIds[materialItem.id], "destination");
+      }
+      assert.equal(previewCalls, 0);
+    }
+    finally { fixture.restore(); }
+  }
+});
+
+test("folder batch processes captured Items strictly sequentially with deterministic child mutation IDs", async () => {
+  const items = ["a", "b", "c"].map((id) => batchPricedItem(id));
+  const group = createActor({ id: "sequential-folder-batch-group", type: "group", managed: true, items });
+  setInventoryFolderState(group, {
+    folders: [{ id: "batch", name: "Batch", parentId: null, color: null }],
+    itemFolderIds: Object.fromEntries(items.map((item) => [item.id, "batch"]))
+  });
+  const fixture = installFixture({ group, actors: [group] });
+  const events = [];
+  const effects = new Set();
+  const requests = [];
+  fixture.service.executeSaleMutation = async (request) => {
+    events.push(`start:${request.itemId}`);
+    await new Promise((resolve) => setImmediate(resolve));
+    effects.add(request.mutationId);
+    requests.push(clone(request));
+    events.push(`finish:${request.itemId}`);
+    return { itemName: request.itemId, quantity: request.quantity, gainedCopper: 50 };
+  };
+  const payload = {
+    groupActorId: group.id,
+    folderId: "batch",
+    action: "sell",
+    includeDescendants: false,
+    operationId: "sequential-folder-batch"
+  };
+  try {
+    const first = await fixture.service.executeInventoryFolderBatch(payload);
+    const firstIds = requests.map((request) => request.mutationId);
+    const retry = await fixture.service.executeInventoryFolderBatch(payload);
+    const retryIds = requests.slice(3).map((request) => request.mutationId);
+    assert.deepEqual(events.slice(0, 6), [
+      "start:a", "finish:a", "start:b", "finish:b", "start:c", "finish:c"
+    ]);
+    assert.equal(first.processed.length, 3);
+    assert.equal(first.totals.gainedCopper, 150);
+    assert.deepEqual(retryIds, firstIds);
+    assert.equal(new Set(firstIds).size, 3);
+    assert.ok(firstIds.every((id) => id.length <= 160));
+    assert.equal(effects.size, 3);
+    assert.deepEqual(retry.totals, first.totals);
+  }
+  finally { fixture.restore(); }
+});
+
+test("folder batch captures direct or recursive scope and skips Items that disappear or move before their turn", async () => {
+  const a = batchPricedItem("a");
+  const b = batchPricedItem("b");
+  const c = batchPricedItem("c");
+  const group = createActor({ id: "scope-folder-batch-group", type: "group", managed: true, items: [a, b, c] });
+  setInventoryFolderState(group, {
+    folders: [
+      { id: "batch", name: "Batch", parentId: null, color: null },
+      { id: "child", name: "Child", parentId: "batch", color: null },
+      { id: "other", name: "Other", parentId: null, color: null }
+    ],
+    itemFolderIds: { a: "batch", b: "batch", c: "child" }
+  });
+  const fixture = installFixture({ group, actors: [group] });
+  const calls = [];
+  fixture.service.executeSaleMutation = async (request) => {
+    calls.push(request.itemId);
+    return { itemName: request.itemId, quantity: request.quantity, gainedCopper: 50 };
+  };
+  try {
+    const direct = await fixture.service.executeInventoryFolderBatch({
+      groupActorId: group.id, folderId: "batch", action: "sell",
+      includeDescendants: false, operationId: "direct-scope"
+    });
+    assert.deepEqual(direct.processed.map((row) => row.itemId), ["a", "b"]);
+
+    calls.length = 0;
+    fixture.service.executeSaleMutation = async (request) => {
+      calls.push(request.itemId);
+      if (request.itemId === "a") {
+        group.items.contents.splice(group.items.contents.indexOf(b), 1);
+        group.flags[MODULE_ID].inventoryFolders.itemFolderIds.c = "other";
+      }
+      return { itemName: request.itemId, quantity: request.quantity, gainedCopper: 50 };
+    };
+    const recursive = await fixture.service.executeInventoryFolderBatch({
+      groupActorId: group.id, folderId: "batch", action: "sell",
+      includeDescendants: true, operationId: "recursive-scope"
+    });
+    assert.deepEqual(calls, ["a"]);
+    assert.deepEqual(recursive.skipped.map((row) => row.code), ["item-missing", "item-moved"]);
+  }
+  finally { fixture.restore(); }
+});
+
+test("folder batch continues ordinary failures, stops reconciliation failures, and reports stable sale skips", async () => {
+  const magical = batchPricedItem("magical", { flags: { [MODULE_ID]: { magical: true } } });
+  const noPrice = batchPricedItem("no-price", { priceValue: 0 });
+  const ordinaryFailure = batchPricedItem("ordinary-failure");
+  const reconciliation = batchPricedItem("reconciliation");
+  const afterStop = batchPricedItem("zz-after-stop");
+  const items = [magical, noPrice, ordinaryFailure, reconciliation, afterStop];
+  const group = createActor({ id: "outcome-folder-batch-group", type: "group", managed: true, items });
+  setInventoryFolderState(group, {
+    folders: [{ id: "batch", name: "Batch", parentId: null, color: null }],
+    itemFolderIds: Object.fromEntries(items.map((item) => [item.id, "batch"]))
+  });
+  const fixture = installFixture({ group, actors: [group] });
+  const calls = [];
+  fixture.service.executeSaleMutation = async (request) => {
+    calls.push(request.itemId);
+    if (request.itemId === ordinaryFailure.id) throw new Error("ordinary sale failure");
+    if (request.itemId === reconciliation.id) {
+      const error = new Error("reconciliation stop");
+      error.code = "reconciliation-required";
+      throw error;
+    }
+    return { itemName: request.itemId, quantity: request.quantity, gainedCopper: 50 };
+  };
+  try {
+    const report = await fixture.service.executeInventoryFolderBatch({
+      groupActorId: group.id, folderId: "batch", action: "sell",
+      includeDescendants: false, operationId: "outcome-folder-batch"
+    });
+    assert.deepEqual(report.skipped.map((row) => row.code), ["magical-item", "no-price"]);
+    assert.deepEqual(report.failed.map((row) => row.itemId), [ordinaryFailure.id, reconciliation.id]);
+    assert.deepEqual(calls, [ordinaryFailure.id, reconciliation.id]);
+    assert.equal(report.stopped, true);
+    assert.equal(report.processed.length, 0);
+    assert.deepEqual(report.totals, { gainedCopper: 0, materials: [] });
+  }
+  finally { fixture.restore(); }
+});
+
+test("folder batch skips non-dismantlable Items and performs no child writes for an empty folder", async () => {
+  const item = batchPricedItem("ordinary-item");
+  const group = createActor({ id: "dismantle-folder-batch-group", type: "group", managed: true, items: [item] });
+  setInventoryFolderState(group, {
+    folders: [
+      { id: "batch", name: "Batch", parentId: null, color: null },
+      { id: "empty", name: "Empty", parentId: null, color: null }
+    ],
+    itemFolderIds: { [item.id]: "batch" }
+  });
+  const fixture = installFixture({ group, actors: [group], moduleApi: { getModel: async () => dismantleModel({ id: "iron" }) } });
+  let childCalls = 0;
+  fixture.service.executeDismantleMutation = async () => { childCalls += 1; };
+  try {
+    const dismantle = await fixture.service.executeInventoryFolderBatch({
+      groupActorId: group.id, folderId: "batch", action: "dismantle",
+      includeDescendants: false, operationId: "dismantle-folder-batch"
+    });
+    const empty = await fixture.service.executeInventoryFolderBatch({
+      groupActorId: group.id, folderId: "empty", action: "sell",
+      includeDescendants: false, operationId: "empty-folder-batch"
+    });
+    assert.equal(dismantle.skipped[0].code, "not-dismantlable");
+    assert.equal(childCalls, 0);
+    assert.deepEqual(empty, {
+      action: "sell", folderId: "empty", includeDescendants: false,
+      processed: [], skipped: [], failed: [], stopped: false,
+      totals: { gainedCopper: 0, materials: [] }
+    });
+  }
+  finally { fixture.restore(); }
+});
+
+test("manual dismantle publishes and enforces the minimum whole-output quantity", async () => {
+  const iron = { id: "iron", name: "Iron", type: "Metal", priceGold: 1, weight: 1 };
+  const model = {
+    gear: [],
+    gearById: new Map(),
+    materials: [iron],
+    materialById: new Map([[iron.id, iron]]),
+    materialByGoodId: new Map()
+  };
+  const source = createItem({
+    id: "light-dismantle-stack",
+    name: "Light broken gear",
+    type: "loot",
+    quantity: 3,
+    system: {
+      quantity: 3,
+      weight: { value: 1, units: "lb" },
+      price: { value: 1, denomination: "gp" }
+    },
+    flags: {
+      [MODULE_ID]: {
+        sourceType: "gear",
+        sourceId: "light-gear",
+        predominantMaterialId: iron.id
+      }
+    }
+  });
+  const group = createActor({
+    id: "minimum-dismantle-group",
+    type: "group",
+    managed: true,
+    items: [source]
+  });
+  const fixture = installFixture({
+    group,
+    actors: [group],
+    moduleApi: { getModel: async () => model }
+  });
+
+  try {
+    const snapshot = await fixture.service.getInventorySnapshot({ groupActorId: group.id });
+    const entry = snapshot.items.find((item) => item.itemId === source.id);
+    assert.equal(entry?.dismantleMinQuantity, 2);
+    assert.equal(entry?.canDismantle, true);
+    await assert.rejects(
+      fixture.service.breakItemToMaterial(source.id, 1),
+      /минимум 2/u
+    );
+    assert.equal(source.system.quantity, 3);
+    assert.equal(
+      fixture.settingsStore[SETTINGS_KEYS.INVENTORY_MUTATION_JOURNAL]?.records,
+      undefined
+    );
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("manual dismantle compensates credited material when source depletion fails", async () => {
+  const iron = { id: "iron", name: "Iron", type: "Metal", priceGold: 1, weight: 1 };
+  const model = {
+    gear: [],
+    gearById: new Map(),
+    materials: [iron],
+    materialById: new Map([[iron.id, iron]]),
+    materialByGoodId: new Map()
+  };
+  const source = createItem({
+    id: "dismantle-source",
+    name: "Iron sword",
+    type: "weapon",
+    quantity: 2,
+    failUpdate: true,
+    system: {
+      quantity: 2,
+      price: { value: 10, denomination: "gp" },
+      weight: { value: 4, units: "lb" }
+    },
+    flags: {
+      [MODULE_ID]: {
+        sourceType: "gear",
+        sourceId: "iron-sword",
+        gearId: "iron-sword",
+        predominantMaterialId: iron.id
+      }
+    }
+  });
+  const group = createActor({
+    id: "manual-dismantle-compensation-group",
+    type: "group",
+    managed: true,
+    items: [source]
+  });
+  setDefaultDismantleFolder(group, source);
+  const fixture = installFixture({
+    group,
+    actors: [group],
+    moduleApi: { getModel: async () => model }
+  });
+
+  try {
+    await assert.rejects(
+      fixture.service.breakItemToMaterial(source.id, 1, { mutationId: "dismantle-source-failure" }),
+      /source update failed/u
+    );
+    assert.deepEqual(group.items.contents, [source]);
+    assert.equal(source.system.quantity, 2);
+
+    await assert.rejects(
+      fixture.service.breakItemToMaterial(source.id, 1, { mutationId: "dismantle-source-failure" }),
+      /source update failed/u
+    );
+    assert.deepEqual(group.items.contents, [source]);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("manual dismantle restores a merged material stack when source depletion fails", async () => {
+  const iron = { id: "iron", name: "Iron", type: "Metal", priceGold: 1, weight: 1 };
+  const model = {
+    gear: [],
+    gearById: new Map(),
+    materials: [iron],
+    materialById: new Map([[iron.id, iron]]),
+    materialByGoodId: new Map()
+  };
+  const source = createItem({
+    id: "dismantle-source",
+    name: "Iron sword",
+    type: "weapon",
+    quantity: 2,
+    failUpdate: true,
+    system: {
+      quantity: 2,
+      price: { value: 10, denomination: "gp" },
+      weight: { value: 4, units: "lb" }
+    },
+    flags: {
+      [MODULE_ID]: {
+        sourceType: "gear",
+        sourceId: "iron-sword",
+        gearId: "iron-sword",
+        predominantMaterialId: iron.id
+      }
+    }
+  });
+  const materialStack = createItem({
+    id: "iron-stack",
+    name: iron.name,
+    type: "loot",
+    quantity: 5,
+    flags: {
+      [MODULE_ID]: {
+        sourceType: "material",
+        sourceId: iron.id,
+        materialId: iron.id,
+        predominantMaterialId: iron.id
+      }
+    }
+  });
+  const group = createActor({
+    id: "manual-dismantle-merge-compensation-group",
+    type: "group",
+    managed: true,
+    items: [source, materialStack]
+  });
+  const fixture = installFixture({
+    group,
+    actors: [group],
+    moduleApi: { getModel: async () => model }
+  });
+
+  try {
+    await assert.rejects(
+      fixture.service.breakItemToMaterial(source.id, 1, { mutationId: "dismantle-merge-failure" })
+    );
+    assert.equal(materialStack.system.quantity, 5);
+    assert.equal(source.system.quantity, 2);
+    assert.deepEqual(group.items.contents, [source, materialStack]);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("active GM dismantle executor commits one material credit across mutation retries", async () => {
+  const iron = { id: "iron", name: "Iron", type: "Metal", priceGold: 1, weight: 1 };
+  const model = {
+    gear: [],
+    gearById: new Map(),
+    materials: [iron],
+    materialById: new Map([[iron.id, iron]]),
+    materialByGoodId: new Map()
+  };
+  const source = createItem({
+    id: "dismantle-source",
+    name: "Iron sword",
+    type: "weapon",
+    quantity: 1,
+    system: {
+      quantity: 1,
+      price: { value: 10, denomination: "gp" },
+      weight: { value: 4, units: "lb" }
+    },
+    flags: {
+      [MODULE_ID]: {
+        sourceType: "gear",
+        sourceId: "iron-sword",
+        gearId: "iron-sword",
+        predominantMaterialId: iron.id
+      }
+    }
+  });
+  const group = createActor({
+    id: "manual-dismantle-executor-group",
+    type: "group",
+    managed: true,
+    items: [source]
+  });
+  setDefaultDismantleFolder(group, source);
+  const fixture = installFixture({
+    group,
+    actors: [group],
+    moduleApi: { getModel: async () => model }
+  });
+  const payload = {
+    inventoryActorId: group.id,
+    itemId: source.id,
+    mutationId: "dismantle-executor",
+    quantity: 1
+  };
+
+  try {
+    const first = await fixture.service.executeDismantleMutation(payload);
+    const retry = await fixture.service.executeDismantleMutation(payload);
+
+    assert.deepEqual(retry, first);
+    assert.deepEqual(first, {
+      itemName: source.name,
+      breakQuantity: 1,
+      materialName: iron.name,
+      materialWeight: 2
+    });
+    assert.equal(group.items.contents.length, 1);
+    assert.equal(group.items.contents[0].getFlag(MODULE_ID, "inventoryMutation")?.kind, "dismantle");
+    assert.equal(group.items.contents[0].system.quantity, 2);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("manual dismantle recovers a material creation whose acknowledgment was lost", async () => {
+  const iron = { id: "iron", name: "Iron", type: "Metal", priceGold: 1, weight: 1 };
+  const model = {
+    gear: [],
+    gearById: new Map(),
+    materials: [iron],
+    materialById: new Map([[iron.id, iron]]),
+    materialByGoodId: new Map()
+  };
+  const source = createItem({
+    id: "dismantle-source",
+    name: "Iron sword",
+    type: "weapon",
+    quantity: 1,
+    system: {
+      quantity: 1,
+      price: { value: 10, denomination: "gp" },
+      weight: { value: 4, units: "lb" }
+    },
+    flags: {
+      [MODULE_ID]: {
+        sourceType: "gear",
+        sourceId: "iron-sword",
+        gearId: "iron-sword",
+        predominantMaterialId: iron.id
+      }
+    }
+  });
+  const group = createActor({
+    id: "manual-dismantle-lost-ack-group",
+    type: "group",
+    managed: true,
+    items: [source],
+    throwAfterCreateOnce: true
+  });
+  setDefaultDismantleFolder(group, source);
+  const fixture = installFixture({
+    group,
+    actors: [group],
+    moduleApi: { getModel: async () => model }
+  });
+
+  try {
+    const result = await fixture.service.executeDismantleMutation({
+      inventoryActorId: group.id,
+      itemId: source.id,
+      mutationId: "dismantle-lost-create-ack",
+      quantity: 1
+    });
+
+    assert.equal(result.materialWeight, 2);
+    assert.equal(group.createEmbeddedDocumentsCalls, 1);
+    assert.equal(group.items.contents.length, 1);
+    assert.equal(group.items.contents[0].system.quantity, 2);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("manual dismantle restores a missing credited material before retrying source debit", async () => {
+  const iron = { id: "iron", name: "Iron", type: "Metal", priceGold: 1, weight: 1 };
+  const model = {
+    gear: [],
+    gearById: new Map(),
+    materials: [iron],
+    materialById: new Map([[iron.id, iron]]),
+    materialByGoodId: new Map()
+  };
+  const source = createItem({
+    id: "dismantle-source",
+    name: "Iron sword",
+    type: "weapon",
+    quantity: 1,
+    system: {
+      quantity: 1,
+      price: { value: 10, denomination: "gp" },
+      weight: { value: 4, units: "lb" }
+    },
+    flags: {
+      [MODULE_ID]: {
+        sourceType: "gear",
+        sourceId: "iron-sword",
+        gearId: "iron-sword",
+        predominantMaterialId: iron.id
+      }
+    }
+  });
+  const group = createActor({
+    id: "manual-dismantle-missing-target-group",
+    type: "group",
+    managed: true,
+    items: [source]
+  });
+  const fixture = installFixture({
+    group,
+    actors: [group],
+    moduleApi: { getModel: async () => model }
+  });
+  const payload = {
+    inventoryActorId: group.id,
+    itemId: source.id,
+    mutationId: "dismantle-missing-target-retry",
+    quantity: 1
+  };
+
+  try {
+    fixture.settingsStore[SETTINGS_KEYS.INVENTORY_MUTATION_JOURNAL] = {
+      version: 1,
+      records: [{
+        id: payload.mutationId,
+        kind: "dismantle",
+        phase: "target-credited",
+        terminal: false,
+        request: { actorId: group.id, itemId: source.id, quantity: 1 },
+        actorId: group.id,
+        itemName: source.name,
+        materialName: iron.name,
+        materialWeight: 2,
+        materialItemData: {
+          name: iron.name,
+          type: "loot",
+          img: "icons/commodities/materials/slime-thick-blue.webp",
+          system: {
+            description: { value: "", chat: "" },
+            unidentified: { description: "" },
+            quantity: 2,
+            price: { value: 1, denomination: "gp" },
+            weight: { value: 1, units: "lb" },
+            type: { value: "trade", subtype: iron.type }
+          },
+          flags: {
+            [MODULE_ID]: {
+              sourceType: "material",
+              sourceId: iron.id,
+              inventoryMutation: { id: payload.mutationId, kind: "dismantle" }
+            }
+          }
+        },
+        sourceReceipt: {
+          itemId: source.id,
+          beforeQuantity: 1,
+          afterQuantity: 0,
+          delta: 1
+        },
+        targetReceipt: {
+          itemId: "",
+          created: true,
+          beforeQuantity: 0,
+          afterQuantity: 2,
+          delta: 2
+        },
+        targetItemId: "missing-credited-material"
+      }]
+    };
+
+    const result = await fixture.service.executeDismantleMutation(payload);
+
+    assert.equal(result.materialWeight, 2);
+    assert.equal(group.createEmbeddedDocumentsCalls, 1);
+    assert.equal(group.items.contents.length, 1);
+    assert.equal(group.items.contents[0].system.quantity, 2);
+    assert.equal(group.items.contents[0].getFlag(MODULE_ID, "inventoryMutation")?.kind, "dismantle");
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("manual dismantle repairs legacy fractional credits before applying a new integer result", async () => {
+  const silver = { id: "silver", name: "Silver", type: "Mineral", priceGold: 5, weight: 1 };
+  const model = {
+    gear: [],
+    gearById: new Map(),
+    materials: [silver],
+    materialById: new Map([[silver.id, silver]]),
+    materialByGoodId: new Map()
+  };
+  const source = createItem({
+    id: "broken-amulet",
+    name: "Broken amulet",
+    type: "loot",
+    quantity: 3,
+    system: {
+      quantity: 3,
+      price: { value: 5, denomination: "gp" },
+      weight: { value: 1, units: "lb" }
+    },
+    flags: {
+      [MODULE_ID]: {
+        sourceType: "gear",
+        sourceId: "silver-amulet",
+        gearId: "silver-amulet",
+        predominantMaterialId: silver.id
+      }
+    }
+  });
+  const firstMutationId = "inventory-dismantle-legacy-created";
+  const secondMutationId = "inventory-dismantle-legacy-merged";
+  const corruptedSilver = createItem({
+    id: "rounded-silver",
+    name: silver.name,
+    type: "loot",
+    quantity: 4,
+    flags: {
+      [MODULE_ID]: {
+        sourceType: "material",
+        sourceId: silver.id,
+        materialId: silver.id,
+        predominantMaterialId: silver.id,
+        inventoryMutation: { id: firstMutationId, kind: "dismantle" }
+      }
+    }
+  });
+  const group = createActor({
+    id: "legacy-fractional-dismantle-group",
+    type: "group",
+    managed: true,
+    items: [source, corruptedSilver]
+  });
+  setDefaultDismantleFolder(group, source, corruptedSilver);
+  const fixture = installFixture({
+    group,
+    actors: [group],
+    moduleApi: { getModel: async () => model }
+  });
+  const sourceReceipt = {
+    itemId: source.id,
+    beforeQuantity: 3,
+    afterQuantity: 0,
+    delta: 3
+  };
+  const baseMaterialItemData = {
+    name: silver.name,
+    type: "loot",
+    img: "icons/commodities/materials/slime-thick-blue.webp",
+    system: {
+      description: { value: "", chat: "" },
+      unidentified: { description: "" },
+      quantity: 1.5,
+      price: { value: 5, denomination: "gp" },
+      weight: { value: 1, units: "lb" },
+      type: { value: "trade", subtype: silver.type }
+    },
+    flags: {
+      [MODULE_ID]: {
+        sourceType: "material",
+        sourceId: silver.id,
+        materialId: silver.id,
+        predominantMaterialId: silver.id
+      }
+    }
+  };
+
+  try {
+    fixture.settingsStore[SETTINGS_KEYS.INVENTORY_MUTATION_JOURNAL] = {
+      version: 1,
+      records: [{
+        id: firstMutationId,
+        kind: "dismantle",
+        phase: "prepared",
+        terminal: false,
+        request: { actorId: group.id, itemId: source.id, quantity: 3 },
+        actorId: group.id,
+        itemName: source.name,
+        materialName: silver.name,
+        materialWeight: 1.5,
+        materialItemData: {
+          ...clone(baseMaterialItemData),
+          flags: {
+            [MODULE_ID]: {
+              ...clone(baseMaterialItemData.flags[MODULE_ID]),
+              inventoryMutation: { id: firstMutationId, kind: "dismantle" }
+            }
+          }
+        },
+        sourceReceipt: clone(sourceReceipt),
+        targetReceipt: {
+          itemId: "",
+          created: true,
+          beforeQuantity: 0,
+          afterQuantity: 1.5,
+          delta: 1.5
+        }
+      }, {
+        id: secondMutationId,
+        kind: "dismantle",
+        phase: "prepared",
+        terminal: false,
+        request: { actorId: group.id, itemId: source.id, quantity: 3 },
+        actorId: group.id,
+        itemName: source.name,
+        materialName: silver.name,
+        materialWeight: 1.5,
+        materialItemData: clone(baseMaterialItemData),
+        sourceReceipt: clone(sourceReceipt),
+        targetReceipt: {
+          itemId: corruptedSilver.id,
+          created: false,
+          beforeQuantity: 2,
+          afterQuantity: 3.5,
+          delta: 1.5
+        }
+      }]
+    };
+
+    const result = await fixture.service.executeDismantleMutation({
+      inventoryActorId: group.id,
+      itemId: source.id,
+      mutationId: "inventory-dismantle-integer-after-repair",
+      quantity: 3
+    });
+
+    assert.equal(result.materialWeight, 1);
+    assert.equal(group.items.contents.length, 1);
+    assert.equal(group.items.contents[0].name, silver.name);
+    assert.equal(group.items.contents[0].system.quantity, 1);
+    assert.equal(group.createEmbeddedDocumentsCalls, 1);
+    const records = fixture.settingsStore[SETTINGS_KEYS.INVENTORY_MUTATION_JOURNAL].records;
+    for (const mutationId of [firstMutationId, secondMutationId]) {
+      const record = records.find((entry) => entry.id === mutationId);
+      assert.equal(record.terminal, true);
+      assert.deepEqual(record.result, {
+        ok: false,
+        code: "legacy-fractional-dismantle-repaired",
+        error: "Legacy fractional dismantle credit was compensated before retry."
+      });
+    }
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("manual dismantle accepts a missing legacy merge target already removed with its created credit", async () => {
+  const silver = { id: "silver", name: "Silver", type: "Mineral", priceGold: 5, weight: 1 };
+  const model = {
+    gear: [],
+    gearById: new Map(),
+    materials: [silver],
+    materialById: new Map([[silver.id, silver]]),
+    materialByGoodId: new Map()
+  };
+  const source = createItem({
+    id: "broken-amulet",
+    name: "Broken amulet",
+    type: "loot",
+    quantity: 3,
+    system: {
+      quantity: 3,
+      price: { value: 5, denomination: "gp" },
+      weight: { value: 1, units: "lb" }
+    },
+    flags: {
+      [MODULE_ID]: {
+        sourceType: "gear",
+        sourceId: "silver-amulet",
+        gearId: "silver-amulet",
+        predominantMaterialId: silver.id
+      }
+    }
+  });
+  const group = createActor({
+    id: "legacy-missing-target-dismantle-group",
+    type: "group",
+    managed: true,
+    items: [source]
+  });
+  setDefaultDismantleFolder(group, source);
+  const fixture = installFixture({
+    group,
+    actors: [group],
+    moduleApi: { getModel: async () => model }
+  });
+  const firstMutationId = "inventory-dismantle-legacy-created-missing";
+  const secondMutationId = "inventory-dismantle-legacy-merged-missing";
+  const sourceReceipt = {
+    itemId: source.id,
+    beforeQuantity: 3,
+    afterQuantity: 0,
+    delta: 3
+  };
+  const materialFlags = {
+    sourceType: "material",
+    sourceId: silver.id,
+    materialId: silver.id,
+    predominantMaterialId: silver.id
+  };
+
+  try {
+    fixture.settingsStore[SETTINGS_KEYS.INVENTORY_MUTATION_JOURNAL] = {
+      version: 1,
+      records: [{
+        id: firstMutationId,
+        kind: "dismantle",
+        phase: "prepared",
+        terminal: false,
+        request: { actorId: group.id, itemId: source.id, quantity: 3 },
+        actorId: group.id,
+        itemName: source.name,
+        materialName: silver.name,
+        materialWeight: 1.5,
+        materialItemData: {
+          name: silver.name,
+          type: "loot",
+          system: { quantity: 1.5 },
+          flags: {
+            [MODULE_ID]: {
+              ...clone(materialFlags),
+              inventoryMutation: { id: firstMutationId, kind: "dismantle" }
+            }
+          }
+        },
+        sourceReceipt: clone(sourceReceipt),
+        targetReceipt: {
+          itemId: "",
+          created: true,
+          beforeQuantity: 0,
+          afterQuantity: 1.5,
+          delta: 1.5
+        }
+      }, {
+        id: secondMutationId,
+        kind: "dismantle",
+        phase: "prepared",
+        terminal: false,
+        request: { actorId: group.id, itemId: source.id, quantity: 3 },
+        actorId: group.id,
+        itemName: source.name,
+        materialName: silver.name,
+        materialWeight: 1.5,
+        materialItemData: {
+          name: silver.name,
+          type: "loot",
+          system: { quantity: 1.5 },
+          flags: { [MODULE_ID]: clone(materialFlags) }
+        },
+        sourceReceipt: clone(sourceReceipt),
+        targetReceipt: {
+          itemId: "missing-rounded-silver",
+          created: false,
+          beforeQuantity: 2,
+          afterQuantity: 3.5,
+          delta: 1.5
+        }
+      }]
+    };
+
+    const result = await fixture.service.executeDismantleMutation({
+      inventoryActorId: group.id,
+      itemId: source.id,
+      mutationId: "inventory-dismantle-after-missing-legacy-target",
+      quantity: 3
+    });
+
+    assert.equal(result.materialWeight, 1);
+    assert.equal(group.items.contents.length, 1);
+    assert.equal(group.items.contents[0].name, silver.name);
+    assert.equal(group.items.contents[0].system.quantity, 1);
+    const records = fixture.settingsStore[SETTINGS_KEYS.INVENTORY_MUTATION_JOURNAL].records;
+    for (const mutationId of [firstMutationId, secondMutationId]) {
+      const record = records.find((entry) => entry.id === mutationId);
+      assert.equal(record.terminal, true);
+      assert.equal(record.result?.code, "legacy-fractional-dismantle-repaired");
+    }
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("manual dismantle refuses to repair a legacy fractional target changed by another mutation", async () => {
+  const silver = { id: "silver", name: "Silver", type: "Mineral", priceGold: 5, weight: 1 };
+  const model = {
+    gear: [],
+    gearById: new Map(),
+    materials: [silver],
+    materialById: new Map([[silver.id, silver]]),
+    materialByGoodId: new Map()
+  };
+  const source = createItem({
+    id: "broken-amulet",
+    name: "Broken amulet",
+    type: "loot",
+    quantity: 3,
+    system: {
+      quantity: 3,
+      price: { value: 5, denomination: "gp" },
+      weight: { value: 1, units: "lb" }
+    },
+    flags: {
+      [MODULE_ID]: {
+        sourceType: "gear",
+        sourceId: "silver-amulet",
+        gearId: "silver-amulet",
+        predominantMaterialId: silver.id
+      }
+    }
+  });
+  const changedSilver = createItem({
+    id: "changed-silver",
+    name: silver.name,
+    type: "loot",
+    quantity: 5,
+    flags: {
+      [MODULE_ID]: {
+        sourceType: "material",
+        sourceId: silver.id,
+        materialId: silver.id,
+        predominantMaterialId: silver.id
+      }
+    }
+  });
+  const group = createActor({
+    id: "unsafe-legacy-fractional-dismantle-group",
+    type: "group",
+    managed: true,
+    items: [source, changedSilver]
+  });
+  const fixture = installFixture({
+    group,
+    actors: [group],
+    moduleApi: { getModel: async () => model }
+  });
+  const legacyMutationId = "inventory-dismantle-legacy-unsafe";
+
+  try {
+    fixture.settingsStore[SETTINGS_KEYS.INVENTORY_MUTATION_JOURNAL] = {
+      version: 1,
+      records: [{
+        id: legacyMutationId,
+        kind: "dismantle",
+        phase: "prepared",
+        terminal: false,
+        request: { actorId: group.id, itemId: source.id, quantity: 3 },
+        actorId: group.id,
+        itemName: source.name,
+        materialName: silver.name,
+        materialWeight: 1.5,
+        materialItemData: {},
+        sourceReceipt: {
+          itemId: source.id,
+          beforeQuantity: 3,
+          afterQuantity: 0,
+          delta: 3
+        },
+        targetReceipt: {
+          itemId: changedSilver.id,
+          created: false,
+          beforeQuantity: 2,
+          afterQuantity: 3.5,
+          delta: 1.5
+        }
+      }]
+    };
+
+    await assert.rejects(
+      fixture.service.executeDismantleMutation({
+        inventoryActorId: group.id,
+        itemId: source.id,
+        mutationId: "inventory-dismantle-after-unsafe-repair",
+        quantity: 3
+      }),
+      /merge target changed before repair/u
+    );
+
+    assert.equal(source.system.quantity, 3);
+    assert.equal(changedSilver.system.quantity, 5);
+    const [record] = fixture.settingsStore[SETTINGS_KEYS.INVENTORY_MUTATION_JOURNAL].records;
+    assert.equal(record.id, legacyMutationId);
+    assert.equal(record.terminal, false);
+  }
+  finally {
+    fixture.restore();
+  }
 });
 
 test("broken lootgen grants persist full durability exactly once and do not merge with intact gear", async () => {
@@ -116,9 +1573,10 @@ test("broken lootgen grants persist full durability exactly once and do not merg
     }
   };
   const group = createActor({ id: "loot-group", type: "group", managed: true });
-  const fixture = installFixture({
+  const fixture = createInventoryIngressFixture({
     group,
     actors: [group],
+    model,
     packs: new Map([["world.rebreya-gear", gearPack]]),
     moduleApi: { getModel: async () => model }
   });
@@ -135,6 +1593,7 @@ test("broken lootgen grants persist full durability exactly once and do not merg
 
     assert.equal(group.items.contents.length, 1);
     assert.equal(group.items.contents[0].type, "weapon");
+    assert.equal(group.items.contents[0].name, "Стальной меч (сломан)");
     assert.deepEqual(group.items.contents[0].system.damage, sourceData.system.damage);
     assert.equal(group.items.contents[0].system.quantity, 1);
     assert.equal(group.items.contents[0].flags[MODULE_ID].durability.state, "broken");
@@ -162,7 +1621,11 @@ test("broken lootgen grants persist full durability exactly once and do not merg
     });
 
     assert.equal(group.items.contents.length, 2);
-    assert.equal(group.items.contents.every((item) => item.name === gear.name && item.type === "weapon"), true);
+    assert.deepEqual(
+      group.items.contents.map((item) => item.name).sort(),
+      ["Стальной меч", "Стальной меч (сломан)"].sort()
+    );
+    assert.equal(group.items.contents.every((item) => item.type === "weapon"), true);
     assert.equal(group.items.contents.some((item) => item.flags[MODULE_ID].magical === true), false);
     const states = group.items.contents.map((item) => item.flags[MODULE_ID].durability?.state ?? "uninitialized");
     assert.deepEqual(states.sort(), ["broken", "uninitialized"]);
@@ -204,6 +1667,198 @@ test("storage loot grants an item and coins to a character exactly once", async 
     assert.equal(hero.items.contents[0].system.quantity, 2);
     assert.equal(hero.system.currency.gp, 3);
     assert.equal(hero.system.currency.sp, 7);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("storage party currency grants stay bound to the exact group across retries", async () => {
+  const requestedGroup = createActor({ id: "requested-group", type: "group", managed: true });
+  const currentGroup = createActor({ id: "current-group", type: "group", managed: true });
+  const groups = new Map([
+    [requestedGroup.id, requestedGroup],
+    [currentGroup.id, currentGroup]
+  ]);
+  const fixture = installFixture({
+    group: currentGroup,
+    actors: [...groups.values()],
+    moduleApi: {
+      groupContextService: {
+        resolveForCurrentUser: () => ({ groupActor: currentGroup, canManage: true }),
+        resolveForGroup: (groupActorId) => ({ groupActor: groups.get(groupActorId) ?? null, canManage: true })
+      }
+    }
+  });
+  const mutationId = "storage:coins:token-1:party";
+
+  try {
+    await fixture.service.addCurrencyToInventoryOnce(
+      { gp: 4, sp: 2 },
+      mutationId,
+      { groupActorId: requestedGroup.id }
+    );
+    await fixture.service.addCurrencyToInventoryOnce(
+      { gp: 4, sp: 2 },
+      mutationId,
+      { groupActorId: requestedGroup.id }
+    );
+
+    assert.equal(requestedGroup.system.currency.gp, 4);
+    assert.equal(requestedGroup.system.currency.sp, 2);
+    assert.equal(currentGroup.system.currency.gp, 0);
+    await assert.rejects(
+      fixture.service.addCurrencyToInventoryOnce(
+        { gp: 4, sp: 2 },
+        mutationId,
+        { groupActorId: currentGroup.id }
+      ),
+      /target|actor|групп/iu
+    );
+    assert.equal(currentGroup.system.currency.gp, 0);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("storage gear with one canonical gear ID coalesces across different source documents", async () => {
+  const hero = createActor({ id: "crossbow-hero" });
+  const fixture = installFixture({ actors: [hero] });
+  const intactRow = (sourceId) => ({
+    rowId: `crossbow-${sourceId}`,
+    sourceType: "gear",
+    sourceId,
+    quantity: 1,
+    itemData: {
+      name: "Арбалет, ручной",
+      type: "weapon",
+      system: { quantity: 1, equipped: false },
+      flags: {
+        [MODULE_ID]: {
+          sourceType: "gear",
+          sourceId,
+          gearId: "arbalet-ruchnoy"
+        }
+      }
+    }
+  });
+
+  try {
+    for (const sourceId of [
+      "Compendium.world.rebreya-gear.Item.crossbow-a",
+      "Compendium.world.rebreya-gear.Item.crossbow-b",
+      "Compendium.world.rebreya-gear.Item.crossbow-c"
+    ]) {
+      await fixture.service.addLootgenRowToCharacterOnce(
+        intactRow(sourceId),
+        hero,
+        `storage:item:corpse:${sourceId}:self`
+      );
+    }
+
+    assert.equal(hero.items.contents.length, 1);
+    assert.equal(hero.items.contents[0].name, "Арбалет, ручной");
+    assert.equal(hero.items.contents[0].system.quantity, 3);
+
+    await fixture.service.addLootgenRowToCharacterOnce({
+      ...intactRow("Compendium.world.rebreya-gear.Item.crossbow-broken"),
+      itemData: {
+        ...intactRow("Compendium.world.rebreya-gear.Item.crossbow-broken").itemData,
+        flags: {
+          [MODULE_ID]: {
+            sourceType: "gear",
+            sourceId: "Compendium.world.rebreya-gear.Item.crossbow-broken",
+            gearId: "arbalet-ruchnoy",
+            durability: {
+              eligible: true,
+              state: "broken",
+              breakStage: 1,
+              hp: { value: 0, max: 10 }
+            }
+          }
+        }
+      }
+    }, hero, "storage:item:corpse:crossbow-broken:self");
+
+    assert.equal(hero.items.contents.length, 2);
+    assert.deepEqual(
+      hero.items.contents.map((item) => [item.name, item.system.quantity]).sort((left, right) => left[0].localeCompare(right[0], "ru")),
+      [["Арбалет, ручной", 3], ["Арбалет, ручной (сломан)", 1]]
+    );
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("persisted broken corpse armor keeps its canonical flag and gains a visible Foundry item suffix", async () => {
+  const hero = createActor({ id: "corpse-loot-hero" });
+  const fixture = installFixture({ actors: [hero] });
+  const durability = {
+    version: 1,
+    eligible: true,
+    state: "broken",
+    breakStage: 1,
+    hp: { value: 0, max: 30 }
+  };
+
+  try {
+    await fixture.service.addLootgenRowToCharacterOnce({
+      rowId: "corpse-v1:plate:laty",
+      sourceType: "gear",
+      sourceId: "laty",
+      quantity: 1,
+      itemData: {
+        name: "Латы",
+        type: "equipment",
+        system: { quantity: 1, equipped: false },
+        flags: { [MODULE_ID]: { sourceType: "gear", gearId: "laty", durability } }
+      }
+    }, hero, "storage:item:corpse:plate:self");
+
+    assert.equal(hero.items.contents.length, 1);
+    assert.equal(hero.items.contents[0].name, "Латы (сломан)");
+    assert.deepEqual(hero.items.contents[0].flags[MODULE_ID].durability, durability);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("storage loot grants persisted magic item data to party inventory exactly once", async () => {
+  const group = createActor({ id: "storage-group", type: "group", managed: true });
+  const fixture = installFixture({ group, actors: [group] });
+  const row = {
+    rowId: "night-goggles-row",
+    sourceType: "gear",
+    sourceId: "Compendium.world.rebreya-magic-items.Item.rUCEi3ytA16ncRdg",
+    quantity: 1,
+    itemData: {
+      name: "Ночные очки",
+      type: "equipment",
+      img: "modules/rebreya-main/templates/icons/Magic%20Items/%D0%9D%D0%BE%D1%87%D0%BD%D1%8B%D0%B5%20%D0%BE%D1%87%D0%BA%D0%B8.webp",
+      system: { quantity: 1, rarity: "uncommon" },
+      flags: { [MODULE_ID]: { sourceType: "magicItem", magicItemId: "nochnye-ochki" } }
+    }
+  };
+
+  try {
+    await fixture.service.addLootgenRowToInventoryOnce(
+      row,
+      "storage:item:token-1:night-goggles-row:party",
+      { allowPersistedItemData: true }
+    );
+    await fixture.service.addLootgenRowToInventoryOnce(
+      row,
+      "storage:item:token-1:night-goggles-row:party",
+      { allowPersistedItemData: true }
+    );
+
+    assert.equal(group.items.contents.length, 1);
+    assert.equal(group.items.contents[0].name, "Ночные очки");
+    assert.equal(group.items.contents[0].flags[MODULE_ID].sourceType, "magicItem");
+    assert.equal(group.items.contents[0].flags[MODULE_ID].magicItemId, "nochnye-ochki");
   }
   finally {
     fixture.restore();
@@ -456,20 +2111,30 @@ function createActor({
   items = [],
   currency = {},
   managed = false,
+  flags = {},
   members = [],
   owners = [],
   throwAfterCreateOnce = false,
+  failSetFlagOnce = false,
   onCreate = null
 } = {}) {
   const actor = new globalThis.Actor();
   let createAckLost = false;
+  let setFlagFailurePending = failSetFlagOnce;
+  const actorFlags = clone(flags);
+  if (managed) {
+    actorFlags[MODULE_ID] ??= {};
+    actorFlags[MODULE_ID][REBREYA_GROUP_FLAGS.MANAGED] = true;
+  }
   Object.assign(actor, {
     id,
     uuid: `Actor.${id}`,
     name: id,
     type,
     isOwner,
-    flags: managed ? { [MODULE_ID]: { [REBREYA_GROUP_FLAGS.MANAGED]: true } } : {},
+    flags: actorFlags,
+    setFlagCalls: [],
+    createEmbeddedDocumentsCalls: 0,
     system: {
       currency: { pp: 0, gp: 0, ep: 0, sp: 0, cp: 0, ...currency },
       abilities: { str: { value: 10 }, con: { mod: 0 } },
@@ -484,6 +2149,17 @@ function createActor({
     getFlag(scope, key) {
       return this.flags?.[scope]?.[key];
     },
+    async setFlag(scope, key, value) {
+      this.setFlagCalls.push({ scope, key, value: clone(value) });
+      if (setFlagFailurePending) {
+        setFlagFailurePending = false;
+        throw new Error("folder flag write failed");
+      }
+      this.flags[scope] ??= {};
+      const targetKey = key.startsWith("==") ? key.slice(2) : key;
+      this.flags[scope][targetKey] = clone(value);
+      return value;
+    },
     testUserPermission(user, permission) {
       return permission === "OWNER" && (user?.isGM === true || owners.includes(user?.id));
     },
@@ -491,11 +2167,12 @@ function createActor({
       applyPatch(this, patch);
       return this;
     },
-    async createEmbeddedDocuments(_documentName, documents) {
+    async createEmbeddedDocuments(_documentName, documents, options = {}) {
+      this.createEmbeddedDocumentsCalls += 1;
       const created = documents.map((document, index) => {
         const { _id, id: _ignoredId, name, type, img, flags, system, ...extraData } = clone(document);
         return createItem({
-          id: `created-${this.items.contents.length + index + 1}`,
+          id: options.keepId && _id ? _id : `created-${this.items.contents.length + index + 1}`,
           name,
           type,
           img,
@@ -524,6 +2201,131 @@ function createActor({
     item.uuid = `${actor.uuid}.Item.${item.id}`;
   }
   return actor;
+}
+
+function setInventoryFolderState(actor, { folders, itemFolderIds }) {
+  actor.flags[MODULE_ID] ??= {};
+  actor.flags[MODULE_ID].inventoryFolders = { version: 1, folders: clone(folders), itemFolderIds: clone(itemFolderIds) };
+}
+
+function setDefaultDismantleFolder(actor, ...items) {
+  setInventoryFolderState(actor, {
+    folders: [{ id: "dismantle-folder", name: "Dismantle", parentId: null, color: null }],
+    itemFolderIds: Object.fromEntries(items.map((item) => [item.id, "dismantle-folder"]))
+  });
+}
+
+function dismantleModel(material) {
+  return {
+    gear: [], gearById: new Map(), materials: [material],
+    materialById: new Map([[material.id, material]]), materialByGoodId: new Map()
+  };
+}
+
+function dismantleSource({ id, materialId, quantity = 1, failUpdate = false } = {}) {
+  return createItem({
+    id, name: "Iron sword", type: "weapon", quantity, failUpdate,
+    system: {
+      quantity,
+      price: { value: 10, denomination: "gp" },
+      weight: { value: 4, units: "lb" }
+    },
+    flags: { [MODULE_ID]: {
+      sourceType: "gear", sourceId: `${id}-gear`, gearId: `${id}-gear`, predominantMaterialId: materialId
+    } }
+  });
+}
+
+function materialStack({ id, material, quantity }) {
+  return createItem({
+    id, name: material.name, type: "loot", quantity,
+    flags: { [MODULE_ID]: {
+      sourceType: "material", sourceId: material.id, materialId: material.id, predominantMaterialId: material.id
+    } }
+  });
+}
+
+function batchPricedItem(id, { priceValue = 1, flags = {} } = {}) {
+  return createItem({
+    id,
+    name: id,
+    type: "loot",
+    quantity: 1,
+    system: {
+      quantity: 1,
+      price: { value: priceValue, denomination: "gp" },
+      weight: { value: 1, units: "lb" },
+      type: { value: "loot", subtype: "" }
+    },
+    flags
+  });
+}
+
+function dismantlePlanner(resolveRoute) {
+  return {
+    async preview(request) {
+      const route = resolveRoute(request);
+      return {
+        version: 1,
+        groupActorId: request.groupActorId,
+        rulesRevision: route.rulesRevision,
+        requestedFolderId: request.requestedFolderId,
+        batch: true,
+        rows: [{ sourceKey: request.rows[0].sourceKey, matchedRuleId: route.matchedRuleId, action: clone(route.action) }]
+      };
+    }
+  };
+}
+
+function seedPreparedDismantleRecord(fixture, { mutationId, group, source, material, destinationFolderId }) {
+  fixture.settingsStore[SETTINGS_KEYS.INVENTORY_MUTATION_JOURNAL] = {
+    version: 1,
+    records: [{
+      id: mutationId,
+      kind: "dismantle",
+      phase: "prepared",
+      terminal: false,
+      request: { actorId: group.id, itemId: source.id, quantity: 1 },
+      actorId: group.id,
+      itemName: source.name,
+      materialName: material.name,
+      materialWeight: 2,
+      sourceFolderId: "source",
+      rulesRevision: 4,
+      matchedRuleId: "initial-route",
+      routingOutcome: "folder",
+      destinationFolderId,
+      materialItemData: {
+        name: material.name,
+        type: "loot",
+        img: "icons/commodities/materials/slime-thick-blue.webp",
+        system: {
+          description: { value: "", chat: "" },
+          unidentified: { description: "" },
+          quantity: 2,
+          price: { value: 1, denomination: "gp" },
+          weight: { value: 1, units: "lb" },
+          type: { value: "trade", subtype: material.type }
+        },
+        flags: { [MODULE_ID]: {
+          sourceType: "material",
+          sourceId: material.id,
+          inventoryMutation: { id: mutationId, kind: "dismantle" }
+        } }
+      },
+      sourceReceipt: { itemId: source.id, beforeQuantity: 1, afterQuantity: 0, delta: 1 },
+      targetReceipt: {
+        itemId: "",
+        created: true,
+        beforeQuantity: 0,
+        afterQuantity: 2,
+        delta: 2,
+        folderId: destinationFolderId,
+        beforeAcquisitionHistory: null,
+        afterAcquisitionHistory: null
+      }
+    }]
+  };
 }
 
 function installFixture({
@@ -614,6 +2416,11 @@ function installFixture({
         };
       }
     },
+    inventoryIngressPlanner: dismantlePlanner((request) => ({
+      action: { type: "legacy", folderId: request.requestedFolderId },
+      matchedRuleId: null,
+      rulesRevision: 0
+    })),
     ...moduleApiOverrides
   };
 
@@ -647,6 +2454,1532 @@ function buildSourceDepletionPayload(sourceItem, targetItem, transferId) {
     }
   };
 }
+
+function createInventoryIngressFixture({
+  group,
+  actors = [group],
+  model = { gear: [], gearById: new Map(), materials: [], materialById: new Map(), materialByGoodId: new Map() },
+  plannerCalls = null,
+  ...fixtureOptions
+} = {}) {
+  let service = null;
+  const compilerCache = new InventoryIngressRuleCompilerCache();
+  const planner = new InventoryIngressPlanner({
+    readRules: (groupActorId) => {
+      if (plannerCalls) plannerCalls.readRules += 1;
+      return service.getInventoryIngressRuleState({ groupActorId });
+    },
+    buildDescriptor: (itemData) => {
+      if (plannerCalls) plannerCalls.buildDescriptor += 1;
+      return buildInventoryIngressDescriptor(itemData, { model });
+    },
+    resolveDismantleOutputs: (itemData, quantity) => {
+      if (plannerCalls) plannerCalls.resolveDismantle += 1;
+      return resolveInventoryDismantleOutputs(itemData, quantity, { model });
+    },
+    compilerCache: {
+      get(groupActorId, state) {
+        if (plannerCalls) plannerCalls.compile += 1;
+        const compiled = compilerCache.get(groupActorId, state);
+        return {
+          candidateRuleIds: (descriptor) => compiled.candidateRuleIds(descriptor),
+          evaluateMany(descriptors) {
+            if (plannerCalls) plannerCalls.evaluateMany += 1;
+            return compiled.evaluateMany(descriptors);
+          }
+        };
+      }
+    },
+    confirm: async () => ({ rootOverrideSourceKeys: [] })
+  });
+  const fixture = installFixture({
+    group,
+    actors,
+    ...fixtureOptions,
+    moduleApi: {
+      getModel: async () => model,
+      ...fixtureOptions.moduleApi,
+      inventoryIngressPlanner: planner
+    }
+  });
+  service = fixture.service;
+  return { ...fixture, planner };
+}
+
+function inventoryIngressItemData(sourceId, { name = sourceId, type = "weapon", quantity = 1 } = {}) {
+  return {
+    name,
+    type,
+    system: {
+      quantity,
+      price: { value: 1, denomination: "gp" },
+      weight: { value: 1, units: "lb" }
+    },
+    flags: {
+      [MODULE_ID]: {
+        sourceType: "gear",
+        sourceId,
+        gearId: sourceId
+      }
+    }
+  };
+}
+
+test("new catalog-backed ingress Items use exact compendium icons for every supported source type", async () => {
+  const definitions = [
+    {
+      sourceType: "material",
+      sourceId: "steel",
+      name: "Сталь",
+      flagName: "materialId",
+      packName: "rebreya-materials",
+      img: "modules/rebreya-main/templates/icons/Materials/Сталь.webp"
+    },
+    {
+      sourceType: "gear",
+      sourceId: "rope",
+      name: "Верёвка",
+      flagName: "gearId",
+      packName: "rebreya-gear",
+      img: "modules/rebreya-main/templates/icons/Gear/Верёвка.webp"
+    },
+    {
+      sourceType: "magicItem",
+      sourceId: "glass-key",
+      name: "Стеклянный ключ",
+      flagName: "magicItemId",
+      packName: "rebreya-magic-items",
+      img: "modules/rebreya-main/templates/icons/Magic/Стеклянный ключ.webp"
+    }
+  ];
+  const material = { id: "steel", name: "Сталь", type: "Минерал", priceGold: 0.2, weight: 1 };
+  const gear = { id: "rope", name: "Верёвка", equipmentType: "Снаряжение", priceGoldEquivalent: 1, weight: 10 };
+  const model = {
+    materials: [material],
+    materialById: new Map([[material.id, material]]),
+    materialByGoodId: new Map(),
+    gear: [gear],
+    gearById: new Map([[gear.id, gear]])
+  };
+  const group = createActor({ id: "catalog-icon-ingress-group", type: "group", managed: true });
+  const packs = new Map(definitions.map((definition) => [`world.${definition.packName}`, {
+    async getIndex() {
+      return [{
+        _id: `${definition.sourceId}-document`,
+        name: definition.name,
+        flags: { [MODULE_ID]: { [definition.flagName]: definition.sourceId } }
+      }];
+    },
+    async getDocument(documentId) {
+      return documentId === `${definition.sourceId}-document`
+        ? { id: documentId, img: definition.img }
+        : null;
+    }
+  }]));
+  const fixture = createInventoryIngressFixture({ group, model, packs });
+  const rows = definitions.map((definition) => ({
+    sourceKey: `${definition.sourceType}:${definition.sourceId}`,
+    quantity: 1,
+    legacyFolderId: null,
+    container: null,
+    itemData: {
+      name: definition.name,
+      type: "loot",
+      img: "icons/svg/item-bag.svg",
+      system: {
+        quantity: 1,
+        price: { value: 1, denomination: "gp" },
+        weight: { value: 1, units: "lb" }
+      },
+      flags: {
+        [MODULE_ID]: {
+          sourceType: definition.sourceType,
+          sourceId: definition.sourceId,
+          [definition.flagName]: definition.sourceId
+        }
+      }
+    }
+  }));
+
+  try {
+    const serializedPlan = await serializeIngressPlan(fixture.planner, {
+      groupActorId: group.id,
+      rows
+    });
+    await fixture.service.commitInventoryIngressBatch({
+      groupActorId: group.id,
+      batchMutationId: "catalog-icon-ingress",
+      sourceOrigin: "storage",
+      serializedPlan
+    }, {
+      resolveRows: async () => clone(rows),
+      debitRow: async () => {},
+      acquisitionContext: { sourceType: "token", sourceId: "icon-source", sourceName: "Источник" }
+    });
+
+    assert.deepEqual(
+      group.items.contents.map((item) => [item.name, item.img]),
+      definitions.map((definition) => [definition.name, definition.img])
+    );
+  }
+  finally { fixture.restore(); }
+});
+
+test("catalog icon resolution never substitutes a same-name document with another stable ID", async () => {
+  const steel = { id: "steel", name: "Сталь", type: "Минерал", priceGold: 0.2, weight: 1 };
+  const model = {
+    materials: [steel],
+    materialById: new Map([[steel.id, steel]]),
+    materialByGoodId: new Map(),
+    gear: [],
+    gearById: new Map()
+  };
+  const group = createActor({ id: "exact-icon-ingress-group", type: "group", managed: true });
+  const fixture = createInventoryIngressFixture({
+    group,
+    model,
+    packs: new Map([["world.rebreya-materials", {
+      async getIndex() {
+        return [{
+          _id: "other-steel-document",
+          name: steel.name,
+          flags: { [MODULE_ID]: { materialId: "other-steel" } }
+        }];
+      },
+      async getDocument(documentId) {
+        return documentId === "other-steel-document"
+          ? { id: documentId, img: "icons/wrong-same-name.webp" }
+          : null;
+      }
+    }]])
+  });
+  const rows = [{
+    sourceKey: "material:steel",
+    quantity: 1,
+    legacyFolderId: null,
+    container: null,
+    itemData: {
+      name: steel.name,
+      type: "loot",
+      img: "icons/material-fallback.webp",
+      system: {
+        quantity: 1,
+        price: { value: 0.2, denomination: "gp" },
+        weight: { value: 1, units: "lb" }
+      },
+      flags: { [MODULE_ID]: { sourceType: "material", sourceId: steel.id, materialId: steel.id } }
+    }
+  }];
+
+  try {
+    const serializedPlan = await serializeIngressPlan(fixture.planner, {
+      groupActorId: group.id,
+      rows
+    });
+    await fixture.service.commitInventoryIngressBatch({
+      groupActorId: group.id,
+      batchMutationId: "exact-icon-ingress",
+      sourceOrigin: "storage",
+      serializedPlan
+    }, {
+      resolveRows: async () => clone(rows),
+      debitRow: async () => {},
+      acquisitionContext: { sourceType: "token", sourceId: "exact-icon-source", sourceName: "Источник" }
+    });
+
+    assert.equal(group.items.contents[0].img, "icons/material-fallback.webp");
+  }
+  finally { fixture.restore(); }
+});
+
+async function serializeIngressPlan(planner, {
+  groupActorId,
+  requestedFolderId = null,
+  rows,
+  rootOverrideSourceKeys = []
+}) {
+  const preview = await planner.preview({
+    groupActorId,
+    requestedFolderId,
+    rows,
+    batch: rows.length > 1
+  });
+  return planner.serialize(preview, { rootOverrideSourceKeys });
+}
+
+test("acquisition provenance records canonical ingress origins once and exposes normalized snapshot history", async () => {
+  const cases = [
+    {
+      origin: "lootgen",
+      expectedMethod: "lootgen",
+      context: { sceneId: "scene-loot", sceneName: "Пещера", sourceType: "lootgen", sourceId: "loot-1", sourceName: "<Гоблин>" }
+    },
+    {
+      origin: "storage",
+      expectedMethod: "storage",
+      context: { sceneId: "scene-store", sceneName: "Склад", sourceType: "token", sourceId: "token-1", sourceName: "Сундук" }
+    },
+    {
+      origin: "import",
+      expectedMethod: "transfer",
+      context: { sceneId: "scene-import", sceneName: "Лагерь", sourceType: "actor", sourceId: "hero-1", sourceName: "Следопыт" }
+    },
+    {
+      origin: "manual-entry",
+      expectedMethod: "manual",
+      context: { userId: "player-1", userName: "Игрок <Один>" }
+    },
+    {
+      origin: "public-model",
+      expectedMethod: "manual",
+      context: { userId: "gm-1", userName: "Мастер" }
+    }
+  ];
+
+  for (const entry of cases) {
+    const itemData = inventoryIngressItemData(`history-${entry.origin}`, { name: `History ${entry.origin}` });
+    const group = createActor({ id: `history-${entry.origin}-group`, type: "group", managed: true });
+    const fixture = createInventoryIngressFixture({ group });
+    const rows = [{ sourceKey: `history-${entry.origin}-row`, quantity: 2, itemData, legacyFolderId: null, container: null }];
+    try {
+      const serializedPlan = await serializeIngressPlan(fixture.planner, { groupActorId: group.id, rows });
+      const request = {
+        groupActorId: group.id,
+        batchMutationId: `history-${entry.origin}-batch`,
+        sourceOrigin: entry.origin,
+        serializedPlan
+      };
+      const adapters = {
+        resolveRows: async () => clone(rows),
+        debitRow: async () => {},
+        acquisitionContext: clone(entry.context)
+      };
+      await fixture.service.commitInventoryIngressBatch(request, adapters);
+      await fixture.service.commitInventoryIngressBatch(request, adapters);
+
+      const target = group.items.contents[0];
+      const history = readInventoryAcquisitionHistory(target.toObject());
+      assert.equal(history.entries.length, 1, entry.origin);
+      assert.equal(history.entries[0].method, entry.expectedMethod, entry.origin);
+      assert.equal(history.entries[0].quantity, 2, entry.origin);
+      if (entry.expectedMethod === "manual") {
+        assert.equal(history.entries[0].sourceName, "Ручное добавление", entry.origin);
+        assert.equal(history.entries[0].detail, entry.context.userName, entry.origin);
+      }
+      else {
+        assert.equal(history.entries[0].sourceName, entry.context.sourceName, entry.origin);
+        assert.equal(history.entries[0].sceneId, entry.context.sceneId, entry.origin);
+      }
+
+      const snapshot = await fixture.service.getInventorySnapshot({ groupActorId: group.id });
+      assert.deepEqual(snapshot.items[0].acquisitionHistory, history, entry.origin);
+    }
+    finally { fixture.restore(); }
+  }
+});
+
+test("acquisition history is unchanged by a same-group folder move", async () => {
+  const item = createItem({
+    id: "history-move-item",
+    name: "History move",
+    flags: { [MODULE_ID]: { inventoryAcquisitionHistory: {
+      version: 1,
+      entries: [{
+        recordedAt: 10,
+        worldTime: null,
+        quantity: 1,
+        method: "storage",
+        sceneId: "",
+        sceneName: "",
+        sourceType: "token",
+        sourceId: "chest",
+        sourceName: "Chest",
+        detail: ""
+      }]
+    } } }
+  });
+  const group = createActor({ id: "history-move-group", type: "group", managed: true, items: [item] });
+  setInventoryFolderState(group, {
+    folders: [
+      { id: "before", name: "Before", parentId: null, color: null },
+      { id: "after", name: "After", parentId: null, color: null }
+    ],
+    itemFolderIds: { [item.id]: "before" }
+  });
+  const fixture = installFixture({ group, actors: [group] });
+  const before = readInventoryAcquisitionHistory(item.toObject());
+  try {
+    await fixture.service.moveInventoryItemToFolder({
+      groupActorId: group.id,
+      itemId: item.id,
+      folderId: "after"
+    });
+    assert.deepEqual(readInventoryAcquisitionHistory(item.toObject()), before);
+  }
+  finally { fixture.restore(); }
+});
+
+test("acquisition history merge keeps newest ten and source-debit rollback restores exact prior history", async () => {
+  const itemData = inventoryIngressItemData("history-stack", { name: "History stack" });
+  const priorHistory = {
+    version: 1,
+    entries: Array.from({ length: 10 }, (_, index) => ({
+      recordedAt: 100 - index,
+      worldTime: null,
+      quantity: 1,
+      method: "other",
+      sceneId: "",
+      sceneName: "",
+      sourceType: "seed",
+      sourceId: `seed-${index}`,
+      sourceName: `Seed ${index}`,
+      detail: ""
+    }))
+  };
+  const target = createItem({
+    id: "history-stack-target",
+    ...itemData,
+    quantity: 3,
+    flags: {
+      ...clone(itemData.flags),
+      [MODULE_ID]: {
+        ...clone(itemData.flags?.[MODULE_ID]),
+        inventoryAcquisitionHistory: clone(priorHistory)
+      }
+    }
+  });
+  const group = createActor({ id: "history-merge-group", type: "group", managed: true, items: [target] });
+  const fixture = createInventoryIngressFixture({ group });
+  const rows = [{ sourceKey: "history-merge-row", quantity: 2, itemData, legacyFolderId: null, container: null }];
+  try {
+    const serializedPlan = await serializeIngressPlan(fixture.planner, { groupActorId: group.id, rows });
+    await fixture.service.commitInventoryIngressBatch({
+      groupActorId: group.id,
+      batchMutationId: "history-merge-batch",
+      sourceOrigin: "storage",
+      serializedPlan
+    }, {
+      resolveRows: async () => clone(rows),
+      debitRow: async () => {},
+      acquisitionContext: { sourceType: "token", sourceId: "chest-1", sourceName: "<Гоблин>" }
+    });
+    const mergedHistory = readInventoryAcquisitionHistory(target.toObject());
+    assert.equal(mergedHistory.entries.length, 10);
+    assert.equal(mergedHistory.entries[0].sourceName, "<Гоблин>");
+    assert.equal(mergedHistory.entries.some((entry) => entry.sourceId === "seed-9"), false);
+    assert.equal(target.system.quantity, 5);
+  }
+  finally { fixture.restore(); }
+
+  const rollbackTarget = createItem({
+    id: "history-rollback-target",
+    ...itemData,
+    quantity: 3,
+    flags: {
+      ...clone(itemData.flags),
+      [MODULE_ID]: {
+        ...clone(itemData.flags?.[MODULE_ID]),
+        inventoryAcquisitionHistory: clone(priorHistory)
+      }
+    }
+  });
+  const rollbackGroup = createActor({ id: "history-rollback-group", type: "group", managed: true, items: [rollbackTarget] });
+  const rollbackFixture = createInventoryIngressFixture({ group: rollbackGroup });
+  try {
+    const serializedPlan = await serializeIngressPlan(rollbackFixture.planner, { groupActorId: rollbackGroup.id, rows });
+    await assert.rejects(
+      rollbackFixture.service.commitInventoryIngressBatch({
+        groupActorId: rollbackGroup.id,
+        batchMutationId: "history-rollback-batch",
+        sourceOrigin: "storage",
+        serializedPlan
+      }, {
+        resolveRows: async () => clone(rows),
+        debitRow: async () => { throw new Error("history source debit failed"); },
+        acquisitionContext: { sourceType: "token", sourceId: "chest-2", sourceName: "Chest" }
+      }),
+      (error) => error?.code === "inventory-ingress-partial"
+    );
+    assert.equal(rollbackTarget.system.quantity, 3);
+    assert.deepEqual(readInventoryAcquisitionHistory(rollbackTarget.toObject()), priorHistory);
+  }
+  finally { rollbackFixture.restore(); }
+});
+
+test("dismantle provenance inherits the newest source and compensation restores exact material history", async () => {
+  const iron = { id: "iron", name: "Iron", type: "Metal", priceGold: 1, weight: 1 };
+  const model = dismantleModel(iron);
+  const source = dismantleSource({ id: "history-dismantle-source", materialId: iron.id, quantity: 2 });
+  source.flags[MODULE_ID].inventoryAcquisitionHistory = {
+    version: 1,
+    entries: [{
+      recordedAt: 10,
+      worldTime: null,
+      quantity: 1,
+      method: "lootgen",
+      sceneId: "scene-cave",
+      sceneName: "Пещера",
+      sourceType: "lootgen",
+      sourceId: "loot-goblin",
+      sourceName: "<Гоблин>",
+      detail: "arbitrary description must not be copied"
+    }]
+  };
+  const priorMaterialHistory = {
+    version: 1,
+    entries: [{
+      recordedAt: 5,
+      worldTime: null,
+      quantity: 1,
+      method: "other",
+      sceneId: "",
+      sceneName: "",
+      sourceType: "seed",
+      sourceId: "old",
+      sourceName: "Old material",
+      detail: ""
+    }]
+  };
+  const material = materialStack({ id: "history-material", material: iron, quantity: 4 });
+  material.flags[MODULE_ID].inventoryAcquisitionHistory = clone(priorMaterialHistory);
+  const group = createActor({ id: "history-dismantle-group", type: "group", managed: true, items: [source, material] });
+  setDefaultDismantleFolder(group, source, material);
+  const fixture = installFixture({ group, actors: [group], moduleApi: { getModel: async () => model } });
+  try {
+    await fixture.service.executeDismantleMutation({
+      inventoryActorId: group.id,
+      itemId: source.id,
+      quantity: 1,
+      mutationId: "history-dismantle-success"
+    });
+    const history = readInventoryAcquisitionHistory(material.toObject());
+    assert.equal(history.entries[0].method, "dismantle");
+    assert.equal(history.entries[0].sourceType, "item");
+    assert.equal(history.entries[0].sourceId, source.id);
+    assert.equal(history.entries[0].sourceName, `Разбор — ${source.name}`);
+    assert.match(history.entries[0].detail, /Пещера/u);
+    assert.match(history.entries[0].detail, /<Гоблин>/u);
+    assert.doesNotMatch(history.entries[0].detail, /arbitrary description/u);
+  }
+  finally { fixture.restore(); }
+
+  const failingSource = dismantleSource({
+    id: "history-dismantle-failing",
+    materialId: iron.id,
+    quantity: 2,
+    failUpdate: true
+  });
+  const rollbackMaterial = materialStack({ id: "history-material-rollback", material: iron, quantity: 4 });
+  rollbackMaterial.flags[MODULE_ID].inventoryAcquisitionHistory = clone(priorMaterialHistory);
+  const rollbackGroup = createActor({
+    id: "history-dismantle-rollback-group",
+    type: "group",
+    managed: true,
+    items: [failingSource, rollbackMaterial]
+  });
+  setDefaultDismantleFolder(rollbackGroup, failingSource, rollbackMaterial);
+  const rollbackFixture = installFixture({
+    group: rollbackGroup,
+    actors: [rollbackGroup],
+    moduleApi: { getModel: async () => model }
+  });
+  try {
+    await assert.rejects(
+      rollbackFixture.service.executeDismantleMutation({
+        inventoryActorId: rollbackGroup.id,
+        itemId: failingSource.id,
+        quantity: 1,
+        mutationId: "history-dismantle-rollback"
+      }),
+      /source update failed/u
+    );
+    assert.equal(rollbackMaterial.system.quantity, 4);
+    assert.deepEqual(readInventoryAcquisitionHistory(rollbackMaterial.toObject()), priorMaterialHistory);
+  }
+  finally { rollbackFixture.restore(); }
+});
+
+test("filtered folder ingress merges only in its target folder", async () => {
+  const rootUpdates = [];
+  const targetUpdates = [];
+  const otherUpdates = [];
+  const itemData = inventoryIngressItemData("sword", { name: "Sword" });
+  const rootStack = createItem({ id: "root-sword", ...itemData, quantity: 1, onUpdate: (_item, patch) => rootUpdates.push(patch) });
+  const targetStack = createItem({ id: "target-sword", ...itemData, quantity: 2, onUpdate: (_item, patch) => targetUpdates.push(patch) });
+  const otherStack = createItem({ id: "other-sword", ...itemData, quantity: 4, onUpdate: (_item, patch) => otherUpdates.push(patch) });
+  const group = createActor({
+    id: "ingress-scoped-group",
+    type: "group",
+    managed: true,
+    items: [rootStack, otherStack, targetStack],
+    flags: {
+      [MODULE_ID]: {
+        inventoryFolders: {
+          version: 1,
+          folders: [
+            { id: "weapons", name: "Weapons", parentId: null },
+            { id: "other", name: "Other", parentId: null }
+          ],
+          itemFolderIds: { "target-sword": "weapons", "other-sword": "other" }
+        },
+        inventoryIngressRules: {
+          version: 1,
+          revision: 1,
+          rules: [{
+            id: "swords-to-weapons",
+            name: "Swords",
+            conditions: [{ field: "sourceId", operator: "is", value: "sword" }],
+            action: { type: "folder", folderId: "weapons" }
+          }]
+        }
+      }
+    }
+  });
+  const fixture = createInventoryIngressFixture({ group });
+  const rows = [{ sourceKey: "row-1", quantity: 1, itemData, legacyFolderId: null, container: null }];
+  let debitCalls = 0;
+
+  try {
+    const serializedPlan = await serializeIngressPlan(fixture.planner, {
+      groupActorId: group.id,
+      requestedFolderId: null,
+      rows
+    });
+    const result = await fixture.service.commitInventoryIngressBatch({
+      groupActorId: group.id,
+      batchMutationId: "scoped-folder-batch",
+      sourceOrigin: "import",
+      serializedPlan
+    }, {
+      resolveRows: async () => clone(rows),
+      debitRow: async () => { debitCalls += 1; }
+    });
+
+    assert.equal(result.changed, true);
+    assert.equal(rootStack.system.quantity, 1);
+    assert.equal(otherStack.system.quantity, 4);
+    assert.equal(targetStack.system.quantity, 3);
+    assert.equal(rootUpdates.length, 0);
+    assert.equal(otherUpdates.length, 0);
+    assert.equal(targetUpdates.length, 1);
+    assert.equal(debitCalls, 1);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("filtered folder ingress creates and assigns a new stack when its target has no candidate", async () => {
+  const itemData = inventoryIngressItemData("axe", { name: "Axe" });
+  const rootStack = createItem({ id: "root-axe", ...itemData, quantity: 2 });
+  const group = createActor({
+    id: "ingress-create-group",
+    type: "group",
+    managed: true,
+    items: [rootStack],
+    flags: {
+      [MODULE_ID]: {
+        inventoryFolders: {
+          version: 1,
+          folders: [{ id: "weapons", name: "Weapons", parentId: null }],
+          itemFolderIds: {}
+        },
+        inventoryIngressRules: {
+          version: 1,
+          revision: 1,
+          rules: [{
+            id: "axes-to-weapons",
+            name: "Axes",
+            conditions: [{ field: "sourceId", operator: "is", value: "axe" }],
+            action: { type: "folder", folderId: "weapons" }
+          }]
+        }
+      }
+    }
+  });
+  const fixture = createInventoryIngressFixture({ group });
+  const rows = [{ sourceKey: "row-axe", quantity: 1, itemData, legacyFolderId: null, container: null }];
+
+  try {
+    const serializedPlan = await serializeIngressPlan(fixture.planner, { groupActorId: group.id, rows });
+    await fixture.service.commitInventoryIngressBatch({
+      groupActorId: group.id,
+      batchMutationId: "scoped-create-batch",
+      sourceOrigin: "import",
+      serializedPlan
+    }, {
+      resolveRows: async () => clone(rows),
+      debitRow: async () => {}
+    });
+
+    assert.equal(rootStack.system.quantity, 2);
+    assert.equal(group.items.contents.length, 2);
+    const created = group.items.contents.find((item) => item !== rootStack);
+    assert.equal(created.system.quantity, 1);
+    assert.equal(group.getFlag(MODULE_ID, "inventoryFolders").itemFolderIds[created.id], "weapons");
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("skip root override scopes merge to root and does not re-evaluate the created original", async () => {
+  const itemData = inventoryIngressItemData("rope", { name: "Rope", type: "loot" });
+  const rootStack = createItem({ id: "root-rope", ...itemData, quantity: 1 });
+  const folderStack = createItem({ id: "folder-rope", ...itemData, quantity: 8 });
+  const group = createActor({
+    id: "ingress-root-group",
+    type: "group",
+    managed: true,
+    items: [folderStack, rootStack],
+    flags: {
+      [MODULE_ID]: {
+        inventoryFolders: {
+          version: 1,
+          folders: [{ id: "supplies", name: "Supplies", parentId: null }],
+          itemFolderIds: { "folder-rope": "supplies" }
+        },
+        inventoryIngressRules: {
+          version: 1,
+          revision: 1,
+          rules: [{
+            id: "skip-rope",
+            name: "Skip rope",
+            conditions: [{ field: "sourceId", operator: "is", value: "rope" }],
+            action: { type: "skip" }
+          }]
+        }
+      }
+    }
+  });
+  const fixture = createInventoryIngressFixture({ group });
+  const rows = [{ sourceKey: "row-rope", quantity: 1, itemData, legacyFolderId: "supplies", container: null }];
+
+  try {
+    const serializedPlan = await serializeIngressPlan(fixture.planner, {
+      groupActorId: group.id,
+      rows,
+      rootOverrideSourceKeys: ["row-rope"]
+    });
+    await fixture.service.commitInventoryIngressBatch({
+      groupActorId: group.id,
+      batchMutationId: "root-override-batch",
+      sourceOrigin: "import",
+      serializedPlan
+    }, {
+      resolveRows: async () => clone(rows),
+      debitRow: async () => {}
+    });
+
+    assert.equal(rootStack.system.quantity, 2);
+    assert.equal(folderStack.system.quantity, 8);
+    assert.equal(group.items.contents.length, 2);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("unmatched ingress preserves legacy cross-folder merge behavior", async () => {
+  const itemData = inventoryIngressItemData("torch", { name: "Torch", type: "loot" });
+  const otherStack = createItem({ id: "other-torch", ...itemData, quantity: 3 });
+  const group = createActor({
+    id: "ingress-legacy-group",
+    type: "group",
+    managed: true,
+    items: [otherStack],
+    flags: {
+      [MODULE_ID]: {
+        inventoryFolders: {
+          version: 1,
+          folders: [
+            { id: "requested", name: "Requested", parentId: null },
+            { id: "other", name: "Other", parentId: null }
+          ],
+          itemFolderIds: { "other-torch": "other" }
+        }
+      }
+    }
+  });
+  const fixture = createInventoryIngressFixture({ group });
+  const rows = [{ sourceKey: "row-torch", quantity: 1, itemData, legacyFolderId: "requested", container: null }];
+
+  try {
+    const serializedPlan = await serializeIngressPlan(fixture.planner, {
+      groupActorId: group.id,
+      requestedFolderId: "requested",
+      rows
+    });
+    await fixture.service.commitInventoryIngressBatch({
+      groupActorId: group.id,
+      batchMutationId: "legacy-merge-batch",
+      sourceOrigin: "import",
+      serializedPlan
+    }, {
+      resolveRows: async () => clone(rows),
+      debitRow: async () => {}
+    });
+
+    assert.equal(group.items.contents.length, 1);
+    assert.equal(otherStack.system.quantity, 4);
+    assert.equal(group.getFlag(MODULE_ID, "inventoryFolders").itemFolderIds[otherStack.id], "other");
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("filtered skip performs no target mutation, folder write or source debit", async () => {
+  const itemData = inventoryIngressItemData("journal", { name: "Journal", type: "loot" });
+  const group = createActor({
+    id: "ingress-skip-group",
+    type: "group",
+    managed: true,
+    flags: {
+      [MODULE_ID]: {
+        inventoryIngressRules: {
+          version: 1,
+          revision: 1,
+          rules: [{
+            id: "skip-journals",
+            name: "Skip journals",
+            conditions: [{ field: "sourceId", operator: "is", value: "journal" }],
+            action: { type: "skip" }
+          }]
+        }
+      }
+    }
+  });
+  const fixture = createInventoryIngressFixture({ group });
+  const rows = [{ sourceKey: "journal-row", quantity: 1, itemData, legacyFolderId: null, container: null }];
+  let debitCalls = 0;
+
+  try {
+    const serializedPlan = await serializeIngressPlan(fixture.planner, { groupActorId: group.id, rows });
+    const result = await fixture.service.commitInventoryIngressBatch({
+      groupActorId: group.id,
+      batchMutationId: "skip-batch",
+      sourceOrigin: "storage",
+      serializedPlan
+    }, {
+      resolveRows: async () => clone(rows),
+      debitRow: async () => { debitCalls += 1; }
+    });
+
+    assert.equal(result.changed, false);
+    assert.equal(result.rows[0].changed, false);
+    assert.equal(group.createEmbeddedDocumentsCalls, 0);
+    assert.equal(group.setFlagCalls.length, 0);
+    assert.equal(group.items.contents.length, 0);
+    assert.equal(debitCalls, 0);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("public Lootgen and model grants enter the canonical group ingress planner", async () => {
+  const lootData = inventoryIngressItemData("public-loot", { name: "Public loot", type: "loot" });
+  const modelData = inventoryIngressItemData("public-model", { name: "Public model", type: "loot" });
+  const group = createActor({
+    id: "public-ingress-group",
+    type: "group",
+    managed: true,
+    flags: {
+      [MODULE_ID]: {
+        inventoryIngressRules: {
+          version: 1,
+          revision: 1,
+          rules: [{
+            id: "skip-public-loot",
+            name: "Skip public loot",
+            conditions: [{ field: "sourceId", operator: "is", value: "public-loot" }],
+            action: { type: "skip" }
+          }, {
+            id: "skip-public-model",
+            name: "Skip public model",
+            conditions: [{ field: "sourceId", operator: "is", value: "public-model" }],
+            action: { type: "skip" }
+          }]
+        }
+      }
+    }
+  });
+  const fixture = createInventoryIngressFixture({ group });
+  fixture.service.buildLootgenItemData = async () => clone(lootData);
+  fixture.service.buildModelItemData = async () => clone(modelData);
+
+  try {
+    const lootResult = await fixture.service.addLootgenRowToInventory({
+      sourceType: "gear",
+      sourceId: "public-loot",
+      quantity: 1,
+      directGrantId: "public-loot-batch"
+    });
+    const modelResult = await fixture.service.addModelItemToInventory(
+      "gear",
+      "public-model",
+      1,
+      { groupActorId: group.id, folderId: null, batchMutationId: "public-model-batch" }
+    );
+
+    assert.equal(lootResult.changed, false);
+    assert.equal(modelResult.changed, false);
+    assert.equal(group.createEmbeddedDocumentsCalls, 0);
+    assert.equal(group.items.contents.length, 0);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("external Item import uses its matched folder while same-group moves bypass filters", async () => {
+  const itemData = inventoryIngressItemData("import-axe", { name: "Import axe" });
+  const externalItem = createItem({ id: "external-axe", ...itemData, quantity: 1 });
+  const hero = createActor({ id: "import-hero", items: [externalItem] });
+  const existingItem = createItem({ id: "existing-axe", ...itemData, quantity: 1 });
+  const group = createActor({
+    id: "filtered-import-group",
+    type: "group",
+    managed: true,
+    items: [existingItem],
+    members: [{ actor: hero }],
+    flags: {
+      [MODULE_ID]: {
+        inventoryFolders: {
+          version: 1,
+          folders: [
+            { id: "weapons", name: "Weapons", parentId: null },
+            { id: "manual", name: "Manual", parentId: null }
+          ],
+          itemFolderIds: {}
+        },
+        inventoryIngressRules: {
+          version: 1,
+          revision: 1,
+          rules: [{
+            id: "axes-to-weapons",
+            name: "Axes to weapons",
+            conditions: [{ field: "sourceId", operator: "is", value: "import-axe" }],
+            action: { type: "folder", folderId: "weapons" }
+          }]
+        }
+      }
+    }
+  });
+  const uuidDocuments = new Map([
+    [externalItem.uuid, externalItem],
+    [existingItem.uuid, existingItem]
+  ]);
+  const fixture = createInventoryIngressFixture({ group, actors: [group, hero], uuidDocuments });
+
+  try {
+    const result = await fixture.service.importDroppedItem({
+      uuid: externalItem.uuid,
+      mutationId: "filtered-import"
+    }, {
+      groupActorId: group.id,
+      folderId: "manual"
+    });
+    assert.equal(result.changed, true);
+    assert.equal(hero.items.contents.length, 0);
+    assert.equal(group.items.contents.length, 2);
+    const imported = group.items.contents.find((item) => item.id !== existingItem.id);
+    assert.equal(group.getFlag(MODULE_ID, "inventoryFolders").itemFolderIds[imported.id], "weapons");
+
+    const moved = await fixture.service.importDroppedItem({
+      uuid: existingItem.uuid,
+      mutationId: "same-group-move"
+    }, {
+      groupActorId: group.id,
+      folderId: "manual"
+    });
+    assert.equal(moved.itemId, existingItem.id);
+    assert.equal(group.items.contents.length, 2);
+    assert.equal(group.getFlag(MODULE_ID, "inventoryFolders").itemFolderIds[existingItem.id], "manual");
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("Lootgen template Items are rejected by ordinary inventory ingress", async () => {
+  const template = createItem({
+    id: "lootgen-template",
+    name: "Template",
+    type: "rebreya-main.lootgen-template",
+    system: { schemaVersion: 1, form: {}, quantity: 1 }
+  });
+  const hero = createActor({ id: "template-owner", items: [template] });
+  const group = createActor({
+    id: "template-target",
+    type: "group",
+    managed: true,
+    members: [{ actor: hero }]
+  });
+  const fixture = createInventoryIngressFixture({
+    group,
+    actors: [group, hero],
+    uuidDocuments: new Map([[template.uuid, template]])
+  });
+  try {
+    await assert.rejects(
+      fixture.service.importDroppedItem({ uuid: template.uuid, mutationId: "template-import" }),
+      /шаблон.*Lootgen|конфигурац/iu
+    );
+    assert.equal(group.items.contents.length, 0);
+    assert.equal(hero.items.contents.includes(template), true);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("filtered dismantle creates only canonical root material output", async () => {
+  const iron = { id: "iron", name: "Iron", type: "Metal", priceGold: 1, weight: 1 };
+  const model = {
+    gear: [],
+    gearById: new Map(),
+    materials: [iron],
+    materialById: new Map([[iron.id, iron]]),
+    materialByGoodId: new Map()
+  };
+  const itemData = {
+    ...inventoryIngressItemData("iron-sword", { name: "Iron sword", quantity: 2 }),
+    system: {
+      quantity: 2,
+      price: { value: 10, denomination: "gp" },
+      weight: { value: 4, units: "lb" }
+    },
+    flags: {
+      [MODULE_ID]: {
+        sourceType: "gear",
+        sourceId: "iron-sword",
+        gearId: "iron-sword",
+        predominantMaterialId: iron.id
+      }
+    }
+  };
+  const materialData = {
+    name: iron.name,
+    type: "loot",
+    quantity: 1,
+    flags: {
+      [MODULE_ID]: {
+        sourceType: "material",
+        sourceId: iron.id,
+        materialId: iron.id
+      }
+    }
+  };
+  const rootMaterial = createItem({ id: "root-iron", ...materialData });
+  const folderMaterial = createItem({ id: "folder-iron", ...materialData, quantity: 7 });
+  const group = createActor({
+    id: "ingress-dismantle-group",
+    type: "group",
+    managed: true,
+    items: [folderMaterial, rootMaterial],
+    flags: {
+      [MODULE_ID]: {
+        inventoryFolders: {
+          version: 1,
+          folders: [{ id: "materials", name: "Materials", parentId: null }],
+          itemFolderIds: { "folder-iron": "materials" }
+        },
+        inventoryIngressRules: {
+          version: 1,
+          revision: 1,
+          rules: [{
+            id: "dismantle-iron",
+            name: "Dismantle iron",
+            conditions: [{ field: "sourceId", operator: "is", value: "iron-sword" }],
+            action: { type: "dismantle" }
+          }]
+        }
+      }
+    }
+  });
+  const fixture = createInventoryIngressFixture({ group, model });
+  const rows = [{ sourceKey: "iron-sword-row", quantity: 2, itemData, legacyFolderId: "materials", container: null }];
+  let debitCalls = 0;
+
+  try {
+    const serializedPlan = await serializeIngressPlan(fixture.planner, { groupActorId: group.id, rows });
+    const result = await fixture.service.commitInventoryIngressBatch({
+      groupActorId: group.id,
+      batchMutationId: "dismantle-batch",
+      sourceOrigin: "lootgen",
+      serializedPlan
+    }, {
+      resolveRows: async () => clone(rows),
+      debitRow: async () => { debitCalls += 1; }
+    });
+
+    assert.equal(result.rows[0].action.type, "dismantle");
+    assert.equal(result.rows[0].derivedFolderId, null);
+    assert.equal(rootMaterial.system.quantity, 5);
+    assert.equal(folderMaterial.system.quantity, 7);
+    assert.equal(group.items.contents.length, 2);
+    assert.equal(group.items.contents.some((item) => item.name === itemData.name), false);
+    assert.equal(debitCalls, 1);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("ingress target create and merge recover lost acknowledgements without duplicate value", async () => {
+  const createData = inventoryIngressItemData("new-pack", { name: "New pack", type: "loot" });
+  const mergeData = inventoryIngressItemData("existing-pack", { name: "Existing pack", type: "loot" });
+  const mergeTarget = createItem({
+    id: "existing-pack",
+    ...mergeData,
+    quantity: 2,
+    throwAfterUpdateOnce: true
+  });
+  const group = createActor({
+    id: "ingress-ack-group",
+    type: "group",
+    managed: true,
+    items: [mergeTarget],
+    throwAfterCreateOnce: true
+  });
+  const fixture = createInventoryIngressFixture({ group });
+
+  try {
+    for (const [sourceKey, itemData, batchMutationId] of [
+      ["create-row", createData, "create-ack-batch"],
+      ["merge-row", mergeData, "merge-ack-batch"]
+    ]) {
+      const rows = [{ sourceKey, quantity: 1, itemData, legacyFolderId: null, container: null }];
+      const serializedPlan = await serializeIngressPlan(fixture.planner, { groupActorId: group.id, rows });
+      await fixture.service.commitInventoryIngressBatch({
+        groupActorId: group.id,
+        batchMutationId,
+        sourceOrigin: "public-model",
+        serializedPlan
+      }, {
+        resolveRows: async () => clone(rows),
+        debitRow: async () => {}
+      });
+    }
+
+    assert.equal(group.items.contents.filter((item) => item.name === createData.name).length, 1);
+    assert.equal(group.items.contents.find((item) => item.name === createData.name).system.quantity, 1);
+    assert.equal(mergeTarget.system.quantity, 3);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("ordinary ingress rolls back the current target after source debit failure and terminal retry is inert", async () => {
+  const itemData = inventoryIngressItemData("retry-item", { name: "Retry item", type: "loot" });
+  const group = createActor({ id: "ingress-retry-group", type: "group", managed: true });
+  const fixture = createInventoryIngressFixture({ group });
+  const rows = [{ sourceKey: "retry-row", quantity: 2, itemData, legacyFolderId: null, container: null }];
+  let resolveCalls = 0;
+  let debitCalls = 0;
+  let sourceQuantity = 2;
+  const recoveryModes = [];
+  const callbacks = {
+    resolveRows: async ({ recovering }) => {
+      resolveCalls += 1;
+      recoveryModes.push(recovering);
+      return clone(rows);
+    },
+    debitRow: async () => {
+      debitCalls += 1;
+      throw new Error("source debit failed");
+    }
+  };
+
+  try {
+    const serializedPlan = await serializeIngressPlan(fixture.planner, { groupActorId: group.id, rows });
+    const request = {
+      groupActorId: group.id,
+      batchMutationId: "source-retry-batch",
+      sourceOrigin: "storage",
+      serializedPlan
+    };
+    await assert.rejects(
+      fixture.service.commitInventoryIngressBatch(request, callbacks),
+      (error) => error?.code === "inventory-ingress-partial"
+        && error?.failedSourceKey === "retry-row"
+    );
+    assert.equal(group.items.contents.length, 0);
+    assert.equal(sourceQuantity, 2);
+
+    await assert.rejects(
+      fixture.service.commitInventoryIngressBatch(request, callbacks),
+      (error) => error?.code === "inventory-ingress-partial"
+        && error?.failedSourceKey === "retry-row"
+    );
+    assert.equal(group.items.contents.length, 0);
+    assert.equal(sourceQuantity, 2);
+    assert.equal(resolveCalls, 1);
+    assert.equal(debitCalls, 1);
+    assert.deepEqual(recoveryModes, [false]);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("storage ingress materializes one portable container tree and assigns only its root folder", async () => {
+  const itemData = inventoryIngressItemData("portable-bag", { name: "Portable bag", type: "container" });
+  const group = createActor({
+    id: "container-ingress-group",
+    type: "group",
+    managed: true,
+    flags: {
+      [MODULE_ID]: {
+        inventoryFolders: {
+          version: 1,
+          folders: [{ id: "bags", name: "Bags", parentId: null }],
+          itemFolderIds: {}
+        },
+        inventoryIngressRules: {
+          version: 1,
+          revision: 1,
+          rules: [{
+            id: "bags-to-folder",
+            name: "Bags",
+            conditions: [{ field: "sourceId", operator: "is", value: "portable-bag" }],
+            action: { type: "folder", folderId: "bags" }
+          }]
+        }
+      }
+    }
+  });
+  const fixture = createInventoryIngressFixture({ group });
+  const rows = [{
+    sourceKey: "container-row",
+    quantity: 1,
+    itemData,
+    legacyFolderId: null,
+    container: { containerId: "portable-bag", children: [{ name: "Gem" }] }
+  }];
+  let grantCalls = 0;
+  let debitCalls = 0;
+  const grantContainer = async ({ actor, container, mutationId, folderId }) => {
+    grantCalls += 1;
+    assert.equal(actor, group);
+    assert.deepEqual(container, rows[0].container);
+    assert.equal(mutationId, "inventory-ingress:portable-container-batch:container-row");
+    assert.equal(folderId, "bags");
+    let root = actor.items.get("portable-root");
+    if (!root) {
+      root = createItem({ id: "portable-root", name: "Portable bag", type: "container" });
+      root.parent = actor;
+      actor.items.contents.push(root);
+    }
+    if (grantCalls === 1) throw new Error("container materialization acknowledgment lost");
+    return root;
+  };
+
+  try {
+    const serializedPlan = await serializeIngressPlan(fixture.planner, { groupActorId: group.id, rows });
+    const request = {
+      groupActorId: group.id,
+      batchMutationId: "portable-container-batch",
+      sourceOrigin: "storage",
+      serializedPlan
+    };
+    const callbacks = {
+      resolveRows: async () => clone(rows),
+      grantContainer,
+      debitRow: async () => { debitCalls += 1; }
+    };
+
+    await assert.rejects(
+      fixture.service.commitInventoryIngressBatch(request, callbacks),
+      /container materialization acknowledgment lost/u
+    );
+    assert.equal(group.items.contents.filter((item) => item.id === "portable-root").length, 1);
+    assert.equal(debitCalls, 0);
+
+    const result = await fixture.service.commitInventoryIngressBatch(request, callbacks);
+    const retry = await fixture.service.commitInventoryIngressBatch(request, callbacks);
+
+    assert.deepEqual(retry, result);
+    assert.equal(grantCalls, 2);
+    assert.equal(debitCalls, 1);
+    assert.equal(group.items.contents.filter((item) => item.id === "portable-root").length, 1);
+    assert.deepEqual(group.getFlag(MODULE_ID, "inventoryFolders").itemFolderIds, {
+      "portable-root": "bags"
+    });
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("ingress rejects stale source identity and reused batch IDs before target writes", async () => {
+  const originalData = inventoryIngressItemData("original", { name: "Original", type: "loot" });
+  const changedData = inventoryIngressItemData("changed", { name: "Changed", type: "loot" });
+  const group = createActor({ id: "ingress-stale-group", type: "group", managed: true });
+  const fixture = createInventoryIngressFixture({ group });
+  const originalRows = [{ sourceKey: "stale-row", quantity: 1, itemData: originalData, legacyFolderId: null, container: null }];
+
+  try {
+    const serializedPlan = await serializeIngressPlan(fixture.planner, { groupActorId: group.id, rows: originalRows });
+    const baseRequest = {
+      groupActorId: group.id,
+      batchMutationId: "stale-batch",
+      sourceOrigin: "import",
+      serializedPlan
+    };
+    await assert.rejects(
+      fixture.service.commitInventoryIngressBatch(baseRequest, {
+        resolveRows: async () => [{ ...originalRows[0], itemData: changedData }],
+        debitRow: async () => {}
+      }),
+      (error) => error?.code === "plan-stale"
+    );
+    assert.equal(group.createEmbeddedDocumentsCalls, 0);
+
+    await fixture.service.commitInventoryIngressBatch(baseRequest, {
+      resolveRows: async () => clone(originalRows),
+      debitRow: async () => {}
+    });
+    await assert.rejects(
+      fixture.service.commitInventoryIngressBatch({
+        ...baseRequest,
+        serializedPlan: { ...serializedPlan, requestedFolderId: "different" }
+      }, {
+        resolveRows: async () => clone(originalRows),
+        debitRow: async () => {}
+      }),
+      (error) => error?.code === "mutation-conflict"
+    );
+    assert.equal(group.items.contents.length, 1);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("ingress rejects stale rule revisions and removed target folders before value writes", async () => {
+  const itemData = inventoryIngressItemData("foldered", { name: "Foldered", type: "loot" });
+  const group = createActor({
+    id: "ingress-authority-group",
+    type: "group",
+    managed: true,
+    flags: {
+      [MODULE_ID]: {
+        inventoryFolders: {
+          version: 1,
+          folders: [{ id: "target", name: "Target", parentId: null }],
+          itemFolderIds: {}
+        },
+        inventoryIngressRules: {
+          version: 1,
+          revision: 1,
+          rules: [{
+            id: "folder-rule",
+            name: "Folder rule",
+            conditions: [{ field: "sourceId", operator: "is", value: "foldered" }],
+            action: { type: "folder", folderId: "target" }
+          }]
+        }
+      }
+    }
+  });
+  const fixture = createInventoryIngressFixture({ group });
+  const rows = [{ sourceKey: "folder-row", quantity: 1, itemData, legacyFolderId: null, container: null }];
+
+  try {
+    const revisionPlan = await serializeIngressPlan(fixture.planner, { groupActorId: group.id, rows });
+    group.flags[MODULE_ID].inventoryIngressRules.revision = 2;
+    await assert.rejects(
+      fixture.service.commitInventoryIngressBatch({
+        groupActorId: group.id,
+        batchMutationId: "stale-revision-batch",
+        sourceOrigin: "import",
+        serializedPlan: revisionPlan
+      }, {
+        resolveRows: async () => clone(rows),
+        debitRow: async () => {}
+      }),
+      (error) => error?.code === "plan-stale"
+    );
+    assert.equal(group.items.contents.length, 0);
+
+    group.flags[MODULE_ID].inventoryIngressRules.revision = 1;
+    const folderPlan = await serializeIngressPlan(fixture.planner, { groupActorId: group.id, rows });
+    group.flags[MODULE_ID].inventoryFolders.folders = [];
+    await assert.rejects(
+      fixture.service.commitInventoryIngressBatch({
+        groupActorId: group.id,
+        batchMutationId: "removed-folder-batch",
+        sourceOrigin: "import",
+        serializedPlan: folderPlan
+      }, {
+        resolveRows: async () => clone(rows),
+        debitRow: async () => {}
+      }),
+      (error) => error?.code === "folder-not-found"
+    );
+    assert.equal(group.items.contents.length, 0);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("nonterminal dismantle retry blocks when authoritative material output changes", async () => {
+  const iron = { id: "mutable-iron", name: "Iron", type: "Metal", priceGold: 1, weight: 1 };
+  const model = {
+    gear: [],
+    gearById: new Map(),
+    materials: [iron],
+    materialById: new Map([[iron.id, iron]]),
+    materialByGoodId: new Map()
+  };
+  const itemData = {
+    ...inventoryIngressItemData("mutable-sword", { name: "Mutable sword" }),
+    system: {
+      quantity: 1,
+      price: { value: 10, denomination: "gp" },
+      weight: { value: 2, units: "lb" }
+    },
+    flags: {
+      [MODULE_ID]: {
+        sourceType: "gear",
+        sourceId: "mutable-sword",
+        gearId: "mutable-sword",
+        predominantMaterialId: iron.id
+      }
+    }
+  };
+  const group = createActor({
+    id: "ingress-material-drift-group",
+    type: "group",
+    managed: true,
+    flags: {
+      [MODULE_ID]: {
+        inventoryIngressRules: {
+          version: 1,
+          revision: 1,
+          rules: [{
+            id: "dismantle-mutable",
+            name: "Dismantle mutable",
+            conditions: [{ field: "sourceId", operator: "is", value: "mutable-sword" }],
+            action: { type: "dismantle" }
+          }]
+        }
+      }
+    }
+  });
+  const fixture = createInventoryIngressFixture({ group, model });
+  const rows = [{ sourceKey: "mutable-row", quantity: 1, itemData, legacyFolderId: null, container: null }];
+
+  try {
+    const serializedPlan = await serializeIngressPlan(fixture.planner, { groupActorId: group.id, rows });
+    const request = {
+      groupActorId: group.id,
+      batchMutationId: "material-drift-batch",
+      sourceOrigin: "storage",
+      serializedPlan
+    };
+    await assert.rejects(
+      fixture.service.commitInventoryIngressBatch(request, {
+        resolveRows: async () => clone(rows),
+        debitRow: async () => { throw new Error("pause before debit"); }
+      }),
+      /pause before debit/u
+    );
+    assert.equal(group.items.contents.length, 1);
+    assert.equal(group.items.contents[0].system.quantity, 1);
+
+    iron.name = "Changed iron";
+    await assert.rejects(
+      fixture.service.commitInventoryIngressBatch(request, {
+        resolveRows: async () => clone(rows),
+        debitRow: async () => {}
+      }),
+      (error) => error?.code === "reconciliation-required"
+    );
+    assert.equal(group.items.contents.length, 1);
+    assert.equal(group.items.contents[0].system.quantity, 1);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("one filtered batch writes folder membership once for many created rows", async () => {
+  const rows = Array.from({ length: 100 }, (_, index) => ({
+    sourceKey: `row-${index}`,
+    quantity: 1,
+    itemData: inventoryIngressItemData(`item-${index}`, { name: `Item ${index}`, type: "loot" }),
+    legacyFolderId: null,
+    container: null
+  }));
+  const group = createActor({
+    id: "ingress-performance-group",
+    type: "group",
+    managed: true,
+    flags: {
+      [MODULE_ID]: {
+        inventoryFolders: {
+          version: 1,
+          folders: [{ id: "bulk", name: "Bulk", parentId: null }],
+          itemFolderIds: {}
+        },
+        inventoryIngressRules: {
+          version: 1,
+          revision: 1,
+          rules: [{
+            id: "all-loot",
+            name: "All loot",
+            conditions: [{ field: "documentType", operator: "is", value: "loot" }],
+            action: { type: "folder", folderId: "bulk" }
+          }]
+        }
+      }
+    }
+  });
+  const plannerCalls = {
+    readRules: 0,
+    buildDescriptor: 0,
+    resolveDismantle: 0,
+    compile: 0,
+    evaluateMany: 0
+  };
+  const fixture = createInventoryIngressFixture({ group, plannerCalls });
+  let debitCalls = 0;
+
+  try {
+    const serializedPlan = await serializeIngressPlan(fixture.planner, { groupActorId: group.id, rows });
+    for (const key of Object.keys(plannerCalls)) plannerCalls[key] = 0;
+    await fixture.service.commitInventoryIngressBatch({
+      groupActorId: group.id,
+      batchMutationId: "hundred-row-batch",
+      sourceOrigin: "lootgen",
+      serializedPlan
+    }, {
+      resolveRows: async () => clone(rows),
+      debitRow: async () => { debitCalls += 1; }
+    });
+
+    assert.equal(group.items.contents.length, 100);
+    assert.equal(group.setFlagCalls.filter((call) => call.key === "==inventoryFolders").length, 1);
+    assert.equal(debitCalls, 100);
+    assert.equal(Object.keys(group.getFlag(MODULE_ID, "inventoryFolders").itemFolderIds).length, 100);
+    assert.deepEqual(plannerCalls, {
+      readRules: 1,
+      buildDescriptor: 100,
+      resolveDismantle: 0,
+      compile: 1,
+      evaluateMany: 1
+    });
+  }
+  finally {
+    fixture.restore();
+  }
+});
 
 test("distributed source depletion requires a captured identity and quantity", async () => {
   const gm = { id: "gm", isGM: true, active: true };
@@ -763,7 +4096,77 @@ test("distributed source depletion observes a delete whose acknowledgment was lo
     const record = fixture.settingsStore[SETTINGS_KEYS.INVENTORY_MUTATION_JOURNAL].records
       .find((entry) => entry.id === payload.transferId);
     assert.equal(record.terminal, true);
-    assert.equal(record.kind, "party-inventory-source-depletion");
+    assert.equal(record.kind, "inventory-simple-v1");
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("concurrent retries of a legacy prepared source depletion re-read the terminal record inside the queue", async () => {
+  const gm = { id: "gm", isGM: true, active: true };
+  const player = { id: "player", isGM: false, active: true };
+  let deleteCalls = 0;
+  const source = createItem({
+    id: "legacy-concurrent-source",
+    name: "Legacy concurrent source",
+    quantity: 1,
+    flags: { [MODULE_ID]: { sourceType: "gear", sourceId: "legacy-concurrent" } },
+    onDelete: () => { deleteCalls += 1; }
+  });
+  const target = createItem({
+    id: "legacy-concurrent-target",
+    name: source.name,
+    quantity: 1,
+    flags: clone(source.flags)
+  });
+  const hero = createActor({ id: "legacy-concurrent-hero", items: [target], owners: [player.id] });
+  const group = createActor({
+    id: "legacy-concurrent-group",
+    type: "group",
+    managed: true,
+    items: [source],
+    members: [{ actor: hero }]
+  });
+  const fixture = installFixture({
+    group,
+    actors: [group, hero],
+    uuidDocuments: new Map([[source.uuid, source], [target.uuid, target], [hero.uuid, hero]]),
+    user: gm,
+    activeGM: gm,
+    users: [player],
+    hideDeletedUuidDocuments: true
+  });
+  const payload = buildSourceDepletionPayload(source, target, "party-transfer:legacy-concurrent");
+  fixture.settingsStore[SETTINGS_KEYS.INVENTORY_MUTATION_JOURNAL] = {
+    version: 1,
+    records: [{
+      id: payload.transferId,
+      kind: "party-inventory-source-depletion",
+      phase: "prepared",
+      request: {
+        transferId: payload.transferId,
+        senderId: player.id,
+        sourceItemUuid: payload.sourceItemUuid,
+        targetItemUuid: payload.targetItemUuid,
+        targetActorUuid: payload.targetActorUuid,
+        expectedIdentity: clone(payload.expectedIdentity),
+        expectedQuantity: payload.expectedQuantity,
+        targetReceipt: clone(payload.targetReceipt)
+      },
+      sourceActorId: group.id,
+      targetActorId: hero.id
+    }]
+  };
+
+  try {
+    const [first, second] = await Promise.all([
+      fixture.service.handlePartyInventorySourceDepletionSocketRequest(payload, { senderId: player.id }),
+      fixture.service.handlePartyInventorySourceDepletionSocketRequest(payload, { senderId: player.id })
+    ]);
+    assert.deepEqual(second, first);
+    assert.equal(deleteCalls, 1);
+    assert.equal(group.items.contents.includes(source), false);
   }
   finally {
     fixture.restore();
@@ -805,9 +4208,10 @@ test("distributed source depletion survives source-deleted journal ACK loss", as
     users: [player],
     hideDeletedUuidDocuments: true,
     afterSettingsSet: ({ key, value }) => {
-      const phase = value?.records?.find((entry) => entry.id === "party-transfer:journal-ack-lost")?.phase;
+      const record = value?.records?.find((entry) => entry.id === "party-transfer:journal-ack-lost");
       if (key === SETTINGS_KEYS.INVENTORY_MUTATION_JOURNAL
-        && phase === "source-depleted"
+        && record?.phase === "committed"
+        && record?.kind === "inventory-simple-v1"
         && !checkpointAckLost) {
         checkpointAckLost = true;
         throw new Error("source-deleted journal acknowledgment lost");
@@ -834,7 +4238,7 @@ test("distributed source depletion survives source-deleted journal ACK loss", as
   }
 });
 
-test("a new active GM completes a prepared source deletion without a second effect", async () => {
+test("a new active GM does not resume simple source deletion without a terminal outcome", async () => {
   const oldGm = { id: "old-gm", isGM: true, active: true };
   const newGm = { id: "new-gm", isGM: true, active: true };
   const player = { id: "player", isGM: false, active: true };
@@ -880,14 +4284,14 @@ test("a new active GM completes a prepared source deletion without a second effe
       /active GM/iu
     );
     globalThis.game.user = newGm;
-    const retry = await fixture.service.handlePartyInventorySourceDepletionSocketRequest(payload, { senderId: player.id });
-
-    assert.equal(retry.handled, true);
+    await assert.rejects(
+      fixture.service.handlePartyInventorySourceDepletionSocketRequest(payload, { senderId: player.id }),
+      (error) => error?.code === "transfer-manual-review"
+    );
     assert.equal(deleteCalls, 1);
     assert.equal(group.items.contents.includes(source), false);
-    const record = fixture.settingsStore[SETTINGS_KEYS.INVENTORY_MUTATION_JOURNAL].records
-      .find((entry) => entry.id === payload.transferId);
-    assert.equal(record.terminal, true);
+    const records = fixture.settingsStore[SETTINGS_KEYS.INVENTORY_MUTATION_JOURNAL].records ?? [];
+    assert.equal(records.some((entry) => entry.id === payload.transferId), false);
   }
   finally {
     fixture.restore();
@@ -1207,6 +4611,106 @@ test("craft output retry adopts the item created while the old GM lost authority
   }
 });
 
+test("take routes an owned synthetic token through its exact world group member", async () => {
+  const source = createItem({ id: "source", name: "Rope", quantity: 2 });
+  const hero = createActor({ id: "hero" });
+  const syntheticHero = createActor({ id: "synthetic-hero" });
+  syntheticHero.isToken = true;
+  syntheticHero.token = { actorId: hero.id };
+  const group = createActor({
+    id: "group",
+    type: "group",
+    managed: true,
+    items: [source],
+    members: [{ actor: hero }]
+  });
+  const player = { id: "player", isGM: false, active: true, character: null };
+  const gm = { id: "gm", isGM: true, active: true };
+  const calls = [];
+  const previousCanvas = globalThis.canvas;
+  globalThis.canvas = { tokens: { controlled: [{ actor: syntheticHero }] } };
+  const fixture = installFixture({
+    group,
+    actors: [group, hero],
+    user: player,
+    activeGM: gm,
+    moduleApi: {
+      socketCommandBus: {
+        async request(command, payload) {
+          calls.push({ command, payload: clone(payload) });
+          return { requested: true };
+        }
+      }
+    }
+  });
+
+  try {
+    await fixture.service.takeInventoryItemToCharacter(source.id, {
+      quantity: 1,
+      mutationId: "take-synthetic"
+    });
+
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].command, "inventory.take");
+    assert.equal(calls[0].payload.targetActorId, hero.id);
+  }
+  finally {
+    fixture.restore();
+    globalThis.canvas = previousCanvas;
+  }
+});
+
+test("player group member routes root Item dismantle through the active GM typed command", async () => {
+  const source = createItem({ id: "dismantle-source", name: "Iron sword", type: "weapon", quantity: 1 });
+  const player = { id: "player", isGM: false, active: true };
+  const gm = { id: "gm", isGM: true, active: true };
+  const hero = createActor({ id: "hero", owners: [player.id] });
+  const group = createActor({
+    id: "group",
+    type: "group",
+    isOwner: false,
+    managed: true,
+    items: [source],
+    members: [{ actor: hero }]
+  });
+  const calls = [];
+  const fixture = installFixture({
+    group,
+    actors: [group, hero],
+    user: player,
+    activeGM: gm,
+    moduleApi: {
+      socketCommandBus: {
+        async request(command, payload) {
+          calls.push({ command, payload: clone(payload) });
+          return { requested: true };
+        }
+      }
+    }
+  });
+
+  try {
+    const result = await fixture.service.breakItemToMaterial(source.id, 1, {
+      mutationId: "dismantle-player"
+    });
+
+    assert.deepEqual(result, { requested: true });
+    assert.deepEqual(calls, [{
+      command: "inventory.dismantle",
+      payload: {
+        inventoryActorId: group.id,
+        itemId: source.id,
+        mutationId: "dismantle-player",
+        quantity: 1
+      }
+    }]);
+    assert.equal(group.items.contents.length, 1);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
 test("take compensates a created target item when source depletion fails", async () => {
   const source = createItem({ id: "source", name: "Rope", quantity: 2, failUpdate: true });
   const hero = createActor({ id: "hero" });
@@ -1259,7 +4763,44 @@ test("sale reverses credited currency when source depletion fails", async () => 
   }
 });
 
-test("import compensates the target item when deleting the source fails", async () => {
+test("sale quote distinguishes treasure, ordinary, magical, and valueless Items", () => {
+  const group = createActor({ id: "group", type: "group", managed: true });
+  const fixture = installFixture({ group, actors: [group] });
+  const priced = {
+    name: "Находка",
+    type: "loot",
+    system: { quantity: 2, price: { value: 1, denomination: "gp" }, type: { value: "treasure" } },
+    flags: {}
+  };
+  try {
+    assert.deepEqual(resolveInventorySaleQuote(priced, 2), {
+      eligible: true,
+      code: "sellable",
+      message: "",
+      quantity: 2,
+      unitCopper: 100,
+      multiplier: 1,
+      gainedCopper: 200
+    });
+    assert.equal(resolveInventorySaleQuote({
+      ...priced,
+      system: { ...priced.system, type: { value: "loot" } }
+    }, 2).gainedCopper, 100);
+    assert.equal(resolveInventorySaleQuote({
+      ...priced,
+      flags: { [MODULE_ID]: { magical: true } }
+    }, 1).code, "magical-item");
+    assert.equal(resolveInventorySaleQuote({
+      ...priced,
+      system: { ...priced.system, price: { value: 0, denomination: "gp" } }
+    }, 1).code, "no-price");
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("import source debit failure compensates target value and replays the terminal failure", async () => {
   const source = createItem({ id: "import-source", name: "Lantern", quantity: 1, failDelete: true });
   const hero = createActor({ id: "hero", items: [source] });
   const group = createActor({
@@ -1269,7 +4810,7 @@ test("import compensates the target item when deleting the source fails", async 
     members: [{ actor: hero }]
   });
   const uuidDocuments = new Map([[source.uuid, source]]);
-  const fixture = installFixture({ group, actors: [group, hero], uuidDocuments });
+  const fixture = createInventoryIngressFixture({ group, actors: [group, hero], uuidDocuments });
 
   try {
     await assert.rejects(
@@ -1278,6 +4819,258 @@ test("import compensates the target item when deleting the source fails", async 
     );
     assert.equal(group.items.contents.length, 0);
     assert.equal(hero.items.contents.includes(source), true);
+    await assert.rejects(
+      fixture.service.importDroppedItem({ uuid: source.uuid, mutationId: "import-failure" }),
+      /source delete failed/u
+    );
+    assert.equal(group.items.contents.length, 0);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("import merge preserves the existing stack folder instead of applying the requested target", async () => {
+  const existing = createItem({
+    id: "existing",
+    name: "Lantern",
+    quantity: 2,
+    flags: { [MODULE_ID]: { sourceType: "gear", sourceId: "lantern" } }
+  });
+  const source = createItem({
+    id: "import-source",
+    name: "Lantern",
+    quantity: 1,
+    flags: { [MODULE_ID]: { sourceType: "gear", sourceId: "lantern" } }
+  });
+  const hero = createActor({ id: "hero", items: [source] });
+  const group = createActor({
+    id: "group",
+    type: "group",
+    managed: true,
+    items: [existing],
+    members: [{ actor: hero }],
+    flags: {
+      [MODULE_ID]: {
+        inventoryFolders: {
+          version: 1,
+          folders: [
+            { id: "folder-old", name: "Old", parentId: null },
+            { id: "folder-new", name: "New", parentId: null }
+          ],
+          itemFolderIds: { existing: "folder-old" }
+        }
+      }
+    }
+  });
+  const fixture = createInventoryIngressFixture({
+    group,
+    actors: [group, hero],
+    uuidDocuments: new Map([[source.uuid, source]])
+  });
+
+  try {
+    const result = await fixture.service.importDroppedItem(
+      { uuid: source.uuid, mutationId: "import-folder-merge" },
+      { groupActorId: "group", folderId: "folder-new" }
+    );
+
+    assert.equal(result.actorId, "group");
+    assert.equal(existing.system.quantity, 3);
+    assert.equal(group.createEmbeddedDocumentsCalls, 0);
+    assert.equal(group.getFlag(MODULE_ID, "inventoryFolders").itemFolderIds.existing, "folder-old");
+    assert.equal(group.setFlagCalls.length, 0);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("import reports terminal partial outcome when final folder assignment fails", async () => {
+  const source = createItem({ id: "import-source", name: "Rope", quantity: 1 });
+  const hero = createActor({ id: "hero", items: [source] });
+  const group = createActor({
+    id: "group",
+    type: "group",
+    managed: true,
+    members: [{ actor: hero }],
+    failSetFlagOnce: true,
+    flags: {
+      [MODULE_ID]: {
+        inventoryFolders: {
+          version: 1,
+          folders: [
+            { id: "folder-new", name: "New", parentId: null },
+            { id: "folder-other", name: "Other", parentId: null }
+          ],
+          itemFolderIds: {}
+        }
+      }
+    }
+  });
+  const fixture = createInventoryIngressFixture({
+    group,
+    actors: [group, hero],
+    uuidDocuments: new Map([[source.uuid, source]])
+  });
+  const dropData = { uuid: source.uuid, mutationId: "import-folder-retry" };
+
+  try {
+    await assert.rejects(
+      () => fixture.service.importDroppedItem(dropData, {
+        groupActorId: "group",
+        folderId: "folder-new"
+      }),
+      /folder flag write failed/u
+    );
+    assert.equal(group.items.contents.length, 1);
+    assert.equal(group.createEmbeddedDocumentsCalls, 1);
+    assert.equal(hero.items.contents.includes(source), false);
+    assert.deepEqual(group.getFlag(MODULE_ID, "inventoryFolders").itemFolderIds, {});
+
+    await assert.rejects(
+      () => fixture.service.importDroppedItem(dropData, {
+        groupActorId: "group",
+        folderId: "folder-other"
+      }),
+      (error) => error?.code === "mutation-conflict"
+    );
+    await assert.rejects(
+      () => fixture.service.importDroppedItem(dropData, {
+        groupActorId: "group",
+        folderId: "folder-new"
+      }),
+      (error) => error?.code === "transfer-manual-review"
+    );
+
+    assert.equal(group.items.contents.length, 1);
+    assert.equal(group.createEmbeddedDocumentsCalls, 1);
+    assert.equal(hero.items.contents.includes(source), false);
+    assert.deepEqual(group.getFlag(MODULE_ID, "inventoryFolders").itemFolderIds, {});
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("storage grant retries folder assignment after create without duplicating the Item", async () => {
+  const group = createActor({
+    id: "group",
+    type: "group",
+    managed: true,
+    failSetFlagOnce: true,
+    flags: {
+      [MODULE_ID]: {
+        inventoryFolders: {
+          version: 1,
+          folders: [{ id: "supplies", name: "Supplies", parentId: null }],
+          itemFolderIds: {}
+        }
+      }
+    }
+  });
+  const fixture = installFixture({ group, actors: [group] });
+  const row = {
+    rowId: "rope-row",
+    quantity: 1,
+    itemData: {
+      name: "Rope",
+      type: "loot",
+      system: { quantity: 1 },
+      flags: { [MODULE_ID]: { sourceType: "storage-manual" } }
+    }
+  };
+  const options = {
+    allowPersistedItemData: true,
+    groupActorId: "group",
+    folderId: "supplies"
+  };
+
+  try {
+    await assert.rejects(
+      () => fixture.service.addLootgenRowToInventoryOnce(row, "grant-folder-retry", options),
+      /folder flag write failed/u
+    );
+    assert.equal(group.items.contents.length, 1);
+    assert.equal(group.createEmbeddedDocumentsCalls, 1);
+
+    await fixture.service.addLootgenRowToInventoryOnce(row, "grant-folder-retry", options);
+    assert.equal(group.items.contents.length, 1);
+    assert.equal(group.createEmbeddedDocumentsCalls, 1);
+    assert.equal(
+      group.getFlag(MODULE_ID, "inventoryFolders").itemFolderIds[group.items.contents[0].id],
+      "supplies"
+    );
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("a damaged storage variant stays separate and the newly created stack receives its target folder", async () => {
+  const sourceFlags = { sourceType: "gear", sourceId: "sword" };
+  const intact = createItem({
+    id: "intact-sword",
+    name: "Sword",
+    quantity: 2,
+    flags: {
+      [MODULE_ID]: {
+        ...sourceFlags,
+        durability: { state: "intact", breakStage: 0, hp: { value: 10, max: 10 } }
+      }
+    }
+  });
+  const group = createActor({
+    id: "group",
+    type: "group",
+    managed: true,
+    items: [intact],
+    flags: {
+      [MODULE_ID]: {
+        inventoryFolders: {
+          version: 1,
+          folders: [
+            { id: "weapons", name: "Weapons", parentId: null },
+            { id: "damaged", name: "Damaged", parentId: null }
+          ],
+          itemFolderIds: { "intact-sword": "weapons" }
+        }
+      }
+    }
+  });
+  const fixture = installFixture({ group, actors: [group] });
+  const row = {
+    rowId: "broken-sword-row",
+    quantity: 1,
+    itemData: {
+      name: "Sword",
+      type: "weapon",
+      system: { quantity: 1 },
+      flags: {
+        [MODULE_ID]: {
+          ...sourceFlags,
+          durability: { state: "broken", breakStage: 1, hp: { value: 0, max: 10 } }
+        }
+      }
+    }
+  };
+
+  try {
+    await fixture.service.addLootgenRowToInventoryOnce(row, "grant-damaged-folder", {
+      allowPersistedItemData: true,
+      groupActorId: "group",
+      folderId: "damaged"
+    });
+
+    assert.equal(intact.system.quantity, 2);
+    assert.equal(group.items.contents.length, 2);
+    assert.equal(group.createEmbeddedDocumentsCalls, 1);
+    const damaged = group.items.contents.find((item) => item.id !== intact.id);
+    assert.equal(damaged.flags[MODULE_ID].durability.state, "broken");
+    assert.deepEqual(group.getFlag(MODULE_ID, "inventoryFolders").itemFolderIds, {
+      "intact-sword": "weapons",
+      [damaged.id]: "damaged"
+    });
   }
   finally {
     fixture.restore();
@@ -1302,7 +5095,7 @@ test("repeating successful inventory mutation ids never applies an economic delt
     members: [{ actor: hero }]
   });
   const uuidDocuments = new Map([[importSource.uuid, importSource]]);
-  const fixture = installFixture({ group, actors: [group, hero], uuidDocuments });
+  const fixture = createInventoryIngressFixture({ group, actors: [group, hero], uuidDocuments });
 
   try {
     await fixture.service.takeInventoryItemToCharacter(takeSource.id, {
@@ -2522,4 +6315,234 @@ test("craft output recovers from write-then-throw creation with frozen source an
 test.after(() => {
   globalThis.Actor = previousActor;
   globalThis.Item = previousItem;
+});
+
+async function preparedLootgenIngressItem({narrative=false}={}) {
+  const descriptor = {version:2,instanceKey:"host",sourceType:"gear",sourceId:"sword",quantity:1,isBroken:false,container:null,
+    upgrades:[{instanceKey:"upgrade",sourceId:"zacharovanie-ostroty",slotIndex:1,choices:{}}]};
+  let nextId=0;
+  const graph=await buildCompositeItemGraph(descriptor, {
+    createDocumentId:()=>String(++nextId).padStart(16,"0"),
+    manifest:[{productId:"zacharovanie-ostroty",decision:"simple-implemented",profile:{compatibility:["weapon"]}}],
+    buildBase:async()=>{
+      const data=inventoryIngressItemData("sword");
+      if(narrative){
+        data.system.description={value:"<p>Подготовленный текст</p>"};
+        Object.assign(data.flags[MODULE_ID],{narrativeVariantId:"sword-prepared",narrativeGearId:"sword",narrativeTitle:"",narrativeDescription:"Подготовленный текст",nonStackable:true});
+      }
+      return data;
+    },
+    buildUpgrade:async()=>({name:"Sharp",type:"loot",system:{quantity:1},flags:{}})
+  });
+  return buildLootgenPreparedItem(descriptor,{graph,unitValue:1200});
+}
+
+test("prepared lootgen ingress requires its trusted source adapter", async()=>{
+  const group=createActor({id:"composed-denied",type:"group",managed:true});
+  const fixture=createInventoryIngressFixture({group});
+  try {
+    const rows=[{sourceKey:"row",quantity:1,itemData:await preparedLootgenIngressItem(),container:null,legacyFolderId:null}];
+    const serializedPlan=await serializeIngressPlan(fixture.planner,{groupActorId:group.id,rows});
+    const request={groupActorId:group.id,batchMutationId:"denied-graph",sourceOrigin:"lootgen",serializedPlan};
+    await assert.rejects(fixture.service.commitInventoryIngressBatch(request,{resolveRows:async()=>clone(rows),debitRow:async()=>{}}),error=>error.code==="invalid-runtime-graph");
+    assert.equal(group.items.contents.length,0);
+  } finally {fixture.restore();}
+});
+
+test("prepared lootgen ingress records graph IDs before writes and recovers only missing children",async()=>{
+  const group=createActor({id:"composed-recovery",type:"group",managed:true});
+  group.items.has=id=>Boolean(group.items.get(id));
+  const fixture=createInventoryIngressFixture({group});
+  let debitCalls=0,createCalls=0;
+  try {
+    const rows=[{sourceKey:"row",quantity:1,itemData:await preparedLootgenIngressItem(),container:null,legacyFolderId:null}];
+    const serializedPlan=await serializeIngressPlan(fixture.planner,{groupActorId:group.id,rows});
+    const request={groupActorId:group.id,batchMutationId:"prepared-recovery",sourceOrigin:"lootgen",serializedPlan};
+    const originalCreate=group.createEmbeddedDocuments.bind(group);
+    group.createEmbeddedDocuments=async(type,documents,options)=>{
+      createCalls++;
+      const record=await fixture.service.mutationJournal.find("inventory-ingress:prepared-recovery");
+      assert.equal(record.rows[0].targetReceipts[0].graphItemIds.length,2);
+      assert.ok(documents.every(data=>record.rows[0].targetReceipts[0].graphItemIds.includes(data._id)));
+      if(createCalls===1){await originalCreate(type,documents.slice(0,1),options);throw new Error("partial graph write");}
+      assert.equal(documents.length,1);
+      return originalCreate(type,documents,options);
+    };
+    let catalogChanged=false;
+    const reads=[];
+    const callbacks={resolveRows:async({recovering})=>{
+      reads.push(recovering);
+      if(!recovering && catalogChanged)throw new Error("catalog drift must not affect prepared recovery");
+      return clone(rows);
+    },debitRow:async()=>{debitCalls++;},allowPreparedLootgenGraph:true};
+    await assert.rejects(fixture.service.commitInventoryIngressBatch(request,callbacks),error=>error.code==="graph-manual-review");
+    assert.equal(group.items.contents.length,1);assert.equal(debitCalls,0);
+    catalogChanged=true;
+    const result=await fixture.service.commitInventoryIngressBatch(request,callbacks);
+    assert.equal(group.items.contents.length,2);assert.equal(debitCalls,1);
+    const host=group.items.contents.find(item=>item.type==="weapon"),child=group.items.contents.find(item=>item.type==="loot");
+    assert.equal(child.system.container,host.id);
+    assert.equal(child.flags[MODULE_ID].installedUpgrade.hostActorId,group.id);
+    assert.equal(host.flags[MODULE_ID].lootgenComposition,undefined);
+    assert.equal(host.flags[MODULE_ID].runtimeItemGraph,undefined);
+    group.items.contents.splice(0);
+    assert.deepEqual(await fixture.service.commitInventoryIngressBatch(request,callbacks),result);
+    assert.equal(group.items.contents.length,0);assert.equal(createCalls,2);assert.equal(debitCalls,1);
+    assert.deepEqual(reads,[false,false,true]);
+  } finally {fixture.restore();}
+});
+
+test("prepared filled-container party ingress debits its source only after the whole tree exists",async()=>{
+  const group=createActor({id:"filled-group",type:"group",managed:true}),fixture=createInventoryIngressFixture({group});
+  group.items.has=id=>Boolean(group.items.get(id));
+  try{
+    const {makePreparedContainerGraph}=await import("./helpers/lootgen-prepared-container-fixture.mjs");
+    const {descriptor,graph}=await makePreparedContainerGraph();
+    const rows=[{sourceKey:"chest-row",quantity:1,itemData:buildLootgenPreparedItem(descriptor,{graph,unitValue:7000}),container:null,legacyFolderId:null}];
+    const serializedPlan=await serializeIngressPlan(fixture.planner,{groupActorId:group.id,rows});
+    const request={groupActorId:group.id,batchMutationId:"filled-party",sourceOrigin:"lootgen",serializedPlan};
+    let calls=0,debits=0;const create=group.createEmbeddedDocuments.bind(group);
+    group.createEmbeddedDocuments=async(type,docs,opts)=>{calls++;if(calls===1){await create(type,docs.slice(0,1),opts);throw new Error("partial");}assert.equal(docs.length,2);return create(type,docs,opts);};
+    const callbacks={resolveRows:async()=>clone(rows),debitRow:async()=>{assert.equal(group.items.contents.length,3);debits++;},allowPreparedLootgenGraph:true};
+    await assert.rejects(fixture.service.commitInventoryIngressBatch(request,callbacks),{code:"graph-manual-review"});
+    assert.equal(debits,0);assert.equal(group.items.contents.length,1);
+    await fixture.service.commitInventoryIngressBatch(request,callbacks);
+    assert.equal(debits,1);assert.equal(calls,2);assert.equal(group.items.contents.length,3);
+    const root=group.items.contents.find(item=>item.type==="container"),host=group.items.contents.find(item=>item.type==="weapon");
+    assert.equal(host.system.container,root.id);assert.equal(root.system.currency.cp,1000);
+  }finally{fixture.restore();}
+});
+
+test("manual dismantle of an installed host rejects before any document write",async()=>{
+  const host=createItem({id:"host",type:"weapon",flags:{[MODULE_ID]:{itemUpgrades:{installed:[{itemId:"child",slotIndex:1}]}}}});
+  const group=createActor({id:"dismantle-composed",type:"group",managed:true,items:[host]});
+  const fixture=createInventoryIngressFixture({group});
+  try {
+    await assert.rejects(fixture.service.executeDismantleMutation({inventoryActorId:group.id,itemId:host.id,quantity:1,mutationId:"no-shell-dismantle"}),/Сначала снимите усовершенствования/u);
+    assert.equal(group.items.contents.length,1);assert.equal(group.createEmbeddedDocumentsCalls,0);
+  }finally{fixture.restore();}
+});
+
+test("character grants reject prepared loot graphs without the trusted adapter",async()=>{
+  const hero=createActor({id:"prepared-denied-hero"});
+  const fixture=installFixture({actors:[hero]});
+  try {
+    await assert.rejects(fixture.service.addLootgenRowToCharacterOnce({quantity:1,itemData:await preparedLootgenIngressItem()},hero,"deny-prepared-character"),{code:"invalid-prepared-lootgen-item"});
+    assert.equal(hero.items.contents.length,0);
+  }finally{fixture.restore();}
+});
+
+test("narrative character grants use persisted itemData, quantity one, and never merge",async()=>{
+  const narrativeItem={name:"Книга",type:"loot",system:{quantity:5,description:{value:"<p>Сохранённый текст</p>"}},flags:{[MODULE_ID]:{
+    sourceType:"gear",sourceId:"book",gearId:"book",narrativeVariantId:"book-a",narrativeGearId:"book",
+    narrativeTitle:"Следы",narrativeDescription:"Сохранённый текст",nonStackable:true
+  }}};
+  const existing=createItem({id:"existing-narrative",name:"Книга",type:"loot",quantity:1,system:{...clone(narrativeItem.system),quantity:1},flags:narrativeItem.flags});
+  const hero=createActor({id:"narrative-hero",items:[existing]});
+  const fixture=installFixture({actors:[hero]});
+  try {
+    const result=await fixture.service.addLootgenRowToCharacterOnce({quantity:8,itemData:narrativeItem},hero,"narrative-character");
+    const created=hero.items.get(result.itemId);
+    assert.equal(hero.items.contents.length,2);
+    assert.equal(existing.system.quantity,1);
+    assert.equal(created.system.quantity,1);
+    assert.equal(created.system.description.value,"<p>Сохранённый текст</p>");
+    assert.equal(created.flags[MODULE_ID].narrativeVariantId,"book-a");
+    assert.deepEqual(await fixture.service.addLootgenRowToCharacterOnce({quantity:8,itemData:{...clone(narrativeItem),system:{...clone(narrativeItem.system),description:{value:"<p>Новый каталог</p>"}}}},hero,"narrative-character"),result);
+    assert.equal(created.system.description.value,"<p>Сохранённый текст</p>");
+    assert.equal(hero.items.contents.length,2);
+  }finally{fixture.restore();}
+});
+
+test("ordinary persisted character grants still merge",async()=>{
+  const flags={[MODULE_ID]:{sourceType:"gear",sourceId:"book",gearId:"book"}};
+  const existing=createItem({id:"existing-book",name:"Книга",type:"loot",quantity:1,flags});
+  const hero=createActor({id:"ordinary-hero",items:[existing]}),fixture=installFixture({actors:[hero]});
+  try {
+    await fixture.service.addLootgenRowToCharacterOnce({quantity:2,itemData:{name:"Книга",type:"loot",system:{quantity:2},flags}},hero,"ordinary-character");
+    assert.equal(hero.items.contents.length,1);
+    assert.equal(existing.system.quantity,3);
+  }finally{fixture.restore();}
+});
+
+test("prepared character grant persists exact graph IDs and resumes without rebuilding or checking a changed catalog",async()=>{
+  const hero=createActor({id:"prepared-hero"}),other=createActor({id:"prepared-other"});
+  const fixture=installFixture({actors:[hero,other]});
+  let creates=0,catalogReads=0,changed=false;
+  try {
+    const row={quantity:1,itemData:await preparedLootgenIngressItem({narrative:true})};
+    const options={allowPreparedLootgenGraph:true,beforePrepare:async()=>{catalogReads++;if(changed)throw new Error("stale catalog");}};
+    const create=hero.createEmbeddedDocuments.bind(hero);
+    hero.createEmbeddedDocuments=async(type,documents,opts)=>{
+      creates++;
+      const record=await fixture.service.mutationJournal.find("prepared-character");
+      assert.equal(record.targetReceipt.graphItemIds.length,2);
+      assert.ok(documents.every(data=>record.targetReceipt.graphItemIds.includes(data._id)));
+      if(creates===1){await create(type,documents.slice(0,1),opts);throw new Error("partial write");}
+      assert.equal(documents.length,1);return create(type,documents,opts);
+    };
+    await assert.rejects(fixture.service.addLootgenRowToCharacterOnce(row,hero,"prepared-character",options),{code:"graph-manual-review"});
+    assert.equal(hero.items.contents.length,1);changed=true;
+    await assert.rejects(fixture.service.addLootgenRowToCharacterOnce(row,other,"prepared-character",options),/different.*target|conflict/u);
+    const altered=clone(row);altered.itemData.name="Different source";
+    await assert.rejects(fixture.service.addLootgenRowToCharacterOnce(altered,hero,"prepared-character",options),/conflict/u);
+    const result=await fixture.service.addLootgenRowToCharacterOnce(row,hero,"prepared-character",options);
+    assert.equal(catalogReads,1);assert.equal(creates,2);assert.equal(hero.items.contents.length,2);
+    const child=hero.items.contents.find(item=>item.type==="loot");
+    const host=hero.items.get(result.itemId);
+    assert.equal(host.flags[MODULE_ID].narrativeVariantId,"sword-prepared");
+    assert.equal(host.system.description.value,"<p>Подготовленный текст</p>");
+    assert.equal(child.flags[MODULE_ID].installedUpgrade.hostActorId,hero.id);
+    assert.equal(child.system.container,result.itemId);
+    hero.items.contents.splice(0);
+    assert.deepEqual(await fixture.service.addLootgenRowToCharacterOnce(row,hero,"prepared-character",options),result);
+    assert.equal(hero.items.contents.length,0);assert.equal(catalogReads,1);
+  }finally{fixture.restore();}
+});
+
+test("prepared filled-container character grant acknowledges only the full graph and survives partial writes",async()=>{
+  const hero=createActor({id:"filled-hero"}),fixture=installFixture({actors:[hero]});
+  try{
+    const {makePreparedContainerGraph}=await import("./helpers/lootgen-prepared-container-fixture.mjs");
+    const {buildLootgenPreparedItem}=await import("../scripts/data/lootgen-prepared-item.js");
+    const {descriptor,graph}=await makePreparedContainerGraph();
+    const row={quantity:1,descriptor,itemData:buildLootgenPreparedItem(descriptor,{graph,unitValue:7000})};
+    let calls=0;const create=hero.createEmbeddedDocuments.bind(hero);
+    hero.createEmbeddedDocuments=async(type,docs,opts)=>{calls++;if(calls===1){await create(type,docs.slice(0,1),opts);throw new Error("partial");}assert.equal(docs.length,2);return create(type,docs,opts);};
+    await assert.rejects(fixture.service.addLootgenRowToCharacterOnce(row,hero,"filled-character",{allowPreparedLootgenGraph:true}),{code:"graph-manual-review"});
+    assert.equal(hero.items.contents.length,1);
+    const result=await fixture.service.addLootgenRowToCharacterOnce(row,hero,"filled-character",{allowPreparedLootgenGraph:true});
+    assert.equal(hero.items.contents.length,3);assert.equal(calls,2);
+    const root=hero.items.get(result.itemId),host=hero.items.contents.find(item=>item.type==="weapon"),upgrade=hero.items.contents.find(item=>item.type==="loot");
+    assert.equal(host.system.container,root.id);assert.equal(upgrade.system.container,host.id);
+    assert.equal(root.system.currency.cp,1000);assert.equal(root.flags[MODULE_ID].lootgenComposition,undefined);
+  }finally{fixture.restore();}
+});
+
+test("prepared character gate rejects before any journal or target write",async()=>{
+  const hero=createActor({id:"prepared-stale-hero"});
+  const fixture=installFixture({actors:[hero]});
+  try {
+    await assert.rejects(fixture.service.addLootgenRowToCharacterOnce({quantity:1,itemData:await preparedLootgenIngressItem()},hero,"stale-character",{
+      allowPreparedLootgenGraph:true,beforePrepare:async()=>{throw new Error("stale catalog");}
+    }),/stale catalog/u);
+    assert.equal(hero.items.contents.length,0);
+    assert.equal(await fixture.service.mutationJournal.find("stale-character"),null);
+  }finally{fixture.restore();}
+});
+
+test("separate prepared character grants keep distinct hosts and upgrade links",async()=>{
+  const hero=createActor({id:"separate-prepared"});
+  const fixture=installFixture({actors:[hero]});
+  try {
+    const row={quantity:1,itemData:await preparedLootgenIngressItem()},options={allowPreparedLootgenGraph:true};
+    const a=await fixture.service.addLootgenRowToCharacterOnce(row,hero,"separate-a",options);
+    const b=await fixture.service.addLootgenRowToCharacterOnce(row,hero,"separate-b",options);
+    assert.notEqual(a.itemId,b.itemId);assert.equal(hero.items.contents.length,4);
+    for(const result of [a,b]){
+      const host=hero.items.get(result.itemId),child=hero.items.get(host.flags[MODULE_ID].itemUpgrades.installed[0].itemId);
+      assert.equal(host.system.quantity,1);assert.equal(child.system.container,host.id);
+      assert.equal(child.flags[MODULE_ID].installedUpgrade.hostItemId,host.id);
+    }
+  }finally{fixture.restore();}
 });

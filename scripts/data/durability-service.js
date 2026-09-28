@@ -6,6 +6,7 @@ import {
 import { DurableMutationJournal } from "../application/durable-mutation-journal.js";
 import { WorldMutationCoordinator } from "../application/world-mutation-coordinator.js";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
+import { formatDurabilityItemName } from "./durability-item-presentation.js?v=1.4.154-broken-item-name";
 import {
   applyDurabilityDamage,
   buildInitialDurability,
@@ -13,7 +14,7 @@ import {
   markDurabilityBroken,
   markDurabilityDestroyed,
   resolveDurabilityProfile
-} from "./durability-rules.js";
+} from "./durability-rules.js?v=1.4.144-spreadsheet-coins-ground-repair";
 
 const DURABILITY_FLAG_PATH = `flags.${MODULE_ID}.durability`;
 const SIDE_EFFECT_LEASE_MS = 30_000;
@@ -212,20 +213,38 @@ export class DurabilityService {
     );
   }
 
-  async #initializeItem(item, { force = false, sourceType, sourceId } = {}) {
-    const itemData = itemDataOf(item);
-    if (!isDurabilityEligible(itemData)) {
+  async getOrBuildDurability(item, { sourceType, sourceId } = {}) {
+    if (!isDurabilityEligible(itemDataOf(item))) {
       return null;
     }
-
     const existing = this.getDurability(item);
-    if (existing && force !== true) {
+    if (existing) {
       return existing;
     }
+    return this.#buildInitialFlag(item, { sourceType, sourceId });
+  }
 
-    const flag = await this.#buildInitialFlag(item, { sourceType, sourceId });
+  async getOrBuildBrokenDurability(item, { sourceType, sourceId } = {}) {
+    const flag = await this.getOrBuildDurability(item, { sourceType, sourceId });
     if (!flag) {
       return null;
+    }
+    const transition = markDurabilityBroken(flag);
+    if (transition.outcome !== "broken") {
+      return flag.state === "broken" ? toPlain(flag) : null;
+    }
+    return transitionWithTimestamp(transition, this.#timestamp()).nextFlag;
+  }
+
+  async #initializeItem(item, { force = false, sourceType, sourceId } = {}) {
+    const flag = force === true
+      ? await this.#buildInitialFlag(item, { sourceType, sourceId })
+      : await this.getOrBuildDurability(item, { sourceType, sourceId });
+    if (!flag) {
+      return null;
+    }
+    if (force !== true && this.getDurability(item)) {
+      return flag;
     }
     const transition = {
       outcome: "initialized",
@@ -323,14 +342,7 @@ export class DurabilityService {
   }
 
   async #readOrBuildFlag(item) {
-    if (!isDurabilityEligible(itemDataOf(item))) {
-      return null;
-    }
-    const existing = this.getDurability(item);
-    if (existing) {
-      return existing;
-    }
-    return this.#buildInitialFlag(item);
+    return this.getOrBuildDurability(item);
   }
 
   async #buildInitialFlag(item, { sourceType, sourceId } = {}) {
@@ -405,6 +417,9 @@ export class DurabilityService {
     const payload = {
       [DURABILITY_FLAG_PATH]: toPlain(committedTransition.nextFlag)
     };
+    const currentName = cleanId(itemDataOf(item)?.name);
+    const nextName = formatDurabilityItemName(currentName, committedTransition.nextFlag);
+    if (nextName && nextName !== currentName) payload.name = nextName;
     if (clearEquipment) {
       payload["system.equipped"] = false;
       Object.assign(payload, clearAttunementPayload(itemDataOf(item)));

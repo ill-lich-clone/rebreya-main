@@ -114,6 +114,10 @@ function installSheetExtensionStubs() {
       return this.attributes[name];
     }
 
+    hasAttribute(name) {
+      return Object.hasOwn(this.attributes, name);
+    }
+
     querySelector(selector) {
       return this.selectors[selector] ?? null;
     }
@@ -378,6 +382,51 @@ test("registerDnd5eSheetExtensions registers hero doll and downtime without repl
       ["modification", "actor-a"],
       ["downtime", "actor-a"]
     ]);
+  }
+  finally {
+    stubs.restore();
+  }
+});
+
+test("hero doll portrait fold returns the previous sidebar state after tab changes and rerenders without saving a dnd5e flag", async () => {
+  const stubs = installSheetExtensionStubs();
+  try {
+    const { registerDnd5eSheetExtensions, syncHeroDollSidebarOnRender } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?portrait-fold=${Date.now()}`);
+    const saved = new Map([["heroDoll", true], ["features", true]]);
+    const writes = [];
+    globalThis.game.user = { setFlag(...args) { writes.push(args); } };
+    stubs.CharacterActorSheet.prototype._toggleSidebar = function (collapsed) {
+      if (collapsed) this.element.classList.add("sidebar-collapsed");
+      else this.element.classList.remove("sidebar-collapsed");
+    };
+    stubs.CharacterActorSheet.prototype.changeTab = function (tab, group) {
+      if (group !== "primary") return;
+      this.tabGroups.primary = tab;
+      if (saved.has(tab)) this._toggleSidebar(saved.get(tab));
+    };
+    registerDnd5eSheetExtensions({ heroDollService: {}, characterDowntimeService: {}, implantService: {} });
+    const actor = createActor(stubs.Actor, { id: "portrait-actor" });
+    const sheet = new stubs.CharacterActorSheet(actor);
+    sheet.element = new stubs.HTMLElement();
+    sheet.tabGroups.primary = "inventory";
+
+    sheet.changeTab("heroDoll", "primary");
+    assert.equal(sheet.element.classList.contains("sidebar-collapsed"), false);
+    sheet._toggleSidebar(true); // dnd5e reapplies the hero-tab flag while rendering.
+    syncHeroDollSidebarOnRender(sheet);
+    assert.equal(sheet.element.classList.contains("sidebar-collapsed"), false);
+    sheet.changeTab("inventory", "primary");
+    assert.equal(sheet.element.classList.contains("sidebar-collapsed"), false);
+
+    sheet._toggleSidebar(true);
+    sheet.changeTab("heroDoll", "primary");
+    sheet.changeTab("inventory", "primary");
+    assert.equal(sheet.element.classList.contains("sidebar-collapsed"), true);
+    sheet._toggleSidebar(false);
+    sheet.changeTab("heroDoll", "primary");
+    sheet.changeTab("features", "primary");
+    assert.equal(sheet.element.classList.contains("sidebar-collapsed"), true);
+    assert.deepEqual(writes, []);
   }
   finally {
     stubs.restore();
@@ -763,7 +812,10 @@ test("registerDnd5eSheetExtensions renders universal belt slots in the inventory
     assert.equal(beltSlots.length, 3);
     assert.equal(containers.children[0].dataset.beltSlot, "1");
     assert.equal(containers.children[1].dataset.locked, "true");
-    assert.equal(containers.children[3].dataset.itemId, "backpack");
+    assert.equal(containers.children[3].dataset.potionTracker, "healing");
+    assert.equal(containers.children[4].dataset.potionTracker, "utility");
+    assert.equal(containers.children[5].dataset.potionTracker, "reagents");
+    assert.equal(containers.children[6].dataset.itemId, "backpack");
   }
   finally {
     stubs.restore();
@@ -861,6 +913,100 @@ test("registerDnd5eSheetExtensions adds right-click hand choices to equipped ite
       "system.equipped": true,
       "flags.rebreya-main.heldHands": ["right"]
     });
+  }
+  finally {
+    stubs.restore();
+  }
+});
+
+test("hero doll slot right click assigns a compatible inventory item and rerenders the sheet", async () => {
+  const stubs = installSheetExtensionStubs();
+  try {
+    const { registerDnd5eSheetExtensions } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?hero-doll-slot-menu=${Date.now()}`);
+    const actor = createActor(stubs.Actor, { id: "actor-a", name: "Asha" });
+    actor.items = {
+      contents: [],
+      get: () => null
+    };
+    const slot = new stubs.HTMLElement({
+      dataset: {
+        slotId: "neck"
+      }
+    });
+    const panel = new stubs.HTMLElement({
+      selectorAll: {
+        "[data-hero-doll-slot='true']": [slot],
+        "[data-hero-doll-item-drag='true']": []
+      }
+    });
+    panel.dataset.tab = "heroDoll";
+    panel.append(slot);
+    const panelSelector = "[data-application-part='heroDoll'] .rm-hero-doll-tab";
+    const root = new stubs.HTMLElement({
+      selectors: {
+        [panelSelector]: panel
+      }
+    });
+    root.append(panel);
+    stubs.document.body = new stubs.HTMLElement();
+    globalThis.window.innerWidth = 800;
+    globalThis.window.innerHeight = 600;
+    const assignments = [];
+    let renderCount = 0;
+    const app = {
+      actor,
+      async render() {
+        renderCount += 1;
+      }
+    };
+    const moduleApi = {
+      heroDollService: {
+        getActorSnapshot() {
+          return {
+            inventoryItems: [
+              { id: "scarf", itemUuid: "Actor.actor-a.Item.scarf", name: "Шарф", img: "scarf.webp", allowedSlots: ["neck"] },
+              { id: "sword", itemUuid: "Actor.actor-a.Item.sword", name: "Меч", img: "sword.webp", allowedSlots: ["leftHand"] }
+            ]
+          };
+        },
+        async assignItemToSlot(...args) {
+          assignments.push(args);
+        }
+      },
+      characterDowntimeService: {
+        getActorContext() {
+          return {};
+        }
+      },
+      async refreshOpenApps() {}
+    };
+
+    registerDnd5eSheetExtensions(moduleApi);
+    stubs.hooks.get("renderCharacterActorSheet")(app, root);
+
+    assert.equal(slot.listeners.contextmenu.length, 1);
+    await slot.listeners.contextmenu[0]({
+      clientX: 24,
+      clientY: 32,
+      preventDefault() {},
+      stopPropagation() {}
+    });
+
+    const menu = stubs.document.body.children.find((child) => child.classList.contains("rm-context-menu"));
+    assert.ok(menu);
+    const scarfButton = menu.children.find((child) => (
+      child.children?.some((node) => node.textContent === "Шарф")
+    ));
+    assert.ok(scarfButton);
+    assert.equal(menu.children.some((child) => child.children?.some((node) => node.textContent === "Меч")), false);
+
+    await scarfButton.listeners.click[0]({
+      preventDefault() {},
+      stopPropagation() {}
+    });
+
+    assert.deepEqual(assignments, [[actor, "neck", { uuid: "Actor.actor-a.Item.scarf" }]]);
+    assert.equal(renderCount, 1);
   }
   finally {
     stubs.restore();
@@ -2170,8 +2316,18 @@ test("character sheet status references use Rebreya text and compact Russian lab
     });
     unconsciousRow.classList.add("condition", "content-link");
 
+    const proneTitle = new stubs.HTMLElement();
+    proneTitle.classList.add("title");
+    proneTitle.textContent = "Сбитый с ног";
+    const proneRow = new stubs.HTMLElement({
+      dataset: { conditionId: "prone", action: "toggleCondition" },
+      selectors: { ".name-stacked .title": proneTitle }
+    });
+    proneRow.classList.add("condition", "content-link");
+
     const conditionsList = new stubs.HTMLElement();
     conditionsList.append(unconsciousRow);
+    conditionsList.append(proneRow);
     const root = new stubs.HTMLElement({
       selectors: {
         ".effects-element .conditions-list": conditionsList
@@ -2214,6 +2370,8 @@ test("character sheet status references use Rebreya text and compact Russian lab
     assert.match(unconsciousRow.dataset.tooltip, /Недееспособный/u);
     assert.equal(unconsciousRow.dataset.tooltipClass, "dnd5e2 dnd5e-tooltip item-tooltip themed theme-light");
     assert.equal(unconsciousTitle.getAttribute("lang"), "ru");
+    assert.match(proneRow.dataset.tooltip, /только ползая/u);
+    assert.match(proneRow.dataset.tooltip, /провоцирует атаки/u);
 
     const provokedRow = conditionsList.children.find((node) => node.dataset.rebreyaCombatStatusId === "rebreya-provoked");
     const provokedTitle = findTreeNode(
@@ -2369,6 +2527,33 @@ test("extendDnd5eItemTypes registers Rebreya artisan tools from the gear compend
       );
       assert.match(CONFIG.DND5E.tools[key].ability, /^(?:str|dex|int|wis|cha)$/u);
     }
+  }
+  finally {
+    stubs.restore();
+  }
+});
+
+test("extendDnd5eItemTypes registers native Rebreya ammunition families", async () => {
+  const stubs = installSheetExtensionStubs();
+  globalThis.game.modules = new Map([["rebreya-main", { documentTypes: { Item: { state: {}, downtime: {} } } }]]);
+  globalThis.CONFIG.Item = {
+    dataModels: { background: class BackgroundData { static metadata = {}; } },
+    typeLabels: {},
+    typeIcons: {}
+  };
+  globalThis.CONFIG.DND5E.consumableTypes = {
+    ammo: { label: "Боеприпасы", subtypes: { firearmBullet: "Пули" } }
+  };
+
+  try {
+    const { extendDnd5eItemTypes } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?rebreya-ammo=${Date.now()}`);
+    extendDnd5eItemTypes();
+
+    assert.equal(CONFIG.DND5E.consumableTypes.ammo.subtypes.rebreyaMusket, "Мушкетные патроны");
+    assert.equal(CONFIG.DND5E.consumableTypes.ammo.subtypes.rebreyaRifle, "Винтовочные патроны");
+    assert.equal(CONFIG.DND5E.consumableTypes.ammo.subtypes.rebreyaShotgun, "Картечные патроны");
+    assert.equal(CONFIG.DND5E.consumableTypes.ammo.subtypes.rebreyaPistol, "Пистолетные патроны");
+    assert.equal(CONFIG.DND5E.consumableTypes.ammo.subtypes.firearmBullet, "Пули");
   }
   finally {
     stubs.restore();
@@ -2661,6 +2846,128 @@ test("weapon item sheet removes firearm-only native property rows from non-firea
   finally {
     stubs.restore();
   }
+});
+
+test("weapon property right click opens its glossary tooltip and Escape closes it", async () => {
+  const stubs = installSheetExtensionStubs();
+  try {
+    const { registerDnd5eSheetExtensions } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?weapon-property-tooltip=${Date.now()}`);
+
+    const item = new globalThis.Item();
+    item.type = "weapon";
+    item.system = {
+      type: { value: "martialM" },
+      properties: { lchGrip: true }
+    };
+    item.flags = {};
+    item.getFlag = (scope, key) => item.flags?.[scope]?.[key];
+
+    const gripRow = new stubs.HTMLElement();
+    gripRow.tagName = "LABEL";
+    const gripControl = new stubs.HTMLElement();
+    gripControl.name = "system.properties.lchGrip";
+    gripRow.append(gripControl);
+
+    const selector = "dnd5e-checkbox[name='system.properties.lchGrip'], input[name='system.properties.lchGrip']";
+    const details = new stubs.HTMLElement();
+    const root = new stubs.HTMLElement({
+      selectors: { ".tab[data-tab='details']": details, [selector]: gripControl },
+      selectorAll: { [selector]: [gripControl] }
+    });
+
+    registerDnd5eSheetExtensions({});
+    stubs.hooks.get("renderItemSheet")({ item, isEditable: true }, root);
+
+    assert.equal(gripRow.listeners.contextmenu.length, 1);
+    let defaultPrevented = false;
+    gripRow.listeners.contextmenu[0]({
+      clientX: 240,
+      clientY: 160,
+      preventDefault() { defaultPrevented = true; },
+      stopPropagation() {}
+    });
+
+    assert.equal(defaultPrevented, true);
+    const tooltip = findTreeNode(stubs.document.documentElement, (node) => node.dataset?.rebreyaWeaponPropertyTooltip === "true");
+    assert.ok(tooltip, "glossary tooltip is appended as an HTML element");
+    assert.ok(findTreeNode(tooltip, (node) => node.textContent === "Смена хвата [Lich]"));
+    assert.ok(findTreeNode(tooltip, (node) => String(node.textContent).includes("изменить хват один раз в ход")));
+
+    assert.equal(stubs.document.listeners.keydown.length, 1);
+    stubs.document.listeners.keydown[0]({ key: "Escape" });
+    assert.equal(tooltip.removed, true);
+  }
+  finally {
+    stubs.restore();
+  }
+});
+
+test("firearm property right click replaces the previous glossary tooltip", async () => {
+  const stubs = installSheetExtensionStubs();
+  try {
+    const { registerDnd5eSheetExtensions } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?firearm-property-tooltip=${Date.now()}`);
+
+    const item = new globalThis.Item();
+    item.type = "weapon";
+    item.system = {
+      type: { value: "firearmPrimitive" },
+      properties: { lchFirearmMisfire: true }
+    };
+    item.flags = {};
+    item.getFlag = (scope, key) => item.flags?.[scope]?.[key];
+    item.update = async () => item;
+
+    const details = new stubs.HTMLElement();
+    const root = new stubs.HTMLElement({ selectors: { ".tab[data-tab='details']": details } });
+
+    registerDnd5eSheetExtensions({});
+    stubs.hooks.get("renderItemSheet")({ item, isEditable: true }, root);
+
+    const misfireRow = findTreeNode(details, (node) => node.dataset?.rebreyaFirearmPropertyRow === "lchFirearmMisfire");
+    const automaticRow = findTreeNode(details, (node) => node.dataset?.rebreyaFirearmPropertyRow === "lchFirearmAutomatic");
+    assert.equal(misfireRow.listeners.contextmenu.length, 1);
+    assert.equal(automaticRow.listeners.contextmenu.length, 1);
+
+    misfireRow.listeners.contextmenu[0]({ clientX: 50, clientY: 60, preventDefault() {}, stopPropagation() {} });
+    const firstTooltip = findTreeNode(stubs.document.documentElement, (node) => node.dataset?.rebreyaWeaponPropertyTooltip === "true");
+    assert.ok(findTreeNode(firstTooltip, (node) => node.textContent === "Осечка (значение)"));
+
+    automaticRow.listeners.contextmenu[0]({ clientX: 80, clientY: 90, preventDefault() {}, stopPropagation() {} });
+    assert.equal(firstTooltip.removed, true);
+    const secondTooltip = findTreeNode(stubs.document.documentElement, (node) => node.dataset?.rebreyaWeaponPropertyTooltip === "true");
+    assert.notEqual(secondTooltip, firstTooltip);
+    assert.ok(findTreeNode(secondTooltip, (node) => node.textContent === "Автоматическое"));
+    assert.ok(findTreeNode(secondTooltip, (node) => String(node.textContent).includes("45-футовый конус")));
+  }
+  finally {
+    stubs.restore();
+  }
+});
+
+test("weapon property glossary covers every Rebreya weapon and firearm property", async () => {
+  const { WEAPON_PROPERTY_GLOSSARY } = await import(`../scripts/data/weapon-property-glossary.js?coverage=${Date.now()}`);
+  const expectedKeys = [
+    "lchGrip", "lchPower", "lchSwing", "lchBackswing", "lchInterfere", "lchAim", "lchPush",
+    "lchTrip", "lchStrReq", "lchArcShot", "lchMechanism", "lchDash", "lchMku", "lchMu",
+    "lchRku", "lchWhirl", "lchReach", "lchPowerStrike", "lchMounted", "lchDeadly", "lchPoison",
+    "lchFirearmMisfire", "lchFirearmAmmunition", "lchFirearmAmmoProperty", "lchFirearmFireMode",
+    "lchFirearmReload", "lchFirearmConstruction", "lchFirearmAutomatic", "lchFirearmBoltAction",
+    "lchFirearmSemiAutomatic", "lchFirearmBulky", "lchFirearmScatter", "lchFirearmExplosive",
+    "lchFirearmRust", "lchFirearmInaccurate", "lchFirearmSurprise", "lchFirearmProneFire",
+    "lchFirearmWaterVulnerability", "lchFirearmOverheat", "lchFirearmMachineGun"
+  ];
+
+  for (const propertyKey of expectedKeys) {
+    assert.ok(WEAPON_PROPERTY_GLOSSARY[propertyKey]?.title, `${propertyKey} has a glossary title`);
+    assert.ok(WEAPON_PROPERTY_GLOSSARY[propertyKey]?.description, `${propertyKey} has a glossary description`);
+  }
+});
+
+test("main stylesheet renders weapon property descriptions as a fixed themed popover", async () => {
+  const css = await readFile(new URL("../styles/main.css", import.meta.url), "utf8");
+  assert.match(css, /\.rm-weapon-property-tooltip\s*\{[^}]*position:\s*fixed;/s);
+  assert.match(css, /\.rm-weapon-property-tooltip__header\s*\{/);
+  assert.match(css, /\.rm-weapon-property-tooltip__description\s*\{/);
 });
 
 test("selectDowntimeTemplateDocumentWithBrowser locks native dnd5e browser to downtime items", async () => {

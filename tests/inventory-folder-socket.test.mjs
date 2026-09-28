@@ -1,0 +1,945 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+
+import { MODULE_ID, REBREYA_GROUP_FLAGS, SETTINGS_KEYS } from "../scripts/constants.js";
+import {
+  INVENTORY_FOLDER_CREATE_COMMAND,
+  INVENTORY_FOLDER_RENAME_COMMAND,
+  INVENTORY_FOLDER_COLOR_COMMAND,
+  INVENTORY_FOLDER_MOVE_COMMAND,
+  INVENTORY_FOLDER_DELETE_COMMAND,
+  INVENTORY_FOLDER_BATCH_COMMAND,
+  INVENTORY_INGRESS_RULE_CREATE_COMMAND,
+  INVENTORY_INGRESS_RULE_DELETE_COMMAND,
+  INVENTORY_INGRESS_RULE_UPDATE_COMMAND,
+  INVENTORY_ITEM_FOLDER_MOVE_COMMAND
+} from "../scripts/data/inventory-service.js";
+import {
+  COMMAND_REQUEST_TYPE,
+  COMMAND_RESULT_TYPE
+} from "../scripts/infrastructure/foundry/socket-command-bus.js";
+
+const originalHooks = globalThis.Hooks;
+globalThis.Hooks = { once() {}, on() {} };
+const { RebreyaMainModule } = await import(`../scripts/main.js?inventory-folder-socket=${Date.now()}`);
+if (originalHooks === undefined) delete globalThis.Hooks;
+else globalThis.Hooks = originalHooks;
+
+function clone(value) {
+  return value == null ? value : JSON.parse(JSON.stringify(value));
+}
+
+function createUser(id, { isGM = false, flags = {} } = {}) {
+  return {
+    id,
+    isGM,
+    active: true,
+    flags: clone(flags),
+    setFlagCalls: [],
+    getFlag(scope, key) {
+      return this.flags?.[scope]?.[key];
+    },
+    async setFlag(scope, key, value) {
+      this.setFlagCalls.push({ scope, key, value: clone(value) });
+      this.flags[scope] ??= {};
+      const targetKey = key.startsWith("==") ? key.slice(2) : key;
+      this.flags[scope][targetKey] = clone(value);
+      return value;
+    }
+  };
+}
+
+function createUsers(users, activeGmId) {
+  const collection = new Map(users.map((user) => [String(user.id), user]));
+  collection.contents = users;
+  collection.activeGM = collection.get(String(activeGmId)) ?? null;
+  return collection;
+}
+
+function createCharacter(id, ownerId) {
+  return {
+    id,
+    type: "character",
+    ownership: { [ownerId]: 3 }
+  };
+}
+
+function createGroup(id, members, { folders = [], itemFolderIds = {}, items = [] } = {}) {
+  const flags = {
+    [MODULE_ID]: {
+      [REBREYA_GROUP_FLAGS.MANAGED]: true,
+      inventoryFolders: {
+        version: 1,
+        folders: clone(folders),
+        itemFolderIds: clone(itemFolderIds)
+      }
+    }
+  };
+  const contents = items.map((item) => ({ ...clone(item) }));
+  return {
+    id,
+    type: "group",
+    system: { members: members.map((actor) => ({ actor })) },
+    flags,
+    setFlagCalls: [],
+    items: {
+      contents,
+      get: (itemId) => contents.find((item) => item.id === itemId) ?? null
+    },
+    getFlag(scope, key) {
+      return this.flags?.[scope]?.[key];
+    },
+    async setFlag(scope, key, value) {
+      this.setFlagCalls.push({ scope, key, value: clone(value) });
+      this.flags[scope] ??= {};
+      const targetKey = key.startsWith("==") ? key.slice(2) : key;
+      this.flags[scope][targetKey] = clone(value);
+      return value;
+    }
+  };
+}
+
+function installFixture({ currentUserId = "gm-a", groupAFolders = [], groupAItems = [] } = {}) {
+  const previousGame = globalThis.game;
+  const previousFoundry = globalThis.foundry;
+  const previousUi = globalThis.ui;
+  const gm = createUser("gm-a", { isGM: true });
+  const playerA = createUser("player-a");
+  const playerB = createUser("player-b");
+  const memberA = createCharacter("member-a", playerA.id);
+  const memberB = createCharacter("member-b", playerB.id);
+  const groupA = createGroup("group-a", [memberA], {
+    folders: groupAFolders,
+    items: groupAItems
+  });
+  const groupB = createGroup("group-b", [memberB]);
+  const users = createUsers([gm, playerA, playerB], gm.id);
+  const actors = [groupA, groupB, memberA, memberB];
+  const emitted = [];
+  const settingsWrites = [];
+  const groupState = {
+    version: 1,
+    activeGroupActorId: groupA.id,
+    groupsById: {
+      [groupA.id]: { version: 1, groupActorId: groupA.id },
+      [groupB.id]: { version: 1, groupActorId: groupB.id }
+    }
+  };
+  const settingsStore = {
+    [SETTINGS_KEYS.GROUP_STATE]: groupState,
+    [SETTINGS_KEYS.CALENDAR_STATE]: {},
+    [SETTINGS_KEYS.COSMOLOGY_STATE]: {}
+  };
+
+  globalThis.foundry = {
+    utils: {
+      deepClone: clone,
+      mergeObject: (base, update) => ({ ...clone(base), ...clone(update) })
+    }
+  };
+  globalThis.ui = { notifications: {} };
+  globalThis.game = {
+    user: users.get(currentUserId),
+    users,
+    actors: {
+      contents: actors,
+      get: (actorId) => actors.find((actor) => actor.id === actorId) ?? null
+    },
+    settings: {
+      settings: new Map(),
+      get(_moduleId, key) {
+        return clone(settingsStore[key]);
+      },
+      async set(_moduleId, key, value) {
+        settingsWrites.push({ key, value: clone(value) });
+        settingsStore[key] = clone(value);
+        return value;
+      }
+    },
+    socket: {
+      emit(channel, message) {
+        emitted.push({ channel, message: clone(message) });
+      }
+    }
+  };
+
+  return {
+    emitted,
+    groupA,
+    groupB,
+    memberA,
+    memberB,
+    settingsWrites,
+    users: { gm, playerA, playerB },
+    restore() {
+      globalThis.game = previousGame;
+      globalThis.foundry = previousFoundry;
+      globalThis.ui = previousUi;
+    }
+  };
+}
+
+function commandRequest(command, senderId, payload, requestId) {
+  return {
+    type: COMMAND_REQUEST_TYPE,
+    command,
+    requestId,
+    senderId,
+    payload
+  };
+}
+
+async function flushCommands() {
+  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setImmediate(resolve));
+}
+
+function resultFor(fixture, requestId) {
+  return fixture.emitted
+    .map((entry) => entry.message)
+    .find((message) => message.type === COMMAND_RESULT_TYPE && message.requestId === requestId);
+}
+
+const FILTER_RULE = {
+  id: "broken-weapons",
+  name: "Сломанное оружие",
+  conditions: [{ field: "durabilityState", operator: "is", value: "broken" }],
+  action: { type: "skip" }
+};
+
+const COMMAND_CASES = [
+  {command: INVENTORY_FOLDER_COLOR_COMMAND, method:"setInventoryFolderColor", payload:{groupActorId:"group-a",folderId:"a",color:"#AA7733"}, wrongValue:p=>({...p,color:"url(x)"})},
+  {
+    command: INVENTORY_FOLDER_CREATE_COMMAND,
+    method: "createInventoryFolder",
+    payload: { groupActorId: "group-a", folderId: "created", name: "Created", parentId: null },
+    wrongValue: (payload) => ({ ...payload, parentId: 7 })
+  },
+  {
+    command: INVENTORY_FOLDER_RENAME_COMMAND,
+    method: "renameInventoryFolder",
+    payload: { groupActorId: "group-a", folderId: "a", name: "Renamed" },
+    wrongValue: (payload) => ({ ...payload, folderId: null })
+  },
+  {
+    command: INVENTORY_FOLDER_MOVE_COMMAND,
+    method: "moveInventoryFolder",
+    payload: { groupActorId: "group-a", folderId: "a", parentId: null },
+    wrongValue: (payload) => ({ ...payload, parentId: false })
+  },
+  {
+    command: INVENTORY_FOLDER_DELETE_COMMAND,
+    method: "deleteInventoryFolder",
+    payload: { groupActorId: "group-a", folderId: "a" },
+    wrongValue: (payload) => ({ ...payload, folderId: null })
+  },
+  {
+    command: INVENTORY_ITEM_FOLDER_MOVE_COMMAND,
+    method: "moveInventoryItemToFolder",
+    payload: { groupActorId: "group-a", itemId: "item-a", folderId: null },
+    wrongValue: (payload) => ({ ...payload, folderId: 7 })
+  },
+  {
+    command: INVENTORY_INGRESS_RULE_CREATE_COMMAND,
+    method: "createInventoryIngressRule",
+    payload: {
+      groupActorId: "group-a",
+      operationId: "create-rule",
+      expectedRevision: 0,
+      rule: FILTER_RULE
+    },
+    wrongValue: (payload) => ({ ...payload, expectedRevision: -1 })
+  },
+  {
+    command: INVENTORY_INGRESS_RULE_UPDATE_COMMAND,
+    method: "updateInventoryIngressRule",
+    payload: {
+      groupActorId: "group-a",
+      operationId: "update-rule",
+      expectedRevision: 1,
+      rule: FILTER_RULE
+    },
+    wrongValue: (payload) => ({ ...payload, rule: { ...payload.rule, extra: true } })
+  },
+  {
+    command: INVENTORY_INGRESS_RULE_DELETE_COMMAND,
+    method: "deleteInventoryIngressRule",
+    payload: {
+      groupActorId: "group-a",
+      operationId: "delete-rule",
+      expectedRevision: 1,
+      ruleId: FILTER_RULE.id
+    },
+    wrongValue: (payload) => ({ ...payload, ruleId: null })
+  }
+];
+
+test("inventory organization commands dispatch exact payloads and refresh only the returned Actor", async () => {
+  const fixture = installFixture();
+  try {
+    const moduleApi = new RebreyaMainModule();
+    const calls = [];
+    const refreshCalls = [];
+    moduleApi.refreshInventoryViews = async (request) => {
+      refreshCalls.push(clone(request));
+    };
+    for (const entry of COMMAND_CASES) {
+      moduleApi.inventoryService[entry.method] = async (payload) => {
+        calls.push({ method: entry.method, payload: clone(payload) });
+        return { actorId: payload.groupActorId, changed: true };
+      };
+      await moduleApi.handleSocketMessage(commandRequest(
+        entry.command,
+        fixture.users.playerA.id,
+        entry.payload,
+        `valid-${entry.command}`
+      ));
+    }
+    await flushCommands();
+
+    assert.deepEqual(calls, COMMAND_CASES.map((entry) => ({
+      method: entry.method,
+      payload: entry.payload
+    })));
+    assert.deepEqual(refreshCalls, COMMAND_CASES.map(() => ({ actorIds: [fixture.groupA.id] })));
+    for (const entry of COMMAND_CASES) {
+      assert.equal(resultFor(fixture, `valid-${entry.command}`)?.ok, true);
+    }
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("inventory organization validators reject missing, extra, untrimmed and wrong typed fields", async () => {
+  const fixture = installFixture();
+  try {
+    const moduleApi = new RebreyaMainModule();
+    let executions = 0;
+    const invalidRequestIds = [];
+    for (const entry of COMMAND_CASES) {
+      moduleApi.inventoryService[entry.method] = async () => {
+        executions += 1;
+        return { actorId: fixture.groupA.id };
+      };
+      const missing = clone(entry.payload);
+      delete missing[Object.keys(missing)[0]];
+      const variants = [
+        missing,
+        { ...entry.payload, extra: true },
+        { ...entry.payload, groupActorId: " group-a" },
+        { ...entry.payload, groupActorId: "g".repeat(161) },
+        entry.wrongValue(entry.payload)
+      ];
+      if (Object.hasOwn(entry.payload, "name")) {
+        variants.push(
+          { ...entry.payload, name: " Untrimmed" },
+          { ...entry.payload, name: "n".repeat(81) }
+        );
+      }
+      for (const [index, payload] of variants.entries()) {
+        const requestId = `invalid-${entry.command}-${index}`;
+        invalidRequestIds.push(requestId);
+        await moduleApi.handleSocketMessage(commandRequest(
+          entry.command,
+          fixture.users.playerA.id,
+          payload,
+          requestId
+        ));
+      }
+    }
+    await flushCommands();
+
+    assert.equal(executions, 0);
+    for (const requestId of invalidRequestIds) {
+      assert.equal(resultFor(fixture, requestId)?.error?.code, "invalid-payload");
+    }
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("rule command validators require canonical exact rule values and safe revisions", async () => {
+  const fixture = installFixture();
+  try {
+    const moduleApi = new RebreyaMainModule();
+    let executions = 0;
+    moduleApi.inventoryService.createInventoryIngressRule = async () => {
+      executions += 1;
+      return { actorId: fixture.groupA.id };
+    };
+    const base = COMMAND_CASES.find((entry) => entry.command === INVENTORY_INGRESS_RULE_CREATE_COMMAND).payload;
+    const variants = [
+      { ...base, expectedRevision: 1.5 },
+      { ...base, operationId: " create-rule" },
+      { ...base, rule: { ...base.rule, name: " Сломанное оружие" } },
+      { ...base, rule: { ...base.rule, conditions: [{ ...base.rule.conditions[0], value: " broken" }] } },
+      { ...base, rule: { ...base.rule, action: { type: "skip", folderId: "weapons" } } }
+    ];
+    for (const [index, payload] of variants.entries()) {
+      await moduleApi.handleSocketMessage(commandRequest(
+        INVENTORY_INGRESS_RULE_CREATE_COMMAND,
+        fixture.users.playerA.id,
+        payload,
+        `invalid-rule-shape-${index}`
+      ));
+    }
+    await flushCommands();
+
+    assert.equal(executions, 0);
+    for (const index of variants.keys()) {
+      assert.equal(resultFor(fixture, `invalid-rule-shape-${index}`)?.error?.code, "invalid-payload");
+    }
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("folder commands enforce the GM/member/foreign/unknown/transport authorization matrix", async () => {
+  const fixture = installFixture();
+  try {
+    const moduleApi = new RebreyaMainModule();
+    const senders = [];
+    moduleApi.refreshInventoryViews = async () => {};
+    moduleApi.inventoryService.createInventoryFolder = async (payload) => {
+      senders.push(payload.folderId);
+      return { actorId: payload.groupActorId, folderId: payload.folderId, changed: true };
+    };
+    const payload = (folderId) => ({
+      groupActorId: fixture.groupA.id,
+      folderId,
+      name: folderId,
+      parentId: null
+    });
+    const requests = [
+      commandRequest(INVENTORY_FOLDER_CREATE_COMMAND, fixture.users.gm.id, payload("gm"), "auth-gm"),
+      commandRequest(INVENTORY_FOLDER_CREATE_COMMAND, fixture.users.playerA.id, payload("member"), "auth-member"),
+      commandRequest(INVENTORY_FOLDER_CREATE_COMMAND, fixture.users.playerB.id, payload("foreign"), "auth-foreign"),
+      commandRequest(INVENTORY_FOLDER_CREATE_COMMAND, "missing-user", payload("unknown"), "auth-unknown")
+    ];
+    for (const request of requests) await moduleApi.handleSocketMessage(request);
+    await moduleApi.handleSocketMessage(
+      commandRequest(INVENTORY_FOLDER_CREATE_COMMAND, fixture.users.playerA.id, payload("forged"), "auth-mismatch"),
+      fixture.users.playerB.id
+    );
+    await flushCommands();
+
+    assert.deepEqual(senders, ["gm", "member"]);
+    assert.equal(resultFor(fixture, "auth-gm")?.ok, true);
+    assert.equal(resultFor(fixture, "auth-member")?.ok, true);
+    assert.equal(resultFor(fixture, "auth-foreign")?.error?.code, "unauthorized");
+    assert.equal(resultFor(fixture, "auth-unknown")?.error?.code, "unknown-sender");
+    assert.equal(resultFor(fixture, "auth-mismatch")?.error?.code, "sender-mismatch");
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("rule commands reuse the GM/member/foreign/unknown/transport authorization matrix", async () => {
+  const fixture = installFixture();
+  try {
+    const moduleApi = new RebreyaMainModule();
+    const senders = [];
+    moduleApi.refreshInventoryViews = async () => {};
+    moduleApi.inventoryService.createInventoryIngressRule = async (payload) => {
+      senders.push(payload.operationId);
+      return { actorId: payload.groupActorId, changed: true };
+    };
+    const payload = (operationId) => ({
+      groupActorId: fixture.groupA.id,
+      operationId,
+      expectedRevision: 0,
+      rule: { ...clone(FILTER_RULE), id: operationId, name: operationId }
+    });
+    const requests = [
+      commandRequest(INVENTORY_INGRESS_RULE_CREATE_COMMAND, fixture.users.gm.id, payload("gm"), "rule-auth-gm"),
+      commandRequest(INVENTORY_INGRESS_RULE_CREATE_COMMAND, fixture.users.playerA.id, payload("member"), "rule-auth-member"),
+      commandRequest(INVENTORY_INGRESS_RULE_CREATE_COMMAND, fixture.users.playerB.id, payload("foreign"), "rule-auth-foreign"),
+      commandRequest(INVENTORY_INGRESS_RULE_CREATE_COMMAND, "missing-user", payload("unknown"), "rule-auth-unknown")
+    ];
+    for (const request of requests) await moduleApi.handleSocketMessage(request);
+    await moduleApi.handleSocketMessage(
+      commandRequest(INVENTORY_INGRESS_RULE_CREATE_COMMAND, fixture.users.playerA.id, payload("forged"), "rule-auth-mismatch"),
+      fixture.users.playerB.id
+    );
+    await flushCommands();
+
+    assert.deepEqual(senders, ["gm", "member"]);
+    assert.equal(resultFor(fixture, "rule-auth-gm")?.ok, true);
+    assert.equal(resultFor(fixture, "rule-auth-member")?.ok, true);
+    assert.equal(resultFor(fixture, "rule-auth-foreign")?.error?.code, "unauthorized");
+    assert.equal(resultFor(fixture, "rule-auth-unknown")?.error?.code, "unknown-sender");
+    assert.equal(resultFor(fixture, "rule-auth-mismatch")?.error?.code, "sender-mismatch");
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("create replay is idempotent while a conflicting stable folder ID fails", async () => {
+  const fixture = installFixture();
+  try {
+    const moduleApi = new RebreyaMainModule();
+    moduleApi.refreshInventoryViews = async () => {};
+    const payload = {
+      groupActorId: fixture.groupA.id,
+      folderId: "stable-folder",
+      name: "Stable",
+      parentId: null
+    };
+
+    await moduleApi.handleSocketMessage(commandRequest(
+      INVENTORY_FOLDER_CREATE_COMMAND,
+      fixture.users.playerA.id,
+      payload,
+      "create-first"
+    ));
+    await moduleApi.handleSocketMessage(commandRequest(
+      INVENTORY_FOLDER_CREATE_COMMAND,
+      fixture.users.playerA.id,
+      payload,
+      "create-replay"
+    ));
+    await moduleApi.handleSocketMessage(commandRequest(
+      INVENTORY_FOLDER_CREATE_COMMAND,
+      fixture.users.playerA.id,
+      { ...payload, name: "Conflict" },
+      "create-conflict"
+    ));
+    await flushCommands();
+
+    assert.equal(fixture.groupA.setFlagCalls.length, 1);
+    assert.equal(resultFor(fixture, "create-first")?.data?.changed, true);
+    assert.equal(resultFor(fixture, "create-replay")?.data?.changed, false);
+    assert.equal(resultFor(fixture, "create-conflict")?.error?.code, "command-failed");
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("queued folder moves re-read live Actor state and reject a newly formed cycle", async () => {
+  const fixture = installFixture({
+    groupAFolders: [
+      { id: "a", name: "A", parentId: null },
+      { id: "b", name: "B", parentId: null }
+    ]
+  });
+  try {
+    const moduleApi = new RebreyaMainModule();
+    moduleApi.refreshInventoryViews = async () => {};
+    let releaseBlock;
+    let enterBlock;
+    const entered = new Promise((resolve) => { enterBlock = resolve; });
+    const blocked = moduleApi.worldMutationCoordinator.run(
+      `inventory-organization:${fixture.groupA.id}`,
+      async () => {
+        enterBlock();
+        await new Promise((resolve) => { releaseBlock = resolve; });
+      }
+    );
+    await entered;
+    await moduleApi.handleSocketMessage(commandRequest(
+      INVENTORY_FOLDER_MOVE_COMMAND,
+      fixture.users.playerA.id,
+      { groupActorId: fixture.groupA.id, folderId: "a", parentId: "b" },
+      "stale-cycle"
+    ));
+    await new Promise((resolve) => setImmediate(resolve));
+    fixture.groupA.flags[MODULE_ID].inventoryFolders.folders = [
+      { id: "a", name: "A", parentId: null },
+      { id: "b", name: "B", parentId: "a" }
+    ];
+    releaseBlock();
+    await blocked;
+    await flushCommands();
+
+    assert.equal(resultFor(fixture, "stale-cycle")?.error?.code, "command-failed");
+    assert.equal(fixture.groupA.setFlagCalls.length, 0);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("module organization wrappers validate locally and route non-active clients through exact commands", async () => {
+  const gmFixture = installFixture();
+  try {
+    const moduleApi = new RebreyaMainModule();
+    const calls = [];
+    const refreshCalls = [];
+    moduleApi.refreshInventoryViews = async (request) => refreshCalls.push(clone(request));
+    for (const entry of COMMAND_CASES) {
+      moduleApi.inventoryService[entry.method] = async (payload) => {
+        calls.push({ method: entry.method, payload: clone(payload) });
+        return { actorId: payload.groupActorId, changed: true };
+      };
+      await moduleApi[entry.method](entry.payload);
+    }
+    await assert.rejects(
+      moduleApi.createInventoryFolder({ ...COMMAND_CASES[0].payload, extra: true }),
+      /payload/iu
+    );
+    assert.deepEqual(calls, COMMAND_CASES.map((entry) => ({ method: entry.method, payload: entry.payload })));
+    assert.deepEqual(refreshCalls, COMMAND_CASES.map(() => ({ actorIds: [gmFixture.groupA.id] })));
+  }
+  finally {
+    gmFixture.restore();
+  }
+
+  const playerFixture = installFixture({ currentUserId: "player-a" });
+  try {
+    const moduleApi = new RebreyaMainModule();
+    const requests = [];
+    moduleApi.refreshInventoryViews = async () => {};
+    moduleApi.socketCommandBus.request = async (command, payload) => {
+      requests.push({ command, payload: clone(payload) });
+      return { actorId: payload.groupActorId };
+    };
+    for (const entry of COMMAND_CASES) await moduleApi[entry.method](entry.payload);
+
+    assert.deepEqual(requests, COMMAND_CASES.map((entry) => ({
+      command: entry.command,
+      payload: entry.payload
+    })));
+  }
+  finally {
+    playerFixture.restore();
+  }
+});
+
+test("non-active item-to-root command refreshes the requester cache after the GM result", async () => {
+  const fixture = installFixture({ currentUserId: "player-a" });
+  try {
+    const moduleApi = new RebreyaMainModule();
+    const refreshCalls = [];
+    let resolveRequest;
+    moduleApi.socketCommandBus.request = () => new Promise((resolve) => {
+      resolveRequest = resolve;
+    });
+    moduleApi.refreshInventoryViews = async (request) => refreshCalls.push(clone(request));
+
+    const pendingMove = moduleApi.moveInventoryItemToFolder({
+      groupActorId: fixture.groupA.id,
+      itemId: "item-a",
+      folderId: null
+    });
+    await Promise.resolve();
+    assert.deepEqual(refreshCalls, []);
+
+    resolveRequest({
+      actorId: fixture.groupA.id,
+      folderId: null,
+      changed: true,
+      deletedFolderId: "",
+      itemId: "item-a"
+    });
+    await pendingMove;
+
+    assert.deepEqual(refreshCalls, [{ actorIds: [fixture.groupA.id] }]);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("folder UI state migrates v1 expansion and keeps pins personal", async () => {
+  const fixture = installFixture({
+    groupAFolders: [
+      { id: "a", name: "A", parentId: null },
+      { id: "b", name: "B", parentId: null }
+    ]
+  });
+  fixture.users.gm.flags[MODULE_ID] = {
+    inventoryFolderUi: {
+      version: 1,
+      groups: {
+        [fixture.groupA.id]: { expandedFolderIds: ["a", "stale"] }
+      }
+    }
+  };
+  try {
+    const moduleApi = new RebreyaMainModule();
+    assert.deepEqual(
+      moduleApi.getInventoryFolderUiState(fixture.groupA.id, ["a", "b"]),
+      { version: 2, groupActorId: fixture.groupA.id, expandedFolderIds: ["a"], pinnedFolderIds: [] }
+    );
+    fixture.users.gm.flags[MODULE_ID].inventoryFolderUi.groups[fixture.groupA.id]
+      .expandedFolderIds = ["stale"];
+
+    let releaseBlock;
+    let enterBlock;
+    const entered = new Promise((resolve) => { enterBlock = resolve; });
+    const blocked = moduleApi.worldMutationCoordinator.run(
+      `inventory-folder-ui:${fixture.users.gm.id}`,
+      async () => {
+        enterBlock();
+        await new Promise((resolve) => { releaseBlock = resolve; });
+      }
+    );
+    await entered;
+    const pending = moduleApi.setInventoryFolderExpanded(fixture.groupA.id, "b", true);
+    fixture.users.gm.flags[MODULE_ID].inventoryFolderUi.groups[fixture.groupA.id]
+      .expandedFolderIds = ["a", "stale"];
+    releaseBlock();
+    await blocked;
+
+    assert.deepEqual(await pending, {
+      version: 2,
+      groupActorId: fixture.groupA.id,
+      expandedFolderIds: ["a", "b"],
+      pinnedFolderIds: []
+    });
+    assert.deepEqual(await moduleApi.setInventoryFolderPinned(fixture.groupA.id, "b", true), {
+      version: 2,
+      groupActorId: fixture.groupA.id,
+      expandedFolderIds: ["a", "b"],
+      pinnedFolderIds: ["b"]
+    });
+    assert.deepEqual(await moduleApi.setInventoryFolderExpanded(fixture.groupA.id, "a", false), {
+      version: 2,
+      groupActorId: fixture.groupA.id,
+      expandedFolderIds: ["b"],
+      pinnedFolderIds: ["b"]
+    });
+    assert.deepEqual(
+      fixture.users.gm.getFlag(MODULE_ID, "inventoryFolderUi").groups[fixture.groupA.id],
+      { expandedFolderIds: ["b"], pinnedFolderIds: ["b"] }
+    );
+    assert.equal(fixture.users.gm.setFlagCalls.length, 3);
+    assert.equal(fixture.groupA.setFlagCalls.length, 0);
+    assert.equal(fixture.settingsWrites.length, 0);
+    assert.equal(fixture.emitted.length, 0);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("inventory.folder.batch accepts only the exact authorized group payload", async () => {
+  const fixture = installFixture();
+  const moduleApi = new RebreyaMainModule();
+  const executions = [];
+  moduleApi.inventoryService.executeInventoryFolderBatch = async (payload) => {
+    executions.push(clone(payload));
+    return {
+      action: payload.action,
+      folderId: payload.folderId,
+      includeDescendants: payload.includeDescendants,
+      processed: [], skipped: [], failed: [], stopped: false,
+      totals: { gainedCopper: 0, materials: [] }
+    };
+  };
+  const payload = {
+    groupActorId: fixture.groupA.id,
+    folderId: "folder-a",
+    action: "sell",
+    includeDescendants: false,
+    operationId: "folder-batch-1"
+  };
+  try {
+    for (const [requestId, senderId, nextPayload] of [
+      ["folder-batch-gm", fixture.users.gm.id, payload],
+      ["folder-batch-member", fixture.users.playerA.id, { ...payload, action: "dismantle", operationId: "folder-batch-2" }],
+      ["folder-batch-foreign", fixture.users.playerB.id, payload],
+      ["folder-batch-unknown", "missing-user", payload],
+      ["folder-batch-extra", fixture.users.playerA.id, { ...payload, extra: true }],
+      ["folder-batch-blank", fixture.users.playerA.id, { ...payload, folderId: "" }],
+      ["folder-batch-action", fixture.users.playerA.id, { ...payload, action: "delete" }],
+      ["folder-batch-recursion", fixture.users.playerA.id, { ...payload, includeDescendants: 1 }],
+      ["folder-batch-long", fixture.users.playerA.id, { ...payload, operationId: "x".repeat(161) }]
+    ]) {
+      await moduleApi.handleSocketMessage(commandRequest(
+        INVENTORY_FOLDER_BATCH_COMMAND,
+        senderId,
+        nextPayload,
+        requestId
+      ));
+    }
+    await moduleApi.handleSocketMessage(
+      commandRequest(INVENTORY_FOLDER_BATCH_COMMAND, fixture.users.playerA.id, payload, "folder-batch-forged"),
+      fixture.users.playerB.id
+    );
+    await flushCommands();
+
+    assert.deepEqual(executions, [payload, { ...payload, action: "dismantle", operationId: "folder-batch-2" }]);
+    assert.equal(resultFor(fixture, "folder-batch-gm")?.ok, true);
+    assert.equal(resultFor(fixture, "folder-batch-member")?.ok, true);
+    assert.equal(resultFor(fixture, "folder-batch-foreign")?.error?.code, "unauthorized");
+    assert.equal(resultFor(fixture, "folder-batch-unknown")?.error?.code, "unknown-sender");
+    assert.equal(resultFor(fixture, "folder-batch-forged")?.error?.code, "sender-mismatch");
+    for (const id of ["extra", "blank", "action", "recursion", "long"]) {
+      assert.equal(resultFor(fixture, `folder-batch-${id}`)?.error?.code, "invalid-payload");
+    }
+  }
+  finally { fixture.restore(); }
+});
+
+test("folder batch public API uses one socket request for a player and direct execution for the active GM", async () => {
+  const payload = {
+    groupActorId: "group-a",
+    folderId: "folder-a",
+    action: "sell",
+    includeDescendants: true,
+    operationId: "folder-batch-public"
+  };
+  const playerFixture = installFixture({ currentUserId: "player-a" });
+  try {
+    const moduleApi = new RebreyaMainModule();
+    const requests = [];
+    let localExecutions = 0;
+    moduleApi.inventoryService.executeInventoryFolderBatch = async () => { localExecutions += 1; };
+    moduleApi.socketCommandBus.request = async (command, exactPayload) => {
+      requests.push({ command, payload: clone(exactPayload) });
+      return { action: exactPayload.action, folderId: exactPayload.folderId };
+    };
+    moduleApi.refreshInventoryViews = async () => {};
+    await moduleApi.runInventoryFolderBatch(payload);
+    assert.deepEqual(requests, [{ command: INVENTORY_FOLDER_BATCH_COMMAND, payload }]);
+    assert.equal(localExecutions, 0);
+  }
+  finally { playerFixture.restore(); }
+
+  const gmFixture = installFixture();
+  try {
+    const moduleApi = new RebreyaMainModule();
+    let socketRequests = 0;
+    let localExecutions = 0;
+    moduleApi.socketCommandBus.request = async () => { socketRequests += 1; };
+    moduleApi.inventoryService.executeInventoryFolderBatch = async (exactPayload) => {
+      localExecutions += 1;
+      assert.deepEqual(exactPayload, payload);
+      return { action: exactPayload.action, folderId: exactPayload.folderId };
+    };
+    moduleApi.refreshInventoryViews = async () => {};
+    await moduleApi.runInventoryFolderBatch(payload);
+    assert.equal(socketRequests, 0);
+    assert.equal(localExecutions, 1);
+  }
+  finally { gmFixture.restore(); }
+});
+
+test("folder UI state filters stale pins independently per group and user", async () => {
+  const fixture = installFixture({
+    groupAFolders: [
+      { id: "a", name: "A", parentId: null },
+      { id: "b", name: "B", parentId: null }
+    ]
+  });
+  fixture.groupB.flags[MODULE_ID].inventoryFolders.folders = [
+    { id: "x", name: "X", parentId: null, color: null }
+  ];
+  fixture.users.gm.flags[MODULE_ID] = {
+    inventoryFolderUi: {
+      version: 2,
+      groups: {
+        [fixture.groupA.id]: { expandedFolderIds: ["a"], pinnedFolderIds: ["a", "stale"] },
+        [fixture.groupB.id]: { expandedFolderIds: [], pinnedFolderIds: ["x"] }
+      }
+    }
+  };
+  fixture.users.playerA.flags[MODULE_ID] = {
+    inventoryFolderUi: {
+      version: 2,
+      groups: {
+        [fixture.groupA.id]: { expandedFolderIds: ["b"], pinnedFolderIds: ["b"] },
+        [fixture.groupB.id]: { expandedFolderIds: [], pinnedFolderIds: ["stale"] }
+      }
+    }
+  };
+  try {
+    const moduleApi = new RebreyaMainModule();
+    assert.deepEqual(moduleApi.getInventoryFolderUiState(fixture.groupA.id, ["a", "b"]), {
+      version: 2,
+      groupActorId: fixture.groupA.id,
+      expandedFolderIds: ["a"],
+      pinnedFolderIds: ["a"]
+    });
+
+    game.user = fixture.users.playerA;
+    assert.deepEqual(moduleApi.getInventoryFolderUiState(fixture.groupA.id, ["a", "b"]), {
+      version: 2,
+      groupActorId: fixture.groupA.id,
+      expandedFolderIds: ["b"],
+      pinnedFolderIds: ["b"]
+    });
+    assert.deepEqual(await moduleApi.setInventoryFolderPinned(fixture.groupA.id, "a", true), {
+      version: 2,
+      groupActorId: fixture.groupA.id,
+      expandedFolderIds: ["b"],
+      pinnedFolderIds: ["b", "a"]
+    });
+    assert.deepEqual(
+      fixture.users.playerA.getFlag(MODULE_ID, "inventoryFolderUi").groups[fixture.groupB.id],
+      { expandedFolderIds: [], pinnedFolderIds: ["stale"] }
+    );
+    await assert.rejects(
+      moduleApi.setInventoryFolderPinned(fixture.groupA.id, "missing", true),
+      (error) => error?.code === "folder-not-found"
+    );
+    assert.equal(fixture.users.gm.setFlagCalls.length, 0);
+    assert.equal(fixture.users.playerA.setFlagCalls.length, 1);
+    assert.equal(fixture.groupA.setFlagCalls.length, 0);
+    assert.equal(fixture.settingsWrites.length, 0);
+    assert.equal(fixture.emitted.length, 0);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("color mutations authorize senders and preserve a concurrent rename and membership", async () => {
+  const fixture=installFixture({groupAFolders:[{id:"a",name:"A",parentId:null}],groupAItems:[{id:"rope"}]});
+  try {
+    const api=new RebreyaMainModule(); api.refreshInventoryViews=async()=>{};
+    fixture.groupA.flags[MODULE_ID].inventoryFolders.itemFolderIds={rope:"a"};
+    const payload={groupActorId:"group-a",folderId:"a",color:"#aa7733"};
+    for (const [sender,id] of [[fixture.users.playerB.id,"foreign"],["missing","unknown"]]) {
+      await api.handleSocketMessage(commandRequest(INVENTORY_FOLDER_COLOR_COMMAND,sender,payload,id));
+    }
+    await api.handleSocketMessage(commandRequest(INVENTORY_FOLDER_COLOR_COMMAND,fixture.users.playerA.id,payload,"forged"),fixture.users.playerB.id);
+    await flushCommands();
+    assert.equal(fixture.groupA.setFlagCalls.length,0);
+    assert.equal(resultFor(fixture,"foreign").error.code,"unauthorized");
+    assert.equal(resultFor(fixture,"unknown").error.code,"unknown-sender");
+    assert.equal(resultFor(fixture,"forged").error.code,"sender-mismatch");
+    let release,enter; const entered=new Promise(r=>enter=r);
+    const blocked=api.worldMutationCoordinator.run("inventory-organization:group-a",async()=>{enter();await new Promise(r=>release=r)});
+    await entered;
+    const rename=api.renameInventoryFolder({groupActorId:"group-a",folderId:"a",name:"Новое"});
+    const color=api.setInventoryFolderColor(payload);
+    release();await blocked;await Promise.all([rename,color]);
+    const state=fixture.groupA.flags[MODULE_ID].inventoryFolders;
+    assert.equal(state.folders[0].name,"Новое");assert.equal(state.folders[0].color,"#AA7733");
+    assert.deepEqual(state.itemFolderIds,{rope:"a"});
+    const count=fixture.groupA.setFlagCalls.length;
+    await api.setInventoryFolderColor(payload);
+    assert.equal(fixture.groupA.setFlagCalls.length,count);
+    await api.handleSocketMessage(commandRequest(INVENTORY_FOLDER_COLOR_COMMAND,fixture.users.playerA.id,{...payload,color:null},"member-reset"));
+    await flushCommands();
+    assert.equal(resultFor(fixture,"member-reset").ok,true);
+    assert.equal(fixture.groupA.flags[MODULE_ID].inventoryFolders.folders[0].color,null);
+    assert.equal(fixture.groupB.setFlagCalls.length,0);
+  } finally {fixture.restore();}
+});
+
+
+test("partial folder command validates quantity and operation ID and binds authenticated sender",async()=>{
+  const fixture=installFixture();
+  try {
+    const api=new RebreyaMainModule();const calls=[];api.refreshInventoryViews=async()=>{};
+    api.inventoryService.moveInventoryItemToFolder=async(payload,context)=>{calls.push({payload,sender:context.sender.id});return{actorId:payload.groupActorId};};
+    const payload={groupActorId:"group-a",itemId:"rope",folderId:null,quantity:3,operationId:"split-1",expectedSourceQuantity:10};
+    await api.handleSocketMessage(commandRequest(INVENTORY_ITEM_FOLDER_MOVE_COMMAND,fixture.users.playerA.id,payload,"valid-part"));
+    const invalid=[{...payload,quantity:0},{...payload,quantity:"3"},{...payload,quantity:0.000001},{...payload,operationId:""},{...payload,extra:true}];
+    for(const [index,row]of invalid.entries())await api.handleSocketMessage(commandRequest(INVENTORY_ITEM_FOLDER_MOVE_COMMAND,fixture.users.playerA.id,row,`bad-part-${index}`));
+    await api.handleSocketMessage(commandRequest(INVENTORY_ITEM_FOLDER_MOVE_COMMAND,fixture.users.playerB.id,payload,"foreign-part"));
+    await flushCommands();
+    assert.equal(calls.length,1);assert.equal(calls[0].sender,fixture.users.playerA.id);assert.deepEqual(calls[0].payload,payload);
+    for(const index of invalid.keys())assert.equal(resultFor(fixture,`bad-part-${index}`).error.code,"invalid-payload");
+    assert.equal(resultFor(fixture,"foreign-part").error.code,"unauthorized");
+  } finally {fixture.restore();}
+});

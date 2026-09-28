@@ -1,41 +1,50 @@
-﻿import { GEAR_COMPENDIUM_LABEL, GEAR_COMPENDIUM_NAME, MODULE_ID } from "../constants.js";
+import { GEAR_COMPENDIUM_LABEL, GEAR_COMPENDIUM_NAME, MODULE_ID } from "../constants.js";
 import { bringAppToFront } from "../ui.js";
 import {
   deduplicateCompendiumFolders,
   ensureCompendiumFolders,
   ensurePackSidebarFolder,
   normalizeFolderPath
-} from "./compendium-utils.js";
+} from "./compendium-utils.js?v=1.4.327";
 import {
   buildGearIconLookup,
   DEFAULT_GEAR_ICON,
   resolveGearItemIcon,
   resolveGearNamedIcon
-} from "./gear-icon-resolver.js";
+} from "./gear-icon-resolver.js?v=1.4.327";
 import {
   classifyGearEntry,
   inferHeroDollSlotGroupFromSlots,
   mapSlotGroupToHeroDollSlots,
   normalizeHeroDollSlotGroup
-} from "./item-classification.js";
+} from "./item-classification.js?v=1.4.292";
 import { createStableGearDocumentId } from "./gear-document-ids.js";
-import { syncManagedDocuments } from "./managed-compendium-sync.js";
+import { getManagedIconProjection, syncManagedDocuments } from "./managed-compendium-sync.js?v=1.4.330";
 import {
   inferWeaponAmmunitionSubtype,
   isSelfAmmunitionWeapon
-} from "./ammunition-compatibility.js?v=1.4.111-native-ammunition-compatibility";
+} from "./ammunition-compatibility.js?v=1.4.147-native-ammunition";
+import { inferRebreyaWeaponAmmunitionSubtype } from "./ammunition-types.js";
 import {
   escapeFoundryHtml as escapeHtml,
   finiteNumber as toFiniteNumber
 } from "../shared/foundry-values.js";
+import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 
 export { buildGearIconLookup };
 
 const PACK_ID = `world.${GEAR_COMPENDIUM_NAME}`;
 const DND5E_SYSTEM_ID = "dnd5e";
 const COMPENDIUM_SIDEBAR_FOLDER = ["Ребрея"];
-const GEAR_TEMPLATE_VERSION = 20;
+const GEAR_TEMPLATE_VERSION = 25;
 const GEAR_CONTAINER_CONTENT_SOURCE_TYPE = "gearContainerContent";
+const STORAGE_COIN_DENOMINATIONS = new Set(["pp", "gp", "sp", "cp"]);
+const STORAGE_COIN_DENOMINATION_BY_NAME = Object.freeze({
+  "медная монета": "cp",
+  "серебрянная монета": "sp",
+  "золотая монета": "gp",
+  "платиновая монета": "pp"
+});
 const FIREARM_ATTACK_ACTIVITY_ID = "lchFirearmAtk001";
 const FIREARM_RELOAD_ACTIVITY_ID = "lchReloadGun0001";
 const FIREARM_AUTOMATIC_FIRE_ACTIVITY_ID = "lchAutoFire00001";
@@ -60,6 +69,13 @@ function normalizeMatchText(value) {
     .replace(/\u0451/gu, "\u0435")
     .replace(/['\u2019\u2018\u02BC\u02B9\u2032"\u201C\u201D\u00AB\u00BB]/gu, "")
     .replace(/\s+/gu, " ");
+}
+
+function resolveGearCoinDenomination(item) {
+  if (normalizeMatchText(item?.equipmentType) !== normalizeMatchText("Сокровища")) {
+    return "";
+  }
+  return STORAGE_COIN_DENOMINATION_BY_NAME[normalizeMatchText(item?.name)] ?? "";
 }
 
 function isPlainObject(value) {
@@ -198,17 +214,20 @@ function parseAmmunitionSourcePack(item, classification) {
 
   const name = cleanString(item.name);
   const match = name.match(/\s*\((\d+)\)\s*$/u);
-  if (!match) {
+  const profileQuantity = Math.floor(toFiniteNumber(item?.ammunition?.quantity, 0));
+  if (!match && profileQuantity < 1) {
     return null;
   }
 
-  const quantity = Math.max(1, Math.floor(toFiniteNumber(match[1], 1)));
+  const quantity = match
+    ? Math.max(1, Math.floor(toFiniteNumber(match[1], 1)))
+    : profileQuantity;
   const sourceWeight = Math.max(0, toFiniteNumber(item.weight, 0));
   const sourcePriceGoldEquivalent = Math.max(0, toFiniteNumber(item.priceGoldEquivalent ?? item.priceValue, 0));
 
   return {
     quantity,
-    actorName: cleanString(name.replace(/\s*\(\d+\)\s*$/u, ""), name),
+    actorName: match ? cleanString(name.replace(/\s*\(\d+\)\s*$/u, ""), name) : name,
     sourceWeight,
     sourcePriceGoldEquivalent,
     actorWeight: roundDecimal(sourceWeight / quantity),
@@ -276,8 +295,12 @@ function buildGearSignature(item) {
     itemSlot,
     heroDollSlots,
     firearmClass: classification.firearmClass,
+    storageCoinDenomination: resolveGearCoinDenomination(item),
     weapon: isPlainObject(item.weapon) ? item.weapon : null,
     armor: isPlainObject(item.armor) ? item.armor : null,
+    ammunition: isPlainObject(item.ammunition) ? item.ammunition : null,
+    explosive: isPlainObject(item.explosive) ? item.explosive : null,
+    attachment: isPlainObject(item.attachment) ? item.attachment : null,
     implant: isPlainObject(item.implant) ? item.implant : null,
     upgrade: isPlainObject(item.upgrade) ? item.upgrade : null
   });
@@ -402,73 +425,33 @@ function resolveWeaponHandRequirement(weapon) {
 }
 
 function buildMetadataRows(item, classification) {
-  const itemSlotGroup = resolveItemSlotGroup(item, classification);
-  const weapon = isPlainObject(item.weapon) ? item.weapon : {};
+  const ammunition = isPlainObject(item.ammunition) ? item.ammunition : {};
+  const explosive = isPlainObject(item.explosive) ? item.explosive : {};
+  const attachment = isPlainObject(item.attachment) ? item.attachment : {};
   const implant = isPlainObject(item.implant) ? item.implant : {};
   const upgrade = isPlainObject(item.upgrade) ? item.upgrade : {};
-  const handRequirement = resolveWeaponHandRequirement(weapon);
-  const itemSlotLabel = {
-    head: "Голова",
-    neck: "Шея",
-    shoulders: "Плечи",
-    bracers: "Наручи",
-    hand: "Рука",
-    chest: "Грудь",
-    belt: "Пояс",
-    legs: "Ноги",
-    ring: "Кольцо",
-    back: "Спина"
-  }[itemSlotGroup] ?? null;
-  const heroDollSlotLabels = mapSlotGroupToHeroDollSlots(itemSlotGroup, classification.heroDollSlots)
-    .map((slotId) => {
-      const slotName = {
-        head: "Голова",
-        neck: "Шея",
-        shoulders: "Плечи",
-        chest: "Грудь",
-        belt: "Пояс",
-        legs: "Ноги",
-        bracers: "Наручи",
-        leftHand: "Рука",
-        rightHand: "Рука",
-        ring1: "Кольцо 1",
-        ring2: "Кольцо 2",
-        back1: "Спина 1",
-        back2: "Спина 2",
-        back3: "Спина 3",
-        back4: "Спина 4",
-        back5: "Спина 5"
-      };
-      return slotName[slotId] ?? slotId;
-    });
 
   return [
-    ["Тип снаряжения", item.equipmentType],
-    ["Слот", itemSlotLabel],
-    ["Тип Foundry", classification.documentType],
-    ["Подтип Foundry", classification.systemTypeSubtype || classification.systemTypeValue || null],
-    ["Базовый предмет", classification.baseItem || null],
-    ["Папка", buildFolderPath(classification).join(" / ") || null],
-    ["Слоты куклы", heroDollSlotLabels.join(", ") || null],
-    ["Цена", item.priceText || null],
-    ["Ранг", clampRank(item.rank)],
-    ["Вес", item.weight ? `${item.weight} фнт.` : null],
-    ["Объем", item.volume],
-    ["Вместимость", item.capacity],
-    ["Преобладающий материал", item.predominantMaterialName],
-    ["Связанный инструмент", item.linkedTool],
-    ["Value", item.value],
-    ["Урон", weapon.damageFormula],
-    ["Тип урона", weapon.damageTypeLabel],
-    ["Руки", handRequirement?.source],
-    ["Свойства оружия", weapon.propertiesText],
+    ["Количество боеприпасов", ammunition.quantity],
+    ["Совместимость боеприпаса", Array.isArray(ammunition.compatibility) ? ammunition.compatibility.join(", ") : null],
+    ["Заменяет боеприпасы", Array.isArray(ammunition.replaces) ? ammunition.replaces.join(", ") : null],
+    ["Свойства боеприпаса", ammunition.propertiesText],
+    ["Радиус взрыва", Number.isFinite(explosive.radius) ? `${explosive.radius} фт.` : null],
+    ["Сл взрывчатки", Number.isFinite(explosive.saveDc) ? `${explosive.saveAbility || "—"} ${explosive.saveDc}` : null],
+    ["Свойства взрывчатки", explosive.propertiesText],
+    ["Слоты обвеса", Array.isArray(attachment.slots?.values) ? attachment.slots.values.join(", ") : null],
+    ["Совместимость обвеса", Array.isArray(attachment.compatibility) ? attachment.compatibility.join(", ") : null],
+    ["Свойства обвеса", attachment.propertiesText],
     ["Очки модификации", implant.pointsText],
     ["Тип импланта", implant.type],
     ["Требования импланта", implant.requirements],
     ["Эффект импланта", cleanString(implant.effect) !== cleanString(item.description) ? implant.effect : null],
     ["Применяется к", upgrade.appliesTo],
     ["Эффект усовершенствования", upgrade.effect],
-    ["Материал усовершенствования", upgrade.sourceMaterialName]
+    ["Материал усовершенствования", upgrade.sourceMaterialName],
+    ["Преобладающий материал", item.predominantMaterialName],
+    ["Связанный инструмент", item.linkedTool],
+    ["Value", item.value]
   ].filter(([, value]) => value !== null && value !== undefined && value !== "");
 }
 
@@ -478,14 +461,14 @@ function buildDescriptionHtml(item, classification) {
 
   return `
     <section class="rebreya-gear-item">
+      ${descriptionText
+        ? `<p>${escapeHtml(descriptionText)}</p>`
+        : "<p>Описание предмета пока не заполнено.</p>"}
       ${metadataRows.length ? `
         <ul>
           ${metadataRows.map(([label, value]) => `<li><strong>${escapeHtml(label)}:</strong> ${renderValue(value)}</li>`).join("")}
         </ul>
       ` : ""}
-      ${descriptionText
-        ? `<p>${escapeHtml(descriptionText)}</p>`
-        : "<p>Описание предмета пока не заполнено.</p>"}
     </section>
   `.trim();
 }
@@ -973,6 +956,12 @@ function buildSystemData(item, classification, descriptionHtml, presentation = n
       applyWeaponData(baseData, item.weapon, {
         suppressNativeAmmunition: isFirearmClassification(classification)
       });
+      if (isFirearmClassification(classification)) {
+        const ammunitionType = inferRebreyaWeaponAmmunitionSubtype(item);
+        if (ammunitionType) {
+          baseData.ammunition = { type: ammunitionType };
+        }
+      }
       if (!isFirearmClassification(classification)) {
         const ammunitionProfile = {
           ...item,
@@ -1067,6 +1056,7 @@ export function createDnd5eItemData(item, folderIdByPath, iconLookup = null) {
   const attackTraitsText = cleanString(weapon.attackTraitsText || weapon.propertiesText);
   const handRequirement = resolveWeaponHandRequirement(weapon);
   const containerContents = cloneContainerContents(item.containerContents);
+  const coinDenomination = resolveGearCoinDenomination(item);
 
   return {
     _id: createStableGearDocumentId(item.id),
@@ -1083,6 +1073,12 @@ export function createDnd5eItemData(item, folderIdByPath, iconLookup = null) {
         managed: true,
         sourceType: "gear",
         gearId: item.id,
+        ...(coinDenomination ? {
+          storageCoinTemplate: {
+            version: 1,
+            denomination: coinDenomination
+          }
+        } : {}),
         signature,
         equipmentType: item.equipmentType ?? "",
         foundryType: classification.documentType,
@@ -1112,7 +1108,10 @@ export function createDnd5eItemData(item, folderIdByPath, iconLookup = null) {
           ? lichWeaponPropertyValues
           : null,
         implant: clonePlainObject(item.implant),
-        upgrade: clonePlainObject(item.upgrade)
+        upgrade: clonePlainObject(item.upgrade),
+        ammunition: clonePlainObject(item.ammunition),
+        explosive: clonePlainObject(item.explosive),
+        attachment: clonePlainObject(item.attachment)
       }
     }
   };
@@ -1290,6 +1289,8 @@ async function syncManagedDocumentIcons(pack, documents, iconLookup) {
       continue;
     }
 
+    if (getManagedIconProjection(pack.collection, document.id)) continue;
+
     const currentIcon = String(document.img ?? "").trim() || DEFAULT_GEAR_ICON;
     const nextIcon = resolveGearNamedIcon({
       name: document.name,
@@ -1310,6 +1311,63 @@ async function syncManagedDocumentIcons(pack, documents, iconLookup) {
   }
 
   await Item.implementation.updateDocuments(updates, { pack: pack.collection });
+}
+
+function collectionValues(collection) {
+  if (Array.isArray(collection?.contents)) return collection.contents;
+  if (Array.isArray(collection)) return collection;
+  if (typeof collection?.values === "function") return Array.from(collection.values());
+  return [];
+}
+
+function documentFolderId(document) {
+  return cleanString(document?.folder?.id ?? document?.folder);
+}
+
+export async function removeLegacyWorldCoinTemplates({
+  gameRef = globalThis.game,
+  ItemClass = globalThis.Item,
+  FolderClass = globalThis.Folder,
+  isActiveGm = isActiveGmClient
+} = {}) {
+  if (isActiveGm(gameRef) !== true) {
+    return { deletedItemIds: [], deletedFolderIds: [] };
+  }
+
+  const items = collectionValues(gameRef?.items);
+  const legacyItems = items.filter((item) => {
+    const flags = item?.flags?.[MODULE_ID] ?? {};
+    const denomination = cleanString(flags.storageCoinTemplate?.denomination).toLowerCase();
+    return flags.sourceType === "coinTemplate"
+      && flags.storageCoinTemplate?.version === 1
+      && STORAGE_COIN_DENOMINATIONS.has(denomination);
+  });
+  const deletedItemIds = legacyItems.map((item) => cleanString(item?.id)).filter(Boolean);
+  if (!deletedItemIds.length) {
+    return { deletedItemIds, deletedFolderIds: [] };
+  }
+  if (typeof ItemClass?.deleteDocuments !== "function") {
+    throw new TypeError("Item.deleteDocuments is required to remove legacy world coin templates.");
+  }
+  await ItemClass.deleteDocuments(deletedItemIds);
+
+  const deletedItemIdSet = new Set(deletedItemIds);
+  const legacyFolderIds = new Set(legacyItems.map(documentFolderId).filter(Boolean));
+  const remainingItems = items.filter((item) => !deletedItemIdSet.has(cleanString(item?.id)));
+  const deletedFolderIds = collectionValues(gameRef?.folders)
+    .filter((folder) => (
+      legacyFolderIds.has(cleanString(folder?.id))
+      && folder?.type === "Item"
+      && folder?.folder == null
+      && cleanString(folder?.name) === "МОНЕТЫ"
+      && !remainingItems.some((item) => documentFolderId(item) === cleanString(folder?.id))
+    ))
+    .map((folder) => cleanString(folder?.id));
+
+  if (deletedFolderIds.length && typeof FolderClass?.deleteDocuments === "function") {
+    await FolderClass.deleteDocuments(deletedFolderIds);
+  }
+  return { deletedItemIds, deletedFolderIds };
 }
 
 async function refreshQuickInsertIndex() {
@@ -1343,7 +1401,7 @@ export class GearCompendiumService {
     const pack = await ensureGearPack();
     await deduplicateCompendiumFolders(pack, ["Обвес", "Обвесы", "Огнестрельное оружие", "Примитивное", "Продвинутое"]);
     const documents = await getPackDocuments(pack);
-    const iconLookup = await buildGearIconLookup({ forceRefresh: true });
+    const iconLookup = await buildGearIconLookup();
     let folderIdByPath = new Map();
     try {
       folderIdByPath = await ensureCompendiumFolders(
@@ -1434,6 +1492,7 @@ export class GearCompendiumService {
 
     const syncedDocuments = await getPackDocuments(pack);
     await syncManagedDocumentIcons(pack, syncedDocuments, iconLookup);
+    await removeLegacyWorldCoinTemplates();
     await refreshQuickInsertIndex();
 
     return game.packs.get(PACK_ID) ?? pack;

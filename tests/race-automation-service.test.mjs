@@ -33,6 +33,18 @@ globalThis.foundry ??= {
 
 globalThis.Actor ??= class Actor {};
 globalThis.Item ??= class Item {};
+globalThis.Roll ??= class Roll {
+  constructor(formula, data = {}) {
+    this.formula = formula;
+    this.data = data;
+    this.total = 0;
+  }
+
+  async evaluate() {
+    this.total = Number(this.formula.replace("@prof", this.data?.attributes?.prof ?? 0)) || 0;
+    return this;
+  }
+};
 globalThis.ChatMessage ??= {
   create: async (data) => data,
   getSpeaker: ({ actor } = {}) => ({ actor: actor?.id ?? "" })
@@ -374,13 +386,13 @@ test("fury-small ignores healing workflows against a larger hostile target", asy
   });
 
   const service = new RaceAutomationService({});
-  await service.applyMidiRollComplete(workflow({
+  await service.applyMidiPreDamageRoll(workflow({
     source,
     target,
     activityType: "heal",
     actionType: "heal",
     damageType: "healing"
-  }));
+  }), null, { rolls: [] });
 
   assert.equal(prompts, 0);
   assert.equal(target.damageApplications.length, 0);
@@ -396,25 +408,37 @@ test("fury-small ignores larger ally targets", async () => {
   });
 
   const service = new RaceAutomationService({});
-  await service.applyMidiRollComplete(workflow({ source, target }));
+  await service.applyMidiPreDamageRoll(workflow({ source, target }), null, { rolls: [] });
 
   assert.equal(prompts, 0);
   assert.equal(target.damageApplications.length, 0);
 });
 
-test("fury-small still prompts for a larger hostile damage target", async () => {
-  const source = new TestActor({ id: "source", size: "sm", disposition: 1, items: [makeFuryFeature()] });
+test("fury-small appends its damage to the triggering damage roll like Divine Smite", async () => {
+  const feature = makeFuryFeature();
+  const source = new TestActor({ id: "source", size: "sm", disposition: 1, items: [feature] });
   const target = new TestActor({ id: "target", size: "med", disposition: -1 });
   let prompts = 0;
   setConfirmHandler(async () => {
     prompts += 1;
-    return false;
+    return true;
   });
 
   const service = new RaceAutomationService({});
-  await service.applyMidiRollComplete(workflow({ source, target }));
+  const config = { rolls: [] };
+  await service.applyMidiPreDamageRoll(workflow({ source, target, damageType: "piercing" }), null, config);
 
   assert.equal(prompts, 1);
+  assert.equal(feature.system.uses.spent, 1);
+  assert.deepEqual(config.rolls, [{
+    data: source.getRollData(),
+    parts: ["2 * @prof"],
+    options: {
+      type: "piercing",
+      types: ["piercing"],
+      flavor: "Ярость мелкого"
+    }
+  }]);
   assert.equal(target.damageApplications.length, 0);
 });
 

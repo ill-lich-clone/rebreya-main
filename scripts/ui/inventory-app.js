@@ -1,7 +1,26 @@
-﻿import { MODULE_ID } from "../constants.js";
+import { planItemInstanceMutation } from "../data/item-instance-rules.js";
+import { ReputationPanel } from "./reputation-panel.js?v=1.4.251";
+import { MODULE_ID } from "../constants.js";
 import { REBREYA_TOOLS } from "../constants.js";
 import { GROUP_CONTEXT_ERRORS } from "../data/group-context-service.js";
-import { buildPartyInventoryItemDragData } from "../integrations/inventory-sync.js";
+import {
+  buildInventoryFolderSearchIndex,
+  buildInventoryFolderTree,
+  InventoryFolderStateError,
+  MAX_INVENTORY_FOLDER_NAME_LENGTH,
+  normalizeExpandedFolderIds,
+  normalizeInventoryFolderColor,
+  normalizePinnedFolderIds,
+  projectInventoryFolderRows,
+  resolveInventoryDropFolderId
+} from "../data/inventory-folder-tree.js?v=1.4.318";
+import { normalizeInventoryAcquisitionHistory } from "../data/inventory-acquisition-history.js?v=1.4.318";
+import { buildPartyInventoryItemDragData } from "../integrations/inventory-sync.js?v=1.4.327";
+import {
+  INVENTORY_INGRESS_RULE_FIELD_DEFINITIONS,
+  normalizeInventoryIngressRule,
+  normalizeInventoryIngressRuleState
+} from "../data/inventory-ingress-rules.js";
 import { bringAppToFront, formatNumber, getAppElement } from "../ui.js";
 import {
   cleanText,
@@ -11,7 +30,40 @@ import {
   openPartyInventoryCrestPicker,
   resolvePartyInventoryCrest
 } from "./party-inventory-crest.js";
+import { isJournalRecordItem } from "../data/journal-record-item.js?v=1.4.217-journal-record-items";
+import { openStorageJournalViewer } from "./storage-journal-viewer.js?v=1.4.221-journal-readonly-dialog";
+import { promptInventoryItemAddition } from "./inventory-item-add-dialog.js?v=1.4.245";
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
+
+export function formatInventoryTransferError(error, itemName = "предмет") {
+  const name = cleanText(itemName) || "предмет";
+  const sourceActorId = cleanText(error?.sourceActorId);
+  const targetActorId = cleanText(error?.targetActorId);
+  const endpoints = sourceActorId || targetActorId
+    ? ` Источник: ${sourceActorId || "неизвестен"}; получатель: ${targetActorId || "неизвестен"}.`
+    : "";
+  if (error?.code === "transfer-failed-compensated") {
+    return `Не удалось перенести «${name}»: добавление получателю отменено, источник сохранён.${endpoints}`;
+  }
+  if (error?.code === "transfer-manual-review") {
+    return `Перенос «${name}» требует ручной сверки источника и получателя.${endpoints}`;
+  }
+  return error?.message || "Не удалось забрать предмет из склада.";
+}
+
+export async function openInventoryItem(item, {
+  moduleApi,
+  openViewer = openStorageJournalViewer
+} = {}) {
+  if (isJournalRecordItem(item)) {
+    const snapshot = await moduleApi.readJournalRecord(item.uuid);
+    await openViewer(snapshot);
+    return "journal";
+  }
+  await item?.sheet?.render?.(true);
+  bringAppToFront(item?.sheet);
+  return "sheet";
+}
 
 const KNOWN_GROUP_CONTEXT_ERROR_MESSAGES = new Set([
   GROUP_CONTEXT_ERRORS.GM_NO_ACTIVE_GROUP,
@@ -63,6 +115,16 @@ const INVENTORY_SORT_OPTIONS = Object.freeze([
   { value: "quantity-desc", label: "Сортировка: количество" }
 ]);
 const INVENTORY_SORT_MODES = new Set(INVENTORY_SORT_OPTIONS.map((option) => option.value));
+const INVENTORY_RULE_ACTION_OPTIONS = Object.freeze([
+  { value: "folder", label: "Переместить в папку" },
+  { value: "skip", label: "Пропустить" },
+  { value: "dismantle", label: "Разобрать" }
+]);
+const INVENTORY_FOLDER_DRAG_TYPE = "RebreyaInventoryFolder";
+const INVENTORY_TREE_DRAG_VERSION = 1;
+const INVENTORY_ITEM_FOLDER_DRAG_FLAG = "inventoryFolderDrag";
+const INVENTORY_DRAG_MIME_TYPES = Object.freeze(["text/plain", "text", "application/json", "text/uri-list"]);
+let activeInventoryTreeDragSession = null;
 const COIN_LABELS = Object.freeze({
   pp: "пм",
   gp: "зм",
@@ -75,6 +137,90 @@ const CURRENCY_MULTIPLIERS = Object.freeze({
   sp: 10,
   cp: 1
 });
+
+function hasExactObjectKeys(value, keys) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const actualKeys = Object.keys(value).sort();
+  const expectedKeys = [...keys].sort();
+  return actualKeys.length === expectedKeys.length
+    && actualKeys.every((key, index) => key === expectedKeys[index]);
+}
+
+function requireInventoryDragId(value, label) {
+  const id = cleanText(value);
+  if (!id) throw new TypeError(`${label} is required for inventory drag data.`);
+  return id;
+}
+
+export function buildInventoryFolderDragData({ groupActorId, folderId } = {}) {
+  return {
+    type: INVENTORY_FOLDER_DRAG_TYPE,
+    rebreyaInventory: {
+      version: INVENTORY_TREE_DRAG_VERSION,
+      kind: "folder",
+      groupActorId: requireInventoryDragId(groupActorId, "groupActorId"),
+      folderId: requireInventoryDragId(folderId, "folderId")
+    }
+  };
+}
+
+export function extendInventoryItemDragData(basePayload, { groupActorId, itemId } = {}) {
+  if (!basePayload || typeof basePayload !== "object" || Array.isArray(basePayload) || basePayload.type !== "Item") {
+    throw new TypeError("A Foundry Item drag payload is required.");
+  }
+  const moduleFlags = basePayload.flags?.[MODULE_ID];
+  return {
+    ...basePayload,
+    flags: {
+      ...(basePayload.flags ?? {}),
+      [MODULE_ID]: {
+        ...(moduleFlags && typeof moduleFlags === "object" && !Array.isArray(moduleFlags) ? moduleFlags : {}),
+        [INVENTORY_ITEM_FOLDER_DRAG_FLAG]: {
+          version: INVENTORY_TREE_DRAG_VERSION,
+          kind: "item",
+          groupActorId: requireInventoryDragId(groupActorId, "groupActorId"),
+          itemId: requireInventoryDragId(itemId, "itemId")
+        }
+      }
+    }
+  };
+}
+
+export function readInventoryTreeDragData(dragData) {
+  if (!dragData || typeof dragData !== "object" || Array.isArray(dragData)) return null;
+
+  if (dragData.type === INVENTORY_FOLDER_DRAG_TYPE) {
+    if (!hasExactObjectKeys(dragData, ["type", "rebreyaInventory"])) return null;
+    const metadata = dragData.rebreyaInventory;
+    if (!hasExactObjectKeys(metadata, ["version", "kind", "groupActorId", "folderId"])) return null;
+    const groupActorId = cleanText(metadata.groupActorId);
+    const folderId = cleanText(metadata.folderId);
+    if (metadata.version !== INVENTORY_TREE_DRAG_VERSION || metadata.kind !== "folder" || !groupActorId || !folderId) {
+      return null;
+    }
+    return { version: INVENTORY_TREE_DRAG_VERSION, kind: "folder", groupActorId, folderId };
+  }
+
+  if (dragData.type !== "Item") return null;
+  const metadata = dragData.flags?.[MODULE_ID]?.[INVENTORY_ITEM_FOLDER_DRAG_FLAG];
+  if (!hasExactObjectKeys(metadata, ["version", "kind", "groupActorId", "itemId"])) return null;
+  const groupActorId = cleanText(metadata.groupActorId);
+  const itemId = cleanText(metadata.itemId);
+  if (metadata.version !== INVENTORY_TREE_DRAG_VERSION || metadata.kind !== "item" || !groupActorId || !itemId) {
+    return null;
+  }
+  return { version: INVENTORY_TREE_DRAG_VERSION, kind: "item", groupActorId, itemId };
+}
+
+function hasInventoryTreeDragMetadata(dragData) {
+  return Boolean(
+    dragData?.type === INVENTORY_FOLDER_DRAG_TYPE
+    || Object.prototype.hasOwnProperty.call(
+      dragData?.flags?.[MODULE_ID] ?? {},
+      INVENTORY_ITEM_FOLDER_DRAG_FLAG
+    )
+  );
+}
 const DOWNTIME_NON_ROLL_ACTION_TYPES = new Set(["resources", "itemChoice", "numericInput", "optionChoice", "rankChoice", "formulaRoll", "descriptionBlock", "downtimeResult"]);
 const DOWNTIME_NON_ROLL_ACTION_SUMMARY_LABELS = Object.freeze({
   resources: "Ресурсы",
@@ -307,6 +453,19 @@ const DOWNTIME_REQUEST_EFFECT_TEMPLATE_OPTIONS = Object.freeze([
 
 function toInteger(value, fallback = 0) {
   return Math.floor(toNumber(value, fallback));
+}
+
+export function formatCompactCurrencyAmount(value) {
+  const amount = toInteger(value, 0);
+  const absolute = Math.abs(amount);
+  const compact = (divisor, suffix) => {
+    const scaled = amount / divisor;
+    const precision = Math.abs(scaled) < 10 ? 1 : 0;
+    return `${Number(scaled.toFixed(precision))}${suffix}`;
+  };
+  if (absolute >= 1_000_000) return compact(1_000_000, "м");
+  if (absolute >= 1_000) return compact(1_000, "к");
+  return String(amount);
 }
 
 function escapeHtml(value) {
@@ -2568,33 +2727,42 @@ function getInventoryEntryItemValueCopper(entry) {
   return Math.max(0, Math.floor(toNumber(entry?.priceCopper, 0) * Math.max(0, toNumber(entry?.quantity, 0))));
 }
 
-function sortInventoryEntries(entries, sortMode) {
+function compareInventoryEntries(left, right, sortMode) {
   const mode = normalizeInventorySortMode(sortMode);
   const compareName = (left, right) => cleanText(left?.name).localeCompare(cleanText(right?.name), "ru");
-  return [...(Array.isArray(entries) ? entries : [])].sort((left, right) => {
-    switch (mode) {
-      case "weight-desc": {
-        const result = toNumber(right?.totalWeight, 0) - toNumber(left?.totalWeight, 0);
-        return result || compareName(left, right);
-      }
-      case "price-desc": {
-        const result = getInventoryEntryItemValueCopper(right) - getInventoryEntryItemValueCopper(left);
-        return result || compareName(left, right);
-      }
-      case "category": {
-        const categoryResult = cleanText(left?.sourceTypeLabel).localeCompare(cleanText(right?.sourceTypeLabel), "ru")
-          || cleanText(left?.itemTypeLabel).localeCompare(cleanText(right?.itemTypeLabel), "ru");
-        return categoryResult || compareName(left, right);
-      }
-      case "quantity-desc": {
-        const result = toNumber(right?.quantity, 0) - toNumber(left?.quantity, 0);
-        return result || compareName(left, right);
-      }
-      case "name":
-      default:
-        return compareName(left, right);
+  switch (mode) {
+    case "weight-desc": {
+      const result = toNumber(right?.totalWeight, 0) - toNumber(left?.totalWeight, 0);
+      return result || compareName(left, right);
     }
-  });
+    case "price-desc": {
+      const result = getInventoryEntryItemValueCopper(right) - getInventoryEntryItemValueCopper(left);
+      return result || compareName(left, right);
+    }
+    case "category": {
+      const categoryResult = cleanText(left?.sourceTypeLabel).localeCompare(cleanText(right?.sourceTypeLabel), "ru")
+        || cleanText(left?.itemTypeLabel).localeCompare(cleanText(right?.itemTypeLabel), "ru");
+      return categoryResult || compareName(left, right);
+    }
+    case "quantity-desc": {
+      const result = toNumber(right?.quantity, 0) - toNumber(left?.quantity, 0);
+      return result || compareName(left, right);
+    }
+    case "name":
+    default:
+      return compareName(left, right);
+  }
+}
+
+function sortInventoryEntries(entries, sortMode) {
+  return [...(Array.isArray(entries) ? entries : [])]
+    .sort((left, right) => compareInventoryEntries(left, right, sortMode));
+}
+
+function sortInventoryFolderTreeItems(node, sortMode) {
+  if (!node) return;
+  node.items = sortInventoryEntries(node.items, sortMode);
+  for (const folder of node.folders ?? []) sortInventoryFolderTreeItems(folder, sortMode);
 }
 
 function buildInventoryValueSummary(entries) {
@@ -2720,12 +2888,209 @@ function readCurrencyValuesFromRoot(root, baseCurrency = {}) {
   };
 }
 
+export function normalizeInventoryFolderDialogResult(result) {
+  if (result?.confirmed !== true) return null;
+  const name = typeof result.name === "string" ? result.name.trim() : "";
+  if (!name) throw new Error("Название папки не может быть пустым.");
+  if (name.length > MAX_INVENTORY_FOLDER_NAME_LENGTH) {
+    throw new Error(`Название папки должно быть не длиннее ${MAX_INVENTORY_FOLDER_NAME_LENGTH} символов.`);
+  }
+  return name;
+}
+
+export async function promptInventoryPartialTransfer({ quantity, step = 1, folders = [], folderId = null, chooseFolder = false }) {
+  const escape = value => foundry.utils.escapeHTML(String(value));
+  const result = await foundry.applications.api.DialogV2.wait({
+    window: { title: "Перенести часть стопки" },
+    content: `<form><label>Количество <input name="quantity" type="number" min="${step}" max="${quantity}" step="${step}" value="${step}" required></label>
+      ${chooseFolder ? `<label>Папка назначения <select name="folderId"><option value="">Корень инвентаря</option>${folders.map(folder => `<option value="${escape(folder.id)}">${escape(folder.name)}</option>`).join("")}</select></label>` : ""}</form>`,
+    render: (_event, dialog) => { const button = getAppElement(dialog)?.querySelector("[data-action='cancel']"); if (button) button.formNoValidate = true; },
+    buttons: [
+      { action: "confirm", label: "Перенести", default: true, callback: (_event, button) => ({
+        confirmed: true, quantity: Number(button.form.elements.quantity.value),
+        folderId: chooseFolder ? button.form.elements.folderId.value || null : folderId
+      }) },
+      { action: "cancel", label: "Отмена", callback: () => ({ confirmed: false }) }
+    ], rejectClose: false
+  });
+  if (result?.confirmed !== true) return null;
+  planItemInstanceMutation({ source: { quantity, step }, quantity: result.quantity, sameActor: true, sameFolder: false, forHeroSlot: false });
+  if (result.folderId !== null && !folders.some(folder => folder.id === result.folderId)) throw new Error("Папка назначения недоступна.");
+  return { quantity: result.quantity, folderId: result.folderId };
+}
+
+export async function promptInventoryFolderColor(initialColor = null) {
+  const dialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
+  if (typeof dialogV2?.wait !== "function") throw new Error("Диалог цвета папки недоступен.");
+  const color = normalizeInventoryFolderColor(initialColor) ?? "#E0B25E";
+  const palette = ["#E0B25E", "#D96B6B", "#79B878", "#6AA9DC", "#AA87D7", "#D98BB4", "#E9E9E9", "#777777"];
+  const result = await dialogV2.wait({
+    window: { title: "Цвет папки" },
+    content: `<form class="rm-inventory-folder-color-dialog">
+      <div class="rm-inventory-folder-palette" aria-label="Палитра">
+        ${palette.map(value => `<button type="button" data-folder-color-swatch="${value}" style="--rm-folder-swatch:${value}" aria-label="${value}" title="${value}"></button>`).join("")}
+      </div>
+      <label>Цвет HEX <input name="folderColor" value="${color}" pattern="#[0-9a-fA-F]{6}" maxlength="7" required autocomplete="off" aria-label="Цвет HEX"></label>
+      <p>Цвет меняет иконку папки. Сброс возвращает цвет темы.</p>
+    </form>`,
+    render: (_event, dialog) => {
+      const root = getAppElement(dialog);
+      const input = root?.querySelector("[name='folderColor']");
+      for (const button of root?.querySelectorAll("[data-action='cancel'], [data-action='reset']") ?? []) {
+        button.formNoValidate = true;
+      }
+      for (const button of root?.querySelectorAll("[data-folder-color-swatch]") ?? []) {
+        button.addEventListener("click", () => { input.value = button.dataset.folderColorSwatch; input.focus(); });
+      }
+    },
+    buttons: [
+      { action: "confirm", label: "Сохранить", default: true, callback: (_event, button) => ({
+        confirmed: true, color: normalizeInventoryFolderColor(button?.form?.elements?.folderColor?.value, { strict: true })
+      }) },
+      { action: "reset", label: "Сбросить", callback: () => ({ confirmed: true, color: null }) },
+      { action: "cancel", label: "Отмена", callback: () => ({ confirmed: false }) }
+    ],
+    rejectClose: false
+  });
+  if (result?.confirmed !== true) return { confirmed: false };
+  return { confirmed: true, color: normalizeInventoryFolderColor(result.color, { strict: true }) };
+}
+
+async function promptInventoryFolderName({ title, initialName = "", confirmLabel = "Сохранить" } = {}) {
+  const dialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
+  if (typeof dialogV2?.wait !== "function") {
+    throw new Error("Диалог папки инвентаря недоступен.");
+  }
+
+  const result = await dialogV2.wait({
+    window: { title: cleanText(title) || "Папка инвентаря" },
+    content: `
+      <form class="rm-inventory-folder-dialog">
+        <div class="form-group">
+          <label>Название папки</label>
+          <input
+            type="text"
+            name="folderName"
+            value="${foundry.utils.escapeHTML(cleanText(initialName))}"
+            maxlength="${MAX_INVENTORY_FOLDER_NAME_LENGTH}"
+            required
+            autofocus
+            autocomplete="off"
+          >
+        </div>
+      </form>
+    `,
+    buttons: [
+      {
+        action: "confirm",
+        label: cleanText(confirmLabel) || "Сохранить",
+        icon: "fa-solid fa-check",
+        default: true,
+        callback: (_event, button) => ({
+          confirmed: true,
+          name: button?.form?.elements?.folderName?.value ?? ""
+        })
+      },
+      {
+        action: "cancel",
+        label: "Отмена",
+        callback: () => ({ confirmed: false })
+      }
+    ],
+    rejectClose: false
+  });
+  return normalizeInventoryFolderDialogResult(result);
+}
+
+export async function promptInventoryIngressConfirmation(preview) {
+  const rows = Array.isArray(preview?.rows) ? preview.rows : [];
+  const dismantleRows = rows.filter((row) => row?.action?.type === "dismantle");
+  const singleSkip = preview?.batch !== true
+    && rows.length === 1
+    && rows[0]?.action?.type === "skip"
+    ? rows[0]
+    : null;
+  if (dismantleRows.length === 0 && !singleSkip) {
+    return Object.freeze({ rootOverrideSourceKeys: Object.freeze([]) });
+  }
+  const dialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
+  if (typeof dialogV2?.wait !== "function") {
+    throw new Error("Диалог фильтра входящего лута недоступен.");
+  }
+  if (singleSkip) {
+    const result = await dialogV2.wait({
+      window: { title: "Фильтр входящего лута" },
+      content: `<p>Правило пропускает «${foundry.utils.escapeHTML(cleanText(singleSkip.displayName))}».</p>`,
+      buttons: [
+        {
+          action: "skip",
+          label: "Не забирать",
+          default: true,
+          callback: () => ({ rootOverrideSourceKeys: [] })
+        },
+        {
+          action: "root",
+          label: "Всё равно добавить в корень",
+          callback: () => ({ rootOverrideSourceKeys: [singleSkip.sourceKey] })
+        },
+        { action: "cancel", label: "Отмена", callback: () => null }
+      ],
+      rejectClose: false
+    });
+    return result == null || result === false ? null : result;
+  }
+
+  const content = dismantleRows.map((row) => {
+    const outputs = (Array.isArray(row.dismantlePreview) ? row.dismantlePreview : [])
+      .map((output) => (
+        `${foundry.utils.escapeHTML(cleanText(output?.name))} × ${foundry.utils.escapeHTML(String(output?.quantity ?? 0))}`
+      ))
+      .join(", ");
+    return `
+      <label class="rm-inventory-ingress-dismantle-row">
+        <input type="checkbox" data-ingress-dismantle-choice data-source-key="${foundry.utils.escapeHTML(row.sourceKey)}" checked>
+        <span><strong>${foundry.utils.escapeHTML(cleanText(row.displayName))}</strong>${outputs ? ` → ${outputs}` : ""}</span>
+      </label>
+    `;
+  }).join("");
+  const result = await dialogV2.wait({
+    window: { title: "Подтверждение разборки" },
+    content: `<form class="rm-inventory-ingress-dismantle-dialog">${content}</form>`,
+    buttons: [
+      {
+        action: "confirm",
+        label: "Подтвердить",
+        icon: "fa-solid fa-hammer",
+        default: true,
+        callback: (_event, button) => ({
+          rootOverrideSourceKeys: Array.from(
+            button?.form?.querySelectorAll?.("[data-ingress-dismantle-choice]") ?? []
+          ).filter((input) => input.checked !== true)
+            .map((input) => cleanText(input.dataset?.sourceKey))
+            .filter(Boolean)
+        })
+      },
+      { action: "cancel", label: "Отмена", callback: () => null }
+    ],
+    rejectClose: false
+  });
+  return result == null || result === false ? null : result;
+}
+
+function createInventoryFolderId() {
+  const folderId = cleanText(globalThis.crypto?.randomUUID?.());
+  if (!folderId) {
+    throw new Error("Не удалось создать стабильный идентификатор папки.");
+  }
+  return folderId;
+}
+
 async function promptNumericValue({ title, label, value = "", min = 0, step = "0.01", confirmLabel = "Сохранить", allowRelative = false }) {
   return new Promise((resolve) => {
     let settled = false;
     const inputType = allowRelative ? "text" : "number";
     const relativeAttributes = allowRelative
-      ? 'inputmode="decimal" pattern="[+-]?(?:[0-9]+(?:[.,][0-9]+)?|[.,][0-9]+)"'
+      ? 'inputmode="decimal" pattern="[+\\-]?(?:[0-9]+(?:[.,][0-9]+)?|[.,][0-9]+)"'
       : `min="${foundry.utils.escapeHTML(String(min))}" step="${foundry.utils.escapeHTML(String(step))}"`;
 
     const resolveFromRoot = (root) => {
@@ -2905,19 +3270,19 @@ async function promptCurrencyDialog(currency = {}) {
           <div class="rm-currency-dialog__grid">
             <div class="rm-field rm-field--narrow">
               <label>Пм</label>
-              <input type="text" inputmode="numeric" pattern="[+-]?[0-9]*" value="${safeCurrency.pp}" data-field="currency-pp">
+              <input type="text" inputmode="numeric" pattern="[+\\-]?[0-9]*" value="${safeCurrency.pp}" data-field="currency-pp">
             </div>
             <div class="rm-field rm-field--narrow">
               <label>Зм</label>
-              <input type="text" inputmode="numeric" pattern="[+-]?[0-9]*" value="${safeCurrency.gp}" data-field="currency-gp">
+              <input type="text" inputmode="numeric" pattern="[+\\-]?[0-9]*" value="${safeCurrency.gp}" data-field="currency-gp">
             </div>
             <div class="rm-field rm-field--narrow">
               <label>См</label>
-              <input type="text" inputmode="numeric" pattern="[+-]?[0-9]*" value="${safeCurrency.sp}" data-field="currency-sp">
+              <input type="text" inputmode="numeric" pattern="[+\\-]?[0-9]*" value="${safeCurrency.sp}" data-field="currency-sp">
             </div>
             <div class="rm-field rm-field--narrow">
               <label>Мм</label>
-              <input type="text" inputmode="numeric" pattern="[+-]?[0-9]*" value="${safeCurrency.cp}" data-field="currency-cp">
+              <input type="text" inputmode="numeric" pattern="[+\\-]?[0-9]*" value="${safeCurrency.cp}" data-field="currency-cp">
             </div>
           </div>
           <p class="rm-muted">Сначала отредактируйте значения, затем при необходимости примените конвертацию.</p>
@@ -3086,12 +3451,35 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
   };
 
   constructor(moduleApi, options = {}) {
-    super(options);
+    const {
+      groupActorId = "",
+      rootFolderId = null,
+      inventoryViewKey = "main",
+      ...applicationOptions
+    } = options ?? {};
+    super(applicationOptions);
     this.moduleApi = moduleApi;
+    this.reputationPanel = new ReputationPanel(moduleApi, { render: () => this.refreshReputationPanel() });
+    this.reputationActorIds = [];
+    this.reputationRefreshSequence = 0;
+    this.inventoryHeaderAnimationStartedAt = Date.now();
+    this.groupActorId = cleanText(groupActorId);
+    this.rootFolderId = cleanText(rootFolderId) || null;
+    this.inventoryViewKey = cleanText(inventoryViewKey) || "main";
+    this.expandedFolderIds = new Set();
+    this.pinnedFolderIds = new Set();
+    this.inventorySnapshotCache = null;
+    this.inventoryFolderTreeCache = null;
+    this.inventorySearchIndexCache = null;
+    this.inventoryContextCache = null;
+    this.missingRootCloseScheduled = false;
     this.activeTab = "inventory";
     this.search = "";
     this.typeFilter = "all";
     this.sortMode = "name";
+    this.inventoryMode = "items";
+    this.inventoryRuleDraft = null;
+    this.inventoryRuleDraftError = "";
     this.selectedNewMemberId = "";
     this.newMemberQuery = "";
     this.availablePartyActors = [];
@@ -3109,8 +3497,11 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.downtimeQueuePage = 1;
     this.downtimeArchivePage = 1;
     this.travelTrackTime = false;
+    this.pendingTravelSnapshot = null;
+    this.travelMutationSequence = 0;
     this.expandedPartyMembers = new Set();
     this.searchRenderTimeout = null;
+    this.inventorySearchRenderPending = false;
     this.craftSearchRenderTimeout = null;
     this.craftMutationIds = new Map();
     this.actionFeedbackTimeout = null;
@@ -3120,6 +3511,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.actionFeedback = null;
     this.canManage = false;
     this.canDropInventoryItems = false;
+    this.canOrganizeInventory = false;
     this.groupActor = null;
     this.partyMembershipManagedByNativeGroup = false;
     this.scrollRestore = null;
@@ -3128,7 +3520,24 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   get id() {
-    return `${MODULE_ID}-inventory-app`;
+    if (this.inventoryViewKey === "main") {
+      return `${MODULE_ID}-inventory-app`;
+    }
+    const scopedToken = Array.from(this.inventoryViewKey, (character) => character.codePointAt(0).toString(16)).join("-");
+    return `${MODULE_ID}-inventory-folder-${scopedToken}`;
+  }
+
+  get inventoryActorId() {
+    return cleanText(this.inventorySnapshotCache?.actor?.id) || this.groupActorId;
+  }
+
+  async refreshInventorySnapshot({ preserveScroll = true } = {}) {
+    this.inventorySnapshotCache = null;
+    this.inventoryFolderTreeCache = null;
+    this.inventorySearchIndexCache = null;
+    this.inventoryContextCache = null;
+    this.inventorySearchRenderPending = false;
+    return this.render({ force: true, preserveScroll });
   }
 
   setActiveTab(tab, { render = true } = {}) {
@@ -3332,7 +3741,22 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.contextMenuCleanup = null;
   }
 
-  #openContextMenu({ x, y, title = "", actions = [] }) {
+  #getContextMenuZIndex() {
+    const appElement = getAppElement(this);
+    const ownerWindow = appElement?.closest?.(".window-app, .application") ?? null;
+    const windows = Array.from(document.querySelectorAll(".window-app, .application"));
+    if (ownerWindow && !windows.includes(ownerWindow)) {
+      windows.push(ownerWindow);
+    }
+
+    const maxZIndex = windows.reduce((maxValue, node) => {
+      const currentValue = Number.parseInt(window.getComputedStyle(node).zIndex ?? "", 10);
+      return Number.isFinite(currentValue) ? Math.max(maxValue, currentValue) : maxValue;
+    }, 100);
+    return String(maxZIndex + 2);
+  }
+
+  #openContextMenu({ x, y, anchor = null, title = "", actions = [] }) {
     this.#closeContextMenu();
     if (!Array.isArray(actions) || !actions.length) {
       return;
@@ -3352,7 +3776,8 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     for (const action of actions) {
       const button = document.createElement("button");
       button.type = "button";
-      button.className = `rm-context-menu__item${action.danger ? " is-danger" : ""}`;
+      button.disabled = action.disabled === true;
+      button.className = `rm-context-menu__item${action.danger ? " is-danger" : ""}${button.disabled ? " is-disabled" : ""}`;
       if (action.icon) {
         const iconNode = document.createElement("i");
         iconNode.className = action.icon;
@@ -3363,10 +3788,11 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       labelNode.textContent = action.label ?? "";
       button.appendChild(labelNode);
 
-      button.addEventListener("click", () => {
+      button.addEventListener("click", async () => {
+        if (button.disabled) return;
         this.#closeContextMenu();
         try {
-          action.callback?.();
+          await action.callback?.();
         }
         catch (error) {
           console.error(`${MODULE_ID} | Context menu action failed.`, error);
@@ -3376,15 +3802,37 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     }
 
     document.body.appendChild(menuRoot);
+    const syncMenuLayer = () => {
+      const nextZIndex = this.#getContextMenuZIndex();
+      if (menuRoot.style.zIndex !== nextZIndex) {
+        menuRoot.style.zIndex = nextZIndex;
+      }
+    };
+    syncMenuLayer();
+    const windowLayerObserver = typeof MutationObserver === "function"
+      ? new MutationObserver(syncMenuLayer)
+      : null;
+    windowLayerObserver?.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["style"]
+    });
 
-    const bounds = menuRoot.getBoundingClientRect();
-    const maxLeft = window.innerWidth - bounds.width - 8;
-    const maxTop = window.innerHeight - bounds.height - 8;
-    const safeLeft = Math.max(8, Math.min(x, maxLeft));
-    const safeTop = Math.max(8, Math.min(y, maxTop));
+    const positionMenu = () => {
+      const anchorBounds = anchor?.getBoundingClientRect?.() ?? null;
+      const targetX = toNumber(anchorBounds?.right, x);
+      const targetY = toNumber(anchorBounds?.bottom, y);
+      const bounds = menuRoot.getBoundingClientRect();
+      const maxLeft = window.innerWidth - bounds.width - 8;
+      const maxTop = window.innerHeight - bounds.height - 8;
+      const safeLeft = Math.max(8, Math.min(targetX, maxLeft));
+      const safeTop = Math.max(8, Math.min(targetY, maxTop));
 
-    menuRoot.style.left = `${safeLeft}px`;
-    menuRoot.style.top = `${safeTop}px`;
+      menuRoot.style.left = `${safeLeft}px`;
+      menuRoot.style.top = `${safeTop}px`;
+    };
+    positionMenu();
 
     const handlePointerDown = (event) => {
       if (!menuRoot.contains(event.target)) {
@@ -3396,18 +3844,527 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         this.#closeContextMenu();
       }
     };
+    const handleAnchorChange = () => {
+      if (anchor?.isConnected === false) {
+        this.#closeContextMenu();
+        return;
+      }
+      positionMenu();
+    };
 
     document.addEventListener("pointerdown", handlePointerDown, true);
     document.addEventListener("keydown", handleKeyDown, true);
+    if (anchor) {
+      document.addEventListener("scroll", handleAnchorChange, true);
+      window.addEventListener?.("resize", handleAnchorChange);
+    }
 
     this.contextMenuCleanup = () => {
       document.removeEventListener("pointerdown", handlePointerDown, true);
       document.removeEventListener("keydown", handleKeyDown, true);
+      if (anchor) {
+        document.removeEventListener("scroll", handleAnchorChange, true);
+        window.removeEventListener?.("resize", handleAnchorChange);
+      }
+      windowLayerObserver?.disconnect();
       menuRoot.remove();
     };
   }
 
-  #openItemContextMenu(row, { x = 0, y = 0 } = {}) {
+  async #runInventoryFolderMutation(operation, { successMessage, errorMessage }) {
+    try {
+      const result = await operation();
+      ui.notifications?.info(successMessage);
+      return result;
+    }
+    catch (error) {
+      console.error(`${MODULE_ID} | Inventory folder action failed.`, error);
+      try {
+        await this.refreshInventorySnapshot({ preserveScroll: true });
+      }
+      catch (refreshError) {
+        console.error(`${MODULE_ID} | Failed to refresh inventory folders after command error.`, refreshError);
+      }
+      ui.notifications?.error(error.message || errorMessage);
+      return null;
+    }
+  }
+
+  async #runInventoryRuleMutation(operation) {
+    try {
+      const result = await operation();
+      this.inventoryRuleDraft = null;
+      this.inventoryRuleDraftError = "";
+      await this.refreshInventorySnapshot({ preserveScroll: true });
+      return result;
+    }
+    catch (error) {
+      this.inventoryRuleDraftError = error?.message || "Не удалось сохранить правило фильтрации.";
+      this.inventorySnapshotCache = null;
+      this.inventoryFolderTreeCache = null;
+      this.inventorySearchIndexCache = null;
+      this.inventoryContextCache = null;
+      await this.render({ force: true, preserveScroll: true });
+      globalThis.ui?.notifications?.error?.(this.inventoryRuleDraftError);
+      return null;
+    }
+  }
+
+  async #saveInventoryRuleDraft() {
+    let rule;
+    try {
+      rule = this.#normalizeInventoryRuleDraft();
+      this.inventoryRuleDraftError = "";
+    }
+    catch (error) {
+      this.inventoryRuleDraftError = error?.message || "Заполните правило.";
+      this.inventorySearchRenderPending = true;
+      await this.render({ force: true, preserveScroll: true });
+      return null;
+    }
+    const expectedRevision = normalizeInventoryIngressRuleState(
+      this.inventorySnapshotCache?.inventoryIngressRules ?? null
+    ).revision;
+    const payload = {
+      groupActorId: this.inventoryActorId,
+      operationId: globalThis.crypto.randomUUID(),
+      expectedRevision,
+      rule
+    };
+    return this.#runInventoryRuleMutation(() => (
+      this.inventoryRuleDraft.mode === "edit"
+        ? this.moduleApi.updateInventoryIngressRule(payload)
+        : this.moduleApi.createInventoryIngressRule(payload)
+    ));
+  }
+
+  async #deleteInventoryRule(ruleId) {
+    const expectedRevision = normalizeInventoryIngressRuleState(
+      this.inventorySnapshotCache?.inventoryIngressRules ?? null
+    ).revision;
+    return this.#runInventoryRuleMutation(() => this.moduleApi.deleteInventoryIngressRule({
+      groupActorId: this.inventoryActorId,
+      operationId: globalThis.crypto.randomUUID(),
+      expectedRevision,
+      ruleId
+    }));
+  }
+
+  async #createInventoryFolder(parentId = null) {
+    let name;
+    let folderId;
+    try {
+      name = await promptInventoryFolderName({
+        title: parentId ? "Создать вложенную папку" : "Создать папку",
+        confirmLabel: "Создать"
+      });
+      if (name === null) return null;
+      folderId = createInventoryFolderId();
+    }
+    catch (error) {
+      ui.notifications?.error(error.message || "Не удалось подготовить создание папки.");
+      return null;
+    }
+
+    const groupActorId = this.inventoryActorId;
+    return this.#runInventoryFolderMutation(
+      () => this.moduleApi.createInventoryFolder({
+        groupActorId,
+        folderId,
+        name,
+        parentId: cleanText(parentId) || null
+      }),
+      {
+        successMessage: `Папка «${name}» создана.`,
+        errorMessage: "Не удалось создать папку."
+      }
+    );
+  }
+
+  async #setInventoryFolderColor(folderId, initialColor) {
+    const groupActorId = this.inventoryActorId;
+    let result;
+    try {
+      result = await promptInventoryFolderColor(initialColor);
+      if (!result.confirmed) return null;
+    } catch (error) {
+      ui.notifications?.error(error.message || "Не удалось выбрать цвет папки.");
+      return null;
+    }
+    return this.#runInventoryFolderMutation(
+      () => this.moduleApi.setInventoryFolderColor({ groupActorId, folderId, color: result.color }),
+      { successMessage: "Цвет папки сохранён.", errorMessage: "Не удалось изменить цвет папки." }
+    );
+  }
+
+  async #renameInventoryFolder(folderId, initialName) {
+    let name;
+    try {
+      name = await promptInventoryFolderName({
+        title: "Переименовать папку",
+        initialName,
+        confirmLabel: "Переименовать"
+      });
+      if (name === null) return null;
+    }
+    catch (error) {
+      ui.notifications?.error(error.message || "Не удалось подготовить переименование папки.");
+      return null;
+    }
+
+    const groupActorId = this.inventoryActorId;
+    return this.#runInventoryFolderMutation(
+      () => this.moduleApi.renameInventoryFolder({ groupActorId, folderId, name }),
+      {
+        successMessage: `Папка переименована в «${name}».`,
+        errorMessage: "Не удалось переименовать папку."
+      }
+    );
+  }
+
+  async #deleteInventoryFolder(folderId, folderName) {
+    const safeName = cleanText(folderName) || "Папка";
+    const confirmed = await confirmAction(
+      "Удалить папку",
+      `<p>Удалить папку «${foundry.utils.escapeHTML(safeName)}»?</p>
+       <p>Предметы и вложенные папки будут перемещены на один уровень выше и не будут удалены.</p>`
+    );
+    if (!confirmed) return null;
+
+    const groupActorId = this.inventoryActorId;
+    return this.#runInventoryFolderMutation(
+      () => this.moduleApi.deleteInventoryFolder({ groupActorId, folderId }),
+      {
+        successMessage: `Папка «${safeName}» удалена.`,
+        errorMessage: "Не удалось удалить папку."
+      }
+    );
+  }
+
+  async #openInventoryFolderPopout(folderId) {
+    const groupActorId = this.inventoryActorId;
+    if (typeof this.moduleApi.openInventoryFolderPopout !== "function") {
+      ui.notifications?.error("Отдельное окно папки пока недоступно.");
+      return null;
+    }
+    return this.moduleApi.openInventoryFolderPopout(groupActorId, folderId);
+  }
+
+  async #promptInventoryFolderBatch(folderId, folderName, action) {
+    const safeAction = action === "dismantle" ? "dismantle" : "sell";
+    const folder = this.inventoryFolderTreeCache?.foldersById?.get(folderId) ?? null;
+    if (!folder) {
+      ui.notifications?.warn?.("Папка больше не существует.");
+      await this.refreshInventorySnapshot({ preserveScroll: true });
+      return null;
+    }
+    const eligible = folder.items.filter((entry) => (
+      safeAction === "sell" ? entry.canSell === true : entry.canDismantle === true
+    )).length;
+    const skipped = Math.max(0, folder.items.length - eligible);
+    const verb = safeAction === "sell" ? "Продать" : "Разобрать";
+    const result = await foundry.applications.api.DialogV2.wait({
+      window: { title: `${verb} всё в папке` },
+      content: `<form class="rm-inventory-folder-batch-dialog">
+        <p>${verb} предметы в папке «${escapeHtml(folderName)}»?</p>
+        <p>Сейчас напрямую: доступно ${eligible}, будет пропущено ${skipped}.</p>
+        <label><input name="includeDescendants" type="checkbox"> Включая вложенные папки</label>
+      </form>`,
+      buttons: [
+        {
+          action: "confirm",
+          label: verb,
+          default: true,
+          callback: (_event, button) => ({
+            confirmed: true,
+            includeDescendants: button?.form?.elements?.includeDescendants?.checked === true
+          })
+        },
+        { action: "cancel", label: "Отмена", callback: () => ({ confirmed: false }) }
+      ],
+      rejectClose: false
+    });
+    if (result?.confirmed !== true) return null;
+
+    const report = await this.moduleApi.runInventoryFolderBatch({
+      groupActorId: this.inventoryActorId,
+      folderId,
+      action: safeAction,
+      includeDescendants: result.includeDescendants === true,
+      operationId: globalThis.crypto.randomUUID()
+    });
+    await this.refreshInventorySnapshot({ preserveScroll: true });
+    await this.#showInventoryFolderBatchReport(report);
+    return report;
+  }
+
+  async #showInventoryFolderBatchReport(report = {}) {
+    const processed = Array.isArray(report.processed) ? report.processed : [];
+    const skipped = Array.isArray(report.skipped) ? report.skipped : [];
+    const failed = Array.isArray(report.failed) ? report.failed : [];
+    const materials = Array.isArray(report.totals?.materials) ? report.totals.materials : [];
+    const list = (rows) => rows.length
+      ? `<ul>${rows.map((row) => `<li>${escapeHtml(row.itemName || row.name || row.itemId)}${row.code ? ` — ${escapeHtml(row.code)}` : ""}</li>`).join("")}</ul>`
+      : "<p>—</p>";
+    const totals = report.action === "sell"
+      ? `<p>Получено меди: ${Math.max(0, toInteger(report.totals?.gainedCopper, 0))}</p>`
+      : (materials.length
+        ? `<ul>${materials.map((row) => `<li>${escapeHtml(row.name)}: ${escapeHtml(row.quantity)}</li>`).join("")}</ul>`
+        : "<p>Материалы не получены.</p>");
+    return foundry.applications.api.DialogV2.wait({
+      window: { title: "Результат пакетного действия" },
+      content: `<section class="rm-inventory-folder-batch-report${report.stopped === true ? " is-stopped" : ""}">
+        ${report.stopped === true ? "<p><strong>Остановлено: требуется сверка состояния.</strong></p>" : ""}
+        <h3>Обработано: ${processed.length}</h3>${list(processed)}
+        <h3>Пропущено: ${skipped.length}</h3>${list(skipped)}
+        <h3>Ошибки: ${failed.length}</h3>${list(failed)}
+        <h3>Итого</h3>${totals}
+      </section>`,
+      buttons: [{ action: "close", label: "Закрыть", default: true }],
+      rejectClose: false
+    });
+  }
+
+  async #showInventoryAcquisitionHistory(itemId) {
+    const item = (this.inventorySnapshotCache?.allItems ?? this.inventorySnapshotCache?.items ?? [])
+      .find((entry) => cleanText(entry?.itemId ?? entry?.id) === cleanText(itemId));
+    const history = normalizeInventoryAcquisitionHistory(item?.acquisitionHistory);
+    const methodLabels = {
+      lootgen: "Получено через Lootgen",
+      storage: "Получено из хранилища",
+      transfer: "Получено переносом",
+      manual: "Добавлено вручную",
+      dismantle: "Получено при разборе",
+      other: "Получено"
+    };
+    const recordedDateFormatter = new Intl.DateTimeFormat("ru-RU", {
+      day: "numeric",
+      month: "long",
+      year: "numeric"
+    });
+    const content = history.entries.length
+      ? `<ol class="rm-inventory-acquisition-history">${history.entries.map((entry) => {
+          const source = entry.sourceName || entry.detail || entry.sceneName || "Источник не записан";
+          const scene = entry.sceneName ? `<span>Сцена: ${escapeHtml(entry.sceneName)}</span>` : "";
+          const detail = entry.detail && entry.detail !== source ? `<span>${escapeHtml(entry.detail)}</span>` : "";
+          const recordedDate = new Date(entry.recordedAt);
+          const recordedAt = Number.isFinite(recordedDate.getTime())
+            ? Object.fromEntries(recordedDateFormatter.formatToParts(recordedDate).map((part) => [part.type, part.value]))
+            : null;
+          const recordedAtLabel = recordedAt
+            ? `${recordedAt.day} ${recordedAt.month} ${recordedAt.year}`
+            : "Дата не записана";
+          return `<li><strong>${escapeHtml(source)}</strong><span>${escapeHtml(methodLabels[entry.method] ?? methodLabels.other)} · ${escapeHtml(entry.quantity)} шт.</span>${scene}${detail}<time>${escapeHtml(recordedAtLabel)}</time></li>`;
+        }).join("")}</ol>`
+      : "<p>Источник не записан</p>";
+    return foundry.applications.api.DialogV2.wait({
+      window: { title: `Источники: ${cleanText(item?.name) || "Предмет"}` },
+      content,
+      buttons: [{ action: "close", label: "Закрыть", default: true }],
+      rejectClose: false
+    });
+  }
+
+  async #setInventoryFolderPinned(folderId, pinned) {
+    const groupActorId = this.inventoryActorId;
+    const previous = new Set(this.pinnedFolderIds);
+    try {
+      const result = await this.moduleApi.setInventoryFolderPinned(groupActorId, folderId, pinned);
+      const folderIds = [...(this.inventoryFolderTreeCache?.foldersById?.keys?.() ?? [])];
+      const returnedIds = result?.pinnedFolderIds;
+      if (Array.isArray(returnedIds)) {
+        this.pinnedFolderIds = new Set(normalizePinnedFolderIds(returnedIds, { folderIds }));
+      }
+      else if (pinned) this.pinnedFolderIds.add(folderId);
+      else this.pinnedFolderIds.delete(folderId);
+      this.inventorySearchRenderPending = true;
+      await this.render?.({ force: true, preserveScroll: true });
+      return result;
+    }
+    catch (error) {
+      this.pinnedFolderIds = previous;
+      ui.notifications?.error?.(error?.message || "Не удалось изменить закрепление папки.");
+      return null;
+    }
+  }
+
+  #openInventoryFolderContextMenu(row, { x = 0, y = 0, anchor = null } = {}) {
+    if (!(row instanceof HTMLElement) || !this.canOrganizeInventory) return;
+
+    const folderId = cleanText(row.dataset.folderId);
+    const folderName = cleanText(row.dataset.folderName) || "Папка";
+    const pinned = row.dataset.folderPinned === "true" || this.pinnedFolderIds.has(folderId);
+    if (!folderId) return;
+
+    const actions = [
+      {
+        label: "Создать вложенную папку",
+        icon: "fa-solid fa-folder-plus",
+        disabled: row.dataset.canCreateChild === "false",
+        callback: () => this.#createInventoryFolder(folderId)
+      },
+      {
+        label: "Переименовать",
+        icon: "fa-solid fa-pen",
+        callback: () => this.#renameInventoryFolder(folderId, folderName)
+      },
+      {
+        label: "Цвет папки",
+        icon: "fa-solid fa-palette",
+        callback: () => this.#setInventoryFolderColor(folderId, row.dataset.folderColor)
+      },
+      {
+        label: "Открыть отдельно",
+        icon: "fa-solid fa-up-right-from-square",
+        callback: () => this.#openInventoryFolderPopout(folderId)
+      },
+      {
+        label: "Продать всё",
+        icon: "fa-solid fa-coins",
+        callback: () => this.#promptInventoryFolderBatch(folderId, folderName, "sell")
+      },
+      {
+        label: "Разобрать всё",
+        icon: "fa-solid fa-hammer",
+        callback: () => this.#promptInventoryFolderBatch(folderId, folderName, "dismantle")
+      },
+      {
+        label: pinned ? "Открепить" : "Закрепить",
+        icon: pinned ? "fa-solid fa-thumbtack" : "fa-solid fa-thumbtack",
+        callback: () => this.#setInventoryFolderPinned(folderId, !pinned)
+      },
+      {
+        label: "Удалить",
+        icon: "fa-solid fa-trash",
+        danger: true,
+        callback: () => this.#deleteInventoryFolder(folderId, folderName)
+      }
+    ];
+
+    this.#openContextMenu({ x, y, anchor, title: folderName, actions });
+  }
+
+  #readInventoryDropTarget(event, dropzone) {
+    const eventTarget = event?.target instanceof HTMLElement
+      ? event.target
+      : event?.target?.parentElement ?? null;
+    if (!eventTarget) return null;
+
+    const itemTarget = eventTarget.closest?.(".rm-inventory-tree-row--item[data-item-id]") ?? null;
+    if (itemTarget && dropzone.contains(itemTarget)) {
+      return {
+        reference: { kind: "item", id: cleanText(itemTarget.dataset?.itemId) },
+        targetElement: itemTarget,
+        highlightElement: itemTarget
+      };
+    }
+
+    let targetElement = eventTarget.closest?.("[data-folder-drop-id]") ?? null;
+    if (!targetElement && dropzone.contains(eventTarget)) targetElement = dropzone;
+    if (!targetElement || (targetElement !== dropzone && !dropzone.contains(targetElement))) return null;
+
+    const folderId = cleanText(targetElement.dataset?.folderDropId) || null;
+    return {
+      reference: targetElement === dropzone
+        ? { kind: "background" }
+        : folderId === null ? { kind: "root" } : { kind: "folder", id: folderId },
+      targetElement,
+      highlightElement: targetElement.closest?.(".rm-inventory-folder-row[data-folder-id]") ?? targetElement
+    };
+  }
+
+  #resolveInventoryDropTarget(target, tree = this.inventoryFolderTreeCache, rootFolderId = this.rootFolderId) {
+    if (!target || !tree) return null;
+    return {
+      ...target,
+      folderId: resolveInventoryDropFolderId({
+        target: target.reference,
+        state: tree.state,
+        itemIds: tree.itemsById,
+        rootFolderId
+      })
+    };
+  }
+
+  #resolveInventoryDropAction(dragData, folderId, {
+    tree = this.inventoryFolderTreeCache,
+    groupActorId = this.inventoryActorId,
+    canDrop = this.canDropInventoryItems
+  } = {}) {
+    if (!canDrop || !tree) return null;
+    const internal = readInventoryTreeDragData(dragData);
+    if (internal) {
+      if (internal.groupActorId !== groupActorId) return null;
+      if (internal.kind === "folder") {
+        if (!tree.foldersById.has(internal.folderId)) return null;
+        if (folderId === internal.folderId) return null;
+        let currentId = folderId;
+        while (currentId !== null) {
+          if (currentId === internal.folderId) return null;
+          currentId = tree.foldersById.get(currentId)?.parentId ?? null;
+        }
+        return { kind: "folder", internal };
+      }
+      if (!tree.itemsById.has(internal.itemId)) return null;
+      return { kind: "item", internal };
+    }
+
+    if (hasInventoryTreeDragMetadata(dragData)) return null;
+    return ["Item", "JournalEntry", "JournalEntryPage"].includes(dragData?.type)
+      ? { kind: "external", dragData }
+      : null;
+  }
+
+  async #submitPartialTransfer(payload) {
+    this.pendingItemInstanceTransfer = payload;
+    return this.#runInventoryFolderMutation(async () => {
+      try {
+        const result = await this.moduleApi.moveInventoryItemToFolder(payload);
+        this.pendingItemInstanceTransfer = null;
+        return result;
+      } catch (error) {
+        if (!["request-timeout", "ambiguous-outcome", "manual-review", "pending-instance-operation"].includes(error?.code)) this.pendingItemInstanceTransfer = null;
+        throw error;
+      }
+    }, { successMessage: "Предметы перемещены.", errorMessage: "Не удалось перенести часть стопки." });
+  }
+
+  async #transferInventoryPart(itemId, folderId = null, { chooseFolder = false, snapshot = null, groupActorId = this.inventoryActorId } = {}) {
+    if (this.pendingItemInstanceTransfer) {
+      ui.notifications?.warn?.("Сначала повторите незавершённый перенос через меню предмета.");
+      return null;
+    }
+    snapshot ??= await this.moduleApi.getInventorySnapshot({ createActor: false, groupActorId });
+    if (cleanText(snapshot.actor?.id) !== groupActorId) throw new Error("Группа инвентаря изменилась.");
+    const item = (snapshot.allItems ?? snapshot.items ?? []).find(entry => (entry.itemId ?? entry.id) === itemId);
+    if (!item) throw new Error("Предмет больше не существует.");
+    const result = await promptInventoryPartialTransfer({
+      quantity: item.quantity, step: item.sourceType === "material" ? 0.00001 : 1,
+      folders: snapshot.folders ?? [], folderId, chooseFolder
+    });
+    if (!result) return null;
+    return this.#submitPartialTransfer({ groupActorId, itemId, ...result, expectedSourceQuantity: item.quantity, operationId: crypto.randomUUID() });
+  }
+
+  async #applyInventoryDrop(action, folderId, groupActorId = this.inventoryActorId) {
+    if (action.kind === "folder") {
+      return this.moduleApi.moveInventoryFolder({
+        groupActorId,
+        folderId: action.internal.folderId,
+        parentId: folderId
+      });
+    }
+    if (action.kind === "item") {
+      return this.moduleApi.moveInventoryItemToFolder({
+        groupActorId,
+        itemId: action.internal.itemId,
+        folderId
+      });
+    }
+    return this.moduleApi.importInventoryDrop(action.dragData, { groupActorId, folderId });
+  }
+
+  #openItemContextMenu(row, { x = 0, y = 0, anchor = null } = {}) {
     if (!(row instanceof HTMLElement)) {
       return;
     }
@@ -3422,6 +4379,14 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     };
 
     const actions = [];
+    if (this.pendingItemInstanceTransfer?.groupActorId === this.inventoryActorId) {
+      actions.push({ label: "Повторить незавершённый перенос", icon: "fa-solid fa-rotate-right",
+        callback: () => this.#submitPartialTransfer(this.pendingItemInstanceTransfer) });
+    }
+    if (this.canOrganizeInventory && Number(row.dataset.quantity) > (row.dataset.sourceType === "material" ? 0.00001 : 1)) {
+      actions.push({ label: "Перенести часть…", icon: "fa-solid fa-arrow-right-arrow-left",
+        callback: () => this.#transferInventoryPart(row.dataset.itemId, null, { chooseFolder: true }) });
+    }
     if (actionButtons.takeSelf) {
       actions.push({
         label: "Забрать себе",
@@ -3462,6 +4427,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.#openContextMenu({
       x,
       y,
+      anchor,
       title: itemName,
       actions
     });
@@ -3678,15 +4644,271 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     };
   }
 
+  #newInventoryRuleDraft(rule = null) {
+    const source = rule ? foundry.utils.deepClone(rule) : null;
+    return {
+      mode: source ? "edit" : "create",
+      id: cleanText(source?.id) || globalThis.crypto.randomUUID(),
+      name: cleanText(source?.name),
+      conditions: (source?.conditions?.length ? source.conditions : [{
+        field: "sourceType",
+        operator: "is",
+        value: ""
+      }]).map((condition) => ({
+        field: cleanText(condition.field) || "sourceType",
+        operator: cleanText(condition.operator) || "is",
+        valueText: Array.isArray(condition.value) ? condition.value.join(", ") : String(condition.value ?? "")
+      })),
+      actionType: cleanText(source?.action?.type) || "folder",
+      folderId: cleanText(source?.action?.folderId) || ""
+    };
+  }
+
+  #parseInventoryRuleCondition(condition) {
+    const definition = INVENTORY_INGRESS_RULE_FIELD_DEFINITIONS[condition.field];
+    const text = String(condition.valueText ?? "").trim();
+    if (!definition || !definition.operators.includes(condition.operator) || !text) {
+      throw new Error("Заполните поле, оператор и значение каждого условия.");
+    }
+    let value = text;
+    if (definition.kind === "number") {
+      value = condition.operator === "between"
+        ? text.split(",").map((entry) => Number(entry.trim()))
+        : Number(text);
+    }
+    else if (definition.kind === "boolean") {
+      if (!["true", "false"].includes(text.toLowerCase())) {
+        throw new Error("Логическое значение должно быть true или false.");
+      }
+      value = text.toLowerCase() === "true";
+    }
+    else if (condition.operator === "in" || condition.operator === "notIn") {
+      value = text.split(",").map((entry) => entry.trim()).filter(Boolean);
+    }
+    return { field: condition.field, operator: condition.operator, value };
+  }
+
+  #normalizeInventoryRuleDraft() {
+    const draft = this.inventoryRuleDraft;
+    if (!draft) throw new Error("Черновик правила не найден.");
+    const action = draft.actionType === "folder"
+      ? { type: "folder", folderId: cleanText(draft.folderId) }
+      : { type: draft.actionType };
+    return normalizeInventoryIngressRule({
+      id: cleanText(draft.id),
+      name: cleanText(draft.name),
+      conditions: draft.conditions.map((condition) => this.#parseInventoryRuleCondition(condition)),
+      action
+    });
+  }
+
+  #prepareInventoryRuleDraftContext(folderOptions) {
+    if (!this.inventoryRuleDraft) return null;
+    const draft = this.inventoryRuleDraft;
+    return {
+      ...draft,
+      conditions: draft.conditions.map((condition, index) => {
+        const definition = INVENTORY_INGRESS_RULE_FIELD_DEFINITIONS[condition.field]
+          ?? INVENTORY_INGRESS_RULE_FIELD_DEFINITIONS.sourceType;
+        return {
+          ...condition,
+          index,
+          invalid: !cleanText(condition.valueText),
+          isBoolean: definition.kind === "boolean",
+          isNumber: definition.kind === "number" && condition.operator !== "between",
+          booleanOptions: ["true", "false"].map((value) => ({
+            value,
+            label: value === "true" ? "Да" : "Нет",
+            selected: value === String(condition.valueText).toLowerCase()
+          })),
+          fieldOptions: Object.keys(INVENTORY_INGRESS_RULE_FIELD_DEFINITIONS).map((value) => ({
+            value,
+            label: value,
+            selected: value === condition.field
+          })),
+          operatorOptions: definition.operators.map((value) => ({
+            value,
+            label: value,
+            selected: value === condition.operator
+          }))
+        };
+      }),
+      actionOptions: INVENTORY_RULE_ACTION_OPTIONS.map((option) => ({
+        ...option,
+        selected: option.value === draft.actionType
+      })),
+      showFolder: draft.actionType === "folder",
+      folderOptions: folderOptions.map((folder) => ({
+        value: folder.id,
+        label: folder.name,
+        selected: folder.id === draft.folderId
+      }))
+    };
+  }
+
+  #inventoryRuleContext() {
+    const state = normalizeInventoryIngressRuleState(
+      this.inventorySnapshotCache?.inventoryIngressRules ?? null
+    );
+    const folders = this.inventorySnapshotCache?.folders ?? [];
+    return {
+      inventoryFiltersActive: this.inventoryMode === "filters",
+      inventoryRulesRevision: state.revision,
+      inventoryRules: state.rules.map((rule) => ({
+        ...rule,
+        conditionLabels: rule.conditions.map((condition) => (
+          `${condition.field} ${condition.operator} ${Array.isArray(condition.value) ? condition.value.join(", ") : condition.value}`
+        )),
+        actionLabel: rule.action.type === "folder"
+          ? `Папка: ${folders.find((folder) => folder.id === rule.action.folderId)?.name ?? rule.action.folderId}`
+          : rule.action.type === "skip" ? "Пропустить" : "Разобрать"
+      })),
+      inventoryRuleDraft: this.#prepareInventoryRuleDraftContext(folders),
+      inventoryRuleDraftError: this.inventoryRuleDraftError
+    };
+  }
+
+  #projectCachedInventoryContext() {
+    if (!this.inventoryContextCache || !this.inventoryFolderTreeCache || !this.inventorySearchIndexCache) {
+      return null;
+    }
+
+    this.sortMode = normalizeInventorySortMode(this.sortMode);
+    sortInventoryFolderTreeItems(this.inventoryFolderTreeCache.root, this.sortMode);
+    const projection = projectInventoryFolderRows({
+      tree: this.inventoryFolderTreeCache,
+      searchIndex: this.inventorySearchIndexCache,
+      rootFolderId: this.rootFolderId,
+      expandedFolderIds: [...this.expandedFolderIds],
+      search: this.search,
+      typeFilter: this.typeFilter
+    });
+    const inventoryRows = projection.rows.map((row) => ({
+      ...row,
+      isFolder: row.kind === "folder",
+      isItem: row.kind === "item",
+      isCollapsed: row.kind === "folder" && !row.expanded,
+      isPinned: row.kind === "folder" && this.pinnedFolderIds.has(row.folderId),
+      canDismantle: row.kind === "item" ? row.canDismantle === true : row.canDismantle
+    }));
+    const inventory = inventoryRows.filter((row) => row.kind === "item");
+    const inventoryRootFolder = projection.rootFolder
+      ? {
+          folderId: projection.rootFolder.folderId,
+          name: projection.rootFolder.name,
+          parentId: projection.rootFolder.parentId
+        }
+      : null;
+
+    const pinnedInventoryFolders = this.rootFolderId === null && this.inventoryMode === "items"
+      ? [...this.pinnedFolderIds].flatMap((folderId) => {
+          const folder = this.inventoryFolderTreeCache.foldersById.get(folderId);
+          return folder ? [{
+            folderId,
+            name: folder.name,
+            color: folder.color,
+            recursiveItemCount: folder.recursiveItemCount
+          }] : [];
+        })
+      : null;
+    return {
+      ...this.inventoryContextCache,
+      ...this.#inventoryRuleContext(),
+      search: this.search,
+      typeFilter: this.typeFilter,
+      inventoryActorId: this.inventoryActorId,
+      inventoryRootFolder,
+      inventoryRootFolderMissing: projection.rootFolderMissing,
+      inventoryRows,
+      inventory,
+      inventoryCount: projection.visibleItemCount,
+      emptyInventory: inventoryRows.length === 0,
+      expandedFolderIds: [...this.expandedFolderIds],
+      ...(pinnedInventoryFolders === null ? {} : { pinnedInventoryFolders }),
+      typeOptions: this.inventoryContextCache.typeOptions.map((option) => ({
+        ...option,
+        selected: option.value === this.typeFilter
+      })),
+      sortMode: this.sortMode,
+      sortOptions: INVENTORY_SORT_OPTIONS.map((option) => ({
+        ...option,
+        selected: option.value === this.sortMode
+      }))
+    };
+  }
+
+  #applyInventoryRootLifecycle(context) {
+    if (!this.rootFolderId || !context) {
+      return context;
+    }
+
+    if (context.inventoryRootFolder) {
+      this.missingRootCloseScheduled = false;
+      this.options ??= {};
+      this.options.window ??= {};
+      this.options.window.title = context.inventoryRootFolder.name;
+      return context;
+    }
+
+    if (context.inventoryRootFolderMissing && !this.missingRootCloseScheduled) {
+      this.missingRootCloseScheduled = true;
+      globalThis.queueMicrotask?.(() => {
+        globalThis.ui?.notifications?.info?.("Папка инвентаря удалена. Её содержимое перемещено на один уровень выше.");
+        void this.close?.();
+      });
+    }
+    return {
+      ...context,
+      inventoryRows: [],
+      inventory: [],
+      inventoryCount: 0,
+      emptyInventory: true
+    };
+  }
+
   async _prepareContext() {
+    if (this.inventorySearchRenderPending) {
+      this.inventorySearchRenderPending = false;
+      const cachedContext = this.#projectCachedInventoryContext();
+      if (cachedContext) return this.#applyInventoryRootLifecycle(cachedContext);
+    }
+    this.inventorySearchRenderPending = false;
     this.calendarDowntimeByIsoDate = {};
     this.groupActor = null;
     try {
       const inventorySnapshot = await this.moduleApi.getInventorySnapshot({
-        search: this.search,
-        typeFilter: this.typeFilter,
-        createActor: false
+        createActor: false,
+        groupActorId: this.groupActorId
       });
+      this.inventorySnapshotCache = inventorySnapshot;
+      const inventoryItems = inventorySnapshot.allItems ?? inventorySnapshot.items ?? [];
+      const itemFolderIds = Object.fromEntries(inventoryItems
+        .map((item) => [cleanText(item?.itemId ?? item?.id), cleanText(item?.folderId) || null])
+        .filter(([itemId]) => itemId));
+      this.inventoryFolderTreeCache = buildInventoryFolderTree({
+        state: {
+          version: inventorySnapshot.folderStateVersion,
+          folders: inventorySnapshot.folders ?? [],
+          itemFolderIds
+        },
+        items: inventoryItems,
+        compareItems: (left, right) => compareInventoryEntries(left, right, this.sortMode)
+      });
+      this.inventorySearchIndexCache = buildInventoryFolderSearchIndex(this.inventoryFolderTreeCache, {
+        itemText: (item) => [
+          item?.name,
+          item?.itemTypeLabel,
+          item?.materialLabel,
+          item?.sourceTypeLabel
+        ].join(" ")
+      });
+      const folderIds = [...this.inventoryFolderTreeCache.foldersById.keys()];
+      const inventoryActorId = this.inventoryActorId;
+      const folderUiState = inventoryActorId
+        ? await this.moduleApi.getInventoryFolderUiState?.(inventoryActorId, folderIds)
+        : null;
+      this.expandedFolderIds = new Set(normalizeExpandedFolderIds(folderUiState?.expandedFolderIds, { folderIds }));
+      this.pinnedFolderIds = new Set(normalizePinnedFolderIds(folderUiState?.pinnedFolderIds, { folderIds }));
       let group = null;
       let groupContextError = String(inventorySnapshot.groupContextError ?? "").trim();
       try {
@@ -3719,6 +4941,9 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         groupContextError = groupContextError || error.message || "Не удалось определить группу Rebreya.";
       }
       const partySnapshot = await this.moduleApi.getPartySnapshot();
+      this.reputationActorIds = (partySnapshot.members ?? []).map(member => member.actorId).filter(Boolean);
+      const reputationHtml = this.activeTab === "party" && typeof this.moduleApi.getReputation === "function"
+        ? await this.reputationPanel.renderContent(this.reputationActorIds.map(id => game.actors?.get?.(id)).filter(Boolean)) : "";
       const craftSnapshot = await this.moduleApi.getCraftSnapshot({
         search: this.craftSearch,
         crafterActorId: this.craftCrafterActorId
@@ -3727,7 +4952,13 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       let travelSnapshot = null;
       let travelWarning = "";
       try {
-        travelSnapshot = await this.moduleApi.getTravelSnapshot?.();
+        if (this.pendingTravelSnapshot !== null) {
+          travelSnapshot = this.pendingTravelSnapshot;
+          this.pendingTravelSnapshot = null;
+        }
+        else {
+          travelSnapshot = await this.moduleApi.getTravelSnapshot?.();
+        }
       }
       catch (error) {
         if (!isKnownGroupContextError(error)) {
@@ -3768,9 +4999,9 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         id: actor.id,
         name: actor.name
       }));
-      const totalCapacityLb = toNumber(partySnapshot.totalCapacityLb, 0);
-      const inventoryWeight = toNumber(partySnapshot.inventoryWeight, 0);
-      const freeCapacityLb = roundNumber(toNumber(partySnapshot.freeCapacityLb, 0), 2);
+      const totalCapacityLb = toNumber(partySnapshot.storage?.capacityLb ?? partySnapshot.totalCapacityLb, 0);
+      const inventoryWeight = toNumber(partySnapshot.storage?.weightLb ?? partySnapshot.inventoryWeight, 0);
+      const freeCapacityLb = roundNumber(toNumber(partySnapshot.storage?.freeCapacityLb ?? partySnapshot.freeCapacityLb, 0), 2);
       const capacityUsedRawPercent = totalCapacityLb > 0
         ? roundNumber((inventoryWeight / totalCapacityLb) * 100, 1)
         : 0;
@@ -3845,13 +5076,32 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         totalCopper: 0,
         label: inventorySnapshot.summary.currencyLabel
       };
+      const currencyDisplay = Object.fromEntries(
+        ["pp", "gp", "sp", "cp"].map((denomination) => [
+          denomination,
+          formatCompactCurrencyAmount(currency[denomination])
+        ])
+      );
       this.sortMode = normalizeInventorySortMode(this.sortMode);
-      const sortedInventoryItems = sortInventoryEntries(inventorySnapshot.items, this.sortMode);
       const itemValueSummary = buildInventoryValueSummary(inventorySnapshot.allItems ?? inventorySnapshot.items);
-      const partyMembers = (partySnapshot.members ?? []).map((member) => ({
-        ...member,
-        expanded: this.expandedPartyMembers.has(member.actorId)
-      }));
+      const partyMembers = (partySnapshot.members ?? []).map((member) => {
+        const memberInventoryWeight = Math.max(0, toNumber(member.storage?.weightLb ?? member.inventoryWeight, 0));
+        const memberCapacityLb = Math.max(0, toNumber(member.storage?.capacityLb ?? member.capacityLb, 0));
+        const capacityUsedRawPercent = memberCapacityLb > 0
+          ? roundNumber((memberInventoryWeight / memberCapacityLb) * 100, 1)
+          : (memberInventoryWeight > 0 ? 100 : 0);
+
+        return {
+          ...member,
+          storageWeightLb: memberInventoryWeight,
+          storageCapacityLb: memberCapacityLb,
+          currencyGp: Math.max(0, roundNumber(toNumber(member.currencyGp, 0), 2)),
+          capacityUsedRawPercent,
+          capacityUsedPercent: Math.min(100, Math.max(0, capacityUsedRawPercent)),
+          isOverloaded: memberInventoryWeight > memberCapacityLb,
+          expanded: this.expandedPartyMembers.has(member.actorId)
+        };
+      });
       const membershipManagedByNativeGroup = Boolean(partySnapshot.membershipManagedByNativeGroup);
       const addMemberDisabled = membershipManagedByNativeGroup || availableActors.length === 0;
       const craftHasCrafters = (craftSnapshot.crafters ?? []).length > 0;
@@ -3889,6 +5139,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       const canEditCurrency = Boolean(canManage || canDropInventoryItems);
       this.canManage = canManage;
       this.canDropInventoryItems = canDropInventoryItems;
+      this.canOrganizeInventory = canDropInventoryItems;
       this.partyMembershipManagedByNativeGroup = membershipManagedByNativeGroup;
 
       if (!availableActors.some((actor) => actor.id === this.selectedNewMemberId)) {
@@ -3965,7 +5216,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       const calendarCells = buildCalendarDowntimeCells(calendarSnapshot, downtimeSnapshot);
       this.calendarDowntimeByIsoDate = Object.fromEntries(calendarCells.map((cell) => [cell.isoDate, cell.downtime]));
 
-      return {
+      const context = {
         hasError: false,
         actor: inventorySnapshot.actor ?? {
           id: "",
@@ -3991,19 +5242,24 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
           canEditCrest: Boolean(canManage && this.groupActor)
         },
         groupContextError,
-        inventory: sortedInventoryItems,
-        inventoryCount: sortedInventoryItems.length,
-        emptyInventory: inventorySnapshot.emptyInventory,
+        inventoryRows: [],
+        inventory: [],
+        inventoryCount: 0,
+        emptyInventory: true,
         summary: {
           ...inventorySnapshot.summary,
           currency,
+          currencyDisplay,
           ...itemValueSummary,
-          partyCapacityLb: partySnapshot.totalCapacityLb,
+          partyCapacityLb: totalCapacityLb,
           freeCapacityLb,
           freeCapacityClass: freeCapacityLb < 0 ? "rm-negative" : "rm-positive"
         },
+        reputationHtml,
         party: {
           ...partySnapshot,
+          storageWeightLb: inventoryWeight,
+          storageCapacityLb: totalCapacityLb,
           freeCapacityLb,
           foodDaysLeft,
           waterDaysLeft,
@@ -4080,10 +5336,18 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         actionFeedback,
         canManage,
         canDropInventoryItems,
+        canDismantleInventory: canDropInventoryItems,
+        canOrganizeInventory: canDropInventoryItems,
         canEditCurrency
       };
+      this.inventoryContextCache = context;
+      return this.#applyInventoryRootLifecycle(this.#projectCachedInventoryContext());
     }
     catch (error) {
+      this.inventorySnapshotCache = null;
+      this.inventoryFolderTreeCache = null;
+      this.inventorySearchIndexCache = null;
+      this.inventoryContextCache = null;
       console.error(`${MODULE_ID} | Failed to prepare inventory app.`, error);
       return {
         hasError: true,
@@ -4093,14 +5357,44 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   async #openItemSheet(itemId) {
-    const actor = await this.moduleApi.inventoryService.getInventoryActor({ create: true });
+    const actor = await this.moduleApi.inventoryService.getInventoryActor({
+      create: true,
+      groupActorId: this.inventoryActorId
+    });
     const item = actor?.items.get(itemId) ?? null;
     if (!item) {
       throw new Error("Предмет уже не найден в складе.");
     }
 
-    await item.sheet?.render?.(true);
-    bringAppToFront(item.sheet);
+    await openInventoryItem(item, { moduleApi: this.moduleApi });
+  }
+
+  async #createInventoryItem() {
+    const groupActorId = cleanText(this.inventoryActorId);
+    const folderId = this.rootFolderId === null ? null : cleanText(this.rootFolderId);
+    if (!groupActorId) throw new Error("Склад группы не найден.");
+    const targetFolder = folderId
+      ? this.inventoryFolderTreeCache?.folderById?.get?.(folderId) ?? null
+      : null;
+    return promptInventoryItemAddition({
+      targetLabel: targetFolder?.name
+        ? `«${targetFolder.name}»`
+        : folderId
+          ? "выбранная папка"
+          : "корень склада",
+      loadCatalog: () => this.moduleApi.getInventoryAddCatalog(),
+      submitCatalogItem: (entry, quantity, attempt) => this.moduleApi.addModelItemToInventory(
+        entry.sourceType,
+        entry.sourceId,
+        quantity,
+        { groupActorId, folderId, batchMutationId: attempt.batchMutationId }
+      ),
+      submitManualItem: (manualEntry, attempt) => this.moduleApi.addManualInventoryItem(
+        manualEntry,
+        manualEntry.quantity,
+        { groupActorId, folderId, batchMutationId: attempt.batchMutationId }
+      )
+    });
   }
 
   async #promptSupply(resourceKey) {
@@ -5657,6 +6951,18 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     });
   }
 
+  async refreshReputationPanel() {
+    const sequence = ++this.reputationRefreshSequence;
+    const root = getAppElement(this)?.querySelector("[data-reputation-panel]");
+    if (!root || this.activeTab !== "party") return;
+    const html = await this.reputationPanel.renderContent(this.reputationActorIds.map(id => game.actors?.get?.(id)).filter(Boolean));
+    if (sequence !== this.reputationRefreshSequence || !root.isConnected) return;
+    const wrapper = document.createElement("div"); wrapper.innerHTML = html;
+    const panel = wrapper.firstElementChild;
+    root.replaceWith(panel);
+    this.reputationPanel.bind(panel);
+  }
+
   async _onRender(context, options) {
     await super._onRender(context, options);
     const element = getAppElement(this);
@@ -5664,10 +6970,28 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       return;
     }
 
+    this.reputationPanel.bind(element.querySelector("[data-reputation-panel]"));
+
+    const inventoryHeader = element.querySelector(".rm-inventory-book__header--inventory");
+    if (inventoryHeader instanceof HTMLElement) {
+      const elapsedSeconds = Math.max(0, Date.now() - this.inventoryHeaderAnimationStartedAt) / 1000;
+      inventoryHeader.style.setProperty(
+        "--rm-inventory-header-animation-delay",
+        `${-elapsedSeconds}s`
+      );
+    }
+
     this.#closeContextMenu();
     this.renderListenersAbortController?.abort();
     this.renderListenersAbortController = new AbortController();
     const listenerOptions = { signal: this.renderListenersAbortController.signal };
+
+    element.querySelectorAll(".is-drop-target-ready").forEach((node) => {
+      node.classList.remove("is-drop-target-ready");
+    });
+    element.querySelectorAll(".rm-inventory-drop-surface.is-dragover").forEach((node) => {
+      node.classList.remove("is-dragover");
+    });
 
     this.#rememberExpandedPartyMembers(element);
 
@@ -5690,21 +7014,66 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     element.querySelectorAll("[data-item-drag]").forEach((row) => {
       row.addEventListener("dragstart", (event) => {
         const uuid = event.currentTarget.dataset.itemUuid;
-        if (!uuid || !event.dataTransfer) {
+        const itemId = cleanText(event.currentTarget.dataset.itemId);
+        const groupActorId = this.inventoryActorId;
+        if (!uuid || !itemId || !groupActorId || !event.dataTransfer) {
           return;
         }
 
-        event.dataTransfer.effectAllowed = "all";
-        const payload = JSON.stringify(buildPartyInventoryItemDragData(uuid));
-
-        for (const mimeType of ["text/plain", "text", "application/json", "text/uri-list"]) {
-          try {
-            event.dataTransfer.setData(mimeType, payload);
+        try {
+          event.dataTransfer.effectAllowed = "all";
+          const dragData = extendInventoryItemDragData(
+            buildPartyInventoryItemDragData(uuid),
+            { groupActorId, itemId }
+          );
+          const payload = JSON.stringify(dragData);
+          for (const mimeType of INVENTORY_DRAG_MIME_TYPES) {
+            try {
+              event.dataTransfer.setData(mimeType, payload);
+            }
+            catch (_error) {
+              // Ignore MIME types unsupported by this browser.
+            }
           }
-          catch (_error) {
-            // Ignore unsupported mime types
-          }
+          activeInventoryTreeDragSession = { dataTransfer: event.dataTransfer, dragData };
         }
+        catch (error) {
+          console.error(`${MODULE_ID} | Failed to start inventory Item drag.`, error);
+          ui.notifications?.error(error.message || "Не удалось начать перенос предмета.");
+        }
+      }, listenerOptions);
+      row.addEventListener("dragend", () => {
+        activeInventoryTreeDragSession = null;
+      }, listenerOptions);
+    });
+
+    element.querySelectorAll("[data-folder-drag]").forEach((row) => {
+      row.addEventListener("dragstart", (event) => {
+        const folderId = cleanText(event.currentTarget.dataset.folderId);
+        const groupActorId = this.inventoryActorId;
+        if (!folderId || !groupActorId || !event.dataTransfer) return;
+
+        try {
+          event.dataTransfer.effectAllowed = "all";
+          const dragData = buildInventoryFolderDragData({ groupActorId, folderId });
+          const payload = JSON.stringify(dragData);
+          for (const mimeType of INVENTORY_DRAG_MIME_TYPES) {
+            try {
+              event.dataTransfer.setData(mimeType, payload);
+            }
+            catch (_error) {
+              // Ignore MIME types unsupported by this browser.
+            }
+          }
+          activeInventoryTreeDragSession = { dataTransfer: event.dataTransfer, dragData };
+        }
+        catch (error) {
+          console.error(`${MODULE_ID} | Failed to start inventory folder drag.`, error);
+          ui.notifications?.error(error.message || "Не удалось начать перенос папки.");
+        }
+      }, listenerOptions);
+      row.addEventListener("dragend", () => {
+        activeInventoryTreeDragSession = null;
       }, listenerOptions);
     });
 
@@ -5718,12 +7087,18 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       const originCityId = cleanText(element.querySelector("[data-action='travel-origin']")?.value);
       const destinationCityId = cleanText(element.querySelector("[data-action='travel-destination']")?.value);
       const mode = cleanText(element.querySelector("[data-action='travel-mode']")?.value) || "land";
+      const mutationSequence = ++this.travelMutationSequence;
       try {
-        await this.moduleApi.setTravelRoute?.({
+        const snapshot = await this.moduleApi.setTravelRoute?.({
           originCityId,
           destinationCityId,
           mode
         });
+        if (mutationSequence !== this.travelMutationSequence) {
+          return;
+        }
+        this.pendingTravelSnapshot = snapshot ?? null;
+        await this.render({ force: true, preserveScroll: true });
         this.#setActionFeedback("success", "Маршрут путешествия обновлён.");
         bringAppToFront(this);
       }
@@ -5801,9 +7176,15 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       }, listenerOptions);
     });
 
-    element.querySelector("[data-action='travel-clear']")?.addEventListener("click", async () => {
+    const clearTravelRoute = async () => {
+      const mutationSequence = ++this.travelMutationSequence;
       try {
-        await this.moduleApi.clearTravelRoute?.();
+        const snapshot = await this.moduleApi.clearTravelRoute?.();
+        if (mutationSequence !== this.travelMutationSequence) {
+          return;
+        }
+        this.pendingTravelSnapshot = snapshot ?? null;
+        await this.render({ force: true, preserveScroll: true });
         this.#setActionFeedback("success", "Маршрут путешествия очищен.");
         bringAppToFront(this);
       }
@@ -5814,7 +7195,20 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         this.render({ force: true });
         ui.notifications?.error(message);
       }
-    }, listenerOptions);
+    };
+
+    element.querySelector("[data-action='travel-clear']")?.addEventListener("click", clearTravelRoute, listenerOptions);
+
+    element.querySelectorAll("[data-action='clear-header-travel-route']").forEach((routeCard) => {
+      routeCard.addEventListener("contextmenu", async (event) => {
+        if (!this.canManage) {
+          return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        await clearTravelRoute();
+      }, listenerOptions);
+    });
 
     element.querySelectorAll("[data-transport-row]").forEach((row) => {
       row.addEventListener("contextmenu", (event) => {
@@ -6155,8 +7549,209 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       }, listenerOptions);
     }
 
+    element.querySelector("[data-action='toggle-inventory-filters']")?.addEventListener("click", async (event) => {
+      event.preventDefault();
+      this.inventoryMode = this.inventoryMode === "filters" ? "items" : "filters";
+      this.inventoryRuleDraftError = "";
+      this.inventorySearchRenderPending = true;
+      await this.render({ force: true, preserveScroll: true });
+    }, listenerOptions);
+
+    element.querySelector("[data-action='create-inventory-rule']")?.addEventListener("click", async () => {
+      if (!this.canOrganizeInventory) return;
+      this.inventoryRuleDraft = this.#newInventoryRuleDraft();
+      this.inventoryRuleDraftError = "";
+      this.inventorySearchRenderPending = true;
+      await this.render({ force: true, preserveScroll: true });
+    }, listenerOptions);
+
+    element.querySelectorAll("[data-action='edit-inventory-rule']").forEach((button) => {
+      button.addEventListener("click", async (event) => {
+        if (!this.canOrganizeInventory) return;
+        const ruleId = cleanText(event.currentTarget.dataset.ruleId);
+        const state = normalizeInventoryIngressRuleState(this.inventorySnapshotCache?.inventoryIngressRules ?? null);
+        const rule = state.rules.find((entry) => entry.id === ruleId);
+        if (!rule) return;
+        this.inventoryRuleDraft = this.#newInventoryRuleDraft(rule);
+        this.inventoryRuleDraftError = "";
+        this.inventorySearchRenderPending = true;
+        await this.render({ force: true, preserveScroll: true });
+      }, listenerOptions);
+    });
+
+    element.querySelectorAll("[data-action='delete-inventory-rule']").forEach((button) => {
+      button.addEventListener("click", async (event) => {
+        if (!this.canOrganizeInventory) return;
+        await this.#deleteInventoryRule(cleanText(event.currentTarget.dataset.ruleId));
+      }, listenerOptions);
+    });
+
+    element.querySelector("[data-action='inventory-rule-name']")?.addEventListener("input", (event) => {
+      if (this.inventoryRuleDraft) this.inventoryRuleDraft.name = event.currentTarget.value ?? "";
+    }, listenerOptions);
+
+    for (const action of ["inventory-rule-field", "inventory-rule-operator", "inventory-rule-value"]) {
+      element.querySelectorAll(`[data-action='${action}']`).forEach((control) => {
+        const eventName = action === "inventory-rule-value" && control.tagName !== "SELECT" ? "input" : "change";
+        control.addEventListener(eventName, async (event) => {
+          const index = Number(event.currentTarget.closest?.("[data-condition-index]")?.dataset?.conditionIndex);
+          const condition = this.inventoryRuleDraft?.conditions?.[index];
+          if (!condition) return;
+          if (action === "inventory-rule-field") {
+            condition.field = cleanText(event.currentTarget.value);
+            condition.operator = INVENTORY_INGRESS_RULE_FIELD_DEFINITIONS[condition.field]?.operators?.[0] ?? "is";
+            condition.valueText = INVENTORY_INGRESS_RULE_FIELD_DEFINITIONS[condition.field]?.kind === "boolean"
+              ? "true"
+              : "";
+          }
+          else if (action === "inventory-rule-operator") condition.operator = cleanText(event.currentTarget.value);
+          else condition.valueText = event.currentTarget.value ?? "";
+          this.inventoryRuleDraftError = "";
+          if (action !== "inventory-rule-value") {
+            this.inventorySearchRenderPending = true;
+            await this.render({ force: true, preserveScroll: true });
+          }
+        }, listenerOptions);
+      });
+    }
+
+    element.querySelector("[data-action='inventory-rule-action']")?.addEventListener("change", async (event) => {
+      if (!this.inventoryRuleDraft) return;
+      this.inventoryRuleDraft.actionType = cleanText(event.currentTarget.value);
+      this.inventoryRuleDraftError = "";
+      this.inventorySearchRenderPending = true;
+      await this.render({ force: true, preserveScroll: true });
+    }, listenerOptions);
+
+    element.querySelector("[data-action='inventory-rule-folder']")?.addEventListener("change", (event) => {
+      if (this.inventoryRuleDraft) this.inventoryRuleDraft.folderId = cleanText(event.currentTarget.value);
+    }, listenerOptions);
+
+    element.querySelector("[data-action='add-inventory-rule-condition']")?.addEventListener("click", async () => {
+      this.inventoryRuleDraft?.conditions.push({ field: "sourceType", operator: "is", valueText: "" });
+      this.inventorySearchRenderPending = true;
+      await this.render({ force: true, preserveScroll: true });
+    }, listenerOptions);
+
+    element.querySelectorAll("[data-action='remove-inventory-rule-condition']").forEach((button) => {
+      button.addEventListener("click", async (event) => {
+        const index = Number(event.currentTarget.closest?.("[data-condition-index]")?.dataset?.conditionIndex);
+        if (!this.inventoryRuleDraft?.conditions?.[index]) return;
+        this.inventoryRuleDraft.conditions.splice(index, 1);
+        this.inventorySearchRenderPending = true;
+        await this.render({ force: true, preserveScroll: true });
+      }, listenerOptions);
+    });
+
+    element.querySelector("[data-action='save-inventory-rule']")?.addEventListener("click", async () => {
+      if (this.canOrganizeInventory) await this.#saveInventoryRuleDraft();
+    }, listenerOptions);
+
+    element.querySelector("[data-action='cancel-inventory-rule']")?.addEventListener("click", async () => {
+      this.inventoryRuleDraft = null;
+      this.inventoryRuleDraftError = "";
+      this.inventorySearchRenderPending = true;
+      await this.render({ force: true, preserveScroll: true });
+    }, listenerOptions);
+
+    element.querySelectorAll("[data-action='create-inventory-folder']").forEach((button) => {
+      button.addEventListener("click", async (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        await this.#createInventoryFolder(this.rootFolderId);
+      }, listenerOptions);
+    });
+
+    element.querySelectorAll("[data-action='create-inventory-item']").forEach((button) => {
+      button.addEventListener("click", async (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!this.canDropInventoryItems && !this.canOrganizeInventory) return;
+        try {
+          await this.#createInventoryItem();
+        }
+        catch (error) {
+          console.error(`${MODULE_ID} | Failed to create inventory Item.`, error);
+          ui.notifications?.error(error.message || "Не удалось создать предмет.");
+        }
+      }, listenerOptions);
+    });
+
+    element.querySelectorAll("[data-action='open-inventory-folder-menu']").forEach((button) => {
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const row = event.currentTarget.closest(".rm-inventory-folder-row[data-folder-id]");
+        if (!(row instanceof HTMLElement)) return;
+        const rect = event.currentTarget.getBoundingClientRect?.() ?? {};
+        this.#openInventoryFolderContextMenu(row, {
+          x: toNumber(rect.right, toNumber(rect.left, 0) + toNumber(rect.width, 0)),
+          y: toNumber(rect.bottom, toNumber(rect.top, 0) + toNumber(rect.height, 0)),
+          anchor: event.currentTarget
+        });
+      }, listenerOptions);
+    });
+
+    element.querySelectorAll("[data-action='open-pinned-inventory-folder']").forEach((button) => {
+      button.addEventListener("click", async (event) => {
+        event.preventDefault();
+        const folderId = cleanText(event.currentTarget.dataset.folderId);
+        if (folderId) await this.#openInventoryFolderPopout(folderId);
+      }, listenerOptions);
+    });
+
+    element.querySelectorAll("[data-action='show-item-acquisition-history']").forEach((button) => {
+      button.addEventListener("click", async (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        await this.#showInventoryAcquisitionHistory(cleanText(event.currentTarget.dataset.itemId));
+      }, listenerOptions);
+    });
+
+    if (this.canOrganizeInventory) {
+      element.querySelectorAll(".rm-inventory-folder-row[data-folder-id]").forEach((row) => {
+        row.addEventListener("contextmenu", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          this.#openInventoryFolderContextMenu(event.currentTarget, {
+            x: event.clientX,
+            y: event.clientY
+          });
+        }, listenerOptions);
+      });
+    }
+
+    element.querySelectorAll("[data-action='toggle-inventory-folder']").forEach((button) => {
+      button.addEventListener("click", async (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const folderId = cleanText(event.currentTarget.dataset.folderId);
+        const groupActorId = this.inventoryActorId;
+        if (!folderId || !groupActorId || !this.inventoryFolderTreeCache?.foldersById.has(folderId)) return;
+
+        const previousExpandedFolderIds = new Set(this.expandedFolderIds);
+        const expanded = !previousExpandedFolderIds.has(folderId);
+        if (expanded) this.expandedFolderIds.add(folderId);
+        else this.expandedFolderIds.delete(folderId);
+
+        try {
+          this.inventorySearchRenderPending = true;
+          await this.render({ force: true, preserveScroll: true });
+          await this.moduleApi.setInventoryFolderExpanded(groupActorId, folderId, expanded);
+        }
+        catch (error) {
+          this.expandedFolderIds = previousExpandedFolderIds;
+          this.inventorySearchRenderPending = true;
+          await this.render({ force: true, preserveScroll: true });
+          console.error(`${MODULE_ID} | Failed to persist inventory folder expansion.`, error);
+          ui.notifications?.error(error.message || "Не удалось изменить раскрытие папки.");
+        }
+      }, listenerOptions);
+    });
+
     element.querySelector("[data-action='search']")?.addEventListener("input", (event) => {
       this.search = event.currentTarget.value ?? "";
+      this.inventorySearchRenderPending = true;
       this.focusRestore = {
         action: "search",
         start: event.currentTarget.selectionStart ?? this.search.length,
@@ -6170,11 +7765,13 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     element.querySelector("[data-action='type-filter']")?.addEventListener("change", (event) => {
       this.typeFilter = event.currentTarget.value || "all";
+      this.inventorySearchRenderPending = true;
       this.render({ force: true });
     }, listenerOptions);
 
     element.querySelector("[data-action='sort-mode']")?.addEventListener("change", (event) => {
       this.sortMode = normalizeInventorySortMode(event.currentTarget.value);
+      this.inventorySearchRenderPending = true;
       this.render({ force: true });
     }, listenerOptions);
 
@@ -6280,12 +7877,16 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const itemId = event.currentTarget.dataset.itemId;
         const itemName = event.currentTarget.dataset.itemName ?? "предмет";
         const maxQuantity = Math.max(1, toInteger(event.currentTarget.dataset.quantity, 1));
+        const minQuantity = Math.max(
+          1,
+          Math.min(maxQuantity, toInteger(event.currentTarget.dataset.minQuantity, 1))
+        );
         try {
           const quantity = await promptNumericValue({
             title: `Разбор: ${itemName}`,
-            label: `Сколько разбирать (1-${maxQuantity})`,
-            value: "1",
-            min: 1,
+            label: `Сколько разбирать (${minQuantity}-${maxQuantity})`,
+            value: String(minQuantity),
+            min: minQuantity,
             step: "1",
             confirmLabel: "Разобрать"
           });
@@ -6293,7 +7894,10 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
             return;
           }
 
-          const safeQuantity = Math.max(1, Math.min(maxQuantity, toInteger(quantity, 1)));
+          const safeQuantity = Math.max(
+            minQuantity,
+            Math.min(maxQuantity, toInteger(quantity, minQuantity))
+          );
           const result = await this.moduleApi.breakInventoryItemToMaterial(itemId, safeQuantity);
           ui.notifications?.info(`Разобрано: ${result.breakQuantity} x ${result.itemName} -> ${result.materialWeight} фнт. (${result.materialName}).`);
         }
@@ -6335,7 +7939,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         }
         catch (error) {
           console.error(`${MODULE_ID} | Failed to take inventory item.`, error);
-          ui.notifications?.error(error.message || "Не удалось забрать предмет из склада.");
+          ui.notifications?.error(formatInventoryTransferError(error, itemName));
         }
       }, listenerOptions);
     });
@@ -6402,33 +8006,141 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     const dropzone = element.querySelector("[data-action='inventory-dropzone']");
     if (dropzone) {
+      let activeDropTarget = null;
+      const clearDropState = () => {
+        activeDropTarget?.classList?.remove("is-drop-target-ready");
+        activeDropTarget = null;
+        dropzone.classList.remove("is-dragover");
+      };
+      const readAcceptedDrop = (event) => {
+        let dragData;
+        try {
+          dragData = TextEditor.getDragEventData(event);
+        }
+        catch (_error) {
+          return null;
+        }
+        const target = this.#readInventoryDropTarget(event, dropzone);
+        if (!target) return null;
+        if (!readInventoryTreeDragData(dragData)
+          && (hasInventoryTreeDragMetadata(dragData)
+            || !["Item", "JournalEntry", "JournalEntryPage"].includes(dragData?.type))) return null;
+        return { dragData, target };
+      };
+      const readAcceptedDragOver = (event) => {
+        let target;
+        try {
+          target = this.#resolveInventoryDropTarget(this.#readInventoryDropTarget(event, dropzone));
+        }
+        catch (_error) { return null; }
+        if (!target) return null;
+
+        try {
+          const readableDragData = TextEditor.getDragEventData(event);
+          if (readableDragData && Object.keys(readableDragData).length > 0) {
+            const action = this.#resolveInventoryDropAction(readableDragData, target.folderId);
+            return action ? { action, target } : null;
+          }
+        }
+        catch (_error) {
+          // Browsers protect DataTransfer contents during dragover.
+        }
+
+        if (activeInventoryTreeDragSession?.dataTransfer === event.dataTransfer) {
+          const action = this.#resolveInventoryDropAction(
+            activeInventoryTreeDragSession.dragData,
+            target.folderId
+          );
+          return action ? { action, target } : null;
+        }
+
+        const transferTypes = Array.from(event.dataTransfer?.types ?? []);
+        return transferTypes.some((mimeType) => INVENTORY_DRAG_MIME_TYPES.includes(mimeType))
+          ? { action: null, target }
+          : null;
+      };
+
       dropzone.addEventListener("dragover", (event) => {
+        clearDropState();
+        const accepted = readAcceptedDragOver(event);
+        if (!accepted) return;
         event.preventDefault();
+        if (event.dataTransfer) {
+          event.dataTransfer.dropEffect = accepted.action?.kind === "external" || !accepted.action ? "copy" : "move";
+        }
         dropzone.classList.add("is-dragover");
+        activeDropTarget = accepted.target.highlightElement;
+        activeDropTarget?.classList?.add("is-drop-target-ready");
       }, listenerOptions);
 
       dropzone.addEventListener("dragleave", (event) => {
         if (event.relatedTarget && dropzone.contains(event.relatedTarget)) {
           return;
         }
-        dropzone.classList.remove("is-dragover");
+        clearDropState();
       }, listenerOptions);
 
       dropzone.addEventListener("drop", async (event) => {
+        const accepted = readAcceptedDrop(event);
+        const partialTransfer = event.shiftKey === true;
+        const groupActorId = this.inventoryActorId;
+        const rootFolderId = this.rootFolderId;
+        activeInventoryTreeDragSession = null;
+        clearDropState();
+        if (!accepted) return;
         event.preventDefault();
-        dropzone.classList.remove("is-dragover");
 
         try {
-          const dragData = TextEditor.getDragEventData(event);
-          await this.moduleApi.importInventoryDrop(dragData);
-          ui.notifications?.info(this.canManage
-            ? "Предмет перенесён в партийный склад."
-            : "Запрос на перенос предмета отправлен мастеру.");
+          const snapshot = await this.moduleApi.getInventorySnapshot({ createActor: false, groupActorId });
+          if (listenerOptions.signal.aborted) return;
+          if (this.inventoryActorId !== groupActorId || this.rootFolderId !== rootFolderId
+            || cleanText(snapshot?.actor?.id) !== groupActorId) {
+            throw new InventoryFolderStateError("invalid-drop-target", "Группа инвентаря изменилась. Повторите перенос.");
+          }
+          const items = snapshot.allItems ?? snapshot.items ?? [];
+          const tree = buildInventoryFolderTree({
+            state: {
+              version: snapshot.folderStateVersion,
+              folders: snapshot.folders ?? [],
+              itemFolderIds: Object.fromEntries(items.map((item) => [
+                cleanText(item?.itemId ?? item?.id), cleanText(item?.folderId) || null
+              ]))
+            },
+            items
+          });
+          const target = this.#resolveInventoryDropTarget(accepted.target, tree, rootFolderId);
+          const action = this.#resolveInventoryDropAction(accepted.dragData, target.folderId, {
+            tree, groupActorId, canDrop: Boolean(snapshot.canDropInventoryItems || snapshot.actor?.canEdit)
+          });
+          if (!action) {
+            ui.notifications?.warn?.("Перенос больше недоступен. Проверьте предмет, папку и права доступа.");
+            await this.refreshInventorySnapshot();
+            return;
+          }
+          if (partialTransfer && action.kind === "item") {
+            await this.#transferInventoryPart(action.internal.itemId, target.folderId, { snapshot, groupActorId });
+            return;
+          }
+          const result = await this.#applyInventoryDrop(action, target.folderId, groupActorId);
+          if (action.kind === "external") {
+            if (result?.cancelled === true || result == null) return;
+            bringAppToFront(this);
+            return;
+          }
+          const message = action.kind === "folder"
+            ? "Папка перемещена."
+            : "Стэк предмета перемещён целиком.";
+          ui.notifications?.info(message);
           bringAppToFront(this);
         }
         catch (error) {
-          console.error(`${MODULE_ID} | Failed to import dropped inventory item.`, error);
-          ui.notifications?.error(error.message || "Не удалось перенести предмет в склад.");
+          if (error?.code === "invalid-drop-target") {
+            ui.notifications?.warn?.(error.message);
+          } else {
+            console.error(`${MODULE_ID} | Failed to apply inventory tree drop.`, error);
+            ui.notifications?.error(error.message || "Не удалось переместить содержимое инвентаря.");
+          }
+          await this.refreshInventorySnapshot();
         }
       }, listenerOptions);
     }
@@ -6763,7 +8475,8 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
           : toNumber(rect.bottom, toNumber(rect.top, 0) + toNumber(rect.height, 0));
         this.#openItemContextMenu(row, {
           x,
-          y
+          y,
+          anchor: event.currentTarget
         });
       }, listenerOptions);
     });
@@ -6865,11 +8578,23 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     window.clearTimeout(this.craftSearchRenderTimeout);
     window.clearTimeout(this.actionFeedbackTimeout);
     this.searchRenderTimeout = null;
+    this.inventorySearchRenderPending = false;
+    this.inventorySnapshotCache = null;
+    this.inventoryFolderTreeCache = null;
+    this.inventorySearchIndexCache = null;
+    this.inventoryContextCache = null;
+    this.expandedFolderIds.clear();
+    this.pinnedFolderIds.clear();
     this.craftSearchRenderTimeout = null;
     this.actionFeedbackTimeout = null;
     this.renderListenersAbortController?.abort();
     this.renderListenersAbortController = null;
     return super._preClose ? super._preClose(options) : undefined;
   }
-}
 
+  async _onClose(options) {
+    this.reputationPanel.close();
+    this.moduleApi?.unregisterInventoryFolderPopout?.(this.inventoryViewKey, this);
+    return super._onClose ? super._onClose(options) : undefined;
+  }
+}

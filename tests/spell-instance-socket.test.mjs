@@ -501,8 +501,9 @@ test("the real command bus durably claims an owner operation without an instance
 
   assert.equal(actor.effects.length, 0);
   assert.equal(actor.updateCalls.length, 1);
-  assert.equal(emitted.at(-2)[1].data.status, "claimed");
-  assert.equal(emitted.at(-1)[1].data.status, "completed");
+  const results = emitted.filter(([, message]) => message.type === "rebreya.command.result");
+  assert.equal(results.at(-2)[1].data.status, "claimed");
+  assert.equal(results.at(-1)[1].data.status, "completed");
 });
 
 test("the real command bus retains claim authorization", async () => {

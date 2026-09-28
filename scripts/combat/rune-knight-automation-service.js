@@ -146,6 +146,12 @@ function tokenActor(token) {
   return token?.actor ?? token?.document?.actor ?? null;
 }
 
+function tokensHaveOpposingDisposition(leftToken, rightToken) {
+  const left = Math.sign(numberValue(leftToken?.document?.disposition ?? leftToken?.disposition, 0));
+  const right = Math.sign(numberValue(rightToken?.document?.disposition ?? rightToken?.disposition, 0));
+  return left !== 0 && right !== 0 && left !== right;
+}
+
 function tokenCenter(token) {
   const target = token?.object ?? token;
   if (target?.center && Number.isFinite(Number(target.center.x)) && Number.isFinite(Number(target.center.y))) {
@@ -1090,6 +1096,7 @@ export class RuneKnightAutomationService {
         this.#normalizeHitReactionCandidate(candidate, "cloud"),
         this.#hitReactionTrigger(context, CLOUD_REACTION_KIND),
         CLOUD_RANGE_FEET,
+        true,
         true
       ),
       buildPrompt: (candidate, context) => this.#cloudReactionPrompt(
@@ -1194,7 +1201,13 @@ export class RuneKnightAutomationService {
     return trigger;
   }
 
-  async #canUseHitReaction(candidate, trigger, rangeFeet, requireRedirectTarget) {
+  async #canUseHitReaction(
+    candidate,
+    trigger,
+    rangeFeet,
+    requireRedirectTarget,
+    requireHostileAttacker = false
+  ) {
     const actor = candidate?.actor;
     const item = candidate?.item;
     if (
@@ -1207,6 +1220,9 @@ export class RuneKnightAutomationService {
     ) return false;
     const reactionState = this.moduleApi?.combatAttackService?.canUseReaction?.(actor, 1);
     if (reactionState && reactionState.canUse === false) return false;
+    if (requireHostileAttacker && !tokensHaveOpposingDisposition(candidate.token, trigger.attackerToken)) {
+      return false;
+    }
     if (!this.#isVisible(candidate, trigger)) return false;
     if (this.#distanceFeet(candidate.token, trigger.targetToken) > rangeFeet) return false;
     return !requireRedirectTarget || this.#cloudRedirectTargets(candidate, trigger).length > 0;
@@ -1238,6 +1254,7 @@ export class RuneKnightAutomationService {
     return tokens.filter((token) => (
       isActorDocument(tokenActor(token))
       && !this.#sameToken(token, trigger?.attackerToken)
+      && !this.#sameToken(token, trigger?.targetToken)
       && this.#distanceFeet(candidate?.token, token) <= CLOUD_RANGE_FEET
     ));
   }

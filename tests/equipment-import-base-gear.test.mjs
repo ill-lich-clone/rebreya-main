@@ -1,0 +1,413 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+
+import {
+  adaptBaseGear,
+  buildEquipmentReferenceIndex,
+  mergeGearFragments
+} from "../tools/equipment-import/adapters/base-gear.mjs";
+import { validateEquipmentOverrides } from "../tools/equipment-import/overrides.mjs";
+import { diffEquipmentBundles } from "../tools/equipment-import/diff.mjs";
+
+const referenceSnapshot = Object.freeze({
+  layout: "raw",
+  range: "'_СПРАВОЧНИК_СНАРЯЖЕНИЯ'!A1:Q20",
+  values: [
+    ["Ключ", "Тип", "Каноническое название", "Цена", "Ранг", "Вес", "Источник", "Строка источника", "Статус", "ID источника", "Тип (сырой)", "Название (сырое)", "Цена (сырая)", "Ранг (сырой)", "Вес (сырой)", "Лист", "Строка", "", "ID для подмены", "Каноническое название", "Ключ ручной позиции", "ID ручной позиции", "Тип", "Название", "Цена", "Ранг", "Вес", "Источник", "Строка каталога"],
+    ["оружие|дротик", "Оружие", "Дротик", "5 мм", "0", "1/4 фнт", "Оружие V0.36", "17", "OK", "Оружие V0.36!A17", "Оружие", "Дротик", "5 мм", "0", "1/4 фнт", "Оружие V0.36", "17"],
+    ["обвес|коллиматорный прицел", "Обвес", "Коллиматорный прицел", "500 зм", "3", "1 фнт", "Улучшения и обвесы V0.2", "10", "OK", "Улучшения и обвесы V0.2!B10", "Обвес", "Коллиматорный прицел", "500 зм", "3", "1 фнт", "Улучшения и обвесы V0.2", "10"],
+    [...Array(20).fill(""), "снаряжение|сундук", "Немагическое снаряжение V0.1!A200", "Снаряжение", "Сундук", "5 зм", "1", "25 фнт", "Каталог (ручное)", "200"]
+  ]
+});
+
+const baseSnapshot = Object.freeze({
+  sheetKey: "baseGear",
+  sheetTitle: "Общий компендиум снаряжения V0.1",
+  range: "'Общий компендиум снаряжения V0.1'!A1:M806",
+  rows: [
+    {
+      rowNumber: 112,
+      sourceIdentity: "Дротик",
+      cells: {
+        Название: "Дротик",
+        "Тип снаряжения": "Оружие",
+        "Подтип (магазин)": "Оружейная лавка",
+        Цена: "5 мм",
+        Ранг: "0",
+        Вес: "1/4 фнт",
+        Объем: "",
+        Вместимость: "",
+        Описание: "Деревянное метательное оружие.",
+        "Преобладающий материал (источник)": "Железо",
+        "Связанный инструмент": "Кузнеца",
+        Value: "5",
+        "Множественное появление": "1"
+      }
+    },
+    {
+      rowNumber: 200,
+      sourceIdentity: "Сундук",
+      cells: {
+        Название: "Сундук",
+        "Тип снаряжения": "Снаряжение",
+        "Подтип (магазин)": "Общие товары",
+        Цена: "5 зм",
+        Ранг: "1",
+        Вес: "25 фнт",
+        Объем: "10 фнт",
+        Вместимость: "300 фнт",
+        Описание: "Прочный деревянный сундук.",
+        "Преобладающий материал (источник)": "Дерево",
+        "Связанный инструмент": "Плотника",
+        Value: "12",
+        "Множественное появление": "1"
+      }
+    },
+    {
+      rowNumber: 300,
+      sourceIdentity: "Телега",
+      cells: {
+        Название: "Телега",
+        "Тип снаряжения": "Транспорт",
+        Цена: "15 зм",
+        Ранг: "1",
+        Вес: "—",
+        Описание: "Маршрутизируется в transport catalog."
+      }
+    }
+  ]
+});
+
+function overrides() {
+  return validateEquipmentOverrides({
+    schemaVersion: 1,
+    identities: {
+      gear: {
+        "оружие|дротик": { id: "dart", aliases: ["оружие|дротик новый"] },
+        "снаряжение|сундук": "chest"
+      },
+      materials: {
+        Железо: "zhelezo",
+        Дерево: "derevo"
+      }
+    },
+    enrichment: {
+      gear: {
+        chest: {
+          foundryType: "container",
+          containerCapacity: 300
+        }
+      }
+    }
+  }, {
+    allowedEnrichmentFields: {
+      gear: ["foundryType", "containerCapacity"],
+      materials: []
+    }
+  });
+}
+
+test("reference index resolves only exact canonical source keys and source coordinates", () => {
+  const index = buildEquipmentReferenceIndex({
+    snapshots: { equipmentReferences: referenceSnapshot },
+    overrides: overrides()
+  });
+
+  assert.deepEqual(index.gearByKey.get("оружие|дротик"), {
+    sourceKey: "оружие|дротик",
+    canonicalName: "Дротик",
+    equipmentType: "Оружие",
+    sourceRef: "Оружие V0.36!A17",
+    sheetTitle: "Оружие V0.36",
+    rowNumber: 17
+  });
+  assert.equal(index.gearByKey.has("Дротик"), false);
+  assert.equal(index.gearByKey.get("оружие|дротик новый").sourceRef, "Оружие V0.36!A17");
+  assert.equal(
+    index.gearByKey.get("обвес|коллиматорный прицел").sourceRef,
+    "Улучшения и обвесы V0.2!B10"
+  );
+  assert.equal(
+    index.gearByKey.get("снаряжение|сундук").sourceRef,
+    "Общий компендиум снаряжения V0.1!A200"
+  );
+  assert.equal(
+    index.gearBySourceRef.get("Оружие V0.36!A17").sourceKey,
+    "оружие|дротик"
+  );
+  assert.equal(index.resolveStableGearId(index.gearBySourceRef.get("Оружие V0.36!A17")), "dart");
+});
+
+test("reference index prefers an identical canonical row over its stale manual duplicate", () => {
+  const values = structuredClone(referenceSnapshot.values);
+  values.splice(1, 0, [
+    ...Array(20).fill(""), "оружие|дротик", "Немагическое снаряжение V0.1!A112", "Оружие",
+    "Дротик", "5 мм", "0", "1/4 фнт", "Каталог (ручное)", "112"
+  ]);
+
+  const index = buildEquipmentReferenceIndex({
+    snapshots: { equipmentReferences: { ...referenceSnapshot, values } },
+    overrides: overrides()
+  });
+
+  assert.equal(index.gearByKey.get("оружие|дротик").sourceRef, "Оружие V0.36!A17");
+  assert.equal(index.gearBySourceRef.has("Общий компендиум снаряжения V0.1!A112"), false);
+});
+
+test("reference index rejoins shifted manual rows by exact live gear key and drops deleted rows", () => {
+  const values = structuredClone(referenceSnapshot.values);
+  values.push(
+    [...Array(20).fill(""), "снаряжение|факел", "Немагическое снаряжение V0.1!A40", "Снаряжение", "Факел", "1 мм", "1", "1 фнт", "Каталог (ручное)", "40"],
+    [...Array(20).fill(""), "снаряжение|кислота (флакон)", "Немагическое снаряжение V0.1!A41", "Снаряжение", "Кислота (флакон)", "25 зм", "1", "1 фнт", "Каталог (ручное)", "41"]
+  );
+  const shiftedBaseGear = {
+    ...baseSnapshot,
+    rows: [{
+      rowNumber: 38,
+      cells: {
+        Название: "Факел",
+        "Тип снаряжения": "Снаряжение"
+      }
+    }]
+  };
+
+  const index = buildEquipmentReferenceIndex({
+    snapshots: {
+      equipmentReferences: { ...referenceSnapshot, values },
+      baseGear: shiftedBaseGear
+    },
+    overrides: overrides()
+  });
+
+  assert.equal(index.gearByKey.get("снаряжение|факел").sourceRef, "Общий компендиум снаряжения V0.1!A38");
+  assert.equal(index.gearByKey.has("снаряжение|кислота (флакон)"), false);
+  assert.equal(index.gearBySourceRef.has("Общий компендиум снаряжения V0.1!A41"), false);
+});
+
+test("reference index canonicalizes the renamed explosives source sheet", () => {
+  const values = structuredClone(referenceSnapshot.values);
+  values.push([
+    "взрывчатка|дымовая шашка", "Взрывчатка", "Дымовая шашка", "40 зм", "2", "2 фнт",
+    "Взрывчатка V0.0", "4", "OK", "Взрывчатка V0.0!A4"
+  ]);
+
+  const index = buildEquipmentReferenceIndex({
+    snapshots: { equipmentReferences: { ...referenceSnapshot, values } },
+    overrides: overrides()
+  });
+
+  assert.equal(index.gearByKey.get("взрывчатка|дымовая шашка").sourceRef, "Взрывчатка V0.1!A4");
+  assert.equal(index.gearBySourceRef.has("Взрывчатка V0.0!A4"), false);
+});
+
+test("base gear adapter maps formatted strings to the current runtime contract", () => {
+  const referenceIndex = buildEquipmentReferenceIndex({
+    snapshots: { equipmentReferences: referenceSnapshot },
+    overrides: overrides()
+  });
+  const result = adaptBaseGear({
+    snapshot: baseSnapshot,
+    referenceIndex,
+    overrides: overrides(),
+    materials: [{ id: "zhelezo", name: "Железо" }, { id: "derevo", name: "Дерево" }],
+    diagnostics: []
+  });
+
+  assert.equal(result.items.length, 2);
+  assert.equal(result.transportRows.length, 1);
+  assert.deepEqual(result.items[0], {
+    id: "dart",
+    name: "Дротик",
+    equipmentType: "Оружие",
+    shopSubtype: "Оружейная лавка",
+    priceText: "5 мм",
+    priceValue: 5,
+    priceDenomination: "cp",
+    priceGoldEquivalent: 0.05,
+    rank: 0,
+    weight: 0.25,
+    volume: "",
+    capacity: "",
+    description: "Деревянное метательное оружие.",
+    predominantMaterialId: "zhelezo",
+    predominantMaterialName: "Железо",
+    linkedTool: "Кузнеца",
+    value: "5",
+    multipleAppearance: "1",
+    source: "equipment-google-sheet",
+    sourceIdentity: "оружие|дротик",
+    sourceRef: "Оружие V0.36!A17",
+    itemSlot: "",
+    heroDollSlots: ""
+  });
+  assert.equal(result.items[1].id, "chest");
+  assert.equal(result.items[1].foundryType, "container");
+  assert.equal(result.items[1].containerCapacity, 300);
+});
+
+test("base gear keeps a non-catalog source name without inventing a material id", () => {
+  const reference = {
+    sourceKey: "снаряжение|кости тролля",
+    canonicalName: "Кости тролля",
+    equipmentType: "Снаряжение",
+    sourceRef: "Общий компендиум снаряжения V0.1!A700"
+  };
+  const result = adaptBaseGear({
+    snapshot: {
+      ...baseSnapshot,
+      rows: [{
+        rowNumber: 700,
+        cells: {
+          Название: "Кости тролля",
+          "Тип снаряжения": "Снаряжение",
+          Цена: "50 зм",
+          Ранг: "2",
+          Вес: "5 фнт",
+          "Преобладающий материал (источник)": "Тролль"
+        }
+      }]
+    },
+    referenceIndex: {
+      gearByKey: new Map([[reference.sourceKey, reference]]),
+      resolveStableGearId: () => "kosti-trollya"
+    },
+    overrides: { identities: { materials: {} }, enrichment: {} },
+    materials: [{ id: "zhelezo", name: "Железо" }],
+    diagnostics: []
+  });
+
+  assert.equal(result.items[0].predominantMaterialId, null);
+  assert.equal(result.items[0].predominantMaterialName, "Тролль");
+});
+
+test("base gear accepts a new source row only when an exact reviewed identity owns it", () => {
+  const reviewedOverrides = validateEquipmentOverrides({
+    schemaVersion: 1,
+    identities: { gear: { "снаряжение|мыло": "mylo" } },
+    enrichment: { gear: {} }
+  });
+  const result = adaptBaseGear({
+    snapshot: {
+      ...baseSnapshot,
+      rows: [{ rowNumber: 58, cells: { Название: "Мыло", "Тип снаряжения": "Снаряжение", Цена: "", Ранг: "", Вес: "" } }]
+    },
+    referenceIndex: { gearByKey: new Map(), resolveStableGearId: () => "mylo" },
+    overrides: reviewedOverrides,
+    diagnostics: []
+  });
+
+  assert.equal(result.items[0].id, "mylo");
+  assert.equal(result.items[0].sourceRef, "Общий компендиум снаряжения V0.1!A58");
+});
+
+test("base adapter uses type-specific weight rules and routes the live transport category", () => {
+  const attachmentReference = {
+    sourceKey: "обвес|облегченный ствол",
+    canonicalName: "Облегчённый ствол",
+    sourceRef: "Улучшения и обвесы V0.2!B23"
+  };
+  const referenceIndex = {
+    gearByKey: new Map([[attachmentReference.sourceKey, attachmentReference]]),
+    resolveStableGearId: () => "light-barrel"
+  };
+  const snapshot = {
+    ...baseSnapshot,
+    rows: [
+      {
+        rowNumber: 234,
+        cells: {
+          Название: "Облегчённый ствол",
+          "Тип снаряжения": "Обвес",
+          Цена: "4000 зм",
+          Ранг: "5",
+          Вес: "-1 фнт",
+          Описание: "Уменьшает массу оружия."
+        }
+      },
+      {
+        rowNumber: 300,
+        cells: {
+          Название: "Гражданский автомобиль",
+          "Тип снаряжения": "Скакуны и транспорт",
+          Цена: "600 зм",
+          Ранг: "5",
+          Вес: "3000 фнт",
+          Описание: "Маршрутизируется в transport catalog."
+        }
+      }
+    ]
+  };
+
+  const result = adaptBaseGear({ snapshot, referenceIndex, overrides: { identities: {}, enrichment: {} }, diagnostics: [] });
+  assert.equal(result.items[0].weight, -1);
+  assert.equal(result.transportRows.length, 1);
+  assert.equal(result.transportRows[0].cells.Название, "Гражданский автомобиль");
+});
+
+test("base adapter rejects a row without an exact reference join", () => {
+  const referenceIndex = buildEquipmentReferenceIndex({
+    snapshots: { equipmentReferences: referenceSnapshot },
+    overrides: overrides()
+  });
+  const invalid = {
+    ...baseSnapshot,
+    rows: [{
+      ...baseSnapshot.rows[0],
+      cells: { ...baseSnapshot.rows[0].cells, Название: "Дротик переименованный" }
+    }]
+  };
+
+  assert.throws(
+    () => adaptBaseGear({ snapshot: invalid, referenceIndex, overrides: overrides(), diagnostics: [] }),
+    (error) => {
+      assert.equal(error.diagnostics[0].code, "missing-equipment-reference");
+      assert.match(error.diagnostics[0].message, /missing exact equipment reference/i);
+      return true;
+    }
+  );
+});
+
+test("gear fragment merge rejects two adapters owning the same field", () => {
+  assert.throws(
+    () => mergeGearFragments({
+      baseItems: [{ id: "dart", name: "Дротик" }],
+      fragmentsByAdapter: {
+        weapons: new Map([["dart", { weapon: { damage: "1d4" } }]]),
+        explosives: new Map([["dart", { weapon: { damage: "2d4" } }]])
+      },
+      diagnostics: []
+    }),
+    (error) => {
+      assert.equal(error.diagnostics[0].code, "gear-field-ownership-conflict");
+      assert.match(error.diagnostics[0].message, /field ownership conflict/i);
+      return true;
+    }
+  );
+});
+
+test("removing acid and alchemist fire after row shifts preserves every surviving gear id", () => {
+  const retained = [
+    { id: "rope", name: "Верёвка", sourceIdentity: "снаряжение|верёвка", sourceRef: "Общий компендиум снаряжения V0.1!A40" },
+    { id: "torch", name: "Факел", sourceIdentity: "снаряжение|факел", sourceRef: "Общий компендиум снаряжения V0.1!A41" }
+  ];
+  const removed = [
+    { id: "alhimicheskiy-ogon-flyaga", name: "Алхимический огонь (фляга)", sourceIdentity: "снаряжение|алхимический огонь (фляга)", sourceRef: "Общий компендиум снаряжения V0.1!A38" },
+    { id: "kislota-flakon", name: "Кислота (флакон)", sourceIdentity: "снаряжение|кислота (флакон)", sourceRef: "Общий компендиум снаряжения V0.1!A39" }
+  ];
+  const emptyCatalogs = { upgrades: [], materials: [], implants: [], transport: [], magicItems: [] };
+  const currentBundle = { catalogs: { ...emptyCatalogs, gear: [...removed, ...retained] } };
+  const nextBundle = { catalogs: { ...emptyCatalogs, gear: retained.map((item, index) => ({
+    ...item,
+    sourceRef: `Общий компендиум снаряжения V0.1!A${38 + index}`
+  })) } };
+
+  const diff = diffEquipmentBundles({ currentBundle, nextBundle });
+
+  assert.deepEqual(diff.catalogs.gear.removed.map((item) => item.name).sort(), [
+    "Алхимический огонь (фляга)",
+    "Кислота (флакон)"
+  ]);
+  assert.equal(diff.catalogs.gear.added.length, 0);
+  assert.equal(diff.catalogs.gear.identityChurn.length, 0);
+  assert.deepEqual(diff.catalogs.gear.changed.map((item) => item.id).sort(), ["rope", "torch"]);
+});

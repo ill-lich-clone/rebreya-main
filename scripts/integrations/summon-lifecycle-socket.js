@@ -1,3 +1,5 @@
+import { aggregateKey, keyedMutationScheduling } from "../application/socket-command-scheduling.js";
+
 export const SUMMON_LIFECYCLE_MUTATION_COMMAND = "summon-lifecycle-mutation";
 
 const ACTIONS = new Set(["ensure-link", "delete-operation-tokens"]);
@@ -79,6 +81,10 @@ export function registerSummonLifecycleSocketCommand(moduleApi, options = {}) {
   commandBus.register(SUMMON_LIFECYCLE_MUTATION_COMMAND, {
     validate: isValidSummonLifecycleMutationPayload,
     authorize: async (payload, { sender } = {}) => senderOwnsActor(await resolve(payload.actorUuid, options), sender),
+    scheduling: keyedMutationScheduling((payload) => [
+      aggregateKey("actor", payload.actorUuid),
+      aggregateKey("scene", payload.sceneUuid)
+    ]),
     execute: async (payload, { sender } = {}) => {
       const actor = await resolve(payload.actorUuid, options);
       if (!senderOwnsActor(actor, sender)) throw new Error("Summon lifecycle mutation is not authorized.");

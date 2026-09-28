@@ -33,6 +33,18 @@ async function flushTasks() {
   await new Promise((resolve) => setImmediate(resolve));
 }
 
+function createMutationGateway({ assertActiveGm = () => {} } = {}) {
+  const coordinator = new WorldMutationCoordinator();
+  const commits = [];
+  return {
+    commits,
+    commit(key, operation) {
+      commits.push(key);
+      return coordinator.run(key, () => operation(Object.freeze({ assertActiveGm })));
+    }
+  };
+}
+
 function createRepositoryFixture(initialState = {}) {
   let storedState = initialState;
   const reads = [];
@@ -54,14 +66,16 @@ function createRepositoryFixture(initialState = {}) {
       }
     }
   };
+  const mutationGateway = createMutationGateway();
   const repository = new TraderStateRepository({
-    coordinator: new WorldMutationCoordinator(),
+    mutationGateway,
     gameProvider: () => game,
     normalizeState: normalizeTraderState
   });
 
   return {
     game,
+    mutationGateway,
     reads,
     repository,
     get storedState() {
@@ -73,6 +87,33 @@ function createRepositoryFixture(initialState = {}) {
     writes
   };
 }
+
+test("TraderStateRepository commits through the active-GM trader setting queue", async () => {
+  const commits = [];
+  const expectedFailure = new Error("active GM changed");
+  const repository = new TraderStateRepository({
+    mutationGateway: {
+      commit(key, operation) {
+        commits.push(key);
+        return operation(Object.freeze({
+          assertActiveGm() {
+            throw expectedFailure;
+          }
+        }));
+      }
+    },
+    gameProvider: () => ({
+      settings: {
+        get: () => ({ version: 1, traders: {}, order: [], tradeLog: [] }),
+        set: async () => assert.fail("inactive mutation must not write trader state")
+      }
+    }),
+    normalizeState: normalizeTraderState
+  });
+
+  await assert.rejects(repository.mutate(() => "never"), (error) => error === expectedFailure);
+  assert.deepEqual(commits, ["setting:traderState"]);
+});
 
 function buildTransaction(transactionId, status, updatedAt) {
   return {
@@ -155,7 +196,7 @@ test("TraderStateRepository fails closed before mutation when setting access is 
   for (const { name, gameProvider } of fixtures) {
     let mutatorCalls = 0;
     const repository = new TraderStateRepository({
-      coordinator: new WorldMutationCoordinator(),
+      mutationGateway: createMutationGateway(),
       gameProvider,
       normalizeState: normalizeTraderState
     });

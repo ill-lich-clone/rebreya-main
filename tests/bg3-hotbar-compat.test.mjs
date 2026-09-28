@@ -9,11 +9,33 @@ const {
   getBg3DeathSaveData,
   patchBg3HotbarDeathSavesContainer,
   patchBg3HotbarStorageCommonActions,
+  publishPanelToolApi,
+  registerExternalPanelTool,
   registerSceneControlsHook,
   resolvePlayerInventoryButtonAnchor,
   shouldSkipBg3HotbarCommonActionsForActor,
-  shouldSuppressBg3HotbarAutoAdd
+  shouldSuppressBg3HotbarAutoAdd,
+  unregisterExternalPanelTool
 } = await import("../scripts/hooks.js");
+
+test("panel registration API is publishable during init before the full module API exists", () => {
+  const calls = [];
+  const moduleEntry = { api: { existing: true } };
+
+  const api = publishPanelToolApi(moduleEntry, {
+    register: (...args) => calls.push(["register", ...args]),
+    unregister: (...args) => calls.push(["unregister", ...args])
+  });
+
+  assert.equal(moduleEntry.api, api);
+  assert.equal(api.existing, true);
+  api.registerPanelTool("rebreya-gen", { name: "purchase" });
+  api.unregisterPanelTool("rebreya-gen", "purchase");
+  assert.deepEqual(calls, [
+    ["register", "rebreya-gen", { name: "purchase" }],
+    ["unregister", "rebreya-gen", "purchase"]
+  ]);
+});
 
 function withSceneControlsHandler(callback) {
   const previousHooks = globalThis.Hooks;
@@ -31,6 +53,7 @@ function withSceneControlsHandler(callback) {
   };
   globalThis.game = {
     i18n: { localize: (key) => key },
+    modules: new Map([["rebreya-gen", { id: "rebreya-gen", active: true }]]),
     settings: { get: () => true },
     user: { isGM: true }
   };
@@ -67,6 +90,7 @@ function withSceneControlsHandlerForUser(user, callback) {
   };
   globalThis.game = {
     i18n: { localize: (key) => key },
+    modules: new Map([["rebreya-gen", { id: "rebreya-gen", active: true }]]),
     settings: { get: () => true },
     user
   };
@@ -154,6 +178,10 @@ class FakeElement {
   querySelector(selector) {
     if (selector === "[data-rebreya-player-inventory-button='true']") {
       return this.children.find((child) => child.dataset.rebreyaPlayerInventoryButton === "true") ?? null;
+    }
+    const utilityMatch = selector.match(/^\[data-rebreya-player-utility='([^']+)'\]$/u);
+    if (utilityMatch) {
+      return this.children.find((child) => child.dataset.rebreyaPlayerUtility === utilityMatch[1]) ?? null;
     }
 
     if (selector === "#players") {
@@ -397,6 +425,12 @@ test("player list inventory button shows and refreshes the active group token", 
     getGroupContext: () => ({ groupActor: groupA }),
     openInventoryApp: async () => {
       opened.push(true);
+    },
+    openQuestLogApp: async () => {
+      opened.push("quest-log");
+    },
+    openEconomyApp: async () => {
+      opened.push("economy");
     }
   }, {
     viewport: {
@@ -416,11 +450,13 @@ test("player list inventory button shows and refreshes the active group token", 
     }
   });
 
-  const button = document.body.children[0];
+  const button = document.body.querySelector("[data-rebreya-player-inventory-button='true']");
+  const questButton = document.body.querySelector("[data-rebreya-player-utility='quest-log']");
+  const economyButton = document.body.querySelector("[data-rebreya-player-utility='economy']");
   assert.equal(inserted, true);
   assert.equal(insertedAgain, false);
   assert.equal(playersElement.children.length, 0);
-  assert.equal(document.body.children.length, 1);
+  assert.equal(document.body.children.length, 3);
   assert.equal(button.parentElement, document.body);
   assert.equal(button.dataset.rebreyaPlayerInventoryButton, "true");
   assert.equal(button.classList.contains("rm-player-inventory-button"), true);
@@ -431,13 +467,40 @@ test("player list inventory button shows and refreshes the active group token", 
   assert.equal(button.children[0].getAttribute("aria-hidden"), "true");
   assert.equal(button.style.left, "calc(clamp(220px, 8.5vw, 280px) + 8px)");
   assert.match(button.style.top, /vh$/u);
+  assert.equal(questButton.classList.contains("rm-player-inventory-utility-button"), true);
+  assert.equal(economyButton.classList.contains("rm-player-inventory-utility-button"), true);
+  assert.equal(questButton.children.length, 1);
+  assert.equal(economyButton.children.length, 1);
+  assert.equal(questButton.children[0].tagName, "I");
+  assert.equal(economyButton.children[0].tagName, "I");
+  assert.equal(questButton.children[0].classList.contains("fa-book-open"), true);
+  assert.equal(economyButton.children[0].classList.contains("fa-coins"), true);
+  assert.match(questButton.style.top, /vh$/u);
+  assert.match(economyButton.style.top, /vh$/u);
+  assert.ok(Number.parseFloat(questButton.style.top) < Number.parseFloat(button.style.top));
+  assert.ok(Number.parseFloat(economyButton.style.top) > Number.parseFloat(button.style.top));
 
   await button.listeners.click[0]({
     preventDefault() {},
     stopPropagation() {}
   });
+  await questButton.listeners.click[0]({ preventDefault() {}, stopPropagation() {} });
+  await economyButton.listeners.click[0]({ preventDefault() {}, stopPropagation() {} });
 
-  assert.deepEqual(opened, [true]);
+  assert.deepEqual(opened, [true, "quest-log", "economy"]);
+});
+
+test("player launcher utility controls use the same round geometry as inventory", async () => {
+  const css = await readFile(new URL("../styles/main.css", import.meta.url), "utf8");
+
+  assert.match(
+    css,
+    /\.rm-player-inventory-utility-button\s*\{[^}]*width:\s*36px;[^}]*height:\s*36px;[^}]*border-radius:\s*50%;/u
+  );
+  assert.doesNotMatch(
+    css,
+    /\.rm-player-inventory-utility-button\s*\{[^}]*transform:\s*translateX/u
+  );
 });
 
 test("player inventory button anchor prefers the outer player list app", () => {
@@ -468,6 +531,7 @@ test("scene controls create a separate Rebreya group for record controls", () =>
 
     assert.deepEqual(controls.tokens.tools, {});
     assert.ok(controls["rebreya-main-rebreya"]);
+    assert.equal(controls["rebreya-main-rebreya"].icon, "rebreya-main-control-icon");
     assert.equal(controls["rebreya-main-rebreya"].activeTool, "rebreya-main-panel");
     assert.equal(controls["rebreya-main-rebreya"].tools["rebreya-main-panel"].onChange, undefined);
     assert.equal(controls["rebreya-main-rebreya"].tools["rebreya-main-panel"].button, undefined);
@@ -478,6 +542,7 @@ test("scene controls create a separate Rebreya group for record controls", () =>
       "rebreya-main-groups",
       "rebreya-main-calendar",
       "rebreya-main-cosmology",
+      "rebreya-main-scene-activity",
       "rebreya-main-lootgen"
     ]);
     const groupsTool = controls["rebreya-main-rebreya"].tools["rebreya-main-groups"];
@@ -488,6 +553,19 @@ test("scene controls create a separate Rebreya group for record controls", () =>
     assert.equal(cosmologyTool.icon, "fa-solid fa-solar-system");
     assert.equal(cosmologyTool.visible, true);
   });
+});
+
+test("Rebreya scene control renders its bundled image icon", async () => {
+  const [css, icon] = await Promise.all([
+    readFile(new URL("../styles/main.css", import.meta.url), "utf8"),
+    readFile(new URL("../assets/ui/rebreya-control-icon.png", import.meta.url))
+  ]);
+
+  assert.ok(icon.byteLength > 0);
+  assert.match(
+    css,
+    /#scene-controls\s+\.layer\[data-control="rebreya-main-rebreya"\]\s*\{[^}]*background-image:\s*url\("\/modules\/rebreya-main\/assets\/ui\/rebreya-control-icon\.png"\)\s*!important;[^}]*background-size:\s*70%;[^}]*filter:\s*grayscale\(100%\);/su
+  );
 });
 
 test("scene controls remove the hidden Rebreya placeholder row from layout", async () => {
@@ -521,6 +599,7 @@ test("scene controls create a separate Rebreya group for array controls", () => 
     assert.deepEqual(tokenControl.tools, []);
     const rebreyaIndex = controls.findIndex((control) => control?.name === "rebreya-main-rebreya");
     assert.equal(rebreyaIndex, 2);
+    assert.equal(controls[rebreyaIndex].icon, "rebreya-main-control-icon");
     assert.equal(controls[rebreyaIndex].activeTool, "rebreya-main-panel");
     assert.equal(controls[rebreyaIndex].tools.find((tool) => tool.name === "rebreya-main-panel").onChange, undefined);
     assert.equal(controls[rebreyaIndex].tools.find((tool) => tool.name === "rebreya-main-panel").button, undefined);
@@ -531,6 +610,7 @@ test("scene controls create a separate Rebreya group for array controls", () => 
       "rebreya-main-groups",
       "rebreya-main-calendar",
       "rebreya-main-cosmology",
+      "rebreya-main-scene-activity",
       "rebreya-main-lootgen"
     ]);
     const groupsTool = controls[rebreyaIndex].tools.find((tool) => tool.name === "rebreya-main-groups");
@@ -540,6 +620,44 @@ test("scene controls create a separate Rebreya group for array controls", () => 
     assert.equal(cosmologyTool.title, "REBREYA_MAIN.Controls.OpenCosmology");
     assert.equal(cosmologyTool.icon, "fa-solid fa-solar-system");
     assert.equal(cosmologyTool.visible, true);
+  });
+});
+
+test("scene controls merge a registered external tool in record and array shapes", () => {
+  withSceneControlsHandler((handler) => {
+    let activations = 0;
+    const visible = () => true;
+    const onChange = () => { activations += 1; };
+    registerExternalPanelTool("rebreya-gen", {
+      name: "rebreya-gen-purchase",
+      title: "Закупка",
+      icon: "fa-solid fa-cart-shopping",
+      order: 45,
+      visible,
+      onChange
+    });
+
+    try {
+      const recordControls = { tokens: { name: "tokens", order: 20, tools: {} } };
+      handler(recordControls);
+      const recordTool = recordControls["rebreya-main-rebreya"].tools["rebreya-gen-purchase"];
+      assert.equal(recordTool.title, "Закупка");
+      assert.equal(recordTool.icon, "fa-solid fa-cart-shopping");
+      assert.equal(recordTool.visible, true);
+      assert.equal(recordTool.button, true);
+
+      const arrayControls = [{ name: "tokens", order: 20, tools: [] }];
+      handler(arrayControls);
+      const arrayTool = arrayControls
+        .find((control) => control.name === "rebreya-main-rebreya")
+        .tools.find((tool) => tool.name === "rebreya-gen-purchase");
+      assert.equal(arrayTool.title, "Закупка");
+      arrayTool.onChange(new Event("change"), true);
+      assert.equal(activations, 1);
+    }
+    finally {
+      unregisterExternalPanelTool("rebreya-gen", "rebreya-gen-purchase");
+    }
   });
 });
 
@@ -557,6 +675,17 @@ test("scene controls hide groups tool from non-GM users", () => {
 
     const groupsTool = controls["rebreya-main-rebreya"].tools["rebreya-main-groups"];
     assert.equal(groupsTool.visible, false);
+  });
+});
+
+test("scene controls expose Economy to non-GM users", () => {
+  withSceneControlsHandlerForUser({ isGM: false }, (handler) => {
+    const controls = { tokens: { name: "tokens", order: 20, tools: {} } };
+    handler(controls);
+
+    const economyTool = controls["rebreya-main-rebreya"].tools["rebreya-main-economy"];
+    assert.equal(economyTool.visible, true);
+    assert.equal(economyTool.title, "REBREYA_MAIN.Controls.OpenEconomy");
   });
 });
 
@@ -582,5 +711,13 @@ test("scene controls deactivate the tiles layer before Rebreya app buttons run",
     controls["rebreya-main-rebreya"].onChange(new Event("change"), true);
 
     assert.equal(deactivationCount, 1);
+  });
+});
+
+test("scene activity tool is available to GMs and hidden from players",()=>{
+  for(const isGM of [true,false])withSceneControlsHandlerForUser({isGM},handler=>{
+    const controls={tokens:{name:"tokens",order:1,tools:{}}};handler(controls);
+    const tool=controls["rebreya-main-rebreya"].tools["rebreya-main-scene-activity"];
+    assert.equal(tool.visible,isGM);assert.equal(tool.title,"Открыть сцену");assert.equal(typeof tool.onChange,"function");
   });
 });

@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { UiRefreshCoordinator } from "../scripts/infrastructure/ui/ui-refresh-coordinator.js";
 import { MODULE_ID, SETTINGS_KEYS } from "../scripts/constants.js";
 import { registerSettings } from "../scripts/settings.js";
-import { registerInventorySyncHooks } from "../scripts/integrations/inventory-sync.js";
+import { buildPartyInventoryItemDragData, handleAcceptedPartyInventoryItem, registerInventorySyncHooks } from "../scripts/integrations/inventory-sync.js";
 
 const originalHooks = globalThis.Hooks;
 globalThis.Hooks = { once() {}, on() {} };
@@ -20,6 +20,7 @@ function installUiFixture() {
   const previousGame = globalThis.game;
   const previousUi = globalThis.ui;
   const previousFoundry = globalThis.foundry;
+  const previousWindow = globalThis.window;
   const calls = [];
 
   globalThis.game = {
@@ -35,7 +36,48 @@ function installUiFixture() {
       warn() {}
     }
   };
-  globalThis.foundry = { applications: { instances: [] } };
+  globalThis.window = {
+    clearTimeout: globalThis.clearTimeout,
+    setTimeout: globalThis.setTimeout
+  };
+  globalThis.foundry = {
+    applications: {
+      instances: [],
+      api: {
+        ApplicationV2: class {
+          constructor(options = {}) {
+            this.options = structuredClone(options);
+            this.rendered = false;
+            this.minimized = false;
+          }
+
+          async render(options = {}) {
+            this.rendered = true;
+            this.renderOptions = options;
+            return this;
+          }
+
+          async close(options = {}) {
+            await this._preClose?.(options);
+            this.rendered = false;
+            await this._onClose?.(options);
+          }
+
+          async _preClose() {}
+          async _onClose() {}
+
+          bringToFront() {
+            this.bringToFrontCalls = (this.bringToFrontCalls ?? 0) + 1;
+          }
+        },
+        HandlebarsApplicationMixin: (Base) => class extends Base {},
+        DialogV2: {}
+      }
+    },
+    utils: {
+      escapeHTML: (value) => String(value ?? "")
+    }
+  };
 
   const createApp = (name, actorId = "") => ({
     rendered: true,
@@ -53,6 +95,7 @@ function installUiFixture() {
       globalThis.game = previousGame;
       globalThis.ui = previousUi;
       globalThis.foundry = previousFoundry;
+      globalThis.window = previousWindow;
     }
   };
 }
@@ -186,6 +229,22 @@ test("cosmology refresh does not render unrelated open applications", async () =
   }
 });
 
+test("city presentation refresh targets only requested city apps", async () => {
+  const fixture = installUiFixture();
+  try {
+    fixture.moduleApi.cityApps.set("a", fixture.createApp("city-a"));
+    fixture.moduleApi.cityApps.set("b", fixture.createApp("city-b"));
+
+    await fixture.moduleApi.refreshCityViews({ cityIds: ["b"] });
+
+    assert.deepEqual(fixture.calls.map((call) => call.name), ["city-b"]);
+    assert.equal(fixture.calls[0].options.focus, false);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
 test("cosmology setting changes request only the cosmology refresh scope", () => {
   const previousGame = globalThis.game;
   const previousUi = globalThis.ui;
@@ -304,6 +363,81 @@ test("inventory refresh without actor ids does not render every open Actor sheet
   }
 });
 
+test("folder popout registry reuses exact scopes, keeps distinct scopes separate and unregisters by identity", async () => {
+  const fixture = installUiFixture();
+  const userFlagWrites = [];
+  try {
+    globalThis.game.modules = new Map([[MODULE_ID, { version: `folder-popouts-${Date.now()}` }]]);
+    globalThis.game.user.setFlag = async (...args) => userFlagWrites.push(args);
+    fixture.moduleApi.inventoryService.getInventorySnapshot = async ({ groupActorId } = {}) => ({
+      actor: { id: groupActorId, type: "group" },
+      folders: [
+        { id: "weapons", name: "Оружие", parentId: null },
+        { id: "potions", name: "Зелья", parentId: null }
+      ]
+    });
+
+    const weapons = await fixture.moduleApi.openInventoryFolderPopout("group-a", "weapons");
+    const reusedWeapons = await fixture.moduleApi.openInventoryFolderPopout("group-a", "weapons");
+    const potions = await fixture.moduleApi.openInventoryFolderPopout("group-a", "potions");
+
+    assert.equal(reusedWeapons, weapons);
+    assert.notEqual(potions, weapons);
+    assert.equal(fixture.moduleApi.inventoryFolderApps.size, 2);
+    assert.equal(weapons.options.window.title, "Оружие");
+    assert.notEqual(weapons.id, potions.id);
+    assert.equal(weapons.inventoryViewKey, "group-a:weapons");
+    assert.equal(weapons.bringToFrontCalls, 2);
+    assert.deepEqual(userFlagWrites, []);
+
+    const replacement = { inventoryViewKey: weapons.inventoryViewKey };
+    fixture.moduleApi.unregisterInventoryFolderPopout(weapons.inventoryViewKey, replacement);
+    assert.equal(fixture.moduleApi.inventoryFolderApps.get(weapons.inventoryViewKey), weapons);
+    await weapons.close({ reason: "manual" });
+    assert.equal(fixture.moduleApi.inventoryFolderApps.has(weapons.inventoryViewKey), false);
+    assert.equal(fixture.moduleApi.inventoryFolderApps.get(potions.inventoryViewKey), potions);
+    assert.equal(new RebreyaMainModule().inventoryFolderApps.size, 0);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("inventory refresh targets only live views and Actor sheets in the affected group scope", async () => {
+  const fixture = installUiFixture();
+  const refreshCalls = [];
+  const inventoryView = (name, actorId, overrides = {}) => ({
+    rendered: true,
+    inventoryActorId: actorId,
+    async refreshInventorySnapshot(options) {
+      refreshCalls.push({ name, options });
+    },
+    ...overrides
+  });
+  try {
+    fixture.moduleApi.inventoryApp = inventoryView("main-a", "group-a");
+    fixture.moduleApi.inventoryFolderApps.set("group-a:weapons", inventoryView("weapons-a", "group-a"));
+    fixture.moduleApi.inventoryFolderApps.set("group-a:potions", inventoryView("potions-a", "group-a", { minimized: true }));
+    fixture.moduleApi.inventoryFolderApps.set("group-b:weapons", inventoryView("weapons-b", "group-b"));
+    fixture.moduleApi.inventoryFolderApps.set("group-a:closed", inventoryView("closed-a", "group-a", { rendered: false }));
+    globalThis.ui.windows = {
+      affected: fixture.createApp("actor-a", "group-a"),
+      unrelated: fixture.createApp("actor-b", "group-b")
+    };
+
+    await fixture.moduleApi.refreshInventoryViews({ actorIds: ["group-a"] });
+
+    assert.deepEqual(refreshCalls, [
+      { name: "main-a", options: { preserveScroll: true } },
+      { name: "weapons-a", options: { preserveScroll: true } }
+    ]);
+    assert.deepEqual(fixture.calls, [{ name: "actor-a", options: { force: true, focus: false } }]);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
 test("multi-document inventory hooks wait for the mutation boundary and render once", async () => {
   const fixture = installUiFixture();
   const handlers = new Map();
@@ -336,6 +470,115 @@ test("multi-document inventory hooks wait for the mutation boundary and render o
   }
 });
 
+test("runInventoryMutation returns the authoritative result before the default scoped refresh settles", async () => {
+  const fixture = installUiFixture();
+  let rejectRefresh;
+  let refreshCalls = 0;
+  let mutationResolved = false;
+  let holdCountAtResolution = null;
+  const warnings = [];
+  const previousConsoleError = console.error;
+  try {
+    console.error = () => {};
+    globalThis.ui.notifications.warn = (message) => warnings.push(message);
+    fixture.moduleApi.refreshInventoryViews = async ({ actorIds }) => {
+      refreshCalls += 1;
+      assert.deepEqual(actorIds, ["group-a", "hero-a"]);
+      return new Promise((_resolve, reject) => { rejectRefresh = reject; });
+    };
+
+    const mutation = fixture.moduleApi.runInventoryMutation(
+      async () => ({ actorId: "hero-a", sourceActorId: "group-a", changed: true }),
+      {
+        actorIdsFromResult: (result) => [result.sourceActorId, result.actorId]
+      }
+    ).then((result) => {
+      mutationResolved = true;
+      holdCountAtResolution = fixture.moduleApi.inventoryRefreshHoldCount;
+      return result;
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    assert.equal(mutationResolved, true);
+    assert.equal(holdCountAtResolution, 0);
+    assert.equal(refreshCalls, 1);
+    assert.deepEqual(await mutation, { actorId: "hero-a", sourceActorId: "group-a", changed: true });
+
+    rejectRefresh(new Error("render failed"));
+    await Promise.resolve();
+    await Promise.resolve();
+    assert.deepEqual(warnings, ["Инвентарь изменён, но интерфейс не удалось обновить автоматически."]);
+  }
+  finally {
+    console.error = previousConsoleError;
+    fixture.restore();
+  }
+});
+
+test("runInventoryMutation waits for refresh only when an explicit caller requests it", async () => {
+  const fixture = installUiFixture();
+  let resolveRefresh;
+  let mutationResolved = false;
+  try {
+    fixture.moduleApi.refreshInventoryViews = () => new Promise((resolve) => {
+      resolveRefresh = resolve;
+    });
+
+    const mutation = fixture.moduleApi.runInventoryMutation(
+      async () => ({ actorId: "hero-a", changed: true }),
+      { awaitRefresh: true }
+    ).then((result) => {
+      mutationResolved = true;
+      return result;
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    assert.equal(fixture.moduleApi.inventoryRefreshHoldCount, 0);
+    assert.equal(mutationResolved, false);
+
+    resolveRefresh();
+    assert.deepEqual(await mutation, { actorId: "hero-a", changed: true });
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("simple take failure schedules deferred refresh for the exact source and target Actors", async () => {
+  const fixture = installUiFixture();
+  const refreshedScopes = [];
+  try {
+    fixture.moduleApi.refreshInventoryViews = async ({ actorIds }) => {
+      refreshedScopes.push(actorIds);
+    };
+    fixture.moduleApi.inventoryService.takeInventoryItemToCharacter = async () => {
+      const error = new Error("manual review required");
+      Object.assign(error, {
+        code: "transfer-manual-review",
+        inventoryTransferMode: "simple",
+        sourceActorId: "source-group",
+        targetActorId: "target-hero"
+      });
+      throw error;
+    };
+
+    await assert.rejects(
+      fixture.moduleApi.takeInventoryItemToCharacter("item-a"),
+      (error) => error?.code === "transfer-manual-review"
+    );
+    await Promise.resolve();
+
+    assert.deepEqual(refreshedScopes, [["source-group", "target-hero"]]);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
 test("take inventory refresh uses the Actor resolved by the service result", async () => {
   const fixture = installUiFixture();
   try {
@@ -350,6 +593,7 @@ test("take inventory refresh uses the Actor resolved by the service result", asy
     });
 
     await fixture.moduleApi.takeInventoryItemToCharacter("item-a");
+    await new Promise((resolve) => setTimeout(resolve, 100));
 
     assert.deepEqual(fixture.calls.map((call) => call.name).sort(), ["inventory", "resolved"]);
   }
@@ -375,6 +619,7 @@ test("inventory take socket result routes refresh to the affected Actor sheet", 
       actorId: "resolved-actor",
       ok: true
     });
+    await new Promise((resolve) => setTimeout(resolve, 100));
 
     assert.deepEqual(fixture.calls.map((call) => call.name).sort(), ["inventory", "resolved"]);
   }
@@ -382,3 +627,40 @@ test("inventory take socket result routes refresh to the affected Actor sheet", 
     fixture.restore();
   }
 });
+
+for (const route of ["accepted-item", "socket-request", "socket-result"]) {
+  test(`party transfer refreshes only the source inventory and recipient sheet: ${route}`, async () => {
+    const fixture = installUiFixture();
+    try {
+      game.user.active = true;
+      game.users.activeGM = game.user;
+      const affected = fixture.createApp("source-inventory");
+      affected.inventoryActorId = "source-group";
+      const unrelated = fixture.createApp("other-inventory");
+      unrelated.inventoryActorId = "other-group";
+      fixture.moduleApi.inventoryApp = affected;
+      fixture.moduleApi.inventoryFolderApps.set("other", unrelated);
+      ui.windows = { hero: fixture.createApp("recipient", "hero"), other: fixture.createApp("other-sheet", "other-hero") };
+      const result = { handled: true, actorId: "source-group", targetActorId: "hero" };
+      fixture.moduleApi.inventoryService.handlePartyInventorySourceDepletionSocketRequest = async () => result;
+      fixture.moduleApi.inventoryService.handleAcceptedPartyInventoryItem = async () => result;
+      fixture.moduleApi.initializeItem = async () => {};
+      if (route === "accepted-item") {
+        const source = { uuid: "Actor.source-group.Item.torch", name: "Torch", type: "loot", system: { quantity: 1 } };
+        const target = { ...source, uuid: "Actor.hero.Item.copy", parent: { id: "hero", type: "character" } };
+        buildPartyInventoryItemDragData(source.uuid, source);
+        await handleAcceptedPartyInventoryItem(target, {}, "gm", fixture.moduleApi);
+      }
+      else {
+        await fixture.moduleApi.handleSocketMessage({
+          type: route === "socket-request" ? "inventory-source-depletion-request" : "inventory-source-depletion-result",
+          senderId: route === "socket-request" ? "player" : "other-gm", forUserId: "gm", ok: true,
+          actorId: "source-group", targetActorId: "hero"
+        });
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      assert.deepEqual(fixture.calls.map(call => call.name).sort(), ["recipient", "source-inventory"]);
+    }
+    finally { fixture.restore(); }
+  });
+}

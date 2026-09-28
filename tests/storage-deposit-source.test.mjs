@@ -25,7 +25,11 @@ function applyPatch(target, patch) {
   }
 }
 
-function createEmbeddedItem({ quantity = 5, sourceId = "Compendium.dnd5e.items.arrow" } = {}) {
+function createEmbeddedItem({
+  quantity = 5,
+  sourceId = "Compendium.dnd5e.items.arrow",
+  denomination = null
+} = {}) {
   const created = [];
   const actor = {
     uuid: "Actor.hero",
@@ -44,7 +48,12 @@ function createEmbeddedItem({ quantity = 5, sourceId = "Compendium.dnd5e.items.a
     name: "Стрела",
     type: "consumable",
     img: "arrow.webp",
-    flags: { core: { sourceId } },
+    flags: {
+      core: { sourceId },
+      ...(denomination ? {
+        [MODULE_ID]: { storageCoinTemplate: { version: 1, denomination } }
+      } : {})
+    },
     system: { quantity },
     deleted: false,
     updates: [],
@@ -88,7 +97,23 @@ function createStorageToken() {
   };
 }
 
-test("deposit drag parser accepts Foundry Items and Rebreya storage rows only", () => {
+test("currency-backed rows resolve as physical sources and consume only the requested coins", async () => {
+  const token = createStorageToken();
+  token.flags[MODULE_ID] = { storage: { state: "opened", manualCoins: { cp: 8, gp: 1 } } };
+  const storageService = new StorageService();
+  const source = await resolveStorageDepositSource({ kind: "storage-row", tokenUuid: token.uuid, rowId: "__coins:cp", quantity: 8 }, {
+    resolveToken: async () => token, storageService
+  });
+  assert.equal(source.available, 8);
+  assert.equal(source.row.sourceId, "mednaya-moneta");
+  const receipt = await source.consume(3);
+  assert.equal(readStorageState(token).manualCoins.cp, 5);
+  assert.equal(readStorageState(token).manualCoins.gp, 1);
+  await source.restore(receipt);
+  assert.equal(readStorageState(token).manualCoins.cp, 8);
+});
+
+test("deposit drag parser accepts exact Journal entries, Foundry Items, and Rebreya storage rows", () => {
   assert.deepEqual(parseStorageDepositDragData({
     type: "Item",
     uuid: "Actor.hero.Item.sword"
@@ -122,6 +147,37 @@ test("deposit drag parser accepts Foundry Items and Rebreya storage rows only", 
   }), {
     kind: "storage-token",
     tokenUuid: "Scene.scene.Token.chest"
+  });
+  assert.deepEqual(parseStorageDepositDragData({
+    type: "JournalEntry",
+    uuid: "JournalEntry.notes"
+  }), {
+    kind: "journal",
+    sourceUuid: "JournalEntry.notes",
+    documentName: "JournalEntry"
+  });
+  assert.deepEqual(parseStorageDepositDragData({
+    kind: "journal",
+    sourceUuid: "JournalEntry.notes",
+    documentName: "JournalEntry"
+  }), {
+    kind: "journal",
+    sourceUuid: "JournalEntry.notes",
+    documentName: "JournalEntry"
+  });
+  assert.equal(parseStorageDepositDragData({
+    kind: "journal",
+    sourceUuid: "JournalEntry.notes",
+    documentName: "JournalEntry",
+    extra: true
+  }), null);
+  assert.deepEqual(parseStorageDepositDragData({
+    type: "JournalEntryPage",
+    uuid: "JournalEntry.notes.JournalEntryPage.page"
+  }), {
+    kind: "journal",
+    sourceUuid: "JournalEntry.notes.JournalEntryPage.page",
+    documentName: "JournalEntryPage"
   });
 });
 
@@ -204,6 +260,185 @@ test("world and compendium item deposits copy without mutating their source", as
   }
 });
 
+test("Lootgen template Items cannot enter ordinary storage rows", async () => {
+  const item = {
+    id: "template",
+    uuid: "Item.template",
+    documentName: "Item",
+    parent: null,
+    name: "Template",
+    type: "rebreya-main.lootgen-template",
+    system: { schemaVersion: 1, form: {} }
+  };
+  await assert.rejects(
+    resolveStorageDepositSource({ kind: "item", itemUuid: item.uuid }, { fromUuid: async () => item }),
+    /шаблон.*Lootgen|конфигурац/iu
+  );
+});
+
+test("managed gear-compendium coin Items resolve from their stable flag as unbounded copy sources", async () => {
+  const item = {
+    uuid: "Compendium.world.rebreya-gear.Item.gold-template",
+    documentName: "Item",
+    parent: null,
+    pack: "world.rebreya-gear",
+    name: "Переименованный жетон",
+    type: "loot",
+    img: "custom.webp",
+    flags: { [MODULE_ID]: { storageCoinTemplate: { version: 1, denomination: "gp" } } },
+    system: { quantity: 1, sourceType: "coinTemplate" },
+    toObject() {
+      return {
+        name: this.name,
+        type: this.type,
+        img: this.img,
+        flags: clone(this.flags),
+        system: clone(this.system)
+      };
+    }
+  };
+  const source = await resolveStorageDepositSource({ kind: "item", itemUuid: item.uuid }, {
+    fromUuid: async () => item
+  });
+
+  assert.equal(source.kind, "coin-template");
+  assert.equal(source.denomination, "gp");
+  assert.equal(source.mode, "copy");
+  assert.equal(source.available, null);
+  assert.deepEqual(await source.consume(Number.MAX_SAFE_INTEGER), { kind: "copy" });
+  assert.equal(await source.restore({ kind: "copy" }), false);
+  assert.equal(item.system.quantity, 1);
+});
+
+test("managed embedded Coin Items move within their live quantity and reuse Item receipts", async () => {
+  const partial = createEmbeddedItem({ quantity: 5, denomination: "sp" });
+  const partialSource = await resolveStorageDepositSource({ kind: "item", itemUuid: partial.item.uuid }, {
+    fromUuid: async () => partial.item
+  });
+
+  assert.equal(partialSource.kind, "coin-template");
+  assert.equal(partialSource.denomination, "sp");
+  assert.equal(partialSource.mode, "move");
+  assert.equal(partialSource.available, 5);
+  assert.equal(partialSource.canUserMove({ id: "owner" }), true);
+  assert.equal(partialSource.canUserMove({ id: "stranger" }), false);
+  const partialReceipt = await partialSource.consume(2);
+  assert.equal(partial.item.system.quantity, 3);
+  await partialSource.restore(partialReceipt);
+  assert.equal(partial.item.system.quantity, 5);
+
+  const full = createEmbeddedItem({ quantity: 2, denomination: "cp" });
+  const fullSource = await resolveStorageDepositSource({ kind: "item", itemUuid: full.item.uuid }, {
+    fromUuid: async () => full.item
+  });
+  const fullReceipt = await fullSource.consume(2);
+  assert.equal(full.item.deleted, true);
+  await fullSource.restore(fullReceipt);
+  assert.equal(full.created.length, 1);
+  assert.equal(full.created[0].rows[0].system.quantity, 2);
+  assert.deepEqual(full.created[0].options, { keepId: true });
+});
+
+test("unflagged loot remains an ordinary Item source", async () => {
+  const item = createEmbeddedItem({ quantity: 3 }).item;
+  item.type = "loot";
+  item.name = "Жетон без managed-флага";
+  const source = await resolveStorageDepositSource({ kind: "item", itemUuid: item.uuid }, {
+    fromUuid: async () => item
+  });
+
+  assert.equal(source.kind, "item");
+  assert.equal(source.denomination, undefined);
+  assert.equal(source.available, 3);
+});
+
+test("Journal deposits resolve an authoritative reference and copy without mutating the document", async () => {
+  const journal = {
+    uuid: "JournalEntry.notes",
+    documentName: "JournalEntry",
+    name: "Полевые заметки",
+    img: "icons/book.webp",
+    ownership: { default: 0 },
+    updates: [],
+    deleted: false,
+    async update(patch) { this.updates.push(clone(patch)); },
+    async delete() { this.deleted = true; }
+  };
+  const resolvedUuids = [];
+  const source = await resolveStorageDepositSource({
+    kind: "journal",
+    sourceUuid: "JournalEntry.untrusted-drag-value",
+    documentName: "JournalEntry"
+  }, {
+    fromUuid: async (uuid) => {
+      resolvedUuids.push(uuid);
+      return journal;
+    },
+    createRowId: () => "journal-row"
+  });
+
+  assert.equal(source.kind, "journal");
+  assert.equal(source.mode, "copy");
+  assert.equal(source.available, 1);
+  assert.equal(source.sourceKey, journal.uuid);
+  assert.equal(source.journal, journal);
+  assert.deepEqual(resolvedUuids, ["JournalEntry.untrusted-drag-value"]);
+  assert.deepEqual(source.row, {
+    rowKind: "journal",
+    rowId: "journal-row",
+    stackKey: "",
+    sourceId: "JournalEntry.notes",
+    sourceType: "journal",
+    sourceDocumentName: "JournalEntry",
+    name: "Полевые заметки",
+    img: "icons/book.webp",
+    quantity: 1
+  });
+  assert.equal(source.canUserMove({ isGM: true }), true);
+  assert.equal(source.canUserMove({ isGM: false }), false);
+  const receipt = await source.consume(1);
+  assert.deepEqual(receipt, { kind: "copy" });
+  assert.equal(await source.restore(receipt), false);
+  assert.deepEqual(journal.ownership, { default: 0 });
+  assert.deepEqual(journal.updates, []);
+  assert.equal(journal.deleted, false);
+});
+
+test("Journal page deposits preserve the exact authoritative page identity", async () => {
+  const page = {
+    uuid: "JournalEntry.notes.JournalEntryPage.page",
+    documentName: "JournalEntryPage",
+    name: "Отдельная страница",
+    img: "icons/page.webp",
+    parent: { uuid: "JournalEntry.notes", documentName: "JournalEntry" }
+  };
+  const source = await resolveStorageDepositSource({
+    kind: "journal",
+    sourceUuid: page.uuid,
+    documentName: "JournalEntryPage"
+  }, { fromUuid: async () => page, createRowId: () => "page-row" });
+
+  assert.equal(source.journal, page);
+  assert.equal(source.sourceKey, page.uuid);
+  assert.deepEqual(source.row, {
+    rowKind: "journal",
+    rowId: "page-row",
+    stackKey: "",
+    sourceId: page.uuid,
+    sourceType: "journal",
+    sourceDocumentName: "JournalEntryPage",
+    name: "Отдельная страница",
+    img: "icons/page.webp",
+    quantity: 1
+  });
+
+  await assert.rejects(resolveStorageDepositSource({
+    kind: "journal",
+    sourceUuid: page.uuid,
+    documentName: "JournalEntry"
+  }, { fromUuid: async () => page }), /тип|JournalEntry/iu);
+});
+
 test("storage-row deposits consume and restore a ground pile quantity", async () => {
   const storageService = new StorageService();
   const token = createStorageToken();
@@ -236,6 +471,51 @@ test("storage-row deposits consume and restore a ground pile quantity", async ()
   await source.restore(receipt);
   assert.equal(readStorageState(token).manualRows[0].quantity, 4);
   assert.equal(readStorageState(token).state, "opened");
+});
+
+test("storage-row deposits reject Journal references before cloning or claiming them", async () => {
+  const storageService = new StorageService();
+  const token = createStorageToken();
+  await storageService.configure(token, {
+    state: "opened",
+    manualRows: [{
+      rowKind: "journal",
+      rowId: "journal-row",
+      stackKey: "",
+      sourceId: "JournalEntry.notes",
+      sourceType: "journal",
+      name: "Полевые заметки",
+      img: "icons/book.webp",
+      quantity: 1
+    }]
+  });
+  let createRowIdCalls = 0;
+  let claimCalls = 0;
+  const originalClaim = storageService.claim.bind(storageService);
+  storageService.claim = async (...args) => {
+    claimCalls += 1;
+    return originalClaim(...args);
+  };
+
+  await assert.rejects(
+    resolveStorageDepositSource({
+      kind: "storage-row",
+      tokenUuid: token.uuid,
+      rowId: "journal-row",
+      quantity: 1
+    }, {
+      resolveToken: async () => token,
+      storageService,
+      createRowId: () => {
+        createRowIdCalls += 1;
+        return "must-not-clone";
+      }
+    }),
+    /журнал/iu
+  );
+  assert.equal(createRowIdCalls, 0);
+  assert.equal(claimCalls, 0);
+  assert.deepEqual(readStorageState(token).claimedRowIds, []);
 });
 
 test("portable dnd5e container Items move with their complete recursive snapshot", async () => {
@@ -413,6 +693,7 @@ test("whole storage token sources delete after deposit and can restore the origi
     name: token.name,
     actorId: token.actor.id,
     texture: clone(token.texture),
+    sight: { enabled: true, range: 60 },
     flags: clone(token.flags)
   });
   token.delete = async () => { token.deleted = true; };
@@ -431,6 +712,7 @@ test("whole storage token sources delete after deposit and can restore the origi
   assert.equal(token.parent.created.length, 1);
   assert.equal(token.parent.created[0].type, "Token");
   assert.equal(token.parent.created[0].documents[0]._id, token.id);
+  assert.deepEqual(token.parent.created[0].documents[0].sight, { enabled: false, range: 60 });
 });
 
 test("a single ordinary ground item is transferred as an item instead of a nested container", async () => {
@@ -478,6 +760,39 @@ test("a single ordinary ground item is transferred as an item instead of a neste
   assert.equal(token.deleted, true);
   await source.restore(complete);
   assert.equal(token.parent.created.length, 1);
+});
+
+test("a Journal-only ground pile stays a container and never becomes an Item transfer source", async () => {
+  const token = createStorageToken();
+  token.toObject = () => ({ _id: token.id, name: token.name, flags: clone(token.flags) });
+  token.delete = async () => { token.deleted = true; };
+  const storageService = new StorageService();
+  await storageService.configure(token, {
+    storageKind: "pile",
+    state: "opened",
+    containerId: "journal-pile",
+    manualRows: [{
+      rowKind: "journal",
+      rowId: "journal-row",
+      stackKey: "",
+      sourceId: "JournalEntry.notes",
+      sourceType: "journal",
+      name: "Полевые заметки",
+      img: "icons/book.webp",
+      quantity: 1
+    }]
+  });
+
+  const source = await resolveStorageDepositSource({ kind: "storage-token", tokenUuid: token.uuid }, {
+    resolveToken: async () => token,
+    storageService,
+    createRowId: () => "journal-container-row"
+  });
+
+  assert.equal(source.row.rowKind, "container");
+  assert.equal(source.row.container.state.manualRows[0].rowKind, "journal");
+  assert.equal("itemData" in source.row.container.state.manualRows[0], false);
+  assert.equal(source.available, 1);
 });
 
 test("a marked ground pile with a stale chest kind still transfers its single ordinary item directly", async () => {

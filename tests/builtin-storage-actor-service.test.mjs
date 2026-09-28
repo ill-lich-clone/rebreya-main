@@ -14,17 +14,34 @@ import {
 } from "../scripts/data/builtin-storage-actor-service.js";
 import { CHEST_OBJECT_DURABILITY } from "../scripts/data/native-object-durability-service.js";
 
+const EXPECTED_SYNC_IDS = [
+  "wood-dark-copper",
+  "wood-dark-silver",
+  "wood-dark-gold",
+  "barrel",
+  "wicker-basket",
+  "provision-sack",
+  "ceramic-storage-jar",
+  "wardrobe",
+  "kitchen-hutch",
+  "dresser",
+  "bedside-cabinet",
+  "ground-pile"
+];
+
 function createHarness({ active = true, failPresetId = "" } = {}) {
   const currentUser = { id: "gm-primary", isGM: true, active };
   const folders = [];
   const actors = [];
+  const scenes = [];
   const folderCreates = [];
   const actorCreates = [];
   const game = {
     user: currentUser,
     users: { activeGM: active ? currentUser : null, contents: [currentUser] },
     folders: { contents: folders },
-    actors: { contents: actors }
+    actors: { contents: actors },
+    scenes: { contents: scenes }
   };
 
   const Folder = {
@@ -60,7 +77,35 @@ function createHarness({ active = true, failPresetId = "" } = {}) {
     actorProvider: () => Actor,
     logger: { error() {} }
   });
-  return { service, game, folders, actors, folderCreates, actorCreates };
+  return { service, game, folders, actors, scenes, folderCreates, actorCreates };
+}
+
+function makeActorUpdatable(actor) {
+  actor.updates = [];
+  actor.update = async function update(patch) {
+    this.updates.push(structuredClone(patch));
+    for (const [path, value] of Object.entries(patch)) {
+      const parts = path.split(".");
+      let cursor = this;
+      for (const part of parts.slice(0, -1)) cursor = (cursor[part] ??= {});
+      cursor[parts.at(-1)] = structuredClone(value);
+    }
+  };
+  return actor;
+}
+
+function makeTokenUpdatable(token) {
+  token.updates = [];
+  token.update = async function update(patch) {
+    this.updates.push(structuredClone(patch));
+    for (const [path, value] of Object.entries(patch)) {
+      const parts = path.split(".");
+      let cursor = this;
+      for (const part of parts.slice(0, -1)) cursor = (cursor[part] ??= {});
+      cursor[parts.at(-1)] = structuredClone(value);
+    }
+  };
+  return token;
 }
 
 test("built-in storage Actor data creates an unlinked closed NPC with independent token state", () => {
@@ -74,6 +119,8 @@ test("built-in storage Actor data creates an unlinked closed NPC with independen
   assert.equal(data.flags[MODULE_ID].storage.enabled, true);
   assert.equal(data.flags[MODULE_ID][BUILTIN_STORAGE_PRESET_FLAG].id, "wood-dark-copper");
   assert.equal(data.prototypeToken.actorLink, false);
+  assert.equal(data.prototypeToken.disposition, 0);
+  assert.equal(data.prototypeToken.sight.enabled, false);
   assert.equal(data.prototypeToken.name, "Сундук");
   assert.equal(data.prototypeToken.texture.src, preset.textures.unopened);
   assert.deepEqual(data.prototypeToken.flags[MODULE_ID].objectDurability, CHEST_OBJECT_DURABILITY);
@@ -98,10 +145,27 @@ test("ground pile Actor data creates an unlinked already-open storage prototype"
   assert.equal(data.flags[MODULE_ID].storage.enabled, true);
   assert.equal(data.flags[MODULE_ID].groundPilePrototype.enabled, true);
   assert.equal(data.prototypeToken.actorLink, false);
+  assert.equal(data.prototypeToken.disposition, 0);
+  assert.equal(data.prototypeToken.sight.enabled, false);
   assert.equal(data.prototypeToken.flags[MODULE_ID].groundPile.enabled, true);
   assert.equal(storage.storageKind, "pile");
   assert.equal(storage.state, "opened");
   assert.equal(storage.displayMode, "opened");
+});
+
+test("built-in furniture Actor data uses its preset token name and storage base name", () => {
+  const preset = BUILTIN_STORAGE_PRESETS.find(({ id }) => id === "barrel");
+  assert.ok(preset);
+
+  const data = buildBuiltinStorageActorData(preset, "storage-folder");
+  const storage = data.prototypeToken.flags[MODULE_ID].storage;
+
+  assert.equal(data.name, "Бочка");
+  assert.equal(data.prototypeToken.name, "Бочка");
+  assert.equal(storage.baseName, "Бочка");
+  assert.equal(storage.storageKind, "chest");
+  assert.deepEqual(storage.textures, preset.textures);
+  assert.deepEqual(data.prototypeToken.flags[MODULE_ID].objectDurability, CHEST_OBJECT_DURABILITY);
 });
 
 test("inactive GM clients do not read or create built-in storage documents", async () => {
@@ -112,7 +176,7 @@ test("inactive GM clients do not read or create built-in storage documents", asy
   assert.equal(harness.actorCreates.length, 0);
 });
 
-test("active GM creates the root folder, three chests, and one pile Actor exactly once", async () => {
+test("active GM creates the root folder and every built-in storage Actor exactly once", async () => {
   const harness = createHarness();
 
   const first = await harness.service.sync();
@@ -124,12 +188,322 @@ test("active GM creates the root folder, three chests, and one pile Actor exactl
     type: "Actor",
     folder: null
   });
-  assert.equal(harness.actorCreates.length, 4);
+  assert.equal(harness.actorCreates.length, 12);
   assert.deepEqual(
     first.actors.map((actor) => actor.getFlag(MODULE_ID, BUILTIN_STORAGE_PRESET_FLAG).id),
-    ["wood-dark-copper", "wood-dark-silver", "wood-dark-gold", "ground-pile"]
+    EXPECTED_SYNC_IDS
   );
   assert.deepEqual(second.actors, first.actors);
+});
+
+test("sync disables prototype sight for every classified persistent storage Actor only", async () => {
+  const harness = createHarness();
+  const storageFolder = {
+    id: "storage-folder",
+    name: BUILTIN_STORAGE_FOLDER_NAME,
+    type: "Actor",
+    folder: null
+  };
+  harness.folders.push(storageFolder);
+  const markedStorage = makeActorUpdatable({
+    id: "marked-storage",
+    type: "npc",
+    folder: null,
+    flags: { [MODULE_ID]: { storage: { enabled: true } } },
+    prototypeToken: { sight: { enabled: true, range: 60 } }
+  });
+  const groundPilePrototype = makeActorUpdatable({
+    id: "ground-pile-prototype",
+    type: "npc",
+    folder: null,
+    flags: { [MODULE_ID]: { groundPilePrototype: { enabled: true } } },
+    prototypeToken: { sight: { enabled: true } }
+  });
+  const folderOnlyNpc = makeActorUpdatable({
+    id: "folder-only",
+    type: "npc",
+    folder: storageFolder,
+    flags: {},
+    prototypeToken: { sight: { enabled: true } }
+  });
+  const corpseOnlyNpc = makeActorUpdatable({
+    id: "corpse-only",
+    type: "npc",
+    folder: null,
+    flags: {},
+    prototypeToken: {
+      sight: { enabled: true },
+      flags: {
+        [MODULE_ID]: {
+          storage: {
+            version: 1,
+            corpseMaterialization: { version: 1, status: "complete" }
+          }
+        }
+      }
+    }
+  });
+  const ordinaryNpc = makeActorUpdatable({
+    id: "ordinary-npc",
+    type: "npc",
+    folder: null,
+    flags: {},
+    prototypeToken: { sight: { enabled: true } }
+  });
+  const character = makeActorUpdatable({
+    id: "character",
+    type: "character",
+    folder: null,
+    flags: {},
+    prototypeToken: { sight: { enabled: true } }
+  });
+  const transport = makeActorUpdatable({
+    id: "transport",
+    type: "vehicle",
+    folder: null,
+    flags: {},
+    prototypeToken: { sight: { enabled: true } }
+  });
+  harness.actors.push(
+    markedStorage,
+    groundPilePrototype,
+    folderOnlyNpc,
+    corpseOnlyNpc,
+    ordinaryNpc,
+    character,
+    transport
+  );
+
+  await harness.service.sync();
+
+  for (const actor of [markedStorage, groundPilePrototype]) {
+    assert.deepEqual(actor.updates, [{ "prototypeToken.sight.enabled": false }]);
+    assert.equal(actor.prototypeToken.sight.enabled, false);
+  }
+  for (const actor of [folderOnlyNpc, corpseOnlyNpc, ordinaryNpc, character, transport]) {
+    assert.equal(actor.updates.length, 0, actor.id);
+    assert.equal(actor.prototypeToken.sight.enabled, true, actor.id);
+  }
+});
+
+test("sync disables sight on classified storage tokens across scenes without touching ordinary or corpse tokens", async () => {
+  const harness = createHarness();
+  const markedStorage = makeActorUpdatable({
+    id: "marked-storage",
+    type: "npc",
+    flags: { [MODULE_ID]: { storage: { enabled: true } } },
+    prototypeToken: { sight: { enabled: false } }
+  });
+  const groundPilePrototype = makeActorUpdatable({
+    id: "ground-pile-prototype",
+    type: "npc",
+    flags: { [MODULE_ID]: { groundPilePrototype: { enabled: true } } },
+    prototypeToken: { sight: { enabled: false } }
+  });
+  const ordinaryNpc = makeActorUpdatable({
+    id: "ordinary-npc",
+    type: "npc",
+    flags: {},
+    prototypeToken: { sight: { enabled: true } }
+  });
+  harness.actors.push(markedStorage, groundPilePrototype, ordinaryNpc);
+
+  const markedToken = makeTokenUpdatable({
+    id: "marked-token",
+    actorId: markedStorage.id,
+    sight: { enabled: true, range: 60 },
+    flags: {}
+  });
+  const pileToken = makeTokenUpdatable({
+    id: "pile-token",
+    actorId: groundPilePrototype.id,
+    sight: { enabled: true },
+    flags: {}
+  });
+  const tokenOnlyStorage = makeTokenUpdatable({
+    id: "token-only-storage",
+    actorId: ordinaryNpc.id,
+    sight: { enabled: true },
+    flags: { [MODULE_ID]: { storage: { version: 1, state: "opened" } } }
+  });
+  const corpseToken = makeTokenUpdatable({
+    id: "corpse-token",
+    actorId: ordinaryNpc.id,
+    actor: ordinaryNpc,
+    sight: { enabled: true },
+    flags: {
+      [MODULE_ID]: {
+        storage: {
+          version: 1,
+          corpseMaterialization: { version: 1, status: "complete" }
+        }
+      }
+    }
+  });
+  const ordinaryToken = makeTokenUpdatable({
+    id: "ordinary-token",
+    actorId: ordinaryNpc.id,
+    actor: ordinaryNpc,
+    sight: { enabled: true },
+    flags: {}
+  });
+  const characterToken = makeTokenUpdatable({
+    id: "character-token",
+    actorId: "character",
+    sight: { enabled: true },
+    flags: {}
+  });
+  const transportToken = makeTokenUpdatable({
+    id: "transport-token",
+    actorId: "transport",
+    sight: { enabled: true },
+    flags: {}
+  });
+  harness.scenes.push(
+    { id: "scene-a", tokens: { contents: [markedToken, corpseToken, ordinaryToken] } },
+    { id: "scene-b", tokens: { contents: [pileToken, tokenOnlyStorage, characterToken, transportToken] } }
+  );
+
+  await harness.service.sync();
+
+  for (const token of [markedToken, pileToken, tokenOnlyStorage]) {
+    assert.deepEqual(token.updates, [{ "sight.enabled": false }]);
+    assert.equal(token.sight.enabled, false);
+  }
+  for (const token of [corpseToken, ordinaryToken, characterToken, transportToken]) {
+    assert.equal(token.updates.length, 0, token.id);
+    assert.equal(token.sight.enabled, true, token.id);
+  }
+});
+
+test("a repeated sync writes nothing when storage Actor prototypes and scene tokens are already correct", async () => {
+  const harness = createHarness();
+  await harness.service.sync();
+  for (const actor of harness.actors) makeActorUpdatable(actor);
+
+  const markedStorage = makeActorUpdatable({
+    id: "marked-storage",
+    type: "npc",
+    flags: { [MODULE_ID]: { storage: { enabled: true } } },
+    prototypeToken: { sight: { enabled: true } }
+  });
+  harness.actors.push(markedStorage);
+  const markedToken = makeTokenUpdatable({
+    id: "marked-token",
+    actorId: markedStorage.id,
+    sight: { enabled: true },
+    flags: {}
+  });
+  harness.scenes.push({ id: "scene-a", tokens: { contents: [markedToken] } });
+
+  await harness.service.sync();
+  const actorWrites = harness.actors.reduce((total, actor) => total + (actor.updates?.length ?? 0), 0);
+  const tokenWrites = markedToken.updates.length;
+  await harness.service.sync();
+
+  assert.equal(actorWrites, 1);
+  assert.equal(tokenWrites, 1);
+  assert.equal(harness.actors.reduce((total, actor) => total + (actor.updates?.length ?? 0), 0), actorWrites);
+  assert.equal(markedToken.updates.length, tokenWrites);
+});
+
+test("sync reuses the deterministic oldest storage folder at any nesting level", async () => {
+  const cases = [
+    {
+      name: "oldest known creation time",
+      folders: [
+        { id: "newer-root", name: BUILTIN_STORAGE_FOLDER_NAME, type: "Actor", folder: null, _stats: { createdTime: 200 } },
+        { id: "oldest-nested", name: ` ${BUILTIN_STORAGE_FOLDER_NAME} `, type: "Actor", folder: "parent-folder", _stats: { createdTime: 100 } }
+      ],
+      expectedId: "oldest-nested"
+    },
+    {
+      name: "known time before missing time",
+      folders: [
+        { id: "missing-time", name: BUILTIN_STORAGE_FOLDER_NAME, type: "Actor", folder: "parent-folder" },
+        { id: "known-time", name: BUILTIN_STORAGE_FOLDER_NAME, type: "Actor", folder: null, _stats: { createdTime: 300 } }
+      ],
+      expectedId: "known-time"
+    },
+    {
+      name: "stable ID tie break for equal known times",
+      folders: [
+        { id: "known-z", name: BUILTIN_STORAGE_FOLDER_NAME, type: "Actor", folder: null, _stats: { createdTime: 400 } },
+        { id: "known-a", name: BUILTIN_STORAGE_FOLDER_NAME, type: "Actor", folder: "parent-folder", _stats: { createdTime: 400 } }
+      ],
+      expectedId: "known-a"
+    },
+    {
+      name: "stable ID tie break",
+      folders: [
+        { id: "folder-z", name: BUILTIN_STORAGE_FOLDER_NAME, type: "Actor", folder: null },
+        { id: "folder-a", name: BUILTIN_STORAGE_FOLDER_NAME, type: "Actor", folder: "parent-folder" }
+      ],
+      expectedId: "folder-a"
+    }
+  ];
+
+  for (const fixture of cases) {
+    const harness = createHarness();
+    harness.folders.push(
+      { id: `ignored-${fixture.name}`, name: "Другая папка", type: "Actor", folder: null },
+      ...structuredClone(fixture.folders)
+    );
+
+    const result = await harness.service.sync();
+
+    assert.equal(result.folder.id, fixture.expectedId, fixture.name);
+    assert.equal(harness.folderCreates.length, 0, fixture.name);
+    assert.equal(harness.actorCreates.length, EXPECTED_SYNC_IDS.length, fixture.name);
+    assert.equal(harness.actorCreates.every(({ data }) => data.folder === fixture.expectedId), true, fixture.name);
+  }
+});
+
+test("sync reconciles existing built-in Actors into the oldest storage folder without deleting duplicates", async () => {
+  const harness = createHarness();
+  await harness.service.sync();
+  const initialFolderCreates = harness.folderCreates.length;
+  const canonical = {
+    id: "storage-oldest",
+    name: BUILTIN_STORAGE_FOLDER_NAME,
+    type: "Actor",
+    folder: "under-hand-folder",
+    _stats: { createdTime: 100 }
+  };
+  const duplicate = {
+    id: "storage-newer",
+    name: BUILTIN_STORAGE_FOLDER_NAME,
+    type: "Actor",
+    folder: null,
+    _stats: { createdTime: 200 }
+  };
+  harness.folders.splice(0, harness.folders.length, duplicate, canonical);
+
+  for (const actor of harness.actors) {
+    actor.folder = duplicate.id;
+    actor.name = `Пользовательское имя ${actor.id}`;
+    makeActorUpdatable(actor);
+  }
+  const preservedName = harness.actors[0].name;
+  const preservedRows = [{ rowId: "kept-row", name: "Содержимое", quantity: 1 }];
+  harness.actors[0].prototypeToken.flags[MODULE_ID].storage.manualRows = structuredClone(preservedRows);
+
+  const result = await harness.service.sync();
+
+  assert.equal(result.folder, canonical);
+  assert.equal(harness.folderCreates.length, initialFolderCreates);
+  assert.deepEqual(harness.folders, [duplicate, canonical]);
+  assert.equal(harness.actors[0].name, preservedName);
+  for (const actor of harness.actors) {
+    assert.equal(actor.updates.length, 1);
+    assert.equal(actor.updates[0].folder, canonical.id);
+    assert.equal(Object.hasOwn(actor.updates[0], "prototypeToken.disposition"), false);
+    assert.equal(Object.hasOwn(actor.updates[0], "prototypeToken.sight.enabled"), false);
+  }
+  assert.deepEqual(
+    harness.actors[0].prototypeToken.flags[MODULE_ID].storage.manualRows,
+    preservedRows
+  );
 });
 
 test("sync restores only a missing preset and preserves edits to existing Actors", async () => {
@@ -147,9 +521,9 @@ test("sync restores only a missing preset and preserves edits to existing Actors
   const result = await harness.service.sync();
 
   assert.equal(harness.folderCreates.length, 1);
-  assert.equal(harness.actorCreates.length, 5);
+  assert.equal(harness.actorCreates.length, 13);
   assert.equal(copper.name, "Мой медный сундук");
-  assert.equal(result.actors.length, 4);
+  assert.equal(result.actors.length, 12);
   assert.equal(result.actors.filter((actor) => (
     actor.getFlag(MODULE_ID, BUILTIN_STORAGE_PRESET_FLAG).id === "wood-dark-silver"
   )).length, 1);
@@ -162,7 +536,98 @@ test("one rejected preset does not prevent the other built-in Actors from being 
 
   assert.deepEqual(
     result.actors.map((actor) => actor.getFlag(MODULE_ID, BUILTIN_STORAGE_PRESET_FLAG).id),
-    ["wood-dark-copper", "wood-dark-gold", "ground-pile"]
+    EXPECTED_SYNC_IDS.filter((id) => id !== "wood-dark-silver")
   );
-  assert.equal(harness.actorCreates.length, 4);
+  assert.equal(harness.actorCreates.length, 12);
+});
+
+test("sync migrates only automatically inherited scene token names to the preset token name", async () => {
+  const harness = createHarness();
+  await harness.service.sync();
+  const copper = harness.actors.find((actor) => (
+    actor.getFlag(MODULE_ID, BUILTIN_STORAGE_PRESET_FLAG).id === "wood-dark-copper"
+  ));
+  const createToken = (name) => ({
+    actorId: copper.id,
+    name,
+    flags: { [MODULE_ID]: { storage: { baseName: name } } },
+    updates: [],
+    async update(patch) {
+      this.updates.push(structuredClone(patch));
+    }
+  });
+  const automatic = createToken("Сундук — медные монеты");
+  const custom = createToken("Мой сундук");
+  harness.scenes.push({ tokens: { contents: [automatic, custom] } });
+
+  await harness.service.sync();
+
+  assert.equal(automatic.updates.length, 1);
+  assert.equal(automatic.updates[0].name, "Сундук");
+  assert.equal(automatic.updates[0][`flags.${MODULE_ID}.storage`].baseName, "Сундук");
+  assert.equal(custom.updates.length, 1);
+  assert.equal(custom.updates[0].disposition, 0);
+  assert.equal(custom.updates[0]["sight.enabled"], false);
+  assert.equal(Object.hasOwn(custom.updates[0], "name"), false);
+});
+
+test("sync neutralizes managed storage scene tokens without renaming a ground item", async () => {
+  const harness = createHarness();
+  await harness.service.sync();
+  const copper = harness.actors.find((actor) => (
+    actor.getFlag(MODULE_ID, BUILTIN_STORAGE_PRESET_FLAG).id === "wood-dark-copper"
+  ));
+  const groundPile = harness.actors.find((actor) => (
+    actor.getFlag(MODULE_ID, BUILTIN_STORAGE_PRESET_FLAG).id === "ground-pile"
+  ));
+  const createToken = ({ actorId, name, flags }) => ({
+    actorId,
+    name,
+    disposition: -1,
+    sight: { enabled: true, range: 60 },
+    flags,
+    updates: [],
+    async update(patch) {
+      this.updates.push(structuredClone(patch));
+      for (const [path, value] of Object.entries(patch)) {
+        const parts = path.split(".");
+        let cursor = this;
+        for (const part of parts.slice(0, -1)) cursor = (cursor[part] ??= {});
+        cursor[parts.at(-1)] = structuredClone(value);
+      }
+    }
+  });
+  const storageToken = createToken({
+    actorId: copper.id,
+    name: "Мой сундук",
+    flags: { [MODULE_ID]: { storage: { baseName: "Мой сундук" } } }
+  });
+  const itemToken = createToken({
+    actorId: groundPile.id,
+    name: "Латы",
+    flags: {
+      [MODULE_ID]: {
+        storage: { baseName: "Латы" },
+        groundPile: { enabled: true }
+      }
+    }
+  });
+  const foreignToken = createToken({ actorId: "ordinary-npc", name: "Враг", flags: {} });
+  harness.scenes.push({ tokens: { contents: [storageToken, itemToken, foreignToken] } });
+
+  await harness.service.sync();
+
+  for (const token of [storageToken, itemToken]) {
+    assert.equal(token.updates.length, 1);
+    assert.equal(token.updates[0].disposition, 0);
+    assert.equal(token.updates[0]["sight.enabled"], false);
+  }
+  assert.equal(Object.hasOwn(itemToken.updates[0], "name"), false);
+  assert.equal(foreignToken.updates.length, 0);
+
+  await harness.service.sync();
+
+  assert.equal(storageToken.updates.length, 1);
+  assert.equal(itemToken.updates.length, 1);
+  assert.equal(foreignToken.updates.length, 0);
 });

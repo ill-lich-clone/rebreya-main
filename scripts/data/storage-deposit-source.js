@@ -1,12 +1,19 @@
+import { buildStorageCoinRow, storageCoinRowDenomination, assertStorageCoinTransferAvailable } from "./storage-service.js";
 import { MODULE_ID } from "../constants.js";
 import { GROUND_PILE_PRESET_ID } from "./builtin-storage-presets.js";
-import { isStorageActor, readStorageState, readStorageStateAtPath } from "./storage-service.js";
+import {
+  isStorageActor,
+  readStorageCoinDenomination,
+  readStorageState,
+  readStorageStateAtPath
+} from "./storage-service.js?v=1.4.200-storage-broken-presentation";
 import {
   buildStorageContainerRow,
   isStorageContainerRow,
+  isStorageJournalRow,
   rekeyStorageContainerSnapshot
-} from "./storage-container-snapshot.js?v=1.4.126-native-container-copies";
-import { buildStorageContainerSnapshotFromToken } from "./storage-container-item-service.js";
+} from "./storage-container-snapshot.js?v=1.4.317";
+import { buildStorageContainerSnapshotFromToken } from "./storage-container-item-service.js?v=1.4.322";
 import { parseStorageDragData } from "../ui/storage-transfer-ui.js";
 
 function clone(value) {
@@ -38,6 +45,14 @@ function parsedObject(value) {
   catch (_error) {
     return null;
   }
+}
+
+function hasExactKeys(value, expectedKeys) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const actualKeys = Object.keys(value).sort();
+  const sortedExpected = [...expectedKeys].sort();
+  return actualKeys.length === sortedExpected.length
+    && actualKeys.every((key, index) => key === sortedExpected[index]);
 }
 
 function createDepositRowId() {
@@ -90,6 +105,11 @@ function isItemDocument(document) {
     || document?.constructor?.metadata?.name === "Item";
 }
 
+function journalDocumentName(document) {
+  const name = clean(document?.documentName ?? document?.constructor?.metadata?.name);
+  return ["JournalEntry", "JournalEntryPage"].includes(name) ? name : "";
+}
+
 function isEmbeddedActorItem(item) {
   return item?.parent?.documentName === "Actor"
     || item?.parent?.constructor?.metadata?.name === "Actor";
@@ -112,6 +132,22 @@ function buildItemRow(item, available, createRowId) {
     img: clean(item?.img ?? data.img),
     quantity: available,
     itemData: data
+  };
+}
+
+function buildJournalRow(journal, documentName, createRowId) {
+  const sourceId = clean(journal?.uuid);
+  if (!sourceId) throw new Error("Журнал не имеет допустимого UUID.");
+  return {
+    rowKind: "journal",
+    rowId: clean(createRowId?.()) || createDepositRowId(),
+    stackKey: "",
+    sourceId,
+    sourceType: "journal",
+    sourceDocumentName: documentName,
+    name: clean(journal?.name) || "Журнал",
+    img: clean(journal?.img),
+    quantity: 1
   };
 }
 
@@ -138,7 +174,7 @@ function singleGroundItem(snapshot, document) {
   const state = snapshot.state ?? {};
   const claimed = new Set((Array.isArray(state.claimedRowIds) ? state.claimedRowIds : []).map(clean));
   const rows = storageRows(state).filter((row) => !claimed.has(clean(row?.rowId)));
-  if (rows.length !== 1 || isStorageContainerRow(rows[0])) return null;
+  if (rows.length !== 1 || isStorageContainerRow(rows[0]) || isStorageJournalRow(rows[0])) return null;
   if (state.coinsClaimed !== true) {
     const coinKeys = ["pp", "gp", "sp", "cp"];
     const hasCoins = coinKeys.some((key) => (
@@ -151,6 +187,16 @@ function singleGroundItem(snapshot, document) {
 
 export function parseStorageDepositDragData(value) {
   const canonical = parsedObject(value);
+  if (hasExactKeys(canonical, ["documentName", "kind", "sourceUuid"])
+    && canonical.kind === "journal"
+    && ["JournalEntry", "JournalEntryPage"].includes(clean(canonical.documentName))
+    && clean(canonical.sourceUuid)) {
+    return {
+      kind: "journal",
+      sourceUuid: clean(canonical.sourceUuid),
+      documentName: clean(canonical.documentName)
+    };
+  }
   if (canonical?.kind === "item" && clean(canonical.itemUuid)) {
     return { kind: "item", itemUuid: clean(canonical.itemUuid) };
   }
@@ -186,19 +232,119 @@ export function parseStorageDepositDragData(value) {
     const tokenUuid = clean(payload.uuid ?? payload.tokenUuid);
     return tokenUuid ? { kind: "storage-token", tokenUuid } : null;
   }
+  if (["JournalEntry", "JournalEntryPage"].includes(clean(payload.type))) {
+    const sourceUuid = clean(payload.uuid);
+    return sourceUuid ? { kind: "journal", sourceUuid, documentName: clean(payload.type) } : null;
+  }
   if (!["Item", "ItemUUID"].includes(clean(payload.type))) return null;
   const itemUuid = clean(payload.uuid);
   return itemUuid ? { kind: "item", itemUuid } : null;
+}
+
+async function resolveJournalSource(sourceRef, { fromUuid, createRowId }) {
+  if (typeof fromUuid !== "function") throw new TypeError("Для журнала требуется разрешение UUID.");
+  const expectedDocumentName = clean(sourceRef.documentName);
+  if (!["JournalEntry", "JournalEntryPage"].includes(expectedDocumentName)) {
+    throw new Error("Не указан допустимый тип документа журнала.");
+  }
+  const journal = await fromUuid(sourceRef.sourceUuid);
+  if (journalDocumentName(journal) !== expectedDocumentName) {
+    throw new Error(`Перетаскиваемый документ ${expectedDocumentName} не найден или имеет другой тип.`);
+  }
+  const row = buildJournalRow(journal, expectedDocumentName, createRowId);
+  return {
+    kind: "journal",
+    mode: "copy",
+    available: 1,
+    row,
+    sourceKey: row.sourceId,
+    journal,
+    canUserMove(user) { return user?.isGM === true; },
+    async consume(requestedQuantity) {
+      requireQuantity(requestedQuantity, 1);
+      return { kind: "copy" };
+    },
+    async restore() { return false; }
+  };
 }
 
 async function resolveItemSource(sourceRef, { fromUuid, createRowId, containerItemService = null }) {
   if (typeof fromUuid !== "function") throw new TypeError("Для предмета требуется разрешение UUID.");
   const item = await fromUuid(sourceRef.itemUuid);
   if (!isItemDocument(item)) throw new Error("Перетаскиваемый предмет не найден.");
+  if (item.type === `${MODULE_ID}.lootgen-template`) {
+    throw new Error("Шаблон Lootgen является конфигурацией и не может храниться как обычный предмет.");
+  }
 
   const available = itemQuantity(item);
   const embedded = isEmbeddedActorItem(item);
   const parent = embedded ? item.parent : null;
+  const denomination = readStorageCoinDenomination(item);
+  if (denomination) {
+    const coinAvailable = embedded ? positiveQuantity(item?.system?.quantity) : null;
+    if (embedded && !coinAvailable) {
+      throw new Error("В источнике нет доступных монет.");
+    }
+    return {
+      kind: "coin-template",
+      denomination,
+      mode: embedded ? "move" : "copy",
+      available: coinAvailable,
+      sourceKey: clean(item.uuid),
+      item,
+      sourceActor: parent,
+      canUserMove(user) {
+        if (!embedded || user?.isGM === true) return true;
+        if (typeof parent?.testUserPermission === "function") {
+          return parent.testUserPermission(user, "OWNER") === true;
+        }
+        return item?.isOwner === true || parent?.isOwner === true;
+      },
+      async consume(requestedQuantity) {
+        const maximum = embedded
+          ? positiveQuantity(item?.system?.quantity)
+          : Number.POSITIVE_INFINITY;
+        const quantity = requireQuantity(requestedQuantity, maximum);
+        if (!embedded) return { kind: "copy" };
+        const beforeQuantity = positiveQuantity(item?.system?.quantity);
+        const snapshot = itemData(item);
+        if (quantity < beforeQuantity) {
+          await item.update({ "system.quantity": beforeQuantity - quantity });
+          return {
+            kind: "item-update",
+            itemUuid: clean(item.uuid),
+            beforeQuantity,
+            item,
+            parent
+          };
+        }
+        await item.delete();
+        return {
+          kind: "item-delete",
+          itemUuid: clean(item.uuid),
+          beforeQuantity,
+          snapshot,
+          item,
+          parent
+        };
+      },
+      async restore(receipt) {
+        if (!receipt || receipt.kind === "copy") return false;
+        if (receipt.kind === "item-update") {
+          await receipt.item.update({ "system.quantity": receipt.beforeQuantity });
+          return true;
+        }
+        if (receipt.kind === "item-delete") {
+          if (typeof receipt.parent?.createEmbeddedDocuments !== "function") {
+            throw new Error("Не удалось восстановить исходные монеты после ошибки переноса.");
+          }
+          await receipt.parent.createEmbeddedDocuments("Item", [receipt.snapshot], { keepId: true });
+          return true;
+        }
+        return false;
+      }
+    };
+  }
   if (clean(item?.type) === "container") {
     if (!containerItemService || typeof containerItemService.captureFromItem !== "function") {
       throw new Error("Сервис переносимых контейнеров Rebreya недоступен.");
@@ -310,9 +456,13 @@ async function resolveStorageRowSource(sourceRef, {
   const path = Array.isArray(sourceRef.path) ? sourceRef.path.map(clean).filter(Boolean).slice(0, 8) : [];
   const state = readStorageStateAtPath(token, path);
   const rowId = clean(sourceRef.rowId);
-  const row = storageRows(state).find((entry) => clean(entry?.rowId) === rowId) ?? null;
+  const row = storageCoinRowDenomination(rowId) ? buildStorageCoinRow(state, rowId)
+    : storageRows(state).find((entry) => clean(entry?.rowId) === rowId) ?? null;
   if (!row || state.claimedRowIds.includes(rowId)) {
     throw new Error("Предмет исходного хранилища уже недоступен.");
+  }
+  if (isStorageJournalRow(row)) {
+    throw new Error("Ссылку на журнал нельзя переносить как предмет из другого хранилища.");
   }
   const available = positiveQuantity(row.quantity ?? row.itemData?.system?.quantity, 1);
   const depositRow = clone(row);
@@ -340,8 +490,10 @@ async function resolveStorageRowSource(sourceRef, {
     async consume(requestedQuantity) {
       const quantity = requireQuantity(requestedQuantity, available);
       const beforeState = readStorageStateAtPath(token, path);
+      assertStorageCoinTransferAvailable(beforeState);
       const result = await storageService.claim(token, {
-        kind: "row",
+        kind: storageCoinRowDenomination(rowId) ? "coins" : "row",
+        ...(storageCoinRowDenomination(rowId) ? { denomination: storageCoinRowDenomination(rowId) } : {}),
         rowId,
         quantity,
         path
@@ -411,6 +563,7 @@ async function resolveStorageTokenSource(sourceRef, { resolveToken, storageServi
           throw new TypeError("Для частичного переноса наземного предмета требуется StorageService.");
         }
         const beforeState = readStorageState(document);
+        assertStorageCoinTransferAvailable(beforeState);
         const result = await storageService.claim(document, {
           kind: "row",
           rowId: clean(groundItem.rowId),
@@ -439,7 +592,12 @@ async function resolveStorageTokenSource(sourceRef, { resolveToken, storageServi
       if (receipt?.kind !== "storage-token" || typeof receipt.parent?.createEmbeddedDocuments !== "function") {
         return false;
       }
-      await receipt.parent.createEmbeddedDocuments("Token", [receipt.tokenData], { keepId: true });
+      const restoredTokenData = clone(receipt.tokenData) ?? {};
+      restoredTokenData.sight = {
+        ...(clone(restoredTokenData.sight) ?? {}),
+        enabled: false
+      };
+      await receipt.parent.createEmbeddedDocuments("Token", [restoredTokenData], { keepId: true });
       return true;
     }
   };
@@ -451,6 +609,9 @@ export async function resolveStorageDepositSource(sourceRef, dependencies = {}) 
   }
   if (sourceRef.kind === "item") {
     return resolveItemSource(sourceRef, dependencies);
+  }
+  if (sourceRef.kind === "journal") {
+    return resolveJournalSource(sourceRef, dependencies);
   }
   if (sourceRef.kind === "storage-row") {
     return resolveStorageRowSource(sourceRef, dependencies);

@@ -2,14 +2,17 @@ import { HELD_ITEM_UPDATED_HOOK, MODULE_ID } from "../constants.js";
 import { getFighterManeuverAutomation } from "../data/fighter-automation.js";
 import {
   hasActiveRepeatingShot,
+  inferAmmunitionItemSubtype,
   isCompatibleAmmunition
-} from "../data/ammunition-compatibility.js?v=1.4.111-native-ammunition-compatibility";
+} from "../data/ammunition-compatibility.js?v=1.4.147-native-ammunition";
 import { getCharacterSizeRule } from "./size-automation-service.js?v=1.4.109-character-size";
+import { getNaturalReachFeet } from "./natural-reach.js";
 import {
   buildHeldItemHandUpdate,
   canUseHeldItemForHandRequirement,
-  getItemHeldHands
-} from "../integrations/held-items.js?v=1.4.96-npc-held-natural";
+  getItemHeldHands,
+  hasDistinctHeldItemsInDifferentHands
+} from "../integrations/held-items.js?v=1.4.181-dual-wield-gloves";
 
 const FIREARM_WEAPON_TYPES = new Set(["firearmPrimitive", "firearmAdvanced"]);
 const WEAPON_TYPE_SIMPLE_PREFIX = "simple";
@@ -20,6 +23,7 @@ const FIREARM_CURRENT_MISFIRE_FLAG = "firearmMisfire";
 const FIREARM_BASE_MISFIRE_FLAG = "firearmBaseMisfire";
 const FIREARM_MISFIRE_PROPERTY = "lchFirearmMisfire";
 const FIREARM_RUST_PROPERTY = "lchFirearmRust";
+const FIREARM_RELOAD_PROPERTY = "lchFirearmReload";
 const FIREARM_MISFIRE_DIE_FORMULA = "1d20";
 const FIREARM_AMMO_STATE_FLAG = "firearmAmmoState";
 const FIREARM_CHAT_NOTES_FLAG = "firearmChatNotes";
@@ -29,6 +33,7 @@ const IMPLANT_RELOAD_RESERVOIR_CAPACITY = 20;
 const FIREARM_JAM_NAME_SUFFIX = " (клин)";
 const FIREARM_CLEAR_JAM_ACTIVITY_ID = "lchClearBreech01";
 const FIREARM_MAINTAIN_ACTIVITY_ID = "lchMaintainGun01";
+const FIREARM_RELOAD_ACTIVITY_ID = "lchReloadGun0001";
 const FIREARM_CLEAR_JAM_AUTOMATION = "firearm-clear-jam";
 const FIREARM_MAINTAIN_AUTOMATION = "firearm-maintain";
 const FIREARM_RELOAD_AUTOMATION = "firearm-reload";
@@ -42,6 +47,7 @@ const PROVOKED_ATTACK_REACTION_KIND = "provoked-attack";
 const PARRY_REACTION_KIND = "parry";
 const INTERCEPTION_REACTION_KIND = "interception";
 const FIGHTER_DOMINANCE_TARGET = "fighter-dominance";
+const DUAL_WIELD_GLOVES_MAGIC_ITEM_ID = "перчатки-двуручного-боя";
 const PATCHED_USAGE_BUTTON_PROTOTYPES = new WeakSet();
 function heldItemUpdateOptions() {
   return { render: false };
@@ -702,6 +708,29 @@ function isEquippedItem(item) {
   }
 
   return true;
+}
+
+function hasDualWieldGlovesDamageBonus(actor, currentItem) {
+  if (!actor || !isMeleeWeaponItem(currentItem) || !isEquippedItem(currentItem)) {
+    return false;
+  }
+  const hasEquippedGloves = collectionValues(actor.items).some((item) => (
+    item?.getFlag?.(MODULE_ID, "magicItemId") === DUAL_WIELD_GLOVES_MAGIC_ITEM_ID
+    && isEquippedItem(item)
+  ));
+  if (!hasEquippedGloves) {
+    return false;
+  }
+  return hasDistinctHeldItemsInDifferentHands(actor, currentItem, {
+    predicate: (item) => isMeleeWeaponItem(item) && isEquippedItem(item)
+  });
+}
+
+function hasEquivalentFlatTwoPart(parts) {
+  return (Array.isArray(parts) ? parts : []).some((part) => {
+    const formula = String(part ?? "").replace(/\s+/gu, "");
+    return formula === "+2" || formula === "2";
+  });
 }
 
 function getItemWeightLb(item) {
@@ -1396,17 +1425,56 @@ export class CombatAttackService {
     ui.notifications?.warn?.(`${weaponName}: не хватает патронов в магазине (${current}/${required}).`);
   }
 
-  #setFirearmAmmoStateSync(item, state) {
+  #setFirearmAmmoStateSync(item, state, { persist = true } = {}) {
     const capacity = Math.max(0, Math.floor(toNumber(state?.capacity, 0)));
     const current = capacity > 0 ? clampInteger(state?.current, 0, capacity) : 0;
+    const ammunition = cleanText(state?.ammunition);
+    const currentState = readDocumentFlag(item, MODULE_ID, FIREARM_AMMO_STATE_FLAG);
+    const nextName = withFirearmAmmoSuffix(item?.name, current, capacity);
+    const stateUnchanged = toNumber(currentState?.current, NaN) === current
+      && toNumber(currentState?.capacity, NaN) === capacity
+      && cleanText(currentState?.ammunition) === ammunition;
+    if (stateUnchanged && item?.name === nextName) {
+      return {
+        current,
+        capacity,
+        ammunition,
+        ...(cleanText(currentState?.updatedAt) ? { updatedAt: currentState.updatedAt } : {})
+      };
+    }
+
     const nextState = {
       current,
       capacity,
-      ammunition: cleanText(state?.ammunition),
+      ammunition,
       updatedAt: new Date().toISOString()
     };
-    this.#writeItemFlag(item, FIREARM_AMMO_STATE_FLAG, nextState);
-    this.#writeItemName(item, withFirearmAmmoSuffix(item?.name, current, capacity));
+    try {
+      item.flags ??= {};
+      item.flags[MODULE_ID] ??= {};
+      item.flags[MODULE_ID][FIREARM_AMMO_STATE_FLAG] = nextState;
+      item.name = nextName;
+    }
+    catch (_error) {
+      // The combined document update below remains the persisted source of truth.
+    }
+
+    if (persist === false) {
+      return nextState;
+    }
+
+    if (typeof item?.update === "function") {
+      Promise.resolve(item.update({
+        [`flags.${MODULE_ID}.${FIREARM_AMMO_STATE_FLAG}`]: nextState,
+        name: nextName
+      })).catch((error) => {
+        console.error(`${MODULE_ID} | Failed to persist firearm ammunition state.`, error);
+      });
+    }
+    else {
+      this.#writeItemFlag(item, FIREARM_AMMO_STATE_FLAG, nextState);
+      this.#writeItemName(item, nextName);
+    }
     return nextState;
   }
 
@@ -1551,10 +1619,18 @@ export class CombatAttackService {
     return direct && typeof direct === "object" ? "system.quantity.value" : "system.quantity";
   }
 
-  #findMatchingAmmunition(actor, ammunitionLabel) {
+  #findMatchingAmmunition(actor, weapon, ammunitionLabel) {
     const directAmmunition = this.#resolveAmmunitionItemByIdentifier(actor, ammunitionLabel);
     if (directAmmunition) {
       return [directAmmunition];
+    }
+
+    const nativeSubtype = cleanText(foundry.utils.getProperty(weapon, "system.ammunition.type"));
+    if (nativeSubtype) {
+      return collectionValues(actor?.items)
+        .filter((item) => this.#isAmmunitionItem(item))
+        .filter((item) => this.#getItemQuantity(item) > 0)
+        .filter((item) => inferAmmunitionItemSubtype(item) === nativeSubtype);
     }
 
     const wantedStem = this.#ammunitionStem(ammunitionLabel);
@@ -1569,7 +1645,7 @@ export class CombatAttackService {
         || wantedStem.includes(this.#ammunitionStem(item.name)));
   }
 
-  async #spendActorAmmunition(actor, ammunitionLabel, amount) {
+  #planActorAmmunitionSpend(actor, weapon, ammunitionLabel, amount) {
     const requested = Math.max(0, Math.floor(toNumber(amount, 0)));
     if (requested <= 0) {
       return {
@@ -1580,7 +1656,7 @@ export class CombatAttackService {
 
     let remaining = requested;
     const updates = [];
-    for (const ammoItem of this.#findMatchingAmmunition(actor, ammunitionLabel)) {
+    for (const ammoItem of this.#findMatchingAmmunition(actor, weapon, ammunitionLabel)) {
       if (remaining <= 0) {
         break;
       }
@@ -1593,13 +1669,13 @@ export class CombatAttackService {
 
       const nextQuantity = quantity - spend;
       const path = this.#itemQuantityUpdatePath(ammoItem);
-      await ammoItem.update?.({ [path]: nextQuantity });
       updates.push({
         item: ammoItem,
         itemId: ammoItem.id,
         itemName: ammoItem.name,
         spent: spend,
-        remaining: nextQuantity
+        remaining: nextQuantity,
+        path
       });
       remaining -= spend;
     }
@@ -1792,11 +1868,11 @@ export class CombatAttackService {
 
   #resolveReachBonusFeet(item, options = {}) {
     const actor = options.actor ?? item.actor ?? item.parent ?? null;
-    const actorBonus = Math.max(0, toNumber(actor?.getFlag?.(MODULE_ID, "racialReachBonusFeet"), 0));
-    const runeKnightBonus = this.#resolveRuneKnightReachBonusFeet(actor);
+    const sizeBase = getCharacterSizeRule(actor?.system?.traits?.size).baseReachFeet;
+    const naturalBonus = Math.max(0, getNaturalReachFeet(actor) - sizeBase);
     const weaponBonus = this.#resolveWeaponReachBonusFeet(item, options);
 
-    return weaponBonus + actorBonus + runeKnightBonus;
+    return weaponBonus + naturalBonus;
   }
 
   #resolveFinalMeleeReachFeet(item, options = {}) {
@@ -1805,27 +1881,6 @@ export class CombatAttackService {
     const independentBonuses = this.#resolveReachBonusFeet(item, { ...options, actor });
 
     return Math.max(0, sizeBase + independentBonuses);
-  }
-
-  #resolveRuneKnightReachBonusFeet(actor) {
-    let maximum = 0;
-    for (const effect of collectionValues(actor?.effects)) {
-      if (effect?.disabled === true || effect?.isSuppressed === true) continue;
-      const automation = cleanText(foundry.utils.getProperty(
-        effect,
-        `flags.${MODULE_ID}.runeKnight.automation`
-      ));
-      const appliedSize = cleanText(foundry.utils.getProperty(
-        effect,
-        `flags.${MODULE_ID}.runeKnight.form.appliedActorSize`
-      )).toLowerCase();
-      if (automation !== "giant-might-form" || appliedSize !== "huge") continue;
-      maximum = Math.max(maximum, Math.max(0, toNumber(foundry.utils.getProperty(
-        effect,
-        `flags.${MODULE_ID}.runeKnight.reachBonus`
-      ), 0)));
-    }
-    return maximum;
   }
 
   #getLichAutomationState(item, options = {}) {
@@ -1841,7 +1896,7 @@ export class CombatAttackService {
       return false;
     }
 
-    if (this.#resolveCanonicalFirearmMisfireThreshold(item) === 0) {
+    if (!this.#hasFirearmMisfireMechanic(item)) {
       return false;
     }
 
@@ -1897,35 +1952,178 @@ export class CombatAttackService {
     return 0;
   }
 
-  #hasConfiguredFirearmMisfire(item, options = {}) {
-    const canonicalThreshold = this.#resolveCanonicalFirearmMisfireThreshold(item);
-    if (canonicalThreshold === 0) {
-      return false;
-    }
-    if (Number.isFinite(canonicalThreshold)) {
-      return true;
-    }
+  #getCanonicalFirearmPropertyValues(item) {
+    const gearItem = this.#resolveCanonicalGearItem(item);
+    const values = gearItem?.weapon?.lichWeaponPropertyValues;
+    return isPlainObject(values) ? values : {};
+  }
 
+  #hasConfiguredFirearmMisfire(item, options = {}) {
     if (!this.#hasItemProperty(item, FIREARM_MISFIRE_PROPERTY)) {
       return false;
     }
 
     const values = this.#getLichWeaponPropertyValues(item, options);
     const configured = toNumber(values.misfire ?? values.firearmMisfire, NaN);
-    return Number.isFinite(configured) && configured > 0;
+    if (Number.isFinite(configured)) {
+      return configured > 0;
+    }
+
+    const canonicalThreshold = this.#resolveCanonicalFirearmMisfireThreshold(item);
+    return Number.isFinite(canonicalThreshold) && canonicalThreshold > 0;
   }
 
   #hasFirearmMisfireMechanic(item) {
-    const canonicalThreshold = this.#resolveCanonicalFirearmMisfireThreshold(item);
-    if (canonicalThreshold === 0) {
-      return false;
-    }
-    if (Number.isFinite(canonicalThreshold)) {
-      return true;
-    }
-
     return this.#hasConfiguredFirearmMisfire(item)
       || this.#hasItemProperty(item, FIREARM_RUST_PROPERTY);
+  }
+
+  #isFirearmReloadActivity(activityId, activity) {
+    const safeActivityId = cleanText(activityId ?? activity?._id ?? activity?.id);
+    return safeActivityId === FIREARM_RELOAD_ACTIVITY_ID
+      || cleanText(foundry.utils.getProperty(activity, `flags.${MODULE_ID}.automation`)) === FIREARM_RELOAD_AUTOMATION;
+  }
+
+  #buildFirearmUtilityActivity({ activityId, name, activationType, chatFlavor, automation, sort }) {
+    return {
+      _id: activityId,
+      type: "utility",
+      name,
+      sort,
+      activation: { type: activationType, value: 1, condition: "", override: false },
+      consumption: { scaling: { allowed: false, max: "" }, spellSlot: false, targets: [] },
+      description: { chatFlavor },
+      duration: { value: "", units: "inst", special: "", concentration: false, override: false },
+      effects: [],
+      flags: { [MODULE_ID]: { managed: true, automation } },
+      range: { value: null, units: "self", special: "", override: false },
+      target: {
+        template: { count: "", contiguous: false, type: "", size: "", width: "", height: "", units: "" },
+        affects: { count: "", type: "self", choice: false, special: "" },
+        prompt: false,
+        override: false
+      },
+      uses: { spent: 0, max: "", recovery: [] }
+    };
+  }
+
+  async synchronizeFirearmPropertyState(item, changed = {}) {
+    if (!isFirearmItem(item)) {
+      return { updated: false };
+    }
+
+    const hasChangedPath = (path) => {
+      if (Object.hasOwn(changed, path)) return true;
+      const parts = path.split(".");
+      let cursor = changed;
+      for (const part of parts) {
+        if (!cursor || typeof cursor !== "object" || !Object.hasOwn(cursor, part)) return false;
+        cursor = cursor[part];
+      }
+      return true;
+    };
+    const nestedPropertiesChange = changed?.system?.properties;
+    const propertyCollectionChanged = Object.hasOwn(changed, "system.properties")
+      || Array.isArray(nestedPropertiesChange)
+      || nestedPropertiesChange instanceof Set;
+    const misfireChanged = propertyCollectionChanged
+      || hasChangedPath(`system.properties.${FIREARM_MISFIRE_PROPERTY}`);
+    const reloadChanged = propertyCollectionChanged
+      || hasChangedPath(`system.properties.${FIREARM_RELOAD_PROPERTY}`);
+    if (!misfireChanged && !reloadChanged) {
+      return { updated: false };
+    }
+
+    const values = { ...this.#getLichWeaponPropertyValues(item) };
+    const canonicalValues = this.#getCanonicalFirearmPropertyValues(item);
+    const nextActivities = Object.fromEntries(collectionEntries(foundry.utils.getProperty(item, "system.activities"))
+      .map(([activityId, activity]) => [cleanText(activityId ?? activity?._id ?? activity?.id), sourceData(activity)])
+      .filter(([activityId]) => Boolean(activityId)));
+    const update = {};
+    let nextName = cleanText(item.name);
+
+    if (misfireChanged) {
+      const enabled = this.#hasItemProperty(item, FIREARM_MISFIRE_PROPERTY)
+        || this.#hasItemProperty(item, FIREARM_RUST_PROPERTY);
+      for (const [activityId, activity] of Object.entries(nextActivities)) {
+        if (this.#isFirearmMisfireMaintenanceActivity(activityId, activity)) delete nextActivities[activityId];
+      }
+      nextName = stripFirearmJamSuffix(nextName);
+      update[`flags.${MODULE_ID}.-=${FIREARM_JAMMED_FLAG}`] = null;
+      if (enabled) {
+        const canonicalThreshold = toNumber(canonicalValues.misfire ?? canonicalValues.firearmMisfire, NaN);
+        const localThreshold = toNumber(values.misfire ?? values.firearmMisfire, NaN);
+        const threshold = this.#hasItemProperty(item, FIREARM_RUST_PROPERTY)
+          && !this.#hasItemProperty(item, FIREARM_MISFIRE_PROPERTY)
+          ? 1
+          : clampInteger(Number.isFinite(canonicalThreshold) && canonicalThreshold > 0
+            ? canonicalThreshold
+            : (Number.isFinite(localThreshold) && localThreshold > 0 ? localThreshold : 1), 1, 20);
+        delete values.firearmMisfire;
+        values.misfire = threshold;
+        update[`flags.${MODULE_ID}.${FIREARM_BASE_MISFIRE_FLAG}`] = threshold;
+        update[`flags.${MODULE_ID}.${FIREARM_CURRENT_MISFIRE_FLAG}`] = threshold;
+        nextActivities[FIREARM_CLEAR_JAM_ACTIVITY_ID] = this.#buildFirearmUtilityActivity({
+          activityId: FIREARM_CLEAR_JAM_ACTIVITY_ID,
+          name: "Очистить затвор",
+          activationType: "action",
+          chatFlavor: "Очистить затворную раму: снять клин и увеличить текущий показатель осечки на 1, максимум до 10.",
+          automation: FIREARM_CLEAR_JAM_AUTOMATION,
+          sort: 100
+        });
+        nextActivities[FIREARM_MAINTAIN_ACTIVITY_ID] = this.#buildFirearmUtilityActivity({
+          activityId: FIREARM_MAINTAIN_ACTIVITY_ID,
+          name: "Привести оружие в порядок",
+          activationType: "minute",
+          chatFlavor: "Проверка Ловкости или Интеллекта (инструменты жестянщика) против Сл 10 + текущий показатель осечки. При успехе осечка возвращается к базовому значению.",
+          automation: FIREARM_MAINTAIN_AUTOMATION,
+          sort: 200
+        });
+      }
+      else {
+        delete values.misfire;
+        delete values.firearmMisfire;
+        update[`flags.${MODULE_ID}.-=${FIREARM_BASE_MISFIRE_FLAG}`] = null;
+        update[`flags.${MODULE_ID}.-=${FIREARM_CURRENT_MISFIRE_FLAG}`] = null;
+      }
+    }
+
+    if (reloadChanged) {
+      const enabled = this.#hasItemProperty(item, FIREARM_RELOAD_PROPERTY);
+      for (const [activityId, activity] of Object.entries(nextActivities)) {
+        if (this.#isFirearmReloadActivity(activityId, activity)) delete nextActivities[activityId];
+      }
+      nextName = stripFirearmAmmoSuffix(nextName);
+      if (enabled) {
+        const canonicalReload = cleanText(canonicalValues.reload);
+        const capacity = this.#parseFirstPositiveInteger(canonicalReload)
+          || this.#parseFirstPositiveInteger(values.reload)
+          || 1;
+        const reload = canonicalReload || `Перезарядка ${capacity}`;
+        const ammunition = cleanText(canonicalValues.ammunition ?? values.ammunition);
+        values.reload = reload;
+        update[`flags.${MODULE_ID}.${FIREARM_AMMO_STATE_FLAG}`] = { current: 0, capacity, ammunition };
+        nextName = withFirearmAmmoSuffix(nextName, 0, capacity);
+        nextActivities[FIREARM_RELOAD_ACTIVITY_ID] = this.#buildFirearmUtilityActivity({
+          activityId: FIREARM_RELOAD_ACTIVITY_ID,
+          name: "Перезарядить",
+          activationType: "action",
+          chatFlavor: `Перезарядить оружие: заполнить боезапас до ${capacity}, списав подходящие боеприпасы из инвентаря.`,
+          automation: FIREARM_RELOAD_AUTOMATION,
+          sort: 50
+        });
+      }
+      else {
+        delete values.reload;
+        update[`flags.${MODULE_ID}.-=${FIREARM_AMMO_STATE_FLAG}`] = null;
+      }
+    }
+
+    update.name = nextName;
+    update[`flags.${MODULE_ID}.lichWeaponPropertyValues`] = values;
+    update["system.activities"] = nextActivities;
+    await item.update?.(update, { render: false, [MODULE_ID]: { firearmPropertySync: true } });
+    return { updated: true };
   }
 
   #isFirearmMisfireMaintenanceActivity(activityId, activity) {
@@ -2230,17 +2428,23 @@ export class CombatAttackService {
       return clampInteger(explicit, 0, 20);
     }
 
-    const canonicalThreshold = this.#resolveCanonicalFirearmMisfireThreshold(item);
-    if (canonicalThreshold === 0) {
+    const hasMisfire = this.#hasItemProperty(item, FIREARM_MISFIRE_PROPERTY);
+    const hasRust = this.#hasItemProperty(item, FIREARM_RUST_PROPERTY);
+    if (!hasMisfire && !hasRust) {
       return 0;
     }
+    if (!hasMisfire && hasRust) {
+      return 1;
+    }
+
+    const canonicalThreshold = this.#resolveCanonicalFirearmMisfireThreshold(item);
 
     const directFlag = toNumber(readDocumentFlag(item, MODULE_ID, FIREARM_CURRENT_MISFIRE_FLAG), NaN);
     if (Number.isFinite(directFlag)) {
       return clampInteger(directFlag, 0, 20);
     }
 
-    if (Number.isFinite(canonicalThreshold)) {
+    if (Number.isFinite(canonicalThreshold) && canonicalThreshold > 0) {
       return clampInteger(canonicalThreshold, 1, 20);
     }
 
@@ -2248,10 +2452,6 @@ export class CombatAttackService {
     const fromValues = toNumber(values.misfire ?? values.firearmMisfire, NaN);
     if (this.#hasItemProperty(item, FIREARM_MISFIRE_PROPERTY)) {
       return Number.isFinite(fromValues) ? clampInteger(fromValues, 1, 20) : 0;
-    }
-
-    if (this.#hasItemProperty(item, FIREARM_RUST_PROPERTY)) {
-      return 1;
     }
 
     return 0;
@@ -2402,16 +2602,22 @@ export class CombatAttackService {
   }
 
   #resolveFirearmBaseMisfireThreshold(item, fallback = 1) {
+    const hasMisfire = this.#hasItemProperty(item, FIREARM_MISFIRE_PROPERTY);
+    const hasRust = this.#hasItemProperty(item, FIREARM_RUST_PROPERTY);
+    if (!hasMisfire && !hasRust) {
+      return 0;
+    }
+    if (!hasMisfire && hasRust) {
+      return 1;
+    }
+
     const baseFlag = toNumber(readDocumentFlag(item, MODULE_ID, FIREARM_BASE_MISFIRE_FLAG), NaN);
     if (Number.isFinite(baseFlag)) {
       return clampInteger(baseFlag, 1, 10);
     }
 
     const canonicalThreshold = this.#resolveCanonicalFirearmMisfireThreshold(item);
-    if (canonicalThreshold === 0) {
-      return 0;
-    }
-    if (Number.isFinite(canonicalThreshold)) {
+    if (Number.isFinite(canonicalThreshold) && canonicalThreshold > 0) {
       return clampInteger(canonicalThreshold, 1, 10);
     }
 
@@ -2421,28 +2627,7 @@ export class CombatAttackService {
       return clampInteger(configured, 1, 10);
     }
 
-    if (this.#hasItemProperty(item, FIREARM_RUST_PROPERTY)) {
-      return 1;
-    }
-
     return clampInteger(fallback, 1, 10);
-  }
-
-  #rememberFirearmBaseMisfire(item, currentThreshold) {
-    const existing = toNumber(readDocumentFlag(item, MODULE_ID, FIREARM_BASE_MISFIRE_FLAG), NaN);
-    if (Number.isFinite(existing)) {
-      return;
-    }
-
-    this.#writeItemFlag(
-      item,
-      FIREARM_BASE_MISFIRE_FLAG,
-      this.#resolveFirearmBaseMisfireThreshold(item, currentThreshold)
-    );
-  }
-
-  #markFirearmNameJammed(item) {
-    this.#writeItemName(item, withFirearmJamSuffix(item?.name));
   }
 
   #createFirearmMisfireMessage(actor, item, result, options = {}) {
@@ -2496,15 +2681,47 @@ export class CombatAttackService {
   }
 
   #jamFirearm(actor, item, result, options = {}) {
-    this.#rememberFirearmBaseMisfire(item, result.threshold);
-    this.#markFirearmNameJammed(item);
+    const existingBaseMisfire = toNumber(
+      readDocumentFlag(item, MODULE_ID, FIREARM_BASE_MISFIRE_FLAG),
+      NaN
+    );
+    const baseMisfire = Number.isFinite(existingBaseMisfire)
+      ? clampInteger(existingBaseMisfire, 1, 10)
+      : this.#resolveFirearmBaseMisfireThreshold(item, result.threshold);
+    const nextName = withFirearmJamSuffix(item?.name);
     const jamState = {
       value: true,
       threshold: result.threshold,
       rollTotal: result.rollTotal,
       jammedAt: new Date().toISOString()
     };
-    this.#writeItemFlag(item, FIREARM_JAMMED_FLAG, jamState);
+    const update = {
+      [`flags.${MODULE_ID}.${FIREARM_JAMMED_FLAG}`]: jamState,
+      name: nextName,
+      ...(!Number.isFinite(existingBaseMisfire)
+        ? { [`flags.${MODULE_ID}.${FIREARM_BASE_MISFIRE_FLAG}`]: baseMisfire }
+        : {})
+    };
+    try {
+      item.flags ??= {};
+      item.flags[MODULE_ID] ??= {};
+      item.flags[MODULE_ID][FIREARM_JAMMED_FLAG] = jamState;
+      item.flags[MODULE_ID][FIREARM_BASE_MISFIRE_FLAG] = baseMisfire;
+      item.name = nextName;
+    }
+    catch (_error) {
+      // The combined document update below remains the persisted source of truth.
+    }
+    if (typeof item?.update === "function") {
+      Promise.resolve(item.update(update)).catch((error) => {
+        console.error(`${MODULE_ID} | Failed to persist firearm jam state.`, error);
+      });
+    }
+    else {
+      this.#writeItemFlag(item, FIREARM_JAMMED_FLAG, jamState);
+      this.#writeItemFlag(item, FIREARM_BASE_MISFIRE_FLAG, baseMisfire);
+      this.#writeItemName(item, nextName);
+    }
     this.#createFirearmMisfireMessage(actor, item, { ...result, jammed: true }, options);
     this.#notifyFirearmJammed(item);
   }
@@ -3521,14 +3738,13 @@ export class CombatAttackService {
 
     try {
       const item = activity.item;
+      if (this.moduleApi.itemUpgradeAutomationService?.rolls.preRollAttack(config) === false) return false;
       if (this.#blockJammedFirearm(item)) {
         return false;
       }
 
       const isFirearm = isFirearmItem(item);
       const repeatingShot = !isFirearm && hasActiveRepeatingShot(item);
-      const actor = activity.actor ?? item.actor ?? null;
-      const firearmMessageOptions = isFirearm ? { ...config, messageConfig: message } : config;
       if (!isFirearm && !repeatingShot) {
         this.#clearInvalidNativeAmmunitionSelection(activity, config, dialog);
       }
@@ -3550,22 +3766,7 @@ export class CombatAttackService {
           if (this.#getFirearmAmmoShotBlock(item)) {
             return true;
           }
-
-          const ammo = this.#consumeLoadedFirearmAmmo(
-            actor,
-            item,
-            this.#resolveFirearmShotAmmoCost(item),
-            firearmMessageOptions
-          );
-          if (!ammo.success) {
-            return false;
-          }
         }
-      }
-
-      const misfire = this.#rollFirearmMisfire(actor, item, firearmMessageOptions);
-      if (misfire.jammed) {
-        return false;
       }
 
       const automation = this.#getLichAutomationState(item);
@@ -3605,14 +3806,31 @@ export class CombatAttackService {
 
     try {
       const item = activity.item;
-      const automation = this.#getLichAutomationState(item);
-      const rku = Math.max(0, Math.floor(toNumber(automation.rku, 0)));
-      if (rku <= 0) {
+      const firstRoll = Array.isArray(rolls) ? (rolls[0] ?? null) : (rolls ?? null);
+      if (!firstRoll) {
         return true;
       }
 
-      const firstRoll = Array.isArray(rolls) ? (rolls[0] ?? null) : (rolls ?? null);
-      if (!firstRoll) {
+      if (isFirearmItem(item)) {
+        const actor = activity.actor ?? item.actor ?? null;
+        const firearmMessageOptions = {
+          message: firstRoll.parent ?? null,
+          messageConfig: {}
+        };
+        const ammo = this.#consumeLoadedFirearmAmmo(
+          actor,
+          item,
+          this.#resolveFirearmShotAmmoCost(item),
+          firearmMessageOptions
+        );
+        if (ammo.success) {
+          this.#rollFirearmMisfire(actor, item, firearmMessageOptions);
+        }
+      }
+
+      const automation = this.#getLichAutomationState(item);
+      const rku = Math.max(0, Math.floor(toNumber(automation.rku, 0)));
+      if (rku <= 0) {
         return true;
       }
 
@@ -3840,10 +4058,12 @@ export class CombatAttackService {
 
     try {
       const item = activity.item;
+      if (this.moduleApi.itemUpgradeAutomationService?.rolls.preRollDamage(config, message) === false) return false;
       const automation = this.#getLichAutomationState(item);
       const mu = Math.max(0, Math.floor(toNumber(automation.mu, 0)));
       const mku = Math.max(0, Math.floor(toNumber(automation.mku, 0)));
       const rku = Math.max(0, Math.floor(toNumber(automation.rku, 0)));
+      const dualWieldGloves = hasDualWieldGlovesDamageBonus(activity.actor ?? item?.actor, item);
 
       const workflowCritical = (
         config?.workflow?.isCritical === true
@@ -3856,7 +4076,7 @@ export class CombatAttackService {
         || recentOutcome?.rkuCriticalOnHit === true
       );
 
-      if (mu <= 0 && mku <= 0 && !rkuCriticalOnHit) {
+      if (mu <= 0 && mku <= 0 && !rkuCriticalOnHit && !dualWieldGloves) {
         return true;
       }
 
@@ -3874,6 +4094,11 @@ export class CombatAttackService {
       }
 
       baseDamageRollConfig.options ??= {};
+
+      if (dualWieldGloves && !hasEquivalentFlatTwoPart(baseDamageRollConfig.parts)) {
+        baseDamageRollConfig.parts ??= [];
+        baseDamageRollConfig.parts.push("+2");
+      }
 
       if (mku > 0) {
         const currentBonusDice = Math.max(
@@ -4112,7 +4337,7 @@ export class CombatAttackService {
     }
 
     const safeRequiredUses = Math.max(1, Math.floor(toNumber(requiredUses, 1)));
-    if (actorHasReactionSuppression(actor)) {
+    if (actorHasReactionSuppression(actor) || this.moduleApi?.curseUpgradeAutomationService?.blocksReaction(actor)) {
       return {
         actorId: state.actorId,
         canUse: false,
@@ -4422,8 +4647,9 @@ export class CombatAttackService {
       state.ammunition,
       missing
     );
-    const inventorySpent = await this.#spendActorAmmunition(
+    const inventorySpent = this.#planActorAmmunitionSpend(
       actor,
+      weapon,
       state.ammunition,
       Math.max(0, missing - reservoirSpent.spent)
     );
@@ -4445,7 +4671,26 @@ export class CombatAttackService {
     const nextState = this.#setFirearmAmmoStateSync(weapon, {
       ...state,
       current: Math.min(state.capacity, state.current + totalSpent)
+    }, { persist: false });
+    const itemUpdates = inventorySpent.updates.map((update) => ({
+      _id: update.itemId,
+      [update.path]: update.remaining
+    }));
+    itemUpdates.push({
+      _id: weapon.id,
+      [`flags.${MODULE_ID}.${FIREARM_AMMO_STATE_FLAG}`]: nextState,
+      name: weapon.name
     });
+    if (typeof actor.updateEmbeddedDocuments === "function") {
+      await actor.updateEmbeddedDocuments("Item", itemUpdates);
+    }
+    else {
+      for (const update of inventorySpent.updates) {
+        await update.item?.update?.({ [update.path]: update.remaining });
+      }
+      const { _id, ...weaponUpdate } = itemUpdates.at(-1);
+      await weapon.update?.(weaponUpdate);
+    }
     this.#createFirearmChatMessage(
       actor,
       weapon,
@@ -4777,9 +5022,15 @@ export class CombatAttackService {
     const proficiencyBonus = this.#isAttackProficient(actor, weapon, options)
       ? getActorProficiencyBonus(actor)
       : 0;
-    const situationalBonus = toNumber(options.bonus, 0);
+    const upgradeModifiers = this.moduleApi.itemUpgradeAutomationService?.rolls.evaluate(weapon, { primary: false },
+      this.#resolveActor(options.targetActor ?? options.targetId ?? options.targetToken ?? null));
+    const situationalBonus = toNumber(options.bonus, 0) + (upgradeModifiers?.attackBonus ?? 0);
     const attackBonus = abilityMod + proficiencyBonus + situationalBonus;
-    const rollMode = resolveRollMode(options);
+    let rollMode = resolveRollMode(options);
+    if (upgradeModifiers?.advantage) {
+      if (["disadvantage", "heroicDisadvantage"].includes(rollMode)) rollMode = "normal";
+      else if (rollMode === "normal") rollMode = "advantage";
+    }
     const d20Formula = buildD20Formula(rollMode);
 
     const formula = `${d20Formula} + @abilityMod + @proficiencyBonus + @situationalBonus`;

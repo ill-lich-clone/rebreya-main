@@ -1,19 +1,19 @@
-﻿import { MAGIC_ITEMS_COMPENDIUM_NAME, MODULE_ID } from "../constants.js";
-import { buildLootgenStatusContent } from "./lootgen-chat.js";
-import { GEAR_COMPENDIUM_NAME } from "../constants.js";
+import { getLootgenContainerSummary } from "./lootgen-container-preview.js?v=1.4.269";
+import { MODULE_ID } from "../constants.js";
+import { resolveLootgenItemValue as resolveLegacyItemValue } from "../data/item-value.js?v=1.4.250";
+import { buildLootgenStatusContent, formatLootgenUpgradeSummary, openLootgenRowPreview } from "./lootgen-chat.js?v=1.4.269";
 import {
   buildLootgenRowIdentity,
-  collectBreakableManagedGearIds,
   normalizeBrokenEquipmentChance,
   normalizeLootgenBrokenMarker
-} from "../data/lootgen-durability.js";
+} from "../data/lootgen-durability.js?v=1.4.154-corpse-storage-broken-name";
 import { getAppElement } from "../ui.js";
 import {
   buildLootgenTypeFilterOptions,
-  isLootgenTypeAllowed,
   resolveMagicLootgenTypeLabel
-} from "./lootgen-type-filters.js";
-import { generateLootgenResult, normalizeLootgenForm } from "../data/lootgen-generator.js?v=1.4.129-lootgen-row-cap";
+} from "./lootgen-type-filters.js?v=1.4.258";
+import { buildLootgenGearTypeOptions, readLootgenMagicDocuments } from "../data/lootgen-source-catalog.js?v=1.4.317";
+import { normalizeLootgenForm } from "../data/lootgen-generator.js?v=1.4.317";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
@@ -23,7 +23,6 @@ const COIN_MULTIPLIERS = {
   sp: 10,
   cp: 1
 };
-const MATERIAL_LOOTGEN_TYPE_LABEL = "Материал";
 
 function toNumber(value, fallback = 0) {
   const numericValue = Number(value ?? fallback);
@@ -92,39 +91,6 @@ function randomCoinsFromValue(totalValue) {
     ...normalized,
     label: formatCoinsLabel(normalized)
   };
-}
-
-function parsePriceToGold(price = {}) {
-  const value = Math.max(0, toNumber(price?.value, 0));
-  const denomination = String(price?.denomination ?? "gp").toLowerCase();
-
-  switch (denomination) {
-    case "pp":
-      return value * 10;
-    case "sp":
-      return value * 0.1;
-    case "cp":
-      return value * 0.01;
-    case "gp":
-    default:
-      return value;
-  }
-}
-
-function normalizeBargainingTag(value) {
-  return String(value ?? "")
-    .trim()
-    .toLowerCase()
-    .replace(/ё/gu, "е");
-}
-
-function isBargainingBlocked(value) {
-  const normalized = normalizeBargainingTag(value);
-  if (!normalized) {
-    return false;
-  }
-
-  return normalized.includes("запрещ") || normalized.includes("невозмож");
 }
 
 function aggregateRows(rows) {
@@ -260,33 +226,10 @@ export async function confirmLootgenTemplateRemoval(
 }
 
 export function resolveLootgenItemValue(rawValue, fallbackGold = 0) {
-  const explicit = Math.max(0, toInteger(rawValue, 0));
-  if (explicit > 0) {
-    return explicit;
-  }
-
-  const fallbackValue = toInteger(Math.round(Math.max(0, toNumber(fallbackGold, 0)) * 100), 0);
-  return Math.max(0, fallbackValue);
+  return resolveLegacyItemValue(rawValue, fallbackGold);
 }
 
-export function buildLootgenMundaneCandidate(gearItem, {
-  rank,
-  value,
-  typeLabel,
-  breakable = false
-} = {}) {
-  return {
-    sourceType: "gear",
-    sourceId: String(gearItem?.id ?? ""),
-    name: String(gearItem?.name ?? "Снаряжение"),
-    rank: Math.max(0, toInteger(rank, 0)),
-    value: Math.max(0, toInteger(value, 0)),
-    multipleAppearance: String(gearItem?.multipleAppearance ?? "1"),
-    typeLabel: String(typeLabel ?? gearItem?.equipmentType ?? "Снаряжение"),
-    stackable: true,
-    breakable: Boolean(breakable)
-  };
-}
+export { buildLootgenMundaneCandidate } from "../data/lootgen-source-catalog.js?v=1.4.317";
 
 export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
   static DEFAULT_OPTIONS = {
@@ -319,6 +262,7 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.itemCount = 8;
     this.optimalItemQuantity = 4;
     this.budgetValue = 5000;
+    this.coinBudgetPercent = 20;
     this.includeGear = true;
     this.includeCoins = true;
     this.includeMagicItems = false;
@@ -326,7 +270,14 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.magicTypeFilters = {};
     this.magicPercent = 25;
     this.brokenEquipmentChance = 0;
+    Object.assign(this,{enableUpgrades:false,upgradeChance:0,maxUpgradesPerItem:1,upgradeTypes:[],upgradeRanks:[],enableFilledContainers:false,filledContainerChance:0,generationDepth:1});
+    this.pendingPreparation=null;
+    this.generationInFlight=null;
+    this.pendingPreparedClaims=new Map();
     this.selectedTemplateId = "";
+    this.editingTemplateUuid = String(options.templateUuid ?? "").trim();
+    this.readOnly = options.readOnly === true;
+    this.editingTemplateLoaded = false;
     this.generated = this.#createEmptyGenerated();
     this.chatLootId = "";
     this.renderListenersAbortController = null;
@@ -341,6 +292,7 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     if (options.sharedResult) {
       this.generated = this.#normalizeSharedResult(options.sharedResult);
+      this.chatLootId=this.generated.lootId??"";
     }
   }
 
@@ -363,6 +315,7 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   #normalizeSharedResult(payload = {}) {
+    if (payload.resultVersion===2) return this.#projectPreparedResult(this.moduleApi.getLootgenGeneratedResult(payload.lootId));
     const rows = aggregateRows(normalizeGeneratedRows(payload.rows ?? []));
     const coins = {
       ...normalizeCoins(payload.coins ?? {}),
@@ -383,7 +336,19 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
     };
   }
 
-  #cloneGeneratedResult() {
+  #projectPreparedResult(result) {
+    if(result?.state?.resultVersion!==2 || result.state.generationReady!==true)throw new Error("Подготовленная добыча недоступна.");
+    const state=foundry.utils.deepClone(result.state);
+    return {...state,messageId:result.messageId,hasResult:state.rows.length>0 || Number(state.coins?.totalCopper)>0,
+      internalCurrencyValue:Math.max(0,toNumber(state.currencyValue,0)-toNumber(state.coins?.totalCopper,0)),
+      coins:state.coinsClaimed?normalizeCoins({}):normalizeCoins(state.coins),
+      rows:state.rows.map(row=>({...row,chatLootId:state.lootId,chatRowId:row.rowId,
+        containerSummary:getLootgenContainerSummary(row),upgradeSummaries:(row.upgrades??[]).map(formatLootgenUpgradeSummary)}))};
+  }
+
+  #cloneGeneratedResult({referenceOnly=false}={}) {
+    if(this.generated.resultVersion===2)return foundry.utils.deepClone(referenceOnly
+      ? {resultVersion:2,lootId:this.generated.lootId,hasResult:this.generated.hasResult} : this.generated);
     return foundry.utils.deepClone({
       rows: this.generated.rows ?? [],
       coins: normalizeCoins(this.generated.coins ?? {}),
@@ -403,13 +368,17 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
       itemCount: this.itemCount,
       optimalItemQuantity: this.optimalItemQuantity,
       budgetValue: this.budgetValue,
+      coinBudgetPercent: this.coinBudgetPercent,
       includeGear: this.includeGear,
       includeCoins: this.includeCoins,
       includeMagicItems: this.includeMagicItems,
       gearTypeFilters: this.gearTypeFilters,
       magicTypeFilters: this.magicTypeFilters,
       magicPercent: this.magicPercent,
-      brokenEquipmentChance: this.brokenEquipmentChance
+      brokenEquipmentChance: this.brokenEquipmentChance,
+      enableUpgrades:this.enableUpgrades,upgradeChance:this.upgradeChance,maxUpgradesPerItem:this.maxUpgradesPerItem,
+      enableFilledContainers:this.enableFilledContainers,filledContainerChance:this.filledContainerChance,generationDepth:this.generationDepth,
+      upgradeTypes:this.upgradeTypes,upgradeRanks:this.upgradeRanks
     });
   }
 
@@ -420,6 +389,7 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.itemCount = form.itemCount;
     this.optimalItemQuantity = form.optimalItemQuantity;
     this.budgetValue = form.budgetValue;
+    this.coinBudgetPercent = form.coinBudgetPercent;
     this.includeGear = form.includeGear;
     this.includeCoins = form.includeCoins;
     this.includeMagicItems = form.includeMagicItems;
@@ -427,12 +397,15 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.magicTypeFilters = { ...form.magicTypeFilters };
     this.magicPercent = form.magicPercent;
     this.brokenEquipmentChance = form.brokenEquipmentChance;
+    for(const key of ["enableUpgrades","upgradeChance","maxUpgradesPerItem","upgradeTypes","upgradeRanks","enableFilledContainers","filledContainerChance","generationDepth"])this[key]=foundry.utils.deepClone(form[key]);
     return form;
   }
 
   async applyTemplateById(templateId, { render = true } = {}) {
     const id = String(templateId ?? "").trim();
-    const template = await this.moduleApi.getLootgenTemplate?.(id);
+    const template = typeof this.moduleApi.resolveLootgenTemplate === "function"
+      ? await this.moduleApi.resolveLootgenTemplate(id)
+      : await this.moduleApi.getLootgenTemplate?.(id);
     if (!template) throw new Error("Выберите шаблон Lootgen.");
     this.applyLootgenTemplate(template);
     this.selectedTemplateId = id;
@@ -458,6 +431,7 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
       throw new Error("Текущая версия модуля не поддерживает шаблоны Lootgen.");
     }
     return this.moduleApi.saveLootgenTemplate({
+      ...(this.editingTemplateUuid ? { itemUuid: this.editingTemplateUuid } : {}),
       name,
       form: this.#getFormSnapshot()
     });
@@ -470,7 +444,7 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
       || typeof this.moduleApi.removeLootgenTemplate !== "function") {
       throw new Error("Текущая версия модуля не поддерживает удаление шаблонов Lootgen.");
     }
-    const template = this.moduleApi.getLootgenTemplate(templateId);
+    const template = await this.moduleApi.getLootgenTemplate(templateId);
     if (!template) {
       throw new Error("Выберите шаблон Lootgen.");
     }
@@ -488,7 +462,7 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
   restoreGeneratedResult(payload = {}) {
     this.generated = this.#normalizeSharedResult(payload);
-    this.chatLootId = "";
+    this.chatLootId = this.generated.lootId??"";
     this.render({ force: true }).catch((error) => {
       console.error(`${MODULE_ID} | Failed to restore lootgen result.`, error);
     });
@@ -523,57 +497,18 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
   setSharedResult(payload = {}) {
     this.generated = this.#normalizeSharedResult(payload);
+    this.chatLootId=this.generated.lootId??"";
     this.render({ force: true }).catch((error) => {
       console.error(`${MODULE_ID} | Failed to refresh shared lootgen result.`, error);
     });
   }
 
-  #toValue(rawValue, fallbackGold = 0) {
-    return resolveLootgenItemValue(rawValue, fallbackGold);
-  }
-
-  async #getBreakableGearSourceIds() {
-    const pack = game.packs.get(`world.${GEAR_COMPENDIUM_NAME}`) ?? null;
-    if (!pack) {
-      return new Set();
-    }
-
-    const index = await pack.getIndex({
-      fields: [
-        "type",
-        "system.rarity",
-        "system.properties",
-        `flags.${MODULE_ID}.managed`,
-        `flags.${MODULE_ID}.sourceType`,
-        `flags.${MODULE_ID}.sourceId`,
-        `flags.${MODULE_ID}.gearId`,
-        `flags.${MODULE_ID}.magical`,
-        `flags.${MODULE_ID}.isMagical`,
-        `flags.${MODULE_ID}.magic`,
-        `flags.${MODULE_ID}.magicItemId`,
-        `flags.${MODULE_ID}.magicId`
-      ]
-    });
-    return collectBreakableManagedGearIds(index);
-  }
-
   #buildGearTypeOptions(model) {
-    return buildLootgenTypeFilterOptions(
-      [
-        ...(model?.gear ?? []).map((item) => item?.equipmentType ?? "Снаряжение"),
-        ...((model?.materials ?? []).length ? [MATERIAL_LOOTGEN_TYPE_LABEL] : [])
-      ],
-      this.gearTypeFilters
-    );
+    return buildLootgenGearTypeOptions(model, this.gearTypeFilters);
   }
 
   async #getMagicDocuments() {
-    const pack = game.packs.get(`world.${MAGIC_ITEMS_COMPENDIUM_NAME}`) ?? null;
-    if (!pack) {
-      return [];
-    }
-
-    return pack.getDocuments();
+    return readLootgenMagicDocuments();
   }
 
   #buildMagicTypeOptions(documents = []) {
@@ -583,172 +518,33 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
     );
   }
 
-  async #buildMundanePool(model) {
-    const minRank = Math.max(0, Math.min(this.rankMin, this.rankMax));
-    const maxRank = Math.max(minRank, Math.max(this.rankMin, this.rankMax));
-    const pool = [];
-    const gearTypeOptions = this.#buildGearTypeOptions(model);
-    const breakableGearIds = this.includeGear
-      ? await this.#getBreakableGearSourceIds()
-      : new Set();
-
-    if (this.includeGear) {
-      for (const gearItem of model.gear ?? []) {
-        const bargaining = gearItem.bargaining ?? gearItem.itemBargaining ?? "";
-        if (isBargainingBlocked(bargaining)) {
-          continue;
-        }
-
-        const rank = Math.max(0, toInteger(gearItem.rank, 0));
-        if (rank < minRank || rank > maxRank) {
-          continue;
-        }
-
-        const typeLabel = String(gearItem.equipmentType ?? "Снаряжение");
-        if (!isLootgenTypeAllowed(typeLabel, gearTypeOptions)) {
-          continue;
-        }
-
-        const fallbackGold = toNumber(gearItem.priceGoldEquivalent, toNumber(gearItem.priceValue, 0));
-        const value = this.#toValue(gearItem.value, fallbackGold);
-        pool.push(buildLootgenMundaneCandidate(gearItem, {
-          rank,
-          value,
-          typeLabel,
-          breakable: breakableGearIds.has(String(gearItem.id))
-        }));
-      }
-
-      if (isLootgenTypeAllowed(MATERIAL_LOOTGEN_TYPE_LABEL, gearTypeOptions)) {
-        for (const material of model.materials ?? []) {
-          const bargaining = material.bargaining ?? material.itemBargaining ?? "";
-          if (isBargainingBlocked(bargaining)) {
-            continue;
-          }
-
-          const rank = Math.max(0, toInteger(material.rank, 0));
-          if (rank < minRank || rank > maxRank) {
-            continue;
-          }
-
-          const fallbackGold = toNumber(material.priceGold, 0);
-          const value = this.#toValue(material.value, fallbackGold);
-          pool.push({
-            sourceType: "material",
-            sourceId: String(material.id),
-            name: String(material.name ?? MATERIAL_LOOTGEN_TYPE_LABEL),
-            rank,
-            value,
-            multipleAppearance: "1",
-            typeLabel: MATERIAL_LOOTGEN_TYPE_LABEL,
-            stackable: true
-          });
-        }
-      }
-    }
-
-    return pool.sort((left, right) => left.rank - right.rank || left.value - right.value);
-  }
-
-  async #buildMagicPool() {
-    const minRank = Math.max(0, Math.min(this.rankMin, this.rankMax));
-    const maxRank = Math.max(minRank, Math.max(this.rankMin, this.rankMax));
-    const pack = game.packs.get(`world.${MAGIC_ITEMS_COMPENDIUM_NAME}`) ?? null;
-    if (!pack) {
-      return [];
-    }
-
-    const documents = await this.#getMagicDocuments();
-    const magicTypeOptions = this.#buildMagicTypeOptions(documents);
-    const pool = [];
-    for (const document of documents) {
-      const flags = foundry.utils.getProperty(document, `flags.${MODULE_ID}`) ?? {};
-      let signatureBargaining = "";
-      const signatureRaw = String(flags.signature ?? "").trim();
-      if (signatureRaw.startsWith("{")) {
-        try {
-          signatureBargaining = String(JSON.parse(signatureRaw)?.bargaining ?? "");
-        }
-        catch (_error) {
-          signatureBargaining = "";
-        }
-      }
-
-      const bargaining = flags.bargaining ?? flags.itemBargaining ?? signatureBargaining;
-      if (isBargainingBlocked(bargaining)) {
-        continue;
-      }
-
-      const rank = Math.max(0, toInteger(
-        flags.rank
-        ?? flags.itemRank
-        ?? foundry.utils.getProperty(document, "system.rank")
-        ?? 0,
-        0
-      ));
-      if (rank < minRank || rank > maxRank) {
-        continue;
-      }
-
-      const sourceId = String(flags.magicItemId ?? document.id ?? "").trim();
-      if (!sourceId) {
-        continue;
-      }
-
-      const explicitValue = toNumber(flags.value, 0);
-      const legacyValue = toNumber(flags.priceGold, 0);
-      const fallbackPrice = parsePriceToGold(foundry.utils.getProperty(document, "system.price") ?? {});
-      const value = explicitValue > 0
-        ? Math.max(1, toInteger(explicitValue, 1))
-        : (legacyValue > 0
-          ? Math.max(1, toInteger(legacyValue, 1))
-          : Math.max(1, toInteger(Math.round(fallbackPrice * 100), 1)));
-      const isConsumable = document.type === "consumable"
-        || Boolean(flags.isConsumable)
-        || String(flags.foundryType ?? "").trim().toLowerCase() === "consumable";
-      const typeLabel = resolveMagicLootgenTypeLabel(document);
-      if (!isLootgenTypeAllowed(typeLabel, magicTypeOptions)) {
-        continue;
-      }
-
-      pool.push({
-        sourceType: "magicItem",
-        sourceId,
-        name: String(document.name ?? "Магический предмет"),
-        rank,
-        value,
-        typeLabel,
-        stackable: isConsumable
-      });
-    }
-
-    return pool.sort((left, right) => left.rank - right.rank || left.value - right.value);
-  }
-
   async #generateLoot() {
-    const model = await this.moduleApi.getModel();
-    const mundanePool = await this.#buildMundanePool(model);
-    const magicPool = this.includeMagicItems ? await this.#buildMagicPool() : [];
-    this.generated = generateLootgenResult({
-      mundanePool,
-      magicPool,
-      includeMagicItems: this.includeMagicItems,
-      magicPercent: this.magicPercent,
-      itemCount: this.itemCount,
-      optimalItemQuantity: this.optimalItemQuantity,
-      budgetValue: this.budgetValue,
-      includeCoins: this.includeCoins,
-      brokenEquipmentChance: this.brokenEquipmentChance,
+    const form=this.#getFormSnapshot(),key=JSON.stringify(form);
+    if(this.generationInFlight){
+      if(this.generationInFlight.key!==key)throw new Error("Дождитесь завершения текущей генерации.");
+      return this.generationInFlight.promise;
+    }
+    const promise=(async()=>{
+      if(form.enableUpgrades || form.enableFilledContainers){
+        if(this.pendingPreparation?.key!==key)this.pendingPreparation={key,operationId:randomID()};
+        const result=await this.moduleApi.prepareLootgenGeneratedResult(form,{operationId:this.pendingPreparation.operationId});
+        this.generated=this.#projectPreparedResult(result);
+        this.chatLootId=result.lootId;
+        this.pendingPreparation=null;
+        return;
+      }
+      this.generated = await this.moduleApi.lootgenSourceCatalog.generate(form, {
       batchId: randomID(),
-      generatedAt: new Intl.DateTimeFormat("ru-RU", {
-        dateStyle: "short",
-        timeStyle: "medium"
-      }).format(new Date())
+      generatedAt: new Intl.DateTimeFormat("ru-RU", {dateStyle:"short",timeStyle:"medium"}).format(new Date())
     });
     this.chatLootId = "";
+    })();
+    this.generationInFlight={key,promise};
+    try{return await promise;}finally{this.generationInFlight=null;}
   }
 
   #buildSharedPayload() {
+    if(this.generated.resultVersion===2)return {resultVersion:2,lootId:this.generated.lootId};
     return foundry.utils.deepClone({
       rows: this.generated.rows,
       coins: normalizeCoins(this.generated.coins ?? {}),
@@ -766,6 +562,7 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
       throw new Error("Строка лутгена не найдена.");
     }
 
+    if(this.generated.resultVersion===2)return openLootgenRowPreview({getFlag:()=>this.moduleApi.getLootgenGeneratedResult(this.generated.lootId).state},row.rowId);
     await this.moduleApi.openTradeEntry(row.sourceType, row.sourceId, row.name);
   }
 
@@ -775,6 +572,8 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
       throw new Error("Строка лутгена не найдена.");
     }
 
+    if(this.generated.resultVersion===2)return this.#claimPreparedResult(`row:${row.rowId}`,claimId=>this.moduleApi.claimLootgenChatRowToInventory(this.generated.lootId,row.rowId,{claimId,quiet:true}));
+
     if (typeof this.moduleApi.addLootgenRowToInventory === "function") {
       await this.moduleApi.addLootgenRowToInventory(row);
       return;
@@ -783,6 +582,7 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   async #addCoinsToInventory() {
+    if(this.generated.resultVersion===2)return this.#claimPreparedResult("coins",claimId=>this.moduleApi.claimLootgenChatAllToInventory(this.generated.lootId,{claimId,quiet:true,coinsOnly:true}));
     const coins = normalizeCoins(this.generated.coins ?? {});
     if (coins.totalCopper <= 0) {
       return false;
@@ -797,21 +597,24 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   async #takeAllToInventory() {
-    for (const row of this.generated.rows) {
-      if (typeof this.moduleApi.addLootgenRowToInventory === "function") {
-        await this.moduleApi.addLootgenRowToInventory(row);
-      }
-      else {
-        throw new Error("Текущая версия склада не поддерживает безопасную выдачу Lootgen.");
-      }
+    if(this.generated.resultVersion===2)return this.#claimPreparedResult("all",claimId=>this.moduleApi.claimLootgenChatAllToInventory(this.generated.lootId,{claimId,quiet:true}));
+    if (typeof this.moduleApi.addLootgenRowsToInventory !== "function") {
+      throw new Error("Текущая версия склада не поддерживает безопасную пакетную выдачу Lootgen.");
     }
-
-    await this.#addCoinsToInventory();
+    await this.moduleApi.addLootgenRowsToInventory(this.generated.rows, {
+      coins: normalizeCoins(this.generated.coins ?? {}),
+      batchMutationId: this.generated.directCoinGrantId
+    });
   }
 
   async #sendResultToChat() {
     if (!this.generated.hasResult) {
       throw new Error("Сначала сгенерируйте добычу.");
+    }
+
+    if(this.generated.resultVersion===2){
+      const result=await this.moduleApi.publishLootgenGeneratedResult(this.generated.lootId);
+      this.generated=this.#projectPreparedResult(result);return result;
     }
 
     const result = await this.moduleApi.createLootgenChatMessage(this.#buildSharedPayload(), {
@@ -834,10 +637,26 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.generated.hasResult = rows.length > 0 || Number(this.generated.coins?.totalCopper ?? 0) > 0;
   }
 
+  async #claimPreparedResult(action,execute) {
+    const lootId=this.generated.lootId,key=`${lootId}:${action}`;
+    const claimId=this.pendingPreparedClaims.get(key)??randomID();this.pendingPreparedClaims.set(key,claimId);
+    try{
+      const result=await execute(claimId);
+      this.pendingPreparedClaims.delete(key);return result;
+    }finally{
+      try{
+        const current=this.#normalizeSharedResult({resultVersion:2,lootId});
+        if(this.generated.lootId===lootId)this.generated=current;
+        if(current.claims?.some(claim=>claim.id===claimId && claim.phase==="committed"))this.pendingPreparedClaims.delete(key);
+      }catch(error){console.error(`${MODULE_ID} | Failed to refresh prepared loot after claim.`,error);}
+    }
+  }
+
   handleLootgenChatClaim(lootId, rowId, claimType) {
     if (!this.chatLootId || String(lootId ?? "") !== this.chatLootId) {
       return false;
     }
+    if(this.generated.resultVersion===2){this.setSharedResult({resultVersion:2,lootId});return true;}
 
     if (claimType === "coins") {
       this.generated.coins = randomCoinsFromValue(0);
@@ -863,8 +682,18 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   async _prepareContext() {
+    if (this.editingTemplateUuid && !this.editingTemplateLoaded) {
+      const template = typeof this.moduleApi.resolveLootgenTemplate === "function"
+        ? await this.moduleApi.resolveLootgenTemplate(this.editingTemplateUuid)
+        : await this.moduleApi.getLootgenTemplate?.(this.editingTemplateUuid);
+      if (!template) throw new Error("Шаблон Lootgen не найден.");
+      this.applyLootgenTemplate(template);
+      this.selectedTemplateId = template.uuid ?? template.id;
+      this.editingTemplateLoaded = true;
+    }
+    if(this.generated.resultVersion===2)this.generated=this.#normalizeSharedResult(this.generated);
     const isGM = game.user?.isGM === true;
-    const canManage = isGM && !this.viewer;
+    const canManage = isGM && !this.viewer && !this.readOnly;
     let model = {};
     let magicDocuments = [];
     let lootgenTemplates = [];
@@ -901,11 +730,13 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const hasGearSource = this.includeGear && gearTypeOptions.some((option) => option.checked);
     const hasMagicSource = this.includeMagicItems && magicTypeOptions.some((option) => option.checked);
     const hasItemSources = hasGearSource || hasMagicSource;
-    const generateDisabled = !hasItemSources;
+    const generateDisabled = !hasItemSources || Boolean(this.generationInFlight);
     return {
       isGM,
       viewer: this.viewer,
       canManage,
+      editingTemplateUuid: this.editingTemplateUuid,
+      readOnly: this.readOnly,
       appKey: this.appKey,
       form: {
         rankMin: this.rankMin,
@@ -913,6 +744,7 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
         itemCount: this.itemCount,
         optimalItemQuantity: this.optimalItemQuantity,
         budgetValue: this.budgetValue,
+        coinBudgetPercent: this.coinBudgetPercent,
         includeGear: this.includeGear,
         includeCoins: this.includeCoins,
         includeMagicItems: this.includeMagicItems,
@@ -924,9 +756,14 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
         hasMagicTypeOptions: magicTypeOptions.length > 0,
         magicPercent: this.magicPercent,
         brokenEquipmentChance: this.brokenEquipmentChance,
+        enableUpgrades:this.enableUpgrades,upgradeChance:this.upgradeChance,maxUpgradesPerItem:this.maxUpgradesPerItem,
+        enableFilledContainers:this.enableFilledContainers,filledContainerChance:this.filledContainerChance,generationDepth:this.generationDepth,
+        upgradeTypes:this.upgradeTypes,upgradeRanks:this.upgradeRanks,
+        upgradeTypeOptions:["Материал","Зачарование","Проклятье"].map(value=>({value,checked:this.upgradeTypes.includes(value)})),
+        upgradeRankOptions:Array.from({length:10},(_,index)=>({value:index+1,checked:this.upgradeRanks.includes(index+1)})),
         hasItemSources,
         generateDisabled,
-        generateDisabledReason: generateDisabled
+        generateDisabledReason: this.generationInFlight?"Подготовка добычи…":generateDisabled
           ? "Выберите хотя бы один источник предметов: снаряжение или магические предметы."
           : ""
       },
@@ -935,6 +772,7 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
         hasRows: (this.generated.rows ?? []).length > 0,
         hasCoins: Number(this.generated.coins?.totalCopper ?? 0) > 0,
         coinsLabel: formatCoinsLabel(this.generated.coins ?? {}),
+        internalCurrencyValue: toNumber(this.generated.internalCurrencyValue,0),
         spentGold: roundNumber(toNumber(this.generated.spentValue, 0) / 100, 2)
       }
     };
@@ -998,7 +836,7 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
             return;
           }
 
-          if (fieldName === "magicPercent" || fieldName === "brokenEquipmentChance") {
+          if (fieldName === "magicPercent" || fieldName === "brokenEquipmentChance" || fieldName === "coinBudgetPercent" || fieldName === "upgradeChance" || fieldName === "filledContainerChance") {
             this[fieldName] = fieldName === "brokenEquipmentChance"
               ? normalizeBrokenEquipmentChance(input.value)
               : Math.min(100, Math.max(0, toInteger(input.value, this[fieldName])));
@@ -1011,16 +849,24 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
             input.value = String(this[fieldName]);
             return;
           }
+          if(fieldName==="maxUpgradesPerItem" || fieldName==="generationDepth"){this[fieldName]=Math.min(3,Math.max(1,toInteger(input.value,1)));input.value=String(this[fieldName]);return;}
 
           this[fieldName] = Math.max(0, toInteger(input.value, this[fieldName]));
           input.value = String(this[fieldName]);
         }, listenerOptions);
       });
 
-      element.querySelector("[data-action='lootgen-generate']")?.addEventListener("click", async () => {
+      element.querySelectorAll("[data-upgrade-filter]").forEach(input=>input.addEventListener("change",()=>{
+        const key=input.dataset.upgradeFilter,value=key==="upgradeRanks"?Number(input.value):input.value;
+        if(!["upgradeTypes","upgradeRanks"].includes(key))return;
+        this[key]=input.checked?[...new Set([...this[key],value])]:this[key].filter(entry=>entry!==value);
+      },listenerOptions));
+
+      element.querySelector("[data-action='lootgen-generate']")?.addEventListener("click", async (event) => {
+        const button=event.currentTarget;button.disabled=true;
         try {
           await this.#generateLoot();
-          if (game.user?.isGM && typeof this.moduleApi.shareLootgenResult === "function") {
+          if (this.generated.resultVersion!==2 && game.user?.isGM && typeof this.moduleApi.shareLootgenResult === "function") {
             await this.moduleApi.shareLootgenResult(this.#buildSharedPayload());
           }
           await this.render({ force: true });
@@ -1031,10 +877,12 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
           await this.render({ force: true });
           await this.#postStatusToChat("error", message);
         }
+        finally{button.disabled=false;}
       }, listenerOptions);
 
       element.querySelector("[data-action='lootgen-clear']")?.addEventListener("click", async () => {
-        const previousResult = this.#cloneGeneratedResult();
+        if(this.generationInFlight){ui.notifications?.info("Дождитесь завершения генерации.");return;}
+        const previousResult = this.#cloneGeneratedResult({referenceOnly:true});
         this.generated = this.#createEmptyGenerated();
         this.chatLootId = "";
         await this.render({ force: true });
@@ -1115,9 +963,9 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
         button.addEventListener("click", async (event) => {
           try {
             const rowIndex = toInteger(event.currentTarget.dataset.rowIndex, -1);
-            await this.#addRowToInventory(rowIndex);
+            const changed=await this.#addRowToInventory(rowIndex);
             await this.render({ force: true });
-            await this.#postStatusToChat("success", "Строка добычи добавлена в партийный склад.");
+            if(changed!==false)await this.#postStatusToChat("success", "Строка добычи добавлена в партийный склад.");
           }
           catch (error) {
             console.error(`${MODULE_ID} | Failed to add loot row to inventory.`, error);
@@ -1130,9 +978,9 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
       element.querySelector("[data-action='lootgen-take-all']")?.addEventListener("click", async () => {
         try {
-          await this.#takeAllToInventory();
+          const changed=await this.#takeAllToInventory();
           await this.render({ force: true });
-          await this.#postStatusToChat("success", "Добыча полностью перенесена в партийный склад.");
+          if(changed!==false)await this.#postStatusToChat("success", this.generated.resultVersion===2?"Добыча обработана правилами партийного склада.":"Добыча полностью перенесена в партийный склад.");
         }
         catch (error) {
           console.error(`${MODULE_ID} | Failed to transfer generated loot.`, error);

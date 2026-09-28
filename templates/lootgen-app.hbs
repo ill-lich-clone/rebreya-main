@@ -74,6 +74,10 @@
           </summary>
           <div class="rm-lootgen-settings__content">
             <div class="rm-field">
+              <label for="rm-coin-reserve-{{appKey}}" title="Эта доля бюджета сохраняется для монет до подбора предметов. Неизрасходованный остаток тоже добавляется к монетам. При выключенных монетах резерв не применяется.">Доля бюджета на монеты, %</label>
+              <input id="rm-coin-reserve-{{appKey}}" type="number" min="0" max="100" step="1" value="{{form.coinBudgetPercent}}" data-field="coinBudgetPercent">
+            </div>
+            <div class="rm-field">
               <label title="Шанс включить магический предмет в выдачу (0-100%).">% магических предметов</label>
               <input type="number" min="0" max="100" step="1" value="{{form.magicPercent}}" data-field="magicPercent">
             </div>
@@ -93,10 +97,50 @@
               </label>
               <label class="rm-lootgen-check">
                 <input type="checkbox" {{#if form.includeCoins}}checked{{/if}} data-field="includeCoins">
-                <span>Остаток в монеты</span>
+                <span>Монеты: резерв и остаток</span>
               </label>
             </div>
 
+              <section class="rm-lootgen-type-filter">
+                <label class="rm-lootgen-check">
+                  <input type="checkbox" {{#if form.enableUpgrades}}checked{{/if}} data-field="enableUpgrades">
+                  <span>Предметы с усовершенствованиями</span>
+                </label>
+                <p class="rm-muted">Полная стоимость входит в общий бюджет. Выбираются только доступные усовершенствования.</p>
+                <div class="rm-field">
+                  <label>Шанс усовершенствования, %</label>
+                  <input type="number" min="0" max="100" value="{{form.upgradeChance}}" data-field="upgradeChance">
+                </div>
+                <div class="rm-field">
+                  <label>Максимум на предмет</label>
+                  <input type="number" min="1" max="3" value="{{form.maxUpgradesPerItem}}" data-field="maxUpgradesPerItem">
+                </div>
+                <p class="rm-muted">Типы и ранги: если ничего не выбрано, используются все доступные.</p>
+                <div class="rm-lootgen-type-filter__options">
+                  {{#each form.upgradeTypeOptions}}
+                    <label class="rm-lootgen-check rm-lootgen-check--compact"><input type="checkbox" value="{{value}}" {{#if checked}}checked{{/if}} data-upgrade-filter="upgradeTypes"><span>{{value}}</span></label>
+                  {{/each}}
+                </div>
+                <div class="rm-lootgen-type-filter__options">
+                  {{#each form.upgradeRankOptions}}
+                    <label class="rm-lootgen-check rm-lootgen-check--compact"><input type="checkbox" value="{{value}}" {{#if checked}}checked{{/if}} data-upgrade-filter="upgradeRanks"><span>Ранг {{value}}</span></label>
+                  {{/each}}
+                </div>
+              </section>
+            <section class="rm-lootgen-type-filter">
+              <label class="rm-lootgen-check">
+                <input type="checkbox" {{#if form.enableFilledContainers}}checked{{/if}} data-field="enableFilledContainers">
+                <span>Заполненные контейнеры</span>
+              </label>
+              <p class="rm-muted">Оболочка, содержимое, усовершенствования и монеты входят в общий бюджет и учитывают вместимость.</p>
+              <label class="rm-field"><span>Шанс заполнения, %</span>
+                <input type="number" min="0" max="100" value="{{form.filledContainerChance}}" data-field="filledContainerChance">
+              </label>
+              <label class="rm-field"><span>Глубина вложения</span>
+                <input type="number" min="1" max="3" value="{{form.generationDepth}}" data-field="generationDepth">
+              </label>
+              <p class="rm-muted">1 — вещи в контейнере; 2–3 — допускаются контейнеры внутри.</p>
+            </section>
             <div class="rm-lootgen-type-filters">
               {{#if form.hasGearTypeOptions}}
                 <section class="rm-lootgen-type-filter">
@@ -207,11 +251,15 @@
             <strong>{{rmNum generated.totalItems precision=0}}</strong>
           </div>
           <div class="rm-compact-pill">
-            <span>Потрачено</span>
+            <span>Предметы без монет</span>
             <strong>{{rmNum generated.spentValue precision=0}} value</strong>
           </div>
+          {{#if generated.internalCurrencyValue}}<div class="rm-compact-pill">
+            <span>Монеты в контейнерах</span>
+            <strong>{{rmNum generated.internalCurrencyValue precision=0}} value</strong>
+          </div>{{/if}}
           <div class="rm-compact-pill">
-            <span>Монеты</span>
+            <span>Монеты снаружи</span>
             <strong>{{generated.coinsLabel}}</strong>
           </div>
         </section>
@@ -219,7 +267,7 @@
         {{#if generated.hasRows}}
           <div class="rm-lootgen-result-list">
             {{#each generated.rows}}
-              <article class="rm-lootgen-result-row">
+              <article class="rm-lootgen-result-row {{#if claimed}}is-claimed{{/if}}">
                 <div class="rm-lootgen-result-row__main">
                   <strong>
                     <button
@@ -227,7 +275,7 @@
                       class="rm-link-button rm-link-button--accent"
                       data-action="lootgen-open-entry"
                       data-row-index="{{rowIndex}}"
-                      title="Открыть предмет"
+                      title="{{#if containerSummary}}Посмотреть содержимое{{else}}Открыть предмет{{/if}}"
                     >
                       {{name}}
                     </button>
@@ -235,6 +283,10 @@
                   <p class="rm-muted">
                     {{typeLabel}} • ранг {{rank}} • {{rmNum value precision=0}} value • x{{rmNum quantity precision=0}}
                   </p>
+                  {{#if containerSummary}}<p class="rm-muted">{{containerSummary}}</p>{{/if}}
+                  {{#each upgradeSummaries}}<p class="rm-muted">{{this}}</p>{{/each}}
+                  {{#if descriptor}}<p class="rm-muted">Полная стоимость: {{rmNum totalValue precision=0}} value</p>{{/if}}
+                  {{#if claimed}}<span class="rm-lootgen-condition">Забрано</span>{{/if}}
                   {{#if isBroken}}
                     <span class="rm-lootgen-condition rm-lootgen-condition--broken">
                       <i class="fa-solid fa-link-slash"></i>
@@ -245,7 +297,7 @@
                 <div class="rm-lootgen-result-row__side">
                   <span>{{rmNum totalValue precision=0}} value</span>
                   {{#if ../canManage}}
-                    <button type="button" class="rm-icon-button" data-action="lootgen-take-row" data-row-index="{{rowIndex}}" title="Добавить строку в склад">
+                    <button type="button" class="rm-icon-button" data-action="lootgen-take-row" data-row-index="{{rowIndex}}" {{#if claimed}}disabled{{/if}} title="Добавить строку в склад">
                       <i class="fa-solid fa-inbox"></i>
                     </button>
                   {{/if}}

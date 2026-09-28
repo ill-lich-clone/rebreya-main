@@ -3,13 +3,141 @@ import assert from "node:assert/strict";
 
 import {
   STORAGE_UPDATED_HOOK,
+  STORAGE_COIN_DENOMINATIONS,
   StorageService,
+  buildStorageTokenState,
   deriveStorageDisplayName,
   isStorageActor,
+  readStorageCoinDenomination,
   readStorageState,
   readStorageStateAtPath
 } from "../scripts/data/storage-service.js";
 import { buildStorageContainerRow } from "../scripts/data/storage-container-snapshot.js";
+import { createEmptyStorageTriggerState } from "../scripts/data/storage-trigger-service.js";
+import { normalizeLootgenForm } from "../scripts/data/lootgen-generator.js";
+
+test("opening a chest folds unclaimed coin Items into currency exactly once", async () => {
+  const token = createStorageToken("coin-chest");
+  token.flags["rebreya-main"] = { storage: {
+    state: "opened", manualCoins: { gp: 1 }, generatedCoins: { cp: 6 },
+    generatedRows: [{ rowId: "copper", quantity: 41, itemData: {
+      flags: { "rebreya-main": { storageCoinTemplate: { version: 1, denomination: "cp" } } }
+    } }]
+  } };
+  const service = new StorageService();
+  const first = await service.open(token);
+  assert.equal(first.rows.length, 0);
+  assert.deepEqual(first.coins, { pp: 0, gp: 1, sp: 0, cp: 47 });
+  assert.deepEqual((await service.open(token)).coins, first.coins);
+});
+
+test("claiming one coin denomination leaves the other denominations available", async () => {
+  const token = createStorageToken("coin-denominations");
+  token.flags["rebreya-main"] = { storage: {
+    state: "opened", manualCoins: { gp: 2, cp: 41 }, generatedCoins: { cp: 6 }
+  } };
+  const service = new StorageService();
+  const result = await service.claim(token, { kind: "coins", denomination: "cp" });
+  assert.deepEqual(result.coins, { pp: 0, gp: 0, sp: 0, cp: 47 });
+  assert.equal(result.state.coinsClaimed, false);
+  assert.equal(result.state.manualCoins.gp, 2);
+  assert.equal(result.state.manualCoins.cp + result.state.generatedCoins.cp, 0);
+  assert.equal((await service.claim(token, { kind: "coins", denomination: "cp" })).changed, false);
+  assert.equal((await service.claim(token, { kind: "coins", denomination: "gp" })).state.state, "empty");
+});
+
+test("partial coin depletion is idempotent across repeated requests", async () => {
+  const token = createStorageToken("partial-coins");
+  token.flags["rebreya-main"] = { storage: { state: "opened", manualCoins: { cp: 8, gp: 1 } } };
+  const service = new StorageService();
+  const request = { kind: "coins", denomination: "cp", quantity: 3, mutationId: "drop-three" };
+  const first = await service.claim(token, request);
+  assert.equal(first.coins.cp, 3);
+  assert.equal(first.state.manualCoins.cp + first.state.generatedCoins.cp, 5);
+  const retry = await service.claim(token, request);
+  assert.equal(retry.state.manualCoins.cp + retry.state.generatedCoins.cp, 5);
+  await assert.rejects(service.claim(token, { ...request, quantity: 4 }), /mutationId|повторно/u);
+});
+
+test("old claimed currency and claimed coin Items are not credited again on opening", async () => {
+  const token = createStorageToken("claimed-coin-chest");
+  const coin = (rowId, quantity) => ({ rowId, quantity, itemData: {
+    flags: { "rebreya-main": { storageCoinTemplate: { version: 1, denomination: "cp" } } }
+  } });
+  token.flags["rebreya-main"] = { storage: {
+    state: "opened", coinsClaimed: true, manualCoins: { gp: 20 }, generatedCoins: { cp: 6 },
+    manualRows: [coin("taken", 90)], generatedRows: [coin("remaining", 41)], claimedRowIds: ["taken"]
+  } };
+  const service = new StorageService();
+  const result = await service.open(token);
+  assert.deepEqual(result.coins, { pp: 0, gp: 0, sp: 0, cp: 41 });
+  assert.equal(result.rows.length, 0);
+  assert.deepEqual((await service.open(token)).coins, result.coins);
+});
+
+test("storage state projects an empty trigger section without an eager write", () => {
+  const token = createStorageToken("legacy-triggers");
+  assert.deepEqual(readStorageState(token).triggers, createEmptyStorageTriggerState());
+  assert.deepEqual(token.flags, {});
+});
+
+test("storage trigger definitions save by revision and reset executions without variables", async () => {
+  const token = createStorageToken("trigger-state");
+  const service = new StorageService();
+  const chainsByEvent = createEmptyStorageTriggerState().chainsByEvent;
+  chainsByEvent.beforeOpen.push({
+    id: "lock", name: "Замок", enabled: true, repeat: "onceGlobal", entryStepId: "deny",
+    steps: [{ id: "deny", type: "deny", config: { message: "Заперто" } }]
+  });
+  const saved = await service.saveTriggerDefinitions(token, { chainsByEvent }, 0);
+  assert.equal(saved.triggers.revision, 1);
+  assert.equal(saved.triggers.chainsByEvent.beforeOpen[0].id, "lock");
+  await assert.rejects(
+    service.saveTriggerDefinitions(token, { chainsByEvent }, 0),
+    /revision|изменена/iu
+  );
+
+  await service.updateTriggerRuntime(token, (runtime) => {
+    runtime.variables.locked = true;
+    runtime.executionState.onceGlobal.lock = true;
+    runtime.executionState.runs.run = { status: "complete" };
+  });
+  const reset = await service.resetTriggerExecutions(token);
+  assert.deepEqual(reset.triggers.variables, { locked: true });
+  assert.deepEqual(reset.triggers.executionState, { onceGlobal: {}, oncePerCharacter: {}, runs: {} });
+  assert.equal(reset.triggers.revision, 1);
+});
+
+test("storage trigger definition save preserves an unchanged opaque future chain", async () => {
+  const token = createStorageToken("future-trigger-state");
+  token.flags["rebreya-main"] = {
+    storage: {
+      triggers: {
+        version: 1,
+        revision: 3,
+        chainsByEvent: {
+          beforeOpen: [{
+            id: "future", name: "Future", enabled: true, repeat: "always", entryStepId: "future-step",
+            steps: [{ id: "future-step", type: "futureTeleport", config: { exact: [1, 2, 3] } }]
+          }]
+        }
+      }
+    }
+  };
+  const service = new StorageService();
+  const current = readStorageState(token).triggers;
+  const definitions = structuredClone(current.chainsByEvent);
+  definitions.afterOpen.push({
+    id: "known", name: "Known", enabled: true, repeat: "always", entryStepId: "finish",
+    steps: [{ id: "finish", type: "finish", config: {} }]
+  });
+
+  const saved = await service.saveTriggerDefinitions(token, { chainsByEvent: definitions }, 3);
+
+  assert.equal(saved.triggers.revision, 4);
+  assert.deepEqual(saved.triggers.chainsByEvent.beforeOpen[0], current.chainsByEvent.beforeOpen[0]);
+  assert.equal(saved.triggers.chainsByEvent.afterOpen[0].id, "known");
+});
 
 function createStorageToken(id, name = "Сундук") {
   const flags = {};
@@ -34,6 +162,90 @@ function createStorageToken(id, name = "Сундук") {
     }
   };
 }
+
+function makeDeadNpcStorageToken(id, actorId = "dead-npc") {
+  const token = createStorageToken(id, "Павшее существо");
+  token.uuid = `Scene.scene.Token.${id}`;
+  token.actor = {
+    id: actorId,
+    uuid: `Actor.${actorId}`,
+    type: "npc",
+    system: { attributes: { hp: { value: 0 } } }
+  };
+  return token;
+}
+
+function corpseResult(actorId, rows = []) {
+  return {
+    rows,
+    coins: {},
+    corpseMaterialization: {
+      version: 1,
+      status: "complete",
+      sourceActorUuid: `Actor.${actorId}`,
+      sourceActorId: actorId
+    }
+  };
+}
+
+test("storage owns coin denominations and reads only the exact managed flag", () => {
+  assert.deepEqual(STORAGE_COIN_DENOMINATIONS, ["pp", "gp", "sp", "cp"]);
+  assert.equal(readStorageCoinDenomination({
+    flags: { "rebreya-main": { storageCoinTemplate: { version: 1, denomination: "gp" } } }
+  }), "gp");
+  assert.equal(readStorageCoinDenomination({
+    flags: { "rebreya-main": { storageCoinTemplate: { version: 1, denomination: "ep" } } }
+  }), null);
+  assert.equal(readStorageCoinDenomination({
+    flags: { "rebreya-main": { storageCoinTemplate: { version: 2, denomination: "gp" } } }
+  }), null);
+  assert.equal(readStorageCoinDenomination({
+    flags: { "rebreya-main": { storageCoinTemplate: { denomination: "gp" } } }
+  }), null);
+  assert.equal(readStorageCoinDenomination({ name: "Золотая монета" }), null);
+});
+
+test("storage snapshots replace the removed goggles icon in row and persisted item data", () => {
+  const state = buildStorageTokenState({
+    state: "opened",
+    generatedRows: [{
+      rowId: "night-goggles",
+      name: "Ночные очки",
+      img: "icons/equipment/eyes/goggles-of-night.webp",
+      itemData: {
+        name: "Ночные очки",
+        img: "goggles-of-night.webp",
+        system: { quantity: 1 }
+      }
+    }]
+  });
+
+  const expected = "modules/rebreya-main/templates/icons/Magic%20Items/%D0%9D%D0%BE%D1%87%D0%BD%D1%8B%D0%B5%20%D0%BE%D1%87%D0%BA%D0%B8.webp";
+  assert.equal(state.generatedRows[0].img, expected);
+  assert.equal(state.generatedRows[0].itemData.img, expected);
+});
+
+test("storage keeps only unique read markers for canonical Journal rows", () => {
+  const state = buildStorageTokenState({
+    state: "opened",
+    manualRows: [{
+      rowKind: "journal",
+      rowId: "notes",
+      sourceId: "JournalEntry.notes",
+      sourceType: "journal",
+      name: "Записка",
+      quantity: 1
+    }, {
+      rowKind: "item",
+      rowId: "key",
+      name: "Ключ",
+      quantity: 1
+    }],
+    readJournalRowIds: [" notes ", "missing", "key", "notes"]
+  });
+
+  assert.deepEqual(state.readJournalRowIds, ["notes"]);
+});
 
 test("two storage tokens using one actor keep independent template snapshots", async () => {
   const service = new StorageService();
@@ -63,7 +275,7 @@ test("opening once merges manual rows and a generated result", async () => {
   });
   const token = createStorageToken("chest");
 
-  await service.configure(token, { manualRows: [{ rowId: "manual" }] });
+  await service.configure(token, { manualRows: [{ rowId: "manual" }], mixGeneratedLoot: true });
   const first = await service.open(token, {});
   const second = await service.open(token, {});
 
@@ -72,6 +284,55 @@ test("opening once merges manual rows and a generated result", async () => {
   assert.equal(first.generatedNow, true);
   assert.equal(second.generatedNow, false);
   assert.equal(generationCount, 1);
+});
+
+test("storage mixed-loot mode defaults false and manual first-open skips generation", async () => {
+  assert.equal(buildStorageTokenState({}).mixGeneratedLoot, false);
+  assert.equal(buildStorageTokenState({ mixGeneratedLoot: true }).mixGeneratedLoot, true);
+  let generationCount = 0;
+  const service = new StorageService({
+    generate: async () => {
+      generationCount += 1;
+      return { rows: [{ rowId: "generated" }], coins: { gp: 2 } };
+    }
+  });
+  const token = createStorageToken("manual-only");
+  await service.configure(token, {
+    manualRows: [{ rowId: "manual", quantity: 1 }],
+    manualCoins: { sp: 3 }
+  });
+
+  const result = await service.open(token);
+
+  assert.equal(generationCount, 0);
+  assert.equal(result.generatedNow, false);
+  assert.deepEqual(result.rows.map((row) => row.rowId), ["manual"]);
+  assert.equal(result.coins.sp, 3);
+  assert.equal(result.coins.gp, 0);
+  assert.deepEqual(readStorageState(token).generatedRows, []);
+});
+
+test("mixed manual coins generate once and no-manual storage keeps default generation", async () => {
+  const forms = [];
+  const service = new StorageService({
+    generate: async (form) => {
+      forms.push(form);
+      return { rows: [{ rowId: "generated" }], coins: { gp: 2 } };
+    }
+  });
+  const mixed = createStorageToken("mixed-coins");
+  await service.configure(mixed, { manualCoins: { sp: 3 }, mixGeneratedLoot: true });
+  const mixedResult = await service.open(mixed);
+  await service.open(mixed);
+  assert.equal(forms.length, 1);
+  assert.equal(mixedResult.coins.gp, 2);
+  assert.equal(mixedResult.coins.sp, 3);
+
+  const defaultStorage = createStorageToken("default-generation");
+  const defaultResult = await service.open(defaultStorage);
+  assert.equal(forms.length, 2);
+  assert.equal(defaultResult.generatedNow, true);
+  assert.equal(defaultResult.rows[0].rowId, "generated");
 });
 
 test("storage actor marker and empty display name use Rebreya-owned flags", () => {
@@ -255,6 +516,126 @@ test("simultaneous first opens invoke the generated callback once after opening"
   assert.deepEqual(opened, ["opened"]);
 });
 
+test("corpse first-open atomically stores a complete marker and stays empty without lootgen", async () => {
+  let materializations = 0;
+  let generations = 0;
+  const service = new StorageService({
+    materializeFirstOpen: async () => {
+      materializations += 1;
+      return corpseResult("troll");
+    },
+    generate: async () => {
+      generations += 1;
+      return { rows: [{ rowId: "must-not-exist" }], coins: {} };
+    }
+  });
+  const token = makeDeadNpcStorageToken("troll-token", "troll");
+
+  const [first, duplicate] = await Promise.all([service.open(token), service.open(token)]);
+
+  assert.equal(first.generatedNow, true);
+  assert.equal(duplicate.generatedNow, true);
+  assert.equal(materializations, 1);
+  assert.equal(generations, 0);
+  assert.equal(readStorageState(token).state, "empty");
+  assert.deepEqual(readStorageState(token).generatedRows, []);
+  assert.deepEqual(readStorageState(token).corpseMaterialization, {
+    version: 1,
+    status: "complete",
+    sourceActorUuid: "Actor.troll",
+    sourceActorId: "troll"
+  });
+
+  const reopenedByNewActiveGm = await new StorageService({
+    materializeFirstOpen: async () => {
+      materializations += 1;
+      return corpseResult("troll", [{ rowId: "duplicate" }]);
+    }
+  }).open(token);
+
+  assert.equal(reopenedByNewActiveGm.generatedNow, false);
+  assert.equal(materializations, 1);
+  assert.deepEqual(reopenedByNewActiveGm.rows, []);
+});
+
+test("corpse claims preserve the marker and never restore partially or fully claimed loot", async () => {
+  let materializations = 0;
+  const materializeFirstOpen = async () => {
+    materializations += 1;
+    return corpseResult("champion", [{
+      rowId: "corpse-v1:arrows:strely-20",
+      stackKey: "gear:strely-20",
+      sourceType: "gear",
+      sourceId: "strely-20",
+      quantity: 20,
+      itemData: { system: { quantity: 20 } }
+    }]);
+  };
+  const token = makeDeadNpcStorageToken("champion-token", "champion");
+  const service = new StorageService({ materializeFirstOpen });
+
+  await service.open(token);
+  await service.claim(token, { kind: "row", rowId: "corpse-v1:arrows:strely-20", quantity: 7 });
+  await new StorageService({ materializeFirstOpen }).open(token);
+
+  assert.equal(readStorageState(token).generatedRows[0].quantity, 13);
+  assert.equal(readStorageState(token).generatedRows[0].itemData.system.quantity, 13);
+  assert.equal(readStorageState(token).corpseMaterialization.status, "complete");
+  assert.equal(materializations, 1);
+
+  await service.claim(token, { kind: "row", rowId: "corpse-v1:arrows:strely-20", quantity: 13 });
+  await new StorageService({ materializeFirstOpen }).open(token);
+
+  assert.equal(readStorageState(token).state, "empty");
+  assert.deepEqual(readStorageState(token).claimedRowIds, ["corpse-v1:arrows:strely-20"]);
+  assert.equal(readStorageState(token).corpseMaterialization.status, "complete");
+  assert.equal(materializations, 1);
+});
+
+test("two dead tokens sharing one Actor keep independent corpse materialization state", async () => {
+  let materializations = 0;
+  const service = new StorageService({
+    materializeFirstOpen: async ({ token }) => {
+      materializations += 1;
+      return corpseResult("shared", [{
+        rowId: `corpse-v1:${token.id}:sword`,
+        sourceType: "gear",
+        sourceId: "sword",
+        quantity: 1,
+        itemData: { system: { quantity: 1 } }
+      }]);
+    }
+  });
+  const first = makeDeadNpcStorageToken("first-corpse", "shared");
+  const second = makeDeadNpcStorageToken("second-corpse", "shared");
+
+  await Promise.all([service.open(first), service.open(second)]);
+  await service.claim(first, { kind: "row", rowId: "corpse-v1:first-corpse:sword" });
+
+  assert.equal(materializations, 2);
+  assert.equal(readStorageState(first).state, "empty");
+  assert.equal(readStorageState(second).state, "opened");
+  assert.deepEqual(readStorageState(second).claimedRowIds, []);
+  assert.equal(readStorageState(first).corpseMaterialization.sourceActorId, "shared");
+  assert.equal(readStorageState(second).corpseMaterialization.sourceActorId, "shared");
+});
+
+test("corpse first-open rechecks HP before its atomic write and leaves no marker after healing", async () => {
+  const token = makeDeadNpcStorageToken("healed-before-write", "healed");
+  const service = new StorageService({
+    materializeFirstOpen: async () => {
+      token.actor.system.attributes.hp.value = 1;
+      return corpseResult("healed", [{ rowId: "must-not-persist" }]);
+    }
+  });
+
+  await assert.rejects(service.open(token), /no longer eligible/u);
+
+  assert.equal(readStorageState(token).state, "unopened");
+  assert.deepEqual(readStorageState(token).generatedRows, []);
+  assert.equal(readStorageState(token).corpseMaterialization, null);
+});
+
 test("generated callback failure does not roll back opened storage", async () => {
   const warnings = [];
   const service = new StorageService({
@@ -278,6 +659,36 @@ test("GM quantity editing updates generated row and embedded item quantity", asy
 
   assert.equal(next.generatedRows[0].quantity, 4);
   assert.equal(next.generatedRows[0].itemData.system.quantity, 4);
+});
+
+test("Journal reference rows cannot be claimed or quantity-edited", async () => {
+  const service = new StorageService();
+  const token = createStorageToken("journal-guards");
+  await service.configure(token, {
+    state: "opened",
+    manualRows: [{
+      rowKind: "journal",
+      rowId: "journal-row",
+      stackKey: "",
+      sourceId: "JournalEntry.notes",
+      sourceType: "journal",
+      name: "Полевые заметки",
+      img: "icons/book.webp",
+      quantity: 1
+    }]
+  });
+
+  await assert.rejects(
+    service.claim(token, { kind: "row", rowId: "journal-row", quantity: 1 }),
+    /журнал.*нельзя забрать/iu
+  );
+  await assert.rejects(
+    service.updateRowQuantity(token, "journal-row", 2),
+    /журнал/iu
+  );
+  assert.deepEqual(readStorageState(token).claimedRowIds, []);
+  assert.equal(readStorageState(token).manualRows[0].quantity, 1);
+  assert.equal("itemData" in readStorageState(token).manualRows[0], false);
 });
 
 test("deleting the final generated row empties storage", async () => {
@@ -327,6 +738,93 @@ test("row durability updates only the selected item data and emits storageUpdate
   }
 });
 
+test("storage durability toggle breaks and fully repairs only canonical durable rows", async () => {
+  const service = new StorageService();
+  const token = createStorageToken("durability-toggle");
+  const durability = {
+    version: 1,
+    eligible: true,
+    state: "intact",
+    breakStage: 0,
+    hp: { value: 8, max: 15 },
+    initializedFrom: { sourceType: "gear", sourceId: "shield" }
+  };
+  await service.configure(token, {
+    state: "opened",
+    manualRows: [{
+      rowId: "shield",
+      quantity: 1,
+      itemData: { flags: { ["rebreya-main"]: { durability } } }
+    }]
+  });
+
+  const broken = await service.setRowBroken(token, "shield", true);
+  const brokenFlag = broken.manualRows[0].itemData.flags["rebreya-main"].durability;
+  assert.equal(brokenFlag.state, "broken");
+  assert.equal(brokenFlag.breakStage, 1);
+  assert.deepEqual(brokenFlag.hp, { value: 0, max: 15 });
+  assert.deepEqual(brokenFlag.initializedFrom, durability.initializedFrom);
+
+  const repaired = await service.setRowBroken(token, "shield", false);
+  const repairedFlag = repaired.manualRows[0].itemData.flags["rebreya-main"].durability;
+  assert.equal(repairedFlag.state, "intact");
+  assert.equal(repairedFlag.breakStage, 0);
+  assert.deepEqual(repairedFlag.hp, { value: 15, max: 15 });
+});
+
+test("storage durability toggle lazily initializes eligible gear before breaking it", async () => {
+  const service = new StorageService({
+    getOrBuildDurability: async () => ({
+      version: 1,
+      eligible: true,
+      state: "intact",
+      breakStage: 0,
+      hp: { value: 30, max: 30 },
+      initializedFrom: { sourceType: "gear", sourceId: "plate" }
+    })
+  });
+  const token = createStorageToken("lazy-durability-toggle");
+  await service.configure(token, {
+    state: "opened",
+    manualRows: [{
+      rowId: "plate",
+      sourceType: "gear",
+      sourceId: "plate",
+      quantity: 1,
+      itemData: {
+        name: "Латы",
+        type: "equipment",
+        system: { quantity: 1, properties: [], rarity: "" },
+        flags: {}
+      }
+    }]
+  });
+
+  const next = await service.setRowBroken(token, "plate", true);
+  const durability = next.manualRows[0].itemData.flags["rebreya-main"].durability;
+
+  assert.equal(durability.state, "broken");
+  assert.equal(durability.breakStage, 1);
+  assert.deepEqual(durability.hp, { value: 0, max: 30 });
+  assert.deepEqual(durability.initializedFrom, { sourceType: "gear", sourceId: "plate" });
+});
+
+test("storage durability toggle rejects journals, malformed flags, and non-boolean requests", async () => {
+  const service = new StorageService();
+  const token = createStorageToken("durability-toggle-invalid");
+  await service.configure(token, {
+    state: "opened",
+    manualRows: [
+      { rowId: "plain", quantity: 1, itemData: { flags: {} } },
+      { rowId: "journal", rowKind: "journal", quantity: 1, journal: { uuid: "JournalEntry.notes" } }
+    ]
+  });
+
+  await assert.rejects(service.setRowBroken(token, "plain", true), /прочност/iu);
+  await assert.rejects(service.setRowBroken(token, "journal", true), /журнал/iu);
+  await assert.rejects(service.setRowBroken(token, "plain", "true"), /логическ/iu);
+});
+
 test("depositing into empty storage reopens the same token with its opened texture", async () => {
   const service = new StorageService();
   const token = createStorageToken("deposit-empty");
@@ -361,6 +859,62 @@ test("depositing into empty storage reopens the same token with its opened textu
   assert.equal(readStorageState(token).manualRows[0].itemData.system.quantity, 2);
   assert.equal(token.texture.src, "open.webp");
   assert.equal(token.name, "Сундук");
+});
+
+test("administrative deposits preserve opened state and keep closed storage unopened", async () => {
+  const service = new StorageService();
+  const expectedByState = [
+    ["unopened", "unopened", "unopened", "closed.webp"],
+    ["empty", "unopened", "unopened", "closed.webp"],
+    ["opened", "opened", "opened", "open.webp"]
+  ];
+  for (const [initial, expectedState, expectedMode, expectedTexture] of expectedByState) {
+    const token = createStorageToken(`admin-${initial}`);
+    await service.configure(token, {
+      state: initial,
+      displayMode: initial,
+      textures: { unopened: "closed.webp", opened: "open.webp", empty: "empty.webp" }
+    });
+    await service.depositRow(token, {
+      rowId: `row-${initial}`,
+      sourceId: `Item.${initial}`,
+      quantity: 1,
+      itemData: { system: { quantity: 1 } }
+    }, { quantity: 1, presentation: "administrative" });
+
+    assert.equal(readStorageState(token).state, expectedState, initial);
+    assert.equal(readStorageState(token).displayMode, expectedMode, initial);
+    assert.equal(token.texture.src, expectedTexture, initial);
+  }
+});
+
+test("administrative nested deposit keeps an unopened container closed without replacing root state", async () => {
+  const service = new StorageService();
+  const token = createStorageToken("admin-nested");
+  const bagRow = buildStorageContainerRow({
+    containerId: "closed-bag",
+    storageKind: "bag",
+    name: "Закрытая сумка",
+    state: {
+      baseName: "Закрытая сумка",
+      state: "unopened",
+      displayMode: "unopened",
+      manualRows: [],
+      generatedRows: []
+    }
+  }, { rowId: "closed-bag-row" });
+  await service.configure(token, { state: "opened", manualRows: [bagRow] });
+
+  await service.depositRow(token, {
+    rowId: "nested-gem",
+    sourceId: "Item.gem",
+    quantity: 1,
+    itemData: { system: { quantity: 1 } }
+  }, { quantity: 1, path: ["closed-bag-row"], presentation: "administrative" });
+
+  assert.equal(readStorageState(token).state, "opened");
+  assert.equal(readStorageStateAtPath(token, ["closed-bag-row"]).state, "unopened");
+  assert.equal(readStorageStateAtPath(token, ["closed-bag-row"]).displayMode, "unopened");
 });
 
 test("depositing an equivalent item merges its stack and leaves claimed rows untouched", async () => {
@@ -423,6 +977,48 @@ test("storage deposits reject invalid quantities without changing state", async 
   assert.deepEqual(readStorageState(token).manualRows, []);
 });
 
+test("Journal deposits store one non-stackable reference and remain GM-deletable", async () => {
+  const service = new StorageService();
+  const token = createStorageToken("journal-deposit");
+  const row = {
+    rowKind: "journal",
+    rowId: "journal-row",
+    stackKey: "must-not-stack",
+    sourceId: "JournalEntry.notes",
+    sourceType: "journal",
+    sourceDocumentName: "JournalEntryPage",
+    name: "Полевые заметки",
+    img: "icons/book.webp",
+    quantity: 1
+  };
+  await service.configure(token, { state: "empty", displayMode: "empty" });
+
+  await assert.rejects(
+    service.depositRow(token, row, { quantity: 2 }),
+    /журнал.*целиком|количеств/iu
+  );
+  assert.deepEqual(readStorageState(token).manualRows, []);
+
+  const result = await service.depositRow(token, row, { quantity: 1 });
+  assert.equal(result.quantity, 1);
+  assert.equal(result.merged, false);
+  assert.deepEqual(readStorageState(token).manualRows, [{
+    rowKind: "journal",
+    rowId: "journal-row",
+    stackKey: "",
+    sourceId: "JournalEntry.notes",
+    sourceType: "journal",
+    sourceDocumentName: "JournalEntryPage",
+    name: "Полевые заметки",
+    img: "icons/book.webp",
+    quantity: 1
+  }]);
+
+  const deleted = await service.deleteRow(token, "journal-row");
+  assert.deepEqual(deleted.manualRows, []);
+  assert.equal(deleted.state, "empty");
+});
+
 test("nested storage paths deposit and claim without replacing the root container", async () => {
   const service = new StorageService();
   const token = createStorageToken("nested-root", "Сундук");
@@ -469,6 +1065,190 @@ test("nested storage paths deposit and claim without replacing the root containe
   assert.equal(claim.row.quantity, 1);
   assert.equal(readStorageStateAtPath(token, ["bag-row"]).manualRows[0].quantity, 1);
   assert.equal(readStorageState(token).state, "opened");
+});
+
+test("markJournalRead persists a shared marker inside the selected nested container", async () => {
+  const service = new StorageService();
+  const token = createStorageToken("journal-root", "Сундук");
+  const journal = {
+    rowKind: "journal",
+    rowId: "nested-notes",
+    stackKey: "",
+    sourceId: "JournalEntry.nested-notes",
+    sourceType: "journal",
+    name: "Записка",
+    quantity: 1
+  };
+  const bagRow = buildStorageContainerRow({
+    containerId: "journal-bag",
+    storageKind: "bag",
+    name: "Сумка",
+    state: { state: "opened", manualRows: [journal], generatedRows: [] }
+  }, { rowId: "bag-row" });
+  await service.configure(token, { state: "opened", manualRows: [bagRow] });
+
+  const first = await service.markJournalRead(token, "nested-notes", { path: ["bag-row"] });
+  const retry = await service.markJournalRead(token, "nested-notes", { path: ["bag-row"] });
+
+  assert.equal(first.changed, true);
+  assert.equal(retry.changed, false);
+  assert.deepEqual(readStorageStateAtPath(token, ["bag-row"]).readJournalRowIds, ["nested-notes"]);
+  assert.deepEqual(readStorageState(token).readJournalRowIds, []);
+});
+
+test("bulk claim bindings are durable per nested scope and pending storage is bounded", async () => {
+  const service = new StorageService({ generate: async () => ({ rows: [], coins: {} }) });
+  const token = createStorageToken("bulk-bindings-root", "Сундук");
+  const bag = buildStorageContainerRow({
+    containerId: "bulk-bindings-bag",
+    storageKind: "bag",
+    name: "Сумка",
+    state: { state: "opened", manualRows: [], generatedRows: [] }
+  }, { rowId: "bag-row" });
+  await service.configure(token, { state: "opened", manualRows: [bag] });
+
+  const first = await service.bindBulkClaimMutation(token, "bulk-key", "fingerprint-a", { path: ["bag-row"] });
+  assert.equal(first.changed, true);
+  await assert.rejects(
+    service.bindBulkClaimMutation(token, "bulk-key", "fingerprint-b", { path: ["bag-row"] }),
+    /mutationId|параметр/iu
+  );
+  const complete = await service.completeBulkClaimMutation(token, "bulk-key", "fingerprint-a", {
+    path: ["bag-row"]
+  });
+  assert.equal(complete.changed, true);
+  assert.equal(
+    readStorageStateAtPath(token, ["bag-row"]).bulkClaimMutations[0].status,
+    "complete"
+  );
+
+  for (let index = 0; index < 100; index += 1) {
+    await service.bindBulkClaimMutation(token, `pending-${index}`, `fingerprint-${index}`, {
+      path: ["bag-row"]
+    });
+  }
+  await assert.rejects(
+    service.bindBulkClaimMutation(token, "pending-overflow", "fingerprint-overflow", { path: ["bag-row"] }),
+    /слишком много/iu
+  );
+  const nested = readStorageStateAtPath(token, ["bag-row"]);
+  assert.equal(nested.bulkClaimMutations.filter(({ status }) => status === "pending").length, 100);
+  assert.equal(nested.bulkClaimMutations.filter(({ status }) => status === "complete").length, 1);
+  assert.deepEqual(readStorageState(token).bulkClaimMutations, []);
+});
+
+test("storage state keeps at most one hundred completed bulk claim bindings", () => {
+  const state = buildStorageTokenState({
+    bulkClaimMutations: Array.from({ length: 125 }, (_, index) => ({
+      mutationKey: `complete-${index}`,
+      fingerprint: `fingerprint-${index}`,
+      status: "complete"
+    }))
+  });
+
+  assert.equal(state.bulkClaimMutations.length, 100);
+  assert.equal(state.bulkClaimMutations[0].mutationKey, "complete-25");
+  assert.equal(state.bulkClaimMutations.at(-1).mutationKey, "complete-124");
+});
+
+test("storage preserves legacy template snapshots and version two provenance while generating only from form", async () => {
+  const generatedForms = [];
+  const service = new StorageService({
+    generate: async (form) => {
+      generatedForms.push(structuredClone(form));
+      return { rows: [], coins: {} };
+    }
+  });
+  const legacyToken = createStorageToken("legacy-template", "Legacy");
+  const legacy = { name: "Legacy", form: { itemCount: 3 } };
+  await service.configure(legacyToken, { template: legacy });
+  assert.deepEqual(readStorageState(legacyToken).template, {
+    name: "Legacy",
+    form: normalizeLootgenForm({ itemCount: 3 })
+  });
+  await service.open(legacyToken);
+
+  const currentToken = createStorageToken("current-template", "Current");
+  const current = {
+    version: 2,
+    name: "Current",
+    img: "icons/current.webp",
+    form: { itemCount: 5 },
+    sourceUuid: "Item.template",
+    assignedAt: 777
+  };
+  await service.configure(currentToken, { template: current });
+  assert.deepEqual(readStorageState(currentToken).template, {
+    ...current,
+    form: normalizeLootgenForm(current.form)
+  });
+  await service.open(currentToken);
+
+  assert.deepEqual(generatedForms, [
+    normalizeLootgenForm(legacy.form),
+    normalizeLootgenForm(current.form)
+  ]);
+});
+
+test("completing a bulk claim retains its receipt while evicting the oldest terminal binding", async () => {
+  const service = new StorageService({ generate: async () => ({ rows: [], coins: {} }) });
+  const token = createStorageToken("bulk-complete-rollover", "Сундук");
+  await service.configure(token, {
+    state: "opened",
+    bulkClaimMutations: [
+      { mutationKey: "current", fingerprint: "current-fingerprint", status: "pending" },
+      ...Array.from({ length: 100 }, (_, index) => ({
+        mutationKey: `complete-${index}`,
+        fingerprint: `fingerprint-${index}`,
+        status: "complete"
+      }))
+    ]
+  });
+
+  await service.completeBulkClaimMutation(token, "current", "current-fingerprint");
+
+  const bindings = readStorageState(token).bulkClaimMutations;
+  assert.equal(bindings.length, 100);
+  assert.equal(bindings.some(({ mutationKey }) => mutationKey === "current"), true);
+  assert.equal(bindings.some(({ mutationKey }) => mutationKey === "complete-0"), false);
+});
+
+test("corpse materialization is root-only and nested containers keep their normal first-open lifecycle", async () => {
+  let materializations = 0;
+  let generations = 0;
+  const service = new StorageService({
+    materializeFirstOpen: async () => {
+      materializations += 1;
+      return corpseResult("dead-with-bag", [{ rowId: "corpse-copy" }]);
+    },
+    generate: async () => {
+      generations += 1;
+      return { rows: [{ rowId: "nested-generated" }], coins: {} };
+    }
+  });
+  const token = makeDeadNpcStorageToken("dead-with-bag-token", "dead-with-bag");
+  const bagRow = buildStorageContainerRow({
+    containerId: "corpse-bag",
+    storageKind: "bag",
+    name: "Сумка",
+    state: {
+      baseName: "Сумка",
+      state: "unopened",
+      manualRows: [],
+      generatedRows: []
+    }
+  }, { rowId: "bag-row" });
+  await service.configure(token, { state: "opened", manualRows: [bagRow] });
+
+  await service.open(token, { path: ["bag-row"] });
+
+  assert.equal(materializations, 0);
+  assert.equal(generations, 1);
+  assert.deepEqual(
+    readStorageStateAtPath(token, ["bag-row"]).generatedRows.map((row) => row.rowId),
+    ["nested-generated"]
+  );
+  assert.equal(readStorageStateAtPath(token, ["bag-row"]).corpseMaterialization, null);
 });
 
 test("nested storage rejects self and ancestor container cycles", async () => {

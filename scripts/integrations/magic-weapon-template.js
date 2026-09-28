@@ -1,5 +1,5 @@
 import { MODULE_ID } from "../constants.js";
-import { buildGearIconLookup, createDnd5eItemData } from "../data/gear-compendium.js";
+import { buildGearIconLookup, createDnd5eItemData } from "../data/gear-compendium.js?v=1.4.327";
 import { classifyGearEntry } from "../data/item-classification.js";
 
 let magicWeaponTemplateHookRegistered = false;
@@ -1681,7 +1681,6 @@ export async function handleActorRenderMagicWeapons(
     prompt = promptMagicWeaponTemplate,
     armorPrompt = promptMagicArmorTemplate,
     ammunitionPrompt = promptMagicAmmunitionTemplate,
-    toolPrompt = promptMagicToolTemplate,
   } = {},
 ) {
   if (actor?.type !== "character" || !canPromptForActor(actor)) {
@@ -1711,15 +1710,6 @@ export async function handleActorRenderMagicWeapons(
     if (promptableAmmunition) {
       return processMagicAmmunitionTemplateItem(item, promptableAmmunition, moduleApi, {
         prompt: ammunitionPrompt,
-      });
-    }
-
-    const promptableTool = getPromptableMagicToolContext(item, {}, "", {
-      requireCurrentUser: false,
-    });
-    if (promptableTool) {
-      return processMagicToolTemplateItem(item, promptableTool, moduleApi, {
-        prompt: toolPrompt,
       });
     }
   }

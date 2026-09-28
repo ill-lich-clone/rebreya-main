@@ -1,7 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { deduplicateCompendiumFolders } from "../scripts/data/compendium-utils.js";
+import {
+  buildNamedIconLookup,
+  clearNamedIconCache,
+  deduplicateCompendiumFolders
+} from "../scripts/data/compendium-utils.js";
 
 function createPackFixture() {
   const folders = [
@@ -92,5 +96,52 @@ test("deduplicates nested compendium folders after merging duplicate parents", a
   finally {
     globalThis.Folder = originalFolder;
     globalThis.Item = originalItem;
+  }
+});
+
+test("named icon lookup reuses a recursive scan until the shared cache is cleared", async () => {
+  const originalFilePicker = globalThis.FilePicker;
+  const root = "modules/rebreya-main/templates/icons";
+  const nested = `${root}/Materials`;
+  const browsed = [];
+  function FilePickerFixture() {}
+  FilePickerFixture.browse = async (_source, path) => {
+    browsed.push(path);
+    if (path === root) {
+      return {
+        files: [`${root}/Common.webp`],
+        dirs: [nested]
+      };
+    }
+    if (path === nested) {
+      return {
+        files: [`${nested}/Iron.webp`],
+        dirs: []
+      };
+    }
+    throw new Error(`Unexpected icon path: ${path}`);
+  };
+  globalThis.FilePicker = FilePickerFixture;
+
+  try {
+    clearNamedIconCache();
+    const first = await buildNamedIconLookup([root]);
+    const second = await buildNamedIconLookup([root]);
+
+    assert.equal(first.get("common"), `${root}/Common.webp`);
+    assert.equal(first.get("iron"), `${root}/Materials/Iron.webp`);
+    assert.equal(second.get("iron"), `${root}/Materials/Iron.webp`);
+    assert.deepEqual(browsed, [root, nested]);
+
+    clearNamedIconCache();
+    await buildNamedIconLookup([root]);
+    assert.deepEqual(browsed, [root, nested, root, nested]);
+
+    await buildNamedIconLookup([root], { forceRefresh: true });
+    assert.deepEqual(browsed, [root, nested, root, nested, root, nested]);
+  }
+  finally {
+    clearNamedIconCache();
+    globalThis.FilePicker = originalFilePicker;
   }
 });

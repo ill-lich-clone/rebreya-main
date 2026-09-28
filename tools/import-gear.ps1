@@ -61,7 +61,7 @@ function Convert-ToPlainNumber([string]$Value, [switch]$AllowNull) {
   return $(if ($AllowNull) { $null } else { 0 })
 }
 function Normalize-PriceCode([string]$Value) {
-  $text = ((Normalize-DisplayText $Value).ToLowerInvariant() -replace '[^[:word:]]', '')
+  $text = ((Normalize-DisplayText $Value).ToLowerInvariant() -replace '[^\p{L}\p{Nd}]', '')
   switch ($text) {
     'мм' { return 'cp' }
     'см' { return 'sp' }
@@ -760,9 +760,10 @@ foreach ($row in ($rows | Where-Object { $_.__row -gt $gearHeader.RowNumber })) 
     predominantMaterialName = if ($material) { $material.name } else { $materialName }
     linkedTool = Normalize-DisplayText (Get-HeaderValue $row $gearHeader @('Связанный инструмент'))
     value = Normalize-DisplayText (Get-HeaderValue $row $gearHeader @('Value'))
+    multipleAppearance = '1'
+    source = 'gear-workbook'
     itemSlot = Normalize-DisplayText (Get-HeaderValue $row $gearHeader @('Слот'))
     heroDollSlots = Normalize-DisplayText (Get-HeaderValue $row $gearHeader @('Слоты куклы'))
-    source = 'gear-workbook'
   }
   if ($enrichment) {
     $enrichmentMatchCount += 1
@@ -776,13 +777,18 @@ foreach ($row in ($rows | Where-Object { $_.__row -gt $gearHeader.RowNumber })) 
       'foundryFolder',
       'itemSlot',
       'heroDollSlots',
+      'multipleAppearance',
       'firearmClass',
       'weapon',
       'armor'
     )) {
       $property = $enrichment.PSObject.Properties[$field]
       if (-not $property -or $null -eq $property.Value) { continue }
-      $item | Add-Member -NotePropertyName $field -NotePropertyValue $property.Value -Force
+      if ($item.PSObject.Properties[$field]) {
+        $item.$field = $property.Value
+      } else {
+        $item | Add-Member -NotePropertyName $field -NotePropertyValue $property.Value
+      }
     }
   }
   $gear += $item

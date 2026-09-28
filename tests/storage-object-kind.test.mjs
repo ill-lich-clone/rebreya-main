@@ -42,6 +42,29 @@ test("unrelated module flags do not identify a native storage object", () => {
   assert.equal(isNativeStorageObject(null), false);
 });
 
+test("materialized corpse storage remains a creature instead of a native object", () => {
+  const corpse = {
+    actor: { type: "npc", flags: {} },
+    flags: {
+      [MODULE_ID]: {
+        storage: {
+          version: 1,
+          state: "opened",
+          corpseMaterialization: {
+            version: 1,
+            status: "complete",
+            sourceActorUuid: "Actor.champion",
+            sourceActorId: "champion"
+          }
+        }
+      }
+    }
+  };
+
+  assert.equal(storageObjectKind(corpse), null);
+  assert.equal(isNativeStorageObject(corpse), false);
+});
+
 test("classifier follows actor and token document relationships", () => {
   const tokenDocument = {
     flags: { [MODULE_ID]: { groundPile: { enabled: true } } }

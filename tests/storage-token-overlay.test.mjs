@@ -85,3 +85,41 @@ test("persistent feedback does not schedule an automatic close and accepts a mod
   assert.equal(timeoutCalls.length, 0);
   assert.equal(body.nodes[0].className, "rm-storage-token-feedback rm-storage-token-feedback--drop-ready");
 });
+
+test("action button stays disabled while its callback is pending and re-enables on a retained overlay", async () => {
+  const created = [];
+  const body = { append() {} };
+  const document = {
+    body,
+    createElement(tag) {
+      const node = {
+        tag,
+        className: "",
+        dataset: {},
+        style: { setProperty() {} },
+        disabled: false,
+        append() {},
+        remove() {},
+        addEventListener(name, callback) { this.listeners ??= {}; this.listeners[name] = callback; },
+        getBoundingClientRect: () => ({ width: 160, height: 32 })
+      };
+      created.push(node);
+      return node;
+    },
+    addEventListener() {}
+  };
+  let release;
+  const pending = new Promise((resolve) => { release = resolve; });
+  const controller = new StorageTokenOverlayController({
+    document,
+    window: { innerWidth: 800, innerHeight: 600, addEventListener() {} },
+    canvasProvider: () => null
+  });
+  controller.showActions({}, [{ id: "open", label: "Открыть", callback: () => pending }]);
+  const button = created.find((node) => node.tag === "button");
+  const click = button.listeners.click({ stopPropagation() {} });
+  assert.equal(button.disabled, true);
+  release(false);
+  await click;
+  assert.equal(button.disabled, false);
+});

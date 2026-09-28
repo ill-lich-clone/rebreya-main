@@ -1,5 +1,24 @@
-﻿import { MODULE_ID } from "../constants.js";
-import { getHeroDollBackSlots, getHeroDollSlots, inferHeroDollSlotsFromName, normalizeHeroDollSlots } from "./item-classification.js";
+﻿import { MODULE_ID, REBREYA_GROUP_FLAGS } from "../constants.js";
+import { getHeroDollBackSlots, getHeroDollSlots, inferHeroDollSlotsFromName, normalizeHeroDollSlots } from "./item-classification.js?v=1.4.338-hero-doll-menu";
+
+import { ItemInstanceWorkflow } from "../application/item-instance-workflow.js?v=1.4.249-item-instances";
+import { ItemInstanceDocuments } from "../infrastructure/foundry/item-instance-documents.js?v=1.4.249-item-instances";
+import { ItemInstanceError } from "./item-instance-rules.js";
+import { isInventoryGraphItem } from "../application/inventory-graph-transfer.js?v=1.4.280";
+import { captureRuntimeItemGraph, buildRuntimeGraphDocuments } from "./runtime-item-graph.js?v=1.4.267-native-schema";
+import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
+import { buildHeldItemWornUpdate, getItemHeldHands } from "../integrations/held-items.js";
+
+export const HERO_DOLL_ASSIGN_COMMAND = "hero-doll.assign";
+export const HERO_DOLL_NORMALIZE_COMMAND = "hero-doll.normalize-stack";
+export const HERO_DOLL_CLEAR_COMMAND = "hero-doll.clear";
+export function isValidHeroDollAssignPayload(payload) {
+  return payload && Object.keys(payload).sort().join(",") === "actorUuid,operationId,slotId,sourceItemUuid"
+    && /^Actor\.[A-Za-z0-9_-]+$/.test(payload.actorUuid)
+    && /^Actor\.[A-Za-z0-9_-]+\.Item\.[A-Za-z0-9_-]+$/.test(payload.sourceItemUuid)
+    && HERO_DOLL_SLOTS.some(slot => slot.id === payload.slotId)
+    && typeof payload.operationId === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(payload.operationId);
+}
 
 const HERO_DOLL_SLOTS = getHeroDollSlots();
 const HERO_DOLL_INVENTORY_TYPES = new Set([
@@ -17,19 +36,15 @@ function toNumber(value, fallback = 0) {
   return Number.isFinite(numericValue) ? numericValue : fallback;
 }
 
+function buildHeroDollEquippedUpdate(item, equipped) {
+  return {
+    "system.equipped": equipped === true || getItemHeldHands(item).length > 0
+  };
+}
+
 function roundNumber(value, precision = 2) {
   const factor = 10 ** precision;
   return Math.round((toNumber(value, 0) + Number.EPSILON) * factor) / factor;
-}
-
-function sanitizeEmbeddedItemData(itemData) {
-  const source = foundry.utils.deepClone(itemData);
-  delete source._id;
-  delete source.folder;
-  delete source.sort;
-  delete source.ownership;
-  delete source._stats;
-  return source;
 }
 
 function getItemQuantity(itemData) {
@@ -74,6 +89,7 @@ function buildEmptySnapshot(actor = null) {
 export class HeroDollService {
   constructor(moduleApi) {
     this.moduleApi = moduleApi;
+    this.pendingAssignments = new Map();
   }
 
   #normalizeState(actor) {
@@ -104,38 +120,6 @@ export class HeroDollService {
     return state;
   }
 
-  async #saveState(actor, state) {
-    const nextState = foundry.utils.mergeObject(buildDefaultState(), foundry.utils.deepClone(state), {
-      inplace: false
-    });
-
-    // setFlag merges nested objects and can leave removed slots behind.
-    // Replace the whole flag to keep slot removals deterministic.
-    await actor.unsetFlag(MODULE_ID, "heroDoll");
-    await actor.setFlag(MODULE_ID, "heroDoll", nextState);
-    return nextState;
-  }
-
-  async #syncEquippedState(item, equipped) {
-    if (!(item instanceof Item)) {
-      return;
-    }
-
-    const itemData = item.toObject();
-    if (!foundry.utils.hasProperty(itemData, "system.equipped")) {
-      return;
-    }
-
-    const currentValue = Boolean(foundry.utils.getProperty(itemData, "system.equipped"));
-    if (currentValue === equipped) {
-      return;
-    }
-
-    await item.update({
-      "system.equipped": equipped
-    });
-  }
-
   #getItemAllowedSlots(item) {
     if (!(item instanceof Item)) {
       return [];
@@ -148,7 +132,13 @@ export class HeroDollService {
       ?? foundry.utils.getProperty(item, "system.heroDollSlots")
     );
     if (explicit.length) {
-      return explicit;
+      const compatible = new Set(explicit);
+      if (compatible.has("ring1") && compatible.has("ring2")) compatible.add("ring3");
+      const backSlots = getHeroDollBackSlots();
+      if (backSlots.slice(0, 5).every((slotId) => compatible.has(slotId))) {
+        for (const slotId of backSlots.slice(5)) compatible.add(slotId);
+      }
+      return [...compatible];
     }
 
     const itemTypeValue = String(foundry.utils.getProperty(item, "system.type.value") ?? "").trim().toLowerCase();
@@ -164,7 +154,7 @@ export class HeroDollService {
       }
 
       if (itemTypeValue === "ring") {
-        return ["ring1", "ring2"];
+        return normalizeHeroDollSlots("ring");
       }
     }
 
@@ -270,64 +260,6 @@ export class HeroDollService {
       .filter(Boolean);
   }
 
-  async #moveItemToActor(sourceItem, targetActor) {
-    const sourceActor = sourceItem.parent;
-    const sourceData = sourceItem.toObject();
-    const sourceQuantity = getItemQuantity(sourceData);
-    const itemData = sanitizeEmbeddedItemData(sourceData);
-
-    if (sourceQuantity > 1) {
-      foundry.utils.setProperty(itemData, "system.quantity", 1);
-      const [created] = await targetActor.createEmbeddedDocuments("Item", [itemData]);
-      await sourceItem.update({
-        "system.quantity": roundNumber(sourceQuantity - 1, 2)
-      });
-      return created ?? null;
-    }
-
-    const [created] = await targetActor.createEmbeddedDocuments("Item", [itemData]);
-    await sourceItem.delete();
-
-    if (sourceActor?.sheet?.rendered) {
-      try {
-        await sourceActor.sheet.render({ force: true });
-      }
-      catch (_error) {
-        await sourceActor.sheet.render(true);
-      }
-    }
-
-    return created ?? null;
-  }
-
-  async #resolveDropItem(actor, dropData) {
-    const itemDocument = dropData?.uuid ? await fromUuid(dropData.uuid) : null;
-    if (!(itemDocument instanceof Item) || !(itemDocument.parent instanceof Actor)) {
-      throw new Error("Перетащите предмет из листа персонажа или партийного склада.");
-    }
-
-    const sourceActor = itemDocument.parent;
-    if (!actor?.isOwner || !sourceActor.isOwner) {
-      throw new Error("Недостаточно прав для изменения куклы героя.");
-    }
-
-    if (sourceActor.id === actor.id) {
-      return itemDocument;
-    }
-
-    const inventoryActor = await this.moduleApi.inventoryService?.getInventoryActor?.({ create: false }) ?? null;
-    if (!inventoryActor || sourceActor.id !== inventoryActor.id) {
-      throw new Error("Кукла героя принимает предметы только из инвентаря персонажа или общего склада группы.");
-    }
-
-    const movedItem = await this.#moveItemToActor(itemDocument, actor);
-    if (!movedItem) {
-      throw new Error("Не удалось перенести предмет в инвентарь персонажа.");
-    }
-
-    return movedItem;
-  }
-
   getActorSnapshot(actor) {
     if (!(actor instanceof Actor)) {
       return buildEmptySnapshot();
@@ -348,6 +280,7 @@ export class HeroDollService {
       return {
         ...slot,
         occupied: Boolean(item),
+        legacyStack: Boolean(item && item.system.quantity > 1),
         itemId: item?.id ?? "",
         itemUuid: item?.uuid ?? "",
         itemName: item?.name ?? "",
@@ -373,76 +306,156 @@ export class HeroDollService {
   }
 
   async clearSlot(actor, slotId) {
-    if (!(actor instanceof Actor) || !slotId) {
-      return false;
-    }
-
-    const state = this.#normalizeState(actor);
-    const itemId = state.slots[slotId]?.itemId ?? null;
-    if (!itemId) {
-      return false;
-    }
-
-    delete state.slots[slotId];
-    await this.#saveState(actor, state);
-
-    const item = actor.items.get(itemId) ?? null;
-    const stillReserved = Object.values(state.slots).some((slotState) => slotState.itemId === itemId);
-    if (!stillReserved) {
-      await this.#syncEquippedState(item, false);
-    }
-
+    const itemId = this.#normalizeState(actor).slots[slotId]?.itemId;
+    if (!itemId) return false;
+    await this.#submitAssignment(actor, slotId, {uuid:`${actor.uuid}.Item.${itemId}`}, "clear");
     return true;
   }
 
-  async assignItemToSlot(actor, slotId, dropData) {
-    if (!(actor instanceof Actor)) {
-      throw new Error("Персонаж для куклы героя не найден.");
+  prepareDisarmPlacement(actor, item) {
+    const slots = actor.getFlag(MODULE_ID, "heroDoll")?.slots ?? {};
+    return Object.entries(slots).filter(([, value]) => value?.itemId === item.id).map(([slot, value]) => ({
+      path: `flags.${MODULE_ID}.heroDoll.slots.${slot}`, before: foundry.utils.deepClone(value), after: null
+    }));
+  }
+
+  normalizeLegacyStack(actor, slotId) {
+    const itemId = this.#normalizeState(actor).slots[slotId]?.itemId;
+    if (!itemId) throw new ItemInstanceError("item-not-found", "В слоте нет предмета.");
+    return this.#submitAssignment(actor,slotId,{uuid:`${actor.uuid}.Item.${itemId}`},"normalize");
+  }
+
+  assignItemToSlot(actor, slotId, dropData) {
+    return this.#submitAssignment(actor, slotId, dropData, "assign");
+  }
+
+  async #submitAssignment(actor, slotId, dropData, mode) {
+    const key = JSON.stringify([actor?.uuid, dropData?.uuid, slotId, mode]);
+    const payload = this.pendingAssignments.get(key) ?? {
+      actorUuid: actor?.uuid, sourceItemUuid: dropData?.uuid, slotId, operationId: crypto.randomUUID()
+    };
+    this.pendingAssignments.set(key, payload);
+    try {
+      const method = {assign:"assignHeroDollItem",normalize:"normalizeHeroDollStack",clear:"clearHeroDollSlot"}[mode];
+      const result = await this.moduleApi[method](payload);
+      this.pendingAssignments.delete(key);
+      return actor.items.get(result.itemId) ?? await fromUuid(`${actor.uuid}.Item.${result.itemId}`);
+    } catch (error) {
+      if (!["request-timeout", "ambiguous-outcome", "active-gm-changed", "manual-review", "pending-instance-operation"].includes(error?.code)) this.pendingAssignments.delete(key);
+      throw error;
     }
+  }
 
-    const slot = HERO_DOLL_SLOTS.find((entry) => entry.id === slotId) ?? null;
-    if (!slot) {
-      throw new Error("Слот куклы героя не найден.");
+  async #authorizeAssignment({ sourceActor, targetActor, sourceItem }, intent, sender) {
+    const owns = actor => sender?.isGM === true || actor?.testUserPermission?.(sender, "OWNER") === true;
+    if (!(targetActor instanceof Actor) || targetActor.type !== "character" || !owns(targetActor)) {
+      throw new ItemInstanceError("unauthorized", "Недостаточно прав для изменения куклы героя.");
     }
-
-    const item = await this.#resolveDropItem(actor, dropData);
-    const allowedSlots = this.#getItemAllowedSlots(item);
-    if (!allowedSlots.length) {
-      throw new Error(`Для предмета "${item.name}" не настроены слоты куклы героя.`);
-    }
-
-    if (!allowedSlots.includes(slotId)) {
-      const allowedLabels = allowedSlots
-        .map((allowedSlotId) => HERO_DOLL_SLOTS.find((entry) => entry.id === allowedSlotId)?.label ?? "")
-        .filter(Boolean)
-        .join(", ");
-      throw new Error(allowedLabels
-        ? `Этот предмет нельзя поместить в слот "${slot.label}". Подходящие слоты: ${allowedLabels}.`
-        : `Этот предмет нельзя поместить в слот "${slot.label}".`);
-    }
-
-    const state = this.#normalizeState(actor);
-    const previousItemId = state.slots[slotId]?.itemId ?? null;
-
-    for (const [existingSlotId, slotState] of Object.entries(state.slots)) {
-      if (slotState.itemId === item.id) {
-        delete state.slots[existingSlotId];
+    if (sourceActor.uuid !== targetActor.uuid) {
+      const group = sourceActor.getFlag(MODULE_ID, REBREYA_GROUP_FLAGS.MANAGED) === true;
+      const context = group ? await this.moduleApi.groupContextService.resolveForGroup(sourceActor.id) : null;
+      if (!group || !context?.members?.some(member => member.id === targetActor.id) || !owns(sourceActor)) {
+        throw new ItemInstanceError("unauthorized", "Предмет должен принадлежать персонажу или доступному складу его группы.");
       }
     }
-
-    state.slots[slotId] = { itemId: item.id };
-    await this.#saveState(actor, state);
-    await this.#syncEquippedState(item, true);
-
-    if (previousItemId && previousItemId !== item.id) {
-      const previousItem = actor.items.get(previousItemId) ?? null;
-      const stillReserved = Object.values(state.slots).some((slotState) => slotState.itemId === previousItemId);
-      if (!stillReserved) {
-        await this.#syncEquippedState(previousItem, false);
+    if (!sourceItem) return;
+    if (intent.mode !== "assign") {
+      if (sourceActor.uuid !== targetActor.uuid || this.#normalizeState(targetActor).slots[intent.heroSlotId]?.itemId !== sourceItem.id
+        || (intent.mode === "normalize" && sourceItem.system.quantity <= 1)) {
+        throw new ItemInstanceError("stale-slot", "Содержимое слота изменилось. Обновите лист персонажа.");
       }
+      return;
     }
+    if (!this.#getItemAllowedSlots(sourceItem).includes(intent.heroSlotId)) {
+      throw new ItemInstanceError("invalid-slot", "Этот предмет нельзя поместить в выбранный слот куклы героя.");
+    }
+  }
 
-    return item;
+  #prepareAssignment({ sourceItem, targetActor, intent, plan, itemId }) {
+    const flag = `flags.${MODULE_ID}.heroDoll`;
+    const state = this.#normalizeState(targetActor);
+    const slots = [intent.heroSlotId];
+    const replaced = new Set(slots.map(slot => state.slots[slot]?.itemId).filter(id => id && id !== itemId));
+    for (const [slot, entry] of Object.entries(state.slots)) {
+      if (entry.itemId === itemId || replaced.has(entry.itemId)) delete state.slots[slot];
+    }
+    for (const slot of slots) state.slots[slot] = { itemId };
+    const step = (id, data, patch) => {
+      const after = Object.fromEntries(Object.entries(patch).map(([path,value]) => [path.replace(".-=", "."),value]));
+      const before = Object.fromEntries(Object.keys(after).map(path => [path,foundry.utils.getProperty(data,path) ?? null]));
+      return { actor: "target", itemId: id, before, after };
+    };
+    const placement = [...replaced].map(id => {
+      const item = targetActor.items.get(id);
+      return step(id, item.toObject(), buildHeroDollEquippedUpdate(item, false));
+    });
+    const beforeAssignment = plan.kind === "move" && isInventoryGraphItem(sourceItem.parent, sourceItem)
+      ? buildRuntimeGraphDocuments(captureRuntimeItemGraph(sourceItem.parent, sourceItem), "hero-placement-preview", sourceItem.toObject(), { actorId: targetActor.id }).documents[0]
+      : sourceItem.toObject();
+    placement.push(step(itemId, beforeAssignment, buildHeroDollEquippedUpdate(sourceItem, true)));
+    placement.push({ actor:"target", before:{[flag]:targetActor.getFlag(MODULE_ID,"heroDoll") ?? null}, after:{[flag]:state} });
+    return placement;
+  }
+
+  async executeAssignItemToSlot(payload, { sender } = {}, mode = "assign") {
+    if (!["assign","clear","normalize"].includes(mode)) throw new ItemInstanceError("invalid-mode", "Неизвестное действие куклы героя.");
+    if (!isValidHeroDollAssignPayload(payload)) throw new ItemInstanceError("invalid-payload", "Некорректные данные экипировки.");
+    const [sourceActorUuid, sourceItemId] = payload.sourceItemUuid.split(".Item.");
+    const inventory = this.moduleApi.inventoryService;
+    const documents = new ItemInstanceDocuments();
+    const authorityId = game.user?.id;
+    const assertAuthority = () => {
+      if (!isActiveGmClient(game) || game.user.id !== authorityId) throw new ItemInstanceError("active-gm-changed", "Активный мастер изменился. Повторите операцию.");
+    };
+    const intent = {operationId:payload.operationId,sourceActorUuid,sourceItemId,destinationActorUuid:payload.actorUuid,
+      quantity:mode === "assign" ? 1 : null,targetFolderId:null,heroSlotId:payload.slotId,expectedSourceQuantity:null,mode};
+    const workflow = new ItemInstanceWorkflow({journal:inventory.mutationJournal,coordinator:this.moduleApi.worldMutationCoordinator,documents});
+    return workflow.run(intent, {
+      sender, assertAuthority,
+      planSource: source => mode === "assign" ? {} : {
+        source: mode === "normalize" ? {...source,isEquipped:false,isHeld:false} : source,
+        quantity: mode === "normalize" ? source.quantity - 1 : source.quantity,
+        sameFolder:false,forHeroSlot:false
+      },
+      prepareTargetData: (data, source) => {
+        if (mode !== "normalize") return;
+        for (const [path,value] of Object.entries(buildHeldItemWornUpdate(false,source.sourceItem))) {
+          const parts = path.split("."); const key = parts.pop();
+          if (key.startsWith("-=")) {
+            const parent = foundry.utils.getProperty(data,parts.join("."));
+            if (parent) delete parent[key.slice(2)];
+          } else foundry.utils.setProperty(data,path,value);
+        }
+      },
+      authorize: (source, request) => this.#authorizeAssignment(source, request, sender),
+      preparePlacement: source => {
+        if (mode === "normalize") return [];
+        if (mode === "clear") {
+          const flag = `flags.${MODULE_ID}.heroDoll`;
+          const state = this.#normalizeState(source.targetActor);
+          for (const [slot,entry] of Object.entries(state.slots)) if (entry.itemId === source.sourceItem.id) delete state.slots[slot];
+          const patch = buildHeroDollEquippedUpdate(source.sourceItem, false);
+          const after = Object.fromEntries(Object.entries(patch).map(([path,value])=>[path.replace(".-=","."),value]));
+          const before = Object.fromEntries(Object.keys(after).map(path=>[path,foundry.utils.getProperty(source.data,path) ?? null]));
+          return [{actor:"target",itemId:source.sourceItem.id,before,after},
+            {actor:"target",before:{[flag]:source.targetActor.getFlag(MODULE_ID,"heroDoll") ?? null},after:{[flag]:state}}];
+        }
+        if (source.plan.kind === "move" && (source.isEquipped || source.isHeld)) {
+          throw new ItemInstanceError("complex-transfer", "Сначала перенесите предмет с индивидуальным состоянием штатным действием склада, затем экипируйте его.");
+        }
+        return this.#prepareAssignment(source);
+      },
+      moveWhole: async record => {
+        const result = await inventory.executeTakeMutation({inventoryActorId:sourceActorUuid.slice(6),targetActorId:payload.actorUuid.slice(6),
+          itemId:sourceItemId,quantity:1,mutationId:`hero-${record.targetData.flags[MODULE_ID].itemInstanceOrigin.id}`});
+        if (!result?.createdItemId) throw new ItemInstanceError("manual-review", "Штатный перенос не вернул ID предмета. Нужна сверка.");
+        return {itemId:result.createdItemId};
+      },
+      verifyWhole: async record => {
+        const receipt = await inventory.mutationJournal.find(`hero-${record.targetData.flags[MODULE_ID].itemInstanceOrigin.id}`);
+        if (!receipt?.terminal || (!receipt.result?.ok || receipt.result.value?.createdItemId !== record.itemId)) throw new ItemInstanceError("manual-review", "Нет подтверждения штатного переноса. Нужна сверка.");
+      }
+    });
   }
 
   async openSlotItem(actor, slotId) {

@@ -87,3 +87,36 @@ test("safe markdown links render their labels without exposing markup syntax", (
   assert.match(html, /\[опасная ссылка\]\(javascript:alert\(1\)\)/u);
   assert.doesNotThrow(() => verifyDescriptionTextPreserved(markdown, html));
 });
+
+test("escaped pipes remain visible inside markdown table cells", () => {
+  const markdown = "| к4 | Эффект |\n| --- | --- |\n| 1 | Огонь \\| лёд |";
+  const html = renderDescriptionMarkdown(markdown);
+
+  assert.match(html, /<td>Огонь \| лёд<\/td>/u);
+  assert.doesNotThrow(() => verifyDescriptionTextPreserved(markdown, html));
+});
+
+test("escaped markdown link labels remain parseable inside table cells", () => {
+  const markdown = "| Уровень | Заклинание |\n| --- | --- |\n| 1 | [*щит \\[shield\\]*](https://example.com/shield) |";
+  const html = renderDescriptionMarkdown(markdown);
+
+  assert.match(html, /<td><a href="https:\/\/example\.com\/shield"><em>щит \[shield\]<\/em><\/a><\/td>/u);
+  assert.doesNotThrow(() => verifyDescriptionTextPreserved(markdown, html));
+});
+
+test("single source newlines remain explicit line breaks", () => {
+  const markdown = "Первое свойство.\nВторое свойство.\nТретье свойство.";
+  const html = renderDescriptionMarkdown(markdown, { preserveSingleNewlines: true });
+
+  assert.equal(html, "<p>Первое свойство.<br>Второе свойство.<br>Третье свойство.</p>");
+  assert.doesNotThrow(() => verifyDescriptionTextPreserved(markdown, html));
+});
+
+test("default markdown rendering folds technical source hard wraps", () => {
+  const markdown = "Строка из PDF продолжается,\nна следующей технической строке.";
+
+  assert.equal(
+    renderDescriptionMarkdown(markdown),
+    "<p>Строка из PDF продолжается, на следующей технической строке.</p>"
+  );
+});

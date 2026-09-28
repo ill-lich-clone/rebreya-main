@@ -7,18 +7,18 @@
       "name": "ill_lich"
     }
   ],
-  "version": "1.4.134",
+  "version": "1.4.347",
+  "persistentStorage": true,
   "compatibility": {
     "minimum": "13",
     "verified": "13"
   },
   "esmodules": [
-    "scripts/main-1.4.134.js"
+    "scripts/main-1.4.347.js"
   ],
   "socket": true,
   "styles": [
-    "styles/main.css",
-    "styles/quest-log-enhancements.css"
+    "styles/main.css"
   ],
   "languages": [
     {
@@ -29,6 +29,7 @@
   ],
   "documentTypes": {
     "Item": {
+      "lootgen-template": {},
       "state": {
         "htmlFields": [
           "description.value",

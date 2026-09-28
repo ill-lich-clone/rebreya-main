@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   buildCulturalFeatChoiceAdvancement,
+  createStateItemData,
   resolveCulturalFeats
 } from "../scripts/data/states-compendium.js";
 
@@ -66,4 +67,34 @@ test("states with linked cultural feats keep their explicit feat pool", () => {
     replacement: false
   });
   assert.deepEqual(advancement.configuration.pool, [{ uuid: linkedUuid }]);
+});
+
+test("state item data prefers a module-owned icon matched by state name", () => {
+  const previousConst = globalThis.CONST;
+  const previousFoundry = globalThis.foundry;
+  globalThis.CONST = { DOCUMENT_OWNERSHIP_LEVELS: { OBSERVER: 2 } };
+  globalThis.foundry = { utils: { deepClone: (value) => structuredClone(value) } };
+  try {
+    const iconPath = "modules/rebreya-main/templates/icons/States/%D0%90%D0%B7%D0%B0%D0%B4%D1%80%D0%B0%D0%BD%D1%81%D0%BA%D0%B0%D1%8F%20%D0%B8%D0%BC%D0%BF%D0%B5%D1%80%D0%B8%D1%8F.webp";
+    const itemData = createStateItemData({
+      state: {
+        id: "azadran-empire",
+        name: "Азадранская империя",
+        rank: 8,
+        continent: "Северный континент",
+        languages: { native: "Азадранский", dominant: "" },
+        culturalFeatNames: []
+      },
+      culturalFeatResolution: { missingNames: [] },
+      system: {},
+      folderPath: ["Государства Тейванкаля"],
+      signature: "state-signature"
+    }, new Map(), new Map([["азадранская империя", iconPath]]));
+
+    assert.equal(itemData.img, iconPath);
+  }
+  finally {
+    globalThis.CONST = previousConst;
+    globalThis.foundry = previousFoundry;
+  }
 });

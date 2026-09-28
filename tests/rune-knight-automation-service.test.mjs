@@ -574,8 +574,17 @@ function assignActorIdentity(actor, id, name = id) {
   return actor;
 }
 
-function createHitRewriteHarness({ consumeReaction = true, failShieldApply = false } = {}) {
-  const cloudItem = createItem({ id: "cloud", automation: "cloud", spent: 0, max: 1 });
+function createHitRewriteHarness({
+  consumeReaction = true,
+  failShieldApply = false,
+  cloudSpent = 0,
+  cloudDisposition = 1,
+  attackerDisposition = -1,
+  includeShield = true,
+  redirectedAvailable = true,
+  originalIsCloud = false
+} = {}) {
+  const cloudItem = createItem({ id: "cloud", automation: "cloud", spent: cloudSpent, max: 1 });
   const shieldItem = createItem({ id: "shield", automation: "runic-shield", spent: 0, max: 4 });
   const cloudActor = assignActorIdentity(createActor({ items: [cloudItem] }), "cloud-actor", "Cloud Knight");
   const shieldActor = assignActorIdentity(createActor({ items: [shieldItem] }), "shield-actor", "Shield Knight");
@@ -584,12 +593,19 @@ function createHitRewriteHarness({ consumeReaction = true, failShieldApply = fal
   const redirected = assignActorIdentity(createActor({ level: 1, prof: 2 }), "redirected", "Redirected Target");
   original.system.attributes.ac = { value: 15 };
   redirected.system.attributes.ac = { value: 16 };
-  const token = (id, actor) => ({ id, uuid: `Scene.scene.Token.${id}`, actor, name: actor.name });
-  const cloudToken = token("cloud", cloudActor);
-  const shieldToken = token("shield", shieldActor);
-  const attackerToken = token("attacker", attacker);
-  const originalToken = token("original", original);
-  const redirectedToken = token("redirected", redirected);
+  const token = (id, actor, disposition = 0) => ({
+    id,
+    uuid: `Scene.scene.Token.${id}`,
+    actor,
+    name: actor.name,
+    disposition
+  });
+  const cloudToken = token("cloud", cloudActor, cloudDisposition);
+  const shieldToken = token("shield", shieldActor, cloudDisposition);
+  const attackerToken = token("attacker", attacker, attackerDisposition);
+  const originalToken = originalIsCloud ? cloudToken : token("original", original, cloudDisposition);
+  const originalActor = originalIsCloud ? cloudActor : original;
+  const redirectedToken = token("redirected", redirected, cloudDisposition);
   const candidates = {
     "rune-cloud": [{
       id: cloudActor.id,
@@ -601,7 +617,7 @@ function createHitRewriteHarness({ consumeReaction = true, failShieldApply = fal
       itemUuid: cloudItem.uuid,
       ownerUserIds: ["owner"]
     }],
-    "runic-shield": [{
+    "runic-shield": includeShield ? [{
       id: shieldActor.id,
       actor: shieldActor,
       actorUuid: shieldActor.uuid,
@@ -610,7 +626,7 @@ function createHitRewriteHarness({ consumeReaction = true, failShieldApply = fal
       item: shieldItem,
       itemUuid: shieldItem.uuid,
       ownerUserIds: ["owner"]
-    }]
+    }] : []
   };
   const capabilityIndex = {
     providers: new Map(),
@@ -653,8 +669,11 @@ function createHitRewriteHarness({ consumeReaction = true, failShieldApply = fal
       if (prompt.title === "Облачная руна") {
         const options = prompt.fields[0].options;
         assert.equal(options.some((option) => option.value === attackerToken.uuid), false);
-        assert.ok(options.some((option) => option.value === redirectedToken.uuid));
-        return { accepted: true, targetTokenUuid: redirectedToken.uuid };
+        if (redirectedAvailable) {
+          assert.ok(options.some((option) => option.value === redirectedToken.uuid));
+          return { accepted: true, targetTokenUuid: redirectedToken.uuid };
+        }
+        return { accepted: false };
       }
       return { accepted: true };
     },
@@ -681,7 +700,7 @@ function createHitRewriteHarness({ consumeReaction = true, failShieldApply = fal
     targets: new Set([originalToken]),
     hitTargets: new Set([originalToken]),
     hitTargetsEC: new Set(),
-    damageList: [{ tokenUuid: originalToken.uuid, actorUuid: original.uuid }],
+    damageList: [{ tokenUuid: originalToken.uuid, actorUuid: originalActor.uuid }],
     async setAttackRoll(roll) {
       this.attackRoll = roll;
       if (failShieldApply && roll === rerolledAttack) throw new Error("shield apply failed");
@@ -691,7 +710,13 @@ function createHitRewriteHarness({ consumeReaction = true, failShieldApply = fal
   const service = new RuneKnightAutomationService(moduleApi, {
     distanceFeet: () => 25,
     isVisible: () => true,
-    sceneTokens: () => [cloudToken, shieldToken, attackerToken, originalToken, redirectedToken]
+    sceneTokens: () => [
+      cloudToken,
+      ...(includeShield ? [shieldToken] : []),
+      attackerToken,
+      ...(!originalIsCloud ? [originalToken] : []),
+      ...(redirectedAvailable ? [redirectedToken] : [])
+    ]
   });
   return {
     service,
@@ -730,6 +755,64 @@ test("Cloud Rune rewrites the target before Runic Shield rerolls and recalculate
   assert.equal(harness.workflow.hitTargets.has(harness.redirectedToken), false);
   assert.strictEqual(harness.workflow.attackRoll, harness.rerolledAttack);
   assert.equal(harness.workflow.damageList.some((row) => row.tokenUuid === harness.originalToken.uuid), false);
+});
+
+test("Cloud Rune ignores friendly and neutral attackers", async () => {
+  for (const [cloudDisposition, attackerDisposition] of [[1, 1], [1, 0], [0, -1]]) {
+    const harness = createHitRewriteHarness({
+      cloudDisposition,
+      attackerDisposition,
+      includeShield: false
+    });
+    await harness.service.initialize();
+
+    await harness.service.applyMidiHitsChecked(harness.workflow);
+
+    assert.deepEqual(harness.calls.prompts, []);
+    assert.equal(harness.cloudItem.system.uses.spent, 0);
+    assert.equal(harness.calls.reactions, 0);
+  }
+});
+
+test("Cloud Rune treats either opposing disposition direction as hostile", async () => {
+  const harness = createHitRewriteHarness({
+    cloudDisposition: -1,
+    attackerDisposition: 1,
+    includeShield: false
+  });
+  await harness.service.initialize();
+
+  await harness.service.applyMidiHitsChecked(harness.workflow);
+
+  assert.deepEqual(harness.calls.prompts.map((prompt) => prompt.title), ["Облачная руна"]);
+  assert.equal(harness.cloudItem.system.uses.spent, 1);
+  assert.equal(harness.calls.reactions, 1);
+});
+
+test("Cloud Rune does not prompt after its uses are exhausted", async () => {
+  const harness = createHitRewriteHarness({ cloudSpent: 1, includeShield: false });
+  await harness.service.initialize();
+
+  await harness.service.applyMidiHitsChecked(harness.workflow);
+
+  assert.deepEqual(harness.calls.prompts, []);
+  assert.equal(harness.cloudItem.system.uses.spent, 1);
+  assert.equal(harness.calls.reactions, 0);
+});
+
+test("Cloud Rune requires a different redirect target", async () => {
+  const harness = createHitRewriteHarness({
+    includeShield: false,
+    redirectedAvailable: false,
+    originalIsCloud: true
+  });
+  await harness.service.initialize();
+
+  await harness.service.applyMidiHitsChecked(harness.workflow);
+
+  assert.deepEqual(harness.calls.prompts, []);
+  assert.equal(harness.cloudItem.system.uses.spent, 0);
+  assert.equal(harness.calls.reactions, 0);
 });
 
 test("Cloud and Runic Shield restore workflow and uses when ordinary reaction payment fails", async () => {

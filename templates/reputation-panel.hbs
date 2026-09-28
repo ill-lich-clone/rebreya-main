@@ -1,0 +1,44 @@
+  <section class="rm-reputation" data-reputation-panel>
+    <header class="rm-reputation__header">
+      <div><p class="rm-eyebrow">Имя и поступки</p><h3>Репутация</h3></div>
+      <label>Персонаж
+        <select data-reputation-actor aria-label="Персонаж">
+          <option value="">Выберите персонажа</option>
+          {{#each reputation.actors}}<option value="{{uuid}}" {{#if selected}}selected{{/if}}>{{name}}</option>{{/each}}
+        </select>
+      </label>
+    </header>
+    {{#if reputation.selected}}
+      <p class="rm-reputation__actor">{{reputation.name}}</p>
+      <div class="rm-reputation__counters">
+        <div><span>Слава</span><strong data-reputation-fame>{{reputation.fame}}</strong></div>
+        <div><span>Дурная слава</span><strong data-reputation-infamy>{{reputation.infamy}}</strong></div>
+      </div>
+      {{#if reputation.canEdit}}
+        {{#unless reputation.editing}}<button type="button" data-action="edit-reputation" {{#if reputation.pending}}disabled{{/if}}>Изменить репутацию</button>{{/unless}}
+      {{/if}}
+    {{else}}<p class="rm-muted">Выберите персонажа, чтобы увидеть его славу и дурную славу.</p>{{/if}}
+    {{#if reputation.editing}}
+      <form data-reputation-form class="rm-reputation__form">
+        <p>Изменение для: <strong>{{reputation.draft.name}}</strong></p>
+        <fieldset {{#if reputation.locked}}disabled{{/if}}>
+          <label>Действие<select name="mode"><option value="delta" {{#if reputation.deltaMode}}selected{{/if}}>Прибавить / вычесть</option><option value="set" {{#unless reputation.deltaMode}}selected{{/unless}}>Установить значения</option></select></label>
+          <div class="rm-reputation__fields">
+            <label>Слава<input type="text" inputmode="numeric" name="fame" value="{{reputation.draft.fame}}" required></label>
+            <label>Дурная слава<input type="text" inputmode="numeric" name="infamy" value="{{reputation.draft.infamy}}" required></label>
+          </div>
+          <label>Причина<input type="text" name="reason" maxlength="240" value="{{reputation.draft.reason}}" required placeholder="За какой поступок?"></label>
+        </fieldset>
+        <div class="rm-reputation__actions">
+          <button type="submit" {{#if reputation.pending}}disabled{{/if}}>{{#if reputation.pending}}Сохранение…{{else}}{{#if reputation.retry}}Повторить ту же операцию{{else}}Сохранить{{/if}}{{/if}}</button>
+          <button type="button" data-action="cancel-reputation" {{#if reputation.pending}}disabled{{/if}}>Отмена</button>
+        </div>
+      </form>
+    {{/if}}
+    {{#if reputation.error}}<p class="rm-reputation__error" role="alert">{{reputation.error}}</p>{{/if}}
+    {{#if reputation.history}}
+      <details class="rm-reputation__history"><summary>Последние изменения</summary>
+        <ol>{{#each reputation.history}}<li><strong>{{reason}}</strong><span>Слава: {{before.fame}} → {{after.fame}} · Дурная слава: {{before.infamy}} → {{after.infamy}}</span></li>{{/each}}</ol>
+      </details>
+    {{/if}}
+  </section>

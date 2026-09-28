@@ -12,6 +12,7 @@ test("scene storage and durability are owned by Rebreya and add no retired exter
     readFile(new URL("../scripts/main.js", import.meta.url), "utf8"),
     readFile(new URL("../scripts/data/storage-service.js", import.meta.url), "utf8"),
     readFile(new URL("../scripts/data/storage-command-service.js", import.meta.url), "utf8"),
+    readFile(new URL("../scripts/data/storage-journal-reader.js", import.meta.url), "utf8"),
     readFile(new URL("../scripts/data/durability-rules.js", import.meta.url), "utf8"),
     readFile(new URL("../scripts/data/durability-service.js", import.meta.url), "utf8"),
     readFile(new URL("../scripts/integrations/storage-token-hooks.js", import.meta.url), "utf8"),
@@ -22,9 +23,16 @@ test("scene storage and durability are owned by Rebreya and add no retired exter
 
   assert.equal(manifest.relationships.requires.some((entry) => entry.id === "item-piles"), false);
   assert.doesNotMatch([mainSource, ...runtimeSources].join("\n"), /item.?piles|itempiles/iu);
-  for (const apiName of ["openStorage", "claimStorageRow", "claimStorageCoins", "configureStorageToken"]) {
+  for (const apiName of [
+    "openStorage", "readStorageJournal", "claimStorageRow", "claimStorageCoins", "configureStorageToken",
+    "dropStorageCoinsToScene", "dropStorageJournalToScene"
+  ]) {
     assert.match(mainSource, new RegExp(`\\b${apiName}\\b`, "u"));
   }
+  assert.match(mainSource, /STORAGE_JOURNAL_READ_COMMAND\s*=\s*"storage\.journal\.read"/u);
+  assert.match(mainSource, /STORAGE_COIN_DROP_COMMAND\s*=\s*"storage\.coin\.drop"/u);
+  assert.match(mainSource, /STORAGE_JOURNAL_DROP_COMMAND\s*=\s*"storage\.journal\.drop-to-scene"/u);
+  assert.doesNotMatch([mainSource, ...runtimeSources].join("\n"), /(?:currency|coin)(?:Store|Repository)/iu);
 });
 
 function installFoundryUtils() {
@@ -449,7 +457,15 @@ test("trade audit keeps the latest twenty rows and rollback reverses a purchase"
     }
   };
 
-  const service = new TraderService({});
+  const service = new TraderService({}, {
+    stateRepository: {
+      read: () => state,
+      async mutate(mutator) {
+        const result = await mutator(state);
+        return result;
+      }
+    }
+  });
 
   try {
     for (let index = 0; index < 21; index += 1) {
@@ -690,6 +706,61 @@ test("party inventory snapshot remaps removed core supply icon paths", async () 
 
     assert.equal(snapshot.allItems.find((item) => item.itemId === "food").img, "icons/consumables/food/berries-ration-round-red.webp");
     assert.equal(snapshot.allItems.find((item) => item.itemId === "water").img, "icons/sundries/survival/waterskin-leather-brown.webp");
+  }
+  finally {
+    globalThis.game = previousGame;
+    restoreFoundry();
+  }
+});
+
+test("party inventory projection preserves custom icons and replaces only placeholder icons from the stable gear source", async () => {
+  const restoreFoundry = installFoundryUtils();
+  const previousGame = globalThis.game;
+  const actor = {
+    id: "party-inventory",
+    name: "Party Inventory",
+    isOwner: true,
+    system: { currency: {} },
+    items: {
+      contents: [
+        {
+          id: "custom-icon",
+          uuid: "Actor.party.Item.custom-icon",
+          name: "Бензин (1 галлон)",
+          type: "loot",
+          img: "worlds/rebreya/uploads/fuel.png",
+          flags: { "rebreya-main": { sourceType: "gear", sourceId: "catalog-fuel", gearId: "catalog-fuel" } },
+          toObject: () => ({ system: { quantity: 1, weight: { value: 1 }, price: {} } })
+        },
+        {
+          id: "placeholder-icon",
+          uuid: "Actor.party.Item.placeholder-icon",
+          name: "Переименованный бензин",
+          type: "loot",
+          img: "icons/svg/item-bag.svg",
+          flags: { "rebreya-main": { sourceType: "gear", sourceId: "catalog-fuel", gearId: "catalog-fuel" } },
+          toObject: () => ({ system: { quantity: 1, weight: { value: 1 }, price: {} } })
+        }
+      ]
+    }
+  };
+  globalThis.game = {
+    user: { id: "gm", isGM: true },
+    actors: { get: (id) => id === actor.id ? actor : null },
+    settings: { get: () => ({ inventoryActorId: actor.id }) }
+  };
+  const service = new InventoryService({
+    getModel: async () => ({
+      materials: [], materialById: new Map(), materialByGoodId: new Map(),
+      gear: [{ id: "catalog-fuel", name: "Бензин (1 галлон)", equipmentType: "Снаряжение" }],
+      gearById: new Map([["catalog-fuel", { id: "catalog-fuel", name: "Бензин (1 галлон)", equipmentType: "Снаряжение" }]])
+    })
+  });
+
+  try {
+    const snapshot = await service.getInventorySnapshot();
+    assert.equal(snapshot.allItems.find((entry) => entry.itemId === "custom-icon").img, "worlds/rebreya/uploads/fuel.png");
+    assert.notEqual(snapshot.allItems.find((entry) => entry.itemId === "placeholder-icon").img, "icons/svg/item-bag.svg");
   }
   finally {
     globalThis.game = previousGame;

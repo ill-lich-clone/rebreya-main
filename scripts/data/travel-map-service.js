@@ -125,8 +125,12 @@ function buildCreateTokenData(groupActor, position, scene) {
 }
 
 export class TravelMapService {
-  constructor({ gameProvider = () => globalThis.game } = {}) {
+  constructor({
+    gameProvider = () => globalThis.game,
+    canvasProvider = () => globalThis.canvas
+  } = {}) {
     this.gameProvider = gameProvider;
+    this.canvasProvider = canvasProvider;
   }
 
   async syncGroupToken({ groupActor = null, position = null } = {}) {
@@ -150,8 +154,34 @@ export class TravelMapService {
       throw new Error(`Сцена «${position.sceneName || "Карта мира"}» не найдена.`);
     }
 
+    const canvas = this.canvasProvider?.();
+    const activeScene = canvas?.scene ?? null;
+    const sceneId = cleanText(scene.id ?? scene._id);
+    const activeSceneId = cleanText(activeScene?.id ?? activeScene?._id);
+    const isRenderedScene = !canvas || (
+      activeScene
+      && (
+        activeScene === scene
+        || (sceneId && activeSceneId && sceneId === activeSceneId)
+      )
+    );
+    if (!isRenderedScene) {
+      return {
+        synced: false,
+        deferred: true,
+        sceneName: scene.name
+      };
+    }
+
     const placement = buildTravelTokenPlacement(scene, position);
     const existingToken = findGroupToken(scene, groupActor.id);
+    if (canvas && existingToken?.object === null) {
+      return {
+        synced: false,
+        deferred: true,
+        sceneName: scene.name
+      };
+    }
     if (existingToken) {
       const tokenId = cleanText(existingToken.id ?? existingToken._id);
       if (!tokenId) {

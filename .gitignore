@@ -6,3 +6,4 @@ Trace-*.json
 conversation-memory.txt
 tmp-races-*.json
 tmp_selenium_*.log
+tools/google-credentials.json

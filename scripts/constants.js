@@ -7,8 +7,12 @@ export const MATERIALS_COMPENDIUM_NAME = "rebreya-materials";
 export const MATERIALS_COMPENDIUM_LABEL = "Материалы Rebreya";
 export const GEAR_COMPENDIUM_NAME = "rebreya-gear";
 export const GEAR_COMPENDIUM_LABEL = "Немагическое снаряжение Rebreya";
+export const ALCHEMY_COMPENDIUM_NAME = "rebreya-alchemy";
+export const ALCHEMY_COMPENDIUM_LABEL = "Алхимия Ребреи";
 export const MAGIC_ITEMS_COMPENDIUM_NAME = "rebreya-magic-items";
 export const MAGIC_ITEMS_COMPENDIUM_LABEL = "Магические предметы Rebreya";
+export const GLOSSARY_COMPENDIUM_NAME = "rebreya-glossary";
+export const GLOSSARY_COMPENDIUM_LABEL = "Термины Rebreya";
 export const FEATS_COMPENDIUM_NAME = "rebreya-feats";
 export const FEATS_COMPENDIUM_LABEL = "Черты Rebreya (D&D 5e 2014)";
 export const BACKGROUNDS_COMPENDIUM_NAME = "rebreya-backgrounds";
@@ -18,6 +22,7 @@ export const STATES_COMPENDIUM_LABEL = "Государства Тейванка�
 export const STATE_ITEM_TYPE = `${MODULE_ID}.state`;
 export const DOWNTIME_ITEM_TYPE = `${MODULE_ID}.downtime`;
 export const CRAFTSMAN_GADGET_ITEM_TYPE = `${MODULE_ID}.gadget`;
+export const LOOTGEN_TEMPLATE_ITEM_TYPE = `${MODULE_ID}.lootgen-template`;
 export const CRAFTSMAN_CLASS_IDENTIFIER = "craftsman-v01";
 export const CRAFTSMAN_CONSTRUCTS_COMPENDIUM_NAME = "rebreya-craftsman-constructs";
 export const CRAFTSMAN_CONSTRUCTS_COMPENDIUM_LABEL = "Конструкты Ремесленника Rebreya";
@@ -157,6 +162,7 @@ export const REBREYA_TOOLS = [
 ];
 
 export const SETTINGS_KEYS = {
+  SCENE_ACTIVITY_STATE: "sceneActivityState",
   SHOW_BUTTON: "showEconomyButton",
   DEBUG_MODE: "debugMode",
   DATA_SOURCE_MODE: "dataSourceMode",
@@ -175,9 +181,11 @@ export const SETTINGS_KEYS = {
   CRAFT_STATE: "craftState",
   CRAFT_MUTATION_JOURNAL: "craftMutationJournal",
   INVENTORY_MUTATION_JOURNAL: "inventoryMutationJournal",
+  PURCHASE_BASKET_JOURNAL: "purchaseBasketJournal",
   DURABILITY_MUTATION_JOURNAL: "durabilityMutationJournal",
   CALENDAR_STATE: "calendarState",
   CONNECTION_STATES: "connectionStates",
+  CITY_PRESENTATION_OVERRIDES: "cityPresentationOverrides",
   REFERENCE_NOTES: "referenceNotes",
   TRADE_ROUTE_OVERRIDES: "tradeRouteOverrides",
   STATE_POLICIES: "statePolicies",

@@ -1,0 +1,37 @@
+{
+  "boevoy-posokh": {
+    "weapon": {
+      "damageFormula": "1d6",
+      "damageType": "bludgeoning",
+      "damageTypeLabel": "Дробящий",
+      "properties": ["ver", "lchDash", "lchSwing"],
+      "propertiesText": "Универсальное (1d8); Наскок 1к2; Размах",
+      "range": { "value": 0, "long": 0, "reach": 5, "units": "ft" },
+      "versatileDamageFormula": "1d8",
+      "lichWeaponPropertyValues": { "dashDice": "1d2" },
+      "attackTraitsText": "Универсальное (1d8); Наскок 1к2; Размах"
+    }
+  },
+  "kremnevyy-pistolet": {
+    "weapon": {
+      "damageFormula": "1d8",
+      "damageTypeLabel": "Колющий",
+      "damageType": "piercing",
+      "propertiesText": "Одноручное; Дальность 30/90; Осечка 3; Боеприпасы: Мушкетные; Одиночные; Перезарядка 1; Лёгкое",
+      "properties": ["amm", "lchFirearmWaterVulnerability", "lchFirearmMisfire", "lchFirearmAmmunition", "lchFirearmFireMode", "lchFirearmReload", "lgt"],
+      "range": { "value": 30, "long": 90, "reach": 0, "units": "ft" },
+      "attackTraitsText": "Одноручное; Дальность 30/90; Осечка 3; Боеприпасы: Мушкетные; Одиночные; Перезарядка 1; Лёгкое",
+      "attackTraits": {},
+      "lichWeaponPropertyValues": {
+        "inventionYear": 270,
+        "misfire": 3,
+        "ammunition": "Мушкетные",
+        "fireMode": "Одиночные",
+        "reload": "Перезарядка 1"
+      },
+      "firearmAttackType": "firearm",
+      "firearmClass": "primitive"
+    },
+    "firearmClass": "primitive"
+  }
+}

@@ -1,5 +1,9 @@
-import { rollLootgenBrokenState } from "./lootgen-durability.js";
+import { generateLootgenContainerResult } from "./lootgen-container-generation.js?v=1.4.317";
+import { pickLootgenNarrativeFields, selectLootgenNarrativeVariant } from "./lootgen-narrative-catalog.js?v=1.4.317";
+import { rollLootgenBrokenState } from "./lootgen-durability.js?v=1.4.154-corpse-storage-broken-name";
 import { rollLootgenMultipleAppearance } from "./lootgen-multiple-appearance.js?v=1.4.128-lootgen-multiplicity";
+import { chooseLootgenUpgradeVariant } from "./lootgen-upgrade-variants.js?v=1.4.278";
+import { getLootgenAggregationKey } from "./lootgen-item-descriptor.js?v=1.4.256";
 
 const COIN_MULTIPLIERS = {
   pp: 1000,
@@ -37,6 +41,12 @@ function normalizeFilterMap(value) {
     .filter(([key]) => key));
 }
 
+export function isLootgenUpgrade(row = {}) {
+  if (String(row.upgrade?.type ?? "").trim()) return true;
+  return [row.equipmentType, row.typeLabel].some(value =>
+    /^(?:усовершенствование|зачарование|проклятье|проклятие)$/iu.test(String(value ?? "").trim()));
+}
+
 export function normalizeLootgenForm(raw = {}) {
   const source = raw && typeof raw === "object" ? raw : {};
   const rankMin = clampInteger(source.rankMin, 0, 10, 0);
@@ -48,11 +58,20 @@ export function normalizeLootgenForm(raw = {}) {
     itemCount: clampInteger(source.itemCount, 1, 40, 8),
     optimalItemQuantity: clampInteger(source.optimalItemQuantity, 1, 100, 4),
     budgetValue: Math.max(0, toInteger(source.budgetValue, 5000)),
+    coinBudgetPercent: clampInteger(source.coinBudgetPercent, 0, 100, 0),
     magicPercent: clampInteger(source.magicPercent, 0, 100, 25),
     brokenEquipmentChance: clampInteger(source.brokenEquipmentChance, 0, 100, 0),
     includeGear: source.includeGear !== false,
     includeMagicItems: source.includeMagicItems === true,
     includeCoins: source.includeCoins !== false,
+    enableFilledContainers: source.enableFilledContainers === true,
+    filledContainerChance: clampInteger(source.filledContainerChance,0,100,0),
+    generationDepth: clampInteger(source.generationDepth,1,3,1),
+    enableUpgrades: source.enableUpgrades === true,
+    upgradeChance: clampInteger(source.upgradeChance, 0, 100, 0),
+    maxUpgradesPerItem: clampInteger(source.maxUpgradesPerItem, 1, 3, 1),
+    upgradeTypes: Array.from(new Set((Array.isArray(source.upgradeTypes) ? source.upgradeTypes : []).filter(type => ["Материал","Зачарование","Проклятье"].includes(type)))),
+    upgradeRanks: Array.from(new Set((Array.isArray(source.upgradeRanks) ? source.upgradeRanks : []).map(Number).filter(rank => Number.isInteger(rank) && rank >= 1 && rank <= 10))),
     gearTypeFilters: normalizeFilterMap(source.gearTypeFilters),
     magicTypeFilters: normalizeFilterMap(source.magicTypeFilters)
   };
@@ -83,6 +102,19 @@ function weightedRandomPick(values, getWeight, random) {
 
 function candidateIdentity(candidate) {
   return `${String(candidate?.sourceType ?? "")}:${String(candidate?.sourceId ?? "")}`;
+}
+
+function withNarrativeVariant(candidate, random) {
+  const variant = selectLootgenNarrativeVariant(candidate, random);
+  if (!variant) return { ...candidate };
+  return {
+    ...candidate,
+    narrativeVariantId: variant.variantId,
+    narrativeGearId: variant.gearId,
+    narrativeTitle: variant.title,
+    narrativeDescription: variant.description,
+    stackable: false
+  };
 }
 
 function candidateWeight(candidate, currentQuantity, optimalQuantity) {
@@ -124,6 +156,17 @@ function formatCoinsLabel(coins = {}) {
   return parts.length ? parts.join(" ") : "0 мм";
 }
 
+function lootgenCoinDenomination(row) {
+  if (row?.sourceType !== "gear") return null;
+  switch (row.sourceId) {
+    case "mednaya-moneta": return "cp";
+    case "serebryannaya-moneta": return "sp";
+    case "zolotaya-moneta": return "gp";
+    case "platinovaya-moneta": return "pp";
+    default: return null;
+  }
+}
+
 function randomCoinsFromValue(totalValue, random) {
   let remaining = Math.max(0, toInteger(totalValue, 0));
   const coins = {
@@ -156,7 +199,10 @@ function randomCoinsFromValue(totalValue, random) {
 function aggregateRows(rows) {
   const map = new Map();
   for (const row of rows) {
-    const key = `${row.sourceType}:${row.sourceId}:${row.isBroken ? "broken" : "intact"}`;
+    const narrativeIdentity = String(row.narrativeVariantId ?? "");
+    const key = row.descriptor
+      ? `${getLootgenAggregationKey(row.descriptor)}:${narrativeIdentity}`
+      : `${row.sourceType}:${row.sourceId}:${narrativeIdentity}:${row.isBroken ? "broken" : "intact"}`;
     const isStackable = row.stackable === undefined
       ? ["material", "gear"].includes(String(row.sourceType ?? ""))
       : Boolean(row.stackable);
@@ -169,9 +215,11 @@ function aggregateRows(rows) {
       typeLabel: row.typeLabel,
       stackable: isStackable,
       isBroken: Boolean(row.isBroken),
+      ...pickLootgenNarrativeFields(row),
       quantity: 0,
       totalValue: 0
     };
+    if (row.descriptor) existing.descriptor = structuredClone(row.descriptor);
 
     if (existing.stackable) {
       existing.quantity += row.quantity;
@@ -205,30 +253,52 @@ export function generateLootgenResult({
   itemCount = 1,
   optimalItemQuantity = 4,
   budgetValue = 0,
+  coinBudgetPercent = 0,
   includeCoins = true,
   brokenEquipmentChance = 0,
   batchId = "",
   generatedAt = "",
-  random = Math.random
+  random = Math.random,
+  enableUpgrades = false, upgradeChance = 0, maxUpgradesPerItem = 1, upgradeTypes = [], upgradeRanks = [],
+  manifest = [], catalogReader = null,
+  enableFilledContainers=false,filledContainerChance=0,generationDepth=1,coinWeightPerCoinLb=0.02,
+  createInstanceKey = () => globalThis.crypto.randomUUID()
 } = {}) {
   if (typeof random !== "function") {
     throw new TypeError("random must be a function");
   }
 
+  const explicitBudget=rawForm?rawForm.budgetValue:budgetValue;
+  if((rawForm?.enableFilledContainers===true || (!rawForm && enableFilledContainers)) && explicitBudget!=null
+    && (!Number.isSafeInteger(Number(explicitBudget)) || Number(explicitBudget)<0))throw new Error("Небезопасный бюджет лута.");
   const form = normalizeLootgenForm(rawForm ?? {
     rankMin,
     rankMax,
     itemCount,
     optimalItemQuantity,
     budgetValue,
+    coinBudgetPercent,
     includeMagicItems,
     magicPercent,
     includeCoins,
-    brokenEquipmentChance
+    brokenEquipmentChance, enableUpgrades, upgradeChance, maxUpgradesPerItem, upgradeTypes, upgradeRanks, enableFilledContainers,filledContainerChance,generationDepth
   });
-  const safeMundanePool = Array.isArray(mundanePool) ? mundanePool : [];
-  const safeMagicPool = Array.isArray(magicPool) ? magicPool : [];
-  if (!safeMundanePool.length && !safeMagicPool.length) {
+  if ((form.enableUpgrades || form.enableFilledContainers) && !Number.isSafeInteger(form.budgetValue)) throw new Error("Небезопасный бюджет лута.");
+  const priceDiagnostics=[];
+  const priced = rows => !(form.enableUpgrades || form.enableFilledContainers) ? rows : rows.flatMap(row => {
+    try {
+      const price = catalogReader?.resolveValueComponent?.(row);
+      if(price?.priceKnown === true && Number.isSafeInteger(price.unitValue) && price.unitValue >= 0)return [{...row,value:price.unitValue}];
+    } catch {}
+    if(form.enableFilledContainers && priceDiagnostics.length<200)priceDiagnostics.push({reason:"unknown-price",sourceId:row.sourceId});
+    return [];
+  });
+  const safeMundanePool = priced((Array.isArray(mundanePool) ? mundanePool : [])
+    .filter(row => !lootgenCoinDenomination(row) && !isLootgenUpgrade(row)));
+  const safeMagicPool = priced((Array.isArray(magicPool) ? magicPool : []).filter(row => !isLootgenUpgrade(row)));
+  if(form.enableFilledContainers)return generateLootgenContainerResult({form,mundanePool:safeMundanePool,magicPool:safeMagicPool,catalogReader,manifest,random,createInstanceKey,batchId:String(batchId??" ").trim(),generatedAt,coinWeightPerCoinLb,priceDiagnostics,pick:weightedRandomPick,makeCoins:randomCoinsFromValue});
+  if (!safeMundanePool.length && !safeMagicPool.length
+    && !(form.includeCoins && Array.isArray(mundanePool) && mundanePool.some(lootgenCoinDenomination))) {
     throw new Error("Для выбранных параметров нет доступных предметов.");
   }
 
@@ -236,8 +306,17 @@ export function generateLootgenResult({
   const forceMagicOnly = form.includeMagicItems && magicChance >= 0.999;
   const maxRows = form.itemCount;
   const safeBudgetValue = form.budgetValue;
-  let remainingValue = safeBudgetValue;
+  const coinReserve = !form.includeCoins ? 0 : form.enableUpgrades
+    ? Math.floor(safeBudgetValue / 100) * form.coinBudgetPercent + Math.floor((safeBudgetValue % 100) * form.coinBudgetPercent / 100)
+    : Math.floor(safeBudgetValue * form.coinBudgetPercent / 100);
+  let remainingValue = safeBudgetValue - coinReserve;
   const picks = [];
+  const attemptBudget = {remaining:2000}, instanceKeys = new Set();
+  const allocateInstanceKey = () => {
+    const key = createInstanceKey();
+    if (instanceKeys.has(key)) throw new Error("Повторный идентификатор экземпляра лута.");
+    instanceKeys.add(key);return key;
+  };
   const selectedIdentities = new Set();
   const selectedCandidates = [];
   const quantitiesByIdentity = new Map();
@@ -256,6 +335,7 @@ export function generateLootgenResult({
   );
 
   for (let index = 0; index < maxRows && remainingValue > 0; index += 1) {
+    if (form.enableUpgrades && attemptBudget.remaining-- <= 0) break;
     const affordableMundane = safeMundanePool.filter(isAffordableUnselected);
     const affordableMagic = safeMagicPool.filter(isAffordableUnselected);
     if (!affordableMundane.length && !affordableMagic.length) {
@@ -280,10 +360,11 @@ export function generateLootgenResult({
     }
 
     const pickedKey = candidateIdentity(picked);
-    const unitValue = Math.max(0, toInteger(picked.value, 0));
-    let quantity = picked.sourceType === "magicItem" || picked.stackable === false
+    const narrativePick = withNarrativeVariant(picked, random);
+    const unitValue = Math.max(0, toInteger(narrativePick.value, 0));
+    let quantity = narrativePick.sourceType === "magicItem" || narrativePick.stackable === false
       ? 1
-      : rollLootgenMultipleAppearance(picked.multipleAppearance ?? "1", random);
+      : rollLootgenMultipleAppearance(narrativePick.multipleAppearance ?? "1", random);
     if (unitValue > 0) {
       quantity = Math.min(quantity, Math.floor(remainingValue / unitValue));
     }
@@ -294,23 +375,29 @@ export function generateLootgenResult({
     }
 
     const selected = {
-      ...picked,
+      ...narrativePick,
       value: unitValue,
       isBroken: rollLootgenBrokenState({
-        sourceType: picked.sourceType,
+        sourceType: narrativePick.sourceType,
         chance: form.brokenEquipmentChance,
-        isEligible: picked.breakable === true,
+        isEligible: narrativePick.breakable === true,
         random
       })
     };
-    const totalValue = unitValue * quantity;
+    if (form.enableUpgrades && !Number.isSafeInteger(quantity)) throw new Error("Небезопасное количество лута.");
+    const variant = chooseLootgenUpgradeVariant({host:selected,remainingValue,form,catalogReader,manifest,random,createInstanceKey:allocateInstanceKey,attemptBudget});
+    if (variant.descriptor) {
+      selected.descriptor=variant.descriptor;selected.value=variant.value.totalValue;selected.stackable=false;quantity=1;
+      selectedIdentities.delete(pickedKey);
+    }
+    const totalValue = selected.value * quantity;
     selectedCandidates.push(selected);
     picks.push({ ...selected, quantity, totalValue });
     quantitiesByIdentity.set(pickedKey, quantity);
     remainingValue = Math.max(0, remainingValue - totalValue);
   }
 
-  while (remainingValue > 0) {
+  while (remainingValue > 0 && (!form.enableUpgrades || attemptBudget.remaining-- > 0)) {
     const repeatable = selectedCandidates.filter((entry) => (
       entry.sourceType !== "magicItem"
       && entry.stackable !== false
@@ -341,7 +428,7 @@ export function generateLootgenResult({
 
   let rows = aggregateRows(picks);
   const spentValue = rows.reduce((sum, row) => sum + row.totalValue, 0);
-  const coins = form.includeCoins ? randomCoinsFromValue(remainingValue, random) : randomCoinsFromValue(0, random);
+  const coins = randomCoinsFromValue(form.includeCoins ? remainingValue + coinReserve : 0, random);
   const safeBatchId = String(batchId ?? "").trim();
   rows = rows.map((row, index) => ({
     ...row,

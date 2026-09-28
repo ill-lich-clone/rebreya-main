@@ -1,10 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { MODULE_ID } from "../scripts/constants.js";
+import { createOverlayDom } from "./helpers/overlay-dom.mjs";
 
 class FakeApplicationV2 {
   constructor(options = {}) {
     this.options = options;
+  }
+
+  async _onRender() {
+    await this.baseRenderGate;
   }
 
   async render() {}
@@ -16,7 +22,8 @@ globalThis.foundry = {
   applications: {
     api: {
       ApplicationV2: FakeApplicationV2,
-      HandlebarsApplicationMixin: (Base) => Base
+      HandlebarsApplicationMixin: (Base) => Base,
+      DialogV2: { wait: async () => null }
     }
   },
   utils: { deepClone: (value) => structuredClone(value) }
@@ -25,7 +32,186 @@ globalThis.game = { user: { isGM: true } };
 globalThis.randomID = () => "storage-test-id";
 globalThis.HTMLElement = FakeElement;
 
-const { StorageApp } = await import("../scripts/ui/storage-app.js?storage-app-test");
+const storageAppModule = await import("../scripts/ui/storage-app.js?storage-app-test");
+const { StorageApp, formatStorageTransferError } = storageAppModule;
+
+test("storage transfer errors report accepted, failed and untouched rows", () => {
+  assert.equal(
+    formatStorageTransferError({
+      code: "inventory-ingress-partial",
+      completedSourceKeys: ["accepted-a", "accepted-b"],
+      failedSourceKey: "failed-c",
+      unprocessedSourceKeys: ["later-d"]
+    }),
+    "Перенесено строк: 2; ошибка на строке «failed-c»; не обработано: 1. Повторите действие только для оставшихся строк."
+  );
+  assert.match(
+    formatStorageTransferError({
+      code: "transfer-manual-review",
+      completedSourceKeys: ["accepted-a"],
+      failedSourceKey: "uncertain-b"
+    }),
+    /ручн.*сверк.*Перенесено строк до остановки: 1/iu
+  );
+});
+
+test("storage refreshes its source snapshot after a structured partial transfer rejection", async () => {
+  const previousConsoleError = console.error;
+  let snapshotCalls = 0;
+  let renderCalls = 0;
+  const error = Object.assign(new Error("partial storage transfer"), {
+    code: "inventory-ingress-partial",
+    inventoryTransferMode: "simple",
+    completedSourceKeys: ["row-1"],
+    failedSourceKey: "row-2",
+    unprocessedSourceKeys: []
+  });
+  const { app } = createApp({
+    configure: false,
+    getStorageSnapshot: async () => {
+      snapshotCalls += 1;
+      return {
+        tokenUuid: "Scene.scene.Token.chest",
+        name: "Сундук",
+        state: "opened",
+        rows: [{ rowId: "row-1", name: "Меч", quantity: 1 }],
+        coins: {}
+      };
+    },
+    claimStorageRow: async () => { throw error; }
+  });
+  const listeners = new Map();
+  app.element = new class extends FakeElement {
+    addEventListener(name, callback) { listeners.set(name, callback); }
+  }();
+  app.render = async () => { renderCalls += 1; };
+
+  try {
+    console.error = () => {};
+    await app._prepareContext();
+    await app._onRender({}, {});
+    const control = {
+      dataset: { action: "storage-claim-self", rowId: "row-1" },
+      closest(selector) { return selector === "[data-action]" ? this : null; }
+    };
+    await listeners.get("click")({ target: control, preventDefault() {} });
+    await new Promise((resolve) => setImmediate(resolve));
+
+    assert.equal(snapshotCalls, 2);
+    assert.equal(renderCalls, 1);
+  }
+  finally {
+    console.error = previousConsoleError;
+  }
+});
+
+test("coin stacks expose their canonical item card and standard storage drag payload", async () => {
+  const { app } = createApp({ configure: false });
+  const listeners = new Map();
+  const opened = [];
+  app.moduleApi.openTradeEntry = async (...args) => opened.push(args);
+  app.element = new class extends FakeElement {
+    addEventListener(name, callback) { listeners.set(name, callback); }
+  }();
+  app.render = async () => {};
+  await app._prepareContext();
+  await app._onRender({}, {});
+  const source = { dataset: { rowId: "__coins:gp" } };
+  const payloads = [];
+  listeners.get("dragstart")({ target: { closest: () => source }, dataTransfer: { setData: (_type, data) => payloads.push(JSON.parse(data)) } });
+  assert.equal(payloads[0]?.type, "RebreyaStorageClaim");
+  assert.equal(payloads[0]?.rowId, "__coins:gp");
+  assert.equal(payloads[0]?.quantity, 2);
+  await listeners.get("click")({ target: { closest: () => ({ dataset: { action: "storage-open-item", rowId: "__coins:gp" } }) } });
+  assert.deepEqual(opened[0], ["gear", "zolotaya-moneta", "Золотая монета"]);
+  const template = await readFile(new URL("../templates/storage-app.hbs", import.meta.url), "utf8");
+  assert.match(template, /rm-storage-item--coins[^>]*draggable="true"[^>]*data-storage-row-drag/u);
+});
+
+test("storage presents a separate physical coin stack per denomination", async () => {
+  const { app } = createApp({ getStorageSnapshot: async () => ({
+    state: "opened", rows: [], coins: { gp: 1, sp: 1, cp: 47 }
+  }) });
+  app.activeRowId = "__coins:cp";
+  const context = await app._prepareContext();
+  assert.deepEqual(context.coinRows.map(row => [row.denomination, row.quantity]), [["gp", 1], ["sp", 1], ["cp", 47]]);
+  assert.equal(context.activePopover.denomination, "cp");
+  assert.equal(context.activePopover.name, "47 мм");
+  assert.ok(context.coinRows.every(row => row.img.endsWith("-moneta.webp")));
+});
+
+test("a click inside a replaced grid does not immediately close its popover", async () => {
+  const previousDocument = globalThis.document;
+  const documentListeners = new Map();
+  globalThis.document = { addEventListener: (name, handler) => documentListeners.set(name, handler) };
+  try {
+    const { app } = createApp();
+    app.element = new class extends FakeElement {
+      addEventListener() {}
+      contains() { return false; }
+    }();
+    const context = await app._prepareContext();
+    await app._onRender(context);
+    app.activeRowId = "__coins:gp";
+    documentListeners.get("click")({ target: {}, composedPath: () => [app.element] });
+    assert.equal(app.activeRowId, "__coins:gp");
+  }
+  finally { globalThis.document = previousDocument; }
+});
+
+test("storage configuration projects an immutable template source and manual-loot warning", async () => {
+  const { app } = createApp({ getStorageSnapshot: async () => ({
+    tokenUuid: "Scene.scene.Token.chest",
+    baseName: "Chest",
+    name: "Chest",
+    state: "opened",
+    rows: [],
+    coins: {},
+    manualRows: [{ rowId: "manual", name: "Rope", quantity: 1 }],
+    mixGeneratedLoot: false,
+    template: {
+      version: 2,
+      name: "Bandit cache",
+      img: "bandit.webp",
+      form: {},
+      sourceUuid: "Item.bandit",
+      assignedAt: 1
+    }
+  }) });
+  const context = await app._prepareContext();
+  assert.equal(context.configuration.template.name, "Bandit cache");
+  assert.equal(context.configuration.template.sourceUuid, "Item.bandit");
+  assert.equal(context.configuration.hasManualContentWithoutMix, true);
+  const template = await readFile(new URL("../templates/storage-app.hbs", import.meta.url), "utf8");
+  assert.match(template, /data-storage-template-drop/u);
+  assert.doesNotMatch(template, /name="templateId"/u);
+});
+
+test("dropping an Item on the template field assigns its UUID without using deposit ingress", async () => {
+  const previousTextEditor = globalThis.TextEditor;
+  globalThis.TextEditor = { getDragEventData: () => ({ type: "Item", uuid: "Item.bandit" }) };
+  const { app, depositCalls } = createApp();
+  const assignments = [];
+  app.moduleApi.assignStorageLootgenTemplate = async (...args) => assignments.push(args);
+  const listeners = new Map();
+  app.element = new class extends FakeElement {
+    addEventListener(name, callback) { listeners.set(name, callback); }
+  }();
+  app.render = async () => {};
+  try {
+    const context = await app._prepareContext();
+    await app._onRender(context, {});
+    const field = { closest: (selector) => selector === "[data-storage-template-drop]" ? field : null };
+    await listeners.get("drop")({ target: field, preventDefault() {}, dataTransfer: { types: ["text/plain"] } });
+    assert.equal(assignments.length, 1);
+    assert.equal(assignments[0][0], "Scene.scene.Token.chest");
+    assert.equal(assignments[0][1], "Item.bandit");
+    assert.equal(depositCalls.length, 0);
+  }
+  finally {
+    globalThis.TextEditor = previousTextEditor;
+  }
+});
 
 function createApp({
   canManage = true,
@@ -33,13 +219,27 @@ function createApp({
   withTextures = true,
   getStorageSnapshot = null,
   inspectStorageDepositSource = null,
+  readStorageJournal = null,
+  recordStorageJournal = null,
+  claimStorageRow = null,
+  claimStorageAll = null,
+  claimStorageRowResult = { changed: true, sourceDeleted: false },
+  claimStorageAllResult = { changed: true, sourceDeleted: false },
+  openStorageJournalViewer = null,
   appOptions = {}
 } = {}) {
   globalThis.game.user.isGM = canManage;
   const textureCalls = [];
   const claimCalls = [];
+  const bulkClaimCalls = [];
   const depositCalls = [];
   const quantityCalls = [];
+  const brokenCalls = [];
+  const journalReadCalls = [];
+  const journalRecordCalls = [];
+  const triggerEditorCalls = [];
+  const triggerResetCalls = [];
+  const configCalls = [];
   const moduleApi = {
     async getStorageSnapshot(...args) {
       if (getStorageSnapshot) return getStorageSnapshot(...args);
@@ -51,6 +251,7 @@ function createApp({
         rows: [{ rowId: "row-1", name: "Меч", quantity: 1, typeLabel: "Оружие", img: "icons/sword.webp" }],
         coins: { pp: 0, gp: 2, sp: 0, cp: 0 },
         manualRows: [],
+        mixGeneratedLoot: true,
         template: { name: "Простой сундук", form: {} },
         textures: withTextures ? {
           unopened: "closed.webp",
@@ -68,6 +269,11 @@ function createApp({
     },
     async claimStorageRow(...args) {
       claimCalls.push(args);
+      return claimStorageRow ? claimStorageRow(...args) : claimStorageRowResult;
+    },
+    async claimStorageAll(...args) {
+      bulkClaimCalls.push(args);
+      return claimStorageAll ? claimStorageAll(...args) : claimStorageAllResult;
     },
     async inspectStorageDepositSource(data) {
       if (inspectStorageDepositSource) return inspectStorageDepositSource(data);
@@ -82,10 +288,49 @@ function createApp({
     },
     async updateStorageRowQuantity(...args) {
       quantityCalls.push(args);
+    },
+    async setStorageRowBroken(...args) {
+      brokenCalls.push(args);
+    },
+    async readStorageJournal(...args) {
+      journalReadCalls.push(args);
+      return readStorageJournal
+        ? readStorageJournal(...args)
+        : { name: "Запись", pages: [] };
+    },
+    async recordStorageJournal(...args) {
+      journalRecordCalls.push(args);
+      return recordStorageJournal ? recordStorageJournal(...args) : { created: true };
+    },
+    async openStorageTriggerEditor(...args) {
+      triggerEditorCalls.push(args);
+    },
+    async resetStorageTriggerExecutions(...args) {
+      triggerResetCalls.push(args);
+    },
+    async configureStorageToken(...args) {
+      configCalls.push(args);
     }
   };
-  const app = new StorageApp(moduleApi, "Scene.scene.Token.chest", { configure, ...appOptions });
-  return { app, textureCalls, claimCalls, depositCalls, quantityCalls };
+  const app = new StorageApp(moduleApi, "Scene.scene.Token.chest", {
+    configure,
+    ...(openStorageJournalViewer ? { openStorageJournalViewer } : {}),
+    ...appOptions
+  });
+  return {
+    app,
+    textureCalls,
+    claimCalls,
+    bulkClaimCalls,
+    depositCalls,
+    quantityCalls,
+    brokenCalls,
+    journalReadCalls,
+    journalRecordCalls,
+    triggerEditorCalls,
+    triggerResetCalls,
+    configCalls
+  };
 }
 
 test("storage grid offers self and party destinations for rows and coins", async () => {
@@ -99,19 +344,463 @@ test("storage grid offers self and party destinations for rows and coins", async
   assert.match(template, /data-action="storage-claim-party"/u);
   assert.match(template, /data-action="storage-claim-coins-self"/u);
   assert.match(template, /data-action="storage-claim-coins-party"/u);
+  assert.doesNotMatch(template, />Залутать всё</u);
+  assert.doesNotMatch(template, /storage-claim-all-(?:self|party)/u);
+  assert.match(template, /data-action="storage-claim-all"/u);
+  assert.match(template, />Забрать всё</u);
+  assert.match(
+    template,
+    /\{\{#if hasGridItems\}\}[\s\S]*?\{\{\/if\}\}[\s\S]*?\{\{#if canClaimAll\}\}[\s\S]*?data-action="storage-claim-all"/u
+  );
   assert.match(template, /\{\{#if configuration\.canSetTexture\}\}/u);
   assert.match(template, /data-action="storage-set-texture"/u);
   assert.match(template, /data-mode="\{\{mode\}\}"/u);
   assert.doesNotMatch(template, /storage-page/u);
 });
 
+test("storage bulk destination dialog maps both standard actions and close to canonical results", async () => {
+  const previousWait = globalThis.foundry.applications.api.DialogV2.wait;
+  const configs = [];
+  try {
+    for (const { buttonIndex, expected } of [
+      { buttonIndex: 0, expected: "self" },
+      { buttonIndex: 1, expected: "party" },
+      { buttonIndex: 2, expected: null }
+    ]) {
+      globalThis.foundry.applications.api.DialogV2.wait = async (config) => {
+        configs.push(config);
+        return config.buttons[buttonIndex].callback();
+      };
+      assert.equal(await storageAppModule.promptStorageClaimAllDestination(), expected);
+    }
+    globalThis.foundry.applications.api.DialogV2.wait = async (config) => {
+      configs.push(config);
+      return config.close();
+    };
+    assert.equal(await storageAppModule.promptStorageClaimAllDestination(), null);
+    assert.deepEqual(
+      configs[0].buttons.map(({ label }) => label),
+      ["Забрать всё себе", "Забрать в инвентарь", "Отмена"]
+    );
+  }
+  finally {
+    globalThis.foundry.applications.api.DialogV2.wait = previousWait;
+  }
+});
+
+test("storage bulk action asks once and dispatches only the selected existing destination", async () => {
+  const previousWait = globalThis.foundry.applications.api.DialogV2.wait;
+  const { app, bulkClaimCalls } = createApp({
+    configure: false,
+    appOptions: { characterTokenUuid: "Scene.scene.Token.hero", path: ["bag-row"] }
+  });
+  const listeners = new Map();
+  app.render = async () => {};
+  app.element = new class extends FakeElement {
+    addEventListener(name, callback) { listeners.set(name, callback); }
+  }();
+
+  const context = await app._prepareContext();
+  assert.equal(context.canClaimAll, true);
+  await app._onRender({}, {});
+  const control = {
+    dataset: { action: "storage-claim-all" },
+    closest(selector) { return selector === "[data-action]" ? this : null; }
+  };
+  try {
+    for (const destination of [null, "self", "party"]) {
+      globalThis.foundry.applications.api.DialogV2.wait = async () => destination;
+      await listeners.get("click")({ target: control, preventDefault() {} });
+    }
+
+    assert.equal(bulkClaimCalls.length, 2);
+    assert.deepEqual(bulkClaimCalls.map((call) => call[1]), ["self", "party"]);
+    for (const call of bulkClaimCalls) {
+      assert.equal(call[0], app.tokenUuid);
+      assert.match(call[2], /^storage-all-/u);
+      assert.deepEqual(call[3], {
+        path: ["bag-row"],
+        characterTokenUuid: "Scene.scene.Token.hero"
+      });
+    }
+  }
+  finally {
+    globalThis.foundry.applications.api.DialogV2.wait = previousWait;
+  }
+
+  const journalOnly = createApp({
+    configure: false,
+    getStorageSnapshot: async () => ({
+      tokenUuid: "Scene.scene.Token.chest",
+      name: "Сундук",
+      state: "opened",
+      rows: [{ rowId: "notes", rowKind: "journal", name: "Записка", quantity: 1 }],
+      coins: {}
+    })
+  });
+  assert.equal((await journalOnly.app._prepareContext()).canClaimAll, false);
+});
+
+test("storage bulk action keeps one pending dialog or claim and restores its control state", async () => {
+  const previousWait = globalThis.foundry.applications.api.DialogV2.wait;
+  let dialogCalls = 0;
+  let resolveClaim;
+  const claimResult = new Promise((resolve) => { resolveClaim = resolve; });
+  const { app, bulkClaimCalls } = createApp({
+    configure: false,
+    claimStorageAll: async () => claimResult
+  });
+  const listeners = new Map();
+  app.render = async () => {};
+  app.element = new class extends FakeElement {
+    addEventListener(name, callback) { listeners.set(name, callback); }
+  }();
+  await app._prepareContext();
+  await app._onRender({}, {});
+  const control = {
+    dataset: { action: "storage-claim-all" },
+    closest(selector) { return selector === "[data-action]" ? this : null; }
+  };
+
+  try {
+    globalThis.foundry.applications.api.DialogV2.wait = async () => {
+      dialogCalls += 1;
+      return "self";
+    };
+    const firstClick = listeners.get("click")({ target: control, preventDefault() {} });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal((await app._prepareContext()).claimAllPending, true);
+    await listeners.get("click")({ target: control, preventDefault() {} });
+    assert.equal(dialogCalls, 1);
+    assert.equal(bulkClaimCalls.length, 1);
+
+    resolveClaim({ changed: true, sourceDeleted: false });
+    await firstClick;
+    assert.equal((await app._prepareContext()).claimAllPending, false);
+  }
+  finally {
+    globalThis.foundry.applications.api.DialogV2.wait = previousWait;
+  }
+});
+
+test("storage bulk action clears its pending guard when the pending-state render fails", async () => {
+  const previousConsoleError = console.error;
+  const { app, bulkClaimCalls } = createApp({ configure: false });
+  const listeners = new Map();
+  app.element = new class extends FakeElement {
+    addEventListener(name, callback) { listeners.set(name, callback); }
+  }();
+  await app._prepareContext();
+  await app._onRender({}, {});
+  app.render = async () => { throw new Error("render failed"); };
+  const control = {
+    dataset: { action: "storage-claim-all" },
+    closest(selector) { return selector === "[data-action]" ? this : null; }
+  };
+
+  try {
+    console.error = () => {};
+    await listeners.get("click")({ target: control, preventDefault() {} });
+    assert.equal(app.claimAllPending, false);
+    assert.equal(bulkClaimCalls.length, 0);
+  }
+  finally {
+    console.error = previousConsoleError;
+  }
+});
+
+test("successful final ground-pile claim closes without requesting the deleted token snapshot", async () => {
+  const previousUi = globalThis.ui;
+  const errors = [];
+  globalThis.ui = { notifications: { error: (message) => errors.push(message) } };
+  try {
+    let snapshotRequests = 0;
+    const { app } = createApp({
+      configure: false,
+      claimStorageRowResult: { changed: true, sourceDeleted: true },
+      getStorageSnapshot: async () => {
+        snapshotRequests += 1;
+        if (snapshotRequests > 1) throw new Error("Токен хранилища не найден.");
+        return {
+          tokenUuid: "Scene.scene.Token.ground",
+          name: "Меч",
+          state: "opened",
+          rows: [{ rowId: "last-row", rowKind: "item", name: "Меч", quantity: 1 }],
+          coins: {}
+        };
+      }
+    });
+    const listeners = new Map();
+    let closes = 0;
+    app.close = async () => { closes += 1; };
+    app.render = async () => {};
+    app.element = new class extends FakeElement {
+      addEventListener(name, callback) { listeners.set(name, callback); }
+    }();
+    await app._prepareContext();
+    await app._onRender({}, {});
+    const control = {
+      dataset: { action: "storage-claim-self", rowId: "last-row" },
+      closest(selector) { return selector === "[data-action]" ? this : null; }
+    };
+
+    await listeners.get("click")({ target: control, preventDefault() {} });
+
+    assert.equal(snapshotRequests, 1);
+    assert.equal(closes, 1);
+    assert.deepEqual(errors, []);
+  }
+  finally {
+    globalThis.ui = previousUi;
+  }
+});
+
+test("cancelled and stale party filter plans keep the storage row and request a fresh plan on retry", async () => {
+  const previousUi = globalThis.ui;
+  const errors = [];
+  globalThis.ui = { notifications: { error: (message) => errors.push(message) } };
+  try {
+    let attempts = 0;
+    const { app } = createApp({
+      configure: false,
+      claimStorageRow: async () => {
+        attempts += 1;
+        if (attempts === 1) {
+          const error = new Error("План устарел");
+          error.code = "plan-stale";
+          throw error;
+        }
+        return null;
+      }
+    });
+    const listeners = new Map();
+    let renders = 0;
+    app.render = async () => { renders += 1; };
+    app.element = new class extends FakeElement {
+      addEventListener(name, callback) { listeners.set(name, callback); }
+    }();
+    await app._prepareContext();
+    app.activeRowId = "row-1";
+    await app._onRender({}, {});
+    const control = {
+      dataset: { action: "storage-claim-party", rowId: "row-1" },
+      closest(selector) { return selector === "[data-action]" ? this : null; }
+    };
+
+    await listeners.get("click")({ target: control, preventDefault() {} });
+    await listeners.get("click")({ target: control, preventDefault() {} });
+
+    assert.equal(attempts, 2);
+    assert.equal(app.activeRowId, "row-1");
+    assert.equal(app.snapshot.rows.some((row) => row.rowId === "row-1"), true);
+    assert.equal(renders, 0);
+    assert.deepEqual(errors, ["План устарел"]);
+  }
+  finally {
+    globalThis.ui = previousUi;
+  }
+});
+
+test("Journal rows expose a read-only view model and no transfer controls", async () => {
+  const { app } = createApp({
+    configure: true,
+    getStorageSnapshot: async () => ({
+      tokenUuid: "Scene.scene.Token.chest",
+      name: "Сундук",
+      state: "opened",
+      rows: [{
+        rowId: "journal-row",
+        rowKind: "journal",
+        sourceId: "JournalEntry.private-notes",
+        name: "Полевые заметки",
+        journalRead: true,
+        quantity: 1
+      }],
+      coins: {}
+    })
+  });
+
+  const context = await app._prepareContext();
+  const row = context.rows[0];
+  assert.equal(row.isJournal, true);
+  assert.equal(row.name, "Полевые заметки (прочитано)");
+  assert.equal(row.canDrag, false);
+  assert.equal(row.canClaim, false);
+  assert.equal(row.canOpenSource, false);
+  assert.equal(row.showQuantity, false);
+  assert.equal(row.canDelete, true);
+
+  const template = await readFile(new URL("../templates/storage-app.hbs", import.meta.url), "utf8");
+  assert.match(template, /\{\{#if canDrag\}\}[\s\S]*?data-storage-row-drag[\s\S]*?\{\{\/if\}\}/u);
+  assert.match(template, /\{\{#if activePopover\.isJournal\}\}[\s\S]*?data-action="storage-read-journal"[\s\S]*?\{\{\/if\}\}/u);
+  const journalBranch = template.match(/\{\{#if activePopover\.isJournal\}\}([\s\S]*?)\{\{else\}\}/u)?.[1] ?? "";
+  assert.doesNotMatch(journalBranch, /storage-claim-self|storage-claim-party|data-storage-quantity|data-storage-row-drag/u);
+});
+
+test("storage row derives a visible broken suffix from the canonical persisted durability flag", async () => {
+  const { app } = createApp({
+    configure: false,
+    getStorageSnapshot: async () => ({
+      tokenUuid: "Scene.scene.Token.champion",
+      name: "Чемпион",
+      state: "opened",
+      rows: [{
+        rowId: "corpse-v1:plate:laty",
+        name: "Латы",
+        quantity: 1,
+        itemData: {
+          name: "Латы",
+          type: "equipment",
+          flags: {
+            [MODULE_ID]: {
+              durability: { eligible: true, state: "broken", breakStage: 1, hp: { value: 0, max: 30 } }
+            }
+          }
+        }
+      }],
+      coins: {}
+    })
+  });
+
+  const context = await app._prepareContext();
+
+  assert.equal(context.rows[0].name, "Латы (сломан)");
+});
+
+test("GM storage popover exposes the broken toggle only for canonical durable items", async () => {
+  const { app } = createApp({
+    getStorageSnapshot: async () => ({
+      tokenUuid: "Scene.scene.Token.chest",
+      name: "Сундук",
+      state: "opened",
+      rows: [{
+        rowId: "shield",
+        name: "Щит",
+        quantity: 1,
+        itemData: {
+          flags: {
+            [MODULE_ID]: {
+              durability: { version: 1, eligible: true, state: "broken", breakStage: 1, hp: { value: 0, max: 15 } }
+            }
+          }
+        }
+      }],
+      coins: {}
+    })
+  });
+  app.activeRowId = "shield";
+
+  const context = await app._prepareContext();
+
+  assert.equal(context.activePopover.canToggleBroken, true);
+  assert.equal(context.activePopover.broken, true);
+});
+
+test("GM storage popover exposes the broken toggle for eligible uninitialized gear", async () => {
+  const { app } = createApp({
+    getStorageSnapshot: async () => ({
+      tokenUuid: "Scene.scene.Token.plate",
+      name: "Латы",
+      state: "opened",
+      rows: [{
+        rowId: "plate",
+        name: "Латы",
+        quantity: 1,
+        itemData: {
+          name: "Латы",
+          type: "equipment",
+          system: { quantity: 1, properties: [], rarity: "" },
+          flags: {}
+        }
+      }],
+      coins: {}
+    })
+  });
+  app.activeRowId = "plate";
+
+  const context = await app._prepareContext();
+
+  assert.equal(context.activePopover.canToggleBroken, true);
+  assert.equal(context.activePopover.broken, false);
+});
+
+test("Journal read action passes nested access context and one stable record callback", async () => {
+  const snapshot = {
+    name: "Полевые заметки",
+    pages: [{ pageId: "text-1", name: "День первый", type: "text", html: "<p>Безопасный текст</p>" }]
+  };
+  const viewerCalls = [];
+  let snapshotRequests = 0;
+  const { app, journalReadCalls, journalRecordCalls } = createApp({
+    configure: false,
+    appOptions: {
+      path: ["bag-row"],
+      characterTokenUuid: "Scene.scene.Token.hero"
+    },
+    getStorageSnapshot: async () => {
+      snapshotRequests += 1;
+      return {
+        tokenUuid: "Scene.scene.Token.chest",
+        name: "Сумка",
+        state: "opened",
+        rows: [{
+          rowId: "journal-row",
+          rowKind: "journal",
+          name: "Полевые заметки",
+          journalRead: snapshotRequests > 1,
+          quantity: 1
+        }],
+        coins: {}
+      };
+    },
+    readStorageJournal: async () => snapshot,
+    openStorageJournalViewer: async (receivedSnapshot, options) => viewerCalls.push([receivedSnapshot, options])
+  });
+  const listeners = new Map();
+  app.element = new class extends FakeElement {
+    addEventListener(name, callback) { listeners.set(name, callback); }
+  }();
+  app.render = async () => {};
+  await app._prepareContext();
+  await app._onRender({}, {});
+  const control = {
+    dataset: { action: "storage-read-journal", rowId: "journal-row" },
+    closest(selector) { return selector === "[data-action]" ? this : null; }
+  };
+
+  await listeners.get("click")({ target: control, preventDefault() {} });
+
+  assert.deepEqual(journalReadCalls, [[
+    "Scene.scene.Token.chest",
+    "journal-row",
+    { path: ["bag-row"], characterTokenUuid: "Scene.scene.Token.hero" }
+  ]]);
+  assert.equal(viewerCalls.length, 1);
+  assert.equal(viewerCalls[0][0], snapshot);
+  assert.equal(typeof viewerCalls[0][1].onRecord, "function");
+  await viewerCalls[0][1].onRecord();
+  await viewerCalls[0][1].onRecord();
+  assert.equal(journalRecordCalls.length, 2);
+  assert.equal(journalRecordCalls[0][0], "Scene.scene.Token.chest");
+  assert.equal(journalRecordCalls[0][1], "journal-row");
+  assert.match(journalRecordCalls[0][2], /^storage-journal-record-/u);
+  assert.equal(journalRecordCalls[1][2], journalRecordCalls[0][2]);
+  assert.deepEqual(journalRecordCalls[0][3], {
+    path: ["bag-row"],
+    characterTokenUuid: "Scene.scene.Token.hero"
+  });
+  assert.equal(snapshotRequests, 2);
+  assert.equal((await app._prepareContext()).rows[0].name, "Полевые заметки (прочитано)");
+});
+
 test("storage configuration exposes template and manual item controls to GMs", async () => {
   const context = await createApp().app._prepareContext();
   assert.equal(context.canManage, true);
   assert.equal(context.configuration.enabled, true);
-  assert.equal(context.configuration.templateOptions[0].name, "Простой сундук");
+  assert.equal(context.configuration.template.name, "Простой сундук");
   assert.equal(context.configuration.canAddManualItems, true);
   assert.equal(context.configuration.baseName, "Chest");
+  assert.equal(context.configuration.mixGeneratedLoot, true);
   assert.equal(context.configuration.canSetTexture, true);
   assert.equal(context.configuration.displayMode, "opened");
   assert.deepEqual(
@@ -127,22 +816,92 @@ test("storage configuration exposes template and manual item controls to GMs", a
   assert.equal(context.rows[0].canEdit, true);
   assert.equal(context.gridColumns, 3);
   assert.equal(context.activePopover, null);
+  assert.equal(context.canClaimAll, false);
+});
+
+test("storage configuration saves the mixed-loot checkbox with the existing fields", async () => {
+  const { app, configCalls } = createApp();
+  const listeners = new Map();
+  app.render = async () => {};
+  app.element = new class extends FakeElement {
+    addEventListener(name, callback) { listeners.set(name, callback); }
+  }();
+  await app._prepareContext();
+  await app._onRender({}, {});
+  const form = {
+    elements: {
+      baseName: { value: "Сундук мастера" },
+      mixGeneratedLoot: { checked: true }
+    }
+  };
+  const control = {
+    dataset: { action: "storage-save-config" },
+    closest(selector) {
+      if (selector === "[data-action]") return this;
+      if (selector === "form") return form;
+      return null;
+    }
+  };
+
+  await listeners.get("click")({ target: control, preventDefault() {} });
+
+  assert.deepEqual(configCalls[0], [
+    app.tokenUuid,
+    { baseName: "Сундук мастера", mixGeneratedLoot: true },
+    {}
+  ]);
+  const template = await readFile(new URL("../templates/storage-app.hbs", import.meta.url), "utf8");
+  assert.match(template, /name="mixGeneratedLoot"/u);
+  assert.match(template, />Подмешивать случайный лут</u);
+  assert.match(
+    template,
+    /data-action="storage-save-config"[\s\S]*?>Сохранить<\/[\s\S]*?name="mixGeneratedLoot"/u
+  );
+  assert.doesNotMatch(template, /Сохранить настройки/u);
+});
+
+test("ordinary storage still exposes claim all when transferable contents exist", async () => {
+  const context = await createApp({ configure: false }).app._prepareContext();
+  assert.equal(context.canClaimAll, true);
+});
+
+test("storage configuration opens and resets triggers for the exact nested path", async () => {
+  const { app, triggerEditorCalls, triggerResetCalls } = createApp({
+    appOptions: { path: ["bag"], characterTokenUuid: "Scene.scene.Token.hero" }
+  });
+  const listeners = new Map();
+  app.element = new class extends FakeElement { addEventListener(name, callback) { listeners.set(name, callback); } }();
+  app.render = async () => {};
+  await app._prepareContext();
+  await app._onRender({}, {});
+  const click = async (action) => listeners.get("click")({
+    target: { dataset: { action }, closest(selector) { return selector === "[data-action]" ? this : null; } },
+    preventDefault() {}
+  });
+
+  await click("storage-open-trigger-editor");
+  await click("storage-reset-triggers");
+
+  assert.deepEqual(triggerEditorCalls, [["Scene.scene.Token.chest", { path: ["bag"], characterTokenUuid: "Scene.scene.Token.hero" }]]);
+  assert.deepEqual(triggerResetCalls, [["Scene.scene.Token.chest", "", { path: ["bag"], characterTokenUuid: "Scene.scene.Token.hero" }]]);
 });
 
 test("storage configuration is hidden from players", async () => {
   const context = await createApp({ canManage: false, configure: true }).app._prepareContext();
   assert.equal(context.canManage, false);
   assert.equal(context.configuration.enabled, false);
-  assert.deepEqual(context.configuration.templateOptions, []);
+  assert.equal(context.configuration.template, null);
   assert.equal(context.configuration.canSetTexture, false);
   assert.equal(context.rows[0].canEdit, false);
 });
 
 test("storage template exposes generated-row quantity and delete controls to GMs", async () => {
   const template = await readFile(new URL("../templates/storage-app.hbs", import.meta.url), "utf8");
-  assert.match(template, /data-action="storage-update-row"/u);
+  assert.doesNotMatch(template, /data-action="storage-update-row"/u);
   assert.match(template, /data-action="storage-delete-row"/u);
   assert.match(template, /data-storage-quantity/u);
+  assert.match(template, /data-storage-broken/u);
+  assert.match(template, />Сломано</u);
   assert.match(template, /class="rm-storage-popover-layer"/u);
   assert.match(template, /data-anchor-row-id="\{\{activePopover\.anchorRowId\}\}"/u);
 });
@@ -164,7 +923,7 @@ test("clicking a texture mode sends the exact token and mode through the module 
     }
   }();
   app.element = root;
-  app._onRender({}, {});
+  await app._onRender({}, {});
   const control = {
     dataset: { action: "storage-set-texture", mode: "empty" },
     closest(selector) {
@@ -187,7 +946,7 @@ test("changing a storage quantity saves it without requiring the tiny check butt
     addEventListener(name, callback) { listeners.set(name, callback); }
   }();
   app.element = root;
-  app._onRender({}, {});
+  await app._onRender({}, {});
   const input = {
     value: "7",
     dataset: { rowId: "row-1" },
@@ -204,6 +963,30 @@ test("changing a storage quantity saves it without requiring the tiny check butt
   ]]);
 });
 
+test("changing the broken toggle sends the exact row and nested path through the module API", async () => {
+  const { app, brokenCalls } = createApp({ appOptions: { path: ["bag-row"] } });
+  const listeners = new Map();
+  const root = new class extends FakeElement {
+    addEventListener(name, callback) { listeners.set(name, callback); }
+  }();
+  app.element = root;
+  await app._onRender({}, {});
+  const input = {
+    checked: true,
+    dataset: { rowId: "row-1" },
+    matches: (selector) => selector === "[data-storage-broken]"
+  };
+
+  await listeners.get("change")({ target: input });
+
+  assert.deepEqual(brokenCalls, [[
+    "Scene.scene.Token.chest",
+    "row-1",
+    true,
+    { path: ["bag-row"] }
+  ]]);
+});
+
 test("compact storage uses the token name only in the window title", async () => {
   const template = await readFile(new URL("../templates/storage-app.hbs", import.meta.url), "utf8");
   const { app } = createApp();
@@ -217,7 +1000,7 @@ test("compact storage uses the token name only in the window title", async () =>
   }();
 
   const context = await app._prepareContext();
-  app._onRender(context, {});
+  await app._onRender(context, {});
 
   assert.equal(app.options.window.title, "Сундук");
   assert.equal(app.title, "Сундук");
@@ -230,13 +1013,15 @@ test("item cells keep click actions separate from article dragging and use no na
   const css = await readFile(new URL("../styles/main.css", import.meta.url), "utf8");
 
   assert.match(template, /<article[^>]*draggable="true"[^>]*data-storage-row-drag/u);
-  assert.match(template, /class="rm-storage-item__icon rm-tooltip-anchor"[^>]*data-action="\{\{primaryAction\}\}"/u);
-  assert.match(template, /class="rm-storage-item__icon rm-tooltip-anchor"[^>]*data-rm-tooltip="\{\{name\}\}"/u);
+  assert.match(template, /class="rm-storage-item__icon rm-storage-tooltip-anchor"[^>]*data-action="\{\{primaryAction\}\}"/u);
+  assert.match(template, /class="rm-storage-item__icon rm-storage-tooltip-anchor"[^>]*data-rm-tooltip="\{\{name\}\}"/u);
   assert.match(template, /data-storage-popover/u);
   assert.doesNotMatch(template, /class="[^"]*rm-storage-item__icon[^"]*"[^>]*title=/u);
   assert.match(template, /aria-label="[^"]*\{\{name\}\}"/u);
-  assert.match(css, /\.rm-storage-item__icon\.rm-tooltip-anchor\s*\{[^}]*overflow:\s*visible/isu);
-  assert.match(css, /\.rm-storage-item__icon\.rm-tooltip-anchor\s*>\s*img\s*\{[^}]*border-radius:\s*inherit/isu);
+  assert.match(css, /\.rm-storage-item__icon\.rm-storage-tooltip-anchor\s*\{[^}]*overflow:\s*visible/isu);
+  assert.match(css, /\.rm-storage-item__icon\.rm-storage-tooltip-anchor\s*>\s*img\s*\{[^}]*border-radius:\s*inherit/isu);
+  assert.doesNotMatch(template, /class="[^"]*\brm-tooltip-anchor\b/u);
+  assert.match(css, /\.rm-anchored-tooltip\s*\{[^}]*white-space:\s*pre-wrap/isu);
 });
 
 test("container cells open the nested storage directly while ordinary items open their popover", async () => {
@@ -291,7 +1076,7 @@ test("PKM on a nested container still exposes transfer actions", async () => {
     addEventListener(name, callback) { listeners.set(name, callback); }
   }();
   await app._prepareContext();
-  app._onRender({}, {});
+  await app._onRender({}, {});
   const icon = {
     dataset: { action: "storage-open-container", rowId: "bag-row" },
     closest(selector) { return selector.includes("storage-open-container") ? this : null; }
@@ -334,7 +1119,7 @@ test("matching token updates rerender from a fresh snapshot and unrelated update
       addEventListener() {}
     }();
     await app._prepareContext();
-    app._onRender({}, {});
+    await app._onRender({}, {});
 
     name = "Сундук (пусто)";
     await callbacks.get("updateToken")[0]({ uuid: app.tokenUuid });
@@ -370,7 +1155,7 @@ test("newer snapshot requests win and hook subscriptions are removed on close", 
     });
     app.render = async () => {};
     app.element = new class extends FakeElement { addEventListener() {} }();
-    app._onRender({}, {});
+    await app._onRender({}, {});
 
     const first = app.scheduleSnapshotRefresh();
     const second = app.scheduleSnapshotRefresh();
@@ -403,7 +1188,7 @@ test("LKM opens an item popover and its self action claims the row", async () =>
     addEventListener(name, callback) { listeners.set(name, callback); }
   }();
   await app._prepareContext();
-  app._onRender({}, {});
+  await app._onRender({}, {});
 
   const control = (action) => ({
     dataset: { action, rowId: "row-1" },
@@ -433,7 +1218,7 @@ test("popover close control dismisses the active item popover", async () => {
     addEventListener(name, callback) { listeners.set(name, callback); }
   }();
   await app._prepareContext();
-  app._onRender({}, {});
+  await app._onRender({}, {});
   app.activeRowId = "row-1";
   const closeControl = {
     dataset: { action: "storage-close-popover" },
@@ -455,7 +1240,7 @@ test("PKM opens the same item popover and suppresses the native menu", async () 
     addEventListener(name, callback) { listeners.set(name, callback); }
   }();
   await app._prepareContext();
-  app._onRender({}, {});
+  await app._onRender({}, {});
 
   let prevented = 0;
   let stopped = 0;
@@ -477,14 +1262,85 @@ test("PKM opens the same item popover and suppresses the native menu", async () 
   assert.equal(stopped, 1);
 });
 
+test("storage portal retains canonical actions and resolves the replacement row after rerender", async () => {
+  const dom = createOverlayDom(FakeElement);
+  const { owner: root, anchor, content } = dom.fixture();
+  const { app, quantityCalls, brokenCalls, claimCalls } = createApp();
+  let currentAnchor = anchor;
+  let currentContent = content;
+  currentAnchor.dataset.rowId = 'row-1';
+  root.querySelector = selector => selector === '[data-storage-popover]' ? currentContent : null;
+  root.querySelectorAll = () => [currentAnchor];
+  app.element = root;
+  app.activeRowId = 'row-1';
+  await app._prepareContext();
+  await app._onRender({}, {});
+  assert.ok(app.rowPopover?.element?.contains(content));
+  const input = { dataset: {rowId:'row-1'}, value:'4', checked:true, matches:s=>s==='[data-storage-quantity]' };
+  await content.emit('change',{target:input});
+  assert.equal(quantityCalls.length,1);
+  input.matches=s=>s==='[data-storage-broken]';
+  await content.emit('change',{target:input});
+  assert.equal(brokenCalls.length,1);
+  const control = { dataset:{action:'storage-claim-self',rowId:'row-1'}, closest(){return this;} };
+  const oldWait=foundry.applications.api.DialogV2.wait;
+  foundry.applications.api.DialogV2.wait=async()=>1;
+  try { await content.emit('click',{target:control,preventDefault(){}}); }
+  finally { foundry.applications.api.DialogV2.wait=oldWait; }
+  assert.equal(claimCalls.length,1);
+  currentAnchor.remove(); currentAnchor=new dom.Element(); currentAnchor.dataset.rowId='row-1'; root.append(currentAnchor);
+  currentContent=new dom.Element(); currentContent.rect=content.rect;
+  app.activeRowId='row-1'; await app._onRender({},{});
+  assert.equal(dom.document.body.children.filter(e=>e.dataset.rmAnchoredOverlay).length,1);
+  assert.ok(app.rowPopover.element.contains(currentContent));
+  await content.emit('change',{target:input}); assert.equal(brokenCalls.length,1,'old handlers aborted');
+  let closeRenders=0; app.render=async()=>{closeRenders++;};
+  app.rowPopover.close({restoreFocus:true});
+  assert.equal(closeRenders,0,'closing preserves the focused row DOM');
+  assert.equal(dom.document.activeElement,currentAnchor);
+  assert.equal(currentAnchor.getAttribute('aria-expanded'),'false');
+  await app._onClose({}); assert.equal(dom.document.body.children.length,1);
+  assert.equal(app.snapshot.rows.length,1,'closing does not remove rows');
+});
+
+test("storage popover keeps a stable row anchor without grid-index geometry", async () => {
+  const rows = Array.from({ length: 8 }, (_value, index) => ({
+    rowId: `row-${index + 1}`,
+    name: `Предмет ${index + 1}`,
+    quantity: 1
+  }));
+  const { app } = createApp({
+    configure: false,
+    getStorageSnapshot: async () => ({
+      tokenUuid: "Scene.scene.Token.chest",
+      name: "Бочка",
+      state: "opened",
+      rows,
+      coins: { gp: 2 }
+    })
+  });
+
+  for (const [rowId, expected] of [
+    ["row-1", "row-1"], ["row-6", "row-6"], ["row-8", "row-8"], ["__coins", "__coins:gp"]
+  ]) {
+    app.activeRowId = rowId;
+    const context = await app._prepareContext();
+    assert.equal(context.activePopover.anchorRowId, expected);
+    assert.equal(context.activePopover.anchorRow, undefined);
+  }
+});
+
 test("storage item popovers stay interactive above their grid", async () => {
   const css = await readFile(new URL("../styles/main.css", import.meta.url), "utf8");
   const template = await readFile(new URL("../templates/storage-app.hbs", import.meta.url), "utf8");
   assert.match(css, /\.rm-storage-item__popover\s*\{[^}]*pointer-events:\s*auto/isu);
-  assert.match(css, /\.rm-storage-popover-layer\s*\{[^}]*position:\s*absolute[^}]*pointer-events:\s*none/isu);
-  assert.match(css, /\.rebreya-storage-app\s+\.window-content\s*\{[^}]*overflow:\s*visible/isu);
+  assert.match(css, /\.rm-anchored-overlay\s*\{[^}]*position:\s*fixed/isu);
+  assert.match(css, /\.rm-storage-grid\s*\{[^}]*position:\s*relative/isu);
+  assert.doesNotMatch(css, /--rm-storage-popover-anchor-row/u);
+  assert.match(css, /\.rebreya-storage-app\s+\.window-content\s*\{[^}]*overflow:\s*auto/isu);
   assert.doesNotMatch(css, /\.rm-storage-grid:has\(/u);
-  assert.match(template, /<\/div>\s*\{\{else\}\}[\s\S]*?\{\{#if activePopover\}\}\s*<div class="rm-storage-popover-layer"/u);
+  assert.match(template, /\{\{#each coinRows\}\}[\s\S]*?\{\{\/each\}\}\s*\{\{#if activePopover\}\}\s*<div\s+class="rm-storage-popover-layer"/u);
+  assert.match(template, /data-storage-popover-layer\s+hidden/u);
 });
 
 test("minimized storage hides all overflowing window content", async () => {
@@ -530,7 +1386,7 @@ test("container title opens a nested path and breadcrumbs return to the root", a
     addEventListener(name, callback) { listeners.set(name, callback); }
   }();
   await app._prepareContext();
-  app._onRender({}, {});
+  await app._onRender({}, {});
   const control = (action, rowId = "bag-row", index = "0") => ({
     dataset: { action, rowId, index },
     closest(selector) { return selector === "[data-action]" ? this : null; }
@@ -557,7 +1413,7 @@ test("GM configuration drop routes an item through the authoritative deposit API
     addEventListener(name, callback) { listeners.set(name, callback); }
   }();
   await app._prepareContext();
-  app._onRender({}, {});
+  await app._onRender({}, {});
   let prevented = 0;
   const dropzone = {
     closest(selector) { return selector === "[data-storage-dropzone]" ? this : null; }
@@ -579,6 +1435,86 @@ test("GM configuration drop routes an item through the authoritative deposit API
   });
   assert.equal(depositCalls[0][2], 1);
   assert.match(depositCalls[0][3], /^storage-window-deposit-/u);
+  assert.deepEqual(depositCalls[0][4], { administrative: true });
+});
+
+test("GM configuration drop routes a JournalEntry reference through the authoritative deposit API", async () => {
+  const { app, depositCalls } = createApp({
+    configure: true,
+    inspectStorageDepositSource: async (data) => ({
+      source: { kind: "journal", sourceUuid: data.uuid, documentName: data.type },
+      available: 1,
+      mode: "copy"
+    })
+  });
+  const listeners = new Map();
+  app.render = async () => {};
+  app.element = new class extends FakeElement {
+    addEventListener(name, callback) { listeners.set(name, callback); }
+  }();
+  await app._prepareContext();
+  await app._onRender({}, {});
+  let prevented = 0;
+  const dropzone = {
+    closest(selector) { return selector === "[data-storage-dropzone]" ? this : null; }
+  };
+  await listeners.get("drop")({
+    target: dropzone,
+    preventDefault: () => { prevented += 1; },
+    dataTransfer: {
+      getData: () => JSON.stringify({ type: "JournalEntry", uuid: "JournalEntry.mechanus" })
+    }
+  });
+
+  assert.equal(prevented, 1);
+  assert.equal(depositCalls.length, 1);
+  assert.deepEqual(depositCalls[0][1], {
+    kind: "journal",
+    sourceUuid: "JournalEntry.mechanus",
+    documentName: "JournalEntry"
+  });
+  assert.equal(depositCalls[0][2], 1);
+});
+
+test("GM configuration drop routes a JournalEntryPage reference through the authoritative deposit API", async () => {
+  const { app, depositCalls } = createApp({
+    configure: true,
+    inspectStorageDepositSource: async (data) => ({
+      source: { kind: "journal", sourceUuid: data.uuid, documentName: data.type },
+      available: 1,
+      mode: "copy"
+    })
+  });
+  const listeners = new Map();
+  app.render = async () => {};
+  app.element = new class extends FakeElement {
+    addEventListener(name, callback) { listeners.set(name, callback); }
+  }();
+  await app._prepareContext();
+  await app._onRender({}, {});
+  let prevented = 0;
+  const dropzone = {
+    closest(selector) { return selector === "[data-storage-dropzone]" ? this : null; }
+  };
+  await listeners.get("drop")({
+    target: dropzone,
+    preventDefault: () => { prevented += 1; },
+    dataTransfer: {
+      getData: () => JSON.stringify({
+        type: "JournalEntryPage",
+        uuid: "JournalEntry.mechanus.JournalEntryPage.warning"
+      })
+    }
+  });
+
+  assert.equal(prevented, 1);
+  assert.equal(depositCalls.length, 1);
+  assert.deepEqual(depositCalls[0][1], {
+    kind: "journal",
+    sourceUuid: "JournalEntry.mechanus.JournalEntryPage.warning",
+    documentName: "JournalEntryPage"
+  });
+  assert.equal(depositCalls[0][2], 1);
 });
 
 test("ordinary player storage accepts a ground-pile row drop anywhere in its window", async () => {
@@ -614,7 +1550,7 @@ test("ordinary player storage accepts a ground-pile row drop anywhere in its win
     addEventListener(name, callback) { listeners.set(name, callback); }
   }();
   await app._prepareContext();
-  app._onRender({}, {});
+  await app._onRender({}, {});
   let prevented = 0;
   let phase = "dragover";
   const dropEvent = {
@@ -655,7 +1591,7 @@ test("ordinary storage leaves unsupported and editable-target drops to native be
     addEventListener(name, callback) { listeners.set(name, callback); }
   }();
   await app._prepareContext();
-  app._onRender({}, {});
+  await app._onRender({}, {});
   let prevented = 0;
   const unsupported = {
     target: { closest: () => null },

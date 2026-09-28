@@ -12,6 +12,7 @@ import { PerformerAutomationService } from "../scripts/combat/performer-automati
 import { RaceAutomationService } from "../scripts/combat/race-automation-service.js";
 import { RuneKnightAutomationService } from "../scripts/combat/rune-knight-automation-service.js";
 import { SorcererAutomationService } from "../scripts/combat/sorcerer-automation-service.js";
+import { MagicItemsCompendiumService } from "../scripts/data/magic-items-compendium.js";
 
 function stepRecorder() {
   const steps = [];
@@ -92,7 +93,8 @@ test("composition root registers background services after constructing the pipe
     "raceAutomationService",
     "craftsmanGadgetService",
     "craftsmanConstructorService",
-    "implantService"
+    "implantService",
+    "magicItemsCompendium"
   ]) {
     assert.match(
       source.slice(pipelineIndex, registrationIndex),
@@ -127,6 +129,19 @@ test("race, Fighter, and Paladin register ordered interactive long-rest choices"
     assert.equal(typeof step.isEligible, "function", step.id);
     assert.equal(typeof step.run, "function", step.id);
   }
+});
+
+test("magic-item ability rings register one interactive long-rest choice", () => {
+  const { pipeline, steps } = stepRecorder();
+
+  new MagicItemsCompendiumService().registerLongRestSteps(pipeline);
+
+  assert.deepEqual(
+    steps.map(({ id, order, interactive }) => ({ id, order, interactive })),
+    [{ id: "magic-items.ability-rings", order: 250, interactive: true }]
+  );
+  assert.equal(typeof steps[0].isEligible, "function");
+  assert.equal(typeof steps[0].run, "function");
 });
 
 test("interactive long-rest dialogs consume pipeline progress", async () => {

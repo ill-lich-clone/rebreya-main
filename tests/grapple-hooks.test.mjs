@@ -1,0 +1,375 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import { MODULE_ID } from "../scripts/constants.js";
+import { GRAPPLE_LINK_FLAG } from "../scripts/combat/grapple-automation-service.js";
+import { registerGrappleHooks } from "../scripts/combat/grapple-hooks.js";
+
+function hooksRegistry() {
+  const entries = new Map();
+  return {
+    on(event, callback) {
+      const list = entries.get(event) ?? [];
+      list.push(callback);
+      entries.set(event, list);
+      return callback;
+    },
+    call(event, ...args) {
+      return (entries.get(event) ?? []).map((callback) => callback(...args));
+    },
+    count(event) { return (entries.get(event) ?? []).length; }
+  };
+}
+
+function sourceToken() {
+  const uuid = "Scene.scene.Token.source";
+  return {
+    id: "source",
+    uuid,
+    x: 10,
+    y: 20,
+    flags: {},
+    actor: {
+      flags: { [MODULE_ID]: { handReservations: [{
+        linkId: "link-1", kind: "grapple", handSlot: "left",
+        sourceTokenUuid: uuid, targetTokenUuid: "Scene.scene.Token.target"
+      }] } },
+      items: { contents: [] },
+      effects: { contents: [] },
+      getFlag(scope, key) { return this.flags?.[scope]?.[key]; }
+    },
+    getFlag(scope, key) { return this.flags?.[scope]?.[key]; }
+  };
+}
+
+function targetToken() {
+  const link = {
+    linkId: "link-1", kind: "grapple", handSlot: "left",
+    sourceTokenUuid: "Scene.scene.Token.source", targetTokenUuid: "Scene.scene.Token.target"
+  };
+  return {
+    id: "target",
+    uuid: link.targetTokenUuid,
+    x: 100,
+    y: 200,
+    flags: { [MODULE_ID]: { [GRAPPLE_LINK_FLAG]: link } },
+    actor: { flags: {}, items: { contents: [] }, effects: { contents: [] } },
+    getFlag(scope, key) { return this.flags?.[scope]?.[key]; }
+  };
+}
+
+function deferred() {
+  let resolve;
+  const promise = new Promise((done) => { resolve = done; });
+  return { promise, resolve };
+}
+
+async function flush() {
+  await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+function environment({
+  dialogChoice = "cancel",
+  showMoveDialog = null,
+  dragError = null,
+  TokenClass = undefined,
+  twistedTargetLink = null,
+  twistedSourceLinks = [],
+  game = { user: { id: "player-a" }, combat: null, scenes: { active: null } },
+  canvas = { scene: null }
+} = {}) {
+  const Hooks = hooksRegistry();
+  const calls = { drag: [], releaseMove: [], twistedPull: [], twistedReleaseMove: [], twistedScenes: [], auras: [], effects: [], tokens: [], scenes: [], dialogs: [], errors: [] };
+  const moduleApi = {
+    getTwistedLink: () => twistedTargetLink,
+    getTwistedLinksForSource: () => twistedSourceLinks,
+    async requestDragFromTokenUpdate(payload) {
+      calls.drag.push(payload);
+      if (dragError) throw dragError;
+    },
+    async requestReleaseAndMove(payload) { calls.releaseMove.push(payload); },
+    async requestTwistedPullFromTokenUpdate(payload) { calls.twistedPull.push(payload); },
+    async requestTwistedReleaseAndMove(payload) { calls.twistedReleaseMove.push(payload); },
+    async handleManagedEffectDeleted(effect) { calls.effects.push(effect); },
+    async handleTokenDeleted(token) { calls.tokens.push(token); },
+    async reconcileScene(scene) { calls.scenes.push(scene); },
+    async reconcileTwistedLinks(scene) { calls.twistedScenes.push(scene); },
+    async refreshTwistedAura(combat, scene) { calls.auras.push({ combat, scene }); }
+  };
+  registerGrappleHooks(moduleApi, {
+    Hooks,
+    showMoveDialog: showMoveDialog ?? (async (config) => {
+      calls.dialogs.push(config);
+      return dialogChoice;
+    }),
+    randomId: () => `operation-${calls.drag.length + calls.releaseMove.length + 1}`,
+    isActiveGmClient: () => true,
+    gameProvider: () => game,
+    canvasProvider: () => canvas,
+    notifyError: (message) => calls.errors.push(message),
+    TokenClass
+  });
+  return { Hooks, calls, moduleApi };
+}
+
+test("registers one hook for each grapple lifecycle surface", () => {
+  const env = environment();
+  for (const event of ["preUpdateToken", "deleteActiveEffect", "deleteToken", "canvasReady", "ready"]) {
+    assert.equal(env.Hooks.count(event), 1, event);
+  }
+});
+
+test("source UI drag ignores token footprints during dnd5e preview pathfinding", () => {
+  class TokenPlaceable {
+    constructor(document) {
+      this.document = document;
+      this.actor = document.actor;
+    }
+
+    _getDragConstrainOptions() {
+      return { ignoreWalls: false, ignoreCost: false };
+    }
+  }
+
+  environment({ TokenClass: TokenPlaceable });
+
+  const source = new TokenPlaceable(sourceToken());
+  assert.deepEqual(source._getDragConstrainOptions(), {
+    ignoreWalls: false,
+    ignoreCost: false,
+    ignoreTokens: true
+  });
+
+  const ordinaryDocument = sourceToken();
+  ordinaryDocument.actor.flags[MODULE_ID].handReservations = [];
+  const ordinary = new TokenPlaceable(ordinaryDocument);
+  assert.deepEqual(ordinary._getDragConstrainOptions(), {
+    ignoreWalls: false,
+    ignoreCost: false
+  });
+});
+
+test("source movement removes only coordinates and schedules one authoritative grouped drag", async () => {
+  const env = environment();
+  const token = sourceToken();
+  const changed = { x: 500, y: 600, alpha: 0.5 };
+  assert.deepEqual(env.Hooks.call("preUpdateToken", token, changed, {}, "player-a"), [undefined]);
+  assert.deepEqual(changed, { alpha: 0.5 });
+  await flush();
+  assert.deepEqual(env.calls.drag, [{
+    sourceTokenUuid: token.uuid,
+    x: 500,
+    y: 600,
+    operationId: "grapple-drag-operation-1",
+    requesterUserId: "player-a"
+  }]);
+
+  const onlyPosition = { x: 700 };
+  assert.deepEqual(env.Hooks.call("preUpdateToken", token, onlyPosition, {}, "player-a"), [false]);
+  assert.deepEqual(onlyPosition, {});
+});
+
+test("source drag recovers the requested waypoint after dnd5e removes blocked coordinates", async () => {
+  const env = environment();
+  const token = sourceToken();
+  const changed = {};
+  const options = {
+    movement: {
+      [token.id]: {
+        method: "dragging",
+        waypoints: [{ x: 110, y: 20, action: "walk" }],
+        constrainOptions: {}
+      }
+    }
+  };
+
+  assert.deepEqual(env.Hooks.call("preUpdateToken", token, changed, options, "player-a"), [false]);
+  await flush();
+
+  assert.deepEqual(env.calls.drag.map(({ x, y }) => [x, y]), [[110, 20]]);
+});
+
+test("source drag prefers the requested waypoint over coordinates clipped by dnd5e", async () => {
+  const env = environment();
+  const token = sourceToken();
+  const changed = { x: 10, y: 20, _movementHistory: [{ x: 10, y: 20 }] };
+  const options = {
+    movement: {
+      [token.id]: {
+        method: "dragging",
+        waypoints: [{ x: 110, y: 20, action: "walk" }],
+        constrainOptions: {}
+      }
+    }
+  };
+
+  assert.deepEqual(env.Hooks.call("preUpdateToken", token, changed, options, "player-a"), [false]);
+  assert.deepEqual(changed, {});
+  await flush();
+
+  assert.deepEqual(env.calls.drag.map(({ x, y }) => [x, y]), [[110, 20]]);
+});
+
+test("source movement reports a localized grapple error instead of an internal code", async () => {
+  const error = new Error("outside-reach");
+  error.code = "outside-reach";
+  const env = environment({ dragError: error });
+
+  env.Hooks.call("preUpdateToken", sourceToken(), { x: 500, y: 600 }, {}, "player-a");
+  await flush();
+
+  assert.deepEqual(env.calls.errors, ["Автоматика захвата: схваченное существо нельзя переместить в эту точку"]);
+});
+
+test("grapple bypass preserves the original movement patch", async () => {
+  const env = environment();
+  const changed = { x: 500, y: 600 };
+  env.Hooks.call("preUpdateToken", sourceToken(), changed, {
+    [MODULE_ID]: { grappleBypass: true }
+  }, "player-a");
+  await flush();
+  assert.deepEqual(changed, { x: 500, y: 600 });
+  assert.equal(env.calls.drag.length, 0);
+});
+
+test("target movement shows the Russian choice and release button clears the link before moving", async () => {
+  const env = environment({ dialogChoice: "release" });
+  const token = targetToken();
+  const changed = { x: 500, y: 600, alpha: 0.5 };
+  env.Hooks.call("preUpdateToken", token, changed, {}, "player-a");
+  assert.deepEqual(changed, { alpha: 0.5 });
+  await flush();
+
+  assert.equal(env.calls.dialogs[0].title, "Существо было схвачено");
+  assert.deepEqual(env.calls.dialogs[0].buttons.map((button) => button.label), [
+    "Отменить захват",
+    "Отменить перемещение"
+  ]);
+  assert.deepEqual(env.calls.releaseMove, [{
+    targetTokenUuid: token.uuid,
+    linkId: "link-1",
+    x: 500,
+    y: 600,
+    operationId: "grapple-release-move-operation-1",
+    requesterUserId: "player-a"
+  }]);
+});
+
+test("cancel, close, and duplicate target updates do not move or open parallel dialogs", async () => {
+  const pending = deferred();
+  let dialogCount = 0;
+  const env = environment({ showMoveDialog: async () => {
+    dialogCount += 1;
+    return pending.promise;
+  } });
+  const token = targetToken();
+  env.Hooks.call("preUpdateToken", token, { x: 300 }, {}, "player-a");
+  env.Hooks.call("preUpdateToken", token, { y: 400 }, {}, "player-a");
+  await flush();
+  assert.equal(dialogCount, 1);
+  pending.resolve(null);
+  await flush();
+  assert.equal(env.calls.releaseMove.length, 0);
+});
+
+test("ordinary token movement is left byte-for-byte unchanged", () => {
+  const env = environment();
+  const token = targetToken();
+  token.flags = {};
+  const changed = { x: 500, alpha: 0.25 };
+  assert.deepEqual(env.Hooks.call("preUpdateToken", token, changed, {}, "player-a"), [undefined]);
+  assert.deepEqual(changed, { x: 500, alpha: 0.25 });
+});
+
+test("twisted target can move inside its radius without a dialog", async () => {
+  const token = targetToken();
+  token.flags = {};
+  const env = environment({ twistedTargetLink: {
+    linkId: "twisted-1", sourceTokenUuid: "Scene.scene.Token.source",
+    targetTokenUuid: token.uuid, radiusFeet: 10
+  } });
+  env.moduleApi.isTwistedTargetOutsideRadius = () => false;
+  const changed = { x: 150 };
+  assert.deepEqual(env.Hooks.call("preUpdateToken", token, changed, {}, "player-a"), [undefined]);
+  await flush();
+  assert.deepEqual(changed, { x: 150 });
+  assert.equal(env.calls.dialogs.length, 0);
+});
+
+test("twisted target movement outside its radius offers release or movement cancellation", async () => {
+  const token = targetToken();
+  token.flags = {};
+  const env = environment({
+    dialogChoice: "release-twisted",
+    twistedTargetLink: {
+      linkId: "twisted-1", sourceTokenUuid: "Scene.scene.Token.source",
+      targetTokenUuid: token.uuid, radiusFeet: 10
+    }
+  });
+  env.moduleApi.isTwistedTargetOutsideRadius = () => true;
+  const changed = { x: 500, y: 600 };
+  env.Hooks.call("preUpdateToken", token, changed, {}, "player-a");
+  assert.deepEqual(changed, {});
+  await flush();
+  assert.deepEqual(env.calls.dialogs[0].buttons.map((button) => button.label), [
+    "Отменить скручивание", "Отменить перемещение"
+  ]);
+  assert.equal(env.calls.twistedReleaseMove.length, 1);
+});
+
+test("twisted source movement is replaced with one authoritative minimum pull", async () => {
+  const token = sourceToken();
+  token.actor.flags[MODULE_ID].handReservations = [];
+  const env = environment({ twistedSourceLinks: [{ linkId: "twisted-1" }] });
+  const changed = { x: 500, y: 600 };
+  env.Hooks.call("preUpdateToken", token, changed, {}, "player-a");
+  assert.deepEqual(changed, {});
+  await flush();
+  assert.equal(env.calls.twistedPull.length, 1);
+  assert.deepEqual([env.calls.twistedPull[0].x, env.calls.twistedPull[0].y], [500, 600]);
+});
+
+test("effect/token cleanup and active-GM scene reconciliation route through the service", async () => {
+  const env = environment();
+  const effect = { id: "effect" };
+  const token = targetToken();
+  const scene = { id: "scene" };
+  env.Hooks.call("deleteActiveEffect", effect, {}, "player-a");
+  env.Hooks.call("deleteToken", token, {}, "player-a");
+  env.Hooks.call("canvasReady", { scene });
+  env.Hooks.call("ready");
+  await flush();
+  assert.deepEqual(env.calls.effects, [effect]);
+  assert.deepEqual(env.calls.tokens, [token]);
+  assert.deepEqual(env.calls.scenes, [scene]);
+});
+
+test("twisted aura refreshes outside combat when status or canvas state changes", async () => {
+  const scene = { id: "scene" };
+  const game = { user: { id: "player-a" }, combat: null, scenes: { active: scene } };
+  const env = environment({ game, twistedSourceLinks: [{ linkId: "twisted-1" }] });
+
+  env.Hooks.call("createActiveEffect", { id: "twisted" });
+  env.Hooks.call("canvasReady", { scene });
+  env.Hooks.call("updateToken", { id: "source", parent: scene }, { x: 100 }, {}, "player-a");
+  await flush();
+
+  assert.deepEqual(env.calls.auras, [
+    { combat: null, scene },
+    { combat: null, scene },
+    { combat: null, scene }
+  ]);
+});
+
+test("twisted aura uses the GM viewed canvas scene before the globally active scene", async () => {
+  const activeScene = { id: "active-scene" };
+  const viewedScene = { id: "viewed-scene" };
+  const game = { user: { id: "gm" }, combat: null, scenes: { active: activeScene } };
+  const env = environment({ game, canvas: { scene: viewedScene } });
+
+  env.Hooks.call("createActiveEffect", { id: "twisted" });
+  await flush();
+
+  assert.deepEqual(env.calls.twistedScenes, [viewedScene]);
+  assert.deepEqual(env.calls.auras, [{ combat: null, scene: viewedScene }]);
+});

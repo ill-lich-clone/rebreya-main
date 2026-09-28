@@ -1,4 +1,4 @@
-﻿import {
+import {
   BACKGROUNDS_COMPENDIUM_LABEL,
   BACKGROUNDS_COMPENDIUM_NAME,
   FEATS_COMPENDIUM_NAME,
@@ -11,8 +11,8 @@ import {
   ensurePackSidebarFolder,
   normalizeFolderPath,
   resolveNamedIcon
-} from "./compendium-utils.js";
-import { syncManagedDocumentsOnActiveGm } from "./managed-compendium-sync.js";
+} from "./compendium-utils.js?v=1.4.327";
+import { syncManagedDocumentsOnActiveGm } from "./managed-compendium-sync.js?v=1.4.330";
 import { buildSlug } from "./item-classification.js";
 
 const PACK_ID = `world.${BACKGROUNDS_COMPENDIUM_NAME}`;
@@ -656,7 +656,7 @@ export class BackgroundsCompendiumService {
     const entries = prepareBackgroundEntries(backgrounds, featLookupByName);
     const pack = await ensurePack();
     const documents = await getPackDocuments(pack);
-    const iconLookup = await buildNamedIconLookup(BACKGROUND_ICON_SEARCH_PATHS, { forceRefresh: true });
+    const iconLookup = await buildNamedIconLookup(BACKGROUND_ICON_SEARCH_PATHS);
 
     let folderIdByPath = new Map();
     await syncManagedDocumentsOnActiveGm(game, {
