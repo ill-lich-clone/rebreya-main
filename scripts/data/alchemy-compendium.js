@@ -9,12 +9,11 @@ import {
 } from "./compendium-utils.js?v=1.4.327";
 import { createStableGearDocumentId } from "./gear-document-ids.js";
 import { syncManagedDocuments } from "./managed-compendium-sync.js?v=1.4.330";
-import { getAlchemyTypeRules } from "./alchemy-product-rules.js?v=1.4.344";
 
 const PACK_ID = `world.${ALCHEMY_COMPENDIUM_NAME}`;
 const DND5E_SYSTEM_ID = "dnd5e";
 const COMPENDIUM_SIDEBAR_FOLDER = Object.freeze(["Ребрея"]);
-const TEMPLATE_VERSION = 1;
+const TEMPLATE_VERSION = 2;
 const MODULE_ASSET_PREFIX = `modules/${MODULE_ID}/`;
 const APPROVED_PRODUCT_COUNT = 230;
 const OMITTED_DUPLICATE_SOURCE_NUMBERS = new Set([36, 52, 67, 76]);
@@ -111,49 +110,35 @@ export function buildAlchemyFolderPath(product) {
   return [...base, `Ранг ${requireRank(product?.rank)}`];
 }
 
-function definitionList(rows) {
-  const visibleRows = rows.filter(([, value]) => isPresent(value));
-  if (!visibleRows.length) return "";
-  return `<dl>${visibleRows.map(([label, value]) => `<dt><strong>${escapeHtml(label)}</strong></dt><dd>${escapeHtml(value)}</dd>`).join("")}</dl>`;
-}
-
-function textSection(title, value) {
-  if (!isPresent(value)) return "";
-  return `<h2>${escapeHtml(title)}</h2><p>${escapeHtml(value)}</p>`;
-}
-
 export function buildAlchemyDescriptionHtml(product) {
-  const sections = [];
-  sections.push(textSection("Эффект", product?.effect));
-  sections.push(textSection("Эффект катализатора", product?.catalystEffect));
-
-  const usage = definitionList([
+  const descriptionText = cleanString(product?.effect);
+  const metadataRows = [
+    ["Эффект катализатора", product?.catalystEffect],
     ["Активация", product?.activation],
     ["Длительность", product?.duration],
     ["Требования", product?.requirements],
-    ["Зона", product?.radiusOrEmanation]
-  ]);
-  if (usage) sections.push(`<h2>Использование</h2>${usage}`);
-
-  sections.push(textSection("Цена", `${cleanString(product?.priceFormula)} ЗМ`));
-
-  const recipeRows = [
+    ["Зона", product?.radiusOrEmanation],
+    ["Цена", isPresent(product?.priceFormula) ? `${cleanString(product.priceFormula)} ЗМ` : null],
     ["Уровень реагентов", product?.reagentLevel],
     ...ASPECT_LABELS.map(([key, label]) => [label, product?.aspects?.[key]]),
     ["Обязательный компонент", product?.mandatoryComponent],
     ["Сл создания", product?.craftingDc],
     ["Частный катализатор", product?.privateCatalyst],
     ["Упрощённое создание", product?.simplifiedCreation]
-  ];
-  const recipe = definitionList(recipeRows);
-  if (recipe) sections.push(`<h2>Рецепт</h2>${recipe}`);
+  ].filter(([, value]) => isPresent(value));
 
-  const rules = getAlchemyTypeRules(product?.productType);
-  if (rules.length) {
-    sections.push(`<h2>Правила</h2>${rules.map((rule) => `<p>${escapeHtml(rule)}</p>`).join("")}`);
-  }
-
-  return sections.filter(Boolean).join("");
+  return `
+    <section class="rebreya-gear-item">
+      ${descriptionText
+        ? `<p>${escapeHtml(descriptionText)}</p>`
+        : "<p>Описание предмета пока не заполнено.</p>"}
+      ${metadataRows.length ? `
+        <ul>
+          ${metadataRows.map(([label, value]) => `<li><strong>${escapeHtml(label)}:</strong> ${escapeHtml(value)}</li>`).join("")}
+        </ul>
+      ` : ""}
+    </section>
+  `.trim();
 }
 
 function normalizedAspects(product) {
@@ -188,8 +173,7 @@ export function buildAlchemySignature(product) {
     icon: cleanString(product?.icon),
     topDownImage: cleanString(product?.topDownImage),
     sourceRef: cleanString(product?.sourceRef),
-    folderPath: buildAlchemyFolderPath(product),
-    rules: getAlchemyTypeRules(product?.productType)
+    folderPath: buildAlchemyFolderPath(product)
   });
 }
 

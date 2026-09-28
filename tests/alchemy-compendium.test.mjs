@@ -149,6 +149,7 @@ test("alchemy description escapes source text and exposes the complete non-empty
   });
   const html = buildAlchemyDescriptionHtml(value);
 
+  assert.match(html, /^<section class="rebreya-gear-item">/u);
   assert.doesNotMatch(html, /<script|<img/iu);
   assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/u);
   assert.match(html, /Катализатор &amp; усиление/u);
@@ -159,7 +160,7 @@ test("alchemy description escapes source text and exposes the complete non-empty
   assert.match(html, /Позитивная энергия[\s\S]*2/u);
   assert.match(html, /Клык &lt;дракона&gt;/u);
   assert.match(html, /Частный катализатор[\s\S]*Секретов нет/u);
-  assert.match(html, /Зависимость от веществ/u);
+  assert.doesNotMatch(html, /Правила|Зависимость от веществ/u);
 
   const ordered = [
     "Эффект",
@@ -176,8 +177,7 @@ test("alchemy description escapes source text and exposes the complete non-empty
     "Обязательный компонент",
     "Сл создания",
     "Частный катализатор",
-    "Упрощённое создание",
-    "Правила"
+    "Упрощённое создание"
   ];
   let cursor = -1;
   for (const marker of ordered) {
