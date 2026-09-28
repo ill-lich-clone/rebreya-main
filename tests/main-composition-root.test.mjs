@@ -49,8 +49,8 @@ test("current release reuses the catalog icon cache graph", async () => {
     ...sharedCacheImporters.map((name) => readFile(new URL(`../scripts/data/${name}.js`, import.meta.url), "utf8"))
   ]);
   const manifest = JSON.parse(manifestSource);
-  assert.equal(manifest.version, "1.4.344");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.344.js"]);
+  assert.equal(manifest.version, "1.4.345");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.345.js"]);
   assert.doesNotMatch(manifestSource, /main-1\.4\.319\.js/u);
   assert.match(mainSource, /data\/inventory-service\.js\?v=1\.4\.327/u);
   assert.match(mainSource, /data\/storage-command-service\.js\?v=1\.4\.322/u);
@@ -100,6 +100,24 @@ test("managed compendia sync actions and glossary before feats", async () => {
   const feats = source.indexOf("await this.featsCompendium.sync()");
 
   assert.ok(actions >= 0 && actions < glossary && glossary < feats);
+});
+
+test("composition root syncs one alchemy compendium on the active GM between gear and unrelated packs", async () => {
+  const source = await readFile(new URL("../scripts/main.js", import.meta.url), "utf8");
+  assert.equal(source.match(/import \{ AlchemyCompendiumService \} from "\.\/data\/alchemy-compendium\.js\?v=1\.4\.345";/gu)?.length ?? 0, 1);
+  assert.equal(source.match(/this\.alchemyCompendium = new AlchemyCompendiumService\(\);/gu)?.length ?? 0, 1);
+  assert.equal(source.match(/await this\.alchemyCompendium\.sync\(model\.alchemyProducts\);/gu)?.length ?? 0, 1);
+
+  const gear = source.indexOf("await this.gearCompendium.sync(model.gear)");
+  const activeGmGuard = source.indexOf("if (isActiveGmClient(globalThis.game))", gear);
+  const alchemy = source.indexOf("await this.alchemyCompendium.sync(model.alchemyProducts)", gear);
+  const isolatedWarning = source.indexOf("Failed to sync alchemy compendium.", alchemy);
+  const magic = source.indexOf("await this.magicItemsCompendium.syncOwnedMagicItems", alchemy);
+  assert.ok(gear >= 0 && gear < activeGmGuard && activeGmGuard < alchemy && alchemy < isolatedWarning && isolatedWarning < magic);
+
+  const alchemyBlock = source.slice(activeGmGuard, magic);
+  assert.match(alchemyBlock, /try\s*\{[\s\S]*alchemyCompendium\.sync[\s\S]*\}\s*catch \(error\)/u);
+  assert.doesNotMatch(alchemyBlock, /register\(|Hooks\.|socket|api\.|Application|Dialog/u);
 });
 
 function createHooks() {

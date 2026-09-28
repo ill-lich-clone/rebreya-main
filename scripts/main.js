@@ -19,6 +19,7 @@ import {
 import { setManagedIconProjection } from "./data/managed-compendium-sync.js?v=1.4.330";
 import { MaterialsCompendiumService } from "./data/materials-compendium.js?v=1.4.330";
 import { GearCompendiumService } from "./data/gear-compendium.js?v=1.4.330";
+import { AlchemyCompendiumService } from "./data/alchemy-compendium.js?v=1.4.345";
 import { repairWorldAmmunitionCompatibility } from "./data/ammunition-compatibility.js?v=1.4.147-native-ammunition";
 import { MagicItemsCompendiumService } from "./data/magic-items-compendium.js?v=1.4.330";
 import { FeatsCompendiumService } from "./data/feats-compendium.js?v=1.4.330";
@@ -1558,6 +1559,7 @@ export class RebreyaMainModule {
     });
     this.materialsCompendium = new MaterialsCompendiumService();
     this.gearCompendium = new GearCompendiumService();
+    this.alchemyCompendium = new AlchemyCompendiumService();
     this.grapplePlacementPreview = new GrapplePlacementPreview();
     this.magicItemsCompendium = new MagicItemsCompendiumService({
       placementPreview: this.grapplePlacementPreview
@@ -4453,6 +4455,16 @@ export class RebreyaMainModule {
     catch (error) {
       console.error(`${MODULE_ID} | Failed to sync gear compendium.`, error);
       ui.notifications?.warn(game.i18n.localize("REBREYA_MAIN.Notifications.GearCompendiumSyncFailed"));
+    }
+
+    if (isActiveGmClient(globalThis.game)) {
+      try {
+        await this.alchemyCompendium.sync(model.alchemyProducts);
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to sync alchemy compendium.`, error);
+        ui.notifications?.warn("Не удалось синхронизировать компендиум алхимии Ребреи.");
+      }
     }
 
     try {
