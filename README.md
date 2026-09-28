@@ -149,6 +149,7 @@ Versioned entrypoint обязан оставаться минимальным ca
 |---|---|
 | `world.rebreya-materials` | `materials-compendium.js`, `data/materials.json` |
 | `world.rebreya-gear` | `gear-compendium.js`, `data/gear.json` |
+| `world.rebreya-alchemy` | `alchemy-compendium.js`, `data/alchemy-products.json` |
 | `world.rebreya-magic-items` | `magic-items-compendium.js`, `magicItem.js` |
 | `world.rebreya-feats` | `feats-compendium.js`, `feat.js` и overrides |
 | `world.rebreya-states` | `states-compendium.js`, `data/states-teyvankal-v02.json` |
@@ -434,7 +435,7 @@ node tools/import-alchemy-products.mjs
 node tools/import-alchemy-products.mjs --apply
 ```
 
-Первый запуск только валидирует 230 строк и показывает diff, второй atomically обновляет `data/alchemy-products.json`. Удаление требует `--allow-removals`, а смена канонического ID при прежнем номере продукта блокируется всегда. Каталог хранит авторские механики как текст: цена Foundry позднее публикуется по максимально возможному результату формулы, сама формула остаётся в описании, а вес в фунтах равен рангу. Рецепты не скрываются от игроков. Для offline-проверки доступны `--snapshot <path>` и `--write-snapshot <path>`; полный список: `node tools/import-alchemy-products.mjs --help`.
+Первый запуск только валидирует 230 строк и показывает diff, второй atomically обновляет `data/alchemy-products.json`. Удаление требует `--allow-removals`, а смена канонического ID при прежнем номере продукта блокируется всегда. Active GM публикует каталог в `world.rebreya-alchemy`: это dnd5e `consumable` Item с уникальной иконкой, top-down изображением, максимальной ценой формулы и весом по рангу. Каталог хранит авторские механики как текст; исходная формула и все поля рецепта, включая частный катализатор, остаются в открытом описании для игроков. Activities и Active Effects алхимия пока не создаёт. Для offline-проверки доступны `--snapshot <path>` и `--write-snapshot <path>`; полный список: `node tools/import-alchemy-products.mjs --help`.
 
 Остальные импортные инструменты: `tools/import-xlsx.ps1`, временно сохраняемые до финальной parity-проверки `import-materials.ps1`/`import-gear.ps1`, `sync-travel-network.mjs`, `apply-feat-automation.mjs`, `apply-race-automation.mjs`. `import-xlsx.ps1` владеет отдельным economy workbook workflow и генерирует module-owned city panorama paths; сами WebP перед релизом должны находиться в `assets/cities/`. Формат item-полей дополнительно описан в `docs/foundry-item-fields.md`.
 
