@@ -6,10 +6,10 @@ const RELEASED_CACHE_VERSION = "1\\.4\\.96";
 
 test("alchemy compendium release advances the cache version", async () => {
   const manifest = JSON.parse(await readFile(new URL("../module.json", import.meta.url), "utf8"));
-  assert.equal(manifest.version, "1.4.348");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.348.js"]);
+  assert.equal(manifest.version, "1.4.349");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.349.js"]);
   assert.equal(
-    (await readFile(new URL("../scripts/main-1.4.348.js", import.meta.url), "utf8")).trim(),
+    (await readFile(new URL("../scripts/main-1.4.349.js", import.meta.url), "utf8")).trim(),
     'import "./main.js";'
   );
 });
@@ -91,8 +91,8 @@ test("module manifest loads an unpinned canonical entrypoint for page-refresh up
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const [entrypoint] = manifest.esmodules;
 
-  assert.equal(manifest.version, "1.4.348");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.348.js"]);
+  assert.equal(manifest.version, "1.4.349");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.349.js"]);
   assert.doesNotMatch(entrypoint, /[?#]/u);
 
   const entrypointSource = await readFile(new URL(entrypoint, manifestUrl), "utf8");
@@ -330,7 +330,7 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
     "data/storage-service.js?v=1.4.270",
     "data/storage-access.js?v=1.4.197-door-trigger-target",
     "data/builtin-storage-actor-service.js?v=1.4.216-storage-token-vision",
-    "data/storage-ground-pile-service.js?v=1.4.322",
+    "data/storage-ground-pile-service.js?v=1.4.349",
     "data/storage-container-item-service.js?v=1.4.322",
     "data/storage-deposit-source.js?v=1.4.322",
     "data/storage-command-service.js?v=1.4.322",
@@ -364,12 +364,12 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
     assert.equal(source.includes(importPath), true, importPath);
   }
   assert.equal(
-    groundPileServiceSource.includes("storage-pile-presentation.js?v=1.4.322"),
+    groundPileServiceSource.includes("storage-pile-presentation.js?v=1.4.349"),
     true,
     "ground-pile presentation changes need their own browser module cache key"
   );
   assert.equal(
-    canonicalSource.includes("storage-ground-pile-service.js?v=1.4.322"),
+    canonicalSource.includes("storage-ground-pile-service.js?v=1.4.349"),
     true,
     "ground-pile token layout changes need their own browser module cache key"
   );
@@ -400,7 +400,7 @@ test("module keeps recent published entrypoint URLs as canonical compatibility f
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
 
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.348.js"]);
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.349.js"]);
 
   for (const fileName of ["main-1.4.98.js", "main-1.4.99.js", "main-1.4.100.js"]) {
     const forwarderSource = await readFile(new URL(`../scripts/${fileName}`, import.meta.url), "utf8");

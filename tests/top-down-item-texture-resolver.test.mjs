@@ -101,6 +101,33 @@ test("managed materials resolve by material identity", () => {
   );
 });
 
+test("managed alchemy products resolve their module-owned top-down image", () => {
+  const row = {
+    sourceType: "consumable",
+    sourceId: "Compendium.world.rebreya-alchemy.Item.alchemy-document",
+    itemData: {
+      flags: {
+        [MODULE_ID]: {
+          managed: true,
+          sourceType: "alchemyProduct",
+          alchemyProductId: "alchemy-77",
+          topDownImage: "modules/rebreya-main/assets/top-down/items/alchemy/77-zel-e-lecheniya-1-ur.webp"
+        }
+      }
+    }
+  };
+
+  assert.deepEqual(resolveTopDownItemPresentation(row), {
+    img: "modules/rebreya-main/assets/top-down/items/alchemy/77-zel-e-lecheniya-1-ur.webp",
+    visualType: "",
+    textureScale: 1,
+    tokenWidth: null,
+    tokenHeight: null,
+    rotationMode: "full"
+  });
+  assert.equal(resolveTopDownItemTexture(row), resolveTopDownItemPresentation(row).img);
+});
+
 test("legacy managed gear with gearId but no flag sourceId remains supported", () => {
   const row = managedRow("gear", "rapira", { gearId: "rapira" });
   delete row.itemData.flags[MODULE_ID].sourceId;

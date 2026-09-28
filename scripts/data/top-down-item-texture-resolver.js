@@ -10,6 +10,18 @@ function clean(value) {
   return String(value ?? "").trim();
 }
 
+function resolveAlchemyTopDownTexture(row) {
+  const flags = row?.itemData?.flags?.[MODULE_ID];
+  if (!flags || typeof flags !== "object" || Array.isArray(flags)) return null;
+  if (flags.managed !== true || clean(flags.sourceType) !== "alchemyProduct") return null;
+  if (!/^alchemy-\d+$/u.test(clean(flags.alchemyProductId))) return null;
+
+  const image = clean(flags.topDownImage);
+  const prefix = `modules/${MODULE_ID}/assets/top-down/items/alchemy/`;
+  const filename = image.startsWith(prefix) ? image.slice(prefix.length) : "";
+  return /^[a-z0-9][a-z0-9-]*\.webp$/u.test(filename) ? image : null;
+}
+
 function resolveTopDownItemKey(row) {
   if (!row || typeof row !== "object") return null;
 
@@ -47,6 +59,18 @@ export function resolveTopDownItemPresentation(row, {
   tokenScales = TOP_DOWN_ITEM_TOKEN_SCALES,
   footprints = TOP_DOWN_ITEM_FOOTPRINTS
 } = {}) {
+  const alchemyImage = resolveAlchemyTopDownTexture(row);
+  if (alchemyImage) {
+    return {
+      img: alchemyImage,
+      visualType: "",
+      textureScale: 1,
+      tokenWidth: null,
+      tokenHeight: null,
+      rotationMode: "full"
+    };
+  }
+
   const key = resolveTopDownItemKey(row);
   const img = key ? textures.get(key) : null;
   if (!img) return null;
@@ -64,6 +88,8 @@ export function resolveTopDownItemPresentation(row, {
 export function resolveTopDownItemTexture(row, {
   textures = TOP_DOWN_ITEM_TEXTURES
 } = {}) {
+  const alchemyImage = resolveAlchemyTopDownTexture(row);
+  if (alchemyImage) return alchemyImage;
   const key = resolveTopDownItemKey(row);
   return key ? textures.get(key) ?? null : null;
 }

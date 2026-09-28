@@ -71,6 +71,35 @@ test("single managed gear and material rows use their canonical top-down texture
   }]).img, `modules/${MODULE_ID}/assets/top-down/items/material/material-10.webp`);
 });
 
+test("single managed alchemy row uses its top-down texture instead of the Foundry icon", () => {
+  assert.deepEqual(deriveGroundPilePresentation([{
+    sourceType: "consumable",
+    sourceId: "Compendium.world.rebreya-alchemy.Item.healing-potion",
+    name: "Зелье лечения (1 ур.)",
+    img: "modules/rebreya-main/templates/icons/Alchemy/77-zel-e-lecheniya-1-ur.webp",
+    typeLabel: "Зелье",
+    quantity: 1,
+    itemData: {
+      flags: {
+        [MODULE_ID]: {
+          managed: true,
+          sourceType: "alchemyProduct",
+          alchemyProductId: "alchemy-77",
+          topDownImage: "modules/rebreya-main/assets/top-down/items/alchemy/77-zel-e-lecheniya-1-ur.webp"
+        }
+      }
+    }
+  }]), {
+    name: "Зелье лечения (1 ур.)",
+    img: `modules/${MODULE_ID}/assets/top-down/items/alchemy/77-zel-e-lecheniya-1-ur.webp`,
+    categoryKey: "single",
+    topDownItem: true,
+    tokenSize: 0.5,
+    textureScale: 1,
+    rotationSeed: "consumable:Compendium.world.rebreya-alchemy.Item.healing-potion"
+  });
+});
+
 test("single managed armor uses a full grid cell with its curated texture scale", () => {
   assert.deepEqual(deriveGroundPilePresentation([{
     rowId: "source-laty",

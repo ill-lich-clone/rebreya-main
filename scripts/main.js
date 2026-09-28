@@ -254,8 +254,8 @@ import {
   measureStorageTokenDistance
 } from "./data/storage-access.js?v=1.4.197-door-trigger-target";
 import { BuiltinStorageActorService } from "./data/builtin-storage-actor-service.js?v=1.4.216-storage-token-vision";
-import { StorageGroundPileService } from "./data/storage-ground-pile-service.js?v=1.4.322";
-import { deriveGroundPilePlacement } from "./data/storage-pile-presentation.js?v=1.4.322";
+import { StorageGroundPileService } from "./data/storage-ground-pile-service.js?v=1.4.349";
+import { deriveGroundPilePlacement } from "./data/storage-pile-presentation.js?v=1.4.349";
 import { StorageContainerItemService } from "./data/storage-container-item-service.js?v=1.4.322";
 import { isStorageJournalRow, buildStorageContainerRow } from "./data/storage-container-snapshot.js?v=1.4.317";
 import { StorageTriggerService } from "./data/storage-trigger-service.js?v=1.4.197-door-trigger-target";
