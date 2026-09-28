@@ -233,7 +233,7 @@ test("ammunition adapter rejects unknown compatibility and malformed damage modi
 });
 
 const explosiveSnapshot = {
-  sheetKey: "explosives", sheetTitle: "Взрывчатка V0.0", range: "'Взрывчатка V0.0'!A1:N1000",
+  sheetKey: "explosives", sheetTitle: "Взрывчатка V0.1", range: "'Взрывчатка V0.1'!A1:O1000",
   rows: [{ rowNumber: 3, sourceIdentity: "Малая Осколочная граната", cells: {
     Название: "Малая Осколочная граната", Урон: "1к4+1к4", "Тип урона": "Колющий и Огонь",
     "Оружейная группа": "Ручная", "Сл взрывчатки": "13", "Радиус взрыва": "10 футов",
@@ -250,7 +250,7 @@ function singleReference(sourceRef, stableId) {
 test("explosive adapter types radius, save, damage, uses, and source properties", () => {
   const fragments = adaptExplosiveProfiles({
     snapshot: explosiveSnapshot,
-    referenceIndex: singleReference("Взрывчатка V0.0!A3", "malaya-oskolochnaya-granata"), diagnostics: []
+    referenceIndex: singleReference("Взрывчатка V0.1!A3", "malaya-oskolochnaya-granata"), diagnostics: []
   });
   assert.deepEqual(fragments.get("malaya-oskolochnaya-granata"), { explosive: {
     damage: [{ formula: "1d4", type: "piercing" }, { formula: "1d4", type: "fire" }],
@@ -264,13 +264,13 @@ test("explosive adapter rejects mismatched damage terms and unknown deployment",
   const mismatch = structuredClone(explosiveSnapshot);
   mismatch.rows[0].cells.Урон = "1d4";
   assert.throws(
-    () => adaptExplosiveProfiles({ snapshot: mismatch, referenceIndex: singleReference("Взрывчатка V0.0!A3", "grenade"), diagnostics: [] }),
+    () => adaptExplosiveProfiles({ snapshot: mismatch, referenceIndex: singleReference("Взрывчатка V0.1!A3", "grenade"), diagnostics: [] }),
     (error) => error.diagnostics?.some((entry) => entry.code === "explosive-damage-arity")
   );
   const unknown = structuredClone(explosiveSnapshot);
   unknown.rows[0].cells["Оружейная группа"] = "Подводная";
   assert.throws(
-    () => adaptExplosiveProfiles({ snapshot: unknown, referenceIndex: singleReference("Взрывчатка V0.0!A3", "grenade"), diagnostics: [] }),
+    () => adaptExplosiveProfiles({ snapshot: unknown, referenceIndex: singleReference("Взрывчатка V0.1!A3", "grenade"), diagnostics: [] }),
     (error) => error.diagnostics?.some((entry) => entry.code === "unknown-explosive-deployment")
   );
 });

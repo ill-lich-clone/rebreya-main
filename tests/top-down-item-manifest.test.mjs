@@ -23,9 +23,9 @@ test("canonical manifest entries cover every gear and material ID once", () => {
 
   assert.equal(TOP_DOWN_MANIFEST_SCHEMA_VERSION, 3);
   assert.equal(TOP_DOWN_ATLAS_CAPACITY, 25);
-  assert.equal(entries.length, 1420);
-  assert.equal(new Set(keys).size, 1420);
-  assert.equal(entries.filter((entry) => entry.sourceType === "gear").length, 808);
+  assert.equal(entries.length, 1418);
+  assert.equal(new Set(keys).size, 1418);
+  assert.equal(entries.filter((entry) => entry.sourceType === "gear").length, 806);
   assert.equal(entries.filter((entry) => entry.sourceType === "material").length, 612);
   assert.equal(new Set(entries.map((entry) => entry.atlasId)).size, 57);
   assert.ok(entries.every((entry) => entry.cellIndex >= 0 && entry.cellIndex < 25));
@@ -272,7 +272,7 @@ test("checked-in manifest matches the canonical catalogs", async () => {
   ));
 
   assert.equal(validateTopDownManifest({ manifest, gear, materials }), true);
-  assert.equal(manifest.entries.length, 1420);
+  assert.equal(manifest.entries.length, 1418);
   assert.ok(manifest.entries.every((entry) => (
     entry.status === "accepted"
     && entry.technicalQa === "passed"

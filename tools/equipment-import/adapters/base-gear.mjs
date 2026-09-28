@@ -18,6 +18,10 @@ import {
   throwIfDiagnostics
 } from "../validation.mjs";
 
+const CANONICAL_SOURCE_SHEET_TITLES = new Map([
+  ["Взрывчатка V0.0", "Взрывчатка V0.1"]
+]);
+
 function contextFor(snapshot, row, column) {
   return {
     sheetKey: snapshot.sheetKey,
@@ -34,7 +38,30 @@ function fail(code, message, details = {}) {
 function sourceReference(value, sourceKey, rowNumber) {
   const match = String(value ?? "").trim().match(/^(.+)!([A-Z]+)(\d+)$/u);
   if (!match) fail("invalid-source-reference", `Invalid source reference for ${sourceKey}`, { rowNumber, value });
-  return { sourceRef: value.trim(), sheetTitle: match[1], rowNumber: Number(match[3]) };
+  const sheetTitle = CANONICAL_SOURCE_SHEET_TITLES.get(match[1]) ?? match[1];
+  return {
+    sourceRef: `${sheetTitle}!${match[2]}${match[3]}`,
+    sheetTitle,
+    rowNumber: Number(match[3])
+  };
+}
+
+function liveBaseRowsByKey(snapshot) {
+  if (!Array.isArray(snapshot?.rows)) return null;
+  const rowsByKey = new Map();
+  for (const row of snapshot.rows) {
+    const name = String(row?.cells?.["Название"] ?? "").trim();
+    const equipmentType = String(row?.cells?.["Тип снаряжения"] ?? "").trim();
+    if (!name || !equipmentType) continue;
+    const sourceKey = buildCanonicalEquipmentSourceKey({ equipmentType, name });
+    if (rowsByKey.has(sourceKey)) {
+      fail("duplicate-base-gear-key", `Duplicate live base equipment key: ${sourceKey}`, {
+        rowNumber: row.rowNumber
+      });
+    }
+    rowsByKey.set(sourceKey, row.rowNumber);
+  }
+  return rowsByKey;
 }
 
 export function buildEquipmentReferenceIndex({ snapshots, overrides }) {
@@ -42,6 +69,7 @@ export function buildEquipmentReferenceIndex({ snapshots, overrides }) {
   if (!snapshot || snapshot.layout !== "raw" || !Array.isArray(snapshot.values)) {
     fail("missing-reference-snapshot", "Missing raw equipment reference snapshot");
   }
+  const currentBaseRows = liveBaseRowsByKey(snapshots?.baseGear);
   const [header = [], ...rows] = snapshot.values;
   const expectedColumns = [[0, "Ключ"], [1, "Тип"], [2, "Каноническое название"], [8, "Статус"], [9, "ID источника"], [20, "Ключ ручной позиции"], [22, "Тип"], [23, "Название"], [28, "Строка каталога"]];
   for (const [index, required] of expectedColumns) {
@@ -81,7 +109,9 @@ export function buildEquipmentReferenceIndex({ snapshots, overrides }) {
       if (canonical && canonical.equipmentType === manualType && canonical.canonicalName === manualName) {
         continue;
       }
-      const catalogRow = Number(row[28]);
+      const currentCatalogRow = currentBaseRows?.get(manualKey);
+      if (currentBaseRows && !currentCatalogRow) continue;
+      const catalogRow = currentCatalogRow ?? Number(row[28]);
       if (!Number.isInteger(catalogRow) || catalogRow < 1) {
         fail("invalid-source-reference", `Invalid manual catalog row for ${manualKey}`, { rowNumber: index + 2 });
       }

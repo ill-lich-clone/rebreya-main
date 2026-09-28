@@ -131,12 +131,12 @@ export const SHEET_REGISTRY = Object.freeze({
     outputCatalog: "gear"
   }),
   explosives: declaration(9, {
-    sheetTitle: "Взрывчатка V0.0",
-    range: "A1:N1000",
+    sheetTitle: "Взрывчатка V0.1",
+    range: "A1:O1000",
     headerRows: [1, 2],
     dataStartRow: 3,
     requiredHeaders: ["Название", "Урон", "Тип урона", "Цена", "Ранг", "Вес", "Оружейная группа", "Сл взрывчатки", "Радиус взрыва"],
-    optionalHeaders: ["Время задержки", "Механизм срабатывания", "Обезвреживание", "Дистанция", "Дополнительные свойства"],
+    optionalHeaders: ["Год изобретения (распространения)", "Время задержки", "Механизм срабатывания", "Обезвреживание", "Дистанция", "Дополнительные свойства"],
     stableKeyHeader: "Название",
     adapter: "explosives",
     outputCatalog: "gear"
@@ -168,7 +168,7 @@ export const SHEET_REGISTRY = Object.freeze({
     headerRows: [1, 2],
     dataStartRow: 3,
     requiredHeaders: ["Название", "Тип", "Цена (зм)", "Вес (фнт)", "Ранг", "Описание"],
-    optionalHeaders: ["Подтип / добыча", "Усовершенствование", "Имплант", "Создание и Снаряжение", "Алхимия", "Знания", "Аспекты (алхимия)"],
+    optionalHeaders: ["Подтип / добыча", "Усовершенствование", "Имплант", "Создание и Снаряжение", "Алхимия", "Алхимия\n// НЕ АКТУАЛЬНО", "Знания", "Аспекты (алхимия)"],
     stableKeyHeader: "Название",
     adapter: "materials",
     outputCatalog: "materials"

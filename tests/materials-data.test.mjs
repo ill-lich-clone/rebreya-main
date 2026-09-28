@@ -152,6 +152,6 @@ test("latest material rows retain all thirteen source columns", () => {
   const last = byName.get("Ядовитый реагент 4-й ранг");
   assert.equal(last?.source?.row, 614);
   assert.equal(last?.applications?.crafting, "Ожерелье адаптации");
-  assert.equal(last?.applications?.alchemy, "Зелье сопротивление");
+  assert.equal(last?.applications?.alchemy, "Зелье сопротивления");
   assert.equal(last?.alchemyAspects, "—");
 });

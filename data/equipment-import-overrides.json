@@ -216,7 +216,9 @@
       },
       "взрывчатка|осколочная гранат": {
         "id": "oskolochnaya-granat",
-        "aliases": []
+        "aliases": [
+          "взрывчатка|осколочная граната"
+        ]
       },
       "взрывчатка|отталкивающая граната": {
         "id": "ottalkivayushchaya-granata",
@@ -1276,10 +1278,6 @@
         "id": "akvarelnyy-peyzazh",
         "aliases": []
       },
-      "снаряжение|алхимический огонь (фляга)": {
-        "id": "alkhimicheskiy-ogon-flyaga",
-        "aliases": []
-      },
       "снаряжение|амулет (священный символ)": {
         "id": "amulet-svyashchennyy-simvol",
         "aliases": []
@@ -1586,10 +1584,6 @@
       },
       "снаряжение|кирка, горняцкая": {
         "id": "kirka-gornyatskaya",
-        "aliases": []
-      },
-      "снаряжение|кислота (флакон)": {
-        "id": "kislota-flakon",
         "aliases": []
       },
       "снаряжение|книга": {

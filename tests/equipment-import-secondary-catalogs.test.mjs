@@ -52,6 +52,17 @@ test("materials adapter preserves exact A:M text and parses fractional numeric f
   assert.equal(result[0].isSynthetic, false);
 });
 
+test("materials adapter preserves the deprecated alchemy text after its live header rename", () => {
+  const snapshot = structuredClone({ ...raw.material, rows: [raw.material.row] });
+  const cells = snapshot.rows[0].cells;
+  cells["Алхимия\n// НЕ АКТУАЛЬНО"] = cells.Алхимия;
+  delete cells.Алхимия;
+
+  const [material] = adaptMaterialsCatalog({ snapshot, overrides: overrides(), diagnostics: [] });
+
+  assert.equal(material.applications.alchemy, expected.material.applications.alchemy);
+});
+
 test("materials adapter rejects a malformed numeric cell with its source coordinate", () => {
   const snapshot = structuredClone({ ...raw.material, rows: [raw.material.row] });
   snapshot.rows[0].cells["Вес (фнт)"] = "14/ фнт";

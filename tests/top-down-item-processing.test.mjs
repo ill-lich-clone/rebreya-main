@@ -367,6 +367,60 @@ test("pipeline CLI emits a deterministic 25-cell generation plan", async () => {
   }
 });
 
+test("pipeline CLI synchronizes stale metadata and removes non-canonical entries", async () => {
+  const tempRoot = await mkdtemp(join(tmpdir(), "rebreya-topdown-sync-"));
+  const manifestPath = join(tempRoot, "manifest.json");
+  try {
+    const manifest = JSON.parse(await readFile(new URL("data/top-down-item-assets.json", moduleRoot), "utf8"));
+    const expectedSourceRef = manifest.entries[0].sourceRef;
+    const preserved = {
+      status: manifest.entries[0].status,
+      technicalQa: manifest.entries[0].technicalQa,
+      visualQa: manifest.entries[0].visualQa,
+      generationHash: manifest.entries[0].generationHash,
+      assetHash: manifest.entries[0].assetHash,
+      atlasId: manifest.entries[0].atlasId,
+      cellIndex: manifest.entries[0].cellIndex
+    };
+    manifest.entries[0].sourceRef = "Старый лист!A999";
+    manifest.entries.push({
+      ...structuredClone(manifest.entries[0]),
+      sourceId: "stale-entry",
+      assetPath: "assets/top-down/items/gear/stale-entry.webp",
+      atlasId: "retry-999"
+    });
+    await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+
+    const result = spawnSync(process.execPath, [
+      fileURLToPath(new URL("tools/top-down-item-assets.mjs", moduleRoot)),
+      "sync",
+      "--manifest", manifestPath
+    ], {
+      cwd: new URL(".", moduleRoot),
+      encoding: "utf8",
+      windowsHide: true
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    const report = JSON.parse(result.stdout);
+    const updated = JSON.parse(await readFile(manifestPath, "utf8"));
+    assert.equal(report.removed, 1);
+    assert.equal(updated.entries.some((entry) => entry.sourceId === "stale-entry"), false);
+    assert.equal(updated.entries[0].sourceRef, expectedSourceRef);
+    assert.deepEqual({
+      status: updated.entries[0].status,
+      technicalQa: updated.entries[0].technicalQa,
+      visualQa: updated.entries[0].visualQa,
+      generationHash: updated.entries[0].generationHash,
+      assetHash: updated.entries[0].assetHash,
+      atlasId: updated.entries[0].atlasId,
+      cellIndex: updated.entries[0].cellIndex
+    }, preserved);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("pipeline CLI moves rejected cells to a new append-only retry atlas", async () => {
   const tempRoot = await mkdtemp(join(tmpdir(), "rebreya-topdown-retry-"));
   const manifestPath = join(tempRoot, "manifest.json");

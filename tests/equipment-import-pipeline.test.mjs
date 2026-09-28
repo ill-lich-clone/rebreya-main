@@ -7,6 +7,7 @@ import {
   buildEquipmentBundle,
   validateEquipmentBundle
 } from "../tools/equipment-import/pipeline.mjs";
+import { SHEET_REGISTRY } from "../tools/equipment-import/sheet-registry.mjs";
 
 const fixtureRoot = new URL("./fixtures/equipment-import/", import.meta.url);
 const core = JSON.parse(await readFile(new URL("complete-snapshot.json", fixtureRoot), "utf8"));
@@ -44,7 +45,7 @@ function workbookSnapshot() {
       armor: profiles.paddedArmor,
       ammunition: { sheetKey: "ammunition", sheetTitle: "Боеприпасы", range: "'Боеприпасы'!B1:G1005", layout: "raw", values: [] },
       specialAmmunition: { sheetKey: "specialAmmunition", sheetTitle: "Особые боеприпасы", range: "'Особые боеприпасы'!B2:H1000", rows: [] },
-      explosives: { sheetKey: "explosives", sheetTitle: "Взрывчатка V0.0", range: "'Взрывчатка V0.0'!A1:N1000", rows: [] },
+      explosives: { sheetKey: "explosives", sheetTitle: "Взрывчатка V0.1", range: "'Взрывчатка V0.1'!A1:O1000", rows: [] },
       attachments: { sheetKey: "attachments", sheetTitle: "Улучшения и обвесы V0.2", range: "'Улучшения и обвесы V0.2'!A1:AA1010", layout: "raw", values: [] },
       upgrades: {
         sheetKey: "upgrades",
@@ -71,6 +72,13 @@ function workbookSnapshot() {
     }
   };
 }
+
+test("equipment registry reads the current explosives sheet", () => {
+  assert.equal(SHEET_REGISTRY.explosives.sheetTitle, "Взрывчатка V0.1");
+  assert.equal(SHEET_REGISTRY.explosives.range, "A1:O1000");
+  assert.ok(SHEET_REGISTRY.explosives.optionalHeaders.includes("Год изобретения (распространения)"));
+  assert.ok(SHEET_REGISTRY.materials.optionalHeaders.includes("Алхимия\n// НЕ АКТУАЛЬНО"));
+});
 
 test("pipeline composes the complete immutable catalog bundle", () => {
   assert.deepEqual(GENERATED_CATALOG_PATHS, {

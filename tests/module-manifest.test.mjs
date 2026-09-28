@@ -4,6 +4,16 @@ import { readdir, readFile } from "node:fs/promises";
 
 const RELEASED_CACHE_VERSION = "1\\.4\\.96";
 
+test("alchemy catalog release advances the cache version", async () => {
+  const manifest = JSON.parse(await readFile(new URL("../module.json", import.meta.url), "utf8"));
+  assert.equal(manifest.version, "1.4.339");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.339.js"]);
+  assert.equal(
+    (await readFile(new URL("../scripts/main-1.4.339.js", import.meta.url), "utf8")).trim(),
+    'import "./main.js";'
+  );
+});
+
 test("cached server manifests retain loadable entrypoints across patch releases", async () => {
   const manifest = JSON.parse(await readFile(new URL("../module.json", import.meta.url), "utf8"));
   const [major, minor, patch] = manifest.version.split(".").map(Number);
@@ -81,8 +91,8 @@ test("module manifest loads an unpinned canonical entrypoint for page-refresh up
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const [entrypoint] = manifest.esmodules;
 
-  assert.equal(manifest.version, "1.4.338");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.338.js"]);
+  assert.equal(manifest.version, "1.4.339");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.339.js"]);
   assert.doesNotMatch(entrypoint, /[?#]/u);
 
   const entrypointSource = await readFile(new URL(entrypoint, manifestUrl), "utf8");
@@ -390,7 +400,7 @@ test("module keeps recent published entrypoint URLs as canonical compatibility f
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
 
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.338.js"]);
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.339.js"]);
 
   for (const fileName of ["main-1.4.98.js", "main-1.4.99.js", "main-1.4.100.js"]) {
     const forwarderSource = await readFile(new URL(`../scripts/${fileName}`, import.meta.url), "utf8");

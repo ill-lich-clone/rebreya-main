@@ -77,7 +77,7 @@ export function adaptMaterialsCatalog({ snapshot, overrides, diagnostics = [] })
         upgrade: literal(cells, "Усовершенствование"),
         implant: literal(cells, "Имплант"),
         crafting: literal(cells, "Создание и Снаряжение"),
-        alchemy: literal(cells, "Алхимия"),
+        alchemy: literal(cells, "Алхимия\n// НЕ АКТУАЛЬНО") || literal(cells, "Алхимия"),
         knowledge: literal(cells, "Знания")
       },
       alchemyAspects: literal(cells, "Аспекты (алхимия)"),

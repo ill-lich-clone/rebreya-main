@@ -1072,14 +1072,14 @@ test("gear custom icons can match shortened and type-qualified item names", () =
   const gear = JSON.parse(readFileSync(join(TESTS_DIR, "..", "data", "gear.json"), "utf8").replace(/^\uFEFF/u, ""));
   const byId = new Map(gear.map((item) => [item.id, item]));
   const iconLookup = new Map([
-    ["алхимический огонь", "modules/rebreya-main/templates/icons/Goods/%D0%90%D0%BB%D1%85%D0%B8%D0%BC%D0%B8%D1%87%D0%B5%D1%81%D0%BA%D0%B8%D0%B9%20%D0%BE%D0%B3%D0%BE%D0%BD%D1%8C.webp"],
+    ["амулет", "modules/rebreya-main/templates/icons/Goods/%D0%90%D0%BC%D1%83%D0%BB%D0%B5%D1%82.webp"],
     ["коготь чудовища имплант", "modules/rebreya-main/templates/icons/Goods/%D0%9A%D0%BE%D0%B3%D0%BE%D1%82%D1%8C%20%D1%87%D1%83%D0%B4%D0%BE%D0%B2%D0%B8%D1%89%D0%B0%20(%D0%B8%D0%BC%D0%BF%D0%BB%D0%B0%D0%BD%D1%82).webp"],
     ["коготь чудовища усовершенствование", "modules/rebreya-main/templates/icons/Goods/%D0%9A%D0%BE%D0%B3%D0%BE%D1%82%D1%8C%20%D1%87%D1%83%D0%B4%D0%BE%D0%B2%D0%B8%D1%89%D0%B0%20(%D1%83%D1%81%D0%BE%D0%B2%D0%B5%D1%80%D1%88%D0%B5%D0%BD%D1%81%D1%82%D0%B2%D0%BE%D0%B2%D0%B0%D0%BD%D0%B8%D0%B5).webp"]
   ]);
 
   assert.equal(
-    createDnd5eItemData(byId.get("alkhimicheskiy-ogon-flyaga"), new Map(), iconLookup).img,
-    "modules/rebreya-main/templates/icons/Goods/%D0%90%D0%BB%D1%85%D0%B8%D0%BC%D0%B8%D1%87%D0%B5%D1%81%D0%BA%D0%B8%D0%B9%20%D0%BE%D0%B3%D0%BE%D0%BD%D1%8C.webp"
+    createDnd5eItemData(byId.get("amulet-svyashchennyy-simvol"), new Map(), iconLookup).img,
+    "modules/rebreya-main/templates/icons/Goods/%D0%90%D0%BC%D1%83%D0%BB%D0%B5%D1%82.webp"
   );
   assert.equal(
     createDnd5eItemData(byId.get("kogot-chudovishcha"), new Map(), iconLookup).img,

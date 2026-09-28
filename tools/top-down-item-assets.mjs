@@ -17,6 +17,7 @@ import {
   validateAssetCollection
 } from "./top-down-items/image-processing.mjs";
 import {
+  synchronizeTopDownManifest,
   topDownEntryKey,
   validateTopDownManifest
 } from "./top-down-items/manifest.mjs";
@@ -93,6 +94,25 @@ function atlasPlan(manifest, atlasId) {
       ...emptyCells
     ].join("\n")
   };
+}
+
+function synchronizeManifest(context) {
+  const previousEntries = Array.isArray(context.manifest?.entries) ? context.manifest.entries : [];
+  const previousByKey = new Map(previousEntries.map((entry) => [topDownEntryKey(entry), entry]));
+  const manifest = synchronizeTopDownManifest({
+    manifest: context.manifest,
+    gear: context.gear,
+    materials: context.materials
+  });
+  validateTopDownManifest({ manifest, gear: context.gear, materials: context.materials });
+  const nextByKey = new Map(manifest.entries.map((entry) => [topDownEntryKey(entry), entry]));
+  const added = [...nextByKey.keys()].filter((key) => !previousByKey.has(key)).length;
+  const removed = [...previousByKey.keys()].filter((key) => !nextByKey.has(key)).length;
+  const updated = [...nextByKey].filter(([key, entry]) => (
+    previousByKey.has(key) && JSON.stringify(previousByKey.get(key)) !== JSON.stringify(entry)
+  )).length;
+  writeJsonAtomic(context.manifestPath, manifest);
+  return { entries: manifest.entries.length, added, updated, removed };
 }
 
 function requestedKeys(options) {
@@ -303,6 +323,9 @@ function main() {
   const context = loadContext(options);
   let result;
   switch (command) {
+    case "sync":
+      result = synchronizeManifest(context);
+      break;
     case "plan":
       result = atlasPlan(context.manifest, String(options["atlas-id"] ?? "").trim());
       break;
@@ -334,7 +357,7 @@ function main() {
       result = createContactSheet(context, options);
       break;
     default:
-      throw new Error("Usage: top-down-item-assets.mjs <plan|process-atlas|accept-atlas|reject-atlas|accept-entries|reject-entries|assign-retry|validate|generate-runtime-catalog|contact-sheet> [options]");
+      throw new Error("Usage: top-down-item-assets.mjs <sync|plan|process-atlas|accept-atlas|reject-atlas|accept-entries|reject-entries|assign-retry|validate|generate-runtime-catalog|contact-sheet> [options]");
   }
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
 }

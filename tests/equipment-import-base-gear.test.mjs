@@ -7,6 +7,7 @@ import {
   mergeGearFragments
 } from "../tools/equipment-import/adapters/base-gear.mjs";
 import { validateEquipmentOverrides } from "../tools/equipment-import/overrides.mjs";
+import { diffEquipmentBundles } from "../tools/equipment-import/diff.mjs";
 
 const referenceSnapshot = Object.freeze({
   layout: "raw",
@@ -151,6 +152,52 @@ test("reference index prefers an identical canonical row over its stale manual d
 
   assert.equal(index.gearByKey.get("оружие|дротик").sourceRef, "Оружие V0.36!A17");
   assert.equal(index.gearBySourceRef.has("Общий компендиум снаряжения V0.1!A112"), false);
+});
+
+test("reference index rejoins shifted manual rows by exact live gear key and drops deleted rows", () => {
+  const values = structuredClone(referenceSnapshot.values);
+  values.push(
+    [...Array(20).fill(""), "снаряжение|факел", "Немагическое снаряжение V0.1!A40", "Снаряжение", "Факел", "1 мм", "1", "1 фнт", "Каталог (ручное)", "40"],
+    [...Array(20).fill(""), "снаряжение|кислота (флакон)", "Немагическое снаряжение V0.1!A41", "Снаряжение", "Кислота (флакон)", "25 зм", "1", "1 фнт", "Каталог (ручное)", "41"]
+  );
+  const shiftedBaseGear = {
+    ...baseSnapshot,
+    rows: [{
+      rowNumber: 38,
+      cells: {
+        Название: "Факел",
+        "Тип снаряжения": "Снаряжение"
+      }
+    }]
+  };
+
+  const index = buildEquipmentReferenceIndex({
+    snapshots: {
+      equipmentReferences: { ...referenceSnapshot, values },
+      baseGear: shiftedBaseGear
+    },
+    overrides: overrides()
+  });
+
+  assert.equal(index.gearByKey.get("снаряжение|факел").sourceRef, "Общий компендиум снаряжения V0.1!A38");
+  assert.equal(index.gearByKey.has("снаряжение|кислота (флакон)"), false);
+  assert.equal(index.gearBySourceRef.has("Общий компендиум снаряжения V0.1!A41"), false);
+});
+
+test("reference index canonicalizes the renamed explosives source sheet", () => {
+  const values = structuredClone(referenceSnapshot.values);
+  values.push([
+    "взрывчатка|дымовая шашка", "Взрывчатка", "Дымовая шашка", "40 зм", "2", "2 фнт",
+    "Взрывчатка V0.0", "4", "OK", "Взрывчатка V0.0!A4"
+  ]);
+
+  const index = buildEquipmentReferenceIndex({
+    snapshots: { equipmentReferences: { ...referenceSnapshot, values } },
+    overrides: overrides()
+  });
+
+  assert.equal(index.gearByKey.get("взрывчатка|дымовая шашка").sourceRef, "Взрывчатка V0.1!A4");
+  assert.equal(index.gearBySourceRef.has("Взрывчатка V0.0!A4"), false);
 });
 
 test("base gear adapter maps formatted strings to the current runtime contract", () => {
@@ -336,4 +383,31 @@ test("gear fragment merge rejects two adapters owning the same field", () => {
       return true;
     }
   );
+});
+
+test("removing acid and alchemist fire after row shifts preserves every surviving gear id", () => {
+  const retained = [
+    { id: "rope", name: "Верёвка", sourceIdentity: "снаряжение|верёвка", sourceRef: "Общий компендиум снаряжения V0.1!A40" },
+    { id: "torch", name: "Факел", sourceIdentity: "снаряжение|факел", sourceRef: "Общий компендиум снаряжения V0.1!A41" }
+  ];
+  const removed = [
+    { id: "alhimicheskiy-ogon-flyaga", name: "Алхимический огонь (фляга)", sourceIdentity: "снаряжение|алхимический огонь (фляга)", sourceRef: "Общий компендиум снаряжения V0.1!A38" },
+    { id: "kislota-flakon", name: "Кислота (флакон)", sourceIdentity: "снаряжение|кислота (флакон)", sourceRef: "Общий компендиум снаряжения V0.1!A39" }
+  ];
+  const emptyCatalogs = { upgrades: [], materials: [], implants: [], transport: [], magicItems: [] };
+  const currentBundle = { catalogs: { ...emptyCatalogs, gear: [...removed, ...retained] } };
+  const nextBundle = { catalogs: { ...emptyCatalogs, gear: retained.map((item, index) => ({
+    ...item,
+    sourceRef: `Общий компендиум снаряжения V0.1!A${38 + index}`
+  })) } };
+
+  const diff = diffEquipmentBundles({ currentBundle, nextBundle });
+
+  assert.deepEqual(diff.catalogs.gear.removed.map((item) => item.name).sort(), [
+    "Алхимический огонь (фляга)",
+    "Кислота (флакон)"
+  ]);
+  assert.equal(diff.catalogs.gear.added.length, 0);
+  assert.equal(diff.catalogs.gear.identityChurn.length, 0);
+  assert.deepEqual(diff.catalogs.gear.changed.map((item) => item.id).sort(), ["rope", "torch"]);
 });

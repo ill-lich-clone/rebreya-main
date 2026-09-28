@@ -3408,7 +3408,7 @@
   {
     "alchemyAspects": "",
     "applications": {
-      "alchemy": "Зелье понимания языков",
+      "alchemy": "Зелье понимания",
       "crafting": "Недоступно",
       "implant": "Язык чудовища (м)",
       "knowledge": "Недоступно",
@@ -3668,7 +3668,7 @@
   {
     "alchemyAspects": "",
     "applications": {
-      "alchemy": "Зелье мужества",
+      "alchemy": "Зелье героизма",
       "crafting": "Оружие +1",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -3694,7 +3694,7 @@
   {
     "alchemyAspects": "",
     "applications": {
-      "alchemy": "Зелье сопротивление",
+      "alchemy": "Зелье сопротивления",
       "crafting": "Чешуйчатый доспех +1",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -3720,7 +3720,7 @@
   {
     "alchemyAspects": "",
     "applications": {
-      "alchemy": "Зелье интеллекта",
+      "alchemy": "Зелье ментальных навыков",
       "crafting": "Недоступно",
       "implant": "Мозг чудовища",
       "knowledge": "Недоступно",
@@ -3902,7 +3902,7 @@
   {
     "alchemyAspects": "",
     "applications": {
-      "alchemy": "Зелье ледяного дыхания",
+      "alchemy": "Криогенная бомба",
       "crafting": "Недоступно",
       "implant": "Ледяной клык",
       "knowledge": "Недоступно",
@@ -3980,7 +3980,7 @@
   {
     "alchemyAspects": "",
     "applications": {
-      "alchemy": "Зелье тьмы",
+      "alchemy": "Зелье невидимости",
       "crafting": "Эльфийский плащ",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -4084,7 +4084,7 @@
   {
     "alchemyAspects": "",
     "applications": {
-      "alchemy": "Зелье молодости",
+      "alchemy": "Зелье долголетия",
       "crafting": "Питательный омлет",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -4110,7 +4110,7 @@
   {
     "alchemyAspects": "",
     "applications": {
-      "alchemy": "Зелье дыхания",
+      "alchemy": "Бутилированное дыхание",
       "crafting": "Недоступно",
       "implant": "Лёгкое чудовища",
       "knowledge": "Недоступно",
@@ -4188,7 +4188,7 @@
   {
     "alchemyAspects": "",
     "applications": {
-      "alchemy": "Зелье восстановления жизненных сил",
+      "alchemy": "Зелье заживления ран",
       "crafting": "Недоступно",
       "implant": "Регенерирующая плоть",
       "knowledge": "Недоступно",
@@ -4240,7 +4240,7 @@
   {
     "alchemyAspects": "",
     "applications": {
-      "alchemy": "Зелье восстановления магических сил",
+      "alchemy": "Зелья восстановления магических сил",
       "crafting": "Недоступно",
       "implant": "Недоступно",
       "knowledge": "Ритуал некромантии",
@@ -4266,7 +4266,7 @@
   {
     "alchemyAspects": "",
     "applications": {
-      "alchemy": "Астральное масло",
+      "alchemy": "Масло эфирности",
       "crafting": "Кольца характеристики (Интеллект)",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -4318,7 +4318,7 @@
   {
     "alchemyAspects": "",
     "applications": {
-      "alchemy": "Зелье силы",
+      "alchemy": "Зелье силы Великанов",
       "crafting": "Недоступно",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -4422,7 +4422,7 @@
   {
     "alchemyAspects": "",
     "applications": {
-      "alchemy": "Зелье молний",
+      "alchemy": "Электрическая бомба",
       "crafting": "Недоступно",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -4448,7 +4448,7 @@
   {
     "alchemyAspects": "",
     "applications": {
-      "alchemy": "Масло восстановления",
+      "alchemy": "Эликсир здоровья",
       "crafting": "Недоступно",
       "implant": "Живая вода",
       "knowledge": "Недоступно",
@@ -4578,7 +4578,7 @@
   {
     "alchemyAspects": "",
     "applications": {
-      "alchemy": "Зелье демонического горна",
+      "alchemy": "Масло дикой магии",
       "crafting": "Дьявольский доспех",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -4682,7 +4682,7 @@
   {
     "alchemyAspects": "",
     "applications": {
-      "alchemy": "Зелье духа",
+      "alchemy": "Зелья восстановления магических сил",
       "crafting": "Недоступно",
       "implant": "Недоступно",
       "knowledge": "Ритуал некромантии",
@@ -4786,7 +4786,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Требование для Зелья левитации",
+      "alchemy": "Зелье легкости пёрышка",
       "crafting": "Недоступно",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -4968,7 +4968,7 @@
   {
     "alchemyAspects": "",
     "applications": {
-      "alchemy": "Зелье ускорения",
+      "alchemy": "Зелье скорости",
       "crafting": "Недоступно",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -5046,7 +5046,7 @@
   {
     "alchemyAspects": "",
     "applications": {
-      "alchemy": "Зелье преображения",
+      "alchemy": "Компонент зелий трансформации",
       "crafting": "Недоступно",
       "implant": "Сердце преобразования",
       "knowledge": "Недоступно",
@@ -5150,7 +5150,7 @@
   {
     "alchemyAspects": "",
     "applications": {
-      "alchemy": "Зелье преобладания магии",
+      "alchemy": "Зелье отторжения",
       "crafting": "Недоступно",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -5228,7 +5228,7 @@
   {
     "alchemyAspects": "",
     "applications": {
-      "alchemy": "Зелье чужеродной природы",
+      "alchemy": "Зелье легкого искажения",
       "crafting": "Недоступно",
       "implant": "Ядро переплетённой реальности",
       "knowledge": "Недоступно",
@@ -5280,7 +5280,7 @@
   {
     "alchemyAspects": "",
     "applications": {
-      "alchemy": "Метафизическое зелье",
+      "alchemy": "Зелье планарного якоря",
       "crafting": "Недоступно",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -6190,7 +6190,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье дыхания",
+      "alchemy": "Зелье подводного дыхания",
       "crafting": "Недоступно",
       "implant": "Жаберный клапан",
       "knowledge": "Недоступно",
@@ -6320,7 +6320,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Масло восстановления",
+      "alchemy": "Основа алхимических масел",
       "crafting": "Влагозащитная пропитка. Расходуемое снаряжение 1-го ранга. За 10 минут обработайте один предмет верхней одежды или рюкзак. Обработанные участки защищены от дождя и брызг 24 часа, но не от погружения в воду.",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -6658,7 +6658,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Катализатор Зелья планарного якоря: на время его действия существо также нельзя переместить против его воли или сбить с ног.",
+      "alchemy": "Недоступно",
       "crafting": "Редкие сплавы, навигационные приборы и магические фокусы",
       "implant": "Недоступно",
       "knowledge": "Астрономия, геология и места падения",
@@ -6736,7 +6736,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье преображения",
+      "alchemy": "Компонент зелий трансформации",
       "crafting": "Плащ множества стилей",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -6762,7 +6762,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье преображения",
+      "alchemy": "Компонент зелий трансформации",
       "crafting": "Плащ множества стилей",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -6788,7 +6788,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье преображения",
+      "alchemy": "Компонент зелий трансформации",
       "crafting": "Плащ множества стилей",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -6814,7 +6814,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье преображения",
+      "alchemy": "Компонент зелий трансформации",
       "crafting": "Плащ множества стилей",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -6840,7 +6840,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье преображения",
+      "alchemy": "Компонент зелий трансформации",
       "crafting": "Плащ множества стилей",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -6866,7 +6866,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье преображения",
+      "alchemy": "Компонент зелий трансформации",
       "crafting": "Плащ множества стилей",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -7230,7 +7230,7 @@
   {
     "alchemyAspects": "",
     "applications": {
-      "alchemy": "Зелья невидимости",
+      "alchemy": "Зелье невидимости",
       "crafting": "Существо может действием уничтожить камень, становясь невидимым вплоть до 1-й минуты, пока поддерживает концентрацию.  После использования камень разрушается",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -7256,7 +7256,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Катализатор Зелья лёгкого искажения: его длительность увеличивается с 1 до 10 минут. Когда эффект заканчивается, существо становится Отравленным на 1 час; иммунитет, полученный от самого зелья, не предотвращает это состояние.",
+      "alchemy": "Недоступно",
       "crafting": "Пигменты, химические реактивы и специальные сплавы",
       "implant": "Недоступно",
       "knowledge": "Геология, распознавание и места залегания",
@@ -7282,7 +7282,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье сопротивление",
+      "alchemy": "Зелье сопротивления",
       "crafting": "Кольцо сопротивления",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -7308,7 +7308,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье сопротивление",
+      "alchemy": "Зелье сопротивления",
       "crafting": "Кольцо сопротивления",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -7334,7 +7334,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье сопротивление",
+      "alchemy": "Зелье сопротивления",
       "crafting": "Кольцо сопротивления",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -7360,7 +7360,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье сопротивление",
+      "alchemy": "Зелье сопротивления",
       "crafting": "Кольцо сопротивления",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -7386,7 +7386,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье сопротивление",
+      "alchemy": "Зелье сопротивления",
       "crafting": "Кольцо сопротивления",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -7412,7 +7412,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье сопротивление",
+      "alchemy": "Зелье сопротивления",
       "crafting": "Кольцо сопротивления",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -7438,7 +7438,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье сопротивление",
+      "alchemy": "Зелье сопротивления",
       "crafting": "Кольцо сопротивления",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -7464,7 +7464,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье сопротивление",
+      "alchemy": "Зелье сопротивления",
       "crafting": "Кольцо сопротивления",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -7490,7 +7490,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье силы",
+      "alchemy": "Зелье силы Великанов",
       "crafting": "Перчатки плавания и лазания",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -7516,7 +7516,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье силы",
+      "alchemy": "Зелье силы Великанов",
       "crafting": "Перчатки плавания и лазания",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -7542,7 +7542,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье силы",
+      "alchemy": "Зелье силы Великанов",
       "crafting": "Перчатки плавания и лазания",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -8010,7 +8010,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье выносливости",
+      "alchemy": "Зелье темпа",
       "crafting": "Подковы скорости",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -8036,7 +8036,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье выносливости",
+      "alchemy": "Зелье темпа",
       "crafting": "Подковы скорости",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -8062,7 +8062,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье выносливости",
+      "alchemy": "Зелье темпа",
       "crafting": "Подковы скорости",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -8088,7 +8088,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье выносливости",
+      "alchemy": "Зелье темпа",
       "crafting": "Подковы ветра",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -9024,7 +9024,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье интеллекта",
+      "alchemy": "Зелье ментальных навыков",
       "crafting": "Медальон мыслей",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -9050,7 +9050,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье интеллекта",
+      "alchemy": "Зелье ментальных навыков",
       "crafting": "Недоступно",
       "implant": "Мозг чудовища",
       "knowledge": "Недоступно",
@@ -9076,7 +9076,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье интеллекта",
+      "alchemy": "Зелье ментальных навыков",
       "crafting": "Медальон мыслей",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -9102,7 +9102,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье интеллекта",
+      "alchemy": "Зелье ментальных навыков",
       "crafting": "Недоступно",
       "implant": "Мозг чудовища",
       "knowledge": "Недоступно",
@@ -9128,7 +9128,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье интеллекта",
+      "alchemy": "Зелье ментальных навыков",
       "crafting": "Недоступно",
       "implant": "Мозг чудовища",
       "knowledge": "Недоступно",
@@ -9154,7 +9154,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье интеллекта",
+      "alchemy": "Зелье ментальных навыков",
       "crafting": "Недоступно",
       "implant": "Мозг чудовища",
       "knowledge": "Недоступно",
@@ -9180,7 +9180,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье интеллекта",
+      "alchemy": "Зелье ментальных навыков",
       "crafting": "Недоступно",
       "implant": "Мозг чудовища",
       "knowledge": "Недоступно",
@@ -9206,7 +9206,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье интеллекта",
+      "alchemy": "Зелье ментальных навыков",
       "crafting": "Недоступно",
       "implant": "Мозг чудовища",
       "knowledge": "Недоступно",
@@ -9232,7 +9232,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье интеллекта",
+      "alchemy": "Зелье ментальных навыков",
       "crafting": "Недоступно",
       "implant": "Мозг чудовища",
       "knowledge": "Недоступно",
@@ -9804,7 +9804,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье левитации",
+      "alchemy": "Зелье легкости пёрышка",
       "crafting": "Недоступно",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -9830,7 +9830,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье левитации",
+      "alchemy": "Зелье легкости пёрышка",
       "crafting": "Недоступно",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -9856,7 +9856,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье левитации",
+      "alchemy": "Зелье легкости пёрышка",
       "crafting": "Недоступно",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -9882,7 +9882,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье левитации",
+      "alchemy": "Зелье легкости пёрышка",
       "crafting": "Недоступно",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -9908,7 +9908,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье левитации",
+      "alchemy": "Зелье легкости пёрышка",
       "crafting": "Недоступно",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -9934,7 +9934,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье левитации",
+      "alchemy": "Зелье легкости пёрышка",
       "crafting": "Недоступно",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -10064,7 +10064,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье интеллекта",
+      "alchemy": "Зелье ментальных навыков",
       "crafting": "Медальон мыслей",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -10090,7 +10090,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье интеллекта",
+      "alchemy": "Зелье ментальных навыков",
       "crafting": "Кольцо защиты разума",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -10116,7 +10116,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье интеллекта",
+      "alchemy": "Зелье ментальных навыков",
       "crafting": "Медальон мыслей",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -10142,7 +10142,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье интеллекта",
+      "alchemy": "Зелье ментальных навыков",
       "crafting": "Медальон мыслей",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -10168,7 +10168,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье интеллекта",
+      "alchemy": "Зелье ментальных навыков",
       "crafting": "Кольцо защиты разума",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -10194,7 +10194,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье интеллекта",
+      "alchemy": "Зелье ментальных навыков",
       "crafting": "Кольцо защиты разума",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -10220,7 +10220,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье интеллекта",
+      "alchemy": "Зелье ментальных навыков",
       "crafting": "Кольцо защиты разума",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -10246,7 +10246,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье интеллекта",
+      "alchemy": "Зелье ментальных навыков",
       "crafting": "Кольцо защиты разума",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -10272,7 +10272,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье восстановления жизненных сил",
+      "alchemy": "Зелье заживления ран",
       "crafting": "Недоступно",
       "implant": "Плата регенерации",
       "knowledge": "Недоступно",
@@ -10298,7 +10298,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье восстановления жизненных сил",
+      "alchemy": "Зелье заживления ран",
       "crafting": "Недоступно",
       "implant": "Регенерирующая плоть",
       "knowledge": "Недоступно",
@@ -10324,7 +10324,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье восстановления жизненных сил",
+      "alchemy": "Зелье заживления ран",
       "crafting": "Недоступно",
       "implant": "Регенерирующая плоть",
       "knowledge": "Недоступно",
@@ -10350,7 +10350,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье восстановления жизненных сил",
+      "alchemy": "Зелье заживления ран",
       "crafting": "Недоступно",
       "implant": "Регенерирующая плоть",
       "knowledge": "Недоступно",
@@ -10402,7 +10402,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье мужества",
+      "alchemy": "Зелье героизма",
       "crafting": "Слуховой рог",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -10428,7 +10428,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье мужества",
+      "alchemy": "Зелье героизма",
       "crafting": "Слуховой рог",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -10454,7 +10454,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье мужества",
+      "alchemy": "Зелье героизма",
       "crafting": "Недоступно",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -10480,7 +10480,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье мужества",
+      "alchemy": "Зелье героизма",
       "crafting": "Недоступно",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -10506,7 +10506,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье мужества",
+      "alchemy": "Зелье героизма",
       "crafting": "Недоступно",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -10532,7 +10532,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье мужества",
+      "alchemy": "Зелье героизма",
       "crafting": "Недоступно",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -10558,7 +10558,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье мужества",
+      "alchemy": "Зелье героизма",
       "crafting": "Недоступно",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -10584,7 +10584,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Катализатор Зелья отложенного возврата: возвращение срабатывает даже между планами и игнорирует эффекты, запрещающие телепортацию, если они созданы заклинанием 8-го уровня или ниже.",
+      "alchemy": "Недоступно",
       "crafting": "Планарные устройства, стабилизаторы порталов и высшие магические фокусы",
       "implant": "Недоступно",
       "knowledge": "Планарная геология и места разломов",
@@ -10818,7 +10818,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье восстановления жизненных сил",
+      "alchemy": "Зелье заживления ран",
       "crafting": "Кольцо регенерации",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -12170,7 +12170,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье ускорения",
+      "alchemy": "Зелье темпа",
       "crafting": "Плащ защиты +1",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -12534,7 +12534,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье преображения",
+      "alchemy": "Компонент зелий трансформации",
       "crafting": "Перчатки плавания и лазания",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -12560,7 +12560,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье преображения",
+      "alchemy": "Компонент зелий трансформации",
       "crafting": "Перчатки плавания и лазания",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -12690,7 +12690,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье дыхания",
+      "alchemy": "Зелье подводного дыхания",
       "crafting": "Графин бесконечной воды",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -12716,7 +12716,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье дыхания",
+      "alchemy": "Зелье подводного дыхания",
       "crafting": "Графин бесконечной воды",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -12742,7 +12742,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье дыхания",
+      "alchemy": "Зелье подводного дыхания",
       "crafting": "Графин бесконечной воды",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -12768,7 +12768,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье дыхания",
+      "alchemy": "Зелье подводного дыхания",
       "crafting": "Чаша командования водяными элементалями",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -12794,7 +12794,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье дыхания",
+      "alchemy": "Зелье подводного дыхания",
       "crafting": "Чаша командования водяными элементалями",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -12820,7 +12820,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье дыхания",
+      "alchemy": "Зелье подводного дыхания",
       "crafting": "Чаша командования водяными элементалями",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -13418,7 +13418,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье молний",
+      "alchemy": "Электрическая бомба",
       "crafting": "Посох грома и молнии",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -13444,7 +13444,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье молний",
+      "alchemy": "Электрическая бомба",
       "crafting": "Метательное копьё молнии",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -13470,7 +13470,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье молний",
+      "alchemy": "Электрическая бомба",
       "crafting": "Метательное копьё молнии",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -13496,7 +13496,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье молний",
+      "alchemy": "Электрическая бомба",
       "crafting": "Метательное копьё молнии",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -13522,7 +13522,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье молний",
+      "alchemy": "Электрическая бомба",
       "crafting": "Волшебная палочка молний",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -13548,7 +13548,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье молний",
+      "alchemy": "Электрическая бомба",
       "crafting": "Посох грома и молнии",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -13574,7 +13574,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье молний",
+      "alchemy": "Электрическая бомба",
       "crafting": "Посох грома и молнии",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -13600,7 +13600,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье молний",
+      "alchemy": "Электрическая бомба",
       "crafting": "Посох грома и молнии",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -13626,7 +13626,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье сопротивление",
+      "alchemy": "Зелье сопротивления",
       "crafting": "Пропитанная древесная фокусировка",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -13652,7 +13652,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье сопротивление",
+      "alchemy": "Зелье сопротивления",
       "crafting": "Посох огня",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -13678,7 +13678,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье сопротивление",
+      "alchemy": "Зелье сопротивления",
       "crafting": "Пропитанная древесная фокусировка",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -13704,7 +13704,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье сопротивление",
+      "alchemy": "Зелье сопротивления",
       "crafting": "Камень элементаля",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -13730,7 +13730,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье сопротивление",
+      "alchemy": "Зелье сопротивления",
       "crafting": "Камень элементаля",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -13756,7 +13756,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье сопротивление",
+      "alchemy": "Зелье сопротивления",
       "crafting": "Жаровня командования огненными элементалями",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -13782,7 +13782,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье сопротивление",
+      "alchemy": "Зелье сопротивления",
       "crafting": "Язык пламени",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -13808,7 +13808,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье сопротивление",
+      "alchemy": "Зелье сопротивления",
       "crafting": "Посох огня",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -13834,7 +13834,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье сопротивление",
+      "alchemy": "Зелье сопротивления",
       "crafting": "Посох огня",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -13860,7 +13860,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье сопротивление",
+      "alchemy": "Зелье сопротивления",
       "crafting": "Посох огня",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -14328,7 +14328,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье тьмы",
+      "alchemy": "Зелье невидимости",
       "crafting": "Эльфийский плащ",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -14354,7 +14354,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье тьмы",
+      "alchemy": "Зелье невидимости",
       "crafting": "Эльфийский плащ",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -14380,7 +14380,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье тьмы",
+      "alchemy": "Зелье невидимости",
       "crafting": "Недоступно",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -14406,7 +14406,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье тьмы",
+      "alchemy": "Зелье невидимости",
       "crafting": "Недоступно",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -14432,7 +14432,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье тьмы",
+      "alchemy": "Зелье невидимости",
       "crafting": "Недоступно",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -14458,7 +14458,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье тьмы",
+      "alchemy": "Зелье невидимости",
       "crafting": "Недоступно",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -14484,7 +14484,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье тьмы",
+      "alchemy": "Зелье невидимости",
       "crafting": "Недоступно",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -14640,7 +14640,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье ледяного дыхания",
+      "alchemy": "Криогенная бомба",
       "crafting": "Ледяной кинжал",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -14666,7 +14666,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье ледяного дыхания",
+      "alchemy": "Криогенная бомба",
       "crafting": "Кольцо сопротивления",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -14692,7 +14692,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье ледяного дыхания",
+      "alchemy": "Криогенная бомба",
       "crafting": "Кольцо сопротивления",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -14718,7 +14718,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье ледяного дыхания",
+      "alchemy": "Криогенная бомба",
       "crafting": "Кольцо сопротивления",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -14744,7 +14744,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье ледяного дыхания",
+      "alchemy": "Криогенная бомба",
       "crafting": "Кольцо сопротивления",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -14770,7 +14770,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье ледяного дыхания",
+      "alchemy": "Криогенная бомба",
       "crafting": "Ледяной кинжал",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -14796,7 +14796,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье ледяного дыхания",
+      "alchemy": "Криогенная бомба",
       "crafting": "Ледяной кинжал",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -14822,7 +14822,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье ледяного дыхания",
+      "alchemy": "Криогенная бомба",
       "crafting": "Ледяной кинжал",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -14848,7 +14848,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье ледяного дыхания",
+      "alchemy": "Криогенная бомба",
       "crafting": "Ледяной кинжал",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -14978,7 +14978,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье сопротивление",
+      "alchemy": "Зелье сопротивления",
       "crafting": "Ожерелье адаптации",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -15056,7 +15056,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье понимания языков",
+      "alchemy": "Зелье понимания",
       "crafting": "Недоступно",
       "implant": "Язык чудовища (м)",
       "knowledge": "Недоступно",
@@ -15082,7 +15082,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье понимания языков",
+      "alchemy": "Зелье понимания",
       "crafting": "Недоступно",
       "implant": "Язык чудовища (м)",
       "knowledge": "Недоступно",
@@ -15108,7 +15108,7 @@
   {
     "alchemyAspects": "—",
     "applications": {
-      "alchemy": "Зелье понимания языков",
+      "alchemy": "Зелье понимания",
       "crafting": "Недоступно",
       "implant": "Язык чудовища (м)",
       "knowledge": "Недоступно",
@@ -15134,7 +15134,7 @@
   {
     "alchemyAspects": "",
     "applications": {
-      "alchemy": "Катализатор Зелья молниеносной реакции: после использования предоставленной зельем дополнительной Реакции существо получает +1 к КД до начала своего следующего хода.",
+      "alchemy": "Недоступно",
       "crafting": "Провода, посуда, механизмы и декоративные детали",
       "implant": "Недоступно",
       "knowledge": "Недоступно",
@@ -15888,7 +15888,7 @@
   {
     "alchemyAspects": "",
     "applications": {
-      "alchemy": "Катализатор Зелья усиленного колдовства: первое заклинание, усиленное этим зельем, получает +1 к броску атаки заклинанием или Сл спасброска — выбирается при наложении заклинания.",
+      "alchemy": "Недоступно",
       "crafting": "Украшения, монеты, фокусы и точные механизмы",
       "implant": "Недоступно",
       "knowledge": "Недоступно",

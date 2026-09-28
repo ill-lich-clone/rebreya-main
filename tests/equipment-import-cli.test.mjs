@@ -126,6 +126,35 @@ test("destructive guards fail before apply", async (t) => {
   assert.deepEqual((await readGenerated(cwd)).filesByPath, before);
 });
 
+test("ordinary alchemy removals report exactly two records without identity churn", async (t) => {
+  const current = structuredClone(bundle);
+  current.catalogs.gear.push(
+    {
+      ...structuredClone(current.catalogs.gear[0]),
+      id: "alhimicheskiy-ogon-flyaga",
+      name: "Алхимический огонь (фляга)",
+      sourceIdentity: "снаряжение|алхимический огонь (фляга)",
+      sourceRef: "Общий компендиум снаряжения V0.1!A38"
+    },
+    {
+      ...structuredClone(current.catalogs.gear[0]),
+      id: "kislota-flakon",
+      name: "Кислота (флакон)",
+      sourceIdentity: "снаряжение|кислота (флакон)",
+      sourceRef: "Общий компендиум снаряжения V0.1!A39"
+    }
+  );
+  const cwd = await setup(t, current);
+
+  const result = run(cwd, ["--apply"]);
+
+  assert.equal(result.status, 5, result.stderr);
+  assert.match(result.stdout, /gear: \+0 .* -2 churn:0/u);
+  assert.match(result.stdout, /Алхимический огонь \(фляга\)/u);
+  assert.match(result.stdout, /Кислота \(флакон\)/u);
+  assert.doesNotMatch(result.stdout, /identity-churn/u);
+});
+
 test("interrupted recovery runs before source access and unrecoverable recovery blocks", async (t) => {
   const cwd = await setup(t);
   const relative = "data/gear.json";

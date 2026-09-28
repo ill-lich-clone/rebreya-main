@@ -32,7 +32,7 @@ test("every canonical gear and material item resolves to an existing module icon
 
   try {
     const icons = await buildGearIconLookup({ forceRefresh: true });
-    assert.equal(gear.length, 808);
+    assert.equal(gear.length, 806);
     assert.equal(materials.length, 612);
     for (const item of gear) {
       const icon = resolveGearNamedIcon(item, icons) || resolveGearItemIcon(item, { iconLookup: icons });

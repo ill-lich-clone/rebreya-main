@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   EQUIPMENT_OVERRIDE_SCHEMA_VERSION,
@@ -96,6 +97,20 @@ test("stable identity resolution uses only exact source keys and reviewed aliase
     sourceName: "Переименованный боевой посох",
     overrides
   }), "boevoy-posoh");
+});
+
+test("checked-in overrides retain the explosive ID after the source typo is corrected", () => {
+  const checkedIn = validateEquipmentOverrides(JSON.parse(readFileSync(
+    new URL("../data/equipment-import-overrides.json", import.meta.url),
+    "utf8"
+  )));
+
+  assert.equal(resolveStableIdentity({
+    catalog: "gear",
+    sourceKey: "взрывчатка|осколочная граната",
+    sourceName: "Осколочная граната",
+    overrides: checkedIn
+  }), "oskolochnaya-granat");
 });
 
 test("manual enrichment permits only adapter-owned non-sheet fields", () => {

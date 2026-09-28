@@ -342,8 +342,8 @@
     },
     "explosives": {
       "sheetKey": "explosives",
-      "sheetTitle": "Взрывчатка V0.0",
-      "range": "'Взрывчатка V0.0'!A1:N1000",
+      "sheetTitle": "Взрывчатка V0.1",
+      "range": "'Взрывчатка V0.1'!A1:O1000",
       "rows": []
     },
     "attachments": {
