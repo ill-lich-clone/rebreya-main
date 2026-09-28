@@ -16,6 +16,12 @@ const DND5E_SYSTEM_ID = "dnd5e";
 const COMPENDIUM_SIDEBAR_FOLDER = Object.freeze(["Ребрея"]);
 const TEMPLATE_VERSION = 1;
 const MODULE_ASSET_PREFIX = `modules/${MODULE_ID}/`;
+const APPROVED_PRODUCT_COUNT = 230;
+const OMITTED_DUPLICATE_SOURCE_NUMBERS = new Set([36, 52, 67, 76]);
+const APPROVED_SOURCE_NUMBERS = Object.freeze(
+  Array.from({ length: 234 }, (_value, index) => index + 1)
+    .filter((sourceNumber) => !OMITTED_DUPLICATE_SOURCE_NUMBERS.has(sourceNumber))
+);
 
 const SUBTYPE_BY_PRODUCT_TYPE = Object.freeze({
   "Зелье": "potion",
@@ -297,26 +303,28 @@ function desiredPackMetadata() {
 
 async function ensureAlchemyPack() {
   const desired = desiredPackMetadata();
-  let pack = globalThis.game.packs.get(PACK_ID);
+  const pack = globalThis.game.packs.get(PACK_ID);
   if (pack && (pack.documentName !== desired.type || pack.metadata?.system !== desired.system)) {
-    await pack.deleteCompendium?.();
-    pack = null;
+    throw new Error(
+      `Alchemy sync found an incompatible existing compendium '${PACK_ID}' `
+      + `(${cleanString(pack.documentName) || "unknown"}/${cleanString(pack.metadata?.system) || "unknown"}); `
+      + `expected ${desired.type}/${desired.system}. The existing compendium was preserved.`
+    );
   }
-  if (!pack) {
-    pack = await globalThis.foundry.documents.collections.CompendiumCollection.createCompendium(desired);
-  }
+  const compatiblePack = pack
+    ?? await globalThis.foundry.documents.collections.CompendiumCollection.createCompendium(desired);
 
-  const currentDnd5eFlags = pack.metadata?.flags?.dnd5e ?? {};
+  const currentDnd5eFlags = compatiblePack.metadata?.flags?.dnd5e ?? {};
   if (
-    typeof pack.configure === "function"
+    typeof compatiblePack.configure === "function"
     && (
       cleanString(currentDnd5eFlags.sourceBook) !== desired.flags.dnd5e.sourceBook
       || JSON.stringify(currentDnd5eFlags.types ?? []) !== JSON.stringify(desired.flags.dnd5e.types)
     )
   ) {
-    await pack.configure({
+    await compatiblePack.configure({
       flags: {
-        ...(pack.metadata?.flags ?? {}),
+        ...(compatiblePack.metadata?.flags ?? {}),
         dnd5e: {
           ...currentDnd5eFlags,
           ...desired.flags.dnd5e
@@ -325,8 +333,8 @@ async function ensureAlchemyPack() {
     });
   }
 
-  await ensurePackSidebarFolder(pack, COMPENDIUM_SIDEBAR_FOLDER);
-  return pack;
+  await ensurePackSidebarFolder(compatiblePack, COMPENDIUM_SIDEBAR_FOLDER);
+  return compatiblePack;
 }
 
 function normalizedAssetPath(path) {
@@ -389,6 +397,55 @@ function documentHasNoAutomation(document) {
   return activityCount === 0 && effectCount === 0;
 }
 
+function embeddedDocumentIds(collection) {
+  if (!collection) return [];
+  if (Array.isArray(collection)) {
+    return collection.map((entry) => cleanString(entry?._id ?? entry?.id)).filter(Boolean);
+  }
+  if (typeof collection.keys === "function") {
+    return Array.from(collection.keys(), cleanString).filter(Boolean);
+  }
+  const contents = collection.contents;
+  if (Array.isArray(contents)) {
+    return contents.map((entry) => cleanString(entry?._id ?? entry?.id)).filter(Boolean);
+  }
+  if (typeof collection === "object") {
+    return Object.entries(collection)
+      .map(([key, entry]) => cleanString(entry?._id ?? entry?.id ?? key))
+      .filter(Boolean);
+  }
+  return [];
+}
+
+function requireCompleteApprovedCatalog(products) {
+  if (!Array.isArray(products) || products.length !== APPROVED_PRODUCT_COUNT) {
+    throw new TypeError(`Alchemy sync requires the complete approved catalog of ${APPROVED_PRODUCT_COUNT} products.`);
+  }
+  const ids = products.map((product) => cleanString(product?.id));
+  const sourceNumbers = products.map((product) => product?.sourceNumber);
+  const hasExpectedSourceNumbers = sourceNumbers.every(
+    (sourceNumber, index) => sourceNumber === APPROVED_SOURCE_NUMBERS[index]
+  );
+  if (ids.some((id) => !id) || new Set(ids).size !== APPROVED_PRODUCT_COUNT || !hasExpectedSourceNumbers) {
+    throw new TypeError(`Alchemy sync requires the complete approved catalog of ${APPROVED_PRODUCT_COUNT} products.`);
+  }
+  return products;
+}
+
+async function applyTextOnlyAlchemyUpdate(document, data) {
+  const effectIds = embeddedDocumentIds(document?.effects);
+  if (effectIds.length > 0) {
+    if (typeof document?.deleteEmbeddedDocuments !== "function") {
+      throw new TypeError(`Managed alchemy document ${cleanString(document?.id ?? document?._id)} cannot remove Active Effects`);
+    }
+    await document.deleteEmbeddedDocuments("ActiveEffect", effectIds);
+  }
+  for (const activityId of embeddedDocumentIds(document?.system?.activities)) {
+    data[`system.activities.-=${activityId}`] = null;
+  }
+  await document.update(data);
+}
+
 export class AlchemyCompendiumService {
   constructor({ validateAssetPaths = validateAlchemyAssetPaths } = {}) {
     if (typeof validateAssetPaths !== "function") {
@@ -402,7 +459,7 @@ export class AlchemyCompendiumService {
       return null;
     }
 
-    const safeProducts = Array.isArray(products) ? products : [];
+    const safeProducts = requireCompleteApprovedCatalog(products);
     const prebuiltData = safeProducts.map((product) => createAlchemyItemData(product, new Map()));
     await this.validateAssetPaths(prebuiltData.flatMap((data) => [
       data.img,
@@ -436,7 +493,8 @@ export class AlchemyCompendiumService {
         const data = createAlchemyItemData(product, folderIdByPath);
         delete data._id;
         return data;
-      }
+      },
+      applyUpdate: applyTextOnlyAlchemyUpdate
     });
 
     return globalThis.game.packs.get(PACK_ID) ?? pack;

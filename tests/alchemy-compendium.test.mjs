@@ -14,6 +14,9 @@ import { getAlchemyTypeRules } from "../scripts/data/alchemy-product-rules.js";
 import { createStableGearDocumentId } from "../scripts/data/gear-document-ids.js";
 
 const MODULE_ID = "rebreya-main";
+const productionCatalog = JSON.parse(
+  await readFile(new URL("../data/alchemy-products.json", import.meta.url), "utf8")
+);
 
 function product(overrides = {}) {
   return {
@@ -62,9 +65,31 @@ function makeDocument(data) {
   document.getFlag = (scope, key) => document.flags?.[scope]?.[key];
   document.update = async (update) => {
     const replacementSystem = update["==system"];
-    Object.assign(document, structuredClone(update));
+    const cloned = structuredClone(update);
+    if (cloned.system && !replacementSystem) {
+      document.system = {
+        ...(document.system ?? {}),
+        ...cloned.system,
+        activities: {
+          ...(document.system?.activities ?? {}),
+          ...(cloned.system.activities ?? {})
+        }
+      };
+      delete cloned.system;
+    }
+    for (const key of Object.keys(cloned)) {
+      if (key.startsWith("system.activities.-=")) {
+        delete document.system.activities[key.slice("system.activities.-=".length)];
+        delete cloned[key];
+      }
+    }
+    Object.assign(document, cloned);
     if (replacementSystem) document.system = structuredClone(replacementSystem);
     delete document["==system"];
+  };
+  document.deleteEmbeddedDocuments = async (documentName, ids) => {
+    assert.equal(documentName, "ActiveEffect");
+    document.effects = (document.effects ?? []).filter((effect) => !ids.includes(effect._id ?? effect.id));
   };
   return document;
 }
@@ -237,8 +262,7 @@ test("all 230 catalog products project to stable consumables with unique artwork
   };
 
   try {
-    const catalog = JSON.parse(await readFile(new URL("../data/alchemy-products.json", import.meta.url), "utf8"));
-    const items = catalog.map((entry) => createAlchemyItemData(entry, new Map()));
+    const items = productionCatalog.map((entry) => createAlchemyItemData(entry, new Map()));
     assert.equal(items.length, 230);
     assert.equal(new Set(items.map((entry) => entry._id)).size, 230);
     assert.equal(new Set(items.map((entry) => entry.img)).size, 230);
@@ -261,25 +285,28 @@ test("alchemy compendium validates all assets before mutation and synchronizes o
     CONFIG: globalThis.CONFIG
   };
   const mutations = [];
+  const deletedEffects = [];
   const folders = [];
   const sidebarFolders = [];
-  const first = product();
-  const second = product({
-    id: "alchemy-2",
-    sourceNumber: 2,
-    name: "Второй продукт",
-    productType: "Яд (Оружейный)",
-    icon: "templates/icons/Alchemy/2-vtoroy-produkt.webp",
-    topDownImage: "assets/top-down/items/alchemy/2-vtoroy-produkt.webp",
-    sourceRef: "Алхимические продукты V1!A4"
-  });
+  const [first, second] = productionCatalog;
   const currentFirstData = createAlchemyItemData(first, new Map());
+  const currentFirst = makeDocument({
+    ...currentFirstData,
+    name: "Старое имя",
+    system: {
+      ...currentFirstData.system,
+      activities: { "legacy-activity": { _id: "legacy-activity", name: "Legacy activity" } }
+    },
+    effects: [{ _id: "legacy-effect", name: "Legacy effect" }],
+    flags: { [MODULE_ID]: { ...currentFirstData.flags[MODULE_ID], signature: "old" } }
+  });
+  const deleteEmbeddedDocuments = currentFirst.deleteEmbeddedDocuments;
+  currentFirst.deleteEmbeddedDocuments = async (documentName, ids) => {
+    deletedEffects.push([documentName, [...ids]]);
+    return deleteEmbeddedDocuments(documentName, ids);
+  };
   const documents = [
-    makeDocument({
-      ...currentFirstData,
-      name: "Старое имя",
-      flags: { [MODULE_ID]: { ...currentFirstData.flags[MODULE_ID], signature: "old" } }
-    }),
+    currentFirst,
     makeDocument({
       _id: "stale-managed",
       name: "Устаревший",
@@ -368,30 +395,31 @@ test("alchemy compendium validates all assets before mutation and synchronizes o
       validateAssetPaths: async (paths) => {
         validationCalls += 1;
         assert.deepEqual(mutations, [], "asset validation must precede every world mutation");
-        assert.deepEqual(new Set(paths), new Set([
-          `modules/${MODULE_ID}/${first.icon}`,
-          `modules/${MODULE_ID}/${first.topDownImage}`,
-          `modules/${MODULE_ID}/${second.icon}`,
-          `modules/${MODULE_ID}/${second.topDownImage}`
-        ]));
+        assert.deepEqual(new Set(paths), new Set(productionCatalog.flatMap((entry) => [
+          `modules/${MODULE_ID}/${entry.icon}`,
+          `modules/${MODULE_ID}/${entry.topDownImage}`
+        ])));
       }
     });
 
-    await service.sync([first, second]);
+    await service.sync(productionCatalog);
     assert.equal(validationCalls, 1);
-    assert.equal(documents.filter((entry) => flagOf(entry, "managed")).length, 2);
+    assert.equal(documents.filter((entry) => flagOf(entry, "managed")).length, 230);
     assert.ok(documents.some((entry) => entry.id === "user-copy"));
     assert.equal(documents.some((entry) => entry.id === "stale-managed"), false);
     assert.equal(documents.find((entry) => flagOf(entry, "alchemyProductId") === first.id)?.name, first.name);
     assert.equal(documents.find((entry) => flagOf(entry, "alchemyProductId") === second.id)?.name, second.name);
-    assert.ok(mutations.some((entry) => entry === "create:1"));
+    assert.deepEqual(currentFirst.system.activities, {});
+    assert.deepEqual(currentFirst.effects, []);
+    assert.deepEqual(deletedEffects, [["ActiveEffect", ["legacy-effect"]]]);
+    assert.ok(mutations.some((entry) => entry === "create:229"));
     assert.ok(mutations.some((entry) => entry.startsWith("delete:stale-managed")));
 
     const folderKeys = folders.map((folder) => `${folder.folder ?? "root"}/${folder.name}`);
     assert.equal(new Set(folderKeys).size, folderKeys.length);
     const folderCount = folders.length;
     mutations.length = 0;
-    await service.sync([first, second]);
+    await service.sync(productionCatalog);
     assert.equal(validationCalls, 2);
     assert.equal(folders.length, folderCount);
     assert.deepEqual(mutations, []);
@@ -402,6 +430,73 @@ test("alchemy compendium validates all assets before mutation and synchronizes o
     globalThis.Folder = previous.Folder;
     globalThis.CONST = previous.CONST;
     globalThis.CONFIG = previous.CONFIG;
+  }
+});
+
+test("alchemy sync rejects malformed, empty, and partial catalogs before any pack mutation", async () => {
+  const previous = { game: globalThis.game, CONFIG: globalThis.CONFIG, CONST: globalThis.CONST };
+  let packLookups = 0;
+  globalThis.game = {
+    user: { isGM: true },
+    system: { id: "dnd5e" },
+    packs: { get() { packLookups += 1; return null; } }
+  };
+  globalThis.CONFIG = { DND5E: { consumableTypes: { potion: {} } } };
+  globalThis.CONST = { DOCUMENT_OWNERSHIP_LEVELS: { OBSERVER: 2 } };
+
+  try {
+    const service = new AlchemyCompendiumService({ validateAssetPaths: async () => {} });
+    for (const catalog of [null, {}, [], productionCatalog.slice(0, -1)]) {
+      await assert.rejects(() => service.sync(catalog), /complete approved catalog of 230 products/iu);
+    }
+    assert.equal(packLookups, 0);
+  }
+  finally {
+    globalThis.game = previous.game;
+    globalThis.CONFIG = previous.CONFIG;
+    globalThis.CONST = previous.CONST;
+  }
+});
+
+test("alchemy sync preserves an incompatible existing pack instead of deleting it", async () => {
+  const previous = {
+    game: globalThis.game,
+    foundry: globalThis.foundry,
+    CONFIG: globalThis.CONFIG,
+    CONST: globalThis.CONST
+  };
+  let deleted = 0;
+  let created = 0;
+  const pack = {
+    collection: "world.rebreya-alchemy",
+    documentName: "Actor",
+    metadata: { system: "dnd5e" },
+    async deleteCompendium() { deleted += 1; }
+  };
+  globalThis.game = {
+    user: { isGM: true },
+    system: { id: "dnd5e" },
+    packs: new Map([[pack.collection, pack]])
+  };
+  globalThis.foundry = {
+    documents: { collections: { CompendiumCollection: {
+      async createCompendium() { created += 1; return pack; }
+    } } }
+  };
+  globalThis.CONFIG = { DND5E: { consumableTypes: { potion: {}, poison: {}, food: {}, trinket: {} } } };
+  globalThis.CONST = { DOCUMENT_OWNERSHIP_LEVELS: { OBSERVER: 2 } };
+
+  try {
+    const service = new AlchemyCompendiumService({ validateAssetPaths: async () => {} });
+    await assert.rejects(() => service.sync(productionCatalog), /incompatible existing compendium/iu);
+    assert.equal(deleted, 0);
+    assert.equal(created, 0);
+  }
+  finally {
+    globalThis.game = previous.game;
+    globalThis.foundry = previous.foundry;
+    globalThis.CONFIG = previous.CONFIG;
+    globalThis.CONST = previous.CONST;
   }
 });
 
@@ -422,7 +517,7 @@ test("alchemy sync aborts before world mutation when any required asset is missi
         throw new Error("Missing alchemy asset: broken.webp");
       }
     });
-    await assert.rejects(() => service.sync([product()]), /Missing alchemy asset/iu);
+    await assert.rejects(() => service.sync(productionCatalog), /Missing alchemy asset/iu);
     assert.equal(packLookups, 0);
   }
   finally {

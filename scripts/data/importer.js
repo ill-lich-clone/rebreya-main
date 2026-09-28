@@ -213,7 +213,8 @@ async function loadFromBasePath(basePath) {
     gear: mergeGearCatalogExtensions(gear, { implants, upgrades }),
     alchemyProducts: Array.isArray(alchemyProducts) ? alchemyProducts : [],
     source: {
-      basePath: normalizedBasePath
+      basePath: normalizedBasePath,
+      alchemyProductsAvailable: alchemyProducts !== null
     }
   });
 }

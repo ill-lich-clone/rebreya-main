@@ -254,6 +254,7 @@ test("builtin dataset loader reads upgrade profiles and merges them into base ge
   try {
     const dataset = await importer.loadEconomyDataset();
     assert.deepEqual(dataset.alchemyProducts, []);
+    assert.equal(dataset.source.alchemyProductsAvailable, true);
     assert.deepEqual(dataset.gear, [{
       id: baseProduct.id,
       name: baseProduct.name,
@@ -325,6 +326,7 @@ test("legacy dataset base path treats a missing alchemy catalog as an empty opti
   try {
     const dataset = await importer.loadEconomyDataset();
     assert.deepEqual(dataset.alchemyProducts, []);
+    assert.equal(dataset.source.alchemyProductsAvailable, false);
   }
   finally {
     globalThis.game = originalGame;

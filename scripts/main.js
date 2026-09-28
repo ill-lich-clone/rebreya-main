@@ -19,7 +19,7 @@ import {
 import { setManagedIconProjection } from "./data/managed-compendium-sync.js?v=1.4.330";
 import { MaterialsCompendiumService } from "./data/materials-compendium.js?v=1.4.330";
 import { GearCompendiumService } from "./data/gear-compendium.js?v=1.4.330";
-import { AlchemyCompendiumService } from "./data/alchemy-compendium.js?v=1.4.345";
+import { AlchemyCompendiumService } from "./data/alchemy-compendium.js?v=1.4.347";
 import { repairWorldAmmunitionCompatibility } from "./data/ammunition-compatibility.js?v=1.4.147-native-ammunition";
 import { MagicItemsCompendiumService } from "./data/magic-items-compendium.js?v=1.4.330";
 import { FeatsCompendiumService } from "./data/feats-compendium.js?v=1.4.330";
@@ -43,7 +43,7 @@ import { SpellsCompendiumService } from "./data/spells-compendium.js?v=1.4.330";
 import { ActionsCompendiumService } from "./data/actions-compendium.js?v=1.4.330";
 import { DowntimeCompendiumService } from "./data/downtime-compendium.js?v=1.4.330";
 import { FeatChoiceAutomationService, registerFeatChoiceAutomationHooks } from "./automation/feat-choice-service.js";
-import { EconomyRepository } from "./data/repository.js?v=1.4.322";
+import { EconomyRepository } from "./data/repository.js?v=1.4.347";
 import { TraderService, normalizeTraderState } from "./data/trader-service.js?v=1.4.327";
 import { TradeTransactionService } from "./features/trading/trade-transaction-service.js";
 import { PurchaseBasketService } from "./features/trading/purchase-basket-service.js";
@@ -4459,7 +4459,9 @@ export class RebreyaMainModule {
 
     if (isActiveGmClient(globalThis.game)) {
       try {
-        await this.alchemyCompendium.sync(model.alchemyProducts);
+        if (model.source?.alchemyProductsAvailable !== false) {
+          await this.alchemyCompendium.sync(model.alchemyProducts);
+        }
       }
       catch (error) {
         console.error(`${MODULE_ID} | Failed to sync alchemy compendium.`, error);
