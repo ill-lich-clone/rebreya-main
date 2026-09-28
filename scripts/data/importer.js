@@ -192,13 +192,14 @@ async function fetchJson(path, { optional = false } = {}) {
 
 async function loadFromBasePath(basePath) {
   const normalizedBasePath = trimTrailingSlash(basePath);
-  const [goods, regions, cities, reference, materials, gear, implants, upgrades] = await Promise.all([
+  const [goods, regions, cities, reference, materials, gear, alchemyProducts, implants, upgrades] = await Promise.all([
     fetchJson(`${normalizedBasePath}/goods.json`),
     fetchJson(`${normalizedBasePath}/regions.json`),
     fetchJson(`${normalizedBasePath}/cities.json`),
     fetchJson(`${normalizedBasePath}/reference.json`),
     fetchJson(`${normalizedBasePath}/materials.json`, { optional: true }),
     fetchJson(`${normalizedBasePath}/gear.json`, { optional: true }),
+    fetchJson(`${normalizedBasePath}/alchemy-products.json`, { optional: true }),
     fetchJson(`${normalizedBasePath}/implants.json`, { optional: true }),
     fetchJson(`${normalizedBasePath}/upgrades.json`, { optional: true })
   ]);
@@ -210,6 +211,7 @@ async function loadFromBasePath(basePath) {
     reference,
     materials: Array.isArray(materials) ? materials : [],
     gear: mergeGearCatalogExtensions(gear, { implants, upgrades }),
+    alchemyProducts: Array.isArray(alchemyProducts) ? alchemyProducts : [],
     source: {
       basePath: normalizedBasePath
     }

@@ -222,6 +222,7 @@ test("builtin dataset loader reads upgrade profiles and merges them into base ge
     ["reference.json", {}],
     ["materials.json", []],
     ["gear.json", [baseProduct]],
+    ["alchemy-products.json", []],
     ["implants.json", []],
     ["upgrades.json", [upgradeProfile]]
   ]);
@@ -252,6 +253,7 @@ test("builtin dataset loader reads upgrade profiles and merges them into base ge
 
   try {
     const dataset = await importer.loadEconomyDataset();
+    assert.deepEqual(dataset.alchemyProducts, []);
     assert.deepEqual(dataset.gear, [{
       id: baseProduct.id,
       name: baseProduct.name,
@@ -287,6 +289,42 @@ test("builtin dataset loader reads upgrade profiles and merges them into base ge
       upgrade: upgradeProfile.upgrade,
       source: "gear-workbook"
     }]);
+  }
+  finally {
+    globalThis.game = originalGame;
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("legacy dataset base path treats a missing alchemy catalog as an empty optional collection", async () => {
+  const originalGame = globalThis.game;
+  const originalFetch = globalThis.fetch;
+  globalThis.game = {
+    settings: {
+      get(_moduleId, key) {
+        if (key === SETTINGS_KEYS.DATA_SOURCE_MODE) return DATA_SOURCE_MODES.BUILTIN;
+        if (key === SETTINGS_KEYS.CUSTOM_DATA_PATH) return "";
+        return undefined;
+      }
+    }
+  };
+  globalThis.fetch = async (requestPath) => {
+    const fileName = String(requestPath).split("/").at(-1);
+    if (fileName === "alchemy-products.json") {
+      return { ok: false, status: 404, statusText: "Not Found" };
+    }
+    const payload = fileName === "reference.json" ? {} : [];
+    return {
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      json: async () => payload
+    };
+  };
+
+  try {
+    const dataset = await importer.loadEconomyDataset();
+    assert.deepEqual(dataset.alchemyProducts, []);
   }
   finally {
     globalThis.game = originalGame;

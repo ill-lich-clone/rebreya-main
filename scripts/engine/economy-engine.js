@@ -1475,6 +1475,7 @@ export function buildEconomyModel(
   const effectiveStatePolicies = resolveEffectiveStatePolicies(cities, statePolicies, globalEventModifiers ?? {});
   const materials = Array.isArray(dataset.materials) ? dataset.materials : [];
   const gear = Array.isArray(dataset.gear) ? dataset.gear : [];
+  const alchemyProducts = Array.isArray(dataset.alchemyProducts) ? dataset.alchemyProducts : [];
   const reference = dataset.reference ?? {};
 
   const regionById = new Map(regions.map((region) => [region.id, region]));
@@ -1522,12 +1523,14 @@ export function buildEconomyModel(
     regions,
     materials,
     gear,
+    alchemyProducts,
     cities: citySnapshots,
     cityById,
     regionById,
     materialById,
     materialByGoodId,
     gearById: new Map(gear.map((item) => [item.id, item])),
+    alchemyProductById: new Map(alchemyProducts.map((product) => [product.id, product])),
     tradeRoutes: tradeRouteIndex.tradeRoutes,
     tradeRouteById: tradeRouteIndex.tradeRouteById,
     effectiveStatePolicies: foundry.utils.deepClone(effectiveStatePolicies),

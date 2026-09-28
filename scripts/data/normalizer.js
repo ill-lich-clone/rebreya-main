@@ -10,6 +10,34 @@ const REGIONS_ROOT_KEYS = ["regions"];
 const CITIES_ROOT_KEYS = ["cities", "settlements", "locations"];
 const MATERIALS_ROOT_KEYS = ["materials"];
 const GEAR_ROOT_KEYS = ["gear", "equipment", "items"];
+const ALCHEMY_PRODUCTS_ROOT_KEYS = ["alchemyProducts"];
+
+const ALCHEMY_REQUIRED_FIELDS = [
+  "id",
+  "sourceNumber",
+  "name",
+  "productType",
+  "priceFormula",
+  "priceMaximumGp",
+  "rank",
+  "reagentLevel",
+  "effect",
+  "catalystEffect",
+  "aspects",
+  "mandatoryComponent",
+  "craftingDc",
+  "privateCatalyst",
+  "activation",
+  "duration",
+  "requirements",
+  "simplifiedCreation",
+  "radiusOrEmanation",
+  "rarity",
+  "weight",
+  "icon",
+  "topDownImage",
+  "sourceRef"
+];
 
 const GOODS_FIELD_ALIASES = {
   id: ["id", "slug", "key", "code"],
@@ -757,6 +785,48 @@ function sanitizeSuspiciousDemandMirrors(cities, goods, reference, source) {
   }
 }
 
+export function normalizeAlchemyProducts(rawAlchemyProducts) {
+  const records = toRecordArray(rawAlchemyProducts, ALCHEMY_PRODUCTS_ROOT_KEYS);
+  const usedIds = new Set();
+
+  return records.map((record, index) => {
+    if (!isObject(record)) {
+      throw new TypeError(`Alchemy product at index ${index} must be an object`);
+    }
+    for (const field of ALCHEMY_REQUIRED_FIELDS) {
+      if (!Object.hasOwn(record, field) || record[field] === undefined) {
+        throw new TypeError(`Alchemy product at index ${index} requires required field ${field}`);
+      }
+    }
+
+    const id = cleanString(record.id);
+    if (!id) throw new TypeError(`Alchemy product at index ${index} requires required field id`);
+    if (usedIds.has(id)) throw new TypeError(`Duplicate alchemy product id: ${id}`);
+    usedIds.add(id);
+
+    if (!Number.isInteger(record.sourceNumber) || record.sourceNumber <= 0) {
+      throw new TypeError(`${id}: sourceNumber must be a positive integer`);
+    }
+    if (!cleanString(record.name) || !cleanString(record.productType)) {
+      throw new TypeError(`${id}: name and productType must be non-empty strings`);
+    }
+    if (!Number.isInteger(record.rank) || record.rank < 1 || record.rank > 9) {
+      throw new TypeError(`${id}: rank must be an integer from 1 through 9`);
+    }
+    if (!Number.isFinite(record.priceMaximumGp) || record.priceMaximumGp < 0) {
+      throw new TypeError(`${id}: priceMaximumGp must be a non-negative number`);
+    }
+    if (!isObject(record.aspects)) throw new TypeError(`${id}: aspects must be an object`);
+    for (const field of ["priceFormula", "rarity", "icon", "topDownImage", "sourceRef"]) {
+      if (!cleanString(record[field])) throw new TypeError(`${id}: ${field} must be a non-empty string`);
+    }
+
+    const normalized = foundry.utils.deepClone(record);
+    normalized.id = id;
+    return normalized;
+  });
+}
+
 export function normalizeEconomyDataset(rawDataset) {
   const source = foundry.utils.deepClone(rawDataset?.source ?? {});
   const { goods, aliasMap: goodAliasMap } = normalizeGoods(rawDataset?.goods);
@@ -764,6 +834,7 @@ export function normalizeEconomyDataset(rawDataset) {
   const { cities, aliasMap: cityAliasMap } = normalizeCities(rawDataset?.cities, goodAliasMap, regionAliasMap);
   const { materials, aliasMap: materialAliasMap } = normalizeMaterials(rawDataset?.materials, goodAliasMap, goods);
   const { gear } = normalizeGear(rawDataset?.gear, materialAliasMap, materials);
+  const alchemyProducts = normalizeAlchemyProducts(rawDataset?.alchemyProducts);
   const reference = normalizeReference(rawDataset?.reference, cityAliasMap);
 
   sanitizeSuspiciousDemandMirrors(cities, goods, reference, source);
@@ -774,6 +845,7 @@ export function normalizeEconomyDataset(rawDataset) {
     cities,
     materials,
     gear,
+    alchemyProducts,
     reference,
     source
   };
