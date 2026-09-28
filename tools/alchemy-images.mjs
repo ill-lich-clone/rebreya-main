@@ -30,8 +30,8 @@ function parseArguments(argv) {
   const options = {};
   for (let index = 0; index < rest.length; index += 1) {
     const argument = rest[index];
-    if (argument === "--require-accepted") {
-      options.requireAccepted = true;
+    if (argument === "--require-accepted" || argument === "--replace-existing") {
+      options[argument.slice(2).replace(/-([a-z])/gu, (_match, letter) => letter.toUpperCase())] = true;
       continue;
     }
     if (!argument.startsWith("--")) throw new Error(`Unexpected argument: ${argument}`);
@@ -205,7 +205,8 @@ export function runAlchemyImagesCli(argv = process.argv.slice(2)) {
           moduleRoot,
           manifestPath: context.manifestPath,
           gridId: cleanRequired(options["grid-id"], "process-grid requires --grid-id"),
-          sourcePath: path.resolve(cleanRequired(options.source, "process-grid requires --source"))
+          sourcePath: path.resolve(cleanRequired(options.source, "process-grid requires --source")),
+          replaceExisting: options.replaceExisting === true
         });
         break;
       case "contact-sheet":

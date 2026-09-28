@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import {
+  copyFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -88,7 +89,10 @@ export function buildFfmpegFilter({ crop, pad, kind }) {
   if (kind === "topDown") filters.push("format=rgba");
   filters.push(`pad=${square.side}:${square.side}:${square.left}:${square.top}:color=${color}`);
   filters.push("scale=512:512:flags=lanczos");
-  if (kind === "topDown") filters.push("format=rgba");
+  if (kind === "topDown") {
+    filters.push("format=rgba");
+    filters.push("lut=a='if(lt(val,16),0,val)'");
+  }
   return filters.join(",");
 }
 
@@ -123,6 +127,7 @@ export function processAlchemyGrid({
   manifestPath = null,
   gridId,
   sourcePath,
+  replaceExisting = false,
   spawnImpl = spawnSync
 }) {
   const source = probeImage(sourcePath, spawnImpl);
@@ -138,10 +143,17 @@ export function processAlchemyGrid({
   const workRoot = mkdtempSync(path.join(os.tmpdir(), "rebreya-alchemy-grid-"));
   const generationHash = createHash("sha256").update(readFileSync(sourcePath)).digest("hex");
   const staged = [];
+  const destinationTemporaries = [];
   try {
     for (const [index, entry] of selected.entries()) {
       const outputPath = path.resolve(moduleRoot, ...entry.outputPath.split("/"));
-      if (existsSync(outputPath)) throw new Error(`Refusing to overwrite alchemy asset: ${entry.outputPath}`);
+      if (existsSync(outputPath)) {
+        if (!replaceExisting) throw new Error(`Refusing to overwrite alchemy asset: ${entry.outputPath}`);
+        const existing = inspectProcessedAlchemyImage(outputPath, { spawnImpl });
+        if (!entry.assetHash || existing.contentHash !== entry.assetHash) {
+          throw new Error(`Refusing to replace changed alchemy asset: ${entry.outputPath}`);
+        }
+      }
       const temporary = path.join(workRoot, `${String(index).padStart(2, "0")}.webp`);
       const filter = buildFfmpegFilter({ crop: entry.crop, pad: entry.padding, kind: entry.kind });
       const args = [
@@ -177,7 +189,14 @@ export function processAlchemyGrid({
     }
     for (const item of staged) {
       mkdirSync(path.dirname(item.outputPath), { recursive: true });
-      renameSync(item.temporary, item.outputPath);
+      const destinationTemporary = `${item.outputPath}.${randomUUID()}.tmp`;
+      copyFileSync(item.temporary, destinationTemporary);
+      destinationTemporaries.push(destinationTemporary);
+    }
+    for (let index = 0; index < staged.length; index += 1) {
+      const item = staged[index];
+      if (existsSync(item.outputPath)) copyFileSync(destinationTemporaries[index], item.outputPath);
+      else renameSync(destinationTemporaries[index], item.outputPath);
     }
     for (const item of staged) {
       Object.assign(item.entry, {
@@ -190,6 +209,7 @@ export function processAlchemyGrid({
     if (manifestPath) writeManifestAtomic(manifestPath, manifest);
     return { gridId, processed: staged.length, generationHash };
   } finally {
+    for (const temporary of destinationTemporaries) rmSync(temporary, { force: true });
     rmSync(workRoot, { recursive: true, force: true });
   }
 }

@@ -45,6 +45,8 @@ test("ffmpeg filter crops, pads, then scales once without unequal-axis distortio
 
   assert.match(topDown, /^crop=100:120:31:42,format=rgba,pad=120:120:10:0:color=0x00000000,scale=512:512/u);
   assert.match(icon, /^crop=100:120:31:42,pad=120:120:10:0:color=0x2a1d18,scale=512:512/u);
+  assert.match(topDown, /lut=a='if\(lt\(val,16\),0,val\)'/u);
+  assert.doesNotMatch(icon, /lut=/u);
   assert.equal((topDown.match(/scale=/gu) ?? []).length, 1);
   assert.doesNotMatch(topDown, /scale=100:120|scale=120:100/u);
 });
@@ -107,6 +109,46 @@ test("grid processing refuses an unreviewed crop before creating output", async 
     sourcePath
   }), /reviewed crop/i);
   assert.equal(existsSync(path.join(moduleRoot, ...entry.outputPath.split("/"))), false);
+});
+
+test("reviewed replacement is opt-in and only replaces the manifest-owned asset", async (t) => {
+  const moduleRoot = await mkdtemp(path.join(os.tmpdir(), "rebreya-alchemy-replace-"));
+  t.after(() => rm(moduleRoot, { recursive: true, force: true }));
+  const sourcePath = path.join(moduleRoot, "grid.png");
+  generateTransparentGrid(sourcePath);
+  const manifest = buildAlchemyImageManifest(products.slice(0, 1));
+  const entry = manifest.entries.find((candidate) => candidate.kind === "topDown");
+  Object.assign(entry, {
+    status: "processing",
+    visualQa: "passed",
+    cropReviewed: true,
+    crop: { x: 60, y: 50, width: 100, height: 120 }
+  });
+  processAlchemyGrid({ manifest, moduleRoot, gridId: entry.gridId, sourcePath });
+
+  assert.throws(() => processAlchemyGrid({
+    manifest,
+    moduleRoot,
+    gridId: entry.gridId,
+    sourcePath
+  }), /refusing to overwrite/i);
+  const replaced = processAlchemyGrid({
+    manifest,
+    moduleRoot,
+    gridId: entry.gridId,
+    sourcePath,
+    replaceExisting: true
+  });
+  assert.equal(replaced.processed, 1);
+
+  entry.assetHash = "0".repeat(64);
+  assert.throws(() => processAlchemyGrid({
+    manifest,
+    moduleRoot,
+    gridId: entry.gridId,
+    sourcePath,
+    replaceExisting: true
+  }), /changed alchemy asset/i);
 });
 
 test("failed ffmpeg output leaves manifest status and hashes untouched", async (t) => {
