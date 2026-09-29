@@ -3,8 +3,10 @@ import test from "node:test";
 
 import {
   CombatStatusService,
+  DECAYING_DAMAGE_COUNTER_TYPE,
   DECAYING_DAMAGE_OVERTIME_LABEL,
-  buildDecayingDamageChange
+  buildDecayingDamageChange,
+  createDecayingDamageCounterClass
 } from "../scripts/combat/status-service.js";
 import { registerCombatHooks } from "../scripts/combat/hooks.js";
 
@@ -117,7 +119,7 @@ test("decaying damage emits one typed Midi-QOL OverTime change for the current a
     assert.deepEqual(buildDecayingDamageChange(10, { step: 1, damageType: "fire" }), {
       key: "flags.midi-qol.OverTime.rebreyaDecayingDamage",
       mode: 0,
-      value: `turn=start,damageRoll=10,damageType=fire,fastForwardDamage=true,allowIncapacitated=true,label="${DECAYING_DAMAGE_OVERTIME_LABEL}"`,
+      value: `turn=end,damageRoll=10,damageType=fire,fastForwardDamage=true,allowIncapacitated=true,label="${DECAYING_DAMAGE_OVERTIME_LABEL}"`,
       priority: 20
     });
     assert.throws(
@@ -156,8 +158,10 @@ test("completed Midi overtime damage reduces the status only after the workflow 
 
     assert.equal(await service.handleMidiRollComplete(workflow), true);
     assert.equal(effect.flags[MODULE_ID].statusValue, 9);
-    assert.equal(effect.flags.statuscounter.value, 1);
-    assert.equal(effect.flags.statuscounter.visible, false);
+    assert.equal(effect.flags.statuscounter.value, 9);
+    assert.equal(effect.flags.statuscounter.visible, true);
+    assert.equal(effect.flags.statuscounter.config.type, DECAYING_DAMAGE_COUNTER_TYPE);
+    assert.equal(effect.flags[MODULE_ID].decayingDamageStackCount, 1);
     assert.match(effect.changes[0].value, /damageRoll=9/iu);
     assert.deepEqual(actor.updateCalls, []);
     assert.equal(await service.handleActiveEffectUpdate(effect), false);
@@ -165,6 +169,63 @@ test("completed Midi overtime damage reduces the status only after the workflow 
     assert.match(effect.changes[0].value, /damageRoll=9/iu);
     assert.equal(await service.handleMidiRollComplete(workflow), false);
     assert.equal(effect.flags[MODULE_ID].statusValue, 9);
+  }
+  finally {
+    globals.restore();
+  }
+});
+
+test("decaying damage counter displays the current amount while exposing one technical stack to Midi-QOL", async () => {
+  const globals = installFoundryGlobals();
+  try {
+    class TestStatusCounter {
+      constructor(parent, data = {}) {
+        this.parent = parent;
+        Object.assign(this, data);
+      }
+    }
+
+    const DecayingDamageCounter = createDecayingDamageCounterClass(TestStatusCounter);
+    const updates = [];
+    const effect = {
+      flags: {
+        [MODULE_ID]: {
+          statusValue: 10,
+          decayingDamageStackCount: 1
+        },
+        statuscounter: { visible: false }
+      },
+      _source: {
+        flags: {
+          [MODULE_ID]: {
+            statusValue: 10,
+            decayingDamageStackCount: 1
+          }
+        }
+      },
+      getFlag(scope, key) {
+        return this.flags?.[scope]?.[key];
+      },
+      async update(patch) {
+        updates.push(patch);
+        applyPatch(this, patch);
+      },
+      async delete() {
+        this.deleted = true;
+      }
+    };
+    const counter = new DecayingDamageCounter(effect, {});
+
+    assert.equal(counter.visible, true);
+    assert.equal(counter.displayValue, 10);
+    assert.equal(counter._sourceValue, 1);
+    await counter.decrement();
+    assert.deepEqual(updates, [{
+      [`flags.${MODULE_ID}.statusValue`]: 9,
+      "flags.statuscounter.value": 9,
+      "flags.statuscounter.visible": true,
+      [`flags.${MODULE_ID}.decayingDamageStackCount`]: 1
+    }]);
   }
   finally {
     globals.restore();

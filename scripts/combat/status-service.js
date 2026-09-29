@@ -22,12 +22,82 @@ const FRIGHTENED_STATUS_ID = REBREYA_FRIGHTENED_STATUS_ID;
 const NAUSEATED_STATUS_ID = "rebreya-nauseated";
 const STATUS_COUNTER_MODULE_ID = "statuscounter";
 const DECAYING_DAMAGE_STATUS_ID = "rebreya-decaying-damage";
+const DECAYING_DAMAGE_STACK_FLAG = "decayingDamageStackCount";
+export const DECAYING_DAMAGE_COUNTER_TYPE = "rebreya-decaying-damage";
 const DECAYING_DAMAGE_META_VERSION = 2;
 const DECAYING_DAMAGE_OVERTIME_KEY = "flags.midi-qol.OverTime.rebreyaDecayingDamage";
 export const DECAYING_DAMAGE_OVERTIME_LABEL = "Rebreya: Затихающий урон";
 const DAE_SPECIAL_DURATION_TURN_START_SOURCE = "turnStartSource";
 const DAE_SPECIAL_DURATION_TURN_END_SOURCE = "turnEndSource";
 const TWISTED_STATUS_ID = "rebreya-twisted";
+
+export function createDecayingDamageCounterClass(StatusCounter) {
+  return class DecayingDamageCounter extends StatusCounter {
+    constructor(parent, data = {}) {
+      super(parent, data);
+      this.type = DECAYING_DAMAGE_COUNTER_TYPE;
+      this.dataSource = `flags.${MODULE_ID}.${DECAYING_DAMAGE_STACK_FLAG}`;
+    }
+
+    static get label() {
+      return "Затихающий урон";
+    }
+
+    get visible() {
+      return true;
+    }
+
+    get displayValue() {
+      return normalizeStatusValue(this.parent?.getFlag?.(MODULE_ID, STATUS_VALUE_FLAG), 1);
+    }
+
+    get _sourceValue() {
+      return 1;
+    }
+
+    setValue(value) {
+      const numericValue = Math.floor(toNumber(value, 0));
+      if (numericValue <= 0) {
+        return typeof this._deleteParent === "function"
+          ? this._deleteParent()
+          : this.parent?.delete?.();
+      }
+
+      return this.parent.update({
+        [`flags.${MODULE_ID}.${STATUS_VALUE_FLAG}`]: numericValue,
+        [`flags.${STATUS_COUNTER_MODULE_ID}.value`]: numericValue,
+        [`flags.${STATUS_COUNTER_MODULE_ID}.visible`]: true,
+        [`flags.${MODULE_ID}.${DECAYING_DAMAGE_STACK_FLAG}`]: 1
+      });
+    }
+
+    increment() {
+      return this.setValue(this.displayValue + 1);
+    }
+
+    decrement() {
+      return this.setValue(this.displayValue - 1);
+    }
+
+    set(value) {
+      return this.setValue(value);
+    }
+  };
+}
+
+export function registerDecayingDamageCounterType() {
+  const api = globalThis.game?.modules?.get?.(STATUS_COUNTER_MODULE_ID)?.api;
+  if (typeof api?.StatusCounter !== "function" || typeof api?.addCounterType !== "function") {
+    return false;
+  }
+
+  api.addCounterType(
+    DECAYING_DAMAGE_COUNTER_TYPE,
+    createDecayingDamageCounterClass(api.StatusCounter),
+    [DECAYING_DAMAGE_STATUS_ID]
+  );
+  return true;
+}
 
 function documentUuid(document) {
   return String(document?.document?.uuid ?? document?.uuid ?? "").trim();
@@ -386,7 +456,7 @@ export function buildDecayingDamageChange(value, meta = {}, { effectId = "" } = 
     key: DECAYING_DAMAGE_OVERTIME_KEY,
     mode: activeEffectCustomMode(),
     value: [
-      "turn=start",
+      "turn=end",
       `damageRoll=${amount}`,
       `damageType=${normalizedMeta.damageType}`,
       "fastForwardDamage=true",
@@ -920,8 +990,11 @@ function buildCanonicalManagedStatusUpdate(effect, statusId, { actor = null, sou
   if (statusSupportsValue(statusId)) {
     patch[`flags.${MODULE_ID}.${STATUS_VALUE_FLAG}`] = value ?? null;
     if (statusId === DECAYING_DAMAGE_STATUS_ID) {
-      patch[`flags.${STATUS_COUNTER_MODULE_ID}.value`] = 1;
-      patch[`flags.${STATUS_COUNTER_MODULE_ID}.visible`] = false;
+      patch[`flags.${STATUS_COUNTER_MODULE_ID}.value`] = value;
+      patch[`flags.${STATUS_COUNTER_MODULE_ID}.visible`] = true;
+      patch[`flags.${STATUS_COUNTER_MODULE_ID}.config.type`] = DECAYING_DAMAGE_COUNTER_TYPE;
+      patch[`flags.${STATUS_COUNTER_MODULE_ID}.config.dataSource`] = `flags.${MODULE_ID}.${DECAYING_DAMAGE_STACK_FLAG}`;
+      patch[`flags.${MODULE_ID}.${DECAYING_DAMAGE_STACK_FLAG}`] = 1;
     }
     else if (value !== null && value !== undefined && isActiveFrightenedStatus) {
       patch[`flags.${STATUS_COUNTER_MODULE_ID}.value`] = value;
@@ -1100,6 +1173,7 @@ function buildDynamicStatusChanges(statusId, value, meta = {}, effect = null) {
 }
 
 export function registerCombatStatusConfig() {
+  registerDecayingDamageCounterType();
   const coreStatusEffects = Array.isArray(CONFIG?.statusEffects) ? CONFIG.statusEffects : null;
   const dnd5eStatusEffects =
     CONFIG?.DND5E?.statusEffects && typeof CONFIG.DND5E.statusEffects === "object"
@@ -1852,10 +1926,13 @@ export class CombatStatusService {
         patch.icon = statusIcon(statusId);
         patch.statuses = [statusId];
         patch["flags.core.statusId"] = statusId;
-        patch[`flags.${STATUS_COUNTER_MODULE_ID}.value`] = statusId === DECAYING_DAMAGE_STATUS_ID
-          ? 1
-          : statusValue;
-        patch[`flags.${STATUS_COUNTER_MODULE_ID}.visible`] = statusId !== DECAYING_DAMAGE_STATUS_ID;
+        patch[`flags.${STATUS_COUNTER_MODULE_ID}.value`] = statusValue;
+        patch[`flags.${STATUS_COUNTER_MODULE_ID}.visible`] = true;
+        if (statusId === DECAYING_DAMAGE_STATUS_ID) {
+          patch[`flags.${STATUS_COUNTER_MODULE_ID}.config.type`] = DECAYING_DAMAGE_COUNTER_TYPE;
+          patch[`flags.${STATUS_COUNTER_MODULE_ID}.config.dataSource`] = `flags.${MODULE_ID}.${DECAYING_DAMAGE_STACK_FLAG}`;
+          patch[`flags.${MODULE_ID}.${DECAYING_DAMAGE_STACK_FLAG}`] = 1;
+        }
       }
     }
     if (Object.hasOwn(options, "value") || !statusSupportsValue(statusId)) {
