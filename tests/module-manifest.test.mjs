@@ -4,12 +4,12 @@ import { readdir, readFile } from "node:fs/promises";
 
 const RELEASED_CACHE_VERSION = "1\\.4\\.96";
 
-test("decaying damage end-turn counter fix advances the cache version", async () => {
+test("decaying damage StatusCounter setup retry advances the cache version", async () => {
   const manifest = JSON.parse(await readFile(new URL("../module.json", import.meta.url), "utf8"));
-  assert.equal(manifest.version, "1.4.352");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.352.js"]);
+  assert.equal(manifest.version, "1.4.353");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.353.js"]);
   assert.equal(
-    (await readFile(new URL("../scripts/main-1.4.352.js", import.meta.url), "utf8")).trim(),
+    (await readFile(new URL("../scripts/main-1.4.353.js", import.meta.url), "utf8")).trim(),
     'import "./main.js";'
   );
 });
@@ -91,8 +91,8 @@ test("module manifest loads an unpinned canonical entrypoint for page-refresh up
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const [entrypoint] = manifest.esmodules;
 
-  assert.equal(manifest.version, "1.4.352");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.352.js"]);
+  assert.equal(manifest.version, "1.4.353");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.353.js"]);
   assert.doesNotMatch(entrypoint, /[?#]/u);
 
   const entrypointSource = await readFile(new URL(entrypoint, manifestUrl), "utf8");
@@ -400,7 +400,7 @@ test("module keeps recent published entrypoint URLs as canonical compatibility f
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
 
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.352.js"]);
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.353.js"]);
 
   for (const fileName of ["main-1.4.98.js", "main-1.4.99.js", "main-1.4.100.js"]) {
     const forwarderSource = await readFile(new URL(`../scripts/${fileName}`, import.meta.url), "utf8");
@@ -483,7 +483,7 @@ test("module entrypoint cache-busts the current combat status service", async ()
 
   assert.match(
     entrypointSource,
-    /combat\/status-service\.js\?v=1\.4\.352-decaying-damage-end-turn-counter/u
+    /combat\/status-service\.js\?v=1\.4\.353-statuscounter-setup-retry/u
   );
 });
 
@@ -626,7 +626,7 @@ test("combat automation imports preserve their released cache busts", async () =
   );
   assert.match(
     entrypointSource,
-    /status-service\.js\?v=1\.4\.352-decaying-damage-end-turn-counter/u,
+    /status-service\.js\?v=1\.4\.353-statuscounter-setup-retry/u,
   );
   assert.match(
     entrypointSource,

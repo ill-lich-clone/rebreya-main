@@ -6,7 +6,8 @@ import {
   DECAYING_DAMAGE_COUNTER_TYPE,
   DECAYING_DAMAGE_OVERTIME_LABEL,
   buildDecayingDamageChange,
-  createDecayingDamageCounterClass
+  createDecayingDamageCounterClass,
+  registerCombatStatusConfig
 } from "../scripts/combat/status-service.js";
 import { registerCombatHooks } from "../scripts/combat/hooks.js";
 
@@ -41,7 +42,8 @@ function installFoundryGlobals() {
     game: globalThis.game,
     Dialog: globalThis.Dialog,
     HTMLElement: globalThis.HTMLElement,
-    HTMLInputElement: globalThis.HTMLInputElement
+    HTMLInputElement: globalThis.HTMLInputElement,
+    Hooks: globalThis.Hooks
   };
 
   class TestActor {}
@@ -130,6 +132,52 @@ test("decaying damage emits one typed Midi-QOL OverTime change for the current a
       () => buildDecayingDamageChange(10, { step: 1, damageType: "unknown" }),
       /неподдерживаемый тип урона/iu
     );
+  }
+  finally {
+    globals.restore();
+  }
+});
+
+test("decaying damage registers its StatusCounter type when the dependency API appears at setup", () => {
+  const globals = installFoundryGlobals();
+  try {
+    let setupCallback;
+    globalThis.Hooks = {
+      once(name, callback) {
+        if (name === "setup") setupCallback = callback;
+      }
+    };
+    globalThis.game.modules = new Map();
+
+    registerCombatStatusConfig();
+    assert.equal(typeof setupCallback, "function");
+
+    class TestStatusCounter {
+      constructor(parent, data = {}) {
+        this.parent = parent;
+        Object.assign(this, data);
+      }
+    }
+    let RegisteredCounter;
+    globalThis.game.modules.set("statuscounter", {
+      api: {
+        StatusCounter: TestStatusCounter,
+        addCounterType(_type, CounterClass) {
+          RegisteredCounter = CounterClass;
+        }
+      }
+    });
+    setupCallback();
+
+    const effect = {
+      getFlag(scope, key) {
+        if (scope === MODULE_ID && key === "statusValue") return 7;
+        return undefined;
+      }
+    };
+    const counter = new RegisteredCounter(effect, {});
+    assert.equal(counter.displayValue, 7);
+    assert.equal(counter._sourceValue, 1);
   }
   finally {
     globals.restore();

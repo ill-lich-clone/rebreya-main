@@ -323,7 +323,7 @@ import { SpellInterceptionRuntime } from "./combat/spell-interception-runtime.js
 import { SpellAreaRuntime } from "./combat/spell-area-runtime.js";
 import { SpellAutomationHookBridge } from "./combat/spell-automation-hook-bridge.js";
 import { registerRadialStatusEffects } from "./combat/radial-status-effects.js";
-import { CombatStatusService, registerCombatStatusConfig } from "./combat/status-service.js?v=1.4.352-decaying-damage-end-turn-counter";
+import { CombatStatusService, registerCombatStatusConfig } from "./combat/status-service.js?v=1.4.353-statuscounter-setup-retry";
 import { AttackRollBoostService } from "./combat/attack-roll-boost-service.js?v=1.4.96";
 import { EnvironmentAutomationService } from "./combat/environment-automation-service.js?v=1.4.96-environment-stable-statuses";
 import { registerMechanusRollHooks } from "./cosmology/mechanus-rolls.js?v=1.4.140-mechanus-dnd5e-activity-repair";

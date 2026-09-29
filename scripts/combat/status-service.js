@@ -1173,7 +1173,13 @@ function buildDynamicStatusChanges(statusId, value, meta = {}, effect = null) {
 }
 
 export function registerCombatStatusConfig() {
-  registerDecayingDamageCounterType();
+  if (!registerDecayingDamageCounterType() && typeof globalThis.Hooks?.once === "function") {
+    Hooks.once("setup", () => {
+      if (!registerDecayingDamageCounterType()) {
+        console.error(`${MODULE_ID} | StatusCounter API unavailable during setup; decaying damage counter type was not registered.`);
+      }
+    });
+  }
   const coreStatusEffects = Array.isArray(CONFIG?.statusEffects) ? CONFIG.statusEffects : null;
   const dnd5eStatusEffects =
     CONFIG?.DND5E?.statusEffects && typeof CONFIG.DND5E.statusEffects === "object"
