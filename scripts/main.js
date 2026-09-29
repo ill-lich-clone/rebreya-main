@@ -324,6 +324,7 @@ import { SpellAreaRuntime } from "./combat/spell-area-runtime.js";
 import { SpellAutomationHookBridge } from "./combat/spell-automation-hook-bridge.js";
 import { registerRadialStatusEffects } from "./combat/radial-status-effects.js";
 import { CombatStatusService, registerCombatStatusConfig } from "./combat/status-service.js?v=1.4.353-statuscounter-setup-retry";
+import { AlchemyBombRuntimeService } from "./combat/alchemy-bomb-runtime-service.js?v=1.4.354";
 import { AttackRollBoostService } from "./combat/attack-roll-boost-service.js?v=1.4.96";
 import { EnvironmentAutomationService } from "./combat/environment-automation-service.js?v=1.4.96-environment-stable-statuses";
 import { registerMechanusRollHooks } from "./cosmology/mechanus-rolls.js?v=1.4.140-mechanus-dnd5e-activity-repair";
@@ -391,6 +392,10 @@ import { registerImplantAutomationHooks } from "./integrations/implant-automatio
 import { registerCraftsmanGadgetSocketCommand } from "./integrations/craftsman-gadget-socket.js";
 import { registerSpellInstanceSocketCommand } from "./integrations/spell-instance-socket.js";
 import { registerSummonLifecycleSocketCommand } from "./integrations/summon-lifecycle-socket.js";
+import {
+  ALCHEMY_BOMB_MUTATION_COMMAND,
+  registerAlchemyBombSocketCommand
+} from "./integrations/alchemy-bomb-socket.js?v=1.4.354";
 import { registerTransportGroupDropHooks } from "./integrations/transport-group-drop.js";
 import { registerStorageTransferDropHooks } from "./integrations/storage-transfer-drop.js?v=1.4.213-furniture-orientation";
 import { registerStorageTokenDropHooks } from "./integrations/storage-token-drop.js?v=1.4.322";
@@ -1946,6 +1951,16 @@ export class RebreyaMainModule {
     });
     this.curseUpgradeAutomationService = new CurseUpgradeAutomationService(this);
     this.combatStatusService = new CombatStatusService(this);
+    this.alchemyBombRuntimeService = new AlchemyBombRuntimeService({
+      mutationRequester: (payload) => this.privilegedMutationGateway.mutate(
+        ALCHEMY_BOMB_MUTATION_COMMAND,
+        payload,
+        { operationId: `alchemy-bomb:${payload.operationId}:${payload.action}` }
+      ),
+      statusService: this.combatStatusService,
+      durabilityService: this.durabilityService,
+      mapObjectTokenService: this.mapObjectTokenService
+    });
     this.implantAutomationService = new ImplantAutomationService(this);
     this.combatAttackService = new CombatAttackService(this);
     this.sizeAutomationService = new SizeAutomationService(this);
@@ -2315,6 +2330,7 @@ export class RebreyaMainModule {
     registerCraftsmanGadgetSocketCommand(this);
     registerSpellInstanceSocketCommand(this);
     registerSummonLifecycleSocketCommand(this);
+    registerAlchemyBombSocketCommand(this);
     registerTransportInstanceCommands(this.socketCommandBus, this.transportInstanceService);
     const authorizeGroup = (payload, { sender }) => this.#canSenderManageGroup(sender, payload.groupActorId);
     const authorizeGlobalEvents = (_payload, { sender }) => sender?.isGM === true;

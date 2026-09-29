@@ -9,11 +9,15 @@ import {
 } from "./compendium-utils.js?v=1.4.327";
 import { createStableGearDocumentId } from "./gear-document-ids.js";
 import { syncManagedDocuments } from "./managed-compendium-sync.js?v=1.4.330";
+import {
+  buildAlchemyActivities,
+  buildAlchemyConsumableUses
+} from "./alchemy-automation.js";
 
 const PACK_ID = `world.${ALCHEMY_COMPENDIUM_NAME}`;
 const DND5E_SYSTEM_ID = "dnd5e";
 const COMPENDIUM_SIDEBAR_FOLDER = Object.freeze(["Ребрея"]);
-const TEMPLATE_VERSION = 2;
+const TEMPLATE_VERSION = 3;
 const MODULE_ASSET_PREFIX = `modules/${MODULE_ID}/`;
 const APPROVED_PRODUCT_COUNT = 230;
 const OMITTED_DUPLICATE_SOURCE_NUMBERS = new Set([36, 52, 67, 76]);
@@ -210,6 +214,8 @@ export function createAlchemyItemData(product, folderIdByPath = new Map()) {
   const icon = moduleAssetPath(product?.icon);
   const topDownImage = moduleAssetPath(product?.topDownImage);
   const signature = buildAlchemySignature(product);
+  const activities = buildAlchemyActivities(product);
+  const uses = buildAlchemyConsumableUses(product);
 
   return {
     _id: createStableGearDocumentId(`alchemy-product:${id}`),
@@ -242,7 +248,8 @@ export function createAlchemyItemData(product, folderIdByPath = new Map()) {
         value: resolveAlchemyConsumableSubtype(productType),
         subtype: ""
       },
-      activities: {}
+      ...(uses ? { uses } : {}),
+      activities
     },
     effects: [],
     flags: {
@@ -373,12 +380,17 @@ async function validateAlchemyAssetPaths(paths) {
   }
 }
 
-function documentHasNoAutomation(document) {
+function documentHasExpectedAutomation(document, product) {
   const activities = document?.system?.activities;
-  const activityCount = activities instanceof Map ? activities.size : Object.keys(activities ?? {}).length;
+  const activityIds = activities instanceof Map
+    ? Array.from(activities.keys(), cleanString).filter(Boolean)
+    : Object.keys(activities ?? {});
+  const expectedIds = Object.keys(buildAlchemyActivities(product));
   const effects = document?.effects;
   const effectCount = Array.isArray(effects) ? effects.length : Number(effects?.size ?? 0);
-  return activityCount === 0 && effectCount === 0;
+  return activityIds.length === expectedIds.length
+    && activityIds.every((id) => expectedIds.includes(id))
+    && effectCount === 0;
 }
 
 function embeddedDocumentIds(collection) {
@@ -468,7 +480,7 @@ export class AlchemyCompendiumService {
       signatureOfEntry: (product) => buildAlchemySignature(product),
       signatureOfDocument: (document) => document.getFlag?.(MODULE_ID, "signature"),
       documentIdOfEntry: (product) => createStableGearDocumentId(`alchemy-product:${product?.id}`),
-      documentMatchesEntry: (document) => documentHasNoAutomation(document),
+      documentMatchesEntry: (document, product) => documentHasExpectedAutomation(document, product),
       prepareFolders: async (entries) => {
         folderIdByPath = await ensureCompendiumFolders(pack, entries.map(buildAlchemyFolderPath));
       },

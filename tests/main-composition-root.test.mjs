@@ -49,8 +49,8 @@ test("current release reuses the catalog icon cache graph", async () => {
     ...sharedCacheImporters.map((name) => readFile(new URL(`../scripts/data/${name}.js`, import.meta.url), "utf8"))
   ]);
   const manifest = JSON.parse(manifestSource);
-  assert.equal(manifest.version, "1.4.353");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.353.js"]);
+  assert.equal(manifest.version, "1.4.354");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.354.js"]);
   assert.doesNotMatch(manifestSource, /main-1\.4\.319\.js/u);
   assert.match(mainSource, /data\/inventory-service\.js\?v=1\.4\.327/u);
   assert.match(mainSource, /data\/storage-command-service\.js\?v=1\.4\.322/u);
@@ -119,6 +119,16 @@ test("composition root syncs one alchemy compendium on the active GM between gea
   const alchemyBlock = source.slice(activeGmGuard, magic);
   assert.match(alchemyBlock, /try\s*\{[\s\S]*alchemyCompendium\.sync[\s\S]*\}\s*catch \(error\)/u);
   assert.doesNotMatch(alchemyBlock, /register\(|Hooks\.|socket|api\.|Application|Dialog/u);
+});
+
+test("composition root wires one alchemy bomb runtime and its typed command", async () => {
+  const source = await readFile(new URL("../scripts/main.js", import.meta.url), "utf8");
+  assert.equal(source.match(/this\.alchemyBombRuntimeService = new AlchemyBombRuntimeService\(/gu)?.length ?? 0, 1);
+  assert.equal(source.match(/registerAlchemyBombSocketCommand\(this\);/gu)?.length ?? 0, 1);
+  assert.match(source, /ALCHEMY_BOMB_MUTATION_COMMAND,[\s\S]*payload,[\s\S]*alchemy-bomb:/u);
+  assert.match(source, /statusService: this\.combatStatusService/u);
+  assert.match(source, /durabilityService: this\.durabilityService/u);
+  assert.match(source, /mapObjectTokenService: this\.mapObjectTokenService/u);
 });
 
 function createHooks() {

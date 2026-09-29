@@ -60,7 +60,8 @@ export function registerCombatHooks(moduleApi) {
   const simpleUpgrades = moduleApi?.itemUpgradeAutomationService;
   const hasGrappleService = Boolean(moduleApi?.grappleAutomationService);
   const hasMagicItemsCompendium = Boolean(moduleApi?.magicItemsCompendium);
-  if (!hasStatusService && !hasAttackService && !hasRaceService && !hasFighterService && !hasSorcererService && !hasElementalAdeptService && !hasPaladinService && !hasPaladinDogmaService && !hasRogueService && !hasAttackRollBoostService && !hasPerformerService && !hasBardicInspirationCompatService && !hasEnvironmentService && !hasSpellService && !hasReactionCapabilityIndex && !hasRuneKnightService && !hasSizeService && !hasCurseEaterService && !hasGrappleService && !hasMagicItemsCompendium && !curseUpgrades && !simpleUpgrades) {
+  const hasAlchemyBombService = Boolean(moduleApi?.alchemyBombRuntimeService);
+  if (!hasStatusService && !hasAttackService && !hasRaceService && !hasFighterService && !hasSorcererService && !hasElementalAdeptService && !hasPaladinService && !hasPaladinDogmaService && !hasRogueService && !hasAttackRollBoostService && !hasPerformerService && !hasBardicInspirationCompatService && !hasEnvironmentService && !hasSpellService && !hasReactionCapabilityIndex && !hasRuneKnightService && !hasSizeService && !hasCurseEaterService && !hasGrappleService && !hasMagicItemsCompendium && !hasAlchemyBombService && !curseUpgrades && !simpleUpgrades) {
     return;
   }
 
@@ -68,6 +69,38 @@ export function registerCombatHooks(moduleApi) {
     return;
   }
   game[HOOKS_REGISTERED_KEY] = true;
+
+  if (hasAlchemyBombService) {
+    Hooks.on("midi-qol.preItemRollV2", async ({ workflow } = {}) => {
+      try {
+        return await moduleApi.alchemyBombRuntimeService.prepareWorkflow(workflow);
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to prepare alchemy bomb workflow.`, error);
+        globalThis.ui?.notifications?.error?.(error?.message ?? "Не удалось подготовить бросок бомбы.");
+        return false;
+      }
+    });
+    Hooks.on("midi-qol.RollComplete", async (workflow) => {
+      try {
+        await moduleApi.alchemyBombRuntimeService.completeWorkflow(workflow);
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to complete alchemy bomb workflow.`, error);
+        globalThis.ui?.notifications?.error?.(error?.message ?? "Не удалось применить эффект бомбы.");
+      }
+      return true;
+    });
+    Hooks.on("midi-qol.preAbort", async (workflow) => {
+      await moduleApi.alchemyBombRuntimeService.abortWorkflow(workflow).catch((error) => {
+        console.error(`${MODULE_ID} | Failed to abort alchemy bomb workflow.`, error);
+      });
+      return true;
+    });
+    Hooks.on("updateWorldTime", (worldTime) => moduleApi.alchemyBombRuntimeService
+      .cleanupExpiredStickyZones(worldTime)
+      .catch((error) => console.error(`${MODULE_ID} | Failed to clean expired sticky bomb zones.`, error)));
+  }
 
   if (simpleUpgrades) {
     const run = promise => Promise.resolve(promise).catch(error => console.error(`${MODULE_ID} | Simple item upgrade sync failed.`, error));

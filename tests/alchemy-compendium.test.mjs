@@ -10,6 +10,11 @@ import {
   createAlchemyItemData,
   resolveAlchemyConsumableSubtype
 } from "../scripts/data/alchemy-compendium.js";
+import {
+  buildAlchemyActivities,
+  buildAlchemyConsumableUses,
+  getAlchemyAutomationDefinition
+} from "../scripts/data/alchemy-automation.js";
 import { getAlchemyTypeRules } from "../scripts/data/alchemy-product-rules.js";
 import { createStableGearDocumentId } from "../scripts/data/gear-document-ids.js";
 
@@ -199,7 +204,7 @@ test("alchemy description escapes source text and exposes the complete non-empty
   assert.doesNotMatch(sparse, /Эффект катализатора|Требования|Зона|Обязательный компонент|Сл создания|Частный катализатор|Упрощённое создание/u);
 });
 
-test("alchemy Item projection uses maximum price, rank weight, no automation, and complete managed flags", () => {
+test("alchemy Item projection uses maximum price, rank weight, selective automation, and complete managed flags", () => {
   const previousConst = globalThis.CONST;
   const previousConfig = globalThis.CONFIG;
   globalThis.CONST = { DOCUMENT_OWNERSHIP_LEVELS: { OBSERVER: 2 } };
@@ -224,6 +229,7 @@ test("alchemy Item projection uses maximum price, rank weight, no automation, an
     assert.equal(data.system.rarity, "common");
     assert.deepEqual(data.system.type, { value: "potion", subtype: "" });
     assert.deepEqual(data.system.activities, {});
+    assert.equal(data.system.uses, undefined);
     assert.deepEqual(data.effects, []);
     assert.deepEqual(flags, {
       managed: true,
@@ -253,7 +259,96 @@ test("alchemy Item projection uses maximum price, rank weight, no automation, an
   }
 });
 
-test("all 230 catalog products project to stable consumables with unique artwork", async () => {
+test("the nine basic healing potions expose native selected-target healing activities", () => {
+  const expectedFormulas = [
+    "1d4 + 1", "2d4 + 2", "3d4 + 3", "4d4 + 4", "6d4 + 6",
+    "8d4 + 8", "10d4 + 10", "15d4 + 15", "25d4 + 25"
+  ];
+  const healingProducts = productionCatalog.filter((entry) => (
+    Number(entry.sourceNumber) >= 77 && Number(entry.sourceNumber) <= 85
+  ));
+
+  assert.equal(healingProducts.length, 9);
+  healingProducts.forEach((entry, index) => {
+    const definition = getAlchemyAutomationDefinition(entry);
+    const activities = buildAlchemyActivities(entry);
+    const [activity] = Object.values(activities);
+
+    assert.equal(definition.kind, "healing");
+    assert.equal(definition.formula, expectedFormulas[index]);
+    assert.equal(activity._id, Object.keys(activities)[0]);
+    assert.equal(activity.type, "heal");
+    assert.equal(activity.activation.type, "action");
+    assert.deepEqual(activity.target.affects, {
+      count: "1",
+      type: "creature",
+      choice: true,
+      special: ""
+    });
+    assert.equal(activity.target.prompt, true);
+    assert.equal(activity.healing.custom.formula, expectedFormulas[index]);
+    assert.deepEqual(activity.healing.types, ["healing"]);
+    assert.deepEqual(activity.consumption.targets, [{
+      type: "itemUses",
+      target: "",
+      value: "1",
+      scaling: { mode: "", formula: "" }
+    }]);
+    assert.deepEqual(buildAlchemyConsumableUses(entry), {
+      spent: 0,
+      max: "1",
+      recovery: [],
+      autoDestroy: true
+    });
+  });
+});
+
+test("all 63 bombs expose stable fixed-DC save activities and normalized runtime definitions", () => {
+  const bombs = productionCatalog.filter((entry) => entry.productType === "Бомба");
+  assert.equal(bombs.length, 63);
+
+  for (const entry of bombs) {
+    const definition = getAlchemyAutomationDefinition(entry);
+    const firstActivities = buildAlchemyActivities(entry);
+    const secondActivities = buildAlchemyActivities(structuredClone(entry));
+    const [activity] = Object.values(firstActivities);
+
+    assert.equal(definition.kind, "bomb", entry.id);
+    assert.equal(definition.dc, 11 + entry.rank, entry.id);
+    assert.equal(definition.radius, entry.rank <= 3 ? 5 : entry.rank <= 6 ? 10 : 15, entry.id);
+    assert.deepEqual(firstActivities, secondActivities, entry.id);
+    assert.equal(activity._id, Object.keys(firstActivities)[0], entry.id);
+    assert.equal(activity.type, "save", entry.id);
+    assert.equal(activity.name, "Бросить бомбу", entry.id);
+    assert.equal(activity.activation.type, "attack", entry.id);
+    assert.equal(activity.save.dc.formula, String(11 + entry.rank), entry.id);
+    assert.equal(activity.target.prompt, false, entry.id);
+    assert.deepEqual(activity.target.template, {
+      count: "1",
+      contiguous: false,
+      type: "radius",
+      size: String(definition.radius),
+      width: "",
+      height: "",
+      units: "ft"
+    }, entry.id);
+    assert.deepEqual(activity.consumption.targets, [{
+      type: "itemUses",
+      target: "",
+      value: "1",
+      scaling: { mode: "", formula: "" }
+    }], entry.id);
+    assert.deepEqual(activity.flags[MODULE_ID].alchemyBomb, definition, entry.id);
+    assert.deepEqual(buildAlchemyConsumableUses(entry), {
+      spent: 0,
+      max: "1",
+      recovery: [],
+      autoDestroy: true
+    }, entry.id);
+  }
+});
+
+test("all 230 catalog products project stable consumables and automate only healing potions and bombs", async () => {
   const previousConst = globalThis.CONST;
   const previousConfig = globalThis.CONFIG;
   globalThis.CONST = { DOCUMENT_OWNERSHIP_LEVELS: { OBSERVER: 2 } };
@@ -268,7 +363,13 @@ test("all 230 catalog products project to stable consumables with unique artwork
     assert.equal(new Set(items.map((entry) => entry.img)).size, 230);
     assert.equal(new Set(items.map((entry) => entry.flags[MODULE_ID].topDownImage)).size, 230);
     assert.ok(items.every((entry) => entry.type === "consumable"));
-    assert.ok(items.every((entry) => Object.keys(entry.system.activities).length === 0 && entry.effects.length === 0));
+    const automated = items.filter((entry) => Object.keys(entry.system.activities).length === 1);
+    const manual = items.filter((entry) => Object.keys(entry.system.activities).length === 0);
+    assert.equal(automated.length, 72);
+    assert.equal(manual.length, 158);
+    assert.ok(automated.every((entry) => entry.system.uses?.max === "1" && entry.system.uses.autoDestroy === true));
+    assert.ok(manual.every((entry) => entry.system.uses === undefined));
+    assert.ok(items.every((entry) => entry.effects.length === 0));
   }
   finally {
     globalThis.CONST = previousConst;
