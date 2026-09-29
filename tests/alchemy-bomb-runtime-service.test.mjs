@@ -157,6 +157,83 @@ test("bomb placement keeps the throwing sheet minimized until an instant workflo
   assert.deepEqual(workflow.actor.sheet.calls, ["minimize", "maximize"]);
 });
 
+test("bomb passes its real template to Midi and initializes save targets instead of only assigning targets", async () => {
+  const workflow = makeWorkflow();
+  const template = { uuid: "Scene.scene-1.MeasuredTemplate.area" };
+  const victim = { id: "victim", uuid: "Scene.scene-1.Token.victim", object: { id: "victim" } };
+  let processed;
+  workflow.setTargets = function(targets) {
+    this.targets = new Set(targets);
+    this.failedSaves = new Set(targets);
+  };
+  workflow.processPlacedTemplates = async function(templates, activity) {
+    processed = { templates, activity };
+    this.setTargets(new Set([victim.object, { id: "bomb", uuid: "Scene.scene-1.Token.bomb" }]));
+    return true;
+  };
+  const service = new AlchemyBombRuntimeService({
+    placementProvider: async () => [{ x: 153, y: 261 }],
+    gridProvider: () => ({ size: 100, distance: 5 }),
+    rangeOverlayFactory: () => ({ destroy() {} }),
+    resolveUuid: async (uuid) => uuid === template.uuid ? template : victim,
+    mutationRequester: async () => ({ tokenUuid: "Scene.scene-1.Token.bomb", templateUuid: template.uuid, targetTokenUuids: [victim.uuid] })
+  });
+  await service.prepareWorkflow(workflow);
+  assert.deepEqual(processed.templates, [template]);
+  assert.equal(processed.activity, workflow.activity);
+  assert.deepEqual([...workflow.failedSaves], [victim.object]);
+});
+
+test("bomb confirmed center snaps to a grid vertex even when free placement returns fractional coordinates", async () => {
+  let payload;
+  const service = new AlchemyBombRuntimeService({
+    placementProvider: async () => [{ x: 153, y: 261 }],
+    gridProvider: () => ({ size: 100, distance: 5 }),
+    rangeOverlayFactory: () => ({ destroy() {} }),
+    mutationRequester: async (data) => {
+      payload = data;
+      return { tokenUuid: "Scene.scene-1.Token.bomb", templateUuid: "Scene.scene-1.MeasuredTemplate.area" };
+    }
+  });
+  await service.prepareWorkflow(makeWorkflow());
+  assert.equal(payload.x, 200);
+  assert.equal(payload.y, 300);
+});
+
+test("native bomb placement preview snaps only its marked token and releases its draw hook", async () => {
+  const previous = { game: globalThis.game, canvas: globalThis.canvas, Hooks: globalThis.Hooks };
+  let onDraw;
+  let preview;
+  let released = false;
+  globalThis.canvas = { grid: { size: 100, distance: 5 } };
+  globalThis.Hooks = {
+    on(event, callback) { assert.equal(event, "drawToken"); onDraw = callback; return 7; },
+    off(event, id) { assert.equal(event, "drawToken"); assert.equal(id, 7); released = true; }
+  };
+  globalThis.game = { dnd5e: { canvas: { TokenPlacement: { async place(config) {
+    const unrelated = { document: { flags: {} } };
+    onDraw(unrelated);
+    assert.equal(unrelated.getSnappedPosition, undefined);
+    preview = { document: config.tokens[0].toObject() };
+    onDraw(preview);
+    const point = preview.getSnappedPosition({ x: 153, y: 261 });
+    assert.deepEqual(point, { x: 175, y: 275 });
+    return [];
+  } } } } };
+  try {
+    const service = new AlchemyBombRuntimeService({ mutationRequester: async () => ({}) });
+    assert.equal(await service.prepareWorkflow(makeWorkflow()), false);
+    assert.equal(released, true);
+    assert.equal(Object.hasOwn(preview, "getSnappedPosition"), false);
+  }
+  finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete globalThis[key];
+      else globalThis[key] = value;
+    }
+  }
+});
+
 test("bomb completion keeps its session after Midi replaces the workflow id with the chat message id", async () => {
   const workflow = makeWorkflow({ id: "pre-chat-workflow" });
   workflow.templateUuids = [];

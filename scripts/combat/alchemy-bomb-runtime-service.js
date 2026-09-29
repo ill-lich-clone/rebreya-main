@@ -98,6 +98,17 @@ function registerPlacedTemplate(workflow, templateUuid) {
   workflow.placedTemplateCount = workflow.templateUuids.length;
 }
 
+export function snapBombCenterToVertex(point, grid) {
+  const size = finite(grid?.size, "grid size");
+  if (size <= 0) throw new RangeError("grid size must be positive");
+  const canvasGrid = globalThis.canvas?.grid;
+  const mode = globalThis.CONST?.GRID_SNAPPING_MODES?.VERTEX;
+  if (typeof canvasGrid?.getSnappedPoint === "function" && mode != null) {
+    return canvasGrid.getSnappedPoint(point, { mode, resolution: 1 });
+  }
+  return { x: Math.round(point.x / size) * size, y: Math.round(point.y / size) * size };
+}
+
 function buildPreviewPrototype({ actor, name, image }) {
   return {
     parent: actor,
@@ -114,7 +125,8 @@ function buildPreviewPrototype({ actor, name, image }) {
         disposition: 0,
         rotation: 0,
         elevation: 0,
-        randomImg: false
+        randomImg: false,
+        flags: { [MODULE_ID]: { alchemyBombPlacementPreview: true } }
       };
     }
   };
@@ -128,7 +140,29 @@ async function defaultPlacementProvider(config) {
     error.code = "token-placement-unavailable";
     throw error;
   }
-  return place.call(globalThis.game?.dnd5e?.canvas?.TokenPlacement ?? globalThis.dnd5e.canvas.TokenPlacement, config);
+  const previews = new Map();
+  const hooks = globalThis.Hooks;
+  const hookId = hooks?.on?.("drawToken", (token) => {
+    if (!token?.document?.flags?.[MODULE_ID]?.alchemyBombPlacementPreview || previews.has(token)) return;
+    const original = Object.getOwnPropertyDescriptor(token, "getSnappedPosition");
+    previews.set(token, original);
+    token.getSnappedPosition = (position) => {
+      const size = Number(globalThis.canvas?.grid?.size ?? globalThis.canvas?.dimensions?.size);
+      const offset = (size * BOMB_TOKEN_SIZE) / 2;
+      const center = snapBombCenterToVertex({ x: position.x + offset, y: position.y + offset }, { size });
+      return { x: center.x - offset, y: center.y - offset };
+    };
+  });
+  try {
+    return await place.call(globalThis.game?.dnd5e?.canvas?.TokenPlacement ?? globalThis.dnd5e.canvas.TokenPlacement, config);
+  }
+  finally {
+    if (hookId != null) hooks.off("drawToken", hookId);
+    for (const [token, original] of previews) {
+      if (original) Object.defineProperty(token, "getSnappedPosition", original);
+      else delete token.getSnappedPosition;
+    }
+  }
 }
 
 function defaultGridProvider() {
@@ -324,8 +358,10 @@ export class AlchemyBombRuntimeService {
         return false;
       }
 
-      const x = finite(placement.x, "placement x") + ((gridSize * BOMB_TOKEN_SIZE) / 2);
-      const y = finite(placement.y, "placement y") + ((gridSize * BOMB_TOKEN_SIZE) / 2);
+      const { x, y } = snapBombCenterToVertex({
+        x: finite(placement.x, "placement x") + ((gridSize * BOMB_TOKEN_SIZE) / 2),
+        y: finite(placement.y, "placement y") + ((gridSize * BOMB_TOKEN_SIZE) / 2)
+      }, { size: gridSize });
       if (bombThrowDistanceFeet(token, { x, y }, { size: gridSize, distance: gridDistance }) > BOMB_THROW_RANGE_FEET + 1e-9) {
         throw codedError("outside-throw-range", `Точка броска находится дальше ${BOMB_THROW_RANGE_FEET} футов.`);
       }
@@ -351,12 +387,21 @@ export class AlchemyBombRuntimeService {
       };
       placed = await this.#mutationRequester(payload);
       const targetUuids = Array.isArray(placed?.targetTokenUuids) ? placed.targetTokenUuids.map(clean).filter(Boolean) : [];
-      if (targetUuids.length) {
-        const targets = (await Promise.all(targetUuids.map((uuid) => this.#resolveUuid(uuid)))).filter(Boolean);
-        workflow.targets = new Set(targets.map((target) => target?.object ?? target));
-        await this.#targetUpdater(targets.map((target) => clean(target?.id ?? target?.document?.id)).filter(Boolean));
+      const targets = (await Promise.all(targetUuids.map((uuid) => this.#resolveUuid(uuid)))).filter(Boolean);
+      const targetSet = new Set(targets.map((target) => target?.object ?? target));
+      if (typeof workflow.setTargets === "function") workflow.setTargets(targetSet);
+      else workflow.targets = targetSet;
+      if (typeof workflow.processPlacedTemplates === "function") {
+        const template = await this.#resolveUuid(placed?.templateUuid);
+        if (!template || await workflow.processPlacedTemplates([template], activity) === false) {
+          throw new Error("MIDI не удалось принять шаблон бомбы.");
+        }
+        const filtered = new Set(Array.from(workflow.targets ?? []).filter((target) => tokenUuid(target) !== placed.tokenUuid));
+        workflow.setTargets(filtered);
       }
-      registerPlacedTemplate(workflow, placed?.templateUuid);
+      else registerPlacedTemplate(workflow, placed?.templateUuid);
+      await this.#targetUpdater(Array.from(workflow.targets ?? [])
+        .map((target) => clean(target?.id ?? target?.document?.id)).filter(Boolean));
       const session = {
         definition: structuredClone(definition),
         persistent: definition.persistent === true,
