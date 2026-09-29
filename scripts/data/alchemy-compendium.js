@@ -12,7 +12,7 @@ import { syncManagedDocuments } from "./managed-compendium-sync.js?v=1.4.330";
 import {
   buildAlchemyActivities,
   buildAlchemyConsumableUses
-} from "./alchemy-automation.js";
+} from "./alchemy-automation.js?v=1.4.355";
 
 const PACK_ID = `world.${ALCHEMY_COMPENDIUM_NAME}`;
 const DND5E_SYSTEM_ID = "dnd5e";
