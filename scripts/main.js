@@ -303,7 +303,7 @@ import {
   isValidStorageTokenCharacterPayload,
   storageCharacterTokenUuidForClaim
 } from "./data/storage-command-service.js?v=1.4.322";
-import { registerCombatHooks } from "./combat/hooks.js?v=1.4.253-simple-upgrades";
+import { registerCombatHooks } from "./combat/hooks.js?v=1.4.350-decaying-damage";
 import { CombatAttackService } from "./combat/attack-service.js?v=1.4.254-simple-upgrades";
 import { ImplantAutomationService } from "./combat/implant-automation-service.js";
 import { SizeAutomationService } from "./combat/size-automation-service.js?v=1.4.110-character-size-authority";
@@ -323,7 +323,7 @@ import { SpellInterceptionRuntime } from "./combat/spell-interception-runtime.js
 import { SpellAreaRuntime } from "./combat/spell-area-runtime.js";
 import { SpellAutomationHookBridge } from "./combat/spell-automation-hook-bridge.js";
 import { registerRadialStatusEffects } from "./combat/radial-status-effects.js";
-import { CombatStatusService, registerCombatStatusConfig } from "./combat/status-service.js?v=1.4.334-twisted-macro";
+import { CombatStatusService, registerCombatStatusConfig } from "./combat/status-service.js?v=1.4.350-decaying-damage";
 import { AttackRollBoostService } from "./combat/attack-roll-boost-service.js?v=1.4.96";
 import { EnvironmentAutomationService } from "./combat/environment-automation-service.js?v=1.4.96-environment-stable-statuses";
 import { registerMechanusRollHooks } from "./cosmology/mechanus-rolls.js?v=1.4.140-mechanus-dnd5e-activity-repair";

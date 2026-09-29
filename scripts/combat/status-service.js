@@ -21,6 +21,10 @@ const LEGACY_RESTRAINED_STATUS_ID = "rebreya-restrained";
 const FRIGHTENED_STATUS_ID = REBREYA_FRIGHTENED_STATUS_ID;
 const NAUSEATED_STATUS_ID = "rebreya-nauseated";
 const STATUS_COUNTER_MODULE_ID = "statuscounter";
+const DECAYING_DAMAGE_STATUS_ID = "rebreya-decaying-damage";
+const DECAYING_DAMAGE_META_VERSION = 2;
+const DECAYING_DAMAGE_OVERTIME_KEY = "flags.midi-qol.OverTime.rebreyaDecayingDamage";
+export const DECAYING_DAMAGE_OVERTIME_LABEL = "Rebreya: Затихающий урон";
 const DAE_SPECIAL_DURATION_TURN_START_SOURCE = "turnStartSource";
 const DAE_SPECIAL_DURATION_TURN_END_SOURCE = "turnEndSource";
 const TWISTED_STATUS_ID = "rebreya-twisted";
@@ -308,6 +312,89 @@ function normalizeFrightenedValue(value, context = {}) {
 
 function activeEffectAddMode() {
   return globalThis.CONST?.ACTIVE_EFFECT_MODES?.ADD ?? 2;
+}
+
+function activeEffectCustomMode() {
+  return globalThis.CONST?.ACTIVE_EFFECT_MODES?.CUSTOM ?? 0;
+}
+
+function knownDamageTypes() {
+  const damageTypes = globalThis.CONFIG?.DND5E?.damageTypes;
+  if (damageTypes instanceof Map) return new Set(damageTypes.keys());
+  if (damageTypes instanceof Set) return new Set(damageTypes);
+  if (damageTypes && typeof damageTypes === "object") return new Set(Object.keys(damageTypes));
+  return new Set();
+}
+
+function damageTypeChoices() {
+  const damageTypes = globalThis.CONFIG?.DND5E?.damageTypes;
+  const localize = (label) => globalThis.game?.i18n?.localize?.(String(label)) ?? String(label);
+  if (damageTypes instanceof Map) {
+    return Array.from(damageTypes, ([id, definition]) => ({
+      id: String(id),
+      label: localize(definition?.label ?? definition ?? id)
+    }));
+  }
+  if (!damageTypes || typeof damageTypes !== "object") return [];
+  return Object.entries(damageTypes).map(([id, definition]) => ({
+    id,
+    label: localize(definition?.label ?? definition ?? id)
+  }));
+}
+
+function damageTypeLabel(damageType) {
+  const normalizedType = String(damageType ?? "").trim();
+  return damageTypeChoices().find((choice) => choice.id === normalizedType)?.label ?? normalizedType;
+}
+
+function normalizeDecayingDamageMeta(meta = {}) {
+  const step = Math.max(1, Math.floor(toNumber(meta?.step, 1)));
+  const damageType = String(meta?.damageType ?? "").trim();
+  if (!damageType) {
+    throw new Error("Для затихающего урона необходимо выбрать тип урона.");
+  }
+  const availableTypes = knownDamageTypes();
+  if (availableTypes.size > 0 && !availableTypes.has(damageType)) {
+    throw new Error(`Неподдерживаемый тип урона: ${damageType}.`);
+  }
+  return {
+    ...cloneData(meta ?? {}),
+    version: DECAYING_DAMAGE_META_VERSION,
+    step,
+    damageType
+  };
+}
+
+function decayingDamageWorkflowLabel(effectId = "") {
+  const normalizedEffectId = String(effectId ?? "").trim();
+  return normalizedEffectId
+    ? `${DECAYING_DAMAGE_OVERTIME_LABEL} [${normalizedEffectId}]`
+    : DECAYING_DAMAGE_OVERTIME_LABEL;
+}
+
+function decayingDamageEffectIdFromWorkflow(workflow) {
+  const itemName = String(workflow?.item?.name ?? "");
+  const prefix = `${DECAYING_DAMAGE_OVERTIME_LABEL} [`;
+  if (!itemName.startsWith(prefix) || !itemName.endsWith("]")) return "";
+  return itemName.slice(prefix.length, -1).trim();
+}
+
+export function buildDecayingDamageChange(value, meta = {}, { effectId = "" } = {}) {
+  const amount = normalizeStatusValue(value, 1);
+  const normalizedMeta = normalizeDecayingDamageMeta(meta);
+  return {
+    key: DECAYING_DAMAGE_OVERTIME_KEY,
+    mode: activeEffectCustomMode(),
+    value: [
+      "turn=start",
+      `damageRoll=${amount}`,
+      `damageType=${normalizedMeta.damageType}`,
+      "fastForwardDamage=true",
+      "allowIncapacitated=true",
+      `label="${decayingDamageWorkflowLabel(effectId)}"`
+    ].join(","),
+    priority: 20
+  };
 }
 
 export function buildNauseatedChanges(value) {
@@ -754,7 +841,7 @@ function readManagedStatusValue(effect, statusId, context = {}) {
   return parseGenericStatusValueFromName(effect?.name);
 }
 
-function buildCanonicalManagedStatusChanges(effect, statusId, value, { actor = null, isStrongest = true } = {}) {
+function buildCanonicalManagedStatusChanges(effect, statusId, value, { actor = null, isStrongest = true, meta = {} } = {}) {
   if (statusId === FRIGHTENED_STATUS_ID) {
     return buildSyncedFrightenedChanges(effect, value, { isStrongest });
   }
@@ -769,7 +856,7 @@ function buildCanonicalManagedStatusChanges(effect, statusId, value, { actor = n
       : buildDiscreetSpeedChanges(value);
   }
 
-  return buildDynamicStatusChanges(statusId, value) ?? [];
+  return buildDynamicStatusChanges(statusId, value, meta, effect) ?? [];
 }
 
 function buildCanonicalManagedStatusName(statusId, value, context = {}) {
@@ -779,6 +866,12 @@ function buildCanonicalManagedStatusName(statusId, value, context = {}) {
 
   if (statusId === REBREYA_DISCREET_STATUS_ID) {
     return value === null ? plainDiscreetStatusName() : discreetStatusName(value);
+  }
+
+  if (statusId === DECAYING_DAMAGE_STATUS_ID) {
+    const step = Math.max(1, Math.floor(toNumber(context.meta?.step, 1)));
+    const typeLabel = damageTypeLabel(context.meta?.damageType);
+    return `Затихающий урон ${normalizeStatusValue(value, 1)}(-${step})${typeLabel ? ` — ${typeLabel}` : ""}`;
   }
 
   return genericStatusName(statusId, value);
@@ -792,15 +885,16 @@ function buildCanonicalManagedStatusUpdate(effect, statusId, { actor = null, sou
 
   const isActiveFrightenedStatus = statusId !== FRIGHTENED_STATUS_ID || isStrongest;
   const value = readManagedStatusValue(effect, statusId, { actor, sourceActor });
+  const meta = getEffectStatusValue(effect, MODULE_ID, STATUS_META_FLAG) ?? {};
   const patch = {
     _id: effectId,
-    name: buildCanonicalManagedStatusName(statusId, value, { actor, sourceActor }),
+    name: buildCanonicalManagedStatusName(statusId, value, { actor, sourceActor, meta }),
     img: statusIcon(statusId),
     icon: statusIcon(statusId),
     statuses: statusId === FRIGHTENED_STATUS_ID
       ? buildSyncedFrightenedStatuses(effect, { isStrongest })
       : [statusId],
-    changes: buildCanonicalManagedStatusChanges(effect, statusId, value, { actor, isStrongest }),
+    changes: buildCanonicalManagedStatusChanges(effect, statusId, value, { actor, isStrongest, meta }),
     "flags.core.statusId": isActiveFrightenedStatus ? statusId : null,
     [`flags.${MODULE_ID}.${STATUS_ID_FLAG}`]: statusId
   };
@@ -809,8 +903,7 @@ function buildCanonicalManagedStatusUpdate(effect, statusId, { actor = null, sou
     patch.disabled = !isStrongest;
   }
 
-  const meta = getEffectStatusValue(effect, MODULE_ID, STATUS_META_FLAG);
-  if (meta !== undefined) {
+  if (getEffectStatusValue(effect, MODULE_ID, STATUS_META_FLAG) !== undefined) {
     patch[`flags.${MODULE_ID}.${STATUS_META_FLAG}`] = cloneData(meta ?? {});
   }
 
@@ -964,13 +1057,29 @@ function buildStaticStatusChanges(statusId) {
     : null;
 }
 
-function buildDynamicStatusChanges(statusId, value) {
+function buildDynamicStatusChanges(statusId, value, meta = {}, effect = null) {
   if (statusId === FRIGHTENED_STATUS_ID) {
     return buildFrightenedChanges(value);
   }
 
   if (statusId === NAUSEATED_STATUS_ID) {
     return buildNauseatedChanges(value);
+  }
+
+  if (statusId === DECAYING_DAMAGE_STATUS_ID) {
+    const preservedChanges = Array.isArray(effect?.changes)
+      ? effect.changes
+        .filter((change) => String(change?.key ?? "") !== DECAYING_DAMAGE_OVERTIME_KEY)
+        .map(cloneData)
+      : [];
+    try {
+      return [...preservedChanges, buildDecayingDamageChange(value, meta, {
+        effectId: getEffectDocumentId(effect)
+      })];
+    }
+    catch {
+      return preservedChanges;
+    }
   }
 
   return buildStaticStatusChanges(statusId);
@@ -1036,12 +1145,11 @@ export function registerCombatStatusConfig() {
 export class CombatStatusService {
   constructor(moduleApi) {
     this.moduleApi = moduleApi;
-    this._internalActorUpdates = new Set();
     this._discreetSyncActorIds = new Set();
     this._frightenedSyncActorIds = new Set();
     this._managedEffectCanonicalizationIds = new Set();
     this._pendingManagedStatusCreates = new Set();
-    this._turnLocks = new Set();
+    this._processedDecayingDamageWorkflows = new WeakSet();
   }
 
   async initialize() {
@@ -1327,6 +1435,76 @@ export class CombatStatusService {
     });
   }
 
+  async #promptDecayingDamage(currentStatus = null) {
+    const currentMeta = currentStatus?.meta ?? {};
+    const choices = damageTypeChoices();
+    const currentDamageType = String(currentMeta.damageType ?? "").trim();
+    const selectedDamageType = choices.some((choice) => choice.id === currentDamageType)
+      ? currentDamageType
+      : choices[0]?.id ?? "";
+    return new Promise((resolve) => {
+      let settled = false;
+      const dialog = new Dialog({
+        title: "Затихающий урон",
+        content: `
+          <form class="rm-purchase-dialog">
+            <div class="rm-field">
+              <label for="rm-decaying-damage-value">Начальный урон</label>
+              <input id="rm-decaying-damage-value" type="number" min="1" step="1"
+                value="${foundry.utils.escapeHTML(String(normalizeStatusValue(currentStatus?.value, 1)))}"
+                data-field="status-value">
+            </div>
+            <div class="rm-field">
+              <label for="rm-decaying-damage-step">Уменьшение за ход</label>
+              <input id="rm-decaying-damage-step" type="number" min="1" step="1"
+                value="${foundry.utils.escapeHTML(String(Math.max(1, Math.floor(toNumber(currentMeta.step, 1)))))}"
+                data-field="decaying-damage-step">
+            </div>
+            <div class="rm-field">
+              <label for="rm-decaying-damage-type">Тип урона</label>
+              <select id="rm-decaying-damage-type" data-field="decaying-damage-type" required>
+                ${choices.map((choice) => `<option value="${foundry.utils.escapeHTML(choice.id)}"${choice.id === selectedDamageType ? " selected" : ""}>${foundry.utils.escapeHTML(choice.label)}</option>`).join("")}
+              </select>
+            </div>
+          </form>
+        `,
+        buttons: {
+          confirm: {
+            label: "Применить",
+            callback: (html) => {
+              const root = getDialogRoot(html);
+              const amount = normalizeStatusValue(root?.querySelector("[data-field='status-value']")?.value, 1);
+              const step = normalizeStatusValue(root?.querySelector("[data-field='decaying-damage-step']")?.value, 1);
+              const damageType = String(root?.querySelector("[data-field='decaying-damage-type']")?.value ?? "").trim();
+              if (!damageType) {
+                globalThis.ui?.notifications?.warn?.("Выберите тип затихающего урона.");
+                settled = true;
+                resolve(undefined);
+                return;
+              }
+              settled = true;
+              resolve({ amount, meta: normalizeDecayingDamageMeta({ step, damageType }) });
+            }
+          },
+          cancel: {
+            label: "Отмена",
+            callback: () => {
+              settled = true;
+              resolve(undefined);
+            }
+          }
+        },
+        default: "confirm",
+        close: () => {
+          if (!settled) resolve(undefined);
+        }
+      }, {
+        classes: ["rebreya-main", "rebreya-trader-dialog"]
+      });
+      dialog.render(true);
+    });
+  }
+
   async #promptStatusDuration(statusName, sourceActor) {
     return new Promise((resolve) => {
       let settled = false;
@@ -1421,6 +1599,24 @@ export class CombatStatusService {
 
     const currentEffect = this.#findStatusEffect(actor, statusId);
     const currentStatus = this.getStatus(actor, statusId);
+    if (statusId === DECAYING_DAMAGE_STATUS_ID) {
+      if (event.type === "contextmenu") {
+        this.#stopHudEvent(event);
+        if (currentStatus?.active) await this.clearStatus(actor, statusId);
+        return;
+      }
+      if (event.type !== "click" || event.button !== 0) return;
+      this.#stopHudEvent(event);
+      const configuration = await this.#promptDecayingDamage(currentStatus);
+      if (!configuration) return;
+      await this.setStatus(actor, statusId, {
+        active: true,
+        value: configuration.amount,
+        meta: configuration.meta
+      });
+      return;
+    }
+
     if (event.type === "click" && event.button === 0 && event.ctrlKey === true) {
       if (!globalThis.game?.combat) {
         ui.notifications?.warn?.("Боевые длительности доступны только в активном бою.");
@@ -1583,9 +1779,15 @@ export class CombatStatusService {
     const definition = getRebreyaStatusDefinition(statusId);
     const statusLabel = definition?.label ?? statusId;
     const statusIcon = definition?.icon ?? "icons/svg/aura.svg";
-    const dynamicChanges = buildDynamicStatusChanges(statusId, options.value);
+    const dynamicChanges = buildDynamicStatusChanges(statusId, options.value, options.meta ?? {});
     return {
-      name: statusLabel,
+      name: statusSupportsValue(statusId)
+        ? buildCanonicalManagedStatusName(statusId, options.value, {
+          actor: options.actor ?? null,
+          sourceActor: options.sourceActor ?? null,
+          meta: options.meta ?? {}
+        })
+        : statusLabel,
       img: statusIcon,
       icon: statusIcon,
       statuses: buildEffectStatusesSet(statusId),
@@ -1614,6 +1816,9 @@ export class CombatStatusService {
     const patch = {
       [`flags.${MODULE_ID}.${STATUS_ID_FLAG}`]: statusId
     };
+    const effectiveMeta = Object.hasOwn(options, "meta")
+      ? options.meta
+      : getEffectStatusValue(effect, MODULE_ID, STATUS_META_FLAG) ?? {};
     let statusValue = options.value;
     if (Object.hasOwn(options, "value")) {
       statusValue = statusId === FRIGHTENED_STATUS_ID
@@ -1626,7 +1831,8 @@ export class CombatStatusService {
       if (statusSupportsValue(statusId)) {
         patch.name = buildCanonicalManagedStatusName(statusId, statusValue, {
           actor: options.actor ?? null,
-          sourceActor: options.sourceActor ?? null
+          sourceActor: options.sourceActor ?? null,
+          meta: effectiveMeta
         });
         patch.img = statusIcon(statusId);
         patch.icon = statusIcon(statusId);
@@ -1637,7 +1843,7 @@ export class CombatStatusService {
       }
     }
     if (Object.hasOwn(options, "value") || !statusSupportsValue(statusId)) {
-      const dynamicChanges = buildDynamicStatusChanges(statusId, statusValue);
+      const dynamicChanges = buildDynamicStatusChanges(statusId, statusValue, effectiveMeta, effect);
       if (Array.isArray(dynamicChanges)) {
         patch.changes = dynamicChanges;
       }
@@ -1661,7 +1867,7 @@ export class CombatStatusService {
     }
 
     const active = options.active !== false;
-    const statusOptions = active && statusId === FRIGHTENED_STATUS_ID
+    let statusOptions = active && statusId === FRIGHTENED_STATUS_ID
       ? {
         ...options,
         value: normalizeFrightenedValue(Object.hasOwn(options, "value") ? options.value : null, {
@@ -1670,6 +1876,12 @@ export class CombatStatusService {
         })
       }
       : options;
+    if (active && statusId === DECAYING_DAMAGE_STATUS_ID) {
+      statusOptions = {
+        ...statusOptions,
+        meta: normalizeDecayingDamageMeta(statusOptions.meta)
+      };
+    }
     const overlay = statusOptions.overlay === true;
     const durationRounds = toNumber(statusOptions.durationRounds, DEFAULT_DURATION_ROUNDS);
     if (statusId === REBREYA_DISCREET_STATUS_ID) {
@@ -1811,17 +2023,20 @@ export class CombatStatusService {
       ? normalizeFrightenedValue(value, { actor })
       : value;
     const effect = this.#findStatusEffect(actor, statusId);
+    const statusMeta = statusId === DECAYING_DAMAGE_STATUS_ID
+      ? normalizeDecayingDamageMeta(meta ?? getEffectStatusValue(effect, MODULE_ID, STATUS_META_FLAG))
+      : meta;
     if (!effect) {
       return this.setStatus(actor, statusId, {
         active: true,
         value: statusValue,
-        meta
+        meta: statusMeta
       });
     }
 
     await this.#storeStatusMetadata(effect, statusId, {
       value: statusValue,
-      meta,
+      meta: statusMeta,
       actor
     });
     if (statusId === REBREYA_DISCREET_STATUS_ID) {
@@ -2137,31 +2352,16 @@ export class CombatStatusService {
       return this.clearStatus(actorOrId, "decayingDamage");
     }
 
-    const step = Math.max(0, Math.floor(toNumber(options.step, 0)));
-    const meta = {
-      step: step > 0 ? step : safeAmount,
-      damageType: String(options.damageType ?? "").trim(),
+    const meta = normalizeDecayingDamageMeta({
+      step: options.step,
+      damageType: options.damageType,
       sourceActorId: String(options.sourceActorId ?? "").trim()
-    };
+    });
     return this.setStatus(actorOrId, "decayingDamage", {
       active: true,
       value: safeAmount,
       meta
     });
-  }
-
-  async #withActorUpdateLock(actor, task) {
-    if (!(actor instanceof Actor)) {
-      return task();
-    }
-
-    this._internalActorUpdates.add(actor.id);
-    try {
-      return await task();
-    }
-    finally {
-      this._internalActorUpdates.delete(actor.id);
-    }
   }
 
   async syncBloodiedForActor(actor, { forceRemove = false } = {}) {
@@ -2250,84 +2450,59 @@ export class CombatStatusService {
     return true;
   }
 
-  async tickDecayingDamage(actorOrId) {
-    const actor = this.#resolveActor(actorOrId);
-    if (!(actor instanceof Actor)) {
-      return null;
+  async handleMidiRollComplete(workflow) {
+    if (!isActiveGmClient(globalThis.game) || !workflow || typeof workflow !== "object") {
+      return false;
+    }
+    const effectId = decayingDamageEffectIdFromWorkflow(workflow);
+    if (workflow.workflowOptions?.isOverTime !== true || !effectId) {
+      return false;
+    }
+    if (this._processedDecayingDamageWorkflows.has(workflow)) {
+      return false;
+    }
+    this._processedDecayingDamageWorkflows.add(workflow);
+
+    const actors = new Set();
+    for (const target of workflow.targets ?? []) {
+      const actor = target?.actor ?? target?.document?.actor ?? null;
+      if (actor instanceof Actor) actors.add(actor);
     }
 
-    const status = this.getStatus(actor, "decayingDamage");
-    if (!status?.active) {
-      return null;
-    }
-
-    const hp = getActorHpSnapshot(actor);
-    const currentValue = Math.max(0, Math.floor(toNumber(status.value, 0)));
-    if (!hp || currentValue <= 0) {
-      await this.clearStatus(actor, "decayingDamage");
-      return {
-        actorId: actor.id,
-        appliedDamage: 0,
-        remaining: 0
-      };
-    }
-
-    const nextHp = Math.max(0, hp.current - currentValue);
-    await this.#withActorUpdateLock(actor, async () => {
-      await actor.update({
-        "system.attributes.hp.value": nextHp
-      });
-    });
-
-    const configuredStep = Math.max(1, Math.floor(toNumber(status.meta?.step, currentValue)));
-    const remaining = Math.max(0, currentValue - configuredStep);
-    if (remaining <= 0) {
-      await this.clearStatus(actor, "decayingDamage");
-    }
-    else {
-      await this.setStatusValue(actor, "decayingDamage", remaining, {
-        ...(status.meta ?? {}),
-        step: configuredStep
-      });
-    }
-
-    return {
-      actorId: actor.id,
-      appliedDamage: currentValue,
-      remaining
-    };
-  }
-
-  async handleCombatTurnChange(combat, updateData = {}) {
-    if (!game.user?.isGM) {
-      return null;
-    }
-
-    if (!(combat instanceof Combat)) {
-      return null;
-    }
-
-    const hasTurnChange = Object.hasOwn(updateData, "round") || Object.hasOwn(updateData, "turn");
-    if (!hasTurnChange) {
-      return null;
-    }
-
-    const combatKey = combat.id;
-    if (this._turnLocks.has(combatKey)) {
-      return null;
-    }
-
-    this._turnLocks.add(combatKey);
-    try {
-      const currentActor = combat.combatant?.actor ?? null;
-      if (!(currentActor instanceof Actor)) {
-        return null;
+    let changed = false;
+    for (const actor of actors) {
+      const effect = actor.effects?.contents?.find((candidate) => (
+        getEffectDocumentId(candidate) === effectId
+        && resolveManagedStatusIdFromEffect(candidate, "") === DECAYING_DAMAGE_STATUS_ID
+      )) ?? null;
+      if (!effect) continue;
+      const currentValue = Math.max(0, Math.floor(toNumber(
+        getEffectStatusValue(effect, MODULE_ID, STATUS_VALUE_FLAG),
+        0
+      )));
+      const meta = getEffectStatusValue(effect, MODULE_ID, STATUS_META_FLAG) ?? {};
+      const step = Math.max(1, Math.floor(toNumber(meta.step, 1)));
+      const remaining = Math.max(0, currentValue - step);
+      if (remaining <= 0) {
+        try {
+          await effect.delete();
+        }
+        catch (error) {
+          if (!isMissingActiveEffectError(error)) throw error;
+        }
       }
-
-      return this.tickDecayingDamage(currentActor);
+      else {
+        await this.#storeStatusMetadata(effect, DECAYING_DAMAGE_STATUS_ID, {
+          value: remaining,
+          meta: {
+            ...meta,
+            step
+          },
+          actor
+        });
+      }
+      changed = true;
     }
-    finally {
-      this._turnLocks.delete(combatKey);
-    }
+    return changed;
   }
 }
