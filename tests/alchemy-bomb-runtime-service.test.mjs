@@ -90,6 +90,9 @@ test("withMinimizedActorSheet does not open or maximize closed and already minim
 
 test("bomb placement keeps the throwing sheet minimized until an instant workflow completes", async () => {
   const workflow = makeWorkflow();
+  workflow.expectedTemplateCount = 1;
+  workflow.templateUuids = [];
+  workflow.placedTemplateCount = 0;
   const placements = [];
   const mutations = [];
   const rangeOverlays = [];
@@ -120,6 +123,8 @@ test("bomb placement keeps the throwing sheet minimized until an instant workflo
   assert.equal(rangeOverlays[0].options.reachFeet, 60);
   assert.equal(rangeOverlays[0].options.sourceToken, workflow.token.document);
   assert.equal(rangeOverlays[0].destroyed, 1);
+  assert.deepEqual(workflow.templateUuids, ["Scene.scene-1.MeasuredTemplate.area"]);
+  assert.equal(workflow.placedTemplateCount, 1);
   assert.equal(placements[0].tokens.length, 1);
   assert.equal(placements[0].tokens[0].toObject().texture.src, "modules/rebreya-main/bomb.webp");
   assert.deepEqual(workflow.actor.sheet.calls, ["minimize"]);
@@ -149,6 +154,30 @@ test("bomb placement keeps the throwing sheet minimized until an instant workflo
   assert.equal(mutations[2].action, "cleanup");
   assert.equal(mutations[2].tokenUuid, "Scene.scene-1.Token.bomb");
   assert.equal(mutations[2].templateUuid, "Scene.scene-1.MeasuredTemplate.area");
+  assert.deepEqual(workflow.actor.sheet.calls, ["minimize", "maximize"]);
+});
+
+test("bomb completion keeps its session after Midi replaces the workflow id with the chat message id", async () => {
+  const workflow = makeWorkflow({ id: "pre-chat-workflow" });
+  workflow.templateUuids = [];
+  const mutations = [];
+  const service = new AlchemyBombRuntimeService({
+    placementProvider: async () => [{ x: 175, y: 275, elevation: 5 }],
+    mutationRequester: async (payload) => {
+      mutations.push(structuredClone(payload));
+      return payload.action === "place"
+        ? { tokenUuid: "Scene.scene-1.Token.bomb", templateUuid: "Scene.scene-1.MeasuredTemplate.area" }
+        : { ok: true };
+    },
+    rangeOverlayFactory: () => ({ destroy() {} }),
+    gridProvider: () => ({ size: 100, distance: 5 })
+  });
+
+  assert.equal(await service.prepareWorkflow(workflow), true);
+  workflow.id = "ChatMessage.message-1";
+  assert.equal(await service.completeWorkflow(workflow), true);
+  assert.deepEqual(mutations.map((entry) => entry.action), ["place", "apply-results", "cleanup"]);
+  assert.equal(mutations[1].operationId, "pre-chat-workflow");
   assert.deepEqual(workflow.actor.sheet.calls, ["minimize", "maximize"]);
 });
 
@@ -280,7 +309,18 @@ test("active GM placement creates a half-cell bomb, measured template, sticky re
     async createEmbeddedDocuments(type, data) {
       created.push({ type, data: structuredClone(data) });
       const id = type.toLowerCase();
-      return [{ id, uuid: `${this.uuid}.${type}.${id}`, flags: data[0].flags, async update(patch) { this.patch = patch; } }];
+      const document = { id, uuid: `${this.uuid}.${type}.${id}`, flags: data[0].flags, async update(patch) { this.patch = patch; } };
+      if (type === "Token") {
+        Object.assign(document, {
+          x: data[0].x,
+          y: data[0].y,
+          width: data[0].width,
+          height: data[0].height,
+          actor: {}
+        });
+        this.tokens.set(id, document);
+      }
+      return [document];
     }
   };
   const service = new AlchemyBombRuntimeService({

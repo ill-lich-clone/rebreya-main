@@ -89,6 +89,15 @@ function itemFlag(item, key) {
   return item?.getFlag?.(MODULE_ID, key) ?? item?.flags?.[MODULE_ID]?.[key];
 }
 
+function registerPlacedTemplate(workflow, templateUuid) {
+  const uuid = clean(templateUuid);
+  if (!uuid) throw new Error("Размещение бомбы не вернуло шаблон эманации.");
+  workflow.templateUuid = uuid;
+  if (!Array.isArray(workflow.templateUuids)) workflow.templateUuids = [];
+  if (!workflow.templateUuids.includes(uuid)) workflow.templateUuids.push(uuid);
+  workflow.placedTemplateCount = workflow.templateUuids.length;
+}
+
 function buildPreviewPrototype({ actor, name, image }) {
   return {
     parent: actor,
@@ -238,6 +247,7 @@ export class AlchemyBombRuntimeService {
   #rangeOverlayFactory;
   #resolveUuid;
   #sessions = new Map();
+  #workflowSessionIds = new WeakMap();
   #statusService;
   #targetUpdater;
 
@@ -271,7 +281,8 @@ export class AlchemyBombRuntimeService {
     const definition = bombDefinition(workflow);
     if (definition?.kind !== "bomb") return true;
     const id = workflowId(workflow);
-    if (this.#sessions.has(id)) return true;
+    const linkedSessionId = this.#workflowSessionIds.get(workflow);
+    if (this.#sessions.has(linkedSessionId ?? id)) return true;
 
     const actor = workflow?.actor ?? workflow?.activity?.actor ?? workflow?.item?.actor;
     const item = workflow?.item ?? workflow?.activity?.item;
@@ -345,6 +356,7 @@ export class AlchemyBombRuntimeService {
         workflow.targets = new Set(targets.map((target) => target?.object ?? target));
         await this.#targetUpdater(targets.map((target) => clean(target?.id ?? target?.document?.id)).filter(Boolean));
       }
+      registerPlacedTemplate(workflow, placed?.templateUuid);
       const session = {
         definition: structuredClone(definition),
         persistent: definition.persistent === true,
@@ -362,6 +374,7 @@ export class AlchemyBombRuntimeService {
         throw new Error("Размещение бомбы не вернуло токен и шаблон.");
       }
       this.#sessions.set(id, session);
+      this.#workflowSessionIds.set(workflow, id);
       return true;
     }
     catch (error) {
@@ -381,7 +394,7 @@ export class AlchemyBombRuntimeService {
   }
 
   async completeWorkflow(workflow) {
-    const id = clean(workflow?.id ?? workflow?.uuid);
+    const id = this.#workflowSessionIds.get(workflow) ?? clean(workflow?.id ?? workflow?.uuid);
     const session = this.#sessions.get(id);
     if (!session) return false;
     try {
@@ -411,10 +424,11 @@ export class AlchemyBombRuntimeService {
   }
 
   async #finishWorkflow(workflow, { forceCleanup }) {
-    const id = clean(workflow?.id ?? workflow?.uuid);
+    const id = this.#workflowSessionIds.get(workflow) ?? clean(workflow?.id ?? workflow?.uuid);
     const session = this.#sessions.get(id);
     if (!session) return false;
     this.#sessions.delete(id);
+    this.#workflowSessionIds.delete(workflow);
     try {
       if (forceCleanup || !session.persistent) await this.#requestCleanup(session);
       return true;
@@ -525,7 +539,10 @@ export class AlchemyBombRuntimeService {
       tokenUuid: documentUuid(token, scene, "Token"),
       templateUuid: documentUuid(template, scene, "MeasuredTemplate"),
       regionUuid: documentUuid(region, scene, "Region"),
-      targetTokenUuids: tokensInRadius(scene, { x: payload.x, y: payload.y }, payload.radius).map((entry) => clean(entry.uuid)).filter(Boolean)
+      targetTokenUuids: tokensInRadius(scene, { x: payload.x, y: payload.y }, payload.radius)
+        .filter((entry) => documentId(entry) !== documentId(token))
+        .map((entry) => clean(entry.uuid))
+        .filter(Boolean)
     };
   }
 
