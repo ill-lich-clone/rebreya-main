@@ -75,7 +75,7 @@ test("registers once and authorizes only the throwing actor owner or GM", async 
   const registrations = new Map();
   const moduleApi = {
     alchemyBombRuntimeService: { handleSocketMutation() {} },
-    socketCommandBus: { register: (name, definition) => registrations.set(name, definition) }
+    privilegedMutationGateway: { registerCommand: (name, definition) => registrations.set(name, definition) }
   };
   const options = { fromUuid: async (uuid) => uuid === actor.uuid ? actor : null };
 
@@ -98,7 +98,7 @@ test("execute rechecks scene and source token before delegating the mutation", a
   const registrations = new Map();
   registerAlchemyBombSocketCommand({
     alchemyBombRuntimeService: { handleSocketMutation: async (payload, context) => { calls.push({ payload, context }); return { ok: true }; } },
-    socketCommandBus: { register: (name, definition) => registrations.set(name, definition) }
+    privilegedMutationGateway: { registerCommand: (name, definition) => registrations.set(name, definition) }
   }, { fromUuid: async (uuid) => uuid === actor.uuid ? actor : uuid === scene.uuid ? scene : null });
 
   const command = registrations.get(ALCHEMY_BOMB_MUTATION_COMMAND);

@@ -32,7 +32,10 @@ function makeWorkflow({ id = "workflow-1", family = "alchemical-fire", persisten
     id: "source-token",
     uuid: "Scene.scene-1.Token.source-token",
     actor,
-    document: { id: "source-token", uuid: "Scene.scene-1.Token.source-token", actor, elevation: 5, parent: scene }
+    document: {
+      id: "source-token", uuid: "Scene.scene-1.Token.source-token", actor, elevation: 5, parent: scene,
+      x: 0, y: 0, width: 1, height: 1
+    }
   };
   const definition = {
     kind: "bomb",
@@ -89,10 +92,17 @@ test("bomb placement keeps the throwing sheet minimized until an instant workflo
   const workflow = makeWorkflow();
   const placements = [];
   const mutations = [];
+  const rangeOverlays = [];
   const service = new AlchemyBombRuntimeService({
+    rangeOverlayFactory: (options) => {
+      const state = { options, destroyed: 0 };
+      rangeOverlays.push(state);
+      return { destroy() { state.destroyed += 1; } };
+    },
     placementProvider: async (config) => {
       placements.push(config);
       assert.deepEqual(workflow.actor.sheet.calls, ["minimize"]);
+      assert.equal(rangeOverlays[0].destroyed, 0);
       return [{ x: 175, y: 275, elevation: 5 }];
     },
     mutationRequester: async (payload) => {
@@ -106,6 +116,10 @@ test("bomb placement keeps the throwing sheet minimized until an instant workflo
 
   assert.equal(await service.prepareWorkflow(workflow), true);
   assert.equal(placements.length, 1);
+  assert.equal(rangeOverlays.length, 1);
+  assert.equal(rangeOverlays[0].options.reachFeet, 60);
+  assert.equal(rangeOverlays[0].options.sourceToken, workflow.token.document);
+  assert.equal(rangeOverlays[0].destroyed, 1);
   assert.equal(placements[0].tokens.length, 1);
   assert.equal(placements[0].tokens[0].toObject().texture.src, "modules/rebreya-main/bomb.webp");
   assert.deepEqual(workflow.actor.sheet.calls, ["minimize"]);
@@ -136,6 +150,64 @@ test("bomb placement keeps the throwing sheet minimized until an instant workflo
   assert.equal(mutations[2].tokenUuid, "Scene.scene-1.Token.bomb");
   assert.equal(mutations[2].templateUuid, "Scene.scene-1.MeasuredTemplate.area");
   assert.deepEqual(workflow.actor.sheet.calls, ["minimize", "maximize"]);
+});
+
+test("bomb placement rejects a confirmed point beyond the visible 60-foot throw range", async () => {
+  const workflow = makeWorkflow();
+  let mutationCalls = 0;
+  const service = new AlchemyBombRuntimeService({
+    placementProvider: async () => [{ x: 1275, y: 25, elevation: 5 }],
+    mutationRequester: async () => {
+      mutationCalls += 1;
+      return { tokenUuid: "Scene.scene-1.Token.bomb", templateUuid: "Scene.scene-1.MeasuredTemplate.area" };
+    },
+    rangeOverlayFactory: () => ({ destroy() {} }),
+    gridProvider: () => ({ size: 100, distance: 5 })
+  });
+
+  await assert.rejects(
+    () => service.prepareWorkflow(workflow),
+    (error) => error?.code === "outside-throw-range"
+  );
+  assert.equal(mutationCalls, 0);
+  assert.deepEqual(workflow.actor.sheet.calls, ["minimize", "maximize"]);
+});
+
+test("default bomb placement preview draws a yellow 60-foot boundary around the thrower", async () => {
+  const previousPixi = globalThis.PIXI;
+  const previousCanvas = globalThis.canvas;
+  const drawCalls = [];
+  class Graphics {
+    clear() {}
+    lineStyle(...args) { drawCalls.push(["line", ...args]); }
+    drawCircle(...args) { drawCalls.push(["circle", ...args]); }
+    destroy() { drawCalls.push(["destroy"]); }
+  }
+  const overlayLayer = {
+    addChild(graphics) { graphics.parent = this; },
+    removeChild(graphics) { graphics.parent = null; }
+  };
+  globalThis.PIXI = { Graphics };
+  globalThis.canvas = { interface: { grid: overlayLayer } };
+
+  try {
+    const service = new AlchemyBombRuntimeService({
+      placementProvider: async () => [],
+      mutationRequester: async () => ({}),
+      gridProvider: () => ({ size: 100, distance: 5 })
+    });
+
+    assert.equal(await service.prepareWorkflow(makeWorkflow()), false);
+    assert.deepEqual(drawCalls[0], ["line", 6, 0xffff00, 0.9]);
+    assert.deepEqual(drawCalls[1], ["circle", 50, 50, 1200]);
+    assert.deepEqual(drawCalls.at(-1), ["destroy"]);
+  }
+  finally {
+    if (previousPixi === undefined) delete globalThis.PIXI;
+    else globalThis.PIXI = previousPixi;
+    if (previousCanvas === undefined) delete globalThis.canvas;
+    else globalThis.canvas = previousCanvas;
+  }
 });
 
 test("cancelled bomb placement restores the sheet and performs no scene mutation", async () => {

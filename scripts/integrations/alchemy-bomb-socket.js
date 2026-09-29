@@ -15,7 +15,7 @@ const RESULT_KEYS = Object.freeze([
   "action", "operationId", "actorUuid", "sourceTokenUuid", "sceneUuid", "family", "failedTokenUuids",
   "savedTokenUuids", "effect", "point", "regionUuid"
 ]);
-const registeredBuses = new WeakSet();
+const registeredGateways = new WeakSet();
 
 function isPlainRecord(value) {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
@@ -143,12 +143,12 @@ function sourceTokenId(sceneUuid, tokenUuid) {
 }
 
 export function registerAlchemyBombSocketCommand(moduleApi, options = {}) {
-  const commandBus = moduleApi?.socketCommandBus;
+  const mutationGateway = moduleApi?.privilegedMutationGateway;
   const runtime = moduleApi?.alchemyBombRuntimeService;
-  if (typeof commandBus?.register !== "function" || typeof runtime?.handleSocketMutation !== "function") return false;
-  if (registeredBuses.has(commandBus)) return true;
+  if (typeof mutationGateway?.registerCommand !== "function" || typeof runtime?.handleSocketMutation !== "function") return false;
+  if (registeredGateways.has(mutationGateway)) return true;
 
-  commandBus.register(ALCHEMY_BOMB_MUTATION_COMMAND, {
+  mutationGateway.registerCommand(ALCHEMY_BOMB_MUTATION_COMMAND, {
     validate: isValidAlchemyBombMutationPayload,
     authorize: async (payload, { sender } = {}) => senderOwnsActor(await resolve(payload.actorUuid, options), sender),
     scheduling: keyedMutationScheduling((payload) => [
@@ -170,6 +170,6 @@ export function registerAlchemyBombSocketCommand(moduleApi, options = {}) {
       return runtime.handleSocketMutation(payload, { actor, scene });
     }
   });
-  registeredBuses.add(commandBus);
+  registeredGateways.add(mutationGateway);
   return true;
 }

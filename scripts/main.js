@@ -324,7 +324,7 @@ import { SpellAreaRuntime } from "./combat/spell-area-runtime.js";
 import { SpellAutomationHookBridge } from "./combat/spell-automation-hook-bridge.js";
 import { registerRadialStatusEffects } from "./combat/radial-status-effects.js";
 import { CombatStatusService, registerCombatStatusConfig } from "./combat/status-service.js?v=1.4.353-statuscounter-setup-retry";
-import { AlchemyBombRuntimeService } from "./combat/alchemy-bomb-runtime-service.js?v=1.4.354";
+import { AlchemyBombRuntimeService } from "./combat/alchemy-bomb-runtime-service.js?v=1.4.356";
 import { AttackRollBoostService } from "./combat/attack-roll-boost-service.js?v=1.4.96";
 import { EnvironmentAutomationService } from "./combat/environment-automation-service.js?v=1.4.96-environment-stable-statuses";
 import { registerMechanusRollHooks } from "./cosmology/mechanus-rolls.js?v=1.4.140-mechanus-dnd5e-activity-repair";
@@ -345,7 +345,7 @@ import { BardicInspirationCompatService } from "./combat/bardic-inspiration-comp
 import { RaceAutomationService, SOCKET_EVENT_RACE_AUTOMATION } from "./combat/race-automation-service.js?v=1.4.147-race-damage";
 import { GrappleAutomationService, GRAPPLE_LINK_FLAG, getTwistedLinkForToken } from "./combat/grapple-automation-service.js";
 import { GrappleMacroService } from "./combat/grapple-macro-service.js?v=1.4.334-twisted-macro";
-import { GrapplePlacementPreview } from "./combat/grapple-placement-preview.js?v=1.4.290-rogue-mantle";
+import { GrapplePlacementPreview } from "./combat/grapple-placement-preview.js?v=1.4.356";
 import { getActorHandReservations } from "./integrations/held-items.js";
 import { CraftsmanGadgetService } from "./combat/craftsman-gadget-service.js";
 import { CraftsmanGadgetZoneService } from "./combat/craftsman-gadget-zone-service.js";
@@ -395,7 +395,7 @@ import { registerSummonLifecycleSocketCommand } from "./integrations/summon-life
 import {
   ALCHEMY_BOMB_MUTATION_COMMAND,
   registerAlchemyBombSocketCommand
-} from "./integrations/alchemy-bomb-socket.js?v=1.4.354";
+} from "./integrations/alchemy-bomb-socket.js?v=1.4.356";
 import { registerTransportGroupDropHooks } from "./integrations/transport-group-drop.js";
 import { registerStorageTransferDropHooks } from "./integrations/storage-transfer-drop.js?v=1.4.213-furniture-orientation";
 import { registerStorageTokenDropHooks } from "./integrations/storage-token-drop.js?v=1.4.322";

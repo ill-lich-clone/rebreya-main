@@ -6,10 +6,10 @@ const RELEASED_CACHE_VERSION = "1\\.4\\.96";
 
 test("current alchemy automation release advances the module cache version", async () => {
   const manifest = JSON.parse(await readFile(new URL("../module.json", import.meta.url), "utf8"));
-  assert.equal(manifest.version, "1.4.355");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.355.js"]);
+  assert.equal(manifest.version, "1.4.356");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.356.js"]);
   assert.equal(
-    (await readFile(new URL("../scripts/main-1.4.355.js", import.meta.url), "utf8")).trim(),
+    (await readFile(new URL("../scripts/main-1.4.356.js", import.meta.url), "utf8")).trim(),
     'import "./main.js";'
   );
 });
@@ -101,8 +101,8 @@ test("module manifest loads an unpinned canonical entrypoint for page-refresh up
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const [entrypoint] = manifest.esmodules;
 
-  assert.equal(manifest.version, "1.4.355");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.355.js"]);
+  assert.equal(manifest.version, "1.4.356");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.356.js"]);
   assert.doesNotMatch(entrypoint, /[?#]/u);
 
   const entrypointSource = await readFile(new URL(entrypoint, manifestUrl), "utf8");
@@ -410,7 +410,7 @@ test("module keeps recent published entrypoint URLs as canonical compatibility f
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
 
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.355.js"]);
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.356.js"]);
 
   for (const fileName of ["main-1.4.98.js", "main-1.4.99.js", "main-1.4.100.js"]) {
     const forwarderSource = await readFile(new URL(`../scripts/${fileName}`, import.meta.url), "utf8");
@@ -751,7 +751,7 @@ test("automatic owned magic item sync cache-busts its live service graph", async
   );
   assert.match(
     entrypointSource,
-    /grapple-placement-preview\.js\?v=1\.4\.290-rogue-mantle/u
+    /grapple-placement-preview\.js\?v=1\.4\.356/u
   );
   assert.match(
     compendiumSource,

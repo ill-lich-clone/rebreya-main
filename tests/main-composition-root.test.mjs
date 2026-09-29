@@ -11,7 +11,7 @@ import { BuiltinStorageActorService } from "../scripts/data/builtin-storage-acto
 import { StorageOpenSoundService } from "../scripts/data/storage-open-sound-service.js?v=1.4.145-coin-icons-storage-sound";
 import { GrappleAutomationService } from "../scripts/combat/grapple-automation-service.js";
 import { GrappleMacroService } from "../scripts/combat/grapple-macro-service.js?v=1.4.334-twisted-macro";
-import { GrapplePlacementPreview } from "../scripts/combat/grapple-placement-preview.js?v=1.4.290-rogue-mantle";
+import { GrapplePlacementPreview } from "../scripts/combat/grapple-placement-preview.js?v=1.4.356";
 import {
   COMMAND_REQUEST_TYPE,
   COMMAND_RESULT_TYPE
@@ -49,8 +49,8 @@ test("current release reuses the catalog icon cache graph", async () => {
     ...sharedCacheImporters.map((name) => readFile(new URL(`../scripts/data/${name}.js`, import.meta.url), "utf8"))
   ]);
   const manifest = JSON.parse(manifestSource);
-  assert.equal(manifest.version, "1.4.355");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.355.js"]);
+  assert.equal(manifest.version, "1.4.356");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.356.js"]);
   assert.doesNotMatch(manifestSource, /main-1\.4\.319\.js/u);
   assert.match(mainSource, /data\/inventory-service\.js\?v=1\.4\.327/u);
   assert.match(mainSource, /data\/storage-command-service\.js\?v=1\.4\.322/u);

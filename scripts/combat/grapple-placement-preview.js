@@ -24,7 +24,7 @@ function cprResolution(width, height) {
   return maximum % 2 === 0 ? -1 : 1;
 }
 
-function defaultOverlayFactory({ sourceToken, reachFeet, grid, markerRadiusPixels }) {
+export function createReachBoundaryOverlay({ sourceToken, reachFeet, grid, markerRadiusPixels = 0 }) {
   const Graphics = globalThis.PIXI?.Graphics;
   if (typeof Graphics !== "function") return { update() {}, destroy() {} };
   const origin = grappleReachOriginRect(sourceToken, grid);
@@ -101,7 +101,7 @@ export class GrapplePlacementPreview {
 
   constructor({
     crosshairsProvider = () => globalThis.chrisPremades?.Crosshairs,
-    overlayFactory = defaultOverlayFactory,
+    overlayFactory = createReachBoundaryOverlay,
     gridProvider = defaultGrid,
     sceneRectProvider = defaultSceneRect,
     checkCollision = defaultCollision,

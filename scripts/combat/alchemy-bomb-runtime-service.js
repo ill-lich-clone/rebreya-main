@@ -1,6 +1,9 @@
 import { MODULE_ID } from "../constants.js";
+import { grappleReachOriginRect } from "./grapple-geometry.js";
+import { createReachBoundaryOverlay } from "./grapple-placement-preview.js?v=1.4.356";
 
 const BOMB_TOKEN_SIZE = 0.5;
+export const BOMB_THROW_RANGE_FEET = 60;
 const ALCHEMY_BOMB_FLAG = "alchemyBombRuntime";
 const STICKY_REGION_SCRIPT = "await game.rebreyaMain?.alchemyBombRuntimeService?.handleStickyRegionEvent?.({ scene, region, event });";
 
@@ -12,6 +15,24 @@ function finite(value, name) {
   const number = Number(value);
   if (!Number.isFinite(number)) throw new TypeError(`${name} must be finite`);
   return number;
+}
+
+function codedError(code, message) {
+  const error = new Error(message);
+  error.code = code;
+  return error;
+}
+
+export function bombThrowDistanceFeet(source, point, grid) {
+  const gridSize = finite(grid?.size, "grid size");
+  const gridDistance = finite(grid?.distance, "grid distance");
+  if (gridSize <= 0 || gridDistance <= 0) throw new RangeError("grid metrics must be positive");
+  const origin = grappleReachOriginRect(source, { size: gridSize, distance: gridDistance });
+  const x = finite(point?.x, "bomb center x");
+  const y = finite(point?.y, "bomb center y");
+  const horizontalGap = Math.max(origin.left - x, x - origin.right, 0);
+  const verticalGap = Math.max(origin.top - y, y - origin.bottom, 0);
+  return (Math.hypot(horizontalGap, verticalGap) / gridSize) * gridDistance;
 }
 
 function bombDefinition(workflow) {
@@ -214,6 +235,7 @@ export class AlchemyBombRuntimeService {
   #mapObjectTokenService;
   #mutationRequester;
   #placementProvider;
+  #rangeOverlayFactory;
   #resolveUuid;
   #sessions = new Map();
   #statusService;
@@ -223,6 +245,7 @@ export class AlchemyBombRuntimeService {
     placementProvider = defaultPlacementProvider,
     mutationRequester,
     gridProvider = defaultGridProvider,
+    rangeOverlayFactory = createReachBoundaryOverlay,
     statusService = null,
     durabilityService = null,
     mapObjectTokenService = null,
@@ -232,9 +255,11 @@ export class AlchemyBombRuntimeService {
     if (typeof placementProvider !== "function") throw new TypeError("placementProvider must be a function");
     if (typeof mutationRequester !== "function") throw new TypeError("mutationRequester must be a function");
     if (typeof gridProvider !== "function") throw new TypeError("gridProvider must be a function");
+    if (typeof rangeOverlayFactory !== "function") throw new TypeError("rangeOverlayFactory must be a function");
     this.#placementProvider = placementProvider;
     this.#mutationRequester = mutationRequester;
     this.#gridProvider = gridProvider;
+    this.#rangeOverlayFactory = rangeOverlayFactory;
     this.#statusService = statusService;
     this.#durabilityService = durabilityService;
     this.#mapObjectTokenService = mapObjectTokenService;
@@ -262,19 +287,37 @@ export class AlchemyBombRuntimeService {
     const restoreSheet = await minimizeActorSheet(actor);
     let placed = null;
     try {
-      const placements = await this.#placementProvider({
-        tokens: [buildPreviewPrototype({ actor, name: clean(item?.name) || "Бомба", image })],
-        origin: { elevation: finite(token?.elevation ?? 0, "source token elevation") }
+      const grid = this.#gridProvider();
+      const gridSize = finite(grid?.size, "grid size");
+      const gridDistance = finite(grid?.distance, "grid distance");
+      if (gridSize <= 0 || gridDistance <= 0) throw new RangeError("grid metrics must be positive");
+      const rangeOverlay = this.#rangeOverlayFactory({
+        sourceToken: token,
+        reachFeet: BOMB_THROW_RANGE_FEET,
+        grid: { size: gridSize, distance: gridDistance },
+        markerRadiusPixels: 0
       });
+      let placements;
+      try {
+        placements = await this.#placementProvider({
+          tokens: [buildPreviewPrototype({ actor, name: clean(item?.name) || "Бомба", image })],
+          origin: { elevation: finite(token?.elevation ?? 0, "source token elevation") }
+        });
+      }
+      finally {
+        rangeOverlay?.destroy?.();
+      }
       const placement = Array.isArray(placements) ? placements[0] : null;
       if (!placement) {
         await restoreSheet();
         return false;
       }
 
-      const grid = this.#gridProvider();
-      const gridSize = finite(grid?.size, "grid size");
-      if (gridSize <= 0) throw new RangeError("grid size must be positive");
+      const x = finite(placement.x, "placement x") + ((gridSize * BOMB_TOKEN_SIZE) / 2);
+      const y = finite(placement.y, "placement y") + ((gridSize * BOMB_TOKEN_SIZE) / 2);
+      if (bombThrowDistanceFeet(token, { x, y }, { size: gridSize, distance: gridDistance }) > BOMB_THROW_RANGE_FEET + 1e-9) {
+        throw codedError("outside-throw-range", `Точка броска находится дальше ${BOMB_THROW_RANGE_FEET} футов.`);
+      }
       const payload = {
         action: "place",
         operationId: id,
@@ -286,8 +329,8 @@ export class AlchemyBombRuntimeService {
         productId: clean(itemFlag(item, "alchemyProductId")),
         name: clean(item.name) || "Бомба",
         image,
-        x: finite(placement.x, "placement x") + ((gridSize * BOMB_TOKEN_SIZE) / 2),
-        y: finite(placement.y, "placement y") + ((gridSize * BOMB_TOKEN_SIZE) / 2),
+        x,
+        y,
         elevation: finite(placement.elevation ?? token?.elevation ?? 0, "placement elevation"),
         radius: finite(definition.radius, "bomb radius"),
         persistent: definition.persistent === true,
