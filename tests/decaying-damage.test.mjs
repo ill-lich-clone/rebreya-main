@@ -156,9 +156,13 @@ test("completed Midi overtime damage reduces the status only after the workflow 
 
     assert.equal(await service.handleMidiRollComplete(workflow), true);
     assert.equal(effect.flags[MODULE_ID].statusValue, 9);
-    assert.equal(effect.flags.statuscounter.value, 9);
+    assert.equal(effect.flags.statuscounter.value, 1);
+    assert.equal(effect.flags.statuscounter.visible, false);
     assert.match(effect.changes[0].value, /damageRoll=9/iu);
     assert.deepEqual(actor.updateCalls, []);
+    assert.equal(await service.handleActiveEffectUpdate(effect), false);
+    assert.equal(effect.flags[MODULE_ID].statusValue, 9);
+    assert.match(effect.changes[0].value, /damageRoll=9/iu);
     assert.equal(await service.handleMidiRollComplete(workflow), false);
     assert.equal(effect.flags[MODULE_ID].statusValue, 9);
   }
@@ -273,6 +277,7 @@ test("manual HUD application requires amount, decay step, and a base damage type
 
     assert.match(dialogContent, /decaying-damage-step/u);
     assert.match(dialogContent, /decaying-damage-type/u);
+    assert.match(dialogContent, /rm-decaying-damage-dialog/u);
     assert.equal(effect.flags[MODULE_ID].statusValue, 10);
     assert.equal(effect.flags[MODULE_ID].statusMeta.step, 2);
     assert.equal(effect.flags[MODULE_ID].statusMeta.damageType, "fire");

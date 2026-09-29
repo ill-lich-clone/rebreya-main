@@ -4587,6 +4587,21 @@ summary:focus-visible {
   gap: 14px;
 }
 
+.rebreya-trader-dialog .rm-decaying-damage-dialog select,
+.rebreya-trader-dialog .rm-decaying-damage-dialog option,
+.rebreya-trader-dialog .rm-decaying-damage-dialog optgroup {
+  color: var(--rm-text-primary);
+  background-color: var(--rm-color-ink);
+  -webkit-text-fill-color: var(--rm-text-primary);
+  color-scheme: dark;
+}
+
+.rebreya-trader-dialog .rm-decaying-damage-dialog option:checked {
+  color: var(--rm-color-ink);
+  background-color: var(--rm-color-gold);
+  -webkit-text-fill-color: var(--rm-color-ink);
+}
+
 .rm-downtime-text-dialog textarea {
   width: 100%;
   min-height: 120px;

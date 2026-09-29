@@ -828,6 +828,16 @@ function readManagedStatusValue(effect, statusId, context = {}) {
     return null;
   }
 
+  if (statusId === DECAYING_DAMAGE_STATUS_ID) {
+    const moduleValue = getEffectStatusValue(effect, MODULE_ID, STATUS_VALUE_FLAG);
+    if (Number.isFinite(Number(moduleValue)) && Number(moduleValue) > 0) {
+      return normalizeStatusValue(moduleValue, 1);
+    }
+
+    const nameValue = String(effect?.name ?? "").match(/(\d+)\s*\(-\d+\)/u)?.[1];
+    return nameValue ? normalizeStatusValue(nameValue, 1) : null;
+  }
+
   const counterValue = getEffectStatusValue(effect, STATUS_COUNTER_MODULE_ID, "value");
   if (Number.isFinite(Number(counterValue)) && Number(counterValue) > 0) {
     return normalizeStatusValue(counterValue, 1);
@@ -909,7 +919,11 @@ function buildCanonicalManagedStatusUpdate(effect, statusId, { actor = null, sou
 
   if (statusSupportsValue(statusId)) {
     patch[`flags.${MODULE_ID}.${STATUS_VALUE_FLAG}`] = value ?? null;
-    if (value !== null && value !== undefined && isActiveFrightenedStatus) {
+    if (statusId === DECAYING_DAMAGE_STATUS_ID) {
+      patch[`flags.${STATUS_COUNTER_MODULE_ID}.value`] = 1;
+      patch[`flags.${STATUS_COUNTER_MODULE_ID}.visible`] = false;
+    }
+    else if (value !== null && value !== undefined && isActiveFrightenedStatus) {
       patch[`flags.${STATUS_COUNTER_MODULE_ID}.value`] = value;
       patch[`flags.${STATUS_COUNTER_MODULE_ID}.visible`] = true;
     }
@@ -1447,7 +1461,7 @@ export class CombatStatusService {
       const dialog = new Dialog({
         title: "Затихающий урон",
         content: `
-          <form class="rm-purchase-dialog">
+          <form class="rm-purchase-dialog rm-decaying-damage-dialog">
             <div class="rm-field">
               <label for="rm-decaying-damage-value">Начальный урон</label>
               <input id="rm-decaying-damage-value" type="number" min="1" step="1"
@@ -1838,8 +1852,10 @@ export class CombatStatusService {
         patch.icon = statusIcon(statusId);
         patch.statuses = [statusId];
         patch["flags.core.statusId"] = statusId;
-        patch[`flags.${STATUS_COUNTER_MODULE_ID}.value`] = statusValue;
-        patch[`flags.${STATUS_COUNTER_MODULE_ID}.visible`] = true;
+        patch[`flags.${STATUS_COUNTER_MODULE_ID}.value`] = statusId === DECAYING_DAMAGE_STATUS_ID
+          ? 1
+          : statusValue;
+        patch[`flags.${STATUS_COUNTER_MODULE_ID}.visible`] = statusId !== DECAYING_DAMAGE_STATUS_ID;
       }
     }
     if (Object.hasOwn(options, "value") || !statusSupportsValue(statusId)) {
