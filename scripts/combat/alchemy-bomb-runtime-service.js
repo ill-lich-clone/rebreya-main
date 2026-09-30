@@ -438,11 +438,30 @@ export class AlchemyBombRuntimeService {
     }
   }
 
+  async excludeBombTarget(workflow) {
+    const id = this.#workflowSessionIds.get(workflow) ?? clean(workflow?.id ?? workflow?.uuid);
+    const session = this.#sessions.get(id);
+    if (!session) return false;
+    // Do not use setTargets here: Midi resets resolved saves and hits in that method.
+    for (const key of ["targets", "hitTargets", "hitTargetsEC", "failedSaves", "saves", "effectTargets", "applicationTargets", "superSavers", "semiSuperSavers", "advantageSaves", "criticalSaves", "fumbleSaves"]) {
+      if (!(workflow[key] instanceof Set)) continue;
+      for (const target of workflow[key]) {
+        if (tokenUuid(target) === session.tokenUuid) workflow[key].delete(target);
+      }
+    }
+    const userTargets = globalThis.game?.user?.targets ?? workflow.targets ?? [];
+    await this.#targetUpdater(Array.from(userTargets)
+      .filter((target) => tokenUuid(target) !== session.tokenUuid)
+      .map((target) => clean(target?.id ?? target?.document?.id)).filter(Boolean));
+    return true;
+  }
+
   async completeWorkflow(workflow) {
     const id = this.#workflowSessionIds.get(workflow) ?? clean(workflow?.id ?? workflow?.uuid);
     const session = this.#sessions.get(id);
     if (!session) return false;
     try {
+      await this.excludeBombTarget(workflow);
       await this.#mutationRequester({
         action: "apply-results",
         operationId: session.operationId,

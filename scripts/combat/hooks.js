@@ -81,6 +81,12 @@ export function registerCombatHooks(moduleApi) {
         return false;
       }
     });
+    for (const event of ["preWaitForSaves", "preCheckSaves", "preAllRollsComplete", "preApplyDynamicEffects"]) {
+      Hooks.on(`midi-qol.${event}`, async (workflow) => {
+        await moduleApi.alchemyBombRuntimeService.excludeBombTarget(workflow);
+        return true;
+      });
+    }
     Hooks.on("midi-qol.RollComplete", async (workflow) => {
       try {
         await moduleApi.alchemyBombRuntimeService.completeWorkflow(workflow);

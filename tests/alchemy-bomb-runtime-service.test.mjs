@@ -162,6 +162,7 @@ test("bomb passes its real template to Midi and initializes save targets instead
   const template = { uuid: "Scene.scene-1.MeasuredTemplate.area" };
   const victim = { id: "victim", uuid: "Scene.scene-1.Token.victim", object: { id: "victim" } };
   let processed;
+  const updatedTargets = [];
   workflow.setTargets = function(targets) {
     this.targets = new Set(targets);
     this.failedSaves = new Set(targets);
@@ -176,12 +177,43 @@ test("bomb passes its real template to Midi and initializes save targets instead
     gridProvider: () => ({ size: 100, distance: 5 }),
     rangeOverlayFactory: () => ({ destroy() {} }),
     resolveUuid: async (uuid) => uuid === template.uuid ? template : victim,
+    targetUpdater: (ids) => updatedTargets.push(ids),
     mutationRequester: async () => ({ tokenUuid: "Scene.scene-1.Token.bomb", templateUuid: template.uuid, targetTokenUuids: [victim.uuid] })
   });
   await service.prepareWorkflow(workflow);
   assert.deepEqual(processed.templates, [template]);
   assert.equal(processed.activity, workflow.activity);
   assert.deepEqual([...workflow.failedSaves], [victim.object]);
+
+  // Midi processes activity templates again after creating the chat card.
+  const bomb = { document: { id: "bomb", uuid: "Scene.scene-1.Token.bomb" } };
+  const saved = { document: { id: "saved", uuid: "Scene.scene-1.Token.saved" } };
+  workflow.id = "chat-card-id";
+  workflow.targets = new Set([victim.object, saved, bomb]);
+  workflow.hitTargets = new Set(workflow.targets);
+  workflow.failedSaves = new Set([victim.object, bomb]);
+  workflow.saves = new Set([saved]);
+  workflow.effectTargets = new Set([victim.object, bomb]);
+  workflow.applicationTargets = new Set(workflow.targets);
+  workflow.setTargets = () => { throw new Error("must not reset resolved saves"); };
+  await service.excludeBombTarget(workflow);
+  assert.deepEqual([...workflow.targets], [victim.object, saved]);
+  assert.deepEqual([...workflow.hitTargets], [victim.object, saved]);
+  assert.deepEqual([...workflow.failedSaves], [victim.object]);
+  assert.deepEqual([...workflow.saves], [saved]);
+  assert.deepEqual([...workflow.effectTargets], [victim.object]);
+  assert.deepEqual([...workflow.applicationTargets], [victim.object, saved]);
+  assert.deepEqual(updatedTargets.at(-1), ["victim", "saved"]);
+  const previousGame = globalThis.game;
+  try {
+    globalThis.game = { user: { targets: new Set([saved, bomb]) } };
+    await service.excludeBombTarget(workflow);
+    assert.deepEqual(updatedTargets.at(-1), ["saved"]);
+  }
+  finally {
+    globalThis.game = previousGame;
+  }
+  assert.equal(await service.excludeBombTarget(makeWorkflow({ id: "unrelated" })), false);
 });
 
 test("bomb confirmed center snaps to a grid vertex even when free placement returns fractional coordinates", async () => {
