@@ -256,7 +256,7 @@ import {
 import { BuiltinStorageActorService } from "./data/builtin-storage-actor-service.js?v=1.4.360";
 import { StorageGroundPileService } from "./data/storage-ground-pile-service.js?v=1.4.360";
 import { deriveGroundPilePlacement } from "./data/storage-pile-presentation.js?v=1.4.349";
-import { StorageContainerItemService } from "./data/storage-container-item-service.js?v=1.4.360";
+import { StorageContainerItemService } from "./data/storage-container-item-service.js?v=1.4.361";
 import { isStorageJournalRow, buildStorageContainerRow } from "./data/storage-container-snapshot.js?v=1.4.317";
 import { StorageTriggerService } from "./data/storage-trigger-service.js?v=1.4.197-door-trigger-target";
 import { DoorTriggerTargetRepository, readDoorTriggerTarget } from "./data/door-trigger-target.js?v=1.4.199-door-overlay-anchor";
@@ -279,7 +279,7 @@ import {
 import {
   parseStorageDepositDragData,
   resolveStorageDepositSource
-} from "./data/storage-deposit-source.js?v=1.4.360";
+} from "./data/storage-deposit-source.js?v=1.4.361";
 import { NativeObjectDurabilityService } from "./data/native-object-durability-service.js?v=1.4.360";
 import {
   StorageCommandService,
@@ -302,7 +302,7 @@ import {
   isValidStorageRestorePortablePayload,
   isValidStorageTokenCharacterPayload,
   storageCharacterTokenUuidForClaim
-} from "./data/storage-command-service.js?v=1.4.360";
+} from "./data/storage-command-service.js?v=1.4.361";
 import { registerCombatHooks } from "./combat/hooks.js?v=1.4.359";
 import { CombatAttackService } from "./combat/attack-service.js?v=1.4.254-simple-upgrades";
 import { ImplantAutomationService } from "./combat/implant-automation-service.js";
@@ -398,7 +398,7 @@ import {
 } from "./integrations/alchemy-bomb-socket.js?v=1.4.356";
 import { registerTransportGroupDropHooks } from "./integrations/transport-group-drop.js";
 import { registerStorageTransferDropHooks } from "./integrations/storage-transfer-drop.js?v=1.4.213-furniture-orientation";
-import { registerStorageTokenDropHooks } from "./integrations/storage-token-drop.js?v=1.4.360";
+import { registerStorageTokenDropHooks } from "./integrations/storage-token-drop.js?v=1.4.361";
 import { registerStorageContainerHierarchyHooks } from "./integrations/storage-container-hierarchy.js?v=1.4.122-storage-container-cycle-repair";
 import { registerNarrativeItemCreationHooks } from "./integrations/narrative-item-creation.js?v=1.4.317";
 import { registerTransportVehicleSheetHooks } from "./integrations/transport-vehicle-sheet.js";

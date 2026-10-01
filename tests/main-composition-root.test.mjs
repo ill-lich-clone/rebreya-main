@@ -49,11 +49,11 @@ test("current release reuses the catalog icon cache graph", async () => {
     ...sharedCacheImporters.map((name) => readFile(new URL(`../scripts/data/${name}.js`, import.meta.url), "utf8"))
   ]);
   const manifest = JSON.parse(manifestSource);
-  assert.equal(manifest.version, "1.4.360");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.360.js"]);
+  assert.equal(manifest.version, "1.4.361");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.361.js"]);
   assert.doesNotMatch(manifestSource, /main-1\.4\.319\.js/u);
   assert.match(mainSource, /data\/inventory-service\.js\?v=1\.4\.327/u);
-  assert.match(mainSource, /data\/storage-command-service\.js\?v=1\.4\.360/u);
+  assert.match(mainSource, /data\/storage-command-service\.js\?v=1\.4\.361/u);
   assert.match(mainSource, /integrations\/inventory-sync\.js\?v=1\.4\.327/u);
   assert.match(syncSource, /data\/inventory-service\.js\?v=1\.4\.327/u);
   assert.match(appSource, /integrations\/inventory-sync\.js\?v=1\.4\.327/u);

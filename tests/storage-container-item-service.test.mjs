@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import { DurableMutationJournal } from "../scripts/application/durable-mutation-journal.js";
 
 import { MODULE_ID } from "../scripts/constants.js";
+import { StorageService, readStorageState } from "../scripts/data/storage-service.js";
+import { StorageCommandService } from "../scripts/data/storage-command-service.js";
 import { buildStorageContainerRow } from "../scripts/data/storage-container-snapshot.js";
 import {
   StorageContainerItemService,
@@ -512,6 +514,63 @@ test("an ordinary native dnd5e container is captured with all of its live conten
   assert.equal(snapshot.state.manualRows[0].name, "Факел");
   assert.equal(snapshot.state.manualRows[0].quantity, 4);
   assert.equal(snapshot.state.manualCoins.gp, 3);
+});
+
+test("fresh compendium and world backpacks can generate assigned loot on their first scene opening", async (t) => {
+  for (const pack of ["world.rebreya-gear", ""]) await t.test(pack || "world Item", async () => {
+    const source = { id: "backpack", uuid: pack ? `Compendium.${pack}.Item.backpack` : "Item.backpack",
+      pack, name: "Рюкзак", type: "container", system: { quantity: 1, currency: {} }, flags: {} };
+    const storageActor = { id: "fallback", flags: { [MODULE_ID]: { storage: { enabled: true } } },
+      async getTokenDocument() { return { toObject: () => ({ actorId: this.id, texture: {} }) }; } };
+    const scene = { id: "scene", tokens: { contents: [] }, async createEmbeddedDocuments(_type, documents) {
+      const token = { ...clone(documents[0]), uuid: "Scene.scene.Token.backpack", actor: storageActor,
+        async update(patch) {
+          for (const [key, value] of Object.entries(patch)) {
+            if (key === `flags.${MODULE_ID}.storage`) this.flags[MODULE_ID].storage = clone(value);
+            else this[key] = clone(value);
+          }
+        } };
+      this.tokens.contents.push(token);
+      return [token];
+    } };
+    const containers = new StorageContainerItemService({ resolveScene: () => scene, resolveActor: () => null,
+      resolveFallbackActor: () => storageActor });
+    const snapshot = await containers.captureFromItem(source);
+    const token = await containers.restoreSnapshotToScene(snapshot, { sceneId: scene.id, x: 100, y: 100, mutationId: "drop-bag" });
+    const generatedForms = [];
+    const storage = new StorageService({ generate: async form => {
+      generatedForms.push(form.itemCount);
+      return { rows: [{ rowId: "loot", name: "Самоцвет", quantity: 1 }], coins: { gp: 2 } };
+    } });
+    const commands = new StorageCommandService({ storageService: storage, inventoryService: {},
+      resolveToken: () => token, measureDistance: () => 0, isVisibleTo: () => true,
+      journalReader: { async read() { return null; } },
+      lootgenTemplateItems: { async buildSnapshot() { return { version: 2, name: "Рюкзак-4", img: "", sourceUuid: "Item.template", assignedAt: 1, form: { itemCount: 6 } }; } } });
+    await commands.configure({ tokenUuid: token.uuid, itemUuid: "Item.template", operationId: `assign-${pack}` }, { sender: { id: "gm", isGM: true } });
+    assert.equal(readStorageState(token).state, "unopened");
+    assert.equal(token.name, "Рюкзак");
+    const opened = await commands.open({ tokenUuid: token.uuid, mutationId: "first" }, { sender: { id: "gm", isGM: true } });
+    assert.equal(opened.generatedNow, true);
+    assert.equal(readStorageState(token).generatedRows[0].name, "Самоцвет");
+    assert.equal(readStorageState(token).generatedCoins.gp, 2);
+    await commands.open({ tokenUuid: token.uuid, mutationId: "again" }, { sender: { id: "gm", isGM: true } });
+    assert.deepEqual(generatedForms, [6]);
+    assert.deepEqual(source.flags, {});
+  });
+});
+
+test("capturing owned empty bags and previously opened portable catalog bags preserves empty state", async () => {
+  const actor = createActor();
+  const [owned] = await actor.createEmbeddedDocuments("Item", [{ name: "Мой рюкзак", type: "container", system: { quantity: 1, currency: {} }, flags: {} }]);
+  const service = new StorageContainerItemService();
+  assert.equal((await service.captureFromItem(owned)).state.state, "empty");
+  const [portable] = await actor.createEmbeddedDocuments("Item", [{ name: "Опустошённый рюкзак", type: "container", system: { quantity: 1, currency: {} },
+    flags: { [MODULE_ID]: { storageContainer: { containerId: "used-bag", storageKind: "bag", name: "Опустошённый рюкзак", state: { state: "empty" } } } } }]);
+  const data = portable.toObject();
+  delete data.id;
+  delete data.uuid;
+  data.pack = "world.bags";
+  assert.equal((await service.captureFromItem(data)).state.state, "empty");
 });
 
 test("scene storage snapshots preserve actor and token presentation", () => {

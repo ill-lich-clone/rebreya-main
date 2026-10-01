@@ -489,7 +489,16 @@ export class StorageContainerItemService {
     const actor = item?.parent?.documentName === "Actor" || item?.parent?.type
       ? item.parent
       : item?.actor ?? null;
-    return this.#captureItemTree(item,itemCollection(actor));
+    const snapshot = await this.#captureItemTree(item,itemCollection(actor));
+    // A bare catalog/world container is an encounter source, not an already looted physical bag.
+    if (!actor && snapshot.state.state === "empty"
+      && !readPortableStorageContainerSnapshot(item) && !readFlag(item, "lootgenComposition")) {
+      return buildStorageContainerSnapshot({
+        ...snapshot,
+        state: { ...snapshot.state, state: "unopened", displayMode: "unopened" }
+      });
+    }
+    return snapshot;
   }
 
   /** Freeze a validated detached generation graph into the canonical portable snapshot. No native documents or catalog reads. */
