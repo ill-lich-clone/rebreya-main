@@ -6,10 +6,10 @@ const RELEASED_CACHE_VERSION = "1\\.4\\.96";
 
 test("current alchemy automation release advances the module cache version", async () => {
   const manifest = JSON.parse(await readFile(new URL("../module.json", import.meta.url), "utf8"));
-  assert.equal(manifest.version, "1.4.359");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.359.js"]);
+  assert.equal(manifest.version, "1.4.360");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.360.js"]);
   assert.equal(
-    (await readFile(new URL("../scripts/main-1.4.359.js", import.meta.url), "utf8")).trim(),
+    (await readFile(new URL("../scripts/main-1.4.360.js", import.meta.url), "utf8")).trim(),
     'import "./main.js";'
   );
 });
@@ -101,21 +101,18 @@ test("module manifest loads an unpinned canonical entrypoint for page-refresh up
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const [entrypoint] = manifest.esmodules;
 
-  assert.equal(manifest.version, "1.4.359");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.359.js"]);
+  assert.equal(manifest.version, "1.4.360");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.360.js"]);
   assert.doesNotMatch(entrypoint, /[?#]/u);
 
   const entrypointSource = await readFile(new URL(entrypoint, manifestUrl), "utf8");
   assert.equal(entrypointSource, 'import "./main.js";\n');
 });
 
-test("Lootgen window import reuses the released stylesheet cache version", async () => {
+test("Lootgen window import uses the current template editing cache version", async () => {
   const entrypointSource = await readCanonicalEntrypointSource();
 
-  assert.match(entrypointSource, new RegExp(
-    `lootgen-app\\.js\\?v=\\$\\{encodeURIComponent\\(MODULE_STYLE_VERSION\\)\\}`,
-    "u"
-  ));
+  assert.match(entrypointSource, /lootgen-app\.js\?v=1\.4\.360/u);
   assert.match(entrypointSource, /const MODULE_STYLE_VERSION = "1\.4\.322";/u);
 });
 
@@ -165,7 +162,7 @@ test("canonical entrypoint cache-busts the player-list inventory token launcher"
 
   assert.match(
     entrypointSource,
-    /hooks\.js\?v=1\.4\.272/u
+    /hooks\.js\?v=1\.4\.360/u
   );
   assert.match(
     entrypointSource,
@@ -326,26 +323,26 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
     "data/inventory-service.js?v=1.4.327",
     "data/inventory-ingress-descriptor.js?v=1.4.268",
     "data/durability-service.js?v=1.4.154-corpse-storage-broken-name",
-    "data/corpse-storage-materializer.js?v=1.4.195-storage-administration",
-    "data/native-object-durability-service.js?v=1.4.153-corpse-creature",
+    "data/corpse-storage-materializer.js?v=1.4.360",
+    "data/native-object-durability-service.js?v=1.4.360",
     "data/crafting-service.js?v=1.4.96-craft-calendar",
     "data/craft-downtime-service.js?v=1.4.96-craft-calendar",
     "data/calendar-transition-coordinator.js?v=1.4.96-craft-calendar",
-    "integrations/durability-hooks.js?v=1.4.153-corpse-creature",
+    "integrations/durability-hooks.js?v=1.4.360",
     "data/storage-trigger-service.js?v=1.4.197-door-trigger-target",
-    "integrations/storage-token-hooks.js?v=1.4.197-door-trigger-target",
+    "integrations/storage-token-hooks.js?v=1.4.360",
     "integrations/inventory-sync.js?v=1.4.327",
     "data/gear-compendium.js?v=1.4.330",
     "data/storage-open-sound-service.js?v=1.4.145-coin-icons-storage-sound",
-    "data/storage-service.js?v=1.4.270",
+    "data/storage-service.js?v=1.4.360",
     "data/storage-access.js?v=1.4.197-door-trigger-target",
-    "data/builtin-storage-actor-service.js?v=1.4.216-storage-token-vision",
-    "data/storage-ground-pile-service.js?v=1.4.349",
-    "data/storage-container-item-service.js?v=1.4.322",
-    "data/storage-deposit-source.js?v=1.4.322",
-    "data/storage-command-service.js?v=1.4.322",
+    "data/builtin-storage-actor-service.js?v=1.4.360",
+    "data/storage-ground-pile-service.js?v=1.4.360",
+    "data/storage-container-item-service.js?v=1.4.360",
+    "data/storage-deposit-source.js?v=1.4.360",
+    "data/storage-command-service.js?v=1.4.360",
     "integrations/storage-transfer-drop.js?v=1.4.213-furniture-orientation",
-    "integrations/storage-token-drop.js?v=1.4.322"
+    "integrations/storage-token-drop.js?v=1.4.360"
   ]) {
     assert.equal(canonicalSource.includes(importPath), true, importPath);
   }
@@ -356,12 +353,12 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
     "durability rule changes need their own browser module cache key"
   );
   assert.equal(
-    durabilityHooksSource.includes("data/storage-object-kind.js?v=1.4.153-corpse-creature"),
+    durabilityHooksSource.includes("data/storage-object-kind.js?v=1.4.360"),
     true,
     "corpse object classification changes need their own browser module cache key"
   );
   assert.equal(
-    nativeObjectDurabilitySource.includes("storage-object-kind.js?v=1.4.153-corpse-creature"),
+    nativeObjectDurabilitySource.includes("storage-object-kind.js?v=1.4.360"),
     true,
     "native object resolution must share the corpse-safe classifier"
   );
@@ -379,22 +376,22 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
     "ground-pile presentation changes need their own browser module cache key"
   );
   assert.equal(
-    canonicalSource.includes("storage-ground-pile-service.js?v=1.4.349"),
+    canonicalSource.includes("storage-ground-pile-service.js?v=1.4.360"),
     true,
     "ground-pile token layout changes need their own browser module cache key"
   );
-  const corpseTargetCacheKey = "storage-corpse-target.js?v=1.4.195-storage-corpse-target";
+  const corpseTargetCacheKey = "storage-corpse-target.js?v=1.4.360";
   for (const source of [canonicalSource, storageServiceSource, storageCommandSource, materializerSource, storageTokenHooksSource]) {
     assert.equal(source.includes(corpseTargetCacheKey), true, "corpse target owners must share one browser module URL");
   }
 
   assert.match(
     canonicalSource,
-    /import\(`\.\/ui\/lootgen-app\.js\?v=\$\{encodeURIComponent\(MODULE_STYLE_VERSION\)\}`\)/u
+    /import\("\.\/ui\/lootgen-app\.js\?v=1\.4\.360"\)/u
   );
   assert.match(
     canonicalSource,
-    /storage-app\.js\?v=\$\{encodeURIComponent\(`\$\{moduleVersion\}-journal-record-drop`\)\}/u
+    /storage-app\.js\?v=1\.4\.360/u
   );
   assert.match(storageCommandSource, /journal-record-item\.js\?v=1\.4\.217-journal-record-items/u);
   assert.match(storageAppSource, /storage-journal-viewer\.js\?v=1\.4\.221-journal-readonly-dialog/u);
@@ -410,7 +407,7 @@ test("module keeps recent published entrypoint URLs as canonical compatibility f
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
 
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.359.js"]);
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.360.js"]);
 
   for (const fileName of ["main-1.4.98.js", "main-1.4.99.js", "main-1.4.100.js"]) {
     const forwarderSource = await readFile(new URL(`../scripts/${fileName}`, import.meta.url), "utf8");

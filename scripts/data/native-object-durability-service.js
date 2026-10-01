@@ -5,8 +5,8 @@ import {
   markDurabilityBroken,
   markDurabilityDestroyed
 } from "./durability-rules.js";
-import { storageObjectKind } from "./storage-object-kind.js?v=1.4.153-corpse-creature";
-import { readStorageState } from "./storage-service.js";
+import { storageObjectKind } from "./storage-object-kind.js?v=1.4.360";
+import { readStorageState } from "./storage-service.js?v=1.4.360";
 
 export const STORAGE_OBJECT_DURABILITY_FLAG = "objectDurability";
 

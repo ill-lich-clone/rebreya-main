@@ -1,5 +1,5 @@
 import { MODULE_ID } from "../constants.js";
-import { storageObjectKind } from "../data/storage-object-kind.js";
+import { storageObjectKind } from "../data/storage-object-kind.js?v=1.4.360";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 
 const LEGACY_FRAME_NAME_PREFIX = `${MODULE_ID}.ground-pile-frame`;

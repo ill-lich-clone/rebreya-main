@@ -1,4 +1,4 @@
-import { buildStorageCoinRow } from "../data/storage-service.js";
+import { buildStorageCoinRow } from "../data/storage-service.js?v=1.4.360";
 import { MODULE_ID } from "../constants.js";
 import { getAppElement } from "../ui.js";
 import { AnchoredOverlay, bindAnchoredTooltips } from "./anchored-overlay.js?v=1.4.247-anchored-overlays";
@@ -176,6 +176,16 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
   get title() {
     return clean(this.snapshot?.name) || clean(this.options?.window?.title) || "Сундук";
+  }
+
+  prepareOpen({ path = [], characterTokenUuid = "" } = {}) {
+    this.snapshotRequest += 1;
+    this.snapshot = null;
+    this.activeRowId = "";
+    this.path = (Array.isArray(path) ? path : []).map(clean).filter(Boolean).slice(0, 8);
+    this.pathNames = [];
+    this.characterTokenUuid = clean(characterTokenUuid);
+    this.rowPopover?.close();
   }
 
   #pathRequest() {
@@ -503,8 +513,7 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   async _onClose(options) {
-    this.snapshotRequest += 1;
-    this.activeRowId = "";
+    this.prepareOpen({ characterTokenUuid: this.characterTokenUuid });
     this.rowPopover?.destroy();
     this.rowPopover = null;
     this.renderListenersAbortController?.abort();
@@ -585,7 +594,11 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
     if (!row || row.rowKind !== "container" || !row.container) {
       throw new Error("Вложенный контейнер уже недоступен.");
     }
-    this.path.push(clean(row.rowId));
+    const nextPath = [...this.path, clean(row.rowId)];
+    if (!this.configure) {
+      await this.moduleApi.openStorage(this.tokenUuid, { ...this.#pathRequest(), path: nextPath });
+    }
+    this.path = nextPath;
     this.pathNames.push(clean(row.name) || "Контейнер");
     this.activeRowId = "";
     this.snapshot = null;

@@ -3,13 +3,13 @@ import {
   CHEST_OBJECT_DURABILITY,
   ensureStorageObjectDurability,
   readStorageObjectDurability
-} from "../data/native-object-durability-service.js?v=1.4.153-corpse-creature";
+} from "../data/native-object-durability-service.js?v=1.4.360";
 import { isDurabilityEligible } from "../data/durability-rules.js";
 import {
   isMaterializedCorpseStorageState,
   storageObjectKind
-} from "../data/storage-object-kind.js?v=1.4.153-corpse-creature";
-import { readStorageState, STORAGE_UPDATED_HOOK } from "../data/storage-service.js";
+} from "../data/storage-object-kind.js?v=1.4.360";
+import { readStorageState, STORAGE_UPDATED_HOOK } from "../data/storage-service.js?v=1.4.360";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 import { isNaturalWeapon } from "./held-items.js?v=1.4.96-npc-held-natural";
 

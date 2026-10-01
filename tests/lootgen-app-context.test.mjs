@@ -200,6 +200,21 @@ test("Lootgen template editing loads and saves the exact Item UUID", async () =>
   assert.equal(saved[0].itemUuid, template.uuid);
 });
 
+test("editing a copied compendium template continues saving the returned world Item", async () => {
+  const saved = [];
+  const app = new LootgenApp({
+    saveLootgenTemplate: async payload => {
+      saved.push(payload);
+      return { id: "copy", uuid: "Item.copy", name: payload.name, form: payload.form };
+    }
+  }, { templateUuid: "Compendium.world.templates.Item.original" });
+  await app.saveTemplateFromName("Копия");
+  await app.saveTemplateFromName("Изменённая копия");
+  assert.equal(saved[0].itemUuid, "Compendium.world.templates.Item.original");
+  assert.equal(saved[1].itemUuid, "Item.copy");
+  assert.equal(app.selectedTemplateId, "copy");
+});
+
 test("lootgen take-all delegates one batch instead of looping over row grants", () => {
   const source = readFileSync(new URL("../scripts/ui/lootgen-app.js", import.meta.url), "utf8");
   const body = source.match(/async #takeAllToInventory\(\) \{(?<body>[\s\S]*?)\n  \}\n\n  async #sendResultToChat/u)?.groups?.body ?? "";

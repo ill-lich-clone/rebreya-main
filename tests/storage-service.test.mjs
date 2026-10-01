@@ -958,6 +958,74 @@ test("depositing an equivalent item merges its stack and leaves claimed rows unt
   assert.equal(state.manualRows[1].itemData.system.quantity, 5);
 });
 
+test("storage stacks equivalent generated items despite roll identity and quantity metadata", async () => {
+  const service = new StorageService();
+  const token = createStorageToken("generated-stack");
+  const row = (index, quantity) => ({ rowId: `row-${index}`, rowIndex: index, itemId: `doc-${index}`, itemUuid: `Item.doc-${index}`,
+    stackKey: "gear:arrow", sourceId: "arrow", name: "Стрела", quantity, totalValue: 10 * quantity,
+    descriptor: { version: 2, instanceKey: `roll-${index}`, quantity, upgrades: [], container: null },
+    composition: { version: 2, instanceKey: `roll-${index}`, upgrades: [] },
+    itemData: { _id: `doc-${index}`, name: "Стрела", system: { quantity },
+      flags: { "rebreya-main": { lootgenChat: { lootId: `loot-${index}`, rowId: `row-${index}`, rowIndex: index } } } }
+  });
+  await service.configure(token, { state: "opened", manualRows: [row(0, 1)] });
+  const result = await service.depositRow(token, row(1, 2));
+  assert.equal(result.merged, true);
+  const rows = readStorageState(token).manualRows;
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].quantity, 3);
+  assert.equal(rows[0].itemData.system.quantity, 3);
+});
+
+test("storage deposits preserve distinct durability, charges and upgrades from the same source", async (t) => {
+  const original = {
+    rowId: "first", stackKey: "gear:sword", sourceId: "sword", name: "Меч", quantity: 1,
+    itemData: { name: "Меч", type: "weapon", system: { quantity: 1, uses: { spent: 0, max: 3 } },
+      flags: { "rebreya-main": { durability: { state: "intact", hp: { value: 10, max: 10 } } } } }
+  };
+  for (const [name, change] of [
+    ["broken", row => { row.itemData.flags["rebreya-main"].durability.state = "broken"; }],
+    ["damaged", row => { row.itemData.flags["rebreya-main"].durability.hp.value = 4; }],
+    ["spent charges", row => { row.itemData.system.uses.spent = 2; }],
+    ["upgrade", row => { row.itemData.flags["rebreya-main"].runtimeItemGraph = { nodes: [{ _id: "host" }, { _id: "upgrade" }] }; }]
+  ]) await t.test(name, async () => {
+    const service = new StorageService();
+    const token = createStorageToken(name);
+    await service.configure(token, { state: "opened", manualRows: [original] });
+    const incoming = structuredClone(original);
+    incoming.rowId = "second";
+    change(incoming);
+    await service.depositRow(token, incoming, { quantity: 1 });
+    const rows = readStorageState(token).manualRows;
+    assert.equal(rows.length, 2);
+    assert.deepEqual(rows.map(row => row.quantity), [1, 1]);
+    assert.deepEqual(rows[1].itemData, incoming.itemData);
+  });
+});
+
+test("gameplay deposits leave first-open generation pending in root and nested storage", async () => {
+  const calls = [];
+  const service = new StorageService({ generate: async form => {
+    calls.push(form.itemCount);
+    return { rows: [{ rowId: "generated", name: "Самоцвет", quantity: 1 }], coins: { gp: 2 } };
+  } });
+  for (const nested of [false, true]) {
+    const token = createStorageToken(`first-open-${nested}`);
+    const initial = { state: "unopened", mixGeneratedLoot: true, template: { name: "Сокровище", form: { itemCount: 3 } } };
+    const path = nested ? ["bag-row"] : [];
+    await service.configure(token, nested
+      ? { state: "opened", manualRows: [buildStorageContainerRow({ containerId: "bag", name: "Сумка", state: initial }, { rowId: "bag-row" })] }
+      : initial);
+    await service.depositRow(token, { rowId: "torch", name: "Факел", quantity: 1 }, { quantity: 1, path });
+    assert.equal(readStorageStateAtPath(token, path).state, "unopened");
+    const result = await service.open(token, { path });
+    assert.deepEqual(result.rows.map(row => row.rowId), ["torch", "generated"]);
+    assert.equal(result.coins.gp, 2);
+    await service.open(token, { path });
+  }
+  assert.deepEqual(calls, [3, 3]);
+});
+
 test("storage deposits reject invalid quantities without changing state", async () => {
   const service = new StorageService();
   const token = createStorageToken("deposit-invalid");

@@ -1,6 +1,6 @@
 ﻿import { MODULE_ID, SETTINGS_KEYS } from "./constants.js";
 
-import { isNativeStorageObject } from "./data/storage-object-kind.js";
+import { isNativeStorageObject } from "./data/storage-object-kind.js?v=1.4.360";
 import { PanelToolRegistry } from "./ui/panel-tool-registry.js";
 
 let bg3HotbarSuppressionHookRegistered = false;

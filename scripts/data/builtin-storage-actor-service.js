@@ -3,14 +3,14 @@ import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 import {
   BUILTIN_STORAGE_PRESETS,
   GROUND_PILE_STORAGE_PRESET
-} from "./builtin-storage-presets.js";
+} from "./builtin-storage-presets.js?v=1.4.360";
 import {
   CHEST_OBJECT_DURABILITY,
   normalizeStorageObjectDurability,
   STORAGE_OBJECT_DURABILITY_FLAG
-} from "./native-object-durability-service.js";
-import { storageObjectKind } from "./storage-object-kind.js?v=1.4.216-storage-token-vision";
-import { buildStorageTokenState } from "./storage-service.js";
+} from "./native-object-durability-service.js?v=1.4.360";
+import { storageObjectKind } from "./storage-object-kind.js?v=1.4.360";
+import { buildStorageTokenState } from "./storage-service.js?v=1.4.360";
 
 export const BUILTIN_STORAGE_FOLDER_NAME = "Хранилища";
 export const BUILTIN_STORAGE_PRESET_FLAG = "builtinStoragePreset";

@@ -105,7 +105,7 @@ function npcToken({ id = "corpse", hp = 0, items = [], actorId = "npc" } = {}) {
   };
 }
 
-test("corpse target contract keeps a complete materialized NPC accessible after HP drift", () => {
+test("healing a materialized NPC disables corpse storage without discarding its receipt", () => {
   assert.equal(typeof corpseStorage.isCorpseStorageTarget, "function");
   const token = npcToken({ hp: 7 });
   token.flags = {
@@ -116,8 +116,23 @@ test("corpse target contract keeps a complete materialized NPC accessible after 
     }
   };
 
+  assert.equal(corpseStorage.isCorpseStorageTarget(token), false);
+  token.actor.system.attributes.hp.value = 0;
   assert.equal(corpseStorage.isCorpseStorageTarget(token), true);
+  assert.equal(token.flags[MODULE_ID].storage.corpseMaterialization.status, "complete");
   assert.equal(corpseStorage.isCorpseStorageTarget(npcToken({ hp: 7 })), false);
+});
+
+test("unconscious and stable NPCs at zero HP are not automatically treated as corpses", () => {
+  for (const status of ["unconscious", "stable"]) {
+    const token = npcToken({ hp: 0 });
+    token.actor.statuses = new Set([status]);
+    assert.equal(isDeadNpcStorageTarget(token), false, status);
+    token.flags = { [MODULE_ID]: { storage: { corpseMaterialization: { version: 1, status: "complete" } } } };
+    assert.equal(corpseStorage.isCorpseStorageTarget(token), false, status);
+    token.actor.statuses.add("dead");
+    assert.equal(isDeadNpcStorageTarget(token), true);
+  }
 });
 
 const CHAMPION_GEAR = [

@@ -1,5 +1,5 @@
 import { MODULE_ID } from "../constants.js";
-import { isMaterializedCorpseStorageState } from "./storage-corpse-target.js?v=1.4.195-storage-corpse-target";
+import { isMaterializedCorpseStorageState } from "./storage-corpse-target.js?v=1.4.360";
 
 export { isMaterializedCorpseStorageState };
 

@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { MODULE_ID } from "../scripts/constants.js";
 import { createOverlayDom } from "./helpers/overlay-dom.mjs";
+import { StorageService, readStorageStateAtPath } from "../scripts/data/storage-service.js";
+import { buildStorageContainerRow } from "../scripts/data/storage-container-snapshot.js";
 
 class FakeApplicationV2 {
   constructor(options = {}) {
@@ -241,6 +243,7 @@ function createApp({
   const triggerResetCalls = [];
   const configCalls = [];
   const moduleApi = {
+    async openStorage() {},
     async getStorageSnapshot(...args) {
       if (getStorageSnapshot) return getStorageSnapshot(...args);
       return {
@@ -1299,8 +1302,10 @@ test("storage portal retains canonical actions and resolves the replacement row 
   assert.equal(closeRenders,0,'closing preserves the focused row DOM');
   assert.equal(dom.document.activeElement,currentAnchor);
   assert.equal(currentAnchor.getAttribute('aria-expanded'),'false');
+  const previousSnapshot = app.snapshot;
   await app._onClose({}); assert.equal(dom.document.body.children.length,1);
-  assert.equal(app.snapshot.rows.length,1,'closing does not remove rows');
+  assert.equal(previousSnapshot.rows.length,1,'closing does not remove stored rows');
+  assert.equal(app.snapshot, null, 'closing invalidates the view cache');
 });
 
 test("storage popover keeps a stable row anchor without grid-index geometry", async () => {
@@ -1403,6 +1408,94 @@ test("container title opens a nested path and breadcrumbs return to the root", a
   await listeners.get("click")({ target: control("storage-breadcrumb", "", "0") });
   assert.deepEqual(app.path, []);
   assert.equal(app.snapshot.name, "Сундук");
+});
+
+test("entering unopened nested storage executes its first open before reading contents", async () => {
+  let generationCalls = 0;
+  const service = new StorageService({ generate: async () => {
+    generationCalls += 1;
+    return { rows: [{ rowId: "gem", name: "Самоцвет", quantity: 1 }], coins: {} };
+  } });
+  const token = {
+    id: "root", name: "Сундук", uuid: "Scene.scene.Token.chest", flags: {},
+    getFlag(scope, key) { return this.flags[scope]?.[key]; },
+    async update(patch) {
+      if (patch[`flags.${MODULE_ID}.storage`]) this.flags[MODULE_ID] = { storage: structuredClone(patch[`flags.${MODULE_ID}.storage`]) };
+      return this;
+    }
+  };
+  await service.configure(token, { state: "opened", manualRows: [buildStorageContainerRow({
+    containerId: "bag", name: "Сумка", state: { state: "unopened" }
+  }, { rowId: "bag-row" })] });
+  const { app } = createApp({ configure: false, appOptions: { characterTokenUuid: "Scene.scene.Token.hero" },
+    getStorageSnapshot: async (_uuid, request = {}) => {
+      const state = readStorageStateAtPath(token, request.path);
+      return { name: state.baseName, state: state.state, rows: [...state.manualRows, ...state.generatedRows], coins: {} };
+    }
+  });
+  const requests = [];
+  app.moduleApi.openStorage = async (uuid, request) => {
+    requests.push({ uuid, ...request });
+    return service.open(token, request);
+  };
+  const listeners = new Map();
+  app.element = new class extends FakeElement { addEventListener(name, callback) { listeners.set(name, callback); } }();
+  await app._prepareContext();
+  await app._onRender({}, {});
+  const control = { dataset: { action: "storage-open-container", rowId: "bag-row" }, closest() { return this; } };
+  await listeners.get("click")({ target: control });
+  assert.equal(generationCalls, 1);
+  assert.equal(app.snapshot.state, "opened");
+  assert.deepEqual(app.snapshot.rows.map(row => row.rowId), ["gem"]);
+  assert.deepEqual(requests, [{ uuid: token.uuid, path: ["bag-row"], characterTokenUuid: "Scene.scene.Token.hero" }]);
+});
+
+test("a denied nested open keeps the current breadcrumb and snapshot", async () => {
+  const root = { name: "Сундук", state: "opened", rows: [{ rowKind: "container", rowId: "bag", name: "Сумка", quantity: 1, container: { containerId: "bag" } }], coins: {} };
+  const { app } = createApp({ configure: false, getStorageSnapshot: async () => root });
+  app.moduleApi.openStorage = async () => { throw new Error("Заперто"); };
+  const listeners = new Map();
+  app.element = new class extends FakeElement { addEventListener(name, callback) { listeners.set(name, callback); } }();
+  await app._prepareContext();
+  await app._onRender({}, {});
+  const previous = console.error;
+  try {
+    console.error = () => {};
+    const control = { dataset: { action: "storage-open-container", rowId: "bag" }, closest() { return this; } };
+    await listeners.get("click")({ target: control });
+    assert.deepEqual(app.path, []);
+    assert.equal(app.snapshot.name, "Сундук");
+  } finally { console.error = previous; }
+});
+
+test("reopening a closed storage window fetches contents changed while it was closed", async () => {
+  let rows = [{ rowId: "old", name: "Меч", quantity: 1 }];
+  let reads = 0;
+  const { app } = createApp({ getStorageSnapshot: async () => {
+    reads += 1;
+    return { name: "Сундук", state: "opened", rows: structuredClone(rows), coins: {} };
+  } });
+  await app._prepareContext();
+  app.path = ["bag"];
+  app.pathNames = ["Сумка"];
+  await app._onClose({});
+  rows = [];
+  await app._prepareContext();
+  assert.equal(reads, 2);
+  assert.deepEqual(app.snapshot.rows, []);
+  assert.deepEqual(app.path, []);
+});
+
+test("an explicit reopen resets a cached window to its requested path and character", async () => {
+  const { app } = createApp();
+  await app._prepareContext();
+  app.path = ["old-bag"];
+  app.pathNames = ["Старая сумка"];
+  app.prepareOpen({ path: ["new-bag"], characterTokenUuid: "Scene.scene.Token.other" });
+  assert.deepEqual(app.path, ["new-bag"]);
+  assert.deepEqual(app.pathNames, []);
+  assert.equal(app.characterTokenUuid, "Scene.scene.Token.other");
+  assert.equal(app.snapshot, null);
 });
 
 test("GM configuration drop routes an item through the authoritative deposit API", async () => {

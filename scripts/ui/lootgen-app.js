@@ -430,11 +430,17 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
     if (typeof this.moduleApi.saveLootgenTemplate !== "function") {
       throw new Error("Текущая версия модуля не поддерживает шаблоны Lootgen.");
     }
-    return this.moduleApi.saveLootgenTemplate({
+    const saved = await this.moduleApi.saveLootgenTemplate({
       ...(this.editingTemplateUuid ? { itemUuid: this.editingTemplateUuid } : {}),
       name,
       form: this.#getFormSnapshot()
     });
+    if (this.editingTemplateUuid && saved?.uuid) {
+      this.editingTemplateUuid = saved.uuid;
+      this.editingTemplateLoaded = true;
+      this.selectedTemplateId = saved.id;
+    }
+    return saved;
   }
 
   async removeTemplateById(templateId, {

@@ -1,19 +1,19 @@
-import { buildStorageCoinRow, storageCoinRowDenomination, pendingStorageCoinTransfer, assertStorageCoinTransferAvailable } from "./storage-service.js";
+import { buildStorageCoinRow, storageCoinRowDenomination, pendingStorageCoinTransfer, assertStorageCoinTransferAvailable } from "./storage-service.js?v=1.4.360";
 import { runDisarmDrop } from "../application/disarm-drop-workflow.js?v=1.4.252";
 import {
   isStorageActor,
   readStorageCoinDenomination,
   readStorageState,
   readStorageStateAtPath
-} from "./storage-service.js?v=1.4.270";
-import { resolveStorageDepositSource } from "./storage-deposit-source.js?v=1.4.322";
+} from "./storage-service.js?v=1.4.360";
+import { resolveStorageDepositSource } from "./storage-deposit-source.js?v=1.4.360";
 import { isStorageContainerRow, isStorageJournalRow } from "./storage-container-snapshot.js?v=1.4.317";
 import { MODULE_ID } from "../constants.js";
 import { escapeFoundryHtml } from "../shared/foundry-values.js";
 import {
   isCorpseStorageTarget,
   isMaterializedCorpseStorageState
-} from "./storage-corpse-target.js?v=1.4.195-storage-corpse-target";
+} from "./storage-corpse-target.js?v=1.4.360";
 import {
   MAX_STORAGE_DISTANCE_FEET,
   STORAGE_ACCESS_DISTANCE_ERROR_CODE,
@@ -25,7 +25,7 @@ import {
   TriggerTargetCoordinator,
   createTriggerTargetRef
 } from "../application/trigger-target-coordinator.js?v=1.4.197-door-trigger-target";
-import { StorageTriggerTargetAdapter } from "./storage-trigger-target-adapter.js?v=1.4.197-door-trigger-target";
+import { StorageTriggerTargetAdapter } from "./storage-trigger-target-adapter.js?v=1.4.360";
 import { isGroundPileCardinalRotation } from "./storage-ground-pile-layout.js?v=1.4.215-container-rotation";
 import {
   buildJournalRecordItemData,

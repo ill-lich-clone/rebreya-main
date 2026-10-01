@@ -253,7 +253,7 @@ test("corpse pointer handlers recheck HP and living unmarked NPCs never open", a
   assert.equal(harness.tokenListeners.has("pointertap"), false);
 });
 
-test("materialized corpse pointer remains available after a stale positive HP projection", async () => {
+test("materialized NPCs with restored HP do not receive corpse pointer actions", async () => {
   const harness = createHarness({ isGM: true });
   harness.storageToken.actor.flags = {};
   harness.storageToken.actor.system = { attributes: { hp: { value: 7 } } };
@@ -267,10 +267,8 @@ test("materialized corpse pointer remains available after a stale positive HP pr
 
   harness.listeners.get("drawToken")(harness.storageToken);
   const handler = harness.tokenListeners.get("pointertap");
-  assert.equal(typeof handler, "function");
-  await handler({ button: 0 });
-
-  assert.deepEqual(harness.shown[0].map((action) => action.label), ["Открыть", "Настроить"]);
+  assert.equal(handler, undefined);
+  assert.deepEqual(harness.shown, []);
 });
 
 test("a distant player gets the existing local feedback instead of opening a corpse", async () => {

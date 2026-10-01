@@ -1,5 +1,5 @@
 ﻿import { DATA_SOURCE_MODES, DEFAULT_DISPLAY_PRECISION, MODULE_ID, SETTINGS_KEYS } from "./constants.js?v=1.4.271";
-import { refreshEconomyLauncher } from "./hooks.js";
+import { refreshEconomyLauncher } from "./hooks.js?v=1.4.360";
 export {
   SOCKET_EVENT_SET_SETTING,
   SOCKET_EVENT_SET_SETTING_RESULT,

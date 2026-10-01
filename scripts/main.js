@@ -5,7 +5,7 @@ import { SCENE_ACTIVITY_COMMANDS, isValidSceneActivityPayload, authorizeSceneAct
 import { LootgenGeneratedResultService, LOOTGEN_PREPARE_RESULT_COMMAND, isValidPrepareLootgenPayload } from "./application/lootgen-generated-result-service.js?v=1.4.268";
 import { buildLootgenGeneratedState, assertLootgenCatalogCurrent } from "./application/lootgen-generated-state.js?v=1.4.317";
 import { normalizeLootgenForm } from "./data/lootgen-generator.js?v=1.4.317";
-import { storageCoinRowDenomination } from "./data/storage-service.js";
+import { storageCoinRowDenomination } from "./data/storage-service.js?v=1.4.360";
 // @rebreya-role canonical-composition-root
 import { LootgenSourceCatalog } from "./data/lootgen-source-catalog.js?v=1.4.317";
 import { MODULE_ID, MODULE_TITLE, SETTINGS_KEYS } from "./constants.js";
@@ -228,41 +228,41 @@ import {
 import { StorageTriggerPromptBroker } from "./infrastructure/foundry/storage-trigger-prompt-broker.js";
 import { UiRefreshCoordinator } from "./infrastructure/ui/ui-refresh-coordinator.js";
 import { GlobalEventsService } from "./data/global-events-service.js";
-import { LootgenTemplateItemService } from "./data/lootgen-template-item.js";
+import { LootgenTemplateItemService } from "./data/lootgen-template-item.js?v=1.4.360";
 import {
   registerLootgenTemplateItemSheet,
   registerLootgenTemplateItemType
-} from "./integrations/lootgen-template-item-type.js";
+} from "./integrations/lootgen-template-item-type.js?v=1.4.360";
 import {
   StorageService,
   isStorageActor,
   readStorageState,
   readStorageStateAtPath
-} from "./data/storage-service.js?v=1.4.270";
+} from "./data/storage-service.js?v=1.4.360";
 import {
   CorpseStorageMaterializer
-} from "./data/corpse-storage-materializer.js?v=1.4.195-storage-administration";
+} from "./data/corpse-storage-materializer.js?v=1.4.360";
 import {
   isCorpseStorageTarget,
   isDeadNpcStorageTarget,
   isMaterializedCorpseStorageState
-} from "./data/storage-corpse-target.js?v=1.4.195-storage-corpse-target";
+} from "./data/storage-corpse-target.js?v=1.4.360";
 import { StorageOpenSoundService } from "./data/storage-open-sound-service.js?v=1.4.145-coin-icons-storage-sound";
 import {
   isStorageTokenVisible,
   measureStoragePointDistance,
   measureStorageTokenDistance
 } from "./data/storage-access.js?v=1.4.197-door-trigger-target";
-import { BuiltinStorageActorService } from "./data/builtin-storage-actor-service.js?v=1.4.216-storage-token-vision";
-import { StorageGroundPileService } from "./data/storage-ground-pile-service.js?v=1.4.349";
+import { BuiltinStorageActorService } from "./data/builtin-storage-actor-service.js?v=1.4.360";
+import { StorageGroundPileService } from "./data/storage-ground-pile-service.js?v=1.4.360";
 import { deriveGroundPilePlacement } from "./data/storage-pile-presentation.js?v=1.4.349";
-import { StorageContainerItemService } from "./data/storage-container-item-service.js?v=1.4.322";
+import { StorageContainerItemService } from "./data/storage-container-item-service.js?v=1.4.360";
 import { isStorageJournalRow, buildStorageContainerRow } from "./data/storage-container-snapshot.js?v=1.4.317";
 import { StorageTriggerService } from "./data/storage-trigger-service.js?v=1.4.197-door-trigger-target";
 import { DoorTriggerTargetRepository, readDoorTriggerTarget } from "./data/door-trigger-target.js?v=1.4.199-door-overlay-anchor";
 import { measureDoorDistanceFeet, preflightDoorAccess } from "./data/door-access.js?v=1.4.197-door-trigger-target";
 import { TriggerTargetCoordinator } from "./application/trigger-target-coordinator.js?v=1.4.197-door-trigger-target";
-import { StorageTriggerTargetAdapter } from "./data/storage-trigger-target-adapter.js?v=1.4.197-door-trigger-target";
+import { StorageTriggerTargetAdapter } from "./data/storage-trigger-target-adapter.js?v=1.4.360";
 import { DoorTriggerTargetAdapter } from "./data/door-trigger-target-adapter.js?v=1.4.199-door-overlay-anchor";
 import {
   DoorTriggerCommandService,
@@ -279,8 +279,8 @@ import {
 import {
   parseStorageDepositDragData,
   resolveStorageDepositSource
-} from "./data/storage-deposit-source.js?v=1.4.322";
-import { NativeObjectDurabilityService } from "./data/native-object-durability-service.js?v=1.4.153-corpse-creature";
+} from "./data/storage-deposit-source.js?v=1.4.360";
+import { NativeObjectDurabilityService } from "./data/native-object-durability-service.js?v=1.4.360";
 import {
   StorageCommandService,
   isValidStorageClaimAllPayload,
@@ -302,7 +302,7 @@ import {
   isValidStorageRestorePortablePayload,
   isValidStorageTokenCharacterPayload,
   storageCharacterTokenUuidForClaim
-} from "./data/storage-command-service.js?v=1.4.322";
+} from "./data/storage-command-service.js?v=1.4.360";
 import { registerCombatHooks } from "./combat/hooks.js?v=1.4.359";
 import { CombatAttackService } from "./combat/attack-service.js?v=1.4.254-simple-upgrades";
 import { ImplantAutomationService } from "./combat/implant-automation-service.js";
@@ -357,20 +357,20 @@ import {
   refreshPlayerInventoryQuickButton,
   registerSceneControlsHook,
   unregisterExternalPanelTool
-} from "./hooks.js?v=1.4.272";
+} from "./hooks.js?v=1.4.360";
 import {
   extendDnd5eItemTypes,
   registerDnd5eSheetExtensions,
   registerRebreyaWeaponBaseItemsFromGearPack
 } from "./integrations/dnd5e-sheet-extensions.js?v=1.4.338-hero-doll-menu";
-import { registerHeldShieldArmorClassPatch } from "./integrations/held-shield-ac.js?v=1.4.96";
+import { registerHeldShieldArmorClassPatch } from "./integrations/held-shield-ac.js?v=1.4.360";
 import { registerTravelMapHooks } from "./integrations/travel-map-hooks.js?v=1.4.141-auraeffects-inactive-scene";
 import {
   patchDurabilityItemEffectSuppression,
   reconcileBrokenEquippedArmor,
   reconcileNativeObjectDurability,
   registerDurabilityHooks
-} from "./integrations/durability-hooks.js?v=1.4.153-corpse-creature";
+} from "./integrations/durability-hooks.js?v=1.4.360";
 import { patchEffectMacroCombatHooks } from "./integrations/effectmacro-compat.js";
 import { patchSmAirshipRenderSettingsHook } from "./integrations/sm-airship-compat.js";
 import { patchDnd5eTooltipRaceGuard } from "./integrations/dnd5e-tooltip-compat.js?v=1.4.215-tooltip-race";
@@ -379,7 +379,7 @@ import { runMapObjectTokenMacro } from "./integrations/map-object-token-macro.js
 import { refreshSmallTimeDateDisplay, registerSmallTimeIntegration, syncSmallTimeToCalendarTime } from "./integrations/smalltime-compat.js";
 import { registerRationFoodConversionHook } from "./integrations/ration-food-conversion.js";
 import { registerMagicWeaponTemplateHook } from "./integrations/magic-weapon-template.js?v=1.4.327";
-import { registerStorageTokenHooks } from "./integrations/storage-token-hooks.js?v=1.4.197-door-trigger-target";
+import { registerStorageTokenHooks } from "./integrations/storage-token-hooks.js?v=1.4.360";
 import { registerDoorTriggerHooks } from "./integrations/door-trigger-hooks.js?v=1.4.199-door-overlay-anchor";
 import { registerCraftsmanGadgetHooks } from "./integrations/craftsman-gadget-hooks.js";
 import { registerSpellAutomationHooks } from "./integrations/spell-automation-hooks.js";
@@ -398,7 +398,7 @@ import {
 } from "./integrations/alchemy-bomb-socket.js?v=1.4.356";
 import { registerTransportGroupDropHooks } from "./integrations/transport-group-drop.js";
 import { registerStorageTransferDropHooks } from "./integrations/storage-transfer-drop.js?v=1.4.213-furniture-orientation";
-import { registerStorageTokenDropHooks } from "./integrations/storage-token-drop.js?v=1.4.322";
+import { registerStorageTokenDropHooks } from "./integrations/storage-token-drop.js?v=1.4.360";
 import { registerStorageContainerHierarchyHooks } from "./integrations/storage-container-hierarchy.js?v=1.4.122-storage-container-cycle-repair";
 import { registerNarrativeItemCreationHooks } from "./integrations/narrative-item-creation.js?v=1.4.317";
 import { registerTransportVehicleSheetHooks } from "./integrations/transport-vehicle-sheet.js";
@@ -418,7 +418,7 @@ import {
   SOCKET_EVENT_SET_SETTING_RESULT,
   handleSettingsUpdateSocketResponse,
   registerSettings
-} from "./settings.js?v=1.4.271";
+} from "./settings.js?v=1.4.360";
 import { buildLootgenChatContent, buildLootgenStatusContent, registerLootgenChatHooks } from "./ui/lootgen-chat.js?v=1.4.269";
 import { bringAppToFront, notifyUser, registerHandlebarsHelpers, rerenderApp } from "./ui.js";
 import { promptDurabilityOutcome } from "./ui/durability-outcome-dialog.js";
@@ -5685,6 +5685,7 @@ export class RebreyaMainModule {
     const token = document?.document ?? document;
     if (!token?.actor) throw new Error("Токен хранилища не найден.");
     const materializedCorpse = allowMaterializedCorpse
+      && isCorpseStorageTarget(token)
       && isMaterializedCorpseStorageState(readStorageState(token));
     if (!isStorageActor(token.actor)
       && !(allowCorpse && isCorpseStorageTarget(token))
@@ -5942,10 +5943,7 @@ export class RebreyaMainModule {
         characterTokenUuid: safeCharacterTokenUuid
       });
     }
-    const moduleVersion = game.modules.get(MODULE_ID)?.version ?? "1.4.96";
-    const { StorageApp } = await import(
-      `./ui/storage-app.js?v=${encodeURIComponent(`${moduleVersion}-journal-record-drop`)}`
-    );
+    const { StorageApp } = await import("./ui/storage-app.js?v=1.4.360");
     const key = `${safeTokenUuid}:${configure ? "configure" : "open"}`;
     let app = this.storageApps.get(key);
     if (!app) {
@@ -5958,7 +5956,7 @@ export class RebreyaMainModule {
       this.storageApps.set(key, app);
     }
     else {
-      app.characterTokenUuid = safeCharacterTokenUuid;
+      app.prepareOpen({ path: safePath, characterTokenUuid: safeCharacterTokenUuid });
       if (anchorToToken) app.requestTokenAnchor?.();
     }
     await app.render({ force: true });
@@ -7278,7 +7276,7 @@ export class RebreyaMainModule {
         throw new Error("Лутген доступен только мастеру.");
       }
 
-      const { LootgenApp } = await import(`./ui/lootgen-app.js?v=${encodeURIComponent(MODULE_STYLE_VERSION)}`);
+      const { LootgenApp } = await import("./ui/lootgen-app.js?v=1.4.360");
       let app = null;
 
       if (!viewer && !newWindow && !templateUuid) {

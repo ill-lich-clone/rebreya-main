@@ -1,4 +1,5 @@
 import { MODULE_ID } from "../constants.js";
+import { storageRowsCanStack } from "./storage-row-stacking.js?v=1.4.360";
 import { normalizeLootgenForm } from "./lootgen-generator.js?v=1.4.317";
 import {
   markDurabilityBroken,
@@ -7,7 +8,7 @@ import {
 import {
   CORPSE_MATERIALIZATION_VERSION,
   isDeadNpcStorageTarget
-} from "./storage-corpse-target.js?v=1.4.195-storage-corpse-target";
+} from "./storage-corpse-target.js?v=1.4.360";
 import {
   buildStorageContainerSnapshot,
   collectStorageContainerIds,
@@ -385,6 +386,7 @@ function mergeDepositIntoRows(rows, claimedRowIds, row, stackKey, quantity) {
     ? nextRows.findIndex((entry) => (
         !claimedRowIds.has(String(entry?.rowId ?? "").trim())
         && storageRowStackKey(entry) === stackKey
+        && storageRowsCanStack(entry, row)
       ))
     : -1;
   if (index < 0) return { rows: nextRows, merged: false, rowId: "" };
@@ -1048,7 +1050,8 @@ export class StorageService {
       manualRows.push(deposited);
     }
 
-    const nextPresentation = presentation === "administrative" && current.state !== "opened"
+    const nextPresentation = current.state === "unopened"
+      || (presentation === "administrative" && current.state !== "opened")
       ? "unopened"
       : "opened";
     const state = await this.#write(token, {

@@ -1,19 +1,19 @@
-import { buildStorageCoinRow, storageCoinRowDenomination, assertStorageCoinTransferAvailable } from "./storage-service.js";
+import { buildStorageCoinRow, storageCoinRowDenomination, assertStorageCoinTransferAvailable } from "./storage-service.js?v=1.4.360";
 import { MODULE_ID } from "../constants.js";
-import { GROUND_PILE_PRESET_ID } from "./builtin-storage-presets.js";
+import { GROUND_PILE_PRESET_ID } from "./builtin-storage-presets.js?v=1.4.360";
 import {
   isStorageActor,
   readStorageCoinDenomination,
   readStorageState,
   readStorageStateAtPath
-} from "./storage-service.js?v=1.4.200-storage-broken-presentation";
+} from "./storage-service.js?v=1.4.360";
 import {
   buildStorageContainerRow,
   isStorageContainerRow,
   isStorageJournalRow,
   rekeyStorageContainerSnapshot
 } from "./storage-container-snapshot.js?v=1.4.317";
-import { buildStorageContainerSnapshotFromToken } from "./storage-container-item-service.js?v=1.4.322";
+import { buildStorageContainerSnapshotFromToken } from "./storage-container-item-service.js?v=1.4.360";
 import { parseStorageDragData } from "../ui/storage-transfer-ui.js";
 
 function clone(value) {

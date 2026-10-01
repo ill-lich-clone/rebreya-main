@@ -3,7 +3,7 @@ import {
   LOOTGEN_TEMPLATE_DEFAULT_IMG,
   LOOTGEN_TEMPLATE_ITEM_SCHEMA_VERSION,
   normalizeLootgenTemplateItemSystem
-} from "../data/lootgen-template-item.js";
+} from "../data/lootgen-template-item.js?v=1.4.360";
 
 export const LOOTGEN_TEMPLATE_TYPE_LABEL = "TYPES.Item.rebreya-main.lootgen-template";
 export const LOOTGEN_TEMPLATE_TYPE_PLURAL_LABEL = "TYPES.Item.rebreya-main.lootgen-templatePl";

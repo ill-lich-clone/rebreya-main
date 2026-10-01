@@ -232,6 +232,43 @@ test("template Item service resolves a compendium Item to a detached projection 
   assert.equal(snapshot.assignedAt, 777);
 });
 
+test("saving an unlocked compendium template updates the source document", async () => {
+  const h = serviceHarness();
+  const source = templateItem({ id: "pack", uuid: "Compendium.world.templates.Item.pack" });
+  source.pack = "world.templates";
+  source.isOwner = true;
+  source.canUserModify = () => true;
+  h.items.push(templateItem({ id: "world-import", name: "Edited pack" }));
+  const service = new LootgenTemplateItemService({ ...h.dependencies,
+    resolveUuid: async () => source, resolvePack: () => ({ locked: false }) });
+  const saved = await service.save({ itemUuid: source.uuid, name: "Edited pack", form: { itemCount: 7 } });
+  assert.equal(saved.uuid, source.uuid);
+  assert.equal(source.system.form.itemCount, 7);
+  assert.equal(h.items.length, 1);
+  assert.equal(h.items[0].system.form.itemCount, 2);
+});
+
+test("saving a locked compendium template creates an editable world copy preserving its icon", async () => {
+  const h = serviceHarness();
+  const source = templateItem({ id: "pack", uuid: "Compendium.world.templates.Item.pack", img: "pack.webp", form: { itemCount: 2 } });
+  source.pack = "world.templates";
+  source.canUserModify = () => false;
+  h.items.push(templateItem({ id: "existing", name: source.name }));
+  const service = new LootgenTemplateItemService({ ...h.dependencies,
+    resolveUuid: async uuid => uuid === source.uuid ? source : h.dependencies.resolveUuid(uuid),
+    resolvePack: () => ({ locked: true }) });
+  const saved = await service.save({ itemUuid: source.uuid, name: source.name, form: { itemCount: 8 } });
+  assert.match(saved.uuid, /^Item\./u);
+  assert.notEqual(saved.name, source.name);
+  assert.equal(saved.img, "pack.webp");
+  assert.equal(saved.form.itemCount, 8);
+  assert.equal(source.system.form.itemCount, 2);
+  assert.equal(h.items.length, 2);
+  await service.save({ itemUuid: saved.uuid, name: saved.name, form: { itemCount: 9 } });
+  assert.equal(h.items.length, 2);
+  assert.equal(h.items[1].system.form.itemCount, 9);
+});
+
 test("legacy migration resumes partial runs, avoids duplicates, and preserves edited Items", async () => {
   const legacy = {
     version: 2,

@@ -122,6 +122,7 @@ export class LootgenTemplateItemService {
     listItems = () => Array.from(globalThis.game?.items ?? []),
     listFolders = () => Array.from(globalThis.game?.folders ?? []),
     resolveUuid = (uuid) => globalThis.fromUuid?.(uuid),
+    resolvePack = (id) => globalThis.game?.packs?.get?.(id),
     createItem = (data) => globalThis.Item?.create?.(data),
     createFolder = (data) => globalThis.Folder?.create?.(data),
     getLegacySetting = () => globalThis.game?.settings?.get?.(MODULE_ID, "lootgenTemplates"),
@@ -136,6 +137,7 @@ export class LootgenTemplateItemService {
       listItems,
       listFolders,
       resolveUuid,
+      resolvePack,
       createItem,
       createFolder,
       getLegacySetting,
@@ -181,7 +183,8 @@ export class LootgenTemplateItemService {
     if (!isLootgenTemplateItem(item)) {
       throw new Error("Шаблон Lootgen не найден или имеет неподдерживаемый тип.");
     }
-    if (editable && (item.pack || item.isOwner === false || item.canUserModify?.(globalThis.game?.user, "update") === false)) {
+    if (editable && ((item.pack && this.resolvePack(item.pack)?.locked !== false)
+      || item.isOwner === false || item.canUserModify?.(globalThis.game?.user, "update") === false)) {
       throw new Error("Этот шаблон Lootgen нельзя редактировать.");
     }
     projectLootgenTemplateItem(item);
@@ -223,7 +226,7 @@ export class LootgenTemplateItemService {
   async save({ itemUuid = "", id = "", name, img, form } = {}) {
     this.#assertGm("Сохранять");
     this.#assertItemTypeAvailable();
-    const safeName = normalizeName(name);
+    let safeName = normalizeName(name);
     if (!safeName) throw new Error("Укажите название шаблона.");
     if (!isPlainObject(form)) throw new Error("Некорректная форма шаблона Lootgen.");
     const system = normalizeLootgenTemplateItemSystem({
@@ -231,8 +234,19 @@ export class LootgenTemplateItemService {
       form
     });
     const editableIdentity = clean(itemUuid) || clean(id);
-    const existing = editableIdentity ? await this.resolve(editableIdentity, { editable: true }) : null;
-    const duplicate = this.#items().find((item) => (
+    const source = editableIdentity ? await this.resolve(editableIdentity) : null;
+    const copyLockedTemplate = source?.pack && this.resolvePack(source.pack)?.locked !== false;
+    const existing = source && !copyLockedTemplate ? await this.resolve(editableIdentity, { editable: true }) : null;
+    if (copyLockedTemplate) {
+      const requestedName = safeName;
+      let copyIndex = 0;
+      const names = new Set(this.#items().map(item => normalizeName(item.name).toLocaleLowerCase("ru")));
+      while (names.has(safeName.toLocaleLowerCase("ru"))) {
+        copyIndex += 1;
+        safeName = `${requestedName} (копия${copyIndex > 1 ? ` ${copyIndex}` : ""})`;
+      }
+    }
+    const duplicate = !existing?.pack && this.#items().find((item) => (
       item !== existing && normalizeName(item.name).toLocaleLowerCase("ru") === safeName.toLocaleLowerCase("ru")
     ));
     if (duplicate) throw new Error("Шаблон с таким названием уже существует.");
@@ -245,7 +259,7 @@ export class LootgenTemplateItemService {
       const folder = await this.#ensureFolder();
       item = await this.createItem?.({
         name: safeName,
-        img: clean(img) || LOOTGEN_TEMPLATE_DEFAULT_IMG,
+        img: clean(img) || clean(source?.img) || LOOTGEN_TEMPLATE_DEFAULT_IMG,
         type: LOOTGEN_TEMPLATE_ITEM_TYPE,
         folder: folder.id,
         system

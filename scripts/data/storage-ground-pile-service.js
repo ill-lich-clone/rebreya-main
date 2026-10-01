@@ -1,11 +1,12 @@
-import { splitLegacyCoinRows, migrateLegacyCoinRowsInState } from "./storage-service.js";
+import { splitLegacyCoinRows, migrateLegacyCoinRowsInState } from "./storage-service.js?v=1.4.360";
 import { MODULE_ID } from "../constants.js";
-import { GROUND_PILE_PRESET_ID } from "./builtin-storage-presets.js";
+import { storageRowsCanStack } from "./storage-row-stacking.js?v=1.4.360";
+import { GROUND_PILE_PRESET_ID } from "./builtin-storage-presets.js?v=1.4.360";
 import {
   buildStorageTokenState,
   readStorageCoinDenomination,
   readStorageState
-} from "./storage-service.js?v=1.4.200-storage-broken-presentation";
+} from "./storage-service.js?v=1.4.360";
 import { isStorageJournalRow } from "./storage-container-snapshot.js?v=1.4.317";
 import {
   deriveGroundPilePresentation,
@@ -396,6 +397,7 @@ export class StorageGroundPileService {
         const identity = rowIdentity(incoming);
         const stackIndex = manualRows.findIndex((entry) => (
           !claimed.has(clean(entry?.rowId)) && rowIdentity(entry) === identity
+          && storageRowsCanStack(entry, incoming)
         ));
         if (stackIndex < 0) {
           manualRows.push(clone(incoming));

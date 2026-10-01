@@ -309,6 +309,7 @@ test("opening GM settings for a marked storage does not perform first-open gener
     moduleApi.storageService.open = async () => { firstOpenCalls += 1; };
     const app = {
       characterTokenUuid: "",
+      prepareOpen({ path, characterTokenUuid }) { this.path = path; this.characterTokenUuid = characterTokenUuid; },
       async render() {},
       requestTokenAnchor() {}
     };
@@ -575,6 +576,7 @@ test("module composition materializes a corpse before allowing marker-guarded GM
     moduleApi.storageOpenSoundService.playForToken = async () => {};
     moduleApi.storageApps.set(`${token.uuid}:configure`, {
       characterTokenUuid: "",
+      prepareOpen({ characterTokenUuid }) { this.characterTokenUuid = characterTokenUuid; },
       async render() {},
       requestTokenAnchor() {}
     });
@@ -587,8 +589,9 @@ test("module composition materializes a corpse before allowing marker-guarded GM
     assert.equal(snapshot.state, "opened");
     assert.deepEqual(snapshot.rows.map((row) => row.sourceId), ["laty"]);
     actor.system.attributes.hp.value = 7;
-    const driftedSnapshot = await moduleApi.getStorageSnapshot(token.uuid);
-    assert.deepEqual(driftedSnapshot.rows.map((row) => row.sourceId), ["laty"]);
+    await assert.rejects(moduleApi.getStorageSnapshot(token.uuid), /не отмечен/u);
+    await assert.rejects(moduleApi.configureStorageToken(token.uuid, {}), /не отмечен/u);
+    actor.system.attributes.hp.value = 0;
     const configured = await moduleApi.configureStorageToken(token.uuid, {
       baseName: "Тело Чемпиона",
       mixGeneratedLoot: true

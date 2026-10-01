@@ -3444,6 +3444,11 @@ test("dead NPC storage open reuses player access checks, allows GM, and rejects 
       corpseMaterialization: { version: 1, status: "complete" }
     }
   };
+  await assert.rejects(materializedHarness.service.open({
+    tokenUuid: materializedHarness.storageToken.uuid,
+    characterTokenUuid: materializedHarness.characterToken.uuid
+  }, { sender: materializedHarness.player }), /не является хранилищем/iu);
+  materializedHarness.storageToken.actor.system.attributes.hp.value = 0;
   const materializedResult = await materializedHarness.service.open({
     tokenUuid: materializedHarness.storageToken.uuid,
     characterTokenUuid: materializedHarness.characterToken.uuid

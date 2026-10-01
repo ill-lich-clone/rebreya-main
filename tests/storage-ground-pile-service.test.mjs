@@ -644,8 +644,11 @@ test("a player who drops an item owns the created synthetic pile actor", async (
 
 test("dropping on a pile stacks identical items and appends different items", async () => {
   const { service, tokens } = createHarness();
-  await service.transferToScene({ row: sword, quantity: 2, sceneId: "scene", x: 300, y: 400, mutationId: "one" });
-  await service.transferToScene({ row: sword, quantity: 3, sceneId: "scene", x: 320, y: 420, mutationId: "two" });
+  const generated = (index, quantity) => ({ ...structuredClone(sword), rowIndex: index, totalValue: 10 * quantity,
+    descriptor: { version: 2, instanceKey: `roll-${index}`, quantity, upgrades: [], container: null },
+    composition: { version: 2, instanceKey: `roll-${index}`, upgrades: [] } });
+  await service.transferToScene({ row: generated(0, 2), quantity: 2, sceneId: "scene", x: 300, y: 400, mutationId: "one" });
+  await service.transferToScene({ row: generated(1, 3), quantity: 3, sceneId: "scene", x: 320, y: 420, mutationId: "two" });
 
   assert.equal(tokens.length, 1);
   assert.equal(readStorageState(tokens[0]).manualRows.length, 1);
@@ -663,6 +666,25 @@ test("dropping on a pile stacks identical items and appends different items", as
   assert.equal(readStorageState(tokens[0]).manualRows.length, 2);
   assert.equal(tokens[0].name, "Куча оружия");
   assert.match(tokens[0].texture.src, /weapons\.png$/u);
+});
+
+test("ground piles keep differently damaged and upgraded items separate", async () => {
+  const h = createHarness();
+  const original = structuredClone(sword);
+  original.quantity = original.itemData.system.quantity = 1;
+  original.itemData.flags = { [MODULE_ID]: { durability: { state: "intact", hp: { value: 10, max: 10 } } } };
+  await h.service.transferToScene({ row: original, quantity: 1, sceneId: "scene", x: 300, y: 400, mutationId: "intact" });
+  const damaged = structuredClone(original);
+  damaged.itemData.flags[MODULE_ID].durability.hp.value = 4;
+  await h.service.transferToScene({ row: damaged, quantity: 1, sceneId: "scene", x: 300, y: 400, mutationId: "damaged" });
+  const upgraded = structuredClone(original);
+  upgraded.itemData.flags[MODULE_ID].runtimeItemGraph = { nodes: [{ _id: "host" }, { _id: "upgrade" }] };
+  await h.service.transferToScene({ row: upgraded, quantity: 1, sceneId: "scene", x: 300, y: 400, mutationId: "upgraded" });
+  const rows = readStorageState(h.tokens[0]).manualRows;
+  assert.equal(rows.length, 3);
+  assert.deepEqual(rows.map(row => row.quantity), [1, 1, 1]);
+  assert.deepEqual(rows.map(row => row.itemData.flags[MODULE_ID].durability.hp.value), [10, 4, 10]);
+  assert.equal(rows[2].itemData.flags[MODULE_ID].runtimeItemGraph.nodes.length, 2);
 });
 
 test("Journal scene rows remain reference-only, quantity one, and never stack", async () => {
