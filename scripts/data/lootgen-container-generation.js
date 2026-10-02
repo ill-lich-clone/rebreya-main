@@ -1,4 +1,5 @@
 import { addItemValue, evaluateItemValue } from "./item-value.js?v=1.4.264";
+import { createLootgenThemeContext } from "./lootgen-thematic-selection.js?v=1.4.362";
 import { normalizeLootgenComposition } from "./lootgen-item-descriptor.js?v=1.4.264";
 import { buildStorageContainerSnapshot, buildStorageContainerRow } from "./storage-container-snapshot.js?v=1.4.317";
 import { canFitLootgenContents, debitLootgenBudget, readLootgenPhysicalFootprint } from "./lootgen-container-rules.js?v=1.4.266";
@@ -16,7 +17,7 @@ const withNarrativeVariant=(candidate,random)=>{
 
 /** Internal policy of generateLootgenResult: one ledger for every accepted root and descendant. */
 export function generateLootgenContainerResult({form,mundanePool,magicPool,catalogReader,manifest,random,createInstanceKey,batchId,generatedAt,
-  pick,makeCoins,coinWeightPerCoinLb=0.02,priceDiagnostics=[]}){
+  pick,makeCoins,themeContext=createLootgenThemeContext(),coinWeightPerCoinLb=0.02,priceDiagnostics=[]}){
   if(!catalogReader?.readPhysicalItem || !catalogReader?.resolveContainerProfile)throw new Error("Каталог не поддерживает заполненные контейнеры.");
   if(typeof coinWeightPerCoinLb!=="number" || !Number.isFinite(coinWeightPerCoinLb) || coinWeightPerCoinLb<0)throw new Error("Некорректный вес монет.");
   const draw=random;random=()=>{const value=draw();if(typeof value!=="number" || !Number.isFinite(value) || value<0 || value>=1)throw new RangeError("random must return a number in [0,1)");return value;};
@@ -31,15 +32,15 @@ export function generateLootgenContainerResult({form,mundanePool,magicPool,catal
   const fraction=()=>0.5+Math.max(0,Math.min(1,Number(random())||0))*0.5;
   const physicalWeight=footprint=>{try{return readLootgenPhysicalFootprint(footprint).weightLb;}catch{return null;}};
 
-  function buildCandidate(allowance,depth,excluded=new Set()){
+  function buildCandidate(allowance,depth,excluded=new Set(),selection=themeContext){
     if(ledger.attemptsRemaining--<=0){note("attempt-limit");return null;}
     if(ledger.documentsRemaining<1){note("document-limit");return null;}
-    const affordable=row=>!excluded.has(key(row)) && row.value<=allowance
+    const affordable=row=>!excluded.has(key(row)) && row.value<=allowance && selection.weight(row)>0
       && !(depth>=form.generationDepth && catalogReader.readPhysicalItem(row)?.type==="container");
     const mundane=mundanePool.filter(affordable),magic=magicPool.filter(affordable);
     const wantsMagic=form.includeMagicItems && magic.length && (!mundane.length || random()<form.magicPercent/100);
     const pool=form.includeMagicItems && form.magicPercent===100?magic:wantsMagic?magic:mundane.length?mundane:magic;
-    const baseSelected=pick(pool,()=>1,random);if(!baseSelected)return null;
+    const baseSelected=pick(pool,row=>selection.weight(row),random);if(!baseSelected)return null;
     const selected=withNarrativeVariant(baseSelected,random);
     const physical=catalogReader.readPhysicalItem(selected),isContainer=physical?.type==="container";
     const host={...selected,isBroken:rollLootgenBrokenState({sourceType:selected.sourceType,chance:form.brokenEquipmentChance,isEligible:selected.breakable===true,random})};
@@ -61,11 +62,12 @@ export function generateLootgenContainerResult({form,mundanePool,magicPool,catal
     if(isContainer && profile.eligible && depth<form.generationDepth && form.filledContainerChance>0
       && (form.filledContainerChance===100 || random()<form.filledContainerChance/100)){
       const children=[],contents=[],rejected=new Set();
+      const childSelection=selection.forContainer(selected);
       const childAllowance=Math.floor(Math.min(allowance-ownValue,ledger.itemBudgetRemaining)*fraction());
       const startItems=ledger.itemBudgetRemaining;
       while(ledger.documentsRemaining>0 && ledger.attemptsRemaining>0){
         const checkpoint=reserve();
-        const child=buildCandidate(childAllowance-(startItems-ledger.itemBudgetRemaining),depth+1,rejected);
+        const child=buildCandidate(childAllowance-(startItems-ledger.itemBudgetRemaining),depth+1,rejected,childSelection);
         if(!child)break;
         const fit=canFitLootgenContents({profile,currentContents:contents,candidate:child.footprint,allowUnknownVolume:true});
         if(!fit.fits){restore(checkpoint);rejected.add(key(child.row));note(fit.reason,child.row.sourceId);continue;}
@@ -74,6 +76,7 @@ export function generateLootgenContainerResult({form,mundanePool,magicPool,catal
         children.push(d.container?{...buildStorageContainerRow(d.container,{rowId}),...pickLootgenNarrativeFields(child.row)}:{rowKind:"item",rowId,name:child.row.name,sourceType:d.sourceType,sourceId:d.sourceId,
           quantity:d.quantity,...pickLootgenNarrativeFields(child.row),composition:composition(d)});
         contents.push(child.footprint);
+        childSelection.accept(child.row);
       }
       let internalCoins=makeCoins(0,random);
       const coinAllowance=Math.floor(ledger.coinBudgetRemaining*fraction());
@@ -100,12 +103,13 @@ export function generateLootgenContainerResult({form,mundanePool,magicPool,catal
   for(let index=0;index<form.itemCount && ledger.documentsRemaining>0 && ledger.attemptsRemaining>0;index++){
     const candidate=buildCandidate(ledger.itemBudgetRemaining,0);if(!candidate)break;
     rows.push({...candidate.row,directGrantId:`lootgen:${batchId}:row:${rows.length}`});
+    themeContext.accept(candidate.row);
   }
   if(ledger.documentsRemaining===0)note("document-limit");
   if(ledger.attemptsRemaining<=0)note("attempt-limit");
   const spentValue=form.budgetValue-coinReserve-ledger.itemBudgetRemaining;
   const internalCurrencyValue=coinReserve-ledger.coinBudgetRemaining;
-  const coins=makeCoins(form.includeCoins?addItemValue(ledger.itemBudgetRemaining,ledger.coinBudgetRemaining):0,random);
+  const coins=makeCoins(form.includeCoins?ledger.coinBudgetRemaining:0,random);
   const currencyValue=addItemValue(internalCurrencyValue,coins.totalCopper),totalValue=addItemValue(spentValue,currencyValue);
   const treeValue=rows.reduce((sum,row)=>addItemValue(sum,row.totalValue),0);
   if(addItemValue(treeValue,coins.totalCopper)!==totalValue)throw new Error("Нарушен общий бюджет дерева лута.");

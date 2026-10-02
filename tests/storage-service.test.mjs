@@ -163,6 +163,12 @@ function createStorageToken(id, name = "Сундук") {
   };
 }
 
+function createTemplatedStorageToken(id, name) {
+  const token = createStorageToken(id, name);
+  token.flags["rebreya-main"] = { storage: { template: { name: "Тестовый набор", form: { itemCount: 1 } } } };
+  return token;
+}
+
 function makeDeadNpcStorageToken(id, actorId = "dead-npc") {
   const token = createStorageToken(id, "Павшее существо");
   token.uuid = `Scene.scene.Token.${id}`;
@@ -273,7 +279,7 @@ test("opening once merges manual rows and a generated result", async () => {
       };
     }
   });
-  const token = createStorageToken("chest");
+  const token = createTemplatedStorageToken("chest");
 
   await service.configure(token, { manualRows: [{ rowId: "manual" }], mixGeneratedLoot: true });
   const first = await service.open(token, {});
@@ -312,7 +318,26 @@ test("storage mixed-loot mode defaults false and manual first-open skips generat
   assert.deepEqual(readStorageState(token).generatedRows, []);
 });
 
-test("mixed manual coins generate once and no-manual storage keeps default generation", async () => {
+test("empty storage without a template opens once with only 500–1500 value in coins", async () => {
+  for (const [sample, value] of [[0, 500], [0.5, 1000], [0.999999, 1500]]) {
+    let rolls = 0;
+    const service = new StorageService({
+      random: () => { rolls += 1; return sample; },
+      generate: async () => { throw new Error("Default storage must not call the item generator"); }
+    });
+    const token = createStorageToken(`coins-${value}`);
+    const first = await service.open(token);
+    const second = await service.open(token);
+    assert.deepEqual(first.rows, []);
+    assert.equal(first.coins.pp * 1000 + first.coins.gp * 100 + first.coins.sp * 10 + first.coins.cp, value);
+    assert.deepEqual(second.coins, first.coins);
+    assert.equal(first.generatedNow, true);
+    assert.equal(second.generatedNow, false);
+    assert.equal(rolls, 1);
+  }
+});
+
+test("mixed manual coins use their template and unconfigured storage keeps the coin fallback", async () => {
   const forms = [];
   const service = new StorageService({
     generate: async (form) => {
@@ -320,7 +345,7 @@ test("mixed manual coins generate once and no-manual storage keeps default gener
       return { rows: [{ rowId: "generated" }], coins: { gp: 2 } };
     }
   });
-  const mixed = createStorageToken("mixed-coins");
+  const mixed = createTemplatedStorageToken("mixed-coins");
   await service.configure(mixed, { manualCoins: { sp: 3 }, mixGeneratedLoot: true });
   const mixedResult = await service.open(mixed);
   await service.open(mixed);
@@ -330,9 +355,10 @@ test("mixed manual coins generate once and no-manual storage keeps default gener
 
   const defaultStorage = createStorageToken("default-generation");
   const defaultResult = await service.open(defaultStorage);
-  assert.equal(forms.length, 2);
+  assert.equal(forms.length, 1);
   assert.equal(defaultResult.generatedNow, true);
-  assert.equal(defaultResult.rows[0].rowId, "generated");
+  assert.deepEqual(defaultResult.rows, []);
+  assert.ok(defaultResult.coins.gp >= 5 && defaultResult.coins.gp <= 15);
 });
 
 test("storage actor marker and empty display name use Rebreya-owned flags", () => {
@@ -355,7 +381,7 @@ test("opening, final claim, and reset select the matching storage texture", asyn
   const service = new StorageService({
     generate: async () => ({ rows: [{ rowId: "generated" }], coins: {} })
   });
-  const token = createStorageToken("visual-chest");
+  const token = createTemplatedStorageToken("visual-chest");
 
   await service.configure(token, { textures, displayMode: "unopened" });
   assert.equal(token.texture.src, "closed.webp");
@@ -392,7 +418,7 @@ test("a partial claim preserves a GM's manual texture without changing loot stat
       coins: {}
     })
   });
-  const token = createStorageToken("manual-visual");
+  const token = createTemplatedStorageToken("manual-visual");
   await service.configure(token, {
     textures: { unopened: "closed.webp", opened: "open.webp", empty: "empty.webp" }
   });
@@ -423,7 +449,7 @@ test("quantity claims decrement a row before claiming its final units", async ()
       coins: {}
     })
   });
-  const token = createStorageToken("quantity-claim");
+  const token = createTemplatedStorageToken("quantity-claim");
   await service.open(token);
 
   const first = await service.claim(token, {
@@ -459,7 +485,7 @@ test("quantity claims reject invalid or excessive amounts without changing stora
       coins: {}
     })
   });
-  const token = createStorageToken("invalid-quantity-claim");
+  const token = createTemplatedStorageToken("invalid-quantity-claim");
   await service.open(token);
 
   await assert.rejects(
@@ -652,7 +678,7 @@ test("generated callback failure does not roll back opened storage", async () =>
 
 test("GM quantity editing updates generated row and embedded item quantity", async () => {
   const service = new StorageService({ generate: async () => ({ rows: [{ rowId: "row", quantity: 1, itemData: { system: { quantity: 1 } } }], coins: {} }) });
-  const token = createStorageToken("editable");
+  const token = createTemplatedStorageToken("editable");
   await service.open(token);
 
   const next = await service.updateRowQuantity(token, "row", 4);
@@ -693,7 +719,7 @@ test("Journal reference rows cannot be claimed or quantity-edited", async () => 
 
 test("deleting the final generated row empties storage", async () => {
   const service = new StorageService({ generate: async () => ({ rows: [{ rowId: "row" }], coins: {} }) });
-  const token = createStorageToken("deletable");
+  const token = createTemplatedStorageToken("deletable");
   await service.open(token);
 
   const next = await service.deleteRow(token, "row");
@@ -717,7 +743,7 @@ test("row durability updates only the selected item data and emits storageUpdate
         coins: {}
       })
     });
-    const token = createStorageToken("durable-row");
+    const token = createTemplatedStorageToken("durable-row");
     token.uuid = "Scene.scene.Token.durable-row";
     await service.open(token);
     calls.length = 0;
@@ -1301,6 +1327,7 @@ test("corpse materialization is root-only and nested containers keep their norma
     name: "Сумка",
     state: {
       baseName: "Сумка",
+      template: { name: "Набор сумки", form: { itemCount: 1 } },
       state: "unopened",
       manualRows: [],
       generatedRows: []

@@ -1,6 +1,6 @@
 import { MODULE_ID } from "../constants.js";
 import { storageRowsCanStack } from "./storage-row-stacking.js?v=1.4.360";
-import { normalizeLootgenForm } from "./lootgen-generator.js?v=1.4.317";
+import { normalizeLootgenForm } from "./lootgen-generator.js?v=1.4.362";
 import {
   markDurabilityBroken,
   markDurabilityIntact
@@ -500,6 +500,7 @@ export class StorageService {
     getOrBuildDurability = async () => null,
     materializeFirstOpen = async () => null,
     onGeneratedOpen = async () => {},
+    random = Math.random,
     logger = console
   } = {}) {
     if (typeof generate !== "function") {
@@ -512,6 +513,7 @@ export class StorageService {
       throw new TypeError("StorageService requires a durability builder function.");
     }
     this.generate = generate;
+    this.random = random;
     this.getOrBuildDurability = getOrBuildDurability;
     this.materializeFirstOpen = materializeFirstOpen;
     this.onGeneratedOpen = typeof onGeneratedOpen === "function" ? onGeneratedOpen : async () => {};
@@ -810,6 +812,12 @@ export class StorageService {
     }
     else if (hasUnclaimedManualContent(current) && current.mixGeneratedLoot !== true) {
       generated = { rows: [], coins: {} };
+    }
+    else if (!current.template) {
+      const sample = Math.max(0, Math.min(0.9999999999999999, Number(this.random()) || 0));
+      const value = 500 + Math.floor(sample * 1001);
+      generated = { rows: [], coins: { pp: 0, gp: Math.floor(value / 100), sp: Math.floor(value % 100 / 10), cp: value % 10 } };
+      generatedNow = true;
     }
     else {
       generated = await this.generate(current.template?.form ?? normalizeLootgenForm({}), {

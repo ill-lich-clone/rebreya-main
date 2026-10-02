@@ -3,9 +3,10 @@ import { loadUpgradeAutomationManifest } from "./upgrade-automation-manifest.js?
 import { MODULE_ID, GEAR_COMPENDIUM_NAME, MAGIC_ITEMS_COMPENDIUM_NAME } from "../constants.js";
 import { resolveLootgenItemValue } from "./item-value.js?v=1.4.264";
 import { collectBreakableManagedGearIds } from "./lootgen-durability.js?v=1.4.154-corpse-storage-broken-name";
-import { generateLootgenResult, isLootgenUpgrade, normalizeLootgenForm } from "./lootgen-generator.js?v=1.4.317";
+import { generateLootgenResult, isLootgenUpgrade, normalizeLootgenForm } from "./lootgen-generator.js?v=1.4.362";
 import { buildLootgenTypeFilterOptions, isLootgenTypeAllowed, resolveMagicLootgenTypeLabel } from "./lootgen-type-filters.js?v=1.4.258";
 import { loadLootgenNarrativeCatalog } from "./lootgen-narrative-catalog.js?v=1.4.317";
+import { getLootgenThemeProfile } from "./lootgen-thematic-selection.js?v=1.4.362";
 const MATERIAL_LOOTGEN_TYPE_LABEL="Материал";
 function toNumber(value, fallback = 0) {
   const numericValue = Number(value ?? fallback);
@@ -66,6 +67,7 @@ export function buildLootgenMundaneCandidate(gearItem, {
     typeLabel: String(typeLabel ?? gearItem?.equipmentType ?? "Снаряжение"),
     stackable: true,
     breakable: Boolean(breakable),
+    lootTheme: getLootgenThemeProfile({ ...gearItem, sourceType: "gear", typeLabel: typeLabel ?? gearItem?.equipmentType }),
     narrativeVariants: structuredClone(narrativeVariants)
   };
 }
@@ -138,7 +140,8 @@ export function buildLootgenMundanePool({model,form,breakableGearIds=new Set(),n
             value,
             multipleAppearance: "1",
             typeLabel: MATERIAL_LOOTGEN_TYPE_LABEL,
-            stackable: true
+            stackable: true,
+            lootTheme: getLootgenThemeProfile({ ...material, sourceType: "material" })
           });
         }
       }
@@ -211,7 +214,12 @@ export function buildLootgenMagicPool({form,documents=[]}) {
         rank,
         value,
         typeLabel,
-        stackable: isConsumable
+        stackable: isConsumable,
+        lootTheme: getLootgenThemeProfile({ sourceType: "magicItem", sourceId, name: document.name, typeLabel,
+          itemType: flags.itemType, itemSubtype: flags.itemSubtype, isConsumable,
+          foundryType: document.type, foundrySubtype: document.system?.type?.value,
+          armor: document.type === "equipment" && ["light", "medium", "heavy", "shield"].includes(document.system?.type?.value) ? { type: document.system.type.value } : undefined,
+          weapon: document.type === "weapon" ? { properties: Array.from(document.system?.properties ?? []), baseItem: document.system?.type?.baseItem } : undefined })
       });
     }
 

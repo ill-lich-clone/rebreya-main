@@ -21,6 +21,18 @@ function run(options){let id=0;return generateLootgenResult({...options,random:(
 
 function walk(rows){const descriptors=[];const visit=d=>{descriptors.push(d);for(const row of [...(d.container?.state.manualRows??[]),...(d.container?.state.generatedRows??[])])visit({...row.composition,quantity:row.quantity,container:row.container??null});};for(const row of rows)visit(row.descriptor);return descriptors;}
 
+test("filled backpack contents follow the backpack theme and stop without exhausting the shared budget", () => {
+  const model = { gear: [{ id: "bag", value: 10 }, { id: "weapon", value: 10 }, { id: "sleep", value: 10 }, { id: "blanket", value: 10 }] };
+  const gearIndex = model.gear.map(({ id }) => ({ _id: id, type: id === "bag" ? "container" : "loot", system: { quantity: 1,
+    weight: { value: 1, units: "lb" }, capacity: { weight: { value: 100, units: "lb" } } }, flags: { "rebreya-main": { managed: true, gearId: id } } }));
+  const catalogReader = createLootgenCatalogReader({ model, gearIndex });
+  const mundanePool = ["Рюкзак", "Длинный меч", "Спальный мешок", "Одеяло"].map((name, index) => ({ sourceType: "gear", sourceId: model.gear[index].id, name, value: 10, multipleAppearance: "1", stackable: true }));
+  const result = run({ form: normalizeLootgenForm({ itemCount: 1, budgetValue: 1000, includeCoins: true, coinBudgetPercent: 0, enableFilledContainers: true, filledContainerChance: 100 }), mundanePool, magicPool: [], catalogReader, manifest: [] });
+  assert.deepEqual(result.rows[0].descriptor.container.state.manualRows.map(row => row.name).sort(), ["Одеяло", "Спальный мешок"].sort());
+  assert.equal(result.totalValue, 30);
+  assert.equal(result.unusedValue, 970);
+});
+
 test("filled container generation spends one shared item and coin budget with upgraded children",()=>{
   const options=fixture(),result=run(options);
   assert.ok(result.rows[0].descriptor.container);
@@ -45,6 +57,7 @@ test("budget boundaries, zero prices and disabled currency preserve nonnegative 
 
 test("shared limits bound recursive nesting and distinguish identical shells",()=>{
   const options=fixture({generationDepth:3,itemCount:40,chestValue:0,childValue:0,budgetValue:0});options.form.enableUpgrades=false;
+  options.mundanePool[1].name="Неизвестная деталь";
   const result=run(options),nodes=walk(result.rows);
   assert.ok(nodes.length<=200);assert.ok(result.rows.length<=40);
   assert.equal(new Set(nodes.map(d=>d.instanceKey)).size,nodes.length);

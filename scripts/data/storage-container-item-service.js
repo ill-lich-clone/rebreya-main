@@ -5,8 +5,8 @@ import { buildRuntimeGraphDocuments, materializeRuntimeItemGraph } from "./runti
 import { itemInstanceFingerprint } from "../application/item-instance-workflow.js";
 import { WorldMutationCoordinator } from "../application/world-mutation-coordinator.js";
 import { MODULE_ID } from "../constants.js";
-import { GROUND_PILE_PRESET_ID } from "./builtin-storage-presets.js?v=1.4.360";
-import { readStorageState } from "./storage-service.js?v=1.4.360";
+import { GROUND_PILE_PRESET_ID } from "./builtin-storage-presets.js?v=1.4.362";
+import { readStorageState } from "./storage-service.js?v=1.4.362";
 import {
   buildStorageContainerRow,
   buildStorageContainerSnapshot,

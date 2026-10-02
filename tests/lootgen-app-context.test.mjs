@@ -58,6 +58,7 @@ test("lootgen mundane candidates carry authored package formulas", () => {
     typeLabel: "Снаряжение",
     stackable: true,
     breakable: false,
+    lootTheme: { themes: ["scholar", "arcane"], role: "writing" },
     narrativeVariants: []
   });
 });

@@ -1,12 +1,12 @@
-import { splitLegacyCoinRows, migrateLegacyCoinRowsInState } from "./storage-service.js?v=1.4.360";
+import { splitLegacyCoinRows, migrateLegacyCoinRowsInState } from "./storage-service.js?v=1.4.362";
 import { MODULE_ID } from "../constants.js";
 import { storageRowsCanStack } from "./storage-row-stacking.js?v=1.4.360";
-import { GROUND_PILE_PRESET_ID } from "./builtin-storage-presets.js?v=1.4.360";
+import { GROUND_PILE_PRESET_ID } from "./builtin-storage-presets.js?v=1.4.362";
 import {
   buildStorageTokenState,
   readStorageCoinDenomination,
   readStorageState
-} from "./storage-service.js?v=1.4.360";
+} from "./storage-service.js?v=1.4.362";
 import { isStorageJournalRow } from "./storage-container-snapshot.js?v=1.4.317";
 import {
   deriveGroundPilePresentation,

@@ -1,4 +1,4 @@
-import { generateLootgenResult } from "../data/lootgen-generator.js?v=1.4.317";
+import { generateLootgenResult } from "../data/lootgen-generator.js?v=1.4.362";
 import { normalizeLootgenItemDescriptor, projectLootgenDescriptorTree } from "../data/lootgen-item-descriptor.js?v=1.4.268";
 import { buildCompositeItemGraph } from "../data/composite-item-graph.js?v=1.4.292";
 import { buildLootgenPreparedItem } from "../data/lootgen-prepared-item.js?v=1.4.268";
@@ -53,7 +53,7 @@ export function readLootgenCatalogFingerprint(descriptors,snapshot) {
 
 /** Detached preparation only. The result service persists this state before the Chat publisher writes. */
 export async function buildLootgenGeneratedState(form,{operationId,lootId,authorId}, {
-  catalog,buildItemData,prepareContainerGraph,createDocumentId,random=Math.random,now=()=>new Date().toISOString()
+  catalog,buildItemData,prepareContainerGraph,createDocumentId,random=Math.random,now=()=>new Date().toISOString(),seedRows=[]
 }) {
   const snapshot=await catalog.load(form);
   if((!snapshot.form.enableUpgrades && !snapshot.form.enableFilledContainers) || !snapshot.catalogReader)throw new Error("Prepared loot requires a composed catalog snapshot.");
@@ -64,7 +64,7 @@ export async function buildLootgenGeneratedState(form,{operationId,lootId,author
     allocated.add(id);return id;
   };
   const generated=generateLootgenResult({form:snapshot.form,mundanePool:snapshot.mundanePool,magicPool:snapshot.magicPool,
-    manifest:snapshot.manifest,catalogReader:snapshot.catalogReader,coinWeightPerCoinLb:snapshot.coinWeightPerCoinLb,random,createInstanceKey:allocate,batchId:operationId,generatedAt:now()});
+    manifest:snapshot.manifest,catalogReader:snapshot.catalogReader,coinWeightPerCoinLb:snapshot.coinWeightPerCoinLb,random,seedRows,createInstanceKey:allocate,batchId:operationId,generatedAt:now()});
   const rows=[];
   for(const [rowIndex,row] of generated.rows.entries()) {
     const descriptor=normalizeLootgenItemDescriptor(row.descriptor??{version:2,instanceKey:allocate(),sourceType:row.sourceType,

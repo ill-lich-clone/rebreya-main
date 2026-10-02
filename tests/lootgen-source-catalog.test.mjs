@@ -1,9 +1,45 @@
 import test from "node:test";
+import { buildLootgenMundaneCandidate } from "../scripts/data/lootgen-source-catalog.js";
 import assert from "node:assert/strict";
 import { buildLootgenMundanePool, buildLootgenMagicPool, LootgenSourceCatalog } from "../scripts/data/lootgen-source-catalog.js";
+import { normalizeMagicItems, createMagicItemData } from "../scripts/data/magic-items-compendium.js";
+import { MAGIC_ITEMS } from "../magicItem.js";
 
 const form={rankMin:0,rankMax:4,includeGear:true,includeMagicItems:true,gearTypeFilters:{},magicTypeFilters:{}};
 const emptyNarrativeCatalog={byGearId:new Map()};
+
+test("magic selection retains native shield structure even with an unfamiliar name", () => {
+  const [shield] = buildLootgenMagicPool({ form, documents: [{ id: "shield", name: "Aegis", type: "equipment",
+    flags: { "rebreya-main": { rank: 0, value: 10, itemType: "Доспех" } }, system: { type: { value: "shield" } } }] });
+  assert.equal(shield.lootTheme.role, "shield");
+});
+
+test("magic ranged base items retain ammo family and handedness despite mgc-only properties", () => {
+  const [bow] = buildLootgenMagicPool({ form, documents: [{ id: "bow", name: "Aerie", type: "weapon",
+    flags: { "rebreya-main": { rank: 0, value: 10, itemType: "Оружие" } },
+    system: { type: { value: "martialR", baseItem: "longbow" }, properties: ["mgc"] } }] });
+  assert.equal(bow.lootTheme.ammoFamily, "arrow");
+  assert.equal(bow.lootTheme.twoHanded, true);
+});
+
+test("normalized native magic staves retain their arcane role through the runtime catalog", () => {
+  const previousConst = globalThis.CONST;
+  let documents;
+  try {
+    globalThis.CONST = { DOCUMENT_OWNERSHIP_LEVELS: { OBSERVER: 2 } };
+    documents = normalizeMagicItems(MAGIC_ITEMS.filter(item => ["солнечный-посох", "посох-магов"].includes(item.id)))
+      .map(item => createMagicItemData(item, new Map(), new Map()));
+  } finally {
+    if (previousConst === undefined) delete globalThis.CONST;
+    else globalThis.CONST = previousConst;
+  }
+  const pool = buildLootgenMagicPool({ form: { ...form, rankMax: 10 }, documents });
+  assert.equal(pool.length, 2);
+  for (const row of pool) {
+    assert.equal(row.lootTheme.role, "focus", row.sourceId);
+    assert.ok(row.lootTheme.themes.includes("arcane"));
+  }
+});
 test("catalog pools preserve packages, type/rank/bargaining filters and exclude loose upgrades",()=>{
   const model={gear:[{id:"paper",name:"Paper",rank:0,value:2,multipleAppearance:"2к12",equipmentType:"Снаряжение"},
     {id:"sword",rank:1,value:100,equipmentType:"Оружие"},{id:"blocked",rank:1,value:3,bargaining:"Запрещено"},
@@ -87,4 +123,10 @@ test("coin weight follows dnd5e currency and metric settings",async()=>{
     globalThis.CONFIG={DND5E:{encumbrance:{currencyPerWeight:{imperial:50,metric:100}},weightUnits:{lb:{conversion:1},kg:{conversion:2.5}}}};
     assert.equal(readLootgenCoinWeight(),0.02);metric=true;assert.equal(readLootgenCoinWeight(),0.025);enabled=false;assert.equal(readLootgenCoinWeight(),0);
   }finally{if(previousGame===undefined)delete globalThis.game;else globalThis.game=previousGame;if(previousConfig===undefined)delete globalThis.CONFIG;else globalThis.CONFIG=previousConfig;}
+});
+test("catalog candidates carry semantic roles and structural weapon compatibility", () => {
+  const candidate = buildLootgenMundaneCandidate({ id: "relic", name: "Реликвия", equipmentType: "Оружие", weapon: { properties: ["two"] } });
+  assert.equal(candidate.lootTheme.role, "weapon");
+  assert.equal(candidate.lootTheme.twoHanded, true);
+  assert.deepEqual(candidate.lootTheme.themes, ["combat"]);
 });

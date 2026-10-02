@@ -214,6 +214,7 @@ function createHarness({
   createChatMessage = null,
   logger = null,
   triggerService = null,
+  template = { name: "Тестовый набор", form: { itemCount: 1 } },
   lootgenTemplateItems = null
 } = {}) {
   const player = { id: "player", name: playerName, isGM: false };
@@ -288,7 +289,7 @@ function createHarness({
     name: "Сундук",
     parent: scene,
     actor: storageActor,
-    flags: {},
+    flags: { [MODULE_ID]: { storage: { template } } },
     getFlag(scope, key) {
       return this.flags?.[scope]?.[key];
     },
@@ -2473,6 +2474,7 @@ test("storage template configuration validates exact operation-bound payloads", 
 test("active GM assigns authoritative detached snapshots and rejects unauthorized or conflicting retries", async () => {
   let revision = 1;
   const h = createHarness({
+    template: null,
     lootgenTemplateItems: {
       async buildSnapshot(itemUuid) {
         if (itemUuid !== "Item.template") throw new Error("not a template");

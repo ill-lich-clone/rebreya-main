@@ -58,10 +58,6 @@
             <input type="number" min="1" max="40" step="1" value="{{form.itemCount}}" data-field="itemCount">
           </div>
           <div class="rm-field">
-            <label title="Мягкий ориентир количества копий одного предмета. Генератор может дать меньше или больше, если этого требует бюджет и формула предмета.">Оптимальное количество предметов</label>
-            <input type="number" min="1" max="100" step="1" value="{{form.optimalItemQuantity}}" data-field="optimalItemQuantity">
-          </div>
-          <div class="rm-field">
             <label title="Общий лимит value на всю выдачу.">Бюджет, value</label>
             <input type="number" min="0" step="1" value="{{form.budgetValue}}" data-field="budgetValue">
           </div>
@@ -74,7 +70,7 @@
           </summary>
           <div class="rm-lootgen-settings__content">
             <div class="rm-field">
-              <label for="rm-coin-reserve-{{appKey}}" title="Эта доля бюджета сохраняется для монет до подбора предметов. Неизрасходованный остаток тоже добавляется к монетам. При выключенных монетах резерв не применяется.">Доля бюджета на монеты, %</label>
+              <label for="rm-coin-reserve-{{appKey}}" title="Эта доля бюджета сохраняется для монет до подбора предметов. Остальная сумма доступна предметам; неиспользованная часть остаётся неизрасходованной. При выключенных монетах резерв не применяется.">Доля бюджета на монеты, %</label>
               <input id="rm-coin-reserve-{{appKey}}" type="number" min="0" max="100" step="1" value="{{form.coinBudgetPercent}}" data-field="coinBudgetPercent">
             </div>
             <div class="rm-field">
@@ -97,7 +93,7 @@
               </label>
               <label class="rm-lootgen-check">
                 <input type="checkbox" {{#if form.includeCoins}}checked{{/if}} data-field="includeCoins">
-                <span>Монеты: резерв и остаток</span>
+                <span>Монеты из резерва</span>
               </label>
             </div>
 

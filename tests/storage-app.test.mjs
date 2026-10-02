@@ -1425,7 +1425,7 @@ test("entering unopened nested storage executes its first open before reading co
     }
   };
   await service.configure(token, { state: "opened", manualRows: [buildStorageContainerRow({
-    containerId: "bag", name: "Сумка", state: { state: "unopened" }
+    containerId: "bag", name: "Сумка", state: { state: "unopened", template: { name: "Набор сумки", form: { itemCount: 1 } } }
   }, { rowId: "bag-row" })] });
   const { app } = createApp({ configure: false, appOptions: { characterTokenUuid: "Scene.scene.Token.hero" },
     getStorageSnapshot: async (_uuid, request = {}) => {

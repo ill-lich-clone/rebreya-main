@@ -198,6 +198,7 @@ test("destroying an unopened chest generates once, spills one snapshot, then del
     }
   };
   const chest = createToken({ objectDurability: { ...structuredClone(CHEST_OBJECT_DURABILITY), hp: { value: 0, max: 18 } } });
+  chest.flags[MODULE_ID].storage.template = { name: "Набор сундука", form: { itemCount: 3 } };
   Object.assign(chest, { x: 200, y: 300, width: 1, height: 1 });
   chest.parent = { id: "scene", grid: { size: 100 } };
   chest.delete = async () => { chest.deleted = true; };
@@ -213,6 +214,23 @@ test("destroying an unopened chest generates once, spills one snapshot, then del
   assert.equal(snapshots[0].y, 350);
   assert.equal(chest.deleted, true);
   assert.deepEqual(result, { outcome: "destroyed", pileUuid: "Scene.scene.Token.pile" });
+});
+
+test("destroying an unconfigured chest spills its coin fallback without item generation", async () => {
+  const storageService = new StorageService({ random: () => 0,
+    generate: async () => { throw new Error("Unconfigured chest must only roll coins"); } });
+  let snapshot;
+  const groundPileService = { async transferSnapshotToScene(request) {
+    snapshot = request;
+    return { token: { uuid: "Scene.scene.Token.coins" } };
+  } };
+  const chest = createToken();
+  chest.delete = async () => { chest.deleted = true; };
+  const { service } = createService({ storageService, groundPileService });
+  await service.destroyChest(chest, { mutationId: "destroy-unconfigured-chest" });
+  assert.deepEqual(snapshot.rows, []);
+  assert.deepEqual(snapshot.coins, { pp: 0, gp: 5, sp: 0, cp: 0 });
+  assert.equal(chest.deleted, true);
 });
 
 test("retry after pile creation reuses the stable mutation and deletes without duplication", async () => {

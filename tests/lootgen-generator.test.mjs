@@ -6,6 +6,44 @@ import {
   normalizeLootgenForm
 } from "../scripts/data/lootgen-generator.js";
 
+test("automatic loot themes connect equipment instead of mixing unrelated kits", () => {
+  const candidate = (sourceId, name, typeLabel) => ({ sourceType: "gear", sourceId, name, typeLabel, value: 10, multipleAppearance: "1", stackable: true });
+  for (const [pool, expected] of [
+    [[candidate("longsword", "Длинный меч", "Оружие"), candidate("sleeping-bag", "Спальный мешок", "Снаряжение"), candidate("shield", "Щит", "Броня"), candidate("chainmail", "Кольчуга", "Броня")], ["longsword", "shield", "chainmail"]],
+    [[candidate("greatsword", "Двуручный меч", "Оружие"), candidate("shield", "Щит", "Броня"), candidate("chainmail", "Кольчуга", "Броня")], ["greatsword", "chainmail"]],
+    [[candidate("ryukzak", "Рюкзак", "Снаряжение"), candidate("hammer", "Боевой молот", "Оружие"), candidate("sleeping-bag", "Спальный мешок", "Снаряжение"), candidate("blanket", "Одеяло", "Снаряжение")], ["ryukzak", "sleeping-bag", "blanket"]],
+    [[candidate("longbow", "Длинный лук", "Оружие"), candidate("bolts", "Арбалетные болты", "Боеприпас"), candidate("arrows", "Стрелы", "Боеприпас")], ["longbow", "arrows"]]
+  ]) {
+    const result = generateLootgenResult({ mundanePool: pool, itemCount: 4, budgetValue: 1000, includeCoins: false, random: () => 0 });
+    assert.deepEqual(result.rows.map(row => row.sourceId).sort(), [...expected].sort());
+    assert.ok(result.rows.every(row => row.quantity === 1));
+    assert.ok(result.spentValue < result.budgetValue);
+  }
+});
+
+test("unused item budget does not inflate quantities or become an unrequested coin hoard", () => {
+  const result = generateLootgenResult({ mundanePool: [{ sourceType: "gear", sourceId: "ration", name: "Рацион", value: 100, multipleAppearance: "1", stackable: true }],
+    budgetValue: 1000, itemCount: 1, coinBudgetPercent: 10, includeCoins: true, random: () => 0 });
+  assert.equal(result.rows[0].quantity, 1);
+  assert.equal(result.spentValue, 100);
+  assert.equal(result.coins.totalCopper, 100);
+});
+
+test("existing manual equipment anchors the next generated items without duplicating its role", () => {
+  const weapon = { sourceType: "gear", sourceId: "greatsword", name: "Двуручный меч", typeLabel: "Оружие", value: 10 };
+  const result = generateLootgenResult({ seedRows: [weapon], mundanePool: [weapon,
+    { sourceType: "gear", sourceId: "shield", name: "Щит", value: 10 },
+    { sourceType: "gear", sourceId: "armor", name: "Кольчуга", value: 10 }], itemCount: 5, budgetValue: 100, includeCoins: false, random: () => 0 });
+  assert.deepEqual(result.rows.map(row => row.sourceId), ["armor"]);
+});
+
+test("manual native equipment outside the filtered catalog retains its handedness as a thematic seed", () => {
+  const result = generateLootgenResult({ seedRows: [{ name: "Реликвия", sourceId: "outside-rank-filter", itemData: { type: "weapon", name: "Реликвия", system: { properties: ["two"] } } }],
+    mundanePool: [{ sourceType: "gear", sourceId: "shield", name: "Щит", value: 10 }, { sourceType: "gear", sourceId: "armor", name: "Кольчуга", value: 10 }],
+    itemCount: 2, budgetValue: 100, includeCoins: false, random: () => 0 });
+  assert.deepEqual(result.rows.map(row => row.sourceId), ["armor"]);
+});
+
 const variantA={variantId:"book-a",gearId:"book",sourceName:"Книга",title:"A",description:"Первый",rank:0};
 const variantB={variantId:"book-b",gearId:"book",sourceName:"Книга",title:"B",description:"Последний",rank:0};
 
@@ -87,7 +125,7 @@ test("coins never consume the requested ordinary item row limit", () => {
     budgetValue: 100, itemCount: 5, includeCoins: true, random: () => 0
   });
   assert.equal(result.rows.length, 5);
-  assert.equal(result.coins.totalCopper, 50);
+  assert.equal(result.coins.totalCopper, 0);
   assert.equal(result.spentValue, 50);
 });
 
@@ -148,10 +186,10 @@ test("coin reserve is bounded and missing legacy values preserve the old budget"
 });
 
 for (const scenario of [
-  { percent: 20, includeCoins: true, spent: 800, coins: 201 },
+  { percent: 20, includeCoins: true, spent: 100, coins: 200 },
   { percent: 100, includeCoins: true, spent: 0, coins: 1001 },
-  { percent: 0, includeCoins: true, spent: 1000, coins: 1 },
-  { percent: 20, includeCoins: false, spent: 1000, coins: 0 }
+  { percent: 0, includeCoins: true, spent: 100, coins: 0 },
+  { percent: 20, includeCoins: false, spent: 100, coins: 0 }
 ]) {
   test(`lootgen reserves ${scenario.percent}% for coins when enabled=${scenario.includeCoins}`, () => {
     const result = generateLootgenResult({
@@ -187,10 +225,10 @@ test("lootgen rolls an authored package formula once for a valueless source", ()
 
   assert.equal(result.rows[0].quantity, 24);
   assert.equal(result.spentValue, 0);
-  assert.equal(result.coins.totalCopper, 100);
+  assert.equal(result.coins.totalCopper, 0);
 });
 
-test("lootgen repeats selection passes and may exceed the soft target to spend budget", () => {
+test("lootgen keeps one authored package and leaves the remaining budget unused", () => {
   const result = generateLootgenResult({
     mundanePool: [{
       sourceType: "gear",
@@ -209,8 +247,8 @@ test("lootgen repeats selection passes and may exceed the soft target to spend b
     random: () => 0
   });
 
-  assert.equal(result.rows[0].quantity, 6);
-  assert.equal(result.spentValue, 600);
+  assert.equal(result.rows[0].quantity, 1);
+  assert.equal(result.spentValue, 100);
 });
 
 test("lootgen treats itemCount as a hard cap on result rows across budget passes", () => {
@@ -236,10 +274,10 @@ test("lootgen treats itemCount as a hard cap on result rows across budget passes
 
   assert.equal(result.rows.length, 4);
   assert.equal(result.spentValue, 20);
-  assert.equal(result.coins.totalCopper, 30);
+  assert.equal(result.coins.totalCopper, 0);
 });
 
-test("lootgen fills requested rows before increasing selected stack quantities", () => {
+test("lootgen selects distinct rows without inflating their stack quantities", () => {
   const mundanePool = Array.from({ length: 4 }, (_, index) => ({
     sourceType: "gear",
     sourceId: `material-${index}`,
@@ -261,9 +299,9 @@ test("lootgen fills requested rows before increasing selected stack quantities",
   });
 
   assert.equal(result.rows.length, 4);
-  assert.equal(result.totalItems, 10);
-  assert.equal(result.rows.some((row) => row.quantity > 1), true);
-  assert.equal(result.spentValue, 50);
+  assert.equal(result.totalItems, 4);
+  assert.equal(result.rows.some((row) => row.quantity > 1), false);
+  assert.equal(result.spentValue, 20);
 });
 
 test("lootgen never repeats one specific magic item even when it is consumable", () => {
@@ -289,7 +327,7 @@ test("lootgen never repeats one specific magic item even when it is consumable",
 
   assert.equal(result.rows[0].quantity, 1);
   assert.equal(result.spentValue, 100);
-  assert.equal(result.coins.totalCopper, 900);
+  assert.equal(result.coins.totalCopper, 0);
 });
 
 test("lootgen selects a zero-value item once without using it as a budget filler", () => {
@@ -312,7 +350,7 @@ test("lootgen selects a zero-value item once without using it as a budget filler
 
   assert.equal(result.rows[0].quantity, 1);
   assert.equal(result.spentValue, 0);
-  assert.equal(result.coins.totalCopper, 500);
+  assert.equal(result.coins.totalCopper, 0);
 });
 
 test("lootgen generator produces a reusable result payload within the configured budget", () => {
@@ -349,8 +387,8 @@ test("lootgen generator produces a reusable result payload within the configured
       typeLabel: "Снаряжение",
       stackable: true,
       isBroken: false,
-      quantity: 2,
-      totalValue: 400,
+      quantity: 1,
+      totalValue: 200,
       rowIndex: 0,
       directGrantId: "lootgen:test-batch:row:0"
     }],
@@ -358,13 +396,14 @@ test("lootgen generator produces a reusable result payload within the configured
       pp: 0,
       gp: 0,
       sp: 0,
-      cp: 100,
-      totalCopper: 100,
-      label: "100 мм"
+      cp: 0,
+      totalCopper: 0,
+      label: "0 мм"
     },
-    spentValue: 400,
+    spentValue: 200,
     budgetValue: 500,
-    totalItems: 2,
+    unusedValue: 300,
+    totalItems: 1,
     generatedAt: "01.08.2026, 12:00:00",
     directCoinGrantId: "lootgen:test-batch:coins",
     hasResult: true
