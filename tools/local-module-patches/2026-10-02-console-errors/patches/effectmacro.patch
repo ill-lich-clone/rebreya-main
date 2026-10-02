@@ -1,0 +1,49 @@
+diff --git a/effectmacro/module.json b/effectmacro/module.json
+index 29acd36a..37c2a596 100644
+--- a/effectmacro/module.json
++++ b/effectmacro/module.json
+@@ -1,7 +1,7 @@
+ {
+     "id": "effectmacro",
+     "title": "Effect Macro",
+-    "version": "13.0.3",
++    "version": "13.0.4",
+     "authors": [
+         {
+             "name": "Zhell",
+@@ -17,7 +17,7 @@
+         "verified": "13"
+     },
+     "esmodules": [
+-        "module.mjs"
++        "module-13.0.4.mjs"
+     ],
+     "styles": [
+         "styles/styles.css"
+diff --git a/effectmacro/module.mjs b/effectmacro/module.mjs
+index 15177fe8..4f8d27d4 100644
+--- a/effectmacro/module.mjs
++++ b/effectmacro/module.mjs
+@@ -377,6 +377,7 @@ function isExecutor(actor) {
+  * @returns {foundry.documents.User|null}   The designated user, or `null` if none found.
+  */
+ function getExecutor(actor) {
++  if (!actor) return null;
+   return game.users.getDesignatedUser(user => {
+     return !user.isGM && user.active && actor.testUserPermission(user, "OWNER");
+   }) ?? game.users.activeGM;
+@@ -410,7 +411,7 @@ function init$2() {
+  * @param {string} hook   The trigger name.
+  */
+ async function _executeAppliedEffects$1(actor, hook) {
+-  if (!effectmacro.utils.isExecutor(actor)) return;
++  if (!actor || !effectmacro.utils.isExecutor(actor)) return;
+ 
+   for (const e of actor.appliedEffects.filter(e => effectmacro.utils.hasMacro(e, hook)))
+     await effectmacro.utils.callMacro(e, hook);
+diff --git a/effectmacro/module-13.0.4.mjs b/effectmacro/module-13.0.4.mjs
+new file mode 100644
+--- /dev/null
++++ b/effectmacro/module-13.0.4.mjs
+@@ -0,0 +1 @@
++import "./module.mjs?v=13.0.4";

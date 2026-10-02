@@ -36,13 +36,13 @@
 
 **Interfaces:** Consumes установленный source text; VM mocks Hooks.once/on, game/settings, ui и BG3Hotbar. Produces прежние `registerSettings(): void` и `hookRollEvent(rollConfig,dialogConfig,messageConfig): void` с безопасным отсутствующим UI/settings. Test helper читает sibling module root либо `THIRD_PARTY_MODULES_ROOT`; не входит в общий `tests/*.test.mjs` glob.
 
-- [ ] Сохранить exact source+manifest backups всех четырёх модулей; записать before hashes и проверить repository status/fetch.
-- [ ] Добавить source-based lifecycle tests: init user undefined/GM/player → ready GM/player; settings called exactly once, GM UI count=0, player UI count=1.
-- [ ] Добавить roll tests: no UI/manager/actor/setting/workflow, mismatched actor, MIDI disabled, setting false → неизменённый roll; setting true + matching actor + advBtn/disBtn → соответствующее поле true; advOnce=true вызывает один setState(null), advOnce=false не вызывает reset.
-- [ ] Запустить `node --test --test-name-pattern="BG3" tools/local-module-patches/2026-10-02-console-errors/console-errors.test.mjs`; ожидается red на GM settings и отсутствующем UI/settings.
-- [ ] Перенести существующий registerSettings в ready до GM return; удалить прежний повторный вызов. В hookRollEvent проверять panel/actor/workflow и game.settings.settings.has до get; сохранить прежние advState/advOnce.
-- [ ] Повысить manifest version до 3.4.5; обеспечить cache bust изменённого entrypoint и config import единственным ESM URL в каждом importer. Проверить реальные importers через scoped rg, не создавать второй module lifecycle.
-- [ ] Повторить BG3 tests; ожидается 0 failed. Проверить сохранённые keys/scopes/defaults сравнением исходного registerSettings.
+- [x] Сохранить exact source+manifest backups всех четырёх модулей; записать before hashes и проверить repository status/fetch.
+- [x] Добавить source-based lifecycle tests: init user undefined/GM/player → ready GM/player; settings called exactly once, GM UI count=0, player UI count=1.
+- [x] Добавить roll tests: no UI/manager/actor/setting/workflow, mismatched actor, MIDI disabled, setting false → неизменённый roll; setting true + matching actor + advBtn/disBtn → соответствующее поле true; advOnce=true вызывает один setState(null), advOnce=false не вызывает reset.
+- [x] Запустить `node --test --test-name-pattern="BG3" tools/local-module-patches/2026-10-02-console-errors/console-errors.test.mjs`; ожидается red на GM settings и отсутствующем UI/settings.
+- [x] Перенести существующий registerSettings в ready до GM return; удалить прежний повторный вызов. В hookRollEvent проверять panel/actor/workflow и game.settings.settings.has до get; сохранить прежние advState/advOnce.
+- [x] Повысить manifest version до 3.4.5; обеспечить cache bust изменённого entrypoint и config import единственным ESM URL в каждом importer. Проверить реальные importers через scoped rg, не создавать второй module lifecycle.
+- [x] Повторить BG3 tests; ожидается 0 failed. Проверить сохранённые keys/scopes/defaults сравнением исходного registerSettings.
 
 ## Task 2: sm-airship renderSettings
 
@@ -50,10 +50,10 @@
 
 **Interfaces:** Consumes Foundry renderSettings callback `(app,html)` и canOpenApp(); produces ту же launch button/action.
 
-- [ ] Добавить tests на DOM input, прежний jQuery input, два render (count buttons=1), canOpenApp=false (count=0), anchor present/absent и обработчик открытия (openAirshipApp called once; preventDefault called).
-- [ ] Запустить focused pattern `airship`; ожидается red на HTMLElement.find.
-- [ ] В существующем callback нормализовать input в jQuery root (`html?.jquery ? html : $(html)`), сохранив button placement, click callback и дедупликацию. Никаких новых hooks/apps.
-- [ ] Повысить version до 0.1.10 и cache bust entrypoint; повторить tests, ожидается 0 failed.
+- [x] Добавить tests на DOM input, прежний jQuery input, два render (count buttons=1), canOpenApp=false (count=0), anchor present/absent и обработчик открытия (openAirshipApp called once; preventDefault called).
+- [x] Запустить focused pattern `airship`; ожидается red на HTMLElement.find.
+- [x] В существующем callback нормализовать input в jQuery root (`html?.jquery ? html : $(html)`), сохранив button placement, click callback и дедупликацию. Никаких новых hooks/apps.
+- [x] Повысить version до 0.1.10 и cache bust entrypoint; повторить tests, ожидается 0 failed.
 
 ## Task 3: transform-cleanup flags guard
 
@@ -61,10 +61,10 @@
 
 **Interfaces:** Preserves `onUpdateActor(updatedActor,changed,options,userId): void` и existing Actor.implementation.deleteDocuments invocation.
 
-- [ ] Добавить tests: changed без flags, flags без dnd5e, dnd5e без deletion key → 0 deletes/no throw; active GM + dnd5e `-=isPolymorphed` → exact `[updatedActor.id]`; inactive GM/player → 0 deletes.
-- [ ] Запустить focused pattern `transform`; ожидается red для отсутствующих flags/dnd5e.
-- [ ] Перед in проверять changed?.flags?.dnd5e, сохранив active GM guard и прежнее удаление. Не менять критерий самого удаления.
-- [ ] Повысить version до 13.351.5.3.2.2 и cache bust entrypoint; повторить tests, ожидается 0 failed.
+- [x] Добавить tests: changed без flags, flags без dnd5e, dnd5e без deletion key → 0 deletes/no throw; active GM + dnd5e `-=isPolymorphed` → exact `[updatedActor.id]`; inactive GM/player → 0 deletes.
+- [x] Запустить focused pattern `transform`; ожидается red для отсутствующих flags/dnd5e.
+- [x] Перед in проверять changed?.flags?.dnd5e, сохранив active GM guard и прежнее удаление. Не менять критерий самого удаления.
+- [x] Повысить version до 13.351.5.3.2.2 и cache bust entrypoint; повторить tests, ожидается 0 failed.
 
 ## Task 4: effectmacro missing Actor
 
@@ -72,10 +72,10 @@
 
 **Interfaces:** Preserves `getExecutor(actor): User|null`, `_executeAppliedEffects$1(actor,hook): Promise<void>` и callers updateCombat/updateCombatant.
 
-- [ ] Добавить tests: getExecutor(undefined/null)=null; undefined actor execution=no-op; valid actor designated owner unchanged; fallback activeGM unchanged; non-executor не выполняет macros; matching appliedEffects идут в прежнем порядке. Сценарий missing previous actor + valid current actor выполняет только current effects.
-- [ ] Запустить focused pattern `effectmacro`; ожидается red для undefined Actor.
-- [ ] Добавить guard отсутствующего Actor в getExecutor и execution helper; не менять порядок owner selection/effect filters.
-- [ ] Повысить version до 13.0.4 и cache bust entrypoint; повторить tests, ожидается 0 failed.
+- [x] Добавить tests: getExecutor(undefined/null)=null; undefined actor execution=no-op; valid actor designated owner unchanged; fallback activeGM unchanged; non-executor не выполняет macros; matching appliedEffects идут в прежнем порядке. Сценарий missing previous actor + valid current actor выполняет только current effects.
+- [x] Запустить focused pattern `effectmacro`; ожидается red для undefined Actor.
+- [x] Добавить guard отсутствующего Actor в getExecutor и execution helper; не менять порядок owner selection/effect filters.
+- [x] Повысить version до 13.0.4 и cache bust entrypoint; повторить tests, ожидается 0 failed.
 
 ## Task 5: Patch bundle, итоговая проверка и Git
 
@@ -83,13 +83,20 @@
 
 **Interfaces:** Bundle manifest хранит relative file paths, original/patched versions, SHA-256 before/after и местоположение backups; patch-файлы содержат только diff затронутых source/manifest. Не содержит world data/credentials. README описывает focused command, local-patch статус, восстановление из backups и риск замены при upstream update.
 
-- [ ] Сгенерировать минимальные diffs из exact backups и installed files; проверить, что изменение каждого файла соответствует spec.
-- [ ] Запустить весь artifact: `node --test tools/local-module-patches/2026-10-02-console-errors/console-errors.test.mjs`; ожидается 0 failed. Запустить `node --check` на изменённых JS/MJS; JSON parse четырёх manifests; проверить cache URLs и их существующие targets.
-- [ ] Если CODEX-сеанс доступен, загрузить изменённые callbacks без повторной регистрации lifecycle/hooks либо открыть новый клиент и проверить: registered BG3 settings, GM UI absent, roll no-op без реальных бросков, airship button count/action, transform/effectmacro fixture scenarios без Document writes. Не изменять живой бой или ownership pack. Указать точные runtime versions и ограничения cache/server manifest refresh.
-- [ ] Обновить паспорт проверочного artifact: owner, data flow source→VM mocks→assertions, команда и отсутствие persisted writes. Сохранить результат тестов, версии и пути backups в README.
-- [ ] `git diff --check`, `git diff --stat`, содержательный diff; добавлять только spec, plan и patch artifact/docs. Commit `fix: preserve third-party hooks during missing client state`; `git push -u origin lich_branch`.
-- [ ] Если runtime rebreya-main не изменялся, его version не повышать и общую runtime suite не запускать: actual changes verified по сторонним исходникам. Если новая необходимость изменит этот scope, сначала пересмотреть spec и выполнить полные проверки из AGENTS.md.
+- [x] Сгенерировать минимальные diffs из exact backups и installed files; проверить, что изменение каждого файла соответствует spec.
+- [x] Запустить весь artifact: `node --test tools/local-module-patches/2026-10-02-console-errors/console-errors.test.mjs`; ожидается 0 failed. Запустить `node --check` на изменённых JS/MJS; JSON parse четырёх manifests; проверить cache URLs и их существующие targets.
+- [x] **Пропущено по указанию пользователя «Не нужно проверять»:** Если CODEX-сеанс доступен, загрузить изменённые callbacks без повторной регистрации lifecycle/hooks либо открыть новый клиент и проверить: registered BG3 settings, GM UI absent, roll no-op без реальных бросков, airship button count/action, transform/effectmacro fixture scenarios без Document writes. Не изменять живой бой или ownership pack. Указать точные runtime versions и ограничения cache/server manifest refresh.
+- [x] Обновить паспорт проверочного artifact: owner, data flow source→VM mocks→assertions, команда и отсутствие persisted writes. Сохранить результат тестов, версии и пути backups в README.
+- [x] `git diff --check`, `git diff --stat`, содержательный diff; добавлять только spec, plan и patch artifact/docs. Commit `fix: preserve third-party hooks during missing client state`; `git push -u origin lich_branch`.
+- [x] Если runtime rebreya-main не изменялся, его version не повышать и общую runtime suite не запускать: actual changes verified по сторонним исходникам. Если новая необходимость изменит этот scope, сначала пересмотреть spec и выполнить полные проверки из AGENTS.md.
 
 ## Execution review
 
-Self-review: все четыре owner fixes и сохранённые контракты покрыты focused tests; общие version/cache/backup/patch constraints покрыты Task 5. Применение — executing-plans в текущем чате, с остановкой при foreign changes, drift или несовпадении spec. До product edits требуется согласование этого плана пользователем.
+Self-review: все четыре owner fixes и сохранённые контракты покрыты focused tests; общие version/cache/backup/patch constraints покрыты Task 5. Применение — executing-plans в текущем чате, с остановкой при foreign changes, drift или несовпадении spec. План согласован пользователем до product edits; выполнение завершено 2026-10-02. Live-пункт пропущен по прямому указанию пользователя, без доступа к игре.
+
+
+## Результат исполнения
+
+Tasks 1–4: ожидаемые red failures воспроизведены до реализации; итог 34 passed / 0 failed. Task 1 дополнен regression tests на newly reachable GM onChange callbacks и migration: 36 отсутствующих panel guards, player-only migration, исходные settings metadata/player callback bodies сохранены.
+
+Task 5: проверены 46 JS/MJS, 4 manifests, 125 relative import references; четыре patches применены и обращены на изолированных копиях с точным совпадением 50 after / 46 before SHA-256. Live-проверка отменена пользователем; сервер не перезапускался. Runtime rebreya-main не менялся. Решения исполнения и backups записаны в `tools/local-module-patches/2026-10-02-console-errors/README.md`.

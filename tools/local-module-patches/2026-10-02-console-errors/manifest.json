@@ -1,0 +1,333 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-10-02T17:56:05.090Z",
+  "backupRoot": "C:/Users/ill_lich/.codex/backups/foundry-console-errors-2026-10-02/2026-10-02T17-42-39-989Z",
+  "modules": {
+    "bg3-inspired-hotbar": {
+      "beforeVersion": "3.4.4",
+      "afterVersion": "3.4.5",
+      "entrypoint": "scripts/module-3.4.5.js",
+      "patch": "patches/bg3-inspired-hotbar.patch"
+    },
+    "sm-airship": {
+      "beforeVersion": "0.1.9",
+      "afterVersion": "0.1.10",
+      "entrypoint": "scripts/module-0.1.10.js",
+      "patch": "patches/sm-airship.patch"
+    },
+    "transform-cleanup": {
+      "beforeVersion": "13.351.5.3.2.1",
+      "afterVersion": "13.351.5.3.2.2",
+      "entrypoint": "transform-cleanup-13.351.5.3.2.2.mjs",
+      "patch": "patches/transform-cleanup.patch"
+    },
+    "effectmacro": {
+      "beforeVersion": "13.0.3",
+      "afterVersion": "13.0.4",
+      "entrypoint": "module-13.0.4.mjs",
+      "patch": "patches/effectmacro.patch"
+    }
+  },
+  "files": [
+    {
+      "module": "bg3-inspired-hotbar",
+      "path": "module.json",
+      "beforeSha256": "384b890c8f3eea6cb411321187bec9268426398af23c429b6a0893c2c700e1fc",
+      "afterSha256": "3412d337c52965d922922e3b974cfb69e594aa277d4b52f336debe954433771d"
+    },
+    {
+      "module": "sm-airship",
+      "path": "module.json",
+      "beforeSha256": "7521518d03ec5c5531bf21471d828f2acc9d343765eeaa2e4a269c7703ee6a05",
+      "afterSha256": "3375906f221d86b104a739ffacbc3c5d8d0eb24f1eff07f3fbca4f3a4b35ff98"
+    },
+    {
+      "module": "sm-airship",
+      "path": "scripts/module.js",
+      "beforeSha256": "f972a8b59f4d2e855cb65981da2fa1a387354e4f7e60823dd034f3af9b1de2a6",
+      "afterSha256": "c08ed2229b7544275af4f329373fec7fe08102ef437b57ed09591447c6786f68"
+    },
+    {
+      "module": "transform-cleanup",
+      "path": "module.json",
+      "beforeSha256": "aa3a85c2117802673b439d44fdfc3a955c35013f4344983c749c99559d90673a",
+      "afterSha256": "feefbc04e6d64924960757515ced1c51fcf91baedab7eca4351e18db2cf8f2ef"
+    },
+    {
+      "module": "transform-cleanup",
+      "path": "transform-cleanup.mjs",
+      "beforeSha256": "7b1d757dcf4f6f5586effe7be90b6864bc8c74a4edf246cef310b9d9888ff9a2",
+      "afterSha256": "c735123646af4fc8983572a7ee29e76db4ffe9271f3f7b1538375489874eed0f"
+    },
+    {
+      "module": "effectmacro",
+      "path": "module.json",
+      "beforeSha256": "83e1f805781dc2530e4ff499488aa679a3c2e8ca3ee9f5ed2969be34a12cc7c3",
+      "afterSha256": "8458b0475ae6ac6a0f030c193a0289ef3fdd5b1baf992fee091482d66fe64093"
+    },
+    {
+      "module": "effectmacro",
+      "path": "module.mjs",
+      "beforeSha256": "59f5052d99338517bf3b56cb404fb817c93ec3c8e33e1d5c6373ebf8fc691f22",
+      "afterSha256": "88ffebb4f6fa31e5f41ee9fed6d5743f428ca5d6d76d9ae134772bb3259fa461"
+    },
+    {
+      "module": "bg3-inspired-hotbar",
+      "path": "scripts/bg3-hotbar.js",
+      "beforeSha256": "924f0bbff0d97a43d89ad565fb4d08c67df62810ada6c52ba1d8a61fa9ba93e6",
+      "afterSha256": "4bdb484af6b54a2c8e35d31b9f7cfc68be47c8324a89c07236befdf6627e4b3d"
+    },
+    {
+      "module": "bg3-inspired-hotbar",
+      "path": "scripts/components/component.js",
+      "beforeSha256": "486194a87d560acac6e48ece9eacabf9229d3d6444396d385d845c6069699e73",
+      "afterSha256": "d6c0da0dd3f08793bb65a140eaa79dc723b88decb076fb6e396c16aede5f4dab"
+    },
+    {
+      "module": "bg3-inspired-hotbar",
+      "path": "scripts/components/containers/AdvContainer.js",
+      "beforeSha256": "a53a10d4584041be81f327d8efd5161dce3bfd48eb7ee002676689159ccae51a",
+      "afterSha256": "fbc700629a8b582638c78ddabb9c6e01154e119cdd9563d0ecf47b0d6b9e0691"
+    },
+    {
+      "module": "bg3-inspired-hotbar",
+      "path": "scripts/components/containers/ContainerPopover.js",
+      "beforeSha256": "3a7c6f9b43f5e7d5c0fc1ee045130baa024683c30609f4273eebe5c6dc659327",
+      "afterSha256": "ec1755f16aa7d61ebacacf91543b1fd818504b44e3c171fc9b85ab2895a4b1af"
+    },
+    {
+      "module": "bg3-inspired-hotbar",
+      "path": "scripts/components/containers/ControlContainer.js",
+      "beforeSha256": "28dc298877e19005fcf8f0b8075179921dd75d1a7e7c0e32b64491a3533792c2",
+      "afterSha256": "2f80967836f4915c3f2b33b18138bd829fd30f0b64c31c073b7d4783796f5d3e"
+    },
+    {
+      "module": "bg3-inspired-hotbar",
+      "path": "scripts/components/containers/DeathSavesContainer.js",
+      "beforeSha256": "555176f9bf942852bb8571049e7581467cc7b4133be32482324012ef8c27dbb9",
+      "afterSha256": "0a69053c7cd50a3acd0d725a803f21a044f9be6d91411b5546fd3ee0c41b3805"
+    },
+    {
+      "module": "bg3-inspired-hotbar",
+      "path": "scripts/components/containers/FilterContainer.js",
+      "beforeSha256": "d868cf22925c8f9186cfbbd866cb39530fafda25b1fb6a08bca71c0a10df0b65",
+      "afterSha256": "6d025866664779dc55b1265629367d0fc0405dd8af4ed400d10442ac32cb9a7e"
+    },
+    {
+      "module": "bg3-inspired-hotbar",
+      "path": "scripts/components/containers/PassiveContainer.js",
+      "beforeSha256": "79328af40189cbca15641ed67a944e650e9f003d84549121034b3a997ab07ed8",
+      "afterSha256": "7b3eef622385ab9446678456501627d34fbf0b033bf941a63f6d7d7a0f8ad43f"
+    },
+    {
+      "module": "bg3-inspired-hotbar",
+      "path": "scripts/components/containers/PortraitContainer.js",
+      "beforeSha256": "124bd26ff4674409c1dabc719585855562bc3a942af0712ae89c993be89d7c92",
+      "afterSha256": "8f35f8f63b62aa59afcf3a9b6e398cda1ae4fd187e8fd1616bcf00a751f3d1b2"
+    },
+    {
+      "module": "bg3-inspired-hotbar",
+      "path": "scripts/components/containers/PortraitHealth.js",
+      "beforeSha256": "53bdaad728be9de04141694daff6bb2ca8d2d8f7318172c991f840970271713f",
+      "afterSha256": "664f32a06d5ca80b6ba0b0dd4a3abc5a43cc43be6435dac2805ae5a6418f86c2"
+    },
+    {
+      "module": "bg3-inspired-hotbar",
+      "path": "scripts/components/containers/RestTurnContainer.js",
+      "beforeSha256": "9941589f361918e8243522519e89f4e1f948df3341891e26f4235e8c07a6617d",
+      "afterSha256": "f6640cb83abe90dc70bb2c7447a74e4eb6e02af4cd117ed59e6f603ff70a127f"
+    },
+    {
+      "module": "bg3-inspired-hotbar",
+      "path": "scripts/components/containers/WeaponContainer.js",
+      "beforeSha256": "58ac3a910079272743daa54f7cb9931cf883a06867b40213c5658381de5b7bba",
+      "afterSha256": "8cd784c10a0aecddf5677f6fbfdd8df5ade8709d8069b443f6bf6805ba852efc"
+    },
+    {
+      "module": "bg3-inspired-hotbar",
+      "path": "scripts/components/dialog/CPRActionsDialog.js",
+      "beforeSha256": "40c53abbd258cb7da2f7c84b91233db32f8bd0ef33ce432ea6f3310f23a451c9",
+      "afterSha256": "2c921c484d71e9555d0b59327f752cf8a2943d1688edf665b48b5d31e668ac76"
+    },
+    {
+      "module": "bg3-inspired-hotbar",
+      "path": "scripts/components/dialog/ExtraInfosDialog.js",
+      "beforeSha256": "e34801ddae484af0a0632648eb11838895de840bebc4fbfaba4b8a604bc8c255",
+      "afterSha256": "70058d0b9a29e2b7339174fa00262ec3028ff6da623f92c19c98eb95b956fa3f"
+    },
+    {
+      "module": "bg3-inspired-hotbar",
+      "path": "scripts/components/dialog/SettingDialog.js",
+      "beforeSha256": "e536ebbb68ec9faf741b991e75ffb4a61b2a281aba3f6cab5d8c2afcdfa3a7eb",
+      "afterSha256": "e6fe3cb470a84ad322c7ab5b1a7bddaa5a88e21002db7cec89d56bad2656f6ef"
+    },
+    {
+      "module": "bg3-inspired-hotbar",
+      "path": "scripts/components/dialog/ThemeSettingDialog.js",
+      "beforeSha256": "8989442dd5d4059ae81c1af6eb1d724dc752dbfe0a665a5e7c8b0f8d62a2cc14",
+      "afterSha256": "cebb4d1422e6832e2654cedfe88194fba066744eefb8c5db9d11e3472fc00679"
+    },
+    {
+      "module": "bg3-inspired-hotbar",
+      "path": "scripts/features/AutoPopulateContainer.js",
+      "beforeSha256": "e1c14cf47b2b27128459d09320560f2433e17af22d506c0fe58c7372d9b19419",
+      "afterSha256": "30c199306e4d467bd78072d2d06a947ebfadf2244dd733828a079813db23a628"
+    },
+    {
+      "module": "bg3-inspired-hotbar",
+      "path": "scripts/features/AutoPopulateCreateToken.js",
+      "beforeSha256": "59e2f2ec2527532cef4de201691197551e7c1996dcec32d7c6ab0cbe63ae125d",
+      "afterSha256": "a7f2972dca4c7d9e90b2d2f93467e0cfe6cb0345bf42d068a986ce84e0ecba8a"
+    },
+    {
+      "module": "bg3-inspired-hotbar",
+      "path": "scripts/managers/ControlsManager.js",
+      "beforeSha256": "270123b22ba6b93839a70fe5de538792fc95665847d0abf68dded4b2ec60efdb",
+      "afterSha256": "5c5cca0d9c839c9602c47c775d83086532d43cb6cead81d90235ccccea1001a1"
+    },
+    {
+      "module": "bg3-inspired-hotbar",
+      "path": "scripts/managers/DragDropManager.js",
+      "beforeSha256": "1359ee0ca0533af7653bb9079712cbabb70ef68419420c805c4dafe3173c1c20",
+      "afterSha256": "c02a24ffe40242803dea1629c6009163892bfc1241475af09be880fe145c4b3d"
+    },
+    {
+      "module": "bg3-inspired-hotbar",
+      "path": "scripts/managers/HotbarManager.js",
+      "beforeSha256": "326f2a12e55618dff58af1d7bc3d9d96b3686ddbe67eb457d608d0bd692fd76d",
+      "afterSha256": "fbefe628bb6f8a4fabbeedc0da4e684d0d3342c12cd47421ff53429ccca337d7"
+    },
+    {
+      "module": "bg3-inspired-hotbar",
+      "path": "scripts/managers/ItemUpdateManager.js",
+      "beforeSha256": "dfa7c799f0fed2b4536af9f4fbd05e0044cd546060c1260ca370da9bc106f5b3",
+      "afterSha256": "48de4b7e3b4e3e36711400157861f086cfa80c120143047e9f7c6a839fb62643"
+    },
+    {
+      "module": "bg3-inspired-hotbar",
+      "path": "scripts/managers/TooltipManager.js",
+      "beforeSha256": "024b8779a84224a63257e2376a34430db39fcaf6003c98ad6aa8ccf8b36ee609",
+      "afterSha256": "d80ddf814de57c4fcb110927aaca44e830ab11384d09e8e9d7f95a8b1c5e6474"
+    },
+    {
+      "module": "bg3-inspired-hotbar",
+      "path": "scripts/module.js",
+      "beforeSha256": "8570424e921baa5e4c6fcae392c7cdb14613dcb7d4f7843306a2d0ded2bf15cf",
+      "afterSha256": "1faa330c3523c8295a1bbbd5cdc8437d21221adc2d90514db628b8e5cb24c88d"
+    },
+    {
+      "module": "bg3-inspired-hotbar",
+      "path": "scripts/utils/config.js",
+      "beforeSha256": "eabe640943b12720ef9c3586ca1cde71f3c384eca9e236e1beccd81d4a744ffc",
+      "afterSha256": "928c038e9e8343d15211d678f5c7fc4da1aedcdb31995b5558f8e2a9be2710b7"
+    },
+    {
+      "module": "bg3-inspired-hotbar",
+      "path": "scripts/components/buttons/activeButton.js",
+      "beforeSha256": "feb89a2c5d9071344c736acdeeee929195cce8a7a944066bce451ce95c915453",
+      "afterSha256": "2252515c7de10d781c556416251c01f810d8d2ab3b477d8fcc2c55853aef2902"
+    },
+    {
+      "module": "bg3-inspired-hotbar",
+      "path": "scripts/components/buttons/BaseButton.js",
+      "beforeSha256": "08e943d627ce55426100c34e0703d036dfb22bc41ec77fff7e19e19a9b48a935",
+      "afterSha256": "37ce3b58c05f5b644ca1b4b16b6c8bfb3a1df5f361fc6b6929c72600e3f447a1"
+    },
+    {
+      "module": "bg3-inspired-hotbar",
+      "path": "scripts/components/buttons/filterButton.js",
+      "beforeSha256": "7ee89c3010367b9164a255dd4b2e5df433eef55290e79b78d1ad9e457355cf25",
+      "afterSha256": "e2edb496a5ed9e0fac568bdafb5c4d9aa2ec0a1bb35fd3e3e111f5fe5f19e42a"
+    },
+    {
+      "module": "bg3-inspired-hotbar",
+      "path": "scripts/components/buttons/itemButton.js",
+      "beforeSha256": "095d3ae1b0105d2c72925858662c0471810b615268abad9e04f6be8a367c3ea1",
+      "afterSha256": "76862adf3e41cb151965b476c2f869d2b4eb624cfac602b910f1c87bd7eaa1ff"
+    },
+    {
+      "module": "bg3-inspired-hotbar",
+      "path": "scripts/components/buttons/passiveButton.js",
+      "beforeSha256": "aff4febc254a183e463a4a56b195be4a1dfdb503170746e09e596f44f112223a",
+      "afterSha256": "d7a02d81d5942615d885b32bb046e45a1f84f3bca6a9661c9bf26c439b7e1cb6"
+    },
+    {
+      "module": "bg3-inspired-hotbar",
+      "path": "scripts/components/containers/AbilityContainer.js",
+      "beforeSha256": "a569bd7969d311c858c5a74c43571fc3df9db30be2129306942ddd2dca74e484",
+      "afterSha256": "0e4c543c118b2d4bae5927470f2aaa4ae5cefd64381286f6354c65982aeb5062"
+    },
+    {
+      "module": "bg3-inspired-hotbar",
+      "path": "scripts/components/containers/ActiveContainer.js",
+      "beforeSha256": "af4fb62b138b1b302a22b44cfb24ca7ff03812388e5a4c45d167b76f0e666b02",
+      "afterSha256": "f4aa7f8a9a90f2c4ea49f776854226592ce8e004da0728097289aa6d8f92d3ea"
+    },
+    {
+      "module": "bg3-inspired-hotbar",
+      "path": "scripts/components/containers/DragBar.js",
+      "beforeSha256": "5f27ea44d7322c4c976e2d6e414d7063cbd62e554c681fbc5ce566f28394e553",
+      "afterSha256": "b43ec80c48d1d7bd732bd0fa34775cfffec097df1ef951ac2938e89ae9d06045"
+    },
+    {
+      "module": "bg3-inspired-hotbar",
+      "path": "scripts/components/containers/GridCell.js",
+      "beforeSha256": "48ec7338c11ee3bf1d1586a60c274f78cc7ca5d4694b065c7a32601cbeb0a536",
+      "afterSha256": "f0266b6df4cd7a56616a22fd567f9415e2fe89655ef1dcddf4476b678f878757"
+    },
+    {
+      "module": "bg3-inspired-hotbar",
+      "path": "scripts/components/containers/GridContainer.js",
+      "beforeSha256": "53993382106553c707123896b79c6b030c47777f46c17c2b08ed07bd521b4e38",
+      "afterSha256": "aabf1fbbc73ca16bff4ba632762c9abd48ee22fa90acdfcf3012d6478ea37f69"
+    },
+    {
+      "module": "bg3-inspired-hotbar",
+      "path": "scripts/components/containers/HotbarContainer.js",
+      "beforeSha256": "9f3f3e34752806d8c37cdaf9c4067988ac317c02c34fccad02524fc2196e4ebd",
+      "afterSha256": "02b9d605c4f5d7f6461bc58b2467d610b3d38c01cd3303d3265fd105ebf744b5"
+    },
+    {
+      "module": "bg3-inspired-hotbar",
+      "path": "scripts/components/containers/MenuContainer.js",
+      "beforeSha256": "7359adde3fc64be8de4ca074d4ac6343884bac356d2cb264b368d0e63e702aeb",
+      "afterSha256": "6bcd7f00deef0937372aa85dca1b94668ab56003b136da42357a66ce3aa2d3b9"
+    },
+    {
+      "module": "bg3-inspired-hotbar",
+      "path": "scripts/features/AutoSort.js",
+      "beforeSha256": "bb8b25711770310ed01587464fba3c7175461f81a059d5f2945f9870e7502e9a",
+      "afterSha256": "e4dfedf76c1105f33e1dd6f0b594da4845409b934f51a90995ce2c4289341cac"
+    },
+    {
+      "module": "bg3-inspired-hotbar",
+      "path": "scripts/managers/TargetSelector.js",
+      "beforeSha256": "ec0a100457f4fbcb89cf7798dae5e32df1672b2072ba4ff4195af46ebae233e0",
+      "afterSha256": "6ac7a55c7ab07e4228b93b865061090c189005d8e38ea428904db62c7fb1dde6"
+    },
+    {
+      "module": "bg3-inspired-hotbar",
+      "path": "scripts/module-3.4.5.js",
+      "beforeSha256": null,
+      "afterSha256": "ad5abb3448ed32c777c28670a0cbe235c9b13db950eef43ff670a3aaf504eb34"
+    },
+    {
+      "module": "sm-airship",
+      "path": "scripts/module-0.1.10.js",
+      "beforeSha256": null,
+      "afterSha256": "6a8168882e19eed2dcf5760ea08e0a4ceaf787cad2b504ce569d35854f2d9079"
+    },
+    {
+      "module": "transform-cleanup",
+      "path": "transform-cleanup-13.351.5.3.2.2.mjs",
+      "beforeSha256": null,
+      "afterSha256": "7e64e85a2121f5411a2ec7cbe8f2823e1b86e4ac1616ef28b971a9b0369e5cf4"
+    },
+    {
+      "module": "effectmacro",
+      "path": "module-13.0.4.mjs",
+      "beforeSha256": null,
+      "afterSha256": "2bd288edfbbd67f1143c4bdc5aff299c7c3c8a16a0756378d887d368f1aa6793"
+    }
+  ]
+}

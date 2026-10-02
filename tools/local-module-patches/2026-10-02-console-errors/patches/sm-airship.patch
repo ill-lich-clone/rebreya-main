@@ -1,0 +1,56 @@
+diff --git a/sm-airship/module.json b/sm-airship/module.json
+index 0581b727..f66875c9 100644
+--- a/sm-airship/module.json
++++ b/sm-airship/module.json
+@@ -2,7 +2,7 @@
+     "id": "sm-airship",
+     "title": "Steam Mechanics Airship",
+     "description": "FoundryVTT module for managing the airship of PMC Steam Mechanics",
+-    "version": "0.1.9",
++    "version": "0.1.10",
+     "authors": [
+         {
+             "name": "OpenAI Codex + user"
+@@ -13,7 +13,7 @@
+         "verified": "12"
+     },
+     "esmodules": [
+-        "scripts/module.js"
++        "scripts/module-0.1.10.js"
+     ],
+     "styles": [
+         "styles/airship.css"
+diff --git a/sm-airship/scripts/module.js b/sm-airship/scripts/module.js
+index 2600f299..c2b6db37 100644
+--- a/sm-airship/scripts/module.js
++++ b/sm-airship/scripts/module.js
+@@ -304,7 +304,8 @@ Hooks.once("ready", async () => {
+ 
+ Hooks.on("renderSettings", (_app, html) => {
+     if (!canOpenApp()) return
+-    if (html.find(".sm-airship-settings-launch").length) return
++    const root = html?.jquery ? html : $(html)
++    if (root.find(".sm-airship-settings-launch").length) return
+ 
+     const button = $(`
+         <button type="button" class="sm-airship-settings-launch">
+@@ -318,11 +319,11 @@ Hooks.on("renderSettings", (_app, html) => {
+         openAirshipApp()
+     })
+ 
+-    const anchor = html.find("#settings-documentation")
++    const anchor = root.find("#settings-documentation")
+     if (anchor.length) {
+         anchor.before(button)
+         return
+     }
+ 
+-    html.append(button)
++    root.append(button)
+ })
+diff --git a/sm-airship/scripts/module-0.1.10.js b/sm-airship/scripts/module-0.1.10.js
+new file mode 100644
+--- /dev/null
++++ b/sm-airship/scripts/module-0.1.10.js
+@@ -0,0 +1 @@
++import "./module.js?v=0.1.10";

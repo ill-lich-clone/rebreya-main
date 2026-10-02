@@ -1,0 +1,40 @@
+diff --git a/transform-cleanup/module.json b/transform-cleanup/module.json
+index 3997fc8f..c9bba82c 100644
+--- a/transform-cleanup/module.json
++++ b/transform-cleanup/module.json
+@@ -2,14 +2,14 @@
+   "id": "transform-cleanup",
+   "title": "Transformation Cleanup",
+   "description": "A module for D&D 5e on Foundry VTT that automatically cleans up leftover actors after a player reverts a transformation.",
+-  "version": "13.351.5.3.2.1",
++  "version": "13.351.5.3.2.2",
+   "compatibility": {
+     "minimum": "13",
+     "verified": "13.351",
+     "maximum": "13.999"
+   },
+   "esmodules": [
+-    "transform-cleanup.mjs"
++    "transform-cleanup-13.351.5.3.2.2.mjs"
+   ],
+   "relationships": {
+     "systems": [
+diff --git a/transform-cleanup/transform-cleanup.mjs b/transform-cleanup/transform-cleanup.mjs
+index 066285d5..e3af22df 100644
+--- a/transform-cleanup/transform-cleanup.mjs
++++ b/transform-cleanup/transform-cleanup.mjs
+@@ -82,7 +82,7 @@ function init() {
+ }
+ 
+ function onUpdateActor(updatedActor, changed, options, userId) {
+-  if (game.user.isActiveGM && '-=isPolymorphed' in changed.flags.dnd5e) {
++  if (game.user.isActiveGM && changed?.flags?.dnd5e && '-=isPolymorphed' in changed.flags.dnd5e) {
+     Actor.implementation.deleteDocuments([ updatedActor.id ]);
+   }
+ }
+diff --git a/transform-cleanup/transform-cleanup-13.351.5.3.2.2.mjs b/transform-cleanup/transform-cleanup-13.351.5.3.2.2.mjs
+new file mode 100644
+--- /dev/null
++++ b/transform-cleanup/transform-cleanup-13.351.5.3.2.2.mjs
+@@ -0,0 +1 @@
++import "./transform-cleanup.mjs?v=13.351.5.3.2.2";

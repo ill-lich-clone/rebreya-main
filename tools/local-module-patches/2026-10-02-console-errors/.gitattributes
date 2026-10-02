@@ -1,0 +1,2 @@
+# Preserve exact patch bytes and mandatory whitespace in unified-diff context.
+patches/*.patch -text -whitespace
