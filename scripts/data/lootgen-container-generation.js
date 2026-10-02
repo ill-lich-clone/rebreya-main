@@ -1,5 +1,5 @@
 import { addItemValue, evaluateItemValue } from "./item-value.js?v=1.4.264";
-import { createLootgenThemeContext } from "./lootgen-thematic-selection.js?v=1.4.362";
+import { createLootgenThemeContext } from "./lootgen-thematic-selection.js?v=1.4.363";
 import { normalizeLootgenComposition } from "./lootgen-item-descriptor.js?v=1.4.264";
 import { buildStorageContainerSnapshot, buildStorageContainerRow } from "./storage-container-snapshot.js?v=1.4.317";
 import { canFitLootgenContents, debitLootgenBudget, readLootgenPhysicalFootprint } from "./lootgen-container-rules.js?v=1.4.266";
@@ -17,7 +17,8 @@ const withNarrativeVariant=(candidate,random)=>{
 
 /** Internal policy of generateLootgenResult: one ledger for every accepted root and descendant. */
 export function generateLootgenContainerResult({form,mundanePool,magicPool,catalogReader,manifest,random,createInstanceKey,batchId,generatedAt,
-  pick,makeCoins,themeContext=createLootgenThemeContext(),coinWeightPerCoinLb=0.02,priceDiagnostics=[]}){
+  pick,makeCoins,themeContext=createLootgenThemeContext(),coinWeightPerCoinLb=0.02,priceDiagnostics=[],
+  quantityWeight=(_row,quantity)=>quantity<form.optimalItemQuantity?2:0.5}){
   if(!catalogReader?.readPhysicalItem || !catalogReader?.resolveContainerProfile)throw new Error("Каталог не поддерживает заполненные контейнеры.");
   if(typeof coinWeightPerCoinLb!=="number" || !Number.isFinite(coinWeightPerCoinLb) || coinWeightPerCoinLb<0)throw new Error("Некорректный вес монет.");
   const draw=random;random=()=>{const value=draw();if(typeof value!=="number" || !Number.isFinite(value) || value<0 || value>=1)throw new RangeError("random must return a number in [0,1)");return value;};
@@ -105,11 +106,26 @@ export function generateLootgenContainerResult({form,mundanePool,magicPool,catal
     rows.push({...candidate.row,directGrantId:`lootgen:${batchId}:row:${rows.length}`});
     themeContext.accept(candidate.row);
   }
+  const repeatable=rows.filter(row=>row.sourceType!=="magicItem" && row.stackable!==false && !row.narrativeVariantId
+    && !row.descriptor.container && !row.descriptor.upgrades.length && catalogReader.readPhysicalItem(row)?.type!=="container"
+    && row.totalValue>0);
+  while(ledger.itemBudgetRemaining>0 && ledger.attemptsRemaining>0){
+    ledger.attemptsRemaining--;
+    const affordable=repeatable.filter(row=>row.totalValue/row.quantity<=ledger.itemBudgetRemaining);
+    const row=pick(affordable,row=>quantityWeight(row,row.quantity)*themeContext.weight(row),random);
+    if(!row)break;
+    const unitValue=row.totalValue/row.quantity;
+    const quantity=Math.min(rollLootgenMultipleAppearance(row.multipleAppearance??"1",random),Math.floor(ledger.itemBudgetRemaining/unitValue));
+    const newQuantity=addItemValue(row.quantity,quantity);
+    const totalValue=addItemValue(row.totalValue,unitValue*quantity);
+    ledger.itemBudgetRemaining=debitLootgenBudget(ledger.itemBudgetRemaining,unitValue*quantity);
+    row.quantity=newQuantity;row.descriptor.quantity=newQuantity;row.totalValue=totalValue;
+  }
   if(ledger.documentsRemaining===0)note("document-limit");
   if(ledger.attemptsRemaining<=0)note("attempt-limit");
   const spentValue=form.budgetValue-coinReserve-ledger.itemBudgetRemaining;
   const internalCurrencyValue=coinReserve-ledger.coinBudgetRemaining;
-  const coins=makeCoins(form.includeCoins?ledger.coinBudgetRemaining:0,random);
+  const coins=makeCoins(form.includeCoins?addItemValue(ledger.coinBudgetRemaining,ledger.itemBudgetRemaining):0,random);
   const currencyValue=addItemValue(internalCurrencyValue,coins.totalCopper),totalValue=addItemValue(spentValue,currencyValue);
   const treeValue=rows.reduce((sum,row)=>addItemValue(sum,row.totalValue),0);
   if(addItemValue(treeValue,coins.totalCopper)!==totalValue)throw new Error("Нарушен общий бюджет дерева лута.");

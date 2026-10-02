@@ -119,7 +119,7 @@ export function getLootgenThemeProfile(item = {}) {
   return profile([], "other");
 }
 
-/** One scope chooses a theme, then completes different roles within that theme. */
+/** One scope prefers related and complementary equipment without excluding other loot. */
 export function createLootgenThemeContext(seedRows = [], { initialTheme = "" } = {}) {
   let theme = initialTheme;
   let hasTwoHandedWeapon = false;
@@ -137,14 +137,14 @@ export function createLootgenThemeContext(seedRows = [], { initialTheme = "" } =
   const context = {
     weight(row) {
       const info = read(row);
-      if (info.role === "shield" && hasTwoHandedWeapon || info.twoHanded && hasShield) return 0;
-      if (specialty && info.specialty && info.specialty !== specialty) return 0;
-      if (info.role === "ammunition" && weaponAmmo && !(info.ammoFamilies ?? []).includes(weaponAmmo)) return 0;
-      if (info.role === "weapon" && hasAmmunition && (!info.ammoFamily || !ammunition.has(info.ammoFamily))) return 0;
-      if (info.role !== "other" && (roles.get(info.role) ?? 0) >= (info.role === "reagent" || info.role === "treasure" || info.role === "supplies" ? 3 : 1)) return 0;
-      if (!theme || info.openTheme) return 1;
-      if (!info.themes.length) return 0.15;
-      return info.themes.includes(theme) ? 4 : 0;
+      let weight = !theme || info.openTheme ? 1
+        : !info.themes.length ? 0.15 : info.themes.includes(theme) ? 4 : 0.25;
+      weight /= 1 + (roles.get(info.role) ?? 0);
+      if (info.role === "shield" && hasTwoHandedWeapon || info.twoHanded && hasShield) weight *= 0.1;
+      if (specialty && info.specialty && info.specialty !== specialty) weight *= 0.1;
+      if (info.role === "ammunition" && weaponAmmo && !(info.ammoFamilies ?? []).includes(weaponAmmo)) weight *= 0.1;
+      if (info.role === "weapon" && hasAmmunition && (!info.ammoFamily || !ammunition.has(info.ammoFamily))) weight *= 0.1;
+      return weight;
     },
     accept(row) {
       const info = read(row);

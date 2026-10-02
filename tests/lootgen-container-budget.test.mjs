@@ -21,16 +21,33 @@ function run(options){let id=0;return generateLootgenResult({...options,random:(
 
 function walk(rows){const descriptors=[];const visit=d=>{descriptors.push(d);for(const row of [...(d.container?.state.manualRows??[]),...(d.container?.state.generatedRows??[])])visit({...row.composition,quantity:row.quantity,container:row.container??null});};for(const row of rows)visit(row.descriptor);return descriptors;}
 
-test("filled backpack contents follow the backpack theme and stop without exhausting the shared budget", () => {
+test("filled backpack prefers camping contents and turns the remaining budget into coins", () => {
   const model = { gear: [{ id: "bag", value: 10 }, { id: "weapon", value: 10 }, { id: "sleep", value: 10 }, { id: "blanket", value: 10 }] };
   const gearIndex = model.gear.map(({ id }) => ({ _id: id, type: id === "bag" ? "container" : "loot", system: { quantity: 1,
     weight: { value: 1, units: "lb" }, capacity: { weight: { value: 100, units: "lb" } } }, flags: { "rebreya-main": { managed: true, gearId: id } } }));
   const catalogReader = createLootgenCatalogReader({ model, gearIndex });
   const mundanePool = ["Рюкзак", "Длинный меч", "Спальный мешок", "Одеяло"].map((name, index) => ({ sourceType: "gear", sourceId: model.gear[index].id, name, value: 10, multipleAppearance: "1", stackable: true }));
-  const result = run({ form: normalizeLootgenForm({ itemCount: 1, budgetValue: 1000, includeCoins: true, coinBudgetPercent: 0, enableFilledContainers: true, filledContainerChance: 100 }), mundanePool, magicPool: [], catalogReader, manifest: [] });
-  assert.deepEqual(result.rows[0].descriptor.container.state.manualRows.map(row => row.name).sort(), ["Одеяло", "Спальный мешок"].sort());
-  assert.equal(result.totalValue, 30);
-  assert.equal(result.unusedValue, 970);
+  let draws = 0, id = 0;
+  const result = generateLootgenResult({ form: normalizeLootgenForm({ itemCount: 1, budgetValue: 1000, includeCoins: true, coinBudgetPercent: 0, enableFilledContainers: true, filledContainerChance: 100 }), mundanePool, magicPool: [], catalogReader, manifest: [], random: () => draws++ === 0 ? 0 : 0.5, createInstanceKey: () => `camp-${++id}` });
+  const children = result.rows[0].descriptor.container.state.manualRows;
+  assert.equal(children[0].name, "Спальный мешок");
+  assert.ok(children.some(row => row.name === "Одеяло"));
+  assert.equal(result.totalValue, 1000);
+  assert.equal(result.coins.totalCopper, 250);
+  assert.equal(result.unusedValue, 0);
+});
+
+test("filled mode also spends a million through ordinary root stack quantities", () => {
+  const options = fixture({ budgetValue: 1000000, childValue: 10000, includeCoins: false });
+  options.form.enableUpgrades = false;
+  options.mundanePool = [{ ...options.mundanePool[1], multipleAppearance: "2" }];
+  const result = run(options);
+  assert.equal(result.rows.length, 1);
+  assert.equal(result.rows[0].quantity, 100);
+  assert.equal(result.rows[0].descriptor.quantity, 100);
+  assert.equal(result.rows[0].totalValue, 1000000);
+  assert.equal(result.spentValue, 1000000);
+  assert.equal(result.unusedValue, 0);
 });
 
 test("filled container generation spends one shared item and coin budget with upgraded children",()=>{
@@ -41,6 +58,7 @@ test("filled container generation spends one shared item and coin budget with up
   assert.equal(treeValue+result.coins.totalCopper+result.unusedValue,10000);
   assert.equal(result.spentValue+result.currencyValue,result.totalValue);
   assert.equal(result.totalValue+result.unusedValue,10000);
+  assert.equal(result.unusedValue,0);
   assert.equal(result.totalItems,1);
   assert.equal(result.rows[0].quantity,1);
 });
@@ -52,6 +70,7 @@ test("budget boundaries, zero prices and disabled currency preserve nonnegative 
     assert.equal(result.spentValue+result.currencyValue+result.unusedValue,options.form.budgetValue);
     assert.equal(result.rows.reduce((sum,row)=>sum+row.totalValue,0)+result.coins.totalCopper+result.unusedValue,options.form.budgetValue);
     if(config.includeCoins===false)assert.equal(result.currencyValue,0);
+    else assert.equal(result.unusedValue,0);
   }
 });
 

@@ -1,10 +1,10 @@
-import { generateLootgenContainerResult } from "./lootgen-container-generation.js?v=1.4.362";
+import { generateLootgenContainerResult } from "./lootgen-container-generation.js?v=1.4.363";
 import { pickLootgenNarrativeFields, selectLootgenNarrativeVariant } from "./lootgen-narrative-catalog.js?v=1.4.317";
 import { rollLootgenBrokenState } from "./lootgen-durability.js?v=1.4.154-corpse-storage-broken-name";
 import { rollLootgenMultipleAppearance } from "./lootgen-multiple-appearance.js?v=1.4.128-lootgen-multiplicity";
 import { chooseLootgenUpgradeVariant } from "./lootgen-upgrade-variants.js?v=1.4.278";
 import { getLootgenAggregationKey } from "./lootgen-item-descriptor.js?v=1.4.256";
-import { createLootgenThemeContext } from "./lootgen-thematic-selection.js?v=1.4.362";
+import { createLootgenThemeContext } from "./lootgen-thematic-selection.js?v=1.4.363";
 
 const COIN_MULTIPLIERS = {
   pp: 1000,
@@ -103,6 +103,12 @@ function weightedRandomPick(values, getWeight, random) {
 
 function candidateIdentity(candidate) {
   return `${String(candidate?.sourceType ?? "")}:${String(candidate?.sourceId ?? "")}`;
+}
+
+function candidateWeight(candidate, currentQuantity, optimalQuantity) {
+  if (candidate.sourceType === "magicItem") return currentQuantity === 0 ? 1 : 0;
+  if (currentQuantity === 0) return 4;
+  return currentQuantity < optimalQuantity ? 2 : 0.5;
 }
 
 function withNarrativeVariant(candidate, random) {
@@ -293,7 +299,8 @@ export function generateLootgenResult({
     return candidatesByIdentity.get(candidateIdentity({ sourceType, sourceId })) ?? row;
   });
   const themeContext = createLootgenThemeContext(seed);
-  if(form.enableFilledContainers)return generateLootgenContainerResult({form,mundanePool:safeMundanePool,magicPool:safeMagicPool,catalogReader,manifest,random,createInstanceKey,batchId:String(batchId??" ").trim(),generatedAt,coinWeightPerCoinLb,priceDiagnostics,themeContext,pick:weightedRandomPick,makeCoins:randomCoinsFromValue});
+  const quantityWeight = (candidate, quantity) => candidateWeight(candidate, quantity, form.optimalItemQuantity);
+  if(form.enableFilledContainers)return generateLootgenContainerResult({form,mundanePool:safeMundanePool,magicPool:safeMagicPool,catalogReader,manifest,random,createInstanceKey,batchId:String(batchId??" ").trim(),generatedAt,coinWeightPerCoinLb,priceDiagnostics,themeContext,quantityWeight,pick:weightedRandomPick,makeCoins:randomCoinsFromValue});
   if (!safeMundanePool.length && !safeMagicPool.length
     && !(form.includeCoins && Array.isArray(mundanePool) && mundanePool.some(lootgenCoinDenomination))) {
     throw new Error("Для выбранных параметров нет доступных предметов.");
@@ -315,6 +322,8 @@ export function generateLootgenResult({
     instanceKeys.add(key);return key;
   };
   const selectedIdentities = new Set();
+  const quantitiesByIdentity = new Map();
+  const weightFor = candidate => quantityWeight(candidate, quantitiesByIdentity.get(candidateIdentity(candidate)) ?? 0) * themeContext.weight(candidate);
   const isAffordableUnselected = (entry) => {
     const identity = candidateIdentity(entry);
     if (selectedIdentities.has(identity)) {
@@ -344,7 +353,7 @@ export function generateLootgenResult({
         ? affordableMagic
         : (affordableMundane.length ? affordableMundane : affordableMagic);
     }
-    const picked = weightedRandomPick(sourcePool, entry => themeContext.weight(entry), random);
+    const picked = weightedRandomPick(sourcePool, weightFor, random);
     if (!picked) {
       break;
     }
@@ -382,13 +391,32 @@ export function generateLootgenResult({
     }
     const totalValue = selected.value * quantity;
     picks.push({ ...selected, quantity, totalValue });
+    // Composed magic copies have separate identities; only an ordinary magic pick closes that source.
+    if (selected.sourceType !== "magicItem" || !variant.descriptor) {
+      quantitiesByIdentity.set(pickedKey, (quantitiesByIdentity.get(pickedKey) ?? 0) + quantity);
+    }
     themeContext.accept(selected);
     remainingValue = Math.max(0, remainingValue - totalValue);
   }
 
+  // Increase existing stacks so large budgets do not allocate a row per package.
+  const repeatable = picks.filter(row => row.sourceType !== "magicItem" && row.stackable !== false
+    && !row.descriptor && !row.narrativeVariantId && row.value > 0);
+  while (remainingValue > 0 && (!form.enableUpgrades || attemptBudget.remaining-- > 0)) {
+    const picked = weightedRandomPick(repeatable.filter(row => row.value <= remainingValue), weightFor, random);
+    if (!picked) break;
+    const quantity = Math.min(rollLootgenMultipleAppearance(picked.multipleAppearance ?? "1", random), Math.floor(remainingValue / picked.value));
+    const totalValue = picked.value * quantity;
+    picked.quantity += quantity;
+    picked.totalValue += totalValue;
+    const key = candidateIdentity(picked);
+    quantitiesByIdentity.set(key, (quantitiesByIdentity.get(key) ?? 0) + quantity);
+    remainingValue -= totalValue;
+  }
+
   let rows = aggregateRows(picks);
   const spentValue = rows.reduce((sum, row) => sum + row.totalValue, 0);
-  const coins = randomCoinsFromValue(form.includeCoins ? coinReserve : 0, random);
+  const coins = randomCoinsFromValue(form.includeCoins ? coinReserve + remainingValue : 0, random);
   const safeBatchId = String(batchId ?? "").trim();
   rows = rows.map((row, index) => ({
     ...row,

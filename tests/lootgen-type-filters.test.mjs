@@ -104,11 +104,11 @@ test("lootgen lets the GM save and apply reusable templates", async () => {
   assert.match(source, /applyLootgenTemplate/u);
 });
 
-test("lootgen hides the obsolete quantity refill control", async () => {
+test("lootgen exposes the soft quantity target alongside the budget", async () => {
   const template = await readFile(new URL("../templates/lootgen-app.hbs", import.meta.url), "utf8");
 
-  assert.doesNotMatch(template, /data-field="optimalItemQuantity"/u);
-  assert.doesNotMatch(template, /Оптимальное количество предметов/u);
+  assert.match(template, /min="1" max="100"[^>]+data-field="optimalItemQuantity"/u);
+  assert.match(template, /Оптимальное количество предметов/u);
 });
 
 test("lootgen renders a saved-template delete control", async () => {

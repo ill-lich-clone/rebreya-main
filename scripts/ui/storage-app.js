@@ -1,4 +1,4 @@
-import { buildStorageCoinRow } from "../data/storage-service.js?v=1.4.362";
+import { buildStorageCoinRow } from "../data/storage-service.js?v=1.4.363";
 import { MODULE_ID } from "../constants.js";
 import { getAppElement } from "../ui.js";
 import { AnchoredOverlay, bindAnchoredTooltips } from "./anchored-overlay.js?v=1.4.247-anchored-overlays";

@@ -1,4 +1,4 @@
-import { CHEST_OBJECT_DURABILITY } from "./native-object-durability-service.js?v=1.4.362";
+import { CHEST_OBJECT_DURABILITY } from "./native-object-durability-service.js?v=1.4.363";
 
 const CHEST_ASSET_ROOT = "modules/rebreya-main/assets/storage/chests";
 const FURNITURE_ASSET_ROOT = "modules/rebreya-main/assets/storage/furniture";

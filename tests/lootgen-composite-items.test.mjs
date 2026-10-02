@@ -96,3 +96,16 @@ test("zero and full coin reserves share the composed budget exactly once",()=>{
     assert.equal(result.spentValue,percent===0?1500:0);assert.equal(result.rows.length,percent===0?1:0);
   }
 });
+
+test("upgraded magic copies keep separate identities and can spend the full budget", () => {
+  const o = options(3000);
+  Object.assign(o.form, { itemCount: 2, includeMagicItems: true, magicPercent: 100 });
+  o.magicPool = [{ ...o.mundanePool[0], sourceType: "magicItem" }];
+  o.mundanePool = [];
+  const result = generateLootgenResult(o);
+  assert.equal(result.rows.length, 2);
+  assert.equal(result.spentValue, 3000);
+  assert.equal(result.unusedValue, 0);
+  assert.ok(result.rows.every(row => row.quantity === 1 && row.descriptor.upgrades.length === 2));
+  assert.notEqual(result.rows[0].descriptor.instanceKey, result.rows[1].descriptor.instanceKey);
+});

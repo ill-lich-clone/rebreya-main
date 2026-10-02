@@ -11,6 +11,26 @@ const candidate = id => {
   return { ...row, sourceType: "gear", sourceId: id };
 };
 
+test("themes prefer related equipment without excluding another theme", () => {
+  const context = createLootgenThemeContext([candidate("ryukzak")]);
+  const related = context.weight(candidate("spal-nik"));
+  const other = context.weight(candidate("dvuruchnyy-mech"));
+  assert.ok(related > other && other > 0);
+});
+
+test("repeated roles remain available with a lower positive weight", () => {
+  const row = candidate("bakler");
+  const context = createLootgenThemeContext([], { initialTheme: "combat" });
+  const original = context.weight(row);
+  for (let index = 0; index < 5; index++) context.accept(row);
+  assert.ok(context.weight(row) > 0);
+  assert.ok(context.weight(row) < original);
+  const reagent = { sourceType: "material", name: "Алхимический реагент", lootTheme: { themes: ["alchemy"], role: "reagent" } };
+  const alchemy = createLootgenThemeContext();
+  for (let index = 0; index < 3; index++) alchemy.accept(reagent);
+  assert.ok(alchemy.weight(reagent) > 0);
+});
+
 test("real catalog exceptions use structural armor, camping and tool semantics", () => {
   for (const [id, theme, role] of [
     ["bakler", "combat", "shield"], ["spal-nik", "camping", "sleep"],
@@ -35,8 +55,10 @@ test("catalog ammunition follows authored compatibility, including universal phy
   const rifle = createLootgenThemeContext([candidate("vintovka")]);
   assert.ok(rifle.weight(candidate("vintovochnyy-patron-10")) > 0);
   assert.ok(rifle.weight(candidate("adamantovaya-pulya-10")) > 0);
-  assert.equal(rifle.weight(candidate("broneboynyy-10")), 0, "unresolved authored compatibility must not invent a cannon kit");
-  assert.equal(rifle.weight(candidate("strely-20")), 0);
+  for (const id of ["broneboynyy-10", "strely-20"]) {
+    assert.ok(rifle.weight(candidate(id)) > 0);
+    assert.ok(rifle.weight(candidate(id)) < rifle.weight(candidate("vintovochnyy-patron-10")));
+  }
 });
 
 test("every selectable authored gear category has an internal theme", () => {
@@ -59,13 +81,15 @@ test("manual armor and ranged weapon choose the weapon theme regardless of row o
   for (const seed of [[armor, bow], [bow, armor]]) {
     const context = createLootgenThemeContext(seed);
     assert.ok(context.weight(candidate("strely-20")) > 0);
-    assert.equal(context.weight(candidate("arbaletnye-bolty-20")), 0);
+    assert.ok(context.weight(candidate("arbaletnye-bolty-20")) > 0);
+    assert.ok(context.weight(candidate("arbaletnye-bolty-20")) < context.weight(candidate("strely-20")));
   }
 });
 
 test("unresolved ammunition cannot imply compatibility when selected before a weapon", () => {
   const context = createLootgenThemeContext([candidate("broneboynyy-10")]);
-  assert.equal(context.weight(candidate("vintovka")), 0);
+  assert.ok(context.weight(candidate("vintovka")) > 0);
+  assert.ok(context.weight(candidate("vintovka")) < createLootgenThemeContext().weight(candidate("vintovka")));
 });
 
 test("protection names do not invent shields, including armor and the Defender sword", () => {
@@ -84,16 +108,19 @@ test("magic general ammunition and universal physical rounds remain compatible w
   }
 });
 
-test("laser rifle accepts thermal batteries and rejects energy batteries", () => {
+test("laser rifle prefers compatible thermal batteries over energy batteries", () => {
   const context = createLootgenThemeContext([candidate("lazernaya-vintovka")]);
   assert.ok(context.weight(candidate("teplovaya-batareya-20")) > 0);
-  assert.equal(context.weight(candidate("batareya-4")), 0);
+  assert.ok(context.weight(candidate("batareya-4")) > 0);
+  assert.ok(context.weight(candidate("batareya-4")) < context.weight(candidate("teplovaya-batareya-20")));
 });
 
 test("magic projection retains explicit two-handed swords without restricting versatile casting staves", () => {
   const sword = { ...MAGIC_ITEMS.find(item => item.id === "двуручный-серебряный-меч"), sourceType: "magicItem", weapon: { properties: ["mgc"] } };
   assert.equal(getLootgenThemeProfile(sword).twoHanded, true);
-  assert.equal(createLootgenThemeContext([sword]).weight(candidate("bakler")), 0);
+  const shieldWeight = createLootgenThemeContext([sword]).weight(candidate("bakler"));
+  assert.ok(shieldWeight > 0);
+  assert.ok(shieldWeight < createLootgenThemeContext([], { initialTheme: "combat" }).weight(candidate("bakler")));
   const staff = { ...MAGIC_ITEMS.find(item => item.id === "солнечный-посох"), sourceType: "magicItem", weapon: { properties: ["mgc"], baseItem: "quarterstaff" } };
   assert.equal(getLootgenThemeProfile(staff).role, "focus");
 });

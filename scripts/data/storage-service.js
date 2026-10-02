@@ -1,6 +1,6 @@
 import { MODULE_ID } from "../constants.js";
 import { storageRowsCanStack } from "./storage-row-stacking.js?v=1.4.360";
-import { normalizeLootgenForm } from "./lootgen-generator.js?v=1.4.362";
+import { normalizeLootgenForm } from "./lootgen-generator.js?v=1.4.363";
 import {
   markDurabilityBroken,
   markDurabilityIntact
