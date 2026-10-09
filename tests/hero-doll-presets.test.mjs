@@ -18,6 +18,61 @@ function setup(t,options={}) {
   return fx;
 }
 
+function setupLootRing(t,options={}) {
+  const fx=setup(t,options);fx.source.data.type='loot';fx.source.data.name='Кольцо-печатка';
+  delete fx.source.system.equipped;fx.source.flags['rebreya-main'].heroDollSlots=['ring1'];
+  fx.hero.flags['rebreya-main'].heroDoll.slots={ring1:{itemId:fx.source.id}};
+  const update=fx.source.update.bind(fx.source);
+  fx.source.update=async(patch,...args)=>{const supported={...patch};delete supported['system.equipped'];return update(supported,...args);};
+  const create=fx.hero.createEmbeddedDocuments.bind(fx.hero);
+  fx.createdLootData=[];
+  fx.hero.createEmbeddedDocuments=async(type,rows,...args)=>{
+    fx.createdLootData.push(...structuredClone(rows));
+    for (const row of rows) if(row.type==='loot') delete row.system.equipped;
+    return create(type,rows,...args);
+  };
+  return fx;
+}
+test('loot signet ring preset applies and clears without an unsupported equipped write',async t=>{
+  const fx=setupLootRing(t);await fx.create();fx.hero.flags['rebreya-main'].heroDoll.slots={};
+  const count=fx.calls.filter(([phase])=>phase==='equip').length;
+  await fx.apply();
+  assert.deepEqual(fx.hero.getFlag('rebreya-main','heroDoll').slots,{ring1:{itemId:fx.source.id}});
+  assert.equal(fx.source.type,'loot');assert.equal(Object.hasOwn(fx.source.system,'equipped'),false);
+  assert.equal(fx.calls.filter(([phase])=>phase==='equip').length,count);
+  const snap=fx.service.getActorSnapshot(fx.hero);
+  assert.equal(snap.slots.find(s=>s.id==='ring1').occupied,true);assert.equal(snap.reservedCount,1);
+  await fx.service.executeAssignItemToSlot({actorUuid:fx.hero.uuid,sourceItemUuid:fx.source.uuid,slotId:'ring1',operationId:'loot-clear'},{sender:game.user},'clear');
+  assert.deepEqual(fx.hero.getFlag('rebreya-main','heroDoll').slots,{});
+  assert.equal(fx.calls.filter(([phase])=>phase==='equip').length,count);
+  await fx.service.executeAssignItemToSlot({actorUuid:fx.hero.uuid,sourceItemUuid:fx.source.uuid,slotId:'ring1',operationId:'loot-reassign'},{sender:game.user});
+  assert.deepEqual(fx.hero.getFlag('rebreya-main','heroDoll').slots,{ring1:{itemId:fx.source.id}});
+  assert.equal(fx.calls.filter(([phase])=>phase==='equip').length,count);
+});
+test('loot preset legacy remainder omits unsupported equipped and preserves physical quantity',async t=>{
+  const fx=setupLootRing(t,{quantity:3});await fx.create();fx.hero.flags['rebreya-main'].heroDoll.slots={};
+  await fx.apply();
+  assert.equal(fx.source.system.quantity,1);assert.equal(fx.total(),3);
+  const remainder=fx.hero.items.contents.find(item=>item.id!==fx.source.id);
+  assert.equal(remainder.system.quantity,2);assert.equal(Object.hasOwn(remainder.system,'equipped'),false);
+  assert.equal(Object.hasOwn(fx.source.system,'equipped'),false);
+});
+test('loot legacy Apply rollback restores quantity without a false compensation fingerprint conflict',async t=>{
+  const fx=setupLootRing(t,{quantity:3});await fx.create();fx.hero.flags['rebreya-main'].heroDoll.slots={};
+  fx.failAt('placement','after');
+  await assert.rejects(fx.apply(),e=>e.code==='instance-compensated');
+  assert.equal(fx.source.system.quantity,3);assert.equal(fx.hero.items.contents.length,1);
+  assert.equal(Object.hasOwn(fx.source.system,'equipped'),false);
+  assert.deepEqual(fx.hero.getFlag('rebreya-main','heroDoll').slots,{});
+});
+test('manual loot legacy normalization uses schema-compatible remainder data',async t=>{
+  const fx=setupLootRing(t,{quantity:3});
+  await fx.service.executeAssignItemToSlot({actorUuid:fx.hero.uuid,sourceItemUuid:fx.source.uuid,slotId:'ring1',operationId:'loot-normalize'},{sender:game.user},'normalize');
+  assert.equal(fx.source.system.quantity,1);assert.equal(fx.total(),3);
+  const remainder=fx.hero.items.contents.find(item=>item.id!==fx.source.id);
+  assert.equal(Object.hasOwn(remainder.system,'equipped'),false);
+  assert.equal(Object.hasOwn(fx.createdLootData[0].system,'equipped'),false);
+});
 test('preset Apply resolves Actors once per pass and writes doll/preset flags together',async t=>{
   const fx=setup(t);await fx.create();await fx.create('Поход','travel');
   fx.hero.flags['rebreya-main'].heroDoll.slots={};fx.source.system.equipped=false;

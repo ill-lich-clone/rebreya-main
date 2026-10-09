@@ -49,9 +49,16 @@ function toNumber(value, fallback = 0) {
 }
 
 function buildHeroDollEquippedUpdate(item, equipped) {
+  if (typeof item.system?.equipped !== "boolean") return {};
   return {
     "system.equipped": equipped === true || getItemHeldHands(item).length > 0
   };
+}
+
+function buildHeroDollRemainderUpdate(item) {
+  const update = buildHeldItemWornUpdate(false, item);
+  if (typeof item.system?.equipped !== "boolean") delete update["system.equipped"];
+  return update;
 }
 
 function roundNumber(value, precision = 2) {
@@ -524,7 +531,7 @@ export class HeroDollService {
             const plan = planItemInstanceMutation({source:{...source,isEquipped:false,isHeld:false},quantity:source.quantity-1,sameActor:true,sameFolder:false,forHeroSlot:false});
             const prepared = await documents.prepare(childIntent,plan,source,{
               preparePlacement:()=>[],prepareTargetData:(data)=>{
-                for (const [path,value] of Object.entries(buildHeldItemWornUpdate(false,item))) {
+                for (const [path,value] of Object.entries(buildHeroDollRemainderUpdate(item))) {
                   const parts=path.split("."),leaf=parts.pop(),parent=foundry.utils.getProperty(data,parts.join("."));
                   if (leaf.startsWith("-=")) {if(parent)delete parent[leaf.slice(2)];}
                   else foundry.utils.setProperty(data,path,value);
@@ -542,7 +549,8 @@ export class HeroDollService {
         for (const itemId of touched) {
           const item=actor.items.get(itemId);if(!item)continue;
           const after=buildHeroDollEquippedUpdate(item,equipped.has(itemId));
-          placement.push({actor:"target",itemId,before:{"system.equipped":item.system.equipped ?? null},after});
+          const before = Object.fromEntries(Object.keys(after).map(path=>[path,foundry.utils.getProperty(item.toObject(),path) ?? null]));
+          placement.push({actor:"target",itemId,before,after});
         }
         actorBefore[dollPath]=actor.getFlag(MODULE_ID,"heroDoll")?.slots ?? null;
         actorAfter[dollPath]=nextSlots;
@@ -577,7 +585,7 @@ export class HeroDollService {
       },
       prepareTargetData: (data, source) => {
         if (mode !== "normalize") return;
-        for (const [path,value] of Object.entries(buildHeldItemWornUpdate(false,source.sourceItem))) {
+        for (const [path,value] of Object.entries(buildHeroDollRemainderUpdate(source.sourceItem))) {
           const parts = path.split("."); const key = parts.pop();
           if (key.startsWith("-=")) {
             const parent = foundry.utils.getProperty(data,parts.join("."));

@@ -6,10 +6,10 @@ const RELEASED_CACHE_VERSION = "1\\.4\\.96";
 
 test("current alchemy automation release advances the module cache version", async () => {
   const manifest = JSON.parse(await readFile(new URL("../module.json", import.meta.url), "utf8"));
-  assert.equal(manifest.version, "1.4.368");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.368.js"]);
+  assert.equal(manifest.version, "1.4.369");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.369.js"]);
   assert.equal(
-    (await readFile(new URL("../scripts/main-1.4.368.js", import.meta.url), "utf8")).trim(),
+    (await readFile(new URL("../scripts/main-1.4.369.js", import.meta.url), "utf8")).trim(),
     'import "./main.js";'
   );
 });
@@ -101,8 +101,8 @@ test("module manifest loads an unpinned canonical entrypoint for page-refresh up
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const [entrypoint] = manifest.esmodules;
 
-  assert.equal(manifest.version, "1.4.368");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.368.js"]);
+  assert.equal(manifest.version, "1.4.369");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.369.js"]);
   assert.doesNotMatch(entrypoint, /[?#]/u);
 
   const entrypointSource = await readFile(new URL(entrypoint, manifestUrl), "utf8");
@@ -113,7 +113,7 @@ test("Lootgen window import uses the current template editing cache version", as
   const entrypointSource = await readCanonicalEntrypointSource();
 
   assert.match(entrypointSource, /lootgen-app\.js\?v=1\.4\.363/u);
-  assert.match(entrypointSource, /const MODULE_STYLE_VERSION = "1\.4\.368";/u);
+  assert.match(entrypointSource, /const MODULE_STYLE_VERSION = "1\.4\.369";/u);
 });
 
 test("glossary and feat-link owners preserve their released cache key", async () => {
@@ -407,7 +407,7 @@ test("module keeps recent published entrypoint URLs as canonical compatibility f
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
 
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.368.js"]);
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.369.js"]);
 
   for (const fileName of ["main-1.4.98.js", "main-1.4.99.js", "main-1.4.100.js"]) {
     const forwarderSource = await readFile(new URL(`../scripts/${fileName}`, import.meta.url), "utf8");
@@ -581,7 +581,7 @@ test("legacy settings relay fails closed when a world-setting socket is unavaila
 test("module stylesheet cache bust loads the storage deposit interaction styles", async () => {
   const entrypointSource = await readCanonicalEntrypointSource();
 
-  assert.match(entrypointSource, /const MODULE_STYLE_VERSION = "1\.4\.368";/u);
+  assert.match(entrypointSource, /const MODULE_STYLE_VERSION = "1\.4\.369";/u);
   assert.match(entrypointSource, /const stylesheetHref = `\$\{MODULE_STYLE_PATH\}\?v=\$\{encodeURIComponent\(MODULE_STYLE_VERSION\)\}`;/u);
   assert.doesNotMatch(entrypointSource, /module\?\.version\s*\?\?/u);
 });
