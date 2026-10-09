@@ -373,7 +373,7 @@ export class HeroDollService {
 
   async #authorizeAssignment({ sourceActor, targetActor, sourceItem }, intent, sender) {
     const owns = actor => sender?.isGM === true || actor?.testUserPermission?.(sender, "OWNER") === true;
-    if (!(targetActor instanceof Actor) || targetActor.type !== "character" || !owns(targetActor)) {
+    if (!(targetActor instanceof Actor) || !["character", "npc"].includes(targetActor.type) || !owns(targetActor)) {
       throw new ItemInstanceError("unauthorized", "Недостаточно прав для изменения куклы героя.");
     }
     if (sourceActor.uuid !== targetActor.uuid) {
@@ -472,7 +472,7 @@ export class HeroDollService {
     const workflow = new ItemInstanceWorkflow({documents,journal:this.moduleApi.inventoryService.mutationJournal,coordinator:this.moduleApi.worldMutationCoordinator});
     return workflow.runBatch(intent,{sender,assertAuthority,
       authorize: ({targetActor}) => {
-        if (!(targetActor instanceof Actor) || targetActor.type !== "character" || !(sender?.isGM || targetActor.testUserPermission(sender,"OWNER"))) {
+        if (!(targetActor instanceof Actor) || !["character", "npc"].includes(targetActor.type) || !(sender?.isGM || targetActor.testUserPermission(sender,"OWNER"))) {
           throw new ItemInstanceError("unauthorized","Недостаточно прав для изменения комплекта героя.");
         }
       },

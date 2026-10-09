@@ -13,6 +13,21 @@ function setup(options={}) {
   return fx;
 }
 
+test("NPC equips and clears a real unit with existing owner authorization",async t=>{
+  const fx=setup({quantity:1});t.after(()=>fx.restore());fx.hero.type="npc";
+  const result=await fx.run(fx.payload,{id:"player",isGM:false});assert.equal(result.itemId,fx.source.id);
+  assert.equal(fx.source.system.equipped,true);
+  await fx.service.executeAssignItemToSlot({...fx.payload,operationId:"npc-clear"},{sender:game.user},"clear");
+  assert.deepEqual(fx.hero.getFlag("rebreya-main","heroDoll").slots,{});
+  assert.equal(fx.total(),1);
+});
+test("NPC assignment rejects non-owner and unsupported Actor types",async t=>{
+  const fx=setup({quantity:1});t.after(()=>fx.restore());fx.hero.type="npc";
+  await assert.rejects(fx.run(fx.payload,{id:"stranger",isGM:false}),/доступ|прав|персонаж/iu);
+  assert.equal(fx.calls.length,0);
+  fx.hero.type="vehicle";
+  await assert.rejects(fx.run(),/доступ|прав|персонаж/iu);
+});
 test("hero equips one real unit and replay does not create another",async t=>{
   const fx=setup();t.after(()=>fx.restore());
   const result=await fx.run();assert.notEqual(result.itemId,fx.source.id);

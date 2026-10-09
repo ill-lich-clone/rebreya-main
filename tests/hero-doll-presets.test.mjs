@@ -18,6 +18,18 @@ function setup(t,options={}) {
   return fx;
 }
 
+test('NPC presets apply missing equipment as a removable ghost',async t=>{
+  const fx=setup(t);fx.hero.type='npc';await fx.create();fx.hero.items.contents=[];
+  await fx.apply();assert.equal(fx.service.getActorSnapshot(fx.hero).slots.find(s=>s.id==='neck').ghost,true);
+  await fx.run('clear-ghost',{slotId:'neck'});assert.deepEqual(fx.state().ghosts,{});
+  assert.equal(fx.state().presets[0].slots.neck.itemId,'rope');
+});
+test('NPC presets reject unauthorized users and unsupported Actor types',async t=>{
+  const fx=setup(t);fx.hero.type='npc';
+  await assert.rejects(fx.run('create',{name:'Бой',presetId:'battle'},{id:'stranger',isGM:false}),/прав|доступ|персонаж/iu);
+  assert.equal(fx.state(),undefined);fx.hero.type='vehicle';
+  await assert.rejects(fx.create(),/прав|доступ|персонаж/iu);
+});
 test('save captures concrete IDs with name/image, independent Actor state and no writes on snapshot',async t=>{
   const fx=setup(t);await fx.create();const count=fx.calls.length;
   assert.deepEqual(fx.state().presets[0].slots,{neck:{itemId:'rope',name:'Амулет',img:'amulet.webp'}});

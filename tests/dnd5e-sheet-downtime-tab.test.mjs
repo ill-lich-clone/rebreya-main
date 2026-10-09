@@ -184,6 +184,12 @@ function installSheetExtensionStubs() {
     }
   }
 
+  class NPCActorSheet {
+    static TABS = [{tab:"features"},{tab:"inventory"},{tab:"specialTraits"}];
+    static PARTS = {features:{template:"npc-features.hbs"},inventory:{template:"npc-inventory.hbs"}};
+    constructor(actor) {this.actor=actor;this.tabGroups={primary:"heroDoll"};}
+    async _preparePartContext(partId,context) {return {...context,preparedPartId:partId};}
+  }
   const hooks = new Map();
   const fakeDocument = new FakeHTMLElement();
   fakeDocument.documentElement = new FakeHTMLElement();
@@ -203,7 +209,8 @@ function installSheetExtensionStubs() {
     dnd5e: {
       applications: {
         actor: {
-          CharacterActorSheet
+          CharacterActorSheet,
+          NPCActorSheet
         }
       }
     },
@@ -257,6 +264,7 @@ function installSheetExtensionStubs() {
     Actor: FakeActor,
     HTMLElement: FakeHTMLElement,
     CharacterActorSheet,
+    NPCActorSheet,
     document: fakeDocument,
     hooks,
     restore() {
@@ -309,6 +317,45 @@ function findTreeNode(root, predicate) {
   return null;
 }
 
+test("NPC sheets get only the hero doll and preserve native parts and context", async () => {
+  const stubs=installSheetExtensionStubs();
+  try {
+    const {registerDnd5eSheetExtensions}=await import(`../scripts/integrations/dnd5e-sheet-extensions.js?npc-doll=${Date.now()}`);
+    const actor=createActor(stubs.Actor,{id:"npc-a",name:"Страж"});actor.type="npc";
+    registerDnd5eSheetExtensions({heroDollService:{getActorSnapshot:target=>({actorId:target.id})}});
+    assert.deepEqual(stubs.NPCActorSheet.TABS.map(t=>t.tab),["features","inventory","heroDoll","specialTraits"]);
+    assert.equal(stubs.NPCActorSheet.PARTS.features.template,"npc-features.hbs");
+    assert.equal(stubs.NPCActorSheet.PARTS.modification,undefined);
+    assert.equal(stubs.NPCActorSheet.PARTS.downtime,undefined);
+    const sheet=new stubs.NPCActorSheet(actor);
+    const context=await sheet._preparePartContext("heroDoll",{base:true},{});
+    assert.equal(context.heroDoll.actorId,"npc-a");assert.equal(context.heroDollTab.active,true);
+    assert.deepEqual(await sheet._preparePartContext("inventory",{base:true},{}),{base:true,preparedPartId:"inventory"});
+    const feat={id:"npc-feat",name:"Черта",type:"feat",flags:{"rebreya-main":{sourceType:"feat"}}};
+    const features={sections:[{id:"actions",label:"Actions",items:[feat]}],itemContext:{"npc-feat":{groups:{activation:"action"}}}};
+    assert.deepEqual(await sheet._preparePartContext("features",structuredClone(features),{}),{...features,preparedPartId:"features"});
+    registerDnd5eSheetExtensions({});
+    assert.equal(stubs.NPCActorSheet.TABS.filter(t=>t.tab==="heroDoll").length,1);
+  } finally {stubs.restore();}
+});
+test("NPC doll listeners bind through both actor sheet and ApplicationV2 renders", async () => {
+  const stubs=installSheetExtensionStubs();
+  try {
+    const {registerDnd5eSheetExtensions}=await import(`../scripts/integrations/dnd5e-sheet-extensions.js?npc-render=${Date.now()}`);
+    const actor=createActor(stubs.Actor,{id:"npc-a",name:"Страж",type:"npc"});
+    const panel=new stubs.HTMLElement();
+    const root=new stubs.HTMLElement({selectors:{".rm-hero-doll-tab[data-tab='heroDoll']":panel}});
+    const app={actor,element:root,tabGroups:{primary:"heroDoll"},_toggleSidebar(){},async render(){}};
+    registerDnd5eSheetExtensions({heroDollService:{getActorSnapshot:()=>({slots:[]})}});
+    stubs.hooks.get("renderNPCActorSheet")(app,root);
+    assert.equal(typeof panel.listeners.click.at(-1),"function");
+    const oldSignal=panel.listenerOptions.click.at(-1).signal;
+    stubs.hooks.get("renderApplicationV2")(app,root);
+    assert.equal(oldSignal.aborted,true);
+    assert.equal(panel.listenerOptions.click.at(-1).signal.aborted,false);
+    assert.equal(root.style.getPropertyValue("--rm-character-sheet-header-image"),"");
+  } finally {stubs.restore();}
+});
 test("registerDnd5eSheetExtensions registers hero doll and downtime without replacing native class templates", async () => {
   const stubs = installSheetExtensionStubs();
   try {
@@ -354,7 +401,7 @@ test("registerDnd5eSheetExtensions registers hero doll and downtime without repl
       stubs.CharacterActorSheet.TABS.map((tab) => tab.tab),
       ["inventory", "heroDoll", "modification", "downtime", "specialTraits"]
     );
-    assert.match(stubs.CharacterActorSheet.PARTS.heroDoll.template, /hero-doll-tab\.hbs\?v=1\.4\.364$/u);
+    assert.match(stubs.CharacterActorSheet.PARTS.heroDoll.template, /hero-doll-tab\.hbs\?v=1\.4\.365$/u);
     assert.match(stubs.CharacterActorSheet.PARTS.modification.template, /modification-tab\.hbs$/u);
     assert.ok(
       stubs.CharacterActorSheet.PARTS.modification.templates.includes(

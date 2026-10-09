@@ -337,15 +337,18 @@
   pointer-events: none;
 }
 
+.dnd5e2.sheet.actor.npc:not(.sidebar-collapsed):has(.rm-hero-doll-tab.active) .main-content,
 .dnd5e2.sheet.actor.character:not(.sidebar-collapsed):has(.rm-hero-doll-tab.active) .main-content {
   grid-template-columns: 0 1fr;
   padding-left: 0;
 }
 
+.dnd5e2.sheet.actor.npc:not(.sidebar-collapsed):has(.rm-hero-doll-tab.active) .main-content > .sidebar,
 .dnd5e2.sheet.actor.character:not(.sidebar-collapsed):has(.rm-hero-doll-tab.active) .main-content > .sidebar {
   margin-left: calc(var(--dnd5e-sheet-sidebar-width) * -1);
 }
 
+.dnd5e2.sheet.actor.npc:has(.rm-hero-doll-tab.active) .sidebar-collapser,
 .dnd5e2.sheet.actor.character:has(.rm-hero-doll-tab.active) .sidebar-collapser {
   visibility: hidden;
 }

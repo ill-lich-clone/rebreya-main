@@ -334,6 +334,8 @@ Lootgen: в настройках генерации доступна «Доля 
 
 ### Группы, inventory, travel, craft и downtime
 
+Вкладка «Кукла героя» и её пресеты доступны в штатных листах dnd5e типов `character` и `npc`, включая NPC мастера. Изменения разрешены GM или владельцу (OWNER). Для NPC добавляется только кукла; вкладки модификаций и простоя остаются у персонажей игроков. Поддерживаются акторы мира и связанные с ними токены; несвязанные токены с отдельным synthetic Actor пока не поддерживаются командами куклы.
+
 - `getGroupRegistry`, `getGroupContext`, `registerPartyGroup`, `setActivePartyGroup`, `mergeLegacyInventoryIntoGroup`.
 - `getInventorySnapshot`, `getInventoryIngressRuleState`, `getPartySnapshot`, `addPartyMember`, `removePartyMember`, `updatePartyDefaults`, `updatePartyMember`, `updatePartyMemberTool`.
 

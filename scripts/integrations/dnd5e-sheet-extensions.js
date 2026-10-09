@@ -65,7 +65,7 @@ import {
 const HERO_DOLL_TAB_ID = "heroDoll";
 const HERO_DOLL_TAB_LABEL = "Кукла героя";
 const HERO_DOLL_TAB_ICON = "fa-solid fa-person";
-const HERO_DOLL_TEMPLATE = `modules/${MODULE_ID}/templates/hero-doll-tab.hbs?v=1.4.364`;
+const HERO_DOLL_TEMPLATE = `modules/${MODULE_ID}/templates/hero-doll-tab.hbs?v=1.4.365`;
 const MODIFICATION_TAB_ID = "modification";
 const MODIFICATION_TAB_LABEL = "Модифицирование";
 const MODIFICATION_TAB_ICON = "fa-solid fa-microchip";
@@ -2326,7 +2326,7 @@ function buildItemModsTabState(app) {
   };
 }
 
-function ensureHeroDollTabDefinition(CharacterActorSheet) {
+function ensureHeroDollTabDefinition(CharacterActorSheet, { characterTabs = true } = {}) {
   if (!Array.isArray(CharacterActorSheet.TABS)) {
     CharacterActorSheet.TABS = [];
   }
@@ -2338,7 +2338,7 @@ function ensureHeroDollTabDefinition(CharacterActorSheet) {
       label: HERO_DOLL_TAB_LABEL,
       icon: HERO_DOLL_TAB_ICON
     },
-    {
+    ...(characterTabs ? [{
       tab: MODIFICATION_TAB_ID,
       label: MODIFICATION_TAB_LABEL,
       icon: MODIFICATION_TAB_ICON
@@ -2347,7 +2347,7 @@ function ensureHeroDollTabDefinition(CharacterActorSheet) {
       tab: CHARACTER_DOWNTIME_TAB_ID,
       label: CHARACTER_DOWNTIME_TAB_LABEL,
       icon: CHARACTER_DOWNTIME_TAB_ICON
-    }
+    }] : [])
   ]) {
     if (nextTabs.some((tab) => tab?.tab === tabEntry.tab)) {
       continue;
@@ -2371,7 +2371,7 @@ function ensureHeroDollTabDefinition(CharacterActorSheet) {
       template: HERO_DOLL_TEMPLATE,
       scrollable: [""]
     },
-    [MODIFICATION_TAB_ID]: {
+    ...(characterTabs ? { [MODIFICATION_TAB_ID]: {
       classes: ["flexcol"],
       container: { classes: ["tab-body"], id: "tabs" },
       template: MODIFICATION_TEMPLATE,
@@ -2386,7 +2386,7 @@ function ensureHeroDollTabDefinition(CharacterActorSheet) {
       container: { classes: ["tab-body"], id: "tabs" },
       template: CHARACTER_DOWNTIME_TEMPLATE,
       scrollable: [""]
-    }
+    }} : {})
   };
 }
 
@@ -2458,13 +2458,16 @@ function patchItemModsPartContext(ItemSheet5e) {
   });
 }
 
-function patchHeroDollPartContext(CharacterActorSheet, moduleApi) {
+function patchHeroDollPartContext(CharacterActorSheet, moduleApi, { characterTabs = true } = {}) {
   if (CharacterActorSheet.prototype[HERO_DOLL_PATCH_FLAG]) {
     return;
   }
 
   const originalPreparePartContext = CharacterActorSheet.prototype._preparePartContext;
   CharacterActorSheet.prototype._preparePartContext = async function (partId, context, options) {
+    if (!characterTabs && partId !== HERO_DOLL_TAB_ID) {
+      return originalPreparePartContext.call(this, partId, context, options);
+    }
     const preparedPartId = partId === MODIFICATION_TAB_ID ? "inventory" : partId;
     const prepared = await originalPreparePartContext.call(this, preparedPartId, context, options);
     const preparedWithFeatGroups = partId === "features"
@@ -7401,6 +7404,12 @@ export function registerDnd5eSheetExtensions(moduleApi) {
     patchHeroDollPartContext(CharacterActorSheet, moduleApi);
     patchHeroDollSidebarChangeTab(CharacterActorSheet);
   }
+  const NPCActorSheet = game.dnd5e?.applications?.actor?.NPCActorSheet;
+  if (NPCActorSheet) {
+    ensureHeroDollTabDefinition(NPCActorSheet, { characterTabs: false });
+    patchHeroDollPartContext(NPCActorSheet, moduleApi, { characterTabs: false });
+    patchHeroDollSidebarChangeTab(NPCActorSheet);
+  }
   registerCraftsmanTidyContent();
   const ItemSheet5e = game.dnd5e?.applications?.item?.ItemSheet5e
     ?? globalThis.dnd5e?.applications?.item?.ItemSheet5e
@@ -7444,6 +7453,10 @@ export function registerDnd5eSheetExtensions(moduleApi) {
       console.error(`${MODULE_ID} | Failed to bind Sorcerer cooldown badges.`, error);
     }
 
+    if (actor.type === "npc") {
+      syncHeroDollSidebarOnRender(app);
+      bindHeroDollPanel(root, app, moduleApi);
+    }
     if (actor.type === "character") {
       try {
         enhanceCraftsmanStandardClassCard(root, actor);
@@ -7568,6 +7581,10 @@ export function registerDnd5eSheetExtensions(moduleApi) {
     }
 
     const actor = getActorFromSheetApp(app);
+    if (actor?.type === "npc" && isActorSheetRenderApp(app)) {
+      syncHeroDollSidebarOnRender(app);
+      bindHeroDollPanel(root, app, moduleApi);
+    }
     if (actor?.type === "character" && isActorSheetRenderApp(app)) {
       try {
         enhanceCraftsmanStandardClassCard(root, actor);
