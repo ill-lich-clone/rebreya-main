@@ -1,8 +1,8 @@
 import { MODULE_ID, REBREYA_GROUP_FLAGS } from "../constants.js";
 import { getHeroDollBackSlots, getHeroDollSlots, inferHeroDollSlotsFromName, normalizeHeroDollSlots } from "./item-classification.js?v=1.4.338-hero-doll-menu";
 
-import { ItemInstanceWorkflow, itemInstanceFingerprint } from "../application/item-instance-workflow.js?v=1.4.364-hero-presets";
-import { ItemInstanceDocuments } from "../infrastructure/foundry/item-instance-documents.js?v=1.4.364-hero-presets";
+import { ItemInstanceWorkflow, itemInstanceFingerprint } from "../application/item-instance-workflow.js?v=1.4.368-hero-performance";
+import { ItemInstanceDocuments } from "../infrastructure/foundry/item-instance-documents.js?v=1.4.368-hero-performance";
 import { ItemInstanceError, planItemInstanceMutation } from "./item-instance-rules.js";
 import { normalizeHeroDollPresets, captureHeroDollPresetSlots, heroDollPresetModified } from "./hero-doll-presets.js?v=1.4.364-hero-presets";
 import { isInventoryGraphItem } from "../application/inventory-graph-transfer.js?v=1.4.280";
@@ -470,7 +470,7 @@ export class HeroDollService {
     };
     const intent = {operationId:payload.operationId,mode:"hero-preset",sourceActorUuid:payload.actorUuid,destinationActorUuid:payload.actorUuid,payload};
     const workflow = new ItemInstanceWorkflow({documents,journal:this.moduleApi.inventoryService.mutationJournal,coordinator:this.moduleApi.worldMutationCoordinator});
-    return workflow.runBatch(intent,{sender,assertAuthority,
+    return workflow.runBatch(intent,{sender,assertAuthority,suppressItemRenders:true,
       authorize: ({targetActor}) => {
         if (!(targetActor instanceof Actor) || !["character", "npc"].includes(targetActor.type) || !(sender?.isGM || targetActor.testUserPermission(sender,"OWNER"))) {
           throw new ItemInstanceError("unauthorized","Недостаточно прав для изменения комплекта героя.");
@@ -486,7 +486,7 @@ export class HeroDollService {
     const raw = actor.getFlag(MODULE_ID,"heroDollPresets") ?? null;
     const state = normalizeHeroDollPresets(raw), doll = this.#normalizeState(actor);
     const preset = state.presets.find(entry=>entry.id===payload.presetId);
-    const steps = [], placement = [];
+    const steps = [], placement = [], actorBefore = {}, actorAfter = {};
     if (!["create","clear-ghost"].includes(payload.action) && !preset) throw new ItemInstanceError("preset-not-found","Комплект больше не существует.");
     if (["create","rename"].includes(payload.action)) {
       if (state.presets.some(entry=>entry.id!==payload.presetId && entry.name.toLocaleLowerCase()===payload.name.trim().toLocaleLowerCase())) {
@@ -544,11 +544,13 @@ export class HeroDollService {
           const after=buildHeroDollEquippedUpdate(item,equipped.has(itemId));
           placement.push({actor:"target",itemId,before:{"system.equipped":item.system.equipped ?? null},after});
         }
-        placement.push({actor:"target",before:{[dollPath]:actor.getFlag(MODULE_ID,"heroDoll")?.slots ?? null},after:{[dollPath]:nextSlots}});
+        actorBefore[dollPath]=actor.getFlag(MODULE_ID,"heroDoll")?.slots ?? null;
+        actorAfter[dollPath]=nextSlots;
         state.ghosts=ghosts;state.activePresetId=preset.id;break;
       }
     }
-    placement.push({actor:"target",before:{[presetPath]:raw},after:{[presetPath]:state}});
+    actorBefore[presetPath]=raw;actorAfter[presetPath]=state;
+    placement.push({actor:"target",before:actorBefore,after:actorAfter});
     steps.push({intent,plan:{kind:"placement",preserveSourceId:true},placement});
     return {steps,value:{presetId:payload.presetId ?? state.activePresetId}};
   }

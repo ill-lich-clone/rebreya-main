@@ -15,6 +15,8 @@
 
 ## Foundry driver
 
+- `#placementDocument(step,record,actors=null)` допускает уже resolved source/target Actors. `writePlacement` и `verifyCommitted` выполняют Actor resolution один раз на проход; Item lookup всегда читает текущую collection. `writePlacement(record,context)` повторяет CAS внутри guarded callback после authority await и для preset `context.suppressItemRenders` передаёт render:false только forward Item update. Actor updates, hooks и compensation render options не меняются. Verify/write mismatch добавляет UUID/paths в failure message.
+
 `ItemInstanceDocuments({resolveActor=fromUuid})`, файл `scripts/infrastructure/foundry/item-instance-documents.js`, не хранит отдельного world state.
 
 - `readActors(intent)` разрешает source/target заново. `readSource(intent,actors)` возвращает refs, detached ItemData, quantity/step/folder и complex-state policy DTO. Поддерживаются world Actor UUIDs; synthetic sheet не является новым самостоятельным маршрутом переноса.
@@ -25,6 +27,8 @@
 - `compensate` сначала сверяет все touched fields и target metadata. Чужие edits или missing target после debit требуют manual-review. Затем обратным порядком восстанавливает placement, source quantity/marker и удаляет только свой неизменённый target. Весь Actor snapshot не восстанавливается.
 
 ## Владельцы поведения и UI
+
+- Preset final Actor placement объединяет doll slots/preset state с двумя before/after touched paths в одной записи; все Item before/after receipts, quantity rules, heldHands и post-write проверки сохранены. Batch compensation сохраняет initial failure code/message при входе в compensating; после безопасного отката terminal notification содержит причину и сохраняется для replay. Legacy records без failure по-прежнему поддерживаются. Tests: `hero-doll-presets.test.mjs`, `item-instance-batch.test.mjs`.
 
 - Кукла и её пресеты разрешены для world Actor типов `character` и `npc` с одинаковой проверкой GM/OWNER; другие типы отклоняются до writes. Связанные токены используют world Actor. Synthetic Actor несвязанных токенов не входит в существующий UUID/lock/command контракт. NPC sheet использует прежние workflows и quantity/grip/compensation правила без отдельного владельца.
 

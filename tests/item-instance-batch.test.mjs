@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ItemInstanceWorkflow } from '../scripts/application/item-instance-workflow.js';
+import { ItemInstanceWorkflow, itemInstanceFingerprint } from '../scripts/application/item-instance-workflow.js';
 import { ItemInstanceDocuments } from '../scripts/infrastructure/foundry/item-instance-documents.js';
 import { makeInstanceDocumentsFixture } from './helpers/item-instance-documents-fixture.mjs';
 
@@ -19,6 +19,29 @@ function setup(t) {
   return fx;
 }
 
+test('placement preserves a foreign Actor edit during the authority await',async t=>{
+  const fx=setup(t);
+  const documents=new ItemInstanceDocuments();
+  const foreign={version:1,slots:{head:{itemId:'foreign'}}};
+  const record={intent:{sourceActorUuid:fx.hero.uuid,destinationActorUuid:fx.hero.uuid},placement:[{
+    actor:'target',before:{'flags.rebreya-main.heroDoll':null},after:{'flags.rebreya-main.heroDoll':{version:1,slots:{neck:{itemId:'rope'}}}}
+  }]};
+  await assert.rejects(documents.writePlacement(record,{assertAuthority:async()=>{fx.hero.flags['rebreya-main'].heroDoll=structuredClone(foreign);}}),e=>e.code==='manual-review');
+  assert.deepEqual(fx.hero.getFlag('rebreya-main','heroDoll'),foreign);
+});
+test('resumed compensation conflict preserves the original durable failure',async t=>{
+  const fx=setup(t),journal=fx.api.inventoryService.mutationJournal;
+  const intent={operationId:'batch-1',mode:'hero-preset',sourceActorUuid:fx.hero.uuid,destinationActorUuid:fx.hero.uuid};
+  const id=`item-instance:${JSON.stringify([game.user.id,intent.mode,intent.operationId])}`;
+  const failure={code:'EIO',message:'original database error'};
+  await journal.start({id,intent,fingerprint:itemInstanceFingerprint(intent),kind:'item-instance-v1',batch:true,phase:'compensating',failure,
+    steps:[{intent,plan:{kind:'placement',preserveSourceId:true},placement:[{actor:'target',before:{'flags.rebreya-main.heroDoll':null},after:{'flags.rebreya-main.heroDoll':{slots:{neck:{itemId:'rope'}}}}}]}]});
+  fx.hero.flags['rebreya-main'].heroDoll={slots:{head:{itemId:'foreign'}}};
+  await assert.rejects(fx.run(),e=>e.code==='manual-review');
+  const record=await journal.find(id);
+  assert.deepEqual(record.failure,failure);assert.equal(record.compensationFailure.code,'manual-review');
+  assert.deepEqual(fx.hero.getFlag('rebreya-main','heroDoll'),{slots:{head:{itemId:'foreign'}}});
+});
 test('batch applies real equipped fields and doll placement; terminal retry never writes again',async t=>{
   const fx=setup(t);await fx.run();const count=fx.calls.length;
   assert.equal(fx.source.system.equipped,true);

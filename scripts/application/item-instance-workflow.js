@@ -85,7 +85,9 @@ export class ItemInstanceWorkflow {
     if (record.phase !== "compensated") {
       try {
         if (record.phase !== "compensating") record = await this.#batchJournal(context,
-          () => this.journal.checkpoint(record.id, record.phase, "compensating"));
+          () => this.journal.checkpoint(record.id, record.phase, "compensating", {
+            failure: record.failure ?? {code:error?.code ?? "write-failed",message:error?.message ?? ""}
+          }));
         for (const step of [...record.steps].reverse()) {
           await this.#guarded(context, () => this.documents.compensate(step, context));
         }
@@ -95,14 +97,15 @@ export class ItemInstanceWorkflow {
         const current = await this.#batchJournal(context, () => this.journal.find(record.id));
         if (current && !current.terminal && current.phase !== "manual-review") {
           await this.#batchJournal(context, () => this.journal.checkpoint(record.id, current.phase, "manual-review", {
-            failure: { code: error?.code ?? "write-failed", message: error?.message ?? "" },
+            failure: current.failure ?? record.failure ?? { code: error?.code ?? "write-failed", message: error?.message ?? "" },
             compensationFailure: { code: compensationError?.code ?? "compensation-failed", message: compensationError?.message ?? "" }
           }));
         }
         throw new ItemInstanceError("manual-review", "Предметы изменились во время переключения. Нужна ручная сверка.");
       }
     }
-    const result = { ok: false, code: "instance-compensated", message: "Переключение отменено; исходное состояние восстановлено." };
+    const reason = record.failure?.message;
+    const result = { ok: false, code: "instance-compensated", message: `Переключение отменено; исходное состояние восстановлено.${reason ? ` Причина: ${reason}` : ""}` };
     await this.#batchJournal(context, () => this.journal.finish(record.id, result));
     throw new ItemInstanceError(result.code, result.message);
   }

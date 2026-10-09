@@ -1,5 +1,5 @@
 import { DisarmError, evaluateDisarmRules, resolveDisarmOutcome } from "./disarm-rules.js?v=1.4.252";
-import { itemInstanceFingerprint } from "../application/item-instance-workflow.js?v=1.4.364-hero-presets";
+import { itemInstanceFingerprint } from "../application/item-instance-workflow.js?v=1.4.368-hero-performance";
 
 /** One durable owner; human decisions return between commands and never hold a queue. */
 export class DisarmService {

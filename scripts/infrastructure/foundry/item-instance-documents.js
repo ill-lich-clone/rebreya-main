@@ -1,12 +1,12 @@
 import { MODULE_ID } from "../../constants.js";
 import { ItemInstanceError } from "../../data/item-instance-rules.js";
-import { itemInstanceFingerprint as fingerprint } from "../../application/item-instance-workflow.js?v=1.4.364-hero-presets";
+import { itemInstanceFingerprint as fingerprint } from "../../application/item-instance-workflow.js?v=1.4.368-hero-performance";
 import { createStableGearDocumentId } from "../../data/gear-document-ids.js";
 
 const prefix = `flags.${MODULE_ID}`;
 const get = (object, path) => path.split(".").reduce((value, key) => value?.[key], object);
 const equal = (a, b) => fingerprint(a) === fingerprint(b);
-const conflict = () => { throw new ItemInstanceError("manual-review", "Затронутые поля предмета изменены; нужна ручная сверка."); };
+const conflict = (detail = "") => { throw new ItemInstanceError("manual-review", `Затронутые поля предмета изменены; нужна ручная сверка.${detail ? ` ${detail}` : ""}`); };
 const clone = value => value === undefined ? undefined : structuredClone(value);
 
 function cleanClone(data) {
@@ -110,8 +110,8 @@ export class ItemInstanceDocuments {
     return value;
   }
 
-  async #placementDocument(step, record) {
-    const actors = await this.readActors(record.intent);
+  async #placementDocument(step, record, actors = null) {
+    actors ??= await this.readActors(record.intent);
     const actor = step.actor === "source" ? actors.sourceActor : actors.targetActor;
     return step.itemId ? actor.items.get(step.itemId === "$target" ? record.itemId : step.itemId) : actor;
   }
@@ -134,14 +134,22 @@ export class ItemInstanceDocuments {
   }
 
   async writePlacement(record, context) {
+    if (!record.placement.length) return;
+    const actors = await this.readActors(record.intent);
     for (const raw of record.placement) {
       const step = this.#substitute(raw, record);
-      const document = await this.#placementDocument(step, record);
+      const document = await this.#placementDocument(step, record, actors);
       if (!document) conflict();
       const current = this.#readFields(document, step.before);
       if (equal(current, step.after)) continue;
-      if (!equal(current, step.before)) conflict();
-      await this.#write(context, () => document.update(this.#update(step.after)));
+      if (!equal(current, step.before)) conflict(`${document.uuid ?? document.id}: ${Object.keys(step.before).filter(path=>!equal(current[path],step.before[path])).join(", ")}.`);
+      await this.#write(context, () => {
+        // Authority checks await; reread touched fields before writing so another writer is never overwritten.
+        const guardedCurrent = this.#readFields(document, step.before);
+        if (equal(guardedCurrent, step.after)) return;
+        if (!equal(guardedCurrent, step.before)) conflict(`${document.uuid ?? document.id}: ${Object.keys(step.before).filter(path=>!equal(guardedCurrent[path],step.before[path])).join(", ")}.`);
+        return document.update(this.#update(step.after), context.suppressItemRenders && step.itemId ? {render:false} : {});
+      });
     }
   }
 
@@ -155,8 +163,10 @@ export class ItemInstanceDocuments {
     }
     if (record.plan.kind === "move") await context.verifyWhole(record);
     for (const raw of record.placement) {
-      const step = this.#substitute(raw, record), document = await this.#placementDocument(step, record);
-      if (!document || !equal(this.#readFields(document, step.after), step.after)) conflict();
+      const step = this.#substitute(raw, record), document = await this.#placementDocument(step, record, {sourceActor,targetActor});
+      if (!document) conflict();
+      const current = this.#readFields(document, step.after);
+      if (!equal(current, step.after)) conflict(`Не подтверждена запись ${document.uuid ?? document.id}: ${Object.keys(step.after).filter(path=>!equal(current[path],step.after[path])).join(", ")}.`);
     }
   }
 

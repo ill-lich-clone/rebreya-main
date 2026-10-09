@@ -18,6 +18,45 @@ function setup(t,options={}) {
   return fx;
 }
 
+test('preset Apply resolves Actors once per pass and writes doll/preset flags together',async t=>{
+  const fx=setup(t);await fx.create();await fx.create('Поход','travel');
+  fx.hero.flags['rebreya-main'].heroDoll.slots={};fx.source.system.equipped=false;
+  const resolve=globalThis.fromUuid;let reads=0;
+  globalThis.fromUuid=async uuid=>{if(uuid===fx.hero.uuid)reads++;return resolve(uuid);};
+  const count=fx.calls.filter(([phase])=>phase==='placement').length;
+  await fx.apply();
+  assert.equal(reads,3,'one initial, one write and one verify Actor lookup');
+  assert.equal(fx.calls.filter(([phase])=>phase==='placement').length-count,1);
+  assert.equal(fx.source.system.equipped,true);assert.equal(fx.state().activePresetId,'battle');
+  assert.deepEqual(fx.hero.getFlag('rebreya-main','heroDoll').slots,{neck:{itemId:'rope'}});
+});
+test('preset forward Item update suppresses native renders while keeping final Actor render',async t=>{
+  const fx=setup(t);await fx.create();fx.hero.flags['rebreya-main'].heroDoll.slots={};fx.source.system.equipped=false;
+  const itemUpdate=fx.source.update.bind(fx.source),actorUpdate=fx.hero.update.bind(fx.hero);let itemOptions,actorOptions;
+  fx.source.update=async(patch,options)=>{itemOptions=options;return itemUpdate(patch,options);};
+  fx.hero.update=async(patch,options)=>{actorOptions=options;return actorUpdate(patch,options);};
+  await fx.apply();assert.equal(itemOptions?.render,false);assert.notEqual(actorOptions?.render,false);
+});
+test('preset rollback preserves original failure in durable record and notification',async t=>{
+  const fx=setup(t);await fx.create();fx.hero.flags['rebreya-main'].heroDoll.slots={};fx.source.system.equipped=false;
+  const update=fx.hero.update.bind(fx.hero);let fail=true;
+  fx.hero.update=async(...args)=>{if(fail){fail=false;throw new Error('database write rejected');}return update(...args);};
+  const payload=fx.payload('apply',{presetId:'battle',expectedFingerprint:itemInstanceFingerprint(fx.state().presets[0])});
+  await assert.rejects(fx.service.executePresetMutation(payload,{sender:game.user}),e=>e.code==='instance-compensated'&&e.message.includes('database write rejected'));
+  const record=await fx.api.inventoryService.mutationJournal.find(`item-instance:${JSON.stringify([game.user.id,'hero-preset','preset-op-2'])}`);
+  assert.equal(record.failure.message,'database write rejected');
+  assert.equal(fx.source.system.equipped,false);assert.deepEqual(fx.hero.getFlag('rebreya-main','heroDoll').slots,{});
+  const calls=fx.calls.length;
+  await assert.rejects(fx.service.executePresetMutation(payload,{sender:game.user}),e=>e.code==='instance-compensated'&&e.message.includes('database write rejected'));
+  assert.equal(fx.calls.length,calls,'terminal failure retry never writes again');
+});
+test('preset verify mismatch identifies the rejected document field after safe rollback',async t=>{
+  const fx=setup(t);await fx.create();fx.hero.flags['rebreya-main'].heroDoll.slots={};fx.source.system.equipped=false;
+  const update=fx.source.update.bind(fx.source);
+  fx.source.update=async(...args)=>{const result=await update(...args);fx.source.system.equipped=false;return result;};
+  await assert.rejects(fx.apply(),e=>e.code==='instance-compensated'&&e.message.includes('system.equipped')&&e.message.includes(fx.source.uuid));
+  assert.deepEqual(fx.hero.getFlag('rebreya-main','heroDoll').slots,{});
+});
 test('NPC presets apply missing equipment as a removable ghost',async t=>{
   const fx=setup(t);fx.hero.type='npc';await fx.create();fx.hero.items.contents=[];
   await fx.apply();assert.equal(fx.service.getActorSnapshot(fx.hero).slots.find(s=>s.id==='neck').ghost,true);
