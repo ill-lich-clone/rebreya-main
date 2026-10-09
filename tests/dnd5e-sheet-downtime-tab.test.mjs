@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { extname } from "node:path";
 import { readFile, stat } from "node:fs/promises";
 
 function readWebpDimensions(bytes) {
@@ -317,6 +318,22 @@ function findTreeNode(root, predicate) {
   return null;
 }
 
+test("registered character and NPC templates satisfy Foundry server extension validation", async () => {
+  const stubs=installSheetExtensionStubs();
+  try {
+    const {registerDnd5eSheetExtensions}=await import(`../scripts/integrations/dnd5e-sheet-extensions.js?template-path=${Date.now()}`);
+    registerDnd5eSheetExtensions({});
+    for (const Sheet of [stubs.CharacterActorSheet,stubs.NPCActorSheet]) {
+      for (const part of Object.values(Sheet.PARTS)) {
+        for (const path of [part.template,...(part.templates??[])]) {
+          if (!path?.startsWith("modules/rebreya-main/")) continue;
+          assert.ok([".handlebars",".hbs",".html"].includes(extname(path)),`Foundry rejects template extension: ${path}`);
+          assert.ok((await readFile(new URL(`../${path.slice("modules/rebreya-main/".length)}`,import.meta.url),"utf8")).length);
+        }
+      }
+    }
+  } finally {stubs.restore();}
+});
 test("NPC sheets get only the hero doll and preserve native parts and context", async () => {
   const stubs=installSheetExtensionStubs();
   try {
@@ -401,7 +418,7 @@ test("registerDnd5eSheetExtensions registers hero doll and downtime without repl
       stubs.CharacterActorSheet.TABS.map((tab) => tab.tab),
       ["inventory", "heroDoll", "modification", "downtime", "specialTraits"]
     );
-    assert.match(stubs.CharacterActorSheet.PARTS.heroDoll.template, /hero-doll-tab\.hbs\?v=1\.4\.365$/u);
+    assert.match(stubs.CharacterActorSheet.PARTS.heroDoll.template, /hero-doll-tab\.hbs$/u);
     assert.match(stubs.CharacterActorSheet.PARTS.modification.template, /modification-tab\.hbs$/u);
     assert.ok(
       stubs.CharacterActorSheet.PARTS.modification.templates.includes(

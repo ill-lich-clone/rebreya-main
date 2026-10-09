@@ -65,7 +65,8 @@ import {
 const HERO_DOLL_TAB_ID = "heroDoll";
 const HERO_DOLL_TAB_LABEL = "Кукла героя";
 const HERO_DOLL_TAB_ICON = "fa-solid fa-person";
-const HERO_DOLL_TEMPLATE = `modules/${MODULE_ID}/templates/hero-doll-tab.hbs?v=1.4.365`;
+// Foundry loads templates through a filesystem socket path, which cannot include URL query parameters.
+const HERO_DOLL_TEMPLATE = `modules/${MODULE_ID}/templates/hero-doll-tab.hbs`;
 const MODIFICATION_TAB_ID = "modification";
 const MODIFICATION_TAB_LABEL = "Модифицирование";
 const MODIFICATION_TAB_ICON = "fa-solid fa-microchip";
