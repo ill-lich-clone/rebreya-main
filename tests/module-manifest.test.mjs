@@ -6,10 +6,10 @@ const RELEASED_CACHE_VERSION = "1\\.4\\.96";
 
 test("current alchemy automation release advances the module cache version", async () => {
   const manifest = JSON.parse(await readFile(new URL("../module.json", import.meta.url), "utf8"));
-  assert.equal(manifest.version, "1.4.363");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.363.js"]);
+  assert.equal(manifest.version, "1.4.364");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.364.js"]);
   assert.equal(
-    (await readFile(new URL("../scripts/main-1.4.363.js", import.meta.url), "utf8")).trim(),
+    (await readFile(new URL("../scripts/main-1.4.364.js", import.meta.url), "utf8")).trim(),
     'import "./main.js";'
   );
 });
@@ -101,8 +101,8 @@ test("module manifest loads an unpinned canonical entrypoint for page-refresh up
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const [entrypoint] = manifest.esmodules;
 
-  assert.equal(manifest.version, "1.4.363");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.363.js"]);
+  assert.equal(manifest.version, "1.4.364");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.364.js"]);
   assert.doesNotMatch(entrypoint, /[?#]/u);
 
   const entrypointSource = await readFile(new URL(entrypoint, manifestUrl), "utf8");
@@ -113,7 +113,7 @@ test("Lootgen window import uses the current template editing cache version", as
   const entrypointSource = await readCanonicalEntrypointSource();
 
   assert.match(entrypointSource, /lootgen-app\.js\?v=1\.4\.363/u);
-  assert.match(entrypointSource, /const MODULE_STYLE_VERSION = "1\.4\.322";/u);
+  assert.match(entrypointSource, /const MODULE_STYLE_VERSION = "1\.4\.364";/u);
 });
 
 test("glossary and feat-link owners preserve their released cache key", async () => {
@@ -224,7 +224,7 @@ test("production registers the hidden GiantTribe advancement before race compend
   );
   assert.match(
     entrypointSource,
-    /dnd5e-sheet-extensions\.js\?v=1\.4\.338-hero-doll-menu/u
+    /dnd5e-sheet-extensions\.js\?v=1\.4\.364-hero-presets/u
   );
   assert.match(
     entrypointSource,
@@ -313,7 +313,7 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
 
   assert.match(
     canonicalSource,
-    /integrations\/dnd5e-sheet-extensions\.js\?v=1\.4\.338-hero-doll-menu/u
+    /integrations\/dnd5e-sheet-extensions\.js\?v=1\.4\.364-hero-presets/u
   );
   assert.match(sheetSource, /\.\/universal-belt\.js\?v=1\.4\.335-reagent-tracker/u);
 
@@ -407,7 +407,7 @@ test("module keeps recent published entrypoint URLs as canonical compatibility f
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
 
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.363.js"]);
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.364.js"]);
 
   for (const fileName of ["main-1.4.98.js", "main-1.4.99.js", "main-1.4.100.js"]) {
     const forwarderSource = await readFile(new URL(`../scripts/${fileName}`, import.meta.url), "utf8");
@@ -581,7 +581,7 @@ test("legacy settings relay fails closed when a world-setting socket is unavaila
 test("module stylesheet cache bust loads the storage deposit interaction styles", async () => {
   const entrypointSource = await readCanonicalEntrypointSource();
 
-  assert.match(entrypointSource, /const MODULE_STYLE_VERSION = "1\.4\.322";/u);
+  assert.match(entrypointSource, /const MODULE_STYLE_VERSION = "1\.4\.364";/u);
   assert.match(entrypointSource, /const stylesheetHref = `\$\{MODULE_STYLE_PATH\}\?v=\$\{encodeURIComponent\(MODULE_STYLE_VERSION\)\}`;/u);
   assert.doesNotMatch(entrypointSource, /module\?\.version\s*\?\?/u);
 });
@@ -719,7 +719,7 @@ test("held item integrations preserve their released cache bust", async () => {
 
   assert.match(
     entrypointSource,
-    /dnd5e-sheet-extensions\.js\?v=1\.4\.338-hero-doll-menu/u,
+    /dnd5e-sheet-extensions\.js\?v=1\.4\.364-hero-presets/u,
   );
   assert.match(
     entrypointSource,

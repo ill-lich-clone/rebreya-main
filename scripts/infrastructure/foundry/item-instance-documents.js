@@ -1,6 +1,6 @@
 import { MODULE_ID } from "../../constants.js";
 import { ItemInstanceError } from "../../data/item-instance-rules.js";
-import { itemInstanceFingerprint as fingerprint } from "../../application/item-instance-workflow.js";
+import { itemInstanceFingerprint as fingerprint } from "../../application/item-instance-workflow.js?v=1.4.364-hero-presets";
 import { createStableGearDocumentId } from "../../data/gear-document-ids.js";
 
 const prefix = `flags.${MODULE_ID}`;
@@ -147,7 +147,7 @@ export class ItemInstanceDocuments {
 
   async verifyCommitted(record, context) {
     const { sourceActor, targetActor } = await this.readActors(record.intent);
-    if (!targetActor.items.get(record.itemId)) conflict();
+    if (record.plan.kind !== "placement" && !targetActor.items.get(record.itemId)) conflict();
     if (record.plan.kind === "split") {
       const item = sourceActor.items.get(record.intent.sourceItemId);
       if (item?.system.quantity !== record.plan.sourceRemaining || !equal(item.getFlag(MODULE_ID, "itemInstanceDebit"), record.sourceMarkerAfter)) conflict();
@@ -161,6 +161,26 @@ export class ItemInstanceDocuments {
   }
 
   async compensate(record, context) {
+    if (record.plan.kind === "placement") {
+      const steps = [];
+      for (const raw of record.placement) {
+        const step = this.#substitute(raw, record), document = await this.#placementDocument(step, record);
+        if (!document) conflict();
+        const current = this.#readFields(document, step.before);
+        if (!equal(current, step.before) && !equal(current, step.after)) conflict();
+        steps.push({ step, document });
+      }
+      for (const { step, document } of steps.reverse()) {
+        await this.#write(context, () => {
+          // Earlier awaits and authority checks may allow another writer to edit this field.
+          const current = this.#readFields(document, step.before);
+          if (equal(current, step.before)) return;
+          if (!equal(current, step.after)) conflict();
+          return document.update(this.#update(step.before));
+        });
+      }
+      return;
+    }
     // The whole-transfer owner is the only owner of its debit and deletion receipts.
     if (record.plan.kind === "move") conflict();
     const { sourceActor, targetActor } = await this.readActors(record.intent);

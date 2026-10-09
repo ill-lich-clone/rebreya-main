@@ -12,6 +12,7 @@ import {
   TEYVANKAL_STATE_LANGUAGES
 } from "../constants.js";
 import { registerCraftsmanGadgetItemType } from "./craftsman-gadget-item-type.js?v=1.4.327";
+import { bindHeroDollPresetControls } from "../ui/hero-doll-presets-ui.js?v=1.4.364-hero-presets";
 import { bringAppToFront } from "../ui.js";
 import { bindAnchoredTooltips } from "../ui/anchored-overlay.js?v=1.4.247-anchored-overlays";
 import { createStableGearDocumentId } from "../data/gear-document-ids.js";
@@ -64,7 +65,7 @@ import {
 const HERO_DOLL_TAB_ID = "heroDoll";
 const HERO_DOLL_TAB_LABEL = "Кукла героя";
 const HERO_DOLL_TAB_ICON = "fa-solid fa-person";
-const HERO_DOLL_TEMPLATE = `modules/${MODULE_ID}/templates/hero-doll-tab.hbs`;
+const HERO_DOLL_TEMPLATE = `modules/${MODULE_ID}/templates/hero-doll-tab.hbs?v=1.4.364`;
 const MODIFICATION_TAB_ID = "modification";
 const MODIFICATION_TAB_LABEL = "Модифицирование";
 const MODIFICATION_TAB_ICON = "fa-solid fa-microchip";
@@ -3489,6 +3490,10 @@ function bindHeroDollSlotListeners(panel, app, moduleApi, listenerOptions = unde
           disabled: true
         }];
 
+      if (slotSnapshot?.ghost) {
+        actions.unshift({id:"hero-doll-clear-ghost",label:"Убрать силуэт",icon:"fa-solid fa-xmark",
+          callback:async()=>{await moduleApi.heroDollService.clearGhost(actor,slotId);await rerenderActorSheet(app,moduleApi);}});
+      }
       openHeldItemContextMenu({
         x: Number(event.clientX ?? 0),
         y: Number(event.clientY ?? 0),
@@ -3850,6 +3855,9 @@ function bindHeroDollPanel(root, app, moduleApi) {
   const panelListenerOptions = { signal: panelAbortController.signal };
   bindHeroDollSlotListeners(panel, app, moduleApi, panelListenerOptions);
   bindHeroDollInventoryListeners(panel, app, panelListenerOptions);
+  const actor = getActorFromSheetApp(app);
+  if (actor) bindHeroDollPresetControls(panel,{actor,service:moduleApi.heroDollService,
+    rerender:()=>rerenderActorSheet(app,moduleApi),signal:panelAbortController.signal,openMenu:openHeldItemContextMenu});
 
   heroDollRootAbortControllers.get(root)?.abort();
   const rootAbortController = new AbortController();

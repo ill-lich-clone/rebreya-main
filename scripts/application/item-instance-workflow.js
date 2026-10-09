@@ -27,6 +27,95 @@ export class ItemInstanceWorkflow {
     return lock(0);
   }
 
+  runBatch(intent, context) {
+    if (!context?.sender?.id || !intent?.operationId || !intent.sourceActorUuid
+      || intent.sourceActorUuid !== intent.destinationActorUuid || !intent.mode) {
+      return Promise.reject(new ItemInstanceError("invalid-intent", "Неполные данные комплекта."));
+    }
+    const request = structuredClone(intent);
+    return this.coordinator.run(`inventory-organization:${request.sourceActorUuid.split(".").at(-1)}`,
+      () => this.#runBatch(request, context));
+  }
+
+  async #runBatch(intent, context) {
+    await context.assertAuthority();
+    const id = `item-instance:${JSON.stringify([context.sender.id, intent.mode, intent.operationId])}`;
+    const fingerprint = itemInstanceFingerprint(intent);
+    let record = await this.#batchJournal(context, () => this.journal.find(id));
+    if (record && record.fingerprint !== fingerprint) throw new ItemInstanceError("operation-conflict", "Этот ID уже использован для другой операции.");
+    const actors = await this.documents.readActors(intent);
+    await context.authorize(actors, intent);
+    if (record?.terminal) {
+      if (!record.result.ok) throw new ItemInstanceError(record.result.code, record.result.message);
+      return { ...record.result.value, replayed: true };
+    }
+    if (record?.phase === "manual-review") throw new ItemInstanceError("manual-review", "Операция требует ручной сверки.");
+    if (!record) {
+      const pending = await this.#batchJournal(context, () => this.journal.listPending());
+      if (pending.some(entry => entry.kind === "item-instance-v1" &&
+        [entry.intent.sourceActorUuid, entry.intent.destinationActorUuid].includes(intent.sourceActorUuid))) {
+        throw new ItemInstanceError("pending-instance-operation", "Сначала завершите или сверьте предыдущую операцию с предметами этого персонажа.");
+      }
+      const prepared = await context.prepareBatch(actors, { id, fingerprint, intent });
+      record = await this.#batchJournal(context, () => this.journal.start({ ...prepared, id, fingerprint, intent,
+        kind: "item-instance-v1", batch: true, phase: "prepared" }));
+    }
+    if (["compensating", "compensated"].includes(record.phase)) return this.#compensateBatch(record, context);
+    try {
+      if (record.phase === "prepared") {
+        for (const step of record.steps) {
+          for (const method of ["createTarget", "debitSource", "writePlacement"]) {
+            await this.#guarded(context, () => this.documents[method](step, context));
+          }
+        }
+        record = await this.#batchJournal(context, () => this.journal.checkpoint(id, "prepared", "placement-written"));
+      }
+      for (const step of record.steps) await this.#guarded(context, () => this.documents.verifyCommitted(step, context));
+    } catch (error) {
+      await context.assertAuthority();
+      record = await this.#batchJournal(context, () => this.journal.find(id)) ?? record;
+      return this.#compensateBatch(record, context, error);
+    }
+    const value = { ...record.value, operationId: intent.operationId, replayed: false };
+    await this.#batchJournal(context, () => this.journal.finish(id, { ok: true, value }));
+    return value;
+  }
+
+  async #compensateBatch(record, context, error = null) {
+    if (record.phase !== "compensated") {
+      try {
+        if (record.phase !== "compensating") record = await this.#batchJournal(context,
+          () => this.journal.checkpoint(record.id, record.phase, "compensating"));
+        for (const step of [...record.steps].reverse()) {
+          await this.#guarded(context, () => this.documents.compensate(step, context));
+        }
+        record = await this.#batchJournal(context, () => this.journal.checkpoint(record.id, "compensating", "compensated"));
+      } catch (compensationError) {
+        await context.assertAuthority();
+        const current = await this.#batchJournal(context, () => this.journal.find(record.id));
+        if (current && !current.terminal && current.phase !== "manual-review") {
+          await this.#batchJournal(context, () => this.journal.checkpoint(record.id, current.phase, "manual-review", {
+            failure: { code: error?.code ?? "write-failed", message: error?.message ?? "" },
+            compensationFailure: { code: compensationError?.code ?? "compensation-failed", message: compensationError?.message ?? "" }
+          }));
+        }
+        throw new ItemInstanceError("manual-review", "Предметы изменились во время переключения. Нужна ручная сверка.");
+      }
+    }
+    const result = { ok: false, code: "instance-compensated", message: "Переключение отменено; исходное состояние восстановлено." };
+    await this.#batchJournal(context, () => this.journal.finish(record.id, result));
+    throw new ItemInstanceError(result.code, result.message);
+  }
+
+  async #batchJournal(context, operation) {
+    try { return await this.#guarded(context, operation); }
+    catch (error) {
+      await context.assertAuthority();
+      if (error instanceof ItemInstanceError) throw error;
+      throw new ItemInstanceError("ambiguous-outcome", "Не удалось подтвердить запись операции. Повторите прежнее действие для сверки результата.");
+    }
+  }
+
   async #guarded(context, operation) {
     await context.assertAuthority();
     const result = await operation();

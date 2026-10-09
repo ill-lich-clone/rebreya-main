@@ -10264,6 +10264,31 @@ summary:focus-visible {
   background: rgba(255, 255, 255, 0.08);
 }
 
+.rm-hero-doll-presets {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-block: 8px 14px;
+}
+
+.rm-hero-doll-presets select {
+  flex: 1 1 140px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.rm-hero-doll-presets__modified {
+  color: var(--rm-text-muted);
+  font-size: 11px;
+  font-style: italic;
+}
+
+.rm-hero-doll-slot__image--ghost {
+  opacity: 0.35;
+  filter: grayscale(1);
+}
+
 .rm-hero-doll-slot__surface.is-dragover {
   border-color: var(--rm-border-strong);
   background: rgb(var(--rm-color-gold-rgb) / 0.12);

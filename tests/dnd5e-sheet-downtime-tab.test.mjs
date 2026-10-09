@@ -354,7 +354,7 @@ test("registerDnd5eSheetExtensions registers hero doll and downtime without repl
       stubs.CharacterActorSheet.TABS.map((tab) => tab.tab),
       ["inventory", "heroDoll", "modification", "downtime", "specialTraits"]
     );
-    assert.match(stubs.CharacterActorSheet.PARTS.heroDoll.template, /hero-doll-tab\.hbs$/u);
+    assert.match(stubs.CharacterActorSheet.PARTS.heroDoll.template, /hero-doll-tab\.hbs\?v=1\.4\.364$/u);
     assert.match(stubs.CharacterActorSheet.PARTS.modification.template, /modification-tab\.hbs$/u);
     assert.ok(
       stubs.CharacterActorSheet.PARTS.modification.templates.includes(

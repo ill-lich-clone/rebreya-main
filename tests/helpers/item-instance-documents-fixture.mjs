@@ -11,7 +11,7 @@ export function makeInstanceDocumentsFixture({ quantity = 10, itemFlags = {}, it
   class FakeItem {
     constructor(data,parent){this.data=clone(data);this.parent=parent;}
     get id(){return this.data._id;} get uuid(){return `${this.parent.uuid}.Item.${this.id}`;}
-    get system(){return this.data.system;} get name(){return this.data.name;} get type(){return this.data.type;}
+    get system(){return this.data.system;} get name(){return this.data.name;} get type(){return this.data.type;} get img(){return this.data.img;}
     get flags(){return this.data.flags;} get isOwner(){return true;}
     getFlag(scope,key){return this.data.flags?.[scope]?.[key];}
     toObject(){return clone(this.data);}

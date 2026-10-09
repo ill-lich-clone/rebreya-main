@@ -109,7 +109,7 @@ import {
 } from "./application/inventory-ingress-planner.js?v=1.4.257";
 import { DurabilityService } from "./data/durability-service.js?v=1.4.154-corpse-storage-broken-name";
 import { MapObjectTokenService } from "./data/map-object-token-service.js?v=1.4.97-map-object-token";
-import { HeroDollService, HERO_DOLL_ASSIGN_COMMAND, HERO_DOLL_NORMALIZE_COMMAND, HERO_DOLL_CLEAR_COMMAND, isValidHeroDollAssignPayload } from "./data/hero-doll-service.js?v=1.4.338-hero-doll-menu";
+import { HeroDollService, HERO_DOLL_ASSIGN_COMMAND, HERO_DOLL_NORMALIZE_COMMAND, HERO_DOLL_CLEAR_COMMAND, HERO_DOLL_PRESET_COMMAND, isValidHeroDollAssignPayload, isValidHeroDollPresetPayload } from "./data/hero-doll-service.js?v=1.4.364-hero-presets";
 import { ImplantService } from "./data/implant-service.js";
 import { CraftingService } from "./data/crafting-service.js?v=1.4.96-craft-calendar";
 import { CraftDowntimeService } from "./data/craft-downtime-service.js?v=1.4.96-craft-calendar";
@@ -362,7 +362,7 @@ import {
   extendDnd5eItemTypes,
   registerDnd5eSheetExtensions,
   registerRebreyaWeaponBaseItemsFromGearPack
-} from "./integrations/dnd5e-sheet-extensions.js?v=1.4.338-hero-doll-menu";
+} from "./integrations/dnd5e-sheet-extensions.js?v=1.4.364-hero-presets";
 import { registerHeldShieldArmorClassPatch } from "./integrations/held-shield-ac.js?v=1.4.363";
 import { registerTravelMapHooks } from "./integrations/travel-map-hooks.js?v=1.4.141-auraeffects-inactive-scene";
 import {
@@ -488,7 +488,7 @@ const LEGACY_WORLD_MUTATION_SOCKET_TYPES = new Set([
   SOCKET_EVENT_LOOTGEN_CLAIM_COINS
 ]);
 const MODULE_STYLE_PATH = `modules/${MODULE_ID}/styles/main.css`;
-const MODULE_STYLE_VERSION = "1.4.322";
+const MODULE_STYLE_VERSION = "1.4.364";
 const SECONDS_PER_HOUR = 3600;
 const SECONDS_PER_DAY = 86400;
 const TRAVEL_DAY_HOURS = 8;
@@ -2254,6 +2254,10 @@ export class RebreyaMainModule {
     return this.privilegedMutationGateway.mutate(HERO_DOLL_CLEAR_COMMAND, payload, { operationId: payload.operationId });
   }
 
+  mutateHeroDollPreset(payload) {
+    return this.privilegedMutationGateway.mutate(HERO_DOLL_PRESET_COMMAND, payload, { operationId: payload.operationId });
+  }
+
   registerSummonProvider(provider) {
     return this.summonLifecycleRuntime.registerProvider(provider);
   }
@@ -2326,6 +2330,12 @@ export class RebreyaMainModule {
         execute: (payload, context) => this.heroDollService.executeAssignItemToSlot(payload, context, mode)
       });
     }
+    this.privilegedMutationGateway.registerCommand(HERO_DOLL_PRESET_COMMAND, {
+      validate: isValidHeroDollPresetPayload,
+      authorize: (_payload, {sender}) => Boolean(sender?.id),
+      scheduling: keyedMutationScheduling(payload=>[actorKey(payload.actorUuid)]),
+      execute: (payload, context) => this.heroDollService.executePresetMutation(payload, context)
+    });
     registerCurseUpgradeSocketCommands(this);
     registerCraftsmanGadgetSocketCommand(this);
     registerSpellInstanceSocketCommand(this);

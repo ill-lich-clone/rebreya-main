@@ -12,12 +12,25 @@
         </button>
       </header>
 
+      <div class="rm-hero-doll-presets">
+        <select data-hero-doll-preset-select aria-label="Комплект куклы" {{#unless heroDoll.canEditPresets}}disabled{{/unless}}>
+          <option value="">Выберите комплект</option>
+          {{#each heroDoll.presets}}
+            <option value="{{ id }}" {{#if selected}}selected{{/if}}>{{ name }}</option>
+          {{/each}}
+        </select>
+        <button type="button" class="rm-hero-doll-tab__button unbutton always-interactive" data-preset-command="apply" {{#unless heroDoll.canEditPresets}}disabled{{/unless}}>Применить</button>
+        <button type="button" class="rm-hero-doll-tab__button unbutton always-interactive" data-preset-command="save" {{#unless heroDoll.canEditPresets}}disabled{{/unless}}>Сохранить</button>
+        <button type="button" class="rm-icon-button always-interactive" data-preset-command="manage" aria-label="Управление комплектами" title="Управление комплектами" {{#unless heroDoll.canEditPresets}}disabled{{/unless}}><i class="fa-solid fa-ellipsis"></i></button>
+        {{#if heroDoll.presetModified}}<span class="rm-hero-doll-presets__modified">Изменён</span>{{/if}}
+      </div>
+
       <div class="rm-hero-doll-grid">
         {{#each heroDoll.slots}}
           <div class="rm-hero-doll-slot rm-hero-doll-slot--{{ area }}">
             <button
               type="button"
-              class="rm-hero-doll-slot__surface unbutton always-interactive {{#if occupied}}is-occupied{{/if}}"
+              class="rm-hero-doll-slot__surface unbutton always-interactive {{#if occupied}}is-occupied{{/if}} {{#if ghost}}is-ghost{{/if}}"
               data-hero-doll-slot="true"
               data-action="{{#if occupied}}open-slot-item{{else}}slot-drop{{/if}}"
               data-slot-id="{{ id }}"
@@ -29,7 +42,11 @@
               {{#if occupied}}
                 <img class="rm-hero-doll-slot__image" src="{{ itemImg }}" alt="">
               {{else}}
-                <span class="rm-hero-doll-slot__empty">{{ label }}</span>
+                {{#if ghost}}
+                  <img class="rm-hero-doll-slot__image rm-hero-doll-slot__image--ghost" data-hero-doll-ghost-image="true" src="{{ itemImg }}" alt="{{ itemName }}">
+                {{else}}
+                  <span class="rm-hero-doll-slot__empty">{{ label }}</span>
+                {{/if}}
               {{/if}}
             </button>
 
@@ -37,6 +54,9 @@
               <button type="button" class="rm-hero-doll-slot__normalize rm-icon-button always-interactive" data-action="normalize-slot-stack" data-slot-id="{{ id }}" title="Выделить одну экипированную единицу">
                 <i class="fa-solid fa-layer-group"></i>
               </button>
+            {{/if}}
+            {{#if ghost}}
+              <button type="button" class="rm-hero-doll-slot__clear rm-icon-button always-interactive" data-action="clear-slot" data-slot-id="{{ id }}" title="Убрать силуэт" aria-label="Убрать силуэт" {{#unless ../heroDoll.canEditPresets}}disabled{{/unless}}><i class="fa-solid fa-xmark"></i></button>
             {{/if}}
             {{#if occupied}}
               <button
