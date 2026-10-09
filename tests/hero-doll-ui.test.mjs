@@ -20,9 +20,11 @@ test('hero slot template shows its name inside only an empty square and keeps ac
 
 test('compact hero doll preserves anatomical placements and reserves the narrow column for inventory', async () => {
   const css=await readFile(new URL('../styles/main.css',import.meta.url),'utf8');
-  const compact=css.match(/@container \(max-width: 1320px\)\s*\{\s*\.rm-hero-doll-tab__layout\s*\{([^}]+)\}/u)?.[1]??'';
-  assert.match(compact,/grid-template-columns:\s*minmax\(400px,\s*460px\)\s+minmax\(0,\s*1fr\)/u);
-  assert.match(css,/@container \(max-width: 780px\)\s*\{\s*\.rm-hero-doll-tab__layout\s*\{\s*grid-template-columns:\s*1fr/u);
+  const layoutRules=[...css.matchAll(/\.rm-hero-doll-tab__layout\s*\{([^}]+)\}/gu)];
+  assert.equal(layoutRules.length,1,'no responsive rule may replace the two-column layout');
+  assert.match(layoutRules[0][1],/grid-template-columns:\s*minmax\(420px,\s*460px\)\s+minmax\(220px,\s*1fr\)/u);
+  assert.match(layoutRules[0][1],/min-width:\s*654px/u);
+  assert.match(css,/\.tab\.rm-hero-doll-tab\s*\{[^}]*overflow-x:\s*auto/u);
   assert.match(css,/\.rm-hero-doll-grid\s*\{[^}]*grid-template-columns:\s*repeat\(5,\s*68px\)/u);
   assert.match(css,/\.rm-hero-doll-grid\s*\{[^}]*grid-template-rows:\s*repeat\(8,\s*68px\)/u);
   assert.match(css,/\.rm-hero-doll-slot--head\s*\{\s*grid-column:\s*3;\s*grid-row:\s*1/u);

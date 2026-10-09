@@ -9925,6 +9925,8 @@ summary:focus-visible {
   display: none;
   gap: 12px;
   container-type: inline-size;
+  min-width: 0;
+  overflow-x: auto;
 }
 
 .tab.rm-hero-doll-tab.active {
@@ -10067,21 +10069,10 @@ summary:focus-visible {
 
 .rm-hero-doll-tab__layout {
   display: grid;
-  grid-template-columns: minmax(400px, 460px) minmax(0, 1fr);
+  grid-template-columns: minmax(420px, 460px) minmax(220px, 1fr);
+  min-width: 654px;
   gap: 14px;
   align-items: start;
-}
-
-@container (max-width: 1320px) {
-  .rm-hero-doll-tab__layout {
-    grid-template-columns: minmax(400px, 460px) minmax(0, 1fr);
-  }
-}
-
-@container (max-width: 780px) {
-  .rm-hero-doll-tab__layout {
-    grid-template-columns: 1fr;
-  }
 }
 
 .rm-hero-doll-board,
