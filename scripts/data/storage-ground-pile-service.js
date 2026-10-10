@@ -47,6 +47,27 @@ function presentationLayout(presentation, width, height, rotation) {
   }, rotation);
 }
 
+function automaticPresentationLayout(presentation, rows, coins, rotation) {
+  const tiny = presentation.categoryKey === "coins" || (["single", "journal-note"].includes(presentation.categoryKey)
+    && rows.length === 1 && rows[0]?.rowKind !== "container" && !rows[0]?.container && !hasPositiveCoins(coins));
+  const size = presentation.tokenSize ?? (tiny ? 0.5 : 1);
+  return presentationLayout(presentation, presentation.tokenWidth ?? size, presentation.tokenHeight ?? size, rotation);
+}
+
+function groundPileSizing(token, groundFlag, previousLayout, nextLayout) {
+  const valid = value => Number.isFinite(value) && value > 0;
+  const current = { width: token.width, height: token.height, scaleX: token.texture?.scaleX ?? 1, scaleY: token.texture?.scaleY ?? 1 };
+  const previous = { width: previousLayout.width, height: previousLayout.height, scaleX: previousLayout.textureScale, scaleY: previousLayout.textureScale };
+  const custom = (keys, flag) => keys.every(key => valid(current[key]))
+    && (groundFlag[flag] === true || keys.some(key => Math.abs(current[key]
+      - (valid(groundFlag.autoLayout?.[key]) ? groundFlag.autoLayout[key] : previous[key])) > 1e-6));
+  return {
+    autoLayout: { width: nextLayout.width, height: nextLayout.height, scaleX: nextLayout.textureScale, scaleY: nextLayout.textureScale },
+    customFootprint: custom(["width", "height"], "customFootprint"),
+    customTextureScale: custom(["scaleX", "scaleY"], "customTextureScale")
+  };
+}
+
 function collectionValues(collection) {
   if (Array.isArray(collection?.contents)) return collection.contents;
   if (Array.isArray(collection)) return collection;
@@ -257,6 +278,11 @@ export class StorageGroundPileService {
         : deterministicStorageTokenRotation(presentation.rotationSeed, presentation.rotationMode))
       : 0;
     const layout = presentationLayout(presentation, targetWidth, targetHeight, rotation);
+    const previousRotation = previousPresentation.rotationMode === "cardinal" && !isGroundPileCardinalRotation(Number(token.rotation))
+      ? deterministicStorageTokenRotation(previousPresentation.rotationSeed, "cardinal") : Number(token.rotation ?? 0);
+    const previousLayout = automaticPresentationLayout(previousPresentation, visibleRows(previousState), unclaimedCoins(previousState), previousRotation);
+    const sizing = groundPileSizing(token, groundPile, previousLayout, layout);
+    Object.assign(groundPile, sizing);
     const gridSize = Math.max(1, Number(token?.parent?.grid?.size ?? token?.parent?.grid?.sizeX ?? 100) || 100);
     const currentWidth = Math.max(0.5, Number(token?.width ?? 1));
     const currentHeight = Math.max(0.5, Number(token?.height ?? 1));
@@ -275,11 +301,10 @@ export class StorageGroundPileService {
       "sight.enabled": false,
       name: presentation.name,
       "texture.src": presentation.img,
-      "texture.scaleX": layout.textureScale,
-      "texture.scaleY": layout.textureScale,
+      ...(!sizing.customTextureScale ? { "texture.scaleX": layout.textureScale, "texture.scaleY": layout.textureScale } : {}),
       ...(presentation.rotationMode === "cardinal" ? { "texture.fit": "contain" } : {}),
       rotation: layout.rotation,
-      ...resize,
+      ...(!sizing.customFootprint ? resize : {}),
       ...(clean(ownerUserId) ? { delta: ownedSyntheticActorDelta(token?.delta, ownerUserId) } : {})
     });
     return normalized;
@@ -507,6 +532,13 @@ export class StorageGroundPileService {
           groundPile: {
             enabled: true,
             coinPile: presentation.categoryKey === "coins",
+            autoLayout: {
+              width: layout.width, height: layout.height,
+              scaleX: presentation.topDownItem ? layout.textureScale : Number(prototype.texture?.scaleX ?? 1),
+              scaleY: presentation.topDownItem ? layout.textureScale : Number(prototype.texture?.scaleY ?? 1)
+            },
+            customFootprint: false,
+            customTextureScale: false,
             mutationIds: [stableMutationId]
           }
         }
@@ -558,8 +590,10 @@ export class StorageGroundPileService {
             || /^modules\/rebreya-main\/assets\/top-down\/items\/gear\/(?:platinovaya|zolotaya|serebryannaya|mednaya)-moneta\.webp$/u.test(clean(token.texture?.src))
           );
           const wrappers = migrateSyntheticCoinPileRowsInState(current);
+          const groundFlag = clone(readFlag(token, "groundPile")) ?? {};
           const categoryPresentation = deriveGroundPilePresentation(visibleRows(current), {
-            coins: unclaimedCoins(current), readJournalRowIds: current.readJournalRowIds
+            coins: unclaimedCoins(current), readJournalRowIds: current.readJournalRowIds,
+            preserveEmptyCoinPile: groundFlag.coinPile === true
           });
           const currentTexture = clean(token.texture?.src);
           const categoryRepair = ["weapons", "firearms", "armor"].includes(categoryPresentation.categoryKey)
@@ -570,8 +604,15 @@ export class StorageGroundPileService {
             state: legacyRows?.state ?? wrappers.state,
             convertedRows: (wrappers?.convertedRows ?? 0) + (legacyRows?.convertedRows ?? 0)
           } : (legacyCoinIcon || categoryRepair ? { state: current, convertedRows: 0 } : null);
+          if (!["width", "height", "scaleX", "scaleY"].every(key => Number.isFinite(groundFlag.autoLayout?.[key]) && groundFlag.autoLayout[key] > 0)) {
+            const baselineRotation = categoryPresentation.rotationMode === "cardinal" && !isGroundPileCardinalRotation(Number(token.rotation))
+              ? deterministicStorageTokenRotation(categoryPresentation.rotationSeed, "cardinal") : Number(token.rotation ?? 0);
+            const baseline = automaticPresentationLayout(categoryPresentation, visibleRows(current), unclaimedCoins(current), baselineRotation);
+            await token.update({ [`flags.${MODULE_ID}.groundPile`]: {
+              ...groundFlag, ...groundPileSizing(token, groundFlag, baseline, baseline)
+            } });
+          }
           if (!migration) continue;
-          const groundFlag = clone(readFlag(token, "groundPile")) ?? {};
           const presentation = deriveGroundPilePresentation(visibleRows(migration.state), {
             coins: unclaimedCoins(migration.state),
             preserveEmptyCoinPile: groundFlag.coinPile === true,

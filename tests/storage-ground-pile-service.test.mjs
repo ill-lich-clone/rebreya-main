@@ -92,6 +92,94 @@ const sword = {
   itemData: { name: "Меч", system: { quantity: 5 } }
 };
 
+test("manual coin footprint survives refresh, merge, restart and legacy metadata", async () => {
+  for (const legacy of [false, true]) {
+    const h = createHarness();
+    await h.service.transferSnapshotToScene({ rows: [], coins: { pp: 100 }, sceneId: "scene", x: 300, y: 400, mutationId: `custom-${legacy}` });
+    const token = h.tokens[0];
+    if (legacy) delete token.flags[MODULE_ID].groundPile.autoLayout;
+    Object.assign(token, { width: 2, height: 3, x: 125, y: 275 });
+    await h.service.refreshAfterStorageMutation(token, { ...readStorageState(token), manualCoins: { pp: 50 } });
+    assert.deepEqual([token.width, token.height, token.x, token.y], [2, 3, 125, 275]);
+    await h.service.transferSnapshotToScene({ rows: [], coins: { gp: 1000 }, sceneId: "scene", x: 225, y: 375, mutationId: `custom-merge-${legacy}` });
+    assert.equal(h.tokens.length, 1);
+    assert.deepEqual([token.width, token.height, token.x, token.y], [2, 3, 125, 275]);
+    assert.deepEqual(readStorageState(token).manualCoins, { pp: 50, gp: 1000, sp: 0, cp: 0 });
+    const restarted = new StorageGroundPileService({ gameProvider: () => h.game, isActiveGm: () => true });
+    await restarted.refreshAfterStorageMutation(token, readStorageState(token));
+    assert.deepEqual([token.width, token.height, token.x, token.y], [2, 3, 125, 275]);
+    Object.assign(token, { width: 0.5, height: 0.5 });
+    await restarted.refreshAfterStorageMutation(token, { ...readStorageState(token), manualRows: [structuredClone(sword)], manualCoins: {} });
+    assert.deepEqual([token.width, token.height, token.x, token.y], [0.5, 0.5, 125, 275]);
+  }
+});
+
+test("custom texture scale and footprint are independent through category changes", async () => {
+  const h = createHarness();
+  await h.service.transferSnapshotToScene({ rows: [], coins: { pp: 100 }, sceneId: "scene", x: 300, y: 400, mutationId: "scale-only" });
+  const token = h.tokens[0];
+  Object.assign(token.texture, { scaleX: 2, scaleY: 1.25 });
+  await h.service.refreshAfterStorageMutation(token, { ...readStorageState(token), manualRows: [structuredClone(sword)], manualCoins: {} });
+  assert.deepEqual([token.width, token.height, token.x, token.y], [1, 1, 250, 350]);
+  assert.deepEqual([token.texture.scaleX, token.texture.scaleY], [2, 1.25]);
+  await h.service.refreshAfterStorageMutation(token, readStorageState(token));
+  assert.deepEqual([token.texture.scaleX, token.texture.scaleY], [2, 1.25]);
+
+  const f = createHarness();
+  await f.service.transferToScene({ row: longsword, quantity: 1, sceneId: "scene", x: 300, y: 400, mutationId: "footprint-only" });
+  Object.assign(f.tokens[0], { width: 0.25, height: 0.4 });
+  await f.service.refreshAfterStorageMutation(f.tokens[0], { ...readStorageState(f.tokens[0]), manualRows: [structuredClone(sword)] });
+  assert.deepEqual([f.tokens[0].width, f.tokens[0].height], [0.25, 0.4]);
+  assert.deepEqual([f.tokens[0].texture.scaleX, f.tokens[0].texture.scaleY], [1, 1]);
+});
+
+test("untouched category transitions resize automatically despite near-equal layout values", async () => {
+  const h = createHarness();
+  await h.service.transferToScene({ row: sword, quantity: 1, sceneId: "scene", x: 300, y: 400, mutationId: "automatic" });
+  const token = h.tokens[0];
+  token.width += 1e-7;
+  await h.service.refreshAfterStorageMutation(token, { ...readStorageState(token), manualRows: [{ ...structuredClone(sword), quantity: 2 }] });
+  assert.deepEqual([token.width, token.height], [1, 1]);
+  await h.service.refreshAfterStorageMutation(token, { ...readStorageState(token), manualRows: [{ ...structuredClone(sword), quantity: 1 }] });
+  assert.deepEqual([token.width, token.height], [0.5, 0.5]);
+  assert.ok(Math.abs(token.x + 25 - 300) < 1e-5);
+  assert.equal(token.y + 25, 400);
+});
+
+test("startup repair preserves custom legacy geometry and invalid metadata falls back safely", async () => {
+  const h = createHarness();
+  await h.service.transferSnapshotToScene({ rows: [], coins: { pp: 100 }, sceneId: "scene", x: 300, y: 400, mutationId: "legacy-repair-size" });
+  const token = h.tokens[0];
+  token.flags[MODULE_ID].groundPile.autoLayout = { width: -1, height: null, scaleX: "bad", scaleY: 0 };
+  Object.assign(token, { width: 2, height: 3, x: 125, y: 275 });
+  Object.assign(token.texture, { src: "icons/commodities/currency/coins-assorted-mix-platinum.webp", scaleX: 2, scaleY: 1.25 });
+  await h.service.repairLegacyCoinRows();
+  assert.deepEqual([token.width, token.height, token.x, token.y], [2, 3, 125, 275]);
+  assert.deepEqual([token.texture.scaleX, token.texture.scaleY], [2, 1.25]);
+  assert.equal(readStorageState(token).manualCoins.pp, 100);
+  assert.equal(token.texture.src, `modules/${MODULE_ID}/assets/top-down/items/coins/pp-pile.webp`);
+});
+
+test("startup seeds legacy sizing before production persist-then-refresh ordering", async () => {
+  for (const manuallySized of [false, true]) {
+    const h = createHarness();
+    await h.service.transferSnapshotToScene({ rows: [], coins: { pp: 100 }, sceneId: "scene", x: 300, y: 400, mutationId: `seed-${manuallySized}` });
+    const token = h.tokens[0];
+    delete token.flags[MODULE_ID].groundPile.autoLayout;
+    if (manuallySized) Object.assign(token, { width: 1, height: 1 });
+    token.texture.src = "custom-legacy-coin.webp";
+    await h.service.repairLegacyCoinRows();
+    assert.equal(token.texture.src, "custom-legacy-coin.webp");
+    token.flags[MODULE_ID].storage = { ...readStorageState(token), manualRows: [structuredClone(sword)], manualCoins: {} };
+    await h.service.refreshAfterStorageMutation(token, readStorageState(token));
+    assert.deepEqual([token.width, token.height], [1, 1]);
+    token.flags[MODULE_ID].storage = { ...readStorageState(token), manualRows: [], manualCoins: { pp: 50 } };
+    await h.service.refreshAfterStorageMutation(token, readStorageState(token));
+    assert.deepEqual([token.width, token.height], manuallySized ? [1, 1] : [0.5, 0.5]);
+    assert.equal(readStorageState(token).manualCoins.pp, 50);
+  }
+});
+
 const axe = {
   ...structuredClone(sword),
   rowId: "source-axe",
@@ -1362,6 +1450,7 @@ test("active GM idempotently migrates legacy Coin Item rows into manualCoins and
   legacyState.manualRows = [structuredClone(platinumCoinItemRow)];
   legacyState.manualCoins = { pp: 0, gp: 100, sp: 0, cp: 0 };
   token.flags[MODULE_ID].storage = legacyState;
+  delete token.flags[MODULE_ID].groundPile.autoLayout;
   token.width = 1;
   token.height = 1;
   token.x = 250;

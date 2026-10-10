@@ -254,7 +254,7 @@ import {
   measureStorageTokenDistance
 } from "./data/storage-access.js?v=1.4.197-door-trigger-target";
 import { BuiltinStorageActorService } from "./data/builtin-storage-actor-service.js?v=1.4.370";
-import { StorageGroundPileService } from "./data/storage-ground-pile-service.js?v=1.4.370";
+import { StorageGroundPileService } from "./data/storage-ground-pile-service.js?v=1.4.371";
 import { deriveGroundPilePlacement } from "./data/storage-pile-presentation.js?v=1.4.370";
 import { StorageContainerItemService } from "./data/storage-container-item-service.js?v=1.4.370";
 import { isStorageJournalRow, buildStorageContainerRow } from "./data/storage-container-snapshot.js?v=1.4.317";
@@ -488,7 +488,7 @@ const LEGACY_WORLD_MUTATION_SOCKET_TYPES = new Set([
   SOCKET_EVENT_LOOTGEN_CLAIM_COINS
 ]);
 const MODULE_STYLE_PATH = `modules/${MODULE_ID}/styles/main.css`;
-const MODULE_STYLE_VERSION = "1.4.370";
+const MODULE_STYLE_VERSION = "1.4.371";
 const SECONDS_PER_HOUR = 3600;
 const SECONDS_PER_DAY = 86400;
 const TRAVEL_DAY_HOURS = 8;

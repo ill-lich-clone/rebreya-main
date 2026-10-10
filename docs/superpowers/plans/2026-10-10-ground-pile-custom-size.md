@@ -1,6 +1,6 @@
 # Ground Pile Custom Size Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans or superpowers:subagent-driven-development to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans or superpowers:subagent-driven-development to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Keep manually set dimensions and texture scales when updating existing Rebreya ground tokens.
 
@@ -32,12 +32,12 @@
 
 **Interfaces:** Private `automaticPresentationLayout(presentation,rows,coins,rotation) -> {width,height,textureScale,rotation}` reuses `presentationLayout()` and existing tiny/container/category rules for legacy references. Private `groundPileSizing(token,groundFlag,previousLayout,nextLayout) -> {autoLayout,customFootprint,customTextureScale}` resolves independent sticky customization; validate dimensions/scales as finite positive numbers and compare with tolerance 1e-6. Existing `#writePile()` consumes this result, omits custom geometry fields from its update and persists metadata atomically alongside storage flags. Creation seeds metadata with the actual dimensions/scales applied, including prototype values where already used. No public signature changes.
 
-- [ ] Add regressions through the existing createHarness/service APIs: create pp100 pile, manually set `{width:2,height:3,x:125,y:275}`, refresh pp50, merge gp1000 and refresh again; assert those four fields unchanged and pp/gp exact. Repeat without autoLayout metadata and after a new service instance. Manually edit back to 0.5×0.5 after first detection, then transition category: manual footprint still wins.
-- [ ] Add independent-scale regression: set `{scaleX:2,scaleY:1.25}` on a normal coin token, transition to mixed ordinary pile; assert scales unchanged while untouched footprint follows automatic size. Conversely custom footprint alone allows automatic scale changes. Add startup repair fixture preserving custom rectangle/scales and money.
-- [ ] Pin unchanged automatic single→weapon stack→single widths 0.5→1→0.5, center; preserve existing furniture orientation/compensation tests. Add invalid metadata fallback and near-equal 1e-7 precision fixture that remains automatic; custom positive dimensions below0.5 are retained. Assert actual document fields, not just metadata.
-- [ ] Run `node --test tests/storage-ground-pile-service.test.mjs`, confirm new user-visible assertions fail before implementation.
-- [ ] Implement the two private helpers and conditional writes. Seed creation metadata from effective token data; retain automatic sizing/rotation branches. Preserve custom axes as a pair within footprint or scale group, and current coordinates verbatim when footprint is custom.
-- [ ] Run `node --test tests/storage-ground-pile-service.test.mjs tests/storage-ground-pile-layout.test.mjs tests/storage-pile-presentation.test.mjs tests/storage-socket.test.mjs`; require zero failures. Review all spec requirements against tests before release.
+- [x] Add regressions through the existing createHarness/service APIs: create pp100 pile, manually set `{width:2,height:3,x:125,y:275}`, refresh pp50, merge gp1000 and refresh again; assert those four fields unchanged and pp/gp exact. Repeat without autoLayout metadata and after a new service instance. Manually edit back to 0.5×0.5 after first detection, then transition category: manual footprint still wins.
+- [x] Add independent-scale regression: set `{scaleX:2,scaleY:1.25}` on a normal coin token, transition to mixed ordinary pile; assert scales unchanged while untouched footprint follows automatic size. Conversely custom footprint alone allows automatic scale changes. Add startup repair fixture preserving custom rectangle/scales and money.
+- [x] Pin unchanged automatic single→weapon stack→single widths 0.5→1→0.5, center; preserve existing furniture orientation/compensation tests. Add invalid metadata fallback and near-equal 1e-7 precision fixture that remains automatic; custom positive dimensions below0.5 are retained. Assert actual document fields, not just metadata.
+- [x] Run `node --test tests/storage-ground-pile-service.test.mjs`, confirm new user-visible assertions fail before implementation.
+- [x] Implement the two private helpers and conditional writes. Seed creation metadata from effective token data; retain automatic sizing/rotation branches. Preserve custom axes as a pair within footprint or scale group, and current coordinates verbatim when footprint is custom.
+- [x] Run `node --test tests/storage-ground-pile-service.test.mjs tests/storage-ground-pile-layout.test.mjs tests/storage-pile-presentation.test.mjs tests/storage-socket.test.mjs`; require zero failures. Review all spec requirements against tests before release.
 
 ### Task 2: Document, verify and ship the same change
 
@@ -45,11 +45,20 @@
 
 **Interfaces:** Preserve existing public API. Optional groundPile sizing metadata is backwards-compatible; document its fields/owner/data flow and profile tests in the passport. All runtime importers use one canonical fresh URL for every changed dependency.
 
-- [ ] Document persistent custom footprint/scale and legacy fallback. Bump manifest/forwarder/style cache and affected import graph, updating focused release assertions without weakening them.
-- [ ] Run full `node --test tests/*.test.mjs`; require fail0 and record pass/skipped counts. Run `git diff --check`, `node --check` for every tracked JS/MJS plus new forwarder, and parse tracked JSON with PowerShell `ConvertFrom-Json`; require zero errors.
+- [x] Document persistent custom footprint/scale and legacy fallback. Bump manifest/forwarder/style cache and affected import graph, updating focused release assertions without weakening them.
+- [x] Run full `node --test tests/*.test.mjs`; require fail0 and record pass/skipped counts. Run `git diff --check`, `node --check` for every tracked JS/MJS plus new forwarder, and parse tracked JSON with PowerShell `ConvertFrom-Json`; require zero errors.
 - [ ] Attempt existing Foundry bridge only if its connection can be reached; otherwise report live QA unperformed. Live check: enlarge coin pile, partially claim/merge, reload, verify dimensions/scales/content; untouched category transition remains automatic. Do not invent a runtime version or world URL.
-- [ ] Obtain one fresh independent final review after execution; resolve findings with failing/passing regressions. Review meaningful diff/stat/check, stage only task files, commit `fix: preserve manually resized ground pile tokens`, push `git push -u origin lich_branch`, report version/commit/spec/plan and verification.
+- [x] Obtain one fresh independent final review after execution; resolve findings with failing/passing regressions. Review meaningful diff/stat/check, stage only task files, commit `fix: preserve manually resized ground pile tokens`, push `git push -u origin lich_branch`, report version/commit/spec/plan and verification.
 
 ## Self-review and handoff
 
-Both tasks cover the approved spec; all five review-focus inputs have explicit regressions. Use native execution here: one behavior owner and one atomic release, so splitting implementation provides little value. Bounded Gemini analysis recommended snapshot comparison inside the existing owner; its claims were checked against the current create/write paths. No implementation changes have started. Await user review of this plan before executing.
+Both tasks cover the approved spec; all five review-focus inputs have explicit regressions. Use native execution here: one behavior owner and one atomic release, so splitting implementation provides little value. Bounded Gemini analysis recommended snapshot comparison inside the existing owner; its claims were checked against the current create/write paths. User approved native execution; implementation completed.
+
+
+## Execution result — 2026-10-10
+
+Release1.4.371. New manual-size regressions failed before implementation (3 failures), then focused196 tests passed, 0 failed. Cache/manifest/composition60 tests passed. Fresh independent review identified legacy persist→refresh ordering; added a failing production-order regression and seeded metadata in the existing startup repair owner without changing custom art/content/geometry. Independent re-review verified4 regressions and reported no remaining findings. This initialization is necessary because storage callers can persist content before invoking refresh. Existing legacy migration fixture deletes autoLayout when simulating an old token; original size/center/currency repair assertions remain intact.
+
+Final `node --test tests/*.test.mjs`:4493 tests,4492 passed,0 failed,1 skipped. Full `node --check`:941 JS/MJS files passed; after the review fix both affected files were checked again. All55 tracked JSON files parsed through `ConvertFrom-Json`. `git diff --check` passed. Foundry bridge smoke returned "Foundry VTT module not connected"; live QA and exact runtime/system versions are unverified. Gemini supplied bounded sizing/legacy analysis; Codex verified implementation and integrated the findings.
+
+Current lich_branch checkout reused as explicitly required; no worktree created. Ignored scratch test logs remain locally because cleanup was previously blocked by tool policy; durable conclusions are recorded here.
