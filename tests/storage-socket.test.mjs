@@ -26,6 +26,142 @@ import {
 } from "../scripts/data/storage-command-service.js";
 import { createEmptyStorageTriggerState } from "../scripts/data/storage-trigger-service.js";
 
+for (const mixed of [false, true]) {
+  test(`ground currency token deposits balances with restart-safe retries (${mixed ? "mixed" : "pp"})`, async () => {
+    const h = createHarness({ depositSource: resolveStorageDepositSource });
+    const source = { ...h.storageToken, id: "coin-source", uuid: "Scene.scene.Token.coin-source", flags: {
+      [MODULE_ID]: { groundPile: { enabled: true, coinPile: true }, storage: {
+        state: "opened", storageKind: "pile", manualCoins: { pp: 100, gp: mixed ? 1000 : 0 }
+      } }
+    } };
+    h.documents.set(source.uuid, source);
+    await h.storageService.configure(h.storageToken, { state: "opened", manualCoins: { sp: 2 } });
+    const request = depositPayload(h, { source: { kind: "storage-token", tokenUuid: source.uuid }, quantity: mixed ? 1 : 50 });
+    await h.service.deposit(request, { sender: h.gm });
+    assert.deepEqual(readStorageState(h.storageToken).manualCoins, { pp: mixed ? 100 : 50, gp: mixed ? 1000 : 0, sp: 2, cp: 0 });
+    assert.equal(readStorageState(h.storageToken).manualRows.length, 0);
+    await h.createCommandService().deposit(request, { sender: h.gm });
+    assert.equal(readStorageState(h.storageToken).manualCoins.pp, mixed ? 100 : 50);
+    assert.equal(readStorageState(source).coinsClaimed, mixed);
+    if (!mixed) assert.equal(readStorageState(source).manualCoins.pp, 50);
+  });
+}
+
+test("moving a coin token to a character grants wallet currency without container materialization", async () => {
+  const h = createHarness({ depositSource: resolveStorageDepositSource });
+  h.storageToken.flags[MODULE_ID].groundPile = { enabled: true, coinPile: true };
+  await h.storageService.configure(h.storageToken, { state: "opened", storageKind: "pile", manualCoins: { pp: 100, gp: 1000 } });
+  const request = { tokenUuid: h.storageToken.uuid, actorUuid: h.targetHero.uuid, mutationId: "move-coin-token", characterTokenUuid: h.characterToken.uuid };
+  await h.service.moveStorageTokenToCharacter(request, { sender: h.gm });
+  assert.equal(h.itemGrants.length, 0);
+  assert.equal(h.coinGrants.reduce((sum, grant) => sum + Number(grant.coins.pp ?? 0), 0), 100);
+  assert.equal(h.coinGrants.reduce((sum, grant) => sum + Number(grant.coins.gp ?? 0), 0), 1000);
+  await h.createCommandService().moveStorageTokenToCharacter(request, { sender: h.gm });
+  assert.equal(h.coinGrants.reduce((sum, grant) => sum + Number(grant.coins.pp ?? 0), 0), 100);
+});
+
+for (const failingSide of ["target", "source", "completion"]) {
+  test(`coin deposit ${failingSide} failure preserves balances and recovers without duplicate credit`, async () => {
+    const h = createHarness({ depositSource: resolveStorageDepositSource });
+    const source = { ...h.storageToken, id: "coin-source", uuid: "Scene.scene.Token.coin-source", flags: {
+      [MODULE_ID]: { groundPile: { enabled: true, coinPile: true }, storage: {
+        state: "opened", storageKind: "pile", manualCoins: { pp: 100, gp: 1000 }
+      } }
+    } };
+    h.documents.set(source.uuid, source);
+    await h.storageService.configure(h.storageToken, { state: "opened" });
+    let once = true;
+    const originalComplete = h.storageService.completeBulkClaimMutation.bind(h.storageService);
+    if (failingSide === "completion") h.storageService.completeBulkClaimMutation = async (...args) => {
+      if (once) { once = false; throw new Error("completion rejected"); }
+      return originalComplete(...args);
+    };
+    else (failingSide === "target" ? h.storageToken : source).beforeUpdate = patch => {
+      const next = patch[`flags.${MODULE_ID}.storage`];
+      if (once && (failingSide === "target" ? next?.manualCoins?.pp === 100 : next?.coinsClaimed === true)) {
+        once = false; throw new Error(`${failingSide} rejected`);
+      }
+    };
+    const request = depositPayload(h, { source: { kind: "storage-token", tokenUuid: source.uuid }, quantity: 1 });
+    await assert.rejects(h.service.deposit(request, { sender: h.gm }), /rejected/u);
+    if (failingSide === "completion") await assert.rejects(h.createCommandService().claimCoins({
+      tokenUuid: source.uuid, characterTokenUuid: h.characterToken.uuid, destination: "self", mutationId: "competing-credit"
+    }, { sender: h.gm }), /не завершён/u);
+    if (failingSide !== "completion") {
+      assert.equal(readStorageState(source).manualCoins.pp, 100);
+      assert.equal(readStorageState(source).coinsClaimed, false);
+      assert.equal(readStorageState(h.storageToken).manualCoins.pp, 0);
+    }
+    await h.createCommandService().deposit(request, { sender: h.gm });
+    assert.deepEqual(readStorageState(h.storageToken).manualCoins, { pp: 100, gp: 1000, sp: 0, cp: 0 });
+    assert.equal(readStorageState(source).coinsClaimed, true);
+    await h.createCommandService().deposit(request, { sender: h.gm });
+    assert.equal(readStorageState(h.storageToken).manualCoins.pp, 100);
+  });
+}
+
+test("concurrent partial coin deposits cannot overdraw the ground balance", async () => {
+  const h = createHarness({ depositSource: resolveStorageDepositSource });
+  const source = { ...h.storageToken, id: "coin-source", uuid: "Scene.scene.Token.coin-source", flags: {
+    [MODULE_ID]: { groundPile: { enabled: true, coinPile: true }, storage: {
+      state: "opened", storageKind: "pile", manualCoins: { pp: 100 }
+    } }
+  } };
+  h.documents.set(source.uuid, source);
+  await h.storageService.configure(h.storageToken, { state: "opened" });
+  const results = await Promise.allSettled(["a", "b"].map(mutationId => h.service.deposit(
+    depositPayload(h, { source: { kind: "storage-token", tokenUuid: source.uuid }, quantity: 60, mutationId }), { sender: h.gm }
+  )));
+  assert.equal(results.filter(result => result.status === "fulfilled").length, 1);
+  assert.equal(readStorageState(h.storageToken).manualCoins.pp, 60);
+  assert.equal(readStorageState(source).manualCoins.pp, 40);
+});
+
+test("coin deposit resumes from a source-only crash reservation", async () => {
+  const h = createHarness({ depositSource: resolveStorageDepositSource });
+  const source = { ...h.storageToken, id: "coin-source", uuid: "Scene.scene.Token.coin-source", flags: {
+    [MODULE_ID]: { groundPile: { enabled: true, coinPile: true }, storage: {
+      state: "opened", storageKind: "pile", manualCoins: { pp: 100 }
+    } }
+  } };
+  h.documents.set(source.uuid, source);
+  await h.storageService.configure(h.storageToken, { state: "opened" });
+  let crashState;
+  const bind = h.storageService.bindBulkClaimMutation.bind(h.storageService);
+  h.storageService.bindBulkClaimMutation = async (...args) => {
+    const result = await bind(...args);
+    if (!crashState && args[0] === source) crashState = clone(readStorageState(source));
+    return result;
+  };
+  h.storageToken.beforeUpdate = patch => {
+    if (patch[`flags.${MODULE_ID}.storage`]?.manualCoins?.pp === 50) throw new Error("crash before target credit");
+  };
+  const request = depositPayload(h, { source: { kind: "storage-token", tokenUuid: source.uuid }, quantity: 50 });
+  await assert.rejects(h.service.deposit(request, { sender: h.gm }), /crash/u);
+  delete h.storageToken.beforeUpdate;
+  await source.update({ [`flags.${MODULE_ID}.storage`]: crashState });
+  await h.createCommandService().deposit(request, { sender: h.gm });
+  assert.equal(readStorageState(h.storageToken).manualCoins.pp, 50);
+  assert.equal(readStorageState(source).manualCoins.pp, 50);
+});
+
+test("gold-only coin token wallet transfer recovers the interrupted denomination before empty ones", async () => {
+  const h = createHarness({ depositSource: resolveStorageDepositSource });
+  h.storageToken.flags[MODULE_ID].groundPile = { enabled: true, coinPile: true };
+  await h.storageService.configure(h.storageToken, { state: "opened", storageKind: "pile", manualCoins: { gp: 100 } });
+  const claim = h.storageService.claim.bind(h.storageService);
+  let fail = true;
+  h.storageService.claim = async (...args) => {
+    if (fail && args[1].denomination === "gp") { fail = false; throw new Error("source debit rejected"); }
+    return claim(...args);
+  };
+  const request = { tokenUuid: h.storageToken.uuid, actorUuid: h.targetHero.uuid, mutationId: "interrupted-gold", characterTokenUuid: h.characterToken.uuid };
+  await assert.rejects(h.service.moveStorageTokenToCharacter(request, { sender: h.gm }), /debit rejected/u);
+  await h.createCommandService().moveStorageTokenToCharacter(request, { sender: h.gm });
+  assert.equal(h.coinGrants.reduce((sum, grant) => sum + Number(grant.coins.gp ?? 0), 0), 100);
+  assert.equal(readStorageState(h.storageToken).coinsClaimed, true);
+});
+
 test("coin claims validate a denomination and credit only the selected stack", async () => {
   const harness = createHarness();
   const access = { tokenUuid: harness.storageToken.uuid, characterTokenUuid: harness.characterToken.uuid };

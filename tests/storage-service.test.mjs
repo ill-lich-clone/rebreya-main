@@ -16,6 +16,88 @@ import { buildStorageContainerRow } from "../scripts/data/storage-container-snap
 import { createEmptyStorageTriggerState } from "../scripts/data/storage-trigger-service.js";
 import { normalizeLootgenForm } from "../scripts/data/lootgen-generator.js";
 
+test("depositing currency preserves claimed balances and rejects overflow without Item rows", async () => {
+  const token = createStorageToken("currency-deposit");
+  const service = new StorageService();
+  await service.configure(token, { state: "opened", manualCoins: { gp: 1000 } });
+  await service.depositCoins(token, { pp: 100 });
+  assert.deepEqual(readStorageState(token).manualCoins, { pp: 100, gp: 1000, sp: 0, cp: 0 });
+  assert.equal(readStorageState(token).manualRows.length, 0);
+  const before = readStorageState(token);
+  await assert.rejects(service.depositCoins(token, { pp: Number.MAX_SAFE_INTEGER }), /safe|безопас/u);
+  assert.deepEqual(readStorageState(token), before);
+  await service.claim(token, { kind: "coins" });
+  await service.depositCoins(token, { sp: 3 });
+  assert.deepEqual(readStorageState(token).manualCoins, { pp: 0, gp: 0, sp: 3, cp: 0 });
+});
+
+function syntheticCoinWrapper(overrides = {}) {
+  return buildStorageContainerRow({
+    containerId: "legacy-platinum-wrapper", storageKind: "pile", name: "Платиновая монета",
+    state: { state: "opened", manualCoins: { pp: 100 } },
+    presentation: { tokenData: { texture: { src: "modules/rebreya-main/assets/top-down/items/coins/pp-pile.webp" } } },
+    ...overrides
+  }, { rowId: "wrapper-row" });
+}
+
+test("currency deposit and wrapper repair reject combined manual/generated overflow atomically", async () => {
+  const service = new StorageService();
+  for (const wrapper of [false, true]) {
+    const token = createStorageToken(`combined-overflow-${wrapper}`);
+    await service.configure(token, { state: "opened", generatedCoins: { pp: Number.MAX_SAFE_INTEGER },
+      manualRows: wrapper ? [syntheticCoinWrapper()] : [] });
+    const before = readStorageState(token);
+    await assert.rejects(wrapper ? service.open(token) : service.depositCoins(token, { pp: 1 }), /safe|безопас/u);
+    assert.deepEqual(readStorageState(token), before);
+  }
+});
+
+test("opening a synthetic pp100 wrapper merges into root gp1000 exactly once", async () => {
+  const token = createStorageToken("wrapper-storage");
+  const service = new StorageService();
+  await service.configure(token, { state: "opened", manualCoins: { gp: 1000 }, manualRows: [syntheticCoinWrapper()] });
+  const first = await service.open(token);
+  assert.deepEqual(first.coins, { pp: 100, gp: 1000, sp: 0, cp: 0 });
+  assert.equal(first.rows.length, 0);
+  assert.deepEqual((await service.open(token)).coins, first.coins);
+});
+
+test("synthetic coin repair never returns claimed currency or overflows balances", async () => {
+  const service = new StorageService();
+  for (const claimed of ["wrapper", "nested", "root"]) {
+    const token = createStorageToken(`claimed-${claimed}`);
+    const wrapper = syntheticCoinWrapper({ state: { state: "opened", manualCoins: { pp: 100 }, coinsClaimed: claimed === "nested" } });
+    await service.configure(token, { state: "opened", manualRows: [wrapper], manualCoins: { gp: 1000 },
+      claimedRowIds: claimed === "wrapper" ? ["wrapper-row"] : [], coinsClaimed: claimed === "root" });
+    const result = await service.open(token);
+    assert.equal(result.coins.pp, claimed === "wrapper" || claimed === "nested" ? 0 : 100);
+    assert.equal(result.state.coinsClaimed, claimed === "root" ? false : result.state.coinsClaimed);
+    if (claimed === "root") assert.equal(result.coins.gp, 0);
+  }
+  const token = createStorageToken("overflow-wrapper");
+  await service.configure(token, { state: "opened", manualRows: [syntheticCoinWrapper()], manualCoins: { pp: Number.MAX_SAFE_INTEGER } });
+  const before = readStorageState(token);
+  await assert.rejects(service.open(token), /safe|безопас/u);
+  assert.deepEqual(readStorageState(token), before);
+});
+
+for (const [name, overrides] of [
+  ["real purse", { storageKind: "bag" }],
+  ["physical host", { presentation: { itemIdentity: { sourceType: "gear", sourceId: "koshelek" } } }],
+  ["custom texture", { presentation: { tokenData: { texture: { src: "custom-coins.webp" } } } }],
+  ["unopened", { state: { state: "unopened", manualCoins: { pp: 100 } } }],
+  ["ordinary contents", { state: { state: "opened", manualCoins: { pp: 100 }, manualRows: [{ rowId: "sword", name: "Меч", quantity: 1 }] } }],
+  ["reservation", { state: { state: "opened", manualCoins: { pp: 100 }, bulkClaimMutations: [{ mutationKey: "pending", fingerprint: "reserved", status: "pending" }] } }]
+  , ["trigger execution", { state: { state: "opened", manualCoins: { pp: 100 }, triggers: { ...createEmptyStorageTriggerState(), executionState: { onceGlobal: {}, oncePerCharacter: {}, runs: { historical: { phase: "running" } } } } } }]
+]) test(`coin repair preserves ${name}`, async () => {
+  const token = createStorageToken(`preserve-${name}`);
+  const service = new StorageService();
+  await service.configure(token, { state: "opened", manualRows: [syntheticCoinWrapper(overrides)] });
+  const before = readStorageState(token);
+  await service.open(token);
+  assert.deepEqual(readStorageState(token), before);
+});
+
 test("opening a chest folds unclaimed coin Items into currency exactly once", async () => {
   const token = createStorageToken("coin-chest");
   token.flags["rebreya-main"] = { storage: {

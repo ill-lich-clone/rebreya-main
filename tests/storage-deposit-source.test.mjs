@@ -97,6 +97,44 @@ function createStorageToken() {
   };
 }
 
+for (const [coins, available, denomination] of [
+  [{ pp: 100 }, 100, "pp"], [{ pp: 100, gp: 1000 }, 1, null]
+]) {
+  test(`ground currency source stays currency (${denomination ?? "mixed"}) and restores exact balances`, async () => {
+    const token = createStorageToken();
+    const storageService = new StorageService();
+    token.flags[MODULE_ID] = { groundPile: { enabled: true, coinPile: true } };
+    await storageService.configure(token, { storageKind: "pile", state: "opened", manualCoins: coins });
+    const resolve = () => resolveStorageDepositSource({ kind: "storage-token", tokenUuid: token.uuid }, {
+      resolveToken: async () => token, storageService
+    });
+    const source = await resolve();
+    assert.equal(source.row, null);
+    assert.equal(source.available, available);
+    assert.equal(source.denomination, denomination);
+    assert.deepEqual(source.coins, { pp: 100, gp: denomination ? 0 : 1000, sp: 0, cp: 0 });
+    const receipt = await source.consume(denomination ? 50 : 1);
+    assert.equal(readStorageState(token).coinsClaimed, !denomination);
+    if (denomination) assert.equal(readStorageState(token).manualCoins.pp, 50);
+    await source.restore(receipt);
+    assert.equal(readStorageState(token).manualCoins.pp, 100);
+    assert.equal(readStorageState(token).coinsClaimed, false);
+    await storageService.claim(token, { kind: "coins" });
+    await assert.rejects(resolve(), /монет|пуст/u);
+  });
+}
+
+test("a real chest holding only coins remains a physical container source", async () => {
+  const token = createStorageToken();
+  const storageService = new StorageService();
+  await storageService.configure(token, { storageKind: "chest", state: "opened", manualCoins: { pp: 100 } });
+  const source = await resolveStorageDepositSource({ kind: "storage-token", tokenUuid: token.uuid }, {
+    resolveToken: async () => token, storageService
+  });
+  assert.equal(source.row.rowKind, "container");
+  assert.equal(source.available, 1);
+});
+
 test("currency-backed rows resolve as physical sources and consume only the requested coins", async () => {
   const token = createStorageToken();
   token.flags[MODULE_ID] = { storage: { state: "opened", manualCoins: { cp: 8, gp: 1 } } };

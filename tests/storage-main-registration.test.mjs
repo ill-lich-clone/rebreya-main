@@ -143,26 +143,26 @@ test("main registers the storage deposit socket API and current cache keys", asy
   assert.match(main, /this\.storageContainerItemService = new StorageContainerItemService\(\{/u);
   assert.match(main, /await this\.storageGroundPileService\.repairLegacyCoinRows\(\);/u);
   for (const importPath of [
-    "data/storage-service.js?v=1.4.363",
+    "data/storage-service.js?v=1.4.370",
     "data/storage-open-sound-service.js?v=1.4.145-coin-icons-storage-sound",
     "data/storage-access.js?v=1.4.197-door-trigger-target",
-    "data/builtin-storage-actor-service.js?v=1.4.363",
-    "data/storage-ground-pile-service.js?v=1.4.363",
-    "data/storage-container-item-service.js?v=1.4.363",
-    "data/storage-deposit-source.js?v=1.4.363",
-    "data/storage-command-service.js?v=1.4.363",
+    "data/builtin-storage-actor-service.js?v=1.4.370",
+    "data/storage-ground-pile-service.js?v=1.4.370",
+    "data/storage-container-item-service.js?v=1.4.370",
+    "data/storage-deposit-source.js?v=1.4.370",
+    "data/storage-command-service.js?v=1.4.370",
     "data/storage-trigger-service.js?v=1.4.197-door-trigger-target",
-    "integrations/storage-token-hooks.js?v=1.4.363",
+    "integrations/storage-token-hooks.js?v=1.4.370",
     "combat/hooks.js?v=1.4.359",
     "integrations/storage-transfer-drop.js?v=1.4.213-furniture-orientation",
-    "integrations/storage-token-drop.js?v=1.4.363",
+    "integrations/storage-token-drop.js?v=1.4.370",
     "integrations/storage-container-hierarchy.js?v=1.4.122-storage-container-cycle-repair"
   ]) {
     assert.equal(main.includes(importPath), true, importPath);
   }
   for (const importPath of [
-    "storage-service.js?v=1.4.363",
-    "storage-deposit-source.js?v=1.4.363",
+    "storage-service.js?v=1.4.370",
+    "storage-deposit-source.js?v=1.4.370",
     "storage-access.js?v=1.4.197-door-trigger-target"
   ]) {
     assert.equal(storageCommand.includes(importPath), true, importPath);

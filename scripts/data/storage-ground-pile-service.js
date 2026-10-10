@@ -1,17 +1,17 @@
-import { splitLegacyCoinRows, migrateLegacyCoinRowsInState } from "./storage-service.js?v=1.4.363";
+import { splitLegacyCoinRows, migrateLegacyCoinRowsInState, migrateSyntheticCoinPileRowsInState } from "./storage-service.js?v=1.4.370";
 import { MODULE_ID } from "../constants.js";
 import { storageRowsCanStack } from "./storage-row-stacking.js?v=1.4.360";
-import { GROUND_PILE_PRESET_ID } from "./builtin-storage-presets.js?v=1.4.363";
+import { GROUND_PILE_PRESET_ID } from "./builtin-storage-presets.js?v=1.4.370";
 import {
   buildStorageTokenState,
   readStorageCoinDenomination,
   readStorageState
-} from "./storage-service.js?v=1.4.363";
+} from "./storage-service.js?v=1.4.370";
 import { isStorageJournalRow } from "./storage-container-snapshot.js?v=1.4.317";
 import {
   deriveGroundPilePresentation,
   isGroundPileToken
-} from "./storage-pile-presentation.js?v=1.4.349";
+} from "./storage-pile-presentation.js?v=1.4.370";
 import {
   buildGroundPileTokenLayout,
   deterministicStorageTokenRotation,
@@ -234,7 +234,7 @@ export class StorageGroundPileService {
     };
     const rows = visibleRows(state);
     const hasCoins = hasPositiveCoins(unclaimedCoins(state));
-    const tinyGroundItem = presentation.categoryKey === "coins" || (rows.length === 1
+    const tinyGroundItem = presentation.categoryKey === "coins" || (["single", "journal-note"].includes(presentation.categoryKey) && rows.length === 1
       && rows[0]?.rowKind !== "container"
       && !rows[0]?.container
       && !hasCoins);
@@ -456,7 +456,7 @@ export class StorageGroundPileService {
     });
     const prototype = clone(actor?.prototypeToken?.toObject?.() ?? actor?.prototypeToken ?? {});
     const hasCoins = hasPositiveCoins(incomingCoins);
-    const tinyGroundItem = presentation.categoryKey === "coins" || (rows.length === 1
+    const tinyGroundItem = presentation.categoryKey === "coins" || (["single", "journal-note"].includes(presentation.categoryKey) && rows.length === 1
       && rows[0]?.rowKind !== "container"
       && !rows[0]?.container
       && !hasCoins);
@@ -557,8 +557,19 @@ export class StorageGroundPileService {
             /^icons\/commodities\/currency\/(?:coins-plain-gold|coins-assorted-mix-(?:platinum|silver|copper))\.webp$/u.test(clean(token.texture?.src))
             || /^modules\/rebreya-main\/assets\/top-down\/items\/gear\/(?:platinovaya|zolotaya|serebryannaya|mednaya)-moneta\.webp$/u.test(clean(token.texture?.src))
           );
-          const migration = migrateLegacyCoinRowsInState(current)
-            ?? (legacyCoinIcon ? { state: current, convertedRows: 0 } : null);
+          const wrappers = migrateSyntheticCoinPileRowsInState(current);
+          const categoryPresentation = deriveGroundPilePresentation(visibleRows(current), {
+            coins: unclaimedCoins(current), readJournalRowIds: current.readJournalRowIds
+          });
+          const currentTexture = clean(token.texture?.src);
+          const categoryRepair = ["weapons", "firearms", "armor"].includes(categoryPresentation.categoryKey)
+            && /^modules\/rebreya-main\/assets\/(?:top-down\/items\/|storage\/piles\/)/u.test(currentTexture)
+            && currentTexture !== categoryPresentation.img;
+          const legacyRows = migrateLegacyCoinRowsInState(wrappers?.state ?? current);
+          const migration = wrappers || legacyRows ? {
+            state: legacyRows?.state ?? wrappers.state,
+            convertedRows: (wrappers?.convertedRows ?? 0) + (legacyRows?.convertedRows ?? 0)
+          } : (legacyCoinIcon || categoryRepair ? { state: current, convertedRows: 0 } : null);
           if (!migration) continue;
           const groundFlag = clone(readFlag(token, "groundPile")) ?? {};
           const presentation = deriveGroundPilePresentation(visibleRows(migration.state), {

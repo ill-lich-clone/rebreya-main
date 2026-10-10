@@ -1,12 +1,12 @@
-import { buildStorageCoinRow, storageCoinRowDenomination, pendingStorageCoinTransfer, assertStorageCoinTransferAvailable } from "./storage-service.js?v=1.4.363";
+import { buildStorageCoinRow, storageCoinRowDenomination, pendingStorageCoinTransfer, assertStorageCoinTransferAvailable } from "./storage-service.js?v=1.4.370";
 import { runDisarmDrop } from "../application/disarm-drop-workflow.js?v=1.4.252";
 import {
   isStorageActor,
   readStorageCoinDenomination,
   readStorageState,
   readStorageStateAtPath
-} from "./storage-service.js?v=1.4.363";
-import { resolveStorageDepositSource } from "./storage-deposit-source.js?v=1.4.363";
+} from "./storage-service.js?v=1.4.370";
+import { resolveStorageDepositSource } from "./storage-deposit-source.js?v=1.4.370";
 import { isStorageContainerRow, isStorageJournalRow } from "./storage-container-snapshot.js?v=1.4.317";
 import { MODULE_ID } from "../constants.js";
 import { escapeFoundryHtml } from "../shared/foundry-values.js";
@@ -25,7 +25,7 @@ import {
   TriggerTargetCoordinator,
   createTriggerTargetRef
 } from "../application/trigger-target-coordinator.js?v=1.4.197-door-trigger-target";
-import { StorageTriggerTargetAdapter } from "./storage-trigger-target-adapter.js?v=1.4.363";
+import { StorageTriggerTargetAdapter } from "./storage-trigger-target-adapter.js?v=1.4.370";
 import { isGroundPileCardinalRotation } from "./storage-ground-pile-layout.js?v=1.4.215-container-rotation";
 import {
   buildJournalRecordItemData,
@@ -1903,7 +1903,22 @@ export class StorageCommandService {
     return this.#runMutation(queueKeys, mutationKey, async () => {
       const access = await this.#resolveAccess(payload, sender);
       storageContainerTransferBinding(access.storageToken);
-      const source = await this.resolveDepositSource(sourceRef, {
+      const beforeTarget = readStorageStateAtPath(access.storageToken, path);
+      const currencyKey = `coin-transfer:${mutationKey}`;
+      const currencyBinding = beforeTarget.bulkClaimMutations.find(entry => entry.mutationKey === currencyKey);
+      const currencySourceToken = sourceRef.kind === "storage-token" ? tokenDocument(await this.resolveToken(sourceRef.tokenUuid)) : null;
+      const sourceCurrencyBinding = currencySourceToken && readStorageState(currencySourceToken).bulkClaimMutations.find(entry => entry.mutationKey === currencyKey);
+      const recoveryBinding = currencyBinding ?? sourceCurrencyBinding;
+      const currencyRequest = mutationRequestFingerprint(payload, sender);
+      const reservation = recoveryBinding ? JSON.parse(recoveryBinding.fingerprint) : null;
+      if (reservation && reservation.request !== currencyRequest) throw new Error("Coin deposit mutationId conflict.");
+      const source = reservation ? {
+        kind: "storage-token", mode: "move", coins: reservation.coins,
+        denomination: reservation.denomination, available: quantity,
+        storageToken: tokenDocument(await this.resolveToken(sourceRef.tokenUuid)),
+        consume() {}, restore() {},
+        canUserMove(user) { return user?.isGM === true || this.storageToken?.testUserPermission?.(user, "OWNER") === true || this.storageToken?.actor?.testUserPermission?.(user, "OWNER") === true; }
+      } : await this.resolveDepositSource(sourceRef, {
         fromUuid: this.resolveDocument,
         resolveToken: this.resolveToken,
         storageService: this.storageService,
@@ -1929,7 +1944,35 @@ export class StorageCommandService {
         storageContainerTransferBinding(sourceAccess.storageToken);
       }
 
-      const beforeTarget = readStorageStateAtPath(access.storageToken, path);
+      if (source.coins) {
+        if (currencyBinding?.status === "complete") return { changed: true, coins: reservation.coins, state: beforeTarget, sourceMode: "move" };
+        const coins = reservation?.coins ?? (source.denomination ? { [source.denomination]: quantity } : source.coins);
+        const fingerprint = recoveryBinding?.fingerprint ?? JSON.stringify({ request: currencyRequest, coins, denomination: source.denomination, quantity });
+        const beforeSource = readStorageState(source.storageToken);
+        let credited = false;
+        try {
+          await this.storageService.bindBulkClaimMutation(source.storageToken, currencyKey, fingerprint);
+          await this.storageService.depositCoins(access.storageToken, coins, { path, presentation: administrative ? "administrative" : "gameplay", mutationKey: currencyKey, fingerprint });
+          credited = true;
+          await this.storageService.claim(source.storageToken, {
+            kind: "coins", mutationId: mutationKey,
+            ...(source.denomination ? { denomination: source.denomination, quantity } : {})
+          });
+          await this.storageService.completeBulkClaimMutation(source.storageToken, currencyKey, fingerprint);
+          await this.storageService.completeBulkClaimMutation(access.storageToken, currencyKey, fingerprint, { path });
+        }
+        catch (error) {
+          const sourceState = readStorageState(source.storageToken);
+          const debited = sourceState.rowClaimMutations.some(entry => entry.mutationId === mutationKey)
+            || sourceState.bulkClaimMutations.some(entry => entry.mutationKey === `coin-debit:${mutationKey}`);
+          if (credited && !debited && !currencyBinding) await this.storageService.configure(access.storageToken, beforeTarget, { path });
+          if (!debited && !currencyBinding) await this.storageService.configure(source.storageToken, beforeSource);
+          throw error;
+        }
+        await this.#refreshSource(source.storageToken, readStorageState(source.storageToken));
+        await this.#refreshSource(access.storageToken, readStorageState(access.storageToken));
+        return { changed: true, coins, state: readStorageStateAtPath(access.storageToken, path), sourceMode: "move" };
+      }
       let deposited = null;
       let sourceReceipt = null;
       try {
@@ -1986,6 +2029,30 @@ export class StorageCommandService {
     const tokenUuid = clean(payload.tokenUuid);
     const actorUuid = clean(payload.actorUuid);
     const mutationId = requireMutationId(payload.mutationId);
+    const currencyToken = tokenDocument(await this.resolveToken(tokenUuid));
+    const currencyState = currencyToken ? readStorageState(currencyToken) : null;
+    const currencyFlag = currencyToken?.getFlag?.(MODULE_ID, "groundPile") ?? currencyToken?.flags?.[MODULE_ID]?.groundPile;
+    if (currencyFlag?.enabled === true && currencyFlag?.coinPile === true
+      && currencyState?.state !== "unopened"
+      && [...currencyState.manualRows, ...currencyState.generatedRows].every(row => currencyState.claimedRowIds.includes(row.rowId))) {
+      await this.#resolveCharacterTarget({ actorUuid }, sender);
+      if (sender?.isGM !== true && currencyToken.testUserPermission?.(sender, "OWNER") !== true
+        && currencyToken.actor?.testUserPermission?.(sender, "OWNER") !== true) throw new Error("У вас нет прав владельца на перемещение этого хранилища.");
+      const coins = { pp: 0, gp: 0, sp: 0, cp: 0 };
+      const pending = pendingStorageCoinTransfer(currencyState);
+      const pendingRequest = pending ? JSON.parse(JSON.parse(pending.fingerprint).request).request : null;
+      const pendingDenomination = storageCoinRowDenomination(pendingRequest?.rowId);
+      const denominations = Object.keys(coins).sort((a, b) => Number(b === pendingDenomination) - Number(a === pendingDenomination));
+      for (const denomination of denominations) {
+        const result = await this.claimRow({
+          tokenUuid, characterTokenUuid: payload.characterTokenUuid, rowId: `__coins:${denomination}`,
+          quantity: null, destination: "character", target: { actorUuid }, ingressPlan: null,
+          mutationId: `${mutationId}:${denomination}`
+        }, { sender });
+        coins[denomination] = result.coins?.[denomination] ?? (result.changed ? result.quantity ?? 0 : 0);
+      }
+      return { changed: Object.values(coins).some(amount => amount > 0), coins, actorUuid, itemUuid: "" };
+    }
     const mutationKey = storageMutationId({
       tokenUuid,
       kind: "token-character",

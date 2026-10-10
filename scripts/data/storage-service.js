@@ -140,6 +140,56 @@ export function migrateLegacyCoinRowsInState(state) {
   };
 }
 
+export function migrateSyntheticCoinPileRowsInState(state) {
+  if ((state?.bulkClaimMutations ?? []).some(entry => entry.status === "pending")) return null;
+  const claimed = new Set(state?.claimedRowIds ?? []);
+  const removed = new Set();
+  let coins = normalizeCoins({});
+  const keep = row => {
+    const snapshot = row?.container;
+    const nested = snapshot?.state;
+    const presentation = snapshot?.presentation ?? {};
+    const texture = String(presentation.tokenData?.texture?.src ?? "");
+    if (row?.sourceType !== "container" || snapshot?.storageKind !== "pile" || nested?.state !== "opened"
+      || presentation.itemIdentity || presentation.itemData || presentation.itemSystem
+      || row.composition || nested.lootgenComposition
+      || [...(nested.manualRows ?? []), ...(nested.generatedRows ?? [])].length
+      || (nested.bulkClaimMutations ?? []).some(entry => entry.status === "pending")
+      || Object.values(nested.triggers?.chainsByEvent ?? {}).some(chains => chains.length)
+      || Object.keys(nested.triggers?.variables ?? {}).length
+      || Object.values(nested.triggers?.executionState ?? {}).some(value => Object.keys(value ?? {}).length)
+      || !/^modules\/rebreya-main\/(?:assets\/top-down\/items\/coins\/(?:pp|gp|sp|cp)-(?:\d{2}|pile)\.webp|assets\/storage\/piles\/coins\.png)$/u.test(texture)) return true;
+    removed.add(cleanId(row.rowId));
+    if (!claimed.has(row.rowId) && nested.coinsClaimed !== true) {
+      for (const balance of [nested.manualCoins, nested.generatedCoins]) {
+        if (Object.values(balance ?? {}).some(amount => !Number.isSafeInteger(amount) || amount < 0)) {
+          throw new Error("Некорректный баланс монет вложенной кучи.");
+        }
+        coins = addManualCoinsChecked(coins, balance);
+      }
+    }
+    return false;
+  };
+  const manualRows = (state?.manualRows ?? []).filter(keep);
+  const generatedRows = (state?.generatedRows ?? []).filter(keep);
+  if (!removed.size) return null;
+  const credited = COIN_KEYS.some(key => coins[key] > 0);
+  const discardClaimed = credited && state.coinsClaimed === true;
+  const manualCoins = addManualCoinsChecked(discardClaimed ? {} : state.manualCoins, coins);
+  const generatedCoins = discardClaimed ? normalizeCoins({}) : clone(state.generatedCoins);
+  addManualCoinsChecked(manualCoins, generatedCoins);
+  return {
+    convertedRows: removed.size,
+    state: {
+      ...clone(state), manualRows: clone(manualRows), generatedRows: clone(generatedRows),
+      claimedRowIds: (state.claimedRowIds ?? []).filter(id => !removed.has(id)),
+      manualCoins,
+      generatedCoins,
+      coinsClaimed: credited ? false : state.coinsClaimed
+    }
+  };
+}
+
 function cleanName(value, fallback = "Хранилище") {
   const name = String(value ?? "").trim().replace(/\s+/gu, " ");
   return name || fallback;
@@ -768,6 +818,8 @@ export class StorageService {
 
   async #openOnce(token, context) {
     let current = readStorageState(token);
+    const wrappers = migrateSyntheticCoinPileRowsInState(current);
+    if (wrappers) current = await this.#write(token, wrappers.state);
     const migrated = migrateLegacyCoinRowsInState(current);
     if (migrated) current = await this.#write(token, migrated.state);
     if (current.corpseMaterialization?.status === "complete" || current.state !== "unopened") {
@@ -859,6 +911,9 @@ export class StorageService {
 
     if (request?.kind === "coins") {
       assertStorageCoinTransferAvailable(current, cleanId(request.mutationId));
+      const wholeReceipt = request.mutationId && !request.denomination
+        ? current.bulkClaimMutations.find(entry => entry.mutationKey === `coin-debit:${request.mutationId}`) : null;
+      if (wholeReceipt) return { changed: true, coins: JSON.parse(wholeReceipt.fingerprint), state: clone(current) };
       const denomination = request.denomination;
       if (denomination !== undefined && !COIN_KEYS.includes(denomination)) {
         throw new Error("Некорректный номинал монет.");
@@ -898,6 +953,9 @@ export class StorageService {
         rowClaimMutations: mutationId && denomination
           ? [...current.rowClaimMutations, { mutationId, rowId, quantity: coins[denomination] }]
           : current.rowClaimMutations,
+        bulkClaimMutations: mutationId && !denomination
+          ? [...current.bulkClaimMutations, { mutationKey: `coin-debit:${mutationId}`, fingerprint: JSON.stringify(coins), status: "complete" }]
+          : current.bulkClaimMutations,
         coinsClaimed,
         state: nextState,
         displayMode: nextState === "empty" ? "empty" : current.displayMode
@@ -984,6 +1042,36 @@ export class StorageService {
       displayMode: nextState === "empty" ? "empty" : current.displayMode
     });
     return { changed: true, row: claimedRow, quantity, state };
+  }
+
+  async depositCoins(token, coins, { path = [], presentation = "gameplay", mutationKey = "", fingerprint = "" } = {}) {
+    token = this.#scopedToken(token, path);
+    const current = readStorageState(token);
+    assertStorageCoinTransferAvailable(current, mutationKey.replace(/^coin-transfer:/u, ""));
+    if (!STORAGE_DEPOSIT_PRESENTATIONS.has(presentation)) throw new Error("Неизвестный режим добавления монет.");
+    if (!coins || Object.keys(coins).some(key => !COIN_KEYS.includes(key))
+      || Object.values(coins).some(amount => !Number.isSafeInteger(amount) || amount < 0)
+      || !Object.values(coins).some(amount => amount > 0)) throw new Error("Некорректное количество монет.");
+    const previous = mutationKey && current.bulkClaimMutations.find(entry => entry.mutationKey === mutationKey);
+    if (previous) {
+      if (previous.fingerprint !== fingerprint) throw bulkClaimMutationConflict("Coin deposit mutationId conflict.");
+      return { changed: true, coins: clone(coins), state: current };
+    }
+    const nextPresentation = current.state === "unopened" || (presentation === "administrative" && current.state !== "opened")
+      ? "unopened" : "opened";
+    const manualCoins = addManualCoinsChecked(current.coinsClaimed ? {} : current.manualCoins, coins);
+    const generatedCoins = current.coinsClaimed ? normalizeCoins({}) : current.generatedCoins;
+    addManualCoinsChecked(manualCoins, generatedCoins);
+    const state = await this.#write(token, {
+      ...current,
+      manualCoins,
+      generatedCoins,
+      coinsClaimed: false, state: nextPresentation, displayMode: nextPresentation,
+      bulkClaimMutations: mutationKey
+        ? [...current.bulkClaimMutations, { mutationKey, fingerprint, status: "pending" }]
+        : current.bulkClaimMutations
+    });
+    return { changed: true, coins: clone(coins), state };
   }
 
   async depositRow(token, row, { quantity, path = [], presentation = "gameplay" } = {}) {

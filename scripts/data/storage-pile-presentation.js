@@ -63,6 +63,23 @@ const PRESENTATION_BY_TYPE = new Map(STORAGE_PILE_PRESENTATIONS
   .filter((entry) => entry.normalizedTypeLabel)
   .map((entry) => [entry.normalizedTypeLabel, entry]));
 
+function pileCategory(row) {
+  const flags = row.itemData?.flags?.[MODULE_ID];
+  const label = PRESENTATION_BY_TYPE.get(normalizeStoragePileCategory(row.typeLabel))
+    ?? (flags?.managed === true ? PRESENTATION_BY_TYPE.get(normalizeStoragePileCategory(flags.equipmentType)) : null);
+  if (label) return label;
+  const type = clean(row.itemData?.type ?? row.sourceType).toLowerCase();
+  if (type === "weapon") return PRESENTATION_BY_TYPE.get(normalizeStoragePileCategory("Оружие"));
+  if (type === "equipment" && ["light", "medium", "heavy", "shield", "natural"].includes(clean(row.itemData?.system?.type?.value))) {
+    return PRESENTATION_BY_TYPE.get(normalizeStoragePileCategory("Доспех"));
+  }
+  return null;
+}
+
+export function deriveStorageCoinImage(coins = {}) {
+  return deriveGroundPilePresentation([], { coins }).img;
+}
+
 export function deriveGroundPilePresentation(rows = [], {
   coins = {},
   preserveEmptyCoinPile = false,
@@ -97,6 +114,11 @@ export function deriveGroundPilePresentation(rows = [], {
     const quantity = Math.max(1, Math.trunc(Number(
       row.quantity ?? row.itemData?.system?.quantity ?? 1
     )) || 1);
+    const category = pileCategory(row);
+    if (quantity > 1 && ["weapons", "firearms", "armor"].includes(category?.key)
+      && row.rowKind !== "container" && !row.container) {
+      return { name: category.name, img: category.img, categoryKey: category.key };
+    }
     const name = formatDurabilityItemName(
       clean(row.name ?? row.itemData?.name) || "Предмет",
       row.itemData?.flags?.[MODULE_ID]?.durability
@@ -123,11 +145,10 @@ export function deriveGroundPilePresentation(rows = [], {
   }
 
   if (ordinaryRows.length > 1) {
-    const labels = new Set(ordinaryRows.map((row) => normalizeStoragePileCategory(
-      row.typeLabel ?? row.itemData?.type
-    )).filter(Boolean));
+    const categories = ordinaryRows.map(pileCategory);
+    const labels = new Set(categories.map(category => category?.key ?? ""));
     if (labels.size === 1) {
-      const presentation = PRESENTATION_BY_TYPE.get(labels.values().next().value);
+      const presentation = categories[0];
       if (presentation) {
         return { name: presentation.name, img: presentation.img, categoryKey: presentation.key };
       }

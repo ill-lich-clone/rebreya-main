@@ -1,20 +1,21 @@
-import { buildStorageCoinRow, storageCoinRowDenomination, assertStorageCoinTransferAvailable } from "./storage-service.js?v=1.4.363";
+import { buildStorageCoinRow, storageCoinRowDenomination, assertStorageCoinTransferAvailable } from "./storage-service.js?v=1.4.370";
 import { MODULE_ID } from "../constants.js";
-import { GROUND_PILE_PRESET_ID } from "./builtin-storage-presets.js?v=1.4.363";
+import { GROUND_PILE_PRESET_ID } from "./builtin-storage-presets.js?v=1.4.370";
 import {
   isStorageActor,
   readStorageCoinDenomination,
   readStorageState,
   readStorageStateAtPath
-} from "./storage-service.js?v=1.4.363";
+} from "./storage-service.js?v=1.4.370";
 import {
   buildStorageContainerRow,
   isStorageContainerRow,
   isStorageJournalRow,
   rekeyStorageContainerSnapshot
 } from "./storage-container-snapshot.js?v=1.4.317";
-import { buildStorageContainerSnapshotFromToken } from "./storage-container-item-service.js?v=1.4.363";
+import { buildStorageContainerSnapshotFromToken } from "./storage-container-item-service.js?v=1.4.370";
 import { parseStorageDragData } from "../ui/storage-transfer-ui.js";
+import { deriveGroundPilePresentation } from "./storage-pile-presentation.js?v=1.4.370";
 
 function clone(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));
@@ -519,6 +520,56 @@ async function resolveStorageTokenSource(sourceRef, { resolveToken, storageServi
     throw new Error("Перетаскиваемый токен не является хранилищем Rebreya.");
   }
   const snapshot = buildStorageContainerSnapshotFromToken(document);
+  const state = snapshot.state;
+  const claimed = new Set(state.claimedRowIds ?? []);
+  const rows = storageRows(state).filter(row => !claimed.has(clean(row.rowId)));
+  const presentation = snapshot.presentation ?? {};
+  const currencyPile = isMarkedGroundPile(document)
+    && state.state !== "unopened" && rows.length === 0
+    && !presentation.itemIdentity && !presentation.itemData && !presentation.itemSystem;
+  if (currencyPile) {
+    assertStorageCoinTransferAvailable(state);
+    const coins = Object.fromEntries(["pp", "gp", "sp", "cp"].map(key => [key,
+      state.coinsClaimed === true ? 0 : Number(state.manualCoins?.[key] ?? 0) + Number(state.generatedCoins?.[key] ?? 0)
+    ]));
+    const keys = Object.keys(coins).filter(key => coins[key] > 0);
+    if (!keys.length) throw new Error("В наземной куче нет доступных монет.");
+    if (Object.values(coins).some(amount => !Number.isSafeInteger(amount) || amount < 0)) {
+      throw new Error("Некорректный баланс монет наземной кучи.");
+    }
+    const denomination = keys.length === 1 ? keys[0] : null;
+    const available = denomination ? coins[denomination] : 1;
+    const art = deriveGroundPilePresentation([], { coins });
+    return {
+      kind: "storage-token", mode: "move", row: null, coins, denomination, available,
+      name: art.name, img: art.img, sourceKey: clean(document.uuid ?? sourceRef.tokenUuid),
+      storageToken: document,
+      canUserMove(user) {
+        if (user?.isGM === true) return true;
+        return document.testUserPermission?.(user, "OWNER")
+          ?? document.actor?.testUserPermission?.(user, "OWNER")
+          ?? (document.isOwner === true || document.actor?.isOwner === true);
+      },
+      async consume(requestedQuantity) {
+        const quantity = requireQuantity(requestedQuantity, available);
+        const beforeState = readStorageState(document);
+        assertStorageCoinTransferAvailable(beforeState);
+        if (!denomination && ["pp", "gp", "sp", "cp"].some(key =>
+          Number(beforeState.manualCoins?.[key] ?? 0) + Number(beforeState.generatedCoins?.[key] ?? 0) !== coins[key]
+        )) throw new Error("Состав монетной кучи изменился. Повторите перенос.");
+        const result = await storageService.claim(document, {
+          kind: "coins", ...(denomination ? { denomination, quantity } : {})
+        });
+        if (!result.changed) throw new Error("Монеты уже недоступны.");
+        return { kind: "storage-row", beforeState, state: result.state, token: document };
+      },
+      async restore(receipt) {
+        if (receipt?.kind !== "storage-row") return false;
+        await storageService.configure(document, receipt.beforeState);
+        return true;
+      }
+    };
+  }
   const groundItem = singleGroundItem(snapshot, document);
   const row = groundItem
     ? {

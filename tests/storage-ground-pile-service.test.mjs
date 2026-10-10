@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { MODULE_ID } from "../scripts/constants.js";
 import { StorageGroundPileService } from "../scripts/data/storage-ground-pile-service.js";
 import { readStorageState } from "../scripts/data/storage-service.js";
+import { buildStorageContainerRow } from "../scripts/data/storage-container-snapshot.js";
 
 function applyPatch(target, patch) {
   for (const [path, value] of Object.entries(patch)) {
@@ -250,12 +251,12 @@ test("canvas transfer creates an unlinked independent ground pile token", async 
   assert.equal(tokens[0].actorLink, false);
   assert.equal(tokens[0].disposition, 0);
   assert.deepEqual(tokens[0].sight, { enabled: false, range: 60 });
-  assert.equal(tokens[0].width, 0.5);
-  assert.equal(tokens[0].height, 0.5);
-  assert.equal(tokens[0].x, 275);
-  assert.equal(tokens[0].y, 375);
-  assert.equal(tokens[0].name, "Меч (2)");
-  assert.equal(tokens[0].texture.src, "icons/sword.webp");
+  assert.equal(tokens[0].width, 1);
+  assert.equal(tokens[0].height, 1);
+  assert.equal(tokens[0].x, 250);
+  assert.equal(tokens[0].y, 350);
+  assert.equal(tokens[0].name, "Куча оружия");
+  assert.equal(tokens[0].texture.src, `modules/${MODULE_ID}/assets/storage/piles/weapons.png`);
   assert.equal(tokens[0].flags[MODULE_ID].groundPile.enabled, true);
   assert.equal(tokens[0].flags[MODULE_ID].groundPile.coinPile, false);
   assert.equal(readStorageState(tokens[0]).manualRows[0].quantity, 2);
@@ -653,7 +654,7 @@ test("dropping on a pile stacks identical items and appends different items", as
   assert.equal(tokens.length, 1);
   assert.equal(readStorageState(tokens[0]).manualRows.length, 1);
   assert.equal(readStorageState(tokens[0]).manualRows[0].quantity, 5);
-  assert.equal(tokens[0].name, "Меч (5)");
+  assert.equal(tokens[0].name, "Куча оружия");
 
   await service.transferToScene({
     row: { ...sword, sourceId: "axe", name: "Топор", img: "icons/axe.webp" },
@@ -1402,4 +1403,32 @@ test("legacy coin texture repair migrates stock and old module icons while prese
   tokens[0].texture.src = "custom-coin.webp";
   await service.repairLegacyCoinRows();
   assert.equal(tokens[0].texture.src, "custom-coin.webp");
+});
+
+test("startup repair unfolds a synthetic coin container without duplicating either denomination", async () => {
+  const { service, tokens } = createHarness();
+  const wrapper = buildStorageContainerRow({
+    containerId: "old-coin-token", storageKind: "pile", name: "Платиновая монета",
+    state: { state: "opened", manualCoins: { pp: 100 } },
+    presentation: { tokenData: { texture: { src: `modules/${MODULE_ID}/assets/top-down/items/coins/pp-pile.webp` } } }
+  });
+  await service.transferSnapshotToScene({ rows: [wrapper], coins: { gp: 1000 }, sceneId: "scene", x: 300, y: 400, mutationId: "legacy-coin-container" });
+  await service.repairLegacyCoinRows();
+  assert.deepEqual(readStorageState(tokens[0]).manualCoins, { pp: 100, gp: 1000, sp: 0, cp: 0 });
+  assert.equal(readStorageState(tokens[0]).manualRows.length, 0);
+  assert.equal(tokens[0].name, "Куча монет");
+  assert.equal(tokens[0].texture.src, `modules/${MODULE_ID}/assets/storage/piles/coins.png`);
+  assert.equal((await service.repairLegacyCoinRows()).repairedTokens, 0);
+});
+
+test("startup repair restores category art for old module weapon stacks and keeps custom art", async () => {
+  const { service, tokens } = createHarness();
+  await service.transferToScene({ row: { ...longsword, quantity: 2 }, quantity: 2, sceneId: "scene", x: 300, y: 400, mutationId: "old-stack" });
+  tokens[0].texture.src = `modules/${MODULE_ID}/assets/top-down/items/gear/dlinnyy-mech.webp`;
+  assert.equal((await service.repairLegacyCoinRows()).repairedTokens, 1);
+  assert.equal(tokens[0].texture.src, `modules/${MODULE_ID}/assets/storage/piles/weapons.png`);
+  assert.equal((await service.repairLegacyCoinRows()).repairedTokens, 0);
+  tokens[0].texture.src = "custom-weapons.webp";
+  await service.repairLegacyCoinRows();
+  assert.equal(tokens[0].texture.src, "custom-weapons.webp");
 });

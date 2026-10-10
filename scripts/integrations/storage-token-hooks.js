@@ -4,7 +4,7 @@ import {
   STORAGE_ACCESS_DISTANCE_ERROR_CODE,
   STORAGE_ACCESS_DISTANCE_ERROR_MESSAGE
 } from "../data/storage-access.js?v=1.4.197-door-trigger-target";
-import { isStorageActor } from "../data/storage-service.js?v=1.4.363";
+import { isStorageActor } from "../data/storage-service.js?v=1.4.370";
 import { isCorpseStorageTarget } from "../data/storage-corpse-target.js?v=1.4.360";
 import { StorageTokenOverlayController } from "../ui/storage-token-overlay.js?v=1.4.197-door-trigger-target";
 import { GroundPileFrameController } from "./storage-ground-pile-frame.js?v=1.4.360";

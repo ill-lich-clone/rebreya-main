@@ -4,6 +4,25 @@ import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { MODULE_ID } from "../scripts/constants.js";
+
+test("weapon and armor stacks become category piles without changing ammunition stack art", () => {
+  for (const [type, systemType, category, name] of [
+    ["weapon", "martialM", "weapons", "Куча оружия"], ["equipment", "heavy", "armor", "Куча доспехов"]
+  ]) {
+    const row = { name: "Предмет", img: "single.webp", quantity: 2, itemData: { type, system: { type: { value: systemType } } } };
+    assert.equal(deriveGroundPilePresentation([row]).categoryKey, category);
+    assert.equal(deriveGroundPilePresentation([row]).name, name);
+    assert.equal(deriveGroundPilePresentation([{ ...row, quantity: 1 }]).categoryKey, "single");
+    assert.equal(deriveGroundPilePresentation([row, { ...row, name: "Другой" }]).categoryKey, category);
+  }
+  assert.equal(deriveGroundPilePresentation([{ name: "Стрела", img: "arrow.webp", typeLabel: "Боеприпас", quantity: 20 }]).img, "arrow.webp");
+  assert.equal(deriveGroundPilePresentation([
+    { typeLabel: "Оружие" }, { name: "Неизвестный предмет", itemData: { type: "equipment", system: { type: { value: "trinket" } } } }
+  ]).categoryKey, "mixed-items");
+  assert.equal(deriveGroundPilePresentation([{
+    quantity: 3, itemData: { type: "weapon", flags: { [MODULE_ID]: { managed: true, equipmentType: "Огнестрельное оружие" } } }
+  }]).categoryKey, "firearms");
+});
 import {
   deriveGroundPilePlacement,
   deriveGroundPilePresentation,

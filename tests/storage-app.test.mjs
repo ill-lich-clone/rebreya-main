@@ -139,7 +139,11 @@ test("storage presents a separate physical coin stack per denomination", async (
   assert.deepEqual(context.coinRows.map(row => [row.denomination, row.quantity]), [["gp", 1], ["sp", 1], ["cp", 47]]);
   assert.equal(context.activePopover.denomination, "cp");
   assert.equal(context.activePopover.name, "47 мм");
-  assert.ok(context.coinRows.every(row => row.img.endsWith("-moneta.webp")));
+  assert.deepEqual(context.coinRows.map(row => row.img), [
+    "modules/rebreya-main/assets/top-down/items/coins/gp-01.webp",
+    "modules/rebreya-main/assets/top-down/items/coins/sp-01.webp",
+    "modules/rebreya-main/assets/top-down/items/coins/cp-47.webp"
+  ]);
 });
 
 test("a click inside a replaced grid does not immediately close its popover", async () => {

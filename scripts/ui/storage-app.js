@@ -1,4 +1,5 @@
-import { buildStorageCoinRow } from "../data/storage-service.js?v=1.4.363";
+import { buildStorageCoinRow } from "../data/storage-service.js?v=1.4.370";
+import { deriveStorageCoinImage } from "../data/storage-pile-presentation.js?v=1.4.370";
 import { MODULE_ID } from "../constants.js";
 import { getAppElement } from "../ui.js";
 import { AnchoredOverlay, bindAnchoredTooltips } from "./anchored-overlay.js?v=1.4.247-anchored-overlays";
@@ -239,11 +240,10 @@ export class StorageApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const hasTextureSet = TEXTURE_MODES.every(({ mode }) => clean(this.snapshot?.textures?.[mode]));
     const snapshotRows = this.snapshot?.rows ?? [];
     const hasCoins = COIN_KEYS.some((key) => coins[key] > 0);
-    const coinImages = { pp: "platinovaya", gp: "zolotaya", sp: "serebryannaya", cp: "mednaya" };
     const coinRows = COIN_KEYS.filter(key => coins[key] > 0).map(denomination => ({
       ...buildStorageCoinRow({ manualCoins: coins }, `__coins:${denomination}`),
       name: coinsLabel({ [denomination]: coins[denomination] }),
-      img: `modules/rebreya-main/assets/top-down/items/gear/${coinImages[denomination]}-moneta.webp`,
+      img: deriveStorageCoinImage({ [denomination]: coins[denomination] }),
       expanded: this.activeRowId === `__coins:${denomination}`
     }));
     const gridItemCount = snapshotRows.length + coinRows.length;
