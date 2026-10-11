@@ -10,7 +10,7 @@ import { TransportCompendiumService } from "../scripts/data/transport-compendium
 import { BuiltinStorageActorService } from "../scripts/data/builtin-storage-actor-service.js?v=1.4.370";
 import { StorageOpenSoundService } from "../scripts/data/storage-open-sound-service.js?v=1.4.145-coin-icons-storage-sound";
 import { GrappleAutomationService } from "../scripts/combat/grapple-automation-service.js";
-import { GrappleMacroService } from "../scripts/combat/grapple-macro-service.js?v=1.4.334-twisted-macro";
+import { GrappleMacroService } from "../scripts/combat/grapple-macro-service.js?v=1.4.372";
 import { GrapplePlacementPreview } from "../scripts/combat/grapple-placement-preview.js?v=1.4.356";
 import {
   COMMAND_REQUEST_TYPE,
@@ -49,10 +49,10 @@ test("current release reuses the catalog icon cache graph", async () => {
     ...sharedCacheImporters.map((name) => readFile(new URL(`../scripts/data/${name}.js`, import.meta.url), "utf8"))
   ]);
   const manifest = JSON.parse(manifestSource);
-  assert.equal(manifest.version, "1.4.371");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.371.js"]);
+  assert.equal(manifest.version, "1.4.372");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.372.js"]);
   assert.doesNotMatch(manifestSource, /main-1\.4\.319\.js/u);
-  assert.match(mainSource, /data\/inventory-service\.js\?v=1\.4\.327/u);
+  assert.match(mainSource, /data\/inventory-service\.js\?v=1\.4\.372/u);
   assert.match(mainSource, /data\/storage-command-service\.js\?v=1\.4\.370/u);
   assert.match(mainSource, /integrations\/inventory-sync\.js\?v=1\.4\.327/u);
   assert.match(syncSource, /data\/inventory-service\.js\?v=1\.4\.327/u);
@@ -272,6 +272,21 @@ test("ready composes spell automation on one registry alongside legacy hook regi
     }]);
 
     const moduleApi = module.api;
+    assert.equal(typeof moduleApi.treatWounds, "function");
+    assert.equal(moduleApi.treatWoundsService.journal, moduleApi.inventoryService.mutationJournal);
+    assert.equal(moduleApi.treatWoundsService.adapter, moduleApi.treatWoundsAdapter);
+    const treatmentRequests = [];
+    const originalTreatmentMutate = moduleApi.privilegedMutationGateway.mutate;
+    moduleApi.privilegedMutationGateway.mutate = async (command,payload) => { treatmentRequests.push({command,payload}); return {phase:"completed",intent:{operationId:payload.operationId}}; };
+    moduleApi.pendingTreatWoundsIntent={operationId:"treatment-replay"};
+    await moduleApi.treatWounds();
+    assert.deepEqual(treatmentRequests,[{command:"treat-wounds.resume",payload:{operationId:"treatment-replay"}}]);
+    assert.equal(moduleApi.pendingTreatWoundsIntent,null);
+    moduleApi.pendingTreatWoundsIntent={operationId:"missing-treatment"};
+    moduleApi.privilegedMutationGateway.mutate=async()=>{throw Object.assign(new Error("missing"),{code:"operation-not-found"});};
+    await assert.rejects(moduleApi.requestTreatWoundsAction("resume",{operationId:"missing-treatment"}));
+    assert.equal(moduleApi.pendingTreatWoundsIntent,null);
+    moduleApi.privilegedMutationGateway.mutate=originalTreatmentMutate;
     assert.equal(moduleApi.storageCommandService.lootgenTemplateItems, moduleApi.lootgenTemplateItems);
     assert.equal(typeof moduleApi.resolveLootgenTemplate, "function");
     assert.equal(typeof moduleApi.assignStorageLootgenTemplate, "function");
@@ -524,7 +539,7 @@ test("composition root owns one inventory ingress graph and one batch dispatch h
 
   assert.match(
     source,
-    /\.\/data\/inventory-service\.js\?v=1\.4\.327/u,
+    /\.\/data\/inventory-service\.js\?v=1\.4\.372/u,
     "inventory-service cache key must change with the catalog icon workflow"
   );
   assert.equal(source.match(/new InventoryIngressRuleCompilerCache\(/gu)?.length, 1);

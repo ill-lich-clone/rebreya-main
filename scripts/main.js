@@ -60,7 +60,7 @@ import {
   normalizeGroupState,
   normalizeGroupTransportState,
   resolveGroupMemberActor
-} from "./data/group-context-service.js";
+} from "./data/group-context-service.js?v=1.4.372";
 import { DowntimeService } from "./data/downtime-service.js?v=1.4.96-craft-calendar";
 import { CharacterDowntimeService } from "./data/character-downtime-service.js";
 import {
@@ -94,7 +94,7 @@ import {
   SOCKET_EVENT_INVENTORY_SOURCE_DEPLETION_RESULT,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_REQUEST,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_RESULT
-} from "./data/inventory-service.js?v=1.4.327";
+} from "./data/inventory-service.js?v=1.4.372";
 import {
   InventoryIngressRuleCompilerCache,
   normalizeInventoryIngressRule
@@ -117,6 +117,11 @@ import { ItemUpgradeService } from "./data/item-upgrade-service.js?v=1.4.292";
 import { ItemUpgradeAutomationService } from "./automation/item-upgrade-automation-service.js?v=1.4.292";
 import { ReputationService } from "./application/reputation-service.js?v=1.4.251";
 import { DisarmService } from "./combat/disarm-service.js?v=1.4.276";
+import { TreatWoundsService } from "./application/treat-wounds-service.js?v=1.4.372";
+import { TreatWoundsDnd5eAdapter } from "./integrations/treat-wounds-dnd5e-adapter.js?v=1.4.372";
+import { TreatWoundsDocuments } from "./infrastructure/foundry/treat-wounds-documents.js?v=1.4.372";
+import { TREAT_WOUNDS_ACTIONS, isValidTreatWoundsPayload, authorizeTreatWoundsSender } from "./infrastructure/foundry/treat-wounds-command-contract.js?v=1.4.372";
+import { resolveTreatWoundsSelection, promptTreatWounds, buildTreatWoundsChatContent, bindTreatWoundsChat } from "./ui/treat-wounds-dialog.js?v=1.4.372";
 import { DisarmRollAdapter } from "./integrations/disarm-roll-adapter.js?v=1.4.252";
 import { DisarmDocuments } from "./infrastructure/foundry/disarm-documents.js?v=1.4.252";
 import { DISARM_ACTIONS, isValidDisarmPayload, authorizeDisarmSender } from "./infrastructure/foundry/disarm-command-contract.js?v=1.4.276";
@@ -344,7 +349,7 @@ import {
 import { BardicInspirationCompatService } from "./combat/bardic-inspiration-compat-service.js";
 import { RaceAutomationService, SOCKET_EVENT_RACE_AUTOMATION } from "./combat/race-automation-service.js?v=1.4.147-race-damage";
 import { GrappleAutomationService, GRAPPLE_LINK_FLAG, getTwistedLinkForToken } from "./combat/grapple-automation-service.js";
-import { GrappleMacroService } from "./combat/grapple-macro-service.js?v=1.4.334-twisted-macro";
+import { GrappleMacroService } from "./combat/grapple-macro-service.js?v=1.4.372";
 import { GrapplePlacementPreview } from "./combat/grapple-placement-preview.js?v=1.4.356";
 import { getActorHandReservations } from "./integrations/held-items.js";
 import { CraftsmanGadgetService } from "./combat/craftsman-gadget-service.js";
@@ -1761,6 +1766,12 @@ export class RebreyaMainModule {
     this.promptDurabilityOutcome = promptDurabilityOutcome;
     this.durabilityOutcomeTasks = new Map();
     const disarmCapability = Object.freeze({});
+    this.treatWoundsAdapter = new TreatWoundsDnd5eAdapter();
+    this.treatWoundsDocuments = new TreatWoundsDocuments({ adapter: this.treatWoundsAdapter, groupContextService: this.groupContextService });
+    this.treatWoundsService = new TreatWoundsService({ journal: this.inventoryService.mutationJournal,
+      coordinator: this.worldMutationCoordinator, inventoryService: this.inventoryService, adapter: this.treatWoundsAdapter,
+      documents: this.treatWoundsDocuments, gameProvider: () => globalThis.game, isActiveGm: () => isActiveGmClient(globalThis.game),
+      publish: record => this.publishTreatWoundsOperation(record) });
     this.disarmDocuments = new DisarmDocuments();
     this.storageCommandService = new StorageCommandService({
       storageService: this.storageService,
@@ -2066,6 +2077,50 @@ export class RebreyaMainModule {
     });
   }
 
+  async requestTreatWoundsAction(action, payload) {
+    if (!TREAT_WOUNDS_ACTIONS.includes(action)) throw new Error("Неизвестное действие перевязки.");
+    let result;
+    try { result = await this.privilegedMutationGateway.mutate(`treat-wounds.${action}`, payload); }
+    catch (error) {
+      if (action === "resume" && error.code === "operation-not-found" && this.pendingTreatWoundsIntent?.operationId === payload.operationId) this.pendingTreatWoundsIntent = null;
+      throw error;
+    }
+    if (["completed", "cancelled"].includes(result?.phase) && this.pendingTreatWoundsIntent?.operationId === result.intent?.operationId) this.pendingTreatWoundsIntent = null;
+    return result;
+  }
+
+  async treatWounds(options = {}) {
+    if (this.treatWoundsDialogTask) return this.treatWoundsDialogTask;
+    this.treatWoundsDialogTask = (async () => {
+      if (this.pendingTreatWoundsIntent) return this.requestTreatWoundsAction("resume", { operationId: this.pendingTreatWoundsIntent.operationId });
+      const tokens = resolveTreatWoundsSelection(options);
+      const preview = await this.requestTreatWoundsAction("preview", tokens);
+      const selected = await promptTreatWounds(preview);
+      if (!selected) return null;
+      this.pendingTreatWoundsIntent = { ...tokens, ...selected, operationId: createSocketRequestId("treat-wounds") };
+      try { return await this.requestTreatWoundsAction("start", this.pendingTreatWoundsIntent); }
+      catch (error) {
+        if (["unsupported-system", "unauthorized", "invalid-tokens", "invalid-target", "medicine-required", "invalid-tier", "invalid-kit", "cooldown", "operation-pending"].includes(error.code)) this.pendingTreatWoundsIntent = null;
+        throw error;
+      }
+    })();
+    try { return await this.treatWoundsDialogTask; }
+    catch (error) { globalThis.ui?.notifications?.error?.(error.message); throw error; }
+    finally { this.treatWoundsDialogTask = null; }
+  }
+
+  async publishTreatWoundsOperation(record) {
+    if (!isActiveGmClient(globalThis.game) || !record.medicineRoll) return;
+    const content = buildTreatWoundsChatContent(record);
+    const parts = record.intent.sourceTokenUuid.split(".");
+    const speaker = { alias: record.sourceName, actor: record.sourceActorUuid.split(".").at(-1), scene: parts[1], token: parts.at(-1) };
+    const rolls = [record.medicineRoll, record.resultRoll].filter(Boolean).map(r => Roll.fromData(r.json));
+    const existing = game.messages.contents.find(m => m.author?.isGM && m.getFlag(MODULE_ID, "treatWoundsOperationId") === record.intent.operationId);
+    if (!isActiveGmClient(globalThis.game)) return;
+    if (existing) await existing.update({ content, rolls, speaker });
+    else await ChatMessage.create({ content, rolls, speaker, flags: { [MODULE_ID]: { treatWoundsOperationId: record.intent.operationId } } });
+  }
+
   async requestDisarmAction(action, payload) {
     if (!DISARM_ACTIONS.includes(action)) throw new Error("Неизвестное действие обезоруживания.");
     let result;
@@ -2295,6 +2350,12 @@ export class RebreyaMainModule {
         });
         return {lootId:result.lootId,messageId:result.messageId};
       }
+    });
+    for (const action of TREAT_WOUNDS_ACTIONS) this.privilegedMutationGateway.registerCommand(`treat-wounds.${action}`, {
+      validate: payload => isValidTreatWoundsPayload(action, payload),
+      authorize: (payload, context) => authorizeTreatWoundsSender(action, payload, context),
+      scheduling: action === "preview" ? QUERY_SCHEDULING : EXCLUSIVE_MUTATION_SCHEDULING,
+      execute: (payload, context) => this.treatWoundsService[action](payload, { sender: context.sender, assertAuthority: context.assertActiveGm })
     });
     for (const action of DISARM_ACTIONS) this.privilegedMutationGateway.registerCommand(`disarm.${action}`, {
       validate: payload => isValidDisarmPayload(action, payload),
@@ -3279,6 +3340,10 @@ export class RebreyaMainModule {
     if (!this.disarmChatHookRegistered) {
       this.disarmChatHookRegistered = true;
       Hooks.on("renderChatMessageHTML", (message, html) => bindDisarmChat(message, html, this));
+      Hooks.on("renderChatMessageHTML", (message, html) => bindTreatWoundsChat(message, html, this));
+      Hooks.on("updateWorldTime", worldTime => this.treatWoundsService.cleanupExpiredEffects(worldTime)
+        .catch(error => console.error(`${MODULE_ID} | Failed to expire treat wounds immunity.`, error)));
+      await this.treatWoundsService.cleanupExpiredEffects();
     }
     if (globalThis.game?.user?.isGM === true) {
       try {

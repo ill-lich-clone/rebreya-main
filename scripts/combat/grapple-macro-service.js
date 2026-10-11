@@ -7,6 +7,7 @@ export const GRAPPLE_MACRO_SOURCE_ID = "grapple-macro";
 export const MOVE_GRAPPLED_MACRO_SOURCE_ID = "move-grappled-macro";
 export const DISARM_MACRO_SOURCE_ID = "disarm-macro";
 export const TWISTED_MACRO_SOURCE_ID = "twisted-macro";
+export const TREAT_WOUNDS_MACRO_SOURCE_ID = "treat-wounds-macro";
 
 const MANAGED_FLAG = "managed";
 const SOURCE_ID_FLAG = "sourceId";
@@ -105,6 +106,11 @@ function buildManagedFolderData() {
   };
 }
 
+export function buildTreatWoundsMacroData(folderId, options = {}) {
+  return macroData({ name: "Перевязка ран", command: "await game.rebreyaMain?.treatWounds?.();",
+    sourceId: TREAT_WOUNDS_MACRO_SOURCE_ID, folderId, observerOwnershipLevel: options.observerOwnershipLevel });
+}
+
 function folderSnapshot(folder) {
   return {
     name: folder?.name,
@@ -174,6 +180,9 @@ export class GrappleMacroService {
         observerOwnershipLevel: this.#observerOwnershipLevel
       })),
       await this.#syncMacro(game, TWISTED_MACRO_SOURCE_ID, buildTwistedMacroData(folderId, {
+        observerOwnershipLevel: this.#observerOwnershipLevel
+      })),
+      await this.#syncMacro(game, TREAT_WOUNDS_MACRO_SOURCE_ID, buildTreatWoundsMacroData(folderId, {
         observerOwnershipLevel: this.#observerOwnershipLevel
       }))
     ];

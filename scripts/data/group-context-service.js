@@ -501,6 +501,13 @@ export class GroupContextService {
     });
   }
 
+  canManageGroupForUser(groupActorId, user) {
+    const groupActor = this.#requireGroupActor(groupActorId);
+    if (!user) return false;
+    return Boolean(user.isGM) || getGroupMemberActors(groupActor).some(actor => actor?.type === "character"
+      && (actor.testUserPermission?.(user, "OWNER") ?? Number(actor.ownership?.[user.id] ?? actor.ownership?.default ?? 0) >= 3));
+  }
+
   resolveForGroup(groupActorId) {
     const groupActor = this.#requireGroupActor(groupActorId);
     const registry = this.getRegistry();

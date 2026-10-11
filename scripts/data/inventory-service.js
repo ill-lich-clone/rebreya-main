@@ -1,3 +1,4 @@
+import { consumeTreatWoundsKitOnce } from "../application/treat-wounds-kit-consumption.js?v=1.4.372";
 import { ItemInstanceWorkflow, itemInstanceFingerprint } from "../application/item-instance-workflow.js?v=1.4.368-hero-performance";
 import { RUNTIME_ITEM_GRAPH_FLAG, captureRuntimeItemGraph, buildRuntimeGraphDocuments, materializeRuntimeItemGraph } from "./runtime-item-graph.js?v=1.4.267-native-schema";
 import { INVENTORY_GRAPH_TRANSFER_KIND, isInventoryGraphItem, transferInventoryGraph } from "../application/inventory-graph-transfer.js?v=1.4.280";
@@ -1905,6 +1906,9 @@ function buildSupplyItemData(resourceKey, quantity) {
 }
 
 export class InventoryService {
+  async consumeTreatWoundsKitOnce(payload, context) {
+    return consumeTreatWoundsKitOnce(this, payload, context, { adapter: this.moduleApi.treatWoundsAdapter });
+  }
   constructor(moduleApi) {
     this.moduleApi = moduleApi;
     this.lastGroupContextError = "";

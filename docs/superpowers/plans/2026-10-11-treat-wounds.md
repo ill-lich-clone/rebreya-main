@@ -99,3 +99,21 @@
 ## Execution handoff
 
 Рекомендуется исполнение `executing-plans` в текущей сессии: задачи связаны общим журналом, inventory owner и API; дробление между отдельными implementer-контекстами не нужно. Перед product-правками требуется согласование этого письменного плана согласно AGENTS.md и Superpowers.
+
+## Отчёт исполнения — 11 октября 2026
+
+Реализованы задачи1–4: managed макрос, личный/групповой whole-kit debit, authoritative procedure/recovery, уровни/ПО, четыре исхода в native chat, ActiveEffect3600 от начала, однократное продолжение, паспорт и README. Версия1.4.372; новый forwarder добавлен, старый1.4.371 сохранён как import-only compatibility entrypoint согласно существующим regression-тестам cached manifests. Runtime manifest использует только1.4.372.
+
+Проверки после исправлений независимого ревью:
+
+- `node --test tests/*.test.mjs`: **4530 passed, 0 failed, 1 skipped**, всего4531.
+- `node --check` для956 tracked JS/MJS: **0 ошибок**.
+- `Get-Content -Raw -Encoding UTF8 ... | ConvertFrom-Json` для55 tracked JSON: **0 ошибок**.
+- `git diff --check`, `git diff --cached --check`: чисто.
+- Native Foundry13.351 DialogV2: primary диалог отрисован с групповым комплектом/tiers/customDC, Cancel возвращаетfalse; continuation диалог показывает+50мин и сохранённые19HP, Confirm возвращаетtrue, горизонтального overflow нет. Скриншот просмотрен. Mutations настоящих Actors/Items, player↔GM sockets и world reload не были live-проверены: браузер находится на `/join`, авторизованная сессия отсутствует. Installed dnd5e5.2.5 API и schema проверены по source, не заявляются как полноценный live-pass.
+
+Независимое ревью GPT-6 Astra: три Important runtime findings исправлены через RED→GREEN — native сброс успешных death saves при0→positive HP; effectiveMax/tempmax; смерть пациента во время pending recovery. Замечание о visible tier/cooldown отнесено к Important из-за неясного бонуса при customDC и исправлено отдельным RED→GREEN: карточка показывает ступень/бонус и remaining world-time interval на момент публикации. Отложенных code findings нет. Declined-to-judge: authenticated live document behavior; ограничение сохранено выше.
+
+Принятые решения (ledger): чистая текущая `lich_branch` вместо новой ветки/checkout по инструкции пользователя; PowerShell ledger вместо Bash-скриптов bookkeeping на Windows; native проверка configure:false после player DialogV2, чтобы authoritative queue не ждала GM-диалог (native modifiers сохранены); continuation имеет отдельный receipt в существующем журнале, сохраняя bounded retention/replay; tier/cooldown omission исправлено как влияющее на понимание результата. Цена при неверной интерпретации: первый вариант не даёт изоляции от будущих чужих изменений; PowerShell требует дисциплины ведения ledger; configure:false не даёт второго интерактивного редактирования native roll; bounded journal ограничивает очень старые recovery; remaining interval привязан к моменту карточки, а не обновляется каждую секунду. Эти ограничения не меняют утверждённые формулы, quantity или время процедуры.
+
+Спецификация: `docs/superpowers/specs/2026-10-11-treat-wounds-design.md`. План/отчёт: этот файл. Commit/push выполняются только в `lich_branch`; никаких merge в main или force push.

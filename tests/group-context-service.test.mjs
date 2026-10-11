@@ -155,6 +155,17 @@ function assertGroupContextShape(context, group, { initializedAt, memberActorIds
   assert.equal(typeof context.canManage, "boolean");
 }
 
+test("group access uses explicit requesting player even on a GM execution client", () => {
+  const member=createCharacter("healer",{ownerUserId:"player-1"}), group=createGroup("group",[{actor:member}]);
+  const fixture=installGameFixture({actors:[member,group],user:{id:"gm",isGM:true}});
+  try {
+    const service=createActiveGroupContextService();
+    assert.equal(service.canManageGroupForUser("group",{id:"player-1"}),true);
+    assert.equal(service.canManageGroupForUser("group",{id:"outsider"}),false);
+    assert.equal(service.canManageGroupForUser("group",{id:"gm",isGM:true}),true);
+  } finally {fixture.restore();}
+});
+
 test("normalizeGroupRegistry preserves active group and per-group state", () => {
   const registry = normalizeGroupRegistry({
     version: 1,
