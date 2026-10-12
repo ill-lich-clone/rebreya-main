@@ -59,13 +59,17 @@
 - Produces: `InventoryService.updatePartyDefaults(patch = {},
   { groupActorId = "", guard } = {})` и такой же optional group scope у
   `RebreyaMainModule.updatePartyDefaults(patch = {}, { groupActorId = "" } = {})`.
+- Produces: `InventoryService.getPartySnapshot({actor=null,groupActorId=""}={})`
+  принимает optional explicit scope; UI читает флажки показанного inventory ID,
+  сохраняя прежний вызов без аргументов. Это закрывает смену active group после
+  async inventory snapshot load.
 - Produces: `GROUP_PARTY_DEFAULTS_UPDATE_COMMAND = "group.party.defaults.update"`
   и `isValidGroupPartyDefaultsUpdatePayload(payload)`: exact `{ groupActorId,
   patch }`, trimmed non-empty group ID, plain patch только с прежними полями.
   Coverage в socket payload — booleans; public wrapper сохраняет прежнее
   приведение `=== true`. `defaultCapMod` сохраняет прежнюю нормализацию.
 
-- [ ] **Step 1: Write regression tests before product changes.**
+- [x] **Step 1: Write regression tests before product changes.**
   Использовать существующие fixtures и реальные сервисы; добавить assertions:
   A=`true/false`, B=`false/true`, member norms=`food 2 / water 3`, supplies=`10/10`.
   После двух дней A имеет `food 10 / water 4`, B — `food 6 / water 10`.
@@ -76,16 +80,16 @@
   имеют `false/false`; unrelated group state и `defaultCapMod` сохраняются.
   API/UI тесты проверяют captured ID, inactive-GM socket route, отказ чужому
   владельцу/неверной группе и отсутствие мировых coverage writes.
-- [ ] **Step 2: Run RED.**
+- [x] **Step 2: Run RED.**
   `node --test tests/group-context-service.test.mjs tests/group-inventory-migration.test.mjs tests/group-command-dispatch.test.mjs tests/inventory-app-context.test.mjs`.
   Expected: новые проверки падают на отсутствии scoped coverage/migration/route;
   исключить ошибки fixture/import из доказательства RED.
-- [ ] **Step 3: Implement schema and initial migration.**
+- [x] **Step 3: Implement schema and initial migration.**
   Нормализовать optional booleans, задать fresh defaults; migration использует
   fresh-read repository queue и не трогает прочие домены. В `ready` active GM
   запускает migration после prune зарегистрированных групп и до initialize.
   Coverage берётся из `PARTY_STATE` только для первоначального заполнения.
-- [ ] **Step 4: Implement scoped reading and service mutation.**
+- [x] **Step 4: Implement scoped reading and service mutation.**
   Один private resolver `#getSupplyCoverage(state, inventoryActor)` используется
   `getPartySnapshot()` и `#buildSupplyConsumptionSnapshot()`. Для native группы
   читать её `supplyCoverage`; до первоначальной migration отсутствующие поля
@@ -93,25 +97,25 @@
   group. Legacy режим сохраняет прежний путь. Не менять формулы списания/
   энергии; `defaultCapMod` сохраняет прежний world scope и числовые правила.
   Явный group ID валидировать, не подменять текущей группой после `await`.
-- [ ] **Step 5: Connect gateway, API and UI.**
+- [x] **Step 5: Connect gateway, API and UI.**
   Зарегистрировать command с keyed scheduling по `groupKey(groupActorId)`,
   существующей `#canSenderManageGroup`, проверкой зарегистрированной группы,
   `assertActiveGm` и одним scoped inventory refresh. Native public wrapper
   использует gateway; legacy wrapper сохраняет прежний route. Обработчик
   `party-default-field` захватывает `inventoryActorId` и передаёт optional scope.
-- [ ] **Step 6: Run GREEN and affected repository checks.**
+- [x] **Step 6: Run GREEN and affected repository checks.**
   Повторить RED-команду и `node --test tests/group-state-repository.test.mjs`.
   Expected: все проверки проходят; старые coverage-тесты остаются и проверяют
   прежние quantity/energy assertions, не заменяются более слабыми тестами.
-- [ ] **Step 7: Document and version.**
+- [x] **Step 7: Document and version.**
   Обновить паспорт сигнатур/schema/flow/tests и README API; синхронно bump
   manifest и forwarder до `1.4.373`, проверить runtime references.
-- [ ] **Step 8: Validate once before commit.**
+- [x] **Step 8: Validate once before commit.**
   `node --test tests/*.test.mjs`; `git diff --check`; `node --check` для каждого
   tracked JS/MJS; `ConvertFrom-Json` для каждого tracked JSON. Expected:
   ноль failed, syntax/JSON/diff errors. Если доступен Foundry, проверить две
   группы, persistence/reload и console; недоступную live-проверку указать.
-- [ ] **Step 9: Review, commit and push.**
+- [x] **Step 9: Review, commit and push.**
   Сверить полный diff со spec, выполнить independent review через Gemini
   (если CLI доступен; иначе доступный review инструмент/локальная сверка),
   исправить существенные замечания с RED/GREEN. Проверить remote и отсутствие
@@ -121,6 +125,6 @@
 
 ## Execution handoff
 
-Рекомендуется native/inline: одна связанная правка с существующими владельцами,
-без отдельных implementer subagents. До выполнения требуется согласование
-этого плана пользователем. Спецификация согласована 2026-10-12.
+План и native/inline execution согласованы пользователем 2026-10-12.
+Одна связанная правка с существующими владельцами выполняется без отдельных
+implementer subagents. Спецификация согласована 2026-10-12.

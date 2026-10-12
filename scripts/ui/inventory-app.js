@@ -4940,7 +4940,9 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
         groupContextError = groupContextError || error.message || "Не удалось определить группу Rebreya.";
       }
-      const partySnapshot = await this.moduleApi.getPartySnapshot();
+      const partySnapshot = await this.moduleApi.getPartySnapshot({
+        groupActorId: inventorySnapshot.actor?.type === "group" ? inventorySnapshot.actor.id : ""
+      });
       this.reputationActorIds = (partySnapshot.members ?? []).map(member => member.actorId).filter(Boolean);
       const reputationHtml = this.activeTab === "party" && typeof this.moduleApi.getReputation === "function"
         ? await this.reputationPanel.renderContent(this.reputationActorIds.map(id => game.actors?.get?.(id)).filter(Boolean)) : "";
@@ -8381,11 +8383,12 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         }
 
         try {
+          const groupActorId = this.inventorySnapshotCache?.actor?.type === "group" ? this.inventoryActorId : "";
           await this.moduleApi.updatePartyDefaults({
             [fieldName]: event.currentTarget.type === "checkbox"
               ? event.currentTarget.checked
               : (event.currentTarget.value ?? "")
-          });
+          }, { groupActorId });
         }
         catch (error) {
           console.error(`${MODULE_ID} | Failed to update party default field '${fieldName}'.`, error);

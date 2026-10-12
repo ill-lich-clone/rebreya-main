@@ -38,7 +38,7 @@ test("warehouse profile preserves physical load and accounts for nested, metric 
 import assert from "node:assert/strict";
 
 import { DOWNTIME_ITEM_TYPE, MODULE_ID } from "../scripts/constants.js";
-import { GROUP_CONTEXT_ERRORS } from "../scripts/data/group-context-service.js";
+import { GROUP_CONTEXT_ERRORS, GroupContextService } from "../scripts/data/group-context-service.js";
 import { WorldMutationCoordinator } from "../scripts/application/world-mutation-coordinator.js";
 import {
   INVENTORY_CURRENCY_CONVERT_COMMAND,
@@ -324,6 +324,128 @@ function installInventoryFixture({
     }
   };
 }
+
+function installSupplyCoverageFixture() {
+  const actors = [];
+  const groupsById = {};
+  const groups = ["a", "b"].map((id) => {
+    const member = createActor({ id: `member-${id}`, type: "character", abilities: { con: { mod: 0 } } });
+    const items = ["food", "water"].map((resourceKey) => createItem({
+      id: `${resourceKey}-${id}`, quantity: 10,
+      flags: { [MODULE_ID]: { resourceKey } }
+    }));
+    const group = createActor({ id, type: "group", isOwner: true, items,
+      members: [{ actor: member }], flags: { [MODULE_ID]: { managedPartyGroup: true } } });
+    actors.push(group, member);
+    groupsById[id] = {
+      supplyCoverage: { coverFoodExpenses: id === "a", coverWaterExpenses: id === "b" },
+      memberStateByActorId: { [member.id]: { foodPerDay: 2, waterGalPerDay: 3, energyCurrent: 3 } }
+    };
+    return group;
+  });
+  const fixture = installInventoryFixture({ actors,
+    partyState: { defaultCapMod: 7, coverFoodExpenses: false, coverWaterExpenses: false, members: {} },
+    groupState: { activeGroupActorId: "b", groupsById }
+  });
+  const coordinator = new WorldMutationCoordinator();
+  const gateway = { commit: (key, operation) => coordinator.run(key, () => operation({ assertActiveGm() {} })) };
+  const groupContextService = new GroupContextService({ mutationGateway: gateway });
+  const moduleApi = { groupContextService, getModel: async () => ({
+    materials: [], materialById: new Map(), materialByGoodId: new Map(), gear: [], gearById: new Map()
+  }) };
+  return { ...fixture, fixture, groups, gateway, moduleApi, groupContextService, service: new InventoryService(moduleApi) };
+}
+
+test("native groups persist independent food and water coverage without world coverage writes", async () => {
+  const fixture = installSupplyCoverageFixture();
+  try {
+    const a = await fixture.service.getPartySnapshot({ actor: fixture.groups[0] });
+    const b = await fixture.service.getPartySnapshot({ actor: fixture.groups[1] });
+    assert.equal((await fixture.service.getPartySnapshot({ groupActorId: "a" })).coverFoodExpenses, true);
+    assert.equal((await fixture.service.getInventorySnapshot({ groupActorId: "a" })).actor.type, "group");
+    assert.deepEqual([a.coverFoodExpenses, a.coverWaterExpenses, b.coverFoodExpenses, b.coverWaterExpenses],
+      [true, false, false, true]);
+    await fixture.service.updatePartyDefaults({ coverFoodExpenses: false }, { groupActorId: "a" });
+    await fixture.service.updatePartyDefaults({ coverWaterExpenses: false, defaultCapMod: "8.5" }, { groupActorId: "b" });
+    const reloaded = new InventoryService(fixture.moduleApi);
+    assert.equal((await reloaded.getPartySnapshot({ actor: fixture.groups[0] })).coverFoodExpenses, false);
+    assert.equal((await reloaded.getPartySnapshot({ actor: fixture.groups[1] })).coverWaterExpenses, false);
+    assert.deepEqual(fixture.fixture.groupState.groupsById.a.supplyCoverage,
+      { coverFoodExpenses: false, coverWaterExpenses: false });
+    assert.equal(fixture.fixture.state.coverFoodExpenses, false);
+    assert.equal(fixture.fixture.state.coverWaterExpenses, false);
+    assert.equal(fixture.fixture.state.defaultCapMod, 8.5);
+  }
+  finally { fixture.restore(); }
+});
+
+test("captured groups spend only their uncovered supplies over multiple days", async () => {
+  const fixture = installSupplyCoverageFixture();
+  try {
+    await fixture.service.consumeSuppliesDays(2, { groupId: "a", applyEnergy: false });
+    await fixture.service.consumeSuppliesDays(2, { groupId: "b", applyEnergy: false });
+    assert.deepEqual(fixture.groups.map((group) => group.items.contents.map((item) => item.system.quantity)),
+      [[10, 4], [6, 10]]);
+  }
+  finally { fixture.restore(); }
+});
+
+test("covered food preserves quantities while uncovered water shortage still costs energy", async () => {
+  const fixture = installSupplyCoverageFixture();
+  try {
+    fixture.groups[0].items.contents[1].system.quantity = 1;
+    const result = await fixture.service.consumeSuppliesDays(2, { groupId: "a" });
+    assert.equal(result.supplies[0].energyUpdates[0].hungry, true);
+    assert.equal(result.supplies[1].energyUpdates[0].energyCurrent, 1);
+    assert.equal(fixture.groups[0].items.contents[0].system.quantity, 10);
+    assert.equal(fixture.groups[0].items.get("water-a"), null);
+    assert.equal(fixture.fixture.groupState.groupsById.a.memberStateByActorId["member-a"].energyCurrent, 1);
+    assert.equal(fixture.fixture.groupState.groupsById.b.memberStateByActorId["member-b"].energyCurrent, 3);
+  }
+  finally { fixture.restore(); }
+});
+
+test("party defaults capture their group before waiting and reject unknown explicit groups", async () => {
+  const fixture = installSupplyCoverageFixture();
+  try {
+    fixture.fixture.groupState.activeGroupActorId = "a";
+    let release;
+    const pending = new Promise((resolve) => { release = resolve; });
+    const commit = fixture.gateway.commit;
+    fixture.gateway.commit = async (...args) => { await pending; return commit(...args); };
+    const update = fixture.service.updatePartyDefaults({ coverWaterExpenses: true });
+    fixture.fixture.groupState.activeGroupActorId = "b";
+    release();
+    await update;
+    assert.equal(fixture.fixture.groupState.groupsById.a.supplyCoverage.coverWaterExpenses, true);
+    assert.equal(fixture.fixture.state.coverWaterExpenses, false);
+    await assert.rejects(fixture.service.updatePartyDefaults({ coverFoodExpenses: true }, { groupActorId: "missing" }));
+    assert.equal(fixture.fixture.state.coverFoodExpenses, false);
+  }
+  finally { fixture.restore(); }
+});
+
+test("explicit unregistered group defaults never fall back to world capacity writes", async () => {
+  const fixture = installSupplyCoverageFixture();
+  try {
+    delete fixture.fixture.groupState.groupsById.a;
+    await assert.rejects(fixture.service.updatePartyDefaults({ defaultCapMod: 9 }, { groupActorId: "a" }));
+    assert.equal(fixture.fixture.state.defaultCapMod, 7);
+  }
+  finally { fixture.restore(); }
+});
+
+test("legacy party defaults keep the original world coverage and capacity behavior", async () => {
+  const fixture = installInventoryFixture();
+  try {
+    const service = new InventoryService({});
+    await service.updatePartyDefaults({ coverFoodExpenses: true, coverWaterExpenses: false, defaultCapMod: "4.5" });
+    assert.equal(fixture.state.coverFoodExpenses, true);
+    assert.equal(fixture.state.coverWaterExpenses, false);
+    assert.equal(fixture.state.defaultCapMod, 4.5);
+  }
+  finally { fixture.restore(); }
+});
 
 function ingressRule({
   id = "broken-weapons",

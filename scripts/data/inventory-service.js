@@ -20,9 +20,10 @@ import {
   GROUP_CONTEXT_ERRORS,
   getGroupMemberActors,
   isManagedPartyGroup,
+  normalizeGroupSupplyCoverage,
   normalizeGroupTransportState,
   resolveGroupMemberActor
-} from "./group-context-service.js";
+} from "./group-context-service.js?v=1.4.373";
 import { DurableMutationJournal } from "../application/durable-mutation-journal.js?v=1.4.249-item-instances";
 import { WorldMutationCoordinator } from "../application/world-mutation-coordinator.js";
 import { finiteNumber as toNumber } from "../shared/foundry-values.js";
@@ -1996,6 +1997,14 @@ export class InventoryService {
     return context?.groupState && typeof context.groupState === "object"
       ? context.groupState
       : null;
+  }
+
+  #getSupplyCoverage(state, inventoryActor) {
+    const scoped = this.#getNativeGroupState(inventoryActor)?.supplyCoverage;
+    return {
+      coverFoodExpenses: scoped?.coverFoodExpenses ?? state.coverFoodExpenses,
+      coverWaterExpenses: scoped?.coverWaterExpenses ?? state.coverWaterExpenses
+    };
   }
 
   canManagePartyInventory(actor = null) {
@@ -4017,9 +4026,9 @@ export class InventoryService {
     return foundry.utils.deepClone(result);
   }
 
-  async #writeState(mutator, { guard } = {}) {
+  async #writeState(mutator, { guard, inventoryActor = null } = {}) {
     guard?.();
-    if (!this.canManagePartyInventory()) {
+    if (!this.canManagePartyInventory(inventoryActor)) {
       throw new Error("Партийным инвентарём управляют владельцы склада.");
     }
 
@@ -6548,9 +6557,13 @@ export class InventoryService {
     return true;
   }
 
-  async getPartySnapshot({ actor = null } = {}) {
+  async getPartySnapshot({ actor = null, groupActorId = "" } = {}) {
     const state = this.#getState();
-    const inventoryActor = actor ?? await this.getInventoryActor({ create: false });
+    const requestedGroupId = cleanId(groupActorId);
+    const inventoryActor = actor ?? (requestedGroupId
+      ? this.#resolveSupplyConsumptionActor(requestedGroupId)
+      : await this.getInventoryActor({ create: false }));
+    const coverage = this.#getSupplyCoverage(state, inventoryActor);
     const partyWeightSnapshot = buildActorInventoryWeightSnapshot(inventoryActor);
     const partyInventoryWeight = partyWeightSnapshot.weightLb;
     const model = inventoryActor ? await this.moduleApi.getModel() : null;
@@ -6645,8 +6658,8 @@ export class InventoryService {
     const totalCapacityLb = roundNumber(partyMembers.reduce((sum, member) => sum + member.capacityLb, 0), 2);
     const foodRequiredPerDay = roundNumber(partyMembers.reduce((sum, member) => sum + member.foodPerDay, 0), 2);
     const waterRequiredPerDay = roundNumber(partyMembers.reduce((sum, member) => sum + member.waterGalPerDay, 0), 2);
-    const totalFoodPerDay = state.coverFoodExpenses ? 0 : foodRequiredPerDay;
-    const totalWaterGalPerDay = state.coverWaterExpenses ? 0 : waterRequiredPerDay;
+    const totalFoodPerDay = coverage.coverFoodExpenses ? 0 : foodRequiredPerDay;
+    const totalWaterGalPerDay = coverage.coverWaterExpenses ? 0 : waterRequiredPerDay;
     const totalEnergyCurrent = roundNumber(partyMembers.reduce((sum, member) => sum + member.energyCurrent, 0), 0);
     const totalEnergyMax = roundNumber(partyMembers.reduce((sum, member) => sum + member.energyMax, 0), 0);
     const availableActors = membershipManagedByNativeGroup
@@ -6681,8 +6694,7 @@ export class InventoryService {
 
     return {
       defaultCapMod: state.defaultCapMod,
-      coverFoodExpenses: state.coverFoodExpenses,
-      coverWaterExpenses: state.coverWaterExpenses,
+      ...coverage,
       members: partyMembers,
       memberCount: partyMembers.length,
       emptyMembers: partyMembers.length === 0,
@@ -6905,6 +6917,7 @@ export class InventoryService {
     return {
       actor: {
         id: actor.id,
+        type: actor.type,
         name: actor.name,
         img: actor.img,
         currencyLabel: currency.label,
@@ -7950,21 +7963,49 @@ export class InventoryService {
     });
   }
 
-  async updatePartyDefaults(patch = {}) {
-    return this.#writeState((state) => {
+  async updatePartyDefaults(patch = {}, { groupActorId = "", guard } = {}) {
+    const requestedGroupId = cleanId(groupActorId);
+    const groupActor = requestedGroupId
+      ? this.#resolveSupplyConsumptionActor(requestedGroupId)
+      : this.#getGroupInventoryActor();
+    if (groupActor && !this.moduleApi.groupContextService.getRegistry().groupsById[groupActor.id]) {
+      throw new Error(GROUP_CONTEXT_ERRORS.GROUP_NOT_FOUND);
+    }
+    guard?.();
+    this.#assertCanManagePartyInventory(groupActor);
+    const writeLegacy = () => this.#writeState((state) => {
       if (patch.defaultCapMod !== undefined) {
         const nextValue = Math.max(1, roundNumber(toNumber(patch.defaultCapMod, state.defaultCapMod), 2));
         state.defaultCapMod = nextValue;
       }
-      if (patch.coverFoodExpenses !== undefined) {
+      if (!groupActor && patch.coverFoodExpenses !== undefined) {
         state.coverFoodExpenses = patch.coverFoodExpenses === true;
       }
-      if (patch.coverWaterExpenses !== undefined) {
+      if (!groupActor && patch.coverWaterExpenses !== undefined) {
         state.coverWaterExpenses = patch.coverWaterExpenses === true;
       }
-
       return foundry.utils.deepClone(state);
-    });
+    }, { guard, inventoryActor: groupActor });
+    if (!groupActor) return writeLegacy();
+    if (patch.coverFoodExpenses !== undefined || patch.coverWaterExpenses !== undefined) {
+      const legacyState = this.#getState();
+      await this.moduleApi.groupContextService.mutateGroupState(groupActor.id, (groupState) => {
+        guard?.();
+        this.#resolveSupplyConsumptionActor(groupActor.id);
+        groupState.supplyCoverage = {
+          coverFoodExpenses: legacyState.coverFoodExpenses,
+          coverWaterExpenses: legacyState.coverWaterExpenses,
+          ...normalizeGroupSupplyCoverage(groupState.supplyCoverage)
+        };
+        for (const key of ["coverFoodExpenses", "coverWaterExpenses"]) {
+          if (patch[key] !== undefined) groupState.supplyCoverage[key] = patch[key] === true;
+        }
+      });
+      guard?.();
+    }
+    if (patch.defaultCapMod !== undefined) await writeLegacy();
+    const state = this.#getState();
+    return { ...state, ...this.#getSupplyCoverage(state, groupActor) };
   }
 
   async updatePartyMember(actorId, patch = {}) {
@@ -8140,6 +8181,7 @@ export class InventoryService {
   }
 
   #buildSupplyConsumptionSnapshot(state, inventoryActor) {
+    const coverage = this.#getSupplyCoverage(state, inventoryActor);
     const members = this.#buildPartyMemberRows(state, inventoryActor)
       .map(({ actorId, actor: actorDocument, memberState }) => {
         const normalizedMember = this.#normalizeMemberState(memberState);
@@ -8160,12 +8202,11 @@ export class InventoryService {
     const waterRequiredPerDay = roundNumber(members.reduce((sum, member) => sum + member.waterGalPerDay, 0), 2);
 
     return {
-      coverFoodExpenses: state.coverFoodExpenses === true,
-      coverWaterExpenses: state.coverWaterExpenses === true,
+      ...coverage,
       members,
       memberCount: members.length,
-      totalFoodPerDay: state.coverFoodExpenses ? 0 : foodRequiredPerDay,
-      totalWaterGalPerDay: state.coverWaterExpenses ? 0 : waterRequiredPerDay
+      totalFoodPerDay: coverage.coverFoodExpenses ? 0 : foodRequiredPerDay,
+      totalWaterGalPerDay: coverage.coverWaterExpenses ? 0 : waterRequiredPerDay
     };
   }
 

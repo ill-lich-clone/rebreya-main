@@ -315,6 +315,56 @@ function commandRequest(command, senderId, payload, requestId = `${command}-requ
   };
 }
 
+test("group party defaults command validates exact scope and boolean coverage", () => {
+  const validate = groupRegistryMutationCommands.isValidGroupPartyDefaultsUpdatePayload;
+  assert.equal(typeof validate, "function");
+  assert.equal(validate({ groupActorId: "group-a", patch: { coverFoodExpenses: false } }), true);
+  for (const payload of [
+    { groupActorId: " group-a", patch: {} },
+    { groupActorId: "group-a", patch: { coverWaterExpenses: "true" } },
+    { groupActorId: "group-a", patch: { members: {} } },
+    { groupActorId: "group-a", patch: {}, extra: true }
+  ]) assert.equal(validate(payload), false);
+});
+
+test("group party defaults command updates the authorized group and rejects other owners", async () => {
+  const fixture = installFixture({ includeGroupB: true });
+  try {
+    const api = new RebreyaMainModule();
+    await api.handleSocketMessage(commandRequest("group.party.defaults.update", fixture.users.playerB.id,
+      { groupActorId: "group-b", patch: { coverFoodExpenses: true, coverWaterExpenses: false } }, "coverage-b"));
+    await flushCommands();
+    assert.deepEqual(fixture.store[SETTINGS_KEYS.GROUP_STATE].groupsById["group-b"].supplyCoverage,
+      { coverFoodExpenses: true, coverWaterExpenses: false });
+    const writes = fixture.writes.length;
+    await api.handleSocketMessage(commandRequest("group.party.defaults.update", fixture.users.playerA.id,
+      { groupActorId: "group-b", patch: { coverFoodExpenses: false } }, "forged-coverage"));
+    await flushCommands();
+    assert.equal(fixture.writes.length, writes);
+    assert.equal(fixture.emitted.find(({ message }) => message.requestId === "forged-coverage"
+      && message.type === COMMAND_RESULT_TYPE).message.ok, false);
+    assert.equal(fixture.writes.some(({ key }) => key === SETTINGS_KEYS.PARTY_STATE), false);
+  }
+  finally { fixture.restore(); }
+});
+
+test("inactive GM party defaults API captures and sends the explicit group through gateway", async () => {
+  const fixture = installFixture({ currentUserId: "gm-b", includeGroupB: true });
+  try {
+    const api = new RebreyaMainModule();
+    const calls = [];
+    api.socketCommandBus.request = async (command, payload) => {
+      calls.push({ command, payload });
+      return { coverFoodExpenses: true };
+    };
+    await api.updatePartyDefaults({ coverFoodExpenses: true }, { groupActorId: "group-b" });
+    assert.deepEqual(calls, [{ command: "group.party.defaults.update",
+      payload: { groupActorId: "group-b", patch: { coverFoodExpenses: true } } }]);
+    assert.equal(fixture.writes.length, 0);
+  }
+  finally { fixture.restore(); }
+});
+
 async function flushCommands() {
   await new Promise((resolve) => setImmediate(resolve));
   await new Promise((resolve) => setImmediate(resolve));
@@ -378,6 +428,12 @@ test("inventory and storage socket commands declare scoped scheduling policies",
       payload,
       {}
     );
+    assert.deepEqual(resolve("group.party.defaults.update", {
+      groupActorId: "group-a", patch: { coverFoodExpenses: true }
+    }).keys, ["group:group-a"]);
+    assert.deepEqual(resolve("group.party.defaults.update", {
+      groupActorId: "group-a", patch: { defaultCapMod: "4.5" }
+    }).keys, ["group:group-a", "setting:partyState"]);
     assert.deepEqual(resolve("inventory.take", {
       inventoryActorId: "group-a",
       targetActorId: "character-a"

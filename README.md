@@ -338,6 +338,14 @@ Lootgen: в настройках генерации доступна «Доля 
 
 - `getGroupRegistry`, `getGroupContext`, `registerPartyGroup`, `setActivePartyGroup`, `mergeLegacyInventoryIntoGroup`.
 - `getInventorySnapshot`, `getInventoryIngressRuleState`, `getPartySnapshot`, `addPartyMember`, `removePartyMember`, `updatePartyDefaults`, `updatePartyMember`, `updatePartyMemberTool`.
+  `updatePartyDefaults(patch, { groupActorId } = {})` сохраняет `coverFoodExpenses`
+  и `coverWaterExpenses` отдельно в выбранной dnd5e-группе; без options группа
+  захватывается при входе в вызов. Оба флажка используются в snapshot и при
+  календарном списании припасов. Существующие группы однократно наследуют старые
+  мировые значения, новые начинают с выключенных флажков. `defaultCapMod`
+  сохраняет прежний мировой scope; legacy-инвентарь сохраняет прежний API.
+  `getInventorySnapshot().actor.type` позволяет отличить native group от legacy;
+  `getPartySnapshot({ groupActorId })` читает флажки и участников указанной группы.
 
   `getPartySnapshot()` и его `members[]` содержат отдельный `storage`:
   `{ baseCapacityLb, physicalWeightLb, containerCapacityLb, containerUsedLb, weightLb, capacityLb, freeCapacityLb, overloadLb }`.

@@ -6,10 +6,10 @@ const RELEASED_CACHE_VERSION = "1\\.4\\.96";
 
 test("current storage pile release advances the module cache version", async () => {
   const manifest = JSON.parse(await readFile(new URL("../module.json", import.meta.url), "utf8"));
-  assert.equal(manifest.version, "1.4.372");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.372.js"]);
+  assert.equal(manifest.version, "1.4.373");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.373.js"]);
   assert.equal(
-    (await readFile(new URL("../scripts/main-1.4.372.js", import.meta.url), "utf8")).trim(),
+    (await readFile(new URL("../scripts/main-1.4.373.js", import.meta.url), "utf8")).trim(),
     'import "./main.js";'
   );
 });
@@ -101,8 +101,8 @@ test("module manifest loads an unpinned canonical entrypoint for page-refresh up
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const [entrypoint] = manifest.esmodules;
 
-  assert.equal(manifest.version, "1.4.372");
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.372.js"]);
+  assert.equal(manifest.version, "1.4.373");
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.373.js"]);
   assert.doesNotMatch(entrypoint, /[?#]/u);
 
   const entrypointSource = await readFile(new URL(entrypoint, manifestUrl), "utf8");
@@ -320,7 +320,7 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
   for (const importPath of [
     "data/trader-service.js?v=1.4.327",
     "data/downtime-service.js?v=1.4.96-craft-calendar",
-    "data/inventory-service.js?v=1.4.372",
+    "data/inventory-service.js?v=1.4.373",
     "data/inventory-ingress-descriptor.js?v=1.4.268",
     "data/durability-service.js?v=1.4.154-corpse-storage-broken-name",
     "data/corpse-storage-materializer.js?v=1.4.360",
@@ -407,7 +407,7 @@ test("module keeps recent published entrypoint URLs as canonical compatibility f
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
 
-  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.372.js"]);
+  assert.deepEqual(manifest.esmodules, ["scripts/main-1.4.373.js"]);
 
   for (const fileName of ["main-1.4.98.js", "main-1.4.99.js", "main-1.4.100.js"]) {
     const forwarderSource = await readFile(new URL(`../scripts/${fileName}`, import.meta.url), "utf8");

@@ -563,6 +563,24 @@ test("InventoryApp _prepareContext never creates Foundry documents while renderi
   }
 });
 
+test("InventoryApp reads supply coverage for the displayed inventory instead of changed active context", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const api = createModuleApi({ getGroupContext: () => null });
+  const getInventorySnapshot = api.getInventorySnapshot.bind(api);
+  api.getInventorySnapshot = async () => ({ ...await getInventorySnapshot(),
+    actor: { id: "shown-group", type: "group" }, hasActor: true });
+  const calls = [];
+  const getPartySnapshot = api.getPartySnapshot.bind(api);
+  api.getPartySnapshot = async (options) => { calls.push(options); return getPartySnapshot(); };
+  const { InventoryApp } = await import("../scripts/ui/inventory-app.js");
+  try {
+    const context = await new InventoryApp(api)._prepareContext();
+    assert.equal(context.hasError, false);
+    assert.deepEqual(calls, [{ groupActorId: "shown-group" }]);
+  }
+  finally { restoreFoundry(); }
+});
+
 test("InventoryApp projects three searches from one cached folder model without world writes", async () => {
   const restoreFoundry = installFoundryApplicationStub();
   const dom = installMinimalDom();
@@ -3742,6 +3760,34 @@ test("InventoryApp dismantle prompt starts at the canonical whole-output minimum
     restoreFoundry();
   }
 });
+
+for (const [actorType, expectedGroupId] of [["group", "shown-group"], ["npc", ""]]) {
+test(`InventoryApp supply coverage captures the displayed ${actorType} scope`, async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const dom = installMinimalDom();
+  const previousUi = globalThis.ui;
+  const field = createFakeElement({ dataset: { field: "coverFoodExpenses" } });
+  field.type = "checkbox";
+  field.checked = true;
+  const root = createFakeElement();
+  root.querySelector = () => null;
+  root.querySelectorAll = (selector) => selector === "[data-action='party-default-field']" ? [field] : [];
+  globalThis.ui = { notifications: { error() {} }, windows: {} };
+  try {
+    const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?coverage=${Date.now()}`);
+    const api = createModuleApi({ getGroupContext: () => null });
+    const calls = [];
+    api.updatePartyDefaults = async (patch, options) => calls.push({ patch, options });
+    const app = new InventoryApp(api);
+    app.element = root;
+    app.inventorySnapshotCache = { actor: { id: "shown-group", type: actorType } };
+    await app._onRender({}, {});
+    await field.listeners.change[0]({ currentTarget: field });
+    assert.deepEqual(calls, [{ patch: { coverFoodExpenses: true }, options: { groupActorId: expectedGroupId } }]);
+  }
+  finally { globalThis.ui = previousUi; dom.restore(); restoreFoundry(); }
+});
+}
 
 test("InventoryApp numeric prompt prevents native form submission and applies the supply edit once", async () => {
   const restoreFoundry = installFoundryApplicationStub();

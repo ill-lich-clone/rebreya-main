@@ -12,6 +12,34 @@ import {
   normalizeGroupRegistry,
   resolvePlayerGroupActor
 } from "../scripts/data/group-context-service.js";
+
+test("group supply coverage migration preserves explicit false and is repeatable", async () => {
+  let writes = 0;
+  const fixture = installGameFixture({
+    registry: { activeGroupActorId: "a", groupsById: {
+      a: { traderState: { retained: true } },
+      b: { supplyCoverage: { coverFoodExpenses: false, coverWaterExpenses: true } }
+    } },
+    onSetSetting: () => { writes += 1; }
+  });
+  try {
+    const service = createActiveGroupContextService();
+    assert.equal(await service.initializeSupplyCoverage({ coverFoodExpenses: true, coverWaterExpenses: false }), 1);
+    assert.deepEqual(service.getRegistry().groupsById.a.supplyCoverage,
+      { coverFoodExpenses: true, coverWaterExpenses: false });
+    assert.deepEqual(service.getRegistry().groupsById.b.supplyCoverage,
+      { coverFoodExpenses: false, coverWaterExpenses: true });
+    assert.deepEqual(service.getRegistry().groupsById.a.traderState, { retained: true });
+    assert.equal(await service.initializeSupplyCoverage({ coverFoodExpenses: false, coverWaterExpenses: true }), 0);
+    assert.equal(writes, 1);
+    assert.deepEqual(buildDefaultGroupState("new").supplyCoverage,
+      { coverFoodExpenses: false, coverWaterExpenses: false });
+    assert.deepEqual(normalizeGroupState("old", {}).supplyCoverage, {});
+    assert.deepEqual(normalizeGroupState("partial", { supplyCoverage: { coverFoodExpenses: false } }).supplyCoverage,
+      { coverFoodExpenses: false });
+  }
+  finally { fixture.restore(); }
+});
 import { DowntimeService } from "../scripts/data/downtime-service.js";
 
 function nullProtoRecord(entries = []) {
@@ -207,6 +235,7 @@ test("normalizeGroupRegistry preserves active group and per-group state", () => 
     craftState: { queue: ["item-a"] },
     travelState: {},
     memberStateByActorId: {},
+    supplyCoverage: {},
     transportState: { activeTransportId: "" },
     questState: {
       unlocksByQuestId: {},
@@ -571,6 +600,7 @@ test("buildDefaultGroupState creates file-backed empty runtime state without leg
     craftState: {},
     travelState: {},
     memberStateByActorId: {},
+    supplyCoverage: { coverFoodExpenses: false, coverWaterExpenses: false },
     transportState: { activeTransportId: "" },
     questState: {
       unlocksByQuestId: {},

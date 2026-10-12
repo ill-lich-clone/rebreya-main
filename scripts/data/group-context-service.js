@@ -248,6 +248,7 @@ export function buildDefaultGroupState(groupActorId, { now = Date.now() } = {}) 
     craftState: {},
     travelState: {},
     memberStateByActorId: {},
+    supplyCoverage: { coverFoodExpenses: false, coverWaterExpenses: false },
     transportState: {
       activeTransportId: ""
     },
@@ -279,6 +280,13 @@ export function normalizeGroupTransportState(value = {}) {
   };
 }
 
+export function normalizeGroupSupplyCoverage(value = {}) {
+  const source = asObject(value);
+  return Object.fromEntries(["coverFoodExpenses", "coverWaterExpenses"]
+    .filter((key) => typeof source[key] === "boolean")
+    .map((key) => [key, source[key]]));
+}
+
 export function normalizeGroupState(groupActorId, value = {}) {
   const source = asObject(value);
   const downtimeState = asObject(source.downtimeState);
@@ -300,6 +308,7 @@ export function normalizeGroupState(groupActorId, value = {}) {
     craftState: clone(asObject(source.craftState)),
     travelState: clone(asObject(source.travelState)),
     memberStateByActorId: normalizeMemberStateByActorId(source.memberStateByActorId),
+    supplyCoverage: normalizeGroupSupplyCoverage(source.supplyCoverage),
     transportState: normalizeGroupTransportState(source.transportState),
     questState: normalizeQuestState(source.questState),
     downtimeState: {
@@ -415,6 +424,22 @@ export class GroupContextService {
 
   mutateGroupState(groupActorId, mutator, options) {
     return this.#groupStateRepository.mutateGroupState(groupActorId, mutator, options);
+  }
+
+  async initializeSupplyCoverage(legacyCoverage = {}) {
+    const fields = ["coverFoodExpenses", "coverWaterExpenses"];
+    const needsInitialization = (state) => fields.some((key) => typeof state.supplyCoverage?.[key] !== "boolean");
+    if (!Object.values(this.getRegistry().groupsById).some(needsInitialization)) return 0;
+    return this.#groupStateRepository.mutateRegistry((registry) => {
+      let initialized = 0;
+      for (const state of Object.values(registry.groupsById)) {
+        if (!needsInitialization(state)) continue;
+        state.supplyCoverage = normalizeGroupSupplyCoverage(state.supplyCoverage);
+        for (const key of fields) state.supplyCoverage[key] ??= legacyCoverage[key] === true;
+        initialized += 1;
+      }
+      return initialized;
+    });
   }
 
   getManagedGroupActors({ includeUnregistered = false } = {}) {

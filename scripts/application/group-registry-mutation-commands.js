@@ -1,6 +1,7 @@
 export const GROUP_REGISTRY_REGISTER_COMMAND = "group.registry.register";
 export const GROUP_REGISTRY_ACTIVATE_COMMAND = "group.registry.activate";
 export const GROUP_INVENTORY_MERGE_LEGACY_COMMAND = "group.inventory.merge-legacy";
+export const GROUP_PARTY_DEFAULTS_UPDATE_COMMAND = "group.party.defaults.update";
 
 function isPlainObject(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
@@ -27,4 +28,16 @@ export function isValidGroupRegistryActivatePayload(payload) {
 
 export function isValidGroupInventoryMergeLegacyPayload(payload) {
   return isExactGroupActorPayload(payload);
+}
+
+export function isValidGroupPartyDefaultsUpdatePayload(payload) {
+  if (!isPlainObject(payload) || Object.keys(payload).length !== 2
+    || !Object.prototype.hasOwnProperty.call(payload, "patch")
+    || !isExactGroupActorPayload({ groupActorId: payload.groupActorId })
+    || !isPlainObject(payload.patch)) return false;
+  return Object.entries(payload.patch).every(([key, value]) => {
+    if (key === "coverFoodExpenses" || key === "coverWaterExpenses") return typeof value === "boolean";
+    if (key === "defaultCapMod") return typeof value === "string" || (typeof value === "number" && Number.isFinite(value));
+    return false;
+  });
 }
