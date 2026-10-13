@@ -35,7 +35,7 @@ dnd5e movement hooks. Один синхронный фильтр удаляет 
 - Modify: `scripts/integrations/storage-token-hooks.js` — единственный runtime owner.
 - Modify: `tests/storage-token-hooks.test.mjs` — behavior tests через зарегистрированные callbacks.
 - Modify: `scripts/main.js` — integration import cache URL `?v=1.4.374`.
-- Modify: `module.json`, `tests/module-manifest.test.mjs`, `tests/main-composition-root.test.mjs` — release alignment.
+- Modify: `module.json`, `tests/module-manifest.test.mjs`, `tests/main-composition-root.test.mjs`, `tests/storage-main-registration.test.mjs` — release alignment.
 - Create: `scripts/main-1.4.374.js` с единственным `import "./main.js";`.
 - Modify: `docs/function-passport.md`, `README.md`; отчёт фиксирует spec/plan и проверки.
 
@@ -48,37 +48,37 @@ dnd5e movement hooks. Один синхронный фильтр удаляет 
 - Produces: `registerStorageTokenHooks()` регистрирует один и тот же callback для обоих hooks;
   остальные существующие registrations/return contract не меняются.
 
-- [ ] **Step 1: Write failing regression tests.**
+- [x] **Step 1: Write failing regression tests.**
   Через существующий harness получить callbacks обоих точных hook names;
   для player/GM и `preview:true/false` передать Set из chest, token-only storage,
   ground pile, обычного enemy NPC, character, vehicle, corpse и unmarked NPC
   из папки «Хранилища». Assert: остаются ровно последние пять, Set тот же,
   параметры не изменены и update/settings/API calls отсутствуют.
   Повторный callback и пустой Set безопасны, Set без storage не меняется.
-- [ ] **Step 2: Observe RED.**
+- [x] **Step 2: Observe RED.**
   `node --test tests/storage-token-hooks.test.mjs`.
   Expected: callback ещё не зарегистрирован / storage остаётся в Set;
   остальные baseline tests проходят (до edits: 33 focused passed, 0 failed).
-- [ ] **Step 3: Implement minimal hook integration.**
+- [x] **Step 3: Implement minimal hook integration.**
   Импортировать canonical classifier, объявить private void callback,
   удалять matching elements через `found.delete(token)` и зарегистрировать
   его в существующем `registerStorageTokenHooks()` для обоих public hooks.
   Не патчить Token/TokenLayer prototype и не менять Actor type/права.
-- [ ] **Step 4: Verify GREEN and existing interaction contracts.**
+- [x] **Step 4: Verify GREEN and existing interaction contracts.**
   `node --test tests/storage-token-hooks.test.mjs tests/storage-object-kind.test.mjs tests/storage-token-drop.test.mjs tests/storage-access.test.mjs`.
   Expected: 0 failed; прежние open/deposit/drop/distance/ownership checks сохранены.
-- [ ] **Step 5: Version and document.**
+- [x] **Step 5: Version and document.**
   Bump manifest/forwarder to `1.4.374`, обновить только изменённую integration
   cache URL и соответствующие release assertions. Записать hook names,
   classifier/data flow/exclusions/focused tests в паспорт и README.
-- [ ] **Step 6: Run complete required checks once.**
+- [x] **Step 6: Run complete required checks once.**
   `node --test tests/*.test.mjs`; `git diff --check`; `node --check` для каждого
   tracked JS/MJS и нового forwarder; JSON parsing всех tracked JSON через
   `Get-Content -Raw -Encoding UTF8 <file> | ConvertFrom-Json`.
   Expected: 0 test/syntax/JSON/diff failures; skips указывать отдельно.
   Live Foundry проверить только при доступной authenticated test world;
   иначе указать проверенную installed system version и границу live QA.
-- [ ] **Step 7: Review and finish.**
+- [x] **Step 7: Review and finish.**
   Передать компактный diff/spec Gemini для review без tool calls; если CLI
   недоступен/timeout — выполнить отдельный source/spec review и указать fallback.
   Проверить remote/чужие правки, meaningful diff и добавить только task files.
@@ -87,5 +87,5 @@ dnd5e movement hooks. Один синхронный фильтр удаляет 
 
 ## Execution handoff
 
-Рекомендуется native/inline: одна короткая интеграция, без implementer subagents.
-Спецификация согласована 2026-10-13; реализация начинается после review этого плана.
+Native/inline execution и план согласованы пользователем 2026-10-13.
+Одна короткая интеграция выполнена без implementer subagents.

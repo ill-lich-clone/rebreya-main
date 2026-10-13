@@ -6,8 +6,15 @@ import {
 } from "../data/storage-access.js?v=1.4.197-door-trigger-target";
 import { isStorageActor } from "../data/storage-service.js?v=1.4.370";
 import { isCorpseStorageTarget } from "../data/storage-corpse-target.js?v=1.4.360";
+import { storageObjectKind } from "../data/storage-object-kind.js?v=1.4.360";
 import { StorageTokenOverlayController } from "../ui/storage-token-overlay.js?v=1.4.197-door-trigger-target";
 import { GroundPileFrameController } from "./storage-ground-pile-frame.js?v=1.4.360";
+
+function excludeStorageMovementObstacles(_gridSpace, _movingToken, _options, found) {
+  for (const token of found) {
+    if (storageObjectKind(token) !== null) found.delete(token);
+  }
+}
 
 export function buildStorageTokenActions(moduleApi, token, {
   isGM = false,
@@ -59,6 +66,9 @@ export function registerStorageTokenHooks(moduleApi, {
   frameController = new GroundPileFrameController({ gameProvider })
 } = {}) {
   if (typeof hooks?.on !== "function") return false;
+
+  hooks.on("dnd5e.determineOccupiedGridSpaceBlocking", excludeStorageMovementObstacles);
+  hooks.on("dnd5e.determineOccupiedGridSpaceDifficult", excludeStorageMovementObstacles);
 
   const pointerHandlers = new WeakMap();
   const ensureGroundPileFrame = async (token) => {

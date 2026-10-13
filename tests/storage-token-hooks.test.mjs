@@ -4,6 +4,62 @@ import assert from "node:assert/strict";
 import { MODULE_ID } from "../scripts/constants.js";
 import { registerStorageTokenHooks } from "../scripts/integrations/storage-token-hooks.js";
 
+for (const hookName of [
+  "dnd5e.determineOccupiedGridSpaceBlocking",
+  "dnd5e.determineOccupiedGridSpaceDifficult"
+]) {
+  for (const isGM of [false, true]) {
+    for (const preview of [false, true]) {
+      test(`${hookName} excludes storage but retains creatures (${isGM ? "GM" : "player"}, preview=${preview})`, () => {
+        const harness = createHarness({ isGM, frameController: { ensure: () => false } });
+        const callback = harness.listeners.get(hookName);
+        assert.equal(typeof callback, "function");
+        const enemy = { actor: { type: "npc", flags: {} }, document: { disposition: -1 } };
+        const character = { actor: { type: "character", flags: {} }, document: { disposition: 1 } };
+        const vehicle = { actor: { type: "vehicle", flags: {} }, document: { disposition: 0 } };
+        const tokenOnlyStorage = { actor: { type: "npc", flags: {} }, document: {
+          disposition: -1, flags: { [MODULE_ID]: { storage: { version: 1, state: "opened" } } }
+        } };
+        const groundPile = { actor: { type: "npc", flags: {} }, document: {
+          disposition: 0, flags: { [MODULE_ID]: { groundPile: { enabled: true } } }
+        } };
+        const corpse = { actor: { type: "npc", flags: {} }, document: {
+          disposition: -1, flags: { [MODULE_ID]: { storage: {
+            version: 1, corpseMaterialization: { version: 1, status: "complete" }
+          } } }
+        } };
+        const unmarkedNpc = { actor: { type: "npc", flags: {}, folder: { name: "Хранилища" } },
+          document: { disposition: -1 } };
+        const occupants = [harness.storageToken, enemy, tokenOnlyStorage, character,
+          groundPile, vehicle, corpse, unmarkedNpc];
+        const originalData = JSON.stringify(occupants);
+        for (const occupant of occupants) {
+          occupant.document.update = () => assert.fail("movement filtering must not write TokenDocuments");
+          occupant.actor.update = () => assert.fail("movement filtering must not write Actors");
+          Object.freeze(occupant.document);
+          Object.freeze(occupant.actor);
+          Object.freeze(occupant);
+        }
+        const found = new Set(occupants);
+        const expected = [enemy, character, vehicle, corpse, unmarkedNpc];
+        const gridSpace = Object.freeze({ i: 1, j: 2 });
+        const movingToken = Object.freeze({ actor: Object.freeze({ type: "character" }),
+          document: Object.freeze({ disposition: 1 }) });
+        const options = Object.freeze({ preview });
+        assert.equal(callback(gridSpace, movingToken, options, found), undefined);
+        assert.deepEqual([...found], expected);
+        assert.equal(found.has(harness.storageToken), false);
+        assert.equal(JSON.stringify(occupants), originalData);
+        callback(gridSpace, movingToken, options, found);
+        assert.deepEqual([...found], expected);
+        assert.doesNotThrow(() => callback(gridSpace, movingToken, options, new Set()));
+        assert.equal(harness.calls.length, 0);
+        assert.equal(harness.openCalls.length, 0);
+      });
+    }
+  }
+}
+
 function createHarness({ isGM = false, distance = 5, frameController = null } = {}) {
   const listeners = new Map();
   const calls = [];
